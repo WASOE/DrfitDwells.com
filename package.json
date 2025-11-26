@@ -1,0 +1,19 @@
+{
+  "name": "drift-dwells-booking-portal",
+  "version": "1.0.0",
+  "description": "Booking system for Drift & Dwells eco-retreat cabins",
+  "main": "server/server.js",
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "cd server && npm run dev",
+    "client": "cd client && npm run dev",
+    "build": "cd client && npm run build",
+    "start": "cd server && npm start"
+  },
+  "keywords": ["booking", "hospitality", "eco-retreat", "bulgaria"],
+  "author": "Drift & Dwells",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

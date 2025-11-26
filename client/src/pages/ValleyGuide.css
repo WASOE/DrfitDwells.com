@@ -1,0 +1,167 @@
+/* Valley Guide Print Styles */
+@media print {
+  @page {
+    margin: 1.5cm;
+  }
+
+  /* Hide navigation and non-essential elements */
+  .no-print,
+  header,
+  footer,
+  nav,
+  button,
+  .btn-pill,
+  .copy-button {
+    display: none !important;
+  }
+
+  body {
+    background: white;
+    font-size: 12pt;
+    line-height: 1.6;
+  }
+
+  .valley-guide-content {
+    max-width: 70ch;
+    margin: 0 auto;
+    padding: 0;
+  }
+
+  /* One column layout */
+  .route-cards {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Page break rules */
+  .valley-guide-content section {
+    page-break-inside: avoid;
+    margin-bottom: 2rem;
+  }
+
+  .card-editorial {
+    page-break-inside: avoid;
+  }
+
+  /* Safety callouts should not split */
+  .bg-red-50,
+  .bg-yellow-50 {
+    page-break-inside: avoid;
+  }
+
+  .valley-guide-content h1,
+  .valley-guide-content h2,
+  .valley-guide-content h3 {
+    page-break-after: avoid;
+  }
+
+  /* Show URLs after links */
+  a[href]::after {
+    content: " (" attr(href) ")";
+    font-size: 0.85em;
+    color: #666;
+    word-break: break-all;
+  }
+
+  /* Coordinates should be visible */
+  strong {
+    font-weight: 600;
+  }
+}
+
+/* Mobile optimizations */
+@media (max-width: 640px) {
+  .valley-guide-content {
+    padding: 1rem;
+  }
+
+  .route-cards {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Small mobile spacing (≤360px) */
+@media (max-width: 360px) {
+  .valley-guide-content section {
+    margin-bottom: 2rem;
+  }
+
+  .route-cards {
+    gap: 1rem;
+  }
+
+  .card-editorial {
+    padding: 1rem;
+  }
+
+  /* Ensure all CTAs are ≥48px and 12-16px apart */
+  .btn-pill,
+  button {
+    min-height: 48px !important;
+    margin-bottom: 12px;
+  }
+
+  .space-y-4 > * + * {
+    margin-top: 16px;
+  }
+
+  /* Map & coordinates section spacing */
+  .card-editorial.space-y-4 > * + * {
+    margin-top: 16px;
+  }
+}
+
+/* Focus styles for accessibility */
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid #81887A;
+  outline-offset: 2px;
+}
+
+/* Copy button feedback - microtoast near button */
+.copy-button.copied {
+  background-color: #10b981 !important;
+  color: white !important;
+  position: relative;
+}
+
+.copy-button.copied::after {
+  content: 'Copied!';
+  position: absolute;
+  top: -35px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1f2937;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.copy-button.copied::before {
+  content: '';
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: #1f2937;
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* Screen reader only text */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+

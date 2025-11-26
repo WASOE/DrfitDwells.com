@@ -1,0 +1,114 @@
+/**
+ * Drift & Dwells Craft Experience Modal Styles
+ * Version: 1.3.0
+ */
+
+/* Ensure builder/themes can't unset the hidden state */
+.ddw-craft-modal[hidden] { display: none !important; }
+
+.ddw-craft-card {
+  border: 1px solid #dfe5de;
+  background: #f7faf7;
+  border-radius: 14px;
+  padding: 1.5rem;
+}
+
+.ddw-craft-title {
+  margin: 0 0 .5rem;
+  font-size: 1.875rem;
+  line-height: 1.2;
+  color: #6b7a6c;
+}
+
+.ddw-craft-copy {
+  margin: 0 0 1rem;
+  color: #4b5563;
+}
+
+.ddw-craft-open {
+  background: #9aa78f;
+  color: #fff;
+  border: 0;
+  padding: .9rem 1.4rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.ddw-craft-open:hover {
+  background: #8a9680;
+}
+
+.ddw-craft-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  display: grid;
+  place-items: center;
+}
+
+.ddw-craft-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, .6);
+  cursor: pointer;
+}
+
+.ddw-craft-dialog {
+  position: relative;
+  width: min(960px, 92vw);
+  height: min(80vh, 900px);
+  background: #fff;
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .35);
+  outline: none;
+}
+
+.ddw-craft-iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+.ddw-craft-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: #fff;
+  border: 0;
+  border-radius: 999px;
+  padding: .25rem .6rem;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .2);
+  font-size: 1.5rem;
+  line-height: 1;
+  color: #6b7280;
+  transition: background-color 0.2s, color 0.2s;
+  z-index: 10;
+}
+
+.ddw-craft-close:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+@media (max-width: 768px) {
+  .ddw-craft-dialog {
+    width: 95vw;
+    height: 85vh;
+    border-radius: 12px;
+  }
+  
+  .ddw-craft-card {
+    padding: 1.25rem;
+  }
+  
+  .ddw-craft-title {
+    font-size: 1.5rem;
+  }
+}
+
+
+

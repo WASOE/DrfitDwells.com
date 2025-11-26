@@ -1,0 +1,435 @@
+import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { availabilityAPI, unitAPI } from '../services/api';
+import SearchBar from '../components/SearchBar';
+
+// Safe URL normalization helper
+function normalizeSrc(u) {
+  if (!u) return '';
+  if (/^https?:\/\//i.test(u)) return u;
+  if (u.startsWith('/')) return u;
+  return `/uploads/cabins/${u}`;
+}
+
+// Get cover image from images array with fallback to legacy imageUrl
+function getCoverImage(cabin) {
+  const arr = Array.isArray(cabin.images) ? cabin.images : [];
+  const cover = arr.find(i => i && i.isCover) || arr[0];
+  const url = cover?.url || cabin.imageUrl || '';
+  return normalizeSrc(url);
+}
+
+const SearchResults = () => {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  
+  const [cabins, setCabins] = useState([]);
+  const [unitCountsByTypeId, setUnitCountsByTypeId] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Extract and validate search parameters
+  const getValidatedSearchParams = () => {
+    let checkIn = searchParams.get('checkIn');
+    let checkOut = searchParams.get('checkOut');
+    let adults = parseInt(searchParams.get('adults')) || 2;
+    let children = parseInt(searchParams.get('children')) || 0;
+
+    // Validate and fix dates
+    if (checkIn) {
+      const checkInDate = new Date(checkIn);
+      if (isNaN(checkInDate.getTime())) {
+        checkIn = null;
+      }
+    }
+
+    if (checkOut) {
+      const checkOutDate = new Date(checkOut);
+      if (isNaN(checkOutDate.getTime())) {
+        checkOut = null;
+      }
+    }
+
+    // Edge case: If only checkIn provided, default checkOut = checkIn + 2 nights
+    if (checkIn && !checkOut) {
+      const checkInDate = new Date(checkIn);
+      const checkOutDate = new Date(checkInDate);
+      checkOutDate.setDate(checkInDate.getDate() + 2);
+      checkOut = checkOutDate.toISOString().split('T')[0];
+    }
+
+    // Edge case: If checkOut <= checkIn, nudge checkOut = checkIn + 1
+    if (checkIn && checkOut) {
+      const checkInDate = new Date(checkIn);
+      const checkOutDate = new Date(checkOut);
+      if (checkOutDate <= checkInDate) {
+        const newCheckOutDate = new Date(checkInDate);
+        newCheckOutDate.setDate(checkInDate.getDate() + 1);
+        checkOut = newCheckOutDate.toISOString().split('T')[0];
+      }
+    }
+
+    // Clamp unreasonable values
+    adults = Math.max(1, Math.min(10, adults));
+    children = Math.max(0, Math.min(10, children));
+
+    return { checkIn, checkOut, adults, children };
+  };
+
+  const currentSearchParams = getValidatedSearchParams();
+
+  // Handle draft parameter
+  const draftToken = searchParams.get('draft');
+
+  // Load draft data if token is present
+  useEffect(() => {
+    const loadDraft = async () => {
+      if (!draftToken) return;
+
+      try {
+        const response = await fetch(`/api/drafts/${draftToken}`);
+        const result = await response.json();
+
+        if (result.success) {
+          const { payload } = result;
+          
+          // Update URL with draft data
+          const urlParams = new URLSearchParams(searchParams);
+          
+          if (payload.checkIn) urlParams.set('checkIn', payload.checkIn);
+          if (payload.checkOut) urlParams.set('checkOut', payload.checkOut);
+          if (payload.adults) urlParams.set('adults', payload.adults.toString());
+          if (payload.children) urlParams.set('children', payload.children.toString());
+          
+          // Remove draft token from URL
+          urlParams.delete('draft');
+          
+          navigate(`/search?${urlParams.toString()}`, { replace: true });
+        }
+      } catch (error) {
+        console.error('Error loading draft:', error);
+        // Silently ignore draft loading errors
+      }
+    };
+
+    loadDraft();
+  }, [draftToken, navigate, searchParams]);
+
+  // Search for available cabins
+  const searchCabins = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await availabilityAPI.search(currentSearchParams);
+      
+      if (response.data.success) {
+        const cabinsData = response.data.data.cabins;
+        // Debug: log multi-unit cabins
+        const multiCabins = cabinsData.filter(c => 
+          (c?.inventoryMode === 'multi' || c?.inventoryType === 'multi') && 
+          (c?.cabinTypeRef || c?.cabinTypeId)
+        );
+        if (multiCabins.length > 0) {
+          console.log('Multi-unit cabins found:', multiCabins.map(c => ({
+            name: c.name,
+            inventoryMode: c.inventoryMode,
+            inventoryType: c.inventoryType,
+            cabinTypeRef: c.cabinTypeRef,
+            cabinTypeId: c.cabinTypeId
+          })));
+        }
+        setCabins(cabinsData);
+      } else {
+        setError(response.data.message || 'Failed to search cabins');
+      }
+    } catch (err) {
+      console.error('Search error:', err);
+      setError(err.response?.data?.message || 'Error searching for cabins. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Update URL if validation changed parameters - with proper dependency management
+  useEffect(() => {
+    const urlParams = new URLSearchParams(searchParams);
+    let urlUpdated = false;
+
+    // Check if checkIn needs updating
+    const currentCheckIn = urlParams.get('checkIn');
+    if (currentSearchParams.checkIn !== currentCheckIn) {
+      if (currentSearchParams.checkIn) {
+        urlParams.set('checkIn', currentSearchParams.checkIn);
+      } else {
+        urlParams.delete('checkIn');
+      }
+      urlUpdated = true;
+    }
+
+    // Check if checkOut needs updating
+    const currentCheckOut = urlParams.get('checkOut');
+    if (currentSearchParams.checkOut !== currentCheckOut) {
+      if (currentSearchParams.checkOut) {
+        urlParams.set('checkOut', currentSearchParams.checkOut);
+      } else {
+        urlParams.delete('checkOut');
+      }
+      urlUpdated = true;
+    }
+
+    // Check if adults needs updating
+    const currentAdults = parseInt(urlParams.get('adults')) || 2;
+    if (currentSearchParams.adults !== currentAdults) {
+      urlParams.set('adults', currentSearchParams.adults.toString());
+      urlUpdated = true;
+    }
+
+    // Check if children needs updating
+    const currentChildren = parseInt(urlParams.get('children')) || 0;
+    if (currentSearchParams.children !== currentChildren) {
+      urlParams.set('children', currentSearchParams.children.toString());
+      urlUpdated = true;
+    }
+
+    // Only navigate if something actually changed
+    if (urlUpdated) {
+      navigate(`/search?${urlParams.toString()}`, { replace: true });
+    }
+  }, [currentSearchParams.checkIn, currentSearchParams.checkOut, currentSearchParams.adults, currentSearchParams.children, navigate, searchParams]);
+
+  // Load search results on component mount
+  useEffect(() => {
+    if (currentSearchParams.checkIn && currentSearchParams.checkOut) {
+      searchCabins();
+    } else {
+      navigate('/');
+    }
+  }, [searchParams]);
+
+  // Unique cabin type ids for multi-unit results
+  const multiTypeIds = useMemo(() => {
+    const ids = new Set();
+    for (const c of cabins) {
+      const isMulti = c?.inventoryMode === 'multi' || c?.inventoryType === 'multi';
+      const typeId = c?.cabinTypeRef || c?.cabinTypeId;
+      if (isMulti && typeId) {
+        ids.add(typeId.toString());
+      }
+    }
+    return Array.from(ids);
+  }, [cabins]);
+
+  // Fetch unit counts for multi-unit cabin types
+  useEffect(() => {
+    let cancelled = false;
+    const loadCounts = async () => {
+      if (multiTypeIds.length === 0) {
+        setUnitCountsByTypeId({});
+        return;
+      }
+      try {
+        const results = await Promise.allSettled(
+          multiTypeIds.map(async (typeId) => {
+            try {
+              const resp = await unitAPI.getByCabinType(typeId);
+              const items = resp?.data?.data?.units || [];
+              const active = items.filter(u => u?.isActive !== false).length;
+              return { typeId: typeId.toString(), total: items.length, active };
+            } catch (err) {
+              console.warn(`Failed to load units for type ${typeId}:`, err);
+              return { typeId: typeId.toString(), total: 0, active: 0 };
+            }
+          })
+        );
+        if (cancelled) return;
+        const next = {};
+        for (const r of results) {
+          if (r.status === 'fulfilled' && r.value) {
+            next[r.value.typeId] = { total: r.value.total, active: r.value.active };
+          }
+        }
+        setUnitCountsByTypeId(next);
+      } catch (err) {
+        console.error('Error loading unit counts:', err);
+      }
+    };
+    loadCounts();
+    return () => { cancelled = true; };
+  }, [multiTypeIds]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-white">
+        <div className="max-w-7xl mx-auto px-6 py-20">
+          <div className="text-center py-20">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-sage"></div>
+            <p className="mt-6 text-body text-gray-600">Searching for available cabins...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-white">
+        <div className="max-w-7xl mx-auto px-6 py-20">
+          <div className="text-center py-20">
+            <h2 className="headline-subsection mb-6">Search Error</h2>
+            <p className="text-editorial text-gray-600 mb-12">{error}</p>
+            <button
+              onClick={() => navigate('/')}
+              className="btn-pill"
+            >
+              back to home →
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-white">
+      <div className="max-w-7xl mx-auto px-6 py-20">
+        {/* Search Bar */}
+        <div className="mb-20">
+          <SearchBar initialData={currentSearchParams} />
+        </div>
+
+        {/* Search Results Header */}
+        <div className="mb-16">
+          <h1 className="headline-section mb-8">
+            Available Cabins
+          </h1>
+          
+          <div className="card-editorial p-8">
+            <div className="flex flex-wrap items-center gap-8 text-body text-gray-600">
+              <span className="flex items-center">
+                <span className="w-2 h-2 bg-sage rounded-full mr-3"></span>
+                {currentSearchParams.checkIn && new Date(currentSearchParams.checkIn).toLocaleDateString()} - {currentSearchParams.checkOut && new Date(currentSearchParams.checkOut).toLocaleDateString()}
+              </span>
+              <span className="flex items-center">
+                <span className="w-2 h-2 bg-sage rounded-full mr-3"></span>
+                {currentSearchParams.adults} {currentSearchParams.adults === 1 ? 'Adult' : 'Adults'}
+                {currentSearchParams.children > 0 && (
+                  <span>, {currentSearchParams.children} {currentSearchParams.children === 1 ? 'Child' : 'Children'}</span>
+                )}
+              </span>
+              <span className="flex items-center">
+                <span className="w-2 h-2 bg-sage rounded-full mr-3"></span>
+                {cabins.length} {cabins.length === 1 ? 'Cabin' : 'Cabins'} Available
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Results */}
+        {cabins.length === 0 ? (
+          <div className="text-center py-20">
+            <h2 className="headline-subsection mb-6">
+              No Available Cabins
+            </h2>
+            <p className="text-editorial text-gray-600 mb-12 max-w-2xl mx-auto">
+              Sorry, we couldn't find any available cabins for your selected dates and group size. 
+              Try adjusting your search criteria.
+            </p>
+            <button
+              onClick={() => navigate('/')}
+              className="btn-pill"
+            >
+              new search →
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12">
+            {cabins.map((cabin) => (
+              <div key={cabin._id} className="card-cabin group flex flex-col h-full">
+                <div className="relative h-64 overflow-hidden">
+                  <img
+                    src={getCoverImage(cabin)}
+                    alt={cabin.name}
+                    loading="lazy"
+                    decoding="async"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                  {/* Multi-unit pill */}
+                  {(() => {
+                    const isMulti = cabin?.inventoryMode === 'multi' || cabin?.inventoryType === 'multi';
+                    const typeId = cabin?.cabinTypeRef || cabin?.cabinTypeId;
+                    if (!isMulti || !typeId) return null;
+                    const typeIdStr = typeId.toString();
+                    const count = unitCountsByTypeId[typeIdStr];
+                    return (
+                      <div className="absolute top-6 left-6 bg-white/95 backdrop-blur-sm px-3 py-1.5 rounded-full border border-gray-200 shadow-sm z-10">
+                        <span className="text-xs font-medium text-gray-800">
+                          Multi-unit
+                          {count?.total > 0 && (
+                            <span> • {count.total} units</span>
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })()}
+                  <div className="absolute top-6 right-6 bg-white/95 backdrop-blur-sm px-4 py-2">
+                    <span className="text-sm font-light text-sage tracking-wide">
+                      {cabin.capacity} {cabin.capacity === 1 ? 'Guest' : 'Guests'}
+                    </span>
+                  </div>
+                </div>
+                <div className="p-8 flex flex-col flex-grow">
+                  <h3 className="headline-subsection mb-4">
+                    {cabin.name}
+                  </h3>
+                  <p className="text-body text-gray-600 flex items-center mb-6">
+                    <span className="w-1 h-1 bg-sage rounded-full mr-3"></span>
+                    {cabin.location}
+                  </p>
+                  <p className="text-body text-gray-600 mb-8 line-clamp-3 flex-grow">
+                    {cabin.description}
+                  </p>
+                  <div className="border-t border-gray-200 pt-6 mt-auto">
+                    <div className="flex justify-between items-center mb-6">
+                      <div>
+                        <p className="text-body text-gray-600">
+                          {cabin.totalNights} {cabin.totalNights === 1 ? 'night' : 'nights'}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-serif text-2xl font-bold text-sage">
+                          €{cabin.totalPrice}
+                        </p>
+                        <p className="text-sm text-gray-500 font-light">
+                          €{cabin.pricePerNight}/night
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => navigate(`/cabin/${cabin._id}?${new URLSearchParams(currentSearchParams).toString()}`)}
+                      className="w-full btn-editorial text-center block py-3"
+                    >
+                      view details →
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Back to Home */}
+        <div className="text-center mt-20">
+          <button
+            onClick={() => navigate('/')}
+            className="btn-underline"
+          >
+            ← back to home
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default SearchResults;

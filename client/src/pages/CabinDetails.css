@@ -1,0 +1,269 @@
+/* CabinDetails.css — Premium polish, production-ready */
+
+/* Container */
+.cabin-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.cabin-container > button.btn-underline {
+  display: block;
+}
+
+@media (max-width: 640px) {
+  .cabin-container {
+    padding: 0 16px;
+  }
+}
+
+/* Grid Layout — Premium spacing */
+.details-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+  overflow: visible;
+  transform: none;
+}
+
+@media (min-width: 1024px) {
+  .details-grid {
+    grid-template-columns: minmax(0, 1fr) 380px;
+    gap: 48px; /* Bumped from 40px for better spacing */
+  }
+}
+
+/* Sticky Booking Card — Polished */
+.aside-sticky {
+  position: sticky;
+  top: 32px; /* Bumped from 24px */
+  align-self: start;
+  max-height: calc(100vh - 64px);
+  overflow-y: auto;
+  overflow-x: visible;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+
+.aside-sticky::-webkit-scrollbar {
+  width: 6px;
+}
+
+.aside-sticky::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.aside-sticky::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.aside-sticky::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.3);
+}
+
+/* Typography — Premium scale */
+h1.cabin-title {
+  font-weight: 700;
+  line-height: 1.15;
+  font-size: 2.125rem; /* 34px base */
+  margin: 0;
+  color: #111827;
+}
+
+@media (min-width: 1024px) {
+  h1.cabin-title {
+    font-size: 2.25rem; /* 36px desktop */
+  }
+}
+
+.section-title {
+  font-weight: 700;
+  line-height: 1.2;
+  font-size: 1.5rem; /* 24px base */
+  margin: 0;
+  color: #111827;
+}
+
+@media (min-width: 1024px) {
+  .section-title {
+    font-size: 1.625rem; /* 26px desktop */
+  }
+}
+
+/* Body text */
+.cabin-container p {
+  font-size: 1rem; /* 16px */
+  line-height: 1.6;
+  color: #374151;
+}
+
+@media (min-width: 1024px) {
+  .cabin-container p {
+    font-size: 1.0625rem; /* 17px desktop */
+  }
+}
+
+/* Section spacing — Premium rhythm */
+.cabin-container > * + * {
+  margin-top: 2rem; /* 32px base */
+}
+
+@media (min-width: 1024px) {
+  .cabin-container > * + * {
+    margin-top: 2.5rem; /* 40px desktop */
+  }
+}
+
+/* Special sections */
+.cabin-container > .space-y-4 {
+  margin-top: 1.5rem;
+}
+
+@media (min-width: 1024px) {
+  .cabin-container > .space-y-4 {
+    margin-top: 2rem;
+  }
+}
+
+/* Grid children — allow shrinking */
+.details-grid > .reviews-col,
+.details-grid > .aside-sticky {
+  overflow-x: visible;
+}
+
+.reviews-col {
+  min-width: 0;
+}
+
+/* Trust row — Premium inline layout */
+.trust-row {
+  line-height: 1.5;
+  font-size: 0.875rem; /* 14px */
+  color: #374151;
+}
+
+.trust-row .rating-score {
+  font-weight: 600;
+  color: #111827;
+}
+
+/* Tabular numbers for prices */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Booking card — Premium spacing */
+.booking-card {
+  position: relative;
+  padding: 28px; /* Premium padding */
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.06); /* Light depth shadow */
+}
+
+@media (max-width: 1023px) {
+  .booking-card {
+    padding: 24px;
+  }
+}
+
+/* Mobile: stack; desktop: grid */
+@media (max-width: 1023px) {
+  .details-grid {
+    display: block;
+    gap: 0;
+  }
+  
+  .aside-sticky {
+    position: static;
+    top: auto;
+    max-height: none;
+    overflow-y: visible;
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+  
+  .aside-sticky::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Accessibility */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Focus styles — Premium, visible rings */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid #81887A;
+  outline-offset: 2px;
+  outline-style: solid;
+}
+
+/* Button press states */
+button:active:not(:disabled) {
+  transform: scale(0.98);
+  transition: transform 0.1s;
+}
+
+/* Review cards with content-visibility for performance */
+.reviews-col article {
+  content-visibility: auto;
+  contain-intrinsic-size: 200px;
+}
+
+/* Lightbox */
+[data-lightbox-overlay="true"] {
+  position: fixed;
+  z-index: 50;
+}
+
+/* Mobile bottom sticky bar spacing */
+@media (max-width: 1023px) {
+  .cabin-details-page {
+    padding-bottom: 72px; /* Space for sticky bar */
+  }
+}
+
+/* Toast animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -10px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* Print styles */
+@media print {
+  .aside-sticky {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+  
+  .details-grid {
+    display: block;
+  }
+  
+  button,
+  .btn-pill,
+  .btn-underline {
+    display: none;
+  }
+}

@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+client/node_modules/
+server/node_modules/
+package-lock.json
+client/package-lock.json
+server/package-lock.json
+
+# Build outputs
+dist/
+build/
+client/dist/
+client/build/
+*.log
+
+# Environment variables
+.env
+.env.local
+.env.local-smoke
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+coverage/
+.nyc_output/
+
+# Temporary files
+*.tmp
+*.temp
+test-image.txt
+
+# Uploads (keep structure but ignore large files - adjust as needed)
+# server/uploads/
+# uploads/
+
+# WordPress plugin builds
+wordpress-plugin/*.zip
+
+# Misc
+.cache/
+.temp/
+
