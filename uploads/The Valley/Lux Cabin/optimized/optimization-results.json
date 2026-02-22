@@ -1,0 +1,323 @@
+{
+  "desktop": [
+    {
+      "id": "exterior-hero",
+      "size": "desktop",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/exterior-hero-desktop.webp",
+      "width": 1920,
+      "sizeKB": 367.611328125
+    },
+    {
+      "id": "exterior-roof",
+      "size": "desktop",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/exterior-roof-desktop.webp",
+      "width": 1920,
+      "sizeKB": 335.0625
+    },
+    {
+      "id": "exterior-windows",
+      "size": "desktop",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/exterior-windows-desktop.webp",
+      "width": 1920,
+      "sizeKB": 373.947265625
+    },
+    {
+      "id": "exterior-angle",
+      "size": "desktop",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/exterior-angle-desktop.webp",
+      "width": 1920,
+      "sizeKB": 374.814453125
+    },
+    {
+      "id": "interior-main",
+      "size": "desktop",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-main-desktop.webp",
+      "width": 1600,
+      "sizeKB": 216.474609375
+    },
+    {
+      "id": "interior-planks",
+      "size": "desktop",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-planks-desktop.webp",
+      "width": 1600,
+      "sizeKB": 149.166015625
+    },
+    {
+      "id": "interior-overview",
+      "size": "desktop",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-overview-desktop.webp",
+      "width": 1194,
+      "sizeKB": 97.55078125
+    },
+    {
+      "id": "interior-detail",
+      "size": "desktop",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-detail-desktop.webp",
+      "width": 1600,
+      "sizeKB": 218.052734375
+    },
+    {
+      "id": "interior-bathroom",
+      "size": "desktop",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-bathroom-desktop.webp",
+      "width": 1600,
+      "sizeKB": 210.77734375
+    },
+    {
+      "id": "interior-kitchen",
+      "size": "desktop",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-kitchen-desktop.webp",
+      "width": 1600,
+      "sizeKB": 145.421875
+    },
+    {
+      "id": "interior-bedroom",
+      "size": "desktop",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-bedroom-desktop.webp",
+      "width": 1600,
+      "sizeKB": 164.171875
+    },
+    {
+      "id": "interior-lighting",
+      "size": "desktop",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-lighting-desktop.webp",
+      "width": 1920,
+      "sizeKB": 367.58203125
+    },
+    {
+      "id": "interior-space",
+      "size": "desktop",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-space-desktop.webp",
+      "width": 1920,
+      "sizeKB": 287.927734375
+    },
+    {
+      "id": "interior-window",
+      "size": "desktop",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-window-desktop.webp",
+      "width": 1194,
+      "sizeKB": 117.119140625
+    },
+    {
+      "id": "systems-ready",
+      "size": "desktop",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/systems-ready-desktop.webp",
+      "width": 1920,
+      "sizeKB": 325.630859375
+    }
+  ],
+  "mobile": [
+    {
+      "id": "exterior-hero",
+      "size": "mobile",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/exterior-hero-mobile.webp",
+      "width": 768,
+      "sizeKB": 108.58984375
+    },
+    {
+      "id": "exterior-roof",
+      "size": "mobile",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/exterior-roof-mobile.webp",
+      "width": 768,
+      "sizeKB": 100.13671875
+    },
+    {
+      "id": "exterior-windows",
+      "size": "mobile",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/exterior-windows-mobile.webp",
+      "width": 768,
+      "sizeKB": 110.615234375
+    },
+    {
+      "id": "exterior-angle",
+      "size": "mobile",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/exterior-angle-mobile.webp",
+      "width": 768,
+      "sizeKB": 117.69921875
+    },
+    {
+      "id": "interior-main",
+      "size": "mobile",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-main-mobile.webp",
+      "width": 768,
+      "sizeKB": 57.08984375
+    },
+    {
+      "id": "interior-planks",
+      "size": "mobile",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-planks-mobile.webp",
+      "width": 768,
+      "sizeKB": 40.904296875
+    },
+    {
+      "id": "interior-overview",
+      "size": "mobile",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-overview-mobile.webp",
+      "width": 768,
+      "sizeKB": 43.9609375
+    },
+    {
+      "id": "interior-detail",
+      "size": "mobile",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-detail-mobile.webp",
+      "width": 768,
+      "sizeKB": 58.693359375
+    },
+    {
+      "id": "interior-bathroom",
+      "size": "mobile",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-bathroom-mobile.webp",
+      "width": 768,
+      "sizeKB": 59.17578125
+    },
+    {
+      "id": "interior-kitchen",
+      "size": "mobile",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-kitchen-mobile.webp",
+      "width": 768,
+      "sizeKB": 40.380859375
+    },
+    {
+      "id": "interior-bedroom",
+      "size": "mobile",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-bedroom-mobile.webp",
+      "width": 768,
+      "sizeKB": 41.935546875
+    },
+    {
+      "id": "interior-lighting",
+      "size": "mobile",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-lighting-mobile.webp",
+      "width": 768,
+      "sizeKB": 64.482421875
+    },
+    {
+      "id": "interior-space",
+      "size": "mobile",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-space-mobile.webp",
+      "width": 768,
+      "sizeKB": 52.98046875
+    },
+    {
+      "id": "interior-window",
+      "size": "mobile",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-window-mobile.webp",
+      "width": 768,
+      "sizeKB": 51.4921875
+    },
+    {
+      "id": "systems-ready",
+      "size": "mobile",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/systems-ready-mobile.webp",
+      "width": 768,
+      "sizeKB": 59.080078125
+    }
+  ],
+  "thumbnail": [
+    {
+      "id": "exterior-hero",
+      "size": "thumbnail",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/exterior-hero-thumbnail.webp",
+      "width": 300,
+      "sizeKB": 14.55078125
+    },
+    {
+      "id": "exterior-roof",
+      "size": "thumbnail",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/exterior-roof-thumbnail.webp",
+      "width": 300,
+      "sizeKB": 12.068359375
+    },
+    {
+      "id": "exterior-windows",
+      "size": "thumbnail",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/exterior-windows-thumbnail.webp",
+      "width": 300,
+      "sizeKB": 14.44921875
+    },
+    {
+      "id": "exterior-angle",
+      "size": "thumbnail",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/exterior-angle-thumbnail.webp",
+      "width": 300,
+      "sizeKB": 14.642578125
+    },
+    {
+      "id": "interior-main",
+      "size": "thumbnail",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-main-thumbnail.webp",
+      "width": 300,
+      "sizeKB": 9.232421875
+    },
+    {
+      "id": "interior-planks",
+      "size": "thumbnail",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-planks-thumbnail.webp",
+      "width": 300,
+      "sizeKB": 8.08203125
+    },
+    {
+      "id": "interior-overview",
+      "size": "thumbnail",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-overview-thumbnail.webp",
+      "width": 300,
+      "sizeKB": 9.873046875
+    },
+    {
+      "id": "interior-detail",
+      "size": "thumbnail",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-detail-thumbnail.webp",
+      "width": 300,
+      "sizeKB": 9.09375
+    },
+    {
+      "id": "interior-bathroom",
+      "size": "thumbnail",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-bathroom-thumbnail.webp",
+      "width": 300,
+      "sizeKB": 9.259765625
+    },
+    {
+      "id": "interior-kitchen",
+      "size": "thumbnail",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-kitchen-thumbnail.webp",
+      "width": 300,
+      "sizeKB": 6.998046875
+    },
+    {
+      "id": "interior-bedroom",
+      "size": "thumbnail",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-bedroom-thumbnail.webp",
+      "width": 300,
+      "sizeKB": 7.50390625
+    },
+    {
+      "id": "interior-lighting",
+      "size": "thumbnail",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-lighting-thumbnail.webp",
+      "width": 300,
+      "sizeKB": 10.90625
+    },
+    {
+      "id": "interior-space",
+      "size": "thumbnail",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-space-thumbnail.webp",
+      "width": 300,
+      "sizeKB": 9.51171875
+    },
+    {
+      "id": "interior-window",
+      "size": "thumbnail",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/interior-window-thumbnail.webp",
+      "width": 300,
+      "sizeKB": 10.595703125
+    },
+    {
+      "id": "systems-ready",
+      "size": "thumbnail",
+      "path": "/uploads/The Valley/Lux Cabin/optimized/systems-ready-thumbnail.webp",
+      "width": 300,
+      "sizeKB": 9.544921875
+    }
+  ]
+}

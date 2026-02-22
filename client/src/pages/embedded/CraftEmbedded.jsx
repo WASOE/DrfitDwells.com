@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useBookingContext } from '../../context/BookingContext';
 import { cabinAPI } from '../../services/api';
 
@@ -607,10 +608,13 @@ const CraftEmbedded = () => {
                         />
                         <span className="ml-4 text-sm text-gray-900 leading-relaxed">
                           I agree to the{' '}
-                          <a href="#" className="text-drift-green hover:text-drift-light-green underline">
+                          <Link to="/terms" target="_blank" rel="noopener noreferrer" className="text-drift-green hover:text-drift-light-green underline">
                             retreat terms and conditions
-                          </a>{' '}
-                          and understand the cancellation policy *
+                          </Link>{' '}
+                          and understand the{' '}
+                          <Link to="/cancellation-policy" target="_blank" rel="noopener noreferrer" className="text-drift-green hover:text-drift-light-green underline">
+                            cancellation policy
+                          </Link> *
                         </span>
                       </label>
                       {errors.agreedToTerms && (

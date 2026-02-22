@@ -78,6 +78,8 @@ router.post('/', [
     let cabinType = null;
     let assignedUnitId = unitId || null;
     let pricePerNight = 0;
+    let pricingModel = 'per_night';
+    let minGuests = 1;
     let transportOptions = [];
 
     // Handle legacy single-cabin booking
@@ -94,6 +96,12 @@ router.post('/', [
         return res.status(400).json({
           success: false,
           message: `This cabin can only accommodate ${cabin.capacity} guests`
+        });
+      }
+      if (totalGuests < (cabin.minGuests || 1)) {
+        return res.status(400).json({
+          success: false,
+          message: `This cabin requires at least ${cabin.minGuests || 1} guests`
         });
       }
 
@@ -117,6 +125,8 @@ router.post('/', [
       }
 
       pricePerNight = cabin.pricePerNight;
+      pricingModel = cabin.pricingModel || 'per_night';
+      minGuests = cabin.minGuests || 1;
       transportOptions = cabin.transportOptions || [];
     } 
     // Handle multi-unit cabin booking
@@ -149,6 +159,12 @@ router.post('/', [
           message: `This cabin type can only accommodate ${cabinType.capacity} guests`
         });
       }
+      if (totalGuests < (cabinType.minGuests || 1)) {
+        return res.status(400).json({
+          success: false,
+          message: `This cabin type requires at least ${cabinType.minGuests || 1} guests`
+        });
+      }
 
       // If specific unit requested, verify it's available
       if (unitId) {
@@ -173,12 +189,17 @@ router.post('/', [
       }
 
       pricePerNight = cabinType.pricePerNight;
+      pricingModel = cabinType.pricingModel || 'per_night';
+      minGuests = cabinType.minGuests || 1;
       transportOptions = cabinType.transportOptions || [];
     }
 
     // Calculate total price
     const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
     let totalPrice = totalNights * pricePerNight;
+    if (pricingModel === 'per_person') {
+      totalPrice *= totalGuests;
+    }
     
     // Add transport cost if provided
     if (req.body.transportMethod && req.body.transportMethod !== 'Not selected') {

@@ -5,6 +5,7 @@ import MosaicGallery from '../components/MosaicGallery';
 import ReviewsSection from '../components/reviews/ReviewsSection';
 import MapArrival from '../components/MapArrival';
 import './CabinDetails.css';
+import '../components/gallery/lightbox.css';
 
 // Constants
 const DEFAULT_EXPERIENCES = [
@@ -25,6 +26,8 @@ const AFrameDetails = () => {
   const [error, setError] = useState(null);
   const [bookingLoading, setBookingLoading] = useState(false);
   const [bookingSuccess, setBookingSuccess] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
   const [selectedExpKeys, setSelectedExpKeys] = useState(new Set());
   const [isMultiUnitEnabled, setIsMultiUnitEnabled] = useState(false);
   const [unitStats, setUnitStats] = useState(null); // { total, active }
@@ -66,6 +69,53 @@ const AFrameDetails = () => {
     return `/uploads/cabins/${u}`;
   }, []);
 
+  const lightboxGallery = useMemo(() => (
+    gallery.map((img) => ({
+      ...img,
+      url: normalizeSrc(img.url || img),
+      alt: img.alt || cabinType?.name || 'A-Frame image'
+    }))
+  ), [gallery, normalizeSrc, cabinType?.name]);
+
+  const openLightbox = useCallback((index = 0) => {
+    const safeIndex = Math.max(0, Math.min(index, lightboxGallery.length - 1));
+    setLightboxIndex(safeIndex);
+    setLightboxOpen(true);
+    document.body.classList.add('lightbox-open');
+  }, [lightboxGallery.length]);
+
+  const closeLightbox = useCallback(() => {
+    setLightboxOpen(false);
+    document.body.classList.remove('lightbox-open');
+  }, []);
+
+  const goToPrevious = useCallback(() => {
+    if (!lightboxGallery.length) return;
+    const nextIndex = lightboxIndex === 0 ? lightboxGallery.length - 1 : lightboxIndex - 1;
+    setLightboxIndex(nextIndex);
+  }, [lightboxGallery.length, lightboxIndex]);
+
+  const goToNext = useCallback(() => {
+    if (!lightboxGallery.length) return;
+    const nextIndex = lightboxIndex === lightboxGallery.length - 1 ? 0 : lightboxIndex + 1;
+    setLightboxIndex(nextIndex);
+  }, [lightboxGallery.length, lightboxIndex]);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (!lightboxOpen) return;
+      if (e.key === 'Escape') closeLightbox();
+      if (e.key === 'ArrowLeft') goToPrevious();
+      if (e.key === 'ArrowRight') goToNext();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [lightboxOpen, closeLightbox, goToPrevious, goToNext]);
+
+  useEffect(() => (
+    () => document.body.classList.remove('lightbox-open')
+  ), []);
+
   // Experiences
   const experiences = useMemo(() => {
     const fromType = Array.isArray(cabinType?.experiences) ? cabinType.experiences.filter(x => x?.active !== false) : [];
@@ -104,13 +154,17 @@ const AFrameDetails = () => {
       }
       
       const totalNights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
-      const totalPrice = totalNights * cabinType.pricePerNight;
+      const totalGuests = (searchCriteria.adults || 0) + (searchCriteria.children || 0);
+      let totalPrice = totalNights * cabinType.pricePerNight;
+      if ((cabinType.pricingModel || 'per_night') === 'per_person') {
+        totalPrice *= Math.max(totalGuests, 1);
+      }
       
       return { totalNights, totalPrice };
     } catch {
       return null;
     }
-  }, [cabinType, searchCriteria.checkIn, searchCriteria.checkOut]);
+  }, [cabinType, searchCriteria.checkIn, searchCriteria.checkOut, searchCriteria.adults, searchCriteria.children]);
 
   // Highlights
   const highlights = useMemo(() => {
@@ -407,7 +461,7 @@ const AFrameDetails = () => {
 
         {gallery.length > 0 && (
           <div className="mt-6">
-            <MosaicGallery images={gallery} onOpenLightbox={(index) => {}} />
+            <MosaicGallery images={gallery} onOpenLightbox={(index) => openLightbox(index)} />
           </div>
         )}
 
@@ -506,7 +560,10 @@ const AFrameDetails = () => {
                 {cabinType.pricePerNight && (
                   <div className="flex justify-between items-center py-2">
                     <span className="text-gray-600">Price per night</span>
-                    <span className="font-medium text-gray-900 tabular-nums">€{cabinType.pricePerNight.toLocaleString()} / night</span>
+                    <span className="font-medium text-gray-900 tabular-nums">
+                      €{cabinType.pricePerNight.toLocaleString()} / night
+                      {(cabinType.pricingModel || 'per_night') === 'per_person' ? ' per person' : ''}
+                    </span>
                   </div>
                 )}
                 
@@ -654,6 +711,52 @@ const AFrameDetails = () => {
           </div>
         </aside>
       </section>
+
+      {lightboxOpen && lightboxGallery.length > 0 && (
+        <div className="lightbox-overlay" role="dialog" aria-modal="true">
+          <div className="lightbox-container">
+            <button
+              className="lightbox-close"
+              aria-label="Close gallery"
+              onClick={closeLightbox}
+            >
+              ×
+            </button>
+            {lightboxGallery.length > 1 && (
+              <>
+                <button
+                  className="lightbox-nav lightbox-prev"
+                  aria-label="Previous photo"
+                  onClick={goToPrevious}
+                >
+                  ‹
+                </button>
+                <button
+                  className="lightbox-nav lightbox-next"
+                  aria-label="Next photo"
+                  onClick={goToNext}
+                >
+                  ›
+                </button>
+              </>
+            )}
+            <div className="lightbox-image-container" onClick={closeLightbox}>
+              <img
+                src={lightboxGallery[lightboxIndex]?.url}
+                alt={lightboxGallery[lightboxIndex]?.alt || `Photo ${lightboxIndex + 1}`}
+                className="lightbox-image"
+                loading="eager"
+                decoding="async"
+              />
+            </div>
+            <div className="lightbox-caption">
+              <div className="lightbox-counter">
+                {lightboxIndex + 1} / {lightboxGallery.length}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

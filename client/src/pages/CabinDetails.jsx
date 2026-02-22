@@ -5,6 +5,7 @@ import { useBookingContext } from '../context/BookingContext';
 import MosaicGallery from '../components/MosaicGallery';
 import ReviewsSection from '../components/reviews/ReviewsSection';
 import MapArrival from '../components/MapArrival';
+import StickyBookingBar from '../components/StickyBookingBar';
 import './CabinDetails.css';
 
 // Constants
@@ -23,6 +24,9 @@ const CabinDetails = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { setBasicInfo } = useBookingContext();
+  
+  // Check if we're returning to craft flow
+  const returnTo = searchParams.get('returnTo');
   
   // ===== B) All State hooks (declare ALL unconditionally) =====
   const [cabin, setCabin] = useState(null);
@@ -294,13 +298,17 @@ const CabinDetails = () => {
       }
       
       const totalNights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
-      const totalPrice = totalNights * cabin.pricePerNight;
+      const totalGuests = (searchCriteria.adults || 0) + (searchCriteria.children || 0);
+      let totalPrice = totalNights * cabin.pricePerNight;
+      if ((cabin.pricingModel || 'per_night') === 'per_person') {
+        totalPrice *= Math.max(totalGuests, 1);
+      }
       
       return { totalNights, totalPrice };
     } catch {
       return null;
     }
-  }, [cabin, searchCriteria.checkIn, searchCriteria.checkOut]);
+  }, [cabin, searchCriteria.checkIn, searchCriteria.checkOut, searchCriteria.adults, searchCriteria.children]);
 
   // Lightbox handlers (singletons)
   const openLightbox = useCallback((startIdx = 0, filterTag = null, mode = 'grid') => {
@@ -813,6 +821,30 @@ const CabinDetails = () => {
     return Object.keys(errors).length === 0;
   }, [formData]);
 
+  // Handle selecting cabin for craft flow return
+  const handleSelectCabinForCraft = useCallback(() => {
+    if (!id || !searchCriteria.checkIn || !searchCriteria.checkOut) {
+      setError('Please ensure check-in and check-out dates are selected');
+      return;
+    }
+    
+    // Save basic booking info to context
+    setBasicInfo({
+      cabinId: id,
+      checkIn: searchCriteria.checkIn,
+      checkOut: searchCriteria.checkOut,
+      adults: searchCriteria.adults,
+      children: searchCriteria.children
+    });
+    
+    // Navigate back to craft flow
+    if (returnTo) {
+      navigate(`/${returnTo}`);
+    } else {
+      navigate('/craft/step-4');
+    }
+  }, [id, searchCriteria, setBasicInfo, navigate, returnTo]);
+
   // Handle starting the crafted experience wizard
   const handleStartCraftedExperience = useCallback(() => {
     if (!id || !searchCriteria.checkIn || !searchCriteria.checkOut) {
@@ -966,7 +998,7 @@ const CabinDetails = () => {
 
   // ===== I) Render (all hooks have been called by this point) =====
   return (
-    <div className="min-h-screen bg-white cabin-details-page">
+    <div className="min-h-screen bg-white cabin-details-page pb-32 md:pb-0">
       {/* SEO JSON-LD */}
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd }} />
       
@@ -1192,14 +1224,25 @@ const CabinDetails = () => {
               <p className="text-xs text-gray-600 leading-relaxed mb-4">
                 Let us personalize your stay with a guided experience tailored to your needs.
               </p>
-              <button
-                type="button"
-                onClick={handleStartCraftedExperience}
-                className="w-full bg-sage text-white py-3 px-4 rounded-lg text-sm font-semibold hover:bg-sage-dark transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none"
-                disabled={!searchCriteria.checkIn || !searchCriteria.checkOut}
-              >
-                Start Crafted Experience →
-              </button>
+              {returnTo ? (
+                <button
+                  type="button"
+                  onClick={handleSelectCabinForCraft}
+                  className="w-full bg-sage text-white py-3 px-4 rounded-lg text-sm font-semibold hover:bg-sage-dark transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none"
+                  disabled={!searchCriteria.checkIn || !searchCriteria.checkOut}
+                >
+                  Select This Cabin →
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleStartCraftedExperience}
+                  className="w-full bg-sage text-white py-3 px-4 rounded-lg text-sm font-semibold hover:bg-sage-dark transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none"
+                  disabled={!searchCriteria.checkIn || !searchCriteria.checkOut}
+                >
+                  Start Crafted Experience →
+                </button>
+              )}
             </div>
           </div>
             </div>
@@ -1277,7 +1320,10 @@ const CabinDetails = () => {
                 {cabin.pricePerNight && (
                   <div className="flex justify-between items-center py-2">
                     <span className="text-gray-600">Price per night</span>
-                    <span className="font-medium text-gray-900 tabular-nums">€{cabin.pricePerNight.toLocaleString()} / night</span>
+                    <span className="font-medium text-gray-900 tabular-nums">
+                      €{cabin.pricePerNight.toLocaleString()} / night
+                      {(cabin.pricingModel || 'per_night') === 'per_person' ? ' per person' : ''}
+                    </span>
                   </div>
                 )}
                 {/* Experience add-ons */}
@@ -1882,36 +1928,27 @@ const CabinDetails = () => {
         </div>
       )}
 
-      {/* Mobile Bottom Sticky Bar */}
-      <div className="fixed bottom-0 inset-x-0 bg-white border-t border-gray-200 px-4 py-3 flex items-center justify-between md:hidden z-40 shadow-lg" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
-        <div className="text-sm flex-1 min-w-0">
-          {pricing ? (
-            <>
-              <div className="font-semibold text-gray-900 tabular-nums">
-                €{(pricing.totalPrice + (experienceTotal || 0)).toLocaleString()} total
-              </div>
-              <div className="text-gray-500 text-xs mt-0.5">
-                {pricing.totalNights} {pricing.totalNights === 1 ? 'night' : 'nights'}
-              </div>
-            </>
-          ) : (
-            <div className="text-gray-600">Select dates to see pricing</div>
-          )}
-        </div>
-        <button
-          onClick={() => {
-            if (!searchCriteria.checkIn || !searchCriteria.checkOut) {
-              setMobileDateDrawerOpen(true);
-            } else {
-              document.getElementById('details')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }
-          }}
-          className="ml-4 px-4 py-2.5 rounded-xl bg-[#81887A] text-white font-semibold text-sm hover:opacity-95 transition-all shadow-sm active:scale-95"
-          aria-label={pricing ? 'Request to book' : 'Select dates'}
-        >
-          {pricing ? 'Request to book' : 'Select dates'}
-        </button>
-      </div>
+      <StickyBookingBar
+        className="md:hidden"
+        label={
+          pricing
+            ? `€${(pricing.totalPrice + (experienceTotal || 0)).toLocaleString()} total`
+            : 'Select dates to see pricing'
+        }
+        subLabel={
+          pricing
+            ? `${pricing.totalNights} ${pricing.totalNights === 1 ? 'night' : 'nights'}`
+            : undefined
+        }
+        buttonLabel={searchCriteria.checkIn && searchCriteria.checkOut ? 'Request to book' : 'Select dates'}
+        onButtonClick={() => {
+          if (!searchCriteria.checkIn || !searchCriteria.checkOut) {
+            setMobileDateDrawerOpen(true);
+          } else {
+            document.getElementById('details')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }}
+      />
     </div>
   );
 };

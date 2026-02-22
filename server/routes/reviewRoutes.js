@@ -1,9 +1,13 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const Review = require('../models/Review');
+const Cabin = require('../models/Cabin');
+const CabinType = require('../models/CabinType');
 
 const router = express.Router();
 
 // GET /api/cabins/:id/reviews - Public endpoint for cabin reviews
+// Supports both Cabin IDs and CabinType IDs (for multi-unit properties)
 router.get('/cabins/:id/reviews', async (req, res) => {
   try {
     const { id } = req.params;
@@ -20,12 +24,30 @@ router.get('/cabins/:id/reviews', async (req, res) => {
     const minRatingNum = parseInt(minRating);
     const skip = (pageNum - 1) * limitNum;
 
+    // Check if ID is a CabinType (for multi-unit properties like A-frame)
+    let cabinIds = [];
+    const cabinType = await CabinType.findById(id);
+    if (cabinType) {
+      // If it's a CabinType, find all Cabin instances with this cabinTypeRef
+      const cabins = await Cabin.find({ cabinTypeRef: id }, '_id');
+      cabinIds = cabins.map(c => c._id);
+      // Also include the CabinType ID itself in case reviews are linked directly
+      cabinIds.push(new mongoose.Types.ObjectId(id));
+    } else {
+      // Regular Cabin ID
+      cabinIds = [new mongoose.Types.ObjectId(id)];
+    }
+
     // Build query - only approved reviews, minRating filter, no deleted
+    // For CabinType, search across all related Cabin instances
     const query = {
-      cabinId: id,
+      cabinId: { $in: cabinIds },
       status: 'approved',
       rating: { $gte: minRatingNum },
-      deletedAt: { $exists: false }
+      $or: [
+        { deletedAt: { $exists: false } },
+        { deletedAt: null }
+      ]
     };
 
     if (lang) {

@@ -17,7 +17,7 @@ export const locations = [
     },
     image: "/uploads/Content%20website/drift-dwells-bulgaria-bucephalus-suite.avif",
     interiorImage: "/uploads/Content%20website/drift-dwells-bulgaria-cabin-journal.avif",
-    audioSrc: "https://cdn.pixabay.com/download/audio/2021/10/26/audio_4260fb2952.mp3?filename=forest-lullaby-ambient-9703.mp3"
+    audioSrc: "/audio/Soyb - Mood (freetouse.com).mp3"
   },
   {
     id: "valley",
@@ -34,9 +34,9 @@ export const locations = [
       wifi: "Starlink Available",
       philosophy: "Drift"
     },
-    image: "/uploads/Content%20website/drift-dwells-bulgaria-valley-haven.avif",
-    interiorImage: "/uploads/Content%20website/drift-dwells-bulgaria-meadow-trail.avif",
-    audioSrc: "https://cdn.pixabay.com/download/audio/2022/10/25/audio_1abe0606de.mp3?filename=soft-wind-chimes-124008.mp3"
+    image: "/uploads/The%20Valley/1760891828283-4dj2r5qvw0p-WhatsApp-Image-2025-10-14-at-2.05.18-PM-(3).jpeg",
+    interiorImage: "/uploads/The%20Valley/1760891860480-135mocsa00t-WhatsApp-Image-2025-10-14-at-2.05.17-PM-(6).jpeg",
+    audioSrc: "/audio/lit-fireplace-6307.mp3"
   }
 ];
 
@@ -65,6 +65,10 @@ export const contentPillars = {
   }
 };
 
+import LaurelIcon from '../components/icons/LaurelIcon';
+import LeafIcon from '../components/icons/LeafIcon';
+import WifiIcon from '../components/icons/WifiIcon';
+
 export const home = {
   hero: {
     headline: "Drift into the Wild. Dwell in the Silence.",
@@ -75,10 +79,21 @@ export const home = {
     narrative: "We are not a hotel. We are a collection of hideaways designed for those who seek the edge of the map. Drift & Dwells was born from a simple duality: the urge to roam the untamed heights and the need to root oneself in raw, unvarnished comfort. Whether you crave the absolute, off-grid silence of the Pirin forests or the ethereal, high-altitude community of the Rhodope meadows, we offer the rarest amenity of all: presence."
   },
   trust: [
-    { label: "Superhost", sub: "Airbnb Guest Favorite" },
-    { label: "4.9/5", sub: "Average Rating" },
-    { label: "Eco-Certified", sub: "Sustainable Stay" },
-    { label: "Starlink", sub: "High-Speed WiFi" }
+    { 
+      icon: LaurelIcon, 
+      title: "Guest favorite", 
+      subtitle: "Rated 4.9/5" 
+    },
+    { 
+      icon: LeafIcon, 
+      title: "Eco-certified", 
+      subtitle: "Sustainable stay" 
+    },
+    { 
+      icon: WifiIcon, 
+      title: "Starlink", 
+      subtitle: "150 Mbps" 
+    }
   ]
 };
 

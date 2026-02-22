@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useBookingContext } from '../../context/BookingContext';
+import StickyBookingBar from '../../components/StickyBookingBar';
 
 // Nature-inspired icons
 const HeartIcon = () => (
@@ -53,9 +54,27 @@ const OtherIcon = () => (
 
 const Step1TripType = () => {
   const navigate = useNavigate();
-  const { tripType, customTripType, cabinId, setTripType, setCustomTripType, setCurrentStep } = useBookingContext();
+  const { tripType, customTripType, cabinId, currentStep, totalSteps, setTripType, setCustomTripType, setCurrentStep } = useBookingContext();
   
   const [showCustomInput, setShowCustomInput] = useState(tripType === 'Other');
+
+  useEffect(() => {
+    // Only set step if it's not already 1 to prevent infinite loops
+    if (currentStep !== 1) {
+      setCurrentStep(1);
+    }
+  }, []); // Empty dependency array - only run on mount
+
+  const tripTypeLabels = useMemo(() => ({
+    romantic: 'Romantic Getaway',
+    family: 'Family Retreat',
+    solo: 'Solo Reset',
+    'digital-detox': 'Digital Detox',
+    creative: 'Creative Escape',
+    nature: 'Nature Exploration',
+    adventure: 'Adventure Weekend',
+    other: 'Other'
+  }), []);
 
   const tripTypes = [
     {
@@ -159,104 +178,115 @@ const Step1TripType = () => {
     navigate('/');
   };
 
+  const stepLabel = `Step ${currentStep || 1} of ${totalSteps || 4}`;
+  const selectedTripLabel = tripType
+    ? (tripType === 'other' && customTripType
+        ? customTripType
+        : (tripTypeLabels[tripType] || tripType))
+    : 'Select an intention to continue';
+  const canProceed = Boolean(tripType);
+
   return (
-    <div className="min-h-screen bg-white">
-      {/* Editorial Header Section */}
+    <div className="min-h-screen bg-white pt-16 md:pt-32 pb-24 md:pb-32">
+      {/* Mobile-Optimized Header Section */}
       <div className="block-editorial">
-        <div className="max-w-4xl mx-auto px-6 text-center">
-          <h1 className="headline-editorial mb-8 text-white">
+        <div className="max-w-4xl mx-auto px-4 md:px-6 text-center py-8 md:py-12">
+          <h1 className="text-3xl md:text-5xl font-serif font-bold text-white mb-4 md:mb-8 tracking-tight md:tracking-editorial">
             What brings you here?
           </h1>
-          <p className="text-editorial text-gray-300 max-w-2xl mx-auto">
+          <p className="text-base md:text-lg font-sans font-light text-gray-300 max-w-2xl mx-auto leading-relaxed px-2">
             Every journey has a reason. Let us help you shape it.
           </p>
         </div>
       </div>
 
-      {/* Progress Indicator */}
-      <div className="block-white">
-        <div className="max-w-4xl mx-auto px-6">
-          <div className="flex items-center justify-center space-x-6">
-            <div className="w-8 h-8 bg-sage rounded-full flex items-center justify-center">
-              <span className="text-white text-sm font-light">1</span>
+      {/* Mobile-Optimized Progress Indicator */}
+      <div className="block-white py-6 md:py-12">
+        <div className="max-w-4xl mx-auto px-4 md:px-6">
+          <div className="flex items-center justify-center gap-2 md:gap-6">
+            <div className="w-10 h-10 md:w-8 md:h-8 bg-sage rounded-full flex items-center justify-center shadow-sm">
+              <span className="text-white text-base md:text-sm font-medium md:font-light">1</span>
             </div>
-            <div className="h-px w-20 bg-gray-300"></div>
-            <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
-              <span className="text-gray-500 text-sm font-light">2</span>
+            <div className="h-px flex-1 max-w-12 md:max-w-20 bg-sage"></div>
+            <div className="w-10 h-10 md:w-8 md:h-8 bg-gray-200 rounded-full flex items-center justify-center">
+              <span className="text-gray-500 text-base md:text-sm font-medium md:font-light">2</span>
             </div>
-            <div className="h-px w-20 bg-gray-300"></div>
-            <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
-              <span className="text-gray-500 text-sm font-light">3</span>
+            <div className="h-px flex-1 max-w-12 md:max-w-20 bg-gray-300"></div>
+            <div className="w-10 h-10 md:w-8 md:h-8 bg-gray-200 rounded-full flex items-center justify-center">
+              <span className="text-gray-500 text-base md:text-sm font-medium md:font-light">3</span>
             </div>
-            <div className="h-px w-20 bg-gray-300"></div>
-            <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
-              <span className="text-gray-500 text-sm font-light">4</span>
+            <div className="h-px flex-1 max-w-12 md:max-w-20 bg-gray-300"></div>
+            <div className="w-10 h-10 md:w-8 md:h-8 bg-gray-200 rounded-full flex items-center justify-center">
+              <span className="text-gray-500 text-base md:text-sm font-medium md:font-light">4</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="max-w-6xl mx-auto px-6 py-20">
+      {/* Main Content - Mobile Optimized */}
+      <div className="max-w-6xl mx-auto px-4 md:px-6 py-8 md:py-20">
 
-        {/* Trip Type Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-20">
+        {/* Trip Type Cards - Mobile Optimized */}
+        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-12 mb-12 md:mb-20">
           {tripTypes.map((trip) => (
             <button
               key={trip.id}
               onClick={() => handleTripTypeSelect(trip.id)}
               className={`
-                group relative p-8 border transition-all duration-300 bg-white hover:bg-gray-50
+                group relative p-4 md:p-8 rounded-2xl md:rounded-3xl transition-all duration-300 min-h-[140px] md:min-h-0
+                active:scale-[0.98] touch-manipulation
                 ${tripType === trip.id 
-                  ? 'border-sage border-b-4' 
-                  : 'border-gray-200 hover:border-sage'
+                  ? 'border-2 border-stone-900 bg-stone-50 shadow-lg md:shadow-xl'
+                  : 'border border-gray-200 bg-white active:border-stone-900/40'
                 }
               `}
             >
-              {/* Selection indicator */}
+              {/* Selection indicator - Mobile optimized */}
               {tripType === trip.id && (
-                <div className="absolute top-6 right-6 w-6 h-6 bg-sage rounded-full flex items-center justify-center">
-                  <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                <div className="absolute top-3 right-3 md:top-6 md:right-6 w-6 h-6 md:w-7 md:h-7 bg-stone-900 text-white rounded-full flex items-center justify-center shadow-sm">
+                  <svg className="w-3 h-3 md:w-3.5 md:h-3.5" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
                 </div>
               )}
               
-                      <div className="text-center">
-                        <div className="flex justify-center mb-6 text-sage group-hover:text-sage-dark transition-colors">
-                          {trip.icon}
-                        </div>
-                        <h3 className="headline-small mb-3">
-                          {trip.title}
-                        </h3>
-                        <p className="text-sm text-gray-600 leading-relaxed">
-                          {trip.description}
-                        </p>
-                      </div>
+              <div className="text-center">
+                <div className={`flex justify-center mb-3 md:mb-6 transition-colors ${tripType === trip.id ? 'text-stone-900' : 'text-sage'}`}>
+                  <div className="w-8 h-8 md:w-8 md:h-8">
+                    {trip.icon}
+                  </div>
+                </div>
+                <h3 className="text-xs md:text-base font-sans font-medium md:font-medium uppercase tracking-wide mb-1 md:mb-3 text-gray-900 leading-tight">
+                  {trip.title}
+                </h3>
+                <p className="text-[10px] md:text-sm text-gray-600 leading-snug md:leading-relaxed">
+                  {trip.description}
+                </p>
+              </div>
             </button>
           ))}
         </div>
 
-        {/* Custom Input for "Other" */}
+        {/* Custom Input for "Other" - Mobile Optimized */}
         {showCustomInput && (
-          <div className="mb-20">
+          <div className="mb-12 md:mb-20">
             <div className="max-w-2xl mx-auto">
-              <label className="label-editorial text-center block">
+              <label className="block text-xs font-sans font-light text-gray-600 mb-3 tracking-wide uppercase text-center md:text-left">
                 Tell us about your unique experience
               </label>
               <textarea
                 value={customTripType}
                 onChange={(e) => handleCustomInputChange(e.target.value)}
                 placeholder="Describe what brings you to our eco-retreat..."
-                className="input-editorial resize-none bg-white font-light text-lg leading-loose"
+                className="w-full px-0 py-3 md:py-4 border-0 border-b border-gray-300 focus:border-black outline-none transition-all duration-200 bg-transparent font-light text-base md:text-lg leading-relaxed resize-none"
                 rows={4}
               />
             </div>
           </div>
         )}
 
-        {/* Navigation */}
-        <div className="flex justify-between items-center max-w-2xl mx-auto">
+        {/* Desktop Navigation */}
+        <div className="hidden md:flex justify-between items-center max-w-2xl mx-auto">
           <button
             onClick={handleBack}
             className="btn-underline"
@@ -266,12 +296,22 @@ const Step1TripType = () => {
           
           <button
             onClick={handleNext}
-            className="btn-pill"
+            className={`btn-pill ${!canProceed ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={!canProceed}
           >
             next step →
           </button>
         </div>
       </div>
+
+      <StickyBookingBar
+        className="md:hidden"
+        label={stepLabel}
+        subLabel={selectedTripLabel}
+        buttonLabel="Next step →"
+        buttonDisabled={!canProceed}
+        onButtonClick={handleNext}
+      />
     </div>
   );
 };

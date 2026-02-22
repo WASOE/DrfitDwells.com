@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useBookingContext } from '../../context/BookingContext';
 import { cabinAPI, bookingAPI } from '../../services/api';
+import StickyBookingBar from '../../components/StickyBookingBar';
 
 const Step4Summary = () => {
   const navigate = useNavigate();
@@ -15,6 +16,8 @@ const Step4Summary = () => {
     customTripType,
     transportMethod,
     guestInfo,
+    currentStep,
+    totalSteps,
     setCurrentStep
   } = useBookingContext();
   
@@ -23,17 +26,16 @@ const Step4Summary = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
 
+  useEffect(() => {
+    setCurrentStep(4);
+  }, [setCurrentStep]);
+
   // Load cabin data
   useEffect(() => {
     const loadCabin = async () => {
       if (!cabinId) {
-        // No cabin selected - redirect to search with soft prompt
-        const searchParams = new URLSearchParams();
-        if (checkIn) searchParams.set('checkIn', checkIn);
-        if (checkOut) searchParams.set('checkOut', checkOut);
-        if (adults) searchParams.set('adults', adults.toString());
-        if (children) searchParams.set('children', children.toString());
-        navigate(`/search?${searchParams.toString()}`);
+        // No cabin selected - show prompt instead of redirecting
+        setLoading(false);
         return;
       }
 
@@ -42,7 +44,23 @@ const Step4Summary = () => {
         const response = await cabinAPI.getById(cabinId);
         
         if (response.data.success) {
-          setCabin(response.data.data.cabin);
+          const loadedCabin = response.data.data.cabin;
+          setCabin(loadedCabin);
+          
+          // Validate transport method if one was selected
+          if (transportMethod && loadedCabin.transportOptions) {
+            const availableTransports = loadedCabin.transportOptions.filter(t => t.isAvailable);
+            const selectedTransportAvailable = availableTransports.some(
+              t => t.type === transportMethod.type
+            );
+            
+            if (!selectedTransportAvailable) {
+              // Transport not available for this cabin - show warning but don't block
+              console.warn(`Selected transport ${transportMethod.type} is not available for ${loadedCabin.name}`);
+              // Note: We keep the transport selection for data gathering purposes
+              // User can see this in the summary and adjust if needed
+            }
+          }
         } else {
           setError('Cabin not found');
         }
@@ -55,7 +73,7 @@ const Step4Summary = () => {
     };
 
     loadCabin();
-  }, [cabinId, navigate, checkIn, checkOut, adults, children]);
+  }, [cabinId, transportMethod]);
 
   // Calculate pricing
   const calculatePricing = () => {
@@ -65,7 +83,10 @@ const Step4Summary = () => {
     const totalNights = Math.ceil(timeDiff / (1000 * 3600 * 24));
     const totalGuests = adults + children;
     
-    const cabinCost = cabin.pricePerNight * totalNights;
+    let cabinCost = cabin.pricePerNight * totalNights;
+    if ((cabin.pricingModel || 'per_night') === 'per_person') {
+      cabinCost *= Math.max(totalGuests, 1);
+    }
     const transportCost = transportMethod ? transportMethod.pricePerPerson * totalGuests : 0;
     const romanticSetupCost = guestInfo.romanticSetup ? 30 : 0;
     
@@ -110,15 +131,21 @@ const Step4Summary = () => {
     return { firstName, lastName };
   };
 
+  const handleSelectCabin = () => {
+    // Navigate to search with return parameter
+    const searchParams = new URLSearchParams();
+    if (checkIn) searchParams.set('checkIn', checkIn);
+    if (checkOut) searchParams.set('checkOut', checkOut);
+    if (adults) searchParams.set('adults', adults.toString());
+    if (children) searchParams.set('children', children.toString());
+    searchParams.set('returnTo', 'craft/step-4');
+    navigate(`/search?${searchParams.toString()}`);
+  };
+
   const handleConfirmBooking = async () => {
     // Guard: don't POST without cabinId
     if (!cabinId) {
-      const searchParams = new URLSearchParams();
-      if (checkIn) searchParams.set('checkIn', checkIn);
-      if (checkOut) searchParams.set('checkOut', checkOut);
-      if (adults) searchParams.set('adults', adults.toString());
-      if (children) searchParams.set('children', children.toString());
-      navigate(`/search?${searchParams.toString()}`, { replace: true });
+      handleSelectCabin();
       return;
     }
 
@@ -286,7 +313,91 @@ const Step4Summary = () => {
     );
   }
 
-  if (!cabin || !pricing) {
+  // Show cabin selection prompt if no cabin selected - Mobile Optimized
+  if (!cabinId || !cabin) {
+    return (
+      <div className="min-h-screen bg-white pt-16 md:pt-32 pb-24 md:pb-32">
+        <div className="max-w-4xl mx-auto px-4 md:px-6 py-8 md:py-20">
+          {/* Mobile-Optimized Progress Indicator */}
+          <div className="flex items-center justify-center mb-12 md:mb-20 gap-2 md:gap-6">
+            <div className="w-10 h-10 md:w-8 md:h-8 bg-sage rounded-full flex items-center justify-center shadow-sm">
+              <span className="text-white text-base md:text-sm font-medium md:font-light">1</span>
+            </div>
+            <div className="h-px flex-1 max-w-12 md:max-w-20 bg-sage"></div>
+            <div className="w-10 h-10 md:w-8 md:h-8 bg-sage rounded-full flex items-center justify-center shadow-sm">
+              <span className="text-white text-base md:text-sm font-medium md:font-light">2</span>
+            </div>
+            <div className="h-px flex-1 max-w-12 md:max-w-20 bg-sage"></div>
+            <div className="w-10 h-10 md:w-8 md:h-8 bg-sage rounded-full flex items-center justify-center shadow-sm">
+              <span className="text-white text-base md:text-sm font-medium md:font-light">3</span>
+            </div>
+            <div className="h-px flex-1 max-w-12 md:max-w-20 bg-sage"></div>
+            <div className="w-10 h-10 md:w-8 md:h-8 bg-sage rounded-full flex items-center justify-center shadow-sm">
+              <span className="text-white text-base md:text-sm font-medium md:font-light">4</span>
+            </div>
+          </div>
+
+          {/* Cabin Selection Prompt - Mobile Optimized */}
+          <div className="card-editorial p-6 md:p-12 text-center max-w-2xl mx-auto">
+            <div className="mb-8">
+              <div className="inline-block p-6 bg-sage/10 rounded-full mb-6">
+                <svg className="w-16 h-16 text-sage" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
+                </svg>
+              </div>
+              <h1 className="headline-section mb-6">
+                Choose Your Retreat
+              </h1>
+              <p className="text-editorial text-gray-600 mb-4 max-w-xl mx-auto">
+                You're almost there! To complete your booking, please select the cabin where you'd like to stay.
+              </p>
+              {checkIn && checkOut && (
+                <div className="mt-8 p-6 bg-gray-50 rounded-lg border border-gray-200">
+                  <p className="text-sm text-gray-600 mb-2">Your selected dates:</p>
+                  <p className="text-body font-light text-black">
+                    {new Date(checkIn).toLocaleDateString('en-US', { 
+                      weekday: 'long', 
+                      year: 'numeric', 
+                      month: 'long', 
+                      day: 'numeric' 
+                    })} - {new Date(checkOut).toLocaleDateString('en-US', { 
+                      weekday: 'long', 
+                      year: 'numeric', 
+                      month: 'long', 
+                      day: 'numeric' 
+                    })}
+                  </p>
+                  {adults && (
+                    <p className="text-sm text-gray-600 mt-2">
+                      {adults} {adults === 1 ? 'Adult' : 'Adults'}
+                      {children > 0 && `, ${children} ${children === 1 ? 'Child' : 'Children'}`}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3 md:gap-4 justify-center mt-8 md:mt-12">
+              <button
+                onClick={handleSelectCabin}
+                className="btn-pill text-base md:text-lg py-3 md:py-4 px-6 md:px-8 min-h-[48px] md:min-h-0 touch-manipulation active:scale-[0.98]"
+              >
+                Browse Available Cabins →
+              </button>
+              <button
+                onClick={() => navigate('/craft/step-3')}
+                className="btn-underline text-sm md:text-sm py-2 min-h-[44px] md:min-h-0 touch-manipulation"
+              >
+                ← Back to Details
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!pricing) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-drift-green/5 to-drift-light-green/5">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -306,56 +417,60 @@ const Step4Summary = () => {
     );
   }
 
+  const stepLabel = `Step ${currentStep || 4} of ${totalSteps || 4}`;
+  const totalLabel = pricing ? `€${pricing.totalCost.toLocaleString()} total` : 'Review your details';
+  const subLabel = pricing ? `${pricing.totalNights} ${pricing.totalNights === 1 ? 'night' : 'nights'}` : stepLabel;
+
   return (
-    <div className="min-h-screen bg-white">
-      <div className="max-w-6xl mx-auto px-6 py-20">
-        {/* Header */}
-        <div className="text-center mb-20">
-          <div className="flex items-center justify-center mb-12">
-            <div className="w-8 h-8 bg-sage rounded-full flex items-center justify-center mr-6">
-              <span className="text-white font-light text-sm">1</span>
+    <div className="min-h-screen bg-white pt-16 md:pt-32 pb-24 md:pb-32">
+      <div className="max-w-6xl mx-auto px-4 md:px-6 py-8 md:py-20">
+        {/* Mobile-Optimized Header */}
+        <div className="text-center mb-12 md:mb-20">
+          <div className="flex items-center justify-center mb-8 md:mb-12 gap-2 md:gap-6">
+            <div className="w-10 h-10 md:w-8 md:h-8 bg-sage rounded-full flex items-center justify-center shadow-sm">
+              <span className="text-white text-base md:text-sm font-medium md:font-light">1</span>
             </div>
-            <div className="h-px w-20 bg-sage"></div>
-            <div className="w-8 h-8 bg-sage rounded-full flex items-center justify-center mx-6">
-              <span className="text-white font-light text-sm">2</span>
+            <div className="h-px flex-1 max-w-12 md:max-w-20 bg-sage"></div>
+            <div className="w-10 h-10 md:w-8 md:h-8 bg-sage rounded-full flex items-center justify-center shadow-sm">
+              <span className="text-white text-base md:text-sm font-medium md:font-light">2</span>
             </div>
-            <div className="h-px w-20 bg-sage"></div>
-            <div className="w-8 h-8 bg-sage rounded-full flex items-center justify-center mx-6">
-              <span className="text-white font-light text-sm">3</span>
+            <div className="h-px flex-1 max-w-12 md:max-w-20 bg-sage"></div>
+            <div className="w-10 h-10 md:w-8 md:h-8 bg-sage rounded-full flex items-center justify-center shadow-sm">
+              <span className="text-white text-base md:text-sm font-medium md:font-light">3</span>
             </div>
-            <div className="h-px w-20 bg-sage"></div>
-            <div className="w-8 h-8 bg-sage rounded-full flex items-center justify-center ml-6">
-              <span className="text-white font-light text-sm">4</span>
+            <div className="h-px flex-1 max-w-12 md:max-w-20 bg-sage"></div>
+            <div className="w-10 h-10 md:w-8 md:h-8 bg-sage rounded-full flex items-center justify-center shadow-sm">
+              <span className="text-white text-base md:text-sm font-medium md:font-light">4</span>
             </div>
           </div>
           
-          <h1 className="headline-section mb-8">
+          <h1 className="text-2xl md:text-3xl font-serif font-bold mb-4 md:mb-8 tracking-tight md:tracking-editorial">
             Your retreat is almost ready
           </h1>
-          <p className="text-editorial text-gray-600 mb-6">
+          <p className="text-base md:text-lg font-sans font-light text-gray-600 mb-4 md:mb-6 leading-relaxed">
             Just one more step to confirm your stay
           </p>
-          <p className="text-sm text-gray-500 tracking-wide uppercase">
+          <p className="text-xs md:text-sm text-gray-500 tracking-wide uppercase">
             Review your details and confirm your booking
           </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-16">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 md:gap-16">
           {/* Booking Details */}
-          <div className="lg:col-span-2 space-y-12">
-            {/* Cabin & Dates */}
-            <div className="card-editorial p-8">
-              <div className="flex items-center justify-between mb-8">
-                <h2 className="headline-subsection">Your Retreat</h2>
+          <div className="lg:col-span-2 space-y-8 md:space-y-12">
+            {/* Cabin & Dates - Mobile Optimized */}
+            <div className="card-editorial p-5 md:p-8">
+              <div className="flex items-center justify-between mb-6 md:mb-8">
+                <h2 className="text-xl md:text-2xl font-serif font-bold tracking-editorial">Your Retreat</h2>
                 <button
                   onClick={() => handleEditStep(1)}
-                  className="btn-underline"
+                  className="btn-underline text-xs md:text-sm"
                 >
                   edit
                 </button>
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-12">
                 <div>
                   <h3 className="font-serif text-2xl font-bold text-black mb-4">{cabin.name}</h3>
                   <p className="text-body text-gray-600 mb-4 flex items-center">
@@ -415,6 +530,20 @@ const Step4Summary = () => {
                     <span className="text-xs text-gray-600 uppercase tracking-wide">Arrival Method:</span>
                     <p className="font-light text-black mt-1">{transportMethod.type}</p>
                     <p className="text-body text-gray-600 mt-1">{transportMethod.duration}</p>
+                    {cabin && cabin.transportOptions && (
+                      (() => {
+                        const availableTransports = cabin.transportOptions.filter(t => t.isAvailable);
+                        const isAvailable = availableTransports.some(t => t.type === transportMethod.type);
+                        if (!isAvailable) {
+                          return (
+                            <p className="text-sm text-amber-600 mt-2 italic">
+                              Note: This transport method may not be available for {cabin.name}. We'll confirm availability when processing your booking.
+                            </p>
+                          );
+                        }
+                        return null;
+                      })()
+                    )}
                   </div>
                 )}
               </div>
@@ -478,10 +607,10 @@ const Step4Summary = () => {
             </div>
           </div>
 
-          {/* Pricing Summary */}
+          {/* Pricing Summary - Mobile Optimized */}
           <div className="lg:col-span-1">
-            <div className="card-editorial p-8 sticky top-8">
-              <h3 className="headline-subsection mb-8">Booking Summary</h3>
+            <div className="card-editorial p-5 md:p-8 lg:sticky lg:top-8">
+              <h3 className="text-xl md:text-2xl font-serif font-bold mb-6 md:mb-8 tracking-editorial">Booking Summary</h3>
               
               <div className="space-y-8">
                 {/* Cabin Cost */}
@@ -534,11 +663,11 @@ const Step4Summary = () => {
                 </div>
               )}
 
-              {/* Confirm Button */}
+              {/* Confirm Button - Mobile Optimized */}
               <button
                 onClick={handleConfirmBooking}
                 disabled={submitting}
-                className={`w-full mt-8 btn-pill text-lg py-4 ${
+                className={`w-full mt-6 md:mt-8 btn-pill text-base md:text-lg py-3 md:py-4 min-h-[48px] md:min-h-0 touch-manipulation active:scale-[0.98] ${
                   submitting ? 'opacity-50 cursor-not-allowed' : ''
                 }`}
               >
@@ -552,8 +681,8 @@ const Step4Summary = () => {
           </div>
         </div>
 
-        {/* Navigation */}
-        <div className="flex justify-between items-center max-w-2xl mx-auto mt-20">
+        {/* Desktop Navigation */}
+        <div className="hidden md:flex justify-between items-center max-w-2xl mx-auto mt-12 md:mt-20">
           <button
             onClick={handleBack}
             className="btn-underline"
@@ -568,6 +697,15 @@ const Step4Summary = () => {
           </div>
         </div>
       </div>
+
+      <StickyBookingBar
+        className="md:hidden"
+        label={totalLabel}
+        subLabel={subLabel}
+        buttonLabel={submitting ? 'Confirming...' : 'Confirm my stay →'}
+        buttonDisabled={submitting}
+        onButtonClick={handleConfirmBooking}
+      />
     </div>
   );
 };

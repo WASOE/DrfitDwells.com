@@ -61,3 +61,32 @@ Aylyak represents:
 - **Ritual Over Routine**: Creating meaningful daily practices
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

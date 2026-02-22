@@ -16,5 +16,18 @@ export default defineConfig({
         changeOrigin: true
       }
     }
+  },
+  build: {
+    sourcemap: false,
+    chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          motion: ['framer-motion'],
+          datepicker: ['react-datepicker']
+        }
+      }
+    }
   }
 })

@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { availabilityAPI, unitAPI } from '../services/api';
 import SearchBar from '../components/SearchBar';
+import { useBookingContext } from '../context/BookingContext';
+import { startOfDay, addDays, isBefore, format as formatDate } from 'date-fns';
 
 // Safe URL normalization helper
 function normalizeSrc(u) {
@@ -22,11 +24,16 @@ function getCoverImage(cabin) {
 const SearchResults = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { setBasicInfo } = useBookingContext();
   
   const [cabins, setCabins] = useState([]);
   const [unitCountsByTypeId, setUnitCountsByTypeId] = useState({});
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [retryCount, setRetryCount] = useState(0);
+  
+  // Check if we're returning to craft flow
+  const returnTo = searchParams.get('returnTo');
 
   // Extract and validate search parameters
   const getValidatedSearchParams = () => {
@@ -35,39 +42,31 @@ const SearchResults = () => {
     let adults = parseInt(searchParams.get('adults')) || 2;
     let children = parseInt(searchParams.get('children')) || 0;
 
-    // Validate and fix dates
+    const today = startOfDay(new Date());
+    let checkInDate = null;
     if (checkIn) {
-      const checkInDate = new Date(checkIn);
-      if (isNaN(checkInDate.getTime())) {
-        checkIn = null;
+      const parsed = startOfDay(new Date(checkIn));
+      if (!Number.isNaN(parsed.getTime())) {
+        checkInDate = parsed;
       }
     }
+    if (!checkInDate || isBefore(checkInDate, today)) {
+      checkInDate = today;
+    }
 
+    let checkOutDate = null;
     if (checkOut) {
-      const checkOutDate = new Date(checkOut);
-      if (isNaN(checkOutDate.getTime())) {
-        checkOut = null;
+      const parsed = startOfDay(new Date(checkOut));
+      if (!Number.isNaN(parsed.getTime())) {
+        checkOutDate = parsed;
       }
     }
-
-    // Edge case: If only checkIn provided, default checkOut = checkIn + 2 nights
-    if (checkIn && !checkOut) {
-      const checkInDate = new Date(checkIn);
-      const checkOutDate = new Date(checkInDate);
-      checkOutDate.setDate(checkInDate.getDate() + 2);
-      checkOut = checkOutDate.toISOString().split('T')[0];
+    if (!checkOutDate || !checkInDate || isBefore(checkOutDate, addDays(checkInDate, 1))) {
+      checkOutDate = addDays(checkInDate, 1);
     }
 
-    // Edge case: If checkOut <= checkIn, nudge checkOut = checkIn + 1
-    if (checkIn && checkOut) {
-      const checkInDate = new Date(checkIn);
-      const checkOutDate = new Date(checkOut);
-      if (checkOutDate <= checkInDate) {
-        const newCheckOutDate = new Date(checkInDate);
-        newCheckOutDate.setDate(checkInDate.getDate() + 1);
-        checkOut = newCheckOutDate.toISOString().split('T')[0];
-      }
-    }
+    checkIn = formatDate(checkInDate, 'yyyy-MM-dd');
+    checkOut = formatDate(checkOutDate, 'yyyy-MM-dd');
 
     // Clamp unreasonable values
     adults = Math.max(1, Math.min(10, adults));
@@ -119,7 +118,7 @@ const SearchResults = () => {
   const searchCabins = async () => {
     try {
       setLoading(true);
-      setError(null);
+      setErrorMessage('');
 
       const response = await availabilityAPI.search(currentSearchParams);
       
@@ -140,12 +139,29 @@ const SearchResults = () => {
           })));
         }
         setCabins(cabinsData);
+        setRetryCount(0);
       } else {
-        setError(response.data.message || 'Failed to search cabins');
+        setErrorMessage(response.data.message || 'Failed to search cabins');
       }
     } catch (err) {
       console.error('Search error:', err);
-      setError(err.response?.data?.message || 'Error searching for cabins. Please try again.');
+      const apiMessage = err.response?.data?.message || '';
+      if (
+        err.response?.status === 400 &&
+        apiMessage.toLowerCase().includes('check-in date cannot be in the past') &&
+        retryCount < 2
+      ) {
+        setRetryCount((prev) => prev + 1);
+        const today = startOfDay(new Date());
+        const tomorrow = addDays(today, 1);
+        const params = new URLSearchParams(searchParams);
+        params.set('checkIn', formatDate(today, 'yyyy-MM-dd'));
+        params.set('checkOut', formatDate(tomorrow, 'yyyy-MM-dd'));
+        navigate(`/search?${params.toString()}`, { replace: true });
+        return;
+      }
+
+      setErrorMessage(apiMessage || 'Error searching for cabins. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -205,7 +221,12 @@ const SearchResults = () => {
     } else {
       navigate('/');
     }
-  }, [searchParams]);
+  }, [
+    currentSearchParams.checkIn,
+    currentSearchParams.checkOut,
+    currentSearchParams.adults,
+    currentSearchParams.children
+  ]);
 
   // Unique cabin type ids for multi-unit results
   const multiTypeIds = useMemo(() => {
@@ -271,31 +292,17 @@ const SearchResults = () => {
     );
   }
 
-  if (error) {
-    return (
-      <div className="min-h-screen bg-white">
-        <div className="max-w-7xl mx-auto px-6 py-20">
-          <div className="text-center py-20">
-            <h2 className="headline-subsection mb-6">Search Error</h2>
-            <p className="text-editorial text-gray-600 mb-12">{error}</p>
-            <button
-              onClick={() => navigate('/')}
-              className="btn-pill"
-            >
-              back to home →
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-white">
       <div className="max-w-7xl mx-auto px-6 py-20">
         {/* Search Bar */}
         <div className="mb-20">
           <SearchBar initialData={currentSearchParams} />
+          {errorMessage && (
+            <p className="text-red-500 text-sm mt-4">
+              {errorMessage || 'Please select valid dates and try again.'}
+            </p>
+          )}
         </div>
 
         {/* Search Results Header */}
@@ -402,15 +409,53 @@ const SearchResults = () => {
                         </p>
                         <p className="text-sm text-gray-500 font-light">
                           €{cabin.pricePerNight}/night
+                          {(cabin.pricingModel || 'per_night') === 'per_person' ? ' per person' : ''}
                         </p>
                       </div>
                     </div>
                     <button
-                      onClick={() => navigate(`/cabin/${cabin._id}?${new URLSearchParams(currentSearchParams).toString()}`)}
+                      onClick={() => {
+                        const isMulti = cabin?.inventoryMode === 'multi' || cabin?.inventoryType === 'multi';
+                        const typeSlug = cabin?.slug || cabin?.cabinTypeSlug;
+                        const searchParams = new URLSearchParams(currentSearchParams).toString();
+
+                        // If returning to craft flow, set cabinId in context and navigate back
+                        if (returnTo) {
+                          setBasicInfo({
+                            cabinId: cabin._id,
+                            checkIn: currentSearchParams.checkIn,
+                            checkOut: currentSearchParams.checkOut,
+                            adults: currentSearchParams.adults,
+                            children: currentSearchParams.children
+                          });
+                          navigate(`/${returnTo}`);
+                          return;
+                        }
+
+                        if (isMulti && typeSlug) {
+                          navigate(`/stays/${typeSlug}?${searchParams}`);
+                          return;
+                        }
+
+                        navigate(`/cabin/${cabin._id}?${searchParams}`);
+                      }}
                       className="w-full btn-editorial text-center block py-3"
                     >
-                      view details →
+                      {returnTo ? 'Select This Cabin →' : 'view details →'}
                     </button>
+                    {returnTo && (
+                      <button
+                        onClick={() => {
+                          // Allow viewing details while preserving returnTo
+                          const params = new URLSearchParams(currentSearchParams);
+                          params.set('returnTo', returnTo);
+                          navigate(`/cabin/${cabin._id}?${params.toString()}`);
+                        }}
+                        className="w-full btn-underline text-center block py-2 mt-2"
+                      >
+                        view details first →
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

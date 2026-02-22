@@ -1,0 +1,90 @@
+{
+  "locations": {
+    "cabin": {
+      "name": "The Cabin",
+      "location": "Bachevo, Rhodope Mountains",
+      "description": "Off-grid mountain cabin"
+    },
+    "valley": {
+      "name": "The Valley",
+      "location": "Chereshovo/Ortsevo",
+      "description": "Mountain village at 1,550m with A-frames and Stone House"
+    }
+  },
+  "images": {
+    "cabin": {
+      "direct": [
+        "/uploads/The Cabin/*.jpeg",
+        "/uploads/The Cabin/*.png"
+      ],
+      "contentWebsite": [
+        "/uploads/Content%20website/drift-dwells-bulgaria-bucephalus-suite.avif",
+        "/uploads/Content%20website/drift-dwells-bulgaria-cabin-journal.avif",
+        "/uploads/Content%20website/drift-dwells-bulgaria-cabin-path.png",
+        "/uploads/Content%20website/drift-dwells-bulgaria-fern-study.png",
+        "/uploads/Content%20website/drift-dwells-bulgaria-lake-dawn.png",
+        "/uploads/Content%20website/drift-dwells-bulgaria-rainy-eaves.avif"
+      ],
+      "keywords": ["bucephalus", "cabin-journal", "cabin-path", "fern-study", "lake-dawn", "rainy-eaves"]
+    },
+    "valley": {
+      "direct": [
+        "/uploads/The Valley/*.jpeg"
+      ],
+      "contentWebsite": [
+        "/uploads/Content%20website/drift-dwells-bulgaria-valley-haven.avif",
+        "/uploads/Content%20website/drift-dwells-bulgaria-meadow-trail.avif",
+        "/uploads/Content%20website/drift-dwells-bulgaria-starlit-mountain.avif",
+        "/uploads/Content%20website/drift-dwells-bulgaria-campfire-night.avif",
+        "/uploads/Content%20website/drift-dwells-bulgaria-fireside-lounge.avif",
+        "/uploads/Content%20website/drift-dwells-bulgaria-river-letters.avif",
+        "/uploads/Content%20website/SKy-view-Aframe.jpg"
+      ],
+      "keywords": ["valley-haven", "meadow-trail", "starlit-mountain", "campfire-night", "fireside-lounge", "river-letters", "aframe", "sky-view"]
+    },
+    "generic": {
+      "contentWebsite": [
+        "/uploads/Content%20website/drift-dwells-bulgaria-firepit-sketch.png",
+        "/uploads/Content%20website/drift-dwells-bulgaria-lantern-walk.png",
+        "/uploads/Content%20website/drift-dwells-bulgaria-pine-sketch.png",
+        "/uploads/Content%20website/drift-dwells-bulgaria-vintage-map.png"
+      ],
+      "keywords": ["sketch", "vintage-map", "lantern-walk"],
+      "description": "Generic/decorative images that can be used in either location"
+    }
+  },
+  "videos": {
+    "cabin": [
+      "/uploads/Videos/The-cabin-header.mp4",
+      "/uploads/Videos/Dark-fire-cabin.mp4",
+      "/uploads/Videos/Dark-fire-cabin-poster.jpg"
+    ],
+    "valley": [
+      "/uploads/Videos/The-Valley-firaplace-video.mp4",
+      "/uploads/Videos/The-Valley-From-the-Sky.mp4",
+      "/uploads/Videos/The-Valley-Night-Stars.mp4",
+      "/uploads/Videos/Light-aframes.mp4",
+      "/uploads/Videos/Light-aframes-poster.jpg",
+      "/uploads/Videos/The-Valley-firaplace-video-poster.jpg"
+    ],
+    "unknown": [
+      "/uploads/Videos/Video content/download (15).mp4",
+      "/uploads/Videos/Video content/download (22).mp4",
+      "/uploads/Videos/Video content/download (27).mp4"
+    ]
+  },
+  "rules": {
+    "do": [
+      "Use Cabin images ONLY in /cabin routes and Cabin-related components",
+      "Use Valley images ONLY in /valley routes and Valley-related components",
+      "Use generic/decorative images in shared sections (homepage, general galleries)",
+      "Check categorization before adding new images"
+    ],
+    "dont": [
+      "Use Cabin images in Valley pages/components",
+      "Use Valley images in Cabin pages/components",
+      "Mix location-specific images without explicit reason",
+      "Use images from wrong location folder"
+    ]
+  }
+}

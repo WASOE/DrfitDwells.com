@@ -15,13 +15,20 @@ const featureFlags = {
 
   // Returns whether multi-unit functionality is globally enabled
   isMultiUnitGloballyEnabled() {
-    return this._parseBoolean(process.env.MULTI_UNIT_ENABLED);
+    if (process.env.MULTI_UNIT_ENABLED !== undefined) {
+      return this._parseBoolean(process.env.MULTI_UNIT_ENABLED);
+    }
+    // Default to enabled for local/dev if not explicitly set.
+    return process.env.NODE_ENV !== 'production';
   },
 
   // Returns configured multi-unit type slugs as an array (lowercased)
   getMultiUnitTypes() {
     const raw = process.env.MULTI_UNIT_TYPES || '';
-    if (!raw) return [];
+    if (!raw) {
+      // Default to A-frame for local/dev when not explicitly set.
+      return process.env.NODE_ENV !== 'production' ? ['a-frame'] : [];
+    }
     return raw
       .split(',')
       .map((slug) => slug.trim().toLowerCase())

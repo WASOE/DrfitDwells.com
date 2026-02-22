@@ -29,10 +29,20 @@ router.get('/', [
 
     const { checkIn, checkOut, adults, children = 0 } = req.query;
     
-    // Parse dates
-    const checkInDate = moment(checkIn).startOf('day').toDate();
-    const checkOutDate = moment(checkOut).startOf('day').toDate();
-    const totalGuests = parseInt(adults) + parseInt(children);
+    // Parse dates in UTC to avoid timezone skew
+    const checkInMoment = moment.utc(checkIn, moment.ISO_8601, true);
+    const checkOutMoment = moment.utc(checkOut, moment.ISO_8601, true);
+
+    if (!checkInMoment.isValid() || !checkOutMoment.isValid()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide valid ISO8601 dates'
+      });
+    }
+
+    const checkInDate = checkInMoment.startOf('day').toDate();
+    const checkOutDate = checkOutMoment.startOf('day').toDate();
+    const totalGuests = parseInt(adults, 10) + parseInt(children, 10);
 
     // Validate dates
     if (checkInDate >= checkOutDate) {
@@ -42,7 +52,7 @@ router.get('/', [
       });
     }
 
-    if (checkInDate < moment().startOf('day').toDate()) {
+    if (checkInMoment.isBefore(moment.utc().startOf('day'))) {
       return res.status(400).json({
         success: false,
         message: 'Check-in date cannot be in the past'
@@ -52,8 +62,11 @@ router.get('/', [
     // Get all active cabins
     const allCabins = await Cabin.find({ isActive: true });
 
-    // Filter cabins by capacity
-    const capacityFilteredCabins = allCabins.filter(cabin => cabin.capacity >= totalGuests);
+    // Filter cabins by capacity and minimum guest requirements
+    const capacityFilteredCabins = allCabins.filter(cabin => {
+      const minGuests = cabin.minGuests || 1;
+      return cabin.capacity >= totalGuests && totalGuests >= minGuests;
+    });
 
     // Check availability for each cabin
     const availableCabins = [];
@@ -84,13 +97,61 @@ router.get('/', [
       if (conflictingBookings.length === 0) {
         // Calculate total price
         const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
-        const totalPrice = totalNights * cabin.pricePerNight;
+        let totalPrice = totalNights * cabin.pricePerNight;
+        if ((cabin.pricingModel || 'per_night') === 'per_person') {
+          totalPrice *= totalGuests;
+        }
 
         availableCabins.push({
           ...cabin.toObject(),
           totalNights,
           totalPrice,
           available: true
+        });
+      }
+    }
+
+    // Include multi-unit cabin types (e.g. A-Frames) when enabled
+    if (featureFlags.isMultiUnitGloballyEnabled()) {
+      const cabinTypes = await CabinType.find({ isActive: true });
+
+      for (const cabinType of cabinTypes) {
+        if (!featureFlags.isMultiUnitType(cabinType.slug)) {
+          continue;
+        }
+
+        const minGuests = cabinType.minGuests || 1;
+        if (totalGuests > cabinType.capacity || totalGuests < minGuests) {
+          continue;
+        }
+
+        const availabilitySummary = await AssignmentEngine.getAvailabilitySummary(
+          cabinType._id,
+          checkInDate,
+          checkOutDate
+        );
+
+        if (availabilitySummary.availableUnits.length === 0) {
+          continue;
+        }
+
+        const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
+        let totalPrice = totalNights * cabinType.pricePerNight;
+        if ((cabinType.pricingModel || 'per_night') === 'per_person') {
+          totalPrice *= totalGuests;
+        }
+
+        availableCabins.push({
+          ...cabinType.toObject(),
+          totalNights,
+          totalPrice,
+          available: true,
+          inventoryMode: 'multi',
+          inventoryType: 'multi',
+          cabinTypeId: cabinType._id,
+          cabinTypeRef: cabinType._id,
+          unitsAvailable: availabilitySummary.availableUnits.length,
+          unitsTotal: availabilitySummary.totalUnits
         });
       }
     }
@@ -154,10 +215,20 @@ router.get('/cabin-type/:slug', [
       });
     }
     
-    // Parse dates
-    const checkInDate = moment(checkIn).startOf('day').toDate();
-    const checkOutDate = moment(checkOut).startOf('day').toDate();
-    const totalGuests = parseInt(adults) + parseInt(children);
+    // Parse dates in UTC
+    const checkInMoment = moment.utc(checkIn, moment.ISO_8601, true);
+    const checkOutMoment = moment.utc(checkOut, moment.ISO_8601, true);
+
+    if (!checkInMoment.isValid() || !checkOutMoment.isValid()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide valid ISO8601 dates'
+      });
+    }
+
+    const checkInDate = checkInMoment.startOf('day').toDate();
+    const checkOutDate = checkOutMoment.startOf('day').toDate();
+    const totalGuests = parseInt(adults, 10) + parseInt(children, 10);
 
     // Validate dates
     if (checkInDate >= checkOutDate) {
@@ -167,7 +238,7 @@ router.get('/cabin-type/:slug', [
       });
     }
 
-    if (checkInDate < moment().startOf('day').toDate()) {
+    if (checkInMoment.isBefore(moment.utc().startOf('day'))) {
       return res.status(400).json({
         success: false,
         message: 'Check-in date cannot be in the past'
@@ -187,11 +258,17 @@ router.get('/cabin-type/:slug', [
       });
     }
 
-    // Check capacity
+    // Check capacity + minimum guests
     if (totalGuests > cabinType.capacity) {
       return res.status(400).json({
         success: false,
         message: `This cabin type can only accommodate ${cabinType.capacity} guests`
+      });
+    }
+    if (totalGuests < (cabinType.minGuests || 1)) {
+      return res.status(400).json({
+        success: false,
+        message: `This cabin type requires at least ${cabinType.minGuests || 1} guests`
       });
     }
 
@@ -206,7 +283,10 @@ router.get('/cabin-type/:slug', [
 
     // Calculate total price
     const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
-    const totalPrice = totalNights * cabinType.pricePerNight;
+    let totalPrice = totalNights * cabinType.pricePerNight;
+    if ((cabinType.pricingModel || 'per_night') === 'per_person') {
+      totalPrice *= totalGuests;
+    }
 
     res.json({
       success: true,

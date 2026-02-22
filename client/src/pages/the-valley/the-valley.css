@@ -1,0 +1,405 @@
+/* 
+ * The Valley Design System - Typography & Layout Reset
+ * 
+ * Typography: Montserrat primary, strict scale
+ * Layout: 1120px max-width, strict grid alignment
+ * Spacing: Fixed scale (24/48/96px)
+ */
+
+:root {
+  /* Canvas - Light Background */
+  --valley-canvas: #ffffff;
+  
+  /* Surface (translucent, used sparingly) */
+  --valley-surface: rgba(0, 0, 0, 0.02);
+  
+  /* Borders (1px, consistent opacity) */
+  --valley-border: rgba(0, 0, 0, 0.12);
+  --valley-border-subtle: rgba(0, 0, 0, 0.08);
+  
+  /* Type Scale - Montserrat Primary */
+  --valley-font-primary: 'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --valley-font-secondary: 'Playfair Display', serif; /* Optional, only for short quotes */
+  
+  /* Type Colors - Dark on Light */
+  --valley-text-heading: #1a1a1a;
+  --valley-text-body: #2a2a2a;
+  --valley-text-muted: #4a4a4a;
+  --valley-text-subtle: #6a6a6a;
+  
+  /* Accent */
+  --valley-accent: #81887A;
+  --valley-accent-hover: #6d7366;
+  
+  /* Layout */
+  --valley-container-max: 1120px;
+  --valley-gutter: 1.5rem; /* 24px */
+  --valley-section-padding: 6rem; /* 96px */
+  --valley-section-padding-mobile: 3rem; /* 48px */
+  
+  /* Spacing Scale (fixed: 24/48/96px) */
+  --valley-space-sm: 1.5rem; /* 24px */
+  --valley-space-md: 3rem; /* 48px */
+  --valley-space-lg: 6rem; /* 96px */
+  
+  /* Image Aspect Ratios */
+  --valley-ratio-editorial: 21 / 9; /* 2.33:1 */
+  --valley-ratio-portrait: 4 / 5; /* 0.8:1 */
+  --valley-ratio-square: 1 / 1;
+}
+
+.valley-page {
+  background-color: var(--valley-canvas);
+  padding-bottom: 70px; /* Space for mobile sticky CTA */
+}
+
+@media (min-width: 768px) {
+  .valley-page {
+    padding-bottom: 0; /* No padding on desktop */
+  }
+}
+
+/* Container - Strict Grid */
+.valley-container {
+  max-width: var(--valley-container-max);
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: var(--valley-gutter);
+  padding-right: var(--valley-gutter);
+}
+
+/* Section */
+.valley-section {
+  padding-top: var(--valley-section-padding-mobile);
+  padding-bottom: var(--valley-section-padding-mobile);
+  border-top: 1px solid var(--valley-border-subtle);
+}
+
+@media (min-width: 768px) {
+  .valley-section {
+    padding-top: var(--valley-section-padding);
+    padding-bottom: var(--valley-section-padding);
+  }
+}
+
+/* Typography Scale - Exact Specifications */
+
+/* H1 (Hero) */
+.valley-h1 {
+  font-family: var(--valley-font-primary);
+  font-weight: 600;
+  font-size: 4rem; /* 64px */
+  line-height: 1.15;
+  color: var(--valley-text-heading);
+  letter-spacing: -0.02em;
+}
+
+@media (min-width: 768px) {
+  .valley-h1 {
+    font-size: 4.5rem; /* 72px */
+  }
+}
+
+/* H2 (Section Titles) */
+.valley-h2 {
+  font-family: var(--valley-font-primary);
+  font-weight: 700;
+  font-size: 2.5rem; /* 40px */
+  line-height: 1.15;
+  color: var(--valley-text-heading);
+  letter-spacing: -0.02em;
+}
+
+@media (min-width: 768px) {
+  .valley-h2 {
+    font-size: 2.875rem; /* 46px */
+  }
+}
+
+/* Section Intro Sentence */
+.valley-intro {
+  font-family: var(--valley-font-primary);
+  font-weight: 500;
+  font-size: 1.25rem; /* 20px */
+  line-height: 1.4;
+  color: var(--valley-text-body);
+}
+
+@media (min-width: 768px) {
+  .valley-intro {
+    font-size: 1.375rem; /* 22px */
+  }
+}
+
+/* Body Text */
+.valley-body {
+  font-family: var(--valley-font-primary);
+  font-weight: 400;
+  font-size: 0.9375rem; /* 15px */
+  line-height: 1.6;
+  color: var(--valley-text-body);
+}
+
+@media (min-width: 768px) {
+  .valley-body {
+    font-size: 1rem; /* 16px */
+  }
+}
+
+/* Meta / Labels */
+.valley-label {
+  font-family: var(--valley-font-primary);
+  font-weight: 500;
+  font-size: 0.75rem; /* 12px */
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--valley-text-subtle);
+}
+
+@media (min-width: 768px) {
+  .valley-label {
+    font-size: 0.8125rem; /* 13px */
+  }
+}
+
+/* Captions */
+.valley-caption {
+  font-family: var(--valley-font-primary);
+  font-weight: 400;
+  font-size: 0.8125rem; /* 13px */
+  line-height: 1.5;
+  color: var(--valley-text-muted);
+}
+
+/* Optional: Serif Quote (only for short quotes) */
+.valley-quote {
+  font-family: var(--valley-font-secondary);
+  font-style: italic;
+  font-weight: 300;
+  font-size: 1.5rem;
+  line-height: 1.4;
+  color: var(--valley-text-heading);
+}
+
+@media (min-width: 768px) {
+  .valley-quote {
+    font-size: 1.75rem;
+  }
+}
+
+/* Divider */
+.valley-divider {
+  border-top: 1px solid var(--valley-border-subtle);
+  margin: var(--valley-space-md) 0;
+}
+
+@media (min-width: 768px) {
+  .valley-divider {
+    margin: var(--valley-space-lg) 0;
+  }
+}
+
+/* Vibe Section - Horizontal Scroll Hide */
+.vibe-scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.vibe-scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Seasonal Comparison Slider */
+.seasonal-slider {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.seasonal-slider:active {
+  cursor: col-resize;
+}
+
+/* About Page - Story Reading Layout */
+.story-reading-layout {
+  font-family: var(--valley-font-primary);
+}
+
+.story-body-text {
+  font-size: 1.125rem; /* 18px */
+  line-height: 1.8;
+  color: var(--valley-text-body);
+  font-weight: 400;
+  font-family: var(--valley-font-primary);
+  margin: 0;
+}
+
+@media (min-width: 768px) {
+  .story-body-text {
+    font-size: 1.25rem; /* 20px */
+    line-height: 1.8;
+  }
+}
+
+.story-paragraphs {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.story-paragraph-wrapper {
+  position: relative;
+}
+
+.story-paragraph-separator {
+  height: 1px;
+  background: linear-gradient(to right, transparent, var(--valley-border-subtle), transparent);
+  margin: 1.5rem 0;
+  width: 100%;
+}
+
+/* Pull Quote Component - Improved */
+.story-pull-quote {
+  background-color: rgba(0, 0, 0, 0.025);
+  border-left: 3px solid var(--valley-text-heading);
+  padding: 3rem 3.5rem;
+  margin: 3rem 0;
+  position: relative;
+}
+
+.story-pull-quote-text {
+  font-size: 1.625rem;
+  line-height: 1.65;
+  color: var(--valley-text-heading);
+  font-weight: 500;
+  font-family: var(--valley-font-primary);
+  font-style: italic;
+  margin: 0;
+}
+
+@media (min-width: 768px) {
+  .story-pull-quote-text {
+    font-size: 1.875rem;
+    line-height: 1.7;
+  }
+}
+
+/* Proof Strip */
+.proof-strip {
+  border: 1px solid var(--valley-border);
+  border-radius: 0.5rem;
+  padding: 1.5rem 2rem;
+  background-color: var(--valley-canvas);
+}
+
+.proof-strip-label {
+  font-family: var(--valley-font-primary);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--valley-text-subtle);
+  font-weight: 500;
+  margin-bottom: 1.5rem;
+}
+
+.proof-strip-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  text-align: center;
+}
+
+.proof-stat-value {
+  font-family: var(--valley-font-primary);
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--valley-text-heading);
+  margin-bottom: 0.5rem;
+}
+
+@media (min-width: 768px) {
+  .proof-stat-value {
+    font-size: 1.75rem;
+  }
+}
+
+.proof-stat-label {
+  font-family: var(--valley-font-primary);
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--valley-text-subtle);
+  font-weight: 400;
+}
+
+/* Premium Card */
+.premium-card {
+  background-color: var(--valley-canvas);
+  border-radius: 1rem;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.1);
+  transition: box-shadow 0.3s ease, transform 0.3s ease;
+}
+
+.premium-card:hover {
+  box-shadow: 0 8px 12px rgba(0, 0, 0, 0.08), 0 4px 6px rgba(0, 0, 0, 0.06);
+  transform: translateY(-4px);
+}
+
+/* Archive Gallery - Polaroid Style */
+.archive-polaroid {
+  background-color: var(--valley-canvas);
+  padding: 1rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.1);
+  border-radius: 0.25rem;
+  transition: box-shadow 0.3s ease, transform 0.3s ease;
+}
+
+.archive-polaroid:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+}
+
+.archive-image-wrapper {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  background-color: #f4f2ee;
+  margin-bottom: 0.75rem;
+}
+
+.archive-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.archive-caption {
+  font-family: var(--valley-font-primary);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--valley-text-body);
+  font-weight: 400;
+  text-align: left;
+  margin: 0;
+  padding: 0 0.25rem;
+}

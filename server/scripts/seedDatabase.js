@@ -1,6 +1,10 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
+const fs = require('fs');
+const path = require('path');
 const Cabin = require('../models/Cabin');
+const CabinType = require('../models/CabinType');
+const Unit = require('../models/Unit');
 const Booking = require('../models/Booking');
 
 const connectDB = async () => {
@@ -13,142 +17,238 @@ const connectDB = async () => {
   }
 };
 
-const sampleCabins = [
-  {
-    name: "Forest Haven",
-    description: "A cozy cabin nestled in the heart of the Bulgarian forest, perfect for couples seeking tranquility. Features a wood-burning stove, private deck, and stunning mountain views.",
-    capacity: 2,
-    pricePerNight: 120,
-    imageUrl: "https://images.unsplash.com/photo-1449824913935-59a10b8d2000.jpg",
-    location: "Rila Mountains, Bulgaria",
-    amenities: ["Wood-burning stove", "Private deck", "Mountain views", "WiFi", "Kitchenette", "Parking"],
-    blockedDates: [],
-    transportOptions: [
-      { type: "Horse", pricePerPerson: 50, description: "Traditional horse ride through forest trails", duration: "45 minutes", isAvailable: true },
-      { type: "ATV", pricePerPerson: 100, description: "Adventure ride on all-terrain vehicle", duration: "30 minutes", isAvailable: true },
-      { type: "Jeep", pricePerPerson: 50, description: "Comfortable 4x4 transport to the cabin", duration: "25 minutes", isAvailable: true },
-      { type: "Hike", pricePerPerson: 0, description: "Scenic hiking trail through the mountains", duration: "2 hours", isAvailable: true }
-    ]
-  },
-  {
-    name: "Mountain Retreat",
-    description: "Spacious family cabin with panoramic views of the Balkan Mountains. Ideal for families or groups up to 6 people. Features a large living area, full kitchen, and outdoor fire pit.",
-    capacity: 6,
-    pricePerNight: 180,
-    imageUrl: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4.jpg",
-    location: "Balkan Mountains, Bulgaria",
-    amenities: ["Full kitchen", "Outdoor fire pit", "Large living area", "WiFi", "Parking", "BBQ area", "Hiking trails access"],
-    blockedDates: [],
-    transportOptions: [
-      { type: "Jeep", pricePerPerson: 60, description: "Family-friendly 4x4 transport", duration: "35 minutes", isAvailable: true },
-      { type: "ATV", pricePerPerson: 120, description: "Exciting ATV adventure for the family", duration: "40 minutes", isAvailable: true },
-      { type: "Hike", pricePerPerson: 0, description: "Family hiking trail with scenic views", duration: "1.5 hours", isAvailable: true }
-    ]
-  },
-  {
-    name: "Lakeside Sanctuary",
-    description: "Charming cabin overlooking a pristine mountain lake. Perfect for nature lovers and photographers. Features a private dock, fishing equipment, and eco-friendly amenities.",
-    capacity: 4,
-    pricePerNight: 150,
-    imageUrl: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4.jpg",
-    location: "Seven Rila Lakes, Bulgaria",
-    amenities: ["Private dock", "Fishing equipment", "Eco-friendly", "WiFi", "Solar power", "Composting toilet", "Water access"],
-    blockedDates: [],
-    transportOptions: [
-      { type: "Boat", pricePerPerson: 80, description: "Scenic boat ride across the lake", duration: "20 minutes", isAvailable: true },
-      { type: "Hike", pricePerPerson: 0, description: "Peaceful lakeside hiking trail", duration: "1 hour", isAvailable: true },
-      { type: "Jeep", pricePerPerson: 40, description: "Direct road access to the cabin", duration: "15 minutes", isAvailable: true }
-    ]
-  },
-  {
-    name: "Valley Vista",
-    description: "Modern eco-cabin with floor-to-ceiling windows offering breathtaking valley views. Features sustainable design, rainwater collection, and organic garden access.",
-    capacity: 3,
-    pricePerNight: 140,
-    imageUrl: "https://images.unsplash.com/photo-1449824913935-59a10b8d2000.jpg",
-    location: "Rhodope Mountains, Bulgaria",
-    amenities: ["Floor-to-ceiling windows", "Sustainable design", "Rainwater collection", "Organic garden", "WiFi", "Composting", "Solar panels"],
-    blockedDates: [],
-    transportOptions: [
-      { type: "Horse", pricePerPerson: 60, description: "Eco-friendly horse ride through the valley", duration: "50 minutes", isAvailable: true },
-      { type: "Jeep", pricePerPerson: 45, description: "Sustainable transport to the eco-cabin", duration: "30 minutes", isAvailable: true },
-      { type: "Hike", pricePerPerson: 0, description: "Nature trail through organic gardens", duration: "1.5 hours", isAvailable: true }
-    ]
-  },
-  {
-    name: "Wilderness Lodge",
-    description: "Rustic cabin for true wilderness enthusiasts. No electricity, but includes gas lighting, wood stove, and access to pristine hiking trails. Perfect for digital detox.",
-    capacity: 2,
-    pricePerNight: 80,
-    imageUrl: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4.jpg",
-    location: "Pirin National Park, Bulgaria",
-    amenities: ["Gas lighting", "Wood stove", "Hiking trails", "Wildlife viewing", "No electricity", "Composting toilet", "Water from spring"],
-    blockedDates: [],
-    transportOptions: [
-      { type: "Hike", pricePerPerson: 0, description: "Authentic wilderness hiking experience", duration: "3 hours", isAvailable: true },
-      { type: "Horse", pricePerPerson: 70, description: "Traditional horse ride to the wilderness", duration: "2 hours", isAvailable: true }
-    ]
+const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+const KEEP_CABIN_NAMES = ['Bucephalus', 'The Cabin'];
+
+const toPublicUrl = (...parts) => `/${parts.map((part) => encodeURIComponent(part)).join('/')}`;
+
+const listImages = (relativeParts) => {
+  const absDir = path.join(__dirname, '..', '..', ...relativeParts);
+  const files = fs.readdirSync(absDir).filter((file) => {
+    const ext = path.extname(file).toLowerCase();
+    return IMAGE_EXTENSIONS.has(ext);
+  });
+
+  files.sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
+
+  return files.map((file, index) => ({
+    url: toPublicUrl(...relativeParts, file),
+    alt: '',
+    sort: index,
+    isCover: index === 0
+  }));
+};
+
+const ensureImages = (label, images) => {
+  if (!images.length) {
+    throw new Error(`No images found for ${label}. Check uploads path and filenames.`);
   }
-];
+};
+
+const buildUnits = (count) => (
+  Array.from({ length: count }, (_, idx) => {
+    const number = String(idx + 1).padStart(2, '0');
+    return {
+      unitNumber: `AF-${number}`,
+      displayName: `A-Frame ${number}`,
+      isActive: true
+    };
+  })
+);
 
 const seedDatabase = async () => {
   try {
     await connectDB();
 
-    // Clear existing data
-    await Cabin.deleteMany({});
-    await Booking.deleteMany({});
-    console.log('Cleared existing data');
+    const keepCabins = await Cabin.find({ name: { $in: KEEP_CABIN_NAMES } });
+    const keepCabinIds = keepCabins.map((cabin) => cabin._id);
 
-    // Insert sample cabins
-    const cabins = await Cabin.insertMany(sampleCabins);
-    console.log(`Inserted ${cabins.length} cabins`);
+    await Booking.deleteMany({
+      $or: [
+        { cabinTypeId: { $ne: null } },
+        ...(keepCabinIds.length
+          ? [{ cabinId: { $nin: keepCabinIds } }]
+          : [{ cabinId: { $exists: true } }])
+      ]
+    });
 
-    // Create some sample bookings for testing
-    const sampleBookings = [
-      {
-        cabinId: cabins[0]._id,
-        checkIn: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
-        checkOut: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000), // 10 days from now
-        adults: 2,
-        children: 0,
-        status: 'confirmed',
-        guestInfo: {
-          firstName: 'John',
-          lastName: 'Doe',
-          email: 'john.doe@example.com',
-          phone: '+359 88 123 4567'
+    await Cabin.deleteMany({ name: { $nin: KEEP_CABIN_NAMES } });
+    await CabinType.deleteMany({});
+    await Unit.deleteMany({});
+
+    const aFrameImages = listImages(['uploads', 'The Valley', 'A frames']);
+    const stoneHouseImages = listImages(['uploads', 'The Valley', 'Stone House']);
+    const luxCabinImages = listImages(['uploads', 'The Valley', 'Lux Cabin']);
+
+    ensureImages('A-Frames', aFrameImages);
+    ensureImages('Stone House', stoneHouseImages);
+    ensureImages('Lux Cabin', luxCabinImages);
+
+    const aFrameType = await CabinType.create({
+      name: 'A-Frame',
+      slug: 'a-frame',
+      description:
+        'Off-grid A-frame cabins in a hidden mountain valley below Ortsevo, the highest inhabited village in the Balkans. Designed for quiet stays, nature immersion, and switching off. Simple, warm, and private, with shared facilities in the heart of the valley.',
+      capacity: 2,
+      minGuests: 1,
+      pricePerNight: 60,
+      pricingModel: 'per_night',
+      minNights: 2,
+      location: 'Chereshovo / Ortsevo, Rhodope Mountains, Bulgaria',
+      amenities: [
+        'Double bed',
+        'Wood stove',
+        'Private terrace',
+        'Electricity (solar, limited)',
+        'Mountain and meadow view',
+        'Bed linen and towels',
+        'Shared rustic kitchen',
+        'Shared outdoor showers',
+        'Shared toilets',
+        'Fire pit',
+        'Starlink internet in communal area'
+      ],
+      transportOptions: [
+        {
+          type: 'Jeep',
+          pricePerPerson: 25,
+          description: '4x4 transfer from Chereshovo to the Valley',
+          duration: '25 minutes',
+          isAvailable: true
         },
-        totalPrice: 360, // 3 nights * 120
-        specialRequests: 'Please prepare the cabin for our anniversary'
+        {
+          type: 'Horse',
+          pricePerPerson: 40,
+          description: 'Guided horse ride into the Valley',
+          duration: '90 minutes',
+          isAvailable: true
+        },
+        {
+          type: 'Hike',
+          pricePerPerson: 0,
+          description: 'Marked hiking route to the Valley',
+          duration: '2.5 hours',
+          isAvailable: true
+        }
+      ],
+      imageUrl: aFrameImages[0].url,
+      images: aFrameImages,
+      isActive: true
+    });
+
+    const units = buildUnits(13).map((unit) => ({
+      ...unit,
+      cabinTypeId: aFrameType._id
+    }));
+    await Unit.insertMany(units);
+
+    const cabins = await Cabin.insertMany([
+      {
+        name: 'Stone House',
+        description:
+          'A restored 400-year-old stone house at the center of the valley, surrounded by forest, water, and open meadow. Features a 360-degree balcony, shared kitchen, outdoor bathrooms, and communal spaces for groups, families, or retreats.',
+        capacity: 6,
+        minGuests: 3,
+        pricePerNight: 25,
+        pricingModel: 'per_person',
+        minNights: 2,
+        location: 'Chereshovo / Ortsevo, Rhodope Mountains, Bulgaria',
+        amenities: [
+          'Multiple sleeping areas',
+          'Fireplace',
+          'Shared rustic kitchen',
+          'Shared outdoor showers',
+          'Shared toilets',
+          'Large panoramic balcony',
+          'Fire pit',
+          'Electricity (solar, limited)',
+          'Starlink internet',
+          'Bed linen and towels',
+          'Valley and mountain views'
+        ],
+        transportOptions: [
+          {
+            type: 'Jeep',
+            pricePerPerson: 25,
+            description: '4x4 transfer from Chereshovo to the Valley',
+            duration: '25 minutes',
+            isAvailable: true
+          },
+          {
+            type: 'Horse',
+            pricePerPerson: 40,
+            description: 'Guided horse ride into the Valley',
+            duration: '90 minutes',
+            isAvailable: true
+          },
+          {
+            type: 'Hike',
+            pricePerPerson: 0,
+            description: 'Marked hiking route to the Valley',
+            duration: '2.5 hours',
+            isAvailable: true
+          }
+        ],
+        imageUrl: stoneHouseImages[0].url,
+        images: stoneHouseImages,
+        isActive: true
       },
       {
-        cabinId: cabins[1]._id,
-        checkIn: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days from now
-        checkOut: new Date(Date.now() + 17 * 24 * 60 * 60 * 1000), // 17 days from now
-        adults: 4,
-        children: 2,
-        status: 'pending',
-        guestInfo: {
-          firstName: 'Maria',
-          lastName: 'Petrova',
-          email: 'maria.petrova@example.com',
-          phone: '+359 87 987 6543'
-        },
-        totalPrice: 540, // 3 nights * 180
-        specialRequests: 'Family with young children, please provide high chair'
+        name: 'Lux Cabin',
+        description:
+          'Private off-grid cabin with full comfort for couples who want privacy without giving up the Valley atmosphere. Includes its own kitchen and bathroom, tucked away in a quiet corner of the land.',
+        capacity: 2,
+        minGuests: 1,
+        pricePerNight: 90,
+        pricingModel: 'per_night',
+        minNights: 2,
+        location: 'Chereshovo / Ortsevo, Rhodope Mountains, Bulgaria',
+        amenities: [
+          'Double bed',
+          'Private bathroom with hot shower',
+          'Private kitchen',
+          'Wood stove',
+          'Electricity (solar)',
+          'Private terrace',
+          'Mountain view',
+          'Bed linen and towels',
+          'Fire pit access',
+          'Starlink internet'
+        ],
+        transportOptions: [
+          {
+            type: 'Jeep',
+            pricePerPerson: 25,
+            description: '4x4 transfer from Chereshovo to the Valley',
+            duration: '25 minutes',
+            isAvailable: true
+          },
+          {
+            type: 'Horse',
+            pricePerPerson: 40,
+            description: 'Guided horse ride into the Valley',
+            duration: '90 minutes',
+            isAvailable: true
+          },
+          {
+            type: 'Hike',
+            pricePerPerson: 0,
+            description: 'Marked hiking route to the Valley',
+            duration: '2 km (from Chereshovo 20 to 30 min)',
+            isAvailable: true
+          }
+        ],
+        imageUrl: luxCabinImages[0].url,
+        images: luxCabinImages,
+        isActive: true
       }
-    ];
-
-    const bookings = await Booking.insertMany(sampleBookings);
-    console.log(`Inserted ${bookings.length} sample bookings`);
+    ]);
 
     console.log('✅ Database seeded successfully!');
-    console.log('\nSample data created:');
-    console.log(`- ${cabins.length} cabins`);
-    console.log(`- ${bookings.length} bookings`);
-    console.log('\nYou can now start the server and test the booking system.');
-
+    console.log(`- Kept cabins: ${keepCabins.length}`);
+    console.log(`- Cabin types created: 1 (A-Frame)`);
+    console.log(`- Units created: ${units.length}`);
+    console.log(`- Cabins created: ${cabins.length}`);
   } catch (error) {
     console.error('Seeding error:', error);
   } finally {
@@ -156,7 +256,6 @@ const seedDatabase = async () => {
   }
 };
 
-// Run seeding if this file is executed directly
 if (require.main === module) {
   seedDatabase();
 }

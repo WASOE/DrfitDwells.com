@@ -1,0 +1,50 @@
+BEHAVIORAL RULES:
+
+1.  **Mobile-First, Desktop-Constrained:** Always write CSS/Tailwind with a "Mobile First" approach, BUT immediately define the desktop constraints.
+
+    -   Never leave a main container as `w-full` without a `max-w` (e.g., `max-w-7xl mx-auto`) for desktop.
+
+    -   Always check how UI elements stretch on screens larger than 1024px.
+
+
+
+2.  **Responsiveness Check:**
+
+    -   When modifying layout, AUTOMATICALLY generate the `md:` and `lg:` classes.
+
+    -   If creating a grid, assume `grid-cols-1` for mobile and `grid-cols-2` or `3` for desktop.
+
+
+
+3.  **Visual Hierarchy:**
+
+    -   On Desktop: Use more whitespace (`py-24`), larger fonts for headers, and constrained text widths (`max-w-2xl` for paragraphs).
+
+    -   On Mobile: Use tighter spacing (`py-12`) and full-width text.
+
+
+
+4.  **No "Stretching":**
+
+    -   Inputs, Buttons, and Cards should never stretch to 1920px width. Always constrain them on desktop.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

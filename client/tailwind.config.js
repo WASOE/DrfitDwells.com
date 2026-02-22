@@ -23,6 +23,7 @@ export default {
         'sans': ['Inter', 'system-ui', 'sans-serif'],
         'serif': ['Playfair Display', 'Georgia', 'serif'],
         'heading': ['Playfair Display', 'Georgia', 'serif'],
+        'script': ['Caveat', 'cursive'],
       },
       fontSize: {
         'editorial-xl': ['5rem', { lineHeight: '1.1', letterSpacing: '0.02em' }],

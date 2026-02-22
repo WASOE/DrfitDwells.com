@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const path = require('path');
 const fs = require('fs');
 const connectDB = require('./config/database');
@@ -63,11 +64,23 @@ const allowCraftOrigin = (req, res, next) => {
 
 // Middleware
 app.use(cors());
+app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Static file serving for uploads
-app.use('/uploads', express.static(uploadsDir));
+// Static file serving for uploads with caching headers
+const staticOptions = {
+  maxAge: '7d',
+  setHeaders(res, filePath) {
+    const longCacheExtensions = ['.mp4', '.webm', '.png', '.jpg', '.jpeg', '.avif', '.webp'];
+    if (longCacheExtensions.includes(path.extname(filePath).toLowerCase())) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    } else {
+      res.setHeader('Cache-Control', 'public, max-age=604800');
+    }
+  }
+};
+app.use('/uploads', express.static(uploadsDir, staticOptions));
 
 // Routes
 app.use('/api/availability', availabilityRoutes);

@@ -1,5 +1,6 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { BookingProvider } from './context/BookingContext'
+import ScrollToTop from './components/ScrollToTop'
 import SiteLayout from './layouts/SiteLayout'
 import AdminLayout from './layouts/AdminLayout'
 import EmbeddedLayout from './layouts/EmbeddedLayout'
@@ -11,6 +12,16 @@ import CabinDetails from './pages/CabinDetails'
 import AFrameDetails from './pages/AFrameDetails'
 import BookingSuccess from './pages/BookingSuccess'
 import ValleyGuide from './pages/ValleyGuide'
+import TheCabin from './pages/TheCabin'
+import CabinFaqPage from './pages/CabinFaqPage'
+import TheValleyPage from './pages/the-valley/TheValleyPage'
+import About from './pages/About'
+import Build from './pages/Build'
+import Terms from './pages/legal/Terms'
+import Privacy from './pages/legal/Privacy'
+import CancellationPolicy from './pages/legal/CancellationPolicy'
+import Career from './pages/legal/Career'
+import Press from './pages/legal/Press'
 import Step1TripType from './pages/craft/Step1TripType'
 import Step2ArrivalMethod from './pages/craft/Step2ArrivalMethod'
 import Step3GuestDetails from './pages/craft/Step3GuestDetails'
@@ -33,11 +44,23 @@ import CraftEmbedded from './pages/embedded/CraftEmbedded'
 function App() {
   return (
     <BookingProvider>
+      <ScrollToTop />
       <Routes>
         {/* Site (guest) layout */}
         <Route element={<SiteLayout />}>
           <Route path="/" element={<Home />} />
           <Route path="/search" element={<SearchResults />} />
+          <Route path="/cabin" element={<TheCabin />} />
+          <Route path="/cabin/faq" element={<CabinFaqPage />} />
+          <Route path="/valley" element={<TheValleyPage />} />
+          <Route path="/about" element={<About />} />
+          <Route path="/build" element={<Build />} />
+          <Route path="/journal" element={<Navigate to="/build" replace />} />
+          <Route path="/terms" element={<Terms />} />
+          <Route path="/privacy" element={<Privacy />} />
+          <Route path="/cancellation-policy" element={<CancellationPolicy />} />
+          <Route path="/career" element={<Career />} />
+          <Route path="/press" element={<Press />} />
           <Route path="/cabin/:id" element={<CabinDetails />} />
           <Route path="/stays/a-frame" element={<AFrameDetails />} />
           <Route path="/booking-success/:id" element={<BookingSuccess />} />

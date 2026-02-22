@@ -32,10 +32,21 @@ const cabinSchema = new mongoose.Schema({
     min: [1, 'Capacity must be at least 1'],
     max: [20, 'Capacity cannot exceed 20']
   },
+  minGuests: {
+    type: Number,
+    min: [1, 'Minimum guests must be at least 1'],
+    max: [20, 'Minimum guests cannot exceed 20'],
+    default: 1
+  },
   pricePerNight: {
     type: Number,
     required: [true, 'Price per night is required'],
     min: [0, 'Price cannot be negative']
+  },
+  pricingModel: {
+    type: String,
+    enum: ['per_night', 'per_person'],
+    default: 'per_night'
   },
   minNights: {
     type: Number,

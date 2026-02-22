@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800;900&family=Merriweather:wght@300;400;700&family=Inter:wght@100;200;300;400;500;600;700;800;900&family=Dancing+Script:wght@400;500;600;700&family=Caveat:wght@400;500;600;700&family=Permanent+Marker&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Merriweather:wght@300;400;700&family=Inter:wght@300;400;500;600&family=Caveat:wght@400;600&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -211,7 +211,7 @@
   }
 
   .polaroid-hover:hover {
-    z-index: 50 !important;
+    z-index: 35 !important;
   }
 
   .polaroid-hover:hover > div {
@@ -254,5 +254,19 @@
     body {
       overflow-x: hidden;
     }
+  }
+
+  /* Radial gradient utility */
+  .bg-gradient-radial {
+    background: radial-gradient(circle, var(--tw-gradient-stops));
+  }
+
+  /* Ensure date picker appears above announcement bar */
+  .react-datepicker-popper {
+    z-index: 9999 !important;
+  }
+
+  .react-datepicker {
+    z-index: 9999 !important;
   }
 }

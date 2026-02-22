@@ -1,12 +1,17 @@
 import React from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import Header from "../components/Header";
 import Footer from "../components/Footer";
 import AudioPlayer from "../components/AudioPlayer";
+import BookingModal from "../components/BookingModal";
+import AnnouncementBar from "../components/AnnouncementBar";
 
 export default function  SiteLayout() {
+  const location = useLocation();
+  const isHome = location.pathname === '/';
+
   return (
-    <div className="relative">
+    <div className="relative overflow-x-hidden">
       <div
         className="pointer-events-none fixed inset-0 z-0 opacity-5 mix-blend-soft-light"
         style={{
@@ -17,10 +22,11 @@ export default function  SiteLayout() {
       <div className="relative z-10">
         <Header />
         <Outlet />
-        <Footer />
+        {!isHome && <Footer />}
         <AudioPlayer />
+        <BookingModal />
+        <AnnouncementBar />
       </div>
     </div>
   );
 }
-

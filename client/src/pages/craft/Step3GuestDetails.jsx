@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { useBookingContext } from '../../context/BookingContext';
+import StickyBookingBar from '../../components/StickyBookingBar';
 
 const Step3GuestDetails = () => {
   const navigate = useNavigate();
@@ -13,6 +14,8 @@ const Step3GuestDetails = () => {
     checkIn,
     checkOut,
     cabinId,
+    currentStep,
+    totalSteps,
     updateGuestInfo, 
     setCurrentStep 
   } = useBookingContext();
@@ -27,6 +30,10 @@ const Step3GuestDetails = () => {
   });
 
   const [errors, setErrors] = useState({});
+
+  useEffect(() => {
+    setCurrentStep(3);
+  }, [setCurrentStep]);
 
   // Calculate total transport cost
   const totalGuests = adults + children;
@@ -88,19 +95,8 @@ const Step3GuestDetails = () => {
     updateGuestInfo(formData);
     setCurrentStep(4);
     
-    // If no cabin selected, redirect to search with draft context
-    // Otherwise continue to Step 4 for booking confirmation
-    if (!cabinId) {
-      // Build search URL with current dates if available
-      const searchParams = new URLSearchParams();
-      if (checkIn) searchParams.set('checkIn', checkIn);
-      if (checkOut) searchParams.set('checkOut', checkOut);
-      if (adults) searchParams.set('adults', adults.toString());
-      if (children) searchParams.set('children', children.toString());
-      navigate(`/search?${searchParams.toString()}`);
-    } else {
-      navigate('/craft/step-4');
-    }
+    // Always navigate to Step 4 - it will show cabin selection prompt if needed
+    navigate('/craft/step-4');
   };
 
   const handleBack = () => {
@@ -112,63 +108,66 @@ const Step3GuestDetails = () => {
                      /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email) && 
                      formData.agreedToTerms;
 
+  const stepLabel = `Step ${currentStep || 3} of ${totalSteps || 4}`;
+  const guestSummary = formData.fullName ? formData.fullName : 'Guest information needed';
+
   return (
-    <div className="min-h-screen bg-white">
-      {/* Editorial Header Section */}
+    <div className="min-h-screen bg-white pt-16 md:pt-32 pb-24 md:pb-32">
+      {/* Mobile-Optimized Header Section */}
       <div className="block-editorial">
-        <div className="max-w-4xl mx-auto px-6 text-center">
-          <h1 className="headline-editorial mb-8 text-white">
+        <div className="max-w-4xl mx-auto px-4 md:px-6 text-center py-8 md:py-12">
+          <h1 className="text-3xl md:text-5xl font-serif font-bold text-white mb-4 md:mb-8 tracking-tight md:tracking-editorial">
             Just a few more details...
           </h1>
-          <p className="text-editorial text-gray-300 max-w-2xl mx-auto">
+          <p className="text-base md:text-lg font-sans font-light text-gray-300 max-w-2xl mx-auto leading-relaxed px-2">
             We're almost ready to craft your perfect retreat
           </p>
         </div>
       </div>
 
-      {/* Progress Indicator */}
-      <div className="block-white">
-        <div className="max-w-4xl mx-auto px-6">
-          <div className="flex items-center justify-center space-x-6">
-            <div className="w-8 h-8 bg-sage rounded-full flex items-center justify-center">
-              <span className="text-white text-sm font-light">1</span>
+      {/* Mobile-Optimized Progress Indicator */}
+      <div className="block-white py-6 md:py-12">
+        <div className="max-w-4xl mx-auto px-4 md:px-6">
+          <div className="flex items-center justify-center gap-2 md:gap-6">
+            <div className="w-10 h-10 md:w-8 md:h-8 bg-sage rounded-full flex items-center justify-center shadow-sm">
+              <span className="text-white text-base md:text-sm font-medium md:font-light">1</span>
             </div>
-            <div className="h-px w-20 bg-sage"></div>
-            <div className="w-8 h-8 bg-sage rounded-full flex items-center justify-center">
-              <span className="text-white text-sm font-light">2</span>
+            <div className="h-px flex-1 max-w-12 md:max-w-20 bg-sage"></div>
+            <div className="w-10 h-10 md:w-8 md:h-8 bg-sage rounded-full flex items-center justify-center shadow-sm">
+              <span className="text-white text-base md:text-sm font-medium md:font-light">2</span>
             </div>
-            <div className="h-px w-20 bg-sage"></div>
-            <div className="w-8 h-8 bg-sage rounded-full flex items-center justify-center">
-              <span className="text-white text-sm font-light">3</span>
+            <div className="h-px flex-1 max-w-12 md:max-w-20 bg-sage"></div>
+            <div className="w-10 h-10 md:w-8 md:h-8 bg-sage rounded-full flex items-center justify-center shadow-sm">
+              <span className="text-white text-base md:text-sm font-medium md:font-light">3</span>
             </div>
-            <div className="h-px w-20 bg-gray-300"></div>
-            <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
-              <span className="text-gray-500 text-sm font-light">4</span>
+            <div className="h-px flex-1 max-w-12 md:max-w-20 bg-gray-300"></div>
+            <div className="w-10 h-10 md:w-8 md:h-8 bg-gray-200 rounded-full flex items-center justify-center">
+              <span className="text-gray-500 text-base md:text-sm font-medium md:font-light">4</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="max-w-6xl mx-auto px-6 py-20">
+      {/* Main Content - Mobile Optimized */}
+      <div className="max-w-6xl mx-auto px-4 md:px-6 py-8 md:py-20">
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-16">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 md:gap-16">
           {/* Form Section */}
           <div className="lg:col-span-2">
-            <div className="card-editorial p-8">
-              <h2 className="headline-subsection mb-8">Guest Information</h2>
+            <div className="card-editorial p-5 md:p-8">
+              <h2 className="text-xl md:text-2xl font-serif font-bold mb-6 md:mb-8 tracking-editorial">Guest Information</h2>
               
-              <div className="space-y-12">
-                {/* Full Name */}
+              <div className="space-y-8 md:space-y-12">
+                {/* Full Name - Mobile Optimized */}
                 <div>
-                  <label className="label-editorial">
+                  <label className="block text-xs font-sans font-light text-gray-600 mb-3 tracking-wide uppercase">
                     Full Name *
                   </label>
                   <input
                     type="text"
                     value={formData.fullName}
                     onChange={(e) => handleInputChange('fullName', e.target.value)}
-                    className={`input-editorial ${
+                    className={`w-full px-0 py-3 md:py-4 border-0 border-b border-gray-300 focus:border-black outline-none transition-all duration-200 bg-transparent font-light text-base md:text-lg ${
                       errors.fullName ? 'border-red-500' : ''
                     }`}
                     placeholder="Enter your full name"
@@ -178,16 +177,16 @@ const Step3GuestDetails = () => {
                   )}
                 </div>
 
-                {/* Email */}
+                {/* Email - Mobile Optimized */}
                 <div>
-                  <label className="label-editorial">
+                  <label className="block text-xs font-sans font-light text-gray-600 mb-3 tracking-wide uppercase">
                     Email Address *
                   </label>
                   <input
                     type="email"
                     value={formData.email}
                     onChange={(e) => handleInputChange('email', e.target.value)}
-                    className={`input-editorial ${
+                    className={`w-full px-0 py-3 md:py-4 border-0 border-b border-gray-300 focus:border-black outline-none transition-all duration-200 bg-transparent font-light text-base md:text-lg ${
                       errors.email ? 'border-red-500' : ''
                     }`}
                     placeholder="your.email@example.com"
@@ -197,73 +196,76 @@ const Step3GuestDetails = () => {
                   )}
                 </div>
 
-                {/* Phone */}
+                {/* Phone - Mobile Optimized */}
                 <div>
-                  <label className="label-editorial">
+                  <label className="block text-xs font-sans font-light text-gray-600 mb-3 tracking-wide uppercase">
                     Phone Number
                   </label>
                   <input
                     type="tel"
                     value={formData.phone}
                     onChange={(e) => handleInputChange('phone', e.target.value)}
-                    className="input-editorial"
+                    className="w-full px-0 py-3 md:py-4 border-0 border-b border-gray-300 focus:border-black outline-none transition-all duration-200 bg-transparent font-light text-base md:text-lg"
                     placeholder="+1 (555) 123-4567"
                   />
-                  <p className="mt-2 text-sm text-gray-500 font-light">Optional - for important updates about your stay</p>
+                  <p className="mt-2 text-xs md:text-sm text-gray-500 font-light">Optional - for important updates about your stay</p>
                 </div>
 
-                {/* Special Requests */}
+                {/* Special Requests - Mobile Optimized */}
                 <div>
-                  <label className="label-editorial">
+                  <label className="block text-xs font-sans font-light text-gray-600 mb-3 tracking-wide uppercase">
                     Special Requests or Notes
                   </label>
                   <textarea
                     value={formData.specialRequests}
                     onChange={(e) => handleInputChange('specialRequests', e.target.value)}
-                    className="input-editorial resize-none"
+                    className="w-full px-0 py-3 md:py-4 border-0 border-b border-gray-300 focus:border-black outline-none transition-all duration-200 bg-transparent font-light text-base md:text-lg resize-none"
                     rows={4}
                     placeholder="Any dietary restrictions, accessibility needs, or special requests for your stay..."
                   />
-                  <p className="mt-2 text-sm text-gray-500 font-light">Let us know how we can make your stay even more special</p>
+                  <p className="mt-2 text-xs md:text-sm text-gray-500 font-light">Let us know how we can make your stay even more special</p>
                 </div>
 
-                {/* Romantic Setup (only for Romantic Getaway) */}
+                {/* Romantic Setup (only for Romantic Getaway) - Mobile Optimized */}
                 {tripType === 'romantic' && (
-                  <div className="p-8 bg-sage/5 border border-sage/20">
+                  <div className="p-5 md:p-8 bg-sage/5 border border-sage/20 rounded-lg">
                     <label className="flex items-center cursor-pointer">
                       <input
                         type="checkbox"
                         checked={formData.romanticSetup}
                         onChange={(e) => handleInputChange('romanticSetup', e.target.checked)}
-                        className="w-5 h-5 text-sage border-gray-300 rounded focus:ring-sage focus:ring-2"
+                        className="w-5 h-5 text-sage border-gray-300 rounded focus:ring-sage focus:ring-2 flex-shrink-0"
                       />
-                      <span className="ml-4 text-body text-black">
+                      <span className="ml-4 text-sm md:text-base font-sans font-light text-black">
                         Would you like a romantic setup?
                       </span>
                     </label>
-                    <p className="mt-3 text-body text-gray-600 leading-loose">
+                    <p className="mt-3 text-sm md:text-base font-sans font-light text-gray-600 leading-relaxed">
                       We can arrange special touches like rose petals, candles, and champagne for your romantic getaway
                     </p>
                   </div>
                 )}
 
-                {/* Terms and Conditions */}
+                {/* Terms and Conditions - Mobile Optimized */}
                 <div>
                   <label className="flex items-start cursor-pointer">
                     <input
                       type="checkbox"
                       checked={formData.agreedToTerms}
                       onChange={(e) => handleInputChange('agreedToTerms', e.target.checked)}
-                      className={`w-5 h-5 text-sage border-gray-300 rounded focus:ring-sage focus:ring-2 mt-0.5 ${
+                      className={`w-5 h-5 text-sage border-gray-300 rounded focus:ring-sage focus:ring-2 mt-0.5 flex-shrink-0 ${
                         errors.agreedToTerms ? 'border-red-500' : ''
                       }`}
                     />
-                    <span className="ml-4 text-body text-black leading-relaxed">
+                    <span className="ml-4 text-sm md:text-base font-sans font-light text-black leading-relaxed">
                       I agree to the{' '}
-                      <a href="#" className="text-sage hover:text-sage-dark underline font-light">
+                      <Link to="/terms" target="_blank" rel="noopener noreferrer" className="text-sage hover:text-sage-dark underline">
                         retreat terms and conditions
-                      </a>{' '}
-                      and understand the cancellation policy *
+                      </Link>{' '}
+                      and understand the{' '}
+                      <Link to="/cancellation-policy" target="_blank" rel="noopener noreferrer" className="text-sage hover:text-sage-dark underline">
+                        cancellation policy
+                      </Link> *
                     </span>
                   </label>
                   {errors.agreedToTerms && (
@@ -274,12 +276,12 @@ const Step3GuestDetails = () => {
             </div>
           </div>
 
-          {/* Summary Sidebar */}
-          <div className="lg:col-span-1">
+          {/* Summary Sidebar - Hidden on mobile, shown on desktop */}
+          <div className="hidden lg:block lg:col-span-1">
             <div className="card-editorial p-8 sticky top-8">
-              <h3 className="headline-subsection mb-8">Your Retreat Summary</h3>
+              <h3 className="text-xl md:text-2xl font-serif font-bold mb-8 tracking-editorial">Your Retreat Summary</h3>
               
-              <div className="space-y-8 text-body">
+              <div className="space-y-8 text-sm md:text-base font-sans font-light">
                 {/* Trip Type */}
                 <div>
                   <span className="text-gray-600 block text-xs tracking-wide mb-3 uppercase">Trip Type:</span>
@@ -340,8 +342,8 @@ const Step3GuestDetails = () => {
           </div>
         </div>
 
-        {/* Navigation */}
-        <div className="flex justify-between items-center max-w-2xl mx-auto mt-20">
+        {/* Desktop Navigation */}
+        <div className="hidden md:flex justify-between items-center max-w-2xl mx-auto mt-12 md:mt-20">
           <button
             onClick={handleBack}
             className="btn-underline"
@@ -360,6 +362,15 @@ const Step3GuestDetails = () => {
           </button>
         </div>
       </div>
+
+      <StickyBookingBar
+        className="md:hidden"
+        label={stepLabel}
+        subLabel={guestSummary}
+        buttonLabel="Next step →"
+        buttonDisabled={!isFormValid}
+        onButtonClick={handleNext}
+      />
     </div>
   );
 };

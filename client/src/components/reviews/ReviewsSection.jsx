@@ -77,7 +77,6 @@ function ReviewCard({ r }) {
                   className="ml-1 text-gray-500 hover:text-gray-700"
                   onClick={(e) => {
                     e.preventDefault();
-                    // TODO: Implement translation
                     console.log('Translate review to', locale);
                   }}
                   aria-label={`Translate review from ${locale}`}

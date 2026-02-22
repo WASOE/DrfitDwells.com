@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer } from 'react';
+import React, { createContext, useContext, useReducer, useMemo } from 'react';
 
 // Initial state
 const initialState = {
@@ -186,8 +186,8 @@ const BookingContext = createContext();
 export const BookingProvider = ({ children }) => {
   const [state, dispatch] = useReducer(bookingReducer, initialState);
 
-  // Action creators
-  const actions = {
+  // Action creators - memoized to prevent recreation on every render
+  const actions = useMemo(() => ({
     setBasicInfo: (basicInfo) => {
       dispatch({ type: ActionTypes.SET_BASIC_INFO, payload: basicInfo });
     },
@@ -240,12 +240,12 @@ export const BookingProvider = ({ children }) => {
     updateCraftExtras: (extras) => {
       dispatch({ type: ActionTypes.UPDATE_CRAFT_EXTRAS, payload: extras });
     }
-  };
+  }), []); // Empty dependency array - dispatch is stable from useReducer
 
-  const value = {
+  const value = useMemo(() => ({
     ...state,
     ...actions
-  };
+  }), [state, actions]);
 
   return (
     <BookingContext.Provider value={value}>
