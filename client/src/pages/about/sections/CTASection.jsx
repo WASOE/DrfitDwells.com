@@ -47,7 +47,7 @@ const CTASection = () => {
               transition={{ duration: 0.6, delay: 0.2 }}
             >
               <Link
-                to="/the-valley"
+                to="/valley"
                 className="block border rounded-2xl px-8 py-6 text-center transition-all hover:bg-[var(--valley-text-heading)] hover:text-white hover:scale-105"
                 style={{ 
                   borderColor: 'var(--valley-text-heading)',

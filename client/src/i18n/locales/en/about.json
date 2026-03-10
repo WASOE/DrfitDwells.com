@@ -1,0 +1,44 @@
+{
+  "hero": {
+    "title": "The story of Drift & Dwells",
+    "intro1": "I used to live in the Netherlands and work all the time.",
+    "intro2": "At some point it stopped working for me.",
+    "intro3": "I burned out.",
+    "readStory": "Read the story",
+    "showLess": "Show less",
+    "fullStory": "Then Covid came and everything slowed down. I did the opposite. I left in a campervan. Not to find myself. I just wanted to feel normal again.\n\nI kept driving and ended up in Bulgaria.\n\nI saw a piece of land there and bought it almost on the spot. I did not sit down and make some big plan. I just felt like doing it.\n\nI started building because winter was coming and I needed shelter.\n\nThen deadlines shifted. Things took longer. Winter arrived, and I was still building.\n\nNights went to minus 25. The wood was frozen. The ground was hard. There was no signal on the land.\n\nI did not know everything, so I learned while building.\n\nI would walk up the hill to get signal, about 20 minutes up and 20 minutes back down, download YouTube videos, and continue building.\n\nSometimes the video was wrong. Sometimes I got it wrong. Then I had to walk up again and figure out the next step.\n\nThere was no big plan at that point. Mostly just the pressure of the present. What needs to be done now. What can I fix today. What do I need before tonight.\n\nIt was slow. It was frustrating. But honestly, it helped me.\n\nI was busy with real things. Measuring. Cutting. Fixing. Trying again. One thing at a time.\n\nAnd my head got quieter.\n\nWhen the cabin was done, I realized that place had done a lot for me.\n\nNothing magical. Just simple things. Quiet. Cold air. Silence. Physical work. Sleeping properly again.\n\nSo I put it on Airbnb.\n\nNot because I had some big business idea.\n\nI just thought maybe other people could use the same thing.\n\nPeople came.\n\nAnd I kept hearing the same kind of feedback, again and again.\n\nI slept.\n\nI slowed down.\n\nI feel normal again.\n\nThat is how Drift & Dwells started.\n\nFirst it was one cabin.\n\nThen we kept going.\n\nWhat started as one cabin turned into Drift & Dwells.\n\nWe build places that help people slow down and reset. That is the whole point.\n\nToday that means two things for us.\n\nWe build and host our own places here in Bulgaria.\n\nAnd we also build cabins for clients abroad, including in the Netherlands.\n\nNow we are building The Valley, which is the next chapter.\n\nAnd somewhere in all of that, the first cabin became the number one cabin on Airbnb.\n\nI still think the reason is simple.\n\nIt is real.\n\nIt is built with care.\n\nAnd it works."
+  },
+  "stats": {
+    "guestNights": "Guest nights",
+    "averageRating": "Average rating",
+    "value1": "1,000+",
+    "value2": "4.95 Airbnb, 9.8 Booking"
+  },
+  "outcomes": {
+    "cabin": {
+      "title": "The Cabin",
+      "description": "The original. Quiet, iconic, made for deep rest.",
+      "linkText": "Explore The Cabin"
+    },
+    "valley": {
+      "title": "The Valley",
+      "description": "Our next chapter. More space, more nature, more experiences.",
+      "linkText": "Explore The Valley"
+    }
+  },
+  "host": {
+    "title": "The builder and host",
+    "lead": "I build what we host, and host what we build. That feedback loop is the whole point.",
+    "bullet1": "Built by hand",
+    "bullet2": "Off grid systems that work in winter",
+    "bullet3": "Designed for sleep, silence, and simplicity",
+    "tagline": "Built and hosted by the same hands."
+  },
+  "cta": {
+    "lead": "If the story resonates, start with the place that fits you.",
+    "exploreCabin": "Explore The Cabin",
+    "exploreValley": "Explore The Valley",
+    "buildLink": "Looking to own one? Build your cabin →",
+    "tagline": "We build places for living, not scrolling."
+  }
+}

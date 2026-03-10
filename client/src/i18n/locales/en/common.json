@@ -1,0 +1,86 @@
+{
+  "footer": {
+    "headline": "Notes from the mountains.",
+    "subcopy": "Stories from the mountains, delivered quietly to your inbox.",
+    "emailPlaceholder": "EMAIL ADDRESS",
+    "privacyConsent": "I agree with the {{privacyPolicy}} and {{termsOfUse}}.",
+    "privacyPolicy": "privacy policy",
+    "termsOfUse": "terms of use",
+    "menu": "Menu",
+    "company": "Company",
+    "contact": "Contact",
+    "followUs": "Follow Us",
+    "careers": "Careers",
+    "press": "Press",
+    "termsLink": "Terms & Conditions",
+    "privacyLink": "Privacy Policy",
+    "phoneExample": "+359 88 123 4567",
+    "legalLine": "© 2024 Drift & Dwells. All rights reserved.",
+    "bottomStrip": {
+      "mountainEscape": "MOUNTAIN ESCAPE",
+      "natureFirst": "NATURE FIRST",
+      "slowDown": "SLOW DOWN",
+      "stayWild": "STAY WILD"
+    },
+    "ratings": {
+      "topHomes": "Top 1% of Homes",
+      "travellerAwards": "Traveller Review Awards",
+      "travelersChoice": "Travelers' Choice"
+    }
+  },
+  "announcement": {
+    "bar": "RATED TOP 1% ON PLATFORMS • WE'VE GONE SOLO • BOOK DIRECT & SAVE FEES",
+    "title": "We've Gone Wild.",
+    "subtitle": "From Top 1% on Airbnb to 100% Independent.",
+    "body": "We realized something important: We'd rather invest in our guests than in platform fees. By booking direct, the 15% service fee stays in your pocket. Same luxury, better price.",
+    "cta": "See Your Savings",
+    "closeAria": "Close"
+  },
+  "authority": {
+    "airbnbTopHomes": "Top 1% of Homes",
+    "bookingAwards": "Traveller Review Awards",
+    "tripadvisorChoice": "Travelers' Choice"
+  },
+  "destinations": {
+    "headline": "Atmospheric Retreats",
+    "tagline": "Sound on. Breath slows. Pages turn.",
+    "brand": "Drift & Dwells",
+    "cabin": {
+      "name": "The Cabin",
+      "tagline": "Solitary • Stoic • Deep Detox",
+      "description": "Nestled in the rugged folds of the Pirin Mountains, The Cabin is a testament to the beauty of subtraction. Formerly 'Bucephalus', this is a sanctuary for the over-connected.",
+      "price": "From €120/night",
+      "cta": "View The Cabin",
+      "details": {
+        "access": "3km Rugged Trail (SUV/Jeep Required)",
+        "power": "Off-Grid (Solar/Gas - No Hair Dryers)",
+        "wifiOffGrid": "Off-Grid",
+        "wifiStarlink": "Starlink"
+      }
+    },
+    "valley": {
+      "name": "The Valley",
+      "tagline": "Ethereal • Communal • Light",
+      "description": "Suspended between earth and sky at 1,550m. A collection of 13 A-frames and a communal Stone House designed for the modern drifter.",
+      "price": "From €145/night",
+      "cta": "View The Valley",
+      "details": {
+        "access": "Jeep, ATV, or Horseback Transfer",
+        "connectivity": "Starlink (Stone House Only)",
+        "altitude": "1,550m (Highest Inhabited Village in Balkans)",
+        "wifiStarlink": "Starlink"
+      }
+    }
+  },
+  "audio": {
+    "soundOn": "Sound On",
+    "soundOff": "Sound Off",
+    "loading": "Loading...",
+    "fileError": "File Error",
+    "ariaSoundOn": "Turn sound on",
+    "ariaSoundOff": "Turn sound off",
+    "ariaPlayAudio": "Play audio",
+    "ariaStopAudio": "Stop audio"
+  }
+}
+

@@ -63,6 +63,12 @@ const seedDatabase = async () => {
     const keepCabins = await Cabin.find({ name: { $in: KEEP_CABIN_NAMES } });
     const keepCabinIds = keepCabins.map((cabin) => cabin._id);
 
+    // Update Bucephalus/The Cabin pricing (€55/night, min 2 nights)
+    await Cabin.updateMany(
+      { name: { $in: KEEP_CABIN_NAMES } },
+      { $set: { pricePerNight: 55, minNights: 2 } }
+    );
+
     await Booking.deleteMany({
       $or: [
         { cabinTypeId: { $ne: null } },
@@ -199,7 +205,7 @@ const seedDatabase = async () => {
           'Private off-grid cabin with full comfort for couples who want privacy without giving up the Valley atmosphere. Includes its own kitchen and bathroom, tucked away in a quiet corner of the land.',
         capacity: 2,
         minGuests: 1,
-        pricePerNight: 90,
+        pricePerNight: 85,
         pricingModel: 'per_night',
         minNights: 2,
         location: 'Chereshovo / Ortsevo, Rhodope Mountains, Bulgaria',

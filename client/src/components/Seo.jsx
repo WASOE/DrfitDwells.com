@@ -1,0 +1,79 @@
+import { Helmet } from 'react-helmet-async';
+
+const ORIGIN = 'https://driftanddwells.com';
+
+const Seo = ({
+  title,
+  description,
+  canonicalPath,
+  noindex = false,
+  jsonLd,
+  ogImage,
+  ogType = 'website',
+  preloadImages = [],
+  hreflangAlternates = []
+}) => {
+  const origin =
+    typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : ORIGIN;
+  const canonical = canonicalPath ? `${origin}${canonicalPath}` : origin;
+  const absoluteOgImage =
+    ogImage && ogImage.startsWith('http') ? ogImage : ogImage ? `${origin}${ogImage}` : null;
+
+  return (
+    <Helmet>
+      {title && <title>{title}</title>}
+      {description && <meta name="description" content={description} />}
+      <link rel="canonical" href={canonical} />
+      {hreflangAlternates.length > 0 && hreflangAlternates.map(({ href, hreflang }) => (
+        <link key={hreflang} rel="alternate" hrefLang={hreflang} href={href.startsWith('http') ? href : `${origin}${href}`} />
+      ))}
+      {noindex && <meta name="robots" content="noindex,nofollow" />}
+      {/* Open Graph */}
+      {title && <meta property="og:title" content={title} />}
+      {description && <meta property="og:description" content={description} />}
+      <meta property="og:type" content={ogType} />
+      <meta property="og:url" content={canonical} />
+      {absoluteOgImage && <meta property="og:image" content={absoluteOgImage} />}
+      {absoluteOgImage && title && <meta property="og:image:alt" content={title} />}
+      {/* Twitter */}
+      <meta name="twitter:card" content="summary_large_image" />
+      {title && <meta name="twitter:title" content={title} />}
+      {description && <meta name="twitter:description" content={description} />}
+      {absoluteOgImage && <meta name="twitter:image" content={absoluteOgImage} />}
+      {/* Route-specific image preloads */}
+      {preloadImages.map((img, index) => {
+        const href = img.startsWith('http') ? img : `${origin}${img}`;
+        return (
+          <link
+            key={index}
+            rel="preload"
+            as="image"
+            href={href}
+            fetchPriority="high"
+          />
+        );
+      })}
+      {jsonLd && (
+        Array.isArray(jsonLd)
+          ? jsonLd.map((schema, index) => (
+              <script
+                dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+                type="application/ld+json"
+                key={index}
+              />
+            ))
+          : (
+            <script
+              dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+              type="application/ld+json"
+            />
+          )
+      )}
+    </Helmet>
+  );
+};
+
+export default Seo;
+

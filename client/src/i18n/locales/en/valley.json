@@ -1,0 +1,95 @@
+{
+  "hero": {
+    "microLabel": "Off-grid Rhodope Mountain Retreat • Bulgaria",
+    "title": "The Valley",
+    "subtitle": "A Private Village Above the Clouds",
+    "body1": "A private mountain village with individual cabins, a historic stone house, and shared outdoor spaces in the Rhodope Mountains.",
+    "body2": "Designed for quiet, privacy, and comfort, with heating, hot water, and year-round access.",
+    "ctaPrimary": "Check Availability",
+    "ctaSecondary": "Explore Stays",
+    "chipPrivateValley": "Private valley",
+    "chipOffGridComfort": "Off-grid comfort",
+    "chipAltitude": "1,550m altitude"
+  },
+  "editorial": {
+    "title": "The Secret Valley",
+    "lead": "A mountain village where each stay is private, but the land is shared.",
+    "storyIntro": "Several cabins, a stone house, and shared outdoor spaces. Private stays, shared land.",
+    "highlights": {
+      "altitude": {
+        "title": "Altitude and views",
+        "text": "1,550m above sea level. Panoramic mountain vistas."
+      },
+      "fire": {
+        "title": "Fire, hot tub, stargazing",
+        "text": "Communal fire pit, hot tub, exceptional stargazing."
+      },
+      "adventure": {
+        "title": "Adventure base",
+        "text": "ATV trails, hiking routes, mountain exploration."
+      },
+      "quiet": {
+        "title": "Quiet, privacy, nature",
+        "text": "Space, silence, autonomy. Everything works."
+      }
+    },
+    "captions": {
+      "fireside": "The communal Stone House at The Valley, a shared gathering space for guests to connect, cook, and relax together.",
+      "panoramaVillage": "The Valley at 1,550m altitude, a mountain village where each stay is private but the land is shared.",
+      "summerVillage": "A small, walkable mountain village where each stay is private, but the land itself is shared."
+    }
+  },
+  "stays": {
+    "title": "Stays",
+    "intro": "Choose your stay.",
+    "labels": {
+      "sleeps": "Sleeps:",
+      "bestFor": "Best for:",
+      "keyFeature": "Key feature:"
+    },
+    "bestFor": {
+      "stoneHouse": "families or small groups",
+      "aFrames": "solo travelers or couples",
+      "default": "couples"
+    },
+    "cta": {
+      "checkDates": "Check dates",
+      "viewDetails": "View details"
+    },
+    "cards": {
+      "luxury-cabin": {
+        "title": "Luxury Cabin",
+        "sleeps": "2",
+        "bullets": ["Full comfort with heating and modern amenities", "Uninterrupted panoramic mountain views", "Private, secluded vantage point"]
+      },
+      "stone-house": {
+        "title": "Stone House",
+        "sleeps": "up to 6",
+        "bullets": ["Historic stone construction with generous shared spaces", "Starlink internet and coworking space", "Perfect for families or small groups"]
+      },
+      "a-frames": {
+        "title": "A-Frames",
+        "sleeps": "2 per cabin",
+        "bullets": ["Minimal design immersed in nature", "Focused on simplicity and quiet", "Perfect for solo travelers or couples"]
+      }
+    }
+  },
+  "vibe": {
+    "title": "The Vibe",
+    "statement": "Unstructured days. Hike, read, cook, sit by the fire.",
+    "seasons": {
+      "summer": "Summer",
+      "winter": "Winter"
+    },
+    "comparisonCaption": "The Valley at 1,550m altitude, a mountain village where each stay is private but the land is shared. Drag to compare seasons.",
+    "moments": {
+      "firepit": "Evenings by the communal firepit",
+      "morningCoffee": "Morning coffee on the porch with mountain views",
+      "reading": "Quiet reading in nature",
+      "sunrise": "Sunrise from your cabin window",
+      "stargazing": "Hot tub under the stars",
+      "atv": "ATV adventures through mountain trails"
+    }
+  }
+}
+

@@ -4,11 +4,12 @@
   "description": "Booking system for Drift & Dwells eco-retreat cabins",
   "main": "server/server.js",
   "scripts": {
-    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "dev": "concurrently --names \"server,client\" --prefix-colors \"blue,green\" \"npm run server\" \"npm run client\"",
     "server": "cd server && npm run dev",
     "client": "cd client && npm run dev",
     "build": "cd client && npm run build",
-    "start": "cd server && npm start"
+    "start": "cd server && npm start",
+    "posters:extract": "node scripts/extract-video-posters.mjs"
   },
   "keywords": [
     "booking",

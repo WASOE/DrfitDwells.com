@@ -1,0 +1,53 @@
+{
+  "offGrid": {
+    "metaTitle": "Off-Grid Cabins in Bulgaria | Eco Stays & Digital Detox | Drift & Dwells",
+    "metaDescription": "Two unique eco stays in the Bulgarian mountains. True off-grid cabins for comfort, silence, and real disconnection. The Cabin & The Valley.",
+    "h1": "Off-Grid Cabins in Bulgaria to Truly Unplug",
+    "intro": "Off-grid here means comfort, not survival. Solar power, wood stoves, and spring water—with the silence and stars you came for.",
+    "cabinVsValley": {
+      "title": "The Cabin vs The Valley",
+      "cabin": "The Cabin: Cosy off-grid mountain hideaway for two. No wifi, wood stove, deep silence. Near Bachevo in the Rhodopes.",
+      "valley": "The Valley: Mountain village at 1,550m with A-frames and Stone House. Starlink in the Stone House, full workation option."
+    },
+    "digitalDetox": {
+      "title": "Digital Detox—What It Actually Means",
+      "body": "No screens in the cabin. Books, fire, walks, and real conversation. You leave with a reset, not a to-do list."
+    },
+    "location": {
+      "title": "Location & How to Get There",
+      "body": "Both stays are in the Rhodope and Pirin regions. Sofia, Plovdiv, and Bansko are the main gateways. High clearance recommended for The Cabin; 4x4 or ATV transfer for The Valley."
+    },
+    "cta": "Check availability"
+  },
+  "rhodopes": {
+    "metaTitle": "Cabin Retreat in the Rhodopes | Hikes, Villages & Nature | Drift & Dwells",
+    "metaDescription": "The Rhodopes as a destination: hikes, villages, and two stays to slow down. Practical travel tips and routes.",
+    "h1": "Cabin Retreat in the Rhodopes: Nature, Villages & Silence",
+    "whyRhodopes": "The Rhodopes are quieter than the crowded ski resorts. Wild meadows, forests, and villages that move at a different pace.",
+    "thingsToDo": {
+      "title": "Things to Do",
+      "items": ["Hiking trails in Pirin & Rhodopes", "Village walks and local food", "Stargazing (no light pollution)", "Hot springs nearby", "Rila Monastery day trip"]
+    },
+    "cta": "Check availability"
+  },
+  "bansko": {
+    "metaTitle": "Cabin Near Bansko | Workation & Reset | Drift & Dwells",
+    "metaDescription": "Cabin escape near Bansko: nature and silence with access to the nomad scene. Perfect for workation or reset.",
+    "h1": "Cabin Near Bansko for Workation & Reset",
+    "whyBansko": "Bansko has grown into a remote-work hub: coworking, coliving, and nomad events. But when you need to disconnect, a cabin in the mountains is the flip side.",
+    "twoPaths": {
+      "title": "Two Paths",
+      "community": "Community: Coworking days, events, nomad meetups in Bansko.",
+      "disconnect": "Disconnect: Cabin life—silence, focus, and outdoor time."
+    },
+    "cta": "Check availability"
+  },
+  "retreatVenue": {
+    "metaTitle": "Retreat Venue Bulgaria | Private Mountain Setting | Drift & Dwells",
+    "metaDescription": "Host your retreat in the Bulgarian mountains. Quiet setting, nature, and privacy. Request availability and capacity.",
+    "h1": "Retreat Venue in Bulgaria: Silence, Nature & Privacy",
+    "offer": "Privacy, scenery, and a pace that supports workshops, yoga, and creative work. Capacity and seasonality vary—we work with small groups.",
+    "howItWorks": "Request availability and capacity. We respond within 48 hours with options and pricing.",
+    "cta": "Request availability"
+  }
+}

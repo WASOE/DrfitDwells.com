@@ -41,6 +41,16 @@ import ReviewEdit from './pages/admin/ReviewEdit'
 // Embedded pages
 import CraftEmbedded from './pages/embedded/CraftEmbedded'
 
+// Payment & refund
+import ConfirmBooking from './pages/ConfirmBooking'
+import BookingRefundResolution from './pages/BookingRefundResolution'
+
+// SEO landing pages
+import OffGridCabinsBulgaria from './pages/seo/OffGridCabinsBulgaria'
+import RhodopesCabinRetreat from './pages/seo/RhodopesCabinRetreat'
+import BanskoRemoteWorkRetreat from './pages/seo/BanskoRemoteWorkRetreat'
+import RetreatVenueBulgaria from './pages/seo/RetreatVenueBulgaria'
+
 function App() {
   return (
     <BookingProvider>
@@ -61,7 +71,9 @@ function App() {
           <Route path="/cancellation-policy" element={<CancellationPolicy />} />
           <Route path="/career" element={<Career />} />
           <Route path="/press" element={<Press />} />
+          <Route path="/cabin/:id/confirm" element={<ConfirmBooking />} />
           <Route path="/cabin/:id" element={<CabinDetails />} />
+          <Route path="/booking-refund" element={<BookingRefundResolution />} />
           <Route path="/stays/a-frame" element={<AFrameDetails />} />
           <Route path="/booking-success/:id" element={<BookingSuccess />} />
           <Route path="/my-trip/:bookingId/valley-guide" element={<ValleyGuide />} />
@@ -71,6 +83,12 @@ function App() {
           <Route path="/craft/step-2" element={<Step2ArrivalMethod />} />
           <Route path="/craft/step-3" element={<Step3GuestDetails />} />
           <Route path="/craft/step-4" element={<Step4Summary />} />
+
+          {/* SEO landing pages */}
+          <Route path="/off-grid-cabins-bulgaria" element={<OffGridCabinsBulgaria />} />
+          <Route path="/rhodopes-cabin-retreat" element={<RhodopesCabinRetreat />} />
+          <Route path="/bansko-remote-work-retreat" element={<BanskoRemoteWorkRetreat />} />
+          <Route path="/retreat-venue-bulgaria" element={<RetreatVenueBulgaria />} />
         </Route>
 
         {/* Admin layout (no global header/footer) */}

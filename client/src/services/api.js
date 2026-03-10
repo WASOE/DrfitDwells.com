@@ -78,6 +78,8 @@ export const unitAPI = {
 export const bookingAPI = {
   // Create new booking (supports both cabinId and cabinTypeId)
   create: (bookingData) => api.post('/bookings', bookingData),
+  // Create Stripe PaymentIntent for cabin booking (returns clientSecret)
+  createPaymentIntent: (data) => api.post('/bookings/create-payment-intent', data),
   // Get booking details
   getById: (id) => api.get(`/bookings/${id}`),
   // Submit add-on request (Jeep/ATV/Horse/Guide)

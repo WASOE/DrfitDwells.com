@@ -1,0 +1,34 @@
+{
+  "hero": {
+    "leftHeadline": "Dwell in the Silence.",
+    "rightHeadline": "Drift into the Wild.",
+    "exploreCabin": "Explore The Cabin",
+    "exploreValley": "Explore The Valley"
+  },
+  "craft": {
+    "eyebrow": "Trip design",
+    "title": "Craft your stay, before you book.",
+    "description": "Answer a few calm questions. We'll suggest a stay, a loose itinerary, and the small details that make it feel like yours.",
+    "outcomes": {
+      "cabinMatch": "Cabin match",
+      "activityIdeas": "Activity ideas",
+      "suggestedRhythm": "Suggested rhythm"
+    },
+    "microcopy": "Takes 1 minute \u2022 No payment required",
+    "ctaPrimary": "Start my tailored stay",
+    "ctaSecondary": "See an example itinerary"
+  },
+  "philosophy": {
+    "word": "Aylyak",
+    "phonetic": "[ahy-lyak]",
+    "type": "noun",
+    "definition1": "a deliberate refusal to be rushed; the Bulgarian concept of living at nature's pace, choosing presence over productivity and real connection over constant connection.",
+    "definition2": "the guiding principle behind Drift & Dwells: we create spaces where you can disconnect from the noise and reconnect with what matters\u2014nature, yourself, and meaningful moments."
+  },
+  "memory": {
+    "loading": "Loading memories\u2026",
+    "title": "Slide through the archive",
+    "subtitle": "Drag to feel each chapter breathe."
+  }
+}
+

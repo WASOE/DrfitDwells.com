@@ -2,11 +2,39 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 
+/** Routes that render a fixed bottom bar (BookingDrawer or StickyBookingBar). Announcement bar sits above it. */
+function hasStickyBottomBar(pathname) {
+  if (pathname === '/') return true;           // Home: BookingDrawer (mobile)
+  if (pathname === '/valley') return true;     // Valley: BookingDrawer (mobile)
+  if (/^\/cabin\/[^/]+$/.test(pathname)) return true;  // CabinDetails: StickyBookingBar
+  if (/^\/craft\/step-[1-4]$/.test(pathname)) return true; // Craft steps: StickyBookingBar
+  return false;
+}
+
+/** Desktop: only CabinDetails and craft steps have a visible sticky bar; Home/Valley use BookingDrawer md:hidden. */
+function hasStickyBottomBarOnDesktop(pathname) {
+  if (/^\/cabin\/[^/]+$/.test(pathname)) return true;
+  if (/^\/craft\/step-[1-4]$/.test(pathname)) return true;
+  return false;
+}
+
+/** Bottom offset so banner sits flush above the sticky bar. BookingDrawer = 70px, StickyBookingBar ≈ 72px. */
+function getBottomPosition(pathname) {
+  const hasSticky = hasStickyBottomBar(pathname);
+  const hasStickyDesktop = hasStickyBottomBarOnDesktop(pathname);
+  if (!hasSticky) return 'bottom-0';
+  // Home/Valley: BookingDrawer is exactly 70px — use 70 so no gap above "Check Availability"
+  if (pathname === '/' || pathname === '/valley') {
+    return hasStickyDesktop ? 'bottom-[72px]' : 'bottom-[70px] md:bottom-0';
+  }
+  // Cabin details & craft: StickyBookingBar ~72px
+  return hasStickyDesktop ? 'bottom-[72px]' : 'bottom-[72px] md:bottom-0';
+}
+
 const AnnouncementBar = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const location = useLocation();
-  const isCabinPage = location.pathname === '/cabin';
   const isBuildPage = location.pathname === '/build';
   
   useEffect(() => {
@@ -28,11 +56,9 @@ const AnnouncementBar = () => {
     setIsModalOpen(false);
   };
 
-  // On cabin page: always at bottom-0 (below booking bar)
-  // On other pages: bottom-[70px] on mobile (above BookingDrawer), bottom-0 on desktop
-  const bottomPosition = isCabinPage 
-    ? 'bottom-0' 
-    : 'bottom-[70px] md:bottom-0';
+  // Smart position: only reserve space above when this route actually shows a sticky bottom bar.
+  // Use exact bar height so there's no gap between banner and button (70px for BookingDrawer, 72px for StickyBookingBar).
+  const bottomPosition = getBottomPosition(location.pathname);
 
   return (
     <>

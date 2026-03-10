@@ -1,0 +1,86 @@
+{
+  "footer": {
+    "headline": "Бележки от планината.",
+    "subcopy": "Истории от планината, тихо изпратени към пощата ти.",
+    "emailPlaceholder": "ИМЕЙЛ АДРЕС",
+    "privacyConsent": "Съгласен/на съм с {{privacyPolicy}} и {{termsOfUse}}.",
+    "privacyPolicy": "политиката за поверителност",
+    "termsOfUse": "общите условия",
+    "menu": "Меню",
+    "company": "Компания",
+    "contact": "Контакт",
+    "followUs": "Последвай ни",
+    "careers": "Кариери",
+    "press": "Преса",
+    "termsLink": "Общи условия",
+    "privacyLink": "Политика за поверителност",
+    "phoneExample": "+359 88 123 4567",
+    "legalLine": "© 2024 Drift & Dwells. Всички права запазени.",
+    "bottomStrip": {
+      "mountainEscape": "ПЛАНИНСКО БЯГСТВО",
+      "natureFirst": "ПРИРОДАТА ПРЕДИ ВСИЧКО",
+      "slowDown": "ЗАБАВИ ХОД",
+      "stayWild": "ОСТАНИ ДИВ"
+    },
+    "ratings": {
+      "topHomes": "Топ 1% домове",
+      "travellerAwards": "Traveller Review Awards",
+      "travelersChoice": "Travelers' Choice"
+    }
+  },
+  "announcement": {
+    "bar": "В ТОП 1% НА ПЛАТФОРМИТЕ • ВЕЧЕ СМЕ САМОСТОЯТЕЛНИ • РЕЗЕРВИРАЙ ДИРЕКТНО И СПЕСТИ ТАКСИ",
+    "title": "Скъсахме с платформите.",
+    "subtitle": "От Топ 1% в Airbnb до 100% независими.",
+    "body": "Осъзнахме нещо важно: по-добре е да инвестираме в гостите си, а не в такси. Когато резервираш директно, 15% такса остава при теб. Същият лукс, по-добра цена.",
+    "cta": "Виж спестяванията",
+    "closeAria": "Затвори"
+  },
+  "authority": {
+    "airbnbTopHomes": "Топ 1% домове",
+    "bookingAwards": "Traveller Review Awards",
+    "tripadvisorChoice": "Travelers' Choice"
+  },
+  "destinations": {
+    "headline": "Атмосферни убежища",
+    "tagline": "Звукът намалява. Дишането се успокоява. Страниците се обръщат.",
+    "brand": "Drift & Dwells",
+    "cabin": {
+      "name": "Къщата",
+      "tagline": "Самотна • Стойка • Дълбок детокс",
+      "description": "Скътана в суровите гънки на Пирин, Къщата е доказателство за красотата на изваждането. Бивш „Буцефал“ – убежище за свръхсвързаните.",
+      "price": "От €120/нощувка",
+      "cta": "Виж Къщата",
+      "details": {
+        "access": "3 км необработена пътека (препоръчителна SUV/джип)",
+        "power": "Офф-грид (солар/газ – без сешоари)",
+        "wifiOffGrid": "Офф-грид",
+        "wifiStarlink": "Starlink"
+      }
+    },
+    "valley": {
+      "name": "Долината",
+      "tagline": "Етерична • Общностна • Лекомислена",
+      "description": "Окачена между земята и небето на 1 550 м. Колекция от 13 А-рамки и обща каменна къща за съвременния дрифтер.",
+      "price": "От €145/нощувка",
+      "cta": "Виж Долината",
+      "details": {
+        "access": "Трансфер с джип, ATV или кон",
+        "connectivity": "Starlink (само Каменната къща)",
+        "altitude": "1 550 м (най-високото обитавано село на Балканите)",
+        "wifiStarlink": "Starlink"
+      }
+    }
+  },
+  "audio": {
+    "soundOn": "Звук вкл",
+    "soundOff": "Звук изкл",
+    "loading": "Зареждане...",
+    "fileError": "Грешка при файл",
+    "ariaSoundOn": "Включи звука",
+    "ariaSoundOff": "Изключи звука",
+    "ariaPlayAudio": "Пусни аудио",
+    "ariaStopAudio": "Спри аудио"
+  }
+}
+

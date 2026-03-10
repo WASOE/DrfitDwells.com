@@ -4,7 +4,7 @@ export const locations = [
     name: "The Cabin",
     tagline: "Unplug. Unwind. Disappear.",
     description: "Nestled in the rugged folds of the Pirin Mountains, The Cabin is a testament to the beauty of subtraction. Formerly 'Bucephalus', this is a sanctuary for the over-connected.",
-    price: "From €120/night",
+    price: "From €55/night",
     cta: "View The Cabin",
     details: {
       access: "3km Rugged Trail (SUV/Jeep Required)",
@@ -24,7 +24,7 @@ export const locations = [
     name: "The Valley",
     tagline: "A Village Above the Clouds.",
     description: "Suspended between earth and sky at 1,550m. A collection of 13 A-frames and a communal Stone House designed for the modern drifter.",
-    price: "From €145/night",
+    price: "From €60/night",
     cta: "View The Valley",
     details: {
       access: "Jeep, ATV, or Horseback Transfer",

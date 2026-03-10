@@ -316,7 +316,7 @@ const Step4Summary = () => {
   // Show cabin selection prompt if no cabin selected - Mobile Optimized
   if (!cabinId || !cabin) {
     return (
-      <div className="min-h-screen bg-white pt-16 md:pt-32 pb-24 md:pb-32">
+      <div className="min-h-screen bg-white pb-24 md:pb-32">
         <div className="max-w-4xl mx-auto px-4 md:px-6 py-8 md:py-20">
           {/* Mobile-Optimized Progress Indicator */}
           <div className="flex items-center justify-center mb-12 md:mb-20 gap-2 md:gap-6">
@@ -422,7 +422,7 @@ const Step4Summary = () => {
   const subLabel = pricing ? `${pricing.totalNights} ${pricing.totalNights === 1 ? 'night' : 'nights'}` : stepLabel;
 
   return (
-    <div className="min-h-screen bg-white pt-16 md:pt-32 pb-24 md:pb-32">
+    <div className="min-h-screen bg-white pb-24 md:pb-32">
       <div className="max-w-6xl mx-auto px-4 md:px-6 py-8 md:py-20">
         {/* Mobile-Optimized Header */}
         <div className="text-center mb-12 md:mb-20">

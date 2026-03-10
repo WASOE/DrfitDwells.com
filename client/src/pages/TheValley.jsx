@@ -1,16 +1,20 @@
-import { useRef, useEffect, useState } from 'react';
-import { motion, AnimatePresence, useInView, useScroll, useTransform } from 'framer-motion';
-import { ChevronDown, ChevronRight, ChevronLeft, Wifi, Users, MapPin, Mountain, Home, Cloud, Flame, Trees, Sparkles } from 'lucide-react';
+import { useRef, useEffect, useLayoutEffect, useState } from 'react';
+import { motion, AnimatePresence, useInView } from 'framer-motion';
+import { ChevronDown, MapPin, Mountain, Home, Flame, Trees, Sparkles } from 'lucide-react';
 import { locations } from '../data/content';
 import { useBookingSearch } from '../context/BookingSearchContext';
 import AuthorityStrip from '../components/AuthorityStrip';
-import { getSEOAlt, getSEOTitle, getImageMetadata } from '../data/imageMetadata';
+import HeroSeasonToggle from '../components/HeroSeasonToggle';
+import { useSeason } from '../context/SeasonContext';
+import { getSEOAlt, getSEOTitle } from '../data/imageMetadata';
+import { VALLEY_MEDIA } from '../config/mediaConfig';
 
-const VALLEY_VIDEO = '/uploads/Videos/The-Valley-firaplace-video.mp4';
-const VALLEY_STILL = '/uploads/Videos/The-Valley-firaplace-video-poster.jpg';
+const VALLEY_VIDEOS = VALLEY_MEDIA.heroVideo;
+const VALLEY_STILLS = VALLEY_MEDIA.heroPoster;
 
 const TheValley = () => {
   const valley = locations.find(loc => loc.id === 'valley');
+  const { season } = useSeason();
   const { openModal } = useBookingSearch();
   const heroRef = useRef(null);
   const videoRef = useRef(null);
@@ -20,7 +24,7 @@ const TheValley = () => {
   const [shouldLoadMedia, setShouldLoadMedia] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [isLowBandwidth, setIsLowBandwidth] = useState(false);
-  const [activeTab, setActiveTab] = useState('drifters');
+  const [_activeTab, setActiveTab] = useState('drifters');
   const [hoveredHotspot, setHoveredHotspot] = useState(null);
   const [mapImageLoaded, setMapImageLoaded] = useState(false);
   const [mapImageError, setMapImageError] = useState(false);
@@ -32,11 +36,11 @@ const TheValley = () => {
   const svgRef = useRef(null);
 
 
-  const accommodationsInView = useInView(accommodationsRef, { once: true, margin: '-100px' });
+  const _accommodationsInView = useInView(accommodationsRef, { once: true, margin: '-100px' });
   const trustBadgesRef = useRef(null);
-  const trustBadgesInView = useInView(trustBadgesRef, { once: true, margin: '-50px' });
+  const _trustBadgesInView = useInView(trustBadgesRef, { once: true, margin: '-50px' });
   const aylyakRef = useRef(null);
-  const aylyakInView = useInView(aylyakRef, { once: true, margin: '-200px' });
+  const _aylyakInView = useInView(aylyakRef, { once: true, margin: '-200px' });
 
   // Smooth scroll to section
   const scrollToAccommodations = () => {
@@ -79,20 +83,28 @@ const TheValley = () => {
     return () => connection.removeEventListener?.('change', updateConnectionPreference);
   }, []);
 
-  // Lazy-load media only when hero is near viewport
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setShouldLoadMedia(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: '200px' }
-    );
-    observer.observe(containerRef.current);
-    return () => observer.disconnect();
+  // Load hero media when in view. useLayoutEffect so ref is set; fallback for mobile where IO can be unreliable.
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (el) {
+      const observer = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) {
+            setShouldLoadMedia(true);
+            observer.disconnect();
+          }
+        },
+        { rootMargin: '200px' }
+      );
+      observer.observe(el);
+      const fallback = setTimeout(() => setShouldLoadMedia(true), 200);
+      return () => {
+        observer.disconnect();
+        clearTimeout(fallback);
+      };
+    }
+    const fallback = setTimeout(() => setShouldLoadMedia(true), 200);
+    return () => clearTimeout(fallback);
   }, []);
 
   const shouldPlayVideo = shouldLoadMedia && !prefersReducedMotion && !isLowBandwidth;
@@ -106,11 +118,11 @@ const TheValley = () => {
           await videoRef.current.play();
         }
       } catch (error) {
-        console.log('Video autoplay blocked, will play on interaction');
+        if (import.meta.env.DEV) console.log('Video autoplay blocked, will play on interaction');
       }
     };
     playVideo();
-  }, [shouldPlayVideo]);
+  }, [shouldPlayVideo, season]);
 
   if (!valley) {
     return (
@@ -165,9 +177,9 @@ const TheValley = () => {
           >
             {!shouldPlayVideo ? (
               <img
-                src={VALLEY_STILL}
-                alt={getSEOAlt(VALLEY_STILL) || 'The Valley: A Village Above the Clouds - Mountain village at 1,550m altitude showing A-frames, stone house, and mountain landscape, Chereshovo/Ortsevo, Rhodope Mountains, Bulgaria'}
-                title={getSEOTitle(VALLEY_STILL) || 'The Valley - A Village Above the Clouds at 1,550m Altitude'}
+                src={VALLEY_STILLS[season]}
+                alt={getSEOAlt(VALLEY_STILLS[season]) || 'The Valley: A Village Above the Clouds - Mountain village at 1,550m altitude showing A-frames, stone house, and mountain landscape, Chereshovo/Ortsevo, Rhodope Mountains, Bulgaria'}
+                title={getSEOTitle(VALLEY_STILLS[season]) || 'The Valley - A Village Above the Clouds at 1,550m Altitude'}
                 className="absolute inset-0 w-full h-full object-cover"
                 loading="lazy"
                 decoding="async"
@@ -183,6 +195,7 @@ const TheValley = () => {
               />
             ) : (
               <video
+                key={season}
                 ref={videoRef}
                 className="absolute inset-0 w-full h-full object-cover"
                 autoPlay
@@ -190,7 +203,7 @@ const TheValley = () => {
                 muted
                 playsInline
                 preload="metadata"
-                poster={VALLEY_STILL}
+                poster={VALLEY_STILLS[season]}
                 aria-label="Video showing The Valley mountain village with fireplace and mountain landscape at 1,550m altitude, Chereshovo/Ortsevo, Rhodope Mountains, Bulgaria"
                 style={{
                   minWidth: '100%',
@@ -202,20 +215,22 @@ const TheValley = () => {
                   transformOrigin: 'center center'
                 }}
               >
-                <source src={VALLEY_VIDEO} type="video/mp4" />
+                <source src={VALLEY_VIDEOS[season]} type="video/mp4" />
               </video>
             )}
           </motion.div>
           
           {/* Overlay - Improved gradient for readability */}
           <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/40 to-black/60" />
+
+          <HeroSeasonToggle />
           
-          {/* 1,550m Altitude Badge - Top Right */}
+          {/* 1,550m Altitude Badge - Top Right (hidden on mobile) */}
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.8, delay: 0.5 }}
-            className="absolute top-8 right-4 md:top-12 md:right-12 z-20"
+            className="absolute top-8 right-4 md:top-12 md:right-12 z-20 hidden md:block"
           >
             <div className="px-4 py-2 bg-white/10 backdrop-blur-md border border-white/20 text-white text-sm md:text-base font-serif tracking-wide">
               1,550m Altitude
@@ -259,13 +274,13 @@ const TheValley = () => {
             >
               <button
                 onClick={openModal}
-                className="bg-white text-stone-900 px-6 sm:px-8 py-3 sm:py-4 font-bold uppercase tracking-widest text-xs sm:text-sm hover:scale-105 transition-transform shadow-xl border-none min-h-[44px] touch-manipulation"
+                className="bg-white text-stone-900 px-6 sm:px-8 py-3 sm:py-4 font-bold uppercase tracking-[0.3em] text-xs sm:text-sm hover:scale-105 transition-transform shadow-xl border-none rounded-full min-h-[44px] touch-manipulation"
               >
                 Check availability
               </button>
               <button
                 onClick={scrollToAccommodations}
-                className="border border-white/30 text-white px-6 sm:px-8 py-3 sm:py-4 font-medium uppercase tracking-widest text-xs sm:text-sm hover:bg-white/10 transition-all backdrop-blur-sm min-h-[44px] touch-manipulation"
+                className="border border-white/30 text-white px-6 sm:px-8 py-3 sm:py-4 font-medium uppercase tracking-[0.3em] text-xs sm:text-sm hover:bg-white/10 transition-all backdrop-blur-sm rounded-full min-h-[44px] touch-manipulation"
               >
                 Explore stays
               </button>
@@ -274,7 +289,7 @@ const TheValley = () => {
                   const mapSection = document.querySelector('[id*="lay"], [id*="map"]') || document.querySelector('section:nth-of-type(3)');
                   mapSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }}
-                className="border border-white/30 text-white px-6 sm:px-8 py-3 sm:py-4 font-medium uppercase tracking-widest text-xs sm:text-sm hover:bg-white/10 transition-all backdrop-blur-sm min-h-[44px] touch-manipulation"
+                className="border border-white/30 text-white px-6 sm:px-8 py-3 sm:py-4 font-medium uppercase tracking-[0.3em] text-xs sm:text-sm hover:bg-white/10 transition-all backdrop-blur-sm rounded-full min-h-[44px] touch-manipulation"
               >
                 Explore the village layout
               </button>
@@ -328,7 +343,7 @@ const TheValley = () => {
               transition={{ duration: 0.8 }}
               className="bg-[#2f2f2f] border border-white/15 rounded-2xl p-8 md:p-12 lg:p-16 shadow-xl"
             >
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-12">
                 {/* Left: Story */}
                 <div className="flex flex-col justify-center">
             <motion.p
@@ -693,7 +708,7 @@ const TheValley = () => {
             </motion.div>
             
             {/* Location Callout Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8 max-w-7xl mx-auto">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-12 max-w-7xl mx-auto">
               {/* Stone House Callout */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -754,7 +769,7 @@ const TheValley = () => {
           className="relative py-24 md:py-32 border-t border-white/5"
         >
           <div className="max-w-7xl mx-auto px-4 md:px-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-12">
               {/* Premium Stay Card 1: Luxury Cabin */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
@@ -767,9 +782,9 @@ const TheValley = () => {
                 {/* Large Image */}
                 <div className="relative h-64 md:h-80 overflow-hidden bg-[#1f2328]">
                   <img 
-                    src="/uploads/The%20Valley/Lux-cabin-WhatsApp%20Image%202025-12-03%20at%204.36.14%20PM.jpeg"
-                    alt={getSEOAlt('/uploads/The Valley/Lux-cabin-WhatsApp Image 2025-12-03 at 4.36.14 PM.jpeg') || 'Luxury cabin interior at The Valley showing modern plywood walls and large windows at 1,550m altitude, Rhodope Mountains, Bulgaria'}
-                    title={getSEOTitle('/uploads/The Valley/Lux-cabin-WhatsApp Image 2025-12-03 at 4.36.14 PM.jpeg') || 'Luxury Cabin Interior - Modern Plywood Design with Large Windows'}
+                    src="/uploads/The%20Valley/WhatsApp%20Image%202025-12-03%20at%204.36.14%20PM.jpeg"
+                    alt={getSEOAlt('/uploads/The Valley/WhatsApp Image 2025-12-03 at 4.36.14 PM.jpeg') || 'Luxury cabin interior at The Valley showing modern plywood walls and large windows at 1,550m altitude, Rhodope Mountains, Bulgaria'}
+                    title={getSEOTitle('/uploads/The Valley/WhatsApp Image 2025-12-03 at 4.36.14 PM.jpeg') || 'Luxury Cabin Interior - Modern Plywood Design with Large Windows'}
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 group-hover:brightness-110"
                     loading="lazy"
                     decoding="async"
@@ -957,7 +972,7 @@ const TheValley = () => {
             </div>
 
             {/* Airbnb-Style Hero Grid Layout */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 max-w-7xl mx-auto">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 max-w-7xl mx-auto">
               {/* Large Hero Image - Left Side (50% width) - Panoramic Valley View */}
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
@@ -1170,27 +1185,27 @@ const TheValley = () => {
             </h2>
 
             <div className="flex flex-col space-y-4">
-              <div className="flex items-start gap-4">
+              <div className="flex items-start gap-4 md:gap-6">
                 <MapPin className="w-5 h-5 text-neutral-500 mt-1 flex-shrink-0" />
                 <p className="font-serif text-base md:text-lg text-neutral-400 leading-relaxed">Year-round access and parking</p>
               </div>
 
-              <div className="flex items-start gap-4">
+              <div className="flex items-start gap-4 md:gap-6">
                 <Home className="w-5 h-5 text-neutral-500 mt-1 flex-shrink-0" />
                 <p className="font-serif text-base md:text-lg text-neutral-400 leading-relaxed">Reliable heating and hot water in all units</p>
               </div>
 
-              <div className="flex items-start gap-4">
+              <div className="flex items-start gap-4 md:gap-6">
                 <Mountain className="w-5 h-5 text-neutral-500 mt-1 flex-shrink-0" />
                 <p className="font-serif text-base md:text-lg text-neutral-400 leading-relaxed">Drinking water availability</p>
               </div>
 
-              <div className="flex items-start gap-4">
+              <div className="flex items-start gap-4 md:gap-6">
                 <Mountain className="w-5 h-5 text-neutral-500 mt-1 flex-shrink-0" />
                 <p className="font-serif text-base md:text-lg text-neutral-400 leading-relaxed">Winter and snow conditions</p>
               </div>
 
-              <div className="flex items-start gap-4">
+              <div className="flex items-start gap-4 md:gap-6">
                 <Home className="w-5 h-5 text-neutral-500 mt-1 flex-shrink-0" />
                 <p className="font-serif text-base md:text-lg text-neutral-400 leading-relaxed">Support availability in case of weather changes</p>
               </div>

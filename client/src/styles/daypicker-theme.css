@@ -1,0 +1,15 @@
+/**
+ * DayPicker theme overrides - aligned with DATEPICKER_DESIGN_AUDIT.md / design system.
+ * Uses stone/gray (#111827) instead of default blue for selected states.
+ */
+.rdp-root {
+  --rdp-accent-color: #111827;
+  --rdp-accent-background-color: #111827;
+  --rdp-range_middle-background-color: #f3f4f6;
+  --rdp-range_middle-color: #111827;
+  --rdp-range_start-background: #111827;
+  --rdp-range_start-color: #ffffff;
+  --rdp-range_end-background: #111827;
+  --rdp-range_end-color: #ffffff;
+  --rdp-today-color: #111827;
+}

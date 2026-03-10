@@ -187,7 +187,7 @@ const Step1TripType = () => {
   const canProceed = Boolean(tripType);
 
   return (
-    <div className="min-h-screen bg-white pt-16 md:pt-32 pb-24 md:pb-32">
+    <div className="min-h-screen bg-white pb-24 md:pb-32">
       {/* Mobile-Optimized Header Section */}
       <div className="block-editorial">
         <div className="max-w-4xl mx-auto px-4 md:px-6 text-center py-8 md:py-12">

@@ -6,9 +6,13 @@ import AudioPlayer from "../components/AudioPlayer";
 import BookingModal from "../components/BookingModal";
 import AnnouncementBar from "../components/AnnouncementBar";
 
-export default function  SiteLayout() {
+/** Routes where the first section is a full-bleed hero (content intentionally under the nav). No top padding. */
+const HERO_PATHS = ['/', '/cabin', '/valley'];
+
+export default function SiteLayout() {
   const location = useLocation();
   const isHome = location.pathname === '/';
+  const isHeroPage = HERO_PATHS.includes(location.pathname);
 
   return (
     <div className="relative overflow-x-hidden">
@@ -21,7 +25,12 @@ export default function  SiteLayout() {
       />
       <div className="relative z-10">
         <Header />
-        <Outlet />
+        <main
+          style={isHeroPage ? undefined : { paddingTop: 'var(--header-offset)' }}
+          className={isHeroPage ? '' : 'min-h-0'}
+        >
+          <Outlet />
+        </main>
         {!isHome && <Footer />}
         <AudioPlayer />
         <BookingModal />

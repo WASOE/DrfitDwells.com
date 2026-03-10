@@ -1,0 +1,5 @@
+/* CabinGallerySection - Lightbox overlay positioning */
+.cabin-gallery-lightbox[data-lightbox-overlay="true"] {
+  position: fixed;
+  z-index: 50;
+}

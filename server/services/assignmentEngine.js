@@ -46,7 +46,8 @@ class AssignmentEngine {
         }
 
         // Check unit-specific blocked dates
-        const hasBlockedDates = unit.blockedDates.some(blockedDate => {
+        const unitBlocked = Array.isArray(unit.blockedDates) ? unit.blockedDates : [];
+        const hasBlockedDates = unitBlocked.some(blockedDate => {
           const blocked = moment(blockedDate).startOf('day').toDate();
           return blocked >= checkInDate && blocked < checkOutDate;
         });
@@ -118,7 +119,8 @@ class AssignmentEngine {
       const checkOutDate = moment(checkOut).startOf('day').toDate();
 
       // Check unit-specific blocked dates
-      const hasBlockedDates = unit.blockedDates.some(blockedDate => {
+      const unitBlocked = Array.isArray(unit.blockedDates) ? unit.blockedDates : [];
+      const hasBlockedDates = unitBlocked.some(blockedDate => {
         const blocked = moment(blockedDate).startOf('day').toDate();
         return blocked >= checkInDate && blocked < checkOutDate;
       });

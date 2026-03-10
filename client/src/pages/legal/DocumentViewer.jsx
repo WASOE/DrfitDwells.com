@@ -55,7 +55,7 @@ const DocumentViewer = ({
   };
 
   return (
-    <div className="min-h-screen bg-white pt-16 md:pt-24 pb-12 md:pb-24">
+    <div className="min-h-screen bg-white pb-12 md:pb-24">
       <div className="max-w-6xl mx-auto px-4 md:px-6">
         {/* Header */}
         <div className="mb-8 md:mb-12 text-center">

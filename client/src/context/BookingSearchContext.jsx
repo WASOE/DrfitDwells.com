@@ -8,6 +8,8 @@ export const BookingSearchProvider = ({ children }) => {
   const [checkOut, setCheckOut] = useState(null);
   const [adults, setAdults] = useState(2);
   const [childCount, setChildCount] = useState(0);
+  const [babies, setBabies] = useState(0);
+  const [pets, setPets] = useState(0);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const updateDates = (start, end) => {
@@ -15,12 +17,18 @@ export const BookingSearchProvider = ({ children }) => {
     setCheckOut(end || null);
   };
 
-  const updateGuests = ({ adults: nextAdults, children: nextChildren }) => {
+  const updateGuests = ({ adults: nextAdults, children: nextChildren, babies: nextBabies, pets: nextPets }) => {
     if (typeof nextAdults === 'number') {
       setAdults(Math.max(1, nextAdults));
     }
     if (typeof nextChildren === 'number') {
       setChildCount(Math.max(0, nextChildren));
+    }
+    if (typeof nextBabies === 'number') {
+      setBabies(Math.max(0, nextBabies));
+    }
+    if (typeof nextPets === 'number') {
+      setPets(Math.max(0, nextPets));
     }
   };
 
@@ -29,6 +37,8 @@ export const BookingSearchProvider = ({ children }) => {
     setCheckOut(null);
     setAdults(2);
     setChildCount(0);
+    setBabies(0);
+    setPets(0);
   };
 
   const nights = useMemo(() => {
@@ -43,6 +53,8 @@ export const BookingSearchProvider = ({ children }) => {
     checkOut,
     adults,
     children: childCount,
+    babies,
+    pets,
     nights,
     updateDates,
     updateGuests,

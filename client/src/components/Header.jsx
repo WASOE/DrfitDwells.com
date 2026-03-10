@@ -1,14 +1,18 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import { useBookingSearch } from '../context/BookingSearchContext';
+import { useLanguage } from '../context/LanguageContext.jsx';
 
 const Header = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const location = useLocation();
+  const { t } = useTranslation('nav');
+  const { language, setLanguage } = useLanguage();
   const { openModal } = useBookingSearch();
-  const isHeroOverlay = location.pathname === '/' || location.pathname === '/cabin' || location.pathname === '/valley' || location.pathname === '/about';
+  const isHeroOverlay = location.pathname === '/' || location.pathname === '/cabin' || location.pathname === '/valley';
 
   // Detect scroll position
   useEffect(() => {
@@ -42,21 +46,21 @@ const Header = () => {
 
   // Desktop navigation links
   const navLinks = [
-    { to: '/', label: 'Home' },
-    { to: '/cabin', label: 'The Cabin' },
-    { to: '/valley', label: 'The Valley' },
-    { to: '/about', label: 'About' },
-    { to: '/build', label: 'Build' }
+    { to: '/', label: t('home') },
+    { to: '/cabin', label: t('cabin') },
+    { to: '/valley', label: t('valley') },
+    { to: '/about', label: t('about') },
+    { to: '/build', label: t('build') }
   ];
 
   // Mobile navigation links (including Search)
   const mobileNavLinks = [
-    { to: '/', label: 'Home', isModal: false },
-    { to: '/cabin', label: 'The Cabin', isModal: false },
-    { to: '/valley', label: 'The Valley', isModal: false },
-    { to: '/about', label: 'About', isModal: false },
-    { to: '/build', label: 'Build', isModal: false },
-    { to: null, label: 'Search', isModal: true }
+    { to: '/', label: t('home'), isModal: false },
+    { to: '/cabin', label: t('cabin'), isModal: false },
+    { to: '/valley', label: t('valley'), isModal: false },
+    { to: '/about', label: t('about'), isModal: false },
+    { to: '/build', label: t('build'), isModal: false },
+    { to: null, label: t('search'), isModal: true }
   ];
 
   const isActive = (path) => location.pathname === path;
@@ -107,12 +111,7 @@ const Header = () => {
     }
   };
 
-  // Console island styles based on theme
-  const consoleIslandClasses = useDarkTheme
-    ? 'bg-white/80 backdrop-blur-md border border-stone-200 shadow-sm'
-    : 'bg-black/20 backdrop-blur-md border border-white/10 shadow-lg';
-
-  // Link text colors based on theme
+  // Link text colors based on theme (minimalist text, no pills)
   const linkTextClasses = useDarkTheme
     ? 'text-stone-900'
     : 'text-white';
@@ -127,7 +126,6 @@ const Header = () => {
             <div className="flex-shrink-0">
               <Link to="/" className="flex items-center" onClick={() => setIsMobileMenuOpen(false)}>
                 {useDarkTheme ? (
-                  // Dark logo for light backgrounds (scrolled or non-hero pages)
                   <img 
                     src="/uploads/Logo/DRIFTS-ai.png" 
                     alt="Drift & Dwells" 
@@ -135,7 +133,6 @@ const Header = () => {
                     style={{ filter: 'contrast(1.1) brightness(0.95)' }}
                   />
                 ) : (
-                  // White logo for dark hero background (top of page) - with drop shadow
                   <img 
                     src="/uploads/Logo/Drift-Dwell-white.png" 
                     alt="Drift & Dwells" 
@@ -145,8 +142,8 @@ const Header = () => {
               </Link>
             </div>
 
-            {/* Zone 2: The Console (Center) - Floating Island */}
-            <nav className={`hidden md:flex items-center gap-1 ${consoleIslandClasses} rounded-full px-2 py-2 transition-all duration-300`}>
+            {/* Zone 2: The Console (Center) - Minimalist text links */}
+            <nav className="hidden md:flex items-center gap-8 lg:gap-10 transition-all duration-300 whitespace-nowrap">
               {navLinks.map((link) => {
                 const active = isActive(link.to);
                 return (
@@ -154,15 +151,8 @@ const Header = () => {
                     key={link.to}
                     to={link.to}
                     className={`
-                      px-5 py-2 rounded-full text-sm font-medium transition-all duration-300 ${linkTextClasses}
-                      ${active
-                        ? useDarkTheme
-                          ? 'bg-stone-100'
-                          : 'bg-white/10'
-                        : useDarkTheme
-                          ? 'hover:bg-stone-100'
-                          : 'hover:bg-white/10'
-                      }
+                      text-[11px] md:text-xs font-medium uppercase tracking-[0.2em] transition-colors duration-200 ${linkTextClasses}
+                      ${active ? 'opacity-100' : useDarkTheme ? 'opacity-70 hover:opacity-100' : 'opacity-80 hover:opacity-100'}
                     `}
                   >
                     {link.label}
@@ -172,12 +162,37 @@ const Header = () => {
             </nav>
 
             {/* Zone 3: The Action (Right) */}
-            <div className="hidden md:flex items-center gap-3 flex-shrink-0">
+            <div className="hidden md:flex items-center flex-shrink-0 ml-4 lg:ml-6 gap-2">
+              {/* Language toggle */}
+              <div className="flex items-center gap-1 text-[11px] uppercase tracking-[0.2em]">
+                <button
+                  type="button"
+                  onClick={() => setLanguage('en')}
+                  className={`px-2 py-1 rounded-full ${
+                    language === 'en'
+                      ? 'bg-stone-900 text-[#F1ECE2]'
+                      : 'bg-transparent text-stone-500'
+                  }`}
+                >
+                  {t('language.en')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLanguage('bg')}
+                  className={`px-1.5 py-0.5 rounded-full ${
+                    language === 'bg'
+                      ? 'bg-stone-900 text-[#F1ECE2]'
+                      : 'bg-transparent text-stone-500'
+                  }`}
+                >
+                  {t('language.bg')}
+                </button>
+              </div>
               <button
                 onClick={openModal}
-                className="bg-[#F1ECE2] text-stone-900 px-6 py-3 rounded-full font-bold uppercase tracking-widest text-xs hover:scale-105 transition-transform shadow-md active:scale-95"
+                className="bg-[#F1ECE2] text-stone-900 px-5 py-2.5 rounded-full font-bold uppercase tracking-[0.3em] text-xs hover:scale-105 transition-transform shadow-md active:scale-95 min-h-[2.5rem] flex items-center justify-center"
               >
-                Book
+                {t('book')}
               </button>
             </div>
 

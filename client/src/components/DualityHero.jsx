@@ -1,14 +1,30 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Sun } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import SearchBar from './SearchBar';
+import HeroSeasonToggle from './HeroSeasonToggle';
+import { useSeason } from '../context/SeasonContext';
+import { CABIN_MEDIA, VALLEY_MEDIA } from '../config/mediaConfig';
 
-const CABIN_VIDEO = '/uploads/Videos/Dark-fire-cabin.mp4';
-const VALLEY_VIDEO = '/uploads/Videos/Light-aframes.mp4';
-const CABIN_STILL = '/uploads/Videos/Dark-fire-cabin-poster.jpg';
-const VALLEY_STILL = '/uploads/Videos/Light-aframes-poster.jpg';
+// Cabin hero media comes directly from canonical config:
+// - winter video -> winter poster
+// - summer video -> summer poster
+const CABIN_VIDEOS = CABIN_MEDIA.heroVideo;
+const CABIN_STILLS = CABIN_MEDIA.heroPoster;
+
+// On the home hero we intentionally use a cinematic night-stars pair
+// for the valley summer pane, while keeping the firaplace winter pair.
+const VALLEY_VIDEOS = {
+  winter: VALLEY_MEDIA.heroVideo.winter,
+  summer: VALLEY_MEDIA.altSummerPair.video
+};
+const VALLEY_STILLS = {
+  winter: VALLEY_MEDIA.heroPoster.winter,
+  summer: VALLEY_MEDIA.altSummerPair.poster
+};
 
 const DualityHero = () => {
+  const { season } = useSeason();
   const [hoveredPane, setHoveredPane] = useState(null); // 'left', 'right', or null
   const [isMobile, setIsMobile] = useState(false);
   const [shouldLoadMedia, setShouldLoadMedia] = useState(false);
@@ -17,6 +33,7 @@ const DualityHero = () => {
   const leftVideoRef = useRef(null);
   const rightVideoRef = useRef(null);
   const containerRef = useRef(null);
+  const { t } = useTranslation('home');
 
   // Detect mobile device
   useEffect(() => {
@@ -26,26 +43,6 @@ const DualityHero = () => {
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
-  }, []);
-
-  // Get current time
-  const getCurrentTime = () => {
-    const now = new Date();
-    return now.toLocaleTimeString('en-US', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: true 
-    });
-  };
-
-  const [currentTime, setCurrentTime] = useState(getCurrentTime());
-
-  // Update time every minute
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentTime(getCurrentTime());
-    }, 60000);
-    return () => clearInterval(interval);
   }, []);
 
   // Detect reduced motion preference
@@ -76,20 +73,28 @@ const DualityHero = () => {
     return () => connection.removeEventListener?.('change', updateConnectionPreference);
   }, []);
 
-  // Lazy-load media only when hero is near viewport
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setShouldLoadMedia(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: '200px' }
-    );
-    observer.observe(containerRef.current);
-    return () => observer.disconnect();
+  // Load hero media when in view. useLayoutEffect so ref is set; fallback for mobile where IO can be unreliable.
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (el) {
+      const observer = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) {
+            setShouldLoadMedia(true);
+            observer.disconnect();
+          }
+        },
+        { rootMargin: '200px' }
+      );
+      observer.observe(el);
+      const fallback = setTimeout(() => setShouldLoadMedia(true), 200);
+      return () => {
+        observer.disconnect();
+        clearTimeout(fallback);
+      };
+    }
+    const fallback = setTimeout(() => setShouldLoadMedia(true), 200);
+    return () => clearTimeout(fallback);
   }, []);
 
   const shouldPlayVideo = shouldLoadMedia && !prefersReducedMotion && !isLowBandwidth;
@@ -97,33 +102,26 @@ const DualityHero = () => {
   const renderMediaLayer = (side) => {
     const isLeft = side === 'left';
     const videoRef = isLeft ? leftVideoRef : rightVideoRef;
-    const videoSource = isLeft ? CABIN_VIDEO : VALLEY_VIDEO;
-    const poster = isLeft ? CABIN_STILL : VALLEY_STILL;
+    const videoSource = isLeft ? CABIN_VIDEOS[season] : VALLEY_VIDEOS[season];
+    const poster = isLeft ? CABIN_STILLS[season] : VALLEY_STILLS[season];
     const altText = isLeft ? 'Cabin exterior' : 'Valley landscape';
 
-    if (!shouldPlayVideo) {
-      return (
-        <img
-          src={poster}
-          alt={altText}
-          className="absolute inset-0 w-full h-full object-cover"
-          loading="lazy"
-          decoding="async"
-        />
-      );
-    }
+    // Left (cabin) pane is the primary hero on both mobile and desktop.
+    const isPrimary = isLeft;
 
-    return (
-      <video
-        ref={videoRef}
-        className="absolute inset-0 w-full h-full object-cover"
-        autoPlay
-        loop
-        muted
-        playsInline
-        preload="metadata"
-        poster={poster}
-        style={{
+    // Cabin (left) video has letterboxing/black at top – anchor lower to crop it out, zoom in to fill
+    const mediaStyle = isLeft
+      ? {
+          minWidth: '100%',
+          minHeight: '100%',
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          objectPosition: 'center 35%',
+          transform: 'scale(1.35)',
+          transformOrigin: 'center center'
+        }
+      : {
           minWidth: '100%',
           minHeight: '100%',
           width: '100%',
@@ -131,7 +129,34 @@ const DualityHero = () => {
           objectFit: 'cover',
           transform: 'scale(1.1)',
           transformOrigin: 'center center'
-        }}
+        };
+
+    if (!shouldPlayVideo) {
+      return (
+        <img
+          src={poster}
+          alt={altText}
+          className="absolute inset-0 w-full h-full object-cover"
+          style={mediaStyle}
+          loading={isPrimary ? 'eager' : 'lazy'}
+          fetchpriority={isPrimary ? 'high' : 'auto'}
+          decoding="async"
+        />
+      );
+    }
+
+    return (
+      <video
+        key={`${side}-${season}`}
+        ref={videoRef}
+        className="absolute inset-0 w-full h-full object-cover"
+        autoPlay
+        loop
+        muted
+        playsInline
+        preload="none"
+        poster={poster}
+        style={mediaStyle}
       >
         <source src={videoSource} type="video/mp4" />
       </video>
@@ -150,11 +175,11 @@ const DualityHero = () => {
           await rightVideoRef.current.play();
         }
       } catch (error) {
-        console.log('Video autoplay blocked, will play on interaction');
+        if (import.meta.env.DEV) console.log('Video autoplay blocked, will play on interaction');
       }
     };
     playVideos();
-  }, [shouldPlayVideo]);
+  }, [shouldPlayVideo, season]);
 
   // Track mouse position for desktop hover
   useEffect(() => {
@@ -202,17 +227,17 @@ const DualityHero = () => {
     notHovered: { width: '30%' }
   };
 
-  // Text animation variants
+  // Text animation variants - commit to choice: fade out non-active side
   const driftTextVariants = {
-    idle: { scale: 1, opacity: 1 },
-    hovered: { scale: 1.1, opacity: 1 },
-    notHovered: { scale: 0.9, opacity: 0.6 }
+    idle: { opacity: 1, y: 0 },
+    hovered: { opacity: 1, y: 0 },
+    notHovered: { opacity: 0, y: -12, pointerEvents: 'none' }
   };
 
   const dwellTextVariants = {
-    idle: { scale: 1, opacity: 1 },
-    hovered: { scale: 1.1, opacity: 1 },
-    notHovered: { scale: 0.9, opacity: 0.6 }
+    idle: { opacity: 1, y: 0 },
+    hovered: { opacity: 1, y: 0 },
+    notHovered: { opacity: 0, y: -12, pointerEvents: 'none' }
   };
 
   // Get animation state for each pane
@@ -244,13 +269,9 @@ const DualityHero = () => {
   return (
     <section 
       ref={containerRef}
-      className={`relative w-full overflow-hidden ${isMobile ? 'flex flex-col h-[100dvh]' : 'h-screen'}`}
+      className={`relative w-full overflow-hidden ${isMobile ? 'flex flex-col h-[100svh]' : 'h-screen'}`}
     >
-      {/* Live Atmosphere Widget - Hidden on mobile */}
-      <div className="hidden md:flex absolute top-6 right-10 z-30 items-center gap-2 text-xs font-mono uppercase tracking-widest text-white/80 pointer-events-none">
-        <Sun className="w-4 h-4" />
-        <span className="whitespace-nowrap">1,550m • 12°C • {currentTime}</span>
-      </div>
+      <HeroSeasonToggle position={isMobile ? 'bottom-center' : 'below-menu'} />
 
       {/* Mobile Layout: Flexible Split View */}
       {isMobile ? (
@@ -261,16 +282,16 @@ const DualityHero = () => {
                 {renderMediaLayer('left')}
               <div className="absolute inset-0 bg-black/40" />
               
-              {/* Text centered in top pane */}
-              <div className="relative z-20 pointer-events-none text-center">
-                <h2 className="font-['Playfair_Display'] text-2xl md:text-6xl text-white font-semibold tracking-tight leading-tight drop-shadow-lg px-4 whitespace-nowrap">
-                  Dwell in the Silence.
+              {/* Text centered in top pane - one line, smaller so both EN and BG fit */}
+              <div className="relative z-20 pointer-events-none text-center px-2">
+                <h2 className="font-['Playfair_Display'] text-lg sm:text-xl text-white font-semibold tracking-tight leading-tight drop-shadow-2xl whitespace-nowrap">
+                  {t('hero.leftHeadline')}
                 </h2>
                 <a
-                  href="/search?location=cabin"
+                  href="/cabin"
                   className="inline-flex items-center gap-2 mt-2 text-xs uppercase tracking-widest border-b border-white/50 pb-1 text-white/80 hover:text-white transition-colors pointer-events-auto"
                 >
-                  Explore The Cabin
+                  {t('hero.exploreCabin')}
                 </a>
               </div>
             </div>
@@ -287,23 +308,20 @@ const DualityHero = () => {
                 {renderMediaLayer('right')}
               <div className="absolute inset-0 bg-black/20" />
               
-              {/* Text centered in bottom pane */}
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none text-center">
-                <h2 className="font-['Playfair_Display'] text-2xl md:text-6xl text-white font-semibold tracking-tight leading-tight drop-shadow-lg px-4 whitespace-nowrap">
-                  Drift into the Wild.
+              {/* Text centered in bottom pane - one line, smaller so both EN and BG fit */}
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none text-center px-2">
+                <h2 className="font-['Playfair_Display'] text-lg sm:text-xl text-white font-semibold tracking-tight leading-tight drop-shadow-2xl whitespace-nowrap">
+                  {t('hero.rightHeadline')}
                 </h2>
                 <a
-                  href="/search?location=valley"
+                  href="/valley"
                   className="inline-flex items-center gap-2 mt-2 text-xs uppercase tracking-widest border-b border-white/50 pb-1 text-white/80 hover:text-white transition-colors pointer-events-auto"
                 >
-                  Explore The Valley
+                  {t('hero.exploreValley')}
                 </a>
               </div>
             </div>
           </div>
-
-          {/* Spacer - Reserves space for Booking Bar */}
-          <div className="h-[70px] w-full flex-none md:hidden" />
         </>
       ) : (
         <>
@@ -316,25 +334,29 @@ const DualityHero = () => {
             transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
           >
             <div className="relative w-full h-full">
-                {renderMediaLayer('left')}
-                <div className="absolute inset-0 bg-black/40" />
-                
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-4">
-                  <motion.h2
-                    className="font-['Playfair_Display'] text-4xl lg:text-6xl xl:text-7xl text-white font-semibold tracking-tight leading-[1.1] drop-shadow-lg"
-                    initial="idle"
-                    animate={getLeftTextState()}
-                    variants={dwellTextVariants}
-                    transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-                  >
-                    Dwell in the Silence.
-                  </motion.h2>
-                  <a
-                    href="/search?location=cabin"
-                    className="inline-flex items-center gap-2 mt-6 text-xs uppercase tracking-widest border-b border-white/50 pb-1 text-white/80 hover:text-white transition-colors"
-                  >
-                    Explore The Cabin
-                  </a>
+              {renderMediaLayer('left')}
+              <div className="absolute inset-0 bg-black/40" />
+
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-4">
+                <motion.h2
+                  className="font-['Playfair_Display'] text-2xl sm:text-3xl md:text-4xl lg:text-5xl text-white font-semibold tracking-tight leading-tight drop-shadow-2xl"
+                  initial="idle"
+                  animate={getLeftTextState()}
+                  variants={dwellTextVariants}
+                  transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+                >
+                  {t('hero.leftHeadline')}
+                </motion.h2>
+                <motion.a
+                  href="/cabin"
+                  initial="idle"
+                  animate={getLeftTextState()}
+                  variants={dwellTextVariants}
+                  transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+                  className="inline-flex items-center gap-2 mt-6 text-xs uppercase tracking-widest border-b border-white/50 pb-1 text-white/80 hover:text-white transition-colors"
+                >
+                  {t('hero.exploreCabin')}
+                </motion.a>
               </div>
             </div>
           </motion.div>
@@ -352,29 +374,31 @@ const DualityHero = () => {
                 
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-4">
                   <motion.h2
-                    className="font-['Playfair_Display'] text-4xl lg:text-6xl xl:text-7xl text-white font-semibold tracking-tight leading-[1.1] drop-shadow-lg"
+                    className="font-['Playfair_Display'] text-2xl sm:text-3xl md:text-4xl lg:text-5xl text-white font-semibold tracking-tight leading-tight drop-shadow-2xl whitespace-nowrap"
                     initial="idle"
                     animate={getRightTextState()}
                     variants={driftTextVariants}
-                    transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                    transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
                   >
-                    Drift into the Wild.
+                    {t('hero.rightHeadline')}
                   </motion.h2>
-                  <a
-                    href="/search?location=valley"
+                  <motion.a
+                    href="/valley"
+                    initial="idle"
+                    animate={getRightTextState()}
+                    variants={driftTextVariants}
+                    transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
                     className="inline-flex items-center gap-2 mt-6 text-xs uppercase tracking-widest border-b border-white/50 pb-1 text-white/80 hover:text-white transition-colors"
                   >
-                    Explore The Valley
-                  </a>
+                    {t('hero.exploreValley')}
+                  </motion.a>
               </div>
             </div>
           </motion.div>
 
-          <div className="absolute bottom-8 lg:bottom-12 left-1/2 -translate-x-1/2 z-20 w-full max-w-5xl px-6 pointer-events-auto">
+          <div className="absolute bottom-8 lg:bottom-12 left-1/2 -translate-x-1/2 z-20 w-full max-w-4xl px-4 sm:px-6 pointer-events-auto">
             <motion.div
-              className="bg-white/40 border border-white/30 backdrop-blur-md rounded-full p-4 lg:p-6 shadow-[0_20px_50px_rgba(12,26,19,0.2)] transition-all duration-300 hover:bg-white/60 hover:border-white/80"
-              whileHover={{ scale: 1.02 }}
-              transition={{ type: 'spring', stiffness: 140, damping: 18 }}
+              className="bg-white/[0.07] border border-white/20 backdrop-blur-sm rounded-xl px-4 py-3 sm:px-5 sm:py-3.5 transition-colors duration-300 hover:bg-white/[0.09] hover:border-white/30"
             >
               <SearchBar buttonTheme="hero" variant="glass" />
             </motion.div>

@@ -415,7 +415,7 @@ export const imageMetadata = {
     },
 
     // NEW VALLEY IMAGES - December 2025
-    '/uploads/The Valley/WhatsApp Image 2025-12-03 at 1.36.11 PM.jpeg': {
+    '/uploads/The Valley/Lux-cabin-WhatsApp Image 2025-12-03 at 1.36.11 PM.jpeg': {
       location: 'valley',
       subject: 'Cozy A-Frame Interior with Fire',
       perspective: 'interior',
@@ -488,7 +488,7 @@ export const imageMetadata = {
     },
 
     // NEW VALLEY IMAGES - January 2026
-    '/uploads/The Valley/WhatsApp Image 2026-01-11 at 11.43.40 AM (1).jpeg': {
+    '/uploads/The Valley/Lux-cabin-WhatsApp Image 2026-01-11 at 11.43.40 AM (1).jpeg': {
       location: 'valley',
       subject: 'A-Frame Interior with Panoramic Windows',
       perspective: 'interior',
@@ -516,7 +516,7 @@ export const imageMetadata = {
       useCases: ['adventure-activities', 'outdoor-experiences', 'mountain-adventure', 'activities']
     },
 
-    '/uploads/The Valley/WhatsApp Image 2026-01-11 at 11.43.41 AM (1).jpeg': {
+    '/uploads/The Valley/Lux-cabin-WhatsApp Image 2026-01-11 at 11.43.41 AM (1).jpeg': {
       location: 'valley',
       subject: 'A-Frame Kitchen and Wood Stove',
       perspective: 'interior',
@@ -530,7 +530,7 @@ export const imageMetadata = {
       useCases: ['a-frame-interior', 'kitchen-showcase', 'wood-stove', 'modern-amenities', 'compact-living']
     },
 
-    '/uploads/The Valley/WhatsApp Image 2026-01-11 at 11.43.41 AM (2).jpeg': {
+    '/uploads/The Valley/Lux-cabin-WhatsApp Image 2026-01-11 at 11.43.41 AM (2).jpeg': {
       location: 'valley',
       subject: 'A-Frame Interior with Mountain Views',
       perspective: 'interior',
@@ -558,7 +558,7 @@ export const imageMetadata = {
       useCases: ['a-frame-interior', 'bathroom-showcase', 'rustic-design', 'vintage-style']
     },
 
-    '/uploads/The Valley/WhatsApp Image 2026-01-11 at 11.43.41 AM (4).jpeg': {
+    '/uploads/The Valley/Lux-cabin-WhatsApp Image 2026-01-11 at 11.43.41 AM (4).jpeg': {
       location: 'valley',
       subject: 'A-Frame Interior Evening Ambiance',
       perspective: 'interior',
@@ -572,7 +572,7 @@ export const imageMetadata = {
       useCases: ['a-frame-interior', 'evening-atmosphere', 'cozy-night', 'warm-ambiance']
     },
 
-    '/uploads/The Valley/WhatsApp Image 2026-01-11 at 11.43.41 AM (5).jpeg': {
+    '/uploads/The Valley/Lux-cabin-WhatsApp Image 2026-01-11 at 11.43.41 AM (5).jpeg': {
       location: 'valley',
       subject: 'A-Frame Interior with Panoramic Windows (Duplicate View)',
       perspective: 'interior',
@@ -586,7 +586,7 @@ export const imageMetadata = {
       useCases: ['a-frame-interior', 'mountain-views', 'modern-design', 'panoramic-windows', 'accommodation-showcase']
     },
 
-    '/uploads/The Valley/WhatsApp Image 2026-01-11 at 11.43.41 AM.jpeg': {
+    '/uploads/The Valley/Lux-cabin-WhatsApp Image 2026-01-11 at 11.43.41 AM.jpeg': {
       location: 'valley',
       subject: 'A-Frame Kitchen with Person Reading',
       perspective: 'interior',
@@ -600,7 +600,7 @@ export const imageMetadata = {
       useCases: ['a-frame-interior', 'cozy-atmosphere', 'reading-space', 'lifestyle']
     },
 
-    '/uploads/The Valley/WhatsApp Image 2026-01-11 at 11.43.42 AM (1).jpeg': {
+    '/uploads/The Valley/Lux-cabin-WhatsApp Image 2026-01-11 at 11.43.42 AM (1).jpeg': {
       location: 'valley',
       subject: 'A-Frame Interior with Sunset Window View',
       perspective: 'interior',
@@ -628,7 +628,7 @@ export const imageMetadata = {
       useCases: ['luxury-cabin-interior', 'sunset-moment', 'window-view', 'golden-hour', 'sunrise-sunset', 'interior-gallery']
     },
 
-    '/uploads/The Valley/1768207498-98737209.jpg': {
+    '/uploads/The Valley/Lux-cabin-exterior-1768207498-98737209.jpg': {
       location: 'valley',
       subject: 'Person Reading in Nature',
       perspective: 'exterior',
@@ -698,7 +698,7 @@ export const imageMetadata = {
       useCases: ['a-frame-interior', 'cozy-atmosphere', 'natural-light']
     },
 
-    '/uploads/The Valley/WhatsApp Image 2026-01-11 at 11.43.46 AM.jpeg': {
+    '/uploads/The Valley/Lux-cabin-WhatsApp Image 2026-01-11 at 11.43.46 AM.jpeg': {
       location: 'valley',
       subject: 'A-Frame Interior View',
       perspective: 'interior',
@@ -712,7 +712,7 @@ export const imageMetadata = {
       useCases: ['a-frame-interior', 'cozy-atmosphere', 'accommodation-showcase']
     },
 
-    '/uploads/The Valley/WhatsApp Image 2026-01-11 at 11.43.47 AM.jpeg': {
+    '/uploads/The Valley/Lux-cabin-WhatsApp Image 2026-01-11 at 11.43.47 AM.jpeg': {
       location: 'valley',
       subject: 'A-Frame Interior Wide View',
       perspective: 'interior',
@@ -726,7 +726,7 @@ export const imageMetadata = {
       useCases: ['a-frame-interior', 'spacious-layout', 'accommodation-showcase']
     },
 
-    '/uploads/The Valley/WhatsApp Image 2026-01-11 at 11.43.51 AM.jpeg': {
+    '/uploads/The Valley/Lux-cabin-WhatsApp Image 2026-01-11 at 11.43.51 AM.jpeg': {
       location: 'valley',
       subject: 'A-Frame Interior with Natural Elements',
       perspective: 'interior',
@@ -754,7 +754,7 @@ export const imageMetadata = {
       useCases: ['a-frame-interior', 'architecture-detail', 'design-highlight']
     },
 
-    '/uploads/The Valley/WhatsApp Image 2026-01-11 at 11.43.52 AM.jpeg': {
+    '/uploads/The Valley/Lux-cabin-WhatsApp Image 2026-01-11 at 11.43.52 AM.jpeg': {
       location: 'valley',
       subject: 'A-Frame Interior with Cozy Atmosphere',
       perspective: 'interior',
@@ -875,7 +875,7 @@ export const imageMetadata = {
   // VIDEO POSTERS
   // ============================================
   videos: {
-    '/uploads/Videos/The-cabin-header-poster.jpg': {
+    '/uploads/Videos/The-cabin-header.winter-poster.jpg': {
       location: 'cabin',
       subject: 'The Cabin (Bucephalus) Hero/Header',
       perspective: 'exterior',
@@ -965,24 +965,10 @@ export const imageMetadata = {
     },
 
     // LUXURY CABIN IMAGES - January 2026 (Renamed with Lux-cabin- prefix)
-    // Exterior: Lux-cabin-exterior- prefix
-    // Interior: Lux-cabin- prefix
-    
-    '/uploads/The Valley/Lux-cabin-exterior-WhatsApp Image 2025-12-03 at 4.36.14 PM.jpeg': {
-      location: 'valley',
-      subject: 'Luxury Cabin Exterior - Dark Square Building',
-      perspective: 'exterior',
-      content: 'Exterior view of Luxury Cabin showing dark/black square building with large windows. Modern architectural design, secluded vantage point at The Valley. Perfect for couples seeking privacy and comfort.',
-      seo: {
-        alt: 'Luxury cabin exterior at The Valley showing dark square building with large windows at 1,550m altitude, Rhodope Mountains, Bulgaria',
-        title: 'Luxury Cabin - Modern Dark Square Building with Large Windows',
-        description: 'The exterior of the Luxury Cabin at The Valley, featuring a distinctive dark/black square building with large windows, modern architectural design, and a secluded vantage point perfect for couples seeking privacy and comfort at 1,550m altitude.'
-      },
-      tags: ['luxury-cabin', 'exterior', 'dark-building', 'square', 'large-windows', 'modern', 'couples-retreat', 'secluded', '1-550m'],
-      useCases: ['luxury-cabin-exterior', 'accommodation-showcase', 'couples-retreat', 'modern-design', 'booking-card']
-    },
+    // Exterior: Lux-cabin-exterior- prefix where present on disk
+    // Interior: Lux-cabin- prefix for 2026-01-11; WhatsApp... for 2025-10-17 and 4.36.14
 
-    '/uploads/The Valley/Lux-cabin-WhatsApp Image 2025-12-03 at 4.36.14 PM.jpeg': {
+    '/uploads/The Valley/WhatsApp Image 2025-12-03 at 4.36.14 PM.jpeg': {
       location: 'valley',
       subject: 'Luxury Cabin Interior - Modern Plywood Design',
       perspective: 'interior',
@@ -994,63 +980,6 @@ export const imageMetadata = {
       },
       tags: ['luxury-cabin', 'interior', 'modern', 'plywood-walls', 'large-windows', 'contemporary', 'comfortable', 'heating', 'amenities', '1-550m'],
       useCases: ['luxury-cabin-interior', 'accommodation-showcase', 'modern-interior', 'comfort-features', 'interior-gallery']
-    },
-
-    // Additional Luxury Cabin Exterior Images - January 2026
-    '/uploads/The Valley/Lux-cabin-exterior-WhatsApp Image 2025-10-17 at 10.20.23 AM.jpeg': {
-      location: 'valley',
-      subject: 'Luxury Cabin Exterior - Mountain Setting',
-      perspective: 'exterior',
-      content: 'Exterior view of Luxury Cabin showing dark/black square building with large windows, set against mountain landscape. Modern architectural design, secluded location at The Valley.',
-      seo: {
-        alt: 'Luxury cabin exterior at The Valley showing dark square building in mountain setting at 1,550m altitude, Rhodope Mountains, Bulgaria',
-        title: 'Luxury Cabin Exterior - Modern Building in Mountain Setting',
-        description: 'The exterior of the Luxury Cabin at The Valley, featuring a dark/black square building with large windows, modern architectural design, set against the beautiful mountain landscape at 1,550m altitude - perfect for couples seeking privacy and comfort.'
-      },
-      tags: ['luxury-cabin', 'exterior', 'dark-building', 'square', 'large-windows', 'modern', 'mountain-setting', 'secluded', '1-550m'],
-      useCases: ['luxury-cabin-exterior', 'accommodation-showcase', 'mountain-setting', 'exterior-gallery']
-    },
-
-    '/uploads/The Valley/Lux-cabin-exterior-WhatsApp Image 2025-10-17 at 10.20.24 AM (1).jpeg': {
-      location: 'valley',
-      subject: 'Luxury Cabin Exterior - Architectural Detail',
-      perspective: 'exterior',
-      content: 'Exterior view of Luxury Cabin showing dark/black square building with large windows, architectural details, and modern design. Secluded vantage point at The Valley.',
-      seo: {
-        alt: 'Luxury cabin exterior at The Valley showing architectural details and modern design at 1,550m altitude, Rhodope Mountains, Bulgaria',
-        title: 'Luxury Cabin Exterior - Modern Architectural Design Details',
-        description: 'An exterior view of the Luxury Cabin at The Valley, showcasing the dark/black square building with large windows, architectural details, and modern design at a secluded vantage point at 1,550m altitude.'
-      },
-      tags: ['luxury-cabin', 'exterior', 'dark-building', 'square', 'large-windows', 'modern', 'architectural-details', 'secluded', '1-550m'],
-      useCases: ['luxury-cabin-exterior', 'accommodation-showcase', 'architectural-details', 'exterior-gallery']
-    },
-
-    '/uploads/The Valley/Lux-cabin-exterior-WhatsApp Image 2025-10-17 at 10.20.24 AM (2).jpeg': {
-      location: 'valley',
-      subject: 'Luxury Cabin Exterior - Landscape View',
-      perspective: 'exterior',
-      content: 'Exterior view of Luxury Cabin showing dark/black square building with large windows, surrounded by natural landscape. Modern design in mountain setting at The Valley.',
-      seo: {
-        alt: 'Luxury cabin exterior at The Valley showing dark building in natural landscape at 1,550m altitude, Rhodope Mountains, Bulgaria',
-        title: 'Luxury Cabin Exterior - Modern Building in Natural Landscape',
-        description: 'The exterior of the Luxury Cabin at The Valley, featuring a dark/black square building with large windows, modern design, surrounded by natural landscape in the mountain setting at 1,550m altitude.'
-      },
-      tags: ['luxury-cabin', 'exterior', 'dark-building', 'square', 'large-windows', 'modern', 'natural-landscape', 'mountain-setting', '1-550m'],
-      useCases: ['luxury-cabin-exterior', 'accommodation-showcase', 'natural-setting', 'exterior-gallery']
-    },
-
-    '/uploads/The Valley/Lux-cabin-exterior-WhatsApp Image 2025-10-17 at 10.20.24 AM (6).jpeg': {
-      location: 'valley',
-      subject: 'Luxury Cabin Exterior - Panoramic View',
-      perspective: 'exterior',
-      content: 'Exterior view of Luxury Cabin showing dark/black square building with large windows, panoramic mountain backdrop. Modern architectural design, secluded location at The Valley.',
-      seo: {
-        alt: 'Luxury cabin exterior at The Valley showing dark building with panoramic mountain backdrop at 1,550m altitude, Rhodope Mountains, Bulgaria',
-        title: 'Luxury Cabin Exterior - Panoramic Mountain Backdrop',
-        description: 'An exterior view of the Luxury Cabin at The Valley, featuring the dark/black square building with large windows, modern architectural design, and a stunning panoramic mountain backdrop at 1,550m altitude - perfect for couples seeking privacy and breathtaking views.'
-      },
-      tags: ['luxury-cabin', 'exterior', 'dark-building', 'square', 'large-windows', 'modern', 'panoramic-views', 'mountain-backdrop', 'secluded', '1-550m'],
-      useCases: ['luxury-cabin-exterior', 'accommodation-showcase', 'panoramic-views', 'exterior-gallery', 'mountain-views']
     },
 
     // New Luxury Cabin Exterior Images - January 2026 (Watermark Removed)

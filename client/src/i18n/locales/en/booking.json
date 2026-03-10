@@ -1,0 +1,66 @@
+{
+  "mobile": {
+    "datesLabel": "Dates",
+    "guestsLabel": "Guests",
+    "summaryTapToChoose": "Tap to choose dates",
+    "planYourStay": "Plan your stay"
+  },
+  "cta": {
+    "checkAvailability": "Check availability",
+    "search": "Search",
+    "reserve": "Reserve",
+    "confirmAndPay": "Confirm and pay",
+    "selectDates": "Select dates to check availability",
+    "apply": "Apply"
+  },
+  "fields": {
+    "checkIn": "Check in",
+    "checkOut": "Check out",
+    "guests": "Guests",
+    "selectDate": "Select date"
+  },
+  "errors": {
+    "checkInRequired": "Check-in date is required",
+    "checkInPast": "Check-in date cannot be in the past",
+    "checkOutRequired": "Check-out date is required",
+    "checkOutAfterCheckIn": "Check-out date must be after check-in date",
+    "datesRequired": "Please select arrival and departure dates"
+  },
+  "actions": {
+    "search": "Search",
+    "applyDates": "Apply dates"
+  },
+  "guestSummary": "{{count}} guest",
+  "guestSummary_plural": "{{count}} guests",
+  "petsSummary": "{{count}} pet",
+  "petsSummary_plural": "{{count}} pets",
+  "guests": {
+    "adults": {
+      "label": "Adults",
+      "description": "Ages 13 or above"
+    },
+    "children": {
+      "label": "Children",
+      "description": "Ages 2–12"
+    },
+    "babies": {
+      "label": "Babies",
+      "description": "Under 2"
+    },
+    "pets": {
+      "label": "Pets",
+      "description": "Bringing a service animal?"
+    },
+    "addGuests": "Add guests"
+  },
+  "modal": {
+    "selectYourStay": "Select your stay",
+    "closeAria": "Close booking modal",
+    "clear": "Clear",
+    "when": "When will you be there?",
+    "who": "Who is coming?",
+    "nights": "{{count}} night",
+    "nights_plural": "{{count}} nights"
+  }
+}
+

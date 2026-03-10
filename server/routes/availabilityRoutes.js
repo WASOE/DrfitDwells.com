@@ -73,7 +73,8 @@ router.get('/', [
 
     for (const cabin of capacityFilteredCabins) {
       // Check if cabin has blocked dates in the requested period
-      const hasBlockedDates = cabin.blockedDates.some(blockedDate => {
+      const blockedDates = Array.isArray(cabin.blockedDates) ? cabin.blockedDates : [];
+      const hasBlockedDates = blockedDates.some(blockedDate => {
         const blocked = moment(blockedDate).startOf('day').toDate();
         return blocked >= checkInDate && blocked < checkOutDate;
       });

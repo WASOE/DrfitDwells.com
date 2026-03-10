@@ -1,0 +1,66 @@
+{
+  "cta": {
+    "checkAvailability": "Провери наличност",
+    "search": "Търси",
+    "reserve": "Резервирай",
+    "confirmAndPay": "Потвърди и плати",
+    "selectDates": "Избери дати за проверка на наличност",
+    "apply": "Приложи"
+  },
+  "mobile": {
+    "datesLabel": "Дати",
+    "guestsLabel": "Гости",
+    "summaryTapToChoose": "Избери дати",
+    "planYourStay": "Планирай престоя"
+  },
+  "fields": {
+    "checkIn": "Настаняване",
+    "checkOut": "Напускане",
+    "guests": "Гости",
+    "selectDate": "Избери дата"
+  },
+  "errors": {
+    "datesRequired": "Моля, изберете дати за пристигане и заминаване",
+    "checkInRequired": "Необходима е дата на настаняване",
+    "checkInPast": "Датата на настаняване не може да е в миналото",
+    "checkOutRequired": "Необходима е дата на напускане",
+    "checkOutAfterCheckIn": "Датата на напускане трябва да е след датата на настаняване"
+  },
+  "actions": {
+    "search": "Търси",
+    "applyDates": "Приложи дати"
+  },
+  "guestSummary": "{{count}} гост",
+  "guestSummary_plural": "{{count}} гости",
+  "petsSummary": "{{count}} домашен любимец",
+  "petsSummary_plural": "{{count}} домашни любимци",
+  "guests": {
+    "adults": {
+      "label": "Възрастни",
+      "description": "13+ години"
+    },
+    "children": {
+      "label": "Деца",
+      "description": "2–12 години"
+    },
+    "babies": {
+      "label": "Бебета",
+      "description": "Под 2 години"
+    },
+    "pets": {
+      "label": "Домашни любимци",
+      "description": "Идва ли служебно куче?"
+    },
+    "addGuests": "Добави гости"
+  },
+  "modal": {
+    "selectYourStay": "Избери своя престой",
+    "closeAria": "Затвори прозореца за резервация",
+    "clear": "Изчисти",
+    "when": "Кога ще бъдете там?",
+    "who": "Кой идва?",
+    "nights": "{{count}} нощ",
+    "nights_plural": "{{count}} нощи"
+  }
+}
+

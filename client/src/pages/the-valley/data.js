@@ -1,8 +1,11 @@
 // Shared constants and data for The Valley page
+import { VALLEY_MEDIA } from '../../config/mediaConfig';
 
-export const VALLEY_VIDEO = '/uploads/Videos/The-Valley-firaplace-video.mp4';
-// Using a Valley landscape image as fallback poster since the specific poster doesn't exist
-export const VALLEY_STILL = '/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.23%20AM.jpeg';
+// Valley hero always uses the primary firaplace video pair here:
+// - winter video -> winter poster
+// - summer video -> summer poster
+export const VALLEY_VIDEOS = VALLEY_MEDIA.heroVideo;
+export const VALLEY_STILLS = VALLEY_MEDIA.heroPoster;
 
 // Noise texture SVG data URL
 export const NOISE_TEXTURE = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E";
@@ -49,6 +52,7 @@ export const STAY_CARDS = [
     backendName: 'Lux Cabin',
     route: null,
     sleeps: '2',
+    price: '€85/night',
     image: '/uploads/The%20Valley/Lux-cabin-exterior-watermark-remover-20260113071503.jpg',
     imagePath: '/uploads/The Valley/Lux-cabin-exterior-watermark-remover-20260113071503.jpg',
     bullets: [
@@ -63,6 +67,7 @@ export const STAY_CARDS = [
     backendName: 'Stone House',
     route: null,
     sleeps: 'up to 6',
+    price: '€25/person (min 3)',
     image: '/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.24%20AM.jpeg',
     imagePath: '/uploads/The Valley/WhatsApp Image 2025-10-17 at 10.20.24 AM.jpeg',
     bullets: [
@@ -77,6 +82,7 @@ export const STAY_CARDS = [
     backendName: null,
     route: '/stays/a-frame',
     sleeps: '2 per cabin',
+    price: '€60/night',
     image: '/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.24%20AM%20(4).jpeg',
     imagePath: '/uploads/The Valley/WhatsApp Image 2025-10-17 at 10.20.24 AM (4).jpeg',
     bullets: [

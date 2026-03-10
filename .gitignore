@@ -45,6 +45,9 @@ test-image.txt
 # WordPress plugin builds
 wordpress-plugin/*.zip
 
+# Local MongoDB data
+mongo-data/
+
 # Misc
 .cache/
 .temp/

@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, useScroll, useTransform } from 'framer-motion';
 import { Volume2, VolumeX, Wifi, WifiOff, Mountain, Car, Zap } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 const CabinCard = ({ title, description, image, interiorImage, audioSrc, details, locationId, price, cta, videoSrc, videoPoster }) => {
   const navigate = useNavigate();
+  const { t } = useTranslation('common');
   const cardRef = useRef(null);
   const videoRef = useRef(null);
   const { scrollYProgress } = useScroll({
@@ -71,12 +73,12 @@ const CabinCard = ({ title, description, image, interiorImage, audioSrc, details
       setVideoLoaded(true);
       // Auto-play video when loaded (muted and looped)
       video.play().catch((err) => {
-        console.log('Video autoplay prevented:', err);
+        if (import.meta.env.DEV) console.log('Video autoplay prevented:', err);
       });
     };
 
     const handleError = () => {
-      console.warn('Video failed to load, falling back to static image');
+      if (import.meta.env.DEV) console.warn('Video failed to load, falling back to static image');
       setVideoError(true);
     };
 
@@ -127,7 +129,10 @@ const CabinCard = ({ title, description, image, interiorImage, audioSrc, details
       whileHover={{ y: -5 }}
     >
       <div className="relative group">
-        <motion.div style={{ y }} className="overflow-hidden rounded-t-[32px] relative h-56 md:h-[340px] bg-transparent" style={{ overflow: 'hidden' }}>
+        <motion.div
+          style={{ y }}
+          className="overflow-hidden rounded-t-[32px] relative h-56 md:h-[340px] bg-transparent"
+        >
           {/* Video with lazy loading - show poster first, then video */}
           {videoSrc && !prefersReducedMotion && !videoError ? (
             <>
@@ -169,7 +174,7 @@ const CabinCard = ({ title, description, image, interiorImage, audioSrc, details
                   loop
                   muted
                   playsInline
-                  preload="metadata"
+                  preload="none"
                   poster={videoPoster}
                 />
               )}
@@ -237,7 +242,7 @@ const CabinCard = ({ title, description, image, interiorImage, audioSrc, details
           className={`absolute top-4 right-4 sm:top-6 sm:right-6 h-12 w-12 sm:h-14 sm:w-14 rounded-full bg-white/80 backdrop-blur-lg border border-white/60 shadow-lg flex items-center justify-center transition-transform duration-300 active:scale-95 touch-manipulation ${
             isPlaying ? 'scale-105' : ''
           }`}
-          aria-label={isPlaying ? 'Stop audio' : 'Play audio'}
+          aria-label={isPlaying ? t('audio.ariaStopAudio') : t('audio.ariaPlayAudio')}
         >
           {isPlaying && (
             <motion.span
@@ -261,11 +266,11 @@ const CabinCard = ({ title, description, image, interiorImage, audioSrc, details
 
       <div className="p-5 pb-6 md:p-7 md:pb-7 bg-white/90 backdrop-blur-[1px] flex-1 flex flex-col">
         <p className="text-xs uppercase tracking-[0.45em] text-gray-500 mb-3">
-          Drift & Dwells
+          {t('destinations.brand')}
         </p>
         {locationId && (
           <p className="text-[10px] md:text-xs font-sans uppercase tracking-[0.2em] text-stone-500 mb-2">
-            {locationId === 'cabin' ? 'Solitary • Stoic • Deep Detox' : 'Ethereal • Communal • Light'}
+            {locationId === 'cabin' ? t('destinations.cabin.tagline') : t('destinations.valley.tagline')}
           </p>
         )}
         <h3 className="font-['Playfair_Display'] text-2xl md:text-3xl text-[#1d2a1f] mb-3">
@@ -299,12 +304,12 @@ const CabinCard = ({ title, description, image, interiorImage, audioSrc, details
             {details.wifi === "No WiFi" ? (
               <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 rounded-full text-xs text-amber-700 border border-amber-200">
                 <WifiOff className="w-3.5 h-3.5" />
-                <span>Off-Grid</span>
+                <span>{t('destinations.cabin.details.wifiOffGrid')}</span>
               </div>
             ) : details.wifi === "Starlink Available" ? (
               <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 rounded-full text-xs text-blue-700 border border-blue-200">
                 <Wifi className="w-3.5 h-3.5" />
-                <span>Starlink</span>
+                <span>{t('destinations.valley.details.wifiStarlink')}</span>
               </div>
             ) : null}
           </div>

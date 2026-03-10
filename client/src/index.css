@@ -4,6 +4,11 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Global: header height for fixed nav so content never sits under the menu on non-hero pages */
+:root {
+  --header-offset: 5.5rem; /* py-6 + nav content height; used by layout and HeroSeasonToggle */
+}
+
 @layer base {
   html {
     font-family: 'Inter', system-ui, sans-serif;
@@ -261,12 +266,18 @@
     background: radial-gradient(circle, var(--tw-gradient-stops));
   }
 
-  /* Ensure date picker appears above announcement bar */
+  /* Date picker portal: stacking context so calendar is above hero/sections (e.g. z-20) */
+  #datepicker-portal {
+    position: relative;
+    z-index: 10050;
+  }
+
+  /* Ensure date picker appears above fixed header (z-50) and announcement bar */
   .react-datepicker-popper {
-    z-index: 9999 !important;
+    z-index: 10050 !important;
   }
 
   .react-datepicker {
-    z-index: 9999 !important;
+    z-index: 10050 !important;
   }
 }

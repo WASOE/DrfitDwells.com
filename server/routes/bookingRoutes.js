@@ -7,8 +7,116 @@ const AssignmentEngine = require('../services/assignmentEngine');
 const featureFlags = require('../utils/featureFlags');
 const moment = require('moment');
 const emailService = require('../services/emailService');
+const pricingService = require('../services/pricingService');
+const Stripe = require('stripe');
 
 const router = express.Router();
+const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+
+// POST /api/bookings/create-payment-intent - Create Stripe PaymentIntent for cabin booking
+router.post('/create-payment-intent', [
+  body('cabinId').isMongoId().withMessage('Valid cabin ID is required'),
+  body('checkIn').isISO8601().withMessage('Valid check-in date is required'),
+  body('checkOut').isISO8601().withMessage('Valid check-out date is required'),
+  body('adults').isInt({ min: 1, max: 10 }).withMessage('Adults must be between 1 and 10'),
+  body('children').optional().isInt({ min: 0, max: 10 }).withMessage('Children must be between 0 and 10'),
+  body('experienceKeys').optional().isArray().withMessage('experienceKeys must be an array')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    if (!stripe) {
+      return res.status(503).json({
+        success: false,
+        message: 'Payment is not configured'
+      });
+    }
+
+    const { cabinId, checkIn, checkOut, adults, children = 0, experienceKeys = [] } = req.body;
+    const checkInDate = moment(checkIn).startOf('day').toDate();
+    const checkOutDate = moment(checkOut).startOf('day').toDate();
+
+    if (checkInDate >= checkOutDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Check-out date must be after check-in date'
+      });
+    }
+    if (checkInDate < moment().startOf('day').toDate()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Check-in date cannot be in the past'
+      });
+    }
+
+    const cabin = await Cabin.findById(cabinId);
+    if (!cabin || !cabin.isActive) {
+      return res.status(404).json({
+        success: false,
+        message: 'Cabin not found or not available'
+      });
+    }
+
+    const totalGuests = parseInt(adults, 10) + parseInt(children, 10);
+    if (totalGuests > cabin.capacity) {
+      return res.status(400).json({
+        success: false,
+        message: `This cabin can only accommodate ${cabin.capacity} guests`
+      });
+    }
+
+    const errKeys = pricingService.validateExperienceKeys(cabin, experienceKeys);
+    if (errKeys) {
+      return res.status(400).json({
+        success: false,
+        message: errKeys
+      });
+    }
+
+    const { totalPrice } = pricingService.calculateCabinPrice(
+      cabin,
+      checkInDate,
+      checkOutDate,
+      parseInt(adults, 10),
+      parseInt(children, 10),
+      experienceKeys
+    );
+
+    if (totalPrice < 0.5) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid price'
+      });
+    }
+
+    const currency = (process.env.STRIPE_CURRENCY || 'eur').toLowerCase();
+    const amountCents = Math.round(totalPrice * 100);
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: amountCents,
+      currency,
+      automatic_payment_methods: { enabled: true }
+    });
+
+    return res.json({
+      success: true,
+      clientSecret: paymentIntent.client_secret
+    });
+  } catch (err) {
+    console.error('Create payment intent error:', err);
+    return res.status(500).json({
+      success: false,
+      message: process.env.NODE_ENV === 'development' ? err.message : 'Payment setup failed'
+    });
+  }
+});
 
 // POST /api/bookings - Create a new booking
 // Supports both legacy single-cabin bookings (cabinId) and multi-unit cabin type bookings (cabinTypeId)

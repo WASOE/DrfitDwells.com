@@ -152,7 +152,7 @@ export function getLocationMedia(location) {
       videos: [
         '/uploads/Videos/The-cabin-header.mp4',
         '/uploads/Videos/Dark-fire-cabin.mp4',
-        '/uploads/Videos/Dark-fire-cabin-poster.jpg',
+        '/uploads/Videos/The-cabin-header.winter-poster.jpg',
       ]
     };
   }
@@ -176,7 +176,7 @@ export function getLocationMedia(location) {
         '/uploads/Videos/The-Valley-From-the-Sky.mp4',
         '/uploads/Videos/The-Valley-Night-Stars.mp4',
         '/uploads/Videos/Light-aframes.mp4',
-        '/uploads/Videos/Light-aframes-poster.jpg',
+        '/uploads/Videos/The-Valley-firaplace-video.winter-poster.jpg',
         '/uploads/Videos/The-Valley-firaplace-video-poster.jpg',
       ]
     };

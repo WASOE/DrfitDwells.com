@@ -1,0 +1,154 @@
+{
+  "hero": {
+    "title": "The Cabin",
+    "subtitle": "The Art of Subtraction",
+    "body": "Off grid mountain cabin for two in the Rhodope Mountains, Bulgaria. High clearance recommended. No wifi.",
+    "ctaPrimary": "Check availability",
+    "ctaSecondary": "Is this for you?"
+  },
+  "narrative": {
+    "intro1": "Nestled in the rugged folds of the Pirin Mountains in Bulgaria, The Cabin is a testament to the beauty of subtraction. Here, every unnecessary element has been stripped away, leaving only what matters: the crackle of firewood, the whisper of wind through pines, and the profound silence that follows when you finally unplug.",
+    "intro2": "This is not a place for convenience. It is a place for presence. A deliberate choice to step away from the noise and rediscover what it means to truly dwell in the Rhodope Mountains.",
+    "statement": "This is not a hotel. It is a commitment.",
+    "readReality": "Read the reality"
+  },
+  "reality": {
+    "title": "The Reality of staying off grid",
+    "cards": {
+      "access": {
+        "title": "Access",
+        "body": "High clearance recommended. Normal cars can reach the cabin but expect a rough forest road. Drive slowly over bumps and stones, especially after rain."
+      },
+      "power": {
+        "title": "Power",
+        "body": "Off grid solar only. No hair dryers. No AC. Power is limited and must be used with care."
+      },
+      "silence": {
+        "title": "Silence",
+        "body": "No neighbors. No road noise. Nights are very dark and very quiet."
+      },
+      "connection": {
+        "title": "Connection",
+        "body": "No wifi. Only emergency Starlink if needed. You cannot work remotely from here."
+      }
+    }
+  },
+  "trustBar": {
+    "awardTitle": "Most Iconic Destination Award",
+    "awardSubtitle": "Travel & Hospitality Excellence",
+    "featuredTitle": "Nationally Featured",
+    "featuredSubtitle": "As seen on all National TV Channels",
+    "tvLabel": "As seen on national television",
+    "tvCaption": "Our cabin in a national medicine commercial"
+  },
+  "practical": {
+    "title": "Practical details",
+    "items": {
+      "sleeps": {
+        "label": "Sleeps",
+        "value": "2 adults"
+      },
+      "location": {
+        "label": "Location",
+        "value": "Near Bachevo, Rhodope Mountains"
+      },
+      "access": {
+        "label": "Access",
+        "value": "High clearance recommended"
+      },
+      "heating": {
+        "label": "Heating",
+        "value": "Wood stove"
+      },
+      "water": {
+        "label": "Water",
+        "value": "Spring water (Wood-fired hot water)"
+      },
+      "check": {
+        "label": "Check In / Out",
+        "value": "3:00 PM / 11:00 AM"
+      },
+      "pets": {
+        "label": "Pets",
+        "value": "Not permitted (Wildlife protection)"
+      }
+    }
+  },
+  "faq": {
+    "title": "Questions before you book",
+    "link": "Read the full FAQ for The Cabin \u2192",
+    "questions": [
+      {
+        "question": "How do I get to the cabin and what is the road like?",
+        "answerParts": [
+          {"type": "p", "text": "The cabin is reached by a rough forest road. High clearance is recommended, though normal cars can reach it if driven very slowly."},
+          {"type": "ul", "items": ["Winter: Snow and ice make the road challenging. Allow extra time and drive with extreme caution.", "Spring: Mud after rain makes the road slippery and slow going.", "Summer: Dry conditions are easiest, but dust can be heavy and the road remains rough."]},
+          {"type": "p", "text": "The drive from the main road to the cabin typically takes 15-20 minutes depending on conditions and vehicle."}
+        ]
+      },
+      {
+        "question": "What should I expect with electricity and charging?",
+        "answerParts": [
+          {"type": "p", "text": "There are no normal power outlets in the cabin."},
+          {"type": "ul", "items": ["A small solar system provides power for lights only.", "You must bring your own power banks or battery packs to charge phones and devices.", "No kettles, hair dryers, or high-consumption devices can be used.", "The solar system cannot support appliances beyond basic lighting."]}
+        ]
+      },
+      {
+        "question": "How does water and bathing work?",
+        "answerParts": [
+          {"type": "p", "text": "Drinking water comes from a spring source. You collect water using containers or taps provided at the cabin."},
+          {"type": "ul", "items": ["Warm water for washing is prepared manually, typically using a basin system heated on the wood stove.", "In winter, water freezes more easily and the system works slower. Allow extra time for water preparation.", "This is a manual, hands-on process that requires effort and patience."]}
+        ]
+      },
+      {
+        "question": "How is the cabin heated, especially in winter?",
+        "answerParts": [
+          {"type": "p", "text": "The main heat source is a wood stove. You must light and maintain the fire yourself throughout your stay."},
+          {"type": "ul", "items": ["Firewood is provided, but you are responsible for keeping the fire going.", "You must be comfortable using and monitoring a wood stove safely.", "Nights can be very cold, especially in winter. Bring proper warm clothing and layers regardless of season.", "The cabin can get cold if the fire is not maintained consistently."]}
+        ]
+      },
+      {
+        "question": "How does the hot tub work and what should I know?",
+        "answerParts": [
+          {"type": "p", "text": "The hot tub is wood-fired and requires significant time and effort to heat."},
+          {"type": "ul", "items": ["It takes 4-6 hours to heat from cold to usable temperature.", "It consumes a large amount of firewood. You must decide if you want to commit the time and wood needed.", "In winter, heating takes longer and may be impractical due to freezing risks.", "You are responsible for lighting and maintaining the fire that heats the tub."]}
+        ]
+      },
+      {
+        "question": "Is there internet or phone signal?",
+        "answerParts": [
+          {"type": "p", "text": "No. There is no wifi and mobile reception is weak or completely absent at the cabin."},
+          {"type": "ul", "items": ["This is a full digital detox location with no reliable connectivity.", "In emergencies, you must walk or drive back towards the village to regain phone signal.", "Plan accordingly. Download any maps, information, or entertainment before arriving."]}
+        ]
+      }
+    ]
+  },
+  "vibe": {
+    "title": "See where you'll dwell",
+    "subtitle": "Explore the spaces—bedroom, kitchen, view—that make The Cabin home.",
+    "cta": "Check availability"
+  },
+  "livingNotes": {
+    "title": "Living Notes",
+    "subtitle": "What guests say after staying at The Cabin.",
+    "loading": "Loading reviews...",
+    "noReviews": "Guest reviews will appear here.",
+    "more": "See all reviews & book",
+    "reviewCount": "{{count}} reviews",
+    "entries": [
+      {
+        "text": "We brewed pine needle tea at dawn. The steam looked like soft handwriting.",
+        "author": "Daniela"
+      },
+      {
+        "text": "The journal we found on the shelf had pressed ferns from guests we will never meet.",
+        "author": "Petra & Ivo"
+      },
+      {
+        "text": "Three days without a screen. We remembered how to listen.",
+        "author": "Markus"
+      }
+    ]
+  }
+}
+

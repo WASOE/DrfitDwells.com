@@ -1,9 +1,11 @@
-import { useRef } from 'react';
 import { motion } from 'framer-motion';
 import { ChevronDown } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useBookingSearch } from '../../../context/BookingSearchContext';
+import { useSeason } from '../../../context/SeasonContext';
 import { getSEOAlt, getSEOTitle } from '../../../data/imageMetadata';
-import { VALLEY_VIDEO, VALLEY_STILL } from '../data';
+import HeroSeasonToggle from '../../../components/HeroSeasonToggle';
+import { VALLEY_VIDEOS, VALLEY_STILLS } from '../data';
 
 const HeroSection = ({ 
   containerRef, 
@@ -11,9 +13,11 @@ const HeroSection = ({
   videoRef, 
   shouldPlayVideo, 
   scrollToAccommodations,
-  noiseTexture 
+  noiseTexture: _noiseTexture 
 }) => {
   const { openModal } = useBookingSearch();
+  const { season } = useSeason();
+  const { t } = useTranslation('valley');
 
   return (
     <section 
@@ -26,11 +30,12 @@ const HeroSection = ({
       >
         {!shouldPlayVideo ? (
           <img
-            src={VALLEY_STILL}
-            alt={getSEOAlt(VALLEY_STILL) || 'The Valley: A Village Above the Clouds - Mountain village at 1,550m altitude showing A-frames, stone house, and mountain landscape, Chereshovo/Ortsevo, Rhodope Mountains, Bulgaria'}
-            title={getSEOTitle(VALLEY_STILL) || 'The Valley - A Village Above the Clouds at 1,550m Altitude'}
+            src={VALLEY_STILLS[season]}
+            alt={getSEOAlt(VALLEY_STILLS[season]) || 'The Valley: A Village Above the Clouds - Mountain village at 1,550m altitude showing A-frames, stone house, and mountain landscape, Chereshovo/Ortsevo, Rhodope Mountains, Bulgaria'}
+            title={getSEOTitle(VALLEY_STILLS[season]) || 'The Valley - A Village Above the Clouds at 1,550m Altitude'}
             className="absolute inset-0 w-full h-full object-cover"
-            loading="lazy"
+            loading="eager"
+            fetchpriority="high"
             decoding="async"
             style={{
               minWidth: '100%',
@@ -44,14 +49,15 @@ const HeroSection = ({
           />
         ) : (
           <video
+            key={season}
             ref={videoRef}
             className="absolute inset-0 w-full h-full object-cover"
             autoPlay
             loop
             muted
             playsInline
-            preload="metadata"
-            poster={VALLEY_STILL}
+            preload="none"
+            poster={VALLEY_STILLS[season]}
             aria-label="Video showing The Valley mountain village with fireplace and mountain landscape at 1,550m altitude, Chereshovo/Ortsevo, Rhodope Mountains, Bulgaria"
             style={{
               minWidth: '100%',
@@ -63,20 +69,22 @@ const HeroSection = ({
               transformOrigin: 'center center'
             }}
           >
-            <source src={VALLEY_VIDEO} type="video/mp4" />
+            <source src={VALLEY_VIDEOS[season]} type="video/mp4" />
           </video>
         )}
       </motion.div>
       
       {/* Overlay - Improved gradient for readability */}
       <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/40 to-black/60" />
+
+      <HeroSeasonToggle />
       
-      {/* 1,550m Altitude Badge - Top Right */}
+      {/* 1,550m Altitude Badge - Top Right (hidden on mobile) */}
       <motion.div
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.8, delay: 0.5 }}
-        className="absolute top-8 right-4 md:top-12 md:right-12 z-20"
+        className="absolute top-8 right-4 md:top-12 md:right-12 z-20 hidden md:block"
       >
         <div className="px-4 py-2 bg-white/10 backdrop-blur-md border border-white/20 text-white text-sm md:text-base font-serif tracking-wide">
           1,550m Altitude
@@ -85,69 +93,75 @@ const HeroSection = ({
       
       {/* Content */}
       <div className="relative z-10 text-center px-4 max-w-4xl mx-auto">
+        {/* Micro label */}
+        <motion.p 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.2 }}
+          className="font-serif text-xs md:text-sm tracking-[0.2em] uppercase text-white/70 mb-4 drop-shadow-sm"
+        >
+          {t('hero.microLabel')}
+        </motion.p>
+
+        {/* Main headline */}
         <motion.h1 
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.2 }}
-          className="font-['Playfair_Display'] text-2xl md:text-6xl text-white font-semibold tracking-tight leading-tight drop-shadow-lg mb-4"
+          transition={{ duration: 0.8, delay: 0.3 }}
+          className="font-['Playfair_Display'] text-5xl md:text-7xl lg:text-8xl text-white font-semibold tracking-tight leading-tight drop-shadow-2xl mb-3"
         >
-          The Valley: A Village Above the Clouds.
+          {t('hero.title')}
         </motion.h1>
           
-        <motion.p 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.3 }}
-          className="mt-3 text-base md:text-lg text-neutral-400 max-w-2xl mx-auto font-light drop-shadow-sm"
-        >
-          A private off-grid mountain village with individual cabins, a historic stone house, and shared outdoor spaces in the Rhodope Mountains, Bulgaria.
-        </motion.p>
-          
-        <motion.p 
+        {/* Subtitle */}
+        <motion.h2 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.35 }}
-          className="mt-4 text-sm md:text-base text-neutral-400 max-w-2xl mx-auto font-light drop-shadow-sm"
+          className="font-serif text-xl md:text-2xl lg:text-3xl text-white/95 font-normal tracking-tight mb-6 drop-shadow-sm"
         >
-          Designed for quiet, privacy, and comfort, with reliable heating, hot water, and year-round access.
-        </motion.p>
+          {t('hero.subtitle')}
+        </motion.h2>
           
-        <motion.div
+        {/* Body copy - Line 1 */}
+        <motion.p 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.4 }}
-          className="flex flex-col sm:flex-row gap-4 justify-center items-center mt-8 px-4"
+          className="text-base md:text-lg text-white/90 max-w-2xl mx-auto font-serif leading-relaxed drop-shadow-sm mb-3"
         >
-          <button
-            onClick={openModal}
-            className="bg-white text-stone-900 px-6 sm:px-8 py-3 sm:py-4 font-bold uppercase tracking-widest text-xs sm:text-sm hover:scale-105 transition-transform shadow-xl border-none min-h-[44px] touch-manipulation"
-          >
-            Check availability
-          </button>
-          <button
-            onClick={scrollToAccommodations}
-            className="border border-white/30 text-white px-6 sm:px-8 py-3 sm:py-4 font-medium uppercase tracking-widest text-xs sm:text-sm hover:bg-white/10 transition-all backdrop-blur-sm min-h-[44px] touch-manipulation"
-          >
-            Explore stays
-          </button>
-        </motion.div>
-        
-        {/* Trust Chips */}
+          {t('hero.body1')}
+        </motion.p>
+          
+        {/* Body copy - Line 2 */}
+        <motion.p 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.45 }}
+          className="text-base md:text-lg text-white/90 max-w-2xl mx-auto font-serif leading-relaxed drop-shadow-sm mb-8"
+        >
+          {t('hero.body2')}
+        </motion.p>
+          
+        {/* CTAs */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.6 }}
-          className="flex flex-wrap justify-center gap-3 mt-8 px-4"
+          transition={{ duration: 0.8, delay: 0.5 }}
+          className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-8 px-4"
         >
-          <div className="px-4 py-2 bg-white/10 backdrop-blur-md border border-white/20 text-white text-xs md:text-sm font-light tracking-wide rounded-full">
-            Above the clouds
-          </div>
-          <div className="px-4 py-2 bg-white/10 backdrop-blur-md border border-white/20 text-white text-xs md:text-sm font-light tracking-wide rounded-full">
-            Off-grid comfort
-          </div>
-          <div className="px-4 py-2 bg-white/10 backdrop-blur-md border border-white/20 text-white text-xs md:text-sm font-light tracking-wide rounded-full">
-            Private valley
-          </div>
+          <button
+            onClick={openModal}
+            className="bg-white text-stone-900 px-6 sm:px-8 py-3 sm:py-4 font-bold uppercase tracking-[0.3em] text-xs sm:text-sm hover:scale-105 transition-transform shadow-xl border-none rounded-full min-h-[44px] touch-manipulation"
+          >
+            {t('hero.ctaPrimary')}
+          </button>
+          <button
+            onClick={scrollToAccommodations}
+            className="border border-white/30 text-white px-6 sm:px-8 py-3 sm:py-4 font-medium uppercase tracking-[0.3em] text-xs sm:text-sm hover:bg-white/10 transition-all backdrop-blur-sm rounded-full min-h-[44px] touch-manipulation"
+          >
+            {t('hero.ctaSecondary')}
+          </button>
         </motion.div>
       </div>
 

@@ -1,0 +1,14 @@
+{
+  "home": "Home",
+  "cabin": "The Cabin",
+  "valley": "The Valley",
+  "about": "About",
+  "build": "Build",
+  "search": "Search",
+  "book": "Book",
+  "language": {
+    "en": "EN",
+    "bg": "BG"
+  }
+}
+

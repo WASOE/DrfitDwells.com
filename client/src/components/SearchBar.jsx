@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import DatePicker from 'react-datepicker';
-import 'react-datepicker/dist/react-datepicker.css';
+import { useTranslation } from 'react-i18next';
 import { useBookingSearch } from '../context/BookingSearchContext';
+import GuestSelect from './GuestSelect';
 
 const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'default' }) => {
   const navigate = useNavigate();
@@ -12,12 +12,19 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
     checkOut,
     adults,
     children,
+    babies = 0,
+    pets = 0,
     updateDates,
     updateGuests,
     openModal
   } = useBookingSearch();
 
   const [errors, setErrors] = useState({});
+  const { t } = useTranslation('booking');
+  const [openCheckIn, setOpenCheckIn] = useState(false);
+  const [openCheckOut, setOpenCheckOut] = useState(false);
+  const [DatePickerComponent, setDatePickerComponent] = useState(null);
+  const [pendingOpen, setPendingOpen] = useState(null); // 'checkIn' | 'checkOut' when calendar should open after load
 
   const formData = { checkIn, checkOut, adults, children };
 
@@ -45,8 +52,59 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
         children: incomingChildren !== undefined ? incomingChildren : children
       });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialData?.checkIn, initialData?.checkOut, initialData?.adults, initialData?.children]);
+
+  // Close datepickers on scroll on mobile only. On desktop, closing on any scroll prevented selecting dates (calendar closed as soon as it opened or on tiny scroll).
+  useEffect(() => {
+    const handleScroll = () => {
+      const isMobile = window.matchMedia('(max-width: 767px)').matches;
+      if (!isMobile) return;
+      setOpenCheckIn(false);
+      setOpenCheckOut(false);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true, capture: true });
+    return () => window.removeEventListener('scroll', handleScroll, { capture: true });
+  }, []);
+
+  // Load react-datepicker and its CSS. Preload on desktop so the real input is there when user clicks (fixes calendar not opening on first click).
+  const loadDatePicker = useCallback(async () => {
+    if (DatePickerComponent) return;
+    const [mod] = await Promise.all([
+      import('./date/DatePickerLazy.jsx'),
+      import('react-datepicker/dist/react-datepicker.css'),
+    ]);
+    setDatePickerComponent(() => mod.default);
+  }, [DatePickerComponent]);
+
+  // On desktop, preload the datepicker immediately so "Select date" shows the real input and calendar opens on first click
+  useEffect(() => {
+    if (DatePickerComponent) return;
+    const isDesktop = typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches;
+    if (!isDesktop) return;
+    const t = setTimeout(loadDatePicker, 0);
+    return () => clearTimeout(t);
+  }, [DatePickerComponent, loadDatePicker]);
+
+  // When DatePicker has just loaded and user had clicked to open, open the calendar (react-datepicker often needs open to *transition* to true after mount)
+  useEffect(() => {
+    if (!DatePickerComponent || !pendingOpen) return;
+    if (pendingOpen === 'checkIn') {
+      setOpenCheckIn(false);
+      const t = setTimeout(() => {
+        setOpenCheckIn(true);
+        setPendingOpen(null);
+      }, 0);
+      return () => clearTimeout(t);
+    }
+    if (pendingOpen === 'checkOut') {
+      setOpenCheckOut(false);
+      const t = setTimeout(() => {
+        setOpenCheckOut(true);
+        setPendingOpen(null);
+      }, 0);
+      return () => clearTimeout(t);
+    }
+  }, [DatePickerComponent, pendingOpen]);
 
   const handleDateChange = (field, date) => {
     if (field === 'checkIn') {
@@ -55,7 +113,7 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
       setErrors(prev => ({ ...prev, checkIn: null, checkOut: null }));
     } else {
       if (date && checkIn && date <= checkIn) {
-        setErrors(prev => ({ ...prev, checkOut: 'Check-out date must be after check-in date' }));
+        setErrors(prev => ({ ...prev, checkOut: t('errors.checkOutAfterCheckIn') }));
         return;
       }
       updateDates(checkIn, date);
@@ -63,32 +121,20 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
     }
   };
 
-  const handleGuestChange = (field, value) => {
-    updateGuests({ [field]: value });
-    setErrors(prev => ({ ...prev, [field]: null }));
-  };
 
   const validateForm = () => {
     const newErrors = {};
 
     if (!checkIn) {
-      newErrors.checkIn = 'Check-in date is required';
+      newErrors.checkIn = t('errors.checkInRequired');
     } else if (checkIn < new Date()) {
-      newErrors.checkIn = 'Check-in date cannot be in the past';
+      newErrors.checkIn = t('errors.checkInPast');
     }
 
     if (!checkOut) {
-      newErrors.checkOut = 'Check-out date is required';
+      newErrors.checkOut = t('errors.checkOutRequired');
     } else if (checkIn && checkOut <= checkIn) {
-      newErrors.checkOut = 'Check-out date must be after check-in date';
-    }
-
-    if (adults < 1) {
-      newErrors.adults = 'At least 1 adult is required';
-    }
-
-    if (children < 0) {
-      newErrors.children = 'Children count cannot be negative';
+      newErrors.checkOut = t('errors.checkOutAfterCheckIn');
     }
 
     setErrors(newErrors);
@@ -103,7 +149,9 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
       checkIn: checkIn?.toISOString().split('T')[0] || '',
       checkOut: checkOut?.toISOString().split('T')[0] || '',
       adults: adults.toString(),
-      children: children.toString()
+      children: children.toString(),
+      babies: (babies || 0).toString(),
+      pets: (pets || 0).toString()
     });
 
     navigate(`/search?${searchParams.toString()}`);
@@ -111,53 +159,96 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
 
   const summaryDates = checkIn && checkOut
     ? `${checkIn.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} → ${checkOut.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
-    : 'Tap to choose dates';
+    : t('mobile.summaryTapToChoose');
 
-  const guestSummary = `${adults + children} guest${adults + children === 1 ? '' : 's'}`;
+  const totalGuests = adults + children;
+  const guestSummary = t('guestSummary', { count: totalGuests });
 
-  const baseInputClassDesktop = isGlass
-    ? 'w-full h-12 lg:h-14 bg-white/15 text-sm lg:text-base text-white placeholder:text-white/70 border border-white/25 rounded-full px-4 focus:border-white/60 focus:outline-none focus:ring-2 focus:ring-white/20 transition-colors duration-150'
-    : 'w-full h-12 sm:h-14 bg-transparent text-base sm:text-sm placeholder:text-gray-500 text-gray-900 border-b border-gray-300 focus:border-b focus:border-[#81887A] focus:outline-none transition-colors duration-150';
+  const checkInLabel = formData.checkIn
+    ? formData.checkIn.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : t('fields.selectDate');
 
-  const selectClassDesktop = `${baseInputClassDesktop} appearance-none pr-8 ${isGlass ? 'text-white' : 'text-gray-900'}`;
-  const dividerClass = isGlass ? 'hidden' : 'hidden md:block w-px h-8 bg-gray-300';
-  const errorTextClass = isGlass ? 'text-white text-xs mt-1' : 'text-red-500 text-xs mt-1';
+  const checkOutLabel = formData.checkOut
+    ? formData.checkOut.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : t('fields.selectDate');
+
+  // Unified field styling - all fields look identical
+  const fieldContainerClass = 'flex flex-col';
+  const fieldLabelClass = isGlass
+    ? 'text-[9px] uppercase tracking-[0.3em] font-serif text-white/70 mb-1.5'
+    : 'text-[9px] uppercase tracking-[0.3em] font-serif text-gray-500 mb-1.5';
+  const fieldInputClass = isGlass
+    ? 'w-full h-12 lg:h-14 bg-transparent text-sm lg:text-base font-serif text-white border-b border-white/40 focus:border-white focus:outline-none transition-colors duration-150 pb-1'
+    : 'w-full h-12 lg:h-14 bg-transparent text-sm lg:text-base font-serif text-gray-900 border-b border-gray-300 focus:border-gray-900 focus:outline-none transition-colors duration-150 pb-1';
+  const _fieldSelectClass = `${fieldInputClass} appearance-none cursor-pointer`;
+  const dividerClass = isGlass ? 'hidden' : 'hidden md:block w-px h-12 lg:h-14 bg-gray-300 self-end mb-3';
+  const errorTextClass = isGlass ? 'text-white/80 text-xs mt-1.5' : 'text-red-500 text-xs mt-1.5';
 
   return (
-    <form onSubmit={handleSubmit}>
+    <form onSubmit={handleSubmit} className="w-full">
+      {/* Mobile View */}
       <div className="md:hidden space-y-3">
         <div className="bg-[#2a2a2a] rounded-2xl p-4 text-white">
-          <p className="text-[9px] uppercase tracking-[0.3em] text-white/60">Dates</p>
-          <p className="font-['Montserrat'] text-base mt-2">{summaryDates}</p>
+          <p className="text-[9px] uppercase tracking-[0.3em] text-white/60">{t('mobile.datesLabel')}</p>
+          <p className="font-serif text-base mt-2">{summaryDates}</p>
         </div>
         <div className="bg-[#2a2a2a] rounded-2xl p-4 text-white">
-          <p className="text-[9px] uppercase tracking-[0.3em] text-white/60">Guests</p>
-          <p className="font-['Montserrat'] text-base mt-2">{guestSummary}</p>
+          <p className="text-[9px] uppercase tracking-[0.3em] text-white/60">{t('mobile.guestsLabel')}</p>
+          <p className="font-serif text-base mt-2">{guestSummary}</p>
         </div>
         <button
           type="button"
           onClick={openModal}
           className="w-full bg-[#F1ECE2] text-stone-900 py-3 rounded-2xl uppercase tracking-[0.2em] text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#F1ECE2]/50 active:scale-[0.98] transition-all duration-150 touch-manipulation"
         >
-          Plan your stay
+          {t('mobile.planYourStay')}
         </button>
       </div>
 
-      <div className={`hidden md:flex flex-row gap-5 items-end ${isGlass ? 'text-white' : ''}`}>
-        <div className="w-[232px]">
-          <label htmlFor="checkIn-desktop" className="sr-only">Check-in date</label>
-          <DatePicker
-            id="checkIn-desktop"
-            selected={formData.checkIn}
-            onChange={(date) => handleDateChange('checkIn', date)}
-            selectsStart
-            startDate={formData.checkIn}
-            endDate={formData.checkOut}
-            minDate={new Date()}
-            placeholderText={isGlass ? 'Check in' : 'Select date'}
-            className={`${baseInputClassDesktop} ${errors.checkIn ? (isGlass ? 'border-white' : 'border-red-400') : ''}`}
-            dateFormat="MM/dd/yyyy"
-          />
+      {/* Desktop View - Redesigned with consistent field structure */}
+      <div className={`hidden md:flex flex-row items-end gap-6 w-full ${isGlass ? 'text-white' : ''}`}>
+        {/* Check-in Date */}
+        <div className={fieldContainerClass} style={{ width: '180px' }}>
+          <label htmlFor="checkIn-desktop" className={fieldLabelClass}>
+            {t('fields.checkIn')}
+          </label>
+          {DatePickerComponent ? (
+            <DatePickerComponent
+              id="checkIn-desktop"
+              selected={formData.checkIn}
+              onChange={(date) => handleDateChange('checkIn', date)}
+              open={openCheckIn}
+              onCalendarOpen={() => setOpenCheckIn(true)}
+              onCalendarClose={() => setOpenCheckIn(false)}
+              onClickOutside={() => setOpenCheckIn(false)}
+              selectsStart
+              startDate={formData.checkIn}
+              endDate={formData.checkOut}
+              minDate={new Date()}
+              placeholderText={t('fields.selectDate')}
+              className={`${fieldInputClass} ${errors.checkIn ? (isGlass ? 'border-white' : 'border-red-400') : ''}`}
+              dateFormat="MMM dd"
+              portalId="datepicker-portal"
+            />
+          ) : (
+            <button
+              type="button"
+              id="checkIn-desktop"
+              className={`${fieldInputClass} ${errors.checkIn ? (isGlass ? 'border-white' : 'border-red-400') : ''} text-left`}
+              onClick={() => {
+                loadDatePicker();
+                setPendingOpen('checkIn');
+                setOpenCheckIn(true);
+              }}
+              onFocus={() => {
+                loadDatePicker();
+                setPendingOpen('checkIn');
+                setOpenCheckIn(true);
+              }}
+            >
+              {checkInLabel}
+            </button>
+          )}
           {errors.checkIn && (
             <p className={errorTextClass}>{errors.checkIn}</p>
           )}
@@ -165,20 +256,48 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
 
         <div className={dividerClass}></div>
 
-        <div className="w-[232px]">
-          <label htmlFor="checkOut-desktop" className="sr-only">Check-out date</label>
-          <DatePicker
-            id="checkOut-desktop"
-            selected={formData.checkOut}
-            onChange={(date) => handleDateChange('checkOut', date)}
-            selectsEnd
-            startDate={formData.checkIn}
-            endDate={formData.checkOut}
-            minDate={formData.checkIn || new Date()}
-            placeholderText={isGlass ? 'Check out' : 'Select date'}
-            className={`${baseInputClassDesktop} ${errors.checkOut ? (isGlass ? 'border-white' : 'border-red-400') : ''}`}
-            dateFormat="MM/dd/yyyy"
-          />
+        {/* Check-out Date */}
+        <div className={fieldContainerClass} style={{ width: '180px' }}>
+          <label htmlFor="checkOut-desktop" className={fieldLabelClass}>
+            {t('fields.checkOut')}
+          </label>
+          {DatePickerComponent ? (
+            <DatePickerComponent
+              id="checkOut-desktop"
+              selected={formData.checkOut}
+              onChange={(date) => handleDateChange('checkOut', date)}
+              open={openCheckOut}
+              onCalendarOpen={() => setOpenCheckOut(true)}
+              onCalendarClose={() => setOpenCheckOut(false)}
+              onClickOutside={() => setOpenCheckOut(false)}
+              selectsEnd
+              startDate={formData.checkIn}
+              endDate={formData.checkOut}
+              minDate={formData.checkIn || new Date()}
+              placeholderText={t('fields.selectDate')}
+              className={`${fieldInputClass} ${errors.checkOut ? (isGlass ? 'border-white' : 'border-red-400') : ''}`}
+              dateFormat="MMM dd"
+              portalId="datepicker-portal"
+            />
+          ) : (
+            <button
+              type="button"
+              id="checkOut-desktop"
+              className={`${fieldInputClass} ${errors.checkOut ? (isGlass ? 'border-white' : 'border-red-400') : ''} text-left`}
+              onClick={() => {
+                loadDatePicker();
+                setPendingOpen('checkOut');
+                setOpenCheckOut(true);
+              }}
+              onFocus={() => {
+                loadDatePicker();
+                setPendingOpen('checkOut');
+                setOpenCheckOut(true);
+              }}
+            >
+              {checkOutLabel}
+            </button>
+          )}
           {errors.checkOut && (
             <p className={errorTextClass}>{errors.checkOut}</p>
           )}
@@ -186,74 +305,28 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
 
         <div className={dividerClass}></div>
 
-        <div className="w-[172px]">
-          <label htmlFor="adults-desktop" className="sr-only">Number of adults</label>
-          <div className="relative">
-            <select
-              id="adults-desktop"
-              value={formData.adults}
-              onChange={(e) => handleGuestChange('adults', parseInt(e.target.value, 10))}
-              className={`${selectClassDesktop} ${errors.adults ? (isGlass ? 'border-white' : 'border-red-400') : ''}`}
-              style={!isGlass ? { color: '#111827' } : {}}
-            >
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => (
-                <option key={num} value={num} style={{ color: '#111827', backgroundColor: '#ffffff' }}>{num} {num === 1 ? 'Adult' : 'Adults'}</option>
-              ))}
-            </select>
-            <svg
-              className={`pointer-events-none absolute right-1 top-1/2 -translate-y-[46%] h-4 w-4 ${isGlass ? 'text-white/80' : 'text-gray-600'}`}
-              viewBox="0 0 20 20"
-              fill="currentColor"
-              aria-hidden="true"
-            >
-              <path d="M6 8l4 4 4-4" />
-            </svg>
-          </div>
-          {errors.adults && (
-            <p className={errorTextClass}>{errors.adults}</p>
-          )}
+        {/* Guests */}
+        <div style={{ width: '180px' }}>
+          <GuestSelect
+            label={t('fields.guests')}
+            isGlass={isGlass}
+          />
         </div>
 
-        <div className={dividerClass}></div>
+        {/* Spacer so button aligns to right edge and no gap remains */}
+        <div className="flex-1 min-w-0" aria-hidden="true" />
 
-        <div className="w-[172px]">
-          <label htmlFor="children-desktop" className="sr-only">Number of children</label>
-          <div className="relative">
-            <select
-              id="children-desktop"
-              value={formData.children}
-              onChange={(e) => handleGuestChange('children', parseInt(e.target.value, 10))}
-              className={`${selectClassDesktop} ${errors.children ? (isGlass ? 'border-white' : 'border-red-400') : ''}`}
-              style={!isGlass ? { color: '#111827' } : {}}
-            >
-              {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(num => (
-                <option key={num} value={num} style={{ color: '#111827', backgroundColor: '#ffffff' }}>{num} {num === 1 ? 'Child' : 'Children'}</option>
-              ))}
-            </select>
-            <svg
-              className={`pointer-events-none absolute right-1 top-1/2 -translate-y-[46%] h-4 w-4 ${isGlass ? 'text-white/80' : 'text-gray-600'}`}
-              viewBox="0 0 20 20"
-              fill="currentColor"
-              aria-hidden="true"
-            >
-              <path d="M6 8l4 4 4-4" />
-            </svg>
-          </div>
-          {errors.children && (
-            <p className={errorTextClass}>{errors.children}</p>
-          )}
-        </div>
-
-        <div className="w-auto">
+        {/* Search Button */}
+        <div className="flex-shrink-0">
           <button
             type="submit"
-            className={`min-w-[176px] h-12 lg:h-14 px-6 rounded-lg text-sm lg:text-base font-medium focus:outline-none focus:ring-2 active:scale-95 transition-all duration-150 inline-flex items-center justify-center whitespace-nowrap touch-manipulation ${
+            className={`h-12 lg:h-14 px-8 lg:px-12 rounded-full text-sm uppercase tracking-[0.3em] font-semibold focus:outline-none focus:ring-2 active:scale-95 transition-all duration-150 inline-flex items-center justify-center whitespace-nowrap touch-manipulation shadow-lg hover:shadow-xl ${
               buttonTheme === 'hero'
-                ? 'bg-black text-white hover:bg-black/90 focus:ring-black/40'
-                : 'bg-[#81887A] text-white hover:bg-[#6F766B] focus:ring-[#81887A]/30'
+                ? 'bg-black text-white hover:bg-stone-800 focus:ring-black/40'
+                : 'bg-black text-white hover:bg-stone-800 focus:ring-black/40'
             }`}
           >
-            Search cabins →
+            {t('actions.search')}
           </button>
         </div>
       </div>

@@ -13,10 +13,10 @@
  */
 
 import { Suspense, lazy } from 'react';
-import { useRef, useEffect, useState } from 'react';
-import { useInView } from 'framer-motion';
+import { useRef, useEffect, useLayoutEffect, useState } from 'react';
+import { useSeason } from '../../context/SeasonContext';
 import { locations } from '../../data/content';
-import { NOISE_TEXTURE, GRAIN_OVERLAY } from './data';
+import { NOISE_TEXTURE } from './data';
 import HeroSection from './sections/HeroSection';
 import EditorialHookSection from './sections/EditorialHookSection';
 import StaysSection from './sections/StaysSection';
@@ -24,12 +24,16 @@ import VibeSection from './sections/VibeSection';
 import ReviewsSection from './sections/ReviewsSection';
 import PracticalDetailsAccordion from './sections/PracticalDetailsAccordion';
 import BookingCTABand from './sections/BookingCTABand';
+import GMBContactStrip from '../../components/GMBContactStrip';
+import { GMB_LOCATIONS, CONTACT_PHONE } from '../../data/gmbLocations';
 import './the-valley.css';
+import Seo from '../../components/Seo';
 
 const BookingDrawer = lazy(() => import('../../components/BookingDrawer'));
 
 const TheValleyPage = () => {
   const valley = locations.find(loc => loc.id === 'valley');
+  const { season } = useSeason();
   const heroRef = useRef(null);
   const videoRef = useRef(null);
   const containerRef = useRef(null);
@@ -74,20 +78,28 @@ const TheValleyPage = () => {
     return () => connection.removeEventListener?.('change', updateConnectionPreference);
   }, []);
 
-  // Lazy-load media only when hero is near viewport
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setShouldLoadMedia(true);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: '200px' }
-    );
-    observer.observe(containerRef.current);
-    return () => observer.disconnect();
+  // Load hero media when in view. useLayoutEffect so ref is set; fallback for mobile where IO can be unreliable.
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (el) {
+      const observer = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) {
+            setShouldLoadMedia(true);
+            observer.disconnect();
+          }
+        },
+        { rootMargin: '200px' }
+      );
+      observer.observe(el);
+      const fallback = setTimeout(() => setShouldLoadMedia(true), 200);
+      return () => {
+        observer.disconnect();
+        clearTimeout(fallback);
+      };
+    }
+    const fallback = setTimeout(() => setShouldLoadMedia(true), 200);
+    return () => clearTimeout(fallback);
   }, []);
 
   const shouldPlayVideo = shouldLoadMedia && !prefersReducedMotion && !isLowBandwidth;
@@ -101,11 +113,11 @@ const TheValleyPage = () => {
           await videoRef.current.play();
         }
       } catch (error) {
-        console.log('Video autoplay blocked, will play on interaction');
+        if (import.meta.env.DEV) console.log('Video autoplay blocked, will play on interaction');
       }
     };
     playVideo();
-  }, [shouldPlayVideo]);
+  }, [shouldPlayVideo, season]);
 
   if (!valley) {
     return (
@@ -117,40 +129,101 @@ const TheValleyPage = () => {
     );
   }
 
+  const origin = 'https://driftanddwells.com';
+
+  const valleyLoc = GMB_LOCATIONS.valley;
+  const structuredData = {
+    '@context': 'https://schema.org',
+    '@type': 'LodgingBusiness',
+    '@id': `${origin}/valley#lodging`,
+    name: valleyLoc.businessName,
+    description: valleyLoc.description,
+    url: valleyLoc.url,
+    telephone: CONTACT_PHONE,
+    image: [`${origin}/uploads/Videos/The-Valley-firaplace-video.winter-poster.jpg`],
+    address: {
+      '@type': 'PostalAddress',
+      addressCountry: valleyLoc.address.country,
+      addressRegion: valleyLoc.address.region,
+      addressLocality: valleyLoc.address.locality,
+      postalCode: valleyLoc.address.postalCode,
+      streetAddress: valleyLoc.address.street || undefined
+    },
+    geo: {
+      '@type': 'GeoCoordinates',
+      latitude: valleyLoc.geo.latitude,
+      longitude: valleyLoc.geo.longitude
+    },
+    hasMap: valleyLoc.getMapsUrl(),
+    openingHoursSpecification: { '@type': 'OpeningHoursSpecification', dayOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'], opens: '00:00', closes: '23:59' },
+    publisher: { '@id': `${origin}#organization` }
+  };
+
+  const valleyBreadcrumbs = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: `${origin}/` },
+      { '@type': 'ListItem', position: 2, name: 'The Valley', item: `${origin}/valley` }
+    ]
+  };
+
   return (
-    <div 
-      className="valley-page"
-      style={{ 
-        backgroundColor: 'var(--valley-canvas)',
-        minHeight: '100vh'
-      }}
-    >
-      <HeroSection
-        containerRef={containerRef}
-        heroRef={heroRef}
-        videoRef={videoRef}
-        shouldPlayVideo={shouldPlayVideo}
-        scrollToAccommodations={scrollToAccommodations}
-        noiseTexture={NOISE_TEXTURE}
+    <>
+      <Seo
+        title="The Valley – Mountain Village Retreat Above the Clouds | Drift & Dwells"
+        description="Discover The Valley, a private mountain village retreat above the clouds in Bulgaria with individual cabins, historic stone house, and shared outdoor spaces."
+        canonicalPath="/valley"
+        hreflangAlternates={[
+          { href: '/valley', hreflang: 'en' },
+          { href: '/valley', hreflang: 'x-default' }
+        ]}
+        ogType="place"
+        ogImage="/uploads/Videos/The-Valley-firaplace-video.winter-poster.jpg"
+        preloadImages={['/uploads/Videos/The-Valley-firaplace-video.winter-poster.jpg']}
+        jsonLd={[structuredData, valleyBreadcrumbs]}
       />
+      <div 
+        className="valley-page"
+        style={{ 
+          backgroundColor: 'var(--valley-canvas)',
+          minHeight: '100vh'
+        }}
+      >
+        <HeroSection
+          containerRef={containerRef}
+          heroRef={heroRef}
+          videoRef={videoRef}
+          shouldPlayVideo={shouldPlayVideo}
+          scrollToAccommodations={scrollToAccommodations}
+          noiseTexture={NOISE_TEXTURE}
+        />
 
-      <EditorialHookSection />
+        <EditorialHookSection />
 
-      <StaysSection accommodationsRef={accommodationsRef} />
+        <StaysSection accommodationsRef={accommodationsRef} />
 
-      <VibeSection galleryRef={galleryRef} />
+        <VibeSection galleryRef={galleryRef} />
 
-      <ReviewsSection trustBadgesRef={trustBadgesRef} />
+        <ReviewsSection trustBadgesRef={trustBadgesRef} />
 
-      <PracticalDetailsAccordion />
+        <PracticalDetailsAccordion />
 
-      <BookingCTABand />
+        {/* GMB NAP strip - Get directions & Call */}
+        <section className="valley-section" style={{ paddingTop: 0 }}>
+          <div className="valley-container" style={{ maxWidth: '900px' }}>
+            <GMBContactStrip locationKey="valley" variant="light" />
+          </div>
+        </section>
 
-      {/* Mobile Sticky CTA - Same as Home */}
-      <Suspense fallback={null}>
-        <BookingDrawer />
-      </Suspense>
-    </div>
+        <BookingCTABand />
+
+        {/* Mobile Sticky CTA - Same as Home */}
+        <Suspense fallback={null}>
+          <BookingDrawer />
+        </Suspense>
+      </div>
+    </>
   );
 };
 
