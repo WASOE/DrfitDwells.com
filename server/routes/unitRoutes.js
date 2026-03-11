@@ -2,6 +2,7 @@ const express = require('express');
 const Unit = require('../models/Unit');
 const CabinType = require('../models/CabinType');
 const featureFlags = require('../utils/featureFlags');
+const { validateId } = require('../middleware/validateId');
 
 const router = express.Router();
 
@@ -11,7 +12,7 @@ const multiUnitDisabled = (res) => res.status(403).json({
 });
 
 // GET /api/units/by-type/:cabinTypeId - Get all units for a cabin type
-router.get('/by-type/:cabinTypeId', async (req, res) => {
+router.get('/by-type/:cabinTypeId', validateId('cabinTypeId'), async (req, res) => {
   try {
     if (!featureFlags.isMultiUnitGloballyEnabled()) {
       return multiUnitDisabled(res);
@@ -45,7 +46,7 @@ router.get('/by-type/:cabinTypeId', async (req, res) => {
 });
 
 // GET /api/units/:id - Get unit by ID
-router.get('/:id', async (req, res) => {
+router.get('/:id', validateId('id'), async (req, res) => {
   try {
     if (!featureFlags.isMultiUnitGloballyEnabled()) {
       return multiUnitDisabled(res);

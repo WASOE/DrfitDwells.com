@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
+import { useParams, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { cabinAPI, bookingAPI } from '../services/api';
 import { useBookingContext } from '../context/BookingContext';
 import MosaicGallery from '../components/MosaicGallery';
 import ReviewsSection from '../components/reviews/ReviewsSection';
 import MapArrival from '../components/MapArrival';
 import StickyBookingBar from '../components/StickyBookingBar';
+import Seo from '../components/Seo';
 import './CabinDetails.css';
 
 // Constants
@@ -999,7 +1000,13 @@ const CabinDetails = () => {
   // ===== I) Render (all hooks have been called by this point) =====
   return (
     <div className="min-h-screen bg-white cabin-details-page pb-32 md:pb-0">
-      {/* SEO JSON-LD */}
+      <Seo
+        title={`${cabin.name} | Drift & Dwells`}
+        description={pageDescription}
+        canonicalPath={`/cabin/${id}`}
+        ogImage={pageImage}
+        ogType="product"
+      />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd }} />
       
       {/* Save Toast */}

@@ -2,7 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useBookingSearch } from '../context/BookingSearchContext';
+import { useLanguage } from '../context/LanguageContext.jsx';
 import GuestSelect from './GuestSelect';
+import { localizePath } from '../utils/localizedRoutes';
 
 const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'default' }) => {
   const navigate = useNavigate();
@@ -21,6 +23,7 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
 
   const [errors, setErrors] = useState({});
   const { t } = useTranslation('booking');
+  const { language } = useLanguage();
   const [openCheckIn, setOpenCheckIn] = useState(false);
   const [openCheckOut, setOpenCheckOut] = useState(false);
   const [DatePickerComponent, setDatePickerComponent] = useState(null);
@@ -69,10 +72,9 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
   // Load react-datepicker and its CSS. Preload on desktop so the real input is there when user clicks (fixes calendar not opening on first click).
   const loadDatePicker = useCallback(async () => {
     if (DatePickerComponent) return;
-    const [mod] = await Promise.all([
-      import('./date/DatePickerLazy.jsx'),
-      import('react-datepicker/dist/react-datepicker.css'),
-    ]);
+    await import('react-datepicker/dist/react-datepicker.css');
+    await import('../styles/react-datepicker-theme.css');
+    const mod = await import('./date/DatePickerLazy.jsx');
     setDatePickerComponent(() => mod.default);
   }, [DatePickerComponent]);
 
@@ -154,7 +156,7 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
       pets: (pets || 0).toString()
     });
 
-    navigate(`/search?${searchParams.toString()}`);
+    navigate(`${localizePath('/search', language)}?${searchParams.toString()}`);
   };
 
   const summaryDates = checkIn && checkOut
@@ -227,6 +229,8 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
               minDate={new Date()}
               placeholderText={t('fields.selectDate')}
               className={`${fieldInputClass} ${errors.checkIn ? (isGlass ? 'border-white' : 'border-red-400') : ''}`}
+              calendarClassName="dd-datepicker"
+              popperClassName="dd-datepicker-popper"
               dateFormat="MMM dd"
               portalId="datepicker-portal"
             />
@@ -276,6 +280,8 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
               minDate={formData.checkIn || new Date()}
               placeholderText={t('fields.selectDate')}
               className={`${fieldInputClass} ${errors.checkOut ? (isGlass ? 'border-white' : 'border-red-400') : ''}`}
+              calendarClassName="dd-datepicker"
+              popperClassName="dd-datepicker-popper"
               dateFormat="MMM dd"
               portalId="datepicker-portal"
             />

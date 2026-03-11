@@ -1,13 +1,13 @@
 const express = require('express');
 const Cabin = require('../models/Cabin');
+const { validateId } = require('../middleware/validateId');
 
 const router = express.Router();
 
-// GET /api/cabins/:id - Get cabin details
-router.get('/:id', async (req, res) => {
+router.get('/:id', validateId('id'), async (req, res) => {
   try {
     const cabin = await Cabin.findById(req.params.id);
-    
+
     if (!cabin || !cabin.isActive) {
       return res.status(404).json({
         success: false,
@@ -30,11 +30,10 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// GET /api/cabins - Get all active cabins (for admin or general listing)
 router.get('/', async (req, res) => {
   try {
     const cabins = await Cabin.find({ isActive: true }).select('-blockedDates');
-    
+
     res.json({
       success: true,
       data: { cabins }

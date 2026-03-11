@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
-import { cabinAPI } from '../services/api';
+import { getPrimaryCabin } from '../services/cabinContent';
 import { getSEOAlt } from '../data/imageMetadata';
 import './CabinGallerySection.css';
 
@@ -187,13 +187,8 @@ const CabinGallerySection = ({ openModal }) => {
     let active = true;
     const load = async () => {
       try {
-        const res = await cabinAPI.getAll();
-        if (!active || !res?.data?.success) return;
-        const cabins = res.data?.data?.cabins || res.data?.cabins || [];
-        const found = cabins.find(
-          c => c?.name && ['the cabin', 'bucephalus', 'the cabin (bucephalus)'].includes(c.name.trim().toLowerCase())
-        ) || cabins[0];
-        if (found) setCabin(found);
+        const found = await getPrimaryCabin();
+        if (active && found) setCabin(found);
       } catch {
         setCabin(null);
       } finally {

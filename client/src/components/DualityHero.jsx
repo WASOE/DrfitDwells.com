@@ -4,7 +4,9 @@ import { useTranslation } from 'react-i18next';
 import SearchBar from './SearchBar';
 import HeroSeasonToggle from './HeroSeasonToggle';
 import { useSeason } from '../context/SeasonContext';
+import { useLanguage } from '../context/LanguageContext.jsx';
 import { CABIN_MEDIA, VALLEY_MEDIA } from '../config/mediaConfig';
+import { localizePath } from '../utils/localizedRoutes';
 
 // Cabin hero media comes directly from canonical config:
 // - winter video -> winter poster
@@ -34,6 +36,7 @@ const DualityHero = () => {
   const rightVideoRef = useRef(null);
   const containerRef = useRef(null);
   const { t } = useTranslation('home');
+  const { language } = useLanguage();
 
   // Detect mobile device
   useEffect(() => {
@@ -214,18 +217,8 @@ const DualityHero = () => {
     };
   }, [isMobile]);
 
-  // Animation variants for panes - desktop only
-  const leftPaneVariants = {
-    idle: { width: '50%' },
-    hovered: { width: '70%' },
-    notHovered: { width: '30%' }
-  };
-
-  const rightPaneVariants = {
-    idle: { width: '50%' },
-    hovered: { width: '70%' },
-    notHovered: { width: '30%' }
-  };
+  const leftFlex = hoveredPane === 'left' ? 7 : hoveredPane === 'right' ? 3 : 5;
+  const rightFlex = hoveredPane === 'right' ? 7 : hoveredPane === 'left' ? 3 : 5;
 
   // Text animation variants - commit to choice: fade out non-active side
   const driftTextVariants = {
@@ -240,20 +233,7 @@ const DualityHero = () => {
     notHovered: { opacity: 0, y: -12, pointerEvents: 'none' }
   };
 
-  // Get animation state for each pane
-  const getLeftPaneState = () => {
-    if (isMobile) return 'idle';
-    if (hoveredPane === null) return 'idle';
-    return hoveredPane === 'left' ? 'hovered' : 'notHovered';
-  };
-
-  const getRightPaneState = () => {
-    if (isMobile) return 'idle';
-    if (hoveredPane === null) return 'idle';
-    return hoveredPane === 'right' ? 'hovered' : 'notHovered';
-  };
-
-  // Get text animation state
+  // Text animation state
   const getLeftTextState = () => {
     if (isMobile) return 'idle';
     if (hoveredPane === null) return 'idle';
@@ -284,11 +264,11 @@ const DualityHero = () => {
               
               {/* Text centered in top pane - one line, smaller so both EN and BG fit */}
               <div className="relative z-20 pointer-events-none text-center px-2">
-                <h2 className="font-['Playfair_Display'] text-lg sm:text-xl text-white font-semibold tracking-tight leading-tight drop-shadow-2xl whitespace-nowrap">
+                <h1 className="font-['Playfair_Display'] text-lg sm:text-xl text-white font-semibold tracking-tight leading-tight drop-shadow-2xl whitespace-nowrap">
                   {t('hero.leftHeadline')}
-                </h2>
+                </h1>
                 <a
-                  href="/cabin"
+                  href={localizePath('/cabin', language)}
                   className="inline-flex items-center gap-2 mt-2 text-xs uppercase tracking-widest border-b border-white/50 pb-1 text-white/80 hover:text-white transition-colors pointer-events-auto"
                 >
                   {t('hero.exploreCabin')}
@@ -314,7 +294,7 @@ const DualityHero = () => {
                   {t('hero.rightHeadline')}
                 </h2>
                 <a
-                  href="/valley"
+                  href={localizePath('/valley', language)}
                   className="inline-flex items-center gap-2 mt-2 text-xs uppercase tracking-widest border-b border-white/50 pb-1 text-white/80 hover:text-white transition-colors pointer-events-auto"
                 >
                   {t('hero.exploreValley')}
@@ -325,20 +305,17 @@ const DualityHero = () => {
         </>
       ) : (
         <>
-          {/* Desktop Layout */}
-          <motion.div
-            className="absolute left-0 top-0 h-full z-10 bg-black overflow-hidden"
-            initial="idle"
-            animate={getLeftPaneState()}
-            variants={leftPaneVariants}
-            transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+        <div className="flex w-full h-full">
+          <div
+            className="relative h-full z-10 bg-black overflow-hidden"
+            style={{ flex: leftFlex, transition: 'flex 0.6s cubic-bezier(0.22,1,0.36,1)' }}
           >
             <div className="relative w-full h-full">
               {renderMediaLayer('left')}
               <div className="absolute inset-0 bg-black/40" />
 
               <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-4">
-                <motion.h2
+                <motion.h1
                   className="font-['Playfair_Display'] text-2xl sm:text-3xl md:text-4xl lg:text-5xl text-white font-semibold tracking-tight leading-tight drop-shadow-2xl"
                   initial="idle"
                   animate={getLeftTextState()}
@@ -346,9 +323,9 @@ const DualityHero = () => {
                   transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
                 >
                   {t('hero.leftHeadline')}
-                </motion.h2>
+                </motion.h1>
                 <motion.a
-                  href="/cabin"
+                  href={localizePath('/cabin', language)}
                   initial="idle"
                   animate={getLeftTextState()}
                   variants={dwellTextVariants}
@@ -359,19 +336,16 @@ const DualityHero = () => {
                 </motion.a>
               </div>
             </div>
-          </motion.div>
+          </div>
 
-          <motion.div
-            className="absolute right-0 top-0 h-full z-10 bg-black overflow-hidden"
-            initial="idle"
-            animate={getRightPaneState()}
-            variants={rightPaneVariants}
-            transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+          <div
+            className="relative h-full z-10 bg-black overflow-hidden"
+            style={{ flex: rightFlex, transition: 'flex 0.6s cubic-bezier(0.22,1,0.36,1)' }}
           >
             <div className="relative w-full h-full">
                 {renderMediaLayer('right')}
                 <div className="absolute inset-0 bg-black/20" />
-                
+
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-4">
                   <motion.h2
                     className="font-['Playfair_Display'] text-2xl sm:text-3xl md:text-4xl lg:text-5xl text-white font-semibold tracking-tight leading-tight drop-shadow-2xl whitespace-nowrap"
@@ -383,7 +357,7 @@ const DualityHero = () => {
                     {t('hero.rightHeadline')}
                   </motion.h2>
                   <motion.a
-                    href="/valley"
+                    href={localizePath('/valley', language)}
                     initial="idle"
                     animate={getRightTextState()}
                     variants={driftTextVariants}
@@ -394,15 +368,16 @@ const DualityHero = () => {
                   </motion.a>
               </div>
             </div>
-          </motion.div>
-
-          <div className="absolute bottom-8 lg:bottom-12 left-1/2 -translate-x-1/2 z-20 w-full max-w-4xl px-4 sm:px-6 pointer-events-auto">
-            <motion.div
-              className="bg-white/[0.07] border border-white/20 backdrop-blur-sm rounded-xl px-4 py-3 sm:px-5 sm:py-3.5 transition-colors duration-300 hover:bg-white/[0.09] hover:border-white/30"
-            >
-              <SearchBar buttonTheme="hero" variant="glass" />
-            </motion.div>
           </div>
+
+        </div>
+        <div className="absolute bottom-8 lg:bottom-12 left-1/2 -translate-x-1/2 z-20 w-full max-w-4xl px-4 sm:px-6 pointer-events-auto">
+          <motion.div
+            className="bg-white/[0.07] border border-white/20 backdrop-blur-sm rounded-xl px-4 py-3 sm:px-5 sm:py-3.5 transition-colors duration-300 hover:bg-white/[0.09] hover:border-white/30"
+          >
+            <SearchBar buttonTheme="hero" variant="glass" />
+          </motion.div>
+        </div>
         </>
       )}
     </section>

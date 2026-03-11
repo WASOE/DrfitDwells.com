@@ -5,17 +5,25 @@ import Footer from "../components/Footer";
 import AudioPlayer from "../components/AudioPlayer";
 import BookingModal from "../components/BookingModal";
 import AnnouncementBar from "../components/AnnouncementBar";
+import { stripLocaleFromPath } from "../utils/localizedRoutes";
 
 /** Routes where the first section is a full-bleed hero (content intentionally under the nav). No top padding. */
 const HERO_PATHS = ['/', '/cabin', '/valley'];
 
 export default function SiteLayout() {
   const location = useLocation();
-  const isHome = location.pathname === '/';
-  const isHeroPage = HERO_PATHS.includes(location.pathname);
+  const basePath = stripLocaleFromPath(location.pathname);
+  const isHome = basePath === '/';
+  const isHeroPage = HERO_PATHS.includes(basePath);
 
   return (
     <div className="relative overflow-x-hidden">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:bg-white focus:px-4 focus:py-2 focus:rounded focus:shadow-lg focus:text-sm focus:font-medium"
+      >
+        Skip to content
+      </a>
       <div
         className="pointer-events-none fixed inset-0 z-0 opacity-5 mix-blend-soft-light"
         style={{
@@ -26,6 +34,7 @@ export default function SiteLayout() {
       <div className="relative z-10">
         <Header />
         <main
+          id="main"
           style={isHeroPage ? undefined : { paddingTop: 'var(--header-offset)' }}
           className={isHeroPage ? '' : 'min-h-0'}
         >

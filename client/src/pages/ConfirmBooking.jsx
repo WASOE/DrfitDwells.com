@@ -7,6 +7,7 @@ import { cabinAPI, bookingAPI } from '../services/api';
 import ChangeDatesModal from '../components/booking/ChangeDatesModal';
 import ChangeGuestsModal from '../components/booking/ChangeGuestsModal';
 import PriceDetailsModal from '../components/booking/PriceDetailsModal';
+import Seo from '../components/Seo';
 
 const stripePk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 const stripePromise = stripePk ? loadStripe(stripePk) : null;
@@ -421,9 +422,17 @@ const ConfirmBooking = () => {
 
   if (loading || !cabin) {
     return (
-      <div className="min-h-screen bg-[#F7F4EE] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#81887A]" />
-      </div>
+      <>
+        <Seo
+          title="Confirm and pay | Drift & Dwells"
+          description="Review your stay details and complete your Drift & Dwells booking."
+          canonicalPath={`/cabin/${id}/confirm`}
+          noindex
+        />
+        <div className="min-h-screen bg-[#F7F4EE] flex items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#81887A]" />
+        </div>
+      </>
     );
   }
 
@@ -442,8 +451,15 @@ const ConfirmBooking = () => {
   const cabinName = cabin.name || 'Cabin';
 
   return (
-    <div className="min-h-screen bg-[#F7F4EE] pb-32 md:pb-0">
-      <div className="max-w-2xl mx-auto px-4 py-6 md:py-10">
+    <>
+      <Seo
+        title={`Confirm ${cabinName} booking | Drift & Dwells`}
+        description={`Review dates, guests, and payment details for your ${cabinName} stay.`}
+        canonicalPath={`/cabin/${id}/confirm`}
+        noindex
+      />
+      <div className="min-h-screen bg-[#F7F4EE] pb-32 md:pb-0">
+        <div className="max-w-2xl mx-auto px-4 py-6 md:py-10">
         {/* Header */}
         <header className="flex items-center justify-between mb-6">
           <h1 className="text-xl font-semibold text-gray-900">Confirm and pay</h1>
@@ -582,36 +598,37 @@ const ConfirmBooking = () => {
             </>
           )}
         </div>
-      </div>
+        </div>
 
-      {/* Modals */}
-      <ChangeDatesModal
-        isOpen={datesModalOpen}
-        onClose={() => setDatesModalOpen(false)}
-        checkIn={checkIn}
-        checkOut={checkOut}
-        onSave={handleDatesSave}
-      />
-      <ChangeGuestsModal
-        isOpen={guestsModalOpen}
-        onClose={() => setGuestsModalOpen(false)}
-        adults={adults}
-        children={children}
-        babies={babies}
-        pets={pets}
-        maxGuests={maxGuests}
-        allowPets={allowPets}
-        onSave={handleGuestsSave}
-      />
-      <PriceDetailsModal
-        isOpen={priceModalOpen}
-        onClose={() => setPriceModalOpen(false)}
-        nights={pricing?.totalNights}
-        pricePerNight={pricing?.pricePerNight}
-        totalPrice={grandTotal}
-        extras={experienceExtras}
-      />
-    </div>
+        {/* Modals */}
+        <ChangeDatesModal
+          isOpen={datesModalOpen}
+          onClose={() => setDatesModalOpen(false)}
+          checkIn={checkIn}
+          checkOut={checkOut}
+          onSave={handleDatesSave}
+        />
+        <ChangeGuestsModal
+          isOpen={guestsModalOpen}
+          onClose={() => setGuestsModalOpen(false)}
+          adults={adults}
+          children={children}
+          babies={babies}
+          pets={pets}
+          maxGuests={maxGuests}
+          allowPets={allowPets}
+          onSave={handleGuestsSave}
+        />
+        <PriceDetailsModal
+          isOpen={priceModalOpen}
+          onClose={() => setPriceModalOpen(false)}
+          nights={pricing?.totalNights}
+          pricePerNight={pricing?.pricePerNight}
+          totalPrice={grandTotal}
+          extras={experienceExtras}
+        />
+      </div>
+    </>
   );
 }
 

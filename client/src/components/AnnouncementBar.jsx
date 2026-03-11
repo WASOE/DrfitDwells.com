@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
+import { stripLocaleFromPath } from '../utils/localizedRoutes';
 
 /** Routes that render a fixed bottom bar (BookingDrawer or StickyBookingBar). Announcement bar sits above it. */
 function hasStickyBottomBar(pathname) {
+  pathname = stripLocaleFromPath(pathname);
   if (pathname === '/') return true;           // Home: BookingDrawer (mobile)
   if (pathname === '/valley') return true;     // Valley: BookingDrawer (mobile)
   if (/^\/cabin\/[^/]+$/.test(pathname)) return true;  // CabinDetails: StickyBookingBar
@@ -13,6 +15,7 @@ function hasStickyBottomBar(pathname) {
 
 /** Desktop: only CabinDetails and craft steps have a visible sticky bar; Home/Valley use BookingDrawer md:hidden. */
 function hasStickyBottomBarOnDesktop(pathname) {
+  pathname = stripLocaleFromPath(pathname);
   if (/^\/cabin\/[^/]+$/.test(pathname)) return true;
   if (/^\/craft\/step-[1-4]$/.test(pathname)) return true;
   return false;
@@ -35,7 +38,8 @@ const AnnouncementBar = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const location = useLocation();
-  const isBuildPage = location.pathname === '/build';
+  const basePath = stripLocaleFromPath(location.pathname);
+  const isBuildPage = basePath === '/build';
   
   useEffect(() => {
     setIsMounted(true);
@@ -58,7 +62,7 @@ const AnnouncementBar = () => {
 
   // Smart position: only reserve space above when this route actually shows a sticky bottom bar.
   // Use exact bar height so there's no gap between banner and button (70px for BookingDrawer, 72px for StickyBookingBar).
-  const bottomPosition = getBottomPosition(location.pathname);
+  const bottomPosition = getBottomPosition(basePath);
 
   return (
     <>

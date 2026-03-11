@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import Seo from '../../components/Seo';
 
 /**
  * Reusable component for displaying legal documents as embedded PDFs
@@ -8,43 +8,10 @@ const DocumentViewer = ({
   title, 
   description, 
   pdfPath, 
-  fileName 
+  fileName,
+  canonicalPath,
+  noindex = false
 }) => {
-  // Update SEO meta tags
-  useEffect(() => {
-    document.title = `${title} | Drift & Dwells`;
-    
-    // Update or create meta tags
-    const updateMetaTag = (name, content, isProperty = false) => {
-      const attr = isProperty ? 'property' : 'name';
-      let meta = document.querySelector(`meta[${attr}="${name}"]`);
-      if (!meta) {
-        meta = document.createElement('meta');
-        meta.setAttribute(attr, name);
-        document.head.appendChild(meta);
-      }
-      meta.setAttribute('content', content);
-    };
-    
-    updateMetaTag('description', description);
-    updateMetaTag('og:title', `${title} | Drift & Dwells`, true);
-    updateMetaTag('og:description', description, true);
-    updateMetaTag('og:type', 'website', true);
-    updateMetaTag('og:url', window.location.href, true);
-    updateMetaTag('twitter:card', 'summary');
-    updateMetaTag('twitter:title', `${title} | Drift & Dwells`);
-    updateMetaTag('twitter:description', description);
-    
-    // Canonical link
-    let canonical = document.querySelector('link[rel="canonical"]');
-    if (!canonical) {
-      canonical = document.createElement('link');
-      canonical.setAttribute('rel', 'canonical');
-      document.head.appendChild(canonical);
-    }
-    canonical.setAttribute('href', window.location.href);
-  }, [title, description]);
-
   const handleDownload = () => {
     const link = document.createElement('a');
     link.href = pdfPath;
@@ -55,8 +22,15 @@ const DocumentViewer = ({
   };
 
   return (
-    <div className="min-h-screen bg-white pb-12 md:pb-24">
-      <div className="max-w-6xl mx-auto px-4 md:px-6">
+    <>
+      <Seo
+        title={`${title} | Drift & Dwells`}
+        description={description}
+        canonicalPath={canonicalPath}
+        noindex={noindex}
+      />
+      <div className="min-h-screen bg-white pb-12 md:pb-24">
+        <div className="max-w-6xl mx-auto px-4 md:px-6">
         {/* Header */}
         <div className="mb-8 md:mb-12 text-center">
           <h1 className="text-3xl md:text-4xl lg:text-5xl font-serif font-bold text-black mb-4 md:mb-6 tracking-tight">
@@ -118,8 +92,9 @@ const DocumentViewer = ({
             {' '}to view it.
           </p>
         </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 

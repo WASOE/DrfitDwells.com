@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { differenceInDays } from 'date-fns';
 
 const BookingSearchContext = createContext();
@@ -12,34 +12,26 @@ export const BookingSearchProvider = ({ children }) => {
   const [pets, setPets] = useState(0);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  const updateDates = (start, end) => {
+  const updateDates = useCallback((start, end) => {
     setCheckIn(start || null);
     setCheckOut(end || null);
-  };
+  }, []);
 
-  const updateGuests = ({ adults: nextAdults, children: nextChildren, babies: nextBabies, pets: nextPets }) => {
-    if (typeof nextAdults === 'number') {
-      setAdults(Math.max(1, nextAdults));
-    }
-    if (typeof nextChildren === 'number') {
-      setChildCount(Math.max(0, nextChildren));
-    }
-    if (typeof nextBabies === 'number') {
-      setBabies(Math.max(0, nextBabies));
-    }
-    if (typeof nextPets === 'number') {
-      setPets(Math.max(0, nextPets));
-    }
-  };
+  const updateGuests = useCallback(({ adults: nextAdults, children: nextChildren, babies: nextBabies, pets: nextPets }) => {
+    if (typeof nextAdults === 'number') setAdults(Math.max(1, nextAdults));
+    if (typeof nextChildren === 'number') setChildCount(Math.max(0, nextChildren));
+    if (typeof nextBabies === 'number') setBabies(Math.max(0, nextBabies));
+    if (typeof nextPets === 'number') setPets(Math.max(0, nextPets));
+  }, []);
 
-  const resetSearch = () => {
+  const resetSearch = useCallback(() => {
     setCheckIn(null);
     setCheckOut(null);
     setAdults(2);
     setChildCount(0);
     setBabies(0);
     setPets(0);
-  };
+  }, []);
 
   const nights = useMemo(() => {
     if (checkIn && checkOut) {
@@ -48,7 +40,10 @@ export const BookingSearchProvider = ({ children }) => {
     return 0;
   }, [checkIn, checkOut]);
 
-  const value = {
+  const openModal = useCallback(() => setIsModalOpen(true), []);
+  const closeModal = useCallback(() => setIsModalOpen(false), []);
+
+  const value = useMemo(() => ({
     checkIn,
     checkOut,
     adults,
@@ -60,9 +55,23 @@ export const BookingSearchProvider = ({ children }) => {
     updateGuests,
     resetSearch,
     isModalOpen,
-    openModal: () => setIsModalOpen(true),
-    closeModal: () => setIsModalOpen(false)
-  };
+    openModal,
+    closeModal
+  }), [
+    checkIn,
+    checkOut,
+    adults,
+    childCount,
+    babies,
+    pets,
+    nights,
+    updateDates,
+    updateGuests,
+    resetSearch,
+    isModalOpen,
+    openModal,
+    closeModal
+  ]);
 
   return (
     <BookingSearchContext.Provider value={value}>

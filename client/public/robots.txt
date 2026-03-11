@@ -1,5 +1,5 @@
 User-agent: *
 Disallow: /admin/
 
-Sitemap: https://driftanddwells.com/sitemap.xml
+Sitemap: https://driftdwells.com/sitemap.xml
 

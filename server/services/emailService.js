@@ -1,20 +1,34 @@
 const nodemailer = require('nodemailer');
 
-// In-memory idempotency guard for email events
-const sentEvents = new Map(); // key: `${bookingId}:${event}` -> timestamp
-const EVENT_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const htmlEscape = (s) => {
+  if (s == null || s === '') return '';
+  const str = String(s);
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
+const sentEvents = new Map();
+const EVENT_TTL_MS = 10 * 60 * 1000;
+
+function cleanupSentEvents() {
+  const now = Date.now();
+  for (const [k, t] of sentEvents) {
+    if (now - t >= EVENT_TTL_MS) sentEvents.delete(k);
+  }
+}
+
+const _cleanupInterval = setInterval(cleanupSentEvents, EVENT_TTL_MS);
+if (_cleanupInterval.unref) _cleanupInterval.unref();
 
 function markAndCheckEventRecentlySent(key) {
   const now = Date.now();
   const prev = sentEvents.get(key);
   if (prev && now - prev < EVENT_TTL_MS) return true;
   sentEvents.set(key, now);
-  // occasional cleanup
-  if (sentEvents.size > 5000) {
-    for (const [k, t] of sentEvents) {
-      if (now - t >= EVENT_TTL_MS) sentEvents.delete(k);
-    }
-  }
   return false;
 }
 
@@ -161,18 +175,18 @@ class EmailService {
           </div>
           
           <div class="content">
-            <h2>Hello ${booking.guestInfo.firstName}!</h2>
+            <h2>Hello ${htmlEscape(booking.guestInfo?.firstName)}!</h2>
             <p>Thank you for choosing Drift & Dwells for your off-grid retreat. We've received your booking request and are excited to welcome you to nature.</p>
             
             <div class="booking-details">
               <h3 style="margin-top: 0; color: #374151;">Booking Details</h3>
               <div class="detail-row">
                 <span class="detail-label">Cabin:</span>
-                <span>${cabin.name} • ${cabin.location}</span>
+                <span>${htmlEscape(cabin.name)} • ${htmlEscape(cabin.location)}</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">Check-in:</span>
-                <span>${checkIn.toLocaleDateString('en-GB')} (${booking.cabinId.arrivalWindowDefault || 'TBD'})</span>
+                <span>${checkIn.toLocaleDateString('en-GB')} (${htmlEscape(cabin.arrivalWindowDefault || 'TBD')})</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">Check-out:</span>
@@ -188,12 +202,12 @@ class EmailService {
               </div>
               <div class="detail-row">
                 <span class="detail-label">Trip Type:</span>
-                <span>${booking.tripType || 'Custom Experience'}</span>
+                <span>${htmlEscape(booking.tripType || 'Custom Experience')}</span>
               </div>
               ${booking.transportMethod && booking.transportMethod !== 'Not selected' ? `
               <div class="detail-row">
                 <span class="detail-label">Transport:</span>
-                <span>${booking.transportMethod}</span>
+                <span>${htmlEscape(booking.transportMethod)}</span>
               </div>
               ` : ''}
               <div class="detail-row">
@@ -205,7 +219,7 @@ class EmailService {
             ${cabin.meetingPoint?.googleMapsUrl ? `
             <div class="guidance-section">
               <h3 style="margin-top: 0; color: #92400e;">📍 Directions</h3>
-              <p><strong>Meeting Point:</strong> ${cabin.meetingPoint.label || cabin.location}</p>
+              <p><strong>Meeting Point:</strong> ${htmlEscape(cabin.meetingPoint.label || cabin.location)}</p>
               <a href="${cabin.meetingPoint.googleMapsUrl}" class="btn" target="_blank">Open in Google Maps</a>
               ${cabin.meetingPoint.what3words ? `<a href="https://what3words.com/${cabin.meetingPoint.what3words}" class="btn" target="_blank">///${cabin.meetingPoint.what3words}</a>` : ''}
               ${cabin.meetingPoint.lat && cabin.meetingPoint.lng ? `<p style="margin: 10px 0; font-family: monospace; background: white; padding: 8px; border-radius: 4px;">GPS: ${cabin.meetingPoint.lat}, ${cabin.meetingPoint.lng}</p>` : ''}
@@ -216,7 +230,7 @@ class EmailService {
             <div class="packing-list">
               <h3 style="margin-top: 0; color: #166534;">🎒 Packing List</h3>
               <ul>
-                ${cabin.packingList.slice(0, 5).map(item => `<li>${item}</li>`).join('')}
+                ${cabin.packingList.slice(0, 5).map(item => `<li>${htmlEscape(item)}</li>`).join('')}
                 ${cabin.packingList.length > 5 ? `<li><em>... and ${cabin.packingList.length - 5} more items</em></li>` : ''}
               </ul>
               ${cabin.packingList.length > 5 ? '<p><em>See full packing list in your booking confirmation email.</em></p>' : ''}
@@ -243,14 +257,14 @@ class EmailService {
             ${cabin.safetyNotes ? `
             <div class="safety-notes">
               <h3 style="margin-top: 0; color: #dc2626;">⚠️ Safety & House Rules</h3>
-              <p>${cabin.safetyNotes}</p>
+              <p>${htmlEscape(cabin.safetyNotes)}</p>
             </div>
             ` : ''}
 
             ${cabin.emergencyContact ? `
             <div class="contact-info">
               <h3 style="margin-top: 0; color: #1e40af;">🚨 Emergency Contact</h3>
-              <p><strong>${cabin.emergencyContact}</strong></p>
+              <p><strong>${htmlEscape(cabin.emergencyContact)}</strong></p>
             </div>
             ` : ''}
 
@@ -380,18 +394,18 @@ The Drift & Dwells Team
           <div class="content">
             <div class="confirmed-badge">✅ BOOKING CONFIRMED</div>
             
-            <h2>Hello ${booking.guestInfo.firstName}!</h2>
-            <p>Great news! Your booking has been confirmed. We're excited to welcome you to your off-grid retreat at <strong>${cabin.name}</strong>.</p>
+            <h2>Hello ${htmlEscape(booking.guestInfo?.firstName)}!</h2>
+            <p>Great news! Your booking has been confirmed. We're excited to welcome you to your off-grid retreat at <strong>${htmlEscape(cabin.name)}</strong>.</p>
             
             <div class="booking-details">
               <h3 style="margin-top: 0; color: #374151;">Confirmed Details</h3>
               <div class="detail-row">
                 <span class="detail-label">Cabin:</span>
-                <span>${cabin.name} • ${cabin.location}</span>
+                <span>${htmlEscape(cabin.name)} • ${htmlEscape(cabin.location)}</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">Check-in:</span>
-                <span>${checkIn.toLocaleDateString('en-GB')} (${booking.cabinId.arrivalWindowDefault || 'TBD'})</span>
+                <span>${checkIn.toLocaleDateString('en-GB')} (${htmlEscape(cabin.arrivalWindowDefault || 'TBD')})</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">Check-out:</span>
@@ -491,14 +505,14 @@ The Drift & Dwells Team
           <div class="content">
             <div class="cancelled-badge">❌ BOOKING CANCELLED</div>
             
-            <h2>Hello ${booking.guestInfo.firstName},</h2>
-            <p>We're sorry to inform you that your booking for <strong>${cabin.name}</strong> has been cancelled.</p>
+            <h2>Hello ${htmlEscape(booking.guestInfo?.firstName)},</h2>
+            <p>We're sorry to inform you that your booking for <strong>${htmlEscape(cabin.name)}</strong> has been cancelled.</p>
             
             <div class="booking-details">
               <h3 style="margin-top: 0; color: #374151;">Cancelled Booking</h3>
               <div class="detail-row">
                 <span class="detail-label">Cabin:</span>
-                <span>${cabin.name} • ${cabin.location}</span>
+                <span>${htmlEscape(cabin.name)} • ${htmlEscape(cabin.location)}</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">Check-in:</span>
@@ -606,7 +620,7 @@ The Drift & Dwells Team
               </div>
               <div class="detail-row">
                 <span class="detail-label">Cabin:</span>
-                <span>${cabin.name} • ${cabin.location}</span>
+                <span>${htmlEscape(cabin.name)} • ${htmlEscape(cabin.location)}</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">Check-in:</span>
@@ -622,15 +636,15 @@ The Drift & Dwells Team
               </div>
               <div class="detail-row">
                 <span class="detail-label">Guest:</span>
-                <span>${booking.guestInfo.firstName} ${booking.guestInfo.lastName}</span>
+                <span>${htmlEscape(booking.guestInfo?.firstName)} ${htmlEscape(booking.guestInfo?.lastName)}</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">Email:</span>
-                <span>${booking.guestInfo.email}</span>
+                <span>${htmlEscape(booking.guestInfo?.email)}</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">Phone:</span>
-                <span>${booking.guestInfo.phone}</span>
+                <span>${htmlEscape(booking.guestInfo?.phone)}</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">Guests:</span>
@@ -638,12 +652,12 @@ The Drift & Dwells Team
               </div>
               <div class="detail-row">
                 <span class="detail-label">Trip Type:</span>
-                <span>${booking.tripType || 'Custom Experience'}</span>
+                <span>${htmlEscape(booking.tripType || 'Custom Experience')}</span>
               </div>
               ${booking.transportMethod && booking.transportMethod !== 'Not selected' ? `
               <div class="detail-row">
                 <span class="detail-label">Transport:</span>
-                <span>${booking.transportMethod}</span>
+                <span>${htmlEscape(booking.transportMethod)}</span>
               </div>
               ` : ''}
               <div class="detail-row">
@@ -653,12 +667,12 @@ The Drift & Dwells Team
               ${booking.specialRequests ? `
               <div class="detail-row">
                 <span class="detail-label">Special Requests:</span>
-                <span>${booking.specialRequests}</span>
+                <span>${htmlEscape(booking.specialRequests)}</span>
               </div>
               ` : ''}
             </div>
 
-            <p><strong>Status:</strong> ${booking.status}</p>
+            <p><strong>Status:</strong> ${htmlEscape(booking.status)}</p>
             
             <p>Please review and confirm this booking in the admin panel.</p>
           </div>

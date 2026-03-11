@@ -10,6 +10,8 @@ const emailService = require('../services/emailService');
 
 const DEFAULT_CABIN_IMAGE_URL = 'https://placehold.co/1200x800?text=Cabin';
 
+const escapeRegex = (str) => String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 const CABIN_ALLOWED_FIELDS = [
   'name', 'description', 'location', 'hostName', 'capacity', 'pricePerNight', 'minNights',
   'transportOptions', 'blockedDates', 'meetingPoint', 'packingList',
@@ -669,8 +671,17 @@ const login = (req, res) => {
       console.warn('Admin login using fallback credentials from config/defaults.js. Set ADMIN_USER, ADMIN_PASS, and ADMIN_JWT_SECRET for production.');
     }
 
-    // Verify credentials
-    if (username !== adminUser || password !== adminPass) {
+    const userBuf = Buffer.from(username, 'utf8');
+    const passBuf = Buffer.from(password, 'utf8');
+    const adminUserBuf = Buffer.from(adminUser, 'utf8');
+    const adminPassBuf = Buffer.from(adminPass, 'utf8');
+
+    const userMatch = userBuf.length === adminUserBuf.length &&
+      crypto.timingSafeEqual(userBuf, adminUserBuf);
+    const passMatch = passBuf.length === adminPassBuf.length &&
+      crypto.timingSafeEqual(passBuf, adminPassBuf);
+
+    if (!userMatch || !passMatch) {
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -750,9 +761,9 @@ const getBookings = async (req, res) => {
     // Text search (guest name, email, or booking reference)
     if (q) {
       filter.$or = [
-        { 'guestInfo.firstName': { $regex: q, $options: 'i' } },
-        { 'guestInfo.lastName': { $regex: q, $options: 'i' } },
-        { 'guestInfo.email': { $regex: q, $options: 'i' } }
+        { 'guestInfo.firstName': { $regex: escapeRegex(q), $options: 'i' } },
+        { 'guestInfo.lastName': { $regex: escapeRegex(q), $options: 'i' } },
+        { 'guestInfo.email': { $regex: escapeRegex(q), $options: 'i' } }
       ];
     }
 
@@ -947,8 +958,8 @@ const getCabins = async (req, res) => {
 
     if (q) {
       filter.$or = [
-        { name: { $regex: q, $options: 'i' } },
-        { location: { $regex: q, $options: 'i' } }
+        { name: { $regex: escapeRegex(q), $options: 'i' } },
+        { location: { $regex: escapeRegex(q), $options: 'i' } }
       ];
     }
 

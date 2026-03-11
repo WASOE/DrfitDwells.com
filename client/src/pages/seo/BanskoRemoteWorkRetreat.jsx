@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { useBookingSearch } from '../../context/BookingSearchContext';
 import Seo from '../../components/Seo';
+import { buildHreflangAlternates } from '../../utils/localizedRoutes';
 import './seo-landing.css';
 
 const BanskoRemoteWorkRetreat = () => {
@@ -16,10 +17,7 @@ const BanskoRemoteWorkRetreat = () => {
         description={t('bansko.metaDescription')}
         canonicalPath="/bansko-remote-work-retreat"
         ogImage="/uploads/The Valley/WhatsApp Image 2025-10-17 at 10.20.23 AM.jpeg"
-        hreflangAlternates={[
-          { href: '/bansko-remote-work-retreat', hreflang: 'en' },
-          { href: '/bansko-remote-work-retreat', hreflang: 'x-default' }
-        ]}
+        hreflangAlternates={buildHreflangAlternates('/bansko-remote-work-retreat')}
       />
       <div className="seo-landing">
         <section className="seo-landing-hero">

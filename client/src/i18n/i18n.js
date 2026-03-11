@@ -22,6 +22,7 @@ import bookingBg from './locales/bg/booking.json';
 import legalBg from './locales/bg/legal.json';
 import aboutBg from './locales/bg/about.json';
 import seoBg from './locales/bg/seo.json';
+import { getLanguageFromPath } from '../utils/localizedRoutes';
 
 const resources = {
   en: {
@@ -52,6 +53,9 @@ const resources = {
 
 const getInitialLanguage = () => {
   if (typeof window === 'undefined') return 'en';
+
+  const pathLanguage = getLanguageFromPath(window.location.pathname);
+  if (pathLanguage === 'bg') return 'bg';
 
   const saved = window.localStorage.getItem('dd_language');
   if (saved === 'en' || saved === 'bg') return saved;

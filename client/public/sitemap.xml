@@ -1,68 +1,76 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://driftanddwells.com/</loc>
+    <loc>https://driftdwells.com/</loc>
     <lastmod>2026-03-01</lastmod>
   </url>
   <url>
-    <loc>https://driftanddwells.com/cabin</loc>
+    <loc>https://driftdwells.com/bg</loc>
+    <lastmod>2026-03-11</lastmod>
+  </url>
+  <url>
+    <loc>https://driftdwells.com/cabin</loc>
     <lastmod>2026-03-05</lastmod>
   </url>
   <url>
-    <loc>https://driftanddwells.com/valley</loc>
+    <loc>https://driftdwells.com/bg/cabin</loc>
+    <lastmod>2026-03-11</lastmod>
+  </url>
+  <url>
+    <loc>https://driftdwells.com/valley</loc>
     <lastmod>2026-03-05</lastmod>
   </url>
   <url>
-    <loc>https://driftanddwells.com/off-grid-cabins-bulgaria</loc>
+    <loc>https://driftdwells.com/bg/valley</loc>
+    <lastmod>2026-03-11</lastmod>
+  </url>
+  <url>
+    <loc>https://driftdwells.com/off-grid-cabins-bulgaria</loc>
     <lastmod>2026-03-05</lastmod>
   </url>
   <url>
-    <loc>https://driftanddwells.com/rhodopes-cabin-retreat</loc>
+    <loc>https://driftdwells.com/bg/off-grid-cabins-bulgaria</loc>
+    <lastmod>2026-03-11</lastmod>
+  </url>
+  <url>
+    <loc>https://driftdwells.com/rhodopes-cabin-retreat</loc>
     <lastmod>2026-03-05</lastmod>
   </url>
   <url>
-    <loc>https://driftanddwells.com/bansko-remote-work-retreat</loc>
+    <loc>https://driftdwells.com/bg/rhodopes-cabin-retreat</loc>
+    <lastmod>2026-03-11</lastmod>
+  </url>
+  <url>
+    <loc>https://driftdwells.com/bansko-remote-work-retreat</loc>
     <lastmod>2026-03-05</lastmod>
   </url>
   <url>
-    <loc>https://driftanddwells.com/retreat-venue-bulgaria</loc>
+    <loc>https://driftdwells.com/bg/bansko-remote-work-retreat</loc>
+    <lastmod>2026-03-11</lastmod>
+  </url>
+  <url>
+    <loc>https://driftdwells.com/retreat-venue-bulgaria</loc>
     <lastmod>2026-03-05</lastmod>
   </url>
   <url>
-    <loc>https://driftanddwells.com/about</loc>
+    <loc>https://driftdwells.com/bg/retreat-venue-bulgaria</loc>
+    <lastmod>2026-03-11</lastmod>
+  </url>
+  <url>
+    <loc>https://driftdwells.com/about</loc>
     <lastmod>2026-03-01</lastmod>
   </url>
   <url>
-    <loc>https://driftanddwells.com/build</loc>
-    <lastmod>2026-03-01</lastmod>
+    <loc>https://driftdwells.com/bg/about</loc>
+    <lastmod>2026-03-11</lastmod>
   </url>
   <url>
-    <loc>https://driftanddwells.com/search</loc>
-    <lastmod>2026-03-01</lastmod>
+    <loc>https://driftdwells.com/stays/a-frame</loc>
+    <lastmod>2026-03-10</lastmod>
   </url>
   <url>
-    <loc>https://driftanddwells.com/cabin/faq</loc>
-    <lastmod>2026-03-01</lastmod>
-  </url>
-  <url>
-    <loc>https://driftanddwells.com/terms</loc>
-    <lastmod>2026-03-01</lastmod>
-  </url>
-  <url>
-    <loc>https://driftanddwells.com/privacy</loc>
-    <lastmod>2026-03-01</lastmod>
-  </url>
-  <url>
-    <loc>https://driftanddwells.com/cancellation-policy</loc>
-    <lastmod>2026-03-01</lastmod>
-  </url>
-  <url>
-    <loc>https://driftanddwells.com/career</loc>
-    <lastmod>2026-03-01</lastmod>
-  </url>
-  <url>
-    <loc>https://driftanddwells.com/press</loc>
-    <lastmod>2026-03-01</lastmod>
+    <loc>https://driftdwells.com/cabin/faq</loc>
+    <lastmod>2026-03-10</lastmod>
   </url>
 </urlset>
 

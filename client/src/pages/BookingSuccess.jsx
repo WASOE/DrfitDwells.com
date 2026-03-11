@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useLocation } from 'react-router-dom';
 import { bookingAPI } from '../services/api';
+import Seo from '../components/Seo';
+import { localizePath } from '../utils/localizedRoutes';
 
 const BookingSuccess = () => {
   const { id } = useParams();
+  const location = useLocation();
+  const routeLanguage = location.pathname.startsWith('/bg') ? 'bg' : 'en';
   const [booking, setBooking] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -128,34 +132,50 @@ END:VCALENDAR`;
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-drift-green/5 to-drift-light-green/5">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-          <div className="text-center">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-drift-green"></div>
-            <p className="mt-4 text-gray-600">Loading your booking confirmation...</p>
+      <>
+        <Seo
+          title="Booking confirmation | Drift & Dwells"
+          description="Your Drift & Dwells booking confirmation and arrival details."
+          canonicalPath={`/booking-success/${id}`}
+          noindex
+        />
+        <div className="min-h-screen bg-gradient-to-br from-drift-green/5 to-drift-light-green/5">
+          <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+            <div className="text-center">
+              <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-drift-green"></div>
+              <p className="mt-4 text-gray-600">Loading your booking confirmation...</p>
+            </div>
           </div>
         </div>
-      </div>
+      </>
     );
   }
 
   if (error || !booking) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-drift-green/5 to-drift-light-green/5">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-          <div className="text-center">
-            <div className="text-red-500 text-6xl mb-4">⚠️</div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-4">Booking Not Found</h1>
-            <p className="text-gray-600 mb-8">{error || 'The booking you\'re looking for could not be found.'}</p>
-            <Link
-              to="/"
-              className="btn-primary px-8 py-3"
-            >
-              Back to Home
-            </Link>
+      <>
+        <Seo
+          title="Booking confirmation unavailable | Drift & Dwells"
+          description="This booking confirmation could not be loaded."
+          canonicalPath={`/booking-success/${id}`}
+          noindex
+        />
+        <div className="min-h-screen bg-gradient-to-br from-drift-green/5 to-drift-light-green/5">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+            <div className="text-center">
+              <div className="text-red-500 text-6xl mb-4">⚠️</div>
+              <h1 className="text-3xl font-bold text-gray-900 mb-4">Booking Not Found</h1>
+              <p className="text-gray-600 mb-8">{error || 'The booking you\'re looking for could not be found.'}</p>
+              <Link
+                to="/"
+                className="btn-primary px-8 py-3"
+              >
+                Back to Home
+              </Link>
+            </div>
           </div>
         </div>
-      </div>
+      </>
     );
   }
 
@@ -163,7 +183,14 @@ END:VCALENDAR`;
   const totalNights = getTotalNights(booking.checkIn, booking.checkOut);
 
   return (
-    <div className="min-h-screen bg-drift-bg">
+    <>
+      <Seo
+        title={`Booking confirmed for ${booking.cabinId?.name || 'your stay'} | Drift & Dwells`}
+        description="Your Drift & Dwells booking is confirmed. Review your itinerary, pre-arrival guidance, and trip details."
+        canonicalPath={`/booking-success/${id}`}
+        noindex
+      />
+      <div className="min-h-screen bg-drift-bg">
       {/* Inspirational Header */}
       <div className="bg-gradient-to-r from-drift-primary to-drift-light-green text-white">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
@@ -498,13 +525,13 @@ END:VCALENDAR`;
         <div className="text-center mt-12">
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link
-              to="/"
+              to={localizePath('/', routeLanguage)}
               className="btn-primary px-8 py-3"
             >
               Back to Home
             </Link>
             <Link
-              to="/search"
+              to={localizePath('/search', routeLanguage)}
               className="btn-secondary px-8 py-3"
             >
               Explore More Cabins
@@ -547,7 +574,8 @@ END:VCALENDAR`;
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 };
 

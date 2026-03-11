@@ -1,8 +1,10 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
+const rateLimit = require('express-rate-limit');
 const Booking = require('../models/Booking');
 const Cabin = require('../models/Cabin');
 const CabinType = require('../models/CabinType');
+const PaymentFinalization = require('../models/PaymentFinalization');
 const AssignmentEngine = require('../services/assignmentEngine');
 const featureFlags = require('../utils/featureFlags');
 const moment = require('moment');
@@ -10,11 +12,29 @@ const emailService = require('../services/emailService');
 const pricingService = require('../services/pricingService');
 const Stripe = require('stripe');
 
+const { validateId } = require('../middleware/validateId');
+
 const router = express.Router();
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
+const bookingCreateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many booking requests, please slow down.' }
+});
+
+const paymentIntentLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many payment attempts. Please try again in a minute.' }
+});
+
 // POST /api/bookings/create-payment-intent - Create Stripe PaymentIntent for cabin booking
-router.post('/create-payment-intent', [
+router.post('/create-payment-intent', paymentIntentLimiter, [
   body('cabinId').isMongoId().withMessage('Valid cabin ID is required'),
   body('checkIn').isISO8601().withMessage('Valid check-in date is required'),
   body('checkOut').isISO8601().withMessage('Valid check-out date is required'),
@@ -80,13 +100,23 @@ router.post('/create-payment-intent', [
       });
     }
 
+    const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
+    const minNights = cabin.minNights || 1;
+    if (totalNights < minNights) {
+      return res.status(400).json({
+        success: false,
+        message: `This cabin requires a minimum stay of ${minNights} night${minNights !== 1 ? 's' : ''}`
+      });
+    }
+
     const { totalPrice } = pricingService.calculateCabinPrice(
       cabin,
       checkInDate,
       checkOutDate,
       parseInt(adults, 10),
       parseInt(children, 10),
-      experienceKeys
+      experienceKeys,
+      { transportMethod: req.body.transportMethod, romanticSetup: req.body.romanticSetup }
     );
 
     if (totalPrice < 0.5) {
@@ -102,7 +132,16 @@ router.post('/create-payment-intent', [
     const paymentIntent = await stripe.paymentIntents.create({
       amount: amountCents,
       currency,
-      automatic_payment_methods: { enabled: true }
+      automatic_payment_methods: { enabled: true },
+      metadata: {
+        cabinId: cabinId.toString(),
+        checkIn: checkInDate.toISOString(),
+        checkOut: checkOutDate.toISOString(),
+        amountCents: String(amountCents),
+        experienceKeys: JSON.stringify(experienceKeys || []),
+        transportMethod: String(req.body.transportMethod || ''),
+        romanticSetup: String(!!req.body.romanticSetup)
+      }
     });
 
     return res.json({
@@ -120,7 +159,7 @@ router.post('/create-payment-intent', [
 
 // POST /api/bookings - Create a new booking
 // Supports both legacy single-cabin bookings (cabinId) and multi-unit cabin type bookings (cabinTypeId)
-router.post('/', [
+router.post('/', bookingCreateLimiter, [
   body('cabinId').optional().isMongoId().withMessage('Valid cabin ID is required if provided'),
   body('cabinTypeId').optional().isMongoId().withMessage('Valid cabin type ID is required if provided'),
   body('unitId').optional().isMongoId().withMessage('Valid unit ID is required if provided'),
@@ -145,7 +184,7 @@ router.post('/', [
       });
     }
 
-    const { cabinId, cabinTypeId, unitId, checkIn, checkOut, adults, children = 0, guestInfo, specialRequests } = req.body;
+    const { cabinId, cabinTypeId, unitId, checkIn, checkOut, adults, children = 0, guestInfo, specialRequests, paymentIntentId } = req.body;
 
     // Validate: must have either cabinId OR cabinTypeId, not both
     if (!cabinId && !cabinTypeId) {
@@ -213,6 +252,14 @@ router.post('/', [
         });
       }
 
+      const totalNightsCabin = moment(checkOutDate).diff(moment(checkInDate), 'days');
+      if (totalNightsCabin < (cabin.minNights || 1)) {
+        return res.status(400).json({
+          success: false,
+          message: `This cabin requires a minimum stay of ${cabin.minNights || 1} night${(cabin.minNights || 1) !== 1 ? 's' : ''}`
+        });
+      }
+
       // Check for conflicting bookings
       const conflictingBookings = await Booking.find({
         cabinId,
@@ -274,6 +321,14 @@ router.post('/', [
         });
       }
 
+      const totalNightsType = moment(checkOutDate).diff(moment(checkInDate), 'days');
+      if (totalNightsType < (cabinType.minNights || 1)) {
+        return res.status(400).json({
+          success: false,
+          message: `This cabin type requires a minimum stay of ${cabinType.minNights || 1} night${(cabinType.minNights || 1) !== 1 ? 's' : ''}`
+        });
+      }
+
       // If specific unit requested, verify it's available
       if (unitId) {
         const isAvailable = await AssignmentEngine.isUnitAvailable(unitId, checkInDate, checkOutDate);
@@ -302,24 +357,55 @@ router.post('/', [
       transportOptions = cabinType.transportOptions || [];
     }
 
-    // Calculate total price
-    const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
-    let totalPrice = totalNights * pricePerNight;
-    if (pricingModel === 'per_person') {
-      totalPrice *= totalGuests;
-    }
-    
-    // Add transport cost if provided
-    if (req.body.transportMethod && req.body.transportMethod !== 'Not selected') {
-      const transportOption = transportOptions.find(t => t.type === req.body.transportMethod);
-      if (transportOption) {
-        totalPrice += transportOption.pricePerPerson * totalGuests;
+    // Calculate total price using pricingService (must match PI if paymentIntentId provided)
+    const entity = cabin || cabinType;
+    const experienceKeys = Array.isArray(req.body.experienceKeys) ? req.body.experienceKeys : [];
+    const { totalPrice } = pricingService.calculateCabinPrice(
+      entity,
+      checkInDate,
+      checkOutDate,
+      parseInt(adults),
+      parseInt(children),
+      experienceKeys,
+      { transportMethod: req.body.transportMethod, romanticSetup: req.body.romanticSetup }
+    );
+
+    // Verify Stripe payment if paymentIntentId is provided
+    if (paymentIntentId && stripe) {
+      try {
+        const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+        if (pi.status !== 'succeeded') {
+          return res.status(402).json({
+            success: false,
+            message: `Payment not completed (status: ${pi.status})`
+          });
+        }
+        const expectedCents = Math.round(totalPrice * 100);
+        if (pi.amount !== expectedCents) {
+          return res.status(400).json({
+            success: false,
+            message: 'Payment amount does not match booking total'
+          });
+        }
+        const meta = pi.metadata || {};
+        const metaCabinId = meta.cabinId;
+        const metaCheckIn = meta.checkIn;
+        const metaCheckOut = meta.checkOut;
+        if (cabinId && (!metaCabinId || metaCabinId !== cabinId.toString())) {
+          return res.status(400).json({ success: false, message: 'Payment was not created for this cabin' });
+        }
+        if (metaCheckIn && metaCheckIn !== checkInDate.toISOString()) {
+          return res.status(400).json({ success: false, message: 'Payment dates do not match' });
+        }
+        if (metaCheckOut && metaCheckOut !== checkOutDate.toISOString()) {
+          return res.status(400).json({ success: false, message: 'Payment dates do not match' });
+        }
+      } catch (stripeErr) {
+        return res.status(400).json({
+          success: false,
+          message: 'Could not verify payment'
+        });
       }
-    }
-    
-    // Add romantic setup cost if requested
-    if (req.body.romanticSetup) {
-      totalPrice += 30; // €30 flat fee for romantic setup
     }
 
     // Create booking
@@ -361,6 +447,40 @@ router.post('/', [
 
     const booking = new Booking(bookingData);
     await booking.save();
+
+    // Race-condition guard: verify no overlapping booking was saved concurrently
+    if (cabinId) {
+      const overlaps = await Booking.countDocuments({
+        cabinId,
+        _id: { $ne: booking._id },
+        status: { $in: ['pending', 'confirmed'] },
+        checkIn: { $lt: checkOutDate },
+        checkOut: { $gt: checkInDate }
+      });
+      if (overlaps > 0) {
+        await Booking.deleteOne({ _id: booking._id });
+        return res.status(409).json({
+          success: false,
+          message: 'This cabin was just booked by another guest. Please choose different dates.'
+        });
+      }
+    }
+    if (assignedUnitId) {
+      const overlaps = await Booking.countDocuments({
+        unitId: assignedUnitId,
+        _id: { $ne: booking._id },
+        status: { $in: ['pending', 'confirmed'] },
+        checkIn: { $lt: checkOutDate },
+        checkOut: { $gt: checkInDate }
+      });
+      if (overlaps > 0) {
+        await Booking.deleteOne({ _id: booking._id });
+        return res.status(409).json({
+          success: false,
+          message: 'This unit was just booked by another guest. Please choose different dates.'
+        });
+      }
+    }
 
     // Populate details for response
     if (cabinId) {
@@ -422,11 +542,38 @@ router.post('/', [
   }
 });
 
-// GET /api/bookings/:id - Get booking details
-router.get('/:id', async (req, res) => {
+// GET /api/bookings/refund-status - Get refund status for a payment intent
+router.get('/refund-status', async (req, res) => {
+  try {
+    const { paymentIntentId, email } = req.query;
+    if (!paymentIntentId || !email) {
+      return res.status(400).json({ success: false, message: 'paymentIntentId and email are required' });
+    }
+    const record = await PaymentFinalization.findOne({ paymentIntentId });
+    if (!record || record.guestEmail.toLowerCase() !== email.toLowerCase()) {
+      return res.status(404).json({ success: false, message: 'Refund record not found' });
+    }
+    res.json({
+      success: true,
+      data: {
+        status: record.status,
+        amountCents: record.amountCents,
+        currency: record.currency,
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt
+      }
+    });
+  } catch (error) {
+    console.error('Refund status error:', error);
+    res.status(500).json({ success: false, message: 'Error retrieving refund status' });
+  }
+});
+
+// GET /api/bookings/:id - Get booking details (requires guest email for PII access)
+router.get('/:id', validateId('id'), async (req, res) => {
   try {
     const booking = await Booking.findById(req.params.id);
-    
+
     if (!booking) {
       return res.status(404).json({
         success: false,
@@ -434,7 +581,6 @@ router.get('/:id', async (req, res) => {
       });
     }
 
-    // Populate appropriate fields based on booking type
     if (booking.cabinId) {
       await booking.populate('cabinId', 'name description imageUrl location meetingPoint packingList arrivalGuideUrl safetyNotes emergencyContact arrivalWindowDefault transportCutoffs');
     } else if (booking.cabinTypeId) {
@@ -442,9 +588,21 @@ router.get('/:id', async (req, res) => {
       await booking.populate('unitId', 'unitNumber displayName');
     }
 
+    const bookingObj = booking.toObject();
+    const { email } = req.query;
+    const isOwner = email && email.toLowerCase() === (bookingObj.guestInfo?.email || '').toLowerCase();
+
+    if (!isOwner && bookingObj.guestInfo) {
+      const e = bookingObj.guestInfo.email || '';
+      const [local, domain] = e.split('@');
+      bookingObj.guestInfo.email = local ? `${local.slice(0, 3)}***@${domain || ''}` : '';
+      const p = bookingObj.guestInfo.phone || '';
+      bookingObj.guestInfo.phone = p.length > 4 ? `***${p.slice(-4)}` : '****';
+    }
+
     res.json({
       success: true,
-      data: { booking }
+      data: { booking: bookingObj }
     });
 
   } catch (error) {
@@ -458,7 +616,8 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST /api/bookings/:id/addon-request - Submit add-on request (Jeep/ATV/Horse/Guide)
-router.post('/:id/addon-request', [
+router.post('/:id/addon-request', validateId('id'), [
+  body('email').isEmail().normalizeEmail().withMessage('Valid email is required to verify booking ownership'),
   body('type').isIn(['jeep', 'atv', 'horse', 'guide']).withMessage('Valid add-on type is required'),
   body('date').optional().isISO8601().withMessage('Valid date is required'),
   body('timeWindow').optional().isString().withMessage('Time window must be a string'),
@@ -483,18 +642,20 @@ router.post('/:id/addon-request', [
       });
     }
 
+    const providedEmail = (req.body.email || '').toLowerCase();
+    const bookingEmail = (booking.guestInfo?.email || '').toLowerCase();
+    if (providedEmail !== bookingEmail) {
+      return res.status(403).json({
+        success: false,
+        message: 'Email does not match this booking'
+      });
+    }
+
     const { type, date, pax, notes } = req.body;
 
-    // Store add-on request (for now, just log it - could store in booking or separate collection)
-    console.log('Add-on request received:', {
-      bookingId: booking._id,
-      type,
-      date,
-      pax,
-      notes,
-      guestEmail: booking.guestInfo.email,
-      guestName: `${booking.guestInfo.firstName} ${booking.guestInfo.lastName}`
-    });
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Add-on request received:', { bookingId: booking._id, type, date, pax, notes });
+    }
 
     // TODO: Store in database (could add addonRequests array to Booking model)
     // For now, just return success - admin can check logs or we can add email notification

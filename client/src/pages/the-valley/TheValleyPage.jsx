@@ -14,6 +14,7 @@
 
 import { Suspense, lazy } from 'react';
 import { useRef, useEffect, useLayoutEffect, useState } from 'react';
+import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useSeason } from '../../context/SeasonContext';
 import { locations } from '../../data/content';
 import { NOISE_TEXTURE } from './data';
@@ -26,14 +27,17 @@ import PracticalDetailsAccordion from './sections/PracticalDetailsAccordion';
 import BookingCTABand from './sections/BookingCTABand';
 import GMBContactStrip from '../../components/GMBContactStrip';
 import { GMB_LOCATIONS, CONTACT_PHONE } from '../../data/gmbLocations';
+import { getSiteUrl } from '../../utils/siteUrl';
 import './the-valley.css';
 import Seo from '../../components/Seo';
+import { buildHreflangAlternates } from '../../utils/localizedRoutes';
 
 const BookingDrawer = lazy(() => import('../../components/BookingDrawer'));
 
 const TheValleyPage = () => {
   const valley = locations.find(loc => loc.id === 'valley');
   const { season } = useSeason();
+  const { language } = useLanguage();
   const heroRef = useRef(null);
   const videoRef = useRef(null);
   const containerRef = useRef(null);
@@ -129,7 +133,7 @@ const TheValleyPage = () => {
     );
   }
 
-  const origin = 'https://driftanddwells.com';
+  const origin = getSiteUrl();
 
   const valleyLoc = GMB_LOCATIONS.valley;
   const structuredData = {
@@ -167,20 +171,27 @@ const TheValleyPage = () => {
       { '@type': 'ListItem', position: 2, name: 'The Valley', item: `${origin}/valley` }
     ]
   };
+  const seoTitle =
+    language === 'bg'
+      ? 'The Valley – планинско уединение над облаците | Drift & Dwells'
+      : 'The Valley – Mountain Village Retreat Above the Clouds | Drift & Dwells';
+  const seoDescription =
+    language === 'bg'
+      ? 'Открийте The Valley, частно планинско уединение високо в България с отделни къщи, историческа каменна къща и споделени външни пространства.'
+      : 'Discover The Valley, a private mountain village retreat above the clouds in Bulgaria with individual cabins, historic stone house, and shared outdoor spaces.';
 
   return (
     <>
       <Seo
-        title="The Valley – Mountain Village Retreat Above the Clouds | Drift & Dwells"
-        description="Discover The Valley, a private mountain village retreat above the clouds in Bulgaria with individual cabins, historic stone house, and shared outdoor spaces."
+        title={seoTitle}
+        description={seoDescription}
         canonicalPath="/valley"
-        hreflangAlternates={[
-          { href: '/valley', hreflang: 'en' },
-          { href: '/valley', hreflang: 'x-default' }
-        ]}
+        hreflangAlternates={buildHreflangAlternates('/valley')}
         ogType="place"
         ogImage="/uploads/Videos/The-Valley-firaplace-video.winter-poster.jpg"
-        preloadImages={['/uploads/Videos/The-Valley-firaplace-video.winter-poster.jpg']}
+        preloadImages={[season === 'summer'
+          ? '/uploads/Videos/The-Valley-firaplace-video-poster.jpg'
+          : '/uploads/Videos/The-Valley-firaplace-video.winter-poster.jpg']}
         jsonLd={[structuredData, valleyBreadcrumbs]}
       />
       <div 

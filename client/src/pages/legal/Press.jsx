@@ -5,6 +5,8 @@ const Press = () => {
     <DocumentViewer
       title="Press & Media"
       description="Media resources, press releases, and information for journalists covering Drift & Dwells."
+      canonicalPath="/press"
+      noindex
       pdfPath="/uploads/PDFs/drift-dwells-docs-v2/press.pdf"
       fileName="drift-dwells-press-media.pdf"
     />

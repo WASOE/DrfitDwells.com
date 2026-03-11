@@ -3,10 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { motion, useScroll, useTransform } from 'framer-motion';
 import { Volume2, VolumeX, Wifi, WifiOff, Mountain, Car, Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useLanguage } from '../context/LanguageContext.jsx';
+import { localizePath } from '../utils/localizedRoutes';
 
 const CabinCard = ({ title, description, image, interiorImage, audioSrc, details, locationId, price, cta, videoSrc, videoPoster }) => {
   const navigate = useNavigate();
   const { t } = useTranslation('common');
+  const { language } = useLanguage();
   const cardRef = useRef(null);
   const videoRef = useRef(null);
   const { scrollYProgress } = useScroll({
@@ -25,9 +28,9 @@ const CabinCard = ({ title, description, image, interiorImage, audioSrc, details
 
   const handleCtaClick = () => {
     if (locationId === 'cabin') {
-      navigate('/cabin');
+      navigate(localizePath('/cabin', language));
     } else if (locationId === 'valley') {
-      navigate('/valley');
+      navigate(localizePath('/valley', language));
     }
   };
 
@@ -90,19 +93,19 @@ const CabinCard = ({ title, description, image, interiorImage, audioSrc, details
     };
   }, [shouldLoadVideo]);
 
-  useEffect(() => {
-    audioRef.current = new Audio(audioSrc);
-    audioRef.current.loop = true;
-    audioRef.current.volume = 0.65;
-
-    return () => {
-      audioRef.current?.pause();
-      audioRef.current = null;
-    };
-  }, [audioSrc]);
+  useEffect(() => () => {
+    audioRef.current?.pause();
+    audioRef.current = null;
+  }, []);
 
   const toggleAudio = async () => {
-    if (!audioRef.current) return;
+    if (!audioSrc) return;
+
+    if (!audioRef.current) {
+      audioRef.current = new Audio(audioSrc);
+      audioRef.current.loop = true;
+      audioRef.current.volume = 0.65;
+    }
 
     if (isPlaying) {
       audioRef.current.pause();
@@ -124,7 +127,7 @@ const CabinCard = ({ title, description, image, interiorImage, audioSrc, details
   return (
     <motion.article
       ref={cardRef}
-      className="bg-white/95 rounded-[32px] overflow-hidden border border-[#ded7c8]/70 shadow-2xl shadow-[0_25px_70px_rgba(12,26,20,0.18)] transition-all duration-500 hover:shadow-[0_35px_110px_rgba(12,30,22,0.25)] w-full m-0 h-full flex flex-col"
+      className="relative bg-white/95 rounded-[32px] overflow-hidden border border-[#ded7c8]/70 shadow-2xl shadow-[0_25px_70px_rgba(12,26,20,0.18)] transition-all duration-500 hover:shadow-[0_35px_110px_rgba(12,30,22,0.25)] w-full m-0 h-full flex flex-col"
       style={{ margin: 0 }}
       whileHover={{ y: -5 }}
     >

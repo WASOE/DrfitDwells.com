@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { bookingAPI } from '../services/api';
 import { CONTACT_EMAIL } from '../data/gmbLocations';
+import Seo from '../components/Seo';
+import { getLanguageFromPath, localizePath } from '../utils/localizedRoutes';
 
 const statusLabels = {
   finalization_failed: 'Processing refund',
@@ -12,6 +14,7 @@ const statusLabels = {
 
 const BookingRefundResolution = () => {
   const [searchParams] = useSearchParams();
+  const routeLanguage = typeof window !== 'undefined' ? getLanguageFromPath(window.location.pathname) : 'en';
   const paymentIntentId = searchParams.get('payment_intent');
   const email = searchParams.get('email') || '';
   const checkIn = searchParams.get('checkIn');
@@ -29,7 +32,8 @@ const BookingRefundResolution = () => {
     if (adults) params.set('adults', adults);
     if (children != null) params.set('children', children);
     const q = params.toString();
-    return q ? `/search?${q}` : '/search';
+    const localizedSearch = localizePath('/search', routeLanguage);
+    return q ? `${localizedSearch}?${q}` : localizedSearch;
   })();
 
   useEffect(() => {
@@ -62,26 +66,42 @@ const BookingRefundResolution = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F7F4EE] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#81887A]" />
-      </div>
+      <>
+        <Seo
+          title="Refund status | Drift & Dwells"
+          description="Track the status of your Drift & Dwells refund."
+          canonicalPath="/booking-refund"
+          noindex
+        />
+        <div className="min-h-screen bg-[#F7F4EE] flex items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#81887A]" />
+        </div>
+      </>
     );
   }
 
   if (error || !paymentIntentId) {
     return (
-      <div className="min-h-screen bg-[#F7F4EE] flex items-center justify-center px-4">
-        <div className="max-w-xl w-full text-center">
-          <h1 className="text-2xl font-semibold text-stone-800 mb-4">Refund status</h1>
-          <p className="text-stone-600 mb-6">{error || 'No payment reference provided.'}</p>
-          <Link
-            to={searchHref}
-            className="inline-block px-6 py-3 rounded-xl bg-[#81887A] text-white font-medium hover:opacity-95"
-          >
-            Search availability
-          </Link>
+      <>
+        <Seo
+          title="Refund status unavailable | Drift & Dwells"
+          description="The refund status page could not be loaded."
+          canonicalPath="/booking-refund"
+          noindex
+        />
+        <div className="min-h-screen bg-[#F7F4EE] flex items-center justify-center px-4">
+          <div className="max-w-xl w-full text-center">
+            <h1 className="text-2xl font-semibold text-stone-800 mb-4">Refund status</h1>
+            <p className="text-stone-600 mb-6">{error || 'No payment reference provided.'}</p>
+            <Link
+              to={searchHref}
+              className="inline-block px-6 py-3 rounded-xl bg-[#81887A] text-white font-medium hover:opacity-95"
+            >
+              Search availability
+            </Link>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
@@ -90,9 +110,16 @@ const BookingRefundResolution = () => {
   const checkOutStr = data?.checkOut ? new Date(data.checkOut).toLocaleDateString('en-GB') : '';
 
   return (
-    <div className="min-h-screen bg-[#F7F4EE] flex items-center justify-center px-4 py-16">
-      <div className="max-w-xl w-full mx-auto">
-        <div className="bg-white rounded-2xl shadow-sm border border-stone-200 overflow-hidden">
+    <>
+      <Seo
+        title="Refund in progress | Drift & Dwells"
+        description="Your Drift & Dwells refund is being processed. Review the latest payment and booking status."
+        canonicalPath="/booking-refund"
+        noindex
+      />
+      <div className="min-h-screen bg-[#F7F4EE] flex items-center justify-center px-4 py-16">
+        <div className="max-w-xl w-full mx-auto">
+          <div className="bg-white rounded-2xl shadow-sm border border-stone-200 overflow-hidden">
           <div className="bg-[#81887A] text-white px-6 py-8 text-center">
             <h1 className="text-2xl md:text-3xl font-semibold">Refund in progress</h1>
             <p className="mt-2 opacity-90">Your payment is being refunded</p>
@@ -150,8 +177,9 @@ const BookingRefundResolution = () => {
             </div>
           </div>
         </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 

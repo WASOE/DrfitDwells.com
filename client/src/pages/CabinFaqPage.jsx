@@ -1,7 +1,26 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Plus, Minus } from 'lucide-react';
+import Seo from '../components/Seo';
+
+const faqTextAnswers = {
+  'What time is check-in and check-out?': 'Check-in is from 3:00 PM onwards. Check-out is by 11:00 AM. Early check-in or late check-out may be possible but must be arranged in advance.',
+  'How do I receive access instructions?': 'Detailed access instructions, GPS coordinates, and directions are sent via email after booking confirmation. Save or print them as you may lose phone signal approaching the cabin.',
+  'What type of vehicle do I need?': 'High clearance vehicles are strongly recommended. 4x4 vehicles are ideal. City cars and low clearance vehicles cannot reliably reach the cabin. In winter, snow chains or 4x4 may be essential.',
+  'What power is available?': 'There are no standard power outlets. A small solar system provides power for basic LED lighting only and cannot support appliances, chargers, or high-consumption devices.',
+  'How do I charge my phone and devices?': 'You must bring your own fully charged power banks or battery packs. There is no way to recharge them at the cabin.',
+  'Where does drinking water come from?': 'Drinking water comes from a natural spring source near the cabin. The water is clean and safe to drink.',
+  'How long does it take to heat the hot tub?': 'The wood-fired hot tub takes 4-6 hours to heat from cold. This requires maintaining a fire for the entire duration. In winter, heating takes significantly longer and may be impractical.',
+  'How does the composting toilet work?': 'The cabin uses a composting toilet system that does not require water or flushing. Add sawdust or provided material after each use as directed.',
+  'What is the main heating source?': 'The main heat source is a wood stove located in the cabin. You must light and maintain the fire yourself. There is no automatic heating system. Firewood is provided.',
+  'Can I bring my pet?': 'No. Pets are not permitted at The Cabin. The remote location and presence of wildlife make it unsuitable for pets.',
+  'Is there wifi?': 'No. There is no wifi connection at the cabin. This is a full digital detox location.',
+  'Is there phone signal?': 'Mobile reception is weak or completely absent at the cabin. Do not rely on having phone signal during your stay.',
+  'Should I bring my own food?': 'Yes. You must bring all food and drinks for your stay. There are no nearby shops or restaurants.',
+  'What wildlife might I encounter?': 'The area is home to various wildlife including bears, wolves, wild boar, and smaller animals. Store food securely and never feed wildlife.',
+  'Where exactly is The Cabin located?': 'The Cabin is located near Bachevo in the Rhodope Mountains, Bulgaria. Exact GPS coordinates are provided after booking confirmation.'
+};
 
 const CabinFaqPage = () => {
   const [openCategory, setOpenCategory] = useState(null);
@@ -18,6 +37,16 @@ const CabinFaqPage = () => {
       [key]: !prev[key]
     }));
   };
+
+  const faqJsonLd = useMemo(() => ({
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: Object.entries(faqTextAnswers).map(([q, a]) => ({
+      '@type': 'Question',
+      name: q,
+      acceptedAnswer: { '@type': 'Answer', text: a }
+    }))
+  }), []);
 
   const faqData = [
     {
@@ -514,7 +543,12 @@ const CabinFaqPage = () => {
 
   return (
     <div className="relative min-h-screen bg-[#272522] text-[#F1ECE2]">
-      {/* Hero Section */}
+      <Seo
+        title="The Cabin FAQ | Drift & Dwells"
+        description="Everything you need to know about staying at The Cabin — arrival, check-in, amenities, transport, and seasonal information."
+        canonicalPath="/cabin/faq"
+        jsonLd={faqJsonLd}
+      />
       <section className="relative py-16 sm:py-20 md:py-24 bg-[#1c1917] border-b border-white/10">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 md:px-8">
           <div className="text-center mb-8">

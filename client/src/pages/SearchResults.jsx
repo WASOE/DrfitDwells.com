@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { availabilityAPI, unitAPI } from '../services/api';
 import SearchBar from '../components/SearchBar';
+import Seo from '../components/Seo';
 import { useBookingContext } from '../context/BookingContext';
 import { startOfDay, addDays, isBefore, format as formatDate } from 'date-fns';
 
@@ -79,6 +80,8 @@ const SearchResults = () => {
 
   // Handle draft parameter
   const draftToken = searchParams.get('draft');
+  const seoTitle = 'Search availability | Drift & Dwells';
+  const seoDescription = 'Browse currently available Drift & Dwells stays for your selected dates and group size.';
 
   // Load draft data if token is present
   useEffect(() => {
@@ -281,20 +284,35 @@ const SearchResults = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-white">
-        <div className="max-w-7xl mx-auto px-6 py-20">
-          <div className="text-center py-20">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-sage"></div>
-            <p className="mt-6 text-body text-gray-600">Searching for available cabins...</p>
+      <>
+        <Seo
+          title={seoTitle}
+          description={seoDescription}
+          canonicalPath="/search"
+          noindex
+        />
+        <div className="min-h-screen bg-white">
+          <div className="max-w-7xl mx-auto px-6 py-20">
+            <div className="text-center py-20">
+              <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-sage"></div>
+              <p className="mt-6 text-body text-gray-600">Searching for available cabins...</p>
+            </div>
           </div>
         </div>
-      </div>
+      </>
     );
   }
 
   return (
-    <div className="min-h-screen bg-white">
-      <div className="max-w-7xl mx-auto px-6 py-20">
+    <>
+      <Seo
+        title={seoTitle}
+        description={seoDescription}
+        canonicalPath="/search"
+        noindex
+      />
+      <div className="min-h-screen bg-white">
+        <div className="max-w-7xl mx-auto px-6 py-20">
         {/* Search Bar */}
         <div className="mb-20">
           <SearchBar initialData={currentSearchParams} />
@@ -472,8 +490,9 @@ const SearchResults = () => {
             ← back to home
           </button>
         </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 

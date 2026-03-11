@@ -68,48 +68,41 @@ router.get('/', [
       return cabin.capacity >= totalGuests && totalGuests >= minGuests;
     });
 
-    // Check availability for each cabin
-    const availableCabins = [];
+    const cabinIds = capacityFilteredCabins.map(c => c._id);
+    const conflicting = await Booking.find({
+      cabinId: { $in: cabinIds },
+      status: { $in: ['pending', 'confirmed'] },
+      checkIn: { $lt: checkOutDate },
+      checkOut: { $gt: checkInDate }
+    }).select('cabinId').lean();
 
+    const bookedCabinIds = new Set(conflicting.map(b => b.cabinId.toString()));
+
+    const availableCabins = [];
     for (const cabin of capacityFilteredCabins) {
-      // Check if cabin has blocked dates in the requested period
+      if (bookedCabinIds.has(cabin._id.toString())) continue;
+
       const blockedDates = Array.isArray(cabin.blockedDates) ? cabin.blockedDates : [];
       const hasBlockedDates = blockedDates.some(blockedDate => {
         const blocked = moment(blockedDate).startOf('day').toDate();
         return blocked >= checkInDate && blocked < checkOutDate;
       });
 
-      if (hasBlockedDates) {
-        continue;
-      }
+      if (hasBlockedDates) continue;
 
-      // Check for existing bookings that overlap with the requested period
-      const conflictingBookings = await Booking.find({
-        cabinId: cabin._id,
-        status: { $in: ['pending', 'confirmed'] },
-        $or: [
-          {
-            checkIn: { $lt: checkOutDate },
-            checkOut: { $gt: checkInDate }
-          }
-        ]
-      });
-
-      if (conflictingBookings.length === 0) {
-        // Calculate total price
+      // Calculate total price
         const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
         let totalPrice = totalNights * cabin.pricePerNight;
         if ((cabin.pricingModel || 'per_night') === 'per_person') {
           totalPrice *= totalGuests;
         }
 
-        availableCabins.push({
-          ...cabin.toObject(),
-          totalNights,
-          totalPrice,
-          available: true
-        });
-      }
+      availableCabins.push({
+        ...cabin.toObject(),
+        totalNights,
+        totalPrice,
+        available: true
+      });
     }
 
     // Include multi-unit cabin types (e.g. A-Frames) when enabled

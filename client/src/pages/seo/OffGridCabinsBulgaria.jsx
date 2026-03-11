@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { useBookingSearch } from '../../context/BookingSearchContext';
 import Seo from '../../components/Seo';
+import { buildHreflangAlternates } from '../../utils/localizedRoutes';
 import './seo-landing.css';
 
 const OffGridCabinsBulgaria = () => {
@@ -16,10 +17,7 @@ const OffGridCabinsBulgaria = () => {
         description={t('offGrid.metaDescription')}
         canonicalPath="/off-grid-cabins-bulgaria"
         ogImage="/uploads/Videos/The-cabin-header.winter-poster.jpg"
-        hreflangAlternates={[
-          { href: '/off-grid-cabins-bulgaria', hreflang: 'en' },
-          { href: '/off-grid-cabins-bulgaria', hreflang: 'x-default' }
-        ]}
+        hreflangAlternates={buildHreflangAlternates('/off-grid-cabins-bulgaria')}
       />
       <div className="seo-landing">
         <section className="seo-landing-hero">

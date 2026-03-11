@@ -189,6 +189,7 @@ const EditorialHookSection = () => {
                 src="/uploads/The%20Valley/Screencastfrom2024-09-3022-01-26-ezgif.com-video-to-gif-converter-1-1.gif"
                 alt="The Valley animated overview showing mountain village layout, A-frame cabins, and natural landscape"
                 className="w-full h-auto"
+                style={{ aspectRatio: '16/9' }}
                 loading="lazy"
               />
             </div>

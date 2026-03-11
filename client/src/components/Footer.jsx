@@ -1,8 +1,11 @@
 import { useLocation, Link } from 'react-router-dom';
+import { localizePath, stripLocaleFromPath } from '../utils/localizedRoutes';
 
 const Footer = () => {
   const location = useLocation();
-  const isHome = location.pathname === '/';
+  const basePath = stripLocaleFromPath(location.pathname);
+  const language = location.pathname === '/bg' || location.pathname.startsWith('/bg/') ? 'bg' : 'en';
+  const isHome = basePath === '/';
 
   // Bottom strip elements with image icons
   const bottomStripElements = [
@@ -80,9 +83,9 @@ const Footer = () => {
                 <input type="checkbox" id="privacy" className="mt-1" style={{ width: '14px', height: '14px' }} />
                 <label htmlFor="privacy" className="font-['Montserrat'] text-[#111]" style={{ fontSize: '11px', fontWeight: 400, opacity: 0.7, lineHeight: '1.5' }}>
                   I agree with the{' '}
-                  <Link to="/privacy" className="underline hover:opacity-60">privacy policy</Link>
+                  <Link to={localizePath('/privacy', language)} className="underline hover:opacity-60">privacy policy</Link>
                   {' '}and{' '}
-                  <Link to="/terms" className="underline hover:opacity-60">terms of use</Link>.
+                  <Link to={localizePath('/terms', language)} className="underline hover:opacity-60">terms of use</Link>.
                 </label>
               </div>
             </form>
@@ -100,27 +103,27 @@ const Footer = () => {
               
               <ul>
                 <li style={{ marginBottom: 'clamp(16px, 2vw, 28px)' }}>
-                  <Link to="/" className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
+                  <Link to={localizePath('/', language)} className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
                     Home
                   </Link>
                 </li>
                 <li style={{ marginBottom: 'clamp(16px, 2vw, 28px)' }}>
-                  <Link to="/cabin" className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
+                  <Link to={localizePath('/cabin', language)} className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
                     The Cabin
                   </Link>
                 </li>
                 <li style={{ marginBottom: 'clamp(16px, 2vw, 28px)' }}>
-                  <Link to="/valley" className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
+                  <Link to={localizePath('/valley', language)} className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
                     The Valley
                   </Link>
                 </li>
                 <li style={{ marginBottom: 'clamp(16px, 2vw, 28px)' }}>
-                  <Link to="/about" className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
+                  <Link to={localizePath('/about', language)} className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
                     About
                   </Link>
                 </li>
                 <li style={{ marginBottom: 'clamp(16px, 2vw, 28px)' }}>
-                  <Link to="/build" className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
+                  <Link to={localizePath('/build', language)} className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
                     Build
                   </Link>
                 </li>
@@ -135,22 +138,22 @@ const Footer = () => {
               
               <ul>
                 <li style={{ marginBottom: 'clamp(16px, 2vw, 28px)' }}>
-                  <Link to="/career" className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
+                  <Link to={localizePath('/career', language)} className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
                     Careers
                   </Link>
                 </li>
                 <li style={{ marginBottom: 'clamp(16px, 2vw, 28px)' }}>
-                  <Link to="/press" className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
+                  <Link to={localizePath('/press', language)} className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
                     Press
                   </Link>
                 </li>
                 <li style={{ marginBottom: 'clamp(16px, 2vw, 28px)' }}>
-                  <Link to="/terms" className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
+                  <Link to={localizePath('/terms', language)} className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
                     Terms & Conditions
                   </Link>
                 </li>
                 <li style={{ marginBottom: 'clamp(16px, 2vw, 28px)' }}>
-                  <Link to="/privacy" className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
+                  <Link to={localizePath('/privacy', language)} className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
                     Privacy Policy
                   </Link>
                 </li>

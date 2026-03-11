@@ -1,0 +1,60 @@
+.dd-datepicker-popper {
+  z-index: 10050 !important;
+}
+
+.dd-datepicker {
+  z-index: 10050 !important;
+  font-family: 'Inter', system-ui, sans-serif !important;
+  border: 1px solid rgba(17, 24, 39, 0.14) !important;
+  border-radius: 1rem !important;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18) !important;
+  overflow: hidden;
+}
+
+.dd-datepicker .react-datepicker__header {
+  background: #f8f5ef !important;
+  border-bottom: 1px solid rgba(17, 24, 39, 0.08) !important;
+}
+
+.dd-datepicker .react-datepicker__current-month,
+.dd-datepicker .react-datepicker__day-name,
+.dd-datepicker .react-datepicker__month-read-view,
+.dd-datepicker .react-datepicker__year-read-view {
+  color: #111827 !important;
+}
+
+.dd-datepicker .react-datepicker__day--selected,
+.dd-datepicker .react-datepicker__day--in-selecting-range,
+.dd-datepicker .react-datepicker__day--in-range,
+.dd-datepicker .react-datepicker__month-text--selected,
+.dd-datepicker .react-datepicker__month-text--in-selecting-range,
+.dd-datepicker .react-datepicker__month-text--in-range,
+.dd-datepicker .react-datepicker__quarter-text--selected,
+.dd-datepicker .react-datepicker__quarter-text--in-selecting-range,
+.dd-datepicker .react-datepicker__quarter-text--in-range,
+.dd-datepicker .react-datepicker__year-text--selected,
+.dd-datepicker .react-datepicker__year-text--in-selecting-range,
+.dd-datepicker .react-datepicker__year-text--in-range,
+.dd-datepicker .react-datepicker__day--keyboard-selected,
+.dd-datepicker .react-datepicker__month-text--keyboard-selected,
+.dd-datepicker .react-datepicker__quarter-text--keyboard-selected,
+.dd-datepicker .react-datepicker__year-text--keyboard-selected {
+  background-color: #111827 !important;
+  color: #f9fafb !important;
+  border-radius: 9999px !important;
+}
+
+.dd-datepicker .react-datepicker__day--selected:hover,
+.dd-datepicker .react-datepicker__day--in-selecting-range:hover,
+.dd-datepicker .react-datepicker__day--in-range:hover,
+.dd-datepicker .react-datepicker__day--keyboard-selected:hover {
+  background-color: #1f2937 !important;
+  color: #f9fafb !important;
+}
+
+.dd-datepicker .react-datepicker__day:hover,
+.dd-datepicker .react-datepicker__month-text:hover,
+.dd-datepicker .react-datepicker__quarter-text:hover,
+.dd-datepicker .react-datepicker__year-text:hover {
+  border-radius: 9999px !important;
+}

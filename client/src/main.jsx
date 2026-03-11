@@ -12,15 +12,15 @@ import './i18n/i18n.js';
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <HelmetProvider>
-      <LanguageProvider>
-        <SeasonProvider>
-          <BookingSearchProvider>
-            <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <LanguageProvider>
+          <SeasonProvider>
+            <BookingSearchProvider>
               <App />
-            </BrowserRouter>
-          </BookingSearchProvider>
-        </SeasonProvider>
-      </LanguageProvider>
+            </BookingSearchProvider>
+          </SeasonProvider>
+        </LanguageProvider>
+      </BrowserRouter>
     </HelmetProvider>
   </React.StrictMode>,
 );

@@ -221,7 +221,7 @@ const ValleyGuide = () => {
   const [toast, setToast] = useState(null);
   const [expandedActivity, setExpandedActivity] = useState(null);
   const [showAddOnForm, setShowAddOnForm] = useState(null);
-  const [addOnForm, setAddOnForm] = useState({ date: '', timeWindow: '', pax: '', notes: '' });
+  const [addOnForm, setAddOnForm] = useState({ email: '', date: '', timeWindow: '', pax: '', notes: '' });
 
   useEffect(() => {
     const fetchBooking = async () => {
@@ -295,6 +295,7 @@ const ValleyGuide = () => {
   const handleAddOnRequest = async (type) => {
     try {
       await bookingAPI.submitAddOnRequest(bookingId, {
+        email: addOnForm.email,
         type,
         date: addOnForm.date,
         timeWindow: addOnForm.timeWindow,
@@ -303,8 +304,8 @@ const ValleyGuide = () => {
       });
       setToast('Request sent — we will confirm with you.');
       setTimeout(() => setToast(null), 3000);
-        setShowAddOnForm(null);
-        setAddOnForm({ date: '', timeWindow: '', pax: '', notes: '' });
+      setShowAddOnForm(null);
+      setAddOnForm({ email: '', date: '', timeWindow: '', pax: '', notes: '' });
     } catch (err) {
       console.error(err);
       alert('Unable to submit request just now.');
@@ -687,6 +688,15 @@ const ValleyGuide = () => {
           <div className="bg-white rounded-3xl border p-6 space-y-4 w-full max-w-md" style={{ borderColor: COLORS.border }}>
             <h3 className="font-['Instrument_Serif'] text-2xl">Request {showAddOnForm}</h3>
             <div className="space-y-3 text-sm">
+              <input
+                type="email"
+                placeholder="Your booking email"
+                value={addOnForm.email}
+                onChange={(e) => setAddOnForm({ ...addOnForm, email: e.target.value })}
+                className="w-full rounded-2xl border px-4 py-2"
+                style={{ borderColor: COLORS.border }}
+                required
+              />
               <input
                 type="date"
                 value={addOnForm.date}

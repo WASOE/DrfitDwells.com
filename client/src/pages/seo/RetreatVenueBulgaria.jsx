@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { useBookingSearch } from '../../context/BookingSearchContext';
 import Seo from '../../components/Seo';
+import { buildHreflangAlternates } from '../../utils/localizedRoutes';
 import './seo-landing.css';
 
 const RetreatVenueBulgaria = () => {
@@ -16,10 +17,7 @@ const RetreatVenueBulgaria = () => {
         description={t('retreatVenue.metaDescription')}
         canonicalPath="/retreat-venue-bulgaria"
         ogImage="/uploads/The Valley/WhatsApp Image 2025-10-17 at 10.20.23 AM.jpeg"
-        hreflangAlternates={[
-          { href: '/retreat-venue-bulgaria', hreflang: 'en' },
-          { href: '/retreat-venue-bulgaria', hreflang: 'x-default' }
-        ]}
+        hreflangAlternates={buildHreflangAlternates('/retreat-venue-bulgaria')}
       />
       <div className="seo-landing">
         <section className="seo-landing-hero">

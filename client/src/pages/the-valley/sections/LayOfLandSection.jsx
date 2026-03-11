@@ -86,6 +86,7 @@ const LayOfLandSection = ({ scrollToAccommodations }) => {
               <video
                 ref={mapVideoRef}
                 src="/uploads/Videos/The-Valley-From-the-Sky.mp4"
+                poster="/uploads/Content%20website/SKy-view-Aframe.jpg"
                 className="w-full h-auto block"
                 autoPlay
                 muted

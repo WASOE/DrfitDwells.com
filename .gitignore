@@ -2,9 +2,6 @@
 node_modules/
 client/node_modules/
 server/node_modules/
-package-lock.json
-client/package-lock.json
-server/package-lock.json
 
 # Build outputs
 dist/
@@ -38,9 +35,9 @@ coverage/
 *.temp
 test-image.txt
 
-# Uploads (keep structure but ignore large files - adjust as needed)
-# server/uploads/
-# uploads/
+# Uploads (keep structure but ignore large files)
+server/uploads/
+uploads/
 
 # WordPress plugin builds
 wordpress-plugin/*.zip

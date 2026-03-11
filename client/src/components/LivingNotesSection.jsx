@@ -2,8 +2,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
-import { cabinAPI, reviewAPI } from '../services/api';
+import { reviewAPI } from '../services/api';
+import { getPrimaryCabin } from '../services/cabinContent';
+import { useLanguage } from '../context/LanguageContext.jsx';
 import { deriveDisplayName } from '../utils/nameUtils';
+import { localizePath } from '../utils/localizedRoutes';
 
 function Stars({ value }) {
   const full = Math.round(value);
@@ -28,6 +31,7 @@ const MAX_CHARS = 90;
 
 const LivingNotesSection = () => {
   const { t } = useTranslation('cabin');
+  const { language } = useLanguage();
   const [cabinId, setCabinId] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -36,12 +40,7 @@ const LivingNotesSection = () => {
   const loadCabinAndReviews = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await cabinAPI.getAll();
-      if (!res?.data?.success) return;
-      const cabins = res.data?.data?.cabins || res.data?.cabins || [];
-      const cabin = cabins.find(
-        c => c?.name && ['the cabin', 'bucephalus', 'the cabin (bucephalus)'].includes(c.name.trim().toLowerCase())
-      ) || cabins[0];
+      const cabin = await getPrimaryCabin();
       if (!cabin?._id) return;
       setCabinId(cabin._id);
 
@@ -140,7 +139,7 @@ const LivingNotesSection = () => {
             className="text-center mt-8 md:mt-10"
           >
             <Link
-              to={cabinId ? `/cabin/${cabinId}` : '/search'}
+              to={cabinId ? localizePath(`/cabin/${cabinId}`, language) : localizePath('/search', language)}
               className="inline-flex items-center gap-2 text-[#F1ECE2] font-medium text-sm md:text-base border-b border-[#F1ECE2]/50 hover:border-[#F1ECE2] transition-colors pb-1"
             >
               {t('livingNotes.more', 'See all reviews & book')}

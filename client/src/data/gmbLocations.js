@@ -4,7 +4,7 @@
  * Used for schema.org structured data, NAP consistency, and local SEO.
  */
 
-const ORIGIN = 'https://driftanddwells.com';
+const ORIGIN = import.meta.env.VITE_SITE_URL || 'https://driftdwells.com';
 
 // Shared contact – verified GMB phone
 export const CONTACT_PHONE = import.meta.env.VITE_CONTACT_PHONE || '+359 87 634 2540';

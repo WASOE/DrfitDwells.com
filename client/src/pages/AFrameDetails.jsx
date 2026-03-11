@@ -4,6 +4,7 @@ import { cabinTypeAPI, availabilityAPI, bookingAPI, unitAPI } from '../services/
 import MosaicGallery from '../components/MosaicGallery';
 import ReviewsSection from '../components/reviews/ReviewsSection';
 import MapArrival from '../components/MapArrival';
+import Seo from '../components/Seo';
 import './CabinDetails.css';
 import '../components/gallery/lightbox.css';
 
@@ -401,6 +402,12 @@ const AFrameDetails = () => {
 
   return (
     <div className="min-h-screen bg-white cabin-details-page">
+      <Seo
+        title={`${cabinType?.name || 'A-Frame'} | Drift & Dwells`}
+        description={cabinType?.description?.substring(0, 160) || 'Book an A-frame cabin with Drift & Dwells.'}
+        canonicalPath="/stays/a-frame"
+        ogImage={cabinType?.imageUrl}
+      />
       <div className="cabin-container">
         <button onClick={() => navigate(-1)} className="btn-underline mb-8 mt-8">← back to search results</button>
 

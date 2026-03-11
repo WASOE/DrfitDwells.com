@@ -1,7 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { adminAuth } = require('../middleware/adminAuth');
-const { upload } = require('../middleware/upload');
+const { upload, validateMagicBytes } = require('../middleware/upload');
 const { login, getBookings, getBookingById, updateBookingStatus, getCabins, getCabinById, createCabin, updateCabin } = require('../controllers/adminController');
 const Cabin = require('../models/Cabin');
 const EmailEvent = require('../models/EmailEvent');
@@ -70,6 +70,12 @@ router.post('/cabins/:id/images', upload.single('file'), async (req, res) => {
     const cabin = await Cabin.findById(req.params.id);
     if (!cabin) return res.status(404).json({ success: false, message: 'Cabin not found' });
     if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
+
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    if (!validateMagicBytes(req.file.path, ext)) {
+      fs.promises.unlink(req.file.path).catch(() => {});
+      return res.status(400).json({ success: false, message: 'File content does not match its extension' });
+    }
 
     const relPath = path.join('/uploads', 'cabins', req.params.id, 'original', req.file.filename);
     // basic metadata; width/height left 0 without processing

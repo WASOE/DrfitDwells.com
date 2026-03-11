@@ -5,6 +5,7 @@ import { ChevronDown, Plus, Minus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { locations } from '../data/content';
 import { useBookingSearch } from '../context/BookingSearchContext';
+import { useLanguage } from '../context/LanguageContext.jsx';
 import AuthorityStrip from '../components/AuthorityStrip';
 import CabinGallerySection from '../components/CabinGallerySection';
 import HeroSeasonToggle from '../components/HeroSeasonToggle';
@@ -15,6 +16,8 @@ import GMBContactStrip from '../components/GMBContactStrip';
 import { GMB_LOCATIONS, CONTACT_PHONE } from '../data/gmbLocations';
 import { getSEOAlt, getSEOTitle } from '../data/imageMetadata';
 import Seo from '../components/Seo';
+import { buildHreflangAlternates } from '../utils/localizedRoutes';
+import { getSiteUrl } from '../utils/siteUrl';
 
 const CABIN_VIDEOS = CABIN_MEDIA.heroVideo;
 const CABIN_STILLS = CABIN_MEDIA.heroPoster;
@@ -25,6 +28,7 @@ const TheCabin = () => {
   const cabin = locations.find(loc => loc.id === 'cabin');
   const { season } = useSeason();
   const { openModal } = useBookingSearch();
+  const { language } = useLanguage();
   const heroRef = useRef(null);
   const videoRef = useRef(null);
   const containerRef = useRef(null);
@@ -176,7 +180,7 @@ const TheCabin = () => {
   // Grain overlay texture - Enhanced for paper feel
   const grainOverlay = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23grain)'/%3E%3C/svg%3E";
 
-  const origin = 'https://driftanddwells.com';
+  const origin = getSiteUrl();
 
   const cabinLoc = GMB_LOCATIONS.cabin;
   const structuredData = {
@@ -220,20 +224,25 @@ const TheCabin = () => {
       { '@type': 'ListItem', position: 2, name: 'The Cabin', item: `${origin}/cabin` }
     ]
   };
+  const seoTitle =
+    language === 'bg'
+      ? 'The Cabin – оф-грид планинска къща в България | Drift & Dwells'
+      : 'The Cabin – Off-Grid Mountain Cabin in Bulgaria | Drift & Dwells';
+  const seoDescription =
+    language === 'bg'
+      ? 'Отседнете в The Cabin, напълно оф-грид планинска къща за двама в Родопите. Без wifi, с печка на дърва и дълбока тишина сред природата.'
+      : 'Stay at The Cabin, a fully off-grid mountain cabin for two in the Rhodope Mountains of Bulgaria. No wifi, wood stove heating, and deep silence in nature.';
 
   return (
     <>
       <Seo
-        title="The Cabin – Off-Grid Mountain Cabin in Bulgaria | Drift & Dwells"
-        description="Stay at The Cabin, a fully off-grid mountain cabin for two in the Rhodope Mountains of Bulgaria. No wifi, wood stove heating, and deep silence in nature."
+        title={seoTitle}
+        description={seoDescription}
         canonicalPath="/cabin"
-        hreflangAlternates={[
-          { href: '/cabin', hreflang: 'en' },
-          { href: '/cabin', hreflang: 'x-default' }
-        ]}
+        hreflangAlternates={buildHreflangAlternates('/cabin')}
         ogType="place"
         ogImage={CABIN_STILLS.winter}
-        preloadImages={[CABIN_STILLS.winter]}
+        preloadImages={[CABIN_STILLS[season] || CABIN_STILLS.winter]}
         jsonLd={[structuredData, cabinBreadcrumbs]}
       />
       <div className="relative min-h-screen bg-[#22201e] text-[#F1ECE2]" style={{ backgroundImage: `url("${noiseTexture}")`, backgroundRepeat: 'repeat' }}>

@@ -1,6 +1,7 @@
 import { Helmet } from 'react-helmet-async';
-
-const ORIGIN = 'https://driftanddwells.com';
+import { useLocation } from 'react-router-dom';
+import { getLanguageFromPath, localizePath } from '../utils/localizedRoutes';
+import { getSiteUrl, toAbsoluteAssetUrl, toAbsoluteSiteUrl } from '../utils/siteUrl';
 
 const Seo = ({
   title,
@@ -13,21 +14,21 @@ const Seo = ({
   preloadImages = [],
   hreflangAlternates = []
 }) => {
-  const origin =
-    typeof window !== 'undefined' && window.location?.origin
-      ? window.location.origin
-      : ORIGIN;
-  const canonical = canonicalPath ? `${origin}${canonicalPath}` : origin;
-  const absoluteOgImage =
-    ogImage && ogImage.startsWith('http') ? ogImage : ogImage ? `${origin}${ogImage}` : null;
+  const location = useLocation();
+  const siteUrl = getSiteUrl();
+  const routeLanguage = getLanguageFromPath(location.pathname);
+  const localizedCanonicalPath = canonicalPath ? localizePath(canonicalPath, routeLanguage) : '/';
+  const canonical = `${siteUrl}${localizedCanonicalPath}`;
+  const absoluteOgImage = toAbsoluteSiteUrl(ogImage);
 
   return (
     <Helmet>
+      <html lang={routeLanguage} />
       {title && <title>{title}</title>}
       {description && <meta name="description" content={description} />}
       <link rel="canonical" href={canonical} />
       {hreflangAlternates.length > 0 && hreflangAlternates.map(({ href, hreflang }) => (
-        <link key={hreflang} rel="alternate" hrefLang={hreflang} href={href.startsWith('http') ? href : `${origin}${href}`} />
+        <link key={hreflang} rel="alternate" hrefLang={hreflang} href={href.startsWith('http') ? href : `${siteUrl}${href}`} />
       ))}
       {noindex && <meta name="robots" content="noindex,nofollow" />}
       {/* Open Graph */}
@@ -44,7 +45,7 @@ const Seo = ({
       {absoluteOgImage && <meta name="twitter:image" content={absoluteOgImage} />}
       {/* Route-specific image preloads */}
       {preloadImages.map((img, index) => {
-        const href = img.startsWith('http') ? img : `${origin}${img}`;
+        const href = toAbsoluteAssetUrl(img);
         return (
           <link
             key={index}

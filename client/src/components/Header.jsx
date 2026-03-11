@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { useBookingSearch } from '../context/BookingSearchContext';
 import { useLanguage } from '../context/LanguageContext.jsx';
+import { localizePath, stripLocaleFromPath } from '../utils/localizedRoutes';
 
 const Header = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -12,7 +13,8 @@ const Header = () => {
   const { t } = useTranslation('nav');
   const { language, setLanguage } = useLanguage();
   const { openModal } = useBookingSearch();
-  const isHeroOverlay = location.pathname === '/' || location.pathname === '/cabin' || location.pathname === '/valley';
+  const basePath = stripLocaleFromPath(location.pathname);
+  const isHeroOverlay = basePath === '/' || basePath === '/cabin' || basePath === '/valley';
 
   // Detect scroll position
   useEffect(() => {
@@ -46,24 +48,24 @@ const Header = () => {
 
   // Desktop navigation links
   const navLinks = [
-    { to: '/', label: t('home') },
-    { to: '/cabin', label: t('cabin') },
-    { to: '/valley', label: t('valley') },
-    { to: '/about', label: t('about') },
-    { to: '/build', label: t('build') }
+    { to: localizePath('/', language), label: t('home') },
+    { to: localizePath('/cabin', language), label: t('cabin') },
+    { to: localizePath('/valley', language), label: t('valley') },
+    { to: localizePath('/about', language), label: t('about') },
+    { to: localizePath('/build', language), label: t('build') }
   ];
 
   // Mobile navigation links (including Search)
   const mobileNavLinks = [
-    { to: '/', label: t('home'), isModal: false },
-    { to: '/cabin', label: t('cabin'), isModal: false },
-    { to: '/valley', label: t('valley'), isModal: false },
-    { to: '/about', label: t('about'), isModal: false },
-    { to: '/build', label: t('build'), isModal: false },
+    { to: localizePath('/', language), label: t('home'), isModal: false },
+    { to: localizePath('/cabin', language), label: t('cabin'), isModal: false },
+    { to: localizePath('/valley', language), label: t('valley'), isModal: false },
+    { to: localizePath('/about', language), label: t('about'), isModal: false },
+    { to: localizePath('/build', language), label: t('build'), isModal: false },
     { to: null, label: t('search'), isModal: true }
   ];
 
-  const isActive = (path) => location.pathname === path;
+  const isActive = (path) => stripLocaleFromPath(path) === basePath;
 
   const handleMobileLinkClick = (link) => {
     setIsMobileMenuOpen(false);
@@ -124,7 +126,7 @@ const Header = () => {
           <div className="flex justify-between items-center">
             {/* Zone 1: The Brand (Left) */}
             <div className="flex-shrink-0">
-              <Link to="/" className="flex items-center" onClick={() => setIsMobileMenuOpen(false)}>
+              <Link to={localizePath('/', language)} className="flex items-center" onClick={() => setIsMobileMenuOpen(false)}>
                 {useDarkTheme ? (
                   <img 
                     src="/uploads/Logo/DRIFTS-ai.png" 

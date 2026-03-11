@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import Seo from '../components/Seo';
 import ConfiguratorHeader from '../components/configurator/ConfiguratorHeader';
 import VisualizerCanvas from '../components/configurator/VisualizerCanvas';
 import OptionSelector from '../components/configurator/OptionSelector';
@@ -8,6 +9,7 @@ import MobileConfigPanel from '../components/configurator/MobileConfigPanel';
 import MobileStepIndicator from '../components/configurator/MobileStepIndicator';
 import MobileSpecsBar from '../components/configurator/MobileSpecsBar';
 import SocialProofRibbon from '../components/configurator/SocialProofRibbon';
+import { useLanguage } from '../context/LanguageContext.jsx';
 
 const ACCENT_RGB = [129, 136, 122];
 
@@ -551,6 +553,7 @@ const Build = () => {
   const [isSpecsBarExpanded, setIsSpecsBarExpanded] = useState(false);
   const [showScrollIndicator, setShowScrollIndicator] = useState(false);
   const configPanelRef = useRef(null);
+  const { language } = useLanguage();
 
   // Detect mobile
   useEffect(() => {
@@ -851,13 +854,28 @@ const Build = () => {
     mediaOptions.filter(media => media.view === mediaView),
     [mediaOptions, mediaView]
   );
+  const seoTitle =
+    language === 'bg'
+      ? 'Създайте оф-грид къща | Drift & Dwells'
+      : 'Build an off-grid cabin | Drift & Dwells';
+  const seoDescription =
+    language === 'bg'
+      ? 'Конфигурирайте материали, системи и опции за доставка за оф-грид къща на Drift & Dwells.'
+      : 'Configure materials, systems, and delivery options for a Drift & Dwells off-grid cabin build.';
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Header - Desktop only, mobile uses step indicator */}
-      <div className="hidden lg:block">
-        <ConfiguratorHeader />
-      </div>
+    <>
+      <Seo
+        title={seoTitle}
+        description={seoDescription}
+        canonicalPath="/build"
+        noindex
+      />
+      <div className="min-h-screen bg-white">
+        {/* Header - Desktop only, mobile uses step indicator */}
+        <div className="hidden lg:block">
+          <ConfiguratorHeader />
+        </div>
 
       {/* Mobile Step Indicator */}
       <MobileStepIndicator
@@ -1073,7 +1091,8 @@ const Build = () => {
         isConfigPanelOpen={isMobileConfigOpen}
         onExpandedChange={setIsSpecsBarExpanded}
       />
-    </div>
+      </div>
+    </>
   );
 };
 

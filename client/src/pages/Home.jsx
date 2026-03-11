@@ -6,22 +6,35 @@ import Footer from '../components/Footer';
 import CraftExperienceSection from '../components/CraftExperienceSection';
 import Seo from '../components/Seo';
 import { useTranslation } from 'react-i18next';
+import { useLanguage } from '../context/LanguageContext.jsx';
 import { CONTACT_PHONE } from '../data/gmbLocations';
+import { buildHreflangAlternates } from '../utils/localizedRoutes';
+import { getSiteUrl } from '../utils/siteUrl';
 
 const MemoryStream = lazy(() => import('../components/MemoryStream'));
 const BookingDrawer = lazy(() => import('../components/BookingDrawer'));
 
-const origin = 'https://driftanddwells.com';
+const origin = getSiteUrl();
 
 const Home = () => {
   const { t } = useTranslation('home');
+  const { language } = useLanguage();
+  const seoTitle =
+    language === 'bg'
+      ? 'Drift & Dwells | Оф-грид планински уединения в България'
+      : 'Drift & Dwells | Off-Grid Mountain Retreats in Bulgaria';
+  const seoDescription =
+    language === 'bg'
+      ? 'Резервирайте оф-грид планинско уединение в България с Drift & Dwells. Отседнете в The Cabin или The Valley за бавно, осъзнато време сред Родопите.'
+      : 'Book off-grid mountain retreats in Bulgaria with Drift & Dwells. Stay at The Cabin or The Valley for slow, intentional time in the Rhodope mountains.';
 
   return (
     <>
       <Seo
-        title="Drift & Dwells | Off-Grid Mountain Retreats in Bulgaria"
-        description="Book off-grid mountain retreats in Bulgaria with Drift & Dwells. Stay at The Cabin or The Valley for slow, intentional time in the Rhodope mountains."
+        title={seoTitle}
+        description={seoDescription}
         canonicalPath="/"
+        hreflangAlternates={buildHreflangAlternates('/')}
         ogImage="/uploads/Videos/The-cabin-header.winter-poster.jpg"
         jsonLd={[
           {

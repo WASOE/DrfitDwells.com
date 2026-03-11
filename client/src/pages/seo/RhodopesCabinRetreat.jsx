@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { useBookingSearch } from '../../context/BookingSearchContext';
 import Seo from '../../components/Seo';
+import { buildHreflangAlternates } from '../../utils/localizedRoutes';
 import './seo-landing.css';
 
 const RhodopesCabinRetreat = () => {
@@ -17,10 +18,7 @@ const RhodopesCabinRetreat = () => {
         description={t('rhodopes.metaDescription')}
         canonicalPath="/rhodopes-cabin-retreat"
         ogImage="/uploads/The Valley/WhatsApp Image 2025-10-17 at 10.20.23 AM.jpeg"
-        hreflangAlternates={[
-          { href: '/rhodopes-cabin-retreat', hreflang: 'en' },
-          { href: '/rhodopes-cabin-retreat', hreflang: 'x-default' }
-        ]}
+        hreflangAlternates={buildHreflangAlternates('/rhodopes-cabin-retreat')}
       />
       <div className="seo-landing">
         <section className="seo-landing-hero">
