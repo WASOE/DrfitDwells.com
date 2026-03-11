@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import Header from "../components/Header";
 import Footer from "../components/Footer";
@@ -7,12 +7,20 @@ import BookingModal from "../components/BookingModal";
 import AnnouncementBar from "../components/AnnouncementBar";
 import ChatWidgetLazy from "../components/ChatWidgetLazy";
 import { stripLocaleFromPath } from "../utils/localizedRoutes";
+import { useFloatingSafeArea } from "../hooks/useFloatingSafeArea";
 
 /** Routes where the first section is a full-bleed hero (content intentionally under the nav). No top padding. */
 const HERO_PATHS = ['/', '/cabin', '/valley'];
 
 export default function SiteLayout() {
   const location = useLocation();
+  const { bottomOffset } = useFloatingSafeArea();
+
+  // Sync CSS variable for components that use raw CSS (e.g. var(--floating-bottom-offset))
+  useEffect(() => {
+    document.documentElement.style.setProperty('--floating-bottom-offset', `${bottomOffset}px`);
+    return () => document.documentElement.style.removeProperty('--floating-bottom-offset');
+  }, [bottomOffset]);
   const basePath = stripLocaleFromPath(location.pathname);
   const isHome = basePath === '/';
   const isHeroPage = HERO_PATHS.includes(basePath);

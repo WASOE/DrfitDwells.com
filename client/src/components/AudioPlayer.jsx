@@ -2,9 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Volume2, VolumeX, AlertCircle } from 'lucide-react';
 import { locations } from '../data/content';
+import { useFloatingSafeArea } from '../hooks/useFloatingSafeArea';
 
 function AudioPlayer() {
   const location = useLocation();
+  const { bottomOffset, isDesktop } = useFloatingSafeArea();
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [hasError, setHasError] = useState(false);
@@ -253,7 +255,10 @@ function AudioPlayer() {
   // If there's an error, show a warning but still allow interaction
   if (hasError) {
     return (
-      <div className="fixed top-20 right-4 md:bottom-6 md:left-6 md:top-auto md:right-auto z-[60]">
+      <div
+        className="fixed top-20 right-4 md:left-6 md:top-auto md:right-auto z-[60]"
+        style={isDesktop ? { bottom: `${bottomOffset}px` } : undefined}
+      >
         <button
           onClick={toggleAudio}
           disabled={true}
@@ -272,9 +277,12 @@ function AudioPlayer() {
     <button
       onClick={toggleAudio}
       disabled={isLoading}
-      className="fixed top-20 right-4 md:bottom-6 md:left-6 md:top-auto md:right-auto z-[60] w-12 h-12 md:w-auto md:h-auto md:px-4 md:py-2 rounded-full bg-stone-900/90 md:bg-stone-900/80 backdrop-blur-md text-white flex items-center justify-center gap-3 cursor-pointer hover:bg-black transition-colors touch-manipulation shadow-lg border border-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
+      className="fixed top-20 right-4 md:left-6 md:top-auto md:right-auto z-[60] w-12 h-12 md:w-auto md:h-auto md:px-4 md:py-2 rounded-full bg-stone-900/90 md:bg-stone-900/80 backdrop-blur-md text-white flex items-center justify-center gap-3 cursor-pointer hover:bg-black transition-colors touch-manipulation shadow-lg border border-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
+      style={{
+        ...(isDesktop ? { bottom: `${bottomOffset}px` } : {}),
+        pointerEvents: 'auto'
+      }}
       aria-label={isPlaying ? 'Turn sound off' : 'Turn sound on'}
-      style={{ pointerEvents: 'auto' }}
     >
       {isLoading ? (
         <>

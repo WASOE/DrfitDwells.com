@@ -180,7 +180,7 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
     ? 'text-[9px] uppercase tracking-[0.3em] font-serif text-white/70 mb-1.5'
     : 'text-[9px] uppercase tracking-[0.3em] font-serif text-gray-500 mb-1.5';
   const fieldInputClass = isGlass
-    ? 'w-full h-12 lg:h-14 bg-transparent text-sm lg:text-base font-serif text-white border-b border-white/40 focus:border-white focus:outline-none transition-colors duration-150 pb-1'
+    ? 'w-full h-12 lg:h-14 bg-transparent text-sm lg:text-base font-serif text-white placeholder:text-white border-b border-white/40 focus:border-white focus:outline-none transition-colors duration-150 pb-1'
     : 'w-full h-12 lg:h-14 bg-transparent text-sm lg:text-base font-serif text-gray-900 border-b border-gray-300 focus:border-gray-900 focus:outline-none transition-colors duration-150 pb-1';
   const _fieldSelectClass = `${fieldInputClass} appearance-none cursor-pointer`;
   const dividerClass = isGlass ? 'hidden' : 'hidden md:block w-px h-12 lg:h-14 bg-gray-300 self-end mb-3';

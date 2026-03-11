@@ -1,6 +1,106 @@
 /* CabinDetails.css — Premium polish, production-ready */
 
-/* Container */
+/* Outer container — constrained width */
+.cabin-page-outer {
+  max-width: 1280px;
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+@media (min-width: 640px) {
+  .cabin-page-outer {
+    padding-left: 2rem;  /* px-8 */
+    padding-right: 2rem;
+  }
+}
+
+@media (min-width: 1280px) {
+  .cabin-page-outer {
+    padding-left: 3rem;  /* xl:px-12 */
+    padding-right: 3rem;
+  }
+}
+
+/* Desktop hero grid — Airbnb pattern: card starts BELOW gallery, not beside it */
+.cabin-hero-grid {
+  display: block;
+}
+
+@media (min-width: 1024px) {
+  .cabin-hero-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.65fr) minmax(360px, 420px);
+    grid-template-rows: auto auto 1fr;
+    gap: 32px;
+    align-items: start;
+  }
+
+  /* Row 1: title block spans full width so Save/Share align with gallery right edge */
+  .cabin-hero-title-block {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  /* Row 2: gallery spans full content width, moderate height (Airbnb reference) */
+  .cabin-hero-gallery-wrap {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    min-width: 0;
+  }
+
+  /* Row 3: content (left), booking card (right) — card starts here, below gallery */
+  .cabin-hero-content {
+    grid-column: 1;
+    grid-row: 3;
+    min-width: 0;
+  }
+
+  /* Right column: spacer spans rows 1–2 so card aligns with content below gallery */
+  .cabin-hero-right-spacer {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    min-height: 0;
+  }
+
+  .cabin-hero-right {
+    grid-column: 2;
+    grid-row: 3;
+    position: sticky;
+    top: 32px;
+    align-self: start;
+    max-height: calc(100vh - 64px);
+    overflow-y: auto;
+    overflow-x: visible;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+  }
+}
+
+.cabin-hero-right::-webkit-scrollbar {
+  width: 6px;
+}
+
+.cabin-hero-right::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.cabin-hero-right::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+@media (max-width: 1023px) {
+  .cabin-hero-right {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+/* Container for legacy / error states */
 .cabin-container {
   max-width: 1200px;
   margin: 0 auto;
@@ -159,6 +259,11 @@ h1.cabin-title {
   position: relative;
   padding: 28px; /* Premium padding */
   box-shadow: 0 2px 20px rgba(0, 0, 0, 0.06); /* Light depth shadow */
+}
+
+/* Compact reservation card — Airbnb-style, conversion-first */
+.booking-card-compact {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 @media (max-width: 1023px) {

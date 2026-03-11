@@ -7,6 +7,12 @@
   --header-offset: 5.5rem; /* py-6 + nav content height; used by layout and HeroSeasonToggle */
 }
 
+/* Safe area: bottom offset for floating elements (chat, audio) to avoid overlapping sticky bars.
+ * Set by useFloatingSafeArea / FloatingSafeAreaProvider. Default clears 72px bar + 16px gap. */
+:root {
+  --floating-bottom-offset: 88px;
+}
+
 /* Typography (standardized): Inter = body/sans, Playfair Display = headings/serif, Merriweather = editorial, Montserrat = valley/footer/UI, Caveat = handwritten. Loaded in index.css @import and index.html. */
 @layer base {
   html {

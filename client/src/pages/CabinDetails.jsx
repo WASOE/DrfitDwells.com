@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { cabinAPI, bookingAPI } from '../services/api';
 import { useBookingContext } from '../context/BookingContext';
+import { useBookingSearch } from '../context/BookingSearchContext';
 import MosaicGallery from '../components/MosaicGallery';
 import ReviewsSection from '../components/reviews/ReviewsSection';
 import MapArrival from '../components/MapArrival';
@@ -22,9 +23,10 @@ const DEFAULT_EXPERIENCES = [
 const CabinDetails = () => {
   // ===== A) Router & Context hooks (always first) =====
   const { id } = useParams();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { setBasicInfo } = useBookingContext();
+  const { openModal: openDateModal } = useBookingSearch();
   
   // Check if we're returning to craft flow
   const returnTo = searchParams.get('returnTo');
@@ -53,7 +55,7 @@ const CabinDetails = () => {
   });
 
   const [formErrors, setFormErrors] = useState({});
-  const [mobileDateDrawerOpen, setMobileDateDrawerOpen] = useState(false);
+  const [showBookingFormModal, setShowBookingFormModal] = useState(false);
 
   // ===== C) All Refs (declare ALL unconditionally) =====
   const lightboxCloseBtnRef = useRef(null);
@@ -67,6 +69,21 @@ const CabinDetails = () => {
     adults: Math.max(1, parseInt(searchParams.get('adults'), 10) || 2),
     children: Math.max(0, parseInt(searchParams.get('children'), 10) || 0)
   }), [searchParams]);
+
+  // Helper to update URL search params so pricing / nights stay in sync
+  const updateSearchParams = useCallback((patch) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      Object.entries(patch).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === '') {
+          next.delete(key);
+        } else {
+          next.set(key, String(value));
+        }
+      });
+      return next;
+    });
+  }, [setSearchParams]);
 
   // Space tag definitions (memoized to prevent unnecessary re-renders)
   const SPACE_TAGS = useMemo(() => [
@@ -558,6 +575,45 @@ const CabinDetails = () => {
     canonical.setAttribute('href', window.location.href);
   }, [cabin, pageTitle, pageDescription, pageImage]);
 
+  // Lock body scroll and Escape to close when booking form modal is open
+  useEffect(() => {
+    if (!showBookingFormModal) return;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e) => {
+      if (e.key === 'Escape') setShowBookingFormModal(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [showBookingFormModal]);
+
+  // Listen for global "openCraftExperience" band click (bottom sticky band)
+  // Duplicate the minimal logic here to avoid referencing callbacks
+  useEffect(() => {
+    const handler = () => {
+      if (!id || !searchCriteria.checkIn || !searchCriteria.checkOut) return;
+      // Save basic booking info to context
+      setBasicInfo({
+        cabinId: id,
+        checkIn: searchCriteria.checkIn,
+        checkOut: searchCriteria.checkOut,
+        adults: searchCriteria.adults,
+        children: searchCriteria.children
+      });
+
+      // Navigate to appropriate craft step
+      if (returnTo) {
+        navigate(`/${returnTo}`);
+      } else {
+        navigate('/craft/step-1');
+      }
+    };
+    window.addEventListener('openCraftExperience', handler);
+    return () => window.removeEventListener('openCraftExperience', handler);
+  }, [id, searchCriteria.checkIn, searchCriteria.checkOut, searchCriteria.adults, searchCriteria.children, navigate, returnTo, setBasicInfo]);
+
   // Initialize saved state from localStorage
   useEffect(() => {
     if (!id) return;
@@ -999,7 +1055,7 @@ const CabinDetails = () => {
 
   // ===== I) Render (all hooks have been called by this point) =====
   return (
-    <div className="min-h-screen bg-white cabin-details-page pb-32 md:pb-0">
+    <div className="min-h-screen bg-white cabin-details-page pb-32 md:pb-24">
       <Seo
         title={`${cabin.name} | Drift & Dwells`}
         description={pageDescription}
@@ -1019,14 +1075,16 @@ const CabinDetails = () => {
       {/* Error banner (for non-fatal errors) */}
       {error && cabin && (
         <div className="bg-red-50 border-b border-red-200" role="alert">
-          <div className="cabin-container py-3">
+          <div className="cabin-page-outer py-3">
             <p className="text-sm text-red-800">{error}</p>
           </div>
         </div>
       )}
 
-      {/* Hero Section - OUTSIDE grid */}
-      <div className="cabin-container">
+      {/* Hero Section — Airbnb pattern: Row 1 title, Row 2 gallery, Row 3 content + booking card (card starts below gallery) */}
+      <div className="cabin-page-outer cabin-hero-grid mt-8 mb-24">
+        {/* Row 1: title block */}
+        <div className="cabin-hero-title-block">
         {/* Back Button */}
         <button
           onClick={() => navigate(-1)}
@@ -1036,15 +1094,50 @@ const CabinDetails = () => {
           ← back to search results
         </button>
 
-        {/* Title and Trust Stack */}
-        <div className="space-y-2 mb-6">
-          <h1 className="cabin-title">
+        {/* Title row — title left, Save/Share right, never wrap (design constraints) */}
+        <div className="flex flex-nowrap items-start justify-between gap-4 mb-2">
+          <h1 className="cabin-title min-w-0 flex-1">
             {cabin.name || 'Cabin'}
           </h1>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <button
+              className={`inline-flex items-center gap-1 text-gray-700 hover:text-black transition-all focus:outline-none focus:ring-2 focus:ring-sage focus:ring-offset-2 rounded ${
+                isSaved ? 'animate-[spring_0.3s_ease-out]' : ''
+              }`}
+              onClick={toggleSave}
+              aria-pressed={isSaved}
+              aria-label={isSaved ? 'Remove from saved' : 'Save cabin'}
+              style={{
+                transform: isSaved ? 'scale(1.1)' : 'scale(1)',
+                transition: 'transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)'
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill={isSaved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={isSaved ? 'text-red-500' : ''}>
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+              </svg>
+              <span>{isSaved ? 'Saved' : 'Save'}</span>
+            </button>
+            <button
+              className="inline-flex items-center gap-1 text-gray-700 hover:text-black transition-colors focus:outline-none focus:ring-2 focus:ring-sage focus:ring-offset-2 rounded"
+              onClick={handleShare}
+              aria-label="Share cabin link"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="18" cy="5" r="3"></circle>
+                <circle cx="6" cy="12" r="3"></circle>
+                <circle cx="18" cy="19" r="3"></circle>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+              </svg>
+              <span>Share</span>
+            </button>
+          </div>
+        </div>
 
-          {/* Trust stack + actions — Premium inline layout */}
+        {/* Trust stack — meta only, no Save/Share here */}
+        <div className="space-y-2 mb-3 lg:mb-4">
           <div className="trust-row flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            {/* Rating + count + badges — Bold score, microcopy format */}
+            {/* Rating + count + badges */}
             {typeof cabin.averageRating === 'number' && cabin.averageRating > 0 && (
               <>
                 <span className="flex items-center gap-1">
@@ -1111,78 +1204,74 @@ const CabinDetails = () => {
                 </>
               );
             })()}
-
-            {/* Actions */}
-            <span className="ml-auto flex items-center gap-3">
-              <button
-                className={`inline-flex items-center gap-1 text-gray-700 hover:text-black transition-all focus:outline-none focus:ring-2 focus:ring-sage focus:ring-offset-2 rounded ${
-                  isSaved ? 'animate-[spring_0.3s_ease-out]' : ''
-                }`}
-                onClick={toggleSave}
-                aria-pressed={isSaved}
-                aria-label={isSaved ? 'Remove from saved' : 'Save cabin'}
-                style={{
-                  transform: isSaved ? 'scale(1.1)' : 'scale(1)',
-                  transition: 'transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)'
-                }}
-              >
-                <svg 
-                  width="16" 
-                  height="16" 
-                  viewBox="0 0 24 24" 
-                  fill={isSaved ? 'currentColor' : 'none'} 
-                  stroke="currentColor" 
-                  strokeWidth="2" 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                  className={isSaved ? 'text-red-500' : ''}
-                >
-                  <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
-                </svg>
-                <span>{isSaved ? 'Saved' : 'Save'}</span>
-              </button>
-              <button
-                className="inline-flex items-center gap-1 text-gray-700 hover:text-black transition-colors focus:outline-none focus:ring-2 focus:ring-sage focus:ring-offset-2 rounded" 
-                onClick={handleShare}
-                aria-label="Share cabin link"
-              >
-                <svg 
-                  width="16" 
-                  height="16" 
-                  viewBox="0 0 24 24" 
-                  fill="none" 
-                  stroke="currentColor" 
-                  strokeWidth="2" 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <circle cx="18" cy="5" r="3"></circle>
-                  <circle cx="6" cy="12" r="3"></circle>
-                  <circle cx="18" cy="19" r="3"></circle>
-                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
-                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
-                </svg>
-                <span>Share</span>
-              </button>
-            </span>
           </div>
+        </div>
+        </div>
+        {/* END cabin-hero-title-block */}
+
+        {/* Row 2: gallery */}
+        <div className="cabin-hero-gallery-wrap mt-6 w-full">
+          {gallery.length > 0 ? (
+            <>
+              <MosaicGallery
+                images={gallery}
+                onOpenLightbox={(index) => openLightbox(index, null, 'grid')}
+              />
+              {gallery[0] && (
+                <link rel="preload" as="image" href={normalizeSrc(gallery[0].url)} />
+              )}
+            </>
+          ) : null}
+        </div>
+
+        {/* Right column spacer — rows 1–2; reserves space so card starts below gallery (desktop only) */}
+        <div className="cabin-hero-right-spacer hidden lg:block" aria-hidden="true" />
+
+        {/* Row 3 left: content block (location, description, etc.) */}
+        <div className="cabin-hero-content">
+        {/* Quick Book Strip — mobile only; desktop has single booking card on right */}
+        <div className="mt-6 p-4 md:p-5 bg-gradient-to-br from-sage/10 via-white to-sage/5 border border-sage/20 rounded-xl shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 lg:hidden">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+            <div>
+              <span className="text-[10px] uppercase tracking-[0.2em] text-gray-500 font-medium">Price</span>
+              <p className="text-xl md:text-2xl font-semibold text-gray-900 tabular-nums mt-0.5">
+                {pricing
+                  ? `€${(pricing.totalPrice + (experienceTotal || 0)).toLocaleString()} total`
+                  : cabin.pricePerNight
+                    ? `From €${cabin.pricePerNight.toLocaleString()}/night`
+                    : 'Select dates for pricing'}
+              </p>
+              {pricing && (
+                <p className="text-sm text-gray-500 mt-0.5">
+                  {pricing.totalNights} {pricing.totalNights === 1 ? 'night' : 'nights'}
+                  {cabin.pricePerNight && ` · €${cabin.pricePerNight.toLocaleString()}/night`}
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent('openBookDirectModal'))}
+                className="text-xs text-sage hover:text-sage-dark underline-offset-2 hover:underline mt-1.5 font-medium"
+              >
+                Book direct · save fees
+              </button>
             </div>
-
-        {/* Cabin Image Gallery */}
-        {gallery.length > 0 && (
-          <div className="mt-6">
-            <MosaicGallery
-              images={gallery}
-              onOpenLightbox={(index) => openLightbox(index, null, 'grid')}
-            />
-            {/* Preload hero image */}
-            {gallery[0] && (
-              <link rel="preload" as="image" href={normalizeSrc(gallery[0].url)} />
-            )}
           </div>
-        )}
+          <div className="flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                if (!searchCriteria.checkIn || !searchCriteria.checkOut) {
+                  openDateModal();
+                } else {
+                  document.getElementById('details')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+              }}
+              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#81887A] text-white font-semibold text-sm hover:opacity-95 transition-all shadow-sm hover:shadow-md min-h-[44px] touch-manipulation"
+            >
+              {searchCriteria.checkIn && searchCriteria.checkOut ? 'Request to book →' : 'Select dates'}
+            </button>
+          </div>
+        </div>
 
         {/* Location and Description */}
         <div className="space-y-4 mt-6">
@@ -1214,46 +1303,6 @@ const CabinDetails = () => {
           </div>
         )}
 
-        {/* Craft Your Perfect Experience - Right under description */}
-        <div className="mt-8 md:mt-10 p-5 bg-gradient-to-br from-sage/10 via-sage/5 to-white border-2 border-sage/30 rounded-xl shadow-sm">
-          <div className="flex items-start gap-3">
-            <div className="flex-shrink-0 w-10 h-10 bg-sage/20 rounded-lg flex items-center justify-center">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-sage">
-                <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
-                <path d="M2 17l10 5 10-5"></path>
-                <path d="M2 12l10 5 10-5"></path>
-              </svg>
-            </div>
-            <div className="flex-1">
-              <h3 className="text-base font-bold text-gray-900 mb-1">
-                Craft Your Perfect Experience
-              </h3>
-              <p className="text-xs text-gray-600 leading-relaxed mb-4">
-                Let us personalize your stay with a guided experience tailored to your needs.
-              </p>
-              {returnTo ? (
-                <button
-                  type="button"
-                  onClick={handleSelectCabinForCraft}
-                  className="w-full bg-sage text-white py-3 px-4 rounded-lg text-sm font-semibold hover:bg-sage-dark transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none"
-                  disabled={!searchCriteria.checkIn || !searchCriteria.checkOut}
-                >
-                  Select This Cabin →
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleStartCraftedExperience}
-                  className="w-full bg-sage text-white py-3 px-4 rounded-lg text-sm font-semibold hover:bg-sage-dark transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none"
-                  disabled={!searchCriteria.checkIn || !searchCriteria.checkOut}
-                >
-                  Start Crafted Experience →
-                </button>
-              )}
-            </div>
-          </div>
-            </div>
-
         {/* Amenities */}
         {cabin.amenities && cabin.amenities.length > 0 && (
           <div className="space-y-4 mt-12 md:mt-16">
@@ -1270,12 +1319,9 @@ const CabinDetails = () => {
                 </div>
               </div>
             )}
-      </div>
 
-      {/* Two-column section: Reviews + Booking */}
-      <section className="cabin-container details-grid mt-12 md:mt-16 mb-24" id="details">
-        {/* LEFT: reviews column */}
-        <div className="reviews-col">
+        {/* Guest Reviews — in left column flow */}
+        <div className="mt-12 md:mt-16 reviews-col" id="details">
           <h2 className="section-title" id="guest-reviews">
             Guest Reviews
           </h2>
@@ -1288,107 +1334,167 @@ const CabinDetails = () => {
 
           {/* Map & Arrival Section */}
           <MapArrival cabin={cabin} />
-          </div>
+        </div>
+        </div>
+        {/* END cabin-hero-content */}
 
-        {/* RIGHT: booking aside */}
-        <aside className="aside-sticky" aria-label="Booking information">
-          <div className="booking-card rounded-2xl border border-gray-200 shadow-md bg-white">
-            <h3 className="text-xl font-bold text-gray-900 mb-6">
-                Booking Summary
-            </h3>
-              
-            {pricing && (
-              <div className="space-y-3 text-sm">
-                {searchCriteria.checkIn && (
-                  <div className="flex justify-between items-center py-2">
-                    <span className="text-gray-600">Check-in</span>
-                    <span className="font-medium text-gray-900">{formatDate(searchCriteria.checkIn)}</span>
+        {/* RIGHT: booking card — starts below gallery, aligns with content row */}
+        <aside className="cabin-hero-right" aria-label="Reservation">
+          <div className="booking-card-compact rounded-2xl border border-gray-200/80 shadow-sm bg-white p-5">
+            {/* Price as anchor — not "Booking Summary" */}
+            {pricing ? (
+              <>
+                <div className="mb-4">
+                  <p className="text-2xl font-semibold text-gray-900 tabular-nums">
+                    €{(pricing.totalPrice + (experienceTotal || 0)).toLocaleString()}
+                    <span className="text-base font-normal text-gray-500 ml-1">total</span>
+                  </p>
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    {pricing.totalNights} {pricing.totalNights === 1 ? 'night' : 'nights'}
+                    {cabin.pricePerNight && ` · €${cabin.pricePerNight.toLocaleString()}/night`}
+                  </p>
                 </div>
-                )}
-                {searchCriteria.checkOut && (
-                  <div className="flex justify-between items-center py-2">
-                    <span className="text-gray-600">Check-out</span>
-                    <span className="font-medium text-gray-900">{formatDate(searchCriteria.checkOut)}</span>
-                </div>
-                )}
-                <div className="flex justify-between items-center py-2">
-                  <span className="text-gray-600">Guests</span>
-                  <span className="font-medium text-gray-900">
-                    {searchCriteria.adults} {searchCriteria.adults === 1 ? 'Adult' : 'Adults'}
-                    {searchCriteria.children > 0 && (
-                      <span>, {searchCriteria.children} {searchCriteria.children === 1 ? 'Child' : 'Children'}</span>
-                    )}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center py-2">
-                  <span className="text-gray-600">Nights</span>
-                  <span className="font-medium text-gray-900">{pricing.totalNights}</span>
-                </div>
-                {cabin.pricePerNight && (
-                  <div className="flex justify-between items-center py-2">
-                    <span className="text-gray-600">Price per night</span>
-                    <span className="font-medium text-gray-900 tabular-nums">
-                      €{cabin.pricePerNight.toLocaleString()} / night
-                      {(cabin.pricingModel || 'per_night') === 'per_person' ? ' per person' : ''}
-                    </span>
+
+                <div className="space-y-2 text-sm border-t border-gray-100 pt-4">
+                  {/* Editable check-in / check-out */}
+                  <div className="flex justify-between items-center gap-3 py-1.5">
+                    <span className="text-gray-500">Check-in</span>
+                    <input
+                      type="date"
+                      value={searchCriteria.checkIn || ''}
+                      onChange={(e) => updateSearchParams({ checkIn: e.target.value })}
+                      className="input-editorial h-8 px-2 py-1 text-xs text-gray-900 w-[150px]"
+                    />
                   </div>
-                )}
-                {/* Experience add-ons */}
+                  <div className="flex justify-between items-center gap-3 py-1.5">
+                    <span className="text-gray-500">Check-out</span>
+                    <input
+                      type="date"
+                      value={searchCriteria.checkOut || ''}
+                      onChange={(e) => updateSearchParams({ checkOut: e.target.value })}
+                      className="input-editorial h-8 px-2 py-1 text-xs text-gray-900 w-[150px]"
+                    />
+                  </div>
+
+                  {/* Editable guests (total) */}
+                  <div className="flex justify-between items-center gap-3 py-1.5">
+                    <span className="text-gray-500">Guests</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => updateSearchParams({
+                          adults: Math.max(1, (searchCriteria.adults || 1) - 1)
+                        })}
+                        className="w-6 h-6 rounded-full border border-gray-300 flex items-center justify-center text-xs text-gray-700 hover:bg-gray-50"
+                        aria-label="Decrease guests"
+                      >
+                        −
+                      </button>
+                      <span className="text-gray-900 text-sm min-w-[2rem] text-center">
+                        {(searchCriteria.adults || 0) + (searchCriteria.children || 0)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => updateSearchParams({
+                          adults: Math.max(1, (searchCriteria.adults || 1) + 1)
+                        })}
+                        className="w-6 h-6 rounded-full border border-gray-300 flex items-center justify-center text-xs text-gray-700 hover:bg-gray-50"
+                        aria-label="Increase guests"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Add-ons: compact, always open */}
                 {experiences.length > 0 && (
-                  <div className="py-3">
-                    <div className="text-sm font-semibold text-gray-900 mb-2">Experience add-ons</div>
-                    <div className="flex flex-wrap gap-2">
+                  <div className="mt-3 pt-3 border-t border-gray-100">
+                    <div className="text-sm text-gray-600 mb-1 flex items-center justify-between">
+                      <span>Add experiences {selectedExpKeys.size > 0 && `· €${experienceTotal.toLocaleString()}`}</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
                       {experiences.map(exp => {
                         const selected = selectedExpKeys.has(exp.key);
                         const guests = (searchCriteria.adults || 0) + (searchCriteria.children || 0);
                         const qty = exp.unit === 'per_guest' ? Math.max(guests, 1) : 1;
                         const showQty = exp.unit === 'per_guest' && guests > 1;
                         return (
-                          <div key={exp.key} className="relative group">
-                            <button
-                              type="button"
-                              onClick={() => toggleExperience(exp.key)}
-                              className={`px-3 py-1.5 rounded-full text-sm inline-flex items-center gap-2 border ${selected ? 'bg-[#81887A] text-white border-[#81887A]' : 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200'}`}
-                              aria-pressed={selected}
-                            >
-                              <span>{exp.name}</span>
-                              {showQty && <span className="text-xs opacity-70">×{qty}</span>}
-                              <span className="opacity-80">· {exp.price} {exp.currency}</span>
-                            </button>
-                            {/* Tooltip */}
-                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10">
-                              {exp.name}
-                              {exp.unit === 'per_guest' && ` (per guest)`}
-                            </div>
-                          </div>
+                          <button
+                            key={exp.key}
+                            type="button"
+                            onClick={() => toggleExperience(exp.key)}
+                            className={`px-2.5 py-1 rounded-lg text-xs border ${selected ? 'bg-[#81887A] text-white border-[#81887A]' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-gray-300'}`}
+                            aria-pressed={selected}
+                          >
+                            {exp.name}{showQty && ` ×${qty}`} · {exp.price} {exp.currency}
+                          </button>
                         );
                       })}
+                    </div>
                   </div>
-                </div>
                 )}
 
-                <div className="border-t border-gray-200 pt-3 mt-3">
-                  <div className="flex justify-between items-center">
-                    <span className="font-semibold text-sm">Total</span>
-                    <span className="font-semibold text-base text-gray-900 tabular-nums">€{(pricing.totalPrice + (experienceTotal || 0)).toLocaleString()}</span>
-                  </div>
-                  <div className="text-xs text-gray-500 mt-2">
-                    {pricing.totalNights} {pricing.totalNights === 1 ? 'night' : 'nights'}
-                    {experienceTotal > 0 && (
-                      <span className="text-green-700 font-medium"> • Includes add-ons: €{experienceTotal.toLocaleString()}</span>
-                    )}
-                  </div>
-                </div>
-              </div>
+                {/* Primary CTA — opens guest form modal */}
+                <button
+                  type="button"
+                  data-booking-primary-cta="true"
+                  onClick={() => {
+                    if (!searchCriteria.checkIn || !searchCriteria.checkOut) {
+                      openDateModal();
+                    } else {
+                      setShowBookingFormModal(true);
+                    }
+                  }}
+                  className="w-full mt-5 py-3.5 rounded-xl bg-[#81887A] text-white font-semibold text-sm hover:opacity-95 transition-all shadow-sm"
+                >
+                  {!searchCriteria.checkIn || !searchCriteria.checkOut ? 'Select dates' : 'Request to book'}
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-gray-500 mb-4">
+                  Add dates to see price and availability.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => openDateModal()}
+                  className="w-full py-3.5 rounded-xl bg-[#81887A] text-white font-semibold text-sm hover:opacity-95 transition-all"
+                >
+                  Select dates
+                </button>
+              </>
             )}
+          </div>
 
-            {!pricing && (
-              <p className="text-sm text-gray-500 py-4">
-                Please select check-in and check-out dates to see pricing.
-              </p>
-            )}
+        </aside>
+      </div>
 
-            {/* Booking Form */}
+      {/* Booking Form Modal — step 2 after clicking Request to book */}
+      {showBookingFormModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+          onClick={() => setShowBookingFormModal(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Complete your booking"
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-5 py-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">Complete your booking</h3>
+              <button
+                type="button"
+                onClick={() => setShowBookingFormModal(false)}
+                className="p-2 -m-2 text-gray-500 hover:text-gray-900 rounded-full"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-5">
             {bookingSuccess ? (
               <div className="mt-6 p-4 text-center" role="alert">
                 <h2 className="text-base font-semibold mb-3">
@@ -1537,9 +1643,10 @@ const CabinDetails = () => {
                 </p>
               </form>
             )}
+            </div>
           </div>
-        </aside>
-      </section>
+        </div>
+      )}
 
       {/* Lightbox — Grid Mode & Viewer Mode */}
       {lightboxOpen && gallery.length > 0 && (
@@ -1936,7 +2043,7 @@ const CabinDetails = () => {
       )}
 
       <StickyBookingBar
-        className="md:hidden"
+        className="lg:hidden"
         label={
           pricing
             ? `€${(pricing.totalPrice + (experienceTotal || 0)).toLocaleString()} total`
@@ -1950,9 +2057,9 @@ const CabinDetails = () => {
         buttonLabel={searchCriteria.checkIn && searchCriteria.checkOut ? 'Request to book' : 'Select dates'}
         onButtonClick={() => {
           if (!searchCriteria.checkIn || !searchCriteria.checkOut) {
-            setMobileDateDrawerOpen(true);
+            openDateModal();
           } else {
-            document.getElementById('details')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            setShowBookingFormModal(true);
           }
         }}
       />

@@ -467,7 +467,7 @@ const AFrameDetails = () => {
         </div>
 
         {gallery.length > 0 && (
-          <div className="mt-6">
+          <div className="mt-6 w-full">
             <MosaicGallery images={gallery} onOpenLightbox={(index) => openLightbox(index)} />
           </div>
         )}

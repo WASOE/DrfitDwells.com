@@ -68,6 +68,7 @@ const INTENT_TRIGGERS = {
   hot_tub_heat_time: [/\bheat\b/i, /\bhow\s+long\b/i, /\bwarm\s*up\b/i, /\bhours?\b/i],
   hot_tub_winter: [/\bwinter\b/i, /\bcold\s+weather\b/i, /\bfreezing\b/i, /\bfrozen\b/i],
   hot_tub_how_it_works: [/\bhow\s+does\b/i, /\bwork\b/i, /\bwood\s*fired\b/i, /\bwood\s*burning\b/i],
+  hot_tub_booking_process: [/\bhow\s+can\s+I\s+use\b/i, /\bhow\s+do\s+I\s+use\b/i, /\bhow\s+to\s+use\b/i, /\bwhat\s+do\s+I\s+need\s+to\s+do\b/i],
   firewood_included: [/\bfirewood\b/i, /\bwood\b/i, /\bincluded\b/i, /\bextra\s+charge\b/i],
   heating: [/\bheating\b/i, /\bfireplace\b/i, /\bwarm\b/i, /\bcold\b/i],
   kitchen_food: [/\bkitchen\b/i, /\bcook\b/i, /\bfridge\b/i, /\bshop\b/i, /\bgrocery\b/i, /\bbbq\b/i, /\bfood\b/i],
@@ -77,6 +78,7 @@ const INTENT_TRIGGERS = {
   kids_baby: [/\bkids?\b/i, /\bchild\b/i, /\bbaby\b/i, /\btoddler\b/i, /\bfamily\b/i, /\bchildren\b/i],
   availability_capacity: [/\bavailable\b/i, /\bcapacity\b/i, /\bpeople\b/i, /\bsleeps\b/i],
   activities_upsell: [/\bhorse\b/i, /\briding\b/i, /\bhiking\b/i, /\bactivities\b/i, /\bromantic\b/i],
+  atv_pricing: [/\batv\b/i, /\bquad\b/i],
 };
 
 const CLARIFY_BY_INTENT = {
@@ -95,6 +97,7 @@ const CLARIFY_BY_INTENT = {
   hot_tub_heat_time: "Are you asking how long the hot tub takes to heat?",
   hot_tub_winter: "Are you asking if the hot tub works in winter?",
   hot_tub_how_it_works: "Are you asking how the wood-fired hot tub works?",
+  hot_tub_booking_process: "Are you asking what to do to use the hot tub?",
   firewood_included: "Are you asking about cabin firewood or hot tub wood cost?",
   heating: "Are you asking about firewood, the fireplace, or whether it'll be warm enough?",
   kitchen_food: "Are you asking about the kitchen, fridge, or where to shop?",
@@ -106,6 +109,7 @@ const CLARIFY_BY_INTENT = {
   pricing_discounts:
     "For rescheduling, refunds, or discounts, it's best to reach me directly on WhatsApp so I can look at your booking.",
   activities_upsell: "Are you asking about horse riding, hiking, or what to do nearby?",
+  atv_pricing: "Are you asking about ATV tour prices?",
 };
 
 const PROPERTY_CLARIFY = "Are you asking about The Cabin or The Valley? I can give you the right answer once I know.";
@@ -154,19 +158,22 @@ function loadFaq() {
   return faqCache;
 }
 
-/** Resolve FAQ entry by exact phrase match. Returns entry or null. */
+/** Resolve FAQ entry by exact phrase match. Returns entry or null. Prefers longest matching phrase. */
 function exactPhraseMatch(query) {
   const faq = loadFaq();
   const qNorm = normalize(query);
   if (!qNorm) return null;
   const entryId = exactPhraseMap.get(qNorm);
   if (entryId) return faq.entries.find((e) => e.id === entryId);
+  let best = null;
+  let bestLen = 0;
   for (const [phrase, id] of exactPhraseMap) {
-    if (qNorm.includes(phrase) || phrase.includes(qNorm)) {
-      return faq.entries.find((e) => e.id === id);
+    if ((qNorm.includes(phrase) || phrase.includes(qNorm)) && phrase.length > bestLen) {
+      best = faq.entries.find((e) => e.id === id);
+      bestLen = phrase.length;
     }
   }
-  return null;
+  return best;
 }
 
 /** Interpolate {{key}} placeholders in answer text from operational config */

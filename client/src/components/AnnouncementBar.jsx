@@ -13,11 +13,10 @@ function hasStickyBottomBar(pathname) {
   return false;
 }
 
-/** Desktop: only CabinDetails and craft steps have a visible sticky bar; Home/Valley use BookingDrawer md:hidden. */
+/** Desktop: only CabinDetails have a visible sticky bar; Home/Valley use BookingDrawer md:hidden. Craft steps have no desktop sticky bar. */
 function hasStickyBottomBarOnDesktop(pathname) {
   pathname = stripLocaleFromPath(pathname);
   if (/^\/cabin\/[^/]+$/.test(pathname)) return true;
-  if (/^\/craft\/step-[1-4]$/.test(pathname)) return true;
   return false;
 }
 
@@ -40,10 +39,19 @@ const AnnouncementBar = () => {
   const location = useLocation();
   const basePath = stripLocaleFromPath(location.pathname);
   const isBuildPage = basePath === '/build';
+  const isCabinDetails = /^\/cabin\/[^/]+$/.test(basePath);
   
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  // Cabin details: listen for modal open from quick-book strip link
+  useEffect(() => {
+    if (!isCabinDetails) return;
+    const handler = () => setIsModalOpen(true);
+    window.addEventListener('openBookDirectModal', handler);
+    return () => window.removeEventListener('openBookDirectModal', handler);
+  }, [isCabinDetails]);
 
   // Don't show announcement bar on Build page (after all hooks)
   if (isBuildPage) {
@@ -61,26 +69,69 @@ const AnnouncementBar = () => {
   };
 
   // Smart position: only reserve space above when this route actually shows a sticky bottom bar.
-  // Use exact bar height so there's no gap between banner and button (70px for BookingDrawer, 72px for StickyBookingBar).
   const bottomPosition = getBottomPosition(basePath);
 
   return (
     <>
-      {/* Announcement Bar */}
-      <div
-        onClick={handleBarClick}
-        className={`fixed z-40 w-full bg-[#1c1917] border-t border-white/10 cursor-pointer hover:bg-black transition-colors ${bottomPosition}`}
-        style={{ 
-          isolation: 'isolate',
-          transform: 'translateZ(0)'
-        }}
-      >
-        <div className="text-center">
-          <p className="text-[#F1ECE2] text-[10px] md:text-xs font-bold uppercase tracking-[0.2em] py-3">
-            RATED TOP 1% ON PLATFORMS • WE'VE GONE SOLO • BOOK DIRECT & SAVE FEES
-          </p>
+      {/* Bottom bands:
+         - Cabin details: Craft Your Experience band (desktop only)
+         - Other pages: Top 1% announcement band (existing behavior) */}
+      {isCabinDetails ? (
+        <div
+          className="hidden md:block fixed bottom-0 z-40 w-full bg-[#1c1917] border-t border-white/10"
+          style={{
+            isolation: 'isolate',
+            transform: 'translateZ(0)'
+          }}
+        >
+          <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+            <p className="text-[#F1ECE2] text-[11px] tracking-[0.18em] uppercase font-medium">
+              Craft your perfect stay — guided, off-grid experience design
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent('openCraftExperience'))}
+                className="px-4 py-2 rounded-full bg-[#F1ECE2] text-[#1c1917] text-[11px] font-semibold uppercase tracking-[0.18em] hover:bg-white transition-colors"
+              >
+                Start crafted experience →
+              </button>
+              <span className="text-[#F1ECE2]/70 text-[10px] uppercase tracking-[0.18em]">
+                or
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const btn = document.querySelector('[data-booking-primary-cta="true"]');
+                  if (btn && typeof btn.click === 'function') {
+                    btn.click();
+                  } else {
+                    document.getElementById('details')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                  }
+                }}
+                className="px-4 py-2 rounded-full border border-[#F1ECE2]/60 text-[#F1ECE2] text-[11px] font-semibold uppercase tracking-[0.18em] hover:bg-[#F1ECE2]/10 transition-colors"
+              >
+                Book now
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div
+          onClick={handleBarClick}
+          className={`fixed z-40 w-full bg-[#1c1917] border-t border-white/10 cursor-pointer hover:bg-black transition-colors ${bottomPosition}`}
+          style={{ 
+            isolation: 'isolate',
+            transform: 'translateZ(0)'
+          }}
+        >
+          <div className="text-center">
+            <p className="text-[#F1ECE2] text-[10px] md:text-xs font-bold uppercase tracking-[0.2em] py-3">
+              RATED TOP 1% ON PLATFORMS • WE'VE GONE SOLO • BOOK DIRECT & SAVE FEES
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Manifesto Modal */}
       {isModalOpen && isMounted && typeof document !== 'undefined' && createPortal(

@@ -319,8 +319,6 @@
         "can we use the hot tub",
         "can we use the hottub in the cabin",
         "can i use the hottub in the cabin",
-        "use the hot tub",
-        "use the hottub",
         "so wood is not included",
         "we need to pay separately",
         "there is an extra charge right",
@@ -328,8 +326,8 @@
         "wood not included",
         "pay separately for wood"
       ],
-      "short_answer": "Yes. At The Cabin the hot tub itself is included. Wood is extra—{{hotTubWoodBgn}} BGN when we provide it. Let us know in advance if you want to use it.",
-      "full_answer": "Yes. At The Cabin the hot tub itself is included. Wood is extra and costs {{hotTubWoodBgn}} BGN when we provide it. If you want to use it, let us know in advance so we can guide you—it takes 6–8 hours to heat.",
+      "short_answer": "Yes. At The Cabin you can use the hot tub. The tub itself is included, while wood is extra ({{hotTubWoodBgn}} BGN). Let us know in advance—it takes 6–8 hours to heat and weather can affect use.",
+      "full_answer": "Yes. At The Cabin you can use the hot tub. The tub itself is included, while wood is extra and costs {{hotTubWoodBgn}} BGN when we provide it. Please let us know in advance because it takes 6 to 8 hours to heat and weather can affect use.",
       "escalation_rule": null,
       "upsell_hint": null
     },
@@ -421,6 +419,29 @@
       "short_answer": "At The Cabin: sometimes. Frozen water and cold make it harder—takes longer, more wood, not always realistic.",
       "full_answer": "At The Cabin in winter it's trickier. Frozen water, cold temps—heating takes longer and uses much more wood. Many guests find it impractical. If the hot tub matters for your dates, tell me when you're coming and I'll be straight about what's possible.",
       "escalation_rule": "suggestWhatsApp",
+      "upsell_hint": null
+    },
+    {
+      "id": "hot_tub_booking_process",
+      "property": "cabin",
+      "intent": "hot_tub_booking_process",
+      "canonical_question": "How can I use the hot tub? What do I need to do?",
+      "alternative_phrasings": [
+        "how can I use the hot tub",
+        "how can I use the hottub",
+        "how can I use the hottub at the cabin",
+        "how can we use the hot tub",
+        "how do I use the hot tub",
+        "what do I need to do to use the hot tub",
+        "how to use the hot tub",
+        "how to use the jacuzzi",
+        "what are the steps to use the tub",
+        "instructions for hot tub",
+        "how does it work to use the tub"
+      ],
+      "short_answer": "Yes. Let us know in advance so we can guide you. The tub is included; wood is extra ({{hotTubWoodBgn}} BGN). Takes 6–8 hours to heat. In some weather it may not be possible.",
+      "full_answer": "Yes. At The Cabin you can use the hot tub, but please let us know in advance so we can guide you and prepare properly. The tub itself is included, while wood is extra and costs {{hotTubWoodBgn}} BGN when we provide it. It usually takes 6 to 8 hours to heat. In some weather conditions it may not be possible to use.",
+      "escalation_rule": null,
       "upsell_hint": null
     },
     {
@@ -675,9 +696,31 @@
         "horse"
       ],
       "short_answer": "Horse riding can be arranged. The nature is the real luxury.",
-      "full_answer": "Horse riding can be arranged at The Cabin—around 100 BGN per person per hour including gear and guide. The Valley has horseback transfer as an option. The nature is the real luxury—hiking, views, privacy. Very romantic for couples.",
+      "full_answer": "Horse riding can be arranged at The Cabin—around {{horseRidingBgnPerHour}} BGN per person per hour including gear and guide. The Valley has horseback transfer and ATV tours. The nature is the real luxury—hiking, views, privacy. Very romantic for couples.",
       "escalation_rule": null,
       "upsell_hint": "horse riding"
+    },
+    {
+      "id": "atv_pricing",
+      "property": "valley",
+      "intent": "atv_pricing",
+      "canonical_question": "How much does the ATV tour cost?",
+      "alternative_phrasings": [
+        "how much is atv",
+        "atv price",
+        "atv tour cost",
+        "how much does atv cost",
+        "atv tour price",
+        "atv prices",
+        "how much for atv",
+        "atv tour how much",
+        "atv experience cost",
+        "atv adventure price"
+      ],
+      "short_answer": "At The Valley: 1h Intro forest loop {{atvIntroForestBgn}} BGN, 1.5h Ridge & Valley {{atvRidgeValleyBgn}} BGN, 2h Above the Clouds {{atvAboveCloudsBgn}} BGN per ATV (driver + 1 passenger).",
+      "full_answer": "At The Valley we offer three ATV tours. 1 hour Intro forest loop: {{atvIntroForestBgn}} BGN per ATV (driver + 1 passenger allowed). 1.5 hour Ridge & Valley tour: {{atvRidgeValleyBgn}} BGN per ATV. 2 hours Above the Clouds tour: {{atvAboveCloudsBgn}} BGN per ATV. Message us to book.",
+      "escalation_rule": null,
+      "upsell_hint": "ATV tours"
     },
     {
       "id": "offgrid_expectations",

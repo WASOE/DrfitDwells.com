@@ -12,4 +12,12 @@ module.exports = {
 
   /** Horse riding at The Cabin (BGN per person per hour, including gear and guide) */
   horseRidingBgnPerHour: 100,
+
+  /** ATV tours at The Valley — per ATV (driver + 1 passenger allowed) */
+  atvIntroForestBgn: 140,
+  atvIntroForestHours: 1,
+  atvRidgeValleyBgn: 190,
+  atvRidgeValleyHours: 1.5,
+  atvAboveCloudsBgn: '230–250',
+  atvAboveCloudsHours: 2,
 };

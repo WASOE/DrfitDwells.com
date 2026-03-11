@@ -110,7 +110,7 @@ export default function MosaicGallery({ images = [], onOpenLightbox }) {
         </button>
         {images.length > 1 && (
           <div
-            className="absolute bottom-3 right-3 bg-white/90 backdrop-blur px-3 py-1 rounded-full text-sm shadow hover:bg-white transition-colors cursor-pointer"
+            className="absolute bottom-3 right-3 inline-flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-lg text-sm font-medium shadow-md hover:bg-gray-50 transition-colors cursor-pointer"
             onClick={(e) => {
               e.stopPropagation();
               onOpenLightbox(heroIndex);
@@ -125,70 +125,76 @@ export default function MosaicGallery({ images = [], onOpenLightbox }) {
             }}
             aria-label="Show all photos"
           >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+            </svg>
             Show all photos
           </div>
         )}
       </div>
 
-      {/* Desktop/Tablet: 5-up mosaic — Premium styling */}
-      <div className="hidden sm:grid sm:grid-cols-3 gap-2 relative">
-        {/* Hero spans 2 cols - fixed aspect ratio */}
+      {/* Desktop/Tablet: 1 large left + 4 small right, ALL ALIGNED (top/bottom match) */}
+      <div className="hidden sm:grid sm:grid-cols-[2fr_1fr] sm:grid-rows-2 sm:gap-3 relative rounded-xl overflow-hidden">
+        {/* Hero — spans 2 rows, defines height */}
         <button
           aria-label={`Open gallery: ${images.length} ${images.length === 1 ? 'photo' : 'photos'}`}
-          className="col-span-2 aspect-[4/3] overflow-hidden rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#81887A] focus:ring-offset-2 shadow-md hover:shadow-lg transition-all duration-300 group relative"
+          className="col-span-1 row-span-2 min-h-0 overflow-hidden rounded-l-xl focus:outline-none focus:ring-2 focus:ring-[#81887A] focus:ring-offset-2 group relative aspect-[1.6/1]"
           onClick={() => onOpenLightbox(heroIndex)}
         >
           <img 
             src={hero.url} 
             alt={hero.alt || ''} 
-            className="w-full h-full object-cover group-hover:scale-[1.01] transition-transform duration-300" 
+            className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300" 
             loading="eager"
             decoding="async"
           />
-          {/* Show all photos overlay - always visible, fades in on hover */}
-          {images.length > 1 && (
-            <div className="absolute bottom-3 right-3 opacity-100 group-hover:opacity-100 transition-opacity">
-              <div
-                className="bg-white/95 backdrop-blur-sm px-3 py-1.5 rounded-lg text-xs font-medium text-gray-900 shadow-md hover:bg-white hover:shadow-lg transition-all border border-gray-200/50 cursor-pointer"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpenLightbox(heroIndex);
-                }}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onOpenLightbox(0);
-                  }
-                }}
-                aria-label={`Show all ${images.length} photos`}
-              >
-                Show all photos
-              </div>
-            </div>
-          )}
         </button>
 
-        {/* 4 small tiles (or fewer) - 1:1 aspect, aligned to hero baseline */}
-        <div className="grid grid-cols-2 grid-rows-2 gap-2 self-start">
+        {/* 4 small tiles — right column, 2x2, same total height as hero */}
+        <div className="col-span-1 row-span-2 grid grid-cols-2 grid-rows-2 gap-3 min-h-0 min-w-0">
           {rest.map((img, i) => {
             const imgIndex = restIndices[i] >= 0 ? restIndices[i] : (heroIndex + i + 1);
+            const isBottomRight = i === rest.length - 1;
             return (
               <button
                 key={img._id || i}
-                className="aspect-square overflow-hidden rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#81887A] shadow-sm hover:shadow-md transition-all duration-300 group"
-                aria-label={`Open photo ${i+2}`}
+                className={`min-h-0 overflow-hidden focus:outline-none focus:ring-2 focus:ring-[#81887A] group relative ${i === 1 && rest.length > 1 ? 'rounded-tr-xl' : ''} ${i === rest.length - 1 ? 'rounded-br-xl' : ''} ${rest.length === 1 ? 'rounded-r-xl' : ''}`}
+                aria-label={`Open photo ${i + 2}`}
                 onClick={() => onOpenLightbox(imgIndex)}
               >
                 <img 
                   src={img.url} 
                   alt={img.alt || ''} 
-                  className="w-full h-full object-cover group-hover:scale-[1.01] transition-transform duration-300" 
+                  className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300" 
                   loading="lazy" 
                   decoding="async"
                 />
+                {/* "Show all photos" overlay on bottom-right tile — Airbnb style */}
+                {images.length > 1 && isBottomRight && (
+                  <div
+                    className="absolute inset-0 flex items-end justify-end p-3 bg-gradient-to-t from-black/40 to-transparent"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenLightbox(0);
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        onOpenLightbox(0);
+                      }
+                    }}
+                    aria-label={`Show all ${images.length} photos`}
+                  >
+                    <span className="inline-flex items-center gap-1.5 bg-white px-3 py-1.5 rounded-lg text-sm font-medium text-gray-900 shadow-md hover:bg-gray-50 transition-colors cursor-pointer">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                      </svg>
+                      Show all photos
+                    </span>
+                  </div>
+                )}
               </button>
             );
           })}

@@ -9,7 +9,7 @@ const StickyBookingBar = ({
 }) => {
   return (
     <div
-      className={`fixed bottom-0 left-0 w-full z-50 bg-white border-t border-stone-200 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] px-4 py-3.5 md:py-3 flex items-center justify-between gap-3 ${className}`}
+      className={`fixed bottom-0 left-0 w-full z-50 bg-white border-t border-stone-200 shadow-[0_-4px_20px_rgba(0,0,0,0.08)] px-4 py-3.5 md:py-3 flex items-center justify-between gap-3 ${className || ''}`}
       style={{ paddingBottom: 'max(0.875rem, env(safe-area-inset-bottom))' }}
     >
       <div className="text-sm md:text-sm flex-1 min-w-0">

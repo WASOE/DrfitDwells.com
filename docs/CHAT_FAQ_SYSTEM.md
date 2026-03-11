@@ -150,6 +150,18 @@ Add `?debug=1` to the request or header `X-Chat-Debug: 1` to get `_debug: { top3
 - **Price second** — e.g. "50 BGN when we provide it."
 - **One practical detail third** — e.g. "Let us know in advance if you want to use it."
 
+### Intent splits (avoid overloaded buckets)
+
+When one topic hides multiple user intents, split into separate entries:
+
+| Topic | Split | Example questions |
+|-------|-------|-------------------|
+| Hot tub | inclusion vs process | "is it included?" vs "how can I use it?" |
+| Access | permission vs process | "can a normal car reach?" vs "how do I get there?" |
+| Shower | availability vs expectations | "is there a shower?" vs "how does it work?" |
+| WiFi | existence vs reliability | "is there wifi?" vs "how strong is it?" |
+| Pets | allowed vs conditions | "are pets allowed?" vs "what are the rules?" |
+
 ### Property scope
 
 - Every FAQ entry has `property: cabin | valley | both`.

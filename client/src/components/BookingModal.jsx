@@ -6,7 +6,7 @@ import '../styles/daypicker-theme.css';
 const DayPicker = lazy(() =>
   import('react-day-picker').then((m) => {
     import('react-day-picker/dist/style.css');
-    return m;
+    return { default: m.DayPicker };
   })
 );
 import { X, Minus, Plus } from 'lucide-react';
