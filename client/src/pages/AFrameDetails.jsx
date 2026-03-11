@@ -58,7 +58,10 @@ const AFrameDetails = () => {
   }, [setSearchParams]);
 
   const { goToConfirmOrOpenDates } = useBookingNavigation({
-    cabinId: cabinType?._id,
+    bookingEntityId: cabinType?._id,
+    bookingEntityType: 'cabinType',
+    bookingEntitySlug: MULTI_UNIT_SLUG,
+    confirmPath: '/stays/a-frame/confirm',
     searchCriteria,
     selectedExpKeys,
     openDateModal,

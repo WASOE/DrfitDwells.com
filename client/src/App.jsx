@@ -84,6 +84,8 @@ function App() {
               <Route path="/press" element={<Press />} />
               <Route path="/cabin/:id/confirm" element={<ConfirmBooking />} />
               <Route path="/bg/cabin/:id/confirm" element={<ConfirmBooking />} />
+              <Route path="/stays/a-frame/confirm" element={<ConfirmBooking />} />
+              <Route path="/bg/stays/a-frame/confirm" element={<ConfirmBooking />} />
               <Route path="/cabin/:id" element={<CabinDetails />} />
               <Route path="/bg/cabin/:id" element={<CabinDetails />} />
               <Route path="/booking-refund" element={<BookingRefundResolution />} />

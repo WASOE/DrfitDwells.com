@@ -16,12 +16,32 @@ function getPrimaryTag(img) {
   return Array.isArray(img.tags) && img.tags.length > 0 ? img.tags[0] : null;
 }
 
+function pickHeroImage(images) {
+  if (!images || images.length === 0) return null;
+
+  const cover = images.find((img) => img.isCover) || null;
+  const heroPriorityTags = ['outdoor', 'view', 'living_room', 'bedroom'];
+
+  const prioritized = images.find((img) => heroPriorityTags.includes(getPrimaryTag(img)));
+
+  if (!cover) {
+    return prioritized || images[0];
+  }
+
+  const coverTag = getPrimaryTag(cover);
+  if (heroPriorityTags.includes(coverTag)) {
+    return cover;
+  }
+
+  return prioritized || cover;
+}
+
 // Smart selection for 5-photo cover collage
 function selectCoverCollage(images) {
   if (!images || images.length === 0) return [];
   
-  // Find cover image first
-  const cover = images.find(img => img.isCover) || images[0];
+  // Pick a visually strong hero first; don't blindly trust cover metadata.
+  const cover = pickHeroImage(images);
   if (!cover) return [];
   
   // Priority spaces for diversity
@@ -133,46 +153,45 @@ export default function MosaicGallery({ images = [], onOpenLightbox }) {
         )}
       </div>
 
-      {/* Desktop/Tablet: 1 large left + 4 small right, ALL ALIGNED (top/bottom match) */}
-      <div className="hidden sm:grid sm:grid-cols-[2fr_1fr] sm:grid-rows-2 sm:gap-3 relative rounded-xl overflow-hidden">
-        {/* Hero — spans 2 rows, defines height */}
+      {/* Desktop/Tablet: 1 large left + 4 small right — fixed aspect rectangle */}
+      <div className="hidden sm:grid sm:grid-cols-[2fr_1fr] sm:grid-rows-1 sm:gap-3 relative rounded-xl overflow-hidden" style={{ aspectRatio: '2.4' }}>
+        {/* Hero — fills full height of the fixed-ratio container */}
         <button
           aria-label={`Open gallery: ${images.length} ${images.length === 1 ? 'photo' : 'photos'}`}
-          className="col-span-1 row-span-2 min-h-0 overflow-hidden rounded-l-xl focus:outline-none focus:ring-2 focus:ring-[#81887A] focus:ring-offset-2 group relative aspect-[1.6/1]"
+          className="min-h-0 min-w-0 overflow-hidden rounded-l-xl focus:outline-none focus:ring-2 focus:ring-[#81887A] focus:ring-offset-2 group relative"
           onClick={() => onOpenLightbox(heroIndex)}
         >
           <img 
             src={hero.url} 
             alt={hero.alt || ''} 
-            className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300" 
+            className="absolute inset-0 w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300" 
             loading="eager"
             decoding="async"
           />
         </button>
 
-        {/* 4 small tiles — right column, 2x2, same total height as hero */}
-        <div className="col-span-1 row-span-2 grid grid-cols-2 grid-rows-2 gap-3 min-h-0 min-w-0">
+        {/* 4 small tiles — right column, 2x2, fills same height as hero */}
+        <div className="grid grid-cols-2 grid-rows-2 gap-3 min-h-0 min-w-0">
           {rest.map((img, i) => {
             const imgIndex = restIndices[i] >= 0 ? restIndices[i] : (heroIndex + i + 1);
             const isBottomRight = i === rest.length - 1;
             return (
               <button
                 key={img._id || i}
-                className={`min-h-0 overflow-hidden focus:outline-none focus:ring-2 focus:ring-[#81887A] group relative ${i === 1 && rest.length > 1 ? 'rounded-tr-xl' : ''} ${i === rest.length - 1 ? 'rounded-br-xl' : ''} ${rest.length === 1 ? 'rounded-r-xl' : ''}`}
+                className={`relative min-h-0 overflow-hidden focus:outline-none focus:ring-2 focus:ring-[#81887A] group ${i === 1 && rest.length > 1 ? 'rounded-tr-xl' : ''} ${i === rest.length - 1 ? 'rounded-br-xl' : ''} ${rest.length === 1 ? 'rounded-r-xl' : ''}`}
                 aria-label={`Open photo ${i + 2}`}
                 onClick={() => onOpenLightbox(imgIndex)}
               >
                 <img 
                   src={img.url} 
                   alt={img.alt || ''} 
-                  className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300" 
+                  className="absolute inset-0 w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300" 
                   loading="lazy" 
                   decoding="async"
                 />
-                {/* "Show all photos" overlay on bottom-right tile — Airbnb style */}
                 {images.length > 1 && isBottomRight && (
                   <div
-                    className="absolute inset-0 flex items-end justify-end p-3 bg-gradient-to-t from-black/40 to-transparent"
+                    className="absolute inset-0 flex items-end justify-end p-3 bg-gradient-to-t from-black/40 to-transparent z-10"
                     onClick={(e) => {
                       e.stopPropagation();
                       onOpenLightbox(0);

@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useParams, useNavigate, useLocation, useSearchParams, Navigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
-import { cabinAPI, bookingAPI } from '../services/api';
+import { cabinAPI, cabinTypeAPI, bookingAPI } from '../services/api';
 import { CONFIRM_BOOKING_SIMPLE_KEY } from '../hooks/useBookingNavigation';
 import ChangeDatesModal from '../components/booking/ChangeDatesModal';
 import ChangeGuestsModal from '../components/booking/ChangeGuestsModal';
@@ -33,7 +33,7 @@ function formatDate(dateInput) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-function PaymentFormInner({ onSubmit, loading }) {
+function PaymentFormInner({ onSubmit, loading, disabled = false }) {
   const stripe = useStripe();
   const elements = useElements();
 
@@ -48,7 +48,7 @@ function PaymentFormInner({ onSubmit, loading }) {
       <PaymentElement />
       <button
         type="submit"
-        disabled={!stripe || loading}
+        disabled={!stripe || loading || disabled}
         className="w-full h-12 rounded-xl bg-[#81887A] text-white font-semibold hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {loading ? 'Processing...' : 'Confirm and pay'}
@@ -76,17 +76,26 @@ const ConfirmBooking = () => {
     }
     try {
       const stored = sessionStorage.getItem(CONFIRM_BOOKING_SIMPLE_KEY);
+      const pending = sessionStorage.getItem('confirm-booking-pending');
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('payment_intent')) {
+        if (!pending) return passedState;
+        return JSON.parse(pending);
+      }
       if (!stored) return passedState;
       const data = JSON.parse(stored);
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('payment_intent')) return passedState; // Stripe redirect, don't use simple storage
-      if (data.cabinId !== id) return passedState;
+      if (data.confirmPath && data.confirmPath !== window.location.pathname) return passedState;
+      if (!data.confirmPath && id && data.cabinId !== id) return passedState;
       return data;
     } catch (e) {
       return passedState;
     }
   };
   const initialState = getInitialState();
+  const bookingEntityType = initialState.bookingEntityType || 'cabin';
+  const bookingEntityId = initialState.bookingEntityId || initialState.cabinId || id || null;
+  const bookingEntitySlug = initialState.bookingEntitySlug || null;
+  const confirmPath = initialState.confirmPath || window.location.pathname;
 
   const [formData, setFormData] = useState(() => initialState.formData || {
     firstName: '',
@@ -124,6 +133,10 @@ const ConfirmBooking = () => {
   const [priceModalOpen, setPriceModalOpen] = useState(false);
   const [clientSecret, setClientSecret] = useState(null);
   const [stripeError, setStripeError] = useState(null);
+
+  const handleFormChange = useCallback((field, value) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  }, []);
 
   const maxGuests = cabin?.capacity ?? 4;
   const allowPets = cabin?.allowPets ?? false;
@@ -173,15 +186,39 @@ const ConfirmBooking = () => {
   }, [adults, children, babies, pets]);
 
   useEffect(() => {
-    if (!id) return;
-    cabinAPI
-      .getById(id)
-      .then((res) => {
-        if (res.data.success) setCabin(res.data.data.cabin);
-      })
-      .catch(() => setError('Failed to load cabin'))
-      .finally(() => setLoading(false));
-  }, [id]);
+    const loadStay = async () => {
+      try {
+        if (bookingEntityType === 'cabinType') {
+          if (!bookingEntitySlug) {
+            throw new Error('Missing cabin type slug');
+          }
+          const res = await cabinTypeAPI.getBySlug(bookingEntitySlug);
+          if (res.data.success) {
+            setCabin(res.data.data.cabinType);
+            return;
+          }
+          throw new Error('Failed to load stay');
+        }
+
+        if (!bookingEntityId) {
+          throw new Error('Missing cabin id');
+        }
+
+        const res = await cabinAPI.getById(bookingEntityId);
+        if (res.data.success) {
+          setCabin(res.data.data.cabin);
+          return;
+        }
+        throw new Error('Failed to load cabin');
+      } catch (err) {
+        setError(err.message || 'Failed to load stay');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadStay();
+  }, [bookingEntityId, bookingEntitySlug, bookingEntityType]);
 
   // Sync URL when we have dates but URL lacks them (e.g. after restore from sessionStorage)
   useEffect(() => {
@@ -210,7 +247,6 @@ const ConfirmBooking = () => {
           setSubmitLoading(true);
           const fd = data.formData || {};
           const bookingData = {
-            cabinId: data.cabinId || id,
             checkIn: data.checkIn,
             checkOut: data.checkOut,
             adults: data.adults ?? 2,
@@ -225,6 +261,11 @@ const ConfirmBooking = () => {
             },
             specialRequests: fd.specialRequests || ''
           };
+          if ((data.bookingEntityType || 'cabin') === 'cabinType') {
+            bookingData.cabinTypeId = data.bookingEntityId || data.cabinId;
+          } else {
+            bookingData.cabinId = data.bookingEntityId || data.cabinId || id;
+          }
           bookingAPI.create(bookingData)
             .then((res) => {
               if (res.data.success && res.data.data?.booking?._id) {
@@ -255,28 +296,33 @@ const ConfirmBooking = () => {
       }
       window.history.replaceState({}, '', window.location.pathname);
     }
-  }, [id, navigate]);
+  }, [bookingEntityId, bookingEntityType, id, navigate]);
 
   useEffect(() => {
-    if (!stripePromise || !id || !checkIn || !checkOut || grandTotal < 0.5 || clientSecret) return;
+    if (!stripePromise || !bookingEntityId || !checkIn || !checkOut || grandTotal < 0.5 || clientSecret) return;
     const checkInStr = checkIn instanceof Date ? checkIn.toISOString().split('T')[0] : checkIn;
     const checkOutStr = checkOut instanceof Date ? checkOut.toISOString().split('T')[0] : checkOut;
+    const payload = {
+      checkIn: checkInStr,
+      checkOut: checkOutStr,
+      adults,
+      children,
+      experienceKeys: Array.from(selectedExpKeys)
+    };
+    if (bookingEntityType === 'cabinType') {
+      payload.cabinTypeId = bookingEntityId;
+    } else {
+      payload.cabinId = bookingEntityId;
+    }
     bookingAPI
-      .createPaymentIntent({
-        cabinId: id,
-        checkIn: checkInStr,
-        checkOut: checkOutStr,
-        adults,
-        children,
-        experienceKeys: Array.from(selectedExpKeys)
-      })
+      .createPaymentIntent(payload)
       .then((res) => {
         if (res.data.success && res.data.clientSecret) {
           setClientSecret(res.data.clientSecret);
         }
       })
       .catch(() => setStripeError('Payment setup failed'));
-  }, [stripePromise, id, checkIn, checkOut, adults, children, selectedExpKeys, grandTotal, clientSecret]);
+  }, [stripePromise, bookingEntityId, bookingEntityType, checkIn, checkOut, adults, children, selectedExpKeys, grandTotal, clientSecret]);
 
   const handleDatesSave = useCallback((from, to) => {
     setCheckIn(from);
@@ -300,7 +346,6 @@ const ConfirmBooking = () => {
 
   const createBooking = useCallback(async (paymentIntentId = null) => {
     const bookingData = {
-        cabinId: id,
         checkIn: checkIn.toISOString().split('T')[0],
         checkOut: checkOut.toISOString().split('T')[0],
         adults,
@@ -314,6 +359,11 @@ const ConfirmBooking = () => {
         },
         specialRequests: formData.specialRequests.trim()
       };
+    if (bookingEntityType === 'cabinType') {
+      bookingData.cabinTypeId = bookingEntityId;
+    } else {
+      bookingData.cabinId = bookingEntityId;
+    }
     if (paymentIntentId) {
       bookingData.paymentIntentId = paymentIntentId;
     }
@@ -331,10 +381,10 @@ const ConfirmBooking = () => {
     } else {
       throw new Error(response.data.message || 'Booking failed');
     }
-  }, [id, checkIn, checkOut, adults, children, formData, selectedExpKeys, experiences, navigate]);
+  }, [bookingEntityId, bookingEntityType, checkIn, checkOut, adults, children, formData, selectedExpKeys, experiences, navigate]);
 
   const handleConfirmAndPay = useCallback(async () => {
-    if (!id || !checkIn || !checkOut || !pricing) return;
+    if (!bookingEntityId || !checkIn || !checkOut || !pricing) return;
     setSubmitLoading(true);
     setError(null);
     try {
@@ -344,16 +394,20 @@ const ConfirmBooking = () => {
     } finally {
       setSubmitLoading(false);
     }
-  }, [id, checkIn, checkOut, pricing, createBooking]);
+  }, [bookingEntityId, checkIn, checkOut, pricing, createBooking]);
 
   const handleStripeSubmit = useCallback(async (stripe, elements) => {
-    if (!id || !checkIn || !checkOut || !pricing) return;
+    if (!bookingEntityId || !checkIn || !checkOut || !pricing) return;
     setSubmitLoading(true);
     setError(null);
     setStripeError(null);
     try {
       sessionStorage.setItem('confirm-booking-pending', JSON.stringify({
-        cabinId: id,
+        cabinId: bookingEntityId,
+        bookingEntityId,
+        bookingEntityType,
+        bookingEntitySlug,
+        confirmPath,
         checkIn: checkIn.toISOString().split('T')[0],
         checkOut: checkOut.toISOString().split('T')[0],
         adults,
@@ -368,7 +422,7 @@ const ConfirmBooking = () => {
       const { error: stripeError, paymentIntent } = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          return_url: `${window.location.origin}/cabin/${id}/confirm`,
+          return_url: `${window.location.origin}${confirmPath}`,
           payment_method_data: {
             billing_details: {
               name: `${formData.firstName} ${formData.lastName}`,
@@ -419,7 +473,7 @@ const ConfirmBooking = () => {
     } finally {
       setSubmitLoading(false);
     }
-  }, [id, checkIn, checkOut, pricing, adults, children, formData, selectedExpKeys, experiences, createBooking]);
+  }, [bookingEntityId, bookingEntitySlug, bookingEntityType, checkIn, checkOut, pricing, adults, children, formData, selectedExpKeys, experiences, createBooking, confirmPath]);
 
   if (loading || !cabin) {
     return (
@@ -427,7 +481,7 @@ const ConfirmBooking = () => {
         <Seo
           title="Confirm and pay | Drift & Dwells"
           description="Review your stay details and complete your Drift & Dwells booking."
-          canonicalPath={`/cabin/${id}/confirm`}
+          canonicalPath={confirmPath}
           noindex
         />
         <div className="min-h-screen bg-[#F7F4EE] flex items-center justify-center">
@@ -442,15 +496,7 @@ const ConfirmBooking = () => {
     !!formData.lastName?.trim() &&
     !!formData.email?.trim() &&
     !!formData.phone?.trim();
-
-  if (!hasGuestInfo) {
-    const params = new URLSearchParams();
-    if (checkIn) params.set('checkIn', checkIn instanceof Date ? checkIn.toISOString().split('T')[0] : checkIn);
-    if (checkOut) params.set('checkOut', checkOut instanceof Date ? checkOut.toISOString().split('T')[0] : checkOut);
-    params.set('adults', String(adults));
-    params.set('children', String(children));
-    return <Navigate to={`/cabin/${id}?${params.toString()}`} replace />;
-  }
+  const hasValidGuestInfo = hasGuestInfo && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim());
 
   const coverImage = cabin.images?.[0]?.url || cabin.imageUrl;
   const cabinName = cabin.name || 'Cabin';
@@ -460,7 +506,7 @@ const ConfirmBooking = () => {
       <Seo
         title={`Confirm ${cabinName} booking | Drift & Dwells`}
         description={`Review dates, guests, and payment details for your ${cabinName} stay.`}
-        canonicalPath={`/cabin/${id}/confirm`}
+        canonicalPath={confirmPath}
         noindex
       />
       <div className="min-h-screen bg-[#F7F4EE] pb-32 md:pb-0">
@@ -511,6 +557,76 @@ const ConfirmBooking = () => {
               </span>
             )}
           </div>
+        </div>
+
+        {/* Guest details */}
+        <div className="mb-6 p-6 bg-white rounded-xl border border-gray-200 shadow-sm">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Guest details</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div>
+              <label htmlFor="confirm-first-name" className="label-editorial">First name</label>
+              <input
+                id="confirm-first-name"
+                type="text"
+                value={formData.firstName}
+                onChange={(e) => handleFormChange('firstName', e.target.value)}
+                className="input-editorial"
+                autoComplete="given-name"
+                placeholder="First name"
+              />
+            </div>
+            <div>
+              <label htmlFor="confirm-last-name" className="label-editorial">Last name</label>
+              <input
+                id="confirm-last-name"
+                type="text"
+                value={formData.lastName}
+                onChange={(e) => handleFormChange('lastName', e.target.value)}
+                className="input-editorial"
+                autoComplete="family-name"
+                placeholder="Last name"
+              />
+            </div>
+            <div>
+              <label htmlFor="confirm-email" className="label-editorial">Email</label>
+              <input
+                id="confirm-email"
+                type="email"
+                value={formData.email}
+                onChange={(e) => handleFormChange('email', e.target.value)}
+                className="input-editorial"
+                autoComplete="email"
+                placeholder="Email"
+              />
+            </div>
+            <div>
+              <label htmlFor="confirm-phone" className="label-editorial">Phone</label>
+              <input
+                id="confirm-phone"
+                type="tel"
+                value={formData.phone}
+                onChange={(e) => handleFormChange('phone', e.target.value)}
+                className="input-editorial"
+                autoComplete="tel"
+                placeholder="Phone number"
+              />
+            </div>
+          </div>
+          <div className="mt-5">
+            <label htmlFor="confirm-special-requests" className="label-editorial">Special requests</label>
+            <textarea
+              id="confirm-special-requests"
+              value={formData.specialRequests}
+              onChange={(e) => handleFormChange('specialRequests', e.target.value)}
+              className="input-editorial min-h-[96px] resize-y"
+              placeholder="Anything we should know before your stay?"
+            />
+          </div>
+          {!hasValidGuestInfo && (
+            <p className="mt-4 text-sm text-amber-700">
+              Add your guest details before continuing to payment.
+            </p>
+          )}
         </div>
 
         {/* Dates row */}
@@ -581,7 +697,7 @@ const ConfirmBooking = () => {
           {stripePromise && clientSecret ? (
             <>
               <Elements stripe={stripePromise} options={{ clientSecret }}>
-                <PaymentFormInner onSubmit={handleStripeSubmit} loading={submitLoading} />
+                <PaymentFormInner onSubmit={handleStripeSubmit} loading={submitLoading} disabled={!hasValidGuestInfo} />
               </Elements>
               {stripeError && (
                 <p className="mt-2 text-sm text-red-600">{stripeError}</p>
@@ -595,7 +711,7 @@ const ConfirmBooking = () => {
               <button
                 type="button"
                 onClick={handleConfirmAndPay}
-                disabled={submitLoading || !pricing}
+                disabled={submitLoading || !pricing || !hasValidGuestInfo}
                 className="w-full h-12 rounded-xl bg-[#81887A] text-white font-semibold hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {submitLoading ? 'Submitting...' : `Confirm and pay €${grandTotal.toLocaleString()}`}

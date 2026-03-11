@@ -20,6 +20,10 @@ export function buildConfirmSearchParams(searchCriteria) {
  */
 export function useBookingNavigation({
   cabinId,
+  bookingEntityId,
+  bookingEntityType = 'cabin',
+  bookingEntitySlug,
+  confirmPath,
   searchCriteria,
   selectedExpKeys,
   openDateModal,
@@ -32,13 +36,19 @@ export function useBookingNavigation({
     }
 
     const params = buildConfirmSearchParams(searchCriteria);
+    const entityId = bookingEntityId || cabinId;
+    const targetConfirmPath = confirmPath || `/cabin/${entityId}/confirm`;
 
     // Persist lightweight state for ConfirmBooking restore
     try {
       sessionStorage.setItem(
         CONFIRM_BOOKING_SIMPLE_KEY,
         JSON.stringify({
-          cabinId,
+          cabinId: entityId,
+          bookingEntityId: entityId,
+          bookingEntityType,
+          bookingEntitySlug: bookingEntitySlug || null,
+          confirmPath: targetConfirmPath,
           searchCriteria: {
             checkIn: searchCriteria.checkIn,
             checkOut: searchCriteria.checkOut,
@@ -52,9 +62,13 @@ export function useBookingNavigation({
       // ignore storage errors
     }
 
-    navigate?.(`/cabin/${cabinId}/confirm?${params.toString()}`, {
+    navigate?.(`${targetConfirmPath}?${params.toString()}`, {
       state: {
-        cabinId,
+        cabinId: entityId,
+        bookingEntityId: entityId,
+        bookingEntityType,
+        bookingEntitySlug: bookingEntitySlug || null,
+        confirmPath: targetConfirmPath,
         searchCriteria: {
           checkIn: searchCriteria.checkIn,
           checkOut: searchCriteria.checkOut,
@@ -65,7 +79,11 @@ export function useBookingNavigation({
       }
     });
   }, [
+    bookingEntityId,
+    bookingEntitySlug,
+    bookingEntityType,
     cabinId,
+    confirmPath,
     navigate,
     openDateModal,
     searchCriteria?.checkIn,

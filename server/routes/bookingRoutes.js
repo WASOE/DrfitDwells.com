@@ -42,7 +42,8 @@ const paymentIntentLimiter = rateLimit({
 
 // POST /api/bookings/create-payment-intent - Create Stripe PaymentIntent for cabin booking
 router.post('/create-payment-intent', paymentIntentLimiter, [
-  body('cabinId').isMongoId().withMessage('Valid cabin ID is required'),
+  body('cabinId').optional().isMongoId().withMessage('Valid cabin ID is required if provided'),
+  body('cabinTypeId').optional().isMongoId().withMessage('Valid cabin type ID is required if provided'),
   body('checkIn').isISO8601().withMessage('Valid check-in date is required'),
   body('checkOut').isISO8601().withMessage('Valid check-out date is required'),
   body('adults').isInt({ min: 1, max: 10 }).withMessage('Adults must be between 1 and 10'),
@@ -66,7 +67,20 @@ router.post('/create-payment-intent', paymentIntentLimiter, [
       });
     }
 
-    const { cabinId, checkIn, checkOut, adults, children = 0, experienceKeys = [] } = req.body;
+    const { cabinId, cabinTypeId, checkIn, checkOut, adults, children = 0, experienceKeys = [] } = req.body;
+
+    if (!cabinId && !cabinTypeId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Either cabinId or cabinTypeId is required'
+      });
+    }
+    if (cabinId && cabinTypeId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot specify both cabinId and cabinTypeId'
+      });
+    }
     const checkInDate = moment(checkIn).startOf('day').toDate();
     const checkOutDate = moment(checkOut).startOf('day').toDate();
 
@@ -83,23 +97,50 @@ router.post('/create-payment-intent', paymentIntentLimiter, [
       });
     }
 
-    const cabin = await Cabin.findById(cabinId);
-    if (!cabin || !cabin.isActive) {
-      return res.status(404).json({
-        success: false,
-        message: 'Cabin not found or not available'
-      });
+    const totalGuests = parseInt(adults, 10) + parseInt(children, 10);
+    let entity = null;
+    let entityType = 'cabin';
+
+    if (cabinId) {
+      entity = await Cabin.findById(cabinId);
+      if (!entity || !entity.isActive) {
+        return res.status(404).json({
+          success: false,
+          message: 'Cabin not found or not available'
+        });
+      }
+    } else {
+      entityType = 'cabinType';
+      entity = await CabinType.findById(cabinTypeId);
+      if (!entity || !entity.isActive) {
+        return res.status(404).json({
+          success: false,
+          message: 'Stay type not found or not available'
+        });
+      }
+      if (!featureFlags.isMultiUnitGloballyEnabled() || !featureFlags.isMultiUnitType(entity.slug)) {
+        return res.status(400).json({
+          success: false,
+          message: 'This stay type is not configured for unified booking'
+        });
+      }
+      const availableUnit = await AssignmentEngine.assignUnit(cabinTypeId, checkInDate, checkOutDate);
+      if (!availableUnit) {
+        return res.status(409).json({
+          success: false,
+          message: 'No units available for the selected dates'
+        });
+      }
     }
 
-    const totalGuests = parseInt(adults, 10) + parseInt(children, 10);
-    if (totalGuests > cabin.capacity) {
+    if (totalGuests > entity.capacity) {
       return res.status(400).json({
         success: false,
-        message: `This cabin can only accommodate ${cabin.capacity} guests`
+        message: `This stay can only accommodate ${entity.capacity} guests`
       });
     }
 
-    const errKeys = pricingService.validateExperienceKeys(cabin, experienceKeys);
+    const errKeys = pricingService.validateExperienceKeys(entity, experienceKeys);
     if (errKeys) {
       return res.status(400).json({
         success: false,
@@ -108,16 +149,16 @@ router.post('/create-payment-intent', paymentIntentLimiter, [
     }
 
     const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
-    const minNights = cabin.minNights || 1;
+    const minNights = entity.minNights || 1;
     if (totalNights < minNights) {
       return res.status(400).json({
         success: false,
-        message: `This cabin requires a minimum stay of ${minNights} night${minNights !== 1 ? 's' : ''}`
+        message: `This stay requires a minimum stay of ${minNights} night${minNights !== 1 ? 's' : ''}`
       });
     }
 
     const { totalPrice } = pricingService.calculateCabinPrice(
-      cabin,
+      entity,
       checkInDate,
       checkOutDate,
       parseInt(adults, 10),
@@ -141,7 +182,9 @@ router.post('/create-payment-intent', paymentIntentLimiter, [
       currency,
       automatic_payment_methods: { enabled: true },
       metadata: {
-        cabinId: cabinId.toString(),
+        entityType,
+        cabinId: cabinId ? cabinId.toString() : '',
+        cabinTypeId: cabinTypeId ? cabinTypeId.toString() : '',
         checkIn: checkInDate.toISOString(),
         checkOut: checkOutDate.toISOString(),
         amountCents: String(amountCents),
@@ -396,10 +439,14 @@ router.post('/', bookingCreateLimiter, [
         }
         const meta = pi.metadata || {};
         const metaCabinId = meta.cabinId;
+        const metaCabinTypeId = meta.cabinTypeId;
         const metaCheckIn = meta.checkIn;
         const metaCheckOut = meta.checkOut;
         if (cabinId && (!metaCabinId || metaCabinId !== cabinId.toString())) {
           return res.status(400).json({ success: false, message: 'Payment was not created for this cabin' });
+        }
+        if (cabinTypeId && (!metaCabinTypeId || metaCabinTypeId !== cabinTypeId.toString())) {
+          return res.status(400).json({ success: false, message: 'Payment was not created for this stay type' });
         }
         if (metaCheckIn && metaCheckIn !== checkInDate.toISOString()) {
           return res.status(400).json({ success: false, message: 'Payment dates do not match' });
