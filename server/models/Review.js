@@ -119,9 +119,7 @@ const ReviewSchema = new mongoose.Schema({
     default: null
   },
 
-  raw: { 
-    type: Object 
-  } // provenance; never expose publicly
+  raw: { type: Object, select: false } // provenance; never expose publicly
 }, { 
   timestamps: true 
 });

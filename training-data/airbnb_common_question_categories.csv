@@ -1,0 +1,11 @@
+category,frequency_pairs,sample_questions
+access_transport,256,Can I reach the place with a normal car? | Do I need a 4x4? | Can transport be arranged from the village? | How rough is the last part of the road?
+activities_upsell,138,Can we do horse riding? | What can we do nearby? | Is this area romantic / good for hiking?
+heating_firewood,128,Will it be warm enough? | Is firewood included? | What heating is available?
+offgrid_core,119,Is there electricity? | Is there hot water? | Is there Wi-Fi or signal? | What kind of toilet is there?
+checkin_arrival,116,Is it self check-in? | Can we arrive late? | Where is the key box? | Should we arrive before dark?
+hot_tub,114,Is the hot tub included? | How does it heat? | Can we use it in winter? | How long does it take?
+kitchen_food,104,Is there a kitchen? | Can we cook inside? | Is there a fridge? | How far is the nearest shop?
+availability_capacity,90,Is it still available? | Can more people fit? | Can we bring a dog or child?
+pricing_discounts,74,Can you discount the stay? | Can we reschedule? | Can we get a refund because the place is too off-grid / snowy / difficult?
+bathroom_toilet,62,Is there a bathroom inside? | Is the toilet private? | How does the off-grid toilet work?

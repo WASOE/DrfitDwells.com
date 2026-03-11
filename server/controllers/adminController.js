@@ -767,9 +767,8 @@ const getBookings = async (req, res) => {
       ];
     }
 
-    // Calculate pagination
-    const pageNum = parseInt(page);
-    const limitNum = parseInt(limit);
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
     const skip = (pageNum - 1) * limitNum;
 
     // Get bookings with cabin population
@@ -885,7 +884,6 @@ const updateBookingStatus = async (req, res) => {
       });
     }
 
-    // No-op if status is the same
     if (booking.status === status) {
       return res.json({
         success: true,
@@ -894,7 +892,19 @@ const updateBookingStatus = async (req, res) => {
       });
     }
 
-    // Update status (skip date validations since we're only updating status)
+    const ALLOWED_TRANSITIONS = {
+      pending: ['confirmed', 'cancelled'],
+      confirmed: ['cancelled'],
+      cancelled: []
+    };
+    const allowed = ALLOWED_TRANSITIONS[booking.status];
+    if (!allowed || !allowed.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot transition from ${booking.status} to ${status}`
+      });
+    }
+
     const oldStatus = booking.status;
     booking.status = status;
     await booking.save({ validateBeforeSave: false });
@@ -963,8 +973,8 @@ const getCabins = async (req, res) => {
       ];
     }
 
-    const pageNum = parseInt(page, 10);
-    const limitNum = parseInt(limit, 10);
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
     const skip = (pageNum - 1) * limitNum;
 
     const cabins = await Cabin.find(filter)

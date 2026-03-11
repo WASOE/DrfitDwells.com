@@ -5,6 +5,7 @@ import Footer from "../components/Footer";
 import AudioPlayer from "../components/AudioPlayer";
 import BookingModal from "../components/BookingModal";
 import AnnouncementBar from "../components/AnnouncementBar";
+import ChatWidgetLazy from "../components/ChatWidgetLazy";
 import { stripLocaleFromPath } from "../utils/localizedRoutes";
 
 /** Routes where the first section is a full-bleed hero (content intentionally under the nav). No top padding. */
@@ -44,6 +45,7 @@ export default function SiteLayout() {
         <AudioPlayer />
         <BookingModal />
         <AnnouncementBar />
+        <ChatWidgetLazy />
       </div>
     </div>
   );

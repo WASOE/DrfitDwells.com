@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { adminAuth } = require('../middleware/adminAuth');
 const { upload, validateMagicBytes } = require('../middleware/upload');
+const { validateId } = require('../middleware/validateId');
 const { login, getBookings, getBookingById, updateBookingStatus, getCabins, getCabinById, createCabin, updateCabin } = require('../controllers/adminController');
 const Cabin = require('../models/Cabin');
 const EmailEvent = require('../models/EmailEvent');
@@ -34,10 +35,10 @@ router.use(adminAuth);
 router.get('/bookings', getBookings);
 
 // GET /api/admin/bookings/:id - Get single booking detail
-router.get('/bookings/:id', getBookingById);
+router.get('/bookings/:id', validateId('id'), getBookingById);
 
 // PATCH /api/admin/bookings/:id/status - Update booking status
-router.patch('/bookings/:id/status', [
+router.patch('/bookings/:id/status', validateId('id'), [
   body('status').isIn(['pending', 'confirmed', 'cancelled']).withMessage('Status must be pending, confirmed, or cancelled')
 ], (req, res) => {
   const errors = validationResult(req);
@@ -59,13 +60,13 @@ router.get('/cabins', getCabins);
 router.post('/cabins', createCabin);
 
 // GET /api/admin/cabins/:id - Get single cabin detail
-router.get('/cabins/:id', getCabinById);
+router.get('/cabins/:id', validateId('id'), getCabinById);
 
 // PATCH /api/admin/cabins/:id - Update cabin
-router.patch('/cabins/:id', updateCabin);
+router.patch('/cabins/:id', validateId('id'), updateCabin);
 
 // POST /api/admin/cabins/:id/images  (single file field "file")
-router.post('/cabins/:id/images', upload.single('file'), async (req, res) => {
+router.post('/cabins/:id/images', validateId('id'), upload.single('file'), async (req, res) => {
   try {
     const cabin = await Cabin.findById(req.params.id);
     if (!cabin) return res.status(404).json({ success: false, message: 'Cabin not found' });
@@ -103,7 +104,7 @@ router.post('/cabins/:id/images', upload.single('file'), async (req, res) => {
 });
 
 // PATCH /api/admin/cabins/:id/images/:imageId  (alt, isCover, sort, tags, spaceOrder)
-router.patch('/cabins/:id/images/:imageId', async (req, res) => {
+router.patch('/cabins/:id/images/:imageId', validateId('id'), validateId('imageId'), async (req, res) => {
   try {
     const { id, imageId } = req.params;
     const { alt, isCover, sort, tags, spaceOrder } = req.body;
@@ -209,7 +210,7 @@ router.patch('/cabins/:id/images/batch', async (req, res) => {
 });
 
 // DELETE /api/admin/cabins/:id/images/:imageId
-router.delete('/cabins/:id/images/:imageId', async (req, res) => {
+router.delete('/cabins/:id/images/:imageId', validateId('id'), validateId('imageId'), async (req, res) => {
   try {
     const { id, imageId } = req.params;
     const cabin = await Cabin.findById(id);
@@ -254,12 +255,14 @@ router.get('/email-events', async (req, res) => {
     if (bookingId) filter.bookingId = bookingId;
     if (email) filter.to = email;
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-    
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+    const skip = (pageNum - 1) * limitNum;
+
     const events = await EmailEvent.find(filter)
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(parseInt(limit))
+      .limit(limitNum)
       .lean();
 
     const total = await EmailEvent.countDocuments(filter);
@@ -269,10 +272,10 @@ router.get('/email-events', async (req, res) => {
       data: {
         events,
         pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
+          page: pageNum,
+          limit: limitNum,
           total,
-          pages: Math.ceil(total / parseInt(limit))
+          pages: Math.ceil(total / limitNum)
         }
       }
     });

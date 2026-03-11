@@ -17,6 +17,13 @@ const { validateId } = require('../middleware/validateId');
 const router = express.Router();
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
+const validateTransportMethod = (value, transportOptions) => {
+  if (!value || value === 'Not selected') return null;
+  const opts = Array.isArray(transportOptions) ? transportOptions : [];
+  const match = opts.find((t) => t && t.type === value);
+  return match ? value : null;
+};
+
 const bookingCreateLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
@@ -417,19 +424,17 @@ router.post('/', bookingCreateLimiter, [
       guestInfo,
       specialRequests,
       totalPrice,
-      // Legacy fields for backward compatibility
-      tripType: req.body.tripType,
-      transportMethod: req.body.transportMethod,
-      romanticSetup: req.body.romanticSetup || false,
-      // Future-proof craft object
-      craft: req.body.craft || {
+      tripType: typeof req.body.tripType === 'string' ? req.body.tripType.trim().slice(0, 50) : undefined,
+      transportMethod: validateTransportMethod(req.body.transportMethod, transportOptions),
+      romanticSetup: !!req.body.romanticSetup,
+      craft: {
         version: 1,
-        tripType: req.body.tripType,
-        transportMethod: req.body.transportMethod,
+        tripType: typeof req.body.tripType === 'string' ? req.body.tripType.trim().slice(0, 50) : '',
+        transportMethod: validateTransportMethod(req.body.transportMethod, transportOptions) || '',
         extras: {
-          romanticSetup: req.body.romanticSetup || false,
-          customTripType: req.body.customTripType || '',
-          specialRequests: req.body.specialRequests || ''
+          romanticSetup: !!req.body.romanticSetup,
+          customTripType: typeof req.body.customTripType === 'string' ? req.body.customTripType.trim().slice(0, 100) : '',
+          specialRequests: typeof req.body.specialRequests === 'string' ? req.body.specialRequests.trim().slice(0, 500) : ''
         }
       },
       status: 'pending'

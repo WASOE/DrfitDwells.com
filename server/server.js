@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const morgan = require('morgan');
+const mongoSanitize = require('express-mongo-sanitize');
 const cors = require('cors');
 const compression = require('compression');
 const helmet = require('helmet');
@@ -22,6 +23,7 @@ const adminCabinTypeRoutes = require('./routes/adminCabinTypeRoutes');
 const draftRoutes = require('./routes/draftRoutes');
 const emailWebhookRoutes = require('./routes/emailWebhookRoutes');
 const stripeWebhookRoutes = require('./routes/stripeWebhookRoutes');
+const chatRoutes = require('./routes/chatRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -138,6 +140,7 @@ app.use('/api/stripe', express.raw({ type: 'application/json' }), stripeWebhookR
 
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+app.use(mongoSanitize());
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // General API rate limit
@@ -178,6 +181,7 @@ app.get('/api/health', (req, res) => {
 });
 
 // --- Routes ---
+app.use('/api/chat', chatRoutes); // No DB required—FAQ retrieval only
 app.use('/api/availability', requireDb, availabilityRoutes);
 app.use('/api/bookings', requireDb, bookingRoutes);
 app.use('/api/cabins', requireDb, cabinRoutes);
@@ -207,6 +211,9 @@ app.use('*', (req, res) => {
 const server = app.listen(PORT, () => {
   console.log(`Drift & Dwells Booking Server running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
+  // Precompute chat FAQ embeddings (non-blocking)
+  const chatService = require('./services/chatService');
+  chatService.warmEmbeddings().catch((err) => console.warn('[chat] Warm failed:', err?.message));
 });
 
 // --- Graceful shutdown ---

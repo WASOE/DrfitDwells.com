@@ -95,7 +95,8 @@ const bookingSchema = new mongoose.Schema({
   },
   totalPrice: {
     type: Number,
-    required: true
+    required: true,
+    min: [0, 'Total price cannot be negative']
   },
   specialRequests: {
     type: String,

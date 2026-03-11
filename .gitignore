@@ -45,6 +45,11 @@ wordpress-plugin/*.zip
 # Local MongoDB data
 mongo-data/
 
+# Chat FAQ logs (for expanding knowledge base, tuning)
+training-data/chat_unanswered.log
+training-data/chat_interactions.jsonl
+training-data/chat_feedback.jsonl
+
 # Misc
 .cache/
 .temp/

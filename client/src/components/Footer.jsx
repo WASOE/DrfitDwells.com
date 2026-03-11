@@ -93,7 +93,7 @@ const Footer = () => {
           </div>
 
           {/* RIGHT COLUMN - Navigation/Utility (60% width) */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-12">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 md:gap-12">
             
             {/* COLUMN 1: Menu */}
             <div className="flex flex-col">
@@ -130,7 +130,37 @@ const Footer = () => {
               </ul>
             </div>
 
-            {/* COLUMN 2: Company & Help Merged */}
+            {/* COLUMN 2: Explore (SEO landing pages) */}
+            <div className="flex flex-col">
+              <h3 className="font-['Montserrat'] text-[#111] uppercase mb-5" style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '0.18em', opacity: 0.75 }}>
+                Explore
+              </h3>
+              
+              <ul>
+                <li style={{ marginBottom: 'clamp(16px, 2vw, 28px)' }}>
+                  <Link to={localizePath('/off-grid-cabins-bulgaria', language)} className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
+                    Off-Grid Cabins Bulgaria
+                  </Link>
+                </li>
+                <li style={{ marginBottom: 'clamp(16px, 2vw, 28px)' }}>
+                  <Link to={localizePath('/rhodopes-cabin-retreat', language)} className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
+                    Rhodopes Cabin Retreat
+                  </Link>
+                </li>
+                <li style={{ marginBottom: 'clamp(16px, 2vw, 28px)' }}>
+                  <Link to={localizePath('/bansko-remote-work-retreat', language)} className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
+                    Bansko Remote Work Retreat
+                  </Link>
+                </li>
+                <li style={{ marginBottom: 'clamp(16px, 2vw, 28px)' }}>
+                  <Link to={localizePath('/retreat-venue-bulgaria', language)} className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
+                    Retreat Venue Bulgaria
+                  </Link>
+                </li>
+              </ul>
+            </div>
+
+            {/* COLUMN 3: Company & Help Merged */}
             <div className="flex flex-col">
               <h3 className="font-['Montserrat'] text-[#111] uppercase mb-5" style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '0.18em', opacity: 0.75 }}>
                 Company

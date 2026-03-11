@@ -1,5 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const { validateId } = require('../middleware/validateId');
 const Review = require('../models/Review');
 const Cabin = require('../models/Cabin');
 const CabinType = require('../models/CabinType');
@@ -8,7 +9,7 @@ const router = express.Router();
 
 // GET /api/cabins/:id/reviews - Public endpoint for cabin reviews
 // Supports both Cabin IDs and CabinType IDs (for multi-unit properties)
-router.get('/cabins/:id/reviews', async (req, res) => {
+router.get('/cabins/:id/reviews', validateId('id'), async (req, res) => {
   try {
     const { id } = req.params;
     const {
@@ -19,9 +20,9 @@ router.get('/cabins/:id/reviews', async (req, res) => {
       sort = 'pinned_first'
     } = req.query;
 
-    const pageNum = parseInt(page);
-    const limitNum = parseInt(limit);
-    const minRatingNum = parseInt(minRating);
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 10));
+    const minRatingNum = parseInt(minRating, 10) || 2;
     const skip = (pageNum - 1) * limitNum;
 
     // Check if ID is a CabinType (for multi-unit properties like A-frame)
