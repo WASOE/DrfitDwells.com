@@ -1,4 +1,3 @@
-import './the-valley/the-valley.css';
 import HeroSection from './about/sections/HeroSection';
 import StatsSection from './about/sections/StatsSection';
 import OutcomesSection from './about/sections/OutcomesSection';
@@ -28,7 +27,7 @@ const About = () => {
         hreflangAlternates={buildHreflangAlternates('/about')}
         ogImage="/uploads/Videos/The-cabin-header.winter-poster.jpg"
       />
-      <div className="valley-page">
+      <div className="bg-white">
         <HeroSection />
         <StatsSection />
         <OutcomesSection />

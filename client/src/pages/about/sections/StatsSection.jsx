@@ -13,25 +13,37 @@ const StatsSection = () => {
 
   return (
     <section ref={ref} className="py-12 md:py-16">
-      <div className="valley-container">
-        <div className="max-w-[700px] mx-auto">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-            transition={{ duration: 0.6 }}
-            className="proof-strip"
+      <div className="max-w-[700px] mx-auto px-4 sm:px-8">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={isInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+          transition={{ duration: 0.6 }}
+          className="border border-gray-200 rounded-lg p-6 md:p-8 bg-[#faf9f7]"
+        >
+          <p className="text-xs uppercase tracking-[0.15em] text-gray-400 font-medium mb-5"
+            style={{ fontFamily: 'var(--valley-font-primary, Georgia, serif)' }}
           >
-            <div className="proof-strip-label">Proof</div>
-            <div className="proof-strip-content">
-              {stats.map((stat, index) => (
-                <div key={stat.label} className="proof-stat">
-                  <div className="proof-stat-value">{stat.value}</div>
-                  <div className="proof-stat-label">{stat.label}</div>
-                </div>
-              ))}
-            </div>
-          </motion.div>
-        </div>
+            Proof
+          </p>
+          <div className="grid grid-cols-2 gap-8 text-center">
+            {stats.map((stat) => (
+              <div key={stat.label}>
+                <p
+                  className="text-2xl md:text-[1.75rem] font-semibold text-gray-900 mb-1"
+                  style={{ fontFamily: 'var(--valley-font-primary, Georgia, serif)' }}
+                >
+                  {stat.value}
+                </p>
+                <p
+                  className="text-xs uppercase tracking-[0.12em] text-gray-400 font-medium"
+                  style={{ fontFamily: 'var(--valley-font-primary, Georgia, serif)' }}
+                >
+                  {stat.label}
+                </p>
+              </div>
+            ))}
+          </div>
+        </motion.div>
       </div>
     </section>
   );
