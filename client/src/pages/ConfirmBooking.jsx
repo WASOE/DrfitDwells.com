@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, useSearchParams, Navigate } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { cabinAPI, bookingAPI } from '../services/api';
+import { CONFIRM_BOOKING_SIMPLE_KEY } from '../hooks/useBookingNavigation';
 import ChangeDatesModal from '../components/booking/ChangeDatesModal';
 import ChangeGuestsModal from '../components/booking/ChangeGuestsModal';
 import PriceDetailsModal from '../components/booking/PriceDetailsModal';
@@ -74,7 +75,7 @@ const ConfirmBooking = () => {
       return passedState;
     }
     try {
-      const stored = sessionStorage.getItem('confirm-booking-simple');
+      const stored = sessionStorage.getItem(CONFIRM_BOOKING_SIMPLE_KEY);
       if (!stored) return passedState;
       const data = JSON.parse(stored);
       const params = new URLSearchParams(window.location.search);
@@ -319,7 +320,7 @@ const ConfirmBooking = () => {
     const response = await bookingAPI.create(bookingData);
     if (response.data.success) {
       try {
-        sessionStorage.removeItem('confirm-booking-simple');
+        sessionStorage.removeItem(CONFIRM_BOOKING_SIMPLE_KEY);
       } catch (e) { /* ignore */ }
       const bookingId = response.data.data?.booking?._id;
       if (bookingId) {
@@ -436,15 +437,19 @@ const ConfirmBooking = () => {
     );
   }
 
-  const hasGuestInfo = formData.firstName?.trim() && formData.lastName?.trim() && formData.email?.trim() && formData.phone?.trim();
+  const hasGuestInfo =
+    !!formData.firstName?.trim() &&
+    !!formData.lastName?.trim() &&
+    !!formData.email?.trim() &&
+    !!formData.phone?.trim();
+
   if (!hasGuestInfo) {
     const params = new URLSearchParams();
     if (checkIn) params.set('checkIn', checkIn instanceof Date ? checkIn.toISOString().split('T')[0] : checkIn);
     if (checkOut) params.set('checkOut', checkOut instanceof Date ? checkOut.toISOString().split('T')[0] : checkOut);
     params.set('adults', String(adults));
     params.set('children', String(children));
-    navigate(`/cabin/${id}?${params.toString()}`, { replace: true });
-    return null;
+    return <Navigate to={`/cabin/${id}?${params.toString()}`} replace />;
   }
 
   const coverImage = cabin.images?.[0]?.url || cabin.imageUrl;

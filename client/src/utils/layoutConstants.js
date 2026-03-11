@@ -39,11 +39,16 @@ import { stripLocaleFromPath } from './localizedRoutes';
  */
 export function getFloatingBottomOffset(pathname, isDesktop = false) {
   const basePath = stripLocaleFromPath(pathname || '/');
+  let hasBottomBar = false;
   for (const { pattern, desktop, mobile } of ROUTES_WITH_BOTTOM_BAR) {
     if (pattern.test(basePath)) {
       const showBar = isDesktop ? desktop : mobile;
-      return showBar ? FLOATING_BOTTOM_OFFSET : FLOATING_GAP;
+      hasBottomBar = showBar;
+      break;
     }
   }
-  return FLOATING_GAP;
+
+  // Base offset: above sticky bar if present, otherwise small gap from viewport edge
+  const baseOffset = hasBottomBar ? FLOATING_BOTTOM_OFFSET : FLOATING_GAP;
+  return baseOffset;
 }

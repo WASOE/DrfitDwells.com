@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useParams, useSearchParams, useNavigate, useLocation } from 'react-router-dom';
-import { cabinAPI, bookingAPI } from '../services/api';
+import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
+import { cabinAPI } from '../services/api';
 import { useBookingContext } from '../context/BookingContext';
 import { useBookingSearch } from '../context/BookingSearchContext';
+import { useBookingNavigation } from '../hooks/useBookingNavigation';
 import MosaicGallery from '../components/MosaicGallery';
 import ReviewsSection from '../components/reviews/ReviewsSection';
 import MapArrival from '../components/MapArrival';
@@ -12,7 +13,6 @@ import './CabinDetails.css';
 
 // Constants
 const SCROLL_DELAY_MS = 100;
-const BOOKING_SUCCESS_REDIRECT_MS = 2000;
 const LIGHTBOX_FOCUS_DELAY_MS = 0;
 const DEFAULT_EXPERIENCES = [
   { key: 'atv_pickup', name: 'ATV pickup', price: 70, currency: 'BGN', unit: 'flat_per_stay', active: true, sortOrder: 0 },
@@ -35,8 +35,6 @@ const CabinDetails = () => {
   const [cabin, setCabin] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [bookingLoading, setBookingLoading] = useState(false);
-  const [bookingSuccess, setBookingSuccess] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxMode, setLightboxMode] = useState('grid'); // 'grid' or 'viewer'
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -44,18 +42,6 @@ const CabinDetails = () => {
   const [gridScrollPosition, setGridScrollPosition] = useState(0); // Save scroll for back navigation
   const [isSaved, setIsSaved] = useState(false);
   const [selectedExpKeys, setSelectedExpKeys] = useState(new Set());
-
-  // Form state
-  const [formData, setFormData] = useState({
-    firstName: '',
-    lastName: '',
-    email: '',
-    phone: '',
-    specialRequests: ''
-  });
-
-  const [formErrors, setFormErrors] = useState({});
-  const [showBookingFormModal, setShowBookingFormModal] = useState(false);
 
   // ===== C) All Refs (declare ALL unconditionally) =====
   const lightboxCloseBtnRef = useRef(null);
@@ -328,6 +314,15 @@ const CabinDetails = () => {
     }
   }, [cabin, searchCriteria.checkIn, searchCriteria.checkOut, searchCriteria.adults, searchCriteria.children]);
 
+  // Unified cabin → payment flow via shared hook
+  const { goToConfirmOrOpenDates } = useBookingNavigation({
+    cabinId: id,
+    searchCriteria,
+    selectedExpKeys,
+    openDateModal,
+    navigate
+  });
+
   // Lightbox handlers (singletons)
   const openLightbox = useCallback((startIdx = 0, filterTag = null, mode = 'grid') => {
     // Prevent opening if already open with same state (avoid duplicate updates)
@@ -574,20 +569,6 @@ const CabinDetails = () => {
     }
     canonical.setAttribute('href', window.location.href);
   }, [cabin, pageTitle, pageDescription, pageImage]);
-
-  // Lock body scroll and Escape to close when booking form modal is open
-  useEffect(() => {
-    if (!showBookingFormModal) return;
-    document.body.style.overflow = 'hidden';
-    const onKey = (e) => {
-      if (e.key === 'Escape') setShowBookingFormModal(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => {
-      document.body.style.overflow = '';
-      window.removeEventListener('keydown', onKey);
-    };
-  }, [showBookingFormModal]);
 
   // Listen for global "openCraftExperience" band click (bottom sticky band)
   // Duplicate the minimal logic here to avoid referencing callbacks
@@ -836,48 +817,6 @@ const CabinDetails = () => {
     }
   }, [cabin?.name, cabin?.location]);
 
-  // ===== I) Pure function handlers (not hooks - can be after early returns) =====
-  // Handle form input changes
-  const handleInputChange = useCallback((field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-    
-    // Clear error when user starts typing
-    if (formErrors[field]) {
-      setFormErrors(prev => ({
-        ...prev,
-        [field]: null
-      }));
-    }
-  }, [formErrors]);
-
-  // Validate form
-  const validateForm = useCallback(() => {
-    const errors = {};
-
-    if (!formData.firstName.trim()) {
-      errors.firstName = 'First name is required';
-    }
-    if (!formData.lastName.trim()) {
-      errors.lastName = 'Last name is required';
-    }
-    if (!formData.email.trim()) {
-      errors.email = 'Email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      errors.email = 'Please enter a valid email address';
-    }
-    if (!formData.phone.trim()) {
-      errors.phone = 'Phone number is required';
-    } else if (!/^[\d\s\-\+\(\)]+$/.test(formData.phone)) {
-      errors.phone = 'Please enter a valid phone number';
-    }
-
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  }, [formData]);
-
   // Handle selecting cabin for craft flow return
   const handleSelectCabinForCraft = useCallback(() => {
     if (!id || !searchCriteria.checkIn || !searchCriteria.checkOut) {
@@ -921,77 +860,6 @@ const CabinDetails = () => {
     // Navigate to the wizard
     navigate('/craft/step-1');
   }, [id, searchCriteria, setBasicInfo, navigate]);
-
-  // Handle booking submission
-  const handleBookingSubmit = useCallback(async (e) => {
-    e.preventDefault();
-    
-    if (!validateForm()) {
-      // Scroll to first error
-      const firstErrorField = Object.keys(formErrors)[0];
-      if (firstErrorField) {
-        const errorElement = document.querySelector(`[name="${firstErrorField}"]`);
-        errorElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        errorElement?.focus();
-      }
-      return;
-    }
-
-    if (!id || !searchCriteria.checkIn || !searchCriteria.checkOut) {
-      setError('Please ensure check-in and check-out dates are selected');
-      return;
-    }
-
-    try {
-      setBookingLoading(true);
-      setError(null);
-      
-      const bookingData = {
-        cabinId: id,
-        checkIn: searchCriteria.checkIn,
-        checkOut: searchCriteria.checkOut,
-        adults: searchCriteria.adults,
-        children: searchCriteria.children,
-        experiences: Array.from(selectedExpKeys).map(key => {
-          const exp = experiences.find(e => e.key === key);
-          const qty = exp?.unit === 'per_guest' ? (searchCriteria.adults + searchCriteria.children) : 1;
-          return { key, quantity: qty, priceAtBooking: exp?.price || 0, currency: exp?.currency || 'BGN' };
-        }),
-        guestInfo: {
-          firstName: formData.firstName.trim(),
-          lastName: formData.lastName.trim(),
-          email: formData.email.trim(),
-          phone: formData.phone.trim()
-        },
-        specialRequests: formData.specialRequests.trim()
-      };
-
-      const response = await bookingAPI.create(bookingData);
-      
-      if (response.data.success) {
-        const bookingId = response.data.data?.booking?._id;
-        setBookingSuccess(true);
-        // Redirect to success page after a short delay with booking id
-        if (bookingId) {
-          setTimeout(() => {
-            navigate(`/booking-success/${bookingId}`);
-          }, BOOKING_SUCCESS_REDIRECT_MS);
-        } else {
-          // Fallback if no booking ID
-          setTimeout(() => {
-            navigate('/');
-          }, BOOKING_SUCCESS_REDIRECT_MS);
-        }
-      } else {
-        setError(response.data.message || 'Error creating booking. Please try again.');
-      }
-    } catch (err) {
-      console.error('Booking error:', err);
-      setError(err.response?.data?.message || 'Error creating booking. Please try again.');
-    } finally {
-      setBookingLoading(false);
-    }
-  }, [validateForm, formErrors, id, searchCriteria, formData, navigate]);
 
   // Format date helper
   const formatDate = useCallback((dateString) => {
@@ -1259,16 +1127,10 @@ const CabinDetails = () => {
           <div className="flex-shrink-0">
             <button
               type="button"
-              onClick={() => {
-                if (!searchCriteria.checkIn || !searchCriteria.checkOut) {
-                  openDateModal();
-                } else {
-                  document.getElementById('details')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }
-              }}
+              onClick={goToConfirmOrOpenDates}
               className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#81887A] text-white font-semibold text-sm hover:opacity-95 transition-all shadow-sm hover:shadow-md min-h-[44px] touch-manipulation"
             >
-              {searchCriteria.checkIn && searchCriteria.checkOut ? 'Request to book →' : 'Select dates'}
+              {searchCriteria.checkIn && searchCriteria.checkOut ? 'Continue to payment →' : 'Select dates'}
             </button>
           </div>
         </div>
@@ -1338,8 +1200,8 @@ const CabinDetails = () => {
         </div>
         {/* END cabin-hero-content */}
 
-        {/* RIGHT: booking card — starts below gallery, aligns with content row */}
-        <aside className="cabin-hero-right" aria-label="Reservation">
+        {/* RIGHT: booking card — starts below gallery, aligns with content row (desktop only) */}
+        <aside className="cabin-hero-right hidden lg:block" aria-label="Reservation">
           <div className="booking-card-compact rounded-2xl border border-gray-200/80 shadow-sm bg-white p-5">
             {/* Price as anchor — not "Booking Summary" */}
             {pricing ? (
@@ -1435,20 +1297,14 @@ const CabinDetails = () => {
                   </div>
                 )}
 
-                {/* Primary CTA — opens guest form modal */}
+                {/* Primary CTA — unified pay-now flow */}
                 <button
                   type="button"
                   data-booking-primary-cta="true"
-                  onClick={() => {
-                    if (!searchCriteria.checkIn || !searchCriteria.checkOut) {
-                      openDateModal();
-                    } else {
-                      setShowBookingFormModal(true);
-                    }
-                  }}
+                  onClick={goToConfirmOrOpenDates}
                   className="w-full mt-5 py-3.5 rounded-xl bg-[#81887A] text-white font-semibold text-sm hover:opacity-95 transition-all shadow-sm"
                 >
-                  {!searchCriteria.checkIn || !searchCriteria.checkOut ? 'Select dates' : 'Request to book'}
+                  {!searchCriteria.checkIn || !searchCriteria.checkOut ? 'Select dates' : 'Continue to payment'}
                 </button>
               </>
             ) : (
@@ -1469,184 +1325,6 @@ const CabinDetails = () => {
 
         </aside>
       </div>
-
-      {/* Booking Form Modal — step 2 after clicking Request to book */}
-      {showBookingFormModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
-          onClick={() => setShowBookingFormModal(false)}
-          role="dialog"
-          aria-modal="true"
-          aria-label="Complete your booking"
-        >
-          <div
-            className="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-5 py-4 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">Complete your booking</h3>
-              <button
-                type="button"
-                onClick={() => setShowBookingFormModal(false)}
-                className="p-2 -m-2 text-gray-500 hover:text-gray-900 rounded-full"
-                aria-label="Close"
-              >
-                ×
-              </button>
-            </div>
-            <div className="p-5">
-            {bookingSuccess ? (
-              <div className="mt-6 p-4 text-center" role="alert">
-                <h2 className="text-base font-semibold mb-3">
-                  Booking Submitted!
-                </h2>
-                <p className="text-sm text-gray-600">
-                  Your booking request has been submitted successfully. 
-                  We'll contact you shortly to confirm your reservation.
-                </p>
-              </div>
-            ) : (
-              <form onSubmit={handleBookingSubmit} className="mt-6 space-y-4" noValidate>
-                <h2 className="text-base font-semibold mb-4">
-                  Guest Information
-                </h2>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label htmlFor="firstName" className="label-editorial">
-                      First Name *
-                    </label>
-                    <input
-                      id="firstName"
-                      name="firstName"
-                      type="text"
-                      value={formData.firstName}
-                      onChange={(e) => handleInputChange('firstName', e.target.value)}
-                      className={`input-editorial ${formErrors.firstName ? 'border-red-500' : ''}`}
-                      placeholder="First name"
-                      aria-invalid={!!formErrors.firstName}
-                      aria-describedby={formErrors.firstName ? 'firstName-error' : undefined}
-                      required
-                    />
-                    {formErrors.firstName && (
-                      <p id="firstName-error" className="text-red-500 text-xs mt-1" role="alert">
-                        {formErrors.firstName}
-                      </p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label htmlFor="lastName" className="label-editorial">
-                      Last Name *
-                    </label>
-                    <input
-                      id="lastName"
-                      name="lastName"
-                      type="text"
-                      value={formData.lastName}
-                      onChange={(e) => handleInputChange('lastName', e.target.value)}
-                      className={`input-editorial ${formErrors.lastName ? 'border-red-500' : ''}`}
-                      placeholder="Last name"
-                      aria-invalid={!!formErrors.lastName}
-                      aria-describedby={formErrors.lastName ? 'lastName-error' : undefined}
-                      required
-                    />
-                    {formErrors.lastName && (
-                      <p id="lastName-error" className="text-red-500 text-xs mt-1" role="alert">
-                        {formErrors.lastName}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <label htmlFor="email" className="label-editorial">
-                    Email *
-                  </label>
-                  <input
-                    id="email"
-                    name="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => handleInputChange('email', e.target.value)}
-                    className={`input-editorial ${formErrors.email ? 'border-red-500' : ''}`}
-                    placeholder="Email"
-                    aria-invalid={!!formErrors.email}
-                    aria-describedby={formErrors.email ? 'email-error' : undefined}
-                    required
-                  />
-                  {formErrors.email && (
-                    <p id="email-error" className="text-red-500 text-xs mt-1" role="alert">
-                      {formErrors.email}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label htmlFor="phone" className="label-editorial">
-                    Phone Number *
-                  </label>
-                  <input
-                    id="phone"
-                    name="phone"
-                    type="tel"
-                    value={formData.phone}
-                    onChange={(e) => handleInputChange('phone', e.target.value)}
-                    className={`input-editorial ${formErrors.phone ? 'border-red-500' : ''}`}
-                    placeholder="Phone number"
-                    aria-invalid={!!formErrors.phone}
-                    aria-describedby={formErrors.phone ? 'phone-error' : undefined}
-                    required
-                  />
-                  {formErrors.phone && (
-                    <p id="phone-error" className="text-red-500 text-xs mt-1" role="alert">
-                      {formErrors.phone}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label htmlFor="specialRequests" className="label-editorial">
-                    Special Requests
-                  </label>
-                  <textarea
-                    id="specialRequests"
-                    name="specialRequests"
-                    value={formData.specialRequests}
-                    onChange={(e) => handleInputChange('specialRequests', e.target.value)}
-                    className="input-editorial h-20 resize-none"
-                    placeholder="Any special requests or notes..."
-                  />
-                </div>
-
-                <div className="relative py-3" aria-hidden="true">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-gray-300" />
-                  </div>
-                  <div className="relative flex justify-center text-xs">
-                    <span className="px-4 bg-white text-gray-500 font-light">or</span>
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={bookingLoading || !pricing}
-                  className="w-full h-11 rounded-xl bg-[#81887A] text-white font-semibold hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#81887A] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
-                  aria-label={bookingLoading ? 'Submitting booking request' : (pricing ? 'Request to book' : 'Select dates')}
-                >
-                  {bookingLoading ? 'Submitting...' : (pricing ? 'Request to book →' : 'Select dates')}
-                </button>
-
-                <p className="text-xs text-gray-500 text-center font-light leading-relaxed pt-2">
-                  By submitting this form, you agree to our terms and conditions. 
-                  We'll contact you within 24 hours to confirm your booking.
-                </p>
-              </form>
-            )}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Lightbox — Grid Mode & Viewer Mode */}
       {lightboxOpen && gallery.length > 0 && (
@@ -2054,14 +1732,8 @@ const CabinDetails = () => {
             ? `${pricing.totalNights} ${pricing.totalNights === 1 ? 'night' : 'nights'}`
             : undefined
         }
-        buttonLabel={searchCriteria.checkIn && searchCriteria.checkOut ? 'Request to book' : 'Select dates'}
-        onButtonClick={() => {
-          if (!searchCriteria.checkIn || !searchCriteria.checkOut) {
-            openDateModal();
-          } else {
-            setShowBookingFormModal(true);
-          }
-        }}
+        buttonLabel={searchCriteria.checkIn && searchCriteria.checkOut ? 'Continue to payment' : 'Select dates'}
+        onButtonClick={goToConfirmOrOpenDates}
       />
     </div>
   );

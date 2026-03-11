@@ -38,8 +38,11 @@ const AnnouncementBar = () => {
   const [isMounted, setIsMounted] = useState(false);
   const location = useLocation();
   const basePath = stripLocaleFromPath(location.pathname);
+  const isHome = basePath === '/';
   const isBuildPage = basePath === '/build';
   const isCabinDetails = /^\/cabin\/[^/]+$/.test(basePath);
+  const isConfirmPage = /^\/cabin\/[^/]+\/confirm$/.test(basePath);
+  const hasStickyForRoute = hasStickyBottomBar(basePath);
   
   useEffect(() => {
     setIsMounted(true);
@@ -53,8 +56,9 @@ const AnnouncementBar = () => {
     return () => window.removeEventListener('openBookDirectModal', handler);
   }, [isCabinDetails]);
 
-  // Don't show announcement bar on Build page (after all hooks)
-  if (isBuildPage) {
+  // Don't show announcement bar on Build page or confirm page (after all hooks)
+  // Home keeps the sticky band for desktop; mobile is handled inline in Home.jsx
+  if (isBuildPage || isConfirmPage) {
     return null;
   }
 
@@ -119,8 +123,8 @@ const AnnouncementBar = () => {
       ) : (
         <div
           onClick={handleBarClick}
-          className={`fixed z-40 w-full bg-[#1c1917] border-t border-white/10 cursor-pointer hover:bg-black transition-colors ${bottomPosition}`}
-          style={{ 
+          className={`fixed z-40 w-full bg-[#1c1917] border-t border-white/10 cursor-pointer hover:bg-black transition-colors ${bottomPosition} ${hasStickyForRoute ? 'hidden md:block' : ''}`}
+          style={{
             isolation: 'isolate',
             transform: 'translateZ(0)'
           }}
