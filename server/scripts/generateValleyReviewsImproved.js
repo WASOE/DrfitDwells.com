@@ -349,8 +349,29 @@ const STONE_HOUSE_REVIEW_TEMPLATES = [
   }
 ];
 
+// Rating distributions tuned for high-but-realistic scores (only 5★ and 4★, all "good" reviews)
+const A_FRAME_RATING_DISTRIBUTION = [
+  { rating: 5, weight: 0.91 },
+  { rating: 4, weight: 0.09 },
+];
+
+const STONE_HOUSE_RATING_DISTRIBUTION = [
+  { rating: 5, weight: 0.86 },
+  { rating: 4, weight: 0.14 },
+];
+
+function pickRating(distribution) {
+  const r = Math.random();
+  let acc = 0;
+  for (const entry of distribution) {
+    acc += entry.weight;
+    if (r <= acc) return entry.rating;
+  }
+  return distribution[0].rating;
+}
+
 // Generate reviews
-function generateReviews(templates, count, cabinId, cabinName) {
+function generateReviews(templates, count, cabinId, cabinName, ratingDistribution) {
   const reviews = [];
   const usedNames = new Set();
   
@@ -365,15 +386,31 @@ function generateReviews(templates, count, cabinId, cabinName) {
     usedNames.add(name);
     
     const template = templates[Math.floor(Math.random() * templates.length)];
-    const text = typeof template === 'function' ? template() : template;
+    let text = typeof template === 'function' ? template() : template;
     const date = generateDate();
     const externalId = `manual-${cabinName.toLowerCase().replace(/\s+/g, '-')}-${Date.now()}-${i}`;
+    const rating = ratingDistribution ? pickRating(ratingDistribution) : 5;
+
+    // For 4★ reviews, keep tone clearly positive but surface a bit more friction
+    if (rating === 4) {
+      const softImperfections = [
+        ' The access road is a bit rough in places, so plan to drive slowly and arrive before dark.',
+        ' It is quite remote, so bringing groceries and water for the whole stay is essential.',
+        ' The house is more rustic than a hotel, which we liked, but people expecting classic hotel comfort should know this.',
+        ' Weather can change fast in the mountains, so some outdoor plans may need flexibility, but the stay is still worth it.',
+        ' Getting there takes some effort on the dirt road, yet the setting makes up for it once you arrive.',
+      ];
+      // Only append if not already very long
+      if (text.length < 700) {
+        text += softImperfections[Math.floor(Math.random() * softImperfections.length)];
+      }
+    }
     
     reviews.push({
       cabinId,
       externalId,
       source: 'manual',
-      rating: 5, // All 5 stars as requested
+      rating,
       text: text,
       reviewerName: name,
       language: 'en',
@@ -433,13 +470,62 @@ function generateReviews(templates, count, cabinId, cabinName) {
     console.log(`✅ Deleted ${deletedStoneHouse.deletedCount} Stone House reviews\n`);
 
     // Generate reviews
-    console.log('Generating 75 A-frame reviews...');
-    const aFrameReviews = generateReviews(A_FRAME_REVIEW_TEMPLATES, 75, aFrameCabin._id, aFrameCabin.name);
+    console.log('Generating 110 A-frame reviews...');
+    const aFrameReviews = generateReviews(
+      A_FRAME_REVIEW_TEMPLATES,
+      110,
+      aFrameCabin._id,
+      aFrameCabin.name,
+      A_FRAME_RATING_DISTRIBUTION
+    );
     console.log(`✅ Generated ${aFrameReviews.length} A-frame reviews\n`);
 
-    console.log('Generating 90 Stone House reviews...');
-    const stoneHouseReviews = generateReviews(STONE_HOUSE_REVIEW_TEMPLATES, 90, stoneHouse._id, stoneHouse.name);
+    console.log('Generating 97 Stone House reviews...');
+    const stoneHouseReviews = generateReviews(
+      STONE_HOUSE_REVIEW_TEMPLATES,
+      97,
+      stoneHouse._id,
+      stoneHouse.name,
+      STONE_HOUSE_RATING_DISTRIBUTION
+    );
     console.log(`✅ Generated ${stoneHouseReviews.length} Stone House reviews\n`);
+
+    // Dry-run style summary before import for realism checks
+    function summarize(label, list) {
+      const total = list.length;
+      const ratingCounts = list.reduce((acc, r) => {
+        acc[r.rating] = (acc[r.rating] || 0) + 1;
+        return acc;
+      }, {});
+      const avgRating =
+        total === 0 ? 0 : list.reduce((sum, r) => sum + r.rating, 0) / total;
+
+      const lengthBuckets = { short: 0, medium: 0, long: 0 };
+      list.forEach((r) => {
+        const lines = r.text.split(/\r?\n/).filter(Boolean);
+        const lineCount = lines.length || 1;
+        if (lineCount <= 2) lengthBuckets.short += 1;
+        else if (lineCount <= 5) lengthBuckets.medium += 1;
+        else lengthBuckets.long += 1;
+      });
+
+      const languageCounts = list.reduce((acc, r) => {
+        const lang = r.language || 'en';
+        acc[lang] = (acc[lang] || 0) + 1;
+        return acc;
+      }, {});
+
+      console.log(`\nPreview stats for ${label}:`);
+      console.log('  Total reviews:', total);
+      console.log('  Rating counts:', ratingCounts);
+      console.log('  Average rating:', avgRating.toFixed(3));
+      console.log('  Length buckets:', lengthBuckets);
+      console.log('  Languages:', languageCounts);
+      console.log('');
+    }
+
+    summarize('A-frame', aFrameReviews);
+    summarize('Stone House', stoneHouseReviews);
 
     // Import reviews
     console.log('Importing A-frame reviews...');
@@ -539,9 +625,9 @@ function generateReviews(templates, count, cabinId, cabinName) {
 
     console.log('📊 Import Summary');
     console.log('==================');
-    console.log(`A-frame reviews:    ${importedAFrame}/75`);
-    console.log(`Stone House reviews: ${importedStoneHouse}/90`);
-    console.log(`Total imported:     ${importedAFrame + importedStoneHouse}/165\n`);
+    console.log(`A-frame reviews:    ${importedAFrame}/110`);
+    console.log(`Stone House reviews: ${importedStoneHouse}/97`);
+    console.log(`Total imported:     ${importedAFrame + importedStoneHouse}/${110 + 97}\n`);
 
     await mongoose.disconnect();
     console.log('✅ Done!');

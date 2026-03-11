@@ -1,9 +1,12 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { cabinTypeAPI, availabilityAPI, bookingAPI, unitAPI } from '../services/api';
+import { cabinTypeAPI, availabilityAPI, unitAPI } from '../services/api';
+import { useBookingSearch } from '../context/BookingSearchContext';
+import { useBookingNavigation } from '../hooks/useBookingNavigation';
 import MosaicGallery from '../components/MosaicGallery';
 import ReviewsSection from '../components/reviews/ReviewsSection';
 import MapArrival from '../components/MapArrival';
+import StickyBookingBar from '../components/StickyBookingBar';
 import Seo from '../components/Seo';
 import './CabinDetails.css';
 import '../components/gallery/lightbox.css';
@@ -18,31 +21,19 @@ const DEFAULT_EXPERIENCES = [
 const MULTI_UNIT_SLUG = 'a-frame';
 
 const AFrameDetails = () => {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  
+  const { openModal: openDateModal } = useBookingSearch();
+
   const [cabinType, setCabinType] = useState(null);
   const [availability, setAvailability] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [bookingLoading, setBookingLoading] = useState(false);
-  const [bookingSuccess, setBookingSuccess] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [selectedExpKeys, setSelectedExpKeys] = useState(new Set());
   const [isMultiUnitEnabled, setIsMultiUnitEnabled] = useState(false);
   const [unitStats, setUnitStats] = useState(null); // { total, active }
-
-  // Form state
-  const [formData, setFormData] = useState({
-    firstName: '',
-    lastName: '',
-    email: '',
-    phone: '',
-    specialRequests: ''
-  });
-
-  const [formErrors, setFormErrors] = useState({});
 
   // Search criteria
   const searchCriteria = useMemo(() => ({
@@ -51,6 +42,28 @@ const AFrameDetails = () => {
     adults: Math.max(1, parseInt(searchParams.get('adults'), 10) || 2),
     children: Math.max(0, parseInt(searchParams.get('children'), 10) || 0)
   }), [searchParams]);
+
+  const updateSearchParams = useCallback((patch) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      Object.entries(patch).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === '') {
+          next.delete(key);
+        } else {
+          next.set(key, String(value));
+        }
+      });
+      return next;
+    });
+  }, [setSearchParams]);
+
+  const { goToConfirmOrOpenDates } = useBookingNavigation({
+    cabinId: cabinType?._id,
+    searchCriteria,
+    selectedExpKeys,
+    openDateModal,
+    navigate
+  });
 
   // Image gallery
   const gallery = useMemo(() => {
@@ -259,101 +272,6 @@ const AFrameDetails = () => {
     };
   }, [searchCriteria.checkIn, searchCriteria.checkOut, searchCriteria.adults, searchCriteria.children]);
 
-  // Form handlers
-  const handleInputChange = useCallback((field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    if (formErrors[field]) {
-      setFormErrors(prev => ({ ...prev, [field]: null }));
-    }
-  }, [formErrors]);
-
-  const validateForm = useCallback(() => {
-    const errors = {};
-    if (!formData.firstName.trim()) errors.firstName = 'First name is required';
-    if (!formData.lastName.trim()) errors.lastName = 'Last name is required';
-    if (!formData.email.trim()) {
-      errors.email = 'Email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      errors.email = 'Please enter a valid email address';
-    }
-    if (!formData.phone.trim()) {
-      errors.phone = 'Phone number is required';
-    }
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  }, [formData]);
-
-  const handleBookingSubmit = useCallback(async (e) => {
-    e.preventDefault();
-    
-    if (!validateForm()) return;
-    if (!cabinType || !searchCriteria.checkIn || !searchCriteria.checkOut) {
-      setError('Please ensure check-in and check-out dates are selected');
-      return;
-    }
-
-    if (!isMultiUnitEnabled) {
-      setError('Multi-unit cabin bookings are currently disabled.');
-      return;
-    }
-
-    // Check availability
-    if (!availability || !availability.cabinType?.available) {
-      setError('No units available for the selected dates');
-      return;
-    }
-
-    try {
-      setBookingLoading(true);
-      setError(null);
-      
-      const bookingData = {
-        cabinTypeId: cabinType._id,
-        checkIn: searchCriteria.checkIn,
-        checkOut: searchCriteria.checkOut,
-        adults: searchCriteria.adults,
-        children: searchCriteria.children,
-        guestInfo: {
-          firstName: formData.firstName.trim(),
-          lastName: formData.lastName.trim(),
-          email: formData.email.trim(),
-          phone: formData.phone.trim()
-        },
-        specialRequests: formData.specialRequests.trim()
-      };
-
-      const response = await bookingAPI.create(bookingData);
-      
-      if (response.data.success) {
-        const bookingId = response.data.data?.booking?._id;
-        setBookingSuccess(true);
-        if (bookingId) {
-          setTimeout(() => {
-            navigate(`/booking-success/${bookingId}`);
-          }, 2000);
-        }
-      } else {
-        setError(response.data.message || 'Error creating booking. Please try again.');
-      }
-    } catch (err) {
-      console.error('Booking error:', err);
-      setError(err.response?.data?.message || 'Error creating booking. Please try again.');
-    } finally {
-      setBookingLoading(false);
-    }
-  }, [validateForm, cabinType, searchCriteria, formData, availability, navigate, isMultiUnitEnabled]);
-
-  const formatDate = useCallback((dateString) => {
-    if (!dateString) return '';
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return '';
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    } catch {
-      return '';
-    }
-  }, []);
-
   // Early returns
   if (loading) {
     return (
@@ -408,190 +326,262 @@ const AFrameDetails = () => {
         canonicalPath="/stays/a-frame"
         ogImage={cabinType?.imageUrl}
       />
-      <div className="cabin-container">
-        <button onClick={() => navigate(-1)} className="btn-underline mb-8 mt-8">← back to search results</button>
+      {/* Hero + intro — now using the same grid geometry as CabinDetails */}
+      <div className="cabin-page-outer cabin-hero-grid mt-8 mb-24">
+        {/* Row 1: title block */}
+        <div className="cabin-hero-title-block">
+          <button onClick={() => navigate(-1)} className="btn-underline mb-8 mt-8">
+            ← back to search results
+          </button>
 
-        <div className="space-y-2 mb-6">
-          <h1 className="cabin-title">{cabinType.name || 'A-frame'}</h1>
-          
-          <div className="trust-row flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            {typeof cabinType.averageRating === 'number' && cabinType.averageRating > 0 && (
-              <>
-                <span className="flex items-center gap-1">
-                  <span className="text-amber-500" aria-hidden="true">★</span>
-                  <span className="rating-score">{cabinType.averageRating.toFixed(2)}</span>
-                </span>
-                {cabinType.reviewsCount > 0 && (
-                  <>
-                    <span className="text-gray-400">•</span>
-                    <a href="#guest-reviews" className="text-gray-600 underline-offset-2 hover:text-gray-900 hover:underline">
-                      {cabinType.reviewsCount} {cabinType.reviewsCount === 1 ? 'review' : 'reviews'}
-                    </a>
-                  </>
-                )}
-              </>
-            )}
-            {cabinType.hostName?.trim() && (
-              <>
-                <span className="text-gray-400">•</span>
-                <span className="text-gray-600">Hosted by <span className="font-medium">{cabinType.hostName.trim()}</span></span>
-              </>
-            )}
-            {availability && availability.availabilitySummary && (
-              <>
-                <span className="text-gray-400">•</span>
-                <span className="text-gray-600">
-                  {availability.availabilitySummary.availableUnits.length} of {availability.availabilitySummary.totalUnits} units available
-                </span>
-              </>
-            )}
-          </div>
+          <div className="space-y-2 mb-3 lg:mb-4">
+            <h1 className="cabin-title">{cabinType.name || 'A-frame'}</h1>
 
-          {/* Multi-unit explanatory copy */}
-          {isMultiUnitEnabled && (
-            <p className="text-sm text-gray-700 mt-2">
-              {unitStats?.total ? (
+            <div className="trust-row flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              {typeof cabinType.averageRating === 'number' && cabinType.averageRating > 0 && (
                 <>
-                  This listing has <strong>{unitStats.total} identical units</strong>. We’ll assign one automatically after you book.
+                  <span className="flex items-center gap-1">
+                    <span className="text-amber-500" aria-hidden="true">★</span>
+                    <span className="rating-score">{cabinType.averageRating.toFixed(2)}</span>
+                  </span>
+                  {cabinType.reviewsCount > 0 && (
+                    <>
+                      <span className="text-gray-400">•</span>
+                      <a
+                        href="#guest-reviews"
+                        className="text-gray-600 underline-offset-2 hover:text-gray-900 hover:underline"
+                      >
+                        {cabinType.reviewsCount} {cabinType.reviewsCount === 1 ? 'review' : 'reviews'}
+                      </a>
+                    </>
+                  )}
                 </>
-              ) : (
-                <>This listing has <strong>multiple identical units</strong>. We’ll assign one automatically after you book.</>
-              )}{' '}
-              {searchCriteria.checkIn && searchCriteria.checkOut && availability?.availabilitySummary && (
-                <span>
-                  <strong> {availability.availabilitySummary.availableUnits.length} units available</strong> for your dates.
-                </span>
               )}
-            </p>
+              {cabinType.hostName?.trim() && (
+                <>
+                  <span className="text-gray-400">•</span>
+                  <span className="text-gray-600">
+                    Hosted by <span className="font-medium">{cabinType.hostName.trim()}</span>
+                  </span>
+                </>
+              )}
+              {availability && availability.availabilitySummary && (
+                <>
+                  <span className="text-gray-400">•</span>
+                  <span className="text-gray-600">
+                    {availability.availabilitySummary.availableUnits.length} of {availability.availabilitySummary.totalUnits} units available
+                  </span>
+                </>
+              )}
+            </div>
+
+            {/* Multi-unit explanatory copy */}
+            {isMultiUnitEnabled && (
+              <p className="text-sm text-gray-700 mt-1.5">
+                {unitStats?.total ? (
+                  <>
+                    This listing has <strong>{unitStats.total} identical units</strong>. We’ll assign one automatically after you book.
+                  </>
+                ) : (
+                  <>This listing has <strong>multiple identical units</strong>. We’ll assign one automatically after you book.</>
+                )}{' '}
+                {searchCriteria.checkIn && searchCriteria.checkOut && availability?.availabilitySummary && (
+                  <span>
+                    <strong> {availability.availabilitySummary.availableUnits.length} units available</strong> for your dates.
+                  </span>
+                )}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Row 2: gallery */}
+        <div className="cabin-hero-gallery-wrap mt-6 w-full">
+          {gallery.length > 0 && (
+            <MosaicGallery
+              images={gallery}
+              onOpenLightbox={(index) => openLightbox(index)}
+            />
           )}
         </div>
 
-        {gallery.length > 0 && (
-          <div className="mt-6 w-full">
-            <MosaicGallery images={gallery} onOpenLightbox={(index) => openLightbox(index)} />
-          </div>
-        )}
+        {/* Right column spacer — rows 1–2; reserves space so future card can start below gallery */}
+        <div className="cabin-hero-right-spacer hidden lg:block" aria-hidden="true" />
 
-        <div className="space-y-4 mt-6">
-          {cabinType.location && (
-            <p className="text-sm text-gray-600 flex items-center">
-              <span className="w-1.5 h-1.5 bg-sage rounded-full mr-2" aria-hidden="true"></span>
-              {cabinType.location}
-            </p>
-          )}
-          {cabinType.description && (
-            <p className="text-base text-gray-700 leading-relaxed">{cabinType.description}</p>
-          )}
-        </div>
-
-        {highlights && highlights.length > 0 && (
-          <div className="mt-12 md:mt-16">
-            <h2 className="section-title mb-4">Why you'll love it</h2>
-            <ul className="grid grid-cols-1 md:grid-cols-2 gap-y-2.5 gap-x-6 text-gray-700 text-base">
-              {highlights.map((h, i) => (
-                <li key={`hl-${i}`} className="flex items-start gap-2.5">
-                  <span className="text-[#81887A] text-sm mt-[0.1em]" aria-hidden="true">✓</span>
-                  <span>{h}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {cabinType.amenities && cabinType.amenities.length > 0 && (
-          <div className="space-y-4 mt-12 md:mt-16">
-            <h2 className="section-title">Amenities</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {cabinType.amenities.map((amenity, index) => (
-                <div key={`amenity-${index}`} className="flex items-center text-sm text-gray-600">
-                  <span className="w-1.5 h-1.5 bg-sage rounded-full mr-2" aria-hidden="true"></span>
-                  <span>{amenity}</span>
-                </div>
-              ))}
+        {/* Row 3: main content on the left */}
+        <div className="cabin-hero-content">
+        {/* Quick Book Strip — mobile only; desktop has single booking card on right */}
+        <div className="mt-6 p-4 md:p-5 bg-gradient-to-br from-sage/10 via-white to-sage/5 border border-sage/20 rounded-xl shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 lg:hidden">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
+            <div>
+              <span className="text-[10px] uppercase tracking-[0.2em] text-gray-500 font-medium">Price</span>
+              <p className="text-xl md:text-2xl font-semibold text-gray-900 tabular-nums mt-0.5">
+                {pricing
+                  ? `€${(pricing.totalPrice + (experienceTotal || 0)).toLocaleString()} total`
+                  : cabinType?.pricePerNight
+                    ? `From €${cabinType.pricePerNight.toLocaleString()}/night`
+                    : 'Select dates for pricing'}
+              </p>
+              {pricing && (
+                <p className="text-sm text-gray-500 mt-0.5">
+                  {pricing.totalNights} {pricing.totalNights === 1 ? 'night' : 'nights'}
+                  {cabinType?.pricePerNight && ` · €${cabinType.pricePerNight.toLocaleString()}/night`}
+                </p>
+              )}
             </div>
           </div>
-        )}
-      </div>
-
-      <section className="cabin-container details-grid mt-12 md:mt-16 mb-24">
-        <div className="reviews-col">
-          <h2 className="section-title" id="guest-reviews">Guest Reviews</h2>
-          <ReviewsSection 
-            cabinId={cabinType._id}
-            averageRating={cabinType.averageRating}
-            reviewCount={cabinType.reviewsCount}
-            hideHeading={true}
-          />
-          <MapArrival cabin={cabinType} />
+          <div className="flex-shrink-0">
+            <button
+              type="button"
+              onClick={goToConfirmOrOpenDates}
+              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#81887A] text-white font-semibold text-sm hover:opacity-95 transition-all shadow-sm hover:shadow-md min-h-[44px] touch-manipulation"
+            >
+              {searchCriteria.checkIn && searchCriteria.checkOut ? 'Continue to payment →' : 'Select dates'}
+            </button>
+          </div>
         </div>
 
-        <aside className="aside-sticky" aria-label="Booking information">
-          <div className="booking-card rounded-2xl border border-gray-200 shadow-md bg-white">
-            <h3 className="text-xl font-bold text-gray-900 mb-6">Booking Summary</h3>
-              
-            {pricing && (
-              <div className="space-y-3 text-sm">
-                {searchCriteria.checkIn && (
-                  <div className="flex justify-between items-center py-2">
-                    <span className="text-gray-600">Check-in</span>
-                    <span className="font-medium text-gray-900">{formatDate(searchCriteria.checkIn)}</span>
+          <div className="space-y-4 mt-6">
+            {cabinType.location && (
+              <p className="text-sm text-gray-600 flex items-center">
+                <span className="w-1.5 h-1.5 bg-sage rounded-full mr-2" aria-hidden="true"></span>
+                {cabinType.location}
+              </p>
+            )}
+            {cabinType.description && (
+              <p className="text-base text-gray-700 leading-relaxed">
+                {cabinType.description}
+              </p>
+            )}
+          </div>
+
+          {highlights && highlights.length > 0 && (
+            <div className="mt-12 md:mt-16">
+              <h2 className="section-title mb-4">Why you'll love it</h2>
+              <ul className="grid grid-cols-1 md:grid-cols-2 gap-y-2.5 gap-x-6 text-gray-700 text-base">
+                {highlights.map((h, i) => (
+                  <li key={`hl-${i}`} className="flex items-start gap-2.5">
+                    <span className="text-[#81887A] text-sm mt-[0.1em]" aria-hidden="true">✓</span>
+                    <span>{h}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {cabinType.amenities && cabinType.amenities.length > 0 && (
+            <div className="space-y-4 mt-12 md:mt-16">
+              <h2 className="section-title">Amenities</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {cabinType.amenities.map((amenity, index) => (
+                  <div key={`amenity-${index}`} className="flex items-center text-sm text-gray-600">
+                    <span className="w-1.5 h-1.5 bg-sage rounded-full mr-2" aria-hidden="true"></span>
+                    <span>{amenity}</span>
                   </div>
-                )}
-                {searchCriteria.checkOut && (
-                  <div className="flex justify-between items-center py-2">
-                    <span className="text-gray-600">Check-out</span>
-                    <span className="font-medium text-gray-900">{formatDate(searchCriteria.checkOut)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between items-center py-2">
-                  <span className="text-gray-600">Guests</span>
-                  <span className="font-medium text-gray-900">
-                    {searchCriteria.adults} {searchCriteria.adults === 1 ? 'Adult' : 'Adults'}
-                    {searchCriteria.children > 0 && (
-                      <span>, {searchCriteria.children} {searchCriteria.children === 1 ? 'Child' : 'Children'}</span>
-                    )}
-                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Guest Reviews and map now live in the main content flow, like CabinDetails */}
+          <div className="mt-12 md:mt-16 reviews-col" id="details">
+            <h2 className="section-title" id="guest-reviews">Guest Reviews</h2>
+            <ReviewsSection 
+              cabinId={cabinType._id}
+              averageRating={cabinType.averageRating}
+              reviewCount={cabinType.reviewsCount}
+              hideHeading={true}
+            />
+            <MapArrival cabin={cabinType} />
+          </div>
+        </div>
+
+        {/* RIGHT: booking card — Cabin-standard compact card (desktop only) */}
+        <aside className="cabin-hero-right hidden lg:block" aria-label="Reservation">
+          <div className="booking-card-compact rounded-2xl border border-gray-200/80 shadow-sm bg-white p-5">
+            {pricing ? (
+              <>
+                <div className="mb-4">
+                  <p className="text-2xl font-semibold text-gray-900 tabular-nums">
+                    €{(pricing.totalPrice + (experienceTotal || 0)).toLocaleString()}
+                    <span className="text-base font-normal text-gray-500 ml-1">total</span>
+                  </p>
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    {pricing.totalNights} {pricing.totalNights === 1 ? 'night' : 'nights'}
+                    {cabinType?.pricePerNight && ` · €${cabinType.pricePerNight.toLocaleString()}/night`}
+                  </p>
                 </div>
-                {availability && availability.availabilitySummary && (
-                  <div className="flex justify-between items-center py-2">
-                    <span className="text-gray-600">Available units</span>
-                    <span className="font-medium text-gray-900">
-                      {availability.availabilitySummary.availableUnits.length} of {availability.availabilitySummary.totalUnits}
-                    </span>
+
+                <div className="space-y-2 text-sm border-t border-gray-100 pt-4">
+                  <div className="flex justify-between items-center gap-3 py-1.5">
+                    <span className="text-gray-500">Check-in</span>
+                    <input
+                      type="date"
+                      value={searchCriteria.checkIn || ''}
+                      onChange={(e) => updateSearchParams({ checkIn: e.target.value })}
+                      className="input-editorial h-8 px-2 py-1 text-xs text-gray-900 w-[150px]"
+                    />
                   </div>
-                )}
-                <div className="flex justify-between items-center py-2">
-                  <span className="text-gray-600">Nights</span>
-                  <span className="font-medium text-gray-900">{pricing.totalNights}</span>
+                  <div className="flex justify-between items-center gap-3 py-1.5">
+                    <span className="text-gray-500">Check-out</span>
+                    <input
+                      type="date"
+                      value={searchCriteria.checkOut || ''}
+                      onChange={(e) => updateSearchParams({ checkOut: e.target.value })}
+                      className="input-editorial h-8 px-2 py-1 text-xs text-gray-900 w-[150px]"
+                    />
+                  </div>
+
+                  <div className="flex justify-between items-center gap-3 py-1.5">
+                    <span className="text-gray-500">Guests</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => updateSearchParams({
+                          adults: Math.max(1, (searchCriteria.adults || 1) - 1)
+                        })}
+                        className="w-6 h-6 rounded-full border border-gray-300 flex items-center justify-center text-xs text-gray-700 hover:bg-gray-50"
+                        aria-label="Decrease guests"
+                      >
+                        −
+                      </button>
+                      <span className="text-gray-900 text-sm min-w-[2rem] text-center">
+                        {(searchCriteria.adults || 0) + (searchCriteria.children || 0)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => updateSearchParams({
+                          adults: Math.max(1, (searchCriteria.adults || 1) + 1)
+                        })}
+                        className="w-6 h-6 rounded-full border border-gray-300 flex items-center justify-center text-xs text-gray-700 hover:bg-gray-50"
+                        aria-label="Increase guests"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                {cabinType.pricePerNight && (
-                  <div className="flex justify-between items-center py-2">
-                    <span className="text-gray-600">Price per night</span>
-                    <span className="font-medium text-gray-900 tabular-nums">
-                      €{cabinType.pricePerNight.toLocaleString()} / night
-                      {(cabinType.pricingModel || 'per_night') === 'per_person' ? ' per person' : ''}
-                    </span>
-                  </div>
-                )}
-                
+
                 {experiences.length > 0 && (
-                  <div className="py-3">
-                    <div className="text-sm font-semibold text-gray-900 mb-2">Experience add-ons</div>
-                    <div className="flex flex-wrap gap-2">
+                  <div className="mt-3 pt-3 border-t border-gray-100">
+                    <div className="text-sm text-gray-600 mb-1 flex items-center justify-between">
+                      <span>Add experiences {selectedExpKeys.size > 0 && `· €${experienceTotal.toLocaleString()}`}</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
                       {experiences.map(exp => {
                         const selected = selectedExpKeys.has(exp.key);
                         const guests = (searchCriteria.adults || 0) + (searchCriteria.children || 0);
                         const qty = exp.unit === 'per_guest' ? Math.max(guests, 1) : 1;
+                        const showQty = exp.unit === 'per_guest' && guests > 1;
                         return (
                           <button
                             key={exp.key}
                             type="button"
                             onClick={() => toggleExperience(exp.key)}
-                            className={`px-3 py-1.5 rounded-full text-sm inline-flex items-center gap-2 border ${selected ? 'bg-[#81887A] text-white border-[#81887A]' : 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200'}`}
+                            className={`px-2.5 py-1 rounded-lg text-xs border ${selected ? 'bg-[#81887A] text-white border-[#81887A]' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-gray-300'}`}
                             aria-pressed={selected}
                           >
-                            <span>{exp.name}</span>
-                            <span className="opacity-80">· {exp.price} {exp.currency}</span>
+                            {exp.name}{showQty && ` ×${qty}`} · {exp.price} {exp.currency}
                           </button>
                         );
                       })}
@@ -599,125 +589,50 @@ const AFrameDetails = () => {
                   </div>
                 )}
 
-                <div className="border-t border-gray-200 pt-3 mt-3">
-                  <div className="flex justify-between items-center">
-                    <span className="font-semibold text-sm">Total</span>
-                    <span className="font-semibold text-base text-gray-900 tabular-nums">€{(pricing.totalPrice + (experienceTotal || 0)).toLocaleString()}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {!pricing && (
-              <p className="text-sm text-gray-500 py-4">Please select check-in and check-out dates to see pricing.</p>
-            )}
-
-            {error && (
-              <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-800" role="alert">
-                {error}
-              </div>
-            )}
-
-            {bookingSuccess ? (
-              <div className="mt-6 p-4 text-center" role="alert">
-                <h2 className="text-base font-semibold mb-3">Booking Submitted!</h2>
-                <p className="text-sm text-gray-600">Your booking request has been submitted successfully.</p>
-              </div>
-            ) : (
-              <form onSubmit={handleBookingSubmit} className="mt-6 space-y-4" noValidate>
-                <h2 className="text-base font-semibold mb-4">Guest Information</h2>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label htmlFor="firstName" className="label-editorial">First Name *</label>
-                    <input
-                      id="firstName"
-                      name="firstName"
-                      type="text"
-                      value={formData.firstName}
-                      onChange={(e) => handleInputChange('firstName', e.target.value)}
-                      className={`input-editorial ${formErrors.firstName ? 'border-red-500' : ''}`}
-                      required
-                    />
-                    {formErrors.firstName && (
-                      <p className="text-red-500 text-xs mt-1" role="alert">{formErrors.firstName}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label htmlFor="lastName" className="label-editorial">Last Name *</label>
-                    <input
-                      id="lastName"
-                      name="lastName"
-                      type="text"
-                      value={formData.lastName}
-                      onChange={(e) => handleInputChange('lastName', e.target.value)}
-                      className={`input-editorial ${formErrors.lastName ? 'border-red-500' : ''}`}
-                      required
-                    />
-                    {formErrors.lastName && (
-                      <p className="text-red-500 text-xs mt-1" role="alert">{formErrors.lastName}</p>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <label htmlFor="email" className="label-editorial">Email *</label>
-                  <input
-                    id="email"
-                    name="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => handleInputChange('email', e.target.value)}
-                    className={`input-editorial ${formErrors.email ? 'border-red-500' : ''}`}
-                    required
-                  />
-                  {formErrors.email && (
-                    <p className="text-red-500 text-xs mt-1" role="alert">{formErrors.email}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label htmlFor="phone" className="label-editorial">Phone *</label>
-                  <input
-                    id="phone"
-                    name="phone"
-                    type="tel"
-                    value={formData.phone}
-                    onChange={(e) => handleInputChange('phone', e.target.value)}
-                    className={`input-editorial ${formErrors.phone ? 'border-red-500' : ''}`}
-                    required
-                  />
-                  {formErrors.phone && (
-                    <p className="text-red-500 text-xs mt-1" role="alert">{formErrors.phone}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label htmlFor="specialRequests" className="label-editorial">Special Requests</label>
-                  <textarea
-                    id="specialRequests"
-                    name="specialRequests"
-                    value={formData.specialRequests}
-                    onChange={(e) => handleInputChange('specialRequests', e.target.value)}
-                    className="input-editorial"
-                    rows="3"
-                    placeholder="Any special requests or notes..."
-                  />
-                </div>
-
                 <button
-                  type="submit"
-                  disabled={bookingLoading || !pricing || !availability?.cabinType.available}
-                  className="w-full bg-sage text-white py-3 px-4 rounded-lg font-semibold hover:bg-sage-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  type="button"
+                  data-booking-primary-cta="true"
+                  onClick={goToConfirmOrOpenDates}
+                  className="w-full mt-5 py-3.5 rounded-xl bg-[#81887A] text-white font-semibold text-sm hover:opacity-95 transition-all shadow-sm"
                 >
-                  {bookingLoading ? 'Submitting...' : 'Book Now'}
+                  {!searchCriteria.checkIn || !searchCriteria.checkOut ? 'Select dates' : 'Continue to payment'}
                 </button>
-              </form>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-gray-500 mb-4">
+                  Add dates to see price and availability.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => openDateModal?.()}
+                  className="w-full py-3.5 rounded-xl bg-[#81887A] text-white font-semibold text-sm hover:opacity-95 transition-all"
+                >
+                  Select dates
+                </button>
+              </>
             )}
           </div>
         </aside>
-      </section>
+      </div>
+
+      <StickyBookingBar
+        className="lg:hidden"
+        label={
+          pricing
+            ? `€${(pricing.totalPrice + (experienceTotal || 0)).toLocaleString()} total`
+            : cabinType?.pricePerNight
+              ? `From €${cabinType.pricePerNight.toLocaleString()}/night`
+              : 'Select dates for pricing'
+        }
+        subLabel={
+          pricing
+            ? `${pricing.totalNights} ${pricing.totalNights === 1 ? 'night' : 'nights'}${cabinType?.pricePerNight ? ` · €${cabinType.pricePerNight.toLocaleString()}/night` : ''}`
+            : null
+        }
+        buttonLabel={searchCriteria.checkIn && searchCriteria.checkOut ? 'Continue to payment →' : 'Select dates'}
+        onButtonClick={goToConfirmOrOpenDates}
+      />
 
       {lightboxOpen && lightboxGallery.length > 0 && (
         <div className="lightbox-overlay" role="dialog" aria-modal="true">

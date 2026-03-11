@@ -1,18 +1,21 @@
 import CabinCard from './CabinCard';
 import { locations } from '../data/content';
 import { useTranslation } from 'react-i18next';
-
-// Video paths matching TheCabin and TheValley pages (winter as default for footer cards)
-const CABIN_VIDEO = '/uploads/Videos/The-cabin-header.winter.mp4';
-const CABIN_VIDEO_POSTER = '/uploads/Videos/The-cabin-header.winter-poster.jpg';
-const VALLEY_VIDEO = '/uploads/Videos/The-Valley-firaplace-video.winter.mp4';
-const VALLEY_VIDEO_POSTER = '/uploads/Videos/The-Valley-firaplace-video.winter-poster.jpg';
+import { useSeason } from '../context/SeasonContext';
+import { CABIN_MEDIA, VALLEY_MEDIA } from '../config/mediaConfig';
 
 // Entry point rule: cards for a specific stay → listing; cards for a collection → category
 const DestinationsFooter = () => {
+  const { season } = useSeason();
   const cabin = locations.find(loc => loc.id === 'cabin');
   const valley = locations.find(loc => loc.id === 'valley');
   const { t } = useTranslation('common');
+
+  // Match footer card media to current hero season (winter/summer)
+  const CABIN_VIDEO = CABIN_MEDIA.heroVideo[season];
+  const CABIN_VIDEO_POSTER = CABIN_MEDIA.heroPoster[season];
+  const VALLEY_VIDEO = VALLEY_MEDIA.heroVideo[season];
+  const VALLEY_VIDEO_POSTER = VALLEY_MEDIA.heroPoster[season];
 
   const cabinTranslated = cabin ? {
     ...cabin,
