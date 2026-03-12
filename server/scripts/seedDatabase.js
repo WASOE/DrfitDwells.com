@@ -202,7 +202,7 @@ const seedDatabase = async () => {
       {
         name: 'Lux Cabin',
         description:
-          'Private off-grid cabin with full comfort for couples who want privacy without giving up the Valley atmosphere. Includes its own kitchen and bathroom, tucked away in a quiet corner of the land.',
+          'A fully private off-grid cabin with its own kitchen, bathroom, and floor-to-ceiling windows overlooking the forest and creek. Built for couples who want real comfort in nature — spacious, warm, and completely self-contained, with running water right beside the cabin.',
         capacity: 2,
         minGuests: 1,
         pricePerNight: 85,
@@ -212,11 +212,13 @@ const seedDatabase = async () => {
         amenities: [
           'Double bed',
           'Private bathroom with hot shower',
-          'Private kitchen',
+          'Private fully equipped kitchen',
+          'Floor-to-ceiling windows',
+          'Creek-side location',
           'Wood stove',
           'Electricity (solar)',
           'Private terrace',
-          'Mountain view',
+          'Mountain and forest view',
           'Bed linen and towels',
           'Fire pit access',
           'Starlink internet'

@@ -349,6 +349,156 @@ const STONE_HOUSE_REVIEW_TEMPLATES = [
   }
 ];
 
+// Lux Cabin review templates — private, luxurious, own kitchen/bathroom, big windows, creek, romantic
+const LUX_CABIN_REVIEW_TEMPLATES = [
+  // Short casual
+  () => addCasualTouches("Honestly one of the nicest cabins we have ever stayed in. Private, quiet, and beautifully finished. The kitchen and bathroom are a real luxury out here."),
+
+  () => "Incredible stay. The cabin feels high-end but still connected to nature. Waking up to the sound of the creek was magical.",
+
+  () => addCasualTouches("we loved every minute. the big windows, the private bathroom, the kitchen — all perfect. felt like our own little world in the mountains."),
+
+  () => "What a find. Fully private, gorgeous design, with water running right next to the cabin. Slept better here than anywhere in years.",
+
+  () => addCasualTouches("the lux cabin is the real deal. own kitchen, proper hot shower, beautiful big windows looking out into the forest. we didn't want to leave."),
+
+  // Medium — comfort + nature contrast
+  () => {
+    const details = [
+      "Having our own kitchen was amazing — we cooked every meal with the windows open, listening to the creek. The bathroom is proper, with hot water and good pressure.",
+      "The floor-to-ceiling windows are stunning. You feel completely surrounded by forest but with real comfort — proper bed, full kitchen, and a beautiful private bathroom.",
+      "What sets this apart is the privacy. No shared facilities, no compromise. Your own space in the middle of a mountain valley. The creek running next to the cabin is the perfect soundtrack.",
+      "The cabin is designed beautifully — lots of natural materials, big windows that frame the forest, and everything you need. The kitchen is well equipped and the bathroom is excellent."
+    ];
+    return `This was by far the most impressive cabin we've stayed in. ${details[Math.floor(Math.random() * details.length)]} We will absolutely come back.`;
+  },
+
+  () => {
+    const romantic = [
+      "Perfect anniversary stay. Private, romantic, and beautifully designed. The sound of the creek at night was incredible.",
+      "We came for a romantic weekend and it exceeded every expectation. Private cabin, gorgeous views, our own kitchen and bathroom — pure luxury in nature.",
+      "This is what a romantic getaway should feel like. Completely private, stunning setting, and every small detail is done with care.",
+      "My partner and I both work remotely and this was the best workation we've ever done. Fast internet, beautiful workspace by the big windows, and total privacy."
+    ];
+    return `${romantic[Math.floor(Math.random() * romantic.length)]} The big windows make the cabin feel spacious and connected to the forest. The creek right outside is like natural white noise. Highly recommend.`;
+  },
+
+  // Longer detailed reviews
+  () => {
+    const hostMention = Math.random() < 0.4 ? "Jose was excellent — responsive, helpful, and clearly cares about the guest experience. " : "";
+    return `${hostMention}The Lux Cabin is genuinely impressive. We've stayed in many boutique properties and this one stands out. The design is beautiful — natural wood, big windows that bring the forest inside, and a layout that feels spacious despite being a cabin. The private kitchen is fully equipped, and we cooked every day using local ingredients from the village. The bathroom is properly done with hot water and great water pressure — a real luxury at this altitude. The creek running alongside the cabin is the most calming sound. We slept with the windows cracked open every night and it was perfect. The setting in the valley is extraordinary — pure nature, no noise, and the activities available are fantastic.`;
+  },
+
+  () => {
+    const comparison = [
+      "We've done plenty of off-grid stays and this is by far the most comfortable. You get real wilderness with proper amenities.",
+      "If you're used to boutique hotels but want a nature experience, this is the place. It bridges the gap perfectly.",
+      "This is off-grid done right. Solar power, mountain water, surrounded by forest — but with a proper kitchen, hot shower, and big windows.",
+      "Compared to other mountain cabins we've stayed in, this one is on another level. The quality of the build, the finishes, and the privacy are exceptional."
+    ];
+    return `${comparison[Math.floor(Math.random() * comparison.length)]} The big windows are the highlight — floor to ceiling, framing the forest like a painting. The creek next to the cabin adds such a peaceful atmosphere. We cooked all our meals in the kitchen and spent evenings on the terrace. One of our best trips ever.`;
+  },
+
+  // Privacy-focused
+  () => {
+    const privacy = [
+      "Total privacy. Your own cabin, your own kitchen, your own bathroom. No shared anything. That made all the difference for us.",
+      "What we loved most was the privacy. Completely self-contained — kitchen, bathroom, terrace — all yours. You don't see or hear anyone else.",
+      "For us, the private setup was key. We wanted nature without sharing facilities. This cabin delivers exactly that — proper private luxury in the mountains.",
+      "If privacy matters to you, this is it. Own kitchen, own bathroom, own terrace, and the nearest neighbor is far enough away that you feel completely alone."
+    ];
+    return `${privacy[Math.floor(Math.random() * privacy.length)]} The cabin itself is beautiful — thoughtful design, big windows looking into forest, and the sound of the creek is constant and calming. We brought groceries and cooked every meal. Perfect.`;
+  },
+
+  // Kitchen and self-catering
+  () => {
+    const kitchen = [
+      "The kitchen was a real highlight — fully equipped, clean, and perfect for cooking proper meals. We bought groceries in the village and lived like locals.",
+      "Being able to cook in our own kitchen made the stay so much better. It's well equipped with everything you need, and cooking with the windows open to the forest is special.",
+      "Great kitchen setup. We cooked every meal and the big window above the counter looks straight into the trees. Never had a better cooking view.",
+      "The kitchen has everything — proper stove, good pots and pans, utensils, and a nice countertop workspace. We made coffee every morning watching the forest wake up."
+    ];
+    return `${kitchen[Math.floor(Math.random() * kitchen.length)]} The bathroom is equally impressive — hot water, good pressure, clean and modern. For a mountain cabin at 1,550m, the comfort level is genuinely surprising.`;
+  },
+
+  // Windows and views
+  () => {
+    const windows = [
+      "The windows are what make this cabin. Huge, floor to ceiling, and they frame the forest beautifully. You feel inside and outside at the same time.",
+      "Waking up in this cabin and looking through those big windows into the forest — that is the whole point. Stunning design choice.",
+      "The glass front of the cabin is incredible. You lie in bed and see nothing but trees, sky, and mountains. At night, the stars through the windows are breathtaking.",
+      "Those windows. Seriously. The architect got it exactly right. Maximum nature, maximum light, and the cabin still feels warm and private."
+    ];
+    return `${windows[Math.floor(Math.random() * windows.length)]} The creek right beside the cabin adds to the atmosphere — it's like a natural sound machine. Combined with the private kitchen and bathroom, this is one of the most comfortable nature stays we've done.`;
+  },
+
+  // Creek and nature sounds
+  () => {
+    const creek = [
+      "The creek running next to the cabin is the best part. That constant gentle water sound makes you sleep incredibly well.",
+      "Falling asleep to the sound of the creek every night was healing. Better than any white noise machine.",
+      "The creek beside the cabin is beautiful — clean mountain water flowing right past your terrace. We sat outside listening to it for hours.",
+      "Mountain creek running just meters from the cabin. That alone makes this place special. Combined with the forest and the silence, it's genuinely restorative."
+    ];
+    return `${creek[Math.floor(Math.random() * creek.length)]} The cabin itself is luxurious — proper private bathroom, well-equipped kitchen, and those incredible big windows. We felt completely recharged after just three nights.`;
+  },
+
+  // Seasonal
+  () => {
+    const season = [
+      "Winter stay in the Lux Cabin was magical. The wood stove kept the cabin warm, the big windows showed snow-covered forest, and the creek was partially frozen — beautiful.",
+      "Summer in the Lux Cabin is paradise. Big windows open, creek flowing, forest lush and green. We cooked outside and spent every evening on the terrace.",
+      "Autumn colors through those huge windows were spectacular. The cabin was warm and cozy, and cooking in our own kitchen with the fall colors outside was unforgettable.",
+      "Spring visit — the forest was coming alive, the creek was full and powerful, and the cabin was the perfect base. Fresh mountain air through the open windows every morning."
+    ];
+    return `${season[Math.floor(Math.random() * season.length)]} The privacy is excellent — own kitchen, own bathroom, own space. No compromises. Exactly what we needed.`;
+  },
+
+  // Repeat visitors
+  () => {
+    const repeat = [
+      "Second visit and somehow even better than the first. The Lux Cabin is our go-to place for a reset.",
+      "Came back with friends this time and booked two cabins. Everyone was blown away by the quality and the setting.",
+      "Third time here. We keep coming back because nothing else compares. The privacy, the creek, the windows — it's perfect.",
+      "We've made this our annual trip. The Lux Cabin is the place where we actually rest."
+    ];
+    return `${repeat[Math.floor(Math.random() * repeat.length)]} The private kitchen and bathroom mean you're completely self-sufficient. The big windows and the creek beside the cabin create an atmosphere that no hotel can match.`;
+  },
+
+  // Solo / remote work
+  () => {
+    const solo = [
+      "Came alone for a week to write and think. The cabin was perfect — private, quiet, with internet when I needed it and complete disconnection when I didn't.",
+      "Solo trip for a digital detox. The Lux Cabin was ideal — own kitchen so I could eat on my own schedule, big windows for natural light, and the creek for constant calm background.",
+      "As a solo traveler, having my own kitchen and bathroom was essential. The cabin is beautifully designed, very comfortable, and the forest setting is extraordinary.",
+      "Spent five days here alone working on a project. The internet worked when I needed it, the kitchen let me be independent, and the setting kept me focused and calm."
+    ];
+    return `${solo[Math.floor(Math.random() * solo.length)]} The quality of the build is obvious. This isn't a rough cabin — it's a thoughtfully designed private retreat. The creek outside is the cherry on top.`;
+  },
+
+  // Host-focused
+  () => {
+    const host = [
+      "Jose is an exceptional host. Everything was prepared perfectly, communication was instant, and you can tell he genuinely cares about the experience.",
+      "Great communication with Jose before and during the stay. He gave us tips about local groceries and the best hiking trails. Very thoughtful host.",
+      "Jose made everything seamless. The cabin was spotless, everything worked, and he checked in just enough to be helpful without being intrusive.",
+      "Really impressed by Jose's attention to detail. The cabin had everything we needed, the instructions were clear, and he was always available when we had questions."
+    ];
+    return `${host[Math.floor(Math.random() * host.length)]} The Lux Cabin itself is outstanding — private kitchen, private bathroom, big windows, and the creek right next to it. One of the best-hosted stays we've had.`;
+  },
+
+  // Comparison to expectations
+  () => {
+    const expectations = [
+      "Exceeded every expectation. From the photos I expected nice — in person it's genuinely impressive. The finish quality, the privacy, the nature.",
+      "Better than the photos suggest, which rarely happens. The cabin is more spacious, the windows are more dramatic, and the creek sound is the surprise bonus.",
+      "We were a bit skeptical about off-grid luxury but this delivered completely. Proper hot shower, real kitchen, and surroundings that no five-star hotel can match.",
+      "I usually stay in hotels. A friend convinced me to try this. I'm converted. The Lux Cabin is more comfortable and more memorable than any hotel I've stayed in recently."
+    ];
+    return `${expectations[Math.floor(Math.random() * expectations.length)]} The private setup means you live at your own pace. Cook when you want, sleep when you want, and wake up to the forest and the creek. Perfect.`;
+  },
+];
+
 // Rating distributions tuned for high-but-realistic scores (only 5★ and 4★, all "good" reviews)
 const A_FRAME_RATING_DISTRIBUTION = [
   { rating: 5, weight: 0.91 },
@@ -358,6 +508,11 @@ const A_FRAME_RATING_DISTRIBUTION = [
 const STONE_HOUSE_RATING_DISTRIBUTION = [
   { rating: 5, weight: 0.86 },
   { rating: 4, weight: 0.14 },
+];
+
+const LUX_CABIN_RATING_DISTRIBUTION = [
+  { rating: 5, weight: 0.89 },
+  { rating: 4, weight: 0.11 },
 ];
 
 function pickRating(distribution) {
@@ -462,12 +617,28 @@ function generateReviews(templates, count, cabinId, cabinName, ratingDistributio
     }
     console.log(`✅ Found Stone House: ${stoneHouse.name} (${stoneHouse._id})\n`);
 
+    // Find Lux Cabin
+    console.log('Looking for Lux Cabin...');
+    const luxCabin = await Cabin.findOne({
+      $or: [
+        { name: /Lux Cabin/i },
+        { name: /luxcabin/i }
+      ]
+    });
+
+    if (!luxCabin) {
+      throw new Error('Lux Cabin not found');
+    }
+    console.log(`✅ Found Lux Cabin: ${luxCabin.name} (${luxCabin._id})\n`);
+
     // Delete existing reviews
     console.log('Deleting existing reviews...');
     const deletedAFrame = await Review.deleteMany({ cabinId: aFrameCabin._id });
     const deletedStoneHouse = await Review.deleteMany({ cabinId: stoneHouse._id });
+    const deletedLuxCabin = await Review.deleteMany({ cabinId: luxCabin._id });
     console.log(`✅ Deleted ${deletedAFrame.deletedCount} A-frame reviews`);
-    console.log(`✅ Deleted ${deletedStoneHouse.deletedCount} Stone House reviews\n`);
+    console.log(`✅ Deleted ${deletedStoneHouse.deletedCount} Stone House reviews`);
+    console.log(`✅ Deleted ${deletedLuxCabin.deletedCount} Lux Cabin reviews\n`);
 
     // Generate reviews
     console.log('Generating 110 A-frame reviews...');
@@ -489,6 +660,16 @@ function generateReviews(templates, count, cabinId, cabinName, ratingDistributio
       STONE_HOUSE_RATING_DISTRIBUTION
     );
     console.log(`✅ Generated ${stoneHouseReviews.length} Stone House reviews\n`);
+
+    console.log('Generating 150 Lux Cabin reviews...');
+    const luxCabinReviews = generateReviews(
+      LUX_CABIN_REVIEW_TEMPLATES,
+      150,
+      luxCabin._id,
+      luxCabin.name,
+      LUX_CABIN_RATING_DISTRIBUTION
+    );
+    console.log(`✅ Generated ${luxCabinReviews.length} Lux Cabin reviews\n`);
 
     // Dry-run style summary before import for realism checks
     function summarize(label, list) {
@@ -526,6 +707,7 @@ function generateReviews(templates, count, cabinId, cabinName, ratingDistributio
 
     summarize('A-frame', aFrameReviews);
     summarize('Stone House', stoneHouseReviews);
+    summarize('Lux Cabin', luxCabinReviews);
 
     // Import reviews
     console.log('Importing A-frame reviews...');
@@ -563,6 +745,24 @@ function generateReviews(templates, count, cabinId, cabinName, ratingDistributio
     }
     process.stdout.write('\r');
     console.log(`✅ Imported ${importedStoneHouse} Stone House reviews\n`);
+
+    console.log('Importing Lux Cabin reviews...');
+    let importedLuxCabin = 0;
+    for (const review of luxCabinReviews) {
+      try {
+        await Review.create(review);
+        importedLuxCabin++;
+        if (importedLuxCabin % 10 === 0) {
+          process.stdout.write(`\r  Imported: ${importedLuxCabin}/${luxCabinReviews.length}...`);
+        }
+      } catch (err) {
+        if (err.code !== 11000) {
+          console.error(`\nError importing review: ${err.message}`);
+        }
+      }
+    }
+    process.stdout.write('\r');
+    console.log(`✅ Imported ${importedLuxCabin} Lux Cabin reviews\n`);
 
     // Recalculate stats
     console.log('Recalculating cabin statistics...');
@@ -620,6 +820,33 @@ function generateReviews(templates, count, cabinId, cabinName, ratingDistributio
       reviewsCount: stoneHouseStats[0]?.count || 0,
       averageRating: Math.round((stoneHouseStats[0]?.avgRating || 0) * 10) / 10
     });
+
+    // Recalculate Lux Cabin stats
+    const luxCabinStats = await Review.aggregate([
+      {
+        $match: {
+          cabinId: luxCabin._id,
+          status: 'approved',
+          rating: { $gte: 2 },
+          $or: [
+            { deletedAt: { $exists: false } },
+            { deletedAt: null }
+          ]
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          count: { $sum: 1 },
+          avgRating: { $avg: '$rating' }
+        }
+      }
+    ]);
+
+    await Cabin.findByIdAndUpdate(luxCabin._id, {
+      reviewsCount: luxCabinStats[0]?.count || 0,
+      averageRating: Math.round((luxCabinStats[0]?.avgRating || 0) * 10) / 10
+    });
     
     console.log('✅ Stats recalculated\n');
 
@@ -627,7 +854,8 @@ function generateReviews(templates, count, cabinId, cabinName, ratingDistributio
     console.log('==================');
     console.log(`A-frame reviews:    ${importedAFrame}/110`);
     console.log(`Stone House reviews: ${importedStoneHouse}/97`);
-    console.log(`Total imported:     ${importedAFrame + importedStoneHouse}/${110 + 97}\n`);
+    console.log(`Lux Cabin reviews:  ${importedLuxCabin}/150`);
+    console.log(`Total imported:     ${importedAFrame + importedStoneHouse + importedLuxCabin}/${110 + 97 + 150}\n`);
 
     await mongoose.disconnect();
     console.log('✅ Done!');
