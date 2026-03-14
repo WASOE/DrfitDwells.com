@@ -133,6 +133,7 @@ const ConfirmBooking = () => {
   const [priceModalOpen, setPriceModalOpen] = useState(false);
   const [clientSecret, setClientSecret] = useState(null);
   const [stripeError, setStripeError] = useState(null);
+  const [stripeEnabled, setStripeEnabled] = useState(false);
 
   const handleFormChange = useCallback((field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -220,6 +221,16 @@ const ConfirmBooking = () => {
     loadStay();
   }, [bookingEntityId, bookingEntitySlug, bookingEntityType]);
 
+  useEffect(() => {
+    bookingAPI.getConfig()
+      .then((res) => {
+        if (res.data?.success && res.data?.data?.stripeEnabled === true) {
+          setStripeEnabled(true);
+        }
+      })
+      .catch(() => { /* keep stripeEnabled false */ });
+  }, []);
+
   // Sync URL when we have dates but URL lacks them (e.g. after restore from sessionStorage)
   useEffect(() => {
     if (!checkIn || !checkOut) return;
@@ -299,7 +310,7 @@ const ConfirmBooking = () => {
   }, [bookingEntityId, bookingEntityType, id, navigate]);
 
   useEffect(() => {
-    if (!stripePromise || !bookingEntityId || !checkIn || !checkOut || grandTotal < 0.5 || clientSecret) return;
+    if (!stripeEnabled || !stripePromise || !bookingEntityId || !checkIn || !checkOut || grandTotal < 0.5 || clientSecret) return;
     const checkInStr = checkIn instanceof Date ? checkIn.toISOString().split('T')[0] : checkIn;
     const checkOutStr = checkOut instanceof Date ? checkOut.toISOString().split('T')[0] : checkOut;
     const payload = {
@@ -322,7 +333,7 @@ const ConfirmBooking = () => {
         }
       })
       .catch(() => setStripeError('Payment setup failed'));
-  }, [stripePromise, bookingEntityId, bookingEntityType, checkIn, checkOut, adults, children, selectedExpKeys, grandTotal, clientSecret]);
+  }, [stripeEnabled, stripePromise, bookingEntityId, bookingEntityType, checkIn, checkOut, adults, children, selectedExpKeys, grandTotal, clientSecret]);
 
   const handleDatesSave = useCallback((from, to) => {
     setCheckIn(from);

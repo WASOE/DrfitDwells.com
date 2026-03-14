@@ -40,6 +40,16 @@ const paymentIntentLimiter = rateLimit({
   message: { success: false, message: 'Too many payment attempts. Please try again in a minute.' }
 });
 
+// GET /api/bookings/config - Public config for booking flow (e.g. stripeEnabled)
+router.get('/config', (req, res) => {
+  res.json({
+    success: true,
+    data: {
+      stripeEnabled: !!stripe
+    }
+  });
+});
+
 // POST /api/bookings/create-payment-intent - Create Stripe PaymentIntent for cabin booking
 router.post('/create-payment-intent', paymentIntentLimiter, [
   body('cabinId').optional().isMongoId().withMessage('Valid cabin ID is required if provided'),
@@ -574,6 +584,7 @@ router.post('/', bookingCreateLimiter, [
       // Don't fail the booking creation if emails fail
     }
 
+    const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
     res.status(201).json({
       success: true,
       message: 'Booking request submitted successfully',

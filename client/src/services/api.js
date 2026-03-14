@@ -66,6 +66,7 @@ export const unitAPI = {
 
 export const bookingAPI = {
   create: (bookingData) => api.post('/bookings', bookingData),
+  getConfig: () => api.get('/bookings/config'),
   createPaymentIntent: (data) => api.post('/bookings/create-payment-intent', data),
   getById: (id, email) => {
     const params = {};
