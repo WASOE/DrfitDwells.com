@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
+const { DEFAULT_MONGO_URI } = require('./dbDefaults');
 
-const uri = process.env.MONGODB_URI || 'mongodb://localhost:27017/drift-dwells-booking';
+const uri = process.env.MONGODB_URI || process.env.MONGO_URI || DEFAULT_MONGO_URI;
 
 const connectOptions = {
   maxPoolSize: 10,

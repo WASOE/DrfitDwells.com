@@ -8,6 +8,9 @@ const Cabin = require('../models/Cabin');
 const EmailEvent = require('../models/EmailEvent');
 const path = require('path');
 const fs = require('fs');
+const { requirePermission, ACTIONS } = require('../services/permissionService');
+const { appendAuditEvent } = require('../services/auditWriter');
+const { adminModuleWriteGate } = require('../middleware/adminModuleCutoverEnforcement');
 
 const router = express.Router();
 
@@ -57,16 +60,16 @@ router.patch('/bookings/:id/status', validateId('id'), [
 router.get('/cabins', getCabins);
 
 // POST /api/admin/cabins - Create cabin
-router.post('/cabins', createCabin);
+router.post('/cabins', adminModuleWriteGate('cabins'), createCabin);
 
 // GET /api/admin/cabins/:id - Get single cabin detail
 router.get('/cabins/:id', validateId('id'), getCabinById);
 
 // PATCH /api/admin/cabins/:id - Update cabin
-router.patch('/cabins/:id', validateId('id'), updateCabin);
+router.patch('/cabins/:id', validateId('id'), adminModuleWriteGate('cabins'), updateCabin);
 
 // POST /api/admin/cabins/:id/images  (single file field "file")
-router.post('/cabins/:id/images', validateId('id'), upload.single('file'), async (req, res) => {
+router.post('/cabins/:id/images', validateId('id'), adminModuleWriteGate('cabins'), upload.single('file'), async (req, res) => {
   try {
     const cabin = await Cabin.findById(req.params.id);
     if (!cabin) return res.status(404).json({ success: false, message: 'Cabin not found' });
@@ -104,7 +107,7 @@ router.post('/cabins/:id/images', validateId('id'), upload.single('file'), async
 });
 
 // PATCH /api/admin/cabins/:id/images/:imageId  (alt, isCover, sort, tags, spaceOrder)
-router.patch('/cabins/:id/images/:imageId', validateId('id'), validateId('imageId'), async (req, res) => {
+router.patch('/cabins/:id/images/:imageId', validateId('id'), validateId('imageId'), adminModuleWriteGate('cabins'), async (req, res) => {
   try {
     const { id, imageId } = req.params;
     const { alt, isCover, sort, tags, spaceOrder } = req.body;
@@ -142,7 +145,7 @@ router.patch('/cabins/:id/images/:imageId', validateId('id'), validateId('imageI
 });
 
 // PATCH /api/admin/cabins/:id/images/reorder  body: [{imageId, sort, spaceOrder}]
-router.patch('/cabins/:id/images/reorder', async (req, res) => {
+router.patch('/cabins/:id/images/reorder', adminModuleWriteGate('cabins'), async (req, res) => {
   try {
     const { id } = req.params;
     const order = Array.isArray(req.body) ? req.body : [];
@@ -165,7 +168,7 @@ router.patch('/cabins/:id/images/reorder', async (req, res) => {
 });
 
 // PATCH /api/admin/cabins/:id/images/batch - Bulk update images (tags, spaceOrder, etc.)
-router.patch('/cabins/:id/images/batch', async (req, res) => {
+router.patch('/cabins/:id/images/batch', adminModuleWriteGate('cabins'), async (req, res) => {
   try {
     const { id } = req.params;
     const { updates } = req.body; // Array of {imageId, tags?, spaceOrder?, alt?, isCover?}
@@ -210,7 +213,7 @@ router.patch('/cabins/:id/images/batch', async (req, res) => {
 });
 
 // DELETE /api/admin/cabins/:id/images/:imageId
-router.delete('/cabins/:id/images/:imageId', validateId('id'), validateId('imageId'), async (req, res) => {
+router.delete('/cabins/:id/images/:imageId', validateId('id'), validateId('imageId'), adminModuleWriteGate('cabins'), async (req, res) => {
   try {
     const { id, imageId } = req.params;
     const cabin = await Cabin.findById(id);
@@ -218,6 +221,39 @@ router.delete('/cabins/:id/images/:imageId', validateId('id'), validateId('image
 
     const idx = cabin.images.findIndex(i => i._id === imageId);
     if (idx === -1) return res.status(404).json({ success: false, message: 'Image not found' });
+
+    requirePermission({
+      role: req.user?.role,
+      action: ACTIONS.CABIN_IMAGE_DELETE
+    });
+
+    const beforeCount = cabin.images.length;
+    const removedImage = cabin.images[idx];
+    await appendAuditEvent(
+      {
+        actorType: 'user',
+        actorId: req.user?.id || 'admin',
+        entityType: 'Cabin',
+        entityId: cabin._id.toString(),
+        action: 'cabin_image_delete',
+        beforeSnapshot: {
+          imagesCount: beforeCount,
+          imageId: String(imageId)
+        },
+        afterSnapshot: {
+          imagesCount: beforeCount - 1,
+          imageId: String(imageId)
+        },
+        metadata: {
+          imageUrl: removedImage?.url || null
+        },
+        reason: 'image_delete',
+        sourceContext: {
+          route: 'DELETE /api/admin/cabins/:id/images/:imageId'
+        }
+      },
+      { req }
+    );
 
     const [img] = cabin.images.splice(idx, 1);
     // try remove file
@@ -235,6 +271,12 @@ router.delete('/cabins/:id/images/:imageId', validateId('id'), validateId('image
     await cabin.save();
     return res.json({ success: true, data: { images: cabin.images } });
   } catch (e) {
+    if (e.code === 'PERMISSION_DENIED') {
+      return res.status(e.status || 403).json({ success: false, message: e.message });
+    }
+    if (e.code === 'AUDIT_WRITE_FAILED') {
+      return res.status(500).json({ success: false, message: 'Delete blocked because audit write failed' });
+    }
     return res.status(500).json({ success: false, message: e.message });
   }
 });

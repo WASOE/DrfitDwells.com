@@ -7,6 +7,9 @@ const Unit = require('../models/Unit');
 const featureFlags = require('../utils/featureFlags');
 const authDefaults = require('../config/defaults');
 const emailService = require('../services/emailService');
+const { requirePermission, ACTIONS } = require('../services/permissionService');
+const { appendAuditEvent } = require('../services/auditWriter');
+const { assertAdminModuleWriteAllowed } = require('../services/ops/cutover/opsCutoverService');
 
 const DEFAULT_CABIN_IMAGE_URL = 'https://placehold.co/1200x800?text=Cabin';
 
@@ -692,6 +695,7 @@ const login = (req, res) => {
     const now = Math.floor(Date.now() / 1000);
     const payload = {
       sub: 'admin',
+      role: 'admin',
       iat: now,
       exp: now + (7 * 24 * 60 * 60), // 7 days
       jti: crypto.randomBytes(16).toString('hex')
@@ -906,6 +910,33 @@ const updateBookingStatus = async (req, res) => {
     }
 
     const oldStatus = booking.status;
+    // Cutover enforcement: when the Reservations module is cut over, legacy /admin writes are blocked.
+    await assertAdminModuleWriteAllowed('reservations');
+    requirePermission({
+      role: req.user?.role,
+      action: ACTIONS.BOOKING_STATUS_UPDATE
+    });
+
+    await appendAuditEvent(
+      {
+        actorType: 'user',
+        actorId: req.user?.id || 'admin',
+        entityType: 'Reservation',
+        entityId: booking._id.toString(),
+        action: 'reservation_status_update',
+        beforeSnapshot: { status: oldStatus },
+        afterSnapshot: { status },
+        metadata: {
+          legacyModel: 'Booking'
+        },
+        reason: null,
+        sourceContext: {
+          route: 'PATCH /api/admin/bookings/:id/status'
+        }
+      },
+      { req }
+    );
+
     booking.status = status;
     await booking.save({ validateBeforeSave: false });
 
@@ -948,6 +979,26 @@ const updateBookingStatus = async (req, res) => {
 
   } catch (error) {
     console.error('Update booking status error:', error);
+    if (error.code === 'PERMISSION_DENIED') {
+      return res.status(error.status || 403).json({
+        success: false,
+        message: error.message
+      });
+    }
+    if (error.code === 'CUTOVER_WRITE_BLOCKED') {
+      return res.status(error.status || 403).json({
+        success: false,
+        errorType: 'cutover_blocked',
+        message: error.message,
+        details: { moduleKey: error.moduleKey || 'unknown' }
+      });
+    }
+    if (error.code === 'AUDIT_WRITE_FAILED') {
+      return res.status(500).json({
+        success: false,
+        message: 'Status update blocked because audit write failed'
+      });
+    }
     res.status(500).json({
       success: false,
       message: 'Failed to update booking status'

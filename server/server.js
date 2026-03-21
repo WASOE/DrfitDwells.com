@@ -24,6 +24,8 @@ const draftRoutes = require('./routes/draftRoutes');
 const emailWebhookRoutes = require('./routes/emailWebhookRoutes');
 const stripeWebhookRoutes = require('./routes/stripeWebhookRoutes');
 const chatRoutes = require('./routes/chatRoutes');
+const opsRoutes = require('./routes/ops');
+const internalSyncRoutes = require('./routes/internalSyncRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -64,6 +66,14 @@ connectDB().then((conn) => {
         console.error('Review index sync error:', err);
       }
     });
+
+    // Automatic iCal sync scheduling (prod-safe, env-controlled).
+    try {
+      const { startIcalSyncSchedulerIfEnabled } = require('./services/ops/ingestion/icalSyncScheduler');
+      startIcalSyncSchedulerIfEnabled();
+    } catch (e) {
+      console.error('[ical-sync] Scheduler startup failed:', e?.message || e);
+    }
   }
 }).catch(() => {});
 
@@ -194,6 +204,8 @@ app.use('/api/admin/reviews', requireDb, adminReviewRoutes);
 app.use('/api/admin/cabin-types', requireDb, adminCabinTypeRoutes);
 app.use('/api/drafts', allowCraftOrigin, requireDb, draftRoutes);
 app.use('/api/email/webhook', emailWebhookRoutes);
+app.use('/api/ops', requireDb, opsRoutes);
+app.use('/api/internal/sync', requireDb, internalSyncRoutes);
 
 // Error handling
 app.use((err, req, res, _next) => {

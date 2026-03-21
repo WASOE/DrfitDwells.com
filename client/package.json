@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host",
     "validate:media": "node ./scripts/validate-media-assets.mjs",
+    "validate:calendaruxinteractions": "node ./scripts/validate-calendar-ux-interactions.mjs",
     "build": "npm run validate:media && vite build && node ./scripts/prerender-routes.cjs",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview --host",

@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import AdminLayout from '../../components/admin/AdminLayout';
 import { reviewAPI, cabinAPI } from '../../services/api';
 
 const ReviewsList = () => {
@@ -172,33 +171,30 @@ const ReviewsList = () => {
   };
 
   return (
-    <AdminLayout>
-      <div className="px-4 sm:px-0">
-        <div className="sm:flex sm:items-center sm:justify-between">
-          <div className="sm:flex-auto">
-            <h1 className="text-2xl font-playfair font-bold text-gray-900">
+    <div className="px-4 sm:px-0">
+        <header className="flex flex-wrap items-end justify-between gap-4 mb-10">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight text-gray-900">
               Reviews
             </h1>
-            <p className="mt-2 text-sm text-gray-700">
+            <p className="mt-0.5 text-sm text-gray-500">
               Manage and moderate cabin reviews
             </p>
           </div>
-          <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
-            <button
-              onClick={() => navigate('/admin/reviews/new')}
-              className="bg-[#81887A] text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-[#707668]"
-            >
-              + Add Review
-            </button>
-          </div>
-        </div>
+          <button
+            onClick={() => navigate('/admin/reviews/new')}
+            className="inline-flex items-center px-4 py-2.5 text-sm font-medium text-white bg-[#81887A] rounded-lg hover:bg-[#707668] focus:outline-none focus:ring-2 focus:ring-[#81887A]/30 focus:ring-offset-2 shrink-0 transition-colors"
+          >
+            + Add Review
+          </button>
+        </header>
 
         {/* Filters */}
-        <div className="mt-8 bg-white shadow rounded-lg p-6">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-6 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Search */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-xs font-medium text-gray-500 mb-2">
                 Search
               </label>
               <input
@@ -386,7 +382,7 @@ const ReviewsList = () => {
           </div>
         )}
 
-        {/* Reviews Table */}
+        {/* Reviews list */}
         {loading ? (
           <div className="mt-8 text-center py-12">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#81887A] mx-auto"></div>
@@ -398,7 +394,60 @@ const ReviewsList = () => {
           </div>
         ) : (
           <>
-            <div className="mt-8 bg-white shadow overflow-hidden sm:rounded-lg overflow-x-auto">
+            {/* Mobile: cards */}
+            <div className="md:hidden mt-6 space-y-3">
+              {reviews.map((review) => (
+                <div
+                  key={review._id}
+                  className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] p-4 space-y-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        {review.pinned && <span className="text-yellow-500" title="Pinned">📌</span>}
+                        <span className="text-sm font-medium text-gray-900 tabular-nums">
+                          {renderStars(review.rating)}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-xs text-gray-500 truncate">
+                        {review.cabinId?.name || 'N/A'} · {review.reviewerName || 'Unknown'}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/admin/reviews/${review._id}`)}
+                      className="shrink-0 inline-flex items-center px-3 py-2 text-sm font-medium text-white bg-[#81887A] rounded-lg hover:bg-[#707668] focus:outline-none focus:ring-2 focus:ring-[#81887A]/30 focus:ring-offset-2 transition-colors"
+                    >
+                      Edit
+                    </button>
+                  </div>
+
+                  <div className="text-sm text-gray-900 leading-snug">
+                    <span className="block line-clamp-3">{review.text}</span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-gray-100">
+                    <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getSourceBadge(review.source)}`}>
+                      {review.source}
+                    </span>
+                    <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadge(review.status)}`}>
+                      {review.status}
+                    </span>
+                    {review.locked && (
+                      <span className="text-xs text-gray-500" title="Review is locked (imported)">🔒 Locked</span>
+                    )}
+                    <span className="ml-auto text-xs text-gray-500 tabular-nums">
+                      {review.createdAtSource
+                        ? new Date(review.createdAtSource).toLocaleDateString()
+                        : new Date(review.createdAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop/tablet: table */}
+            <div className="hidden md:block mt-8 bg-white shadow overflow-hidden sm:rounded-lg overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
@@ -537,7 +586,6 @@ const ReviewsList = () => {
           </>
         )}
       </div>
-    </AdminLayout>
   );
 };
 

@@ -1,6 +1,5 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import AdminLayout from '../../components/admin/AdminLayout';
 import { uploadCabinImage, updateCabinImage, reorderCabinImages, deleteCabinImage, batchUpdateCabinImages } from '../../api/adminImages';
 import { reviewAPI } from '../../services/api';
 import axios from 'axios';
@@ -82,6 +81,9 @@ const CabinEdit = () => {
   const [unitCountInput, setUnitCountInput] = useState('');
   const [unitCountError, setUnitCountError] = useState('');
   const [unitsMessage, setUnitsMessage] = useState('');
+  const [preArrivalOpen, setPreArrivalOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const initialSnapshotRef = useRef(null);
   const normalizeUnit = useCallback((unit) => ({
     _id: unit?._id || null,
     id: unit?._id || `local-${Math.random().toString(36).slice(2, 8)}-${Date.now()}`,
@@ -517,6 +519,54 @@ const CabinEdit = () => {
     fetchCabin();
   }, [id, navigate, isNew, normalizeUnit, sortUnits]);
 
+  const buildSnapshot = useCallback(() => {
+    // Keep only values that affect save payload (used for dirty state + discard).
+    return {
+      formData,
+      inventoryType,
+      units,
+      multiUnitConfig,
+      blockedDatesText,
+      packingListText,
+      highlightsText
+    };
+  }, [formData, inventoryType, units, multiUnitConfig, blockedDatesText, packingListText, highlightsText]);
+
+  // Capture initial state after load (so long forms have reliable "dirty" tracking).
+  useEffect(() => {
+    if (isNew) return;
+    if (!cabin?._id) return;
+    if (initialSnapshotRef.current) return;
+    initialSnapshotRef.current = buildSnapshot();
+  }, [isNew, cabin?._id, buildSnapshot]);
+
+  const isDirty = useMemo(() => {
+    if (!initialSnapshotRef.current) return false;
+    try {
+      return JSON.stringify(buildSnapshot()) !== JSON.stringify(initialSnapshotRef.current);
+    } catch {
+      return false;
+    }
+  }, [buildSnapshot]);
+
+  const discardChanges = useCallback(() => {
+    const snap = initialSnapshotRef.current;
+    if (!snap) return;
+    setFormData(snap.formData);
+    setInventoryType(snap.inventoryType);
+    setUnits(snap.units);
+    setMultiUnitConfig(snap.multiUnitConfig);
+    setBlockedDatesText(snap.blockedDatesText);
+    setPackingListText(snap.packingListText);
+    setHighlightsText(snap.highlightsText);
+    setSaveMessage('');
+    setError('');
+    setFieldErrors({});
+    setUnitsError('');
+    setUnitFormErrors({});
+    setInventoryTypeError('');
+  }, []);
+
   useEffect(() => {
     if (multiUnitEnabled !== null) return;
     let cancelled = false;
@@ -894,84 +944,139 @@ const CabinEdit = () => {
 
   // Images tab component
   const ImagesTab = () => {
-    return (
-      <div className="space-y-4">
-        {/* Upload Section */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Upload Image
-          </label>
-          <input 
-            type="file" 
-            accept="image/*" 
-            onChange={handleImageUpload}
-            className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-[#81887A] file:text-white hover:file:bg-[#707668]"
-          />
-        </div>
+    const uploadInputRef = useRef(null);
+    const [expandedImageId, setExpandedImageId] = useState(null);
 
-        {/* Filters and Bulk Actions */}
-        <div className="flex flex-wrap items-center gap-3 pb-4 border-b">
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-700">Filter:</label>
-            <select
-              value={spaceFilter}
-              onChange={(e) => setSpaceFilter(e.target.value)}
-              className="border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:ring-[#81887A] focus:border-[#81887A]"
+    const selectedCount = selectedImages.size;
+    const canBulkSetCover = selectedCount === 1;
+
+    const handleClearSelection = () => setSelectedImages(new Set());
+
+    const handleBulkDelete = async () => {
+      if (selectedImages.size === 0) return;
+      // Delete sequentially to keep behavior predictable and reuse existing endpoints.
+      for (const imageId of Array.from(selectedImages)) {
+        // eslint-disable-next-line no-await-in-loop
+        await handleRemoveImage(imageId);
+      }
+      handleClearSelection();
+    };
+
+    const handleBulkSetCover = async () => {
+      if (!canBulkSetCover) return;
+      const [imageId] = Array.from(selectedImages);
+      await handleSetCover(imageId);
+      handleClearSelection();
+    };
+
+    return (
+      <div className="space-y-5">
+        {/* Top bar */}
+        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              ref={uploadInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleImageUpload}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => uploadInputRef.current?.click()}
+              className="inline-flex items-center px-4 py-2.5 text-sm font-medium text-white bg-[#81887A] rounded-lg hover:bg-[#707668] focus:outline-none focus:ring-2 focus:ring-[#81887A]/30 focus:ring-offset-2 transition-colors"
             >
-              <option value="all">All ({images.length})</option>
-              <option value="unassigned">Unassigned ({images.filter(img => !getPrimaryTag(img)).length})</option>
-              {SPACE_TAGS.map(tag => {
-                const count = images.filter(img => getPrimaryTag(img) === tag.value).length;
-                if (count === 0) return null;
-                return (
-                  <option key={tag.value} value={tag.value}>
-                    {tag.label} ({count})
-                  </option>
-                );
-              })}
-            </select>
+              Upload
+            </button>
+
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-medium text-gray-500">Filter</label>
+              <select
+                value={spaceFilter}
+                onChange={(e) => setSpaceFilter(e.target.value)}
+                className="px-3 py-2.5 text-sm border border-gray-200 rounded-lg bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A] transition-colors"
+              >
+                <option value="all">All ({images.length})</option>
+                <option value="unassigned">Unassigned ({images.filter(img => !getPrimaryTag(img)).length})</option>
+                {SPACE_TAGS.map(tag => {
+                  const count = images.filter(img => getPrimaryTag(img) === tag.value).length;
+                  if (count === 0) return null;
+                  return (
+                    <option key={tag.value} value={tag.value}>
+                      {tag.label} ({count})
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 ml-auto">
+          <div className="flex flex-wrap items-center gap-2">
             <button
+              type="button"
               onClick={handleSelectAll}
-              className="px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
+              className="inline-flex items-center px-3.5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
             >
-              {selectedImages.size === filteredImages.length ? 'Deselect All' : 'Select All'}
+              {selectedImages.size === filteredImages.length ? 'Deselect all' : 'Select all'}
             </button>
-            {selectedImages.size > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-600">{selectedImages.size} selected</span>
-                <div className="flex gap-1">
-                  <select
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        handleBulkTag(e.target.value);
-                        e.target.value = '';
-                      }
-                    }}
-                    className="border border-gray-300 rounded-md px-2 py-1 text-xs focus:ring-[#81887A] focus:border-[#81887A]"
-                    defaultValue=""
-                  >
-                    <option value="">Tag selected...</option>
-                    {SPACE_TAGS.map(tag => (
-                      <option key={tag.value} value={tag.value}>{tag.label}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+
+            {selectedCount > 0 && (
+              <>
+                <span className="text-sm text-gray-600 tabular-nums">{selectedCount} selected</span>
+                <select
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      handleBulkTag(e.target.value);
+                      e.target.value = '';
+                    }
+                  }}
+                  className="px-3 py-2.5 text-sm border border-gray-200 rounded-lg bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A] transition-colors"
+                  defaultValue=""
+                >
+                  <option value="">Set space…</option>
+                  {SPACE_TAGS.map(tag => (
+                    <option key={tag.value} value={tag.value}>{tag.label}</option>
+                  ))}
+                </select>
+
+                <button
+                  type="button"
+                  disabled={!canBulkSetCover}
+                  onClick={handleBulkSetCover}
+                  className="inline-flex items-center px-3.5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title={!canBulkSetCover ? 'Select exactly one image to set as cover' : undefined}
+                >
+                  Set as cover
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBulkDelete}
+                  className="inline-flex items-center px-3.5 py-2.5 text-sm font-medium text-red-700 bg-white border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
+                >
+                  Delete selected
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearSelection}
+                  className="inline-flex items-center px-3.5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
+                >
+                  Clear selection
+                </button>
+              </>
             )}
           </div>
         </div>
-      
-        {/* Image Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {filteredImages.map((img, idx) => {
+
+        {/* Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+          {filteredImages.map((img) => {
             const isSelected = selectedImages.has(img._id);
             const primaryTag = getPrimaryTag(img);
+            const isExpanded = expandedImageId === img._id;
+            const spaceLabel = primaryTag ? (SPACE_TAGS.find(t => t.value === primaryTag)?.label || primaryTag) : 'Unassigned';
             return (
-              <div 
-                key={img._id} 
+              <div
+                key={img._id}
                 draggable
                 onDragStart={e => {
                   const globalIdx = images.findIndex(i => i._id === img._id);
@@ -982,14 +1087,13 @@ const CabinEdit = () => {
                   const fromIdx = Number(e.dataTransfer.getData('text/plain'));
                   const fromImg = images[fromIdx];
                   const toIdx = images.findIndex(i => i._id === img._id);
-                  
+
                   const newItems = images.slice();
                   newItems.splice(fromIdx, 1);
                   newItems.splice(toIdx, 0, fromImg);
-                  
-                  // Reindex sort
-                  const order = newItems.map((it, i) => ({ 
-                    imageId: it._id, 
+
+                  const order = newItems.map((it, i) => ({
+                    imageId: it._id,
                     sort: i,
                     spaceOrder: it.spaceOrder || 0
                   }));
@@ -997,70 +1101,90 @@ const CabinEdit = () => {
                   await handleDragEnd(order);
                 }}
                 onDragOver={e => e.preventDefault()}
-                className={`border rounded p-2 hover:shadow-md transition-shadow ${isSelected ? 'ring-2 ring-[#81887A] bg-[#81887A]/5' : ''}`}
+                className={`rounded-xl border border-gray-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden ${
+                  isSelected ? 'ring-2 ring-[#81887A]/40' : ''
+                }`}
               >
-                {/* Checkbox */}
                 <div className="relative">
-                  <input
-                    type="checkbox"
-                    checked={isSelected}
-                    onChange={() => handleToggleSelect(img._id)}
-                    className="absolute top-2 left-2 w-5 h-5 z-10 cursor-pointer"
-                  />
-                  <img src={img.url} alt={img.alt || ''} className="w-full h-32 object-cover rounded" />
-                </div>
-                
-                <div className="mt-2 text-sm">
-                  {/* Space Tag */}
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
-                    Space
-                    <select
-                      value={primaryTag || ''}
-                      onChange={(e) => {
-                        const newTags = e.target.value ? [e.target.value] : [];
-                        handleUpdateTag(img._id, newTags);
-                      }}
-                      className="w-full border px-2 py-1 rounded text-xs mt-1"
-                    >
-                      <option value="">Unassigned</option>
-                      {SPACE_TAGS.map(tag => (
-                        <option key={tag.value} value={tag.value}>{tag.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                  
-                  {/* Alt Text */}
-                  <label className="block text-xs font-medium text-gray-700">
-                    Alt Text
+                  <img src={img.url} alt={img.alt || ''} className="w-full h-28 sm:h-36 object-cover" />
+                  <label className="absolute top-2 left-2 inline-flex items-center justify-center w-6 h-6 rounded-md bg-white/90 border border-gray-200 shadow-sm">
                     <input
-                      className="w-full border px-2 py-1 rounded text-xs mt-1"
-                      defaultValue={img.alt}
-                      onBlur={e => handleChangeAlt(img._id, e.target.value)}
-                      placeholder="Image description"
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => handleToggleSelect(img._id)}
+                      className="w-4 h-4"
                     />
                   </label>
-                  
-                  {/* Actions */}
-                  <div className="flex gap-2 mt-2">
+                  {img.isCover && (
+                    <div className="absolute top-2 right-2 text-[11px] font-medium px-2 py-1 rounded-full bg-[#81887A] text-white shadow-sm">
+                      Cover
+                    </div>
+                  )}
+                </div>
+
+                <div className="px-3 py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium text-gray-700 truncate">{spaceLabel}</div>
+                      <div className="mt-1 text-xs text-gray-500 truncate">
+                        {img.alt ? `Alt: ${img.alt}` : 'Alt: —'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
                     {!img.isCover && (
-                      <button 
-                        className="px-2 py-1 border rounded text-xs hover:bg-gray-50" 
+                      <button
+                        type="button"
                         onClick={() => handleSetCover(img._id)}
+                        className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
                       >
-                        Set as cover
+                        Set cover
                       </button>
                     )}
-                    <button 
-                      className="px-2 py-1 border rounded text-xs text-red-600 hover:bg-red-50" 
+                    <button
+                      type="button"
+                      onClick={() => setExpandedImageId((cur) => (cur === img._id ? null : img._id))}
+                      className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
+                    >
+                      {isExpanded ? 'Hide metadata' : 'Edit metadata'}
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => handleRemoveImage(img._id)}
+                      className="px-3 py-1.5 text-xs font-medium text-red-700 bg-white border border-red-200 rounded-lg hover:bg-red-50"
                     >
                       Delete
                     </button>
                   </div>
-                  {img.isCover && <div className="mt-1 text-green-700 text-xs font-medium">Cover Image</div>}
-                  {primaryTag && (
-                    <div className="mt-1 text-xs text-gray-500">
-                      {SPACE_TAGS.find(t => t.value === primaryTag)?.label || primaryTag}
+
+                  {isExpanded && (
+                    <div className="mt-3 pt-3 border-t border-gray-100 space-y-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-2">Space</label>
+                        <select
+                          value={primaryTag || ''}
+                          onChange={(e) => {
+                            const newTags = e.target.value ? [e.target.value] : [];
+                            handleUpdateTag(img._id, newTags);
+                          }}
+                          className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A] transition-colors"
+                        >
+                          <option value="">Unassigned</option>
+                          {SPACE_TAGS.map(tag => (
+                            <option key={tag.value} value={tag.value}>{tag.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-2">Alt text</label>
+                        <input
+                          className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-lg bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A] transition-colors placeholder:text-gray-400"
+                          defaultValue={img.alt}
+                          onBlur={e => handleChangeAlt(img._id, e.target.value)}
+                          placeholder="Short description for accessibility"
+                        />
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1241,6 +1365,7 @@ const CabinEdit = () => {
           }
         } else {
           setCabin(data.data.cabin);
+          initialSnapshotRef.current = buildSnapshot();
           setSaveMessage('Cabin updated successfully');
           setTimeout(() => setSaveMessage(''), 3000);
         }
@@ -1298,64 +1423,52 @@ const CabinEdit = () => {
 
   if (loading) {
     return (
-      <AdminLayout>
-        <div className="px-4 sm:px-0">
-          <div className="flex items-center justify-center h-64">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#81887A] mx-auto"></div>
-              <p className="mt-2 text-sm text-gray-600">Loading cabin...</p>
-            </div>
+      <div className="px-4 sm:px-0">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#81887A] mx-auto"></div>
+            <p className="mt-2 text-sm text-gray-600">Loading cabin...</p>
           </div>
         </div>
-      </AdminLayout>
+      </div>
     );
   }
 
   if (error && !cabin) {
     return (
-      <AdminLayout>
-        <div className="px-4 sm:px-0">
-          <div className="rounded-md bg-red-50 p-4">
-            <div className="text-sm text-red-700">{error}</div>
-          </div>
+      <div className="px-4 sm:px-0">
+        <div className="rounded-md bg-red-50 p-4">
+          <div className="text-sm text-red-700">{error}</div>
         </div>
-      </AdminLayout>
+      </div>
     );
   }
 
   return (
-    <AdminLayout>
-      <div className="px-4 sm:px-0">
-        <div className="sm:flex sm:items-center">
-          <div className="sm:flex-auto">
+    <div className="px-4 sm:px-0 pb-28">
+        <header className="mb-8">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <button
+              type="button"
               onClick={() => navigate('/admin/cabins')}
-              className="mb-4 text-sm text-gray-500 hover:text-gray-700"
+              className="text-sm text-gray-500 hover:text-gray-800"
             >
               ← Back to Cabins
             </button>
-            <h1 className="text-2xl font-playfair font-bold text-gray-900">
+          </div>
+
+          <div className="mt-4">
+            <h1 className="text-xl font-semibold tracking-tight text-gray-900">
               {isNew ? 'New Cabin' : 'Edit Cabin'}
             </h1>
-            <p className="mt-2 text-sm text-gray-700">
-              {isNew ? 'Create a new cabin listing and configure its booking details.' : (cabin?.name || 'Loading...')}
+            <p className="mt-0.5 text-sm text-gray-500">
+              {isNew ? 'Create a new cabin listing and configure its booking details.' : `${formData.location || 'No location'} · ${inventoryType === 'multi' ? 'Multi-unit' : 'Single unit'}`}
             </p>
+            {saveMessage && (
+              <p className="mt-2 text-xs text-green-700">{saveMessage}</p>
+            )}
           </div>
-          <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-[#81887A] hover:bg-[#707668] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#81887A] disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {saving ? 'Saving...' : (isNew ? 'Create cabin' : 'Save changes')}
-              </button>
-              {saveMessage && (
-                <span className="text-sm text-green-600">{saveMessage}</span>
-              )}
-            </div>
-          </div>
-        </div>
+        </header>
 
         {error && (
           <div className="mt-4 rounded-md bg-red-50 p-4">
@@ -1365,63 +1478,55 @@ const CabinEdit = () => {
 
         {/* Tab Navigation */}
         {tabConfig.length > 1 && (
-          <div className="mt-8">
-            <div className="border-b border-gray-200">
-              <nav className="-mb-px flex space-x-8">
-                {tabConfig.map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => handleTabClick(tab)}
-                    className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                      activeTab === tab
-                        ? 'border-[#81887A] text-[#81887A]'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    }`}
-                  >
-                    {getTabLabel(tab)}
-                  </button>
-                ))}
-              </nav>
-            </div>
+          <div className="mb-6">
+            <nav className="flex gap-1 border-b border-gray-200 overflow-x-auto [-webkit-overflow-scrolling:touch]">
+              {tabConfig.map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => handleTabClick(tab)}
+                  className={`py-3 px-4 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                    activeTab === tab
+                      ? 'border-[#81887A] text-[#81887A]'
+                      : 'border-transparent text-gray-500 hover:text-gray-800'
+                  }`}
+                >
+                  {getTabLabel(tab)}
+                </button>
+              ))}
+            </nav>
           </div>
         )}
 
         {/* Tab Content */}
         {activeTab === 'images' ? (
-          <div className="mt-8 bg-white shadow overflow-hidden sm:rounded-lg">
-            <div className="px-4 py-5 sm:px-6">
-              <h3 className="text-lg leading-6 font-medium text-gray-900">
-                Cabin Images
-              </h3>
-              <p className="mt-1 text-sm text-gray-500">
-                Upload and manage images for this cabin. The first image will be used as the cover image.
+          <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+            <div className="px-4 sm:px-6 py-5">
+              <h3 className="text-sm font-semibold text-gray-900">Cabin Images</h3>
+              <p className="mt-0.5 text-sm text-gray-500">
+                Upload and manage images. The first image is the cover.
               </p>
             </div>
-            <div className="border-t border-gray-200 px-4 py-5 sm:px-6">
+            <div className="border-t border-gray-100 px-4 sm:px-6 py-5">
               <ImagesTab />
             </div>
           </div>
         ) : activeTab === 'reviews' ? (
-          <div className="mt-8 bg-white shadow overflow-hidden sm:rounded-lg">
-            <div className="px-4 py-5 sm:px-6 sm:flex sm:items-center sm:justify-between">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+            <div className="px-6 py-5 sm:flex sm:items-center sm:justify-between">
               <div>
-                <h3 className="text-lg leading-6 font-medium text-gray-900">
-                  Cabin Reviews
-                </h3>
-                <p className="mt-1 text-sm text-gray-500">
-                  View and manage reviews for this cabin. Average rating: {cabin?.averageRating ? `${cabin.averageRating.toFixed(1)}` : 'N/A'} ({cabin?.reviewsCount || 0} reviews)
+                <h3 className="text-sm font-semibold text-gray-900">Cabin Reviews</h3>
+                <p className="mt-0.5 text-sm text-gray-500">
+                  {cabin?.averageRating ? `${cabin.averageRating.toFixed(1)} avg` : 'N/A'} · {cabin?.reviewsCount || 0} reviews
                 </p>
               </div>
-              <div className="mt-4 sm:mt-0">
-                <button
-                  onClick={() => navigate(`/admin/reviews?cabinId=${id}`)}
-                  className="bg-[#81887A] text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-[#707668]"
-                >
-                  Manage All Reviews
-                </button>
-              </div>
+              <button
+                onClick={() => navigate(`/admin/reviews?cabinId=${id}`)}
+                className="mt-4 sm:mt-0 inline-flex items-center px-4 py-2.5 text-sm font-medium text-white bg-[#81887A] rounded-lg hover:bg-[#707668] shrink-0"
+              >
+                Manage All Reviews
+              </button>
             </div>
-            <div className="border-t border-gray-200 px-4 py-5 sm:px-6">
+            <div className="border-t border-gray-100 px-6 py-5">
               {reviewsLoading ? (
                 <div className="text-center py-8">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#81887A] mx-auto"></div>
@@ -1498,15 +1603,14 @@ const CabinEdit = () => {
           </div>
         ) : (
           <>
-          <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Left Column - Base Fields */}
-          <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-            <div className="px-4 py-5 sm:px-6">
-              <h3 className="text-lg leading-6 font-medium text-gray-900">
-                Basic Information
-              </h3>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          <div className="lg:col-span-2 space-y-6">
+          {/* Section A: Basic listing */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+            <div className="px-6 py-5">
+              <h3 className="text-sm font-semibold text-gray-900">Basic listing</h3>
             </div>
-            <div className="border-t border-gray-200 px-4 py-5 sm:px-6 space-y-4">
+            <div className="border-t border-gray-100 px-6 py-5 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700">
                   Cabin type
@@ -1567,18 +1671,33 @@ const CabinEdit = () => {
                 )}
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Name</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => handleInputChange('name', e.target.value)}
-                  className={getInputClasses('name')}
-                  required
-                />
-                {fieldErrors.name && (
-                  <p className="mt-1 text-sm text-red-600">{fieldErrors.name}</p>
-                )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Name</label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => handleInputChange('name', e.target.value)}
+                    className={getInputClasses('name')}
+                    required
+                  />
+                  {fieldErrors.name && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.name}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Location</label>
+                  <input
+                    type="text"
+                    value={formData.location}
+                    onChange={(e) => handleInputChange('location', e.target.value)}
+                    className={getInputClasses('location')}
+                    required
+                  />
+                  {fieldErrors.location && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.location}</p>
+                  )}
+                </div>
               </div>
 
               <div>
@@ -1595,33 +1714,18 @@ const CabinEdit = () => {
                   <p className="mt-1 text-sm text-red-600">{fieldErrors.description}</p>
                 )}
               </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Location</label>
-                <input
-                  type="text"
-                  value={formData.location}
-                  onChange={(e) => handleInputChange('location', e.target.value)}
-                  className={getInputClasses('location')}
-                  required
-                />
-                {fieldErrors.location && (
-                  <p className="mt-1 text-sm text-red-600">{fieldErrors.location}</p>
-                )}
-              </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Host Name</label>
-                <input
-                  type="text"
-                  value={formData.hostName}
-                  onChange={(e) => handleInputChange('hostName', e.target.value)}
-                  className={getInputClasses('hostName')}
-                  placeholder="Drift & Dwells"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Host name</label>
+                  <input
+                    type="text"
+                    value={formData.hostName}
+                    onChange={(e) => handleInputChange('hostName', e.target.value)}
+                    className={getInputClasses('hostName')}
+                    placeholder="Drift & Dwells"
+                  />
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
                     {inventoryType === 'multi' ? 'Capacity per unit' : 'Capacity'}
@@ -1638,11 +1742,22 @@ const CabinEdit = () => {
                     <p className="mt-1 text-sm text-red-600">{fieldErrors.capacity}</p>
                   )}
                 </div>
-                
+              </div>
+            </div>
+          </div>
+
+          {/* Section B: Pricing & stay rules */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+            <div className="px-6 py-5">
+              <h3 className="text-sm font-semibold text-gray-900">Pricing & stay rules</h3>
+              <p className="mt-0.5 text-sm text-gray-500">Commercial basics for booking.</p>
+            </div>
+            <div className="border-t border-gray-100 px-6 py-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  {inventoryType === 'multi' ? 'Base price per night per unit (€)' : 'Price per Night (€)'}
-                </label>
+                  <label className="block text-sm font-medium text-gray-700">
+                    {inventoryType === 'multi' ? 'Base price per night per unit (€)' : 'Price per night (€)'}
+                  </label>
                   <input
                     type="number"
                     min="0"
@@ -1656,30 +1771,28 @@ const CabinEdit = () => {
                     <p className="mt-1 text-sm text-red-600">{fieldErrors.pricePerNight}</p>
                   )}
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    {inventoryType === 'multi' ? 'Minimum nights (per booking)' : 'Minimum nights'}
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={formData.minNights}
+                    onChange={(e) => handleInputChange('minNights', parseInt(e.target.value) || 1)}
+                    className={getInputClasses('minNights')}
+                    required
+                  />
+                  {fieldErrors.minNights && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.minNights}</p>
+                  )}
+                </div>
               </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  {inventoryType === 'multi' ? 'Minimum nights (per booking)' : 'Minimum Nights'}
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={formData.minNights}
-                  onChange={(e) => handleInputChange('minNights', parseInt(e.target.value) || 1)}
-                  className={getInputClasses('minNights')}
-                  required
-                />
-                {fieldErrors.minNights && (
-                  <p className="mt-1 text-sm text-red-600">{fieldErrors.minNights}</p>
-                )}
-              </div>
-
             </div>
           </div>
 
         {inventoryType === 'multi' && (
-          <div className="mt-8 lg:col-span-2 bg-white shadow overflow-hidden sm:rounded-lg">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
             <div className="px-4 py-5 sm:px-6 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
               <div>
                 <h3 className="text-lg leading-6 font-medium text-gray-900">Units & inventory</h3>
@@ -1709,7 +1822,7 @@ const CabinEdit = () => {
                 </button>
               </div>
             </div>
-            <div className="border-t border-gray-200 px-4 py-5 sm:px-6 space-y-6">
+            <div className="border-t border-gray-100 px-6 py-5 space-y-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700">
                   Number of units
@@ -1910,12 +2023,12 @@ const CabinEdit = () => {
         )}
 
           {/* Highlights */}
-          <div className="mt-8 bg-white shadow overflow-hidden sm:rounded-lg">
-            <div className="px-4 py-5 sm:px-6">
-              <h3 className="text-lg leading-6 font-medium text-gray-900">Why you'll love it</h3>
+          <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+            <div className="px-6 py-5">
+              <h3 className="text-sm font-semibold text-gray-900">Why you'll love it</h3>
               <p className="mt-1 text-sm text-gray-500">Enter up to 5 highlights (one per line, max 100 chars each). These appear as bullets on the public page.</p>
             </div>
-            <div className="border-t border-gray-200 px-4 py-5 sm:px-6">
+            <div className="border-t border-gray-100 px-6 py-5">
               <textarea
                 rows={5}
                 value={highlightsText}
@@ -1929,70 +2042,80 @@ const CabinEdit = () => {
             </div>
           </div>
 
-          {/* Response Time */}
-          <div className="mt-8 bg-white shadow overflow-hidden sm:rounded-lg">
-            <div className="px-4 py-5 sm:px-6">
-              <h3 className="text-lg leading-6 font-medium text-gray-900">Average Response Time</h3>
-              <p className="mt-1 text-sm text-gray-500">Average response time in hours (e.g., 1.5 for 1–2 hours). Leave empty for default.</p>
-            </div>
-            <div className="border-t border-gray-200 px-4 py-5 sm:px-6">
-              <input
-                type="number"
-                min="0"
-                step="0.1"
-                value={formData.avgResponseTimeHours}
-                onChange={(e) => handleInputChange('avgResponseTimeHours', e.target.value)}
-                className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-[#81887A] focus:border-[#81887A] sm:text-sm"
-                placeholder="1.5"
-              />
-            </div>
-          </div>
+          {/* Advanced settings (collapsed by default) */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setAdvancedOpen((v) => !v)}
+              className="w-full px-6 py-5 flex items-center justify-between text-left"
+            >
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900">Advanced settings</h3>
+                <p className="mt-0.5 text-sm text-gray-500">Low-frequency admin fields.</p>
+              </div>
+              <span className="text-sm text-gray-500">{advancedOpen ? 'Hide' : 'Show'}</span>
+            </button>
+            {advancedOpen && (
+              <div className="border-t border-gray-100 px-6 py-5 space-y-6">
+                <div>
+                  <h4 className="text-sm font-medium text-gray-900">Average response time (hours)</h4>
+                  <p className="mt-0.5 text-sm text-gray-500">Optional. Leave empty for default.</p>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={formData.avgResponseTimeHours}
+                    onChange={(e) => handleInputChange('avgResponseTimeHours', e.target.value)}
+                    className="mt-2 block w-full border border-gray-200 rounded-lg bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A] text-sm px-3.5 py-2.5"
+                    placeholder="1.5"
+                  />
+                </div>
 
-          {/* Geo Location */}
-          <div className="mt-8 bg-white shadow overflow-hidden sm:rounded-lg">
-            <div className="px-4 py-5 sm:px-6">
-              <h3 className="text-lg leading-6 font-medium text-gray-900">Map Coordinates</h3>
-              <p className="mt-1 text-sm text-gray-500">Optional: Precise coordinates for map display. Leave empty to use a placeholder.</p>
-            </div>
-            <div className="border-t border-gray-200 px-4 py-5 sm:px-6 grid grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Latitude</label>
-                <input
-                  type="number"
-                  step="any"
-                  value={formData.geoLocation?.latitude || ''}
-                  onChange={(e) => handleGeoLocationChange('latitude', e.target.value)}
-                  className={getInputClasses('geoLocation.latitude')}
-                  placeholder="42.1234"
-                />
+                <div>
+                  <h4 className="text-sm font-medium text-gray-900">Map coordinates</h4>
+                  <p className="mt-0.5 text-sm text-gray-500">Optional precise coordinates for map display.</p>
+                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-2">Latitude</label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={formData.geoLocation?.latitude || ''}
+                        onChange={(e) => handleGeoLocationChange('latitude', e.target.value)}
+                        className={getInputClasses('geoLocation.latitude')}
+                        placeholder="42.1234"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-2">Longitude</label>
+                      <input
+                        type="number"
+                        step="any"
+                        value={formData.geoLocation?.longitude || ''}
+                        onChange={(e) => handleGeoLocationChange('longitude', e.target.value)}
+                        className={getInputClasses('geoLocation.longitude')}
+                        placeholder="23.5678"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-2">Zoom</label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="20"
+                        value={formData.geoLocation?.zoom || 11}
+                        onChange={(e) => handleGeoLocationChange('zoom', e.target.value)}
+                        className={getInputClasses('geoLocation.zoom')}
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Longitude</label>
-                <input
-                  type="number"
-                  step="any"
-                  value={formData.geoLocation?.longitude || ''}
-                  onChange={(e) => handleGeoLocationChange('longitude', e.target.value)}
-                  className={getInputClasses('geoLocation.longitude')}
-                  placeholder="23.5678"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Zoom</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="20"
-                  value={formData.geoLocation?.zoom || 11}
-                  onChange={(e) => handleGeoLocationChange('zoom', e.target.value)}
-                  className={getInputClasses('geoLocation.zoom')}
-                />
-              </div>
-            </div>
+            )}
           </div>
 
           {/* Experiences */}
-          <div className="mt-8 bg-white shadow overflow-hidden sm:rounded-lg">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
             <div className="px-4 py-5 sm:px-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -2008,7 +2131,7 @@ const CabinEdit = () => {
                 </button>
               </div>
             </div>
-            <div className="border-t border-gray-200 px-4 py-5 sm:px-6 space-y-4">
+            <div className="border-t border-gray-100 px-6 py-5 space-y-4">
               {formData.experiences.length === 0 ? (
                 <p className="text-sm text-gray-500">No experiences added. Click "+ Add Experience" to create one.</p>
               ) : (
@@ -2101,12 +2224,12 @@ const CabinEdit = () => {
           </div>
 
           {/* Badges */}
-          <div className="mt-8 bg-white shadow overflow-hidden sm:rounded-lg">
-            <div className="px-4 py-5 sm:px-6">
-              <h3 className="text-lg leading-6 font-medium text-gray-900">Badges</h3>
-              <p className="mt-1 text-sm text-gray-500">Toggle brand badges and set the label text.</p>
+          <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+            <div className="px-6 py-5">
+              <h3 className="text-sm font-semibold text-gray-900">Badges</h3>
+              <p className="mt-0.5 text-sm text-gray-500">Toggle brand badges and set the label text.</p>
             </div>
-            <div className="border-t border-gray-200 px-4 py-5 sm:p-6 grid sm:grid-cols-2 gap-6">
+            <div className="border-t border-gray-100 px-6 py-5 grid sm:grid-cols-2 gap-6">
               {/* Superhost */}
               <div>
                 <label className="flex items-center gap-3">
@@ -2169,20 +2292,18 @@ const CabinEdit = () => {
             </div>
           </div>
 
-          {/* Right Column - Transport Options */}
-          <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-            <div className="px-4 py-5 sm:px-6 flex justify-between items-center">
-              <h3 className="text-lg leading-6 font-medium text-gray-900">
-                Transport Options
-              </h3>
+          {/* Transport Options */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+            <div className="px-6 py-5 flex justify-between items-center">
+              <h3 className="text-sm font-semibold text-gray-900">Transport Options</h3>
               <button
                 onClick={addTransportOption}
-                className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#81887A]"
+                className="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
               >
                 Add Option
               </button>
             </div>
-            <div className="border-t border-gray-200 px-4 py-5 sm:px-6">
+            <div className="border-t border-gray-100 px-6 py-5">
               {formData.transportOptions.length === 0 ? (
                 <p className="text-sm text-gray-500">No transport options configured.</p>
               ) : (
@@ -2266,7 +2387,7 @@ const CabinEdit = () => {
         </div>
 
         {/* Blocked Dates */}
-        <div className="mt-8 bg-white shadow overflow-hidden sm:rounded-lg">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
           <div className="px-4 py-5 sm:px-6">
             <h3 className="text-lg leading-6 font-medium text-gray-900">
               Blocked Dates
@@ -2294,21 +2415,27 @@ const CabinEdit = () => {
           </div>
                 </div>
         
-                {/* Pre-Arrival Guidance */}
-                <div className="mt-8 bg-white shadow overflow-hidden sm:rounded-lg">
-          <div className="px-4 py-5 sm:px-6">
-            <h3 className="text-lg leading-6 font-medium text-gray-900">
-              Pre-Arrival Guidance
-            </h3>
-            <p className="mt-1 text-sm text-gray-500">
-              Information to help guests prepare for their stay
-            </p>
-          </div>
-          <div className="border-t border-gray-200 px-4 py-5 sm:px-6 space-y-6">
+                {/* Pre-Arrival Guidance (collapsed by default) */}
+                <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setPreArrivalOpen((v) => !v)}
+            className="w-full px-6 py-5 flex items-center justify-between text-left"
+          >
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">Pre-arrival guidance</h3>
+              <p className="mt-0.5 text-sm text-gray-500">
+                {formData.meetingPoint?.label ? `Meeting point: ${formData.meetingPoint.label}` : 'No meeting point set'} · {formData.arrivalWindowDefault ? `Arrival: ${formData.arrivalWindowDefault}` : 'No arrival window'} · {formData.emergencyContact ? 'Emergency contact set' : 'No emergency contact'}
+              </p>
+            </div>
+            <span className="text-sm text-gray-500">{preArrivalOpen ? 'Hide' : 'Show'}</span>
+          </button>
+          {preArrivalOpen && (
+          <div className="border-t border-gray-100 px-6 py-5 space-y-6">
             
             {/* Meeting Point */}
             <div>
-              <h4 className="text-md font-medium text-gray-900 mb-4">Meeting Point</h4>
+              <h4 className="text-sm font-medium text-gray-900 mb-3">Arrival location</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Label</label>
@@ -2369,7 +2496,7 @@ const CabinEdit = () => {
         
             {/* Packing List */}
             <div>
-              <h4 className="text-md font-medium text-gray-900 mb-4">Packing List</h4>
+              <h4 className="text-sm font-medium text-gray-900 mb-3">What guests should bring</h4>
               <textarea
                 value={packingListText}
                 onChange={(e) => handlePackingListChange(e.target.value)}
@@ -2385,7 +2512,7 @@ const CabinEdit = () => {
             {/* Arrival Guide & Safety */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <h4 className="text-md font-medium text-gray-900 mb-4">Arrival Guide (PDF)</h4>
+                <h4 className="text-sm font-medium text-gray-900 mb-3">Arrival guide (PDF)</h4>
                 <input
                   type="url"
                   value={formData.arrivalGuideUrl}
@@ -2395,7 +2522,7 @@ const CabinEdit = () => {
                 />
               </div>
               <div>
-                <h4 className="text-md font-medium text-gray-900 mb-4">Emergency Contact</h4>
+                <h4 className="text-sm font-medium text-gray-900 mb-3">Emergency contact</h4>
                 <input
                   type="text"
                   value={formData.emergencyContact}
@@ -2408,7 +2535,7 @@ const CabinEdit = () => {
         
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <h4 className="text-md font-medium text-gray-900 mb-4">Default Arrival Window</h4>
+                <h4 className="text-sm font-medium text-gray-900 mb-3">Arrival timing</h4>
                 <input
                   type="text"
                   value={formData.arrivalWindowDefault}
@@ -2418,7 +2545,7 @@ const CabinEdit = () => {
                 />
               </div>
               <div>
-                <h4 className="text-md font-medium text-gray-900 mb-4">Safety & House Rules</h4>
+                <h4 className="text-sm font-medium text-gray-900 mb-3">Safety / house rules</h4>
                 <textarea
                   value={formData.safetyNotes}
                   onChange={(e) => handleInputChange('safetyNotes', e.target.value)}
@@ -2432,7 +2559,7 @@ const CabinEdit = () => {
             {/* Transport Cutoffs */}
             <div>
               <div className="flex justify-between items-center mb-4">
-                <h4 className="text-md font-medium text-gray-900">Transport Cutoffs</h4>
+                <h4 className="text-sm font-medium text-gray-900">Transport cutoffs</h4>
                 <button
                   onClick={addTransportCutoff}
                   className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#81887A]"
@@ -2474,11 +2601,160 @@ const CabinEdit = () => {
             </div>
         
           </div>
+          )}
         </div>
+
+          {/* Right column: overview + actions */}
+          <aside className="lg:col-span-1 space-y-6">
+            {/* Cabin summary */}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+              <div className="px-6 py-5">
+                <h3 className="text-sm font-semibold text-gray-900">Cabin summary</h3>
+              </div>
+              <div className="border-t border-gray-100 px-6 py-5 space-y-4">
+                {(() => {
+                  const cover = images.find((i) => i?.isCover) || images[0] || null;
+                  return (
+                    <div className="flex items-start gap-3">
+                      <div className="w-16 h-16 rounded-lg bg-gray-100 overflow-hidden flex-shrink-0">
+                        {cover?.url ? (
+                          <img src={cover.url} alt="" className="w-full h-full object-cover" />
+                        ) : null}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-gray-900 truncate">{formData.name || 'Untitled cabin'}</div>
+                        <div className="text-xs text-gray-500 truncate">{formData.location || 'No location'}</div>
+                        <div className="mt-2 text-xs text-gray-500 tabular-nums">
+                          {inventoryType === 'multi' ? 'Multi-unit' : 'Single unit'} · {formData.capacity || 0} cap
+                        </div>
+                        <div className="mt-1 text-xs text-gray-500 tabular-nums">
+                          €{Number(formData.pricePerNight || 0)} / night · {Number(formData.minNights || 1)} min nights
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* Status / completeness */}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+              <div className="px-6 py-5">
+                <h3 className="text-sm font-semibold text-gray-900">Completeness</h3>
+              </div>
+              <div className="border-t border-gray-100 px-6 py-5 space-y-2">
+                {(() => {
+                  const hasBasic = Boolean(formData.name && formData.location && formData.description && Number(formData.capacity) > 0);
+                  const hasPricing = Number(formData.pricePerNight) > 0 && Number(formData.minNights) > 0;
+                  const hasImages = images.length > 0;
+                  const hasCover = images.some((i) => i?.isCover);
+                  const hasTransport = (formData.transportOptions || []).length > 0;
+                  const hasArrival = Boolean(formData.meetingPoint?.label || formData.arrivalGuideUrl || formData.emergencyContact || formData.arrivalWindowDefault || packingListText?.trim());
+                  const items = [
+                    ['Basic info', hasBasic],
+                    ['Pricing', hasPricing],
+                    ['Images', hasImages],
+                    ['Cover set', hasCover],
+                    ['Transport', hasTransport],
+                    ['Arrival guidance', hasArrival]
+                  ];
+                  return (
+                    <ul className="space-y-1">
+                      {items.map(([label, ok]) => (
+                        <li key={label} className="flex items-center justify-between text-sm">
+                          <span className="text-gray-700">{label}</span>
+                          <span className={ok ? 'text-green-700' : 'text-gray-400'}>
+                            {ok ? 'Complete' : 'Missing'}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* Quick actions */}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+              <div className="px-6 py-5">
+                <h3 className="text-sm font-semibold text-gray-900">Quick actions</h3>
+              </div>
+              <div className="border-t border-gray-100 px-6 py-5 space-y-2">
+                <button
+                  type="button"
+                  onClick={() => window.open(`/cabin/${id}`, '_blank', 'noopener,noreferrer')}
+                  className="w-full text-left px-3 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
+                >
+                  Open public page
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('images')}
+                  className="w-full text-left px-3 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
+                >
+                  Go to Images
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('reviews')}
+                  className="w-full text-left px-3 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
+                >
+                  Go to Reviews
+                </button>
+              </div>
+            </div>
+
+            {/* Save state */}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+              <div className="px-6 py-5">
+                <h3 className="text-sm font-semibold text-gray-900">Save state</h3>
+              </div>
+              <div className="border-t border-gray-100 px-6 py-5">
+                <p className="text-sm text-gray-600">
+                  {isDirty ? 'Unsaved changes' : 'Saved'}
+                </p>
+                <p className="mt-1 text-xs text-gray-400">
+                  {saveMessage ? saveMessage : (isDirty ? 'Remember to save your changes.' : 'All changes are saved.')}
+                </p>
+              </div>
+            </div>
+          </aside>
+          </div>
+
+          {/* Sticky action bar (primary actions live here) */}
+          <div className="fixed bottom-0 left-0 right-0 z-50">
+            <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8">
+              <div className="bg-white/95 backdrop-blur border-t border-gray-200 shadow-[0_-8px_24px_rgba(0,0,0,0.06)] sm:rounded-t-xl px-3 sm:px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="text-sm text-gray-700">
+                  <span className="font-medium">{isDirty ? 'Unsaved changes' : 'Saved'}</span>
+                  <span className="hidden sm:inline text-gray-500 ml-2">
+                    {isDirty ? 'Your edits haven’t been saved yet.' : 'All changes are saved.'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    onClick={discardChanges}
+                    disabled={!isDirty}
+                    className="inline-flex justify-center items-center px-4 py-3 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full sm:w-auto"
+                  >
+                    Reset
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={saving || !isDirty}
+                    className="inline-flex justify-center items-center px-4 py-3 text-sm font-medium text-white bg-[#81887A] rounded-lg hover:bg-[#707668] focus:outline-none focus:ring-2 focus:ring-[#81887A]/30 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full sm:w-auto"
+                  >
+                    {saving ? 'Saving…' : 'Save changes'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </>
         )}
       </div>
-    </AdminLayout>
   );
 };
 

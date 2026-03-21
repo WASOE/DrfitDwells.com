@@ -4,6 +4,7 @@ const { adminAuth } = require('../middleware/adminAuth');
 const mongoose = require('mongoose');
 const Review = require('../models/Review');
 const Cabin = require('../models/Cabin');
+const { adminModuleWriteGate } = require('../middleware/adminModuleCutoverEnforcement');
 
 const router = express.Router();
 
@@ -151,7 +152,7 @@ router.post('/', [
   body('reviewHighlight').optional().trim().isLength({ max: 100 }),
   body('highlightType').optional().isIn(['LENGTH_OF_STAY', 'TYPE_OF_TRIP']),
   body('language').optional().trim().isLength({ max: 10 })
-], async (req, res) => {
+], adminModuleWriteGate('reviews_communications'), async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -311,7 +312,7 @@ router.patch('/:id', [
   body('status').optional().isIn(['approved', 'pending', 'hidden']),
   body('pinned').optional().isBoolean(),
   body('locked').optional().isBoolean()
-], async (req, res) => {
+], adminModuleWriteGate('reviews_communications'), async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -445,7 +446,7 @@ router.post('/bulk', [
   body('ids').isArray().withMessage('ids must be an array'),
   body('ids.*').isMongoId().withMessage('Each ID must be valid'),
   body('action').isIn(['approve', 'hide', 'pin', 'unpin', 'delete']).withMessage('Invalid action')
-], async (req, res) => {
+], adminModuleWriteGate('reviews_communications'), async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -519,7 +520,7 @@ router.post('/bulk', [
 });
 
 // POST /api/admin/reviews/recalc/:cabinId - Recalculate cabin stats
-router.post('/recalc/:cabinId', async (req, res) => {
+router.post('/recalc/:cabinId', adminModuleWriteGate('reviews_communications'), async (req, res) => {
   try {
     const { cabinId } = req.params;
 

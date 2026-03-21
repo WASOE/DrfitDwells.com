@@ -8,26 +8,27 @@ export default function AdminLayout() {
   const location = useLocation();
 
   useEffect(() => {
+    if (location.pathname === '/admin/login') {
+      setIsAuthenticated(true);
+      setLoading(false);
+      return;
+    }
+
+    const token = localStorage.getItem('adminToken');
+    if (!token) {
+      setIsAuthenticated(false);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
     const checkAuth = async () => {
-      if (location.pathname === '/admin/login') {
-        setIsAuthenticated(true);
-        setLoading(false);
-        return;
-      }
-
-      const token = localStorage.getItem('adminToken');
-      if (!token) {
-        setIsAuthenticated(false);
-        setLoading(false);
-        return;
-      }
-
       try {
         const response = await fetch('/api/admin/bookings', {
           method: 'HEAD',
           headers: { Authorization: `Bearer ${token}` }
         });
-
+        if (cancelled) return;
         if (response.ok) {
           setIsAuthenticated(true);
         } else {
@@ -35,14 +36,16 @@ export default function AdminLayout() {
           setIsAuthenticated(false);
         }
       } catch {
+        if (cancelled) return;
         localStorage.removeItem('adminToken');
         setIsAuthenticated(false);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     checkAuth();
+    return () => { cancelled = true; };
   }, [location.pathname]);
 
   const developerNavEnabled = useMemo(() => {
@@ -60,19 +63,24 @@ export default function AdminLayout() {
     navigate('/admin/login');
   };
 
+  useEffect(() => {
+    if (!loading && !isAuthenticated && location.pathname !== '/admin/login') {
+      navigate('/admin/login', { replace: true });
+    }
+  }, [loading, isAuthenticated, location.pathname, navigate]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#81887A] mx-auto" />
-          <p className="mt-2 text-sm text-gray-600">Loading...</p>
+          <div className="animate-spin rounded-full h-7 w-7 border-2 border-gray-200 border-t-[#81887A] mx-auto" />
+          <p className="mt-3 text-xs text-gray-500">Loading...</p>
         </div>
       </div>
     );
   }
 
   if (!isAuthenticated && location.pathname !== '/admin/login') {
-    navigate('/admin/login', { replace: true });
     return null;
   }
 
@@ -80,65 +88,62 @@ export default function AdminLayout() {
     return <Outlet />;
   }
 
+  const navLink = (path, label) => {
+    const isActive = location.pathname.startsWith(path);
+    return (
+      <a
+        href={path}
+        className={`py-3 px-4 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap ${
+          isActive
+            ? 'text-[#81887A] border-[#81887A]'
+            : 'border-transparent text-gray-500 hover:text-gray-800'
+        }`}
+      >
+        {label}
+      </a>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm border-b border-gray-200">
+      <header className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-[#81887A] rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-xs tracking-widest">D&D</span>
+          <div className="py-3">
+            {/* Mobile-safe header: brand + logout */}
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 bg-[#81887A] rounded-lg flex items-center justify-center shrink-0">
+                  <span className="text-white font-semibold text-[10px] tracking-widest">D&D</span>
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-gray-900 tracking-tight truncate">Admin</div>
+                  <div className="text-[11px] text-gray-400 tabular-nums hidden sm:block">
+                    {new Date().toLocaleDateString()}
+                  </div>
+                </div>
               </div>
-              <span className="text-lg font-bold text-gray-900 tracking-wider uppercase">Admin Panel</span>
-            </div>
-            <div className="flex items-center space-x-4">
-              <span className="text-sm text-gray-500">{new Date().toLocaleDateString()}</span>
-              <button onClick={handleLogout} className="text-sm text-gray-500 hover:text-gray-700 transition-colors">
+
+              <button
+                onClick={handleLogout}
+                className="text-sm text-gray-500 hover:text-gray-800 font-medium transition-colors px-3 py-2 rounded-md border border-gray-200 hover:bg-gray-50"
+              >
                 Logout
               </button>
+            </div>
+
+            {/* Nav: horizontal scroll on mobile, standard on desktop */}
+            <div className="mt-3 -mx-4 sm:mx-0">
+              <nav className="flex items-center gap-1 overflow-x-auto px-4 sm:px-0 border-b border-gray-200 [-webkit-overflow-scrolling:touch]">
+                {navLink('/admin/bookings', 'Bookings')}
+                {navLink('/admin/cabins', 'Cabins')}
+                {navLink('/admin/reviews', 'Reviews')}
+                {developerNavEnabled && navLink('/admin/cabin-types', 'Cabin types')}
+              </nav>
             </div>
           </div>
         </div>
       </header>
-      <nav className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex space-x-8">
-            <a
-              href="/admin/bookings"
-              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                location.pathname.startsWith('/admin/bookings')
-                  ? 'border-[#81887A] text-[#81887A]'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              Bookings
-            </a>
-            <a
-              href="/admin/cabins"
-              className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                location.pathname.startsWith('/admin/cabins')
-                  ? 'border-[#81887A] text-[#81887A]'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              Cabins
-            </a>
-            {developerNavEnabled && (
-              <a
-                href="/admin/cabin-types"
-                className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                  location.pathname.startsWith('/admin/cabin-types')
-                    ? 'border-[#81887A] text-[#81887A]'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                Cabin types
-              </a>
-            )}
-          </div>
-        </div>
-      </nav>
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+      <main className="max-w-7xl mx-auto py-10 px-4 sm:px-6 lg:px-8">
         <Outlet />
       </main>
     </div>

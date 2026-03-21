@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import AdminLayout from '../../components/admin/AdminLayout';
 
 const BookingDetail = () => {
   const { id } = useParams();
@@ -105,96 +104,87 @@ const BookingDetail = () => {
 
   if (loading) {
     return (
-      <AdminLayout>
-        <div className="px-4 sm:px-0">
-          <div className="flex items-center justify-center h-64">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#81887A] mx-auto"></div>
-              <p className="mt-2 text-sm text-gray-600">Loading booking...</p>
-            </div>
+      <div className="px-4 sm:px-0">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#81887A] mx-auto"></div>
+            <p className="mt-2 text-sm text-gray-600">Loading booking...</p>
           </div>
         </div>
-      </AdminLayout>
+      </div>
     );
   }
 
   if (error) {
     return (
-      <AdminLayout>
-        <div className="px-4 sm:px-0">
-          <div className="rounded-md bg-red-50 p-4">
-            <div className="text-sm text-red-700">{error}</div>
-          </div>
+      <div className="px-4 sm:px-0">
+        <div className="rounded-md bg-red-50 p-4">
+          <div className="text-sm text-red-700">{error}</div>
         </div>
-      </AdminLayout>
+      </div>
     );
   }
 
   if (!booking) {
     return (
-      <AdminLayout>
-        <div className="px-4 sm:px-0">
-          <div className="rounded-md bg-yellow-50 p-4">
-            <div className="text-sm text-yellow-700">Booking not found</div>
-          </div>
+      <div className="px-4 sm:px-0">
+        <div className="rounded-md bg-yellow-50 p-4">
+          <div className="text-sm text-yellow-700">Booking not found</div>
         </div>
-      </AdminLayout>
+      </div>
     );
   }
 
   return (
-    <AdminLayout>
-      <div className="px-4 sm:px-0">
-        <div className="sm:flex sm:items-center">
-          <div className="sm:flex-auto">
+    <div className="px-4 sm:px-0 max-w-3xl space-y-6">
+        <header className="flex flex-wrap items-end justify-between gap-4">
+          <div>
             <button
               onClick={() => navigate('/admin/bookings')}
-              className="mb-4 text-sm text-gray-500 hover:text-gray-700"
+              className="text-sm text-gray-500 hover:text-gray-800 mb-2 block"
             >
               ← Back to Bookings
             </button>
-            <h1 className="text-2xl font-playfair font-bold text-gray-900">
-              Booking Details
+            <h1 className="text-xl font-semibold tracking-tight text-gray-900">
+              Booking
             </h1>
-            <p className="mt-2 text-sm text-gray-700">
-              Booking ID: {booking._id}
+            <p className="mt-0.5 text-sm text-gray-500">
+              <span className="font-mono text-[12px]">{booking._id}</span>
             </p>
           </div>
-          <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
-            <div className="flex items-center gap-4">
-              <label htmlFor="status" className="block text-sm font-medium text-gray-700">
-                Status:
-              </label>
-              <select
-                id="status"
-                value={booking.status}
-                onChange={(e) => handleStatusUpdate(e.target.value)}
-                disabled={updatingStatus}
-                className="rounded-md border-gray-300 shadow-sm focus:border-[#81887A] focus:ring-[#81887A] sm:text-sm"
-              >
-                <option value="pending">Pending</option>
-                <option value="confirmed">Confirmed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
-              {saveMessage && (
-                <span className="text-sm text-green-600">{saveMessage}</span>
-              )}
-            </div>
+          <div className="flex items-center gap-3">
+            {saveMessage && (
+              <span className="text-xs text-green-700">{saveMessage}</span>
+            )}
+            <label htmlFor="status" className="text-xs font-medium text-gray-500">
+              Status
+            </label>
+            <select
+              id="status"
+              value={booking.status}
+              onChange={(e) => handleStatusUpdate(e.target.value)}
+              disabled={updatingStatus}
+              className="px-3 py-2.5 text-sm border border-gray-200 rounded-lg bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A] transition-colors"
+            >
+              <option value="pending">Pending</option>
+              <option value="confirmed">Confirmed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
           </div>
-        </div>
+        </header>
 
-        <div className="mt-8 bg-white shadow overflow-hidden sm:rounded-lg">
-          <div className="px-4 py-5 sm:px-6">
-            <h3 className="text-lg leading-6 font-medium text-gray-900">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+          <div className="px-6 py-5">
+            <h3 className="text-sm font-semibold text-gray-900">
               Booking Information
             </h3>
             <p className="mt-1 max-w-2xl text-sm text-gray-500">
               Complete booking details and guest information.
             </p>
           </div>
-          <div className="border-t border-gray-200">
+          <div className="border-t border-gray-100">
             <dl>
-              <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+              <div className="bg-gray-50/50 px-6 py-4 sm:grid sm:grid-cols-3 sm:gap-4">
                 <dt className="text-sm font-medium text-gray-500">Status</dt>
                 <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
                   <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
@@ -208,37 +198,37 @@ const BookingDetail = () => {
                   </span>
                 </dd>
               </div>
-              <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+              <div className="bg-white px-6 py-4 sm:grid sm:grid-cols-3 sm:gap-4">
                 <dt className="text-sm font-medium text-gray-500">Created</dt>
                 <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
                   {new Date(booking.createdAt).toLocaleString()}
                 </dd>
               </div>
-              <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+              <div className="bg-gray-50/50 px-6 py-4 sm:grid sm:grid-cols-3 sm:gap-4">
                 <dt className="text-sm font-medium text-gray-500">Check-in</dt>
                 <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
                   {new Date(booking.checkIn).toLocaleDateString()}
                 </dd>
               </div>
-              <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+              <div className="bg-white px-6 py-4 sm:grid sm:grid-cols-3 sm:gap-4">
                 <dt className="text-sm font-medium text-gray-500">Check-out</dt>
                 <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
                   {new Date(booking.checkOut).toLocaleDateString()}
                 </dd>
               </div>
-              <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+              <div className="bg-gray-50/50 px-6 py-4 sm:grid sm:grid-cols-3 sm:gap-4">
                 <dt className="text-sm font-medium text-gray-500">Cabin</dt>
                 <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
                   {booking.cabinId?.name} • {booking.cabinId?.location}
                 </dd>
               </div>
-              <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+              <div className="bg-white px-6 py-4 sm:grid sm:grid-cols-3 sm:gap-4">
                 <dt className="text-sm font-medium text-gray-500">Guests</dt>
                 <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
                   {booking.adults} Adults, {booking.children} Children
                 </dd>
               </div>
-              <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+              <div className="bg-gray-50/50 px-6 py-4 sm:grid sm:grid-cols-3 sm:gap-4">
                 <dt className="text-sm font-medium text-gray-500">Trip Type</dt>
                 <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
                   {booking.craft?.tripType || booking.tripType || 'Not specified'}
@@ -247,7 +237,7 @@ const BookingDetail = () => {
                   )}
                 </dd>
               </div>
-              <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+              <div className="bg-white px-6 py-4 sm:grid sm:grid-cols-3 sm:gap-4">
                 <dt className="text-sm font-medium text-gray-500">Transport</dt>
                 <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
                   {booking.craft?.transportMethod || booking.transportMethod?.type || 'Not specified'}
@@ -256,13 +246,13 @@ const BookingDetail = () => {
                   )}
                 </dd>
               </div>
-              <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+              <div className="bg-gray-50/50 px-6 py-4 sm:grid sm:grid-cols-3 sm:gap-4">
                 <dt className="text-sm font-medium text-gray-500">Romantic Setup</dt>
                 <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
                   {booking.craft?.extras?.romanticSetup || booking.romanticSetup ? 'Yes' : 'No'}
                 </dd>
               </div>
-              <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+              <div className="bg-white px-6 py-4 sm:grid sm:grid-cols-3 sm:gap-4">
                 <dt className="text-sm font-medium text-gray-500">Total Price</dt>
                 <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
                   €{booking.totalPrice}
@@ -273,27 +263,27 @@ const BookingDetail = () => {
         </div>
 
         {/* Guest Information */}
-        <div className="mt-8 bg-white shadow overflow-hidden sm:rounded-lg">
-          <div className="px-4 py-5 sm:px-6">
-            <h3 className="text-lg leading-6 font-medium text-gray-900">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+          <div className="px-6 py-5">
+            <h3 className="text-sm font-semibold text-gray-900">
               Guest Information
             </h3>
           </div>
-          <div className="border-t border-gray-200">
+          <div className="border-t border-gray-100">
             <dl>
-              <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+              <div className="bg-gray-50/50 px-6 py-4 sm:grid sm:grid-cols-3 sm:gap-4">
                 <dt className="text-sm font-medium text-gray-500">Name</dt>
                 <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
                   {booking.guestInfo.firstName} {booking.guestInfo.lastName}
                 </dd>
               </div>
-              <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+              <div className="bg-white px-6 py-4 sm:grid sm:grid-cols-3 sm:gap-4">
                 <dt className="text-sm font-medium text-gray-500">Email</dt>
                 <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
                   {booking.guestInfo.email}
                 </dd>
               </div>
-              <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+              <div className="bg-gray-50/50 px-6 py-4 sm:grid sm:grid-cols-3 sm:gap-4">
                 <dt className="text-sm font-medium text-gray-500">Phone</dt>
                 <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
                   {booking.guestInfo.phone || 'Not provided'}
@@ -304,26 +294,26 @@ const BookingDetail = () => {
         </div>
 
         {/* Email Activity Panel */}
-        <div className="mt-8 bg-white shadow overflow-hidden sm:rounded-lg">
-          <div className="px-4 py-5 sm:px-6">
-            <h3 className="text-lg leading-6 font-medium text-gray-900">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+          <div className="px-6 py-5">
+            <h3 className="text-sm font-semibold text-gray-900">
               Email Activity
             </h3>
             <p className="mt-1 max-w-2xl text-sm text-gray-500">
               Email delivery and engagement events for this booking.
             </p>
           </div>
-          <div className="border-t border-gray-200">
+          <div className="border-t border-gray-100">
             {emailLoading ? (
-              <div className="px-4 py-5 sm:px-6">
+              <div className="px-6 py-5">
                 <div className="text-sm text-gray-500">Loading email events...</div>
               </div>
             ) : emailEvents.length === 0 ? (
-              <div className="px-4 py-5 sm:px-6">
+              <div className="px-6 py-5">
                 <div className="text-sm text-gray-500">No email events found for this booking.</div>
               </div>
             ) : (
-              <div className="px-4 py-5 sm:px-6">
+              <div className="px-6 py-5">
                 <div className="space-y-4">
                   {emailEvents.map((event, index) => (
                     <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
@@ -357,7 +347,6 @@ const BookingDetail = () => {
           </div>
         </div>
       </div>
-    </AdminLayout>
   );
 };
 

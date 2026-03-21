@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import AdminLayout from '../../components/admin/AdminLayout';
 import { reviewAPI, cabinAPI } from '../../services/api';
 
 const ReviewEdit = () => {
@@ -210,35 +209,54 @@ const ReviewEdit = () => {
 
   if (loading) {
     return (
-      <AdminLayout>
-        <div className="px-4 sm:px-0">
-          <div className="flex items-center justify-center h-64">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#81887A] mx-auto"></div>
-              <p className="mt-2 text-sm text-gray-600">Loading review...</p>
-            </div>
+      <div className="px-4 sm:px-0">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#81887A] mx-auto"></div>
+            <p className="mt-2 text-sm text-gray-600">Loading review...</p>
           </div>
         </div>
-      </AdminLayout>
+      </div>
     );
   }
 
   return (
-    <AdminLayout>
-      <div className="px-4 sm:px-0">
-        <div className="sm:flex sm:items-center">
-          <div className="sm:flex-auto">
+    <div className="px-4 sm:px-0 max-w-3xl space-y-6">
+        <header className="flex flex-wrap items-end justify-between gap-4">
+          <div>
             <button
               onClick={() => navigate('/admin/reviews')}
-              className="mb-4 text-sm text-gray-500 hover:text-gray-700"
+              className="text-sm text-gray-500 hover:text-gray-800 mb-2 block"
             >
               ← Back to Reviews
             </button>
-            <h1 className="text-2xl font-playfair font-bold text-gray-900">
-              {isNew ? 'Add Review' : 'Edit Review'}
+            <h1 className="text-xl font-semibold tracking-tight text-gray-900">
+              {isNew ? 'New Review' : 'Edit Review'}
             </h1>
+            {!isNew && review?._id && (
+              <p className="mt-0.5 text-sm text-gray-500">
+                <span className="font-mono text-[12px]">{review._id}</span>
+              </p>
+            )}
           </div>
-        </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => navigate('/admin/reviews')}
+              className="inline-flex items-center px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="inline-flex items-center px-4 py-2.5 text-sm font-medium text-white bg-[#81887A] rounded-lg hover:bg-[#707668] focus:outline-none focus:ring-2 focus:ring-[#81887A]/30 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </header>
 
         {error && (
           <div className="mt-4 rounded-md bg-red-50 p-4">
@@ -292,8 +310,8 @@ const ReviewEdit = () => {
           </div>
         )}
 
-        <div className="mt-8 bg-white shadow overflow-hidden sm:rounded-lg">
-          <div className="px-4 py-5 sm:p-6 space-y-6">
+        <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+          <div className="px-6 py-5 space-y-6">
             {/* Basic Info */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Cabin */}
@@ -539,26 +557,9 @@ const ReviewEdit = () => {
               </div>
             )}
 
-            {/* Actions */}
-            <div className="border-t border-gray-200 pt-6 flex justify-end gap-4">
-              <button
-                onClick={() => navigate('/admin/reviews')}
-                className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="px-4 py-2 bg-[#81887A] text-white rounded-md text-sm font-medium hover:bg-[#707668] disabled:opacity-50"
-              >
-                {saving ? 'Saving...' : 'Save Review'}
-              </button>
-            </div>
           </div>
         </div>
       </div>
-    </AdminLayout>
   );
 };
 

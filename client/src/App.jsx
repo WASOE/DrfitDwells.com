@@ -5,6 +5,7 @@ import ScrollToTop from './components/ScrollToTop'
 import ErrorBoundary from './components/ErrorBoundary'
 import SiteLayout from './layouts/SiteLayout'
 import AdminLayout from './layouts/AdminLayout'
+import OpsLayout from './layouts/OpsLayout'
 import EmbeddedLayout from './layouts/EmbeddedLayout'
 
 const Home = lazy(() => import('./pages/Home'))
@@ -37,6 +38,19 @@ const CabinTypesList = lazy(() => import('./pages/admin/CabinTypesList'))
 const CabinTypeEdit = lazy(() => import('./pages/admin/CabinTypeEdit'))
 const ReviewsList = lazy(() => import('./pages/admin/ReviewsList'))
 const ReviewEdit = lazy(() => import('./pages/admin/ReviewEdit'))
+const OpsDashboard = lazy(() => import('./pages/ops/OpsDashboard'))
+const OpsCalendarIndex = lazy(() => import('./pages/ops/calendar/OpsCalendarIndex'))
+const OpsCalendarMonth = lazy(() => import('./pages/ops/calendar/OpsCalendarMonth'))
+const OpsReservations = lazy(() => import('./pages/ops/OpsReservations'))
+const OpsReservationDetail = lazy(() => import('./pages/ops/OpsReservationDetail'))
+const OpsPayments = lazy(() => import('./pages/ops/OpsPayments'))
+const OpsSyncCenter = lazy(() => import('./pages/ops/OpsSyncCenter'))
+const OpsCabinsDetail = lazy(() => import('./pages/ops/OpsCabins'))
+const OpsCabinsList = lazy(() => import('./pages/ops/OpsCabins').then((m) => ({ default: m.OpsCabinsList })))
+const OpsReviews = lazy(() => import('./pages/ops/OpsReviews'))
+const OpsCommunicationOversight = lazy(() => import('./pages/ops/OpsCommunicationOversight'))
+const OpsManualReviewBacklog = lazy(() => import('./pages/ops/OpsManualReviewBacklog'))
+const OpsReadiness = lazy(() => import('./pages/ops/OpsReadiness'))
 
 const CraftEmbedded = lazy(() => import('./pages/embedded/CraftEmbedded'))
 
@@ -131,6 +145,23 @@ function App() {
             {/* Embedded layout */}
             <Route element={<EmbeddedLayout />}>
               <Route path="/embedded/craft" element={<CraftEmbedded />} />
+            </Route>
+
+            {/* Ops layout */}
+            <Route element={<OpsLayout />}>
+              <Route path="/ops" element={<OpsDashboard />} />
+              <Route path="/ops/calendar" element={<OpsCalendarIndex />} />
+              <Route path="/ops/calendar/:cabinId" element={<OpsCalendarMonth />} />
+              <Route path="/ops/reservations" element={<OpsReservations />} />
+              <Route path="/ops/reservations/:id" element={<OpsReservationDetail />} />
+              <Route path="/ops/payments" element={<OpsPayments />} />
+              <Route path="/ops/sync" element={<OpsSyncCenter />} />
+              <Route path="/ops/cabins" element={<OpsCabinsList />} />
+              <Route path="/ops/cabins/:id" element={<OpsCabinsDetail />} />
+              <Route path="/ops/reviews" element={<OpsReviews />} />
+              <Route path="/ops/communications" element={<OpsCommunicationOversight />} />
+              <Route path="/ops/manual-review" element={<OpsManualReviewBacklog />} />
+            <Route path="/ops/readiness" element={<OpsReadiness />} />
             </Route>
           </Routes>
         </Suspense>

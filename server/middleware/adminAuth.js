@@ -44,7 +44,7 @@ const adminAuth = (req, res, next) => {
   }
   
   const token = authHeader.substring(7); // Remove 'Bearer '
-  const secret = process.env.ADMIN_JWT_SECRET;
+  const secret = process.env.ADMIN_JWT_SECRET || (process.env.NODE_ENV !== 'production' ? require('../config/defaults').adminJwtSecret : null);
   
   if (!secret) {
     console.error('ADMIN_JWT_SECRET not configured');
@@ -62,8 +62,13 @@ const adminAuth = (req, res, next) => {
       message: 'Invalid or expired token' 
     });
   }
-  
+
+  const role = payload.role === 'operator' ? 'operator' : 'admin';
   req.admin = payload;
+  req.user = {
+    id: payload.sub || 'admin',
+    role
+  };
   next();
 };
 

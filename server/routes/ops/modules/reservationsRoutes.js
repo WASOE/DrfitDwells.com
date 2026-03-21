@@ -1,0 +1,172 @@
+const express = require('express');
+const { getReservationsWorkspaceReadModel } = require('../../../services/ops/readModels/reservationsReadModel');
+const { getReservationDetailReadModel } = require('../../../services/ops/readModels/reservationDetailReadModel');
+const {
+  transitionReservation,
+  reassignReservation,
+  editReservationDates,
+  addReservationNote
+} = require('../../../services/ops/domain/reservationWriteService');
+const { editGuestContact } = require('../../../services/ops/domain/guestWriteService');
+
+const router = express.Router();
+
+function handleDomainError(res, error) {
+  if (error.code === 'PERMISSION_DENIED') {
+    return res.status(error.status || 403).json({ success: false, errorType: 'permission', message: error.message, details: error.permission || null });
+  }
+  if (error.code === 'AUDIT_WRITE_FAILED') {
+    return res.status(500).json({ success: false, errorType: 'audit_failure', message: 'Action blocked because audit write failed' });
+  }
+  const map = {
+    invalid_transition: 409,
+    validation: 400,
+    conflict: 409,
+    dependency_failure: 502
+  };
+  if (error.type && map[error.type]) {
+    return res.status(error.status || map[error.type]).json({
+      success: false,
+      errorType: error.type,
+      message: error.message,
+      details: error.details || null
+    });
+  }
+  return res.status(500).json({ success: false, errorType: 'dependency_failure', message: error.message });
+}
+
+router.get('/', async (req, res) => {
+  try {
+    const data = await getReservationsWorkspaceReadModel(req.query);
+    return res.json({ success: true, data });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/:id', async (req, res) => {
+  try {
+    const data = await getReservationDetailReadModel(req.params.id);
+    if (!data) {
+      return res.status(404).json({ success: false, message: 'Reservation not found' });
+    }
+    return res.json({ success: true, data });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/:id/actions/confirm', async (req, res) => {
+  try {
+    const data = await transitionReservation({
+      bookingId: req.params.id,
+      kind: 'confirm',
+      ctx: { req, user: req.user, route: 'POST /api/ops/reservations/:id/actions/confirm' }
+    });
+    return res.json({ success: true, data });
+  } catch (error) {
+    return handleDomainError(res, error);
+  }
+});
+
+router.post('/:id/actions/check-in', async (req, res) => {
+  try {
+    const data = await transitionReservation({
+      bookingId: req.params.id,
+      kind: 'checkIn',
+      ctx: { req, user: req.user, route: 'POST /api/ops/reservations/:id/actions/check-in' }
+    });
+    return res.json({ success: true, data });
+  } catch (error) {
+    return handleDomainError(res, error);
+  }
+});
+
+router.post('/:id/actions/complete', async (req, res) => {
+  try {
+    const data = await transitionReservation({
+      bookingId: req.params.id,
+      kind: 'complete',
+      ctx: { req, user: req.user, route: 'POST /api/ops/reservations/:id/actions/complete' }
+    });
+    return res.json({ success: true, data });
+  } catch (error) {
+    return handleDomainError(res, error);
+  }
+});
+
+router.post('/:id/actions/cancel', async (req, res) => {
+  try {
+    const data = await transitionReservation({
+      bookingId: req.params.id,
+      kind: 'cancel',
+      reason: req.body?.reason || null,
+      ctx: { req, user: req.user, route: 'POST /api/ops/reservations/:id/actions/cancel' }
+    });
+    return res.json({ success: true, data });
+  } catch (error) {
+    return handleDomainError(res, error);
+  }
+});
+
+router.post('/:id/actions/reassign', async (req, res) => {
+  try {
+    const data = await reassignReservation({
+      bookingId: req.params.id,
+      toCabinId: req.body?.toCabinId,
+      acceptExternalHoldWarnings: Boolean(req.body?.acceptExternalHoldWarnings),
+      reason: req.body?.reason || null,
+      ctx: { req, user: req.user, route: 'POST /api/ops/reservations/:id/actions/reassign' }
+    });
+    return res.json({ success: true, data });
+  } catch (error) {
+    return handleDomainError(res, error);
+  }
+});
+
+router.post('/:id/actions/edit-dates', async (req, res) => {
+  try {
+    const data = await editReservationDates({
+      bookingId: req.params.id,
+      checkInDate: req.body?.checkInDate,
+      checkOutDate: req.body?.checkOutDate,
+      reason: req.body?.reason || null,
+      ctx: { req, user: req.user, route: 'POST /api/ops/reservations/:id/actions/edit-dates' }
+    });
+    return res.json({ success: true, data });
+  } catch (error) {
+    return handleDomainError(res, error);
+  }
+});
+
+router.post('/:id/actions/edit-guest-contact', async (req, res) => {
+  try {
+    const data = await editGuestContact({
+      bookingId: req.params.id,
+      firstName: req.body?.firstName,
+      lastName: req.body?.lastName,
+      email: req.body?.email,
+      phone: req.body?.phone,
+      ctx: { req, user: req.user, route: 'POST /api/ops/reservations/:id/actions/edit-guest-contact' }
+    });
+    return res.json({ success: true, data });
+  } catch (error) {
+    return handleDomainError(res, error);
+  }
+});
+
+router.post('/:id/actions/add-note', async (req, res) => {
+  try {
+    const data = await addReservationNote({
+      bookingId: req.params.id,
+      content: req.body?.content,
+      metadata: req.body?.metadata || {},
+      ctx: { req, user: req.user, route: 'POST /api/ops/reservations/:id/actions/add-note' }
+    });
+    return res.json({ success: true, data });
+  } catch (error) {
+    return handleDomainError(res, error);
+  }
+});
+
+module.exports = router;

@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import AdminLayout from '../../components/admin/AdminLayout';
 
 const defaultFieldErrors = Object.freeze({});
 
@@ -351,55 +350,48 @@ const CabinTypeEdit = () => {
 
   if (loading) {
     return (
-      <AdminLayout>
-        <div className="px-4 sm:px-0">
-          <div className="flex items-center justify-center h-64">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#81887A] mx-auto"></div>
-              <p className="mt-2 text-sm text-gray-600">Loading cabin type...</p>
-            </div>
+      <div className="px-4 sm:px-0">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#81887A] mx-auto"></div>
+            <p className="mt-2 text-sm text-gray-600">Loading cabin type...</p>
           </div>
         </div>
-      </AdminLayout>
+      </div>
     );
   }
 
   if (disabled) {
     return (
-      <AdminLayout>
-        <div className="px-4 sm:px-0">
-          <div className="rounded-md bg-yellow-50 border border-yellow-200 p-6 text-center">
-            <h2 className="text-lg font-semibold text-yellow-800">Multi-unit inventory is disabled</h2>
-            <p className="mt-2 text-sm text-yellow-700">
-              Enable <code className="font-mono">MULTI_UNIT_ENABLED</code> to manage cabin types and units.
-            </p>
-            <button
-              onClick={() => navigate('/admin/cabins')}
-              className="mt-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-[#81887A] hover:bg-[#707668] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#81887A]"
-            >
-              Back to cabins
-            </button>
-          </div>
+      <div className="px-4 sm:px-0">
+        <div className="rounded-md bg-yellow-50 border border-yellow-200 p-6 text-center">
+          <h2 className="text-lg font-semibold text-yellow-800">Multi-unit inventory is disabled</h2>
+          <p className="mt-2 text-sm text-yellow-700">
+            Enable <code className="font-mono">MULTI_UNIT_ENABLED</code> to manage cabin types and units.
+          </p>
+          <button
+            onClick={() => navigate('/admin/cabins')}
+            className="mt-4 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-[#81887A] hover:bg-[#707668] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#81887A]"
+          >
+            Back to cabins
+          </button>
         </div>
-      </AdminLayout>
+      </div>
     );
   }
 
   if (error && !cabinType && !isNew) {
     return (
-      <AdminLayout>
-        <div className="px-4 sm:px-0">
-          <div className="rounded-md bg-red-50 p-4">
-            <div className="text-sm text-red-700">{error}</div>
-          </div>
+      <div className="px-4 sm:px-0">
+        <div className="rounded-md bg-red-50 p-4">
+          <div className="text-sm text-red-700">{error}</div>
         </div>
-      </AdminLayout>
+      </div>
     );
   }
 
   return (
-    <AdminLayout>
-      <div className="px-4 sm:px-0">
+    <div className="px-4 sm:px-0">
         <div className="sm:flex sm:items-center">
           <div className="sm:flex-auto">
             <button
@@ -801,8 +793,7 @@ const CabinTypeEdit = () => {
             </div>
           )}
         </div>
-      </div>
-    </AdminLayout>
+    </div>
   );
 };
 
