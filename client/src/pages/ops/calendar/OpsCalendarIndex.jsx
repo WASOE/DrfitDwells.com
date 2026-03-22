@@ -41,6 +41,11 @@ function initialsFromName(name) {
   return out || '—';
 }
 
+/** Stable id for calendar routes (single cabin or multi-unit type from ops cabins list). */
+function propertyRouteId(cabinLike) {
+  return cabinLike.cabinId || cabinLike.cabinTypeId || '';
+}
+
 export default function OpsCalendarIndex() {
   const [preview, setPreview] = useState(null);
   const [cabinsExtra, setCabinsExtra] = useState(null);
@@ -82,10 +87,11 @@ export default function OpsCalendarIndex() {
     });
     const items = cabinsExtra?.items || [];
     const rows = items.map((c) => {
-      const p = byId.get(c.cabinId);
+      const routeId = propertyRouteId(c);
+      const p = byId.get(routeId) || byId.get(c.cabinId) || byId.get(c.cabinTypeId);
       return { cabin: c, preview: p || null };
     });
-    const seen = new Set(rows.map((r) => r.cabin.cabinId));
+    const seen = new Set(rows.map((r) => propertyRouteId(r.cabin)).filter(Boolean));
     (preview?.previewByCabin || []).forEach((p) => {
       if (seen.has(p.cabinId)) return;
       rows.push({
@@ -108,92 +114,103 @@ export default function OpsCalendarIndex() {
   }
 
   return (
-    <div className="space-y-4 max-w-4xl mx-auto px-1 sm:px-0 pb-20 md:pb-8">
-      <header className="space-y-1">
+    <div className="space-y-4 w-full pb-20 md:pb-8">
+      <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5 text-left">
         <h1 className="text-lg font-semibold text-gray-900">Calendar</h1>
-        <p className="text-sm text-gray-600">
-          Pick a property for the operational month view. Preview shows the next {preview?.request?.previewDays || 14} nights ({preview?.meta?.propertyTimezone || 'Europe/Sofia'}).
+        <p className="text-sm text-gray-600 mt-1 max-w-3xl">
+          Pick a property for the operational month view. Preview shows the next {preview?.request?.previewDays || 14} nights (
+          {preview?.meta?.propertyTimezone || 'Europe/Sofia'}).
         </p>
         {preview?.meta?.today ? (
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-gray-500 mt-2">
             Today: <span className="font-mono">{preview.meta.today}</span>
           </p>
         ) : null}
-      </header>
 
-      {error ? <div className="text-sm text-red-600 rounded-lg border border-red-200 bg-red-50 px-3 py-2">{error}</div> : null}
+        <div className="mt-4 pt-4 border-t border-gray-100 flex flex-wrap gap-x-4 gap-y-2 text-[10px] uppercase tracking-wide text-gray-500">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" /> Res.
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" /> Manual
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-gray-800 shrink-0" /> Maint.
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-violet-500 shrink-0" /> Ext.
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" /> Conflict
+          </span>
+        </div>
+      </section>
 
-      <div className="flex flex-wrap gap-2 text-[10px] uppercase tracking-wide text-gray-500">
-        <span className="inline-flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-blue-600" /> Res.
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-amber-500" /> Manual
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-gray-800" /> Maint.
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-violet-500" /> Ext.
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-red-500" /> Conflict
-        </span>
-      </div>
+      {error ? (
+        <div className="text-sm text-red-600 rounded-xl border border-red-200 bg-red-50 px-4 py-3">{error}</div>
+      ) : null}
 
       <ul className="space-y-3">
         {mergedRows.length === 0 ? (
-          <li className="text-sm text-gray-500 border border-dashed border-gray-200 rounded-xl p-6 text-center">No properties found.</li>
+          <li className="text-sm text-gray-500 border border-dashed border-gray-200 rounded-xl p-8 text-center bg-white">
+            No properties found.
+          </li>
         ) : null}
         {mergedRows.map(({ cabin, preview: pr }) => {
+          const routeId = propertyRouteId(cabin);
+          const rowKey = routeId || `row-${cabin.name}`;
           const blocks = pr?.blocks || [];
           const sync = pr?.syncIndicators?.syncStatus || 'stale';
           const syncCls = SYNC_BADGE[sync] || SYNC_BADGE.stale;
           const img = cabin.content?.imageUrl || pr?.listing?.imageUrl;
-          const hardN =
-            pr?.summary?.hardConflictCount ??
-            pr?.conflictMarkers?.hard?.length ??
-            0;
-          const warnN =
-            pr?.summary?.warningCount ??
-            pr?.conflictMarkers?.warnings?.length ??
-            0;
+          const hardN = pr?.summary?.hardConflictCount ?? pr?.conflictMarkers?.hard?.length ?? 0;
+          const warnN = pr?.summary?.warningCount ?? pr?.conflictMarkers?.warnings?.length ?? 0;
 
           return (
-            <li key={cabin.cabinId}>
+            <li key={rowKey}>
               <Link
-                to={`/ops/calendar/${cabin.cabinId}`}
-                className="flex gap-3 sm:gap-4 bg-white border border-gray-200 rounded-xl p-3 sm:p-4 hover:border-gray-300 hover:shadow-sm transition-shadow min-w-0"
+                to={routeId ? `/ops/calendar/${routeId}` : '#'}
+                className={`flex flex-col lg:grid lg:grid-cols-12 lg:gap-6 lg:items-center bg-white border border-gray-200 rounded-xl p-4 md:p-5 min-w-0 text-left transition-shadow ${
+                  routeId ? 'hover:border-gray-300 hover:shadow-sm' : 'opacity-60 pointer-events-none'
+                }`}
               >
-                <div className="w-16 h-16 sm:w-20 sm:h-20 shrink-0 rounded-lg bg-gray-100 overflow-hidden border border-gray-100">
-                  {img ? (
-                    <img src={img} alt="" className="w-full h-full object-cover" loading="lazy" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-xs font-semibold text-gray-700 bg-gray-50">
-                      {initialsFromName(cabin.name)}
-                    </div>
-                  )}
-                </div>
-                <div className="flex-1 min-w-0 space-y-2">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="font-semibold text-gray-900 truncate">{cabin.name}</div>
-                      <div className="text-xs text-gray-500 truncate">{cabin.location || '—'}</div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-1 shrink-0">
-                      <span
-                        className={`text-[10px] px-2 py-0.5 rounded-full border ${
-                          cabin.isActive !== false ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-gray-100 text-gray-600 border-gray-200'
-                        }`}
-                      >
-                        {cabin.isActive !== false ? 'Active' : 'Inactive'}
-                      </span>
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full border ${syncCls}`}>Sync: {sync}</span>
-                    </div>
+                <div className="lg:col-span-2 flex lg:block shrink-0 mb-3 lg:mb-0">
+                  <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-lg bg-gray-100 overflow-hidden border border-gray-100">
+                    {img ? (
+                      <img src={img} alt="" className="w-full h-full object-cover" loading="lazy" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-sm font-semibold text-gray-700 bg-gray-50">
+                        {initialsFromName(cabin.name)}
+                      </div>
+                    )}
                   </div>
+                </div>
 
+                <div className="lg:col-span-4 min-w-0 space-y-2 mb-3 lg:mb-0">
+                  <div className="flex flex-wrap items-start gap-x-2 gap-y-1">
+                    <span className="text-base font-semibold text-gray-900 leading-snug">{cabin.name}</span>
+                    {cabin.kind === 'multi_unit_type' ? (
+                      <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded border bg-indigo-50 text-indigo-800 border-indigo-100 shrink-0">
+                        Multi-unit
+                      </span>
+                    ) : null}
+                    <span
+                      className={`text-[10px] px-2 py-0.5 rounded-full border shrink-0 ${
+                        cabin.isActive !== false
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                          : 'bg-gray-100 text-gray-600 border-gray-200'
+                      }`}
+                    >
+                      {cabin.isActive !== false ? 'Active' : 'Inactive'}
+                    </span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full border shrink-0 ${syncCls}`}>Sync: {sync}</span>
+                  </div>
+                  <p className="text-sm text-gray-600">{cabin.location || '—'}</p>
+                </div>
+
+                <div className="lg:col-span-6 min-w-0 space-y-2">
                   <div className="overflow-x-auto -mx-1 px-1">
-                    <div className="flex gap-0.5 min-w-max py-1">
+                    <div className="flex gap-1 min-w-max py-1">
                       {stripKeys.map((dk) => {
                         const { dot, ring } = cellToneForDay(dk, blocks);
                         const isToday = dk === preview?.meta?.today;
@@ -201,7 +218,9 @@ export default function OpsCalendarIndex() {
                           <div
                             key={dk}
                             title={dk}
-                            className={`w-2.5 h-6 rounded-sm flex items-end justify-center pb-0.5 shrink-0 ${isToday ? 'outline outline-2 outline-amber-400 outline-offset-1' : ''}`}
+                            className={`w-2.5 h-7 rounded-sm flex items-end justify-center pb-0.5 shrink-0 ${
+                              isToday ? 'outline outline-2 outline-amber-400 outline-offset-1' : ''
+                            }`}
                           >
                             <span className={`w-1.5 h-1.5 rounded-full ${dot} ${ring}`} />
                           </div>
@@ -211,7 +230,7 @@ export default function OpsCalendarIndex() {
                   </div>
 
                   {pr?.summary?.hasConflict ? (
-                    <div className="flex flex-wrap gap-2 pt-2">
+                    <div className="flex flex-wrap gap-2">
                       {hardN > 0 ? (
                         <span className="text-[10px] px-2 py-0.5 rounded-full border border-red-200 bg-red-50 text-red-800 font-medium">
                           Hard {hardN}

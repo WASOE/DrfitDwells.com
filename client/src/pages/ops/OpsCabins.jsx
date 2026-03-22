@@ -12,6 +12,16 @@ function listHref(item) {
   return `/ops/cabins/${item.cabinId}`;
 }
 
+function thumbInitials(name) {
+  const s = String(name || '').trim();
+  if (!s) return '—';
+  const parts = s.split(/\s+/).filter(Boolean);
+  const a = parts[0]?.[0] || '';
+  const b = parts.length > 1 ? parts[parts.length - 1]?.[0] || '' : '';
+  const out = `${a}${b}`.toUpperCase();
+  return out || '—';
+}
+
 export function OpsCabinsList() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -57,100 +67,128 @@ export function OpsCabinsList() {
   const totalPages = pg.totalPages || 1;
 
   return (
-    <div className="space-y-3 pb-16 sm:pb-0 max-w-4xl mx-auto w-full">
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <h2 className="text-lg font-semibold text-gray-900">Cabins &amp; unit types</h2>
-        <p className="text-sm text-gray-500 mt-1">
-          Single cabins and multi-unit types (e.g. A-Frame) from source data. Read-only.
-        </p>
-        <form onSubmit={onSearchSubmit} className="mt-4 flex flex-col sm:flex-row gap-2 sm:items-center max-w-xl">
-          <input
-            type="search"
-            value={searchDraft}
-            onChange={(e) => setSearchDraft(e.target.value)}
-            placeholder="Search name, location, slug…"
-            className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm"
-          />
-          <button
-            type="submit"
-            className="px-4 py-2 text-sm rounded-lg bg-[#81887A] text-white hover:opacity-90"
+    <div className="space-y-4 pb-16 sm:pb-0 w-full">
+      <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
+        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 lg:gap-8">
+          <div className="min-w-0 flex-1 text-left">
+            <h2 className="text-lg font-semibold text-gray-900">Cabins &amp; unit types</h2>
+            <p className="text-xs text-gray-500 mt-1 max-w-2xl">
+              Single cabins and multi-unit types (e.g. A-Frame) from source data. Read-only.
+            </p>
+          </div>
+          <form
+            onSubmit={onSearchSubmit}
+            className="flex flex-col sm:flex-row gap-2 sm:items-center w-full lg:w-auto lg:min-w-[280px] lg:max-w-md shrink-0"
           >
-            Search
-          </button>
-        </form>
+            <input
+              type="search"
+              value={searchDraft}
+              onChange={(e) => setSearchDraft(e.target.value)}
+              placeholder="Search name, location, slug…"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+            />
+            <button
+              type="submit"
+              className="px-4 py-2 text-sm rounded-lg bg-[#81887A] text-white hover:opacity-90 whitespace-nowrap shrink-0"
+            >
+              Search
+            </button>
+          </form>
+        </div>
       </section>
 
-      <div className="space-y-2">
+      <div className="space-y-3">
         {data.items?.length === 0 ? (
-          <p className="text-sm text-gray-500">No rows match your filters.</p>
+          <p className="text-sm text-gray-500 border border-dashed border-gray-200 rounded-xl p-6 bg-white">No rows match your filters.</p>
         ) : null}
-        {data.items?.map((c) => (
-          <Link
-            key={listRowId(c)}
-            to={listHref(c)}
-            className="block bg-white border border-gray-200 rounded-xl p-4 hover:bg-gray-50"
-          >
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-semibold text-gray-900 truncate">{c.name}</span>
-                  {c.kind === 'multi_unit_type' ? (
-                    <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-100">
-                      Multi-unit type
-                    </span>
-                  ) : (
-                    <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-stone-100 text-stone-700 border border-stone-200">
-                      Single cabin
-                    </span>
-                  )}
+        {data.items?.map((c) => {
+          const img = c.content?.imageUrl;
+          return (
+            <Link
+              key={listRowId(c)}
+              to={listHref(c)}
+              className="block bg-white border border-gray-200 rounded-xl p-4 md:p-5 hover:bg-gray-50/80 hover:border-gray-300 transition-colors"
+            >
+              <div className="flex flex-col lg:flex-row lg:items-stretch gap-4 lg:gap-6">
+                <div className="shrink-0 flex lg:block">
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24 rounded-lg bg-gray-100 overflow-hidden border border-gray-100">
+                    {img ? (
+                      <img src={img} alt="" className="w-full h-full object-cover" loading="lazy" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-sm font-semibold text-gray-600 bg-gray-50">
+                        {thumbInitials(c.name)}
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="text-xs text-gray-500 truncate">{c.location}</div>
-                {c.kind === 'multi_unit_type' && c.slug ? (
-                  <div className="text-xs text-gray-400 mt-0.5">Slug: {c.slug}</div>
-                ) : null}
-              </div>
-              <div className="flex flex-wrap gap-2 sm:justify-end">
-                {c.kind === 'multi_unit_type' ? (
-                  <>
-                    <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50">
-                      {c.operational.totalUnits ?? 0} units ({c.operational.activeUnits ?? 0} active)
-                    </span>
-                    {c.operational.blockedUnitsCount > 0 ? (
-                      <span className="text-xs px-2 py-1 rounded border border-amber-200 bg-amber-50 text-amber-900">
-                        {c.operational.blockedUnitsCount} w/ unit blocks
+
+                <div className="min-w-0 flex-1 text-left space-y-2">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span className="text-base font-semibold text-gray-900">{c.name}</span>
+                    {c.kind === 'multi_unit_type' ? (
+                      <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-100">
+                        Multi-unit type
+                      </span>
+                    ) : (
+                      <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-stone-100 text-stone-700 border border-stone-200">
+                        Single cabin
+                      </span>
+                    )}
+                    {c.isActive === false ? (
+                      <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-200">
+                        Inactive
                       </span>
                     ) : null}
-                  </>
-                ) : null}
-                <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50">
-                  {c.operational.capacity ?? '—'} guests
-                </span>
-                <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50">
-                  {c.operational.minNights ?? '—'} min nights
-                </span>
-                {c.kind === 'single_cabin' ? (
-                  <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50">
-                    {c.operational.blockedDatesCount ?? 0} blocked nights
+                  </div>
+                  <p className="text-sm text-gray-600">{c.location || '—'}</p>
+                  {c.kind === 'multi_unit_type' && c.slug ? (
+                    <p className="text-xs text-gray-400 font-mono">Slug: {c.slug}</p>
+                  ) : null}
+                </div>
+
+                <div className="flex flex-wrap lg:flex-nowrap lg:content-start gap-2 lg:justify-end lg:max-w-xl lg:shrink-0 lg:pt-0.5">
+                  {c.kind === 'multi_unit_type' ? (
+                    <>
+                      <span className="text-xs px-2.5 py-1 rounded border border-gray-200 bg-gray-50 whitespace-nowrap">
+                        {c.operational.totalUnits ?? 0} units ({c.operational.activeUnits ?? 0} active)
+                      </span>
+                      {c.operational.blockedUnitsCount > 0 ? (
+                        <span className="text-xs px-2.5 py-1 rounded border border-amber-200 bg-amber-50 text-amber-900 whitespace-nowrap">
+                          {c.operational.blockedUnitsCount} w/ unit blocks
+                        </span>
+                      ) : null}
+                    </>
+                  ) : null}
+                  <span className="text-xs px-2.5 py-1 rounded border border-gray-200 bg-gray-50 whitespace-nowrap">
+                    {c.operational.capacity ?? '—'} guests
                   </span>
-                ) : null}
-                {c.kind === 'multi_unit_type' && c.operational.pricePerNight != null ? (
-                  <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50">
-                    {c.operational.pricePerNight} / night
+                  <span className="text-xs px-2.5 py-1 rounded border border-gray-200 bg-gray-50 whitespace-nowrap">
+                    {c.operational.minNights ?? '—'} min nights
                   </span>
-                ) : null}
+                  {c.kind === 'single_cabin' ? (
+                    <span className="text-xs px-2.5 py-1 rounded border border-gray-200 bg-gray-50 whitespace-nowrap">
+                      {c.operational.blockedDatesCount ?? 0} blocked nights
+                    </span>
+                  ) : null}
+                  {c.kind === 'multi_unit_type' && c.operational.pricePerNight != null ? (
+                    <span className="text-xs px-2.5 py-1 rounded border border-gray-200 bg-gray-50 whitespace-nowrap">
+                      {c.operational.pricePerNight} / night
+                    </span>
+                  ) : null}
+                </div>
               </div>
-            </div>
-          </Link>
-        ))}
+            </Link>
+          );
+        })}
       </div>
 
       {totalPages > 1 ? (
-        <div className="flex items-center justify-between gap-2 pt-2">
+        <div className="flex items-center justify-between gap-3 pt-1">
           <button
             type="button"
             disabled={page <= 1 || loading}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
-            className="text-sm px-3 py-1.5 rounded border border-gray-200 disabled:opacity-40"
+            className="text-sm px-3 py-2 rounded-lg border border-gray-200 bg-white disabled:opacity-40"
           >
             Previous
           </button>
@@ -161,7 +199,7 @@ export function OpsCabinsList() {
             type="button"
             disabled={page >= totalPages || loading}
             onClick={() => setPage((p) => p + 1)}
-            className="text-sm px-3 py-1.5 rounded border border-gray-200 disabled:opacity-40"
+            className="text-sm px-3 py-2 rounded-lg border border-gray-200 bg-white disabled:opacity-40"
           >
             Next
           </button>
@@ -208,37 +246,52 @@ export default function OpsCabinDetail() {
   const pre = data.preArrival || {};
   const degraded = data.degraded || {};
   const titleId = isMulti ? data.cabinTypeId : data.cabinId;
+  const cover = content.imageUrl;
 
   return (
-    <div className="space-y-4 pb-16 sm:pb-0 max-w-5xl mx-auto w-full">
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
+    <div className="space-y-4 pb-16 sm:pb-0 w-full">
+      <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
         <Link to="/ops/cabins" className="text-sm text-[#81887A] hover:underline">
           Back to cabins
         </Link>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <h2 className="text-lg font-semibold text-gray-900">{content.name || '—'}</h2>
-          {isMulti ? (
-            <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-100">
-              Multi-unit type
-            </span>
-          ) : (
-            <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-stone-100 text-stone-700 border border-stone-200">
-              Single cabin
-            </span>
-          )}
+        <div className="mt-4 flex flex-col sm:flex-row sm:items-start gap-4 sm:gap-6">
+          <div className="shrink-0 w-20 h-20 sm:w-24 sm:h-24 rounded-lg bg-gray-100 overflow-hidden border border-gray-100">
+            {cover ? (
+              <img src={cover} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-sm font-semibold text-gray-600 bg-gray-50">
+                {thumbInitials(content.name)}
+              </div>
+            )}
+          </div>
+          <div className="min-w-0 flex-1 text-left">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-lg font-semibold text-gray-900">{content.name || '—'}</h2>
+              {isMulti ? (
+                <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-100">
+                  Multi-unit type
+                </span>
+              ) : (
+                <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-stone-100 text-stone-700 border border-stone-200">
+                  Single cabin
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 mt-1 font-mono break-all">{titleId}</p>
+            {data.slug ? <p className="text-xs text-gray-400 mt-0.5 font-mono">Slug: {data.slug}</p> : null}
+            <p className="text-sm text-gray-600 mt-2">{content.location || '—'}</p>
+            {degraded.missingGeo ? (
+              <p className="mt-2 text-sm text-amber-800">Degraded: missing geo coordinates.</p>
+            ) : null}
+            {degraded.emptyInventory ? (
+              <p className="mt-2 text-sm text-amber-800">Degraded: no units linked to this cabin type.</p>
+            ) : null}
+          </div>
         </div>
-        <p className="text-xs text-gray-500 mt-1 font-mono break-all">{titleId}</p>
-        {data.slug ? <p className="text-xs text-gray-400 mt-0.5">Slug: {data.slug}</p> : null}
-        {degraded.missingGeo ? (
-          <p className="mt-2 text-sm text-amber-800">Degraded: missing geo coordinates.</p>
-        ) : null}
-        {degraded.emptyInventory ? (
-          <p className="mt-2 text-sm text-amber-800">Degraded: no units linked to this cabin type.</p>
-        ) : null}
       </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <section className="bg-white border border-gray-200 rounded-xl p-4">
+        <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
           <h3 className="text-sm font-semibold text-gray-900">Operational settings</h3>
           <div className="mt-3 space-y-2 text-sm text-gray-700">
             <p>Capacity: {op.capacity ?? '—'}</p>
@@ -259,17 +312,16 @@ export default function OpsCabinDetail() {
           </div>
         </section>
 
-        <section className="bg-white border border-gray-200 rounded-xl p-4">
+        <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
           <h3 className="text-sm font-semibold text-gray-900">Content &amp; media</h3>
           <div className="mt-3 space-y-2">
-            {content.imageUrl ? (
-              <img src={content.imageUrl} alt="" className="w-full max-w-md rounded-lg border border-gray-200" />
+            {cover ? (
+              <img src={cover} alt="" className="w-full max-w-lg rounded-lg border border-gray-200" />
             ) : (
               <p className="text-sm text-gray-500">No cover image.</p>
             )}
-            <p className="text-sm text-gray-700">Location: {content.location || '—'}</p>
             {content.description ? (
-              <p className="text-sm text-gray-600 line-clamp-4">{content.description}</p>
+              <p className="text-sm text-gray-600 line-clamp-6">{content.description}</p>
             ) : null}
             <p className="text-sm text-gray-600">Highlights: {content.highlights?.length ? content.highlights.join(', ') : '—'}</p>
             {isMulti && content.experiences?.length ? (
@@ -280,25 +332,25 @@ export default function OpsCabinDetail() {
       </div>
 
       {isMulti && Array.isArray(data.units) ? (
-        <section className="bg-white border border-gray-200 rounded-xl p-4 overflow-x-auto">
+        <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5 overflow-x-auto">
           <h3 className="text-sm font-semibold text-gray-900">Units</h3>
           <p className="text-xs text-gray-500 mt-1">{data.units.length} unit(s) in database.</p>
-          <table className="mt-3 w-full text-sm text-left min-w-[320px]">
+          <table className="mt-3 w-full text-sm text-left min-w-[480px]">
             <thead>
               <tr className="border-b border-gray-200 text-xs text-gray-500 uppercase">
-                <th className="py-2 pr-2">Unit</th>
-                <th className="py-2 pr-2">Display</th>
-                <th className="py-2 pr-2">Active</th>
-                <th className="py-2">Blocked dates</th>
+                <th className="py-2 pr-4 text-left">Unit</th>
+                <th className="py-2 pr-4 text-left">Display</th>
+                <th className="py-2 pr-4 text-left">Active</th>
+                <th className="py-2 text-left">Blocked dates</th>
               </tr>
             </thead>
             <tbody>
               {data.units.map((u) => (
                 <tr key={u.unitId} className="border-b border-gray-100">
-                  <td className="py-2 pr-2 font-mono text-xs">{u.unitNumber}</td>
-                  <td className="py-2 pr-2">{u.displayName || '—'}</td>
-                  <td className="py-2 pr-2">{u.isActive ? 'Yes' : 'No'}</td>
-                  <td className="py-2">{u.blockedDatesCount ?? 0}</td>
+                  <td className="py-2.5 pr-4 font-mono text-xs">{u.unitNumber}</td>
+                  <td className="py-2.5 pr-4">{u.displayName || '—'}</td>
+                  <td className="py-2.5 pr-4">{u.isActive ? 'Yes' : 'No'}</td>
+                  <td className="py-2.5">{u.blockedDatesCount ?? 0}</td>
                 </tr>
               ))}
             </tbody>
@@ -306,7 +358,7 @@ export default function OpsCabinDetail() {
         </section>
       ) : null}
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
+      <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
         <h3 className="text-sm font-semibold text-gray-900">Pre-arrival configuration</h3>
         <div className="mt-3 space-y-2 text-sm text-gray-700">
           <p>Packing list items: {pre.packingList?.length ?? 0}</p>

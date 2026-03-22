@@ -197,61 +197,73 @@ export default function OpsCalendarMonth() {
   }
 
   return (
-    <div className="space-y-4 max-w-5xl mx-auto px-1 sm:px-0 pb-28 md:pb-10">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div className="min-w-0">
-          <Link to="/ops/calendar" className="text-xs text-[#81887A] hover:underline">
-            ← All properties
-          </Link>
-          <h1 className="text-lg font-semibold text-gray-900 truncate mt-1">{cabinLabel}</h1>
-          <p className="text-xs text-gray-500 font-mono">
-            {fromYmd} → {toYmd} <span className="text-gray-400">(exclusive end)</span>
-          </p>
+    <div className="space-y-4 w-full pb-28 md:pb-10">
+      <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5 text-left">
+        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <Link to="/ops/calendar" className="text-sm text-[#81887A] hover:underline">
+              ← All properties
+            </Link>
+            <h1 className="text-lg font-semibold text-gray-900 mt-2 lg:mt-3">{cabinLabel}</h1>
+            <p className="text-xs text-gray-500 font-mono mt-1">
+              {fromYmd} → {toYmd} <span className="text-gray-400">(exclusive end)</span>
+            </p>
+            {priceHint?.nightPrice != null ? (
+              <p className="text-sm text-gray-600 mt-3">
+                List night from cabin: <span className="font-semibold">{priceHint.nightPrice}</span>{' '}
+                {priceHint.currency?.toUpperCase()}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0 lg:pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                const d = new Date(Date.UTC(year, monthIndex - 1, 1));
+                setYear(d.getUTCFullYear());
+                setMonthIndex(d.getUTCMonth());
+              }}
+              className="px-3 py-2 text-sm rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+            >
+              Prev
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const d = new Date(Date.UTC(year, monthIndex + 1, 1));
+                setYear(d.getUTCFullYear());
+                setMonthIndex(d.getUTCMonth());
+              }}
+              className="px-3 py-2 text-sm rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+            >
+              Next
+            </button>
+            <span className={`text-xs px-2.5 py-1 rounded-full border ${syncCls}`}>Sync {sync}</span>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
+
+        {error ? <div className="text-sm text-red-600 border border-red-200 bg-red-50 rounded-lg px-3 py-2 mt-4">{error}</div> : null}
+        {actionError && !sheetKind ? (
+          <div className="text-sm text-red-600 border border-red-200 bg-red-50 rounded-lg px-3 py-2 mt-3">{actionError}</div>
+        ) : null}
+
+        <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-gray-100">
           <button
             type="button"
-            onClick={() => {
-              const d = new Date(Date.UTC(year, monthIndex - 1, 1));
-              setYear(d.getUTCFullYear());
-              setMonthIndex(d.getUTCMonth());
-            }}
-            className="px-3 py-2 text-sm rounded-lg border border-gray-200 bg-white"
+            onClick={() => openPanel('manual')}
+            className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
           >
-            Prev
+            Add manual block
           </button>
           <button
             type="button"
-            onClick={() => {
-              const d = new Date(Date.UTC(year, monthIndex + 1, 1));
-              setYear(d.getUTCFullYear());
-              setMonthIndex(d.getUTCMonth());
-            }}
-            className="px-3 py-2 text-sm rounded-lg border border-gray-200 bg-white"
+            onClick={() => openPanel('maintenance')}
+            className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200 hover:bg-gray-50"
           >
-            Next
+            Add maintenance
           </button>
-          <span className={`text-xs px-2 py-1 rounded-full border ${syncCls}`}>Sync {sync}</span>
         </div>
-      </div>
-
-      {priceHint?.nightPrice != null ? (
-        <div className="text-xs text-gray-600">
-          List night from cabin: <span className="font-semibold">{priceHint.nightPrice}</span> {priceHint.currency?.toUpperCase()}
-        </div>
-      ) : null}
-
-      {error ? <div className="text-sm text-red-600 border border-red-200 bg-red-50 rounded-lg px-3 py-2">{error}</div> : null}
-      {actionError && !sheetKind ? <div className="text-sm text-red-600 border border-red-200 bg-red-50 rounded-lg px-3 py-2">{actionError}</div> : null}
-
-      <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={() => openPanel('manual')} className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200">
-          Add manual block
-        </button>
-        <button type="button" onClick={() => openPanel('maintenance')} className="px-3 py-2 text-sm rounded-lg bg-white border border-gray-200">
-          Add maintenance
-        </button>
-      </div>
+      </section>
 
       <CalendarBottomSheet
         open={
@@ -345,7 +357,7 @@ export default function OpsCalendarMonth() {
         </div>
       </CalendarBottomSheet>
 
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
         <div className="grid grid-cols-7 border-b border-gray-200 bg-gray-50">
           {WEEKDAYS.map((d) => (
             <div key={d} className="text-[10px] sm:text-xs font-medium text-gray-500 text-center py-2">
@@ -447,8 +459,8 @@ export default function OpsCalendarMonth() {
         })}
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-xl p-4">
-        <h3 className="text-sm font-semibold text-gray-900 mb-2">Legend</h3>
+      <div className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
+        <h3 className="text-sm font-semibold text-gray-900 mb-3">Legend</h3>
         <ul className="flex flex-wrap gap-2">
           {legendItems().map((x) => (
             <li key={x.key} className={`text-xs px-2 py-1 rounded border ${x.className}`}>
