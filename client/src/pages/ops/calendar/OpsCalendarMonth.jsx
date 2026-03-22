@@ -1,67 +1,20 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { addDays } from 'date-fns';
+import { formatInTimeZone, toDate } from 'date-fns-tz';
 import { opsReadAPI, opsWriteAPI } from '../../../services/opsApi';
 import { BLOCK_BAR, CONFLICT_RING, SYNC_BADGE, legendItems } from './calendarVisualTokens';
-import { addDaysUtc, buildMonthGrid, ymdUtc } from './opsCalendarDateUtils';
+import {
+  OPS_CALENDAR_TZ,
+  addOneMonth,
+  buildSofiaMonthGrid,
+  computeWeekBarSegments,
+  formatSofiaMonthTitle,
+  sofiaNowYearMonth
+} from './opsCalendarDateUtils';
 import CalendarBottomSheet from './CalendarBottomSheet';
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-function utcMidnight(d) {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-}
-
-function daysBetweenUtc(a, b) {
-  const ms = b.getTime() - a.getTime();
-  return Math.round(ms / (1000 * 60 * 60 * 24));
-}
-
-function blockExclusiveEndDate(block) {
-  return new Date(block.endDate);
-}
-
-function blockStartDate(block) {
-  return new Date(block.startDate);
-}
-
-function segmentsForWeek(weekDays, blocks, cabinId) {
-  const weekStart = utcMidnight(weekDays[0]);
-  const weekEndEx = addDaysUtc(weekStart, 7);
-  const segs = [];
-  for (const b of blocks) {
-    if (String(b.cabinId) !== String(cabinId)) continue;
-    if (b.status === 'tombstoned') continue;
-    const bs = utcMidnight(blockStartDate(b));
-    const bex = utcMidnight(blockExclusiveEndDate(b));
-    const os = bs > weekStart ? bs : weekStart;
-    const oe = bex < weekEndEx ? bex : weekEndEx;
-    if (os >= oe) continue;
-    const startOffset = daysBetweenUtc(weekStart, os);
-    const span = daysBetweenUtc(os, oe);
-    const endOffset = startOffset + span;
-    segs.push({
-      block: b,
-      startOffset,
-      endOffset,
-      span,
-      leftPct: (startOffset / 7) * 100,
-      widthPct: (span / 7) * 100,
-      lane: 0
-    });
-  }
-  segs.sort((a, b) => a.startOffset - b.startOffset || b.endOffset - a.endOffset);
-  const laneEnds = [];
-  segs.forEach((s) => {
-    let lane = 0;
-    while (laneEnds[lane] != null && s.startOffset < laneEnds[lane]) {
-      lane += 1;
-    }
-    s.lane = lane;
-    laneEnds[lane] = s.endOffset;
-  });
-  const laneCount = laneEnds.length || 0;
-  return { segs, laneCount: Math.max(1, laneCount) };
-}
 
 function extractMongoIdFromBlockId(id) {
   const s = String(id || '');
@@ -69,11 +22,17 @@ function extractMongoIdFromBlockId(id) {
   return null;
 }
 
+function blockRangeTitle(b) {
+  const s = String(b?.startDate || '').slice(0, 10);
+  const e = String(b?.endDate || '').slice(0, 10);
+  return `${s} → ${e} (exclusive end)`;
+}
+
 export default function OpsCalendarMonth() {
   const { cabinId } = useParams();
-  const now = new Date();
-  const [year, setYear] = useState(now.getUTCFullYear());
-  const [monthIndex, setMonthIndex] = useState(now.getUTCMonth());
+  const initialYm = useMemo(() => sofiaNowYearMonth(), []);
+  const [year, setYear] = useState(initialYm.year);
+  const [monthIndex, setMonthIndex] = useState(initialYm.monthIndex);
   const [data, setData] = useState(null);
   const [cabinLabel, setCabinLabel] = useState('');
   const [loading, setLoading] = useState(true);
@@ -82,20 +41,23 @@ export default function OpsCalendarMonth() {
   const [formStart, setFormStart] = useState('');
   const [formEnd, setFormEnd] = useState('');
   const [openBlockKey, setOpenBlockKey] = useState(null);
-  const [sheetKind, setSheetKind] = useState(null); // add_manual | add_maintenance | edit_manual | edit_maintenance | remove
+  const [sheetKind, setSheetKind] = useState(null);
   const [sheetBlock, setSheetBlock] = useState(null);
 
-  const { monthStart, monthEndExclusive, weeks } = useMemo(() => buildMonthGrid(year, monthIndex), [year, monthIndex]);
+  const { weeks, monthStartYmd, monthEndExclusiveYmd } = useMemo(
+    () => buildSofiaMonthGrid(year, monthIndex),
+    [year, monthIndex]
+  );
 
-  const fromYmd = ymdUtc(monthStart);
-  const toYmd = ymdUtc(monthEndExclusive);
+  const monthTitle = useMemo(() => formatSofiaMonthTitle(year, monthIndex), [year, monthIndex]);
+  const rangeTooltip = `${monthStartYmd} → ${monthEndExclusiveYmd} (checkout day exclusive)`;
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
       const [calRes, cabRes] = await Promise.all([
-        opsReadAPI.calendar({ from: fromYmd, to: toYmd, cabinId }),
+        opsReadAPI.calendar({ from: monthStartYmd, to: monthEndExclusiveYmd, cabinId }),
         opsReadAPI.cabinDetail(cabinId)
       ]);
       setData(calRes.data?.data || null);
@@ -106,7 +68,7 @@ export default function OpsCalendarMonth() {
     } finally {
       setLoading(false);
     }
-  }, [cabinId, fromYmd, toYmd]);
+  }, [cabinId, monthStartYmd, monthEndExclusiveYmd]);
 
   useEffect(() => {
     load();
@@ -118,13 +80,20 @@ export default function OpsCalendarMonth() {
   const syncCls = SYNC_BADGE[sync] || SYNC_BADGE.stale;
   const priceHint = data?.pricingHint;
 
+  const goToday = () => {
+    const { year: y, monthIndex: m } = sofiaNowYearMonth();
+    setYear(y);
+    setMonthIndex(m);
+  };
+
   const openPanel = (kind) => {
     setActionError('');
     setSheetBlock(null);
     if (kind === 'manual') setSheetKind('add_manual');
     if (kind === 'maintenance') setSheetKind('add_maintenance');
-    setFormStart(fromYmd);
-    setFormEnd(ymdUtc(addDaysUtc(monthStart, 1)));
+    setFormStart(monthStartYmd);
+    const t0 = toDate(`${monthStartYmd} 00:00:00.000`, { timeZone: OPS_CALENDAR_TZ });
+    setFormEnd(formatInTimeZone(addDays(t0, 1), OPS_CALENDAR_TZ, 'yyyy-MM-dd'));
   };
 
   const closeSheet = () => {
@@ -197,31 +166,38 @@ export default function OpsCalendarMonth() {
   }
 
   return (
-    <div className="space-y-4 w-full pb-28 md:pb-10">
-      <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5 text-left">
-        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            <Link to="/ops/calendar" className="text-sm text-[#81887A] hover:underline">
+    <div className="space-y-4 w-full max-w-7xl mx-auto pb-28 md:pb-10 text-left">
+      <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 flex-1 space-y-2">
+            <Link to="/ops/calendar" className="text-sm text-[#81887A] hover:underline inline-block">
               ← All properties
             </Link>
-            <h1 className="text-lg font-semibold text-gray-900 mt-2 lg:mt-3">{cabinLabel}</h1>
-            <p className="text-xs text-gray-500 font-mono mt-1">
-              {fromYmd} → {toYmd} <span className="text-gray-400">(exclusive end)</span>
-            </p>
+            <h1
+              className="text-2xl md:text-3xl font-semibold text-gray-900 tracking-tight"
+              title={rangeTooltip}
+            >
+              {monthTitle}
+            </h1>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-600">
+              <span className="font-medium text-gray-800">{cabinLabel}</span>
+              <span className={`text-xs px-2.5 py-0.5 rounded-full border ${syncCls}`}>Sync: {sync}</span>
+              <span className="text-xs text-gray-500">{OPS_CALENDAR_TZ}</span>
+            </div>
             {priceHint?.nightPrice != null ? (
-              <p className="text-sm text-gray-600 mt-3">
+              <p className="text-sm text-gray-600 pt-1">
                 List night from cabin: <span className="font-semibold">{priceHint.nightPrice}</span>{' '}
                 {priceHint.currency?.toUpperCase()}
               </p>
             ) : null}
           </div>
-          <div className="flex flex-wrap items-center gap-2 shrink-0 lg:pt-1">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button
               type="button"
               onClick={() => {
-                const d = new Date(Date.UTC(year, monthIndex - 1, 1));
-                setYear(d.getUTCFullYear());
-                setMonthIndex(d.getUTCMonth());
+                const n = addOneMonth(year, monthIndex, -1);
+                setYear(n.year);
+                setMonthIndex(n.monthIndex);
               }}
               className="px-3 py-2 text-sm rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
             >
@@ -229,16 +205,22 @@ export default function OpsCalendarMonth() {
             </button>
             <button
               type="button"
+              onClick={goToday}
+              className="px-3 py-2 text-sm rounded-lg border border-gray-200 bg-white hover:bg-gray-50 font-medium"
+            >
+              Today
+            </button>
+            <button
+              type="button"
               onClick={() => {
-                const d = new Date(Date.UTC(year, monthIndex + 1, 1));
-                setYear(d.getUTCFullYear());
-                setMonthIndex(d.getUTCMonth());
+                const n = addOneMonth(year, monthIndex, 1);
+                setYear(n.year);
+                setMonthIndex(n.monthIndex);
               }}
               className="px-3 py-2 text-sm rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
             >
               Next
             </button>
-            <span className={`text-xs px-2.5 py-1 rounded-full border ${syncCls}`}>Sync {sync}</span>
           </div>
         </div>
 
@@ -346,9 +328,7 @@ export default function OpsCalendarMonth() {
                 ? 'Maintenance block'
                 : 'Block'}
           </div>
-          <div className="text-xs text-gray-500">
-            {String(sheetBlock?.startDate || '').slice(0, 10)} → {String(sheetBlock?.endDate || '').slice(0, 10)} (end exclusive)
-          </div>
+          <div className="text-xs text-gray-500">{blockRangeTitle(sheetBlock)}</div>
           {actionError ? (
             <div className="text-sm text-red-700 border border-red-200 bg-red-50 rounded-lg px-3 py-2">
               {actionError}
@@ -358,45 +338,63 @@ export default function OpsCalendarMonth() {
       </CalendarBottomSheet>
 
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-        <div className="grid grid-cols-7 border-b border-gray-200 bg-gray-50">
+        <div className="px-3 py-2.5 border-b border-gray-200 bg-gray-50/90">
+          <p className="text-[11px] sm:text-xs font-medium text-gray-600 mb-2">Legend</p>
+          <ul className="flex flex-wrap gap-1.5 sm:gap-2">
+            {legendItems().map((x) => (
+              <li key={x.key} className={`text-[10px] sm:text-xs px-2 py-0.5 sm:py-1 rounded border ${x.className}`}>
+                {x.label}
+              </li>
+            ))}
+          </ul>
+          <p className="text-[10px] text-gray-500 mt-2">
+            Conflicts: hard {data?.conflictMarkers?.hard?.length || 0}, warnings {data?.conflictMarkers?.warnings?.length || 0}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-7 border-b border-gray-200 bg-gray-200/90">
           {WEEKDAYS.map((d) => (
-            <div key={d} className="text-[10px] sm:text-xs font-medium text-gray-500 text-center py-2">
+            <div key={d} className="text-[10px] sm:text-xs font-semibold text-gray-700 text-center py-2.5">
               {d}
             </div>
           ))}
         </div>
-        {weeks.map((weekDays, wi) => {
-          const { segs, laneCount } = segmentsForWeek(weekDays, blocks, cabinId);
-          const barAreaH = Math.min(12, laneCount) * 26 + 8;
+        {weeks.map((weekCells, wi) => {
+          const { segs, laneCount } = computeWeekBarSegments(weekCells, blocks, cabinId);
+          const barAreaH = Math.min(12, laneCount) * 28 + 10;
           return (
             <div key={wi} className="border-b border-gray-100 last:border-b-0">
-              <div className="grid grid-cols-7">
-                {weekDays.map((day) => {
-                  const inMonth = day >= monthStart && day < monthEndExclusive;
-                  const ymd = ymdUtc(day);
-                  const isToday = todayYmd && ymd === todayYmd;
+              <div className="grid grid-cols-7 divide-x divide-gray-100">
+                {weekCells.map((cell) => {
+                  const inMonth = cell.ymd >= monthStartYmd && cell.ymd < monthEndExclusiveYmd;
+                  const isToday = todayYmd && cell.ymd === todayYmd;
                   return (
                     <div
-                      key={ymd}
-                      className={`min-h-[48px] sm:min-h-[56px] border-r border-gray-100 last:border-r-0 p-1 ${!inMonth ? 'bg-gray-50/80' : 'bg-white'} ${
-                        isToday ? 'ring-1 ring-inset ring-amber-400 bg-amber-50/40' : ''
-                      }`}
+                      key={cell.ymd}
+                      className={`min-h-[52px] sm:min-h-[60px] p-1.5 ${
+                        !inMonth ? 'bg-gray-50 text-gray-400' : 'bg-white text-gray-900'
+                      } ${isToday ? 'ring-2 ring-inset ring-[#81887A]/50 bg-[#f4f6f2]' : ''}`}
                     >
-                      <div className={`text-xs sm:text-sm font-medium ${inMonth ? 'text-gray-900' : 'text-gray-300'}`}>{day.getUTCDate()}</div>
+                      <div
+                        className={`text-xs sm:text-sm font-semibold tabular-nums ${inMonth ? 'text-gray-900' : 'text-gray-300'}`}
+                      >
+                        {cell.dayOfMonth}
+                      </div>
                     </div>
                   );
                 })}
               </div>
-              <div className="relative border-t border-gray-100 bg-gray-50/50 px-0.5" style={{ minHeight: barAreaH }}>
+              <div className="relative border-t border-gray-100 bg-gray-50/60 px-0.5 py-1" style={{ minHeight: barAreaH }}>
                 {segs.map((s) => {
                   const b = s.block;
                   const bar = BLOCK_BAR[b.blockType] || 'bg-gray-500 text-white';
                   const ring = b.render?.conflictToken === 'hard' ? CONFLICT_RING.hard : b.render?.conflictToken === 'warning' ? CONFLICT_RING.warning : '';
                   const label = b.render?.labelShort || b.blockType;
-                  const top = 4 + s.lane * 26;
+                  const top = 5 + s.lane * 28;
                   const rowKey = `${wi}-${b.id}`;
                   const canAct = (b.blockType === 'manual_block' || b.blockType === 'maintenance') && extractMongoIdFromBlockId(b.id);
                   const menuOpen = openBlockKey === rowKey;
+                  const tip = `${label} — ${blockRangeTitle(b)}`;
 
                   if (b.blockType === 'reservation') {
                     return (
@@ -404,8 +402,8 @@ export default function OpsCalendarMonth() {
                         key={rowKey}
                         to={`/ops/reservations/${b.sourceReference}`}
                         className={`absolute flex items-center px-1 rounded border text-[10px] sm:text-xs font-medium truncate shadow-sm ${bar} ${ring}`}
-                        style={{ left: `${s.leftPct}%`, width: `${s.widthPct}%`, top, height: 22 }}
-                        title={label}
+                        style={{ left: `${s.leftPct}%`, width: `${s.widthPct}%`, top, height: 24 }}
+                        title={tip}
                       >
                         {label}
                       </Link>
@@ -417,8 +415,8 @@ export default function OpsCalendarMonth() {
                       <button
                         type="button"
                         className={`absolute flex items-center px-1 rounded border text-[10px] sm:text-xs font-medium truncate shadow-sm text-left ${bar} ${ring}`}
-                        style={{ left: `${s.leftPct}%`, width: `${s.widthPct}%`, top, height: 22 }}
-                        title={label}
+                        style={{ left: `${s.leftPct}%`, width: `${s.widthPct}%`, top, height: 24 }}
+                        title={tip}
                         onClick={() => setOpenBlockKey((k) => (k === rowKey ? null : rowKey))}
                       >
                         {label}
@@ -426,7 +424,7 @@ export default function OpsCalendarMonth() {
                       {menuOpen && canAct ? (
                         <div
                           className="absolute z-20 flex flex-col gap-1 bg-white border border-gray-200 shadow-lg rounded-lg p-2 text-xs"
-                          style={{ left: `${s.leftPct}%`, top: top + 24, minWidth: 140 }}
+                          style={{ left: `${s.leftPct}%`, top: top + 26, minWidth: 140 }}
                         >
                           <button
                             type="button"
@@ -457,20 +455,6 @@ export default function OpsCalendarMonth() {
             </div>
           );
         })}
-      </div>
-
-      <div className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
-        <h3 className="text-sm font-semibold text-gray-900 mb-3">Legend</h3>
-        <ul className="flex flex-wrap gap-2">
-          {legendItems().map((x) => (
-            <li key={x.key} className={`text-xs px-2 py-1 rounded border ${x.className}`}>
-              {x.label}
-            </li>
-          ))}
-        </ul>
-        <p className="text-xs text-gray-500 mt-2">
-          Conflicts: hard {data?.conflictMarkers?.hard?.length || 0}, warnings {data?.conflictMarkers?.warnings?.length || 0}
-        </p>
       </div>
     </div>
   );
