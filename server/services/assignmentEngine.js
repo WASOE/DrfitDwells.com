@@ -1,6 +1,10 @@
 const Unit = require('../models/Unit');
 const Booking = require('../models/Booking');
-const moment = require('moment');
+const {
+  findParentCabinForCabinType,
+  isUnitGuestStayAvailable
+} = require('./publicAvailabilityService');
+const { BLOCKING_BOOKING_STATUSES } = require('./calendar/blockingStatusConstants');
 
 /**
  * Assignment Engine for A-frame bookings
@@ -29,38 +33,23 @@ class AssignmentEngine {
 
       if (units.length === 0) return null;
 
-      const checkInDate = moment(checkIn).startOf('day').toDate();
-      const checkOutDate = moment(checkOut).startOf('day').toDate();
       const unitIds = units.map(u => u._id);
 
-      const [conflictingUnitIds, counts] = await Promise.all([
-        Booking.find({
-          unitId: { $in: unitIds },
-          status: { $in: ['pending', 'confirmed'] },
-          checkIn: { $lt: checkOutDate },
-          checkOut: { $gt: checkInDate }
-        }).distinct('unitId'),
-        Booking.aggregate([
-          { $match: { unitId: { $in: unitIds }, status: { $in: ['pending', 'confirmed'] } } },
-          { $group: { _id: '$unitId', count: { $sum: 1 } } }
-        ])
-      ]);
+      const parentCabin = await findParentCabinForCabinType(cabinTypeId);
 
-      const conflictSet = new Set(conflictingUnitIds.map(id => id.toString()));
+      const counts = await Booking.aggregate([
+        { $match: { unitId: { $in: unitIds }, status: { $in: BLOCKING_BOOKING_STATUSES } } },
+        { $group: { _id: '$unitId', count: { $sum: 1 } } }
+      ]);
       const countMap = new Map(counts.map(c => [c._id.toString(), c.count]));
 
       const availableUnits = [];
       for (const unit of units) {
         if (excludeUnitId && unit._id.toString() === excludeUnitId.toString()) continue;
 
-        const unitBlocked = Array.isArray(unit.blockedDates) ? unit.blockedDates : [];
-        const hasBlockedDates = unitBlocked.some(blockedDate => {
-          const blocked = moment(blockedDate).startOf('day').toDate();
-          return blocked >= checkInDate && blocked < checkOutDate;
-        });
-        if (hasBlockedDates) continue;
-
-        if (conflictSet.has(unit._id.toString())) continue;
+        // Canonical: bookings + AvailabilityBlock (incl. external_hold) + unit blockedDates
+        const ok = await isUnitGuestStayAvailable(unit._id, cabinTypeId, checkIn, checkOut, parentCabin);
+        if (!ok) continue;
 
         availableUnits.push({
           unit,
@@ -96,33 +85,8 @@ class AssignmentEngine {
         return false;
       }
 
-      const checkInDate = moment(checkIn).startOf('day').toDate();
-      const checkOutDate = moment(checkOut).startOf('day').toDate();
-
-      // Check unit-specific blocked dates
-      const unitBlocked = Array.isArray(unit.blockedDates) ? unit.blockedDates : [];
-      const hasBlockedDates = unitBlocked.some(blockedDate => {
-        const blocked = moment(blockedDate).startOf('day').toDate();
-        return blocked >= checkInDate && blocked < checkOutDate;
-      });
-
-      if (hasBlockedDates) {
-        return false;
-      }
-
-      // Check for conflicting bookings
-      const conflictingBookings = await Booking.find({
-        unitId: unit._id,
-        status: { $in: ['pending', 'confirmed'] },
-        $or: [
-          {
-            checkIn: { $lt: checkOutDate },
-            checkOut: { $gt: checkInDate }
-          }
-        ]
-      });
-
-      return conflictingBookings.length === 0;
+      const parentCabin = await findParentCabinForCabinType(unit.cabinTypeId);
+      return isUnitGuestStayAvailable(unit._id, unit.cabinTypeId, checkIn, checkOut, parentCabin);
     } catch (error) {
       console.error('Check unit availability error:', error);
       return false;
@@ -143,18 +107,7 @@ class AssignmentEngine {
         isActive: true
       }).sort({ unitNumber: 1 });
 
-      const checkInDate = moment(checkIn).startOf('day').toDate();
-      const checkOutDate = moment(checkOut).startOf('day').toDate();
-      const unitIds = units.map(u => u._id);
-
-      const conflictingUnitIds = await Booking.find({
-        unitId: { $in: unitIds },
-        status: { $in: ['pending', 'confirmed'] },
-        checkIn: { $lt: checkOutDate },
-        checkOut: { $gt: checkInDate }
-      }).distinct('unitId');
-
-      const conflictSet = new Set(conflictingUnitIds.map(id => id.toString()));
+      const parentCabin = await findParentCabinForCabinType(cabinTypeId);
 
       const summary = {
         totalUnits: units.length,
@@ -163,12 +116,7 @@ class AssignmentEngine {
       };
 
       for (const unit of units) {
-        const unitBlocked = Array.isArray(unit.blockedDates) ? unit.blockedDates : [];
-        const hasBlockedDates = unitBlocked.some(blockedDate => {
-          const blocked = moment(blockedDate).startOf('day').toDate();
-          return blocked >= checkInDate && blocked < checkOutDate;
-        });
-        const isAvailable = !hasBlockedDates && !conflictSet.has(unit._id.toString());
+        const isAvailable = await isUnitGuestStayAvailable(unit._id, cabinTypeId, checkIn, checkOut, parentCabin);
 
         const entry = { unitId: unit._id, unitNumber: unit.unitNumber, displayName: unit.displayName };
         if (isAvailable) {

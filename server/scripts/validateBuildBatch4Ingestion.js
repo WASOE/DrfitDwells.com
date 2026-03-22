@@ -16,6 +16,7 @@ const { importIcalForCabin } = require('../services/ops/ingestion/icalIngestionS
 const { getReservationsWorkspaceReadModel } = require('../services/ops/readModels/reservationsReadModel');
 const { getDashboardReadModel } = require('../services/ops/readModels/dashboardReadModel');
 const { getSyncCenterReadModel } = require('../services/ops/readModels/syncCenterReadModel');
+const { assertScriptWriteAllowedForMongoUri } = require('../utils/scriptProductionGuard');
 
 function plusDays(days) {
   const d = new Date();
@@ -36,7 +37,9 @@ function makeStripeEvent({ id, type, created, object }) {
 }
 
 async function run() {
-  await mongoose.connect(process.env.MONGODB_URI || process.env.MONGO_URI || DEFAULT_MONGO_URI);
+  const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || DEFAULT_MONGO_URI;
+  await mongoose.connect(mongoUri);
+  assertScriptWriteAllowedForMongoUri(mongoUri);
 
   const stamp = Date.now();
   const bookingEmail = `batch4-${stamp}@example.com`;
@@ -56,6 +59,8 @@ async function run() {
     adults: 2,
     children: 0,
     status: 'pending',
+    isTest: true,
+    isProductionSafe: false,
     guestInfo: {
       firstName: 'Batch4',
       lastName: 'Tester',

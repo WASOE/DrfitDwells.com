@@ -25,6 +25,7 @@
     "cleanup:reservation-integrity:preview": "node scripts/reservationIntegrityCleanup.js --preview-unsafe-blocking --preview-ics-exclusion",
     "validate:sync": "node scripts/validateCalendarSync.js",
     "validate:syncscheduler": "node scripts/validateCalendarSyncScheduler.js",
+    "maintenance:archive-fixtures": "node scripts/maintenance/archiveFixtureContamination.js",
     "test:security": "node --test scripts/securityHardening.test.cjs"
   },
   "dependencies": {

@@ -2,10 +2,15 @@ const express = require('express');
 const { query, validationResult } = require('express-validator');
 const Cabin = require('../models/Cabin');
 const CabinType = require('../models/CabinType');
-const Booking = require('../models/Booking');
 const AssignmentEngine = require('../services/assignmentEngine');
 const featureFlags = require('../utils/featureFlags');
 const moment = require('moment');
+const { normalizeDateToSofiaDayStart } = require('../utils/dateTime');
+const {
+  normalizeGuestStayRange,
+  isSingleCabinGuestStayAvailable
+} = require('../services/publicAvailabilityService');
+const { guestFacingCabinMatch } = require('../utils/fixtureExclusion');
 
 const router = express.Router();
 
@@ -28,39 +33,32 @@ router.get('/', [
     }
 
     const { checkIn, checkOut, adults, children = 0 } = req.query;
-    
-    // Parse dates in UTC to avoid timezone skew
-    const checkInMoment = moment.utc(checkIn, moment.ISO_8601, true);
-    const checkOutMoment = moment.utc(checkOut, moment.ISO_8601, true);
 
-    if (!checkInMoment.isValid() || !checkOutMoment.isValid()) {
+    let checkInDate;
+    let checkOutDate;
+    try {
+      const n = normalizeGuestStayRange(checkIn, checkOut);
+      checkInDate = n.startDate;
+      checkOutDate = n.endDate;
+    } catch (e) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide valid ISO8601 dates'
+        message: 'Please provide a valid stay range (check-out must be after check-in)'
       });
     }
 
-    const checkInDate = checkInMoment.startOf('day').toDate();
-    const checkOutDate = checkOutMoment.startOf('day').toDate();
     const totalGuests = parseInt(adults, 10) + parseInt(children, 10);
 
-    // Validate dates
-    if (checkInDate >= checkOutDate) {
-      return res.status(400).json({
-        success: false,
-        message: 'Check-out date must be after check-in date'
-      });
-    }
-
-    if (checkInMoment.isBefore(moment.utc().startOf('day'))) {
+    const todayStart = normalizeDateToSofiaDayStart(new Date());
+    if (checkInDate < todayStart) {
       return res.status(400).json({
         success: false,
         message: 'Check-in date cannot be in the past'
       });
     }
 
-    // Get all active cabins
-    const allCabins = await Cabin.find({ isActive: true });
+    // Guest-facing cabins only (exclude validation fixture names)
+    const allCabins = await Cabin.find(guestFacingCabinMatch());
 
     // Filter cabins by capacity and minimum guest requirements
     const capacityFilteredCabins = allCabins.filter(cabin => {
@@ -68,27 +66,10 @@ router.get('/', [
       return cabin.capacity >= totalGuests && totalGuests >= minGuests;
     });
 
-    const cabinIds = capacityFilteredCabins.map(c => c._id);
-    const conflicting = await Booking.find({
-      cabinId: { $in: cabinIds },
-      status: { $in: ['pending', 'confirmed'] },
-      checkIn: { $lt: checkOutDate },
-      checkOut: { $gt: checkInDate }
-    }).select('cabinId').lean();
-
-    const bookedCabinIds = new Set(conflicting.map(b => b.cabinId.toString()));
-
     const availableCabins = [];
     for (const cabin of capacityFilteredCabins) {
-      if (bookedCabinIds.has(cabin._id.toString())) continue;
-
-      const blockedDates = Array.isArray(cabin.blockedDates) ? cabin.blockedDates : [];
-      const hasBlockedDates = blockedDates.some(blockedDate => {
-        const blocked = moment(blockedDate).startOf('day').toDate();
-        return blocked >= checkInDate && blocked < checkOutDate;
-      });
-
-      if (hasBlockedDates) continue;
+      const ok = await isSingleCabinGuestStayAvailable(cabin, checkIn, checkOut);
+      if (!ok) continue;
 
       // Calculate total price
         const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
@@ -201,38 +182,31 @@ router.get('/cabin-type/:slug', [
 
     const { checkIn, checkOut, adults, children = 0 } = req.query;
     const typeSlug = req.params.slug?.trim().toLowerCase();
-    
+
     if (!featureFlags.isMultiUnitType(typeSlug)) {
       return res.status(404).json({
         success: false,
         message: 'Multi-unit cabin type not found'
       });
     }
-    
-    // Parse dates in UTC
-    const checkInMoment = moment.utc(checkIn, moment.ISO_8601, true);
-    const checkOutMoment = moment.utc(checkOut, moment.ISO_8601, true);
 
-    if (!checkInMoment.isValid() || !checkOutMoment.isValid()) {
+    let checkInDate;
+    let checkOutDate;
+    try {
+      const n = normalizeGuestStayRange(checkIn, checkOut);
+      checkInDate = n.startDate;
+      checkOutDate = n.endDate;
+    } catch (e) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide valid ISO8601 dates'
+        message: 'Please provide a valid stay range (check-out must be after check-in)'
       });
     }
 
-    const checkInDate = checkInMoment.startOf('day').toDate();
-    const checkOutDate = checkOutMoment.startOf('day').toDate();
     const totalGuests = parseInt(adults, 10) + parseInt(children, 10);
 
-    // Validate dates
-    if (checkInDate >= checkOutDate) {
-      return res.status(400).json({
-        success: false,
-        message: 'Check-out date must be after check-in date'
-      });
-    }
-
-    if (checkInMoment.isBefore(moment.utc().startOf('day'))) {
+    const todayStart = normalizeDateToSofiaDayStart(new Date());
+    if (checkInDate < todayStart) {
       return res.status(400).json({
         success: false,
         message: 'Check-in date cannot be in the past'

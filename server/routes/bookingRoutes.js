@@ -8,6 +8,15 @@ const PaymentFinalization = require('../models/PaymentFinalization');
 const AssignmentEngine = require('../services/assignmentEngine');
 const featureFlags = require('../utils/featureFlags');
 const moment = require('moment');
+const {
+  normalizeGuestStayRange,
+  assertSingleCabinGuestStayAvailableOrThrow,
+  countBlockingBlocksForSingleCabin,
+  countBlockingBlocksForUnit,
+  findParentCabinForCabinType
+} = require('../services/publicAvailabilityService');
+const { normalizeDateToSofiaDayStart } = require('../utils/dateTime');
+const { BLOCKING_BOOKING_STATUSES } = require('../services/calendar/blockingStatusConstants');
 const emailService = require('../services/emailService');
 const pricingService = require('../services/pricingService');
 const Stripe = require('stripe');
@@ -91,16 +100,21 @@ router.post('/create-payment-intent', paymentIntentLimiter, [
         message: 'Cannot specify both cabinId and cabinTypeId'
       });
     }
-    const checkInDate = moment(checkIn).startOf('day').toDate();
-    const checkOutDate = moment(checkOut).startOf('day').toDate();
-
-    if (checkInDate >= checkOutDate) {
+    let checkInDate;
+    let checkOutDate;
+    try {
+      const n = normalizeGuestStayRange(checkIn, checkOut);
+      checkInDate = n.startDate;
+      checkOutDate = n.endDate;
+    } catch (e) {
       return res.status(400).json({
         success: false,
-        message: 'Check-out date must be after check-in date'
+        message: 'Please provide a valid stay range (check-out must be after check-in)'
       });
     }
-    if (checkInDate < moment().startOf('day').toDate()) {
+
+    const todayStart = normalizeDateToSofiaDayStart(new Date());
+    if (checkInDate < todayStart) {
       return res.status(400).json({
         success: false,
         message: 'Check-in date cannot be in the past'
@@ -118,6 +132,17 @@ router.post('/create-payment-intent', paymentIntentLimiter, [
           success: false,
           message: 'Cabin not found or not available'
         });
+      }
+      try {
+        await assertSingleCabinGuestStayAvailableOrThrow(entity, checkIn, checkOut);
+      } catch (e) {
+        if (e.code === 'NOT_AVAILABLE') {
+          return res.status(409).json({
+            success: false,
+            message: 'This cabin is not available for the selected dates'
+          });
+        }
+        throw e;
       }
     } else {
       entityType = 'cabinType';
@@ -261,19 +286,20 @@ router.post('/', bookingCreateLimiter, [
       });
     }
 
-    // Parse dates
-    const checkInDate = moment(checkIn).startOf('day').toDate();
-    const checkOutDate = moment(checkOut).startOf('day').toDate();
-
-    // Validate dates
-    if (checkInDate >= checkOutDate) {
+    let checkInDate;
+    let checkOutDate;
+    try {
+      const n = normalizeGuestStayRange(checkIn, checkOut);
+      checkInDate = n.startDate;
+      checkOutDate = n.endDate;
+    } catch (e) {
       return res.status(400).json({
         success: false,
-        message: 'Check-out date must be after check-in date'
+        message: 'Please provide a valid stay range (check-out must be after check-in)'
       });
     }
 
-    if (checkInDate < moment().startOf('day').toDate()) {
+    if (checkInDate < normalizeDateToSofiaDayStart(new Date())) {
       return res.status(400).json({
         success: false,
         message: 'Check-in date cannot be in the past'
@@ -284,6 +310,7 @@ router.post('/', bookingCreateLimiter, [
     let cabin = null;
     let cabinType = null;
     let assignedUnitId = unitId || null;
+    let parentCabinForUnit = null;
     let pricePerNight = 0;
     let pricingModel = 'per_night';
     let minGuests = 1;
@@ -320,23 +347,16 @@ router.post('/', bookingCreateLimiter, [
         });
       }
 
-      // Check for conflicting bookings
-      const conflictingBookings = await Booking.find({
-        cabinId,
-        status: { $in: ['pending', 'confirmed'] },
-        $or: [
-          {
-            checkIn: { $lt: checkOutDate },
-            checkOut: { $gt: checkInDate }
-          }
-        ]
-      });
-
-      if (conflictingBookings.length > 0) {
-        return res.status(409).json({
-          success: false,
-          message: 'This cabin is not available for the selected dates'
-        });
+      try {
+        await assertSingleCabinGuestStayAvailableOrThrow(cabin, checkIn, checkOut);
+      } catch (e) {
+        if (e.code === 'NOT_AVAILABLE') {
+          return res.status(409).json({
+            success: false,
+            message: 'This cabin is not available for the selected dates'
+          });
+        }
+        throw e;
       }
 
       pricePerNight = cabin.pricePerNight;
@@ -415,6 +435,8 @@ router.post('/', bookingCreateLimiter, [
       pricingModel = cabinType.pricingModel || 'per_night';
       minGuests = cabinType.minGuests || 1;
       transportOptions = cabinType.transportOptions || [];
+
+      parentCabinForUnit = await findParentCabinForCabinType(cabinTypeId);
     }
 
     // Calculate total price using pricingService (must match PI if paymentIntentId provided)
@@ -517,16 +539,17 @@ router.post('/', bookingCreateLimiter, [
     const booking = new Booking(bookingData);
     await booking.save();
 
-    // Race-condition guard: verify no overlapping booking was saved concurrently
+    // Race-condition guard: overlapping booking saved concurrently, or block created after our read
     if (cabinId) {
       const overlaps = await Booking.countDocuments({
         cabinId,
         _id: { $ne: booking._id },
-        status: { $in: ['pending', 'confirmed'] },
+        status: { $in: BLOCKING_BOOKING_STATUSES },
         checkIn: { $lt: checkOutDate },
         checkOut: { $gt: checkInDate }
       });
-      if (overlaps > 0) {
+      const blockRace = await countBlockingBlocksForSingleCabin(cabinId, checkInDate, checkOutDate);
+      if (overlaps > 0 || blockRace > 0) {
         await Booking.deleteOne({ _id: booking._id });
         return res.status(409).json({
           success: false,
@@ -538,11 +561,15 @@ router.post('/', bookingCreateLimiter, [
       const overlaps = await Booking.countDocuments({
         unitId: assignedUnitId,
         _id: { $ne: booking._id },
-        status: { $in: ['pending', 'confirmed'] },
+        status: { $in: BLOCKING_BOOKING_STATUSES },
         checkIn: { $lt: checkOutDate },
         checkOut: { $gt: checkInDate }
       });
-      if (overlaps > 0) {
+      let blockRace = 0;
+      if (parentCabinForUnit) {
+        blockRace = await countBlockingBlocksForUnit(parentCabinForUnit._id, assignedUnitId, checkInDate, checkOutDate);
+      }
+      if (overlaps > 0 || blockRace > 0) {
         await Booking.deleteOne({ _id: booking._id });
         return res.status(409).json({
           success: false,

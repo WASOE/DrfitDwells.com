@@ -6,12 +6,15 @@ const ChannelSyncEvent = require('../models/ChannelSyncEvent');
 const AvailabilityBlock = require('../models/AvailabilityBlock');
 const { runAvailabilityBackfillDryRun } = require('../services/availabilityBackfillService');
 const { normalizeExclusiveDateRange } = require('../utils/dateTime');
+const { assertScriptWriteAllowedForMongoUri } = require('../utils/scriptProductionGuard');
+const { DEFAULT_MONGO_URI } = require('../config/dbDefaults');
 
 async function main() {
   const conn = await connectDB();
   if (!conn) {
     throw new Error('Database connection unavailable');
   }
+  assertScriptWriteAllowedForMongoUri(process.env.MONGODB_URI || process.env.MONGO_URI || DEFAULT_MONGO_URI);
 
   const now = new Date();
   const tomorrow = new Date(now.getTime() + 24 * 3600 * 1000);

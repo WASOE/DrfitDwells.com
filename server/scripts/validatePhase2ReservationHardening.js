@@ -10,6 +10,7 @@ const Booking = require('../models/Booking');
 const Payment = require('../models/Payment');
 const { selectBlockingSpansForSingleCabin } = require('../services/calendar/selectBlockingSpans');
 const { getReservationIntegritySignals } = require('../services/ops/readiness/reservationIntegritySignals');
+const { assertScriptWriteAllowedForMongoUri } = require('../utils/scriptProductionGuard');
 
 function assert(cond, message) {
   if (!cond) throw new Error(message);
@@ -25,6 +26,7 @@ async function run() {
   process.env.PUBLIC_ICS_STRICT_ELIGIBILITY = '1';
   const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || DEFAULT_MONGO_URI;
   await mongoose.connect(mongoUri);
+  assertScriptWriteAllowedForMongoUri(mongoUri);
 
   const todayUtc = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()));
   const base = addDaysUTC(todayUtc, 40);
@@ -54,6 +56,8 @@ async function run() {
       adults: 2,
       children: 0,
       status: 'pending',
+      isTest: true,
+      isProductionSafe: false,
       guestInfo: {
         firstName: 'Pay',
         lastName: 'Later',
@@ -138,6 +142,8 @@ async function run() {
       adults: 2,
       children: 0,
       status: 'confirmed',
+      isTest: true,
+      isProductionSafe: false,
       guestInfo: {
         firstName: 'Legacy',
         lastName: 'Paid',

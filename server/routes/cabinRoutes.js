@@ -1,6 +1,7 @@
 const express = require('express');
 const Cabin = require('../models/Cabin');
 const { validateId } = require('../middleware/validateId');
+const { guestFacingCabinMatch, isFixtureCabinName } = require('../utils/fixtureExclusion');
 
 const router = express.Router();
 
@@ -32,7 +33,7 @@ router.get('/:id', validateId('id'), async (req, res) => {
 
 router.get('/', async (req, res) => {
   try {
-    const cabins = await Cabin.find({ isActive: true }).select('-blockedDates');
+    const cabins = await Cabin.find(guestFacingCabinMatch()).select('-blockedDates');
 
     res.json({
       success: true,

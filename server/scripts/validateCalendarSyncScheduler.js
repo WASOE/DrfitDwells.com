@@ -12,6 +12,7 @@ const ChannelSyncEvent = require('../models/ChannelSyncEvent');
 
 const { startIcalSyncSchedulerIfEnabled, stopIcalSyncSchedulerForTest, getIcalSyncSchedulerState, runManualIcalSync } = require('../services/ops/ingestion/icalSyncScheduler');
 const { getOpsHealthReadModel } = require('../services/ops/readModels/healthReadModel');
+const { assertScriptWriteAllowedForMongoUri } = require('../utils/scriptProductionGuard');
 
 function assert(cond, message) {
   if (!cond) throw new Error(message);
@@ -58,6 +59,7 @@ async function waitFor(predicate, { timeoutMs = 8000, intervalMs = 150 } = {}) {
 async function run() {
   const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || DEFAULT_MONGO_URI;
   await mongoose.connect(mongoUri);
+  assertScriptWriteAllowedForMongoUri(mongoUri);
 
   const channel = 'airbnb_ical';
 

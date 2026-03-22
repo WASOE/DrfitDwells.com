@@ -9,6 +9,7 @@ const adminController = require('../controllers/adminController');
 const { transitionReservation } = require('../services/ops/domain/reservationWriteService');
 const Booking = require('../models/Booking');
 const Cabin = require('../models/Cabin');
+const { assertScriptWriteAllowedForMongoUri } = require('../utils/scriptProductionGuard');
 
 function makeRes() {
   return {
@@ -28,6 +29,7 @@ function makeRes() {
 async function run() {
   const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || DEFAULT_MONGO_URI;
   await mongoose.connect(mongoUri);
+  assertScriptWriteAllowedForMongoUri(mongoUri);
 
   try {
     // Ensure cutover is enabled for reservations and legacy admin writes are blocked.
@@ -53,6 +55,8 @@ async function run() {
         adults: 2,
         children: 0,
         status: 'pending',
+        isTest: true,
+        isProductionSafe: false,
         guestInfo: {
           firstName: 'Ops',
           lastName: 'Smoke',

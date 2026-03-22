@@ -5,7 +5,7 @@ const { mapBookingToReservationCompatible } = require('../../../mappers/bookingT
 const { escapeRegex } = require('../../../utils/escapeRegex');
 
 function buildBookingFilters(query) {
-  const filters = {};
+  const filters = { isTest: { $ne: true } };
   if (query.status) filters.status = query.status;
   if (query.cabinId) filters.cabinId = query.cabinId;
   if (query.dateFrom || query.dateTo) {

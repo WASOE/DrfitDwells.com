@@ -3,6 +3,7 @@ const Cabin = require('../../../models/Cabin');
 const CabinType = require('../../../models/CabinType');
 const Unit = require('../../../models/Unit');
 const { escapeRegex } = require('../../../utils/escapeRegex');
+const { FIXTURE_CABIN_NAME_PATTERN, isFixtureCabinName } = require('../../../utils/fixtureExclusion');
 
 function mapSingleCabinListItem(cabin) {
   return {
@@ -79,15 +80,22 @@ async function getCabinsListReadModel({ page = 1, limit = 20, search = '' }) {
   const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
   const skip = (safePage - 1) * safeLimit;
 
-  const cabinFilter = {};
+  const fixtureExclusion = { name: { $not: FIXTURE_CABIN_NAME_PATTERN } };
+  const cabinFilter = { ...fixtureExclusion };
   const typeFilter = { isActive: true };
 
   if (search) {
     const q = escapeRegex(String(search));
-    cabinFilter.$or = [
-      { name: { $regex: q, $options: 'i' } },
-      { location: { $regex: q, $options: 'i' } }
+    cabinFilter.$and = [
+      fixtureExclusion,
+      {
+        $or: [
+          { name: { $regex: q, $options: 'i' } },
+          { location: { $regex: q, $options: 'i' } }
+        ]
+      }
     ];
+    delete cabinFilter.name;
     typeFilter.$and = [
       { isActive: true },
       {
@@ -135,6 +143,9 @@ async function getCabinDetailReadModel(id) {
   if (!mongoose.Types.ObjectId.isValid(id)) return null;
 
   const cabin = await Cabin.findById(id).lean();
+  if (cabin && isFixtureCabinName(cabin.name)) {
+    return null;
+  }
   if (cabin) {
     return {
       kind: 'single_cabin',

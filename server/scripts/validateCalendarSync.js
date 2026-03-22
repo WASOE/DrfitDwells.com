@@ -5,6 +5,7 @@ const http = require('http');
 const mongoose = require('mongoose');
 
 const { DEFAULT_MONGO_URI } = require('../config/dbDefaults');
+const { assertScriptWriteAllowedForMongoUri } = require('../utils/scriptProductionGuard');
 const Cabin = require('../models/Cabin');
 const Booking = require('../models/Booking');
 const AvailabilityBlock = require('../models/AvailabilityBlock');
@@ -42,6 +43,7 @@ function templateLoad(filePath, replacements) {
 async function run() {
   const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || DEFAULT_MONGO_URI;
   await mongoose.connect(mongoUri);
+  assertScriptWriteAllowedForMongoUri(mongoUri);
 
   const todayUtc = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()));
   // Future window so Booking schema validation passes (check-in must be in the future).
@@ -98,6 +100,8 @@ async function run() {
     adults: 2,
     children: 0,
     status: 'pending',
+    isTest: true,
+    isProductionSafe: false,
     guestInfo: {
       firstName: 'Sync',
       lastName: 'Overlap',

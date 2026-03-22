@@ -10,6 +10,7 @@ const { transitionReservation, reassignReservation, editReservationDates, editGu
 const { createBlock, editBlock, tombstoneBlock } = require('../services/ops/domain/availabilityWriteService');
 const { sendArrivalInstructions } = require('../services/ops/domain/communicationWriteService');
 const { getReservationDetailReadModel } = require('../services/ops/readModels/reservationDetailReadModel');
+const { assertScriptWriteAllowedForMongoUri } = require('../utils/scriptProductionGuard');
 
 function plusDays(days) {
   const d = new Date();
@@ -50,6 +51,7 @@ async function ensureBooking({ cabinId, status = 'pending', checkIn, checkOut, e
 async function run() {
   const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || DEFAULT_MONGO_URI;
   await mongoose.connect(mongoUri);
+  assertScriptWriteAllowedForMongoUri(mongoUri);
   const report = {
     transitionFlow: false,
     invalidTransitionRejected: false,

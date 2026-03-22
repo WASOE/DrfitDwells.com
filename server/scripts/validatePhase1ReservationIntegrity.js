@@ -20,6 +20,7 @@ const { getCalendarReadModel } = require('../services/ops/readModels/calendarRea
 const { selectBlockingSpansForSingleCabin } = require('../services/calendar/selectBlockingSpans');
 const { transitionReservation } = require('../services/ops/domain/reservationWriteService');
 const { normalizeExclusiveDateRange } = require('../utils/dateTime');
+const { assertScriptWriteAllowedForMongoUri } = require('../utils/scriptProductionGuard');
 
 function assert(cond, message) {
   if (!cond) throw new Error(message);
@@ -34,6 +35,7 @@ function addDaysUTC(date, days) {
 async function run() {
   const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || DEFAULT_MONGO_URI;
   await mongoose.connect(mongoUri);
+  assertScriptWriteAllowedForMongoUri(mongoUri);
 
   const todayUtc = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()));
   const base = addDaysUTC(todayUtc, 35);
@@ -77,6 +79,8 @@ async function run() {
       adults: 2,
       children: 0,
       status: 'confirmed',
+      isTest: true,
+      isProductionSafe: false,
       guestInfo: {
         firstName: 'Zed',
         lastName: 'Cancelled',
@@ -117,6 +121,8 @@ async function run() {
       adults: 2,
       children: 0,
       status: 'confirmed',
+      isTest: true,
+      isProductionSafe: false,
       guestInfo: {
         firstName: 'Block',
         lastName: 'Tomb',
