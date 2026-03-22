@@ -58,6 +58,10 @@ const buildUnits = (count) => (
 
 const seedDatabase = async () => {
   try {
+    if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PRODUCTION_SEED !== '1') {
+      console.error('[seed] Refused: NODE_ENV=production. Set ALLOW_PRODUCTION_SEED=1 only on intentional maintenance.');
+      process.exit(1);
+    }
     await connectDB();
 
     const keepCabins = await Cabin.find({ name: { $in: KEEP_CABIN_NAMES } });

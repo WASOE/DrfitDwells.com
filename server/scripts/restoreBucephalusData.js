@@ -24,6 +24,10 @@ const connectDB = async () => {
 
 async function restoreBucephalusData() {
   try {
+    if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PRODUCTION_SEED !== '1') {
+      console.error('[seed] restoreBucephalusData refused in production without ALLOW_PRODUCTION_SEED=1');
+      process.exit(1);
+    }
     await connectDB();
 
     const cabin = await Cabin.findOne({ name: { $in: ['The Cabin', 'Bucephalus'] } });

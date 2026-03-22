@@ -494,7 +494,14 @@ router.post('/', bookingCreateLimiter, [
           specialRequests: typeof req.body.specialRequests === 'string' ? req.body.specialRequests.trim().slice(0, 500) : ''
         }
       },
-      status: 'pending'
+      status: 'pending',
+      isProductionSafe: true,
+      isTest: false,
+      provenance: {
+        source: 'guest_portal',
+        intakeRevision: 1,
+        createdByRoute: 'POST /api/bookings'
+      }
     };
 
     // Add appropriate ID fields based on booking type

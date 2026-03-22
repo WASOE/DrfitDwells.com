@@ -144,7 +144,10 @@ async function tickOnce({ reason = 'scheduler_cycle' } = {}) {
 
   // Discover configured cabins from source truth.
   // We only run cabins/channels with a configured feedUrl.
-  const configured = await CabinChannelSyncState.find({ channel: CHANNEL, feedUrl: { $ne: null } })
+  const configured = await CabinChannelSyncState.find({
+    channel: CHANNEL,
+    feedUrl: { $exists: true, $nin: [null, ''] }
+  })
     .select('cabinId feedUrl')
     .lean();
 

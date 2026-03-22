@@ -107,9 +107,10 @@ async function importIcalForCabin({ cabinId, feedUrl, channel = 'airbnb_ical' })
       anomalyType: 'feed_unreachable',
       metadata: {}
     });
+    // Never clear persisted feedUrl on a missing-run input — that bricks scheduler/manual retry.
     await CabinChannelSyncState.findOneAndUpdate(
       { cabinId, channel },
-      { $set: { feedUrl: null, lastSyncedAt: runAt, lastSyncOutcome: 'failed', lastSyncMessage: 'Missing feed URL' } },
+      { $set: { lastSyncedAt: runAt, lastSyncOutcome: 'failed', lastSyncMessage: 'Missing feed URL' } },
       { upsert: true, new: true }
     );
     return { outcome: 'failed', imported: 0, tombstoned: 0 };

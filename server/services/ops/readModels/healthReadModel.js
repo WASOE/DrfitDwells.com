@@ -8,9 +8,21 @@ const ManualReviewItem = require('../../../models/ManualReviewItem');
 const StripeEventEvidence = require('../../../models/StripeEventEvidence');
 const CabinChannelSyncState = require('../../../models/CabinChannelSyncState');
 const { getIcalSyncSchedulerState } = require('../ingestion/icalSyncScheduler');
+const { getReservationIntegritySignals } = require('../readiness/reservationIntegritySignals');
 
 async function getOpsHealthReadModel() {
-  const [guestCount, blockCount, auditCount, syncCount, paymentCount, payoutCount, manualReviewOpenCount, lastStripeEvent, syncStates] = await Promise.all([
+  const [
+    guestCount,
+    blockCount,
+    auditCount,
+    syncCount,
+    paymentCount,
+    payoutCount,
+    manualReviewOpenCount,
+    lastStripeEvent,
+    syncStates,
+    reservationIntegrity
+  ] = await Promise.all([
     Guest.countDocuments({}),
     AvailabilityBlock.countDocuments({}),
     AuditEvent.countDocuments({}),
@@ -55,6 +67,7 @@ async function getOpsHealthReadModel() {
       }))
     },
     calendarSyncScheduler: getIcalSyncSchedulerState(),
+    reservationIntegrity,
     generatedAt: new Date().toISOString()
   };
 }

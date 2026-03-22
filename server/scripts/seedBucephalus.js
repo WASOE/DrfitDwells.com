@@ -41,6 +41,10 @@ const listImages = (relativeParts) => {
 
 const seedBucephalus = async () => {
   try {
+    if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PRODUCTION_SEED !== '1') {
+      console.error('[seed] seedBucephalus refused in production without ALLOW_PRODUCTION_SEED=1');
+      process.exit(1);
+    }
     await connectDB();
 
     const existing = await Cabin.findOne({ name: { $in: KEEP_CABIN_NAMES } });

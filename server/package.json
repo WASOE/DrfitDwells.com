@@ -19,6 +19,10 @@
     "validate:batch7": "node scripts/validateBuildBatch7Readiness.js",
     "validate:batch7cutover": "node scripts/validateBuildBatch7FinalCutover.js",
     "validate:calendarux": "node scripts/validateBuildCalendarUxBatch.js",
+    "validate:phase1": "node scripts/validatePhase1ReservationIntegrity.js",
+    "validate:phase2": "node scripts/validatePhase2ReservationHardening.js",
+    "cleanup:reservation-integrity": "node scripts/reservationIntegrityCleanup.js",
+    "cleanup:reservation-integrity:preview": "node scripts/reservationIntegrityCleanup.js --preview-unsafe-blocking --preview-ics-exclusion",
     "validate:sync": "node scripts/validateCalendarSync.js",
     "validate:syncscheduler": "node scripts/validateCalendarSyncScheduler.js",
     "test:security": "node --test scripts/securityHardening.test.cjs"

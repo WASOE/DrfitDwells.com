@@ -22,6 +22,9 @@ function mapBookingToReservationCompatible(bookingDoc = {}) {
     sourceReference: null,
     importedAt: null,
     lastSyncedAt: null,
+    isProductionSafe: booking.isProductionSafe !== undefined ? booking.isProductionSafe : null,
+    isTest: booking.isTest === true,
+    intakeProvenance: booking.provenance || null,
     provenance: {
       mappedFrom: 'Booking',
       mappingVersion: 1

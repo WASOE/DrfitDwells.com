@@ -2,9 +2,9 @@ const mongoose = require('mongoose');
 const Booking = require('../../models/Booking');
 const AvailabilityBlock = require('../../models/AvailabilityBlock');
 const { normalizeExclusiveDateRange } = require('../../utils/dateTime');
-
-/** Booking statuses that still occupy the property on the calendar. */
-const BLOCKING_BOOKING_STATUSES = ['pending', 'confirmed', 'in_house'];
+const { BLOCKING_BOOKING_STATUSES } = require('./blockingStatusConstants');
+const { isPublicIcsStrictEligibility } = require('../../config/publicIcsConfig');
+const { loadPaidOrPartialReservationIdSet, isBookingEligibleForPublicIcs } = require('./icsBlockingEligibility');
 
 /**
  * Load blocking date spans for a single-cabin property (source truth only).
@@ -13,10 +13,13 @@ const BLOCKING_BOOKING_STATUSES = ['pending', 'confirmed', 'in_house'];
  * - Excludes external_hold and reservation-backed blocks (stays come from Booking only).
  *
  * @param {mongoose.Types.ObjectId|string} cabinId
+ * @param {{ strictIcsEligibility?: boolean }} [options] strictIcsEligibility defaults from env (production => strict pending requires paid/partial Payment)
  * @returns {Promise<Array<{ kind: string, sourceId: string, startDateInclusive: Date, endDateExclusive: Date, dtstamp: Date, lastModified?: Date }>>}
  */
-async function selectBlockingSpansForSingleCabin(cabinId) {
+async function selectBlockingSpansForSingleCabin(cabinId, options = {}) {
   const oid = typeof cabinId === 'string' ? new mongoose.Types.ObjectId(cabinId) : cabinId;
+  const strictIcs =
+    typeof options.strictIcsEligibility === 'boolean' ? options.strictIcsEligibility : isPublicIcsStrictEligibility();
 
   const [bookings, blocks] = await Promise.all([
     Booking.find({
@@ -24,7 +27,7 @@ async function selectBlockingSpansForSingleCabin(cabinId) {
       $or: [{ cabinTypeId: null }, { cabinTypeId: { $exists: false } }],
       status: { $in: BLOCKING_BOOKING_STATUSES }
     })
-      .select('checkIn checkOut createdAt updatedAt')
+      .select('checkIn checkOut createdAt updatedAt status isProductionSafe isTest provenance')
       .lean(),
     AvailabilityBlock.find({
       cabinId: oid,
@@ -36,9 +39,16 @@ async function selectBlockingSpansForSingleCabin(cabinId) {
       .lean()
   ]);
 
+  const allBlockingIds = bookings.map((b) => String(b._id));
+  const paidSet =
+    allBlockingIds.length > 0 ? await loadPaidOrPartialReservationIdSet(allBlockingIds) : new Set();
+
   const spans = [];
 
   for (const b of bookings) {
+    if (!isBookingEligibleForPublicIcs(b, paidSet, strictIcs)) {
+      continue;
+    }
     try {
       const { startDate, endDate } = normalizeExclusiveDateRange(b.checkIn, b.checkOut);
       const lm = b.updatedAt || b.createdAt;

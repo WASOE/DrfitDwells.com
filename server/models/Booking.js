@@ -62,6 +62,16 @@ const bookingSchema = new mongoose.Schema({
     enum: ['pending', 'confirmed', 'in_house', 'completed', 'cancelled'],
     default: 'pending'
   },
+  /** Explicit gate for public outbound ICS; null/absent uses resolveBookingExportSafety() rules. */
+  isProductionSafe: {
+    type: Boolean,
+    required: false
+  },
+  /** Demo / lab / fixture bookings — never exported on public ICS when true. */
+  isTest: {
+    type: Boolean,
+    default: false
+  },
   guestInfo: {
     firstName: {
       type: String,
@@ -132,6 +142,21 @@ const bookingSchema = new mongoose.Schema({
       type: Object,
       default: {}
     }
+  },
+  /** Intake and lifecycle provenance (optional; do not use for authorization). */
+  provenance: {
+    type: new mongoose.Schema(
+      {
+        source: { type: String, trim: true },
+        channel: { type: String, trim: true, default: null },
+        intakeRevision: { type: Number, default: 1 },
+        lastTransitionAt: { type: Date, default: null },
+        lastTransition: { type: String, trim: true, default: null },
+        createdByRoute: { type: String, trim: true, default: null }
+      },
+      { _id: false }
+    ),
+    default: undefined
   }
 }, {
   timestamps: true

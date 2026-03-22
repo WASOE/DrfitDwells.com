@@ -91,7 +91,27 @@ async function transitionReservation({ bookingId, kind, reason = null, ctx = {} 
   );
 
   booking.status = nextStatus;
+  if (!booking.provenance) {
+    booking.provenance = {};
+  }
+  booking.provenance.lastTransitionAt = new Date();
+  booking.provenance.lastTransition = kind;
+  booking.markModified('provenance');
   await booking.save({ validateBeforeSave: false });
+
+  // Canonical AvailabilityBlock surface: reservation-backed rows must not outlive non-blocking booking status.
+  if (nextStatus === 'cancelled' || nextStatus === 'completed') {
+    await AvailabilityBlock.updateMany(
+      { reservationId: booking._id, blockType: 'reservation', status: 'active' },
+      {
+        $set: {
+          status: 'tombstoned',
+          tombstonedAt: new Date(),
+          tombstoneReason: nextStatus === 'cancelled' ? 'reservation_cancelled' : 'reservation_completed'
+        }
+      }
+    );
+  }
 
   const result = {
     reservationId: String(booking._id),

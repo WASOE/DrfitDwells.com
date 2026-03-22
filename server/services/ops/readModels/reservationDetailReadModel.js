@@ -8,6 +8,9 @@ const AuditEvent = require('../../../models/AuditEvent');
 const ReservationNote = require('../../../models/ReservationNote');
 const { mapBookingToReservationCompatible } = require('../../../mappers/bookingToReservationMapper');
 const { mapEmailEventToCommunicationCompatible } = require('../../../mappers/emailEventToCommunicationMapper');
+const { isPublicIcsStrictEligibility, isPublicIcsExportSafetyEnforced } = require('../../../config/publicIcsConfig');
+const { isBookingEligibleForPublicIcs, loadPaidOrPartialReservationIdSet } = require('../../calendar/icsBlockingEligibility');
+const { resolveBookingExportSafety } = require('../../calendar/bookingExportSafety');
 
 async function getReservationDetailReadModel(reservationId) {
   const booking = await Booking.findById(reservationId).lean();
@@ -26,8 +29,13 @@ async function getReservationDetailReadModel(reservationId) {
       .lean(),
     ReservationNote.find({ reservationId: booking._id, 'tombstone.isTombstoned': false })
       .sort({ createdAt: -1 })
-      .lean()
+      .lean(),
   ]);
+
+  const strictIcs = isPublicIcsStrictEligibility();
+  const paidSet = await loadPaidOrPartialReservationIdSet([String(booking._id)]);
+  const exportSafety = resolveBookingExportSafety(booking, paidSet);
+  const outboundIcsEligible = isBookingEligibleForPublicIcs(booking, paidSet, strictIcs);
 
   return {
     reservation: mapped,
@@ -110,6 +118,13 @@ async function getReservationDetailReadModel(reservationId) {
     degraded: {
       guestEntityMissing: !guest,
       payoutLinkageIncomplete: payouts.length === 0
+    },
+    provenance: booking.provenance || null,
+    outboundCalendar: {
+      publicIcsStrictEligibility: strictIcs,
+      exportSafetyEnforced: isPublicIcsExportSafetyEnforced(),
+      exportSafety,
+      eligibleForSingleCabinOutboundIcs: outboundIcsEligible
     }
   };
 }

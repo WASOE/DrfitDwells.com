@@ -10,6 +10,7 @@ const {
   normalizeDateToSofiaDayStart
 } = require('../../../utils/dateTime');
 const { assertExclusiveCalendarRangeWithinMax } = require('../../../utils/calendarExclusiveRangeGuard');
+const { BLOCKING_BOOKING_STATUSES } = require('../../calendar/blockingStatusConstants');
 
 function overlaps(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && aEnd > bStart;
@@ -52,7 +53,9 @@ function labelShortForBlockType(blockType) {
     case 'maintenance':
       return 'Maintenance';
     case 'external_hold':
-      return 'External';
+      return 'Channel hold';
+    case 'reservation':
+      return 'Reservation';
     default:
       return blockType;
   }
@@ -82,13 +85,28 @@ function enrichBlockRender(block, bookingById, windowStart, windowEndExclusive) 
   const end = new Date(block.endDate);
   const occupiedDayKeys = enumerateOccupiedDayKeysInWindow(start, end, windowStart, windowEndExclusive);
 
+  if (block.blockType === 'external_hold') {
+    return {
+      ...block,
+      render: {
+        labelShort: 'Channel hold',
+        guestInitials: null,
+        guestShortName: null,
+        blockTypeToken: 'external_hold',
+        holdCategory: 'channel_import',
+        conflictToken: null,
+        occupiedDayKeys
+      }
+    };
+  }
+
   let guestInitials = null;
   let guestShortName = null;
   let labelShort = null;
 
   if (block.blockType === 'reservation' && block.sourceReference) {
     const booking = bookingById.get(String(block.sourceReference));
-    if (booking) {
+    if (booking && BLOCKING_BOOKING_STATUSES.includes(booking.status)) {
       const g = guestShortFromBooking(booking);
       guestInitials = g.guestInitials;
       guestShortName = g.guestShortName;
@@ -106,6 +124,7 @@ function enrichBlockRender(block, bookingById, windowStart, windowEndExclusive) 
       guestInitials,
       guestShortName,
       blockTypeToken: block.blockType,
+      holdCategory: block.blockType === 'reservation' ? 'internal_reservation' : 'internal_block',
       conflictToken: null,
       occupiedDayKeys
     }
@@ -170,8 +189,15 @@ async function buildBlocksForRange(normalized, cabinId) {
 
   const bookingById = new Map(bookings.map((b) => [String(b._id), b]));
 
+  const reservationBlockBookingIds = new Set(
+    availabilityBlocks
+      .filter((b) => b.status === 'active' && b.blockType === 'reservation' && b.reservationId)
+      .map((b) => String(b.reservationId))
+  );
+
   const reservationBacked = bookings
-    .filter((b) => b.cabinId)
+    .filter((b) => b.cabinId && BLOCKING_BOOKING_STATUSES.includes(b.status))
+    .filter((b) => !reservationBlockBookingIds.has(String(b._id)))
     .map((b) => {
       const range = normalizeExclusiveDateRange(b.checkIn, b.checkOut);
       return {
@@ -196,7 +222,8 @@ async function buildBlocksForRange(normalized, cabinId) {
     id: `block:${blk._id}`,
     blockType: blk.blockType,
     sourceType: 'availability_block',
-    sourceReference: String(blk._id),
+    sourceReference:
+      blk.blockType === 'reservation' && blk.reservationId ? String(blk.reservationId) : String(blk._id),
     cabinId: String(blk.cabinId),
     unitId: blk.unitId ? String(blk.unitId) : null,
     startDate: normalizeDateToSofiaDayStart(blk.startDate).toISOString(),

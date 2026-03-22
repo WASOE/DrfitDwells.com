@@ -374,7 +374,8 @@ async function computeOpsReadiness() {
     qaSmoke,
     manualReview: {
       openCount: await ManualReviewItem.countDocuments({ status: 'open' })
-    }
+    },
+    reservationIntegrity: health.reservationIntegrity || null
   };
 }
 
