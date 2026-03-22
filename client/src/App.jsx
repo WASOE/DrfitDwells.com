@@ -2,7 +2,6 @@ import { Suspense, lazy } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { BookingProvider } from './context/BookingContext'
 import ScrollToTop from './components/ScrollToTop'
-import ErrorBoundary from './components/ErrorBoundary'
 import SiteLayout from './layouts/SiteLayout'
 import AdminLayout from './layouts/AdminLayout'
 import OpsLayout from './layouts/OpsLayout'
@@ -70,11 +69,10 @@ const PageLoader = () => (
 
 function App() {
   return (
-    <ErrorBoundary>
-      <BookingProvider>
-        <ScrollToTop />
-        <Suspense fallback={<PageLoader />}>
-          <Routes>
+    <BookingProvider>
+      <ScrollToTop />
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
             {/* Site (guest) layout */}
             <Route element={<SiteLayout />}>
               <Route path="/" element={<Home />} />
@@ -163,10 +161,9 @@ function App() {
               <Route path="/ops/manual-review" element={<OpsManualReviewBacklog />} />
             <Route path="/ops/readiness" element={<OpsReadiness />} />
             </Route>
-          </Routes>
-        </Suspense>
-      </BookingProvider>
-    </ErrorBoundary>
+        </Routes>
+      </Suspense>
+    </BookingProvider>
   )
 }
 

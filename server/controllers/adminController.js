@@ -691,23 +691,25 @@ const login = (req, res) => {
       });
     }
     
-    // Create token payload
+    // Create token payload (24h TTL; bump ADMIN_TOKEN_VERSION env to revoke all existing tokens)
     const now = Math.floor(Date.now() / 1000);
+    const ttlSeconds = 24 * 60 * 60;
     const payload = {
       sub: 'admin',
       role: 'admin',
       iat: now,
-      exp: now + (7 * 24 * 60 * 60), // 7 days
-      jti: crypto.randomBytes(16).toString('hex')
+      exp: now + ttlSeconds,
+      jti: crypto.randomBytes(16).toString('hex'),
+      tv: String(process.env.ADMIN_TOKEN_VERSION || '1')
     };
-    
+
     // Generate token
     const token = createToken(payload, jwtSecret);
-    
+
     res.json({
       success: true,
       token,
-      expiresIn: 7 * 24 * 60 * 60 // 7 days in seconds
+      expiresIn: ttlSeconds
     });
     
   } catch (error) {

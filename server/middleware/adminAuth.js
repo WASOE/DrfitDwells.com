@@ -1,5 +1,11 @@
 const crypto = require('crypto');
 
+/**
+ * Admin/ops auth (current model):
+ * - Bearer token stored in browser localStorage (XSS can steal it — prefer future httpOnly cookie migration).
+ * - Short TTL + ADMIN_TOKEN_VERSION allow rotation without changing ADMIN_JWT_SECRET.
+ */
+
 // JWT-like token creation and verification using Node.js crypto
 const createToken = (payload, secret) => {
   const payloadBase64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -20,12 +26,18 @@ const verifyToken = (token, secret) => {
     }
     
     const payload = JSON.parse(Buffer.from(payloadBase64, 'base64url').toString());
-    
+
+    const expectedTv = process.env.ADMIN_TOKEN_VERSION || '1';
+    const tokenTv = payload.tv != null ? String(payload.tv) : '1';
+    if (tokenTv !== expectedTv) {
+      return null;
+    }
+
     // Check expiration
     if (payload.exp && Date.now() / 1000 > payload.exp) {
       return null;
     }
-    
+
     return payload;
   } catch (error) {
     return null;

@@ -2,6 +2,7 @@ const Booking = require('../../../models/Booking');
 const Payment = require('../../../models/Payment');
 const AvailabilityBlock = require('../../../models/AvailabilityBlock');
 const { mapBookingToReservationCompatible } = require('../../../mappers/bookingToReservationMapper');
+const { escapeRegex } = require('../../../utils/escapeRegex');
 
 function buildBookingFilters(query) {
   const filters = {};
@@ -13,7 +14,7 @@ function buildBookingFilters(query) {
     if (query.dateTo) filters.checkIn.$lte = new Date(query.dateTo);
   }
   if (query.search) {
-    const q = String(query.search);
+    const q = escapeRegex(String(query.search));
     filters.$or = [
       { 'guestInfo.firstName': { $regex: q, $options: 'i' } },
       { 'guestInfo.lastName': { $regex: q, $options: 'i' } },

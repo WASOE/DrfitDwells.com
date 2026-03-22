@@ -9,6 +9,7 @@ const {
   normalizeExclusiveDateRange,
   normalizeDateToSofiaDayStart
 } = require('../../../utils/dateTime');
+const { assertExclusiveCalendarRangeWithinMax } = require('../../../utils/calendarExclusiveRangeGuard');
 
 function overlaps(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && aEnd > bStart;
@@ -336,6 +337,7 @@ async function getCalendarReadModel({ from, to, cabinId = null, indexPreview = f
   }
 
   const normalized = normalizeExclusiveDateRange(from, to);
+  assertExclusiveCalendarRangeWithinMax(normalized.startDate, normalized.endDate);
   const { blocks, conflictMarkers } = await buildBlocksForRange(normalized, cabinId || null);
   const latestScoped = await ChannelSyncEvent.findOne(cabinId ? { cabinId } : {}).sort({ runAt: -1 }).lean();
   const mergedSync = cabinId

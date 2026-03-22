@@ -555,35 +555,6 @@ router.post('/', bookingCreateLimiter, [
     // Get the appropriate entity for email (cabin or cabinType)
     const entityForEmail = cabin || cabinType;
 
-    // Send emails
-    try {
-      // Guest confirmation email
-      const guestEmail = emailService.generateBookingReceivedEmail(booking, entityForEmail);
-      await emailService.sendEmail({
-        to: booking.guestInfo.email,
-        subject: guestEmail.subject,
-        html: guestEmail.html,
-        text: guestEmail.text,
-        trigger: 'booking_received',
-        bookingId: booking._id
-      });
-
-      // Internal notification email
-      const internalEmail = emailService.generateInternalNotificationEmail(booking, entityForEmail);
-      const internalEmailTo = process.env.EMAIL_TO_INTERNAL || 'ops@driftdwells.com';
-      await emailService.sendEmail({
-        to: internalEmailTo,
-        subject: internalEmail.subject,
-        html: internalEmail.html,
-        text: internalEmail.text,
-        trigger: 'booking_received_internal',
-        bookingId: booking._id
-      });
-    } catch (emailError) {
-      console.error('Email sending error:', emailError);
-      // Don't fail the booking creation if emails fail
-    }
-
     const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
     res.status(201).json({
       success: true,
@@ -594,6 +565,48 @@ router.post('/', bookingCreateLimiter, [
         totalPrice
       }
     });
+
+    // Decouple SMTP latency from the HTTP response; booking is already persisted.
+    void (async () => {
+      try {
+        const guestEmail = emailService.generateBookingReceivedEmail(booking, entityForEmail);
+        const guestResult = await emailService.sendEmail({
+          to: booking.guestInfo.email,
+          subject: guestEmail.subject,
+          html: guestEmail.html,
+          text: guestEmail.text,
+          trigger: 'booking_received',
+          bookingId: booking._id
+        });
+        if (!guestResult.success) {
+          console.error('[booking-email] Guest confirmation not sent:', {
+            bookingId: String(booking._id),
+            method: guestResult.method,
+            error: guestResult.error
+          });
+        }
+
+        const internalEmail = emailService.generateInternalNotificationEmail(booking, entityForEmail);
+        const internalEmailTo = process.env.EMAIL_TO_INTERNAL || 'ops@driftdwells.com';
+        const internalResult = await emailService.sendEmail({
+          to: internalEmailTo,
+          subject: internalEmail.subject,
+          html: internalEmail.html,
+          text: internalEmail.text,
+          trigger: 'booking_received_internal',
+          bookingId: booking._id
+        });
+        if (!internalResult.success) {
+          console.error('[booking-email] Internal notification not sent:', {
+            bookingId: String(booking._id),
+            method: internalResult.method,
+            error: internalResult.error
+          });
+        }
+      } catch (emailError) {
+        console.error('[booking-email] Async delivery error:', emailError);
+      }
+    })();
 
   } catch (error) {
     console.error('Booking creation error:', error);

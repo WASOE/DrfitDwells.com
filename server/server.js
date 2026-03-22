@@ -1,4 +1,7 @@
 require('dotenv').config();
+const { validateProductionEnvOrExit } = require('./config/validateProductionEnv');
+validateProductionEnvOrExit();
+
 const express = require('express');
 const morgan = require('morgan');
 const mongoSanitize = require('express-mongo-sanitize');
