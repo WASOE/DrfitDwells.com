@@ -16,7 +16,7 @@ router.get('/:id', async (req, res) => {
   try {
     const data = await getCabinDetailReadModel(req.params.id);
     if (!data) {
-      return res.status(404).json({ success: false, message: 'Cabin not found' });
+      return res.status(404).json({ success: false, message: 'Cabin or cabin type not found' });
     }
     return res.json({ success: true, data });
   } catch (error) {
