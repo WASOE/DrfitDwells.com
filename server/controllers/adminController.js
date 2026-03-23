@@ -10,7 +10,10 @@ const emailService = require('../services/emailService');
 const { requirePermission, ACTIONS } = require('../services/permissionService');
 const { appendAuditEvent } = require('../services/auditWriter');
 const { assertAdminModuleWriteAllowed } = require('../services/ops/cutover/opsCutoverService');
-const { FIXTURE_CABIN_NAME_PATTERN } = require('../utils/fixtureExclusion');
+const {
+  FIXTURE_CABIN_NAME_PATTERN,
+  FIXTURE_BOOKING_EMAIL_PATTERN
+} = require('../utils/fixtureExclusion');
 
 const DEFAULT_CABIN_IMAGE_URL = 'https://placehold.co/1200x800?text=Cabin';
 
@@ -770,7 +773,22 @@ const getBookings = async (req, res) => {
       and.push({ checkIn });
     }
     if (transport) and.push({ transportMethod: transport });
-    if (!showFixtures) and.push({ isTest: { $ne: true } });
+    if (!showFixtures) {
+      and.push({ isTest: { $ne: true } });
+      and.push({ 'guestInfo.email': { $not: FIXTURE_BOOKING_EMAIL_PATTERN } });
+      const fixtureCabinIds = await Cabin.find({ name: { $regex: FIXTURE_CABIN_NAME_PATTERN } })
+        .select('_id')
+        .lean();
+      if (fixtureCabinIds.length > 0) {
+        and.push({
+          $or: [
+            { cabinId: null },
+            { cabinId: { $exists: false } },
+            { cabinId: { $nin: fixtureCabinIds.map((c) => c._id) } }
+          ]
+        });
+      }
+    }
     if (!showArchived) {
       and.push({ $or: [{ archivedAt: null }, { archivedAt: { $exists: false } }] });
     }

@@ -3,13 +3,16 @@ const Booking = require('../../models/Booking');
 const AvailabilityBlock = require('../../models/AvailabilityBlock');
 const CabinChannelSyncState = require('../../models/CabinChannelSyncState');
 const { appendAuditEvent } = require('../auditWriter');
-const { FIXTURE_CABIN_NAME_PATTERN, isFixtureCabinName } = require('../../utils/fixtureExclusion');
+const {
+  FIXTURE_CABIN_NAME_PATTERN,
+  FIXTURE_BOOKING_EMAIL_PATTERN,
+  isFixtureCabinName,
+  isFixtureBookingEmail
+} = require('../../utils/fixtureExclusion');
 const {
   findStaleReservationBlockRows,
   runIntegrityPreviews
 } = require('./maintenanceIntegrityPreviews');
-
-const FIXTURE_BOOKING_EMAIL_RE = /^(sync-overlap-|batch4-|smoke-)/i;
 
 function assertReason(reason) {
   const r = reason != null ? String(reason).trim() : '';
@@ -20,10 +23,6 @@ function assertReason(reason) {
     throw err;
   }
   return r;
-}
-
-function isFixtureBookingEmail(email) {
-  return FIXTURE_BOOKING_EMAIL_RE.test(String(email || ''));
 }
 
 function isFixtureBookingDoc(booking) {
@@ -79,7 +78,7 @@ async function auditMaintenance(
 function previewFixtureContamination() {
   const cabinQuery = { name: { $regex: FIXTURE_CABIN_NAME_PATTERN } };
   const bookingQuery = {
-    $or: [{ 'guestInfo.email': { $regex: FIXTURE_BOOKING_EMAIL_RE } }, { isTest: true }]
+    $or: [{ 'guestInfo.email': { $regex: FIXTURE_BOOKING_EMAIL_PATTERN } }, { isTest: true }]
   };
   return Promise.all([
     Cabin.find(cabinQuery).select('_id name isActive archivedAt').lean(),
@@ -107,7 +106,7 @@ async function applyFixtureContaminationArchive(reason, ctx) {
   const [fixtureCabins, fixtureBookings] = await Promise.all([
     Cabin.find({ name: { $regex: FIXTURE_CABIN_NAME_PATTERN } }).select('_id name isActive').lean(),
     Booking.find({
-      $or: [{ 'guestInfo.email': { $regex: FIXTURE_BOOKING_EMAIL_RE } }, { isTest: true }]
+      $or: [{ 'guestInfo.email': { $regex: FIXTURE_BOOKING_EMAIL_PATTERN } }, { isTest: true }]
     })
       .select('_id status')
       .lean()
@@ -457,7 +456,7 @@ async function listMaintenanceReservations({
 
   if (!includeFixtures) {
     and.push({ isTest: { $ne: true } });
-    and.push({ 'guestInfo.email': { $not: FIXTURE_BOOKING_EMAIL_RE } });
+    and.push({ 'guestInfo.email': { $not: FIXTURE_BOOKING_EMAIL_PATTERN } });
   }
   if (!includeArchived) {
     and.push({ $or: [{ archivedAt: null }, { archivedAt: { $exists: false } }] });
