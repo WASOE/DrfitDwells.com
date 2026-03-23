@@ -22,6 +22,13 @@ const auditEventSchema = new mongoose.Schema(
       default: null,
       immutable: true
     },
+    /** JWT role at write time: admin | operator (NIST RBAC audit trail). */
+    actorRole: {
+      type: String,
+      default: null,
+      immutable: true,
+      index: true
+    },
     entityType: {
       type: String,
       required: true,

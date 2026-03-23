@@ -5,7 +5,8 @@ const {
   transitionReservation,
   reassignReservation,
   editReservationDates,
-  addReservationNote
+  addReservationNote,
+  createManualReservation
 } = require('../../../services/ops/domain/reservationWriteService');
 const { editGuestContact } = require('../../../services/ops/domain/guestWriteService');
 
@@ -41,6 +42,28 @@ router.get('/', async (req, res) => {
     return res.json({ success: true, data });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/manual', async (req, res) => {
+  try {
+    const data = await createManualReservation({
+      cabinId: req.body?.cabinId,
+      checkInDate: req.body?.checkIn ?? req.body?.checkInDate,
+      checkOutDate: req.body?.checkOut ?? req.body?.checkOutDate,
+      adults: req.body?.adults,
+      children: req.body?.children,
+      guestInfo: req.body?.guestInfo,
+      initialStatus: req.body?.initialStatus || 'pending',
+      note: req.body?.note,
+      acceptExternalHoldWarnings: Boolean(req.body?.acceptExternalHoldWarnings),
+      paymentPlaceholderNote: req.body?.paymentPlaceholderNote,
+      reason: req.body?.reason || null,
+      ctx: { req, user: req.user, route: 'POST /api/ops/reservations/manual' }
+    });
+    return res.status(201).json({ success: true, data });
+  } catch (error) {
+    return handleDomainError(res, error);
   }
 });
 

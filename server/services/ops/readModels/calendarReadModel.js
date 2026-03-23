@@ -11,6 +11,7 @@ const {
 } = require('../../../utils/dateTime');
 const { assertExclusiveCalendarRangeWithinMax } = require('../../../utils/calendarExclusiveRangeGuard');
 const { BLOCKING_BOOKING_STATUSES } = require('../../calendar/blockingStatusConstants');
+const { guestFacingCabinMatch } = require('../../../utils/fixtureExclusion');
 
 function overlaps(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && aEnd > bStart;
@@ -320,7 +321,10 @@ async function getCalendarReadModel({ from, to, cabinId = null, indexPreview = f
     const endM = startM.clone().add(days, 'days');
     const normalized = normalizeExclusiveDateRange(startM.toDate(), endM.toDate());
 
-    const cabins = await Cabin.find({}).sort({ name: 1 }).select('_id name isActive imageUrl').lean();
+    const cabins = await Cabin.find(guestFacingCabinMatch())
+      .sort({ name: 1 })
+      .select('_id name isActive imageUrl')
+      .lean();
 
     const previewByCabin = [];
     for (const c of cabins) {

@@ -113,6 +113,17 @@ const cabinSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+  archivedAt: {
+    type: Date,
+    default: null,
+    index: true
+  },
+  archivedReason: {
+    type: String,
+    trim: true,
+    maxlength: [500, 'Archive reason cannot exceed 500 characters'],
+    default: null
+  },
   transportOptions: [{
     type: {
       type: String,

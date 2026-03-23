@@ -5,23 +5,31 @@ const { mapBookingToReservationCompatible } = require('../../../mappers/bookingT
 const { escapeRegex } = require('../../../utils/escapeRegex');
 
 function buildBookingFilters(query) {
-  const filters = { isTest: { $ne: true } };
-  if (query.status) filters.status = query.status;
-  if (query.cabinId) filters.cabinId = query.cabinId;
+  const includeArchived = query.includeArchived === '1' || query.includeArchived === 'true';
+  const and = [{ isTest: { $ne: true } }];
+  if (!includeArchived) {
+    and.push({ $or: [{ archivedAt: null }, { archivedAt: { $exists: false } }] });
+  }
+  if (query.status) and.push({ status: query.status });
+  if (query.cabinId) and.push({ cabinId: query.cabinId });
   if (query.dateFrom || query.dateTo) {
-    filters.checkIn = {};
-    if (query.dateFrom) filters.checkIn.$gte = new Date(query.dateFrom);
-    if (query.dateTo) filters.checkIn.$lte = new Date(query.dateTo);
+    const checkIn = {};
+    if (query.dateFrom) checkIn.$gte = new Date(query.dateFrom);
+    if (query.dateTo) checkIn.$lte = new Date(query.dateTo);
+    and.push({ checkIn });
   }
   if (query.search) {
     const q = escapeRegex(String(query.search));
-    filters.$or = [
-      { 'guestInfo.firstName': { $regex: q, $options: 'i' } },
-      { 'guestInfo.lastName': { $regex: q, $options: 'i' } },
-      { 'guestInfo.email': { $regex: q, $options: 'i' } }
-    ];
+    and.push({
+      $or: [
+        { 'guestInfo.firstName': { $regex: q, $options: 'i' } },
+        { 'guestInfo.lastName': { $regex: q, $options: 'i' } },
+        { 'guestInfo.email': { $regex: q, $options: 'i' } }
+      ]
+    });
   }
-  return filters;
+  if (and.length === 1) return and[0];
+  return { $and: and };
 }
 
 function derivePaymentStatus(payments) {

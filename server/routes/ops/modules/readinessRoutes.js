@@ -9,6 +9,8 @@ const { requireOpsAdminRole } = require('../../../middleware/requireOpsAdminRole
 
 const router = express.Router();
 
+router.use(requireOpsAdminRole);
+
 router.get('/summary', async (req, res) => {
   try {
     const readiness = await computeOpsReadiness();
@@ -80,7 +82,7 @@ router.get('/qa', async (req, res) => {
   }
 });
 
-router.post('/cutover/:module/enable', requireOpsAdminRole, async (req, res) => {
+router.post('/cutover/:module/enable', async (req, res) => {
   try {
     const { module: moduleKey } = req.params;
     // For enable, enforce read + write primary depending on backend capability.
@@ -104,7 +106,7 @@ router.post('/cutover/:module/enable', requireOpsAdminRole, async (req, res) => 
   }
 });
 
-router.post('/cutover/:module/rollback', requireOpsAdminRole, async (req, res) => {
+router.post('/cutover/:module/rollback', async (req, res) => {
   try {
     const { module: moduleKey } = req.params;
     const state = await rollbackModuleCutover(moduleKey);

@@ -8,7 +8,8 @@ const FIXTURE_CABIN_NAME_PATTERN =
 function guestFacingCabinMatch() {
   return {
     isActive: true,
-    name: { $not: FIXTURE_CABIN_NAME_PATTERN }
+    name: { $not: FIXTURE_CABIN_NAME_PATTERN },
+    $or: [{ archivedAt: null }, { archivedAt: { $exists: false } }]
   };
 }
 

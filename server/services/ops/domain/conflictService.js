@@ -12,6 +12,8 @@ async function evaluateCabinConflicts({ cabinId, startDate, endDate, excludeRese
   const bookingFilter = {
     cabinId,
     status: { $in: ['pending', 'confirmed', 'in_house'] },
+    isTest: { $ne: true },
+    $or: [{ archivedAt: null }, { archivedAt: { $exists: false } }],
     checkIn: { $lt: normalized.endDate },
     checkOut: { $gt: normalized.startDate }
   };

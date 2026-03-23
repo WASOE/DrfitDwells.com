@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { decodeRoleFromToken, opsReadAPI } from '../services/opsApi';
 
@@ -8,7 +8,7 @@ export default function OpsLayout() {
   const [health, setHealth] = useState(null);
   const location = useLocation();
   const navigate = useNavigate();
-  const role = useMemo(() => decodeRoleFromToken(), []);
+  const role = decodeRoleFromToken();
 
   useEffect(() => {
     let cancelled = false;
@@ -83,8 +83,15 @@ export default function OpsLayout() {
               <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Ops Console</p>
               <h1 className="text-base font-semibold text-gray-900 truncate">Drift & Dwells</h1>
             </div>
-            <div className="text-xs text-gray-500 px-2 py-1 rounded border border-gray-200 bg-gray-50">
-              Role: {role}
+            <div
+              className={`text-xs px-2 py-1 rounded border tabular-nums ${
+                role === 'operator'
+                  ? 'text-sky-800 border-sky-200 bg-sky-50'
+                  : 'text-amber-900 border-amber-200 bg-amber-50'
+              }`}
+              title="Session role from login"
+            >
+              {role === 'operator' ? 'Operator' : 'Admin'}
             </div>
           </div>
           <nav className="-mx-4 px-4 sm:mx-0 sm:px-0 overflow-x-auto border-t border-gray-100">

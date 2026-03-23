@@ -67,18 +67,32 @@ const adminAuth = (req, res, next) => {
   }
   
   const payload = verifyToken(token, secret);
-  
-  if (!payload || payload.sub !== 'admin') {
-    return res.status(401).json({ 
-      success: false, 
-      message: 'Invalid or expired token' 
+
+  if (!payload) {
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid or expired token'
     });
   }
 
   const role = payload.role === 'operator' ? 'operator' : 'admin';
+  if (role !== 'operator' && role !== 'admin') {
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid or expired token'
+    });
+  }
+
+  const subject =
+    payload.sub != null && String(payload.sub).trim() !== ''
+      ? String(payload.sub).trim()
+      : role === 'operator'
+        ? 'operator'
+        : 'admin';
+
   req.admin = payload;
   req.user = {
-    id: payload.sub || 'admin',
+    id: subject,
     role
   };
   next();

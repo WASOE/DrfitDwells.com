@@ -1,11 +1,14 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const { adminAuth } = require('../middleware/adminAuth');
+const { requireOpsAdminRole } = require('../middleware/requireOpsAdminRole');
 const CabinChannelSyncState = require('../models/CabinChannelSyncState');
 const { runManualIcalSync, CHANNEL } = require('../services/ops/ingestion/icalSyncScheduler');
+const { appendAuditEvent } = require('../services/auditWriter');
 
 const router = express.Router();
 router.use(adminAuth);
+router.use(requireOpsAdminRole);
 
 router.post('/airbnb-ical/run', async (req, res) => {
   try {
@@ -35,6 +38,35 @@ router.post('/airbnb-ical/run', async (req, res) => {
       });
     }
 
+    try {
+      await appendAuditEvent(
+        {
+          actorType: 'user',
+          actorId: req.user?.id || 'admin',
+          entityType: 'Cabin',
+          entityId: String(cabinOid),
+          action: 'sync_manual_run',
+          beforeSnapshot: { feedUrlOverride: overrideUrl || null },
+          afterSnapshot: { summary: data?.status || data?.outcome || data || null },
+          reason: null,
+          metadata: { channel: CHANNEL },
+          sourceContext: { route: 'POST /api/internal/sync/airbnb-ical/run', namespace: 'maintenance' }
+        },
+        { req }
+      );
+    } catch (auditErr) {
+      if (auditErr.code === 'AUDIT_WRITE_FAILED') {
+        console.error('[internal-sync] audit failed after manual run', auditErr);
+        return res.status(500).json({
+          success: false,
+          errorType: 'audit_after_sync',
+          message: 'Sync ran but audit logging failed; check server logs',
+          data
+        });
+      }
+      throw auditErr;
+    }
+
     return res.json({ success: true, data });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -46,6 +78,29 @@ router.post('/airbnb-ical/configure', async (req, res) => {
     const { cabinId, feedUrl } = req.body || {};
     if (!cabinId || !feedUrl) {
       return res.status(400).json({ success: false, message: 'cabinId and feedUrl are required' });
+    }
+    const before = await CabinChannelSyncState.findOne({ cabinId, channel: 'airbnb_ical' }).lean();
+    try {
+      await appendAuditEvent(
+        {
+          actorType: 'user',
+          actorId: req.user?.id || 'admin',
+          entityType: 'CabinChannelSyncState',
+          entityId: `${String(cabinId)}:airbnb_ical`,
+          action: 'sync_feed_configure',
+          beforeSnapshot: before ? { feedUrl: before.feedUrl } : null,
+          afterSnapshot: { feedUrl: String(feedUrl).trim() },
+          reason: null,
+          metadata: { channel: 'airbnb_ical' },
+          sourceContext: { route: 'POST /api/internal/sync/airbnb-ical/configure', namespace: 'maintenance' }
+        },
+        { req }
+      );
+    } catch (auditErr) {
+      if (auditErr.code === 'AUDIT_WRITE_FAILED') {
+        return res.status(500).json({ success: false, message: 'Audit write failed; feed URL was not changed' });
+      }
+      throw auditErr;
     }
     const state = await CabinChannelSyncState.findOneAndUpdate(
       { cabinId, channel: 'airbnb_ical' },

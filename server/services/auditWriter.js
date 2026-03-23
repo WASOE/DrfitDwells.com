@@ -17,10 +17,12 @@ async function appendAuditEvent(payload, options = {}) {
     throw err;
   }
 
+  const actorRoleFromReq = options.req?.user?.role != null ? String(options.req.user.role) : null;
   const doc = await AuditEvent.create({
     happenedAt: payload.happenedAt || new Date(),
     actorType: payload.actorType,
     actorId: payload.actorId ?? null,
+    actorRole: payload.actorRole != null ? String(payload.actorRole) : actorRoleFromReq,
     entityType: payload.entityType,
     entityId: String(payload.entityId),
     action: payload.action,

@@ -1,4 +1,5 @@
 const Booking = require('../../../models/Booking');
+const Cabin = require('../../../models/Cabin');
 const Guest = require('../../../models/Guest');
 const ReservationNote = require('../../../models/ReservationNote');
 const AvailabilityBlock = require('../../../models/AvailabilityBlock');
@@ -9,6 +10,9 @@ const { buildIdempotencyKey, getRememberedResult, rememberResult } = require('..
 const { normalizeExclusiveDateRange } = require('../../../utils/dateTime');
 const { evaluateCabinConflicts } = require('./conflictService');
 const { createDomainError } = require('./errors');
+const { isFixtureCabinName } = require('../../../utils/fixtureExclusion');
+const { countBlockingBlocksForSingleCabin } = require('../../publicAvailabilityService');
+const { BLOCKING_BOOKING_STATUSES } = require('../../calendar/blockingStatusConstants');
 
 const ALLOWED_TRANSITIONS = {
   confirm: { from: ['pending'], to: 'confirmed', action: ACTIONS.OPS_RESERVATION_CONFIRM },
@@ -336,6 +340,202 @@ async function editGuestContact({ bookingId, firstName, lastName, email, phone, 
   return result;
 }
 
+async function createManualReservation({
+  cabinId,
+  checkInDate,
+  checkOutDate,
+  adults = 2,
+  children = 0,
+  guestInfo,
+  initialStatus = 'pending',
+  note = null,
+  acceptExternalHoldWarnings = false,
+  paymentPlaceholderNote = null,
+  reason = null,
+  ctx = {}
+}) {
+  requirePermission({
+    role: ctx.user?.role,
+    action: ACTIONS.OPS_RESERVATION_MANUAL_CREATE
+  });
+
+  if (!cabinId) {
+    throw createDomainError('validation', 'cabinId is required');
+  }
+  if (!guestInfo || !guestInfo.firstName || !guestInfo.lastName || !guestInfo.email || !guestInfo.phone) {
+    throw createDomainError('validation', 'guestInfo must include firstName, lastName, email, and phone');
+  }
+
+  const allowedInitial = ['pending', 'confirmed'];
+  if (!allowedInitial.includes(initialStatus)) {
+    throw createDomainError('validation', 'initialStatus must be pending or confirmed');
+  }
+
+  const normalized = normalizeExclusiveDateRange(checkInDate, checkOutDate);
+  const fingerprint = `${cabinId}:${normalized.startDate.toISOString()}:${normalized.endDate.toISOString()}:${String(guestInfo.email).toLowerCase()}`;
+  const idemKey = getIdempotencyFromContext(ctx, ACTIONS.OPS_RESERVATION_MANUAL_CREATE, fingerprint);
+  const remembered = getRememberedResult(idemKey);
+  if (remembered) return remembered;
+
+  const cabin = await Cabin.findById(cabinId).lean();
+  if (!cabin) {
+    throw createDomainError('validation', 'Cabin not found', { cabinId }, 404);
+  }
+  if (cabin.archivedAt) {
+    throw createDomainError('validation', 'Cabin is archived', { cabinId }, 409);
+  }
+
+  if (isFixtureCabinName(cabin.name)) {
+    const allowFixture = process.env.ALLOW_FIXTURE_ENTITY_OPS_WRITE === '1';
+    if (process.env.NODE_ENV === 'production') {
+      throw createDomainError('validation', 'Manual reservations cannot be created on fixture cabins');
+    }
+    if (!allowFixture) {
+      throw createDomainError(
+        'validation',
+        'Fixture cabins are blocked for manual reservations (set ALLOW_FIXTURE_ENTITY_OPS_WRITE=1 in non-production to override)'
+      );
+    }
+  }
+
+  const check = await evaluateCabinConflicts({
+    cabinId,
+    startDate: normalized.startDate,
+    endDate: normalized.endDate
+  });
+  if (check.hasHardConflicts) {
+    throw createDomainError(
+      'conflict',
+      'Dates conflict with existing reservations or blocks',
+      { hardConflicts: check.hardConflicts },
+      409
+    );
+  }
+  if (check.warnings.length > 0 && !acceptExternalHoldWarnings) {
+    throw createDomainError(
+      'conflict',
+      'External channel holds overlap this range (pass acceptExternalHoldWarnings to proceed)',
+      { warnings: check.warnings },
+      409
+    );
+  }
+
+  const provenanceSource = ctx.user?.role === 'operator' ? 'operator_manual' : 'admin_manual';
+  const paymentNote = paymentPlaceholderNote != null && String(paymentPlaceholderNote).trim()
+    ? String(paymentPlaceholderNote).trim().slice(0, 450)
+    : '';
+
+  const booking = new Booking({
+    _id: new mongoose.Types.ObjectId(),
+    cabinId,
+    checkIn: normalized.startDate,
+    checkOut: normalized.endDate,
+    adults: Math.max(1, parseInt(adults, 10) || 1),
+    children: Math.max(0, parseInt(children, 10) || 0),
+    guestInfo: {
+      firstName: String(guestInfo.firstName).trim(),
+      lastName: String(guestInfo.lastName).trim(),
+      email: String(guestInfo.email).trim().toLowerCase(),
+      phone: String(guestInfo.phone).trim()
+    },
+    specialRequests: paymentNote ? `[payment placeholder] ${paymentNote}` : undefined,
+    totalPrice: 0,
+    status: initialStatus,
+    isTest: false,
+    isProductionSafe: true,
+    provenance: {
+      source: provenanceSource,
+      channel: 'staff',
+      intakeRevision: 1,
+      createdByRoute: ctx.route || null
+    }
+  });
+
+  await appendAuditEvent(
+    {
+      actorType: 'user',
+      actorId: ctx.user?.id || 'admin',
+      entityType: 'Reservation',
+      entityId: String(booking._id),
+      action: 'reservation_manual_create',
+      beforeSnapshot: null,
+      afterSnapshot: {
+        cabinId: String(cabinId),
+        checkIn: normalized.startDate,
+        checkOut: normalized.endDate,
+        initialStatus,
+        guestEmail: booking.guestInfo.email,
+        provenanceSource
+      },
+      metadata: { legacyModel: 'Booking' },
+      reason: reason || null,
+      sourceContext: {
+        route: ctx.route || null,
+        namespace: 'ops'
+      }
+    },
+    { req: ctx.req }
+  );
+
+  await booking.save({ validateBeforeSave: false });
+
+  const overlaps = await Booking.countDocuments({
+    cabinId,
+    _id: { $ne: booking._id },
+    status: { $in: BLOCKING_BOOKING_STATUSES },
+    isTest: { $ne: true },
+    $or: [{ archivedAt: null }, { archivedAt: { $exists: false } }],
+    checkIn: { $lt: normalized.endDate },
+    checkOut: { $gt: normalized.startDate }
+  });
+  const blockRace = await countBlockingBlocksForSingleCabin(cabinId, normalized.startDate, normalized.endDate);
+  if (overlaps > 0 || blockRace > 0) {
+    await Booking.deleteOne({ _id: booking._id });
+    throw createDomainError(
+      'conflict',
+      'Availability changed while saving; please retry',
+      { overlaps, blockRace },
+      409
+    );
+  }
+
+  await Guest.findOneAndUpdate(
+    { email: booking.guestInfo.email },
+    {
+      $set: {
+        firstName: booking.guestInfo.firstName,
+        lastName: booking.guestInfo.lastName,
+        email: booking.guestInfo.email,
+        phone: booking.guestInfo.phone,
+        source: 'internal_admin'
+      },
+      $setOnInsert: {
+        importedAt: new Date(),
+        sourceReference: String(booking._id)
+      }
+    },
+    { new: true, upsert: true }
+  );
+
+  if (note != null && String(note).trim()) {
+    await addReservationNote({
+      bookingId: String(booking._id),
+      content: String(note).trim(),
+      metadata: { kind: 'manual_intake' },
+      ctx
+    });
+  }
+
+  const result = {
+    reservationId: String(booking._id),
+    status: booking.status,
+    cabinId: String(booking.cabinId),
+    provenanceSource
+  };
+  rememberResult(idemKey, result);
+  return result;
+}
+
 async function addReservationNote({ bookingId, content, metadata = {}, ctx = {} }) {
   requirePermission({
     role: ctx.user?.role,
@@ -403,5 +603,6 @@ module.exports = {
   reassignReservation,
   editReservationDates,
   editGuestContact,
-  addReservationNote
+  addReservationNote,
+  createManualReservation
 };

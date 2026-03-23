@@ -29,6 +29,7 @@ const stripeWebhookRoutes = require('./routes/stripeWebhookRoutes');
 const chatRoutes = require('./routes/chatRoutes');
 const opsRoutes = require('./routes/ops');
 const internalSyncRoutes = require('./routes/internalSyncRoutes');
+const maintenanceRoutes = require('./routes/maintenanceRoutes');
 const publicCalendarRoutes = require('./routes/publicCalendarRoutes');
 
 const app = express();
@@ -211,6 +212,7 @@ app.use('/api/drafts', allowCraftOrigin, requireDb, draftRoutes);
 app.use('/api/email/webhook', emailWebhookRoutes);
 app.use('/api/ops', requireDb, opsRoutes);
 app.use('/api/internal/sync', requireDb, internalSyncRoutes);
+app.use('/api/maintenance', requireDb, maintenanceRoutes);
 
 // Error handling
 app.use((err, req, res, _next) => {

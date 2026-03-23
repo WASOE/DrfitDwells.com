@@ -37,10 +37,12 @@ const AdminLogin = () => {
       const data = await response.json();
 
       if (data.success) {
-        // Store token in localStorage
         localStorage.setItem('adminToken', data.token);
-        // Redirect to bookings
-        navigate('/admin/bookings');
+        if (data.role === 'operator') {
+          navigate('/ops');
+        } else {
+          navigate('/admin/bookings');
+        }
       } else {
         setError(data.message || 'Login failed');
       }

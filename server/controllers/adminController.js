@@ -10,6 +10,7 @@ const emailService = require('../services/emailService');
 const { requirePermission, ACTIONS } = require('../services/permissionService');
 const { appendAuditEvent } = require('../services/auditWriter');
 const { assertAdminModuleWriteAllowed } = require('../services/ops/cutover/opsCutoverService');
+const { FIXTURE_CABIN_NAME_PATTERN } = require('../utils/fixtureExclusion');
 
 const DEFAULT_CABIN_IMAGE_URL = 'https://placehold.co/1200x800?text=Cabin';
 
@@ -668,35 +669,53 @@ const login = (req, res) => {
 
     const adminUser = process.env.ADMIN_USER || authDefaults.adminUser;
     const adminPass = process.env.ADMIN_PASS || authDefaults.adminPass;
+    const operatorUser = process.env.ADMIN_OPERATOR_USER || authDefaults.operatorUser;
+    const operatorPass = process.env.ADMIN_OPERATOR_PASS || authDefaults.operatorPass;
     const jwtSecret = process.env.ADMIN_JWT_SECRET || authDefaults.adminJwtSecret;
 
     if (!process.env.ADMIN_USER || !process.env.ADMIN_PASS || !process.env.ADMIN_JWT_SECRET) {
       console.warn('Admin login using fallback credentials from config/defaults.js. Set ADMIN_USER, ADMIN_PASS, and ADMIN_JWT_SECRET for production.');
     }
+    if (!process.env.ADMIN_OPERATOR_USER || !process.env.ADMIN_OPERATOR_PASS) {
+      console.warn('Operator login using fallback credentials from config/defaults.js. Set ADMIN_OPERATOR_USER and ADMIN_OPERATOR_PASS for production.');
+    }
 
-    const userBuf = Buffer.from(username, 'utf8');
-    const passBuf = Buffer.from(password, 'utf8');
+    const userBuf = Buffer.from(String(username || ''), 'utf8');
+    const passBuf = Buffer.from(String(password || ''), 'utf8');
+
     const adminUserBuf = Buffer.from(adminUser, 'utf8');
     const adminPassBuf = Buffer.from(adminPass, 'utf8');
+    const operatorUserBuf = Buffer.from(operatorUser, 'utf8');
+    const operatorPassBuf = Buffer.from(operatorPass, 'utf8');
 
-    const userMatch = userBuf.length === adminUserBuf.length &&
-      crypto.timingSafeEqual(userBuf, adminUserBuf);
-    const passMatch = passBuf.length === adminPassBuf.length &&
+    const adminMatch =
+      userBuf.length === adminUserBuf.length &&
+      crypto.timingSafeEqual(userBuf, adminUserBuf) &&
+      passBuf.length === adminPassBuf.length &&
       crypto.timingSafeEqual(passBuf, adminPassBuf);
 
-    if (!userMatch || !passMatch) {
+    const operatorMatch =
+      userBuf.length === operatorUserBuf.length &&
+      crypto.timingSafeEqual(userBuf, operatorUserBuf) &&
+      passBuf.length === operatorPassBuf.length &&
+      crypto.timingSafeEqual(passBuf, operatorPassBuf);
+
+    if (!adminMatch && !operatorMatch) {
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
       });
     }
-    
+
+    const role = adminMatch ? 'admin' : 'operator';
+    const subject = adminMatch ? 'admin' : 'operator';
+
     // Create token payload (24h TTL; bump ADMIN_TOKEN_VERSION env to revoke all existing tokens)
     const now = Math.floor(Date.now() / 1000);
     const ttlSeconds = 24 * 60 * 60;
     const payload = {
-      sub: 'admin',
-      role: 'admin',
+      sub: subject,
+      role,
       iat: now,
       exp: now + ttlSeconds,
       jti: crypto.randomBytes(16).toString('hex'),
@@ -709,6 +728,7 @@ const login = (req, res) => {
     res.json({
       success: true,
       token,
+      role,
       expiresIn: ttlSeconds
     });
     
@@ -732,46 +752,39 @@ const getBookings = async (req, res) => {
       q,
       transport,
       page = 1,
-      limit = 20
+      limit = 20,
+      includeFixtures,
+      includeArchived
     } = req.query;
 
-    // Build filter object
-    const filter = {};
+    const showFixtures = includeFixtures === '1' || includeFixtures === 'true';
+    const showArchived = includeArchived === '1' || includeArchived === 'true';
 
-    // Status filter
-    if (status) {
-      filter.status = status;
-    }
-
-    // Cabin filter
-    if (cabinId) {
-      filter.cabinId = cabinId;
-    }
-
-    // Date range filter (check-in date)
+    const and = [];
+    if (status) and.push({ status });
+    if (cabinId) and.push({ cabinId });
     if (from || to) {
-      filter.checkIn = {};
-      if (from) {
-        filter.checkIn.$gte = new Date(from);
-      }
-      if (to) {
-        filter.checkIn.$lte = new Date(to);
-      }
+      const checkIn = {};
+      if (from) checkIn.$gte = new Date(from);
+      if (to) checkIn.$lte = new Date(to);
+      and.push({ checkIn });
     }
-
-    // Transport filter
-    if (transport) {
-      filter.transportMethod = transport;
+    if (transport) and.push({ transportMethod: transport });
+    if (!showFixtures) and.push({ isTest: { $ne: true } });
+    if (!showArchived) {
+      and.push({ $or: [{ archivedAt: null }, { archivedAt: { $exists: false } }] });
     }
-
-    // Text search (guest name, email, or booking reference)
     if (q) {
-      filter.$or = [
-        { 'guestInfo.firstName': { $regex: escapeRegex(q), $options: 'i' } },
-        { 'guestInfo.lastName': { $regex: escapeRegex(q), $options: 'i' } },
-        { 'guestInfo.email': { $regex: escapeRegex(q), $options: 'i' } }
-      ];
+      and.push({
+        $or: [
+          { 'guestInfo.firstName': { $regex: escapeRegex(q), $options: 'i' } },
+          { 'guestInfo.lastName': { $regex: escapeRegex(q), $options: 'i' } },
+          { 'guestInfo.email': { $regex: escapeRegex(q), $options: 'i' } }
+        ]
+      });
     }
+
+    const filter = and.length === 0 ? {} : and.length === 1 ? and[0] : { $and: and };
 
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
@@ -869,6 +882,16 @@ const getBookingById = async (req, res) => {
 // Update booking status
 const updateBookingStatus = async (req, res) => {
   try {
+    const legacyWrites = process.env.LEGACY_ADMIN_BOOKING_STATUS_WRITE;
+    if (legacyWrites === '0' || legacyWrites === 'false') {
+      return res.status(403).json({
+        success: false,
+        errorType: 'legacy_write_disabled',
+        message: 'Legacy admin booking status writes are disabled. Use the OPS reservations workspace.',
+        hint: 'Re-enable with LEGACY_ADMIN_BOOKING_STATUS_WRITE=1 if you must use this path temporarily.'
+      });
+    }
+
     const { id } = req.params;
     const { status } = req.body;
 
@@ -984,7 +1007,8 @@ const updateBookingStatus = async (req, res) => {
     if (error.code === 'PERMISSION_DENIED') {
       return res.status(error.status || 403).json({
         success: false,
-        message: error.message
+        message: error.message,
+        hint: 'Use the OPS reservations workspace for day-to-day reservation lifecycle changes.'
       });
     }
     if (error.code === 'CUTOVER_WRITE_BLOCKED') {
@@ -1014,17 +1038,31 @@ const getCabins = async (req, res) => {
     const {
       q,
       page = 1,
-      limit = 20
+      limit = 20,
+      includeFixtures,
+      includeArchived
     } = req.query;
 
-    const filter = {};
+    const showFixtures = includeFixtures === '1' || includeFixtures === 'true';
+    const showArchived = includeArchived === '1' || includeArchived === 'true';
 
-    if (q) {
-      filter.$or = [
-        { name: { $regex: escapeRegex(q), $options: 'i' } },
-        { location: { $regex: escapeRegex(q), $options: 'i' } }
-      ];
+    const and = [];
+    if (!showFixtures) {
+      and.push({ name: { $not: FIXTURE_CABIN_NAME_PATTERN } });
     }
+    if (!showArchived) {
+      and.push({ $or: [{ archivedAt: null }, { archivedAt: { $exists: false } }] });
+    }
+    if (q) {
+      and.push({
+        $or: [
+          { name: { $regex: escapeRegex(q), $options: 'i' } },
+          { location: { $regex: escapeRegex(q), $options: 'i' } }
+        ]
+      });
+    }
+
+    const filter = and.length === 0 ? {} : and.length === 1 ? and[0] : { $and: and };
 
     const pageNum = Math.max(1, parseInt(page, 10) || 1);
     const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));

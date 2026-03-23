@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { decodeRoleFromToken } from '../services/opsApi';
 
 export default function AdminLayout() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -66,6 +67,13 @@ export default function AdminLayout() {
   useEffect(() => {
     if (!loading && !isAuthenticated && location.pathname !== '/admin/login') {
       navigate('/admin/login', { replace: true });
+    }
+  }, [loading, isAuthenticated, location.pathname, navigate]);
+
+  useEffect(() => {
+    if (loading || !isAuthenticated || location.pathname === '/admin/login') return;
+    if (decodeRoleFromToken() === 'operator' && location.pathname.startsWith('/admin')) {
+      navigate('/ops', { replace: true });
     }
   }, [loading, isAuthenticated, location.pathname, navigate]);
 
@@ -137,6 +145,7 @@ export default function AdminLayout() {
                 {navLink('/admin/bookings', 'Bookings')}
                 {navLink('/admin/cabins', 'Cabins')}
                 {navLink('/admin/reviews', 'Reviews')}
+                {decodeRoleFromToken() === 'admin' && navLink('/maintenance', 'Maintenance')}
                 {developerNavEnabled && navLink('/admin/cabin-types', 'Cabin types')}
               </nav>
             </div>

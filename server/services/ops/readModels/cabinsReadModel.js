@@ -80,14 +80,16 @@ async function getCabinsListReadModel({ page = 1, limit = 20, search = '' }) {
   const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
   const skip = (safePage - 1) * safeLimit;
 
+  const archivedClause = { $or: [{ archivedAt: null }, { archivedAt: { $exists: false } }] };
   const fixtureExclusion = { name: { $not: FIXTURE_CABIN_NAME_PATTERN } };
-  const cabinFilter = { ...fixtureExclusion };
+  const cabinFilter = { $and: [fixtureExclusion, archivedClause] };
   const typeFilter = { isActive: true };
 
   if (search) {
     const q = escapeRegex(String(search));
     cabinFilter.$and = [
       fixtureExclusion,
+      archivedClause,
       {
         $or: [
           { name: { $regex: q, $options: 'i' } },
@@ -95,7 +97,6 @@ async function getCabinsListReadModel({ page = 1, limit = 20, search = '' }) {
         ]
       }
     ];
-    delete cabinFilter.name;
     typeFilter.$and = [
       { isActive: true },
       {
@@ -144,6 +145,9 @@ async function getCabinDetailReadModel(id) {
 
   const cabin = await Cabin.findById(id).lean();
   if (cabin && isFixtureCabinName(cabin.name)) {
+    return null;
+  }
+  if (cabin && cabin.archivedAt) {
     return null;
   }
   if (cabin) {

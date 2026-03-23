@@ -5,6 +5,7 @@ import ScrollToTop from './components/ScrollToTop'
 import SiteLayout from './layouts/SiteLayout'
 import AdminLayout from './layouts/AdminLayout'
 import OpsLayout from './layouts/OpsLayout'
+import MaintenanceLayout from './layouts/MaintenanceLayout'
 import EmbeddedLayout from './layouts/EmbeddedLayout'
 
 const Home = lazy(() => import('./pages/Home'))
@@ -50,6 +51,12 @@ const OpsReviews = lazy(() => import('./pages/ops/OpsReviews'))
 const OpsCommunicationOversight = lazy(() => import('./pages/ops/OpsCommunicationOversight'))
 const OpsManualReviewBacklog = lazy(() => import('./pages/ops/OpsManualReviewBacklog'))
 const OpsReadiness = lazy(() => import('./pages/ops/OpsReadiness'))
+const MaintenanceHome = lazy(() => import('./pages/maintenance/MaintenanceHome'))
+const MaintenanceCabins = lazy(() => import('./pages/maintenance/MaintenanceCabins'))
+const MaintenanceReservations = lazy(() => import('./pages/maintenance/MaintenanceReservations'))
+const MaintenanceSync = lazy(() => import('./pages/maintenance/MaintenanceSync'))
+const MaintenanceCleanup = lazy(() => import('./pages/maintenance/MaintenanceCleanup'))
+const MaintenanceArchived = lazy(() => import('./pages/maintenance/MaintenanceArchived'))
 
 const CraftEmbedded = lazy(() => import('./pages/embedded/CraftEmbedded'))
 
@@ -160,6 +167,15 @@ function App() {
               <Route path="/ops/communications" element={<OpsCommunicationOversight />} />
               <Route path="/ops/manual-review" element={<OpsManualReviewBacklog />} />
             <Route path="/ops/readiness" element={<OpsReadiness />} />
+            </Route>
+
+            <Route element={<MaintenanceLayout />}>
+              <Route path="/maintenance" element={<MaintenanceHome />} />
+              <Route path="/maintenance/cabins" element={<MaintenanceCabins />} />
+              <Route path="/maintenance/reservations" element={<MaintenanceReservations />} />
+              <Route path="/maintenance/sync" element={<MaintenanceSync />} />
+              <Route path="/maintenance/cleanup" element={<MaintenanceCleanup />} />
+              <Route path="/maintenance/archived" element={<MaintenanceArchived />} />
             </Route>
         </Routes>
       </Suspense>

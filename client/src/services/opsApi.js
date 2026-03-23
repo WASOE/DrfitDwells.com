@@ -66,7 +66,9 @@ const opsWriteAPI = {
   editMaintenanceBlock: (blockId, payload) =>
     api.post(`/ops/availability/maintenance-blocks/${blockId}/edit`, payload, { headers: authHeaders() }),
   removeMaintenanceBlock: (blockId, reason) =>
-    api.post(`/ops/availability/maintenance-blocks/${blockId}/remove`, { reason }, { headers: authHeaders() })
+    api.post(`/ops/availability/maintenance-blocks/${blockId}/remove`, { reason }, { headers: authHeaders() }),
+  createManualReservation: (payload) =>
+    api.post('/ops/reservations/manual', payload, { headers: authHeaders() })
 };
 
 export { opsReadAPI, opsWriteAPI, decodeRoleFromToken };

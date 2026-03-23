@@ -13,7 +13,13 @@ const isDev = import.meta.env.DEV;
 api.interceptors.request.use(
   (config) => {
     if (isDev) console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
-    if (config.url?.startsWith('/admin/')) {
+    const u = config.url || '';
+    if (
+      u.startsWith('/admin/') ||
+      u.startsWith('/maintenance/') ||
+      u.startsWith('/internal/') ||
+      u.startsWith('/ops/')
+    ) {
       const token = localStorage.getItem('adminToken');
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;

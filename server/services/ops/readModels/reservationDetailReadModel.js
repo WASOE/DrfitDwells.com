@@ -15,6 +15,7 @@ const { resolveBookingExportSafety } = require('../../calendar/bookingExportSafe
 async function getReservationDetailReadModel(reservationId) {
   const booking = await Booking.findById(reservationId).lean();
   if (!booking) return null;
+  if (booking.isTest || booking.archivedAt) return null;
 
   const mapped = mapBookingToReservationCompatible(booking);
   const [guest, availability, payments, payouts, emailEvents, auditSummary, notes] = await Promise.all([

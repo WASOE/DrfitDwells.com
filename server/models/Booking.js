@@ -72,6 +72,18 @@ const bookingSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  /** Soft-archive (maintenance); hidden from default OPS/admin/public lists. */
+  archivedAt: {
+    type: Date,
+    default: null,
+    index: true
+  },
+  archivedReason: {
+    type: String,
+    trim: true,
+    maxlength: [500, 'Archive reason cannot exceed 500 characters'],
+    default: null
+  },
   guestInfo: {
     firstName: {
       type: String,
