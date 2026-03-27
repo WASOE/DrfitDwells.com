@@ -90,6 +90,36 @@
       "stargazing": "Hot tub under the stars",
       "atv": "ATV adventures through mountain trails"
     }
+  },
+  "practical": {
+    "title": "Practical details",
+    "intro": "Remote does not mean unprepared.",
+    "locationTitle": "Meeting point, address & contact",
+    "locationBody": "Transfers and directions use the Chereshovo area listing below—the same pin and phone we publish for wayfinding and local listings, so what you see here matches your booking.",
+    "directionsCta": "Get directions",
+    "callCta": "Call",
+    "items": {
+      "access": {
+        "title": "Year-round access and parking",
+        "content": "The Valley is accessible year-round. Parking is available at the designated area, with a 1km walk to the village (assistance available)."
+      },
+      "amenities": {
+        "title": "Reliable heating and hot water",
+        "content": "All units are equipped with modern heating systems and hot water. The infrastructure is designed to function reliably in all seasons."
+      },
+      "water": {
+        "title": "Drinking water availability",
+        "content": "Fresh drinking water is available on-site. Each accommodation has access to clean, filtered water for all your needs."
+      },
+      "winter": {
+        "title": "Winter and snow conditions",
+        "content": "The Valley is fully prepared for winter conditions. Pathways are maintained, and all systems are designed to handle snow and cold weather."
+      },
+      "support": {
+        "title": "Support availability",
+        "content": "Support is available in case of weather changes or emergencies. Remote does not mean unprepared—we ensure everything works reliably."
+      }
+    }
   }
 }
 

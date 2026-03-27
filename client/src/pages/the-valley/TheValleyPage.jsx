@@ -25,7 +25,6 @@ import VibeSection from './sections/VibeSection';
 import ReviewsSection from './sections/ReviewsSection';
 import PracticalDetailsAccordion from './sections/PracticalDetailsAccordion';
 import BookingCTABand from './sections/BookingCTABand';
-import GMBContactStrip from '../../components/GMBContactStrip';
 import { GMB_LOCATIONS, CONTACT_PHONE } from '../../data/gmbLocations';
 import { getSiteUrl } from '../../utils/siteUrl';
 import './the-valley.css';
@@ -219,13 +218,6 @@ const TheValleyPage = () => {
         <ReviewsSection trustBadgesRef={trustBadgesRef} />
 
         <PracticalDetailsAccordion />
-
-        {/* GMB NAP strip - Get directions & Call */}
-        <section className="valley-section" style={{ paddingTop: 0 }}>
-          <div className="valley-container" style={{ maxWidth: '900px' }}>
-            <GMBContactStrip locationKey="valley" variant="light" />
-          </div>
-        </section>
 
         <BookingCTABand />
 

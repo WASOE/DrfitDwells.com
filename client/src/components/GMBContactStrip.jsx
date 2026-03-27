@@ -5,7 +5,12 @@ import { GMB_LOCATIONS, CONTACT_PHONE } from '../data/gmbLocations';
  * NAP (Name, Address, Phone) strip for local SEO & GMB consistency.
  * Renders "Get directions" and "Call" buttons linked to the correct location.
  */
-const GMBContactStrip = ({ locationKey = 'cabin', variant = 'dark' }) => {
+const GMBContactStrip = ({
+  locationKey = 'cabin',
+  variant = 'dark',
+  directionsLabel = 'Get directions',
+  callLabel = 'Call'
+}) => {
   const loc = GMB_LOCATIONS[locationKey];
   if (!loc) return null;
 
@@ -31,14 +36,14 @@ const GMBContactStrip = ({ locationKey = 'cabin', variant = 'dark' }) => {
           className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-full border transition-colors ${btnClass}`}
         >
           <MapPin className="w-4 h-4" aria-hidden />
-          Get directions
+          {directionsLabel}
         </a>
         <a
           href={telHref}
           className={`inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-full border transition-colors ${btnClass}`}
         >
           <Phone className="w-4 h-4" aria-hidden />
-          Call
+          {callLabel}
         </a>
       </div>
     </div>
