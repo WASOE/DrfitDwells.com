@@ -183,13 +183,15 @@ const EditorialHookSection = () => {
               Several cabins, a stone house, and shared outdoor spaces. Private stays, shared land.
             </p>
             
-            {/* GIF */}
-            <div className="relative w-full rounded-xl overflow-hidden">
+            {/* GIF — aspect ratio on wrapper + cover avoids letterboxing from img box vs intrinsic AR mismatch */}
+            <div
+              className="relative w-full overflow-hidden rounded-xl bg-[#e8e8e8]"
+              style={{ aspectRatio: '16 / 9' }}
+            >
               <img
                 src="/uploads/The%20Valley/Screencastfrom2024-09-3022-01-26-ezgif.com-video-to-gif-converter-1-1.gif"
                 alt="The Valley animated overview showing mountain village layout, A-frame cabins, and natural landscape"
-                className="w-full h-auto"
-                style={{ aspectRatio: '16/9' }}
+                className="absolute inset-0 h-full w-full object-cover object-center"
                 loading="lazy"
               />
             </div>
