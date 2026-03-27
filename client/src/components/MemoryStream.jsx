@@ -37,28 +37,30 @@ export default function MemoryStream() {
 
       {/* Mobile: Horizontal Scroll Container */}
       <div className="md:hidden flex overflow-x-auto snap-x snap-mandatory scrollbar-hide gap-4 px-4">
-        {photos.map((photo, index) => (
-          <div
-            key={index}
-            className="relative shrink-0 snap-center w-[280px]"
-          >
-            <div className="relative aspect-[4/5] overflow-hidden rounded-xl group">
-              <img 
-                src={photo.src} 
-                alt={photo.caption} 
-                className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105" 
-                loading="lazy"
-                decoding="async"
-              />
-              {/* Caption overlay with stronger gradient scrim */}
+        {PHOTOS.map((photo) => {
+          const caption = t(`memory.photos.${photo.key}`);
+          return (
+            <div
+              key={photo.src}
+              className="relative shrink-0 snap-center w-[280px]"
+            >
+              <div className="relative aspect-[4/5] overflow-hidden rounded-xl group">
+                <img
+                  src={photo.src}
+                  alt={caption}
+                  className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
+                  loading="lazy"
+                  decoding="async"
+                />
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/60 to-black/20 pt-20 pb-5 px-5">
                 <p className="text-white text-sm uppercase tracking-[0.15em] font-light">
-                  {photo.caption}
+                  {caption}
                 </p>
               </div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Desktop: The Carousel Container with Bleed Effect */}
