@@ -34,7 +34,7 @@ const NotFoundPage = () => {
           aria-hidden="true"
           className="absolute inset-0 opacity-[0.12]"
           style={{
-            backgroundImage: 'url("/uploads/Content%20website/404-adventure-background.jpg")',
+            backgroundImage: 'url("/uploads/Videos/The-cabin-header.summer-poster.jpg")',
             backgroundSize: 'cover',
             backgroundPosition: 'center'
           }}
