@@ -28,7 +28,15 @@
   "memory": {
     "loading": "Loading memories\u2026",
     "title": "Slide through the archive",
-    "subtitle": "Drag to feel each chapter breathe."
+    "subtitle": "Drag to feel each chapter breathe.",
+    "photos": {
+      "lakeDawn": "First light · misty water, Rhodopes",
+      "fernRhodopes": "Rhodope ferns · growth near The Cabin",
+      "pineSketch": "Mountain pine · illustrated stillness",
+      "cabinInterior": "The Cabin · warm wood interior, Bachevo",
+      "forestPath": "Forest path · approach through the pines",
+      "rainEaves": "Rain on cedar eaves · The Cabin shelter"
+    }
   }
 }
 

@@ -1,17 +1,19 @@
 import { useRef, useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import { useTranslation } from "react-i18next";
 
-// Use your actual image paths here
-const photos = [
-  { src: "/uploads/Content%20website/drift-dwells-bulgaria-lake-dawn.png", caption: "Lake Dawn" },
-  { src: "/uploads/Content%20website/drift-dwells-bulgaria-fern-study.png", caption: "Fern Study" },
-  { src: "/uploads/Content%20website/drift-dwells-bulgaria-pine-sketch.png", caption: "Pine Sketch" },
-  { src: "/uploads/Content%20website/drift-dwells-bulgaria-valley-haven.avif", caption: "Valley Fog" },
-  { src: "/uploads/Content%20website/drift-dwells-bulgaria-cabin-path.png", caption: "Cabin Path" },
-  { src: "/uploads/Content%20website/drift-dwells-bulgaria-rainy-eaves.avif", caption: "Rain Hymns" },
+/** Order matches imageMetadata: cabin / Rhodopes scenes (valley-haven asset is cabin interior). */
+const PHOTOS = [
+  { src: "/uploads/Content%20website/drift-dwells-bulgaria-lake-dawn.png", key: "lakeDawn" },
+  { src: "/uploads/Content%20website/drift-dwells-bulgaria-fern-study.png", key: "fernRhodopes" },
+  { src: "/uploads/Content%20website/drift-dwells-bulgaria-pine-sketch.png", key: "pineSketch" },
+  { src: "/uploads/Content%20website/drift-dwells-bulgaria-valley-haven.avif", key: "cabinInterior" },
+  { src: "/uploads/Content%20website/drift-dwells-bulgaria-cabin-path.png", key: "forestPath" },
+  { src: "/uploads/Content%20website/drift-dwells-bulgaria-rainy-eaves.avif", key: "rainEaves" },
 ];
 
 export default function MemoryStream() {
+  const { t } = useTranslation("home");
   const [width, setWidth] = useState(0);
   const carousel = useRef();
 
@@ -25,10 +27,10 @@ export default function MemoryStream() {
       <div className="max-w-7xl mx-auto px-4 md:px-6">
         <div className="text-center mb-12 md:mb-16">
           <h2 className="font-serif text-4xl md:text-5xl text-stone-900 mb-4">
-            Slide through the archive
+            {t("memory.title")}
           </h2>
           <p className="text-sm md:text-xl text-stone-400 font-light italic mt-2">
-            Drag to feel each chapter breathe.
+            {t("memory.subtitle")}
           </p>
         </div>
       </div>
@@ -72,9 +74,11 @@ export default function MemoryStream() {
           dragConstraints={{ right: 0, left: -width }}
           className="flex gap-4 w-fit pr-8 md:pr-12 lg:pr-16"
         >
-          {photos.map((photo, index) => (
+          {PHOTOS.map((photo) => {
+            const caption = t(`memory.photos.${photo.key}`);
+            return (
             <motion.div
-              key={index}
+              key={photo.src}
               className="relative shrink-0 w-[400px] md:w-[450px]"
               whileHover={{ scale: 1.02, zIndex: 10 }}
               transition={{ duration: 0.3 }}
@@ -82,7 +86,7 @@ export default function MemoryStream() {
               <div className="relative aspect-[4/5] overflow-hidden rounded-xl group">
                 <img 
                   src={photo.src} 
-                  alt={photo.caption} 
+                  alt={caption} 
                   className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105" 
                   loading="lazy"
                   decoding="async"
@@ -90,14 +94,15 @@ export default function MemoryStream() {
                 {/* Caption overlay with stronger gradient scrim */}
                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/65 to-black/25 pt-24 pb-6 px-6">
                   <p className="text-white text-sm md:text-base uppercase tracking-[0.2em] font-light">
-                    {photo.caption}
+                    {caption}
                   </p>
                 </div>
                 {/* Subtle hover overlay */}
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors duration-300" />
               </div>
             </motion.div>
-          ))}
+          );
+          })}
         </motion.div>
       </motion.div>
     </section>
