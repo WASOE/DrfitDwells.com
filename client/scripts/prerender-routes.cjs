@@ -1,5 +1,6 @@
 const http = require('node:http');
 const fs = require('node:fs/promises');
+const fsSync = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const puppeteer = require('puppeteer-core');
@@ -8,7 +9,59 @@ const DIST_DIR = path.resolve(__dirname, '..', 'dist');
 const DEFAULT_TITLE = 'Drift & Dwells - Book Your Eco-Retreat';
 const PORT = Number(process.env.PRERENDER_PORT || 0);
 const HOST = '127.0.0.1';
-const EXECUTABLE_PATH = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome';
+
+const SHOULD_SKIP =
+  process.env.PRERENDER_SKIP === '1' ||
+  process.env.PRERENDER_SKIP === 'true' ||
+  process.env.PRERENDER_ENABLED === '0' ||
+  process.env.PRERENDER_ENABLED === 'false';
+
+const REQUIRE_BROWSER =
+  process.env.PRERENDER_REQUIRE_BROWSER === '1' ||
+  process.env.PRERENDER_REQUIRE_BROWSER === 'true';
+
+function envString(value) {
+  if (value == null) return '';
+  return String(value).trim();
+}
+
+function fileExists(executablePath) {
+  if (!executablePath) return false;
+  try {
+    fsSync.accessSync(executablePath, fsSync.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function findBrowserExecutablePath() {
+  const envCandidates = [
+    envString(process.env.PRERENDER_BROWSER_PATH),
+    envString(process.env.PUPPETEER_EXECUTABLE_PATH),
+    envString(process.env.CHROME_BIN),
+    envString(process.env.CHROMIUM_BIN)
+  ].filter(Boolean);
+
+  for (const candidate of envCandidates) {
+    if (fileExists(candidate)) return candidate;
+  }
+
+  const commonCandidates = [
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/snap/bin/chromium',
+    '/opt/google/chrome/chrome'
+  ];
+
+  for (const candidate of commonCandidates) {
+    if (fileExists(candidate)) return candidate;
+  }
+
+  return '';
+}
 
 const ROUTES = [
   '/',
@@ -171,11 +224,30 @@ async function prerenderRoute(browser, route, port) {
 }
 
 async function run() {
+  if (SHOULD_SKIP) {
+    console.log('[prerender] Skipping prerender (PRERENDER_SKIP/PRERENDER_ENABLED).');
+    return;
+  }
+
+  const executablePath = findBrowserExecutablePath();
+  if (!executablePath) {
+    const message =
+      '[prerender] No Chrome/Chromium executable found. ' +
+      'Set PRERENDER_BROWSER_PATH (or PUPPETEER_EXECUTABLE_PATH/CHROME_BIN) to an installed browser path, ' +
+      'or set PRERENDER_SKIP=1 to skip prerender on this machine.';
+    if (REQUIRE_BROWSER) {
+      throw new Error(message);
+    }
+    console.warn(message);
+    console.warn('[prerender] Continuing without prerender (soft skip).');
+    return;
+  }
+
   const server = createStaticServer();
   const port = await startServer(server);
 
   const browser = await puppeteer.launch({
-    executablePath: EXECUTABLE_PATH,
+    executablePath,
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox']
   });
