@@ -245,6 +245,19 @@ const Header = () => {
             className="fixed inset-0 z-[60] bg-stone-900/90 backdrop-blur-xl md:hidden"
             onClick={() => setIsMobileMenuOpen(false)}
           >
+            <button
+              type="button"
+              aria-label="Close menu"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsMobileMenuOpen(false);
+              }}
+              className="fixed top-20 left-6 z-[70] w-12 h-12 rounded-full bg-stone-900/90 backdrop-blur-md text-[#F1ECE2] border border-[#f8f2e8]/15 shadow-lg flex items-center justify-center transition-all duration-150 hover:bg-black/90 active:scale-95 touch-manipulation"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.25}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
             <motion.nav
               variants={containerVariants}
               initial="hidden"

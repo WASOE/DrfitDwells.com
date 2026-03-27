@@ -7,6 +7,7 @@ const Seo = ({
   title,
   description,
   canonicalPath,
+  suppressCanonical = false,
   noindex = false,
   jsonLd,
   ogImage,
@@ -26,7 +27,7 @@ const Seo = ({
       <html lang={routeLanguage} />
       {title && <title>{title}</title>}
       {description && <meta name="description" content={description} />}
-      <link rel="canonical" href={canonical} />
+      {!suppressCanonical && <link rel="canonical" href={canonical} />}
       {hreflangAlternates.length > 0 && hreflangAlternates.map(({ href, hreflang }) => (
         <link key={hreflang} rel="alternate" hrefLang={hreflang} href={href.startsWith('http') ? href : `${siteUrl}${href}`} />
       ))}

@@ -10,7 +10,18 @@
     "build": "cd client && npm run build",
     "start": "cd server && npm start",
     "posters:extract": "node scripts/extract-video-posters.mjs",
-    "chat:review": "node scripts/review-chat-logs.js"
+    "chat:review": "node scripts/review-chat-logs.js",
+    "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright test --grep @smoke",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:report": "playwright show-report",
+    "test:e2e:file": "playwright test",
+    "test:e2e:debug": "playwright test --debug",
+    "test:e2e:auth": "playwright test --project=chromium-admin-auth --project=chromium-ops --project=chromium-permissions-operator",
+    "test:e2e:api": "playwright test tests/e2e/api/api-auth.spec.js",
+    "k6:smoke": "k6 run k6/smoke.js",
+    "k6:average-load": "k6 run k6/average-load.js",
+    "k6:stress": "k6 run k6/stress.js"
   },
   "keywords": [
     "booking",
@@ -23,6 +34,7 @@
   "devDependencies": {
     "concurrently": "^8.2.2",
     "ffmpeg-static": "^5.3.0",
-    "sharp": "^0.34.5"
+    "sharp": "^0.34.5",
+    "@playwright/test": "^1.56.1"
   }
 }

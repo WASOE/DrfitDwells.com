@@ -9,6 +9,7 @@ import ReviewsSection from '../components/reviews/ReviewsSection';
 import MapArrival from '../components/MapArrival';
 import StickyBookingBar from '../components/StickyBookingBar';
 import Seo from '../components/Seo';
+import { daysBetweenDateOnly, parseDateOnlyLocal } from '../utils/dateOnly';
 import './CabinDetails.css';
 
 // Constants
@@ -288,11 +289,11 @@ const CabinDetails = () => {
     }
     
     try {
-      const checkIn = new Date(searchCriteria.checkIn);
-      const checkOut = new Date(searchCriteria.checkOut);
+      const checkIn = parseDateOnlyLocal(searchCriteria.checkIn);
+      const checkOut = parseDateOnlyLocal(searchCriteria.checkOut);
       
       // Validate dates
-      if (isNaN(checkIn.getTime()) || isNaN(checkOut.getTime())) {
+      if (!checkIn || !checkOut || isNaN(checkIn.getTime()) || isNaN(checkOut.getTime())) {
         return null;
       }
       
@@ -301,7 +302,7 @@ const CabinDetails = () => {
         return null;
       }
       
-      const totalNights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
+      const totalNights = daysBetweenDateOnly(checkIn, checkOut);
       const totalGuests = (searchCriteria.adults || 0) + (searchCriteria.children || 0);
       let totalPrice = totalNights * cabin.pricePerNight;
       if ((cabin.pricingModel || 'per_night') === 'per_person') {
@@ -865,8 +866,8 @@ const CabinDetails = () => {
   const formatDate = useCallback((dateString) => {
     if (!dateString) return '';
     try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return '';
+      const date = parseDateOnlyLocal(dateString);
+      if (!date || isNaN(date.getTime())) return '';
       return date.toLocaleDateString('en-US', { 
         month: 'short', 
         day: 'numeric', 

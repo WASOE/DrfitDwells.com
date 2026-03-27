@@ -7,6 +7,7 @@ import AdminLayout from './layouts/AdminLayout'
 import OpsLayout from './layouts/OpsLayout'
 import MaintenanceLayout from './layouts/MaintenanceLayout'
 import EmbeddedLayout from './layouts/EmbeddedLayout'
+import NotFoundLayout from './layouts/NotFoundLayout'
 
 const Home = lazy(() => import('./pages/Home'))
 const SearchResults = lazy(() => import('./pages/SearchResults'))
@@ -14,6 +15,9 @@ const CabinDetails = lazy(() => import('./pages/CabinDetails'))
 const AFrameDetails = lazy(() => import('./pages/AFrameDetails'))
 const BookingSuccess = lazy(() => import('./pages/BookingSuccess'))
 const ValleyGuide = lazy(() => import('./pages/ValleyGuide'))
+const ValleyPublicGuide = lazy(() => import('./pages/guides/ValleyPublicGuide'))
+const TheCabinPublicGuide = lazy(() => import('./pages/guides/TheCabinPublicGuide'))
+const ValleyStayPublicGuide = lazy(() => import('./pages/guides/ValleyStayPublicGuide'))
 const TheCabin = lazy(() => import('./pages/TheCabin'))
 const CabinFaqPage = lazy(() => import('./pages/CabinFaqPage'))
 const TheValleyPage = lazy(() => import('./pages/the-valley/TheValleyPage'))
@@ -62,6 +66,7 @@ const CraftEmbedded = lazy(() => import('./pages/embedded/CraftEmbedded'))
 
 const ConfirmBooking = lazy(() => import('./pages/ConfirmBooking'))
 const BookingRefundResolution = lazy(() => import('./pages/BookingRefundResolution'))
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
 
 const OffGridCabinsBulgaria = lazy(() => import('./pages/seo/OffGridCabinsBulgaria'))
 const RhodopesCabinRetreat = lazy(() => import('./pages/seo/RhodopesCabinRetreat'))
@@ -115,6 +120,10 @@ function App() {
               <Route path="/bg/booking-success/:id" element={<BookingSuccess />} />
               <Route path="/my-trip/:bookingId/valley-guide" element={<ValleyGuide />} />
               <Route path="/bg/my-trip/:bookingId/valley-guide" element={<ValleyGuide />} />
+              <Route path="/guides/the-valley" element={<ValleyPublicGuide />} />
+              <Route path="/guides/the-valley/:staySlug" element={<ValleyStayPublicGuide />} />
+              <Route path="/guides/the-cabin" element={<TheCabinPublicGuide />} />
+              <Route path="/guides/cabin/:slug" element={<Navigate to="/guides/the-valley" replace />} />
 
               {/* Craft flow */}
               <Route path="/craft/step-1" element={<Step1TripType />} />
@@ -176,6 +185,13 @@ function App() {
               <Route path="/maintenance/sync" element={<MaintenanceSync />} />
               <Route path="/maintenance/cleanup" element={<MaintenanceCleanup />} />
               <Route path="/maintenance/archived" element={<MaintenanceArchived />} />
+            </Route>
+
+            {/* Not found layout */}
+            <Route element={<NotFoundLayout />}>
+              <Route path="/bg/*" element={<NotFoundPage />} />
+              <Route path="/nl/*" element={<NotFoundPage />} />
+              <Route path="*" element={<NotFoundPage />} />
             </Route>
         </Routes>
       </Suspense>

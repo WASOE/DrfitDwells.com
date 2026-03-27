@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useBookingContext } from '../../context/BookingContext';
 import { cabinAPI, bookingAPI } from '../../services/api';
 import StickyBookingBar from '../../components/StickyBookingBar';
+import { daysBetweenDateOnly, formatDateOnlyLocal, parseDateOnlyLocal } from '../../utils/dateOnly';
 
 const Step4Summary = () => {
   const navigate = useNavigate();
@@ -79,8 +80,8 @@ const Step4Summary = () => {
   const calculatePricing = () => {
     if (!cabin || !checkIn || !checkOut) return null;
 
-    const timeDiff = new Date(checkOut).getTime() - new Date(checkIn).getTime();
-    const totalNights = Math.ceil(timeDiff / (1000 * 3600 * 24));
+    const totalNights = daysBetweenDateOnly(checkIn, checkOut);
+    if (totalNights < 1) return null;
     const totalGuests = adults + children;
     
     let cabinCost = cabin.pricePerNight * totalNights;
@@ -159,8 +160,8 @@ const Step4Summary = () => {
 
       const bookingData = {
         cabinId,
-        checkIn: new Date(checkIn),
-        checkOut: new Date(checkOut),
+        checkIn: formatDateOnlyLocal(parseDateOnlyLocal(checkIn)),
+        checkOut: formatDateOnlyLocal(parseDateOnlyLocal(checkOut)),
         adults,
         children,
         guestInfo: {
@@ -355,12 +356,12 @@ const Step4Summary = () => {
                 <div className="mt-8 p-6 bg-gray-50 rounded-lg border border-gray-200">
                   <p className="text-sm text-gray-600 mb-2">Your selected dates:</p>
                   <p className="text-body font-light text-black">
-                    {new Date(checkIn).toLocaleDateString('en-US', { 
+                    {parseDateOnlyLocal(checkIn)?.toLocaleDateString('en-US', { 
                       weekday: 'long', 
                       year: 'numeric', 
                       month: 'long', 
                       day: 'numeric' 
-                    })} - {new Date(checkOut).toLocaleDateString('en-US', { 
+                    })} - {parseDateOnlyLocal(checkOut)?.toLocaleDateString('en-US', { 
                       weekday: 'long', 
                       year: 'numeric', 
                       month: 'long', 
@@ -483,7 +484,7 @@ const Step4Summary = () => {
                 <div className="space-y-6">
                   <div>
                     <span className="text-xs text-gray-600 uppercase tracking-wide">Check-in:</span>
-                    <p className="font-light text-black mt-1">{new Date(checkIn).toLocaleDateString('en-US', { 
+                    <p className="font-light text-black mt-1">{parseDateOnlyLocal(checkIn)?.toLocaleDateString('en-US', { 
                       weekday: 'long', 
                       year: 'numeric', 
                       month: 'long', 
@@ -492,7 +493,7 @@ const Step4Summary = () => {
                   </div>
                   <div>
                     <span className="text-xs text-gray-600 uppercase tracking-wide">Check-out:</span>
-                    <p className="font-light text-black mt-1">{new Date(checkOut).toLocaleDateString('en-US', { 
+                    <p className="font-light text-black mt-1">{parseDateOnlyLocal(checkOut)?.toLocaleDateString('en-US', { 
                       weekday: 'long', 
                       year: 'numeric', 
                       month: 'long', 

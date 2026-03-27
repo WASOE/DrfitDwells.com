@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { isSafeArrivalGuideUrl } = require('../utils/arrivalGuideUrl');
 
 /**
  * CabinType Model - For multi-unit cabin types (e.g., A-frames)
@@ -181,10 +182,9 @@ const cabinTypeSchema = new mongoose.Schema({
     type: String,
     validate: {
       validator: function(v) {
-        if (!v) return true;
-        return /^https?:\/\/.+\.pdf$/i.test(v);
+        return isSafeArrivalGuideUrl(v);
       },
-      message: 'Please provide a valid PDF URL'
+      message: 'Please provide a valid URL or /guides path'
     }
   },
   safetyNotes: {

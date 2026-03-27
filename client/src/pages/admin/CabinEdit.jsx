@@ -2512,13 +2512,13 @@ const CabinEdit = () => {
             {/* Arrival Guide & Safety */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <h4 className="text-sm font-medium text-gray-900 mb-3">Arrival guide (PDF)</h4>
+                <h4 className="text-sm font-medium text-gray-900 mb-3">Arrival guide URL (PDF or /guides/...)</h4>
                 <input
-                  type="url"
+                  type="text"
                   value={formData.arrivalGuideUrl}
                   onChange={(e) => handleInputChange('arrivalGuideUrl', e.target.value)}
                   className={getInputClasses('arrivalGuideUrl')}
-                  placeholder="https://example.com/arrival-guide.pdf"
+                  placeholder="https://example.com/arrival-guide.pdf, /guides/the-cabin, /guides/the-valley, or /guides/the-valley/<staySlug>"
                 />
               </div>
               <div>

@@ -8,6 +8,7 @@ import ReviewsSection from '../components/reviews/ReviewsSection';
 import MapArrival from '../components/MapArrival';
 import StickyBookingBar from '../components/StickyBookingBar';
 import Seo from '../components/Seo';
+import { daysBetweenDateOnly, parseDateOnlyLocal } from '../utils/dateOnly';
 import './CabinDetails.css';
 import '../components/gallery/lightbox.css';
 
@@ -163,14 +164,14 @@ const AFrameDetails = () => {
     }
     
     try {
-      const checkIn = new Date(searchCriteria.checkIn);
-      const checkOut = new Date(searchCriteria.checkOut);
+      const checkIn = parseDateOnlyLocal(searchCriteria.checkIn);
+      const checkOut = parseDateOnlyLocal(searchCriteria.checkOut);
       
-      if (isNaN(checkIn.getTime()) || isNaN(checkOut.getTime()) || checkOut <= checkIn) {
+      if (!checkIn || !checkOut || isNaN(checkIn.getTime()) || isNaN(checkOut.getTime()) || checkOut <= checkIn) {
         return null;
       }
       
-      const totalNights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
+      const totalNights = daysBetweenDateOnly(checkIn, checkOut);
       const totalGuests = (searchCriteria.adults || 0) + (searchCriteria.children || 0);
       let totalPrice = totalNights * cabinType.pricePerNight;
       if ((cabinType.pricingModel || 'per_night') === 'per_person') {

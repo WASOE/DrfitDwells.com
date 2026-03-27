@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const { resolveGuideUrl, isPdfUrl } = require('../utils/arrivalGuideUrl');
 
 const htmlEscape = (s) => {
   if (s == null || s === '') return '';
@@ -248,9 +249,9 @@ class EmailService {
 
             ${cabin.arrivalGuideUrl ? `
             <div class="guidance-section">
-              <h3 style="margin-top: 0; color: #92400e;">📄 Offline Arrival Guide</h3>
-              <p>Download our detailed arrival guide for offline reference:</p>
-              <a href="${cabin.arrivalGuideUrl}" class="btn" target="_blank">Download PDF Guide</a>
+              <h3 style="margin-top: 0; color: #92400e;">📄 Arrival Guide</h3>
+              <p>Open practical route and arrival instructions (save offline before travel):</p>
+              <a href="${resolveGuideUrl(cabin.arrivalGuideUrl, process.env.APP_URL)}" class="btn" target="_blank">${isPdfUrl(cabin.arrivalGuideUrl) ? 'Download PDF Guide' : 'Open Arrival Guide'}</a>
             </div>
             ` : ''}
 
@@ -329,7 +330,7 @@ Complete your trip checklist 24 hours before arrival.
 ` : ''}
 
 ${cabin.arrivalGuideUrl ? `
-OFFLINE GUIDE: ${cabin.arrivalGuideUrl}
+ARRIVAL GUIDE: ${resolveGuideUrl(cabin.arrivalGuideUrl, process.env.APP_URL)}
 ` : ''}
 
 ${cabin.safetyNotes ? `

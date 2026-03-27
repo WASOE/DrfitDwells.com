@@ -140,7 +140,7 @@ export default function OpsReservations() {
           </button>
         </div>
         <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 max-w-7xl">
-          <select value={filters.status} onChange={(e) => updateFilter('status', e.target.value)} className="px-3 py-2 text-sm border rounded-lg">
+          <select value={filters.status} onChange={(e) => updateFilter('status', e.target.value)} className="px-3 py-2 text-sm border rounded-lg" aria-label="Reservation status filter" data-testid="ops-filter-status">
             <option value="">All status</option>
             <option value="pending">Pending</option>
             <option value="confirmed">Confirmed</option>
@@ -148,7 +148,7 @@ export default function OpsReservations() {
             <option value="completed">Completed</option>
             <option value="cancelled">Cancelled</option>
           </select>
-          <select value={filters.cabinId} onChange={(e) => updateFilter('cabinId', e.target.value)} className="px-3 py-2 text-sm border rounded-lg">
+          <select value={filters.cabinId} onChange={(e) => updateFilter('cabinId', e.target.value)} className="px-3 py-2 text-sm border rounded-lg" aria-label="Cabin filter" data-testid="ops-filter-cabin">
             <option value="">All cabins</option>
             {cabins.map((c) => (
               <option key={c.cabinId} value={c.cabinId}>
@@ -160,6 +160,8 @@ export default function OpsReservations() {
             value={filters.paymentStatus}
             onChange={(e) => updateFilter('paymentStatus', e.target.value)}
             className="px-3 py-2 text-sm border rounded-lg"
+            aria-label="Payment status filter"
+            data-testid="ops-filter-payment-status"
           >
             <option value="">All payment status</option>
             <option value="paid">Paid</option>
@@ -173,6 +175,8 @@ export default function OpsReservations() {
             onChange={(e) => updateFilter('search', e.target.value)}
             placeholder="Search guest/email"
             className="px-3 py-2 text-sm border rounded-lg"
+            aria-label="Reservations search"
+            data-testid="ops-filter-search"
           />
         </div>
         {error ? <div className="mt-2 text-sm text-red-600">{error}</div> : null}
@@ -368,7 +372,7 @@ export default function OpsReservations() {
 
       <div className="space-y-2">
         {(data?.items || []).map((row) => (
-          <Link key={row.reservationId} to={`/ops/reservations/${row.reservationId}`} className="block bg-white border border-gray-200 rounded-xl p-4 hover:bg-gray-50">
+          <Link key={row.reservationId} to={`/ops/reservations/${row.reservationId}`} className="block bg-white border border-gray-200 rounded-xl p-4 hover:bg-gray-50" data-testid="ops-reservation-row">
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-gray-900">

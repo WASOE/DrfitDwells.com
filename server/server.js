@@ -31,6 +31,7 @@ const opsRoutes = require('./routes/ops');
 const internalSyncRoutes = require('./routes/internalSyncRoutes');
 const maintenanceRoutes = require('./routes/maintenanceRoutes');
 const publicCalendarRoutes = require('./routes/publicCalendarRoutes');
+const publicGuideRoutes = require('./routes/publicGuideRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -198,6 +199,7 @@ app.get('/api/health', (req, res) => {
 // --- Routes ---
 app.use('/api/chat', chatRoutes); // No DB required—FAQ retrieval only
 app.use('/api/public', requireDb, publicCalendarRoutes);
+app.use('/api/public', requireDb, publicGuideRoutes);
 app.use('/api/availability', requireDb, availabilityRoutes);
 app.use('/api/bookings', requireDb, bookingRoutes);
 app.use('/api/cabins', requireDb, cabinRoutes);

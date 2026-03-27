@@ -3,6 +3,7 @@ const { createToken } = require('../middleware/adminAuth');
 const Booking = require('../models/Booking');
 const Cabin = require('../models/Cabin');
 const CabinType = require('../models/CabinType');
+const { isSafeArrivalGuideUrl } = require('../utils/arrivalGuideUrl');
 const Unit = require('../models/Unit');
 const featureFlags = require('../utils/featureFlags');
 const authDefaults = require('../config/defaults');
@@ -462,7 +463,15 @@ const sanitizeCabinPayload = (input = {}, { isUpdate = false, allowMulti = false
     if (typeof input.arrivalGuideUrl !== 'string') {
       errors.push({ field: 'arrivalGuideUrl', message: 'Arrival guide URL must be a string' });
     } else {
-      sanitized.arrivalGuideUrl = input.arrivalGuideUrl.trim();
+      const arrivalGuideUrl = input.arrivalGuideUrl.trim();
+      if (!isSafeArrivalGuideUrl(arrivalGuideUrl)) {
+        errors.push({
+          field: 'arrivalGuideUrl',
+          message: 'Arrival guide URL must be an absolute http(s) URL or a safe /guides/... path'
+        });
+      } else {
+        sanitized.arrivalGuideUrl = arrivalGuideUrl;
+      }
     }
   }
 

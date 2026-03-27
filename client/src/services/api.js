@@ -65,6 +65,10 @@ export const cabinTypeAPI = {
   getAll: () => api.get('/cabin-types')
 };
 
+export const publicGuideAPI = {
+  getValleyStayGuideBySlug: (staySlug) => api.get(`/public/guides/the-valley/stays/${staySlug}`)
+};
+
 export const unitAPI = {
   getByCabinType: (cabinTypeId) => api.get(`/units/by-type/${cabinTypeId}`),
   getById: (id) => api.get(`/units/${id}`)

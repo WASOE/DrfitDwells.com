@@ -5,6 +5,7 @@ import { useBookingSearch } from '../context/BookingSearchContext';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import GuestSelect from './GuestSelect';
 import { localizePath } from '../utils/localizedRoutes';
+import { formatDateOnlyLocal, parseDateOnlyLocal } from '../utils/dateOnly';
 
 const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'default' }) => {
   const navigate = useNavigate();
@@ -33,9 +34,7 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
 
   const parseDate = (value) => {
     if (!value) return null;
-    if (value instanceof Date) return value;
-    const parsed = new Date(value);
-    return isNaN(parsed.getTime()) ? null : parsed;
+    return parseDateOnlyLocal(value);
   };
 
   useEffect(() => {
@@ -148,8 +147,8 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
     if (!validateForm()) return;
 
     const searchParams = new URLSearchParams({
-      checkIn: checkIn?.toISOString().split('T')[0] || '',
-      checkOut: checkOut?.toISOString().split('T')[0] || '',
+      checkIn: formatDateOnlyLocal(checkIn) || '',
+      checkOut: formatDateOnlyLocal(checkOut) || '',
       adults: adults.toString(),
       children: children.toString(),
       babies: (babies || 0).toString(),

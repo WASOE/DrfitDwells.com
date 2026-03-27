@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
-import { differenceInDays } from 'date-fns';
+import { daysBetweenDateOnly } from '../utils/dateOnly';
 
 const BookingSearchContext = createContext();
 
@@ -35,7 +35,7 @@ export const BookingSearchProvider = ({ children }) => {
 
   const nights = useMemo(() => {
     if (checkIn && checkOut) {
-      return Math.max(1, differenceInDays(checkOut, checkIn));
+      return Math.max(1, daysBetweenDateOnly(checkIn, checkOut));
     }
     return 0;
   }, [checkIn, checkOut]);

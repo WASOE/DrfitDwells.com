@@ -12,6 +12,7 @@ const DayPicker = lazy(() =>
 import { X, Minus, Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useBookingSearch } from '../context/BookingSearchContext';
+import { formatDateOnlyLocal } from '../utils/dateOnly';
 
 const BookingModal = () => {
   const navigate = useNavigate();
@@ -91,8 +92,8 @@ const BookingModal = () => {
     }
 
     const searchParams = new URLSearchParams({
-      checkIn: checkIn.toISOString().split('T')[0],
-      checkOut: checkOut.toISOString().split('T')[0],
+      checkIn: formatDateOnlyLocal(checkIn),
+      checkOut: formatDateOnlyLocal(checkOut),
       adults: adults.toString(),
       children: children.toString()
     });

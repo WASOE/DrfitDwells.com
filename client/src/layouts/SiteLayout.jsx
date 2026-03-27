@@ -23,6 +23,7 @@ export default function SiteLayout() {
   }, [bottomOffset]);
   const basePath = stripLocaleFromPath(location.pathname);
   const isHome = basePath === '/';
+  const isGuidePage = basePath.startsWith('/guides/');
   const isHeroPage = HERO_PATHS.includes(basePath);
 
   return (
@@ -49,7 +50,7 @@ export default function SiteLayout() {
         >
           <Outlet />
         </main>
-        {!isHome && <Footer />}
+        {!isHome && !isGuidePage && <Footer />}
         <AudioPlayer />
         <BookingModal />
         <AnnouncementBar />

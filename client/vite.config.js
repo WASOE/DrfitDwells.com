@@ -1,9 +1,46 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import { VitePWA } from 'vite-plugin-pwa';
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: [],
+      manifest: {
+        name: 'Drift & Dwells',
+        short_name: 'Drift & Dwells',
+        theme_color: '#1a1a1a',
+        background_color: '#ffffff',
+        display: 'standalone',
+        start_url: '/',
+        scope: '/',
+        lang: 'en'
+      },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,json,geojson,gpx,kml,webmanifest}'],
+        navigateFallbackDenylist: [/^\/api\//],
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) => url.pathname.startsWith('/guides/the-cabin/'),
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'cabin-arrival-assets',
+              expiration: { maxEntries: 48, maxAgeSeconds: 60 * 60 * 24 * 365 }
+            }
+          }
+        ]
+      }
+    })
+  ],
+  // react-helmet-async ships ESM that default-imports `invariant` (pure CJS).
+  // Without pre-bundling, the browser loads invariant/browser.js and throws
+  // "does not provide an export named 'default'".
+  optimizeDeps: {
+    include: ['react-helmet-async', 'invariant', 'shallowequal', 'prop-types', 'react-fast-compare']
+  },
   server: {
     port: 3000,
     proxy: {
@@ -30,4 +67,4 @@ export default defineConfig({
       }
     }
   }
-})
+});

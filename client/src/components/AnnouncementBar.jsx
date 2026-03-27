@@ -42,6 +42,7 @@ const AnnouncementBar = () => {
   const isBuildPage = basePath === '/build';
   const isCabinDetails = /^\/cabin\/[^/]+$/.test(basePath);
   const isConfirmPage = /^\/cabin\/[^/]+\/confirm$/.test(basePath);
+  const isGuidePage = basePath.startsWith('/guides/');
   const hasStickyForRoute = hasStickyBottomBar(basePath);
   
   useEffect(() => {
@@ -58,7 +59,7 @@ const AnnouncementBar = () => {
 
   // Don't show announcement bar on Build page or confirm page (after all hooks)
   // Home keeps the sticky band for desktop; mobile is handled inline in Home.jsx
-  if (isBuildPage || isConfirmPage) {
+  if (isBuildPage || isConfirmPage || isGuidePage) {
     return null;
   }
 

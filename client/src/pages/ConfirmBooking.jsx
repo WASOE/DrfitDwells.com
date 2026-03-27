@@ -9,6 +9,7 @@ import ChangeDatesModal from '../components/booking/ChangeDatesModal';
 import ChangeGuestsModal from '../components/booking/ChangeGuestsModal';
 import PriceDetailsModal from '../components/booking/PriceDetailsModal';
 import Seo from '../components/Seo';
+import { daysBetweenDateOnly, formatDateOnlyLocal, parseDateOnlyLocal } from '../utils/dateOnly';
 
 const stripePk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 const stripePromise = stripePk ? loadStripe(stripePk) : null;
@@ -28,8 +29,8 @@ function normalizeSrc(u) {
 
 function formatDate(dateInput) {
   if (!dateInput) return '';
-  const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
-  if (isNaN(d.getTime())) return '';
+  const d = parseDateOnlyLocal(dateInput);
+  if (!d || isNaN(d.getTime())) return '';
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
@@ -107,11 +108,11 @@ const ConfirmBooking = () => {
 
   const [checkIn, setCheckIn] = useState(() => {
     const s = initialState.searchCriteria?.checkIn || searchParams.get('checkIn');
-    return s ? new Date(s) : null;
+    return parseDateOnlyLocal(s);
   });
   const [checkOut, setCheckOut] = useState(() => {
     const s = initialState.searchCriteria?.checkOut || searchParams.get('checkOut');
-    return s ? new Date(s) : null;
+    return parseDateOnlyLocal(s);
   });
   const [adults, setAdults] = useState(() =>
     initialState.searchCriteria?.adults ?? (parseInt(searchParams.get('adults'), 10) || 2)
@@ -145,7 +146,7 @@ const ConfirmBooking = () => {
   const pricing = useMemo(() => {
     if (!cabin || !checkIn || !checkOut || !cabin.pricePerNight) return null;
     try {
-      const totalNights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
+      const totalNights = daysBetweenDateOnly(checkIn, checkOut);
       if (totalNights < 1) return null;
       const totalGuests = adults + children;
       let totalPrice = totalNights * cabin.pricePerNight;
@@ -235,11 +236,11 @@ const ConfirmBooking = () => {
   useEffect(() => {
     if (!checkIn || !checkOut) return;
     const current = searchParams.get('checkIn');
-    const expected = checkIn.toISOString().split('T')[0];
+    const expected = formatDateOnlyLocal(checkIn);
     if (current === expected) return;
     const params = new URLSearchParams(searchParams);
     params.set('checkIn', expected);
-    params.set('checkOut', checkOut.toISOString().split('T')[0]);
+    params.set('checkOut', formatDateOnlyLocal(checkOut));
     params.set('adults', String(adults));
     params.set('children', String(children));
     setSearchParams(params, { replace: true });
@@ -311,8 +312,8 @@ const ConfirmBooking = () => {
 
   useEffect(() => {
     if (!stripeEnabled || !stripePromise || !bookingEntityId || !checkIn || !checkOut || grandTotal < 0.5 || clientSecret) return;
-    const checkInStr = checkIn instanceof Date ? checkIn.toISOString().split('T')[0] : checkIn;
-    const checkOutStr = checkOut instanceof Date ? checkOut.toISOString().split('T')[0] : checkOut;
+    const checkInStr = formatDateOnlyLocal(checkIn);
+    const checkOutStr = formatDateOnlyLocal(checkOut);
     const payload = {
       checkIn: checkInStr,
       checkOut: checkOutStr,
@@ -339,8 +340,8 @@ const ConfirmBooking = () => {
     setCheckIn(from);
     setCheckOut(to);
     const params = new URLSearchParams(searchParams);
-    params.set('checkIn', from.toISOString().split('T')[0]);
-    params.set('checkOut', to.toISOString().split('T')[0]);
+    params.set('checkIn', formatDateOnlyLocal(from));
+    params.set('checkOut', formatDateOnlyLocal(to));
     setSearchParams(params);
   }, [searchParams, setSearchParams]);
 
@@ -357,8 +358,8 @@ const ConfirmBooking = () => {
 
   const createBooking = useCallback(async (paymentIntentId = null) => {
     const bookingData = {
-        checkIn: checkIn.toISOString().split('T')[0],
-        checkOut: checkOut.toISOString().split('T')[0],
+        checkIn: formatDateOnlyLocal(checkIn),
+        checkOut: formatDateOnlyLocal(checkOut),
         adults,
         children,
         experienceKeys: Array.from(selectedExpKeys),
@@ -419,8 +420,8 @@ const ConfirmBooking = () => {
         bookingEntityType,
         bookingEntitySlug,
         confirmPath,
-        checkIn: checkIn.toISOString().split('T')[0],
-        checkOut: checkOut.toISOString().split('T')[0],
+        checkIn: formatDateOnlyLocal(checkIn),
+        checkOut: formatDateOnlyLocal(checkOut),
         adults,
         children,
         formData: { ...formData },
@@ -695,7 +696,7 @@ const ConfirmBooking = () => {
         <div className="py-4">
           <p className="font-medium text-gray-900">Free cancellation</p>
           <p className="text-sm text-gray-600 mt-0.5">
-            Cancel before {checkIn && formatDate(new Date(checkIn.getTime() - 5 * 24 * 60 * 60 * 1000))} for a full refund.
+            Cancel before {checkIn && formatDate(new Date(checkIn.getFullYear(), checkIn.getMonth(), checkIn.getDate() - 5))} for a full refund.
           </p>
           <a href="/cancellation-policy" className="text-sm text-gray-700 underline mt-1 inline-block">
             Full policy

@@ -4,7 +4,8 @@ import { availabilityAPI, unitAPI } from '../services/api';
 import SearchBar from '../components/SearchBar';
 import Seo from '../components/Seo';
 import { useBookingContext } from '../context/BookingContext';
-import { startOfDay, addDays, isBefore, format as formatDate } from 'date-fns';
+import { startOfDay, addDays, isBefore } from 'date-fns';
+import { formatDateOnlyLocal, parseDateOnlyLocal } from '../utils/dateOnly';
 
 // Safe URL normalization helper
 function normalizeSrc(u) {
@@ -46,9 +47,9 @@ const SearchResults = () => {
     const today = startOfDay(new Date());
     let checkInDate = null;
     if (checkIn) {
-      const parsed = startOfDay(new Date(checkIn));
-      if (!Number.isNaN(parsed.getTime())) {
-        checkInDate = parsed;
+      const parsed = parseDateOnlyLocal(checkIn);
+      if (parsed) {
+        checkInDate = startOfDay(parsed);
       }
     }
     if (!checkInDate || isBefore(checkInDate, today)) {
@@ -57,17 +58,17 @@ const SearchResults = () => {
 
     let checkOutDate = null;
     if (checkOut) {
-      const parsed = startOfDay(new Date(checkOut));
-      if (!Number.isNaN(parsed.getTime())) {
-        checkOutDate = parsed;
+      const parsed = parseDateOnlyLocal(checkOut);
+      if (parsed) {
+        checkOutDate = startOfDay(parsed);
       }
     }
     if (!checkOutDate || !checkInDate || isBefore(checkOutDate, addDays(checkInDate, 1))) {
       checkOutDate = addDays(checkInDate, 1);
     }
 
-    checkIn = formatDate(checkInDate, 'yyyy-MM-dd');
-    checkOut = formatDate(checkOutDate, 'yyyy-MM-dd');
+    checkIn = formatDateOnlyLocal(checkInDate);
+    checkOut = formatDateOnlyLocal(checkOutDate);
 
     // Clamp unreasonable values
     adults = Math.max(1, Math.min(10, adults));
@@ -82,6 +83,10 @@ const SearchResults = () => {
   const draftToken = searchParams.get('draft');
   const seoTitle = 'Search availability | Drift & Dwells';
   const seoDescription = 'Browse currently available Drift & Dwells stays for your selected dates and group size.';
+  const formatDateLabel = (value) => {
+    const parsed = parseDateOnlyLocal(value);
+    return parsed ? parsed.toLocaleDateString() : '';
+  };
 
   // Load draft data if token is present
   useEffect(() => {
@@ -158,8 +163,8 @@ const SearchResults = () => {
         const today = startOfDay(new Date());
         const tomorrow = addDays(today, 1);
         const params = new URLSearchParams(searchParams);
-        params.set('checkIn', formatDate(today, 'yyyy-MM-dd'));
-        params.set('checkOut', formatDate(tomorrow, 'yyyy-MM-dd'));
+        params.set('checkIn', formatDateOnlyLocal(today));
+        params.set('checkOut', formatDateOnlyLocal(tomorrow));
         navigate(`/search?${params.toString()}`, { replace: true });
         return;
       }
@@ -333,7 +338,7 @@ const SearchResults = () => {
             <div className="flex flex-wrap items-center gap-8 text-body text-gray-600">
               <span className="flex items-center">
                 <span className="w-2 h-2 bg-sage rounded-full mr-3"></span>
-                {currentSearchParams.checkIn && new Date(currentSearchParams.checkIn).toLocaleDateString()} - {currentSearchParams.checkOut && new Date(currentSearchParams.checkOut).toLocaleDateString()}
+                {currentSearchParams.checkIn && formatDateLabel(currentSearchParams.checkIn)} - {currentSearchParams.checkOut && formatDateLabel(currentSearchParams.checkOut)}
               </span>
               <span className="flex items-center">
                 <span className="w-2 h-2 bg-sage rounded-full mr-3"></span>
@@ -352,7 +357,7 @@ const SearchResults = () => {
 
         {/* Results */}
         {cabins.length === 0 ? (
-          <div className="text-center py-20">
+          <div className="text-center py-20" data-testid="search-empty-state">
             <h2 className="headline-subsection mb-6">
               No Available Cabins
             </h2>
@@ -370,7 +375,7 @@ const SearchResults = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12">
             {cabins.map((cabin) => (
-              <div key={cabin._id} className="card-cabin group flex flex-col h-full">
+              <div key={cabin._id} className="card-cabin group flex flex-col h-full" data-testid="search-result-card">
                 <div className="relative h-64 overflow-hidden">
                   <img
                     src={getCoverImage(cabin)}

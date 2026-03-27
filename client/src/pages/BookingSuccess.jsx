@@ -3,6 +3,8 @@ import { useParams, Link, useLocation } from 'react-router-dom';
 import { bookingAPI } from '../services/api';
 import Seo from '../components/Seo';
 import { localizePath } from '../utils/localizedRoutes';
+import { getGuideCtaLabel } from './guides/guideUtils';
+import { daysBetweenDateOnly, parseDateOnlyLocal } from '../utils/dateOnly';
 
 const BookingSuccess = () => {
   const { id } = useParams();
@@ -43,7 +45,8 @@ const BookingSuccess = () => {
 
   // Generate booking reference number
   const generateBookingRef = (bookingId, checkInDate) => {
-    const date = new Date(checkInDate);
+    const date = parseDateOnlyLocal(checkInDate);
+    if (!date) return `DW-UNKNOWN-${bookingId.slice(-3)}`;
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
@@ -70,8 +73,7 @@ const BookingSuccess = () => {
 
   // Calculate total nights
   const getTotalNights = (checkIn, checkOut) => {
-    const timeDiff = new Date(checkOut).getTime() - new Date(checkIn).getTime();
-    return Math.ceil(timeDiff / (1000 * 3600 * 24));
+    return daysBetweenDateOnly(checkIn, checkOut);
   };
 
   // Generate ICS file for calendar
@@ -235,7 +237,7 @@ END:VCALENDAR`;
                   <div>
                     <span className="text-sm text-gray-500 block">Check-in</span>
                     <p className="font-medium">
-                      {new Date(booking.checkIn).toLocaleDateString('en-US', { 
+                      {parseDateOnlyLocal(booking.checkIn)?.toLocaleDateString('en-US', { 
                         weekday: 'long', 
                         year: 'numeric', 
                         month: 'long', 
@@ -247,7 +249,7 @@ END:VCALENDAR`;
                   <div>
                     <span className="text-sm text-gray-500 block">Check-out</span>
                     <p className="font-medium">
-                      {new Date(booking.checkOut).toLocaleDateString('en-US', { 
+                      {parseDateOnlyLocal(booking.checkOut)?.toLocaleDateString('en-US', { 
                         weekday: 'long', 
                         year: 'numeric', 
                         month: 'long', 
@@ -377,7 +379,7 @@ END:VCALENDAR`;
               {/* Offline Guide */}
               {booking.cabinId?.arrivalGuideUrl && (
                 <div className="mb-6">
-                  <h3 className="font-semibold text-gray-900 mb-3">📄 Offline Arrival Guide</h3>
+                  <h3 className="font-semibold text-gray-900 mb-3">📄 Arrival Guide</h3>
                   <a
                     href={booking.cabinId.arrivalGuideUrl}
                     target="_blank"
@@ -387,7 +389,7 @@ END:VCALENDAR`;
                     <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
-                    Download Offline Guide (PDF)
+                    {getGuideCtaLabel(booking.cabinId.arrivalGuideUrl)}
                   </a>
                 </div>
               )}

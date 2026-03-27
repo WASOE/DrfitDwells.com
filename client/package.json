@@ -7,7 +7,8 @@
     "dev": "vite --host",
     "validate:media": "node ./scripts/validate-media-assets.mjs",
     "validate:calendaruxinteractions": "node ./scripts/validate-calendar-ux-interactions.mjs",
-    "build": "npm run validate:media && vite build && node ./scripts/prerender-routes.cjs",
+    "guides:export-the-cabin": "node ./scripts/export-the-cabin-arrival-assets.mjs",
+    "build": "npm run guides:export-the-cabin && npm run validate:media && vite build && node ./scripts/prerender-routes.cjs",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview --host",
     "check:i18n": "node ./scripts/check-i18n.mjs"
@@ -45,6 +46,7 @@
     "tailwindcss": "^3.3.6",
     "vite": "^5.0.0",
     "vite-plugin-prerender": "^1.0.8",
-    "vite-plugin-prerender-esm-fix": "^1.0.8"
+    "vite-plugin-prerender-esm-fix": "^1.0.8",
+    "vite-plugin-pwa": "^1.2.0"
   }
 }

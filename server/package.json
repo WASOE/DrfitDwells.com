@@ -21,6 +21,8 @@
     "validate:calendarux": "node scripts/validateBuildCalendarUxBatch.js",
     "validate:phase1": "node scripts/validatePhase1ReservationIntegrity.js",
     "validate:phase2": "node scripts/validatePhase2ReservationHardening.js",
+    "validate:arrival-guide-links": "node scripts/validateArrivalGuideLinks.js",
+    "guides:parse-the-cabin-kml": "node scripts/parseTheCabinKmlToGuideData.js",
     "cleanup:reservation-integrity": "node scripts/reservationIntegrityCleanup.js",
     "cleanup:reservation-integrity:preview": "node scripts/reservationIntegrityCleanup.js --preview-unsafe-blocking --preview-ics-exclusion",
     "validate:sync": "node scripts/validateCalendarSync.js",

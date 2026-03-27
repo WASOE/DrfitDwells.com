@@ -1,0 +1,22 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "https://driftdwells.com",
+      "localStorage": [
+        {
+          "name": "drift-dwells-season",
+          "value": "summer"
+        },
+        {
+          "name": "adminToken",
+          "value": "eyJzdWIiOiJvcGVyYXRvciIsInJvbGUiOiJvcGVyYXRvciIsImlhdCI6MTc3NDI2NDMzNywiZXhwIjoxNzc0MzUwNzM3LCJqdGkiOiJjODcxMGQyMjk5NDE2NWMzZDBjNWY5YmVjZTk3MGJlYSIsInR2IjoiMiJ9.0c2faf0449981a5700c0df45eb36dad28d9cc20721e93c3ea62f74a9fc3c3d93"
+        },
+        {
+          "name": "dd_language",
+          "value": "en"
+        }
+      ]
+    }
+  ]
+}

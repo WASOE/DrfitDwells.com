@@ -9,6 +9,9 @@ import { BookingSearchProvider } from './context/BookingSearchContext.jsx';
 import { LanguageProvider } from './context/LanguageContext.jsx';
 import { SeasonProvider } from './context/SeasonContext.jsx';
 import './i18n/i18n.js';
+import { registerSW } from 'virtual:pwa-register';
+
+registerSW({ immediate: true });
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
