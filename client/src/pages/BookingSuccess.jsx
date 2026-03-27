@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
 import { bookingAPI } from '../services/api';
 import Seo from '../components/Seo';
 import { localizePath } from '../utils/localizedRoutes';
 import { getGuideCtaLabel } from './guides/guideUtils';
 import { daysBetweenDateOnly, parseDateOnlyLocal } from '../utils/dateOnly';
+import { readConsentChoice } from '../tracking/consent';
+import { fireBrowserPurchase } from '../tracking/purchase';
 
 const BookingSuccess = () => {
   const { id } = useParams();
@@ -14,14 +16,23 @@ const BookingSuccess = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showPackingModal, setShowPackingModal] = useState(false);
+  const purchaseTrackedRef = useRef(false);
 
-  // Fetch booking data
+  const guestEmail = (
+    location.state?.guestEmail ||
+    (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(`dd_booking_guest_${id}`) : '') ||
+    ''
+  )
+    .trim()
+    .toLowerCase();
+
+  // Fetch booking data (guest email unlocks full PII and matches server purchase gate)
   useEffect(() => {
     const fetchBooking = async () => {
       try {
         setLoading(true);
-        const response = await bookingAPI.getById(id);
-        
+        const response = await bookingAPI.getById(id, guestEmail || undefined);
+
         if (response.data.success) {
           setBooking(response.data.data.booking);
         } else {
@@ -41,7 +52,31 @@ const BookingSuccess = () => {
       setError('Invalid booking ID');
       setLoading(false);
     }
-  }, [id]);
+  }, [id, guestEmail]);
+
+  // Server-verified purchase + browser tags (GA4 dataLayer + Meta Pixel), consent-gated — never on click
+  useEffect(() => {
+    if (!booking || !id || purchaseTrackedRef.current) return;
+    if (!guestEmail) return;
+    if (booking.status !== 'confirmed') return;
+
+    purchaseTrackedRef.current = true;
+    bookingAPI
+      .postPurchaseTracking(id, guestEmail)
+      .then((res) => {
+        const data = res.data?.data;
+        if (!data) return;
+        const consent = readConsentChoice();
+        if (consent && (consent.analytics || consent.ads)) {
+          fireBrowserPurchase(data, consent);
+        }
+      })
+      .catch((err) => {
+        const code = err?.response?.data?.code;
+        if (code === 'NOT_ELIGIBLE') return;
+        purchaseTrackedRef.current = false;
+      });
+  }, [booking, id, guestEmail]);
 
   // Generate booking reference number
   const generateBookingRef = (bookingId, checkInDate) => {

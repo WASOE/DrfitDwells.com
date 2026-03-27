@@ -10,6 +10,7 @@ import ChangeGuestsModal from '../components/booking/ChangeGuestsModal';
 import PriceDetailsModal from '../components/booking/PriceDetailsModal';
 import Seo from '../components/Seo';
 import { daysBetweenDateOnly, formatDateOnlyLocal, parseDateOnlyLocal } from '../utils/dateOnly';
+import { getAttributionPayload } from '../tracking/attribution';
 
 const stripePk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 const stripePromise = stripePk ? loadStripe(stripePk) : null;
@@ -258,6 +259,7 @@ const ConfirmBooking = () => {
           sessionStorage.removeItem('confirm-booking-pending');
           setSubmitLoading(true);
           const fd = data.formData || {};
+          const attr = getAttributionPayload();
           const bookingData = {
             checkIn: data.checkIn,
             checkOut: data.checkOut,
@@ -271,7 +273,8 @@ const ConfirmBooking = () => {
               email: fd.email || '',
               phone: fd.phone || ''
             },
-            specialRequests: fd.specialRequests || ''
+            specialRequests: fd.specialRequests || '',
+            ...(attr && Object.values(attr).some(Boolean) ? { attribution: attr } : {})
           };
           if ((data.bookingEntityType || 'cabin') === 'cabinType') {
             bookingData.cabinTypeId = data.bookingEntityId || data.cabinId;
@@ -281,7 +284,14 @@ const ConfirmBooking = () => {
           bookingAPI.create(bookingData)
             .then((res) => {
               if (res.data.success && res.data.data?.booking?._id) {
-                navigate(`/booking-success/${res.data.data.booking._id}`, { replace: true });
+                const bid = res.data.data.booking._id;
+                const em = (fd.email || '').trim().toLowerCase();
+                if (em) {
+                  try {
+                    sessionStorage.setItem(`dd_booking_guest_${bid}`, em);
+                  } catch (e) { /* ignore */ }
+                }
+                navigate(`/booking-success/${bid}`, { replace: true, state: { guestEmail: em } });
               } else {
                 setError('Booking completed but could not retrieve confirmation');
               }
@@ -357,6 +367,7 @@ const ConfirmBooking = () => {
   }, [searchParams, setSearchParams]);
 
   const createBooking = useCallback(async (paymentIntentId = null) => {
+    const attr = getAttributionPayload();
     const bookingData = {
         checkIn: formatDateOnlyLocal(checkIn),
         checkOut: formatDateOnlyLocal(checkOut),
@@ -369,7 +380,8 @@ const ConfirmBooking = () => {
           email: formData.email.trim(),
           phone: formData.phone.trim()
         },
-        specialRequests: formData.specialRequests.trim()
+        specialRequests: formData.specialRequests.trim(),
+        ...(attr && Object.values(attr).some(Boolean) ? { attribution: attr } : {})
       };
     if (bookingEntityType === 'cabinType') {
       bookingData.cabinTypeId = bookingEntityId;
@@ -386,7 +398,11 @@ const ConfirmBooking = () => {
       } catch (e) { /* ignore */ }
       const bookingId = response.data.data?.booking?._id;
       if (bookingId) {
-        navigate(`/booking-success/${bookingId}`, { replace: true });
+        const em = formData.email.trim().toLowerCase();
+        try {
+          sessionStorage.setItem(`dd_booking_guest_${bookingId}`, em);
+        } catch (e) { /* ignore */ }
+        navigate(`/booking-success/${bookingId}`, { replace: true, state: { guestEmail: em } });
       } else {
         navigate('/');
       }

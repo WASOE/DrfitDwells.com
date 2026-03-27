@@ -22,8 +22,29 @@ const pricingService = require('../services/pricingService');
 const Stripe = require('stripe');
 
 const { validateId } = require('../middleware/validateId');
+const { sendPurchaseEvent } = require('../services/metaCapiService');
 
 const router = express.Router();
+
+function sanitizeAttribution(raw) {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const clip = (v) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 500) : null);
+  const o = {
+    utmSource: clip(raw.utmSource),
+    utmMedium: clip(raw.utmMedium),
+    utmCampaign: clip(raw.utmCampaign),
+    utmTerm: clip(raw.utmTerm),
+    utmContent: clip(raw.utmContent),
+    gclid: clip(raw.gclid),
+    gbraid: clip(raw.gbraid),
+    wbraid: clip(raw.wbraid),
+    fbclid: clip(raw.fbclid),
+    msclkid: clip(raw.msclkid),
+    referrer: clip(raw.referrer),
+    landingPath: clip(raw.landingPath)
+  };
+  return Object.values(o).some(Boolean) ? o : undefined;
+}
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
 const validateTransportMethod = (value, transportOptions) => {
@@ -47,6 +68,14 @@ const paymentIntentLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: 'Too many payment attempts. Please try again in a minute.' }
+});
+
+const purchaseTrackingLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many requests, please slow down.' }
 });
 
 // GET /api/bookings/config - Public config for booking flow (e.g. stripeEnabled)
@@ -452,6 +481,7 @@ router.post('/', bookingCreateLimiter, [
       { transportMethod: req.body.transportMethod, romanticSetup: req.body.romanticSetup }
     );
 
+    let stripePaymentVerified = false;
     // Verify Stripe payment if paymentIntentId is provided
     if (paymentIntentId && stripe) {
       try {
@@ -486,12 +516,21 @@ router.post('/', bookingCreateLimiter, [
         if (metaCheckOut && metaCheckOut !== checkOutDate.toISOString()) {
           return res.status(400).json({ success: false, message: 'Payment dates do not match' });
         }
+        stripePaymentVerified = true;
       } catch (stripeErr) {
         return res.status(400).json({
           success: false,
           message: 'Could not verify payment'
         });
       }
+    }
+
+    const attribution = sanitizeAttribution(req.body.attribution);
+    let initialStatus = 'pending';
+    if (stripePaymentVerified) {
+      initialStatus = 'confirmed';
+    } else if (!paymentIntentId && process.env.BOOKING_CONFIRM_WITHOUT_STRIPE === '1') {
+      initialStatus = 'confirmed';
     }
 
     // Create booking
@@ -516,15 +555,20 @@ router.post('/', bookingCreateLimiter, [
           specialRequests: typeof req.body.specialRequests === 'string' ? req.body.specialRequests.trim().slice(0, 500) : ''
         }
       },
-      status: 'pending',
+      status: initialStatus,
       isProductionSafe: true,
       isTest: false,
+      stripePaymentIntentId: stripePaymentVerified ? String(paymentIntentId).trim() : null,
       provenance: {
         source: 'guest_portal',
         intakeRevision: 1,
         createdByRoute: 'POST /api/bookings'
       }
     };
+
+    if (attribution) {
+      bookingData.attribution = attribution;
+    }
 
     // Add appropriate ID fields based on booking type
     if (cabinId) {
@@ -676,6 +720,110 @@ router.get('/refund-status', async (req, res) => {
   } catch (error) {
     console.error('Refund status error:', error);
     res.status(500).json({ success: false, message: 'Error retrieving refund status' });
+  }
+});
+
+const TRACKING_CURRENCY = process.env.BOOKING_TRACKING_CURRENCY || 'EUR';
+
+// POST /api/bookings/:id/purchase-tracking — verified guest only; idempotent Meta CAPI + payload for browser/GTM
+router.post('/:id/purchase-tracking', purchaseTrackingLimiter, validateId('id'), async (req, res) => {
+  try {
+    const email = (req.body?.email || '').trim().toLowerCase();
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'email is required' });
+    }
+
+    const booking = await Booking.findById(req.params.id);
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found' });
+    }
+
+    const bookingEmail = (booking.guestInfo?.email || '').trim().toLowerCase();
+    if (!bookingEmail || bookingEmail !== email) {
+      return res.status(403).json({ success: false, message: 'Email does not match this booking' });
+    }
+
+    if (booking.status !== 'confirmed') {
+      return res.status(403).json({
+        success: false,
+        code: 'NOT_ELIGIBLE',
+        message: 'Booking is not in a paid-confirmed state'
+      });
+    }
+
+    if (booking.cabinId) {
+      await booking.populate('cabinId', 'name');
+    } else if (booking.cabinTypeId) {
+      await booking.populate('cabinTypeId', 'name');
+    }
+
+    const eventId = `pur_${booking._id}`;
+    const transactionId = String(booking._id);
+    const propertyName =
+      booking.cabinId?.name || booking.cabinTypeId?.name || 'Drift & Dwells stay';
+    const value = Number(booking.totalPrice);
+    const items = [
+      {
+        item_id: transactionId,
+        item_name: propertyName,
+        price: value,
+        quantity: 1
+      }
+    ];
+
+    const payload = {
+      event_id: eventId,
+      transaction_id: transactionId,
+      value,
+      currency: TRACKING_CURRENCY,
+      items,
+      property_name: propertyName
+    };
+
+    if (booking.metaPurchaseSentAt) {
+      return res.json({
+        success: true,
+        data: {
+          ...payload,
+          meta_capi_already_sent: true
+        }
+      });
+    }
+
+    const capi = await sendPurchaseEvent({
+      eventId,
+      email: booking.guestInfo.email,
+      value,
+      currency: TRACKING_CURRENCY,
+      clientIp: req.ip,
+      userAgent: req.get('user-agent')
+    });
+
+    if (!capi.skipped && !capi.ok) {
+      console.error('[purchase-tracking] Meta CAPI failed', capi);
+    }
+
+    if (capi.ok || capi.skipped) {
+      booking.metaPurchaseSentAt = new Date();
+      await booking.save();
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        ...payload,
+        meta_capi_sent: !capi.skipped && capi.ok,
+        meta_capi_skipped: !!capi.skipped,
+        meta_capi_will_retry: !capi.ok && !capi.skipped
+      }
+    });
+  } catch (error) {
+    console.error('Purchase tracking error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error processing purchase tracking',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 

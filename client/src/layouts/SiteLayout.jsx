@@ -6,8 +6,10 @@ import AudioPlayer from "../components/AudioPlayer";
 import BookingModal from "../components/BookingModal";
 import AnnouncementBar from "../components/AnnouncementBar";
 import ChatWidgetLazy from "../components/ChatWidgetLazy";
+import ConsentBanner from "../components/ConsentBanner";
 import { stripLocaleFromPath } from "../utils/localizedRoutes";
 import { useFloatingSafeArea } from "../hooks/useFloatingSafeArea";
+import { captureAttributionFromUrl } from "../tracking/attribution";
 
 /** Routes where the first section is a full-bleed hero (content intentionally under the nav). No top padding. */
 const HERO_PATHS = ['/', '/cabin', '/valley'];
@@ -21,6 +23,10 @@ export default function SiteLayout() {
     document.documentElement.style.setProperty('--floating-bottom-offset', `${bottomOffset}px`);
     return () => document.documentElement.style.removeProperty('--floating-bottom-offset');
   }, [bottomOffset]);
+
+  useEffect(() => {
+    captureAttributionFromUrl();
+  }, []);
   const basePath = stripLocaleFromPath(location.pathname);
   const isHome = basePath === '/';
   const isGuidePage = basePath.startsWith('/guides/');
@@ -55,6 +61,7 @@ export default function SiteLayout() {
         <BookingModal />
         <AnnouncementBar />
         <ChatWidgetLazy />
+        <ConsentBanner />
       </div>
     </div>
   );

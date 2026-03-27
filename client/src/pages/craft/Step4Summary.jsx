@@ -4,6 +4,7 @@ import { useBookingContext } from '../../context/BookingContext';
 import { cabinAPI, bookingAPI } from '../../services/api';
 import StickyBookingBar from '../../components/StickyBookingBar';
 import { daysBetweenDateOnly, formatDateOnlyLocal, parseDateOnlyLocal } from '../../utils/dateOnly';
+import { getAttributionPayload } from '../../tracking/attribution';
 
 const Step4Summary = () => {
   const navigate = useNavigate();
@@ -157,6 +158,7 @@ const Step4Summary = () => {
       setError(null);
 
       const { firstName, lastName } = splitFullName(guestInfo.fullName);
+      const attr = getAttributionPayload();
 
       const bookingData = {
         cabinId,
@@ -172,6 +174,7 @@ const Step4Summary = () => {
         },
         totalPrice: pricing.totalCost,
         specialRequests: guestInfo.specialRequests || '',
+        ...(attr && Object.values(attr).some(Boolean) ? { attribution: attr } : {}),
         // Legacy fields for backward compatibility
         tripType: getTripTypeDisplay(),
         transportMethod: transportMethod?.type || 'Not selected',
@@ -186,8 +189,7 @@ const Step4Summary = () => {
             customTripType: customTripType || '',
             specialRequests: guestInfo.specialRequests || ''
           }
-        },
-        status: 'pending'
+        }
       };
 
       console.log('[Step4] Submitting booking data:', {
@@ -245,7 +247,11 @@ const Step4Summary = () => {
 
         console.log('[Step4] Navigating to success page with bookingId:', bookingId);
         setCurrentStep(1); // Reset for next booking
-        navigate(`/booking-success/${bookingId}`, { replace: true });
+        const em = (guestInfo.email || '').trim().toLowerCase();
+        try {
+          sessionStorage.setItem(`dd_booking_guest_${bookingId}`, em);
+        } catch (e) { /* ignore */ }
+        navigate(`/booking-success/${bookingId}`, { replace: true, state: { guestEmail: em } });
       } else {
         console.error('[Step4] Booking creation failed:', response.data.message);
         setError(response.data.message || 'Failed to create booking');

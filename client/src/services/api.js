@@ -85,7 +85,10 @@ export const bookingAPI = {
   },
   getRefundStatus: (paymentIntentId, email) =>
     api.get('/bookings/refund-status', { params: { paymentIntentId, email } }),
-  submitAddOnRequest: (id, addOnData) => api.post(`/bookings/${id}/addon-request`, addOnData)
+  submitAddOnRequest: (id, addOnData) => api.post(`/bookings/${id}/addon-request`, addOnData),
+  /** Server-verified purchase payload + Meta CAPI (idempotent). Requires guest email. */
+  postPurchaseTracking: (id, email) =>
+    api.post(`/bookings/${id}/purchase-tracking`, { email })
 };
 
 export const reviewAPI = {

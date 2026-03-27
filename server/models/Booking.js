@@ -169,6 +169,38 @@ const bookingSchema = new mongoose.Schema({
       { _id: false }
     ),
     default: undefined
+  },
+  /** Set when Stripe PaymentIntent was verified at booking creation (paid flow). */
+  stripePaymentIntentId: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  /** First-touch marketing params captured on the client (attribution / ads). */
+  attribution: {
+    type: new mongoose.Schema(
+      {
+        utmSource: { type: String, trim: true, default: null },
+        utmMedium: { type: String, trim: true, default: null },
+        utmCampaign: { type: String, trim: true, default: null },
+        utmTerm: { type: String, trim: true, default: null },
+        utmContent: { type: String, trim: true, default: null },
+        gclid: { type: String, trim: true, default: null },
+        gbraid: { type: String, trim: true, default: null },
+        wbraid: { type: String, trim: true, default: null },
+        fbclid: { type: String, trim: true, default: null },
+        msclkid: { type: String, trim: true, default: null },
+        referrer: { type: String, trim: true, default: null },
+        landingPath: { type: String, trim: true, default: null }
+      },
+      { _id: false }
+    ),
+    default: undefined
+  },
+  /** Server Meta CAPI Purchase sent once (dedup with browser via event_id). */
+  metaPurchaseSentAt: {
+    type: Date,
+    default: null
   }
 }, {
   timestamps: true

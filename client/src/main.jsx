@@ -1,3 +1,6 @@
+import { installConsentDefaults } from './tracking/consent.js';
+installConsentDefaults();
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
