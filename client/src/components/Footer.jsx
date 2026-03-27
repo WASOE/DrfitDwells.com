@@ -208,7 +208,7 @@ const Footer = () => {
                 <p>
                   <a href="mailto:info@driftdwells.com" className="hover:opacity-60 transition-opacity" rel="noopener noreferrer">info@driftdwells.com</a>
                 </p>
-                <p className="tabular-nums">+359 88 123 4567</p>
+                <p className="tabular-nums whitespace-nowrap">+359 88 123 4567</p>
               </div>
               <div className="mt-3">
                 <h3 className="font-['Montserrat'] text-[#111] uppercase mb-3" style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '0.18em', opacity: 0.75 }}>
