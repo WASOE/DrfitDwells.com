@@ -26,7 +26,7 @@ export function writeConsentChoice(choice) {
 /**
  * Apply Google Consent Mode v2 update + optional GTM / Pixel bootstrap.
  * @param {ConsentChoice} choice
- * @param {{ loadGtm?: () => void; loadMetaPixel?: () => void }} hooks
+ * @param {{ loadGtm?: () => void; loadMetaPixel?: () => void; loadGoogleAdsGtag?: () => void }} hooks
  */
 export function applyConsentToTags(choice, hooks = {}) {
   if (typeof window === 'undefined') return;
@@ -47,8 +47,13 @@ export function applyConsentToTags(choice, hooks = {}) {
   if (choice.analytics && typeof hooks.loadGtm === 'function') {
     hooks.loadGtm();
   }
-  if (choice.ads && typeof hooks.loadMetaPixel === 'function') {
-    hooks.loadMetaPixel();
+  if (choice.ads) {
+    if (typeof hooks.loadGoogleAdsGtag === 'function') {
+      hooks.loadGoogleAdsGtag();
+    }
+    if (typeof hooks.loadMetaPixel === 'function') {
+      hooks.loadMetaPixel();
+    }
   }
 }
 
@@ -75,7 +80,8 @@ export function installConsentDefaults() {
   if (saved) {
     applyConsentToTags(saved, {
       loadGtm: () => import('./tagLoader.js').then((m) => m.loadGtmOnce()),
-      loadMetaPixel: () => import('./tagLoader.js').then((m) => m.loadMetaPixelOnce())
+      loadMetaPixel: () => import('./tagLoader.js').then((m) => m.loadMetaPixelOnce()),
+      loadGoogleAdsGtag: () => import('./tagLoader.js').then((m) => m.loadGoogleAdsGtagOnce())
     });
   }
 }

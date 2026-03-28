@@ -3,12 +3,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useBookingSearch } from '../../../context/BookingSearchContext';
+import { useLocalizedPath } from '../../../hooks/useLocalizedPath';
 import { getSEOAlt, getSEOTitle } from '../../../data/imageMetadata';
 import { STAY_CARDS } from '../data';
 
 const StaysSection = ({ accommodationsRef }) => {
   const { openModal } = useBookingSearch();
   const navigate = useNavigate();
+  const lp = useLocalizedPath();
   const [cabinIdByName, setCabinIdByName] = useState({});
   const { t } = useTranslation('valley');
 
@@ -56,7 +58,7 @@ const StaysSection = ({ accommodationsRef }) => {
   const handleCardAction = (card) => {
     const href = cardLinks[card.id];
     if (href) {
-      navigate(href);
+      navigate(lp(href));
     } else {
       openModal();
     }

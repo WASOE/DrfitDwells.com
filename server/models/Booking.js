@@ -197,7 +197,7 @@ const bookingSchema = new mongoose.Schema({
     ),
     default: undefined
   },
-  /** Server Meta CAPI Purchase sent once (dedup with browser via event_id). */
+  /** Meta CAPI Purchase succeeded at least once (set only on Graph API success, not when CAPI is skipped). */
   metaPurchaseSentAt: {
     type: Date,
     default: null

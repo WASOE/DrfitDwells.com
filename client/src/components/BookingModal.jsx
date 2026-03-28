@@ -1,4 +1,5 @@
 import { useEffect, lazy, Suspense, useMemo, useState } from 'react';
+import '../i18n/ns/booking';
 import { AnimatePresence, motion } from 'framer-motion';
 import { startOfDay } from 'date-fns';
 import '../styles/daypicker-theme.css';
@@ -10,12 +11,14 @@ const DayPicker = lazy(() =>
   })
 );
 import { X, Minus, Plus } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { getLanguageFromPath, localizePath } from '../utils/localizedRoutes';
 import { useBookingSearch } from '../context/BookingSearchContext';
 import { formatDateOnlyLocal } from '../utils/dateOnly';
 
 const BookingModal = () => {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const {
     checkIn,
     checkOut,
@@ -99,7 +102,8 @@ const BookingModal = () => {
     });
 
     closeModal();
-    navigate(`/search?${searchParams.toString()}`);
+    const searchPath = localizePath('/search', getLanguageFromPath(pathname));
+    navigate(`${searchPath}?${searchParams.toString()}`);
   };
 
   const dateSummary = useMemo(() => {

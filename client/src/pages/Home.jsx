@@ -1,32 +1,36 @@
 import { Suspense, lazy } from 'react';
+import '../i18n/ns/home';
 import DualityHero from '../components/DualityHero';
-import AuthorityStrip from '../components/AuthorityStrip';
-import DestinationsFooter from '../components/DestinationsFooter';
-import Footer from '../components/Footer';
-import CraftExperienceSection from '../components/CraftExperienceSection';
 import Seo from '../components/Seo';
 import { useTranslation } from 'react-i18next';
 import { useLanguage } from '../context/LanguageContext.jsx';
+import { useSeason } from '../context/SeasonContext';
+import { getCabinHeroPreloadUrl } from '../config/heroResponsive';
 import { CONTACT_PHONE } from '../data/gmbLocations';
 import { buildHreflangAlternates } from '../utils/localizedRoutes';
 import { getSiteUrl } from '../utils/siteUrl';
 
 const MemoryStream = lazy(() => import('../components/MemoryStream'));
 const BookingDrawer = lazy(() => import('../components/BookingDrawer'));
+const AuthorityStrip = lazy(() => import('../components/AuthorityStrip'));
+const CraftExperienceSection = lazy(() => import('../components/CraftExperienceSection'));
+const DestinationsFooter = lazy(() => import('../components/DestinationsFooter'));
+const Footer = lazy(() => import('../components/Footer'));
 
 const origin = getSiteUrl();
 
 const Home = () => {
   const { t } = useTranslation('home');
   const { language } = useLanguage();
+  const { season } = useSeason();
   const seoTitle =
     language === 'bg'
-      ? 'Drift & Dwells | Оф-грид планински уединения в България'
-      : 'Drift & Dwells | Off-Grid Mountain Retreats in Bulgaria';
+      ? 'Планински оф-грид ретрийт България – Drift & Dwells'
+      : 'Off-Grid Mountain Retreats in Bulgaria – Drift & Dwells';
   const seoDescription =
     language === 'bg'
-      ? 'Резервирайте оф-грид планинско уединение в България с Drift & Dwells. Отседнете в The Cabin или The Valley за бавно, осъзнато време сред Родопите.'
-      : 'Book off-grid mountain retreats in Bulgaria with Drift & Dwells. Stay at The Cabin or The Valley for slow, intentional time in the Rhodope mountains.';
+      ? 'Тишина и природа в Родопите и Пирин: оф-грид къщи и глемпинг за двойки и малки групи. The Cabin и The Valley—резервирайте престой сред планината.'
+      : 'Escape to quiet mountain retreats in Bulgaria\'s Rhodopes and Pirin. Off-grid cabins and glamping for hikers and nature lovers—The Cabin and The Valley. Book your stay.';
 
   return (
     <>
@@ -35,6 +39,9 @@ const Home = () => {
         description={seoDescription}
         canonicalPath="/"
         hreflangAlternates={buildHreflangAlternates('/')}
+        preloadImages={[
+          { href: getCabinHeroPreloadUrl(season), type: 'image/avif', as: 'image', fetchPriority: 'high' }
+        ]}
         ogImage="/uploads/Videos/The-cabin-header.winter-poster.jpg"
         jsonLd={[
           {
@@ -67,10 +74,16 @@ const Home = () => {
           </div>
         </section>
 
-        <AuthorityStrip />
+        <Suspense
+          fallback={<div className="min-h-[200px] bg-[#F9F9F7] border-y border-[#E5E5E0]" aria-hidden />}
+        >
+          <AuthorityStrip />
+        </Suspense>
 
         {/* Craft Your Experience - Premium Conversion Section */}
-        <CraftExperienceSection variant="editorial" />
+        <Suspense fallback={<div className="min-h-[320px] bg-white" aria-hidden />}>
+          <CraftExperienceSection variant="editorial" />
+        </Suspense>
 
         <Suspense fallback={<div className="py-16 text-center text-sm tracking-[0.3em] uppercase text-gray-500">{t('memory.loading')}</div>}>
           <MemoryStream />
@@ -108,10 +121,14 @@ const Home = () => {
         </section>
 
         {/* Destinations Footer - Atmospheric Retreats */}
-        <DestinationsFooter />
+        <Suspense fallback={<div className="min-h-[240px] bg-white" aria-hidden />}>
+          <DestinationsFooter />
+        </Suspense>
 
         {/* Footer */}
-        <Footer />
+        <Suspense fallback={<div className="min-h-[120px] bg-[#F9F8F6]" aria-hidden />}>
+          <Footer />
+        </Suspense>
 
         {/* Booking Drawer - Mobile Only */}
         <Suspense fallback={null}>

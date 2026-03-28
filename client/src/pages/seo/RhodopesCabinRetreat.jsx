@@ -1,7 +1,9 @@
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import '../../i18n/ns/seo';
 import { useTranslation } from 'react-i18next';
 import { useBookingSearch } from '../../context/BookingSearchContext';
+import { useLocalizedPath } from '../../hooks/useLocalizedPath';
 import Seo from '../../components/Seo';
 import { buildHreflangAlternates } from '../../utils/localizedRoutes';
 import './seo-landing.css';
@@ -9,6 +11,7 @@ import './seo-landing.css';
 const RhodopesCabinRetreat = () => {
   const { t } = useTranslation('seo');
   const { openModal } = useBookingSearch();
+  const lp = useLocalizedPath();
   const items = t('rhodopes.thingsToDo.items', { returnObjects: true }) || [];
 
   return (
@@ -56,18 +59,18 @@ const RhodopesCabinRetreat = () => {
         <section className="seo-landing-section">
           <div className="seo-landing-container">
             <p>
-              <Link to="/off-grid-cabins-bulgaria" className="seo-landing-link">
-                Off-grid cabins in Bulgaria (overview)
+              <Link to={lp('/off-grid-cabins-bulgaria')} className="seo-landing-link">
+                {t('rhodopes.links.offGridOverview')}
               </Link>
             </p>
             <p>
-              <Link to="/cabin" className="seo-landing-link">
-                Book The Cabin in the Rhodopes
+              <Link to={lp('/cabin')} className="seo-landing-link">
+                {t('rhodopes.links.bookCabin')}
               </Link>
             </p>
             <p>
-              <Link to="/valley" className="seo-landing-link">
-                Book The Valley: peace & space
+              <Link to={lp('/valley')} className="seo-landing-link">
+                {t('rhodopes.links.bookValley')}
               </Link>
             </p>
           </div>
@@ -75,7 +78,7 @@ const RhodopesCabinRetreat = () => {
 
         <section className="seo-landing-cta">
           <div className="seo-landing-container text-center">
-            <button onClick={openModal} className="seo-landing-btn">
+            <button type="button" onClick={openModal} className="seo-landing-btn">
               {t('rhodopes.cta')}
             </button>
           </div>

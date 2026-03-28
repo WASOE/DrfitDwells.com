@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import '../i18n/ns/booking';
 import { useBookingSearch } from '../context/BookingSearchContext';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import GuestSelect from './GuestSelect';

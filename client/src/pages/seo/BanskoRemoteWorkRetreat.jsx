@@ -1,7 +1,9 @@
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import '../../i18n/ns/seo';
 import { useTranslation } from 'react-i18next';
 import { useBookingSearch } from '../../context/BookingSearchContext';
+import { useLocalizedPath } from '../../hooks/useLocalizedPath';
 import Seo from '../../components/Seo';
 import { buildHreflangAlternates } from '../../utils/localizedRoutes';
 import './seo-landing.css';
@@ -9,6 +11,7 @@ import './seo-landing.css';
 const BanskoRemoteWorkRetreat = () => {
   const { t } = useTranslation('seo');
   const { openModal } = useBookingSearch();
+  const lp = useLocalizedPath();
 
   return (
     <>
@@ -53,13 +56,13 @@ const BanskoRemoteWorkRetreat = () => {
               </div>
             </div>
             <p>
-              <Link to="/valley" className="seo-landing-link">
-                The Valley: remote work retreat in Bulgaria
+              <Link to={lp('/valley')} className="seo-landing-link">
+                {t('bansko.links.valleyWorkRetreat')}
               </Link>
             </p>
             <p>
-              <Link to="/off-grid-cabins-bulgaria" className="seo-landing-link">
-                Off-grid reset: choose your cabin
+              <Link to={lp('/off-grid-cabins-bulgaria')} className="seo-landing-link">
+                {t('bansko.links.offGridReset')}
               </Link>
             </p>
           </div>
@@ -67,7 +70,7 @@ const BanskoRemoteWorkRetreat = () => {
 
         <section className="seo-landing-cta">
           <div className="seo-landing-container text-center">
-            <button onClick={openModal} className="seo-landing-btn">
+            <button type="button" onClick={openModal} className="seo-landing-btn">
               {t('bansko.cta')}
             </button>
           </div>

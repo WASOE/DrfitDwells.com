@@ -1,11 +1,14 @@
-import { useState, useEffect, useMemo } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
+import '../i18n/ns/booking';
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
+import { getLanguageFromPath, localizePath } from '../utils/localizedRoutes';
 import { availabilityAPI, unitAPI } from '../services/api';
-import SearchBar from '../components/SearchBar';
 import Seo from '../components/Seo';
 import { useBookingContext } from '../context/BookingContext';
 import { startOfDay, addDays, isBefore } from 'date-fns';
 import { formatDateOnlyLocal, parseDateOnlyLocal } from '../utils/dateOnly';
+
+const SearchBar = lazy(() => import('../components/SearchBar'));
 
 // Safe URL normalization helper
 function normalizeSrc(u) {
@@ -26,6 +29,10 @@ function getCoverImage(cabin) {
 const SearchResults = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const routeLanguage = getLanguageFromPath(pathname);
+  const searchBase = localizePath('/search', routeLanguage);
+  const homeBase = localizePath('/', routeLanguage);
   const { setBasicInfo } = useBookingContext();
   
   const [cabins, setCabins] = useState([]);
@@ -111,7 +118,7 @@ const SearchResults = () => {
           // Remove draft token from URL
           urlParams.delete('draft');
           
-          navigate(`/search?${urlParams.toString()}`, { replace: true });
+          navigate(`${searchBase}?${urlParams.toString()}`, { replace: true });
         }
       } catch (error) {
         console.error('Error loading draft:', error);
@@ -120,7 +127,7 @@ const SearchResults = () => {
     };
 
     loadDraft();
-  }, [draftToken, navigate, searchParams]);
+  }, [draftToken, navigate, searchBase, searchParams]);
 
   // Search for available cabins
   const searchCabins = async () => {
@@ -165,7 +172,7 @@ const SearchResults = () => {
         const params = new URLSearchParams(searchParams);
         params.set('checkIn', formatDateOnlyLocal(today));
         params.set('checkOut', formatDateOnlyLocal(tomorrow));
-        navigate(`/search?${params.toString()}`, { replace: true });
+        navigate(`${searchBase}?${params.toString()}`, { replace: true });
         return;
       }
 
@@ -218,22 +225,24 @@ const SearchResults = () => {
 
     // Only navigate if something actually changed
     if (urlUpdated) {
-      navigate(`/search?${urlParams.toString()}`, { replace: true });
+      navigate(`${searchBase}?${urlParams.toString()}`, { replace: true });
     }
-  }, [currentSearchParams.checkIn, currentSearchParams.checkOut, currentSearchParams.adults, currentSearchParams.children, navigate, searchParams]);
+  }, [currentSearchParams.checkIn, currentSearchParams.checkOut, currentSearchParams.adults, currentSearchParams.children, navigate, searchBase, searchParams]);
 
   // Load search results on component mount
   useEffect(() => {
     if (currentSearchParams.checkIn && currentSearchParams.checkOut) {
       searchCabins();
     } else {
-      navigate('/');
+      navigate(homeBase);
     }
   }, [
     currentSearchParams.checkIn,
     currentSearchParams.checkOut,
     currentSearchParams.adults,
-    currentSearchParams.children
+    currentSearchParams.children,
+    homeBase,
+    navigate
   ]);
 
   // Unique cabin type ids for multi-unit results
@@ -320,7 +329,16 @@ const SearchResults = () => {
         <div className="max-w-7xl mx-auto px-6 py-20">
         {/* Search Bar */}
         <div className="mb-20">
-          <SearchBar initialData={currentSearchParams} />
+          <Suspense
+            fallback={
+              <div
+                className="min-h-[72px] w-full max-w-2xl rounded-xl bg-gray-100 animate-pulse"
+                aria-hidden
+              />
+            }
+          >
+            <SearchBar initialData={currentSearchParams} />
+          </Suspense>
           {errorMessage && (
             <p className="text-red-500 text-sm mt-4">
               {errorMessage || 'Please select valid dates and try again.'}
@@ -366,7 +384,7 @@ const SearchResults = () => {
               Try adjusting your search criteria.
             </p>
             <button
-              onClick={() => navigate('/')}
+              onClick={() => navigate(homeBase)}
               className="btn-pill"
             >
               new search →
@@ -456,11 +474,11 @@ const SearchResults = () => {
                         }
 
                         if (isMulti && typeSlug) {
-                          navigate(`/stays/${typeSlug}?${searchParams}`);
+                          navigate(`${localizePath(`/stays/${typeSlug}`, routeLanguage)}?${searchParams}`);
                           return;
                         }
 
-                        navigate(`/cabin/${cabin._id}?${searchParams}`);
+                        navigate(`${localizePath(`/cabin/${cabin._id}`, routeLanguage)}?${searchParams}`);
                       }}
                       className="w-full btn-editorial text-center block py-3"
                     >
@@ -472,7 +490,7 @@ const SearchResults = () => {
                           // Allow viewing details while preserving returnTo
                           const params = new URLSearchParams(currentSearchParams);
                           params.set('returnTo', returnTo);
-                          navigate(`/cabin/${cabin._id}?${params.toString()}`);
+                          navigate(`${localizePath(`/cabin/${cabin._id}`, routeLanguage)}?${params.toString()}`);
                         }}
                         className="w-full btn-underline text-center block py-2 mt-2"
                       >
@@ -489,7 +507,7 @@ const SearchResults = () => {
         {/* Back to Home */}
         <div className="text-center mt-20">
           <button
-            onClick={() => navigate('/')}
+            onClick={() => navigate(homeBase)}
             className="btn-underline"
           >
             ← back to home

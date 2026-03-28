@@ -17,6 +17,11 @@
       "title": "Location & How to Get There",
       "body": "Both stays are in the Rhodope and Pirin regions. Sofia, Plovdiv, and Bansko are the main gateways. High clearance recommended for The Cabin; 4x4 or ATV transfer for The Valley."
     },
+    "links": {
+      "cabinCardTitle": "The Cabin: Cosy off-grid mountain hideaway",
+      "valleyCardTitle": "The Valley: Workation-proof off-grid retreat",
+      "rhodopesGuide": "Rhodopes guide: hikes, villages & nature"
+    },
     "cta": "Check availability"
   },
   "rhodopes": {
@@ -27,6 +32,11 @@
     "thingsToDo": {
       "title": "Things to Do",
       "items": ["Hiking trails in Pirin & Rhodopes", "Village walks and local food", "Stargazing (no light pollution)", "Hot springs nearby", "Rila Monastery day trip"]
+    },
+    "links": {
+      "offGridOverview": "Off-grid cabins in Bulgaria (overview)",
+      "bookCabin": "Book The Cabin in the Rhodopes",
+      "bookValley": "Book The Valley: peace & space"
     },
     "cta": "Check availability"
   },
@@ -47,7 +57,9 @@
     "metaDescription": "Host your retreat in the Bulgarian mountains. Quiet setting, nature, and privacy. Request availability and capacity.",
     "h1": "Retreat Venue in Bulgaria: Silence, Nature & Privacy",
     "offer": "Privacy, scenery, and a pace that supports workshops, yoga, and creative work. Capacity and seasonality vary—we work with small groups.",
+    "howItWorksTitle": "How it works",
     "howItWorks": "Request availability and capacity. We respond within 48 hours with options and pricing.",
+    "valleyLink": "The Valley: workation & retreat setting",
     "cta": "Request availability"
   }
 }

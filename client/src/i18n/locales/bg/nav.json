@@ -6,6 +6,11 @@
   "build": "Изгради",
   "search": "Търсене",
   "book": "Резервирай",
+  "exploreTitle": "Открийте",
+  "exploreOffGrid": "Еко къщи оф-грид в България",
+  "exploreRhodopes": "Ритрит в Родопите",
+  "exploreBansko": "Уъркейшън близо до Банско",
+  "exploreRetreatVenue": "Място за ритрит в България",
   "language": {
     "en": "EN",
     "bg": "BG"

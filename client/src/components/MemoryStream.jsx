@@ -16,14 +16,32 @@ export default function MemoryStream() {
   const { t } = useTranslation("home");
   const [width, setWidth] = useState(0);
   const carousel = useRef();
+  const sectionRef = useRef(null);
+  const [mountGallery, setMountGallery] = useState(false);
+
+  useEffect(() => {
+    const el = sectionRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setMountGallery(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: '200px 0px', threshold: 0.01 }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
 
   useEffect(() => {
     if (!carousel.current) return;
     setWidth(carousel.current.scrollWidth - carousel.current.offsetWidth);
-  }, []);
+  }, [mountGallery]);
 
   return (
-    <section className="py-12 md:py-24 bg-[#f4f2ed] overflow-hidden">
+    <section ref={sectionRef} className="py-12 md:py-24 bg-[#f4f2ed] overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 md:px-6">
         <div className="text-center mb-12 md:mb-16">
           <h2 className="font-serif text-4xl md:text-5xl text-stone-900 mb-4">
@@ -35,7 +53,15 @@ export default function MemoryStream() {
         </div>
       </div>
 
+      {!mountGallery ? (
+        <div
+          className="min-h-[280px] md:min-h-[360px] mx-4 md:mx-8 rounded-xl bg-[#ebe8e2]"
+          aria-hidden
+        />
+      ) : null}
+
       {/* Mobile: Horizontal Scroll Container */}
+      {mountGallery ? (
       <div className="md:hidden flex overflow-x-auto snap-x snap-mandatory scrollbar-hide gap-4 px-4">
         {PHOTOS.map((photo) => {
           const caption = t(`memory.photos.${photo.key}`);
@@ -62,8 +88,10 @@ export default function MemoryStream() {
           );
         })}
       </div>
+      ) : null}
 
       {/* Desktop: The Carousel Container with Bleed Effect */}
+      {mountGallery ? (
       <motion.div 
         ref={carousel} 
         className="hidden md:block cursor-grab active:cursor-grabbing overflow-hidden w-full pl-8 md:pl-12 lg:pl-16"
@@ -107,6 +135,7 @@ export default function MemoryStream() {
           })}
         </motion.div>
       </motion.div>
+      ) : null}
     </section>
   );
 }

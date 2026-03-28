@@ -1,4 +1,5 @@
 import { useRef, useEffect, useLayoutEffect, useState } from 'react';
+import '../i18n/ns/cabin';
 import { motion, useInView } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { ChevronDown, Plus, Minus } from 'lucide-react';
@@ -226,12 +227,12 @@ const TheCabin = () => {
   };
   const seoTitle =
     language === 'bg'
-      ? 'The Cabin – оф-грид планинска къща в България | Drift & Dwells'
-      : 'The Cabin – Off-Grid Mountain Cabin in Bulgaria | Drift & Dwells';
+      ? 'Рустик къща в Родопи – The Cabin от Drift & Dwells'
+      : 'Rustic Cabin in Rhodope Mountains – The Cabin by Drift & Dwells';
   const seoDescription =
     language === 'bg'
-      ? 'Отседнете в The Cabin, напълно оф-грид планинска къща за двама в Родопите. Без wifi, с печка на дърва и дълбока тишина сред природата.'
-      : 'Stay at The Cabin, a fully off-grid mountain cabin for two in the Rhodope Mountains of Bulgaria. No wifi, wood stove heating, and deep silence in nature.';
+      ? 'Глемпинг в Бачево: уютна оф-грид дървена къща за двама с камина и звездно небе. За любители на природата и планинските маршрути.'
+      : 'Glamping in Bachevo, Bulgaria: a cosy off-grid wooden cabin for two with a wood stove and clear night skies. For nature lovers and hikers in the Rhodopes.';
 
   return (
     <>

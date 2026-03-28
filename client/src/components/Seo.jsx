@@ -1,7 +1,7 @@
 import { Helmet } from 'react-helmet-async';
 import { useLocation } from 'react-router-dom';
 import { getLanguageFromPath, localizePath } from '../utils/localizedRoutes';
-import { getSiteUrl, toAbsoluteAssetUrl, toAbsoluteSiteUrl } from '../utils/siteUrl';
+import { getSiteUrl, toAbsoluteSiteUrl } from '../utils/siteUrl';
 
 const Seo = ({
   title,
@@ -45,15 +45,21 @@ const Seo = ({
       {description && <meta name="twitter:description" content={description} />}
       {absoluteOgImage && <meta name="twitter:image" content={absoluteOgImage} />}
       {/* Route-specific image preloads */}
-      {preloadImages.map((img, index) => {
-        const href = toAbsoluteAssetUrl(img);
+      {preloadImages.map((entry, index) => {
+        const spec = typeof entry === 'string' ? { href: entry } : entry;
+        const href = /^https?:\/\//i.test(spec.href)
+          ? spec.href
+          : spec.href.startsWith('/')
+            ? spec.href
+            : `/${spec.href}`;
         return (
           <link
             key={index}
             rel="preload"
-            as="image"
+            as={spec.as || 'image'}
             href={href}
-            fetchPriority="high"
+            type={spec.type || undefined}
+            fetchPriority={spec.fetchPriority || 'high'}
           />
         );
       })}

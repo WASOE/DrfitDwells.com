@@ -123,8 +123,11 @@ export default function MosaicGallery({ images = [], onOpenLightbox }) {
           <img
             src={hero.url}
             alt={hero.alt || ''}
+            width={1200}
+            height={800}
             className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
             loading="eager"
+            fetchPriority="high"
             decoding="async"
           />
         </button>
@@ -164,8 +167,11 @@ export default function MosaicGallery({ images = [], onOpenLightbox }) {
           <img 
             src={hero.url} 
             alt={hero.alt || ''} 
+            width={1200}
+            height={800}
             className="absolute inset-0 w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300" 
             loading="eager"
+            fetchPriority="high"
             decoding="async"
           />
         </button>

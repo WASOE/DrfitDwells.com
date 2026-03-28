@@ -1,7 +1,9 @@
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import '../../i18n/ns/seo';
 import { useTranslation } from 'react-i18next';
 import { useBookingSearch } from '../../context/BookingSearchContext';
+import { useLocalizedPath } from '../../hooks/useLocalizedPath';
 import Seo from '../../components/Seo';
 import { buildHreflangAlternates } from '../../utils/localizedRoutes';
 import './seo-landing.css';
@@ -9,6 +11,7 @@ import './seo-landing.css';
 const OffGridCabinsBulgaria = () => {
   const { t } = useTranslation('seo');
   const { openModal } = useBookingSearch();
+  const lp = useLocalizedPath();
 
   return (
     <>
@@ -47,16 +50,16 @@ const OffGridCabinsBulgaria = () => {
             <div className="seo-landing-grid">
               <div className="seo-landing-card">
                 <h3 className="seo-landing-h3">
-                  <Link to="/cabin" className="seo-landing-link">
-                    The Cabin: Cosy off-grid mountain hideaway
+                  <Link to={lp('/cabin')} className="seo-landing-link">
+                    {t('offGrid.links.cabinCardTitle')}
                   </Link>
                 </h3>
                 <p>{t('offGrid.cabinVsValley.cabin')}</p>
               </div>
               <div className="seo-landing-card">
                 <h3 className="seo-landing-h3">
-                  <Link to="/valley" className="seo-landing-link">
-                    The Valley: Workation-proof off-grid retreat
+                  <Link to={lp('/valley')} className="seo-landing-link">
+                    {t('offGrid.links.valleyCardTitle')}
                   </Link>
                 </h3>
                 <p>{t('offGrid.cabinVsValley.valley')}</p>
@@ -77,8 +80,8 @@ const OffGridCabinsBulgaria = () => {
             <h2 className="seo-landing-h2">{t('offGrid.location.title')}</h2>
             <p className="seo-landing-body">{t('offGrid.location.body')}</p>
             <p>
-              <Link to="/rhodopes-cabin-retreat" className="seo-landing-link">
-                Rhodopes guide: hikes, villages & nature
+              <Link to={lp('/rhodopes-cabin-retreat')} className="seo-landing-link">
+                {t('offGrid.links.rhodopesGuide')}
               </Link>
             </p>
           </div>
@@ -86,7 +89,7 @@ const OffGridCabinsBulgaria = () => {
 
         <section className="seo-landing-cta">
           <div className="seo-landing-container text-center">
-            <button onClick={openModal} className="seo-landing-btn">
+            <button type="button" onClick={openModal} className="seo-landing-btn">
               {t('offGrid.cta')}
             </button>
           </div>

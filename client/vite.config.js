@@ -21,6 +21,20 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,json,geojson,gpx,kml,webmanifest}'],
+        globIgnores: [
+          '**/assets/jspdf*.js',
+          '**/assets/html2canvas*.js',
+          '**/assets/Ops*.js',
+          '**/assets/Maintenance*.js',
+          '**/assets/AdminLogin*.js',
+          '**/assets/CabinEdit*.js',
+          '**/assets/ReviewEdit*.js',
+          '**/assets/BookingsList*.js',
+          '**/assets/BookingDetail*.js',
+          '**/assets/CabinTypesList*.js',
+          '**/assets/CabinTypeEdit*.js',
+          '**/assets/ReviewsList*.js'
+        ],
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
@@ -57,12 +71,24 @@ export default defineConfig({
   build: {
     sourcemap: false,
     chunkSizeWarningLimit: 1200,
+    modulePreload: {
+      resolveDependencies: (filename, deps) =>
+        deps.filter(
+          (d) =>
+            !d.includes('datepicker') &&
+            !d.includes('DayPicker') &&
+            !d.includes('jspdf') &&
+            !d.includes('html2canvas') &&
+            !d.includes('/motion-') &&
+            !d.includes('framer-motion')
+        )
+    },
     rollupOptions: {
       output: {
         manualChunks: {
-          vendor: ['react', 'react-dom'],
-          motion: ['framer-motion'],
-          datepicker: ['react-datepicker']
+          vendor: ['react', 'react-dom']
+          // Avoid forcing framer-motion / react-datepicker into named chunks that Rollup
+          // can incorrectly associate with the entry preface (keeps main thread parse smaller).
         }
       }
     }

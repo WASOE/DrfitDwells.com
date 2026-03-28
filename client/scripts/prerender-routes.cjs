@@ -177,6 +177,18 @@ async function stopServer(server) {
   });
 }
 
+/**
+ * Puppeteer serializes the live DOM after stylesheets load; the deferred Google
+ * Fonts trick (media="print" + onload) has already flipped to media="all",
+ * which would make the shipped HTML blocking. Restore print for first paint.
+ */
+function revertDeferredGoogleFontMedia(html) {
+  return html.replace(
+    /(<link[^>]+href="https:\/\/fonts\.googleapis\.com[^>]+)media="all" onload="this\.media='all'"/g,
+    '$1media="print" onload="this.media=\'all\'"'
+  );
+}
+
 async function waitForApp(page) {
   await page.waitForFunction(
     (defaultTitle) => {
@@ -210,10 +222,17 @@ async function prerenderRoute(browser, route, port) {
   const targetUrl = `http://${HOST}:${port}${route}`;
 
   try {
+    // Mobile-first HTML for home so hero markup matches real phones (split panes + poster LCP, not desktop video).
+    if (route === '/' || route === '/bg') {
+      await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true });
+    } else {
+      await page.setViewport({ width: 1280, height: 720, deviceScaleFactor: 1 });
+    }
     await page.goto(targetUrl, { waitUntil: 'networkidle2' });
     await waitForApp(page);
 
-    const html = await page.evaluate(() => `<!DOCTYPE html>${document.documentElement.outerHTML}`);
+    let html = await page.evaluate(() => `<!DOCTYPE html>${document.documentElement.outerHTML}`);
+    html = revertDeferredGoogleFontMedia(html);
     await writePrerenderedRoute(route, html);
 
     const title = await page.title();

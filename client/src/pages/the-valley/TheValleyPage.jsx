@@ -13,6 +13,7 @@
  */
 
 import { Suspense, lazy } from 'react';
+import '../../i18n/ns/valley';
 import { useRef, useEffect, useLayoutEffect, useState } from 'react';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useSeason } from '../../context/SeasonContext';
@@ -172,12 +173,12 @@ const TheValleyPage = () => {
   };
   const seoTitle =
     language === 'bg'
-      ? 'The Valley – планинско уединение над облаците | Drift & Dwells'
-      : 'The Valley – Mountain Village Retreat Above the Clouds | Drift & Dwells';
+      ? 'Каменна къща в планината – The Valley от Drift & Dwells'
+      : 'Mountain Stone House Retreat – The Valley by Drift & Dwells';
   const seoDescription =
     language === 'bg'
-      ? 'Открийте The Valley, частно планинско уединение високо в България с отделни къщи, историческа каменна къща и споделени външни пространства.'
-      : 'Discover The Valley, a private mountain village retreat above the clouds in Bulgaria with individual cabins, historic stone house, and shared outdoor spaces.';
+      ? 'The Valley в Черешово: каменна къща на 1550 м с 360° гледка, A-frame къщи, обща кухня, огнище и Starlink в каменната къща. За почивка и фокусирана работа.'
+      : 'Stay at The Valley in Chereshovo—a historic stone house at 1,550m for deep rest and work. A-frame cabins, 360° views, shared kitchen, firepit, Starlink in the stone house.';
 
   return (
     <>

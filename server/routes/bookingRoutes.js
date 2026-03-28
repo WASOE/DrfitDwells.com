@@ -22,7 +22,12 @@ const pricingService = require('../services/pricingService');
 const Stripe = require('stripe');
 
 const { validateId } = require('../middleware/validateId');
-const { sendPurchaseEvent } = require('../services/metaCapiService');
+const {
+  buildPurchaseTrackingPayload,
+  populateBookingForTracking,
+  trySendMetaCapiPurchase,
+  processMetaPurchaseAfterConfirm
+} = require('../services/bookingPurchaseTracking');
 
 const router = express.Router();
 
@@ -686,6 +691,12 @@ router.post('/', bookingCreateLimiter, [
       }
     })();
 
+    if (initialStatus === 'confirmed') {
+      void processMetaPurchaseAfterConfirm(String(booking._id), req).catch((err) => {
+        console.error('[meta-purchase] Post-confirm CAPI error:', err);
+      });
+    }
+
   } catch (error) {
     console.error('Booking creation error:', error);
     res.status(500).json({
@@ -723,9 +734,7 @@ router.get('/refund-status', async (req, res) => {
   }
 });
 
-const TRACKING_CURRENCY = process.env.BOOKING_TRACKING_CURRENCY || 'EUR';
-
-// POST /api/bookings/:id/purchase-tracking — verified guest only; idempotent Meta CAPI + payload for browser/GTM
+// POST /api/bookings/:id/purchase-tracking — verified guest only; browser payload + optional Meta CAPI retry (primary send is on booking confirm)
 router.post('/:id/purchase-tracking', purchaseTrackingLimiter, validateId('id'), async (req, res) => {
   try {
     const email = (req.body?.email || '').trim().toLowerCase();
@@ -751,34 +760,8 @@ router.post('/:id/purchase-tracking', purchaseTrackingLimiter, validateId('id'),
       });
     }
 
-    if (booking.cabinId) {
-      await booking.populate('cabinId', 'name');
-    } else if (booking.cabinTypeId) {
-      await booking.populate('cabinTypeId', 'name');
-    }
-
-    const eventId = `pur_${booking._id}`;
-    const transactionId = String(booking._id);
-    const propertyName =
-      booking.cabinId?.name || booking.cabinTypeId?.name || 'Drift & Dwells stay';
-    const value = Number(booking.totalPrice);
-    const items = [
-      {
-        item_id: transactionId,
-        item_name: propertyName,
-        price: value,
-        quantity: 1
-      }
-    ];
-
-    const payload = {
-      event_id: eventId,
-      transaction_id: transactionId,
-      value,
-      currency: TRACKING_CURRENCY,
-      items,
-      property_name: propertyName
-    };
+    await populateBookingForTracking(booking);
+    const payload = buildPurchaseTrackingPayload(booking);
 
     if (booking.metaPurchaseSentAt) {
       return res.json({
@@ -790,11 +773,7 @@ router.post('/:id/purchase-tracking', purchaseTrackingLimiter, validateId('id'),
       });
     }
 
-    const capi = await sendPurchaseEvent({
-      eventId,
-      email: booking.guestInfo.email,
-      value,
-      currency: TRACKING_CURRENCY,
+    const capi = await trySendMetaCapiPurchase(booking, {
       clientIp: req.ip,
       userAgent: req.get('user-agent')
     });
@@ -803,16 +782,11 @@ router.post('/:id/purchase-tracking', purchaseTrackingLimiter, validateId('id'),
       console.error('[purchase-tracking] Meta CAPI failed', capi);
     }
 
-    if (capi.ok || capi.skipped) {
-      booking.metaPurchaseSentAt = new Date();
-      await booking.save();
-    }
-
     return res.json({
       success: true,
       data: {
         ...payload,
-        meta_capi_sent: !capi.skipped && capi.ok,
+        meta_capi_sent: !capi.skipped && !!capi.ok,
         meta_capi_skipped: !!capi.skipped,
         meta_capi_will_retry: !capi.ok && !capi.skipped
       }

@@ -1,7 +1,9 @@
 import { useLocation, Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { localizePath, stripLocaleFromPath } from '../utils/localizedRoutes';
 
 const Footer = () => {
+  const { t } = useTranslation('nav');
   const location = useLocation();
   const basePath = stripLocaleFromPath(location.pathname);
   const language = location.pathname === '/bg' || location.pathname.startsWith('/bg/') ? 'bg' : 'en';
@@ -133,28 +135,28 @@ const Footer = () => {
             {/* COLUMN 2: Explore (SEO landing pages) */}
             <div className="flex flex-col">
               <h3 className="font-['Montserrat'] text-[#111] uppercase mb-5" style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '0.18em', opacity: 0.75 }}>
-                Explore
+                {t('exploreTitle')}
               </h3>
               
               <ul>
                 <li style={{ marginBottom: 'clamp(16px, 2vw, 28px)' }}>
                   <Link to={localizePath('/off-grid-cabins-bulgaria', language)} className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
-                    Off-Grid Cabins Bulgaria
+                    {t('exploreOffGrid')}
                   </Link>
                 </li>
                 <li style={{ marginBottom: 'clamp(16px, 2vw, 28px)' }}>
                   <Link to={localizePath('/rhodopes-cabin-retreat', language)} className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
-                    Rhodopes Cabin Retreat
+                    {t('exploreRhodopes')}
                   </Link>
                 </li>
                 <li style={{ marginBottom: 'clamp(16px, 2vw, 28px)' }}>
                   <Link to={localizePath('/bansko-remote-work-retreat', language)} className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
-                    Bansko Remote Work Retreat
+                    {t('exploreBansko')}
                   </Link>
                 </li>
                 <li style={{ marginBottom: 'clamp(16px, 2vw, 28px)' }}>
                   <Link to={localizePath('/retreat-venue-bulgaria', language)} className="font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase" style={{ fontSize: '12px', letterSpacing: '0.12em', fontWeight: 600, lineHeight: '2.5' }}>
-                    Retreat Venue Bulgaria
+                    {t('exploreRetreatVenue')}
                   </Link>
                 </li>
               </ul>

@@ -51,7 +51,7 @@ async function sendPurchaseEvent(opts) {
         action_source: 'website',
         user_data: userData,
         custom_data: {
-          currency: opts.currency || 'EUR',
+          currency: String(opts.currency || 'EUR').toUpperCase(),
           value: String(Number(opts.value).toFixed(2))
         }
       }

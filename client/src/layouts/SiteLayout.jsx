@@ -3,10 +3,11 @@ import { Outlet, useLocation } from "react-router-dom";
 import Header from "../components/Header";
 import Footer from "../components/Footer";
 import AudioPlayer from "../components/AudioPlayer";
-import BookingModal from "../components/BookingModal";
+import BookingModalLazy from "../components/BookingModalLazy";
 import AnnouncementBar from "../components/AnnouncementBar";
 import ChatWidgetLazy from "../components/ChatWidgetLazy";
 import ConsentBanner from "../components/ConsentBanner";
+import DeferredIdleSiteChrome from "../components/DeferredIdleSiteChrome";
 import { stripLocaleFromPath } from "../utils/localizedRoutes";
 import { useFloatingSafeArea } from "../hooks/useFloatingSafeArea";
 import { captureAttributionFromUrl } from "../tracking/attribution";
@@ -29,6 +30,8 @@ export default function SiteLayout() {
   }, []);
   const basePath = stripLocaleFromPath(location.pathname);
   const isHome = basePath === '/';
+  const isSearchPage = basePath === '/search';
+  const deferIdleChrome = isHome || isSearchPage;
   const isGuidePage = basePath.startsWith('/guides/');
   const isHeroPage = HERO_PATHS.includes(basePath);
 
@@ -57,11 +60,21 @@ export default function SiteLayout() {
           <Outlet />
         </main>
         {!isHome && !isGuidePage && <Footer />}
-        <AudioPlayer />
-        <BookingModal />
-        <AnnouncementBar />
-        <ChatWidgetLazy />
-        <ConsentBanner />
+        {deferIdleChrome ? (
+          <>
+            <BookingModalLazy />
+            <ConsentBanner />
+            <DeferredIdleSiteChrome />
+          </>
+        ) : (
+          <>
+            <AudioPlayer />
+            <BookingModalLazy />
+            <AnnouncementBar />
+            <ChatWidgetLazy />
+            <ConsentBanner />
+          </>
+        )}
       </div>
     </div>
   );

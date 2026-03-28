@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { applyConsentToTags, readConsentChoice, writeConsentChoice } from '../tracking/consent';
-import { loadGtmOnce, loadMetaPixelOnce } from '../tracking/tagLoader';
+import { loadGtmOnce, loadMetaPixelOnce, loadGoogleAdsGtagOnce } from '../tracking/tagLoader';
 import { localizePath } from '../utils/localizedRoutes';
 
 /**
@@ -20,7 +20,8 @@ export default function ConsentBanner() {
     writeConsentChoice(choice);
     applyConsentToTags(choice, {
       loadGtm: loadGtmOnce,
-      loadMetaPixel: loadMetaPixelOnce
+      loadMetaPixel: loadMetaPixelOnce,
+      loadGoogleAdsGtag: loadGoogleAdsGtagOnce
     });
     setVisible(false);
   };

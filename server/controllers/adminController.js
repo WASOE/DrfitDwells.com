@@ -15,6 +15,7 @@ const {
   FIXTURE_CABIN_NAME_PATTERN,
   FIXTURE_BOOKING_EMAIL_PATTERN
 } = require('../utils/fixtureExclusion');
+const { processMetaPurchaseAfterConfirm } = require('../services/bookingPurchaseTracking');
 
 const DEFAULT_CABIN_IMAGE_URL = 'https://placehold.co/1200x800?text=Cabin';
 
@@ -991,6 +992,12 @@ const updateBookingStatus = async (req, res) => {
 
     booking.status = status;
     await booking.save({ validateBeforeSave: false });
+
+    if (status === 'confirmed' && oldStatus !== 'confirmed') {
+      void processMetaPurchaseAfterConfirm(String(booking._id), req).catch((err) => {
+        console.error('[meta-purchase] Admin confirm CAPI error:', err);
+      });
+    }
 
     // Populate cabin info for response
     await booking.populate('cabinId', 'name location');

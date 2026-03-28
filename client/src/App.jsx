@@ -1,13 +1,16 @@
 import { Suspense, lazy } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { BookingProvider } from './context/BookingContext'
+import BookingProviderLayout from './layouts/BookingProviderLayout'
 import ScrollToTop from './components/ScrollToTop'
-import SiteLayout from './layouts/SiteLayout'
-import AdminLayout from './layouts/AdminLayout'
-import OpsLayout from './layouts/OpsLayout'
-import MaintenanceLayout from './layouts/MaintenanceLayout'
-import EmbeddedLayout from './layouts/EmbeddedLayout'
-import NotFoundLayout from './layouts/NotFoundLayout'
+
+/** Guest shell (header, outlet, modals) — lazy so admin/ops layouts stay out of the initial graph. */
+const SiteLayout = lazy(() => import('./layouts/SiteLayout'))
+const AdminLayout = lazy(() => import('./layouts/AdminLayout'))
+const OpsLayout = lazy(() => import('./layouts/OpsLayout'))
+const MaintenanceLayout = lazy(() => import('./layouts/MaintenanceLayout'))
+const EmbeddedLayout = lazy(() => import('./layouts/EmbeddedLayout'))
+const NotFoundLayout = lazy(() => import('./layouts/NotFoundLayout'))
 
 const Home = lazy(() => import('./pages/Home'))
 const SearchResults = lazy(() => import('./pages/SearchResults'))
@@ -81,7 +84,7 @@ const PageLoader = () => (
 
 function App() {
   return (
-    <BookingProvider>
+    <>
       <ScrollToTop />
       <Suspense fallback={<PageLoader />}>
         <Routes>
@@ -89,8 +92,6 @@ function App() {
             <Route element={<SiteLayout />}>
               <Route path="/" element={<Home />} />
               <Route path="/bg" element={<Home />} />
-              <Route path="/search" element={<SearchResults />} />
-              <Route path="/bg/search" element={<SearchResults />} />
               <Route path="/cabin" element={<TheCabin />} />
               <Route path="/bg/cabin" element={<TheCabin />} />
               <Route path="/cabin/faq" element={<CabinFaqPage />} />
@@ -106,12 +107,8 @@ function App() {
               <Route path="/cancellation-policy" element={<CancellationPolicy />} />
               <Route path="/career" element={<Career />} />
               <Route path="/press" element={<Press />} />
-              <Route path="/cabin/:id/confirm" element={<ConfirmBooking />} />
-              <Route path="/bg/cabin/:id/confirm" element={<ConfirmBooking />} />
               <Route path="/stays/a-frame/confirm" element={<ConfirmBooking />} />
               <Route path="/bg/stays/a-frame/confirm" element={<ConfirmBooking />} />
-              <Route path="/cabin/:id" element={<CabinDetails />} />
-              <Route path="/bg/cabin/:id" element={<CabinDetails />} />
               <Route path="/booking-refund" element={<BookingRefundResolution />} />
               <Route path="/bg/booking-refund" element={<BookingRefundResolution />} />
               <Route path="/stays/a-frame" element={<AFrameDetails />} />
@@ -125,12 +122,6 @@ function App() {
               <Route path="/guides/the-cabin" element={<TheCabinPublicGuide />} />
               <Route path="/guides/cabin/:slug" element={<Navigate to="/guides/the-valley" replace />} />
 
-              {/* Craft flow */}
-              <Route path="/craft/step-1" element={<Step1TripType />} />
-              <Route path="/craft/step-2" element={<Step2ArrivalMethod />} />
-              <Route path="/craft/step-3" element={<Step3GuestDetails />} />
-              <Route path="/craft/step-4" element={<Step4Summary />} />
-
               {/* SEO landing pages */}
               <Route path="/off-grid-cabins-bulgaria" element={<OffGridCabinsBulgaria />} />
               <Route path="/bg/off-grid-cabins-bulgaria" element={<OffGridCabinsBulgaria />} />
@@ -140,6 +131,20 @@ function App() {
               <Route path="/bg/bansko-remote-work-retreat" element={<BanskoRemoteWorkRetreat />} />
               <Route path="/retreat-venue-bulgaria" element={<RetreatVenueBulgaria />} />
               <Route path="/bg/retreat-venue-bulgaria" element={<RetreatVenueBulgaria />} />
+
+              {/* Booking state only where useBookingContext is required */}
+              <Route element={<BookingProviderLayout />}>
+                <Route path="/search" element={<SearchResults />} />
+                <Route path="/bg/search" element={<SearchResults />} />
+                <Route path="/cabin/:id/confirm" element={<ConfirmBooking />} />
+                <Route path="/bg/cabin/:id/confirm" element={<ConfirmBooking />} />
+                <Route path="/cabin/:id" element={<CabinDetails />} />
+                <Route path="/bg/cabin/:id" element={<CabinDetails />} />
+                <Route path="/craft/step-1" element={<Step1TripType />} />
+                <Route path="/craft/step-2" element={<Step2ArrivalMethod />} />
+                <Route path="/craft/step-3" element={<Step3GuestDetails />} />
+                <Route path="/craft/step-4" element={<Step4Summary />} />
+              </Route>
             </Route>
 
             {/* Admin layout */}
@@ -158,7 +163,14 @@ function App() {
 
             {/* Embedded layout */}
             <Route element={<EmbeddedLayout />}>
-              <Route path="/embedded/craft" element={<CraftEmbedded />} />
+              <Route
+                path="/embedded/craft"
+                element={
+                  <BookingProvider>
+                    <CraftEmbedded />
+                  </BookingProvider>
+                }
+              />
             </Route>
 
             {/* Ops layout */}
@@ -195,7 +207,7 @@ function App() {
             </Route>
         </Routes>
       </Suspense>
-    </BookingProvider>
+    </>
   )
 }
 

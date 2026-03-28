@@ -6,6 +6,11 @@
   "build": "Build",
   "search": "Search",
   "book": "Book",
+  "exploreTitle": "Explore",
+  "exploreOffGrid": "Off-Grid Cabins Bulgaria",
+  "exploreRhodopes": "Rhodopes Cabin Retreat",
+  "exploreBansko": "Bansko Remote Work Retreat",
+  "exploreRetreatVenue": "Retreat Venue Bulgaria",
   "language": {
     "en": "EN",
     "bg": "BG"

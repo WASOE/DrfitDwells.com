@@ -35,6 +35,20 @@ export default {
         'editorial': '0.05em',
         'wide': '0.1em',
         'wider': '0.15em',
+      },
+      keyframes: {
+        headerVeil: {
+          from: { opacity: '0' },
+          to: { opacity: '1' }
+        },
+        headerNavIn: {
+          from: { opacity: '0', transform: 'translateY(12px)' },
+          to: { opacity: '1', transform: 'translateY(0)' }
+        }
+      },
+      animation: {
+        'header-veil': 'headerVeil 0.28s ease-out both',
+        'header-nav-in': 'headerNavIn 0.4s ease-out both'
       }
     },
   },

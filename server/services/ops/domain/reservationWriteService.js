@@ -13,6 +13,7 @@ const { createDomainError } = require('./errors');
 const { isFixtureCabinName } = require('../../../utils/fixtureExclusion');
 const { countBlockingBlocksForSingleCabin } = require('../../publicAvailabilityService');
 const { BLOCKING_BOOKING_STATUSES } = require('../../calendar/blockingStatusConstants');
+const { processMetaPurchaseAfterConfirm } = require('../../bookingPurchaseTracking');
 
 const ALLOWED_TRANSITIONS = {
   confirm: { from: ['pending'], to: 'confirmed', action: ACTIONS.OPS_RESERVATION_CONFIRM },
@@ -102,6 +103,12 @@ async function transitionReservation({ bookingId, kind, reason = null, ctx = {} 
   booking.provenance.lastTransition = kind;
   booking.markModified('provenance');
   await booking.save({ validateBeforeSave: false });
+
+  if (kind === 'confirm' && nextStatus === 'confirmed') {
+    void processMetaPurchaseAfterConfirm(String(booking._id), ctx.req || {}).catch((err) => {
+      console.error('[meta-purchase] OPS confirm CAPI error:', err);
+    });
+  }
 
   // Canonical AvailabilityBlock surface: reservation-backed rows must not outlive non-blocking booking status.
   if (nextStatus === 'cancelled' || nextStatus === 'completed') {

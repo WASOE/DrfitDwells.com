@@ -1,12 +1,13 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { cabinAPI } from '../services/api';
 import { useBookingContext } from '../context/BookingContext';
 import { useBookingSearch } from '../context/BookingSearchContext';
 import { useBookingNavigation } from '../hooks/useBookingNavigation';
 import MosaicGallery from '../components/MosaicGallery';
-import ReviewsSection from '../components/reviews/ReviewsSection';
-import MapArrival from '../components/MapArrival';
+
+const ReviewsSection = lazy(() => import('../components/reviews/ReviewsSection'));
+const MapArrival = lazy(() => import('../components/MapArrival'));
 import StickyBookingBar from '../components/StickyBookingBar';
 import Seo from '../components/Seo';
 import { daysBetweenDateOnly, parseDateOnlyLocal } from '../utils/dateOnly';
@@ -1188,15 +1189,25 @@ const CabinDetails = () => {
           <h2 className="section-title" id="guest-reviews">
             Guest Reviews
           </h2>
-          <ReviewsSection 
-            cabinId={cabin._id}
-            averageRating={cabin.averageRating}
-            reviewCount={cabin.reviewsCount}
-            hideHeading={true}
-          />
-
-          {/* Map & Arrival Section */}
-          <MapArrival cabin={cabin} />
+          <Suspense
+            fallback={
+              <div
+                className="mt-6 space-y-4 min-h-[200px]"
+                aria-hidden
+              >
+                <div className="h-32 rounded-xl bg-gray-100 animate-pulse" />
+                <div className="h-48 rounded-xl bg-gray-100 animate-pulse" />
+              </div>
+            }
+          >
+            <ReviewsSection
+              cabinId={cabin._id}
+              averageRating={cabin.averageRating}
+              reviewCount={cabin.reviewsCount}
+              hideHeading={true}
+            />
+            <MapArrival cabin={cabin} />
+          </Suspense>
         </div>
         </div>
         {/* END cabin-hero-content */}

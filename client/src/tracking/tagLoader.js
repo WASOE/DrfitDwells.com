@@ -1,5 +1,6 @@
 let gtmLoaded = false;
 let pixelLoaded = false;
+let googleAdsGtagLoaded = false;
 
 export function loadGtmOnce() {
   const id = import.meta.env.VITE_GTM_ID;
@@ -41,4 +42,29 @@ export function loadMetaPixelOnce() {
     window.fbq('init', pixelId);
     window.fbq('track', 'PageView');
   }
+}
+
+/**
+ * Optional Google Ads gtag (AW-xxxxxxx) for first-party conversion linker cookies.
+ * Prefer also adding a Conversion Linker tag in GTM on All Pages after consent; use this when you need linker outside GTM.
+ */
+export function loadGoogleAdsGtagOnce() {
+  const id = import.meta.env.VITE_GOOGLE_ADS_ID;
+  if (!id || googleAdsGtagLoaded || typeof document === 'undefined') return;
+  googleAdsGtagLoaded = true;
+
+  window.dataLayer = window.dataLayer || [];
+  if (typeof window.gtag !== 'function') {
+    window.gtag = function gtag() {
+      window.dataLayer.push(arguments);
+    };
+  }
+
+  const s = document.createElement('script');
+  s.async = true;
+  s.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(id)}`;
+  document.head.appendChild(s);
+
+  window.gtag('js', new Date());
+  window.gtag('config', id);
 }

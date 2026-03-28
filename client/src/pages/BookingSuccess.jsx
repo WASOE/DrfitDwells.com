@@ -54,7 +54,7 @@ const BookingSuccess = () => {
     }
   }, [id, guestEmail]);
 
-  // Server-verified purchase + browser tags (GA4 dataLayer + Meta Pixel), consent-gated — never on click
+  // Browser purchase tags (GA4 + Pixel); Meta CAPI is sent on server when booking is confirmed — this endpoint supplies payload + CAPI retry if needed
   useEffect(() => {
     if (!booking || !id || purchaseTrackedRef.current) return;
     if (!guestEmail) return;
