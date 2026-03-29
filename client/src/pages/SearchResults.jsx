@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import '../i18n/ns/booking';
+import { useTranslation } from 'react-i18next';
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { getLanguageFromPath, localizePath } from '../utils/localizedRoutes';
 import { availabilityAPI, unitAPI } from '../services/api';
@@ -7,6 +8,7 @@ import Seo from '../components/Seo';
 import { useBookingContext } from '../context/BookingContext';
 import { startOfDay, addDays, isBefore } from 'date-fns';
 import { formatDateOnlyLocal, parseDateOnlyLocal } from '../utils/dateOnly';
+import { getMinSelectableStayDate } from '../utils/bookingMinStayDate';
 
 const SearchBar = lazy(() => import('../components/SearchBar'));
 
@@ -26,6 +28,45 @@ function getCoverImage(cabin) {
   return normalizeSrc(url);
 }
 
+/** URL query → validated stay params (same rules as booking pickers). */
+function computeValidatedSearchParams(searchParams) {
+  let checkIn = searchParams.get('checkIn');
+  let checkOut = searchParams.get('checkOut');
+  let adults = parseInt(searchParams.get('adults'), 10) || 2;
+  let children = parseInt(searchParams.get('children'), 10) || 0;
+
+  const today = getMinSelectableStayDate();
+  let checkInDate = null;
+  if (checkIn) {
+    const parsed = parseDateOnlyLocal(checkIn);
+    if (parsed) {
+      checkInDate = startOfDay(parsed);
+    }
+  }
+  if (!checkInDate || isBefore(checkInDate, today)) {
+    checkInDate = today;
+  }
+
+  let checkOutDate = null;
+  if (checkOut) {
+    const parsed = parseDateOnlyLocal(checkOut);
+    if (parsed) {
+      checkOutDate = startOfDay(parsed);
+    }
+  }
+  if (!checkOutDate || !checkInDate || isBefore(checkOutDate, addDays(checkInDate, 1))) {
+    checkOutDate = addDays(checkInDate, 1);
+  }
+
+  checkIn = formatDateOnlyLocal(checkInDate);
+  checkOut = formatDateOnlyLocal(checkOutDate);
+
+  adults = Math.max(1, Math.min(10, adults));
+  children = Math.max(0, Math.min(10, children));
+
+  return { checkIn, checkOut, adults, children };
+}
+
 const SearchResults = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -40,51 +81,16 @@ const SearchResults = () => {
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
   const [retryCount, setRetryCount] = useState(0);
-  
+  const [showDateAdjustBanner, setShowDateAdjustBanner] = useState(false);
+  const { t } = useTranslation('booking');
+
   // Check if we're returning to craft flow
   const returnTo = searchParams.get('returnTo');
 
-  // Extract and validate search parameters
-  const getValidatedSearchParams = () => {
-    let checkIn = searchParams.get('checkIn');
-    let checkOut = searchParams.get('checkOut');
-    let adults = parseInt(searchParams.get('adults')) || 2;
-    let children = parseInt(searchParams.get('children')) || 0;
-
-    const today = startOfDay(new Date());
-    let checkInDate = null;
-    if (checkIn) {
-      const parsed = parseDateOnlyLocal(checkIn);
-      if (parsed) {
-        checkInDate = startOfDay(parsed);
-      }
-    }
-    if (!checkInDate || isBefore(checkInDate, today)) {
-      checkInDate = today;
-    }
-
-    let checkOutDate = null;
-    if (checkOut) {
-      const parsed = parseDateOnlyLocal(checkOut);
-      if (parsed) {
-        checkOutDate = startOfDay(parsed);
-      }
-    }
-    if (!checkOutDate || !checkInDate || isBefore(checkOutDate, addDays(checkInDate, 1))) {
-      checkOutDate = addDays(checkInDate, 1);
-    }
-
-    checkIn = formatDateOnlyLocal(checkInDate);
-    checkOut = formatDateOnlyLocal(checkOutDate);
-
-    // Clamp unreasonable values
-    adults = Math.max(1, Math.min(10, adults));
-    children = Math.max(0, Math.min(10, children));
-
-    return { checkIn, checkOut, adults, children };
-  };
-
-  const currentSearchParams = getValidatedSearchParams();
+  const currentSearchParams = useMemo(
+    () => computeValidatedSearchParams(searchParams),
+    [searchParams]
+  );
 
   // Handle draft parameter
   const draftToken = searchParams.get('draft');
@@ -167,11 +173,12 @@ const SearchResults = () => {
         retryCount < 2
       ) {
         setRetryCount((prev) => prev + 1);
-        const today = startOfDay(new Date());
+        const today = getMinSelectableStayDate();
         const tomorrow = addDays(today, 1);
         const params = new URLSearchParams(searchParams);
         params.set('checkIn', formatDateOnlyLocal(today));
         params.set('checkOut', formatDateOnlyLocal(tomorrow));
+        setShowDateAdjustBanner(true);
         navigate(`${searchBase}?${params.toString()}`, { replace: true });
         return;
       }
@@ -225,6 +232,13 @@ const SearchResults = () => {
 
     // Only navigate if something actually changed
     if (urlUpdated) {
+      const rawIn = searchParams.get('checkIn');
+      const rawOut = searchParams.get('checkOut');
+      const datesRewritten =
+        rawIn !== currentSearchParams.checkIn || rawOut !== currentSearchParams.checkOut;
+      if (datesRewritten) {
+        setShowDateAdjustBanner(true);
+      }
       navigate(`${searchBase}?${urlParams.toString()}`, { replace: true });
     }
   }, [currentSearchParams.checkIn, currentSearchParams.checkOut, currentSearchParams.adults, currentSearchParams.children, navigate, searchBase, searchParams]);
@@ -339,6 +353,23 @@ const SearchResults = () => {
           >
             <SearchBar initialData={currentSearchParams} />
           </Suspense>
+          {showDateAdjustBanner && (
+            <div
+              role="status"
+              className="mt-4 max-w-2xl rounded-xl border border-amber-200/90 bg-amber-50/95 px-4 py-3 text-sm text-amber-950 shadow-sm md:mt-5 md:px-5 md:py-4"
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                <p className="min-w-0 leading-relaxed">{t('search.datesAdjustedBanner')}</p>
+                <button
+                  type="button"
+                  onClick={() => setShowDateAdjustBanner(false)}
+                  className="shrink-0 self-end rounded-lg px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-amber-900 underline-offset-2 hover:underline sm:self-start"
+                >
+                  {t('search.dismissBanner')}
+                </button>
+              </div>
+            </div>
+          )}
           {errorMessage && (
             <p className="text-red-500 text-sm mt-4">
               {errorMessage || 'Please select valid dates and try again.'}

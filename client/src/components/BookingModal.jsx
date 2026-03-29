@@ -1,8 +1,10 @@
 import { useEffect, lazy, Suspense, useMemo, useState } from 'react';
 import '../i18n/ns/booking';
+import { useTranslation } from 'react-i18next';
 import { AnimatePresence, motion } from 'framer-motion';
-import { startOfDay } from 'date-fns';
+import { startOfDay, isBefore } from 'date-fns';
 import '../styles/daypicker-theme.css';
+import { getMinSelectableStayDate } from '../utils/bookingMinStayDate';
 
 const DayPicker = lazy(() =>
   import('react-day-picker').then((m) => {
@@ -24,6 +26,7 @@ function bookingModalDevLog(...args) {
 }
 
 const BookingModal = () => {
+  const { t } = useTranslation('booking');
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const {
@@ -49,6 +52,17 @@ const BookingModal = () => {
       to: checkOut ? startOfDay(checkOut) : null
     });
   }, [checkIn, checkOut]);
+
+  useEffect(() => {
+    if (!isModalOpen) return;
+    const today = getMinSelectableStayDate();
+    const from = checkIn ? startOfDay(checkIn) : null;
+    if (from && isBefore(from, today)) {
+      setRange({ from: null, to: null });
+      updateDates(null, null);
+      setError(t('modal.pastDatesUnavailable'));
+    }
+  }, [isModalOpen, checkIn, checkOut, updateDates, t]);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -78,12 +92,15 @@ const BookingModal = () => {
   }, [isModalOpen, closeModal]);
 
   const handleSelect = (selectedRange) => {
+    const today = getMinSelectableStayDate();
     const next = selectedRange
       ? {
           from: selectedRange.from ? startOfDay(selectedRange.from) : null,
           to: selectedRange.to ? startOfDay(selectedRange.to) : null
         }
       : { from: null, to: null };
+    if (next.from && isBefore(next.from, today)) return;
+    if (next.to && isBefore(next.to, today)) return;
     setRange(next);
     if (next.from && next.to) {
       updateDates(next.from, next.to);
@@ -110,6 +127,11 @@ const BookingModal = () => {
       setError('Please select arrival and departure dates.');
       return;
     }
+    const today = getMinSelectableStayDate();
+    if (isBefore(startOfDay(checkIn), today)) {
+      setError(t('errors.checkInPast'));
+      return;
+    }
 
     const searchParams = new URLSearchParams({
       checkIn: formatDateOnlyLocal(checkIn),
@@ -129,6 +151,8 @@ const BookingModal = () => {
     }
     return 'Select your stay';
   }, [checkIn, checkOut]);
+
+  const minStayDate = getMinSelectableStayDate();
 
   /** Plain DOM root (no Framer on this layer) — portaled to document.body via BookingModalLazy. */
   const modalRootStyle = {
@@ -236,7 +260,8 @@ const BookingModal = () => {
                         numberOfMonths={isMobile ? 1 : 2}
                         pagedNavigation
                         captionLayout="dropdown-buttons"
-                        fromDate={startOfDay(new Date())}
+                        fromDate={minStayDate}
+                        disabled={{ before: minStayDate }}
                         modifiersClassNames={{
                           today: 'text-stone-900 font-semibold'
                         }}

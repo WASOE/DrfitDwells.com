@@ -100,8 +100,23 @@
   font-weight: 500;
 }
 
-.booking-modal-daypicker .rdp-disabled {
-  opacity: 0.3;
+.booking-modal-daypicker .rdp-disabled,
+.booking-modal-daypicker .rdp-day_button[disabled] {
+  opacity: 0.32;
+  color: #a8a29e !important;
+  cursor: not-allowed !important;
+  text-decoration: line-through;
+  text-decoration-color: rgba(120, 113, 108, 0.55);
+}
+
+.booking-modal-daypicker .rdp-disabled .rdp-day_button,
+.booking-modal-daypicker .rdp-day_button[disabled] {
+  pointer-events: none;
+}
+
+.booking-modal-daypicker .rdp-day_button[disabled]:hover {
+  background-color: transparent !important;
+  color: #a8a29e !important;
 }
 
 .booking-modal-daypicker .rdp-outside {

@@ -26,6 +26,10 @@
     "checkOutAfterCheckIn": "Check-out date must be after check-in date",
     "datesRequired": "Please select arrival and departure dates"
   },
+  "search": {
+    "datesAdjustedBanner": "Past or invalid dates are not available. Your stay was updated to the next available dates.",
+    "dismissBanner": "Dismiss"
+  },
   "actions": {
     "search": "Search",
     "applyDates": "Apply dates"
@@ -60,7 +64,8 @@
     "when": "When will you be there?",
     "who": "Who is coming?",
     "nights": "{{count}} night",
-    "nights_plural": "{{count}} nights"
+    "nights_plural": "{{count}} nights",
+    "pastDatesUnavailable": "Those dates are no longer available. Please choose a new stay."
   }
 }
 

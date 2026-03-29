@@ -6,7 +6,9 @@ import { useBookingSearch } from '../context/BookingSearchContext';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import GuestSelect from './GuestSelect';
 import { localizePath } from '../utils/localizedRoutes';
+import { startOfDay, isBefore, addDays } from 'date-fns';
 import { formatDateOnlyLocal, parseDateOnlyLocal } from '../utils/dateOnly';
+import { getMinSelectableStayDate } from '../utils/bookingMinStayDate';
 
 const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'default' }) => {
   const navigate = useNavigate();
@@ -109,11 +111,14 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
   }, [DatePickerComponent, pendingOpen]);
 
   const handleDateChange = (field, date) => {
+    const minStay = getMinSelectableStayDate();
     if (field === 'checkIn') {
+      if (date && isBefore(startOfDay(date), minStay)) return;
       const nextCheckOut = checkOut && date && checkOut <= date ? null : checkOut;
       updateDates(date, nextCheckOut);
       setErrors(prev => ({ ...prev, checkIn: null, checkOut: null }));
     } else {
+      if (date && isBefore(startOfDay(date), minStay)) return;
       if (date && checkIn && date <= checkIn) {
         setErrors(prev => ({ ...prev, checkOut: t('errors.checkOutAfterCheckIn') }));
         return;
@@ -129,7 +134,7 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
 
     if (!checkIn) {
       newErrors.checkIn = t('errors.checkInRequired');
-    } else if (checkIn < new Date()) {
+    } else if (isBefore(startOfDay(checkIn), getMinSelectableStayDate())) {
       newErrors.checkIn = t('errors.checkInPast');
     }
 
@@ -165,6 +170,11 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
 
   const totalGuests = adults + children;
   const guestSummary = t('guestSummary', { count: totalGuests });
+
+  const minStayDate = getMinSelectableStayDate();
+  const checkOutMinDate = formData.checkIn
+    ? addDays(startOfDay(formData.checkIn), 1)
+    : minStayDate;
 
   const checkInLabel = formData.checkIn
     ? formData.checkIn.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -226,7 +236,8 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
               selectsStart
               startDate={formData.checkIn}
               endDate={formData.checkOut}
-              minDate={new Date()}
+              minDate={minStayDate}
+              filterDate={(d) => !isBefore(startOfDay(d), minStayDate)}
               placeholderText={t('fields.selectDate')}
               className={`${fieldInputClass} ${errors.checkIn ? (isGlass ? 'border-white' : 'border-red-400') : ''}`}
               calendarClassName="dd-datepicker"
@@ -277,7 +288,8 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
               selectsEnd
               startDate={formData.checkIn}
               endDate={formData.checkOut}
-              minDate={formData.checkIn || new Date()}
+              minDate={checkOutMinDate}
+              filterDate={(d) => !isBefore(startOfDay(d), checkOutMinDate)}
               placeholderText={t('fields.selectDate')}
               className={`${fieldInputClass} ${errors.checkOut ? (isGlass ? 'border-white' : 'border-red-400') : ''}`}
               calendarClassName="dd-datepicker"

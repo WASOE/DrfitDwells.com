@@ -58,3 +58,22 @@
 .dd-datepicker .react-datepicker__year-text:hover {
   border-radius: 9999px !important;
 }
+
+.dd-datepicker .react-datepicker__day--disabled,
+.dd-datepicker .react-datepicker__month-text--disabled,
+.dd-datepicker .react-datepicker__quarter-text--disabled,
+.dd-datepicker .react-datepicker__year-text--disabled {
+  opacity: 0.38 !important;
+  color: #a8a29e !important;
+  cursor: not-allowed !important;
+  text-decoration: line-through;
+  text-decoration-color: rgba(120, 113, 108, 0.5);
+}
+
+.dd-datepicker .react-datepicker__day--disabled:hover,
+.dd-datepicker .react-datepicker__month-text--disabled:hover,
+.dd-datepicker .react-datepicker__quarter-text--disabled:hover,
+.dd-datepicker .react-datepicker__year-text--disabled:hover {
+  background-color: transparent !important;
+  color: #a8a29e !important;
+}

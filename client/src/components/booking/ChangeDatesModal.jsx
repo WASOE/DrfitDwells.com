@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { DayPicker } from 'react-day-picker';
 import 'react-day-picker/dist/style.css';
 import '../../styles/daypicker-theme.css';
+import { startOfDay } from 'date-fns';
+import { getMinSelectableStayDate } from '../../utils/bookingMinStayDate';
 import { X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 /**
@@ -46,7 +48,7 @@ const ChangeDatesModal = ({ isOpen, onClose, checkIn, checkOut, onSave, minDate 
 
   if (!isOpen) return null;
 
-  const fromDate = minDate || new Date();
+  const fromDate = minDate ? startOfDay(minDate) : getMinSelectableStayDate();
 
   return (
     <AnimatePresence>
