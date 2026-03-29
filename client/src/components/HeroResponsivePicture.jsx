@@ -28,7 +28,9 @@ export default function HeroResponsivePicture({
         height={height}
         sizes={sizes}
         loading={loading}
-        fetchPriority={fetchPriority}
+        {...(fetchPriority != null && fetchPriority !== ''
+          ? { fetchpriority: fetchPriority }
+          : {})}
         decoding={decoding}
       />
     </picture>

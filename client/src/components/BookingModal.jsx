@@ -16,6 +16,13 @@ import { getLanguageFromPath, localizePath } from '../utils/localizedRoutes';
 import { useBookingSearch } from '../context/BookingSearchContext';
 import { formatDateOnlyLocal } from '../utils/dateOnly';
 
+function bookingModalDevLog(...args) {
+  if (import.meta.env.DEV) {
+    // eslint-disable-next-line no-console
+    console.info('[booking-modal]', ...args);
+  }
+}
+
 const BookingModal = () => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -51,14 +58,24 @@ const BookingModal = () => {
   }, []);
 
   useEffect(() => {
-    if (isModalOpen) {
-      const originalOverflow = document.body.style.overflow;
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.body.style.overflow = originalOverflow;
-      };
-    }
+    if (!isModalOpen) return undefined;
+    bookingModalDevLog('BookingModal mounted — full-screen layer visible');
+    return () => {
+      bookingModalDevLog('BookingModal unmounted');
+    };
   }, [isModalOpen]);
+
+  useEffect(() => {
+    if (!isModalOpen) return undefined;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeModal();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isModalOpen, closeModal]);
 
   const handleSelect = (selectedRange) => {
     const next = selectedRange
@@ -113,36 +130,64 @@ const BookingModal = () => {
     return 'Select your stay';
   }, [checkIn, checkOut]);
 
+  /** Plain DOM root (no Framer on this layer) — portaled to document.body via BookingModalLazy. */
+  const modalRootStyle = {
+    position: 'fixed',
+    inset: 0,
+    width: '100%',
+    height: '100%',
+    zIndex: 9999,
+    pointerEvents: 'auto',
+    paddingLeft: 'env(safe-area-inset-left, 0px)',
+    paddingRight: 'env(safe-area-inset-right, 0px)'
+  };
+
   return (
-    <AnimatePresence>
+    <AnimatePresence
+      onExitComplete={() => {
+        bookingModalDevLog('AnimatePresence exit complete — layers removed');
+      }}
+    >
       {isModalOpen && (
         <>
-          {/* Backdrop - desktop only */}
-          <motion.div
-            className="hidden md:block fixed inset-0 z-[9998] bg-black/50 backdrop-blur-sm"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+          {/* Desktop backdrop — plain div (no motion) */}
+          <div
+            key="booking-modal-backdrop"
+            className="fixed inset-0 z-[9998] hidden bg-black/50 backdrop-blur-sm md:block"
             onClick={closeModal}
+            role="presentation"
+            aria-hidden
           />
-          
-          {/* Modal */}
-          <motion.div
-            className="fixed inset-0 z-[9999] bg-[#F7F4EE] flex flex-col md:bg-transparent md:items-center md:justify-center md:p-8"
-            initial={isMobile ? { y: '100%' } : { opacity: 0 }}
-            animate={isMobile ? { y: 0 } : { opacity: 1 }}
-            exit={isMobile ? { y: '100%' } : { opacity: 0 }}
-            transition={{ type: 'spring', damping: 28, stiffness: 220 }}
+
+          {/* Full-screen host: fixed to viewport; not a motion component */}
+          <div
+            key="booking-modal-root"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="booking-modal-title"
+            className="flex flex-col bg-[#F7F4EE] md:flex-row md:items-center md:justify-center md:bg-transparent md:p-8"
+            style={modalRootStyle}
           >
+            {/* Inner panel only: motion (slide on mobile, scale on desktop) */}
             <motion.div
-              className="flex flex-col h-full md:h-auto md:max-w-[980px] lg:max-w-[1040px] md:w-full md:bg-white md:shadow-2xl md:rounded-[28px] md:overflow-hidden"
-              initial={isMobile ? {} : { scale: 0.96, opacity: 0 }}
-              animate={isMobile ? {} : { scale: 1, opacity: 1 }}
-              exit={isMobile ? {} : { scale: 0.96, opacity: 0 }}
-              transition={{ type: 'spring', damping: 30, stiffness: 400 }}
+              key="booking-modal-panel"
+              className="flex min-h-0 w-full flex-1 flex-col bg-white shadow-none md:h-auto md:max-h-[calc(100vh-4rem)] md:max-w-[980px] lg:max-w-[1040px] md:w-full md:flex-none md:overflow-hidden md:rounded-[28px] md:shadow-2xl"
+              initial={isMobile ? { y: '100%' } : { scale: 0.96, opacity: 0 }}
+              animate={isMobile ? { y: 0, opacity: 1 } : { scale: 1, opacity: 1 }}
+              exit={isMobile ? { y: '100%' } : { scale: 0.96, opacity: 0 }}
+              transition={
+                isMobile
+                  ? { type: 'spring', damping: 28, stiffness: 220 }
+                  : { type: 'spring', damping: 30, stiffness: 400 }
+              }
             >
               {/* Header */}
-              <header className="flex items-center justify-between px-6 md:px-8 lg:px-10 h-16 md:h-[76px] border-b border-stone-200/80 bg-white">
+              <header
+                className="flex min-h-16 shrink-0 items-center justify-between border-b border-stone-200/80 bg-white px-6 md:min-h-[76px] md:px-8 lg:px-10"
+                style={{
+                  paddingTop: 'max(0px, env(safe-area-inset-top, 0px))'
+                }}
+              >
                 <button
                   type="button"
                   onClick={closeModal}
@@ -151,7 +196,10 @@ const BookingModal = () => {
                 >
                   <X className="w-5 h-5" />
                 </button>
-                <h2 className="font-['Playfair_Display'] text-lg md:text-xl text-stone-900">
+                <h2
+                  id="booking-modal-title"
+                  className="font-['Playfair_Display'] text-lg md:text-xl text-stone-900"
+                >
                   Plan your stay
                 </h2>
                 <button
@@ -260,7 +308,12 @@ const BookingModal = () => {
               </div>
 
               {/* Footer */}
-              <footer className="border-t border-stone-200/80 px-6 md:px-8 lg:px-10 py-5 md:py-5 bg-white flex items-center justify-between">
+              <footer
+                className="flex shrink-0 items-center justify-between border-t border-stone-200/80 bg-white px-6 py-5 md:px-8 md:py-5 lg:px-10"
+                style={{
+                  paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom, 0px))'
+                }}
+              >
                 <div>
                   <p className="text-xs md:text-sm text-stone-500 uppercase tracking-[0.3em]">
                     {nights ? `${nights} ${nights === 1 ? 'night' : 'nights'}` : 'Select dates'}
@@ -281,7 +334,7 @@ const BookingModal = () => {
                 </button>
               </footer>
             </motion.div>
-          </motion.div>
+          </div>
         </>
       )}
     </AnimatePresence>

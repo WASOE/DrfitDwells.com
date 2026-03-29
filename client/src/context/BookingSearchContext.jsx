@@ -40,8 +40,21 @@ export const BookingSearchProvider = ({ children }) => {
     return 0;
   }, [checkIn, checkOut]);
 
-  const openModal = useCallback(() => setIsModalOpen(true), []);
-  const closeModal = useCallback(() => setIsModalOpen(false), []);
+  const openModal = useCallback(() => {
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.info('[booking-modal] openModal() requested');
+    }
+    setIsModalOpen(true);
+  }, []);
+
+  const closeModal = useCallback(() => {
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.info('[booking-modal] closeModal() requested');
+    }
+    setIsModalOpen(false);
+  }, []);
 
   const value = useMemo(() => ({
     checkIn,
