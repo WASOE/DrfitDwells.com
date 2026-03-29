@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, lazy, Suspense, useRef, useLayoutEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import HeroSeasonToggle from './HeroSeasonToggle';
 import { useSeason } from '../context/SeasonContext';
@@ -9,20 +9,88 @@ import HeroPane from './HeroPane';
 
 const DualityHeroDesktop = lazy(() => import('./DualityHeroDesktop'));
 
-const DualityHero = () => {
+/**
+ * Stacked dual hero for small / touch viewports.
+ * Matches Cabin / TheValley: responsive still first, then video when in view and allowed.
+ */
+function MobileDualityHeroStack() {
   const { season } = useSeason();
-  const [isMobile, setIsMobile] = useState(getIsMobileViewport);
   const { t } = useTranslation('home');
   const { language } = useLanguage();
+  const containerRef = useRef(null);
+  const leftVideoRef = useRef(null);
+  const rightVideoRef = useRef(null);
+  const [shouldLoadMedia, setShouldLoadMedia] = useState(false);
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const [isLowBandwidth, setIsLowBandwidth] = useState(false);
 
   useEffect(() => {
-    const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768 || 'ontouchstart' in window);
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const updateMotionPreference = (event) => {
+      setPrefersReducedMotion(event.matches);
     };
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    setPrefersReducedMotion(mediaQuery.matches);
+    mediaQuery.addEventListener('change', updateMotionPreference);
+    return () => mediaQuery.removeEventListener('change', updateMotionPreference);
   }, []);
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined') return;
+    const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (!connection) return;
+
+    const updateConnectionPreference = () => {
+      const lowTypes = ['slow-2g', '2g'];
+      setIsLowBandwidth(connection.saveData || lowTypes.includes(connection.effectiveType));
+    };
+
+    updateConnectionPreference();
+    connection.addEventListener?.('change', updateConnectionPreference);
+    return () => connection.removeEventListener?.('change', updateConnectionPreference);
+  }, []);
+
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (el) {
+      const observer = new IntersectionObserver(
+        ([entry]) => {
+          if (entry.isIntersecting) {
+            setShouldLoadMedia(true);
+            observer.disconnect();
+          }
+        },
+        { rootMargin: '200px' }
+      );
+      observer.observe(el);
+      const fallback = setTimeout(() => setShouldLoadMedia(true), 200);
+      return () => {
+        observer.disconnect();
+        clearTimeout(fallback);
+      };
+    }
+    const fallback = setTimeout(() => setShouldLoadMedia(true), 200);
+    return () => clearTimeout(fallback);
+  }, []);
+
+  const shouldPlayVideo = shouldLoadMedia && !prefersReducedMotion && !isLowBandwidth;
+
+  useEffect(() => {
+    if (!shouldPlayVideo) return;
+    const playVideos = async () => {
+      try {
+        if (leftVideoRef.current) {
+          await leftVideoRef.current.play();
+        }
+        if (rightVideoRef.current) {
+          await rightVideoRef.current.play();
+        }
+      } catch (error) {
+        if (import.meta.env.DEV) console.log('Video autoplay blocked, will play on interaction');
+      }
+    };
+    playVideos();
+  }, [shouldPlayVideo, season]);
 
   const leftMediaStyle = {
     minWidth: '100%',
@@ -44,16 +112,8 @@ const DualityHero = () => {
     transformOrigin: 'center center'
   };
 
-  if (!isMobile) {
-    return (
-      <Suspense fallback={<section className="relative w-full h-screen bg-black" aria-hidden />}>
-        <DualityHeroDesktop />
-      </Suspense>
-    );
-  }
-
   return (
-    <section className="relative w-full overflow-hidden flex flex-col h-[100svh]">
+    <section ref={containerRef} className="relative w-full overflow-hidden flex flex-col h-[100svh]">
       <HeroSeasonToggle position="bottom-center" />
 
       <div className="relative w-full flex-1 bg-black overflow-hidden border-b border-white/20">
@@ -61,8 +121,8 @@ const DualityHero = () => {
           <HeroPane
             side="left"
             season={season}
-            useVideo={false}
-            videoRef={undefined}
+            useVideo={shouldPlayVideo}
+            videoRef={leftVideoRef}
             isPrimary
             mediaStyle={leftMediaStyle}
             sizes="100vw"
@@ -92,8 +152,8 @@ const DualityHero = () => {
           <HeroPane
             side="right"
             season={season}
-            useVideo={false}
-            videoRef={undefined}
+            useVideo={shouldPlayVideo}
+            videoRef={rightVideoRef}
             isPrimary={false}
             mediaStyle={rightMediaStyle}
             sizes="100vw"
@@ -115,6 +175,29 @@ const DualityHero = () => {
       </div>
     </section>
   );
+}
+
+const DualityHero = () => {
+  const [isMobile, setIsMobile] = useState(getIsMobileViewport);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768 || 'ontouchstart' in window);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  if (!isMobile) {
+    return (
+      <Suspense fallback={<section className="relative w-full h-screen bg-black" aria-hidden />}>
+        <DualityHeroDesktop />
+      </Suspense>
+    );
+  }
+
+  return <MobileDualityHeroStack />;
 };
 
 export default DualityHero;
