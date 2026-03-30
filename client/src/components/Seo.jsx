@@ -59,6 +59,7 @@ const Seo = ({
             as={spec.as || 'image'}
             href={href}
             type={spec.type || undefined}
+            media={spec.media || undefined}
             fetchPriority={spec.fetchPriority || 'high'}
           />
         );

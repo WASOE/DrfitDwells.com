@@ -3,15 +3,76 @@ import { useTranslation } from 'react-i18next';
 import HeroSeasonToggle from './HeroSeasonToggle';
 import { useSeason } from '../context/SeasonContext';
 import { useLanguage } from '../context/LanguageContext.jsx';
+import { CABIN_MEDIA, VALLEY_MEDIA } from '../config/mediaConfig';
 import { localizePath } from '../utils/localizedRoutes';
 import { getIsMobileViewport } from '../utils/viewport';
-import HeroPane from './HeroPane';
 
 const DualityHeroDesktop = lazy(() => import('./DualityHeroDesktop'));
 
+const CABIN_VIDEOS = CABIN_MEDIA.heroVideo;
+const CABIN_STILLS = CABIN_MEDIA.heroPoster;
+const VALLEY_VIDEOS = {
+  winter: VALLEY_MEDIA.heroVideo.winter,
+  summer: VALLEY_MEDIA.altSummerPair.video
+};
+const VALLEY_STILLS = {
+  winter: VALLEY_MEDIA.heroPoster.winter,
+  summer: VALLEY_MEDIA.altSummerPair.poster
+};
+
+/**
+ * One mobile pane: poster JPG always (immediate paint), video layered on top when allowed.
+ * Video stays opacity-0 until `playing` so the still never flashes to an empty decoder.
+ */
+function MobileStackPaneMedia({ side, season, shouldPlayVideo, videoRef, poster, videoSource, altText, isPrimary, mediaStyle }) {
+  const [videoRevealed, setVideoRevealed] = useState(false);
+
+  useEffect(() => {
+    setVideoRevealed(false);
+  }, [season, shouldPlayVideo, side]);
+
+  const setImgFetchPriorityRef = (el) => {
+    if (!el) return;
+    el.setAttribute('fetchpriority', isPrimary ? 'high' : 'low');
+  };
+
+  return (
+    <>
+      <img
+        ref={setImgFetchPriorityRef}
+        src={poster}
+        alt={altText}
+        className="absolute inset-0 z-0 w-full h-full object-cover"
+        style={mediaStyle}
+        loading={isPrimary ? 'eager' : 'lazy'}
+        decoding="async"
+      />
+      {shouldPlayVideo ? (
+        <video
+          key={`${side}-${season}`}
+          ref={videoRef}
+          className={`absolute inset-0 z-[1] w-full h-full object-cover transition-opacity duration-200 motion-reduce:transition-none ${
+            videoRevealed ? 'opacity-100' : 'opacity-0'
+          }`}
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="auto"
+          poster={poster}
+          style={mediaStyle}
+          onPlaying={() => setVideoRevealed(true)}
+        >
+          <source src={videoSource} type="video/mp4" />
+        </video>
+      ) : null}
+    </>
+  );
+}
+
 /**
  * Stacked dual hero for small / touch viewports.
- * Matches Cabin / TheValley: responsive still first, then video when in view and allowed.
+ * Desktop uses lazy DualityHeroDesktop + HeroPane.
  */
 function MobileDualityHeroStack() {
   const { season } = useSeason();
@@ -77,19 +138,25 @@ function MobileDualityHeroStack() {
 
   useEffect(() => {
     if (!shouldPlayVideo) return;
-    const playVideos = async () => {
-      try {
-        if (leftVideoRef.current) {
-          await leftVideoRef.current.play();
-        }
-        if (rightVideoRef.current) {
-          await rightVideoRef.current.play();
-        }
-      } catch (error) {
-        if (import.meta.env.DEV) console.log('Video autoplay blocked, will play on interaction');
+
+    const tryPlay = (el) => {
+      if (!el) return;
+      const run = () => {
+        el.muted = true;
+        el.play().catch(() => {});
+      };
+      if (el.readyState >= 2) run();
+      else {
+        el.addEventListener('canplay', run, { once: true });
+        el.addEventListener('loadeddata', run, { once: true });
       }
     };
-    playVideos();
+
+    const id = requestAnimationFrame(() => {
+      tryPlay(leftVideoRef.current);
+      tryPlay(rightVideoRef.current);
+    });
+    return () => cancelAnimationFrame(id);
   }, [shouldPlayVideo, season]);
 
   const leftMediaStyle = {
@@ -118,14 +185,16 @@ function MobileDualityHeroStack() {
 
       <div className="relative w-full flex-1 bg-black overflow-hidden border-b border-white/20">
         <div className="relative w-full h-full flex items-center justify-center">
-          <HeroPane
+          <MobileStackPaneMedia
             side="left"
             season={season}
-            useVideo={shouldPlayVideo}
+            shouldPlayVideo={shouldPlayVideo}
             videoRef={leftVideoRef}
+            poster={CABIN_STILLS[season] ?? CABIN_STILLS.summer}
+            videoSource={CABIN_VIDEOS[season] ?? CABIN_VIDEOS.summer}
+            altText="Cabin exterior"
             isPrimary
             mediaStyle={leftMediaStyle}
-            sizes="100vw"
           />
           <div className="absolute inset-0 bg-black/40" />
 
@@ -149,14 +218,16 @@ function MobileDualityHeroStack() {
 
       <div className="relative w-full flex-1 bg-black overflow-hidden">
         <div className="relative w-full h-full">
-          <HeroPane
+          <MobileStackPaneMedia
             side="right"
             season={season}
-            useVideo={shouldPlayVideo}
+            shouldPlayVideo={shouldPlayVideo}
             videoRef={rightVideoRef}
+            poster={VALLEY_STILLS[season] ?? VALLEY_STILLS.summer}
+            videoSource={VALLEY_VIDEOS[season] ?? VALLEY_VIDEOS.summer}
+            altText="Valley landscape"
             isPrimary={false}
             mediaStyle={rightMediaStyle}
-            sizes="100vw"
           />
           <div className="absolute inset-0 bg-black/20" />
 

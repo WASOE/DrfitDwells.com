@@ -5,7 +5,7 @@ import Seo from '../components/Seo';
 import { useTranslation } from 'react-i18next';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { useSeason } from '../context/SeasonContext';
-import { getCabinHeroPreloadUrl } from '../config/heroResponsive';
+import { getCabinHeroPreloadUrl, getHomeHeroMobilePosterUrls } from '../config/heroResponsive';
 import { CONTACT_PHONE } from '../data/gmbLocations';
 import { buildHreflangAlternates } from '../utils/localizedRoutes';
 import { getSiteUrl } from '../utils/siteUrl';
@@ -40,7 +40,25 @@ const Home = () => {
         canonicalPath="/"
         hreflangAlternates={buildHreflangAlternates('/')}
         preloadImages={[
-          { href: getCabinHeroPreloadUrl(season), type: 'image/avif', as: 'image', fetchPriority: 'high' }
+          {
+            href: getCabinHeroPreloadUrl(season),
+            type: 'image/avif',
+            as: 'image',
+            fetchPriority: 'high',
+            media: '(min-width: 768px)'
+          },
+          {
+            href: mobileCabinPoster,
+            as: 'image',
+            fetchPriority: 'high',
+            media: '(max-width: 767px)'
+          },
+          {
+            href: mobileValleyPoster,
+            as: 'image',
+            fetchPriority: 'low',
+            media: '(max-width: 767px)'
+          }
         ]}
         ogImage="/uploads/Videos/The-cabin-header.winter-poster.jpg"
         jsonLd={[

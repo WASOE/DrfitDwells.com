@@ -50,3 +50,15 @@ export function getCabinHeroPreloadUrl(season) {
   const slug = CABIN_SLUG[season] || CABIN_SLUG.summer;
   return `/media/hero/${slug}-${HERO_LCP_PRELOAD_WIDTH}w.avif`;
 }
+
+/** Canonical JPG posters for the home mobile stacked hero (must match DualityHero mobile panes). */
+export function getHomeHeroMobilePosterUrls(season) {
+  const s = season === 'winter' ? 'winter' : 'summer';
+  return {
+    cabin: CABIN_MEDIA.heroPoster[s] || CABIN_MEDIA.heroPoster.summer,
+    valley:
+      s === 'summer'
+        ? VALLEY_MEDIA.altSummerPair.poster
+        : VALLEY_MEDIA.heroPoster.winter
+  };
+}

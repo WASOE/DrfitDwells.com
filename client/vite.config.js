@@ -33,7 +33,9 @@ export default defineConfig({
           '**/assets/BookingDetail*.js',
           '**/assets/CabinTypesList*.js',
           '**/assets/CabinTypeEdit*.js',
-          '**/assets/ReviewsList*.js'
+          '**/assets/ReviewsList*.js',
+          // Live may not have this asset; exclude to avoid Workbox precaching 404s.
+          '**/uploads/headers/cabin-memory-header.png'
         ],
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
