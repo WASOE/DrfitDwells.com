@@ -23,6 +23,9 @@ const Home = () => {
   const { t } = useTranslation('home');
   const { language } = useLanguage();
   const { season } = useSeason();
+  // Mobile hero first paint is always the poster JPGs (left cabin, right valley),
+  // so we only preload those on small viewports.
+  const { cabin: mobileCabinPoster, valley: mobileValleyPoster } = getHomeHeroMobilePosterUrls(season);
   const seoTitle =
     language === 'bg'
       ? 'Планински оф-грид ретрийт България – Drift & Dwells'
