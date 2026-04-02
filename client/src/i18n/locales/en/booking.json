@@ -3,7 +3,9 @@
     "datesLabel": "Dates",
     "guestsLabel": "Guests",
     "summaryTapToChoose": "Tap to choose dates",
-    "planYourStay": "Plan your stay"
+    "planYourStay": "Plan your stay",
+    "openDatesModalAria": "Edit dates",
+    "openGuestsModalAria": "Edit guests"
   },
   "cta": {
     "checkAvailability": "Check availability",
@@ -28,7 +30,19 @@
   },
   "search": {
     "datesAdjustedBanner": "Past or invalid dates are not available. Your stay was updated to the next available dates.",
-    "dismissBanner": "Dismiss"
+    "dismissBanner": "Dismiss",
+    "browseStaysTitle": "Browse stays",
+    "unavailableForDates": "Unavailable for these dates",
+    "reasonMinGuests": "Minimum {{count}} guests",
+    "reasonMaxGuests": "Maximum {{count}} guests",
+    "reasonMinNights": "Minimum {{count}} nights",
+    "reasonCriteria": "Not available for this search",
+    "hintOpenPlannerGuests": "Adjust guests — Plan your stay",
+    "hintOpenPlannerStay": "Adjust dates or stay length",
+    "hintOpenPlanner": "Adjust your search",
+    "viewPropertyAnyway": "View property →",
+    "emptyCatalogTitle": "No properties to show",
+    "emptyCatalogBody": "We could not load any stays. Try again later or start a new search from the home page."
   },
   "actions": {
     "search": "Search",

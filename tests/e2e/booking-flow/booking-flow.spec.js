@@ -2,7 +2,7 @@ const { test, expect } = require('@playwright/test');
 
 async function openFirstCabinDetails(page) {
   await page.goto('/search?checkIn=2026-06-15&checkOut=2026-06-17&adults=2&children=0');
-  await expect(page.getByRole('heading', { name: /available cabins/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /browse stays/i })).toBeVisible();
 
   const detailsBtn = page.getByRole('button', { name: /view details|select this cabin/i }).first();
   await expect(detailsBtn).toBeVisible();
@@ -14,18 +14,18 @@ async function openFirstCabinDetails(page) {
 test.describe('booking flow', () => {
   test('date search requests availability', async ({ page }) => {
     await page.goto('/search?checkIn=2026-06-15&checkOut=2026-06-17&adults=2&children=0');
-    await expect(page.getByRole('heading', { name: /^Available Cabins$/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /^Browse stays$/i })).toBeVisible();
     await expect(page).toHaveURL(/checkIn=2026-06-15/);
     await expect(page).toHaveURL(/checkOut=2026-06-17/);
   });
 
-  test('empty state or validation appears for impossible criteria', async ({ page }) => {
+  test('large party still sees listings (capacity/eligibility messaging)', async ({ page }) => {
     await page.goto('/search?checkIn=2026-06-15&checkOut=2026-06-17&adults=10&children=10');
-    await expect(page.getByRole('heading', { name: /^Available Cabins$/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /^Browse stays$/i })).toBeVisible();
 
-    const noCabins = page.getByRole('heading', { name: /no available cabins/i });
     const resultsGrid = page.locator('.card-cabin');
-    await expect(noCabins.or(resultsGrid.first())).toBeVisible();
+    const emptyCatalog = page.getByRole('heading', { name: /no properties to show/i });
+    await expect(resultsGrid.first().or(emptyCatalog)).toBeVisible();
   });
 
   test('confirm form validation blocks invalid guest info', async ({ page }) => {

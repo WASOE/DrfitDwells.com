@@ -198,16 +198,26 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
 
   return (
     <form onSubmit={handleSubmit} className="w-full">
-      {/* Mobile View */}
+      {/* Mobile View — dates/guests open the same BookingModal + DayPicker flow as the homepage */}
       <div className="md:hidden space-y-3">
-        <div className="bg-[#2a2a2a] rounded-2xl p-4 text-white">
+        <button
+          type="button"
+          onClick={openModal}
+          className="w-full text-left bg-[#2a2a2a] rounded-2xl p-4 text-white focus:outline-none focus:ring-2 focus:ring-[#F1ECE2]/40 active:scale-[0.99] transition-transform touch-manipulation"
+          aria-label={t('mobile.openDatesModalAria')}
+        >
           <p className="text-[9px] uppercase tracking-[0.3em] text-white/60">{t('mobile.datesLabel')}</p>
           <p className="font-serif text-base mt-2">{summaryDates}</p>
-        </div>
-        <div className="bg-[#2a2a2a] rounded-2xl p-4 text-white">
+        </button>
+        <button
+          type="button"
+          onClick={openModal}
+          className="w-full text-left bg-[#2a2a2a] rounded-2xl p-4 text-white focus:outline-none focus:ring-2 focus:ring-[#F1ECE2]/40 active:scale-[0.99] transition-transform touch-manipulation"
+          aria-label={t('mobile.openGuestsModalAria')}
+        >
           <p className="text-[9px] uppercase tracking-[0.3em] text-white/60">{t('mobile.guestsLabel')}</p>
           <p className="font-serif text-base mt-2">{guestSummary}</p>
-        </div>
+        </button>
         <button
           type="button"
           onClick={openModal}

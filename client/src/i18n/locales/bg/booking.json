@@ -11,7 +11,9 @@
     "datesLabel": "Дати",
     "guestsLabel": "Гости",
     "summaryTapToChoose": "Избери дати",
-    "planYourStay": "Планирай престоя"
+    "planYourStay": "Планирай престоя",
+    "openDatesModalAria": "Промени датите",
+    "openGuestsModalAria": "Промени гостите"
   },
   "fields": {
     "checkIn": "Настаняване",
@@ -28,7 +30,19 @@
   },
   "search": {
     "datesAdjustedBanner": "Минали или невалидни дати не са налични. Престоят ви беше актуализиран към следващите налични дати.",
-    "dismissBanner": "Затвори"
+    "dismissBanner": "Затвори",
+    "browseStaysTitle": "Преглед на местата",
+    "unavailableForDates": "Неналично за избраните дати",
+    "reasonMinGuests": "Минимум {{count}} гости",
+    "reasonMaxGuests": "Максимум {{count}} гости",
+    "reasonMinNights": "Минимум {{count}} нощувки",
+    "reasonCriteria": "Неналично за това търсене",
+    "hintOpenPlannerGuests": "Промени гостите — Планирай престоя",
+    "hintOpenPlannerStay": "Промени датите или продължителността",
+    "hintOpenPlanner": "Промени търсенето",
+    "viewPropertyAnyway": "Виж обекта →",
+    "emptyCatalogTitle": "Няма обекти за показване",
+    "emptyCatalogBody": "Не успяхме да заредим места. Опитайте по-късно или започнете ново търсене от началната страница."
   },
   "actions": {
     "search": "Търси",

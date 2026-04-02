@@ -60,28 +60,65 @@ router.get('/', [
     // Guest-facing cabins only (exclude validation fixture names)
     const allCabins = await Cabin.find(guestFacingCabinMatch());
 
-    // Filter cabins by capacity and minimum guest requirements
-    const capacityFilteredCabins = allCabins.filter(cabin => {
+    const cabinResults = [];
+    for (const cabin of allCabins) {
+      const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
       const minGuests = cabin.minGuests || 1;
-      return cabin.capacity >= totalGuests && totalGuests >= minGuests;
-    });
+      const capacity = cabin.capacity;
+      const minNights = cabin.minNights || 1;
 
-    const availableCabins = [];
-    for (const cabin of capacityFilteredCabins) {
-      const ok = await isSingleCabinGuestStayAvailable(cabin, checkIn, checkOut);
-      if (!ok) continue;
+      let totalPrice = totalNights * cabin.pricePerNight;
+      if ((cabin.pricingModel || 'per_night') === 'per_person') {
+        totalPrice *= totalGuests;
+      }
 
-      // Calculate total price
-        const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
-        let totalPrice = totalNights * cabin.pricePerNight;
-        if ((cabin.pricingModel || 'per_night') === 'per_person') {
-          totalPrice *= totalGuests;
-        }
-
-      availableCabins.push({
+      const baseRow = {
         ...cabin.toObject(),
         totalNights,
-        totalPrice,
+        totalPrice
+      };
+
+      if (totalGuests < minGuests) {
+        cabinResults.push({
+          ...baseRow,
+          available: false,
+          unavailabilityReason: 'min_guests',
+          unavailabilityDetail: { minGuests }
+        });
+        continue;
+      }
+      if (totalGuests > capacity) {
+        cabinResults.push({
+          ...baseRow,
+          available: false,
+          unavailabilityReason: 'max_guests',
+          unavailabilityDetail: { maxGuests: capacity }
+        });
+        continue;
+      }
+      if (totalNights < minNights) {
+        cabinResults.push({
+          ...baseRow,
+          available: false,
+          unavailabilityReason: 'min_nights',
+          unavailabilityDetail: { minNights }
+        });
+        continue;
+      }
+
+      const ok = await isSingleCabinGuestStayAvailable(cabin, checkIn, checkOut);
+      if (!ok) {
+        cabinResults.push({
+          ...baseRow,
+          available: false,
+          unavailabilityReason: 'dates',
+          unavailabilityDetail: {}
+        });
+        continue;
+      }
+
+      cabinResults.push({
+        ...baseRow,
         available: true
       });
     }
@@ -96,7 +133,52 @@ router.get('/', [
         }
 
         const minGuests = cabinType.minGuests || 1;
-        if (totalGuests > cabinType.capacity || totalGuests < minGuests) {
+        const cap = cabinType.capacity;
+        const minNights = cabinType.minNights || 1;
+        const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
+
+        let totalPrice = totalNights * cabinType.pricePerNight;
+        if ((cabinType.pricingModel || 'per_night') === 'per_person') {
+          totalPrice *= totalGuests;
+        }
+
+        const baseMulti = {
+          ...cabinType.toObject(),
+          totalNights,
+          totalPrice,
+          inventoryMode: 'multi',
+          inventoryType: 'multi',
+          cabinTypeId: cabinType._id,
+          cabinTypeRef: cabinType._id,
+          unitsAvailable: 0,
+          unitsTotal: 0
+        };
+
+        if (totalGuests < minGuests) {
+          cabinResults.push({
+            ...baseMulti,
+            available: false,
+            unavailabilityReason: 'min_guests',
+            unavailabilityDetail: { minGuests }
+          });
+          continue;
+        }
+        if (totalGuests > cap) {
+          cabinResults.push({
+            ...baseMulti,
+            available: false,
+            unavailabilityReason: 'max_guests',
+            unavailabilityDetail: { maxGuests: cap }
+          });
+          continue;
+        }
+        if (totalNights < minNights) {
+          cabinResults.push({
+            ...baseMulti,
+            available: false,
+            unavailabilityReason: 'min_nights',
+            unavailabilityDetail: { minNights }
+          });
           continue;
         }
 
@@ -106,35 +188,48 @@ router.get('/', [
           checkOutDate
         );
 
-        if (availabilitySummary.availableUnits.length === 0) {
-          continue;
-        }
+        const hasAvailability = availabilitySummary.availableUnits.length > 0;
 
-        const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
-        let totalPrice = totalNights * cabinType.pricePerNight;
-        if ((cabinType.pricingModel || 'per_night') === 'per_person') {
-          totalPrice *= totalGuests;
+        if (!hasAvailability) {
+          cabinResults.push({
+            ...baseMulti,
+            available: false,
+            unavailabilityReason: 'dates',
+            unavailabilityDetail: {},
+            unitsAvailable: 0,
+            unitsTotal: availabilitySummary.totalUnits
+          });
+        } else {
+          cabinResults.push({
+            ...baseMulti,
+            available: true,
+            unitsAvailable: availabilitySummary.availableUnits.length,
+            unitsTotal: availabilitySummary.totalUnits
+          });
         }
-
-        availableCabins.push({
-          ...cabinType.toObject(),
-          totalNights,
-          totalPrice,
-          available: true,
-          inventoryMode: 'multi',
-          inventoryType: 'multi',
-          cabinTypeId: cabinType._id,
-          cabinTypeRef: cabinType._id,
-          unitsAvailable: availabilitySummary.availableUnits.length,
-          unitsTotal: availabilitySummary.totalUnits
-        });
       }
     }
+
+    cabinResults.sort((a, b) => {
+      if (Boolean(a.available) !== Boolean(b.available)) {
+        return a.available ? -1 : 1;
+      }
+      const an = (a.name || '').toString();
+      const bn = (b.name || '').toString();
+      return an.localeCompare(bn, undefined, { sensitivity: 'base' });
+    });
+
+    // Listing counts (intentional contract; do not overload without auditing consumers):
+    // - totalFound: legacy field = bookable rows only (same meaning as before unavailable rows were included in `cabins`).
+    // - totalListings: full length of `cabins` (available + unavailable for these dates).
+    // - availableCount: explicit bookable count (= totalFound for this endpoint).
+    const availableCount = cabinResults.filter((c) => c.available).length;
+    const totalListings = cabinResults.length;
 
     res.json({
       success: true,
       data: {
-        cabins: availableCabins,
+        cabins: cabinResults,
         searchCriteria: {
           checkIn,
           checkOut,
@@ -142,7 +237,9 @@ router.get('/', [
           children: parseInt(children),
           totalGuests
         },
-        totalFound: availableCabins.length
+        totalFound: availableCount,
+        totalListings,
+        availableCount
       }
     });
 

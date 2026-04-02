@@ -6,6 +6,7 @@ import { getLanguageFromPath, localizePath } from '../utils/localizedRoutes';
 import { availabilityAPI, unitAPI } from '../services/api';
 import Seo from '../components/Seo';
 import { useBookingContext } from '../context/BookingContext';
+import { useBookingSearch } from '../context/BookingSearchContext';
 import { startOfDay, addDays, isBefore } from 'date-fns';
 import { formatDateOnlyLocal, parseDateOnlyLocal } from '../utils/dateOnly';
 import { getMinSelectableStayDate } from '../utils/bookingMinStayDate';
@@ -67,6 +68,84 @@ function computeValidatedSearchParams(searchParams) {
   return { checkIn, checkOut, adults, children };
 }
 
+/**
+ * Maps API `unavailabilityReason` (+ legacy rows with only `available: false`) to card messaging.
+ */
+function getSearchCardStatus(cabin, t) {
+  const isBookable = cabin.available !== false;
+  if (isBookable) {
+    return {
+      isBookable: true,
+      reasonCode: null,
+      banner: null,
+      disabledCta: null,
+      openPlannerGuests: false,
+      openPlannerStay: false
+    };
+  }
+
+  const code = cabin.unavailabilityReason || 'dates';
+  const d = cabin.unavailabilityDetail || {};
+
+  switch (code) {
+    case 'min_guests': {
+      const msg = t('search.reasonMinGuests', { count: d.minGuests });
+      return {
+        isBookable: false,
+        reasonCode: code,
+        banner: msg,
+        disabledCta: msg,
+        openPlannerGuests: true,
+        openPlannerStay: false
+      };
+    }
+    case 'max_guests': {
+      const msg = t('search.reasonMaxGuests', { count: d.maxGuests });
+      return {
+        isBookable: false,
+        reasonCode: code,
+        banner: msg,
+        disabledCta: msg,
+        openPlannerGuests: true,
+        openPlannerStay: false
+      };
+    }
+    case 'min_nights': {
+      const msg = t('search.reasonMinNights', { count: d.minNights });
+      return {
+        isBookable: false,
+        reasonCode: code,
+        banner: msg,
+        disabledCta: msg,
+        openPlannerGuests: false,
+        openPlannerStay: true
+      };
+    }
+    case 'dates': {
+      const msg = t('search.unavailableForDates');
+      return {
+        isBookable: false,
+        reasonCode: code,
+        banner: msg,
+        disabledCta: msg,
+        openPlannerGuests: false,
+        openPlannerStay: true
+      };
+    }
+    default: {
+      const msg = t('search.reasonCriteria');
+      return {
+        isBookable: false,
+        reasonCode: 'criteria',
+        banner: msg,
+        disabledCta: msg,
+        openPlannerGuests: true,
+        openPlannerStay: true
+      };
+    }
+  }
+}
+
 const SearchResults = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -75,7 +154,8 @@ const SearchResults = () => {
   const searchBase = localizePath('/search', routeLanguage);
   const homeBase = localizePath('/', routeLanguage);
   const { setBasicInfo } = useBookingContext();
-  
+  const { openModal } = useBookingSearch();
+
   const [cabins, setCabins] = useState([]);
   const [unitCountsByTypeId, setUnitCountsByTypeId] = useState({});
   const [loading, setLoading] = useState(true);
@@ -96,10 +176,6 @@ const SearchResults = () => {
   const draftToken = searchParams.get('draft');
   const seoTitle = 'Search availability | Drift & Dwells';
   const seoDescription = 'Browse currently available Drift & Dwells stays for your selected dates and group size.';
-  const formatDateLabel = (value) => {
-    const parsed = parseDateOnlyLocal(value);
-    return parsed ? parsed.toLocaleDateString() : '';
-  };
 
   // Load draft data if token is present
   useEffect(() => {
@@ -377,42 +453,17 @@ const SearchResults = () => {
           )}
         </div>
 
-        {/* Search Results Header */}
-        <div className="mb-16">
-          <h1 className="headline-section mb-8">
-            Available Cabins
-          </h1>
-          
-          <div className="card-editorial p-8">
-            <div className="flex flex-wrap items-center gap-8 text-body text-gray-600">
-              <span className="flex items-center">
-                <span className="w-2 h-2 bg-sage rounded-full mr-3"></span>
-                {currentSearchParams.checkIn && formatDateLabel(currentSearchParams.checkIn)} - {currentSearchParams.checkOut && formatDateLabel(currentSearchParams.checkOut)}
-              </span>
-              <span className="flex items-center">
-                <span className="w-2 h-2 bg-sage rounded-full mr-3"></span>
-                {currentSearchParams.adults} {currentSearchParams.adults === 1 ? 'Adult' : 'Adults'}
-                {currentSearchParams.children > 0 && (
-                  <span>, {currentSearchParams.children} {currentSearchParams.children === 1 ? 'Child' : 'Children'}</span>
-                )}
-              </span>
-              <span className="flex items-center">
-                <span className="w-2 h-2 bg-sage rounded-full mr-3"></span>
-                {cabins.length} {cabins.length === 1 ? 'Cabin' : 'Cabins'} Available
-              </span>
-            </div>
-          </div>
-        </div>
+        {/* Page title only — dates/guests live in SearchBar; availability on each card */}
+        <h1 className="headline-section mb-10 md:mb-12">{t('search.browseStaysTitle')}</h1>
 
         {/* Results */}
         {cabins.length === 0 ? (
           <div className="text-center py-20" data-testid="search-empty-state">
             <h2 className="headline-subsection mb-6">
-              No Available Cabins
+              {t('search.emptyCatalogTitle')}
             </h2>
             <p className="text-editorial text-gray-600 mb-12 max-w-2xl mx-auto">
-              Sorry, we couldn't find any available cabins for your selected dates and group size. 
-              Try adjusting your search criteria.
+              {t('search.emptyCatalogBody')}
             </p>
             <button
               onClick={() => navigate(homeBase)}
@@ -423,16 +474,35 @@ const SearchResults = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12">
-            {cabins.map((cabin) => (
-              <div key={cabin._id} className="card-cabin group flex flex-col h-full" data-testid="search-result-card">
+            {cabins.map((cabin) => {
+              const status = getSearchCardStatus(cabin, t);
+              const { isBookable } = status;
+              return (
+              <div
+                key={cabin._id}
+                className={`card-cabin group flex flex-col h-full ${!isBookable ? 'opacity-95' : ''}`}
+                data-testid="search-result-card"
+                data-available={isBookable ? 'true' : 'false'}
+                data-unavailability-reason={status.reasonCode || ''}
+              >
                 <div className="relative h-64 overflow-hidden">
                   <img
                     src={getCoverImage(cabin)}
                     alt={cabin.name}
                     loading="lazy"
                     decoding="async"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    className={`w-full h-full object-cover transition-transform duration-500 ${isBookable ? 'group-hover:scale-105' : 'grayscale-[0.35]'}`}
                   />
+                  {!isBookable && status.banner && (
+                    <div
+                      className="absolute inset-x-0 bottom-0 z-20 bg-stone-900/85 px-4 py-3 text-center"
+                      role="status"
+                    >
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#F1ECE2] leading-snug">
+                        {status.banner}
+                      </p>
+                    </div>
+                  )}
                   {/* Multi-unit pill */}
                   {(() => {
                     const isMulti = cabin?.inventoryMode === 'multi' || cabin?.inventoryType === 'multi';
@@ -485,53 +555,99 @@ const SearchResults = () => {
                         </p>
                       </div>
                     </div>
-                    <button
-                      onClick={() => {
-                        const isMulti = cabin?.inventoryMode === 'multi' || cabin?.inventoryType === 'multi';
-                        const typeSlug = cabin?.slug || cabin?.cabinTypeSlug;
-                        const searchParams = new URLSearchParams(currentSearchParams).toString();
+                    {isBookable ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const isMulti = cabin?.inventoryMode === 'multi' || cabin?.inventoryType === 'multi';
+                            const typeSlug = cabin?.slug || cabin?.cabinTypeSlug;
+                            const searchParams = new URLSearchParams(currentSearchParams).toString();
 
-                        // If returning to craft flow, set cabinId in context and navigate back
-                        if (returnTo) {
-                          setBasicInfo({
-                            cabinId: cabin._id,
-                            checkIn: currentSearchParams.checkIn,
-                            checkOut: currentSearchParams.checkOut,
-                            adults: currentSearchParams.adults,
-                            children: currentSearchParams.children
-                          });
-                          navigate(`/${returnTo}`);
-                          return;
-                        }
+                            if (returnTo) {
+                              setBasicInfo({
+                                cabinId: cabin._id,
+                                checkIn: currentSearchParams.checkIn,
+                                checkOut: currentSearchParams.checkOut,
+                                adults: currentSearchParams.adults,
+                                children: currentSearchParams.children
+                              });
+                              navigate(`/${returnTo}`);
+                              return;
+                            }
 
-                        if (isMulti && typeSlug) {
-                          navigate(`${localizePath(`/stays/${typeSlug}`, routeLanguage)}?${searchParams}`);
-                          return;
-                        }
+                            if (isMulti && typeSlug) {
+                              navigate(`${localizePath(`/stays/${typeSlug}`, routeLanguage)}?${searchParams}`);
+                              return;
+                            }
 
-                        navigate(`${localizePath(`/cabin/${cabin._id}`, routeLanguage)}?${searchParams}`);
-                      }}
-                      className="w-full btn-editorial text-center block py-3"
-                    >
-                      {returnTo ? 'Select This Cabin →' : 'view details →'}
-                    </button>
-                    {returnTo && (
-                      <button
-                        onClick={() => {
-                          // Allow viewing details while preserving returnTo
-                          const params = new URLSearchParams(currentSearchParams);
-                          params.set('returnTo', returnTo);
-                          navigate(`${localizePath(`/cabin/${cabin._id}`, routeLanguage)}?${params.toString()}`);
-                        }}
-                        className="w-full btn-underline text-center block py-2 mt-2"
-                      >
-                        view details first →
-                      </button>
+                            navigate(`${localizePath(`/cabin/${cabin._id}`, routeLanguage)}?${searchParams}`);
+                          }}
+                          className="w-full btn-editorial text-center block py-3"
+                        >
+                          {returnTo ? 'Select This Cabin →' : 'view details →'}
+                        </button>
+                        {returnTo && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const params = new URLSearchParams(currentSearchParams);
+                              params.set('returnTo', returnTo);
+                              navigate(`${localizePath(`/cabin/${cabin._id}`, routeLanguage)}?${params.toString()}`);
+                            }}
+                            className="w-full btn-underline text-center block py-2 mt-2"
+                          >
+                            view details first →
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          disabled
+                          className="w-full rounded-none border border-stone-300 bg-stone-100 py-3 text-center text-sm font-semibold uppercase tracking-[0.15em] text-stone-600 cursor-not-allowed leading-snug px-2"
+                        >
+                          {status.disabledCta}
+                        </button>
+                        {(status.openPlannerGuests || status.openPlannerStay) && (
+                          <button
+                            type="button"
+                            onClick={openModal}
+                            className="w-full text-center text-sm font-medium text-stone-800 underline-offset-2 hover:underline py-3"
+                          >
+                            {status.openPlannerGuests && !status.openPlannerStay
+                              ? t('search.hintOpenPlannerGuests')
+                              : !status.openPlannerGuests && status.openPlannerStay
+                                ? t('search.hintOpenPlannerStay')
+                                : t('search.hintOpenPlanner')}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const isMulti = cabin?.inventoryMode === 'multi' || cabin?.inventoryType === 'multi';
+                            const typeSlug = cabin?.slug || cabin?.cabinTypeSlug;
+                            const params = new URLSearchParams(currentSearchParams);
+                            if (returnTo) params.set('returnTo', returnTo);
+                            const q = params.toString();
+                            if (isMulti && typeSlug) {
+                              navigate(`${localizePath(`/stays/${typeSlug}`, routeLanguage)}?${q}`);
+                              return;
+                            }
+                            navigate(`${localizePath(`/cabin/${cabin._id}`, routeLanguage)}?${q}`);
+                          }}
+                          className="w-full btn-underline text-center block py-2 mt-1"
+                        >
+                          {t('search.viewPropertyAnyway')}
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

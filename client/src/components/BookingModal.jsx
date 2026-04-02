@@ -28,7 +28,7 @@ function bookingModalDevLog(...args) {
 const BookingModal = () => {
   const { t } = useTranslation('booking');
   const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const { pathname, search: locationSearch } = useLocation();
   const {
     checkIn,
     checkOut,
@@ -139,6 +139,12 @@ const BookingModal = () => {
       adults: adults.toString(),
       children: children.toString()
     });
+
+    const preserved = new URLSearchParams(locationSearch);
+    for (const key of ['returnTo', 'draft']) {
+      const v = preserved.get(key);
+      if (v) searchParams.set(key, v);
+    }
 
     closeModal();
     const searchPath = localizePath('/search', getLanguageFromPath(pathname));
@@ -349,6 +355,7 @@ const BookingModal = () => {
                 </div>
                 <button
                   type="button"
+                  data-testid="booking-modal-submit-search"
                   onClick={handleSearch}
                   disabled={!checkIn || !checkOut}
                   className={`h-12 md:h-14 px-8 md:px-12 rounded-full bg-black text-white font-semibold text-sm uppercase tracking-[0.3em] hover:bg-stone-800 disabled:opacity-40 disabled:cursor-not-allowed transition-all ${
