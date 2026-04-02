@@ -611,7 +611,7 @@ const CabinEdit = () => {
   }, [location, navigate]);
 
   const loadReviews = async () => {
-    if (!id) return;
+    if (!id || isNew) return;
     try {
       setReviewsLoading(true);
       const token = localStorage.getItem('adminToken');
@@ -806,14 +806,23 @@ const CabinEdit = () => {
     return Array.from(spaces).sort();
   }, [images]);
 
+  const cabinId = cabin?._id;
+  const canManageImages = Boolean(cabinId);
+  const canManageReviews = Boolean(cabinId);
+
   // Images tab handlers
   const handleImageUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+    if (!cabinId) {
+      setError('Save the cabin first before uploading images.');
+      e.target.value = '';
+      return;
+    }
+
     try {
       const token = localStorage.getItem('adminToken');
-      const { data } = await uploadCabinImage(cabin._id, file, token);
+      const { data } = await uploadCabinImage(cabinId, file, token);
       const sortedImages = data.data.images.slice().sort((a,b)=> (b.isCover - a.isCover) || (a.sort - b.sort));
       setImages(sortedImages);
       setCabin(prev => ({ ...prev, images: data.data.images }));
@@ -824,10 +833,11 @@ const CabinEdit = () => {
   };
 
   const handleSetCover = async (imageId) => {
+    if (!cabinId) return;
     try {
       const token = localStorage.getItem('adminToken');
-      await updateCabinImage(cabin._id, imageId, { isCover: true }, token);
-      const { data } = await axios.get(`/api/admin/cabins/${cabin._id}`, { 
+      await updateCabinImage(cabinId, imageId, { isCover: true }, token);
+      const { data } = await axios.get(`/api/admin/cabins/${cabinId}`, { 
         headers: { Authorization: `Bearer ${localStorage.getItem('adminToken')}` } 
       });
       const sortedImages = (data.data?.cabin?.images || []).slice().sort((a,b)=> (b.isCover - a.isCover) || (a.sort - b.sort));
@@ -840,19 +850,21 @@ const CabinEdit = () => {
   };
 
   const handleChangeAlt = async (imageId, alt) => {
+    if (!cabinId) return;
     try {
       const token = localStorage.getItem('adminToken');
-      await updateCabinImage(cabin._id, imageId, { alt }, token);
+      await updateCabinImage(cabinId, imageId, { alt }, token);
     } catch (err) {
       console.error('Update alt error:', err);
     }
   };
 
   const handleDragEnd = async (newOrder) => {
+    if (!cabinId) return;
     try {
       const token = localStorage.getItem('adminToken');
-      await reorderCabinImages(cabin._id, newOrder, token);
-      const { data } = await axios.get(`/api/admin/cabins/${cabin._id}`, { 
+      await reorderCabinImages(cabinId, newOrder, token);
+      const { data } = await axios.get(`/api/admin/cabins/${cabinId}`, { 
         headers: { Authorization: `Bearer ${token}` } 
       });
       setImages(data.data.cabin.images);
@@ -864,12 +876,13 @@ const CabinEdit = () => {
   };
 
   const handleRemoveImage = async (imageId) => {
+    if (!cabinId) return;
     if (!confirm('Delete this image?')) return;
-    
+
     try {
       const token = localStorage.getItem('adminToken');
-      await deleteCabinImage(cabin._id, imageId, token);
-      const { data } = await axios.get(`/api/admin/cabins/${cabin._id}`, { 
+      await deleteCabinImage(cabinId, imageId, token);
+      const { data } = await axios.get(`/api/admin/cabins/${cabinId}`, { 
         headers: { Authorization: `Bearer ${token}` } 
       });
       setImages(data.data.cabin.images);
@@ -906,16 +919,16 @@ const CabinEdit = () => {
   };
 
   const handleBulkTag = async (tag) => {
-    if (selectedImages.size === 0) return;
-    
+    if (!cabinId || selectedImages.size === 0) return;
+
     try {
       const token = localStorage.getItem('adminToken');
       const updates = Array.from(selectedImages).map(imageId => ({
         imageId,
         tags: [tag]
       }));
-      await batchUpdateCabinImages(cabin._id, updates, token);
-      const { data } = await axios.get(`/api/admin/cabins/${cabin._id}`, { 
+      await batchUpdateCabinImages(cabinId, updates, token);
+      const { data } = await axios.get(`/api/admin/cabins/${cabinId}`, { 
         headers: { Authorization: `Bearer ${token}` } 
       });
       setImages(data.data.cabin.images);
@@ -928,10 +941,11 @@ const CabinEdit = () => {
   };
 
   const handleUpdateTag = async (imageId, tags) => {
+    if (!cabinId) return;
     try {
       const token = localStorage.getItem('adminToken');
-      await updateCabinImage(cabin._id, imageId, { tags }, token);
-      const { data } = await axios.get(`/api/admin/cabins/${cabin._id}`, { 
+      await updateCabinImage(cabinId, imageId, { tags }, token);
+      const { data } = await axios.get(`/api/admin/cabins/${cabinId}`, { 
         headers: { Authorization: `Bearer ${token}` } 
       });
       setImages(data.data.cabin.images);
@@ -983,11 +997,21 @@ const CabinEdit = () => {
             />
             <button
               type="button"
-              onClick={() => uploadInputRef.current?.click()}
-              className="inline-flex items-center px-4 py-2.5 text-sm font-medium text-white bg-[#81887A] rounded-lg hover:bg-[#707668] focus:outline-none focus:ring-2 focus:ring-[#81887A]/30 focus:ring-offset-2 transition-colors"
+              disabled={!canManageImages}
+              title={!canManageImages ? 'Save the cabin first to upload images' : undefined}
+              onClick={() => {
+                if (!canManageImages) return;
+                uploadInputRef.current?.click();
+              }}
+              className="inline-flex items-center px-4 py-2.5 text-sm font-medium text-white bg-[#81887A] rounded-lg hover:bg-[#707668] focus:outline-none focus:ring-2 focus:ring-[#81887A]/30 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#81887A]"
             >
               Upload
             </button>
+            {!canManageImages && (
+              <p className="text-xs text-amber-800 max-w-xs leading-snug">
+                Save the cabin using &quot;Save changes&quot; first, then upload images.
+              </p>
+            )}
 
             <div className="flex items-center gap-2">
               <label className="text-xs font-medium text-gray-500">Filter</label>
@@ -1415,7 +1439,7 @@ const CabinEdit = () => {
     }
   };
   const handleTabClick = (tab) => {
-    if (tab === 'reviews' && !isNew) {
+    if (tab === 'reviews' && cabin?._id) {
       loadReviews();
     }
     setActiveTab(tab);
@@ -1434,7 +1458,8 @@ const CabinEdit = () => {
     );
   }
 
-  if (error && !cabin) {
+  // Edit mode only: full-page error when load failed (new cabin keeps cabin=null by design).
+  if (!isNew && error && !cabin) {
     return (
       <div className="px-4 sm:px-0">
         <div className="rounded-md bg-red-50 p-4">
@@ -1507,11 +1532,46 @@ const CabinEdit = () => {
               </p>
             </div>
             <div className="border-t border-gray-100 px-4 sm:px-6 py-5">
-              <ImagesTab />
+              {!canManageImages ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-950">
+                  <p className="font-medium">Save the cabin first</p>
+                  <p className="mt-1 text-amber-900/90">
+                    Image uploads need a cabin record. Fill in basic information and press &quot;Save changes&quot;.
+                    You will be taken to the edit page where uploads are enabled.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('basic')}
+                    className="mt-3 inline-flex items-center px-3 py-2 text-sm font-medium text-amber-950 bg-white border border-amber-300 rounded-lg hover:bg-amber-100/80"
+                  >
+                    Back to basic info
+                  </button>
+                </div>
+              ) : (
+                <ImagesTab />
+              )}
             </div>
           </div>
         ) : activeTab === 'reviews' ? (
           <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+            {!canManageReviews ? (
+              <div className="px-4 sm:px-6 py-5">
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-950">
+                  <p className="font-medium">Save the cabin first</p>
+                  <p className="mt-1 text-amber-900/90">
+                    Reviews are tied to a cabin record. Save basic information first, then manage reviews from the edit page.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('basic')}
+                    className="mt-3 inline-flex items-center px-3 py-2 text-sm font-medium text-amber-950 bg-white border border-amber-300 rounded-lg hover:bg-amber-100/80"
+                  >
+                    Back to basic info
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
             <div className="px-6 py-5 sm:flex sm:items-center sm:justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-gray-900">Cabin Reviews</h3>
@@ -1600,6 +1660,8 @@ const CabinEdit = () => {
                 </div>
               )}
             </div>
+              </>
+            )}
           </div>
         ) : (
           <>
@@ -2682,22 +2744,46 @@ const CabinEdit = () => {
               <div className="border-t border-gray-100 px-6 py-5 space-y-2">
                 <button
                   type="button"
-                  onClick={() => window.open(`/cabin/${id}`, '_blank', 'noopener,noreferrer')}
-                  className="w-full text-left px-3 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
+                  disabled={!canManageReviews}
+                  title={!canManageReviews ? 'Save the cabin first' : undefined}
+                  onClick={() => {
+                    if (!canManageReviews) {
+                      setError('Save the cabin first to open the public page.');
+                      return;
+                    }
+                    window.open(`/cabin/${cabinId}`, '_blank', 'noopener,noreferrer');
+                  }}
+                  className="w-full text-left px-3 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Open public page
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('images')}
-                  className="w-full text-left px-3 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
+                  disabled={!canManageImages}
+                  title={!canManageImages ? 'Save the cabin first to upload images' : undefined}
+                  onClick={() => {
+                    if (!canManageImages) {
+                      setError('Save the cabin first before managing images.');
+                      return;
+                    }
+                    setActiveTab('images');
+                  }}
+                  className="w-full text-left px-3 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Go to Images
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('reviews')}
-                  className="w-full text-left px-3 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
+                  disabled={!canManageReviews}
+                  title={!canManageReviews ? 'Save the cabin first' : undefined}
+                  onClick={() => {
+                    if (!canManageReviews) {
+                      setError('Save the cabin first before managing reviews.');
+                      return;
+                    }
+                    setActiveTab('reviews');
+                  }}
+                  className="w-full text-left px-3 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Go to Reviews
                 </button>
