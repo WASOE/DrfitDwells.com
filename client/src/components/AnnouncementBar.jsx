@@ -43,6 +43,7 @@ const AnnouncementBar = () => {
   const isCabinDetails = /^\/cabin\/[^/]+$/.test(basePath);
   const isConfirmPage = /^\/cabin\/[^/]+\/confirm$/.test(basePath);
   const isGuidePage = basePath.startsWith('/guides/');
+  const isMyTripPage = basePath.startsWith('/my-trip/');
   const hasStickyForRoute = hasStickyBottomBar(basePath);
   
   useEffect(() => {
@@ -59,7 +60,7 @@ const AnnouncementBar = () => {
 
   // Don't show announcement bar on Build page or confirm page (after all hooks)
   // Home keeps the sticky band for desktop; mobile is handled inline in Home.jsx
-  if (isBuildPage || isConfirmPage || isGuidePage) {
+  if (isBuildPage || isConfirmPage || isGuidePage || isMyTripPage) {
     return null;
   }
 
@@ -132,7 +133,7 @@ const AnnouncementBar = () => {
         >
           <div className="text-center">
             <p className="text-[#F1ECE2] text-[10px] md:text-xs font-bold uppercase tracking-[0.2em] py-3">
-              RATED TOP 1% ON PLATFORMS • WE'VE GONE SOLO • BOOK DIRECT & SAVE FEES
+              WE'VE GONE SOLO • BOOK DIRECT & SAVE FEES
             </p>
           </div>
         </div>
@@ -164,7 +165,7 @@ const AnnouncementBar = () => {
               We've Gone Wild.
             </h2>
             <p className="font-sans text-xs uppercase tracking-widest text-stone-500 mb-6">
-              From Top 1% on Airbnb to 100% Independent.
+              From platforms to 100% independent.
             </p>
             <p className="font-serif text-base leading-relaxed text-[#1c1917] mb-8">
               We realized something important: We'd rather invest in our guests than in platform fees. By booking direct, the 15% service fee stays in your pocket. Same luxury, better price.

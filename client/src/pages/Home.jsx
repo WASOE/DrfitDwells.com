@@ -90,7 +90,7 @@ const Home = () => {
         <section className="md:hidden bg-[#1c1917] border-t border-white/10">
           <div className="text-center px-4 py-3">
             <p className="text-[#F1ECE2] text-[10px] font-bold uppercase tracking-[0.2em]">
-              RATED TOP 1% ON PLATFORMS • WE&apos;VE GONE SOLO • BOOK DIRECT &amp; SAVE FEES
+              WE&apos;VE GONE SOLO • BOOK DIRECT &amp; SAVE FEES
             </p>
           </div>
         </section>
