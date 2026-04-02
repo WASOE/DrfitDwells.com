@@ -11,8 +11,8 @@ Verify these before deploying.
 | `STRIPE_SECRET_KEY` | Yes | Live secret key for payments (never in client/git) |
 | `STRIPE_WEBHOOK_SECRET` | No* | For refund reconciliation; *recommended for prod – webhook to `/api/stripe/webhook`, subscribe to `refund.created`, `refund.updated`, `refund.failed` (optionally `charge.refunded`) |
 | `NODE_ENV` | Yes | Set to `production` |
-| `MULTI_UNIT_ENABLED` | No | Defaults to **on** in code if unset (A-Frame search + `/api/admin/cabin-types`). Set `false` to disable. |
-| `MULTI_UNIT_TYPES` | No | Comma-separated slugs for pooled types; defaults to `a-frame` if unset. |
+| `MULTI_UNIT_ENABLED` | Yes* | *Required for A-Frame / pooled inventory in prod: `true`. If unset with `NODE_ENV=production`, multi-unit stays **off**. |
+| `MULTI_UNIT_TYPES` | Yes* | *For A-Frame only: `a-frame`. Comma-separated if multiple pooled types. Recommended even when using a single type so behavior is explicit. |
 | `CORS_ORIGINS` | No | Comma-separated allowed origins; defaults to driftdwells.com in prod |
 | `TRUST_PROXY` | No | Set to `1` when behind reverse proxy (for rate limiting IP) |
 | `PORT` | No | Defaults to 5000 |
@@ -64,5 +64,6 @@ npm run check:i18n     # Must pass (in client/)
 - [ ] i18n checks pass  
 - [ ] No unsafe production logs (all gated with `import.meta.env.DEV`)  
 - [ ] `MONGODB_URI`, `ADMIN_JWT_SECRET`, `STRIPE_SECRET_KEY`, mail vars set in production  
+- [ ] If A-Frame / multi-unit is live: `MULTI_UNIT_ENABLED=true` and `MULTI_UNIT_TYPES=a-frame` set explicitly  
 - [ ] Canonical domain and CORS/iframe origin verified  
 - [ ] Sitemap and robots.txt served at root  
