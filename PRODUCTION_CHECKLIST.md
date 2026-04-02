@@ -11,6 +11,8 @@ Verify these before deploying.
 | `STRIPE_SECRET_KEY` | Yes | Live secret key for payments (never in client/git) |
 | `STRIPE_WEBHOOK_SECRET` | No* | For refund reconciliation; *recommended for prod – webhook to `/api/stripe/webhook`, subscribe to `refund.created`, `refund.updated`, `refund.failed` (optionally `charge.refunded`) |
 | `NODE_ENV` | Yes | Set to `production` |
+| `MULTI_UNIT_ENABLED` | No | Defaults to **on** in code if unset (A-Frame search + `/api/admin/cabin-types`). Set `false` to disable. |
+| `MULTI_UNIT_TYPES` | No | Comma-separated slugs for pooled types; defaults to `a-frame` if unset. |
 | `CORS_ORIGINS` | No | Comma-separated allowed origins; defaults to driftdwells.com in prod |
 | `TRUST_PROXY` | No | Set to `1` when behind reverse proxy (for rate limiting IP) |
 | `PORT` | No | Defaults to 5000 |

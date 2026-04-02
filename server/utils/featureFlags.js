@@ -18,16 +18,17 @@ const featureFlags = {
     if (process.env.MULTI_UNIT_ENABLED !== undefined) {
       return this._parseBoolean(process.env.MULTI_UNIT_ENABLED);
     }
-    // Default to enabled for local/dev if not explicitly set.
-    return process.env.NODE_ENV !== 'production';
+    // Default ON in all environments when unset (A-Frame / pooled types in search + admin).
+    // Set MULTI_UNIT_ENABLED=false or 0 to disable.
+    return true;
   },
 
   // Returns configured multi-unit type slugs as an array (lowercased)
   getMultiUnitTypes() {
     const raw = process.env.MULTI_UNIT_TYPES || '';
     if (!raw) {
-      // Default to A-frame for local/dev when not explicitly set.
-      return process.env.NODE_ENV !== 'production' ? ['a-frame'] : [];
+      // Default slug when unset — same in production and dev so LIVE search matches local.
+      return ['a-frame'];
     }
     return raw
       .split(',')
