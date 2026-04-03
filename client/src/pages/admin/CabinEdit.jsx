@@ -1603,8 +1603,8 @@ const CabinEdit = () => {
                   role="status"
                 >
                   <p>
-                    <span className="font-medium text-gray-900">Next step:</span>{' '}
-                    Add at least one photo — guests see these on search and the public listing.
+                    <span className="font-medium text-gray-900">Cabin created. Next step: add photos.</span>{' '}
+                    Guests see these on search and the public listing.
                   </p>
                   <button
                     type="button"
@@ -2835,6 +2835,11 @@ const CabinEdit = () => {
                 <h3 className="text-sm font-semibold text-gray-900">Completeness</h3>
               </div>
               <div className="border-t border-gray-100 px-6 py-5 space-y-2">
+                {isNew && (
+                  <p className="text-xs text-gray-600 leading-relaxed mb-3 pb-3 border-b border-gray-100">
+                    Images are added after first save — you’ll go straight to the Images tab next. This checklist is for your planning only.
+                  </p>
+                )}
                 {(() => {
                   const hasBasic = Boolean(formData.name && formData.location && formData.description && Number(formData.capacity) > 0);
                   const hasPricing = Number(formData.pricePerNight) > 0 && Number(formData.minNights) > 0;
@@ -2852,14 +2857,26 @@ const CabinEdit = () => {
                   ];
                   return (
                     <ul className="space-y-1">
-                      {items.map(([label, ok]) => (
-                        <li key={label} className="flex items-center justify-between text-sm">
-                          <span className="text-gray-700">{label}</span>
-                          <span className={ok ? 'text-green-700' : 'text-gray-400'}>
-                            {ok ? 'Complete' : 'Missing'}
-                          </span>
-                        </li>
-                      ))}
+                      {items.map(([label, ok]) => {
+                        const isImageRow = label === 'Images' || label === 'Cover set';
+                        const pendingAfterSave = isNew && isImageRow && !ok;
+                        return (
+                          <li key={label} className="flex items-center justify-between text-sm gap-2">
+                            <span className="text-gray-700">{label}</span>
+                            <span
+                              className={
+                                ok
+                                  ? 'text-green-700 shrink-0'
+                                  : pendingAfterSave
+                                    ? 'text-gray-600 text-right text-xs max-w-[11rem] shrink-0'
+                                    : 'text-gray-400 shrink-0'
+                              }
+                            >
+                              {ok ? 'Complete' : pendingAfterSave ? 'After first save' : 'Missing'}
+                            </span>
+                          </li>
+                        );
+                      })}
                     </ul>
                   );
                 })()}
@@ -2937,6 +2954,9 @@ const CabinEdit = () => {
                         ? 'Required fields are filled. Use Create cabin below.'
                         : 'This listing does not exist until you create it. Add name, description, location, pricing, and capacity (and units if multi-unit).'}
                     </p>
+                    <p className="mt-2 text-xs text-[#81887A] font-medium">
+                      Images are added after first save.
+                    </p>
                   </>
                 ) : (
                   <>
@@ -2959,16 +2979,19 @@ const CabinEdit = () => {
               <div className="bg-white/95 backdrop-blur border-t border-gray-200 shadow-[0_-8px_24px_rgba(0,0,0,0.06)] sm:rounded-t-xl px-3 sm:px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div className="text-sm text-gray-700">
                   {isNew ? (
-                    <>
+                    <div className="min-w-0 flex flex-col sm:flex-row sm:items-baseline sm:flex-wrap gap-1 sm:gap-x-2">
                       <span className="font-medium">
                         {isCreateFormValid ? 'Ready to create' : 'Draft — not saved yet'}
                       </span>
-                      <span className="hidden sm:inline text-gray-500 ml-2">
+                      <span className="hidden sm:inline text-gray-500">
                         {isCreateFormValid
                           ? 'Press Create cabin to save to the database.'
                           : 'Fill required fields to enable Create cabin.'}
                       </span>
-                    </>
+                      <span className="text-xs sm:text-sm text-[#81887A] font-medium sm:ml-0 sm:w-full sm:mt-0.5">
+                        Images are added after first save.
+                      </span>
+                    </div>
                   ) : (
                     <>
                       <span className="font-medium">{isDirty ? 'Unsaved changes' : 'Saved'}</span>
