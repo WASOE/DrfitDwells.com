@@ -1,4 +1,29 @@
+import { useEffect, useState } from 'react';
 import Seo from '../../components/Seo';
+
+async function responseLooksLikePdf(res) {
+  const ct = (res.headers.get('content-type') || '').toLowerCase();
+  return (res.ok || res.status === 206) && ct.includes('application/pdf');
+}
+
+/** HEAD, then Range GET fallback for servers that omit HEAD on static files. */
+async function verifyPdfUrl(urlWithoutHash) {
+  try {
+    let res = await fetch(urlWithoutHash, { method: 'HEAD', cache: 'no-store' });
+    if (await responseLooksLikePdf(res)) return true;
+    if (res.status === 405 || res.status === 501) {
+      res = await fetch(urlWithoutHash, {
+        method: 'GET',
+        headers: { Range: 'bytes=0-0' },
+        cache: 'no-store'
+      });
+      if (await responseLooksLikePdf(res)) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Reusable component for displaying legal documents as embedded PDFs
@@ -12,6 +37,21 @@ const DocumentViewer = ({
   canonicalPath,
   noindex = false
 }) => {
+  const [embedState, setEmbedState] = useState('loading');
+
+  const pdfUrlBase = pdfPath.split('#')[0];
+
+  useEffect(() => {
+    let cancelled = false;
+    setEmbedState('loading');
+    verifyPdfUrl(pdfUrlBase).then((ok) => {
+      if (!cancelled) setEmbedState(ok ? 'ready' : 'unavailable');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [pdfUrlBase]);
+
   const handleDownload = () => {
     const link = document.createElement('a');
     link.href = pdfPath;
@@ -64,19 +104,51 @@ const DocumentViewer = ({
           </button>
         </div>
 
-        {/* PDF Embed */}
+        {/* PDF Embed — only after Content-Type check so SW/HTML fallbacks cannot nest the SPA */}
         <div className="bg-gray-100 rounded-lg overflow-hidden shadow-lg" style={{ minHeight: '600px' }}>
-          <iframe
-            src={`${pdfPath}#toolbar=1&navpanes=1&scrollbar=1`}
-            title={title}
-            className="w-full"
-            style={{ 
-              minHeight: '600px',
-              height: 'calc(100vh - 300px)',
-              maxHeight: '1200px'
-            }}
-            frameBorder="0"
-          />
+          {embedState === 'loading' && (
+            <div
+              className="flex items-center justify-center text-gray-500 text-sm font-light w-full"
+              style={{ minHeight: '600px', height: 'calc(100vh - 300px)', maxHeight: '1200px' }}
+            >
+              Loading preview…
+            </div>
+          )}
+          {embedState === 'ready' && (
+            <iframe
+              src={`${pdfPath}#toolbar=1&navpanes=1&scrollbar=1`}
+              title={title}
+              className="w-full"
+              style={{
+                minHeight: '600px',
+                height: 'calc(100vh - 300px)',
+                maxHeight: '1200px'
+              }}
+              frameBorder="0"
+              onLoad={(e) => {
+                try {
+                  const doc = e.currentTarget.contentDocument;
+                  const ct = doc?.contentType?.toLowerCase() ?? '';
+                  if (doc && ct.includes('text/html')) {
+                    setEmbedState('unavailable');
+                  }
+                } catch {
+                  /* PDF plugin / opaque — treat as OK */
+                }
+              }}
+            />
+          )}
+          {embedState === 'unavailable' && (
+            <div
+              className="flex flex-col items-center justify-center gap-3 px-6 text-center text-gray-600 w-full"
+              style={{ minHeight: '600px', height: 'calc(100vh - 300px)', maxHeight: '1200px' }}
+            >
+              <p className="text-base font-light">This document cannot be shown inline right now.</p>
+              <p className="text-sm text-gray-500 font-light">
+                Use Download PDF below, or try again later.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Footer Note */}

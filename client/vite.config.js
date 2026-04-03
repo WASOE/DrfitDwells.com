@@ -37,7 +37,9 @@ export default defineConfig({
           // Live may not have this asset; exclude to avoid Workbox precaching 404s.
           '**/uploads/headers/cabin-memory-header.png'
         ],
-        navigateFallbackDenylist: [/^\/api\//],
+        // Iframe PDF navigations must not receive index.html (Workbox NavigationRoute).
+        // Without /uploads/ and .pdf here, embedded legal PDFs load the SPA inside the iframe.
+        navigateFallbackDenylist: [/^\/api\//, /^\/uploads\//, /\.pdf$/i],
         runtimeCaching: [
           {
             urlPattern: ({ url }) => url.pathname.startsWith('/guides/the-cabin/'),

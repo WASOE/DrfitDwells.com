@@ -84,8 +84,6 @@ const CabinEdit = () => {
   const [unitsMessage, setUnitsMessage] = useState('');
   const [preArrivalOpen, setPreArrivalOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  /** On /new: optional sections (highlights, transport, arrival…) hidden until expanded. */
-  const [createOptionalExpanded, setCreateOptionalExpanded] = useState(false);
   /** After create redirect: nudge user to upload images. */
   const [imagesNextStepBanner, setImagesNextStepBanner] = useState(false);
   const initialSnapshotRef = useRef(null);
@@ -264,67 +262,101 @@ const CabinEdit = () => {
     }
   };
 
-  const handleGenerateUnits = () => {
-    setUnitsMessage('');
-    const desired = Number(unitCount);
-
+  /** Pure: append generated rows until existing.length === desired (used on create save + manual Generate). */
+  const appendGeneratedUnitsUpToDesired = useCallback((existingUnits, desired, rawPrefix) => {
+    const prefix = typeof rawPrefix === 'string' ? rawPrefix.trim() : '';
     if (!Number.isInteger(desired) || desired < 1) {
-      setUnitCountError('Enter a whole number that is at least 1');
-      return;
+      return { units: existingUnits, error: 'Enter a whole number that is at least 1' };
     }
-
-    if (units.length > desired) {
-      setUnitCountError(`You already have ${units.length} units. Remove or deactivate extras before lowering the number.`);
-      return;
+    if (existingUnits.length > desired) {
+      return {
+        units: existingUnits,
+        error: `You already have ${existingUnits.length} units. Remove or deactivate extras before lowering the number.`
+      };
     }
-
-    if (units.length === desired) {
-      setUnitsMessage(`You already have ${desired} units configured.`);
-      return;
+    if (existingUnits.length === desired) {
+      return { units: existingUnits, error: null };
     }
-
     const digits = getDigitsForCount(desired);
-    const prefix = multiUnitConfig.prefix?.trim() || '';
-    const existingCodes = new Set(units.map((unit) => (unit.unitNumber || '').toLowerCase()));
+    const existingCodes = new Set(existingUnits.map((unit) => (unit.unitNumber || '').toLowerCase()));
     const generated = [];
 
     let attempts = 0;
-    for (let number = 1; units.length + generated.length < desired && attempts < desired * 5; number += 1, attempts += 1) {
+    for (
+      let number = 1;
+      existingUnits.length + generated.length < desired && attempts < desired * 5;
+      number += 1, attempts += 1
+    ) {
       const baseCode = buildUnitCode(prefix, number, digits);
       const code = ensureUniqueCode(baseCode, existingCodes);
       if (!existingCodes.has(code.toLowerCase())) {
         existingCodes.add(code.toLowerCase());
-        generated.push(normalizeUnit({
-          unitNumber: code,
-          displayName: '',
-          adminNotes: '',
-          isActive: true
-        }));
-      }
-    }
-
-    let fallbackNumber = desired + 1;
-    while (units.length + generated.length < desired && fallbackNumber < desired * 6) {
-      const baseCode = buildUnitCode(prefix, fallbackNumber, digits);
-      const code = ensureUniqueCode(baseCode, existingCodes);
-      if (!existingCodes.has(code.toLowerCase())) {
-          existingCodes.add(code.toLowerCase());
-          generated.push(normalizeUnit({
+        generated.push(
+          normalizeUnit({
             unitNumber: code,
             displayName: '',
             adminNotes: '',
             isActive: true
-          }));
+          })
+        );
+      }
+    }
+
+    let fallbackNumber = desired + 1;
+    while (existingUnits.length + generated.length < desired && fallbackNumber < desired * 6) {
+      const baseCode = buildUnitCode(prefix, fallbackNumber, digits);
+      const code = ensureUniqueCode(baseCode, existingCodes);
+      if (!existingCodes.has(code.toLowerCase())) {
+        existingCodes.add(code.toLowerCase());
+        generated.push(
+          normalizeUnit({
+            unitNumber: code,
+            displayName: '',
+            adminNotes: '',
+            isActive: true
+          })
+        );
       }
       fallbackNumber += 1;
     }
 
-    if (generated.length === 0) {
-      setUnitsMessage('No new units were generated. Adjust the prefix or add units manually.');
+    if (generated.length === 0 && existingUnits.length < desired) {
+      return {
+        units: existingUnits,
+        error: 'Could not generate unit codes. Adjust the prefix or unit count, or add units manually.'
+      };
+    }
+
+    const nextUnits = sortUnits([...existingUnits, ...generated]);
+    if (nextUnits.length < desired) {
+      return {
+        units: nextUnits,
+        error: 'Could not generate enough unique unit codes. Try a different prefix or unit count.'
+      };
+    }
+    return { units: nextUnits, error: null };
+  }, [buildUnitCode, ensureUniqueCode, getDigitsForCount, normalizeUnit, sortUnits]);
+
+  const handleGenerateUnits = () => {
+    setUnitsMessage('');
+    setUnitCountError('');
+    const desired = Number(unitCount);
+
+    if (units.length === desired && Number.isInteger(desired) && desired >= 1) {
+      setUnitsMessage(`You already have ${desired} units configured.`);
       return;
     }
 
-    const nextUnits = sortUnits([...units, ...generated]);
+    const { units: nextUnits, error } = appendGeneratedUnitsUpToDesired(units, desired, multiUnitConfig.prefix);
+    if (error) {
+      if (!Number.isInteger(desired) || desired < 1 || units.length > desired) {
+        setUnitCountError(error);
+      } else {
+        setUnitsMessage(error);
+      }
+      return;
+    }
+
     setUnits(nextUnits);
     syncUnitCountWithUnits(nextUnits);
     setUnitCountError('');
@@ -554,27 +586,40 @@ const CabinEdit = () => {
     }
   }, [buildSnapshot]);
 
-  /** Create flow: enable primary button from required fields (not edit dirty tracking). */
-  const isCreateFormValid = useMemo(() => {
-    if (!isNew) return true;
-    const nameOk = typeof formData.name === 'string' && formData.name.trim().length > 0;
-    const descOk = typeof formData.description === 'string' && formData.description.trim().length > 0;
-    const locOk = typeof formData.location === 'string' && formData.location.trim().length > 0;
+  /**
+   * Create flow: which requirement blocks the primary CTA (null = ready).
+   * Multi-unit: only count is required here — unit rows are generated on save from count + prefix.
+   */
+  const createFormBlockingMessage = useMemo(() => {
+    if (!isNew) return null;
+    if (typeof formData.name !== 'string' || !formData.name.trim()) {
+      return 'Add a cabin name.';
+    }
+    if (typeof formData.description !== 'string' || !formData.description.trim()) {
+      return 'Add a description.';
+    }
+    if (typeof formData.location !== 'string' || !formData.location.trim()) {
+      return 'Add a location.';
+    }
     const cap = Number(formData.capacity);
-    const capOk = Number.isInteger(cap) && cap >= 1;
+    if (!Number.isInteger(cap) || cap < 1) {
+      return 'Set capacity to at least 1 guest.';
+    }
     const price = Number(formData.pricePerNight);
-    const priceOk = Number.isFinite(price) && price > 0;
+    if (!Number.isFinite(price) || price <= 0) {
+      return 'Set a price per night greater than zero.';
+    }
     const mn = Number(formData.minNights);
-    const mnOk = Number.isInteger(mn) && mn >= 1;
-    if (!nameOk || !descOk || !locOk || !capOk || !priceOk || !mnOk) return false;
+    if (!Number.isInteger(mn) || mn < 1) {
+      return 'Set minimum nights to at least 1.';
+    }
     if (inventoryType === 'multi') {
       const desired = Number(unitCount);
-      if (!Number.isInteger(desired) || desired < 1) return false;
-      if (units.length === 0) return false;
-      if (!units.some((u) => u.isActive !== false)) return false;
-      if (desired !== units.length) return false;
+      if (!Number.isInteger(desired) || desired < 1) {
+        return 'Enter how many units this listing has (a whole number ≥ 1).';
+      }
     }
-    return true;
+    return null;
   }, [
     isNew,
     formData.name,
@@ -584,9 +629,10 @@ const CabinEdit = () => {
     formData.pricePerNight,
     formData.minNights,
     inventoryType,
-    unitCount,
-    units
+    unitCount
   ]);
+
+  const isCreateFormValid = createFormBlockingMessage === null;
 
   const applyValleyGuidePreset = useCallback(() => {
     const p = VALLEY_GUIDE_ARRIVAL_PRESET;
@@ -1388,31 +1434,62 @@ const CabinEdit = () => {
           return;
         }
 
-        if (units.length === 0) {
+        let resolvedMultiUnits = units;
+        if (isNew) {
+          const { units: filledUnits, error: fillError } = appendGeneratedUnitsUpToDesired(
+            units,
+            desiredUnitCount,
+            multiUnitConfig.prefix
+          );
+          if (fillError) {
+            setUnitCountError(fillError);
+            setSaving(false);
+            return;
+          }
+          resolvedMultiUnits = filledUnits;
+          if (filledUnits !== units) {
+            setUnits(filledUnits);
+            syncUnitCountWithUnits(filledUnits);
+            setUnitsError('');
+            setMultiUnitConfig((prev) => ({
+              ...prev,
+              autoGeneratedCount: desiredUnitCount
+            }));
+          }
+        }
+
+        if (resolvedMultiUnits.length === 0) {
           setUnitsError('Please configure at least one unit for multi-unit cabins.');
           setSaving(false);
           return;
         }
 
-        if (activeUnitsCount === 0) {
+        const resolvedActive = resolvedMultiUnits.filter((u) => u.isActive !== false).length;
+        if (resolvedActive === 0) {
           setUnitsError('Please configure at least one active unit for multi-unit cabins.');
           setSaving(false);
           return;
         }
 
-        if (desiredUnitCount < units.length) {
-          setUnitCountError(`You already have ${units.length} units. Remove or deactivate extras before lowering the number.`);
+        if (desiredUnitCount < resolvedMultiUnits.length) {
+          setUnitCountError(`You already have ${resolvedMultiUnits.length} units. Remove or deactivate extras before lowering the number.`);
           setSaving(false);
           return;
         }
 
-        if (desiredUnitCount > units.length) {
+        if (!isNew && desiredUnitCount > resolvedMultiUnits.length) {
           setUnitCountError('Click “Generate units” to add the remaining units so the table matches the number entered.');
           setSaving(false);
           return;
         }
 
-        payload.units = sortUnits(units).map((unit) => ({
+        if (isNew && desiredUnitCount !== resolvedMultiUnits.length) {
+          setUnitCountError('Unit count does not match generated units. Adjust the number or prefix and try again.');
+          setSaving(false);
+          return;
+        }
+
+        payload.units = sortUnits(resolvedMultiUnits).map((unit) => ({
           _id: unit._id,
           unitNumber: typeof unit.unitNumber === 'string' ? unit.unitNumber.trim() : '',
           displayName: typeof unit.displayName === 'string' ? unit.displayName.trim() : '',
@@ -1446,7 +1523,6 @@ const CabinEdit = () => {
           if (createdCabin?._id) {
             navigate(`/admin/cabins/${createdCabin._id}`, {
               state: {
-                successMessage: 'Cabin created successfully',
                 focusImagesTab: true
               }
             });
@@ -1490,7 +1566,7 @@ const CabinEdit = () => {
   const getInputClasses = (field) =>
     `mt-1 block w-full rounded-md shadow-sm sm:text-sm ${fieldErrors[field] ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-gray-300 focus:ring-[#81887A] focus:border-[#81887A]'}`;
 
-  const tabConfig = isNew ? ['basic'] : ['basic', 'images', 'reviews'];
+  const tabConfig = ['basic', 'images', 'reviews'];
   const getTabLabel = (tab) => {
     switch (tab) {
       case 'basic':
@@ -1534,6 +1610,451 @@ const CabinEdit = () => {
     );
   }
 
+  // Create-only: essentials + Create cabin — no enrich/ops chrome (tabs, summary, completeness, etc.).
+  if (isNew) {
+    return (
+      <div className="px-4 sm:px-0 pb-28">
+        <header className="mb-8">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <button
+              type="button"
+              onClick={() => navigate('/admin/cabins')}
+              className="text-sm text-gray-500 hover:text-gray-800"
+            >
+              ← Back to Cabins
+            </button>
+          </div>
+          <div className="mt-4">
+            <h1 className="text-xl font-semibold tracking-tight text-gray-900">New cabin</h1>
+            <p className="mt-0.5 text-sm text-gray-500">
+              After you create, you’ll add photos and optional details on the next screen.
+            </p>
+          </div>
+        </header>
+
+        {error && (
+          <div className="mt-4 rounded-md bg-red-50 p-4">
+            <div className="text-sm text-red-700">{error}</div>
+          </div>
+        )}
+
+        <div className="max-w-3xl space-y-6">
+          <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+            <div className="px-6 py-5">
+              <h3 className="text-sm font-semibold text-gray-900">Basic listing</h3>
+            </div>
+            <div className="border-t border-gray-100 px-6 py-5 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Cabin type</label>
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label
+                    className={`relative flex flex-col border rounded-lg p-4 cursor-pointer focus-within:ring-2 focus-within:ring-[#81887A] focus-within:border-[#81887A] ${
+                      inventoryType === 'single' ? 'border-[#81887A]' : 'border-gray-300'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="inventoryTypeCreate"
+                      value="single"
+                      checked={inventoryType === 'single'}
+                      onChange={() => handleInventoryTypeChange('single')}
+                      className="sr-only"
+                    />
+                    <span className="text-sm font-medium text-gray-900">Single unit</span>
+                    <span className="mt-1 text-sm text-gray-500">
+                      One unique property (e.g., Stone House, Lux Cabin).
+                    </span>
+                  </label>
+                  {(multiUnitEnabled || inventoryType === 'multi') && (
+                    <label
+                      className={`relative flex flex-col border rounded-lg p-4 cursor-pointer focus-within:ring-2 focus-within:ring-[#81887A] focus-within:border-[#81887A] ${
+                        inventoryType === 'multi' ? 'border-[#81887A]' : 'border-gray-300'
+                      } ${multiUnitEnabled === false ? 'opacity-70 cursor-not-allowed' : ''}`}
+                    >
+                      <input
+                        type="radio"
+                        name="inventoryTypeCreate"
+                        value="multi"
+                        checked={inventoryType === 'multi'}
+                        onChange={() => handleInventoryTypeChange('multi')}
+                        disabled={multiUnitEnabled === false}
+                        className="sr-only"
+                      />
+                      <span className="text-sm font-medium text-gray-900">Multiple identical units</span>
+                      <span className="mt-1 text-sm text-gray-500">
+                        Several interchangeable units with the same layout & price (e.g., 13 A-frames).
+                      </span>
+                    </label>
+                  )}
+                </div>
+                {inventoryTypeError && (
+                  <p className="mt-2 text-sm text-red-600">{inventoryTypeError}</p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Name</label>
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => handleInputChange('name', e.target.value)}
+                    className={getInputClasses('name')}
+                    required
+                  />
+                  {fieldErrors.name && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.name}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Location</label>
+                  <input
+                    type="text"
+                    value={formData.location}
+                    onChange={(e) => handleInputChange('location', e.target.value)}
+                    className={getInputClasses('location')}
+                    required
+                  />
+                  {fieldErrors.location && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.location}</p>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Description</label>
+                <textarea
+                  rows={4}
+                  value={formData.description}
+                  onChange={(e) => handleInputChange('description', e.target.value)}
+                  className={`${getInputClasses('description')} resize-none`}
+                  placeholder="Describe the cabin experience, amenities, and setting..."
+                  required
+                />
+                {fieldErrors.description && (
+                  <p className="mt-1 text-sm text-red-600">{fieldErrors.description}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">
+                  {inventoryType === 'multi' ? 'Capacity per unit' : 'Capacity'}
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={formData.capacity}
+                  onChange={(e) => handleInputChange('capacity', parseInt(e.target.value, 10) || 1)}
+                  className={getInputClasses('capacity')}
+                  required
+                />
+                {fieldErrors.capacity && (
+                  <p className="mt-1 text-sm text-red-600">{fieldErrors.capacity}</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+            <div className="px-6 py-5">
+              <h3 className="text-sm font-semibold text-gray-900">Pricing & stay rules</h3>
+              <p className="mt-0.5 text-sm text-gray-500">Commercial basics for booking.</p>
+            </div>
+            <div className="border-t border-gray-100 px-6 py-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    {inventoryType === 'multi' ? 'Base price per night per unit (€)' : 'Price per night (€)'}
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formData.pricePerNight}
+                    onChange={(e) => handleInputChange('pricePerNight', parseFloat(e.target.value) || 0)}
+                    className={getInputClasses('pricePerNight')}
+                    required
+                  />
+                  {fieldErrors.pricePerNight && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.pricePerNight}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    {inventoryType === 'multi' ? 'Minimum nights (per booking)' : 'Minimum nights'}
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={formData.minNights}
+                    onChange={(e) => handleInputChange('minNights', parseInt(e.target.value, 10) || 1)}
+                    className={getInputClasses('minNights')}
+                    required
+                  />
+                  {fieldErrors.minNights && (
+                    <p className="mt-1 text-sm text-red-600">{fieldErrors.minNights}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {inventoryType === 'multi' && (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+              <div className="px-4 py-5 sm:px-6 flex flex-col gap-4">
+                <div className="min-w-0">
+                  <h3 className="text-lg leading-6 font-medium text-gray-900">Units & inventory</h3>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Use this when you have several identical units. Guests book the group; the system auto-assigns an available unit.
+                  </p>
+                </div>
+                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                  <span className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-gray-100 text-gray-800 w-fit max-w-full">
+                    Total units: {units.length} • Active: {activeUnitsCount}
+                  </span>
+                  <div className="flex flex-col sm:flex-row flex-wrap gap-2 w-full sm:w-auto sm:justify-end shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleGenerateUnits}
+                      className="inline-flex items-center justify-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#81887A]"
+                    >
+                      Generate units
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAddUnitQuick}
+                      className="inline-flex items-center justify-center px-3 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-[#81887A] hover:bg-[#707668] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#81887A]"
+                    >
+                      Add unit
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="border-t border-gray-100 px-6 py-5 space-y-6">
+                <p className="text-sm text-gray-600 rounded-lg border border-gray-100 bg-gray-50/80 px-3 py-2">
+                  When you create this cabin, unit codes are generated automatically from the number and prefix below. Use Generate if you want to preview or edit rows before creating.
+                </p>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Number of units</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={unitCountInput}
+                    onChange={(e) => handleUnitCountChange(e.target.value)}
+                    className={`mt-1 block w-full rounded-md shadow-sm sm:text-sm ${unitCountError ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-gray-300 focus:ring-[#81887A] focus:border-[#81887A]'}`}
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    How many identical units of this cabin do you have? For example, 13 A-frames.
+                  </p>
+                  {unitCountError && (
+                    <p className="mt-2 text-sm text-red-600">{unitCountError}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Unit code prefix (internal)</label>
+                  <input
+                    type="text"
+                    value={multiUnitConfig.prefix}
+                    onChange={(e) =>
+                      setMultiUnitConfig((prev) => ({ ...prev, prefix: e.target.value }))
+                    }
+                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-[#81887A] focus:border-[#81887A] sm:text-sm"
+                    placeholder="AF"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Used only to name units in the admin (e.g., AF-01, AF-02). Guests never see this.
+                  </p>
+                </div>
+
+                <p className="text-xs text-gray-500">
+                  Use “Add unit” to append a single extra unit manually (for example, AF-14 later on).
+                </p>
+
+                {unitsMessage && (
+                  <div className="rounded-md bg-yellow-50 border border-yellow-200 text-sm text-yellow-800 px-4 py-2">
+                    {unitsMessage}
+                  </div>
+                )}
+
+                {unitsError && (
+                  <div className="rounded-md bg-red-50 border border-red-200 text-sm text-red-700 px-4 py-2">
+                    {unitsError}
+                  </div>
+                )}
+
+                <div className="overflow-hidden border border-gray-200 rounded-lg">
+                  {units.length === 0 ? (
+                    <div className="py-6 px-4 text-sm text-gray-500">
+                      No units yet. Add or generate units to finish configuring this cabin.
+                    </div>
+                  ) : (
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Display name</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notes</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {units.map((unit) => {
+                          const isEditing = editingUnitId === unit.id;
+                          return (
+                            <tr key={unit.id} className="align-top">
+                              <td className="px-4 py-3 text-sm text-gray-900">
+                                {isEditing ? (
+                                  <>
+                                    <input
+                                      type="text"
+                                      value={editingUnitDraft.unitNumber}
+                                      onChange={(e) => handleEditingUnitChange('unitNumber', e.target.value)}
+                                      className={`block w-full rounded-md shadow-sm sm:text-sm ${
+                                        unitFormErrors.unitNumber
+                                          ? 'border-red-500 focus:ring-red-500 focus:border-red-500'
+                                          : 'border-gray-300 focus:ring-[#81887A] focus:border-[#81887A]'
+                                      }`}
+                                    />
+                                    {unitFormErrors.unitNumber && (
+                                      <p className="mt-1 text-xs text-red-600">{unitFormErrors.unitNumber}</p>
+                                    )}
+                                  </>
+                                ) : (
+                                  <span className="font-medium">{unit.unitNumber}</span>
+                                )}
+                                {!unit._id && !isEditing && (
+                                  <p className="mt-1 text-xs text-gray-400">Not saved yet</p>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-900">
+                                {isEditing ? (
+                                  <input
+                                    type="text"
+                                    value={editingUnitDraft.displayName}
+                                    onChange={(e) => handleEditingUnitChange('displayName', e.target.value)}
+                                    className="block w-full border-gray-300 rounded-md shadow-sm sm:text-sm focus:ring-[#81887A] focus:border-[#81887A]"
+                                  />
+                                ) : (
+                                  unit.displayName || '—'
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-900">
+                                {isEditing ? (
+                                  <textarea
+                                    rows={2}
+                                    value={editingUnitDraft.adminNotes}
+                                    onChange={(e) => handleEditingUnitChange('adminNotes', e.target.value)}
+                                    className="block w-full border-gray-300 rounded-md shadow-sm sm:text-sm focus:ring-[#81887A] focus:border-[#81887A]"
+                                  />
+                                ) : (
+                                  unit.adminNotes || '—'
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-sm">
+                                {isEditing ? (
+                                  <select
+                                    value={editingUnitDraft.isActive ? 'active' : 'inactive'}
+                                    onChange={(e) => handleEditingUnitChange('isActive', e.target.value === 'active')}
+                                    className="block w-full border-gray-300 rounded-md shadow-sm sm:text-sm focus:ring-[#81887A] focus:border-[#81887A]"
+                                  >
+                                    <option value="active">Active</option>
+                                    <option value="inactive">Inactive</option>
+                                  </select>
+                                ) : (
+                                  <span
+                                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                      unit.isActive !== false
+                                        ? 'bg-green-100 text-green-800'
+                                        : 'bg-gray-100 text-gray-800'
+                                    }`}
+                                  >
+                                    {unit.isActive !== false ? 'Active' : 'Inactive'}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-right text-sm">
+                                {isEditing ? (
+                                  <div className="flex justify-end gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={handleSubmitEditUnit}
+                                      className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-[#81887A] hover:bg-[#707668]"
+                                    >
+                                      Save
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={handleCancelEditUnit}
+                                      className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 hover:bg-gray-50"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex justify-end gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleStartEditUnit(unit)}
+                                      className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-[#81887A] hover:bg-[#707668]"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleUnitActive(unit.id)}
+                                      className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded-md text-gray-700 hover:bg-gray-50"
+                                    >
+                                      {unit.isActive !== false ? 'Deactivate' : 'Activate'}
+                                    </button>
+                                    {!unit._id && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveUnsavedUnit(unit.id)}
+                                        className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-red-600 hover:text-red-800"
+                                      >
+                                        Remove
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="fixed bottom-0 left-0 right-0 z-50">
+          <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8">
+            <div className="bg-white/95 backdrop-blur border-t border-gray-200 shadow-[0_-8px_24px_rgba(0,0,0,0.06)] sm:rounded-t-xl px-3 sm:px-4 py-3 flex flex-col items-stretch sm:items-end gap-2">
+              {createFormBlockingMessage && (
+                <p className="text-sm text-red-600 w-full sm:max-w-lg sm:text-right order-1" role="status">
+                  {createFormBlockingMessage}
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={handleSave}
+                disabled={saving || !isCreateFormValid}
+                className="order-2 inline-flex justify-center items-center px-4 py-3 text-sm font-medium text-white bg-[#81887A] rounded-lg hover:bg-[#707668] focus:outline-none focus:ring-2 focus:ring-[#81887A]/30 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full sm:w-auto shrink-0"
+              >
+                {saving ? 'Saving…' : 'Create cabin'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="px-4 sm:px-0 pb-28">
         <header className="mb-8">
@@ -1548,13 +2069,9 @@ const CabinEdit = () => {
           </div>
 
           <div className="mt-4">
-            <h1 className="text-xl font-semibold tracking-tight text-gray-900">
-              {isNew ? 'New Cabin' : 'Edit Cabin'}
-            </h1>
+            <h1 className="text-xl font-semibold tracking-tight text-gray-900">Edit Cabin</h1>
             <p className="mt-0.5 text-sm text-gray-500">
-              {isNew
-                ? 'Step 1: enter the essentials and create the listing. You can add photos and optional details right after.'
-                : `${formData.location || 'No location'} · ${inventoryType === 'multi' ? 'Multi-unit' : 'Single unit'}`}
+              {`${formData.location || 'No location'} · ${inventoryType === 'multi' ? 'Multi-unit' : 'Single unit'}`}
             </p>
             {saveMessage && (
               <p className="mt-2 text-xs text-green-700">{saveMessage}</p>
@@ -1598,22 +2115,12 @@ const CabinEdit = () => {
                 Upload and manage images. The first image is the cover.
               </p>
               {imagesNextStepBanner && canManageImages && (
-                <div
-                  className="mt-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 rounded-lg border border-[#81887A]/35 bg-[#F4F1EC] px-4 py-3 text-sm text-gray-800"
+                <p
+                  className="mt-4 rounded-lg border border-[#81887A]/35 bg-[#F4F1EC] px-4 py-3 text-sm font-medium text-gray-900"
                   role="status"
                 >
-                  <p>
-                    <span className="font-medium text-gray-900">Cabin created. Next step: add photos.</span>{' '}
-                    Guests see these on search and the public listing.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setImagesNextStepBanner(false)}
-                    className="shrink-0 text-xs font-semibold uppercase tracking-wide text-[#81887A] hover:text-[#707668]"
-                  >
-                    Dismiss
-                  </button>
-                </div>
+                  Next step: add photos for this cabin.
+                </p>
               )}
             </div>
             <div className="border-t border-gray-100 px-4 sm:px-6 py-5">
@@ -1940,33 +2447,33 @@ const CabinEdit = () => {
 
         {inventoryType === 'multi' && (
           <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
-            <div className="px-4 py-5 sm:px-6 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-              <div>
+            <div className="px-4 py-5 sm:px-6 flex flex-col gap-4">
+              <div className="min-w-0">
                 <h3 className="text-lg leading-6 font-medium text-gray-900">Units & inventory</h3>
                 <p className="mt-1 text-sm text-gray-500">
                   Use this when you have several identical units. Guests book the group; the system auto-assigns an available unit.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-gray-100 text-gray-800">
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                <span className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-gray-100 text-gray-800 w-fit max-w-full">
                   Total units: {units.length} • Active: {activeUnitsCount}
                 </span>
-              </div>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <button
-                  type="button"
-                  onClick={handleGenerateUnits}
-                  className="inline-flex items-center justify-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#81887A]"
-                >
-                  Generate units
-                </button>
-                <button
-                  type="button"
-                  onClick={handleAddUnitQuick}
-                  className="inline-flex items-center justify-center px-3 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-[#81887A] hover:bg-[#707668] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#81887A]"
-                >
-                  Add unit
-                </button>
+                <div className="flex flex-col sm:flex-row flex-wrap gap-2 w-full sm:w-auto sm:justify-end shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleGenerateUnits}
+                    className="inline-flex items-center justify-center px-3 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#81887A]"
+                  >
+                    Generate units
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddUnitQuick}
+                    className="inline-flex items-center justify-center px-3 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-[#81887A] hover:bg-[#707668] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#81887A]"
+                  >
+                    Add unit
+                  </button>
+                </div>
               </div>
             </div>
             <div className="border-t border-gray-100 px-6 py-5 space-y-6">
@@ -2169,44 +2676,22 @@ const CabinEdit = () => {
           </div>
         )}
 
-          {isNew && !createOptionalExpanded && (
-            <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
-              <div className="px-6 py-5 space-y-2">
-                <p className="text-sm font-medium text-gray-900">Optional details</p>
-                <p className="text-sm text-gray-600">
-                  Transport, blocked dates, arrival guide, highlights, and more can be added after the cabin exists — or expand now if you prefer.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setCreateOptionalExpanded(true)}
-                  className="inline-flex items-center px-4 py-2.5 text-sm font-medium text-[#81887A] border border-[#81887A] rounded-lg hover:bg-[#81887A]/5"
-                >
-                  Show optional fields
-                </button>
-              </div>
+          <div className="bg-white rounded-xl border border-dashed border-[#81887A]/40 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+            <div className="px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <p className="text-sm text-gray-700">
+                <span className="font-medium text-gray-900">The Valley preset</span>
+                {' — '}
+                Fills transport, packing list, and arrival guide defaults only (not name, price, or location).
+              </p>
+              <button
+                type="button"
+                onClick={applyValleyGuidePreset}
+                className="shrink-0 inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-[#81887A] rounded-lg hover:bg-[#707668]"
+              >
+                Use The Valley preset
+              </button>
             </div>
-          )}
-
-          {(!isNew || createOptionalExpanded) && (
-          <>
-          {isNew && createOptionalExpanded && (
-            <div className="bg-white rounded-xl border border-dashed border-[#81887A]/40 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
-              <div className="px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <p className="text-sm text-gray-700">
-                  <span className="font-medium text-gray-900">The Valley preset</span>
-                  {' — '}
-                  Fills transport, packing list, and arrival guide defaults only (not name, price, or location).
-                </p>
-                <button
-                  type="button"
-                  onClick={applyValleyGuidePreset}
-                  className="shrink-0 inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-[#81887A] rounded-lg hover:bg-[#707668]"
-                >
-                  Use The Valley preset
-                </button>
-              </div>
-            </div>
-          )}
+          </div>
 
           {/* Highlights */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
@@ -2570,11 +3055,8 @@ const CabinEdit = () => {
               )}
             </div>
           </div>
-          </>
-          )}
         </div>
 
-        {(!isNew || createOptionalExpanded) && (
         <div className="lg:col-span-2 space-y-6">
         {/* Blocked Dates */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
@@ -2794,7 +3276,6 @@ const CabinEdit = () => {
           )}
         </div>
         </div>
-        )}
 
           {/* Right column: overview + actions */}
           <aside className="lg:col-span-1 space-y-6">
@@ -2835,11 +3316,6 @@ const CabinEdit = () => {
                 <h3 className="text-sm font-semibold text-gray-900">Completeness</h3>
               </div>
               <div className="border-t border-gray-100 px-6 py-5 space-y-2">
-                {isNew && (
-                  <p className="text-xs text-gray-600 leading-relaxed mb-3 pb-3 border-b border-gray-100">
-                    Images are added after first save — you’ll go straight to the Images tab next. This checklist is for your planning only.
-                  </p>
-                )}
                 {(() => {
                   const hasBasic = Boolean(formData.name && formData.location && formData.description && Number(formData.capacity) > 0);
                   const hasPricing = Number(formData.pricePerNight) > 0 && Number(formData.minNights) > 0;
@@ -2857,33 +3333,20 @@ const CabinEdit = () => {
                   ];
                   return (
                     <ul className="space-y-1">
-                      {items.map(([label, ok]) => {
-                        const isImageRow = label === 'Images' || label === 'Cover set';
-                        const pendingAfterSave = isNew && isImageRow && !ok;
-                        return (
-                          <li key={label} className="flex items-center justify-between text-sm gap-2">
-                            <span className="text-gray-700">{label}</span>
-                            <span
-                              className={
-                                ok
-                                  ? 'text-green-700 shrink-0'
-                                  : pendingAfterSave
-                                    ? 'text-gray-600 text-right text-xs max-w-[11rem] shrink-0'
-                                    : 'text-gray-400 shrink-0'
-                              }
-                            >
-                              {ok ? 'Complete' : pendingAfterSave ? 'After first save' : 'Missing'}
-                            </span>
-                          </li>
-                        );
-                      })}
+                      {items.map(([label, ok]) => (
+                        <li key={label} className="flex items-center justify-between text-sm gap-2">
+                          <span className="text-gray-700">{label}</span>
+                          <span className={ok ? 'text-green-700 shrink-0' : 'text-gray-400 shrink-0'}>
+                            {ok ? 'Complete' : 'Missing'}
+                          </span>
+                        </li>
+                      ))}
                     </ul>
                   );
                 })()}
               </div>
             </div>
 
-            {!isNew && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
               <div className="px-6 py-5">
                 <h3 className="text-sm font-semibold text-gray-900">Quick actions</h3>
@@ -2936,7 +3399,6 @@ const CabinEdit = () => {
                 </button>
               </div>
             </div>
-            )}
 
             {/* Save state */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
@@ -2944,30 +3406,12 @@ const CabinEdit = () => {
                 <h3 className="text-sm font-semibold text-gray-900">Save state</h3>
               </div>
               <div className="border-t border-gray-100 px-6 py-5">
-                {isNew ? (
-                  <>
-                    <p className="text-sm text-gray-600">
-                      {isCreateFormValid ? 'Ready to create' : 'Draft — not saved yet'}
-                    </p>
-                    <p className="mt-1 text-xs text-gray-500">
-                      {isCreateFormValid
-                        ? 'Required fields are filled. Use Create cabin below.'
-                        : 'This listing does not exist until you create it. Add name, description, location, pricing, and capacity (and units if multi-unit).'}
-                    </p>
-                    <p className="mt-2 text-xs text-[#81887A] font-medium">
-                      Images are added after first save.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-sm text-gray-600">
-                      {isDirty ? 'Unsaved changes' : 'Saved'}
-                    </p>
-                    <p className="mt-1 text-xs text-gray-400">
-                      {saveMessage ? saveMessage : (isDirty ? 'Remember to save your changes.' : 'All changes are saved.')}
-                    </p>
-                  </>
-                )}
+                <p className="text-sm text-gray-600">
+                  {isDirty ? 'Unsaved changes' : 'Saved'}
+                </p>
+                <p className="mt-1 text-xs text-gray-400">
+                  {saveMessage ? saveMessage : (isDirty ? 'Remember to save your changes.' : 'All changes are saved.')}
+                </p>
               </div>
             </div>
           </aside>
@@ -2978,28 +3422,10 @@ const CabinEdit = () => {
             <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8">
               <div className="bg-white/95 backdrop-blur border-t border-gray-200 shadow-[0_-8px_24px_rgba(0,0,0,0.06)] sm:rounded-t-xl px-3 sm:px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div className="text-sm text-gray-700">
-                  {isNew ? (
-                    <div className="min-w-0 flex flex-col sm:flex-row sm:items-baseline sm:flex-wrap gap-1 sm:gap-x-2">
-                      <span className="font-medium">
-                        {isCreateFormValid ? 'Ready to create' : 'Draft — not saved yet'}
-                      </span>
-                      <span className="hidden sm:inline text-gray-500">
-                        {isCreateFormValid
-                          ? 'Press Create cabin to save to the database.'
-                          : 'Fill required fields to enable Create cabin.'}
-                      </span>
-                      <span className="text-xs sm:text-sm text-[#81887A] font-medium sm:ml-0 sm:w-full sm:mt-0.5">
-                        Images are added after first save.
-                      </span>
-                    </div>
-                  ) : (
-                    <>
-                      <span className="font-medium">{isDirty ? 'Unsaved changes' : 'Saved'}</span>
-                      <span className="hidden sm:inline text-gray-500 ml-2">
-                        {isDirty ? 'Your edits haven’t been saved yet.' : 'All changes are saved.'}
-                      </span>
-                    </>
-                  )}
+                  <span className="font-medium">{isDirty ? 'Unsaved changes' : 'Saved'}</span>
+                  <span className="hidden sm:inline text-gray-500 ml-2">
+                    {isDirty ? 'Your edits haven’t been saved yet.' : 'All changes are saved.'}
+                  </span>
                 </div>
                 <div className="flex items-center gap-2 w-full sm:w-auto">
                   <button
@@ -3013,10 +3439,10 @@ const CabinEdit = () => {
                   <button
                     type="button"
                     onClick={handleSave}
-                    disabled={saving || (isNew ? !isCreateFormValid : !isDirty)}
+                    disabled={saving || !isDirty}
                     className="inline-flex justify-center items-center px-4 py-3 text-sm font-medium text-white bg-[#81887A] rounded-lg hover:bg-[#707668] focus:outline-none focus:ring-2 focus:ring-[#81887A]/30 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full sm:w-auto"
                   >
-                    {saving ? 'Saving…' : (isNew ? 'Create cabin' : 'Save changes')}
+                    {saving ? 'Saving…' : 'Save changes'}
                   </button>
                 </div>
               </div>
