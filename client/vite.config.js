@@ -39,7 +39,8 @@ export default defineConfig({
         ],
         // Iframe PDF navigations must not receive index.html (Workbox NavigationRoute).
         // Without /uploads/ and .pdf here, embedded legal PDFs load the SPA inside the iframe.
-        navigateFallbackDenylist: [/^\/api\//, /^\/uploads\//, /\.pdf$/i],
+        // Match .pdf before end or query (pathname-only matchers may still see search in some paths).
+        navigateFallbackDenylist: [/^\/api\//, /^\/uploads\//, /\.pdf($|\?)/i],
         runtimeCaching: [
           {
             urlPattern: ({ url }) => url.pathname.startsWith('/guides/the-cabin/'),
