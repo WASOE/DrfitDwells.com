@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { uploadCabinImage, updateCabinImage, reorderCabinImages, deleteCabinImage, batchUpdateCabinImages } from '../../api/adminImages';
 import { reviewAPI } from '../../services/api';
+import { VALLEY_GUIDE_ARRIVAL_PRESET } from '../../data/valleyCabinAdminPreset';
 import axios from 'axios';
 
 const CabinEdit = () => {
@@ -83,6 +84,10 @@ const CabinEdit = () => {
   const [unitsMessage, setUnitsMessage] = useState('');
   const [preArrivalOpen, setPreArrivalOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  /** On /new: optional sections (highlights, transport, arrival…) hidden until expanded. */
+  const [createOptionalExpanded, setCreateOptionalExpanded] = useState(false);
+  /** After create redirect: nudge user to upload images. */
+  const [imagesNextStepBanner, setImagesNextStepBanner] = useState(false);
   const initialSnapshotRef = useRef(null);
   const normalizeUnit = useCallback((unit) => ({
     _id: unit?._id || null,
@@ -549,6 +554,56 @@ const CabinEdit = () => {
     }
   }, [buildSnapshot]);
 
+  /** Create flow: enable primary button from required fields (not edit dirty tracking). */
+  const isCreateFormValid = useMemo(() => {
+    if (!isNew) return true;
+    const nameOk = typeof formData.name === 'string' && formData.name.trim().length > 0;
+    const descOk = typeof formData.description === 'string' && formData.description.trim().length > 0;
+    const locOk = typeof formData.location === 'string' && formData.location.trim().length > 0;
+    const cap = Number(formData.capacity);
+    const capOk = Number.isInteger(cap) && cap >= 1;
+    const price = Number(formData.pricePerNight);
+    const priceOk = Number.isFinite(price) && price > 0;
+    const mn = Number(formData.minNights);
+    const mnOk = Number.isInteger(mn) && mn >= 1;
+    if (!nameOk || !descOk || !locOk || !capOk || !priceOk || !mnOk) return false;
+    if (inventoryType === 'multi') {
+      const desired = Number(unitCount);
+      if (!Number.isInteger(desired) || desired < 1) return false;
+      if (units.length === 0) return false;
+      if (!units.some((u) => u.isActive !== false)) return false;
+      if (desired !== units.length) return false;
+    }
+    return true;
+  }, [
+    isNew,
+    formData.name,
+    formData.description,
+    formData.location,
+    formData.capacity,
+    formData.pricePerNight,
+    formData.minNights,
+    inventoryType,
+    unitCount,
+    units
+  ]);
+
+  const applyValleyGuidePreset = useCallback(() => {
+    const p = VALLEY_GUIDE_ARRIVAL_PRESET;
+    setFormData((prev) => ({
+      ...prev,
+      transportOptions: p.transportOptions.map((o) => ({ ...o })),
+      meetingPoint: { ...p.meetingPoint },
+      arrivalGuideUrl: p.arrivalGuideUrl,
+      safetyNotes: p.safetyNotes,
+      emergencyContact: p.emergencyContact,
+      arrivalWindowDefault: p.arrivalWindowDefault,
+      transportCutoffs: p.transportCutoffs.map((c) => ({ ...c }))
+    }));
+    setPackingListText(p.packingListText);
+    setSaveMessage('');
+  }, []);
+
   const discardChanges = useCallback(() => {
     const snap = initialSnapshotRef.current;
     if (!snap) return;
@@ -603,12 +658,19 @@ const CabinEdit = () => {
   }, [multiUnitEnabled]);
 
   useEffect(() => {
-    if (location.state?.successMessage) {
-      setSaveMessage(location.state.successMessage);
+    const { successMessage, focusImagesTab } = location.state || {};
+    if (successMessage) {
+      setSaveMessage(successMessage);
       setTimeout(() => setSaveMessage(''), 3000);
+    }
+    if (focusImagesTab && !isNew) {
+      setActiveTab('images');
+      setImagesNextStepBanner(true);
+    }
+    if (successMessage || focusImagesTab) {
       navigate(location.pathname.replace(/\/$/, ''), { replace: true, state: {} });
     }
-  }, [location, navigate]);
+  }, [location, navigate, isNew]);
 
   const loadReviews = async () => {
     if (!id || isNew) return;
@@ -1383,7 +1445,10 @@ const CabinEdit = () => {
           const createdCabin = data.data?.cabin;
           if (createdCabin?._id) {
             navigate(`/admin/cabins/${createdCabin._id}`, {
-              state: { successMessage: 'Cabin created successfully' }
+              state: {
+                successMessage: 'Cabin created successfully',
+                focusImagesTab: true
+              }
             });
             return;
           }
@@ -1487,7 +1552,9 @@ const CabinEdit = () => {
               {isNew ? 'New Cabin' : 'Edit Cabin'}
             </h1>
             <p className="mt-0.5 text-sm text-gray-500">
-              {isNew ? 'Create a new cabin listing and configure its booking details.' : `${formData.location || 'No location'} · ${inventoryType === 'multi' ? 'Multi-unit' : 'Single unit'}`}
+              {isNew
+                ? 'Step 1: enter the essentials and create the listing. You can add photos and optional details right after.'
+                : `${formData.location || 'No location'} · ${inventoryType === 'multi' ? 'Multi-unit' : 'Single unit'}`}
             </p>
             {saveMessage && (
               <p className="mt-2 text-xs text-green-700">{saveMessage}</p>
@@ -1530,13 +1597,31 @@ const CabinEdit = () => {
               <p className="mt-0.5 text-sm text-gray-500">
                 Upload and manage images. The first image is the cover.
               </p>
+              {imagesNextStepBanner && canManageImages && (
+                <div
+                  className="mt-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 rounded-lg border border-[#81887A]/35 bg-[#F4F1EC] px-4 py-3 text-sm text-gray-800"
+                  role="status"
+                >
+                  <p>
+                    <span className="font-medium text-gray-900">Next step:</span>{' '}
+                    Add at least one photo — guests see these on search and the public listing.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setImagesNextStepBanner(false)}
+                    className="shrink-0 text-xs font-semibold uppercase tracking-wide text-[#81887A] hover:text-[#707668]"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              )}
             </div>
             <div className="border-t border-gray-100 px-4 sm:px-6 py-5">
               {!canManageImages ? (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-950">
                   <p className="font-medium">Save the cabin first</p>
                   <p className="mt-1 text-amber-900/90">
-                    Image uploads need a cabin record. Fill in basic information and press &quot;Save changes&quot;.
+                    Image uploads need a cabin record. Fill in basic information and press &quot;Create cabin&quot; or &quot;Save changes&quot;.
                     You will be taken to the edit page where uploads are enabled.
                   </p>
                   <button
@@ -2084,6 +2169,45 @@ const CabinEdit = () => {
           </div>
         )}
 
+          {isNew && !createOptionalExpanded && (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+              <div className="px-6 py-5 space-y-2">
+                <p className="text-sm font-medium text-gray-900">Optional details</p>
+                <p className="text-sm text-gray-600">
+                  Transport, blocked dates, arrival guide, highlights, and more can be added after the cabin exists — or expand now if you prefer.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setCreateOptionalExpanded(true)}
+                  className="inline-flex items-center px-4 py-2.5 text-sm font-medium text-[#81887A] border border-[#81887A] rounded-lg hover:bg-[#81887A]/5"
+                >
+                  Show optional fields
+                </button>
+              </div>
+            </div>
+          )}
+
+          {(!isNew || createOptionalExpanded) && (
+          <>
+          {isNew && createOptionalExpanded && (
+            <div className="bg-white rounded-xl border border-dashed border-[#81887A]/40 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
+              <div className="px-6 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <p className="text-sm text-gray-700">
+                  <span className="font-medium text-gray-900">The Valley preset</span>
+                  {' — '}
+                  Fills transport, packing list, and arrival guide defaults only (not name, price, or location).
+                </p>
+                <button
+                  type="button"
+                  onClick={applyValleyGuidePreset}
+                  className="shrink-0 inline-flex items-center px-4 py-2 text-sm font-medium text-white bg-[#81887A] rounded-lg hover:bg-[#707668]"
+                >
+                  Use The Valley preset
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Highlights */}
           <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
             <div className="px-6 py-5">
@@ -2446,8 +2570,12 @@ const CabinEdit = () => {
               )}
             </div>
           </div>
+          </>
+          )}
         </div>
 
+        {(!isNew || createOptionalExpanded) && (
+        <div className="lg:col-span-2 space-y-6">
         {/* Blocked Dates */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
           <div className="px-4 py-5 sm:px-6">
@@ -2665,6 +2793,8 @@ const CabinEdit = () => {
           </div>
           )}
         </div>
+        </div>
+        )}
 
           {/* Right column: overview + actions */}
           <aside className="lg:col-span-1 space-y-6">
@@ -2736,7 +2866,7 @@ const CabinEdit = () => {
               </div>
             </div>
 
-            {/* Quick actions */}
+            {!isNew && (
             <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
               <div className="px-6 py-5">
                 <h3 className="text-sm font-semibold text-gray-900">Quick actions</h3>
@@ -2789,6 +2919,7 @@ const CabinEdit = () => {
                 </button>
               </div>
             </div>
+            )}
 
             {/* Save state */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden">
@@ -2796,12 +2927,27 @@ const CabinEdit = () => {
                 <h3 className="text-sm font-semibold text-gray-900">Save state</h3>
               </div>
               <div className="border-t border-gray-100 px-6 py-5">
-                <p className="text-sm text-gray-600">
-                  {isDirty ? 'Unsaved changes' : 'Saved'}
-                </p>
-                <p className="mt-1 text-xs text-gray-400">
-                  {saveMessage ? saveMessage : (isDirty ? 'Remember to save your changes.' : 'All changes are saved.')}
-                </p>
+                {isNew ? (
+                  <>
+                    <p className="text-sm text-gray-600">
+                      {isCreateFormValid ? 'Ready to create' : 'Draft — not saved yet'}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {isCreateFormValid
+                        ? 'Required fields are filled. Use Create cabin below.'
+                        : 'This listing does not exist until you create it. Add name, description, location, pricing, and capacity (and units if multi-unit).'}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm text-gray-600">
+                      {isDirty ? 'Unsaved changes' : 'Saved'}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-400">
+                      {saveMessage ? saveMessage : (isDirty ? 'Remember to save your changes.' : 'All changes are saved.')}
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           </aside>
@@ -2812,10 +2958,25 @@ const CabinEdit = () => {
             <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8">
               <div className="bg-white/95 backdrop-blur border-t border-gray-200 shadow-[0_-8px_24px_rgba(0,0,0,0.06)] sm:rounded-t-xl px-3 sm:px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div className="text-sm text-gray-700">
-                  <span className="font-medium">{isDirty ? 'Unsaved changes' : 'Saved'}</span>
-                  <span className="hidden sm:inline text-gray-500 ml-2">
-                    {isDirty ? 'Your edits haven’t been saved yet.' : 'All changes are saved.'}
-                  </span>
+                  {isNew ? (
+                    <>
+                      <span className="font-medium">
+                        {isCreateFormValid ? 'Ready to create' : 'Draft — not saved yet'}
+                      </span>
+                      <span className="hidden sm:inline text-gray-500 ml-2">
+                        {isCreateFormValid
+                          ? 'Press Create cabin to save to the database.'
+                          : 'Fill required fields to enable Create cabin.'}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-medium">{isDirty ? 'Unsaved changes' : 'Saved'}</span>
+                      <span className="hidden sm:inline text-gray-500 ml-2">
+                        {isDirty ? 'Your edits haven’t been saved yet.' : 'All changes are saved.'}
+                      </span>
+                    </>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 w-full sm:w-auto">
                   <button
@@ -2829,10 +2990,10 @@ const CabinEdit = () => {
                   <button
                     type="button"
                     onClick={handleSave}
-                    disabled={saving || !isDirty}
+                    disabled={saving || (isNew ? !isCreateFormValid : !isDirty)}
                     className="inline-flex justify-center items-center px-4 py-3 text-sm font-medium text-white bg-[#81887A] rounded-lg hover:bg-[#707668] focus:outline-none focus:ring-2 focus:ring-[#81887A]/30 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full sm:w-auto"
                   >
-                    {saving ? 'Saving…' : 'Save changes'}
+                    {saving ? 'Saving…' : (isNew ? 'Create cabin' : 'Save changes')}
                   </button>
                 </div>
               </div>
