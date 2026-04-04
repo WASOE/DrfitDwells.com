@@ -25,19 +25,34 @@ router.get('/cabins/:id/reviews', validateId('id'), async (req, res) => {
     const minRatingNum = parseInt(minRating, 10) || 2;
     const skip = (pageNum - 1) * limitNum;
 
-    // Check if ID is a CabinType (for multi-unit properties like A-frame)
+    // Resolve review owner IDs for both single-cabin and multi-unit entities.
     let cabinIds = [];
     const cabinType = await CabinType.findById(id);
     if (cabinType) {
-      // If it's a CabinType, find all Cabin instances with this cabinTypeRef
-      const cabins = await Cabin.find({ cabinTypeRef: id }, '_id');
-      cabinIds = cabins.map(c => c._id);
-      // Also include the CabinType ID itself in case reviews are linked directly
+      const cabins = await Cabin.find(
+        { $or: [{ cabinTypeRef: id }, { cabinTypeId: id }] },
+        '_id'
+      );
+      cabinIds = cabins.map((c) => c._id);
       cabinIds.push(new mongoose.Types.ObjectId(id));
     } else {
-      // Regular Cabin ID
+      const cabin = await Cabin.findById(id).select('_id inventoryType cabinTypeId');
       cabinIds = [new mongoose.Types.ObjectId(id)];
+
+      if (cabin && cabin.inventoryType === 'multi' && cabin.cabinTypeId) {
+        const typeId = cabin.cabinTypeId.toString();
+        const relatedCabins = await Cabin.find(
+          { $or: [{ cabinTypeRef: typeId }, { cabinTypeId: typeId }] },
+          '_id'
+        );
+        cabinIds.push(new mongoose.Types.ObjectId(typeId));
+        cabinIds.push(...relatedCabins.map((c) => c._id));
+      }
     }
+
+    cabinIds = Array.from(new Set(cabinIds.map((value) => value.toString()))).map(
+      (value) => new mongoose.Types.ObjectId(value)
+    );
 
     // Build query - only approved reviews, minRating filter, no deleted
     // For CabinType, search across all related Cabin instances

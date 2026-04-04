@@ -58,7 +58,7 @@ router.get('/', [
     }
 
     // Guest-facing cabins only (exclude validation fixture names)
-    const allCabins = await Cabin.find(guestFacingCabinMatch());
+    const allCabins = await Cabin.find({ ...guestFacingCabinMatch(), inventoryType: { $ne: 'multi' } });
 
     const cabinResults = [];
     for (const cabin of allCabins) {

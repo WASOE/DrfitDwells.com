@@ -4,6 +4,7 @@ const { adminAuth } = require('../middleware/adminAuth');
 const mongoose = require('mongoose');
 const Review = require('../models/Review');
 const Cabin = require('../models/Cabin');
+const CabinType = require('../models/CabinType');
 const { adminModuleWriteGate } = require('../middleware/adminModuleCutoverEnforcement');
 
 const router = express.Router();
@@ -532,16 +533,20 @@ router.post('/recalc/:cabinId', adminModuleWriteGate('reviews_communications'), 
       });
     }
 
-    await recalculateCabinStats(cabinId);
+    const statsResult = await recalculateCabinStats(cabinId);
 
-    const updatedCabin = await Cabin.findById(cabinId);
+    const statsDoc =
+      statsResult && statsResult.kind === 'cabinType'
+        ? await CabinType.findById(statsResult.id).select('reviewsCount averageRating')
+        : await Cabin.findById(cabinId).select('reviewsCount averageRating');
+
     res.json({
       success: true,
       message: 'Cabin stats recalculated',
       data: {
         cabin: {
-          reviewsCount: updatedCabin.reviewsCount,
-          averageRating: updatedCabin.averageRating
+          reviewsCount: statsDoc?.reviewsCount || 0,
+          averageRating: statsDoc?.averageRating || 0
         }
       }
     });
@@ -556,14 +561,38 @@ router.post('/recalc/:cabinId', adminModuleWriteGate('reviews_communications'), 
 });
 
 // Helper: Recalculate cabin review statistics
-async function recalculateCabinStats(cabinId) {
+async function recalculateCabinStats(entityId) {
+  const cabin = await Cabin.findById(entityId).select('_id inventoryType cabinTypeId');
+  let targetKind = 'cabin';
+  let targetId = entityId;
+  let reviewOwnerId = entityId;
+
+  if (cabin) {
+    if (cabin.inventoryType === 'multi' && cabin.cabinTypeId) {
+      targetKind = 'cabinType';
+      targetId = cabin.cabinTypeId.toString();
+      reviewOwnerId = cabin.cabinTypeId.toString();
+    }
+  } else {
+    const cabinType = await CabinType.findById(entityId).select('_id');
+    if (!cabinType) {
+      return null;
+    }
+    targetKind = 'cabinType';
+    targetId = cabinType._id.toString();
+    reviewOwnerId = cabinType._id.toString();
+  }
+
   const stats = await Review.aggregate([
     {
       $match: {
-        cabinId: new mongoose.Types.ObjectId(cabinId),
+        cabinId: new mongoose.Types.ObjectId(reviewOwnerId),
         status: 'approved',
         rating: { $gte: 2 },
-        deletedAt: { $exists: false }
+        $or: [
+          { deletedAt: { $exists: false } },
+          { deletedAt: null }
+        ]
       }
     },
     {
@@ -576,12 +605,25 @@ async function recalculateCabinStats(cabinId) {
   ]);
 
   const reviewsCount = stats[0]?.count || 0;
-  const averageRating = stats[0]?.avgRating || 0;
+  const averageRating = Math.round(((stats[0]?.avgRating || 0) * 10)) / 10;
 
-  await Cabin.findByIdAndUpdate(cabinId, {
+  const payload = {
     reviewsCount,
-    averageRating: Math.round(averageRating * 10) / 10 // Round to 1 decimal
-  });
+    averageRating
+  };
+
+  if (targetKind === 'cabinType') {
+    await CabinType.findByIdAndUpdate(targetId, payload);
+  } else {
+    await Cabin.findByIdAndUpdate(targetId, payload);
+  }
+
+  return {
+    kind: targetKind,
+    id: targetId,
+    reviewsCount,
+    averageRating
+  };
 }
 
 module.exports = router;
