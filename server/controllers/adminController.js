@@ -16,6 +16,7 @@ const {
   FIXTURE_BOOKING_EMAIL_PATTERN
 } = require('../utils/fixtureExclusion');
 const { processMetaPurchaseAfterConfirm } = require('../services/bookingPurchaseTracking');
+const { syncMultiUnitGalleryToCabinType } = require('../services/syncMultiUnitGalleryToCabinType');
 
 const DEFAULT_CABIN_IMAGE_URL = 'https://placehold.co/1200x800?text=Cabin';
 
@@ -1533,6 +1534,8 @@ const updateCabin = async (req, res) => {
     }
 
     await cabin.save();
+
+    await syncMultiUnitGalleryToCabinType(cabin);
 
     const responseCabin = await Cabin.findById(cabin._id).lean();
     let multiUnit = null;

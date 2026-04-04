@@ -1,9 +1,15 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { uploadCabinImage, updateCabinImage, reorderCabinImages, deleteCabinImage, batchUpdateCabinImages } from '../../api/adminImages';
 import { reviewAPI } from '../../services/api';
 import { VALLEY_GUIDE_ARRIVAL_PRESET } from '../../data/valleyCabinAdminPreset';
+import AdminGalleryLightbox from '../../components/admin/AdminGalleryLightbox';
 import axios from 'axios';
+
+/** Primary space tag from image.tags (stable helper for filters / memo). */
+function getPrimaryTag(img) {
+  return Array.isArray(img.tags) && img.tags.length > 0 ? img.tags[0] : null;
+}
 
 const CabinEdit = () => {
   const { id } = useParams();
@@ -892,17 +898,16 @@ const CabinEdit = () => {
     { value: 'other', label: 'Other' }
   ];
 
-  // Helper to get primary tag (first tag or null)
-  const getPrimaryTag = (img) => {
-    return Array.isArray(img.tags) && img.tags.length > 0 ? img.tags[0] : null;
-  };
-
-  // Filter images by space
-  const filteredImages = images.filter(img => {
-    if (spaceFilter === 'all') return true;
-    if (spaceFilter === 'unassigned') return !getPrimaryTag(img);
-    return getPrimaryTag(img) === spaceFilter;
-  });
+  // Filter images by space (memoized for lightbox sync + stable deps)
+  const filteredImages = useMemo(
+    () =>
+      images.filter((img) => {
+        if (spaceFilter === 'all') return true;
+        if (spaceFilter === 'unassigned') return !getPrimaryTag(img);
+        return getPrimaryTag(img) === spaceFilter;
+      }),
+    [images, spaceFilter]
+  );
 
   // Get unique spaces present in images
   const availableSpaces = useMemo(() => {
@@ -962,6 +967,11 @@ const CabinEdit = () => {
     try {
       const token = localStorage.getItem('adminToken');
       await updateCabinImage(cabinId, imageId, { alt }, token);
+      const { data } = await axios.get(`/api/admin/cabins/${cabinId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setImages(data.data.cabin.images);
+      setCabin((prev) => ({ ...prev, images: data.data.cabin.images }));
     } catch (err) {
       console.error('Update alt error:', err);
     }
@@ -1068,6 +1078,49 @@ const CabinEdit = () => {
   const ImagesTab = () => {
     const uploadInputRef = useRef(null);
     const [expandedImageId, setExpandedImageId] = useState(null);
+    const [previewImageId, setPreviewImageId] = useState(null);
+    const previewIndexRef = useRef(0);
+    const imgPointerRef = useRef({ down: false, x: 0, y: 0 });
+
+    const openPreview = useCallback(
+      (id) => {
+        const idx = filteredImages.findIndex((i) => i._id === id);
+        if (idx === -1) return;
+        previewIndexRef.current = idx;
+        setPreviewImageId(id);
+      },
+      [filteredImages]
+    );
+
+    useLayoutEffect(() => {
+      if (!previewImageId) return;
+
+      const inFull = images.some((i) => i._id === previewImageId);
+      const idx = filteredImages.findIndex((i) => i._id === previewImageId);
+
+      if (idx !== -1) {
+        previewIndexRef.current = idx;
+        return;
+      }
+
+      if (inFull) {
+        setPreviewImageId(null);
+        return;
+      }
+
+      const oldIdx = previewIndexRef.current;
+      if (filteredImages.length === 0) {
+        setPreviewImageId(null);
+        return;
+      }
+      if (oldIdx < filteredImages.length) {
+        setPreviewImageId(filteredImages[oldIdx]._id);
+      } else if (oldIdx > 0) {
+        setPreviewImageId(filteredImages[oldIdx - 1]._id);
+      } else {
+        setPreviewImageId(filteredImages[0]._id);
+      }
+    }, [images, spaceFilter, previewImageId, filteredImages]);
 
     const selectedCount = selectedImages.size;
     const canBulkSetCover = selectedCount === 1;
@@ -1238,7 +1291,30 @@ const CabinEdit = () => {
                 }`}
               >
                 <div className="relative">
-                  <img src={img.url} alt={img.alt || ''} className="w-full h-28 sm:h-36 object-cover" />
+                  <img
+                    src={img.url}
+                    alt={img.alt || ''}
+                    draggable={false}
+                    className="w-full h-28 sm:h-36 object-cover cursor-pointer"
+                    onPointerDown={(e) => {
+                      if (e.button !== 0) return;
+                      imgPointerRef.current = { down: true, x: e.clientX, y: e.clientY };
+                    }}
+                    onPointerCancel={() => {
+                      imgPointerRef.current = { down: false, x: 0, y: 0 };
+                    }}
+                    onPointerUp={(e) => {
+                      if (e.button !== 0 || !imgPointerRef.current.down) return;
+                      imgPointerRef.current.down = false;
+                      const { x, y } = imgPointerRef.current;
+                      const distSq = (e.clientX - x) ** 2 + (e.clientY - y) ** 2;
+                      if (distSq <= 25) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openPreview(img._id);
+                      }
+                    }}
+                  />
                   <label className="absolute top-2 left-2 inline-flex items-center justify-center w-6 h-6 rounded-md bg-white/90 border border-gray-200 shadow-sm">
                     <input
                       type="checkbox"
@@ -1274,6 +1350,13 @@ const CabinEdit = () => {
                         Set cover
                       </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => openPreview(img._id)}
+                      className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
+                    >
+                      Preview
+                    </button>
                     <button
                       type="button"
                       onClick={() => setExpandedImageId((cur) => (cur === img._id ? null : img._id))}
@@ -1338,6 +1421,24 @@ const CabinEdit = () => {
             )}
           </div>
         )}
+
+        <AdminGalleryLightbox
+          open={Boolean(previewImageId)}
+          images={filteredImages}
+          activeImageId={previewImageId || ''}
+          spaceTags={SPACE_TAGS}
+          getPrimaryTag={getPrimaryTag}
+          onClose={() => setPreviewImageId(null)}
+          onActiveChange={(id) => {
+            const i = filteredImages.findIndex((x) => x._id === id);
+            if (i !== -1) previewIndexRef.current = i;
+            setPreviewImageId(id);
+          }}
+          onSetCover={handleSetCover}
+          onUpdateTag={handleUpdateTag}
+          onSaveAlt={handleChangeAlt}
+          onDelete={handleRemoveImage}
+        />
       </div>
     );
   };

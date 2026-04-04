@@ -11,6 +11,7 @@ const fs = require('fs');
 const { requirePermission, ACTIONS } = require('../services/permissionService');
 const { appendAuditEvent } = require('../services/auditWriter');
 const { adminModuleWriteGate } = require('../middleware/adminModuleCutoverEnforcement');
+const { syncMultiUnitGalleryToCabinType } = require('../services/syncMultiUnitGalleryToCabinType');
 
 const router = express.Router();
 
@@ -100,6 +101,7 @@ router.post('/cabins/:id/images', validateId('id'), adminModuleWriteGate('cabins
     }
     
     await cabin.save();
+    await syncMultiUnitGalleryToCabinType(cabin);
     return res.json({ success: true, data: { image: imageDoc, images: cabin.images } });
   } catch (e) {
     return res.status(500).json({ success: false, message: e.message });
@@ -138,6 +140,7 @@ router.patch('/cabins/:id/images/:imageId', validateId('id'), validateId('imageI
     }
 
     await cabin.save();
+    await syncMultiUnitGalleryToCabinType(cabin);
     return res.json({ success: true, data: { images: cabin.images } });
   } catch (e) {
     return res.status(500).json({ success: false, message: e.message });
@@ -161,6 +164,7 @@ router.patch('/cabins/:id/images/reorder', adminModuleWriteGate('cabins'), async
       }
     });
     await cabin.save();
+    await syncMultiUnitGalleryToCabinType(cabin);
     return res.json({ success: true, data: { images: cabin.images } });
   } catch (e) {
     return res.status(500).json({ success: false, message: e.message });
@@ -206,6 +210,7 @@ router.patch('/cabins/:id/images/batch', adminModuleWriteGate('cabins'), async (
     }
 
     await cabin.save();
+    await syncMultiUnitGalleryToCabinType(cabin);
     return res.json({ success: true, data: { images: cabin.images } });
   } catch (e) {
     return res.status(500).json({ success: false, message: e.message });
@@ -269,6 +274,7 @@ router.delete('/cabins/:id/images/:imageId', validateId('id'), validateId('image
     }
 
     await cabin.save();
+    await syncMultiUnitGalleryToCabinType(cabin);
     return res.json({ success: true, data: { images: cabin.images } });
   } catch (e) {
     if (e.code === 'PERMISSION_DENIED') {
