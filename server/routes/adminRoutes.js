@@ -108,6 +108,47 @@ router.post('/cabins/:id/images', validateId('id'), adminModuleWriteGate('cabins
   }
 });
 
+// PATCH /api/admin/cabins/:id/images/reorder — MUST be registered before /images/:imageId or "reorder" is parsed as imageId → 400
+// body: { order: [{ imageId, sort, spaceOrder? }] } (preferred) or legacy raw array
+router.patch('/cabins/:id/images/reorder', validateId('id'), adminModuleWriteGate('cabins'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const raw = req.body;
+    const order = Array.isArray(raw?.order)
+      ? raw.order
+      : Array.isArray(raw)
+        ? raw
+        : [];
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[admin] PATCH cabins/:id/images/reorder matched', { cabinId: id, orderItems: order.length });
+    }
+    const cabin = await Cabin.findById(id);
+    if (!cabin) return res.status(404).json({ success: false, message: 'Cabin not found' });
+
+    const sortMap = new Map(
+      order.map((o) => [String(o.imageId), typeof o.sort === 'number' ? o.sort : Number(o.sort) || 0])
+    );
+    const spaceOrderMap = new Map(
+      order.map((o) => {
+        const so = o.spaceOrder;
+        const n = typeof so === 'number' ? so : Number(so);
+        return [String(o.imageId), Number.isFinite(n) ? n : undefined];
+      })
+    );
+    cabin.images.forEach((i) => {
+      const key = String(i._id);
+      if (sortMap.has(key)) i.sort = sortMap.get(key);
+      const so = spaceOrderMap.get(key);
+      if (so !== undefined) i.spaceOrder = so;
+    });
+    await cabin.save();
+    await syncMultiUnitGalleryToCabinType(cabin);
+    return res.json({ success: true, data: { images: cabin.images } });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+});
+
 // PATCH /api/admin/cabins/:id/images/:imageId  (alt, isCover, sort, tags, spaceOrder)
 router.patch('/cabins/:id/images/:imageId', validateId('id'), validateId('imageId'), adminModuleWriteGate('cabins'), async (req, res) => {
   try {
@@ -139,30 +180,6 @@ router.patch('/cabins/:id/images/:imageId', validateId('id'), validateId('imageI
       }
     }
 
-    await cabin.save();
-    await syncMultiUnitGalleryToCabinType(cabin);
-    return res.json({ success: true, data: { images: cabin.images } });
-  } catch (e) {
-    return res.status(500).json({ success: false, message: e.message });
-  }
-});
-
-// PATCH /api/admin/cabins/:id/images/reorder  body: [{imageId, sort, spaceOrder}]
-router.patch('/cabins/:id/images/reorder', adminModuleWriteGate('cabins'), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const order = Array.isArray(req.body) ? req.body : [];
-    const cabin = await Cabin.findById(id);
-    if (!cabin) return res.status(404).json({ success: false, message: 'Cabin not found' });
-
-    const sortMap = new Map(order.map(o => [o.imageId, o.sort]));
-    const spaceOrderMap = new Map(order.map(o => [o.imageId, o.spaceOrder]));
-    cabin.images.forEach(i => {
-      if (sortMap.has(i._id)) i.sort = sortMap.get(i._id);
-      if (spaceOrderMap.has(i._id) && spaceOrderMap.get(i._id) !== undefined) {
-        i.spaceOrder = spaceOrderMap.get(i._id);
-      }
-    });
     await cabin.save();
     await syncMultiUnitGalleryToCabinType(cabin);
     return res.json({ success: true, data: { images: cabin.images } });

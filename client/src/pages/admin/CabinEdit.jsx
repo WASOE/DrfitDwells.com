@@ -4,11 +4,22 @@ import { uploadCabinImage, updateCabinImage, reorderCabinImages, deleteCabinImag
 import { reviewAPI } from '../../services/api';
 import { VALLEY_GUIDE_ARRIVAL_PRESET } from '../../data/valleyCabinAdminPreset';
 import AdminGalleryLightbox from '../../components/admin/AdminGalleryLightbox';
+import CabinImageReorderModal from '../../components/admin/CabinImageReorderModal';
 import axios from 'axios';
 
 /** Primary space tag from image.tags (stable helper for filters / memo). */
 function getPrimaryTag(img) {
   return Array.isArray(img.tags) && img.tags.length > 0 ? img.tags[0] : null;
+}
+
+/** Admin grid order: cover first, then ascending `sort` (matches guest “cover first” rule). */
+function applyAdminImageSort(arr) {
+  return (arr || [])
+    .slice()
+    .sort(
+      (a, b) =>
+        (b?.isCover === true) - (a?.isCover === true) || (a.sort ?? 0) - (b.sort ?? 0)
+    );
 }
 
 const CabinEdit = () => {
@@ -437,7 +448,8 @@ const CabinEdit = () => {
   // Image management state
   const [selectedImages, setSelectedImages] = useState(new Set());
   const [spaceFilter, setSpaceFilter] = useState('all'); // 'all', 'unassigned', or a space tag
-  const [activeSpaceForReorder, setActiveSpaceForReorder] = useState(null); // null = global, or space tag
+  /** Lives on parent so refetch after reorder does not remount inline ImagesTab and reset modal. */
+  const [reorderModalOpen, setReorderModalOpen] = useState(false);
 
   useEffect(() => {
     if (isNew) {
@@ -445,6 +457,7 @@ const CabinEdit = () => {
       setLoading(false);
       setError('');
       setImages([]);
+      setReorderModalOpen(false);
       setReviews([]);
       setBlockedDatesText('');
       setPackingListText('');
@@ -462,6 +475,7 @@ const CabinEdit = () => {
     }
 
     const fetchCabin = async () => {
+      setReorderModalOpen(false);
       try {
         const token = localStorage.getItem('adminToken');
         const response = await fetch(`/api/admin/cabins/${id}`, {
@@ -541,7 +555,7 @@ const CabinEdit = () => {
           setUnitsError('');
           setPackingListText((cabinData.packingList || []).join('\n'));
           setHighlightsText((cabinData.highlights || []).join('\n'));
-          setImages((cabinData.images || []).slice().sort((a,b)=> (b.isCover - a.isCover) || (a.sort - b.sort)));
+          setImages(applyAdminImageSort(cabinData.images || []));
           setError('');
         } else if (response.status === 401) {
           localStorage.removeItem('adminToken');
@@ -909,16 +923,6 @@ const CabinEdit = () => {
     [images, spaceFilter]
   );
 
-  // Get unique spaces present in images
-  const availableSpaces = useMemo(() => {
-    const spaces = new Set();
-    images.forEach(img => {
-      const primary = getPrimaryTag(img);
-      if (primary) spaces.add(primary);
-    });
-    return Array.from(spaces).sort();
-  }, [images]);
-
   const cabinId = cabin?._id;
   const canManageImages = Boolean(cabinId);
   const canManageReviews = Boolean(cabinId);
@@ -936,9 +940,9 @@ const CabinEdit = () => {
     try {
       const token = localStorage.getItem('adminToken');
       const { data } = await uploadCabinImage(cabinId, file, token);
-      const sortedImages = data.data.images.slice().sort((a,b)=> (b.isCover - a.isCover) || (a.sort - b.sort));
+      const sortedImages = applyAdminImageSort(data.data.images);
       setImages(sortedImages);
-      setCabin(prev => ({ ...prev, images: data.data.images }));
+      setCabin((prev) => ({ ...prev, images: sortedImages }));
     } catch (err) {
       console.error('Upload error:', err);
       setError('Failed to upload image');
@@ -953,9 +957,9 @@ const CabinEdit = () => {
       const { data } = await axios.get(`/api/admin/cabins/${cabinId}`, { 
         headers: { Authorization: `Bearer ${localStorage.getItem('adminToken')}` } 
       });
-      const sortedImages = (data.data?.cabin?.images || []).slice().sort((a,b)=> (b.isCover - a.isCover) || (a.sort - b.sort));
+      const sortedImages = applyAdminImageSort(data.data?.cabin?.images || []);
       setImages(sortedImages);
-      setCabin(prev => ({ ...prev, images: data.data.cabin.images }));
+      setCabin((prev) => ({ ...prev, images: sortedImages }));
     } catch (err) {
       console.error('Set cover error:', err);
       setError('Failed to set cover image');
@@ -970,26 +974,51 @@ const CabinEdit = () => {
       const { data } = await axios.get(`/api/admin/cabins/${cabinId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setImages(data.data.cabin.images);
-      setCabin((prev) => ({ ...prev, images: data.data.cabin.images }));
+      const sortedImages = applyAdminImageSort(data.data.cabin.images);
+      setImages(sortedImages);
+      setCabin((prev) => ({ ...prev, images: sortedImages }));
     } catch (err) {
       console.error('Update alt error:', err);
     }
   };
 
-  const handleDragEnd = async (newOrder) => {
-    if (!cabinId) return;
+  const persistGalleryOrder = async (orderedImages) => {
+    if (!cabinId) return undefined;
+    const token = localStorage.getItem('adminToken');
+    const order = orderedImages.map((it, i) => ({
+      imageId: String(it._id),
+      sort: i,
+      spaceOrder:
+        typeof it.spaceOrder === 'number' && !Number.isNaN(it.spaceOrder) ? it.spaceOrder : 0
+    }));
+    const res = await reorderCabinImages(cabinId, order, token);
+    const fromApi = res?.data?.data?.images;
+    const sorted = Array.isArray(fromApi)
+      ? applyAdminImageSort(fromApi)
+      : applyAdminImageSort(orderedImages.map((img, i) => ({ ...img, sort: i })));
+    setImages(sorted);
+    setCabin((prev) => ({ ...prev, images: sorted }));
+    return sorted;
+  };
+
+  const handlePersistGalleryOrder = async (orderedImages) => {
     try {
-      const token = localStorage.getItem('adminToken');
-      await reorderCabinImages(cabinId, newOrder, token);
-      const { data } = await axios.get(`/api/admin/cabins/${cabinId}`, { 
-        headers: { Authorization: `Bearer ${token}` } 
-      });
-      setImages(data.data.cabin.images);
-      setCabin(prev => ({ ...prev, images: data.data.cabin.images }));
+      return await persistGalleryOrder(orderedImages);
     } catch (err) {
       console.error('Reorder error:', err);
-      setError('Failed to reorder images');
+      const msg =
+        err?.response?.data?.message ||
+        err?.response?.data?.errors?.[0]?.msg ||
+        err?.message ||
+        '';
+      if (import.meta.env.DEV) {
+        console.warn('[persistGalleryOrder] PATCH failed', {
+          count: orderedImages?.length,
+          response: err?.response?.data
+        });
+      }
+      setError(msg ? `Failed to reorder images: ${msg}` : 'Failed to reorder images');
+      throw err;
     }
   };
 
@@ -1003,8 +1032,9 @@ const CabinEdit = () => {
       const { data } = await axios.get(`/api/admin/cabins/${cabinId}`, { 
         headers: { Authorization: `Bearer ${token}` } 
       });
-      setImages(data.data.cabin.images);
-      setCabin(prev => ({ ...prev, images: data.data.cabin.images }));
+      const sortedImages = applyAdminImageSort(data.data.cabin.images);
+      setImages(sortedImages);
+      setCabin((prev) => ({ ...prev, images: sortedImages }));
       setSelectedImages(prev => {
         const next = new Set(prev);
         next.delete(imageId);
@@ -1049,8 +1079,9 @@ const CabinEdit = () => {
       const { data } = await axios.get(`/api/admin/cabins/${cabinId}`, { 
         headers: { Authorization: `Bearer ${token}` } 
       });
-      setImages(data.data.cabin.images);
-      setCabin(prev => ({ ...prev, images: data.data.cabin.images }));
+      const sortedImages = applyAdminImageSort(data.data.cabin.images);
+      setImages(sortedImages);
+      setCabin((prev) => ({ ...prev, images: sortedImages }));
       setSelectedImages(new Set());
     } catch (err) {
       console.error('Bulk tag error:', err);
@@ -1066,8 +1097,9 @@ const CabinEdit = () => {
       const { data } = await axios.get(`/api/admin/cabins/${cabinId}`, { 
         headers: { Authorization: `Bearer ${token}` } 
       });
-      setImages(data.data.cabin.images);
-      setCabin(prev => ({ ...prev, images: data.data.cabin.images }));
+      const sortedImages = applyAdminImageSort(data.data.cabin.images);
+      setImages(sortedImages);
+      setCabin((prev) => ({ ...prev, images: sortedImages }));
     } catch (err) {
       console.error('Update tag error:', err);
       setError('Failed to update tag');
@@ -1146,68 +1178,99 @@ const CabinEdit = () => {
 
     return (
       <div className="space-y-5">
-        {/* Top bar */}
-        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              ref={uploadInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleImageUpload}
-              className="hidden"
-            />
-            <button
-              type="button"
-              disabled={!canManageImages}
-              title={!canManageImages ? 'Save the cabin first to upload images' : undefined}
-              onClick={() => {
-                if (!canManageImages) return;
-                uploadInputRef.current?.click();
-              }}
-              className="inline-flex items-center px-4 py-2.5 text-sm font-medium text-white bg-[#81887A] rounded-lg hover:bg-[#707668] focus:outline-none focus:ring-2 focus:ring-[#81887A]/30 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#81887A]"
-            >
-              Upload
-            </button>
-            {!canManageImages && (
-              <p className="text-xs text-amber-800 max-w-xs leading-snug">
-                Save the cabin using &quot;Save changes&quot; first, then upload images.
-              </p>
-            )}
+        <input
+          ref={uploadInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleImageUpload}
+          className="hidden"
+        />
 
-            <div className="flex items-center gap-2">
-              <label className="text-xs font-medium text-gray-500">Filter</label>
-              <select
-                value={spaceFilter}
-                onChange={(e) => setSpaceFilter(e.target.value)}
-                className="px-3 py-2.5 text-sm border border-gray-200 rounded-lg bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A] transition-colors"
+        {/* Toolbar: primary actions → space view → select; bulk edits in one strip when needed */}
+        <div className="flex flex-col gap-3 max-w-5xl mx-auto lg:mx-0">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center lg:gap-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={!canManageImages}
+                title={!canManageImages ? 'Save the cabin first to upload images' : undefined}
+                onClick={() => {
+                  if (!canManageImages) return;
+                  uploadInputRef.current?.click();
+                }}
+                className="inline-flex items-center justify-center px-4 py-2.5 text-sm font-medium text-white bg-[#81887A] rounded-lg hover:bg-[#707668] focus:outline-none focus:ring-2 focus:ring-[#81887A]/30 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px]"
               >
-                <option value="all">All ({images.length})</option>
-                <option value="unassigned">Unassigned ({images.filter(img => !getPrimaryTag(img)).length})</option>
-                {SPACE_TAGS.map(tag => {
-                  const count = images.filter(img => getPrimaryTag(img) === tag.value).length;
-                  if (count === 0) return null;
-                  return (
-                    <option key={tag.value} value={tag.value}>
-                      {tag.label} ({count})
-                    </option>
-                  );
-                })}
-              </select>
+                Upload
+              </button>
+              <button
+                type="button"
+                disabled={!canManageImages || spaceFilter !== 'all'}
+                title={
+                  !canManageImages
+                    ? 'Save the cabin first'
+                    : spaceFilter !== 'all'
+                      ? 'Switch Space to All to reorder the full gallery'
+                      : 'Reorder photos'
+                }
+                onClick={() => {
+                  if (!canManageImages || spaceFilter !== 'all') return;
+                  setReorderModalOpen(true);
+                }}
+                className="inline-flex items-center justify-center px-4 py-2.5 text-sm font-medium text-gray-800 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A] transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-h-[44px]"
+              >
+                Reorder
+              </button>
+            </div>
+
+            <div className="flex w-full min-w-0 sm:flex-1 sm:max-w-md lg:max-w-xs">
+              <label className="flex w-full min-w-0 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50/80 px-3 py-1 focus-within:ring-2 focus-within:ring-[#81887A]/20 focus-within:border-[#81887A]">
+                <span className="shrink-0 text-xs font-medium text-gray-500">Space</span>
+                <select
+                  value={spaceFilter}
+                  onChange={(e) => setSpaceFilter(e.target.value)}
+                  aria-label="Show images by space"
+                  className="min-w-0 flex-1 border-0 bg-transparent py-2 text-sm text-gray-900 focus:outline-none focus:ring-0"
+                >
+                  <option value="all">All ({images.length})</option>
+                  <option value="unassigned">Unassigned ({images.filter(img => !getPrimaryTag(img)).length})</option>
+                  {SPACE_TAGS.map(tag => {
+                    const count = images.filter(img => getPrimaryTag(img) === tag.value).length;
+                    if (count === 0) return null;
+                    return (
+                      <option key={tag.value} value={tag.value}>
+                        {tag.label} ({count})
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+            </div>
+
+            <div className="flex sm:ml-auto">
+              <button
+                type="button"
+                onClick={handleSelectAll}
+                className="inline-flex items-center justify-center px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 min-h-[44px] w-full sm:w-auto"
+              >
+                {selectedImages.size === filteredImages.length && filteredImages.length > 0
+                  ? 'Deselect all'
+                  : 'Select all'}
+              </button>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={handleSelectAll}
-              className="inline-flex items-center px-3.5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
-            >
-              {selectedImages.size === filteredImages.length ? 'Deselect all' : 'Select all'}
-            </button>
+          {!canManageImages && (
+            <p className="text-xs text-amber-800 max-w-xl leading-snug">
+              Save the cabin first, then you can upload images.
+            </p>
+          )}
 
-            {selectedCount > 0 && (
-              <>
-                <span className="text-sm text-gray-600 tabular-nums">{selectedCount} selected</span>
+          {selectedCount > 0 && (
+            <div className="flex flex-col gap-2 rounded-xl border border-gray-200 bg-[#F8F7F5] px-3 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+              <span className="text-sm font-medium text-gray-800 tabular-nums shrink-0">
+                {selectedCount} selected
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
                 <select
                   onChange={(e) => {
                     if (e.target.value) {
@@ -1215,44 +1278,44 @@ const CabinEdit = () => {
                       e.target.value = '';
                     }
                   }}
-                  className="px-3 py-2.5 text-sm border border-gray-200 rounded-lg bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A] transition-colors"
+                  className="min-h-[40px] rounded-lg border border-gray-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#81887A]/20"
                   defaultValue=""
+                  aria-label="Set space for selected images"
                 >
                   <option value="">Set space…</option>
                   {SPACE_TAGS.map(tag => (
                     <option key={tag.value} value={tag.value}>{tag.label}</option>
                   ))}
                 </select>
-
                 <button
                   type="button"
                   disabled={!canBulkSetCover}
                   onClick={handleBulkSetCover}
-                  className="inline-flex items-center px-3.5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  title={!canBulkSetCover ? 'Select exactly one image to set as cover' : undefined}
+                  className="inline-flex min-h-[40px] items-center rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                  title={!canBulkSetCover ? 'Select exactly one image' : undefined}
                 >
-                  Set as cover
+                  Set cover
                 </button>
                 <button
                   type="button"
                   onClick={handleBulkDelete}
-                  className="inline-flex items-center px-3.5 py-2.5 text-sm font-medium text-red-700 bg-white border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
+                  className="inline-flex min-h-[40px] items-center rounded-lg border border-red-200 bg-white px-3 text-sm font-medium text-red-700 hover:bg-red-50"
                 >
-                  Delete selected
+                  Delete
                 </button>
                 <button
                   type="button"
                   onClick={handleClearSelection}
-                  className="inline-flex items-center px-3.5 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
+                  className="inline-flex min-h-[40px] items-center rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-gray-600 hover:bg-gray-50"
                 >
-                  Clear selection
+                  Clear
                 </button>
-              </>
-            )}
-          </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Grid */}
+        {/* Grid — use Reorder images; no card drag-and-drop */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
           {filteredImages.map((img) => {
             const isSelected = selectedImages.has(img._id);
@@ -1262,30 +1325,6 @@ const CabinEdit = () => {
             return (
               <div
                 key={img._id}
-                draggable
-                onDragStart={e => {
-                  const globalIdx = images.findIndex(i => i._id === img._id);
-                  e.dataTransfer.setData('text/plain', globalIdx.toString());
-                }}
-                onDrop={async e => {
-                  e.preventDefault();
-                  const fromIdx = Number(e.dataTransfer.getData('text/plain'));
-                  const fromImg = images[fromIdx];
-                  const toIdx = images.findIndex(i => i._id === img._id);
-
-                  const newItems = images.slice();
-                  newItems.splice(fromIdx, 1);
-                  newItems.splice(toIdx, 0, fromImg);
-
-                  const order = newItems.map((it, i) => ({
-                    imageId: it._id,
-                    sort: i,
-                    spaceOrder: it.spaceOrder || 0
-                  }));
-                  setImages(newItems);
-                  await handleDragEnd(order);
-                }}
-                onDragOver={e => e.preventDefault()}
                 className={`rounded-xl border border-gray-200 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)] overflow-hidden ${
                   isSelected ? 'ring-2 ring-[#81887A]/40' : ''
                 }`}
@@ -1438,6 +1477,13 @@ const CabinEdit = () => {
           onUpdateTag={handleUpdateTag}
           onSaveAlt={handleChangeAlt}
           onDelete={handleRemoveImage}
+        />
+
+        <CabinImageReorderModal
+          open={reorderModalOpen}
+          onClose={() => setReorderModalOpen(false)}
+          images={images}
+          onPersist={handlePersistGalleryOrder}
         />
       </div>
     );
@@ -2213,7 +2259,7 @@ const CabinEdit = () => {
             <div className="px-4 sm:px-6 py-5">
               <h3 className="text-sm font-semibold text-gray-900">Cabin Images</h3>
               <p className="mt-0.5 text-sm text-gray-500">
-                Upload and manage images. The first image is the cover.
+                Cover is marked on each card. Use Reorder for gallery order (All spaces only).
               </p>
               {imagesNextStepBanner && canManageImages && (
                 <p

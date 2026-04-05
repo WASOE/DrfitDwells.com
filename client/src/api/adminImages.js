@@ -15,9 +15,11 @@ export function updateCabinImage(cabinId, imageId, payload, token) {
 }
 
 export function reorderCabinImages(cabinId, order, token) {
-  return axios.patch(`/api/admin/cabins/${cabinId}/images/reorder`, order, {
-    headers: { 'Authorization': `Bearer ${token}` }
-  });
+  return axios.patch(
+    `/api/admin/cabins/${cabinId}/images/reorder`,
+    { order },
+    { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
+  );
 }
 
 export function deleteCabinImage(cabinId, imageId, token) {
