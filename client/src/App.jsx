@@ -45,6 +45,7 @@ const CabinTypesList = lazy(() => import('./pages/admin/CabinTypesList'))
 const CabinTypeEdit = lazy(() => import('./pages/admin/CabinTypeEdit'))
 const ReviewsList = lazy(() => import('./pages/admin/ReviewsList'))
 const ReviewEdit = lazy(() => import('./pages/admin/ReviewEdit'))
+const PromoCodesList = lazy(() => import('./pages/admin/PromoCodesList'))
 const OpsDashboard = lazy(() => import('./pages/ops/OpsDashboard'))
 const OpsCalendarIndex = lazy(() => import('./pages/ops/calendar/OpsCalendarIndex'))
 const OpsCalendarMonth = lazy(() => import('./pages/ops/calendar/OpsCalendarMonth'))
@@ -159,6 +160,7 @@ function App() {
               <Route path="/admin/cabin-types/:id" element={<CabinTypeEdit />} />
               <Route path="/admin/reviews" element={<ReviewsList />} />
               <Route path="/admin/reviews/:id" element={<ReviewEdit />} />
+              <Route path="/admin/promo-codes" element={<PromoCodesList />} />
             </Route>
 
             {/* Embedded layout */}

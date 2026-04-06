@@ -120,6 +120,35 @@ const bookingSchema = new mongoose.Schema({
     required: true,
     min: [0, 'Total price cannot be negative']
   },
+  /** Lodging + extras before promo (matches pricingService total for the same inputs). */
+  subtotalPrice: {
+    type: Number,
+    required: false,
+    min: [0, 'Subtotal cannot be negative']
+  },
+  discountAmount: {
+    type: Number,
+    default: 0,
+    min: [0, 'Discount cannot be negative']
+  },
+  promoCode: {
+    type: String,
+    trim: true,
+    uppercase: true,
+    default: null
+  },
+  promoSnapshot: {
+    type: new mongoose.Schema(
+      {
+        code: { type: String, trim: true, uppercase: true },
+        discountType: { type: String, enum: ['fixed', 'percent'] },
+        discountValue: { type: Number },
+        internalName: { type: String, trim: true }
+      },
+      { _id: false }
+    ),
+    default: null
+  },
   specialRequests: {
     type: String,
     maxlength: [500, 'Special requests cannot exceed 500 characters']

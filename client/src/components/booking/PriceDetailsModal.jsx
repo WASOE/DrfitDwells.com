@@ -11,6 +11,9 @@ const PriceDetailsModal = ({
   nights,
   pricePerNight,
   totalPrice,
+  /** When set, show server subtotal + optional discount (lodging + extras combined). */
+  serverSubtotal,
+  discountAmount = 0,
   currency = 'EUR',
   extras = [] // { label, amount }
 }) => {
@@ -26,6 +29,8 @@ const PriceDetailsModal = ({
   const baseTotal = nights && pricePerNight ? nights * pricePerNight : totalPrice || 0;
   const extrasTotal = Array.isArray(extras) ? extras.reduce((s, e) => s + (e.amount || 0), 0) : 0;
   const displayTotal = totalPrice ?? (baseTotal + extrasTotal);
+  const showServerBreakdown = serverSubtotal != null && Number.isFinite(Number(serverSubtotal));
+  const disc = Math.max(0, Number(discountAmount) || 0);
 
   return (
     <AnimatePresence>
@@ -62,22 +67,37 @@ const PriceDetailsModal = ({
 
           {/* Breakdown */}
           <div className="px-6 py-4 space-y-4">
-            {nights && pricePerNight != null && (
+            {showServerBreakdown ? (
               <div className="flex justify-between items-center text-gray-900">
-                <span>
-                  {nights} {nights === 1 ? 'night' : 'nights'} × €{Number(pricePerNight).toLocaleString()}
-                </span>
-                <span className="font-medium tabular-nums">
-                  €{(nights * pricePerNight).toLocaleString()}
-                </span>
+                <span>Stay &amp; add-ons</span>
+                <span className="font-medium tabular-nums">€{Number(serverSubtotal).toLocaleString()}</span>
+              </div>
+            ) : (
+              <>
+                {nights && pricePerNight != null && (
+                  <div className="flex justify-between items-center text-gray-900">
+                    <span>
+                      {nights} {nights === 1 ? 'night' : 'nights'} × €{Number(pricePerNight).toLocaleString()}
+                    </span>
+                    <span className="font-medium tabular-nums">
+                      €{(nights * pricePerNight).toLocaleString()}
+                    </span>
+                  </div>
+                )}
+                {extras.map((extra, i) => (
+                  <div key={i} className="flex justify-between items-center text-gray-900">
+                    <span>{extra.label}</span>
+                    <span className="font-medium tabular-nums">€{Number(extra.amount || 0).toLocaleString()}</span>
+                  </div>
+                ))}
+              </>
+            )}
+            {disc > 0 && (
+              <div className="flex justify-between items-center text-gray-700">
+                <span>Promo</span>
+                <span className="font-medium tabular-nums">−€{disc.toLocaleString()}</span>
               </div>
             )}
-            {extras.map((extra, i) => (
-              <div key={i} className="flex justify-between items-center text-gray-900">
-                <span>{extra.label}</span>
-                <span className="font-medium tabular-nums">€{Number(extra.amount || 0).toLocaleString()}</span>
-              </div>
-            ))}
             <div className="flex justify-between items-center pt-3 border-t border-gray-200 font-semibold text-gray-900">
               <span>Total ({currency})</span>
               <span className="tabular-nums">€{Number(displayTotal).toLocaleString()}</span>

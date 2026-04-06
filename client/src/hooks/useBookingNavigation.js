@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { readGuestPromo } from '../utils/guestPromo';
 
 // Centralized keys + query param builder for cabin → confirm flow
 export const CONFIRM_BOOKING_SIMPLE_KEY = 'confirm-booking-simple';
@@ -9,6 +10,8 @@ export function buildConfirmSearchParams(searchCriteria) {
   if (searchCriteria?.checkOut) params.set('checkOut', searchCriteria.checkOut);
   if (searchCriteria?.adults != null) params.set('adults', String(searchCriteria.adults));
   if (searchCriteria?.children != null) params.set('children', String(searchCriteria.children));
+  const promo = (searchCriteria?.promoCode || readGuestPromo() || '').trim().toUpperCase();
+  if (promo) params.set('promoCode', promo);
   return params;
 }
 
@@ -41,6 +44,8 @@ export function useBookingNavigation({
 
     // Persist lightweight state for ConfirmBooking restore
     try {
+      const promoCode =
+        (searchCriteria?.promoCode || readGuestPromo() || '').trim().toUpperCase() || undefined;
       sessionStorage.setItem(
         CONFIRM_BOOKING_SIMPLE_KEY,
         JSON.stringify({
@@ -55,6 +60,7 @@ export function useBookingNavigation({
             adults: searchCriteria.adults,
             children: searchCriteria.children
           },
+          promoCode,
           selectedExpKeys: Array.from(selectedExpKeys || [])
         })
       );
@@ -75,6 +81,7 @@ export function useBookingNavigation({
           adults: searchCriteria.adults,
           children: searchCriteria.children
         },
+        promoCode: (searchCriteria?.promoCode || readGuestPromo() || '').trim().toUpperCase() || undefined,
         selectedExpKeys: Array.from(selectedExpKeys || [])
       }
     });
@@ -90,6 +97,7 @@ export function useBookingNavigation({
     searchCriteria?.checkOut,
     searchCriteria?.adults,
     searchCriteria?.children,
+    searchCriteria?.promoCode,
     selectedExpKeys
   ]);
 

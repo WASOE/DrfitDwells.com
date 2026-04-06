@@ -7,6 +7,7 @@ import MosaicGallery from '../components/MosaicGallery';
 import ReviewsSection from '../components/reviews/ReviewsSection';
 import MapArrival from '../components/MapArrival';
 import StickyBookingBar from '../components/StickyBookingBar';
+import { StayLodgingPriceBlock } from '../components/booking/StayLodgingPriceBlock';
 import Seo from '../components/Seo';
 import { daysBetweenDateOnly, parseDateOnlyLocal } from '../utils/dateOnly';
 import './CabinDetails.css';
@@ -24,7 +25,7 @@ const MULTI_UNIT_SLUG = 'a-frame';
 const AFrameDetails = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { openModal: openDateModal } = useBookingSearch();
+  const { openModal: openDateModal, setGuestPromoCode } = useBookingSearch();
 
   const [cabinType, setCabinType] = useState(null);
   const [availability, setAvailability] = useState(null);
@@ -41,7 +42,8 @@ const AFrameDetails = () => {
     checkIn: searchParams.get('checkIn'),
     checkOut: searchParams.get('checkOut'),
     adults: Math.max(1, parseInt(searchParams.get('adults'), 10) || 2),
-    children: Math.max(0, parseInt(searchParams.get('children'), 10) || 0)
+    children: Math.max(0, parseInt(searchParams.get('children'), 10) || 0),
+    promoCode: (searchParams.get('promoCode') || '').trim().toUpperCase()
   }), [searchParams]);
 
   const updateSearchParams = useCallback((patch) => {
@@ -184,6 +186,26 @@ const AFrameDetails = () => {
     }
   }, [cabinType, searchCriteria.checkIn, searchCriteria.checkOut, searchCriteria.adults, searchCriteria.children]);
 
+  const serverLodgingTotal = availability?.cabinType?.totalPrice;
+  const displayNights =
+    availability?.cabinType?.totalNights != null ? availability.cabinType.totalNights : pricing?.totalNights;
+  const displayGrandTotal =
+    serverLodgingTotal != null
+      ? serverLodgingTotal + (experienceTotal || 0)
+      : pricing
+        ? pricing.totalPrice + (experienceTotal || 0)
+        : null;
+
+  const lodgingSubtotalBeforePromo = availability?.cabinType?.lodgingSubtotalBeforePromo;
+  const aFrameGrandBeforePromo =
+    lodgingSubtotalBeforePromo != null && displayGrandTotal != null
+      ? lodgingSubtotalBeforePromo + (experienceTotal || 0)
+      : null;
+
+  useEffect(() => {
+    setGuestPromoCode(searchCriteria.promoCode || '');
+  }, [searchCriteria.promoCode, setGuestPromoCode]);
+
   // Highlights
   const highlights = useMemo(() => {
     const fallback = [
@@ -193,6 +215,15 @@ const AFrameDetails = () => {
     ];
     return Array.isArray(cabinType?.highlights) && cabinType.highlights.length ? cabinType.highlights.slice(0,5) : fallback;
   }, [cabinType?.highlights]);
+
+  const highlightColumns = useMemo(() => {
+    const left = [];
+    const right = [];
+    highlights.forEach((h, i) => {
+      (i % 2 === 0 ? left : right).push(h);
+    });
+    return [left, right];
+  }, [highlights]);
 
   // Load cabin type and availability
   useEffect(() => {
@@ -241,12 +272,14 @@ const AFrameDetails = () => {
         // Load availability if dates are provided
         if (searchCriteria.checkIn && searchCriteria.checkOut) {
           try {
-            const availResponse = await availabilityAPI.checkCabinType(MULTI_UNIT_SLUG, {
+            const availParams = {
               checkIn: searchCriteria.checkIn,
               checkOut: searchCriteria.checkOut,
               adults: searchCriteria.adults,
               children: searchCriteria.children
-            });
+            };
+            if (searchCriteria.promoCode) availParams.promoCode = searchCriteria.promoCode;
+            const availResponse = await availabilityAPI.checkCabinType(MULTI_UNIT_SLUG, availParams);
             
             if (!cancelled && availResponse.data.success) {
               setAvailability(availResponse.data.data);
@@ -274,7 +307,13 @@ const AFrameDetails = () => {
     return () => {
       cancelled = true;
     };
-  }, [searchCriteria.checkIn, searchCriteria.checkOut, searchCriteria.adults, searchCriteria.children]);
+  }, [
+    searchCriteria.checkIn,
+    searchCriteria.checkOut,
+    searchCriteria.adults,
+    searchCriteria.children,
+    searchCriteria.promoCode
+  ]);
 
   // Early returns
   if (loading) {
@@ -419,17 +458,43 @@ const AFrameDetails = () => {
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
             <div>
               <span className="text-[10px] uppercase tracking-[0.2em] text-gray-500 font-medium">Price</span>
-              <p className="text-xl md:text-2xl font-semibold text-gray-900 tabular-nums mt-0.5">
-                {pricing
-                  ? `€${(pricing.totalPrice + (experienceTotal || 0)).toLocaleString()} total`
-                  : cabinType?.pricePerNight
-                    ? `From €${cabinType.pricePerNight.toLocaleString()}/night`
-                    : 'Select dates for pricing'}
-              </p>
-              {pricing && (
-                <p className="text-sm text-gray-500 mt-0.5">
-                  {pricing.totalNights} {pricing.totalNights === 1 ? 'night' : 'nights'}
-                  {cabinType?.pricePerNight && ` · €${cabinType.pricePerNight.toLocaleString()}/night`}
+              {displayGrandTotal != null ? (
+                <div className="mt-0.5">
+                  <StayLodgingPriceBlock
+                    wrapperClassName="text-left"
+                    originalAmount={aFrameGrandBeforePromo}
+                    finalAmount={displayGrandTotal}
+                    showPromoMicrocopy={
+                      !!availability?.promo?.applied && !availability?.promo?.invalidReason
+                    }
+                    promoMicrocopyText={availability?.promo?.label || 'Promo applied'}
+                    invalidReason={
+                      searchCriteria.promoCode && availability?.promo?.invalidReason
+                        ? availability.promo.invalidReason
+                        : null
+                    }
+                    priceClassName="text-xl md:text-2xl font-semibold text-gray-900"
+                    strikeClassName="font-serif text-base md:text-lg text-gray-400 line-through decoration-gray-400/70 tabular-nums"
+                    priceSuffix={
+                      <span className="text-base font-normal text-gray-500 ml-1">total</span>
+                    }
+                    footnote={
+                      displayNights != null ? (
+                        <p className="text-sm text-gray-500 mt-0.5">
+                          {displayNights} {displayNights === 1 ? 'night' : 'nights'}
+                          {cabinType?.pricePerNight && ` · €${cabinType.pricePerNight.toLocaleString()}/night`}
+                        </p>
+                      ) : null
+                    }
+                  />
+                </div>
+              ) : cabinType?.pricePerNight ? (
+                <p className="text-xl md:text-2xl font-semibold text-gray-900 tabular-nums mt-0.5">
+                  From €{cabinType.pricePerNight.toLocaleString()}/night
+                </p>
+              ) : (
+                <p className="text-xl md:text-2xl font-semibold text-gray-900 tabular-nums mt-0.5">
+                  Select dates for pricing
                 </p>
               )}
             </div>
@@ -462,14 +527,28 @@ const AFrameDetails = () => {
           {highlights && highlights.length > 0 && (
             <div className="mt-12 md:mt-16">
               <h2 className="section-title mb-4">Why you'll love it</h2>
-              <ul className="grid grid-cols-1 md:grid-cols-2 gap-y-2.5 gap-x-6 text-gray-700 text-base">
+              <ul className="md:hidden space-y-3 text-gray-700 text-sm leading-snug max-w-[65ch]">
                 {highlights.map((h, i) => (
-                  <li key={`hl-${i}`} className="flex items-start gap-2.5">
-                    <span className="text-[#81887A] text-sm mt-[0.1em]" aria-hidden="true">✓</span>
+                  <li key={`hl-m-${i}`} className="flex items-start gap-2.5">
+                    <span className="text-[#81887A] flex-shrink-0 mt-0.5 text-[15px] leading-none" aria-hidden="true">✓</span>
                     <span>{h}</span>
                   </li>
                 ))}
               </ul>
+              <div className="hidden md:flex md:flex-row md:gap-6">
+                {highlightColumns
+                  .filter((col) => col.length > 0)
+                  .map((col, ci) => (
+                    <ul key={`hl-col-${ci}`} className="flex-1 min-w-0 space-y-3 text-gray-700 text-sm leading-snug">
+                      {col.map((h, i) => (
+                        <li key={`hl-d-${ci}-${i}`} className="flex items-start gap-2.5">
+                          <span className="text-[#81887A] flex-shrink-0 mt-0.5 text-[15px] leading-none" aria-hidden="true">✓</span>
+                          <span>{h}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ))}
+              </div>
             </div>
           )}
 
@@ -506,14 +585,30 @@ const AFrameDetails = () => {
             {pricing ? (
               <>
                 <div className="mb-4">
-                  <p className="text-2xl font-semibold text-gray-900 tabular-nums">
-                    €{(pricing.totalPrice + (experienceTotal || 0)).toLocaleString()}
-                    <span className="text-base font-normal text-gray-500 ml-1">total</span>
-                  </p>
-                  <p className="text-sm text-gray-500 mt-0.5">
-                    {pricing.totalNights} {pricing.totalNights === 1 ? 'night' : 'nights'}
-                    {cabinType?.pricePerNight && ` · €${cabinType.pricePerNight.toLocaleString()}/night`}
-                  </p>
+                  <StayLodgingPriceBlock
+                    originalAmount={aFrameGrandBeforePromo}
+                    finalAmount={displayGrandTotal}
+                    showPromoMicrocopy={
+                      !!availability?.promo?.applied && !availability?.promo?.invalidReason
+                    }
+                    promoMicrocopyText={availability?.promo?.label || 'Promo applied'}
+                    invalidReason={
+                      searchCriteria.promoCode && availability?.promo?.invalidReason
+                        ? availability.promo.invalidReason
+                        : null
+                    }
+                    priceClassName="text-2xl font-semibold text-gray-900"
+                    strikeClassName="font-serif text-lg text-gray-400 line-through decoration-gray-400/70 tabular-nums"
+                    priceSuffix={
+                      <span className="text-base font-normal text-gray-500 ml-1">total</span>
+                    }
+                    footnote={
+                      <p className="text-sm text-gray-500 mt-0.5">
+                        {displayNights} {displayNights === 1 ? 'night' : 'nights'}
+                        {cabinType?.pricePerNight && ` · €${cabinType.pricePerNight.toLocaleString()}/night`}
+                      </p>
+                    }
+                  />
                 </div>
 
                 <div className="space-y-2 text-sm border-t border-gray-100 pt-4">
@@ -521,6 +616,10 @@ const AFrameDetails = () => {
                     <span className="text-gray-500">Check-in</span>
                     <input
                       type="date"
+                      name="dw-aframe-check-in"
+                      autoComplete="off"
+                      data-lpignore="true"
+                      data-1p-ignore="true"
                       value={searchCriteria.checkIn || ''}
                       onChange={(e) => updateSearchParams({ checkIn: e.target.value })}
                       className="input-editorial h-8 px-2 py-1 text-xs text-gray-900 w-[150px]"
@@ -530,6 +629,10 @@ const AFrameDetails = () => {
                     <span className="text-gray-500">Check-out</span>
                     <input
                       type="date"
+                      name="dw-aframe-check-out"
+                      autoComplete="off"
+                      data-lpignore="true"
+                      data-1p-ignore="true"
                       value={searchCriteria.checkOut || ''}
                       onChange={(e) => updateSearchParams({ checkOut: e.target.value })}
                       className="input-editorial h-8 px-2 py-1 text-xs text-gray-900 w-[150px]"
@@ -623,15 +726,15 @@ const AFrameDetails = () => {
       <StickyBookingBar
         className="lg:hidden"
         label={
-          pricing
-            ? `€${(pricing.totalPrice + (experienceTotal || 0)).toLocaleString()} total`
+          displayGrandTotal != null
+            ? `€${displayGrandTotal.toLocaleString()} total`
             : cabinType?.pricePerNight
               ? `From €${cabinType.pricePerNight.toLocaleString()}/night`
               : 'Select dates for pricing'
         }
         subLabel={
-          pricing
-            ? `${pricing.totalNights} ${pricing.totalNights === 1 ? 'night' : 'nights'}${cabinType?.pricePerNight ? ` · €${cabinType.pricePerNight.toLocaleString()}/night` : ''}`
+          displayNights != null
+            ? `${displayNights} ${displayNights === 1 ? 'night' : 'nights'}${cabinType?.pricePerNight ? ` · €${cabinType.pricePerNight.toLocaleString()}/night` : ''}`
             : null
         }
         buttonLabel={searchCriteria.checkIn && searchCriteria.checkOut ? 'Continue to payment →' : 'Select dates'}

@@ -10,6 +10,10 @@ import { useBookingSearch } from '../context/BookingSearchContext';
 import { startOfDay, addDays, isBefore } from 'date-fns';
 import { formatDateOnlyLocal, parseDateOnlyLocal } from '../utils/dateOnly';
 import { getMinSelectableStayDate } from '../utils/bookingMinStayDate';
+import {
+  StayLodgingPriceBlock,
+  promoStatusMicrocopyClass
+} from '../components/booking/StayLodgingPriceBlock';
 
 const SearchBar = lazy(() => import('../components/SearchBar'));
 
@@ -65,7 +69,22 @@ function computeValidatedSearchParams(searchParams) {
   adults = Math.max(1, Math.min(10, adults));
   children = Math.max(0, Math.min(10, children));
 
-  return { checkIn, checkOut, adults, children };
+  const promoRaw = searchParams.get('promoCode');
+  const promoCode = promoRaw && promoRaw.trim() ? promoRaw.trim().toUpperCase() : '';
+
+  return { checkIn, checkOut, adults, children, promoCode };
+}
+
+/** Build query string for cabin / stay links (omits empty promo). */
+function stayQueryString(p) {
+  const q = new URLSearchParams({
+    checkIn: p.checkIn,
+    checkOut: p.checkOut,
+    adults: String(p.adults),
+    children: String(p.children)
+  });
+  if (p.promoCode) q.set('promoCode', p.promoCode);
+  return q.toString();
 }
 
 /**
@@ -154,7 +173,7 @@ const SearchResults = () => {
   const searchBase = localizePath('/search', routeLanguage);
   const homeBase = localizePath('/', routeLanguage);
   const { setBasicInfo } = useBookingContext();
-  const { openModal } = useBookingSearch();
+  const { openModal, setGuestPromoCode } = useBookingSearch();
 
   const [cabins, setCabins] = useState([]);
   const [unitCountsByTypeId, setUnitCountsByTypeId] = useState({});
@@ -162,6 +181,7 @@ const SearchResults = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const [retryCount, setRetryCount] = useState(0);
   const [showDateAdjustBanner, setShowDateAdjustBanner] = useState(false);
+  const [searchPromoMeta, setSearchPromoMeta] = useState(null);
   const { t } = useTranslation('booking');
 
   // Check if we're returning to craft flow
@@ -171,6 +191,10 @@ const SearchResults = () => {
     () => computeValidatedSearchParams(searchParams),
     [searchParams]
   );
+
+  useEffect(() => {
+    setGuestPromoCode(currentSearchParams.promoCode || '');
+  }, [currentSearchParams.promoCode, setGuestPromoCode]);
 
   // Handle draft parameter
   const draftToken = searchParams.get('draft');
@@ -196,7 +220,8 @@ const SearchResults = () => {
           if (payload.checkOut) urlParams.set('checkOut', payload.checkOut);
           if (payload.adults) urlParams.set('adults', payload.adults.toString());
           if (payload.children) urlParams.set('children', payload.children.toString());
-          
+          if (payload.promoCode) urlParams.set('promoCode', String(payload.promoCode).trim().toUpperCase());
+
           // Remove draft token from URL
           urlParams.delete('draft');
           
@@ -216,10 +241,19 @@ const SearchResults = () => {
     try {
       setLoading(true);
       setErrorMessage('');
+      setSearchPromoMeta(null);
 
-      const response = await availabilityAPI.search(currentSearchParams);
-      
+      const searchPayload = { ...currentSearchParams };
+      if (!searchPayload.promoCode) delete searchPayload.promoCode;
+
+      const response = await availabilityAPI.search(searchPayload);
+
       if (response.data.success) {
+        const promoPayload = response.data.data.promo;
+        // No promo in query → drop meta so UI cannot show stale applied/invalid state
+        setSearchPromoMeta(
+          currentSearchParams.promoCode ? (promoPayload ?? null) : null
+        );
         const cabinsData = response.data.data.cabins;
         // Debug: log multi-unit cabins
         const multiCabins = cabinsData.filter(c => 
@@ -306,6 +340,16 @@ const SearchResults = () => {
       urlUpdated = true;
     }
 
+    const currentPromo = (urlParams.get('promoCode') || '').trim().toUpperCase();
+    if (currentSearchParams.promoCode !== currentPromo) {
+      if (currentSearchParams.promoCode) {
+        urlParams.set('promoCode', currentSearchParams.promoCode);
+      } else {
+        urlParams.delete('promoCode');
+      }
+      urlUpdated = true;
+    }
+
     // Only navigate if something actually changed
     if (urlUpdated) {
       const rawIn = searchParams.get('checkIn');
@@ -317,7 +361,16 @@ const SearchResults = () => {
       }
       navigate(`${searchBase}?${urlParams.toString()}`, { replace: true });
     }
-  }, [currentSearchParams.checkIn, currentSearchParams.checkOut, currentSearchParams.adults, currentSearchParams.children, navigate, searchBase, searchParams]);
+  }, [
+    currentSearchParams.checkIn,
+    currentSearchParams.checkOut,
+    currentSearchParams.adults,
+    currentSearchParams.children,
+    currentSearchParams.promoCode,
+    navigate,
+    searchBase,
+    searchParams
+  ]);
 
   // Load search results on component mount
   useEffect(() => {
@@ -331,6 +384,7 @@ const SearchResults = () => {
     currentSearchParams.checkOut,
     currentSearchParams.adults,
     currentSearchParams.children,
+    currentSearchParams.promoCode,
     homeBase,
     navigate
   ]);
@@ -429,6 +483,24 @@ const SearchResults = () => {
           >
             <SearchBar initialData={currentSearchParams} />
           </Suspense>
+          {searchPromoMeta?.applied && (
+            <div
+              className="mt-5 max-w-2xl border-t border-gray-200/90 pt-4"
+              role="status"
+            >
+              <p className={promoStatusMicrocopyClass}>
+                {searchPromoMeta.label || 'Promo applied'}
+              </p>
+              <p className="mt-2 text-sm text-gray-600 font-light leading-relaxed max-w-xl">
+                Listed totals reflect your code on the stay.
+              </p>
+            </div>
+          )}
+          {searchPromoMeta?.invalidReason && currentSearchParams.promoCode && (
+            <p className="mt-4 max-w-2xl text-xs text-stone-600 leading-relaxed" role="status">
+              {searchPromoMeta.invalidReason}
+            </p>
+          )}
           {showDateAdjustBanner && (
             <div
               role="status"
@@ -539,21 +611,32 @@ const SearchResults = () => {
                     {cabin.description}
                   </p>
                   <div className="border-t border-gray-200 pt-6 mt-auto">
-                    <div className="flex justify-between items-center mb-6">
+                    <div className="flex justify-between items-start gap-4 mb-6">
                       <div>
                         <p className="text-body text-gray-600">
                           {cabin.totalNights} {cabin.totalNights === 1 ? 'night' : 'nights'}
                         </p>
                       </div>
-                      <div className="text-right">
-                        <p className="font-serif text-2xl font-bold text-sage">
-                          €{cabin.totalPrice}
-                        </p>
-                        <p className="text-sm text-gray-500 font-light">
-                          €{cabin.pricePerNight}/night
-                          {(cabin.pricingModel || 'per_night') === 'per_person' ? ' per person' : ''}
-                        </p>
-                      </div>
+                      <StayLodgingPriceBlock
+                        wrapperClassName="text-right min-w-0 shrink-0"
+                        originalAmount={
+                          searchPromoMeta?.applied ? cabin.lodgingSubtotalBeforePromo : null
+                        }
+                        finalAmount={cabin.totalPrice}
+                        showPromoMicrocopy={!!searchPromoMeta?.applied}
+                        promoMicrocopyText={searchPromoMeta?.label || 'Promo applied'}
+                        invalidReason={
+                          currentSearchParams.promoCode && searchPromoMeta?.invalidReason
+                            ? searchPromoMeta.invalidReason
+                            : null
+                        }
+                        footnote={
+                          <p className="text-sm text-gray-500 font-light mt-1">
+                            €{cabin.pricePerNight}/night
+                            {(cabin.pricingModel || 'per_night') === 'per_person' ? ' per person' : ''}
+                          </p>
+                        }
+                      />
                     </div>
                     {isBookable ? (
                       <>
@@ -562,7 +645,7 @@ const SearchResults = () => {
                           onClick={() => {
                             const isMulti = cabin?.inventoryMode === 'multi' || cabin?.inventoryType === 'multi';
                             const typeSlug = cabin?.slug || cabin?.cabinTypeSlug;
-                            const searchParams = new URLSearchParams(currentSearchParams).toString();
+                            const searchParams = stayQueryString(currentSearchParams);
 
                             if (returnTo) {
                               setBasicInfo({
@@ -591,7 +674,7 @@ const SearchResults = () => {
                           <button
                             type="button"
                             onClick={() => {
-                              const params = new URLSearchParams(currentSearchParams);
+                              const params = new URLSearchParams(stayQueryString(currentSearchParams));
                               params.set('returnTo', returnTo);
                               navigate(`${localizePath(`/cabin/${cabin._id}`, routeLanguage)}?${params.toString()}`);
                             }}
@@ -628,8 +711,8 @@ const SearchResults = () => {
                           onClick={() => {
                             const isMulti = cabin?.inventoryMode === 'multi' || cabin?.inventoryType === 'multi';
                             const typeSlug = cabin?.slug || cabin?.cabinTypeSlug;
-                            const params = new URLSearchParams(currentSearchParams);
-                            if (returnTo) params.set('returnTo', returnTo);
+                              const params = new URLSearchParams(stayQueryString(currentSearchParams));
+                              if (returnTo) params.set('returnTo', returnTo);
                             const q = params.toString();
                             if (isMulti && typeSlug) {
                               navigate(`${localizePath(`/stays/${typeSlug}`, routeLanguage)}?${q}`);

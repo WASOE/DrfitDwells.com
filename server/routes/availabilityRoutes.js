@@ -11,6 +11,7 @@ const {
   isSingleCabinGuestStayAvailable
 } = require('../services/publicAvailabilityService');
 const { guestFacingCabinMatch } = require('../utils/fixtureExclusion');
+const promoService = require('../services/promoService');
 
 const router = express.Router();
 
@@ -19,7 +20,8 @@ router.get('/', [
   query('checkIn').isISO8601().withMessage('Valid check-in date is required'),
   query('checkOut').isISO8601().withMessage('Valid check-out date is required'),
   query('adults').isInt({ min: 1, max: 10 }).withMessage('Adults must be between 1 and 10'),
-  query('children').optional().isInt({ min: 0, max: 10 }).withMessage('Children must be between 0 and 10')
+  query('children').optional().isInt({ min: 0, max: 10 }).withMessage('Children must be between 0 and 10'),
+  query('promoCode').optional().isString().isLength({ max: 40 })
 ], async (req, res) => {
   try {
     // Check for validation errors
@@ -32,7 +34,19 @@ router.get('/', [
       });
     }
 
-    const { checkIn, checkOut, adults, children = 0 } = req.query;
+    const { checkIn, checkOut, adults, children = 0, promoCode: promoCodeRaw } = req.query;
+
+    let promoDocForSearch = null;
+    let promoResponse = { applied: false, invalidReason: null, label: null };
+    if (promoCodeRaw && String(promoCodeRaw).trim()) {
+      const pr = await promoService.resolvePromoDocument(promoCodeRaw);
+      if (pr.invalidReason) {
+        promoResponse = { applied: false, invalidReason: pr.invalidReason, label: null };
+      } else if (pr.doc) {
+        promoDocForSearch = pr.doc;
+        promoResponse = { applied: true, invalidReason: null, label: 'Promo applied' };
+      }
+    }
 
     let checkInDate;
     let checkOutDate;
@@ -71,11 +85,18 @@ router.get('/', [
       if ((cabin.pricingModel || 'per_night') === 'per_person') {
         totalPrice *= totalGuests;
       }
+      totalPrice = Math.round(totalPrice * 100) / 100;
+      const lodgingSubtotalBeforePromo = totalPrice;
+      if (promoDocForSearch) {
+        const { displayPrice } = promoService.applyValidatedDocToLodging(totalPrice, promoDocForSearch);
+        totalPrice = displayPrice;
+      }
 
       const baseRow = {
         ...cabin.toObject(),
         totalNights,
-        totalPrice
+        totalPrice,
+        lodgingSubtotalBeforePromo
       };
 
       if (totalGuests < minGuests) {
@@ -141,11 +162,18 @@ router.get('/', [
         if ((cabinType.pricingModel || 'per_night') === 'per_person') {
           totalPrice *= totalGuests;
         }
+        totalPrice = Math.round(totalPrice * 100) / 100;
+        const lodgingSubtotalBeforePromo = totalPrice;
+        if (promoDocForSearch) {
+          const { displayPrice } = promoService.applyValidatedDocToLodging(totalPrice, promoDocForSearch);
+          totalPrice = displayPrice;
+        }
 
         const baseMulti = {
           ...cabinType.toObject(),
           totalNights,
           totalPrice,
+          lodgingSubtotalBeforePromo,
           inventoryMode: 'multi',
           inventoryType: 'multi',
           cabinTypeId: cabinType._id,
@@ -237,6 +265,7 @@ router.get('/', [
           children: parseInt(children),
           totalGuests
         },
+        promo: promoResponse,
         totalFound: availableCount,
         totalListings,
         availableCount
@@ -258,7 +287,8 @@ router.get('/cabin-type/:slug', [
   query('checkIn').isISO8601().withMessage('Valid check-in date is required'),
   query('checkOut').isISO8601().withMessage('Valid check-out date is required'),
   query('adults').isInt({ min: 1, max: 10 }).withMessage('Adults must be between 1 and 10'),
-  query('children').optional().isInt({ min: 0, max: 10 }).withMessage('Children must be between 0 and 10')
+  query('children').optional().isInt({ min: 0, max: 10 }).withMessage('Children must be between 0 and 10'),
+  query('promoCode').optional().isString().isLength({ max: 40 })
 ], async (req, res) => {
   try {
     if (!featureFlags.isMultiUnitGloballyEnabled()) {
@@ -277,8 +307,20 @@ router.get('/cabin-type/:slug', [
       });
     }
 
-    const { checkIn, checkOut, adults, children = 0 } = req.query;
+    const { checkIn, checkOut, adults, children = 0, promoCode: promoCodeRaw } = req.query;
     const typeSlug = req.params.slug?.trim().toLowerCase();
+
+    let promoDocForType = null;
+    let promoTypeResponse = { applied: false, invalidReason: null, label: null };
+    if (promoCodeRaw && String(promoCodeRaw).trim()) {
+      const pr = await promoService.resolvePromoDocument(promoCodeRaw);
+      if (pr.invalidReason) {
+        promoTypeResponse = { applied: false, invalidReason: pr.invalidReason, label: null };
+      } else if (pr.doc) {
+        promoDocForType = pr.doc;
+        promoTypeResponse = { applied: true, invalidReason: null, label: 'Promo applied' };
+      }
+    }
 
     if (!featureFlags.isMultiUnitType(typeSlug)) {
       return res.status(404).json({
@@ -352,6 +394,12 @@ router.get('/cabin-type/:slug', [
     if ((cabinType.pricingModel || 'per_night') === 'per_person') {
       totalPrice *= totalGuests;
     }
+    totalPrice = Math.round(totalPrice * 100) / 100;
+    const lodgingSubtotalBeforePromo = totalPrice;
+    if (promoDocForType) {
+      const { displayPrice } = promoService.applyValidatedDocToLodging(totalPrice, promoDocForType);
+      totalPrice = displayPrice;
+    }
 
     res.json({
       success: true,
@@ -360,11 +408,13 @@ router.get('/cabin-type/:slug', [
           ...cabinType.toObject(),
           totalNights,
           totalPrice,
+          lodgingSubtotalBeforePromo,
           available: isAvailable,
           availableUnitsCount: availabilitySummary.availableUnits.length,
           totalUnitsCount: availabilitySummary.totalUnits
         },
         availabilitySummary,
+        promo: promoTypeResponse,
         searchCriteria: {
           checkIn,
           checkOut,

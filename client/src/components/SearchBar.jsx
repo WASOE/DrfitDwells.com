@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import '../i18n/ns/booking';
@@ -22,8 +22,19 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
     pets = 0,
     updateDates,
     updateGuests,
-    openModal
+    openModal,
+    guestPromoCode,
+    setGuestPromoCode
   } = useBookingSearch();
+
+  const [promoUiOpen, setPromoUiOpen] = useState(false);
+  const [promoDraft, setPromoDraft] = useState('');
+  useEffect(() => {
+    setPromoDraft(guestPromoCode);
+    if (guestPromoCode) setPromoUiOpen(true);
+  }, [guestPromoCode]);
+
+  const promoTriggerLabel = useMemo(() => 'Promo code', []);
 
   const [errors, setErrors] = useState({});
   const { t } = useTranslation('booking');
@@ -58,6 +69,14 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
       });
     }
   }, [initialData?.checkIn, initialData?.checkOut, initialData?.adults, initialData?.children]);
+
+  useEffect(() => {
+    const data = initialData || {};
+    if (!Object.prototype.hasOwnProperty.call(data, 'promoCode')) return;
+    const raw = data.promoCode;
+    const next = raw != null && String(raw).trim() ? String(raw).trim().toUpperCase() : '';
+    setGuestPromoCode(next);
+  }, [initialData, setGuestPromoCode]);
 
   // Close datepickers on scroll on mobile only. On desktop, closing on any scroll prevented selecting dates (calendar closed as soon as it opened or on tiny scroll).
   useEffect(() => {
@@ -160,6 +179,9 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
       babies: (babies || 0).toString(),
       pets: (pets || 0).toString()
     });
+    const p = promoDraft.trim().toUpperCase();
+    setGuestPromoCode(p);
+    if (p) searchParams.set('promoCode', p);
 
     navigate(`${localizePath('/search', language)}?${searchParams.toString()}`);
   };
@@ -197,7 +219,7 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
   const errorTextClass = isGlass ? 'text-white/80 text-xs mt-1.5' : 'text-red-500 text-xs mt-1.5';
 
   return (
-    <form onSubmit={handleSubmit} className="w-full">
+    <form onSubmit={handleSubmit} className="w-full" autoComplete="off">
       {/* Mobile View — dates/guests open the same BookingModal + DayPicker flow as the homepage */}
       <div className="md:hidden space-y-3">
         <button
@@ -225,6 +247,25 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
         >
           {t('mobile.planYourStay')}
         </button>
+        <div className="pt-1">
+          <button
+            type="button"
+            onClick={() => setPromoUiOpen((o) => !o)}
+            className="text-xs text-white/70 underline underline-offset-2"
+          >
+            {promoTriggerLabel}
+          </button>
+          {promoUiOpen && (
+            <input
+              type="text"
+              value={promoDraft}
+              onChange={(e) => setPromoDraft(e.target.value)}
+              placeholder="Optional"
+              autoComplete="off"
+              className="mt-2 w-full bg-white/10 border border-white/25 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/50"
+            />
+          )}
+        </div>
       </div>
 
       {/* Desktop View - Redesigned with consistent field structure */}
@@ -237,6 +278,7 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
           {DatePickerComponent ? (
             <DatePickerComponent
               id="checkIn-desktop"
+              name="dw-search-check-in"
               selected={formData.checkIn}
               onChange={(date) => handleDateChange('checkIn', date)}
               open={openCheckIn}
@@ -289,6 +331,7 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
           {DatePickerComponent ? (
             <DatePickerComponent
               id="checkOut-desktop"
+              name="dw-search-check-out"
               selected={formData.checkOut}
               onChange={(date) => handleDateChange('checkOut', date)}
               open={openCheckOut}
@@ -339,6 +382,28 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
             label={t('fields.guests')}
             isGlass={isGlass}
           />
+        </div>
+
+        <div className={`flex flex-col justify-end min-w-[100px] ${isGlass ? 'text-white' : ''}`}>
+          <button
+            type="button"
+            onClick={() => setPromoUiOpen((o) => !o)}
+            className={`text-left text-[9px] uppercase tracking-[0.3em] font-serif mb-1.5 ${
+              isGlass ? 'text-white/70 hover:text-white' : 'text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            {promoTriggerLabel}
+          </button>
+          {promoUiOpen && (
+            <input
+              type="text"
+              value={promoDraft}
+              onChange={(e) => setPromoDraft(e.target.value)}
+              placeholder="Optional"
+              autoComplete="off"
+              className={fieldInputClass}
+            />
+          )}
         </div>
 
         {/* Spacer so button aligns to right edge and no gap remains */}

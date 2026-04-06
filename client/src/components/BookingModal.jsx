@@ -39,8 +39,17 @@ const BookingModal = () => {
     updateGuests,
     resetSearch,
     isModalOpen,
-    closeModal
+    closeModal,
+    guestPromoCode,
+    setGuestPromoCode
   } = useBookingSearch();
+
+  const [promoUiOpen, setPromoUiOpen] = useState(false);
+  const [promoDraft, setPromoDraft] = useState('');
+  useEffect(() => {
+    setPromoDraft(guestPromoCode);
+    if (guestPromoCode) setPromoUiOpen(true);
+  }, [guestPromoCode]);
 
   const [range, setRange] = useState({ from: checkIn ? startOfDay(checkIn) : null, to: checkOut ? startOfDay(checkOut) : null });
   const [error, setError] = useState('');
@@ -139,6 +148,9 @@ const BookingModal = () => {
       adults: adults.toString(),
       children: children.toString()
     });
+    const p = promoDraft.trim().toUpperCase();
+    setGuestPromoCode(p);
+    if (p) searchParams.set('promoCode', p);
 
     const preserved = new URLSearchParams(locationSearch);
     for (const key of ['returnTo', 'draft']) {
@@ -241,9 +253,10 @@ const BookingModal = () => {
                 </button>
               </header>
 
-              {/* Content */}
-              <div className="flex-1 md:flex-none overflow-y-auto md:overflow-visible p-6 md:px-8 md:pt-8 md:pb-7 lg:px-10">
-                <div className="mx-auto w-full">
+              {/* Content — min-h-0 so this region shrinks inside the flex column; without it,
+                  overflow-y-auto never clips and the footer can sit on top of the last controls (e.g. Promo code). */}
+              <div className="min-h-0 flex-1 overflow-y-auto p-6 md:flex-none md:overflow-visible md:px-8 md:pt-8 md:pb-7 lg:px-10">
+                <div className="mx-auto w-full pb-4 md:pb-0">
                   <div className="flex flex-col gap-10 md:grid md:grid-cols-[minmax(0,1fr)_280px] lg:grid-cols-[minmax(0,1fr)_300px] md:gap-8 lg:gap-10 md:items-start">
                   {/* Dates Section */}
                   <section className="min-w-0">
@@ -333,6 +346,26 @@ const BookingModal = () => {
                         </div>
                       ))}
                     </div>
+                  </section>
+
+                  <section className="mt-8 border-t border-stone-200 pt-6 pb-2">
+                    <button
+                      type="button"
+                      onClick={() => setPromoUiOpen((o) => !o)}
+                      className="touch-manipulation text-left text-sm text-stone-600 underline underline-offset-2 py-2 -my-2 min-h-[44px] inline-flex items-center"
+                    >
+                      Promo code
+                    </button>
+                    {promoUiOpen && (
+                      <input
+                        type="text"
+                        value={promoDraft}
+                        onChange={(e) => setPromoDraft(e.target.value)}
+                        placeholder="Optional"
+                        autoComplete="off"
+                        className="mt-3 w-full border-b border-stone-300 bg-transparent py-2 text-base text-stone-900 outline-none focus:border-stone-600 placeholder:text-stone-400"
+                      />
+                    )}
                   </section>
                   </div>
                 </div>

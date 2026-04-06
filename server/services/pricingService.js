@@ -16,22 +16,38 @@ const moment = require('moment');
  * @param {Object} opts - { transportMethod?: string, romanticSetup?: boolean }
  * @returns {{ totalPrice: number, totalNights: number, experienceKeysUsed: string[] }}
  */
-function calculateCabinPrice(entity, checkIn, checkOut, adults, children = 0, experienceKeys = [], opts = {}) {
+/**
+ * Nights × rate (and per-person multiplier). Excludes experiences, transport, romantic setup.
+ */
+function calculateBaseLodgingPrice(entity, checkIn, checkOut, adults, children = 0) {
+  const checkInDate = moment(checkIn).startOf('day').toDate();
+  const checkOutDate = moment(checkOut).startOf('day').toDate();
+  const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
+  const totalGuests = Math.max(0, parseInt(adults, 10) || 0) + Math.max(0, parseInt(children, 10) || 0);
+  let base = totalNights * (entity.pricePerNight || 0);
+  if ((entity.pricingModel || 'per_night') === 'per_person') {
+    base *= Math.max(totalGuests, 1);
+  }
+  return Math.round(base * 100) / 100;
+}
+
+/**
+ * Full price split: lodging (promo-eligible in v1) vs extras (experiences + transport + romantic).
+ */
+function calculateCabinPriceBreakdown(entity, checkIn, checkOut, adults, children = 0, experienceKeys = [], opts = {}) {
   const checkInDate = moment(checkIn).startOf('day').toDate();
   const checkOutDate = moment(checkOut).startOf('day').toDate();
   const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
   const totalGuests = Math.max(0, parseInt(adults, 10) || 0) + Math.max(0, parseInt(children, 10) || 0);
 
-  let totalPrice = totalNights * (entity.pricePerNight || 0);
-  if ((entity.pricingModel || 'per_night') === 'per_person') {
-    totalPrice *= Math.max(totalGuests, 1);
-  }
+  const baseLodgingPrice = calculateBaseLodgingPrice(entity, checkIn, checkOut, adults, children);
 
   const experiences = Array.isArray(entity.experiences)
     ? entity.experiences.filter(e => e && e.active !== false)
     : [];
   const allowedKeys = new Set(experiences.map(e => e.key));
 
+  let extrasTotal = 0;
   const keysUsed = [];
   const uniqueKeys = [...new Set(Array.isArray(experienceKeys) ? experienceKeys : [])];
   for (const key of uniqueKeys) {
@@ -39,7 +55,7 @@ function calculateCabinPrice(entity, checkIn, checkOut, adults, children = 0, ex
     const exp = experiences.find(e => e.key === key);
     if (exp) {
       const qty = exp.unit === 'per_guest' ? Math.max(totalGuests, 1) : 1;
-      totalPrice += (exp.price || 0) * qty;
+      extrasTotal += (exp.price || 0) * qty;
       keysUsed.push(key);
     }
   }
@@ -48,15 +64,29 @@ function calculateCabinPrice(entity, checkIn, checkOut, adults, children = 0, ex
     const transportOptions = entity.transportOptions || [];
     const opt = transportOptions.find(t => t && t.type === opts.transportMethod);
     if (opt && opt.pricePerPerson != null) {
-      totalPrice += opt.pricePerPerson * totalGuests;
+      extrasTotal += opt.pricePerPerson * totalGuests;
     }
   }
 
   if (opts.romanticSetup) {
-    totalPrice += 30;
+    extrasTotal += 30;
   }
 
-  return { totalPrice: Math.round(totalPrice * 100) / 100, totalNights, experienceKeysUsed: keysUsed };
+  extrasTotal = Math.round(extrasTotal * 100) / 100;
+  const totalPrice = Math.round((baseLodgingPrice + extrasTotal) * 100) / 100;
+
+  return {
+    baseLodgingPrice,
+    extrasTotal,
+    totalPrice,
+    totalNights,
+    experienceKeysUsed: keysUsed
+  };
+}
+
+function calculateCabinPrice(entity, checkIn, checkOut, adults, children = 0, experienceKeys = [], opts = {}) {
+  const b = calculateCabinPriceBreakdown(entity, checkIn, checkOut, adults, children, experienceKeys, opts);
+  return { totalPrice: b.totalPrice, totalNights: b.totalNights, experienceKeysUsed: b.experienceKeysUsed };
 }
 
 /**
@@ -75,5 +105,7 @@ function validateExperienceKeys(entity, experienceKeys) {
 
 module.exports = {
   calculateCabinPrice,
+  calculateCabinPriceBreakdown,
+  calculateBaseLodgingPrice,
   validateExperienceKeys
 };

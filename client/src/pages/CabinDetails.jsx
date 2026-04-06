@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
-import { cabinAPI } from '../services/api';
+import { cabinAPI, bookingAPI } from '../services/api';
 import { useBookingContext } from '../context/BookingContext';
 import { useBookingSearch } from '../context/BookingSearchContext';
 import { useBookingNavigation } from '../hooks/useBookingNavigation';
@@ -9,6 +9,7 @@ import MosaicGallery from '../components/MosaicGallery';
 const ReviewsSection = lazy(() => import('../components/reviews/ReviewsSection'));
 const MapArrival = lazy(() => import('../components/MapArrival'));
 import StickyBookingBar from '../components/StickyBookingBar';
+import { StayLodgingPriceBlock } from '../components/booking/StayLodgingPriceBlock';
 import Seo from '../components/Seo';
 import { daysBetweenDateOnly, parseDateOnlyLocal } from '../utils/dateOnly';
 import './CabinDetails.css';
@@ -28,7 +29,7 @@ const CabinDetails = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { setBasicInfo } = useBookingContext();
-  const { openModal: openDateModal } = useBookingSearch();
+  const { openModal: openDateModal, setGuestPromoCode } = useBookingSearch();
   
   // Check if we're returning to craft flow
   const returnTo = searchParams.get('returnTo');
@@ -44,6 +45,7 @@ const CabinDetails = () => {
   const [gridScrollPosition, setGridScrollPosition] = useState(0); // Save scroll for back navigation
   const [isSaved, setIsSaved] = useState(false);
   const [selectedExpKeys, setSelectedExpKeys] = useState(new Set());
+  const [cabinQuote, setCabinQuote] = useState(null);
 
   // ===== C) All Refs (declare ALL unconditionally) =====
   const lightboxCloseBtnRef = useRef(null);
@@ -55,7 +57,8 @@ const CabinDetails = () => {
     checkIn: searchParams.get('checkIn'),
     checkOut: searchParams.get('checkOut'),
     adults: Math.max(1, parseInt(searchParams.get('adults'), 10) || 2),
-    children: Math.max(0, parseInt(searchParams.get('children'), 10) || 0)
+    children: Math.max(0, parseInt(searchParams.get('children'), 10) || 0),
+    promoCode: (searchParams.get('promoCode') || '').trim().toUpperCase()
   }), [searchParams]);
 
   // Helper to update URL search params so pricing / nights stay in sync
@@ -265,6 +268,16 @@ const CabinDetails = () => {
     return Array.isArray(cabin?.highlights) && cabin.highlights.length ? cabin.highlights.slice(0,5) : fallback;
   }, [cabin?.highlights]);
 
+  // Even/odd columns match former 2-col grid placement without shared row heights (grid row = max cell height → messy gaps).
+  const highlightColumns = useMemo(() => {
+    const left = [];
+    const right = [];
+    highlights.forEach((h, i) => {
+      (i % 2 === 0 ? left : right).push(h);
+    });
+    return [left, right];
+  }, [highlights]);
+
   // Experience selection helpers
   const toggleExperience = useCallback((key) => {
     setSelectedExpKeys(prev => {
@@ -282,6 +295,50 @@ const CabinDetails = () => {
       return sum + (exp.price || 0) * qty;
     }, 0);
   }, [experiences, selectedExpKeys, searchCriteria.adults, searchCriteria.children]);
+
+  const experienceKeysSorted = useMemo(() => Array.from(selectedExpKeys).sort(), [selectedExpKeys]);
+
+  useEffect(() => {
+    setGuestPromoCode(searchCriteria.promoCode || '');
+  }, [searchCriteria.promoCode, setGuestPromoCode]);
+
+  useEffect(() => {
+    if (!cabin?._id || !searchCriteria.checkIn || !searchCriteria.checkOut) {
+      setCabinQuote(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const payload = {
+          cabinId: cabin._id,
+          checkIn: searchCriteria.checkIn,
+          checkOut: searchCriteria.checkOut,
+          adults: searchCriteria.adults,
+          children: searchCriteria.children,
+          experienceKeys: experienceKeysSorted
+        };
+        if (searchCriteria.promoCode) payload.promoCode = searchCriteria.promoCode;
+        const res = await bookingAPI.quote(payload);
+        if (cancelled) return;
+        if (res.data.success) setCabinQuote(res.data.data);
+        else setCabinQuote(null);
+      } catch {
+        if (!cancelled) setCabinQuote(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    cabin?._id,
+    searchCriteria.checkIn,
+    searchCriteria.checkOut,
+    searchCriteria.adults,
+    searchCriteria.children,
+    searchCriteria.promoCode,
+    experienceKeysSorted
+  ]);
 
   // Calculate pricing - memoized
   const pricing = useMemo(() => {
@@ -315,6 +372,21 @@ const CabinDetails = () => {
       return null;
     }
   }, [cabin, searchCriteria.checkIn, searchCriteria.checkOut, searchCriteria.adults, searchCriteria.children]);
+
+  const displayGrandTotal =
+    cabinQuote?.totalPrice != null
+      ? cabinQuote.totalPrice
+      : pricing
+        ? pricing.totalPrice + (experienceTotal || 0)
+        : null;
+
+  const quoteGrandBeforePromo =
+    !cabinQuote?.promo?.invalidReason &&
+    cabinQuote?.subtotalPrice != null &&
+    Number(cabinQuote.discountAmount) > 0 &&
+    Number(cabinQuote.subtotalPrice) > Number(cabinQuote.totalPrice) + 0.005
+      ? Number(cabinQuote.subtotalPrice)
+      : null;
 
   // Unified cabin → payment flow via shared hook
   const { goToConfirmOrOpenDates } = useBookingNavigation({
@@ -1104,17 +1176,43 @@ const CabinDetails = () => {
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
             <div>
               <span className="text-[10px] uppercase tracking-[0.2em] text-gray-500 font-medium">Price</span>
-              <p className="text-xl md:text-2xl font-semibold text-gray-900 tabular-nums mt-0.5">
-                {pricing
-                  ? `€${(pricing.totalPrice + (experienceTotal || 0)).toLocaleString()} total`
-                  : cabin.pricePerNight
-                    ? `From €${cabin.pricePerNight.toLocaleString()}/night`
-                    : 'Select dates for pricing'}
-              </p>
-              {pricing && (
-                <p className="text-sm text-gray-500 mt-0.5">
-                  {pricing.totalNights} {pricing.totalNights === 1 ? 'night' : 'nights'}
-                  {cabin.pricePerNight && ` · €${cabin.pricePerNight.toLocaleString()}/night`}
+              {displayGrandTotal != null ? (
+                <div className="mt-0.5">
+                  <StayLodgingPriceBlock
+                    wrapperClassName="text-left"
+                    originalAmount={quoteGrandBeforePromo}
+                    finalAmount={displayGrandTotal}
+                    showPromoMicrocopy={
+                      !!cabinQuote?.promo?.applied && !cabinQuote?.promo?.invalidReason
+                    }
+                    promoMicrocopyText={cabinQuote?.promo?.label || 'Promo applied'}
+                    invalidReason={
+                      searchCriteria.promoCode && cabinQuote?.promo?.invalidReason
+                        ? cabinQuote.promo.invalidReason
+                        : null
+                    }
+                    priceClassName="text-xl md:text-2xl font-semibold text-gray-900"
+                    strikeClassName="font-serif text-base md:text-lg text-gray-400 line-through decoration-gray-400/70 tabular-nums"
+                    priceSuffix={
+                      <span className="text-base font-normal text-gray-500 ml-1">total</span>
+                    }
+                    footnote={
+                      pricing ? (
+                        <p className="text-sm text-gray-500 mt-0.5">
+                          {pricing.totalNights} {pricing.totalNights === 1 ? 'night' : 'nights'}
+                          {cabin.pricePerNight && ` · €${cabin.pricePerNight.toLocaleString()}/night`}
+                        </p>
+                      ) : null
+                    }
+                  />
+                </div>
+              ) : cabin.pricePerNight ? (
+                <p className="text-xl md:text-2xl font-semibold text-gray-900 tabular-nums mt-0.5">
+                  From €{cabin.pricePerNight.toLocaleString()}/night
+                </p>
+              ) : (
+                <p className="text-xl md:text-2xl font-semibold text-gray-900 tabular-nums mt-0.5">
+                  Select dates for pricing
                 </p>
               )}
               <button
@@ -1152,18 +1250,32 @@ const CabinDetails = () => {
           )}
         </div>
 
-        {/* Why you'll love it (highlights) — Premium 2-column */}
+        {/* Why you'll love it — mobile: single column; md+: two independent columns (avoids CSS grid row-height coupling) */}
         {highlights && highlights.length > 0 && (
           <div className="mt-12 md:mt-16">
             <h2 className="section-title mb-4">Why you'll love it</h2>
-            <ul className="grid grid-cols-1 md:grid-cols-2 gap-y-2.5 gap-x-6 text-gray-700 text-base max-w-[65ch] md:max-w-none" style={{ lineHeight: '1.35' }}>
+            <ul className="md:hidden space-y-3 text-gray-700 text-sm leading-snug max-w-[65ch]">
               {highlights.map((h, i) => (
-                <li key={`hl-${i}`} className="flex items-start gap-2.5">
-                  <span className="text-[#81887A] text-sm mt-[0.1em] flex-shrink-0" aria-hidden="true" style={{ fontSize: '15px' }}>✓</span>
+                <li key={`hl-m-${i}`} className="flex items-start gap-2.5">
+                  <span className="text-[#81887A] flex-shrink-0 mt-0.5 text-[15px] leading-none" aria-hidden="true">✓</span>
                   <span>{h}</span>
                 </li>
               ))}
             </ul>
+            <div className="hidden md:flex md:flex-row md:gap-6">
+              {highlightColumns
+                .filter((col) => col.length > 0)
+                .map((col, ci) => (
+                  <ul key={`hl-col-${ci}`} className="flex-1 min-w-0 space-y-3 text-gray-700 text-sm leading-snug">
+                    {col.map((h, i) => (
+                      <li key={`hl-d-${ci}-${i}`} className="flex items-start gap-2.5">
+                        <span className="text-[#81887A] flex-shrink-0 mt-0.5 text-[15px] leading-none" aria-hidden="true">✓</span>
+                        <span>{h}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ))}
+            </div>
           </div>
         )}
 
@@ -1219,14 +1331,30 @@ const CabinDetails = () => {
             {pricing ? (
               <>
                 <div className="mb-4">
-                  <p className="text-2xl font-semibold text-gray-900 tabular-nums">
-                    €{(pricing.totalPrice + (experienceTotal || 0)).toLocaleString()}
-                    <span className="text-base font-normal text-gray-500 ml-1">total</span>
-                  </p>
-                  <p className="text-sm text-gray-500 mt-0.5">
-                    {pricing.totalNights} {pricing.totalNights === 1 ? 'night' : 'nights'}
-                    {cabin.pricePerNight && ` · €${cabin.pricePerNight.toLocaleString()}/night`}
-                  </p>
+                  <StayLodgingPriceBlock
+                    originalAmount={quoteGrandBeforePromo}
+                    finalAmount={displayGrandTotal}
+                    showPromoMicrocopy={
+                      !!cabinQuote?.promo?.applied && !cabinQuote?.promo?.invalidReason
+                    }
+                    promoMicrocopyText={cabinQuote?.promo?.label || 'Promo applied'}
+                    invalidReason={
+                      searchCriteria.promoCode && cabinQuote?.promo?.invalidReason
+                        ? cabinQuote.promo.invalidReason
+                        : null
+                    }
+                    priceClassName="text-2xl font-semibold text-gray-900"
+                    strikeClassName="font-serif text-lg text-gray-400 line-through decoration-gray-400/70 tabular-nums"
+                    priceSuffix={
+                      <span className="text-base font-normal text-gray-500 ml-1">total</span>
+                    }
+                    footnote={
+                      <p className="text-sm text-gray-500 mt-0.5">
+                        {pricing.totalNights} {pricing.totalNights === 1 ? 'night' : 'nights'}
+                        {cabin.pricePerNight && ` · €${cabin.pricePerNight.toLocaleString()}/night`}
+                      </p>
+                    }
+                  />
                 </div>
 
                 <div className="space-y-2 text-sm border-t border-gray-100 pt-4">
@@ -1235,6 +1363,10 @@ const CabinDetails = () => {
                     <span className="text-gray-500">Check-in</span>
                     <input
                       type="date"
+                      name="dw-cabin-check-in"
+                      autoComplete="off"
+                      data-lpignore="true"
+                      data-1p-ignore="true"
                       value={searchCriteria.checkIn || ''}
                       onChange={(e) => updateSearchParams({ checkIn: e.target.value })}
                       className="input-editorial h-8 px-2 py-1 text-xs text-gray-900 w-[150px]"
@@ -1244,6 +1376,10 @@ const CabinDetails = () => {
                     <span className="text-gray-500">Check-out</span>
                     <input
                       type="date"
+                      name="dw-cabin-check-out"
+                      autoComplete="off"
+                      data-lpignore="true"
+                      data-1p-ignore="true"
                       value={searchCriteria.checkOut || ''}
                       onChange={(e) => updateSearchParams({ checkOut: e.target.value })}
                       className="input-editorial h-8 px-2 py-1 text-xs text-gray-900 w-[150px]"
@@ -1736,7 +1872,7 @@ const CabinDetails = () => {
         className="lg:hidden"
         label={
           pricing
-            ? `€${(pricing.totalPrice + (experienceTotal || 0)).toLocaleString()} total`
+            ? `€${displayGrandTotal.toLocaleString()} total`
             : 'Select dates to see pricing'
         }
         subLabel={

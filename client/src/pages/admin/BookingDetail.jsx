@@ -252,6 +252,31 @@ const BookingDetail = () => {
                   {booking.craft?.extras?.romanticSetup || booking.romanticSetup ? 'Yes' : 'No'}
                 </dd>
               </div>
+              {booking.subtotalPrice != null && (
+                <div className="bg-white px-6 py-4 sm:grid sm:grid-cols-3 sm:gap-4">
+                  <dt className="text-sm font-medium text-gray-500">Subtotal</dt>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                    €{booking.subtotalPrice}
+                  </dd>
+                </div>
+              )}
+              {(booking.discountAmount ?? 0) > 0 && (
+                <div className="bg-gray-50/50 px-6 py-4 sm:grid sm:grid-cols-3 sm:gap-4">
+                  <dt className="text-sm font-medium text-gray-500">Promo discount</dt>
+                  <dd className="mt-1 text-sm text-emerald-900 sm:mt-0 sm:col-span-2">
+                    −€{booking.discountAmount}
+                    {booking.promoCode ? ` (${booking.promoCode})` : ''}
+                  </dd>
+                </div>
+              )}
+              {booking.promoSnapshot?.internalName && (
+                <div className="bg-white px-6 py-4 sm:grid sm:grid-cols-3 sm:gap-4">
+                  <dt className="text-sm font-medium text-gray-500">Promo (internal)</dt>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                    {booking.promoSnapshot.internalName}
+                  </dd>
+                </div>
+              )}
               <div className="bg-white px-6 py-4 sm:grid sm:grid-cols-3 sm:gap-4">
                 <dt className="text-sm font-medium text-gray-500">Total Price</dt>
                 <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">

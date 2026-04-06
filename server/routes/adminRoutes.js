@@ -12,6 +12,7 @@ const { requirePermission, ACTIONS } = require('../services/permissionService');
 const { appendAuditEvent } = require('../services/auditWriter');
 const { adminModuleWriteGate } = require('../middleware/adminModuleCutoverEnforcement');
 const { syncMultiUnitGalleryToCabinType } = require('../services/syncMultiUnitGalleryToCabinType');
+const adminPromoRoutes = require('./adminPromoRoutes');
 
 const router = express.Router();
 
@@ -34,6 +35,8 @@ router.post('/login', [
 
 // All other admin routes require authentication
 router.use(adminAuth);
+
+router.use('/promo-codes', adminPromoRoutes);
 
 // GET /api/admin/bookings - Get bookings with filters and pagination
 router.get('/bookings', getBookings);

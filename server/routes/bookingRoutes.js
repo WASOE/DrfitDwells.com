@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const rateLimit = require('express-rate-limit');
 const Booking = require('../models/Booking');
+const PromoCode = require('../models/PromoCode');
 const Cabin = require('../models/Cabin');
 const CabinType = require('../models/CabinType');
 const PaymentFinalization = require('../models/PaymentFinalization');
@@ -18,7 +19,8 @@ const {
 const { normalizeDateToSofiaDayStart } = require('../utils/dateTime');
 const { BLOCKING_BOOKING_STATUSES } = require('../services/calendar/blockingStatusConstants');
 const emailService = require('../services/emailService');
-const pricingService = require('../services/pricingService');
+const bookingQuoteService = require('../services/bookingQuoteService');
+const promoService = require('../services/promoService');
 const Stripe = require('stripe');
 
 const { validateId } = require('../middleware/validateId');
@@ -75,6 +77,14 @@ const paymentIntentLimiter = rateLimit({
   message: { success: false, message: 'Too many payment attempts. Please try again in a minute.' }
 });
 
+const bookingQuoteLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many quote requests. Please try again shortly.' }
+});
+
 const purchaseTrackingLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 15,
@@ -93,16 +103,59 @@ router.get('/config', (req, res) => {
   });
 });
 
-// POST /api/bookings/create-payment-intent - Create Stripe PaymentIntent for cabin booking
-router.post('/create-payment-intent', paymentIntentLimiter, [
+const bookingQuoteBodyValidators = [
   body('cabinId').optional().isMongoId().withMessage('Valid cabin ID is required if provided'),
   body('cabinTypeId').optional().isMongoId().withMessage('Valid cabin type ID is required if provided'),
   body('checkIn').isISO8601().withMessage('Valid check-in date is required'),
   body('checkOut').isISO8601().withMessage('Valid check-out date is required'),
   body('adults').isInt({ min: 1, max: 10 }).withMessage('Adults must be between 1 and 10'),
   body('children').optional().isInt({ min: 0, max: 10 }).withMessage('Children must be between 0 and 10'),
-  body('experienceKeys').optional().isArray().withMessage('experienceKeys must be an array')
-], async (req, res) => {
+  body('experienceKeys').optional().isArray().withMessage('experienceKeys must be an array'),
+  body('promoCode').optional().isString().isLength({ max: 40 }).withMessage('promoCode is too long')
+];
+
+// POST /api/bookings/quote — server-owned price + optional promo (display / PI / booking must match)
+router.post('/quote', bookingQuoteLimiter, bookingQuoteBodyValidators, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const result = await bookingQuoteService.buildPublicBookingQuote(req.body);
+    if (!result.ok) {
+      return res.status(result.status).json({
+        success: false,
+        message: result.message,
+        errors: result.errors
+      });
+    }
+
+    const { subtotalPrice, discountAmount, totalPrice, promo } = result;
+    return res.json({
+      success: true,
+      data: {
+        subtotalPrice,
+        discountAmount,
+        totalPrice,
+        promo
+      }
+    });
+  } catch (err) {
+    console.error('Booking quote error:', err);
+    return res.status(500).json({
+      success: false,
+      message: process.env.NODE_ENV === 'development' ? err.message : 'Quote failed'
+    });
+  }
+});
+
+// POST /api/bookings/create-payment-intent - Create Stripe PaymentIntent for cabin booking
+router.post('/create-payment-intent', paymentIntentLimiter, bookingQuoteBodyValidators, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -120,121 +173,26 @@ router.post('/create-payment-intent', paymentIntentLimiter, [
       });
     }
 
-    const { cabinId, cabinTypeId, checkIn, checkOut, adults, children = 0, experienceKeys = [] } = req.body;
+    const { cabinId, cabinTypeId, experienceKeys = [] } = req.body;
 
-    if (!cabinId && !cabinTypeId) {
-      return res.status(400).json({
+    const result = await bookingQuoteService.buildPublicBookingQuote(req.body);
+    if (!result.ok) {
+      return res.status(result.status).json({
         success: false,
-        message: 'Either cabinId or cabinTypeId is required'
-      });
-    }
-    if (cabinId && cabinTypeId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot specify both cabinId and cabinTypeId'
-      });
-    }
-    let checkInDate;
-    let checkOutDate;
-    try {
-      const n = normalizeGuestStayRange(checkIn, checkOut);
-      checkInDate = n.startDate;
-      checkOutDate = n.endDate;
-    } catch (e) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide a valid stay range (check-out must be after check-in)'
+        message: result.message,
+        errors: result.errors
       });
     }
 
-    const todayStart = normalizeDateToSofiaDayStart(new Date());
-    if (checkInDate < todayStart) {
-      return res.status(400).json({
-        success: false,
-        message: 'Check-in date cannot be in the past'
-      });
-    }
-
-    const totalGuests = parseInt(adults, 10) + parseInt(children, 10);
-    let entity = null;
-    let entityType = 'cabin';
-
-    if (cabinId) {
-      entity = await Cabin.findById(cabinId);
-      if (!entity || !entity.isActive) {
-        return res.status(404).json({
-          success: false,
-          message: 'Cabin not found or not available'
-        });
-      }
-      try {
-        await assertSingleCabinGuestStayAvailableOrThrow(entity, checkIn, checkOut);
-      } catch (e) {
-        if (e.code === 'NOT_AVAILABLE') {
-          return res.status(409).json({
-            success: false,
-            message: 'This cabin is not available for the selected dates'
-          });
-        }
-        throw e;
-      }
-    } else {
-      entityType = 'cabinType';
-      entity = await CabinType.findById(cabinTypeId);
-      if (!entity || !entity.isActive) {
-        return res.status(404).json({
-          success: false,
-          message: 'Stay type not found or not available'
-        });
-      }
-      if (!featureFlags.isMultiUnitGloballyEnabled() || !featureFlags.isMultiUnitType(entity.slug)) {
-        return res.status(400).json({
-          success: false,
-          message: 'This stay type is not configured for unified booking'
-        });
-      }
-      const availableUnit = await AssignmentEngine.assignUnit(cabinTypeId, checkInDate, checkOutDate);
-      if (!availableUnit) {
-        return res.status(409).json({
-          success: false,
-          message: 'No units available for the selected dates'
-        });
-      }
-    }
-
-    if (totalGuests > entity.capacity) {
-      return res.status(400).json({
-        success: false,
-        message: `This stay can only accommodate ${entity.capacity} guests`
-      });
-    }
-
-    const errKeys = pricingService.validateExperienceKeys(entity, experienceKeys);
-    if (errKeys) {
-      return res.status(400).json({
-        success: false,
-        message: errKeys
-      });
-    }
-
-    const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
-    const minNights = entity.minNights || 1;
-    if (totalNights < minNights) {
-      return res.status(400).json({
-        success: false,
-        message: `This stay requires a minimum stay of ${minNights} night${minNights !== 1 ? 's' : ''}`
-      });
-    }
-
-    const { totalPrice } = pricingService.calculateCabinPrice(
-      entity,
+    const {
+      totalPrice,
+      subtotalPrice,
+      discountAmount,
+      entityType,
       checkInDate,
       checkOutDate,
-      parseInt(adults, 10),
-      parseInt(children, 10),
-      experienceKeys,
-      { transportMethod: req.body.transportMethod, romanticSetup: req.body.romanticSetup }
-    );
+      appliedPromoCode
+    } = result;
 
     if (totalPrice < 0.5) {
       return res.status(400).json({
@@ -245,6 +203,8 @@ router.post('/create-payment-intent', paymentIntentLimiter, [
 
     const currency = (process.env.STRIPE_CURRENCY || 'eur').toLowerCase();
     const amountCents = Math.round(totalPrice * 100);
+    const subtotalCents = Math.round(subtotalPrice * 100);
+    const discountAmountCents = Math.round(discountAmount * 100);
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount: amountCents,
@@ -259,7 +219,11 @@ router.post('/create-payment-intent', paymentIntentLimiter, [
         amountCents: String(amountCents),
         experienceKeys: JSON.stringify(experienceKeys || []),
         transportMethod: String(req.body.transportMethod || ''),
-        romanticSetup: String(!!req.body.romanticSetup)
+        romanticSetup: String(!!req.body.romanticSetup),
+        promoCode: appliedPromoCode || '',
+        subtotalCents: String(subtotalCents),
+        discountAmountCents: String(discountAmountCents),
+        finalTotalCents: String(amountCents)
       }
     });
 
@@ -290,7 +254,8 @@ router.post('/', bookingCreateLimiter, [
   body('guestInfo.lastName').trim().isLength({ min: 1, max: 50 }).withMessage('Last name is required (max 50 characters)'),
   body('guestInfo.email').isEmail().normalizeEmail().withMessage('Valid email is required'),
   body('guestInfo.phone').trim().isLength({ min: 1 }).withMessage('Phone number is required'),
-  body('specialRequests').optional().isLength({ max: 500 }).withMessage('Special requests cannot exceed 500 characters')
+  body('specialRequests').optional().isLength({ max: 500 }).withMessage('Special requests cannot exceed 500 characters'),
+  body('promoCode').optional().isString().isLength({ max: 40 }).withMessage('promoCode is too long')
 ], async (req, res) => {
   try {
     // Check for validation errors
@@ -473,18 +438,31 @@ router.post('/', bookingCreateLimiter, [
       parentCabinForUnit = await findParentCabinForCabinType(cabinTypeId);
     }
 
-    // Calculate total price using pricingService (must match PI if paymentIntentId provided)
+    // Price + promo via bookingQuoteService (must match PI if paymentIntentId provided)
     const entity = cabin || cabinType;
     const experienceKeys = Array.isArray(req.body.experienceKeys) ? req.body.experienceKeys : [];
-    const { totalPrice } = pricingService.calculateCabinPrice(
+    const quote = await bookingQuoteService.computeQuoteFromEntity(
       entity,
       checkInDate,
       checkOutDate,
-      parseInt(adults),
-      parseInt(children),
+      parseInt(adults, 10),
+      parseInt(children, 10),
       experienceKeys,
-      { transportMethod: req.body.transportMethod, romanticSetup: req.body.romanticSetup }
+      req.body.transportMethod,
+      req.body.romanticSetup,
+      req.body.promoCode
     );
+    const { subtotalPrice, discountAmount, totalPrice, promoSnapshot, appliedPromoCode } = quote;
+
+    if (appliedPromoCode) {
+      const pv = await promoService.resolvePromoDocument(appliedPromoCode);
+      if (!pv.doc || pv.invalidReason) {
+        return res.status(400).json({
+          success: false,
+          message: pv.invalidReason || 'Promo code is no longer valid.'
+        });
+      }
+    }
 
     let stripePaymentVerified = false;
     // Verify Stripe payment if paymentIntentId is provided
@@ -495,13 +473,6 @@ router.post('/', bookingCreateLimiter, [
           return res.status(402).json({
             success: false,
             message: `Payment not completed (status: ${pi.status})`
-          });
-        }
-        const expectedCents = Math.round(totalPrice * 100);
-        if (pi.amount !== expectedCents) {
-          return res.status(400).json({
-            success: false,
-            message: 'Payment amount does not match booking total'
           });
         }
         const meta = pi.metadata || {};
@@ -520,6 +491,10 @@ router.post('/', bookingCreateLimiter, [
         }
         if (metaCheckOut && metaCheckOut !== checkOutDate.toISOString()) {
           return res.status(400).json({ success: false, message: 'Payment dates do not match' });
+        }
+        const promoVerify = bookingQuoteService.verifyPaymentIntentPromoMetadata(pi, quote);
+        if (!promoVerify.ok) {
+          return res.status(400).json({ success: false, message: promoVerify.message });
         }
         stripePaymentVerified = true;
       } catch (stripeErr) {
@@ -547,6 +522,10 @@ router.post('/', bookingCreateLimiter, [
       guestInfo,
       specialRequests,
       totalPrice,
+      subtotalPrice,
+      discountAmount: discountAmount || 0,
+      promoCode: appliedPromoCode || null,
+      promoSnapshot: promoSnapshot || null,
       tripType: typeof req.body.tripType === 'string' ? req.body.tripType.trim().slice(0, 50) : undefined,
       transportMethod: validateTransportMethod(req.body.transportMethod, transportOptions),
       romanticSetup: !!req.body.romanticSetup,
@@ -623,6 +602,27 @@ router.post('/', bookingCreateLimiter, [
         return res.status(409).json({
           success: false,
           message: 'This unit was just booked by another guest. Please choose different dates.'
+        });
+      }
+    }
+
+    if (initialStatus === 'confirmed' && quote.appliedPromoCode) {
+      const inc = await PromoCode.updateOne(
+        {
+          code: quote.appliedPromoCode,
+          $or: [
+            { usageLimit: null },
+            { usageLimit: { $exists: false } },
+            { $expr: { $lt: [{ $ifNull: ['$usageCount', 0] }, '$usageLimit'] } }
+          ]
+        },
+        { $inc: { usageCount: 1 } }
+      );
+      if (inc.matchedCount === 0) {
+        await Booking.deleteOne({ _id: booking._id });
+        return res.status(409).json({
+          success: false,
+          message: 'This promo code is no longer available for new bookings.'
         });
       }
     }

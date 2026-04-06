@@ -11,6 +11,7 @@ import PriceDetailsModal from '../components/booking/PriceDetailsModal';
 import Seo from '../components/Seo';
 import { daysBetweenDateOnly, formatDateOnlyLocal, parseDateOnlyLocal } from '../utils/dateOnly';
 import { getAttributionPayload } from '../tracking/attribution';
+import { readGuestPromo, writeGuestPromo } from '../utils/guestPromo';
 
 const stripePk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 const stripePromise = stripePk ? loadStripe(stripePk) : null;
@@ -94,6 +95,20 @@ const ConfirmBooking = () => {
     }
   };
   const initialState = getInitialState();
+
+  const promoSeed = (() => {
+    try {
+      const u = new URLSearchParams(window.location.search).get('promoCode');
+      if (u?.trim()) return u.trim().toUpperCase();
+    } catch {
+      /* ignore */
+    }
+    const s = initialState.promoCode;
+    if (s && String(s).trim()) return String(s).trim().toUpperCase();
+    const g = readGuestPromo();
+    return g?.trim().toUpperCase() || null;
+  })();
+
   const bookingEntityType = initialState.bookingEntityType || 'cabin';
   const bookingEntityId = initialState.bookingEntityId || initialState.cabinId || id || null;
   const bookingEntitySlug = initialState.bookingEntitySlug || null;
@@ -137,6 +152,13 @@ const ConfirmBooking = () => {
   const [stripeError, setStripeError] = useState(null);
   const [stripeEnabled, setStripeEnabled] = useState(false);
 
+  const [serverQuote, setServerQuote] = useState(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState(null);
+  const [lockedPromoCode, setLockedPromoCode] = useState(promoSeed);
+  const [promoDraft, setPromoDraft] = useState(promoSeed || '');
+  const [promoMessage, setPromoMessage] = useState(null);
+
   const handleFormChange = useCallback((field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   }, []);
@@ -169,6 +191,15 @@ const ConfirmBooking = () => {
     }, 0);
   }, [experiences, selectedExpKeys, adults, children]);
   const grandTotal = (pricing?.totalPrice ?? 0) + experienceTotal;
+  const experienceKeysSorted = useMemo(
+    () => Array.from(selectedExpKeys).sort(),
+    [selectedExpKeys]
+  );
+
+  const displayTotal = serverQuote?.totalPrice ?? grandTotal;
+  const displaySubtotal = serverQuote?.subtotalPrice;
+  const displayDiscount = serverQuote?.discountAmount ?? 0;
+
   const experienceExtras = useMemo(() => {
     const guests = adults + children;
     return experiences
@@ -187,6 +218,120 @@ const ConfirmBooking = () => {
     if (pets) parts.push(`${pets} ${pets === 1 ? 'pet' : 'pets'}`);
     return parts.length ? parts.join(', ') : 'Add guests';
   }, [adults, children, babies, pets]);
+
+  useEffect(() => {
+    setClientSecret(null);
+  }, [checkIn, checkOut, adults, children, experienceKeysSorted, bookingEntityId, bookingEntityType]);
+
+  const quoteFingerprint = useMemo(() => {
+    if (!serverQuote) return '';
+    return [
+      serverQuote.subtotalPrice,
+      serverQuote.discountAmount,
+      serverQuote.totalPrice,
+      lockedPromoCode || '',
+      checkIn ? formatDateOnlyLocal(checkIn) : '',
+      checkOut ? formatDateOnlyLocal(checkOut) : '',
+      adults,
+      children,
+      experienceKeysSorted.join(',')
+    ].join('|');
+  }, [serverQuote, lockedPromoCode, checkIn, checkOut, adults, children, experienceKeysSorted]);
+
+  const quoteTotalFromFingerprint = useMemo(() => {
+    if (!quoteFingerprint) return null;
+    const t = Number(quoteFingerprint.split('|')[2]);
+    return Number.isFinite(t) ? t : null;
+  }, [quoteFingerprint]);
+
+  useEffect(() => {
+    if (!bookingEntityId || !checkIn || !checkOut || !cabin) return;
+    let cancelled = false;
+    (async () => {
+      setQuoteLoading(true);
+      setQuoteError(null);
+      try {
+        const payload = {
+          checkIn: formatDateOnlyLocal(checkIn),
+          checkOut: formatDateOnlyLocal(checkOut),
+          adults,
+          children,
+          experienceKeys: experienceKeysSorted
+        };
+        if (bookingEntityType === 'cabinType') {
+          payload.cabinTypeId = bookingEntityId;
+        } else {
+          payload.cabinId = bookingEntityId;
+        }
+        if (lockedPromoCode) {
+          payload.promoCode = lockedPromoCode;
+        }
+        const res = await bookingAPI.quote(payload);
+        if (cancelled) return;
+        if (res.data.success) {
+          const d = res.data.data;
+          setServerQuote((prev) => {
+            if (
+              prev &&
+              prev.subtotalPrice === d.subtotalPrice &&
+              prev.discountAmount === d.discountAmount &&
+              prev.totalPrice === d.totalPrice &&
+              prev.promo?.applied === d.promo?.applied &&
+              prev.promo?.invalidReason === d.promo?.invalidReason
+            ) {
+              return prev;
+            }
+            return d;
+          });
+          if (lockedPromoCode && d.promo?.invalidReason) {
+            setPromoMessage(d.promo.invalidReason);
+            setLockedPromoCode(null);
+            setPromoDraft('');
+            writeGuestPromo('');
+          } else if (lockedPromoCode && d.promo?.applied) {
+            setPromoMessage(null);
+          } else if (!lockedPromoCode) {
+            setPromoMessage(null);
+          }
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setQuoteError(e.response?.data?.message || 'Could not load price');
+          setServerQuote(null);
+        }
+      } finally {
+        if (!cancelled) setQuoteLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    bookingEntityId,
+    bookingEntityType,
+    checkIn,
+    checkOut,
+    adults,
+    children,
+    experienceKeysSorted,
+    lockedPromoCode,
+    cabin
+  ]);
+
+  const handleApplyPromo = useCallback(() => {
+    setClientSecret(null);
+    const t = promoDraft.trim();
+    if (!t) {
+      setLockedPromoCode(null);
+      setPromoMessage(null);
+      writeGuestPromo('');
+      return;
+    }
+    const u = t.toUpperCase();
+    setLockedPromoCode(u);
+    setPromoMessage(null);
+    writeGuestPromo(u);
+  }, [promoDraft]);
 
   useEffect(() => {
     const loadStay = async () => {
@@ -274,6 +419,7 @@ const ConfirmBooking = () => {
               phone: fd.phone || ''
             },
             specialRequests: fd.specialRequests || '',
+            ...(data.promoCode ? { promoCode: data.promoCode } : {}),
             ...(attr && Object.values(attr).some(Boolean) ? { attribution: attr } : {})
           };
           if ((data.bookingEntityType || 'cabin') === 'cabinType') {
@@ -321,30 +467,68 @@ const ConfirmBooking = () => {
   }, [bookingEntityId, bookingEntityType, id, navigate]);
 
   useEffect(() => {
-    if (!stripeEnabled || !stripePromise || !bookingEntityId || !checkIn || !checkOut || grandTotal < 0.5 || clientSecret) return;
-    const checkInStr = formatDateOnlyLocal(checkIn);
-    const checkOutStr = formatDateOnlyLocal(checkOut);
+    if (
+      !stripeEnabled ||
+      !stripePromise ||
+      !bookingEntityId ||
+      !checkIn ||
+      !checkOut ||
+      !quoteFingerprint ||
+      quoteTotalFromFingerprint == null ||
+      quoteTotalFromFingerprint < 0.5 ||
+      quoteLoading ||
+      quoteError
+    ) {
+      return;
+    }
+    let cancelled = false;
+    setStripeError(null);
     const payload = {
-      checkIn: checkInStr,
-      checkOut: checkOutStr,
+      checkIn: formatDateOnlyLocal(checkIn),
+      checkOut: formatDateOnlyLocal(checkOut),
       adults,
       children,
-      experienceKeys: Array.from(selectedExpKeys)
+      experienceKeys: experienceKeysSorted
     };
     if (bookingEntityType === 'cabinType') {
       payload.cabinTypeId = bookingEntityId;
     } else {
       payload.cabinId = bookingEntityId;
     }
+    if (lockedPromoCode) {
+      payload.promoCode = lockedPromoCode;
+    }
     bookingAPI
       .createPaymentIntent(payload)
       .then((res) => {
+        if (cancelled) return;
         if (res.data.success && res.data.clientSecret) {
           setClientSecret(res.data.clientSecret);
         }
       })
-      .catch(() => setStripeError('Payment setup failed'));
-  }, [stripeEnabled, stripePromise, bookingEntityId, bookingEntityType, checkIn, checkOut, adults, children, selectedExpKeys, grandTotal, clientSecret]);
+      .catch(() => {
+        if (!cancelled) setStripeError('Payment setup failed');
+      });
+    return () => {
+      cancelled = true;
+      setClientSecret(null);
+    };
+  }, [
+    stripeEnabled,
+    stripePromise,
+    bookingEntityId,
+    bookingEntityType,
+    checkIn,
+    checkOut,
+    adults,
+    children,
+    experienceKeysSorted,
+    lockedPromoCode,
+    quoteFingerprint,
+    quoteTotalFromFingerprint,
+    quoteLoading,
+    quoteError
+  ]);
 
   const handleDatesSave = useCallback((from, to) => {
     setCheckIn(from);
@@ -391,6 +575,9 @@ const ConfirmBooking = () => {
     if (paymentIntentId) {
       bookingData.paymentIntentId = paymentIntentId;
     }
+    if (lockedPromoCode) {
+      bookingData.promoCode = lockedPromoCode;
+    }
     const response = await bookingAPI.create(bookingData);
     if (response.data.success) {
       try {
@@ -409,10 +596,10 @@ const ConfirmBooking = () => {
     } else {
       throw new Error(response.data.message || 'Booking failed');
     }
-  }, [bookingEntityId, bookingEntityType, checkIn, checkOut, adults, children, formData, selectedExpKeys, experiences, navigate]);
+  }, [bookingEntityId, bookingEntityType, checkIn, checkOut, adults, children, formData, selectedExpKeys, experiences, navigate, lockedPromoCode]);
 
   const handleConfirmAndPay = useCallback(async () => {
-    if (!bookingEntityId || !checkIn || !checkOut || !pricing) return;
+    if (!bookingEntityId || !checkIn || !checkOut || !pricing || !serverQuote || serverQuote.totalPrice < 0.5) return;
     setSubmitLoading(true);
     setError(null);
     try {
@@ -422,10 +609,10 @@ const ConfirmBooking = () => {
     } finally {
       setSubmitLoading(false);
     }
-  }, [bookingEntityId, checkIn, checkOut, pricing, createBooking]);
+  }, [bookingEntityId, checkIn, checkOut, pricing, serverQuote, createBooking]);
 
   const handleStripeSubmit = useCallback(async (stripe, elements) => {
-    if (!bookingEntityId || !checkIn || !checkOut || !pricing) return;
+    if (!bookingEntityId || !checkIn || !checkOut || !pricing || !serverQuote || serverQuote.totalPrice < 0.5) return;
     setSubmitLoading(true);
     setError(null);
     setStripeError(null);
@@ -440,6 +627,7 @@ const ConfirmBooking = () => {
         checkOut: formatDateOnlyLocal(checkOut),
         adults,
         children,
+        promoCode: lockedPromoCode || undefined,
         formData: { ...formData },
         experiences: Array.from(selectedExpKeys).map((key) => {
           const exp = experiences.find((e) => e.key === key);
@@ -501,7 +689,23 @@ const ConfirmBooking = () => {
     } finally {
       setSubmitLoading(false);
     }
-  }, [bookingEntityId, bookingEntitySlug, bookingEntityType, checkIn, checkOut, pricing, adults, children, formData, selectedExpKeys, experiences, createBooking, confirmPath]);
+  }, [
+    bookingEntityId,
+    bookingEntitySlug,
+    bookingEntityType,
+    checkIn,
+    checkOut,
+    pricing,
+    serverQuote,
+    adults,
+    children,
+    formData,
+    selectedExpKeys,
+    experiences,
+    createBooking,
+    confirmPath,
+    lockedPromoCode
+  ]);
 
   if (loading || !cabin) {
     return (
@@ -691,18 +895,66 @@ const ConfirmBooking = () => {
           </button>
         </div>
 
+        {/* Promo code — mobile: stacked control; md+: same row rhythm as Dates / Guests / Total (text link right) */}
+        <div className="py-4 border-b border-gray-200">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0 flex-1 w-full">
+              <p className="text-sm text-gray-600 mb-2">Promo code</p>
+              <input
+                type="text"
+                value={promoDraft}
+                onChange={(e) => setPromoDraft(e.target.value)}
+                autoComplete="off"
+                placeholder="Optional"
+                className="w-full min-w-0 h-12 border-b border-black/15 bg-transparent px-0 text-[16px] outline-none focus:border-black/30 placeholder:text-black/40"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={handleApplyPromo}
+              className="h-12 w-full shrink-0 rounded-2xl border border-gray-300 text-sm font-medium text-gray-800 hover:bg-gray-50 md:h-auto md:w-auto md:min-w-0 md:rounded-none md:border-0 md:bg-transparent md:p-0 md:hover:bg-transparent md:text-sm md:font-medium md:text-gray-700 md:underline"
+            >
+              Apply
+            </button>
+          </div>
+          {promoMessage && (
+            <p className="text-sm text-amber-800 mt-3">{promoMessage}</p>
+          )}
+          {quoteError && (
+            <p className="text-sm text-red-600 mt-3">{quoteError}</p>
+          )}
+        </div>
+
         {/* Total row */}
         <div className="flex items-center justify-between py-4 border-b border-gray-200">
-          <div>
+          <div className="min-w-0 flex-1">
             <p className="text-sm text-gray-600">Total price</p>
-            <p className="font-medium text-gray-900">
-              €{grandTotal.toLocaleString()} EUR
-            </p>
+            {quoteLoading ? (
+              <p className="font-medium text-gray-500 mt-0.5">Updating…</p>
+            ) : quoteError ? (
+              <p className="font-medium text-gray-500 mt-0.5">—</p>
+            ) : (
+              <div className="mt-0.5 space-y-0.5">
+                {displaySubtotal != null && displayDiscount > 0 && (
+                  <p className="text-xs text-gray-400 line-through decoration-gray-400/80 tabular-nums">
+                    Was €{Number(displaySubtotal).toLocaleString()}
+                  </p>
+                )}
+                {displayDiscount > 0 && (
+                  <p className="text-xs text-gray-600 tabular-nums">
+                    Promo −€{Number(displayDiscount).toLocaleString()}
+                  </p>
+                )}
+                <p className="font-medium text-gray-900 tabular-nums">
+                  €{Number(displayTotal).toLocaleString()} EUR
+                </p>
+              </div>
+            )}
           </div>
           <button
             type="button"
             onClick={() => setPriceModalOpen(true)}
-            className="text-sm font-medium text-gray-700 underline"
+            className="text-sm font-medium text-gray-700 underline shrink-0 ml-3"
           >
             Details
           </button>
@@ -725,7 +977,13 @@ const ConfirmBooking = () => {
           {stripePromise && clientSecret ? (
             <>
               <Elements stripe={stripePromise} options={{ clientSecret }}>
-                <PaymentFormInner onSubmit={handleStripeSubmit} loading={submitLoading} disabled={!hasValidGuestInfo} />
+                <PaymentFormInner
+                  onSubmit={handleStripeSubmit}
+                  loading={submitLoading}
+                  disabled={
+                    !hasValidGuestInfo || quoteLoading || !!quoteError || !serverQuote || serverQuote.totalPrice < 0.5
+                  }
+                />
               </Elements>
               {stripeError && (
                 <p className="mt-2 text-sm text-red-600">{stripeError}</p>
@@ -739,10 +997,20 @@ const ConfirmBooking = () => {
               <button
                 type="button"
                 onClick={handleConfirmAndPay}
-                disabled={submitLoading || !pricing || !hasValidGuestInfo}
+                disabled={
+                  submitLoading ||
+                  !pricing ||
+                  !hasValidGuestInfo ||
+                  quoteLoading ||
+                  !!quoteError ||
+                  !serverQuote ||
+                  serverQuote.totalPrice < 0.5
+                }
                 className="w-full h-12 rounded-xl bg-[#81887A] text-white font-semibold hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {submitLoading ? 'Submitting...' : `Confirm and pay €${grandTotal.toLocaleString()}`}
+                {submitLoading
+                  ? 'Submitting...'
+                  : `Confirm and pay €${Number(displayTotal).toLocaleString()}`}
               </button>
             </>
           )}
@@ -773,7 +1041,9 @@ const ConfirmBooking = () => {
           onClose={() => setPriceModalOpen(false)}
           nights={pricing?.totalNights}
           pricePerNight={pricing?.pricePerNight}
-          totalPrice={grandTotal}
+          totalPrice={displayTotal}
+          serverSubtotal={displaySubtotal != null ? displaySubtotal : undefined}
+          discountAmount={displayDiscount}
           extras={experienceExtras}
         />
       </div>

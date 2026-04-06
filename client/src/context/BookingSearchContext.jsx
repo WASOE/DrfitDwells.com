@@ -1,5 +1,6 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { daysBetweenDateOnly } from '../utils/dateOnly';
+import { readGuestPromo, writeGuestPromo } from '../utils/guestPromo';
 
 const BookingSearchContext = createContext();
 
@@ -11,6 +12,17 @@ export const BookingSearchProvider = ({ children }) => {
   const [babies, setBabies] = useState(0);
   const [pets, setPets] = useState(0);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [guestPromoCode, setGuestPromoCodeState] = useState('');
+
+  useEffect(() => {
+    setGuestPromoCodeState(readGuestPromo());
+  }, []);
+
+  const setGuestPromoCode = useCallback((raw) => {
+    const c = (raw || '').trim().toUpperCase();
+    setGuestPromoCodeState(c);
+    writeGuestPromo(c);
+  }, []);
 
   const updateDates = useCallback((start, end) => {
     setCheckIn(start || null);
@@ -31,6 +43,8 @@ export const BookingSearchProvider = ({ children }) => {
     setChildCount(0);
     setBabies(0);
     setPets(0);
+    setGuestPromoCodeState('');
+    writeGuestPromo('');
   }, []);
 
   const nights = useMemo(() => {
@@ -69,7 +83,9 @@ export const BookingSearchProvider = ({ children }) => {
     resetSearch,
     isModalOpen,
     openModal,
-    closeModal
+    closeModal,
+    guestPromoCode,
+    setGuestPromoCode
   }), [
     checkIn,
     checkOut,
@@ -83,7 +99,9 @@ export const BookingSearchProvider = ({ children }) => {
     resetSearch,
     isModalOpen,
     openModal,
-    closeModal
+    closeModal,
+    guestPromoCode,
+    setGuestPromoCode
   ]);
 
   return (

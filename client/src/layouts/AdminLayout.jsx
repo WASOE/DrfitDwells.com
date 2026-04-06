@@ -145,6 +145,7 @@ export default function AdminLayout() {
                 {navLink('/admin/bookings', 'Bookings')}
                 {navLink('/admin/cabins', 'Cabins')}
                 {navLink('/admin/reviews', 'Reviews')}
+                {navLink('/admin/promo-codes', 'Promo codes')}
                 {decodeRoleFromToken() === 'admin' && navLink('/maintenance', 'Maintenance')}
                 {developerNavEnabled && navLink('/admin/cabin-types', 'Cabin types')}
               </nav>

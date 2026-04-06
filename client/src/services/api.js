@@ -77,6 +77,7 @@ export const unitAPI = {
 export const bookingAPI = {
   create: (bookingData) => api.post('/bookings', bookingData),
   getConfig: () => api.get('/bookings/config'),
+  quote: (data) => api.post('/bookings/quote', data),
   createPaymentIntent: (data) => api.post('/bookings/create-payment-intent', data),
   getById: (id, email) => {
     const params = {};
@@ -89,6 +90,12 @@ export const bookingAPI = {
   /** Guest-verified purchase payload for browser tags; Meta CAPI retries if not yet sent (primary send on booking confirm). */
   postPurchaseTracking: (id, email) =>
     api.post(`/bookings/${id}/purchase-tracking`, { email })
+};
+
+export const promoAdminAPI = {
+  list: () => api.get('/admin/promo-codes'),
+  create: (data) => api.post('/admin/promo-codes', data),
+  update: (id, data) => api.patch(`/admin/promo-codes/${id}`, data)
 };
 
 export const reviewAPI = {
