@@ -384,26 +384,21 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
           />
         </div>
 
-        <div className={`flex flex-col justify-end min-w-[100px] ${isGlass ? 'text-white' : ''}`}>
-          <button
-            type="button"
-            onClick={() => setPromoUiOpen((o) => !o)}
-            className={`text-left text-[9px] uppercase tracking-[0.3em] font-serif mb-1.5 ${
-              isGlass ? 'text-white/70 hover:text-white' : 'text-gray-500 hover:text-gray-800'
-            }`}
-          >
+        {/* Desktop: promo always visible (same rhythm as dates/guests — no toggle). */}
+        <div className={fieldContainerClass} style={{ width: '160px' }}>
+          <label htmlFor="search-promo-desktop" className={fieldLabelClass}>
             {promoTriggerLabel}
-          </button>
-          {promoUiOpen && (
-            <input
-              type="text"
-              value={promoDraft}
-              onChange={(e) => setPromoDraft(e.target.value)}
-              placeholder="Optional"
-              autoComplete="off"
-              className={fieldInputClass}
-            />
-          )}
+          </label>
+          <input
+            id="search-promo-desktop"
+            name="dw-search-promo"
+            type="text"
+            value={promoDraft}
+            onChange={(e) => setPromoDraft(e.target.value)}
+            placeholder="Optional"
+            autoComplete="off"
+            className={fieldInputClass}
+          />
         </div>
 
         {/* Spacer so button aligns to right edge and no gap remains */}
