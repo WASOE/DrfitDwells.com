@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Minus, Plus } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
+import '../../i18n/ns/booking';
 
 /**
  * Airbnb-style "Change guests" modal with adults, children, infants, pets.
@@ -10,7 +11,7 @@ const ChangeGuestsModal = ({
   isOpen,
   onClose,
   adults,
-  children,
+  childGuestCount,
   babies = 0,
   pets = 0,
   maxGuests = 4,
@@ -19,20 +20,20 @@ const ChangeGuestsModal = ({
 }) => {
   const { t } = useTranslation('booking');
   const [localAdults, setLocalAdults] = useState(adults);
-  const [localChildren, setLocalChildren] = useState(children);
+  const [localChildren, setLocalChildren] = useState(childGuestCount);
   const [localBabies, setLocalBabies] = useState(babies);
   const [localPets, setLocalPets] = useState(pets);
 
   useEffect(() => {
     if (isOpen) {
       setLocalAdults(adults);
-      setLocalChildren(children);
+      setLocalChildren(childGuestCount);
       setLocalBabies(babies);
       setLocalPets(pets);
       document.body.style.overflow = 'hidden';
       return () => { document.body.style.overflow = ''; };
     }
-  }, [isOpen, adults, children, babies, pets]);
+  }, [isOpen, adults, childGuestCount, babies, pets]);
 
   const totalExcludingInfants = localAdults + localChildren;
   const canIncreaseAdults = totalExcludingInfants < maxGuests;
@@ -63,10 +64,43 @@ const ChangeGuestsModal = ({
   if (!isOpen) return null;
 
   const rows = [
-    { label: t('guests.adults.label'), description: 'Age 13+', field: 'adults', value: localAdults, min: 1, canDec: localAdults > 1, canInc: canIncreaseAdults },
-    { label: t('guests.children.label'), description: 'Ages 2-12', field: 'children', value: localChildren, min: 0, canDec: localChildren > 0, canInc: canIncreaseChildren },
-    { label: t('guests.babies.label'), description: 'Under 2', field: 'babies', value: localBabies, min: 0, canDec: localBabies > 0, canInc: true },
-    { label: t('guests.pets.label'), description: '', field: 'pets', value: localPets, min: 0, canDec: localPets > 0, canInc: allowPets, hasLink: !allowPets }
+    {
+      label: t('guests.adults.label'),
+      description: t('guests.adults.description'),
+      field: 'adults',
+      value: localAdults,
+      min: 1,
+      canDec: localAdults > 1,
+      canInc: canIncreaseAdults
+    },
+    {
+      label: t('guests.children.label'),
+      description: t('guests.children.description'),
+      field: 'children',
+      value: localChildren,
+      min: 0,
+      canDec: localChildren > 0,
+      canInc: canIncreaseChildren
+    },
+    {
+      label: t('guests.babies.label'),
+      description: t('guests.babies.description'),
+      field: 'babies',
+      value: localBabies,
+      min: 0,
+      canDec: localBabies > 0,
+      canInc: true
+    },
+    {
+      label: t('guests.pets.label'),
+      description: '',
+      field: 'pets',
+      value: localPets,
+      min: 0,
+      canDec: localPets > 0,
+      canInc: allowPets,
+      hasLink: !allowPets
+    }
   ];
 
   return (
@@ -85,12 +119,12 @@ const ChangeGuestsModal = ({
         >
           {/* Header */}
           <header className="flex items-center justify-between px-6 py-4 border-b border-gray-200 shrink-0">
-            <h2 className="text-lg font-semibold text-gray-900">Change guests</h2>
+            <h2 className="text-lg font-semibold text-gray-900">{t('changeGuests.title')}</h2>
             <button
               type="button"
               onClick={onClose}
               className="w-10 h-10 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-100 transition-colors"
-              aria-label="Close"
+              aria-label={t('modal.closeAria')}
             >
               <X className="w-5 h-5" />
             </button>
@@ -98,8 +132,8 @@ const ChangeGuestsModal = ({
 
           {/* Restrictions */}
           <p className="px-6 py-3 text-sm text-gray-600">
-            This place has a maximum of {maxGuests} guests, not including infants.
-            {!allowPets && ' Pets are not allowed.'}
+            {t('changeGuests.restrictions', { maxGuests })}
+            {!allowPets ? ` ${t('changeGuests.petsNotAllowed')}` : ''}
           </p>
 
           {/* Guest rows */}
@@ -150,14 +184,14 @@ const ChangeGuestsModal = ({
               onClick={onClose}
               className="text-sm font-medium text-gray-700 hover:text-gray-900"
             >
-              Cancel
+              {t('actions.cancel')}
             </button>
             <button
               type="button"
               onClick={handleSave}
               className="h-11 px-6 rounded-lg bg-gray-900 text-white font-semibold hover:bg-gray-800 transition-colors"
             >
-              Save
+              {t('actions.save')}
             </button>
           </footer>
         </motion.div>

@@ -14,9 +14,11 @@ const DayPicker = lazy(() =>
 );
 import { X, Minus, Plus } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { getLanguageFromPath, localizePath } from '../utils/localizedRoutes';
+import { localizePath } from '../utils/localizedRoutes';
+import { useSiteLanguage } from '../hooks/useSiteLanguage';
 import { useBookingSearch } from '../context/BookingSearchContext';
 import { formatDateOnlyLocal } from '../utils/dateOnly';
+import { formatStayRangeSummary, getDateFnsLocale } from '../utils/localeDates';
 
 function bookingModalDevLog(...args) {
   if (import.meta.env.DEV) {
@@ -27,8 +29,9 @@ function bookingModalDevLog(...args) {
 
 const BookingModal = () => {
   const { t } = useTranslation('booking');
+  const { language } = useSiteLanguage();
   const navigate = useNavigate();
-  const { pathname, search: locationSearch } = useLocation();
+  const { search: locationSearch } = useLocation();
   const {
     checkIn,
     checkOut,
@@ -133,7 +136,7 @@ const BookingModal = () => {
 
   const handleSearch = () => {
     if (!checkIn || !checkOut) {
-      setError('Please select arrival and departure dates.');
+      setError(t('errors.datesRequired'));
       return;
     }
     const today = getMinSelectableStayDate();
@@ -159,16 +162,16 @@ const BookingModal = () => {
     }
 
     closeModal();
-    const searchPath = localizePath('/search', getLanguageFromPath(pathname));
+    const searchPath = localizePath('/search', language);
     navigate(`${searchPath}?${searchParams.toString()}`);
   };
 
   const dateSummary = useMemo(() => {
     if (checkIn && checkOut) {
-      return `${checkIn.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} → ${checkOut.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+      return formatStayRangeSummary(checkIn, checkOut, language);
     }
-    return 'Select your stay';
-  }, [checkIn, checkOut]);
+    return t('modal.selectYourStay');
+  }, [checkIn, checkOut, language, t]);
 
   const minStayDate = getMinSelectableStayDate();
 
@@ -234,7 +237,7 @@ const BookingModal = () => {
                   type="button"
                   onClick={closeModal}
                   className="w-10 h-10 rounded-full border border-stone-200 flex items-center justify-center text-stone-700 hover:bg-stone-50 transition-colors"
-                  aria-label="Close booking modal"
+                  aria-label={t('modal.closeAria')}
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -242,14 +245,14 @@ const BookingModal = () => {
                   id="booking-modal-title"
                   className="font-['Playfair_Display'] text-lg md:text-xl text-stone-900"
                 >
-                  Plan your stay
+                  {t('mobile.planYourStay')}
                 </h2>
                 <button
                   type="button"
                   onClick={handleClear}
                   className="text-xs uppercase tracking-[0.3em] text-stone-500 hover:text-stone-900 transition-colors"
                 >
-                  Clear
+                  {t('modal.clear')}
                 </button>
               </header>
 
@@ -262,16 +265,16 @@ const BookingModal = () => {
                   <section className="min-w-0">
                     <div className="mb-5 md:mb-6">
                       <p className="text-xs uppercase tracking-[0.4em] text-stone-500 mb-3">
-                        Dates
+                        {t('mobile.datesLabel')}
                       </p>
                       <h3 className="font-['Playfair_Display'] text-2xl md:text-3xl text-stone-900 mb-2">
-                        When will you be there?
+                        {t('modal.when')}
                       </h3>
                       <p className="text-sm md:text-base text-stone-600">{dateSummary}</p>
                     </div>
 
                     <div className="mt-6 md:mt-7">
-                      <Suspense fallback={<div className="h-64 flex items-center justify-center text-gray-400">Loading calendar…</div>}>
+                      <Suspense fallback={<div className="h-64 flex items-center justify-center text-gray-400">{t('modal.loadingCalendar')}</div>}>
                       <DayPicker
                         mode="range"
                         selected={range}
@@ -279,6 +282,7 @@ const BookingModal = () => {
                         numberOfMonths={isMobile ? 1 : 2}
                         pagedNavigation
                         captionLayout="dropdown-buttons"
+                        locale={getDateFnsLocale(language)}
                         fromDate={minStayDate}
                         disabled={{ before: minStayDate }}
                         modifiersClassNames={{
@@ -308,17 +312,29 @@ const BookingModal = () => {
                   <section className="min-w-0 md:pt-1">
                     <div className="mb-5 md:mb-6">
                       <p className="text-xs uppercase tracking-[0.4em] text-stone-500 mb-3">
-                        Guests
+                        {t('fields.guests')}
                       </p>
                       <h3 className="font-['Playfair_Display'] text-2xl md:text-3xl text-stone-900">
-                        Who is coming?
+                        {t('modal.who')}
                       </h3>
                     </div>
 
                     <div className="mt-6 md:mt-7 space-y-3 md:space-y-4">
                       {[
-                        { label: 'Adults', description: 'Ages 13 or above', field: 'adults', value: adults, min: 1 },
-                        { label: 'Children', description: 'Ages 2–12', field: 'children', value: children, min: 0 }
+                        {
+                          label: t('guests.adults.label'),
+                          description: t('guests.adults.description'),
+                          field: 'adults',
+                          value: adults,
+                          min: 1
+                        },
+                        {
+                          label: t('guests.children.label'),
+                          description: t('guests.children.description'),
+                          field: 'children',
+                          value: children,
+                          min: 0
+                        }
                       ].map(({ label, description, field, value, min }) => (
                         <div key={field} className="flex items-center justify-between bg-stone-50/80 rounded-2xl border border-stone-200 px-5 py-4 hover:border-stone-300 transition-colors">
                           <div>
@@ -354,14 +370,14 @@ const BookingModal = () => {
                       onClick={() => setPromoUiOpen((o) => !o)}
                       className="touch-manipulation text-left text-sm text-stone-600 underline underline-offset-2 py-2 -my-2 min-h-[44px] inline-flex items-center"
                     >
-                      Promo code
+                      {t('fields.promoCode')}
                     </button>
                     {promoUiOpen && (
                       <input
                         type="text"
                         value={promoDraft}
                         onChange={(e) => setPromoDraft(e.target.value)}
-                        placeholder="Optional"
+                        placeholder={t('fields.optional')}
                         autoComplete="off"
                         className="mt-3 w-full border-b border-stone-300 bg-transparent py-2 text-base text-stone-900 outline-none focus:border-stone-600 placeholder:text-stone-400"
                       />
@@ -380,10 +396,10 @@ const BookingModal = () => {
               >
                 <div>
                   <p className="text-xs md:text-sm text-stone-500 uppercase tracking-[0.3em]">
-                    {nights ? `${nights} ${nights === 1 ? 'night' : 'nights'}` : 'Select dates'}
+                    {nights ? t('modal.nights', { count: nights }) : t('modal.footerSelectDates')}
                   </p>
                   <p className="text-base md:text-lg text-stone-900 font-serif mt-1">
-                    {adults + children} guest{adults + children === 1 ? '' : 's'}
+                    {t('guestSummary', { count: adults + children })}
                   </p>
                 </div>
                 <button
@@ -395,7 +411,7 @@ const BookingModal = () => {
                     !checkIn || !checkOut ? '' : 'shadow-lg hover:shadow-xl'
                   }`}
                 >
-                  Search
+                  {t('actions.search')}
                 </button>
               </footer>
             </motion.div>

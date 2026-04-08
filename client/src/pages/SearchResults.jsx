@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import '../i18n/ns/booking';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
-import { getLanguageFromPath, localizePath } from '../utils/localizedRoutes';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { localizePath } from '../utils/localizedRoutes';
+import { useSiteLanguage } from '../hooks/useSiteLanguage';
 import { availabilityAPI, unitAPI } from '../services/api';
 import Seo from '../components/Seo';
 import { useBookingContext } from '../context/BookingContext';
@@ -168,8 +169,7 @@ function getSearchCardStatus(cabin, t) {
 const SearchResults = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { pathname } = useLocation();
-  const routeLanguage = getLanguageFromPath(pathname);
+  const { language: routeLanguage } = useSiteLanguage();
   const searchBase = localizePath('/search', routeLanguage);
   const homeBase = localizePath('/', routeLanguage);
   const { setBasicInfo } = useBookingContext();
@@ -198,8 +198,8 @@ const SearchResults = () => {
 
   // Handle draft parameter
   const draftToken = searchParams.get('draft');
-  const seoTitle = 'Search availability | Drift & Dwells';
-  const seoDescription = 'Browse currently available Drift & Dwells stays for your selected dates and group size.';
+  const seoTitle = t('search.seoTitle');
+  const seoDescription = t('search.seoDescription');
 
   // Load draft data if token is present
   useEffect(() => {
@@ -272,7 +272,7 @@ const SearchResults = () => {
         setCabins(cabinsData);
         setRetryCount(0);
       } else {
-        setErrorMessage(response.data.message || 'Failed to search cabins');
+        setErrorMessage(response.data.message || t('search.errorSearchFailed'));
       }
     } catch (err) {
       console.error('Search error:', err);
@@ -293,7 +293,7 @@ const SearchResults = () => {
         return;
       }
 
-      setErrorMessage(apiMessage || 'Error searching for cabins. Please try again.');
+      setErrorMessage(apiMessage || t('search.errorSearchGeneric'));
     } finally {
       setLoading(false);
     }
@@ -453,7 +453,7 @@ const SearchResults = () => {
           <div className="max-w-7xl mx-auto px-6 py-20">
             <div className="text-center py-20">
               <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-sage"></div>
-              <p className="mt-6 text-body text-gray-600">Searching for available cabins...</p>
+              <p className="mt-6 text-body text-gray-600">{t('search.loadingResults')}</p>
             </div>
           </div>
         </div>
@@ -489,7 +489,7 @@ const SearchResults = () => {
               role="status"
             >
               <p className={promoStatusMicrocopyClass}>
-                {searchPromoMeta.label || 'Promo applied'}
+                {searchPromoMeta.label || t('search.promoAppliedDefault')}
               </p>
               <p className="mt-2 text-sm text-gray-600 font-light leading-relaxed max-w-xl">
                 Listed totals reflect your code on the stay.
@@ -520,7 +520,7 @@ const SearchResults = () => {
           )}
           {errorMessage && (
             <p className="text-red-500 text-sm mt-4">
-              {errorMessage || 'Please select valid dates and try again.'}
+              {errorMessage || t('search.errorSelectValidDates')}
             </p>
           )}
         </div>
@@ -541,7 +541,7 @@ const SearchResults = () => {
               onClick={() => navigate(homeBase)}
               className="btn-pill"
             >
-              new search →
+              {t('search.newSearchCta')}
             </button>
           </div>
         ) : (
@@ -585,9 +585,9 @@ const SearchResults = () => {
                     return (
                       <div className="absolute top-6 left-6 bg-white/95 backdrop-blur-sm px-3 py-1.5 rounded-full border border-gray-200 shadow-sm z-10">
                         <span className="text-xs font-medium text-gray-800">
-                          Multi-unit
+                          {t('search.multiUnitPill')}
                           {count?.total > 0 && (
-                            <span> • {count.total} units</span>
+                            <span> {t('search.unitsCount', { count: count.total })}</span>
                           )}
                         </span>
                       </div>
@@ -595,7 +595,7 @@ const SearchResults = () => {
                   })()}
                   <div className="absolute top-6 right-6 bg-white/95 backdrop-blur-sm px-4 py-2">
                     <span className="text-sm font-light text-sage tracking-wide">
-                      {cabin.capacity} {cabin.capacity === 1 ? 'Guest' : 'Guests'}
+                      {t('guestSummary', { count: cabin.capacity })}
                     </span>
                   </div>
                 </div>
@@ -614,7 +614,7 @@ const SearchResults = () => {
                     <div className="flex justify-between items-start gap-4 mb-6">
                       <div>
                         <p className="text-body text-gray-600">
-                          {cabin.totalNights} {cabin.totalNights === 1 ? 'night' : 'nights'}
+                          {t('modal.nights', { count: cabin.totalNights })}
                         </p>
                       </div>
                       <StayLodgingPriceBlock
@@ -624,7 +624,7 @@ const SearchResults = () => {
                         }
                         finalAmount={cabin.totalPrice}
                         showPromoMicrocopy={!!searchPromoMeta?.applied}
-                        promoMicrocopyText={searchPromoMeta?.label || 'Promo applied'}
+                        promoMicrocopyText={searchPromoMeta?.label || t('search.promoAppliedDefault')}
                         invalidReason={
                           currentSearchParams.promoCode && searchPromoMeta?.invalidReason
                             ? searchPromoMeta.invalidReason
@@ -632,8 +632,8 @@ const SearchResults = () => {
                         }
                         footnote={
                           <p className="text-sm text-gray-500 font-light mt-1">
-                            €{cabin.pricePerNight}/night
-                            {(cabin.pricingModel || 'per_night') === 'per_person' ? ' per person' : ''}
+                            {t('search.pricePerNight', { price: cabin.pricePerNight })}
+                            {(cabin.pricingModel || 'per_night') === 'per_person' ? t('search.perPersonSuffix') : ''}
                           </p>
                         }
                       />
@@ -668,7 +668,7 @@ const SearchResults = () => {
                           }}
                           className="w-full btn-editorial text-center block py-3"
                         >
-                          {returnTo ? 'Select This Cabin →' : 'view details →'}
+                          {returnTo ? t('search.selectThisCabinCta') : t('search.viewDetailsCta')}
                         </button>
                         {returnTo && (
                           <button
@@ -680,7 +680,7 @@ const SearchResults = () => {
                             }}
                             className="w-full btn-underline text-center block py-2 mt-2"
                           >
-                            view details first →
+                            {t('search.viewDetailsFirstCta')}
                           </button>
                         )}
                       </>
@@ -740,7 +740,7 @@ const SearchResults = () => {
             onClick={() => navigate(homeBase)}
             className="btn-underline"
           >
-            ← back to home
+            {t('search.backToHomeArrow')}
           </button>
         </div>
         </div>

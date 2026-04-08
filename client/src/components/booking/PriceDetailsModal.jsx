@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
@@ -17,6 +18,7 @@ const PriceDetailsModal = ({
   currency = 'EUR',
   extras = [] // { label, amount }
 }) => {
+  const { t } = useTranslation('booking');
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
@@ -54,12 +56,12 @@ const PriceDetailsModal = ({
         >
           {/* Header */}
           <header className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900">Price details</h2>
+            <h2 className="text-lg font-semibold text-gray-900">{t('confirm.priceDetailsModalTitle')}</h2>
             <button
               type="button"
               onClick={onClose}
               className="w-10 h-10 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-100 transition-colors"
-              aria-label="Close"
+              aria-label={t('modal.closeAria')}
             >
               <X className="w-5 h-5" />
             </button>
@@ -69,7 +71,7 @@ const PriceDetailsModal = ({
           <div className="px-6 py-4 space-y-4">
             {showServerBreakdown ? (
               <div className="flex justify-between items-center text-gray-900">
-                <span>Stay &amp; add-ons</span>
+                <span>{t('confirm.stayAndAddons')}</span>
                 <span className="font-medium tabular-nums">€{Number(serverSubtotal).toLocaleString()}</span>
               </div>
             ) : (
@@ -77,7 +79,7 @@ const PriceDetailsModal = ({
                 {nights && pricePerNight != null && (
                   <div className="flex justify-between items-center text-gray-900">
                     <span>
-                      {nights} {nights === 1 ? 'night' : 'nights'} × €{Number(pricePerNight).toLocaleString()}
+                      {t('modal.nights', { count: nights })} × €{Number(pricePerNight).toLocaleString()}
                     </span>
                     <span className="font-medium tabular-nums">
                       €{(nights * pricePerNight).toLocaleString()}
@@ -94,12 +96,12 @@ const PriceDetailsModal = ({
             )}
             {disc > 0 && (
               <div className="flex justify-between items-center text-gray-700">
-                <span>Promo</span>
+                <span>{t('confirm.promoShort')}</span>
                 <span className="font-medium tabular-nums">−€{disc.toLocaleString()}</span>
               </div>
             )}
             <div className="flex justify-between items-center pt-3 border-t border-gray-200 font-semibold text-gray-900">
-              <span>Total ({currency})</span>
+              <span>{t('confirm.totalWithCurrency', { currency })}</span>
               <span className="tabular-nums">€{Number(displayTotal).toLocaleString()}</span>
             </div>
           </div>
@@ -110,7 +112,7 @@ const PriceDetailsModal = ({
               onClick={onClose}
               className="text-sm text-gray-600 underline hover:text-gray-900"
             >
-              Price breakdown
+              {t('confirm.priceBreakdownDismiss')}
             </button>
           </div>
         </motion.div>

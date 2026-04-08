@@ -3,9 +3,8 @@
     "headline": "Бележки от планината.",
     "subcopy": "Истории от планината, тихо изпратени към пощата ти.",
     "emailPlaceholder": "ИМЕЙЛ АДРЕС",
-    "privacyConsent": "Съгласен/на съм с {{privacyPolicy}} и {{termsOfUse}}.",
-    "privacyPolicy": "политиката за поверителност",
-    "termsOfUse": "общите условия",
+    "privacyConsent": "Съгласен/на съм с <0>политиката за поверителност</0> и <1>общите условия</1>.",
+    "subscribeAria": "Абониране",
     "menu": "Меню",
     "company": "Компания",
     "contact": "Контакт",
@@ -27,6 +26,16 @@
       "travellerAwards": "Traveller Review Awards",
       "travelersChoice": "Travelers' Choice"
     }
+  },
+  "notFound": {
+    "seoTitle": "Страницата не е намерена | Drift & Dwells",
+    "seoDescription": "Тази страница не съществува. Продължи пътуването си с Drift & Dwells.",
+    "kicker": "СТРАНИЦАТА НЕ Е НАМЕРЕНА",
+    "heading": "Поехте по живописен маршрут.",
+    "lead": "Тази пътека не води до къщичка.",
+    "hint": "Върнем ви към по-добъра пътека.",
+    "ctaHome": "Към началната страница",
+    "ctaValley": "Разгледай Долината"
   },
   "announcement": {
     "bar": "ВЕЧЕ СМЕ САМОСТОЯТЕЛНИ • РЕЗЕРВИРАЙ ДИРЕКТНО И СПЕСТИ ТАКСИ",

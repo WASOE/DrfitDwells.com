@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useBookingSearch } from '../context/BookingSearchContext';
 import { useLanguage } from '../context/LanguageContext.jsx';
+import { useSiteLanguage } from '../hooks/useSiteLanguage';
 import { localizePath, stripLocaleFromPath } from '../utils/localizedRoutes';
 
 const Header = () => {
@@ -10,7 +11,8 @@ const Header = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const location = useLocation();
   const { t } = useTranslation('nav');
-  const { language, setLanguage } = useLanguage();
+  const { setLanguage } = useLanguage();
+  const { language } = useSiteLanguage();
   const { openModal } = useBookingSearch();
   const basePath = stripLocaleFromPath(location.pathname);
   const isHeroOverlay = basePath === '/' || basePath === '/cabin' || basePath === '/valley';
@@ -235,6 +237,39 @@ const Header = () => {
                 )}
               </div>
             ))}
+            <div
+              className="mt-10 flex items-center justify-center gap-1 text-[11px] uppercase tracking-[0.2em] opacity-0 animate-header-nav-in"
+              style={{ animationDelay: `${80 + mobileNavLinks.length * 70}ms` }}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setLanguage('en');
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`px-2 py-1 rounded-full touch-manipulation ${
+                  language === 'en'
+                    ? 'bg-[#F1ECE2] text-stone-900'
+                    : 'bg-transparent text-[#F1ECE2]/70 hover:text-[#F1ECE2]'
+                }`}
+              >
+                {t('language.en')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLanguage('bg');
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`px-1.5 py-0.5 rounded-full touch-manipulation ${
+                  language === 'bg'
+                    ? 'bg-[#F1ECE2] text-stone-900'
+                    : 'bg-transparent text-[#F1ECE2]/70 hover:text-[#F1ECE2]'
+                }`}
+              >
+                {t('language.bg')}
+              </button>
+            </div>
           </nav>
         </div>
       )}

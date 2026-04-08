@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
+import '../i18n/ns/booking';
 import { cabinAPI, bookingAPI } from '../services/api';
 import { useBookingContext } from '../context/BookingContext';
 import { useBookingSearch } from '../context/BookingSearchContext';
@@ -30,7 +32,8 @@ const CabinDetails = () => {
   const navigate = useNavigate();
   const { setBasicInfo } = useBookingContext();
   const { openModal: openDateModal, setGuestPromoCode } = useBookingSearch();
-  
+  const { t } = useTranslation('booking');
+
   // Check if we're returning to craft flow
   const returnTo = searchParams.get('returnTo');
   
@@ -838,8 +841,7 @@ const CabinDetails = () => {
       
       const idx = saved.indexOf(cabin._id);
       let next = saved;
-      const wasSaved = idx !== -1;
-      
+
       if (idx === -1) {
         next = [...saved, cabin._id];
         setIsSaved(true);
@@ -890,66 +892,6 @@ const CabinDetails = () => {
       }
     }
   }, [cabin?.name, cabin?.location]);
-
-  // Handle selecting cabin for craft flow return
-  const handleSelectCabinForCraft = useCallback(() => {
-    if (!id || !searchCriteria.checkIn || !searchCriteria.checkOut) {
-      setError('Please ensure check-in and check-out dates are selected');
-      return;
-    }
-    
-    // Save basic booking info to context
-    setBasicInfo({
-      cabinId: id,
-      checkIn: searchCriteria.checkIn,
-      checkOut: searchCriteria.checkOut,
-      adults: searchCriteria.adults,
-      children: searchCriteria.children
-    });
-    
-    // Navigate back to craft flow
-    if (returnTo) {
-      navigate(`/${returnTo}`);
-    } else {
-      navigate('/craft/step-4');
-    }
-  }, [id, searchCriteria, setBasicInfo, navigate, returnTo]);
-
-  // Handle starting the crafted experience wizard
-  const handleStartCraftedExperience = useCallback(() => {
-    if (!id || !searchCriteria.checkIn || !searchCriteria.checkOut) {
-      setError('Please ensure check-in and check-out dates are selected');
-      return;
-    }
-    
-    // Save basic booking info to context
-    setBasicInfo({
-      cabinId: id,
-      checkIn: searchCriteria.checkIn,
-      checkOut: searchCriteria.checkOut,
-      adults: searchCriteria.adults,
-      children: searchCriteria.children
-    });
-    
-    // Navigate to the wizard
-    navigate('/craft/step-1');
-  }, [id, searchCriteria, setBasicInfo, navigate]);
-
-  // Format date helper
-  const formatDate = useCallback((dateString) => {
-    if (!dateString) return '';
-    try {
-      const date = parseDateOnlyLocal(dateString);
-      if (!date || isNaN(date.getTime())) return '';
-      return date.toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric', 
-        year: 'numeric' 
-      });
-    } catch {
-      return '';
-    }
-  }, []);
 
   // ===== H) Early returns (ONLY after ALL hooks are declared) =====
   if (loading) {
@@ -1185,7 +1127,7 @@ const CabinDetails = () => {
                     showPromoMicrocopy={
                       !!cabinQuote?.promo?.applied && !cabinQuote?.promo?.invalidReason
                     }
-                    promoMicrocopyText={cabinQuote?.promo?.label || 'Promo applied'}
+                    promoMicrocopyText={cabinQuote?.promo?.label || undefined}
                     invalidReason={
                       searchCriteria.promoCode && cabinQuote?.promo?.invalidReason
                         ? cabinQuote.promo.invalidReason
@@ -1194,13 +1136,14 @@ const CabinDetails = () => {
                     priceClassName="text-xl md:text-2xl font-semibold text-gray-900"
                     strikeClassName="font-serif text-base md:text-lg text-gray-400 line-through decoration-gray-400/70 tabular-nums"
                     priceSuffix={
-                      <span className="text-base font-normal text-gray-500 ml-1">total</span>
+                      <span className="text-base font-normal text-gray-500 ml-1">{t('details.priceTotalSuffix')}</span>
                     }
                     footnote={
                       pricing ? (
                         <p className="text-sm text-gray-500 mt-0.5">
-                          {pricing.totalNights} {pricing.totalNights === 1 ? 'night' : 'nights'}
-                          {cabin.pricePerNight && ` · €${cabin.pricePerNight.toLocaleString()}/night`}
+                          {t('modal.nights', { count: pricing.totalNights })}
+                          {cabin.pricePerNight &&
+                            ` · ${t('search.pricePerNight', { price: cabin.pricePerNight.toLocaleString() })}`}
                         </p>
                       ) : null
                     }
@@ -1208,11 +1151,11 @@ const CabinDetails = () => {
                 </div>
               ) : cabin.pricePerNight ? (
                 <p className="text-xl md:text-2xl font-semibold text-gray-900 tabular-nums mt-0.5">
-                  From €{cabin.pricePerNight.toLocaleString()}/night
+                  {t('search.priceFromPerNight', { price: cabin.pricePerNight.toLocaleString() })}
                 </p>
               ) : (
                 <p className="text-xl md:text-2xl font-semibold text-gray-900 tabular-nums mt-0.5">
-                  Select dates for pricing
+                  {t('details.selectDatesForPricing')}
                 </p>
               )}
               <button
@@ -1220,7 +1163,7 @@ const CabinDetails = () => {
                 onClick={() => window.dispatchEvent(new CustomEvent('openBookDirectModal'))}
                 className="text-xs text-sage hover:text-sage-dark underline-offset-2 hover:underline mt-1.5 font-medium"
               >
-                Book direct · save fees
+                {t('details.bookDirectSaveFees')}
               </button>
             </div>
           </div>
@@ -1230,7 +1173,9 @@ const CabinDetails = () => {
               onClick={goToConfirmOrOpenDates}
               className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#81887A] text-white font-semibold text-sm hover:opacity-95 transition-all shadow-sm hover:shadow-md min-h-[44px] touch-manipulation"
             >
-              {searchCriteria.checkIn && searchCriteria.checkOut ? 'Continue to payment →' : 'Select dates'}
+              {searchCriteria.checkIn && searchCriteria.checkOut
+                ? t('details.continueToPayment')
+                : t('modal.footerSelectDates')}
             </button>
           </div>
         </div>
@@ -1337,7 +1282,7 @@ const CabinDetails = () => {
                     showPromoMicrocopy={
                       !!cabinQuote?.promo?.applied && !cabinQuote?.promo?.invalidReason
                     }
-                    promoMicrocopyText={cabinQuote?.promo?.label || 'Promo applied'}
+                    promoMicrocopyText={cabinQuote?.promo?.label || undefined}
                     invalidReason={
                       searchCriteria.promoCode && cabinQuote?.promo?.invalidReason
                         ? cabinQuote.promo.invalidReason
@@ -1346,12 +1291,13 @@ const CabinDetails = () => {
                     priceClassName="text-2xl font-semibold text-gray-900"
                     strikeClassName="font-serif text-lg text-gray-400 line-through decoration-gray-400/70 tabular-nums"
                     priceSuffix={
-                      <span className="text-base font-normal text-gray-500 ml-1">total</span>
+                      <span className="text-base font-normal text-gray-500 ml-1">{t('details.priceTotalSuffix')}</span>
                     }
                     footnote={
                       <p className="text-sm text-gray-500 mt-0.5">
-                        {pricing.totalNights} {pricing.totalNights === 1 ? 'night' : 'nights'}
-                        {cabin.pricePerNight && ` · €${cabin.pricePerNight.toLocaleString()}/night`}
+                        {t('modal.nights', { count: pricing.totalNights })}
+                        {cabin.pricePerNight &&
+                          ` · ${t('search.pricePerNight', { price: cabin.pricePerNight.toLocaleString() })}`}
                       </p>
                     }
                   />
@@ -1360,7 +1306,7 @@ const CabinDetails = () => {
                 <div className="space-y-2 text-sm border-t border-gray-100 pt-4">
                   {/* Editable check-in / check-out */}
                   <div className="flex justify-between items-center gap-3 py-1.5">
-                    <span className="text-gray-500">Check-in</span>
+                    <span className="text-gray-500">{t('fields.checkIn')}</span>
                     <input
                       type="date"
                       name="dw-cabin-check-in"
@@ -1373,7 +1319,7 @@ const CabinDetails = () => {
                     />
                   </div>
                   <div className="flex justify-between items-center gap-3 py-1.5">
-                    <span className="text-gray-500">Check-out</span>
+                    <span className="text-gray-500">{t('fields.checkOut')}</span>
                     <input
                       type="date"
                       name="dw-cabin-check-out"
@@ -1388,7 +1334,7 @@ const CabinDetails = () => {
 
                   {/* Editable guests (total) */}
                   <div className="flex justify-between items-center gap-3 py-1.5">
-                    <span className="text-gray-500">Guests</span>
+                    <span className="text-gray-500">{t('fields.guests')}</span>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
@@ -1421,7 +1367,10 @@ const CabinDetails = () => {
                 {experiences.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-gray-100">
                     <div className="text-sm text-gray-600 mb-1 flex items-center justify-between">
-                      <span>Add experiences {selectedExpKeys.size > 0 && `· €${experienceTotal.toLocaleString()}`}</span>
+                      <span>
+                        {t('details.addExperiences')}
+                        {selectedExpKeys.size > 0 && ` · €${experienceTotal.toLocaleString()}`}
+                      </span>
                     </div>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {experiences.map(exp => {
@@ -1437,7 +1386,8 @@ const CabinDetails = () => {
                             className={`px-2.5 py-1 rounded-lg text-xs border ${selected ? 'bg-[#81887A] text-white border-[#81887A]' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-gray-300'}`}
                             aria-pressed={selected}
                           >
-                            {exp.name}{showQty && ` ×${qty}`} · {exp.price} {exp.currency}
+                            {t(`confirm.experience.${exp.key}`, { defaultValue: exp.name })}
+                            {showQty && ` ×${qty}`} · {exp.price} {exp.currency}
                           </button>
                         );
                       })}
@@ -1452,20 +1402,22 @@ const CabinDetails = () => {
                   onClick={goToConfirmOrOpenDates}
                   className="w-full mt-5 py-3.5 rounded-xl bg-[#81887A] text-white font-semibold text-sm hover:opacity-95 transition-all shadow-sm"
                 >
-                  {!searchCriteria.checkIn || !searchCriteria.checkOut ? 'Select dates' : 'Continue to payment'}
+                  {!searchCriteria.checkIn || !searchCriteria.checkOut
+                    ? t('modal.footerSelectDates')
+                    : t('details.continueToPaymentShort')}
                 </button>
               </>
             ) : (
               <>
                 <p className="text-sm text-gray-500 mb-4">
-                  Add dates to see price and availability.
+                  {t('details.addDatesSeePrice')}
                 </p>
                 <button
                   type="button"
                   onClick={() => openDateModal()}
                   className="w-full py-3.5 rounded-xl bg-[#81887A] text-white font-semibold text-sm hover:opacity-95 transition-all"
                 >
-                  Select dates
+                  {t('modal.footerSelectDates')}
                 </button>
               </>
             )}
@@ -1872,15 +1824,17 @@ const CabinDetails = () => {
         className="lg:hidden"
         label={
           pricing
-            ? `€${displayGrandTotal.toLocaleString()} total`
-            : 'Select dates to see pricing'
+            ? t('details.stickyGrandTotal', { amount: displayGrandTotal.toLocaleString() })
+            : t('details.selectDatesToSeePricing')
         }
         subLabel={
-          pricing
-            ? `${pricing.totalNights} ${pricing.totalNights === 1 ? 'night' : 'nights'}`
-            : undefined
+          pricing ? t('modal.nights', { count: pricing.totalNights }) : undefined
         }
-        buttonLabel={searchCriteria.checkIn && searchCriteria.checkOut ? 'Continue to payment' : 'Select dates'}
+        buttonLabel={
+          searchCriteria.checkIn && searchCriteria.checkOut
+            ? t('details.continueToPaymentShort')
+            : t('modal.footerSelectDates')
+        }
         onButtonClick={goToConfirmOrOpenDates}
       />
     </div>

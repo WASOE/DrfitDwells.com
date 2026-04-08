@@ -7,6 +7,7 @@
     "body2": "Designed for quiet, privacy, and comfort, with heating, hot water, and year-round access.",
     "ctaPrimary": "Check Availability",
     "ctaSecondary": "Explore Stays",
+    "ctaExploreLayout": "Explore the village layout",
     "chipPrivateValley": "Private valley",
     "chipOffGridComfort": "Off-grid comfort",
     "chipAltitude": "1,550m altitude"
@@ -120,6 +121,14 @@
         "content": "Support is available in case of weather changes or emergencies. Remote does not mean unprepared—we ensure everything works reliably."
       }
     }
+  },
+  "closing": {
+    "chooseTitle": "Choose your way of staying in The Valley"
+  },
+  "bookingBand": {
+    "headline": "Ready to experience The Valley?",
+    "intro": "Check availability or compare stays.",
+    "compareStays": "Compare stays"
   }
 }
 

@@ -3,9 +3,8 @@
     "headline": "Notes from the mountains.",
     "subcopy": "Stories from the mountains, delivered quietly to your inbox.",
     "emailPlaceholder": "EMAIL ADDRESS",
-    "privacyConsent": "I agree with the {{privacyPolicy}} and {{termsOfUse}}.",
-    "privacyPolicy": "privacy policy",
-    "termsOfUse": "terms of use",
+    "privacyConsent": "I agree with the <0>privacy policy</0> and <1>terms of use</1>.",
+    "subscribeAria": "Subscribe",
     "menu": "Menu",
     "company": "Company",
     "contact": "Contact",
@@ -27,6 +26,16 @@
       "travellerAwards": "Traveller Review Awards",
       "travelersChoice": "Travelers' Choice"
     }
+  },
+  "notFound": {
+    "seoTitle": "Page not found | Drift & Dwells",
+    "seoDescription": "This page could not be found. Continue your Drift & Dwells journey.",
+    "kicker": "PAGE NOT FOUND",
+    "heading": "You took the scenic route.",
+    "lead": "This path does not lead to a cabin.",
+    "hint": "Let's get you back on a better trail.",
+    "ctaHome": "Back to homepage",
+    "ctaValley": "Explore The Valley"
   },
   "announcement": {
     "bar": "WE'VE GONE SOLO • BOOK DIRECT & SAVE FEES",

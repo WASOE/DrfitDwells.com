@@ -1,4 +1,5 @@
 import { useRef, useEffect, useLayoutEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence, useInView } from 'framer-motion';
 import { ChevronDown, MapPin, Mountain, Home, Flame, Trees, Sparkles } from 'lucide-react';
 import { locations } from '../data/content';
@@ -8,11 +9,13 @@ import HeroSeasonToggle from '../components/HeroSeasonToggle';
 import { useSeason } from '../context/SeasonContext';
 import { getSEOAlt, getSEOTitle } from '../data/imageMetadata';
 import { VALLEY_MEDIA } from '../config/mediaConfig';
+import '../i18n/ns/valley';
 
 const VALLEY_VIDEOS = VALLEY_MEDIA.heroVideo;
 const VALLEY_STILLS = VALLEY_MEDIA.heroPoster;
 
 const TheValley = () => {
+  const { t } = useTranslation('valley');
   const valley = locations.find(loc => loc.id === 'valley');
   const { season } = useSeason();
   const { openModal } = useBookingSearch();
@@ -263,7 +266,7 @@ const TheValley = () => {
               transition={{ duration: 0.8, delay: 0.35 }}
               className="mt-4 text-sm md:text-base text-neutral-400 max-w-2xl mx-auto font-light drop-shadow-sm"
             >
-              Designed for quiet, privacy, and comfort, with reliable heating, hot water, and year-round access.
+              {t('hero.body2')}
             </motion.p>
               
             <motion.div
@@ -276,13 +279,13 @@ const TheValley = () => {
                 onClick={openModal}
                 className="bg-white text-stone-900 px-6 sm:px-8 py-3 sm:py-4 font-bold uppercase tracking-[0.3em] text-xs sm:text-sm hover:scale-105 transition-transform shadow-xl border-none rounded-full min-h-[44px] touch-manipulation"
               >
-                Check availability
+                {t('hero.ctaPrimary')}
               </button>
               <button
                 onClick={scrollToAccommodations}
                 className="border border-white/30 text-white px-6 sm:px-8 py-3 sm:py-4 font-medium uppercase tracking-[0.3em] text-xs sm:text-sm hover:bg-white/10 transition-all backdrop-blur-sm rounded-full min-h-[44px] touch-manipulation"
               >
-                Explore stays
+                {t('hero.ctaSecondary')}
               </button>
               <button
                 onClick={() => {
@@ -291,7 +294,7 @@ const TheValley = () => {
                 }}
                 className="border border-white/30 text-white px-6 sm:px-8 py-3 sm:py-4 font-medium uppercase tracking-[0.3em] text-xs sm:text-sm hover:bg-white/10 transition-all backdrop-blur-sm rounded-full min-h-[44px] touch-manipulation"
               >
-                Explore the village layout
+                {t('hero.ctaExploreLayout')}
               </button>
             </motion.div>
             
@@ -1242,7 +1245,7 @@ const TheValley = () => {
               transition={{ duration: 0.8 }}
               className="font-serif italic font-thin text-4xl md:text-5xl lg:text-6xl text-stone-900 mb-6"
             >
-              Choose your way of staying in The Valley
+              {t('closing.chooseTitle')}
             </motion.h2>
             <motion.button
               initial={{ opacity: 0, y: 20 }}
@@ -1252,7 +1255,7 @@ const TheValley = () => {
               onClick={openModal}
               className="mt-8 bg-stone-900 text-[#FDF8F0] px-8 sm:px-12 py-4 sm:py-5 font-bold uppercase tracking-widest text-xs sm:text-sm hover:scale-105 transition-transform shadow-2xl border-none min-h-[44px] touch-manipulation"
             >
-              Check availability
+              {t('hero.ctaPrimary')}
             </motion.button>
           </div>
         </section>

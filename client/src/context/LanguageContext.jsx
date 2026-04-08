@@ -3,6 +3,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import i18n from '../i18n/i18n';
 import { getLanguageFromPath, localizePath } from '../utils/localizedRoutes';
 
+// UI components should read locale via useSiteLanguage (i18n); this provider keeps URL, i18n, and localStorage aligned.
+
 const LanguageContext = createContext({
   language: 'en',
   setLanguage: () => {}

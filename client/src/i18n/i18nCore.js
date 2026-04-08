@@ -37,6 +37,10 @@ i18n.use(initReactI18next).init({
   supportedLngs: ['en', 'bg'],
   ns: CORE_NS,
   defaultNS: 'common',
+  // JSON uses legacy `key` + `key_plural` pairs (e.g. booking.guestSummary). i18next v21+
+  // defaults to v4 ICU suffixes (`_one` / `_other`), which would ignore `_plural`.
+  // New keys: keep this pattern unless you migrate the whole repo to v4-style suffixes.
+  compatibilityJSON: 'v3',
   interpolation: {
     escapeValue: false
   },

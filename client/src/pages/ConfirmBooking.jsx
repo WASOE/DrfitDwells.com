@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { loadStripe } from '@stripe/stripe-js';
@@ -12,6 +13,8 @@ import Seo from '../components/Seo';
 import { daysBetweenDateOnly, formatDateOnlyLocal, parseDateOnlyLocal } from '../utils/dateOnly';
 import { getAttributionPayload } from '../tracking/attribution';
 import { readGuestPromo, writeGuestPromo } from '../utils/guestPromo';
+import { useSiteLanguage } from '../hooks/useSiteLanguage';
+import { formatStayDayLong } from '../utils/localeDates';
 
 const stripePk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 const stripePromise = stripePk ? loadStripe(stripePk) : null;
@@ -29,14 +32,8 @@ function normalizeSrc(u) {
   return `/uploads/cabins/${u}`;
 }
 
-function formatDate(dateInput) {
-  if (!dateInput) return '';
-  const d = parseDateOnlyLocal(dateInput);
-  if (!d || isNaN(d.getTime())) return '';
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
 function PaymentFormInner({ onSubmit, loading, disabled = false }) {
+  const { t } = useTranslation('booking');
   const stripe = useStripe();
   const elements = useElements();
 
@@ -54,7 +51,7 @@ function PaymentFormInner({ onSubmit, loading, disabled = false }) {
         disabled={!stripe || loading || disabled}
         className="w-full h-12 rounded-xl bg-[#81887A] text-white font-semibold hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        {loading ? 'Processing...' : 'Confirm and pay'}
+        {loading ? t('confirm.processingPayment') : t('cta.confirmAndPay')}
       </button>
     </form>
   );
@@ -65,6 +62,14 @@ const ConfirmBooking = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { t } = useTranslation('booking');
+  const { language } = useSiteLanguage();
+  const formatDate = useCallback((dateInput) => {
+    if (!dateInput) return '';
+    const d = dateInput instanceof Date ? dateInput : parseDateOnlyLocal(dateInput);
+    if (!d || isNaN(d.getTime())) return '';
+    return formatStayDayLong(d, language);
+  }, [language]);
 
   const [cabin, setCabin] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -138,12 +143,8 @@ const ConfirmBooking = () => {
   );
   const [babies, setBabies] = useState(initialState.searchCriteria?.babies ?? 0);
   const [pets, setPets] = useState(initialState.searchCriteria?.pets ?? 0);
-  const [selectedExpKeys, setSelectedExpKeys] = useState(() =>
-    new Set(initialState.selectedExpKeys || [])
-  );
-  const [experiences, setExperiences] = useState(() =>
-    initialState.experiences || DEFAULT_EXPERIENCES
-  );
+  const [selectedExpKeys] = useState(() => new Set(initialState.selectedExpKeys || []));
+  const [experiences] = useState(() => initialState.experiences || DEFAULT_EXPERIENCES);
 
   const [datesModalOpen, setDatesModalOpen] = useState(false);
   const [guestsModalOpen, setGuestsModalOpen] = useState(false);
@@ -205,19 +206,19 @@ const ConfirmBooking = () => {
     return experiences
       .filter((e) => selectedExpKeys.has(e.key))
       .map((e) => ({
-        label: e.name,
+        label: t(`confirm.experience.${e.key}`, { defaultValue: e.name }),
         amount: (e.unit === 'per_guest' ? Math.max(guests, 1) : 1) * (e.price || 0)
       }));
-  }, [experiences, selectedExpKeys, adults, children]);
+  }, [experiences, selectedExpKeys, adults, children, t]);
 
   const guestSummary = useMemo(() => {
     const parts = [];
-    if (adults) parts.push(`${adults} ${adults === 1 ? 'adult' : 'adults'}`);
-    if (children) parts.push(`${children} ${children === 1 ? 'child' : 'children'}`);
-    if (babies) parts.push(`${babies} ${babies === 1 ? 'infant' : 'infants'}`);
-    if (pets) parts.push(`${pets} ${pets === 1 ? 'pet' : 'pets'}`);
-    return parts.length ? parts.join(', ') : 'Add guests';
-  }, [adults, children, babies, pets]);
+    if (adults) parts.push(t('success.adultsCount', { count: adults }));
+    if (children) parts.push(t('success.childrenCount', { count: children }));
+    if (babies) parts.push(t('confirm.infantsCount', { count: babies }));
+    if (pets) parts.push(t('petsSummary', { count: pets }));
+    return parts.length ? parts.join(', ') : t('guests.addGuests');
+  }, [adults, children, babies, pets, t]);
 
   useEffect(() => {
     setClientSecret(null);
@@ -296,7 +297,7 @@ const ConfirmBooking = () => {
         }
       } catch (e) {
         if (!cancelled) {
-          setQuoteError(e.response?.data?.message || 'Could not load price');
+          setQuoteError(e.response?.data?.message || t('confirm.couldNotLoadPrice'));
           setServerQuote(null);
         }
       } finally {
@@ -320,14 +321,14 @@ const ConfirmBooking = () => {
 
   const handleApplyPromo = useCallback(() => {
     setClientSecret(null);
-    const t = promoDraft.trim();
-    if (!t) {
+    const trimmed = promoDraft.trim();
+    if (!trimmed) {
       setLockedPromoCode(null);
       setPromoMessage(null);
       writeGuestPromo('');
       return;
     }
-    const u = t.toUpperCase();
+    const u = trimmed.toUpperCase();
     setLockedPromoCode(u);
     setPromoMessage(null);
     writeGuestPromo(u);
@@ -359,14 +360,14 @@ const ConfirmBooking = () => {
         }
         throw new Error('Failed to load cabin');
       } catch (err) {
-        setError(err.message || 'Failed to load stay');
+        setError(err.message || t('confirm.failedToLoadStay'));
       } finally {
         setLoading(false);
       }
     };
 
     loadStay();
-  }, [bookingEntityId, bookingEntitySlug, bookingEntityType]);
+  }, [bookingEntityId, bookingEntitySlug, bookingEntityType, t]);
 
   useEffect(() => {
     bookingAPI.getConfig()
@@ -439,7 +440,7 @@ const ConfirmBooking = () => {
                 }
                 navigate(`/booking-success/${bid}`, { replace: true, state: { guestEmail: em } });
               } else {
-                setError('Booking completed but could not retrieve confirmation');
+                setError(t('confirm.bookingCompletedNoConfirmation'));
               }
             })
             .catch((err) => {
@@ -454,17 +455,17 @@ const ConfirmBooking = () => {
                 if (d.children != null) params.set('children', String(d.children));
                 navigate(`/booking-refund?${params.toString()}`, { replace: true });
               } else {
-                setError(err.response?.data?.message || err.message || 'Booking failed');
+                setError(err.response?.data?.message || err.message || t('confirm.bookingFailed'));
               }
             })
             .finally(() => setSubmitLoading(false));
         } catch (e) {
-          setError('Could not complete booking');
+          setError(t('confirm.couldNotCompleteBooking'));
         }
       }
       window.history.replaceState({}, '', window.location.pathname);
     }
-  }, [bookingEntityId, bookingEntityType, id, navigate]);
+  }, [bookingEntityId, bookingEntityType, id, navigate, t]);
 
   useEffect(() => {
     if (
@@ -507,7 +508,7 @@ const ConfirmBooking = () => {
         }
       })
       .catch(() => {
-        if (!cancelled) setStripeError('Payment setup failed');
+        if (!cancelled) setStripeError(t('confirm.paymentSetupFailed'));
       });
     return () => {
       cancelled = true;
@@ -527,7 +528,8 @@ const ConfirmBooking = () => {
     quoteFingerprint,
     quoteTotalFromFingerprint,
     quoteLoading,
-    quoteError
+    quoteError,
+    t
   ]);
 
   const handleDatesSave = useCallback((from, to) => {
@@ -594,9 +596,9 @@ const ConfirmBooking = () => {
         navigate('/');
       }
     } else {
-      throw new Error(response.data.message || 'Booking failed');
+      throw new Error(response.data.message || t('confirm.bookingFailed'));
     }
-  }, [bookingEntityId, bookingEntityType, checkIn, checkOut, adults, children, formData, selectedExpKeys, experiences, navigate, lockedPromoCode]);
+  }, [bookingEntityId, bookingEntityType, checkIn, checkOut, adults, children, formData, selectedExpKeys, experiences, navigate, lockedPromoCode, t]);
 
   const handleConfirmAndPay = useCallback(async () => {
     if (!bookingEntityId || !checkIn || !checkOut || !pricing || !serverQuote || serverQuote.totalPrice < 0.5) return;
@@ -605,11 +607,11 @@ const ConfirmBooking = () => {
     try {
       await createBooking(null);
     } catch (err) {
-      setError(err.response?.data?.message || err.message || 'Booking failed');
+      setError(err.response?.data?.message || err.message || t('confirm.bookingFailed'));
     } finally {
       setSubmitLoading(false);
     }
-  }, [bookingEntityId, checkIn, checkOut, pricing, serverQuote, createBooking]);
+  }, [bookingEntityId, checkIn, checkOut, pricing, serverQuote, createBooking, t]);
 
   const handleStripeSubmit = useCallback(async (stripe, elements) => {
     if (!bookingEntityId || !checkIn || !checkOut || !pricing || !serverQuote || serverQuote.totalPrice < 0.5) return;
@@ -649,7 +651,7 @@ const ConfirmBooking = () => {
         }
       });
       if (stripeError) {
-        setStripeError(stripeError.message || 'Payment failed');
+        setStripeError(stripeError.message || t('confirm.paymentFailed'));
         setSubmitLoading(false);
         return;
       }
@@ -685,7 +687,7 @@ const ConfirmBooking = () => {
         navigate(`/booking-refund?${params.toString()}`, { replace: true });
         return;
       }
-      setError(err.response?.data?.message || err.message || 'Payment failed');
+      setError(err.response?.data?.message || err.message || t('confirm.paymentFailed'));
     } finally {
       setSubmitLoading(false);
     }
@@ -704,15 +706,17 @@ const ConfirmBooking = () => {
     experiences,
     createBooking,
     confirmPath,
-    lockedPromoCode
+    lockedPromoCode,
+    navigate,
+    t
   ]);
 
   if (loading || !cabin) {
     return (
       <>
         <Seo
-          title="Confirm and pay | Drift & Dwells"
-          description="Review your stay details and complete your Drift & Dwells booking."
+          title={t('confirm.seoLoadingTitle')}
+          description={t('confirm.seoLoadingDescription')}
           canonicalPath={confirmPath}
           noindex
         />
@@ -731,13 +735,13 @@ const ConfirmBooking = () => {
   const hasValidGuestInfo = hasGuestInfo && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim());
 
   const coverImage = cabin.images?.[0]?.url || cabin.imageUrl;
-  const cabinName = cabin.name || 'Cabin';
+  const cabinName = cabin.name || t('confirm.cabinFallback');
 
   return (
     <>
       <Seo
-        title={`Confirm ${cabinName} booking | Drift & Dwells`}
-        description={`Review dates, guests, and payment details for your ${cabinName} stay.`}
+        title={t('confirm.seoTitleWithCabin', { cabinName })}
+        description={t('confirm.seoDescriptionWithCabin', { cabinName })}
         canonicalPath={confirmPath}
         noindex
       />
@@ -745,12 +749,12 @@ const ConfirmBooking = () => {
         <div className="max-w-2xl mx-auto px-4 py-6 md:py-10">
         {/* Header */}
         <header className="flex items-center justify-between mb-6">
-          <h1 className="text-xl font-semibold text-gray-900">Confirm and pay</h1>
+          <h1 className="text-xl font-semibold text-gray-900">{t('cta.confirmAndPay')}</h1>
           <button
             type="button"
             onClick={() => navigate(-1)}
             className="w-10 h-10 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-200"
-            aria-label="Close"
+            aria-label={t('confirm.closeAria')}
           >
             <X className="w-5 h-5" />
           </button>
@@ -785,7 +789,7 @@ const ConfirmBooking = () => {
             )}
             {cabin.badges?.guestFavorite?.enabled && (
               <span className="inline-flex items-center gap-1 mt-1 text-xs text-gray-500">
-                Guest favorite
+                {t('confirm.guestFavorite')}
               </span>
             )}
           </div>
@@ -793,10 +797,10 @@ const ConfirmBooking = () => {
 
         {/* Guest details */}
         <div className="mb-6 p-6 bg-white rounded-xl border border-gray-200 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Guest details</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('confirm.guestDetailsTitle')}</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div>
-              <label htmlFor="confirm-first-name" className="label-editorial">First name</label>
+              <label htmlFor="confirm-first-name" className="label-editorial">{t('confirm.firstName')}</label>
               <input
                 id="confirm-first-name"
                 type="text"
@@ -804,11 +808,11 @@ const ConfirmBooking = () => {
                 onChange={(e) => handleFormChange('firstName', e.target.value)}
                 className="input-editorial"
                 autoComplete="given-name"
-                placeholder="First name"
+                placeholder={t('confirm.firstName')}
               />
             </div>
             <div>
-              <label htmlFor="confirm-last-name" className="label-editorial">Last name</label>
+              <label htmlFor="confirm-last-name" className="label-editorial">{t('confirm.lastName')}</label>
               <input
                 id="confirm-last-name"
                 type="text"
@@ -816,11 +820,11 @@ const ConfirmBooking = () => {
                 onChange={(e) => handleFormChange('lastName', e.target.value)}
                 className="input-editorial"
                 autoComplete="family-name"
-                placeholder="Last name"
+                placeholder={t('confirm.lastName')}
               />
             </div>
             <div>
-              <label htmlFor="confirm-email" className="label-editorial">Email</label>
+              <label htmlFor="confirm-email" className="label-editorial">{t('confirm.email')}</label>
               <input
                 id="confirm-email"
                 type="email"
@@ -828,11 +832,11 @@ const ConfirmBooking = () => {
                 onChange={(e) => handleFormChange('email', e.target.value)}
                 className="input-editorial"
                 autoComplete="email"
-                placeholder="Email"
+                placeholder={t('confirm.email')}
               />
             </div>
             <div>
-              <label htmlFor="confirm-phone" className="label-editorial">Phone</label>
+              <label htmlFor="confirm-phone" className="label-editorial">{t('confirm.phone')}</label>
               <input
                 id="confirm-phone"
                 type="tel"
@@ -840,23 +844,23 @@ const ConfirmBooking = () => {
                 onChange={(e) => handleFormChange('phone', e.target.value)}
                 className="input-editorial"
                 autoComplete="tel"
-                placeholder="Phone number"
+                placeholder={t('confirm.phonePlaceholder')}
               />
             </div>
           </div>
           <div className="mt-5">
-            <label htmlFor="confirm-special-requests" className="label-editorial">Special requests</label>
+            <label htmlFor="confirm-special-requests" className="label-editorial">{t('confirm.specialRequests')}</label>
             <textarea
               id="confirm-special-requests"
               value={formData.specialRequests}
               onChange={(e) => handleFormChange('specialRequests', e.target.value)}
               className="input-editorial min-h-[96px] resize-y"
-              placeholder="Anything we should know before your stay?"
+              placeholder={t('confirm.specialRequestsPlaceholder')}
             />
           </div>
           {!hasValidGuestInfo && (
             <p className="mt-4 text-sm text-amber-700">
-              Add your guest details before continuing to payment.
+              {t('confirm.addGuestDetailsHint')}
             </p>
           )}
         </div>
@@ -864,11 +868,11 @@ const ConfirmBooking = () => {
         {/* Dates row */}
         <div className="flex items-center justify-between py-4 border-b border-gray-200">
           <div>
-            <p className="text-sm text-gray-600">Dates</p>
+            <p className="text-sm text-gray-600">{t('mobile.datesLabel')}</p>
             <p className="font-medium text-gray-900">
               {checkIn && checkOut
                 ? `${formatDate(checkIn)} – ${formatDate(checkOut)}`
-                : 'Select dates'}
+                : t('modal.footerSelectDates')}
             </p>
           </div>
           <button
@@ -876,14 +880,14 @@ const ConfirmBooking = () => {
             onClick={() => setDatesModalOpen(true)}
             className="text-sm font-medium text-gray-700 underline"
           >
-            Change
+            {t('actions.change')}
           </button>
         </div>
 
         {/* Guests row */}
         <div className="flex items-center justify-between py-4 border-b border-gray-200">
           <div>
-            <p className="text-sm text-gray-600">Guests</p>
+            <p className="text-sm text-gray-600">{t('fields.guests')}</p>
             <p className="font-medium text-gray-900">{guestSummary}</p>
           </div>
           <button
@@ -891,7 +895,7 @@ const ConfirmBooking = () => {
             onClick={() => setGuestsModalOpen(true)}
             className="text-sm font-medium text-gray-700 underline"
           >
-            Change
+            {t('actions.change')}
           </button>
         </div>
 
@@ -899,13 +903,13 @@ const ConfirmBooking = () => {
         <div className="py-4 border-b border-gray-200">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="min-w-0 flex-1 w-full">
-              <p className="text-sm text-gray-600 mb-2">Promo code</p>
+              <p className="text-sm text-gray-600 mb-2">{t('fields.promoCode')}</p>
               <input
                 type="text"
                 value={promoDraft}
                 onChange={(e) => setPromoDraft(e.target.value)}
                 autoComplete="off"
-                placeholder="Optional"
+                placeholder={t('fields.optional')}
                 className="w-full min-w-0 h-12 border-b border-black/15 bg-transparent px-0 text-[16px] outline-none focus:border-black/30 placeholder:text-black/40"
               />
             </div>
@@ -914,7 +918,7 @@ const ConfirmBooking = () => {
               onClick={handleApplyPromo}
               className="h-12 w-full shrink-0 rounded-2xl border border-gray-300 text-sm font-medium text-gray-800 hover:bg-gray-50 md:h-auto md:w-auto md:min-w-0 md:rounded-none md:border-0 md:bg-transparent md:p-0 md:hover:bg-transparent md:text-sm md:font-medium md:text-gray-700 md:underline"
             >
-              Apply
+              {t('cta.apply')}
             </button>
           </div>
           {promoMessage && (
@@ -928,21 +932,21 @@ const ConfirmBooking = () => {
         {/* Total row */}
         <div className="flex items-center justify-between py-4 border-b border-gray-200">
           <div className="min-w-0 flex-1">
-            <p className="text-sm text-gray-600">Total price</p>
+            <p className="text-sm text-gray-600">{t('confirm.totalPrice')}</p>
             {quoteLoading ? (
-              <p className="font-medium text-gray-500 mt-0.5">Updating…</p>
+              <p className="font-medium text-gray-500 mt-0.5">{t('confirm.priceUpdating')}</p>
             ) : quoteError ? (
               <p className="font-medium text-gray-500 mt-0.5">—</p>
             ) : (
               <div className="mt-0.5 space-y-0.5">
                 {displaySubtotal != null && displayDiscount > 0 && (
                   <p className="text-xs text-gray-400 line-through decoration-gray-400/80 tabular-nums">
-                    Was €{Number(displaySubtotal).toLocaleString()}
+                    {t('confirm.priceWas', { amount: Number(displaySubtotal).toLocaleString() })}
                   </p>
                 )}
                 {displayDiscount > 0 && (
                   <p className="text-xs text-gray-600 tabular-nums">
-                    Promo −€{Number(displayDiscount).toLocaleString()}
+                    {t('confirm.promoDiscount', { amount: Number(displayDiscount).toLocaleString() })}
                   </p>
                 )}
                 <p className="font-medium text-gray-900 tabular-nums">
@@ -956,24 +960,28 @@ const ConfirmBooking = () => {
             onClick={() => setPriceModalOpen(true)}
             className="text-sm font-medium text-gray-700 underline shrink-0 ml-3"
           >
-            Details
+            {t('confirm.priceDetails')}
           </button>
         </div>
 
         {/* Cancellation */}
         <div className="py-4">
-          <p className="font-medium text-gray-900">Free cancellation</p>
-          <p className="text-sm text-gray-600 mt-0.5">
-            Cancel before {checkIn && formatDate(new Date(checkIn.getFullYear(), checkIn.getMonth(), checkIn.getDate() - 5))} for a full refund.
-          </p>
+          <p className="font-medium text-gray-900">{t('confirm.freeCancellationTitle')}</p>
+          {checkIn ? (
+            <p className="text-sm text-gray-600 mt-0.5">
+              {t('confirm.freeCancellationBody', {
+                date: formatDate(new Date(checkIn.getFullYear(), checkIn.getMonth(), checkIn.getDate() - 5))
+              })}
+            </p>
+          ) : null}
           <a href="/cancellation-policy" className="text-sm text-gray-700 underline mt-1 inline-block">
-            Full policy
+            {t('confirm.fullPolicyLink')}
           </a>
         </div>
 
         {/* Payment - Stripe when configured, else pay on arrival */}
         <div className="mt-6 p-6 bg-white rounded-xl border border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Payment</h2>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('confirm.paymentTitle')}</h2>
           {stripePromise && clientSecret ? (
             <>
               <Elements stripe={stripePromise} options={{ clientSecret }}>
@@ -992,7 +1000,7 @@ const ConfirmBooking = () => {
           ) : (
             <>
               <p className="text-sm text-gray-600 mb-4">
-                You'll pay when you arrive. We'll contact you within 24 hours to confirm your booking.
+                {t('confirm.payOnArrivalNote')}
               </p>
               <button
                 type="button"
@@ -1009,8 +1017,8 @@ const ConfirmBooking = () => {
                 className="w-full h-12 rounded-xl bg-[#81887A] text-white font-semibold hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {submitLoading
-                  ? 'Submitting...'
-                  : `Confirm and pay €${Number(displayTotal).toLocaleString()}`}
+                  ? t('confirm.submittingPayment')
+                  : t('confirm.confirmPayWithAmount', { amount: Number(displayTotal).toLocaleString() })}
               </button>
             </>
           )}
@@ -1029,7 +1037,7 @@ const ConfirmBooking = () => {
           isOpen={guestsModalOpen}
           onClose={() => setGuestsModalOpen(false)}
           adults={adults}
-          children={children}
+          childGuestCount={children}
           babies={babies}
           pets={pets}
           maxGuests={maxGuests}

@@ -1,8 +1,13 @@
 import { motion } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 import { useBookingSearch } from '../../../context/BookingSearchContext';
+import '../../../i18n/ns/booking';
+import '../../../i18n/ns/valley';
 
 const BookingCTABand = () => {
   const { openModal } = useBookingSearch();
+  const { t: tv } = useTranslation('valley');
+  const { t: tb } = useTranslation('booking');
 
   return (
     <section 
@@ -43,7 +48,7 @@ const BookingCTABand = () => {
               className="valley-h2 mb-4"
               style={{ fontSize: '2.75rem', fontWeight: 700, lineHeight: '1.15' }}
             >
-              Ready to experience The Valley?
+              {tv('bookingBand.headline')}
             </motion.h2>
             <motion.p
               initial={{ opacity: 0, y: 20 }}
@@ -52,7 +57,7 @@ const BookingCTABand = () => {
               transition={{ duration: 0.6, delay: 0.1 }}
               className="valley-intro mb-10 max-w-2xl mx-auto"
             >
-              Check availability or compare stays.
+              {tv('bookingBand.intro')}
             </motion.p>
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -65,13 +70,13 @@ const BookingCTABand = () => {
                 onClick={openModal}
                 className="bg-[#1a1a1a] text-white px-12 py-4 font-semibold uppercase tracking-wider text-sm hover:bg-[#2a2a2a] transition-colors min-h-[52px] shadow-lg"
               >
-                Check availability
+                {tb('cta.checkAvailability')}
               </button>
               <button
                 onClick={openModal}
                 className="border border-[#1a1a1a]/30 text-[#1a1a1a] px-10 py-4 font-medium uppercase tracking-wider text-sm hover:bg-[#1a1a1a]/5 transition-colors min-h-[52px]"
               >
-                Compare stays
+                {tv('bookingBand.compareStays')}
               </button>
             </motion.div>
           </div>

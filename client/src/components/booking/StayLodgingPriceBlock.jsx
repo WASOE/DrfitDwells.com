@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 /**
  * Shared stay/lodging price presentation: optional pre-promo strike-through + final amount.
  * Matches SearchBar micro-labels (uppercase serif caps) and card typography (serif sage totals).
@@ -26,7 +28,7 @@ export function StayLodgingPriceBlock({
   originalAmount = null,
   finalAmount,
   showPromoMicrocopy = false,
-  promoMicrocopyText = 'Promo applied',
+  promoMicrocopyText,
   invalidReason = null,
   footnote = null,
   priceSuffix = null,
@@ -34,6 +36,8 @@ export function StayLodgingPriceBlock({
   strikeClassName = 'font-serif text-lg text-gray-400 line-through decoration-gray-400/70 tabular-nums',
   wrapperClassName = ''
 }) {
+  const { t } = useTranslation('booking');
+  const resolvedPromoMicrocopy = promoMicrocopyText ?? t('search.promoAppliedDefault');
   const orig = originalAmount != null ? Number(originalAmount) : null;
   const fin = Number(finalAmount);
   const invalid = Boolean(invalidReason);
@@ -65,11 +69,11 @@ export function StayLodgingPriceBlock({
       {footnote}
       {showSavingsLine && (
         <p className="text-xs text-gray-500 font-light tabular-nums mt-1.5">
-          Save €{savings.toLocaleString()} on stay
+          {t('search.saveOnStay', { amount: savings.toLocaleString() })}
         </p>
       )}
       {showAppliedLine && (
-        <PromoAppliedMicrocopy className="mt-2">{promoMicrocopyText}</PromoAppliedMicrocopy>
+        <PromoAppliedMicrocopy className="mt-2">{resolvedPromoMicrocopy}</PromoAppliedMicrocopy>
       )}
       {invalidReason && (
         <p className="text-xs text-stone-600 mt-2 leading-relaxed">{invalidReason}</p>

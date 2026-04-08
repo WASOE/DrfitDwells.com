@@ -4,10 +4,17 @@ import { useBookingContext } from '../../context/BookingContext';
 import { cabinAPI, bookingAPI } from '../../services/api';
 import StickyBookingBar from '../../components/StickyBookingBar';
 import { daysBetweenDateOnly, formatDateOnlyLocal, parseDateOnlyLocal } from '../../utils/dateOnly';
+import { useSiteLanguage } from '../../hooks/useSiteLanguage';
+import { formatStayDayWithWeekday } from '../../utils/localeDates';
 import { getAttributionPayload } from '../../tracking/attribution';
 
 const Step4Summary = () => {
   const navigate = useNavigate();
+  const { language } = useSiteLanguage();
+  const formatStayVerbose = (dateStr) => {
+    const d = parseDateOnlyLocal(dateStr);
+    return d ? formatStayDayWithWeekday(d, language) : '';
+  };
   const { 
     cabinId,
     checkIn,
@@ -362,17 +369,7 @@ const Step4Summary = () => {
                 <div className="mt-8 p-6 bg-gray-50 rounded-lg border border-gray-200">
                   <p className="text-sm text-gray-600 mb-2">Your selected dates:</p>
                   <p className="text-body font-light text-black">
-                    {parseDateOnlyLocal(checkIn)?.toLocaleDateString('en-US', { 
-                      weekday: 'long', 
-                      year: 'numeric', 
-                      month: 'long', 
-                      day: 'numeric' 
-                    })} - {parseDateOnlyLocal(checkOut)?.toLocaleDateString('en-US', { 
-                      weekday: 'long', 
-                      year: 'numeric', 
-                      month: 'long', 
-                      day: 'numeric' 
-                    })}
+                    {formatStayVerbose(checkIn)} - {formatStayVerbose(checkOut)}
                   </p>
                   {adults && (
                     <p className="text-sm text-gray-600 mt-2">
@@ -490,21 +487,11 @@ const Step4Summary = () => {
                 <div className="space-y-6">
                   <div>
                     <span className="text-xs text-gray-600 uppercase tracking-wide">Check-in:</span>
-                    <p className="font-light text-black mt-1">{parseDateOnlyLocal(checkIn)?.toLocaleDateString('en-US', { 
-                      weekday: 'long', 
-                      year: 'numeric', 
-                      month: 'long', 
-                      day: 'numeric' 
-                    })}</p>
+                    <p className="font-light text-black mt-1">{formatStayVerbose(checkIn)}</p>
                   </div>
                   <div>
                     <span className="text-xs text-gray-600 uppercase tracking-wide">Check-out:</span>
-                    <p className="font-light text-black mt-1">{parseDateOnlyLocal(checkOut)?.toLocaleDateString('en-US', { 
-                      weekday: 'long', 
-                      year: 'numeric', 
-                      month: 'long', 
-                      day: 'numeric' 
-                    })}</p>
+                    <p className="font-light text-black mt-1">{formatStayVerbose(checkOut)}</p>
                   </div>
                   <div>
                     <span className="text-xs text-gray-600 uppercase tracking-wide">Duration:</span>

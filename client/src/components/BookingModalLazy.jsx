@@ -30,12 +30,7 @@ class BookingModalChunkErrorBoundary extends Component {
 
   render() {
     if (this.state.hasError) {
-      return (
-        <BookingModalLoadingShell
-          onClose={this.props.onClose}
-          message="Something went wrong opening the planner."
-        />
-      );
+      return <BookingModalLoadingShell onClose={this.props.onClose} variant="error" />;
     }
     return this.props.children;
   }
@@ -119,7 +114,7 @@ export default function BookingModalLazy() {
     <BookingModalChunkErrorBoundary onClose={closeModal} onError={handleBoundaryError}>
       <Suspense
         fallback={
-          <BookingModalLoadingShell onClose={closeModal} message="Loading planner…" />
+          <BookingModalLoadingShell onClose={closeModal} />
         }
       >
         <BookingModal />

@@ -1,14 +1,21 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import '../i18n/ns/booking';
 import { useBookingSearch } from '../context/BookingSearchContext';
-import { useLanguage } from '../context/LanguageContext.jsx';
+import { useSiteLanguage } from '../hooks/useSiteLanguage';
 import GuestSelect from './GuestSelect';
 import { localizePath } from '../utils/localizedRoutes';
 import { startOfDay, isBefore, addDays } from 'date-fns';
 import { formatDateOnlyLocal, parseDateOnlyLocal } from '../utils/dateOnly';
 import { getMinSelectableStayDate } from '../utils/bookingMinStayDate';
+import {
+  formatStayDay,
+  formatStayRangeSummary,
+  getReactDatepickerDateFormat,
+  getReactDatepickerLocaleKey,
+  registerReactDatepickerLocales
+} from '../utils/localeDates';
 
 const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'default' }) => {
   const navigate = useNavigate();
@@ -34,11 +41,9 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
     if (guestPromoCode) setPromoUiOpen(true);
   }, [guestPromoCode]);
 
-  const promoTriggerLabel = useMemo(() => 'Promo code', []);
-
   const [errors, setErrors] = useState({});
   const { t } = useTranslation('booking');
-  const { language } = useLanguage();
+  const { language } = useSiteLanguage();
   const [openCheckIn, setOpenCheckIn] = useState(false);
   const [openCheckOut, setOpenCheckOut] = useState(false);
   const [DatePickerComponent, setDatePickerComponent] = useState(null);
@@ -93,6 +98,8 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
   // Load react-datepicker and its CSS. Preload on desktop so the real input is there when user clicks (fixes calendar not opening on first click).
   const loadDatePicker = useCallback(async () => {
     if (DatePickerComponent) return;
+    const { registerLocale } = await import('react-datepicker');
+    registerReactDatepickerLocales(registerLocale);
     await import('react-datepicker/dist/react-datepicker.css');
     await import('../styles/react-datepicker-theme.css');
     const mod = await import('./date/DatePickerLazy.jsx');
@@ -187,7 +194,7 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
   };
 
   const summaryDates = checkIn && checkOut
-    ? `${checkIn.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} → ${checkOut.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+    ? formatStayRangeSummary(checkIn, checkOut, language)
     : t('mobile.summaryTapToChoose');
 
   const totalGuests = adults + children;
@@ -199,11 +206,11 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
     : minStayDate;
 
   const checkInLabel = formData.checkIn
-    ? formData.checkIn.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    ? formatStayDay(formData.checkIn, language)
     : t('fields.selectDate');
 
   const checkOutLabel = formData.checkOut
-    ? formData.checkOut.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    ? formatStayDay(formData.checkOut, language)
     : t('fields.selectDate');
 
   // Unified field styling - all fields look identical
@@ -253,14 +260,14 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
             onClick={() => setPromoUiOpen((o) => !o)}
             className="text-xs text-white/70 underline underline-offset-2"
           >
-            {promoTriggerLabel}
+            {t('fields.promoCode')}
           </button>
           {promoUiOpen && (
             <input
               type="text"
               value={promoDraft}
               onChange={(e) => setPromoDraft(e.target.value)}
-              placeholder="Optional"
+              placeholder={t('fields.optional')}
               autoComplete="off"
               className="mt-2 w-full bg-white/10 border border-white/25 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/50"
             />
@@ -294,7 +301,8 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
               className={`${fieldInputClass} ${errors.checkIn ? (isGlass ? 'border-white' : 'border-red-400') : ''}`}
               calendarClassName="dd-datepicker"
               popperClassName="dd-datepicker-popper"
-              dateFormat="MMM dd"
+              locale={getReactDatepickerLocaleKey(language)}
+              dateFormat={getReactDatepickerDateFormat()}
               portalId="datepicker-portal"
             />
           ) : (
@@ -347,7 +355,8 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
               className={`${fieldInputClass} ${errors.checkOut ? (isGlass ? 'border-white' : 'border-red-400') : ''}`}
               calendarClassName="dd-datepicker"
               popperClassName="dd-datepicker-popper"
-              dateFormat="MMM dd"
+              locale={getReactDatepickerLocaleKey(language)}
+              dateFormat={getReactDatepickerDateFormat()}
               portalId="datepicker-portal"
             />
           ) : (
@@ -387,7 +396,7 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
         {/* Desktop: promo always visible (same rhythm as dates/guests — no toggle). */}
         <div className={fieldContainerClass} style={{ width: '160px' }}>
           <label htmlFor="search-promo-desktop" className={fieldLabelClass}>
-            {promoTriggerLabel}
+            {t('fields.promoCode')}
           </label>
           <input
             id="search-promo-desktop"
@@ -395,7 +404,7 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
             type="text"
             value={promoDraft}
             onChange={(e) => setPromoDraft(e.target.value)}
-            placeholder="Optional"
+            placeholder={t('fields.optional')}
             autoComplete="off"
             className={fieldInputClass}
           />

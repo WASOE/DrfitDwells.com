@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import '../i18n/ns/booking';
 import { cabinTypeAPI, availabilityAPI, unitAPI } from '../services/api';
 import { useBookingSearch } from '../context/BookingSearchContext';
 import { useBookingNavigation } from '../hooks/useBookingNavigation';
@@ -25,6 +27,7 @@ const MULTI_UNIT_SLUG = 'a-frame';
 const AFrameDetails = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { t } = useTranslation('booking');
   const { openModal: openDateModal, setGuestPromoCode } = useBookingSearch();
 
   const [cabinType, setCabinType] = useState(null);
@@ -467,7 +470,7 @@ const AFrameDetails = () => {
                     showPromoMicrocopy={
                       !!availability?.promo?.applied && !availability?.promo?.invalidReason
                     }
-                    promoMicrocopyText={availability?.promo?.label || 'Promo applied'}
+                    promoMicrocopyText={availability?.promo?.label || undefined}
                     invalidReason={
                       searchCriteria.promoCode && availability?.promo?.invalidReason
                         ? availability.promo.invalidReason
@@ -476,13 +479,14 @@ const AFrameDetails = () => {
                     priceClassName="text-xl md:text-2xl font-semibold text-gray-900"
                     strikeClassName="font-serif text-base md:text-lg text-gray-400 line-through decoration-gray-400/70 tabular-nums"
                     priceSuffix={
-                      <span className="text-base font-normal text-gray-500 ml-1">total</span>
+                      <span className="text-base font-normal text-gray-500 ml-1">{t('details.priceTotalSuffix')}</span>
                     }
                     footnote={
                       displayNights != null ? (
                         <p className="text-sm text-gray-500 mt-0.5">
-                          {displayNights} {displayNights === 1 ? 'night' : 'nights'}
-                          {cabinType?.pricePerNight && ` · €${cabinType.pricePerNight.toLocaleString()}/night`}
+                          {t('modal.nights', { count: displayNights })}
+                          {cabinType?.pricePerNight &&
+                            ` · ${t('search.pricePerNight', { price: cabinType.pricePerNight.toLocaleString() })}`}
                         </p>
                       ) : null
                     }
@@ -490,11 +494,11 @@ const AFrameDetails = () => {
                 </div>
               ) : cabinType?.pricePerNight ? (
                 <p className="text-xl md:text-2xl font-semibold text-gray-900 tabular-nums mt-0.5">
-                  From €{cabinType.pricePerNight.toLocaleString()}/night
+                  {t('search.priceFromPerNight', { price: cabinType.pricePerNight.toLocaleString() })}
                 </p>
               ) : (
                 <p className="text-xl md:text-2xl font-semibold text-gray-900 tabular-nums mt-0.5">
-                  Select dates for pricing
+                  {t('details.selectDatesForPricing')}
                 </p>
               )}
             </div>
@@ -505,7 +509,9 @@ const AFrameDetails = () => {
               onClick={goToConfirmOrOpenDates}
               className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#81887A] text-white font-semibold text-sm hover:opacity-95 transition-all shadow-sm hover:shadow-md min-h-[44px] touch-manipulation"
             >
-              {searchCriteria.checkIn && searchCriteria.checkOut ? 'Continue to payment →' : 'Select dates'}
+              {searchCriteria.checkIn && searchCriteria.checkOut
+                ? t('details.continueToPayment')
+                : t('modal.footerSelectDates')}
             </button>
           </div>
         </div>
@@ -591,7 +597,7 @@ const AFrameDetails = () => {
                     showPromoMicrocopy={
                       !!availability?.promo?.applied && !availability?.promo?.invalidReason
                     }
-                    promoMicrocopyText={availability?.promo?.label || 'Promo applied'}
+                    promoMicrocopyText={availability?.promo?.label || undefined}
                     invalidReason={
                       searchCriteria.promoCode && availability?.promo?.invalidReason
                         ? availability.promo.invalidReason
@@ -600,12 +606,13 @@ const AFrameDetails = () => {
                     priceClassName="text-2xl font-semibold text-gray-900"
                     strikeClassName="font-serif text-lg text-gray-400 line-through decoration-gray-400/70 tabular-nums"
                     priceSuffix={
-                      <span className="text-base font-normal text-gray-500 ml-1">total</span>
+                      <span className="text-base font-normal text-gray-500 ml-1">{t('details.priceTotalSuffix')}</span>
                     }
                     footnote={
                       <p className="text-sm text-gray-500 mt-0.5">
-                        {displayNights} {displayNights === 1 ? 'night' : 'nights'}
-                        {cabinType?.pricePerNight && ` · €${cabinType.pricePerNight.toLocaleString()}/night`}
+                        {t('modal.nights', { count: displayNights })}
+                        {cabinType?.pricePerNight &&
+                          ` · ${t('search.pricePerNight', { price: cabinType.pricePerNight.toLocaleString() })}`}
                       </p>
                     }
                   />
@@ -613,7 +620,7 @@ const AFrameDetails = () => {
 
                 <div className="space-y-2 text-sm border-t border-gray-100 pt-4">
                   <div className="flex justify-between items-center gap-3 py-1.5">
-                    <span className="text-gray-500">Check-in</span>
+                    <span className="text-gray-500">{t('fields.checkIn')}</span>
                     <input
                       type="date"
                       name="dw-aframe-check-in"
@@ -626,7 +633,7 @@ const AFrameDetails = () => {
                     />
                   </div>
                   <div className="flex justify-between items-center gap-3 py-1.5">
-                    <span className="text-gray-500">Check-out</span>
+                    <span className="text-gray-500">{t('fields.checkOut')}</span>
                     <input
                       type="date"
                       name="dw-aframe-check-out"
@@ -640,7 +647,7 @@ const AFrameDetails = () => {
                   </div>
 
                   <div className="flex justify-between items-center gap-3 py-1.5">
-                    <span className="text-gray-500">Guests</span>
+                    <span className="text-gray-500">{t('fields.guests')}</span>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
@@ -672,7 +679,10 @@ const AFrameDetails = () => {
                 {experiences.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-gray-100">
                     <div className="text-sm text-gray-600 mb-1 flex items-center justify-between">
-                      <span>Add experiences {selectedExpKeys.size > 0 && `· €${experienceTotal.toLocaleString()}`}</span>
+                      <span>
+                        {t('details.addExperiences')}
+                        {selectedExpKeys.size > 0 && ` · €${experienceTotal.toLocaleString()}`}
+                      </span>
                     </div>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {experiences.map(exp => {
@@ -688,7 +698,8 @@ const AFrameDetails = () => {
                             className={`px-2.5 py-1 rounded-lg text-xs border ${selected ? 'bg-[#81887A] text-white border-[#81887A]' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-gray-300'}`}
                             aria-pressed={selected}
                           >
-                            {exp.name}{showQty && ` ×${qty}`} · {exp.price} {exp.currency}
+                            {t(`confirm.experience.${exp.key}`, { defaultValue: exp.name })}
+                            {showQty && ` ×${qty}`} · {exp.price} {exp.currency}
                           </button>
                         );
                       })}
@@ -702,20 +713,22 @@ const AFrameDetails = () => {
                   onClick={goToConfirmOrOpenDates}
                   className="w-full mt-5 py-3.5 rounded-xl bg-[#81887A] text-white font-semibold text-sm hover:opacity-95 transition-all shadow-sm"
                 >
-                  {!searchCriteria.checkIn || !searchCriteria.checkOut ? 'Select dates' : 'Continue to payment'}
+                  {!searchCriteria.checkIn || !searchCriteria.checkOut
+                    ? t('modal.footerSelectDates')
+                    : t('details.continueToPaymentShort')}
                 </button>
               </>
             ) : (
               <>
                 <p className="text-sm text-gray-500 mb-4">
-                  Add dates to see price and availability.
+                  {t('details.addDatesSeePrice')}
                 </p>
                 <button
                   type="button"
                   onClick={() => openDateModal?.()}
                   className="w-full py-3.5 rounded-xl bg-[#81887A] text-white font-semibold text-sm hover:opacity-95 transition-all"
                 >
-                  Select dates
+                  {t('modal.footerSelectDates')}
                 </button>
               </>
             )}
@@ -727,17 +740,25 @@ const AFrameDetails = () => {
         className="lg:hidden"
         label={
           displayGrandTotal != null
-            ? `€${displayGrandTotal.toLocaleString()} total`
+            ? t('details.stickyGrandTotal', { amount: displayGrandTotal.toLocaleString() })
             : cabinType?.pricePerNight
-              ? `From €${cabinType.pricePerNight.toLocaleString()}/night`
-              : 'Select dates for pricing'
+              ? t('search.priceFromPerNight', { price: cabinType.pricePerNight.toLocaleString() })
+              : t('details.selectDatesForPricing')
         }
         subLabel={
           displayNights != null
-            ? `${displayNights} ${displayNights === 1 ? 'night' : 'nights'}${cabinType?.pricePerNight ? ` · €${cabinType.pricePerNight.toLocaleString()}/night` : ''}`
+            ? `${t('modal.nights', { count: displayNights })}${
+                cabinType?.pricePerNight
+                  ? ` · ${t('search.pricePerNight', { price: cabinType.pricePerNight.toLocaleString() })}`
+                  : ''
+              }`
             : null
         }
-        buttonLabel={searchCriteria.checkIn && searchCriteria.checkOut ? 'Continue to payment →' : 'Select dates'}
+        buttonLabel={
+          searchCriteria.checkIn && searchCriteria.checkOut
+            ? t('details.continueToPayment')
+            : t('modal.footerSelectDates')
+        }
         onButtonClick={goToConfirmOrOpenDates}
       />
 
