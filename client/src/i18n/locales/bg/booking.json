@@ -230,6 +230,22 @@
     "packingListModalTitle": "Списък за багаж",
     "closePackingAria": "Затвори"
   },
+  "detailPage": {
+    "loadingCabin": "Зареждане на детайлите за къщата...",
+    "loadingAFrame": "Зареждане на детайлите за A-frame...",
+    "loadingAriaCabin": "Зареждане на детайлите за къщата",
+    "loadingAriaAFrame": "Зареждане на детайлите за A-frame",
+    "loadingSrOnly": "Зареждане...",
+    "errorHeading": "Грешка",
+    "errorNotFound": "Къщата не е намерена",
+    "errorLoadCabin": "Грешка при зареждане на детайлите за къщата",
+    "errorLoadAFrame": "Грешка при зареждане на детайлите за A-frame",
+    "errorMultiUnitUnavailable": "Този престой в момента не е наличен като многообектно изживяване.",
+    "errorLoadAvailability": "Грешка при зареждане на наличността",
+    "backToHome": "към началото →",
+    "backToHomeAria": "Към началната страница",
+    "savedToTripList": "Запазено в списъка с пътувания"
+  },
   "details": {
     "priceTotalSuffix": "общо",
     "selectDatesForPricing": "Изберете дати за цена",

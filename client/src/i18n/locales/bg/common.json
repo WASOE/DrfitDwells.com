@@ -23,8 +23,8 @@
     },
     "ratings": {
       "topHomes": "Топ 1% домове",
-      "travellerAwards": "Traveller Review Awards",
-      "travelersChoice": "Travelers' Choice"
+      "travellerAwards": "Награди за отзиви на пътешественици",
+      "travelersChoice": "Избор на пътешественици"
     }
   },
   "notFound": {
@@ -47,8 +47,8 @@
   },
   "authority": {
     "airbnbTopHomes": "Топ 1% домове",
-    "bookingAwards": "Traveller Review Awards",
-    "tripadvisorChoice": "Travelers' Choice"
+    "bookingAwards": "Награди за отзиви на пътешественици",
+    "tripadvisorChoice": "Избор на пътешественици"
   },
   "destinations": {
     "headline": "Атмосферни убежища",
@@ -89,7 +89,46 @@
     "ariaSoundOn": "Включи звука",
     "ariaSoundOff": "Изключи звука",
     "ariaPlayAudio": "Пусни аудио",
-    "ariaStopAudio": "Спри аудио"
+    "ariaStopAudio": "Спри аудио",
+    "ariaFileError": "Аудиото не е налично"
+  },
+  "seasonToggle": {
+    "groupAria": "Превключване между зимен и летен изглед",
+    "winter": "Зима",
+    "summer": "Лято",
+    "winterViewAria": "Зимен изглед",
+    "summerViewAria": "Летен изглед"
+  },
+  "trustStrip": {
+    "guestFavoriteAlt": "Любимо на гостите",
+    "guestFavoriteTitle": "Любимо на гостите",
+    "guestFavoriteSubtitle": "Един от най-харесваните домове в Airbnb според гостите",
+    "reviews": "Отзиви"
+  },
+  "cabinPromoBar": {
+    "craftLine": "Създай перфектния си престой — водено офф-грид изживяване",
+    "startCrafted": "Започни изживяването →",
+    "or": "или",
+    "bookNow": "Резервирай сега"
+  },
+  "chatWidget": {
+    "headerTitle": "Питай Drift & Dwells",
+    "closeAria": "Затвори",
+    "welcome": "Питай за достъп, удобства, горещата вана, душове, пътя или кой престой ти подхожда.",
+    "chip0": "Гореща вана – как работи?",
+    "chip1": "Стандартна кола стига ли?",
+    "chip2": "Има ли душ?",
+    "chip3": "Wi-Fi или мобилен сигнал?",
+    "chip4": "Цени за АТВ тур?",
+    "fallbackWhatsapp": "Ще ти помогна лично. Пиши в WhatsApp и ще ти отговоря.",
+    "errorWhatsapp": "Нещо се обърка. Пиши в WhatsApp и ще ти помогна директно.",
+    "whatsappLink": "Чат в WhatsApp",
+    "sendAria": "Изпрати",
+    "inputPlaceholder": "Питай за престоя си...",
+    "thinking": "Мисля…",
+    "helpfulQuestion": "Полезно ли е?",
+    "helpfulAria": "Полезно",
+    "notHelpfulAria": "Не е полезно"
   }
 }
 

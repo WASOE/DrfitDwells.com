@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Volume2, VolumeX, AlertCircle } from 'lucide-react';
 import { locations } from '../data/content';
 import { useFloatingSafeArea } from '../hooks/useFloatingSafeArea';
 
 function AudioPlayer() {
+  const { t } = useTranslation('common');
   const location = useLocation();
   const { bottomOffset, isDesktop } = useFloatingSafeArea();
   const [isPlaying, setIsPlaying] = useState(false);
@@ -168,11 +170,11 @@ function AudioPlayer() {
           onClick={toggleAudio}
           disabled={true}
           className="w-12 h-12 md:w-auto md:h-auto md:px-4 md:py-2 rounded-full bg-red-900/90 md:bg-red-900/80 backdrop-blur-md text-white flex items-center justify-center gap-3 cursor-not-allowed shadow-lg border border-red-500/50 opacity-75"
-          aria-label="Audio file error - file needs to be replaced"
-          title={`Audio file error: ${getAudioSrc()} is not a valid MP3 file. Please replace it with a valid audio file.`}
+          aria-label={t('audio.ariaFileError')}
+          title={t('audio.fileError')}
         >
           <AlertCircle className="w-5 h-5 md:w-4 md:h-4" />
-          <span className="hidden md:inline text-xs uppercase tracking-widest">File Error</span>
+          <span className="hidden md:inline text-xs uppercase tracking-widest">{t('audio.fileError')}</span>
         </button>
       </div>
     );
@@ -188,23 +190,23 @@ function AudioPlayer() {
         ...(isDesktop ? { bottom: `${bottomOffset}px` } : {}),
         pointerEvents: 'auto'
       }}
-      aria-label={isPlaying ? 'Turn sound off' : 'Turn sound on'}
+      aria-label={isPlaying ? t('audio.ariaSoundOff') : t('audio.ariaSoundOn')}
     >
       {isLoading ? (
         <>
           <div className="w-5 h-5 md:w-4 md:h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-          <span className="hidden md:inline text-xs uppercase tracking-widest">Loading...</span>
+          <span className="hidden md:inline text-xs uppercase tracking-widest">{t('audio.loading')}</span>
         </>
       ) : isPlaying ? (
         <>
           <Volume2 className="w-5 h-5 md:w-4 md:h-4" />
-          <span className="hidden md:inline text-xs uppercase tracking-widest">Sound On</span>
+          <span className="hidden md:inline text-xs uppercase tracking-widest">{t('audio.soundOn')}</span>
           <span className="hidden md:inline w-2 h-2 bg-green-500 rounded-full animate-pulse" />
         </>
       ) : (
         <>
           <VolumeX className="w-5 h-5 md:w-4 md:h-4" />
-          <span className="hidden md:inline text-xs uppercase tracking-widest">Sound Off</span>
+          <span className="hidden md:inline text-xs uppercase tracking-widest">{t('audio.soundOff')}</span>
         </>
       )}
     </button>

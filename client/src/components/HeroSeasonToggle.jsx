@@ -1,4 +1,5 @@
 import { Snowflake, Sun } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useSeason } from '../context/SeasonContext';
 
 /**
@@ -8,6 +9,7 @@ import { useSeason } from '../context/SeasonContext';
  */
 const HeroSeasonToggle = ({ position = 'bottom-center' }) => {
   const { season, setSeason } = useSeason();
+  const { t } = useTranslation('common');
 
   // below-menu: sit under the header (nav). --header-offset never set in layout, so fallback to header height.
   const positionClasses = position === 'below-menu'
@@ -18,7 +20,7 @@ const HeroSeasonToggle = ({ position = 'bottom-center' }) => {
     <div
       className={positionClasses}
       role="group"
-      aria-label="Switch between winter and summer views"
+      aria-label={t('seasonToggle.groupAria')}
     >
       <div className="inline-flex items-center rounded-full overflow-hidden border border-white/20 bg-white/[0.08] backdrop-blur-sm">
         <button
@@ -30,10 +32,10 @@ const HeroSeasonToggle = ({ position = 'bottom-center' }) => {
               : 'text-white/60 hover:text-white/85'
           }`}
           aria-pressed={season === 'winter'}
-          aria-label="Winter view"
+          aria-label={t('seasonToggle.winterViewAria')}
         >
           <Snowflake className="w-3 h-3 flex-shrink-0" strokeWidth={2} />
-          <span>Winter</span>
+          <span>{t('seasonToggle.winter')}</span>
         </button>
         <button
           type="button"
@@ -44,10 +46,10 @@ const HeroSeasonToggle = ({ position = 'bottom-center' }) => {
               : 'text-white/60 hover:text-white/85'
           }`}
           aria-pressed={season === 'summer'}
-          aria-label="Summer view"
+          aria-label={t('seasonToggle.summerViewAria')}
         >
           <Sun className="w-3 h-3 flex-shrink-0" strokeWidth={2} />
-          <span>Summer</span>
+          <span>{t('seasonToggle.summer')}</span>
         </button>
       </div>
     </div>

@@ -702,12 +702,12 @@ const CabinDetails = () => {
         if (response.data.success) {
           setCabin(response.data.data.cabin);
         } else {
-          setError('Cabin not found');
+          setError(t('detailPage.errorNotFound'));
         }
       } catch (err) {
         if (cancelled) return;
         console.error('Load cabin error:', err);
-        setError(err.response?.data?.message || 'Error loading cabin details');
+        setError(err.response?.data?.message || t('detailPage.errorLoadCabin'));
       } finally {
         if (!cancelled) {
         setLoading(false);
@@ -720,7 +720,7 @@ const CabinDetails = () => {
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, t]);
 
   // Keyboard navigation and focus trap for lightbox
   useEffect(() => {
@@ -901,12 +901,12 @@ const CabinDetails = () => {
           <div className="text-center py-20">
             <div 
               className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-sage"
-              aria-label="Loading cabin details"
+              aria-label={t('detailPage.loadingAriaCabin')}
               role="status"
             >
-              <span className="sr-only">Loading...</span>
+              <span className="sr-only">{t('detailPage.loadingSrOnly')}</span>
             </div>
-            <p className="mt-6 text-sm text-gray-600">Loading cabin details...</p>
+            <p className="mt-6 text-sm text-gray-600">{t('detailPage.loadingCabin')}</p>
           </div>
         </div>
       </div>
@@ -918,14 +918,14 @@ const CabinDetails = () => {
       <div className="min-h-screen bg-white">
         <div className="cabin-container py-20">
           <div className="text-center py-20">
-            <h2 className="section-title mb-6">Error</h2>
+            <h2 className="section-title mb-6">{t('detailPage.errorHeading')}</h2>
             <p className="text-base text-gray-600 mb-12" role="alert">{error}</p>
             <button
               onClick={() => navigate('/')}
               className="btn-pill"
-              aria-label="Return to homepage"
+              aria-label={t('detailPage.backToHomeAria')}
             >
-              back to home →
+              {t('detailPage.backToHome')}
             </button>
           </div>
         </div>
@@ -952,7 +952,7 @@ const CabinDetails = () => {
       {/* Save Toast */}
       {saveToast && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-4 py-2 rounded-lg shadow-lg z-50 animate-[fadeIn_0.2s_ease-out]">
-          <span className="text-sm font-medium">Saved to Trip List</span>
+          <span className="text-sm font-medium">{t('detailPage.savedToTripList')}</span>
         </div>
       )}
       

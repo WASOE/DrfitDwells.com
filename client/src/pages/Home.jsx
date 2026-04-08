@@ -21,6 +21,7 @@ const origin = getSiteUrl();
 
 const Home = () => {
   const { t } = useTranslation('home');
+  const { t: tc } = useTranslation('common');
   const { language } = useLanguage();
   const { season } = useSeason();
   // Mobile hero first paint is always the poster JPGs (left cabin, right valley),
@@ -90,7 +91,7 @@ const Home = () => {
         <section className="md:hidden bg-[#1c1917] border-t border-white/10">
           <div className="text-center px-4 py-3">
             <p className="text-[#F1ECE2] text-[10px] font-bold uppercase tracking-[0.2em]">
-              WE&apos;VE GONE SOLO • BOOK DIRECT &amp; SAVE FEES
+              {tc('announcement.bar')}
             </p>
           </div>
         </section>

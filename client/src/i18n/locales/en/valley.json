@@ -1,8 +1,15 @@
 {
+  "errors": {
+    "valleyNotFound": "Valley information not found."
+  },
   "hero": {
     "microLabel": "Off-grid Rhodope Mountain Retreat • Bulgaria",
     "title": "The Valley",
     "subtitle": "A Private Village Above the Clouds",
+    "heroTitle": "The Valley: A Village Above the Clouds.",
+    "heroLead": "A private off-grid mountain village with individual cabins, a historic stone house, and shared outdoor spaces in the Rhodope Mountains, Bulgaria.",
+    "altitudeBadge": "1,550m Altitude",
+    "chipAboveClouds": "Above the clouds",
     "body1": "A private mountain village with individual cabins, a historic stone house, and shared outdoor spaces in the Rhodope Mountains.",
     "body2": "Designed for quiet, privacy, and comfort, with heating, hot water, and year-round access.",
     "ctaPrimary": "Check Availability",
@@ -16,6 +23,7 @@
     "title": "The Secret Valley",
     "lead": "A mountain village where each stay is private, but the land is shared.",
     "storyIntro": "Several cabins, a stone house, and shared outdoor spaces. Private stays, shared land.",
+    "storyLong": "The Valley is a small, walkable mountain village made up of several cabins, a stone house, and shared outdoor spaces. Each stay is private, but the land itself is shared, creating a quiet sense of togetherness without obligation. Days here are unstructured—guests hike, read, cook, sit by the fire, and do very little on purpose.",
     "highlights": {
       "altitude": {
         "title": "Altitude and views",
@@ -75,8 +83,36 @@
       }
     }
   },
+  "map": {
+    "title": "The Lay of the Land",
+    "subtitle": "Explore the Village Layout",
+    "aerialCaption": "Aerial view of The Valley at 1,550m altitude, showing the scattered village layout across the mountain landscape",
+    "hotspots": {
+      "drifters": {
+        "title": "The Drifters",
+        "body": "13 Geometric Cocoons."
+      },
+      "swing": {
+        "title": "Panoramic Swing",
+        "body": "Overlook the valley from above."
+      },
+      "fire": {
+        "title": "Fireplace",
+        "body": "Gather around the communal fire."
+      },
+      "stone": {
+        "title": "The Stone House",
+        "body": "Starlink & Community."
+      },
+      "lux": {
+        "title": "The Lux Cabin",
+        "body": "Secluded Vantage Point."
+      }
+    }
+  },
   "vibe": {
     "title": "The Vibe",
+    "galleryEyebrow": "Walking through the scattered village",
     "statement": "Unstructured days. Hike, read, cook, sit by the fire.",
     "seasons": {
       "summer": "Summer",
@@ -92,9 +128,19 @@
       "atv": "ATV adventures through mountain trails"
     }
   },
+  "aylyakBlock": {
+    "pronunciation": "[eye-ly-ack]",
+    "partOfSpeech": "noun",
+    "definition": "A deliberate refusal to be rushed. The art of not worrying.",
+    "wifiNote": "Wi-Fi is available inside the cabins. Outdoor and shared spaces are intentionally offline."
+  },
+  "trust": {
+    "guestRatingsBlurb": "Rated by hundreds of guests across Airbnb, Booking, and direct stays."
+  },
   "practical": {
     "title": "Practical details",
     "intro": "Remote does not mean unprepared.",
+    "sheetClosing": "Remote does not mean unprepared. The Valley is designed to function reliably in all seasons.",
     "locationTitle": "Meeting point, address & contact",
     "locationBody": "Transfers and directions use the Chereshovo area listing below—the same pin and phone we publish for wayfinding and local listings, so what you see here matches your booking.",
     "directionsCta": "Get directions",

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { stripLocaleFromPath } from '../utils/localizedRoutes';
 
 /** Routes that render a fixed bottom bar (BookingDrawer or StickyBookingBar). Announcement bar sits above it. */
@@ -34,6 +35,7 @@ function getBottomPosition(pathname) {
 }
 
 const AnnouncementBar = () => {
+  const { t } = useTranslation('common');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const location = useLocation();
@@ -92,7 +94,7 @@ const AnnouncementBar = () => {
         >
           <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
             <p className="text-[#F1ECE2] text-[11px] tracking-[0.18em] uppercase font-medium">
-              Craft your perfect stay — guided, off-grid experience design
+              {t('cabinPromoBar.craftLine')}
             </p>
             <div className="flex items-center gap-2">
               <button
@@ -100,10 +102,10 @@ const AnnouncementBar = () => {
                 onClick={() => window.dispatchEvent(new CustomEvent('openCraftExperience'))}
                 className="px-4 py-2 rounded-full bg-[#F1ECE2] text-[#1c1917] text-[11px] font-semibold uppercase tracking-[0.18em] hover:bg-white transition-colors"
               >
-                Start crafted experience →
+                {t('cabinPromoBar.startCrafted')}
               </button>
               <span className="text-[#F1ECE2]/70 text-[10px] uppercase tracking-[0.18em]">
-                or
+                {t('cabinPromoBar.or')}
               </span>
               <button
                 type="button"
@@ -117,7 +119,7 @@ const AnnouncementBar = () => {
                 }}
                 className="px-4 py-2 rounded-full border border-[#F1ECE2]/60 text-[#F1ECE2] text-[11px] font-semibold uppercase tracking-[0.18em] hover:bg-[#F1ECE2]/10 transition-colors"
               >
-                Book now
+                {t('cabinPromoBar.bookNow')}
               </button>
             </div>
           </div>
@@ -133,7 +135,7 @@ const AnnouncementBar = () => {
         >
           <div className="text-center">
             <p className="text-[#F1ECE2] text-[10px] md:text-xs font-bold uppercase tracking-[0.2em] py-3">
-              WE'VE GONE SOLO • BOOK DIRECT & SAVE FEES
+              {t('announcement.bar')}
             </p>
           </div>
         </div>
@@ -153,7 +155,7 @@ const AnnouncementBar = () => {
             <button
               onClick={handleCloseModal}
               className="absolute top-4 right-4 text-[#1c1917] hover:text-stone-600 transition-colors"
-              aria-label="Close"
+              aria-label={t('announcement.closeAria')}
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -162,19 +164,19 @@ const AnnouncementBar = () => {
 
             {/* Content */}
             <h2 className="font-serif text-3xl font-bold text-[#1c1917] mb-4">
-              We've Gone Wild.
+              {t('announcement.title')}
             </h2>
             <p className="font-sans text-xs uppercase tracking-widest text-stone-500 mb-6">
-              From platforms to 100% independent.
+              {t('announcement.subtitle')}
             </p>
             <p className="font-serif text-base leading-relaxed text-[#1c1917] mb-8">
-              We realized something important: We'd rather invest in our guests than in platform fees. By booking direct, the 15% service fee stays in your pocket. Same luxury, better price.
+              {t('announcement.body')}
             </p>
             <button
               onClick={handleCloseModal}
               className="w-full bg-[#1c1917] text-[#F1ECE2] font-semibold py-3 px-6 rounded-lg hover:bg-black transition-colors uppercase tracking-wide text-sm"
             >
-              See Your Savings
+              {t('announcement.cta')}
             </button>
           </div>
         </div>,

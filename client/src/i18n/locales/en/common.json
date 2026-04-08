@@ -89,7 +89,46 @@
     "ariaSoundOn": "Turn sound on",
     "ariaSoundOff": "Turn sound off",
     "ariaPlayAudio": "Play audio",
-    "ariaStopAudio": "Stop audio"
+    "ariaStopAudio": "Stop audio",
+    "ariaFileError": "Audio unavailable"
+  },
+  "seasonToggle": {
+    "groupAria": "Switch between winter and summer views",
+    "winter": "Winter",
+    "summer": "Summer",
+    "winterViewAria": "Winter view",
+    "summerViewAria": "Summer view"
+  },
+  "trustStrip": {
+    "guestFavoriteAlt": "Guest favorite",
+    "guestFavoriteTitle": "Guest favorite",
+    "guestFavoriteSubtitle": "One of the most loved homes on Airbnb, according to guests",
+    "reviews": "Reviews"
+  },
+  "cabinPromoBar": {
+    "craftLine": "Craft your perfect stay — guided, off-grid experience design",
+    "startCrafted": "Start crafted experience →",
+    "or": "or",
+    "bookNow": "Book now"
+  },
+  "chatWidget": {
+    "headerTitle": "Ask Drift & Dwells",
+    "closeAria": "Close",
+    "welcome": "Ask me about access, amenities, the hot tub, showers, road conditions, or which stay fits you best.",
+    "chip0": "Hot tub—how does it work?",
+    "chip1": "Can a normal car reach?",
+    "chip2": "Is there a shower?",
+    "chip3": "WiFi or phone signal?",
+    "chip4": "ATV tour prices?",
+    "fallbackWhatsapp": "I'd love to help with that personally. Reach me on WhatsApp and I'll get back to you.",
+    "errorWhatsapp": "Something went wrong. Reach me on WhatsApp and I'll help you directly.",
+    "whatsappLink": "Chat on WhatsApp",
+    "sendAria": "Send",
+    "inputPlaceholder": "Ask about your stay...",
+    "thinking": "Thinking…",
+    "helpfulQuestion": "Helpful?",
+    "helpfulAria": "Helpful",
+    "notHelpfulAria": "Not helpful"
   }
 }
 

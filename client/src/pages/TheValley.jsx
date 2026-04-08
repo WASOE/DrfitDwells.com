@@ -130,7 +130,7 @@ const TheValley = () => {
   if (!valley) {
     return (
       <div className="min-h-screen bg-[#121212] flex items-center justify-center">
-        <p className="text-white">Valley information not found.</p>
+        <p className="text-white">{t('errors.valleyNotFound')}</p>
       </div>
     );
   }
@@ -236,7 +236,7 @@ const TheValley = () => {
             className="absolute top-8 right-4 md:top-12 md:right-12 z-20 hidden md:block"
           >
             <div className="px-4 py-2 bg-white/10 backdrop-blur-md border border-white/20 text-white text-sm md:text-base font-serif tracking-wide">
-              1,550m Altitude
+              {t('hero.altitudeBadge')}
             </div>
           </motion.div>
           
@@ -248,7 +248,7 @@ const TheValley = () => {
               transition={{ duration: 0.8, delay: 0.2 }}
               className="font-serif italic font-thin text-5xl md:text-7xl lg:text-8xl text-white tracking-tight leading-tight drop-shadow-[0_4px_12px_rgba(0,0,0,0.8)] mb-4"
             >
-              The Valley: A Village Above the Clouds.
+              {t('hero.heroTitle')}
             </motion.h1>
               
             <motion.p 
@@ -257,7 +257,7 @@ const TheValley = () => {
               transition={{ duration: 0.8, delay: 0.3 }}
               className="mt-3 text-base md:text-lg text-neutral-400 max-w-2xl mx-auto font-light drop-shadow-sm"
             >
-              A private off-grid mountain village with individual cabins, a historic stone house, and shared outdoor spaces in the Rhodope Mountains, Bulgaria.
+              {t('hero.heroLead')}
             </motion.p>
               
             <motion.p 
@@ -306,13 +306,13 @@ const TheValley = () => {
               className="flex flex-wrap justify-center gap-3 mt-8 px-4"
             >
               <div className="px-4 py-2 bg-white/10 backdrop-blur-md border border-white/20 text-white text-xs md:text-sm font-light tracking-wide rounded-full">
-                Above the clouds
+                {t('hero.chipAboveClouds')}
               </div>
               <div className="px-4 py-2 bg-white/10 backdrop-blur-md border border-white/20 text-white text-xs md:text-sm font-light tracking-wide rounded-full">
-                Off-grid comfort
+                {t('hero.chipOffGridComfort')}
               </div>
               <div className="px-4 py-2 bg-white/10 backdrop-blur-md border border-white/20 text-white text-xs md:text-sm font-light tracking-wide rounded-full">
-                Private valley
+                {t('hero.chipPrivateValley')}
               </div>
             </motion.div>
           </div>
@@ -357,7 +357,7 @@ const TheValley = () => {
                     className="text-lg md:text-xl text-neutral-100 leading-relaxed font-serif max-w-[65ch]"
                     style={{ lineHeight: '1.75' }}
             >
-                    The Valley is a small, walkable mountain village made up of several cabins, a stone house, and shared outdoor spaces. Each stay is private, but the land itself is shared, creating a quiet sense of togetherness without obligation. Days here are unstructured—guests hike, read, cook, sit by the fire, and do very little on purpose.
+                    {t('editorial.storyLong')}
             </motion.p>
                 </div>
 
@@ -376,8 +376,8 @@ const TheValley = () => {
                         <Mountain className="w-6 h-6 text-[#81887A]" strokeWidth={1.5} />
                       </div>
                       <div>
-                        <h3 className="text-base md:text-lg font-medium text-white mb-1">Altitude and views</h3>
-                        <p className="text-sm md:text-base text-neutral-300 leading-relaxed">1,550m above sea level, above the clouds, with panoramic mountain vistas.</p>
+                        <h3 className="text-base md:text-lg font-medium text-white mb-1">{t('editorial.highlights.altitude.title')}</h3>
+                        <p className="text-sm md:text-base text-neutral-300 leading-relaxed">{t('editorial.highlights.altitude.text')}</p>
                       </div>
                     </motion.div>
 
@@ -393,8 +393,8 @@ const TheValley = () => {
                         <Flame className="w-6 h-6 text-[#81887A]" strokeWidth={1.5} />
                       </div>
                       <div>
-                        <h3 className="text-base md:text-lg font-medium text-white mb-1">Fire, hot tub, stargazing</h3>
-                        <p className="text-sm md:text-base text-neutral-300 leading-relaxed">Communal fire pit, hot tub experiences, and exceptional stargazing under dark mountain skies.</p>
+                        <h3 className="text-base md:text-lg font-medium text-white mb-1">{t('editorial.highlights.fire.title')}</h3>
+                        <p className="text-sm md:text-base text-neutral-300 leading-relaxed">{t('editorial.highlights.fire.text')}</p>
                       </div>
                     </motion.div>
 
@@ -410,8 +410,8 @@ const TheValley = () => {
                         <Trees className="w-6 h-6 text-[#81887A]" strokeWidth={1.5} />
                       </div>
                       <div>
-                        <h3 className="text-base md:text-lg font-medium text-white mb-1">Adventure base</h3>
-                        <p className="text-sm md:text-base text-neutral-300 leading-relaxed">ATV trails, hiking routes, and mountain exploration right from the village.</p>
+                        <h3 className="text-base md:text-lg font-medium text-white mb-1">{t('editorial.highlights.adventure.title')}</h3>
+                        <p className="text-sm md:text-base text-neutral-300 leading-relaxed">{t('editorial.highlights.adventure.text')}</p>
                       </div>
                     </motion.div>
 
@@ -427,8 +427,8 @@ const TheValley = () => {
                         <Sparkles className="w-6 h-6 text-[#81887A]" strokeWidth={1.5} />
                       </div>
                       <div>
-                        <h3 className="text-base md:text-lg font-medium text-white mb-1">Quiet, privacy, nature</h3>
-                        <p className="text-sm md:text-base text-neutral-300 leading-relaxed">Space, silence, and autonomy while the essentials are handled and everything works.</p>
+                        <h3 className="text-base md:text-lg font-medium text-white mb-1">{t('editorial.highlights.quiet.title')}</h3>
+                        <p className="text-sm md:text-base text-neutral-300 leading-relaxed">{t('editorial.highlights.quiet.text')}</p>
                       </div>
                     </motion.div>
                   </div>
@@ -448,10 +448,10 @@ const TheValley = () => {
           <div className="max-w-7xl mx-auto px-4 md:px-6">
             <div className="text-center mb-12 md:mb-16">
               <h2 className="font-serif italic font-thin text-5xl md:text-7xl text-neutral-200 mb-4">
-                The Lay of the Land
+                {t('map.title')}
               </h2>
               <p className="text-sm md:text-base text-neutral-300 uppercase tracking-widest">
-                Explore the Village Layout
+                {t('map.subtitle')}
               </p>
             </div>
 
@@ -604,9 +604,9 @@ const TheValley = () => {
                           }}
                         >
                           <div className="bg-black/80 backdrop-blur-md border border-white/20 rounded-lg p-4 shadow-2xl w-64">
-                            <h3 className="font-serif italic font-light text-xl text-neutral-400 mb-2">The Drifters</h3>
+                            <h3 className="font-serif italic font-light text-xl text-neutral-400 mb-2">{t('map.hotspots.drifters.title')}</h3>
                             <p className="text-sm text-neutral-400 leading-relaxed">
-                              13 Geometric Cocoons.
+                              {t('map.hotspots.drifters.body')}
                             </p>
                           </div>
                           <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 w-0 h-0 border-l-8 border-r-8 border-t-8 border-transparent border-t-black/80" />
@@ -626,9 +626,9 @@ const TheValley = () => {
                           }}
                         >
                           <div className="bg-black/80 backdrop-blur-md border border-white/20 rounded-lg p-4 shadow-2xl w-64">
-                            <h3 className="font-serif italic font-light text-xl text-neutral-400 mb-2">Panoramic Swing</h3>
+                            <h3 className="font-serif italic font-light text-xl text-neutral-400 mb-2">{t('map.hotspots.swing.title')}</h3>
                             <p className="text-sm text-neutral-400 leading-relaxed">
-                              Overlook the valley from above.
+                              {t('map.hotspots.swing.body')}
                             </p>
                           </div>
                           <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 w-0 h-0 border-l-8 border-r-8 border-t-8 border-transparent border-t-black/80" />
@@ -648,9 +648,9 @@ const TheValley = () => {
                           }}
                         >
                           <div className="bg-black/80 backdrop-blur-md border border-white/20 rounded-lg p-4 shadow-2xl w-64">
-                            <h3 className="font-serif italic font-light text-xl text-neutral-400 mb-2">Fireplace</h3>
+                            <h3 className="font-serif italic font-light text-xl text-neutral-400 mb-2">{t('map.hotspots.fire.title')}</h3>
                             <p className="text-sm text-neutral-400 leading-relaxed">
-                              Gather around the communal fire.
+                              {t('map.hotspots.fire.body')}
                             </p>
                           </div>
                           <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 w-0 h-0 border-l-8 border-r-8 border-t-8 border-transparent border-t-black/80" />
@@ -670,9 +670,9 @@ const TheValley = () => {
                           }}
                         >
                           <div className="bg-black/80 backdrop-blur-md border border-white/20 rounded-lg p-4 shadow-2xl w-64">
-                            <h3 className="font-serif italic font-light text-xl text-neutral-400 mb-2">The Stone House</h3>
+                            <h3 className="font-serif italic font-light text-xl text-neutral-400 mb-2">{t('map.hotspots.stone.title')}</h3>
                             <p className="text-sm text-neutral-400 leading-relaxed">
-                              Starlink & Community.
+                              {t('map.hotspots.stone.body')}
                             </p>
                           </div>
                           <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 w-0 h-0 border-l-8 border-r-8 border-t-8 border-transparent border-t-black/80" />
@@ -692,9 +692,9 @@ const TheValley = () => {
                           }}
                         >
                           <div className="bg-black/80 backdrop-blur-md border border-white/20 rounded-lg p-4 shadow-2xl w-64">
-                            <h3 className="font-serif italic font-light text-xl text-neutral-400 mb-2">The Lux Cabin</h3>
+                            <h3 className="font-serif italic font-light text-xl text-neutral-400 mb-2">{t('map.hotspots.lux.title')}</h3>
                             <p className="text-sm text-neutral-400 leading-relaxed">
-                              Secluded Vantage Point.
+                              {t('map.hotspots.lux.body')}
                             </p>
                           </div>
                           <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 w-0 h-0 border-l-8 border-r-8 border-t-8 border-transparent border-t-black/80" />
@@ -706,7 +706,7 @@ const TheValley = () => {
               </div>
                 {/* Caption */}
                 <p className="mt-4 text-sm md:text-base text-neutral-300 text-center font-serif italic">
-                  Aerial view of The Valley at 1,550m altitude, showing the scattered village layout across the mountain landscape
+                  {t('map.aerialCaption')}
                 </p>
             </div>
             </motion.div>
@@ -721,11 +721,11 @@ const TheValley = () => {
                 transition={{ duration: 0.6, delay: 0.1 }}
                 className="bg-[#2f2f2f] border border-white/15 rounded-xl p-6 shadow-lg hover:border-[#81887A]/40 transition-colors"
             >
-                <h3 className="font-serif italic font-thin text-2xl md:text-3xl text-white mb-4">Stone House</h3>
+                <h3 className="font-serif italic font-thin text-2xl md:text-3xl text-white mb-4">{t('stays.cards.stone-house.title')}</h3>
                 <div className="space-y-2 text-neutral-300">
-                  <p className="text-base font-medium">Sleeps up to 6</p>
-                  <p className="text-sm text-neutral-400">Best for families or small groups</p>
-                  <p className="text-sm text-neutral-300 pt-2 border-t border-white/10">Historic stone house with generous shared living spaces and Starlink</p>
+                  <p className="text-base font-medium">{t('stays.labels.sleeps')} {t('stays.cards.stone-house.sleeps')}</p>
+                  <p className="text-sm text-neutral-400">{t('stays.labels.bestFor')} {t('stays.bestFor.stoneHouse')}</p>
+                  <p className="text-sm text-neutral-300 pt-2 border-t border-white/10">{(t('stays.cards.stone-house.bullets', { returnObjects: true }) || [])[0]}</p>
                 </div>
             </motion.div>
 
@@ -737,11 +737,11 @@ const TheValley = () => {
                 transition={{ duration: 0.6, delay: 0.2 }}
                 className="bg-[#2f2f2f] border border-white/15 rounded-xl p-6 shadow-lg hover:border-[#81887A]/40 transition-colors"
               >
-                <h3 className="font-serif italic font-thin text-2xl md:text-3xl text-white mb-4">A-Frames</h3>
+                <h3 className="font-serif italic font-thin text-2xl md:text-3xl text-white mb-4">{t('stays.cards.a-frames.title')}</h3>
                 <div className="space-y-2 text-neutral-300">
-                  <p className="text-base font-medium">Sleeps 2 per cabin</p>
-                  <p className="text-sm text-neutral-400">Best for solo travelers or couples</p>
-                  <p className="text-sm text-neutral-300 pt-2 border-t border-white/10">Minimal cabins immersed in nature, focused on simplicity and quiet</p>
+                  <p className="text-base font-medium">{t('stays.labels.sleeps')} {t('stays.cards.a-frames.sleeps')}</p>
+                  <p className="text-sm text-neutral-400">{t('stays.labels.bestFor')} {t('stays.bestFor.aFrames')}</p>
+                  <p className="text-sm text-neutral-300 pt-2 border-t border-white/10">{(t('stays.cards.a-frames.bullets', { returnObjects: true }) || [])[0]}</p>
                 </div>
               </motion.div>
 
@@ -753,11 +753,11 @@ const TheValley = () => {
                 transition={{ duration: 0.6, delay: 0.3 }}
                 className="bg-[#2f2f2f] border border-white/15 rounded-xl p-6 shadow-lg hover:border-[#81887A]/40 transition-colors"
               >
-                <h3 className="font-serif italic font-thin text-2xl md:text-3xl text-white mb-4">Luxury Cabin</h3>
+                <h3 className="font-serif italic font-thin text-2xl md:text-3xl text-white mb-4">{t('stays.cards.luxury-cabin.title')}</h3>
                 <div className="space-y-2 text-neutral-300">
-                  <p className="text-base font-medium">Sleeps 2</p>
-                  <p className="text-sm text-neutral-400">Best for couples</p>
-                  <p className="text-sm text-neutral-300 pt-2 border-t border-white/10">Private cabin with full comfort, heating, and uninterrupted views</p>
+                  <p className="text-base font-medium">{t('stays.labels.sleeps')} {t('stays.cards.luxury-cabin.sleeps')}</p>
+                  <p className="text-sm text-neutral-400">{t('stays.labels.bestFor')} {t('stays.bestFor.default')}</p>
+                  <p className="text-sm text-neutral-300 pt-2 border-t border-white/10">{(t('stays.cards.luxury-cabin.bullets', { returnObjects: true }) || [])[0]}</p>
                 </div>
               </motion.div>
             </div>
@@ -797,23 +797,17 @@ const TheValley = () => {
                 
                 {/* Content */}
                 <div className="p-6 md:p-8">
-                  <h3 className="font-serif italic font-thin text-2xl md:text-3xl text-white mb-2">Luxury Cabin</h3>
-                  <p className="text-sm md:text-base text-neutral-300 mb-4">Sleeps 2</p>
+                  <h3 className="font-serif italic font-thin text-2xl md:text-3xl text-white mb-2">{t('stays.cards.luxury-cabin.title')}</h3>
+                  <p className="text-sm md:text-base text-neutral-300 mb-4">{t('stays.labels.sleeps')} {t('stays.cards.luxury-cabin.sleeps')}</p>
                   
                   {/* 3 Bullet Highlights */}
                   <ul className="space-y-2 mb-6">
-                    <li className="flex items-start gap-2 text-sm text-neutral-300">
-                      <span className="text-[#81887A] mt-1">•</span>
-                      <span>Full comfort with heating and modern amenities</span>
-                    </li>
-                    <li className="flex items-start gap-2 text-sm text-neutral-300">
-                      <span className="text-[#81887A] mt-1">•</span>
-                      <span>Uninterrupted panoramic mountain views</span>
-                    </li>
-                    <li className="flex items-start gap-2 text-sm text-neutral-300">
-                      <span className="text-[#81887A] mt-1">•</span>
-                      <span>Private, secluded vantage point</span>
-                    </li>
+                    {(t('stays.cards.luxury-cabin.bullets', { returnObjects: true }) || []).map((line) => (
+                      <li key={line} className="flex items-start gap-2 text-sm text-neutral-300">
+                        <span className="text-[#81887A] mt-1">•</span>
+                        <span>{line}</span>
+                      </li>
+                    ))}
                   </ul>
 
                   {/* CTAs */}
@@ -822,13 +816,13 @@ const TheValley = () => {
                       onClick={openModal}
                       className="bg-[#81887A] text-white px-6 py-3 font-medium uppercase tracking-wider text-xs sm:text-sm rounded-lg hover:bg-[#6d7366] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81887A] focus-visible:ring-offset-2 focus-visible:ring-offset-[#2f2f2f]"
                     >
-                      Check dates
+                      {t('stays.cta.checkDates')}
                     </button>
                     <button
                       onClick={openModal}
                       className="border border-white/20 text-white px-6 py-3 font-medium uppercase tracking-wider text-xs sm:text-sm rounded-lg hover:bg-white/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#2f2f2f]"
                     >
-                      View details
+                      {t('stays.cta.viewDetails')}
                     </button>
                   </div>
                 </div>
@@ -857,23 +851,17 @@ const TheValley = () => {
                 
                 {/* Content */}
                 <div className="p-6 md:p-8">
-                  <h3 className="font-serif italic font-thin text-2xl md:text-3xl text-white mb-2">Stone House</h3>
-                  <p className="text-sm md:text-base text-neutral-300 mb-4">Sleeps up to 6</p>
+                  <h3 className="font-serif italic font-thin text-2xl md:text-3xl text-white mb-2">{t('stays.cards.stone-house.title')}</h3>
+                  <p className="text-sm md:text-base text-neutral-300 mb-4">{t('stays.labels.sleeps')} {t('stays.cards.stone-house.sleeps')}</p>
                   
                   {/* 3 Bullet Highlights */}
                   <ul className="space-y-2 mb-6">
-                    <li className="flex items-start gap-2 text-sm text-neutral-300">
-                      <span className="text-[#81887A] mt-1">•</span>
-                      <span>Historic stone construction with generous shared spaces</span>
-                    </li>
-                    <li className="flex items-start gap-2 text-sm text-neutral-300">
-                      <span className="text-[#81887A] mt-1">•</span>
-                      <span>Starlink internet and coworking space</span>
-                    </li>
-                    <li className="flex items-start gap-2 text-sm text-neutral-300">
-                      <span className="text-[#81887A] mt-1">•</span>
-                      <span>Perfect for families or small groups</span>
-                    </li>
+                    {(t('stays.cards.stone-house.bullets', { returnObjects: true }) || []).map((line) => (
+                      <li key={line} className="flex items-start gap-2 text-sm text-neutral-300">
+                        <span className="text-[#81887A] mt-1">•</span>
+                        <span>{line}</span>
+                      </li>
+                    ))}
                   </ul>
 
                   {/* CTAs */}
@@ -882,13 +870,13 @@ const TheValley = () => {
                       onClick={openModal}
                       className="bg-[#81887A] text-white px-6 py-3 font-medium uppercase tracking-wider text-xs sm:text-sm rounded-lg hover:bg-[#6d7366] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81887A] focus-visible:ring-offset-2 focus-visible:ring-offset-[#2f2f2f]"
                     >
-                      Check dates
+                      {t('stays.cta.checkDates')}
                     </button>
                     <button
                       onClick={openModal}
                       className="border border-white/20 text-white px-6 py-3 font-medium uppercase tracking-wider text-xs sm:text-sm rounded-lg hover:bg-white/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#2f2f2f]"
                     >
-                      View details
+                      {t('stays.cta.viewDetails')}
                     </button>
                   </div>
                 </div>
@@ -917,23 +905,17 @@ const TheValley = () => {
                 
                 {/* Content */}
                 <div className="p-6 md:p-8">
-                  <h3 className="font-serif italic font-thin text-2xl md:text-3xl text-white mb-2">A-Frames</h3>
-                  <p className="text-sm md:text-base text-neutral-300 mb-4">Sleeps 2 per cabin</p>
+                  <h3 className="font-serif italic font-thin text-2xl md:text-3xl text-white mb-2">{t('stays.cards.a-frames.title')}</h3>
+                  <p className="text-sm md:text-base text-neutral-300 mb-4">{t('stays.labels.sleeps')} {t('stays.cards.a-frames.sleeps')}</p>
                   
                   {/* 3 Bullet Highlights */}
                   <ul className="space-y-2 mb-6">
-                    <li className="flex items-start gap-2 text-sm text-neutral-300">
-                      <span className="text-[#81887A] mt-1">•</span>
-                      <span>Minimal design immersed in nature</span>
-                    </li>
-                    <li className="flex items-start gap-2 text-sm text-neutral-300">
-                      <span className="text-[#81887A] mt-1">•</span>
-                      <span>Focused on simplicity and quiet</span>
-                    </li>
-                    <li className="flex items-start gap-2 text-sm text-neutral-300">
-                      <span className="text-[#81887A] mt-1">•</span>
-                      <span>Perfect for solo travelers or couples</span>
-                    </li>
+                    {(t('stays.cards.a-frames.bullets', { returnObjects: true }) || []).map((line) => (
+                      <li key={line} className="flex items-start gap-2 text-sm text-neutral-300">
+                        <span className="text-[#81887A] mt-1">•</span>
+                        <span>{line}</span>
+                      </li>
+                    ))}
                   </ul>
 
                   {/* CTAs */}
@@ -942,13 +924,13 @@ const TheValley = () => {
                       onClick={openModal}
                       className="bg-[#81887A] text-white px-6 py-3 font-medium uppercase tracking-wider text-xs sm:text-sm rounded-lg hover:bg-[#6d7366] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81887A] focus-visible:ring-offset-2 focus-visible:ring-offset-[#2f2f2f]"
                     >
-                      Check dates
+                      {t('stays.cta.checkDates')}
                     </button>
                     <button
                       onClick={openModal}
                       className="border border-white/20 text-white px-6 py-3 font-medium uppercase tracking-wider text-xs sm:text-sm rounded-lg hover:bg-white/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#2f2f2f]"
                     >
-                      View details
+                      {t('stays.cta.viewDetails')}
                     </button>
                   </div>
                 </div>
@@ -968,10 +950,10 @@ const TheValley = () => {
           <div className="max-w-7xl mx-auto px-4 md:px-6">
             <div className="text-center mb-16">
               <h2 className="font-serif italic font-thin text-5xl md:text-7xl text-neutral-400 mb-4">
-                The Vibe
+                {t('vibe.title')}
               </h2>
               <p className="text-sm text-neutral-400 uppercase tracking-widest">
-                Walking through the scattered village
+                {t('vibe.galleryEyebrow')}
               </p>
             </div>
 
@@ -1126,11 +1108,11 @@ const TheValley = () => {
                 className="flex items-center justify-center gap-2 md:gap-3 text-neutral-500"
               >
                 <span className="text-sm md:text-base lg:text-lg font-serif italic">
-                  [eye-ly-ack]
+                  {t('aylyakBlock.pronunciation')}
                 </span>
                 <span className="text-neutral-600">•</span>
                 <span className="text-sm md:text-base lg:text-lg font-serif italic">
-                  noun
+                  {t('aylyakBlock.partOfSpeech')}
                 </span>
               </motion.div>
               
@@ -1158,7 +1140,7 @@ const TheValley = () => {
             className="mt-16 md:mt-24 text-center max-w-2xl mx-auto px-4"
           >
             <p className="text-xs md:text-sm text-neutral-500 leading-relaxed font-serif italic">
-              Wi-Fi is available inside the cabins. Outdoor and shared spaces are intentionally offline.
+              {t('aylyakBlock.wifiNote')}
             </p>
           </motion.div>
         </section>
@@ -1173,7 +1155,7 @@ const TheValley = () => {
           </div>
           <div className="text-center py-6 bg-white">
             <p className="text-sm md:text-base text-neutral-600 font-serif">
-              Rated by hundreds of guests across Airbnb, Booking, and direct stays.
+              {t('trust.guestRatingsBlurb')}
             </p>
           </div>
         </section>
@@ -1185,38 +1167,38 @@ const TheValley = () => {
         <section className="bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-[#1a1a1a] via-[#121212] to-[#0d0d0d] py-12 md:py-24 border-t border-white/5">
           <div className="max-w-4xl mx-auto px-6">
             <h2 className="font-serif italic font-thin text-5xl md:text-7xl text-neutral-400 text-center mb-12 md:mb-16">
-              Practical details
+              {t('practical.title')}
             </h2>
 
             <div className="flex flex-col space-y-4">
               <div className="flex items-start gap-4 md:gap-6">
                 <MapPin className="w-5 h-5 text-neutral-500 mt-1 flex-shrink-0" />
-                <p className="font-serif text-base md:text-lg text-neutral-400 leading-relaxed">Year-round access and parking</p>
+                <p className="font-serif text-base md:text-lg text-neutral-400 leading-relaxed">{t('practical.items.access.title')}</p>
               </div>
 
               <div className="flex items-start gap-4 md:gap-6">
                 <Home className="w-5 h-5 text-neutral-500 mt-1 flex-shrink-0" />
-                <p className="font-serif text-base md:text-lg text-neutral-400 leading-relaxed">Reliable heating and hot water in all units</p>
+                <p className="font-serif text-base md:text-lg text-neutral-400 leading-relaxed">{t('practical.items.amenities.title')}</p>
               </div>
 
               <div className="flex items-start gap-4 md:gap-6">
                 <Mountain className="w-5 h-5 text-neutral-500 mt-1 flex-shrink-0" />
-                <p className="font-serif text-base md:text-lg text-neutral-400 leading-relaxed">Drinking water availability</p>
+                <p className="font-serif text-base md:text-lg text-neutral-400 leading-relaxed">{t('practical.items.water.title')}</p>
               </div>
 
               <div className="flex items-start gap-4 md:gap-6">
                 <Mountain className="w-5 h-5 text-neutral-500 mt-1 flex-shrink-0" />
-                <p className="font-serif text-base md:text-lg text-neutral-400 leading-relaxed">Winter and snow conditions</p>
+                <p className="font-serif text-base md:text-lg text-neutral-400 leading-relaxed">{t('practical.items.winter.title')}</p>
               </div>
 
               <div className="flex items-start gap-4 md:gap-6">
                 <Home className="w-5 h-5 text-neutral-500 mt-1 flex-shrink-0" />
-                <p className="font-serif text-base md:text-lg text-neutral-400 leading-relaxed">Support availability in case of weather changes</p>
+                <p className="font-serif text-base md:text-lg text-neutral-400 leading-relaxed">{t('practical.items.support.title')}</p>
               </div>
 
               <div className="mt-8 pt-6 border-t border-white/10">
                 <p className="font-serif text-base md:text-lg text-neutral-400 leading-relaxed">
-                  Remote does not mean unprepared. The Valley is designed to function reliably in all seasons.
+                  {t('practical.sheetClosing')}
                 </p>
               </div>
             </div>

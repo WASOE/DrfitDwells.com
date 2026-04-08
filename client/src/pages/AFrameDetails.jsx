@@ -268,7 +268,7 @@ const AFrameDetails = () => {
         }
 
         if (!isMultiUnit) {
-          setError('This stay is currently unavailable as a multi-unit experience.');
+          setError(t('detailPage.errorMultiUnitUnavailable'));
           return;
         }
         
@@ -297,7 +297,7 @@ const AFrameDetails = () => {
       } catch (err) {
         if (cancelled) return;
         console.error('Load error:', err);
-        setError(err.response?.data?.message || 'Error loading A-frame details');
+        setError(err.response?.data?.message || t('detailPage.errorLoadAFrame'));
       } finally {
         if (!cancelled) {
           setLoading(false);
@@ -315,7 +315,8 @@ const AFrameDetails = () => {
     searchCriteria.checkOut,
     searchCriteria.adults,
     searchCriteria.children,
-    searchCriteria.promoCode
+    searchCriteria.promoCode,
+    t,
   ]);
 
   // Early returns
@@ -324,8 +325,12 @@ const AFrameDetails = () => {
       <div className="min-h-screen bg-white">
         <div className="cabin-container py-20">
           <div className="text-center py-20">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-sage" aria-label="Loading" />
-            <p className="mt-6 text-sm text-gray-600">Loading A-frame details...</p>
+            <div
+              className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-sage"
+              aria-label={t('detailPage.loadingAriaAFrame')}
+              role="status"
+            />
+            <p className="mt-6 text-sm text-gray-600">{t('detailPage.loadingAFrame')}</p>
           </div>
         </div>
       </div>
@@ -337,9 +342,15 @@ const AFrameDetails = () => {
       <div className="min-h-screen bg-white">
         <div className="cabin-container py-20">
           <div className="text-center py-20">
-            <h2 className="section-title mb-6">Error</h2>
+            <h2 className="section-title mb-6">{t('detailPage.errorHeading')}</h2>
             <p className="text-base text-gray-600 mb-12" role="alert">{error}</p>
-            <button onClick={() => navigate('/')} className="btn-pill">back to home →</button>
+            <button
+              onClick={() => navigate('/')}
+              className="btn-pill"
+              aria-label={t('detailPage.backToHomeAria')}
+            >
+              {t('detailPage.backToHome')}
+            </button>
           </div>
         </div>
       </div>

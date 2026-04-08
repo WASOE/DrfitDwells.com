@@ -230,6 +230,22 @@
     "packingListModalTitle": "Packing list",
     "closePackingAria": "Close"
   },
+  "detailPage": {
+    "loadingCabin": "Loading cabin details...",
+    "loadingAFrame": "Loading A-frame details...",
+    "loadingAriaCabin": "Loading cabin details",
+    "loadingAriaAFrame": "Loading A-frame details",
+    "loadingSrOnly": "Loading...",
+    "errorHeading": "Error",
+    "errorNotFound": "Cabin not found",
+    "errorLoadCabin": "Error loading cabin details",
+    "errorLoadAFrame": "Error loading A-frame details",
+    "errorMultiUnitUnavailable": "This stay is currently unavailable as a multi-unit experience.",
+    "errorLoadAvailability": "Error loading availability",
+    "backToHome": "back to home →",
+    "backToHomeAria": "Return to homepage",
+    "savedToTripList": "Saved to Trip List"
+  },
   "details": {
     "priceTotalSuffix": "total",
     "selectDatesForPricing": "Select dates for pricing",

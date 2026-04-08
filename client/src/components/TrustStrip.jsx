@@ -1,6 +1,9 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 
 const TrustStrip = () => {
+  const { t } = useTranslation('common');
+
   return (
     <section className="py-6 md:py-8 bg-white">
       <div className="max-w-7xl mx-auto px-4 md:px-8">
@@ -9,7 +12,7 @@ const TrustStrip = () => {
           <div className="flex-shrink-0">
             <img
               src="/uploads/Icons%20trival/guest_favorite_2_990x555.webp"
-              alt="Guest favorite"
+              alt={t('trustStrip.guestFavoriteAlt')}
               className="h-16 w-auto object-contain mix-blend-darken contrast-125"
             />
           </div>
@@ -17,10 +20,10 @@ const TrustStrip = () => {
           {/* ZONE 2: CENTER (The Text) */}
           <div className="flex flex-col">
             <span className="text-sm font-semibold text-stone-900 leading-tight">
-              Guest favorite
+              {t('trustStrip.guestFavoriteTitle')}
             </span>
             <span className="text-xs text-stone-600 leading-tight mt-0.5 font-normal">
-              One of the most loved homes on Airbnb, according to guests
+              {t('trustStrip.guestFavoriteSubtitle')}
             </span>
           </div>
 
@@ -47,7 +50,7 @@ const TrustStrip = () => {
             {/* Reviews */}
             <div className="text-center hidden md:block">
               <div className="text-xl font-bold text-stone-900">663</div>
-              <div className="text-xs text-stone-500 underline decoration-stone-300 underline-offset-2">Reviews</div>
+              <div className="text-xs text-stone-500 underline decoration-stone-300 underline-offset-2">{t('trustStrip.reviews')}</div>
             </div>
           </div>
         </div>

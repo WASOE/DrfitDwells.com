@@ -1,6 +1,9 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 
 const AuthorityStrip = () => {
+  const { t } = useTranslation('common');
+
   return (
     <section className="relative bg-[#F9F9F7] py-20 border-y border-[#E5E5E0]">
       <div className="max-w-7xl mx-auto px-6">
@@ -13,7 +16,7 @@ const AuthorityStrip = () => {
               className="h-12 w-auto object-contain mb-6 mix-blend-multiply brightness-0" 
             />
             <div className="text-4xl font-serif text-[#1c1917] mb-2">4.95</div>
-            <div className="text-[10px] uppercase tracking-[0.25em] text-stone-500 font-medium">Top 1% of Homes</div>
+            <div className="text-[10px] uppercase tracking-[0.25em] text-stone-500 font-medium">{t('authority.airbnbTopHomes')}</div>
           </div>
 
           {/* COLUMN 2: Booking.com */}
@@ -23,7 +26,7 @@ const AuthorityStrip = () => {
               <span className="text-2xl font-bold text-[#1c1917] tracking-tight">Booking.com</span>
             </div>
             <div className="text-4xl font-serif text-[#1c1917] mb-2">9.8</div>
-            <div className="text-[10px] uppercase tracking-[0.25em] text-stone-500 font-medium">Traveller Review Awards</div>
+            <div className="text-[10px] uppercase tracking-[0.25em] text-stone-500 font-medium">{t('authority.bookingAwards')}</div>
           </div>
 
           {/* COLUMN 3: TripAdvisor */}
@@ -37,7 +40,7 @@ const AuthorityStrip = () => {
               />
             </div>
             <div className="text-4xl font-serif text-[#1c1917] mb-2">5.0</div>
-            <div className="text-[10px] uppercase tracking-[0.25em] text-stone-500 font-medium">Travelers' Choice</div>
+            <div className="text-[10px] uppercase tracking-[0.25em] text-stone-500 font-medium">{t('authority.tripadvisorChoice')}</div>
           </div>
         </div>
       </div>
