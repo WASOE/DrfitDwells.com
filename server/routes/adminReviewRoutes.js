@@ -6,6 +6,10 @@ const Review = require('../models/Review');
 const Cabin = require('../models/Cabin');
 const CabinType = require('../models/CabinType');
 const { adminModuleWriteGate } = require('../middleware/adminModuleCutoverEnforcement');
+const {
+  resolveReviewOwnerObjectIds,
+  softDeleteOrCondition
+} = require('../services/reviewOwnershipService');
 
 const router = express.Router();
 
@@ -48,10 +52,14 @@ router.get('/', async (req, res) => {
     const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
     const skip = (pageNum - 1) * limitNum;
 
-    // Build query
-    const query = { deletedAt: { $exists: false } };
+    const query = {
+      ...softDeleteOrCondition()
+    };
 
-    if (cabinId) query.cabinId = cabinId;
+    if (cabinId) {
+      const ownerIds = await resolveReviewOwnerObjectIds(cabinId);
+      query.cabinId = ownerIds.length ? { $in: ownerIds } : { $in: [] };
+    }
     if (status) query.status = status;
     if (source) query.source = source;
     if (lang) query.language = lang;
@@ -562,16 +570,17 @@ router.post('/recalc/:cabinId', adminModuleWriteGate('reviews_communications'), 
 
 // Helper: Recalculate cabin review statistics
 async function recalculateCabinStats(entityId) {
-  const cabin = await Cabin.findById(entityId).select('_id inventoryType cabinTypeId');
+  const cabin = await Cabin.findById(entityId).select('_id inventoryType inventoryMode cabinTypeId');
   let targetKind = 'cabin';
   let targetId = entityId;
-  let reviewOwnerId = entityId;
 
   if (cabin) {
-    if (cabin.inventoryType === 'multi' && cabin.cabinTypeId) {
+    if (
+      cabin.cabinTypeId &&
+      (cabin.inventoryType === 'multi' || cabin.inventoryMode === 'multi')
+    ) {
       targetKind = 'cabinType';
       targetId = cabin.cabinTypeId.toString();
-      reviewOwnerId = cabin.cabinTypeId.toString();
     }
   } else {
     const cabinType = await CabinType.findById(entityId).select('_id');
@@ -580,19 +589,20 @@ async function recalculateCabinStats(entityId) {
     }
     targetKind = 'cabinType';
     targetId = cabinType._id.toString();
-    reviewOwnerId = cabinType._id.toString();
+  }
+
+  const ownerIds = await resolveReviewOwnerObjectIds(entityId);
+  if (ownerIds.length === 0) {
+    return null;
   }
 
   const stats = await Review.aggregate([
     {
       $match: {
-        cabinId: new mongoose.Types.ObjectId(reviewOwnerId),
+        cabinId: { $in: ownerIds },
         status: 'approved',
         rating: { $gte: 2 },
-        $or: [
-          { deletedAt: { $exists: false } },
-          { deletedAt: null }
-        ]
+        ...softDeleteOrCondition()
       }
     },
     {

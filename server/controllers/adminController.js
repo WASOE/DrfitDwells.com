@@ -3,6 +3,11 @@ const { createToken } = require('../middleware/adminAuth');
 const Booking = require('../models/Booking');
 const Cabin = require('../models/Cabin');
 const CabinType = require('../models/CabinType');
+const {
+  resolveReviewOwnerObjectIds,
+  aggregateNonDeletedReviewStatsForOwnerIds,
+  aggregateNonDeletedReviewStatsForContext
+} = require('../services/reviewOwnershipService');
 const { isSafeArrivalGuideUrl } = require('../utils/arrivalGuideUrl');
 const Unit = require('../models/Unit');
 const featureFlags = require('../utils/featureFlags');
@@ -616,8 +621,6 @@ const buildCabinResponse = async (cabinDocument) => {
       const cabinType = await CabinType.findById(cabinTypeId);
       if (cabinType) {
         cabin.cabinTypeRef = cabinType._id;
-        cabin.reviewsCount = cabinType.reviewsCount || 0;
-        cabin.averageRating = cabinType.averageRating || 0;
         cabin.multiUnitConfig = cabin.multiUnitConfig || {};
         cabin.multiUnit = {
           cabinTypeId: cabinType._id,
@@ -631,6 +634,10 @@ const buildCabinResponse = async (cabinDocument) => {
   } else {
     cabin.cabinTypeRef = null;
   }
+
+  const resolvedStats = await aggregateNonDeletedReviewStatsForContext(cabin._id);
+  cabin.reviewsCount = resolvedStats.reviewsCount;
+  cabin.averageRating = resolvedStats.averageRating;
 
   cabin.meta.canSwitchInventoryMode = await canSwitchInventoryMode(cabin);
   return cabin;
@@ -1119,9 +1126,29 @@ const getCabins = async (req, res) => {
     const cabinTypesMap = new Map();
     const unitsCountMap = new Map();
 
+    const ownerSets = await Promise.all(
+      cabins.map((c) => resolveReviewOwnerObjectIds(c._id))
+    );
+    const uniqueOwnerKeys = new Map();
+    for (const ids of ownerSets) {
+      const key = ids.map((o) => o.toString()).sort().join('|');
+      if (!uniqueOwnerKeys.has(key)) uniqueOwnerKeys.set(key, ids);
+    }
+    const statsByKey = new Map();
+    await Promise.all(
+      [...uniqueOwnerKeys.entries()].map(async ([key, ownerIds]) => {
+        const stats = await aggregateNonDeletedReviewStatsForOwnerIds(ownerIds);
+        statsByKey.set(key, stats);
+      })
+    );
+    const resolvedStatsList = ownerSets.map((ids) => {
+      const key = ids.map((o) => o.toString()).sort().join('|');
+      return statsByKey.get(key);
+    });
+
     if (multiTypeIds.length > 0) {
       const cabinTypes = await CabinType.find({ _id: { $in: multiTypeIds } })
-        .select('name slug isActive capacity pricePerNight minNights reviewsCount averageRating')
+        .select('name slug isActive capacity pricePerNight minNights')
         .lean();
       cabinTypes.forEach((type) => cabinTypesMap.set(type._id.toString(), type));
 
@@ -1138,7 +1165,8 @@ const getCabins = async (req, res) => {
       unitCounts.forEach((row) => unitsCountMap.set(row._id.toString(), row));
     }
 
-    const transformedCabins = cabins.map((cabin) => {
+    const transformedCabins = cabins.map((cabin, index) => {
+      const resolved = resolvedStatsList[index];
       const base = {
       _id: cabin._id,
       name: cabin.name,
@@ -1149,8 +1177,8 @@ const getCabins = async (req, res) => {
       transportOptionsCount: cabin.transportOptions?.length || 0,
         blockedDatesCount: cabin.blockedDates?.length || 0,
         inventoryType: cabin.inventoryType || 'single',
-        reviewsCount: cabin.reviewsCount || 0,
-        averageRating: cabin.averageRating || 0
+        reviewsCount: resolved.reviewsCount,
+        averageRating: resolved.averageRating
       };
 
       if (base.inventoryType === 'multi') {
@@ -1159,10 +1187,6 @@ const getCabins = async (req, res) => {
         base.unitsCount = counts ? counts.count : 0;
         base.activeUnitsCount = counts ? counts.active : 0;
         const cabinType = key ? cabinTypesMap.get(key) : null;
-        if (cabinType) {
-          base.reviewsCount = cabinType.reviewsCount || 0;
-          base.averageRating = cabinType.averageRating || 0;
-        }
         base.multiUnit = cabinType
           ? {
               cabinTypeId: cabinType._id,
@@ -1233,8 +1257,6 @@ const getCabinById = async (req, res) => {
         .lean();
 
       if (cabinType) {
-        cabin.reviewsCount = cabinType.reviewsCount || 0;
-        cabin.averageRating = cabinType.averageRating || 0;
         multiUnit = {
           cabinTypeId: cabinType._id,
           slug: cabinType.slug,
@@ -1250,6 +1272,10 @@ const getCabinById = async (req, res) => {
         multiUnit = { cabinTypeId: cabin.cabinTypeId, units };
       }
     }
+
+    const resolvedStats = await aggregateNonDeletedReviewStatsForContext(id);
+    cabin.reviewsCount = resolvedStats.reviewsCount;
+    cabin.averageRating = resolvedStats.averageRating;
 
     res.json({
       success: true,
@@ -1542,8 +1568,6 @@ const updateCabin = async (req, res) => {
     if (responseCabin.inventoryType === 'multi' && responseCabin.cabinTypeId) {
       const cabinType = await CabinType.findById(responseCabin.cabinTypeId).lean();
       const units = await Unit.find({ cabinTypeId: responseCabin.cabinTypeId }).sort({ unitNumber: 1 }).lean();
-      responseCabin.reviewsCount = cabinType?.reviewsCount || 0;
-      responseCabin.averageRating = cabinType?.averageRating || 0;
       multiUnit = {
         cabinTypeId: cabinType?._id,
         slug: cabinType?.slug,
@@ -1551,6 +1575,10 @@ const updateCabin = async (req, res) => {
         units
       };
     }
+
+    const resolvedStats = await aggregateNonDeletedReviewStatsForContext(responseCabin._id);
+    responseCabin.reviewsCount = resolvedStats.reviewsCount;
+    responseCabin.averageRating = resolvedStats.averageRating;
 
     res.json({
       success: true,

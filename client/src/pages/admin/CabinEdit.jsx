@@ -444,6 +444,8 @@ const CabinEdit = () => {
   const [images, setImages] = useState([]);
   const [reviews, setReviews] = useState([]);
   const [reviewsLoading, setReviewsLoading] = useState(false);
+  /** Last GET /admin/reviews total for this cabin (matches list; refreshes tab count after tab open). */
+  const [reviewsListTotal, setReviewsListTotal] = useState(null);
   
   // Image management state
   const [selectedImages, setSelectedImages] = useState(new Set());
@@ -459,6 +461,7 @@ const CabinEdit = () => {
       setImages([]);
       setReorderModalOpen(false);
       setReviews([]);
+      setReviewsListTotal(null);
       setBlockedDatesText('');
       setPackingListText('');
       setHighlightsText('');
@@ -476,6 +479,7 @@ const CabinEdit = () => {
 
     const fetchCabin = async () => {
       setReorderModalOpen(false);
+      setReviewsListTotal(null);
       try {
         const token = localStorage.getItem('adminToken');
         const response = await fetch(`/api/admin/cabins/${id}`, {
@@ -746,7 +750,27 @@ const CabinEdit = () => {
       // Load more reviews to show more Edit buttons (increase from 10 to 20)
       const response = await reviewAPI.list({ cabinId: id, limit: 20, sort: 'newest' });
       if (response.data.success) {
-        setReviews(response.data.data.reviews || []);
+        const payload = response.data.data;
+        setReviews(payload.reviews || []);
+        if (typeof payload.total === 'number') setReviewsListTotal(payload.total);
+      }
+      const cabinRes = await fetch(`/api/admin/cabins/${id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (cabinRes.ok) {
+        const d = await cabinRes.json();
+        const c = d.data?.cabin;
+        if (c) {
+          setCabin((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  reviewsCount: c.reviewsCount,
+                  averageRating: c.averageRating
+                }
+              : prev
+          );
+        }
       }
     } catch (err) {
       console.error('Load reviews error:', err);
@@ -1714,6 +1738,7 @@ const CabinEdit = () => {
     `mt-1 block w-full rounded-md shadow-sm sm:text-sm ${fieldErrors[field] ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-gray-300 focus:ring-[#81887A] focus:border-[#81887A]'}`;
 
   const tabConfig = ['basic', 'images', 'reviews'];
+  const cabinReviewsDisplayCount = reviewsListTotal ?? cabin?.reviewsCount ?? 0;
   const getTabLabel = (tab) => {
     switch (tab) {
       case 'basic':
@@ -1721,7 +1746,7 @@ const CabinEdit = () => {
       case 'images':
         return `Images (${images.length})`;
       case 'reviews':
-        return `Reviews${cabin ? ` (${cabin.reviewsCount || 0})` : ''}`;
+        return `Reviews${cabin || reviewsListTotal != null ? ` (${cabinReviewsDisplayCount})` : ''}`;
       default:
         return tab;
     }
@@ -2315,7 +2340,7 @@ const CabinEdit = () => {
               <div>
                 <h3 className="text-sm font-semibold text-gray-900">Cabin Reviews</h3>
                 <p className="mt-0.5 text-sm text-gray-500">
-                  {cabin?.averageRating ? `${cabin.averageRating.toFixed(1)} avg` : 'N/A'} · {cabin?.reviewsCount || 0} reviews
+                  {cabin?.averageRating ? `${cabin.averageRating.toFixed(1)} avg` : 'N/A'} · {cabinReviewsDisplayCount} reviews
                 </p>
               </div>
               <button

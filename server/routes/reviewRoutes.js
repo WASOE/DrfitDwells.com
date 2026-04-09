@@ -1,9 +1,10 @@
 const express = require('express');
-const mongoose = require('mongoose');
 const { validateId } = require('../middleware/validateId');
 const Review = require('../models/Review');
-const Cabin = require('../models/Cabin');
-const CabinType = require('../models/CabinType');
+const {
+  resolveReviewOwnerObjectIds,
+  softDeleteOrCondition
+} = require('../services/reviewOwnershipService');
 
 const router = express.Router();
 
@@ -25,45 +26,26 @@ router.get('/cabins/:id/reviews', validateId('id'), async (req, res) => {
     const minRatingNum = parseInt(minRating, 10) || 2;
     const skip = (pageNum - 1) * limitNum;
 
-    // Resolve review owner IDs for both single-cabin and multi-unit entities.
-    let cabinIds = [];
-    const cabinType = await CabinType.findById(id);
-    if (cabinType) {
-      const cabins = await Cabin.find(
-        { $or: [{ cabinTypeRef: id }, { cabinTypeId: id }] },
-        '_id'
-      );
-      cabinIds = cabins.map((c) => c._id);
-      cabinIds.push(new mongoose.Types.ObjectId(id));
-    } else {
-      const cabin = await Cabin.findById(id).select('_id inventoryType cabinTypeId');
-      cabinIds = [new mongoose.Types.ObjectId(id)];
-
-      if (cabin && cabin.inventoryType === 'multi' && cabin.cabinTypeId) {
-        const typeId = cabin.cabinTypeId.toString();
-        const relatedCabins = await Cabin.find(
-          { $or: [{ cabinTypeRef: typeId }, { cabinTypeId: typeId }] },
-          '_id'
-        );
-        cabinIds.push(new mongoose.Types.ObjectId(typeId));
-        cabinIds.push(...relatedCabins.map((c) => c._id));
-      }
+    const cabinIds = await resolveReviewOwnerObjectIds(id);
+    if (cabinIds.length === 0) {
+      return res.json({
+        success: true,
+        data: {
+          items: [],
+          total: 0,
+          page: pageNum,
+          limit: limitNum,
+          totalPages: 0
+        }
+      });
     }
 
-    cabinIds = Array.from(new Set(cabinIds.map((value) => value.toString()))).map(
-      (value) => new mongoose.Types.ObjectId(value)
-    );
-
-    // Build query - only approved reviews, minRating filter, no deleted
-    // For CabinType, search across all related Cabin instances
+    // Build query - only approved reviews, minRating filter, same soft-delete as admin
     const query = {
       cabinId: { $in: cabinIds },
       status: 'approved',
       rating: { $gte: minRatingNum },
-      $or: [
-        { deletedAt: { $exists: false } },
-        { deletedAt: null }
-      ]
+      ...softDeleteOrCondition()
     };
 
     if (lang) {
