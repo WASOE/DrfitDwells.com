@@ -226,6 +226,21 @@ const bookingSchema = new mongoose.Schema({
     ),
     default: undefined
   },
+  /**
+   * Browser context at booking submit for Meta CAPI (Purchase retry uses this, not success-page req).
+   */
+  metaClientContext: {
+    type: new mongoose.Schema(
+      {
+        eventSourceUrl: { type: String, trim: true, default: null, maxlength: 2000 },
+        fbp: { type: String, trim: true, default: null, maxlength: 500 },
+        fbc: { type: String, trim: true, default: null, maxlength: 500 },
+        sessionId: { type: String, trim: true, default: null, maxlength: 200 }
+      },
+      { _id: false }
+    ),
+    default: undefined
+  },
   /** Meta CAPI Purchase succeeded at least once (set only on Graph API success, not when CAPI is skipped). */
   metaPurchaseSentAt: {
     type: Date,

@@ -7,6 +7,7 @@ import { daysBetweenDateOnly, formatDateOnlyLocal, parseDateOnlyLocal } from '..
 import { useSiteLanguage } from '../../hooks/useSiteLanguage';
 import { formatStayDayWithWeekday } from '../../utils/localeDates';
 import { getAttributionPayload } from '../../tracking/attribution';
+import { getMetaClientContextPayload } from '../../tracking/metaClientContext';
 
 const Step4Summary = () => {
   const navigate = useNavigate();
@@ -181,6 +182,7 @@ const Step4Summary = () => {
         },
         totalPrice: pricing.totalCost,
         specialRequests: guestInfo.specialRequests || '',
+        metaClientContext: getMetaClientContextPayload(),
         ...(attr && Object.values(attr).some(Boolean) ? { attribution: attr } : {}),
         // Legacy fields for backward compatibility
         tripType: getTripTypeDisplay(),

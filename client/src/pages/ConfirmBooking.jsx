@@ -12,6 +12,7 @@ import PriceDetailsModal from '../components/booking/PriceDetailsModal';
 import Seo from '../components/Seo';
 import { daysBetweenDateOnly, formatDateOnlyLocal, parseDateOnlyLocal } from '../utils/dateOnly';
 import { getAttributionPayload } from '../tracking/attribution';
+import { getMetaClientContextPayload } from '../tracking/metaClientContext';
 import { readGuestPromo, writeGuestPromo } from '../utils/guestPromo';
 import { useSiteLanguage } from '../hooks/useSiteLanguage';
 import { formatStayDayLong } from '../utils/localeDates';
@@ -420,6 +421,7 @@ const ConfirmBooking = () => {
               phone: fd.phone || ''
             },
             specialRequests: fd.specialRequests || '',
+            metaClientContext: getMetaClientContextPayload(),
             ...(data.promoCode ? { promoCode: data.promoCode } : {}),
             ...(attr && Object.values(attr).some(Boolean) ? { attribution: attr } : {})
           };
@@ -567,6 +569,7 @@ const ConfirmBooking = () => {
           phone: formData.phone.trim()
         },
         specialRequests: formData.specialRequests.trim(),
+        metaClientContext: getMetaClientContextPayload(),
         ...(attr && Object.values(attr).some(Boolean) ? { attribution: attr } : {})
       };
     if (bookingEntityType === 'cabinType') {

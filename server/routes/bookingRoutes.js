@@ -24,6 +24,7 @@ const promoService = require('../services/promoService');
 const Stripe = require('stripe');
 
 const { validateId } = require('../middleware/validateId');
+const { sanitizeMetaClientContext } = require('../utils/sanitizeMetaClientContext');
 const {
   buildPurchaseTrackingPayload,
   populateBookingForTracking,
@@ -52,6 +53,7 @@ function sanitizeAttribution(raw) {
   };
   return Object.values(o).some(Boolean) ? o : undefined;
 }
+
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
 const validateTransportMethod = (value, transportOptions) => {
@@ -506,6 +508,7 @@ router.post('/', bookingCreateLimiter, [
     }
 
     const attribution = sanitizeAttribution(req.body.attribution);
+    const metaClientContext = sanitizeMetaClientContext(req.body.metaClientContext);
     let initialStatus = 'pending';
     if (stripePaymentVerified) {
       initialStatus = 'confirmed';
@@ -552,6 +555,9 @@ router.post('/', bookingCreateLimiter, [
 
     if (attribution) {
       bookingData.attribution = attribution;
+    }
+    if (metaClientContext) {
+      bookingData.metaClientContext = metaClientContext;
     }
 
     // Add appropriate ID fields based on booking type

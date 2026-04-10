@@ -36,7 +36,26 @@ const publicGuideRoutes = require('./routes/publicGuideRoutes');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.set('trust proxy', 1);
+/**
+ * Express trust proxy: must match reverse-proxy hop count (e.g. 1 for single CDN/ALB).
+ * Set TRUST_PROXY to an integer; unset defaults to 1. Verify with real X-Forwarded-For chain in staging/prod.
+ */
+function resolveTrustProxySetting() {
+  const raw = process.env.TRUST_PROXY;
+  if (raw === undefined || raw === '') {
+    return 1;
+  }
+  const n = parseInt(String(raw), 10);
+  if (!Number.isNaN(n) && n >= 0) {
+    return n;
+  }
+  if (String(raw).trim().toLowerCase() === 'true') {
+    return true;
+  }
+  return 1;
+}
+
+app.set('trust proxy', resolveTrustProxySetting());
 
 // --- Env var validation (warnings for missing optional config) ---
 if (process.env.NODE_ENV === 'production') {

@@ -56,13 +56,20 @@ async function trySendMetaCapiPurchase(booking, ctx = {}) {
   }
 
   const payload = buildPurchaseTrackingPayload(booking);
+  const mc = booking.metaClientContext;
   const capi = await sendPurchaseEvent({
     eventId: payload.event_id,
     email: booking.guestInfo?.email,
+    phone: booking.guestInfo?.phone,
+    firstName: booking.guestInfo?.firstName,
+    lastName: booking.guestInfo?.lastName,
     value: payload.value,
     currency: payload.currency,
     clientIp: ctx.clientIp,
-    userAgent: ctx.userAgent
+    userAgent: ctx.userAgent,
+    eventSourceUrl: mc?.eventSourceUrl || undefined,
+    fbp: mc?.fbp || undefined,
+    fbc: mc?.fbc || undefined
   });
 
   if (capi.ok && !capi.skipped) {

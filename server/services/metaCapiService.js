@@ -1,27 +1,29 @@
-const crypto = require('crypto');
+const metaUserData = require('./metaUserData');
+const { normalizeEmail, buildMetaPurchaseUserData, isMetaCapiPurchaseEnriched } = metaUserData;
 
 /**
  * Meta Conversions API — Purchase once per booking (dedup with Pixel via event_id).
  * Requires META_PIXEL_ID + META_CAPI_ACCESS_TOKEN (system user token with ads_management).
+ *
+ * When META_CAPI_PURCHASE_ENRICHED=1, sends ph/fn/ln/fbp/fbc and event_source_url (from booking metaClientContext).
+ *
+ * When META_TEST_EVENT_CODE is set, adds top-level test_event_code to the Graph payload (Test Events only; unset in prod).
  */
-function sha256Hex(value) {
-  return crypto.createHash('sha256').update(value).digest('hex');
-}
-
-function normalizeEmail(email) {
-  return String(email || '')
-    .trim()
-    .toLowerCase();
-}
 
 /**
  * @param {object} opts
  * @param {string} opts.eventId - shared with browser fbq for deduplication
- * @param {string} opts.email - guest email (hashed per Meta)
+ * @param {string} opts.email - guest email
+ * @param {string} [opts.phone]
+ * @param {string} [opts.firstName]
+ * @param {string} [opts.lastName]
  * @param {number} opts.value - purchase value
  * @param {string} opts.currency - ISO currency e.g. EUR
  * @param {string} [opts.clientIp]
  * @param {string} [opts.userAgent]
+ * @param {string} [opts.eventSourceUrl] - checkout page URL captured at booking create
+ * @param {string} [opts.fbp]
+ * @param {string} [opts.fbc]
  */
 async function sendPurchaseEvent(opts) {
   const pixelId = process.env.META_PIXEL_ID;
@@ -35,28 +37,47 @@ async function sendPurchaseEvent(opts) {
     return { ok: false, skipped: true, reason: 'missing email' };
   }
 
+  const enriched = isMetaCapiPurchaseEnriched();
   const eventTime = Math.floor(Date.now() / 1000);
-  const userData = {
-    em: [sha256Hex(email)]
+  const userData = buildMetaPurchaseUserData({
+    email: opts.email,
+    phone: opts.phone,
+    firstName: opts.firstName,
+    lastName: opts.lastName,
+    clientIp: opts.clientIp,
+    userAgent: opts.userAgent,
+    fbp: opts.fbp,
+    fbc: opts.fbc,
+    enriched
+  });
+
+  const eventPayload = {
+    event_name: 'Purchase',
+    event_time: eventTime,
+    event_id: opts.eventId,
+    action_source: 'website',
+    user_data: userData,
+    custom_data: {
+      currency: String(opts.currency || 'EUR').toUpperCase(),
+      value: String(Number(opts.value).toFixed(2))
+    }
   };
-  if (opts.clientIp) userData.client_ip_address = String(opts.clientIp).slice(0, 45);
-  if (opts.userAgent) userData.client_user_agent = String(opts.userAgent).slice(0, 512);
+
+  if (enriched && opts.eventSourceUrl) {
+    eventPayload.event_source_url = String(opts.eventSourceUrl).slice(0, 2000);
+  }
 
   const body = {
-    data: [
-      {
-        event_name: 'Purchase',
-        event_time: eventTime,
-        event_id: opts.eventId,
-        action_source: 'website',
-        user_data: userData,
-        custom_data: {
-          currency: String(opts.currency || 'EUR').toUpperCase(),
-          value: String(Number(opts.value).toFixed(2))
-        }
-      }
-    ]
+    data: [eventPayload]
   };
+
+  const testEventCode =
+    typeof process.env.META_TEST_EVENT_CODE === 'string'
+      ? process.env.META_TEST_EVENT_CODE.trim().slice(0, 64)
+      : '';
+  if (testEventCode) {
+    body.test_event_code = testEventCode;
+  }
 
   const version = process.env.META_CAPI_GRAPH_VERSION || 'v21.0';
   const url = `https://graph.facebook.com/${version}/${pixelId}/events?access_token=${encodeURIComponent(token)}`;
@@ -76,4 +97,8 @@ async function sendPurchaseEvent(opts) {
   return { ok: true, skipped: false, body: json };
 }
 
-module.exports = { sendPurchaseEvent, sha256Hex, normalizeEmail };
+module.exports = {
+  sendPurchaseEvent,
+  sha256Hex: metaUserData.sha256Hex,
+  normalizeEmail: metaUserData.normalizeEmail
+};
