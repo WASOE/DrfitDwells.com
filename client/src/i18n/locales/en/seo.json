@@ -52,6 +52,124 @@
     },
     "cta": "Check availability"
   },
+  "paidStaysBulgaria": {
+    "metaTitle": "Choose your off-grid stay in Bulgaria | Drift & Dwells",
+    "metaDescription": "Four distinct stays in Bulgaria — The Cabin, Valley A-Frame, Stone House, and Lux Cabin. Pick what fits you and check availability directly.",
+    "hero": {
+      "microLabel": "Drift & Dwells · Bulgaria",
+      "title": "Choose your off-grid stay in Bulgaria",
+      "subhead": "Four distinct stays. Pick the one that fits you and check availability directly.",
+      "ctaScroll": "See stays",
+      "ctaScrollAria": "Scroll to the four stays"
+    },
+    "compact": {
+      "kicker": "Drift & Dwells",
+      "title": "Off-grid stays in Bulgaria",
+      "subline": "Four stays · Check dates on the next step"
+    },
+    "card": {
+      "ratingDisplay": "4.95",
+      "imageBadge": "Direct"
+    },
+    "staysTitle": "Four stays",
+    "reassurance": [
+      "Direct booking with us",
+      "Real mountain stays in Bulgaria",
+      "Clear availability and pricing"
+    ],
+    "reviews": {
+      "caption": "Rated by guests on Airbnb, Booking.com, TripAdvisor — and direct stays."
+    },
+    "comparison": {
+      "title": "Which one fits you?",
+      "hint": "A quick read — not a spreadsheet.",
+      "ctaBack": "Back to stays",
+      "labels": {
+        "bestFor": "Best for",
+        "sleeps": "Sleeps",
+        "privacy": "Privacy",
+        "comfort": "Comfort",
+        "access": "Access"
+      }
+    },
+    "cta": {
+      "checkDates": "Check dates",
+      "viewDetails": "View details",
+      "chooseStay": "Choose your stay",
+      "stickyCheckAvailability": "Check availability",
+      "loading": "Loading…"
+    },
+    "stays": {
+      "the-cabin": {
+        "title": "The Cabin",
+        "price": "From €55/night",
+        "fitLine": "For couples who want the rawest and most remote version.",
+        "facts": [
+          "Rugged mountain access — plan for the approach",
+          "No mains electricity — solar and gas only",
+          "Phone signal is thin to none"
+        ],
+        "comparison": {
+          "bestFor": "Couples, maximum remoteness",
+          "sleeps": "2",
+          "privacy": "Very high — standalone",
+          "comfort": "Rustic, intentional",
+          "access": "Rugged — trail / 4×4 context"
+        }
+      },
+      "valley-a-frame": {
+        "title": "The Valley A-Frame",
+        "price": "From €60/night",
+        "fitLine": "For couples who want off-grid with comfort and mountain views.",
+        "facts": [
+          "Elevated Rhodope setting around 1,550m",
+          "Focused, minimal interiors",
+          "Valley transfers available"
+        ],
+        "comparison": {
+          "bestFor": "Couples — comfort + views",
+          "sleeps": "2 per cabin",
+          "privacy": "Private cabin among a small cluster",
+          "comfort": "Comfortable, compact",
+          "access": "Valley transfer or hike"
+        }
+      },
+      "valley-stone-house": {
+        "title": "The Valley Stone House",
+        "price": "From €25/person (min 3)",
+        "fitLine": "For groups or families who want character, history, and more space.",
+        "facts": [
+          "Historic stone house, shared spaces",
+          "Starlink in the stone house",
+          "Room to spread out indoors and out"
+        ],
+        "comparison": {
+          "bestFor": "Groups & families",
+          "sleeps": "Up to 6",
+          "privacy": "Communal valley hub",
+          "comfort": "Spacious, characterful",
+          "access": "Valley transfer or hike"
+        }
+      },
+      "valley-lux-cabin": {
+        "title": "The Valley Lux Cabin",
+        "price": "From €85/night",
+        "fitLine": "For guests who want the most comfortable Valley stay.",
+        "facts": [
+          "Private cabin, elevated comfort",
+          "Panoramic mountain views",
+          "Heating and full amenities"
+        ],
+        "comparison": {
+          "bestFor": "Couples — top Valley comfort",
+          "sleeps": "2",
+          "privacy": "Private cabin",
+          "comfort": "Highest in the Valley",
+          "access": "Valley transfer or hike"
+        }
+      }
+    }
+  },
   "retreatVenue": {
     "metaTitle": "Retreat Venue Bulgaria | Private Mountain Setting | Drift & Dwells",
     "metaDescription": "Host your retreat in the Bulgarian mountains. Quiet setting, nature, and privacy. Request availability and capacity.",

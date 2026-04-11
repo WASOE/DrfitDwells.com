@@ -27,6 +27,7 @@ const ROUTES_WITH_BOTTOM_BAR = [
   // Home / Valley: booking drawer on mobile only
   { pattern: /^\/$/, desktop: false, mobile: true },
   { pattern: /^\/valley$/, desktop: false, mobile: true },
+  { pattern: /^\/off-grid-stays-bulgaria$/, desktop: false, mobile: true },
 ];
 
 import { stripLocaleFromPath } from './localizedRoutes';

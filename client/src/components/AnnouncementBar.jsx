@@ -9,6 +9,7 @@ function hasStickyBottomBar(pathname) {
   pathname = stripLocaleFromPath(pathname);
   if (pathname === '/') return true;           // Home: BookingDrawer (mobile)
   if (pathname === '/valley') return true;     // Valley: BookingDrawer (mobile)
+  if (pathname === '/off-grid-stays-bulgaria') return true; // Paid landing: sticky mobile CTA
   if (/^\/cabin\/[^/]+$/.test(pathname)) return true;  // CabinDetails: StickyBookingBar
   if (/^\/craft\/step-[1-4]$/.test(pathname)) return true; // Craft steps: StickyBookingBar
   return false;
@@ -27,7 +28,7 @@ function getBottomPosition(pathname) {
   const hasStickyDesktop = hasStickyBottomBarOnDesktop(pathname);
   if (!hasSticky) return 'bottom-0';
   // Home/Valley: BookingDrawer is exactly 70px — use 70 so no gap above "Check Availability"
-  if (pathname === '/' || pathname === '/valley') {
+  if (pathname === '/' || pathname === '/valley' || pathname === '/off-grid-stays-bulgaria') {
     return hasStickyDesktop ? 'bottom-[72px]' : 'bottom-[70px] md:bottom-0';
   }
   // Cabin details & craft: StickyBookingBar ~72px

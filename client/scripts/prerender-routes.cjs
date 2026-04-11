@@ -79,7 +79,9 @@ const ROUTES = [
   '/bansko-remote-work-retreat',
   '/bg/bansko-remote-work-retreat',
   '/retreat-venue-bulgaria',
-  '/bg/retreat-venue-bulgaria'
+  '/bg/retreat-venue-bulgaria',
+  '/off-grid-stays-bulgaria',
+  '/bg/off-grid-stays-bulgaria'
 ];
 
 const CONTENT_TYPES = {
