@@ -5,7 +5,9 @@ const sans = { fontFamily: 'var(--valley-font-primary, Montserrat, system-ui, sa
 
 /**
  * Paid-traffic listing: inline snap gallery + compact sans meta.
- * Clicks on the gallery (swipe/dots) do not navigate; rest of card activates booking.
+ * The whole card (image, copy, price / check dates) opens booking or check-dates flow.
+ * Gallery: drag swipes photos without navigating; tap on the image track still navigates.
+ * Dots jump slides; "View details" is a separate link (stops propagation).
  */
 export default function PaidTrafficStayCard({
   slides = [],
@@ -34,21 +36,24 @@ export default function PaidTrafficStayCard({
   };
 
   const onArticleClick = (e) => {
-    if (e.target.closest('[data-snap-gallery]')) return;
     if (!actionable) return;
     go();
   };
 
   const onArticleKeyDown = (e) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
-    if (e.target.closest('[data-snap-gallery]')) return;
     if (!actionable) return;
+    if (e.target !== e.currentTarget && e.target.closest?.('a[href]')) return;
+    if (e.repeat) return;
     e.preventDefault();
     go();
   };
 
   const textBlock = (
-    <div className="mt-2.5 space-y-0.5" style={sans}>
+    <div
+      className={`mt-2.5 space-y-0.5 ${actionable ? 'cursor-pointer' : ''}`}
+      style={sans}
+    >
       <div className="flex justify-between items-start gap-3">
         <h3 className="text-[15px] font-semibold text-neutral-900 leading-tight tracking-tight pr-1">
           {title}
@@ -105,7 +110,11 @@ export default function PaidTrafficStayCard({
       aria-label={actionable ? `${title} — ${labels.checkDates}` : undefined}
     >
       <div className="relative shadow-sm rounded-2xl">
-        <PaidTrafficCardGallery slides={slides} eagerFirst={eagerGallery} />
+        <PaidTrafficCardGallery
+          slides={slides}
+          eagerFirst={eagerGallery}
+          pointerCursor={actionable}
+        />
         {imageBadge ? (
           <span className="pointer-events-none absolute top-3 left-3 z-10 rounded-full bg-white/90 backdrop-blur-sm px-2.5 py-1 text-[11px] font-semibold text-neutral-900 shadow-sm border border-black/5">
             {imageBadge}
