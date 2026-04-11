@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
-import { ChevronUp, ChevronDown } from 'lucide-react';
+import { ChevronUp } from 'lucide-react';
 
 /**
  * Mobile-optimized collapsible specs bar
@@ -52,7 +52,7 @@ const MobileSpecsBar = ({
           className="w-full flex items-center justify-between touch-manipulation active:bg-gray-50 rounded-lg p-2 -m-2"
         >
           <div className="flex items-center gap-4 flex-1 overflow-x-auto scrollbar-hide">
-            {specs.map((spec, index) => (
+            {specs.map((spec) => (
               <div key={spec.label} className="flex-shrink-0 flex flex-col">
                 <span className="text-[9px] uppercase tracking-[0.2em] text-gray-500 mb-0.5 font-medium">
                   {spec.label}

@@ -1,4 +1,3 @@
-import { motion } from 'framer-motion';
 import AuthorityStrip from '../../../components/AuthorityStrip';
 
 const ReviewsSection = ({ trustBadgesRef }) => {

@@ -1,5 +1,3 @@
-import React from 'react';
-
 const LaurelBadge = () => {
   return (
     <div className="flex items-center justify-between bg-white border border-stone-200 rounded-2xl px-6 py-4 shadow-sm w-full max-w-sm">

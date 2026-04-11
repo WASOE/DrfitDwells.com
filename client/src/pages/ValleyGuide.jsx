@@ -403,7 +403,7 @@ const ValleyGuide = () => {
               style={{ backgroundColor: COLORS.border }}
             />
             <div className="grid md:grid-cols-4 gap-4 relative">
-              {TIMELINE.map((step, idx) => (
+              {TIMELINE.map((step) => (
                 <div key={step.label} className="relative">
                   <div className="flex flex-col">
                     {/* Dot on the line */}

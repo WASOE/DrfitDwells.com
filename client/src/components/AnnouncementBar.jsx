@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -41,7 +41,6 @@ const AnnouncementBar = () => {
   const [isMounted, setIsMounted] = useState(false);
   const location = useLocation();
   const basePath = stripLocaleFromPath(location.pathname);
-  const isHome = basePath === '/';
   const isBuildPage = basePath === '/build';
   const isCabinDetails = /^\/cabin\/[^/]+$/.test(basePath);
   const isConfirmPage = /^\/cabin\/[^/]+\/confirm$/.test(basePath);

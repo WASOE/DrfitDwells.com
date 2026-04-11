@@ -1,26 +1,9 @@
 import { useMemo } from 'react';
 
-// Static map image generator (placeholder - can be replaced with actual map service)
-function generateMapUrl(latitude, longitude, zoom = 11) {
-  // Using a placeholder service - replace with your preferred map provider
-  // Options: Google Maps Static API, Mapbox Static Images, or OpenStreetMap
-  if (!latitude || !longitude) return null;
-  
-  // Example: OpenStreetMap static image (free, no API key needed)
-  // For production, consider using Mapbox or Google Maps Static API
-  const tileSize = 256;
-  const scale = 2; // Retina
-  const size = `${tileSize * scale}x${tileSize * scale}`;
-  
-  // Note: This is a placeholder. For production, use a proper map service
-  return `https://api.mapbox.com/styles/v1/mapbox/outdoors-v11/static/pin-s+81887A(${longitude},${latitude})/${longitude},${latitude},${zoom}/${size}?access_token=YOUR_TOKEN`;
-}
-
 export default function MapArrival({ cabin }) {
   const hasGeoLocation = cabin?.geoLocation?.latitude && cabin?.geoLocation?.longitude;
   const latitude = cabin?.geoLocation?.latitude;
   const longitude = cabin?.geoLocation?.longitude;
-  const zoom = cabin?.geoLocation?.zoom || 11;
   const location = cabin?.location || 'Rila Mountains, Bulgaria';
   
   // Route hint - can be customized per cabin

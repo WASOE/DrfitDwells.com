@@ -8,7 +8,6 @@ const BookingModal = lazy(importBookingModal);
 
 function bookingModalDevLog(...args) {
   if (import.meta.env.DEV) {
-    // eslint-disable-next-line no-console
     console.info('[booking-modal]', ...args);
   }
 }

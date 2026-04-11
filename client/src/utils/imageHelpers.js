@@ -138,7 +138,7 @@ export function validateImageSelection(imagePath, expectedCriteria) {
     };
   }
   
-  const { location, subject, perspective, tags = [] } = metadata;
+  const { location, subject, perspective, tags: _tags = [] } = metadata;
   const { expectedLocation, expectedSubject, expectedPerspective } = expectedCriteria;
   
   const issues = [];

@@ -614,20 +614,6 @@ export const imageMetadata = {
       useCases: ['a-frame-interior', 'sunset-moment', 'window-view', 'golden-hour', 'sunrise-sunset']
     },
 
-    '/uploads/The Valley/Lux-cabin-WhatsApp Image 2026-01-11 at 11.43.42 AM (1).jpeg': {
-      location: 'valley',
-      subject: 'Luxury Cabin Interior with Sunset Window View',
-      perspective: 'interior',
-      content: 'Interior view of Luxury Cabin showing person looking out window at sunset. Warm golden light streaming through large windows, modern plywood walls, and panoramic window view of mountains and sky at golden hour. Dark/black square building with contemporary design.',
-      seo: {
-        alt: 'Luxury cabin interior with sunset window view at The Valley showing person looking out at golden hour, 1,550m altitude, Rhodope Mountains, Bulgaria',
-        title: 'Sunset Window View - Luxury Cabin Interior at Golden Hour',
-        description: 'An interior view of the Luxury Cabin at The Valley showing a person looking out a panoramic window at sunset, with warm golden light streaming through large windows, modern plywood walls, and stunning views of mountains and sky at golden hour, 1,550m altitude.'
-      },
-      tags: ['luxury-cabin', 'interior', 'sunset', 'window-view', 'golden-hour', 'panoramic-window', 'mountain-views', 'sunset-light', 'modern', 'plywood-walls', '1-550m'],
-      useCases: ['luxury-cabin-interior', 'sunset-moment', 'window-view', 'golden-hour', 'sunrise-sunset', 'interior-gallery']
-    },
-
     '/uploads/The Valley/Lux-cabin-exterior-1768207498-98737209.jpg': {
       location: 'valley',
       subject: 'Person Reading in Nature',
@@ -640,20 +626,6 @@ export const imageMetadata = {
       },
       tags: ['reading', 'person', 'outdoor', 'nature', 'lifestyle', 'reading-in-nature', 'peaceful', 'natural-setting', '1-550m'],
       useCases: ['reading-moment', 'lifestyle', 'outdoor-reading', 'nature-experience', 'quiet-moments']
-    },
-
-    '/uploads/The Valley/Lux-cabin-exterior-1768207498-98737209.jpg': {
-      location: 'valley',
-      subject: 'Person Reading in Nature - Luxury Cabin Exterior',
-      perspective: 'exterior',
-      content: 'Exterior view showing person reading in natural outdoor setting near Luxury Cabin at The Valley. Person seated outdoors with book, surrounded by nature, mountain views, and peaceful reading atmosphere. Dark/black square building visible in background.',
-      seo: {
-        alt: 'Person reading in nature near Luxury Cabin at The Valley showing outdoor reading space and natural setting at 1,550m altitude, Rhodope Mountains, Bulgaria',
-        title: 'Reading in Nature - Quiet Outdoor Reading Space at Luxury Cabin',
-        description: 'An exterior view at The Valley showing a person reading in a natural outdoor setting near the Luxury Cabin, seated peacefully with a book, surrounded by nature and mountain views, showcasing the perfect spot for quiet reading in nature at 1,550m altitude.'
-      },
-      tags: ['reading', 'person', 'outdoor', 'nature', 'lifestyle', 'reading-in-nature', 'luxury-cabin', 'peaceful', 'natural-setting', '1-550m'],
-      useCases: ['reading-moment', 'lifestyle', 'outdoor-reading', 'nature-experience', 'quiet-moments', 'luxury-cabin-exterior']
     },
 
     '/uploads/The Valley/1768207815-2996ea84.jpg': {

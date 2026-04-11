@@ -60,7 +60,6 @@ const ReviewEdit = () => {
       setLoading(true);
       setError('');
       
-      const token = localStorage.getItem('adminToken');
       const response = await reviewAPI.getById(id);
       
       if (response.data.success) {
@@ -129,7 +128,6 @@ const ReviewEdit = () => {
         return;
       }
 
-      const token = localStorage.getItem('adminToken');
       let response;
 
       if (isNew) {

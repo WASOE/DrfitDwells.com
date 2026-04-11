@@ -278,7 +278,7 @@ const TheCabin = () => {
               title={getSEOTitle(CABIN_STILLS[season]) || 'The Cabin - Off-Grid Mountain Retreat in Rhodope Mountains'}
               className="absolute inset-0 w-full h-full object-cover"
               loading="eager"
-              fetchpriority="high"
+              fetchPriority="high"
               decoding="async"
               onError={(e) => {
                 e.target.src = CABIN_STILL_FALLBACK;

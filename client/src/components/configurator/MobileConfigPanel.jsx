@@ -23,7 +23,7 @@ const MobileConfigPanel = ({
   isDeliveryStep,
   deliveryContent,
   onDownloadPDF,
-  onScheduleConsultation
+  onScheduleConsultation: _onScheduleConsultation
 }) => {
   const [dragY, setDragY] = useState(0);
   const [isDragging, setIsDragging] = useState(false);

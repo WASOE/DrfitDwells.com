@@ -1,5 +1,4 @@
 import { Helmet } from 'react-helmet-async';
-import { useLocation } from 'react-router-dom';
 import { localizePath } from '../utils/localizedRoutes';
 import { useSiteLanguage } from '../hooks/useSiteLanguage';
 import { getSiteUrl, toAbsoluteSiteUrl } from '../utils/siteUrl';
@@ -16,7 +15,6 @@ const Seo = ({
   preloadImages = [],
   hreflangAlternates = []
 }) => {
-  const location = useLocation();
   const siteUrl = getSiteUrl();
   const { language: routeLanguage } = useSiteLanguage();
   const localizedCanonicalPath = canonicalPath ? localizePath(canonicalPath, routeLanguage) : '/';

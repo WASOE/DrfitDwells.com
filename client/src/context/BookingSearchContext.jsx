@@ -56,7 +56,6 @@ export const BookingSearchProvider = ({ children }) => {
 
   const openModal = useCallback(() => {
     if (import.meta.env.DEV) {
-      // eslint-disable-next-line no-console
       console.info('[booking-modal] openModal() requested');
     }
     setIsModalOpen(true);
@@ -64,7 +63,6 @@ export const BookingSearchProvider = ({ children }) => {
 
   const closeModal = useCallback(() => {
     if (import.meta.env.DEV) {
-      // eslint-disable-next-line no-console
       console.info('[booking-modal] closeModal() requested');
     }
     setIsModalOpen(false);

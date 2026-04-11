@@ -1,12 +1,6 @@
-import { motion } from 'framer-motion';
-import { useInView } from 'framer-motion';
-import { useRef } from 'react';
 import ArchiveGallery from './ArchiveGallery';
 
 const PlaceSection = () => {
-  const ref = useRef(null);
-  const isInView = useInView(ref, { once: true, margin: '-100px' });
-
   // All archive images from the build
   const archiveImages = [
     {
@@ -42,7 +36,7 @@ const PlaceSection = () => {
   ];
 
   return (
-    <section ref={ref} className="valley-section">
+    <section className="valley-section">
       <div className="valley-container">
         <div className="max-w-[700px] mx-auto">
           <ArchiveGallery images={archiveImages} />

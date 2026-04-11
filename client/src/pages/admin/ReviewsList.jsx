@@ -36,7 +36,6 @@ const ReviewsList = () => {
   useEffect(() => {
     const loadCabins = async () => {
       try {
-        const token = localStorage.getItem('adminToken');
         const response = await cabinAPI.getAll();
         if (response.data.success) {
           setCabins(response.data.data.cabins || []);
@@ -62,7 +61,6 @@ const ReviewsList = () => {
         Object.entries(filters).filter(([_, v]) => v !== '')
       );
       
-      const token = localStorage.getItem('adminToken');
       const response = await reviewAPI.list(params);
       
       if (response.data.success) {
@@ -109,7 +107,6 @@ const ReviewsList = () => {
 
     try {
       setBulkActionLoading(true);
-      const token = localStorage.getItem('adminToken');
       const response = await reviewAPI.bulkAction({
         ids: Array.from(selectedReviews),
         action

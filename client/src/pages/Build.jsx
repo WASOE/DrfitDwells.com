@@ -12,8 +12,6 @@ import SocialProofRibbon from '../components/configurator/SocialProofRibbon';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { CONTACT_EMAIL } from '../data/gmbLocations';
 
-const ACCENT_RGB = [129, 136, 122];
-
 // Reorganized into 4 steps as specified
 const CONFIG_STEPS = [
   {

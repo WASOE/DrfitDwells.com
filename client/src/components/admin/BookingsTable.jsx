@@ -182,18 +182,6 @@ const BookingsTable = () => {
     return `${adults}A${children > 0 ? ` ${children}C` : ''}`;
   };
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'confirmed':
-        return 'bg-green-100 text-green-800';
-      case 'cancelled':
-        return 'bg-red-100 text-red-800';
-      case 'pending':
-      default:
-        return 'bg-yellow-100 text-yellow-800';
-    }
-  };
-
   if (loading && bookings.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">

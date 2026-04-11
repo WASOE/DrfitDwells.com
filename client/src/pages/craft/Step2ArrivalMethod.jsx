@@ -19,7 +19,6 @@ const Step2ArrivalMethod = () => {
   
   const [cabin, setCabin] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
 
   useEffect(() => {
     setCurrentStep(2);
@@ -66,19 +65,6 @@ const Step2ArrivalMethod = () => {
     );
   };
 
-  // Get transport color scheme
-  const getTransportColors = (type) => {
-    const colors = {
-      'Horse': { bg: 'from-amber-50 to-orange-50', border: 'border-amber-200', hover: 'hover:border-amber-300' },
-      'ATV': { bg: 'from-red-50 to-pink-50', border: 'border-red-200', hover: 'hover:border-red-300' },
-      'Jeep': { bg: 'from-blue-50 to-indigo-50', border: 'border-blue-200', hover: 'hover:border-blue-300' },
-      'Hike': { bg: 'from-green-50 to-emerald-50', border: 'border-green-200', hover: 'hover:border-green-300' },
-      'Boat': { bg: 'from-cyan-50 to-teal-50', border: 'border-cyan-200', hover: 'hover:border-cyan-300' },
-      'Helicopter': { bg: 'from-purple-50 to-violet-50', border: 'border-purple-200', hover: 'hover:border-purple-300' }
-    };
-    return colors[type] || { bg: 'from-gray-50 to-slate-50', border: 'border-gray-200', hover: 'hover:border-gray-300' };
-  };
-
   // Load cabin data with transport options (optional - can proceed without cabin)
   useEffect(() => {
     const loadCabin = async () => {
@@ -93,12 +79,9 @@ const Step2ArrivalMethod = () => {
         
         if (response.data.success) {
           setCabin(response.data.data.cabin);
-        } else {
-          setError(null); // Don't error if cabin not found - allow proceeding
         }
       } catch (err) {
         console.error('Load cabin error:', err);
-        setError(null); // Don't error - allow proceeding without cabin
       } finally {
         setLoading(false);
       }

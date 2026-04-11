@@ -1,5 +1,4 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { memo } from 'react';
 
 /**
  * Glass panel option selector with floating aesthetic
@@ -9,9 +8,9 @@ const OptionSelector = ({
   category, 
   selectedOptionId, 
   onSelect,
-  stepIndex,
-  totalSteps,
-  isMobile = false
+  stepIndex: _stepIndex,
+  totalSteps: _totalSteps,
+  isMobile: _isMobile = false
 }) => {
   return (
     <motion.div

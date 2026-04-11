@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { useEffect, useState, useMemo, memo } from 'react';
+import { useEffect, useState, memo } from 'react';
 
 /**
  * Majestic visualizer canvas (70% left side)
@@ -9,7 +9,7 @@ import { useEffect, useState, useMemo, memo } from 'react';
 const VisualizerCanvas = ({ 
   activeMediaId, 
   mediaView, 
-  selections,
+  selections: _selections,
   onMediaSelect,
   onMediaViewChange,
   visibleMedia,
@@ -17,7 +17,6 @@ const VisualizerCanvas = ({
   isMobile = false
 }) => {
   const [previousMediaId, setPreviousMediaId] = useState(activeMediaId);
-  const [isTransitioning, setIsTransitioning] = useState(false);
   const [loadedImages, setLoadedImages] = useState(new Set());
   const [isImageLoading, setIsImageLoading] = useState(true);
 
@@ -82,12 +81,12 @@ const VisualizerCanvas = ({
   // Track media changes for cross-fade
   useEffect(() => {
     if (activeMediaId !== previousMediaId) {
-      setIsTransitioning(true);
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         setPreviousMediaId(activeMediaId);
-        setIsTransitioning(false);
       }, 300);
+      return () => clearTimeout(timer);
     }
+    return undefined;
   }, [activeMediaId, previousMediaId]);
 
   const containerClasses = isMobile
@@ -144,7 +143,7 @@ const VisualizerCanvas = ({
                           style={{ objectPosition: 'center' }}
                           loading="eager"
                           decoding="async"
-                          fetchpriority="high"
+                          fetchPriority="high"
                           onLoad={() => setIsImageLoading(false)}
                         />
                       </picture>
@@ -156,7 +155,7 @@ const VisualizerCanvas = ({
                         style={{ objectPosition: 'center' }}
                         loading="eager"
                         decoding="async"
-                        fetchpriority="high"
+                        fetchPriority="high"
                         onLoad={() => setIsImageLoading(false)}
                       />
                     )}

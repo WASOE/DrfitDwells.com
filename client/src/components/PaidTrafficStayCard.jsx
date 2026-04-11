@@ -35,7 +35,7 @@ export default function PaidTrafficStayCard({
     else if (fallbackReady) onAvailabilityFallback();
   };
 
-  const onArticleClick = (e) => {
+  const onArticleClick = (_e) => {
     if (!actionable) return;
     go();
   };

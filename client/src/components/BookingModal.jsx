@@ -22,7 +22,6 @@ import { formatStayRangeSummary, getDateFnsLocale } from '../utils/localeDates';
 
 function bookingModalDevLog(...args) {
   if (import.meta.env.DEV) {
-    // eslint-disable-next-line no-console
     console.info('[booking-modal]', ...args);
   }
 }

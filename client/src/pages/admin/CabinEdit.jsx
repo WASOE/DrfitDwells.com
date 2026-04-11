@@ -1187,7 +1187,6 @@ const CabinEdit = () => {
       if (selectedImages.size === 0) return;
       // Delete sequentially to keep behavior predictable and reuse existing endpoints.
       for (const imageId of Array.from(selectedImages)) {
-        // eslint-disable-next-line no-await-in-loop
         await handleRemoveImage(imageId);
       }
       handleClearSelection();

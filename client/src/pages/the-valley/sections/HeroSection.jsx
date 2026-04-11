@@ -35,7 +35,7 @@ const HeroSection = ({
             title={getSEOTitle(VALLEY_STILLS[season]) || 'The Valley - A Village Above the Clouds at 1,550m Altitude'}
             className="absolute inset-0 w-full h-full object-cover"
             loading="eager"
-            fetchpriority="high"
+            fetchPriority="high"
             decoding="async"
             style={{
               minWidth: '100%',
