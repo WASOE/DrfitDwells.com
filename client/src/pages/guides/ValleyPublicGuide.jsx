@@ -44,8 +44,8 @@ export default function ValleyPublicGuide() {
         'Water for final walk',
         'Personal medication'
       ]}
-      emergencyContact="+359 876 342 540"
-      supportContact="+359 876 342 540"
+      emergencyContact="+359 876342540"
+      supportContact="+359 876342540"
       fallbackPoint="Chereshovo center / village square (best point to stop and call)."
       lostRecovery="Stop at the last confirmed checkpoint, share your live location when signal returns, and wait for route confirmation."
       driftIntro="Drift & Dwells hosts remote stays designed for calm, nature, and reliable practical support when conditions are less than perfect."

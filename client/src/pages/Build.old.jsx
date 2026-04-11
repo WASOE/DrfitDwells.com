@@ -418,7 +418,7 @@ const Build = () => {
     y += 20;
 
     setHeading('Next Steps');
-    doc.text('Request your build timeline at info@driftdwells.com', margin, y, { maxWidth: contentWidth });
+    doc.text('Request your build timeline at jose@driftdwells.com', margin, y, { maxWidth: contentWidth });
 
     const shortId = Math.random().toString(36).slice(2, 6).toUpperCase();
     const dateStamp = new Date().toISOString().slice(0, 10);
@@ -615,7 +615,7 @@ const Build = () => {
                     Download your spec PDF
                   </button>
                   <a
-                    href="mailto:info@driftdwells.com"
+                    href="mailto:jose@driftdwells.com"
                     onClick={() => trackEvent('timeline_requested')}
                     className="mt-4 inline-flex w-full items-center justify-center rounded-full border border-[#1a1a1a] text-[#1a1a1a] px-5 py-3 text-xs uppercase tracking-[0.2em]"
                   >
@@ -765,7 +765,7 @@ const Build = () => {
               Download your spec PDF
             </button>
             <a
-              href="mailto:info@driftdwells.com"
+              href="mailto:jose@driftdwells.com"
               onClick={() => trackEvent('call_scheduled_clicked')}
               className="inline-flex items-center justify-center rounded-full border border-[#1a1a1a] text-[#1a1a1a] px-6 py-3 text-sm font-semibold tracking-[0.12em] uppercase"
             >

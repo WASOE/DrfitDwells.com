@@ -2,7 +2,7 @@ export const CABIN_COORDINATES = '41.930874, 23.401746';
 export const CABIN_NAVIGATE_URL =
   'https://www.google.com/maps/dir/?api=1&destination=41.930874,23.401746&travelmode=driving&dir_action=navigate';
 export const CABIN_HERO_IMAGE = '/uploads/The Cabin/011f4645-32ce-4739-ac8e-16a900612ac7.jpeg';
-export const HOST_PHONE_DISPLAY = '+359 876 342 540';
+export const HOST_PHONE_DISPLAY = '+359 876342540';
 export const HOST_PHONE_E164 = '+359876342540';
 export const GOOGLE_EARTH_URL =
   'https://earth.google.com/earth/d/1RFPJPeRiITrb_9UEYLtQSpqxX8CtNWm7?usp=sharing';

@@ -2,6 +2,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import OptionSelector from './OptionSelector';
+import { CONTACT_EMAIL } from '../../data/gmbLocations';
 
 /**
  * Mobile bottom sheet configuration panel
@@ -173,7 +174,7 @@ const MobileConfigPanel = ({
                           Download Your Spec PDF
                         </button>
                         <a
-                          href="mailto:info@driftdwells.com?subject=Cabin Configuration Consultation"
+                          href={`mailto:${CONTACT_EMAIL}?subject=Cabin Configuration Consultation`}
                           className="block w-full px-6 py-4 border-2 border-black text-black rounded-full text-sm uppercase tracking-wider font-medium active:bg-gray-100 text-center touch-manipulation"
                         >
                           Schedule a Design Consultation

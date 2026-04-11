@@ -7,8 +7,8 @@
 const ORIGIN = import.meta.env.VITE_SITE_URL || 'https://driftdwells.com';
 
 // Shared contact – verified GMB phone
-export const CONTACT_PHONE = import.meta.env.VITE_CONTACT_PHONE || '+359 87 634 2540';
-export const CONTACT_EMAIL = import.meta.env.VITE_CONTACT_EMAIL || 'info@driftdwells.com';
+export const CONTACT_PHONE = import.meta.env.VITE_CONTACT_PHONE || '+359 876342540';
+export const CONTACT_EMAIL = import.meta.env.VITE_CONTACT_EMAIL || 'jose@driftdwells.com';
 
 // Google Maps share links – open the exact GMB listing for directions
 const MAPS_CABIN = 'https://maps.app.goo.gl/5luftFa6jGhLWbVei';

@@ -2,6 +2,7 @@ import { useLocation, Link } from 'react-router-dom';
 import { useTranslation, Trans } from 'react-i18next';
 import { localizePath, stripLocaleFromPath } from '../utils/localizedRoutes';
 import { useSiteLanguage } from '../hooks/useSiteLanguage';
+import { CONTACT_EMAIL, CONTACT_PHONE } from '../data/gmbLocations';
 
 const bottomStripConfig = [
   { image: '/uploads/Icons%20trival/campfire.png', i18nKey: 'footer.bottomStrip.mountainEscape' },
@@ -272,11 +273,15 @@ const Footer = () => {
                 }}
               >
                 <p>
-                  <a href="mailto:info@driftdwells.com" className="hover:opacity-60 transition-opacity" rel="noopener noreferrer">
-                    info@driftdwells.com
+                  <a href={`mailto:${CONTACT_EMAIL}`} className="hover:opacity-60 transition-opacity" rel="noopener noreferrer">
+                    {CONTACT_EMAIL}
                   </a>
                 </p>
-                <p className="tabular-nums whitespace-nowrap">{tc('footer.phoneExample')}</p>
+                <p className="tabular-nums whitespace-nowrap">
+                  <a href={`tel:${CONTACT_PHONE.replace(/\s/g, '')}`} className="hover:opacity-60 transition-opacity">
+                    {CONTACT_PHONE}
+                  </a>
+                </p>
               </div>
               <div className="mt-3">
                 <h3

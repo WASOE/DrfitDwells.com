@@ -1,6 +1,8 @@
 const nodemailer = require('nodemailer');
 const { resolveGuideUrl, isPdfUrl } = require('../utils/arrivalGuideUrl');
 
+const SUPPORT_CONTACT_EMAIL = process.env.CONTACT_EMAIL || 'jose@driftdwells.com';
+
 const htmlEscape = (s) => {
   if (s == null || s === '') return '';
   const str = String(s);
@@ -276,7 +278,7 @@ class EmailService {
 
             <p style="margin-top: 30px;">We'll send you a confirmation email within 24 hours and detailed arrival instructions 3 days before your stay.</p>
             
-            <p>Questions? Reply to this email or contact us at info@driftdwells.com</p>
+            <p>Questions? Reply to this email or contact us at ${htmlEscape(SUPPORT_CONTACT_EMAIL)}</p>
             
             <p>We can't wait to welcome you to your digital detox retreat!</p>
             
@@ -346,7 +348,7 @@ PAYMENT: €${booking.totalPrice} due on arrival (cash or credit cards accepted)
 
 We'll send you a confirmation email within 24 hours and detailed arrival instructions 3 days before your stay.
 
-Questions? Contact us at info@driftdwells.com
+Questions? Contact us at ${SUPPORT_CONTACT_EMAIL}
 
 Best regards,
 The Drift & Dwells Team
@@ -458,7 +460,7 @@ CONFIRMED DETAILS:
 
 We'll send you detailed arrival instructions and local recommendations 3 days before your stay.
 
-Questions? Reply to this email or contact us at info@driftdwells.com
+Questions? Reply to this email or contact us at ${SUPPORT_CONTACT_EMAIL}
 
 Best regards,
 The Drift & Dwells Team

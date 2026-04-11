@@ -10,6 +10,7 @@ import MobileStepIndicator from '../components/configurator/MobileStepIndicator'
 import MobileSpecsBar from '../components/configurator/MobileSpecsBar';
 import SocialProofRibbon from '../components/configurator/SocialProofRibbon';
 import { useLanguage } from '../context/LanguageContext.jsx';
+import { CONTACT_EMAIL } from '../data/gmbLocations';
 
 const ACCENT_RGB = [129, 136, 122];
 
@@ -836,7 +837,7 @@ const Build = () => {
     y += 20;
     doc.text('1. Review this specification', margin, y);
     y += 14;
-    doc.text('2. Contact us at info@driftdwells.com', margin, y);
+    doc.text(`2. Contact us at ${CONTACT_EMAIL}`, margin, y);
     y += 14;
     doc.text('3. Schedule a design consultation', margin, y);
     y += 14;
@@ -1029,7 +1030,7 @@ const Build = () => {
                           Download Your Spec PDF
                         </button>
                         <a
-                          href="mailto:info@driftdwells.com?subject=Cabin Configuration Consultation"
+                          href={`mailto:${CONTACT_EMAIL}?subject=Cabin Configuration Consultation`}
                           className="block w-full px-6 py-4 border border-black text-black rounded-full text-sm uppercase tracking-wider font-medium hover:bg-black hover:text-white transition-colors text-center"
                         >
                           Schedule a Design Consultation
@@ -1060,7 +1061,7 @@ const Build = () => {
         isDeliveryStep={currentStep === 3}
         deliveryContent={deliveryContent}
         onDownloadPDF={handlePdfDownload}
-        onScheduleConsultation={() => window.location.href = 'mailto:info@driftdwells.com?subject=Cabin Configuration Consultation'}
+        onScheduleConsultation={() => { window.location.href = `mailto:${CONTACT_EMAIL}?subject=Cabin Configuration Consultation`; }}
       />
 
       {/* Social Proof Ribbon */}
@@ -1076,7 +1077,7 @@ const Build = () => {
           capacity="2 Persons"
           price={formatPrice(totalPrice)}
           onDownloadPDF={handlePdfDownload}
-          onScheduleConsultation={() => window.location.href = 'mailto:info@driftdwells.com?subject=Cabin Configuration Consultation'}
+          onScheduleConsultation={() => { window.location.href = `mailto:${CONTACT_EMAIL}?subject=Cabin Configuration Consultation`; }}
         />
       </div>
 
@@ -1087,7 +1088,7 @@ const Build = () => {
         capacity="2 Persons"
         price={formatPrice(totalPrice)}
         onDownloadPDF={handlePdfDownload}
-        onScheduleConsultation={() => window.location.href = 'mailto:info@driftdwells.com?subject=Cabin Configuration Consultation'}
+        onScheduleConsultation={() => { window.location.href = `mailto:${CONTACT_EMAIL}?subject=Cabin Configuration Consultation`; }}
         isConfigPanelOpen={isMobileConfigOpen}
         onExpandedChange={setIsSpecsBarExpanded}
       />
