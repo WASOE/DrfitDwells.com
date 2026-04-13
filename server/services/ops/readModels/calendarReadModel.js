@@ -132,27 +132,49 @@ function enrichBlockRender(block, bookingById, windowStart, windowEndExclusive) 
   };
 }
 
+function aggregateSyncStatusFromOutcomes(rows) {
+  if (!rows.length) return { syncStatus: 'stale', lastSyncOutcome: null };
+  const outcomes = rows.map((r) => r?.lastSyncOutcome);
+  if (outcomes.some((x) => x === 'failed')) {
+    const row = rows.find((r) => r.lastSyncOutcome === 'failed');
+    return { syncStatus: 'failed', lastSyncOutcome: row?.lastSyncOutcome ?? 'failed' };
+  }
+  if (outcomes.some((x) => x === 'warning')) {
+    const row = rows.find((r) => r.lastSyncOutcome === 'warning');
+    return { syncStatus: 'warning', lastSyncOutcome: row?.lastSyncOutcome ?? 'warning' };
+  }
+  if (outcomes.some((x) => x === 'success')) {
+    return { syncStatus: 'healthy', lastSyncOutcome: 'success' };
+  }
+  return { syncStatus: 'stale', lastSyncOutcome: rows[rows.length - 1]?.lastSyncOutcome ?? null };
+}
+
 async function syncIndicatorsForCabin(cabinId) {
-  const state = await CabinChannelSyncState.findOne({ cabinId, channel: 'airbnb_ical' }).lean();
-  if (state?.lastSyncedAt) {
-    const outcome = state.lastSyncOutcome;
+  const stateRows = await CabinChannelSyncState.find({ cabinId, channel: 'airbnb_ical' }).lean();
+  const withSync = stateRows.filter((s) => s?.lastSyncedAt);
+  if (withSync.length > 0) {
+    const latestRow = withSync.sort(
+      (a, b) => new Date(b.lastSyncedAt).getTime() - new Date(a.lastSyncedAt).getTime()
+    )[0];
+    const { syncStatus, lastSyncOutcome } = aggregateSyncStatusFromOutcomes(withSync);
     return {
-      lastSyncAt: state.lastSyncedAt,
-      lastSyncOutcome: outcome,
-      syncStatus:
-        outcome === 'failed' ? 'failed' : outcome === 'warning' ? 'warning' : outcome === 'success' ? 'healthy' : 'stale',
-      source: 'cabin_channel_sync_state'
+      lastSyncAt: latestRow.lastSyncedAt,
+      lastSyncOutcome,
+      syncStatus,
+      source: 'cabin_channel_sync_state',
+      unitFeedCount: stateRows.length
     };
   }
   const latest = await ChannelSyncEvent.findOne({ cabinId }).sort({ runAt: -1 }).lean();
   if (!latest) {
-    return { lastSyncAt: null, lastSyncOutcome: null, syncStatus: 'stale', source: 'none' };
+    return { lastSyncAt: null, lastSyncOutcome: null, syncStatus: 'stale', source: 'none', unitFeedCount: 0 };
   }
   return {
     lastSyncAt: latest.runAt,
     lastSyncOutcome: latest.outcome,
     syncStatus: latest.outcome === 'failed' ? 'failed' : latest.outcome === 'warning' ? 'warning' : 'healthy',
-    source: 'channel_sync_event'
+    source: 'channel_sync_event',
+    unitFeedCount: 0
   };
 }
 

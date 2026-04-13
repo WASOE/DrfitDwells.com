@@ -43,8 +43,9 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function makeKey(cabinId, channel) {
-  return `${cabinId}|${channel}`;
+function makeKey(cabinId, channel, unitId = null) {
+  const u = unitId ? String(unitId) : '';
+  return `${cabinId}|${channel}|${u}`;
 }
 
 function getConfigFromEnv() {
@@ -71,9 +72,9 @@ function getConfigFromEnv() {
   };
 }
 
-async function runOnceForCabin({ cabinId, feedUrl, channel = CHANNEL, source = 'scheduler' }) {
+async function runOnceForCabin({ cabinId, feedUrl, channel = CHANNEL, unitId = null, source = 'scheduler' }) {
   const s = state();
-  const key = makeKey(cabinId, channel);
+  const key = makeKey(cabinId, channel, unitId);
   const now = Date.now();
 
   const cooldownUntil = s.cooldownUntil.get(key);
@@ -96,7 +97,7 @@ async function runOnceForCabin({ cabinId, feedUrl, channel = CHANNEL, source = '
     let tombstoned = 0;
 
     for (let attempt = 1; attempt <= s.retryMax + 1; attempt += 1) {
-      const res = await importIcalForCabin({ cabinId, feedUrl, channel });
+      const res = await importIcalForCabin({ cabinId, feedUrl, channel, unitId });
       lastOutcome = res?.outcome || null;
       lastWarnings = res?.warnings ?? 0;
       imported = res?.imported ?? 0;
@@ -148,17 +149,18 @@ async function tickOnce({ reason = 'scheduler_cycle' } = {}) {
     channel: CHANNEL,
     feedUrl: { $exists: true, $nin: [null, ''] }
   })
-    .select('cabinId feedUrl')
+    .select('cabinId feedUrl unitId')
     .lean();
 
   const candidates = configured.slice(0, s.maxCabinsPerCycle);
   const runList = [];
   for (const c of candidates) {
-    const key = makeKey(String(c.cabinId), CHANNEL);
+    const unitId = c.unitId ? String(c.unitId) : null;
+    const key = makeKey(String(c.cabinId), CHANNEL, unitId);
     if (s.inProgress.has(key)) continue;
     const cooldownUntil = s.cooldownUntil.get(key);
     if (cooldownUntil && cooldownUntil > Date.now()) continue;
-    runList.push({ cabinId: String(c.cabinId), feedUrl: c.feedUrl });
+    runList.push({ cabinId: String(c.cabinId), feedUrl: c.feedUrl, unitId: c.unitId || null });
   }
 
   // Avoid hammering a single failing feed: cooldown + per-cabin in-progress lock.
@@ -170,7 +172,13 @@ async function tickOnce({ reason = 'scheduler_cycle' } = {}) {
       i += 1;
       const item = runList[idx];
       if (!item) continue;
-      const res = await runOnceForCabin({ cabinId: item.cabinId, feedUrl: item.feedUrl, channel: CHANNEL, source: 'scheduler' });
+      const res = await runOnceForCabin({
+        cabinId: item.cabinId,
+        feedUrl: item.feedUrl,
+        channel: CHANNEL,
+        unitId: item.unitId,
+        source: 'scheduler'
+      });
       results.push({ cabinId: item.cabinId, ...res });
     }
   });
@@ -251,16 +259,16 @@ function getIcalSyncSchedulerState() {
   };
 }
 
-async function runManualIcalSync({ cabinId, feedUrl, channel = CHANNEL }) {
+async function runManualIcalSync({ cabinId, feedUrl, channel = CHANNEL, unitId = null }) {
   const s = state();
-  const key = makeKey(String(cabinId), channel);
+  const key = makeKey(String(cabinId), channel, unitId);
   if (s.inProgress.has(key)) {
     return {
       status: 'in_progress',
-      message: 'iCal sync already running for this cabin+channel'
+      message: 'iCal sync already running for this cabin+channel(+unit)'
     };
   }
-  const res = await runOnceForCabin({ cabinId, feedUrl, channel, source: 'manual' });
+  const res = await runOnceForCabin({ cabinId, feedUrl, channel, unitId, source: 'manual' });
   return res;
 }
 

@@ -18,6 +18,13 @@ const cabinChannelSyncStateSchema = new mongoose.Schema(
       type: String,
       default: null
     },
+    /** When set, inbound Airbnb iCal is for this physical unit only (required for inventoryType multi parent cabins). */
+    unitId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Unit',
+      default: null,
+      index: true
+    },
     lastSyncedAt: {
       type: Date,
       default: null,
@@ -41,6 +48,6 @@ const cabinChannelSyncStateSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-cabinChannelSyncStateSchema.index({ cabinId: 1, channel: 1 }, { unique: true });
+cabinChannelSyncStateSchema.index({ cabinId: 1, channel: 1, unitId: 1 }, { unique: true });
 
 module.exports = mongoose.model('CabinChannelSyncState', cabinChannelSyncStateSchema);

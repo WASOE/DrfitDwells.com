@@ -7,6 +7,7 @@ const AvailabilityBlock = require('../models/AvailabilityBlock');
 const Booking = require('../models/Booking');
 const Cabin = require('../models/Cabin');
 const Unit = require('../models/Unit');
+const { availabilityBlockUnitScopeClause } = require('./calendar/unitCalendarShared');
 const { normalizeExclusiveDateRange } = require('../utils/dateTime');
 const { BLOCKING_BOOKING_STATUSES } = require('./calendar/blockingStatusConstants');
 
@@ -48,7 +49,7 @@ async function countBlockingBlocksForUnit(parentCabinId, unitId, startDate, endD
     blockType: { $in: BLOCKING_BLOCK_TYPES },
     startDate: { $lt: endDate },
     endDate: { $gt: startDate },
-    $or: [{ unitId: null }, { unitId: { $exists: false } }, { unitId }]
+    ...availabilityBlockUnitScopeClause(unitId)
   });
 }
 

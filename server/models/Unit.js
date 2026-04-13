@@ -40,6 +40,12 @@ const unitSchema = new mongoose.Schema({
     trim: true,
     maxlength: [500, 'Admin notes cannot exceed 500 characters']
   },
+  /** Ops: which external channel listing (e.g. Airbnb) maps to this physical unit — avoids wrong .ics URL on the wrong listing */
+  airbnbListingLabel: {
+    type: String,
+    trim: true,
+    maxlength: [200, 'Label cannot exceed 200 characters']
+  },
   isActive: {
     type: Boolean,
     default: true

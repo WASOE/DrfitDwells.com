@@ -4,6 +4,7 @@ const CabinType = require('../../../models/CabinType');
 const Unit = require('../../../models/Unit');
 const { escapeRegex } = require('../../../utils/escapeRegex');
 const { FIXTURE_CABIN_NAME_PATTERN, isFixtureCabinName } = require('../../../utils/fixtureExclusion');
+const { buildAbsoluteUnitIcsUrl, buildPublicUnitIcsPath } = require('../../../config/publicCalendarSiteUrl');
 
 function mapSingleCabinListItem(cabin) {
   return {
@@ -219,13 +220,20 @@ async function getCabinDetailReadModel(id) {
       emergencyContact: cabinType.emergencyContact || null,
       arrivalWindowDefault: cabinType.arrivalWindowDefault || null
     },
-    units: units.map((u) => ({
-      unitId: String(u._id),
-      unitNumber: u.unitNumber,
-      displayName: u.displayName || null,
-      isActive: u.isActive !== false,
-      blockedDatesCount: Array.isArray(u.blockedDates) ? u.blockedDates.length : 0
-    })),
+    units: units.map((u) => {
+      const unitId = String(u._id);
+      const icsExportPath = buildPublicUnitIcsPath(unitId);
+      return {
+        unitId,
+        unitNumber: u.unitNumber,
+        displayName: u.displayName || null,
+        isActive: u.isActive !== false,
+        blockedDatesCount: Array.isArray(u.blockedDates) ? u.blockedDates.length : 0,
+        airbnbListingLabel: u.airbnbListingLabel ? String(u.airbnbListingLabel).trim() || null : null,
+        icsExportPath,
+        icsExportUrl: u.isActive !== false ? buildAbsoluteUnitIcsUrl(unitId) : null
+      };
+    }),
     degraded: {
       missingGeo: !cabinType.geoLocation?.latitude || !cabinType.geoLocation?.longitude,
       emptyInventory: units.length === 0

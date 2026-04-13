@@ -25,6 +25,14 @@ async function getSyncCenterReadModel({ cabinId = null }) {
     CabinChannelSyncState.find(cabinId ? { cabinId } : {}).lean()
   ]);
 
+  const eventAnomalyCount = new Map();
+  for (const event of events) {
+    const key = `${String(event.cabinId)}:${event.channel}`;
+    if (event.outcome !== 'success') {
+      eventAnomalyCount.set(key, (eventAnomalyCount.get(key) || 0) + 1);
+    }
+  }
+
   const grouped = new Map();
   for (const event of events) {
     const key = `${String(event.cabinId)}:${event.channel}`;
@@ -35,40 +43,39 @@ async function getSyncCenterReadModel({ cabinId = null }) {
         lastSyncedAt: event.runAt,
         lastSyncOutcome: event.outcome,
         syncStatus: deriveSyncStatus(event),
-        unresolvedAnomalies: 0
-      });
-    }
-    if (event.outcome !== 'success') {
-      grouped.get(key).unresolvedAnomalies += 1;
-    }
-  }
-
-  const stateMap = new Map(syncStates.map((s) => [`${String(s.cabinId)}:${s.channel}`, s]));
-  const merged = Array.from(grouped.values());
-  for (const state of syncStates) {
-    const key = `${String(state.cabinId)}:${state.channel}`;
-    if (!grouped.has(key)) {
-      merged.push({
-        cabinId: String(state.cabinId),
-        channel: state.channel,
-        lastSyncedAt: state.lastSyncedAt || null,
-        lastSyncOutcome: state.lastSyncOutcome || null,
-        syncStatus: state.lastSyncOutcome || 'stale',
-        unresolvedAnomalies: 0
+        unresolvedAnomalies: eventAnomalyCount.get(key) || 0
       });
     }
   }
 
-  const healthByCabinChannel = merged.map((entry) => {
-    const state = stateMap.get(`${entry.cabinId}:${entry.channel}`);
-    return {
-      ...entry,
-      lastSyncedAt: state?.lastSyncedAt || entry.lastSyncedAt || null,
-      lastSyncOutcome: state?.lastSyncOutcome || entry.lastSyncOutcome || null,
-      configuredFeed: Boolean(state?.feedUrl),
-      stale: state?.lastSyncedAt ? Date.now() - new Date(state.lastSyncedAt).getTime() > 24 * 60 * 60 * 1000 : true
-    };
-  });
+  function syncStatusFromStateOutcome(o) {
+    if (o === 'failed') return 'failed';
+    if (o === 'warning') return 'warning';
+    if (o === 'success') return 'healthy';
+    return 'stale';
+  }
+
+  const healthByCabinChannel = [
+    ...syncStates.map((state) => ({
+      cabinId: String(state.cabinId),
+      channel: state.channel,
+      unitId: state.unitId ? String(state.unitId) : null,
+      lastSyncedAt: state.lastSyncedAt || null,
+      lastSyncOutcome: state.lastSyncOutcome || null,
+      syncStatus: syncStatusFromStateOutcome(state.lastSyncOutcome),
+      unresolvedAnomalies: eventAnomalyCount.get(`${String(state.cabinId)}:${state.channel}`) || 0,
+      configuredFeed: Boolean(state.feedUrl),
+      stale: state.lastSyncedAt
+        ? Date.now() - new Date(state.lastSyncedAt).getTime() > 24 * 60 * 60 * 1000
+        : true
+    })),
+    ...Array.from(grouped.values()).filter((ev) => {
+      const hasState = syncStates.some(
+        (s) => String(s.cabinId) === ev.cabinId && s.channel === ev.channel
+      );
+      return !hasState;
+    })
+  ];
 
   return {
     healthByCabinChannel,

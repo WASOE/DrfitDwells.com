@@ -1,10 +1,70 @@
 const crypto = require('crypto');
 const axios = require('axios');
+const mongoose = require('mongoose');
 const AvailabilityBlock = require('../../../models/AvailabilityBlock');
 const ChannelSyncEvent = require('../../../models/ChannelSyncEvent');
 const CabinChannelSyncState = require('../../../models/CabinChannelSyncState');
+const Cabin = require('../../../models/Cabin');
+const Unit = require('../../../models/Unit');
+const { findParentCabinForCabinType } = require('../../publicAvailabilityService');
 const { normalizeExclusiveDateRange } = require('../../../utils/dateTime');
 const { openManualReviewItem } = require('./manualReviewService');
+
+function syncStateFilter(cabinId, channel, unitOid) {
+  return { cabinId, channel, unitId: unitOid || null };
+}
+
+function parseUnitOidArg(raw) {
+  if (raw == null || String(raw).trim() === '') return null;
+  const s = String(raw).trim();
+  if (!mongoose.Types.ObjectId.isValid(s)) return null;
+  return new mongoose.Types.ObjectId(s);
+}
+
+/**
+ * Rule 4: multi-inventory parents require a mapped active unit; single-inventory must not set unitId.
+ * @returns {Promise<{ ok: boolean, unitOid: import('mongoose').Types.ObjectId | null, code?: string, message?: string }>}
+ */
+async function resolveInboundUnitForImport(cabinId, unitIdRaw) {
+  const cabin = await Cabin.findById(cabinId).select('inventoryType').lean();
+  if (!cabin) {
+    return { ok: false, unitOid: null, code: 'cabin_not_found', message: 'Cabin not found' };
+  }
+  const isMulti = cabin.inventoryType === 'multi';
+  let unitOid = null;
+  if (unitIdRaw != null && String(unitIdRaw).trim() !== '') {
+    const s = String(unitIdRaw).trim();
+    if (!mongoose.Types.ObjectId.isValid(s)) {
+      return { ok: false, unitOid: null, code: 'invalid_unit', message: 'Invalid unitId' };
+    }
+    unitOid = new mongoose.Types.ObjectId(s);
+  }
+
+  if (isMulti) {
+    if (!unitOid) {
+      return {
+        ok: false,
+        unitOid: null,
+        code: 'unit_required',
+        message: 'unitId is required for multi-inventory inbound Airbnb sync (map one listing to one unit)'
+      };
+    }
+    const unit = await Unit.findById(unitOid).select('cabinTypeId isActive').lean();
+    if (!unit || unit.isActive === false) {
+      return { ok: false, unitOid: null, code: 'unit_inactive', message: 'Unit not found or inactive' };
+    }
+    const parent = await findParentCabinForCabinType(unit.cabinTypeId);
+    if (!parent || String(parent._id) !== String(cabinId)) {
+      return { ok: false, unitOid: null, code: 'unit_parent_mismatch', message: 'Unit does not belong to this parent cabin' };
+    }
+    return { ok: true, unitOid, message: null };
+  }
+
+  if (unitOid) {
+    return { ok: false, unitOid: null, code: 'unit_forbidden', message: 'unitId must not be set for single-inventory cabin' };
+  }
+  return { ok: true, unitOid: null, message: null };
+}
 
 function unfoldIcalLines(input) {
   const rawLines = String(input || '').split(/\r?\n/);
@@ -66,8 +126,16 @@ function parseIcalEvents(icalText) {
   return events;
 }
 
-function deriveDeterministicKey({ cabinId, startDate, endDate, summary = '', source = 'airbnb_ical' }) {
-  const payload = `${cabinId}|${startDate.toISOString()}|${endDate.toISOString()}|${summary.trim().toLowerCase()}|${source}`;
+function deriveDeterministicKey({
+  cabinId,
+  unitId = null,
+  startDate,
+  endDate,
+  summary = '',
+  source = 'airbnb_ical'
+}) {
+  const u = unitId ? String(unitId) : '';
+  const payload = `${cabinId}|${u}|${startDate.toISOString()}|${endDate.toISOString()}|${summary.trim().toLowerCase()}|${source}`;
   return `derived:${crypto.createHash('sha1').update(payload).digest('hex')}`;
 }
 
@@ -85,7 +153,7 @@ function normalizeEventToBlockInput(cabinId, eventRaw) {
   };
 }
 
-async function importIcalForCabin({ cabinId, feedUrl, channel = 'airbnb_ical' }) {
+async function importIcalForCabin({ cabinId, feedUrl, channel = 'airbnb_ical', unitId: unitIdArg = null }) {
   const runAt = new Date();
   if (!feedUrl) {
     await openManualReviewItem({
@@ -109,12 +177,33 @@ async function importIcalForCabin({ cabinId, feedUrl, channel = 'airbnb_ical' })
     });
     // Never clear persisted feedUrl on a missing-run input — that bricks scheduler/manual retry.
     await CabinChannelSyncState.findOneAndUpdate(
-      { cabinId, channel },
+      syncStateFilter(cabinId, channel, parseUnitOidArg(unitIdArg)),
       { $set: { lastSyncedAt: runAt, lastSyncOutcome: 'failed', lastSyncMessage: 'Missing feed URL' } },
       { upsert: true, new: true }
     );
     return { outcome: 'failed', imported: 0, tombstoned: 0 };
   }
+
+  const inbound = await resolveInboundUnitForImport(cabinId, unitIdArg);
+  if (!inbound.ok) {
+    const attemptedUnit = parseUnitOidArg(unitIdArg);
+    await ChannelSyncEvent.create({
+      cabinId,
+      channel,
+      runAt,
+      outcome: 'failed',
+      message: inbound.message,
+      anomalyType: 'sync_unit_mapping',
+      metadata: { code: inbound.code, feedUrl }
+    });
+    await CabinChannelSyncState.findOneAndUpdate(
+      syncStateFilter(cabinId, channel, attemptedUnit),
+      { $set: { feedUrl, lastSyncedAt: runAt, lastSyncOutcome: 'failed', lastSyncMessage: inbound.message } },
+      { upsert: true, new: true }
+    );
+    return { outcome: 'failed', imported: 0, tombstoned: 0, code: inbound.code };
+  }
+  const unitOid = inbound.unitOid;
 
   let responseText = '';
   try {
@@ -145,7 +234,7 @@ async function importIcalForCabin({ cabinId, feedUrl, channel = 'airbnb_ical' })
       metadata: { feedUrl }
     });
     await CabinChannelSyncState.findOneAndUpdate(
-      { cabinId, channel },
+      syncStateFilter(cabinId, channel, unitOid),
       { $set: { feedUrl, lastSyncedAt: runAt, lastSyncOutcome: 'failed', lastSyncMessage: error.message } },
       { upsert: true, new: true }
     );
@@ -176,7 +265,7 @@ async function importIcalForCabin({ cabinId, feedUrl, channel = 'airbnb_ical' })
       metadata: { feedUrl }
     });
     await CabinChannelSyncState.findOneAndUpdate(
-      { cabinId, channel },
+      syncStateFilter(cabinId, channel, unitOid),
       { $set: { feedUrl, lastSyncedAt: runAt, lastSyncOutcome: 'failed', lastSyncMessage: error.message } },
       { upsert: true, new: true }
     );
@@ -193,9 +282,10 @@ async function importIcalForCabin({ cabinId, feedUrl, channel = 'airbnb_ical' })
       continue;
     }
     const derivedKey = blockInput.uid
-      ? `uid:${String(blockInput.uid)}`
+      ? `uid:${unitOid ? `${String(unitOid)}:` : ''}${String(blockInput.uid)}`
       : deriveDeterministicKey({
           cabinId,
+          unitId: unitOid,
           startDate: blockInput.startDate,
           endDate: blockInput.endDate,
           summary: blockInput.summary || '',
@@ -244,7 +334,8 @@ async function importIcalForCabin({ cabinId, feedUrl, channel = 'airbnb_ical' })
         cabinId: block.cabinId,
         blockType: 'external_hold',
         source: channel,
-        sourceReference: block.sourceReference
+        sourceReference: block.sourceReference,
+        unitId: unitOid || null
       },
       {
         $set: {
@@ -253,12 +344,12 @@ async function importIcalForCabin({ cabinId, feedUrl, channel = 'airbnb_ical' })
           status: 'active',
           tombstonedAt: null,
           tombstoneReason: null,
+          unitId: unitOid || null,
           metadata: {
             summary: block.summary || null
           }
         },
         $setOnInsert: {
-          unitId: null,
           reservationId: null,
           importedAt: runAt,
           confidence: 'medium'
@@ -275,6 +366,7 @@ async function importIcalForCabin({ cabinId, feedUrl, channel = 'airbnb_ical' })
     blockType: 'external_hold',
     source: channel,
     status: 'active',
+    unitId: unitOid || null,
     sourceReference: { $nin: currentRefs }
   }).lean();
 
@@ -309,11 +401,12 @@ async function importIcalForCabin({ cabinId, feedUrl, channel = 'airbnb_ical' })
     },
     metadata: {
       warnings,
-      feedUrl
+      feedUrl,
+      unitId: unitOid ? String(unitOid) : null
     }
   });
   await CabinChannelSyncState.findOneAndUpdate(
-    { cabinId, channel },
+    syncStateFilter(cabinId, channel, unitOid),
     {
       $set: {
         feedUrl,
@@ -339,5 +432,7 @@ async function importIcalForCabin({ cabinId, feedUrl, channel = 'airbnb_ical' })
 module.exports = {
   importIcalForCabin,
   parseIcalEvents,
-  deriveDeterministicKey
+  deriveDeterministicKey,
+  resolveInboundUnitForImport,
+  syncStateFilter
 };

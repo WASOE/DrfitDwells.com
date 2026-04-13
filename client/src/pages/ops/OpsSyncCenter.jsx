@@ -53,11 +53,20 @@ export default function OpsSyncCenter() {
             {data.healthByCabinChannel.map((row) => {
               const isStale = row.stale;
               const statusColor = row.lastSyncOutcome === 'failed' ? 'text-red-700 bg-red-50 border-red-200' : isStale ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200';
+              const rowKey = `${row.cabinId}:${row.channel}:${row.unitId || ''}`;
               return (
-                <div key={`${row.cabinId}:${row.channel}`} className="py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                <div key={rowKey} className="py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
                   <div className="min-w-0">
                     <div className="text-sm font-medium text-gray-900">Cabin {row.cabinId}</div>
-                    <div className="text-xs text-gray-500">{row.channel}</div>
+                    <div className="text-xs text-gray-500">
+                      {row.channel}
+                      {row.unitId ? (
+                        <>
+                          {' '}
+                          · unit <span className="font-mono">{row.unitId}</span>
+                        </>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="ml-auto">
                     <span className={`inline-flex items-center px-2 py-1 rounded text-xs border ${statusColor}`}>

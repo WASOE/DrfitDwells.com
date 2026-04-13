@@ -3,7 +3,15 @@ const mongoose = require('mongoose');
 const { adminAuth } = require('../middleware/adminAuth');
 const { requireOpsAdminRole } = require('../middleware/requireOpsAdminRole');
 const CabinChannelSyncState = require('../models/CabinChannelSyncState');
+const { syncStateFilter } = require('../services/ops/ingestion/icalIngestionService');
 const { runManualIcalSync, CHANNEL } = require('../services/ops/ingestion/icalSyncScheduler');
+
+function parseUnitIdBody(raw) {
+  if (raw === undefined || raw === null || String(raw).trim() === '') return null;
+  const s = String(raw).trim();
+  if (!mongoose.Types.ObjectId.isValid(s)) return null;
+  return new mongoose.Types.ObjectId(s);
+}
 const { appendAuditEvent } = require('../services/auditWriter');
 
 const router = express.Router();
@@ -12,7 +20,7 @@ router.use(requireOpsAdminRole);
 
 router.post('/airbnb-ical/run', async (req, res) => {
   try {
-    const { cabinId, feedUrl } = req.body || {};
+    const { cabinId, feedUrl, unitId: unitIdBody } = req.body || {};
     if (!cabinId) {
       return res.status(400).json({ success: false, message: 'cabinId is required' });
     }
@@ -20,15 +28,21 @@ router.post('/airbnb-ical/run', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid cabinId' });
     }
     const cabinOid = new mongoose.Types.ObjectId(String(cabinId));
+    const unitOid = parseUnitIdBody(unitIdBody);
 
     const overrideUrl = feedUrl != null && String(feedUrl).trim() !== '' ? String(feedUrl).trim() : null;
     let effectiveFeedUrl = overrideUrl;
     if (!effectiveFeedUrl) {
-      const state = await CabinChannelSyncState.findOne({ cabinId: cabinOid, channel: CHANNEL }).lean();
+      const state = await CabinChannelSyncState.findOne(syncStateFilter(cabinOid, CHANNEL, unitOid)).lean();
       effectiveFeedUrl = state?.feedUrl && String(state.feedUrl).trim() !== '' ? String(state.feedUrl).trim() : null;
     }
 
-    const data = await runManualIcalSync({ cabinId: String(cabinOid), feedUrl: effectiveFeedUrl, channel: CHANNEL });
+    const data = await runManualIcalSync({
+      cabinId: String(cabinOid),
+      feedUrl: effectiveFeedUrl,
+      channel: CHANNEL,
+      unitId: unitOid
+    });
     if (data?.status === 'in_progress') {
       return res.status(409).json({
         success: false,
@@ -75,21 +89,23 @@ router.post('/airbnb-ical/run', async (req, res) => {
 
 router.post('/airbnb-ical/configure', async (req, res) => {
   try {
-    const { cabinId, feedUrl } = req.body || {};
+    const { cabinId, feedUrl, unitId: unitIdBody } = req.body || {};
     if (!cabinId || !feedUrl) {
       return res.status(400).json({ success: false, message: 'cabinId and feedUrl are required' });
     }
-    const before = await CabinChannelSyncState.findOne({ cabinId, channel: 'airbnb_ical' }).lean();
+    const unitOid = parseUnitIdBody(unitIdBody);
+    const filter = syncStateFilter(cabinId, 'airbnb_ical', unitOid);
+    const before = await CabinChannelSyncState.findOne(filter).lean();
     try {
       await appendAuditEvent(
         {
           actorType: 'user',
           actorId: req.user?.id || 'admin',
           entityType: 'CabinChannelSyncState',
-          entityId: `${String(cabinId)}:airbnb_ical`,
+          entityId: `${String(cabinId)}:airbnb_ical:${unitOid ? String(unitOid) : 'default'}`,
           action: 'sync_feed_configure',
-          beforeSnapshot: before ? { feedUrl: before.feedUrl } : null,
-          afterSnapshot: { feedUrl: String(feedUrl).trim() },
+          beforeSnapshot: before ? { feedUrl: before.feedUrl, unitId: before.unitId || null } : null,
+          afterSnapshot: { feedUrl: String(feedUrl).trim(), unitId: unitOid ? String(unitOid) : null },
           reason: null,
           metadata: { channel: 'airbnb_ical' },
           sourceContext: { route: 'POST /api/internal/sync/airbnb-ical/configure', namespace: 'maintenance' }
@@ -103,8 +119,8 @@ router.post('/airbnb-ical/configure', async (req, res) => {
       throw auditErr;
     }
     const state = await CabinChannelSyncState.findOneAndUpdate(
-      { cabinId, channel: 'airbnb_ical' },
-      { $set: { feedUrl } },
+      filter,
+      { $set: { feedUrl: String(feedUrl).trim() } },
       { new: true, upsert: true }
     );
     return res.json({
@@ -112,7 +128,8 @@ router.post('/airbnb-ical/configure', async (req, res) => {
       data: {
         cabinId: String(state.cabinId),
         channel: state.channel,
-        feedUrl: state.feedUrl
+        feedUrl: state.feedUrl,
+        unitId: state.unitId ? String(state.unitId) : null
       }
     });
   } catch (error) {
