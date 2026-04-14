@@ -26,7 +26,7 @@ import VibeSection from './sections/VibeSection';
 import ReviewsSection from './sections/ReviewsSection';
 import PracticalDetailsAccordion from './sections/PracticalDetailsAccordion';
 import BookingCTABand from './sections/BookingCTABand';
-import { GMB_LOCATIONS, CONTACT_PHONE } from '../../data/gmbLocations';
+import { GMB_LOCATIONS, CONTACT_PHONE, INSTAGRAM_URL, FACEBOOK_URL } from '../../data/gmbLocations';
 import { getSiteUrl } from '../../utils/siteUrl';
 import './the-valley.css';
 import Seo from '../../components/Seo';
@@ -160,7 +160,8 @@ const TheValleyPage = () => {
     },
     hasMap: valleyLoc.getMapsUrl(),
     openingHoursSpecification: { '@type': 'OpeningHoursSpecification', dayOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'], opens: '00:00', closes: '23:59' },
-    publisher: { '@id': `${origin}#organization` }
+    publisher: { '@id': `${origin}#organization` },
+    sameAs: [INSTAGRAM_URL, FACEBOOK_URL]
   };
 
   const valleyBreadcrumbs = {

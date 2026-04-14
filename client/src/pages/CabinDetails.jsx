@@ -15,6 +15,7 @@ import { StayLodgingPriceBlock } from '../components/booking/StayLodgingPriceBlo
 import Seo from '../components/Seo';
 import { daysBetweenDateOnly, parseDateOnlyLocal } from '../utils/dateOnly';
 import './CabinDetails.css';
+import { INSTAGRAM_URL, FACEBOOK_URL } from '../data/gmbLocations';
 
 // Constants
 const SCROLL_DELAY_MS = 100;
@@ -213,7 +214,8 @@ const CabinDetails = () => {
       },
       url: typeof window !== 'undefined' ? window.location.href : undefined,
       priceRange: `€${cabin?.pricePerNight || 0}`,
-      numberOfRooms: 1
+      numberOfRooms: 1,
+      sameAs: [INSTAGRAM_URL, FACEBOOK_URL]
     };
     if (hasAgg) {
       data.aggregateRating = {

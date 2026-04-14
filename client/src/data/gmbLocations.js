@@ -10,6 +10,14 @@ const ORIGIN = import.meta.env.VITE_SITE_URL || 'https://driftdwells.com';
 export const CONTACT_PHONE = import.meta.env.VITE_CONTACT_PHONE || '+359 876342540';
 export const CONTACT_EMAIL = import.meta.env.VITE_CONTACT_EMAIL || 'jose@driftdwells.com';
 
+/** Official brand profiles (optional VITE_ overrides for staging). */
+export const INSTAGRAM_URL =
+  (import.meta.env.VITE_INSTAGRAM_URL && String(import.meta.env.VITE_INSTAGRAM_URL).trim()) ||
+  'https://www.instagram.com/driftdwells/';
+export const FACEBOOK_URL =
+  (import.meta.env.VITE_FACEBOOK_URL && String(import.meta.env.VITE_FACEBOOK_URL).trim()) ||
+  'https://www.facebook.com/profile.php?id=61569960933269';
+
 // Google Maps share links – open the exact GMB listing for directions
 const MAPS_CABIN = 'https://maps.app.goo.gl/5luftFa6jGhLWbVei';
 const MAPS_VALLEY = 'https://maps.app.goo.gl/AJuuoOQesyJnWb6CJ';

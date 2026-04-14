@@ -14,7 +14,7 @@ import { useSeason } from '../context/SeasonContext';
 import { CABIN_MEDIA } from '../config/mediaConfig';
 import LivingNotesSection from '../components/LivingNotesSection';
 import GMBContactStrip from '../components/GMBContactStrip';
-import { GMB_LOCATIONS, CONTACT_PHONE } from '../data/gmbLocations';
+import { GMB_LOCATIONS, CONTACT_PHONE, INSTAGRAM_URL, FACEBOOK_URL } from '../data/gmbLocations';
 import { getSEOAlt, getSEOTitle } from '../data/imageMetadata';
 import Seo from '../components/Seo';
 import { buildHreflangAlternates } from '../utils/localizedRoutes';
@@ -214,7 +214,8 @@ const TheCabin = () => {
       { '@type': 'LocationFeatureSpecification', name: 'Wood stove heating', value: true },
       { '@type': 'LocationFeatureSpecification', name: 'Spring water', value: true },
       { '@type': 'LocationFeatureSpecification', name: 'No Wi-Fi', value: true }
-    ]
+    ],
+    sameAs: [INSTAGRAM_URL, FACEBOOK_URL]
   };
 
   const cabinBreadcrumbs = {

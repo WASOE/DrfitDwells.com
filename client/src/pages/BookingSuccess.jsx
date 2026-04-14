@@ -10,7 +10,7 @@ import { getGuideCtaLabel } from './guides/guideUtils';
 import { daysBetweenDateOnly, parseDateOnlyLocal } from '../utils/dateOnly';
 import { readConsentChoice } from '../tracking/consent';
 import { fireBrowserPurchase } from '../tracking/purchase';
-import { CONTACT_EMAIL, CONTACT_PHONE } from '../data/gmbLocations';
+import { CONTACT_EMAIL, CONTACT_PHONE, INSTAGRAM_URL, FACEBOOK_URL } from '../data/gmbLocations';
 
 const BookingSuccess = () => {
   const { id } = useParams();
@@ -589,6 +589,24 @@ END:VCALENDAR`;
             <br />
             {t('success.footerNoteLine2')}
           </p>
+          <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 mt-4 text-sm text-drift-green">
+            <a
+              href={INSTAGRAM_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium hover:underline underline-offset-2"
+            >
+              Instagram
+            </a>
+            <a
+              href={FACEBOOK_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium hover:underline underline-offset-2"
+            >
+              Facebook
+            </a>
+          </div>
         </div>
       </div>
 

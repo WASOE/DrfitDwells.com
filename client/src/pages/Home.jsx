@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { useSeason } from '../context/SeasonContext';
 import { getCabinHeroPreloadUrl, getHomeHeroMobilePosterUrls } from '../config/heroResponsive';
-import { CONTACT_PHONE } from '../data/gmbLocations';
+import { CONTACT_PHONE, INSTAGRAM_URL, FACEBOOK_URL } from '../data/gmbLocations';
 import { buildHreflangAlternates } from '../utils/localizedRoutes';
 import { getSiteUrl } from '../utils/siteUrl';
 
@@ -80,7 +80,8 @@ const Home = () => {
             name: 'Drift & Dwells',
             url: origin,
             telephone: CONTACT_PHONE,
-            logo: `${origin}/uploads/Logo/DRIFTS-01.png`
+            logo: `${origin}/uploads/Logo/DRIFTS-01.png`,
+            sameAs: [INSTAGRAM_URL, FACEBOOK_URL]
           }
         ]}
       />
