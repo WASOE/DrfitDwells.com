@@ -18,14 +18,19 @@ const FACEBOOK_URL = (
   process.env.FACEBOOK_URL || 'https://www.facebook.com/profile.php?id=61569960933269'
 ).trim();
 
+function copyrightYear() {
+  return new Date().getFullYear();
+}
+
 function guestEmailFooterHtml() {
   const terms = `${EMAIL_SITE_ORIGIN}/terms`;
   const privacy = `${EMAIL_SITE_ORIGIN}/privacy`;
+  const y = copyrightYear();
   return `
           <div class="footer">
-            <p>© 2024 Drift & Dwells. All rights reserved.</p>
-            <p><a href="${htmlEscape(terms)}" style="color: #6b7280;">Terms of Service</a> | <a href="${htmlEscape(privacy)}" style="color: #6b7280;">Privacy Policy</a></p>
-            <p><a href="${htmlEscape(INSTAGRAM_URL)}" style="color: #6b7280;">Instagram</a> | <a href="${htmlEscape(FACEBOOK_URL)}" style="color: #6b7280;">Facebook</a></p>
+            <p class="footer-legal">© ${y} Drift &amp; Dwells. All rights reserved.</p>
+            <p><a href="${htmlEscape(terms)}">Terms of Service</a> | <a href="${htmlEscape(privacy)}">Privacy Policy</a></p>
+            <p><a href="${htmlEscape(INSTAGRAM_URL)}">Instagram</a> | <a href="${htmlEscape(FACEBOOK_URL)}">Facebook</a></p>
           </div>`;
 }
 
@@ -37,10 +42,11 @@ Facebook: ${FACEBOOK_URL}`;
 }
 
 function internalEmailSocialFooterHtml() {
+  const y = copyrightYear();
   return `
           <div class="footer">
-            <p>© 2024 Drift & Dwells. Internal notification.</p>
-            <p><a href="${htmlEscape(INSTAGRAM_URL)}" style="color: #6b7280;">Instagram</a> | <a href="${htmlEscape(FACEBOOK_URL)}" style="color: #6b7280;">Facebook</a></p>
+            <p class="footer-legal">© ${y} Drift &amp; Dwells. Internal notification.</p>
+            <p><a href="${htmlEscape(INSTAGRAM_URL)}">Instagram</a> | <a href="${htmlEscape(FACEBOOK_URL)}">Facebook</a></p>
           </div>`;
 }
 
@@ -267,11 +273,11 @@ class EmailService {
     }
 
     const bodyHtml = `
-            <h2>Hello ${htmlEscape(booking.guestInfo?.firstName)}!</h2>
-            <p class="lede">Thank you for choosing Drift &amp; Dwells for your off-grid retreat. We've received your booking request and are excited to welcome you to nature.</p>
+            <h2>Hello ${htmlEscape(booking.guestInfo?.firstName)}</h2>
+            <p class="lede">Thank you for choosing Drift &amp; Dwells. We've received your booking request and will confirm your stay as soon as we can—usually within 24 hours. This email is not a final confirmation yet.</p>
 
             <div class="booking-details">
-              <h3>Booking details</h3>
+              <h3>Your request</h3>
               <div class="detail-row">
                 <span class="detail-label">Cabin</span>
                 <span>${htmlEscape(stay.name)} • ${htmlEscape(stay.location)}</span>
@@ -310,7 +316,7 @@ class EmailService {
 
             ${stay.meetingPoint?.googleMapsUrl ? `
             <div class="guidance-section">
-              <h3>📍 Directions</h3>
+              <h3>Directions</h3>
               <p><strong>Meeting point:</strong> ${htmlEscape(stay.meetingPoint.label || stay.location)}</p>
               <a href="${stay.meetingPoint.googleMapsUrl}" class="btn btn-sage" target="_blank" rel="noopener noreferrer">Open in Google Maps</a>
               ${stay.meetingPoint.what3words ? `<a href="https://what3words.com/${stay.meetingPoint.what3words}" class="btn btn-sage" target="_blank" rel="noopener noreferrer">///${stay.meetingPoint.what3words}</a>` : ''}
@@ -320,7 +326,7 @@ class EmailService {
 
             ${stay.packingList && stay.packingList.length > 0 ? `
             <div class="packing-list">
-              <h3>🎒 Packing list</h3>
+              <h3>Packing list</h3>
               <ul>
                 ${stay.packingList.slice(0, 5).map(item => `<li>${htmlEscape(item)}</li>`).join('')}
                 ${stay.packingList.length > 5 ? `<li><em>... and ${stay.packingList.length - 5} more items</em></li>` : ''}
@@ -331,16 +337,16 @@ class EmailService {
 
             ${stay.location && (stay.location.toLowerCase().includes('valley') || stay.location.toLowerCase().includes('the valley')) ? `
             <div class="guidance-section valley">
-              <h3>🗺️ Interactive welcome guide</h3>
-              <p><strong>Open your trip guide</strong> to complete checklists, choose your arrival route, and prepare for The Valley.</p>
-              <a href="${process.env.APP_URL || 'http://localhost:5173'}/my-trip/${booking._id}/valley-guide" class="btn btn-blue" target="_blank" rel="noopener noreferrer">Open Valley welcome guide</a>
-              <p style="margin-top: 10px; font-size: 14px; color: #64748b;">Complete your trip checklist 24 hours before arrival.</p>
+              <h3>Welcome guide</h3>
+              <p>Use your trip guide to complete checklists, choose your arrival route, and prepare for The Valley.</p>
+              <a href="${process.env.APP_URL || 'http://localhost:5173'}/my-trip/${booking._id}/valley-guide" class="btn btn-blue" target="_blank" rel="noopener noreferrer">Open welcome guide</a>
+              <p style="margin-top: 10px; font-size: 14px; color: #5a5a54;">Please complete your trip checklist at least 24 hours before arrival.</p>
             </div>
             ` : ''}
 
             ${stay.arrivalGuideUrl ? `
             <div class="guidance-section">
-              <h3>📄 Arrival guide</h3>
+              <h3>Arrival guide</h3>
               <p>Open practical route and arrival instructions (save offline before travel):</p>
               <a href="${resolveGuideUrl(stay.arrivalGuideUrl, process.env.APP_URL)}" class="btn btn-sage" target="_blank" rel="noopener noreferrer">${isPdfUrl(stay.arrivalGuideUrl) ? 'Download PDF guide' : 'Open arrival guide'}</a>
             </div>
@@ -348,51 +354,50 @@ class EmailService {
 
             ${stay.safetyNotes ? `
             <div class="safety-notes">
-              <h3>⚠️ Safety &amp; house rules</h3>
+              <h3>Safety &amp; house rules</h3>
               <p>${htmlEscape(stay.safetyNotes)}</p>
             </div>
             ` : ''}
 
             ${stay.emergencyContact ? `
             <div class="contact-info">
-              <h3>🚨 Emergency contact</h3>
+              <h3>Emergency contact</h3>
               <p><strong>${htmlEscape(stay.emergencyContact)}</strong></p>
             </div>
             ` : ''}
 
             <div class="guidance-section">
-              <h3>💰 Payment</h3>
-              <p>Payment of <strong>€${booking.totalPrice}</strong> is due on arrival. We accept cash and major credit cards.</p>
+              <h3>Payment</h3>
+              <p>If your booking is confirmed, <strong>€${booking.totalPrice}</strong> is due on arrival unless we tell you otherwise. We accept cash and major cards.</p>
             </div>
 
-            <p style="margin-top: 28px;">We'll send you a confirmation email within 24 hours and detailed arrival instructions 3 days before your stay.</p>
+            <p style="margin-top: 26px;">Once your stay is confirmed, we'll follow up with a confirmation email. Closer to your dates, we'll send practical arrival instructions.</p>
 
-            <p>Questions? Reply to this email or contact us at ${htmlEscape(SUPPORT_CONTACT_EMAIL)}</p>
+            <p>Questions? Reply to this email or write to ${htmlEscape(SUPPORT_CONTACT_EMAIL)}.</p>
 
-            <p>We can't wait to welcome you to your digital detox retreat!</p>
-
-            <p>Best regards,<br>The Drift &amp; Dwells Team</p>
+            <p>With warm regards,<br>The Drift &amp; Dwells team</p>
     `;
 
     const html = buildGuestTransactionalHtml({
       title: 'Booking request received — Drift & Dwells',
       preheader: `We received your request for ${htmlEscape(stay.name)} — check-in ${checkIn.toLocaleDateString('en-GB')}`,
-      headerGradientFrom: '#6d735f',
-      headerGradientTo: '#8a9178',
-      headerTagline: '<span style="display:block;margin-top:10px;font-size:15px;font-weight:500;opacity:0.95;">Your booking has been received</span>',
+      headerGradientFrom: '#5c6156',
+      headerGradientTo: '#5c6156',
+      headerTagline:
+        '<span class="email-kicker">Request received</span><span class="email-tagline-lead">We will confirm your stay by email.</span>',
       bodyHtml,
       extraHeadCss: GUEST_LIFECYCLE_RECEIVED_EXTRA_CSS,
       footerHtml: guestEmailFooterHtml()
     });
 
     const text = `
-Drift & Dwells - Booking Confirmation
+Drift & Dwells — Booking request received
 
-Hello ${booking.guestInfo.firstName}!
+Hello ${booking.guestInfo.firstName},
 
-Thank you for choosing Drift & Dwells for your off-grid retreat.
+Thank you for choosing Drift & Dwells. We've received your booking request (this is not a final confirmation yet). We usually confirm within 24 hours.
 
-BOOKING DETAILS:
+YOUR REQUEST:
 - Cabin: ${stay.name} • ${stay.location}
 - Check-in: ${checkIn.toLocaleDateString('en-GB')} (${stay.arrivalWindowDefault || 'TBD'})
 - Check-out: ${checkOut.toLocaleDateString('en-GB')}
@@ -435,20 +440,20 @@ ${stay.emergencyContact ? `
 EMERGENCY CONTACT: ${stay.emergencyContact}
 ` : ''}
 
-PAYMENT: €${booking.totalPrice} due on arrival (cash or credit cards accepted)
+PAYMENT: If confirmed, €${booking.totalPrice} is due on arrival unless we tell you otherwise (cash or major cards).
 
-We'll send you a confirmation email within 24 hours and detailed arrival instructions 3 days before your stay.
+Once your stay is confirmed, we'll email you again. Closer to your trip, we'll send arrival instructions.
 
-Questions? Contact us at ${SUPPORT_CONTACT_EMAIL}
+Questions? ${SUPPORT_CONTACT_EMAIL}
 
-Best regards,
-The Drift & Dwells Team
+Warm regards,
+The Drift & Dwells team
 
 ${guestEmailFooterText()}
     `;
 
     return {
-      subject: `Booking Confirmation - ${stay.name} (${checkIn.toLocaleDateString('en-GB')})`,
+      subject: `Booking request received — ${stay.name} (${checkIn.toLocaleDateString('en-GB')})`,
       html,
       text
     };
@@ -460,13 +465,13 @@ ${guestEmailFooterText()}
     const nights = Math.ceil((checkOut - checkIn) / (1000 * 3600 * 24));
 
     const bodyHtml = `
-            <div class="confirmed-badge">✅ BOOKING CONFIRMED</div>
+            <div class="confirmed-badge" role="status">Booking confirmed</div>
 
-            <h2>Hello ${htmlEscape(booking.guestInfo?.firstName)}!</h2>
-            <p class="lede">Great news! Your booking has been confirmed. We're excited to welcome you to your off-grid retreat at <strong>${htmlEscape(cabin.name)}</strong>.</p>
+            <h2>Hello ${htmlEscape(booking.guestInfo?.firstName)}</h2>
+            <p class="lede">Your stay at <strong>${htmlEscape(cabin.name)}</strong> is confirmed. We're glad you'll be with us for a quiet off-grid retreat.</p>
 
             <div class="booking-details">
-              <h3>Confirmed details</h3>
+              <h3>Confirmed stay</h3>
               <div class="detail-row">
                 <span class="detail-label">Cabin</span>
                 <span>${htmlEscape(cabin.name)} • ${htmlEscape(cabin.location)}</span>
@@ -489,54 +494,55 @@ ${guestEmailFooterText()}
               </div>
             </div>
 
-            <p>We'll send you detailed arrival instructions and local recommendations 3 days before your stay.</p>
+            <p>We'll send practical arrival instructions and local notes a few days before you travel.</p>
 
-            <p>In the meantime, feel free to reply to this email if you have any questions or special requests.</p>
+            <p>Reply to this email any time if you have questions or special requests.</p>
 
-            <p>We can't wait to welcome you to nature!</p>
+            <p>We look forward to hosting you.</p>
 
-            <p>Best regards,<br>The Drift &amp; Dwells Team</p>
+            <p>With warm regards,<br>The Drift &amp; Dwells team</p>
     `;
 
     const html = buildGuestTransactionalHtml({
       title: 'Booking confirmed — Drift & Dwells',
       preheader: `You're confirmed for ${htmlEscape(cabin.name)} — check-in ${checkIn.toLocaleDateString('en-GB')}`,
-      headerGradientFrom: '#047857',
-      headerGradientTo: '#10b981',
-      headerTagline: '<span style="display:block;margin-top:10px;font-size:15px;font-weight:500;opacity:0.95;">Your booking is confirmed</span>',
+      headerGradientFrom: '#4a6b55',
+      headerGradientTo: '#4a6b55',
+      headerTagline:
+        '<span class="email-kicker">Confirmed</span><span class="email-tagline-lead">Your stay is on our calendar.</span>',
       bodyHtml,
       extraHeadCss: GUEST_LIFECYCLE_CONFIRMED_EXTRA_CSS,
       footerHtml: guestEmailFooterHtml()
     });
 
     const text = `
-Drift & Dwells - Booking Confirmed
+Drift & Dwells — Booking confirmed
 
-✅ BOOKING CONFIRMED
+BOOKING CONFIRMED
 
-Hello ${booking.guestInfo.firstName}!
+Hello ${booking.guestInfo.firstName},
 
-Great news! Your booking has been confirmed. We're excited to welcome you to your off-grid retreat at ${cabin.name}.
+Your stay at ${cabin.name} is confirmed. We're glad you'll be with us for a quiet off-grid retreat.
 
-CONFIRMED DETAILS:
+CONFIRMED STAY:
 - Cabin: ${cabin.name} • ${cabin.location}
 - Check-in: ${checkIn.toLocaleDateString('en-GB')} (${cabin?.arrivalWindowDefault || 'TBD'})
 - Check-out: ${checkOut.toLocaleDateString('en-GB')}
 - Duration: ${nights} night${nights !== 1 ? 's' : ''}
 - Total: €${booking.totalPrice}
 
-We'll send you detailed arrival instructions and local recommendations 3 days before your stay.
+We'll send practical arrival instructions and local notes a few days before you travel.
 
-Questions? Reply to this email or contact us at ${SUPPORT_CONTACT_EMAIL}
+Questions? Reply to this email or ${SUPPORT_CONTACT_EMAIL}
 
-Best regards,
-The Drift & Dwells Team
+Warm regards,
+The Drift & Dwells team
 
 ${guestEmailFooterText()}
     `;
 
     return {
-      subject: `Booking Confirmed - ${cabin.name} (${checkIn.toLocaleDateString('en-GB')})`,
+      subject: `Booking confirmed — ${cabin.name} (${checkIn.toLocaleDateString('en-GB')})`,
       html,
       text
     };
@@ -547,13 +553,13 @@ ${guestEmailFooterText()}
     const checkOut = new Date(booking.checkOut);
 
     const bodyHtml = `
-            <div class="cancelled-badge">❌ BOOKING CANCELLED</div>
+            <div class="cancelled-badge" role="status">Booking cancelled</div>
 
-            <h2>Hello ${htmlEscape(booking.guestInfo?.firstName)},</h2>
-            <p class="lede">We're sorry to inform you that your booking for <strong>${htmlEscape(cabin.name)}</strong> has been cancelled.</p>
+            <h2>Hello ${htmlEscape(booking.guestInfo?.firstName)}</h2>
+            <p class="lede">Your booking for <strong>${htmlEscape(cabin.name)}</strong> has been cancelled. If you were not expecting this, please reach out—we're here to help.</p>
 
             <div class="booking-details">
-              <h3>Cancelled booking</h3>
+              <h3>Cancelled stay</h3>
               <div class="detail-row">
                 <span class="detail-label">Cabin</span>
                 <span>${htmlEscape(cabin.name)} • ${htmlEscape(cabin.location)}</span>
@@ -572,51 +578,50 @@ ${guestEmailFooterText()}
               </div>
             </div>
 
-            <p>If you have any questions about this cancellation or would like to make a new booking, please don't hesitate to contact us.</p>
+            <p>If you have questions about this cancellation or would like to plan another visit, reply to this email or contact ${htmlEscape(SUPPORT_CONTACT_EMAIL)}.</p>
 
-            <p>We hope to welcome you to Drift &amp; Dwells in the future.</p>
+            <p>We would be glad to host you another time.</p>
 
-            <p>Best regards,<br>The Drift &amp; Dwells Team</p>
+            <p>With warm regards,<br>The Drift &amp; Dwells team</p>
     `;
 
     const html = buildGuestTransactionalHtml({
       title: 'Booking cancelled — Drift & Dwells',
       preheader: `Your stay at ${htmlEscape(cabin.name)} was cancelled — we're here if you need us`,
-      headerGradientFrom: '#b91c1c',
-      headerGradientTo: '#ef4444',
-      headerTagline: '<span style="display:block;margin-top:10px;font-size:15px;font-weight:500;opacity:0.95;">Booking cancellation notice</span>',
+      headerGradientFrom: '#6b4e4e',
+      headerGradientTo: '#6b4e4e',
+      headerTagline:
+        '<span class="email-kicker">Cancelled</span><span class="email-tagline-lead">This stay will not go ahead.</span>',
       bodyHtml,
       extraHeadCss: GUEST_LIFECYCLE_CANCELLED_EXTRA_CSS,
       footerHtml: guestEmailFooterHtml()
     });
 
     const text = `
-Drift & Dwells - Booking Cancelled
+Drift & Dwells — Booking cancelled
 
-❌ BOOKING CANCELLED
+BOOKING CANCELLED
 
 Hello ${booking.guestInfo.firstName},
 
-We're sorry to inform you that your booking for ${cabin.name} has been cancelled.
+Your booking for ${cabin.name} has been cancelled. If you were not expecting this, please contact us.
 
-CANCELLED BOOKING:
+CANCELLED STAY:
 - Cabin: ${cabin.name} • ${cabin.location}
 - Check-in: ${checkIn.toLocaleDateString('en-GB')}
 - Check-out: ${checkOut.toLocaleDateString('en-GB')}
 - Total: €${booking.totalPrice}
 
-If you have any questions about this cancellation or would like to make a new booking, please don't hesitate to contact us.
+If you have questions or would like to plan another visit: ${SUPPORT_CONTACT_EMAIL}
 
-We hope to welcome you to Drift & Dwells in the future.
-
-Best regards,
-The Drift & Dwells Team
+Warm regards,
+The Drift & Dwells team
 
 ${guestEmailFooterText()}
     `;
 
     return {
-      subject: `Booking Cancelled - ${cabin.name} (${checkIn.toLocaleDateString('en-GB')})`,
+      subject: `Booking cancelled — ${cabin.name} (${checkIn.toLocaleDateString('en-GB')})`,
       html,
       text
     };
@@ -628,10 +633,10 @@ ${guestEmailFooterText()}
     const nights = Math.ceil((checkOut - checkIn) / (1000 * 3600 * 24));
 
     const bodyHtml = `
-            <div class="new-badge">🔔 NEW BOOKING</div>
+            <div class="new-badge">New booking</div>
 
             <h2>New booking received</h2>
-            <p>A new booking has been submitted and requires review.</p>
+            <p>A guest booking has been submitted and may need your review.</p>
 
             <div class="booking-details">
               <h3>Booking details</h3>
@@ -701,22 +706,21 @@ ${guestEmailFooterText()}
     const html = buildInternalNotificationHtml({
       title: 'New booking — Drift & Dwells Admin',
       preheader: `New booking: ${htmlEscape(cabin.name)} — ${htmlEscape(booking.guestInfo?.email || '')}`,
-      headerGradientFrom: '#1f2937',
-      headerGradientTo: '#4b5563',
-      headerTagline: '<span style="display:block;margin-top:8px;font-size:14px;opacity:0.92;">New booking received</span>',
+      headerGradientFrom: '#3d3d38',
+      headerGradientTo: '#3d3d38',
+      headerTagline:
+        '<span class="email-kicker">Inbox</span><span class="email-tagline-lead">Review when you are ready.</span>',
       bodyHtml,
       extraHeadCss: INTERNAL_NOTIFICATION_EXTRA_CSS,
       footerHtml: internalEmailSocialFooterHtml()
     });
 
     const text = `
-Drift & Dwells Admin - New Booking
+Drift & Dwells Admin — New booking
 
-🔔 NEW BOOKING
+NEW BOOKING
 
-New Booking Received
-
-A new booking has been submitted and requires review.
+A guest booking has been submitted and may need your review.
 
 BOOKING DETAILS:
 - Booking ID: ${booking._id}
