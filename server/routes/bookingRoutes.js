@@ -18,7 +18,7 @@ const {
 } = require('../services/publicAvailabilityService');
 const { normalizeDateToSofiaDayStart } = require('../utils/dateTime');
 const { BLOCKING_BOOKING_STATUSES } = require('../services/calendar/blockingStatusConstants');
-const emailService = require('../services/emailService');
+const bookingLifecycleEmailService = require('../services/bookingLifecycleEmailService');
 const bookingQuoteService = require('../services/bookingQuoteService');
 const promoService = require('../services/promoService');
 const Stripe = require('stripe');
@@ -658,38 +658,32 @@ router.post('/', bookingCreateLimiter, [
     // Decouple SMTP latency from the HTTP response; booking is already persisted.
     void (async () => {
       try {
-        const guestEmail = emailService.generateBookingReceivedEmail(booking, entityForEmail);
-        const guestResult = await emailService.sendEmail({
-          to: booking.guestInfo.email,
-          subject: guestEmail.subject,
-          html: guestEmail.html,
-          text: guestEmail.text,
-          trigger: 'booking_received',
-          bookingId: booking._id
+        const guestOutcome = await bookingLifecycleEmailService.sendBookingLifecycleEmail({
+          booking,
+          templateKey: bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_RECEIVED,
+          overrideRecipient: null,
+          lifecycleSource: 'automatic',
+          actorContext: null,
+          entity: entityForEmail
         });
-        if (!guestResult.success) {
-          console.error('[booking-email] Guest confirmation not sent:', {
+        if (!guestOutcome.success) {
+          console.error('[booking-email] Guest booking_received not sent:', {
             bookingId: String(booking._id),
-            method: guestResult.method,
-            error: guestResult.error
+            method: guestOutcome.sendResult?.method,
+            error: guestOutcome.sendResult?.error
           });
         }
 
-        const internalEmail = emailService.generateInternalNotificationEmail(booking, entityForEmail);
-        const internalEmailTo = process.env.EMAIL_TO_INTERNAL || 'ops@driftdwells.com';
-        const internalResult = await emailService.sendEmail({
-          to: internalEmailTo,
-          subject: internalEmail.subject,
-          html: internalEmail.html,
-          text: internalEmail.text,
-          trigger: 'booking_received_internal',
-          bookingId: booking._id
+        const internalOutcome = await bookingLifecycleEmailService.sendInternalNewBookingNotification({
+          booking,
+          entity: entityForEmail,
+          lifecycleSource: 'automatic'
         });
-        if (!internalResult.success) {
+        if (!internalOutcome.success) {
           console.error('[booking-email] Internal notification not sent:', {
             bookingId: String(booking._id),
-            method: internalResult.method,
-            error: internalResult.error
+            method: internalOutcome.sendResult?.method,
+            error: internalOutcome.sendResult?.error
           });
         }
       } catch (emailError) {

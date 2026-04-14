@@ -11,6 +11,17 @@ const EmailEventSchema = new mongoose.Schema({
   subject:  String,
   tag:      String,
   details:  Object, // raw payload slice (safe fields)
+  /** App-logged booking lifecycle / resend rows (type === 'LifecycleEmail') */
+  templateKey: { type: String, index: true },
+  lifecycleSource: { type: String, enum: ['automatic', 'manual_resend'], index: true },
+  emailTrigger: { type: String, index: true },
+  sendStatus: { type: String, enum: ['success', 'failed', 'skipped'], index: true },
+  deliveryMethod: { type: String },
+  overrideRecipientUsed: { type: Boolean, default: false },
+  guestEmailAtSend: { type: String },
+  errorMessage: { type: String },
+  actorId: { type: String },
+  actorRole: { type: String },
   createdAt:{ type: Date, default: Date.now, index: true }
 });
 

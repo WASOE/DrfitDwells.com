@@ -3,6 +3,38 @@ const { resolveGuideUrl, isPdfUrl } = require('../utils/arrivalGuideUrl');
 
 const SUPPORT_CONTACT_EMAIL = process.env.CONTACT_EMAIL || 'jose@driftdwells.com';
 
+const EMAIL_SITE_ORIGIN = (process.env.APP_URL || 'https://driftdwells.com').replace(/\/$/, '');
+const INSTAGRAM_URL = (process.env.INSTAGRAM_URL || 'https://www.instagram.com/driftdwells/').trim();
+const FACEBOOK_URL = (
+  process.env.FACEBOOK_URL || 'https://www.facebook.com/profile.php?id=61569960933269'
+).trim();
+
+function guestEmailFooterHtml() {
+  const terms = `${EMAIL_SITE_ORIGIN}/terms`;
+  const privacy = `${EMAIL_SITE_ORIGIN}/privacy`;
+  return `
+          <div class="footer">
+            <p>© 2024 Drift & Dwells. All rights reserved.</p>
+            <p><a href="${htmlEscape(terms)}" style="color: #6b7280;">Terms of Service</a> | <a href="${htmlEscape(privacy)}" style="color: #6b7280;">Privacy Policy</a></p>
+            <p><a href="${htmlEscape(INSTAGRAM_URL)}" style="color: #6b7280;">Instagram</a> | <a href="${htmlEscape(FACEBOOK_URL)}" style="color: #6b7280;">Facebook</a></p>
+          </div>`;
+}
+
+function guestEmailFooterText() {
+  return `Terms: ${EMAIL_SITE_ORIGIN}/terms
+Privacy: ${EMAIL_SITE_ORIGIN}/privacy
+Instagram: ${INSTAGRAM_URL}
+Facebook: ${FACEBOOK_URL}`;
+}
+
+function internalEmailSocialFooterHtml() {
+  return `
+          <div class="footer">
+            <p>© 2024 Drift & Dwells. Internal notification.</p>
+            <p><a href="${htmlEscape(INSTAGRAM_URL)}" style="color: #6b7280;">Instagram</a> | <a href="${htmlEscape(FACEBOOK_URL)}" style="color: #6b7280;">Facebook</a></p>
+          </div>`;
+}
+
 const htmlEscape = (s) => {
   if (s == null || s === '') return '';
   const str = String(s);
@@ -126,13 +158,13 @@ class EmailService {
     }
   }
 
-  async sendEmail({ to, subject, html, text, trigger, bookingId }) {
+  async sendEmail({ to, subject, html, text, trigger, bookingId, skipIdempotencyWindow = false }) {
     if (this.initPromise) {
       await this.initPromise;
     }
 
-    // Idempotency: avoid duplicate sends for same booking+event in short window
-    if (bookingId && trigger) {
+    // Idempotency: avoid duplicate sends for same booking+event in short window (bypassed for explicit manual resends)
+    if (!skipIdempotencyWindow && bookingId && trigger) {
       const key = `${bookingId}:${trigger}`;
       if (markAndCheckEventRecentlySent(key)) {
         console.log('📧 Skipping duplicate email (idempotency):', { bookingId, trigger });
@@ -357,10 +389,7 @@ class EmailService {
             <p>Best regards,<br>The Drift & Dwells Team</p>
           </div>
           
-          <div class="footer">
-            <p>© 2024 Drift & Dwells. All rights reserved.</p>
-            <p><a href="#" style="color: #6b7280;">Terms of Service</a> | <a href="#" style="color: #6b7280;">Privacy Policy</a></p>
-          </div>
+          ${guestEmailFooterHtml()}
         </div>
       </body>
       </html>
@@ -424,6 +453,8 @@ Questions? Contact us at ${SUPPORT_CONTACT_EMAIL}
 
 Best regards,
 The Drift & Dwells Team
+
+${guestEmailFooterText()}
     `;
 
     return {
@@ -505,10 +536,7 @@ The Drift & Dwells Team
             <p>Best regards,<br>The Drift & Dwells Team</p>
           </div>
           
-          <div class="footer">
-            <p>© 2024 Drift & Dwells. All rights reserved.</p>
-            <p><a href="#" style="color: #6b7280;">Terms of Service</a> | <a href="#" style="color: #6b7280;">Privacy Policy</a></p>
-          </div>
+          ${guestEmailFooterHtml()}
         </div>
       </body>
       </html>
@@ -536,6 +564,8 @@ Questions? Reply to this email or contact us at ${SUPPORT_CONTACT_EMAIL}
 
 Best regards,
 The Drift & Dwells Team
+
+${guestEmailFooterText()}
     `;
 
     return {
@@ -610,10 +640,7 @@ The Drift & Dwells Team
             <p>Best regards,<br>The Drift & Dwells Team</p>
           </div>
           
-          <div class="footer">
-            <p>© 2024 Drift & Dwells. All rights reserved.</p>
-            <p><a href="#" style="color: #6b7280;">Terms of Service</a> | <a href="#" style="color: #6b7280;">Privacy Policy</a></p>
-          </div>
+          ${guestEmailFooterHtml()}
         </div>
       </body>
       </html>
@@ -640,6 +667,8 @@ We hope to welcome you to Drift & Dwells in the future.
 
 Best regards,
 The Drift & Dwells Team
+
+${guestEmailFooterText()}
     `;
 
     return {
@@ -752,9 +781,7 @@ The Drift & Dwells Team
             <p>Please review and confirm this booking in the admin panel.</p>
           </div>
           
-          <div class="footer">
-            <p>© 2024 Drift & Dwells. Internal notification.</p>
-          </div>
+          ${internalEmailSocialFooterHtml()}
         </div>
       </body>
       </html>
@@ -787,6 +814,9 @@ ${booking.specialRequests ? `- Special Requests: ${booking.specialRequests}` : '
 Status: ${booking.status}
 
 Please review and confirm this booking in the admin panel.
+
+Instagram: ${INSTAGRAM_URL}
+Facebook: ${FACEBOOK_URL}
     `;
 
     return {

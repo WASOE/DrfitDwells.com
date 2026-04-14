@@ -15,7 +15,7 @@ const { countBlockingBlocksForSingleCabin } = require('../../publicAvailabilityS
 const { BLOCKING_BOOKING_STATUSES } = require('../../calendar/blockingStatusConstants');
 const { processMetaPurchaseAfterConfirm } = require('../../bookingPurchaseTracking');
 const CabinType = require('../../../models/CabinType');
-const emailService = require('../../emailService');
+const bookingLifecycleEmailService = require('../../bookingLifecycleEmailService');
 
 const ALLOWED_TRANSITIONS = {
   confirm: { from: ['pending'], to: 'confirmed', action: ACTIONS.OPS_RESERVATION_CONFIRM },
@@ -50,39 +50,27 @@ async function loadBookingOrFail(bookingId) {
   return booking;
 }
 
-async function loadEntityForLifecycleEmail(booking) {
-  if (booking.cabinId) {
-    const cabin = await Cabin.findById(booking.cabinId).lean();
-    if (cabin) return cabin;
-  }
-  if (booking.cabinTypeId) {
-    const cabinType = await CabinType.findById(booking.cabinTypeId).lean();
-    if (cabinType) return cabinType;
-  }
-  return { name: 'Your stay', location: '' };
-}
-
 async function sendLifecycleStatusEmail({ booking, kind }) {
   if (!booking?.guestInfo?.email) {
     return { success: false, method: 'invalid', error: 'Guest email is missing for lifecycle email' };
   }
 
-  const entity = await loadEntityForLifecycleEmail(booking);
-  const payload =
+  const templateKey =
     kind === 'confirm'
-      ? emailService.generateBookingConfirmedEmail(booking, entity)
-      : emailService.generateBookingCancelledEmail(booking, entity);
+      ? bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_CONFIRMED
+      : bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_CANCELLED;
 
-  const sendResult = await emailService.sendEmail({
-    to: booking.guestInfo.email,
-    subject: payload.subject,
-    html: payload.html,
-    text: payload.text,
-    trigger: kind === 'confirm' ? 'booking_confirmed' : 'booking_cancelled',
-    bookingId: booking._id
-  });
-
-  return sendResult;
+  try {
+    return await bookingLifecycleEmailService.sendBookingLifecycleEmail({
+      booking,
+      templateKey,
+      overrideRecipient: null,
+      lifecycleSource: 'automatic',
+      actorContext: null
+    });
+  } catch (err) {
+    return { success: false, method: 'error', error: err.message || String(err) };
+  }
 }
 
 async function transitionReservation({ bookingId, kind, reason = null, ctx = {} }) {

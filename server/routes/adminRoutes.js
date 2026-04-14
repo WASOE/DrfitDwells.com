@@ -3,7 +3,17 @@ const { body, validationResult } = require('express-validator');
 const { adminAuth } = require('../middleware/adminAuth');
 const { upload, validateMagicBytes } = require('../middleware/upload');
 const { validateId } = require('../middleware/validateId');
-const { login, getBookings, getBookingById, updateBookingStatus, getCabins, getCabinById, createCabin, updateCabin } = require('../controllers/adminController');
+const {
+  login,
+  getBookings,
+  getBookingById,
+  updateBookingStatus,
+  resendBookingLifecycleEmail,
+  getCabins,
+  getCabinById,
+  createCabin,
+  updateCabin
+} = require('../controllers/adminController');
 const Cabin = require('../models/Cabin');
 const EmailEvent = require('../models/EmailEvent');
 const path = require('path');
@@ -59,6 +69,29 @@ router.patch('/bookings/:id/status', validateId('id'), [
   
   updateBookingStatus(req, res);
 });
+
+// POST /api/admin/bookings/:id/email-actions/resend — manual lifecycle template resend (no booking mutation)
+router.post(
+  '/bookings/:id/email-actions/resend',
+  validateId('id'),
+  [
+    body('templateKey')
+      .isIn(['booking_received', 'booking_confirmed', 'booking_cancelled'])
+      .withMessage('templateKey must be booking_received, booking_confirmed, or booking_cancelled'),
+    body('overrideRecipient').optional({ checkFalsy: true }).isEmail().withMessage('overrideRecipient must be a valid email')
+  ],
+  (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+    resendBookingLifecycleEmail(req, res);
+  }
+);
 
 // GET /api/admin/cabins - Get cabins with search and pagination
 router.get('/cabins', getCabins);

@@ -12,7 +12,7 @@ const { isSafeArrivalGuideUrl } = require('../utils/arrivalGuideUrl');
 const Unit = require('../models/Unit');
 const featureFlags = require('../utils/featureFlags');
 const authDefaults = require('../config/defaults');
-const emailService = require('../services/emailService');
+const bookingLifecycleEmailService = require('../services/bookingLifecycleEmailService');
 const { requirePermission, ACTIONS } = require('../services/permissionService');
 const { appendAuditEvent } = require('../services/auditWriter');
 const { assertAdminModuleWriteAllowed } = require('../services/ops/cutover/opsCutoverService');
@@ -1012,27 +1012,23 @@ const updateBookingStatus = async (req, res) => {
     // Populate cabin info for response
     await booking.populate('cabinId', 'name location');
 
-    // Send email notifications for status changes
+    // Send email notifications for status changes (shared lifecycle service + durable log)
     try {
       if (status === 'confirmed' && oldStatus !== 'confirmed') {
-        const confirmedEmail = emailService.generateBookingConfirmedEmail(booking, booking.cabinId);
-        await emailService.sendEmail({
-          to: booking.guestInfo.email,
-          subject: confirmedEmail.subject,
-          html: confirmedEmail.html,
-          text: confirmedEmail.text,
-          trigger: 'booking_confirmed',
-          bookingId: booking._id
+        await bookingLifecycleEmailService.sendBookingLifecycleEmail({
+          booking,
+          templateKey: bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_CONFIRMED,
+          overrideRecipient: null,
+          lifecycleSource: 'automatic',
+          actorContext: null
         });
       } else if (status === 'cancelled' && oldStatus !== 'cancelled') {
-        const cancelledEmail = emailService.generateBookingCancelledEmail(booking, booking.cabinId);
-        await emailService.sendEmail({
-          to: booking.guestInfo.email,
-          subject: cancelledEmail.subject,
-          html: cancelledEmail.html,
-          text: cancelledEmail.text,
-          trigger: 'booking_cancelled',
-          bookingId: booking._id
+        await bookingLifecycleEmailService.sendBookingLifecycleEmail({
+          booking,
+          templateKey: bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_CANCELLED,
+          overrideRecipient: null,
+          lifecycleSource: 'automatic',
+          actorContext: null
         });
       }
     } catch (emailError) {
@@ -1701,11 +1697,103 @@ const createCabin = async (req, res) => {
   }
 };
 
+const BOOKING_EMAIL_POPULATE_FIELDS =
+  'name description imageUrl location meetingPoint packingList arrivalGuideUrl safetyNotes emergencyContact arrivalWindowDefault transportCutoffs';
+
+// POST body: { templateKey, overrideRecipient? } — manual resend only; does not mutate booking or payments
+const resendBookingLifecycleEmail = async (req, res) => {
+  try {
+    await assertAdminModuleWriteAllowed('reservations');
+    requirePermission({
+      role: req.user?.role,
+      action: ACTIONS.BOOKING_LIFECYCLE_EMAIL_RESEND
+    });
+
+    const { id } = req.params;
+    const { templateKey, overrideRecipient } = req.body;
+
+    if (!bookingLifecycleEmailService.isValidGuestTemplateKey(templateKey)) {
+      return res.status(400).json({
+        success: false,
+        message: 'templateKey must be booking_received, booking_confirmed, or booking_cancelled'
+      });
+    }
+
+    const booking = await Booking.findById(id)
+      .populate('cabinId', BOOKING_EMAIL_POPULATE_FIELDS)
+      .populate('cabinTypeId', BOOKING_EMAIL_POPULATE_FIELDS);
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found' });
+    }
+
+    const result = await bookingLifecycleEmailService.sendBookingLifecycleEmail({
+      booking,
+      templateKey,
+      overrideRecipient: overrideRecipient != null ? String(overrideRecipient) : null,
+      lifecycleSource: 'manual_resend',
+      actorContext: {
+        actorId: req.user?.id || null,
+        actorRole: req.user?.role || null
+      }
+    });
+
+    const ev = result.emailEvent;
+    return res.json({
+      success: Boolean(result.sendResult?.success),
+      data: {
+        sendResult: result.sendResult,
+        sendStatus: result.sendStatus,
+        deliveryMethod: result.deliveryMethod,
+        recipient: result.recipient,
+        templateKey: result.templateKey,
+        emailEvent: ev
+          ? {
+              _id: String(ev._id),
+              createdAt: ev.createdAt,
+              type: ev.type,
+              templateKey: ev.templateKey,
+              lifecycleSource: ev.lifecycleSource,
+              sendStatus: ev.sendStatus,
+              deliveryMethod: ev.deliveryMethod,
+              to: ev.to,
+              subject: ev.subject,
+              overrideRecipientUsed: ev.overrideRecipientUsed,
+              guestEmailAtSend: ev.guestEmailAtSend,
+              actorId: ev.actorId,
+              actorRole: ev.actorRole,
+              errorMessage: ev.errorMessage,
+              messageId: ev.messageId || null
+            }
+          : null
+      }
+    });
+  } catch (error) {
+    if (error.code === 'INVALID_OVERRIDE_EMAIL' || error.code === 'MISSING_RECIPIENT') {
+      return res.status(400).json({ success: false, message: error.message, errorType: error.code });
+    }
+    if (error.code === 'PERMISSION_DENIED') {
+      return res.status(error.status || 403).json({ success: false, message: error.message });
+    }
+    if (error.code === 'CUTOVER_WRITE_BLOCKED') {
+      return res.status(error.status || 403).json({
+        success: false,
+        errorType: 'cutover_blocked',
+        message: error.message,
+        details: { moduleKey: error.moduleKey || 'unknown' }
+      });
+    }
+    console.error('Resend booking lifecycle email error:', error);
+    res.status(500).json({ success: false, message: 'Failed to send email' });
+  }
+};
+
 module.exports = {
   login,
   getBookings,
   getBookingById,
   updateBookingStatus,
+  resendBookingLifecycleEmail,
   getCabins,
   getCabinById,
   createCabin,
