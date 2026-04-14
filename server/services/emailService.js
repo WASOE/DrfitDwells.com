@@ -1,5 +1,14 @@
 const nodemailer = require('nodemailer');
 const { resolveGuideUrl, isPdfUrl } = require('../utils/arrivalGuideUrl');
+const { htmlEscape } = require('../utils/htmlEscape');
+const {
+  buildGuestTransactionalHtml,
+  buildInternalNotificationHtml,
+  GUEST_LIFECYCLE_RECEIVED_EXTRA_CSS,
+  GUEST_LIFECYCLE_CONFIRMED_EXTRA_CSS,
+  GUEST_LIFECYCLE_CANCELLED_EXTRA_CSS,
+  INTERNAL_NOTIFICATION_EXTRA_CSS
+} = require('./emailTemplates/guestLifecycleLayout');
 
 const SUPPORT_CONTACT_EMAIL = process.env.CONTACT_EMAIL || 'jose@driftdwells.com';
 
@@ -34,17 +43,6 @@ function internalEmailSocialFooterHtml() {
             <p><a href="${htmlEscape(INSTAGRAM_URL)}" style="color: #6b7280;">Instagram</a> | <a href="${htmlEscape(FACEBOOK_URL)}" style="color: #6b7280;">Facebook</a></p>
           </div>`;
 }
-
-const htmlEscape = (s) => {
-  if (s == null || s === '') return '';
-  const str = String(s);
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-};
 
 const sentEvents = new Map();
 const EVENT_TTL_MS = 10 * 60 * 1000;
@@ -268,94 +266,61 @@ class EmailService {
       stay = FALLBACK_STAY_ENTITY;
     }
 
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Booking Confirmation - Drift & Dwells</title>
-        <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 20px; }
-          .container { max-width: 600px; margin: 0 auto; }
-          .header { background: linear-gradient(135deg, #81887A, #9CAF88); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
-          .content { background: white; padding: 30px; border: 1px solid #e5e7eb; }
-          .footer { background: #f9fafb; padding: 20px; text-align: center; border-radius: 0 0 8px 8px; font-size: 14px; color: #6b7280; }
-          .booking-details { background: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0; }
-          .detail-row { display: flex; justify-content: space-between; margin: 10px 0; }
-          .detail-label { font-weight: 600; color: #374151; }
-          .guidance-section { margin: 20px 0; padding: 20px; background: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 4px; }
-          .btn { display: inline-block; padding: 12px 24px; background: #81887A; color: white; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 10px 5px; }
-          .btn:hover { background: #707668; }
-          .packing-list { background: #f0fdf4; border: 1px solid #bbf7d0; padding: 15px; border-radius: 6px; margin: 10px 0; }
-          .packing-list ul { margin: 10px 0; padding-left: 20px; }
-          .packing-list li { margin: 5px 0; }
-          .safety-notes { background: #fef2f2; border: 1px solid #fecaca; padding: 15px; border-radius: 6px; margin: 10px 0; }
-          .contact-info { background: #eff6ff; border: 1px solid #bfdbfe; padding: 15px; border-radius: 6px; margin: 10px 0; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1 style="margin: 0; font-size: 28px;">Drift & Dwells</h1>
-            <p style="margin: 10px 0 0; opacity: 0.9;">Your booking has been received!</p>
-          </div>
-          
-          <div class="content">
+    const bodyHtml = `
             <h2>Hello ${htmlEscape(booking.guestInfo?.firstName)}!</h2>
-            <p>Thank you for choosing Drift & Dwells for your off-grid retreat. We've received your booking request and are excited to welcome you to nature.</p>
-            
+            <p class="lede">Thank you for choosing Drift &amp; Dwells for your off-grid retreat. We've received your booking request and are excited to welcome you to nature.</p>
+
             <div class="booking-details">
-              <h3 style="margin-top: 0; color: #374151;">Booking Details</h3>
+              <h3>Booking details</h3>
               <div class="detail-row">
-                <span class="detail-label">Cabin:</span>
+                <span class="detail-label">Cabin</span>
                 <span>${htmlEscape(stay.name)} • ${htmlEscape(stay.location)}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Check-in:</span>
+                <span class="detail-label">Check-in</span>
                 <span>${checkIn.toLocaleDateString('en-GB')} (${htmlEscape(stay.arrivalWindowDefault || 'TBD')})</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Check-out:</span>
+                <span class="detail-label">Check-out</span>
                 <span>${checkOut.toLocaleDateString('en-GB')}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Duration:</span>
+                <span class="detail-label">Duration</span>
                 <span>${nights} night${nights !== 1 ? 's' : ''}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Guests:</span>
+                <span class="detail-label">Guests</span>
                 <span>${booking.adults} adult${booking.adults !== 1 ? 's' : ''}${booking.children > 0 ? `, ${booking.children} child${booking.children !== 1 ? 'ren' : ''}` : ''}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Trip Type:</span>
+                <span class="detail-label">Trip type</span>
                 <span>${htmlEscape(booking.tripType || 'Custom Experience')}</span>
               </div>
               ${booking.transportMethod && booking.transportMethod !== 'Not selected' ? `
               <div class="detail-row">
-                <span class="detail-label">Transport:</span>
+                <span class="detail-label">Transport</span>
                 <span>${htmlEscape(booking.transportMethod)}</span>
               </div>
               ` : ''}
               <div class="detail-row">
-                <span class="detail-label">Total:</span>
-                <span style="font-weight: 700; font-size: 18px; color: #81887A;">€${booking.totalPrice}</span>
+                <span class="detail-label">Total</span>
+                <span class="total-accent">€${booking.totalPrice}</span>
               </div>
             </div>
 
             ${stay.meetingPoint?.googleMapsUrl ? `
             <div class="guidance-section">
-              <h3 style="margin-top: 0; color: #92400e;">📍 Directions</h3>
-              <p><strong>Meeting Point:</strong> ${htmlEscape(stay.meetingPoint.label || stay.location)}</p>
-              <a href="${stay.meetingPoint.googleMapsUrl}" class="btn" target="_blank">Open in Google Maps</a>
-              ${stay.meetingPoint.what3words ? `<a href="https://what3words.com/${stay.meetingPoint.what3words}" class="btn" target="_blank">///${stay.meetingPoint.what3words}</a>` : ''}
-              ${stay.meetingPoint.lat && stay.meetingPoint.lng ? `<p style="margin: 10px 0; font-family: monospace; background: white; padding: 8px; border-radius: 4px;">GPS: ${stay.meetingPoint.lat}, ${stay.meetingPoint.lng}</p>` : ''}
+              <h3>📍 Directions</h3>
+              <p><strong>Meeting point:</strong> ${htmlEscape(stay.meetingPoint.label || stay.location)}</p>
+              <a href="${stay.meetingPoint.googleMapsUrl}" class="btn btn-sage" target="_blank" rel="noopener noreferrer">Open in Google Maps</a>
+              ${stay.meetingPoint.what3words ? `<a href="https://what3words.com/${stay.meetingPoint.what3words}" class="btn btn-sage" target="_blank" rel="noopener noreferrer">///${stay.meetingPoint.what3words}</a>` : ''}
+              ${stay.meetingPoint.lat && stay.meetingPoint.lng ? `<p style="margin: 10px 0 0; font-family: ui-monospace, monospace; background: #fff; padding: 8px 10px; border-radius: 6px; font-size: 14px;">GPS: ${stay.meetingPoint.lat}, ${stay.meetingPoint.lng}</p>` : ''}
             </div>
             ` : ''}
 
             ${stay.packingList && stay.packingList.length > 0 ? `
             <div class="packing-list">
-              <h3 style="margin-top: 0; color: #166534;">🎒 Packing List</h3>
+              <h3>🎒 Packing list</h3>
               <ul>
                 ${stay.packingList.slice(0, 5).map(item => `<li>${htmlEscape(item)}</li>`).join('')}
                 ${stay.packingList.length > 5 ? `<li><em>... and ${stay.packingList.length - 5} more items</em></li>` : ''}
@@ -365,55 +330,60 @@ class EmailService {
             ` : ''}
 
             ${stay.location && (stay.location.toLowerCase().includes('valley') || stay.location.toLowerCase().includes('the valley')) ? `
-            <div class="guidance-section" style="background: #dbeafe; border-left: 4px solid #2563eb; padding: 20px; border-radius: 4px; margin: 20px 0;">
-              <h3 style="margin-top: 0; color: #1e40af;">🗺️ Interactive Welcome Guide</h3>
+            <div class="guidance-section valley">
+              <h3>🗺️ Interactive welcome guide</h3>
               <p><strong>Open your trip guide</strong> to complete checklists, choose your arrival route, and prepare for The Valley.</p>
-              <a href="${process.env.APP_URL || 'http://localhost:5173'}/my-trip/${booking._id}/valley-guide" class="btn" style="background: #2563eb; color: white;" target="_blank">Open Valley Welcome Guide</a>
+              <a href="${process.env.APP_URL || 'http://localhost:5173'}/my-trip/${booking._id}/valley-guide" class="btn btn-blue" target="_blank" rel="noopener noreferrer">Open Valley welcome guide</a>
               <p style="margin-top: 10px; font-size: 14px; color: #64748b;">Complete your trip checklist 24 hours before arrival.</p>
             </div>
             ` : ''}
 
             ${stay.arrivalGuideUrl ? `
             <div class="guidance-section">
-              <h3 style="margin-top: 0; color: #92400e;">📄 Arrival Guide</h3>
+              <h3>📄 Arrival guide</h3>
               <p>Open practical route and arrival instructions (save offline before travel):</p>
-              <a href="${resolveGuideUrl(stay.arrivalGuideUrl, process.env.APP_URL)}" class="btn" target="_blank">${isPdfUrl(stay.arrivalGuideUrl) ? 'Download PDF Guide' : 'Open Arrival Guide'}</a>
+              <a href="${resolveGuideUrl(stay.arrivalGuideUrl, process.env.APP_URL)}" class="btn btn-sage" target="_blank" rel="noopener noreferrer">${isPdfUrl(stay.arrivalGuideUrl) ? 'Download PDF guide' : 'Open arrival guide'}</a>
             </div>
             ` : ''}
 
             ${stay.safetyNotes ? `
             <div class="safety-notes">
-              <h3 style="margin-top: 0; color: #dc2626;">⚠️ Safety & House Rules</h3>
+              <h3>⚠️ Safety &amp; house rules</h3>
               <p>${htmlEscape(stay.safetyNotes)}</p>
             </div>
             ` : ''}
 
             ${stay.emergencyContact ? `
             <div class="contact-info">
-              <h3 style="margin-top: 0; color: #1e40af;">🚨 Emergency Contact</h3>
+              <h3>🚨 Emergency contact</h3>
               <p><strong>${htmlEscape(stay.emergencyContact)}</strong></p>
             </div>
             ` : ''}
 
             <div class="guidance-section">
-              <h3 style="margin-top: 0; color: #92400e;">💰 Payment</h3>
+              <h3>💰 Payment</h3>
               <p>Payment of <strong>€${booking.totalPrice}</strong> is due on arrival. We accept cash and major credit cards.</p>
             </div>
 
-            <p style="margin-top: 30px;">We'll send you a confirmation email within 24 hours and detailed arrival instructions 3 days before your stay.</p>
-            
+            <p style="margin-top: 28px;">We'll send you a confirmation email within 24 hours and detailed arrival instructions 3 days before your stay.</p>
+
             <p>Questions? Reply to this email or contact us at ${htmlEscape(SUPPORT_CONTACT_EMAIL)}</p>
-            
+
             <p>We can't wait to welcome you to your digital detox retreat!</p>
-            
-            <p>Best regards,<br>The Drift & Dwells Team</p>
-          </div>
-          
-          ${guestEmailFooterHtml()}
-        </div>
-      </body>
-      </html>
+
+            <p>Best regards,<br>The Drift &amp; Dwells Team</p>
     `;
+
+    const html = buildGuestTransactionalHtml({
+      title: 'Booking request received — Drift & Dwells',
+      preheader: `We received your request for ${htmlEscape(stay.name)} — check-in ${checkIn.toLocaleDateString('en-GB')}`,
+      headerGradientFrom: '#6d735f',
+      headerGradientTo: '#8a9178',
+      headerTagline: '<span style="display:block;margin-top:10px;font-size:15px;font-weight:500;opacity:0.95;">Your booking has been received</span>',
+      bodyHtml,
+      extraHeadCss: GUEST_LIFECYCLE_RECEIVED_EXTRA_CSS,
+      footerHtml: guestEmailFooterHtml()
+    });
 
     const text = `
 Drift & Dwells - Booking Confirmation
@@ -489,78 +459,55 @@ ${guestEmailFooterText()}
     const checkOut = new Date(booking.checkOut);
     const nights = Math.ceil((checkOut - checkIn) / (1000 * 3600 * 24));
 
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Booking Confirmed - Drift & Dwells</title>
-        <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 20px; }
-          .container { max-width: 600px; margin: 0 auto; }
-          .header { background: linear-gradient(135deg, #059669, #10b981); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
-          .content { background: white; padding: 30px; border: 1px solid #e5e7eb; }
-          .footer { background: #f9fafb; padding: 20px; text-align: center; border-radius: 0 0 8px 8px; font-size: 14px; color: #6b7280; }
-          .confirmed-badge { background: #dcfce7; color: #166534; padding: 10px 20px; border-radius: 20px; display: inline-block; font-weight: 600; margin: 10px 0; }
-          .booking-details { background: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0; }
-          .detail-row { display: flex; justify-content: space-between; margin: 10px 0; }
-          .detail-label { font-weight: 600; color: #374151; }
-          .btn { display: inline-block; padding: 12px 24px; background: #059669; color: white; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 10px 5px; }
-          .btn:hover { background: #047857; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1 style="margin: 0; font-size: 28px;">Drift & Dwells</h1>
-            <p style="margin: 10px 0 0; opacity: 0.9;">Your booking is confirmed!</p>
-          </div>
-          
-          <div class="content">
+    const bodyHtml = `
             <div class="confirmed-badge">✅ BOOKING CONFIRMED</div>
-            
+
             <h2>Hello ${htmlEscape(booking.guestInfo?.firstName)}!</h2>
-            <p>Great news! Your booking has been confirmed. We're excited to welcome you to your off-grid retreat at <strong>${htmlEscape(cabin.name)}</strong>.</p>
-            
+            <p class="lede">Great news! Your booking has been confirmed. We're excited to welcome you to your off-grid retreat at <strong>${htmlEscape(cabin.name)}</strong>.</p>
+
             <div class="booking-details">
-              <h3 style="margin-top: 0; color: #374151;">Confirmed Details</h3>
+              <h3>Confirmed details</h3>
               <div class="detail-row">
-                <span class="detail-label">Cabin:</span>
+                <span class="detail-label">Cabin</span>
                 <span>${htmlEscape(cabin.name)} • ${htmlEscape(cabin.location)}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Check-in:</span>
+                <span class="detail-label">Check-in</span>
                 <span>${checkIn.toLocaleDateString('en-GB')} (${htmlEscape(cabin.arrivalWindowDefault || 'TBD')})</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Check-out:</span>
+                <span class="detail-label">Check-out</span>
                 <span>${checkOut.toLocaleDateString('en-GB')}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Duration:</span>
+                <span class="detail-label">Duration</span>
                 <span>${nights} night${nights !== 1 ? 's' : ''}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Total:</span>
-                <span style="font-weight: 700; font-size: 18px; color: #059669;">€${booking.totalPrice}</span>
+                <span class="detail-label">Total</span>
+                <span class="total-accent">€${booking.totalPrice}</span>
               </div>
             </div>
 
             <p>We'll send you detailed arrival instructions and local recommendations 3 days before your stay.</p>
-            
+
             <p>In the meantime, feel free to reply to this email if you have any questions or special requests.</p>
-            
+
             <p>We can't wait to welcome you to nature!</p>
-            
-            <p>Best regards,<br>The Drift & Dwells Team</p>
-          </div>
-          
-          ${guestEmailFooterHtml()}
-        </div>
-      </body>
-      </html>
+
+            <p>Best regards,<br>The Drift &amp; Dwells Team</p>
     `;
+
+    const html = buildGuestTransactionalHtml({
+      title: 'Booking confirmed — Drift & Dwells',
+      preheader: `You're confirmed for ${htmlEscape(cabin.name)} — check-in ${checkIn.toLocaleDateString('en-GB')}`,
+      headerGradientFrom: '#047857',
+      headerGradientTo: '#10b981',
+      headerTagline: '<span style="display:block;margin-top:10px;font-size:15px;font-weight:500;opacity:0.95;">Your booking is confirmed</span>',
+      bodyHtml,
+      extraHeadCss: GUEST_LIFECYCLE_CONFIRMED_EXTRA_CSS,
+      footerHtml: guestEmailFooterHtml()
+    });
 
     const text = `
 Drift & Dwells - Booking Confirmed
@@ -599,72 +546,49 @@ ${guestEmailFooterText()}
     const checkIn = new Date(booking.checkIn);
     const checkOut = new Date(booking.checkOut);
 
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Booking Cancelled - Drift & Dwells</title>
-        <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 20px; }
-          .container { max-width: 600px; margin: 0 auto; }
-          .header { background: linear-gradient(135deg, #dc2626, #ef4444); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
-          .content { background: white; padding: 30px; border: 1px solid #e5e7eb; }
-          .footer { background: #f9fafb; padding: 20px; text-align: center; border-radius: 0 0 8px 8px; font-size: 14px; color: #6b7280; }
-          .cancelled-badge { background: #fef2f2; color: #dc2626; padding: 10px 20px; border-radius: 20px; display: inline-block; font-weight: 600; margin: 10px 0; border: 1px solid #fecaca; }
-          .booking-details { background: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0; }
-          .detail-row { display: flex; justify-content: space-between; margin: 10px 0; }
-          .detail-label { font-weight: 600; color: #374151; }
-          .btn { display: inline-block; padding: 12px 24px; background: #81887A; color: white; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 10px 5px; }
-          .btn:hover { background: #707668; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1 style="margin: 0; font-size: 28px;">Drift & Dwells</h1>
-            <p style="margin: 10px 0 0; opacity: 0.9;">Booking cancellation notice</p>
-          </div>
-          
-          <div class="content">
+    const bodyHtml = `
             <div class="cancelled-badge">❌ BOOKING CANCELLED</div>
-            
+
             <h2>Hello ${htmlEscape(booking.guestInfo?.firstName)},</h2>
-            <p>We're sorry to inform you that your booking for <strong>${htmlEscape(cabin.name)}</strong> has been cancelled.</p>
-            
+            <p class="lede">We're sorry to inform you that your booking for <strong>${htmlEscape(cabin.name)}</strong> has been cancelled.</p>
+
             <div class="booking-details">
-              <h3 style="margin-top: 0; color: #374151;">Cancelled Booking</h3>
+              <h3>Cancelled booking</h3>
               <div class="detail-row">
-                <span class="detail-label">Cabin:</span>
+                <span class="detail-label">Cabin</span>
                 <span>${htmlEscape(cabin.name)} • ${htmlEscape(cabin.location)}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Check-in:</span>
+                <span class="detail-label">Check-in</span>
                 <span>${checkIn.toLocaleDateString('en-GB')}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Check-out:</span>
+                <span class="detail-label">Check-out</span>
                 <span>${checkOut.toLocaleDateString('en-GB')}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Total:</span>
+                <span class="detail-label">Total</span>
                 <span>€${booking.totalPrice}</span>
               </div>
             </div>
 
             <p>If you have any questions about this cancellation or would like to make a new booking, please don't hesitate to contact us.</p>
-            
-            <p>We hope to welcome you to Drift & Dwells in the future.</p>
-            
-            <p>Best regards,<br>The Drift & Dwells Team</p>
-          </div>
-          
-          ${guestEmailFooterHtml()}
-        </div>
-      </body>
-      </html>
+
+            <p>We hope to welcome you to Drift &amp; Dwells in the future.</p>
+
+            <p>Best regards,<br>The Drift &amp; Dwells Team</p>
     `;
+
+    const html = buildGuestTransactionalHtml({
+      title: 'Booking cancelled — Drift & Dwells',
+      preheader: `Your stay at ${htmlEscape(cabin.name)} was cancelled — we're here if you need us`,
+      headerGradientFrom: '#b91c1c',
+      headerGradientTo: '#ef4444',
+      headerTagline: '<span style="display:block;margin-top:10px;font-size:15px;font-weight:500;opacity:0.95;">Booking cancellation notice</span>',
+      bodyHtml,
+      extraHeadCss: GUEST_LIFECYCLE_CANCELLED_EXTRA_CSS,
+      footerHtml: guestEmailFooterHtml()
+    });
 
     const text = `
 Drift & Dwells - Booking Cancelled
@@ -703,109 +627,87 @@ ${guestEmailFooterText()}
     const checkOut = new Date(booking.checkOut);
     const nights = Math.ceil((checkOut - checkIn) / (1000 * 3600 * 24));
 
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>New Booking - Drift & Dwells Admin</title>
-        <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 20px; }
-          .container { max-width: 600px; margin: 0 auto; }
-          .header { background: linear-gradient(135deg, #1f2937, #374151); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
-          .content { background: white; padding: 30px; border: 1px solid #e5e7eb; }
-          .footer { background: #f9fafb; padding: 20px; text-align: center; border-radius: 0 0 8px 8px; font-size: 14px; color: #6b7280; }
-          .new-badge { background: #dbeafe; color: #1e40af; padding: 10px 20px; border-radius: 20px; display: inline-block; font-weight: 600; margin: 10px 0; }
-          .booking-details { background: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0; }
-          .detail-row { display: flex; justify-content: space-between; margin: 10px 0; }
-          .detail-label { font-weight: 600; color: #374151; }
-          .admin-link { background: #1f2937; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; display: inline-block; margin: 10px 0; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1 style="margin: 0; font-size: 28px;">Drift & Dwells Admin</h1>
-            <p style="margin: 10px 0 0; opacity: 0.9;">New booking received</p>
-          </div>
-          
-          <div class="content">
+    const bodyHtml = `
             <div class="new-badge">🔔 NEW BOOKING</div>
-            
-            <h2>New Booking Received</h2>
+
+            <h2>New booking received</h2>
             <p>A new booking has been submitted and requires review.</p>
-            
+
             <div class="booking-details">
-              <h3 style="margin-top: 0; color: #374151;">Booking Details</h3>
+              <h3>Booking details</h3>
               <div class="detail-row">
-                <span class="detail-label">Booking ID:</span>
+                <span class="detail-label">Booking ID</span>
                 <span>${booking._id}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Cabin:</span>
+                <span class="detail-label">Cabin</span>
                 <span>${htmlEscape(cabin.name)} • ${htmlEscape(cabin.location)}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Check-in:</span>
+                <span class="detail-label">Check-in</span>
                 <span>${checkIn.toLocaleDateString('en-GB')}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Check-out:</span>
+                <span class="detail-label">Check-out</span>
                 <span>${checkOut.toLocaleDateString('en-GB')}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Duration:</span>
+                <span class="detail-label">Duration</span>
                 <span>${nights} night${nights !== 1 ? 's' : ''}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Guest:</span>
+                <span class="detail-label">Guest</span>
                 <span>${htmlEscape(booking.guestInfo?.firstName)} ${htmlEscape(booking.guestInfo?.lastName)}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Email:</span>
+                <span class="detail-label">Email</span>
                 <span>${htmlEscape(booking.guestInfo?.email)}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Phone:</span>
+                <span class="detail-label">Phone</span>
                 <span>${htmlEscape(booking.guestInfo?.phone)}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Guests:</span>
+                <span class="detail-label">Guests</span>
                 <span>${booking.adults} adult${booking.adults !== 1 ? 's' : ''}${booking.children > 0 ? `, ${booking.children} child${booking.children !== 1 ? 'ren' : ''}` : ''}</span>
               </div>
               <div class="detail-row">
-                <span class="detail-label">Trip Type:</span>
+                <span class="detail-label">Trip type</span>
                 <span>${htmlEscape(booking.tripType || 'Custom Experience')}</span>
               </div>
               ${booking.transportMethod && booking.transportMethod !== 'Not selected' ? `
               <div class="detail-row">
-                <span class="detail-label">Transport:</span>
+                <span class="detail-label">Transport</span>
                 <span>${htmlEscape(booking.transportMethod)}</span>
               </div>
               ` : ''}
               <div class="detail-row">
-                <span class="detail-label">Total:</span>
-                <span style="font-weight: 700; font-size: 18px; color: #059669;">€${booking.totalPrice}</span>
+                <span class="detail-label">Total</span>
+                <span style="font-weight: 700; font-size: 17px; color: #047857;">€${booking.totalPrice}</span>
               </div>
               ${booking.specialRequests ? `
               <div class="detail-row">
-                <span class="detail-label">Special Requests:</span>
+                <span class="detail-label">Special requests</span>
                 <span>${htmlEscape(booking.specialRequests)}</span>
               </div>
               ` : ''}
             </div>
 
             <p><strong>Status:</strong> ${htmlEscape(booking.status)}</p>
-            
+
             <p>Please review and confirm this booking in the admin panel.</p>
-          </div>
-          
-          ${internalEmailSocialFooterHtml()}
-        </div>
-      </body>
-      </html>
     `;
+
+    const html = buildInternalNotificationHtml({
+      title: 'New booking — Drift & Dwells Admin',
+      preheader: `New booking: ${htmlEscape(cabin.name)} — ${htmlEscape(booking.guestInfo?.email || '')}`,
+      headerGradientFrom: '#1f2937',
+      headerGradientTo: '#4b5563',
+      headerTagline: '<span style="display:block;margin-top:8px;font-size:14px;opacity:0.92;">New booking received</span>',
+      bodyHtml,
+      extraHeadCss: INTERNAL_NOTIFICATION_EXTRA_CSS,
+      footerHtml: internalEmailSocialFooterHtml()
+    });
 
     const text = `
 Drift & Dwells Admin - New Booking
