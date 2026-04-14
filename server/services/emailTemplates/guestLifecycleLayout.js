@@ -16,6 +16,20 @@ function sanitizeHeaderAccent(hex, fallback = BRAND_SAGE) {
   return fallback;
 }
 
+/** safeHome and safeLogo must already be attribute-safe (htmlEscape). safeLogo empty → text wordmark (no broken img). */
+function buildHeaderLogoMarkup({ safeHome, safeLogo, width, wordmarkSize = 'guest' }) {
+  const w = width;
+  const wmClass = wordmarkSize === 'internal' ? 'email-wordmark email-wordmark--internal' : 'email-wordmark';
+  if (!safeLogo) {
+    return `<a href="${safeHome}" style="text-decoration:none;border:0;color:inherit;">
+      <div class="${wmClass}">Drift <span class="email-wordmark-amp">&amp;</span> Dwells</div>
+    </a>`;
+  }
+  return `<a href="${safeHome}" style="text-decoration:none;border:0;">
+    <img class="email-header-logo" src="${safeLogo}" width="${w}" alt="Drift &amp; Dwells" style="display:block;margin:0 auto;max-width:${w}px;width:100%;height:auto;border:0;outline:none;text-decoration:none;" />
+  </a>`;
+}
+
 /**
  * Table-based detail rows (Outlook-friendly). valueHtml must already be escaped/safe HTML fragments.
  * @param {Array<{ label: string, valueHtml: string }>} rows
@@ -58,6 +72,25 @@ const GUEST_EMAIL_BASE_CSS = `
     .email-header-inner { padding: 32px 28px 26px; }
   }
   .email-header-logo { display: block; margin: 0 auto; border: 0; outline: none; text-decoration: none; }
+  .email-wordmark {
+    font-family: 'Playfair Display', Georgia, 'Times New Roman', serif;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: #1a1918;
+    line-height: 1.2;
+    margin: 0 auto;
+    text-align: center;
+    max-width: 320px;
+  }
+  @media only screen and (min-width: 600px) {
+    .email-wordmark { font-size: 32px; }
+  }
+  .email-wordmark--internal { font-size: 22px; }
+  @media only screen and (min-width: 600px) {
+    .email-wordmark--internal { font-size: 24px; }
+  }
+  .email-wordmark-amp { font-style: italic; font-weight: 600; color: #6b6a64; }
   .email-header-tagline-wrap { padding: 18px 22px 22px; }
   @media only screen and (min-width: 600px) {
     .email-header-tagline-wrap { padding: 4px 28px 26px; }
@@ -247,18 +280,18 @@ function buildGuestTransactionalHtml(opts) {
         )}</div>`
       : '';
 
-  const safeLogo = htmlEscape(String(logoUrl || '').trim());
+  const rawLogo = String(logoUrl || '').trim();
+  const safeLogo = rawLogo ? htmlEscape(rawLogo) : '';
   const safeHome = htmlEscape(String(siteHomeUrl || '').trim());
   const w = Math.min(280, Math.max(120, Number(headerLogoWidth) || 200));
+  const logoMarkup = buildHeaderLogoMarkup({ safeHome, safeLogo, width: w, wordmarkSize: 'guest' });
 
   const headerBlock = `
         <div class="email-header" style="background-color:#f7f5f0;border-bottom:3px solid ${accent};">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
             <tr>
               <td class="email-header-inner" align="center">
-                <a href="${safeHome}" style="text-decoration:none;border:0;">
-                  <img class="email-header-logo" src="${safeLogo}" width="${w}" alt="Drift &amp; Dwells" style="display:block;margin:0 auto;max-width:${w}px;width:100%;height:auto;border:0;outline:none;text-decoration:none;" />
-                </a>
+                ${logoMarkup}
               </td>
             </tr>
             <tr>
@@ -390,6 +423,19 @@ const INTERNAL_BASE_CSS = `
   .email-card .footer a { color: #4a4944; text-decoration: underline; text-underline-offset: 2px; }
   .email-card .footer p { margin: 6px 0; }
   .email-card .footer .footer-legal { font-size: 10px; color: #8a887f; letter-spacing: 0.06em; text-transform: uppercase; }
+  .email-wordmark {
+    font-family: 'Playfair Display', Georgia, 'Times New Roman', serif;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: #1a1918;
+    line-height: 1.2;
+    margin: 0 auto;
+    text-align: center;
+    max-width: 280px;
+  }
+  .email-wordmark--internal { font-size: 20px; }
+  .email-wordmark-amp { font-style: italic; font-weight: 600; color: #6b6a64; }
 `;
 
 const INTERNAL_NOTIFICATION_EXTRA_CSS = `
@@ -443,18 +489,18 @@ function buildInternalNotificationHtml(opts) {
         )}</div>`
       : '';
 
-  const safeLogo = htmlEscape(String(logoUrl || '').trim());
+  const rawLogo = String(logoUrl || '').trim();
+  const safeLogo = rawLogo ? htmlEscape(rawLogo) : '';
   const safeHome = htmlEscape(String(siteHomeUrl || '').trim());
   const w = Math.min(220, Math.max(100, Number(headerLogoWidth) || 152));
+  const logoMarkup = buildHeaderLogoMarkup({ safeHome, safeLogo, width: w, wordmarkSize: 'internal' });
 
   const headerBlock = `
         <div class="email-header" style="background-color:#f0eeea;border-bottom:2px solid ${accent};">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
             <tr>
               <td class="email-header-inner" align="center">
-                <a href="${safeHome}" style="text-decoration:none;border:0;">
-                  <img class="email-header-logo" src="${safeLogo}" width="${w}" alt="Drift &amp; Dwells" style="display:block;margin:0 auto;max-width:${w}px;width:100%;height:auto;border:0;outline:none;text-decoration:none;" />
-                </a>
+                ${logoMarkup}
                 <p style="margin:10px 0 0;font-family:'Inter',sans-serif;font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#7a7870;">Staff</p>
               </td>
             </tr>

@@ -1006,11 +1006,11 @@ const BookingDetail = () => {
               </div>
             </div>
             <p className="px-4 py-2 text-xs text-amber-900 bg-amber-50 border-b border-amber-100/80">
-              Preview only — nothing is sent. Sandbox blocks scripts and forms.
+              Preview only — nothing is sent. Sandbox blocks scripts; images may load for preview (same-origin).
             </p>
             <iframe
               title="Email HTML preview"
-              sandbox=""
+              sandbox="allow-same-origin"
               srcDoc={previewModal.html}
               className="w-full flex-1 min-h-[50vh] sm:min-h-[60vh] border-0 bg-zinc-100"
             />

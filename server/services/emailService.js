@@ -20,13 +20,84 @@ const FACEBOOK_URL = (
   process.env.FACEBOOK_URL || 'https://www.facebook.com/profile.php?id=61569960933269'
 ).trim();
 
-/** Absolute URL for logo in email `<img src>` (matches site favicon path by default). */
+function isLocalOrUnroutableOrigin(origin) {
+  try {
+    const u = new URL(origin);
+    const h = u.hostname.toLowerCase();
+    if (u.protocol === 'file:') return true;
+    return (
+      h === 'localhost' ||
+      h === '127.0.0.1' ||
+      h === '0.0.0.0' ||
+      h === '[::1]' ||
+      h.endsWith('.local')
+    );
+  } catch {
+    return true;
+  }
+}
+
+function upgradeToHttpsIfRemote(url) {
+  try {
+    const u = new URL(url);
+    if (u.protocol === 'http:' && !isLocalOrUnroutableOrigin(url)) {
+      u.protocol = 'https:';
+      return u.href;
+    }
+  } catch {
+    return url;
+  }
+  return url;
+}
+
+/**
+ * Absolute URL for `<img src>` in lifecycle email HTML.
+ * Uses EMAIL_BRAND_LOGO_URL when set; else joins EMAIL_BRAND_LOGO_PATH to a public origin.
+ * When APP_URL points at localhost (typical dev), uses EMAIL_PUBLIC_ASSET_ORIGIN or EMAIL_LOGO_FALLBACK_ORIGIN
+ * so previews and mail clients load a real HTTPS asset instead of a broken localhost URL.
+ */
 function resolveBrandLogoAbsoluteUrl() {
-  const raw = (process.env.EMAIL_BRAND_LOGO_URL || '').trim();
-  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+  const disable = process.env.EMAIL_BRAND_LOGO_DISABLE;
+  if (disable === '1' || disable === 'true' || disable === 'yes') {
+    return '';
+  }
+  const explicit = (process.env.EMAIL_BRAND_LOGO_URL || '').trim();
+  if (explicit === '0' || explicit.toLowerCase() === 'off' || explicit.toLowerCase() === 'false') {
+    return '';
+  }
+  if (explicit.startsWith('https://')) {
+    return explicit;
+  }
+  if (explicit.startsWith('http://')) {
+    return upgradeToHttpsIfRemote(explicit);
+  }
+
   const path = (process.env.EMAIL_BRAND_LOGO_PATH || '/uploads/Logo/DRIFTS-01.png').trim();
   const normalized = path.startsWith('/') ? path : `/${path}`;
-  return `${EMAIL_SITE_ORIGIN}${normalized}`;
+
+  const publicOrigin = (process.env.EMAIL_PUBLIC_ASSET_ORIGIN || '').trim().replace(/\/$/, '');
+  if (publicOrigin.startsWith('https://') || publicOrigin.startsWith('http://')) {
+    return `${upgradeToHttpsIfRemote(publicOrigin)}${normalized}`;
+  }
+
+  const fallbackOrigin = (process.env.EMAIL_LOGO_FALLBACK_ORIGIN || 'https://driftdwells.com')
+    .trim()
+    .replace(/\/$/, '');
+
+  if (isLocalOrUnroutableOrigin(EMAIL_SITE_ORIGIN)) {
+    return `${fallbackOrigin}${normalized}`;
+  }
+
+  let origin = EMAIL_SITE_ORIGIN;
+  try {
+    const u = new URL(origin);
+    if (u.protocol === 'http:') {
+      origin = upgradeToHttpsIfRemote(origin);
+    }
+  } catch {
+    return `${fallbackOrigin}${normalized}`;
+  }
+  return `${String(origin).replace(/\/$/, '')}${normalized}`;
 }
 
 function copyrightYear() {
