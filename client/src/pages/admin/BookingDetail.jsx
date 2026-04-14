@@ -99,6 +99,19 @@ function EmailActivityEventCard({ event }) {
                     <span className="text-gray-500">Subject:</span> {event.subject}
                   </div>
                 ) : null}
+                {event.details?.contentHash ? (
+                  <div className="text-gray-600 break-all">
+                    <span className="text-gray-500">Manual resend editor:</span> digest logged (body not stored)
+                    {event.details.manualContentEdited
+                      ? ' · differed from template defaults'
+                      : ' · matched template defaults'}
+                    {event.details.subjectEdited ? ' · subject changed' : ''}
+                    {event.details.bodyEdited ? ' · HTML changed' : ''}
+                    <span className="block font-mono text-[10px] text-gray-500 mt-0.5">
+                      {event.details.contentHash.slice(0, 16)}…
+                    </span>
+                  </div>
+                ) : null}
                 {event.errorMessage ? (
                   <div className="text-red-700">
                     <span className="text-gray-500">Error:</span> {event.errorMessage}
@@ -154,7 +167,24 @@ const BookingDetail = () => {
     html: '',
     templateKey: null
   });
+  const [editResendModal, setEditResendModal] = useState({
+    open: false,
+    templateKey: null,
+    subject: '',
+    html: '',
+    loading: false
+  });
+  const [editResendLoadingKey, setEditResendLoadingKey] = useState(null);
+  const [editResendSending, setEditResendSending] = useState(false);
   const [emailActionsMessage, setEmailActionsMessage] = useState({ tone: '', text: '' });
+
+  const actionsBusy =
+    !!resendLoadingKey ||
+    !!previewLoadingKey ||
+    !!editResendLoadingKey ||
+    editResendSending ||
+    editResendModal.loading ||
+    editResendModal.open;
 
   const fetchEmailEvents = useCallback(async (bookingId) => {
     try {
@@ -260,8 +290,30 @@ const BookingDetail = () => {
 
     const label = TEMPLATE_LABELS[templateKey] || templateKey;
     const usingOverride = Boolean((overrideRecipient || '').trim());
+    let composedSubject = '';
+    try {
+      const token = localStorage.getItem('adminToken');
+      const previewRes = await fetch(`/api/admin/bookings/${id}/email-actions/preview`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ templateKey })
+      });
+      const previewPayload = await previewRes.json().catch(() => ({}));
+      if (previewRes.ok && previewPayload.success && previewPayload.data?.subject) {
+        composedSubject = previewPayload.data.subject;
+      }
+    } catch {
+      /* confirm still works without subject line */
+    }
+
+    const subjectLine = composedSubject
+      ? `\n\nSubject: ${composedSubject}`
+      : '\n\nSubject: (composed from current booking data)';
     const ok = window.confirm(
-      `Send "${label}" now?\n\nTo: ${effective}${usingOverride ? '\n(using override address)' : '\n(guest email on file)'}`
+      `Send "${label}" now?\n\nTo: ${effective}${usingOverride ? '\n(using override address)' : '\n(guest email on file)'}${subjectLine}\n\nUses template defaults (not the edit-before-send path).`
     );
     if (!ok) return;
 
@@ -326,6 +378,186 @@ const BookingDetail = () => {
 
   const closePreviewModal = () => {
     setPreviewModal({ open: false, subject: '', html: '', templateKey: null });
+  };
+
+  const closeEditResendModal = () => {
+    setEditResendModal({
+      open: false,
+      templateKey: null,
+      subject: '',
+      html: '',
+      loading: false
+    });
+  };
+
+  const openEditFromPreview = () => {
+    if (!previewModal.templateKey) return;
+    setEditResendModal({
+      open: true,
+      templateKey: previewModal.templateKey,
+      subject: previewModal.subject || '',
+      html: previewModal.html || '',
+      loading: false
+    });
+    closePreviewModal();
+  };
+
+  const openEditResendModal = async (templateKey) => {
+    if (!booking) return;
+    setEditResendLoadingKey(templateKey);
+    setEditResendModal({
+      open: true,
+      templateKey,
+      subject: '',
+      html: '',
+      loading: true
+    });
+    setEmailActionsMessage({ tone: '', text: '' });
+    try {
+      const token = localStorage.getItem('adminToken');
+      const response = await fetch(`/api/admin/bookings/${id}/email-actions/preview`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ templateKey })
+      });
+      const payload = await response.json().catch(() => ({}));
+
+      if (response.status === 401) {
+        localStorage.removeItem('adminToken');
+        navigate('/admin/login');
+        return;
+      }
+
+      if (!response.ok || !payload.success || !payload.data?.html) {
+        setEditResendModal({
+          open: false,
+          templateKey: null,
+          subject: '',
+          html: '',
+          loading: false
+        });
+        setEmailActionsMessage({
+          tone: 'error',
+          text: payload.message || 'Could not load template for editing'
+        });
+        return;
+      }
+
+      setEditResendModal({
+        open: true,
+        templateKey,
+        subject: payload.data.subject || '',
+        html: payload.data.html || '',
+        loading: false
+      });
+    } catch (err) {
+      console.error('Load template for edit error:', err);
+      setEditResendModal({
+        open: false,
+        templateKey: null,
+        subject: '',
+        html: '',
+        loading: false
+      });
+      setEmailActionsMessage({ tone: 'error', text: 'Network error while loading template' });
+    } finally {
+      setEditResendLoadingKey(null);
+    }
+  };
+
+  const submitEditedResend = async () => {
+    if (!booking || !editResendModal.templateKey) return;
+    const guestEmail = booking.guestInfo?.email || '';
+    const effective = resolveEffectiveRecipient(overrideRecipient, guestEmail);
+    if (!effective) {
+      setEmailActionsMessage({
+        tone: 'error',
+        text: 'No recipient: enter an override email or ensure this booking has a guest email on file.'
+      });
+      return;
+    }
+
+    const subjectTrim = (editResendModal.subject || '').trim();
+    const htmlRaw = editResendModal.html || '';
+    if (!subjectTrim || !htmlRaw.trim()) {
+      setEmailActionsMessage({
+        tone: 'error',
+        text: 'Subject and HTML are required before sending.'
+      });
+      return;
+    }
+
+    const label = TEMPLATE_LABELS[editResendModal.templateKey] || editResendModal.templateKey;
+    const usingOverride = Boolean((overrideRecipient || '').trim());
+    const ok = window.confirm(
+      `Send edited "${label}"?\n\nTo: ${effective}${usingOverride ? '\n(using override address)' : '\n(guest email on file)'}\n\nSubject: ${subjectTrim}`
+    );
+    if (!ok) return;
+
+    setEditResendSending(true);
+    setEmailActionsMessage({ tone: '', text: '' });
+
+    try {
+      const token = localStorage.getItem('adminToken');
+      const body = {
+        templateKey: editResendModal.templateKey,
+        editedContent: { subject: subjectTrim, html: htmlRaw }
+      };
+      const trimmedOverride = (overrideRecipient || '').trim();
+      if (trimmedOverride) {
+        body.overrideRecipient = trimmedOverride;
+      }
+
+      const response = await fetch(`/api/admin/bookings/${id}/email-actions/resend`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(body)
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (response.status === 401) {
+        localStorage.removeItem('adminToken');
+        navigate('/admin/login');
+        return;
+      }
+
+      if (!response.ok) {
+        setEmailActionsMessage({
+          tone: 'error',
+          text: payload.message || 'Request failed'
+        });
+        return;
+      }
+
+      if (payload.success) {
+        setEmailActionsMessage({
+          tone: 'success',
+          text: `Sent (edited). Status: ${payload.data?.sendStatus || 'success'}. Recipient: ${payload.data?.recipient || effective}.`
+        });
+        closeEditResendModal();
+      } else {
+        setEmailActionsMessage({
+          tone: 'error',
+          text: `Send completed with provider issue. Status: ${payload.data?.sendStatus || 'unknown'}. ${
+            payload.data?.emailEvent?.errorMessage || ''
+          }`.trim()
+        });
+      }
+
+      fetchEmailEvents(booking._id);
+    } catch (err) {
+      console.error('Edited resend error:', err);
+      setEmailActionsMessage({ tone: 'error', text: 'Network error while sending' });
+    } finally {
+      setEditResendSending(false);
+    }
   };
 
   const handlePreviewTemplate = async (templateKey) => {
@@ -585,9 +817,9 @@ const BookingDetail = () => {
         <div className="px-6 py-5">
           <h3 className="text-sm font-semibold text-gray-900">Booking Email Actions</h3>
           <p className="mt-1 max-w-2xl text-sm text-gray-500">
-            Preview shows the composed email in your browser without sending. Resend sends using current booking data.
-            Neither changes booking status, guest contact on the booking, or payments. Leave override blank to use the
-            guest email on file (
+            Preview is read-only. Resend uses template defaults. Edit &amp; resend loads the same composition, lets you
+            adjust subject and HTML (plain text is derived on the server), then sends once. Nothing here changes booking
+            status, guest contact on the booking, or payments. Leave override blank to use the guest email on file (
             <span className="font-medium text-gray-700">{guestEmail || 'none'}</span>
             ). Next send will go to:{' '}
             <span className="font-medium text-gray-900">{previewRecipient}</span>.
@@ -619,55 +851,57 @@ const BookingDetail = () => {
               {emailActionsMessage.text}
             </div>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            <button
-              type="button"
-              disabled={!!resendLoadingKey || !!previewLoadingKey}
-              onClick={() => handleResendTemplate(TEMPLATE_KEYS.BOOKING_RECEIVED)}
-              className="inline-flex justify-center items-center px-4 py-2.5 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {resendLoadingKey === TEMPLATE_KEYS.BOOKING_RECEIVED ? 'Sending…' : 'Resend booking email'}
-            </button>
-            <button
-              type="button"
-              disabled={!!resendLoadingKey || !!previewLoadingKey}
-              onClick={() => handlePreviewTemplate(TEMPLATE_KEYS.BOOKING_RECEIVED)}
-              className="inline-flex justify-center items-center px-4 py-2.5 text-sm font-medium rounded-lg border border-gray-200 bg-gray-50 text-gray-800 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {previewLoadingKey === TEMPLATE_KEYS.BOOKING_RECEIVED ? 'Loading…' : 'Preview booking email'}
-            </button>
-            <button
-              type="button"
-              disabled={!!resendLoadingKey || !!previewLoadingKey}
-              onClick={() => handleResendTemplate(TEMPLATE_KEYS.BOOKING_CONFIRMED)}
-              className="inline-flex justify-center items-center px-4 py-2.5 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {resendLoadingKey === TEMPLATE_KEYS.BOOKING_CONFIRMED ? 'Sending…' : 'Resend confirmation email'}
-            </button>
-            <button
-              type="button"
-              disabled={!!resendLoadingKey || !!previewLoadingKey}
-              onClick={() => handlePreviewTemplate(TEMPLATE_KEYS.BOOKING_CONFIRMED)}
-              className="inline-flex justify-center items-center px-4 py-2.5 text-sm font-medium rounded-lg border border-gray-200 bg-gray-50 text-gray-800 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {previewLoadingKey === TEMPLATE_KEYS.BOOKING_CONFIRMED ? 'Loading…' : 'Preview confirmation email'}
-            </button>
-            <button
-              type="button"
-              disabled={!!resendLoadingKey || !!previewLoadingKey}
-              onClick={() => handleResendTemplate(TEMPLATE_KEYS.BOOKING_CANCELLED)}
-              className="inline-flex justify-center items-center px-4 py-2.5 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {resendLoadingKey === TEMPLATE_KEYS.BOOKING_CANCELLED ? 'Sending…' : 'Resend cancellation email'}
-            </button>
-            <button
-              type="button"
-              disabled={!!resendLoadingKey || !!previewLoadingKey}
-              onClick={() => handlePreviewTemplate(TEMPLATE_KEYS.BOOKING_CANCELLED)}
-              className="inline-flex justify-center items-center px-4 py-2.5 text-sm font-medium rounded-lg border border-gray-200 bg-gray-50 text-gray-800 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {previewLoadingKey === TEMPLATE_KEYS.BOOKING_CANCELLED ? 'Loading…' : 'Preview cancellation email'}
-            </button>
+          <div className="space-y-3">
+            {[
+              {
+                key: TEMPLATE_KEYS.BOOKING_RECEIVED,
+                resendLabel: 'Resend',
+                previewLabel: 'Preview'
+              },
+              {
+                key: TEMPLATE_KEYS.BOOKING_CONFIRMED,
+                resendLabel: 'Resend',
+                previewLabel: 'Preview'
+              },
+              {
+                key: TEMPLATE_KEYS.BOOKING_CANCELLED,
+                resendLabel: 'Resend',
+                previewLabel: 'Preview'
+              }
+            ].map(({ key, resendLabel, previewLabel }) => (
+              <div
+                key={key}
+                className="rounded-lg border border-gray-100 bg-gray-50/50 px-3 py-3 sm:px-4 max-w-3xl"
+              >
+                <div className="text-xs font-medium text-gray-600 mb-2">{TEMPLATE_LABELS[key]}</div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={actionsBusy}
+                    onClick={() => handleResendTemplate(key)}
+                    className="inline-flex justify-center items-center px-3 py-2 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {resendLoadingKey === key ? 'Sending…' : resendLabel}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={actionsBusy}
+                    onClick={() => handlePreviewTemplate(key)}
+                    className="inline-flex justify-center items-center px-3 py-2 text-sm font-medium rounded-lg border border-gray-200 bg-gray-50 text-gray-800 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {previewLoadingKey === key ? 'Loading…' : previewLabel}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={actionsBusy}
+                    onClick={() => openEditResendModal(key)}
+                    className="inline-flex justify-center items-center px-3 py-2 text-sm font-medium rounded-lg border border-[#81887A]/30 bg-white text-gray-800 hover:bg-[#81887A]/5 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {editResendLoadingKey === key ? 'Loading…' : 'Edit & resend'}
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -753,13 +987,23 @@ const BookingDetail = () => {
                 </p>
                 <p className="mt-0.5 text-xs text-gray-600 break-words">{previewModal.subject}</p>
               </div>
-              <button
-                type="button"
-                onClick={closePreviewModal}
-                className="shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 border border-gray-200"
-              >
-                Close
-              </button>
+              <div className="flex flex-wrap gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={openEditFromPreview}
+                  disabled={actionsBusy}
+                  className="rounded-lg px-3 py-1.5 text-sm font-medium text-white bg-[#81887A] hover:bg-[#6d7366] border border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Edit &amp; resend
+                </button>
+                <button
+                  type="button"
+                  onClick={closePreviewModal}
+                  className="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 border border-gray-200"
+                >
+                  Close
+                </button>
+              </div>
             </div>
             <p className="px-4 py-2 text-xs text-amber-900 bg-amber-50 border-b border-amber-100/80">
               Preview only — nothing is sent. Sandbox blocks scripts and forms.
@@ -770,6 +1014,103 @@ const BookingDetail = () => {
               srcDoc={previewModal.html}
               className="w-full flex-1 min-h-[50vh] sm:min-h-[60vh] border-0 bg-zinc-100"
             />
+          </div>
+        </div>
+      ) : null}
+
+      {editResendModal.open ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="email-edit-resend-title"
+        >
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            aria-label="Close editor"
+            onClick={() => {
+              if (!editResendSending) closeEditResendModal();
+            }}
+          />
+          <div className="relative w-full max-w-4xl max-h-[min(92vh,900px)] flex flex-col rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-100 px-4 py-3 sm:px-5">
+              <div className="min-w-0 flex-1">
+                <h2 id="email-edit-resend-title" className="text-sm font-semibold text-gray-900">
+                  Edit before resend
+                </h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  {TEMPLATE_LABELS[editResendModal.templateKey] || editResendModal.templateKey || ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={editResendSending}
+                onClick={closeEditResendModal}
+                className="shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 border border-gray-200 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+            {editResendModal.loading ? (
+              <div className="px-4 py-10 text-center text-sm text-gray-500">Loading template…</div>
+            ) : (
+              <>
+                <p className="px-4 py-2 text-xs text-gray-600 bg-gray-50 border-b border-gray-100 sm:px-5">
+                  Recipient for this send: <span className="font-medium text-gray-900">{previewRecipient}</span>. Plain
+                  text is derived from HTML on the server; obvious script tags and{' '}
+                  <span className="font-mono">javascript:</span> URLs are stripped.
+                </p>
+                <div className="flex-1 overflow-y-auto px-4 py-3 sm:px-5 space-y-3">
+                  <div>
+                    <label htmlFor="edit-resend-subject" className="block text-xs font-medium text-gray-500 mb-1">
+                      Subject
+                    </label>
+                    <input
+                      id="edit-resend-subject"
+                      type="text"
+                      value={editResendModal.subject}
+                      onChange={(e) =>
+                        setEditResendModal((prev) => ({ ...prev, subject: e.target.value }))
+                      }
+                      className="w-full max-w-2xl px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="edit-resend-html" className="block text-xs font-medium text-gray-500 mb-1">
+                      HTML body
+                    </label>
+                    <textarea
+                      id="edit-resend-html"
+                      rows={14}
+                      value={editResendModal.html}
+                      onChange={(e) =>
+                        setEditResendModal((prev) => ({ ...prev, html: e.target.value }))
+                      }
+                      className="w-full font-mono text-xs sm:text-sm px-3 py-2 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A] min-h-[200px] lg:min-h-[280px]"
+                    />
+                  </div>
+                </div>
+                <div className="border-t border-gray-100 px-4 py-3 sm:px-5 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    disabled={editResendSending}
+                    onClick={closeEditResendModal}
+                    className="rounded-lg px-4 py-2 text-sm font-medium text-gray-700 border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={editResendSending}
+                    onClick={submitEditedResend}
+                    className="rounded-lg px-4 py-2 text-sm font-medium text-white bg-[#81887A] hover:bg-[#6d7366] disabled:opacity-50"
+                  >
+                    {editResendSending ? 'Sending…' : 'Confirm send'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       ) : null}

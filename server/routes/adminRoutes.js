@@ -71,7 +71,7 @@ router.patch('/bookings/:id/status', validateId('id'), [
   updateBookingStatus(req, res);
 });
 
-// POST /api/admin/bookings/:id/email-actions/resend — manual lifecycle template resend (no booking mutation)
+// POST /api/admin/bookings/:id/email-actions/resend — manual lifecycle resend (optional body.editedContent: { subject, html })
 router.post(
   '/bookings/:id/email-actions/resend',
   validateId('id'),

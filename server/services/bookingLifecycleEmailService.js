@@ -2,6 +2,11 @@ const Cabin = require('../models/Cabin');
 const CabinType = require('../models/CabinType');
 const EmailEvent = require('../models/EmailEvent');
 const emailService = require('./emailService');
+const {
+  sanitizeManualResendHtml,
+  derivePlainTextFromHtml,
+  hashManualResendHtml
+} = require('../utils/manualLifecycleResendContent');
 
 const TEMPLATE_KEYS = {
   BOOKING_RECEIVED: 'booking_received',
@@ -89,7 +94,8 @@ async function persistLifecycleEmailEvent({
   errorMessage,
   actorId,
   actorRole,
-  messageId
+  messageId,
+  manualEditDetails = null
 }) {
   const doc = {
     provider: 'app',
@@ -113,7 +119,8 @@ async function persistLifecycleEmailEvent({
       templateKey,
       lifecycleSource,
       emailTrigger,
-      deliveryMethod
+      deliveryMethod,
+      ...(manualEditDetails && typeof manualEditDetails === 'object' ? manualEditDetails : {})
     }
   };
   if (messageId) {
@@ -139,13 +146,34 @@ async function sendBookingLifecycleEmail({
   overrideRecipient = null,
   lifecycleSource,
   actorContext = null,
-  entity = null
+  entity = null,
+  manualContentOverride = null
 }) {
   if (!booking?._id) {
     throw new Error('booking with _id is required');
   }
   if (!isValidGuestTemplateKey(templateKey)) {
     throw new Error(`Invalid templateKey: ${templateKey}`);
+  }
+
+  if (manualContentOverride != null) {
+    if (lifecycleSource !== 'manual_resend') {
+      const err = new Error('Manual content overrides are only allowed for manual resend');
+      err.code = 'CONTENT_OVERRIDE_NOT_ALLOWED';
+      throw err;
+    }
+    if (typeof manualContentOverride !== 'object') {
+      const err = new Error('manualContentOverride must be an object');
+      err.code = 'INVALID_MANUAL_EDIT';
+      throw err;
+    }
+    const s = manualContentOverride.subject != null ? String(manualContentOverride.subject).trim() : '';
+    const h = manualContentOverride.html != null ? String(manualContentOverride.html) : '';
+    if (!s || !h.trim()) {
+      const err = new Error('Edited subject and HTML are required for manual content override');
+      err.code = 'INVALID_MANUAL_EDIT';
+      throw err;
+    }
   }
 
   const normalizedOverride = normalizeRecipientOverride(overrideRecipient);
@@ -164,15 +192,36 @@ async function sendBookingLifecycleEmail({
   }
 
   const entityResolved = entity || (await loadEntityForBooking(booking));
-  const payload = composePayload(templateKey, booking, entityResolved);
+  const basePayload = composePayload(templateKey, booking, entityResolved);
   const emailTrigger = TRIGGER_BY_TEMPLATE[templateKey];
   const skipIdempotencyWindow = lifecycleSource === 'manual_resend';
 
+  let finalSubject = basePayload.subject;
+  let finalHtml = basePayload.html;
+  let finalText = basePayload.text;
+  let manualEditDetails = null;
+
+  if (manualContentOverride) {
+    finalSubject = String(manualContentOverride.subject).trim();
+    finalHtml = sanitizeManualResendHtml(String(manualContentOverride.html));
+    finalText = derivePlainTextFromHtml(finalHtml);
+    const defaultHtmlSanitized = sanitizeManualResendHtml(basePayload.html);
+    const subjectEdited = finalSubject !== String(basePayload.subject).trim();
+    const bodyEdited = finalHtml !== defaultHtmlSanitized;
+    const manualContentEdited = subjectEdited || bodyEdited;
+    manualEditDetails = {
+      manualContentEdited,
+      subjectEdited,
+      bodyEdited,
+      contentHash: hashManualResendHtml(finalHtml)
+    };
+  }
+
   const sendResult = await emailService.sendEmail({
     to: recipient,
-    subject: payload.subject,
-    html: payload.html,
-    text: payload.text,
+    subject: finalSubject,
+    html: finalHtml,
+    text: finalText,
     trigger: emailTrigger,
     bookingId: booking._id,
     skipIdempotencyWindow
@@ -188,13 +237,14 @@ async function sendBookingLifecycleEmail({
     sendStatus,
     deliveryMethod,
     to: recipient,
-    subject: payload.subject,
+    subject: finalSubject,
     overrideRecipientUsed: Boolean(normalizedOverride),
     guestEmailAtSend: guestEmail || null,
     errorMessage: sendResult.success ? undefined : sendResult.error,
     actorId: actorContext?.actorId,
     actorRole: actorContext?.actorRole,
-    messageId: sendResult.messageId
+    messageId: sendResult.messageId,
+    manualEditDetails
   });
 
   return {

@@ -1700,7 +1700,53 @@ const createCabin = async (req, res) => {
 const BOOKING_EMAIL_POPULATE_FIELDS =
   'name description imageUrl location meetingPoint packingList arrivalGuideUrl safetyNotes emergencyContact arrivalWindowDefault transportCutoffs';
 
-// POST body: { templateKey, overrideRecipient? } — manual resend only; does not mutate booking or payments
+const {
+  MAX_MANUAL_RESEND_SUBJECT_LENGTH,
+  MAX_MANUAL_RESEND_HTML_LENGTH
+} = require('../utils/manualLifecycleResendContent');
+
+function parseManualResendEditedContent(body) {
+  const raw = body?.editedContent;
+  if (raw == null) return null;
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
+    const err = new Error('editedContent must be an object with subject and html strings');
+    err.code = 'INVALID_MANUAL_EDIT';
+    throw err;
+  }
+  const hasSubject = Object.prototype.hasOwnProperty.call(raw, 'subject');
+  const hasHtml = Object.prototype.hasOwnProperty.call(raw, 'html');
+  if (!hasSubject && !hasHtml) return null;
+  if (!hasSubject || !hasHtml) {
+    const err = new Error('editedContent must include both subject and html');
+    err.code = 'INVALID_MANUAL_EDIT';
+    throw err;
+  }
+  const subject = String(raw.subject).trim();
+  const html = String(raw.html);
+  if (!subject) {
+    const err = new Error('Edited subject cannot be empty');
+    err.code = 'INVALID_MANUAL_EDIT';
+    throw err;
+  }
+  if (!html.trim()) {
+    const err = new Error('Edited HTML cannot be empty');
+    err.code = 'INVALID_MANUAL_EDIT';
+    throw err;
+  }
+  if (subject.length > MAX_MANUAL_RESEND_SUBJECT_LENGTH) {
+    const err = new Error(`Edited subject must be at most ${MAX_MANUAL_RESEND_SUBJECT_LENGTH} characters`);
+    err.code = 'INVALID_MANUAL_EDIT';
+    throw err;
+  }
+  if (html.length > MAX_MANUAL_RESEND_HTML_LENGTH) {
+    const err = new Error(`Edited HTML must be at most ${MAX_MANUAL_RESEND_HTML_LENGTH} characters`);
+    err.code = 'INVALID_MANUAL_EDIT';
+    throw err;
+  }
+  return { subject, html };
+}
+
+// POST body: { templateKey, overrideRecipient?, editedContent?: { subject, html } } — manual resend only; does not mutate booking or payments
 const resendBookingLifecycleEmail = async (req, res) => {
   try {
     await assertAdminModuleWriteAllowed('reservations');
@@ -1719,6 +1765,16 @@ const resendBookingLifecycleEmail = async (req, res) => {
       });
     }
 
+    let manualContentOverride = null;
+    try {
+      manualContentOverride = parseManualResendEditedContent(req.body);
+    } catch (parseErr) {
+      if (parseErr.code === 'INVALID_MANUAL_EDIT') {
+        return res.status(400).json({ success: false, message: parseErr.message, errorType: parseErr.code });
+      }
+      throw parseErr;
+    }
+
     const booking = await Booking.findById(id)
       .populate('cabinId', BOOKING_EMAIL_POPULATE_FIELDS)
       .populate('cabinTypeId', BOOKING_EMAIL_POPULATE_FIELDS);
@@ -1735,7 +1791,8 @@ const resendBookingLifecycleEmail = async (req, res) => {
       actorContext: {
         actorId: req.user?.id || null,
         actorRole: req.user?.role || null
-      }
+      },
+      manualContentOverride
     });
 
     const ev = result.emailEvent;
@@ -1763,12 +1820,19 @@ const resendBookingLifecycleEmail = async (req, res) => {
               actorId: ev.actorId,
               actorRole: ev.actorRole,
               errorMessage: ev.errorMessage,
-              messageId: ev.messageId || null
+              messageId: ev.messageId || null,
+              details: ev.details || null
             }
           : null
       }
     });
   } catch (error) {
+    if (error.code === 'INVALID_MANUAL_EDIT') {
+      return res.status(400).json({ success: false, message: error.message, errorType: error.code });
+    }
+    if (error.code === 'CONTENT_OVERRIDE_NOT_ALLOWED') {
+      return res.status(403).json({ success: false, message: error.message, errorType: error.code });
+    }
     if (error.code === 'INVALID_OVERRIDE_EMAIL' || error.code === 'MISSING_RECIPIENT') {
       return res.status(400).json({ success: false, message: error.message, errorType: error.code });
     }

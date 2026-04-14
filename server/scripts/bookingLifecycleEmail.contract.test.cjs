@@ -234,4 +234,120 @@ describe('sendBookingLifecycleEmail', () => {
       (err) => err.code === 'INVALID_OVERRIDE_EMAIL'
     );
   });
+
+  test('automatic send rejects manual content override', async () => {
+    emailService.sendEmail = async () => assert.fail('sendEmail should not run');
+    const booking = minimalBooking();
+    await assert.rejects(
+      () =>
+        bookingLifecycleEmailService.sendBookingLifecycleEmail({
+          booking,
+          templateKey: bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_RECEIVED,
+          lifecycleSource: 'automatic',
+          actorContext: null,
+          entity: minimalEntity,
+          manualContentOverride: { subject: 'X', html: '<p>x</p>' }
+        }),
+      (err) => err.code === 'CONTENT_OVERRIDE_NOT_ALLOWED'
+    );
+  });
+
+  test('manual_resend with edited content sends overridden subject and derived text', async () => {
+    let capturedSend = null;
+    let capturedCreate = null;
+
+    emailService.sendEmail = async (opts) => {
+      capturedSend = opts;
+      return { success: true, method: 'sent', messageId: 'mid-edit-1' };
+    };
+    EmailEvent.create = async (doc) => {
+      capturedCreate = doc;
+      return { ...doc, _id: new mongoose.Types.ObjectId() };
+    };
+
+    const booking = minimalBooking();
+    await bookingLifecycleEmailService.sendBookingLifecycleEmail({
+      booking,
+      templateKey: bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_RECEIVED,
+      overrideRecipient: null,
+      lifecycleSource: 'manual_resend',
+      actorContext: { actorId: 'admin1', actorRole: 'admin' },
+      entity: minimalEntity,
+      manualContentOverride: {
+        subject: 'Custom subject line',
+        html: '<p>Hello</p><script>evil()</script><a href="javascript:alert(1)">x</a>'
+      }
+    });
+
+    assert.strictEqual(capturedSend.subject, 'Custom subject line');
+    assert.ok(!capturedSend.html.toLowerCase().includes('<script'));
+    assert.ok(!capturedSend.html.includes('javascript:'));
+    assert.strictEqual(capturedSend.text.includes('<'), false);
+    assert.ok(capturedSend.text.includes('Hello'));
+    assert.strictEqual(capturedCreate.subject, 'Custom subject line');
+    assert.ok(capturedCreate.details.contentHash && capturedCreate.details.contentHash.length === 64);
+    assert.strictEqual(capturedCreate.details.manualContentEdited, true);
+    assert.strictEqual(capturedCreate.details.subjectEdited, true);
+    assert.strictEqual(capturedCreate.details.bodyEdited, true);
+  });
+
+  test('manual_resend with edited content identical to template logs hash and flags false', async () => {
+    let capturedSend = null;
+    let capturedCreate = null;
+
+    emailService.sendEmail = async (opts) => {
+      capturedSend = opts;
+      return { success: true, method: 'logged' };
+    };
+    EmailEvent.create = async (doc) => {
+      capturedCreate = doc;
+      return { ...doc, _id: new mongoose.Types.ObjectId() };
+    };
+
+    const booking = minimalBooking();
+    const base = emailService.generateBookingReceivedEmail(booking, minimalEntity);
+
+    await bookingLifecycleEmailService.sendBookingLifecycleEmail({
+      booking,
+      templateKey: bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_RECEIVED,
+      lifecycleSource: 'manual_resend',
+      actorContext: null,
+      entity: minimalEntity,
+      manualContentOverride: { subject: base.subject, html: base.html }
+    });
+
+    assert.strictEqual(capturedSend.subject, base.subject);
+    assert.strictEqual(capturedCreate.details.manualContentEdited, false);
+    assert.strictEqual(capturedCreate.details.subjectEdited, false);
+    assert.strictEqual(capturedCreate.details.bodyEdited, false);
+    assert.ok(capturedCreate.details.contentHash);
+  });
+});
+
+describe('manualLifecycleResendContent', () => {
+  const {
+    sanitizeManualResendHtml,
+    derivePlainTextFromHtml,
+    MAX_MANUAL_RESEND_SUBJECT_LENGTH
+  } = require('../utils/manualLifecycleResendContent');
+
+  test('sanitize strips script and javascript URLs', () => {
+    const html =
+      '<div><a href="javascript:void(0)">j</a><script>bad()</script><p>ok</p></div>';
+    const s = sanitizeManualResendHtml(html);
+    assert.ok(!s.toLowerCase().includes('<script'));
+    assert.ok(!s.includes('javascript:'));
+    assert.ok(s.includes('ok'));
+  });
+
+  test('derivePlainTextFromHtml removes tags', () => {
+    const t = derivePlainTextFromHtml('<p>a&nbsp;b</p>');
+    assert.strictEqual(t.includes('<'), false);
+    assert.ok(t.includes('a'));
+    assert.ok(t.includes('b'));
+  });
+
+  test('max subject length constant is bounded', () => {
+    assert.ok(MAX_MANUAL_RESEND_SUBJECT_LENGTH > 0 && MAX_MANUAL_RESEND_SUBJECT_LENGTH <= 998);
+  });
 });
