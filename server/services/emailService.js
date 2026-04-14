@@ -2,6 +2,8 @@ const nodemailer = require('nodemailer');
 const { resolveGuideUrl, isPdfUrl } = require('../utils/arrivalGuideUrl');
 const { htmlEscape } = require('../utils/htmlEscape');
 const {
+  BRAND_SAGE,
+  buildDetailRowsTable,
   buildGuestTransactionalHtml,
   buildInternalNotificationHtml,
   GUEST_LIFECYCLE_RECEIVED_EXTRA_CSS,
@@ -18,6 +20,15 @@ const FACEBOOK_URL = (
   process.env.FACEBOOK_URL || 'https://www.facebook.com/profile.php?id=61569960933269'
 ).trim();
 
+/** Absolute URL for logo in email `<img src>` (matches site favicon path by default). */
+function resolveBrandLogoAbsoluteUrl() {
+  const raw = (process.env.EMAIL_BRAND_LOGO_URL || '').trim();
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+  const path = (process.env.EMAIL_BRAND_LOGO_PATH || '/uploads/Logo/DRIFTS-01.png').trim();
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  return `${EMAIL_SITE_ORIGIN}${normalized}`;
+}
+
 function copyrightYear() {
   return new Date().getFullYear();
 }
@@ -28,14 +39,16 @@ function guestEmailFooterHtml() {
   const y = copyrightYear();
   return `
           <div class="footer">
-            <p class="footer-legal">© ${y} Drift &amp; Dwells. All rights reserved.</p>
-            <p><a href="${htmlEscape(terms)}">Terms of Service</a> | <a href="${htmlEscape(privacy)}">Privacy Policy</a></p>
-            <p><a href="${htmlEscape(INSTAGRAM_URL)}">Instagram</a> | <a href="${htmlEscape(FACEBOOK_URL)}">Facebook</a></p>
+            <p class="footer-tagline">Off-grid eco-retreat · Bulgaria</p>
+            <p class="footer-home"><a href="${htmlEscape(EMAIL_SITE_ORIGIN)}">driftdwells.com</a></p>
+            <p><a href="${htmlEscape(terms)}">Terms</a> · <a href="${htmlEscape(privacy)}">Privacy</a> · <a href="${htmlEscape(INSTAGRAM_URL)}">Instagram</a> · <a href="${htmlEscape(FACEBOOK_URL)}">Facebook</a></p>
+            <p class="footer-legal">© ${y} Drift &amp; Dwells</p>
           </div>`;
 }
 
 function guestEmailFooterText() {
-  return `Terms: ${EMAIL_SITE_ORIGIN}/terms
+  return `driftdwells.com · Off-grid eco-retreat · Bulgaria
+Terms: ${EMAIL_SITE_ORIGIN}/terms
 Privacy: ${EMAIL_SITE_ORIGIN}/privacy
 Instagram: ${INSTAGRAM_URL}
 Facebook: ${FACEBOOK_URL}`;
@@ -272,54 +285,53 @@ class EmailService {
       stay = FALLBACK_STAY_ENTITY;
     }
 
+    const bookingDetailRows = [
+      { label: 'Cabin', valueHtml: `${htmlEscape(stay.name)} • ${htmlEscape(stay.location)}` },
+      {
+        label: 'Check-in',
+        valueHtml: `${htmlEscape(checkIn.toLocaleDateString('en-GB'))} (${htmlEscape(stay.arrivalWindowDefault || 'TBD')})`
+      },
+      { label: 'Check-out', valueHtml: htmlEscape(checkOut.toLocaleDateString('en-GB')) },
+      {
+        label: 'Duration',
+        valueHtml: htmlEscape(`${nights} night${nights !== 1 ? 's' : ''}`)
+      },
+      {
+        label: 'Guests',
+        valueHtml: htmlEscape(
+          `${booking.adults} adult${booking.adults !== 1 ? 's' : ''}${
+            booking.children > 0
+              ? `, ${booking.children} child${booking.children !== 1 ? 'ren' : ''}`
+              : ''
+          }`
+        )
+      },
+      { label: 'Trip type', valueHtml: htmlEscape(booking.tripType || 'Custom Experience') }
+    ];
+    if (booking.transportMethod && booking.transportMethod !== 'Not selected') {
+      bookingDetailRows.push({ label: 'Transport', valueHtml: htmlEscape(booking.transportMethod) });
+    }
+    bookingDetailRows.push({
+      label: 'Total',
+      valueHtml: `<span class="total-accent">€${htmlEscape(String(booking.totalPrice))}</span>`
+    });
+    const receivedDetailsTable = buildDetailRowsTable(bookingDetailRows);
+
     const bodyHtml = `
-            <h2>Hello ${htmlEscape(booking.guestInfo?.firstName)}</h2>
+            <h2 class="email-heading">Hello ${htmlEscape(booking.guestInfo?.firstName)}</h2>
             <p class="lede">Thank you for choosing Drift &amp; Dwells. We've received your booking request and will confirm your stay as soon as we can—usually within 24 hours. This email is not a final confirmation yet.</p>
 
             <div class="booking-details">
               <h3>Your request</h3>
-              <div class="detail-row">
-                <span class="detail-label">Cabin</span>
-                <span>${htmlEscape(stay.name)} • ${htmlEscape(stay.location)}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Check-in</span>
-                <span>${checkIn.toLocaleDateString('en-GB')} (${htmlEscape(stay.arrivalWindowDefault || 'TBD')})</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Check-out</span>
-                <span>${checkOut.toLocaleDateString('en-GB')}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Duration</span>
-                <span>${nights} night${nights !== 1 ? 's' : ''}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Guests</span>
-                <span>${booking.adults} adult${booking.adults !== 1 ? 's' : ''}${booking.children > 0 ? `, ${booking.children} child${booking.children !== 1 ? 'ren' : ''}` : ''}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Trip type</span>
-                <span>${htmlEscape(booking.tripType || 'Custom Experience')}</span>
-              </div>
-              ${booking.transportMethod && booking.transportMethod !== 'Not selected' ? `
-              <div class="detail-row">
-                <span class="detail-label">Transport</span>
-                <span>${htmlEscape(booking.transportMethod)}</span>
-              </div>
-              ` : ''}
-              <div class="detail-row">
-                <span class="detail-label">Total</span>
-                <span class="total-accent">€${booking.totalPrice}</span>
-              </div>
+              ${receivedDetailsTable}
             </div>
 
             ${stay.meetingPoint?.googleMapsUrl ? `
             <div class="guidance-section">
               <h3>Directions</h3>
               <p><strong>Meeting point:</strong> ${htmlEscape(stay.meetingPoint.label || stay.location)}</p>
-              <a href="${stay.meetingPoint.googleMapsUrl}" class="btn btn-sage" target="_blank" rel="noopener noreferrer">Open in Google Maps</a>
-              ${stay.meetingPoint.what3words ? `<a href="https://what3words.com/${stay.meetingPoint.what3words}" class="btn btn-sage" target="_blank" rel="noopener noreferrer">///${stay.meetingPoint.what3words}</a>` : ''}
+              <a href="${stay.meetingPoint.googleMapsUrl}" class="btn btn-brand" target="_blank" rel="noopener noreferrer">Open in Google Maps</a>
+              ${stay.meetingPoint.what3words ? `<a href="https://what3words.com/${stay.meetingPoint.what3words}" class="btn btn-brand" target="_blank" rel="noopener noreferrer">///${stay.meetingPoint.what3words}</a>` : ''}
               ${stay.meetingPoint.lat && stay.meetingPoint.lng ? `<p style="margin: 10px 0 0; font-family: ui-monospace, monospace; background: #fff; padding: 8px 10px; border-radius: 6px; font-size: 14px;">GPS: ${stay.meetingPoint.lat}, ${stay.meetingPoint.lng}</p>` : ''}
             </div>
             ` : ''}
@@ -339,7 +351,7 @@ class EmailService {
             <div class="guidance-section valley">
               <h3>Welcome guide</h3>
               <p>Use your trip guide to complete checklists, choose your arrival route, and prepare for The Valley.</p>
-              <a href="${process.env.APP_URL || 'http://localhost:5173'}/my-trip/${booking._id}/valley-guide" class="btn btn-blue" target="_blank" rel="noopener noreferrer">Open welcome guide</a>
+              <a href="${process.env.APP_URL || 'http://localhost:5173'}/my-trip/${booking._id}/valley-guide" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">Open welcome guide</a>
               <p style="margin-top: 10px; font-size: 14px; color: #5a5a54;">Please complete your trip checklist at least 24 hours before arrival.</p>
             </div>
             ` : ''}
@@ -348,7 +360,7 @@ class EmailService {
             <div class="guidance-section">
               <h3>Arrival guide</h3>
               <p>Open practical route and arrival instructions (save offline before travel):</p>
-              <a href="${resolveGuideUrl(stay.arrivalGuideUrl, process.env.APP_URL)}" class="btn btn-sage" target="_blank" rel="noopener noreferrer">${isPdfUrl(stay.arrivalGuideUrl) ? 'Download PDF guide' : 'Open arrival guide'}</a>
+              <a href="${resolveGuideUrl(stay.arrivalGuideUrl, process.env.APP_URL)}" class="btn btn-brand" target="_blank" rel="noopener noreferrer">${isPdfUrl(stay.arrivalGuideUrl) ? 'Download PDF guide' : 'Open arrival guide'}</a>
             </div>
             ` : ''}
 
@@ -381,8 +393,10 @@ class EmailService {
     const html = buildGuestTransactionalHtml({
       title: 'Booking request received — Drift & Dwells',
       preheader: `We received your request for ${htmlEscape(stay.name)} — check-in ${checkIn.toLocaleDateString('en-GB')}`,
-      headerGradientFrom: '#5c6156',
-      headerGradientTo: '#5c6156',
+      logoUrl: resolveBrandLogoAbsoluteUrl(),
+      siteHomeUrl: EMAIL_SITE_ORIGIN,
+      headerAccentColor: BRAND_SAGE,
+      headerLogoWidth: 208,
       headerTagline:
         '<span class="email-kicker">Request received</span><span class="email-tagline-lead">We will confirm your stay by email.</span>',
       bodyHtml,
@@ -464,34 +478,33 @@ ${guestEmailFooterText()}
     const checkOut = new Date(booking.checkOut);
     const nights = Math.ceil((checkOut - checkIn) / (1000 * 3600 * 24));
 
+    const confirmedDetailRows = [
+      { label: 'Cabin', valueHtml: `${htmlEscape(cabin.name)} • ${htmlEscape(cabin.location)}` },
+      {
+        label: 'Check-in',
+        valueHtml: `${htmlEscape(checkIn.toLocaleDateString('en-GB'))} (${htmlEscape(cabin.arrivalWindowDefault || 'TBD')})`
+      },
+      { label: 'Check-out', valueHtml: htmlEscape(checkOut.toLocaleDateString('en-GB')) },
+      {
+        label: 'Duration',
+        valueHtml: htmlEscape(`${nights} night${nights !== 1 ? 's' : ''}`)
+      },
+      {
+        label: 'Total',
+        valueHtml: `<span class="total-accent">€${htmlEscape(String(booking.totalPrice))}</span>`
+      }
+    ];
+    const confirmedDetailsTable = buildDetailRowsTable(confirmedDetailRows);
+
     const bodyHtml = `
             <div class="confirmed-badge" role="status">Booking confirmed</div>
 
-            <h2>Hello ${htmlEscape(booking.guestInfo?.firstName)}</h2>
+            <h2 class="email-heading">Hello ${htmlEscape(booking.guestInfo?.firstName)}</h2>
             <p class="lede">Your stay at <strong>${htmlEscape(cabin.name)}</strong> is confirmed. We're glad you'll be with us for a quiet off-grid retreat.</p>
 
             <div class="booking-details">
               <h3>Confirmed stay</h3>
-              <div class="detail-row">
-                <span class="detail-label">Cabin</span>
-                <span>${htmlEscape(cabin.name)} • ${htmlEscape(cabin.location)}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Check-in</span>
-                <span>${checkIn.toLocaleDateString('en-GB')} (${htmlEscape(cabin.arrivalWindowDefault || 'TBD')})</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Check-out</span>
-                <span>${checkOut.toLocaleDateString('en-GB')}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Duration</span>
-                <span>${nights} night${nights !== 1 ? 's' : ''}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Total</span>
-                <span class="total-accent">€${booking.totalPrice}</span>
-              </div>
+              ${confirmedDetailsTable}
             </div>
 
             <p>We'll send practical arrival instructions and local notes a few days before you travel.</p>
@@ -506,8 +519,10 @@ ${guestEmailFooterText()}
     const html = buildGuestTransactionalHtml({
       title: 'Booking confirmed — Drift & Dwells',
       preheader: `You're confirmed for ${htmlEscape(cabin.name)} — check-in ${checkIn.toLocaleDateString('en-GB')}`,
-      headerGradientFrom: '#4a6b55',
-      headerGradientTo: '#4a6b55',
+      logoUrl: resolveBrandLogoAbsoluteUrl(),
+      siteHomeUrl: EMAIL_SITE_ORIGIN,
+      headerAccentColor: '#6d8f75',
+      headerLogoWidth: 208,
       headerTagline:
         '<span class="email-kicker">Confirmed</span><span class="email-tagline-lead">Your stay is on our calendar.</span>',
       bodyHtml,
@@ -552,30 +567,23 @@ ${guestEmailFooterText()}
     const checkIn = new Date(booking.checkIn);
     const checkOut = new Date(booking.checkOut);
 
+    const cancelledDetailRows = [
+      { label: 'Cabin', valueHtml: `${htmlEscape(cabin.name)} • ${htmlEscape(cabin.location)}` },
+      { label: 'Check-in', valueHtml: htmlEscape(checkIn.toLocaleDateString('en-GB')) },
+      { label: 'Check-out', valueHtml: htmlEscape(checkOut.toLocaleDateString('en-GB')) },
+      { label: 'Total', valueHtml: htmlEscape(`€${booking.totalPrice}`) }
+    ];
+    const cancelledDetailsTable = buildDetailRowsTable(cancelledDetailRows);
+
     const bodyHtml = `
             <div class="cancelled-badge" role="status">Booking cancelled</div>
 
-            <h2>Hello ${htmlEscape(booking.guestInfo?.firstName)}</h2>
+            <h2 class="email-heading">Hello ${htmlEscape(booking.guestInfo?.firstName)}</h2>
             <p class="lede">Your booking for <strong>${htmlEscape(cabin.name)}</strong> has been cancelled. If you were not expecting this, please reach out—we're here to help.</p>
 
             <div class="booking-details">
               <h3>Cancelled stay</h3>
-              <div class="detail-row">
-                <span class="detail-label">Cabin</span>
-                <span>${htmlEscape(cabin.name)} • ${htmlEscape(cabin.location)}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Check-in</span>
-                <span>${checkIn.toLocaleDateString('en-GB')}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Check-out</span>
-                <span>${checkOut.toLocaleDateString('en-GB')}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Total</span>
-                <span>€${booking.totalPrice}</span>
-              </div>
+              ${cancelledDetailsTable}
             </div>
 
             <p>If you have questions about this cancellation or would like to plan another visit, reply to this email or contact ${htmlEscape(SUPPORT_CONTACT_EMAIL)}.</p>
@@ -588,8 +596,10 @@ ${guestEmailFooterText()}
     const html = buildGuestTransactionalHtml({
       title: 'Booking cancelled — Drift & Dwells',
       preheader: `Your stay at ${htmlEscape(cabin.name)} was cancelled — we're here if you need us`,
-      headerGradientFrom: '#6b4e4e',
-      headerGradientTo: '#6b4e4e',
+      logoUrl: resolveBrandLogoAbsoluteUrl(),
+      siteHomeUrl: EMAIL_SITE_ORIGIN,
+      headerAccentColor: '#a67c7c',
+      headerLogoWidth: 208,
       headerTagline:
         '<span class="email-kicker">Cancelled</span><span class="email-tagline-lead">This stay will not go ahead.</span>',
       bodyHtml,
@@ -632,70 +642,57 @@ ${guestEmailFooterText()}
     const checkOut = new Date(booking.checkOut);
     const nights = Math.ceil((checkOut - checkIn) / (1000 * 3600 * 24));
 
+    const internalDetailRows = [
+      { label: 'Booking ID', valueHtml: htmlEscape(String(booking._id)) },
+      { label: 'Cabin', valueHtml: `${htmlEscape(cabin.name)} • ${htmlEscape(cabin.location)}` },
+      { label: 'Check-in', valueHtml: htmlEscape(checkIn.toLocaleDateString('en-GB')) },
+      { label: 'Check-out', valueHtml: htmlEscape(checkOut.toLocaleDateString('en-GB')) },
+      {
+        label: 'Duration',
+        valueHtml: htmlEscape(`${nights} night${nights !== 1 ? 's' : ''}`)
+      },
+      {
+        label: 'Guest',
+        valueHtml: `${htmlEscape(booking.guestInfo?.firstName)} ${htmlEscape(booking.guestInfo?.lastName)}`
+      },
+      { label: 'Email', valueHtml: htmlEscape(booking.guestInfo?.email) },
+      { label: 'Phone', valueHtml: htmlEscape(booking.guestInfo?.phone || '—') },
+      {
+        label: 'Party',
+        valueHtml: htmlEscape(
+          `${booking.adults} adult${booking.adults !== 1 ? 's' : ''}${
+            booking.children > 0
+              ? `, ${booking.children} child${booking.children !== 1 ? 'ren' : ''}`
+              : ''
+          }`
+        )
+      },
+      { label: 'Trip type', valueHtml: htmlEscape(booking.tripType || 'Custom Experience') }
+    ];
+    if (booking.transportMethod && booking.transportMethod !== 'Not selected') {
+      internalDetailRows.push({ label: 'Transport', valueHtml: htmlEscape(booking.transportMethod) });
+    }
+    internalDetailRows.push({
+      label: 'Total',
+      valueHtml: `<span style="font-weight:700;font-size:17px;color:${BRAND_SAGE};">€${htmlEscape(String(booking.totalPrice))}</span>`
+    });
+    if (booking.specialRequests) {
+      internalDetailRows.push({
+        label: 'Special requests',
+        valueHtml: htmlEscape(booking.specialRequests)
+      });
+    }
+    const internalDetailsTable = buildDetailRowsTable(internalDetailRows);
+
     const bodyHtml = `
             <div class="new-badge">New booking</div>
 
-            <h2>New booking received</h2>
+            <h2 class="email-heading">New booking received</h2>
             <p>A guest booking has been submitted and may need your review.</p>
 
             <div class="booking-details">
-              <h3>Booking details</h3>
-              <div class="detail-row">
-                <span class="detail-label">Booking ID</span>
-                <span>${booking._id}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Cabin</span>
-                <span>${htmlEscape(cabin.name)} • ${htmlEscape(cabin.location)}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Check-in</span>
-                <span>${checkIn.toLocaleDateString('en-GB')}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Check-out</span>
-                <span>${checkOut.toLocaleDateString('en-GB')}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Duration</span>
-                <span>${nights} night${nights !== 1 ? 's' : ''}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Guest</span>
-                <span>${htmlEscape(booking.guestInfo?.firstName)} ${htmlEscape(booking.guestInfo?.lastName)}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Email</span>
-                <span>${htmlEscape(booking.guestInfo?.email)}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Phone</span>
-                <span>${htmlEscape(booking.guestInfo?.phone)}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Guests</span>
-                <span>${booking.adults} adult${booking.adults !== 1 ? 's' : ''}${booking.children > 0 ? `, ${booking.children} child${booking.children !== 1 ? 'ren' : ''}` : ''}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Trip type</span>
-                <span>${htmlEscape(booking.tripType || 'Custom Experience')}</span>
-              </div>
-              ${booking.transportMethod && booking.transportMethod !== 'Not selected' ? `
-              <div class="detail-row">
-                <span class="detail-label">Transport</span>
-                <span>${htmlEscape(booking.transportMethod)}</span>
-              </div>
-              ` : ''}
-              <div class="detail-row">
-                <span class="detail-label">Total</span>
-                <span style="font-weight: 700; font-size: 17px; color: #047857;">€${booking.totalPrice}</span>
-              </div>
-              ${booking.specialRequests ? `
-              <div class="detail-row">
-                <span class="detail-label">Special requests</span>
-                <span>${htmlEscape(booking.specialRequests)}</span>
-              </div>
-              ` : ''}
+              <h3>Reservation snapshot</h3>
+              ${internalDetailsTable}
             </div>
 
             <p><strong>Status:</strong> ${htmlEscape(booking.status)}</p>
@@ -706,8 +703,10 @@ ${guestEmailFooterText()}
     const html = buildInternalNotificationHtml({
       title: 'New booking — Drift & Dwells Admin',
       preheader: `New booking: ${htmlEscape(cabin.name)} — ${htmlEscape(booking.guestInfo?.email || '')}`,
-      headerGradientFrom: '#3d3d38',
-      headerGradientTo: '#3d3d38',
+      logoUrl: resolveBrandLogoAbsoluteUrl(),
+      siteHomeUrl: EMAIL_SITE_ORIGIN,
+      headerAccentColor: '#b0aea6',
+      headerLogoWidth: 160,
       headerTagline:
         '<span class="email-kicker">Inbox</span><span class="email-tagline-lead">Review when you are ready.</span>',
       bodyHtml,

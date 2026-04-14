@@ -1,200 +1,245 @@
 /**
- * Shared HTML shell for guest booking lifecycle emails.
- * Internal ops notification uses buildInternalNotificationHtml — same discipline, calmer chrome.
+ * Drift & Dwells transactional email shell — brand-aligned, email-client safe.
+ * Guest lifecycle + internal notification share typography tokens; guest uses logo + accent stripe.
  */
 const { htmlEscape } = require('../../utils/htmlEscape');
 
-/** Shared structural + typographic rules; template-specific blocks pass extraHeadCss. */
+/** Site accent (matches booking UI primary). */
+const BRAND_SAGE = '#81887A';
+
+const FONT_LINK =
+  'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@600;700&display=swap';
+
+function sanitizeHeaderAccent(hex, fallback = BRAND_SAGE) {
+  const s = String(hex || '').trim();
+  if (/^#[0-9A-Fa-f]{6}$/.test(s)) return s;
+  return fallback;
+}
+
+/**
+ * Table-based detail rows (Outlook-friendly). valueHtml must already be escaped/safe HTML fragments.
+ * @param {Array<{ label: string, valueHtml: string }>} rows
+ */
+function buildDetailRowsTable(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return '';
+  const inner = rows
+    .map(
+      (r) => `
+    <tr>
+      <td class="detail-td-label" valign="top">${htmlEscape(r.label)}</td>
+      <td class="detail-td-value" valign="top" align="right">${r.valueHtml}</td>
+    </tr>`
+    )
+    .join('');
+  return `<table role="presentation" class="detail-grid" width="100%" cellpadding="0" cellspacing="0" border="0">${inner}
+    </table>`;
+}
+
 const GUEST_EMAIL_BASE_CSS = `
-  .email-outer { padding: 18px 14px 36px; background-color: #eeeee9; }
+  body { margin: 0; padding: 0; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; background-color: #ebeae6; }
+  .email-outer { padding: 20px 14px 40px; background-color: #ebeae6; }
   @media only screen and (min-width: 600px) {
-    .email-outer { padding: 28px 20px 48px; }
+    .email-outer { padding: 32px 20px 56px; }
   }
   .email-container { max-width: 600px; margin: 0 auto; width: 100%; }
   .email-card {
-    background: #fdfdfc;
-    border-radius: 14px;
+    background: #fdfcfa;
+    border-radius: 16px;
     overflow: hidden;
-    border: 1px solid #e0e0da;
-    box-shadow: 0 1px 2px rgba(28, 32, 28, 0.04), 0 12px 40px rgba(28, 32, 28, 0.06);
+    border: 1px solid #dedbd4;
+    box-shadow: 0 2px 0 rgba(26, 25, 24, 0.04), 0 24px 48px rgba(26, 25, 24, 0.07);
   }
   .email-header {
-    color: #fdfdfc;
-    padding: 26px 22px 22px;
+    background-color: #f7f5f0;
     text-align: center;
   }
+  .email-header-inner { padding: 26px 22px 22px; }
   @media only screen and (min-width: 600px) {
-    .email-header { padding: 32px 28px 26px; }
+    .email-header-inner { padding: 32px 28px 26px; }
   }
-  .email-brand {
-    margin: 0;
-    font-size: 22px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    line-height: 1.25;
-    color: #fdfdfc;
-  }
+  .email-header-logo { display: block; margin: 0 auto; border: 0; outline: none; text-decoration: none; }
+  .email-header-tagline-wrap { padding: 18px 22px 22px; }
   @media only screen and (min-width: 600px) {
-    .email-brand { font-size: 24px; }
-  }
-  .email-tagline {
-    margin: 14px 0 0;
-    font-size: 17px;
-    line-height: 1.45;
-    font-weight: 500;
-    color: rgba(253, 253, 252, 0.94);
-  }
-  @media only screen and (min-width: 600px) {
-    .email-tagline { font-size: 18px; }
+    .email-header-tagline-wrap { padding: 4px 28px 26px; }
   }
   .email-kicker {
-    display: block;
-    margin-top: 12px;
+    margin: 0 0 6px;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
     font-size: 11px;
     font-weight: 600;
-    letter-spacing: 0.14em;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: rgba(253, 253, 252, 0.78);
+    color: ${BRAND_SAGE};
   }
   @media only screen and (min-width: 600px) {
     .email-kicker { font-size: 12px; }
   }
+  .email-tagline-lead {
+    margin: 0;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    font-size: 17px;
+    font-weight: 500;
+    line-height: 1.45;
+    color: #1a1918;
+  }
+  @media only screen and (min-width: 600px) {
+    .email-tagline-lead { font-size: 18px; }
+  }
   .email-body {
-    padding: 26px 20px 30px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    padding: 28px 22px 32px;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
     font-size: 16px;
     line-height: 1.65;
-    color: #2a2a28;
+    color: #2c2b28;
   }
   @media only screen and (min-width: 600px) {
-    .email-body { padding: 32px 32px 36px; font-size: 17px; }
+    .email-body { padding: 36px 36px 40px; font-size: 17px; }
   }
-  .email-body h2 {
-    margin: 0 0 14px;
-    font-size: 21px;
-    font-weight: 600;
+  .email-heading {
+    margin: 0 0 16px;
+    font-family: 'Playfair Display', Georgia, 'Times New Roman', serif;
+    font-size: 26px;
+    font-weight: 700;
     letter-spacing: -0.02em;
-    color: #1c1c1a;
-    line-height: 1.3;
+    line-height: 1.25;
+    color: #1a1918;
   }
   @media only screen and (min-width: 600px) {
-    .email-body h2 { font-size: 23px; }
+    .email-heading { font-size: 30px; margin-bottom: 18px; }
   }
-  .email-body h3 { margin: 0 0 8px; font-size: 14px; font-weight: 600; letter-spacing: 0.02em; color: #3d3d38; }
+  .email-body h3 {
+    margin: 0 0 8px;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: #45443f;
+  }
   .email-body p { margin: 0 0 16px; }
   .booking-details {
-    background: #f7f7f4;
-    padding: 0;
+    background: #f4f2ec;
+    margin: 24px 0;
     border-radius: 12px;
-    margin: 22px 0;
-    border: 1px solid #e4e4df;
+    border: 1px solid #e5e2da;
     overflow: hidden;
   }
   .booking-details h3 {
     margin: 0;
     padding: 16px 18px 12px;
-    font-size: 11px;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    font-size: 10px;
     font-weight: 700;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: #5c5c56;
-    border-bottom: 1px solid #e4e4df;
-    background: #f0f0ec;
+    color: #6b6a64;
+    border-bottom: 1px solid #e5e2da;
+    background: #ebe8e0;
   }
   @media only screen and (min-width: 600px) {
-    .booking-details h3 { padding: 18px 20px 14px; }
+    .booking-details h3 { padding: 18px 22px 14px; }
   }
-  .detail-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 16px;
+  .detail-grid { width: 100% !important; border-collapse: collapse !important; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+  .detail-grid tr { border-bottom: 1px solid #e0ddd4; }
+  .detail-grid tr:last-child { border-bottom: none; }
+  .detail-td-label {
     padding: 14px 18px;
-    border-bottom: 1px solid #e8e8e3;
-    flex-wrap: wrap;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    color: #6b6a64;
+    width: 38%;
+  }
+  .detail-td-value {
+    padding: 14px 18px;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    font-size: 15px;
+    font-weight: 500;
+    color: #1a1918;
+    line-height: 1.45;
   }
   @media only screen and (min-width: 600px) {
-    .detail-row { padding: 14px 20px; }
-  }
-  .detail-row:last-child { border-bottom: none; }
-  .detail-label {
-    font-weight: 600;
-    color: #5a5a54;
-    flex: 0 1 38%;
-    min-width: 120px;
-    font-size: 14px;
-  }
-  .detail-row > span:last-child {
-    text-align: right;
-    color: #1c1c1a;
-    flex: 1 1 50%;
-    font-size: 15px;
-    line-height: 1.5;
+    .detail-td-label, .detail-td-value { padding-left: 22px; padding-right: 22px; }
   }
   @media only screen and (max-width: 480px) {
-    .detail-row { flex-direction: column; align-items: stretch; }
-    .detail-row > span:last-child { text-align: left; }
+    .detail-td-value { display: block; width: 100% !important; text-align: left !important; padding-top: 4px; }
+    .detail-td-label { display: block; width: 100% !important; padding-bottom: 2px; }
   }
   .btn {
     display: inline-block;
-    padding: 12px 22px;
-    color: #fdfdfc !important;
-    text-decoration: none;
-    border-radius: 8px;
+    padding: 13px 24px;
+    color: #fdfcfa !important;
+    text-decoration: none !important;
+    border-radius: 10px;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
     font-weight: 600;
     font-size: 14px;
     margin: 6px 8px 6px 0;
-    letter-spacing: 0.01em;
+    letter-spacing: 0.02em;
   }
   .email-card .footer {
-    background: #f4f4f0;
-    padding: 24px 20px 26px;
+    background: linear-gradient(180deg, #f4f2ec 0%, #ebe8e0 100%);
+    padding: 28px 22px 30px;
     text-align: center;
-    border-top: 1px solid #e4e4df;
+    border-top: 1px solid #e5e2da;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
     font-size: 13px;
-    color: #63635c;
+    color: #5c5b56;
     line-height: 1.65;
   }
-  .email-card .footer a { color: #4a4a44; text-decoration: underline; text-underline-offset: 2px; }
-  .email-card .footer p { margin: 8px 0; }
-  .email-card .footer .footer-legal { font-size: 12px; color: #7a7a72; letter-spacing: 0.02em; }
-  .email-tagline-lead {
-    display: block;
-    margin-top: 10px;
+  .email-card .footer a {
+    color: #4a4944;
+    text-decoration: underline;
+    text-underline-offset: 3px;
     font-weight: 500;
-    font-size: 16px;
-    line-height: 1.45;
-    color: rgba(253, 253, 252, 0.94);
   }
-  @media only screen and (min-width: 600px) {
-    .email-tagline-lead { font-size: 17px; margin-top: 12px; }
+  .email-card .footer p { margin: 8px 0; }
+  .email-card .footer .footer-tagline {
+    margin: 0 0 4px;
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: #3d3c38;
+  }
+  .email-card .footer .footer-home { margin: 0 0 12px; }
+  .email-card .footer .footer-home a { font-size: 14px; font-weight: 600; color: ${BRAND_SAGE}; }
+  .email-card .footer .footer-legal {
+    margin: 14px 0 0;
+    font-size: 11px;
+    color: #8a887f;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
   }
 `;
 
 /**
  * @param {object} opts
- * @param {string} opts.title - document <title>
- * @param {string} [opts.preheader] - hidden preheader for inbox preview
- * @param {string} opts.headerGradientFrom
- * @param {string} opts.headerGradientTo
- * @param {string} opts.headerTagline - HTML allowed only if caller escaped; typically plain text
- * @param {string} opts.bodyHtml - inner content (caller must escape dynamic parts)
+ * @param {string} opts.title
+ * @param {string} [opts.preheader]
+ * @param {string} opts.logoUrl - absolute URL to logo image
+ * @param {string} opts.siteHomeUrl - absolute homepage URL (logo link)
+ * @param {string} [opts.headerAccentColor] - 6-char hex bottom stripe (default brand sage)
+ * @param {number} [opts.headerLogoWidth] - img width attribute (default 200)
+ * @param {string} opts.headerTagline - HTML (caller controls escaping of dynamic parts)
+ * @param {string} opts.bodyHtml
  * @param {string} [opts.extraHeadCss]
- * @param {string} opts.footerHtml - full footer block HTML
+ * @param {string} opts.footerHtml
  */
 function buildGuestTransactionalHtml(opts) {
   const {
     title,
     preheader = '',
-    headerGradientFrom,
-    headerGradientTo,
+    logoUrl,
+    siteHomeUrl,
+    headerAccentColor = BRAND_SAGE,
+    headerLogoWidth = 200,
     headerTagline,
     bodyHtml,
     extraHeadCss = '',
     footerHtml
   } = opts;
 
+  const accent = sanitizeHeaderAccent(headerAccentColor);
   const pre =
     preheader != null && String(preheader).trim() !== ''
       ? `<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">${htmlEscape(
@@ -202,12 +247,27 @@ function buildGuestTransactionalHtml(opts) {
         )}</div>`
       : '';
 
-  const from = String(headerGradientFrom || '').trim();
-  const to = String(headerGradientTo || '').trim();
-  const headerStyle =
-    from && to && from.toLowerCase() === to.toLowerCase()
-      ? `background-color: ${from};`
-      : `background: linear-gradient(152deg, ${from} 0%, ${to} 100%);`;
+  const safeLogo = htmlEscape(String(logoUrl || '').trim());
+  const safeHome = htmlEscape(String(siteHomeUrl || '').trim());
+  const w = Math.min(280, Math.max(120, Number(headerLogoWidth) || 200));
+
+  const headerBlock = `
+        <div class="email-header" style="background-color:#f7f5f0;border-bottom:3px solid ${accent};">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td class="email-header-inner" align="center">
+                <a href="${safeHome}" style="text-decoration:none;border:0;">
+                  <img class="email-header-logo" src="${safeLogo}" width="${w}" alt="Drift &amp; Dwells" style="display:block;margin:0 auto;max-width:${w}px;width:100%;height:auto;border:0;outline:none;text-decoration:none;" />
+                </a>
+              </td>
+            </tr>
+            <tr>
+              <td class="email-header-tagline-wrap" align="center">
+                ${headerTagline}
+              </td>
+            </tr>
+          </table>
+        </div>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -217,6 +277,7 @@ function buildGuestTransactionalHtml(opts) {
   <meta name="color-scheme" content="light">
   <meta name="supported-color-schemes" content="light">
   <title>${htmlEscape(title)}</title>
+  <link rel="stylesheet" href="${FONT_LINK}">
   <style>
 ${GUEST_EMAIL_BASE_CSS}
 ${extraHeadCss}
@@ -227,10 +288,7 @@ ${pre}
   <div class="email-outer" role="article" aria-roledescription="email">
     <div class="email-container">
       <div class="email-card">
-        <div class="email-header" style="${headerStyle}">
-          <p class="email-brand">Drift &amp; Dwells</p>
-          <p class="email-tagline">${headerTagline}</p>
-        </div>
+${headerBlock}
         <div class="email-body">
 ${bodyHtml}
         </div>
@@ -243,122 +301,141 @@ ${bodyHtml}
 }
 
 const INTERNAL_BASE_CSS = `
-  .email-outer { padding: 18px 14px 36px; background-color: #eeeee9; }
+  body { margin: 0; padding: 0; -webkit-text-size-adjust: 100%; background-color: #ebeae6; }
+  .email-outer { padding: 20px 14px 40px; background-color: #ebeae6; }
   .email-container { max-width: 600px; margin: 0 auto; width: 100%; }
   .email-card {
-    background: #fdfdfc;
+    background: #fdfcfa;
     border-radius: 14px;
     overflow: hidden;
-    border: 1px solid #e0e0da;
-    box-shadow: 0 1px 2px rgba(28, 32, 28, 0.04), 0 8px 28px rgba(28, 32, 28, 0.05);
+    border: 1px solid #dedbd4;
+    box-shadow: 0 2px 0 rgba(26, 25, 24, 0.03), 0 16px 36px rgba(26, 25, 24, 0.06);
   }
-  .email-header {
-    color: #fdfdfc;
-    padding: 22px 20px;
-    text-align: center;
-  }
-  .email-brand { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
-  .email-tagline { margin: 10px 0 0; font-size: 14px; font-weight: 500; color: rgba(253, 253, 252, 0.9); }
+  .email-header { background-color: #f0eeea; text-align: center; }
+  .email-header-inner { padding: 18px 18px 14px; }
+  .email-header-tagline-wrap { padding: 0 20px 18px; }
   .email-kicker {
-    display: block;
+    margin: 0 0 4px;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
     font-size: 10px;
     font-weight: 600;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: rgba(253, 253, 252, 0.72);
+    color: #7a7870;
   }
   .email-tagline-lead {
-    display: block;
-    margin-top: 8px;
+    margin: 0;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
     font-size: 14px;
     font-weight: 500;
-    line-height: 1.45;
-    color: rgba(253, 253, 252, 0.92);
+    color: #3d3c38;
   }
   .email-body {
-    padding: 24px 20px 28px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    padding: 22px 20px 26px;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
     font-size: 15px;
     line-height: 1.6;
-    color: #2a2a28;
+    color: #2c2b28;
+  }
+  .email-heading {
+    margin: 0 0 12px;
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 22px;
+    font-weight: 700;
+    color: #1a1918;
   }
   .booking-details {
-    background: #f7f7f4;
-    padding: 0;
-    border-radius: 12px;
+    background: #f4f2ec;
     margin: 18px 0;
-    border: 1px solid #e4e4df;
+    border-radius: 10px;
+    border: 1px solid #e5e2da;
     overflow: hidden;
   }
   .booking-details h3 {
     margin: 0;
-    padding: 14px 16px 10px;
-    font-size: 11px;
+    padding: 12px 16px 10px;
+    font-size: 10px;
     font-weight: 700;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: #5c5c56;
-    border-bottom: 1px solid #e4e4df;
-    background: #f0f0ec;
+    color: #6b6a64;
+    border-bottom: 1px solid #e5e2da;
+    background: #ebe8e0;
   }
-  .detail-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 12px 16px;
-    border-bottom: 1px solid #e8e8e3;
-    flex-wrap: wrap;
+  .detail-grid { width: 100% !important; border-collapse: collapse !important; }
+  .detail-grid tr { border-bottom: 1px solid #e0ddd4; }
+  .detail-grid tr:last-child { border-bottom: none; }
+  .detail-td-label {
+    padding: 10px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #6b6a64;
+    width: 36%;
+  }
+  .detail-td-value {
+    padding: 10px 16px;
     font-size: 14px;
+    color: #1a1918;
   }
-  .detail-row:last-child { border-bottom: none; }
-  .detail-label { font-weight: 600; color: #5a5a54; }
   .email-card .footer {
-    background: #f4f4f0;
+    background: #ebe8e0;
     padding: 20px 16px 22px;
     text-align: center;
-    border-top: 1px solid #e4e4df;
+    border-top: 1px solid #e5e2da;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
     font-size: 12px;
-    color: #63635c;
+    color: #6b6a64;
     line-height: 1.6;
   }
-  .email-card .footer a { color: #4a4a44; text-decoration: underline; text-underline-offset: 2px; }
+  .email-card .footer a { color: #4a4944; text-decoration: underline; text-underline-offset: 2px; }
   .email-card .footer p { margin: 6px 0; }
-  .email-card .footer .footer-legal { font-size: 11px; color: #7a7a72; letter-spacing: 0.02em; }
+  .email-card .footer .footer-legal { font-size: 10px; color: #8a887f; letter-spacing: 0.06em; text-transform: uppercase; }
 `;
 
-/** Internal new-booking: restrained badge + admin CTA. */
 const INTERNAL_NOTIFICATION_EXTRA_CSS = `
   .new-badge {
-    background: #ecece8;
-    color: #3d3d38;
-    padding: 8px 14px;
+    background: #e8e6e0;
+    color: #3d3c38;
+    padding: 7px 12px;
     border-radius: 6px;
     display: inline-block;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
     font-weight: 600;
-    margin: 2px 0 16px;
-    font-size: 11px;
-    letter-spacing: 0.1em;
+    margin: 2px 0 14px;
+    font-size: 10px;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
-    border: 1px solid #d8d8d2;
+    border: 1px solid #d5d2ca;
   }
   .admin-link {
-    background: #3d3d38;
-    color: #fdfdfc !important;
+    background: #3d3c38;
+    color: #fdfcfa !important;
     padding: 10px 18px;
     border-radius: 8px;
-    text-decoration: none;
+    text-decoration: none !important;
     display: inline-block;
     margin: 12px 0;
     font-weight: 600;
     font-size: 14px;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
   }
 `;
 
-/**
- * Internal new-booking email: secondary to guest mail; neutral header.
- */
 function buildInternalNotificationHtml(opts) {
-  const { title, preheader = '', headerGradientFrom, headerGradientTo, headerTagline, bodyHtml, footerHtml, extraHeadCss = '' } = opts;
+  const {
+    title,
+    preheader = '',
+    logoUrl,
+    siteHomeUrl,
+    headerAccentColor = '#b0aea6',
+    headerLogoWidth = 152,
+    headerTagline,
+    bodyHtml,
+    footerHtml,
+    extraHeadCss = ''
+  } = opts;
+
+  const accent = sanitizeHeaderAccent(headerAccentColor, '#b0aea6');
   const pre =
     preheader != null && String(preheader).trim() !== ''
       ? `<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">${htmlEscape(
@@ -366,12 +443,26 @@ function buildInternalNotificationHtml(opts) {
         )}</div>`
       : '';
 
-  const from = String(headerGradientFrom || '').trim();
-  const to = String(headerGradientTo || '').trim();
-  const headerStyle =
-    from && to && from.toLowerCase() === to.toLowerCase()
-      ? `background-color: ${from};`
-      : `background: linear-gradient(152deg, ${from} 0%, ${to} 100%);`;
+  const safeLogo = htmlEscape(String(logoUrl || '').trim());
+  const safeHome = htmlEscape(String(siteHomeUrl || '').trim());
+  const w = Math.min(220, Math.max(100, Number(headerLogoWidth) || 152));
+
+  const headerBlock = `
+        <div class="email-header" style="background-color:#f0eeea;border-bottom:2px solid ${accent};">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td class="email-header-inner" align="center">
+                <a href="${safeHome}" style="text-decoration:none;border:0;">
+                  <img class="email-header-logo" src="${safeLogo}" width="${w}" alt="Drift &amp; Dwells" style="display:block;margin:0 auto;max-width:${w}px;width:100%;height:auto;border:0;outline:none;text-decoration:none;" />
+                </a>
+                <p style="margin:10px 0 0;font-family:'Inter',sans-serif;font-size:11px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;color:#7a7870;">Staff</p>
+              </td>
+            </tr>
+            <tr>
+              <td class="email-header-tagline-wrap" align="center">${headerTagline}</td>
+            </tr>
+          </table>
+        </div>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -380,6 +471,7 @@ function buildInternalNotificationHtml(opts) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light">
   <title>${htmlEscape(title)}</title>
+  <link rel="stylesheet" href="${FONT_LINK}">
   <style>
 ${INTERNAL_BASE_CSS}
 ${extraHeadCss}
@@ -390,10 +482,7 @@ ${pre}
   <div class="email-outer">
     <div class="email-container">
       <div class="email-card">
-        <div class="email-header" style="${headerStyle}">
-          <p class="email-brand">Drift &amp; Dwells Admin</p>
-          <p class="email-tagline">${headerTagline}</p>
-        </div>
+${headerBlock}
         <div class="email-body">
 ${bodyHtml}
         </div>
@@ -405,95 +494,122 @@ ${bodyHtml}
 </html>`;
 }
 
-/** Guest booking_received: guidance, packing, safety, valley CTA, payment block. */
 const GUEST_LIFECYCLE_RECEIVED_EXTRA_CSS = `
-  .lede { color: #454542; font-size: 16px; }
+  .lede { color: #45443f; font-size: 16px; }
   @media only screen and (min-width: 600px) { .lede { font-size: 17px; } }
   .guidance-section {
     margin: 22px 0;
     padding: 18px 18px 18px 20px;
-    background: #f8f6f0;
-    border-left: 3px solid #8a8f7e;
-    border-radius: 0 10px 10px 0;
+    background: #f9f7f2;
+    border-left: 3px solid ${BRAND_SAGE};
+    border-radius: 0 12px 12px 0;
   }
-  .guidance-section h3 { margin: 0 0 10px; font-size: 15px; font-weight: 600; color: #3d3d38; letter-spacing: -0.01em; }
-  .guidance-section.valley { background: #f2f5f8; border-left-color: #5a6b7a; }
-  .guidance-section.valley h3 { color: #2f3d4a; }
-  .btn-sage { background: #5c6156 !important; }
-  .btn-sage:hover { background: #4a4e45 !important; }
-  .btn-blue { background: #4a5f6e !important; }
-  .btn-blue:hover { background: #3d4f5c !important; }
+  .guidance-section h3 {
+    margin: 0 0 10px;
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: #1a1918;
+  }
+  .guidance-section.valley { background: #f2f4f7; border-left-color: #5a6570; }
+  .guidance-section.valley h3 { color: #2a3238; }
+  .btn-brand { background: ${BRAND_SAGE} !important; }
+  .btn-brand:hover { background: #6d7368 !important; }
+  .btn-secondary { background: #5a6570 !important; }
+  .btn-secondary:hover { background: #4a545c !important; }
   .packing-list {
-    background: #f4f7f3;
-    border: 1px solid #d4e0d4;
+    background: #f3f6f1;
+    border: 1px solid #d2ddd2;
     padding: 18px;
-    border-radius: 10px;
+    border-radius: 12px;
     margin: 18px 0;
   }
-  .packing-list h3 { margin: 0 0 10px; color: #3d4d3d; font-size: 15px; font-weight: 600; }
+  .packing-list h3 {
+    margin: 0 0 10px;
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: #2a382c;
+  }
   .packing-list ul { margin: 8px 0 0; padding-left: 20px; }
   .packing-list li { margin: 5px 0; }
   .safety-notes {
-    background: #faf6f5;
-    border: 1px solid #e8d8d4;
+    background: #faf6f4;
+    border: 1px solid #e5d8d4;
     padding: 18px;
-    border-radius: 10px;
+    border-radius: 12px;
     margin: 18px 0;
   }
-  .safety-notes h3 { margin: 0 0 10px; color: #5c3d38; font-size: 15px; font-weight: 600; }
+  .safety-notes h3 {
+    margin: 0 0 10px;
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: #4a3530;
+  }
   .contact-info {
-    background: #f2f5f8;
-    border: 1px solid #d4dde6;
+    background: #f2f4f7;
+    border: 1px solid #d4dae2;
     padding: 18px;
-    border-radius: 10px;
+    border-radius: 12px;
     margin: 18px 0;
   }
-  .contact-info h3 { margin: 0 0 10px; color: #2f3d4a; font-size: 15px; font-weight: 600; }
-  .total-accent { font-weight: 700; font-size: 17px; color: #4a4e45; letter-spacing: -0.01em; }
+  .contact-info h3 {
+    margin: 0 0 10px;
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: #2a3238;
+  }
+  .total-accent { font-weight: 700; font-size: 18px; color: #1a1918; letter-spacing: -0.02em; }
 `;
 
 const GUEST_LIFECYCLE_CONFIRMED_EXTRA_CSS = `
-  .lede { color: #454542; font-size: 16px; }
+  .lede { color: #45443f; font-size: 16px; }
   @media only screen and (min-width: 600px) { .lede { font-size: 17px; } }
   .confirmed-badge {
-    background: #e8f0eb;
+    background: #e8efe9;
     color: #2d4a38;
     padding: 8px 14px;
-    border-radius: 6px;
+    border-radius: 8px;
     display: inline-block;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
     font-weight: 600;
     margin: 2px 0 18px;
-    font-size: 11px;
-    letter-spacing: 0.1em;
+    font-size: 10px;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
     border: 1px solid #c5d6c9;
   }
-  .btn-primary { background: #4a6b55 !important; }
-  .btn-primary:hover { background: #3d5a47 !important; }
-  .total-accent { font-weight: 700; font-size: 17px; color: #2d4a38; letter-spacing: -0.01em; }
+  .btn-primary { background: #5f7a66 !important; }
+  .btn-primary:hover { background: #4e6554 !important; }
+  .total-accent { font-weight: 700; font-size: 18px; color: #2d4a38; letter-spacing: -0.02em; }
 `;
 
 const GUEST_LIFECYCLE_CANCELLED_EXTRA_CSS = `
-  .lede { color: #454542; font-size: 16px; }
+  .lede { color: #45443f; font-size: 16px; }
   @media only screen and (min-width: 600px) { .lede { font-size: 17px; } }
   .cancelled-badge {
-    background: #f5ecec;
+    background: #f3eaea;
     color: #5c3838;
     padding: 8px 14px;
-    border-radius: 6px;
+    border-radius: 8px;
     display: inline-block;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
     font-weight: 600;
     margin: 2px 0 18px;
-    font-size: 11px;
-    letter-spacing: 0.1em;
+    font-size: 10px;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
     border: 1px solid #e0cccc;
   }
-  .btn-muted { background: #5c6156 !important; }
-  .btn-muted:hover { background: #4a4e45 !important; }
+  .btn-muted { background: ${BRAND_SAGE} !important; }
+  .btn-muted:hover { background: #6d7368 !important; }
 `;
 
 module.exports = {
+  BRAND_SAGE,
+  buildDetailRowsTable,
   buildGuestTransactionalHtml,
   buildInternalNotificationHtml,
   GUEST_LIFECYCLE_RECEIVED_EXTRA_CSS,
