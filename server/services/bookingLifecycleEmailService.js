@@ -259,11 +259,33 @@ async function sendInternalNewBookingNotification({ booking, entity, lifecycleSo
   };
 }
 
+/**
+ * Compose-only preview for guest lifecycle templates. No send, no EmailEvent, no recipient requirement.
+ */
+async function previewGuestLifecycleEmail({ booking, templateKey, entity = null }) {
+  if (!booking?._id) {
+    throw new Error('booking with _id is required');
+  }
+  if (!isValidGuestTemplateKey(templateKey)) {
+    throw new Error(`Invalid templateKey: ${templateKey}`);
+  }
+
+  const entityResolved = entity || (await loadEntityForBooking(booking));
+  const payload = composePayload(templateKey, booking, entityResolved);
+  return {
+    subject: payload.subject,
+    html: payload.html,
+    text: payload.text,
+    templateKey
+  };
+}
+
 module.exports = {
   TEMPLATE_KEYS,
   isValidGuestTemplateKey,
   loadEntityForBooking,
   sendBookingLifecycleEmail,
+  previewGuestLifecycleEmail,
   sendInternalNewBookingNotification,
   /** Exported for `node:test` contract coverage of send-status mapping only. */
   resolveSendStatus

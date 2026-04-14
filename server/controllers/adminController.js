@@ -1788,12 +1788,64 @@ const resendBookingLifecycleEmail = async (req, res) => {
   }
 };
 
+// POST body: { templateKey } — compose-only preview; no send, no booking mutation, no EmailEvent
+const previewBookingLifecycleEmail = async (req, res) => {
+  try {
+    await assertAdminModuleWriteAllowed('reservations');
+    requirePermission({
+      role: req.user?.role,
+      action: ACTIONS.BOOKING_LIFECYCLE_EMAIL_RESEND
+    });
+
+    const { id } = req.params;
+    const { templateKey } = req.body || {};
+
+    if (!bookingLifecycleEmailService.isValidGuestTemplateKey(templateKey)) {
+      return res.status(400).json({
+        success: false,
+        message: 'templateKey must be booking_received, booking_confirmed, or booking_cancelled'
+      });
+    }
+
+    const booking = await Booking.findById(id)
+      .populate('cabinId', BOOKING_EMAIL_POPULATE_FIELDS)
+      .populate('cabinTypeId', BOOKING_EMAIL_POPULATE_FIELDS);
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking not found' });
+    }
+
+    const data = await bookingLifecycleEmailService.previewGuestLifecycleEmail({
+      booking,
+      templateKey
+    });
+
+    res.set('Cache-Control', 'no-store');
+    return res.json({ success: true, data });
+  } catch (error) {
+    if (error.code === 'PERMISSION_DENIED') {
+      return res.status(error.status || 403).json({ success: false, message: error.message });
+    }
+    if (error.code === 'CUTOVER_WRITE_BLOCKED') {
+      return res.status(error.status || 403).json({
+        success: false,
+        errorType: 'cutover_blocked',
+        message: error.message,
+        details: { moduleKey: error.moduleKey || 'unknown' }
+      });
+    }
+    console.error('Preview booking lifecycle email error:', error);
+    res.status(500).json({ success: false, message: 'Failed to build preview' });
+  }
+};
+
 module.exports = {
   login,
   getBookings,
   getBookingById,
   updateBookingStatus,
   resendBookingLifecycleEmail,
+  previewBookingLifecycleEmail,
   getCabins,
   getCabinById,
   createCabin,

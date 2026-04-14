@@ -147,6 +147,13 @@ const BookingDetail = () => {
   const [emailLoading, setEmailLoading] = useState(false);
   const [overrideRecipient, setOverrideRecipient] = useState('');
   const [resendLoadingKey, setResendLoadingKey] = useState(null);
+  const [previewLoadingKey, setPreviewLoadingKey] = useState(null);
+  const [previewModal, setPreviewModal] = useState({
+    open: false,
+    subject: '',
+    html: '',
+    templateKey: null
+  });
   const [emailActionsMessage, setEmailActionsMessage] = useState({ tone: '', text: '' });
 
   const fetchEmailEvents = useCallback(async (bookingId) => {
@@ -314,6 +321,54 @@ const BookingDetail = () => {
       setEmailActionsMessage({ tone: 'error', text: 'Network error while sending' });
     } finally {
       setResendLoadingKey(null);
+    }
+  };
+
+  const closePreviewModal = () => {
+    setPreviewModal({ open: false, subject: '', html: '', templateKey: null });
+  };
+
+  const handlePreviewTemplate = async (templateKey) => {
+    if (!booking) return;
+    setPreviewLoadingKey(templateKey);
+    setEmailActionsMessage({ tone: '', text: '' });
+    try {
+      const token = localStorage.getItem('adminToken');
+      const response = await fetch(`/api/admin/bookings/${id}/email-actions/preview`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ templateKey })
+      });
+      const payload = await response.json().catch(() => ({}));
+
+      if (response.status === 401) {
+        localStorage.removeItem('adminToken');
+        navigate('/admin/login');
+        return;
+      }
+
+      if (!response.ok || !payload.success || !payload.data?.html) {
+        setEmailActionsMessage({
+          tone: 'error',
+          text: payload.message || 'Preview failed'
+        });
+        return;
+      }
+
+      setPreviewModal({
+        open: true,
+        subject: payload.data.subject || '',
+        html: payload.data.html,
+        templateKey: payload.data.templateKey || templateKey
+      });
+    } catch (err) {
+      console.error('Preview email error:', err);
+      setEmailActionsMessage({ tone: 'error', text: 'Network error while loading preview' });
+    } finally {
+      setPreviewLoadingKey(null);
     }
   };
 
@@ -530,8 +585,9 @@ const BookingDetail = () => {
         <div className="px-6 py-5">
           <h3 className="text-sm font-semibold text-gray-900">Booking Email Actions</h3>
           <p className="mt-1 max-w-2xl text-sm text-gray-500">
-            Resend standard booking emails using current booking data. This does not change booking status, guest
-            contact on the booking, or payments. Leave override blank to use the guest email on file (
+            Preview shows the composed email in your browser without sending. Resend sends using current booking data.
+            Neither changes booking status, guest contact on the booking, or payments. Leave override blank to use the
+            guest email on file (
             <span className="font-medium text-gray-700">{guestEmail || 'none'}</span>
             ). Next send will go to:{' '}
             <span className="font-medium text-gray-900">{previewRecipient}</span>.
@@ -563,10 +619,10 @@ const BookingDetail = () => {
               {emailActionsMessage.text}
             </div>
           )}
-          <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             <button
               type="button"
-              disabled={!!resendLoadingKey}
+              disabled={!!resendLoadingKey || !!previewLoadingKey}
               onClick={() => handleResendTemplate(TEMPLATE_KEYS.BOOKING_RECEIVED)}
               className="inline-flex justify-center items-center px-4 py-2.5 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -574,7 +630,15 @@ const BookingDetail = () => {
             </button>
             <button
               type="button"
-              disabled={!!resendLoadingKey}
+              disabled={!!resendLoadingKey || !!previewLoadingKey}
+              onClick={() => handlePreviewTemplate(TEMPLATE_KEYS.BOOKING_RECEIVED)}
+              className="inline-flex justify-center items-center px-4 py-2.5 text-sm font-medium rounded-lg border border-gray-200 bg-gray-50 text-gray-800 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {previewLoadingKey === TEMPLATE_KEYS.BOOKING_RECEIVED ? 'Loading…' : 'Preview booking email'}
+            </button>
+            <button
+              type="button"
+              disabled={!!resendLoadingKey || !!previewLoadingKey}
               onClick={() => handleResendTemplate(TEMPLATE_KEYS.BOOKING_CONFIRMED)}
               className="inline-flex justify-center items-center px-4 py-2.5 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -582,11 +646,27 @@ const BookingDetail = () => {
             </button>
             <button
               type="button"
-              disabled={!!resendLoadingKey}
+              disabled={!!resendLoadingKey || !!previewLoadingKey}
+              onClick={() => handlePreviewTemplate(TEMPLATE_KEYS.BOOKING_CONFIRMED)}
+              className="inline-flex justify-center items-center px-4 py-2.5 text-sm font-medium rounded-lg border border-gray-200 bg-gray-50 text-gray-800 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {previewLoadingKey === TEMPLATE_KEYS.BOOKING_CONFIRMED ? 'Loading…' : 'Preview confirmation email'}
+            </button>
+            <button
+              type="button"
+              disabled={!!resendLoadingKey || !!previewLoadingKey}
               onClick={() => handleResendTemplate(TEMPLATE_KEYS.BOOKING_CANCELLED)}
               className="inline-flex justify-center items-center px-4 py-2.5 text-sm font-medium rounded-lg border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {resendLoadingKey === TEMPLATE_KEYS.BOOKING_CANCELLED ? 'Sending…' : 'Resend cancellation email'}
+            </button>
+            <button
+              type="button"
+              disabled={!!resendLoadingKey || !!previewLoadingKey}
+              onClick={() => handlePreviewTemplate(TEMPLATE_KEYS.BOOKING_CANCELLED)}
+              className="inline-flex justify-center items-center px-4 py-2.5 text-sm font-medium rounded-lg border border-gray-200 bg-gray-50 text-gray-800 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {previewLoadingKey === TEMPLATE_KEYS.BOOKING_CANCELLED ? 'Loading…' : 'Preview cancellation email'}
             </button>
           </div>
         </div>
@@ -648,6 +728,51 @@ const BookingDetail = () => {
           )}
         </div>
       </div>
+
+      {previewModal.open ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="email-preview-title"
+        >
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            aria-label="Close preview"
+            onClick={closePreviewModal}
+          />
+          <div className="relative w-full max-w-4xl max-h-[min(92vh,900px)] flex flex-col rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-100 px-4 py-3 sm:px-5">
+              <div className="min-w-0 flex-1">
+                <h2 id="email-preview-title" className="text-sm font-semibold text-gray-900">
+                  Email preview
+                </h2>
+                <p className="mt-1 text-xs text-gray-500 truncate" title={previewModal.subject || ''}>
+                  {TEMPLATE_LABELS[previewModal.templateKey] || previewModal.templateKey || ''}
+                </p>
+                <p className="mt-0.5 text-xs text-gray-600 break-words">{previewModal.subject}</p>
+              </div>
+              <button
+                type="button"
+                onClick={closePreviewModal}
+                className="shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 border border-gray-200"
+              >
+                Close
+              </button>
+            </div>
+            <p className="px-4 py-2 text-xs text-amber-900 bg-amber-50 border-b border-amber-100/80">
+              Preview only — nothing is sent. Sandbox blocks scripts and forms.
+            </p>
+            <iframe
+              title="Email HTML preview"
+              sandbox=""
+              srcDoc={previewModal.html}
+              className="w-full flex-1 min-h-[50vh] sm:min-h-[60vh] border-0 bg-zinc-100"
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

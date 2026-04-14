@@ -9,6 +9,7 @@ const {
   getBookingById,
   updateBookingStatus,
   resendBookingLifecycleEmail,
+  previewBookingLifecycleEmail,
   getCabins,
   getCabinById,
   createCabin,
@@ -90,6 +91,28 @@ router.post(
       });
     }
     resendBookingLifecycleEmail(req, res);
+  }
+);
+
+// POST /api/admin/bookings/:id/email-actions/preview — compose-only; no send, no EmailEvent
+router.post(
+  '/bookings/:id/email-actions/preview',
+  validateId('id'),
+  [
+    body('templateKey')
+      .isIn(['booking_received', 'booking_confirmed', 'booking_cancelled'])
+      .withMessage('templateKey must be booking_received, booking_confirmed, or booking_cancelled')
+  ],
+  (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+    previewBookingLifecycleEmail(req, res);
   }
 );
 
