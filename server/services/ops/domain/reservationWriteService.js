@@ -14,6 +14,8 @@ const { isFixtureCabinName } = require('../../../utils/fixtureExclusion');
 const { countBlockingBlocksForSingleCabin } = require('../../publicAvailabilityService');
 const { BLOCKING_BOOKING_STATUSES } = require('../../calendar/blockingStatusConstants');
 const { processMetaPurchaseAfterConfirm } = require('../../bookingPurchaseTracking');
+const CabinType = require('../../../models/CabinType');
+const emailService = require('../../emailService');
 
 const ALLOWED_TRANSITIONS = {
   confirm: { from: ['pending'], to: 'confirmed', action: ACTIONS.OPS_RESERVATION_CONFIRM },
@@ -46,6 +48,41 @@ async function loadBookingOrFail(bookingId) {
     throw createDomainError('validation', 'Reservation not found', { bookingId }, 404);
   }
   return booking;
+}
+
+async function loadEntityForLifecycleEmail(booking) {
+  if (booking.cabinId) {
+    const cabin = await Cabin.findById(booking.cabinId).lean();
+    if (cabin) return cabin;
+  }
+  if (booking.cabinTypeId) {
+    const cabinType = await CabinType.findById(booking.cabinTypeId).lean();
+    if (cabinType) return cabinType;
+  }
+  return { name: 'Your stay', location: '' };
+}
+
+async function sendLifecycleStatusEmail({ booking, kind }) {
+  if (!booking?.guestInfo?.email) {
+    return { success: false, method: 'invalid', error: 'Guest email is missing for lifecycle email' };
+  }
+
+  const entity = await loadEntityForLifecycleEmail(booking);
+  const payload =
+    kind === 'confirm'
+      ? emailService.generateBookingConfirmedEmail(booking, entity)
+      : emailService.generateBookingCancelledEmail(booking, entity);
+
+  const sendResult = await emailService.sendEmail({
+    to: booking.guestInfo.email,
+    subject: payload.subject,
+    html: payload.html,
+    text: payload.text,
+    trigger: kind === 'confirm' ? 'booking_confirmed' : 'booking_cancelled',
+    bookingId: booking._id
+  });
+
+  return sendResult;
 }
 
 async function transitionReservation({ bookingId, kind, reason = null, ctx = {} }) {
@@ -103,6 +140,18 @@ async function transitionReservation({ bookingId, kind, reason = null, ctx = {} 
   booking.provenance.lastTransition = kind;
   booking.markModified('provenance');
   await booking.save({ validateBeforeSave: false });
+
+  if (kind === 'confirm' || kind === 'cancel') {
+    const lifecycleEmailResult = await sendLifecycleStatusEmail({ booking, kind });
+    if (!lifecycleEmailResult.success) {
+      console.error('[reservation-email] Lifecycle email failed:', {
+        bookingId: String(booking._id),
+        kind,
+        method: lifecycleEmailResult.method,
+        error: lifecycleEmailResult.error
+      });
+    }
+  }
 
   if (kind === 'confirm' && nextStatus === 'confirmed') {
     void processMetaPurchaseAfterConfirm(String(booking._id), ctx.req || {}).catch((err) => {

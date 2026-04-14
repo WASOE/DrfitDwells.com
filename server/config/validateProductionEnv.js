@@ -47,10 +47,22 @@ function validateProductionEnv(env = process.env) {
   }
 
   if (env.EMAIL_DELIVERY_REQUIRED === '1' || env.EMAIL_DELIVERY_REQUIRED === 'true') {
-    if (!env.SMTP_URL || !String(env.SMTP_URL).trim()) {
-      errors.push('SMTP_URL is required when EMAIL_DELIVERY_REQUIRED=1.');
-    } else if (!/^(smtps?|smtp):\/\//i.test(env.SMTP_URL) && !/^postmark\+smtp:\/\//i.test(env.SMTP_URL)) {
+    const smtpUrl = (env.SMTP_URL || '').trim();
+    const smtpHost = (env.SMTP_HOST || '').trim();
+    if (!smtpUrl && !smtpHost) {
+      errors.push('SMTP_URL or SMTP_HOST is required when EMAIL_DELIVERY_REQUIRED=1.');
+    } else if (smtpUrl && !/^(smtps?|smtp):\/\//i.test(smtpUrl) && !/^postmark\+smtp:\/\//i.test(smtpUrl)) {
       errors.push('SMTP_URL must look like a URL (e.g. smtp:// or smtps://).');
+    }
+
+    if (smtpHost) {
+      const smtpPortRaw = String(env.SMTP_PORT || '').trim();
+      if (smtpPortRaw) {
+        const smtpPort = Number.parseInt(smtpPortRaw, 10);
+        if (!Number.isFinite(smtpPort) || smtpPort <= 0 || smtpPort > 65535) {
+          errors.push('SMTP_PORT must be a valid TCP port number (1-65535).');
+        }
+      }
     }
   }
 

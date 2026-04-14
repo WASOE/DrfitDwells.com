@@ -19,7 +19,7 @@ Steps:
 - In Gmail, open each email → “Show original”. Confirm SPF/DKIM/DMARC = pass.
 
 Troubleshooting:
-- Ensure NODE_ENV=production and SMTP_URL are set and valid on the host.
+- Ensure NODE_ENV=production and SMTP transport is configured (`SMTP_URL` or `SMTP_HOST` mode), with `SMTP_TLS_SERVERNAME` set when loopback STARTTLS certificate hostname differs from `127.0.0.1`.
 - Check server logs for transporter verification messages.
 - If duplicates appear, verify idempotency logs (should show skipped-duplicate on rapid retries).
 

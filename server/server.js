@@ -63,7 +63,9 @@ if (process.env.NODE_ENV === 'production') {
   if (!process.env.MONGODB_URI) warnings.push('MONGODB_URI not set — using localhost default');
   if (!process.env.STRIPE_SECRET_KEY) warnings.push('STRIPE_SECRET_KEY not set — payments disabled');
   if (!process.env.STRIPE_WEBHOOK_SECRET) warnings.push('STRIPE_WEBHOOK_SECRET not set — webhooks disabled');
-  if (!process.env.SMTP_URL) warnings.push('SMTP_URL not set — emails will be logged, not sent');
+  if (!process.env.SMTP_URL && !process.env.SMTP_HOST) {
+    warnings.push('SMTP transport not set (SMTP_URL or SMTP_HOST) — emails will be logged, not sent');
+  }
   if (!process.env.CORS_ORIGINS) warnings.push('CORS_ORIGINS not set — using localhost defaults');
   warnings.forEach(w => console.warn(`[ENV WARNING] ${w}`));
 }

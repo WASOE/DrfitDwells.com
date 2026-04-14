@@ -17,6 +17,51 @@ const htmlEscape = (s) => {
 const sentEvents = new Map();
 const EVENT_TTL_MS = 10 * 60 * 1000;
 
+function isEmailDeliveryRequired() {
+  return process.env.EMAIL_DELIVERY_REQUIRED === '1' || process.env.EMAIL_DELIVERY_REQUIRED === 'true';
+}
+
+function parseBooleanEnv(value, fallback = false) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === '1' || normalized === 'true' || normalized === 'yes') return true;
+  if (normalized === '0' || normalized === 'false' || normalized === 'no') return false;
+  return fallback;
+}
+
+function buildSmtpTransportConfig() {
+  const smtpHost = (process.env.SMTP_HOST || '').trim();
+  const tlsServername = (process.env.SMTP_TLS_SERVERNAME || '').trim();
+
+  if (smtpHost) {
+    const smtpPort = Number.parseInt(process.env.SMTP_PORT || '587', 10);
+    const secure = parseBooleanEnv(process.env.SMTP_SECURE, smtpPort === 465);
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPass = process.env.SMTP_PASS;
+    const config = {
+      host: smtpHost,
+      port: Number.isFinite(smtpPort) ? smtpPort : 587,
+      secure
+    };
+    if (smtpUser || smtpPass) {
+      config.auth = { user: smtpUser || '', pass: smtpPass || '' };
+    }
+    if (tlsServername) {
+      config.tls = { servername: tlsServername };
+    }
+    return { config, source: 'SMTP_HOST' };
+  }
+
+  const smtpUrl = (process.env.SMTP_URL || '').trim();
+  if (!smtpUrl) return null;
+
+  const config = { url: smtpUrl };
+  if (tlsServername) {
+    config.tls = { servername: tlsServername };
+  }
+  return { config, source: 'SMTP_URL' };
+}
+
 function cleanupSentEvents() {
   const now = Date.now();
   for (const [k, t] of sentEvents) {
@@ -39,21 +84,28 @@ class EmailService {
   constructor() {
     this.transporter = null;
     this.isConfigured = false;
-    this.init();
+    this.lastInitError = null;
+    this.initPromise = this.init();
   }
 
   async init() {
-    const smtpUrl = process.env.SMTP_URL;
-    
-    if (!smtpUrl) {
-      console.log('📧 SMTP_URL not configured - emails will be logged instead of sent');
+    const transportConfig = buildSmtpTransportConfig();
+
+    if (!transportConfig) {
+      this.lastInitError = 'SMTP transport not configured';
+      if (isEmailDeliveryRequired()) {
+        console.error('📧 EMAIL DELIVERY REQUIRED but SMTP transport is missing');
+      } else {
+        console.log('📧 SMTP transport not configured - emails will be logged instead of sent');
+      }
       return;
     }
 
     try {
-      this.transporter = nodemailer.createTransport(smtpUrl);
+      this.transporter = nodemailer.createTransport(transportConfig.config);
       this.isConfigured = true;
-      console.log('📧 Email service configured with SMTP');
+      this.lastInitError = null;
+      console.log(`📧 Email service configured with SMTP (${transportConfig.source})`);
       if (process.env.NODE_ENV === 'production') {
         try {
           await this.transporter.verify();
@@ -62,14 +114,23 @@ class EmailService {
           console.error('📧 Email transporter verification failed:', verifyErr.message);
           this.transporter = null;
           this.isConfigured = false;
+          this.lastInitError = verifyErr.message || 'SMTP verify failed';
+          if (isEmailDeliveryRequired()) {
+            console.error('📧 EMAIL DELIVERY REQUIRED and transporter verification failed');
+          }
         }
       }
     } catch (error) {
       console.error('📧 Failed to configure email service:', error.message);
+      this.lastInitError = error.message || 'SMTP transport init failed';
     }
   }
 
   async sendEmail({ to, subject, html, text, trigger, bookingId }) {
+    if (this.initPromise) {
+      await this.initPromise;
+    }
+
     // Idempotency: avoid duplicate sends for same booking+event in short window
     if (bookingId && trigger) {
       const key = `${bookingId}:${trigger}`;
@@ -90,7 +151,16 @@ class EmailService {
     };
 
     if (!this.isConfigured || !this.transporter) {
-      // Log email instead of sending
+      const missingTransportError = this.lastInitError || 'SMTP transport unavailable';
+      if (isEmailDeliveryRequired()) {
+        console.error('📧 Required email delivery failed before send:', {
+          trigger,
+          bookingId,
+          to,
+          error: missingTransportError
+        });
+        return { success: false, method: 'unavailable', error: missingTransportError };
+      }
       console.log('📧 EMAIL LOG:', JSON.stringify(emailData, null, 2));
       return { success: true, method: 'logged' };
     }
@@ -133,7 +203,9 @@ class EmailService {
         to
       });
 
-      // Fallback to logging
+      if (isEmailDeliveryRequired()) {
+        return { success: false, method: 'failed', error: error.message };
+      }
       console.log('📧 EMAIL LOG (failed to send):', JSON.stringify(emailData, null, 2));
       return { success: false, method: 'logged', error: error.message };
     }
@@ -303,7 +375,7 @@ Thank you for choosing Drift & Dwells for your off-grid retreat.
 
 BOOKING DETAILS:
 - Cabin: ${cabin.name} • ${cabin.location}
-- Check-in: ${checkIn.toLocaleDateString('en-GB')} (${booking.cabinId.arrivalWindowDefault || 'TBD'})
+- Check-in: ${checkIn.toLocaleDateString('en-GB')} (${cabin?.arrivalWindowDefault || 'TBD'})
 - Check-out: ${checkOut.toLocaleDateString('en-GB')}
 - Duration: ${nights} night${nights !== 1 ? 's' : ''}
 - Guests: ${booking.adults} adult${booking.adults !== 1 ? 's' : ''}${booking.children > 0 ? `, ${booking.children} child${booking.children !== 1 ? 'ren' : ''}` : ''}
@@ -453,7 +525,7 @@ Great news! Your booking has been confirmed. We're excited to welcome you to you
 
 CONFIRMED DETAILS:
 - Cabin: ${cabin.name} • ${cabin.location}
-- Check-in: ${checkIn.toLocaleDateString('en-GB')} (${booking.cabinId.arrivalWindowDefault || 'TBD'})
+- Check-in: ${checkIn.toLocaleDateString('en-GB')} (${cabin?.arrivalWindowDefault || 'TBD'})
 - Check-out: ${checkOut.toLocaleDateString('en-GB')}
 - Duration: ${nights} night${nights !== 1 ? 's' : ''}
 - Total: €${booking.totalPrice}
