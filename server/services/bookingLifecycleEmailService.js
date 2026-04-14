@@ -264,5 +264,7 @@ module.exports = {
   isValidGuestTemplateKey,
   loadEntityForBooking,
   sendBookingLifecycleEmail,
-  sendInternalNewBookingNotification
+  sendInternalNewBookingNotification,
+  /** Exported for `node:test` contract coverage of send-status mapping only. */
+  resolveSendStatus
 };

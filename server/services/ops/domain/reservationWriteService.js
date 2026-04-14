@@ -570,6 +570,31 @@ async function createManualReservation({
     });
   }
 
+  if (initialStatus === 'confirmed') {
+    try {
+      const guestOutcome = await bookingLifecycleEmailService.sendBookingLifecycleEmail({
+        booking,
+        templateKey: bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_CONFIRMED,
+        overrideRecipient: null,
+        lifecycleSource: 'automatic',
+        actorContext: null,
+        entity: cabin
+      });
+      if (!guestOutcome.success) {
+        console.error('[reservation-email] Guest booking_confirmed not sent:', {
+          bookingId: String(booking._id),
+          method: guestOutcome.sendResult?.method,
+          error: guestOutcome.sendResult?.error
+        });
+      }
+    } catch (err) {
+      console.error('[reservation-email] Guest booking_confirmed error:', {
+        bookingId: String(booking._id),
+        message: err?.message || String(err)
+      });
+    }
+  }
+
   const result = {
     reservationId: String(booking._id),
     status: booking.status,

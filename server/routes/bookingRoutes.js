@@ -658,20 +658,29 @@ router.post('/', bookingCreateLimiter, [
     // Decouple SMTP latency from the HTTP response; booking is already persisted.
     void (async () => {
       try {
+        const guestTemplateKey =
+          initialStatus === 'confirmed'
+            ? bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_CONFIRMED
+            : bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_RECEIVED;
         const guestOutcome = await bookingLifecycleEmailService.sendBookingLifecycleEmail({
           booking,
-          templateKey: bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_RECEIVED,
+          templateKey: guestTemplateKey,
           overrideRecipient: null,
           lifecycleSource: 'automatic',
           actorContext: null,
           entity: entityForEmail
         });
         if (!guestOutcome.success) {
-          console.error('[booking-email] Guest booking_received not sent:', {
-            bookingId: String(booking._id),
-            method: guestOutcome.sendResult?.method,
-            error: guestOutcome.sendResult?.error
-          });
+          console.error(
+            initialStatus === 'confirmed'
+              ? '[booking-email] Guest booking_confirmed not sent:'
+              : '[booking-email] Guest booking_received not sent:',
+            {
+              bookingId: String(booking._id),
+              method: guestOutcome.sendResult?.method,
+              error: guestOutcome.sendResult?.error
+            }
+          );
         }
 
         const internalOutcome = await bookingLifecycleEmailService.sendInternalNewBookingNotification({

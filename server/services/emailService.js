@@ -248,6 +248,26 @@ class EmailService {
     const checkOut = new Date(booking.checkOut);
     const nights = Math.ceil((checkOut - checkIn) / (1000 * 3600 * 24));
 
+    const FALLBACK_STAY_ENTITY = {
+      name: 'Your stay',
+      location: '',
+      arrivalWindowDefault: '',
+      meetingPoint: undefined,
+      packingList: [],
+      arrivalGuideUrl: '',
+      safetyNotes: '',
+      emergencyContact: ''
+    };
+    let stay;
+    if (cabin != null && typeof cabin === 'object') {
+      stay = cabin;
+    } else {
+      console.warn('[email] generateBookingReceivedEmail: missing cabin/cabinType entity; using placeholder', {
+        bookingId: booking?._id != null ? String(booking._id) : undefined
+      });
+      stay = FALLBACK_STAY_ENTITY;
+    }
+
     const html = `
       <!DOCTYPE html>
       <html>
@@ -289,11 +309,11 @@ class EmailService {
               <h3 style="margin-top: 0; color: #374151;">Booking Details</h3>
               <div class="detail-row">
                 <span class="detail-label">Cabin:</span>
-                <span>${htmlEscape(cabin.name)} • ${htmlEscape(cabin.location)}</span>
+                <span>${htmlEscape(stay.name)} • ${htmlEscape(stay.location)}</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">Check-in:</span>
-                <span>${checkIn.toLocaleDateString('en-GB')} (${htmlEscape(cabin.arrivalWindowDefault || 'TBD')})</span>
+                <span>${checkIn.toLocaleDateString('en-GB')} (${htmlEscape(stay.arrivalWindowDefault || 'TBD')})</span>
               </div>
               <div class="detail-row">
                 <span class="detail-label">Check-out:</span>
@@ -323,28 +343,28 @@ class EmailService {
               </div>
             </div>
 
-            ${cabin.meetingPoint?.googleMapsUrl ? `
+            ${stay.meetingPoint?.googleMapsUrl ? `
             <div class="guidance-section">
               <h3 style="margin-top: 0; color: #92400e;">📍 Directions</h3>
-              <p><strong>Meeting Point:</strong> ${htmlEscape(cabin.meetingPoint.label || cabin.location)}</p>
-              <a href="${cabin.meetingPoint.googleMapsUrl}" class="btn" target="_blank">Open in Google Maps</a>
-              ${cabin.meetingPoint.what3words ? `<a href="https://what3words.com/${cabin.meetingPoint.what3words}" class="btn" target="_blank">///${cabin.meetingPoint.what3words}</a>` : ''}
-              ${cabin.meetingPoint.lat && cabin.meetingPoint.lng ? `<p style="margin: 10px 0; font-family: monospace; background: white; padding: 8px; border-radius: 4px;">GPS: ${cabin.meetingPoint.lat}, ${cabin.meetingPoint.lng}</p>` : ''}
+              <p><strong>Meeting Point:</strong> ${htmlEscape(stay.meetingPoint.label || stay.location)}</p>
+              <a href="${stay.meetingPoint.googleMapsUrl}" class="btn" target="_blank">Open in Google Maps</a>
+              ${stay.meetingPoint.what3words ? `<a href="https://what3words.com/${stay.meetingPoint.what3words}" class="btn" target="_blank">///${stay.meetingPoint.what3words}</a>` : ''}
+              ${stay.meetingPoint.lat && stay.meetingPoint.lng ? `<p style="margin: 10px 0; font-family: monospace; background: white; padding: 8px; border-radius: 4px;">GPS: ${stay.meetingPoint.lat}, ${stay.meetingPoint.lng}</p>` : ''}
             </div>
             ` : ''}
 
-            ${cabin.packingList && cabin.packingList.length > 0 ? `
+            ${stay.packingList && stay.packingList.length > 0 ? `
             <div class="packing-list">
               <h3 style="margin-top: 0; color: #166534;">🎒 Packing List</h3>
               <ul>
-                ${cabin.packingList.slice(0, 5).map(item => `<li>${htmlEscape(item)}</li>`).join('')}
-                ${cabin.packingList.length > 5 ? `<li><em>... and ${cabin.packingList.length - 5} more items</em></li>` : ''}
+                ${stay.packingList.slice(0, 5).map(item => `<li>${htmlEscape(item)}</li>`).join('')}
+                ${stay.packingList.length > 5 ? `<li><em>... and ${stay.packingList.length - 5} more items</em></li>` : ''}
               </ul>
-              ${cabin.packingList.length > 5 ? '<p><em>See full packing list in your booking confirmation email.</em></p>' : ''}
+              ${stay.packingList.length > 5 ? '<p><em>See full packing list in your booking confirmation email.</em></p>' : ''}
             </div>
             ` : ''}
 
-            ${cabin.location && (cabin.location.toLowerCase().includes('valley') || cabin.location.toLowerCase().includes('the valley')) ? `
+            ${stay.location && (stay.location.toLowerCase().includes('valley') || stay.location.toLowerCase().includes('the valley')) ? `
             <div class="guidance-section" style="background: #dbeafe; border-left: 4px solid #2563eb; padding: 20px; border-radius: 4px; margin: 20px 0;">
               <h3 style="margin-top: 0; color: #1e40af;">🗺️ Interactive Welcome Guide</h3>
               <p><strong>Open your trip guide</strong> to complete checklists, choose your arrival route, and prepare for The Valley.</p>
@@ -353,25 +373,25 @@ class EmailService {
             </div>
             ` : ''}
 
-            ${cabin.arrivalGuideUrl ? `
+            ${stay.arrivalGuideUrl ? `
             <div class="guidance-section">
               <h3 style="margin-top: 0; color: #92400e;">📄 Arrival Guide</h3>
               <p>Open practical route and arrival instructions (save offline before travel):</p>
-              <a href="${resolveGuideUrl(cabin.arrivalGuideUrl, process.env.APP_URL)}" class="btn" target="_blank">${isPdfUrl(cabin.arrivalGuideUrl) ? 'Download PDF Guide' : 'Open Arrival Guide'}</a>
+              <a href="${resolveGuideUrl(stay.arrivalGuideUrl, process.env.APP_URL)}" class="btn" target="_blank">${isPdfUrl(stay.arrivalGuideUrl) ? 'Download PDF Guide' : 'Open Arrival Guide'}</a>
             </div>
             ` : ''}
 
-            ${cabin.safetyNotes ? `
+            ${stay.safetyNotes ? `
             <div class="safety-notes">
               <h3 style="margin-top: 0; color: #dc2626;">⚠️ Safety & House Rules</h3>
-              <p>${htmlEscape(cabin.safetyNotes)}</p>
+              <p>${htmlEscape(stay.safetyNotes)}</p>
             </div>
             ` : ''}
 
-            ${cabin.emergencyContact ? `
+            ${stay.emergencyContact ? `
             <div class="contact-info">
               <h3 style="margin-top: 0; color: #1e40af;">🚨 Emergency Contact</h3>
-              <p><strong>${htmlEscape(cabin.emergencyContact)}</strong></p>
+              <p><strong>${htmlEscape(stay.emergencyContact)}</strong></p>
             </div>
             ` : ''}
 
@@ -403,8 +423,8 @@ Hello ${booking.guestInfo.firstName}!
 Thank you for choosing Drift & Dwells for your off-grid retreat.
 
 BOOKING DETAILS:
-- Cabin: ${cabin.name} • ${cabin.location}
-- Check-in: ${checkIn.toLocaleDateString('en-GB')} (${cabin?.arrivalWindowDefault || 'TBD'})
+- Cabin: ${stay.name} • ${stay.location}
+- Check-in: ${checkIn.toLocaleDateString('en-GB')} (${stay.arrivalWindowDefault || 'TBD'})
 - Check-out: ${checkOut.toLocaleDateString('en-GB')}
 - Duration: ${nights} night${nights !== 1 ? 's' : ''}
 - Guests: ${booking.adults} adult${booking.adults !== 1 ? 's' : ''}${booking.children > 0 ? `, ${booking.children} child${booking.children !== 1 ? 'ren' : ''}` : ''}
@@ -412,37 +432,37 @@ BOOKING DETAILS:
 ${booking.transportMethod && booking.transportMethod !== 'Not selected' ? `- Transport: ${booking.transportMethod}` : ''}
 - Total: €${booking.totalPrice}
 
-${cabin.meetingPoint?.googleMapsUrl ? `
+${stay.meetingPoint?.googleMapsUrl ? `
 DIRECTIONS:
-Meeting Point: ${cabin.meetingPoint.label || cabin.location}
-Google Maps: ${cabin.meetingPoint.googleMapsUrl}
-${cabin.meetingPoint.what3words ? `What3Words: ///${cabin.meetingPoint.what3words}` : ''}
-${cabin.meetingPoint.lat && cabin.meetingPoint.lng ? `GPS: ${cabin.meetingPoint.lat}, ${cabin.meetingPoint.lng}` : ''}
+Meeting Point: ${stay.meetingPoint.label || stay.location}
+Google Maps: ${stay.meetingPoint.googleMapsUrl}
+${stay.meetingPoint.what3words ? `What3Words: ///${stay.meetingPoint.what3words}` : ''}
+${stay.meetingPoint.lat && stay.meetingPoint.lng ? `GPS: ${stay.meetingPoint.lat}, ${stay.meetingPoint.lng}` : ''}
 ` : ''}
 
-${cabin.packingList && cabin.packingList.length > 0 ? `
+${stay.packingList && stay.packingList.length > 0 ? `
 PACKING LIST:
-${cabin.packingList.slice(0, 5).map(item => `- ${item}`).join('\n')}
-${cabin.packingList.length > 5 ? `... and ${cabin.packingList.length - 5} more items` : ''}
+${stay.packingList.slice(0, 5).map(item => `- ${item}`).join('\n')}
+${stay.packingList.length > 5 ? `... and ${stay.packingList.length - 5} more items` : ''}
 ` : ''}
 
-${cabin.location && (cabin.location.toLowerCase().includes('valley') || cabin.location.toLowerCase().includes('the valley')) ? `
+${stay.location && (stay.location.toLowerCase().includes('valley') || stay.location.toLowerCase().includes('the valley')) ? `
 INTERACTIVE WELCOME GUIDE:
 Open your trip guide: ${process.env.APP_URL || 'http://localhost:5173'}/my-trip/${booking._id}/valley-guide
 Complete your trip checklist 24 hours before arrival.
 ` : ''}
 
-${cabin.arrivalGuideUrl ? `
-ARRIVAL GUIDE: ${resolveGuideUrl(cabin.arrivalGuideUrl, process.env.APP_URL)}
+${stay.arrivalGuideUrl ? `
+ARRIVAL GUIDE: ${resolveGuideUrl(stay.arrivalGuideUrl, process.env.APP_URL)}
 ` : ''}
 
-${cabin.safetyNotes ? `
+${stay.safetyNotes ? `
 SAFETY & HOUSE RULES:
-${cabin.safetyNotes}
+${stay.safetyNotes}
 ` : ''}
 
-${cabin.emergencyContact ? `
-EMERGENCY CONTACT: ${cabin.emergencyContact}
+${stay.emergencyContact ? `
+EMERGENCY CONTACT: ${stay.emergencyContact}
 ` : ''}
 
 PAYMENT: €${booking.totalPrice} due on arrival (cash or credit cards accepted)
@@ -458,7 +478,7 @@ ${guestEmailFooterText()}
     `;
 
     return {
-      subject: `Booking Confirmation - ${cabin.name} (${checkIn.toLocaleDateString('en-GB')})`,
+      subject: `Booking Confirmation - ${stay.name} (${checkIn.toLocaleDateString('en-GB')})`,
       html,
       text
     };
