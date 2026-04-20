@@ -16,6 +16,7 @@ const initialState = {
     phone: '',
     specialRequests: '',
     agreedToTerms: false,
+    agreedToActivityRisk: false,
     romanticSetup: false
   },
   

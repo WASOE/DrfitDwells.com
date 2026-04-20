@@ -2,6 +2,10 @@ import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useBookingContext } from '../../context/BookingContext';
 import StickyBookingBar from '../../components/StickyBookingBar';
+import {
+  LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
+  LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT
+} from '../../constants/legalAcceptance';
 
 const Step3GuestDetails = () => {
   const navigate = useNavigate();
@@ -26,6 +30,7 @@ const Step3GuestDetails = () => {
     phone: guestInfo.phone || '',
     specialRequests: guestInfo.specialRequests || '',
     agreedToTerms: guestInfo.agreedToTerms || false,
+    agreedToActivityRisk: guestInfo.agreedToActivityRisk || false,
     romanticSetup: guestInfo.romanticSetup || false
   });
 
@@ -70,6 +75,9 @@ const Step3GuestDetails = () => {
     if (!formData.agreedToTerms) {
       newErrors.agreedToTerms = 'You must agree to the terms and conditions';
     }
+    if (!formData.agreedToActivityRisk) {
+      newErrors.agreedToActivityRisk = 'You must accept the activity and terrain risk statement';
+    }
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -106,7 +114,8 @@ const Step3GuestDetails = () => {
   const isFormValid = formData.fullName.trim() && 
                      formData.email.trim() && 
                      /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email) && 
-                     formData.agreedToTerms;
+                     formData.agreedToTerms &&
+                     formData.agreedToActivityRisk;
 
   const stepLabel = `Step ${currentStep || 3} of ${totalSteps || 4}`;
   const guestSummary = formData.fullName ? formData.fullName : 'Guest information needed';
@@ -258,18 +267,36 @@ const Step3GuestDetails = () => {
                       }`}
                     />
                     <span className="ml-4 text-sm md:text-base font-sans font-light text-black leading-relaxed">
-                      I agree to the{' '}
+                      I have read and accept the{' '}
                       <Link to="/terms" target="_blank" rel="noopener noreferrer" className="text-sage hover:text-sage-dark underline">
-                        retreat terms and conditions
+                        Terms & Conditions
                       </Link>{' '}
-                      and understand the{' '}
+                      and{' '}
                       <Link to="/cancellation-policy" target="_blank" rel="noopener noreferrer" className="text-sage hover:text-sage-dark underline">
-                        cancellation policy
+                        Cancellation Policy
                       </Link> *
                     </span>
                   </label>
                   {errors.agreedToTerms && (
                     <p className="mt-2 text-sm text-red-600">{errors.agreedToTerms}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="flex items-start cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.agreedToActivityRisk}
+                      onChange={(e) => handleInputChange('agreedToActivityRisk', e.target.checked)}
+                      className={`w-5 h-5 text-sage border-gray-300 rounded focus:ring-sage focus:ring-2 mt-0.5 flex-shrink-0 ${
+                        errors.agreedToActivityRisk ? 'border-red-500' : ''
+                      }`}
+                    />
+                    <span className="ml-4 text-sm md:text-base font-sans font-light text-black leading-relaxed">
+                      {LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT}
+                    </span>
+                  </label>
+                  {errors.agreedToActivityRisk && (
+                    <p className="mt-2 text-sm text-red-600">{errors.agreedToActivityRisk}</p>
                   )}
                 </div>
               </div>

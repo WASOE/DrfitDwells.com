@@ -21,6 +21,15 @@ const { BLOCKING_BOOKING_STATUSES } = require('../services/calendar/blockingStat
 const bookingLifecycleEmailService = require('../services/bookingLifecycleEmailService');
 const bookingQuoteService = require('../services/bookingQuoteService');
 const promoService = require('../services/promoService');
+const emailService = require('../services/emailService');
+const {
+  LEGAL_ACCEPTANCE_TERMS_VERSION,
+  LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+  LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
+  LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
+  LEGAL_ACCEPTANCE_TERMS_URL,
+  LEGAL_ACCEPTANCE_CANCELLATION_URL
+} = require('../config/legalAcceptance');
 const Stripe = require('stripe');
 
 const { validateId } = require('../middleware/validateId');
@@ -54,6 +63,8 @@ function sanitizeAttribution(raw) {
   return Object.values(o).some(Boolean) ? o : undefined;
 }
 
+const ACCEPTANCE_EMAIL_RETRY_DELAY_MS = 5000;
+
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
 const validateTransportMethod = (value, transportOptions) => {
@@ -86,6 +97,80 @@ const bookingQuoteLimiter = rateLimit({
   legacyHeaders: false,
   message: { success: false, message: 'Too many quote requests. Please try again shortly.' }
 });
+
+function buildLegalAcceptanceConfirmationEmailPayload(booking) {
+  const acceptance = booking.legalAcceptance || {};
+  const legalSubject = `Legal acceptance confirmation — booking ${String(booking._id)}`;
+  const baseSite = (process.env.APP_URL || 'https://driftdwells.com').replace(/\/$/, '');
+  const termsLink = `${baseSite}${LEGAL_ACCEPTANCE_TERMS_URL}`;
+  const cancellationLink = `${baseSite}${LEGAL_ACCEPTANCE_CANCELLATION_URL}`;
+  const legalAcceptedAtIso = acceptance.acceptedAt ? new Date(acceptance.acceptedAt).toISOString() : new Date().toISOString();
+
+  return {
+    to: booking.guestInfo.email,
+    subject: legalSubject,
+    html: `
+      <p>Hello ${booking.guestInfo?.firstName || 'Guest'},</p>
+      <p>This email confirms legal acceptance captured for your booking.</p>
+      <ul>
+        <li><strong>Booking ID:</strong> ${String(booking._id)}</li>
+        <li><strong>Accepted at:</strong> ${legalAcceptedAtIso}</li>
+        <li><strong>Terms version:</strong> ${acceptance.termsVersion || ''}</li>
+        <li><strong>Activity risk version:</strong> ${acceptance.activityRiskVersion || ''}</li>
+      </ul>
+      <p><strong>Accepted statements:</strong></p>
+      <ol>
+        <li>${acceptance.checkbox1TextSnapshot || ''}</li>
+        <li>${acceptance.checkbox2TextSnapshot || ''}</li>
+      </ol>
+      <p>Terms PDF: <a href="${termsLink}">${termsLink}</a></p>
+      <p>Cancellation policy: <a href="${cancellationLink}">${cancellationLink}</a></p>
+    `,
+    text: `Hello ${booking.guestInfo?.firstName || 'Guest'},
+
+This email confirms legal acceptance captured for your booking.
+
+Booking ID: ${String(booking._id)}
+Accepted at: ${legalAcceptedAtIso}
+Terms version: ${acceptance.termsVersion || ''}
+Activity risk version: ${acceptance.activityRiskVersion || ''}
+
+Accepted statements:
+1) ${acceptance.checkbox1TextSnapshot || ''}
+2) ${acceptance.checkbox2TextSnapshot || ''}
+
+Terms PDF: ${termsLink}
+Cancellation policy: ${cancellationLink}
+`,
+    trigger: 'booking_legal_acceptance',
+    bookingId: booking._id
+  };
+}
+
+async function sendLegalAcceptanceConfirmationWithRetry(booking) {
+  const payload = buildLegalAcceptanceConfirmationEmailPayload(booking);
+  const firstAttempt = await emailService.sendEmail(payload);
+  if (firstAttempt.success) return;
+
+  console.error('[booking-email] legal acceptance send failed (attempt 1)', {
+    event: 'booking_legal_acceptance_send_failed',
+    bookingId: String(booking._id),
+    method: firstAttempt.method,
+    error: firstAttempt.error
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, ACCEPTANCE_EMAIL_RETRY_DELAY_MS));
+  const secondAttempt = await emailService.sendEmail(payload);
+  if (!secondAttempt.success) {
+    console.error('[booking-email] legal acceptance send failed (attempt 2)', {
+      event: 'booking_legal_acceptance_send_failed_retry',
+      bookingId: String(booking._id),
+      method: secondAttempt.method,
+      error: secondAttempt.error,
+      retryDelayMs: ACCEPTANCE_EMAIL_RETRY_DELAY_MS
+    });
+  }
+}
 
 const purchaseTrackingLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -256,6 +341,26 @@ router.post('/', bookingCreateLimiter, [
   body('guestInfo.lastName').trim().isLength({ min: 1, max: 50 }).withMessage('Last name is required (max 50 characters)'),
   body('guestInfo.email').isEmail().normalizeEmail().withMessage('Valid email is required'),
   body('guestInfo.phone').trim().isLength({ min: 1 }).withMessage('Phone number is required'),
+  body('legalAcceptance').isObject().withMessage('legalAcceptance is required'),
+  body('legalAcceptance.acceptedTermsAndCancellation')
+    .custom((value) => value === true)
+    .withMessage('Terms and cancellation acceptance is required'),
+  body('legalAcceptance.acceptedActivityRisk')
+    .custom((value) => value === true)
+    .withMessage('Activity risk acceptance is required'),
+  body('legalAcceptance.termsVersion')
+    .equals(LEGAL_ACCEPTANCE_TERMS_VERSION)
+    .withMessage('Invalid terms version'),
+  body('legalAcceptance.activityRiskVersion')
+    .equals(LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION)
+    .withMessage('Invalid activity risk version'),
+  body('legalAcceptance.checkbox1TextSnapshot')
+    .equals(LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT)
+    .withMessage('Invalid checkbox 1 text'),
+  body('legalAcceptance.checkbox2TextSnapshot')
+    .equals(LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT)
+    .withMessage('Invalid checkbox 2 text'),
+  body('legalAcceptance.locale').optional().isString().isLength({ max: 50 }).withMessage('locale is too long'),
   body('specialRequests').optional().isLength({ max: 500 }).withMessage('Special requests cannot exceed 500 characters'),
   body('promoCode').optional().isString().isLength({ max: 40 }).withMessage('promoCode is too long')
 ], async (req, res) => {
@@ -270,7 +375,7 @@ router.post('/', bookingCreateLimiter, [
       });
     }
 
-    const { cabinId, cabinTypeId, unitId, checkIn, checkOut, adults, children = 0, guestInfo, specialRequests, paymentIntentId } = req.body;
+    const { cabinId, cabinTypeId, unitId, checkIn, checkOut, adults, children = 0, guestInfo, specialRequests, paymentIntentId, legalAcceptance } = req.body;
 
     // Validate: must have either cabinId OR cabinTypeId, not both
     if (!cabinId && !cabinTypeId) {
@@ -550,6 +655,22 @@ router.post('/', bookingCreateLimiter, [
         source: 'guest_portal',
         intakeRevision: 1,
         createdByRoute: 'POST /api/bookings'
+      },
+      legalAcceptance: {
+        termsVersion: legalAcceptance.termsVersion,
+        activityRiskVersion: legalAcceptance.activityRiskVersion,
+        acceptedAt: new Date(),
+        firstName: String(guestInfo.firstName || '').trim(),
+        lastName: String(guestInfo.lastName || '').trim(),
+        ip: String(req.ip || '').trim() || null,
+        userAgent: String(req.get('user-agent') || '').trim() || null,
+        locale: typeof legalAcceptance.locale === 'string' && legalAcceptance.locale.trim()
+          ? legalAcceptance.locale.trim().slice(0, 50)
+          : (typeof req.get('accept-language') === 'string' && req.get('accept-language').trim()
+            ? req.get('accept-language').trim().slice(0, 50)
+            : null),
+        checkbox1TextSnapshot: legalAcceptance.checkbox1TextSnapshot,
+        checkbox2TextSnapshot: legalAcceptance.checkbox2TextSnapshot
       }
     };
 
@@ -695,6 +816,8 @@ router.post('/', bookingCreateLimiter, [
             error: internalOutcome.sendResult?.error
           });
         }
+
+        await sendLegalAcceptanceConfirmationWithRetry(booking);
       } catch (emailError) {
         console.error('[booking-email] Async delivery error:', emailError);
       }

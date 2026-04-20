@@ -105,6 +105,8 @@ function App() {
               <Route path="/build" element={<Build />} />
               <Route path="/journal" element={<Navigate to="/build" replace />} />
               <Route path="/terms" element={<Terms />} />
+              <Route path="/terms-and-conditions-drift-dwells" element={<Navigate to="/terms" replace />} />
+              <Route path="/terms-and-conditions-drift-dwells/" element={<Navigate to="/terms" replace />} />
               <Route path="/privacy" element={<Privacy />} />
               <Route path="/cancellation-policy" element={<CancellationPolicy />} />
               <Route path="/career" element={<Career />} />

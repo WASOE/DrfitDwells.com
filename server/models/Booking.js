@@ -115,6 +115,62 @@ const bookingSchema = new mongoose.Schema({
       trim: true
     }
   },
+  legalAcceptance: {
+    termsVersion: {
+      type: String,
+      required: false,
+      trim: true
+    },
+    activityRiskVersion: {
+      type: String,
+      required: false,
+      trim: true
+    },
+    acceptedAt: {
+      type: Date,
+      required: false
+    },
+    firstName: {
+      type: String,
+      required: false,
+      trim: true,
+      maxlength: [50, 'Legal acceptance first name cannot exceed 50 characters']
+    },
+    lastName: {
+      type: String,
+      required: false,
+      trim: true,
+      maxlength: [50, 'Legal acceptance last name cannot exceed 50 characters']
+    },
+    ip: {
+      type: String,
+      required: false,
+      trim: true,
+      maxlength: [100, 'Legal acceptance IP cannot exceed 100 characters']
+    },
+    userAgent: {
+      type: String,
+      required: false,
+      trim: true,
+      maxlength: [500, 'Legal acceptance userAgent cannot exceed 500 characters']
+    },
+    locale: {
+      type: String,
+      required: false,
+      trim: true,
+      maxlength: [50, 'Legal acceptance locale cannot exceed 50 characters']
+    },
+    checkbox1TextSnapshot: {
+      type: String,
+      required: false,
+      trim: true
+    },
+    checkbox2TextSnapshot: {
+      type: String,
+      required: false,
+      trim: true
+    }
+  },
   totalPrice: {
     type: Number,
     required: true,

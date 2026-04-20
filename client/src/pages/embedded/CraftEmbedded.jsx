@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useBookingContext } from '../../context/BookingContext';
 import { cabinAPI } from '../../services/api';
+import {
+  LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT
+} from '../../constants/legalAcceptance';
 
 // Nature-inspired icons (reused from Step1)
 const HeartIcon = () => (
@@ -81,6 +84,7 @@ const CraftEmbedded = () => {
     phone: guestInfo.phone || '',
     specialRequests: guestInfo.specialRequests || '',
     agreedToTerms: guestInfo.agreedToTerms || false,
+    agreedToActivityRisk: guestInfo.agreedToActivityRisk || false,
     romanticSetup: guestInfo.romanticSetup || false
   });
 
@@ -202,6 +206,9 @@ const CraftEmbedded = () => {
     if (!formData.agreedToTerms) {
       newErrors.agreedToTerms = 'You must agree to the terms and conditions';
     }
+    if (!formData.agreedToActivityRisk) {
+      newErrors.agreedToActivityRisk = 'You must accept the activity and terrain risk statement';
+    }
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -305,7 +312,8 @@ const CraftEmbedded = () => {
   const isFormValid = formData.fullName.trim() && 
                      formData.email.trim() && 
                      /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email) && 
-                     formData.agreedToTerms;
+                     formData.agreedToTerms &&
+                     formData.agreedToActivityRisk;
 
   const availableTransports = cabin?.transportOptions?.filter(transport => transport.isAvailable) || [];
 
@@ -619,6 +627,24 @@ const CraftEmbedded = () => {
                       </label>
                       {errors.agreedToTerms && (
                         <p className="mt-1 text-sm text-red-600">{errors.agreedToTerms}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="flex items-start cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={formData.agreedToActivityRisk}
+                          onChange={(e) => handleInputChange('agreedToActivityRisk', e.target.checked)}
+                          className={`w-5 h-5 text-drift-green border-gray-300 rounded focus:ring-drift-green focus:ring-2 mt-0.5 ${
+                            errors.agreedToActivityRisk ? 'border-red-500' : ''
+                          }`}
+                        />
+                        <span className="ml-4 text-sm text-gray-900 leading-relaxed">
+                          {LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT}
+                        </span>
+                      </label>
+                      {errors.agreedToActivityRisk && (
+                        <p className="mt-1 text-sm text-red-600">{errors.agreedToActivityRisk}</p>
                       )}
                     </div>
                   </div>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
@@ -16,6 +16,12 @@ import { getMetaClientContextPayload } from '../tracking/metaClientContext';
 import { readGuestPromo, writeGuestPromo } from '../utils/guestPromo';
 import { useSiteLanguage } from '../hooks/useSiteLanguage';
 import { formatStayDayLong } from '../utils/localeDates';
+import {
+  LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+  LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
+  LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
+  LEGAL_ACCEPTANCE_TERMS_VERSION
+} from '../constants/legalAcceptance';
 
 const stripePk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 const stripePromise = stripePk ? loadStripe(stripePk) : null;
@@ -125,7 +131,9 @@ const ConfirmBooking = () => {
     lastName: '',
     email: '',
     phone: '',
-    specialRequests: ''
+    specialRequests: '',
+    agreedToTerms: initialState.legalAcceptance?.agreedToTerms || false,
+    agreedToActivityRisk: initialState.legalAcceptance?.agreedToActivityRisk || false
   });
 
   const [checkIn, setCheckIn] = useState(() => {
@@ -421,6 +429,15 @@ const ConfirmBooking = () => {
               phone: fd.phone || ''
             },
             specialRequests: fd.specialRequests || '',
+            legalAcceptance: {
+              acceptedTermsAndCancellation: !!fd.agreedToTerms,
+              acceptedActivityRisk: !!fd.agreedToActivityRisk,
+              termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
+              activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+              checkbox1TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
+              checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
+              locale: language || undefined
+            },
             metaClientContext: getMetaClientContextPayload(),
             ...(data.promoCode ? { promoCode: data.promoCode } : {}),
             ...(attr && Object.values(attr).some(Boolean) ? { attribution: attr } : {})
@@ -467,7 +484,7 @@ const ConfirmBooking = () => {
       }
       window.history.replaceState({}, '', window.location.pathname);
     }
-  }, [bookingEntityId, bookingEntityType, id, navigate, t]);
+  }, [bookingEntityId, bookingEntityType, id, navigate, t, language]);
 
   useEffect(() => {
     if (
@@ -569,6 +586,15 @@ const ConfirmBooking = () => {
           phone: formData.phone.trim()
         },
         specialRequests: formData.specialRequests.trim(),
+        legalAcceptance: {
+          acceptedTermsAndCancellation: !!formData.agreedToTerms,
+          acceptedActivityRisk: !!formData.agreedToActivityRisk,
+          termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
+          activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+          checkbox1TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
+          checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
+          locale: language || undefined
+        },
         metaClientContext: getMetaClientContextPayload(),
         ...(attr && Object.values(attr).some(Boolean) ? { attribution: attr } : {})
       };
@@ -601,10 +627,14 @@ const ConfirmBooking = () => {
     } else {
       throw new Error(response.data.message || t('confirm.bookingFailed'));
     }
-  }, [bookingEntityId, bookingEntityType, checkIn, checkOut, adults, children, formData, selectedExpKeys, experiences, navigate, lockedPromoCode, t]);
+  }, [bookingEntityId, bookingEntityType, checkIn, checkOut, adults, children, formData, selectedExpKeys, experiences, navigate, lockedPromoCode, t, language]);
 
   const handleConfirmAndPay = useCallback(async () => {
     if (!bookingEntityId || !checkIn || !checkOut || !pricing || !serverQuote || serverQuote.totalPrice < 0.5) return;
+    if (!formData.agreedToTerms || !formData.agreedToActivityRisk) {
+      setError('Please accept both required legal acknowledgments before completing your booking.');
+      return;
+    }
     setSubmitLoading(true);
     setError(null);
     try {
@@ -614,10 +644,14 @@ const ConfirmBooking = () => {
     } finally {
       setSubmitLoading(false);
     }
-  }, [bookingEntityId, checkIn, checkOut, pricing, serverQuote, createBooking, t]);
+  }, [bookingEntityId, checkIn, checkOut, pricing, serverQuote, createBooking, t, formData.agreedToTerms, formData.agreedToActivityRisk]);
 
   const handleStripeSubmit = useCallback(async (stripe, elements) => {
     if (!bookingEntityId || !checkIn || !checkOut || !pricing || !serverQuote || serverQuote.totalPrice < 0.5) return;
+    if (!formData.agreedToTerms || !formData.agreedToActivityRisk) {
+      setError('Please accept both required legal acknowledgments before completing your booking.');
+      return;
+    }
     setSubmitLoading(true);
     setError(null);
     setStripeError(null);
@@ -736,6 +770,7 @@ const ConfirmBooking = () => {
     !!formData.email?.trim() &&
     !!formData.phone?.trim();
   const hasValidGuestInfo = hasGuestInfo && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim());
+  const hasLegalAcceptance = !!formData.agreedToTerms && !!formData.agreedToActivityRisk;
 
   const coverImage = cabin.images?.[0]?.url || cabin.imageUrl;
   const cabinName = cabin.name || t('confirm.cabinFallback');
@@ -982,6 +1017,38 @@ const ConfirmBooking = () => {
           </a>
         </div>
 
+        <div className="py-4 border-t border-gray-200 space-y-4">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={!!formData.agreedToTerms}
+              onChange={(e) => handleFormChange('agreedToTerms', e.target.checked)}
+              className="mt-0.5 w-5 h-5 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+            />
+            <span className="text-sm text-gray-800 leading-relaxed">
+              I have read and accept the{' '}
+              <Link to="/terms" target="_blank" rel="noopener noreferrer" className="underline">
+                Terms & Conditions
+              </Link>{' '}
+              and{' '}
+              <Link to="/cancellation-policy" target="_blank" rel="noopener noreferrer" className="underline">
+                Cancellation Policy
+              </Link>.
+            </span>
+          </label>
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={!!formData.agreedToActivityRisk}
+              onChange={(e) => handleFormChange('agreedToActivityRisk', e.target.checked)}
+              className="mt-0.5 w-5 h-5 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+            />
+            <span className="text-sm text-gray-800 leading-relaxed">
+              {LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT}
+            </span>
+          </label>
+        </div>
+
         {/* Payment - Stripe when configured, else pay on arrival */}
         <div className="mt-6 p-6 bg-white rounded-xl border border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('confirm.paymentTitle')}</h2>
@@ -992,7 +1059,7 @@ const ConfirmBooking = () => {
                   onSubmit={handleStripeSubmit}
                   loading={submitLoading}
                   disabled={
-                    !hasValidGuestInfo || quoteLoading || !!quoteError || !serverQuote || serverQuote.totalPrice < 0.5
+                    !hasValidGuestInfo || !hasLegalAcceptance || quoteLoading || !!quoteError || !serverQuote || serverQuote.totalPrice < 0.5
                   }
                 />
               </Elements>
@@ -1012,6 +1079,7 @@ const ConfirmBooking = () => {
                   submitLoading ||
                   !pricing ||
                   !hasValidGuestInfo ||
+                  !hasLegalAcceptance ||
                   quoteLoading ||
                   !!quoteError ||
                   !serverQuote ||

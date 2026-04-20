@@ -202,6 +202,11 @@ const staticOptions = {
 };
 app.use('/uploads', express.static(uploadsDir, staticOptions));
 
+// Legacy SEO URL hard redirect to canonical terms page.
+app.get(['/terms-and-conditions-drift-dwells', '/terms-and-conditions-drift-dwells/'], (req, res) => {
+  res.redirect(301, '/terms');
+});
+
 // DB availability check
 const requireDb = (req, res, next) => {
   if (db.isConnected && db.isConnected()) return next();
