@@ -20,6 +20,7 @@
     "test:e2e:auth": "playwright test --project=chromium-admin-auth --project=chromium-ops --project=chromium-permissions-operator",
     "test:e2e:api": "playwright test tests/e2e/api/api-auth.spec.js",
     "test:e2e:availability-contract": "playwright test tests/e2e/api/availability-contract.spec.js --project=chromium",
+    "guard:legal-paths": "node scripts/check-legacy-legal-paths.mjs",
     "k6:smoke": "k6 run k6/smoke.js",
     "k6:average-load": "k6 run k6/average-load.js",
     "k6:stress": "k6 run k6/stress.js"

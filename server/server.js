@@ -206,6 +206,9 @@ app.use('/uploads', express.static(uploadsDir, staticOptions));
 app.get(['/terms-and-conditions-drift-dwells', '/terms-and-conditions-drift-dwells/'], (req, res) => {
   res.redirect(301, '/terms');
 });
+app.get('/uploads/PDFs/drift-dwells-docs-v2/terms.pdf', (req, res) => {
+  res.redirect(301, '/legal/terms-2026-04-19-v2.pdf');
+});
 
 // DB availability check
 const requireDb = (req, res, next) => {
