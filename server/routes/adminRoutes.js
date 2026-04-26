@@ -15,6 +15,7 @@ const {
   createCabin,
   updateCabin
 } = require('../controllers/adminController');
+const { listBookingEmailEvents } = require('../controllers/shared/bookingLifecycleEmailController');
 const Cabin = require('../models/Cabin');
 const EmailEvent = require('../models/EmailEvent');
 const path = require('path');
@@ -364,49 +365,7 @@ router.delete('/cabins/:id/images/:imageId', validateId('id'), validateId('image
 });
 
 // GET /api/admin/email-events - Get email events for a booking or email
-router.get('/email-events', async (req, res) => {
-  try {
-    const { bookingId, email, page = 1, limit = 50 } = req.query;
-    
-    if (!bookingId && !email) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Either bookingId or email is required' 
-      });
-    }
-
-    const filter = {};
-    if (bookingId) filter.bookingId = bookingId;
-    if (email) filter.to = email;
-
-    const pageNum = Math.max(1, parseInt(page, 10) || 1);
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
-    const skip = (pageNum - 1) * limitNum;
-
-    const events = await EmailEvent.find(filter)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limitNum)
-      .lean();
-
-    const total = await EmailEvent.countDocuments(filter);
-
-    return res.json({
-      success: true,
-      data: {
-        events,
-        pagination: {
-          page: pageNum,
-          limit: limitNum,
-          total,
-          pages: Math.ceil(total / limitNum)
-        }
-      }
-    });
-  } catch (e) {
-    return res.status(500).json({ success: false, message: e.message });
-  }
-});
+router.get('/email-events', listBookingEmailEvents);
 
 // POST /api/admin/backfill-imageurl - Backfill imageUrl for existing cabins
 router.post('/backfill-imageurl', async (req, res) => {

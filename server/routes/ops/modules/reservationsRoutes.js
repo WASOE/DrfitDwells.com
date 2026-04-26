@@ -1,4 +1,6 @@
 const express = require('express');
+const { body, validationResult } = require('express-validator');
+const { validateId } = require('../../../middleware/validateId');
 const {
   getReservationsWorkspaceReadModel,
   getReservationsExportRows,
@@ -13,8 +15,25 @@ const {
   createManualReservation
 } = require('../../../services/ops/domain/reservationWriteService');
 const { editGuestContact } = require('../../../services/ops/domain/guestWriteService');
+const {
+  previewBookingLifecycleEmail,
+  resendBookingLifecycleEmail,
+  listBookingEmailEvents
+} = require('../../../controllers/shared/bookingLifecycleEmailController');
 
 const router = express.Router();
+
+function validateLifecycleEmailBody(req, res, next) {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      message: 'Validation failed',
+      errors: errors.array()
+    });
+  }
+  next();
+}
 
 function handleDomainError(res, error) {
   if (error.code === 'PERMISSION_DENIED') {
@@ -96,6 +115,33 @@ router.post('/manual', async (req, res) => {
     return handleDomainError(res, error);
   }
 });
+
+router.post(
+  '/:id/email-actions/preview',
+  validateId('id'),
+  [
+    body('templateKey')
+      .isIn(['booking_received', 'booking_confirmed', 'booking_cancelled'])
+      .withMessage('templateKey must be booking_received, booking_confirmed, or booking_cancelled')
+  ],
+  validateLifecycleEmailBody,
+  previewBookingLifecycleEmail
+);
+
+router.post(
+  '/:id/email-actions/resend',
+  validateId('id'),
+  [
+    body('templateKey')
+      .isIn(['booking_received', 'booking_confirmed', 'booking_cancelled'])
+      .withMessage('templateKey must be booking_received, booking_confirmed, or booking_cancelled'),
+    body('overrideRecipient').optional({ checkFalsy: true }).isEmail().withMessage('overrideRecipient must be a valid email')
+  ],
+  validateLifecycleEmailBody,
+  resendBookingLifecycleEmail
+);
+
+router.get('/:id/email-events', validateId('id'), listBookingEmailEvents);
 
 router.get('/:id', async (req, res) => {
   try {

@@ -23,6 +23,8 @@ const opsReadAPI = {
   reservations: (params) => api.get('/ops/reservations', { params, headers: authHeaders() }),
   reservationsExport: (params) => api.get('/ops/reservations/export', { params, headers: authHeaders() }),
   reservationDetail: (id) => api.get(`/ops/reservations/${id}`, { headers: authHeaders() }),
+  reservationEmailEvents: (id, params) =>
+    api.get(`/ops/reservations/${id}/email-events`, { params, headers: authHeaders() }),
   health: () => api.get('/ops/health/readiness', { headers: authHeaders() }),
   cabins: (params) => api.get('/ops/cabins', { params, headers: authHeaders() }),
   cabinDetail: (id) => api.get(`/ops/cabins/${id}`, { headers: authHeaders() }),
@@ -51,6 +53,10 @@ const opsWriteAPI = {
   editReservationDates: (id, payload) => api.post(`/ops/reservations/${id}/actions/edit-dates`, payload, { headers: authHeaders() }),
   editGuestContact: (id, payload) => api.post(`/ops/reservations/${id}/actions/edit-guest-contact`, payload, { headers: authHeaders() }),
   addReservationNote: (id, content) => api.post(`/ops/reservations/${id}/actions/add-note`, { content }, { headers: authHeaders() }),
+  previewBookingLifecycleEmail: (id, body) =>
+    api.post(`/ops/reservations/${id}/email-actions/preview`, body, { headers: authHeaders() }),
+  resendBookingLifecycleEmail: (id, body) =>
+    api.post(`/ops/reservations/${id}/email-actions/resend`, body, { headers: authHeaders() }),
   sendArrivalInstructions: (id) =>
     api.post(`/ops/communications/reservations/${id}/actions/send-arrival-instructions`, {}, { headers: authHeaders() }),
   resendArrivalInstructions: (id) =>
