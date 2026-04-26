@@ -1,0 +1,57 @@
+# Feature matrix: Legacy Admin → OPS
+
+**Legend — Migration action:** `move` = implement in OPS using shared services; `proxy` = OPS calls same endpoint temporarily; `redirect` = browser/route sends user to OPS; `delete` = remove after parity; `keep temporarily` = compatibility until cutover.
+
+**Note:** “Backend service/controller” lists the primary owner; inline route handlers in `adminRoutes.js` are called out explicitly.
+
+| Domain | Current /admin route | Current frontend file | Current API route | Backend service/controller | Models touched | Write capable? | Existing OPS equivalent | Target OPS route | Migration action | Risk | Dependencies | Test required | Proposed phase |
+|--------|----------------------|----------------------|-------------------|------------------------------|----------------|----------------|---------------------------|------------------|-------------------|------|--------------|---------------|----------------|
+| Auth | `/admin/login` | `client/src/pages/admin/AdminLogin.jsx` | `POST /api/admin/login` | `login()` in `adminController.js` | n/a | yes | Shared token used by OPS (`/admin/login` → OPS) | `/admin/login` (temporary) or future `/ops/login` | keep temporarily → later move | low | JWT/session contract | login, role routing | 4–5 |
+| Shell / nav | `/admin/*` (layout) | `client/src/layouts/AdminLayout.jsx` | `HEAD/GET /api/admin/bookings` (auth probe) | `getBookings` / HEAD behavior | `Booking` | read | `OpsLayout` + ops health | `/ops/*` | redirect / delete shell | low | token in `localStorage` | operator vs admin redirect | 4 |
+| Bookings list | `/admin/bookings` | `client/src/pages/admin/BookingsList.jsx`, `client/src/components/admin/BookingsTable.jsx` | `GET /api/admin/bookings` | `getBookings()` in `adminController.js` | `Booking`, `Cabin` | read | `GET /api/ops/reservations` | `/ops/reservations` | move filters/export; redirect | medium | parity with filters (`stayScope`, etc.) | list, pagination, filters | 1 |
+| Booking status (list) | `/admin/bookings` | `BookingsTable.jsx` | `PATCH /api/admin/bookings/:id/status` | `updateBookingStatus()` | `Booking`, audit | yes | OPS reservation actions | `/ops/reservations/:id` | move; deprecate admin write | high | cutover, lifecycle emails | status transitions | 1 |
+| Email health (list) | `/admin/bookings` | `BookingsTable.jsx` | `GET /api/admin/email-events/summary` | inline in `adminRoutes.js` | `EmailEvent` | read | partial: `GET /api/ops/communications/oversight` | `/ops/reservations` or comms | move or proxy | low | UX parity | column / badge | 1 |
+| Booking detail | `/admin/bookings/:id` | `client/src/pages/admin/BookingDetail.jsx` | `GET /api/admin/bookings/:id` | `getBookingById()` | `Booking`, `Cabin` | read | `GET /api/ops/reservations/:id` | `/ops/reservations/:id` | redirect | low | detail read model parity | load detail | 1 |
+| Booking status (detail) | `/admin/bookings/:id` | `BookingDetail.jsx` | `PATCH /api/admin/bookings/:id/status` | `updateBookingStatus()` | `Booking`, audit | yes | OPS actions | `/ops/reservations/:id` | move; deprecate | high | same as list status | transitions | 1 |
+| Email timeline | `/admin/bookings/:id` | `BookingDetail.jsx` | `GET /api/admin/email-events` | inline `adminRoutes.js` | `EmailEvent` | read | partial in reservation detail / comms | `/ops/reservations/:id` | move | low | pagination | events list | 1 |
+| Lifecycle email preview | `/admin/bookings/:id` | `BookingDetail.jsx` | `POST /api/admin/bookings/:id/email-actions/preview` | `previewBookingLifecycleEmail()` | `Booking`, `Cabin` | read (compose) | none | `/ops/reservations/:id` | move (shared service) | medium | `bookingLifecycleEmailService` | preview modal | 1 |
+| Lifecycle email resend | `/admin/bookings/:id` | `BookingDetail.jsx` | `POST /api/admin/bookings/:id/email-actions/resend` | `resendBookingLifecycleEmail()` | `Booking`, `EmailEvent` | yes | none (arrival only in OPS) | `/ops/reservations/:id` | move (shared service) | high | audit, provider | send, logs | 1 |
+| CSV export | `/admin/bookings` | `BookingsTable.jsx`, `client/src/utils/csvExport.js` | none (client) | n/a | n/a | read | none | `/ops/reservations` | move (client export from OPS data) | low | column parity | export file | 1 |
+| Cabins list | `/admin/cabins` | `client/src/pages/admin/CabinsList.jsx` | `GET /api/admin/cabins` | `getCabins()` | `Cabin`, `CabinType`, `Unit`, review aggregates | read | `GET /api/ops/cabins` | `/ops/cabins` | redirect list when parity | low | list fields | list | 2 |
+| Cabin create/edit | `/admin/cabins/new`, `/admin/cabins/:id` | `client/src/pages/admin/CabinEdit.jsx` | `POST/PATCH /api/admin/cabins` | `createCabin`, `updateCabin` | `Cabin`, `Booking`, `CabinType`, `Unit` | yes | read-focused OPS cabins | `/ops/cabins/:id` | move | high | cutover `cabins` module | CRUD | 2 |
+| Cabin image upload | `/admin/cabins/:id` | `CabinEdit.jsx`, `client/src/api/adminImages.js` | `POST /api/admin/cabins/:id/images` | inline `adminRoutes.js` | `Cabin` | yes | none | `/ops/cabins/:id` | move (reuse handler or service) | high | `syncMultiUnitGalleryToCabinType`, files | upload | 2 |
+| Cabin image reorder | `/admin/cabins/:id` | same | `PATCH /api/admin/cabins/:id/images/reorder` | inline | `Cabin` | yes | none | `/ops/cabins/:id` | move | medium | same | reorder | 2 |
+| Cabin image patch | `/admin/cabins/:id` | same | `PATCH /api/admin/cabins/:id/images/:imageId` | inline | `Cabin` | yes | none | `/ops/cabins/:id` | move | medium | tags whitelist | meta edit | 2 |
+| Cabin image batch | `/admin/cabins/:id` | same | `PATCH /api/admin/cabins/:id/images/batch` | inline | `Cabin` | yes | none | `/ops/cabins/:id` | move | medium | batch validation | batch | 2 |
+| Cabin image delete | `/admin/cabins/:id` | same | `DELETE /api/admin/cabins/:id/images/:imageId` | inline + `permissionService` | `Cabin`, `AuditEvent` | yes | none | `/ops/cabins/:id` | move | high | audit required | delete | 2 |
+| Reviews list | `/admin/reviews` | `client/src/pages/admin/ReviewsList.jsx` | `GET /api/admin/reviews` | inline `adminReviewRoutes.js` | `Review`, `Cabin` | read | `GET /api/ops/reviews` | `/ops/reviews` | move list filters if needed | low | text index | list | 3 |
+| Review create/edit | `/admin/reviews`, `/admin/reviews/:id` | `ReviewsList.jsx`, `ReviewEdit.jsx` | `POST/PATCH /api/admin/reviews` | inline + `adminModuleWriteGate` | `Review`, `Cabin`, `CabinType` | yes | none | `/ops/reviews` (editor) | move | medium | stats recompute | CRUD | 3 |
+| Reviews bulk | `/admin/reviews` | `ReviewsList.jsx` | `POST /api/admin/reviews/bulk` | inline | `Review` | yes | none | `/ops/reviews` | move | medium | bulk validation | bulk | 3 |
+| Reviews recalc | n/a (API/tooling) | n/a | `POST /api/admin/reviews/recalc/:cabinId` | inline | `Cabin`, `Review` | yes | none | `/ops/reviews` or maintenance | move | medium | cabin stats | recalc | 3 |
+| Promo codes | `/admin/promo-codes` | `client/src/pages/admin/PromoCodesList.jsx` | `GET/POST/PATCH /api/admin/promo-codes` | inline `adminPromoRoutes.js` | `PromoCode` | yes | none | `/ops/promo-codes` (new) | move | medium | booking checkout uses codes | CRUD | 3 |
+| Cabin types list | `/admin/cabin-types` | `client/src/pages/admin/CabinTypesList.jsx` | `GET /api/admin/cabin-types` | inline `adminCabinTypeRoutes.js` | `CabinType`, `Unit` | read | partial OPS read | `/ops/cabins` or new `/ops/cabin-types` | move | medium | feature flags multi-unit | list | 3 |
+| Cabin type CRUD | `/admin/cabin-types/:id` | `client/src/pages/admin/CabinTypeEdit.jsx` | `POST/PATCH /api/admin/cabin-types` | inline | `CabinType` | yes | none | `/ops/cabin-types` | move | high | multi-unit | CRUD | 3 |
+| Cabin type units | `/admin/cabin-types/:id` | `CabinTypeEdit.jsx` | `GET/POST /api/admin/cabin-types/:id/units`, `PATCH .../units/:id` | inline | `Unit`, `CabinType` | yes | `PATCH /api/ops/cabins/units/:unitId` (label only) | `/ops/cabin-types` | move; extend OPS | high | parity with label patch | units | 3 |
+| Email events (generic) | used by bookings | `BookingsTable`, `BookingDetail` | `GET /api/admin/email-events` | inline | `EmailEvent` | read | comms / reservation | `/ops/communications` or detail | move | low | query params | events | 1 |
+| Backfill imageUrl | n/a (maintenance-style) | n/a | `POST /api/admin/backfill-imageurl` | inline | `Cabin` | yes | none | `/ops/cabins` or internal | move or internal-only | medium | one-off safety | run once | 2–3 |
+
+## Rows without a dedicated `/admin` page (API only)
+
+| Domain | Current /admin route | Current frontend file | Current API route | Backend | Models | Write? | OPS equivalent | Target | Action | Risk | Phase |
+|--------|----------------------|------------------------|-------------------|---------|--------|--------|------------------|--------|--------|------|-------|
+| Promo | n/a | `PromoCodesList` uses services | `/api/admin/promo-codes` | `adminPromoRoutes.js` | `PromoCode` | yes | none | OPS promo | move | medium | 3 |
+
+## Maintenance app (not under `/admin`, related)
+
+| Domain | Route | Frontend | API | Note | OPS target | Phase |
+|--------|-------|----------|-----|------|------------|-------|
+| Maintenance | `/maintenance/*` | `client/src/pages/maintenance/*`, `MaintenanceLayout` | `/api/maintenance/*` | Admin-only destructive ops | Absorb into OPS or keep gated “break glass” | 3–4 |
+
+---
+
+## Summary counts (planning)
+
+- **High-risk rows:** reservation status dual-write, lifecycle email resend, cabin/media CRUD, cabin type CRUD, image delete.
+- **No OPS equivalent today:** promo codes, full review writes, cabin CRUD/images, lifecycle email preview/resend/edit-resend, admin-only backfill.
+
+For implementation order, follow `02_PHASE_PLAN.md` and `04_FIRST_BATCH_PLAN.md`.

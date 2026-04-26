@@ -1,0 +1,34 @@
+---
+description: Back-office consolidation (Admin → OPS); read migration docs before editing ops/admin surfaces.
+globs:
+  - client/src/pages/admin/**/*
+  - client/src/pages/ops/**/*
+  - client/src/components/admin/**/*
+  - client/src/layouts/AdminLayout.jsx
+  - client/src/layouts/OpsLayout.jsx
+  - server/routes/admin*.js
+  - server/routes/ops/**/*
+  - server/controllers/adminController.js
+  - server/middleware/adminModuleCutoverEnforcement.js
+alwaysApply: false
+---
+
+# Back-office migration
+
+**Before** any edit in matched paths, read:
+
+- `docs/backoffice-migration/00_DECISION.md`
+- `docs/backoffice-migration/01_FEATURE_MATRIX.md`
+- `docs/backoffice-migration/02_PHASE_PLAN.md`
+- `docs/backoffice-migration/03_RULES_FOR_CURSOR.md`
+- `docs/backoffice-migration/04_FIRST_BATCH_PLAN.md`
+
+**Hard rules**
+
+- OPS (`/ops`) is canonical; `/admin` is legacy compatibility only until removed.
+- No new operational features in `/admin`.
+- No duplicate business logic—shared services only.
+- One domain per batch; one reversible commit per batch.
+- No Stripe, pricing, iCal, sync, or public-site changes unless that batch is explicitly scoped for it.
+
+**When done**, report: files changed, routes touched, models touched, tests run, risk level.
