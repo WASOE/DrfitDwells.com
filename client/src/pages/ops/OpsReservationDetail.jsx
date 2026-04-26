@@ -8,8 +8,17 @@ export default function OpsReservationDetail() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [note, setNote] = useState('');
   const [guestDraft, setGuestDraft] = useState(null);
+  const [editDatesOpen, setEditDatesOpen] = useState(false);
+  const [editDatesBusy, setEditDatesBusy] = useState(false);
+  const [editDatesError, setEditDatesError] = useState('');
+  const [editDatesForm, setEditDatesForm] = useState({
+    checkInDate: '',
+    checkOutDate: '',
+    reason: ''
+  });
 
   const load = async () => {
     setLoading(true);
@@ -33,10 +42,52 @@ export default function OpsReservationDetail() {
   const doAction = async (fn, ...args) => {
     try {
       setError('');
+      setSuccessMessage('');
       await fn(...args);
       await load();
     } catch (err) {
       setError(err?.response?.data?.message || 'Action failed');
+    }
+  };
+
+  const openEditDatesModal = () => {
+    setEditDatesForm({
+      checkInDate: String(data?.reservation?.checkInDate || '').slice(0, 10),
+      checkOutDate: String(data?.reservation?.checkOutDate || '').slice(0, 10),
+      reason: ''
+    });
+    setEditDatesError('');
+    setSuccessMessage('');
+    setEditDatesOpen(true);
+  };
+
+  const submitEditDates = async (e) => {
+    e.preventDefault();
+    setEditDatesBusy(true);
+    setEditDatesError('');
+    setError('');
+    setSuccessMessage('');
+    try {
+      await opsWriteAPI.editReservationDates(id, {
+        checkInDate: editDatesForm.checkInDate,
+        checkOutDate: editDatesForm.checkOutDate,
+        reason: editDatesForm.reason.trim() || undefined
+      });
+      await load();
+      setEditDatesOpen(false);
+      setSuccessMessage('Reservation dates updated.');
+    } catch (err) {
+      const status = err?.response?.status;
+      const backendMessage = err?.response?.data?.message;
+      if (status === 409) {
+        setEditDatesError(backendMessage || 'Date change conflicts with existing availability.');
+      } else if (status === 400 || status === 422) {
+        setEditDatesError(backendMessage || 'Please check the entered dates and try again.');
+      } else {
+        setEditDatesError(backendMessage || 'Failed to update reservation dates.');
+      }
+    } finally {
+      setEditDatesBusy(false);
     }
   };
 
@@ -72,6 +123,9 @@ export default function OpsReservationDetail() {
               </button>
               <button onClick={() => doAction(opsWriteAPI.completeReservation, id)} className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50">
                 Complete
+              </button>
+              <button onClick={openEditDatesModal} className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50">
+                Edit dates
               </button>
               {isAdmin ? (
                 <button
@@ -248,7 +302,84 @@ export default function OpsReservationDetail() {
         </div>
       </div>
 
+      {editDatesOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="edit-reservation-dates-title">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            aria-label="Close edit dates modal"
+            onClick={() => {
+              if (!editDatesBusy) setEditDatesOpen(false);
+            }}
+          />
+          <div className="relative w-full max-w-lg rounded-xl bg-white border border-gray-200 shadow-xl p-5 space-y-4">
+            <h3 id="edit-reservation-dates-title" className="text-base font-semibold text-gray-900">
+              Edit reservation dates
+            </h3>
+            <form onSubmit={submitEditDates} className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="checkInDate" className="block text-xs font-medium text-gray-500 mb-1">Check-in</label>
+                  <input
+                    id="checkInDate"
+                    type="date"
+                    required
+                    value={editDatesForm.checkInDate}
+                    onChange={(e) => setEditDatesForm((prev) => ({ ...prev, checkInDate: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="checkOutDate" className="block text-xs font-medium text-gray-500 mb-1">Check-out</label>
+                  <input
+                    id="checkOutDate"
+                    type="date"
+                    required
+                    value={editDatesForm.checkOutDate}
+                    onChange={(e) => setEditDatesForm((prev) => ({ ...prev, checkOutDate: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
+                  />
+                </div>
+              </div>
+              <div>
+                <label htmlFor="editDatesReason" className="block text-xs font-medium text-gray-500 mb-1">Reason (optional)</label>
+                <input
+                  id="editDatesReason"
+                  type="text"
+                  value={editDatesForm.reason}
+                  onChange={(e) => setEditDatesForm((prev) => ({ ...prev, reason: e.target.value }))}
+                  placeholder="Why was this rescheduled?"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
+                />
+              </div>
+              {editDatesError ? (
+                <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                  {editDatesError}
+                </div>
+              ) : null}
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={editDatesBusy}
+                  onClick={() => setEditDatesOpen(false)}
+                  className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editDatesBusy}
+                  className="px-3 py-2 text-sm rounded bg-[#81887A] text-white hover:bg-[#6d7366] disabled:opacity-50"
+                >
+                  {editDatesBusy ? 'Saving...' : 'Save dates'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
       {error ? <div className="fixed bottom-16 sm:bottom-4 right-4 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">{error}</div> : null}
+      {successMessage ? <div className="fixed bottom-16 sm:bottom-4 left-4 bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-2 rounded text-sm">{successMessage}</div> : null}
     </div>
   );
 }
