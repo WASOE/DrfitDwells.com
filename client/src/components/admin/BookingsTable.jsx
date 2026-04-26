@@ -1,24 +1,29 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { exportToCSV } from '../../utils/csvExport';
 
+const readInitialFilters = (searchParams) => ({
+  status: searchParams.get('status') || '',
+  cabinId: searchParams.get('cabinId') || '',
+  from: searchParams.get('from') || '',
+  to: searchParams.get('to') || '',
+  q: searchParams.get('q') || '',
+  transport: searchParams.get('transport') || '',
+  stayScope: searchParams.get('stayScope') || '',
+  page: Math.max(1, parseInt(searchParams.get('page') || '1', 10) || 1),
+  limit: Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20', 10) || 20))
+});
+
 const BookingsTable = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [pagination, setPagination] = useState({});
   const [updatingStatus, setUpdatingStatus] = useState({});
   const [emailSummaries, setEmailSummaries] = useState({});
-  const [filters, setFilters] = useState({
-    status: '',
-    cabinId: '',
-    from: '',
-    to: '',
-    q: '',
-    transport: '',
-    page: 1,
-    limit: 20
-  });
+  const [filters, setFilters] = useState(() => readInitialFilters(searchParams));
+  const [searchInput, setSearchInput] = useState(() => searchParams.get('q') || '');
   const navigate = useNavigate();
 
   // Debounced search
@@ -89,8 +94,22 @@ const BookingsTable = () => {
   }, [filters, navigate]);
 
   useEffect(() => {
+    const nextParams = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== '' && value !== null && value !== undefined) {
+        nextParams.set(key, String(value));
+      }
+    });
+    setSearchParams(nextParams, { replace: true });
+  }, [filters, setSearchParams]);
+
+  useEffect(() => {
     fetchBookings();
   }, [fetchBookings]);
+
+  useEffect(() => () => {
+    if (searchTimeout) clearTimeout(searchTimeout);
+  }, [searchTimeout]);
 
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({
@@ -101,6 +120,7 @@ const BookingsTable = () => {
   };
 
   const handleSearchChange = (value) => {
+    setSearchInput(value);
     // Clear existing timeout
     if (searchTimeout) {
       clearTimeout(searchTimeout);
@@ -208,6 +228,18 @@ const BookingsTable = () => {
         <h2 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-4">Filters</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
+            <label className="block text-xs font-medium text-gray-500 mb-2">Stays</label>
+            <select
+              value={filters.stayScope}
+              onChange={(e) => handleFilterChange('stayScope', e.target.value)}
+              className="w-full px-3.5 py-2.5 text-sm border border-gray-200 rounded-lg bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A] transition-colors"
+            >
+              <option value="">All stays</option>
+              <option value="active">Current &amp; future</option>
+              <option value="past">Past</option>
+            </select>
+          </div>
+          <div>
             <label className="block text-xs font-medium text-gray-500 mb-2">Status</label>
             <select
               value={filters.status}
@@ -260,6 +292,7 @@ const BookingsTable = () => {
           <input
             type="text"
             placeholder="Guest name, email, or booking ID..."
+            value={searchInput}
             onChange={(e) => handleSearchChange(e.target.value)}
             className="w-full px-3.5 py-2.5 text-sm border border-gray-200 rounded-lg bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A] transition-colors placeholder:text-gray-400"
           />

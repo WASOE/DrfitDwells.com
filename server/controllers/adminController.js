@@ -774,6 +774,7 @@ const getBookings = async (req, res) => {
       to,
       q,
       transport,
+      stayScope,
       page = 1,
       limit = 20,
       includeFixtures,
@@ -793,6 +794,20 @@ const getBookings = async (req, res) => {
       and.push({ checkIn });
     }
     if (transport) and.push({ transportMethod: transport });
+    if (stayScope) {
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      if (stayScope === 'past') {
+        and.push({ checkOut: { $lt: startOfToday } });
+      } else if (stayScope === 'active') {
+        and.push({ checkOut: { $gte: startOfToday } });
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'stayScope must be active or past'
+        });
+      }
+    }
     if (!showFixtures) {
       and.push({ isTest: { $ne: true } });
       and.push({ 'guestInfo.email': { $not: FIXTURE_BOOKING_EMAIL_PATTERN } });
