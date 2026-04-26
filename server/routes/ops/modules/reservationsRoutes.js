@@ -1,5 +1,9 @@
 const express = require('express');
-const { getReservationsWorkspaceReadModel } = require('../../../services/ops/readModels/reservationsReadModel');
+const {
+  getReservationsWorkspaceReadModel,
+  getReservationsExportRows,
+  validateStayScope
+} = require('../../../services/ops/readModels/reservationsReadModel');
 const { getReservationDetailReadModel } = require('../../../services/ops/readModels/reservationDetailReadModel');
 const {
   transitionReservation,
@@ -38,9 +42,35 @@ function handleDomainError(res, error) {
 
 router.get('/', async (req, res) => {
   try {
+    const stayScopeError = validateStayScope(req.query.stayScope);
+    if (stayScopeError) {
+      return res.status(400).json({ success: false, errorType: 'validation', message: stayScopeError });
+    }
     const data = await getReservationsWorkspaceReadModel(req.query);
     return res.json({ success: true, data });
   } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/export', async (req, res) => {
+  try {
+    const stayScopeError = validateStayScope(req.query.stayScope);
+    if (stayScopeError) {
+      return res.status(400).json({ success: false, errorType: 'validation', message: stayScopeError });
+    }
+    const { page, limit, ...exportQuery } = req.query;
+    const rows = await getReservationsExportRows(exportQuery);
+    return res.json({ success: true, data: { rows, total: rows.length } });
+  } catch (error) {
+    if (error.type === 'export_too_large') {
+      return res.status(error.status || 413).json({
+        success: false,
+        errorType: 'export_too_large',
+        message: error.message,
+        details: error.details || null
+      });
+    }
     return res.status(500).json({ success: false, message: error.message });
   }
 });

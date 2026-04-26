@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { opsReadAPI, opsWriteAPI } from '../../services/opsApi';
+import { exportToCSV } from '../../utils/csvExport';
 
 export default function OpsReservations() {
   const navigate = useNavigate();
@@ -39,10 +40,14 @@ export default function OpsReservations() {
       arrivalStatus: searchParams.get('arrivalStatus') || '',
       dateFrom: searchParams.get('dateFrom') || '',
       dateTo: searchParams.get('dateTo') || '',
-      search: searchParams.get('search') || ''
+      search: searchParams.get('search') || '',
+      stayScope: searchParams.get('stayScope') || ''
     }),
     [searchParams]
   );
+
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportError, setExportError] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -81,6 +86,34 @@ export default function OpsReservations() {
     else next.set(key, String(value));
     if (key !== 'page') next.delete('page');
     setSearchParams(next);
+  };
+
+  const handleExportCSV = async () => {
+    setExportError('');
+    setExportBusy(true);
+    try {
+      const { page: _p, limit: _l, ...exportParams } = filters;
+      const cleanParams = Object.fromEntries(
+        Object.entries(exportParams).filter(([, v]) => v !== '' && v !== null && v !== undefined)
+      );
+      const resp = await opsReadAPI.reservationsExport(cleanParams);
+      const rows = resp.data?.data?.rows || [];
+      if (rows.length === 0) {
+        setExportError('No reservations match the current filters.');
+        return;
+      }
+      const filename = `ops-reservations-${new Date().toISOString().split('T')[0]}.csv`;
+      exportToCSV(rows, filename);
+    } catch (err) {
+      const data = err?.response?.data;
+      if (data?.errorType === 'export_too_large') {
+        setExportError(data.message || 'Export too large. Refine filters.');
+      } else {
+        setExportError(data?.message || 'Failed to export reservations');
+      }
+    } finally {
+      setExportBusy(false);
+    }
   };
 
   const submitCreate = async (e) => {
@@ -128,18 +161,40 @@ export default function OpsReservations() {
       <div className="bg-white border border-gray-200 rounded-xl p-4">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 max-w-4xl">
           <h2 className="text-lg font-semibold text-gray-900">Reservations workspace</h2>
-          <button
-            type="button"
-            onClick={() => {
-              setCreateError('');
-              setCreateOpen(true);
-            }}
-            className="w-full sm:w-auto shrink-0 px-4 py-2 text-sm font-medium rounded-lg bg-[#81887A] text-white hover:bg-[#707668]"
-          >
-            Create reservation
-          </button>
+          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={handleExportCSV}
+              disabled={exportBusy}
+              className="w-full sm:w-auto shrink-0 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              data-testid="ops-reservations-export-csv"
+            >
+              {exportBusy ? 'Exporting…' : 'Export CSV'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCreateError('');
+                setCreateOpen(true);
+              }}
+              className="w-full sm:w-auto shrink-0 px-4 py-2 text-sm font-medium rounded-lg bg-[#81887A] text-white hover:bg-[#707668]"
+            >
+              Create reservation
+            </button>
+          </div>
         </div>
         <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 max-w-7xl">
+          <select
+            value={filters.stayScope}
+            onChange={(e) => updateFilter('stayScope', e.target.value)}
+            className="px-3 py-2 text-sm border rounded-lg"
+            aria-label="Stay scope filter"
+            data-testid="ops-filter-stay-scope"
+          >
+            <option value="">All reservations</option>
+            <option value="active">Current &amp; future</option>
+            <option value="past">Past</option>
+          </select>
           <select value={filters.status} onChange={(e) => updateFilter('status', e.target.value)} className="px-3 py-2 text-sm border rounded-lg" aria-label="Reservation status filter" data-testid="ops-filter-status">
             <option value="">All status</option>
             <option value="pending">Pending</option>
@@ -174,12 +229,13 @@ export default function OpsReservations() {
             value={filters.search}
             onChange={(e) => updateFilter('search', e.target.value)}
             placeholder="Search guest/email"
-            className="px-3 py-2 text-sm border rounded-lg"
+            className="px-3 py-2 text-sm border rounded-lg sm:col-span-2 lg:col-span-4"
             aria-label="Reservations search"
             data-testid="ops-filter-search"
           />
         </div>
         {error ? <div className="mt-2 text-sm text-red-600">{error}</div> : null}
+        {exportError ? <div className="mt-2 text-sm text-red-600" role="alert">{exportError}</div> : null}
       </div>
 
       {createOpen ? (

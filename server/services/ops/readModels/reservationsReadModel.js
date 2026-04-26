@@ -4,6 +4,15 @@ const AvailabilityBlock = require('../../../models/AvailabilityBlock');
 const { mapBookingToReservationCompatible } = require('../../../mappers/bookingToReservationMapper');
 const { escapeRegex } = require('../../../utils/escapeRegex');
 
+const STAY_SCOPE_VALUES = ['active', 'past'];
+const EXPORT_LIMIT = 5000;
+
+function validateStayScope(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (STAY_SCOPE_VALUES.includes(value)) return null;
+  return `stayScope must be one of: ${STAY_SCOPE_VALUES.join(', ')}`;
+}
+
 function buildBookingFilters(query) {
   const includeArchived = query.includeArchived === '1' || query.includeArchived === 'true';
   const and = [{ isTest: { $ne: true } }];
@@ -17,6 +26,15 @@ function buildBookingFilters(query) {
     if (query.dateFrom) checkIn.$gte = new Date(query.dateFrom);
     if (query.dateTo) checkIn.$lte = new Date(query.dateTo);
     and.push({ checkIn });
+  }
+  if (query.stayScope === 'active' || query.stayScope === 'past') {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    if (query.stayScope === 'past') {
+      and.push({ checkOut: { $lt: startOfToday } });
+    } else {
+      and.push({ checkOut: { $gte: startOfToday } });
+    }
   }
   if (query.search) {
     const q = escapeRegex(String(query.search));
@@ -130,6 +148,50 @@ async function getReservationsWorkspaceReadModel(query = {}) {
   };
 }
 
+async function getReservationsExportRows(query = {}) {
+  const filters = buildBookingFilters(query);
+
+  const total = await Booking.countDocuments(filters);
+  if (total > EXPORT_LIMIT) {
+    const error = new Error(
+      `Export size ${total} exceeds limit of ${EXPORT_LIMIT}. Refine filters and try again.`
+    );
+    error.type = 'export_too_large';
+    error.status = 413;
+    error.details = { limit: EXPORT_LIMIT, total };
+    throw error;
+  }
+
+  const bookings = await Booking.find(filters)
+    .populate('cabinId', 'name location')
+    .sort({ createdAt: -1 })
+    .lean();
+
+  return bookings.map((booking) => ({
+    _id: booking._id,
+    createdAt: booking.createdAt,
+    checkIn: booking.checkIn,
+    checkOut: booking.checkOut,
+    cabinName: booking.cabinId?.name || null,
+    cabinLocation: booking.cabinId?.location || null,
+    guestInfo: {
+      firstName: booking.guestInfo?.firstName || '',
+      lastName: booking.guestInfo?.lastName || '',
+      email: booking.guestInfo?.email || ''
+    },
+    adults: booking.adults,
+    children: booking.children,
+    tripType: booking.tripType || '',
+    transportMethod: booking.transportMethod || null,
+    totalPrice: booking.totalPrice,
+    status: booking.status
+  }));
+}
+
 module.exports = {
-  getReservationsWorkspaceReadModel
+  getReservationsWorkspaceReadModel,
+  getReservationsExportRows,
+  validateStayScope,
+  EXPORT_LIMIT,
+  STAY_SCOPE_VALUES
 };

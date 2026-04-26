@@ -21,6 +21,7 @@ const opsReadAPI = {
   dashboard: () => api.get('/ops/dashboard', { headers: authHeaders() }),
   calendar: (params) => api.get('/ops/calendar', { params, headers: authHeaders() }),
   reservations: (params) => api.get('/ops/reservations', { params, headers: authHeaders() }),
+  reservationsExport: (params) => api.get('/ops/reservations/export', { params, headers: authHeaders() }),
   reservationDetail: (id) => api.get(`/ops/reservations/${id}`, { headers: authHeaders() }),
   health: () => api.get('/ops/health/readiness', { headers: authHeaders() }),
   cabins: (params) => api.get('/ops/cabins', { params, headers: authHeaders() }),
