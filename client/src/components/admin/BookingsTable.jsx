@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { exportToCSV } from '../../utils/csvExport';
+import { exportToCSV, formatBookingStayForCsv } from '../../utils/csvExport';
 
 const readInitialFilters = (searchParams) => ({
   status: searchParams.get('status') || '',
@@ -360,7 +360,7 @@ const BookingsTable = () => {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="text-sm font-medium text-gray-900 truncate">
-                      {formatDate(booking.checkIn)} → {formatDate(booking.checkOut)}
+                      {formatBookingStayForCsv(booking, 'checkIn')} → {formatBookingStayForCsv(booking, 'checkOut')}
                     </div>
                     <div className="mt-0.5 text-xs text-gray-500 truncate">
                       Created {formatDate(booking.createdAt)}
@@ -496,10 +496,10 @@ const BookingsTable = () => {
                     {formatDate(booking.createdAt)}
                   </td>
                   <td className="px-3 py-3.5 whitespace-nowrap text-sm text-gray-900">
-                    {formatDate(booking.checkIn)}
+                    {formatBookingStayForCsv(booking, 'checkIn')}
                   </td>
                   <td className="px-3 py-3.5 whitespace-nowrap text-sm text-gray-900">
-                    {formatDate(booking.checkOut)}
+                    {formatBookingStayForCsv(booking, 'checkOut')}
                   </td>
                   <td className="px-3 py-3.5 text-sm text-gray-900">
                     <div className="min-w-0">

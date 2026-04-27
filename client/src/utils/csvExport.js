@@ -1,4 +1,30 @@
 // CSV export utility - no external dependencies
+const SOFIA_TZ = 'Europe/Sofia';
+
+/**
+ * Check-in / check-out column for exports: prefer API `checkInDateOnly` / `checkOutDateOnly`,
+ * else format the stored instant in Europe/Sofia (never browser-local civil date).
+ * @param {object} booking
+ * @param {'checkIn' | 'checkOut'} field
+ */
+export function formatBookingStayForCsv(booking, field) {
+  if (!booking) return '';
+  const onlyKey = field === 'checkIn' ? 'checkInDateOnly' : 'checkOutDateOnly';
+  const only = booking[onlyKey];
+  if (only && /^\d{4}-\d{2}-\d{2}$/.test(String(only))) {
+    const [y, m, d] = String(only).split('-');
+    return `${d}/${m}/${y}`;
+  }
+  const raw = booking[field];
+  if (!raw) return '';
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: SOFIA_TZ,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  }).format(new Date(raw));
+}
+
 export const exportToCSV = (data, filename = 'bookings.csv') => {
   if (!data || data.length === 0) {
     alert('No data to export');
@@ -71,8 +97,8 @@ export const exportToCSV = (data, filename = 'bookings.csv') => {
   // Convert data to CSV rows
   const csvRows = data.map(booking => [
     escapeCSV(formatDate(booking.createdAt)),
-    escapeCSV(formatDate(booking.checkIn)),
-    escapeCSV(formatDate(booking.checkOut)),
+    escapeCSV(formatBookingStayForCsv(booking, 'checkIn')),
+    escapeCSV(formatBookingStayForCsv(booking, 'checkOut')),
     escapeCSV(booking.cabinName || ''),
     escapeCSV(formatGuestName(booking.guestInfo)),
     escapeCSV(formatGuests(booking.adults, booking.children)),

@@ -34,11 +34,43 @@ function isDateInExclusiveRange(targetInput, startInput, endInput) {
   return (target.isSameOrAfter(start) && target.isBefore(end));
 }
 
+/**
+ * Property-local civil date for a stay boundary (YYYY-MM-DD in Europe/Sofia).
+ * @param {Date|string|number} dateInput
+ * @returns {string}
+ */
+function formatSofiaDateOnly(dateInput) {
+  if (dateInput == null || dateInput === '') return '';
+  const m = moment.tz(dateInput, PROPERTY_TIMEZONE);
+  if (!m.isValid()) return '';
+  return m.format('YYYY-MM-DD');
+}
+
+/**
+ * Human-readable stay date in Europe/Sofia (default en-GB style: DD/MM/YYYY).
+ * @param {Date|string|number} dateInput
+ * @param {string} [locale='en-GB']
+ * @returns {string}
+ */
+function formatSofiaDisplayDate(dateInput, locale = 'en-GB') {
+  if (dateInput == null || dateInput === '') return '';
+  const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  if (Number.isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat(locale, {
+    timeZone: PROPERTY_TIMEZONE,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  }).format(d);
+}
+
 module.exports = {
   PROPERTY_TIMEZONE,
   CHECK_IN_TIME,
   CHECK_OUT_TIME,
   normalizeDateToSofiaDayStart,
   normalizeExclusiveDateRange,
-  isDateInExclusiveRange
+  isDateInExclusiveRange,
+  formatSofiaDateOnly,
+  formatSofiaDisplayDate
 };

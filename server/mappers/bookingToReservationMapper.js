@@ -1,12 +1,19 @@
+const { formatSofiaDateOnly } = require('../utils/dateTime');
+
 function mapBookingToReservationCompatible(bookingDoc = {}) {
   const booking = bookingDoc.toObject ? bookingDoc.toObject() : bookingDoc;
+
+  const checkInRaw = booking.checkIn || null;
+  const checkOutRaw = booking.checkOut || null;
 
   return {
     reservationId: booking._id ? String(booking._id) : null,
     legacyBookingId: booking._id ? String(booking._id) : null,
     cabinId: booking.cabinId ? String(booking.cabinId._id || booking.cabinId) : null,
-    checkInDate: booking.checkIn || null,
-    checkOutDate: booking.checkOut || null,
+    checkInDate: checkInRaw,
+    checkOutDate: checkOutRaw,
+    checkInDateOnly: checkInRaw ? formatSofiaDateOnly(checkInRaw) : null,
+    checkOutDateOnly: checkOutRaw ? formatSofiaDateOnly(checkOutRaw) : null,
     guest: {
       firstName: booking.guestInfo?.firstName || null,
       lastName: booking.guestInfo?.lastName || null,

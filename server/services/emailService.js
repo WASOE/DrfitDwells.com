@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const { formatSofiaDisplayDate } = require('../utils/dateTime');
 const { resolveGuideUrl, isPdfUrl } = require('../utils/arrivalGuideUrl');
 const { htmlEscape } = require('../utils/htmlEscape');
 const {
@@ -360,9 +361,9 @@ class EmailService {
       { label: 'Cabin', valueHtml: `${htmlEscape(stay.name)} • ${htmlEscape(stay.location)}` },
       {
         label: 'Check-in',
-        valueHtml: `${htmlEscape(checkIn.toLocaleDateString('en-GB'))} (${htmlEscape(stay.arrivalWindowDefault || 'TBD')})`
+        valueHtml: `${htmlEscape(formatSofiaDisplayDate(checkIn, 'en-GB'))} (${htmlEscape(stay.arrivalWindowDefault || 'TBD')})`
       },
-      { label: 'Check-out', valueHtml: htmlEscape(checkOut.toLocaleDateString('en-GB')) },
+      { label: 'Check-out', valueHtml: htmlEscape(formatSofiaDisplayDate(checkOut, 'en-GB')) },
       {
         label: 'Duration',
         valueHtml: htmlEscape(`${nights} night${nights !== 1 ? 's' : ''}`)
@@ -463,7 +464,7 @@ class EmailService {
 
     const html = buildGuestTransactionalHtml({
       title: 'Booking request received — Drift & Dwells',
-      preheader: `We received your request for ${htmlEscape(stay.name)} — check-in ${checkIn.toLocaleDateString('en-GB')}`,
+      preheader: `We received your request for ${htmlEscape(stay.name)} — check-in ${formatSofiaDisplayDate(checkIn, 'en-GB')}`,
       logoUrl: resolveBrandLogoAbsoluteUrl(),
       siteHomeUrl: EMAIL_SITE_ORIGIN,
       headerAccentColor: BRAND_SAGE,
@@ -484,8 +485,8 @@ Thank you for choosing Drift & Dwells. We've received your booking request (this
 
 YOUR REQUEST:
 - Cabin: ${stay.name} • ${stay.location}
-- Check-in: ${checkIn.toLocaleDateString('en-GB')} (${stay.arrivalWindowDefault || 'TBD'})
-- Check-out: ${checkOut.toLocaleDateString('en-GB')}
+- Check-in: ${formatSofiaDisplayDate(checkIn, 'en-GB')} (${stay.arrivalWindowDefault || 'TBD'})
+- Check-out: ${formatSofiaDisplayDate(checkOut, 'en-GB')}
 - Duration: ${nights} night${nights !== 1 ? 's' : ''}
 - Guests: ${booking.adults} adult${booking.adults !== 1 ? 's' : ''}${booking.children > 0 ? `, ${booking.children} child${booking.children !== 1 ? 'ren' : ''}` : ''}
 - Trip Type: ${booking.tripType || 'Custom Experience'}
@@ -538,7 +539,7 @@ ${guestEmailFooterText()}
     `;
 
     return {
-      subject: `Booking request received — ${stay.name} (${checkIn.toLocaleDateString('en-GB')})`,
+      subject: `Booking request received — ${stay.name} (${formatSofiaDisplayDate(checkIn, 'en-GB')})`,
       html,
       text
     };
@@ -553,9 +554,9 @@ ${guestEmailFooterText()}
       { label: 'Cabin', valueHtml: `${htmlEscape(cabin.name)} • ${htmlEscape(cabin.location)}` },
       {
         label: 'Check-in',
-        valueHtml: `${htmlEscape(checkIn.toLocaleDateString('en-GB'))} (${htmlEscape(cabin.arrivalWindowDefault || 'TBD')})`
+        valueHtml: `${htmlEscape(formatSofiaDisplayDate(checkIn, 'en-GB'))} (${htmlEscape(cabin.arrivalWindowDefault || 'TBD')})`
       },
-      { label: 'Check-out', valueHtml: htmlEscape(checkOut.toLocaleDateString('en-GB')) },
+      { label: 'Check-out', valueHtml: htmlEscape(formatSofiaDisplayDate(checkOut, 'en-GB')) },
       {
         label: 'Duration',
         valueHtml: htmlEscape(`${nights} night${nights !== 1 ? 's' : ''}`)
@@ -589,7 +590,7 @@ ${guestEmailFooterText()}
 
     const html = buildGuestTransactionalHtml({
       title: 'Booking confirmed — Drift & Dwells',
-      preheader: `You're confirmed for ${htmlEscape(cabin.name)} — check-in ${checkIn.toLocaleDateString('en-GB')}`,
+      preheader: `You're confirmed for ${htmlEscape(cabin.name)} — check-in ${formatSofiaDisplayDate(checkIn, 'en-GB')}`,
       logoUrl: resolveBrandLogoAbsoluteUrl(),
       siteHomeUrl: EMAIL_SITE_ORIGIN,
       headerAccentColor: '#6d8f75',
@@ -612,8 +613,8 @@ Your stay at ${cabin.name} is confirmed. We're glad you'll be with us for a quie
 
 CONFIRMED STAY:
 - Cabin: ${cabin.name} • ${cabin.location}
-- Check-in: ${checkIn.toLocaleDateString('en-GB')} (${cabin?.arrivalWindowDefault || 'TBD'})
-- Check-out: ${checkOut.toLocaleDateString('en-GB')}
+- Check-in: ${formatSofiaDisplayDate(checkIn, 'en-GB')} (${cabin?.arrivalWindowDefault || 'TBD'})
+- Check-out: ${formatSofiaDisplayDate(checkOut, 'en-GB')}
 - Duration: ${nights} night${nights !== 1 ? 's' : ''}
 - Total: €${booking.totalPrice}
 
@@ -628,7 +629,7 @@ ${guestEmailFooterText()}
     `;
 
     return {
-      subject: `Booking confirmed — ${cabin.name} (${checkIn.toLocaleDateString('en-GB')})`,
+      subject: `Booking confirmed — ${cabin.name} (${formatSofiaDisplayDate(checkIn, 'en-GB')})`,
       html,
       text
     };
@@ -640,8 +641,8 @@ ${guestEmailFooterText()}
 
     const cancelledDetailRows = [
       { label: 'Cabin', valueHtml: `${htmlEscape(cabin.name)} • ${htmlEscape(cabin.location)}` },
-      { label: 'Check-in', valueHtml: htmlEscape(checkIn.toLocaleDateString('en-GB')) },
-      { label: 'Check-out', valueHtml: htmlEscape(checkOut.toLocaleDateString('en-GB')) },
+      { label: 'Check-in', valueHtml: htmlEscape(formatSofiaDisplayDate(checkIn, 'en-GB')) },
+      { label: 'Check-out', valueHtml: htmlEscape(formatSofiaDisplayDate(checkOut, 'en-GB')) },
       { label: 'Total', valueHtml: htmlEscape(`€${booking.totalPrice}`) }
     ];
     const cancelledDetailsTable = buildDetailRowsTable(cancelledDetailRows);
@@ -689,8 +690,8 @@ Your booking for ${cabin.name} has been cancelled. If you were not expecting thi
 
 CANCELLED STAY:
 - Cabin: ${cabin.name} • ${cabin.location}
-- Check-in: ${checkIn.toLocaleDateString('en-GB')}
-- Check-out: ${checkOut.toLocaleDateString('en-GB')}
+- Check-in: ${formatSofiaDisplayDate(checkIn, 'en-GB')}
+- Check-out: ${formatSofiaDisplayDate(checkOut, 'en-GB')}
 - Total: €${booking.totalPrice}
 
 If you have questions or would like to plan another visit: ${SUPPORT_CONTACT_EMAIL}
@@ -702,7 +703,7 @@ ${guestEmailFooterText()}
     `;
 
     return {
-      subject: `Booking cancelled — ${cabin.name} (${checkIn.toLocaleDateString('en-GB')})`,
+      subject: `Booking cancelled — ${cabin.name} (${formatSofiaDisplayDate(checkIn, 'en-GB')})`,
       html,
       text
     };
@@ -716,8 +717,8 @@ ${guestEmailFooterText()}
     const internalDetailRows = [
       { label: 'Booking ID', valueHtml: htmlEscape(String(booking._id)) },
       { label: 'Cabin', valueHtml: `${htmlEscape(cabin.name)} • ${htmlEscape(cabin.location)}` },
-      { label: 'Check-in', valueHtml: htmlEscape(checkIn.toLocaleDateString('en-GB')) },
-      { label: 'Check-out', valueHtml: htmlEscape(checkOut.toLocaleDateString('en-GB')) },
+      { label: 'Check-in', valueHtml: htmlEscape(formatSofiaDisplayDate(checkIn, 'en-GB')) },
+      { label: 'Check-out', valueHtml: htmlEscape(formatSofiaDisplayDate(checkOut, 'en-GB')) },
       {
         label: 'Duration',
         valueHtml: htmlEscape(`${nights} night${nights !== 1 ? 's' : ''}`)
@@ -795,8 +796,8 @@ A guest booking has been submitted and may need your review.
 BOOKING DETAILS:
 - Booking ID: ${booking._id}
 - Cabin: ${cabin.name} • ${cabin.location}
-- Check-in: ${checkIn.toLocaleDateString('en-GB')}
-- Check-out: ${checkOut.toLocaleDateString('en-GB')}
+- Check-in: ${formatSofiaDisplayDate(checkIn, 'en-GB')}
+- Check-out: ${formatSofiaDisplayDate(checkOut, 'en-GB')}
 - Duration: ${nights} night${nights !== 1 ? 's' : ''}
 - Guest: ${booking.guestInfo.firstName} ${booking.guestInfo.lastName}
 - Email: ${booking.guestInfo.email}

@@ -90,8 +90,8 @@ export default function OpsReservationDetail() {
 
   const openEditDatesModal = () => {
     setEditDatesForm({
-      checkInDate: String(data?.reservation?.checkInDate || '').slice(0, 10),
-      checkOutDate: String(data?.reservation?.checkOutDate || '').slice(0, 10),
+      checkInDate: data?.reservation?.checkInDateOnly || '',
+      checkOutDate: data?.reservation?.checkOutDateOnly || '',
       reason: ''
     });
     setEditDatesError('');
@@ -367,7 +367,7 @@ export default function OpsReservationDetail() {
         </Link>
         <h2 className="mt-1 text-lg font-semibold text-gray-900">Reservation {reservation.reservationId}</h2>
         <p className="text-sm text-gray-500">
-          {String(reservation.checkInDate || '').slice(0, 10)} - {String(reservation.checkOutDate || '').slice(0, 10)}
+          {reservation.checkInDateOnly || '—'} - {reservation.checkOutDateOnly || '—'}
         </p>
       </div>
 

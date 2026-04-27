@@ -22,6 +22,7 @@ const {
 } = require('../utils/fixtureExclusion');
 const { processMetaPurchaseAfterConfirm } = require('../services/bookingPurchaseTracking');
 const { syncMultiUnitGalleryToCabinType } = require('../services/syncMultiUnitGalleryToCabinType');
+const { formatSofiaDateOnly } = require('../utils/dateTime');
 
 const DEFAULT_CABIN_IMAGE_URL = 'https://placehold.co/1200x800?text=Cabin';
 
@@ -860,6 +861,8 @@ const getBookings = async (req, res) => {
       createdAt: booking.createdAt,
       checkIn: booking.checkIn,
       checkOut: booking.checkOut,
+      checkInDateOnly: booking.checkIn ? formatSofiaDateOnly(booking.checkIn) : null,
+      checkOutDateOnly: booking.checkOut ? formatSofiaDateOnly(booking.checkOut) : null,
       adults: booking.adults,
       children: booking.children,
       status: booking.status,
@@ -918,9 +921,15 @@ const getBookingById = async (req, res) => {
       });
     }
 
+    const bookingPayload = {
+      ...booking,
+      checkInDateOnly: booking.checkIn ? formatSofiaDateOnly(booking.checkIn) : null,
+      checkOutDateOnly: booking.checkOut ? formatSofiaDateOnly(booking.checkOut) : null
+    };
+
     res.json({
       success: true,
-      data: { booking }
+      data: { booking: bookingPayload }
     });
 
   } catch (error) {

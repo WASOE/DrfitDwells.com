@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { bookingAPI } from '../services/api';
+import { formatBookingStayForCsv } from '../utils/csvExport';
 import { CONTACT_EMAIL } from '../data/gmbLocations';
 import Seo from '../components/Seo';
 import { getLanguageFromPath, localizePath } from '../utils/localizedRoutes';
@@ -106,8 +107,12 @@ const BookingRefundResolution = () => {
   }
 
   const amount = data?.amountCents != null ? (data.amountCents / 100).toFixed(2) : null;
-  const checkInStr = data?.checkIn ? new Date(data.checkIn).toLocaleDateString('en-GB') : '';
-  const checkOutStr = data?.checkOut ? new Date(data.checkOut).toLocaleDateString('en-GB') : '';
+  const checkInStr = data?.checkInDateOnly
+    ? formatBookingStayForCsv({ checkInDateOnly: data.checkInDateOnly, checkIn: data.checkIn }, 'checkIn')
+    : '';
+  const checkOutStr = data?.checkOutDateOnly
+    ? formatBookingStayForCsv({ checkOutDateOnly: data.checkOutDateOnly, checkOut: data.checkOut }, 'checkOut')
+    : '';
 
   return (
     <>

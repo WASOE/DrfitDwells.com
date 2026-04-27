@@ -8,6 +8,7 @@ import { useSiteLanguage } from '../hooks/useSiteLanguage';
 import { formatStayDayWithWeekday } from '../utils/localeDates';
 import { getGuideCtaLabel } from './guides/guideUtils';
 import { daysBetweenDateOnly, parseDateOnlyLocal } from '../utils/dateOnly';
+import { formatBookingStayForCsv } from '../utils/csvExport';
 import { readConsentChoice } from '../tracking/consent';
 import { fireBrowserPurchase } from '../tracking/purchase';
 import { CONTACT_EMAIL, CONTACT_PHONE, INSTAGRAM_URL, FACEBOOK_URL } from '../data/gmbLocations';
@@ -84,8 +85,8 @@ const BookingSuccess = () => {
   }, [booking, id, guestEmail]);
 
   // Generate booking reference number
-  const generateBookingRef = (bookingId, checkInDate) => {
-    const date = parseDateOnlyLocal(checkInDate);
+  const generateBookingRef = (bookingId, checkInDateOnly) => {
+    const date = parseDateOnlyLocal(checkInDateOnly);
     if (!date) return `DW-UNKNOWN-${bookingId.slice(-3)}`;
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -222,8 +223,8 @@ END:VCALENDAR`;
     );
   }
 
-  const bookingRef = generateBookingRef(booking._id, booking.checkIn);
-  const totalNights = getTotalNights(booking.checkIn, booking.checkOut);
+  const bookingRef = generateBookingRef(booking._id, booking.checkInDateOnly);
+  const totalNights = getTotalNights(booking.checkInDateOnly, booking.checkOutDateOnly);
 
   return (
     <>
@@ -281,8 +282,9 @@ END:VCALENDAR`;
                     <span className="text-sm text-gray-500 block">{t('fields.checkIn')}</span>
                     <p className="font-medium">
                       {(() => {
-                        const d = parseDateOnlyLocal(booking.checkIn);
-                        return d ? formatStayDayWithWeekday(d, routeLanguage) : null;
+                        const d = parseDateOnlyLocal(booking.checkInDateOnly);
+                        if (d) return formatStayDayWithWeekday(d, routeLanguage);
+                        return formatBookingStayForCsv(booking, 'checkIn') || null;
                       })()}
                     </p>
                   </div>
@@ -291,8 +293,9 @@ END:VCALENDAR`;
                     <span className="text-sm text-gray-500 block">{t('fields.checkOut')}</span>
                     <p className="font-medium">
                       {(() => {
-                        const d = parseDateOnlyLocal(booking.checkOut);
-                        return d ? formatStayDayWithWeekday(d, routeLanguage) : null;
+                        const d = parseDateOnlyLocal(booking.checkOutDateOnly);
+                        if (d) return formatStayDayWithWeekday(d, routeLanguage);
+                        return formatBookingStayForCsv(booking, 'checkOut') || null;
                       })()}
                     </p>
                   </div>

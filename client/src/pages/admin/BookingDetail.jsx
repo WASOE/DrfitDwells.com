@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { formatBookingStayForCsv } from '../../utils/csvExport';
 
 const TEMPLATE_KEYS = {
   BOOKING_RECEIVED: 'booking_received',
@@ -711,13 +712,13 @@ const BookingDetail = () => {
             <div className="bg-gray-50/50 px-6 py-4 sm:grid sm:grid-cols-3 sm:gap-4">
               <dt className="text-sm font-medium text-gray-500">Check-in</dt>
               <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                {new Date(booking.checkIn).toLocaleDateString()}
+                {formatBookingStayForCsv(booking, 'checkIn')}
               </dd>
             </div>
             <div className="bg-white px-6 py-4 sm:grid sm:grid-cols-3 sm:gap-4">
               <dt className="text-sm font-medium text-gray-500">Check-out</dt>
               <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
-                {new Date(booking.checkOut).toLocaleDateString()}
+                {formatBookingStayForCsv(booking, 'checkOut')}
               </dd>
             </div>
             <div className="bg-gray-50/50 px-6 py-4 sm:grid sm:grid-cols-3 sm:gap-4">

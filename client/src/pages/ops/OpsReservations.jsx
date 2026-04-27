@@ -444,7 +444,7 @@ export default function OpsReservations() {
                 <div>
                   <span className="text-gray-500">Dates:</span>{' '}
                   <span className="text-gray-700">
-                    {String(row.dateRange?.startDate || '').slice(0, 10)} - {String(row.dateRange?.endDate || '').slice(0, 10)}
+                    {row.dateRange?.startDateOnly || '—'} - {row.dateRange?.endDateOnly || '—'}
                   </span>
                 </div>
                 <div>

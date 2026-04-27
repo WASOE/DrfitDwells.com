@@ -2,6 +2,7 @@ const Booking = require('../../../models/Booking');
 const Payment = require('../../../models/Payment');
 const AvailabilityBlock = require('../../../models/AvailabilityBlock');
 const { mapBookingToReservationCompatible } = require('../../../mappers/bookingToReservationMapper');
+const { formatSofiaDateOnly } = require('../../../utils/dateTime');
 const { escapeRegex } = require('../../../utils/escapeRegex');
 
 const STAY_SCOPE_VALUES = ['active', 'past'];
@@ -116,7 +117,9 @@ async function getReservationsWorkspaceReadModel(query = {}) {
       guestSummary: mapped.guest,
       dateRange: {
         startDate: mapped.checkInDate,
-        endDate: mapped.checkOutDate
+        endDate: mapped.checkOutDate,
+        startDateOnly: mapped.checkInDateOnly,
+        endDateOnly: mapped.checkOutDateOnly
       },
       cabinSummary: {
         cabinId: mapped.cabinId,
@@ -180,6 +183,8 @@ async function getReservationsExportRows(query = {}) {
     createdAt: booking.createdAt,
     checkIn: booking.checkIn,
     checkOut: booking.checkOut,
+    checkInDateOnly: booking.checkIn ? formatSofiaDateOnly(booking.checkIn) : null,
+    checkOutDateOnly: booking.checkOut ? formatSofiaDateOnly(booking.checkOut) : null,
     cabinName: booking.cabinId?.name || null,
     cabinLocation: booking.cabinId?.location || null,
     guestInfo: {

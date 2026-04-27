@@ -16,7 +16,7 @@ const {
   countBlockingBlocksForUnit,
   findParentCabinForCabinType
 } = require('../services/publicAvailabilityService');
-const { normalizeDateToSofiaDayStart } = require('../utils/dateTime');
+const { normalizeDateToSofiaDayStart, formatSofiaDateOnly } = require('../utils/dateTime');
 const { BLOCKING_BOOKING_STATUSES } = require('../services/calendar/blockingStatusConstants');
 const bookingLifecycleEmailService = require('../services/bookingLifecycleEmailService');
 const bookingQuoteService = require('../services/bookingQuoteService');
@@ -846,7 +846,7 @@ router.get('/refund-status', async (req, res) => {
     if (!paymentIntentId || !email) {
       return res.status(400).json({ success: false, message: 'paymentIntentId and email are required' });
     }
-    const record = await PaymentFinalization.findOne({ paymentIntentId });
+    const record = await PaymentFinalization.findOne({ paymentIntentId }).populate('cabinId', 'name');
     if (!record || record.guestEmail.toLowerCase() !== email.toLowerCase()) {
       return res.status(404).json({ success: false, message: 'Refund record not found' });
     }
@@ -857,7 +857,10 @@ router.get('/refund-status', async (req, res) => {
         amountCents: record.amountCents,
         currency: record.currency,
         createdAt: record.createdAt,
-        updatedAt: record.updatedAt
+        updatedAt: record.updatedAt,
+        checkInDateOnly: formatSofiaDateOnly(record.checkIn),
+        checkOutDateOnly: formatSofiaDateOnly(record.checkOut),
+        cabinName: record.cabinId?.name || null
       }
     });
   } catch (error) {
@@ -962,6 +965,13 @@ router.get('/:id', validateId('id'), async (req, res) => {
       bookingObj.guestInfo.email = local ? `${local.slice(0, 3)}***@${domain || ''}` : '';
       const p = bookingObj.guestInfo.phone || '';
       bookingObj.guestInfo.phone = p.length > 4 ? `***${p.slice(-4)}` : '****';
+    }
+
+    if (bookingObj.checkIn) {
+      bookingObj.checkInDateOnly = formatSofiaDateOnly(bookingObj.checkIn);
+    }
+    if (bookingObj.checkOut) {
+      bookingObj.checkOutDateOnly = formatSofiaDateOnly(bookingObj.checkOut);
     }
 
     res.json({
