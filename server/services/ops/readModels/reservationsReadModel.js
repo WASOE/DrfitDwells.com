@@ -73,7 +73,12 @@ async function getReservationsWorkspaceReadModel(query = {}) {
   const skip = (page - 1) * limit;
 
   const [bookings, total] = await Promise.all([
-    Booking.find(filters).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+    Booking.find(filters)
+      .populate('cabinId', 'name location')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
     Booking.countDocuments(filters)
   ]);
 
@@ -107,6 +112,7 @@ async function getReservationsWorkspaceReadModel(query = {}) {
     const paymentStatus = derivePaymentStatus(paymentTrail);
     return {
       reservationId: mapped.reservationId,
+      reservationStatus: mapped.reservationStatus,
       guestSummary: mapped.guest,
       dateRange: {
         startDate: mapped.checkInDate,
@@ -114,9 +120,11 @@ async function getReservationsWorkspaceReadModel(query = {}) {
       },
       cabinSummary: {
         cabinId: mapped.cabinId,
-        name: null,
-        location: null
+        name: booking.cabinId?.name || null,
+        location: booking.cabinId?.location || null
       },
+      adults: booking.adults ?? null,
+      children: booking.children ?? null,
       source: mapped.source,
       sourceReference: mapped.sourceReference,
       amount: mapped.amount,

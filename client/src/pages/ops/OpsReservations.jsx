@@ -429,17 +429,49 @@ export default function OpsReservations() {
       <div className="space-y-2">
         {(data?.items || []).map((row) => (
           <Link key={row.reservationId} to={`/ops/reservations/${row.reservationId}`} className="block bg-white border border-gray-200 rounded-xl p-4 hover:bg-gray-50" data-testid="ops-reservation-row">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-gray-900">
-                  {row.guestSummary?.firstName} {row.guestSummary?.lastName}
-                </p>
-                <p className="text-xs text-gray-500 truncate">{row.guestSummary?.email}</p>
+            <div className="space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900">
+                    {row.guestSummary?.firstName} {row.guestSummary?.lastName}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate">{row.guestSummary?.email}</p>
+                </div>
+                <p className="text-[11px] text-gray-500 font-mono">#{String(row.reservationId || '').slice(-8)}</p>
               </div>
-              <div className="text-xs text-gray-600">
-                {String(row.dateRange?.startDate || '').slice(0, 10)} - {String(row.dateRange?.endDate || '').slice(0, 10)}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs text-gray-600">
+                <div>
+                  <span className="text-gray-500">Dates:</span>{' '}
+                  <span className="text-gray-700">
+                    {String(row.dateRange?.startDate || '').slice(0, 10)} - {String(row.dateRange?.endDate || '').slice(0, 10)}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Cabin:</span>{' '}
+                  <span className="text-gray-700">{row.cabinSummary?.name || 'Unknown'}</span>
+                  {row.cabinSummary?.location ? (
+                    <span className="text-gray-500"> · {row.cabinSummary.location}</span>
+                  ) : null}
+                </div>
+                <div>
+                  <span className="text-gray-500">Guests:</span>{' '}
+                  <span className="text-gray-700">
+                    {row.adults ?? 0}A{(row.children ?? 0) > 0 ? ` ${(row.children ?? 0)}C` : ''}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-gray-500">Amount:</span>{' '}
+                  <span className="text-gray-700">€{row.amount ?? '—'}</span>
+                </div>
+                <div className="sm:col-span-2">
+                  <span className="text-gray-500">Source:</span>{' '}
+                  <span className="text-gray-700">{row.source || '—'}</span>
+                  {row.sourceReference ? <span className="text-gray-500"> · {row.sourceReference}</span> : null}
+                </div>
               </div>
-              <div className="ml-auto flex flex-wrap gap-2">
+
+              <div className="flex flex-wrap gap-2">
                 <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50">{row.reservationStatus || 'unknown'}</span>
                 <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50">{row.paymentStatus || 'payment unknown'}</span>
                 {row.conflict?.hasConflict ? (
@@ -451,6 +483,30 @@ export default function OpsReservations() {
         ))}
         {data?.items?.length === 0 ? <div className="text-sm text-gray-500">No reservations for current filters.</div> : null}
       </div>
+
+      {data?.pagination?.totalPages > 1 ? (
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => updateFilter('page', Math.max(1, Number(data.pagination.page) - 1))}
+            disabled={Number(data.pagination.page) <= 1}
+            className="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Prev
+          </button>
+          <span className="text-xs text-gray-500 tabular-nums">
+            Page {data.pagination.page} of {data.pagination.totalPages}
+          </span>
+          <button
+            type="button"
+            onClick={() => updateFilter('page', Number(data.pagination.page) + 1)}
+            disabled={Number(data.pagination.page) >= Number(data.pagination.totalPages)}
+            className="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            Next
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
