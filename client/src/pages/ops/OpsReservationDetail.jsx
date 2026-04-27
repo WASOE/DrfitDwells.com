@@ -538,26 +538,25 @@ export default function OpsReservationDetail() {
                 {LIFECYCLE_TEMPLATE_KEYS.map((key) => (
                   <div
                     key={key}
-                    className="rounded-lg border border-gray-200/80 bg-gray-50/40 px-3 py-2.5"
+                    className="rounded-lg border border-gray-200/80 bg-gray-50/40 px-3 py-2.5 space-y-2"
                   >
-                    <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-                      <div className="sm:min-w-[14rem] sm:pr-4">
-                        <span className="block text-sm text-gray-900 leading-tight">{TEMPLATE_LABELS[key]}</span>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 md:flex md:items-center gap-1.5 sm:gap-2">
-                        <button
-                          type="button"
-                          disabled={lifecycleActionsBusy}
-                          onClick={() => handlePreviewTemplate(key)}
-                          className="inline-flex justify-center items-center min-w-[6.5rem] px-2.5 py-1.5 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50"
-                        >
-                          {previewLoadingKey === key ? 'Loading…' : 'Preview'}
-                        </button>
+                    <div>
+                      <span className="block text-sm text-gray-900 leading-tight">{TEMPLATE_LABELS[key]}</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        disabled={lifecycleActionsBusy}
+                        onClick={() => handlePreviewTemplate(key)}
+                        className="w-full inline-flex justify-center items-center px-2.5 py-1.5 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        {previewLoadingKey === key ? 'Loading…' : 'Preview'}
+                      </button>
                       <button
                         type="button"
                         disabled={lifecycleActionsBusy}
                         onClick={() => handleResendTemplate(key)}
-                        className="inline-flex justify-center items-center min-w-[6.5rem] px-2.5 py-1.5 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50"
+                        className="w-full inline-flex justify-center items-center px-2.5 py-1.5 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50"
                       >
                         {resendLoadingKey === key ? 'Sending…' : 'Resend'}
                       </button>
@@ -565,11 +564,10 @@ export default function OpsReservationDetail() {
                         type="button"
                         disabled={lifecycleActionsBusy}
                         onClick={() => openEditResendModal(key)}
-                        className="inline-flex justify-center items-center min-w-[6.5rem] px-2.5 py-1.5 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50"
+                        className="w-full inline-flex justify-center items-center px-2.5 py-1.5 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50"
                       >
                         {editResendLoadingKey === key ? 'Loading…' : 'Edit & resend'}
                       </button>
-                      </div>
                     </div>
                   </div>
                 ))}
