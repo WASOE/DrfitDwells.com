@@ -509,16 +509,16 @@ export default function OpsReservationDetail() {
               </button>
             </div>
 
-            <div className="border-t border-gray-100 pt-3 space-y-3">
+            <div className="border-t border-gray-100 pt-4 space-y-4">
               <h4 className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Booking lifecycle email</h4>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-500 leading-relaxed">
                 Preview is read-only. Resend sends only after you confirm. Leave override blank to use the guest email on file (
                 <span className="font-medium text-gray-800">
                   {resolveEffectiveRecipient(overrideRecipient, guestDraft?.email || reservation?.guest?.email || '') || '—'}
                 </span>
                 ).
               </p>
-              <div>
+              <div className="space-y-1.5">
                 <label htmlFor="ops-lifecycle-override" className="block text-xs font-medium text-gray-600 mb-1">
                   Override recipient (optional)
                 </label>
@@ -534,45 +534,49 @@ export default function OpsReservationDetail() {
               {lifecycleInlineError ? (
                 <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">{lifecycleInlineError}</div>
               ) : null}
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 {LIFECYCLE_TEMPLATE_KEYS.map((key) => (
                   <div
                     key={key}
-                    className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border border-gray-100 bg-gray-50/60 px-3 py-2"
+                    className="rounded-lg border border-gray-200/80 bg-gray-50/40 px-3 py-2.5"
                   >
-                    <span className="text-sm text-gray-900">{TEMPLATE_LABELS[key]}</span>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+                      <div className="sm:min-w-[14rem] sm:pr-4">
+                        <span className="block text-sm text-gray-900 leading-tight">{TEMPLATE_LABELS[key]}</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 md:flex md:items-center gap-1.5 sm:gap-2">
+                        <button
+                          type="button"
+                          disabled={lifecycleActionsBusy}
+                          onClick={() => handlePreviewTemplate(key)}
+                          className="inline-flex justify-center items-center min-w-[6.5rem] px-2.5 py-1.5 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          {previewLoadingKey === key ? 'Loading…' : 'Preview'}
+                        </button>
                       <button
                         type="button"
                         disabled={lifecycleActionsBusy}
                         onClick={() => handleResendTemplate(key)}
-                        className="px-2.5 py-1.5 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50"
+                        className="inline-flex justify-center items-center min-w-[6.5rem] px-2.5 py-1.5 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50"
                       >
                         {resendLoadingKey === key ? 'Sending…' : 'Resend'}
                       </button>
                       <button
                         type="button"
                         disabled={lifecycleActionsBusy}
-                        onClick={() => handlePreviewTemplate(key)}
-                        className="px-2.5 py-1.5 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        {previewLoadingKey === key ? 'Loading…' : 'Preview'}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={lifecycleActionsBusy}
                         onClick={() => openEditResendModal(key)}
-                        className="px-2.5 py-1.5 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50"
+                        className="inline-flex justify-center items-center min-w-[6.5rem] px-2.5 py-1.5 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50"
                       >
                         {editResendLoadingKey === key ? 'Loading…' : 'Edit & resend'}
                       </button>
+                      </div>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="border-t border-gray-100 pt-3 space-y-2">
+            <div className="border-t border-gray-100 pt-5 space-y-2.5">
               <h4 className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Email event history</h4>
               {lifecycleEmailLoading ? (
                 <p className="text-xs text-gray-500">Loading email events…</p>
