@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { opsReadAPI, opsWriteAPI } from '../../services/opsApi';
 
@@ -20,6 +20,13 @@ function thumbInitials(name) {
   const b = parts.length > 1 ? parts[parts.length - 1]?.[0] || '' : '';
   const out = `${a}${b}`.toUpperCase();
   return out || '—';
+}
+
+function normalizeMediaSrc(url) {
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith('/')) return url;
+  return `/uploads/cabins/${url}`;
 }
 
 export function OpsCabinsList() {
@@ -300,12 +307,27 @@ export default function OpsCabinDetail() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [mediaBusy, setMediaBusy] = useState(false);
+  const [mediaMessage, setMediaMessage] = useState('');
+  const [mediaError, setMediaError] = useState('');
+  const uploadRef = useRef(null);
+
+  const loadDetail = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const resp = await opsReadAPI.cabinDetail(id);
+      setData(resp.data?.data || null);
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Failed to load cabin');
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      setLoading(true);
-      setError('');
       try {
         const resp = await opsReadAPI.cabinDetail(id);
         if (cancelled) return;
@@ -333,6 +355,74 @@ export default function OpsCabinDetail() {
   const degraded = data.degraded || {};
   const titleId = isMulti ? data.cabinTypeId : data.cabinId;
   const cover = content.imageUrl;
+  const mediaImages = useMemo(() => {
+    const arr = Array.isArray(content.images) ? [...content.images] : [];
+    return arr.sort((a, b) => {
+      if (Boolean(b?.isCover) !== Boolean(a?.isCover)) return Number(b?.isCover) - Number(a?.isCover);
+      return (a?.sort ?? 0) - (b?.sort ?? 0);
+    });
+  }, [content.images]);
+
+  const runMediaMutation = useCallback(
+    async (work, successText) => {
+      setMediaBusy(true);
+      setMediaError('');
+      setMediaMessage('');
+      try {
+        await work();
+        await loadDetail();
+        setMediaMessage(successText);
+      } catch (err) {
+        setMediaError(err?.response?.data?.message || 'Media update failed');
+      } finally {
+        setMediaBusy(false);
+      }
+    },
+    [loadDetail]
+  );
+
+  const handleUpload = useCallback(
+    async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      await runMediaMutation(() => opsWriteAPI.uploadCabinImage(titleId, file), 'Image uploaded');
+      event.target.value = '';
+    },
+    [runMediaMutation, titleId]
+  );
+
+  const handleSetCover = useCallback(
+    async (imageId) => {
+      await runMediaMutation(
+        () => opsWriteAPI.updateCabinImage(titleId, imageId, { isCover: true }),
+        'Cover image updated'
+      );
+    },
+    [runMediaMutation, titleId]
+  );
+
+  const handleMove = useCallback(
+    async (imageId, direction) => {
+      const idx = mediaImages.findIndex((img) => String(img?._id) === String(imageId));
+      if (idx < 0) return;
+      const target = direction === 'up' ? idx - 1 : idx + 1;
+      if (target < 0 || target >= mediaImages.length) return;
+      const next = [...mediaImages];
+      const swap = next[idx];
+      next[idx] = next[target];
+      next[target] = swap;
+      const order = next.map((img, index) => ({
+        imageId: String(img._id),
+        sort: index,
+        spaceOrder: typeof img.spaceOrder === 'number' ? img.spaceOrder : 0
+      }));
+      await runMediaMutation(
+        () => opsWriteAPI.reorderCabinImages(titleId, order),
+        'Image order updated'
+      );
+    },
+    [mediaImages, runMediaMutation, titleId]
+  );
 
   return (
     <div className="space-y-4 pb-16 sm:pb-0 w-full">
@@ -416,6 +506,86 @@ export default function OpsCabinDetail() {
           </div>
         </section>
       </div>
+
+      <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-gray-900">Media manager</h3>
+          <input
+            ref={uploadRef}
+            type="file"
+            accept="image/*"
+            onChange={handleUpload}
+            className="hidden"
+            disabled={mediaBusy || isMulti}
+          />
+          <button
+            type="button"
+            disabled={mediaBusy || isMulti}
+            onClick={() => uploadRef.current?.click()}
+            className="text-xs px-3 py-2 rounded-lg bg-[#81887A] text-white disabled:opacity-50"
+          >
+            Upload image
+          </button>
+        </div>
+        {isMulti ? (
+          <p className="text-xs text-amber-700 mt-2">
+            Media editing is currently available for single cabins only in this batch.
+          </p>
+        ) : null}
+        {mediaError ? <p className="text-xs text-red-600 mt-2">{mediaError}</p> : null}
+        {mediaMessage ? <p className="text-xs text-green-700 mt-2">{mediaMessage}</p> : null}
+
+        {mediaImages.length === 0 ? (
+          <p className="text-sm text-gray-500 mt-3">No images yet.</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
+            {mediaImages.map((img, index) => (
+              <div key={String(img._id)} className="border border-gray-200 rounded-lg p-2">
+                <div className="relative rounded-md overflow-hidden border border-gray-100 bg-gray-50">
+                  <img
+                    src={normalizeMediaSrc(img.url)}
+                    alt={img.alt || ''}
+                    className="w-full h-28 object-cover"
+                    loading="lazy"
+                  />
+                  {img.isCover ? (
+                    <span className="absolute top-1 right-1 text-[10px] px-2 py-0.5 rounded bg-[#81887A] text-white">
+                      Cover
+                    </span>
+                  ) : null}
+                </div>
+                <div className="mt-2 text-xs text-gray-500">Order: {index + 1}</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={mediaBusy || isMulti || Boolean(img.isCover)}
+                    onClick={() => handleSetCover(String(img._id))}
+                    className="text-xs px-2 py-1 rounded border border-gray-200 bg-white disabled:opacity-50"
+                  >
+                    Set cover
+                  </button>
+                  <button
+                    type="button"
+                    disabled={mediaBusy || isMulti || index === 0}
+                    onClick={() => handleMove(String(img._id), 'up')}
+                    className="text-xs px-2 py-1 rounded border border-gray-200 bg-white disabled:opacity-50"
+                  >
+                    Move up
+                  </button>
+                  <button
+                    type="button"
+                    disabled={mediaBusy || isMulti || index === mediaImages.length - 1}
+                    onClick={() => handleMove(String(img._id), 'down')}
+                    className="text-xs px-2 py-1 rounded border border-gray-200 bg-white disabled:opacity-50"
+                  >
+                    Move down
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       {isMulti && Array.isArray(data.units) ? (
         <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5 overflow-x-auto">

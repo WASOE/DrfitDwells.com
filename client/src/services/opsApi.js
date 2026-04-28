@@ -76,6 +76,17 @@ const opsWriteAPI = {
     api.post(`/ops/availability/maintenance-blocks/${blockId}/remove`, { reason }, { headers: authHeaders() }),
   createManualReservation: (payload) =>
     api.post('/ops/reservations/manual', payload, { headers: authHeaders() }),
+  uploadCabinImage: (id, file) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return api.post(`/ops/cabins/${id}/images`, fd, {
+      headers: { ...authHeaders(), 'Content-Type': 'multipart/form-data' }
+    });
+  },
+  reorderCabinImages: (id, order) =>
+    api.patch(`/ops/cabins/${id}/images/reorder`, { order }, { headers: authHeaders() }),
+  updateCabinImage: (id, imageId, payload) =>
+    api.patch(`/ops/cabins/${id}/images/${imageId}`, payload, { headers: authHeaders() }),
   patchUnitChannelLabel: (unitId, airbnbListingLabel) =>
     api.patch(`/ops/cabins/units/${unitId}`, { airbnbListingLabel }, { headers: authHeaders() })
 };
