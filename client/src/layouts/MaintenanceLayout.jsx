@@ -88,7 +88,7 @@ export default function MaintenanceLayout() {
                 OPS console
               </a>
               <a
-                href="/admin/bookings"
+                href="/ops/reservations"
                 className="text-xs px-3 py-1.5 rounded-lg border border-slate-600 text-slate-300 hover:bg-slate-800"
               >
                 Admin

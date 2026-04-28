@@ -41,7 +41,7 @@ const AdminLogin = () => {
         if (data.role === 'operator') {
           navigate('/ops');
         } else {
-          navigate('/admin/bookings');
+          navigate('/ops/reservations');
         }
       } else {
         setError(data.message || 'Login failed');

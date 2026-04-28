@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useParams } from 'react-router-dom'
 import { BookingProvider } from './context/BookingContext'
 import BookingProviderLayout from './layouts/BookingProviderLayout'
 import ScrollToTop from './components/ScrollToTop'
@@ -37,8 +37,6 @@ const Step3GuestDetails = lazy(() => import('./pages/craft/Step3GuestDetails'))
 const Step4Summary = lazy(() => import('./pages/craft/Step4Summary'))
 
 const AdminLogin = lazy(() => import('./pages/admin/AdminLogin'))
-const BookingsList = lazy(() => import('./pages/admin/BookingsList'))
-const BookingDetail = lazy(() => import('./pages/admin/BookingDetail'))
 const CabinsList = lazy(() => import('./pages/admin/CabinsList'))
 const CabinEdit = lazy(() => import('./pages/admin/CabinEdit'))
 const CabinTypesList = lazy(() => import('./pages/admin/CabinTypesList'))
@@ -83,6 +81,11 @@ const PageLoader = () => (
     <div className="text-sm tracking-[0.3em] uppercase text-gray-400">Loading...</div>
   </div>
 )
+
+const AdminBookingDetailRedirect = () => {
+  const { id } = useParams()
+  return <Navigate to={`/ops/reservations/${id}`} replace />
+}
 
 function App() {
   return (
@@ -156,8 +159,8 @@ function App() {
             {/* Admin layout */}
             <Route element={<AdminLayout />}>
               <Route path="/admin/login" element={<AdminLogin />} />
-              <Route path="/admin/bookings" element={<BookingsList />} />
-              <Route path="/admin/bookings/:id" element={<BookingDetail />} />
+              <Route path="/admin/bookings" element={<Navigate to="/ops/reservations" replace />} />
+              <Route path="/admin/bookings/:id" element={<AdminBookingDetailRedirect />} />
               <Route path="/admin/cabins" element={<CabinsList />} />
               <Route path="/admin/cabins/new" element={<CabinEdit />} />
               <Route path="/admin/cabins/:id" element={<CabinEdit />} />
