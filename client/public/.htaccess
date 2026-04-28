@@ -1,0 +1,13 @@
+RewriteEngine On
+
+# Do not route API calls to the React app
+RewriteCond %{REQUEST_URI} !^/api/ [NC]
+
+# Serve real files and folders normally
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# Only rewrite extensionless app routes, not missing .js/.css/.png/.pdf files
+RewriteCond %{REQUEST_URI} !\.[a-zA-Z0-9]{2,8}$
+
+RewriteRule ^ /index.html [L]
