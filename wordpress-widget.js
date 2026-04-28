@@ -27,14 +27,36 @@
   };
 
   // Utility functions
-  const formatDate = (date) => {
-    return date.toISOString().split('T')[0];
+  const formatDateOnlyLocal = (date) => {
+    if (!date) return '';
+    if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+    const d = new Date(date);
+    if (Number.isNaN(d.getTime())) return '';
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
   const parseDate = (dateString) => {
     if (!dateString) return null;
+    if (typeof dateString === 'string') {
+      const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateString.trim());
+      if (match) {
+        const year = Number(match[1]);
+        const month = Number(match[2]);
+        const day = Number(match[3]);
+        const parsed = new Date(year, month - 1, day);
+        if (
+          parsed.getFullYear() !== year ||
+          parsed.getMonth() !== month - 1 ||
+          parsed.getDate() !== day
+        ) return null;
+        return parsed;
+      }
+    }
     const parsed = new Date(dateString);
-    return isNaN(parsed.getTime()) ? null : parsed;
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
   };
 
   const addDays = (date, days) => {
@@ -226,8 +248,8 @@
       this.isOpen = false;
       this.overlay = null;
       this.formData = {
-        checkIn: formatDate(DDW_CONFIG.defaultCheckIn),
-        checkOut: formatDate(DDW_CONFIG.defaultCheckOut),
+        checkIn: formatDateOnlyLocal(DDW_CONFIG.defaultCheckIn),
+        checkOut: formatDateOnlyLocal(DDW_CONFIG.defaultCheckOut),
         adults: DDW_CONFIG.defaultAdults,
         children: DDW_CONFIG.defaultChildren
       };
@@ -323,7 +345,7 @@
                   id="${DDW_CONFIG.prefix}checkin" 
                   class="${DDW_CONFIG.prefix}input ${this.errors.checkIn ? `${DDW_CONFIG.prefix}error` : ''}"
                   value="${this.formData.checkIn}"
-                  min="${formatDate(DDW_CONFIG.minDate)}"
+                  min="${formatDateOnlyLocal(DDW_CONFIG.minDate)}"
                   required
                 >
                 ${this.errors.checkIn ? `<div class="${DDW_CONFIG.prefix}error-message">${this.errors.checkIn}</div>` : ''}
@@ -335,7 +357,7 @@
                   id="${DDW_CONFIG.prefix}checkout" 
                   class="${DDW_CONFIG.prefix}input ${this.errors.checkOut ? `${DDW_CONFIG.prefix}error` : ''}"
                   value="${this.formData.checkOut}"
-                  min="${this.formData.checkIn || formatDate(DDW_CONFIG.minDate)}"
+                  min="${this.formData.checkIn || formatDateOnlyLocal(DDW_CONFIG.minDate)}"
                   required
                 >
                 ${this.errors.checkOut ? `<div class="${DDW_CONFIG.prefix}error-message">${this.errors.checkOut}</div>` : ''}
@@ -441,7 +463,7 @@
         this.errors.checkOut = 'Check-out date must be after check-in date';
         // Auto-fix: set check-out to check-in + 1 day
         const fixedCheckOut = addDays(checkIn, 1);
-        this.formData.checkOut = formatDate(fixedCheckOut);
+        this.formData.checkOut = formatDateOnlyLocal(fixedCheckOut);
         this.showToast('Check-out date adjusted to be after check-in date');
       }
 
@@ -452,11 +474,11 @@
       const checkOutInput = this.overlay.querySelector(`#${DDW_CONFIG.prefix}checkout`);
       if (checkOutInput && this.formData.checkIn) {
         const minDate = addDays(parseDate(this.formData.checkIn), 1);
-        checkOutInput.min = formatDate(minDate);
+        checkOutInput.min = formatDateOnlyLocal(minDate);
         
         // If current check-out is before new minimum, update it
         if (this.formData.checkOut && parseDate(this.formData.checkOut) <= parseDate(this.formData.checkIn)) {
-          this.formData.checkOut = formatDate(minDate);
+          this.formData.checkOut = formatDateOnlyLocal(minDate);
           checkOutInput.value = this.formData.checkOut;
         }
       }
