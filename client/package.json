@@ -9,7 +9,7 @@
     "validate:calendaruxinteractions": "node ./scripts/validate-calendar-ux-interactions.mjs",
     "guides:export-the-cabin": "node ./scripts/export-the-cabin-arrival-assets.mjs",
     "generate:hero-media": "node ./scripts/generate-hero-variants.mjs",
-    "build": "npm run guides:export-the-cabin && npm run generate:hero-media && npm run validate:media && vite build && node ./scripts/prerender-routes.cjs",
+    "build": "npm run guides:export-the-cabin && npm run generate:hero-media && npm run validate:media && vite build && node ./scripts/copy-htaccess.mjs && node ./scripts/prerender-routes.cjs",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview --host",
     "check:i18n": "node ./scripts/check-i18n.mjs"
