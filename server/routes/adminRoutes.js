@@ -20,10 +20,14 @@ const Cabin = require('../models/Cabin');
 const EmailEvent = require('../models/EmailEvent');
 const path = require('path');
 const fs = require('fs');
-const { requirePermission, ACTIONS } = require('../services/permissionService');
-const { appendAuditEvent } = require('../services/auditWriter');
 const { adminModuleWriteGate } = require('../middleware/adminModuleCutoverEnforcement');
-const { syncMultiUnitGalleryToCabinType } = require('../services/syncMultiUnitGalleryToCabinType');
+const {
+  uploadCabinImage,
+  reorderCabinImages,
+  updateCabinImageMetadata,
+  batchUpdateCabinImages,
+  deleteCabinImage
+} = require('../services/cabins/cabinMediaService');
 const adminPromoRoutes = require('./adminPromoRoutes');
 
 const router = express.Router();
@@ -132,8 +136,6 @@ router.patch('/cabins/:id', validateId('id'), adminModuleWriteGate('cabins'), up
 // POST /api/admin/cabins/:id/images  (single file field "file")
 router.post('/cabins/:id/images', validateId('id'), adminModuleWriteGate('cabins'), upload.single('file'), async (req, res) => {
   try {
-    const cabin = await Cabin.findById(req.params.id);
-    if (!cabin) return res.status(404).json({ success: false, message: 'Cabin not found' });
     if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
 
     const ext = path.extname(req.file.originalname).toLowerCase();
@@ -142,28 +144,12 @@ router.post('/cabins/:id/images', validateId('id'), adminModuleWriteGate('cabins
       return res.status(400).json({ success: false, message: 'File content does not match its extension' });
     }
 
-    const relPath = path.join('/uploads', 'cabins', req.params.id, 'original', req.file.filename);
-    // basic metadata; width/height left 0 without processing
-    const imageDoc = {
-      url: relPath.replace(/\\/g, '/'),
-      alt: '',
-      sort: (cabin.images?.length || 0),
-      isCover: cabin.images.length === 0, // first image becomes cover
-      width: 0,
-      height: 0,
-      bytes: req.file.size
-    };
-    cabin.images.push(imageDoc);
-    
-    // Sync imageUrl to cover image (first image becomes cover)
-    if (imageDoc.isCover) {
-      cabin.imageUrl = imageDoc.url;
-    }
-    
-    await cabin.save();
-    await syncMultiUnitGalleryToCabinType(cabin);
-    return res.json({ success: true, data: { image: imageDoc, images: cabin.images } });
+    const data = await uploadCabinImage({ cabinId: req.params.id, file: req.file });
+    return res.json({ success: true, data });
   } catch (e) {
+    if (e.status === 404) {
+      return res.status(404).json({ success: false, message: e.message });
+    }
     return res.status(500).json({ success: false, message: e.message });
   }
 });
@@ -172,39 +158,12 @@ router.post('/cabins/:id/images', validateId('id'), adminModuleWriteGate('cabins
 // body: { order: [{ imageId, sort, spaceOrder? }] } (preferred) or legacy raw array
 router.patch('/cabins/:id/images/reorder', validateId('id'), adminModuleWriteGate('cabins'), async (req, res) => {
   try {
-    const { id } = req.params;
-    const raw = req.body;
-    const order = Array.isArray(raw?.order)
-      ? raw.order
-      : Array.isArray(raw)
-        ? raw
-        : [];
-    if (process.env.NODE_ENV !== 'production') {
-      console.log('[admin] PATCH cabins/:id/images/reorder matched', { cabinId: id, orderItems: order.length });
-    }
-    const cabin = await Cabin.findById(id);
-    if (!cabin) return res.status(404).json({ success: false, message: 'Cabin not found' });
-
-    const sortMap = new Map(
-      order.map((o) => [String(o.imageId), typeof o.sort === 'number' ? o.sort : Number(o.sort) || 0])
-    );
-    const spaceOrderMap = new Map(
-      order.map((o) => {
-        const so = o.spaceOrder;
-        const n = typeof so === 'number' ? so : Number(so);
-        return [String(o.imageId), Number.isFinite(n) ? n : undefined];
-      })
-    );
-    cabin.images.forEach((i) => {
-      const key = String(i._id);
-      if (sortMap.has(key)) i.sort = sortMap.get(key);
-      const so = spaceOrderMap.get(key);
-      if (so !== undefined) i.spaceOrder = so;
-    });
-    await cabin.save();
-    await syncMultiUnitGalleryToCabinType(cabin);
-    return res.json({ success: true, data: { images: cabin.images } });
+    const data = await reorderCabinImages({ cabinId: req.params.id, rawBody: req.body });
+    return res.json({ success: true, data });
   } catch (e) {
+    if (e.status === 404) {
+      return res.status(404).json({ success: false, message: e.message });
+    }
     return res.status(500).json({ success: false, message: e.message });
   }
 });
@@ -212,38 +171,16 @@ router.patch('/cabins/:id/images/reorder', validateId('id'), adminModuleWriteGat
 // PATCH /api/admin/cabins/:id/images/:imageId  (alt, isCover, sort, tags, spaceOrder)
 router.patch('/cabins/:id/images/:imageId', validateId('id'), validateId('imageId'), adminModuleWriteGate('cabins'), async (req, res) => {
   try {
-    const { id, imageId } = req.params;
-    const { alt, isCover, sort, tags, spaceOrder } = req.body;
-    const cabin = await Cabin.findById(id);
-    if (!cabin) return res.status(404).json({ success: false, message: 'Cabin not found' });
-
-    const img = cabin.images.find(i => i._id === imageId);
-    if (!img) return res.status(404).json({ success: false, message: 'Image not found' });
-
-    if (typeof alt === 'string') img.alt = alt;
-    if (typeof sort === 'number') img.sort = sort;
-    if (typeof spaceOrder === 'number') img.spaceOrder = spaceOrder;
-
-    // Handle tags array
-    if (Array.isArray(tags)) {
-      const validTags = ['bedroom', 'living_room', 'kitchen', 'dining', 'bathroom', 'outdoor', 'view', 'hot_tub_sauna', 'amenities', 'floorplan', 'map', 'other'];
-      img.tags = tags.filter(tag => validTags.includes(tag));
-    }
-
-    if (typeof isCover === 'boolean') {
-      cabin.images.forEach(i => { i.isCover = false; });
-      img.isCover = isCover;
-      
-      // Sync imageUrl to new cover image
-      if (isCover) {
-        cabin.imageUrl = img.url;
-      }
-    }
-
-    await cabin.save();
-    await syncMultiUnitGalleryToCabinType(cabin);
-    return res.json({ success: true, data: { images: cabin.images } });
+    const data = await updateCabinImageMetadata({
+      cabinId: req.params.id,
+      imageId: req.params.imageId,
+      payload: req.body
+    });
+    return res.json({ success: true, data });
   } catch (e) {
+    if (e.status === 404) {
+      return res.status(404).json({ success: false, message: e.message });
+    }
     return res.status(500).json({ success: false, message: e.message });
   }
 });
@@ -251,45 +188,15 @@ router.patch('/cabins/:id/images/:imageId', validateId('id'), validateId('imageI
 // PATCH /api/admin/cabins/:id/images/batch - Bulk update images (tags, spaceOrder, etc.)
 router.patch('/cabins/:id/images/batch', adminModuleWriteGate('cabins'), async (req, res) => {
   try {
-    const { id } = req.params;
-    const { updates } = req.body; // Array of {imageId, tags?, spaceOrder?, alt?, isCover?}
-    const cabin = await Cabin.findById(id);
-    if (!cabin) return res.status(404).json({ success: false, message: 'Cabin not found' });
-
-    if (!Array.isArray(updates)) {
-      return res.status(400).json({ success: false, message: 'Updates must be an array' });
-    }
-
-    const validTags = ['bedroom', 'living_room', 'kitchen', 'dining', 'bathroom', 'outdoor', 'view', 'hot_tub_sauna', 'amenities', 'floorplan', 'map', 'other'];
-    
-    for (const update of updates) {
-      const img = cabin.images.find(i => i._id === update.imageId);
-      if (!img) continue;
-
-      if (Array.isArray(update.tags)) {
-        img.tags = update.tags.filter(tag => validTags.includes(tag));
-      }
-      if (typeof update.spaceOrder === 'number') {
-        img.spaceOrder = update.spaceOrder;
-      }
-      if (typeof update.alt === 'string') {
-        img.alt = update.alt;
-      }
-      if (typeof update.isCover === 'boolean') {
-        if (update.isCover) {
-          cabin.images.forEach(i => { i.isCover = false; });
-          img.isCover = true;
-          cabin.imageUrl = img.url;
-        } else {
-          img.isCover = false;
-        }
-      }
-    }
-
-    await cabin.save();
-    await syncMultiUnitGalleryToCabinType(cabin);
-    return res.json({ success: true, data: { images: cabin.images } });
+    const data = await batchUpdateCabinImages({ cabinId: req.params.id, updates: req.body?.updates });
+    return res.json({ success: true, data });
   } catch (e) {
+    if (e.status === 404) {
+      return res.status(404).json({ success: false, message: e.message });
+    }
+    if (e.status === 400) {
+      return res.status(400).json({ success: false, message: e.message });
+    }
     return res.status(500).json({ success: false, message: e.message });
   }
 });
@@ -297,63 +204,17 @@ router.patch('/cabins/:id/images/batch', adminModuleWriteGate('cabins'), async (
 // DELETE /api/admin/cabins/:id/images/:imageId
 router.delete('/cabins/:id/images/:imageId', validateId('id'), validateId('imageId'), adminModuleWriteGate('cabins'), async (req, res) => {
   try {
-    const { id, imageId } = req.params;
-    const cabin = await Cabin.findById(id);
-    if (!cabin) return res.status(404).json({ success: false, message: 'Cabin not found' });
-
-    const idx = cabin.images.findIndex(i => i._id === imageId);
-    if (idx === -1) return res.status(404).json({ success: false, message: 'Image not found' });
-
-    requirePermission({
-      role: req.user?.role,
-      action: ACTIONS.CABIN_IMAGE_DELETE
+    const data = await deleteCabinImage({
+      cabinId: req.params.id,
+      imageId: req.params.imageId,
+      user: req.user,
+      req
     });
-
-    const beforeCount = cabin.images.length;
-    const removedImage = cabin.images[idx];
-    await appendAuditEvent(
-      {
-        actorType: 'user',
-        actorId: req.user?.id || 'admin',
-        entityType: 'Cabin',
-        entityId: cabin._id.toString(),
-        action: 'cabin_image_delete',
-        beforeSnapshot: {
-          imagesCount: beforeCount,
-          imageId: String(imageId)
-        },
-        afterSnapshot: {
-          imagesCount: beforeCount - 1,
-          imageId: String(imageId)
-        },
-        metadata: {
-          imageUrl: removedImage?.url || null
-        },
-        reason: 'image_delete',
-        sourceContext: {
-          route: 'DELETE /api/admin/cabins/:id/images/:imageId'
-        }
-      },
-      { req }
-    );
-
-    const [img] = cabin.images.splice(idx, 1);
-    // try remove file
-    if (img?.url) {
-      const abs = path.join(__dirname, '..', '..', img.url.replace('/uploads', 'uploads'));
-      fs.promises.unlink(abs).catch(() => {});
-    }
-    // if we removed the cover, set first as cover
-    if (!cabin.images.some(i => i.isCover) && cabin.images[0]) {
-      cabin.images[0].isCover = true;
-      // Sync imageUrl to new cover
-      cabin.imageUrl = cabin.images[0].url;
-    }
-
-    await cabin.save();
-    await syncMultiUnitGalleryToCabinType(cabin);
-    return res.json({ success: true, data: { images: cabin.images } });
+    return res.json({ success: true, data });
   } catch (e) {
+    if (e.status === 404) {
+      return res.status(404).json({ success: false, message: e.message });
+    }
     if (e.code === 'PERMISSION_DENIED') {
       return res.status(e.status || 403).json({ success: false, message: e.message });
     }
