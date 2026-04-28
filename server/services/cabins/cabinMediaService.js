@@ -178,7 +178,7 @@ async function batchUpdateCabinImages({ cabinId, updates }) {
   return { images: cabin.images };
 }
 
-async function deleteCabinImage({ cabinId, imageId, user, req }) {
+async function deleteCabinImage({ cabinId, imageId, user, req, sourceRoute }) {
   const cabin = await Cabin.findById(cabinId);
   if (!cabin) {
     const error = new Error('Cabin not found');
@@ -220,7 +220,7 @@ async function deleteCabinImage({ cabinId, imageId, user, req }) {
       },
       reason: 'image_delete',
       sourceContext: {
-        route: 'DELETE /api/admin/cabins/:id/images/:imageId'
+        route: sourceRoute || 'DELETE /api/admin/cabins/:id/images/:imageId'
       }
     },
     { req }

@@ -1,7 +1,18 @@
 const express = require('express');
 const mongoose = require('mongoose');
+const path = require('path');
+const fs = require('fs');
 const Unit = require('../../../models/Unit');
+const { upload, validateMagicBytes } = require('../../../middleware/upload');
+const { validateId } = require('../../../middleware/validateId');
 const { getCabinsListReadModel, getCabinDetailReadModel } = require('../../../services/ops/readModels/cabinsReadModel');
+const {
+  uploadCabinImage,
+  reorderCabinImages,
+  updateCabinImageMetadata,
+  batchUpdateCabinImages,
+  deleteCabinImage
+} = require('../../../services/cabins/cabinMediaService');
 
 const router = express.Router();
 
@@ -44,6 +55,93 @@ router.patch('/units/:unitId', async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/:id/images', validateId('id'), upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
+
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    if (!validateMagicBytes(req.file.path, ext)) {
+      fs.promises.unlink(req.file.path).catch(() => {});
+      return res.status(400).json({ success: false, message: 'File content does not match its extension' });
+    }
+
+    const data = await uploadCabinImage({ cabinId: req.params.id, file: req.file });
+    return res.json({ success: true, data });
+  } catch (e) {
+    if (e.status === 404) {
+      return res.status(404).json({ success: false, message: e.message });
+    }
+    return res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+router.patch('/:id/images/reorder', validateId('id'), async (req, res) => {
+  try {
+    const data = await reorderCabinImages({ cabinId: req.params.id, rawBody: req.body });
+    return res.json({ success: true, data });
+  } catch (e) {
+    if (e.status === 404) {
+      return res.status(404).json({ success: false, message: e.message });
+    }
+    return res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+router.patch('/:id/images/:imageId', validateId('id'), validateId('imageId'), async (req, res) => {
+  try {
+    const data = await updateCabinImageMetadata({
+      cabinId: req.params.id,
+      imageId: req.params.imageId,
+      payload: req.body
+    });
+    return res.json({ success: true, data });
+  } catch (e) {
+    if (e.status === 404) {
+      return res.status(404).json({ success: false, message: e.message });
+    }
+    return res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+router.patch('/:id/images/batch', async (req, res) => {
+  try {
+    const data = await batchUpdateCabinImages({ cabinId: req.params.id, updates: req.body?.updates });
+    return res.json({ success: true, data });
+  } catch (e) {
+    if (e.status === 404) {
+      return res.status(404).json({ success: false, message: e.message });
+    }
+    if (e.status === 400) {
+      return res.status(400).json({ success: false, message: e.message });
+    }
+    return res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+router.delete('/:id/images/:imageId', validateId('id'), validateId('imageId'), async (req, res) => {
+  try {
+    const data = await deleteCabinImage({
+      cabinId: req.params.id,
+      imageId: req.params.imageId,
+      user: req.user,
+      req,
+      sourceRoute: 'DELETE /api/ops/cabins/:id/images/:imageId'
+    });
+    return res.json({ success: true, data });
+  } catch (e) {
+    if (e.status === 404) {
+      return res.status(404).json({ success: false, message: e.message });
+    }
+    if (e.code === 'PERMISSION_DENIED') {
+      return res.status(e.status || 403).json({ success: false, message: e.message });
+    }
+    if (e.code === 'AUDIT_WRITE_FAILED') {
+      return res.status(500).json({ success: false, message: 'Delete blocked because audit write failed' });
+    }
+    return res.status(500).json({ success: false, message: e.message });
   }
 });
 
