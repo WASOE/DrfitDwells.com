@@ -344,16 +344,12 @@ export default function OpsCabinDetail() {
     };
   }, [id]);
 
-  if (loading) return <div className="text-sm text-gray-500">Loading…</div>;
-  if (error) return <div className="text-sm text-red-600">{error}</div>;
-  if (!data) return <div className="text-sm text-gray-500">Not found.</div>;
-
-  const isMulti = data.kind === 'multi_unit_type';
-  const op = data.operationalSettings || {};
-  const content = data.contentMedia || {};
-  const pre = data.preArrival || {};
-  const degraded = data.degraded || {};
-  const titleId = isMulti ? data.cabinTypeId : data.cabinId;
+  const isMulti = data?.kind === 'multi_unit_type';
+  const op = data?.operationalSettings || {};
+  const content = data?.contentMedia || {};
+  const pre = data?.preArrival || {};
+  const degraded = data?.degraded || {};
+  const titleId = isMulti ? data?.cabinTypeId : data?.cabinId;
   const cover = content.imageUrl;
   const mediaImages = useMemo(() => {
     const arr = Array.isArray(content.images) ? [...content.images] : [];
@@ -423,6 +419,10 @@ export default function OpsCabinDetail() {
     },
     [mediaImages, runMediaMutation, titleId]
   );
+
+  if (loading) return <div className="text-sm text-gray-500">Loading…</div>;
+  if (error) return <div className="text-sm text-red-600">{error}</div>;
+  if (!data) return <div className="text-sm text-gray-500">Not found.</div>;
 
   return (
     <div className="space-y-4 pb-16 sm:pb-0 w-full">
