@@ -41,7 +41,6 @@ const CabinEdit = lazy(() => import('./pages/admin/CabinEdit'))
 const CabinTypesList = lazy(() => import('./pages/admin/CabinTypesList'))
 const CabinTypeEdit = lazy(() => import('./pages/admin/CabinTypeEdit'))
 const ReviewsList = lazy(() => import('./pages/admin/ReviewsList'))
-const PromoCodesList = lazy(() => import('./pages/admin/PromoCodesList'))
 const OpsDashboard = lazy(() => import('./pages/ops/OpsDashboard'))
 const OpsCalendarIndex = lazy(() => import('./pages/ops/calendar/OpsCalendarIndex'))
 const OpsCalendarMonth = lazy(() => import('./pages/ops/calendar/OpsCalendarMonth'))
@@ -183,7 +182,7 @@ function App() {
               <Route path="/admin/reviews" element={<Navigate to="/ops/reviews" replace />} />
               <Route path="/admin/reviews/new" element={<AdminReviewCreateRedirect />} />
               <Route path="/admin/reviews/:id" element={<AdminReviewDetailRedirect />} />
-              <Route path="/admin/promo-codes" element={<PromoCodesList />} />
+              <Route path="/admin/promo-codes" element={<Navigate to="/ops/promo-codes" replace />} />
             </Route>
 
             {/* Embedded layout */}
