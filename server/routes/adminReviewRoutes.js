@@ -1,15 +1,14 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { adminAuth } = require('../middleware/adminAuth');
-const mongoose = require('mongoose');
 const Review = require('../models/Review');
 const Cabin = require('../models/Cabin');
 const CabinType = require('../models/CabinType');
 const { adminModuleWriteGate } = require('../middleware/adminModuleCutoverEnforcement');
 const {
-  resolveReviewOwnerObjectIds,
-  softDeleteOrCondition
-} = require('../services/reviewOwnershipService');
+  listReviewsForModeration,
+  recalculateCabinStats
+} = require('../services/reviews/reviewModerationService');
 
 const router = express.Router();
 
@@ -48,69 +47,27 @@ router.get('/', async (req, res) => {
       sort = 'newest'
     } = req.query;
 
-    const pageNum = Math.max(1, parseInt(page, 10) || 1);
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
-    const skip = (pageNum - 1) * limitNum;
-
-    const query = {
-      ...softDeleteOrCondition()
-    };
-
-    if (cabinId) {
-      const ownerIds = await resolveReviewOwnerObjectIds(cabinId);
-      query.cabinId = ownerIds.length ? { $in: ownerIds } : { $in: [] };
-    }
-    if (status) query.status = status;
-    if (source) query.source = source;
-    if (lang) query.language = lang;
-    if (minRating) query.rating = { ...query.rating, $gte: parseInt(minRating) };
-    if (maxRating) {
-      query.rating = { ...query.rating, $lte: parseInt(maxRating) };
-    }
-
-    // Text search
-    if (q) {
-      query.$text = { $search: q };
-    }
-
-    // Build sort object
-    let sortObj = {};
-    switch (sort) {
-      case 'newest':
-        sortObj = { createdAtSource: -1, _id: -1 };
-        break;
-      case 'oldest':
-        sortObj = { createdAtSource: 1, _id: 1 };
-        break;
-      case 'rating':
-        sortObj = { rating: -1, createdAtSource: -1 };
-        break;
-      case 'pinned':
-        sortObj = { pinned: -1, createdAtSource: -1 };
-        break;
-      default:
-        sortObj = { createdAtSource: -1, _id: -1 };
-    }
-
-    // Get reviews and total
-    const [reviews, total] = await Promise.all([
-      Review.find(query)
-        .populate('cabinId', 'name location')
-        .sort(sortObj)
-        .skip(skip)
-        .limit(limitNum)
-        .lean(),
-      Review.countDocuments(query)
-    ]);
+    const result = await listReviewsForModeration({
+      q,
+      cabinId,
+      status,
+      source,
+      minRating,
+      maxRating,
+      lang,
+      page,
+      limit,
+      sort
+    });
 
     res.json({
       success: true,
       data: {
-        reviews,
-        total,
-        page: pageNum,
-        limit: limitNum,
-        totalPages: Math.ceil(total / limitNum)
+        reviews: result.reviews,
+        total: result.total,
+        page: result.page,
+        limit: result.limit,
+        totalPages: result.totalPages
       }
     });
   } catch (error) {
@@ -567,74 +524,6 @@ router.post('/recalc/:cabinId', adminModuleWriteGate('reviews_communications'), 
     });
   }
 });
-
-// Helper: Recalculate cabin review statistics
-async function recalculateCabinStats(entityId) {
-  const cabin = await Cabin.findById(entityId).select('_id inventoryType inventoryMode cabinTypeId');
-  let targetKind = 'cabin';
-  let targetId = entityId;
-
-  if (cabin) {
-    if (
-      cabin.cabinTypeId &&
-      (cabin.inventoryType === 'multi' || cabin.inventoryMode === 'multi')
-    ) {
-      targetKind = 'cabinType';
-      targetId = cabin.cabinTypeId.toString();
-    }
-  } else {
-    const cabinType = await CabinType.findById(entityId).select('_id');
-    if (!cabinType) {
-      return null;
-    }
-    targetKind = 'cabinType';
-    targetId = cabinType._id.toString();
-  }
-
-  const ownerIds = await resolveReviewOwnerObjectIds(entityId);
-  if (ownerIds.length === 0) {
-    return null;
-  }
-
-  const stats = await Review.aggregate([
-    {
-      $match: {
-        cabinId: { $in: ownerIds },
-        status: 'approved',
-        rating: { $gte: 2 },
-        ...softDeleteOrCondition()
-      }
-    },
-    {
-      $group: {
-        _id: null,
-        count: { $sum: 1 },
-        avgRating: { $avg: '$rating' }
-      }
-    }
-  ]);
-
-  const reviewsCount = stats[0]?.count || 0;
-  const averageRating = Math.round(((stats[0]?.avgRating || 0) * 10)) / 10;
-
-  const payload = {
-    reviewsCount,
-    averageRating
-  };
-
-  if (targetKind === 'cabinType') {
-    await CabinType.findByIdAndUpdate(targetId, payload);
-  } else {
-    await Cabin.findByIdAndUpdate(targetId, payload);
-  }
-
-  return {
-    kind: targetKind,
-    id: targetId,
-    reviewsCount,
-    averageRating
-  };
-}
 
 module.exports = router;
 

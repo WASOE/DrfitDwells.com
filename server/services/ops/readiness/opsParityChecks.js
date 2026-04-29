@@ -6,7 +6,6 @@ const ChannelSyncEvent = require('../../../models/ChannelSyncEvent');
 const CabinChannelSyncState = require('../../../models/CabinChannelSyncState');
 const Payment = require('../../../models/Payment');
 const Payout = require('../../../models/Payout');
-const Review = require('../../../models/Review');
 const EmailEvent = require('../../../models/EmailEvent');
 const ManualReviewItem = require('../../../models/ManualReviewItem');
 const Cabin = require('../../../models/Cabin');
@@ -28,6 +27,7 @@ const { getPaymentsSummaryReadModel, getPaymentsLedgerReadModel, getPayoutsListR
 const { getSyncCenterReadModel } = require('../readModels/syncCenterReadModel');
 const { getCabinsListReadModel, getCabinDetailReadModel } = require('../readModels/cabinsReadModel');
 const { getReviewsReadModel, getCommunicationOversightReadModel } = require('../readModels/reviewsCommsReadModel');
+const { listReviewsForModeration } = require('../../reviews/reviewModerationService');
 
 function overlaps(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && aEnd > bStart;
@@ -683,25 +683,16 @@ async function runReviewsCommsParity({ page = 1, limit = 20 } = {}) {
   const actualReviews = await getReviewsReadModel({ page, limit });
   const actualComms = await getCommunicationOversightReadModel();
 
-  const safePage = Math.max(1, parseInt(page, 10) || 1);
-  const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
-  const skip = (safePage - 1) * safeLimit;
-
-  const [items, total, moderationSummary] = await Promise.all([
-    Review.find({}).sort({ createdAtSource: -1 }).skip(skip).limit(safeLimit).lean(),
-    Review.countDocuments({}),
-    Review.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }])
-  ]);
-
-  const statusCounts = moderationSummary.reduce((acc, row) => {
-    acc[row._id] = row.count;
-    return acc;
-  }, {});
+  const expectedList = await listReviewsForModeration({ page, limit, sort: 'newest' });
 
   const expectedReviews = {
-    items: items.map((review) => ({
+    items: expectedList.reviews.map((review) => ({
       reviewId: String(review._id),
-      cabinId: review.cabinId ? String(review.cabinId) : null,
+      cabinId: review.cabinId
+        ? typeof review.cabinId === 'object' && review.cabinId._id
+          ? String(review.cabinId._id)
+          : String(review.cabinId)
+        : null,
       source: review.source,
       rating: review.rating,
       status: review.status,
@@ -709,12 +700,12 @@ async function runReviewsCommsParity({ page = 1, limit = 20 } = {}) {
       locked: Boolean(review.locked),
       createdAtSource: review.createdAtSource || null
     })),
-    moderationSummary: { approved: statusCounts.approved || 0, pending: statusCounts.pending || 0, hidden: statusCounts.hidden || 0 },
+    moderationSummary: expectedList.moderationSummary,
     pagination: {
-      page: safePage,
-      limit: safeLimit,
-      total,
-      totalPages: Math.ceil(total / safeLimit)
+      page: expectedList.page,
+      limit: expectedList.limit,
+      total: expectedList.total,
+      totalPages: expectedList.totalPages
     }
   };
 
@@ -752,12 +743,12 @@ async function runReviewsCommsParity({ page = 1, limit = 20 } = {}) {
     addMismatch(`comms.recent[${i}].eventId`, expectedComms.recent[i].eventId, actualComms?.recent?.[i]?.eventId, false);
   }
 
-  const evidence = { hasEvidence: total > 0 || expectedComms.summary.totalRecentEvents > 0 };
+  const evidence = { hasEvidence: expectedList.total > 0 || expectedComms.summary.totalRecentEvents > 0 };
 
   return {
     module: 'reviews_communications',
     actual: { reviews: actualReviews, comms: actualComms },
-    expected: { reviewsTotal: total, commsRecent: expectedComms.summary.totalRecentEvents },
+    expected: { reviewsTotal: expectedList.total, commsRecent: expectedComms.summary.totalRecentEvents },
     mismatches,
     evidence
   };

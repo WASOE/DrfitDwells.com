@@ -1,28 +1,16 @@
-const Review = require('../../../models/Review');
 const EmailEvent = require('../../../models/EmailEvent');
+const { listReviewsForModeration } = require('../../reviews/reviewModerationService');
 
 async function getReviewsReadModel({ page = 1, limit = 20 }) {
-  const safePage = Math.max(1, parseInt(page, 10) || 1);
-  const safeLimit = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
-  const skip = (safePage - 1) * safeLimit;
-
-  const [items, total, moderationSummary] = await Promise.all([
-    Review.find({}).sort({ createdAtSource: -1 }).skip(skip).limit(safeLimit).lean(),
-    Review.countDocuments({}),
-    Review.aggregate([
-      { $group: { _id: '$status', count: { $sum: 1 } } }
-    ])
-  ]);
-
-  const statusCounts = moderationSummary.reduce((acc, row) => {
-    acc[row._id] = row.count;
-    return acc;
-  }, {});
-
+  const result = await listReviewsForModeration({ page, limit, sort: 'newest' });
   return {
-    items: items.map((review) => ({
+    items: result.reviews.map((review) => ({
       reviewId: String(review._id),
-      cabinId: review.cabinId ? String(review.cabinId) : null,
+      cabinId: review.cabinId
+        ? typeof review.cabinId === 'object' && review.cabinId._id
+          ? String(review.cabinId._id)
+          : String(review.cabinId)
+        : null,
       source: review.source,
       rating: review.rating,
       status: review.status,
@@ -30,16 +18,12 @@ async function getReviewsReadModel({ page = 1, limit = 20 }) {
       locked: Boolean(review.locked),
       createdAtSource: review.createdAtSource || null
     })),
-    moderationSummary: {
-      approved: statusCounts.approved || 0,
-      pending: statusCounts.pending || 0,
-      hidden: statusCounts.hidden || 0
-    },
+    moderationSummary: result.moderationSummary,
     pagination: {
-      page: safePage,
-      limit: safeLimit,
-      total,
-      totalPages: Math.ceil(total / safeLimit)
+      page: result.page,
+      limit: result.limit,
+      total: result.total,
+      totalPages: result.totalPages
     }
   };
 }
