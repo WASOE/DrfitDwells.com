@@ -37,7 +37,6 @@ const Step3GuestDetails = lazy(() => import('./pages/craft/Step3GuestDetails'))
 const Step4Summary = lazy(() => import('./pages/craft/Step4Summary'))
 
 const AdminLogin = lazy(() => import('./pages/admin/AdminLogin'))
-const CabinsList = lazy(() => import('./pages/admin/CabinsList'))
 const CabinEdit = lazy(() => import('./pages/admin/CabinEdit'))
 const CabinTypesList = lazy(() => import('./pages/admin/CabinTypesList'))
 const CabinTypeEdit = lazy(() => import('./pages/admin/CabinTypeEdit'))
@@ -161,7 +160,7 @@ function App() {
               <Route path="/admin/login" element={<AdminLogin />} />
               <Route path="/admin/bookings" element={<Navigate to="/ops/reservations" replace />} />
               <Route path="/admin/bookings/:id" element={<AdminBookingDetailRedirect />} />
-              <Route path="/admin/cabins" element={<CabinsList />} />
+              <Route path="/admin/cabins" element={<Navigate to="/ops/cabins" replace />} />
               <Route path="/admin/cabins/new" element={<CabinEdit />} />
               <Route path="/admin/cabins/:id" element={<CabinEdit />} />
               <Route path="/admin/cabin-types" element={<CabinTypesList />} />

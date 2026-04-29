@@ -143,7 +143,7 @@ export default function AdminLayout() {
             <div className="mt-3 -mx-4 sm:mx-0">
               <nav className="flex items-center gap-1 overflow-x-auto px-4 sm:px-0 border-b border-gray-200 [-webkit-overflow-scrolling:touch]">
                 {navLink('/ops/reservations', 'Bookings')}
-                {navLink('/admin/cabins', 'Cabins')}
+                {navLink('/ops/cabins', 'Cabins')}
                 {navLink('/admin/reviews', 'Reviews')}
                 {navLink('/admin/promo-codes', 'Promo codes')}
                 {decodeRoleFromToken() === 'admin' && navLink('/maintenance', 'Maintenance')}
