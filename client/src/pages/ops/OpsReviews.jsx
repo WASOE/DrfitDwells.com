@@ -98,6 +98,16 @@ export default function OpsReviews() {
   const deepLinkHandledRef = useRef(null);
   const createDeepLinkHandledRef = useRef(null);
 
+  const buildCabinLabel = (item) => {
+    const locationRaw = item?.location;
+    const location =
+      typeof locationRaw === 'string'
+        ? locationRaw
+        : locationRaw?.label || locationRaw?.city || locationRaw?.name || '';
+    const name = item?.name || item?.label || 'Untitled cabin';
+    return location ? `${name} - ${location}` : name;
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -132,8 +142,11 @@ export default function OpsReviews() {
         if (cancelled) return;
         const items = resp?.data?.data?.items || [];
         const options = items
-          .map((item) => ({ id: item?.id || item?._id, name: item?.name }))
-          .filter((item) => item.id && item.name);
+          .filter((item) => item?.kind === 'single_cabin' && item?.cabinId)
+          .map((item) => ({
+            id: String(item.cabinId),
+            name: buildCabinLabel(item)
+          }));
         setCabins(options);
       } catch {
         if (!cancelled) setCabins([]);
@@ -372,6 +385,7 @@ export default function OpsReviews() {
     Boolean(detailReview?.locked) && Boolean(editForm.locked);
 
   const cabin = detailReview?.cabinId && typeof detailReview.cabinId === 'object' ? detailReview.cabinId : null;
+  const createHasSelectedCabin = !createForm.cabinId || cabins.some((c) => c.id === createForm.cabinId);
 
   if (loading && !data) {
     return <div className="text-sm text-gray-500 max-w-5xl mx-auto px-4 py-6">Loading reviews...</div>;
@@ -520,12 +534,12 @@ export default function OpsReviews() {
           </div>
         </div>
 
-        <div className="flex items-center justify-between text-xs text-gray-500">
-          <span>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+          <span className="text-xs text-gray-500">
             {data?.pagination?.total != null ? `${data.pagination.total} review(s)` : null}
             {loading ? ' · Refreshing…' : null}
           </span>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => {
@@ -536,7 +550,7 @@ export default function OpsReviews() {
                 }
                 setSearchParams(next, { replace: false });
               }}
-              className="px-3 py-1.5 text-xs rounded-lg bg-[#81887A] text-white hover:bg-[#707668]"
+              className="px-3 py-2 text-sm rounded-lg bg-[#81887A] text-white hover:bg-[#707668]"
             >
               Create review
             </button>
@@ -544,7 +558,7 @@ export default function OpsReviews() {
               type="button"
               onClick={() => load()}
               disabled={loading}
-              className="text-blue-700 hover:underline disabled:opacity-50"
+              className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-800 bg-white hover:bg-gray-50 disabled:opacity-50"
             >
               Reload
             </button>
@@ -657,12 +671,16 @@ export default function OpsReviews() {
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                   >
                     <option value="">Select a cabin</option>
+                    {!createHasSelectedCabin ? (
+                      <option value={createForm.cabinId}>{`Selected (ID: ${createForm.cabinId})`}</option>
+                    ) : null}
                     {cabins.map((cabinOption) => (
                       <option key={cabinOption.id} value={cabinOption.id}>
                         {cabinOption.name}
                       </option>
                     ))}
                   </select>
+                  {loadingCabins ? <p className="mt-1 text-[11px] text-gray-500">Loading cabin options...</p> : null}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Rating *</label>
