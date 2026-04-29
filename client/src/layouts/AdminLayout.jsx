@@ -144,7 +144,7 @@ export default function AdminLayout() {
               <nav className="flex items-center gap-1 overflow-x-auto px-4 sm:px-0 border-b border-gray-200 [-webkit-overflow-scrolling:touch]">
                 {navLink('/ops/reservations', 'Bookings')}
                 {navLink('/ops/cabins', 'Cabins')}
-                {navLink('/admin/reviews', 'Reviews')}
+                {navLink('/ops/reviews', 'Reviews')}
                 {navLink('/admin/promo-codes', 'Promo codes')}
                 {decodeRoleFromToken() === 'admin' && navLink('/maintenance', 'Maintenance')}
                 {developerNavEnabled && navLink('/admin/cabin-types', 'Cabin types')}

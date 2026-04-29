@@ -86,6 +86,11 @@ const AdminBookingDetailRedirect = () => {
   return <Navigate to={`/ops/reservations/${id}`} replace />
 }
 
+const AdminReviewDetailRedirect = () => {
+  const { id } = useParams()
+  return <Navigate to={`/ops/reviews?reviewId=${id}`} replace />
+}
+
 function App() {
   return (
     <>
@@ -165,8 +170,9 @@ function App() {
               <Route path="/admin/cabins/:id" element={<CabinEdit />} />
               <Route path="/admin/cabin-types" element={<CabinTypesList />} />
               <Route path="/admin/cabin-types/:id" element={<CabinTypeEdit />} />
-              <Route path="/admin/reviews" element={<ReviewsList />} />
-              <Route path="/admin/reviews/:id" element={<ReviewEdit />} />
+              <Route path="/admin/reviews" element={<Navigate to="/ops/reviews" replace />} />
+              <Route path="/admin/reviews/new" element={<ReviewEdit />} />
+              <Route path="/admin/reviews/:id" element={<AdminReviewDetailRedirect />} />
               <Route path="/admin/promo-codes" element={<PromoCodesList />} />
             </Route>
 

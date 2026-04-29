@@ -412,7 +412,7 @@ const ReviewsList = () => {
                     </div>
                     <button
                       type="button"
-                      onClick={() => navigate(`/admin/reviews/${review._id}`)}
+                      onClick={() => navigate(`/ops/reviews?reviewId=${review._id}`)}
                       className="shrink-0 inline-flex items-center px-3 py-2 text-sm font-medium text-white bg-[#81887A] rounded-lg hover:bg-[#707668] focus:outline-none focus:ring-2 focus:ring-[#81887A]/30 focus:ring-offset-2 transition-colors"
                     >
                       Edit
@@ -536,7 +536,7 @@ const ReviewsList = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium sticky right-0 bg-white group-hover:bg-gray-50 z-10">
                         <button
-                          onClick={() => navigate(`/admin/reviews/${review._id}`)}
+                          onClick={() => navigate(`/ops/reviews?reviewId=${review._id}`)}
                           className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-[#81887A] hover:bg-[#707668] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#81887A] transition-colors"
                           title="Edit this review"
                         >

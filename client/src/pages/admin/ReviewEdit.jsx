@@ -182,7 +182,7 @@ const ReviewEdit = () => {
       if (response.data.success) {
         setSaveMessage('Review saved successfully');
         setTimeout(() => {
-          navigate('/admin/reviews');
+          navigate('/ops/reviews');
         }, 1500);
       } else {
         setError(response.data.message || 'Failed to save review');
@@ -223,7 +223,7 @@ const ReviewEdit = () => {
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <button
-              onClick={() => navigate('/admin/reviews')}
+              onClick={() => navigate('/ops/reviews')}
               className="text-sm text-gray-500 hover:text-gray-800 mb-2 block"
             >
               ← Back to Reviews
@@ -240,7 +240,7 @@ const ReviewEdit = () => {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => navigate('/admin/reviews')}
+              onClick={() => navigate('/ops/reviews')}
               className="inline-flex items-center px-4 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
             >
               Cancel

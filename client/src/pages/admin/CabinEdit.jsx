@@ -2343,7 +2343,7 @@ const CabinEdit = () => {
                 </p>
               </div>
               <button
-                onClick={() => navigate(`/admin/reviews?cabinId=${id}`)}
+                onClick={() => navigate(`/ops/reviews?cabinId=${id}`)}
                 className="mt-4 sm:mt-0 inline-flex items-center px-4 py-2.5 text-sm font-medium text-white bg-[#81887A] rounded-lg hover:bg-[#707668] shrink-0"
               >
                 Manage All Reviews
@@ -2398,7 +2398,7 @@ const CabinEdit = () => {
                         </div>
                         <div className="ml-4 flex items-center gap-2">
                           <button
-                            onClick={() => navigate(`/admin/reviews/${review._id}`)}
+                            onClick={() => navigate(`/ops/reviews?reviewId=${review._id}`)}
                             className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-[#81887A] hover:bg-[#707668] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#81887A]"
                           >
                             Edit
@@ -2414,7 +2414,7 @@ const CabinEdit = () => {
                   ))}
                   <div className="text-center pt-4">
                     <button
-                      onClick={() => navigate(`/admin/reviews?cabinId=${id}`)}
+                      onClick={() => navigate(`/ops/reviews?cabinId=${id}`)}
                       className="text-[#81887A] hover:text-[#707668] text-sm font-medium"
                     >
                       View all reviews →
