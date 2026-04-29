@@ -360,6 +360,52 @@ async function updateReviewModerationStatus({ reviewId, status, ctx = {} }) {
 }
 
 /**
+ * Soft-delete single review for OPS moderation UI (matches legacy bulk delete semantics).
+ * @param {object} params
+ * @param {string} params.reviewId
+ * @param {object} [params.ctx]
+ * @param {string} [params.ctx.editedBy]
+ */
+async function deleteReviewForModeration({ reviewId, ctx = {} }) {
+  if (!mongoose.Types.ObjectId.isValid(String(reviewId))) {
+    const err = new Error('Invalid review id');
+    err.code = 'VALIDATION';
+    err.status = 400;
+    throw err;
+  }
+
+  const review = await Review.findById(reviewId);
+  if (!review) {
+    const err = new Error('Review not found');
+    err.code = 'NOT_FOUND';
+    err.status = 404;
+    throw err;
+  }
+
+  const editedBy = ctx.editedBy || 'admin';
+  const deletedAt = new Date();
+  review.deletedAt = deletedAt;
+  review.status = 'hidden';
+  review.editedAt = deletedAt;
+  review.editedBy = editedBy;
+  await review.save();
+
+  try {
+    await recalculateCabinStats(review.cabinId);
+  } catch (recalcError) {
+    console.error('Recalc stats error (non-fatal):', recalcError);
+  }
+
+  return {
+    reviewId: String(review._id),
+    status: review.status,
+    deletedAt: review.deletedAt,
+    editedAt: review.editedAt,
+    editedBy: review.editedBy
+  };
+}
+
+/**
  * Single review for moderation UI (admin-equivalent populate).
  * @param {string} reviewId
  * @returns {Promise<object>} lean review with populated cabinId (name, location)
@@ -489,6 +535,7 @@ module.exports = {
   listReviewsForModeration,
   createReviewForModeration,
   updateReviewModerationStatus,
+  deleteReviewForModeration,
   getReviewForModeration,
   applyReviewModeratorUpdate
 };

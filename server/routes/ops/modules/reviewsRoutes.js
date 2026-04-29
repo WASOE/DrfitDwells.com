@@ -6,6 +6,7 @@ const {
   listReviewsForModeration,
   createReviewForModeration,
   updateReviewModerationStatus,
+  deleteReviewForModeration,
   getReviewForModeration,
   applyReviewModeratorUpdate
 } = require('../../../services/reviews/reviewModerationService');
@@ -236,6 +237,41 @@ router.patch(
       return res.status(500).json({
         success: false,
         message: error?.message || 'Unable to update review status'
+      });
+    }
+  }
+);
+
+router.delete(
+  '/:id',
+  validateId('id'),
+  adminModuleWriteGate('reviews_communications'),
+  async (req, res) => {
+    try {
+      const result = await deleteReviewForModeration({
+        reviewId: req.params.id,
+        ctx: { editedBy: getOpsIdentity(req) }
+      });
+      return res.json({
+        success: true,
+        message: 'Review deleted',
+        data: { review: result }
+      });
+    } catch (error) {
+      if (error.code === 'NOT_FOUND') {
+        return res.status(404).json({ success: false, message: error.message });
+      }
+      if (error.code === 'VALIDATION') {
+        return res.status(error.status || 400).json({
+          success: false,
+          code: 'VALIDATION',
+          message: error.message
+        });
+      }
+      console.error('OPS review delete error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error?.message || 'Unable to delete review'
       });
     }
   }

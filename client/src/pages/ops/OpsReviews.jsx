@@ -90,6 +90,7 @@ export default function OpsReviews() {
   const [editForm, setEditForm] = useState(emptyEditForm);
   const [editLoading, setEditLoading] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
+  const [editDeleting, setEditDeleting] = useState(false);
   const [editError, setEditError] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState(emptyCreateForm());
@@ -334,6 +335,28 @@ export default function OpsReviews() {
       setEditError(msg);
     } finally {
       setEditSaving(false);
+    }
+  };
+
+  const handleEditDelete = async () => {
+    if (!editReviewId || editLoading || editSaving || editDeleting) return;
+    const confirmed = window.confirm('Delete this review? This is a soft delete and can affect cabin stats.');
+    if (!confirmed) return;
+    setEditDeleting(true);
+    setEditError('');
+    try {
+      await opsWriteAPI.deleteReview(editReviewId);
+      setBanner({ type: 'success', message: 'Review deleted.' });
+      closeEdit();
+      await load();
+    } catch (err) {
+      const msg =
+        err?.response?.status === 403
+          ? 'Not allowed to delete this review (cutover or permissions).'
+          : err?.response?.data?.message || 'Delete failed';
+      setEditError(msg);
+    } finally {
+      setEditDeleting(false);
     }
   };
 
@@ -783,6 +806,14 @@ export default function OpsReviews() {
               <div className="flex gap-2">
                 <button
                   type="button"
+                  disabled={editDeleting || editSaving || editLoading || !detailReview}
+                  onClick={handleEditDelete}
+                  className="px-3 py-2 text-sm rounded-lg border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-50"
+                >
+                  {editDeleting ? 'Deleting…' : 'Delete'}
+                </button>
+                <button
+                  type="button"
                   onClick={closeEdit}
                   className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-800 hover:bg-gray-50"
                 >
@@ -790,7 +821,7 @@ export default function OpsReviews() {
                 </button>
                 <button
                   type="button"
-                  disabled={editSaving || editLoading || !detailReview}
+                  disabled={editSaving || editLoading || editDeleting || !detailReview}
                   onClick={handleEditSave}
                   className="px-3 py-2 text-sm rounded-lg bg-[#81887A] text-white hover:bg-[#707668] disabled:opacity-50"
                 >
