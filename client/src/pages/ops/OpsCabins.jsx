@@ -465,38 +465,32 @@ export default function OpsCabinDetail() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const detailRequestSeq = useRef(0);
 
   const loadDetail = useCallback(async () => {
+    const requestSeq = detailRequestSeq.current + 1;
+    detailRequestSeq.current = requestSeq;
     setLoading(true);
     setError('');
     try {
       const resp = await opsReadAPI.cabinDetail(id);
+      if (detailRequestSeq.current !== requestSeq) return;
       setData(resp.data?.data || null);
     } catch (err) {
+      if (detailRequestSeq.current !== requestSeq) return;
       setError(err?.response?.data?.message || 'Failed to load cabin');
     } finally {
+      if (detailRequestSeq.current !== requestSeq) return;
       setLoading(false);
     }
   }, [id]);
 
   useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const resp = await opsReadAPI.cabinDetail(id);
-        if (cancelled) return;
-        setData(resp.data?.data || null);
-      } catch (err) {
-        if (!cancelled) setError(err?.response?.data?.message || 'Failed to load cabin');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-    load();
+    loadDetail();
     return () => {
-      cancelled = true;
+      detailRequestSeq.current += 1;
     };
-  }, [id]);
+  }, [loadDetail]);
 
   const isMulti = data?.kind === 'multi_unit_type';
   const op = data?.operationalSettings || {};
