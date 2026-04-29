@@ -510,6 +510,10 @@ const ConfirmBooking = () => {
       children,
       experienceKeys: experienceKeysSorted
     };
+    const attr = getAttributionPayload();
+    if (attr && Object.values(attr).some(Boolean)) {
+      payload.attribution = attr;
+    }
     if (bookingEntityType === 'cabinType') {
       payload.cabinTypeId = bookingEntityId;
     } else {

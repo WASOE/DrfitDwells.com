@@ -6,6 +6,7 @@ const PromoCode = require('../models/PromoCode');
 const Cabin = require('../models/Cabin');
 const CabinType = require('../models/CabinType');
 const PaymentFinalization = require('../models/PaymentFinalization');
+const PaymentResolutionIssue = require('../models/PaymentResolutionIssue');
 const AssignmentEngine = require('../services/assignmentEngine');
 const featureFlags = require('../utils/featureFlags');
 const moment = require('moment');
@@ -40,13 +41,57 @@ const {
   trySendMetaCapiPurchase,
   processMetaPurchaseAfterConfirm
 } = require('../services/bookingPurchaseTracking');
+const { openManualReviewItem } = require('../services/ops/ingestion/manualReviewService');
 
 const router = express.Router();
+const REFERRAL_CODE_RE = /^[a-z0-9_-]{1,80}$/;
+
+function normalizeReferralCode(raw) {
+  if (raw == null) return null;
+  const value = String(raw).trim().toLowerCase();
+  if (!value || !REFERRAL_CODE_RE.test(value)) return null;
+  return value;
+}
+
+function parseAttributionCapturedAt(raw) {
+  if (!raw) return null;
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function deriveAttributionSource(attribution) {
+  if (!attribution) return 'direct';
+  if (attribution.referralCode) return 'creator_referral';
+
+  const hasUtm = Boolean(
+    attribution.utmSource ||
+    attribution.utmMedium ||
+    attribution.utmCampaign ||
+    attribution.utmTerm ||
+    attribution.utmContent
+  );
+  if (hasUtm) return 'utm';
+
+  const hasPaidClickId = Boolean(
+    attribution.gclid ||
+    attribution.gbraid ||
+    attribution.wbraid ||
+    attribution.fbclid ||
+    attribution.msclkid
+  );
+  if (hasPaidClickId) return 'paid_click';
+  const hasAnySignal = Boolean(attribution.referrer || attribution.landingPath);
+  if (!hasAnySignal) return 'direct';
+  return 'unknown';
+}
 
 function sanitizeAttribution(raw) {
   if (!raw || typeof raw !== 'object') return undefined;
   const clip = (v) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 500) : null);
+  const referralCode = normalizeReferralCode(raw.referralCode);
+  const attributionCapturedAt = parseAttributionCapturedAt(raw.attributionCapturedAt);
   const o = {
+    referralCode,
     utmSource: clip(raw.utmSource),
     utmMedium: clip(raw.utmMedium),
     utmCampaign: clip(raw.utmCampaign),
@@ -58,9 +103,106 @@ function sanitizeAttribution(raw) {
     fbclid: clip(raw.fbclid),
     msclkid: clip(raw.msclkid),
     referrer: clip(raw.referrer),
-    landingPath: clip(raw.landingPath)
+    landingPath: clip(raw.landingPath),
+    attributionCapturedAt
   };
-  return Object.values(o).some(Boolean) ? o : undefined;
+  if (!Object.values(o).some(Boolean)) return undefined;
+  o.attributionSource = deriveAttributionSource(o);
+  return o;
+}
+
+function summarizeError(err) {
+  if (!err) return null;
+  const msg = err?.message || String(err);
+  return msg ? String(msg).slice(0, 500) : null;
+}
+
+function bookingNeedsReviewGuestResponse(paymentIntentId) {
+  return {
+    success: false,
+    code: 'PAYMENT_RECEIVED_BOOKING_NEEDS_REVIEW',
+    message:
+      'Your payment was received, but we could not automatically finalize the booking. We have flagged it for manual review and will contact you shortly.',
+    paymentIntentId: paymentIntentId ? String(paymentIntentId) : null,
+    requiresManualReview: true
+  };
+}
+
+async function recordPaidBookingResolutionIssue({
+  issueType,
+  errorCode,
+  errorSummary,
+  paymentIntentId,
+  paymentIntent,
+  bookingAttempt,
+  attribution
+}) {
+  if (!paymentIntentId) return null;
+  const totalGuests = Number(bookingAttempt?.adults || 0) + Number(bookingAttempt?.children || 0);
+  const guestFirstName = String(bookingAttempt?.guestInfo?.firstName || '').trim();
+  const guestLastName = String(bookingAttempt?.guestInfo?.lastName || '').trim();
+  const guestName = [guestFirstName, guestLastName].filter(Boolean).join(' ').trim();
+  const issue = await PaymentResolutionIssue.findOneAndUpdate(
+    { paymentIntentId: String(paymentIntentId).trim() },
+    {
+      $set: {
+        status: 'needs_review',
+        issueType,
+        amount: typeof paymentIntent?.amount === 'number' ? paymentIntent.amount / 100 : null,
+        currency: paymentIntent?.currency ? String(paymentIntent.currency).toLowerCase() : null,
+        guest: {
+          name: guestName || null,
+          email: String(bookingAttempt?.guestInfo?.email || '').trim().toLowerCase() || null,
+          phone: String(bookingAttempt?.guestInfo?.phone || '').trim() || null
+        },
+        bookingAttempt: {
+          entityType: bookingAttempt?.entityType || null,
+          cabinId: bookingAttempt?.cabinId ? String(bookingAttempt.cabinId) : null,
+          cabinTypeId: bookingAttempt?.cabinTypeId ? String(bookingAttempt.cabinTypeId) : null,
+          checkIn: bookingAttempt?.checkInDate || null,
+          checkOut: bookingAttempt?.checkOutDate || null,
+          guests: Number.isFinite(totalGuests) ? totalGuests : null,
+          promoCode: bookingAttempt?.promoCode || null
+        },
+        attribution: attribution || {},
+        errorSummary: errorSummary || null,
+        errorCode: errorCode || null,
+        metadata: {
+          sourceRoute: 'POST /api/bookings',
+          paymentIntentStatus: paymentIntent?.status || null
+        }
+      },
+      $setOnInsert: {
+        resolvedAt: null,
+        resolutionNote: null
+      }
+    },
+    { new: true, upsert: true }
+  );
+
+  await openManualReviewItem({
+    category: 'payment_finalization_failure',
+    severity: 'high',
+    entityType: 'PaymentResolutionIssue',
+    entityId: String(issue._id),
+    title: 'Paid booking could not be finalized automatically',
+    details: `PaymentIntent ${String(paymentIntentId)} requires manual booking/payment resolution`,
+    provenance: {
+      source: 'booking_route',
+      sourceReference: String(paymentIntentId)
+    },
+    evidence: {
+      paymentIntentId: String(paymentIntentId),
+      issueType,
+      errorCode: errorCode || null,
+      errorSummary: errorSummary || null,
+      issueId: String(issue._id),
+      guest: issue.guest || {},
+      bookingAttempt: issue.bookingAttempt || {}
+    }
+  });
+
+  return issue;
 }
 
 const ACCEPTANCE_EMAIL_RETRY_DELAY_MS = 5000;
@@ -261,6 +403,7 @@ router.post('/create-payment-intent', paymentIntentLimiter, bookingQuoteBodyVali
     }
 
     const { cabinId, cabinTypeId, experienceKeys = [] } = req.body;
+    const attribution = sanitizeAttribution(req.body.attribution);
 
     const result = await bookingQuoteService.buildPublicBookingQuote(req.body);
     if (!result.ok) {
@@ -310,7 +453,11 @@ router.post('/create-payment-intent', paymentIntentLimiter, bookingQuoteBodyVali
         promoCode: appliedPromoCode || '',
         subtotalCents: String(subtotalCents),
         discountAmountCents: String(discountAmountCents),
-        finalTotalCents: String(amountCents)
+        finalTotalCents: String(amountCents),
+        ...(attribution?.referralCode ? { referralCode: attribution.referralCode } : {}),
+        ...(attribution?.attributionSource ? { attrSource: attribution.attributionSource } : {}),
+        ...(attribution?.utmSource ? { utmSource: attribution.utmSource } : {}),
+        ...(attribution?.utmCampaign ? { utmCampaign: attribution.utmCampaign } : {})
       }
     });
 
@@ -364,6 +511,51 @@ router.post('/', bookingCreateLimiter, [
   body('specialRequests').optional().isLength({ max: 500 }).withMessage('Special requests cannot exceed 500 characters'),
   body('promoCode').optional().isString().isLength({ max: 40 }).withMessage('promoCode is too long')
 ], async (req, res) => {
+  let stripePaymentVerified = false;
+  let verifiedPaymentIntent = null;
+  let checkInDate = null;
+  let checkOutDate = null;
+  let bookingAttemptContext = null;
+  let sanitizedAttribution = null;
+  let paymentIntentIdForReview = null;
+
+  const handlePaidBookingFailure = async ({ issueType, errorCode, errorSummary }) => {
+    if (!stripePaymentVerified || !paymentIntentIdForReview) return false;
+    const structuredCtx = {
+      paymentIntentId: String(paymentIntentIdForReview),
+      cabinId: bookingAttemptContext?.cabinId ? String(bookingAttemptContext.cabinId) : null,
+      cabinTypeId: bookingAttemptContext?.cabinTypeId ? String(bookingAttemptContext.cabinTypeId) : null,
+      checkIn: bookingAttemptContext?.checkInDate ? bookingAttemptContext.checkInDate.toISOString() : null,
+      checkOut: bookingAttemptContext?.checkOutDate ? bookingAttemptContext.checkOutDate.toISOString() : null,
+      errorCode: errorCode || null
+    };
+    console.error('[booking-payment-safety] paid booking finalization failed', structuredCtx);
+    try {
+      const issue = await recordPaidBookingResolutionIssue({
+        issueType,
+        errorCode,
+        errorSummary,
+        paymentIntentId: paymentIntentIdForReview,
+        paymentIntent: verifiedPaymentIntent,
+        bookingAttempt: bookingAttemptContext,
+        attribution: sanitizedAttribution
+      });
+      console.info('[booking-payment-safety] payment resolution issue upserted', {
+        ...structuredCtx,
+        issueId: issue ? String(issue._id) : null
+      });
+    } catch (issueErr) {
+      console.error('[booking-payment-safety] failed to create payment resolution issue', {
+        ...structuredCtx,
+        issueError: summarizeError(issueErr)
+      });
+    }
+    const responsePayload = bookingNeedsReviewGuestResponse(paymentIntentIdForReview);
+    console.info('[booking-payment-safety] returned manual review response to guest', structuredCtx);
+    res.status(409).json(responsePayload);
+    return true;
+  };
+
   try {
     // Check for validation errors
     const errors = validationResult(req);
@@ -392,8 +584,6 @@ router.post('/', bookingCreateLimiter, [
       });
     }
 
-    let checkInDate;
-    let checkOutDate;
     try {
       const n = normalizeGuestStayRange(checkIn, checkOut);
       checkInDate = n.startDate;
@@ -571,7 +761,7 @@ router.post('/', bookingCreateLimiter, [
       }
     }
 
-    let stripePaymentVerified = false;
+    paymentIntentIdForReview = paymentIntentId ? String(paymentIntentId).trim() : null;
     // Verify Stripe payment if paymentIntentId is provided
     if (paymentIntentId && stripe) {
       try {
@@ -604,6 +794,7 @@ router.post('/', bookingCreateLimiter, [
           return res.status(400).json({ success: false, message: promoVerify.message });
         }
         stripePaymentVerified = true;
+        verifiedPaymentIntent = pi;
       } catch (stripeErr) {
         return res.status(400).json({
           success: false,
@@ -613,6 +804,7 @@ router.post('/', bookingCreateLimiter, [
     }
 
     const attribution = sanitizeAttribution(req.body.attribution);
+    sanitizedAttribution = attribution;
     const metaClientContext = sanitizeMetaClientContext(req.body.metaClientContext);
     let initialStatus = 'pending';
     if (stripePaymentVerified) {
@@ -690,9 +882,41 @@ router.post('/', bookingCreateLimiter, [
         bookingData.unitId = assignedUnitId;
       }
     }
+    bookingAttemptContext = {
+      entityType: cabinId ? 'cabin' : 'cabinType',
+      cabinId,
+      cabinTypeId,
+      checkInDate,
+      checkOutDate,
+      adults: parseInt(adults, 10),
+      children: parseInt(children, 10),
+      guestInfo,
+      promoCode: appliedPromoCode || null
+    };
 
     const booking = new Booking(bookingData);
     await booking.save();
+
+    if (stripePaymentVerified && paymentIntentId && stripe) {
+      try {
+        const metadataPatch = {
+          bookingId: String(booking._id),
+          reservationId: String(booking._id)
+        };
+        if (booking.attribution?.referralCode) {
+          metadataPatch.referralCode = booking.attribution.referralCode;
+        }
+        await stripe.paymentIntents.update(String(paymentIntentId).trim(), {
+          metadata: metadataPatch
+        });
+      } catch (stripeMetaErr) {
+        console.error('[booking-stripe-meta] failed to update payment intent metadata after booking save', {
+          bookingId: String(booking._id),
+          paymentIntentId: String(paymentIntentId).trim(),
+          error: stripeMetaErr?.message || stripeMetaErr
+        });
+      }
+    }
 
     // Race-condition guard: overlapping booking saved concurrently, or block created after our read
     if (cabinId) {
@@ -706,6 +930,12 @@ router.post('/', bookingCreateLimiter, [
       const blockRace = await countBlockingBlocksForSingleCabin(cabinId, checkInDate, checkOutDate);
       if (overlaps > 0 || blockRace > 0) {
         await Booking.deleteOne({ _id: booking._id });
+        const handledPaidConflict = await handlePaidBookingFailure({
+          issueType: 'paid_booking_conflict',
+          errorCode: 'CABIN_OVERLAP_AFTER_SAVE',
+          errorSummary: `overlaps=${overlaps}, blockRace=${blockRace}`
+        });
+        if (handledPaidConflict) return;
         return res.status(409).json({
           success: false,
           message: 'This cabin was just booked by another guest. Please choose different dates.'
@@ -726,6 +956,12 @@ router.post('/', bookingCreateLimiter, [
       }
       if (overlaps > 0 || blockRace > 0) {
         await Booking.deleteOne({ _id: booking._id });
+        const handledPaidConflict = await handlePaidBookingFailure({
+          issueType: 'paid_booking_conflict',
+          errorCode: 'UNIT_OVERLAP_AFTER_SAVE',
+          errorSummary: `overlaps=${overlaps}, blockRace=${blockRace}`
+        });
+        if (handledPaidConflict) return;
         return res.status(409).json({
           success: false,
           message: 'This unit was just booked by another guest. Please choose different dates.'
@@ -747,6 +983,12 @@ router.post('/', bookingCreateLimiter, [
       );
       if (inc.matchedCount === 0) {
         await Booking.deleteOne({ _id: booking._id });
+        const handledPaidConflict = await handlePaidBookingFailure({
+          issueType: 'paid_booking_conflict',
+          errorCode: 'PROMO_USAGE_CONFLICT_AFTER_SAVE',
+          errorSummary: 'Promo usage limit reached after booking save'
+        });
+        if (handledPaidConflict) return;
         return res.status(409).json({
           success: false,
           message: 'This promo code is no longer available for new bookings.'
@@ -830,6 +1072,16 @@ router.post('/', bookingCreateLimiter, [
     }
 
   } catch (error) {
+    const mappedIssueType =
+      error?.name === 'ValidationError' || error?.name === 'MongoServerError'
+        ? 'paid_booking_save_failed'
+        : 'paid_booking_unknown_failure';
+    const paidFailureHandled = await handlePaidBookingFailure({
+      issueType: mappedIssueType,
+      errorCode: error?.name || 'BOOKING_CREATE_ERROR',
+      errorSummary: summarizeError(error)
+    });
+    if (paidFailureHandled) return;
     console.error('Booking creation error:', error);
     res.status(500).json({
       success: false,

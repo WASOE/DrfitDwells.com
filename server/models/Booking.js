@@ -265,6 +265,9 @@ const bookingSchema = new mongoose.Schema({
   attribution: {
     type: new mongoose.Schema(
       {
+        referralCode: { type: String, trim: true, lowercase: true, default: null },
+        attributionSource: { type: String, trim: true, default: null },
+        attributionCapturedAt: { type: Date, default: null },
         utmSource: { type: String, trim: true, default: null },
         utmMedium: { type: String, trim: true, default: null },
         utmCampaign: { type: String, trim: true, default: null },
