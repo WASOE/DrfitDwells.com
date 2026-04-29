@@ -55,13 +55,29 @@ function mapReviewToOpsItem(review) {
 
 router.get('/', async (req, res) => {
   try {
-    const { status, page, limit, q } = req.query;
+    const {
+      status,
+      page,
+      limit,
+      q,
+      cabinId,
+      source,
+      sort,
+      minRating,
+      maxRating,
+      lang
+    } = req.query;
     const result = await listReviewsForModeration({
       status: status || undefined,
       page,
       limit,
       q: q || undefined,
-      sort: 'newest'
+      cabinId: cabinId || undefined,
+      source: source || undefined,
+      sort: sort || 'newest',
+      minRating: minRating || undefined,
+      maxRating: maxRating || undefined,
+      lang: lang || undefined
     });
 
     const data = {

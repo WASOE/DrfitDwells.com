@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { opsReadAPI, opsWriteAPI } from '../../services/opsApi';
 
 const STATUS_OPTIONS = [
@@ -6,6 +7,20 @@ const STATUS_OPTIONS = [
   { value: 'approved', label: 'Approved' },
   { value: 'pending', label: 'Pending' },
   { value: 'hidden', label: 'Hidden' }
+];
+
+const SOURCE_OPTIONS = [
+  { value: '', label: 'All sources' },
+  { value: 'airbnb', label: 'Airbnb' },
+  { value: 'manual', label: 'Manual' },
+  { value: 'import', label: 'Import' }
+];
+
+const SORT_OPTIONS = [
+  { value: 'newest', label: 'Newest' },
+  { value: 'oldest', label: 'Oldest' },
+  { value: 'rating', label: 'Highest rating' },
+  { value: 'pinned', label: 'Pinned first' }
 ];
 
 const EDIT_STATUS_OPTIONS = [
@@ -41,12 +56,18 @@ function emptyEditForm() {
 }
 
 export default function OpsReviews() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [cabinIdFilter, setCabinIdFilter] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('');
+  const [sortBy, setSortBy] = useState('newest');
   const [searchQ, setSearchQ] = useState('');
   const [searchInput, setSearchInput] = useState('');
+  const [cabins, setCabins] = useState([]);
+  const [loadingCabins, setLoadingCabins] = useState(false);
   const [rowAction, setRowAction] = useState(null);
   const [banner, setBanner] = useState({ type: '', message: '' });
 
@@ -57,6 +78,7 @@ export default function OpsReviews() {
   const [editLoading, setEditLoading] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState('');
+  const deepLinkHandledRef = useRef(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,6 +87,9 @@ export default function OpsReviews() {
     try {
       const params = { page: 1, limit: 50 };
       if (statusFilter) params.status = statusFilter;
+      if (cabinIdFilter.trim()) params.cabinId = cabinIdFilter.trim();
+      if (sourceFilter) params.source = sourceFilter;
+      if (sortBy) params.sort = sortBy;
       if (searchQ.trim()) params.q = searchQ.trim();
       const resp = await opsReadAPI.reviews(params);
       setData(resp.data?.data || null);
@@ -74,11 +99,35 @@ export default function OpsReviews() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, searchQ]);
+  }, [statusFilter, cabinIdFilter, sourceFilter, sortBy, searchQ]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadCabins = async () => {
+      setLoadingCabins(true);
+      try {
+        const resp = await opsReadAPI.cabins({ page: 1, limit: 200 });
+        if (cancelled) return;
+        const items = resp?.data?.data?.items || [];
+        const options = items
+          .map((item) => ({ id: item?.id || item?._id, name: item?.name }))
+          .filter((item) => item.id && item.name);
+        setCabins(options);
+      } catch {
+        if (!cancelled) setCabins([]);
+      } finally {
+        if (!cancelled) setLoadingCabins(false);
+      }
+    };
+    loadCabins();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const applySearch = () => {
     setSearchQ(searchInput);
@@ -111,9 +160,15 @@ export default function OpsReviews() {
     setEditForm(emptyEditForm());
     setEditError('');
     setEditLoading(false);
+
+    if (searchParams.get('reviewId')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('reviewId');
+      setSearchParams(next, { replace: true });
+    }
   };
 
-  const openEdit = async (reviewId) => {
+  const openEdit = useCallback(async (reviewId) => {
     setEditReviewId(reviewId);
     setEditOpen(true);
     setEditError('');
@@ -147,7 +202,18 @@ export default function OpsReviews() {
     } finally {
       setEditLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const reviewId = searchParams.get('reviewId');
+    if (!reviewId) {
+      deepLinkHandledRef.current = null;
+      return;
+    }
+    if (deepLinkHandledRef.current === reviewId) return;
+    deepLinkHandledRef.current = reviewId;
+    openEdit(reviewId);
+  }, [searchParams, openEdit]);
 
   const handleEditField = (field, value) => {
     if (field.includes('.')) {
@@ -263,22 +329,77 @@ export default function OpsReviews() {
 
       <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-6 space-y-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div className="space-y-1 w-full md:max-w-xs">
-            <label htmlFor="ops-review-status" className="text-xs font-medium text-gray-600">
-              Status
-            </label>
-            <select
-              id="ops-review-status"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-            >
-              {STATUS_OPTIONS.map((o) => (
-                <option key={o.value || 'all'} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 w-full md:max-w-3xl">
+            <div className="space-y-1">
+              <label htmlFor="ops-review-status" className="text-xs font-medium text-gray-600">
+                Status
+              </label>
+              <select
+                id="ops-review-status"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              >
+                {STATUS_OPTIONS.map((o) => (
+                  <option key={o.value || 'all'} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="ops-review-cabin" className="text-xs font-medium text-gray-600">
+                Cabin
+              </label>
+              <select
+                id="ops-review-cabin"
+                value={cabinIdFilter}
+                onChange={(e) => setCabinIdFilter(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="">All cabins</option>
+                {cabins.map((cabinOption) => (
+                  <option key={cabinOption.id} value={cabinOption.id}>
+                    {cabinOption.name}
+                  </option>
+                ))}
+              </select>
+              {loadingCabins ? <p className="text-[11px] text-gray-500">Loading cabins...</p> : null}
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="ops-review-source" className="text-xs font-medium text-gray-600">
+                Source
+              </label>
+              <select
+                id="ops-review-source"
+                value={sourceFilter}
+                onChange={(e) => setSourceFilter(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              >
+                {SOURCE_OPTIONS.map((o) => (
+                  <option key={o.value || 'all'} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="ops-review-sort" className="text-xs font-medium text-gray-600">
+                Sort
+              </label>
+              <select
+                id="ops-review-sort"
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              >
+                {SORT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
           <div className="flex flex-col sm:flex-row gap-2 w-full md:max-w-xl">
             <div className="space-y-1 flex-1 min-w-0">
@@ -348,7 +469,11 @@ export default function OpsReviews() {
               <div className="flex flex-wrap gap-2 pt-1 border-t border-gray-100">
                 <button
                   type="button"
-                  onClick={() => openEdit(r.reviewId)}
+                  onClick={() => {
+                    const next = new URLSearchParams(searchParams);
+                    next.set('reviewId', r.reviewId);
+                    setSearchParams(next, { replace: false });
+                  }}
                   className="px-3 py-1.5 text-sm rounded-lg border border-[#81887A] text-gray-900 hover:bg-gray-50"
                 >
                   Edit
