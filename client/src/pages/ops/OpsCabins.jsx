@@ -44,6 +44,28 @@ const MEDIA_TAG_OPTIONS = [
   'other'
 ];
 
+function formatDateOnlyForOps(value) {
+  if (value == null || value === '') return '';
+  if (typeof value === 'string') {
+    const m = /^(\d{4}-\d{2}-\d{2})/.exec(value.trim());
+    return m ? m[1] : value.slice(0, 10);
+  }
+  try {
+    return new Date(value).toISOString().slice(0, 10);
+  } catch {
+    return String(value);
+  }
+}
+
+function OpsReadOnlyDetailSection({ title, children }) {
+  return (
+    <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5 max-w-4xl mx-auto w-full">
+      <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
+      <div className="mt-3 text-xs text-gray-700 space-y-2">{children}</div>
+    </section>
+  );
+}
+
 export function OpsCabinsList() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -611,8 +633,13 @@ export default function OpsCabinDetail() {
   if (error) return <div className="text-sm text-red-600">{error}</div>;
   if (!data) return <div className="text-sm text-gray-500">Not found.</div>;
 
+  const geo = content?.geoLocation;
+  const meeting = op?.meetingPoint;
+  const summary = op?.unitBlockedDatesSummary;
+  const blockedList = !isMulti && Array.isArray(op.blockedDates) ? op.blockedDates : [];
+
   return (
-    <div className="space-y-4 pb-16 sm:pb-0 w-full">
+    <div className="space-y-4 pb-16 sm:pb-0 w-full max-w-4xl mx-auto">
       <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
         <Link to="/ops/cabins" className="text-sm text-[#81887A] hover:underline">
           Back to cabins
@@ -640,6 +667,9 @@ export default function OpsCabinDetail() {
                 </span>
               )}
             </div>
+            {content.hostName ? (
+              <p className="text-xs text-gray-500 mt-1">Host: {content.hostName}</p>
+            ) : null}
             <p className="text-xs text-gray-500 mt-1 font-mono break-all">{titleId}</p>
             {data.slug ? <p className="text-xs text-gray-400 mt-0.5 font-mono">Slug: {data.slug}</p> : null}
             <p className="text-sm text-gray-600 mt-2">{content.location || '—'}</p>
@@ -653,25 +683,90 @@ export default function OpsCabinDetail() {
         </div>
       </section>
 
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <OpsReadOnlyDetailSection title="Location &amp; coordinates">
+          <p>
+            <span className="font-medium text-gray-800">Address / label:</span> {content.location || '—'}
+          </p>
+          {geo?.latitude != null && geo?.longitude != null ? (
+            <p className="font-mono text-[11px] text-gray-600 break-all">
+              {Number(geo.latitude).toFixed(5)}, {Number(geo.longitude).toFixed(5)}
+              {geo.zoom != null ? ` · zoom ${geo.zoom}` : ''}
+            </p>
+          ) : (
+            <p className="text-gray-500">No map coordinates stored.</p>
+          )}
+        </OpsReadOnlyDetailSection>
+
+        <OpsReadOnlyDetailSection title="Meeting point &amp; arrival">
+          {meeting?.label ? (
+            <p>
+              <span className="font-medium text-gray-800">Meeting point:</span> {meeting.label}
+            </p>
+          ) : (
+            <p className="text-gray-500">No meeting point label.</p>
+          )}
+          {meeting?.googleMapsUrl ? (
+            <p className="break-all">
+              <span className="font-medium text-gray-800">Maps:</span>{' '}
+              <span className="font-mono text-[11px]">{meeting.googleMapsUrl}</span>
+            </p>
+          ) : null}
+          {meeting?.what3words ? (
+            <p>
+              <span className="font-medium text-gray-800">what3words:</span> {meeting.what3words}
+            </p>
+          ) : null}
+          {meeting?.lat != null && meeting?.lng != null ? (
+            <p className="font-mono text-[11px] text-gray-600">
+              Meeting lat/lng: {meeting.lat}, {meeting.lng}
+            </p>
+          ) : null}
+          <p>
+            <span className="font-medium text-gray-800">Default arrival window:</span>{' '}
+            {pre.arrivalWindowDefault?.trim() ? pre.arrivalWindowDefault : '—'}
+          </p>
+          <p className="break-all">
+            <span className="font-medium text-gray-800">Arrival guide URL:</span>{' '}
+            {pre.arrivalGuideUrl ? <span className="font-mono text-[11px]">{pre.arrivalGuideUrl}</span> : '—'}
+          </p>
+        </OpsReadOnlyDetailSection>
+      </div>
+
+      <OpsReadOnlyDetailSection title="Safety &amp; emergency">
+        <p>
+          <span className="font-medium text-gray-800">Emergency contact:</span>{' '}
+          {pre.emergencyContact?.trim() ? pre.emergencyContact : '—'}
+        </p>
+        <div>
+          <p className="font-medium text-gray-800 mb-1">Safety notes</p>
+          {pre.safetyNotes?.trim() ? (
+            <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{pre.safetyNotes}</p>
+          ) : (
+            <p className="text-gray-500">—</p>
+          )}
+        </div>
+      </OpsReadOnlyDetailSection>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
           <h3 className="text-sm font-semibold text-gray-900">Operational settings</h3>
           <div className="mt-3 space-y-2 text-sm text-gray-700">
             <p>Capacity: {op.capacity ?? '—'}</p>
+            <p>Min guests: {op.minGuests ?? '—'}</p>
             <p>Min nights: {op.minNights ?? '—'}</p>
             <p>Price/night: {op.pricePerNight ?? '—'}</p>
-            {isMulti ? <p>Pricing model: {op.pricingModel ?? '—'}</p> : null}
+            <p>Pricing model: {op.pricingModel ?? '—'}</p>
             {isMulti ? (
-              <p>Transport options: {op.transportOptions?.length ?? 0}</p>
+              <p>
+                Unit legacy blocked dates: {summary?.totalBlockedDateEntries ?? 0} entries across{' '}
+                {summary?.unitsWithBlockedDates ?? 0} unit(s)
+              </p>
             ) : (
-              <>
-                <p>Blocked dates count: {op.blockedDates?.length ?? 0}</p>
-                <p>Transport options: {op.transportOptions?.length ?? 0}</p>
-              </>
+              <p>Legacy blocked dates (cabin): {op.blockedDatesCount ?? op.blockedDates?.length ?? 0}</p>
             )}
-            {isMulti && Array.isArray(op.transportCutoffs) && op.transportCutoffs.length > 0 ? (
-              <p className="text-xs text-gray-500">Transport cutoffs: {op.transportCutoffs.length} configured</p>
-            ) : null}
+            <p>Transport options: {op.transportOptions?.length ?? 0}</p>
+            <p>Transport cutoffs: {Array.isArray(op.transportCutoffs) ? op.transportCutoffs.length : 0}</p>
           </div>
         </section>
 
@@ -686,13 +781,114 @@ export default function OpsCabinDetail() {
             {content.description ? (
               <p className="text-sm text-gray-600 line-clamp-6">{content.description}</p>
             ) : null}
-            <p className="text-sm text-gray-600">Highlights: {content.highlights?.length ? content.highlights.join(', ') : '—'}</p>
-            {isMulti && content.experiences?.length ? (
-              <p className="text-sm text-gray-600">Experiences: {content.experiences.length} configured</p>
-            ) : null}
           </div>
         </section>
       </div>
+
+      <OpsReadOnlyDetailSection title="Transport">
+        {Array.isArray(op.transportOptions) && op.transportOptions.length > 0 ? (
+          <ul className="space-y-2 list-none pl-0">
+            {op.transportOptions.map((t, i) => (
+              <li key={i} className="border border-gray-100 rounded-md p-2 bg-gray-50/80">
+                <p className="font-medium text-gray-900">{t.type || '—'}</p>
+                <p className="text-gray-600 mt-0.5">{t.description || '—'}</p>
+                <p className="text-gray-500 mt-0.5">
+                  {t.duration || '—'} · {t.pricePerPerson != null ? `${t.pricePerPerson}/person` : '—'} ·{' '}
+                  {t.isAvailable === false ? 'Unavailable' : 'Available'}
+                </p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-gray-500">No transport options configured.</p>
+        )}
+        {Array.isArray(op.transportCutoffs) && op.transportCutoffs.length > 0 ? (
+          <div className="mt-3 pt-3 border-t border-gray-100">
+            <p className="font-medium text-gray-800 mb-1">Last departure cutoffs</p>
+            <ul className="space-y-1 font-mono text-[11px]">
+              {op.transportCutoffs.map((c, i) => (
+                <li key={i}>
+                  {c.type || '—'} — {c.lastDeparture || '—'}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </OpsReadOnlyDetailSection>
+
+      <OpsReadOnlyDetailSection title="Highlights, badges &amp; experiences">
+        <div>
+          <p className="font-medium text-gray-800 mb-1">Highlights</p>
+          {content.highlights?.length ? (
+            <ul className="list-disc pl-4 space-y-0.5">
+              {content.highlights.map((h, i) => (
+                <li key={i}>{h}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-gray-500">—</p>
+          )}
+        </div>
+        <div className="mt-3 pt-3 border-t border-gray-100">
+          <p className="font-medium text-gray-800 mb-1">Badges</p>
+          {content.badges?.superhost?.enabled || content.badges?.guestFavorite?.enabled ? (
+            <ul className="space-y-1">
+              {content.badges.superhost?.enabled ? (
+                <li>
+                  Superhost: <span className="text-gray-600">{content.badges.superhost.label || 'Superhost'}</span>
+                </li>
+              ) : null}
+              {content.badges.guestFavorite?.enabled ? (
+                <li>
+                  Guest favorite:{' '}
+                  <span className="text-gray-600">{content.badges.guestFavorite.label || 'Guest favorite'}</span>
+                </li>
+              ) : null}
+            </ul>
+          ) : (
+            <p className="text-gray-500">None enabled.</p>
+          )}
+        </div>
+        <div className="mt-3 pt-3 border-t border-gray-100">
+          <p className="font-medium text-gray-800 mb-1">Experiences</p>
+          {Array.isArray(content.experiences) && content.experiences.length > 0 ? (
+            <ul className="space-y-2 list-none pl-0">
+              {content.experiences.map((ex, i) => (
+                <li key={ex.key ? String(ex.key) : `exp-${i}`} className="border border-gray-100 rounded-md p-2 bg-gray-50/80">
+                  <p className="font-medium text-gray-900">{ex.name || '—'}</p>
+                  <p className="text-gray-600 mt-0.5">
+                    {ex.price != null ? `${ex.price} ${ex.currency || 'BGN'}` : '—'} · {ex.unit || 'flat_per_stay'} ·{' '}
+                    {ex.active === false ? 'Inactive' : 'Active'}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-gray-500">—</p>
+          )}
+        </div>
+      </OpsReadOnlyDetailSection>
+
+      <OpsReadOnlyDetailSection title="Blocked dates (legacy cabin fields)">
+        {isMulti ? (
+          <p>
+            Per-unit blocked date entries: <span className="font-mono">{summary?.totalBlockedDateEntries ?? 0}</span>{' '}
+            across <span className="font-mono">{summary?.unitsWithBlockedDates ?? 0}</span> unit(s). See units table
+            for per-unit counts.
+          </p>
+        ) : blockedList.length > 0 ? (
+          <>
+            <p className="text-gray-600 mb-2">
+              Count: {op.blockedDatesCount ?? blockedList.length} · day-level blocks stored on the cabin document.
+            </p>
+            <p className="font-mono text-[11px] text-gray-800 break-all leading-relaxed">
+              {blockedList.map((d) => formatDateOnlyForOps(d)).filter(Boolean).join(', ')}
+            </p>
+          </>
+        ) : (
+          <p className="text-gray-500">No legacy blocked dates on this cabin.</p>
+        )}
+      </OpsReadOnlyDetailSection>
 
       <OpsCabinMediaManager titleId={titleId} isMulti={isMulti} content={content} onReload={loadDetail} />
 
@@ -725,15 +921,17 @@ export default function OpsCabinDetail() {
         </section>
       ) : null}
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
-        <h3 className="text-sm font-semibold text-gray-900">Pre-arrival configuration</h3>
-        <div className="mt-3 space-y-2 text-sm text-gray-700">
-          <p>Packing list items: {pre.packingList?.length ?? 0}</p>
-          <p>Arrival guide URL: {pre.arrivalGuideUrl ? pre.arrivalGuideUrl : '—'}</p>
-          <p>Emergency contact: {pre.emergencyContact ? pre.emergencyContact : '—'}</p>
-          {!isMulti ? <p>Safety notes: {pre.safetyNotes ? 'Present' : '—'}</p> : null}
-        </div>
-      </section>
+      <OpsReadOnlyDetailSection title="Packing list (pre-arrival)">
+        {pre.packingList?.length ? (
+          <ul className="list-disc pl-4 space-y-0.5">
+            {pre.packingList.map((item, i) => (
+              <li key={i}>{item}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-gray-500">No packing list items.</p>
+        )}
+      </OpsReadOnlyDetailSection>
     </div>
   );
 }

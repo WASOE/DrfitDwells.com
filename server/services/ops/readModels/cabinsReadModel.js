@@ -152,6 +152,7 @@ async function getCabinDetailReadModel(id) {
     return null;
   }
   if (cabin) {
+    const blockedDates = cabin.blockedDates || [];
     return {
       kind: 'single_cabin',
       cabinId: String(cabin._id),
@@ -159,9 +160,13 @@ async function getCabinDetailReadModel(id) {
         capacity: cabin.capacity,
         minNights: cabin.minNights,
         pricePerNight: cabin.pricePerNight,
-        blockedDates: cabin.blockedDates || [],
+        blockedDates,
         transportOptions: cabin.transportOptions || [],
-        meetingPoint: cabin.meetingPoint || null
+        meetingPoint: cabin.meetingPoint || null,
+        transportCutoffs: cabin.transportCutoffs || [],
+        pricingModel: cabin.pricingModel || 'per_night',
+        minGuests: cabin.minGuests != null ? cabin.minGuests : 1,
+        blockedDatesCount: Array.isArray(blockedDates) ? blockedDates.length : 0
       },
       contentMedia: {
         name: cabin.name,
@@ -170,7 +175,10 @@ async function getCabinDetailReadModel(id) {
         imageUrl: cabin.imageUrl || null,
         images: cabin.images || [],
         badges: cabin.badges || null,
-        highlights: cabin.highlights || []
+        highlights: cabin.highlights || [],
+        geoLocation: cabin.geoLocation || null,
+        experiences: cabin.experiences || [],
+        hostName: cabin.hostName || null
       },
       preArrival: {
         packingList: cabin.packingList || [],
@@ -190,6 +198,14 @@ async function getCabinDetailReadModel(id) {
 
   const units = await Unit.find({ cabinTypeId: cabinType._id }).sort({ unitNumber: 1 }).lean();
 
+  let totalUnitBlockedDateEntries = 0;
+  let unitsWithBlockedDates = 0;
+  for (const u of units) {
+    const n = Array.isArray(u.blockedDates) ? u.blockedDates.length : 0;
+    if (n > 0) unitsWithBlockedDates += 1;
+    totalUnitBlockedDateEntries += n;
+  }
+
   return {
     kind: 'multi_unit_type',
     cabinTypeId: String(cabinType._id),
@@ -201,7 +217,12 @@ async function getCabinDetailReadModel(id) {
       pricingModel: cabinType.pricingModel || 'per_night',
       transportOptions: cabinType.transportOptions || [],
       meetingPoint: cabinType.meetingPoint || null,
-      transportCutoffs: cabinType.transportCutoffs || []
+      transportCutoffs: cabinType.transportCutoffs || [],
+      minGuests: cabinType.minGuests != null ? cabinType.minGuests : 1,
+      unitBlockedDatesSummary: {
+        totalBlockedDateEntries: totalUnitBlockedDateEntries,
+        unitsWithBlockedDates
+      }
     },
     contentMedia: {
       name: cabinType.name,
@@ -211,7 +232,9 @@ async function getCabinDetailReadModel(id) {
       images: cabinType.images || [],
       badges: cabinType.badges || null,
       highlights: cabinType.highlights || [],
-      experiences: cabinType.experiences || []
+      experiences: cabinType.experiences || [],
+      geoLocation: cabinType.geoLocation || null,
+      hostName: cabinType.hostName || null
     },
     preArrival: {
       packingList: cabinType.packingList || [],
