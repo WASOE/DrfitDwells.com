@@ -13,6 +13,7 @@ const availabilityActionsRoutes = require('./modules/availabilityActionsRoutes')
 const healthRoutes = require('./modules/healthRoutes');
 const manualReviewRoutes = require('./modules/manualReviewRoutes');
 const readinessRoutes = require('./modules/readinessRoutes');
+const creatorPartnersRoutes = require('./modules/creatorPartnersRoutes');
 
 const router = express.Router();
 
@@ -40,5 +41,6 @@ router.use('/availability', availabilityActionsRoutes);
 router.use('/health', healthRoutes);
 router.use('/manual-review', manualReviewRoutes);
 router.use('/readiness', readinessRoutes);
+router.use('/creator-partners', creatorPartnersRoutes);
 
 module.exports = router;
