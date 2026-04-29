@@ -4,10 +4,22 @@ const { validateId } = require('../../../middleware/validateId');
 const { adminModuleWriteGate } = require('../../../middleware/adminModuleCutoverEnforcement');
 const {
   listReviewsForModeration,
+  createReviewForModeration,
   updateReviewModerationStatus,
   getReviewForModeration,
   applyReviewModeratorUpdate
 } = require('../../../services/reviews/reviewModerationService');
+
+const createReviewValidators = [
+  body('cabinId').isMongoId().withMessage('Valid cabin ID is required'),
+  body('rating').isInt({ min: 1, max: 5 }).withMessage('Rating must be between 1 and 5'),
+  body('text').trim().isLength({ min: 1, max: 2000 }).withMessage('Review text is required (max 2000 characters)'),
+  body('reviewerName').optional().trim().isLength({ max: 100 }),
+  body('reviewerId').optional().trim().isLength({ max: 100 }),
+  body('reviewHighlight').optional().trim().isLength({ max: 100 }),
+  body('highlightType').optional().isIn(['LENGTH_OF_STAY', 'TYPE_OF_TRIP']),
+  body('language').optional().trim().isLength({ max: 10 })
+];
 
 const patchReviewValidators = [
   body('rating').optional().isInt({ min: 1, max: 5 }),
@@ -112,6 +124,72 @@ router.get('/:id', validateId('id'), async (req, res) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 });
+
+router.post(
+  '/',
+  createReviewValidators,
+  adminModuleWriteGate('reviews_communications'),
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          code: 'VALIDATION',
+          message: 'Validation failed',
+          errors: errors.array()
+        });
+      }
+
+      const review = await createReviewForModeration({
+        body: req.body,
+        ctx: { editedBy: getOpsIdentity(req) }
+      });
+
+      return res.status(201).json({
+        success: true,
+        message: 'Review created successfully',
+        data: { review }
+      });
+    } catch (error) {
+      if (error.code === 'VALIDATION') {
+        return res.status(error.status || 400).json({
+          success: false,
+          code: 'VALIDATION',
+          message: error.message
+        });
+      }
+      if (error.code === 'CABIN_NOT_FOUND') {
+        return res.status(404).json({
+          success: false,
+          code: error.code,
+          message: error.message
+        });
+      }
+      if (error.code === 'DUPLICATE_EXTERNAL_ID') {
+        return res.status(400).json({
+          success: false,
+          code: error.code,
+          message: error.message
+        });
+      }
+      if (error.name === 'ValidationError') {
+        return res.status(400).json({
+          success: false,
+          code: 'VALIDATION',
+          message: 'Validation failed',
+          details: error.message
+        });
+      }
+      console.error('OPS review create error:', error);
+      return res.status(400).json({
+        success: false,
+        code: 'CREATE_REVIEW_FAILED',
+        message: error?.message || 'Unable to create review'
+      });
+    }
+  }
+);
 
 router.patch(
   '/:id/status',

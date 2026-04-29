@@ -92,6 +92,8 @@ const opsWriteAPI = {
     api.patch(`/ops/cabins/${id}/images/${imageId}`, payload, { headers: authHeaders() }),
   deleteCabinImage: (id, imageId) =>
     api.delete(`/ops/cabins/${id}/images/${imageId}`, { headers: authHeaders() }),
+  createReview: (payload) =>
+    api.post('/ops/reviews', payload, { headers: authHeaders() }),
   updateReviewStatus: (reviewId, status) =>
     api.patch(`/ops/reviews/${reviewId}/status`, { status }, { headers: authHeaders() }),
   updateReview: (reviewId, payload) =>

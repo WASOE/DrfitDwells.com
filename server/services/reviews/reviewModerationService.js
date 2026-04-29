@@ -198,6 +198,121 @@ async function listReviewsForModeration(query = {}) {
 }
 
 /**
+ * Create manual review for moderation surfaces (aligned with legacy admin POST behavior).
+ * @param {object} params
+ * @param {object} params.body
+ * @param {object} [params.ctx]
+ * @param {string} [params.ctx.editedBy]
+ * @returns {Promise<import('mongoose').Document>}
+ */
+async function createReviewForModeration({ body = {}, ctx = {} }) {
+  const {
+    cabinId,
+    rating,
+    text,
+    reviewerName = 'Guest',
+    language = 'en',
+    status = 'approved',
+    pinned = false,
+    locked = false,
+    ownerResponse
+  } = body || {};
+
+  if (!cabinId) {
+    const err = new Error('cabinId is required');
+    err.code = 'VALIDATION';
+    err.status = 400;
+    throw err;
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(String(cabinId))) {
+    const err = new Error('Valid cabin ID is required');
+    err.code = 'VALIDATION';
+    err.status = 400;
+    throw err;
+  }
+
+  const ratingNum = Number(rating);
+  if (!(ratingNum >= 1 && ratingNum <= 5)) {
+    const err = new Error('rating must be between 1 and 5');
+    err.code = 'VALIDATION';
+    err.status = 400;
+    throw err;
+  }
+
+  if (!text || !String(text).trim()) {
+    const err = new Error('text is required');
+    err.code = 'VALIDATION';
+    err.status = 400;
+    throw err;
+  }
+
+  const normalizedStatus = String(status || 'approved').toLowerCase();
+  if (!['approved', 'pending', 'hidden'].includes(normalizedStatus)) {
+    const err = new Error('status must be one of: approved, pending, hidden');
+    err.code = 'VALIDATION';
+    err.status = 400;
+    throw err;
+  }
+
+  const cabin = await Cabin.findById(cabinId).select('_id');
+  if (!cabin) {
+    const err = new Error('Cabin not found');
+    err.code = 'CABIN_NOT_FOUND';
+    err.status = 404;
+    throw err;
+  }
+
+  const pinnedBool = pinned === true || pinned === 'true';
+  const lockedBool = locked === true || locked === 'true';
+  const normalizedReviewerName = reviewerName ? sanitizeName(String(reviewerName).trim()) : null;
+
+  let review;
+  try {
+    review = new Review({
+      cabinId,
+      source: 'manual',
+      rating: ratingNum,
+      text: sanitizeHtml(String(text).trim()),
+      reviewerName: normalizedReviewerName,
+      language: language || 'en',
+      status: normalizedStatus,
+      pinned: pinnedBool,
+      locked: lockedBool,
+      createdAtSource: new Date()
+    });
+
+    await review.save();
+  } catch (error) {
+    if (error?.code === 11000 && error?.keyPattern?.externalId) {
+      const err = new Error('A review with this externalId already exists');
+      err.code = 'DUPLICATE_EXTERNAL_ID';
+      err.status = 400;
+      throw err;
+    }
+    throw error;
+  }
+
+  if (ownerResponse && ownerResponse.text && String(ownerResponse.text).trim()) {
+    const identity = ctx.editedBy || ctx.identity || process.env.ADMIN_EMAIL || 'admin';
+    review.ownerResponse = {
+      text: sanitizeHtml(String(ownerResponse.text).trim()),
+      respondedBy: sanitizeHtml(ownerResponse.respondedBy || identity),
+      respondedAt: new Date()
+    };
+    await review.save();
+  }
+
+  try {
+    await recalculateCabinStats(cabinId);
+  } catch (recalcError) {
+    console.error('Recalc stats error (non-fatal):', recalcError);
+  }
+
+  return review;
+}
+
+/**
  * Set review moderation status to approved or hidden; updates audit fields and recomputes cabin stats.
  * @param {object} params
  * @param {string} params.reviewId
@@ -372,6 +487,7 @@ async function applyReviewModeratorUpdate({ reviewId, body = {}, ctx = {} }) {
 module.exports = {
   recalculateCabinStats,
   listReviewsForModeration,
+  createReviewForModeration,
   updateReviewModerationStatus,
   getReviewForModeration,
   applyReviewModeratorUpdate

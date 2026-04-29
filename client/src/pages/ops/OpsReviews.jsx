@@ -29,6 +29,19 @@ const EDIT_STATUS_OPTIONS = [
   { value: 'hidden', label: 'Hidden' }
 ];
 
+function emptyCreateForm(cabinId = '') {
+  return {
+    cabinId,
+    rating: 5,
+    text: '',
+    reviewerName: 'Guest',
+    language: 'en',
+    status: 'approved',
+    pinned: false,
+    locked: false
+  };
+}
+
 function formatDate(iso) {
   if (!iso) return '—';
   try {
@@ -78,7 +91,12 @@ export default function OpsReviews() {
   const [editLoading, setEditLoading] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState(emptyCreateForm());
+  const [createSaving, setCreateSaving] = useState(false);
+  const [createError, setCreateError] = useState('');
   const deepLinkHandledRef = useRef(null);
+  const createDeepLinkHandledRef = useRef(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -168,6 +186,25 @@ export default function OpsReviews() {
     }
   };
 
+  const openCreate = useCallback((prefillCabinId = '') => {
+    setCreateOpen(true);
+    setCreateError('');
+    setCreateForm(emptyCreateForm(prefillCabinId));
+  }, []);
+
+  const closeCreate = useCallback(() => {
+    setCreateOpen(false);
+    setCreateSaving(false);
+    setCreateError('');
+    setCreateForm(emptyCreateForm(cabinIdFilter));
+
+    if (searchParams.get('create')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('create');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams, cabinIdFilter]);
+
   const openEdit = useCallback(async (reviewId) => {
     setEditReviewId(reviewId);
     setEditOpen(true);
@@ -214,6 +251,19 @@ export default function OpsReviews() {
     deepLinkHandledRef.current = reviewId;
     openEdit(reviewId);
   }, [searchParams, openEdit]);
+
+  useEffect(() => {
+    const createFlag = searchParams.get('create');
+    if (createFlag !== '1') {
+      createDeepLinkHandledRef.current = null;
+      return;
+    }
+    const prefillCabinId = searchParams.get('cabinId') || '';
+    const key = `${createFlag}:${prefillCabinId}`;
+    if (createDeepLinkHandledRef.current === key) return;
+    createDeepLinkHandledRef.current = key;
+    openCreate(prefillCabinId);
+  }, [searchParams, openCreate]);
 
   const handleEditField = (field, value) => {
     if (field.includes('.')) {
@@ -271,6 +321,50 @@ export default function OpsReviews() {
       setEditError(msg);
     } finally {
       setEditSaving(false);
+    }
+  };
+
+  const handleCreateField = (field, value) => {
+    setCreateForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleCreateSave = async () => {
+    setCreateSaving(true);
+    setCreateError('');
+    try {
+      if (!createForm.cabinId) {
+        setCreateError('Please select a cabin');
+        return;
+      }
+      if (!createForm.text.trim()) {
+        setCreateError('Review text is required');
+        return;
+      }
+
+      const payload = {
+        cabinId: createForm.cabinId,
+        rating: Number(createForm.rating),
+        text: createForm.text.trim(),
+        reviewerName: createForm.reviewerName.trim(),
+        language: createForm.language.trim() || 'en',
+        status: String(createForm.status || 'approved').toLowerCase(),
+        pinned: createForm.pinned,
+        locked: createForm.locked
+      };
+
+      await opsWriteAPI.createReview(payload);
+      setBanner({ type: 'success', message: 'Review created successfully.' });
+      closeCreate();
+      await load();
+    } catch (err) {
+      setCreateError(
+        err?.response?.data?.message ||
+          err?.response?.data?.errors?.[0]?.msg ||
+          err?.response?.data?.code ||
+          'Unable to create review'
+      );
+    } finally {
+      setCreateSaving(false);
     }
   };
 
@@ -431,14 +525,30 @@ export default function OpsReviews() {
             {data?.pagination?.total != null ? `${data.pagination.total} review(s)` : null}
             {loading ? ' · Refreshing…' : null}
           </span>
-          <button
-            type="button"
-            onClick={() => load()}
-            disabled={loading}
-            className="text-blue-700 hover:underline disabled:opacity-50"
-          >
-            Reload
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                const next = new URLSearchParams(searchParams);
+                next.set('create', '1');
+                if (cabinIdFilter) {
+                  next.set('cabinId', cabinIdFilter);
+                }
+                setSearchParams(next, { replace: false });
+              }}
+              className="px-3 py-1.5 text-xs rounded-lg bg-[#81887A] text-white hover:bg-[#707668]"
+            >
+              Create review
+            </button>
+            <button
+              type="button"
+              onClick={() => load()}
+              disabled={loading}
+              className="text-blue-700 hover:underline disabled:opacity-50"
+            >
+              Reload
+            </button>
+          </div>
         </div>
 
         <h3 className="text-sm font-semibold text-gray-900">Reviews</h3>
@@ -502,6 +612,138 @@ export default function OpsReviews() {
           ) : null}
         </div>
       </section>
+
+      {createOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="ops-review-create-title"
+        >
+          <div className="bg-white rounded-xl shadow-xl border border-gray-200 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 md:px-6 flex flex-wrap items-center justify-between gap-3 z-10">
+              <h3 id="ops-review-create-title" className="text-lg font-semibold text-gray-900">
+                Create review
+              </h3>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={closeCreate}
+                  className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-800 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateSave}
+                  disabled={createSaving}
+                  className="px-3 py-2 text-sm rounded-lg bg-[#81887A] text-white hover:bg-[#707668] disabled:opacity-50"
+                >
+                  {createSaving ? 'Saving…' : 'Create'}
+                </button>
+              </div>
+            </div>
+            <div className="p-4 md:p-6 space-y-4">
+              {createError ? (
+                <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">{createError}</div>
+              ) : null}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Cabin *</label>
+                  <select
+                    value={createForm.cabinId}
+                    onChange={(e) => handleCreateField('cabinId', e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="">Select a cabin</option>
+                    {cabins.map((cabinOption) => (
+                      <option key={cabinOption.id} value={cabinOption.id}>
+                        {cabinOption.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Rating *</label>
+                  <select
+                    value={createForm.rating}
+                    onChange={(e) => handleCreateField('rating', parseInt(e.target.value, 10))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  >
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <option key={n} value={n}>
+                        {n} ★
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
+                  <select
+                    value={createForm.status}
+                    onChange={(e) => handleCreateField('status', e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  >
+                    {EDIT_STATUS_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Reviewer name</label>
+                  <input
+                    type="text"
+                    value={createForm.reviewerName}
+                    onChange={(e) => handleCreateField('reviewerName', e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Language</label>
+                  <input
+                    type="text"
+                    value={createForm.language}
+                    onChange={(e) => handleCreateField('language', e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+                <div className="md:col-span-2 flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <label className="inline-flex items-center gap-2 text-sm text-gray-800">
+                    <input
+                      type="checkbox"
+                      checked={createForm.pinned}
+                      onChange={(e) => handleCreateField('pinned', e.target.checked)}
+                      className="rounded border-gray-300"
+                    />
+                    Pinned
+                  </label>
+                  <label className="inline-flex items-center gap-2 text-sm text-gray-800">
+                    <input
+                      type="checkbox"
+                      checked={createForm.locked}
+                      onChange={(e) => handleCreateField('locked', e.target.checked)}
+                      className="rounded border-gray-300"
+                    />
+                    Locked
+                  </label>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Review text *</label>
+                  <textarea
+                    value={createForm.text}
+                    onChange={(e) => handleCreateField('text', e.target.value)}
+                    rows={6}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {editOpen ? (
         <div

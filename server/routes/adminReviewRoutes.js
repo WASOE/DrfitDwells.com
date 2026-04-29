@@ -8,6 +8,7 @@ const { adminModuleWriteGate } = require('../middleware/adminModuleCutoverEnforc
 const {
   listReviewsForModeration,
   recalculateCabinStats,
+  createReviewForModeration,
   applyReviewModeratorUpdate
 } = require('../services/reviews/reviewModerationService');
 
@@ -131,105 +132,10 @@ router.post('/', [
       });
     }
 
-    const {
-      cabinId,
-      rating,
-      text,
-      reviewerName = 'Guest',
-      language = 'en',
-      status = 'approved',
-      pinned = false,
-      locked = false,
-      ownerResponse
-    } = req.body || {};
-
-    // Validate required fields
-    if (!cabinId) {
-      return res.status(400).json({
-        success: false,
-        code: 'VALIDATION',
-        message: 'cabinId is required'
-      });
-    }
-
-    const ratingNum = Number(rating);
-    if (!(ratingNum >= 1 && ratingNum <= 5)) {
-      return res.status(400).json({
-        success: false,
-        code: 'VALIDATION',
-        message: 'rating must be between 1 and 5'
-      });
-    }
-
-    if (!text || !text.trim()) {
-      return res.status(400).json({
-        success: false,
-        code: 'VALIDATION',
-        message: 'text is required'
-      });
-    }
-
-    // Normalize status
-    const normalizedStatus = String(status || 'approved').toLowerCase();
-    if (!['approved', 'pending', 'hidden'].includes(normalizedStatus)) {
-      return res.status(400).json({
-        success: false,
-        code: 'VALIDATION',
-        message: 'status must be one of: approved, pending, hidden'
-      });
-    }
-
-    // Verify cabin exists
-    const cabin = await Cabin.findById(cabinId);
-    if (!cabin) {
-      return res.status(404).json({
-        success: false,
-        code: 'CABIN_NOT_FOUND',
-        message: 'Cabin not found'
-      });
-    }
-
-    // Normalize booleans
-    const pinnedBool = pinned === true || pinned === 'true';
-    const lockedBool = locked === true || locked === 'true';
-
-    // Sanitize reviewerName (will be sanitized by model pre-save hook, but normalize here too)
-    const { sanitizeName } = require('../utils/nameUtils');
-    const normalizedReviewerName = reviewerName ? sanitizeName(String(reviewerName).trim()) : null;
-
-    // Create review
-    const review = new Review({
-      cabinId,
-      source: 'manual',
-      rating: ratingNum,
-      text: sanitizeHtml(text.trim()),
-      reviewerName: normalizedReviewerName, // Will be null if empty, which displays as "Guest" in UI
-      language: language || 'en',
-      status: normalizedStatus,
-      pinned: pinnedBool,
-      locked: lockedBool,
-      createdAtSource: new Date()
+    const review = await createReviewForModeration({
+      body: req.body,
+      ctx: { editedBy: getAdminIdentity(req) }
     });
-
-    await review.save();
-
-    // Add owner response if provided
-    if (ownerResponse && ownerResponse.text && ownerResponse.text.trim()) {
-      review.ownerResponse = {
-        text: sanitizeHtml(ownerResponse.text.trim()),
-        respondedBy: sanitizeHtml(ownerResponse.respondedBy || getAdminIdentity(req)),
-        respondedAt: new Date()
-      };
-      await review.save();
-    }
-
-    // Recalculate cabin stats
-    try {
-      await recalculateCabinStats(cabinId);
-    } catch (recalcError) {
-      console.error('Recalc stats error (non-fatal):', recalcError);
-      // Don't fail the review creation if stats recalculation fails
-    }
 
     res.status(201).json({
       success: true,
@@ -238,17 +144,31 @@ router.post('/', [
     });
   } catch (error) {
     console.error('Create review error:', error);
-    
-    // Handle duplicate externalId error (shouldn't happen for manual reviews, but just in case)
-    if (error?.code === 11000 && error?.keyPattern?.externalId) {
+
+    if (error.code === 'DUPLICATE_EXTERNAL_ID') {
       return res.status(400).json({
         success: false,
-        code: 'DUPLICATE_EXTERNAL_ID',
-        message: 'A review with this externalId already exists'
+        code: error.code,
+        message: error.message
       });
     }
 
-    // Handle validation errors
+    if (error.code === 'CABIN_NOT_FOUND') {
+      return res.status(404).json({
+        success: false,
+        code: error.code,
+        message: error.message
+      });
+    }
+
+    if (error.code === 'VALIDATION') {
+      return res.status(error.status || 400).json({
+        success: false,
+        code: 'VALIDATION',
+        message: error.message
+      });
+    }
+
     if (error.name === 'ValidationError') {
       return res.status(400).json({
         success: false,
