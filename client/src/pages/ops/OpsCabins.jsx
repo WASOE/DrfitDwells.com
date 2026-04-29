@@ -120,7 +120,7 @@ export function OpsCabinsList() {
                 <div className="shrink-0 flex lg:block">
                   <div className="w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24 rounded-lg bg-gray-100 overflow-hidden border border-gray-100">
                     {img ? (
-                      <img src={img} alt="" className="w-full h-full object-cover" loading="lazy" />
+                      <img src={normalizeMediaSrc(img)} alt="" className="w-full h-full object-cover" loading="lazy" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-sm font-semibold text-gray-600 bg-gray-50">
                         {thumbInitials(c.name)}
@@ -219,10 +219,21 @@ export function OpsCabinsList() {
 function UnitAirbnbIcsRow({ unit: u }) {
   const [label, setLabel] = useState(u.airbnbListingLabel || '');
   const [hint, setHint] = useState('');
+  const hintTimeoutRef = useRef(null);
 
   useEffect(() => {
     setLabel(u.airbnbListingLabel || '');
   }, [u.unitId, u.airbnbListingLabel]);
+
+  useEffect(
+    () => () => {
+      if (hintTimeoutRef.current) {
+        clearTimeout(hintTimeoutRef.current);
+        hintTimeoutRef.current = null;
+      }
+    },
+    []
+  );
 
   const fullUrl = useMemo(() => {
     if (u.icsExportUrl) return u.icsExportUrl;
@@ -237,7 +248,11 @@ function UnitAirbnbIcsRow({ unit: u }) {
     try {
       await navigator.clipboard.writeText(fullUrl);
       setHint('Copied');
-      setTimeout(() => setHint(''), 2000);
+      if (hintTimeoutRef.current) clearTimeout(hintTimeoutRef.current);
+      hintTimeoutRef.current = setTimeout(() => {
+        setHint('');
+        hintTimeoutRef.current = null;
+      }, 2000);
     } catch {
       setHint('Copy failed');
     }
@@ -248,7 +263,11 @@ function UnitAirbnbIcsRow({ unit: u }) {
     try {
       await opsWriteAPI.patchUnitChannelLabel(u.unitId, label);
       setHint('Saved');
-      setTimeout(() => setHint(''), 2000);
+      if (hintTimeoutRef.current) clearTimeout(hintTimeoutRef.current);
+      hintTimeoutRef.current = setTimeout(() => {
+        setHint('');
+        hintTimeoutRef.current = null;
+      }, 2000);
     } catch (err) {
       setHint(err?.response?.data?.message || 'Save failed');
     }
@@ -513,7 +532,7 @@ export default function OpsCabinDetail() {
         <div className="mt-4 flex flex-col sm:flex-row sm:items-start gap-4 sm:gap-6">
           <div className="shrink-0 w-20 h-20 sm:w-24 sm:h-24 rounded-lg bg-gray-100 overflow-hidden border border-gray-100">
             {cover ? (
-              <img src={cover} alt="" className="w-full h-full object-cover" />
+              <img src={normalizeMediaSrc(cover)} alt="" className="w-full h-full object-cover" />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-sm font-semibold text-gray-600 bg-gray-50">
                 {thumbInitials(content.name)}
@@ -572,7 +591,7 @@ export default function OpsCabinDetail() {
           <h3 className="text-sm font-semibold text-gray-900">Content &amp; media</h3>
           <div className="mt-3 space-y-2">
             {cover ? (
-              <img src={cover} alt="" className="w-full max-w-lg rounded-lg border border-gray-200" />
+              <img src={normalizeMediaSrc(cover)} alt="" className="w-full max-w-lg rounded-lg border border-gray-200" />
             ) : (
               <p className="text-sm text-gray-500">No cover image.</p>
             )}

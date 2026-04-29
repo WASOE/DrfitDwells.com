@@ -9,7 +9,9 @@ function decodeRoleFromToken() {
   try {
     const token = localStorage.getItem('adminToken');
     if (!token) return 'admin';
-    const payload = token.split('.')[0];
+    const parts = token.split('.');
+    const payload = parts[1];
+    if (!payload) return 'admin';
     const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
     return decoded.role === 'operator' ? 'operator' : 'admin';
   } catch {
