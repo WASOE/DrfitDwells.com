@@ -89,6 +89,8 @@ const opsWriteAPI = {
     api.patch(`/ops/cabins/${id}/images/reorder`, { order }, { headers: authHeaders() }),
   updateCabinImage: (id, imageId, payload) =>
     api.patch(`/ops/cabins/${id}/images/${imageId}`, payload, { headers: authHeaders() }),
+  deleteCabinImage: (id, imageId) =>
+    api.delete(`/ops/cabins/${id}/images/${imageId}`, { headers: authHeaders() }),
   patchUnitChannelLabel: (unitId, airbnbListingLabel) =>
     api.patch(`/ops/cabins/units/${unitId}`, { airbnbListingLabel }, { headers: authHeaders() })
 };

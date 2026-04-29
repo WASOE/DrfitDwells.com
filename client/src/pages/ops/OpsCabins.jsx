@@ -29,6 +29,21 @@ function normalizeMediaSrc(url) {
   return `/uploads/cabins/${url}`;
 }
 
+const MEDIA_TAG_OPTIONS = [
+  'bedroom',
+  'living_room',
+  'kitchen',
+  'dining',
+  'bathroom',
+  'outdoor',
+  'view',
+  'hot_tub_sauna',
+  'amenities',
+  'floorplan',
+  'map',
+  'other'
+];
+
 export function OpsCabinsList() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -396,6 +411,38 @@ function OpsCabinMediaManager({ titleId, isMulti, content, onReload }) {
     [mediaImages, runMediaMutation, titleId]
   );
 
+  const handleDelete = useCallback(
+    async (imageId) => {
+      if (!window.confirm('Delete this image? This cannot be undone.')) return;
+      await runMediaMutation(
+        () => opsWriteAPI.deleteCabinImage(titleId, imageId),
+        'Image deleted'
+      );
+    },
+    [runMediaMutation, titleId]
+  );
+
+  const handleSaveAlt = useCallback(
+    async (imageId, altValue) => {
+      await runMediaMutation(
+        () => opsWriteAPI.updateCabinImage(titleId, imageId, { alt: altValue }),
+        'Alt text updated'
+      );
+    },
+    [runMediaMutation, titleId]
+  );
+
+  const handleSetTag = useCallback(
+    async (imageId, tag) => {
+      const tags = tag ? [tag] : [];
+      await runMediaMutation(
+        () => opsWriteAPI.updateCabinImage(titleId, imageId, { tags }),
+        'Image category updated'
+      );
+    },
+    [runMediaMutation, titleId]
+  );
+
   return (
     <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
       <div className="flex items-center justify-between gap-3">
@@ -445,6 +492,39 @@ function OpsCabinMediaManager({ titleId, isMulti, content, onReload }) {
                 ) : null}
               </div>
               <div className="mt-2 text-xs text-gray-500">Order: {index + 1}</div>
+              <div className="mt-2 space-y-2">
+                <label className="block">
+                  <span className="block text-[11px] text-gray-500 mb-1">Alt text</span>
+                  <input
+                    type="text"
+                    defaultValue={img.alt || ''}
+                    onBlur={(event) => {
+                      const nextAlt = String(event.target.value || '');
+                      if (nextAlt === String(img.alt || '')) return;
+                      handleSaveAlt(String(img._id), nextAlt);
+                    }}
+                    disabled={mediaBusy || isMulti}
+                    className="w-full text-xs px-2 py-1.5 rounded border border-gray-200 bg-white disabled:opacity-50"
+                    placeholder="Short image description"
+                  />
+                </label>
+                <label className="block">
+                  <span className="block text-[11px] text-gray-500 mb-1">Category</span>
+                  <select
+                    value={Array.isArray(img.tags) && img.tags[0] ? String(img.tags[0]) : ''}
+                    onChange={(event) => handleSetTag(String(img._id), event.target.value)}
+                    disabled={mediaBusy || isMulti}
+                    className="w-full text-xs px-2 py-1.5 rounded border border-gray-200 bg-white disabled:opacity-50"
+                  >
+                    <option value="">Unassigned</option>
+                    {MEDIA_TAG_OPTIONS.map((tag) => (
+                      <option key={tag} value={tag}>
+                        {tag}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
               <div className="mt-2 flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -469,6 +549,14 @@ function OpsCabinMediaManager({ titleId, isMulti, content, onReload }) {
                   className="text-xs px-2 py-1 rounded border border-gray-200 bg-white disabled:opacity-50"
                 >
                   Move down
+                </button>
+                <button
+                  type="button"
+                  disabled={mediaBusy || isMulti}
+                  onClick={() => handleDelete(String(img._id))}
+                  className="text-xs px-2 py-1 rounded border border-red-200 text-red-700 bg-white disabled:opacity-50"
+                >
+                  Delete
                 </button>
               </div>
             </div>
