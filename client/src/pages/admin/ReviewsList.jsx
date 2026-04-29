@@ -179,7 +179,7 @@ const ReviewsList = () => {
             </p>
           </div>
           <button
-            onClick={() => navigate('/admin/reviews/new')}
+            onClick={() => navigate('/ops/reviews?create=1')}
             className="inline-flex items-center px-4 py-2.5 text-sm font-medium text-white bg-[#81887A] rounded-lg hover:bg-[#707668] focus:outline-none focus:ring-2 focus:ring-[#81887A]/30 focus:ring-offset-2 shrink-0 transition-colors"
           >
             + Add Review

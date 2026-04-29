@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react'
-import { Routes, Route, Navigate, useParams } from 'react-router-dom'
+import { Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom'
 import { BookingProvider } from './context/BookingContext'
 import BookingProviderLayout from './layouts/BookingProviderLayout'
 import ScrollToTop from './components/ScrollToTop'
@@ -41,7 +41,6 @@ const CabinEdit = lazy(() => import('./pages/admin/CabinEdit'))
 const CabinTypesList = lazy(() => import('./pages/admin/CabinTypesList'))
 const CabinTypeEdit = lazy(() => import('./pages/admin/CabinTypeEdit'))
 const ReviewsList = lazy(() => import('./pages/admin/ReviewsList'))
-const ReviewEdit = lazy(() => import('./pages/admin/ReviewEdit'))
 const PromoCodesList = lazy(() => import('./pages/admin/PromoCodesList'))
 const OpsDashboard = lazy(() => import('./pages/ops/OpsDashboard'))
 const OpsCalendarIndex = lazy(() => import('./pages/ops/calendar/OpsCalendarIndex'))
@@ -89,6 +88,16 @@ const AdminBookingDetailRedirect = () => {
 const AdminReviewDetailRedirect = () => {
   const { id } = useParams()
   return <Navigate to={`/ops/reviews?reviewId=${id}`} replace />
+}
+
+const AdminReviewCreateRedirect = () => {
+  const location = useLocation()
+  const sourceParams = new URLSearchParams(location.search)
+  const nextParams = new URLSearchParams()
+  nextParams.set('create', '1')
+  const cabinId = sourceParams.get('cabinId')
+  if (cabinId) nextParams.set('cabinId', cabinId)
+  return <Navigate to={`/ops/reviews?${nextParams.toString()}`} replace />
 }
 
 function App() {
@@ -171,7 +180,7 @@ function App() {
               <Route path="/admin/cabin-types" element={<CabinTypesList />} />
               <Route path="/admin/cabin-types/:id" element={<CabinTypeEdit />} />
               <Route path="/admin/reviews" element={<Navigate to="/ops/reviews" replace />} />
-              <Route path="/admin/reviews/new" element={<ReviewEdit />} />
+              <Route path="/admin/reviews/new" element={<AdminReviewCreateRedirect />} />
               <Route path="/admin/reviews/:id" element={<AdminReviewDetailRedirect />} />
               <Route path="/admin/promo-codes" element={<PromoCodesList />} />
             </Route>

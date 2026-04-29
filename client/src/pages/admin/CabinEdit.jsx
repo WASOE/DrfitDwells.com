@@ -2359,7 +2359,7 @@ const CabinEdit = () => {
                 <div className="text-center py-8">
                   <p className="text-gray-500">No reviews found for this cabin.</p>
                   <button
-                    onClick={() => navigate(`/admin/reviews/new?cabinId=${id}`)}
+                    onClick={() => navigate(`/ops/reviews?create=1&cabinId=${id}`)}
                     className="mt-4 text-[#81887A] hover:text-[#707668] text-sm font-medium"
                   >
                     + Add Review
