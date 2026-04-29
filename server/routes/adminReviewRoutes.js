@@ -7,7 +7,8 @@ const CabinType = require('../models/CabinType');
 const { adminModuleWriteGate } = require('../middleware/adminModuleCutoverEnforcement');
 const {
   listReviewsForModeration,
-  recalculateCabinStats
+  recalculateCabinStats,
+  applyReviewModeratorUpdate
 } = require('../services/reviews/reviewModerationService');
 
 const router = express.Router();
@@ -289,95 +290,36 @@ router.patch('/:id', [
       });
     }
 
-    const review = await Review.findById(req.params.id);
-    if (!review) {
-      return res.status(404).json({
-        success: false,
-        message: 'Review not found'
-      });
-    }
-
-    // Check if locked and trying to edit text
-    const isUnlocking = req.body.locked === false || req.body.locked === 'false';
-    if (review.locked && req.body.text && !isUnlocking) {
-      return res.status(403).json({
-        success: false,
-        code: 'REVIEW_LOCKED',
-        message: 'Review is locked. Set locked to false to edit the text.'
-      });
-    }
-
     const adminIdentity = getAdminIdentity(req);
-    const updateFields = {};
-
-    // Normalize and set editable fields
-    if (req.body.rating !== undefined) {
-      const ratingNum = Number(req.body.rating);
-      if (!(ratingNum >= 1 && ratingNum <= 5)) {
-        return res.status(400).json({
-          success: false,
-          code: 'VALIDATION',
-          message: 'rating must be between 1 and 5'
-        });
-      }
-      updateFields.rating = ratingNum;
-    }
-    if (req.body.text !== undefined) updateFields.text = sanitizeHtml(req.body.text.trim());
-    if (req.body.reviewerName !== undefined) {
-      const { sanitizeName } = require('../utils/nameUtils');
-      const normalized = sanitizeName(String(req.body.reviewerName).trim());
-      updateFields.reviewerName = normalized || null; // Store null instead of empty string
-    }
-    if (req.body.reviewerId !== undefined) updateFields.reviewerId = String(req.body.reviewerId).trim() || null;
-    if (req.body.reviewHighlight !== undefined) updateFields.reviewHighlight = sanitizeHtml(String(req.body.reviewHighlight).trim()) || null;
-    if (req.body.highlightType !== undefined) updateFields.highlightType = req.body.highlightType || null;
-    if (req.body.language !== undefined) updateFields.language = req.body.language;
-    if (req.body.status !== undefined) {
-      const normalizedStatus = String(req.body.status).toLowerCase();
-      if (!['approved', 'pending', 'hidden'].includes(normalizedStatus)) {
-        return res.status(400).json({
-          success: false,
-          code: 'VALIDATION',
-          message: 'status must be one of: approved, pending, hidden'
-        });
-      }
-      updateFields.status = normalizedStatus;
-    }
-    if (req.body.pinned !== undefined) {
-      updateFields.pinned = req.body.pinned === true || req.body.pinned === 'true';
-    }
-    if (req.body.locked !== undefined) {
-      updateFields.locked = req.body.locked === true || req.body.locked === 'true';
-    }
-    if (req.body.moderationNotes !== undefined) updateFields.moderationNotes = req.body.moderationNotes;
-
-    // Owner response
-    if (req.body.ownerResponse) {
-      updateFields.ownerResponse = {
-        text: sanitizeHtml(req.body.ownerResponse.text || ''),
-        respondedBy: sanitizeHtml(req.body.ownerResponse.respondedBy || adminIdentity),
-        respondedAt: new Date()
-      };
-    }
-
-    // Never change externalId for imported reviews
-    // Never change source or raw
-
-    // Update timestamps
-    updateFields.editedAt = new Date();
-    updateFields.editedBy = adminIdentity;
-
-    Object.assign(review, updateFields);
-    await review.save();
-
-    // Recalculate cabin stats if rating or status changed
+    let review;
     try {
-      if (req.body.rating !== undefined || req.body.status !== undefined) {
-        await recalculateCabinStats(review.cabinId);
+      review = await applyReviewModeratorUpdate({
+        reviewId: req.params.id,
+        body: req.body,
+        ctx: { editedBy: adminIdentity }
+      });
+    } catch (serviceErr) {
+      if (serviceErr.code === 'NOT_FOUND') {
+        return res.status(404).json({
+          success: false,
+          message: serviceErr.message
+        });
       }
-    } catch (recalcError) {
-      console.error('Recalc stats error (non-fatal):', recalcError);
-      // Don't fail the review update if stats recalculation fails
+      if (serviceErr.code === 'REVIEW_LOCKED') {
+        return res.status(403).json({
+          success: false,
+          code: serviceErr.code,
+          message: serviceErr.message
+        });
+      }
+      if (serviceErr.code === 'VALIDATION') {
+        return res.status(serviceErr.status || 400).json({
+          success: false,
+          code: 'VALIDATION',
+          message: serviceErr.message
+        });
+      }
+      throw serviceErr;
     }
 
     res.json({
@@ -387,8 +329,7 @@ router.patch('/:id', [
     });
   } catch (error) {
     console.error('Update review error:', error);
-    
-    // Handle validation errors
+
     if (error.name === 'ValidationError') {
       return res.status(400).json({
         success: false,

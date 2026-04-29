@@ -37,6 +37,7 @@ const opsReadAPI = {
   payoutDetail: (id) => api.get(`/ops/payments/payouts/${id}`, { headers: authHeaders() }),
   payoutReconciliationSummary: () => api.get('/ops/payments/payouts/reconciliation-summary', { headers: authHeaders() }),
   reviews: (params) => api.get('/ops/reviews', { params, headers: authHeaders() }),
+  review: (id) => api.get(`/ops/reviews/${id}`, { headers: authHeaders() }),
   communicationsOversight: () => api.get('/ops/communications/oversight', { headers: authHeaders() }),
   manualReview: (params) => api.get('/ops/manual-review', { params, headers: authHeaders() }),
   readinessSummary: () => api.get('/ops/readiness/summary', { headers: authHeaders() }),
@@ -93,6 +94,8 @@ const opsWriteAPI = {
     api.delete(`/ops/cabins/${id}/images/${imageId}`, { headers: authHeaders() }),
   updateReviewStatus: (reviewId, status) =>
     api.patch(`/ops/reviews/${reviewId}/status`, { status }, { headers: authHeaders() }),
+  updateReview: (reviewId, payload) =>
+    api.patch(`/ops/reviews/${reviewId}`, payload, { headers: authHeaders() }),
   patchUnitChannelLabel: (unitId, airbnbListingLabel) =>
     api.patch(`/ops/cabins/units/${unitId}`, { airbnbListingLabel }, { headers: authHeaders() })
 };

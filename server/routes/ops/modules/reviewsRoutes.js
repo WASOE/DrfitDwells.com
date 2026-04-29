@@ -4,8 +4,23 @@ const { validateId } = require('../../../middleware/validateId');
 const { adminModuleWriteGate } = require('../../../middleware/adminModuleCutoverEnforcement');
 const {
   listReviewsForModeration,
-  updateReviewModerationStatus
+  updateReviewModerationStatus,
+  getReviewForModeration,
+  applyReviewModeratorUpdate
 } = require('../../../services/reviews/reviewModerationService');
+
+const patchReviewValidators = [
+  body('rating').optional().isInt({ min: 1, max: 5 }),
+  body('text').optional().trim().isLength({ max: 2000 }),
+  body('reviewerName').optional().trim().isLength({ max: 100 }),
+  body('reviewerId').optional().trim().isLength({ max: 100 }),
+  body('reviewHighlight').optional().trim().isLength({ max: 100 }),
+  body('highlightType').optional().isIn(['LENGTH_OF_STAY', 'TYPE_OF_TRIP']),
+  body('language').optional().trim().isLength({ max: 10 }),
+  body('status').optional().isIn(['approved', 'pending', 'hidden']),
+  body('pinned').optional().isBoolean(),
+  body('locked').optional().isBoolean()
+];
 
 const router = express.Router();
 
@@ -66,6 +81,22 @@ router.get('/', async (req, res) => {
   }
 });
 
+router.get('/:id', validateId('id'), async (req, res) => {
+  try {
+    const review = await getReviewForModeration(req.params.id);
+    return res.json({ success: true, data: { review } });
+  } catch (error) {
+    if (error.code === 'NOT_FOUND') {
+      return res.status(404).json({ success: false, message: error.message });
+    }
+    if (error.code === 'VALIDATION') {
+      return res.status(error.status || 400).json({ success: false, message: error.message });
+    }
+    console.error('OPS review get error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 router.patch(
   '/:id/status',
   validateId('id'),
@@ -111,6 +142,68 @@ router.patch(
       return res.status(500).json({
         success: false,
         message: error?.message || 'Unable to update review status'
+      });
+    }
+  }
+);
+
+router.patch(
+  '/:id',
+  validateId('id'),
+  patchReviewValidators,
+  adminModuleWriteGate('reviews_communications'),
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Validation failed',
+          errors: errors.array()
+        });
+      }
+
+      const review = await applyReviewModeratorUpdate({
+        reviewId: req.params.id,
+        body: req.body,
+        ctx: { editedBy: getOpsIdentity(req) }
+      });
+
+      return res.json({
+        success: true,
+        message: 'Review updated successfully',
+        data: { review }
+      });
+    } catch (error) {
+      if (error.code === 'NOT_FOUND') {
+        return res.status(404).json({ success: false, message: error.message });
+      }
+      if (error.code === 'REVIEW_LOCKED') {
+        return res.status(403).json({
+          success: false,
+          code: error.code,
+          message: error.message
+        });
+      }
+      if (error.code === 'VALIDATION') {
+        return res.status(error.status || 400).json({
+          success: false,
+          code: 'VALIDATION',
+          message: error.message
+        });
+      }
+      if (error.name === 'ValidationError') {
+        return res.status(400).json({
+          success: false,
+          code: 'VALIDATION',
+          message: 'Validation failed',
+          details: error.message
+        });
+      }
+      console.error('OPS review patch error:', error);
+      return res.status(400).json({
+        success: false,
+        message: error?.message || 'Unable to update review'
       });
     }
   }

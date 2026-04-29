@@ -9,6 +9,18 @@ const {
   resolveReviewOwnerObjectIds,
   softDeleteOrCondition
 } = require('../reviewOwnershipService');
+const { sanitizeName } = require('../../utils/nameUtils');
+
+/** Basic XSS prevention — aligned with admin review routes. */
+function sanitizeHtml(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
+    .replace(/\//g, '&#x2F;');
+}
 
 /**
  * Recalculate aggregated review stats for the entity backing `entityId` (cabin or type).
@@ -232,8 +244,135 @@ async function updateReviewModerationStatus({ reviewId, status, ctx = {} }) {
   return review;
 }
 
+/**
+ * Single review for moderation UI (admin-equivalent populate).
+ * @param {string} reviewId
+ * @returns {Promise<object>} lean review with populated cabinId (name, location)
+ */
+async function getReviewForModeration(reviewId) {
+  if (!mongoose.Types.ObjectId.isValid(String(reviewId))) {
+    const err = new Error('Invalid review id');
+    err.code = 'VALIDATION';
+    err.status = 400;
+    throw err;
+  }
+
+  const review = await Review.findById(reviewId).populate('cabinId', 'name location').lean();
+
+  if (!review) {
+    const err = new Error('Review not found');
+    err.code = 'NOT_FOUND';
+    err.status = 404;
+    throw err;
+  }
+
+  return review;
+}
+
+/**
+ * Apply moderator PATCH payload — same behavior as legacy PATCH /api/admin/reviews/:id.
+ * @param {object} params
+ * @param {string} params.reviewId
+ * @param {object} params.body — raw request body (validated upstream when applicable)
+ * @param {object} [params.ctx]
+ * @param {string} [params.ctx.editedBy]
+ * @returns {Promise<import('mongoose').Document>}
+ */
+async function applyReviewModeratorUpdate({ reviewId, body = {}, ctx = {} }) {
+  if (!mongoose.Types.ObjectId.isValid(String(reviewId))) {
+    const err = new Error('Invalid review id');
+    err.code = 'VALIDATION';
+    err.status = 400;
+    throw err;
+  }
+
+  const review = await Review.findById(reviewId);
+  if (!review) {
+    const err = new Error('Review not found');
+    err.code = 'NOT_FOUND';
+    err.status = 404;
+    throw err;
+  }
+
+  const isUnlocking = body.locked === false || body.locked === 'false';
+  if (review.locked && body.text && !isUnlocking) {
+    const err = new Error('Review is locked. Set locked to false to edit the text.');
+    err.code = 'REVIEW_LOCKED';
+    err.status = 403;
+    throw err;
+  }
+
+  const adminIdentity = ctx.editedBy || ctx.identity || process.env.ADMIN_EMAIL || 'admin';
+  const updateFields = {};
+
+  if (body.rating !== undefined) {
+    const ratingNum = Number(body.rating);
+    if (!(ratingNum >= 1 && ratingNum <= 5)) {
+      const err = new Error('rating must be between 1 and 5');
+      err.code = 'VALIDATION';
+      err.status = 400;
+      throw err;
+    }
+    updateFields.rating = ratingNum;
+  }
+  if (body.text !== undefined) updateFields.text = sanitizeHtml(String(body.text).trim());
+  if (body.reviewerName !== undefined) {
+    const normalized = sanitizeName(String(body.reviewerName).trim());
+    updateFields.reviewerName = normalized || null;
+  }
+  if (body.reviewerId !== undefined) updateFields.reviewerId = String(body.reviewerId).trim() || null;
+  if (body.reviewHighlight !== undefined) {
+    updateFields.reviewHighlight = sanitizeHtml(String(body.reviewHighlight).trim()) || null;
+  }
+  if (body.highlightType !== undefined) updateFields.highlightType = body.highlightType || null;
+  if (body.language !== undefined) updateFields.language = body.language;
+  if (body.status !== undefined) {
+    const normalizedStatus = String(body.status).toLowerCase();
+    if (!['approved', 'pending', 'hidden'].includes(normalizedStatus)) {
+      const err = new Error('status must be one of: approved, pending, hidden');
+      err.code = 'VALIDATION';
+      err.status = 400;
+      throw err;
+    }
+    updateFields.status = normalizedStatus;
+  }
+  if (body.pinned !== undefined) {
+    updateFields.pinned = body.pinned === true || body.pinned === 'true';
+  }
+  if (body.locked !== undefined) {
+    updateFields.locked = body.locked === true || body.locked === 'true';
+  }
+  if (body.moderationNotes !== undefined) updateFields.moderationNotes = body.moderationNotes;
+
+  if (body.ownerResponse) {
+    updateFields.ownerResponse = {
+      text: sanitizeHtml(body.ownerResponse.text || ''),
+      respondedBy: sanitizeHtml(body.ownerResponse.respondedBy || adminIdentity),
+      respondedAt: new Date()
+    };
+  }
+
+  updateFields.editedAt = new Date();
+  updateFields.editedBy = adminIdentity;
+
+  Object.assign(review, updateFields);
+  await review.save();
+
+  try {
+    if (body.rating !== undefined || body.status !== undefined) {
+      await recalculateCabinStats(review.cabinId);
+    }
+  } catch (recalcError) {
+    console.error('Recalc stats error (non-fatal):', recalcError);
+  }
+
+  return review;
+}
+
 module.exports = {
   recalculateCabinStats,
   listReviewsForModeration,
-  updateReviewModerationStatus
+  updateReviewModerationStatus,
+  getReviewForModeration,
+  applyReviewModeratorUpdate
 };

@@ -8,6 +8,12 @@ const STATUS_OPTIONS = [
   { value: 'hidden', label: 'Hidden' }
 ];
 
+const EDIT_STATUS_OPTIONS = [
+  { value: 'approved', label: 'Approved' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'hidden', label: 'Hidden' }
+];
+
 function formatDate(iso) {
   if (!iso) return '—';
   try {
@@ -20,6 +26,20 @@ function formatDate(iso) {
   }
 }
 
+function emptyEditForm() {
+  return {
+    rating: 5,
+    text: '',
+    reviewerName: 'Guest',
+    language: 'en',
+    status: 'approved',
+    pinned: false,
+    locked: false,
+    moderationNotes: '',
+    ownerResponse: { text: '', respondedBy: 'Jose' }
+  };
+}
+
 export default function OpsReviews() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -29,6 +49,14 @@ export default function OpsReviews() {
   const [searchInput, setSearchInput] = useState('');
   const [rowAction, setRowAction] = useState(null);
   const [banner, setBanner] = useState({ type: '', message: '' });
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [editReviewId, setEditReviewId] = useState(null);
+  const [detailReview, setDetailReview] = useState(null);
+  const [editForm, setEditForm] = useState(emptyEditForm);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -76,6 +104,115 @@ export default function OpsReviews() {
     }
   };
 
+  const closeEdit = () => {
+    setEditOpen(false);
+    setEditReviewId(null);
+    setDetailReview(null);
+    setEditForm(emptyEditForm());
+    setEditError('');
+    setEditLoading(false);
+  };
+
+  const openEdit = async (reviewId) => {
+    setEditReviewId(reviewId);
+    setEditOpen(true);
+    setEditError('');
+    setDetailReview(null);
+    setEditForm(emptyEditForm());
+    setEditLoading(true);
+    try {
+      const resp = await opsReadAPI.review(reviewId);
+      const review = resp.data?.data?.review;
+      if (!review) {
+        setEditError('Review not found');
+        return;
+      }
+      setDetailReview(review);
+      setEditForm({
+        rating: review.rating ?? 5,
+        text: review.text || '',
+        reviewerName: review.reviewerName?.trim() ? review.reviewerName : 'Guest',
+        language: review.language || 'en',
+        status: review.status || 'approved',
+        pinned: Boolean(review.pinned),
+        locked: Boolean(review.locked),
+        moderationNotes: review.moderationNotes || '',
+        ownerResponse: {
+          text: review.ownerResponse?.text || '',
+          respondedBy: review.ownerResponse?.respondedBy?.trim() || 'Jose'
+        }
+      });
+    } catch (err) {
+      setEditError(err?.response?.data?.message || 'Failed to load review');
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  const handleEditField = (field, value) => {
+    if (field.includes('.')) {
+      const [parent, child] = field.split('.');
+      setEditForm((prev) => ({
+        ...prev,
+        [parent]: { ...prev[parent], [child]: value }
+      }));
+    } else {
+      setEditForm((prev) => ({ ...prev, [field]: value }));
+    }
+  };
+
+  const handleEditSave = async () => {
+    if (!editReviewId || !detailReview) return;
+    setEditError('');
+    setEditSaving(true);
+    try {
+      if (!editForm.text.trim()) {
+        setEditError('Review text is required');
+        return;
+      }
+      if (detailReview.locked && editForm.text.trim() !== detailReview.text && editForm.locked) {
+        setEditError('Cannot edit text while review is locked. Uncheck “Locked” to edit the text.');
+        return;
+      }
+
+      const payload = {
+        rating: Number(editForm.rating),
+        text: editForm.text.trim(),
+        reviewerName: editForm.reviewerName.trim(),
+        language: editForm.language,
+        status: String(editForm.status).toLowerCase(),
+        pinned: editForm.pinned,
+        locked: editForm.locked,
+        moderationNotes: editForm.moderationNotes
+      };
+      if (editForm.ownerResponse.text.trim()) {
+        payload.ownerResponse = {
+          text: editForm.ownerResponse.text.trim(),
+          respondedBy: editForm.ownerResponse.respondedBy.trim() || 'Jose'
+        };
+      }
+
+      await opsWriteAPI.updateReview(editReviewId, payload);
+      setBanner({ type: 'success', message: 'Review saved.' });
+      closeEdit();
+      await load();
+    } catch (err) {
+      const msg =
+        err?.response?.data?.message ||
+        err?.response?.data?.code ||
+        err?.response?.data?.errors?.[0]?.msg ||
+        'Save failed';
+      setEditError(msg);
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const textLocked =
+    Boolean(detailReview?.locked) && Boolean(editForm.locked);
+
+  const cabin = detailReview?.cabinId && typeof detailReview.cabinId === 'object' ? detailReview.cabinId : null;
+
   if (loading && !data) {
     return <div className="text-sm text-gray-500 max-w-5xl mx-auto px-4 py-6">Loading reviews...</div>;
   }
@@ -86,7 +223,7 @@ export default function OpsReviews() {
         <h2 className="text-lg md:text-xl font-semibold text-gray-900">Reviews moderation</h2>
         <p className="text-sm text-gray-500 mt-1 max-w-2xl">
           Approve or hide guest reviews. Same rules as admin reviews (cabins stats refresh after status
-          changes).
+          changes). Edit opens the full moderator form.
         </p>
       </section>
 
@@ -211,6 +348,13 @@ export default function OpsReviews() {
               <div className="flex flex-wrap gap-2 pt-1 border-t border-gray-100">
                 <button
                   type="button"
+                  onClick={() => openEdit(r.reviewId)}
+                  className="px-3 py-1.5 text-sm rounded-lg border border-[#81887A] text-gray-900 hover:bg-gray-50"
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
                   disabled={rowAction !== null || loading || r.status === 'approved'}
                   onClick={() => handleModeration(r.reviewId, 'approved')}
                   className="px-3 py-1.5 text-sm rounded-lg bg-green-700 text-white hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -233,6 +377,238 @@ export default function OpsReviews() {
           ) : null}
         </div>
       </section>
+
+      {editOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="ops-review-edit-title"
+        >
+          <div className="bg-white rounded-xl shadow-xl border border-gray-200 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 md:px-6 flex flex-wrap items-center justify-between gap-3 z-10">
+              <div>
+                <h3 id="ops-review-edit-title" className="text-lg font-semibold text-gray-900">
+                  Edit review
+                </h3>
+                {editReviewId ? (
+                  <p className="text-xs text-gray-500 font-mono mt-0.5">{editReviewId}</p>
+                ) : null}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={closeEdit}
+                  className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-800 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={editSaving || editLoading || !detailReview}
+                  onClick={handleEditSave}
+                  className="px-3 py-2 text-sm rounded-lg bg-[#81887A] text-white hover:bg-[#707668] disabled:opacity-50"
+                >
+                  {editSaving ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 md:p-6 space-y-4">
+              {editLoading ? (
+                <div className="text-sm text-gray-600 py-8 text-center">Loading review…</div>
+              ) : null}
+
+              {editError ? (
+                <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">{editError}</div>
+              ) : null}
+
+              {!editLoading && detailReview ? (
+                <>
+                  {detailReview.locked && editForm.locked ? (
+                    <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900">
+                      <p className="font-medium">Review is locked</p>
+                      <p className="mt-1">
+                        Imported reviews may lock text to prevent accidental edits. Uncheck “Locked” below to
+                        edit the review text.
+                      </p>
+                      <button
+                        type="button"
+                        className="mt-2 text-sm font-medium underline text-yellow-950"
+                        onClick={() => handleEditField('locked', false)}
+                      >
+                        Unlock to edit text →
+                      </button>
+                    </div>
+                  ) : null}
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                      <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Cabin</div>
+                      <p className="text-sm text-gray-900 mt-1">
+                        {cabin?.name ?? '—'}
+                        {cabin?.location ? (
+                          <span className="text-gray-600">
+                            {' '}
+                            · {typeof cabin.location === 'string' ? cabin.location : cabin.location?.label || ''}
+                          </span>
+                        ) : null}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Rating</label>
+                      <select
+                        value={editForm.rating}
+                        onChange={(e) => handleEditField('rating', parseInt(e.target.value, 10))}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                      >
+                        {[1, 2, 3, 4, 5].map((n) => (
+                          <option key={n} value={n}>
+                            {n} ★
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
+                      <select
+                        value={editForm.status}
+                        onChange={(e) => handleEditField('status', e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                      >
+                        {EDIT_STATUS_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Reviewer name</label>
+                      <input
+                        type="text"
+                        value={editForm.reviewerName}
+                        onChange={(e) => handleEditField('reviewerName', e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Language</label>
+                      <input
+                        type="text"
+                        value={editForm.language}
+                        onChange={(e) => handleEditField('language', e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div className="md:col-span-2 flex flex-col gap-3 sm:flex-row sm:items-center">
+                      <label className="inline-flex items-center gap-2 text-sm text-gray-800">
+                        <input
+                          type="checkbox"
+                          checked={editForm.pinned}
+                          onChange={(e) => handleEditField('pinned', e.target.checked)}
+                          className="rounded border-gray-300"
+                        />
+                        Pinned
+                      </label>
+                      <label className="inline-flex items-start gap-2 text-sm text-gray-800">
+                        <input
+                          type="checkbox"
+                          checked={editForm.locked}
+                          onChange={(e) => handleEditField('locked', e.target.checked)}
+                          className="rounded border-gray-300 mt-0.5"
+                        />
+                        <span>
+                          Locked
+                          <span className="block text-xs text-gray-500 font-normal">
+                            Prevents editing review text until unchecked.
+                          </span>
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Review text</label>
+                    <textarea
+                      value={editForm.text}
+                      onChange={(e) => handleEditField('text', e.target.value)}
+                      disabled={textLocked}
+                      rows={6}
+                      className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm ${
+                        textLocked ? 'bg-gray-100 cursor-not-allowed' : ''
+                      }`}
+                    />
+                    {detailReview.source === 'airbnb' ? (
+                      <p className="text-xs text-gray-500 mt-1">Source: imported from {detailReview.source}</p>
+                    ) : null}
+                  </div>
+
+                  <div className="border-t border-gray-100 pt-4 space-y-3">
+                    <h4 className="text-sm font-semibold text-gray-900">Owner response</h4>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Response text</label>
+                      <textarea
+                        value={editForm.ownerResponse.text}
+                        onChange={(e) => handleEditField('ownerResponse.text', e.target.value)}
+                        rows={3}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Responded by</label>
+                      <input
+                        type="text"
+                        value={editForm.ownerResponse.respondedBy}
+                        onChange={(e) => handleEditField('ownerResponse.respondedBy', e.target.value)}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm max-w-md"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Moderation notes (internal)
+                    </label>
+                    <textarea
+                      value={editForm.moderationNotes}
+                      onChange={(e) => handleEditField('moderationNotes', e.target.value)}
+                      rows={3}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    />
+                  </div>
+
+                  <div className="border-t border-gray-100 pt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <span className="text-gray-500">Source</span>
+                      <div className="text-gray-900">{detailReview.source ?? '—'}</div>
+                    </div>
+                    {detailReview.externalId ? (
+                      <div>
+                        <span className="text-gray-500">External ID</span>
+                        <div className="text-gray-900 font-mono text-xs break-all">{detailReview.externalId}</div>
+                      </div>
+                    ) : null}
+                    <div>
+                      <span className="text-gray-500">Original date</span>
+                      <div className="text-gray-900">{formatDate(detailReview.createdAtSource)}</div>
+                    </div>
+                    {detailReview.editedAt ? (
+                      <div className="sm:col-span-2">
+                        <span className="text-gray-500">Last edited</span>
+                        <div className="text-gray-900">
+                          {formatDate(detailReview.editedAt)}
+                          {detailReview.editedBy ? ` · ${detailReview.editedBy}` : ''}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
