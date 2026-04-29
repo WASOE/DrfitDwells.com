@@ -49,6 +49,7 @@ const OpsReservations = lazy(() => import('./pages/ops/OpsReservations'))
 const OpsReservationDetail = lazy(() => import('./pages/ops/OpsReservationDetail'))
 const OpsPayments = lazy(() => import('./pages/ops/OpsPayments'))
 const OpsSyncCenter = lazy(() => import('./pages/ops/OpsSyncCenter'))
+const OpsPromoCodes = lazy(() => import('./pages/ops/OpsPromoCodes'))
 const OpsCabinsDetail = lazy(() => import('./pages/ops/OpsCabins'))
 const OpsCabinsList = lazy(() => import('./pages/ops/OpsCabins').then((m) => ({ default: m.OpsCabinsList })))
 const OpsReviews = lazy(() => import('./pages/ops/OpsReviews'))
@@ -205,6 +206,7 @@ function App() {
               <Route path="/ops/reservations" element={<OpsReservations />} />
               <Route path="/ops/reservations/:id" element={<OpsReservationDetail />} />
               <Route path="/ops/payments" element={<OpsPayments />} />
+              <Route path="/ops/promo-codes" element={<OpsPromoCodes />} />
               <Route path="/ops/sync" element={<OpsSyncCenter />} />
               <Route path="/ops/cabins" element={<OpsCabinsList />} />
               <Route path="/ops/cabins/:id" element={<OpsCabinsDetail />} />

@@ -36,6 +36,7 @@ const opsReadAPI = {
   payoutsList: (params) => api.get('/ops/payments/payouts', { params, headers: authHeaders() }),
   payoutDetail: (id) => api.get(`/ops/payments/payouts/${id}`, { headers: authHeaders() }),
   payoutReconciliationSummary: () => api.get('/ops/payments/payouts/reconciliation-summary', { headers: authHeaders() }),
+  promoCodes: () => api.get('/ops/promo-codes', { headers: authHeaders() }),
   reviews: (params) => api.get('/ops/reviews', { params, headers: authHeaders() }),
   review: (id) => api.get(`/ops/reviews/${id}`, { headers: authHeaders() }),
   communicationsOversight: () => api.get('/ops/communications/oversight', { headers: authHeaders() }),
@@ -92,6 +93,10 @@ const opsWriteAPI = {
     api.patch(`/ops/cabins/${id}/images/${imageId}`, payload, { headers: authHeaders() }),
   deleteCabinImage: (id, imageId) =>
     api.delete(`/ops/cabins/${id}/images/${imageId}`, { headers: authHeaders() }),
+  createPromoCode: (payload) =>
+    api.post('/ops/promo-codes', payload, { headers: authHeaders() }),
+  updatePromoCode: (promoCodeId, payload) =>
+    api.patch(`/ops/promo-codes/${promoCodeId}`, payload, { headers: authHeaders() }),
   createReview: (payload) =>
     api.post('/ops/reviews', payload, { headers: authHeaders() }),
   deleteReview: (reviewId) =>

@@ -67,6 +67,7 @@ export default function OpsLayout() {
     { to: '/ops/calendar', label: 'Calendar' },
     { to: '/ops/reservations', label: 'Reservations' },
     { to: '/ops/payments', label: 'Payments' },
+    { to: '/ops/promo-codes', label: 'Promo codes' },
     { to: '/ops/sync', label: 'Sync' },
     { to: '/ops/cabins', label: 'Cabins' },
     { to: '/ops/reviews', label: 'Reviews' },
