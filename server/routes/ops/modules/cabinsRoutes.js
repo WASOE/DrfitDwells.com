@@ -5,7 +5,9 @@ const fs = require('fs');
 const Unit = require('../../../models/Unit');
 const { upload, validateMagicBytes } = require('../../../middleware/upload');
 const { validateId } = require('../../../middleware/validateId');
+const { adminModuleWriteGate } = require('../../../middleware/adminModuleCutoverEnforcement');
 const { getCabinsListReadModel, getCabinDetailReadModel } = require('../../../services/ops/readModels/cabinsReadModel');
+const { updateCabinFromAdminPayload } = require('../../../services/cabins/cabinManagementService');
 const {
   uploadCabinImage,
   reorderCabinImages,
@@ -15,6 +17,14 @@ const {
 } = require('../../../services/cabins/cabinMediaService');
 
 const router = express.Router();
+const OPS_CABIN_CONTENT_ALLOWED_FIELDS = new Set([
+  'name',
+  'description',
+  'hostName',
+  'avgResponseTimeHours',
+  'highlights',
+  'badges'
+]);
 
 router.get('/', async (req, res) => {
   try {
@@ -53,6 +63,34 @@ router.patch('/units/:unitId', async (req, res) => {
       success: true,
       data: { unitId: String(unitId), airbnbListingLabel: unit.airbnbListingLabel || null }
     });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.patch('/:id/content', validateId('id'), adminModuleWriteGate('cabins'), async (req, res) => {
+  try {
+    const payload = req.body && typeof req.body === 'object' ? req.body : {};
+    const incomingKeys = Object.keys(payload);
+    if (Object.prototype.hasOwnProperty.call(payload, 'experiences')) {
+      return res.status(400).json({
+        success: false,
+        message: 'experiences are not editable in this content slice'
+      });
+    }
+    const unknownKeys = incomingKeys.filter((key) => !OPS_CABIN_CONTENT_ALLOWED_FIELDS.has(key));
+    if (unknownKeys.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Unsupported content fields: ${unknownKeys.join(', ')}`
+      });
+    }
+
+    const result = await updateCabinFromAdminPayload(req.params.id, payload, {});
+    if (!result.ok) {
+      return res.status(result.status).json(result.payload);
+    }
+    return res.status(result.status).json(result.payload);
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }

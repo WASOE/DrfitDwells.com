@@ -91,6 +91,8 @@ const opsWriteAPI = {
     api.patch(`/ops/cabins/${id}/images/reorder`, { order }, { headers: authHeaders() }),
   updateCabinImage: (id, imageId, payload) =>
     api.patch(`/ops/cabins/${id}/images/${imageId}`, payload, { headers: authHeaders() }),
+  updateCabinContent: (id, payload) =>
+    api.patch(`/ops/cabins/${id}/content`, payload, { headers: authHeaders() }),
   deleteCabinImage: (id, imageId) =>
     api.delete(`/ops/cabins/${id}/images/${imageId}`, { headers: authHeaders() }),
   createPromoCode: (payload) =>
