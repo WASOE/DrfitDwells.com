@@ -602,6 +602,10 @@ export default function OpsCabinDetail() {
   const [arrivalEditBusy, setArrivalEditBusy] = useState(false);
   const [arrivalEditError, setArrivalEditError] = useState('');
   const [arrivalEditSuccess, setArrivalEditSuccess] = useState('');
+  const [cutoffsEditOpen, setCutoffsEditOpen] = useState(false);
+  const [cutoffsEditBusy, setCutoffsEditBusy] = useState(false);
+  const [cutoffsEditError, setCutoffsEditError] = useState('');
+  const [cutoffsEditSuccess, setCutoffsEditSuccess] = useState('');
   const [contentEditForm, setContentEditForm] = useState({
     name: '',
     description: '',
@@ -629,6 +633,7 @@ export default function OpsCabinDetail() {
     emergencyContact: '',
     packingListText: ''
   });
+  const [cutoffsEditRows, setCutoffsEditRows] = useState([]);
   const detailRequestSeq = useRef(0);
 
   const loadDetail = useCallback(async () => {
@@ -805,6 +810,53 @@ export default function OpsCabinDetail() {
       setArrivalEditError(err?.response?.data?.message || 'Failed to update arrival details');
     } finally {
       setArrivalEditBusy(false);
+    }
+  };
+
+  const openCutoffsEdit = () => {
+    const rows = Array.isArray(op.transportCutoffs)
+      ? op.transportCutoffs.map((item) => ({
+          type: item?.type ? String(item.type) : 'Horse',
+          lastDeparture: item?.lastDeparture ? String(item.lastDeparture) : '16:30'
+        }))
+      : [];
+    setCutoffsEditRows(rows);
+    setCutoffsEditError('');
+    setCutoffsEditSuccess('');
+    setCutoffsEditOpen(true);
+  };
+
+  const addCutoffRow = () => {
+    setCutoffsEditRows((prev) => [...prev, { type: 'Horse', lastDeparture: '16:30' }]);
+  };
+
+  const removeCutoffRow = (index) => {
+    setCutoffsEditRows((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const updateCutoffRow = (index, field, value) => {
+    setCutoffsEditRows((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
+  };
+
+  const saveCutoffsEdit = async () => {
+    setCutoffsEditBusy(true);
+    setCutoffsEditError('');
+    setCutoffsEditSuccess('');
+    try {
+      const payload = {
+        transportCutoffs: cutoffsEditRows.map((row) => ({
+          type: String(row.type || '').trim(),
+          lastDeparture: String(row.lastDeparture || '').trim()
+        }))
+      };
+      await opsWriteAPI.updateCabinTransportCutoffs(id, payload);
+      await loadDetail();
+      setCutoffsEditSuccess('Transport cutoffs updated.');
+      setCutoffsEditOpen(false);
+    } catch (err) {
+      setCutoffsEditError(err?.response?.data?.message || 'Failed to update transport cutoffs');
+    } finally {
+      setCutoffsEditBusy(false);
     }
   };
 
@@ -1269,6 +1321,17 @@ export default function OpsCabinDetail() {
       </div>
 
       <OpsReadOnlyDetailSection title="Transport">
+        <div className="flex items-center gap-2 mb-2">
+          <button
+            type="button"
+            onClick={openCutoffsEdit}
+            className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+          >
+            Edit cutoffs
+          </button>
+          {cutoffsEditSuccess ? <span className="text-xs text-green-700">{cutoffsEditSuccess}</span> : null}
+          {cutoffsEditError ? <span className="text-xs text-red-700">{cutoffsEditError}</span> : null}
+        </div>
         {Array.isArray(op.transportOptions) && op.transportOptions.length > 0 ? (
           <ul className="space-y-2 list-none pl-0">
             {op.transportOptions.map((t, i) => (
@@ -1298,6 +1361,76 @@ export default function OpsCabinDetail() {
           </div>
         ) : null}
       </OpsReadOnlyDetailSection>
+
+      {cutoffsEditOpen ? (
+        <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5 max-w-4xl mx-auto w-full">
+          <h3 className="text-sm font-semibold text-gray-900">Edit transport cutoffs</h3>
+          <div className="mt-3 space-y-2">
+            {cutoffsEditRows.map((row, index) => (
+              <div key={`cutoff-row-${index}`} className="flex flex-col md:flex-row md:items-center gap-2 border border-gray-100 rounded-md p-2">
+                <select
+                  value={row.type}
+                  onChange={(e) => updateCutoffRow(index, 'type', e.target.value)}
+                  className="border border-gray-200 rounded-md px-2 py-1.5 text-sm w-full md:w-44"
+                >
+                  <option value="Horse">Horse</option>
+                  <option value="ATV">ATV</option>
+                  <option value="Jeep">Jeep</option>
+                  <option value="Hike">Hike</option>
+                  <option value="Boat">Boat</option>
+                  <option value="Helicopter">Helicopter</option>
+                </select>
+                <input
+                  type="time"
+                  value={row.lastDeparture}
+                  onChange={(e) => updateCutoffRow(index, 'lastDeparture', e.target.value)}
+                  className="border border-gray-200 rounded-md px-2 py-1.5 text-sm w-full md:w-40"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeCutoffRow(index)}
+                  className="text-xs px-2.5 py-1.5 rounded border border-red-200 text-red-700 bg-white hover:bg-red-50 w-full md:w-auto"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+            {cutoffsEditRows.length === 0 ? (
+              <p className="text-xs text-gray-500">No cutoffs configured.</p>
+            ) : null}
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={addCutoffRow}
+              className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+              disabled={cutoffsEditBusy}
+            >
+              Add row
+            </button>
+            <button
+              type="button"
+              onClick={saveCutoffsEdit}
+              disabled={cutoffsEditBusy}
+              className="text-xs px-3 py-1.5 rounded-lg bg-[#81887A] text-white disabled:opacity-50"
+            >
+              {cutoffsEditBusy ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCutoffsEditOpen(false);
+                setCutoffsEditError('');
+              }}
+              disabled={cutoffsEditBusy}
+              className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            {cutoffsEditError ? <span className="text-xs text-red-700">{cutoffsEditError}</span> : null}
+          </div>
+        </section>
+      ) : null}
 
       <OpsReadOnlyDetailSection title="Highlights, badges &amp; experiences">
         <div>
