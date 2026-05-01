@@ -99,7 +99,7 @@ const CabinTypeEdit = () => {
       }
       if (response.status === 401) {
         localStorage.removeItem('adminToken');
-        navigate('/admin/login');
+        navigate('/login');
         return;
       }
       if (!response.ok) {
@@ -141,7 +141,7 @@ const CabinTypeEdit = () => {
 
         if (response.status === 401) {
           localStorage.removeItem('adminToken');
-          navigate('/admin/login');
+          navigate('/login');
           return;
         }
 
@@ -234,7 +234,7 @@ const CabinTypeEdit = () => {
 
       if (response.status === 401) {
         localStorage.removeItem('adminToken');
-        navigate('/admin/login');
+        navigate('/login');
         return;
       }
 

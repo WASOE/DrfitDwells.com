@@ -25,7 +25,7 @@ export default function CabinTypesList() {
         }
         if (response.status === 401) {
           localStorage.removeItem('adminToken');
-          navigate('/admin/login');
+          navigate('/login');
           return;
         }
         if (!response.ok) {

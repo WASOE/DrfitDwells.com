@@ -7,9 +7,10 @@ export default function AdminLayout() {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const location = useLocation();
+  const isLoginRoute = location.pathname === '/login' || location.pathname === '/admin/login';
 
   useEffect(() => {
-    if (location.pathname === '/admin/login') {
+    if (isLoginRoute) {
       setIsAuthenticated(true);
       setLoading(false);
       return;
@@ -44,7 +45,7 @@ export default function AdminLayout() {
 
     checkAuth();
     return () => { cancelled = true; };
-  }, [location.pathname]);
+  }, [isLoginRoute, location.pathname]);
 
   const developerNavEnabled = useMemo(() => {
     try {
@@ -58,21 +59,21 @@ export default function AdminLayout() {
   const handleLogout = () => {
     localStorage.removeItem('adminToken');
     setIsAuthenticated(false);
-    navigate('/admin/login');
+    navigate('/login');
   };
 
   useEffect(() => {
-    if (!loading && !isAuthenticated && location.pathname !== '/admin/login') {
-      navigate('/admin/login', { replace: true });
+    if (!loading && !isAuthenticated && !isLoginRoute) {
+      navigate('/login', { replace: true });
     }
-  }, [loading, isAuthenticated, location.pathname, navigate]);
+  }, [loading, isAuthenticated, isLoginRoute, navigate]);
 
   useEffect(() => {
-    if (loading || !isAuthenticated || location.pathname === '/admin/login') return;
+    if (loading || !isAuthenticated || isLoginRoute) return;
     if (decodeRoleFromToken() === 'operator' && location.pathname.startsWith('/admin')) {
       navigate('/ops', { replace: true });
     }
-  }, [loading, isAuthenticated, location.pathname, navigate]);
+  }, [loading, isAuthenticated, isLoginRoute, location.pathname, navigate]);
 
   if (loading) {
     return (
@@ -85,11 +86,11 @@ export default function AdminLayout() {
     );
   }
 
-  if (!isAuthenticated && location.pathname !== '/admin/login') {
+  if (!isAuthenticated && !isLoginRoute) {
     return null;
   }
 
-  if (location.pathname === '/admin/login') {
+  if (isLoginRoute) {
     return <Outlet />;
   }
 

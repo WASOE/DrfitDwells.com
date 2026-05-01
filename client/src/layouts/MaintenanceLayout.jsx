@@ -45,7 +45,7 @@ export default function MaintenanceLayout() {
     if (!ready) return;
     const token = localStorage.getItem('adminToken');
     if (!token || decodeRoleFromToken() === 'operator' || !allowed) {
-      navigate(decodeRoleFromToken() === 'operator' ? '/ops' : '/admin/login', { replace: true });
+      navigate(decodeRoleFromToken() === 'operator' ? '/ops' : '/login', { replace: true });
     }
   }, [ready, allowed, navigate]);
 

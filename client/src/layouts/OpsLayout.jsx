@@ -13,7 +13,7 @@ export default function OpsLayout() {
   const handleLogout = () => {
     localStorage.removeItem('adminToken');
     setIsAuthenticated(false);
-    navigate('/admin/login');
+    navigate('/login');
   };
 
   useEffect(() => {
@@ -58,7 +58,7 @@ export default function OpsLayout() {
 
   useEffect(() => {
     if (ready && !isAuthenticated) {
-      navigate('/admin/login', { replace: true });
+      navigate('/login', { replace: true });
     }
   }, [ready, isAuthenticated, navigate]);
 

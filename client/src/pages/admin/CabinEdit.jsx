@@ -563,7 +563,7 @@ const CabinEdit = () => {
           setError('');
         } else if (response.status === 401) {
           localStorage.removeItem('adminToken');
-          navigate('/admin/login');
+          navigate('/login');
         } else if (response.status === 404) {
           setError('Cabin not found');
         } else {
