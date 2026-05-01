@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { opsReadAPI, opsWriteAPI } from '../../services/opsApi';
+import OpsGalleryLightbox from '../../components/ops/OpsGalleryLightbox';
 
 function listRowId(item) {
   if (item.kind === 'multi_unit_type') return `multi-${item.cabinTypeId}`;
@@ -485,6 +486,7 @@ function OpsCabinMediaManager({ titleId, isMulti, content, onReload }) {
   const [mediaMessage, setMediaMessage] = useState('');
   const [mediaError, setMediaError] = useState('');
   const uploadRef = useRef(null);
+  const [lightboxIndex, setLightboxIndex] = useState(null);
 
   const mediaImages = useMemo(() => {
     const arr = Array.isArray(content?.images) ? [...content.images] : [];
@@ -493,6 +495,29 @@ function OpsCabinMediaManager({ titleId, isMulti, content, onReload }) {
       return (a?.sort ?? 0) - (b?.sort ?? 0);
     });
   }, [content?.images]);
+
+  const lightboxImages = useMemo(
+    () =>
+      mediaImages.map((img) => ({
+        _id: String(img._id),
+        src: normalizeMediaSrc(img.url),
+        alt: img.alt || '',
+        tags: Array.isArray(img.tags) ? img.tags : [],
+        isCover: Boolean(img.isCover)
+      })),
+    [mediaImages]
+  );
+
+  useEffect(() => {
+    if (!Array.isArray(lightboxImages) || lightboxImages.length === 0) {
+      if (lightboxIndex !== null) setLightboxIndex(null);
+      return;
+    }
+    if (lightboxIndex === null) return;
+    if (lightboxIndex < 0 || lightboxIndex >= lightboxImages.length) {
+      setLightboxIndex(lightboxImages.length - 1);
+    }
+  }, [lightboxImages, lightboxIndex]);
 
   const runMediaMutation = useCallback(
     async (work, successText) => {
@@ -628,6 +653,7 @@ function OpsCabinMediaManager({ titleId, isMulti, content, onReload }) {
                   alt={img.alt || ''}
                   className="w-full h-28 object-cover"
                   loading="lazy"
+                  onClick={() => setLightboxIndex(index)}
                 />
                 {img.isCover ? (
                   <span className="absolute top-1 right-1 text-[10px] px-2 py-0.5 rounded bg-[#81887A] text-white">
@@ -707,6 +733,19 @@ function OpsCabinMediaManager({ titleId, isMulti, content, onReload }) {
           ))}
         </div>
       )}
+
+      <OpsGalleryLightbox
+        open={lightboxIndex !== null}
+        images={lightboxImages}
+        activeIndex={lightboxIndex}
+        onClose={() => setLightboxIndex(null)}
+        onPrev={() => setLightboxIndex((idx) => (idx === null ? idx : Math.max(0, idx - 1)))}
+        onNext={() =>
+          setLightboxIndex((idx) =>
+            idx === null ? idx : Math.min(lightboxImages.length - 1, idx + 1)
+          )
+        }
+      />
     </section>
   );
 }
