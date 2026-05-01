@@ -81,6 +81,7 @@ const opsWriteAPI = {
     api.post(`/ops/availability/maintenance-blocks/${blockId}/remove`, { reason }, { headers: authHeaders() }),
   createManualReservation: (payload) =>
     api.post('/ops/reservations/manual', payload, { headers: authHeaders() }),
+  createCabin: (payload) => api.post('/ops/cabins', payload, { headers: authHeaders() }),
   uploadCabinImage: (id, file) => {
     const fd = new FormData();
     fd.append('file', file);

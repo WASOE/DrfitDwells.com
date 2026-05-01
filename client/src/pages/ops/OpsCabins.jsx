@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { opsReadAPI, opsWriteAPI } from '../../services/opsApi';
 import OpsGalleryLightbox from '../../components/ops/OpsGalleryLightbox';
 
@@ -88,12 +88,25 @@ function OpsReadOnlyDetailSection({ title, children }) {
 }
 
 export function OpsCabinsList() {
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [searchDraft, setSearchDraft] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createBusy, setCreateBusy] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const [createForm, setCreateForm] = useState({
+    name: '',
+    description: '',
+    location: '',
+    capacity: '',
+    pricePerNight: '',
+    minNights: '1',
+    hostName: ''
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -118,6 +131,28 @@ export function OpsCabinsList() {
     };
   }, [page, searchQuery]);
 
+  useEffect(() => {
+    if (!createOpen) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setCreateOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [createOpen]);
+
+  const resetCreateForm = () => {
+    setCreateForm({
+      name: '',
+      description: '',
+      location: '',
+      capacity: '',
+      pricePerNight: '',
+      minNights: '1',
+      hostName: ''
+    });
+    setCreateError('');
+  };
+
   const onSearchSubmit = (e) => {
     e.preventDefault();
     setSearchQuery(searchDraft.trim());
@@ -138,29 +173,247 @@ export function OpsCabinsList() {
           <div className="min-w-0 flex-1 text-left">
             <h2 className="text-lg font-semibold text-gray-900">Cabins &amp; unit types</h2>
             <p className="text-xs text-gray-500 mt-1 max-w-2xl">
-              Single cabins and multi-unit types (e.g. A-Frame) from source data. Read-only.
+              Single cabins and multi-unit types (e.g. A-Frame). Use Create cabin for new single listings only.
             </p>
           </div>
-          <form
-            onSubmit={onSearchSubmit}
-            className="flex flex-col sm:flex-row gap-2 sm:items-center w-full lg:w-auto lg:min-w-[280px] lg:max-w-md shrink-0"
-          >
-            <input
-              type="search"
-              value={searchDraft}
-              onChange={(e) => setSearchDraft(e.target.value)}
-              placeholder="Search name, location, slug…"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-            />
+          <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto lg:items-start lg:justify-end lg:max-w-xl shrink-0">
             <button
-              type="submit"
-              className="px-4 py-2 text-sm rounded-lg bg-[#81887A] text-white hover:opacity-90 whitespace-nowrap shrink-0"
+              type="button"
+              onClick={() => {
+                resetCreateForm();
+                setCreateOpen(true);
+              }}
+              className="px-4 py-2 text-sm rounded-lg border border-gray-200 bg-white hover:bg-gray-50 whitespace-nowrap shrink-0 order-2 sm:order-1"
             >
-              Search
+              Create cabin
             </button>
-          </form>
+            <form
+              onSubmit={onSearchSubmit}
+              className="flex flex-col sm:flex-row gap-2 sm:items-center w-full lg:min-w-[280px] lg:max-w-md order-1 sm:order-2"
+            >
+              <input
+                type="search"
+                value={searchDraft}
+                onChange={(e) => setSearchDraft(e.target.value)}
+                placeholder="Search name, location, slug…"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+              />
+              <button
+                type="submit"
+                className="px-4 py-2 text-sm rounded-lg bg-[#81887A] text-white hover:opacity-90 whitespace-nowrap shrink-0"
+              >
+                Search
+              </button>
+            </form>
+          </div>
         </div>
       </section>
+
+      {createOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setCreateOpen(false);
+          }}
+        >
+          <div
+            className="bg-white rounded-t-2xl sm:rounded-xl shadow-lg w-full max-w-lg max-h-[90vh] overflow-y-auto border border-gray-200"
+            role="dialog"
+            aria-labelledby="ops-create-cabin-title"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 md:px-5 flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 id="ops-create-cabin-title" className="text-base font-semibold text-gray-900">
+                  Create single cabin
+                </h3>
+                <p className="text-xs text-gray-500 mt-1 max-w-md">
+                  Creates a single cabin only. Multi-unit provisioning remains separate.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="text-sm text-gray-500 hover:text-gray-800 shrink-0 px-2 py-1"
+                onClick={() => setCreateOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+
+            <form
+              className="p-4 md:p-5 space-y-3 max-w-lg mx-auto w-full"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setCreateError('');
+                const name = createForm.name.trim();
+                const description = createForm.description.trim();
+                const location = createForm.location.trim();
+                const cap = parseInt(String(createForm.capacity).trim(), 10);
+                const price = Number(String(createForm.pricePerNight).trim());
+                const minN = parseInt(String(createForm.minNights).trim(), 10);
+                if (!name || !description || !location) {
+                  setCreateError('Name, description, and location are required.');
+                  return;
+                }
+                if (!Number.isFinite(cap) || cap < 1) {
+                  setCreateError('Capacity must be a positive integer.');
+                  return;
+                }
+                if (!Number.isFinite(price) || price <= 0) {
+                  setCreateError('Price per night must be a positive number.');
+                  return;
+                }
+                if (!Number.isFinite(minN) || minN < 1) {
+                  setCreateError('Minimum nights must be a positive integer.');
+                  return;
+                }
+
+                const payload = {
+                  name,
+                  description,
+                  location,
+                  capacity: cap,
+                  pricePerNight: price,
+                  minNights: minN
+                };
+                const hn = createForm.hostName.trim();
+                if (hn) payload.hostName = hn;
+
+                setCreateBusy(true);
+                try {
+                  const resp = await opsWriteAPI.createCabin(payload);
+                  const cabin = resp?.data?.data?.cabin;
+                  const id = cabin?._id != null ? String(cabin._id) : '';
+                  setCreateOpen(false);
+                  resetCreateForm();
+                  if (id) navigate(`/ops/cabins/${id}`, { state: { opsFlash: 'cabin-created' } });
+                  else navigate('/ops/cabins');
+                } catch (err) {
+                  const msg = err?.response?.data?.message;
+                  const errs = err?.response?.data?.errors;
+                  if (Array.isArray(errs) && errs.length) {
+                    setCreateError(
+                      errs.map((x) => (x.field ? `${x.field}: ${x.message}` : x.message)).join('; ')
+                    );
+                  } else {
+                    setCreateError(msg || err.message || 'Failed to create cabin');
+                  }
+                } finally {
+                  setCreateBusy(false);
+                }
+              }}
+            >
+              {createError ? (
+                <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{createError}</p>
+              ) : null}
+
+              <label className="block">
+                <span className="text-xs font-medium text-gray-700">Name</span>
+                <input
+                  required
+                  type="text"
+                  value={createForm.name}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
+                  className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                  disabled={createBusy}
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium text-gray-700">Description</span>
+                <textarea
+                  required
+                  rows={4}
+                  value={createForm.description}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, description: e.target.value }))}
+                  className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-y min-h-[96px]"
+                  disabled={createBusy}
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium text-gray-700">Location</span>
+                <input
+                  required
+                  type="text"
+                  value={createForm.location}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, location: e.target.value }))}
+                  className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                  disabled={createBusy}
+                />
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-xs font-medium text-gray-700">Capacity (guests)</span>
+                  <input
+                    required
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={createForm.capacity}
+                    onChange={(e) => setCreateForm((f) => ({ ...f, capacity: e.target.value }))}
+                    className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                    disabled={createBusy}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-medium text-gray-700">Price per night</span>
+                  <input
+                    required
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={createForm.pricePerNight}
+                    onChange={(e) => setCreateForm((f) => ({ ...f, pricePerNight: e.target.value }))}
+                    className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                    disabled={createBusy}
+                  />
+                </label>
+              </div>
+              <label className="block max-w-xs">
+                <span className="text-xs font-medium text-gray-700">Minimum nights</span>
+                <input
+                  required
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={createForm.minNights}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, minNights: e.target.value }))}
+                  className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                  disabled={createBusy}
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium text-gray-700">Host name (optional)</span>
+                <input
+                  type="text"
+                  value={createForm.hostName}
+                  onChange={(e) => setCreateForm((f) => ({ ...f, hostName: e.target.value }))}
+                  className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                  disabled={createBusy}
+                />
+              </label>
+
+              <div className="flex flex-col sm:flex-row gap-2 pt-2">
+                <button
+                  type="submit"
+                  disabled={createBusy}
+                  className="px-4 py-2 text-sm rounded-lg bg-[#81887A] text-white hover:opacity-90 disabled:opacity-50"
+                >
+                  {createBusy ? 'Creating…' : 'Create cabin'}
+                </button>
+                <button
+                  type="button"
+                  disabled={createBusy}
+                  onClick={() => setCreateOpen(false)}
+                  className="px-4 py-2 text-sm rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
 
       <div className="space-y-3">
         {data.items?.length === 0 ? (
@@ -752,6 +1005,9 @@ function OpsCabinMediaManager({ titleId, isMulti, content, onReload }) {
 
 export default function OpsCabinDetail() {
   const { id } = useParams();
+  const location = useLocation();
+  const navigateDetail = useNavigate();
+  const [showCreatedBanner, setShowCreatedBanner] = useState(false);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -846,6 +1102,15 @@ export default function OpsCabinDetail() {
       detailRequestSeq.current += 1;
     };
   }, [loadDetail]);
+
+  useEffect(() => {
+    if (location.state?.opsFlash !== 'cabin-created') return;
+    setShowCreatedBanner(true);
+    navigateDetail(
+      { pathname: location.pathname, search: location.search || '' },
+      { replace: true, state: {} }
+    );
+  }, [location.pathname, location.search, location.state?.opsFlash, navigateDetail]);
 
   const isMulti = data?.kind === 'multi_unit_type';
   const op = data?.operationalSettings || {};
@@ -1241,6 +1506,21 @@ export default function OpsCabinDetail() {
 
   return (
     <div className="space-y-4 pb-16 sm:pb-0 w-full max-w-4xl mx-auto">
+      {showCreatedBanner ? (
+        <div
+          role="status"
+          className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 max-w-4xl mx-auto w-full"
+        >
+          <p className="text-sm text-green-900">Cabin created successfully.</p>
+          <button
+            type="button"
+            className="text-sm text-green-800 underline shrink-0 text-left sm:text-right"
+            onClick={() => setShowCreatedBanner(false)}
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
       <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
         <Link to="/ops/cabins" className="text-sm text-[#81887A] hover:underline">
           Back to cabins

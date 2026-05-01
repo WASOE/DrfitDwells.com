@@ -7,7 +7,10 @@ const { upload, validateMagicBytes } = require('../../../middleware/upload');
 const { validateId } = require('../../../middleware/validateId');
 const { adminModuleWriteGate } = require('../../../middleware/adminModuleCutoverEnforcement');
 const { getCabinsListReadModel, getCabinDetailReadModel } = require('../../../services/ops/readModels/cabinsReadModel');
-const { updateCabinFromAdminPayload } = require('../../../services/cabins/cabinManagementService');
+const {
+  createCabinFromAdminPayload,
+  updateCabinFromAdminPayload
+} = require('../../../services/cabins/cabinManagementService');
 const {
   uploadCabinImage,
   reorderCabinImages,
@@ -127,11 +130,55 @@ const OPS_UNIT_EXCLUDED_FIELDS = new Set([
   'cabinTypeId'
 ]);
 
+/** Strict whitelist for single-inventory cabin creation only (no multi-unit / cabin-type payloads). */
+const OPS_SINGLE_CREATE_ALLOWED_FIELDS = new Set([
+  'name',
+  'description',
+  'location',
+  'capacity',
+  'pricePerNight',
+  'minNights',
+  'hostName'
+]);
+
 router.get('/', async (req, res) => {
   try {
     const data = await getCabinsListReadModel(req.query);
     return res.json({ success: true, data });
   } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/', adminModuleWriteGate('cabins'), async (req, res) => {
+  try {
+    const body =
+      req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const incomingKeys = Object.keys(body);
+    const unknownKeys = incomingKeys.filter((key) => !OPS_SINGLE_CREATE_ALLOWED_FIELDS.has(key));
+    if (unknownKeys.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Unsupported fields: ${unknownKeys.join(', ')}`
+      });
+    }
+
+    const payload = { inventoryMode: 'single' };
+    for (const key of OPS_SINGLE_CREATE_ALLOWED_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(body, key)) {
+        payload[key] = body[key];
+      }
+    }
+
+    const result = await createCabinFromAdminPayload(payload, {});
+    if (!result.ok) {
+      return res.status(result.status).json(result.payload);
+    }
+    return res.status(result.status).json(result.payload);
+  } catch (error) {
+    if (error?.name === 'ValidationError') {
+      return res.status(400).json({ success: false, message: error.message });
+    }
     return res.status(500).json({ success: false, message: error.message });
   }
 });
