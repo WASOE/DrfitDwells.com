@@ -614,6 +614,10 @@ export default function OpsCabinDetail() {
   const [occupancyEditBusy, setOccupancyEditBusy] = useState(false);
   const [occupancyEditError, setOccupancyEditError] = useState('');
   const [occupancyEditSuccess, setOccupancyEditSuccess] = useState('');
+  const [pricingEditOpen, setPricingEditOpen] = useState(false);
+  const [pricingEditBusy, setPricingEditBusy] = useState(false);
+  const [pricingEditError, setPricingEditError] = useState('');
+  const [pricingEditSuccess, setPricingEditSuccess] = useState('');
   const [contentEditForm, setContentEditForm] = useState({
     name: '',
     description: '',
@@ -646,6 +650,9 @@ export default function OpsCabinDetail() {
   const [occupancyEditForm, setOccupancyEditForm] = useState({
     capacity: '',
     minNights: ''
+  });
+  const [pricingEditForm, setPricingEditForm] = useState({
+    pricePerNight: ''
   });
   const detailRequestSeq = useRef(0);
 
@@ -959,6 +966,34 @@ export default function OpsCabinDetail() {
     }
   };
 
+  const openPricingEdit = () => {
+    setPricingEditForm({
+      pricePerNight: op.pricePerNight != null ? String(op.pricePerNight) : ''
+    });
+    setPricingEditError('');
+    setPricingEditSuccess('');
+    setPricingEditOpen(true);
+  };
+
+  const savePricingEdit = async () => {
+    setPricingEditBusy(true);
+    setPricingEditError('');
+    setPricingEditSuccess('');
+    try {
+      const payload = {
+        pricePerNight: Number(pricingEditForm.pricePerNight)
+      };
+      await opsWriteAPI.updateCabinPricing(id, payload);
+      await loadDetail();
+      setPricingEditSuccess('Pricing updated.');
+      setPricingEditOpen(false);
+    } catch (err) {
+      setPricingEditError(err?.response?.data?.message || 'Failed to update pricing');
+    } finally {
+      setPricingEditBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-4 pb-16 sm:pb-0 w-full max-w-4xl mx-auto">
       <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
@@ -1021,6 +1056,8 @@ export default function OpsCabinDetail() {
               {arrivalEditError ? <span className="text-xs text-red-700">{arrivalEditError}</span> : null}
               {occupancyEditSuccess ? <span className="text-xs text-green-700">{occupancyEditSuccess}</span> : null}
               {occupancyEditError ? <span className="text-xs text-red-700">{occupancyEditError}</span> : null}
+              {pricingEditSuccess ? <span className="text-xs text-green-700">{pricingEditSuccess}</span> : null}
+              {pricingEditError ? <span className="text-xs text-red-700">{pricingEditError}</span> : null}
             </div>
           </div>
         </div>
@@ -1372,6 +1409,48 @@ export default function OpsCabinDetail() {
         </section>
       ) : null}
 
+      {pricingEditOpen ? (
+        <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5 max-w-4xl mx-auto w-full">
+          <h3 className="text-sm font-semibold text-gray-900">Edit pricing</h3>
+          <p className="mt-1 text-xs text-amber-700">This changes guest quote totals and payment amounts.</p>
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label className="block">
+              <span className="block text-xs text-gray-600 mb-1">Price per night</span>
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={pricingEditForm.pricePerNight}
+                onChange={(e) => setPricingEditForm((p) => ({ ...p, pricePerNight: e.target.value }))}
+                className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-sm"
+              />
+            </label>
+          </div>
+          <div className="mt-4 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={savePricingEdit}
+              disabled={pricingEditBusy}
+              className="text-xs px-3 py-2 rounded-lg bg-[#81887A] text-white disabled:opacity-50"
+            >
+              {pricingEditBusy ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPricingEditOpen(false);
+                setPricingEditError('');
+              }}
+              disabled={pricingEditBusy}
+              className="text-xs px-3 py-2 rounded-lg border border-gray-200 bg-white disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            {pricingEditError ? <span className="text-xs text-red-700">{pricingEditError}</span> : null}
+          </div>
+        </section>
+      ) : null}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <OpsReadOnlyDetailSection title="Location &amp; coordinates">
           <p>
@@ -1441,13 +1520,22 @@ export default function OpsCabinDetail() {
         <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
           <div className="flex items-center justify-between gap-2">
             <h3 className="text-sm font-semibold text-gray-900">Operational settings</h3>
-            <button
-              type="button"
-              onClick={openOccupancyEdit}
-              className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
-            >
-              Edit occupancy
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={openOccupancyEdit}
+                className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+              >
+                Edit occupancy
+              </button>
+              <button
+                type="button"
+                onClick={openPricingEdit}
+                className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+              >
+                Edit price
+              </button>
+            </div>
           </div>
           <div className="mt-3 space-y-2 text-sm text-gray-700">
             <p>Capacity: {op.capacity ?? '—'}</p>
