@@ -606,6 +606,10 @@ export default function OpsCabinDetail() {
   const [cutoffsEditBusy, setCutoffsEditBusy] = useState(false);
   const [cutoffsEditError, setCutoffsEditError] = useState('');
   const [cutoffsEditSuccess, setCutoffsEditSuccess] = useState('');
+  const [transportOptionsEditOpen, setTransportOptionsEditOpen] = useState(false);
+  const [transportOptionsEditBusy, setTransportOptionsEditBusy] = useState(false);
+  const [transportOptionsEditError, setTransportOptionsEditError] = useState('');
+  const [transportOptionsEditSuccess, setTransportOptionsEditSuccess] = useState('');
   const [contentEditForm, setContentEditForm] = useState({
     name: '',
     description: '',
@@ -634,6 +638,7 @@ export default function OpsCabinDetail() {
     packingListText: ''
   });
   const [cutoffsEditRows, setCutoffsEditRows] = useState([]);
+  const [transportOptionsEditRows, setTransportOptionsEditRows] = useState([]);
   const detailRequestSeq = useRef(0);
 
   const loadDetail = useCallback(async () => {
@@ -857,6 +862,62 @@ export default function OpsCabinDetail() {
       setCutoffsEditError(err?.response?.data?.message || 'Failed to update transport cutoffs');
     } finally {
       setCutoffsEditBusy(false);
+    }
+  };
+
+  const openTransportOptionsEdit = () => {
+    const rows = Array.isArray(op.transportOptions)
+      ? op.transportOptions.map((item) => ({
+          type: item?.type ? String(item.type) : '',
+          pricePerPerson: item?.pricePerPerson != null ? String(item.pricePerPerson) : '0',
+          description: item?.description ? String(item.description) : '',
+          duration: item?.duration ? String(item.duration) : '',
+          isAvailable: item?.isAvailable !== false
+        }))
+      : [];
+    setTransportOptionsEditRows(rows);
+    setTransportOptionsEditError('');
+    setTransportOptionsEditSuccess('');
+    setTransportOptionsEditOpen(true);
+  };
+
+  const addTransportOptionRow = () => {
+    setTransportOptionsEditRows((prev) => [
+      ...prev,
+      { type: '', pricePerPerson: '0', description: '', duration: '', isAvailable: true }
+    ]);
+  };
+
+  const removeTransportOptionRow = (index) => {
+    setTransportOptionsEditRows((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const updateTransportOptionRow = (index, field, value) => {
+    setTransportOptionsEditRows((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
+  };
+
+  const saveTransportOptionsEdit = async () => {
+    setTransportOptionsEditBusy(true);
+    setTransportOptionsEditError('');
+    setTransportOptionsEditSuccess('');
+    try {
+      const payload = {
+        transportOptions: transportOptionsEditRows.map((row) => ({
+          type: String(row.type || '').trim(),
+          pricePerPerson: Number(row.pricePerPerson),
+          description: String(row.description || '').trim(),
+          duration: String(row.duration || '').trim(),
+          isAvailable: row.isAvailable !== false
+        }))
+      };
+      await opsWriteAPI.updateCabinTransportOptions(id, payload);
+      await loadDetail();
+      setTransportOptionsEditSuccess('Transport options updated.');
+      setTransportOptionsEditOpen(false);
+    } catch (err) {
+      setTransportOptionsEditError(err?.response?.data?.message || 'Failed to update transport options');
+    } finally {
+      setTransportOptionsEditBusy(false);
     }
   };
 
@@ -1324,11 +1385,20 @@ export default function OpsCabinDetail() {
         <div className="flex items-center gap-2 mb-2">
           <button
             type="button"
+            onClick={openTransportOptionsEdit}
+            className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+          >
+            Edit transport options
+          </button>
+          <button
+            type="button"
             onClick={openCutoffsEdit}
             className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
           >
             Edit cutoffs
           </button>
+          {transportOptionsEditSuccess ? <span className="text-xs text-green-700">{transportOptionsEditSuccess}</span> : null}
+          {transportOptionsEditError ? <span className="text-xs text-red-700">{transportOptionsEditError}</span> : null}
           {cutoffsEditSuccess ? <span className="text-xs text-green-700">{cutoffsEditSuccess}</span> : null}
           {cutoffsEditError ? <span className="text-xs text-red-700">{cutoffsEditError}</span> : null}
         </div>
@@ -1361,6 +1431,113 @@ export default function OpsCabinDetail() {
           </div>
         ) : null}
       </OpsReadOnlyDetailSection>
+
+      {transportOptionsEditOpen ? (
+        <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5 max-w-4xl mx-auto w-full">
+          <h3 className="text-sm font-semibold text-gray-900">Edit transport options</h3>
+          <p className="mt-1 text-xs text-amber-700">Transport prices affect guest quote totals.</p>
+          <div className="mt-3 space-y-3">
+            {transportOptionsEditRows.map((row, index) => (
+              <div key={`transport-option-row-${index}`} className="border border-gray-100 rounded-md p-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <label className="block">
+                    <span className="block text-[11px] text-gray-600 mb-1">Type</span>
+                    <input
+                      type="text"
+                      value={row.type}
+                      onChange={(e) => updateTransportOptionRow(index, 'type', e.target.value)}
+                      className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-sm"
+                      placeholder="Horse, ATV, Jeep..."
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="block text-[11px] text-gray-600 mb-1">Price per person</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={row.pricePerPerson}
+                      onChange={(e) => updateTransportOptionRow(index, 'pricePerPerson', e.target.value)}
+                      className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-sm"
+                    />
+                  </label>
+                  <label className="block md:col-span-2">
+                    <span className="block text-[11px] text-gray-600 mb-1">Description</span>
+                    <input
+                      type="text"
+                      value={row.description}
+                      onChange={(e) => updateTransportOptionRow(index, 'description', e.target.value)}
+                      className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-sm"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="block text-[11px] text-gray-600 mb-1">Duration</span>
+                    <input
+                      type="text"
+                      value={row.duration}
+                      onChange={(e) => updateTransportOptionRow(index, 'duration', e.target.value)}
+                      className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-sm"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="block text-[11px] text-gray-600 mb-1">Available</span>
+                    <select
+                      value={row.isAvailable ? 'true' : 'false'}
+                      onChange={(e) => updateTransportOptionRow(index, 'isAvailable', e.target.value === 'true')}
+                      className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-sm"
+                    >
+                      <option value="true">Yes</option>
+                      <option value="false">No</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => removeTransportOptionRow(index)}
+                    className="text-xs px-2.5 py-1.5 rounded border border-red-200 text-red-700 bg-white hover:bg-red-50"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ))}
+            {transportOptionsEditRows.length === 0 ? (
+              <p className="text-xs text-gray-500">No transport options configured.</p>
+            ) : null}
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={addTransportOptionRow}
+              className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+              disabled={transportOptionsEditBusy}
+            >
+              Add row
+            </button>
+            <button
+              type="button"
+              onClick={saveTransportOptionsEdit}
+              disabled={transportOptionsEditBusy}
+              className="text-xs px-3 py-1.5 rounded-lg bg-[#81887A] text-white disabled:opacity-50"
+            >
+              {transportOptionsEditBusy ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setTransportOptionsEditOpen(false);
+                setTransportOptionsEditError('');
+              }}
+              disabled={transportOptionsEditBusy}
+              className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            {transportOptionsEditError ? <span className="text-xs text-red-700">{transportOptionsEditError}</span> : null}
+          </div>
+        </section>
+      ) : null}
 
       {cutoffsEditOpen ? (
         <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5 max-w-4xl mx-auto w-full">
