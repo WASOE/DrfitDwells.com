@@ -29,6 +29,16 @@ router.get('/health', (req, res) => {
 });
 
 router.use(adminAuth);
+router.get('/session', (req, res) => {
+  return res.json({
+    success: true,
+    data: {
+      authenticated: true,
+      role: req.user?.role || 'admin',
+      actorId: req.user?.id || null
+    }
+  });
+});
 router.use('/foundation', foundationRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/calendar', calendarRoutes);

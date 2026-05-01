@@ -20,6 +20,7 @@ function decodeRoleFromToken() {
 }
 
 const opsReadAPI = {
+  session: () => api.get('/ops/session', { headers: authHeaders() }),
   dashboard: () => api.get('/ops/dashboard', { headers: authHeaders() }),
   calendar: (params) => api.get('/ops/calendar', { params, headers: authHeaders() }),
   reservations: (params) => api.get('/ops/reservations', { params, headers: authHeaders() }),

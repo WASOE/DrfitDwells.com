@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { decodeRoleFromToken } from '../services/opsApi';
+import { decodeRoleFromToken, opsReadAPI } from '../services/opsApi';
 
 export default function AdminLayout() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -25,12 +25,9 @@ export default function AdminLayout() {
     let cancelled = false;
     const checkAuth = async () => {
       try {
-        const response = await fetch('/api/admin/bookings', {
-          method: 'HEAD',
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const response = await opsReadAPI.session();
         if (cancelled) return;
-        if (response.ok) {
+        if (response?.data?.success && response?.data?.data?.authenticated === true) {
           setIsAuthenticated(true);
         } else {
           localStorage.removeItem('adminToken');

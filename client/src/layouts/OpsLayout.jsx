@@ -27,11 +27,21 @@ export default function OpsLayout() {
 
     const run = async () => {
       try {
-        await opsReadAPI.dashboard();
-        const healthResp = await opsReadAPI.health();
+        const sessionResp = await opsReadAPI.session();
         if (cancelled) return;
-        setHealth(healthResp?.data?.data || null);
+        const authenticated = sessionResp?.data?.success && sessionResp?.data?.data?.authenticated === true;
+        if (!authenticated) {
+          setIsAuthenticated(false);
+          return;
+        }
         setIsAuthenticated(true);
+        try {
+          const healthResp = await opsReadAPI.health();
+          if (cancelled) return;
+          setHealth(healthResp?.data?.data || null);
+        } catch {
+          if (!cancelled) setHealth(null);
+        }
       } catch {
         if (!cancelled) {
           setIsAuthenticated(false);
