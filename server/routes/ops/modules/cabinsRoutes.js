@@ -199,6 +199,7 @@ router.post('/:id/archive', validateId('id'), adminModuleWriteGate('cabins'), as
       cabinId: req.params.id,
       reason,
       confirmName,
+      mode: 'ops',
       actor: { id: req.user?.id, role: req.user?.role }
     });
 

@@ -228,21 +228,27 @@ async function applyTombstoneStaleReservationBlocks(reason, ctx) {
 
 async function archiveCabin(cabinId, reason, ctx) {
   const r = assertReason(reason);
-  const result = await archiveSingleCabin({ cabinId, reason: r, actor: ctxActor(ctx) });
-
-  await auditMaintenance(
-    {
-      req: ctx.req,
-      action: 'maintenance_cabin_archive',
-      entityType: 'Cabin',
-      entityId: cabinId,
-      beforeSnapshot: result._auditBefore,
-      afterSnapshot: { archivedAt: result.archivedAt, isActive: result.isActive },
-      reason: r,
-      route: ctx.route || 'POST /api/maintenance/cabins/:id/archive'
-    },
-    ctx
-  );
+  const result = await archiveSingleCabin({
+    cabinId,
+    reason: r,
+    actor: ctxActor(ctx),
+    mode: 'maintenance',
+    beforePersist: async ({ auditBefore, plannedArchivedAt }) => {
+      await auditMaintenance(
+        {
+          req: ctx.req,
+          action: 'maintenance_cabin_archive',
+          entityType: 'Cabin',
+          entityId: cabinId,
+          beforeSnapshot: auditBefore,
+          afterSnapshot: { archivedAt: plannedArchivedAt, isActive: false },
+          reason: r,
+          route: ctx.route || 'POST /api/maintenance/cabins/:id/archive'
+        },
+        ctx
+      );
+    }
+  });
 
   return { cabinId: result.cabinId, archivedAt: result.archivedAt };
 }
