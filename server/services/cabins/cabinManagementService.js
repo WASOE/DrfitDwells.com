@@ -6,7 +6,8 @@ const featureFlags = require('../../utils/featureFlags');
 const { isSafeArrivalGuideUrl } = require('../../utils/arrivalGuideUrl');
 const { aggregateNonDeletedReviewStatsForContext } = require('../reviewOwnershipService');
 
-const DEFAULT_CABIN_IMAGE_URL = 'https://placehold.co/1200x800?text=Cabin';
+// Cabin.imageUrl validator requires https URL ending in .jpg|.jpeg|.png|.webp
+const DEFAULT_CABIN_IMAGE_URL = 'https://placehold.co/1200x800.jpg';
 
 const CABIN_ALLOWED_FIELDS = [
   'name', 'description', 'location', 'hostName', 'capacity', 'pricePerNight', 'minNights',
