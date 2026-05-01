@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { isSafeArrivalGuideUrl } = require('../utils/arrivalGuideUrl');
+const { isSafeGoogleMapsUrl } = require('../utils/googleMapsUrl');
 
 const cabinSchema = new mongoose.Schema({
   name: {
@@ -160,10 +161,9 @@ const cabinSchema = new mongoose.Schema({
       type: String,
       validate: {
         validator: function(v) {
-          if (!v) return true; // Optional field
-          return /^https?:\/\/maps\.google\./.test(v);
+          return isSafeGoogleMapsUrl(v);
         },
-        message: 'Please provide a valid Google Maps URL'
+        message: 'Please provide a valid Google Maps URL (google.com/maps, maps.google.com, maps.app.goo.gl, goo.gl/maps, or share.google)'
       }
     },
     what3words: {

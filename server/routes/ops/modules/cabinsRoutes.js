@@ -159,6 +159,9 @@ router.patch('/:id/arrival', validateId('id'), adminModuleWriteGate('cabins'), a
     }
     return res.status(result.status).json(result.payload);
   } catch (error) {
+    if (error?.name === 'ValidationError') {
+      return res.status(400).json({ success: false, message: error.message });
+    }
     return res.status(500).json({ success: false, message: error.message });
   }
 });
