@@ -25,6 +25,29 @@ const OPS_CABIN_CONTENT_ALLOWED_FIELDS = new Set([
   'highlights',
   'badges'
 ]);
+const OPS_CABIN_ARRIVAL_ALLOWED_FIELDS = new Set([
+  'location',
+  'geoLocation',
+  'meetingPoint',
+  'arrivalWindowDefault',
+  'arrivalGuideUrl',
+  'safetyNotes',
+  'emergencyContact',
+  'packingList'
+]);
+const OPS_CABIN_ARRIVAL_EXCLUDED_FIELDS = new Set([
+  'transportOptions',
+  'transportCutoffs',
+  'pricePerNight',
+  'minNights',
+  'capacity',
+  'minGuests',
+  'pricingModel',
+  'blockedDates',
+  'experiences',
+  'inventoryType',
+  'units'
+]);
 
 router.get('/', async (req, res) => {
   try {
@@ -84,6 +107,50 @@ router.patch('/:id/content', validateId('id'), adminModuleWriteGate('cabins'), a
         success: false,
         message: `Unsupported content fields: ${unknownKeys.join(', ')}`
       });
+    }
+
+    const result = await updateCabinFromAdminPayload(req.params.id, payload, {});
+    if (!result.ok) {
+      return res.status(result.status).json(result.payload);
+    }
+    return res.status(result.status).json(result.payload);
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.patch('/:id/arrival', validateId('id'), adminModuleWriteGate('cabins'), async (req, res) => {
+  try {
+    const payload = req.body && typeof req.body === 'object' ? { ...req.body } : {};
+    const incomingKeys = Object.keys(payload);
+
+    const excludedKeys = incomingKeys.filter((key) => OPS_CABIN_ARRIVAL_EXCLUDED_FIELDS.has(key));
+    if (excludedKeys.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Fields not allowed in arrival edit: ${excludedKeys.join(', ')}`
+      });
+    }
+
+    const unknownKeys = incomingKeys.filter((key) => !OPS_CABIN_ARRIVAL_ALLOWED_FIELDS.has(key));
+    if (unknownKeys.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Unsupported arrival fields: ${unknownKeys.join(', ')}`
+      });
+    }
+
+    if (payload.geoLocation && typeof payload.geoLocation === 'object') {
+      const nextGeo = { ...payload.geoLocation };
+      if (Object.prototype.hasOwnProperty.call(nextGeo, 'lat') && !Object.prototype.hasOwnProperty.call(nextGeo, 'latitude')) {
+        nextGeo.latitude = nextGeo.lat;
+      }
+      if (Object.prototype.hasOwnProperty.call(nextGeo, 'lng') && !Object.prototype.hasOwnProperty.call(nextGeo, 'longitude')) {
+        nextGeo.longitude = nextGeo.lng;
+      }
+      delete nextGeo.lat;
+      delete nextGeo.lng;
+      payload.geoLocation = nextGeo;
     }
 
     const result = await updateCabinFromAdminPayload(req.params.id, payload, {});
