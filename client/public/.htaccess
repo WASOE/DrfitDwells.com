@@ -1,5 +1,8 @@
 RewriteEngine On
 
+# Canonicalize legacy login path before SPA fallback.
+RewriteRule ^admin/login/?$ /login [R=302,L]
+
 # Do not route API calls to the React app
 RewriteCond %{REQUEST_URI} !^/api/ [NC]
 
