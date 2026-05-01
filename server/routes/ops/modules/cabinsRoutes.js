@@ -115,6 +115,17 @@ const OPS_CABIN_EXPERIENCES_EXCLUDED_FIELDS = new Set([
   'inventoryType',
   'units'
 ]);
+const OPS_UNIT_ALLOWED_FIELDS = new Set([
+  'displayName',
+  'adminNotes',
+  'isActive',
+  'airbnbListingLabel'
+]);
+const OPS_UNIT_EXCLUDED_FIELDS = new Set([
+  'unitNumber',
+  'blockedDates',
+  'cabinTypeId'
+]);
 
 router.get('/', async (req, res) => {
   try {
@@ -131,19 +142,67 @@ router.patch('/units/:unitId', async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(String(unitId))) {
       return res.status(400).json({ success: false, message: 'Invalid unit id' });
     }
-    const raw = req.body?.airbnbListingLabel;
-    if (raw !== undefined && raw !== null && typeof raw !== 'string') {
-      return res.status(400).json({ success: false, message: 'airbnbListingLabel must be a string' });
+
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const incomingKeys = Object.keys(body);
+    const excludedKeys = incomingKeys.filter((key) => OPS_UNIT_EXCLUDED_FIELDS.has(key));
+    if (excludedKeys.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Fields not allowed in unit edit: ${excludedKeys.join(', ')}`
+      });
     }
-    const label =
-      raw === undefined || raw === null ? undefined : String(raw).trim().slice(0, 200);
+
+    const unknownKeys = incomingKeys.filter((key) => !OPS_UNIT_ALLOWED_FIELDS.has(key));
+    if (unknownKeys.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Unsupported unit fields: ${unknownKeys.join(', ')}`
+      });
+    }
+
+    const updates = {};
+    if (Object.prototype.hasOwnProperty.call(body, 'displayName')) {
+      const rawDisplayName = body.displayName;
+      if (typeof rawDisplayName !== 'string') {
+        return res.status(400).json({ success: false, message: 'displayName must be a string' });
+      }
+      updates.displayName = rawDisplayName.trim().slice(0, 100);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, 'adminNotes')) {
+      const rawAdminNotes = body.adminNotes;
+      if (typeof rawAdminNotes !== 'string') {
+        return res.status(400).json({ success: false, message: 'adminNotes must be a string' });
+      }
+      updates.adminNotes = rawAdminNotes.trim().slice(0, 500);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, 'isActive')) {
+      if (typeof body.isActive !== 'boolean') {
+        return res.status(400).json({ success: false, message: 'isActive must be a boolean' });
+      }
+      updates.isActive = body.isActive;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, 'airbnbListingLabel')) {
+      const raw = body.airbnbListingLabel;
+      if (raw !== undefined && raw !== null && typeof raw !== 'string') {
+        return res.status(400).json({ success: false, message: 'airbnbListingLabel must be a string' });
+      }
+      const label =
+        raw === undefined || raw === null ? undefined : String(raw).trim().slice(0, 200);
+      if (label !== undefined) {
+        updates.airbnbListingLabel = label === '' ? null : label;
+      }
+    }
 
     const unit = await Unit.findByIdAndUpdate(
       unitId,
-      label === undefined ? {} : { airbnbListingLabel: label === '' ? null : label },
-      { new: true }
+      updates,
+      { new: true, runValidators: true }
     )
-      .select('airbnbListingLabel')
+      .select('displayName adminNotes isActive airbnbListingLabel')
       .lean();
 
     if (!unit) {
@@ -151,9 +210,18 @@ router.patch('/units/:unitId', async (req, res) => {
     }
     return res.json({
       success: true,
-      data: { unitId: String(unitId), airbnbListingLabel: unit.airbnbListingLabel || null }
+      data: {
+        unitId: String(unitId),
+        displayName: unit.displayName || '',
+        adminNotes: unit.adminNotes || '',
+        isActive: unit.isActive !== false,
+        airbnbListingLabel: unit.airbnbListingLabel || null
+      }
     });
   } catch (error) {
+    if (error?.name === 'ValidationError') {
+      return res.status(400).json({ success: false, message: error.message });
+    }
     return res.status(500).json({ success: false, message: error.message });
   }
 });

@@ -250,6 +250,7 @@ async function getCabinDetailReadModel(id) {
         unitId,
         unitNumber: u.unitNumber,
         displayName: u.displayName || null,
+        adminNotes: u.adminNotes || null,
         isActive: u.isActive !== false,
         blockedDatesCount: Array.isArray(u.blockedDates) ? u.blockedDates.length : 0,
         airbnbListingLabel: u.airbnbListingLabel ? String(u.airbnbListingLabel).trim() || null : null,

@@ -273,14 +273,22 @@ export function OpsCabinsList() {
   );
 }
 
-function UnitAirbnbIcsRow({ unit: u }) {
+function UnitAirbnbIcsRow({ unit: u, onReload }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [displayName, setDisplayName] = useState(u.displayName || '');
+  const [adminNotes, setAdminNotes] = useState(u.adminNotes || '');
+  const [isActive, setIsActive] = useState(u.isActive !== false);
   const [label, setLabel] = useState(u.airbnbListingLabel || '');
+  const [busy, setBusy] = useState(false);
   const [hint, setHint] = useState('');
   const hintTimeoutRef = useRef(null);
 
   useEffect(() => {
+    setDisplayName(u.displayName || '');
+    setAdminNotes(u.adminNotes || '');
+    setIsActive(u.isActive !== false);
     setLabel(u.airbnbListingLabel || '');
-  }, [u.unitId, u.airbnbListingLabel]);
+  }, [u.unitId, u.displayName, u.adminNotes, u.isActive, u.airbnbListingLabel]);
 
   useEffect(
     () => () => {
@@ -315,10 +323,18 @@ function UnitAirbnbIcsRow({ unit: u }) {
     }
   };
 
-  const saveLabel = async () => {
+  const saveUnit = async () => {
     setHint('');
+    setBusy(true);
     try {
-      await opsWriteAPI.patchUnitChannelLabel(u.unitId, label);
+      await opsWriteAPI.patchUnitChannelLabel(u.unitId, {
+        displayName,
+        adminNotes,
+        isActive,
+        airbnbListingLabel: label
+      });
+      await onReload();
+      setIsEditing(false);
       setHint('Saved');
       if (hintTimeoutRef.current) clearTimeout(hintTimeoutRef.current);
       hintTimeoutRef.current = setTimeout(() => {
@@ -327,32 +343,117 @@ function UnitAirbnbIcsRow({ unit: u }) {
       }, 2000);
     } catch (err) {
       setHint(err?.response?.data?.message || 'Save failed');
+    } finally {
+      setBusy(false);
     }
+  };
+
+  const cancelEdit = () => {
+    setIsEditing(false);
+    setHint('');
+    setDisplayName(u.displayName || '');
+    setAdminNotes(u.adminNotes || '');
+    setIsActive(u.isActive !== false);
+    setLabel(u.airbnbListingLabel || '');
   };
 
   return (
     <tr className="border-b border-gray-100 align-top">
       <td className="py-2.5 pr-3 font-mono text-xs whitespace-nowrap">{u.unitNumber}</td>
-      <td className="py-2.5 pr-3">{u.displayName || '—'}</td>
-      <td className="py-2.5 pr-3">{u.isActive ? 'Yes' : 'No'}</td>
-      <td className="py-2.5 pr-3">{u.blockedDatesCount ?? 0}</td>
       <td className="py-2.5 pr-3">
-        <div className="flex flex-col gap-1 max-w-[200px]">
+        {isEditing ? (
           <input
             type="text"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            placeholder="e.g. Airbnb listing name / id"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            maxLength={100}
             className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-xs"
-            maxLength={200}
+            placeholder="Display name"
           />
-          <button
-            type="button"
-            onClick={saveLabel}
-            className="text-xs px-2 py-1 rounded border border-gray-200 bg-white hover:bg-gray-50 w-fit"
-          >
-            Save label
-          </button>
+        ) : (
+          u.displayName || '—'
+        )}
+      </td>
+      <td className="py-2.5 pr-3">
+        {isEditing ? (
+          <div className="space-y-1">
+            <label className="inline-flex items-center gap-2 text-xs text-gray-700">
+              <input
+                type="checkbox"
+                checked={isActive}
+                onChange={(e) => setIsActive(e.target.checked)}
+                className="rounded border-gray-300"
+              />
+              Active
+            </label>
+            <p className="text-[11px] text-amber-700">
+              Inactive units are excluded from assignment and availability.
+            </p>
+          </div>
+        ) : (
+          (u.isActive ? 'Yes' : 'No')
+        )}
+      </td>
+      <td className="py-2.5 pr-3">{u.blockedDatesCount ?? 0}</td>
+      <td className="py-2.5 pr-3">
+        <div className="flex flex-col gap-2 max-w-[260px]">
+          {isEditing ? (
+            <>
+              <input
+                type="text"
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
+                placeholder="e.g. Airbnb listing name / id"
+                className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-xs"
+                maxLength={200}
+              />
+              <textarea
+                value={adminNotes}
+                onChange={(e) => setAdminNotes(e.target.value)}
+                rows={2}
+                maxLength={500}
+                placeholder="Internal notes for operators"
+                className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-xs"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={saveUnit}
+                  disabled={busy}
+                  className="text-xs px-2 py-1 rounded border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {busy ? 'Saving…' : 'Save'}
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelEdit}
+                  disabled={busy}
+                  className="text-xs px-2 py-1 rounded border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-xs text-gray-700 break-words">
+                Label: {u.airbnbListingLabel || '—'}
+              </p>
+              <p className="text-xs text-gray-500 break-words">
+                Notes: {u.adminNotes || '—'}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEditing(true);
+                  setHint('');
+                }}
+                className="text-xs px-2 py-1 rounded border border-gray-200 bg-white hover:bg-gray-50 w-fit"
+              >
+                Edit unit
+              </button>
+            </>
+          )}
         </div>
       </td>
       <td className="py-2.5">
@@ -363,6 +464,7 @@ function UnitAirbnbIcsRow({ unit: u }) {
               <button
                 type="button"
                 onClick={copy}
+                disabled={busy}
                 className="text-xs px-3 py-1.5 rounded-lg bg-[#81887A] text-white hover:opacity-90"
               >
                 Copy ICS URL
@@ -2131,7 +2233,7 @@ export default function OpsCabinDetail() {
             </thead>
             <tbody>
               {data.units.map((u) => (
-                <UnitAirbnbIcsRow key={u.unitId} unit={u} />
+                <UnitAirbnbIcsRow key={u.unitId} unit={u} onReload={loadDetail} />
               ))}
             </tbody>
           </table>

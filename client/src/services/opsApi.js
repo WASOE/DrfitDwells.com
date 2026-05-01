@@ -119,8 +119,13 @@ const opsWriteAPI = {
     api.patch(`/ops/reviews/${reviewId}/status`, { status }, { headers: authHeaders() }),
   updateReview: (reviewId, payload) =>
     api.patch(`/ops/reviews/${reviewId}`, payload, { headers: authHeaders() }),
-  patchUnitChannelLabel: (unitId, airbnbListingLabel) =>
-    api.patch(`/ops/cabins/units/${unitId}`, { airbnbListingLabel }, { headers: authHeaders() })
+  patchUnitChannelLabel: (unitId, payloadOrLabel) => {
+    const payload =
+      typeof payloadOrLabel === 'object' && payloadOrLabel !== null
+        ? payloadOrLabel
+        : { airbnbListingLabel: payloadOrLabel };
+    return api.patch(`/ops/cabins/units/${unitId}`, payload, { headers: authHeaders() });
+  }
 };
 
 export { opsReadAPI, opsWriteAPI, decodeRoleFromToken };
