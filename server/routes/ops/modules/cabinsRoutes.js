@@ -74,6 +74,21 @@ const OPS_CABIN_TRANSPORT_OPTIONS_EXCLUDED_FIELDS = new Set([
   'inventoryType',
   'units'
 ]);
+const OPS_CABIN_OCCUPANCY_ALLOWED_FIELDS = new Set([
+  'capacity',
+  'minNights'
+]);
+const OPS_CABIN_OCCUPANCY_EXCLUDED_FIELDS = new Set([
+  'minGuests',
+  'pricePerNight',
+  'pricingModel',
+  'blockedDates',
+  'experiences',
+  'transportOptions',
+  'transportCutoffs',
+  'inventoryType',
+  'units'
+]);
 
 router.get('/', async (req, res) => {
   try {
@@ -256,6 +271,44 @@ router.patch('/:id/transport-options', validateId('id'), adminModuleWriteGate('c
       { transportOptions: body.transportOptions },
       {}
     );
+    if (!result.ok) {
+      return res.status(result.status).json(result.payload);
+    }
+    return res.status(result.status).json(result.payload);
+  } catch (error) {
+    if (error?.name === 'ValidationError') {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.patch('/:id/occupancy', validateId('id'), adminModuleWriteGate('cabins'), async (req, res) => {
+  try {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const incomingKeys = Object.keys(body);
+
+    const excludedKeys = incomingKeys.filter((key) => OPS_CABIN_OCCUPANCY_EXCLUDED_FIELDS.has(key));
+    if (excludedKeys.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Fields not allowed in occupancy edit: ${excludedKeys.join(', ')}`
+      });
+    }
+
+    const unknownKeys = incomingKeys.filter((key) => !OPS_CABIN_OCCUPANCY_ALLOWED_FIELDS.has(key));
+    if (unknownKeys.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Unsupported occupancy fields: ${unknownKeys.join(', ')}`
+      });
+    }
+
+    const payload = {
+      capacity: body.capacity,
+      minNights: body.minNights
+    };
+    const result = await updateCabinFromAdminPayload(req.params.id, payload, {});
     if (!result.ok) {
       return res.status(result.status).json(result.payload);
     }
