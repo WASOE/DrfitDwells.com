@@ -1,5 +1,6 @@
 const Cabin = require('../../models/Cabin');
 const Booking = require('../../models/Booking');
+const { archiveSingleCabin } = require('../cabins/cabinVisibilityService');
 const AvailabilityBlock = require('../../models/AvailabilityBlock');
 const CabinChannelSyncState = require('../../models/CabinChannelSyncState');
 const { appendAuditEvent } = require('../auditWriter');
@@ -227,19 +228,7 @@ async function applyTombstoneStaleReservationBlocks(reason, ctx) {
 
 async function archiveCabin(cabinId, reason, ctx) {
   const r = assertReason(reason);
-  const cabin = await Cabin.findById(cabinId);
-  if (!cabin) {
-    const err = new Error('Cabin not found');
-    err.code = 'NOT_FOUND';
-    err.status = 404;
-    throw err;
-  }
-
-  const before = {
-    archivedAt: cabin.archivedAt || null,
-    isActive: cabin.isActive,
-    name: cabin.name
-  };
+  const result = await archiveSingleCabin({ cabinId, reason: r, actor: ctxActor(ctx) });
 
   await auditMaintenance(
     {
@@ -247,21 +236,15 @@ async function archiveCabin(cabinId, reason, ctx) {
       action: 'maintenance_cabin_archive',
       entityType: 'Cabin',
       entityId: cabinId,
-      beforeSnapshot: before,
-      afterSnapshot: { archivedAt: new Date(), isActive: false },
+      beforeSnapshot: result._auditBefore,
+      afterSnapshot: { archivedAt: result.archivedAt, isActive: result.isActive },
       reason: r,
       route: ctx.route || 'POST /api/maintenance/cabins/:id/archive'
     },
     ctx
   );
 
-  const now = new Date();
-  cabin.archivedAt = now;
-  cabin.archivedReason = r;
-  cabin.isActive = false;
-  await cabin.save({ validateBeforeSave: false });
-
-  return { cabinId: String(cabin._id), archivedAt: now };
+  return { cabinId: result.cabinId, archivedAt: result.archivedAt };
 }
 
 async function deleteFixtureCabin(cabinId, reason, ctx) {

@@ -18,6 +18,7 @@ const {
   batchUpdateCabinImages,
   deleteCabinImage
 } = require('../../../services/cabins/cabinMediaService');
+const { archiveSingleCabin } = require('../../../services/cabins/cabinVisibilityService');
 
 const router = express.Router();
 const OPS_CABIN_CONTENT_ALLOWED_FIELDS = new Set([
@@ -178,6 +179,51 @@ router.post('/', adminModuleWriteGate('cabins'), async (req, res) => {
   } catch (error) {
     if (error?.name === 'ValidationError') {
       return res.status(400).json({ success: false, message: error.message });
+    }
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/:id/archive', validateId('id'), adminModuleWriteGate('cabins'), async (req, res) => {
+  try {
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    const { reason, confirmName } = body;
+    if (typeof reason !== 'string' || typeof confirmName !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'reason and confirmName are required strings'
+      });
+    }
+
+    const result = await archiveSingleCabin({
+      cabinId: req.params.id,
+      reason,
+      confirmName,
+      actor: { id: req.user?.id, role: req.user?.role }
+    });
+
+    const { _auditBefore: _ab, ...data } = result;
+    void _ab;
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    if (error?.name === 'ValidationError') {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    const code = error?.code;
+    const status = error?.status;
+    if (code === 'NOT_FOUND') {
+      return res.status(404).json({ success: false, message: error.message });
+    }
+    if (
+      code === 'VALIDATION' ||
+      code === 'CONFIRM_NAME_MISMATCH' ||
+      code === 'ALREADY_ARCHIVED' ||
+      code === 'NOT_SINGLE_CABIN'
+    ) {
+      return res.status(status || 400).json({ success: false, message: error.message });
+    }
+    if (code === 'BOOKING_CONFLICT') {
+      return res.status(409).json({ success: false, message: error.message });
     }
     return res.status(500).json({ success: false, message: error.message });
   }

@@ -49,10 +49,12 @@
 
 ---
 
-## Batch 10B — OPS single-cabin create (2026)
+## Batch 10B — OPS single-cabin create & archive (2026)
 
 - **`POST /api/ops/cabins`**: `adminModuleWriteGate('cabins')`; strict body whitelist (`name`, `description`, `location`, `capacity`, `pricePerNight`, `minNights`, optional `hostName`); always forces `inventoryMode: 'single'` server-side; rejects unknown keys (including `inventoryMode`, `inventoryType`, `units`, `multiUnitConfig`, `cabinTypeId`, `cabinTypeRef`, `blockedDates`, etc.); delegates to `createCabinFromAdminPayload` unchanged; sanitize/service validation → **400** with existing `{ success, message, errors? }` shape; Mongoose `ValidationError` → **400**.
 - **`/ops/cabins` list**: “Create cabin” modal + minimal form; success navigates to `/ops/cabins/:id` with flash banner; note shown: single cabin only; multi provisioning / cabin types still deferred.
+- **`POST /api/ops/cabins/:id/archive`**: `adminModuleWriteGate('cabins')`; body `reason` (8–500 chars), `confirmName` (must match cabin name); shared **`archiveSingleCabin`** in `server/services/cabins/cabinVisibilityService.js` sets `isActive: false`, `archivedAt`, `archivedReason`; rejects multi / cabin-type-backed cabins; **409** when a non-archived booking exists with `status` in `BLOCKING_BOOKING_STATUSES` (`pending`, `confirmed`, `in_house`) and `checkOut` ≥ Sofia start of today; OPS detail “Danger zone” + modal (single cabins only). **Hard delete** and **restore/unarchive** remain out of scope.
+- **Maintenance**: `POST /api/maintenance/cabins/:id/archive` delegates to **`archiveSingleCabin`** (same booking guard + soft archive), then writes the existing maintenance audit entry; JSON response shape unchanged `{ cabinId, archivedAt }`.
 
 ---
 
