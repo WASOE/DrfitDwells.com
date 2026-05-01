@@ -57,6 +57,26 @@ function formatDateOnlyForOps(value) {
   }
 }
 
+function normalizeExperienceKeySeed(name) {
+  const source = String(name || '').trim().toLowerCase();
+  if (!source) return '';
+  const normalized = source.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return normalized.slice(0, 40);
+}
+
+function buildExperienceKey(name, usedKeys) {
+  const timestamp = Date.now();
+  const seed = normalizeExperienceKeySeed(name);
+  const base = seed ? `exp_${seed}_${timestamp}` : `exp_${timestamp}`;
+  let key = base;
+  let suffix = 1;
+  while (usedKeys.has(key)) {
+    key = `${base}_${suffix++}`;
+  }
+  usedKeys.add(key);
+  return key;
+}
+
 function OpsReadOnlyDetailSection({ title, children }) {
   return (
     <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5 max-w-4xl mx-auto w-full">
@@ -618,6 +638,10 @@ export default function OpsCabinDetail() {
   const [pricingEditBusy, setPricingEditBusy] = useState(false);
   const [pricingEditError, setPricingEditError] = useState('');
   const [pricingEditSuccess, setPricingEditSuccess] = useState('');
+  const [experiencesEditOpen, setExperiencesEditOpen] = useState(false);
+  const [experiencesEditBusy, setExperiencesEditBusy] = useState(false);
+  const [experiencesEditError, setExperiencesEditError] = useState('');
+  const [experiencesEditSuccess, setExperiencesEditSuccess] = useState('');
   const [contentEditForm, setContentEditForm] = useState({
     name: '',
     description: '',
@@ -654,6 +678,7 @@ export default function OpsCabinDetail() {
   const [pricingEditForm, setPricingEditForm] = useState({
     pricePerNight: ''
   });
+  const [experiencesEditRows, setExperiencesEditRows] = useState([]);
   const detailRequestSeq = useRef(0);
 
   const loadDetail = useCallback(async () => {
@@ -994,6 +1019,85 @@ export default function OpsCabinDetail() {
     }
   };
 
+  const openExperiencesEdit = () => {
+    const rows = Array.isArray(content.experiences)
+      ? content.experiences.map((item, index) => ({
+          key: item?.key ? String(item.key) : '',
+          name: item?.name ? String(item.name) : '',
+          price: item?.price != null ? String(item.price) : '0',
+          currency: item?.currency ? String(item.currency) : 'BGN',
+          unit: item?.unit === 'per_guest' ? 'per_guest' : 'flat_per_stay',
+          active: item?.active !== false,
+          sortOrder: item?.sortOrder != null ? String(item.sortOrder) : String(index)
+        }))
+      : [];
+    setExperiencesEditRows(rows);
+    setExperiencesEditError('');
+    setExperiencesEditSuccess('');
+    setExperiencesEditOpen(true);
+  };
+
+  const addExperienceRow = () => {
+    setExperiencesEditRows((prev) => [
+      ...prev,
+      {
+        key: '',
+        name: '',
+        price: '0',
+        currency: 'BGN',
+        unit: 'flat_per_stay',
+        active: true,
+        sortOrder: String(prev.length)
+      }
+    ]);
+  };
+
+  const removeExperienceRow = (index) => {
+    setExperiencesEditRows((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const updateExperienceRow = (index, field, value) => {
+    setExperiencesEditRows((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
+  };
+
+  const saveExperiencesEdit = async () => {
+    setExperiencesEditBusy(true);
+    setExperiencesEditError('');
+    setExperiencesEditSuccess('');
+    try {
+      const usedKeys = new Set();
+      const experiences = experiencesEditRows
+        .map((row, index) => ({
+          key: String(row.key || '').trim(),
+          name: String(row.name || '').trim(),
+          price: Number(row.price),
+          currency: String(row.currency || 'BGN').trim() || 'BGN',
+          unit: row.unit === 'per_guest' ? 'per_guest' : 'flat_per_stay',
+          active: row.active !== false,
+          sortOrder: Number(row.sortOrder ?? index)
+        }))
+        .filter((row) => row.name !== '')
+        .map((row) => {
+          const currentKey = row.key;
+          if (currentKey && !usedKeys.has(currentKey)) {
+            usedKeys.add(currentKey);
+            return row;
+          }
+          return { ...row, key: buildExperienceKey(row.name, usedKeys) };
+        });
+
+      const payload = { experiences };
+      await opsWriteAPI.updateCabinExperiences(id, payload);
+      await loadDetail();
+      setExperiencesEditSuccess('Experiences updated.');
+      setExperiencesEditOpen(false);
+    } catch (err) {
+      setExperiencesEditError(err?.response?.data?.message || 'Failed to update experiences');
+    } finally {
+      setExperiencesEditBusy(false);
+    }
+  };
+
   return (
     <div className="space-y-4 pb-16 sm:pb-0 w-full max-w-4xl mx-auto">
       <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
@@ -1058,6 +1162,8 @@ export default function OpsCabinDetail() {
               {occupancyEditError ? <span className="text-xs text-red-700">{occupancyEditError}</span> : null}
               {pricingEditSuccess ? <span className="text-xs text-green-700">{pricingEditSuccess}</span> : null}
               {pricingEditError ? <span className="text-xs text-red-700">{pricingEditError}</span> : null}
+              {experiencesEditSuccess ? <span className="text-xs text-green-700">{experiencesEditSuccess}</span> : null}
+              {experiencesEditError ? <span className="text-xs text-red-700">{experiencesEditError}</span> : null}
             </div>
           </div>
         </div>
@@ -1451,6 +1557,125 @@ export default function OpsCabinDetail() {
         </section>
       ) : null}
 
+      {experiencesEditOpen ? (
+        <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5 max-w-4xl mx-auto w-full">
+          <h3 className="text-sm font-semibold text-gray-900">Edit experiences</h3>
+          <p className="mt-1 text-xs text-amber-700">Experiences can affect guest extras and quote totals.</p>
+          <div className="mt-3 space-y-3">
+            {experiencesEditRows.map((row, index) => (
+              <div key={`experience-row-${index}`} className="border border-gray-100 rounded-md p-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <label className="block">
+                    <span className="block text-[11px] text-gray-600 mb-1">Name</span>
+                    <input
+                      type="text"
+                      value={row.name}
+                      onChange={(e) => updateExperienceRow(index, 'name', e.target.value)}
+                      className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-sm"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="block text-[11px] text-gray-600 mb-1">Price</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={row.price}
+                      onChange={(e) => updateExperienceRow(index, 'price', e.target.value)}
+                      className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-sm"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="block text-[11px] text-gray-600 mb-1">Currency</span>
+                    <input
+                      type="text"
+                      value={row.currency}
+                      onChange={(e) => updateExperienceRow(index, 'currency', e.target.value)}
+                      className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-sm"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="block text-[11px] text-gray-600 mb-1">Unit</span>
+                    <select
+                      value={row.unit}
+                      onChange={(e) => updateExperienceRow(index, 'unit', e.target.value)}
+                      className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-sm"
+                    >
+                      <option value="flat_per_stay">flat_per_stay</option>
+                      <option value="per_guest">per_guest</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="block text-[11px] text-gray-600 mb-1">Sort order</span>
+                    <input
+                      type="number"
+                      step="1"
+                      value={row.sortOrder}
+                      onChange={(e) => updateExperienceRow(index, 'sortOrder', e.target.value)}
+                      className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-sm"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="block text-[11px] text-gray-600 mb-1">Active</span>
+                    <select
+                      value={row.active ? 'true' : 'false'}
+                      onChange={(e) => updateExperienceRow(index, 'active', e.target.value === 'true')}
+                      className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-sm"
+                    >
+                      <option value="true">true</option>
+                      <option value="false">false</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-[11px] text-gray-500 font-mono break-all">Key: {row.key || '(generated on save)'}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeExperienceRow(index)}
+                    className="ml-auto text-xs px-2.5 py-1.5 rounded border border-red-200 text-red-700 bg-white hover:bg-red-50"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            ))}
+            {experiencesEditRows.length === 0 ? (
+              <p className="text-xs text-gray-500">No experiences configured.</p>
+            ) : null}
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={addExperienceRow}
+              className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+              disabled={experiencesEditBusy}
+            >
+              Add row
+            </button>
+            <button
+              type="button"
+              onClick={saveExperiencesEdit}
+              disabled={experiencesEditBusy}
+              className="text-xs px-3 py-1.5 rounded-lg bg-[#81887A] text-white disabled:opacity-50"
+            >
+              {experiencesEditBusy ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setExperiencesEditOpen(false);
+                setExperiencesEditError('');
+              }}
+              disabled={experiencesEditBusy}
+              className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            {experiencesEditError ? <span className="text-xs text-red-700">{experiencesEditError}</span> : null}
+          </div>
+        </section>
+      ) : null}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <OpsReadOnlyDetailSection title="Location &amp; coordinates">
           <p>
@@ -1833,6 +2058,15 @@ export default function OpsCabinDetail() {
           )}
         </div>
         <div className="mt-3 pt-3 border-t border-gray-100">
+          <div className="flex items-center gap-2 mb-2">
+            <button
+              type="button"
+              onClick={openExperiencesEdit}
+              className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+            >
+              Edit experiences
+            </button>
+          </div>
           <p className="font-medium text-gray-800 mb-1">Experiences</p>
           {Array.isArray(content.experiences) && content.experiences.length > 0 ? (
             <ul className="space-y-2 list-none pl-0">

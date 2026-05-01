@@ -102,6 +102,19 @@ const OPS_CABIN_PRICING_EXCLUDED_FIELDS = new Set([
   'inventoryType',
   'units'
 ]);
+const OPS_CABIN_EXPERIENCES_ALLOWED_FIELDS = new Set([
+  'experiences'
+]);
+const OPS_CABIN_EXPERIENCES_EXCLUDED_FIELDS = new Set([
+  'pricePerNight',
+  'pricingModel',
+  'minGuests',
+  'blockedDates',
+  'transportOptions',
+  'transportCutoffs',
+  'inventoryType',
+  'units'
+]);
 
 router.get('/', async (req, res) => {
   try {
@@ -358,6 +371,44 @@ router.patch('/:id/pricing', validateId('id'), adminModuleWriteGate('cabins'), a
     const result = await updateCabinFromAdminPayload(
       req.params.id,
       { pricePerNight: body.pricePerNight },
+      {}
+    );
+    if (!result.ok) {
+      return res.status(result.status).json(result.payload);
+    }
+    return res.status(result.status).json(result.payload);
+  } catch (error) {
+    if (error?.name === 'ValidationError') {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.patch('/:id/experiences', validateId('id'), adminModuleWriteGate('cabins'), async (req, res) => {
+  try {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const incomingKeys = Object.keys(body);
+
+    const excludedKeys = incomingKeys.filter((key) => OPS_CABIN_EXPERIENCES_EXCLUDED_FIELDS.has(key));
+    if (excludedKeys.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Fields not allowed in experiences edit: ${excludedKeys.join(', ')}`
+      });
+    }
+
+    const unknownKeys = incomingKeys.filter((key) => !OPS_CABIN_EXPERIENCES_ALLOWED_FIELDS.has(key));
+    if (unknownKeys.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Unsupported experiences fields: ${unknownKeys.join(', ')}`
+      });
+    }
+
+    const result = await updateCabinFromAdminPayload(
+      req.params.id,
+      { experiences: body.experiences },
       {}
     );
     if (!result.ok) {
