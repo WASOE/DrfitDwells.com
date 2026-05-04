@@ -16,6 +16,7 @@ import ArchiveCabinModal from './cabins/ArchiveCabinModal.jsx';
 import CabinUnitsEditor from './cabins/CabinUnitsEditor.jsx';
 import CabinContentEditor from './cabins/CabinContentEditor.jsx';
 import CabinArrivalEditor from './cabins/CabinArrivalEditor.jsx';
+import CabinTransportEditor from './cabins/CabinTransportEditor.jsx';
 
 export function OpsCabinsList() {
   const navigate = useNavigate();
@@ -1357,182 +1358,34 @@ export default function OpsCabinDetail() {
         ) : null}
       </OpsReadOnlyDetailSection>
 
-      {transportOptionsEditOpen ? (
-        <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5 max-w-4xl mx-auto w-full">
-          <h3 className="text-sm font-semibold text-gray-900">Edit transport options</h3>
-          <p className="mt-1 text-xs text-amber-700">Transport prices affect guest quote totals.</p>
-          <div className="mt-3 space-y-3">
-            {transportOptionsEditRows.map((row, index) => (
-              <div key={`transport-option-row-${index}`} className="border border-gray-100 rounded-md p-3">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  <label className="block">
-                    <span className="block text-[11px] text-gray-600 mb-1">Type</span>
-                    <input
-                      type="text"
-                      value={row.type}
-                      onChange={(e) => updateTransportOptionRow(index, 'type', e.target.value)}
-                      className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-sm"
-                      placeholder="Horse, ATV, Jeep..."
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="block text-[11px] text-gray-600 mb-1">Price per person</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={row.pricePerPerson}
-                      onChange={(e) => updateTransportOptionRow(index, 'pricePerPerson', e.target.value)}
-                      className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-sm"
-                    />
-                  </label>
-                  <label className="block md:col-span-2">
-                    <span className="block text-[11px] text-gray-600 mb-1">Description</span>
-                    <input
-                      type="text"
-                      value={row.description}
-                      onChange={(e) => updateTransportOptionRow(index, 'description', e.target.value)}
-                      className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-sm"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="block text-[11px] text-gray-600 mb-1">Duration</span>
-                    <input
-                      type="text"
-                      value={row.duration}
-                      onChange={(e) => updateTransportOptionRow(index, 'duration', e.target.value)}
-                      className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-sm"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="block text-[11px] text-gray-600 mb-1">Available</span>
-                    <select
-                      value={row.isAvailable ? 'true' : 'false'}
-                      onChange={(e) => updateTransportOptionRow(index, 'isAvailable', e.target.value === 'true')}
-                      className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-sm"
-                    >
-                      <option value="true">Yes</option>
-                      <option value="false">No</option>
-                    </select>
-                  </label>
-                </div>
-                <div className="mt-2">
-                  <button
-                    type="button"
-                    onClick={() => removeTransportOptionRow(index)}
-                    className="text-xs px-2.5 py-1.5 rounded border border-red-200 text-red-700 bg-white hover:bg-red-50"
-                  >
-                    Remove
-                  </button>
-                </div>
-              </div>
-            ))}
-            {transportOptionsEditRows.length === 0 ? (
-              <p className="text-xs text-gray-500">No transport options configured.</p>
-            ) : null}
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={addTransportOptionRow}
-              className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
-              disabled={transportOptionsEditBusy}
-            >
-              Add row
-            </button>
-            <button
-              type="button"
-              onClick={saveTransportOptionsEdit}
-              disabled={transportOptionsEditBusy}
-              className="text-xs px-3 py-1.5 rounded-lg bg-[#81887A] text-white disabled:opacity-50"
-            >
-              {transportOptionsEditBusy ? 'Saving…' : 'Save'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setTransportOptionsEditOpen(false);
-                setTransportOptionsEditError('');
-              }}
-              disabled={transportOptionsEditBusy}
-              className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            {transportOptionsEditError ? <span className="text-xs text-red-700">{transportOptionsEditError}</span> : null}
-          </div>
-        </section>
-      ) : null}
-
-      {cutoffsEditOpen ? (
-        <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5 max-w-4xl mx-auto w-full">
-          <h3 className="text-sm font-semibold text-gray-900">Edit transport cutoffs</h3>
-          <div className="mt-3 space-y-2">
-            {cutoffsEditRows.map((row, index) => (
-              <div key={`cutoff-row-${index}`} className="flex flex-col md:flex-row md:items-center gap-2 border border-gray-100 rounded-md p-2">
-                <select
-                  value={row.type}
-                  onChange={(e) => updateCutoffRow(index, 'type', e.target.value)}
-                  className="border border-gray-200 rounded-md px-2 py-1.5 text-sm w-full md:w-44"
-                >
-                  <option value="Horse">Horse</option>
-                  <option value="ATV">ATV</option>
-                  <option value="Jeep">Jeep</option>
-                  <option value="Hike">Hike</option>
-                  <option value="Boat">Boat</option>
-                  <option value="Helicopter">Helicopter</option>
-                </select>
-                <input
-                  type="time"
-                  value={row.lastDeparture}
-                  onChange={(e) => updateCutoffRow(index, 'lastDeparture', e.target.value)}
-                  className="border border-gray-200 rounded-md px-2 py-1.5 text-sm w-full md:w-40"
-                />
-                <button
-                  type="button"
-                  onClick={() => removeCutoffRow(index)}
-                  className="text-xs px-2.5 py-1.5 rounded border border-red-200 text-red-700 bg-white hover:bg-red-50 w-full md:w-auto"
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
-            {cutoffsEditRows.length === 0 ? (
-              <p className="text-xs text-gray-500">No cutoffs configured.</p>
-            ) : null}
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={addCutoffRow}
-              className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
-              disabled={cutoffsEditBusy}
-            >
-              Add row
-            </button>
-            <button
-              type="button"
-              onClick={saveCutoffsEdit}
-              disabled={cutoffsEditBusy}
-              className="text-xs px-3 py-1.5 rounded-lg bg-[#81887A] text-white disabled:opacity-50"
-            >
-              {cutoffsEditBusy ? 'Saving…' : 'Save'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setCutoffsEditOpen(false);
-                setCutoffsEditError('');
-              }}
-              disabled={cutoffsEditBusy}
-              className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            {cutoffsEditError ? <span className="text-xs text-red-700">{cutoffsEditError}</span> : null}
-          </div>
-        </section>
-      ) : null}
+      <CabinTransportEditor
+        transportOptionsEditOpen={transportOptionsEditOpen}
+        transportOptionsForm={transportOptionsEditRows}
+        setTransportOptionsForm={setTransportOptionsEditRows}
+        transportOptionsBusy={transportOptionsEditBusy}
+        transportOptionsError={transportOptionsEditError}
+        onCancelTransportOptions={() => {
+          setTransportOptionsEditOpen(false);
+          setTransportOptionsEditError('');
+        }}
+        onSaveTransportOptions={saveTransportOptionsEdit}
+        onAddTransportOptionRow={addTransportOptionRow}
+        onRemoveTransportOptionRow={removeTransportOptionRow}
+        onUpdateTransportOptionRow={updateTransportOptionRow}
+        transportCutoffsEditOpen={cutoffsEditOpen}
+        transportCutoffsForm={cutoffsEditRows}
+        setTransportCutoffsForm={setCutoffsEditRows}
+        transportCutoffsBusy={cutoffsEditBusy}
+        transportCutoffsError={cutoffsEditError}
+        onCancelTransportCutoffs={() => {
+          setCutoffsEditOpen(false);
+          setCutoffsEditError('');
+        }}
+        onSaveTransportCutoffs={saveCutoffsEdit}
+        onAddTransportCutoffRow={addCutoffRow}
+        onRemoveTransportCutoffRow={removeCutoffRow}
+        onUpdateTransportCutoffRow={updateCutoffRow}
+      />
 
       <OpsReadOnlyDetailSection title="Highlights, badges &amp; experiences">
         <div>
