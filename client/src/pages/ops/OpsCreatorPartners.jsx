@@ -4,7 +4,7 @@ import { opsReadAPI, opsWriteAPI } from '../../services/opsApi';
 /** Mirrors server/models/CreatorPartner.js — slug only (no dots). */
 const PARTNER_KEY_RE = /^[a-z0-9_-]{1,80}$/;
 /** Instagram-style referral codes; mirrors server REFERRAL_CODE_RE */
-const REFERRAL_CODE_RE = /^[a-z0-9._-]{1,80}$/;
+const REFERRAL_CODE_RE = /^[a-z0-9_.-]{1,80}$/;
 
 const SLUG_MSG =
   'Slug must be 1–80 characters: lowercase letters, digits, hyphen, or underscore.';

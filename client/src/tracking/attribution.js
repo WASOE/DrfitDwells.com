@@ -1,8 +1,8 @@
 const STORAGE_KEY_V2 = 'dd_attrib_v2';
 const STORAGE_KEY_V1 = 'dd_attrib_v1';
 const TTL_MS = 60 * 24 * 60 * 60 * 1000;
-/** Instagram-style referral codes (dots allowed); must match server CreatorPartner.REFERRAL_CODE_RE */
-const REFERRAL_RE = /^[a-z0-9._-]{1,80}$/;
+/** Instagram-style referral codes (dots allowed). Hyphen last avoids class-range ambiguity. Align with server. */
+const REFERRAL_RE = /^[a-z0-9_.-]{1,80}$/;
 const PARAM_MAP = {
   utm_source: 'utmSource',
   utm_medium: 'utmMedium',
@@ -110,16 +110,45 @@ function readStored() {
  * Capture first-touch attribution from URL + referrer once per session.
  * Call on app boot (e.g. SiteLayout or main).
  */
+function readReferralRawFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  let raw = params.get('ref') || params.get('referral') || params.get('creator');
+  if (raw != null && raw !== '') return raw;
+  try {
+    const u = new URL(window.location.href);
+    return u.searchParams.get('ref') || u.searchParams.get('referral') || u.searchParams.get('creator') || '';
+  } catch {
+    return '';
+  }
+}
+
 export function captureAttributionFromUrl() {
   if (typeof window === 'undefined') return;
-  /** Do not use readStored() here: it upgrades legacy v1 into v2 without URL ref, then this exits early. */
+
+  const referralRaw = readReferralRawFromUrl();
+  const referralCode = normalizeReferralCode(referralRaw || null);
+
   const existingV2 = readStoredV2();
-  if (existingV2) return;
+  if (existingV2) {
+    let fresh = true;
+    if (existingV2.expiresAt) {
+      const exp = new Date(existingV2.expiresAt);
+      fresh = !Number.isNaN(exp.getTime()) && exp.getTime() > Date.now();
+    }
+    if (fresh) {
+      /** Prior partial writes (e.g. legacy v1 upgrade) can leave v2 without referralCode while URL has ?ref= */
+      if (referralCode && !existingV2.referralCode) {
+        writeStoredV2({
+          ...existingV2,
+          referralCode,
+          attributionCapturedAt: existingV2.attributionCapturedAt || new Date().toISOString()
+        });
+      }
+      return;
+    }
+  }
 
   const params = new URLSearchParams(window.location.search);
-  const referralRaw =
-    params.get('ref') || params.get('referral') || params.get('creator');
-  const referralCode = normalizeReferralCode(referralRaw);
   const capturedAt = new Date().toISOString();
   const next = {
     referralCode: referralCode || undefined,

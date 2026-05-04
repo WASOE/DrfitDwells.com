@@ -27,7 +27,7 @@ export default function SiteLayout() {
 
   useEffect(() => {
     captureAttributionFromUrl();
-  }, []);
+  }, [location.pathname, location.search]);
   const basePath = stripLocaleFromPath(location.pathname);
   const isHome = basePath === '/';
   const isSearchPage = basePath === '/search';

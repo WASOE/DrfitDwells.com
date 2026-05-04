@@ -3,8 +3,8 @@ const mongoose = require('mongoose');
 /** Slug and internal partner keys (no dots). */
 const PARTNER_KEY_RE = /^[a-z0-9_-]{1,80}$/;
 
-/** Instagram-style creator referral codes in URLs and storage (dots allowed). */
-const REFERRAL_CODE_RE = /^[a-z0-9._-]{1,80}$/;
+/** Instagram-style creator referral codes in URLs and storage (dots allowed). Hyphen last avoids ambiguity. */
+const REFERRAL_CODE_RE = /^[a-z0-9_.-]{1,80}$/;
 
 function normalizePartnerKey(raw) {
   if (raw == null) return null;

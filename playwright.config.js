@@ -73,7 +73,7 @@ module.exports = defineConfig({
       use: {
         ...devices['Pixel 7']
       },
-      testIgnore: ['**/admin-auth/**', '**/ops/**', '**/permissions/**', '**/api/**', '**/setup/**']
+      testIgnore: ['**/admin-auth/**', '**/ops/**', '**/permissions/**', '**/api/**', '**/setup/**', '**/attribution/**']
     }
   ]
 });
