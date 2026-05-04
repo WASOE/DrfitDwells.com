@@ -4,6 +4,20 @@ import { opsReadAPI, opsWriteAPI } from '../../services/opsApi';
 /** Mirrors server/models/CreatorPartner.js PARTNER_KEY_RE */
 const PARTNER_KEY_RE = /^[a-z0-9_-]{1,80}$/;
 
+const SLUG_MSG =
+  'Slug must be 1–80 characters: lowercase letters, digits, hyphen, or underscore.';
+const REFERRAL_MSG =
+  'Referral code must be 1–80 characters: lowercase letters, digits, hyphen, or underscore.';
+const COMMISSION_MSG = 'Commission rate must be between 0 and 100 percent.';
+
+/** Trim, lowercase, strip common invisible chars (ZWSP/BOM/ZWNJ/ZWJ) before key validation. */
+function normalizePartnerKeyInput(raw) {
+  return String(raw ?? '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
 function toDatetimeLocalValue(iso) {
   if (!iso) return '';
   const d = new Date(iso);
@@ -14,7 +28,7 @@ function toDatetimeLocalValue(iso) {
   )}`;
 }
 
-function emptyForm() {
+function createEmptyCreatorForm() {
   return {
     name: '',
     slug: '',
@@ -83,8 +97,8 @@ function formatAxiosMessage(err) {
 }
 
 function buildPayload(form) {
-  const slug = (form.slug || '').trim().toLowerCase();
-  const referralCode = (form.referralCode || '').trim().toLowerCase();
+  const slug = normalizePartnerKeyInput(form.slug);
+  const referralCode = normalizePartnerKeyInput(form.referralCode);
   const promoTrim = (form.promoCode || '').trim();
   const pct = Number(form.commissionPercent);
   const rateBps = Number.isFinite(pct) ? Math.min(10000, Math.max(0, Math.round(pct * 100))) : 0;
@@ -133,20 +147,16 @@ function buildPayload(form) {
   return payload;
 }
 
-function validateFormLocal(form) {
-  const slug = (form.slug || '').trim().toLowerCase();
-  const referralCode = (form.referralCode || '').trim().toLowerCase();
-  if (!PARTNER_KEY_RE.test(slug)) {
-    return 'Slug must be 1–80 characters: lowercase letters, digits, hyphen, or underscore.';
-  }
-  if (!PARTNER_KEY_RE.test(referralCode)) {
-    return 'Referral code must be 1–80 characters: lowercase letters, digits, hyphen, or underscore.';
-  }
+function validateCreatorForm(form) {
+  const slug = normalizePartnerKeyInput(form.slug);
+  const referral = normalizePartnerKeyInput(form.referralCode);
+  const errors = { slug: '', referral: '', commission: '' };
+  if (!PARTNER_KEY_RE.test(slug)) errors.slug = SLUG_MSG;
+  if (!PARTNER_KEY_RE.test(referral)) errors.referral = REFERRAL_MSG;
   const pct = Number(form.commissionPercent);
-  if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
-    return 'Commission rate must be between 0 and 100 percent.';
-  }
-  return '';
+  if (!Number.isFinite(pct) || pct < 0 || pct > 100) errors.commission = COMMISSION_MSG;
+  const hasErrors = !!(errors.slug || errors.referral || errors.commission);
+  return { errors, hasErrors };
 }
 
 function referralUrl(code) {
@@ -163,8 +173,16 @@ export default function OpsCreatorPartners() {
   const [search, setSearch] = useState('');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState(emptyForm);
+  /** Lazy init so state is always a plain object (never the factory function reference). */
+  const [form, setForm] = useState(() => createEmptyCreatorForm());
   const [saving, setSaving] = useState(false);
+  const [drawerFieldErrors, setDrawerFieldErrors] = useState({ slug: '', referral: '', commission: '' });
+  const [drawerSubmitError, setDrawerSubmitError] = useState('');
+
+  function clearDrawerValidation() {
+    setDrawerFieldErrors({ slug: '', referral: '', commission: '' });
+    setDrawerSubmitError('');
+  }
 
   const load = useCallback(async () => {
     try {
@@ -191,7 +209,8 @@ export default function OpsCreatorPartners() {
 
   function openCreate() {
     setEditingId(null);
-    setForm(emptyForm());
+    setForm(createEmptyCreatorForm());
+    clearDrawerValidation();
     setBanner({ type: '', message: '' });
     setDrawerOpen(true);
   }
@@ -199,17 +218,23 @@ export default function OpsCreatorPartners() {
   function openEdit(row) {
     setEditingId(row._id);
     setForm(rowToForm(row));
+    clearDrawerValidation();
     setBanner({ type: '', message: '' });
     setDrawerOpen(true);
+  }
+
+  function closeDrawer() {
+    setDrawerOpen(false);
+    clearDrawerValidation();
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
     setSaving(true);
-    setBanner({ type: '', message: '' });
-    const localErr = validateFormLocal(form);
-    if (localErr) {
-      setBanner({ type: 'error', message: localErr });
+    clearDrawerValidation();
+    const { errors, hasErrors } = validateCreatorForm(form);
+    if (hasErrors) {
+      setDrawerFieldErrors(errors);
       setSaving(false);
       return;
     }
@@ -231,10 +256,10 @@ export default function OpsCreatorPartners() {
         type: wText ? 'warning' : 'success',
         message: wText ? `${baseMsg} ${wText}` : baseMsg
       });
-      setDrawerOpen(false);
+      closeDrawer();
       await load();
     } catch (err) {
-      setBanner({ type: 'error', message: formatAxiosMessage(err) });
+      setDrawerSubmitError(formatAxiosMessage(err));
     } finally {
       setSaving(false);
     }
@@ -456,13 +481,18 @@ export default function OpsCreatorPartners() {
               </h3>
               <button
                 type="button"
-                onClick={() => setDrawerOpen(false)}
+                onClick={closeDrawer}
                 className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-800 hover:bg-gray-50"
               >
                 Close
               </button>
             </div>
-            <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4">
+            <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4" autoComplete="off">
+              {drawerSubmitError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
+                  {drawerSubmitError}
+                </div>
+              ) : null}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="md:col-span-2">
                   <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
@@ -476,11 +506,21 @@ export default function OpsCreatorPartners() {
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Slug</label>
                   <input
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono lowercase"
+                    className={`w-full rounded-lg border px-3 py-2 text-sm font-mono lowercase ${
+                      drawerFieldErrors.slug ? 'border-red-400 ring-1 ring-red-200' : 'border-gray-300'
+                    }`}
                     value={form.slug}
-                    onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))}
+                    onChange={(e) => {
+                      setForm((f) => ({ ...f, slug: e.target.value }));
+                      setDrawerFieldErrors((er) => ({ ...er, slug: '' }));
+                      setDrawerSubmitError('');
+                    }}
                     required
+                    aria-invalid={!!drawerFieldErrors.slug}
                   />
+                  {drawerFieldErrors.slug ? (
+                    <p className="mt-1 text-xs text-red-700">{drawerFieldErrors.slug}</p>
+                  ) : null}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
@@ -548,11 +588,21 @@ export default function OpsCreatorPartners() {
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Referral code</label>
                   <input
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono lowercase"
+                    className={`w-full rounded-lg border px-3 py-2 text-sm font-mono lowercase ${
+                      drawerFieldErrors.referral ? 'border-red-400 ring-1 ring-red-200' : 'border-gray-300'
+                    }`}
                     value={form.referralCode}
-                    onChange={(e) => setForm((f) => ({ ...f, referralCode: e.target.value }))}
+                    onChange={(e) => {
+                      setForm((f) => ({ ...f, referralCode: e.target.value }));
+                      setDrawerFieldErrors((er) => ({ ...er, referral: '' }));
+                      setDrawerSubmitError('');
+                    }}
                     required
+                    aria-invalid={!!drawerFieldErrors.referral}
                   />
+                  {drawerFieldErrors.referral ? (
+                    <p className="mt-1 text-xs text-red-700">{drawerFieldErrors.referral}</p>
+                  ) : null}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Cookie days</label>
@@ -587,10 +637,20 @@ export default function OpsCreatorPartners() {
                     step="0.01"
                     min={0}
                     max={100}
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm tabular-nums"
+                    className={`w-full rounded-lg border px-3 py-2 text-sm tabular-nums ${
+                      drawerFieldErrors.commission ? 'border-red-400 ring-1 ring-red-200' : 'border-gray-300'
+                    }`}
                     value={form.commissionPercent}
-                    onChange={(e) => setForm((f) => ({ ...f, commissionPercent: e.target.value }))}
+                    onChange={(e) => {
+                      setForm((f) => ({ ...f, commissionPercent: e.target.value }));
+                      setDrawerFieldErrors((er) => ({ ...er, commission: '' }));
+                      setDrawerSubmitError('');
+                    }}
+                    aria-invalid={!!drawerFieldErrors.commission}
                   />
+                  {drawerFieldErrors.commission ? (
+                    <p className="mt-1 text-xs text-red-700">{drawerFieldErrors.commission}</p>
+                  ) : null}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Commission basis</label>
@@ -662,7 +722,7 @@ export default function OpsCreatorPartners() {
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setDrawerOpen(false)}
+                  onClick={closeDrawer}
                   className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
                 >
                   Cancel
