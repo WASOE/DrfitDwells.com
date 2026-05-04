@@ -20,16 +20,15 @@ function normalizePartnerKeyInput(raw) {
     .toLowerCase();
 }
 
-/** Referral: invisible chars stripped, trim, lowercase, strip one leading @ (Instagram). */
+/** Referral: invisible chars stripped, trim, lowercase, strip leading @ (Instagram). */
 function normalizeReferralCodeInput(raw) {
-  let s = String(raw ?? '')
+  return String(raw ?? '')
     .replace(/[\u200B-\u200D\uFEFF]/g, '')
     .trim()
+    .toLowerCase()
+    .replace(/^@+/, '')
+    .trim()
     .toLowerCase();
-  if (s.startsWith('@')) {
-    s = s.slice(1).trim().toLowerCase();
-  }
-  return s;
 }
 
 function toDatetimeLocalValue(iso) {

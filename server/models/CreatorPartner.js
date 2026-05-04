@@ -18,15 +18,18 @@ function validatePartnerKey(value) {
 }
 
 /**
- * Normalize referral code for storage: trim, lowercase, strip a single leading @ (Instagram handle).
+ * Normalize referral code for storage: strip invisible chars, trim, lowercase, strip leading @ (Instagram).
  * Does not reject invalid characters; schema validator enforces REFERRAL_CODE_RE.
  */
 function applyReferralCodeNormalization(raw) {
   if (raw == null) return null;
-  let value = String(raw).trim().toLowerCase();
-  if (value.startsWith('@')) {
-    value = value.slice(1).trim().toLowerCase();
-  }
+  let value = String(raw)
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/^@+/, '')
+    .trim()
+    .toLowerCase();
   return value || null;
 }
 

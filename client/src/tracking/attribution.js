@@ -16,12 +16,19 @@ const PARAM_MAP = {
   msclkid: 'msclkid'
 };
 
+/**
+ * Normalize `ref` / `referral` / `creator` query values for storage (dots OK; strip leading @).
+ * Returns null if empty or invalid (must stay aligned with server REFERRAL_CODE_RE).
+ */
 function normalizeReferralCode(raw) {
   if (raw == null) return null;
-  let value = String(raw).trim().toLowerCase();
-  if (value.startsWith('@')) {
-    value = value.slice(1).trim().toLowerCase();
-  }
+  let value = String(raw)
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/^@+/, '')
+    .trim()
+    .toLowerCase();
   if (!value || !REFERRAL_RE.test(value)) return null;
   return value;
 }
@@ -105,14 +112,14 @@ function readStored() {
  */
 export function captureAttributionFromUrl() {
   if (typeof window === 'undefined') return;
-  const existing = readStored();
-  if (existing && existing.expiresAt) return;
+  /** Do not use readStored() here: it upgrades legacy v1 into v2 without URL ref, then this exits early. */
+  const existingV2 = readStoredV2();
+  if (existingV2) return;
 
   const params = new URLSearchParams(window.location.search);
-  const referralCode =
-    normalizeReferralCode(params.get('ref')) ||
-    normalizeReferralCode(params.get('referral')) ||
-    normalizeReferralCode(params.get('creator'));
+  const referralRaw =
+    params.get('ref') || params.get('referral') || params.get('creator');
+  const referralCode = normalizeReferralCode(referralRaw);
   const capturedAt = new Date().toISOString();
   const next = {
     referralCode: referralCode || undefined,
