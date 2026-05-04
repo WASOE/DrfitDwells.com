@@ -17,6 +17,7 @@ import CabinUnitsEditor from './cabins/CabinUnitsEditor.jsx';
 import CabinContentEditor from './cabins/CabinContentEditor.jsx';
 import CabinArrivalEditor from './cabins/CabinArrivalEditor.jsx';
 import CabinTransportEditor from './cabins/CabinTransportEditor.jsx';
+import CabinOccupancyPricingEditor from './cabins/CabinOccupancyPricingEditor.jsx';
 
 export function OpsCabinsList() {
   const navigate = useNavigate();
@@ -973,100 +974,28 @@ export default function OpsCabinDetail() {
         onSave={saveArrivalEdit}
       />
 
-      {occupancyEditOpen ? (
-        <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5 max-w-4xl mx-auto w-full">
-          <h3 className="text-sm font-semibold text-gray-900">Edit occupancy settings</h3>
-          <p className="mt-1 text-xs text-amber-700">These fields affect guest eligibility and minimum stay rules.</p>
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-            <label className="block">
-              <span className="block text-xs text-gray-600 mb-1">Capacity</span>
-              <input
-                type="number"
-                min="1"
-                step="1"
-                value={occupancyEditForm.capacity}
-                onChange={(e) => setOccupancyEditForm((p) => ({ ...p, capacity: e.target.value }))}
-                className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-sm"
-              />
-            </label>
-            <label className="block">
-              <span className="block text-xs text-gray-600 mb-1">Minimum nights</span>
-              <input
-                type="number"
-                min="1"
-                step="1"
-                value={occupancyEditForm.minNights}
-                onChange={(e) => setOccupancyEditForm((p) => ({ ...p, minNights: e.target.value }))}
-                className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-sm"
-              />
-            </label>
-          </div>
-          <div className="mt-4 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={saveOccupancyEdit}
-              disabled={occupancyEditBusy}
-              className="text-xs px-3 py-2 rounded-lg bg-[#81887A] text-white disabled:opacity-50"
-            >
-              {occupancyEditBusy ? 'Saving…' : 'Save'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setOccupancyEditOpen(false);
-                setOccupancyEditError('');
-              }}
-              disabled={occupancyEditBusy}
-              className="text-xs px-3 py-2 rounded-lg border border-gray-200 bg-white disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            {occupancyEditError ? <span className="text-xs text-red-700">{occupancyEditError}</span> : null}
-          </div>
-        </section>
-      ) : null}
-
-      {pricingEditOpen ? (
-        <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5 max-w-4xl mx-auto w-full">
-          <h3 className="text-sm font-semibold text-gray-900">Edit pricing</h3>
-          <p className="mt-1 text-xs text-amber-700">This changes guest quote totals and payment amounts.</p>
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-            <label className="block">
-              <span className="block text-xs text-gray-600 mb-1">Price per night</span>
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={pricingEditForm.pricePerNight}
-                onChange={(e) => setPricingEditForm((p) => ({ ...p, pricePerNight: e.target.value }))}
-                className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-sm"
-              />
-            </label>
-          </div>
-          <div className="mt-4 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={savePricingEdit}
-              disabled={pricingEditBusy}
-              className="text-xs px-3 py-2 rounded-lg bg-[#81887A] text-white disabled:opacity-50"
-            >
-              {pricingEditBusy ? 'Saving…' : 'Save'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setPricingEditOpen(false);
-                setPricingEditError('');
-              }}
-              disabled={pricingEditBusy}
-              className="text-xs px-3 py-2 rounded-lg border border-gray-200 bg-white disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            {pricingEditError ? <span className="text-xs text-red-700">{pricingEditError}</span> : null}
-          </div>
-        </section>
-      ) : null}
+      <CabinOccupancyPricingEditor
+        occupancyEditOpen={occupancyEditOpen}
+        occupancyForm={occupancyEditForm}
+        setOccupancyForm={setOccupancyEditForm}
+        occupancyBusy={occupancyEditBusy}
+        occupancyError={occupancyEditError}
+        onCancelOccupancy={() => {
+          setOccupancyEditOpen(false);
+          setOccupancyEditError('');
+        }}
+        onSaveOccupancy={saveOccupancyEdit}
+        pricingEditOpen={pricingEditOpen}
+        pricingForm={pricingEditForm}
+        setPricingForm={setPricingEditForm}
+        pricingBusy={pricingEditBusy}
+        pricingError={pricingEditError}
+        onCancelPricing={() => {
+          setPricingEditOpen(false);
+          setPricingEditError('');
+        }}
+        onSavePricing={savePricingEdit}
+      />
 
       {experiencesEditOpen ? (
         <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5 max-w-4xl mx-auto w-full">
