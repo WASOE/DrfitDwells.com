@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { opsReadAPI, opsWriteAPI } from '../../services/opsApi';
 
-/** Mirrors server/models/CreatorPartner.js PARTNER_KEY_RE */
+/** Mirrors server/models/CreatorPartner.js — slug only (no dots). */
 const PARTNER_KEY_RE = /^[a-z0-9_-]{1,80}$/;
+/** Instagram-style referral codes; mirrors server REFERRAL_CODE_RE */
+const REFERRAL_CODE_RE = /^[a-z0-9._-]{1,80}$/;
 
 const SLUG_MSG =
   'Slug must be 1–80 characters: lowercase letters, digits, hyphen, or underscore.';
 const REFERRAL_MSG =
-  'Referral code must be 1–80 characters: lowercase letters, digits, hyphen, or underscore.';
+  'Referral code must be 1–80 characters: lowercase letters, digits, dot, hyphen, or underscore. Optional leading @ is removed.';
 const COMMISSION_MSG = 'Commission rate must be between 0 and 100 percent.';
 
 /** Trim, lowercase, strip common invisible chars (ZWSP/BOM/ZWNJ/ZWJ) before key validation. */
@@ -16,6 +18,18 @@ function normalizePartnerKeyInput(raw) {
     .replace(/[\u200B-\u200D\uFEFF]/g, '')
     .trim()
     .toLowerCase();
+}
+
+/** Referral: invisible chars stripped, trim, lowercase, strip one leading @ (Instagram). */
+function normalizeReferralCodeInput(raw) {
+  let s = String(raw ?? '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .trim()
+    .toLowerCase();
+  if (s.startsWith('@')) {
+    s = s.slice(1).trim().toLowerCase();
+  }
+  return s;
 }
 
 function toDatetimeLocalValue(iso) {
@@ -98,7 +112,7 @@ function formatAxiosMessage(err) {
 
 function buildPayload(form) {
   const slug = normalizePartnerKeyInput(form.slug);
-  const referralCode = normalizePartnerKeyInput(form.referralCode);
+  const referralCode = normalizeReferralCodeInput(form.referralCode);
   const promoTrim = (form.promoCode || '').trim();
   const pct = Number(form.commissionPercent);
   const rateBps = Number.isFinite(pct) ? Math.min(10000, Math.max(0, Math.round(pct * 100))) : 0;
@@ -149,10 +163,10 @@ function buildPayload(form) {
 
 function validateCreatorForm(form) {
   const slug = normalizePartnerKeyInput(form.slug);
-  const referral = normalizePartnerKeyInput(form.referralCode);
+  const referral = normalizeReferralCodeInput(form.referralCode);
   const errors = { slug: '', referral: '', commission: '' };
   if (!PARTNER_KEY_RE.test(slug)) errors.slug = SLUG_MSG;
-  if (!PARTNER_KEY_RE.test(referral)) errors.referral = REFERRAL_MSG;
+  if (!REFERRAL_CODE_RE.test(referral)) errors.referral = REFERRAL_MSG;
   const pct = Number(form.commissionPercent);
   if (!Number.isFinite(pct) || pct < 0 || pct > 100) errors.commission = COMMISSION_MSG;
   const hasErrors = !!(errors.slug || errors.referral || errors.commission);

@@ -204,11 +204,14 @@ referralCode
 
 Rules:
 
-- `?ref=ana` becomes `referralCode = ana`
+- `?ref=ana` becomes `referralCode = ana` (same for `?ref=diana.bosa`)
 - Normalize to lowercase
 - Trim whitespace
-- Allow only letters, numbers, dash, and underscore
+- If the value starts with `@` (Instagram handle paste), remove that single leading `@` and trim again
+- Allowed characters: `a-z`, `0-9`, dot `.`, dash `-`, underscore `_`
 - Max length 80
+- Invalid examples (rejected, not stored): spaces, `/`, `,`, angle brackets / markup, empty after normalize
+- Slug rules for creator **slug** in Ops remain stricter (no dots): `a-z`, `0-9`, `-`, `_` only
 - Store first valid touch for 60 days
 - Do not overwrite valid first-touch attribution unless explicitly designed later
 

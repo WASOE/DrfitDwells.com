@@ -3,6 +3,7 @@ const { body, validationResult } = require('express-validator');
 const rateLimit = require('express-rate-limit');
 const Booking = require('../models/Booking');
 const PromoCode = require('../models/PromoCode');
+const { normalizeReferralCode } = require('../models/CreatorPartner');
 const Cabin = require('../models/Cabin');
 const CabinType = require('../models/CabinType');
 const PaymentFinalization = require('../models/PaymentFinalization');
@@ -44,14 +45,6 @@ const {
 const { openManualReviewItem } = require('../services/ops/ingestion/manualReviewService');
 
 const router = express.Router();
-const REFERRAL_CODE_RE = /^[a-z0-9_-]{1,80}$/;
-
-function normalizeReferralCode(raw) {
-  if (raw == null) return null;
-  const value = String(raw).trim().toLowerCase();
-  if (!value || !REFERRAL_CODE_RE.test(value)) return null;
-  return value;
-}
 
 function parseAttributionCapturedAt(raw) {
   if (!raw) return null;

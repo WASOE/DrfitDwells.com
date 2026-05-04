@@ -1,6 +1,10 @@
 const mongoose = require('mongoose');
 
+/** Slug and internal partner keys (no dots). */
 const PARTNER_KEY_RE = /^[a-z0-9_-]{1,80}$/;
+
+/** Instagram-style creator referral codes in URLs and storage (dots allowed). */
+const REFERRAL_CODE_RE = /^[a-z0-9._-]{1,80}$/;
 
 function normalizePartnerKey(raw) {
   if (raw == null) return null;
@@ -11,6 +15,33 @@ function normalizePartnerKey(raw) {
 function validatePartnerKey(value) {
   if (value == null) return true;
   return PARTNER_KEY_RE.test(String(value));
+}
+
+/**
+ * Normalize referral code for storage: trim, lowercase, strip a single leading @ (Instagram handle).
+ * Does not reject invalid characters; schema validator enforces REFERRAL_CODE_RE.
+ */
+function applyReferralCodeNormalization(raw) {
+  if (raw == null) return null;
+  let value = String(raw).trim().toLowerCase();
+  if (value.startsWith('@')) {
+    value = value.slice(1).trim().toLowerCase();
+  }
+  return value || null;
+}
+
+function validateReferralCode(value) {
+  if (value == null) return true;
+  return REFERRAL_CODE_RE.test(String(value));
+}
+
+/**
+ * Canonical referral code for attribution payloads and booking sanitize: normalized or null if invalid.
+ */
+function normalizeReferralCode(raw) {
+  const value = applyReferralCodeNormalization(raw);
+  if (!value || !REFERRAL_CODE_RE.test(value)) return null;
+  return value;
 }
 
 const creatorPartnerSchema = new mongoose.Schema(
@@ -47,10 +78,10 @@ const creatorPartnerSchema = new mongoose.Schema(
         type: String,
         required: true,
         trim: true,
-        set: normalizePartnerKey,
+        set: applyReferralCodeNormalization,
         validate: {
-          validator: validatePartnerKey,
-          message: 'Referral code must contain only a-z, 0-9, - or _ (max 80 chars)'
+          validator: validateReferralCode,
+          message: 'Referral code must be Instagram-style: a-z, 0-9, ., -, _ (max 80 chars)'
         }
       },
       cookieDays: { type: Number, default: 60, min: 1, max: 365 }
@@ -83,3 +114,6 @@ creatorPartnerSchema.index({ 'referral.code': 1 }, { unique: true });
 module.exports = mongoose.model('CreatorPartner', creatorPartnerSchema);
 module.exports.normalizePartnerKey = normalizePartnerKey;
 module.exports.PARTNER_KEY_RE = PARTNER_KEY_RE;
+module.exports.applyReferralCodeNormalization = applyReferralCodeNormalization;
+module.exports.normalizeReferralCode = normalizeReferralCode;
+module.exports.REFERRAL_CODE_RE = REFERRAL_CODE_RE;

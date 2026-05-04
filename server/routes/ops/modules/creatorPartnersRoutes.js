@@ -3,7 +3,12 @@ const { body, query, validationResult } = require('express-validator');
 const { validateId } = require('../../../middleware/validateId');
 const PromoCode = require('../../../models/PromoCode');
 const CreatorPartner = require('../../../models/CreatorPartner');
-const { normalizePartnerKey, PARTNER_KEY_RE } = require('../../../models/CreatorPartner');
+const {
+  normalizePartnerKey,
+  PARTNER_KEY_RE,
+  applyReferralCodeNormalization,
+  REFERRAL_CODE_RE
+} = require('../../../models/CreatorPartner');
 
 const router = express.Router();
 
@@ -72,6 +77,16 @@ function validatePartnerKeyField(value, fieldLabel) {
   return true;
 }
 
+function validateReferralCodeField(value, fieldLabel) {
+  const normalized = applyReferralCodeNormalization(value);
+  if (!normalized || !REFERRAL_CODE_RE.test(normalized)) {
+    throw new Error(
+      `${fieldLabel} must be Instagram-style: a-z, 0-9, ., -, _ (max 80 chars); optional leading @ is removed`
+    );
+  }
+  return true;
+}
+
 router.get(
   '/',
   [
@@ -114,7 +129,7 @@ router.post(
     body('slug').custom((v) => validatePartnerKeyField(v, 'slug')),
     body('status').optional().isIn(['draft', 'active', 'paused', 'archived']),
     body('referral').isObject().withMessage('referral is required'),
-    body('referral.code').custom((v) => validatePartnerKeyField(v, 'referral.code')),
+    body('referral.code').custom((v) => validateReferralCodeField(v, 'referral.code')),
     body('referral.cookieDays').optional().isInt({ min: 1, max: 365 }),
     body('commission.rateBps').optional().isInt({ min: 0, max: 10000 }),
     body('commission.basis').optional().isIn(['accommodation_net']),
@@ -146,7 +161,7 @@ router.post(
           website: req.body?.profiles?.website ? String(req.body.profiles.website).trim() : null
         },
         referral: {
-          code: normalizePartnerKey(req.body?.referral?.code),
+          code: applyReferralCodeNormalization(req.body?.referral?.code),
           cookieDays: req.body?.referral?.cookieDays ?? 60
         },
         promo: promoLink.promo,
@@ -206,7 +221,7 @@ router.patch(
     body('slug').optional().custom((v) => validatePartnerKeyField(v, 'slug')),
     body('status').optional().isIn(['draft', 'active', 'paused', 'archived']),
     body('referral').optional().isObject(),
-    body('referral.code').optional().custom((v) => validatePartnerKeyField(v, 'referral.code')),
+    body('referral.code').optional().custom((v) => validateReferralCodeField(v, 'referral.code')),
     body('referral.cookieDays').optional().isInt({ min: 1, max: 365 }),
     body('commission.rateBps').optional().isInt({ min: 0, max: 10000 }),
     body('commission.basis').optional().isIn(['accommodation_net']),
@@ -248,7 +263,9 @@ router.patch(
       }
 
       if (req.body.referral !== undefined) {
-        if (req.body?.referral?.code !== undefined) doc.referral.code = normalizePartnerKey(req.body.referral.code);
+        if (req.body?.referral?.code !== undefined) {
+          doc.referral.code = applyReferralCodeNormalization(req.body.referral.code);
+        }
         if (req.body?.referral?.cookieDays !== undefined) doc.referral.cookieDays = req.body.referral.cookieDays;
       }
 

@@ -1,7 +1,8 @@
 const STORAGE_KEY_V2 = 'dd_attrib_v2';
 const STORAGE_KEY_V1 = 'dd_attrib_v1';
 const TTL_MS = 60 * 24 * 60 * 60 * 1000;
-const REFERRAL_RE = /^[a-z0-9_-]{1,80}$/;
+/** Instagram-style referral codes (dots allowed); must match server CreatorPartner.REFERRAL_CODE_RE */
+const REFERRAL_RE = /^[a-z0-9._-]{1,80}$/;
 const PARAM_MAP = {
   utm_source: 'utmSource',
   utm_medium: 'utmMedium',
@@ -17,7 +18,10 @@ const PARAM_MAP = {
 
 function normalizeReferralCode(raw) {
   if (raw == null) return null;
-  const value = String(raw).trim().toLowerCase();
+  let value = String(raw).trim().toLowerCase();
+  if (value.startsWith('@')) {
+    value = value.slice(1).trim().toLowerCase();
+  }
   if (!value || !REFERRAL_RE.test(value)) return null;
   return value;
 }
