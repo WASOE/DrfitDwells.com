@@ -261,6 +261,12 @@ const bookingSchema = new mongoose.Schema({
     trim: true,
     default: null
   },
+  /** Client-generated checkout attempt key for idempotent booking create replay safety. */
+  checkoutId: {
+    type: String,
+    trim: true,
+    default: null
+  },
   /** First-touch marketing params captured on the client (attribution / ads). */
   attribution: {
     type: new mongoose.Schema(
@@ -315,6 +321,10 @@ bookingSchema.index({ cabinTypeId: 1, checkIn: 1, checkOut: 1 });
 bookingSchema.index({ unitId: 1, checkIn: 1, checkOut: 1 });
 bookingSchema.index({ status: 1 });
 bookingSchema.index({ 'guestInfo.email': 1 });
+bookingSchema.index(
+  { checkoutId: 1 },
+  { unique: true, partialFilterExpression: { checkoutId: { $type: 'string', $ne: '' } } }
+);
 
 // Validation: Must have either cabinId OR cabinTypeId, not both
 bookingSchema.pre('validate', function(next) {

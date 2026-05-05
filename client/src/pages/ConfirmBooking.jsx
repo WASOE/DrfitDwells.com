@@ -25,6 +25,31 @@ import {
 
 const stripePk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 const stripePromise = stripePk ? loadStripe(stripePk) : null;
+const CHECKOUT_SESSION_KEY = 'confirm-booking-checkout-session';
+
+function createCheckoutId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `chk_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function buildCheckoutAttemptKey({ bookingEntityType, bookingEntityId, checkIn, checkOut, adults, children }) {
+  const inDate = checkIn ? formatDateOnlyLocal(checkIn) : '';
+  const outDate = checkOut ? formatDateOnlyLocal(checkOut) : '';
+  return [bookingEntityType || '', bookingEntityId || '', inDate, outDate, adults ?? '', children ?? ''].join('|');
+}
+
+function mapCreateBookingErrorMessage(err, fallback) {
+  const code = err?.response?.data?.error?.code;
+  if (code === 'PAYMENT_INTENT_ALREADY_USED') {
+    return 'This payment has already been processed. We couldn\'t create another booking from the same payment. If you were charged, please check your booking confirmation email or contact support with your payment reference.';
+  }
+  if (code === 'CHECKOUT_ID_CONFLICT') {
+    return 'We already received this booking attempt. Please refresh to view the latest result.';
+  }
+  return err?.response?.data?.message || err?.message || fallback;
+}
 
 const DEFAULT_EXPERIENCES = [
   { key: 'atv_pickup', name: 'ATV pickup', price: 70, unit: 'flat_per_stay' },
@@ -168,6 +193,7 @@ const ConfirmBooking = () => {
   const [lockedPromoCode, setLockedPromoCode] = useState(promoSeed);
   const [promoDraft, setPromoDraft] = useState(promoSeed || '');
   const [promoMessage, setPromoMessage] = useState(null);
+  const [checkoutId, setCheckoutId] = useState(() => createCheckoutId());
 
   const handleFormChange = useCallback((field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -253,6 +279,48 @@ const ConfirmBooking = () => {
     const t = Number(quoteFingerprint.split('|')[2]);
     return Number.isFinite(t) ? t : null;
   }, [quoteFingerprint]);
+
+  const checkoutAttemptKey = useMemo(() => buildCheckoutAttemptKey({
+    bookingEntityType,
+    bookingEntityId,
+    checkIn,
+    checkOut,
+    adults,
+    children
+  }), [bookingEntityType, bookingEntityId, checkIn, checkOut, adults, children]);
+
+  useEffect(() => {
+    if (!checkoutAttemptKey) return;
+    let nextCheckoutId = null;
+    try {
+      const raw = sessionStorage.getItem(CHECKOUT_SESSION_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (
+        parsed &&
+        parsed.attemptKey === checkoutAttemptKey &&
+        typeof parsed.checkoutId === 'string' &&
+        parsed.checkoutId.trim().length > 0
+      ) {
+        nextCheckoutId = parsed.checkoutId.trim();
+      }
+    } catch {
+      // ignore storage parse errors
+    }
+    if (!nextCheckoutId) {
+      nextCheckoutId = createCheckoutId();
+      try {
+        sessionStorage.setItem(CHECKOUT_SESSION_KEY, JSON.stringify({
+          attemptKey: checkoutAttemptKey,
+          checkoutId: nextCheckoutId
+        }));
+      } catch {
+        // ignore storage failures
+      }
+    }
+    if (nextCheckoutId !== checkoutId) {
+      setCheckoutId(nextCheckoutId);
+    }
+  }, [checkoutAttemptKey, checkoutId]);
 
   useEffect(() => {
     if (!bookingEntityId || !checkIn || !checkOut || !cabin) return;
@@ -439,6 +507,7 @@ const ConfirmBooking = () => {
               locale: language || undefined
             },
             metaClientContext: getMetaClientContextPayload(),
+            checkoutId: data.checkoutId || checkoutId,
             ...(data.promoCode ? { promoCode: data.promoCode } : {}),
             ...(attr && Object.values(attr).some(Boolean) ? { attribution: attr } : {})
           };
@@ -474,7 +543,7 @@ const ConfirmBooking = () => {
                 if (d.children != null) params.set('children', String(d.children));
                 navigate(`/booking-refund?${params.toString()}`, { replace: true });
               } else {
-                setError(err.response?.data?.message || err.message || t('confirm.bookingFailed'));
+                setError(mapCreateBookingErrorMessage(err, t('confirm.bookingFailed')));
               }
             })
             .finally(() => setSubmitLoading(false));
@@ -484,7 +553,7 @@ const ConfirmBooking = () => {
       }
       window.history.replaceState({}, '', window.location.pathname);
     }
-  }, [bookingEntityId, bookingEntityType, id, navigate, t, language]);
+  }, [bookingEntityId, bookingEntityType, id, navigate, t, language, checkoutId]);
 
   useEffect(() => {
     if (
@@ -599,6 +668,7 @@ const ConfirmBooking = () => {
           checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
           locale: language || undefined
         },
+        checkoutId,
         metaClientContext: getMetaClientContextPayload(),
         ...(attr && Object.values(attr).some(Boolean) ? { attribution: attr } : {})
       };
@@ -617,6 +687,8 @@ const ConfirmBooking = () => {
     if (response.data.success) {
       try {
         sessionStorage.removeItem(CONFIRM_BOOKING_SIMPLE_KEY);
+        sessionStorage.removeItem('confirm-booking-pending');
+        sessionStorage.removeItem(CHECKOUT_SESSION_KEY);
       } catch (e) { /* ignore */ }
       const bookingId = response.data.data?.booking?._id;
       if (bookingId) {
@@ -631,7 +703,7 @@ const ConfirmBooking = () => {
     } else {
       throw new Error(response.data.message || t('confirm.bookingFailed'));
     }
-  }, [bookingEntityId, bookingEntityType, checkIn, checkOut, adults, children, formData, selectedExpKeys, experiences, navigate, lockedPromoCode, t, language]);
+  }, [bookingEntityId, bookingEntityType, checkIn, checkOut, adults, children, formData, selectedExpKeys, experiences, navigate, lockedPromoCode, t, language, checkoutId]);
 
   const handleConfirmAndPay = useCallback(async () => {
     if (!bookingEntityId || !checkIn || !checkOut || !pricing || !serverQuote || serverQuote.totalPrice < 0.5) return;
@@ -644,7 +716,7 @@ const ConfirmBooking = () => {
     try {
       await createBooking(null);
     } catch (err) {
-      setError(err.response?.data?.message || err.message || t('confirm.bookingFailed'));
+      setError(mapCreateBookingErrorMessage(err, t('confirm.bookingFailed')));
     } finally {
       setSubmitLoading(false);
     }
@@ -670,6 +742,7 @@ const ConfirmBooking = () => {
         checkOut: formatDateOnlyLocal(checkOut),
         adults,
         children,
+        checkoutId,
         promoCode: lockedPromoCode || undefined,
         formData: { ...formData },
         experiences: Array.from(selectedExpKeys).map((key) => {
@@ -728,7 +801,7 @@ const ConfirmBooking = () => {
         navigate(`/booking-refund?${params.toString()}`, { replace: true });
         return;
       }
-      setError(err.response?.data?.message || err.message || t('confirm.paymentFailed'));
+      setError(mapCreateBookingErrorMessage(err, t('confirm.paymentFailed')));
     } finally {
       setSubmitLoading(false);
     }

@@ -46,6 +46,58 @@ const { openManualReviewItem } = require('../services/ops/ingestion/manualReview
 const { linkStripePaymentToBooking } = require('../services/payments/paymentLinkingService');
 
 const router = express.Router();
+const CHECKOUT_ID_PATTERN = /^[A-Za-z0-9:_-]{8,128}$/;
+
+function normalizeCheckoutId(value) {
+  if (typeof value !== 'string') return '';
+  return value.trim();
+}
+
+function isValidCheckoutId(value) {
+  return CHECKOUT_ID_PATTERN.test(String(value || ''));
+}
+
+function sameObjectIdish(a, b) {
+  if (!a || !b) return false;
+  return String(a) === String(b);
+}
+
+function sameIsoDateish(a, b) {
+  if (!a || !b) return false;
+  try {
+    return new Date(a).toISOString() === new Date(b).toISOString();
+  } catch {
+    return false;
+  }
+}
+
+function bookingMatchesCheckoutFingerprint(booking, expected) {
+  if (!booking || !expected) return false;
+  if (expected.cabinId && !sameObjectIdish(booking.cabinId, expected.cabinId)) return false;
+  if (expected.cabinTypeId && !sameObjectIdish(booking.cabinTypeId, expected.cabinTypeId)) return false;
+  if (!sameIsoDateish(booking.checkIn, expected.checkInDate)) return false;
+  if (!sameIsoDateish(booking.checkOut, expected.checkOutDate)) return false;
+  if (Number(booking.adults || 0) !== Number(expected.adults || 0)) return false;
+  if (Number(booking.children || 0) !== Number(expected.children || 0)) return false;
+  if (expected.paymentIntentId) {
+    if (String(booking.stripePaymentIntentId || '') !== String(expected.paymentIntentId)) return false;
+  }
+  return true;
+}
+
+function buildCreateBookingSuccessPayload({ booking, checkInDate, checkOutDate, totalPrice, idempotentReplay = false }) {
+  const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
+  return {
+    success: true,
+    message: idempotentReplay ? 'Booking already processed for this checkout attempt' : 'Booking request submitted successfully',
+    idempotentReplay,
+    data: {
+      booking: booking.toObject ? booking.toObject() : booking,
+      totalNights,
+      totalPrice: Number.isFinite(totalPrice) ? totalPrice : booking?.totalPrice
+    }
+  };
+}
 
 function parseAttributionCapturedAt(raw) {
   if (!raw) return null;
@@ -503,7 +555,8 @@ router.post('/', bookingCreateLimiter, [
     .withMessage('Invalid checkbox 2 text'),
   body('legalAcceptance.locale').optional().isString().isLength({ max: 50 }).withMessage('locale is too long'),
   body('specialRequests').optional().isLength({ max: 500 }).withMessage('Special requests cannot exceed 500 characters'),
-  body('promoCode').optional().isString().isLength({ max: 40 }).withMessage('promoCode is too long')
+  body('promoCode').optional().isString().isLength({ max: 40 }).withMessage('promoCode is too long'),
+  body('checkoutId').optional().isString().isLength({ min: 8, max: 128 }).withMessage('checkoutId is invalid')
 ], async (req, res) => {
   let stripePaymentVerified = false;
   let verifiedPaymentIntent = null;
@@ -562,6 +615,7 @@ router.post('/', bookingCreateLimiter, [
     }
 
     const { cabinId, cabinTypeId, unitId, checkIn, checkOut, adults, children = 0, guestInfo, specialRequests, paymentIntentId, legalAcceptance } = req.body;
+    const checkoutId = normalizeCheckoutId(req.body.checkoutId);
 
     // Validate: must have either cabinId OR cabinTypeId, not both
     if (!cabinId && !cabinTypeId) {
@@ -756,6 +810,21 @@ router.post('/', bookingCreateLimiter, [
     }
 
     paymentIntentIdForReview = paymentIntentId ? String(paymentIntentId).trim() : null;
+    const requiresCheckoutId = Boolean(paymentIntentIdForReview);
+    if (requiresCheckoutId && !checkoutId) {
+      return res.status(400).json({
+        success: false,
+        message: 'checkoutId is required for paid booking confirmation',
+        error: { code: 'CHECKOUT_ID_REQUIRED' }
+      });
+    }
+    if (checkoutId && !isValidCheckoutId(checkoutId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'checkoutId is invalid',
+        error: { code: 'INVALID_CHECKOUT_ID' }
+      });
+    }
     // Verify Stripe payment if paymentIntentId is provided
     if (paymentIntentId && stripe) {
       try {
@@ -793,6 +862,64 @@ router.post('/', bookingCreateLimiter, [
         return res.status(400).json({
           success: false,
           message: 'Could not verify payment'
+        });
+      }
+    }
+
+    const checkoutFingerprint = {
+      cabinId: cabinId || null,
+      cabinTypeId: cabinTypeId || null,
+      checkInDate,
+      checkOutDate,
+      adults: parseInt(adults, 10),
+      children: parseInt(children, 10),
+      paymentIntentId: paymentIntentIdForReview || null
+    };
+
+    if (checkoutId) {
+      const existingByCheckoutId = await Booking.findOne({ checkoutId });
+      if (existingByCheckoutId) {
+        if (bookingMatchesCheckoutFingerprint(existingByCheckoutId, checkoutFingerprint)) {
+          return res.status(200).json(
+            buildCreateBookingSuccessPayload({
+              booking: existingByCheckoutId,
+              checkInDate,
+              checkOutDate,
+              totalPrice: existingByCheckoutId.totalPrice,
+              idempotentReplay: true
+            })
+          );
+        }
+        return res.status(409).json({
+          success: false,
+          message: 'This checkout attempt conflicts with an existing booking request',
+          error: { code: 'CHECKOUT_ID_CONFLICT' }
+        });
+      }
+    }
+
+    if (stripePaymentVerified && paymentIntentIdForReview) {
+      const existingByPaymentIntent = await Booking.findOne({ stripePaymentIntentId: paymentIntentIdForReview });
+      if (existingByPaymentIntent) {
+        const checkoutMatches = checkoutId
+          && existingByPaymentIntent.checkoutId
+          && String(existingByPaymentIntent.checkoutId) === String(checkoutId);
+        if (checkoutMatches && bookingMatchesCheckoutFingerprint(existingByPaymentIntent, checkoutFingerprint)) {
+          return res.status(200).json(
+            buildCreateBookingSuccessPayload({
+              booking: existingByPaymentIntent,
+              checkInDate,
+              checkOutDate,
+              totalPrice: existingByPaymentIntent.totalPrice,
+              idempotentReplay: true
+            })
+          );
+        }
+        return res.status(409).json({
+          success: false,
+          message: 'This payment has already been used to create a booking.',
+          error: { code: 'PAYMENT_INTENT_ALREADY_USED' },
+          bookingId: existingByPaymentIntent?._id ? String(existingByPaymentIntent._id) : undefined
         });
       }
     }
@@ -837,6 +964,7 @@ router.post('/', bookingCreateLimiter, [
       isProductionSafe: true,
       isTest: false,
       stripePaymentIntentId: stripePaymentVerified ? String(paymentIntentId).trim() : null,
+      checkoutId: checkoutId || null,
       provenance: {
         source: 'guest_portal',
         intakeRevision: 1,
@@ -888,8 +1016,34 @@ router.post('/', bookingCreateLimiter, [
       promoCode: appliedPromoCode || null
     };
 
-    const booking = new Booking(bookingData);
-    await booking.save();
+    let booking;
+    try {
+      booking = new Booking(bookingData);
+      await booking.save();
+    } catch (saveErr) {
+      if (saveErr?.code === 11000 && checkoutId) {
+        const existingByCheckoutId = await Booking.findOne({ checkoutId });
+        if (existingByCheckoutId) {
+          if (bookingMatchesCheckoutFingerprint(existingByCheckoutId, checkoutFingerprint)) {
+            return res.status(200).json(
+              buildCreateBookingSuccessPayload({
+                booking: existingByCheckoutId,
+                checkInDate,
+                checkOutDate,
+                totalPrice: existingByCheckoutId.totalPrice,
+                idempotentReplay: true
+              })
+            );
+          }
+          return res.status(409).json({
+            success: false,
+            message: 'This checkout attempt conflicts with an existing booking request',
+            error: { code: 'CHECKOUT_ID_CONFLICT' }
+          });
+        }
+      }
+      throw saveErr;
+    }
 
     if (booking.stripePaymentIntentId) {
       try {
@@ -1031,16 +1185,15 @@ router.post('/', bookingCreateLimiter, [
     // Get the appropriate entity for email (cabin or cabinType)
     const entityForEmail = cabin || cabinType;
 
-    const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
-    res.status(201).json({
-      success: true,
-      message: 'Booking request submitted successfully',
-      data: {
-        booking: booking.toObject(),
-        totalNights,
-        totalPrice
-      }
-    });
+    res.status(201).json(
+      buildCreateBookingSuccessPayload({
+        booking,
+        checkInDate,
+        checkOutDate,
+        totalPrice,
+        idempotentReplay: false
+      })
+    );
 
     // Decouple SMTP latency from the HTTP response; booking is already persisted.
     void (async () => {
