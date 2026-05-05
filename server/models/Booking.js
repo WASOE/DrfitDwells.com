@@ -323,7 +323,7 @@ bookingSchema.index({ status: 1 });
 bookingSchema.index({ 'guestInfo.email': 1 });
 bookingSchema.index(
   { checkoutId: 1 },
-  { unique: true, partialFilterExpression: { checkoutId: { $type: 'string', $ne: '' } } }
+  { unique: true, partialFilterExpression: { checkoutId: { $type: 'string' } } }
 );
 
 // Validation: Must have either cabinId OR cabinTypeId, not both

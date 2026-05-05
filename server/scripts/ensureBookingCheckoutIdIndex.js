@@ -7,7 +7,7 @@ const Booking = require('../models/Booking');
 
 const INDEX_NAME = 'checkoutId_unique_non_empty';
 const INDEX_KEY = { checkoutId: 1 };
-const INDEX_PARTIAL = { checkoutId: { $type: 'string', $ne: '' } };
+const INDEX_PARTIAL = { checkoutId: { $type: 'string' } };
 
 function canonical(value) {
   return JSON.stringify(value || {});
@@ -50,6 +50,18 @@ async function run() {
   const collection = Booking.collection;
 
   try {
+    const emptyCheckoutIdCount = await Booking.countDocuments({ checkoutId: '' });
+    if (emptyCheckoutIdCount > 0) {
+      console.error(
+        `[ensure-booking-checkout-id-index] found ${emptyCheckoutIdCount} booking(s) with empty-string checkoutId.`
+      );
+      console.error(
+        '[ensure-booking-checkout-id-index] aborting index creation. Clean these rows first, then re-run.'
+      );
+      process.exitCode = 1;
+      return;
+    }
+
     const beforeIndexes = await collection.indexes();
     console.log('[ensure-booking-checkout-id-index] existing indexes:', beforeIndexes.map((ix) => ix.name));
 
