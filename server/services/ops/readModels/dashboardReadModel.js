@@ -6,6 +6,7 @@ const CommunicationEventLegacy = require('../../../models/EmailEvent');
 const ManualReviewItem = require('../../../models/ManualReviewItem');
 const { mapBookingToReservationCompatible } = require('../../../mappers/bookingToReservationMapper');
 const { normalizeDateToSofiaDayStart } = require('../../../utils/dateTime');
+const { isFixtureBookingEmail } = require('../../../utils/fixtureExclusion');
 
 function dayRange(dateInput = new Date()) {
   const start = normalizeDateToSofiaDayStart(dateInput);
@@ -89,15 +90,26 @@ function derivePaymentAttentionSignals({ reservationStatus, paymentStatus }) {
   const unpaid = paymentStatus === 'unpaid';
   const cancelled = reservationStatus === 'cancelled';
   const cancelledPaid = cancelled && (paymentStatus === 'paid' || paymentStatus === 'partial');
+  const cancelledUnlinkedAudit = cancelled && unlinkedPayment;
   const refundPending = cancelled && (paymentStatus === 'paid' || paymentStatus === 'partial' || pendingVerification);
-  const paymentAttention = failedOrDisputed || pendingVerification || unlinkedPayment || unpaid || cancelledPaid || refundPending;
+  const unpaidActiveAttention = !cancelled && unpaid;
+  const paymentAttention =
+    failedOrDisputed ||
+    pendingVerification ||
+    unlinkedPayment ||
+    cancelledPaid ||
+    cancelledUnlinkedAudit ||
+    refundPending ||
+    unpaidActiveAttention;
   return {
     paymentAttention,
     cancelledPaid,
+    cancelledUnlinkedAudit,
     refundPending,
     unlinkedPayment,
     failedOrDisputed,
-    pendingVerification
+    pendingVerification,
+    unpaidActiveAttention
   };
 }
 
@@ -107,11 +119,14 @@ function buildActionBadges({ reservationStatus, paymentStatus, stayTiming, payme
   if (stayTiming.arrivingToday) badges.push('Arriving today');
   if (stayTiming.currentlyStaying) badges.push('Currently staying');
   if (stayTiming.checkingOutToday) badges.push('Checking out today');
-  if (stayTiming.checkedOut) badges.push('Checked out');
-  if (paymentStatus === 'paid') badges.push('Paid');
-  if (paymentStatus === 'refunded') badges.push('Refunded');
-  if (paymentSignals.refundPending) badges.push('Refund pending');
+  if (paymentSignals.failedOrDisputed) badges.push('Failed/disputed');
+  if (paymentSignals.pendingVerification) badges.push('Pending verification');
+  if (paymentSignals.unlinkedPayment) badges.push('Unlinked payment');
+  if (paymentSignals.unpaidActiveAttention) badges.push('Unpaid');
   if (paymentSignals.cancelledPaid) badges.push('Cancelled + paid');
+  if (paymentSignals.cancelledUnlinkedAudit) badges.push('Cancelled + unlinked');
+  if (paymentStatus === 'refunded') badges.push('Refunded');
+  if (paymentSignals.refundPending) badges.push('Refund follow-up');
   if (paymentSignals.paymentAttention) badges.push('Payment attention');
   return badges;
 }
@@ -184,7 +199,9 @@ async function getDashboardReadModel() {
     for (const key of candidateKeys) unlinkedPaymentByPaymentIntent.add(key);
   }
 
-  const rows = bookings.map((booking) => {
+  const rows = bookings
+    .filter((booking) => !isFixtureBookingEmail(booking?.guestInfo?.email))
+    .map((booking) => {
     const mapped = mapBookingToReservationCompatible(booking);
     const paymentTrail = paymentsByReservation.get(String(booking._id)) || [];
     const pi = typeof booking.stripePaymentIntentId === 'string' ? booking.stripePaymentIntentId.trim() : '';
@@ -199,30 +216,30 @@ async function getDashboardReadModel() {
       paymentStatus
     });
 
-    return {
-      reservationId: mapped.reservationId,
-      detailPath: `/ops/reservations/${mapped.reservationId}`,
-      guestName: `${mapped.guest?.firstName || ''} ${mapped.guest?.lastName || ''}`.trim() || 'Guest',
-      guestEmail: mapped.guest?.email || null,
-      accommodationDisplayName: resolveAccommodationDisplayName(booking),
-      checkInDateOnly: mapped.checkInDateOnly,
-      checkOutDateOnly: mapped.checkOutDateOnly,
-      checkInDate: mapped.checkInDate,
-      adults: booking.adults ?? 0,
-      children: booking.children ?? 0,
-      reservationStatus: mapped.reservationStatus,
-      paymentStatus,
-      source: mapped.source || null,
-      signals: paymentSignals,
-      badges: buildActionBadges({
+      return {
+        reservationId: mapped.reservationId,
+        detailPath: `/ops/reservations/${mapped.reservationId}`,
+        guestName: `${mapped.guest?.firstName || ''} ${mapped.guest?.lastName || ''}`.trim() || 'Guest',
+        guestEmail: mapped.guest?.email || null,
+        accommodationDisplayName: resolveAccommodationDisplayName(booking),
+        checkInDateOnly: mapped.checkInDateOnly,
+        checkOutDateOnly: mapped.checkOutDateOnly,
+        checkInDate: mapped.checkInDate,
+        adults: booking.adults ?? 0,
+        children: booking.children ?? 0,
         reservationStatus: mapped.reservationStatus,
         paymentStatus,
-        stayTiming,
-        paymentSignals
-      }),
-      stayTiming
-    };
-  });
+        source: mapped.source || null,
+        signals: paymentSignals,
+        badges: buildActionBadges({
+          reservationStatus: mapped.reservationStatus,
+          paymentStatus,
+          stayTiming,
+          paymentSignals
+        }),
+        stayTiming
+      };
+    });
 
   const actionNeeded = rows.filter((row) => row.signals.paymentAttention);
   const arrivalsTodayRows = rows.filter((row) => row.stayTiming.arrivingToday);

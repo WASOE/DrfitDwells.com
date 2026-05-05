@@ -27,70 +27,61 @@ function paymentStatusLabel(status) {
 
 function badgeToneClass(label) {
   const lower = String(label || '').toLowerCase();
-  if (lower.includes('payment attention') || lower.includes('cancelled + paid')) {
+  if (lower.includes('payment attention') || lower.includes('cancelled + paid') || lower.includes('failed/disputed')) {
     return 'border-rose-200 bg-rose-50 text-rose-700';
   }
-  if (lower.includes('refund')) return 'border-amber-200 bg-amber-50 text-amber-700';
+  if (lower.includes('refund') || lower.includes('pending verification') || lower.includes('unlinked')) {
+    return 'border-amber-200 bg-amber-50 text-amber-700';
+  }
   if (lower.includes('arriving')) return 'border-sky-200 bg-sky-50 text-sky-700';
   if (lower.includes('currently staying')) return 'border-emerald-200 bg-emerald-50 text-emerald-700';
-  if (lower.includes('cancelled')) return 'border-rose-200 bg-rose-50 text-rose-700';
+  if (lower.includes('cancelled') || lower.includes('unpaid')) return 'border-rose-200 bg-rose-50 text-rose-700';
   if (lower.includes('paid') || lower.includes('refunded')) return 'border-violet-200 bg-violet-50 text-violet-700';
   return 'border-gray-200 bg-gray-50 text-gray-700';
 }
 
-function ReservationSection({ title, rows = [], emptyText }) {
+function ReservationRow({ row }) {
   return (
-    <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
-        <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50 text-gray-700">{rows.length}</span>
-      </div>
-      {rows.length === 0 ? (
-        <p className="text-sm text-gray-500">{emptyText}</p>
-      ) : (
-        <div className="space-y-2">
-          {rows.map((row) => (
-            <Link
-              key={row.reservationId}
-              to={row.detailPath || `/ops/reservations/${row.reservationId}`}
-              className="block border border-gray-200 rounded-lg p-3 hover:bg-gray-50"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900 truncate">{row.guestName || 'Guest'}</p>
-                  <p className="text-xs text-gray-500 truncate">{row.guestEmail || 'No guest email'}</p>
-                </div>
-                <p className="text-[11px] text-gray-500 font-mono">#{String(row.reservationId || '').slice(-8)}</p>
-              </div>
-              <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-xs text-gray-600">
-                <p>
-                  <span className="text-gray-500">Accommodation:</span> <span className="text-gray-700">{row.accommodationDisplayName || 'Unknown'}</span>
-                </p>
-                <p>
-                  <span className="text-gray-500">Dates:</span> <span className="text-gray-700">{row.checkInDateOnly || '—'} - {row.checkOutDateOnly || '—'}</span>
-                </p>
-                <p>
-                  <span className="text-gray-500">Guests:</span>{' '}
-                  <span className="text-gray-700">{row.adults ?? 0}A{(row.children ?? 0) > 0 ? ` ${(row.children ?? 0)}C` : ''}</span>
-                </p>
-                <p>
-                  <span className="text-gray-500">Source:</span> <span className="text-gray-700">{row.source || '—'}</span>
-                </p>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50">{row.reservationStatus || 'unknown'}</span>
-                <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50">{paymentStatusLabel(row.paymentStatus)}</span>
-                {(row.badges || []).map((badge) => (
-                  <span key={badge} className={`text-xs px-2 py-1 rounded border ${badgeToneClass(badge)}`}>
-                    {badge}
-                  </span>
-                ))}
-              </div>
-            </Link>
-          ))}
+    <Link
+      key={row.reservationId}
+      to={row.detailPath || `/ops/reservations/${row.reservationId}`}
+      className="block border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-50"
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-gray-900 truncate">{row.guestName || 'Guest'}</p>
+          <p className="text-xs text-gray-500 truncate">{row.accommodationDisplayName || 'Unknown'}</p>
         </div>
-      )}
-    </section>
+        <p className="text-[11px] text-gray-500 font-mono">#{String(row.reservationId || '').slice(-8)}</p>
+      </div>
+      <p className="mt-1 text-xs text-gray-600">
+        {row.checkInDateOnly || '—'} - {row.checkOutDateOnly || '—'} · {row.adults ?? 0}A
+        {(row.children ?? 0) > 0 ? ` ${(row.children ?? 0)}C` : ''}
+      </p>
+      <div className="mt-1.5 flex flex-wrap gap-1.5">
+        <span className="text-xs px-2 py-0.5 rounded border border-gray-200 bg-gray-50">{row.reservationStatus || 'unknown'}</span>
+        <span className="text-xs px-2 py-0.5 rounded border border-gray-200 bg-gray-50">{paymentStatusLabel(row.paymentStatus)}</span>
+        {(row.badges || [])
+          .filter((badge) => /attention|refund|failed|unlinked|unpaid|cancelled \+ paid|pending verification/i.test(badge))
+          .map((badge) => (
+            <span key={badge} className={`text-xs px-2 py-0.5 rounded border ${badgeToneClass(badge)}`}>
+              {badge}
+            </span>
+          ))}
+      </div>
+    </Link>
+  );
+}
+
+function MiniColumn({ title, rows = [], emptyText }) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
+        <span className="text-xs text-gray-500">{rows.length}</span>
+      </div>
+      {rows.length === 0 ? <p className="text-xs text-gray-500">{emptyText}</p> : rows.map((row) => <ReservationRow key={row.reservationId} row={row} />)}
+    </div>
   );
 }
 
@@ -128,8 +119,8 @@ export default function OpsDashboard() {
       <section className="bg-white border border-gray-200 rounded-xl p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Today&apos;s operations</h2>
-            <p className="text-sm text-gray-500">Who arrives, stays, leaves, and needs attention.</p>
+            <h2 className="text-lg font-semibold text-gray-900">Today</h2>
+            <p className="text-sm text-gray-500">Who arrives, stays, leaves, and what needs attention.</p>
           </div>
           {data.freshness?.degraded || data.freshness?.isStale ? (
             <span className="text-xs px-2 py-1 rounded border border-amber-200 bg-amber-50 text-amber-700">
@@ -139,108 +130,77 @@ export default function OpsDashboard() {
             <span className="text-xs px-2 py-1 rounded border border-emerald-200 bg-emerald-50 text-emerald-700">Healthy</span>
           )}
         </div>
-      </section>
-
-      <section className="grid grid-cols-2 lg:grid-cols-6 gap-2">
-        <div className="bg-white border border-gray-200 rounded-xl p-3">
-          <div className="text-[11px] uppercase tracking-wide text-gray-500">Action needed</div>
-          <div className="mt-1 text-xl font-semibold text-gray-900">{data.aggregates?.actionNeeded ?? 0}</div>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-3">
-          <div className="text-[11px] uppercase tracking-wide text-gray-500">Arrivals today</div>
-          <div className="mt-1 text-xl font-semibold text-gray-900">{data.aggregates?.arrivalsToday ?? 0}</div>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-3">
-          <div className="text-[11px] uppercase tracking-wide text-gray-500">In house</div>
-          <div className="mt-1 text-xl font-semibold text-gray-900">{data.aggregates?.inHouse ?? 0}</div>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-3">
-          <div className="text-[11px] uppercase tracking-wide text-gray-500">Checking out today</div>
-          <div className="mt-1 text-xl font-semibold text-gray-900">{data.aggregates?.departuresToday ?? 0}</div>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-3">
-          <div className="text-[11px] uppercase tracking-wide text-gray-500">Upcoming 7 days</div>
-          <div className="mt-1 text-xl font-semibold text-gray-900">{data.aggregates?.upcoming7Days ?? 0}</div>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-3">
-          <div className="text-[11px] uppercase tracking-wide text-gray-500">Cancelled / refund pending</div>
-          <div className="mt-1 text-xl font-semibold text-gray-900">{data.aggregates?.cancelledRefundPending ?? 0}</div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Link to="/ops/reservations" className="px-3 py-1.5 text-sm rounded border border-gray-200 hover:bg-gray-50">
+            Reservations
+          </Link>
+          <Link to="/ops/calendar" className="px-3 py-1.5 text-sm rounded border border-gray-200 hover:bg-gray-50">
+            Calendar
+          </Link>
+          <Link to="/ops/sync" className="px-3 py-1.5 text-sm rounded border border-gray-200 hover:bg-gray-50">
+            Sync
+          </Link>
         </div>
       </section>
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900">Health & context</h3>
-            <p className="text-sm text-gray-600 mt-1">In-house guests: {data.occupancySnapshot?.value?.inHouse ?? 0}</p>
-            <p className="text-xs text-gray-500 mt-1">Last sync: {data.sync?.lastSyncAt ? String(data.sync.lastSyncAt).slice(0, 19) : '—'}</p>
+      <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
+        <h3 className="text-sm font-semibold text-gray-900">Needs attention</h3>
+        {(data.sections?.actionNeeded || []).length === 0 ? (
+          <p className="text-sm text-gray-500">No action needed.</p>
+        ) : (
+          <div className="space-y-2">
+            {(data.sections?.actionNeeded || []).map((row) => (
+              <ReservationRow key={row.reservationId} row={row} />
+            ))}
           </div>
-          <div>
-          <h3 className="text-sm font-semibold text-gray-900">Quick actions</h3>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <Link to="/ops/reservations" className="px-3 py-1.5 text-sm rounded border border-gray-200 hover:bg-gray-50">
-              Reservations
-            </Link>
-            <Link to="/ops/calendar" className="px-3 py-1.5 text-sm rounded border border-gray-200 hover:bg-gray-50">
-              Calendar
-            </Link>
-            <Link to="/ops/cabins" className="px-3 py-1.5 text-sm rounded border border-gray-200 hover:bg-gray-50">
-              Cabins
-            </Link>
-            <Link to="/ops/sync" className="px-3 py-1.5 text-sm rounded border border-gray-200 hover:bg-gray-50">
-              Sync
-            </Link>
-          </div>
-          </div>
-        </div>
+        )}
       </section>
 
-      <section className="space-y-3">
-        <ReservationSection
-          title="Action needed"
-          rows={data.sections?.actionNeeded || []}
-          emptyText="No action needed."
-        />
-      </section>
-
-      <section className="grid grid-cols-1 xl:grid-cols-3 gap-3">
-        <ReservationSection
-          title="Arrivals today"
+      <section className="bg-white border border-gray-200 rounded-xl p-4 grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <MiniColumn
+          title="Arriving today"
           rows={data.sections?.arrivalsToday || []}
           emptyText="No arrivals today."
         />
-        <ReservationSection
-          title="In house"
+        <MiniColumn
+          title="Staying now"
           rows={data.sections?.inHouse || []}
-          emptyText="No in-house stays."
+          emptyText="No in-house stays now."
         />
-        <ReservationSection
-          title="Checking out today"
+        <MiniColumn
+          title="Leaving today"
           rows={data.sections?.checkingOutToday || []}
-          emptyText="No check-outs today."
+          emptyText="No departures today."
         />
       </section>
 
-      <section className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-        <ReservationSection
-          title="Upcoming 7 days"
-          rows={data.sections?.upcoming7Days || []}
-          emptyText="No upcoming arrivals in the next 7 days."
-        />
-        <ReservationSection
-          title="Cancelled / refund pending"
-          rows={data.sections?.cancelledRefundPending || []}
-          emptyText="No cancelled reservations need refund follow-up."
-        />
-      </section>
-
-      <section className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-        {secondaryMetricKeys.map((m) => (
-          <div key={m.key} className="bg-white border border-gray-200 rounded-xl p-3">
-            <div className="text-[11px] uppercase tracking-wide text-gray-500">{m.label}</div>
-            <div className="mt-1 text-lg font-semibold text-gray-700">{data.aggregates?.[m.key] ?? 0}</div>
+      {(data.sections?.upcoming7Days || []).length > 0 ? (
+        <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-gray-900">Upcoming 7 days</h3>
+            <span className="text-xs text-gray-500">{(data.sections?.upcoming7Days || []).length}</span>
           </div>
+          <div className="space-y-2">
+            {(data.sections?.upcoming7Days || []).map((row) => (
+              <ReservationRow key={row.reservationId} row={row} />
+            ))}
+          </div>
+        </section>
+      ) : (
+        <p className="text-sm text-gray-500">No upcoming arrivals in the next 7 days.</p>
+      )}
+
+      <section className="text-xs text-gray-500 border-t border-gray-200 pt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+        {secondaryMetricKeys.map((m) => (
+          <span key={m.key}>
+            {m.label}: <span className="text-gray-700">{data.aggregates?.[m.key] ?? 0}</span>
+          </span>
         ))}
+        {Number(data.aggregates?.syncWarnings || 0) > 0 ? (
+          <Link to="/ops/sync" className="underline underline-offset-2 text-[#81887A] hover:text-[#707668]">
+            Review sync warnings
+          </Link>
+        ) : null}
       </section>
     </div>
   );
