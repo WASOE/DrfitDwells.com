@@ -4,7 +4,8 @@ const { validateId } = require('../../../middleware/validateId');
 const {
   getReservationsWorkspaceReadModel,
   getReservationsExportRows,
-  validateStayScope
+  validateStayScope,
+  validateOpsBucket
 } = require('../../../services/ops/readModels/reservationsReadModel');
 const { getReservationDetailReadModel } = require('../../../services/ops/readModels/reservationDetailReadModel');
 const {
@@ -65,6 +66,10 @@ router.get('/', async (req, res) => {
     if (stayScopeError) {
       return res.status(400).json({ success: false, errorType: 'validation', message: stayScopeError });
     }
+    const opsBucketError = validateOpsBucket(req.query.opsBucket);
+    if (opsBucketError) {
+      return res.status(400).json({ success: false, errorType: 'validation', message: opsBucketError });
+    }
     const data = await getReservationsWorkspaceReadModel(req.query);
     return res.json({ success: true, data });
   } catch (error) {
@@ -77,6 +82,10 @@ router.get('/export', async (req, res) => {
     const stayScopeError = validateStayScope(req.query.stayScope);
     if (stayScopeError) {
       return res.status(400).json({ success: false, errorType: 'validation', message: stayScopeError });
+    }
+    const opsBucketError = validateOpsBucket(req.query.opsBucket);
+    if (opsBucketError) {
+      return res.status(400).json({ success: false, errorType: 'validation', message: opsBucketError });
     }
     const { page, limit, ...exportQuery } = req.query;
     const rows = await getReservationsExportRows(exportQuery);

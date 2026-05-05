@@ -6,12 +6,27 @@ const { formatSofiaDateOnly } = require('../../../utils/dateTime');
 const { escapeRegex } = require('../../../utils/escapeRegex');
 
 const STAY_SCOPE_VALUES = ['active', 'past'];
+const OPS_BUCKET_VALUES = [
+  'upcoming',
+  'arriving_today',
+  'in_house',
+  'checking_out_today',
+  'past',
+  'cancelled',
+  'payment_attention'
+];
 const EXPORT_LIMIT = 5000;
 
 function validateStayScope(value) {
   if (value === undefined || value === null || value === '') return null;
   if (STAY_SCOPE_VALUES.includes(value)) return null;
   return `stayScope must be one of: ${STAY_SCOPE_VALUES.join(', ')}`;
+}
+
+function validateOpsBucket(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (OPS_BUCKET_VALUES.includes(value)) return null;
+  return `opsBucket must be one of: ${OPS_BUCKET_VALUES.join(', ')}`;
 }
 
 function buildBookingFilters(query) {
@@ -49,6 +64,153 @@ function buildBookingFilters(query) {
   }
   if (and.length === 1) return and[0];
   return { $and: and };
+}
+
+function getStartOfToday(now = new Date()) {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+function getEndOfToday(startOfToday) {
+  const end = new Date(startOfToday);
+  end.setHours(23, 59, 59, 999);
+  return end;
+}
+
+function getEndOfTomorrow(startOfToday) {
+  const end = new Date(startOfToday);
+  end.setDate(end.getDate() + 1);
+  end.setHours(23, 59, 59, 999);
+  return end;
+}
+
+function resolveUnitLabel(booking) {
+  if (!booking?.unitId) return null;
+  const displayName = typeof booking.unitId.displayName === 'string' ? booking.unitId.displayName.trim() : '';
+  if (displayName) return displayName;
+  const unitNumber = typeof booking.unitId.unitNumber === 'string' ? booking.unitId.unitNumber.trim() : '';
+  if (!unitNumber) return null;
+  if (/^unit\b/i.test(unitNumber)) return unitNumber;
+  return `Unit ${unitNumber}`;
+}
+
+function resolveCabinSummary(booking, mapped) {
+  const cabinName = booking?.cabinId?.name || booking?.cabinTypeId?.name || null;
+  const unitLabel = resolveUnitLabel(booking);
+  return {
+    cabinId: mapped.cabinId,
+    cabinTypeId: booking?.cabinTypeId?._id ? String(booking.cabinTypeId._id) : booking?.cabinTypeId ? String(booking.cabinTypeId) : null,
+    unitId: booking?.unitId?._id ? String(booking.unitId._id) : booking?.unitId ? String(booking.unitId) : null,
+    name: cabinName,
+    unitLabel,
+    displayName: cabinName ? (unitLabel ? `${cabinName} · ${unitLabel}` : cabinName) : null,
+    location: booking?.cabinId?.location || booking?.cabinTypeId?.location || null
+  };
+}
+
+function deriveStayTiming(booking, startOfToday) {
+  const endOfToday = getEndOfToday(startOfToday);
+  const endOfTomorrow = getEndOfTomorrow(startOfToday);
+  const checkIn = booking?.checkIn ? new Date(booking.checkIn) : null;
+  const checkOut = booking?.checkOut ? new Date(booking.checkOut) : null;
+  const isCancelled = booking?.status === 'cancelled';
+
+  const arrivingToday = !isCancelled && !!checkIn && checkIn >= startOfToday && checkIn <= endOfToday;
+  const checkingOutToday = !isCancelled && !!checkOut && checkOut >= startOfToday && checkOut <= endOfToday;
+  const currentlyStaying = !isCancelled && !!checkIn && !!checkOut && checkIn < startOfToday && checkOut > endOfToday;
+  const upcoming = !isCancelled && !!checkIn && checkIn > endOfToday;
+  const arrivingTomorrow = upcoming && checkIn <= endOfTomorrow;
+  const checkedOut = !isCancelled && !!checkOut && checkOut < startOfToday;
+  const daysUntilCheckIn = !checkIn
+    ? null
+    : Math.floor((getStartOfToday(checkIn).getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24));
+
+  return {
+    checkIn,
+    checkOut,
+    arrivingToday,
+    arrivingTomorrow,
+    checkingOutToday,
+    currentlyStaying,
+    checkedOut,
+    upcoming,
+    isCancelled,
+    daysUntilCheckIn
+  };
+}
+
+function derivePaymentAttention({ reservationStatus, paymentStatus }) {
+  const baseAttentionStatuses = new Set([
+    'unpaid',
+    'failed',
+    'disputed',
+    'pending_verification',
+    'unlinked_payment'
+  ]);
+  const cancelled = reservationStatus === 'cancelled';
+  const cancelledPaid = cancelled && (paymentStatus === 'paid' || paymentStatus === 'partial');
+  const refundPending = cancelled && (paymentStatus === 'paid' || paymentStatus === 'partial' || paymentStatus === 'pending_verification');
+  const paymentAttention = baseAttentionStatuses.has(paymentStatus) || cancelledPaid || refundPending;
+  return { cancelledPaid, refundPending, paymentAttention };
+}
+
+function deriveOpsBucket({ reservationStatus, stayTiming, paymentAttention }) {
+  if (paymentAttention) return 'payment_attention';
+  if (stayTiming.arrivingToday) return 'arriving_today';
+  if (stayTiming.checkingOutToday) return 'checking_out_today';
+  if (stayTiming.currentlyStaying) return 'in_house';
+  if (stayTiming.upcoming) return 'upcoming';
+  if (reservationStatus === 'cancelled') return 'cancelled';
+  return 'past';
+}
+
+function matchesOpsBucket(opsBucketFilter, row) {
+  if (!opsBucketFilter) return true;
+  const timing = row?.operational?.stayTiming || {};
+  const paymentAttention = !!row?.operational?.paymentAttention;
+  const cancelled = row?.reservationStatus === 'cancelled';
+  if (opsBucketFilter === 'payment_attention') return paymentAttention;
+  if (opsBucketFilter === 'cancelled') return cancelled;
+  if (opsBucketFilter === 'arriving_today') return !!timing.arrivingToday;
+  if (opsBucketFilter === 'checking_out_today') return !!timing.checkingOutToday;
+  if (opsBucketFilter === 'in_house') return !!timing.currentlyStaying;
+  if (opsBucketFilter === 'upcoming') return !!timing.upcoming;
+  if (opsBucketFilter === 'past') return !!timing.checkedOut;
+  return false;
+}
+
+function sortPriority(row) {
+  const status = row.operational?.opsBucket;
+  const map = {
+    payment_attention: 0,
+    arriving_today: 1,
+    checking_out_today: 2,
+    in_house: 3,
+    upcoming: 4,
+    past: 5,
+    cancelled: 6
+  };
+  return map[status] ?? 7;
+}
+
+function sortReservations(rows) {
+  return rows.sort((a, b) => {
+    const priorityDelta = sortPriority(a) - sortPriority(b);
+    if (priorityDelta !== 0) return priorityDelta;
+
+    const aUpcoming = a.operational?.stayTiming?.upcoming ? 1 : 0;
+    const bUpcoming = b.operational?.stayTiming?.upcoming ? 1 : 0;
+    if (aUpcoming !== bUpcoming) return bUpcoming - aUpcoming;
+
+    const aCheckIn = a.dateRange?.startDate ? new Date(a.dateRange.startDate).getTime() : Number.POSITIVE_INFINITY;
+    const bCheckIn = b.dateRange?.startDate ? new Date(b.dateRange.startDate).getTime() : Number.POSITIVE_INFINITY;
+    if (aCheckIn !== bCheckIn) return aCheckIn - bCheckIn;
+
+    const aCreatedAt = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bCreatedAt = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    if (aCreatedAt !== bCreatedAt) return bCreatedAt - aCreatedAt;
+
+    return String(b.reservationId || '').localeCompare(String(a.reservationId || ''));
+  });
 }
 
 function derivePaymentStatus(payments) {
@@ -94,17 +256,14 @@ async function getReservationsWorkspaceReadModel(query = {}) {
   const page = Math.max(1, parseInt(query.page, 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(query.limit, 10) || 20));
   const filters = buildBookingFilters(query);
-  const skip = (page - 1) * limit;
+  const startOfToday = getStartOfToday();
 
-  const [bookings, total] = await Promise.all([
-    Booking.find(filters)
-      .populate('cabinId', 'name location')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean(),
-    Booking.countDocuments(filters)
-  ]);
+  const bookings = await Booking.find(filters)
+    .populate('cabinId', 'name location')
+    .populate('cabinTypeId', 'name location')
+    .populate('unitId', 'displayName unitNumber')
+    .sort({ createdAt: -1 })
+    .lean();
 
   const reservationIds = bookings.map((b) => String(b._id));
   const stripePaymentIntentIds = bookings
@@ -164,7 +323,7 @@ async function getReservationsWorkspaceReadModel(query = {}) {
     }
   }
 
-  const items = bookings.map((booking) => {
+  const rows = bookings.map((booking) => {
     const mapped = mapBookingToReservationCompatible(booking);
     const paymentTrail = paymentsByReservation.get(String(booking._id)) || [];
     const pi = typeof booking.stripePaymentIntentId === 'string' ? booking.stripePaymentIntentId.trim() : '';
@@ -173,9 +332,18 @@ async function getReservationsWorkspaceReadModel(query = {}) {
       linkedPaymentTrail: paymentTrail,
       hasUnlinkedStripePayment: pi ? unlinkedPaymentByPaymentIntent.has(pi) : false
     });
+    const reservationStatus = mapped.reservationStatus;
+    const stayTiming = deriveStayTiming(booking, startOfToday);
+    const paymentSignals = derivePaymentAttention({ reservationStatus, paymentStatus });
+    const opsBucket = deriveOpsBucket({
+      reservationStatus,
+      stayTiming,
+      paymentAttention: paymentSignals.paymentAttention
+    });
     return {
       reservationId: mapped.reservationId,
-      reservationStatus: mapped.reservationStatus,
+      reservationStatus,
+      createdAt: booking.createdAt || null,
       guestSummary: mapped.guest,
       dateRange: {
         startDate: mapped.checkInDate,
@@ -183,11 +351,7 @@ async function getReservationsWorkspaceReadModel(query = {}) {
         startDateOnly: mapped.checkInDateOnly,
         endDateOnly: mapped.checkOutDateOnly
       },
-      cabinSummary: {
-        cabinId: mapped.cabinId,
-        name: booking.cabinId?.name || null,
-        location: booking.cabinId?.location || null
-      },
+      cabinSummary: resolveCabinSummary(booking, mapped),
       adults: booking.adults ?? null,
       children: booking.children ?? null,
       source: mapped.source,
@@ -200,11 +364,30 @@ async function getReservationsWorkspaceReadModel(query = {}) {
         hasConflict: conflictByReservation.get(String(booking._id)) || false,
         severity: conflictByReservation.get(String(booking._id)) ? 'hard' : null
       },
+      operational: {
+        opsBucket,
+        stayTiming,
+        paymentAttention: paymentSignals.paymentAttention,
+        cancelledPaid: paymentSignals.cancelledPaid,
+        refundPending: paymentSignals.refundPending
+      },
       degraded: {
         paymentLinkageIncomplete: paymentStatus === 'pending_verification' || paymentStatus === 'unlinked_payment'
       }
     };
   });
+
+  const opsBucketFilter = query.opsBucket || '';
+  const effectiveOpsBucket = opsBucketFilter || (query.stayScope === 'active' ? 'upcoming' : query.stayScope === 'past' ? 'past' : '');
+  const filteredRows = rows.filter((row) => {
+    if (query.paymentStatus && row.paymentStatus !== query.paymentStatus) return false;
+    if (!matchesOpsBucket(effectiveOpsBucket, row)) return false;
+    return true;
+  });
+  const sortedRows = sortReservations(filteredRows);
+  const total = sortedRows.length;
+  const skip = (page - 1) * limit;
+  const items = sortedRows.slice(skip, skip + limit);
 
   return {
     items,
@@ -216,7 +399,8 @@ async function getReservationsWorkspaceReadModel(query = {}) {
     },
     derived: {
       paymentStatus: 'derived_from_payment_source_truth',
-      conflict: 'derived_from_availability_blocks'
+      conflict: 'derived_from_availability_blocks',
+      opsBucket: 'derived_from_booking_dates_status_and_payment_signals'
     }
   };
 }
@@ -237,6 +421,8 @@ async function getReservationsExportRows(query = {}) {
 
   const bookings = await Booking.find(filters)
     .populate('cabinId', 'name location')
+    .populate('cabinTypeId', 'name location')
+    .populate('unitId', 'displayName unitNumber')
     .sort({ createdAt: -1 })
     .lean();
 
@@ -247,8 +433,9 @@ async function getReservationsExportRows(query = {}) {
     checkOut: booking.checkOut,
     checkInDateOnly: booking.checkIn ? formatSofiaDateOnly(booking.checkIn) : null,
     checkOutDateOnly: booking.checkOut ? formatSofiaDateOnly(booking.checkOut) : null,
-    cabinName: booking.cabinId?.name || null,
-    cabinLocation: booking.cabinId?.location || null,
+    cabinName: booking.cabinId?.name || booking.cabinTypeId?.name || null,
+    cabinLocation: booking.cabinId?.location || booking.cabinTypeId?.location || null,
+    unitLabel: resolveUnitLabel(booking),
     guestInfo: {
       firstName: booking.guestInfo?.firstName || '',
       lastName: booking.guestInfo?.lastName || '',
@@ -267,6 +454,8 @@ module.exports = {
   getReservationsWorkspaceReadModel,
   getReservationsExportRows,
   validateStayScope,
+  validateOpsBucket,
   EXPORT_LIMIT,
-  STAY_SCOPE_VALUES
+  STAY_SCOPE_VALUES,
+  OPS_BUCKET_VALUES
 };

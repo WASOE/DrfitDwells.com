@@ -33,15 +33,11 @@ export default function OpsReservations() {
     () => ({
       page: searchParams.get('page') || 1,
       limit: searchParams.get('limit') || 20,
+      opsBucket: searchParams.get('opsBucket') || '',
       status: searchParams.get('status') || '',
       cabinId: searchParams.get('cabinId') || '',
-      source: searchParams.get('source') || '',
       paymentStatus: searchParams.get('paymentStatus') || '',
-      arrivalStatus: searchParams.get('arrivalStatus') || '',
-      dateFrom: searchParams.get('dateFrom') || '',
-      dateTo: searchParams.get('dateTo') || '',
-      search: searchParams.get('search') || '',
-      stayScope: searchParams.get('stayScope') || ''
+      search: searchParams.get('search') || ''
     }),
     [searchParams]
   );
@@ -100,8 +96,52 @@ export default function OpsReservations() {
     const next = new URLSearchParams(searchParams);
     if (!value) next.delete(key);
     else next.set(key, String(value));
+    if (key === 'opsBucket') next.delete('stayScope');
     if (key !== 'page') next.delete('page');
     setSearchParams(next);
+  };
+
+  const resetFilters = () => {
+    setSearchParams(new URLSearchParams());
+  };
+
+  const buildOperationalBadges = (row) => {
+    const badges = [];
+    const timing = row.operational?.stayTiming || {};
+    const daysUntilCheckIn = Number.isFinite(timing.daysUntilCheckIn) ? timing.daysUntilCheckIn : null;
+    if (row.reservationStatus === 'cancelled') {
+      badges.push({ label: 'Cancelled', tone: 'rose' });
+    } else if (timing.currentlyStaying) {
+      badges.push({ label: 'Currently staying', tone: 'emerald' });
+    } else if (timing.arrivingToday) {
+      badges.push({ label: 'Arriving today', tone: 'sky' });
+    } else if (timing.arrivingTomorrow) {
+      badges.push({ label: 'Arriving tomorrow', tone: 'sky' });
+    } else if (daysUntilCheckIn !== null && daysUntilCheckIn > 1) {
+      badges.push({ label: `Arriving in ${daysUntilCheckIn} days`, tone: 'sky' });
+    } else if (timing.checkedOut) {
+      badges.push({ label: 'Checked out', tone: 'slate' });
+    }
+    if (timing.checkingOutToday && row.reservationStatus !== 'cancelled') {
+      badges.push({ label: 'Checking out today', tone: 'amber' });
+    }
+    if (row.operational?.cancelledPaid) {
+      badges.push({ label: 'Cancelled + paid', tone: 'rose' });
+    }
+    if (row.paymentStatus === 'paid') badges.push({ label: 'Paid', tone: 'emerald' });
+    if (row.paymentStatus === 'refunded') badges.push({ label: 'Refunded', tone: 'violet' });
+    if (row.operational?.refundPending) badges.push({ label: 'Refund pending', tone: 'amber' });
+    if (row.operational?.paymentAttention) badges.push({ label: 'Payment attention', tone: 'rose' });
+    return badges;
+  };
+
+  const badgeToneClass = (tone) => {
+    if (tone === 'emerald') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    if (tone === 'sky') return 'border-sky-200 bg-sky-50 text-sky-700';
+    if (tone === 'amber') return 'border-amber-200 bg-amber-50 text-amber-700';
+    if (tone === 'rose') return 'border-rose-200 bg-rose-50 text-rose-700';
+    if (tone === 'violet') return 'border-violet-200 bg-violet-50 text-violet-700';
+    return 'border-gray-200 bg-gray-50 text-gray-700';
   };
 
   const handleExportCSV = async () => {
@@ -175,9 +215,9 @@ export default function OpsReservations() {
   return (
     <div className="space-y-4 pb-16 sm:pb-0">
       <div className="bg-white border border-gray-200 rounded-xl p-4">
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 max-w-4xl">
+        <div className="flex flex-col sm:flex-row sm:items-start gap-3 max-w-7xl">
           <h2 className="text-lg font-semibold text-gray-900">Reservations workspace</h2>
-          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto sm:ml-auto sm:justify-end">
             <button
               type="button"
               onClick={handleExportCSV}
@@ -201,15 +241,20 @@ export default function OpsReservations() {
         </div>
         <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 max-w-7xl">
           <select
-            value={filters.stayScope}
-            onChange={(e) => updateFilter('stayScope', e.target.value)}
+            value={filters.opsBucket}
+            onChange={(e) => updateFilter('opsBucket', e.target.value)}
             className="px-3 py-2 text-sm border rounded-lg"
-            aria-label="Stay scope filter"
-            data-testid="ops-filter-stay-scope"
+            aria-label="Operational bucket filter"
+            data-testid="ops-filter-ops-bucket"
           >
-            <option value="">All reservations</option>
-            <option value="active">Current &amp; future</option>
+            <option value="">All operational buckets</option>
+            <option value="arriving_today">Arriving today</option>
+            <option value="in_house">In house</option>
+            <option value="checking_out_today">Checking out today</option>
+            <option value="upcoming">Upcoming</option>
             <option value="past">Past</option>
+            <option value="cancelled">Cancelled</option>
+            <option value="payment_attention">Payment attention</option>
           </select>
           <select value={filters.status} onChange={(e) => updateFilter('status', e.target.value)} className="px-3 py-2 text-sm border rounded-lg" aria-label="Reservation status filter" data-testid="ops-filter-status">
             <option value="">All status</option>
@@ -254,6 +299,15 @@ export default function OpsReservations() {
             aria-label="Reservations search"
             data-testid="ops-filter-search"
           />
+        </div>
+        <div className="mt-2 flex items-center justify-end">
+          <button
+            type="button"
+            onClick={resetFilters}
+            className="text-xs text-gray-600 hover:text-gray-900 underline underline-offset-2"
+          >
+            Reset filters
+          </button>
         </div>
         {error ? <div className="mt-2 text-sm text-red-600">{error}</div> : null}
         {exportError ? <div className="mt-2 text-sm text-red-600" role="alert">{exportError}</div> : null}
@@ -470,7 +524,7 @@ export default function OpsReservations() {
                 </div>
                 <div>
                   <span className="text-gray-500">Cabin:</span>{' '}
-                  <span className="text-gray-700">{row.cabinSummary?.name || 'Unknown'}</span>
+                  <span className="text-gray-700">{row.cabinSummary?.displayName || row.cabinSummary?.name || 'Unknown'}</span>
                   {row.cabinSummary?.location ? (
                     <span className="text-gray-500"> · {row.cabinSummary.location}</span>
                   ) : null}
@@ -495,6 +549,11 @@ export default function OpsReservations() {
               <div className="flex flex-wrap gap-2">
                 <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50">{row.reservationStatus || 'unknown'}</span>
                 <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50">{paymentStatusLabel(row.paymentStatus)}</span>
+                {buildOperationalBadges(row).map((badge) => (
+                  <span key={badge.label} className={`text-xs px-2 py-1 rounded border ${badgeToneClass(badge.tone)}`}>
+                    {badge.label}
+                  </span>
+                ))}
                 {row.conflict?.hasConflict ? (
                   <span className="text-xs px-2 py-1 rounded border border-red-200 bg-red-50 text-red-700">Conflict</span>
                 ) : null}
@@ -502,7 +561,18 @@ export default function OpsReservations() {
             </div>
           </Link>
         ))}
-        {data?.items?.length === 0 ? <div className="text-sm text-gray-500">No reservations for current filters.</div> : null}
+        {data?.items?.length === 0 ? (
+          <div className="bg-white border border-gray-200 rounded-xl p-4 text-sm text-gray-600 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <span>No reservations match the selected filters.</span>
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="w-full sm:w-auto px-3 py-2 text-xs font-medium rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+            >
+              Reset filters
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {data?.pagination?.totalPages > 1 ? (
