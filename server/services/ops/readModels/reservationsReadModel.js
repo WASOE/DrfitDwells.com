@@ -61,6 +61,29 @@ function derivePaymentStatus(payments) {
   return null;
 }
 
+function classifyReservationPaymentStatus({ booking, linkedPaymentTrail, hasUnlinkedStripePayment }) {
+  const linkedStatus = derivePaymentStatus(linkedPaymentTrail);
+  if (linkedStatus) return linkedStatus;
+
+  const provenanceSource = String(booking?.provenance?.source || '').trim();
+  const hasStripePaymentIntent = typeof booking?.stripePaymentIntentId === 'string' && booking.stripePaymentIntentId.trim().length > 0;
+  const isManualReservation = provenanceSource === 'admin_manual' || provenanceSource === 'operator_manual';
+
+  if (hasStripePaymentIntent && hasUnlinkedStripePayment) {
+    return 'unlinked_payment';
+  }
+  if (hasStripePaymentIntent && !hasUnlinkedStripePayment) {
+    return 'pending_verification';
+  }
+  if (isManualReservation) {
+    return 'manual_not_required';
+  }
+  if (booking?.totalPrice > 0) {
+    return 'unpaid';
+  }
+  return 'unknown';
+}
+
 function deriveArrivalStatus(booking) {
   if (booking.status === 'confirmed') return 'sent';
   if (booking.status === 'cancelled') return 'not_sent';
@@ -84,6 +107,9 @@ async function getReservationsWorkspaceReadModel(query = {}) {
   ]);
 
   const reservationIds = bookings.map((b) => String(b._id));
+  const stripePaymentIntentIds = bookings
+    .map((b) => (typeof b.stripePaymentIntentId === 'string' ? b.stripePaymentIntentId.trim() : ''))
+    .filter(Boolean);
   const [payments, conflicts] = await Promise.all([
     Payment.find({ reservationId: { $in: reservationIds } }).lean(),
     AvailabilityBlock.find({
@@ -91,6 +117,20 @@ async function getReservationsWorkspaceReadModel(query = {}) {
       status: 'active'
     }).lean()
   ]);
+  const unlinkedPayments = stripePaymentIntentIds.length
+    ? await Payment.find({
+      provider: 'stripe',
+      reservationId: null,
+      $or: [
+        { providerReference: { $in: stripePaymentIntentIds } },
+        { paymentIntentId: { $in: stripePaymentIntentIds } },
+        { stripePaymentIntentId: { $in: stripePaymentIntentIds } },
+        { 'metadata.paymentIntentId': { $in: stripePaymentIntentIds } },
+        { 'metadata.stripePaymentIntentId': { $in: stripePaymentIntentIds } },
+        { 'metadata.id': { $in: stripePaymentIntentIds } }
+      ]
+    }).lean()
+    : [];
 
   const paymentsByReservation = new Map();
   for (const payment of payments) {
@@ -107,10 +147,32 @@ async function getReservationsWorkspaceReadModel(query = {}) {
     conflictByReservation.set(key, true);
   }
 
+  const unlinkedPaymentByPaymentIntent = new Set();
+  for (const payment of unlinkedPayments) {
+    const candidateKeys = [
+      payment.providerReference,
+      payment.paymentIntentId,
+      payment.stripePaymentIntentId,
+      payment.metadata?.paymentIntentId,
+      payment.metadata?.stripePaymentIntentId,
+      payment.metadata?.id
+    ]
+      .map((v) => (typeof v === 'string' ? v.trim() : ''))
+      .filter(Boolean);
+    for (const key of candidateKeys) {
+      unlinkedPaymentByPaymentIntent.add(key);
+    }
+  }
+
   const items = bookings.map((booking) => {
     const mapped = mapBookingToReservationCompatible(booking);
     const paymentTrail = paymentsByReservation.get(String(booking._id)) || [];
-    const paymentStatus = derivePaymentStatus(paymentTrail);
+    const pi = typeof booking.stripePaymentIntentId === 'string' ? booking.stripePaymentIntentId.trim() : '';
+    const paymentStatus = classifyReservationPaymentStatus({
+      booking,
+      linkedPaymentTrail: paymentTrail,
+      hasUnlinkedStripePayment: pi ? unlinkedPaymentByPaymentIntent.has(pi) : false
+    });
     return {
       reservationId: mapped.reservationId,
       reservationStatus: mapped.reservationStatus,
@@ -139,7 +201,7 @@ async function getReservationsWorkspaceReadModel(query = {}) {
         severity: conflictByReservation.get(String(booking._id)) ? 'hard' : null
       },
       degraded: {
-        paymentLinkageIncomplete: paymentStatus === null
+        paymentLinkageIncomplete: paymentStatus === 'pending_verification' || paymentStatus === 'unlinked_payment'
       }
     };
   });

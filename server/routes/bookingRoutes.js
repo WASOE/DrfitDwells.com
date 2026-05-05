@@ -43,6 +43,7 @@ const {
   processMetaPurchaseAfterConfirm
 } = require('../services/bookingPurchaseTracking');
 const { openManualReviewItem } = require('../services/ops/ingestion/manualReviewService');
+const { linkStripePaymentToBooking } = require('../services/payments/paymentLinkingService');
 
 const router = express.Router();
 
@@ -889,6 +890,36 @@ router.post('/', bookingCreateLimiter, [
 
     const booking = new Booking(bookingData);
     await booking.save();
+
+    if (booking.stripePaymentIntentId) {
+      try {
+        const linkResult = await linkStripePaymentToBooking({
+          booking,
+          linkedBy: 'booking_create_reconciliation'
+        });
+        const logPayload = {
+          source: 'booking-payment-link',
+          bookingId: String(booking._id),
+          stripePaymentIntentId: String(booking.stripePaymentIntentId),
+          result: linkResult.status
+        };
+        if (linkResult.paymentId) logPayload.paymentId = linkResult.paymentId;
+        if (linkResult.existingReservationId) logPayload.existingReservationId = linkResult.existingReservationId;
+        if (linkResult.reason) logPayload.reason = linkResult.reason;
+        const level = linkResult.status === 'conflict' ? 'warn' : 'info';
+        console[level](JSON.stringify(logPayload));
+      } catch (linkErr) {
+        console.error(
+          JSON.stringify({
+            source: 'booking-payment-link',
+            bookingId: String(booking._id),
+            stripePaymentIntentId: String(booking.stripePaymentIntentId),
+            result: 'error',
+            error: linkErr?.message || String(linkErr)
+          })
+        );
+      }
+    }
 
     if (stripePaymentVerified && paymentIntentId && stripe) {
       try {

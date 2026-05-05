@@ -49,6 +49,22 @@ export default function OpsReservations() {
   const [exportBusy, setExportBusy] = useState(false);
   const [exportError, setExportError] = useState('');
 
+  const paymentStatusLabel = (status) => {
+    const labels = {
+      paid: 'paid',
+      partial: 'partial',
+      failed: 'failed',
+      disputed: 'disputed',
+      refunded: 'refunded',
+      unpaid: 'unpaid',
+      pending_verification: 'pending verification',
+      manual_not_required: 'manual / not required',
+      unlinked_payment: 'unlinked payment',
+      unknown: 'unknown'
+    };
+    return labels[status] || 'unknown';
+  };
+
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
@@ -221,9 +237,14 @@ export default function OpsReservations() {
             <option value="">All payment status</option>
             <option value="paid">Paid</option>
             <option value="partial">Partial</option>
+            <option value="unpaid">Unpaid</option>
+            <option value="pending_verification">Pending verification</option>
+            <option value="manual_not_required">Manual / not required</option>
+            <option value="unlinked_payment">Unlinked payment</option>
             <option value="failed">Failed</option>
             <option value="disputed">Disputed</option>
             <option value="refunded">Refunded</option>
+            <option value="unknown">Unknown</option>
           </select>
           <input
             value={filters.search}
@@ -473,7 +494,7 @@ export default function OpsReservations() {
 
               <div className="flex flex-wrap gap-2">
                 <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50">{row.reservationStatus || 'unknown'}</span>
-                <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50">{row.paymentStatus || 'payment unknown'}</span>
+                <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50">{paymentStatusLabel(row.paymentStatus)}</span>
                 {row.conflict?.hasConflict ? (
                   <span className="text-xs px-2 py-1 rounded border border-red-200 bg-red-50 text-red-700">Conflict</span>
                 ) : null}
