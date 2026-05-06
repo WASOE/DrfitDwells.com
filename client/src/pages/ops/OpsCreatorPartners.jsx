@@ -226,6 +226,7 @@ export default function OpsCreatorPartners() {
   const [detailCommission, setDetailCommission] = useState([]);
   const [commissionActionBusyId, setCommissionActionBusyId] = useState('');
   const [voidDrafts, setVoidDrafts] = useState({});
+  const [detailTab, setDetailTab] = useState('overview');
 
   function clearDrawerValidation() {
     setDrawerFieldErrors({ slug: '', referral: '', commission: '' });
@@ -351,6 +352,7 @@ export default function OpsCreatorPartners() {
   async function openDetails(row) {
     setDetailRow(row);
     setDetailOpen(true);
+    setDetailTab('overview');
     setDetailError('');
     setDetailLoading(true);
     try {
@@ -371,6 +373,7 @@ export default function OpsCreatorPartners() {
     setDetailCommission([]);
     setCommissionActionBusyId('');
     setVoidDrafts({});
+    setDetailTab('overview');
   }
 
   async function recalculateCommission() {
@@ -570,26 +573,23 @@ export default function OpsCreatorPartners() {
                   <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3 font-mono">Referral</th>
-                  <th className="px-4 py-3 font-mono">Promo</th>
                   <th className="px-4 py-3">Visits</th>
                   <th className="px-4 py-3">Bookings</th>
                   <th className="px-4 py-3">Paid revenue</th>
                   <th className="px-4 py-3">Est. commission</th>
                   <th className="px-4 py-3">Last activity</th>
-                  <th className="px-4 py-3">Profile link</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
                       No creator partners match your filters.
                     </td>
                   </tr>
                 ) : (
                   rows.map((r) => {
-                    const href = mainProfileHref(r);
                     const stats = statsById[r._id] || {};
                     const visits = Number(stats.visits || 0);
                     const uniqueVisitors = Number(stats.uniqueVisitors || 0);
@@ -603,69 +603,39 @@ export default function OpsCreatorPartners() {
                         <td className="px-4 py-3 font-medium text-gray-900">{r.name}</td>
                         <td className="px-4 py-3 text-gray-700 capitalize">{r.status}</td>
                         <td className="px-4 py-3 font-mono text-gray-800">{r.referral?.code || '—'}</td>
-                        <td className="px-4 py-3 font-mono text-gray-700">{r.promo?.code || '—'}</td>
                         <td className="px-4 py-3 tabular-nums text-gray-800">{visits} / {uniqueVisitors}</td>
                         <td className="px-4 py-3 tabular-nums text-gray-800">{attributedBookings} / {paidBookings}</td>
                         <td className="px-4 py-3 tabular-nums text-gray-800">{formatMoney(paidRevenue)}</td>
                         <td className="px-4 py-3 tabular-nums text-gray-800">{formatMoney(commissionEstimate * ((r.commission?.rateBps || 0) / 10000))}</td>
                         <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{formatDateTime(lastActivity)}</td>
-                        <td className="px-4 py-3 max-w-[10rem] md:max-w-xs truncate">
-                          {href ? (
-                            <a
-                              href={href}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-[#81887A] font-medium hover:underline truncate inline-block max-w-full"
-                            >
-                              {href}
-                            </a>
-                          ) : (
-                            '—'
-                          )}
-                        </td>
                         <td className="px-4 py-3 text-right whitespace-nowrap">
-                          <div className="flex flex-wrap justify-end gap-x-2 gap-y-1">
+                          <div className="flex items-center justify-end gap-2">
                             <button
                               type="button"
                               onClick={() => openDetails(r)}
-                              className="text-[#81887A] font-medium hover:underline"
+                              className="px-3 py-1.5 rounded-md bg-[#81887A] text-white text-xs font-medium hover:bg-[#707668]"
                             >
                               Details
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => openEdit(r)}
-                              className="text-[#81887A] font-medium hover:underline"
-                            >
-                              Edit
-                            </button>
-                            {r.status !== 'paused' && r.status !== 'archived' ? (
-                              <button
-                                type="button"
-                                onClick={() => patchStatus(r, 'paused')}
-                                className="text-gray-600 font-medium hover:underline"
-                              >
-                                Pause
-                              </button>
-                            ) : null}
-                            {r.status !== 'archived' ? (
-                              <button
-                                type="button"
-                                onClick={() => patchStatus(r, 'archived')}
-                                className="text-gray-600 font-medium hover:underline"
-                              >
-                                Archive
-                              </button>
-                            ) : null}
-                            {r.referral?.code ? (
-                              <button
-                                type="button"
-                                onClick={() => copyReferralLink(r.referral.code)}
-                                className="text-gray-600 font-medium hover:underline"
-                              >
-                                Copy link
-                              </button>
-                            ) : null}
+                            <details className="relative">
+                              <summary className="list-none cursor-pointer px-2 py-1 rounded-md border border-gray-300 text-xs text-gray-700 hover:bg-gray-50">
+                                More
+                              </summary>
+                              <div className="absolute right-0 mt-1 w-36 bg-white border border-gray-200 rounded-md shadow-lg p-1 z-10 text-left">
+                                <button type="button" onClick={() => openEdit(r)} className="w-full px-2 py-1.5 text-xs text-left hover:bg-gray-50 rounded">Edit</button>
+                                {r.status === 'paused' ? (
+                                  <button type="button" onClick={() => patchStatus(r, 'active')} className="w-full px-2 py-1.5 text-xs text-left hover:bg-gray-50 rounded">Resume</button>
+                                ) : r.status !== 'archived' ? (
+                                  <button type="button" onClick={() => patchStatus(r, 'paused')} className="w-full px-2 py-1.5 text-xs text-left hover:bg-gray-50 rounded">Pause</button>
+                                ) : null}
+                                {r.status !== 'archived' ? (
+                                  <button type="button" onClick={() => patchStatus(r, 'archived')} className="w-full px-2 py-1.5 text-xs text-left hover:bg-gray-50 rounded">Archive</button>
+                                ) : null}
+                                {r.referral?.code ? (
+                                  <button type="button" onClick={() => copyReferralLink(r.referral.code)} className="w-full px-2 py-1.5 text-xs text-left hover:bg-gray-50 rounded">Copy link</button>
+                                ) : null}
+                              </div>
+                            </details>
                           </div>
                         </td>
                       </tr>
@@ -700,44 +670,77 @@ export default function OpsCreatorPartners() {
               {detailLoading ? <div className="text-sm text-gray-600">Loading details…</div> : null}
               {!detailLoading && detailRow ? (
                 <>
-                  <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <div className="border border-gray-200 rounded-lg p-4">
-                      <h4 className="font-semibold text-gray-900 mb-2">Profile</h4>
-                      <div className="text-sm text-gray-700 space-y-1">
-                        <div><span className="text-gray-500">Name:</span> {detailRow.name}</div>
-                        <div><span className="text-gray-500">Status:</span> <span className="capitalize">{detailRow.status}</span></div>
-                        <div><span className="text-gray-500">Slug:</span> <span className="font-mono">{detailRow.slug || '—'}</span></div>
-                        <div><span className="text-gray-500">Commission:</span> {((detailRow.commission?.rateBps || 0) / 100).toFixed(2)}%</div>
-                      </div>
-                    </div>
-                    <div className="border border-gray-200 rounded-lg p-4">
-                      <h4 className="font-semibold text-gray-900 mb-2">Tracking details</h4>
-                      <div className="text-sm text-gray-700 space-y-1">
-                        <div><span className="text-gray-500">Referral code:</span> <span className="font-mono">{detailRow.referral?.code || '—'}</span></div>
-                        <div><span className="text-gray-500">Promo code:</span> <span className="font-mono">{detailRow.promo?.code || '—'}</span></div>
-                        <div><span className="text-gray-500">Cookie days:</span> {detailRow.referral?.cookieDays ?? '—'}</div>
-                        <div><span className="text-gray-500">Referral link:</span> {detailRow.referral?.code ? referralUrl(detailRow.referral.code) : '—'}</div>
-                      </div>
-                    </div>
-                  </section>
-
-                  <section className="border border-gray-200 rounded-lg p-4">
-                    <h4 className="font-semibold text-gray-900 mb-3">Performance summary</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-                      <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Total visits</div><div className="font-semibold text-gray-900">{detailStats?.visits ?? 0}</div></div>
-                      <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Unique-ish visitors</div><div className="font-semibold text-gray-900">{detailStats?.uniqueVisitors ?? 0}</div></div>
-                      <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Total bookings</div><div className="font-semibold text-gray-900">{detailStats?.attributedBookings ?? 0}</div></div>
-                      <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Paid/confirmed</div><div className="font-semibold text-gray-900">{detailStats?.paidConfirmedBookings ?? 0}</div></div>
-                      <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Cancelled/refunded/void</div><div className="font-semibold text-gray-900">{detailStats?.cancelledRefundedVoidBookings ?? 0}</div></div>
-                      <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Conversion rate</div><div className="font-semibold text-gray-900">{formatPercentRatio(detailStats?.conversionRate ?? 0)}</div></div>
-                      <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Gross revenue</div><div className="font-semibold text-gray-900">{formatMoney(detailStats?.grossBookingRevenue ?? 0)}</div></div>
-                      <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Commissionable estimate</div><div className="font-semibold text-gray-900">{formatMoney(detailStats?.commissionableRevenueEstimate ?? 0)}</div></div>
-                      <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Last visit</div><div className="font-semibold text-gray-900">{formatDateTime(detailStats?.lastVisitAt)}</div></div>
-                      <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Last booking</div><div className="font-semibold text-gray-900">{formatDateTime(detailStats?.lastBookingAt)}</div></div>
+                  <section className="border border-gray-200 rounded-lg p-2">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                      {[
+                        ['overview', 'Overview'],
+                        ['bookings', 'Bookings'],
+                        ['commissions', 'Commissions'],
+                        ['profile', 'Profile']
+                      ].map(([id, label]) => (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => setDetailTab(id)}
+                          className={`px-3 py-2 rounded-md text-sm font-medium ${
+                            detailTab === id ? 'bg-[#81887A] text-white' : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
                     </div>
                   </section>
 
-                  <section className="border border-gray-200 rounded-lg p-4">
+                  {detailTab === 'overview' ? (
+                    <>
+                      <section className="border border-gray-200 rounded-lg p-4">
+                        <h4 className="font-semibold text-gray-900 mb-3">Performance summary</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
+                          <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Visits</div><div className="font-semibold text-gray-900">{detailStats?.visits ?? 0}</div></div>
+                          <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Unique visitors</div><div className="font-semibold text-gray-900">{detailStats?.uniqueVisitors ?? 0}</div></div>
+                          <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Bookings</div><div className="font-semibold text-gray-900">{detailStats?.attributedBookings ?? 0}</div></div>
+                          <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Paid bookings</div><div className="font-semibold text-gray-900">{detailStats?.paidConfirmedBookings ?? 0}</div></div>
+                          <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Paid revenue</div><div className="font-semibold text-gray-900">{formatMoney(detailStats?.grossBookingRevenue ?? 0)}</div></div>
+                          <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Est. commission</div><div className="font-semibold text-gray-900">{formatMoney((detailStats?.commissionableRevenueEstimate || 0) * ((detailRow.commission?.rateBps || 0) / 10000))}</div></div>
+                        </div>
+                      </section>
+
+                      <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <div className="border border-gray-200 rounded-lg p-4">
+                          <h4 className="font-semibold text-gray-900 mb-2">Tracking details</h4>
+                          <div className="text-sm text-gray-700 space-y-1">
+                            <div><span className="text-gray-500">Referral code:</span> <span className="font-mono">{detailRow.referral?.code || '—'}</span></div>
+                            <div><span className="text-gray-500">Promo code:</span> <span className="font-mono">{detailRow.promo?.code || '—'}</span></div>
+                            <div><span className="text-gray-500">Cookie days:</span> {detailRow.referral?.cookieDays ?? '—'}</div>
+                            <div><span className="text-gray-500">Conversion:</span> {formatPercentRatio(detailStats?.conversionRate ?? 0)}</div>
+                          </div>
+                        </div>
+                        <div className="border border-gray-200 rounded-lg p-4">
+                          <h4 className="font-semibold text-gray-900 mb-2">Recent activity</h4>
+                          <div className="text-sm text-gray-700 space-y-1">
+                            <div><span className="text-gray-500">Last visit:</span> {formatDateTime(detailStats?.lastVisitAt)}</div>
+                            <div><span className="text-gray-500">Last booking:</span> {formatDateTime(detailStats?.lastBookingAt)}</div>
+                            <div><span className="text-gray-500">Cancelled/refunded/void:</span> {detailStats?.cancelledRefundedVoidBookings ?? 0}</div>
+                          </div>
+                        </div>
+                      </section>
+
+                      <section className="border border-gray-200 rounded-lg p-4">
+                        <h4 className="font-semibold text-gray-900 mb-2">Content agreement / notes</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-700">
+                          <div><span className="text-gray-500">Comp stay offered:</span> {detailRow.contentAgreement?.compStayOffered ? 'Yes' : 'No'}</div>
+                          <div><span className="text-gray-500">Agreed at:</span> {formatDateTime(detailRow.contentAgreement?.agreedAt)}</div>
+                          <div className="md:col-span-2"><span className="text-gray-500">Deliverables:</span> {detailRow.contentAgreement?.deliverables || '—'}</div>
+                          <div className="md:col-span-2"><span className="text-gray-500">Usage rights:</span> {detailRow.contentAgreement?.usageRights || '—'}</div>
+                          <div className="md:col-span-2"><span className="text-gray-500">Notes:</span> {detailRow.notes || '—'}</div>
+                        </div>
+                      </section>
+                    </>
+                  ) : null}
+
+                  {detailTab === 'bookings' ? (
+                    <section className="border border-gray-200 rounded-lg p-4">
                     <h4 className="font-semibold text-gray-900 mb-3">Bookings</h4>
                     <div className="overflow-x-auto">
                       <table className="min-w-full text-sm">
@@ -782,12 +785,14 @@ export default function OpsCreatorPartners() {
                         </tbody>
                       </table>
                     </div>
-                  </section>
+                    </section>
+                  ) : null}
 
-                  <section className="border border-gray-200 rounded-lg p-4 space-y-3">
+                  {detailTab === 'commissions' ? (
+                    <section className="border border-gray-200 rounded-lg p-4 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <h4 className="font-semibold text-gray-900">Commission ledger</h4>
-                      <div className="flex items-center gap-3 text-sm">
+                      <div className="flex flex-wrap items-center gap-2 text-xs md:text-sm">
                         <span className="text-gray-600">Pending eligible: <span className="font-semibold text-gray-900">{formatMoney(commissionPendingEligibleTotal)}</span></span>
                         <span className="text-gray-600">Approved: <span className="font-semibold text-gray-900">{formatMoney(commissionApprovedTotal)}</span></span>
                         <span className="text-gray-600">Due total: <span className="font-semibold text-gray-900">{formatMoney(commissionDueTotal)}</span></span>
@@ -893,18 +898,40 @@ export default function OpsCreatorPartners() {
                         </tbody>
                       </table>
                     </div>
-                  </section>
+                    </section>
+                  ) : null}
 
-                  <section className="border border-gray-200 rounded-lg p-4">
-                    <h4 className="font-semibold text-gray-900 mb-2">Content agreement / notes</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-700">
-                      <div><span className="text-gray-500">Comp stay offered:</span> {detailRow.contentAgreement?.compStayOffered ? 'Yes' : 'No'}</div>
-                      <div><span className="text-gray-500">Agreed at:</span> {formatDateTime(detailRow.contentAgreement?.agreedAt)}</div>
-                      <div className="md:col-span-2"><span className="text-gray-500">Deliverables:</span> {detailRow.contentAgreement?.deliverables || '—'}</div>
-                      <div className="md:col-span-2"><span className="text-gray-500">Usage rights:</span> {detailRow.contentAgreement?.usageRights || '—'}</div>
-                      <div className="md:col-span-2"><span className="text-gray-500">Notes:</span> {detailRow.notes || '—'}</div>
-                    </div>
-                  </section>
+                  {detailTab === 'profile' ? (
+                    <section className="border border-gray-200 rounded-lg p-4">
+                      <h4 className="font-semibold text-gray-900 mb-3">Creator profile</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-700">
+                        <div><span className="text-gray-500">Name:</span> {detailRow.name}</div>
+                        <div><span className="text-gray-500">Status:</span> <span className="capitalize">{detailRow.status}</span></div>
+                        <div><span className="text-gray-500">Slug:</span> <span className="font-mono">{detailRow.slug || '—'}</span></div>
+                        <div><span className="text-gray-500">Promo code:</span> <span className="font-mono">{detailRow.promo?.code || '—'}</span></div>
+                        <div><span className="text-gray-500">Contact email:</span> {detailRow.contact?.email || '—'}</div>
+                        <div><span className="text-gray-500">Contact phone:</span> {detailRow.contact?.phone || '—'}</div>
+                        <div><span className="text-gray-500">Instagram:</span> {detailRow.profiles?.instagram || '—'}</div>
+                        <div><span className="text-gray-500">TikTok:</span> {detailRow.profiles?.tiktok || '—'}</div>
+                        <div><span className="text-gray-500">YouTube:</span> {detailRow.profiles?.youtube || '—'}</div>
+                        <div><span className="text-gray-500">Website:</span> {detailRow.profiles?.website || '—'}</div>
+                        <div><span className="text-gray-500">Commission rate:</span> {((detailRow.commission?.rateBps || 0) / 100).toFixed(2)}%</div>
+                        <div><span className="text-gray-500">Eligible after:</span> {detailRow.commission?.eligibleAfter || '—'}</div>
+                      </div>
+                      {mainProfileHref(detailRow) ? (
+                        <div className="mt-4">
+                          <a
+                            href={mainProfileHref(detailRow)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center px-3 py-2 rounded-md border border-gray-300 text-sm text-gray-800 hover:bg-gray-50"
+                          >
+                            Open profile link
+                          </a>
+                        </div>
+                      ) : null}
+                    </section>
+                  ) : null}
                 </>
               ) : null}
             </div>
