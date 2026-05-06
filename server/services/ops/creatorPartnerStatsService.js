@@ -30,7 +30,10 @@ function buildAttributionMaps(creatorPartners) {
   for (const creator of creatorPartners) {
     const creatorId = String(creator._id);
     const referralCode = normalizeReferralCode(creator?.referral?.code);
-    if (referralCode) referralToCreatorId.set(referralCode, creatorId);
+    // Draft creators should not receive campaign attribution; archived creators retain historical visibility.
+    if (referralCode && ['active', 'paused', 'archived'].includes(creator?.status)) {
+      referralToCreatorId.set(referralCode, creatorId);
+    }
 
     const promoCode = normalizePromoCode(creator?.promo?.code);
     if (promoCode && ['active', 'paused'].includes(creator?.status)) {
@@ -65,6 +68,7 @@ function buildEmptyStats() {
   return {
     visits: 0,
     uniqueVisitors: 0,
+    lastVisitAt: null,
     attributedBookings: 0,
     paidConfirmedBookings: 0,
     cancelledRefundedVoidBookings: 0,
@@ -114,6 +118,9 @@ async function buildAllCreatorPartnerStats() {
     if (!creatorId || !byCreator.has(creatorId)) continue;
     const stats = byCreator.get(creatorId);
     stats.visits += Math.max(1, Number(visit.visitCount) || 1);
+    if (visit.lastSeenAt && (!stats.lastVisitAt || new Date(visit.lastSeenAt) > new Date(stats.lastVisitAt))) {
+      stats.lastVisitAt = visit.lastSeenAt;
+    }
     const dedupeKey = visit.visitorKey || (visit.sessionKey ? `s:${visit.sessionKey}` : null);
     if (dedupeKey) uniqueSets.get(creatorId).add(dedupeKey);
   }
@@ -133,7 +140,9 @@ async function buildAllCreatorPartnerStats() {
       stats.cancelledRefundedVoidBookings += 1;
     }
     stats.grossBookingRevenue += Math.max(0, toMoneyNumber(booking.totalPrice));
-    stats.commissionableRevenueEstimate += estimateCommissionableRevenue(booking);
+    if (booking.status !== 'cancelled') {
+      stats.commissionableRevenueEstimate += estimateCommissionableRevenue(booking);
+    }
     if (!stats.lastBookingAt || new Date(booking.createdAt) > new Date(stats.lastBookingAt)) {
       stats.lastBookingAt = booking.createdAt;
     }

@@ -96,6 +96,7 @@ function formatCreatorPartnerStats(stats) {
   return {
     visits: Number(stats?.visits || 0),
     uniqueVisitors: Number(stats?.uniqueVisitors || 0),
+    lastVisitAt: stats?.lastVisitAt || null,
     attributedBookings: Number(stats?.attributedBookings || 0),
     paidConfirmedBookings: Number(stats?.paidConfirmedBookings || 0),
     cancelledRefundedVoidBookings: Number(stats?.cancelledRefundedVoidBookings || 0),
