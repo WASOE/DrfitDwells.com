@@ -16,7 +16,7 @@ const creatorCommissionSchema = new mongoose.Schema(
     rateBpsSnapshot: { type: Number, required: true, min: 0, max: 10000 },
     commissionableRevenueSnapshot: { type: Number, required: true, min: 0 },
     amountSnapshot: { type: Number, required: true, min: 0 },
-    currency: { type: String, default: 'BGN', trim: true, uppercase: true },
+    currency: { type: String, default: 'EUR', trim: true, uppercase: true },
 
     bookingStatusSnapshot: { type: String, default: null, trim: true },
     paymentStatusSnapshot: { type: String, default: null, trim: true },

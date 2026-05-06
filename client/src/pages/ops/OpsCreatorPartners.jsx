@@ -186,13 +186,23 @@ function formatDateTime(iso) {
   }
 }
 
-function formatMoney(amount, currency = 'BGN') {
+function normalizeDisplayCurrency(currency) {
+  const raw = String(currency || 'EUR').trim().toUpperCase();
+  if (!raw || raw === 'BGN') return 'EUR';
+  return raw;
+}
+
+function formatMoney(amount, currency = 'EUR') {
   const num = Number(amount);
   if (!Number.isFinite(num)) return '—';
   try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 2 }).format(num);
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: normalizeDisplayCurrency(currency),
+      maximumFractionDigits: 2
+    }).format(num);
   } catch {
-    return `${num.toFixed(2)} ${currency}`;
+    return `${num.toFixed(2)} ${normalizeDisplayCurrency(currency)}`;
   }
 }
 
@@ -608,8 +618,8 @@ export default function OpsCreatorPartners() {
                         <td className="px-4 py-3 tabular-nums text-gray-800">{formatMoney(paidRevenue)}</td>
                         <td className="px-4 py-3 tabular-nums text-gray-800">{formatMoney(commissionEstimate * ((r.commission?.rateBps || 0) / 10000))}</td>
                         <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{formatDateTime(lastActivity)}</td>
-                        <td className="px-4 py-3 text-right whitespace-nowrap">
-                          <div className="flex items-center justify-end gap-2">
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex flex-wrap justify-end gap-1.5">
                             <button
                               type="button"
                               onClick={() => openDetails(r)}
@@ -617,25 +627,48 @@ export default function OpsCreatorPartners() {
                             >
                               Details
                             </button>
-                            <details className="relative">
-                              <summary className="list-none cursor-pointer px-2 py-1 rounded-md border border-gray-300 text-xs text-gray-700 hover:bg-gray-50">
-                                More
-                              </summary>
-                              <div className="absolute right-0 mt-1 w-36 bg-white border border-gray-200 rounded-md shadow-lg p-1 z-10 text-left">
-                                <button type="button" onClick={() => openEdit(r)} className="w-full px-2 py-1.5 text-xs text-left hover:bg-gray-50 rounded">Edit</button>
-                                {r.status === 'paused' ? (
-                                  <button type="button" onClick={() => patchStatus(r, 'active')} className="w-full px-2 py-1.5 text-xs text-left hover:bg-gray-50 rounded">Resume</button>
-                                ) : r.status !== 'archived' ? (
-                                  <button type="button" onClick={() => patchStatus(r, 'paused')} className="w-full px-2 py-1.5 text-xs text-left hover:bg-gray-50 rounded">Pause</button>
-                                ) : null}
-                                {r.status !== 'archived' ? (
-                                  <button type="button" onClick={() => patchStatus(r, 'archived')} className="w-full px-2 py-1.5 text-xs text-left hover:bg-gray-50 rounded">Archive</button>
-                                ) : null}
-                                {r.referral?.code ? (
-                                  <button type="button" onClick={() => copyReferralLink(r.referral.code)} className="w-full px-2 py-1.5 text-xs text-left hover:bg-gray-50 rounded">Copy link</button>
-                                ) : null}
-                              </div>
-                            </details>
+                            <button
+                              type="button"
+                              onClick={() => openEdit(r)}
+                              className="px-2 py-1.5 rounded-md border border-gray-300 text-xs text-gray-700 hover:bg-gray-50"
+                            >
+                              Edit
+                            </button>
+                            {r.referral?.code ? (
+                              <button
+                                type="button"
+                                onClick={() => copyReferralLink(r.referral.code)}
+                                className="px-2 py-1.5 rounded-md border border-gray-300 text-xs text-gray-700 hover:bg-gray-50"
+                              >
+                                Copy
+                              </button>
+                            ) : null}
+                            {r.status === 'paused' ? (
+                              <button
+                                type="button"
+                                onClick={() => patchStatus(r, 'active')}
+                                className="px-2 py-1.5 rounded-md border border-gray-300 text-xs text-gray-700 hover:bg-gray-50"
+                              >
+                                Resume
+                              </button>
+                            ) : r.status !== 'archived' ? (
+                              <button
+                                type="button"
+                                onClick={() => patchStatus(r, 'paused')}
+                                className="px-2 py-1.5 rounded-md border border-gray-300 text-xs text-gray-700 hover:bg-gray-50"
+                              >
+                                Pause
+                              </button>
+                            ) : null}
+                            {r.status !== 'archived' ? (
+                              <button
+                                type="button"
+                                onClick={() => patchStatus(r, 'archived')}
+                                className="px-2 py-1.5 rounded-md border border-gray-300 text-xs text-gray-700 hover:bg-gray-50"
+                              >
+                                Archive
+                              </button>
+                            ) : null}
                           </div>
                         </td>
                       </tr>
@@ -655,13 +688,27 @@ export default function OpsCreatorPartners() {
               <h3 className="text-lg font-semibold text-gray-900">
                 Creator performance: {detailRow?.name || 'Details'}
               </h3>
-              <button
-                type="button"
-                onClick={closeDetails}
-                className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-800 hover:bg-gray-50"
-              >
-                Close
-              </button>
+              <div className="flex items-center gap-2">
+                {detailRow ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      closeDetails();
+                      openEdit(detailRow);
+                    }}
+                    className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-800 hover:bg-gray-50"
+                  >
+                    Edit creator
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={closeDetails}
+                  className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-800 hover:bg-gray-50"
+                >
+                  Close
+                </button>
+              </div>
             </div>
             <div className="p-4 md:p-6 space-y-6">
               {detailError ? (
@@ -843,9 +890,9 @@ export default function OpsCreatorPartners() {
                                 <td className="px-3 py-2 font-mono">{entry.bookingId || '—'}</td>
                                 <td className="px-3 py-2 text-gray-500">—</td>
                                 <td className="px-3 py-2">{entry.source || '—'}</td>
-                                <td className="px-3 py-2">{formatMoney(entry.commissionableRevenueSnapshot, entry.currency || 'BGN')}</td>
+                                <td className="px-3 py-2">{formatMoney(entry.commissionableRevenueSnapshot, entry.currency || 'EUR')}</td>
                                 <td className="px-3 py-2">{((entry.rateBpsSnapshot || 0) / 100).toFixed(2)}%</td>
-                                <td className="px-3 py-2 font-semibold">{formatMoney(entry.amountSnapshot, entry.currency || 'BGN')}</td>
+                                <td className="px-3 py-2 font-semibold">{formatMoney(entry.amountSnapshot, entry.currency || 'EUR')}</td>
                                 <td className="px-3 py-2">{entry.eligibilityStatus}</td>
                                 <td className="px-3 py-2 capitalize">{entry.status}</td>
                                 <td className="px-3 py-2">{entry.voidReason || '—'}</td>
@@ -903,7 +950,19 @@ export default function OpsCreatorPartners() {
 
                   {detailTab === 'profile' ? (
                     <section className="border border-gray-200 rounded-lg p-4">
-                      <h4 className="font-semibold text-gray-900 mb-3">Creator profile</h4>
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                        <h4 className="font-semibold text-gray-900">Creator profile</h4>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            closeDetails();
+                            openEdit(detailRow);
+                          }}
+                          className="px-3 py-1.5 rounded-md border border-gray-300 text-xs text-gray-700 hover:bg-gray-50"
+                        >
+                          Edit creator
+                        </button>
+                      </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-700">
                         <div><span className="text-gray-500">Name:</span> {detailRow.name}</div>
                         <div><span className="text-gray-500">Status:</span> <span className="capitalize">{detailRow.status}</span></div>

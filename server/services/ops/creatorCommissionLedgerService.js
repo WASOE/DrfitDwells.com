@@ -174,7 +174,7 @@ async function recalculateCreatorCommissionForPartner(creatorPartnerDoc) {
           rateBpsSnapshot: rateBps,
           commissionableRevenueSnapshot,
           amountSnapshot,
-          currency: 'BGN',
+          currency: 'EUR',
           bookingStatusSnapshot: booking?.status || null,
           paymentStatusSnapshot: derivePaymentStatusSnapshot(booking),
           eligibilityStatus: eligibility.eligibilityStatus,
