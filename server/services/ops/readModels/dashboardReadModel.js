@@ -433,17 +433,35 @@ async function getDashboardReadModel() {
     });
   }
 
-  for (const syncEvent of syncEventsRecent) {
+  if (syncEventsRecent.length > 0) {
+    const rawCount = syncEventsRecent.length;
+    const hasFailed = syncEventsRecent.some((evt) => evt.outcome === 'failed');
+    const newestEvent = syncEventsRecent[0];
+    const uniqueSignatureCount = new Set(
+      syncEventsRecent.map((evt) => {
+        const cabinId = evt.cabinId ? String(evt.cabinId) : '';
+        const channel = evt.channel || '';
+        const anomalyType = evt.anomalyType || '';
+        const outcome = evt.outcome || '';
+        const feedUrl = evt.metadata?.feedUrl || '';
+        const unitId = evt.metadata?.unitId || '';
+        return `${cabinId}|${channel}|${anomalyType}|${outcome}|${feedUrl}|${unitId}`;
+      })
+    ).size;
     alerts.push({
-      id: `sync-${String(syncEvent._id)}`,
+      id: 'sync-summary-recent-issues',
       type: 'sync_issue',
-      severity: syncEvent.outcome === 'failed' ? 'critical' : 'medium',
+      severity: hasFailed ? 'high' : 'medium',
       title: 'Sync needs review',
-      detail: syncEvent.message || `Sync ${syncEvent.outcome} for ${syncEvent.channel || 'channel'}`,
+      detail: rawCount === 1 ? '1 recent sync issue. Review Sync.' : `${rawCount} recent sync issues. Review Sync.`,
       href: '/ops/sync',
-      createdAt: syncEvent.runAt || syncEvent.createdAt,
+      createdAt: newestEvent?.runAt || newestEvent?.createdAt || new Date().toISOString(),
       entityType: 'sync_event',
-      entityId: String(syncEvent._id)
+      entityId: newestEvent?._id ? String(newestEvent._id) : null,
+      metadata: {
+        rawCount,
+        uniqueSignatureCount
+      }
     });
   }
 
