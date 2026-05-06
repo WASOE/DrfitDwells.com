@@ -4,7 +4,7 @@ Date: 2026-04-29
 Project: driftdwells.com
 Feature owner: Drift & Dwells
 Implementation target: existing Drift & Dwells booking portal
-Status: Logic locked before implementation
+Status: Updated to reflect implemented architecture and remaining batches
 
 ## 1. Purpose
 
@@ -77,6 +77,49 @@ A creator referral system with:
 - Simple Ops dashboard
 - Optional public `/creators` page later
 
+### 4.1 Current implemented architecture
+
+The implementation now uses these names and routes as the source of truth:
+
+- Model: `CreatorPartner`
+- Creator management UI: `/ops/creator-partners`
+- Creator management API: `/api/ops/creator-partners`
+- Public referral params: `ref`, `referral`, `creator`
+- Booking attribution field: `Booking.attribution.referralCode`
+- Paid booking safety record: `PaymentResolutionIssue`
+- Visit/click model to build next: `CreatorReferralVisit`
+
+Do not create new `/ops/creator-partners` or `/api/ops/creator-partners` routes.
+Do not create a parallel `Influencer` model.
+Future work must continue from `CreatorPartner`, not restart the architecture.
+
+### 4.2 Current build status
+
+Already implemented:
+
+- Layer 0 payment safety foundation
+- Layer 1 attribution foundation
+- Instagram-style referral codes such as `diana.bosa`
+- Booking attribution storage
+- Stripe PaymentIntent attribution metadata
+- Stripe PaymentIntent `bookingId` / `reservationId` metadata after booking save
+- `CreatorPartner` model
+- `/api/ops/creator-partners` routes
+- `/ops/creator-partners` management UI
+- Promo code management moved to Ops
+- Service worker/cache update hardening
+
+Not implemented yet:
+
+- Referral visit/click tracking
+- Creator booking aggregation
+- Paid revenue totals per creator
+- Commission ledger
+- Manual mark-paid flow
+- Creator performance/detail UI
+- Booking attribution block inside reservation detail
+- Public `/creators` page
+
 ## 5. What this feature is not
 
 This is not:
@@ -135,7 +178,7 @@ The guest experience must remain normal:
 
 ### Admin flow
 
-1. Admin opens `/ops/influencers`.
+1. Admin opens `/ops/creator-partners`.
 2. Admin creates a creator:
    - Name: Ana
    - Handle: `@ana.travel`
@@ -204,14 +247,11 @@ referralCode
 
 Rules:
 
-- `?ref=ana` becomes `referralCode = ana` (same for `?ref=diana.bosa`)
+- `?ref=ana` becomes `referralCode = ana`
 - Normalize to lowercase
 - Trim whitespace
-- If the value starts with `@` (Instagram handle paste), remove that single leading `@` and trim again
-- Allowed characters: `a-z`, `0-9`, dot `.`, dash `-`, underscore `_`
+- Allow only letters, numbers, dash, and underscore
 - Max length 80
-- Invalid examples (rejected, not stored): spaces, `/`, `,`, angle brackets / markup, empty after normalize
-- Slug rules for creator **slug** in Ops remain stricter (no dots): `a-z`, `0-9`, `-`, `_` only
 - Store first valid touch for 60 days
 - Do not overwrite valid first-touch attribution unless explicitly designed later
 
@@ -379,36 +419,56 @@ Rules:
 - `direct`: no attribution signal
 - `unknown`: fallback when source cannot be determined
 
-## 15. Creator model
+## 15. CreatorPartner model
 
-Add a new model in Phase 2:
-
-File:
+The implemented creator model is:
 
 ```txt
-server/models/Influencer.js
+server/models/CreatorPartner.js
 ```
 
-Use the name `Influencer` internally if that fits code naming, but UI should say `Creators` or `Creator Partners`.
+Use `CreatorPartner` internally and `Creator partners` or `Creators` in the UI.
+Do not add a separate `Influencer` model.
 
-Suggested fields:
+Implemented fields:
 
 ```js
 {
   name: String,
-  displayName: String,
-  handle: String,
-  platform: String,
-  email: String,
-  phone: String,
-  referralCode: String,
-  promoCode: String,
+  slug: String,
   status: String,
-  commissionRate: Number,
-  cookieDays: Number,
+  contact: {
+    email: String,
+    phone: String
+  },
+  profiles: {
+    instagram: String,
+    tiktok: String,
+    youtube: String,
+    website: String
+  },
+  referral: {
+    code: String,
+    cookieDays: Number
+  },
+  promo: {
+    code: String,
+    promoCodeId: ObjectId
+  },
+  commission: {
+    rateBps: Number,
+    basis: String,
+    eligibleAfter: String
+  },
+  contentAgreement: {
+    compStayOffered: Boolean,
+    deliverables: String,
+    usageRights: String,
+    agreedAt: Date
+  },
   notes: String,
-  contentDeliverables: [String],
-  rightsStatus: String,
+  createdBy: String,
+  updatedBy: String,
   createdAt: Date,
   updatedAt: Date
 }
@@ -418,23 +478,48 @@ Suggested fields:
 
 ```txt
 draft
-invited
 active
 paused
-completed
 archived
 ```
 
-### Rights status values
+### Referral code rules
+
+Creator referral codes support Instagram-style handles.
+
+Rules:
+
+- Lowercase
+- Trim whitespace
+- Strip a leading `@`
+- Allowed: `a-z`, `0-9`, dot `.`, dash `-`, underscore `_`
+- Max length 80
+
+Examples:
 
 ```txt
-not_required
-pending
-approved
-rejected
+diana.bosa
+diana_bosa
+diana-bosa
+@diana.bosa -> diana.bosa
 ```
 
-Keep this simple. No creator login.
+### Slug rules
+
+Creator slugs remain stricter and do not allow dots.
+
+Rules:
+
+- Lowercase
+- Trim whitespace
+- Allowed: `a-z`, `0-9`, dash `-`, underscore `_`
+- Max length 80
+
+Example:
+
+```txt
+diana-bosa
+```
 
 ## 16. Promo code relation
 
@@ -647,13 +732,15 @@ This is part of the feature foundation because commission must only be calculate
 
 ## 22. Ops UI
 
-Use `/ops/influencers`.
+Use `/ops/creator-partners`.
 
-Do not build `/admin/influencers` unless it redirects to `/ops/influencers`.
+Do not build `/admin/influencers` or `/admin/creator-partners`.
+Legacy admin routes should not be used for this feature.
 
 UI wording should use:
 
 ```txt
+Creator partners
 Creators
 ```
 
@@ -663,43 +750,50 @@ Not:
 Influencers
 ```
 
-Internal code can still use `Influencer` if simpler.
-
-### 22.1 Main list
+### 22.1 Current management page
 
 Route:
 
 ```txt
-/ops/influencers
+/ops/creator-partners
 ```
 
-Columns:
+Current management features:
 
-- Creator
-- Platform
-- Status
-- Referral code
-- Promo code
-- Clicks
+- List creator partners
+- Search
+- Filter by status
+- Create creator partner
+- Edit creator partner
+- Pause creator partner
+- Archive creator partner
+- Copy referral link
+- Store content agreement basics
+- Store commission settings
+- Store optional promo code link
+
+### 22.2 Performance columns to add later
+
+The `/ops/creator-partners` page must evolve from management-only to performance-aware.
+
+Add these metrics after visit tracking and aggregation exist:
+
+- Visits / clicks
+- Unique-ish visitors
 - Bookings
+- Paid bookings
 - Paid revenue
 - Commission due
 - Commission paid
 - Last booking
+- Payout status
 
-Actions:
+### 22.3 Creator detail
 
-- View
-- Edit
-- Pause
-- Archive
-
-### 22.2 Creator detail
-
-Route:
+Future route:
 
 ```txt
-/ops/influencers/:id
+/ops/creator-partners/:id
 ```
 
 Sections:
@@ -707,32 +801,12 @@ Sections:
 1. Creator profile
 2. Tracking details
 3. Campaign terms
-4. Deliverables
-5. Bookings
-6. Commission summary
-7. Payout history
-8. Notes
-
-### 22.3 Create creator
-
-Fields:
-
-- Name
-- Platform
-- Handle
-- Email
-- Referral code
-- Promo code
-- Commission rate
-- Status
-- Notes
-- Deliverables
-
-System should generate:
-
-```txt
-https://driftdwells.com/?ref={referralCode}
-```
+4. Deliverables and content rights
+5. Visits
+6. Bookings
+7. Commission summary
+8. Payout history
+9. Notes
 
 ### 22.4 Booking attribution display
 
@@ -740,10 +814,10 @@ In reservation detail, show a small attribution block:
 
 ```txt
 Source: Creator referral
-Creator: Ana
-Referral code: ana
-Promo code: ANA10
-Campaign: ana_april_2026
+Creator: Diana Bosa
+Referral code: diana.bosa
+Promo code: DIANA10
+Campaign: optional campaign
 ```
 
 Keep it quiet. Do not clutter the reservation screen.
@@ -820,46 +894,64 @@ Better long-term:
 - Store rights status in creator profile.
 - Upload signed agreement or paste agreement text into notes.
 
-## 25. Click tracking
+## 25. Referral visit / click tracking
 
-Do not overbuild click tracking in Phase 1.
+Click tracking is in scope, but it is not financial truth.
 
 Phase 1 can rely on stored attribution and bookings.
+The next remaining batch must add a lightweight referral visit event.
 
-Phase 2 can add a lightweight click event.
-
-Possible model:
+Model to build next:
 
 ```txt
-server/models/InfluencerClick.js
+server/models/CreatorReferralVisit.js
 ```
 
-Fields:
+Purpose:
+
+Track how many people land on the site through each creator referral link.
+
+Suggested fields:
 
 ```js
 {
+  creatorPartnerId: ObjectId,
   referralCode: String,
-  creatorId: ObjectId,
   landingPath: String,
   referrer: String,
   userAgentHash: String,
   ipHash: String,
-  createdAt: Date
+  visitorKey: String,
+  sessionKey: String,
+  firstSeenAt: Date,
+  lastSeenAt: Date,
+  visitCount: Number,
+  convertedBookingId: ObjectId
 }
 ```
 
 Privacy rules:
 
-- Do not store raw IP unless project already has a policy for it.
-- Hash if needed.
-- Keep click data limited.
-- Clicks are directional, not financial truth.
+- Do not store raw IP.
+- Hash IP only if needed and acceptable under the project privacy policy.
+- Hash or reduce user-agent data.
+- Do not store guest name, email, or phone in visit records.
+- Keep click data limited and directional.
+- Do not block page load if visit tracking fails.
+- Do not add third-party tracking scripts.
+
+Counting rules:
+
+- Count a referral landing event when a valid `ref`, `referral`, or `creator` param exists.
+- Deduplicate basic refresh/repeat events using a privacy-safe visitor or session key.
+- Do not overwrite first-touch booking attribution because of click tracking.
+- Clicks are a marketing signal, not a commission source.
 
 Booking and paid revenue matter more than clicks.
 
 ## 26. API design
 
-### Phase 1
+### Implemented booking endpoints
 
 Use existing endpoints:
 
@@ -868,24 +960,48 @@ POST /api/bookings/create-payment-intent
 POST /api/bookings
 ```
 
-Add attribution payload support.
+These now support attribution payload and Stripe metadata linkage.
 
-### Phase 2
-
-Add Ops endpoints:
+### Implemented creator partner endpoints
 
 ```txt
-GET /api/ops/influencers
-POST /api/ops/influencers
-GET /api/ops/influencers/:id
-PATCH /api/ops/influencers/:id
-GET /api/ops/influencers/:id/bookings
-GET /api/ops/influencers/:id/commission
-POST /api/ops/influencers/:id/recalculate
-POST /api/ops/influencers/:id/mark-paid
+GET /api/ops/creator-partners
+POST /api/ops/creator-partners
+GET /api/ops/creator-partners/:id
+PATCH /api/ops/creator-partners/:id
 ```
 
 Protect with existing Ops authentication and authorization.
+
+### Next visit tracking endpoints
+
+```txt
+POST /api/creator-referral-visits
+```
+
+or, if the project prefers grouping under Ops/creator naming:
+
+```txt
+POST /api/creator-partner-visits
+```
+
+This endpoint is public but must be strictly limited:
+
+- Accept only sanitized referral visit data.
+- Never expose creator revenue.
+- Never expose private creator records.
+- Never block the booking or page load if it fails.
+- Rate-limit or deduplicate where reasonable.
+
+### Future Ops reporting endpoints
+
+```txt
+GET /api/ops/creator-partners/:id/bookings
+GET /api/ops/creator-partners/:id/performance
+GET /api/ops/creator-partners/:id/commission
+POST /api/ops/creator-partners/:id/recalculate
+POST /api/ops/creator-partners/:id/mark-paid
+```
 
 ## 27. Security rules
 
@@ -953,57 +1069,107 @@ Must go to refund or manual review flow.
 
 ## 30. Implementation order
 
-This is one feature, but it should be implemented in clean layers.
+This is one feature, but it must be implemented in clean layers.
 
 Do not mix all layers in one uncontrolled patch.
 
-### Layer 0: Payment safety foundation
+### Completed Batch 1: Attribution foundation
+
+Status: implemented.
+
+Includes:
+
+- Frontend attribution storage upgraded to `dd_attrib_v2`
+- `ref`, `referral`, and `creator` URL params supported
+- Instagram-style referral codes with dots supported
+- `Booking.attribution.referralCode` stored
+- Attribution metadata added to Stripe PaymentIntent
+- PaymentIntent updated with `bookingId` / `reservationId` after booking save
+
+### Completed Batch 2: Payment safety foundation
+
+Status: implemented.
+
+Includes:
+
+- `PaymentResolutionIssue` for paid-but-unsaved booking failures
+- Manual review integration
+- Safe guest-facing response for payment received but booking not finalized
+- No commission eligibility for failed paid booking cases
+
+### Completed Batch 3: CreatorPartner registry foundation
+
+Status: implemented.
+
+Includes:
+
+- `server/models/CreatorPartner.js`
+- `/api/ops/creator-partners`
+- Promo code linking without changing promo discount logic
+
+### Completed Batch 4: Promo codes Ops migration
+
+Status: implemented.
+
+Includes:
+
+- Promo code management moved into Ops
+- New creator work uses Ops, not legacy admin
+- Existing promo behavior preserved
+
+### Completed Batch 5: Creator partners Ops UI
+
+Status: implemented.
+
+Includes:
+
+- `/ops/creator-partners`
+- Create/edit/pause/archive creator partner
+- Copy referral link
+- Store content agreement basics
+- Store commission settings
+
+### Completed Batch 5A: Referral code and PWA hardening
+
+Status: implemented.
+
+Includes:
+
+- Instagram-style referral codes such as `diana.bosa`
+- Leading `@` normalization
+- Service worker/cache update hardening
+
+### Next Batch 6: Creator referral visit tracking
 
 Goal:
 
-Make sure paid but failed booking cases are visible and safe.
+Track visits/clicks from creator referral links.
 
 Tasks:
 
-- Audit and fix 409 after succeeded PaymentIntent path.
-- Ensure refund or manual review state exists.
-- Ensure guest gets a safe response.
-- Ensure ops can see the case.
+- Add `CreatorReferralVisit` model.
+- Add small public visit tracking endpoint.
+- Add frontend fire-and-forget event after valid referral capture.
+- Deduplicate repeat refreshes where reasonable.
+- Do not store raw IP.
+- Do not block page load if tracking fails.
+- Do not use third-party scripts.
 
-This protects the whole booking system, not only influencer tracking.
-
-### Layer 1: Attribution foundation
+### Batch 7: Creator booking and revenue aggregation
 
 Goal:
 
-Capture creator referral data and attach it to bookings and Stripe PaymentIntent metadata.
+Ops can see which bookings and paid revenue came from each creator.
 
 Tasks:
 
-- Upgrade frontend attribution storage.
-- Add referralCode support.
-- Extend Booking.attribution.
-- Sanitize backend fields.
-- Add attribution metadata to PaymentIntent.
-- Add bookingId and reservationId metadata after booking save.
+- Aggregate bookings by `Booking.attribution.referralCode`.
+- Apply attribution priority: creator-linked promo code first, referral code second.
+- Count bookings, paid bookings, cancelled/refunded bookings.
+- Calculate paid revenue and commissionable revenue using the safest booking fields.
+- Do not calculate payable commission yet.
 
-No UI yet.
-
-### Layer 2: Creator records
-
-Goal:
-
-Ops can create and manage creator partners.
-
-Tasks:
-
-- Add Influencer model.
-- Add Ops routes.
-- Add `/ops/influencers` list and detail page.
-- Generate referral link.
-- Link optional promo code.
-
-### Layer 3: Commission ledger
+### Batch 8: Commission ledger foundation
 
 Goal:
 
@@ -1011,13 +1177,31 @@ Ops can see commission due and mark payouts manually.
 
 Tasks:
 
-- Add commission snapshot on booking.
-- Calculate commission only for eligible paid bookings.
+- Add commission snapshot records or booking commission snapshot.
+- Calculate only for eligible paid bookings.
+- Exclude paid-but-unsaved review issues.
 - Handle refunds and voids.
 - Add payout status.
 - Add manual mark-paid flow.
+- No Stripe Connect.
 
-### Layer 4: Public creator page
+### Batch 9: Creator performance UI
+
+Goal:
+
+Upgrade `/ops/creator-partners` from management-only to performance-aware.
+
+Tasks:
+
+- Show visits/clicks.
+- Show unique-ish visitors.
+- Show bookings and paid bookings.
+- Show conversion rate.
+- Show paid revenue and commissionable revenue.
+- Show commission due and paid.
+- Show last booking and payout status.
+
+### Batch 10: Public `/creators` page
 
 Goal:
 
@@ -1113,59 +1297,78 @@ Cursor must follow these rules:
 14. After each layer, run build and targeted QA.
 15. Report exact files changed and risks left open.
 
-## 34. Recommended first Cursor task
+## 34. Recommended next Cursor task
 
-Start with Layer 0 and Layer 1.
+Next task: Batch 6, Creator referral visit tracking.
 
-Do not start with UI.
-
-Reason:
-
-Tracking and payment safety must be correct before an Ops dashboard displays numbers.
+Do not start commission ledger until visit tracking and booking aggregation are separated clearly.
 
 Prompt:
 
 ```md
 Use docs/driftdwells_influencer_referral_master_spec.md as the source of truth.
 
-Implement only Layer 0 and Layer 1.
+Implement only Batch 6: Creator referral visit tracking.
 
-Layer 0:
-- Audit and fix the paid PaymentIntent plus failed booking save or 409 path.
-- Ensure the system creates either a refund path or a manual review path according to existing project patterns.
-- Do not silently delete or lose a paid booking without clear operational tracking.
+Goal:
+Track how many people land on the site through each creator referral link.
 
-Layer 1:
-- Upgrade attribution capture to support referralCode from ref, referral, or creator URL params.
-- Store attribution in localStorage with 60-day TTL using dd_attrib_v2.
-- Preserve first-touch behavior.
-- Send attributionCapturedAt and referralCode in existing booking attribution payload.
-- Extend Booking.attribution minimally.
-- Sanitize attribution server-side.
-- Add compact attribution metadata to Stripe PaymentIntent.
-- After successful booking.save(), update PaymentIntent metadata with bookingId and reservationId.
-
-Do not build:
-- /ops/influencers
-- /creators
+Do not implement:
 - commission calculation
-- payout automation
-- creator login
+- payout logic
 - Stripe Connect
+- creator login
+- public /creators page
+- booking revenue aggregation
+- creator performance UI
+- pricing changes
+- promo discount changes
+- booking flow refactors
 
-Preserve:
-- existing booking flow
-- existing promo code logic
-- existing PaymentIntent flow
-- existing A-frame booking path
-- existing admin and ops behavior
+Backend:
+- Add `server/models/CreatorReferralVisit.js`.
+- Add a small public endpoint for referral visit tracking.
+- Resolve `creatorPartnerId` from `referralCode` if an active/draft/paused CreatorPartner exists.
+- Store sanitized referralCode, landingPath, referrer, firstSeenAt, lastSeenAt, visitCount.
+- Use privacy-safe deduplication.
+- Do not store raw IP.
+- Hash IP only if already acceptable under project privacy policy, otherwise omit it.
+- Do not store guest name/email/phone.
+- Do not expose creator revenue or private creator data publicly.
 
-After implementation, report:
+Frontend:
+- Reuse `client/src/tracking/attribution.js`.
+- After valid referral capture, send a fire-and-forget visit event.
+- Do not block page load.
+- Do not retry aggressively.
+- Do not add third-party scripts.
+- Do not overwrite first-touch attribution.
+
+Deduplication:
+- Avoid creating unlimited rows on refresh.
+- Prefer an upsert keyed by referralCode plus a privacy-safe visitor/session key and a short day bucket, or another simple project-consistent method.
+- Click counts are directional, not financial truth.
+
+Verification:
+- Visit `/?ref=diana.bosa`.
+- Confirm `dd_attrib_v2.referralCode = diana.bosa`.
+- Confirm one visit record is created.
+- Refresh and confirm it updates/dedupes instead of creating unlimited duplicates.
+- Visit invalid `/?ref=diana bosa` and confirm no visit record is created.
+- Confirm booking flow still works.
+- Confirm `/ops/creator-partners` still works.
+- Run `npm run build`.
+- Run `npm run test:e2e:api`.
+- Run `npm run test:e2e:attribution`.
+- Run `git diff --check`.
+
+Output:
 - Files changed
-- Exact schema fields added
-- Whether migration is needed
-- Build result
-- Manual QA checklist result
+- Model and endpoint added
+- Deduplication rule
+- Privacy choices
+- Build/test result
+- Manual QA checklist
 - Risks left open
 ```
 

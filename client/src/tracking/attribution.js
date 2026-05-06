@@ -1,5 +1,7 @@
 const STORAGE_KEY_V2 = 'dd_attrib_v2';
 const STORAGE_KEY_V1 = 'dd_attrib_v1';
+const REF_VISITOR_KEY = 'dd_ref_visit_visitor_v1';
+const REF_SESSION_KEY = 'dd_ref_visit_session_v1';
 const TTL_MS = 60 * 24 * 60 * 60 * 1000;
 /** Instagram-style referral codes (dots allowed). Hyphen last avoids class-range ambiguity. Align with server. */
 const REFERRAL_RE = /^[a-z0-9_.-]{1,80}$/;
@@ -80,6 +82,69 @@ function writeStoredV2(obj) {
   }
 }
 
+function getOrCreateVisitVisitorKey() {
+  try {
+    let key = localStorage.getItem(REF_VISITOR_KEY);
+    if (!key) {
+      key =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `v_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+      localStorage.setItem(REF_VISITOR_KEY, key);
+    }
+    return key;
+  } catch {
+    return null;
+  }
+}
+
+function getOrCreateVisitSessionKey() {
+  try {
+    let key = sessionStorage.getItem(REF_SESSION_KEY);
+    if (!key) {
+      key =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `s_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+      sessionStorage.setItem(REF_SESSION_KEY, key);
+    }
+    return key;
+  } catch {
+    return null;
+  }
+}
+
+function trackReferralVisit(referralCode, landingPath, referrer) {
+  if (!referralCode || typeof window === 'undefined') return;
+  const payload = {
+    referralCode,
+    landingPath: landingPath || undefined,
+    referrer: referrer || undefined,
+    visitorKey: getOrCreateVisitVisitorKey() || undefined,
+    sessionKey: getOrCreateVisitSessionKey() || undefined
+  };
+
+  // Fire-and-forget: never block rendering or booking flow.
+  const body = JSON.stringify(payload);
+  window.setTimeout(() => {
+    try {
+      if (navigator.sendBeacon) {
+        const blob = new Blob([body], { type: 'application/json' });
+        navigator.sendBeacon('/api/creator-referral-visits', blob);
+        return;
+      }
+      fetch('/api/creator-referral-visits', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        keepalive: true
+      }).catch(() => {});
+    } catch {
+      /* ignore */
+    }
+  }, 0);
+}
+
 function readStored() {
   const v2 = readStoredV2();
   if (v2) return v2;
@@ -143,6 +208,7 @@ export function captureAttributionFromUrl() {
           referralCode,
           attributionCapturedAt: existingV2.attributionCapturedAt || new Date().toISOString()
         });
+        trackReferralVisit(referralCode, existingV2.landingPath, existingV2.referrer);
       }
       return;
     }
@@ -170,7 +236,12 @@ export function captureAttributionFromUrl() {
   if (next.landingPath) any = true;
 
   if (next.referralCode) any = true;
-  if (any) writeStoredV2(next);
+  if (any) {
+    writeStoredV2(next);
+    if (next.referralCode) {
+      trackReferralVisit(next.referralCode, next.landingPath, next.referrer);
+    }
+  }
 }
 
 /** Payload for POST /api/bookings (attribution field). */
