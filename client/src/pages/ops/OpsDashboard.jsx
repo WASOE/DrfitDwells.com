@@ -94,7 +94,13 @@ export default function OpsDashboard() {
   if (loading) return <div className="text-sm text-gray-500">Loading dashboard...</div>;
   if (error) return <div className="text-sm text-red-600">{error}</div>;
   if (!data) return <div className="text-sm text-gray-500">No dashboard data.</div>;
-  const d = data.dashboard || {};
+  const d = data.dashboard || data?.data?.dashboard || {};
+  const hasDashboardAlerts = Array.isArray(d.alerts);
+  const criticalAlerts = hasDashboardAlerts
+    ? d.alerts
+    : Array.isArray(data.sections?.actionNeeded)
+      ? data.sections.actionNeeded
+      : [];
 
   return (
     <div className="space-y-5 pb-16 sm:pb-0">
@@ -133,11 +139,11 @@ export default function OpsDashboard() {
 
       <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
         <h3 className="text-sm font-semibold text-gray-900">Critical alerts</h3>
-        {(d.alerts || []).length === 0 ? (
+        {criticalAlerts.length === 0 ? (
           <p className="text-sm text-gray-500">No critical alerts.</p>
         ) : (
           <div className="space-y-2">
-            {(d.alerts || []).map((alert) => (
+            {criticalAlerts.map((alert) => (
               <Link
                 key={alert.id}
                 to={alert.href || '/ops/reservations'}
