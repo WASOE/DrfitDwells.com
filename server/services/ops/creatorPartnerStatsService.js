@@ -90,11 +90,15 @@ async function buildAllCreatorPartnerStats() {
     .lean();
   const creatorIds = creatorPartners.map((c) => String(c._id));
   const maps = buildAttributionMaps(creatorPartners);
+  const referralCodes = Array.from(maps.referralToCreatorId.keys());
 
   const visitDocs = await CreatorReferralVisit.find({
-    creatorPartnerId: { $in: creatorPartners.map((c) => c._id) }
+    $or: [
+      { creatorPartnerId: { $in: creatorPartners.map((c) => c._id) } },
+      { referralCode: { $in: referralCodes } }
+    ]
   })
-    .select('creatorPartnerId visitCount visitorKey sessionKey')
+    .select('creatorPartnerId referralCode visitCount visitorKey sessionKey lastSeenAt')
     .lean();
 
   const bookingDocs = await Booking.find({
@@ -114,7 +118,11 @@ async function buildAllCreatorPartnerStats() {
   }
 
   for (const visit of visitDocs) {
-    const creatorId = visit?.creatorPartnerId ? String(visit.creatorPartnerId) : null;
+    let creatorId = visit?.creatorPartnerId ? String(visit.creatorPartnerId) : null;
+    if (!creatorId || !byCreator.has(creatorId)) {
+      const referralCode = normalizeReferralCode(visit?.referralCode);
+      creatorId = referralCode ? maps.referralToCreatorId.get(referralCode) || null : null;
+    }
     if (!creatorId || !byCreator.has(creatorId)) continue;
     const stats = byCreator.get(creatorId);
     stats.visits += Math.max(1, Number(visit.visitCount) || 1);

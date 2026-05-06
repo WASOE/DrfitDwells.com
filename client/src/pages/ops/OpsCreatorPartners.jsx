@@ -588,7 +588,7 @@ export default function OpsCreatorPartners() {
                   <th className="px-4 py-3">Paid revenue</th>
                   <th className="px-4 py-3">Est. commission</th>
                   <th className="px-4 py-3">Last activity</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <th className="px-4 py-3">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -618,19 +618,19 @@ export default function OpsCreatorPartners() {
                         <td className="px-4 py-3 tabular-nums text-gray-800">{formatMoney(paidRevenue)}</td>
                         <td className="px-4 py-3 tabular-nums text-gray-800">{formatMoney(commissionEstimate * ((r.commission?.rateBps || 0) / 10000))}</td>
                         <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{formatDateTime(lastActivity)}</td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex flex-wrap justify-end gap-1.5">
+                        <td className="px-4 py-3">
+                          <div className="inline-flex max-w-xs flex-wrap items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 p-1.5">
                             <button
                               type="button"
                               onClick={() => openDetails(r)}
-                              className="px-3 py-1.5 rounded-md bg-[#81887A] text-white text-xs font-medium hover:bg-[#707668]"
+                              className="h-8 px-3 rounded-md bg-[#81887A] text-white text-xs font-medium hover:bg-[#707668]"
                             >
                               Details
                             </button>
                             <button
                               type="button"
                               onClick={() => openEdit(r)}
-                              className="px-2 py-1.5 rounded-md border border-gray-300 text-xs text-gray-700 hover:bg-gray-50"
+                              className="h-8 px-2.5 rounded-md border border-gray-300 bg-white text-xs text-gray-700 hover:bg-gray-100"
                             >
                               Edit
                             </button>
@@ -638,7 +638,7 @@ export default function OpsCreatorPartners() {
                               <button
                                 type="button"
                                 onClick={() => copyReferralLink(r.referral.code)}
-                                className="px-2 py-1.5 rounded-md border border-gray-300 text-xs text-gray-700 hover:bg-gray-50"
+                                className="h-8 px-2.5 rounded-md border border-gray-300 bg-white text-xs text-gray-700 hover:bg-gray-100"
                               >
                                 Copy
                               </button>
@@ -647,7 +647,7 @@ export default function OpsCreatorPartners() {
                               <button
                                 type="button"
                                 onClick={() => patchStatus(r, 'active')}
-                                className="px-2 py-1.5 rounded-md border border-gray-300 text-xs text-gray-700 hover:bg-gray-50"
+                                className="h-8 px-2.5 rounded-md border border-gray-300 bg-white text-xs text-gray-700 hover:bg-gray-100"
                               >
                                 Resume
                               </button>
@@ -655,7 +655,7 @@ export default function OpsCreatorPartners() {
                               <button
                                 type="button"
                                 onClick={() => patchStatus(r, 'paused')}
-                                className="px-2 py-1.5 rounded-md border border-gray-300 text-xs text-gray-700 hover:bg-gray-50"
+                                className="h-8 px-2.5 rounded-md border border-gray-300 bg-white text-xs text-gray-700 hover:bg-gray-100"
                               >
                                 Pause
                               </button>
@@ -664,7 +664,7 @@ export default function OpsCreatorPartners() {
                               <button
                                 type="button"
                                 onClick={() => patchStatus(r, 'archived')}
-                                className="px-2 py-1.5 rounded-md border border-gray-300 text-xs text-gray-700 hover:bg-gray-50"
+                                className="h-8 px-2.5 rounded-md border border-gray-300 bg-white text-xs text-gray-700 hover:bg-gray-100"
                               >
                                 Archive
                               </button>
