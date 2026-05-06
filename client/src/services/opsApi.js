@@ -39,6 +39,12 @@ const opsReadAPI = {
   payoutReconciliationSummary: () => api.get('/ops/payments/payouts/reconciliation-summary', { headers: authHeaders() }),
   promoCodes: () => api.get('/ops/promo-codes', { headers: authHeaders() }),
   creatorPartners: (params) => api.get('/ops/creator-partners', { params, headers: authHeaders() }),
+  creatorPartnerStats: () => api.get('/ops/creator-partners/stats', { headers: authHeaders() }),
+  creatorPartnerStatsById: (id) => api.get(`/ops/creator-partners/${id}/stats`, { headers: authHeaders() }),
+  creatorPartnerBookings: (id, params) =>
+    api.get(`/ops/creator-partners/${id}/bookings`, { params, headers: authHeaders() }),
+  creatorPartnerCommission: (id, params) =>
+    api.get(`/ops/creator-partners/${id}/commission`, { params, headers: authHeaders() }),
   reviews: (params) => api.get('/ops/reviews', { params, headers: authHeaders() }),
   review: (id) => api.get(`/ops/reviews/${id}`, { headers: authHeaders() }),
   communicationsOversight: () => api.get('/ops/communications/oversight', { headers: authHeaders() }),
@@ -120,6 +126,14 @@ const opsWriteAPI = {
     api.post('/ops/creator-partners', payload, { headers: authHeaders() }),
   updateCreatorPartner: (id, payload) =>
     api.patch(`/ops/creator-partners/${id}`, payload, { headers: authHeaders() }),
+  recalculateCreatorPartnerCommission: (id) =>
+    api.post(`/ops/creator-partners/${id}/recalculate`, {}, { headers: authHeaders() }),
+  approveCreatorCommission: (id, payload = {}) =>
+    api.post(`/ops/creator-commissions/${id}/approve`, payload, { headers: authHeaders() }),
+  markCreatorCommissionPaid: (id, payload = {}) =>
+    api.post(`/ops/creator-commissions/${id}/mark-paid`, payload, { headers: authHeaders() }),
+  voidCreatorCommission: (id, payload) =>
+    api.post(`/ops/creator-commissions/${id}/void`, payload, { headers: authHeaders() }),
   createReview: (payload) =>
     api.post('/ops/reviews', payload, { headers: authHeaders() }),
   deleteReview: (reviewId) =>

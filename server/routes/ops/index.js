@@ -15,6 +15,7 @@ const manualReviewRoutes = require('./modules/manualReviewRoutes');
 const readinessRoutes = require('./modules/readinessRoutes');
 const creatorPartnersRoutes = require('./modules/creatorPartnersRoutes');
 const promoCodesRoutes = require('./modules/promoCodesRoutes');
+const creatorCommissionsRoutes = require('./modules/creatorCommissionsRoutes');
 
 const router = express.Router();
 
@@ -54,5 +55,6 @@ router.use('/manual-review', manualReviewRoutes);
 router.use('/readiness', readinessRoutes);
 router.use('/creator-partners', creatorPartnersRoutes);
 router.use('/promo-codes', promoCodesRoutes);
+router.use('/creator-commissions', creatorCommissionsRoutes);
 
 module.exports = router;

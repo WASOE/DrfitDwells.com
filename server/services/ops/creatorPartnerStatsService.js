@@ -190,15 +190,24 @@ async function listCreatorPartnerAttributedBookings(creatorPartnerDoc, { limit =
   const candidates = await Booking.find({ $or: candidateOr })
     .sort({ createdAt: -1 })
     .limit(Math.max(1, Math.min(300, Number(limit) || 100)))
-    .select('status totalPrice subtotalPrice discountAmount promoCode attribution checkIn checkOut createdAt')
+    .select('status totalPrice subtotalPrice discountAmount promoCode attribution checkIn checkOut createdAt guestInfo cabinId cabinTypeId')
+    .populate('cabinId', 'name')
+    .populate('cabinTypeId', 'name')
     .lean();
 
   return candidates
     .map((booking) => {
       const attribution = resolveBookingCreatorAttribution(booking, maps);
       if (!attribution || attribution.creatorPartnerId !== targetId) return null;
+      const firstName = String(booking?.guestInfo?.firstName || '').trim();
+      const lastName = String(booking?.guestInfo?.lastName || '').trim();
+      const guestName = [firstName, lastName].filter(Boolean).join(' ').trim() || null;
+      const cabinLabel = booking?.cabinId?.name || booking?.cabinTypeId?.name || null;
       return {
         bookingId: String(booking._id),
+        guestName,
+        guestEmail: booking?.guestInfo?.email || null,
+        cabinLabel,
         status: booking.status,
         attributionSource: attribution.source,
         referralCode: booking?.attribution?.referralCode || null,
@@ -206,6 +215,9 @@ async function listCreatorPartnerAttributedBookings(creatorPartnerDoc, { limit =
         checkIn: booking.checkIn,
         checkOut: booking.checkOut,
         createdAt: booking.createdAt,
+        subtotalPrice: Math.max(0, toMoneyNumber(booking.subtotalPrice)),
+        discountAmount: Math.max(0, toMoneyNumber(booking.discountAmount)),
+        totalPrice: Math.max(0, toMoneyNumber(booking.totalPrice)),
         grossBookingRevenue: Math.max(0, toMoneyNumber(booking.totalPrice)),
         commissionableRevenueEstimate: estimateCommissionableRevenue(booking)
       };

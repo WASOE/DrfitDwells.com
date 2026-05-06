@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { opsReadAPI, opsWriteAPI } from '../../services/opsApi';
 
 /** Mirrors server/models/CreatorPartner.js — slug only (no dots). */
@@ -177,8 +177,34 @@ function referralUrl(code) {
   return `${window.location.origin}/?ref=${encodeURIComponent(code)}`;
 }
 
+function formatDateTime(iso) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  } catch {
+    return '—';
+  }
+}
+
+function formatMoney(amount, currency = 'BGN') {
+  const num = Number(amount);
+  if (!Number.isFinite(num)) return '—';
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 2 }).format(num);
+  } catch {
+    return `${num.toFixed(2)} ${currency}`;
+  }
+}
+
+function formatPercentRatio(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return '—';
+  return `${(num * 100).toFixed(2)}%`;
+}
+
 export default function OpsCreatorPartners() {
   const [rows, setRows] = useState([]);
+  const [statsById, setStatsById] = useState({});
   const [loading, setLoading] = useState(true);
   const [banner, setBanner] = useState({ type: '', message: '' });
   const [statusFilter, setStatusFilter] = useState('all');
@@ -191,6 +217,15 @@ export default function OpsCreatorPartners() {
   const [saving, setSaving] = useState(false);
   const [drawerFieldErrors, setDrawerFieldErrors] = useState({ slug: '', referral: '', commission: '' });
   const [drawerSubmitError, setDrawerSubmitError] = useState('');
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailRow, setDetailRow] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState('');
+  const [detailStats, setDetailStats] = useState(null);
+  const [detailBookings, setDetailBookings] = useState([]);
+  const [detailCommission, setDetailCommission] = useState([]);
+  const [commissionActionBusyId, setCommissionActionBusyId] = useState('');
+  const [voidDrafts, setVoidDrafts] = useState({});
 
   function clearDrawerValidation() {
     setDrawerFieldErrors({ slug: '', referral: '', commission: '' });
@@ -203,14 +238,38 @@ export default function OpsCreatorPartners() {
       const params = {};
       if (statusFilter && statusFilter !== 'all') params.status = statusFilter;
       if (search.trim()) params.search = search.trim();
-      const res = await opsReadAPI.creatorPartners(params);
-      setRows(res.data?.data?.creatorPartners || []);
+      const [partnersRes, statsRes] = await Promise.all([
+        opsReadAPI.creatorPartners(params),
+        opsReadAPI.creatorPartnerStats()
+      ]);
+      const partners = partnersRes.data?.data?.creatorPartners || [];
+      const statsRows = statsRes.data?.data?.creatorPartnerStats || [];
+      const nextStatsById = {};
+      for (const row of statsRows) {
+        if (row?.creatorPartnerId) nextStatsById[row.creatorPartnerId] = row.stats || {};
+      }
+      setRows(partners);
+      setStatsById(nextStatsById);
     } catch (e) {
       setBanner({ type: 'error', message: e?.response?.data?.message || 'Failed to load creator partners' });
     } finally {
       setLoading(false);
     }
   }, [statusFilter, search]);
+
+  const refreshSelectedCreatorDetails = useCallback(
+    async (creatorId) => {
+      const [statsRes, bookingsRes, commissionRes] = await Promise.all([
+        opsReadAPI.creatorPartnerStatsById(creatorId),
+        opsReadAPI.creatorPartnerBookings(creatorId, { limit: 100 }),
+        opsReadAPI.creatorPartnerCommission(creatorId, { limit: 100 })
+      ]);
+      setDetailStats(statsRes.data?.data?.stats || null);
+      setDetailBookings(bookingsRes.data?.data?.bookings || []);
+      setDetailCommission(commissionRes.data?.data?.entries || []);
+    },
+    []
+  );
 
   useEffect(() => {
     load();
@@ -289,6 +348,94 @@ export default function OpsCreatorPartners() {
     }
   }
 
+  async function openDetails(row) {
+    setDetailRow(row);
+    setDetailOpen(true);
+    setDetailError('');
+    setDetailLoading(true);
+    try {
+      await refreshSelectedCreatorDetails(row._id);
+    } catch (err) {
+      setDetailError(formatAxiosMessage(err));
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  function closeDetails() {
+    setDetailOpen(false);
+    setDetailRow(null);
+    setDetailError('');
+    setDetailStats(null);
+    setDetailBookings([]);
+    setDetailCommission([]);
+    setCommissionActionBusyId('');
+    setVoidDrafts({});
+  }
+
+  async function recalculateCommission() {
+    if (!detailRow?._id) return;
+    setCommissionActionBusyId('recalculate');
+    setDetailError('');
+    try {
+      await opsWriteAPI.recalculateCreatorPartnerCommission(detailRow._id);
+      await Promise.all([load(), refreshSelectedCreatorDetails(detailRow._id)]);
+      setBanner({ type: 'success', message: 'Commission ledger recalculated.' });
+    } catch (err) {
+      setDetailError(formatAxiosMessage(err));
+    } finally {
+      setCommissionActionBusyId('');
+    }
+  }
+
+  async function approveCommission(entryId) {
+    setCommissionActionBusyId(entryId);
+    setDetailError('');
+    try {
+      await opsWriteAPI.approveCreatorCommission(entryId);
+      await Promise.all([load(), refreshSelectedCreatorDetails(detailRow._id)]);
+      setBanner({ type: 'success', message: 'Commission row approved.' });
+    } catch (err) {
+      setDetailError(formatAxiosMessage(err));
+    } finally {
+      setCommissionActionBusyId('');
+    }
+  }
+
+  async function markCommissionPaid(entryId) {
+    setCommissionActionBusyId(entryId);
+    setDetailError('');
+    try {
+      await opsWriteAPI.markCreatorCommissionPaid(entryId);
+      await Promise.all([load(), refreshSelectedCreatorDetails(detailRow._id)]);
+      setBanner({ type: 'success', message: 'Commission row marked as paid.' });
+    } catch (err) {
+      setDetailError(formatAxiosMessage(err));
+    } finally {
+      setCommissionActionBusyId('');
+    }
+  }
+
+  async function voidCommission(entryId) {
+    const reason = String(voidDrafts[entryId] || '').trim();
+    if (!reason) {
+      setDetailError('Void reason is required before voiding a commission row.');
+      return;
+    }
+    setCommissionActionBusyId(entryId);
+    setDetailError('');
+    try {
+      await opsWriteAPI.voidCreatorCommission(entryId, { voidReason: reason });
+      await Promise.all([load(), refreshSelectedCreatorDetails(detailRow._id)]);
+      setVoidDrafts((prev) => ({ ...prev, [entryId]: '' }));
+      setBanner({ type: 'success', message: 'Commission row voided.' });
+    } catch (err) {
+      setDetailError(formatAxiosMessage(err));
+    } finally {
+      setCommissionActionBusyId('');
+    }
+  }
+
   async function copyReferralLink(code) {
     const url = referralUrl(code);
     if (!url) return;
@@ -300,20 +447,45 @@ export default function OpsCreatorPartners() {
     }
   }
 
-  function formatUpdated(iso) {
-    if (!iso) return '—';
-    try {
-      return new Date(iso).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
-    } catch {
-      return '—';
-    }
-  }
+  const commissionPaidTotal = useMemo(
+    () =>
+      detailCommission
+        .filter((entry) => entry.status === 'paid')
+        .reduce((sum, entry) => sum + (Number(entry.amountSnapshot) || 0), 0),
+    [detailCommission]
+  );
 
-  function commissionPercentDisplay(partner) {
-    const bps = partner.commission?.rateBps;
-    if (typeof bps !== 'number') return '—';
-    return `${bps / 100}%`;
-  }
+  const commissionDueTotal = useMemo(
+    () =>
+      detailCommission
+        .filter((entry) => entry.status === 'approved' || (entry.status === 'pending' && entry.eligibilityStatus === 'eligible'))
+        .reduce((sum, entry) => sum + (Number(entry.amountSnapshot) || 0), 0),
+    [detailCommission]
+  );
+
+  const commissionPendingEligibleTotal = useMemo(
+    () =>
+      detailCommission
+        .filter((entry) => entry.status === 'pending' && entry.eligibilityStatus === 'eligible')
+        .reduce((sum, entry) => sum + (Number(entry.amountSnapshot) || 0), 0),
+    [detailCommission]
+  );
+
+  const commissionApprovedTotal = useMemo(
+    () =>
+      detailCommission
+        .filter((entry) => entry.status === 'approved')
+        .reduce((sum, entry) => sum + (Number(entry.amountSnapshot) || 0), 0),
+    [detailCommission]
+  );
+
+  const commissionVoidTotal = useMemo(
+    () =>
+      detailCommission
+        .filter((entry) => entry.status === 'void')
+        .reduce((sum, entry) => sum + (Number(entry.amountSnapshot) || 0), 0),
+    [detailCommission]
+  );
 
   return (
     <div className="space-y-4 pb-16 sm:pb-0 max-w-7xl mx-auto px-4 py-6 md:py-8">
@@ -399,29 +571,44 @@ export default function OpsCreatorPartners() {
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3 font-mono">Referral</th>
                   <th className="px-4 py-3 font-mono">Promo</th>
-                  <th className="px-4 py-3">Commission</th>
+                  <th className="px-4 py-3">Visits</th>
+                  <th className="px-4 py-3">Bookings</th>
+                  <th className="px-4 py-3">Paid revenue</th>
+                  <th className="px-4 py-3">Est. commission</th>
+                  <th className="px-4 py-3">Last activity</th>
                   <th className="px-4 py-3">Profile link</th>
-                  <th className="px-4 py-3">Updated</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={11} className="px-4 py-8 text-center text-gray-500">
                       No creator partners match your filters.
                     </td>
                   </tr>
                 ) : (
                   rows.map((r) => {
                     const href = mainProfileHref(r);
+                    const stats = statsById[r._id] || {};
+                    const visits = Number(stats.visits || 0);
+                    const uniqueVisitors = Number(stats.uniqueVisitors || 0);
+                    const attributedBookings = Number(stats.attributedBookings || 0);
+                    const paidBookings = Number(stats.paidConfirmedBookings || 0);
+                    const paidRevenue = Number(stats.grossBookingRevenue || 0);
+                    const commissionEstimate = Number(stats.commissionableRevenueEstimate || 0);
+                    const lastActivity = stats.lastVisitAt || stats.lastBookingAt || null;
                     return (
                       <tr key={r._id} className="hover:bg-gray-50/80">
                         <td className="px-4 py-3 font-medium text-gray-900">{r.name}</td>
                         <td className="px-4 py-3 text-gray-700 capitalize">{r.status}</td>
                         <td className="px-4 py-3 font-mono text-gray-800">{r.referral?.code || '—'}</td>
                         <td className="px-4 py-3 font-mono text-gray-700">{r.promo?.code || '—'}</td>
-                        <td className="px-4 py-3 tabular-nums text-gray-800">{commissionPercentDisplay(r)}</td>
+                        <td className="px-4 py-3 tabular-nums text-gray-800">{visits} / {uniqueVisitors}</td>
+                        <td className="px-4 py-3 tabular-nums text-gray-800">{attributedBookings} / {paidBookings}</td>
+                        <td className="px-4 py-3 tabular-nums text-gray-800">{formatMoney(paidRevenue)}</td>
+                        <td className="px-4 py-3 tabular-nums text-gray-800">{formatMoney(commissionEstimate * ((r.commission?.rateBps || 0) / 10000))}</td>
+                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{formatDateTime(lastActivity)}</td>
                         <td className="px-4 py-3 max-w-[10rem] md:max-w-xs truncate">
                           {href ? (
                             <a
@@ -436,9 +623,15 @@ export default function OpsCreatorPartners() {
                             '—'
                           )}
                         </td>
-                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{formatUpdated(r.updatedAt)}</td>
                         <td className="px-4 py-3 text-right whitespace-nowrap">
                           <div className="flex flex-wrap justify-end gap-x-2 gap-y-1">
+                            <button
+                              type="button"
+                              onClick={() => openDetails(r)}
+                              className="text-[#81887A] font-medium hover:underline"
+                            >
+                              Details
+                            </button>
                             <button
                               type="button"
                               onClick={() => openEdit(r)}
@@ -484,6 +677,240 @@ export default function OpsCreatorPartners() {
           </div>
         )}
       </section>
+
+      {detailOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl border border-gray-200 w-full max-w-7xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 md:px-6 flex flex-wrap items-center justify-between gap-3 z-10">
+              <h3 className="text-lg font-semibold text-gray-900">
+                Creator performance: {detailRow?.name || 'Details'}
+              </h3>
+              <button
+                type="button"
+                onClick={closeDetails}
+                className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-800 hover:bg-gray-50"
+              >
+                Close
+              </button>
+            </div>
+            <div className="p-4 md:p-6 space-y-6">
+              {detailError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">{detailError}</div>
+              ) : null}
+              {detailLoading ? <div className="text-sm text-gray-600">Loading details…</div> : null}
+              {!detailLoading && detailRow ? (
+                <>
+                  <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div className="border border-gray-200 rounded-lg p-4">
+                      <h4 className="font-semibold text-gray-900 mb-2">Profile</h4>
+                      <div className="text-sm text-gray-700 space-y-1">
+                        <div><span className="text-gray-500">Name:</span> {detailRow.name}</div>
+                        <div><span className="text-gray-500">Status:</span> <span className="capitalize">{detailRow.status}</span></div>
+                        <div><span className="text-gray-500">Slug:</span> <span className="font-mono">{detailRow.slug || '—'}</span></div>
+                        <div><span className="text-gray-500">Commission:</span> {((detailRow.commission?.rateBps || 0) / 100).toFixed(2)}%</div>
+                      </div>
+                    </div>
+                    <div className="border border-gray-200 rounded-lg p-4">
+                      <h4 className="font-semibold text-gray-900 mb-2">Tracking details</h4>
+                      <div className="text-sm text-gray-700 space-y-1">
+                        <div><span className="text-gray-500">Referral code:</span> <span className="font-mono">{detailRow.referral?.code || '—'}</span></div>
+                        <div><span className="text-gray-500">Promo code:</span> <span className="font-mono">{detailRow.promo?.code || '—'}</span></div>
+                        <div><span className="text-gray-500">Cookie days:</span> {detailRow.referral?.cookieDays ?? '—'}</div>
+                        <div><span className="text-gray-500">Referral link:</span> {detailRow.referral?.code ? referralUrl(detailRow.referral.code) : '—'}</div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="border border-gray-200 rounded-lg p-4">
+                    <h4 className="font-semibold text-gray-900 mb-3">Performance summary</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+                      <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Total visits</div><div className="font-semibold text-gray-900">{detailStats?.visits ?? 0}</div></div>
+                      <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Unique-ish visitors</div><div className="font-semibold text-gray-900">{detailStats?.uniqueVisitors ?? 0}</div></div>
+                      <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Total bookings</div><div className="font-semibold text-gray-900">{detailStats?.attributedBookings ?? 0}</div></div>
+                      <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Paid/confirmed</div><div className="font-semibold text-gray-900">{detailStats?.paidConfirmedBookings ?? 0}</div></div>
+                      <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Cancelled/refunded/void</div><div className="font-semibold text-gray-900">{detailStats?.cancelledRefundedVoidBookings ?? 0}</div></div>
+                      <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Conversion rate</div><div className="font-semibold text-gray-900">{formatPercentRatio(detailStats?.conversionRate ?? 0)}</div></div>
+                      <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Gross revenue</div><div className="font-semibold text-gray-900">{formatMoney(detailStats?.grossBookingRevenue ?? 0)}</div></div>
+                      <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Commissionable estimate</div><div className="font-semibold text-gray-900">{formatMoney(detailStats?.commissionableRevenueEstimate ?? 0)}</div></div>
+                      <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Last visit</div><div className="font-semibold text-gray-900">{formatDateTime(detailStats?.lastVisitAt)}</div></div>
+                      <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Last booking</div><div className="font-semibold text-gray-900">{formatDateTime(detailStats?.lastBookingAt)}</div></div>
+                    </div>
+                  </section>
+
+                  <section className="border border-gray-200 rounded-lg p-4">
+                    <h4 className="font-semibold text-gray-900 mb-3">Bookings</h4>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-sm">
+                        <thead className="bg-gray-50 border-b border-gray-200 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                          <tr>
+                            <th className="px-3 py-2">Booking</th>
+                            <th className="px-3 py-2">Guest</th>
+                            <th className="px-3 py-2">Cabin/entity</th>
+                            <th className="px-3 py-2">Check-in/out</th>
+                            <th className="px-3 py-2">Status</th>
+                            <th className="px-3 py-2">Source</th>
+                            <th className="px-3 py-2">Referral</th>
+                            <th className="px-3 py-2">Promo</th>
+                            <th className="px-3 py-2">Subtotal</th>
+                            <th className="px-3 py-2">Discount</th>
+                            <th className="px-3 py-2">Total</th>
+                            <th className="px-3 py-2">Created</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {detailBookings.length === 0 ? (
+                            <tr><td className="px-3 py-4 text-gray-500" colSpan={12}>No attributed bookings.</td></tr>
+                          ) : detailBookings.map((b) => (
+                            <tr key={b.bookingId}>
+                              <td className="px-3 py-2 font-mono">{b.bookingId}</td>
+                              <td className="px-3 py-2">
+                                <div className="font-medium text-gray-900">{b.guestName || '—'}</div>
+                                <div className="text-xs text-gray-500">{b.guestEmail || '—'}</div>
+                              </td>
+                              <td className="px-3 py-2">{b.cabinLabel || '—'}</td>
+                              <td className="px-3 py-2 whitespace-nowrap">{formatDateTime(b.checkIn)} / {formatDateTime(b.checkOut)}</td>
+                              <td className="px-3 py-2 capitalize">{b.status || '—'}</td>
+                              <td className="px-3 py-2">{b.attributionSource || '—'}</td>
+                              <td className="px-3 py-2 font-mono">{b.referralCode || '—'}</td>
+                              <td className="px-3 py-2 font-mono">{b.promoCode || '—'}</td>
+                              <td className="px-3 py-2">{formatMoney(b.subtotalPrice)}</td>
+                              <td className="px-3 py-2">{formatMoney(b.discountAmount)}</td>
+                              <td className="px-3 py-2">{formatMoney(b.totalPrice)}</td>
+                              <td className="px-3 py-2 whitespace-nowrap">{formatDateTime(b.createdAt)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+
+                  <section className="border border-gray-200 rounded-lg p-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <h4 className="font-semibold text-gray-900">Commission ledger</h4>
+                      <div className="flex items-center gap-3 text-sm">
+                        <span className="text-gray-600">Pending eligible: <span className="font-semibold text-gray-900">{formatMoney(commissionPendingEligibleTotal)}</span></span>
+                        <span className="text-gray-600">Approved: <span className="font-semibold text-gray-900">{formatMoney(commissionApprovedTotal)}</span></span>
+                        <span className="text-gray-600">Due total: <span className="font-semibold text-gray-900">{formatMoney(commissionDueTotal)}</span></span>
+                        <span className="text-gray-600">Paid: <span className="font-semibold text-gray-900">{formatMoney(commissionPaidTotal)}</span></span>
+                        <span className="text-gray-600">Voided: <span className="font-semibold text-gray-900">{formatMoney(commissionVoidTotal)}</span></span>
+                        <button
+                          type="button"
+                          onClick={recalculateCommission}
+                          disabled={commissionActionBusyId === 'recalculate'}
+                          className="px-3 py-2 text-xs md:text-sm rounded-lg border border-gray-300 text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          {commissionActionBusyId === 'recalculate' ? 'Recalculating…' : 'Recalculate'}
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                      Manual workflow only. These actions do not trigger Stripe or real payouts.
+                    </p>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-sm">
+                        <thead className="bg-gray-50 border-b border-gray-200 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                          <tr>
+                            <th className="px-3 py-2">Booking</th>
+                            <th className="px-3 py-2">Guest</th>
+                            <th className="px-3 py-2">Source</th>
+                            <th className="px-3 py-2">Commissionable revenue</th>
+                            <th className="px-3 py-2">Rate</th>
+                            <th className="px-3 py-2">Amount</th>
+                            <th className="px-3 py-2">Eligibility</th>
+                            <th className="px-3 py-2">Status</th>
+                            <th className="px-3 py-2">Void reason</th>
+                            <th className="px-3 py-2">Calculated</th>
+                            <th className="px-3 py-2">Approved</th>
+                            <th className="px-3 py-2">Paid</th>
+                            <th className="px-3 py-2">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {detailCommission.length === 0 ? (
+                            <tr><td className="px-3 py-4 text-gray-500" colSpan={13}>No commission rows yet.</td></tr>
+                          ) : detailCommission.map((entry) => {
+                            const canApprove = entry.status === 'pending' && entry.eligibilityStatus === 'eligible';
+                            const canMarkPaid = entry.status === 'approved';
+                            const canVoid = entry.status === 'pending' || entry.status === 'approved';
+                            const busy = commissionActionBusyId === entry._id;
+                            return (
+                              <tr key={entry._id}>
+                                <td className="px-3 py-2 font-mono">{entry.bookingId || '—'}</td>
+                                <td className="px-3 py-2 text-gray-500">—</td>
+                                <td className="px-3 py-2">{entry.source || '—'}</td>
+                                <td className="px-3 py-2">{formatMoney(entry.commissionableRevenueSnapshot, entry.currency || 'BGN')}</td>
+                                <td className="px-3 py-2">{((entry.rateBpsSnapshot || 0) / 100).toFixed(2)}%</td>
+                                <td className="px-3 py-2 font-semibold">{formatMoney(entry.amountSnapshot, entry.currency || 'BGN')}</td>
+                                <td className="px-3 py-2">{entry.eligibilityStatus}</td>
+                                <td className="px-3 py-2 capitalize">{entry.status}</td>
+                                <td className="px-3 py-2">{entry.voidReason || '—'}</td>
+                                <td className="px-3 py-2 whitespace-nowrap">{formatDateTime(entry.calculatedAt)}</td>
+                                <td className="px-3 py-2 whitespace-nowrap">{formatDateTime(entry.approvedAt)}</td>
+                                <td className="px-3 py-2 whitespace-nowrap">{formatDateTime(entry.paidAt)}</td>
+                                <td className="px-3 py-2">
+                                  <div className="flex flex-col gap-2">
+                                    <div className="flex flex-wrap gap-2">
+                                      <button
+                                        type="button"
+                                        disabled={!canApprove || busy}
+                                        onClick={() => approveCommission(entry._id)}
+                                        className="px-2 py-1 rounded border border-gray-300 text-xs text-gray-800 disabled:opacity-50"
+                                      >
+                                        Approve
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={!canMarkPaid || busy}
+                                        onClick={() => markCommissionPaid(entry._id)}
+                                        className="px-2 py-1 rounded border border-gray-300 text-xs text-gray-800 disabled:opacity-50"
+                                      >
+                                        Mark paid
+                                      </button>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="text"
+                                        placeholder="Void reason"
+                                        value={voidDrafts[entry._id] || ''}
+                                        onChange={(e) => setVoidDrafts((prev) => ({ ...prev, [entry._id]: e.target.value }))}
+                                        className="w-full min-w-[10rem] rounded border border-gray-300 px-2 py-1 text-xs"
+                                        disabled={!canVoid || busy}
+                                      />
+                                      <button
+                                        type="button"
+                                        disabled={!canVoid || busy}
+                                        onClick={() => voidCommission(entry._id)}
+                                        className="px-2 py-1 rounded border border-red-300 text-xs text-red-800 disabled:opacity-50"
+                                      >
+                                        Void
+                                      </button>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+
+                  <section className="border border-gray-200 rounded-lg p-4">
+                    <h4 className="font-semibold text-gray-900 mb-2">Content agreement / notes</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-700">
+                      <div><span className="text-gray-500">Comp stay offered:</span> {detailRow.contentAgreement?.compStayOffered ? 'Yes' : 'No'}</div>
+                      <div><span className="text-gray-500">Agreed at:</span> {formatDateTime(detailRow.contentAgreement?.agreedAt)}</div>
+                      <div className="md:col-span-2"><span className="text-gray-500">Deliverables:</span> {detailRow.contentAgreement?.deliverables || '—'}</div>
+                      <div className="md:col-span-2"><span className="text-gray-500">Usage rights:</span> {detailRow.contentAgreement?.usageRights || '—'}</div>
+                      <div className="md:col-span-2"><span className="text-gray-500">Notes:</span> {detailRow.notes || '—'}</div>
+                    </div>
+                  </section>
+                </>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {drawerOpen ? (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40">
