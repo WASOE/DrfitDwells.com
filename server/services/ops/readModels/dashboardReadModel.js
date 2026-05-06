@@ -2,11 +2,12 @@ const Booking = require('../../../models/Booking');
 const Payment = require('../../../models/Payment');
 const Payout = require('../../../models/Payout');
 const ChannelSyncEvent = require('../../../models/ChannelSyncEvent');
-const CommunicationEventLegacy = require('../../../models/EmailEvent');
+const EmailEvent = require('../../../models/EmailEvent');
 const ManualReviewItem = require('../../../models/ManualReviewItem');
+const StripeEventEvidence = require('../../../models/StripeEventEvidence');
 const { mapBookingToReservationCompatible } = require('../../../mappers/bookingToReservationMapper');
 const { normalizeDateToSofiaDayStart } = require('../../../utils/dateTime');
-const { isFixtureBookingEmail } = require('../../../utils/fixtureExclusion');
+const { FIXTURE_BOOKING_EMAIL_PATTERN } = require('../../../utils/fixtureExclusion');
 
 function dayRange(dateInput = new Date()) {
   const start = normalizeDateToSofiaDayStart(dateInput);
@@ -15,17 +16,44 @@ function dayRange(dateInput = new Date()) {
   return { start, end };
 }
 
-function getEndOfToday(startOfToday) {
-  const end = new Date(startOfToday);
-  end.setHours(23, 59, 59, 999);
-  return end;
+function endOfDay(date) {
+  const d = new Date(date);
+  d.setHours(23, 59, 59, 999);
+  return d;
 }
 
-function getEndOf7Days(startOfToday) {
-  const end = new Date(startOfToday);
-  end.setDate(end.getDate() + 7);
-  end.setHours(23, 59, 59, 999);
-  return end;
+function startOfMonth(now = new Date()) {
+  return new Date(now.getFullYear(), now.getMonth(), 1);
+}
+
+function startOfNextMonth(now = new Date()) {
+  return new Date(now.getFullYear(), now.getMonth() + 1, 1);
+}
+
+function addDays(date, days) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function baseBookingFilter() {
+  return {
+    isTest: { $ne: true },
+    $or: [{ archivedAt: null }, { archivedAt: { $exists: false } }],
+    'guestInfo.email': { $not: FIXTURE_BOOKING_EMAIL_PATTERN }
+  };
+}
+
+function severityScore(severity) {
+  const order = { critical: 4, high: 3, medium: 2, low: 1 };
+  return order[severity] || 1;
+}
+
+function paymentSeverity(status) {
+  if (status === 'failed' || status === 'disputed') return 'critical';
+  if (status === 'pending_verification' || status === 'unlinked_payment') return 'high';
+  if (status === 'unpaid') return 'medium';
+  return 'low';
 }
 
 function resolveUnitLabel(booking) {
@@ -69,97 +97,171 @@ function classifyReservationPaymentStatus({ booking, linkedPaymentTrail, hasUnli
   return 'unknown';
 }
 
-function deriveStayTiming(booking, startOfToday) {
-  const endOfToday = getEndOfToday(startOfToday);
-  const checkIn = booking?.checkIn ? new Date(booking.checkIn) : null;
-  const checkOut = booking?.checkOut ? new Date(booking.checkOut) : null;
-  const isCancelled = booking?.status === 'cancelled';
+function mapReservationRow(booking, paymentStatus) {
+  const mapped = mapBookingToReservationCompatible(booking);
+  const guestsLabel = `${booking.adults ?? 0}A${(booking.children ?? 0) > 0 ? ` ${(booking.children ?? 0)}C` : ''}`;
   return {
-    arrivingToday: !isCancelled && !!checkIn && checkIn >= startOfToday && checkIn <= endOfToday,
-    checkingOutToday: !isCancelled && !!checkOut && checkOut >= startOfToday && checkOut <= endOfToday,
-    currentlyStaying: !isCancelled && !!checkIn && !!checkOut && checkIn < startOfToday && checkOut > endOfToday,
-    checkedOut: !isCancelled && !!checkOut && checkOut < startOfToday,
-    upcoming: !isCancelled && !!checkIn && checkIn > endOfToday
+    reservationId: mapped.reservationId,
+    href: `/ops/reservations/${mapped.reservationId}`,
+    guestName: `${mapped.guest?.firstName || ''} ${mapped.guest?.lastName || ''}`.trim() || 'Guest',
+    guestEmail: mapped.guest?.email || null,
+    accommodationDisplayName: resolveAccommodationDisplayName(booking),
+    datesLabel: `${mapped.checkInDateOnly || '—'} - ${mapped.checkOutDateOnly || '—'}`,
+    guestsLabel,
+    reservationStatus: mapped.reservationStatus,
+    paymentStatus,
+    statusLabel: mapped.reservationStatus || 'unknown',
+    checkInDate: mapped.checkInDate,
+    checkInDateOnly: mapped.checkInDateOnly,
+    checkOutDateOnly: mapped.checkOutDateOnly
   };
 }
 
-function derivePaymentAttentionSignals({ reservationStatus, paymentStatus }) {
-  const failedOrDisputed = paymentStatus === 'failed' || paymentStatus === 'disputed';
-  const pendingVerification = paymentStatus === 'pending_verification';
-  const unlinkedPayment = paymentStatus === 'unlinked_payment';
-  const unpaid = paymentStatus === 'unpaid';
-  const cancelled = reservationStatus === 'cancelled';
-  const cancelledPaid = cancelled && (paymentStatus === 'paid' || paymentStatus === 'partial');
-  const cancelledUnlinkedAudit = cancelled && unlinkedPayment;
-  const refundPending = cancelled && (paymentStatus === 'paid' || paymentStatus === 'partial' || pendingVerification);
-  const unpaidActiveAttention = !cancelled && unpaid;
-  const paymentAttention =
-    failedOrDisputed ||
-    pendingVerification ||
-    unlinkedPayment ||
-    cancelledPaid ||
-    cancelledUnlinkedAudit ||
-    refundPending ||
-    unpaidActiveAttention;
-  return {
-    paymentAttention,
-    cancelledPaid,
-    cancelledUnlinkedAudit,
-    refundPending,
-    unlinkedPayment,
-    failedOrDisputed,
-    pendingVerification,
-    unpaidActiveAttention
-  };
-}
-
-function buildActionBadges({ reservationStatus, paymentStatus, stayTiming, paymentSignals }) {
-  const badges = [];
-  if (reservationStatus === 'cancelled') badges.push('Cancelled');
-  if (stayTiming.arrivingToday) badges.push('Arriving today');
-  if (stayTiming.currentlyStaying) badges.push('Currently staying');
-  if (stayTiming.checkingOutToday) badges.push('Checking out today');
-  if (paymentSignals.failedOrDisputed) badges.push('Failed/disputed');
-  if (paymentSignals.pendingVerification) badges.push('Pending verification');
-  if (paymentSignals.unlinkedPayment) badges.push('Unlinked payment');
-  if (paymentSignals.unpaidActiveAttention) badges.push('Unpaid');
-  if (paymentSignals.cancelledPaid) badges.push('Cancelled + paid');
-  if (paymentSignals.cancelledUnlinkedAudit) badges.push('Cancelled + unlinked');
-  if (paymentStatus === 'refunded') badges.push('Refunded');
-  if (paymentSignals.refundPending) badges.push('Refund follow-up');
-  if (paymentSignals.paymentAttention) badges.push('Payment attention');
-  return badges;
+function hydrateAlerts(alerts = []) {
+  return alerts
+    .sort((a, b) => {
+      const sev = severityScore(b.severity) - severityScore(a.severity);
+      if (sev !== 0) return sev;
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return tb - ta;
+    })
+    .slice(0, 8);
 }
 
 async function getDashboardReadModel() {
   const now = new Date();
-  const { start, end } = dayRange(now);
-  const endOfToday = getEndOfToday(start);
-  const endOf7Days = getEndOf7Days(start);
+  const { start: startOfToday } = dayRange(now);
+  const endOfToday = endOfDay(startOfToday);
+  const endOf7Days = endOfDay(addDays(startOfToday, 7));
+  const endOf14Days = endOfDay(addDays(startOfToday, 14));
+  const monthStart = startOfMonth(now);
+  const nextMonthStart = startOfNextMonth(now);
+  const twoWeeksAgo = addDays(startOfToday, -14);
+  const oneWeekAgo = addDays(startOfToday, -7);
 
-  const [failedEmails, upcomingPayouts, openManualReviews] =
-    await Promise.all([
-      CommunicationEventLegacy.countDocuments({ type: { $in: ['Bounce', 'SpamComplaint'] } }),
-      Payout.countDocuments({ expectedArrivalDate: { $gte: start } }),
-      ManualReviewItem.countDocuments({ status: 'open' })
-    ]);
+  const bookingBase = baseBookingFilter();
+  const todayArrivingFilter = {
+    ...bookingBase,
+    status: { $ne: 'cancelled' },
+    checkIn: { $gte: startOfToday, $lte: endOfToday }
+  };
+  const stayingFilter = {
+    ...bookingBase,
+    status: { $ne: 'cancelled' },
+    checkIn: { $lt: startOfToday },
+    checkOut: { $gt: endOfToday }
+  };
+  const leavingFilter = {
+    ...bookingBase,
+    status: { $ne: 'cancelled' },
+    checkOut: { $gte: startOfToday, $lte: endOfToday }
+  };
+  const upcoming14Filter = {
+    ...bookingBase,
+    status: { $ne: 'cancelled' },
+    checkIn: { $gt: endOfToday, $lte: endOf14Days }
+  };
+  const nextArrivalsFilter = {
+    ...bookingBase,
+    status: { $ne: 'cancelled' },
+    checkIn: { $gt: endOfToday }
+  };
+  const alertBookingFilter = {
+    ...bookingBase,
+    $or: [
+      { status: { $ne: 'cancelled' }, checkOut: { $gte: startOfToday } },
+      { status: 'cancelled', updatedAt: { $gte: twoWeeksAgo } }
+    ]
+  };
+  const activeForPulseFilter = {
+    ...bookingBase,
+    status: { $ne: 'cancelled' },
+    checkOut: { $gte: startOfToday }
+  };
+  const pulseMonthFilter = {
+    ...bookingBase,
+    status: { $ne: 'cancelled' },
+    createdAt: { $gte: monthStart, $lt: nextMonthStart }
+  };
 
-  const bookings = await Booking.find({
-    isTest: { $ne: true },
-    $or: [{ archivedAt: null }, { archivedAt: { $exists: false } }]
-  })
-    .populate('cabinId', 'name location')
-    .populate('cabinTypeId', 'name location')
-    .populate('unitId', 'displayName unitNumber')
-    .sort({ createdAt: -1 })
-    .lean();
-  const reservationIds = bookings.map((b) => String(b._id));
-  const stripePaymentIntentIds = bookings
+  const [
+    arrivingBookings,
+    stayingBookings,
+    leavingBookings,
+    next14Count,
+    nextArrivalsBookings,
+    alertBookings,
+    pulseActiveBookings,
+    pulseMonthAgg,
+    upcoming7Count,
+    cancellationsMTD,
+    refundsMTD,
+    failedEmailCountRecent,
+    failedEmailEvents,
+    syncEventsRecent,
+    syncWarningsRecent,
+    manualReviewOpenCount,
+    manualReviewOpenItems,
+    upcomingPayouts,
+    stripeLastWebhook
+  ] = await Promise.all([
+    Booking.find(todayArrivingFilter).populate('cabinId', 'name').populate('cabinTypeId', 'name').populate('unitId', 'displayName unitNumber').sort({ checkIn: 1 }).limit(20).lean(),
+    Booking.find(stayingFilter).populate('cabinId', 'name').populate('cabinTypeId', 'name').populate('unitId', 'displayName unitNumber').sort({ checkOut: 1 }).limit(20).lean(),
+    Booking.find(leavingFilter).populate('cabinId', 'name').populate('cabinTypeId', 'name').populate('unitId', 'displayName unitNumber').sort({ checkOut: 1 }).limit(20).lean(),
+    Booking.countDocuments(upcoming14Filter),
+    Booking.find(nextArrivalsFilter).populate('cabinId', 'name').populate('cabinTypeId', 'name').populate('unitId', 'displayName unitNumber').sort({ checkIn: 1 }).limit(5).lean(),
+    Booking.find(alertBookingFilter).populate('cabinId', 'name').populate('cabinTypeId', 'name').populate('unitId', 'displayName unitNumber').sort({ updatedAt: -1 }).limit(120).lean(),
+    Booking.find(activeForPulseFilter).select('_id status totalPrice stripePaymentIntentId provenance createdAt checkIn checkOut guestInfo').lean(),
+    Booking.aggregate([
+      { $match: pulseMonthFilter },
+      { $group: { _id: null, bookingsMTD: { $sum: 1 }, bookingValueMTD: { $sum: '$totalPrice' } } }
+    ]),
+    Booking.countDocuments({
+      ...bookingBase,
+      status: { $ne: 'cancelled' },
+      checkIn: { $gt: endOfToday, $lte: endOf7Days }
+    }),
+    Booking.countDocuments({ ...bookingBase, status: 'cancelled', updatedAt: { $gte: monthStart, $lt: nextMonthStart } }),
+    Payment.countDocuments({ status: 'refunded', updatedAt: { $gte: monthStart, $lt: nextMonthStart } }),
+    EmailEvent.countDocuments({
+      createdAt: { $gte: twoWeeksAgo },
+      $or: [{ type: { $in: ['Bounce', 'SpamComplaint'] } }, { sendStatus: 'failed' }]
+    }),
+    EmailEvent.find({
+      createdAt: { $gte: twoWeeksAgo },
+      $or: [{ type: { $in: ['Bounce', 'SpamComplaint'] } }, { sendStatus: 'failed' }]
+    })
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .lean(),
+    ChannelSyncEvent.find({ runAt: { $gte: oneWeekAgo }, outcome: { $in: ['warning', 'failed'] } }).sort({ runAt: -1 }).limit(5).lean(),
+    ChannelSyncEvent.countDocuments({ runAt: { $gte: oneWeekAgo }, outcome: { $in: ['warning', 'failed'] } }),
+    ManualReviewItem.countDocuments({ status: 'open' }),
+    ManualReviewItem.find({ status: 'open' }).sort({ severity: -1, createdAt: -1 }).limit(5).lean(),
+    Payout.countDocuments({ expectedArrivalDate: { $gte: startOfToday } }),
+    StripeEventEvidence.findOne({}).sort({ createdAtProvider: -1 }).lean()
+  ]);
+
+  const allBookingRefs = [
+    ...arrivingBookings,
+    ...stayingBookings,
+    ...leavingBookings,
+    ...nextArrivalsBookings,
+    ...alertBookings,
+    ...pulseActiveBookings
+  ];
+  const uniqueById = new Map();
+  for (const booking of allBookingRefs) uniqueById.set(String(booking._id), booking);
+  const uniqueBookings = [...uniqueById.values()];
+
+  const reservationIds = uniqueBookings.map((b) => String(b._id));
+  const stripePaymentIntentIds = uniqueBookings
     .map((b) => (typeof b.stripePaymentIntentId === 'string' ? b.stripePaymentIntentId.trim() : ''))
     .filter(Boolean);
 
   const [payments, unlinkedPayments] = await Promise.all([
-    Payment.find({ reservationId: { $in: reservationIds } }).lean(),
+    reservationIds.length ? Payment.find({ reservationId: { $in: reservationIds } }).lean() : [],
     stripePaymentIntentIds.length
       ? Payment.find({
           provider: 'stripe',
@@ -184,9 +286,9 @@ async function getDashboardReadModel() {
     paymentsByReservation.get(key).push(payment);
   }
 
-  const unlinkedPaymentByPaymentIntent = new Set();
+  const unlinkedPaymentByIntent = new Set();
   for (const payment of unlinkedPayments) {
-    const candidateKeys = [
+    const keys = [
       payment.providerReference,
       payment.paymentIntentId,
       payment.stripePaymentIntentId,
@@ -196,102 +298,262 @@ async function getDashboardReadModel() {
     ]
       .map((v) => (typeof v === 'string' ? v.trim() : ''))
       .filter(Boolean);
-    for (const key of candidateKeys) unlinkedPaymentByPaymentIntent.add(key);
+    for (const key of keys) unlinkedPaymentByIntent.add(key);
   }
 
-  const rows = bookings
-    .filter((booking) => !isFixtureBookingEmail(booking?.guestInfo?.email))
-    .map((booking) => {
-    const mapped = mapBookingToReservationCompatible(booking);
-    const paymentTrail = paymentsByReservation.get(String(booking._id)) || [];
+  const paymentStatusByReservation = new Map();
+  for (const booking of uniqueBookings) {
+    const key = String(booking._id);
+    const trail = paymentsByReservation.get(key) || [];
     const pi = typeof booking.stripePaymentIntentId === 'string' ? booking.stripePaymentIntentId.trim() : '';
     const paymentStatus = classifyReservationPaymentStatus({
       booking,
-      linkedPaymentTrail: paymentTrail,
-      hasUnlinkedStripePayment: pi ? unlinkedPaymentByPaymentIntent.has(pi) : false
+      linkedPaymentTrail: trail,
+      hasUnlinkedStripePayment: pi ? unlinkedPaymentByIntent.has(pi) : false
     });
-    const stayTiming = deriveStayTiming(booking, start);
-    const paymentSignals = derivePaymentAttentionSignals({
-      reservationStatus: mapped.reservationStatus,
-      paymentStatus
+    paymentStatusByReservation.set(key, paymentStatus);
+  }
+
+  const mapRows = (bookings) =>
+    bookings.map((booking) => {
+      const paymentStatus = paymentStatusByReservation.get(String(booking._id)) || 'unknown';
+      return mapReservationRow(booking, paymentStatus);
     });
 
-      return {
-        reservationId: mapped.reservationId,
-        detailPath: `/ops/reservations/${mapped.reservationId}`,
-        guestName: `${mapped.guest?.firstName || ''} ${mapped.guest?.lastName || ''}`.trim() || 'Guest',
-        guestEmail: mapped.guest?.email || null,
-        accommodationDisplayName: resolveAccommodationDisplayName(booking),
-        checkInDateOnly: mapped.checkInDateOnly,
-        checkOutDateOnly: mapped.checkOutDateOnly,
-        checkInDate: mapped.checkInDate,
-        adults: booking.adults ?? 0,
-        children: booking.children ?? 0,
-        reservationStatus: mapped.reservationStatus,
-        paymentStatus,
-        source: mapped.source || null,
-        signals: paymentSignals,
-        badges: buildActionBadges({
-          reservationStatus: mapped.reservationStatus,
-          paymentStatus,
-          stayTiming,
-          paymentSignals
-        }),
-        stayTiming
-      };
-    });
-
-  const actionNeeded = rows.filter((row) => row.signals.paymentAttention);
-  const arrivalsTodayRows = rows.filter((row) => row.stayTiming.arrivingToday);
-  const inHouseRows = rows.filter((row) => row.stayTiming.currentlyStaying);
-  const checkingOutTodayRows = rows.filter((row) => row.stayTiming.checkingOutToday);
-  const upcoming7Days = rows.filter((row) => {
-    if (row.reservationStatus === 'cancelled') return false;
-    const checkInDate = row.checkInDate ? new Date(row.checkInDate) : null;
-    return checkInDate && checkInDate > endOfToday && checkInDate <= endOf7Days;
+  const todayArrivingRows = mapRows(arrivingBookings);
+  const todayStayingRows = mapRows(stayingBookings);
+  const todayLeavingRows = mapRows(leavingBookings);
+  const nextArrivalsRows = mapRows(nextArrivalsBookings).map((row) => {
+    const checkIn = row.checkInDate ? new Date(row.checkInDate) : null;
+    const days = checkIn ? Math.floor((checkIn.getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24)) : null;
+    return { ...row, statusLabel: Number.isFinite(days) ? `Arrives in ${days} day${days === 1 ? '' : 's'}` : 'Upcoming arrival' };
   });
-  const cancelledRefundPending = rows.filter(
-    (row) => row.reservationStatus === 'cancelled' && (row.signals.refundPending || row.signals.cancelledPaid)
-  );
-  const failedPayments = rows.filter((row) => row.signals.failedOrDisputed).length;
 
-  const latestSync = await ChannelSyncEvent.findOne({}).sort({ runAt: -1 }).lean();
-  const syncWarnings = await ChannelSyncEvent.countDocuments({ outcome: { $in: ['warning', 'failed'] } });
+  const alerts = [];
+  for (const booking of alertBookings) {
+    const reservationId = String(booking._id);
+    const paymentStatus = paymentStatusByReservation.get(reservationId) || 'unknown';
+    const row = mapReservationRow(booking, paymentStatus);
+    const cancelled = booking.status === 'cancelled';
+    const detailBase = `${row.guestName} · ${row.accommodationDisplayName} · ${row.datesLabel}`;
+    const checkIn = booking.checkIn ? new Date(booking.checkIn) : null;
+    const within14d = checkIn && checkIn > endOfToday && checkIn <= endOf14Days;
+
+    if (cancelled && (paymentStatus === 'paid' || paymentStatus === 'partial')) {
+      alerts.push({
+        id: `refund-follow-up-${reservationId}`,
+        type: 'refund_follow_up',
+        severity: 'high',
+        title: 'Refund follow-up',
+        detail: `${detailBase} has cancelled status with paid/partial payment.`,
+        href: row.href,
+        createdAt: booking.updatedAt || booking.createdAt,
+        entityType: 'reservation',
+        entityId: reservationId
+      });
+    }
+    if (cancelled && paymentStatus === 'unlinked_payment') {
+      alerts.push({
+        id: `cancelled-unlinked-${reservationId}`,
+        type: 'payment_link_audit',
+        severity: 'high',
+        title: 'Check payment link',
+        detail: `${detailBase} is cancelled with unlinked payment evidence.`,
+        href: row.href,
+        createdAt: booking.updatedAt || booking.createdAt,
+        entityType: 'reservation',
+        entityId: reservationId
+      });
+    }
+    if (paymentStatus === 'failed' || paymentStatus === 'disputed') {
+      alerts.push({
+        id: `payment-failed-${reservationId}`,
+        type: 'payment_failed',
+        severity: paymentSeverity(paymentStatus),
+        title: 'Payment failed',
+        detail: `${detailBase} has ${paymentStatus} payment status.`,
+        href: row.href,
+        createdAt: booking.updatedAt || booking.createdAt,
+        entityType: 'reservation',
+        entityId: reservationId
+      });
+    }
+    if (paymentStatus === 'pending_verification') {
+      alerts.push({
+        id: `payment-verify-${reservationId}`,
+        type: 'payment_pending_verification',
+        severity: 'high',
+        title: 'Verify payment',
+        detail: `${detailBase} requires payment verification.`,
+        href: row.href,
+        createdAt: booking.updatedAt || booking.createdAt,
+        entityType: 'reservation',
+        entityId: reservationId
+      });
+    }
+    if (paymentStatus === 'unlinked_payment' && !cancelled) {
+      alerts.push({
+        id: `payment-unlinked-${reservationId}`,
+        type: 'payment_unlinked',
+        severity: 'high',
+        title: 'Unlinked payment',
+        detail: `${detailBase} has payment evidence without reservation linkage.`,
+        href: row.href,
+        createdAt: booking.updatedAt || booking.createdAt,
+        entityType: 'reservation',
+        entityId: reservationId
+      });
+    }
+    if (!cancelled && paymentStatus === 'unpaid' && within14d) {
+      alerts.push({
+        id: `unpaid-upcoming-${reservationId}`,
+        type: 'unpaid_upcoming',
+        severity: 'medium',
+        title: 'Unpaid upcoming booking',
+        detail: `${detailBase} arrives soon and remains unpaid.`,
+        href: row.href,
+        createdAt: booking.updatedAt || booking.createdAt,
+        entityType: 'reservation',
+        entityId: reservationId
+      });
+    }
+  }
+
+  for (const evt of failedEmailEvents) {
+    alerts.push({
+      id: `email-failed-${String(evt._id)}`,
+      type: 'guest_email_failed',
+      severity: 'high',
+      title: 'Guest email failed',
+      detail: `${evt.to || 'Unknown recipient'} · ${evt.type || evt.sendStatus || 'email failure'}`,
+      href: evt.bookingId ? `/ops/reservations/${String(evt.bookingId)}` : '/ops/communications',
+      createdAt: evt.createdAt,
+      entityType: 'email',
+      entityId: String(evt._id)
+    });
+  }
+
+  for (const syncEvent of syncEventsRecent) {
+    alerts.push({
+      id: `sync-${String(syncEvent._id)}`,
+      type: 'sync_issue',
+      severity: syncEvent.outcome === 'failed' ? 'critical' : 'medium',
+      title: 'Sync needs review',
+      detail: syncEvent.message || `Sync ${syncEvent.outcome} for ${syncEvent.channel || 'channel'}`,
+      href: '/ops/sync',
+      createdAt: syncEvent.runAt || syncEvent.createdAt,
+      entityType: 'sync_event',
+      entityId: String(syncEvent._id)
+    });
+  }
+
+  for (const item of manualReviewOpenItems) {
+    alerts.push({
+      id: `manual-review-${String(item._id)}`,
+      type: 'manual_review',
+      severity: item.severity || 'medium',
+      title: item.title || 'Manual review item',
+      detail: item.category ? `Category: ${item.category}` : 'Manual review item requires operator attention.',
+      href: '/ops/manual-review',
+      createdAt: item.createdAt,
+      entityType: 'manual_review',
+      entityId: String(item._id)
+    });
+  }
+
+  const criticalAlerts = hydrateAlerts(alerts);
+
+  const pulseAgg = pulseMonthAgg[0] || { bookingsMTD: 0, bookingValueMTD: 0 };
+  const paidActiveCount = pulseActiveBookings.filter((b) => paymentStatusByReservation.get(String(b._id)) === 'paid').length;
+  const activeUnpaidCount = Math.max(0, pulseActiveBookings.length - paidActiveCount);
+
+  const latestSyncEvent = await ChannelSyncEvent.findOne({}).sort({ runAt: -1 }).lean();
+  const latestSyncOutcome = latestSyncEvent?.outcome || null;
+  const webhookSeen = Boolean(stripeLastWebhook?.createdAtProvider);
+  const healthStatus =
+    !webhookSeen || criticalAlerts.some((a) => a.severity === 'critical') || latestSyncOutcome === 'failed'
+      ? 'degraded'
+      : criticalAlerts.length > 0 || latestSyncOutcome === 'warning'
+        ? 'warning'
+        : 'healthy';
+
+  const dashboard = {
+    alerts: criticalAlerts,
+    today: {
+      arriving: { total: todayArrivingRows.length, rows: todayArrivingRows.slice(0, 5) },
+      staying: { total: todayStayingRows.length, rows: todayStayingRows.slice(0, 5) },
+      leaving: { total: todayLeavingRows.length, rows: todayLeavingRows.slice(0, 5) }
+    },
+    upcoming: {
+      horizonDays: 14,
+      next14DaysArrivalCount: next14Count,
+      nextArrivals: nextArrivalsRows
+    },
+    pulse: {
+      month: `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}`,
+      bookingsMTD: pulseAgg.bookingsMTD || 0,
+      bookingValueMTD: pulseAgg.bookingValueMTD || 0,
+      activePaidCount: paidActiveCount,
+      activeUnpaidCount,
+      cancellationsMTD,
+      refundsMTD
+    },
+    health: {
+      status: healthStatus,
+      sync: {
+        lastEventAt: latestSyncEvent?.runAt || null,
+        lastOutcome: latestSyncOutcome,
+        recentIssuesCount: syncWarningsRecent,
+        href: '/ops/sync'
+      },
+      email: {
+        recentFailuresCount: failedEmailCountRecent,
+        href: '/ops/communications'
+      },
+      payments: {
+        webhookLastSeenAt: stripeLastWebhook?.createdAtProvider || null,
+        webhookLastEventType: stripeLastWebhook?.eventType || null,
+        href: '/ops/payments'
+      },
+      manualReview: {
+        openCount: manualReviewOpenCount,
+        href: '/ops/manual-review'
+      }
+    }
+  };
 
   return {
     generatedAt: new Date().toISOString(),
     freshness: {
       isStale: false,
-      degraded: false,
-      reason: null
+      degraded: healthStatus !== 'healthy',
+      reason: !webhookSeen ? 'webhook_not_seen_yet' : healthStatus === 'healthy' ? null : 'alerts_or_health_signals'
     },
+    dashboard,
+    // legacy compatibility fields
     aggregates: {
-      arrivalsToday: arrivalsTodayRows.length,
-      departuresToday: checkingOutTodayRows.length,
-      inHouse: inHouseRows.length,
-      actionNeeded: actionNeeded.length,
-      upcoming7Days: upcoming7Days.length,
-      cancelledRefundPending: cancelledRefundPending.length,
-      pendingActions: openManualReviews,
-      failedPayments,
-      failedEmails,
+      arrivalsToday: dashboard.today.arriving.total,
+      departuresToday: dashboard.today.leaving.total,
+      inHouse: dashboard.today.staying.total,
+      actionNeeded: dashboard.alerts.length,
+      upcoming7Days: upcoming7Count,
+      cancelledRefundPending: dashboard.alerts.filter((a) => a.type === 'refund_follow_up').length,
+      pendingActions: manualReviewOpenCount,
+      failedPayments: dashboard.alerts.filter((a) => a.type === 'payment_failed').length,
+      failedEmails: failedEmailCountRecent,
       upcomingPayouts,
-      syncWarnings,
-      totalReservationsConsidered: rows.length
+      syncWarnings: syncWarningsRecent
     },
     sections: {
-      actionNeeded,
-      arrivalsToday: arrivalsTodayRows,
-      inHouse: inHouseRows,
-      checkingOutToday: checkingOutTodayRows,
-      upcoming7Days,
-      cancelledRefundPending
+      actionNeeded: dashboard.alerts,
+      arrivalsToday: dashboard.today.arriving.rows,
+      inHouse: dashboard.today.staying.rows,
+      checkingOutToday: dashboard.today.leaving.rows,
+      upcoming7Days: dashboard.upcoming.nextArrivals
     },
     occupancySnapshot: {
       source: 'derived',
-      value: {
-        inHouse: inHouseRows.length
-      }
+      value: { inHouse: dashboard.today.staying.total }
     },
     quickActionTargets: {
       reservationsPath: '/api/ops/reservations',
@@ -299,13 +561,12 @@ async function getDashboardReadModel() {
       cabinsPath: '/api/ops/cabins'
     },
     sync: {
-      lastSyncAt: latestSync?.runAt || null,
-      lastSyncOutcome: latestSync?.outcome || null
+      lastSyncAt: latestSyncEvent?.runAt || null,
+      lastSyncOutcome: latestSyncOutcome
     },
     provenance: {
-      rows: 'derived_from_bookings_and_payments',
-      primarySectionCounts: 'derived_from_section_arrays',
-      secondaryMetrics: 'derived_on_read'
+      dashboardV1: 'structured_read_model',
+      primarySectionCounts: 'derived_from_structured_sections'
     }
   };
 }
