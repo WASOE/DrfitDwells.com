@@ -9,6 +9,10 @@ const {
   listCreatorPartnerAttributedBookings
 } = require('../../../services/ops/creatorPartnerStatsService');
 const {
+  recalculateCreatorCommissionForPartner,
+  listCreatorCommissionForPartner
+} = require('../../../services/ops/creatorCommissionLedgerService');
+const {
   normalizePartnerKey,
   PARTNER_KEY_RE,
   applyReferralCodeNormalization,
@@ -294,6 +298,88 @@ router.get('/:id/bookings', validateId('id'), async (req, res) => {
     return res.status(500).json({ success: false, message: 'Unable to load creator partner bookings' });
   }
 });
+
+router.post('/:id/recalculate', validateId('id'), async (req, res) => {
+  try {
+    const creatorPartner = await CreatorPartner.findById(req.params.id)
+      .select('_id status promo referral commission')
+      .lean();
+    if (!creatorPartner) {
+      return res.status(404).json({ success: false, message: 'Creator partner not found' });
+    }
+
+    const result = await recalculateCreatorCommissionForPartner(creatorPartner);
+    return res.json({
+      success: true,
+      data: {
+        creatorPartnerId: String(creatorPartner._id),
+        ...result
+      }
+    });
+  } catch {
+    return res.status(500).json({ success: false, message: 'Unable to recalculate creator commission' });
+  }
+});
+
+router.get(
+  '/:id/commission',
+  validateId('id'),
+  [
+    query('status').optional().isIn(['pending', 'approved', 'paid', 'void']),
+    query('eligibilityStatus').optional().isIn(['eligible', 'not_eligible', 'needs_review']),
+    query('limit').optional().isInt({ min: 1, max: 500 })
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, message: 'Validation failed', errors: errors.array() });
+      }
+
+      const creatorPartner = await CreatorPartner.findById(req.params.id)
+        .select('_id')
+        .lean();
+      if (!creatorPartner) {
+        return res.status(404).json({ success: false, message: 'Creator partner not found' });
+      }
+
+      const entries = await listCreatorCommissionForPartner(creatorPartner._id, {
+        status: req.query.status,
+        eligibilityStatus: req.query.eligibilityStatus,
+        limit: req.query.limit
+      });
+
+      return res.json({
+        success: true,
+        data: {
+          creatorPartnerId: String(creatorPartner._id),
+          entries: entries.map((entry) => ({
+            _id: String(entry._id),
+            bookingId: entry.bookingId ? String(entry.bookingId) : null,
+            referralCode: entry.referralCode || null,
+            promoCode: entry.promoCode || null,
+            source: entry.source,
+            rateBpsSnapshot: entry.rateBpsSnapshot,
+            commissionableRevenueSnapshot: entry.commissionableRevenueSnapshot,
+            amountSnapshot: entry.amountSnapshot,
+            currency: entry.currency,
+            bookingStatusSnapshot: entry.bookingStatusSnapshot || null,
+            paymentStatusSnapshot: entry.paymentStatusSnapshot || null,
+            eligibilityStatus: entry.eligibilityStatus,
+            status: entry.status,
+            voidReason: entry.voidReason || null,
+            calculatedAt: entry.calculatedAt || null,
+            approvedAt: entry.approvedAt || null,
+            paidAt: entry.paidAt || null,
+            notes: entry.notes || null
+          }))
+        }
+      });
+    } catch {
+      return res.status(500).json({ success: false, message: 'Unable to load creator commission ledger' });
+    }
+  }
+);
 
 router.patch(
   '/:id',
