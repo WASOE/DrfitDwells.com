@@ -29,7 +29,16 @@ if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'func
 
 const scheduleSwRegister = () => {
   import('virtual:pwa-register')
-    .then(({ registerSW }) => registerSW({ immediate: true }))
+    .then(({ registerSW }) => {
+      const updateSW = registerSW({
+        immediate: true,
+        onNeedRefresh() {
+          // Auto-activate the new SW and reload once so stale bundles are dropped quickly.
+          updateSW(true);
+          window.location.reload();
+        }
+      });
+    })
     .catch(() => {});
 };
 if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {

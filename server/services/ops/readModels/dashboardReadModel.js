@@ -466,12 +466,14 @@ async function getDashboardReadModel() {
   }
 
   for (const item of manualReviewOpenItems) {
+    const category = typeof item.category === 'string' ? item.category.trim() : '';
+    if (category.startsWith('sync_')) continue;
     alerts.push({
       id: `manual-review-${String(item._id)}`,
       type: 'manual_review',
       severity: item.severity || 'medium',
       title: item.title || 'Manual review item',
-      detail: item.category ? `Category: ${item.category}` : 'Manual review item requires operator attention.',
+      detail: category ? `Category: ${category}` : 'Manual review item requires operator attention.',
       href: '/ops/manual-review',
       createdAt: item.createdAt,
       entityType: 'manual_review',
