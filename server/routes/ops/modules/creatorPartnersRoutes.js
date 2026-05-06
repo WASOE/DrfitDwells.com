@@ -4,6 +4,11 @@ const { validateId } = require('../../../middleware/validateId');
 const PromoCode = require('../../../models/PromoCode');
 const CreatorPartner = require('../../../models/CreatorPartner');
 const {
+  buildAllCreatorPartnerStats,
+  buildSingleCreatorPartnerStats,
+  listCreatorPartnerAttributedBookings
+} = require('../../../services/ops/creatorPartnerStatsService');
+const {
   normalizePartnerKey,
   PARTNER_KEY_RE,
   applyReferralCodeNormalization,
@@ -85,6 +90,20 @@ function validateReferralCodeField(value, fieldLabel) {
     );
   }
   return true;
+}
+
+function formatCreatorPartnerStats(stats) {
+  return {
+    visits: Number(stats?.visits || 0),
+    uniqueVisitors: Number(stats?.uniqueVisitors || 0),
+    attributedBookings: Number(stats?.attributedBookings || 0),
+    paidConfirmedBookings: Number(stats?.paidConfirmedBookings || 0),
+    cancelledRefundedVoidBookings: Number(stats?.cancelledRefundedVoidBookings || 0),
+    grossBookingRevenue: Number(stats?.grossBookingRevenue || 0),
+    commissionableRevenueEstimate: Number(stats?.commissionableRevenueEstimate || 0),
+    lastBookingAt: stats?.lastBookingAt || null,
+    conversionRate: Number(stats?.conversionRate || 0)
+  };
 }
 
 router.get(
@@ -201,6 +220,23 @@ router.post(
   }
 );
 
+router.get('/stats', async (req, res) => {
+  try {
+    const rows = await buildAllCreatorPartnerStats();
+    return res.json({
+      success: true,
+      data: {
+        creatorPartnerStats: rows.map((row) => ({
+          creatorPartnerId: row.creatorPartnerId,
+          stats: formatCreatorPartnerStats(row.stats)
+        }))
+      }
+    });
+  } catch {
+    return res.status(500).json({ success: false, message: 'Unable to load creator partner stats' });
+  }
+});
+
 router.get('/:id', validateId('id'), async (req, res) => {
   try {
     const doc = await CreatorPartner.findById(req.params.id).lean();
@@ -210,6 +246,51 @@ router.get('/:id', validateId('id'), async (req, res) => {
     return res.json({ success: true, data: { creatorPartner: formatCreatorPartner(doc) } });
   } catch {
     return res.status(500).json({ success: false, message: 'Unable to fetch creator partner' });
+  }
+});
+
+router.get('/:id/stats', validateId('id'), async (req, res) => {
+  try {
+    const creatorPartner = await CreatorPartner.findById(req.params.id)
+      .select('_id')
+      .lean();
+    if (!creatorPartner) {
+      return res.status(404).json({ success: false, message: 'Creator partner not found' });
+    }
+
+    const stats = await buildSingleCreatorPartnerStats(creatorPartner);
+    return res.json({
+      success: true,
+      data: {
+        creatorPartnerId: String(creatorPartner._id),
+        stats: formatCreatorPartnerStats(stats)
+      }
+    });
+  } catch {
+    return res.status(500).json({ success: false, message: 'Unable to load creator partner stats' });
+  }
+});
+
+router.get('/:id/bookings', validateId('id'), async (req, res) => {
+  try {
+    const limit = Number(req.query.limit || 100);
+    const creatorPartner = await CreatorPartner.findById(req.params.id)
+      .select('_id status promo referral')
+      .lean();
+    if (!creatorPartner) {
+      return res.status(404).json({ success: false, message: 'Creator partner not found' });
+    }
+
+    const bookings = await listCreatorPartnerAttributedBookings(creatorPartner, { limit });
+    return res.json({
+      success: true,
+      data: {
+        creatorPartnerId: String(creatorPartner._id),
+        bookings
+      }
+    });
+  } catch {
+    return res.status(500).json({ success: false, message: 'Unable to load creator partner bookings' });
   }
 });
 
