@@ -16,7 +16,13 @@ const creatorReferralVisitSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-creatorReferralVisitSchema.index({ referralCode: 1, visitorKey: 1, dayBucket: 1 }, { unique: true, sparse: true });
-creatorReferralVisitSchema.index({ referralCode: 1, sessionKey: 1, dayBucket: 1 }, { unique: true, sparse: true });
+creatorReferralVisitSchema.index(
+  { referralCode: 1, visitorKey: 1, dayBucket: 1 },
+  { unique: true, partialFilterExpression: { visitorKey: { $exists: true, $type: 'string', $ne: '' } } }
+);
+creatorReferralVisitSchema.index(
+  { referralCode: 1, sessionKey: 1, dayBucket: 1 },
+  { unique: true, partialFilterExpression: { sessionKey: { $exists: true, $type: 'string', $ne: '' } } }
+);
 
 module.exports = mongoose.model('CreatorReferralVisit', creatorReferralVisitSchema);

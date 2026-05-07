@@ -76,24 +76,30 @@ router.post(
             ? { referralCode, sessionKey, dayBucket }
             : { referralCode, landingPath: landingPath || null, dayBucket };
 
+      const insertFields = {
+        creatorPartnerId: creator?._id || null,
+        referralCode,
+        landingPath: landingPath || null,
+        referrer: referrer || null,
+        dayBucket,
+        firstSeenAt: now
+      };
+      if (visitorKey) insertFields.visitorKey = visitorKey;
+      if (sessionKey) insertFields.sessionKey = sessionKey;
+
+      const setFields = {
+        creatorPartnerId: creator?._id || null,
+        lastSeenAt: now,
+        referrer: referrer || null
+      };
+      if (visitorKey) setFields.visitorKey = visitorKey;
+      if (sessionKey) setFields.sessionKey = sessionKey;
+
       await CreatorReferralVisit.findOneAndUpdate(
         matchFilter,
         {
-          $setOnInsert: {
-            creatorPartnerId: creator?._id || null,
-            referralCode,
-            landingPath: landingPath || null,
-            referrer: referrer || null,
-            visitorKey: visitorKey || null,
-            sessionKey: sessionKey || null,
-            dayBucket,
-            firstSeenAt: now
-          },
-          $set: {
-            creatorPartnerId: creator?._id || null,
-            lastSeenAt: now,
-            referrer: referrer || null
-          },
+          $setOnInsert: insertFields,
+          $set: setFields,
           $inc: { visitCount: 1 }
         },
         { upsert: true, setDefaultsOnInsert: true }
@@ -102,9 +108,11 @@ router.post(
       return res.status(202).json({ success: true });
     } catch (error) {
       console.error('[creator-referral-visits] failed to record visit', {
+        referralCode: normalizeReferralCode(req.body?.referralCode) || null,
+        dayBucket: getDayBucket(new Date()),
         message: error?.message || String(error)
       });
-      return res.status(202).json({ success: true });
+      return res.status(202).json({ success: false, message: 'Visit tracking failed' });
     }
   }
 );
