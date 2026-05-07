@@ -353,32 +353,45 @@ export default function GiftVouchers() {
       <main className="bg-white">
         {/* Hero */}
         <section className="relative overflow-hidden bg-[#F7F4EE]">
-          <div className="mx-auto w-full max-w-5xl px-4 pb-16 pt-20 sm:px-8 md:pb-24 md:pt-28 lg:pb-32 lg:pt-36">
-            <p className="text-[11px] uppercase tracking-[0.32em] text-stone-500">
-              {copy.kicker}
-            </p>
-            <h1
-              className="mt-6 max-w-3xl font-serif text-4xl leading-[1.05] tracking-tight text-stone-900 sm:text-5xl md:text-6xl lg:text-[5rem]"
-              style={{ fontFamily: 'var(--valley-font-primary, Georgia, serif)' }}
-            >
-              {copy.heroTitle}
-            </h1>
-            <p className="mt-8 max-w-2xl text-base leading-relaxed text-stone-700 md:text-lg">
-              {copy.heroLead}
-            </p>
-            <p className="mt-4 max-w-2xl text-sm leading-relaxed text-stone-600 md:text-base">
-              {copy.heroText}{' '}
-              <span className="italic">The Cabin</span> or <span className="italic">The Valley</span>.
-              {' '}
-              {copy.heroTail}
-            </p>
+          <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-10 px-4 pb-16 pt-20 sm:px-8 md:items-start md:gap-12 md:pb-24 md:pt-28 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:gap-16 lg:pb-32 lg:pt-36">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.32em] text-stone-500">
+                {copy.kicker}
+              </p>
+              <h1
+                className="mt-6 max-w-3xl font-serif text-4xl leading-[1.05] tracking-tight text-stone-900 sm:text-5xl md:text-6xl lg:text-[5rem]"
+                style={{ fontFamily: 'var(--valley-font-primary, Georgia, serif)' }}
+              >
+                {copy.heroTitle}
+              </h1>
+              <p className="mt-8 max-w-2xl text-base leading-relaxed text-stone-700 md:text-lg">
+                {copy.heroLead}
+              </p>
+              <p className="mt-4 max-w-2xl text-sm leading-relaxed text-stone-600 md:text-base">
+                {copy.heroText}{' '}
+                <span className="italic">The Cabin</span> or <span className="italic">The Valley</span>.
+                {' '}
+                {copy.heroTail}
+              </p>
 
-            <div className="mt-12 flex flex-wrap items-center gap-x-8 gap-y-3 text-xs uppercase tracking-[0.22em] text-stone-500">
-              <span>{copy.deliveryTag}</span>
-              <span className="hidden h-px w-6 bg-stone-300 md:inline-block" />
-              <span>{copy.validTag}</span>
-              <span className="hidden h-px w-6 bg-stone-300 md:inline-block" />
-              <span>{copy.fromTag}</span>
+              <div className="mt-12 flex flex-wrap items-center gap-x-8 gap-y-3 text-xs uppercase tracking-[0.22em] text-stone-500">
+                <span>{copy.deliveryTag}</span>
+                <span className="hidden h-px w-6 bg-stone-300 md:inline-block" />
+                <span>{copy.validTag}</span>
+                <span className="hidden h-px w-6 bg-stone-300 md:inline-block" />
+                <span>{copy.fromTag}</span>
+              </div>
+            </div>
+
+            <div className="mx-auto w-full max-w-sm md:sticky md:top-24 md:max-w-none">
+              <figure className="overflow-hidden rounded-md border-8 border-white bg-white shadow-[0_22px_55px_-25px_rgba(0,0,0,0.35)] md:rotate-[2deg]">
+                <img
+                  src="/uploads/The%20Valley/IMG_6431.jpg"
+                  alt="The Valley postcard view"
+                  className="aspect-[4/5] w-full object-cover"
+                  loading="eager"
+                />
+              </figure>
             </div>
           </div>
         </section>
