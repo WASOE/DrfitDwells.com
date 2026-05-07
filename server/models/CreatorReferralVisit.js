@@ -18,11 +18,11 @@ const creatorReferralVisitSchema = new mongoose.Schema(
 
 creatorReferralVisitSchema.index(
   { referralCode: 1, visitorKey: 1, dayBucket: 1 },
-  { unique: true, partialFilterExpression: { visitorKey: { $exists: true, $type: 'string', $ne: '' } } }
+  { unique: true, partialFilterExpression: { visitorKey: { $exists: true, $type: 'string' } } }
 );
 creatorReferralVisitSchema.index(
   { referralCode: 1, sessionKey: 1, dayBucket: 1 },
-  { unique: true, partialFilterExpression: { sessionKey: { $exists: true, $type: 'string', $ne: '' } } }
+  { unique: true, partialFilterExpression: { sessionKey: { $exists: true, $type: 'string' } } }
 );
 
 module.exports = mongoose.model('CreatorReferralVisit', creatorReferralVisitSchema);
