@@ -77,10 +77,7 @@ router.post(
             : { referralCode, landingPath: landingPath || null, dayBucket };
 
       const insertFields = {
-        creatorPartnerId: creator?._id || null,
         referralCode,
-        landingPath: landingPath || null,
-        referrer: referrer || null,
         dayBucket,
         firstSeenAt: now
       };
@@ -89,6 +86,7 @@ router.post(
 
       const setFields = {
         creatorPartnerId: creator?._id || null,
+        landingPath: landingPath || null,
         lastSeenAt: now,
         referrer: referrer || null
       };
