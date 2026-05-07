@@ -90,8 +90,6 @@ router.post(
         lastSeenAt: now,
         referrer: referrer || null
       };
-      if (visitorKey) setFields.visitorKey = visitorKey;
-      if (sessionKey) setFields.sessionKey = sessionKey;
 
       await CreatorReferralVisit.findOneAndUpdate(
         matchFilter,
