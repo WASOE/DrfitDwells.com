@@ -41,6 +41,21 @@ function buildCreatePayload(overrides = {}) {
   };
 }
 
+function buildPostalPayload(overrides = {}) {
+  return buildCreatePayload({
+    deliveryMode: 'postal',
+    recipientEmail: null,
+    deliveryAddress: {
+      addressLine1: '16 Forest Lane',
+      addressLine2: 'Apt 2',
+      city: 'Plovdiv',
+      postalCode: '4000',
+      country: 'Bulgaria'
+    },
+    ...overrides
+  });
+}
+
 function buildWebhookEvent(overrides = {}) {
   return {
     id: 'evt_1',
@@ -89,11 +104,30 @@ test.beforeEach(async () => {
   });
 });
 
-test('quote rejects amount below 10000 cents', async () => {
+test('quote rejects amount below 1500 cents (EUR 15 minimum)', async () => {
   assert.throws(
-    () => quoteGiftVoucherPurchase({ amountOriginalCents: 9900, currency: 'EUR' }),
+    () => quoteGiftVoucherPurchase({ amountOriginalCents: 1499, currency: 'EUR' }),
     (err) => err.code === 'AMOUNT_BELOW_MINIMUM'
   );
+});
+
+test('quote accepts exactly 1500 cents (EUR 15 minimum)', async () => {
+  const result = quoteGiftVoucherPurchase({ amountOriginalCents: 1500, currency: 'EUR' });
+  assert.equal(result.ok, true);
+  assert.equal(result.amountOriginalCents, 1500);
+  assert.equal(result.currency, 'EUR');
+  assert.equal(result.minimumAmountCents, 1500);
+});
+
+test('create-payment-intent accepts exactly 1500 cents (EUR 15 minimum)', async () => {
+  const result = await createGiftVoucherPaymentIntent(buildCreatePayload({
+    amountOriginalCents: 1500,
+    purchaseRequestId: 'gvr_min_boundary_1'
+  }));
+  assert.equal(result.ok, true);
+  const voucher = await GiftVoucher.findById(result.giftVoucherId).lean();
+  assert.equal(voucher.amountOriginalCents, 1500);
+  assert.equal(voucher.balanceRemainingCents, 1500);
 });
 
 test('create-payment-intent creates pending voucher, PI, and payment_pending event', async () => {
@@ -122,6 +156,49 @@ test('terms not accepted creates nothing', async () => {
   assert.equal(await GiftVoucherEvent.countDocuments({}), 0);
 });
 
+test('email mode requires recipientEmail', async () => {
+  await assert.rejects(
+    () =>
+      createGiftVoucherPaymentIntent(
+        buildCreatePayload({
+          deliveryMode: 'email',
+          recipientEmail: null,
+          purchaseRequestId: 'gvr_req_email_requires_recipient'
+        })
+      ),
+    (err) => err.code === 'MISSING_REQUIRED_FIELDS'
+  );
+});
+
+test('postal mode accepts valid postal address without recipientEmail', async () => {
+  const result = await createGiftVoucherPaymentIntent(
+    buildPostalPayload({ purchaseRequestId: 'gvr_req_postal_valid_1' })
+  );
+  assert.equal(result.ok, true);
+  const voucher = await GiftVoucher.findById(result.giftVoucherId).lean();
+  assert.equal(voucher.deliveryMode, 'postal');
+  assert.equal(voucher.recipientEmail, null);
+  assert.equal(voucher.deliveryAddress.addressLine1, '16 Forest Lane');
+});
+
+test('postal mode rejects missing required address fields', async () => {
+  await assert.rejects(
+    () =>
+      createGiftVoucherPaymentIntent(
+        buildPostalPayload({
+          purchaseRequestId: 'gvr_req_postal_missing_addr',
+          deliveryAddress: {
+            addressLine1: '',
+            city: '',
+            postalCode: '',
+            country: ''
+          }
+        })
+      ),
+    (err) => err.code === 'MISSING_REQUIRED_FIELDS'
+  );
+});
+
 test('same purchaseRequestId and same fingerprint returns existing voucher/payment intent', async () => {
   const first = await createGiftVoucherPaymentIntent(buildCreatePayload());
   const second = await createGiftVoucherPaymentIntent(buildCreatePayload());
@@ -143,6 +220,28 @@ test('same purchaseRequestId and different fingerprint returns conflict', async 
     (err) => err.code === 'PURCHASE_REQUEST_CONFLICT'
   );
   assert.equal(await GiftVoucher.countDocuments({}), 1);
+});
+
+test('same purchaseRequestId with different postal address returns conflict', async () => {
+  await createGiftVoucherPaymentIntent(
+    buildPostalPayload({ purchaseRequestId: 'gvr_req_postal_conflict_1' })
+  );
+  await assert.rejects(
+    () =>
+      createGiftVoucherPaymentIntent(
+        buildPostalPayload({
+          purchaseRequestId: 'gvr_req_postal_conflict_1',
+          deliveryAddress: {
+            addressLine1: '99 River Road',
+            addressLine2: null,
+            city: 'Sofia',
+            postalCode: '1000',
+            country: 'Bulgaria'
+          }
+        })
+      ),
+    (err) => err.code === 'PURCHASE_REQUEST_CONFLICT'
+  );
 });
 
 test('same purchaseRequestId after voided PI failure returns PURCHASE_REQUEST_CLOSED', async () => {

@@ -35,8 +35,54 @@ const paymentIntentValidators = [
   body('buyerName').trim().isLength({ min: 1, max: 120 }).withMessage('buyerName is required'),
   body('buyerEmail').isEmail().normalizeEmail().withMessage('buyerEmail must be valid'),
   body('recipientName').trim().isLength({ min: 1, max: 120 }).withMessage('recipientName is required'),
-  body('recipientEmail').isEmail().normalizeEmail().withMessage('recipientEmail must be valid'),
-  body('deliveryMode').optional().isIn(['email', 'manual']).withMessage('deliveryMode must be email or manual'),
+  body('recipientEmail')
+    .optional({ checkFalsy: true })
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('recipientEmail must be valid'),
+  body('deliveryMode').optional().isIn(['email', 'postal', 'manual']).withMessage('deliveryMode must be email, postal, or manual'),
+  body('recipientEmail').custom((value, { req }) => {
+    const mode = req.body?.deliveryMode || 'email';
+    if (mode === 'email' && (!value || !String(value).trim())) {
+      throw new Error('recipientEmail is required for email delivery');
+    }
+    return true;
+  }),
+  body('deliveryAddress.addressLine1')
+    .optional({ nullable: true, checkFalsy: true })
+    .isString()
+    .isLength({ max: 200 })
+    .withMessage('deliveryAddress.addressLine1 is invalid'),
+  body('deliveryAddress.addressLine2')
+    .optional({ nullable: true, checkFalsy: true })
+    .isString()
+    .isLength({ max: 200 })
+    .withMessage('deliveryAddress.addressLine2 is invalid'),
+  body('deliveryAddress.city')
+    .optional({ nullable: true, checkFalsy: true })
+    .isString()
+    .isLength({ max: 120 })
+    .withMessage('deliveryAddress.city is invalid'),
+  body('deliveryAddress.postalCode')
+    .optional({ nullable: true, checkFalsy: true })
+    .isString()
+    .isLength({ max: 40 })
+    .withMessage('deliveryAddress.postalCode is invalid'),
+  body('deliveryAddress.country')
+    .optional({ nullable: true, checkFalsy: true })
+    .isString()
+    .isLength({ max: 120 })
+    .withMessage('deliveryAddress.country is invalid'),
+  body('deliveryAddress').custom((value, { req }) => {
+    const mode = req.body?.deliveryMode || 'email';
+    if (mode === 'postal') {
+      const address = value || {};
+      if (!address.addressLine1 || !address.city || !address.postalCode || !address.country) {
+        throw new Error('deliveryAddress.addressLine1, city, postalCode and country are required for postal delivery');
+      }
+    }
+    return true;
+  }),
   body('deliveryDate').optional().isISO8601().withMessage('deliveryDate must be a valid ISO date'),
   body('message').optional().isString().isLength({ max: 1000 }).withMessage('message is too long'),
   body('purchaseRequestId').optional().isString().isLength({ min: 8, max: 128 }).withMessage('purchaseRequestId is invalid'),

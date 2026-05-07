@@ -66,6 +66,9 @@ const CraftEmbedded = lazy(() => import('./pages/embedded/CraftEmbedded'))
 
 const ConfirmBooking = lazy(() => import('./pages/ConfirmBooking'))
 const BookingRefundResolution = lazy(() => import('./pages/BookingRefundResolution'))
+const GiftVouchers = lazy(() => import('./pages/GiftVouchers'))
+const GiftVoucherSuccess = lazy(() => import('./pages/GiftVoucherSuccess'))
+const GiftVoucherRedeem = lazy(() => import('./pages/GiftVoucherRedeem'))
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
 
 const OffGridCabinsBulgaria = lazy(() => import('./pages/seo/OffGridCabinsBulgaria'))
@@ -131,6 +134,12 @@ function App() {
               <Route path="/bg/stays/a-frame/confirm" element={<ConfirmBooking />} />
               <Route path="/booking-refund" element={<BookingRefundResolution />} />
               <Route path="/bg/booking-refund" element={<BookingRefundResolution />} />
+              <Route path="/gift-vouchers" element={<GiftVouchers />} />
+              <Route path="/bg/gift-vouchers" element={<GiftVouchers />} />
+              <Route path="/gift-vouchers/success" element={<GiftVoucherSuccess />} />
+              <Route path="/bg/gift-vouchers/success" element={<GiftVoucherSuccess />} />
+              <Route path="/gift-vouchers/redeem" element={<GiftVoucherRedeem />} />
+              <Route path="/bg/gift-vouchers/redeem" element={<GiftVoucherRedeem />} />
               <Route path="/stays/a-frame" element={<AFrameDetails />} />
               <Route path="/bg/stays/a-frame" element={<AFrameDetails />} />
               <Route path="/booking-success/:id" element={<BookingSuccess />} />

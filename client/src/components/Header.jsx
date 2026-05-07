@@ -43,6 +43,7 @@ const Header = () => {
   }, [isMobileMenuOpen]);
 
   const useDarkTheme = isScrolled || !isHeroOverlay;
+  const giftNavLabel = language === 'bg' ? 'Подари престой' : 'Gift a stay';
 
   const navLinks = [
     { to: localizePath('/', language), label: t('home') },
@@ -117,6 +118,16 @@ const Header = () => {
             </nav>
 
             <div className="hidden md:flex items-center flex-shrink-0 ml-4 lg:ml-6 gap-2">
+              <Link
+                to={localizePath('/gift-vouchers', language)}
+                className={`text-[11px] font-medium uppercase tracking-[0.22em] transition-colors duration-200 mr-2 ${
+                  useDarkTheme
+                    ? 'text-stone-700/80 hover:text-stone-900'
+                    : 'text-white/85 hover:text-white'
+                }`}
+              >
+                {giftNavLabel}
+              </Link>
               <div className="flex items-center gap-1 text-[11px] uppercase tracking-[0.2em]">
                 <button
                   type="button"
@@ -238,8 +249,20 @@ const Header = () => {
               </div>
             ))}
             <div
-              className="mt-10 flex items-center justify-center gap-1 text-[11px] uppercase tracking-[0.2em] opacity-0 animate-header-nav-in"
+              className="mb-8 opacity-0 animate-header-nav-in"
               style={{ animationDelay: `${80 + mobileNavLinks.length * 70}ms` }}
+            >
+              <Link
+                to={localizePath('/gift-vouchers', language)}
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="font-['Playfair_Display'] text-3xl text-[#F1ECE2] hover:text-white transition-colors duration-200 touch-manipulation block"
+              >
+                {giftNavLabel}
+              </Link>
+            </div>
+            <div
+              className="mt-10 flex items-center justify-center gap-1 text-[11px] uppercase tracking-[0.2em] opacity-0 animate-header-nav-in"
+              style={{ animationDelay: `${80 + (mobileNavLinks.length + 1) * 70}ms` }}
             >
               <button
                 type="button"

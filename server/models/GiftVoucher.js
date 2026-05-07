@@ -11,7 +11,7 @@ const VOUCHER_STATUSES = [
   'refunded'
 ];
 
-const DELIVERY_MODES = ['email', 'manual'];
+const DELIVERY_MODES = ['email', 'postal', 'manual'];
 
 function isIntegerNumber(value) {
   return Number.isInteger(value);
@@ -36,13 +36,24 @@ const attributionSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const deliveryAddressSchema = new mongoose.Schema(
+  {
+    addressLine1: { type: String, trim: true, default: null },
+    addressLine2: { type: String, trim: true, default: null },
+    city: { type: String, trim: true, default: null },
+    postalCode: { type: String, trim: true, default: null },
+    country: { type: String, trim: true, default: null }
+  },
+  { _id: false }
+);
+
 const giftVoucherSchema = new mongoose.Schema(
   {
     code: { type: String, default: null, trim: true, uppercase: true },
     amountOriginalCents: {
       type: Number,
       required: true,
-      min: 10000,
+      min: 1500,
       validate: {
         validator: integerValidator,
         message: 'amountOriginalCents must be an integer'
@@ -76,6 +87,7 @@ const giftVoucherSchema = new mongoose.Schema(
     recipientEmail: { type: String, trim: true, lowercase: true, default: null, index: true },
     message: { type: String, trim: true, default: null },
     deliveryMode: { type: String, enum: DELIVERY_MODES, default: 'email' },
+    deliveryAddress: { type: deliveryAddressSchema, default: undefined },
     deliveryDate: { type: Date, default: null },
     sentAt: { type: Date, default: null },
     expiresAt: { type: Date, default: null, index: true },
@@ -99,14 +111,26 @@ giftVoucherSchema.pre('validate', function validateBalance(next) {
   if (!isIntegerNumber(this.balanceRemainingCents)) {
     return next(new Error('balanceRemainingCents must be an integer'));
   }
-  if (this.amountOriginalCents < 10000) {
-    return next(new Error('amountOriginalCents must be at least 10000'));
+  if (this.amountOriginalCents < 1500) {
+    return next(new Error('amountOriginalCents must be at least 1500'));
   }
   if (this.balanceRemainingCents < 0) {
     return next(new Error('balanceRemainingCents cannot be negative'));
   }
   if (this.balanceRemainingCents > this.amountOriginalCents) {
     return next(new Error('balanceRemainingCents cannot exceed amountOriginalCents'));
+  }
+  if (this.deliveryMode === 'email' && !this.recipientEmail) {
+    return next(new Error('recipientEmail is required for email delivery mode'));
+  }
+  if (this.deliveryMode === 'postal') {
+    const address = this.deliveryAddress || {};
+    if (!this.recipientName) {
+      return next(new Error('recipientName is required for postal delivery mode'));
+    }
+    if (!address.addressLine1 || !address.city || !address.postalCode || !address.country) {
+      return next(new Error('deliveryAddress.addressLine1, city, postalCode and country are required for postal delivery mode'));
+    }
   }
   return next();
 });

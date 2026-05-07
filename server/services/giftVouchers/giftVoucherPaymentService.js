@@ -8,7 +8,7 @@ const { openManualReviewItem } = require('../ops/ingestion/manualReviewService')
 
 const DEFAULT_TERMS_VERSION = 'v1';
 const EUR = 'EUR';
-const MIN_AMOUNT_CENTS = 10000;
+const MIN_AMOUNT_CENTS = 1500;
 const PURCHASE_ID_PATTERN = /^[A-Za-z0-9:_-]{8,128}$/;
 
 let stripeClient = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
@@ -32,12 +32,25 @@ function normalizeEmail(value) {
 function normalizeDeliveryMode(value) {
   const mode = normalizeText(value, 20);
   if (!mode) return 'email';
-  if (mode !== 'email' && mode !== 'manual') {
-    const err = new Error('deliveryMode must be email or manual');
+  if (mode !== 'email' && mode !== 'postal' && mode !== 'manual') {
+    const err = new Error('deliveryMode must be email, postal, or manual');
     err.code = 'INVALID_DELIVERY_MODE';
     throw err;
   }
   return mode;
+}
+
+function normalizeDeliveryAddress(raw) {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const addressLine1 = normalizeText(raw.addressLine1, 200);
+  const addressLine2 = normalizeText(raw.addressLine2, 200);
+  const city = normalizeText(raw.city, 120);
+  const postalCode = normalizeText(raw.postalCode, 40);
+  const country = normalizeText(raw.country, 120);
+  if (!addressLine1 && !addressLine2 && !city && !postalCode && !country) {
+    return undefined;
+  }
+  return { addressLine1, addressLine2, city, postalCode, country };
 }
 
 function parseDate(value) {
@@ -83,7 +96,14 @@ function buildPurchaseFingerprint(payload) {
     recipientName: payload.recipientName,
     recipientEmail: payload.recipientEmail,
     deliveryMode: payload.deliveryMode,
-    deliveryDate: payload.deliveryDate ? payload.deliveryDate.toISOString() : null
+    deliveryDate: payload.deliveryDate ? payload.deliveryDate.toISOString() : null,
+    deliveryAddress: {
+      addressLine1: payload.deliveryAddress?.addressLine1 || null,
+      addressLine2: payload.deliveryAddress?.addressLine2 || null,
+      city: payload.deliveryAddress?.city || null,
+      postalCode: payload.deliveryAddress?.postalCode || null,
+      country: payload.deliveryAddress?.country || null
+    }
   });
   return crypto.createHash('sha256').update(canonical).digest('hex');
 }
@@ -100,7 +120,7 @@ function normalizeQuoteInput(input = {}) {
   const amountOriginalCents = Number(input.amountOriginalCents);
   assertIntegerCents(amountOriginalCents, 'amountOriginalCents');
   if (amountOriginalCents < MIN_AMOUNT_CENTS) {
-    const err = new Error('Minimum amount is 100 EUR');
+    const err = new Error('Minimum amount is EUR 15');
     err.code = 'AMOUNT_BELOW_MINIMUM';
     throw err;
   }
@@ -177,6 +197,7 @@ function normalizeCreateInput(input = {}) {
   const recipientEmail = normalizeEmail(input.recipientEmail);
   const message = normalizeText(input.message, 1000);
   const deliveryMode = normalizeDeliveryMode(input.deliveryMode);
+  const deliveryAddress = normalizeDeliveryAddress(input.deliveryAddress);
   const deliveryDate = parseDate(input.deliveryDate);
   const termsAccepted = input.termsAccepted === true;
   if (!termsAccepted) {
@@ -184,10 +205,22 @@ function normalizeCreateInput(input = {}) {
     err.code = 'TERMS_NOT_ACCEPTED';
     throw err;
   }
-  if (!buyerName || !buyerEmail || !recipientName || !recipientEmail) {
-    const err = new Error('buyerName, buyerEmail, recipientName and recipientEmail are required');
+  if (!buyerName || !buyerEmail || !recipientName) {
+    const err = new Error('buyerName, buyerEmail and recipientName are required');
     err.code = 'MISSING_REQUIRED_FIELDS';
     throw err;
+  }
+  if (deliveryMode === 'email' && !recipientEmail) {
+    const err = new Error('recipientEmail is required for email delivery mode');
+    err.code = 'MISSING_REQUIRED_FIELDS';
+    throw err;
+  }
+  if (deliveryMode === 'postal') {
+    if (!deliveryAddress?.addressLine1 || !deliveryAddress?.city || !deliveryAddress?.postalCode || !deliveryAddress?.country) {
+      const err = new Error('deliveryAddress.addressLine1, city, postalCode and country are required for postal delivery mode');
+      err.code = 'MISSING_REQUIRED_FIELDS';
+      throw err;
+    }
   }
   const purchaseRequestId = normalizePurchaseRequestId(input.purchaseRequestId);
   const attribution = normalizeAttribution(input.attribution);
@@ -201,6 +234,7 @@ function normalizeCreateInput(input = {}) {
     recipientEmail,
     message,
     deliveryMode,
+    deliveryAddress,
     deliveryDate,
     purchaseRequestId,
     attribution,
@@ -258,6 +292,7 @@ async function createGiftVoucherPaymentIntent(input = {}) {
     recipientEmail: normalized.recipientEmail,
     message: normalized.message,
     deliveryMode: normalized.deliveryMode,
+    deliveryAddress: normalized.deliveryAddress,
     deliveryDate: normalized.deliveryDate,
     purchaseRequestId: normalized.purchaseRequestId,
     purchaseFingerprint,

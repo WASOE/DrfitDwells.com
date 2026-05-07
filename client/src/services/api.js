@@ -92,6 +92,11 @@ export const bookingAPI = {
     api.post(`/bookings/${id}/purchase-tracking`, { email })
 };
 
+export const giftVoucherAPI = {
+  quote: (data) => api.post('/gift-vouchers/quote', data),
+  createPaymentIntent: (data) => api.post('/gift-vouchers/create-payment-intent', data)
+};
+
 export const promoAdminAPI = {
   list: () => api.get('/admin/promo-codes'),
   create: (data) => api.post('/admin/promo-codes', data),

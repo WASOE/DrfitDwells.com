@@ -18,7 +18,7 @@ If this spec and the locked batch file conflict, stop and ask for review before 
 
 The Gift of Time Offline
 
-A digital Drift & Dwells gift voucher.  
+A Drift & Dwells gift voucher, delivered by email or as a physical card by post.  
 The buyer pays now.  
 The recipient receives a personal gift voucher code.  
 The code can be used later toward a stay at The Cabin or The Valley.
@@ -37,9 +37,9 @@ This distinction is mandatory for accounting, creator attribution, commission, a
 ## 2) Product rules
 
 - Currency: EUR
-- Minimum amount: EUR 100
-- Preset amounts: EUR 100 / EUR 250 / EUR 500
-- Optional custom amount: allowed in later batch
+- Minimum amount: EUR 15
+- Preset amounts: EUR 15 / EUR 50 / EUR 100 / EUR 250
+- Optional custom amount: allowed (minimum EUR 15)
 - Validity: 12 months from activation/payment confirmation
 - Redeemable for: The Cabin and The Valley
 - Not redeemable for cash
@@ -69,7 +69,12 @@ Required/expected fields:
 - recipientName
 - recipientEmail
 - message
-- deliveryMode (`email` | `manual`)
+- deliveryMode (`email` | `postal` | `manual`)
+- deliveryAddress.addressLine1
+- deliveryAddress.addressLine2
+- deliveryAddress.city
+- deliveryAddress.postalCode
+- deliveryAddress.country
 - deliveryDate
 - sentAt
 - expiresAt
@@ -350,7 +355,6 @@ Premium gift card style is required in recipient-facing voucher delivery.
 
 ## 14) Non-goals for v1
 
-- no physical gift cards
 - no cash withdrawals
 - no bank transfer payout
 - no public standalone voucher balance lookup
@@ -359,6 +363,8 @@ Premium gift card style is required in recipient-facing voucher delivery.
 - no advanced tax invoice automation before accountant decision
 - no multi-currency
 - no public influencer dashboard changes unless explicitly approved
+
+Note: physical card mailing workflow is not implemented in this batch; only delivery preference and postal address storage are captured for later operational handling.
 
 ---
 
