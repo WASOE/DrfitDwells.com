@@ -194,6 +194,14 @@ const ConfirmBooking = () => {
   const [promoDraft, setPromoDraft] = useState(promoSeed || '');
   const [promoMessage, setPromoMessage] = useState(null);
   const [checkoutId, setCheckoutId] = useState(() => createCheckoutId());
+  const [voucherDraft, setVoucherDraft] = useState('');
+  const [appliedVoucherCode, setAppliedVoucherCode] = useState('');
+  const [checkoutInitLoading, setCheckoutInitLoading] = useState(false);
+  const [checkoutInitError, setCheckoutInitError] = useState(null);
+  const [voucherRedemptionId, setVoucherRedemptionId] = useState(null);
+  const [fullVoucherCoverage, setFullVoucherCoverage] = useState(false);
+  const [voucherAppliedCents, setVoucherAppliedCents] = useState(0);
+  const [stripeAmountCents, setStripeAmountCents] = useState(0);
 
   const handleFormChange = useCallback((field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -235,6 +243,9 @@ const ConfirmBooking = () => {
   const displayTotal = serverQuote?.totalPrice ?? grandTotal;
   const displaySubtotal = serverQuote?.subtotalPrice;
   const displayDiscount = serverQuote?.discountAmount ?? 0;
+  const previewVoucherAppliedCents = Number(serverQuote?.voucherAppliedCents || 0);
+  const previewRemainingDueCents = Number(serverQuote?.remainingDueCents || Math.round((displayTotal || 0) * 100));
+  const previewFullVoucherCoverage = Boolean(serverQuote?.fullVoucherCoverage);
 
   const experienceExtras = useMemo(() => {
     const guests = adults + children;
@@ -257,28 +268,11 @@ const ConfirmBooking = () => {
 
   useEffect(() => {
     setClientSecret(null);
-  }, [checkIn, checkOut, adults, children, experienceKeysSorted, bookingEntityId, bookingEntityType]);
-
-  const quoteFingerprint = useMemo(() => {
-    if (!serverQuote) return '';
-    return [
-      serverQuote.subtotalPrice,
-      serverQuote.discountAmount,
-      serverQuote.totalPrice,
-      lockedPromoCode || '',
-      checkIn ? formatDateOnlyLocal(checkIn) : '',
-      checkOut ? formatDateOnlyLocal(checkOut) : '',
-      adults,
-      children,
-      experienceKeysSorted.join(',')
-    ].join('|');
-  }, [serverQuote, lockedPromoCode, checkIn, checkOut, adults, children, experienceKeysSorted]);
-
-  const quoteTotalFromFingerprint = useMemo(() => {
-    if (!quoteFingerprint) return null;
-    const t = Number(quoteFingerprint.split('|')[2]);
-    return Number.isFinite(t) ? t : null;
-  }, [quoteFingerprint]);
+    setVoucherRedemptionId(null);
+    setFullVoucherCoverage(false);
+    setVoucherAppliedCents(0);
+    setStripeAmountCents(0);
+  }, [checkIn, checkOut, adults, children, experienceKeysSorted, bookingEntityId, bookingEntityType, lockedPromoCode, appliedVoucherCode]);
 
   const checkoutAttemptKey = useMemo(() => buildCheckoutAttemptKey({
     bookingEntityType,
@@ -344,6 +338,9 @@ const ConfirmBooking = () => {
         if (lockedPromoCode) {
           payload.promoCode = lockedPromoCode;
         }
+        if (appliedVoucherCode) {
+          payload.voucherCode = appliedVoucherCode;
+        }
         const res = await bookingAPI.quote(payload);
         if (cancelled) return;
         if (res.data.success) {
@@ -393,6 +390,7 @@ const ConfirmBooking = () => {
     children,
     experienceKeysSorted,
     lockedPromoCode,
+    appliedVoucherCode,
     cabin
   ]);
 
@@ -508,6 +506,8 @@ const ConfirmBooking = () => {
             },
             metaClientContext: getMetaClientContextPayload(),
             checkoutId: data.checkoutId || checkoutId,
+            voucherRedemptionId: data.voucherRedemptionId || undefined,
+            ...(data.voucherCode ? { voucherCode: data.voucherCode } : {}),
             ...(data.promoCode ? { promoCode: data.promoCode } : {}),
             ...(attr && Object.values(attr).some(Boolean) ? { attribution: attr } : {})
           };
@@ -555,72 +555,83 @@ const ConfirmBooking = () => {
     }
   }, [bookingEntityId, bookingEntityType, id, navigate, t, language, checkoutId]);
 
-  useEffect(() => {
-    if (
-      !stripeEnabled ||
-      !stripePromise ||
-      !bookingEntityId ||
-      !checkIn ||
-      !checkOut ||
-      !quoteFingerprint ||
-      quoteTotalFromFingerprint == null ||
-      quoteTotalFromFingerprint < 0.5 ||
-      quoteLoading ||
-      quoteError
-    ) {
+  const handleApplyVoucher = useCallback(() => {
+    const trimmed = voucherDraft.trim().toUpperCase();
+    setClientSecret(null);
+    setVoucherRedemptionId(null);
+    setFullVoucherCoverage(false);
+    if (!trimmed) {
+      setAppliedVoucherCode('');
       return;
     }
-    let cancelled = false;
+    setAppliedVoucherCode(trimmed);
+  }, [voucherDraft]);
+
+  const handleRemoveVoucher = useCallback(() => {
+    setVoucherDraft('');
+    setAppliedVoucherCode('');
+    setClientSecret(null);
+    setVoucherRedemptionId(null);
+    setFullVoucherCoverage(false);
+    setVoucherAppliedCents(0);
+    setStripeAmountCents(0);
+    setCheckoutInitError(null);
+  }, []);
+
+  const initializeCheckoutPayment = useCallback(async () => {
+    if (!bookingEntityId || !checkIn || !checkOut || !serverQuote) return;
+    setCheckoutInitLoading(true);
+    setCheckoutInitError(null);
     setStripeError(null);
-    const payload = {
-      checkIn: formatDateOnlyLocal(checkIn),
-      checkOut: formatDateOnlyLocal(checkOut),
-      adults,
-      children,
-      experienceKeys: experienceKeysSorted
-    };
-    const attr = getAttributionPayload();
-    if (attr && Object.values(attr).some(Boolean)) {
-      payload.attribution = attr;
+    setClientSecret(null);
+    try {
+      const payload = {
+        checkIn: formatDateOnlyLocal(checkIn),
+        checkOut: formatDateOnlyLocal(checkOut),
+        adults,
+        children,
+        experienceKeys: experienceKeysSorted,
+        checkoutId
+      };
+      const attr = getAttributionPayload();
+      if (attr && Object.values(attr).some(Boolean)) {
+        payload.attribution = attr;
+      }
+      if (bookingEntityType === 'cabinType') {
+        payload.cabinTypeId = bookingEntityId;
+      } else {
+        payload.cabinId = bookingEntityId;
+      }
+      if (lockedPromoCode) payload.promoCode = lockedPromoCode;
+      if (appliedVoucherCode) payload.voucherCode = appliedVoucherCode;
+      const res = await bookingAPI.createPaymentIntent(payload);
+      if (!res.data?.success) {
+        throw new Error(t('confirm.paymentSetupFailed'));
+      }
+      setVoucherRedemptionId(res.data.redemptionId || null);
+      setFullVoucherCoverage(Boolean(res.data.fullVoucherCoverage));
+      setVoucherAppliedCents(Number(res.data.voucherAppliedCents || 0));
+      setStripeAmountCents(Number(res.data.stripeAmountCents || 0));
+      if (res.data.clientSecret) {
+        setClientSecret(res.data.clientSecret);
+      }
+    } catch (err) {
+      setCheckoutInitError(err.response?.data?.message || t('confirm.paymentSetupFailed'));
+    } finally {
+      setCheckoutInitLoading(false);
     }
-    if (bookingEntityType === 'cabinType') {
-      payload.cabinTypeId = bookingEntityId;
-    } else {
-      payload.cabinId = bookingEntityId;
-    }
-    if (lockedPromoCode) {
-      payload.promoCode = lockedPromoCode;
-    }
-    bookingAPI
-      .createPaymentIntent(payload)
-      .then((res) => {
-        if (cancelled) return;
-        if (res.data.success && res.data.clientSecret) {
-          setClientSecret(res.data.clientSecret);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setStripeError(t('confirm.paymentSetupFailed'));
-      });
-    return () => {
-      cancelled = true;
-      setClientSecret(null);
-    };
   }, [
-    stripeEnabled,
-    stripePromise,
     bookingEntityId,
-    bookingEntityType,
     checkIn,
     checkOut,
+    serverQuote,
     adults,
     children,
     experienceKeysSorted,
+    checkoutId,
+    bookingEntityType,
     lockedPromoCode,
-    quoteFingerprint,
-    quoteTotalFromFingerprint,
-    quoteLoading,
-    quoteError,
+    appliedVoucherCode,
     t
   ]);
 
@@ -669,6 +680,7 @@ const ConfirmBooking = () => {
           locale: language || undefined
         },
         checkoutId,
+        voucherRedemptionId: voucherRedemptionId || undefined,
         metaClientContext: getMetaClientContextPayload(),
         ...(attr && Object.values(attr).some(Boolean) ? { attribution: attr } : {})
       };
@@ -682,6 +694,9 @@ const ConfirmBooking = () => {
     }
     if (lockedPromoCode) {
       bookingData.promoCode = lockedPromoCode;
+    }
+    if (appliedVoucherCode) {
+      bookingData.voucherCode = appliedVoucherCode;
     }
     const response = await bookingAPI.create(bookingData);
     if (response.data.success) {
@@ -703,7 +718,7 @@ const ConfirmBooking = () => {
     } else {
       throw new Error(response.data.message || t('confirm.bookingFailed'));
     }
-  }, [bookingEntityId, bookingEntityType, checkIn, checkOut, adults, children, formData, selectedExpKeys, experiences, navigate, lockedPromoCode, t, language, checkoutId]);
+  }, [bookingEntityId, bookingEntityType, checkIn, checkOut, adults, children, formData, selectedExpKeys, experiences, navigate, lockedPromoCode, appliedVoucherCode, voucherRedemptionId, t, language, checkoutId]);
 
   const handleConfirmAndPay = useCallback(async () => {
     if (!bookingEntityId || !checkIn || !checkOut || !pricing || !serverQuote || serverQuote.totalPrice < 0.5) return;
@@ -714,18 +729,25 @@ const ConfirmBooking = () => {
     setSubmitLoading(true);
     setError(null);
     try {
+      if (appliedVoucherCode && !voucherRedemptionId) {
+        throw new Error('Please continue to payment first so we can reserve your voucher.');
+      }
       await createBooking(null);
     } catch (err) {
       setError(mapCreateBookingErrorMessage(err, t('confirm.bookingFailed')));
     } finally {
       setSubmitLoading(false);
     }
-  }, [bookingEntityId, checkIn, checkOut, pricing, serverQuote, createBooking, t, formData.agreedToTerms, formData.agreedToActivityRisk]);
+  }, [bookingEntityId, checkIn, checkOut, pricing, serverQuote, createBooking, t, formData.agreedToTerms, formData.agreedToActivityRisk, appliedVoucherCode, voucherRedemptionId]);
 
   const handleStripeSubmit = useCallback(async (stripe, elements) => {
     if (!bookingEntityId || !checkIn || !checkOut || !pricing || !serverQuote || serverQuote.totalPrice < 0.5) return;
     if (!formData.agreedToTerms || !formData.agreedToActivityRisk) {
       setError('Please accept both required legal acknowledgments before completing your booking.');
+      return;
+    }
+    if (appliedVoucherCode && !voucherRedemptionId) {
+      setError('Please continue to payment first so we can reserve your voucher.');
       return;
     }
     setSubmitLoading(true);
@@ -743,6 +765,8 @@ const ConfirmBooking = () => {
         adults,
         children,
         checkoutId,
+        voucherRedemptionId,
+        voucherCode: appliedVoucherCode || undefined,
         promoCode: lockedPromoCode || undefined,
         formData: { ...formData },
         experiences: Array.from(selectedExpKeys).map((key) => {
@@ -821,6 +845,8 @@ const ConfirmBooking = () => {
     createBooking,
     confirmPath,
     lockedPromoCode,
+    appliedVoucherCode,
+    voucherRedemptionId,
     navigate,
     t
   ]);
@@ -1044,6 +1070,48 @@ const ConfirmBooking = () => {
           )}
         </div>
 
+        <div className="py-4 border-b border-gray-200">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0 flex-1 w-full">
+              <p className="text-sm text-gray-600 mb-2">Gift voucher code</p>
+              <input
+                type="text"
+                value={voucherDraft}
+                onChange={(e) => setVoucherDraft(e.target.value)}
+                autoComplete="off"
+                placeholder="DD-XXXX-XXXX-XXXX"
+                className="w-full min-w-0 h-12 border-b border-black/15 bg-transparent px-0 text-[16px] outline-none focus:border-black/30 placeholder:text-black/40"
+              />
+            </div>
+            <div className="flex gap-2 md:gap-3">
+              <button
+                type="button"
+                onClick={handleApplyVoucher}
+                className="h-12 px-4 rounded-2xl border border-gray-300 text-sm font-medium text-gray-800 hover:bg-gray-50 md:h-auto md:rounded-none md:border-0 md:bg-transparent md:p-0 md:hover:bg-transparent md:text-gray-700 md:underline"
+              >
+                Apply
+              </button>
+              {appliedVoucherCode ? (
+                <button
+                  type="button"
+                  onClick={handleRemoveVoucher}
+                  className="h-12 px-4 rounded-2xl border border-gray-300 text-sm font-medium text-gray-800 hover:bg-gray-50 md:h-auto md:rounded-none md:border-0 md:bg-transparent md:p-0 md:hover:bg-transparent md:text-gray-700 md:underline"
+                >
+                  Remove
+                </button>
+              ) : null}
+            </div>
+          </div>
+          {appliedVoucherCode ? (
+            <div className="mt-3 text-sm text-gray-700 space-y-1">
+              <p>Preview applied: €{(previewVoucherAppliedCents / 100).toLocaleString()}</p>
+              <p>Remaining card amount: €{(previewRemainingDueCents / 100).toLocaleString()}</p>
+              {previewFullVoucherCoverage ? <p>This voucher can fully cover the booking.</p> : null}
+              {serverQuote?.voucherMessage ? <p className="text-amber-700">{serverQuote.voucherMessage}</p> : null}
+            </div>
+          ) : null}
+        </div>
+
         {/* Total row */}
         <div className="flex items-center justify-between py-4 border-b border-gray-200">
           <div className="min-w-0 flex-1">
@@ -1129,8 +1197,31 @@ const ConfirmBooking = () => {
         {/* Payment - Stripe when configured, else pay on arrival */}
         <div className="mt-6 p-6 bg-white rounded-xl border border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('confirm.paymentTitle')}</h2>
-          {stripePromise && clientSecret ? (
+          {(stripeEnabled || appliedVoucherCode) && !fullVoucherCoverage && !clientSecret ? (
+            <button
+              type="button"
+              onClick={initializeCheckoutPayment}
+              disabled={
+                checkoutInitLoading ||
+                !pricing ||
+                !hasValidGuestInfo ||
+                !hasLegalAcceptance ||
+                quoteLoading ||
+                !!quoteError ||
+                !serverQuote ||
+                serverQuote.totalPrice < 0.5
+              }
+              className="w-full h-12 rounded-xl bg-[#81887A] text-white font-semibold hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {checkoutInitLoading ? t('confirm.processingPayment') : 'Continue to secure payment'}
+            </button>
+          ) : null}
+
+          {stripePromise && clientSecret && !fullVoucherCoverage ? (
             <>
+              <p className="text-sm text-gray-600 mb-4">
+                Voucher applied: €{(voucherAppliedCents / 100).toLocaleString()} | Remaining card payment: €{(stripeAmountCents / 100).toLocaleString()}
+              </p>
               <Elements stripe={stripePromise} options={{ clientSecret }}>
                 <PaymentFormInner
                   onSubmit={handleStripeSubmit}
@@ -1144,7 +1235,34 @@ const ConfirmBooking = () => {
                 <p className="mt-2 text-sm text-red-600">{stripeError}</p>
               )}
             </>
-          ) : (
+          ) : null}
+
+          {fullVoucherCoverage ? (
+            <>
+              <p className="text-sm text-gray-600 mb-4">
+                Voucher applied: €{(voucherAppliedCents / 100).toLocaleString()} | Remaining card payment: €0
+              </p>
+              <button
+                type="button"
+                onClick={handleConfirmAndPay}
+                disabled={
+                  submitLoading ||
+                  !pricing ||
+                  !hasValidGuestInfo ||
+                  !hasLegalAcceptance ||
+                  quoteLoading ||
+                  !!quoteError ||
+                  !serverQuote ||
+                  serverQuote.totalPrice < 0.5
+                }
+                className="w-full h-12 rounded-xl bg-[#81887A] text-white font-semibold hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {submitLoading ? t('confirm.submittingPayment') : 'Complete booking'}
+              </button>
+            </>
+          ) : null}
+
+          {!stripeEnabled ? (
             <>
               <p className="text-sm text-gray-600 mb-4">
                 {t('confirm.payOnArrivalNote')}
@@ -1169,7 +1287,8 @@ const ConfirmBooking = () => {
                   : t('confirm.confirmPayWithAmount', { amount: Number(displayTotal).toLocaleString() })}
               </button>
             </>
-          )}
+          ) : null}
+          {checkoutInitError ? <p className="mt-2 text-sm text-red-600">{checkoutInitError}</p> : null}
         </div>
         </div>
 

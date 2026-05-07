@@ -44,6 +44,14 @@ const {
 } = require('../services/bookingPurchaseTracking');
 const { openManualReviewItem } = require('../services/ops/ingestion/manualReviewService');
 const { linkStripePaymentToBooking } = require('../services/payments/paymentLinkingService');
+const {
+  reserveVoucherForCheckout,
+  attachPaymentIntentToReservation,
+  validateReservedRedemptionForBooking,
+  releaseVoucherReservation,
+  confirmVoucherReservation,
+  releaseExpiredVoucherReservations
+} = require('../services/bookings/bookingVoucherRedemptionService');
 
 const router = express.Router();
 const CHECKOUT_ID_PATTERN = /^[A-Za-z0-9:_-]{8,128}$/;
@@ -253,7 +261,7 @@ async function recordPaidBookingResolutionIssue({
 
 const ACCEPTANCE_EMAIL_RETRY_DELAY_MS = 5000;
 
-const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+let stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
 const validateTransportMethod = (value, transportOptions) => {
   if (!value || value === 'Not selected') return null;
@@ -386,7 +394,8 @@ const bookingQuoteBodyValidators = [
   body('adults').isInt({ min: 1, max: 10 }).withMessage('Adults must be between 1 and 10'),
   body('children').optional().isInt({ min: 0, max: 10 }).withMessage('Children must be between 0 and 10'),
   body('experienceKeys').optional().isArray().withMessage('experienceKeys must be an array'),
-  body('promoCode').optional().isString().isLength({ max: 40 }).withMessage('promoCode is too long')
+  body('promoCode').optional().isString().isLength({ max: 40 }).withMessage('promoCode is too long'),
+  body('voucherCode').optional().isString().isLength({ max: 64 }).withMessage('voucherCode is too long')
 ];
 
 // POST /api/bookings/quote — server-owned price + optional promo (display / PI / booking must match)
@@ -410,14 +419,27 @@ router.post('/quote', bookingQuoteLimiter, bookingQuoteBodyValidators, async (re
       });
     }
 
-    const { subtotalPrice, discountAmount, totalPrice, promo } = result;
+    const {
+      subtotalPrice,
+      discountAmount,
+      totalPrice,
+      promo,
+      voucherAppliedCents = 0,
+      remainingDueCents = Math.round(totalPrice * 100),
+      fullVoucherCoverage = false,
+      voucherPreviewError = null
+    } = result;
     return res.json({
       success: true,
       data: {
         subtotalPrice,
         discountAmount,
         totalPrice,
-        promo
+        promo,
+        voucherAppliedCents,
+        remainingDueCents,
+        fullVoucherCoverage,
+        ...(voucherPreviewError ? { voucherMessage: voucherPreviewError } : {})
       }
     });
   } catch (err) {
@@ -441,15 +463,24 @@ router.post('/create-payment-intent', paymentIntentLimiter, bookingQuoteBodyVali
       });
     }
 
-    if (!stripe) {
-      return res.status(503).json({
-        success: false,
-        message: 'Payment is not configured'
-      });
-    }
-
     const { cabinId, cabinTypeId, experienceKeys = [] } = req.body;
     const attribution = sanitizeAttribution(req.body.attribution);
+    const checkoutId = normalizeCheckoutId(req.body.checkoutId);
+    const voucherCode = typeof req.body.voucherCode === 'string' ? req.body.voucherCode : null;
+    if (checkoutId && !isValidCheckoutId(checkoutId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'checkoutId is invalid',
+        error: { code: 'INVALID_CHECKOUT_ID' }
+      });
+    }
+    if (voucherCode && !checkoutId) {
+      return res.status(400).json({
+        success: false,
+        message: 'checkoutId is required when voucherCode is used',
+        error: { code: 'CHECKOUT_ID_REQUIRED' }
+      });
+    }
 
     const result = await bookingQuoteService.buildPublicBookingQuote(req.body);
     if (!result.ok) {
@@ -481,37 +512,139 @@ router.post('/create-payment-intent', paymentIntentLimiter, bookingQuoteBodyVali
     const amountCents = Math.round(totalPrice * 100);
     const subtotalCents = Math.round(subtotalPrice * 100);
     const discountAmountCents = Math.round(discountAmount * 100);
+    let voucherAppliedCents = 0;
+    let stripeAmountCents = amountCents;
+    let fullVoucherCoverage = false;
+    let redemptionId = null;
+    let giftVoucherId = null;
+    let reservationKey = null;
 
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: amountCents,
-      currency,
-      automatic_payment_methods: { enabled: true },
-      metadata: {
-        entityType,
-        cabinId: cabinId ? cabinId.toString() : '',
-        cabinTypeId: cabinTypeId ? cabinTypeId.toString() : '',
-        checkIn: checkInDate.toISOString(),
-        checkOut: checkOutDate.toISOString(),
-        amountCents: String(amountCents),
-        experienceKeys: JSON.stringify(experienceKeys || []),
-        transportMethod: String(req.body.transportMethod || ''),
-        romanticSetup: String(!!req.body.romanticSetup),
-        promoCode: appliedPromoCode || '',
-        subtotalCents: String(subtotalCents),
-        discountAmountCents: String(discountAmountCents),
-        finalTotalCents: String(amountCents),
-        ...(attribution?.referralCode ? { referralCode: attribution.referralCode } : {}),
-        ...(attribution?.attributionSource ? { attrSource: attribution.attributionSource } : {}),
-        ...(attribution?.utmSource ? { utmSource: attribution.utmSource } : {}),
-        ...(attribution?.utmCampaign ? { utmCampaign: attribution.utmCampaign } : {})
+    if (voucherCode) {
+      await releaseExpiredVoucherReservations({ now: new Date(), limit: 25 });
+      const holdExpiry = new Date(Date.now() + 30 * 60 * 1000);
+      const reservation = await reserveVoucherForCheckout({
+        voucherCode,
+        checkoutId,
+        totalValueCents: amountCents,
+        redemptionExpiresAt: holdExpiry,
+        actor: 'guest'
+      });
+      voucherAppliedCents = reservation.voucherAppliedCents;
+      stripeAmountCents = reservation.remainingDueCents;
+      fullVoucherCoverage = reservation.fullVoucherCoverage;
+      redemptionId = reservation.redemptionId;
+      giftVoucherId = reservation.giftVoucherId;
+      reservationKey = reservation.reservationKey;
+      if (reservation.paymentIntentId) {
+        const existingPi = await stripe.paymentIntents.retrieve(reservation.paymentIntentId);
+        return res.json({
+          success: true,
+          idempotentReplay: true,
+          clientSecret: existingPi.client_secret,
+          paymentIntentId: existingPi.id,
+          redemptionId,
+          fullVoucherCoverage,
+          voucherAppliedCents,
+          stripeAmountCents,
+          subtotalCents,
+          discountAmountCents,
+          totalValueCents: amountCents
+        });
       }
-    });
+      if (fullVoucherCoverage) {
+        return res.json({
+          success: true,
+          fullVoucherCoverage: true,
+          redemptionId,
+          voucherAppliedCents,
+          stripeAmountCents: 0,
+          subtotalCents,
+          discountAmountCents,
+          totalValueCents: amountCents
+        });
+      }
+    }
+
+    if (!stripe) {
+      return res.status(503).json({
+        success: false,
+        message: 'Payment is not configured'
+      });
+    }
+
+    let paymentIntent;
+    try {
+      paymentIntent = await stripe.paymentIntents.create({
+        amount: stripeAmountCents,
+        currency,
+        automatic_payment_methods: { enabled: true },
+        metadata: {
+          entityType,
+          cabinId: cabinId ? cabinId.toString() : '',
+          cabinTypeId: cabinTypeId ? cabinTypeId.toString() : '',
+          checkIn: checkInDate.toISOString(),
+          checkOut: checkOutDate.toISOString(),
+          amountCents: String(stripeAmountCents),
+          experienceKeys: JSON.stringify(experienceKeys || []),
+          transportMethod: String(req.body.transportMethod || ''),
+          romanticSetup: String(!!req.body.romanticSetup),
+          promoCode: appliedPromoCode || '',
+          subtotalCents: String(subtotalCents),
+          discountAmountCents: String(discountAmountCents),
+          finalTotalCents: String(amountCents),
+          voucherAppliedCents: String(voucherAppliedCents),
+          checkoutId: checkoutId || '',
+          redemptionId: redemptionId || '',
+          giftVoucherId: giftVoucherId || '',
+          reservationKey: reservationKey || '',
+          ...(attribution?.referralCode ? { referralCode: attribution.referralCode } : {}),
+          ...(attribution?.attributionSource ? { attrSource: attribution.attributionSource } : {}),
+          ...(attribution?.utmSource ? { utmSource: attribution.utmSource } : {}),
+          ...(attribution?.utmCampaign ? { utmCampaign: attribution.utmCampaign } : {})
+        }
+      });
+    } catch (piErr) {
+      if (redemptionId) {
+        try {
+          await releaseVoucherReservation({
+            redemptionId,
+            reason: 'payment_intent_create_failed',
+            actor: 'system',
+            note: 'release voucher after payment intent initialization failure'
+          });
+        } catch (releaseErr) {
+          console.error('[booking-voucher] failed to release voucher after PI create failure', {
+            redemptionId,
+            error: releaseErr.message
+          });
+        }
+      }
+      throw piErr;
+    }
+
+    if (redemptionId) {
+      await attachPaymentIntentToReservation({ redemptionId, paymentIntentId: paymentIntent.id });
+    }
 
     return res.json({
       success: true,
-      clientSecret: paymentIntent.client_secret
+      clientSecret: paymentIntent.client_secret,
+      paymentIntentId: paymentIntent.id,
+      redemptionId,
+      fullVoucherCoverage: false,
+      voucherAppliedCents,
+      stripeAmountCents,
+      subtotalCents,
+      discountAmountCents,
+      totalValueCents: amountCents
     });
   } catch (err) {
+    if (err?.code === 'CHECKOUT_ID_CONFLICT') {
+      return res.status(409).json({ success: false, message: err.message, error: { code: err.code } });
+    }
+    if (['NOT_FOUND', 'NOT_REDEEMABLE_STATUS', 'MISSING_EXPIRY', 'EXPIRED', 'NO_BALANCE', 'VOUCHER_CODE_REQUIRED'].includes(err?.code)) {
+      return res.status(400).json({ success: false, message: 'This voucher cannot be used.' });
+    }
     console.error('Create payment intent error:', err);
     return res.status(500).json({
       success: false,
@@ -556,7 +689,9 @@ router.post('/', bookingCreateLimiter, [
   body('legalAcceptance.locale').optional().isString().isLength({ max: 50 }).withMessage('locale is too long'),
   body('specialRequests').optional().isLength({ max: 500 }).withMessage('Special requests cannot exceed 500 characters'),
   body('promoCode').optional().isString().isLength({ max: 40 }).withMessage('promoCode is too long'),
-  body('checkoutId').optional().isString().isLength({ min: 8, max: 128 }).withMessage('checkoutId is invalid')
+  body('checkoutId').optional().isString().isLength({ min: 8, max: 128 }).withMessage('checkoutId is invalid'),
+  body('voucherCode').optional().isString().isLength({ max: 64 }).withMessage('voucherCode is too long'),
+  body('voucherRedemptionId').optional().isMongoId().withMessage('voucherRedemptionId is invalid')
 ], async (req, res) => {
   let stripePaymentVerified = false;
   let verifiedPaymentIntent = null;
@@ -565,6 +700,7 @@ router.post('/', bookingCreateLimiter, [
   let bookingAttemptContext = null;
   let sanitizedAttribution = null;
   let paymentIntentIdForReview = null;
+  let voucherReservationContext = null;
 
   const handlePaidBookingFailure = async ({ issueType, errorCode, errorSummary }) => {
     if (!stripePaymentVerified || !paymentIntentIdForReview) return false;
@@ -603,6 +739,57 @@ router.post('/', bookingCreateLimiter, [
     return true;
   };
 
+  const buildVoucherEvidence = ({
+    subtotalCents = 0,
+    discountAmountCents = 0,
+    giftVoucherAppliedCents = 0,
+    stripePaidAmountCents = 0,
+    totalValueCents = 0
+  } = {}) => ({
+    checkoutId: voucherReservationContext?.checkoutId || null,
+    paymentIntentId: paymentIntentIdForReview || null,
+    redemptionId: voucherReservationContext?.redemptionId || null,
+    giftVoucherId: voucherReservationContext?.giftVoucherId || null,
+    subtotalCents,
+    discountAmountCents,
+    giftVoucherAppliedCents,
+    stripePaidAmountCents,
+    totalValueCents
+  });
+
+  const tryReleaseVoucherOnFailure = async ({ reason, note, paidCard = false, evidence = {} }) => {
+    if (!voucherReservationContext?.redemptionId || voucherReservationContext?.confirmed) return { attempted: false };
+    try {
+      await releaseVoucherReservation({
+        redemptionId: voucherReservationContext.redemptionId,
+        reason,
+        actor: 'system',
+        note
+      });
+      voucherReservationContext.released = true;
+      return { attempted: true, released: true };
+    } catch (releaseErr) {
+      const category = paidCard ? 'payment_finalization_failure' : 'gift_voucher_reservation_release_failed';
+      await openManualReviewItem({
+        category,
+        severity: 'high',
+        entityType: 'GiftVoucherRedemption',
+        entityId: String(voucherReservationContext.redemptionId),
+        title: 'Voucher reservation release failed after booking failure',
+        details: note,
+        provenance: {
+          source: 'booking_route',
+          sourceReference: voucherReservationContext.checkoutId || null
+        },
+        evidence: {
+          ...buildVoucherEvidence(evidence),
+          error: releaseErr.message
+        }
+      });
+      return { attempted: true, released: false, error: releaseErr };
+    }
+  };
+
   try {
     // Check for validation errors
     const errors = validationResult(req);
@@ -615,6 +802,7 @@ router.post('/', bookingCreateLimiter, [
     }
 
     const { cabinId, cabinTypeId, unitId, checkIn, checkOut, adults, children = 0, guestInfo, specialRequests, paymentIntentId, legalAcceptance } = req.body;
+    const voucherRedemptionIdInput = req.body.voucherRedemptionId ? String(req.body.voucherRedemptionId) : null;
     const checkoutId = normalizeCheckoutId(req.body.checkoutId);
 
     // Validate: must have either cabinId OR cabinTypeId, not both
@@ -810,7 +998,7 @@ router.post('/', bookingCreateLimiter, [
     }
 
     paymentIntentIdForReview = paymentIntentId ? String(paymentIntentId).trim() : null;
-    const requiresCheckoutId = Boolean(paymentIntentIdForReview);
+    const requiresCheckoutId = Boolean(paymentIntentIdForReview || voucherRedemptionIdInput);
     if (requiresCheckoutId && !checkoutId) {
       return res.status(400).json({
         success: false,
@@ -863,6 +1051,107 @@ router.post('/', bookingCreateLimiter, [
           success: false,
           message: 'Could not verify payment'
         });
+      }
+    }
+
+    const subtotalCents = Math.round(subtotalPrice * 100);
+    const discountAmountCents = Math.round((discountAmount || 0) * 100);
+    const totalValueCents = Math.round(totalPrice * 100);
+    const voucherRedemptionId = voucherRedemptionIdInput;
+    let giftVoucherAppliedCents = 0;
+    let stripePaidAmountCents = totalValueCents;
+    let paymentMethod = stripePaymentVerified ? 'stripe' : 'stripe';
+
+    if (voucherRedemptionId) {
+      try {
+        const validatedRedemption = await validateReservedRedemptionForBooking({
+          redemptionId: voucherRedemptionId,
+          checkoutId,
+          totalValueCents,
+          paymentIntentId: paymentIntentIdForReview || null
+        });
+        giftVoucherAppliedCents = Number(validatedRedemption.amountAppliedCents || 0);
+        stripePaidAmountCents = Math.max(0, totalValueCents - giftVoucherAppliedCents);
+        paymentMethod =
+          giftVoucherAppliedCents >= totalValueCents
+            ? 'gift_voucher'
+            : (giftVoucherAppliedCents > 0 ? 'stripe_plus_gift_voucher' : 'stripe');
+        voucherReservationContext = {
+          checkoutId,
+          redemptionId: String(validatedRedemption._id),
+          giftVoucherId: String(validatedRedemption.giftVoucherId),
+          confirmed: false,
+          released: false
+        };
+      } catch (voucherErr) {
+        if (paymentIntentIdForReview) {
+          await openManualReviewItem({
+            category: 'payment_finalization_failure',
+            severity: 'high',
+            entityType: 'GiftVoucherRedemption',
+            entityId: voucherRedemptionId,
+            title: 'Paid booking could not use reserved voucher',
+            details: 'Voucher reservation was missing, expired, or invalid at booking finalization',
+            provenance: {
+              source: 'booking_route',
+              sourceReference: checkoutId || paymentIntentIdForReview
+            },
+            evidence: buildVoucherEvidence({
+              subtotalCents,
+              discountAmountCents,
+              giftVoucherAppliedCents: 0,
+              stripePaidAmountCents: totalValueCents,
+              totalValueCents
+            })
+          });
+          return res.status(409).json(bookingNeedsReviewGuestResponse(paymentIntentIdForReview));
+        }
+        return res.status(409).json({
+          success: false,
+          message: 'The voucher reservation is no longer valid.',
+          error: { code: voucherErr.code || 'INVALID_VOUCHER_REDEMPTION' }
+        });
+      }
+    }
+
+    if (stripePaymentVerified && paymentIntentIdForReview && voucherReservationContext?.redemptionId) {
+      const piMeta = verifiedPaymentIntent?.metadata || {};
+      const paymentAmountCents = Number(verifiedPaymentIntent?.amount || 0);
+      const metaVoucherAppliedCents = Number(piMeta.voucherAppliedCents || 0);
+      const redemptionAligned =
+        String(piMeta.redemptionId || '') === String(voucherReservationContext.redemptionId || '') &&
+        String(piMeta.checkoutId || '') === String(checkoutId || '') &&
+        metaVoucherAppliedCents === giftVoucherAppliedCents &&
+        paymentAmountCents === stripePaidAmountCents;
+      if (!redemptionAligned) {
+        await openManualReviewItem({
+          category: 'payment_finalization_failure',
+          severity: 'high',
+          entityType: 'GiftVoucherRedemption',
+          entityId: String(voucherReservationContext.redemptionId),
+          title: 'Paid booking payment metadata mismatches voucher reservation',
+          details: 'Stripe PaymentIntent metadata or amount does not align with voucher reservation at booking finalization',
+          provenance: {
+            source: 'booking_route',
+            sourceReference: checkoutId || paymentIntentIdForReview
+          },
+          evidence: {
+            ...buildVoucherEvidence({
+              subtotalCents,
+              discountAmountCents,
+              giftVoucherAppliedCents,
+              stripePaidAmountCents,
+              totalValueCents
+            }),
+            paymentIntentAmountCents: paymentAmountCents,
+            paymentIntentMetadata: {
+              redemptionId: piMeta.redemptionId || null,
+              checkoutId: piMeta.checkoutId || null,
+              voucherAppliedCents: piMeta.voucherAppliedCents || null
+            }
+          }
+        });
+        return res.status(409).json(bookingNeedsReviewGuestResponse(paymentIntentIdForReview));
       }
     }
 
@@ -930,6 +1219,8 @@ router.post('/', bookingCreateLimiter, [
     let initialStatus = 'pending';
     if (stripePaymentVerified) {
       initialStatus = 'confirmed';
+    } else if (voucherReservationContext && stripePaidAmountCents === 0 && giftVoucherAppliedCents > 0) {
+      initialStatus = 'confirmed';
     } else if (!paymentIntentId && process.env.BOOKING_CONFIRM_WITHOUT_STRIPE === '1') {
       initialStatus = 'confirmed';
     }
@@ -945,6 +1236,13 @@ router.post('/', bookingCreateLimiter, [
       totalPrice,
       subtotalPrice,
       discountAmount: discountAmount || 0,
+      subtotalCents,
+      discountAmountCents,
+      giftVoucherAppliedCents,
+      stripePaidAmountCents,
+      totalValueCents,
+      giftVoucherRedemptionId: voucherReservationContext?.redemptionId || null,
+      paymentMethod,
       promoCode: appliedPromoCode || null,
       promoSnapshot: promoSnapshot || null,
       tripType: typeof req.body.tripType === 'string' ? req.body.tripType.trim().slice(0, 50) : undefined,
@@ -1021,6 +1319,18 @@ router.post('/', bookingCreateLimiter, [
       booking = new Booking(bookingData);
       await booking.save();
     } catch (saveErr) {
+      await tryReleaseVoucherOnFailure({
+        reason: 'booking_save_failed',
+        note: 'release voucher reservation after booking save failure',
+        paidCard: Boolean(paymentIntentIdForReview),
+        evidence: {
+          subtotalCents,
+          discountAmountCents,
+          giftVoucherAppliedCents,
+          stripePaidAmountCents,
+          totalValueCents
+        }
+      });
       if (saveErr?.code === 11000 && checkoutId) {
         const existingByCheckoutId = await Booking.findOne({ checkoutId });
         if (existingByCheckoutId) {
@@ -1108,6 +1418,18 @@ router.post('/', bookingCreateLimiter, [
       const blockRace = await countBlockingBlocksForSingleCabin(cabinId, checkInDate, checkOutDate);
       if (overlaps > 0 || blockRace > 0) {
         await Booking.deleteOne({ _id: booking._id });
+        await tryReleaseVoucherOnFailure({
+          reason: 'booking_conflict_after_save',
+          note: 'release voucher reservation after cabin overlap conflict',
+          paidCard: Boolean(paymentIntentIdForReview),
+          evidence: {
+            subtotalCents,
+            discountAmountCents,
+            giftVoucherAppliedCents,
+            stripePaidAmountCents,
+            totalValueCents
+          }
+        });
         const handledPaidConflict = await handlePaidBookingFailure({
           issueType: 'paid_booking_conflict',
           errorCode: 'CABIN_OVERLAP_AFTER_SAVE',
@@ -1134,6 +1456,18 @@ router.post('/', bookingCreateLimiter, [
       }
       if (overlaps > 0 || blockRace > 0) {
         await Booking.deleteOne({ _id: booking._id });
+        await tryReleaseVoucherOnFailure({
+          reason: 'booking_conflict_after_save',
+          note: 'release voucher reservation after unit overlap conflict',
+          paidCard: Boolean(paymentIntentIdForReview),
+          evidence: {
+            subtotalCents,
+            discountAmountCents,
+            giftVoucherAppliedCents,
+            stripePaidAmountCents,
+            totalValueCents
+          }
+        });
         const handledPaidConflict = await handlePaidBookingFailure({
           issueType: 'paid_booking_conflict',
           errorCode: 'UNIT_OVERLAP_AFTER_SAVE',
@@ -1161,6 +1495,18 @@ router.post('/', bookingCreateLimiter, [
       );
       if (inc.matchedCount === 0) {
         await Booking.deleteOne({ _id: booking._id });
+        await tryReleaseVoucherOnFailure({
+          reason: 'promo_conflict_after_save',
+          note: 'release voucher reservation after promo conflict',
+          paidCard: Boolean(paymentIntentIdForReview),
+          evidence: {
+            subtotalCents,
+            discountAmountCents,
+            giftVoucherAppliedCents,
+            stripePaidAmountCents,
+            totalValueCents
+          }
+        });
         const handledPaidConflict = await handlePaidBookingFailure({
           issueType: 'paid_booking_conflict',
           errorCode: 'PROMO_USAGE_CONFLICT_AFTER_SAVE',
@@ -1170,6 +1516,47 @@ router.post('/', bookingCreateLimiter, [
         return res.status(409).json({
           success: false,
           message: 'This promo code is no longer available for new bookings.'
+        });
+      }
+    }
+
+    if (voucherReservationContext?.redemptionId) {
+      try {
+        await confirmVoucherReservation({
+          redemptionId: voucherReservationContext.redemptionId,
+          actor: 'system',
+          note: 'confirm voucher reservation after booking save success'
+        });
+        voucherReservationContext.confirmed = true;
+      } catch (confirmErr) {
+        await openManualReviewItem({
+          category: paymentIntentIdForReview ? 'payment_finalization_failure' : 'gift_voucher_redemption_confirm_failed',
+          severity: 'high',
+          entityType: 'GiftVoucherRedemption',
+          entityId: String(voucherReservationContext.redemptionId),
+          title: 'Voucher reservation confirmation failed after booking save',
+          details: 'Booking was saved but voucher redemption confirmation failed',
+          provenance: {
+            source: 'booking_route',
+            sourceReference: checkoutId || null
+          },
+          evidence: {
+            ...buildVoucherEvidence({
+              subtotalCents,
+              discountAmountCents,
+              giftVoucherAppliedCents,
+              stripePaidAmountCents,
+              totalValueCents
+            }),
+            error: confirmErr.message
+          }
+        });
+        if (paymentIntentIdForReview) {
+          return res.status(409).json(bookingNeedsReviewGuestResponse(paymentIntentIdForReview));
+        }
+        return res.status(500).json({
+          success: false,
+          message: 'Booking was saved but voucher finalization failed. Please contact support.'
         });
       }
     }
@@ -1249,6 +1636,18 @@ router.post('/', bookingCreateLimiter, [
     }
 
   } catch (error) {
+    await tryReleaseVoucherOnFailure({
+      reason: 'booking_create_exception',
+      note: 'release voucher reservation after booking create exception',
+      paidCard: Boolean(paymentIntentIdForReview),
+      evidence: {
+        subtotalCents: 0,
+        discountAmountCents: 0,
+        giftVoucherAppliedCents: 0,
+        stripePaidAmountCents: 0,
+        totalValueCents: 0
+      }
+    });
     const mappedIssueType =
       error?.name === 'ValidationError' || error?.name === 'MongoServerError'
         ? 'paid_booking_save_failed'
@@ -1486,4 +1885,10 @@ router.post('/:id/addon-request', validateId('id'), [
 });
 
 module.exports = router;
+module.exports.__setStripeClientForTesting = (client) => {
+  stripe = client;
+};
+module.exports.__resetStripeClientForTesting = () => {
+  stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+};
 

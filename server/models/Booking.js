@@ -187,6 +187,41 @@ const bookingSchema = new mongoose.Schema({
     default: 0,
     min: [0, 'Discount cannot be negative']
   },
+  subtotalCents: {
+    type: Number,
+    required: false,
+    min: [0, 'subtotalCents cannot be negative']
+  },
+  discountAmountCents: {
+    type: Number,
+    required: false,
+    min: [0, 'discountAmountCents cannot be negative']
+  },
+  giftVoucherAppliedCents: {
+    type: Number,
+    default: 0,
+    min: [0, 'giftVoucherAppliedCents cannot be negative']
+  },
+  stripePaidAmountCents: {
+    type: Number,
+    default: 0,
+    min: [0, 'stripePaidAmountCents cannot be negative']
+  },
+  totalValueCents: {
+    type: Number,
+    required: false,
+    min: [0, 'totalValueCents cannot be negative']
+  },
+  giftVoucherRedemptionId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'GiftVoucherRedemption',
+    default: null
+  },
+  paymentMethod: {
+    type: String,
+    enum: ['stripe', 'gift_voucher', 'stripe_plus_gift_voucher'],
+    default: 'stripe'
+  },
   promoCode: {
     type: String,
     trim: true,

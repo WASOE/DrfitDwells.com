@@ -26,6 +26,24 @@ const giftVoucherRedemptionSchema = new mongoose.Schema(
       default: null,
       index: true
     },
+    checkoutId: {
+      type: String,
+      trim: true,
+      default: null,
+      index: true
+    },
+    reservationKey: {
+      type: String,
+      trim: true,
+      default: null,
+      index: true
+    },
+    paymentIntentId: {
+      type: String,
+      trim: true,
+      default: null,
+      index: true
+    },
     amountAppliedCents: {
       type: Number,
       required: true,
@@ -53,6 +71,7 @@ const giftVoucherRedemptionSchema = new mongoose.Schema(
 
 giftVoucherRedemptionSchema.index({ giftVoucherId: 1, status: 1 });
 giftVoucherRedemptionSchema.index({ createdAt: -1 });
+giftVoucherRedemptionSchema.index({ checkoutId: 1, reservationKey: 1 });
 
 module.exports = mongoose.model('GiftVoucherRedemption', giftVoucherRedemptionSchema);
 module.exports.GIFT_VOUCHER_REDEMPTION_STATUSES = REDEMPTION_STATUSES;

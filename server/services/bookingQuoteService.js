@@ -14,6 +14,7 @@ const {
   assertSingleCabinGuestStayAvailableOrThrow
 } = require('./publicAvailabilityService');
 const { normalizeDateToSofiaDayStart } = require('../utils/dateTime');
+const { previewVoucherApplication } = require('./bookings/bookingVoucherRedemptionService');
 
 /**
  * After entity + dates are resolved (same inputs as pricingService).
@@ -152,6 +153,23 @@ async function buildPublicBookingQuote(body) {
     promoCode
   );
 
+  let voucherAppliedCents = 0;
+  let remainingDueCents = Math.round(quote.totalPrice * 100);
+  let fullVoucherCoverage = false;
+  let voucherPreviewError = null;
+  if (typeof body.voucherCode === 'string' && body.voucherCode.trim()) {
+    const voucherPreview = await previewVoucherApplication({
+      voucherCode: body.voucherCode,
+      totalValueCents: Math.round(quote.totalPrice * 100)
+    });
+    voucherAppliedCents = Number(voucherPreview.voucherAppliedCents || 0);
+    remainingDueCents = Number(voucherPreview.remainingDueCents || remainingDueCents);
+    fullVoucherCoverage = Boolean(voucherPreview.fullVoucherCoverage);
+    if (voucherPreview.success === false) {
+      voucherPreviewError = voucherPreview.message || 'This voucher cannot be used.';
+    }
+  }
+
   return {
     ok: true,
     entityType,
@@ -164,7 +182,11 @@ async function buildPublicBookingQuote(body) {
       invalidReason: quote.promoInvalidReason,
       snapshot: quote.promoSnapshot,
       label: quote.promoSnapshot ? 'Promo applied' : null
-    }
+    },
+    voucherAppliedCents,
+    remainingDueCents,
+    fullVoucherCoverage,
+    voucherPreviewError
   };
 }
 
@@ -174,7 +196,9 @@ async function buildPublicBookingQuote(body) {
 function verifyPaymentIntentPromoMetadata(pi, quote) {
   const meta = pi.metadata || {};
   const expectedFinal = Math.round(quote.totalPrice * 100);
-  if (pi.amount !== expectedFinal) {
+  const voucherAppliedCents = Number(meta.voucherAppliedCents || 0);
+  const expectedStripeAmount = Math.max(0, expectedFinal - (Number.isFinite(voucherAppliedCents) ? voucherAppliedCents : 0));
+  if (pi.amount !== expectedStripeAmount) {
     return { ok: false, message: 'Payment amount does not match booking total' };
   }
 
@@ -185,7 +209,7 @@ function verifyPaymentIntentPromoMetadata(pi, quote) {
     if (Number(meta.discountAmountCents) !== Math.round(quote.discountAmount * 100)) {
       return { ok: false, message: 'Payment discount does not match booking' };
     }
-    if (Number(meta.finalTotalCents) !== Math.round(quote.totalPrice * 100)) {
+    if (Number(meta.finalTotalCents) !== expectedFinal) {
       return { ok: false, message: 'Payment total does not match booking' };
     }
   }
