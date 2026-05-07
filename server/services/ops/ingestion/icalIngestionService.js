@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const AvailabilityBlock = require('../../../models/AvailabilityBlock');
 const ChannelSyncEvent = require('../../../models/ChannelSyncEvent');
 const CabinChannelSyncState = require('../../../models/CabinChannelSyncState');
+const ManualReviewItem = require('../../../models/ManualReviewItem');
 const Cabin = require('../../../models/Cabin');
 const Unit = require('../../../models/Unit');
 const { findParentCabinForCabinType } = require('../../publicAvailabilityService');
@@ -151,6 +152,80 @@ function normalizeEventToBlockInput(cabinId, eventRaw) {
     uid: eventRaw.UID || null,
     summary: eventRaw.SUMMARY || null
   };
+}
+
+async function resolveRecoverableSyncManualReviews({
+  cabinId,
+  feedUrl,
+  channel,
+  unitOid = null,
+  resolvedAt = new Date()
+}) {
+  const cabinIdString = String(cabinId);
+  const cabinIdObjectId = mongoose.Types.ObjectId.isValid(cabinIdString)
+    ? new mongoose.Types.ObjectId(cabinIdString)
+    : null;
+  const cabinIdVariants = [cabinIdString, ...(cabinIdObjectId ? [cabinIdObjectId] : [])];
+  const scopeOr = [
+    { 'provenance.sourceReference': String(feedUrl) },
+    { 'provenance.sourceReference': cabinIdString },
+    { entityId: { $in: cabinIdVariants } },
+    { cabinId: { $in: cabinIdVariants } },
+    { targetId: { $in: cabinIdVariants } },
+    { 'metadata.feedUrl': String(feedUrl) },
+    { 'evidence.feedUrl': String(feedUrl) }
+  ];
+
+  const query = {
+    status: 'open',
+    category: { $in: ['sync_feed_unreachable', 'sync_parse_failure'] },
+    $and: [
+      {
+        $or: [
+          { 'provenance.source': channel },
+          { 'provenance.source': null },
+          { 'provenance.source': { $exists: false } }
+        ]
+      },
+      { $or: scopeOr }
+    ]
+  };
+
+  if (unitOid) {
+    const unitIdString = String(unitOid);
+    const unitIdObjectId = mongoose.Types.ObjectId.isValid(unitIdString)
+      ? new mongoose.Types.ObjectId(unitIdString)
+      : null;
+    const unitIdVariants = [unitIdString, ...(unitIdObjectId ? [unitIdObjectId] : [])];
+    query.$and.push({
+      $or: [
+        { 'metadata.unitId': { $in: unitIdVariants } },
+        { 'evidence.unitId': { $in: unitIdVariants } },
+        { 'provenance.unitId': { $in: unitIdVariants } },
+        { unitId: { $in: unitIdVariants } },
+        { 'metadata.unitId': { $exists: false } },
+        { 'metadata.unitId': null },
+        { 'evidence.unitId': { $exists: false } },
+        { 'evidence.unitId': null },
+        { 'provenance.unitId': { $exists: false } },
+        { 'provenance.unitId': null },
+        { unitId: { $exists: false } },
+        { unitId: null }
+      ]
+    });
+  }
+
+  return ManualReviewItem.updateMany(query, {
+    $set: {
+      status: 'resolved',
+      updatedAt: resolvedAt,
+      resolution: {
+        resolvedAt,
+        resolvedBy: 'system:ical_sync',
+        note: `Auto-resolved after successful iCal sync import for ${feedUrl}`
+      }
+    }
+  });
 }
 
 async function importIcalForCabin({ cabinId, feedUrl, channel = 'airbnb_ical', unitId: unitIdArg = null }) {
@@ -420,6 +495,15 @@ async function importIcalForCabin({ cabinId, feedUrl, channel = 'airbnb_ical', u
     },
     { upsert: true, new: true }
   );
+  if (outcome !== 'failed') {
+    await resolveRecoverableSyncManualReviews({
+      cabinId,
+      feedUrl,
+      channel,
+      unitOid,
+      resolvedAt: runAt
+    });
+  }
 
   return {
     outcome,

@@ -10,6 +10,7 @@ const Cabin = require('../models/Cabin');
 const Booking = require('../models/Booking');
 const AvailabilityBlock = require('../models/AvailabilityBlock');
 const ChannelSyncEvent = require('../models/ChannelSyncEvent');
+const ManualReviewItem = require('../models/ManualReviewItem');
 const { importIcalForCabin } = require('../services/ops/ingestion/icalIngestionService');
 const { getCalendarReadModel } = require('../services/ops/readModels/calendarReadModel');
 
@@ -172,6 +173,38 @@ async function run() {
   const bookingBefore = await Booking.findById(booking._id).lean();
   const bookingCountBefore = await Booking.countDocuments({ cabinId: cabin._id });
   assert(await countNonExternalBlocks() === 0, 'test cabin should start with no non-external AvailabilityBlocks');
+  const staleSyncReview = await ManualReviewItem.create({
+    category: 'sync_feed_unreachable',
+    severity: 'high',
+    status: 'open',
+    entityType: 'Cabin',
+    entityId: cabinId,
+    title: 'Stale iCal feed unreachable',
+    details: 'Historic error that should be auto-resolved after successful sync',
+    provenance: {
+      source: channel,
+      sourceReference: feedUrlA,
+      detectedAt: new Date()
+    },
+    evidence: {
+      feedUrl: feedUrlA
+    }
+  });
+  const unrelatedSyncReview = await ManualReviewItem.create({
+    category: 'sync_duplicate_import',
+    severity: 'medium',
+    status: 'open',
+    entityType: 'Cabin',
+    entityId: cabinId,
+    title: 'Unrelated sync duplicate warning',
+    details: 'Must stay open after success',
+    provenance: {
+      source: channel,
+      sourceReference: 'unrelated-reference',
+      detectedAt: new Date()
+    },
+    evidence: {}
+  });
 
   try {
     // 1) broken_case: should not create active external_hold; should record non-success sync evidence.
@@ -200,6 +233,18 @@ async function run() {
     assert(activeA1 === 2, `success_case_a should create 2 active external_hold, got ${activeA1}`);
     assert(resA1?.outcome === 'success' || resA1?.outcome === 'warning', 'unexpected outcome for success_case_a');
     assert(await countNonExternalBlocks() === 0, 'success_case_a must only create external_hold AvailabilityBlocks');
+    const staleAfterSuccess = await ManualReviewItem.findById(staleSyncReview._id).lean();
+    const unrelatedAfterSuccess = await ManualReviewItem.findById(unrelatedSyncReview._id).lean();
+    assert(staleAfterSuccess?.status === 'resolved', 'successful sync should resolve stale sync_feed_unreachable review');
+    assert(
+      staleAfterSuccess?.resolution?.resolvedAt,
+      'successful sync should stamp resolution.resolvedAt on stale sync review'
+    );
+    assert(
+      staleAfterSuccess?.resolution?.note,
+      'successful sync should set resolution note on stale sync review'
+    );
+    assert(unrelatedAfterSuccess?.status === 'open', 'unrelated sync_duplicate_import review must remain open');
 
     // Idempotency: replay same feed.
     const resA2 = await importIcalForCabin({ cabinId: cabin._id, feedUrl: feedUrlA, channel });
