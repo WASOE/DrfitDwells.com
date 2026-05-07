@@ -49,6 +49,8 @@ const opsReadAPI = {
   review: (id) => api.get(`/ops/reviews/${id}`, { headers: authHeaders() }),
   communicationsOversight: () => api.get('/ops/communications/oversight', { headers: authHeaders() }),
   manualReview: (params) => api.get('/ops/manual-review', { params, headers: authHeaders() }),
+  giftVouchers: (params) => api.get('/ops/gift-vouchers', { params, headers: authHeaders() }),
+  giftVoucherDetail: (id) => api.get(`/ops/gift-vouchers/${id}`, { headers: authHeaders() }),
   readinessSummary: () => api.get('/ops/readiness/summary', { headers: authHeaders() }),
   readinessModules: () => api.get('/ops/readiness/modules', { headers: authHeaders() }),
   readinessOverlap: () => api.get('/ops/readiness/overlap', { headers: authHeaders() }),
@@ -69,6 +71,16 @@ const opsWriteAPI = {
     api.post(`/ops/reservations/${id}/email-actions/preview`, body, { headers: authHeaders() }),
   resendBookingLifecycleEmail: (id, body) =>
     api.post(`/ops/reservations/${id}/email-actions/resend`, body, { headers: authHeaders() }),
+  resendGiftVoucher: (id, payload) =>
+    api.post(`/ops/gift-vouchers/${id}/actions/resend`, payload, { headers: authHeaders() }),
+  voidGiftVoucher: (id, payload) =>
+    api.post(`/ops/gift-vouchers/${id}/actions/void`, payload, { headers: authHeaders() }),
+  extendGiftVoucherExpiry: (id, payload) =>
+    api.post(`/ops/gift-vouchers/${id}/actions/extend-expiry`, payload, { headers: authHeaders() }),
+  adjustGiftVoucherBalance: (id, payload) =>
+    api.post(`/ops/gift-vouchers/${id}/actions/adjust-balance`, payload, { headers: authHeaders() }),
+  updateGiftVoucherRecipientEmail: (id, payload) =>
+    api.post(`/ops/gift-vouchers/${id}/actions/update-recipient-email`, payload, { headers: authHeaders() }),
   sendArrivalInstructions: (id) =>
     api.post(`/ops/communications/reservations/${id}/actions/send-arrival-instructions`, {}, { headers: authHeaders() }),
   resendArrivalInstructions: (id) =>

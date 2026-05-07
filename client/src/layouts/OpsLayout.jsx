@@ -83,6 +83,7 @@ export default function OpsLayout() {
     { to: '/ops/cabins', label: 'Cabins' },
     { to: '/ops/reviews', label: 'Reviews' },
     { to: '/ops/communications', label: 'Comms' },
+    { to: '/ops/gift-vouchers', label: 'Gift vouchers' },
     { to: '/ops/manual-review', label: 'Manual' },
     { to: '/ops/readiness', label: 'Readiness' }
   ];

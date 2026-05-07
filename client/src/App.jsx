@@ -55,6 +55,8 @@ const OpsReviews = lazy(() => import('./pages/ops/OpsReviews'))
 const OpsCommunicationOversight = lazy(() => import('./pages/ops/OpsCommunicationOversight'))
 const OpsManualReviewBacklog = lazy(() => import('./pages/ops/OpsManualReviewBacklog'))
 const OpsReadiness = lazy(() => import('./pages/ops/OpsReadiness'))
+const OpsGiftVouchers = lazy(() => import('./pages/ops/OpsGiftVouchers'))
+const OpsGiftVoucherDetail = lazy(() => import('./pages/ops/OpsGiftVoucherDetail'))
 const MaintenanceHome = lazy(() => import('./pages/maintenance/MaintenanceHome'))
 const MaintenanceCabins = lazy(() => import('./pages/maintenance/MaintenanceCabins'))
 const MaintenanceReservations = lazy(() => import('./pages/maintenance/MaintenanceReservations'))
@@ -223,7 +225,9 @@ function App() {
               <Route path="/ops/reviews" element={<OpsReviews />} />
               <Route path="/ops/communications" element={<OpsCommunicationOversight />} />
               <Route path="/ops/manual-review" element={<OpsManualReviewBacklog />} />
-            <Route path="/ops/readiness" element={<OpsReadiness />} />
+              <Route path="/ops/gift-vouchers" element={<OpsGiftVouchers />} />
+              <Route path="/ops/gift-vouchers/:id" element={<OpsGiftVoucherDetail />} />
+              <Route path="/ops/readiness" element={<OpsReadiness />} />
             </Route>
 
             <Route element={<MaintenanceLayout />}>
