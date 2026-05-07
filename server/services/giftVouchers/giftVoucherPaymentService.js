@@ -5,6 +5,7 @@ const GiftVoucherEvent = require('../../models/GiftVoucherEvent');
 const { appendVoucherEvent } = require('./giftVoucherEventService');
 const { generateUniqueVoucherCode } = require('./giftVoucherCodeService');
 const { openManualReviewItem } = require('../ops/ingestion/manualReviewService');
+const { handleActivatedGiftVoucherDelivery } = require('./giftVoucherEmailService');
 
 const DEFAULT_TERMS_VERSION = 'v1';
 const EUR = 'EUR';
@@ -601,11 +602,26 @@ async function activatePaidVoucherFromStripeEvent(event) {
     };
   }
 
+  let emailDelivery = null;
+  try {
+    emailDelivery = await handleActivatedGiftVoucherDelivery({
+      giftVoucherId: latestVoucher._id,
+      actor: 'system'
+    });
+  } catch (emailErr) {
+    emailDelivery = {
+      ok: false,
+      code: emailErr.code || 'EMAIL_DELIVERY_FAILED',
+      message: emailErr.message
+    };
+  }
+
   return {
     ok: true,
     activationCompleted: true,
     giftVoucherId: String(latestVoucher._id),
-    status: latestVoucher.status
+    status: latestVoucher.status,
+    emailDelivery
   };
 }
 

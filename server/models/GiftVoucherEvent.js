@@ -118,6 +118,13 @@ giftVoucherEventSchema.index(
     partialFilterExpression: { 'metadata.paymentIntentId': { $type: 'string' } }
   }
 );
+giftVoucherEventSchema.index(
+  { giftVoucherId: 1, type: 1, 'metadata.emailLifecycleKey': 1 },
+  {
+    unique: true,
+    partialFilterExpression: { 'metadata.emailLifecycleKey': { $type: 'string' } }
+  }
+);
 
 module.exports = mongoose.model('GiftVoucherEvent', giftVoucherEventSchema);
 module.exports.GIFT_VOUCHER_EVENT_TYPES = GIFT_VOUCHER_EVENT_TYPES;
