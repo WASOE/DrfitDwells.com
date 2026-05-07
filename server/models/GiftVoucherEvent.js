@@ -104,6 +104,20 @@ giftVoucherEventSchema.pre(['deleteOne', 'deleteMany', 'findOneAndDelete', 'find
 
 giftVoucherEventSchema.index({ giftVoucherId: 1, createdAt: -1 });
 giftVoucherEventSchema.index({ giftVoucherId: 1, type: 1, createdAt: -1 });
+giftVoucherEventSchema.index(
+  { giftVoucherId: 1, type: 1, 'metadata.stripeEventId': 1 },
+  {
+    unique: true,
+    partialFilterExpression: { 'metadata.stripeEventId': { $type: 'string' } }
+  }
+);
+giftVoucherEventSchema.index(
+  { giftVoucherId: 1, type: 1, 'metadata.paymentIntentId': 1 },
+  {
+    unique: true,
+    partialFilterExpression: { 'metadata.paymentIntentId': { $type: 'string' } }
+  }
+);
 
 module.exports = mongoose.model('GiftVoucherEvent', giftVoucherEventSchema);
 module.exports.GIFT_VOUCHER_EVENT_TYPES = GIFT_VOUCHER_EVENT_TYPES;

@@ -4,6 +4,7 @@ const Payout = require('../../../models/Payout');
 const StripeEventEvidence = require('../../../models/StripeEventEvidence');
 const PaymentFinalization = require('../../../models/PaymentFinalization');
 const { openManualReviewItem } = require('./manualReviewService');
+const { activatePaidVoucherFromStripeEvent } = require('../../giftVouchers/giftVoucherPaymentService');
 
 function digestEvent(event) {
   return crypto.createHash('sha256').update(JSON.stringify(event)).digest('hex');
@@ -279,6 +280,15 @@ async function applyLegacyFinalizationCompatibility(event) {
 
 async function processStripeWebhookEvent(event) {
   const { alreadyProcessed, evidence } = await ensureStripeEventEvidence(event);
+  const isGiftVoucherSucceeded =
+    event?.type === 'payment_intent.succeeded'
+    && event?.data?.object?.object === 'payment_intent'
+    && event?.data?.object?.metadata?.type === 'gift_voucher';
+
+  if (isGiftVoucherSucceeded) {
+    await activatePaidVoucherFromStripeEvent(event);
+  }
+
   if (alreadyProcessed) {
     return {
       ok: true,
