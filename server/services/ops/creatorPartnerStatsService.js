@@ -1,9 +1,34 @@
 const Booking = require('../../models/Booking');
 const CreatorPartner = require('../../models/CreatorPartner');
 const CreatorReferralVisit = require('../../models/CreatorReferralVisit');
+const GiftVoucher = require('../../models/GiftVoucher');
+const GiftVoucherCreatorCommission = require('../../models/GiftVoucherCreatorCommission');
+const CreatorCommission = require('../../models/CreatorCommission');
 const { normalizeReferralCode } = require('../../models/CreatorPartner');
+const mongoose = require('mongoose');
+const {
+  stayCashCommissionBaseCents,
+  estimateStayCommissionableRevenueEUR
+} = require('./creatorCommissionLedgerService');
 
 const PAID_BOOKING_STATUSES = new Set(['confirmed', 'in_house', 'completed']);
+const PAID_VOUCHER_STATUSES = ['active', 'partially_redeemed', 'redeemed', 'expired'];
+
+function attributionObjectIdMaybe(value) {
+  if (!value) return null;
+  if (value instanceof mongoose.Types.ObjectId) return String(value);
+  const s = String(value).trim();
+  return mongoose.Types.ObjectId.isValid(s) ? s : null;
+}
+
+function resolveGiftVoucherStatsCreator(voucher, maps) {
+  const refNorm = normalizeReferralCode(voucher?.attribution?.referralCode);
+  const idStr = attributionObjectIdMaybe(voucher?.attribution?.creatorPartnerId);
+  let refCreator = refNorm ? maps.referralToCreatorId.get(refNorm) || null : null;
+  const idCreator = idStr;
+  if (refCreator && idCreator && refCreator !== idCreator) return null;
+  return refCreator || idCreator || null;
+}
 
 function normalizePromoCode(raw) {
   if (raw == null) return null;
@@ -16,11 +41,10 @@ function toMoneyNumber(value) {
   return Number.isFinite(num) ? num : 0;
 }
 
-function estimateCommissionableRevenue(booking) {
-  const subtotal = toMoneyNumber(booking?.subtotalPrice);
-  const discount = toMoneyNumber(booking?.discountAmount);
-  if (subtotal > 0) return Math.max(0, subtotal - discount);
-  return Math.max(0, toMoneyNumber(booking?.totalPrice));
+function resolveStayBookingCashRevenueCents(booking) {
+  const cents = stayCashCommissionBaseCents(booking);
+  if (cents !== null) return cents;
+  return Math.round(Math.max(0, toMoneyNumber(booking.totalPrice)) * 100);
 }
 
 function buildAttributionMaps(creatorPartners) {
@@ -74,6 +98,12 @@ function buildEmptyStats() {
     cancelledRefundedVoidBookings: 0,
     grossBookingRevenue: 0,
     commissionableRevenueEstimate: 0,
+    giftVoucherPurchases: 0,
+    giftVoucherRevenueCents: 0,
+    giftVoucherCommissionCents: 0,
+    stayBookingRevenueCents: 0,
+    stayBookingCommissionCents: 0,
+    totalCommissionCents: 0,
     lastBookingAt: null,
     conversionRate: 0
   };
@@ -107,7 +137,34 @@ async function buildAllCreatorPartnerStats() {
       { 'attribution.referralCode': { $exists: true, $ne: null } }
     ]
   })
-    .select('status totalPrice subtotalPrice discountAmount promoCode attribution createdAt')
+    .select(
+      'status totalPrice subtotalPrice discountAmount promoCode attribution createdAt totalValueCents giftVoucherAppliedCents stripePaidAmountCents'
+    )
+    .lean();
+
+  const giftVouchersForStats = await GiftVoucher.find({
+    status: { $in: PAID_VOUCHER_STATUSES },
+    $or: [
+      { 'attribution.referralCode': { $exists: true, $ne: null } },
+      { 'attribution.creatorPartnerId': { $exists: true, $ne: null } }
+    ]
+  })
+    .select('amountOriginalCents attribution')
+    .lean();
+
+  const creatorObjectIds = creatorPartners.map((c) => c._id);
+  const gvCommDocs = await GiftVoucherCreatorCommission.find({
+    creatorPartnerId: { $in: creatorObjectIds },
+    status: { $ne: 'voided' }
+  })
+    .select('creatorPartnerId commissionAmountCents')
+    .lean();
+
+  const stayCommDocs = await CreatorCommission.find({
+    creatorPartnerId: { $in: creatorObjectIds },
+    status: { $nin: ['void'] }
+  })
+    .select('creatorPartnerId amountSnapshot')
     .lean();
 
   const byCreator = new Map();
@@ -148,17 +205,45 @@ async function buildAllCreatorPartnerStats() {
       stats.cancelledRefundedVoidBookings += 1;
     }
     stats.grossBookingRevenue += Math.max(0, toMoneyNumber(booking.totalPrice));
+    if (PAID_BOOKING_STATUSES.has(booking.status)) {
+      stats.stayBookingRevenueCents += resolveStayBookingCashRevenueCents(booking);
+    }
     if (booking.status !== 'cancelled') {
-      stats.commissionableRevenueEstimate += estimateCommissionableRevenue(booking);
+      stats.commissionableRevenueEstimate += estimateStayCommissionableRevenueEUR(booking);
     }
     if (!stats.lastBookingAt || new Date(booking.createdAt) > new Date(stats.lastBookingAt)) {
       stats.lastBookingAt = booking.createdAt;
     }
   }
 
+  for (const gv of giftVouchersForStats) {
+    const creatorId = resolveGiftVoucherStatsCreator(gv, maps);
+    if (!creatorId || !byCreator.has(creatorId)) continue;
+    const s = byCreator.get(creatorId);
+    s.giftVoucherPurchases += 1;
+    s.giftVoucherRevenueCents += Math.max(0, Math.trunc(Number(gv.amountOriginalCents) || 0));
+  }
+
+  for (const row of gvCommDocs) {
+    const id = row?.creatorPartnerId ? String(row.creatorPartnerId) : null;
+    if (!id || !byCreator.has(id)) continue;
+    byCreator.get(id).giftVoucherCommissionCents += Math.max(0, Math.trunc(Number(row.commissionAmountCents) || 0));
+  }
+
+  for (const row of stayCommDocs) {
+    const id = row?.creatorPartnerId ? String(row.creatorPartnerId) : null;
+    if (!id || !byCreator.has(id)) continue;
+    const snap = Number(row.amountSnapshot);
+    byCreator.get(id).stayBookingCommissionCents += Number.isFinite(snap) ? Math.round(snap * 100) : 0;
+  }
+
   return creatorPartners.map((creator) => {
     const creatorId = String(creator._id);
     const stats = byCreator.get(creatorId) || buildEmptyStats();
+    stats.totalCommissionCents = Math.max(
+      0,
+      Math.trunc(stats.stayBookingCommissionCents || 0) + Math.trunc(stats.giftVoucherCommissionCents || 0)
+    );
     const uniqueVisitors = uniqueSets.get(creatorId)?.size || 0;
     return {
       creatorPartnerId: creatorId,
@@ -198,7 +283,9 @@ async function listCreatorPartnerAttributedBookings(creatorPartnerDoc, { limit =
   const candidates = await Booking.find({ $or: candidateOr })
     .sort({ createdAt: -1 })
     .limit(Math.max(1, Math.min(300, Number(limit) || 100)))
-    .select('status totalPrice subtotalPrice discountAmount promoCode attribution checkIn checkOut createdAt guestInfo cabinId cabinTypeId')
+    .select(
+      'status totalPrice subtotalPrice discountAmount promoCode attribution checkIn checkOut createdAt guestInfo cabinId cabinTypeId totalValueCents giftVoucherAppliedCents stripePaidAmountCents'
+    )
     .populate('cabinId', 'name')
     .populate('cabinTypeId', 'name')
     .lean();
@@ -227,7 +314,7 @@ async function listCreatorPartnerAttributedBookings(creatorPartnerDoc, { limit =
         discountAmount: Math.max(0, toMoneyNumber(booking.discountAmount)),
         totalPrice: Math.max(0, toMoneyNumber(booking.totalPrice)),
         grossBookingRevenue: Math.max(0, toMoneyNumber(booking.totalPrice)),
-        commissionableRevenueEstimate: estimateCommissionableRevenue(booking)
+        commissionableRevenueEstimate: estimateStayCommissionableRevenueEUR(booking)
       };
     })
     .filter(Boolean);

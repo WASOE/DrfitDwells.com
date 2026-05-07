@@ -6,6 +6,7 @@ const { appendVoucherEvent } = require('./giftVoucherEventService');
 const { generateUniqueVoucherCode } = require('./giftVoucherCodeService');
 const { openManualReviewItem } = require('../ops/ingestion/manualReviewService');
 const { handleActivatedGiftVoucherDelivery } = require('./giftVoucherEmailService');
+const { ensureGiftVoucherCreatorCommissionAfterActivation } = require('./giftVoucherCommissionService');
 
 const DEFAULT_TERMS_VERSION = 'v1';
 const EUR = 'EUR';
@@ -616,12 +617,24 @@ async function activatePaidVoucherFromStripeEvent(event) {
     };
   }
 
+  let giftVoucherCommission = null;
+  try {
+    giftVoucherCommission = await ensureGiftVoucherCreatorCommissionAfterActivation(latestVoucher);
+  } catch (commissionErr) {
+    console.error('[gift voucher] creator commission hook failed:', commissionErr?.message || commissionErr);
+    giftVoucherCommission = {
+      ok: false,
+      error: commissionErr?.message || String(commissionErr)
+    };
+  }
+
   return {
     ok: true,
     activationCompleted: true,
     giftVoucherId: String(latestVoucher._id),
     status: latestVoucher.status,
-    emailDelivery
+    emailDelivery,
+    giftVoucherCommission
   };
 }
 

@@ -24,6 +24,30 @@ function estimateCommissionableRevenue(booking) {
   return Math.max(0, toMoneyNumber(booking?.totalPrice));
 }
 
+/**
+ * Cash portion of stay value suitable for creator commission (EUR, excluding prepaid voucher).
+ * @returns {number|null} EUR, or null when legacy booking has no totalValueCents.
+ */
+function stayCashCommissionBaseCents(booking) {
+  const tv = booking?.totalValueCents;
+  if (!Number.isFinite(tv)) return null;
+  const gv = Number.isFinite(booking?.giftVoucherAppliedCents)
+    ? Math.max(0, Math.trunc(booking.giftVoucherAppliedCents))
+    : 0;
+  let base = Math.max(0, Math.trunc(tv) - gv);
+  if (Number.isFinite(booking?.stripePaidAmountCents)) {
+    const cap = Math.max(0, Math.trunc(booking.stripePaidAmountCents));
+    base = Math.min(base, cap);
+  }
+  return base;
+}
+
+function estimateStayCommissionableRevenueEUR(booking) {
+  const baseCents = stayCashCommissionBaseCents(booking);
+  if (baseCents !== null) return baseCents / 100;
+  return estimateCommissionableRevenue(booking);
+}
+
 function buildAttributionMaps(creatorPartners) {
   const referralToCreatorId = new Map();
   const promoToCreatorId = new Map();
@@ -105,7 +129,9 @@ async function recalculateCreatorCommissionForPartner(creatorPartnerDoc) {
   }
 
   const bookings = await Booking.find({ $or: candidateOr })
-    .select('status totalPrice subtotalPrice discountAmount promoCode attribution stripePaymentIntentId')
+    .select(
+      'status totalPrice subtotalPrice discountAmount promoCode attribution stripePaymentIntentId totalValueCents giftVoucherAppliedCents stripePaidAmountCents'
+    )
     .lean();
 
   const bookingIds = bookings.map((b) => String(b._id));
@@ -148,7 +174,7 @@ async function recalculateCreatorCommissionForPartner(creatorPartnerDoc) {
     else notEligible += 1;
 
     const commissionableRevenueSnapshot =
-      eligibility.eligibilityStatus === 'eligible' ? estimateCommissionableRevenue(booking) : 0;
+      eligibility.eligibilityStatus === 'eligible' ? estimateStayCommissionableRevenueEUR(booking) : 0;
     const amountSnapshot =
       eligibility.eligibilityStatus === 'eligible'
         ? Number(((commissionableRevenueSnapshot * rateBps) / 10000).toFixed(2))
@@ -205,5 +231,8 @@ async function listCreatorCommissionForPartner(creatorPartnerId, { status, eligi
 
 module.exports = {
   recalculateCreatorCommissionForPartner,
-  listCreatorCommissionForPartner
+  listCreatorCommissionForPartner,
+  stayCashCommissionBaseCents,
+  estimateStayCommissionableRevenueEUR,
+  estimateCommissionableRevenue
 };

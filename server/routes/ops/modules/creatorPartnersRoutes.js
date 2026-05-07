@@ -106,6 +106,12 @@ function formatCreatorPartnerStats(stats) {
     cancelledRefundedVoidBookings: Number(stats?.cancelledRefundedVoidBookings || 0),
     grossBookingRevenue: Number(stats?.grossBookingRevenue || 0),
     commissionableRevenueEstimate: Number(stats?.commissionableRevenueEstimate || 0),
+    giftVoucherPurchases: Number(stats?.giftVoucherPurchases || 0),
+    giftVoucherRevenueCents: Number(stats?.giftVoucherRevenueCents || 0),
+    giftVoucherCommissionCents: Number(stats?.giftVoucherCommissionCents || 0),
+    stayBookingRevenueCents: Number(stats?.stayBookingRevenueCents || 0),
+    stayBookingCommissionCents: Number(stats?.stayBookingCommissionCents || 0),
+    totalCommissionCents: Number(stats?.totalCommissionCents || 0),
     lastBookingAt: stats?.lastBookingAt || null,
     conversionRate: Number(stats?.conversionRate || 0)
   };
