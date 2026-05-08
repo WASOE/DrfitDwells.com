@@ -8,6 +8,7 @@ const {
   computeRedeemableAmountCents,
   buildPublicGenericVoucherError
 } = require('../giftVouchers/giftVoucherValidationService');
+const { openManualReviewItem } = require('../ops/ingestion/manualReviewService');
 
 function normalizeVoucherCode(value) {
   if (typeof value !== 'string') return null;
@@ -62,7 +63,11 @@ async function previewVoucherApplication({ voucherCode, totalValueCents, now = n
   }
 }
 
-async function releaseExpiredVoucherReservations({ now = new Date(), limit = 25 }) {
+async function releaseExpiredVoucherReservations({
+  now = new Date(),
+  limit = 25,
+  openManualReviewOnFailure = false
+} = {}) {
   const scanNow = toDate(now);
   const stale = await GiftVoucherRedemption.find({
     status: 'reserved',
@@ -86,8 +91,28 @@ async function releaseExpiredVoucherReservations({ now = new Date(), limit = 25 
       } else {
         summary.released += 1;
       }
-    } catch {
+    } catch (err) {
       summary.failed += 1;
+      if (openManualReviewOnFailure) {
+        try {
+          await openManualReviewItem({
+            category: 'gift_voucher_reservation_release_failed',
+            severity: 'high',
+            entityType: 'GiftVoucherRedemption',
+            entityId: String(item._id),
+            title: 'Stale gift voucher reservation release failed',
+            details: String(err?.message || err),
+            provenance: { source: 'gift_voucher_maintenance', sourceReference: String(item._id) },
+            evidence: {
+              redemptionId: String(item._id),
+              giftVoucherId: item.giftVoucherId ? String(item.giftVoucherId) : null,
+              error: String(err?.message || err)
+            }
+          });
+        } catch {
+          /* non-fatal */
+        }
+      }
     }
   }
   return summary;

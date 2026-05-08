@@ -618,14 +618,35 @@ async function activatePaidVoucherFromStripeEvent(event) {
   }
 
   let giftVoucherCommission = null;
+  let commissionStatus = 'ok';
   try {
     giftVoucherCommission = await ensureGiftVoucherCreatorCommissionAfterActivation(latestVoucher);
   } catch (commissionErr) {
-    console.error('[gift voucher] creator commission hook failed:', commissionErr?.message || commissionErr);
+    await openManualReviewItem({
+      category: 'gift_voucher_commission_creation_failed',
+      severity: 'high',
+      entityType: 'GiftVoucher',
+      entityId: String(latestVoucher._id),
+      title: 'Gift voucher creator commission creation failed after activation',
+      details: String(commissionErr?.message || commissionErr),
+      provenance: { source: 'stripe_webhook', sourceReference: String(event.id) },
+      evidence: {
+        giftVoucherId: String(latestVoucher._id),
+        stripePaymentIntentId: paymentIntentId,
+        stripeEventId: String(event.id),
+        referralCode: latestVoucher.attribution?.referralCode ?? null,
+        creatorPartnerId: latestVoucher.attribution?.creatorPartnerId
+          ? String(latestVoucher.attribution.creatorPartnerId)
+          : null,
+        error: String(commissionErr?.message || commissionErr)
+      }
+    });
+    commissionStatus = 'failed';
     giftVoucherCommission = {
       ok: false,
       error: commissionErr?.message || String(commissionErr)
     };
+    console.error('[gift voucher] creator commission hook failed:', commissionErr?.message || commissionErr);
   }
 
   return {
@@ -634,6 +655,7 @@ async function activatePaidVoucherFromStripeEvent(event) {
     giftVoucherId: String(latestVoucher._id),
     status: latestVoucher.status,
     emailDelivery,
+    commissionStatus,
     giftVoucherCommission
   };
 }
