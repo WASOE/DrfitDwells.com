@@ -386,7 +386,7 @@ export default function GiftVouchers() {
             <div className="mx-auto w-full max-w-sm md:sticky md:top-24 md:max-w-none">
               <figure className="overflow-hidden rounded-md border-8 border-white bg-white shadow-[0_22px_55px_-25px_rgba(0,0,0,0.35)] md:rotate-[2deg]">
                 <img
-                  src="/uploads/The%20Valley/IMG_6431.jpg"
+                  src="/media/hero/valley-summer-night-1200w.webp"
                   alt="The Valley postcard view"
                   className="aspect-[4/5] w-full object-cover"
                   loading="eager"
