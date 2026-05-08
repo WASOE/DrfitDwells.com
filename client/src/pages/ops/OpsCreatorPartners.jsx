@@ -462,7 +462,7 @@ export default function OpsCreatorPartners() {
       await navigator.clipboard.writeText(url);
       setBanner({ type: 'success', message: 'Referral link copied to clipboard.' });
     } catch {
-      setBanner({ type: 'error', message: 'Could not copy link. Copy manually from the table.' });
+      setBanner({ type: 'error', message: 'Could not copy link. Copy manually from the referral URL.' });
     }
   }
 
@@ -578,131 +578,151 @@ export default function OpsCreatorPartners() {
         </div>
       </section>
 
-      <section className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-6">
+        <h2 className="text-sm font-semibold text-gray-900 mb-4">Partners</h2>
         {loading ? (
-          <div className="p-6 text-sm text-gray-600">Loading…</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200 text-left text-xs font-semibold text-gray-600 uppercase tracking-wide">
-                <tr>
-                  <th className="px-4 py-3">Name</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 font-mono">Referral</th>
-                  <th className="px-4 py-3">Visits</th>
-                  <th className="px-4 py-3">Bookings</th>
-                  <th className="px-4 py-3">Paid stay revenue</th>
-                  <th className="px-4 py-3">Attributed booking value</th>
-                  <th className="px-4 py-3">Gift vouchers</th>
-                  <th className="px-4 py-3">Projected commission (not payable)</th>
-                  <th className="px-4 py-3">Last activity</th>
-                  <th className="px-4 py-3">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {rows.length === 0 ? (
-                  <tr>
-                    <td colSpan={11} className="px-4 py-8 text-center text-gray-500">
-                      No creator partners match your filters.
-                    </td>
-                  </tr>
-                ) : (
-                  rows.map((r) => {
-                    const stats = statsById[r._id] || {};
-                    const visits = Number(stats.visits || 0);
-                    const uniqueVisitors = Number(stats.uniqueVisitors || 0);
-                    const attributedBookings = Number(stats.attributedBookings || 0);
-                    const paidBookings = Number(stats.paidConfirmedBookings || 0);
-                    const paidRevenue = Number(
-                      Number.isFinite(Number(stats.paidStayRevenue))
-                        ? Number(stats.paidStayRevenue)
-                        : Number(stats.stayBookingRevenueCents || 0) / 100
-                    );
-                    const attributedBookingValue = Number(stats.attributedBookingValue ?? stats.grossBookingRevenue ?? 0);
-                    const commissionEstimate = Number(stats.commissionableRevenueEstimate || 0);
-                    const gvPurchases = Number(stats.giftVoucherPurchases || 0);
-                    const gvRevCents = Number(stats.giftVoucherRevenueCents || 0);
-                    const gvCommCents = Number(stats.giftVoucherCommissionCents || 0);
-                    const lastActivity = stats.lastVisitAt || stats.lastBookingAt || null;
-                    return (
-                      <tr key={r._id} className="hover:bg-gray-50/80">
-                        <td className="px-4 py-3 font-medium text-gray-900">{r.name}</td>
-                        <td className="px-4 py-3 text-gray-700 capitalize">{r.status}</td>
-                        <td className="px-4 py-3 font-mono text-gray-800">{r.referral?.code || '—'}</td>
-                        <td className="px-4 py-3 tabular-nums text-gray-800">{visits} / {uniqueVisitors}</td>
-                        <td className="px-4 py-3 tabular-nums text-gray-800">{attributedBookings} / {paidBookings}</td>
-                        <td className="px-4 py-3 tabular-nums text-gray-800">{formatMoney(paidRevenue)}</td>
-                        <td className="px-4 py-3 tabular-nums text-gray-800">{formatMoney(attributedBookingValue)}</td>
-                        <td className="px-4 py-3 text-xs text-gray-700 max-w-[9rem]">
-                          <span className="tabular-nums font-medium text-gray-900">{gvPurchases}</span>{' '}
-                          sales ·{' '}
-                          <span className="tabular-nums">{formatMoneyFromCents(gvRevCents)}</span>
-                          <br />
-                          <span className="text-gray-500">Comm </span>
-                          <span className="tabular-nums">{formatMoneyFromCents(gvCommCents)}</span>
-                        </td>
-                        <td className="px-4 py-3 tabular-nums text-gray-800">{formatMoney(commissionEstimate * ((r.commission?.rateBps || 0) / 10000))}</td>
-                        <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{formatDateTime(lastActivity)}</td>
-                        <td className="px-4 py-3">
-                          <div className="inline-flex max-w-xs flex-wrap items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 p-1.5">
-                            <button
-                              type="button"
-                              onClick={() => openDetails(r)}
-                              className="h-8 px-3 rounded-md bg-[#81887A] text-white text-xs font-medium hover:bg-[#707668]"
-                            >
-                              Details
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => openEdit(r)}
-                              className="h-8 px-2.5 rounded-md border border-gray-300 bg-white text-xs text-gray-700 hover:bg-gray-100"
-                            >
-                              Edit
-                            </button>
-                            {r.referral?.code ? (
-                              <button
-                                type="button"
-                                onClick={() => copyReferralLink(r.referral.code)}
-                                className="h-8 px-2.5 rounded-md border border-gray-300 bg-white text-xs text-gray-700 hover:bg-gray-100"
-                              >
-                                Copy
-                              </button>
-                            ) : null}
-                            {r.status === 'paused' ? (
-                              <button
-                                type="button"
-                                onClick={() => patchStatus(r, 'active')}
-                                className="h-8 px-2.5 rounded-md border border-gray-300 bg-white text-xs text-gray-700 hover:bg-gray-100"
-                              >
-                                Resume
-                              </button>
-                            ) : r.status !== 'archived' ? (
-                              <button
-                                type="button"
-                                onClick={() => patchStatus(r, 'paused')}
-                                className="h-8 px-2.5 rounded-md border border-gray-300 bg-white text-xs text-gray-700 hover:bg-gray-100"
-                              >
-                                Pause
-                              </button>
-                            ) : null}
-                            {r.status !== 'archived' ? (
-                              <button
-                                type="button"
-                                onClick={() => patchStatus(r, 'archived')}
-                                className="h-8 px-2.5 rounded-md border border-gray-300 bg-white text-xs text-gray-700 hover:bg-gray-100"
-                              >
-                                Archive
-                              </button>
-                            ) : null}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+          <div className="py-8 text-sm text-gray-600">Loading…</div>
+        ) : rows.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-10 text-center text-sm text-gray-500">
+            No creator partners match your filters.
           </div>
+        ) : (
+          <ul className="space-y-4">
+            {rows.map((r) => {
+              const stats = statsById[r._id] || {};
+              const visits = Number(stats.visits || 0);
+              const uniqueVisitors = Number(stats.uniqueVisitors || 0);
+              const attributedBookings = Number(stats.attributedBookings || 0);
+              const paidBookings = Number(stats.paidConfirmedBookings || 0);
+              const paidRevenue = Number(
+                Number.isFinite(Number(stats.paidStayRevenue))
+                  ? Number(stats.paidStayRevenue)
+                  : Number(stats.stayBookingRevenueCents || 0) / 100
+              );
+              const attributedBookingValue = Number(stats.attributedBookingValue ?? stats.grossBookingRevenue ?? 0);
+              const commissionEstimate = Number(stats.commissionableRevenueEstimate || 0);
+              const gvPurchases = Number(stats.giftVoucherPurchases || 0);
+              const gvRevCents = Number(stats.giftVoucherRevenueCents || 0);
+              const gvCommCents = Number(stats.giftVoucherCommissionCents || 0);
+              const lastActivity = stats.lastVisitAt || stats.lastBookingAt || null;
+              const projectedCommission = formatMoney(
+                commissionEstimate * ((r.commission?.rateBps || 0) / 10000)
+              );
+              return (
+                <li key={r._id}>
+                  <article className="rounded-lg border border-gray-200 bg-white p-4 md:p-5 shadow-sm">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                          <h3 className="text-base font-semibold text-gray-900">{r.name}</h3>
+                          <span className="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-xs font-medium capitalize text-gray-800">
+                            {r.status}
+                          </span>
+                          <span className="font-mono text-sm text-gray-800">{r.referral?.code || '—'}</span>
+                        </div>
+                        <p className="text-xs text-gray-500">
+                          Last activity · <span className="text-gray-700">{formatDateTime(lastActivity)}</span>
+                        </p>
+                      </div>
+                    </div>
+
+                    <dl className="mt-4 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 text-sm">
+                      <div className="rounded-md border border-gray-100 bg-gray-50/90 px-3 py-2 min-w-0">
+                        <dt className="text-xs text-gray-500 leading-snug">Visits / unique visitors</dt>
+                        <dd className="mt-0.5 tabular-nums font-medium text-gray-900">
+                          {visits} / {uniqueVisitors}
+                        </dd>
+                      </div>
+                      <div className="rounded-md border border-gray-100 bg-gray-50/90 px-3 py-2 min-w-0">
+                        <dt className="text-xs text-gray-500 leading-snug">Bookings / paid bookings</dt>
+                        <dd className="mt-0.5 tabular-nums font-medium text-gray-900">
+                          {attributedBookings} / {paidBookings}
+                        </dd>
+                      </div>
+                      <div className="rounded-md border border-gray-100 bg-gray-50/90 px-3 py-2 min-w-0">
+                        <dt className="text-xs text-gray-500 leading-snug">Paid stay revenue</dt>
+                        <dd className="mt-0.5 tabular-nums font-medium text-gray-900">{formatMoney(paidRevenue)}</dd>
+                      </div>
+                      <div className="rounded-md border border-gray-100 bg-gray-50/90 px-3 py-2 min-w-0">
+                        <dt className="text-xs text-gray-500 leading-snug">Attributed booking value</dt>
+                        <dd className="mt-0.5 tabular-nums font-medium text-gray-900">
+                          {formatMoney(attributedBookingValue)}
+                        </dd>
+                      </div>
+                      <div className="rounded-md border border-gray-100 bg-gray-50/90 px-3 py-2 min-w-0">
+                        <dt className="text-xs text-gray-500 leading-snug">Gift vouchers</dt>
+                        <dd className="mt-0.5 text-gray-900">
+                          <span className="tabular-nums font-medium">{gvPurchases}</span>
+                          <span className="text-gray-500 font-normal"> sales · </span>
+                          <span className="tabular-nums font-medium">{formatMoneyFromCents(gvRevCents)}</span>
+                          <span className="block text-xs text-gray-500 mt-1">
+                            Commission ·{' '}
+                            <span className="tabular-nums text-gray-800">{formatMoneyFromCents(gvCommCents)}</span>
+                          </span>
+                        </dd>
+                      </div>
+                      <div className="rounded-md border border-gray-100 bg-gray-50/90 px-3 py-2 min-w-0">
+                        <dt className="text-xs text-gray-500 leading-snug">Projected commission (not payable)</dt>
+                        <dd className="mt-0.5 tabular-nums font-medium text-gray-900">{projectedCommission}</dd>
+                      </div>
+                    </dl>
+
+                    <div className="mt-4 flex flex-wrap gap-2 pt-3 border-t border-gray-100">
+                      <button
+                        type="button"
+                        onClick={() => openDetails(r)}
+                        className="h-9 px-3 rounded-md bg-[#81887A] text-white text-xs font-medium hover:bg-[#707668]"
+                      >
+                        Details
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openEdit(r)}
+                        className="h-9 px-3 rounded-md border border-gray-300 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50"
+                      >
+                        Edit
+                      </button>
+                      {r.referral?.code ? (
+                        <button
+                          type="button"
+                          onClick={() => copyReferralLink(r.referral.code)}
+                          className="h-9 px-3 rounded-md border border-gray-300 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          Copy
+                        </button>
+                      ) : null}
+                      {r.status === 'paused' ? (
+                        <button
+                          type="button"
+                          onClick={() => patchStatus(r, 'active')}
+                          className="h-9 px-3 rounded-md border border-gray-300 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          Reactivate
+                        </button>
+                      ) : r.status !== 'archived' ? (
+                        <button
+                          type="button"
+                          onClick={() => patchStatus(r, 'paused')}
+                          className="h-9 px-3 rounded-md border border-gray-300 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          Pause
+                        </button>
+                      ) : null}
+                      {r.status !== 'archived' ? (
+                        <button
+                          type="button"
+                          onClick={() => patchStatus(r, 'archived')}
+                          className="h-9 px-3 rounded-md border border-gray-300 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          Archive
+                        </button>
+                      ) : null}
+                    </div>
+                  </article>
+                </li>
+              );
+            })}
+          </ul>
         )}
       </section>
 
