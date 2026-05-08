@@ -1057,7 +1057,7 @@ const ConfirmBooking = () => {
             <button
               type="button"
               onClick={handleApplyPromo}
-              className="h-12 w-full shrink-0 rounded-2xl border border-gray-300 text-sm font-medium text-gray-800 hover:bg-gray-50 md:h-auto md:w-auto md:min-w-0 md:rounded-none md:border-0 md:bg-transparent md:p-0 md:hover:bg-transparent md:text-sm md:font-medium md:text-gray-700 md:underline"
+              className="h-9 self-start shrink-0 rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-800 hover:bg-gray-50 md:h-auto md:w-auto md:min-w-0 md:rounded-none md:border-0 md:bg-transparent md:p-0 md:hover:bg-transparent md:text-sm md:font-medium md:text-gray-700 md:underline"
             >
               {t('cta.apply')}
             </button>
@@ -1083,11 +1083,11 @@ const ConfirmBooking = () => {
                 className="w-full min-w-0 h-12 border-b border-black/15 bg-transparent px-0 text-[16px] outline-none focus:border-black/30 placeholder:text-black/40"
               />
             </div>
-            <div className="flex gap-2 md:gap-3">
+            <div className="flex flex-wrap items-start gap-2 md:gap-3">
               <button
                 type="button"
                 onClick={handleApplyVoucher}
-                className="h-12 px-4 rounded-2xl border border-gray-300 text-sm font-medium text-gray-800 hover:bg-gray-50 md:h-auto md:rounded-none md:border-0 md:bg-transparent md:p-0 md:hover:bg-transparent md:text-gray-700 md:underline"
+                className="h-9 self-start rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-800 hover:bg-gray-50 md:h-auto md:rounded-none md:border-0 md:bg-transparent md:p-0 md:hover:bg-transparent md:text-gray-700 md:underline"
               >
                 Apply
               </button>
@@ -1095,7 +1095,7 @@ const ConfirmBooking = () => {
                 <button
                   type="button"
                   onClick={handleRemoveVoucher}
-                  className="h-12 px-4 rounded-2xl border border-gray-300 text-sm font-medium text-gray-800 hover:bg-gray-50 md:h-auto md:rounded-none md:border-0 md:bg-transparent md:p-0 md:hover:bg-transparent md:text-gray-700 md:underline"
+                  className="h-9 self-start rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-800 hover:bg-gray-50 md:h-auto md:rounded-none md:border-0 md:bg-transparent md:p-0 md:hover:bg-transparent md:text-gray-700 md:underline"
                 >
                   Remove
                 </button>
