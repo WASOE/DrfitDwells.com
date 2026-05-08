@@ -3,14 +3,13 @@ const CreatorPartner = require('../../models/CreatorPartner');
 const CreatorCommission = require('../../models/CreatorCommission');
 const PaymentResolutionIssue = require('../../models/PaymentResolutionIssue');
 const { normalizeReferralCode } = require('../../models/CreatorPartner');
+const {
+  normalizePromoCode,
+  buildCreatorAttributionMaps,
+  resolveBookingCreatorAttribution
+} = require('../creators/creatorAttributionResolver');
 
 const PAID_BOOKING_STATUSES = new Set(['confirmed', 'in_house', 'completed']);
-
-function normalizePromoCode(raw) {
-  if (raw == null) return null;
-  const code = String(raw).trim().toUpperCase();
-  return code || null;
-}
 
 function toMoneyNumber(value) {
   const num = Number(value);
@@ -48,47 +47,6 @@ function estimateStayCommissionableRevenueEUR(booking) {
   return estimateCommissionableRevenue(booking);
 }
 
-function buildAttributionMaps(creatorPartners) {
-  const referralToCreatorId = new Map();
-  const promoToCreatorId = new Map();
-
-  for (const creator of creatorPartners) {
-    const creatorId = String(creator._id);
-    const referralCode = normalizeReferralCode(creator?.referral?.code);
-    if (referralCode && ['active', 'paused', 'archived'].includes(creator?.status)) {
-      referralToCreatorId.set(referralCode, creatorId);
-    }
-
-    const promoCode = normalizePromoCode(creator?.promo?.code);
-    // Archived creators retain historical attribution integrity for existing bookings.
-    if (promoCode && ['active', 'paused', 'archived'].includes(creator?.status)) {
-      promoToCreatorId.set(promoCode, creatorId);
-    }
-  }
-
-  return { referralToCreatorId, promoToCreatorId };
-}
-
-function resolveBookingCreatorAttribution(booking, maps) {
-  const promoCode = normalizePromoCode(booking?.promoCode);
-  if (promoCode && maps.promoToCreatorId.has(promoCode)) {
-    return {
-      creatorPartnerId: maps.promoToCreatorId.get(promoCode),
-      source: 'creator_promo'
-    };
-  }
-
-  const referralCode = normalizeReferralCode(booking?.attribution?.referralCode);
-  if (referralCode && maps.referralToCreatorId.has(referralCode)) {
-    return {
-      creatorPartnerId: maps.referralToCreatorId.get(referralCode),
-      source: 'creator_referral'
-    };
-  }
-
-  return null;
-}
-
 function derivePaymentStatusSnapshot(booking) {
   if (PAID_BOOKING_STATUSES.has(booking?.status)) return 'paid';
   if (booking?.status === 'pending') return 'pending';
@@ -113,7 +71,7 @@ async function recalculateCreatorCommissionForPartner(creatorPartnerDoc) {
   const creatorPartners = await CreatorPartner.find({})
     .select('_id status referral promo')
     .lean();
-  const maps = buildAttributionMaps(creatorPartners);
+  const maps = buildCreatorAttributionMaps(creatorPartners);
   const targetId = String(creatorPartnerDoc._id);
   const rateBps = Math.max(0, Math.min(10000, Number(creatorPartnerDoc?.commission?.rateBps) || 0));
 
@@ -161,7 +119,7 @@ async function recalculateCreatorCommissionForPartner(creatorPartnerDoc) {
 
   for (const booking of bookings) {
     const attribution = resolveBookingCreatorAttribution(booking, maps);
-    if (!attribution || attribution.creatorPartnerId !== targetId) continue;
+    if (!attribution?.creatorPartnerId || attribution.creatorPartnerId !== targetId) continue;
     processed += 1;
 
     const bookingId = String(booking._id);

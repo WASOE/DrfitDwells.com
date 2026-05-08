@@ -591,9 +591,10 @@ export default function OpsCreatorPartners() {
                   <th className="px-4 py-3 font-mono">Referral</th>
                   <th className="px-4 py-3">Visits</th>
                   <th className="px-4 py-3">Bookings</th>
-                  <th className="px-4 py-3">Paid revenue</th>
+                  <th className="px-4 py-3">Paid stay revenue</th>
+                  <th className="px-4 py-3">Attributed booking value</th>
                   <th className="px-4 py-3">Gift vouchers</th>
-                  <th className="px-4 py-3">Est. commission</th>
+                  <th className="px-4 py-3">Projected commission (not payable)</th>
                   <th className="px-4 py-3">Last activity</th>
                   <th className="px-4 py-3">Actions</th>
                 </tr>
@@ -601,7 +602,7 @@ export default function OpsCreatorPartners() {
               <tbody className="divide-y divide-gray-100">
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center text-gray-500">
+                    <td colSpan={11} className="px-4 py-8 text-center text-gray-500">
                       No creator partners match your filters.
                     </td>
                   </tr>
@@ -612,7 +613,12 @@ export default function OpsCreatorPartners() {
                     const uniqueVisitors = Number(stats.uniqueVisitors || 0);
                     const attributedBookings = Number(stats.attributedBookings || 0);
                     const paidBookings = Number(stats.paidConfirmedBookings || 0);
-                    const paidRevenue = Number(stats.grossBookingRevenue || 0);
+                    const paidRevenue = Number(
+                      Number.isFinite(Number(stats.paidStayRevenue))
+                        ? Number(stats.paidStayRevenue)
+                        : Number(stats.stayBookingRevenueCents || 0) / 100
+                    );
+                    const attributedBookingValue = Number(stats.attributedBookingValue ?? stats.grossBookingRevenue ?? 0);
                     const commissionEstimate = Number(stats.commissionableRevenueEstimate || 0);
                     const gvPurchases = Number(stats.giftVoucherPurchases || 0);
                     const gvRevCents = Number(stats.giftVoucherRevenueCents || 0);
@@ -626,6 +632,7 @@ export default function OpsCreatorPartners() {
                         <td className="px-4 py-3 tabular-nums text-gray-800">{visits} / {uniqueVisitors}</td>
                         <td className="px-4 py-3 tabular-nums text-gray-800">{attributedBookings} / {paidBookings}</td>
                         <td className="px-4 py-3 tabular-nums text-gray-800">{formatMoney(paidRevenue)}</td>
+                        <td className="px-4 py-3 tabular-nums text-gray-800">{formatMoney(attributedBookingValue)}</td>
                         <td className="px-4 py-3 text-xs text-gray-700 max-w-[9rem]">
                           <span className="tabular-nums font-medium text-gray-900">{gvPurchases}</span>{' '}
                           sales ·{' '}
@@ -766,14 +773,15 @@ export default function OpsCreatorPartners() {
                           <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Unique visitors</div><div className="font-semibold text-gray-900">{detailStats?.uniqueVisitors ?? 0}</div></div>
                           <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Bookings</div><div className="font-semibold text-gray-900">{detailStats?.attributedBookings ?? 0}</div></div>
                           <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Paid bookings</div><div className="font-semibold text-gray-900">{detailStats?.paidConfirmedBookings ?? 0}</div></div>
-                          <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Paid revenue</div><div className="font-semibold text-gray-900">{formatMoney(detailStats?.grossBookingRevenue ?? 0)}</div></div>
+                          <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Paid stay revenue</div><div className="font-semibold text-gray-900">{formatMoney(Number.isFinite(Number(detailStats?.paidStayRevenue)) ? Number(detailStats?.paidStayRevenue) : Number(detailStats?.stayBookingRevenueCents || 0) / 100)}</div></div>
+                          <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Attributed booking value</div><div className="font-semibold text-gray-900">{formatMoney(detailStats?.attributedBookingValue ?? detailStats?.grossBookingRevenue ?? 0)}</div></div>
                           <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Stay cash revenue</div><div className="font-semibold text-gray-900">{formatMoneyFromCents(detailStats?.stayBookingRevenueCents ?? 0)}</div></div>
                           <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Gift vouchers sold</div><div className="font-semibold text-gray-900">{detailStats?.giftVoucherPurchases ?? 0}</div></div>
                           <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Gift voucher revenue</div><div className="font-semibold text-gray-900">{formatMoneyFromCents(detailStats?.giftVoucherRevenueCents ?? 0)}</div></div>
-                          <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Stay commission est.</div><div className="font-semibold text-gray-900">{formatMoneyFromCents(detailStats?.stayBookingCommissionCents ?? 0)}</div></div>
-                          <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Voucher commission</div><div className="font-semibold text-gray-900">{formatMoneyFromCents(detailStats?.giftVoucherCommissionCents ?? 0)}</div></div>
-                          <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Total commission</div><div className="font-semibold text-gray-900">{formatMoneyFromCents(detailStats?.totalCommissionCents ?? 0)}</div></div>
-                          <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Est. commission</div><div className="font-semibold text-gray-900">{formatMoney((detailStats?.commissionableRevenueEstimate || 0) * ((detailRow.commission?.rateBps || 0) / 10000))}</div></div>
+                          <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Stay projected commission (not payable)</div><div className="font-semibold text-gray-900">{formatMoneyFromCents(detailStats?.stayBookingCommissionCents ?? 0)}</div></div>
+                          <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Voucher commission total (mixed status)</div><div className="font-semibold text-gray-900">{formatMoneyFromCents(detailStats?.giftVoucherCommissionCents ?? 0)}</div></div>
+                          <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Total projected commission (not payable)</div><div className="font-semibold text-gray-900">{formatMoneyFromCents(detailStats?.totalCommissionCents ?? 0)}</div></div>
+                          <div className="rounded border border-gray-200 p-3"><div className="text-gray-500">Projected commission (not payable)</div><div className="font-semibold text-gray-900">{formatMoney((detailStats?.commissionableRevenueEstimate || 0) * ((detailRow.commission?.rateBps || 0) / 10000))}</div></div>
                         </div>
                       </section>
 

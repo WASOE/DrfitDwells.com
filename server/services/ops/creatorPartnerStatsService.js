@@ -4,8 +4,14 @@ const CreatorReferralVisit = require('../../models/CreatorReferralVisit');
 const GiftVoucher = require('../../models/GiftVoucher');
 const GiftVoucherCreatorCommission = require('../../models/GiftVoucherCreatorCommission');
 const CreatorCommission = require('../../models/CreatorCommission');
+const PaymentResolutionIssue = require('../../models/PaymentResolutionIssue');
 const { normalizeReferralCode } = require('../../models/CreatorPartner');
 const mongoose = require('mongoose');
+const {
+  normalizePromoCode,
+  buildCreatorAttributionMaps,
+  resolveBookingCreatorAttribution
+} = require('../creators/creatorAttributionResolver');
 const {
   stayCashCommissionBaseCents,
   estimateStayCommissionableRevenueEUR
@@ -30,12 +36,6 @@ function resolveGiftVoucherStatsCreator(voucher, maps) {
   return refCreator || idCreator || null;
 }
 
-function normalizePromoCode(raw) {
-  if (raw == null) return null;
-  const code = String(raw).trim().toUpperCase();
-  return code || null;
-}
-
 function toMoneyNumber(value) {
   const num = Number(value);
   return Number.isFinite(num) ? num : 0;
@@ -47,47 +47,6 @@ function resolveStayBookingCashRevenueCents(booking) {
   return Math.round(Math.max(0, toMoneyNumber(booking.totalPrice)) * 100);
 }
 
-function buildAttributionMaps(creatorPartners) {
-  const referralToCreatorId = new Map();
-  const promoToCreatorId = new Map();
-
-  for (const creator of creatorPartners) {
-    const creatorId = String(creator._id);
-    const referralCode = normalizeReferralCode(creator?.referral?.code);
-    // Draft creators should not receive campaign attribution; archived creators retain historical visibility.
-    if (referralCode && ['active', 'paused', 'archived'].includes(creator?.status)) {
-      referralToCreatorId.set(referralCode, creatorId);
-    }
-
-    const promoCode = normalizePromoCode(creator?.promo?.code);
-    if (promoCode && ['active', 'paused'].includes(creator?.status)) {
-      promoToCreatorId.set(promoCode, creatorId);
-    }
-  }
-
-  return { referralToCreatorId, promoToCreatorId };
-}
-
-function resolveBookingCreatorAttribution(booking, maps) {
-  const promoCode = normalizePromoCode(booking?.promoCode);
-  if (promoCode && maps.promoToCreatorId.has(promoCode)) {
-    return {
-      creatorPartnerId: maps.promoToCreatorId.get(promoCode),
-      source: 'creator_promo'
-    };
-  }
-
-  const referralCode = normalizeReferralCode(booking?.attribution?.referralCode);
-  if (referralCode && maps.referralToCreatorId.has(referralCode)) {
-    return {
-      creatorPartnerId: maps.referralToCreatorId.get(referralCode),
-      source: 'creator_referral'
-    };
-  }
-
-  return null;
-}
-
 function buildEmptyStats() {
   return {
     visits: 0,
@@ -97,6 +56,8 @@ function buildEmptyStats() {
     paidConfirmedBookings: 0,
     cancelledRefundedVoidBookings: 0,
     grossBookingRevenue: 0,
+    attributedBookingValue: 0,
+    paidStayRevenue: 0,
     commissionableRevenueEstimate: 0,
     giftVoucherPurchases: 0,
     giftVoucherRevenueCents: 0,
@@ -119,7 +80,7 @@ async function buildAllCreatorPartnerStats() {
     .select('_id name slug status referral promo createdAt updatedAt')
     .lean();
   const creatorIds = creatorPartners.map((c) => String(c._id));
-  const maps = buildAttributionMaps(creatorPartners);
+  const maps = buildCreatorAttributionMaps(creatorPartners);
   const referralCodes = Array.from(maps.referralToCreatorId.keys());
 
   const visitDocs = await CreatorReferralVisit.find({
@@ -138,9 +99,23 @@ async function buildAllCreatorPartnerStats() {
     ]
   })
     .select(
-      'status totalPrice subtotalPrice discountAmount promoCode attribution createdAt totalValueCents giftVoucherAppliedCents stripePaidAmountCents'
+      'status totalPrice subtotalPrice discountAmount promoCode attribution createdAt totalValueCents giftVoucherAppliedCents stripePaidAmountCents stripePaymentIntentId'
     )
     .lean();
+  const bookingIds = bookingDocs.map((b) => String(b._id));
+  const paymentIntentIds = bookingDocs.map((b) => String(b?.stripePaymentIntentId || '').trim()).filter(Boolean);
+  const openIssues = await PaymentResolutionIssue.find({
+    $or: [{ 'metadata.bookingId': { $in: bookingIds } }, { paymentIntentId: { $in: paymentIntentIds } }],
+    status: 'needs_review'
+  })
+    .select('paymentIntentId metadata')
+    .lean();
+  const issuesByBookingId = new Set(
+    openIssues
+      .map((i) => (i?.metadata?.bookingId ? String(i.metadata.bookingId) : null))
+      .filter(Boolean)
+  );
+  const issuesByPaymentIntentId = new Set(openIssues.map((i) => String(i.paymentIntentId || '').trim()).filter(Boolean));
 
   const giftVouchersForStats = await GiftVoucher.find({
     status: { $in: PAID_VOUCHER_STATUSES },
@@ -192,21 +167,26 @@ async function buildAllCreatorPartnerStats() {
 
   for (const booking of bookingDocs) {
     const attribution = resolveBookingCreatorAttribution(booking, maps);
-    if (!attribution) continue;
+    if (!attribution?.creatorPartnerId) continue;
     const creatorId = attribution.creatorPartnerId;
     if (!byCreator.has(creatorId)) continue;
 
     const stats = byCreator.get(creatorId);
+    const bookingId = String(booking._id);
+    const paymentIntentId = String(booking?.stripePaymentIntentId || '').trim();
+    const hasOpenIssue = issuesByBookingId.has(bookingId) || (!!paymentIntentId && issuesByPaymentIntentId.has(paymentIntentId));
     stats.attributedBookings += 1;
-    if (PAID_BOOKING_STATUSES.has(booking.status)) {
+    if (PAID_BOOKING_STATUSES.has(booking.status) && !hasOpenIssue) {
       stats.paidConfirmedBookings += 1;
     }
     if (booking.status === 'cancelled') {
       stats.cancelledRefundedVoidBookings += 1;
     }
     stats.grossBookingRevenue += Math.max(0, toMoneyNumber(booking.totalPrice));
-    if (PAID_BOOKING_STATUSES.has(booking.status)) {
+    stats.attributedBookingValue += Math.max(0, toMoneyNumber(booking.totalPrice));
+    if (PAID_BOOKING_STATUSES.has(booking.status) && !hasOpenIssue) {
       stats.stayBookingRevenueCents += resolveStayBookingCashRevenueCents(booking);
+      stats.paidStayRevenue += resolveStayBookingCashRevenueCents(booking) / 100;
     }
     if (booking.status !== 'cancelled') {
       stats.commissionableRevenueEstimate += estimateStayCommissionableRevenueEUR(booking);
@@ -251,6 +231,8 @@ async function buildAllCreatorPartnerStats() {
         ...stats,
         uniqueVisitors,
         grossBookingRevenue: Number(stats.grossBookingRevenue.toFixed(2)),
+        attributedBookingValue: Number(stats.attributedBookingValue.toFixed(2)),
+        paidStayRevenue: Number(stats.paidStayRevenue.toFixed(2)),
         commissionableRevenueEstimate: Number(stats.commissionableRevenueEstimate.toFixed(2))
       })
     };
@@ -268,14 +250,14 @@ async function listCreatorPartnerAttributedBookings(creatorPartnerDoc, { limit =
   const creatorPartners = await CreatorPartner.find({})
     .select('_id status referral promo')
     .lean();
-  const maps = buildAttributionMaps(creatorPartners);
+  const maps = buildCreatorAttributionMaps(creatorPartners);
   const targetId = String(creatorPartnerDoc._id);
 
   const candidateOr = [];
   const creatorReferral = normalizeReferralCode(creatorPartnerDoc?.referral?.code);
   if (creatorReferral) candidateOr.push({ 'attribution.referralCode': creatorReferral });
   const creatorPromoCode = normalizePromoCode(creatorPartnerDoc?.promo?.code);
-  if (creatorPromoCode && ['active', 'paused'].includes(creatorPartnerDoc?.status)) {
+  if (creatorPromoCode && ['active', 'paused', 'archived'].includes(creatorPartnerDoc?.status)) {
     candidateOr.push({ promoCode: creatorPromoCode });
   }
   if (candidateOr.length === 0) return [];
@@ -293,7 +275,7 @@ async function listCreatorPartnerAttributedBookings(creatorPartnerDoc, { limit =
   return candidates
     .map((booking) => {
       const attribution = resolveBookingCreatorAttribution(booking, maps);
-      if (!attribution || attribution.creatorPartnerId !== targetId) return null;
+      if (!attribution?.creatorPartnerId || attribution.creatorPartnerId !== targetId) return null;
       const firstName = String(booking?.guestInfo?.firstName || '').trim();
       const lastName = String(booking?.guestInfo?.lastName || '').trim();
       const guestName = [firstName, lastName].filter(Boolean).join(' ').trim() || null;
