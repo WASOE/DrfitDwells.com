@@ -140,6 +140,9 @@ const opsWriteAPI = {
     api.patch(`/ops/creator-partners/${id}`, payload, { headers: authHeaders() }),
   recalculateCreatorPartnerCommission: (id) =>
     api.post(`/ops/creator-partners/${id}/recalculate`, {}, { headers: authHeaders() }),
+  /** Batch 11B: single-use magic verify URL (OPS-only). Body optional: { sentToEmail }. */
+  createCreatorPartnerPortalLink: (id, body = {}) =>
+    api.post(`/ops/creator-partners/${id}/portal-link`, body, { headers: authHeaders() }),
   approveCreatorCommission: (id, payload = {}) =>
     api.post(`/ops/creator-commissions/${id}/approve`, payload, { headers: authHeaders() }),
   markCreatorCommissionPaid: (id, payload = {}) =>

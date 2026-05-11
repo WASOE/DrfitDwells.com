@@ -243,6 +243,65 @@ export default function OpsCreatorPartners() {
   const [commissionActionBusyId, setCommissionActionBusyId] = useState('');
   const [voidDrafts, setVoidDrafts] = useState({});
   const [detailTab, setDetailTab] = useState('overview');
+  /** Creator portal magic link (11C): in-memory only; cleared when modal closes. */
+  const [portalLinkOpen, setPortalLinkOpen] = useState(false);
+  const [portalLinkBusyId, setPortalLinkBusyId] = useState('');
+  const [portalLinkPayload, setPortalLinkPayload] = useState(null);
+  const [portalLinkError, setPortalLinkError] = useState('');
+  const [portalLinkCopyHint, setPortalLinkCopyHint] = useState('');
+
+  function clearPortalLinkModal() {
+    setPortalLinkOpen(false);
+    setPortalLinkBusyId('');
+    setPortalLinkPayload(null);
+    setPortalLinkError('');
+    setPortalLinkCopyHint('');
+  }
+
+  function isCreatorPortalLinkEligible(row) {
+    return row?.status === 'active' || row?.status === 'paused';
+  }
+
+  async function generateCreatorPortalLink(row) {
+    if (!row?._id || !isCreatorPortalLinkEligible(row)) return;
+    setPortalLinkOpen(true);
+    setPortalLinkBusyId(String(row._id));
+    setPortalLinkPayload(null);
+    setPortalLinkError('');
+    setPortalLinkCopyHint('');
+    try {
+      const res = await opsWriteAPI.createCreatorPartnerPortalLink(row._id, {});
+      const data = res?.data?.data;
+      const verifyUrl = data?.verifyUrl;
+      const expiresAt = data?.expiresAt;
+      if (!verifyUrl || !expiresAt) {
+        setPortalLinkError('Invalid response from server (missing link or expiry).');
+        return;
+      }
+      setPortalLinkPayload({
+        verifyUrl,
+        expiresAt,
+        partnerName: row.name || 'Creator'
+      });
+    } catch (err) {
+      setPortalLinkError(formatAxiosMessage(err));
+    } finally {
+      setPortalLinkBusyId('');
+    }
+  }
+
+  async function copyPortalVerifyUrl() {
+    const url = portalLinkPayload?.verifyUrl;
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      setPortalLinkCopyHint('Copied to clipboard.');
+      setTimeout(() => setPortalLinkCopyHint(''), 3000);
+    } catch {
+      setPortalLinkCopyHint('Copy failed — select the link and copy manually.');
+      setTimeout(() => setPortalLinkCopyHint(''), 5000);
+    }
+  }
 
   function clearDrawerValidation() {
     setDrawerFieldErrors({ slug: '', referral: '', commission: '' });
@@ -675,6 +734,29 @@ export default function OpsCreatorPartners() {
                       >
                         Details
                       </button>
+                      {isCreatorPortalLinkEligible(r) ? (
+                        <button
+                          type="button"
+                          onClick={() => generateCreatorPortalLink(r)}
+                          disabled={portalLinkBusyId === String(r._id)}
+                          className="h-9 px-3 rounded-md border border-gray-300 bg-white text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          {portalLinkBusyId === String(r._id) ? 'Generating…' : 'Portal link'}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled
+                          title={
+                            r.status === 'draft'
+                              ? 'Portal links are available after the partner leaves draft (backend rejects draft).'
+                              : 'Portal link is only available for active or paused partners.'
+                          }
+                          className="h-9 px-3 rounded-md border border-gray-200 bg-gray-50 text-xs font-medium text-gray-400 cursor-not-allowed"
+                        >
+                          Portal link
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => openEdit(r)}
@@ -735,16 +817,28 @@ export default function OpsCreatorPartners() {
               </h3>
               <div className="flex items-center gap-2">
                 {detailRow ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      closeDetails();
-                      openEdit(detailRow);
-                    }}
-                    className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-800 hover:bg-gray-50"
-                  >
-                    Edit creator
-                  </button>
+                  <>
+                    {isCreatorPortalLinkEligible(detailRow) ? (
+                      <button
+                        type="button"
+                        onClick={() => generateCreatorPortalLink(detailRow)}
+                        disabled={portalLinkBusyId === String(detailRow._id)}
+                        className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        {portalLinkBusyId === String(detailRow._id) ? 'Generating…' : 'Portal link'}
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        closeDetails();
+                        openEdit(detailRow);
+                      }}
+                      className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-800 hover:bg-gray-50"
+                    >
+                      Edit creator
+                    </button>
+                  </>
                 ) : null}
                 <button
                   type="button"
@@ -1314,6 +1408,82 @@ export default function OpsCreatorPartners() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {portalLinkOpen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="portal-link-modal-title"
+          className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-4 bg-black/40"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) clearPortalLinkModal();
+          }}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl border border-gray-200 w-full max-w-lg max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between gap-2">
+              <h3 id="portal-link-modal-title" className="text-lg font-semibold text-gray-900">
+                Creator portal link
+              </h3>
+              <button
+                type="button"
+                onClick={clearPortalLinkModal}
+                className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-800 hover:bg-gray-50"
+              >
+                Close
+              </button>
+            </div>
+            <div className="p-4 md:p-6 space-y-4">
+              {portalLinkBusyId && !portalLinkPayload && !portalLinkError ? (
+                <p className="text-sm text-gray-600">Generating link…</p>
+              ) : null}
+              {portalLinkError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
+                  {portalLinkError}
+                </div>
+              ) : null}
+              {portalLinkPayload ? (
+                <>
+                  <p className="text-sm text-gray-800">
+                    <span className="font-medium text-gray-900">{portalLinkPayload.partnerName}</span> — one-time
+                    login URL. Issuing a new link revokes earlier active links for this partner.
+                  </p>
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                    This link gives read-only access to this creator&apos;s portal. Share only with the creator.
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Portal link</label>
+                    <input
+                      readOnly
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-xs font-mono text-gray-900 break-all"
+                      value={portalLinkPayload.verifyUrl}
+                      onFocus={(e) => e.target.select()}
+                    />
+                  </div>
+                  <p className="text-sm text-gray-700">
+                    <span className="text-gray-500">Expires:</span>{' '}
+                    <span className="font-medium">{formatDateTime(portalLinkPayload.expiresAt)}</span>
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={copyPortalVerifyUrl}
+                      className="px-4 py-2 text-sm font-medium text-white bg-[#81887A] rounded-lg hover:bg-[#707668]"
+                    >
+                      Copy link
+                    </button>
+                    {portalLinkCopyHint ? (
+                      <span className="text-sm text-green-800">{portalLinkCopyHint}</span>
+                    ) : null}
+                  </div>
+                </>
+              ) : null}
+            </div>
           </div>
         </div>
       ) : null}
