@@ -1,4 +1,4 @@
-const CreatorPartner = require('../../models/CreatorPartner');
+const CreatorPartner = require('../models/CreatorPartner');
 const { readPortalSessionCookie, verifySessionToken } = require('../services/creatorPortal/creatorPortalSession');
 
 /**
