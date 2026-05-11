@@ -78,6 +78,7 @@ const RhodopesCabinRetreat = lazy(() => import('./pages/seo/RhodopesCabinRetreat
 const BanskoRemoteWorkRetreat = lazy(() => import('./pages/seo/BanskoRemoteWorkRetreat'))
 const RetreatVenueBulgaria = lazy(() => import('./pages/seo/RetreatVenueBulgaria'))
 const OffGridStaysBulgaria = lazy(() => import('./pages/seo/OffGridStaysBulgaria'))
+const CreatorPortal = lazy(() => import('./pages/creator/CreatorPortal'))
 
 const PageLoader = () => (
   <div className="min-h-screen flex items-center justify-center">
@@ -238,6 +239,10 @@ function App() {
               <Route path="/maintenance/cleanup" element={<MaintenanceCleanup />} />
               <Route path="/maintenance/archived" element={<MaintenanceArchived />} />
             </Route>
+
+            {/* Creator portal — cookie session, outside SiteLayout / OPS */}
+            <Route path="/creator" element={<CreatorPortal />} />
+            <Route path="/creator/login" element={<CreatorPortal />} />
 
             {/* Not found layout */}
             <Route element={<NotFoundLayout />}>
