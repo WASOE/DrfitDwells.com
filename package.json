@@ -21,6 +21,7 @@
     "test:e2e:api": "playwright test tests/e2e/api/api-auth.spec.js",
     "test:e2e:attribution": "playwright test tests/e2e/attribution/referral-storage.spec.js",
     "test:creator-portal": "cd server && node --test scripts/creatorPortalBackend.test.cjs",
+    "test:server-imports": "cd server && node --test scripts/serverImportPathAudit.test.cjs",
     "test:creator-referral-visits": "cd server && node --test scripts/creatorReferralVisitRoutes.test.cjs",
     "verify:creator-referral-visit": "node server/scripts/verifyCreatorReferralVisitWrite.js",
     "test:e2e:availability-contract": "playwright test tests/e2e/api/availability-contract.spec.js --project=chromium",
