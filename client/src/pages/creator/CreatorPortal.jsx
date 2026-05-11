@@ -227,6 +227,9 @@ export default function CreatorPortal() {
   const [meError, setMeError] = useState('');
   const [logoutBusy, setLogoutBusy] = useState(false);
 
+  // Custom hook must be at the top level — never after an early return (React #310).
+  const { copiedKey, copy } = useCopyToClipboard();
+
   const load = useCallback(async () => {
     setPhase('boot');
     setMe(null);
@@ -392,8 +395,6 @@ export default function CreatorPortal() {
     profile.commissionRatePercent != null && Number.isFinite(Number(profile.commissionRatePercent))
       ? `${profile.commissionRatePercent}%`
       : null;
-
-  const { copiedKey, copy } = useCopyToClipboard();
 
   return (
     <>
