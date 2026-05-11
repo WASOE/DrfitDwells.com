@@ -28,6 +28,13 @@ function validateProductionEnv(env = process.env) {
     errors.push('ADMIN_JWT_SECRET must be set in production and at least 16 characters.');
   }
 
+  const creatorPortalSessionSecret = (env.CREATOR_PORTAL_SESSION_SECRET || '').trim();
+  if (!creatorPortalSessionSecret || creatorPortalSessionSecret.length < 16) {
+    errors.push(
+      'CREATOR_PORTAL_SESSION_SECRET must be set in production and at least 16 characters (creator portal sessions).'
+    );
+  }
+
   const cors = (env.CORS_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
   if (cors.length === 0) {
     errors.push('CORS_ORIGINS must list at least one allowed origin in production (comma-separated).');

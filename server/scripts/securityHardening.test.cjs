@@ -82,7 +82,8 @@ describe('validateProductionEnv', () => {
       ADMIN_USER: 'a',
       ADMIN_PASS: 'b',
       ADMIN_JWT_SECRET: '1234567890123456',
-      CORS_ORIGINS: 'https://example.com'
+      CORS_ORIGINS: 'https://example.com',
+      CREATOR_PORTAL_SESSION_SECRET: '12345678901234567890123456789012'
     });
     assert.strictEqual(r.ok, false);
     assert.ok(r.errors.some((e) => /MONGODB_URI/i.test(e)));
@@ -96,9 +97,23 @@ describe('validateProductionEnv', () => {
       ADMIN_PASS: 'b',
       ADMIN_JWT_SECRET: '1234567890123456',
       CORS_ORIGINS: 'https://example.com',
+      CREATOR_PORTAL_SESSION_SECRET: '12345678901234567890123456789012',
       STRIPE_SECRET_KEY: 'sk_test_x'
     });
     assert.strictEqual(r.ok, false);
     assert.ok(r.errors.some((e) => /STRIPE_WEBHOOK_SECRET/i.test(e)));
+  });
+
+  test('fails when creator portal session secret missing in production', () => {
+    const r = validateProductionEnv({
+      NODE_ENV: 'production',
+      MONGODB_URI: 'mongodb://127.0.0.1:27017/x',
+      ADMIN_USER: 'a',
+      ADMIN_PASS: 'b',
+      ADMIN_JWT_SECRET: '1234567890123456',
+      CORS_ORIGINS: 'https://example.com'
+    });
+    assert.strictEqual(r.ok, false);
+    assert.ok(r.errors.some((e) => /CREATOR_PORTAL_SESSION_SECRET/i.test(e)));
   });
 });

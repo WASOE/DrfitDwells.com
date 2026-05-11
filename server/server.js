@@ -4,6 +4,7 @@ validateProductionEnvOrExit();
 
 const express = require('express');
 const morgan = require('morgan');
+const { redactAccessLogUrl } = require('./utils/redactAccessLogUrl');
 const mongoSanitize = require('express-mongo-sanitize');
 const cors = require('cors');
 const compression = require('compression');
@@ -34,6 +35,7 @@ const maintenanceRoutes = require('./routes/maintenanceRoutes');
 const publicCalendarRoutes = require('./routes/publicCalendarRoutes');
 const publicGuideRoutes = require('./routes/publicGuideRoutes');
 const creatorReferralVisitRoutes = require('./routes/creatorReferralVisitRoutes');
+const creatorPortalRoutes = require('./routes/creatorPortalRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -180,6 +182,8 @@ app.use('/api/stripe', express.raw({ type: 'application/json' }), stripeWebhookR
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(mongoSanitize());
+// Never log raw creator-portal magic tokens (GET verify uses ?token=).
+morgan.token('url', (req) => redactAccessLogUrl(req.originalUrl || req.url || ''));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // General API rate limit
@@ -233,6 +237,7 @@ app.use('/api/public', requireDb, publicCalendarRoutes);
 app.use('/api/public', requireDb, publicGuideRoutes);
 app.use('/api/availability', requireDb, availabilityRoutes);
 app.use('/api/creator-referral-visits', requireDb, creatorReferralVisitRoutes);
+app.use('/api/creator-portal', requireDb, creatorPortalRoutes);
 app.use('/api/bookings', requireDb, bookingRoutes);
 app.use('/api/gift-vouchers', requireDb, giftVoucherRoutes);
 app.use('/api/cabins', requireDb, cabinRoutes);

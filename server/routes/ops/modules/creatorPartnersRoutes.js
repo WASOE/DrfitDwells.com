@@ -12,6 +12,7 @@ const {
   recalculateCreatorCommissionForPartner,
   listCreatorCommissionForPartner
 } = require('../../../services/ops/creatorCommissionLedgerService');
+const { createCreatorPortalAccessLink } = require('../../../services/creatorPortal/creatorPortalAccessService');
 const {
   normalizePartnerKey,
   PARTNER_KEY_RE,
@@ -302,6 +303,32 @@ router.get('/:id/bookings', validateId('id'), async (req, res) => {
     });
   } catch {
     return res.status(500).json({ success: false, message: 'Unable to load creator partner bookings' });
+  }
+});
+
+/**
+ * OPS-only: issue a single-use creator portal magic link (Batch 11B). No email send in this batch.
+ * Body (optional): { sentToEmail: string }
+ */
+router.post('/:id/portal-link', validateId('id'), async (req, res) => {
+  try {
+    const exists = await CreatorPartner.findById(req.params.id).select('_id').lean();
+    if (!exists) {
+      return res.status(404).json({ success: false, message: 'Creator partner not found' });
+    }
+    const actor = getOpsIdentity(req);
+    const data = await createCreatorPortalAccessLink(req.params.id, actor, {
+      sentToEmail: req.body?.sentToEmail
+    });
+    return res.json({ success: true, data });
+  } catch (e) {
+    if (e.code === 'NOT_FOUND') {
+      return res.status(404).json({ success: false, message: e.message || 'Not found' });
+    }
+    if (e.code === 'INVALID_STATUS') {
+      return res.status(400).json({ success: false, message: e.message || 'Invalid status' });
+    }
+    return res.status(500).json({ success: false, message: 'Unable to create portal link' });
   }
 });
 
