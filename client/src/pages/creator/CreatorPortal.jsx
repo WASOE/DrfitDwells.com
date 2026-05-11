@@ -41,6 +41,33 @@ function humanEligibleAfter(v) {
   return String(v || '').replace(/_/g, ' ') || '—';
 }
 
+function buildReferralLink(code) {
+  if (!code) return '';
+  if (typeof window === 'undefined' || !window.location?.origin) return '';
+  return `${window.location.origin}/?ref=${encodeURIComponent(code)}`;
+}
+
+function useCopyToClipboard() {
+  const [copiedKey, setCopiedKey] = useState('');
+  async function copy(key, value) {
+    if (!value) return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(String(value));
+      } else {
+        return;
+      }
+      setCopiedKey(key);
+      setTimeout(() => {
+        setCopiedKey((cur) => (cur === key ? '' : cur));
+      }, 1800);
+    } catch {
+      /* silently ignore; user can long-press to copy */
+    }
+  }
+  return { copiedKey, copy };
+}
+
 function Shell({ children }) {
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 relative overflow-x-hidden">
@@ -75,12 +102,100 @@ function Card({ title, subtitle, children, className = '' }) {
 
 function Metric({ label, value, hint }) {
   return (
-    <div className="rounded-xl border border-white/10 bg-zinc-900/60 px-3 py-3 md:px-4 md:py-4 min-w-0">
-      <div className="text-[11px] md:text-xs font-medium uppercase tracking-wide text-zinc-500">{label}</div>
-      <div className="mt-1 text-lg md:text-xl font-semibold tabular-nums text-white tracking-tight">{value}</div>
-      {hint ? <p className="mt-1.5 text-[11px] md:text-xs text-zinc-500 leading-snug">{hint}</p> : null}
+    <div className="rounded-2xl border border-white/10 bg-zinc-900/60 px-4 py-4 md:px-5 md:py-5 min-w-0">
+      <div className="text-[11px] md:text-xs font-medium uppercase tracking-[0.14em] text-zinc-500">{label}</div>
+      <div className="mt-2 text-2xl md:text-3xl font-semibold tabular-nums text-white tracking-tight leading-none">
+        {value}
+      </div>
+      {hint ? <p className="mt-2 text-[11px] md:text-xs text-zinc-500 leading-snug">{hint}</p> : null}
     </div>
   );
+}
+
+function BigStat({ label, value, accent = false, hint }) {
+  return (
+    <div
+      className={`rounded-2xl border px-5 py-5 md:px-6 md:py-6 min-w-0 ${
+        accent
+          ? 'border-fuchsia-400/20 bg-gradient-to-br from-fuchsia-500/15 via-rose-500/10 to-amber-500/10'
+          : 'border-white/10 bg-zinc-900/60'
+      }`}
+    >
+      <div
+        className={`text-[11px] md:text-xs font-medium uppercase tracking-[0.16em] ${
+          accent ? 'text-fuchsia-200/90' : 'text-zinc-500'
+        }`}
+      >
+        {label}
+      </div>
+      <div className="mt-2 text-3xl md:text-4xl font-semibold tabular-nums text-white tracking-tight leading-none">
+        {value}
+      </div>
+      {hint ? (
+        <p className={`mt-3 text-xs md:text-sm leading-snug ${accent ? 'text-fuchsia-100/80' : 'text-zinc-500'}`}>
+          {hint}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function Chip({ children, tone = 'neutral' }) {
+  const tones = {
+    neutral: 'border-white/15 bg-white/5 text-zinc-200',
+    active: 'border-emerald-400/30 bg-emerald-400/10 text-emerald-200',
+    paused: 'border-amber-400/30 bg-amber-400/10 text-amber-200',
+    archived: 'border-zinc-500/30 bg-zinc-500/10 text-zinc-300',
+    accent: 'border-fuchsia-400/30 bg-fuchsia-400/10 text-fuchsia-100'
+  };
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium tracking-wide ${
+        tones[tone] || tones.neutral
+      }`}
+    >
+      {children}
+    </span>
+  );
+}
+
+function CopyButton({ onCopy, copied, label = 'Copy', size = 'md' }) {
+  const padding = size === 'sm' ? 'px-2.5 py-1 text-[11px]' : 'px-3 py-1.5 text-xs';
+  return (
+    <button
+      type="button"
+      onClick={onCopy}
+      className={`shrink-0 rounded-full border border-white/15 bg-white/5 ${padding} font-medium text-zinc-100 hover:bg-white/10 transition-colors`}
+    >
+      {copied ? 'Copied' : label}
+    </button>
+  );
+}
+
+function CodeRow({ label, value, onCopy, copied, mono = true, copyLabel = 'Copy' }) {
+  if (!value) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-zinc-900/50 px-3 py-3 md:px-4 md:py-3.5">
+      <div className="min-w-0 flex-1">
+        <div className="text-[11px] uppercase tracking-[0.14em] text-zinc-500">{label}</div>
+        <div
+          className={`mt-1 text-base md:text-lg text-white break-all leading-snug ${
+            mono ? 'font-mono' : 'font-medium'
+          }`}
+        >
+          {value}
+        </div>
+      </div>
+      <CopyButton onCopy={onCopy} copied={copied} label={copyLabel} />
+    </div>
+  );
+}
+
+function statusTone(s) {
+  if (s === 'active') return 'active';
+  if (s === 'paused') return 'paused';
+  if (s === 'archived') return 'archived';
+  return 'neutral';
 }
 
 function LoadingSkeleton() {
@@ -266,6 +381,20 @@ export default function CreatorPortal() {
   const gvRev = metrics.giftVoucherRevenue || {};
   const gvComm = metrics.giftVoucherCommission || {};
 
+  const gvCount = Number(metrics.giftVoucherSales) || 0;
+  const gvRevAmount = Number(gvRev.amount) || 0;
+  const gvCommAmount = Number(gvComm.amount) || 0;
+  const giftVoucherIsEmpty =
+    gvCount === 0 && gvRevAmount === 0 && gvCommAmount === 0 && giftSales.length === 0;
+
+  const referralLink = buildReferralLink(profile.referralCode);
+  const ratePercent =
+    profile.commissionRatePercent != null && Number.isFinite(Number(profile.commissionRatePercent))
+      ? `${profile.commissionRatePercent}%`
+      : null;
+
+  const { copiedKey, copy } = useCopyToClipboard();
+
   return (
     <>
       <Helmet>
@@ -273,199 +402,247 @@ export default function CreatorPortal() {
         <meta name="robots" content="noindex,nofollow" />
       </Helmet>
       <Shell>
-        <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between mb-8 md:mb-10 lg:mb-12 max-w-5xl">
-          <div className="min-w-0 space-y-2">
-            <p className="text-[11px] md:text-xs font-semibold uppercase tracking-[0.2em] text-fuchsia-300/90">
-              Read-only partner view
-            </p>
-            <h1 className="text-2xl md:text-3xl lg:text-4xl font-semibold text-white tracking-tight">
-              {profile.name || 'Creator portal'}
+        <div className="max-w-5xl mx-auto space-y-6 md:space-y-8">
+          {/* Hero */}
+          <header className="space-y-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <p className="text-[11px] md:text-xs font-semibold uppercase tracking-[0.22em] text-fuchsia-300/90">
+                Creator dashboard
+              </p>
+              <button
+                type="button"
+                disabled={logoutBusy}
+                onClick={handleLogout}
+                className="shrink-0 px-3.5 py-2 rounded-full text-xs font-medium border border-white/15 bg-white/5 text-zinc-100 hover:bg-white/10 disabled:opacity-50"
+              >
+                {logoutBusy ? 'Signing out…' : 'Log out'}
+              </button>
+            </div>
+            <h1 className="text-3xl md:text-4xl lg:text-5xl font-semibold text-white tracking-tight leading-[1.05]">
+              {profile.name || 'Welcome'}
             </h1>
-            <p className="text-sm text-zinc-400 max-w-2xl">
-              Performance and commission summaries. Edits and payouts are managed by Drift &amp; Dwells only.
+            <p className="text-sm md:text-base text-zinc-400 max-w-xl leading-relaxed">
+              Track your visits, bookings, and commission.
             </p>
-          </div>
-          <button
-            type="button"
-            disabled={logoutBusy}
-            onClick={handleLogout}
-            className="shrink-0 self-start md:self-center px-4 py-2.5 rounded-xl text-sm font-medium border border-white/15 bg-white/5 text-zinc-100 hover:bg-white/10 disabled:opacity-50"
-          >
-            {logoutBusy ? 'Signing out…' : 'Log out'}
-          </button>
-        </header>
+            <div className="flex flex-wrap items-center gap-2">
+              {profile.status ? (
+                <Chip tone={statusTone(profile.status)}>
+                  <span className="capitalize">{profile.status}</span>
+                </Chip>
+              ) : null}
+              {ratePercent ? <Chip tone="accent">{ratePercent} commission</Chip> : null}
+            </div>
+            <p className="text-xs md:text-sm text-zinc-500 max-w-xl">
+              Commission becomes payable {humanEligibleAfter(profile.eligibleAfter)}.
+            </p>
+          </header>
 
-        <div className="space-y-6 md:space-y-8">
-          <Card title="Profile" subtitle="How you appear in our partner systems.">
-            <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
-              <div>
-                <dt className="text-zinc-500">Status</dt>
-                <dd className="mt-1 font-medium text-white capitalize">{profile.status || '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-zinc-500">Referral code</dt>
-                <dd className="mt-1 font-mono text-zinc-100">{profile.referralCode || '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-zinc-500">Promo code</dt>
-                <dd className="mt-1 font-mono text-zinc-100">{profile.promoCode || '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-zinc-500">Commission rate</dt>
-                <dd className="mt-1 font-semibold text-white">
-                  {profile.commissionRatePercent != null ? `${profile.commissionRatePercent}%` : '—'}
-                </dd>
-              </div>
-              <div className="sm:col-span-2">
-                <dt className="text-zinc-500">Commission timing</dt>
-                <dd className="mt-1 text-zinc-200">Eligible {humanEligibleAfter(profile.eligibleAfter)}.</dd>
-              </div>
-            </dl>
+          {/* Codes & link */}
+          <Card title="Your codes" subtitle="Share these with your audience so we can track every visit and booking.">
+            <div className="space-y-3">
+              <CodeRow
+                label="Referral code"
+                value={profile.referralCode || ''}
+                onCopy={() => copy('ref', profile.referralCode)}
+                copied={copiedKey === 'ref'}
+              />
+              <CodeRow
+                label="Promo code"
+                value={profile.promoCode || ''}
+                onCopy={() => copy('promo', profile.promoCode)}
+                copied={copiedKey === 'promo'}
+              />
+              {referralLink ? (
+                <CodeRow
+                  label="Referral link"
+                  value={referralLink}
+                  mono={false}
+                  copyLabel="Copy link"
+                  onCopy={() => copy('link', referralLink)}
+                  copied={copiedKey === 'link'}
+                />
+              ) : null}
+              {!profile.referralCode && !profile.promoCode ? (
+                <p className="text-sm text-zinc-500">
+                  No codes assigned yet. Drift &amp; Dwells will set this up for you.
+                </p>
+              ) : null}
+            </div>
           </Card>
 
-          <Card
-            title="Metrics"
-            subtitle="Attributed activity and conservative money labels — not a withdrawal balance."
-          >
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4">
+          {/* Performance */}
+          <section className="space-y-3 md:space-y-4">
+            <div className="flex items-baseline justify-between">
+              <h2 className="text-base md:text-lg font-semibold text-white tracking-tight">Performance</h2>
+              <p className="text-xs text-zinc-500">Last 90 days of activity</p>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
               <Metric label="Visits" value={String(metrics.visits ?? 0)} />
               <Metric label="Unique visitors" value={String(metrics.uniqueVisitors ?? 0)} />
-              <Metric label="Attributed bookings" value={String(metrics.bookings ?? 0)} />
+              <Metric label="Bookings generated" value={String(metrics.bookings ?? 0)} />
               <Metric label="Paid bookings" value={String(metrics.paidBookings ?? 0)} />
-              <Metric
-                label="Attributed booking value"
-                value={formatMoney(metrics.attributedBookingValue)}
-                hint="Attributed for visibility; not the same as cash collected."
-              />
-              <Metric label="Paid stay revenue" value={formatMoney(metrics.paidStayRevenue)} />
-              <Metric label="Gift voucher sales (count)" value={String(metrics.giftVoucherSales ?? 0)} />
-              <Metric label="Gift voucher revenue" value={formatMoney(gvRev.amount, gvRev.currency)} />
-              <Metric label="Gift voucher commission (ledger mix)" value={formatMoney(gvComm.amount, gvComm.currency)} />
-              <Metric
-                label="Projected commission"
-                value={formatMoney(pc.amount, pc.currency)}
-                hint="Estimate only — not payable yet. Becomes payable only after the stay is completed and approved per your agreement."
-              />
-              <Metric label="Approved commission" value={formatMoney(approved.amount, approved.currency)} />
-              <Metric label="Paid commission" value={formatMoney(paid.amount, paid.currency)} />
             </div>
-            {pc.notPayable ? (
-              <p className="mt-4 text-xs md:text-sm text-zinc-500 border-t border-white/10 pt-4 max-w-3xl">
-                <span className="text-zinc-300 font-medium">Projected</span> amounts are not cash you can withdraw.
-                Approved and paid lines follow the manual workflow managed by Drift &amp; Dwells.
-              </p>
-            ) : null}
+          </section>
+
+          {/* Booking value */}
+          <Card
+            title="Booking value"
+            subtitle="This is the total booking value tracked through your code, before costs, taxes, fees, and operations."
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+              <Metric
+                label="Booking value generated"
+                value={formatMoney(metrics.attributedBookingValue)}
+                hint="Total value of bookings made through your code or link."
+              />
+              <Metric
+                label="Tracked booking value"
+                value={formatMoney(metrics.paidStayRevenue)}
+                hint="Value of bookings that have already been paid by the guest."
+              />
+            </div>
           </Card>
 
-          <Card title="Recent stay bookings" subtitle="Attributed stays only — no guest contact details.">
+          {/* Commission */}
+          <section className="space-y-3 md:space-y-4">
+            <div className="flex items-baseline justify-between">
+              <h2 className="text-base md:text-lg font-semibold text-white tracking-tight">Your commission</h2>
+              {ratePercent ? (
+                <p className="text-xs text-zinc-500">At {ratePercent} of eligible bookings</p>
+              ) : null}
+            </div>
+            <BigStat
+              label="Projected commission"
+              value={formatMoney(pc.amount, pc.currency)}
+              accent
+              hint="Estimate only. Becomes payable after the stay is completed and approved."
+            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+              <Metric
+                label="Approved commission"
+                value={formatMoney(approved.amount, approved.currency)}
+                hint="Approved for payout."
+              />
+              <Metric
+                label="Paid commission"
+                value={formatMoney(paid.amount, paid.currency)}
+                hint="Already paid."
+              />
+            </div>
+          </section>
+
+          {/* Recent bookings */}
+          <Card title="Recent bookings" subtitle="Stays attributed to your code or link.">
             {recentBookings.length === 0 ? (
-              <p className="text-sm text-zinc-500">No attributed bookings yet.</p>
+              <p className="text-sm text-zinc-500">
+                No bookings yet. Once someone books with your code, you&apos;ll see it here.
+              </p>
             ) : (
-              <div className="space-y-3 md:hidden">
+              <ul className="space-y-3">
                 {recentBookings.map((b) => (
-                  <div
-                    key={b.id}
-                    className="rounded-xl border border-white/10 bg-zinc-900/50 p-3 text-sm space-y-1.5"
-                  >
-                    <div className="flex justify-between gap-2 text-zinc-300">
-                      <span>{formatDate(b.checkIn)} → {formatDate(b.checkOut)}</span>
-                      <span className="capitalize text-zinc-400">{b.status || '—'}</span>
-                    </div>
-                    <div className="text-white font-medium">{b.propertyLabel || 'Property'}</div>
-                    <div className="text-xs text-zinc-500 flex flex-wrap gap-x-3 gap-y-1">
-                      <span>Source: {b.attributionSource || '—'}</span>
-                      <span>Value: {formatMoney(b.bookingValue)}</span>
-                      <span>Commission: {b.commissionStatus || '—'}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            {recentBookings.length > 0 ? (
-              <div className="hidden md:block overflow-x-auto rounded-xl border border-white/10">
-                <table className="min-w-full text-sm text-left">
-                  <thead className="bg-zinc-900/80 text-[11px] uppercase tracking-wide text-zinc-500">
-                    <tr>
-                      <th className="px-3 py-2 font-medium">Stay</th>
-                      <th className="px-3 py-2 font-medium">Property</th>
-                      <th className="px-3 py-2 font-medium">Status</th>
-                      <th className="px-3 py-2 font-medium">Source</th>
-                      <th className="px-3 py-2 font-medium">Value</th>
-                      <th className="px-3 py-2 font-medium">Commission</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/10">
-                    {recentBookings.map((b) => (
-                      <tr key={b.id} className="text-zinc-200">
-                        <td className="px-3 py-2 whitespace-nowrap">
-                          {formatDate(b.checkIn)} – {formatDate(b.checkOut)}
-                        </td>
-                        <td className="px-3 py-2 text-white">{b.propertyLabel || '—'}</td>
-                        <td className="px-3 py-2 capitalize">{b.status || '—'}</td>
-                        <td className="px-3 py-2">{b.attributionSource || '—'}</td>
-                        <td className="px-3 py-2 tabular-nums">{formatMoney(b.bookingValue)}</td>
-                        <td className="px-3 py-2">{b.commissionStatus || '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : null}
-          </Card>
-
-          <Card title="Recent gift voucher sales" subtitle="Voucher purchases attributed to you.">
-            {giftSales.length === 0 ? (
-              <p className="text-sm text-zinc-500">No voucher sales yet.</p>
-            ) : (
-              <ul className="divide-y divide-white/10 rounded-xl border border-white/10 overflow-hidden">
-                {giftSales.map((g, idx) => (
                   <li
-                    key={`gv-${idx}-${g.date ? String(g.date) : idx}`}
-                    className="flex flex-wrap items-center justify-between gap-2 px-3 py-3 bg-zinc-900/40 text-sm"
+                    key={b.id}
+                    className="rounded-xl border border-white/10 bg-zinc-900/50 px-4 py-3.5 md:px-5 md:py-4"
                   >
-                    <span className="text-zinc-300">{formatDateTime(g.date)}</span>
-                    <span className="capitalize text-zinc-400">{g.status || '—'}</span>
-                    <span className="font-medium tabular-nums text-white">
-                      {formatMoney((Number(g.amountOriginalCents) || 0) / 100)}
-                    </span>
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-white font-medium text-sm md:text-base truncate">
+                          {b.propertyLabel || 'Stay'}
+                        </div>
+                        <div className="mt-0.5 text-xs md:text-sm text-zinc-400">
+                          {formatDate(b.checkIn)} → {formatDate(b.checkOut)}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm md:text-base font-semibold text-white tabular-nums">
+                          {formatMoney(b.bookingValue)}
+                        </div>
+                        <div className="mt-0.5 text-[11px] uppercase tracking-wide text-zinc-500 capitalize">
+                          {b.status || '—'}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      <Chip>via {b.attributionSource || 'none'}</Chip>
+                      <Chip tone={b.commissionStatus === 'paid' ? 'active' : 'neutral'}>
+                        Commission: {b.commissionStatus || 'pending'}
+                      </Chip>
+                    </div>
                   </li>
                 ))}
               </ul>
             )}
           </Card>
 
-          <Card title="Recent commission rows" subtitle="Ledger snapshots — read only.">
-            {recentCommission.length === 0 ? (
-              <p className="text-sm text-zinc-500">No commission rows yet.</p>
-            ) : (
-              <div className="overflow-x-auto rounded-xl border border-white/10">
-                <table className="min-w-full text-sm text-left">
-                  <thead className="bg-zinc-900/80 text-[11px] uppercase tracking-wide text-zinc-500">
-                    <tr>
-                      <th className="px-3 py-2 font-medium">Status</th>
-                      <th className="px-3 py-2 font-medium">Source</th>
-                      <th className="px-3 py-2 font-medium">Amount</th>
-                      <th className="px-3 py-2 font-medium">Booking ref</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/10">
-                    {recentCommission.map((c) => (
-                      <tr key={c.id} className="text-zinc-200">
-                        <td className="px-3 py-2 capitalize">{c.status || '—'}</td>
-                        <td className="px-3 py-2">{c.source || '—'}</td>
-                        <td className="px-3 py-2 tabular-nums font-medium text-white">
-                          {formatMoney(c.amount, c.currency)}
-                        </td>
-                        <td className="px-3 py-2 font-mono text-xs text-zinc-500">
-                          {c.bookingId ? String(c.bookingId) : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+          {/* Gift voucher performance */}
+          {giftVoucherIsEmpty ? (
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 md:px-5 md:py-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-medium text-zinc-200">Gift voucher performance</h3>
+                  <p className="mt-0.5 text-xs text-zinc-500">No voucher sales tracked yet.</p>
+                </div>
+                <Chip>0 sales</Chip>
               </div>
-            )}
-          </Card>
+            </div>
+          ) : (
+            <Card
+              title="Gift voucher performance"
+              subtitle="Voucher purchases attributed to your code."
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
+                <Metric label="Voucher sales" value={String(gvCount)} />
+                <Metric label="Voucher revenue" value={formatMoney(gvRevAmount, gvRev.currency)} />
+                <Metric label="Gift voucher commission" value={formatMoney(gvCommAmount, gvComm.currency)} />
+              </div>
+              {giftSales.length > 0 ? (
+                <ul className="mt-5 space-y-2.5">
+                  {giftSales.map((g, idx) => (
+                    <li
+                      key={`gv-${idx}-${g.date ? String(g.date) : idx}`}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/10 bg-zinc-900/50 px-3.5 py-3 text-sm"
+                    >
+                      <span className="text-zinc-300">{formatDateTime(g.date)}</span>
+                      <span className="capitalize text-zinc-400 text-xs">{g.status || '—'}</span>
+                      <span className="font-medium tabular-nums text-white">
+                        {formatMoney((Number(g.amountOriginalCents) || 0) / 100)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </Card>
+          )}
+
+          {/* Recent commission activity (compact) */}
+          {recentCommission.length > 0 ? (
+            <Card title="Recent commission activity" subtitle="Latest updates from your commission records.">
+              <ul className="space-y-2.5">
+                {recentCommission.map((c) => (
+                  <li
+                    key={c.id}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-zinc-900/50 px-3.5 py-3 text-sm"
+                  >
+                    <div className="flex flex-wrap items-center gap-2 min-w-0">
+                      <Chip tone={c.status === 'paid' ? 'active' : c.status === 'approved' ? 'accent' : 'neutral'}>
+                        <span className="capitalize">{c.status || '—'}</span>
+                      </Chip>
+                      <span className="text-zinc-400 text-xs">via {c.source || '—'}</span>
+                    </div>
+                    <span className="font-medium tabular-nums text-white">
+                      {formatMoney(c.amount, c.currency)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
+
+          {/* Trust footer */}
+          <p className="text-xs md:text-sm text-zinc-500 leading-relaxed text-center md:text-left max-w-2xl pt-4 pb-2">
+            Projected amounts are estimates. Approved and paid commission are managed manually by
+            Drift &amp; Dwells.
+          </p>
         </div>
       </Shell>
     </>
