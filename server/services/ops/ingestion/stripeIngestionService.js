@@ -1,10 +1,12 @@
 const crypto = require('crypto');
+const Booking = require('../../../models/Booking');
 const Payment = require('../../../models/Payment');
 const Payout = require('../../../models/Payout');
 const StripeEventEvidence = require('../../../models/StripeEventEvidence');
 const PaymentFinalization = require('../../../models/PaymentFinalization');
 const { openManualReviewItem } = require('./manualReviewService');
 const { activatePaidVoucherFromStripeEvent } = require('../../giftVouchers/giftVoucherPaymentService');
+const { linkStripePaymentToBooking } = require('../../payments/paymentLinkingService');
 
 function digestEvent(event) {
   return crypto.createHash('sha256').update(JSON.stringify(event)).digest('hex');
@@ -36,6 +38,24 @@ function extractPaymentReference(event) {
   if (obj.object === 'charge') return obj.payment_intent || obj.id || null;
   if (obj.object === 'refund') return obj.payment_intent || obj.charge || obj.id || null;
   return obj.payment_intent || null;
+}
+
+function extractCanonicalPaymentIntentId(event) {
+  const obj = event.data?.object || {};
+  if (obj.object === 'payment_intent') return obj.id || null;
+  if (typeof obj.payment_intent === 'string') return obj.payment_intent || null;
+  if (obj.payment_intent && typeof obj.payment_intent === 'object') return obj.payment_intent.id || null;
+  const meta = obj.metadata || {};
+  return meta.paymentIntentId || meta.stripePaymentIntentId || meta.id || null;
+}
+
+function isPaidLikeStatus(status) {
+  return status === 'paid' || status === 'partial';
+}
+
+function amountsMatchWithCentTolerance(left, right) {
+  if (!Number.isFinite(left) || !Number.isFinite(right)) return false;
+  return Math.abs(Number(left) - Number(right)) <= 0.01;
 }
 
 function extractPayoutReference(event) {
@@ -120,23 +140,28 @@ async function upsertCanonicalPaymentFromEvent(event) {
       : null;
   const currency = (obj.currency || 'eur').toLowerCase();
 
+  const paymentIntentId = extractCanonicalPaymentIntentId(event);
+  const incomingReservationId = reservationId || null;
+  const paymentMetadata = {
+    ...(obj.metadata || {}),
+    stripeObjectType: obj.object || null,
+    stripeEventType: event.type
+  };
+  if (incomingReservationId) {
+    paymentMetadata.linkageConfidence = 'high';
+  }
+
   const payment = await Payment.findOneAndUpdate(
     { provider: 'stripe', providerReference: String(providerReference) },
     {
       $set: {
-        reservationId: reservationId || null,
         status: paymentStatus,
         amount: amount ?? 0,
         currency,
         source: 'webhook',
         sourceReference: event.id,
         importedAt: new Date((event.created || Date.now() / 1000) * 1000),
-        metadata: {
-          ...(obj.metadata || {}),
-          stripeObjectType: obj.object || null,
-          stripeEventType: event.type,
-          linkageConfidence: reservationId ? 'high' : 'low'
-        }
+        metadata: paymentMetadata
       },
       $setOnInsert: {
         provider: 'stripe'
@@ -145,7 +170,130 @@ async function upsertCanonicalPaymentFromEvent(event) {
     { new: true, upsert: true }
   );
 
-  if (!reservationId) {
+  if (incomingReservationId) {
+    await Payment.updateOne(
+      {
+        _id: payment._id,
+        $or: [{ reservationId: null }, { reservationId: { $exists: false } }]
+      },
+      {
+        $set: { reservationId: incomingReservationId }
+      }
+    );
+  }
+
+  const paymentLatest = await Payment.findById(payment._id).select('_id reservationId providerReference amount status').lean();
+  const existingReservationId = paymentLatest?.reservationId || null;
+  const reservationConflictDetected = Boolean(
+    incomingReservationId
+    && existingReservationId
+    && String(existingReservationId) !== String(incomingReservationId)
+  );
+
+  let linkedReservationId = existingReservationId ? String(existingReservationId) : null;
+  let unlinkedReviewHandled = false;
+  if (reservationConflictDetected) {
+    unlinkedReviewHandled = true;
+    await openManualReviewItem({
+      category: 'payment_unlinked',
+      severity: 'high',
+      entityType: 'Payment',
+      entityId: payment._id,
+      title: 'Stripe webhook reservation metadata conflicts with existing linkage',
+      details: `Payment ${payment.providerReference} has conflicting reservation linkage metadata`,
+      provenance: {
+        source: 'stripe_webhook',
+        sourceReference: event.id
+      },
+      evidence: {
+        providerReference: paymentLatest?.providerReference || payment.providerReference,
+        paymentIntentId,
+        paymentId: String(paymentLatest?._id || payment._id),
+        existingReservationId: String(existingReservationId),
+        incomingReservationId: String(incomingReservationId),
+        eventId: event.id
+      }
+    });
+  }
+  if (!linkedReservationId && isPaidLikeStatus(paymentStatus)) {
+    if (paymentIntentId) {
+      const bookingCandidates = await Booking.find({
+        stripePaymentIntentId: String(paymentIntentId),
+        isTest: { $ne: true },
+        status: { $in: ['confirmed', 'in_house', 'completed', 'cancelled'] },
+        $or: [{ archivedAt: null }, { archivedAt: { $exists: false } }]
+      })
+        .select('_id stripePaymentIntentId totalPrice stripePaidAmountCents status isTest archivedAt')
+        .lean();
+
+      const compatibleCandidates = bookingCandidates.filter((candidate) => {
+        let targetAmount = null;
+        if (
+          Object.prototype.hasOwnProperty.call(candidate, 'stripePaidAmountCents')
+          && Number.isFinite(candidate.stripePaidAmountCents)
+        ) {
+          targetAmount = Number(candidate.stripePaidAmountCents) / 100;
+        } else if (Number.isFinite(candidate.totalPrice)) {
+          targetAmount = Number(candidate.totalPrice);
+        }
+        return amountsMatchWithCentTolerance(Number(payment.amount), targetAmount);
+      });
+
+      if (compatibleCandidates.length === 1) {
+        const booking = compatibleCandidates[0];
+        const linkResult = await linkStripePaymentToBooking({
+          booking,
+          linkedBy: 'stripe_webhook_reconciliation'
+        });
+        if (linkResult.status === 'linked' || linkResult.status === 'already_linked') {
+          linkedReservationId = String(booking._id);
+        } else if (linkResult.status === 'conflict') {
+          unlinkedReviewHandled = true;
+          await openManualReviewItem({
+            category: 'payment_unlinked',
+            severity: 'high',
+            entityType: 'Payment',
+            entityId: payment._id,
+            title: 'Stripe webhook payment linkage conflict',
+            details: `Payment ${payment.providerReference} conflicts with existing reservation linkage`,
+            provenance: {
+              source: 'stripe_webhook',
+              sourceReference: event.id
+            },
+            evidence: {
+              providerReference: payment.providerReference,
+              paymentIntentId,
+              paymentId: String(payment._id),
+              bookingCandidateId: String(booking._id),
+              linkResult
+            }
+          });
+        }
+      } else if (compatibleCandidates.length > 1) {
+        unlinkedReviewHandled = true;
+        await openManualReviewItem({
+          category: 'payment_unlinked',
+          severity: 'high',
+          entityType: 'Payment',
+          entityId: payment._id,
+          title: 'Stripe webhook payment matches multiple bookings',
+          details: `Payment ${payment.providerReference} matched multiple booking candidates`,
+          provenance: {
+            source: 'stripe_webhook',
+            sourceReference: event.id
+          },
+          evidence: {
+            providerReference: payment.providerReference,
+            paymentIntentId,
+            paymentId: String(payment._id),
+            bookingCandidateIds: compatibleCandidates.map((candidate) => String(candidate._id))
+          }
+        });
+      }
+    }
+  }
+
+  if (!linkedReservationId && !unlinkedReviewHandled) {
     await openManualReviewItem({
       category: 'payment_unlinked',
       severity: 'high',
