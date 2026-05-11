@@ -438,24 +438,15 @@ export default function CreatorPortal() {
             </p>
           </header>
 
-          {/* Codes & link */}
-          <Card title="Your codes" subtitle="Share these with your audience so we can track every visit and booking.">
+          {/* Your code / share link */}
+          <Card
+            title="Your code"
+            subtitle="Share your link or give guests your checkout code. Both help us track bookings from you."
+          >
             <div className="space-y-3">
-              <CodeRow
-                label="Referral code"
-                value={profile.referralCode || ''}
-                onCopy={() => copy('ref', profile.referralCode)}
-                copied={copiedKey === 'ref'}
-              />
-              <CodeRow
-                label="Promo code"
-                value={profile.promoCode || ''}
-                onCopy={() => copy('promo', profile.promoCode)}
-                copied={copiedKey === 'promo'}
-              />
               {referralLink ? (
                 <CodeRow
-                  label="Referral link"
+                  label="Share link"
                   value={referralLink}
                   mono={false}
                   copyLabel="Copy link"
@@ -463,11 +454,23 @@ export default function CreatorPortal() {
                   copied={copiedKey === 'link'}
                 />
               ) : null}
-              {!profile.referralCode && !profile.promoCode ? (
+              {profile.promoCode ? (
+                <CodeRow
+                  label="Checkout code"
+                  value={profile.promoCode}
+                  onCopy={() => copy('promo', profile.promoCode)}
+                  copied={copiedKey === 'promo'}
+                />
+              ) : null}
+              {!referralLink && !profile.promoCode ? (
                 <p className="text-sm text-zinc-500">
-                  No codes assigned yet. Drift &amp; Dwells will set this up for you.
+                  No share link or checkout code assigned yet. Drift &amp; Dwells will set this up for you.
                 </p>
               ) : null}
+              <p className="text-[11px] md:text-xs text-zinc-500 leading-relaxed">
+                Use the share link for posts, stories, and DMs. Use the checkout code for guests who
+                book directly and enter it at checkout.
+              </p>
             </div>
           </Card>
 
@@ -484,25 +487,6 @@ export default function CreatorPortal() {
               <Metric label="Paid bookings" value={String(metrics.paidBookings ?? 0)} />
             </div>
           </section>
-
-          {/* Booking value */}
-          <Card
-            title="Booking value"
-            subtitle="This is the total booking value tracked through your code, before costs, taxes, fees, and operations."
-          >
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
-              <Metric
-                label="Booking value generated"
-                value={formatMoney(metrics.attributedBookingValue)}
-                hint="Total value of bookings made through your code or link."
-              />
-              <Metric
-                label="Tracked booking value"
-                value={formatMoney(metrics.paidStayRevenue)}
-                hint="Value of bookings that have already been paid by the guest."
-              />
-            </div>
-          </Card>
 
           {/* Commission */}
           <section className="space-y-3 md:space-y-4">
@@ -530,6 +514,28 @@ export default function CreatorPortal() {
                 hint="Already paid."
               />
             </div>
+            {recentCommission.length > 0 ? (
+              <Card title="Recent commission activity" subtitle="Latest updates from your commission records.">
+                <ul className="space-y-2.5">
+                  {recentCommission.map((c) => (
+                    <li
+                      key={c.id}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-zinc-900/50 px-3.5 py-3 text-sm"
+                    >
+                      <div className="flex flex-wrap items-center gap-2 min-w-0">
+                        <Chip tone={c.status === 'paid' ? 'active' : c.status === 'approved' ? 'accent' : 'neutral'}>
+                          <span className="capitalize">{c.status || '—'}</span>
+                        </Chip>
+                        <span className="text-zinc-400 text-xs">via {c.source || '—'}</span>
+                      </div>
+                      <span className="font-medium tabular-nums text-white">
+                        {formatMoney(c.amount, c.currency)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            ) : null}
           </section>
 
           {/* Recent bookings */}
@@ -575,6 +581,25 @@ export default function CreatorPortal() {
             )}
           </Card>
 
+          {/* Booking value (supporting context for commission) */}
+          <Card
+            title="Booking value"
+            subtitle="Supporting context for your commission. These are the booking totals tracked through your code, before costs, taxes, fees, and operations."
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+              <Metric
+                label="Booking value generated"
+                value={formatMoney(metrics.attributedBookingValue)}
+                hint="Total value of bookings made through your code or link."
+              />
+              <Metric
+                label="Tracked booking value"
+                value={formatMoney(metrics.paidStayRevenue)}
+                hint="Value of bookings that have already been paid by the guest."
+              />
+            </div>
+          </Card>
+
           {/* Gift voucher performance */}
           {giftVoucherIsEmpty ? (
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 md:px-5 md:py-4">
@@ -614,30 +639,6 @@ export default function CreatorPortal() {
               ) : null}
             </Card>
           )}
-
-          {/* Recent commission activity (compact) */}
-          {recentCommission.length > 0 ? (
-            <Card title="Recent commission activity" subtitle="Latest updates from your commission records.">
-              <ul className="space-y-2.5">
-                {recentCommission.map((c) => (
-                  <li
-                    key={c.id}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-zinc-900/50 px-3.5 py-3 text-sm"
-                  >
-                    <div className="flex flex-wrap items-center gap-2 min-w-0">
-                      <Chip tone={c.status === 'paid' ? 'active' : c.status === 'approved' ? 'accent' : 'neutral'}>
-                        <span className="capitalize">{c.status || '—'}</span>
-                      </Chip>
-                      <span className="text-zinc-400 text-xs">via {c.source || '—'}</span>
-                    </div>
-                    <span className="font-medium tabular-nums text-white">
-                      {formatMoney(c.amount, c.currency)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          ) : null}
 
           {/* Trust footer */}
           <p className="text-xs md:text-sm text-zinc-500 leading-relaxed text-center md:text-left max-w-2xl pt-4 pb-2">
