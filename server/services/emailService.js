@@ -247,7 +247,7 @@ class EmailService {
     }
   }
 
-  async sendEmail({ to, subject, html, text, trigger, bookingId, skipIdempotencyWindow = false }) {
+  async sendEmail({ to, subject, html, text, trigger, bookingId, skipIdempotencyWindow = false, omitBodyFromLogs = false }) {
     if (this.initPromise) {
       await this.initPromise;
     }
@@ -282,7 +282,18 @@ class EmailService {
         });
         return { success: false, method: 'unavailable', error: missingTransportError };
       }
-      console.log('📧 EMAIL LOG:', JSON.stringify(emailData, null, 2));
+      if (omitBodyFromLogs) {
+        console.log('📧 EMAIL LOG (body redacted):', JSON.stringify({
+          to: emailData.to,
+          subject: emailData.subject,
+          trigger: emailData.trigger,
+          bookingId: emailData.bookingId,
+          timestamp: emailData.timestamp,
+          body: '[redacted]'
+        }, null, 2));
+      } else {
+        console.log('📧 EMAIL LOG:', JSON.stringify(emailData, null, 2));
+      }
       return { success: true, method: 'logged' };
     }
 

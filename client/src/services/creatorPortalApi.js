@@ -6,5 +6,7 @@ const cred = { withCredentials: true };
 export const creatorPortalAPI = {
   session: () => api.get('/creator-portal/session', cred),
   me: () => api.get('/creator-portal/me', cred),
-  logout: () => api.post('/creator-portal/logout', {}, cred)
+  logout: () => api.post('/creator-portal/logout', {}, cred),
+  requestLink: (email) =>
+    api.post('/creator-portal/request-link', { email: String(email || '').trim() }, cred)
 };

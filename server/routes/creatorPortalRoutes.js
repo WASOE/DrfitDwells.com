@@ -1,6 +1,9 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
-const { exchangeMagicTokenForSession } = require('../services/creatorPortal/creatorPortalAccessService');
+const {
+  exchangeMagicTokenForSession,
+  requestPortalLinkForEmail
+} = require('../services/creatorPortal/creatorPortalAccessService');
 const {
   setPortalSessionCookie,
   clearPortalSessionCookie
@@ -19,6 +22,24 @@ const verifyLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: 'Too many attempts. Please try again later.' }
+});
+
+const requestLinkLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: true,
+    data: { delivered: 'if-on-file' },
+    message: 'If this email is linked to a creator account, we’ll send a private sign-in link.'
+  }
+});
+
+const SELF_SERVE_GENERIC_RESPONSE = Object.freeze({
+  success: true,
+  data: { delivered: 'if-on-file' },
+  message: 'If this email is linked to a creator account, we’ll send a private sign-in link.'
 });
 
 function portalRedirectBase() {
@@ -57,6 +78,21 @@ router.get('/verify', verifyLimiter, async (req, res) => {
   } catch {
     return redirectFailure(res);
   }
+});
+
+/**
+ * Self-serve magic-link request (public, unauthenticated).
+ * Always returns the same generic 200 payload. Never reveals whether the email matched.
+ * Behaviour is gated by CREATOR_PORTAL_REQUEST_LINK_ENABLED inside the service.
+ */
+router.post('/request-link', requestLinkLimiter, async (req, res) => {
+  try {
+    const rawEmail = req.body && typeof req.body.email === 'string' ? req.body.email : null;
+    await requestPortalLinkForEmail(rawEmail);
+  } catch {
+    /* never reveal to requester */
+  }
+  return res.status(200).json(SELF_SERVE_GENERIC_RESPONSE);
 });
 
 router.use(optionalCreatorPortalSession);

@@ -2,6 +2,14 @@ const crypto = require('crypto');
 const CreatorPartner = require('../../models/CreatorPartner');
 const CreatorPortalAccess = require('../../models/CreatorPortalAccess');
 const { issueSessionToken } = require('./creatorPortalSession');
+const { sendCreatorPortalMagicLinkEmail } = require('./creatorPortalEmail');
+
+const SELF_SERVE_ACTOR = 'self-serve';
+const REQUEST_LINK_COOLDOWN_MS = 10 * 60 * 1000;
+const REQUEST_LINK_MIN_RESPONSE_MS = 600;
+const REQUEST_LINK_MAX_RESPONSE_MS = 1000;
+const EMAIL_MAX_LENGTH = 254;
+const EMAIL_SHAPE_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function hashPortalToken(rawToken) {
   return crypto.createHash('sha256').update(String(rawToken), 'utf8').digest('hex');
@@ -119,9 +127,119 @@ async function exchangeMagicTokenForSession(rawToken) {
   }
 }
 
+function isRequestLinkFeatureEnabled() {
+  return String(process.env.CREATOR_PORTAL_REQUEST_LINK_ENABLED || '').toLowerCase() === 'true';
+}
+
+function normalizeEmailLookup(raw) {
+  if (raw == null) return null;
+  let value;
+  try {
+    value = String(raw).trim().toLowerCase();
+  } catch {
+    return null;
+  }
+  if (!value || value.length > EMAIL_MAX_LENGTH) return null;
+  if (!EMAIL_SHAPE_RE.test(value)) return null;
+  return value;
+}
+
+function pickRandomResponseDelayMs() {
+  const span = REQUEST_LINK_MAX_RESPONSE_MS - REQUEST_LINK_MIN_RESPONSE_MS;
+  const jitter = span > 0 ? Math.floor(Math.random() * (span + 1)) : 0;
+  return REQUEST_LINK_MIN_RESPONSE_MS + jitter;
+}
+
+/**
+ * Self-serve magic-link request.
+ *
+ * Always resolves with no return payload — the caller must respond identically whether or not
+ * a matching partner exists. Never throws, never reveals existence, never logs the raw URL.
+ *
+ * Behaviour matrix:
+ *  - feature flag off                                   → no-op
+ *  - email shape invalid                                → no-op
+ *  - no partner with contact.email === email            → no-op
+ *  - partner exists but status === 'draft'              → no-op
+ *  - an access row was created for this email recently  → no-op (per-email cooldown)
+ *  - otherwise                                          → revoke prior active rows for this partner,
+ *                                                          create new single-use token, email to the
+ *                                                          stored partner.contact.email only.
+ */
+async function requestPortalLinkForEmail(rawEmail) {
+  const startedAt = Date.now();
+  const minElapsed = pickRandomResponseDelayMs();
+
+  try {
+    if (!isRequestLinkFeatureEnabled()) return;
+
+    const email = normalizeEmailLookup(rawEmail);
+    if (!email) return;
+
+    const cooldownSince = new Date(Date.now() - REQUEST_LINK_COOLDOWN_MS);
+    const recent = await CreatorPortalAccess.findOne({
+      sentToEmail: email,
+      createdAt: { $gte: cooldownSince }
+    })
+      .select('_id')
+      .lean();
+    if (recent) return;
+
+    const partner = await CreatorPartner.findOne({
+      'contact.email': email,
+      status: { $in: ['active', 'paused', 'archived'] }
+    })
+      .select('_id name contact.email status')
+      .lean();
+    if (!partner || !partner.contact || !partner.contact.email) return;
+
+    let issued;
+    try {
+      issued = await createCreatorPortalAccessLink(partner._id, SELF_SERVE_ACTOR, {
+        sentToEmail: partner.contact.email
+      });
+    } catch {
+      return;
+    }
+
+    if (!issued || !issued.verifyUrl) return;
+
+    try {
+      await sendCreatorPortalMagicLinkEmail({
+        to: partner.contact.email,
+        creatorName: partner.name || '',
+        verifyUrl: issued.verifyUrl,
+        expiresAt: issued.expiresAt
+      });
+    } catch (sendErr) {
+      // Never reveal failure to requester. emailService already logs without the raw URL.
+      try {
+        console.warn('creator-portal: magic-link email send failed', {
+          partnerId: String(partner._id),
+          status: partner.status,
+          reason: sendErr && sendErr.message ? sendErr.message : 'unknown'
+        });
+      } catch {
+        /* logger failure is non-fatal */
+      }
+    }
+  } catch {
+    /* swallow — caller responds with generic OK regardless */
+  } finally {
+    const elapsed = Date.now() - startedAt;
+    const remaining = minElapsed - elapsed;
+    if (remaining > 0) {
+      await new Promise((resolve) => setTimeout(resolve, remaining));
+    }
+  }
+}
+
 module.exports = {
   hashPortalToken,
   createCreatorPortalAccessLink,
   exchangeMagicTokenForSession,
-  getMagicLinkTtlMs
+  getMagicLinkTtlMs,
+  requestPortalLinkForEmail,
+  isRequestLinkFeatureEnabled,
+  normalizeEmailLookup
 };

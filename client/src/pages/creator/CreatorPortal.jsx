@@ -227,6 +227,11 @@ export default function CreatorPortal() {
   const [meError, setMeError] = useState('');
   const [logoutBusy, setLogoutBusy] = useState(false);
 
+  const [requestEmail, setRequestEmail] = useState('');
+  const [requestBusy, setRequestBusy] = useState(false);
+  const [requestSent, setRequestSent] = useState(false);
+  const [requestError, setRequestError] = useState('');
+
   // Custom hook must be at the top level — never after an early return (React #310).
   const { copiedKey, copy } = useCopyToClipboard();
 
@@ -283,6 +288,29 @@ export default function CreatorPortal() {
     setMe(null);
     setLogoutBusy(false);
     setPhase('guest');
+  }
+
+  async function handleRequestLink(e) {
+    if (e && typeof e.preventDefault === 'function') e.preventDefault();
+    if (requestBusy || requestSent) return;
+    const value = String(requestEmail || '').trim();
+    if (!value) {
+      setRequestError('Enter your email to receive a sign-in link.');
+      return;
+    }
+    if (value.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      setRequestError('Enter a valid email address.');
+      return;
+    }
+    setRequestError('');
+    setRequestBusy(true);
+    try {
+      await creatorPortalAPI.requestLink(value);
+    } catch {
+      /* generic UX: never reveal failure */
+    }
+    setRequestBusy(false);
+    setRequestSent(true);
   }
 
   if (phase === 'boot' || phase === 'session-ok') {
@@ -344,6 +372,59 @@ export default function CreatorPortal() {
               This portal is available through your private creator link from Drift &amp; Dwells. There is no public
               login or password here.
             </p>
+
+            <form
+              onSubmit={handleRequestLink}
+              className="text-left rounded-2xl border border-white/10 bg-white/[0.04] backdrop-blur-sm shadow-lg shadow-black/20 p-4 md:p-6 space-y-3"
+              noValidate
+            >
+              <div>
+                <h2 className="text-base md:text-lg font-semibold text-white tracking-tight">
+                  Email me a sign-in link
+                </h2>
+                <p className="mt-1 text-xs md:text-sm text-zinc-400 leading-relaxed">
+                  Enter the email Drift &amp; Dwells has on file for you. We&apos;ll send your private sign-in link.
+                </p>
+              </div>
+              <label className="block">
+                <span className="sr-only">Email address</span>
+                <input
+                  type="email"
+                  autoComplete="email"
+                  inputMode="email"
+                  placeholder="you@example.com"
+                  value={requestEmail}
+                  onChange={(ev) => setRequestEmail(ev.target.value)}
+                  disabled={requestBusy || requestSent}
+                  maxLength={254}
+                  className="w-full rounded-xl border border-white/10 bg-zinc-900/60 px-4 py-3 text-sm md:text-base text-white placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-fuchsia-400/40 disabled:opacity-60"
+                />
+              </label>
+              {requestError ? (
+                <p className="text-sm text-rose-200">{requestError}</p>
+              ) : null}
+              <button
+                type="submit"
+                disabled={requestBusy || requestSent}
+                className="inline-flex w-full items-center justify-center rounded-xl px-4 py-2.5 text-sm font-medium border border-white/15 bg-gradient-to-br from-fuchsia-500/20 via-rose-500/15 to-amber-500/15 text-white hover:from-fuchsia-500/30 hover:to-amber-500/20 disabled:opacity-60"
+              >
+                {requestSent ? 'Sent' : requestBusy ? 'Sending…' : 'Send sign-in link'}
+              </button>
+              {requestSent ? (
+                <p className="text-xs md:text-sm text-emerald-200/90 leading-relaxed">
+                  If this email is linked to a creator account, we&apos;ll send a private sign-in link.
+                </p>
+              ) : (
+                <p className="text-[11px] md:text-xs text-zinc-500 leading-relaxed">
+                  We never share or display this email. Sign-in links expire after a short time and can be used once.
+                </p>
+              )}
+            </form>
+
+            <p className="text-xs md:text-sm text-zinc-500 leading-relaxed">
+              Don&apos;t have an email on file? Ask your Drift &amp; Dwells contact for a new portal link.
+            </p>
+
             {phase === 'me-error' && meError ? (
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100 text-left">
                 {meError}
