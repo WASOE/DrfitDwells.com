@@ -64,7 +64,14 @@ function normalizeSrc(u) {
   return `/uploads/cabins/${u}`;
 }
 
-function PaymentFormInner({ onSubmit, loading, disabled = false }) {
+function PaymentFormInner({
+  onSubmit,
+  loading,
+  precheckDisabled = false,
+  precheckMessages = [],
+  onPaymentElementReady,
+  onPaymentElementLoadError
+}) {
   const { t } = useTranslation('booking');
   const stripe = useStripe();
   const elements = useElements();
@@ -75,16 +82,37 @@ function PaymentFormInner({ onSubmit, loading, disabled = false }) {
     await onSubmit(stripe, elements);
   };
 
+  const submitDisabled = !stripe || loading || precheckDisabled;
+  const disabledReasons = useMemo(() => {
+    const m = [...precheckMessages];
+    if (!stripe) {
+      m.push('The secure card form is not ready yet (Stripe is still loading).');
+    }
+    return m;
+  }, [precheckMessages, stripe]);
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <PaymentElement />
+      <PaymentElement
+        onReady={() => onPaymentElementReady?.()}
+        onLoadError={(event) => {
+          onPaymentElementLoadError?.(event);
+        }}
+      />
       <button
         type="submit"
-        disabled={!stripe || loading || disabled}
+        disabled={submitDisabled}
         className="w-full h-12 rounded-xl bg-[#81887A] text-white font-semibold hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {loading ? t('confirm.processingPayment') : t('cta.confirmAndPay')}
       </button>
+      {submitDisabled && !loading ? (
+        <div className="space-y-1 text-sm text-gray-700" role="status" aria-live="polite">
+          {disabledReasons.map((msg, i) => (
+            <p key={i}>{msg}</p>
+          ))}
+        </div>
+      ) : null}
     </form>
   );
 }
@@ -202,6 +230,9 @@ const ConfirmBooking = () => {
   const [fullVoucherCoverage, setFullVoucherCoverage] = useState(false);
   const [voucherAppliedCents, setVoucherAppliedCents] = useState(0);
   const [stripeAmountCents, setStripeAmountCents] = useState(0);
+  const [paymentElementReady, setPaymentElementReady] = useState(false);
+  const [paymentElementLoadError, setPaymentElementLoadError] = useState(null);
+  const [stripeSlowHint, setStripeSlowHint] = useState(false);
 
   const handleFormChange = useCallback((field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -851,6 +882,70 @@ const ConfirmBooking = () => {
     t
   ]);
 
+  const hasGuestInfo =
+    !!formData.firstName?.trim() &&
+    !!formData.lastName?.trim() &&
+    !!formData.email?.trim() &&
+    !!formData.phone?.trim();
+  const hasValidGuestInfo = hasGuestInfo && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim());
+  const hasLegalAcceptance = !!formData.agreedToTerms && !!formData.agreedToActivityRisk;
+
+  const paymentPrecheckMessages = useMemo(() => {
+    const msgs = [];
+    if (!hasValidGuestInfo) msgs.push('Add valid guest details (name, email, phone) above.');
+    if (!hasLegalAcceptance) msgs.push('Tick both legal acknowledgement checkboxes above.');
+    if (quoteLoading) msgs.push('Price is still loading—please wait.');
+    if (quoteError) msgs.push(`Price could not be loaded: ${quoteError}`);
+    if (!serverQuote) msgs.push('No price quote is available yet.');
+    if (serverQuote && serverQuote.totalPrice < 0.5) {
+      msgs.push('No card payment is required for this booking (total is below the minimum for online card payment).');
+    }
+    return msgs;
+  }, [hasValidGuestInfo, hasLegalAcceptance, quoteLoading, quoteError, serverQuote]);
+
+  const precheckDisabled =
+    !hasValidGuestInfo ||
+    !hasLegalAcceptance ||
+    quoteLoading ||
+    !!quoteError ||
+    !serverQuote ||
+    serverQuote.totalPrice < 0.5;
+
+  const continueToPayMessages = useMemo(() => {
+    const msgs = [...paymentPrecheckMessages];
+    if (!pricing) msgs.push('Stay and dates are incomplete so we cannot calculate the price yet.');
+    return msgs;
+  }, [paymentPrecheckMessages, pricing]);
+
+  const continueToPayDisabled =
+    checkoutInitLoading || !pricing || precheckDisabled;
+
+  const handlePaymentElementReady = useCallback(() => {
+    setPaymentElementReady(true);
+    setStripeSlowHint(false);
+  }, []);
+
+  const handlePaymentElementLoadError = useCallback(() => {
+    setPaymentElementLoadError(
+      'The secure card form could not load. Please refresh the page or open it in Chrome/Safari.'
+    );
+    setStripeSlowHint(false);
+  }, []);
+
+  useEffect(() => {
+    if (!stripePromise || !clientSecret || fullVoucherCoverage) {
+      setPaymentElementReady(false);
+      setPaymentElementLoadError(null);
+      setStripeSlowHint(false);
+      return;
+    }
+    setPaymentElementReady(false);
+    setPaymentElementLoadError(null);
+    setStripeSlowHint(false);
+    const id = window.setTimeout(() => setStripeSlowHint(true), 9000);
+    return () => window.clearTimeout(id);
+  }, [clientSecret, fullVoucherCoverage, stripePromise]);
+
   if (loading || !cabin) {
     return (
       <>
@@ -866,14 +961,6 @@ const ConfirmBooking = () => {
       </>
     );
   }
-
-  const hasGuestInfo =
-    !!formData.firstName?.trim() &&
-    !!formData.lastName?.trim() &&
-    !!formData.email?.trim() &&
-    !!formData.phone?.trim();
-  const hasValidGuestInfo = hasGuestInfo && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim());
-  const hasLegalAcceptance = !!formData.agreedToTerms && !!formData.agreedToActivityRisk;
 
   const coverImage = cabin.images?.[0]?.url || cabin.imageUrl;
   const cabinName = cabin.name || t('confirm.cabinFallback');
@@ -1198,37 +1285,54 @@ const ConfirmBooking = () => {
         <div className="mt-6 p-6 bg-white rounded-xl border border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('confirm.paymentTitle')}</h2>
           {(stripeEnabled || appliedVoucherCode) && !fullVoucherCoverage && !clientSecret ? (
-            <button
-              type="button"
-              onClick={initializeCheckoutPayment}
-              disabled={
-                checkoutInitLoading ||
-                !pricing ||
-                !hasValidGuestInfo ||
-                !hasLegalAcceptance ||
-                quoteLoading ||
-                !!quoteError ||
-                !serverQuote ||
-                serverQuote.totalPrice < 0.5
-              }
-              className="w-full h-12 rounded-xl bg-[#81887A] text-white font-semibold hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {checkoutInitLoading ? t('confirm.processingPayment') : 'Continue to secure payment'}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={initializeCheckoutPayment}
+                disabled={continueToPayDisabled}
+                className="w-full h-12 rounded-xl bg-[#81887A] text-white font-semibold hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {checkoutInitLoading ? t('confirm.processingPayment') : 'Continue to secure payment'}
+              </button>
+              {continueToPayDisabled && !checkoutInitLoading ? (
+                <div className="mt-3 space-y-1 text-sm text-gray-700" role="status" aria-live="polite">
+                  {continueToPayMessages.map((msg, i) => (
+                    <p key={i}>{msg}</p>
+                  ))}
+                </div>
+              ) : null}
+            </>
           ) : null}
 
           {stripePromise && clientSecret && !fullVoucherCoverage ? (
             <>
               <p className="text-sm text-gray-600 mb-4">
-                Voucher applied: €{(voucherAppliedCents / 100).toLocaleString()} | Remaining card payment: €{(stripeAmountCents / 100).toLocaleString()}
+                {voucherAppliedCents > 0
+                  ? `Voucher applied: €${(voucherAppliedCents / 100).toLocaleString()} | Remaining card payment: €${(stripeAmountCents / 100).toLocaleString()}`
+                  : `Card payment: €${(stripeAmountCents / 100).toLocaleString()}`}
               </p>
+              {paymentElementLoadError ? (
+                <p className="text-sm text-red-600 mb-3">{paymentElementLoadError}</p>
+              ) : null}
+              {!paymentElementLoadError && !paymentElementReady ? (
+                <div className="mb-4 space-y-2">
+                  <p className="text-sm text-gray-600">Loading secure card form…</p>
+                  {stripeSlowHint ? (
+                    <p className="text-sm text-amber-800">
+                      The secure card form is taking longer than expected. If you are using Instagram or Facebook&apos;s
+                      in-app browser, open this page in Chrome or Safari and try again.
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
               <Elements stripe={stripePromise} options={{ clientSecret }}>
                 <PaymentFormInner
                   onSubmit={handleStripeSubmit}
                   loading={submitLoading}
-                  disabled={
-                    !hasValidGuestInfo || !hasLegalAcceptance || quoteLoading || !!quoteError || !serverQuote || serverQuote.totalPrice < 0.5
-                  }
+                  precheckDisabled={precheckDisabled}
+                  precheckMessages={paymentPrecheckMessages}
+                  onPaymentElementReady={handlePaymentElementReady}
+                  onPaymentElementLoadError={handlePaymentElementLoadError}
                 />
               </Elements>
               {stripeError && (
@@ -1240,7 +1344,9 @@ const ConfirmBooking = () => {
           {fullVoucherCoverage ? (
             <>
               <p className="text-sm text-gray-600 mb-4">
-                Voucher applied: €{(voucherAppliedCents / 100).toLocaleString()} | Remaining card payment: €0
+                {voucherAppliedCents > 0
+                  ? `Voucher applied: €${(voucherAppliedCents / 100).toLocaleString()} | Remaining card payment: €0`
+                  : 'Card payment: €0'}
               </p>
               <button
                 type="button"
@@ -1248,17 +1354,19 @@ const ConfirmBooking = () => {
                 disabled={
                   submitLoading ||
                   !pricing ||
-                  !hasValidGuestInfo ||
-                  !hasLegalAcceptance ||
-                  quoteLoading ||
-                  !!quoteError ||
-                  !serverQuote ||
-                  serverQuote.totalPrice < 0.5
+                  precheckDisabled
                 }
                 className="w-full h-12 rounded-xl bg-[#81887A] text-white font-semibold hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {submitLoading ? t('confirm.submittingPayment') : 'Complete booking'}
               </button>
+              {!submitLoading && (!pricing || precheckDisabled) ? (
+                <div className="mt-3 space-y-1 text-sm text-gray-700" role="status" aria-live="polite">
+                  {continueToPayMessages.map((msg, i) => (
+                    <p key={i}>{msg}</p>
+                  ))}
+                </div>
+              ) : null}
             </>
           ) : null}
 
@@ -1273,12 +1381,7 @@ const ConfirmBooking = () => {
                 disabled={
                   submitLoading ||
                   !pricing ||
-                  !hasValidGuestInfo ||
-                  !hasLegalAcceptance ||
-                  quoteLoading ||
-                  !!quoteError ||
-                  !serverQuote ||
-                  serverQuote.totalPrice < 0.5
+                  precheckDisabled
                 }
                 className="w-full h-12 rounded-xl bg-[#81887A] text-white font-semibold hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -1286,6 +1389,13 @@ const ConfirmBooking = () => {
                   ? t('confirm.submittingPayment')
                   : t('confirm.confirmPayWithAmount', { amount: Number(displayTotal).toLocaleString() })}
               </button>
+              {!submitLoading && (!pricing || precheckDisabled) ? (
+                <div className="mt-3 space-y-1 text-sm text-gray-700" role="status" aria-live="polite">
+                  {continueToPayMessages.map((msg, i) => (
+                    <p key={i}>{msg}</p>
+                  ))}
+                </div>
+              ) : null}
             </>
           ) : null}
           {checkoutInitError ? <p className="mt-2 text-sm text-red-600">{checkoutInitError}</p> : null}
