@@ -92,6 +92,8 @@ const opsWriteAPI = {
     api.post(`/ops/communications/reservations/${id}/actions/resend-arrival-instructions`, {}, { headers: authHeaders() }),
   markArrivalCompleted: (id) =>
     api.post(`/ops/communications/reservations/${id}/actions/mark-arrival-completed`, {}, { headers: authHeaders() }),
+  cancelMessagingJob: (jobId, body) =>
+    api.post(`/ops/messaging/jobs/${jobId}/actions/cancel`, body || {}, { headers: authHeaders() }),
   createManualBlock: (payload) => api.post('/ops/availability/manual-blocks', payload, { headers: authHeaders() }),
   editManualBlock: (blockId, payload) =>
     api.post(`/ops/availability/manual-blocks/${blockId}/edit`, payload, { headers: authHeaders() }),

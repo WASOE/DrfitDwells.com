@@ -43,6 +43,7 @@
     "test:email-provider-adapter": "node --test scripts/realEmailProvider.test.cjs",
     "test:email-webhook-dispatch-routing": "node --test scripts/emailWebhookDispatchRouting.test.cjs",
     "test:ops-messaging-read-model": "node --test scripts/opsGuestMessageAutomationReadModel.test.cjs",
+    "test:ops-messaging-write": "node --test scripts/guestMessageAutomationOpsWriteService.test.cjs",
     "start:messaging-worker": "node scripts/runMessagingWorker.js",
     "maintenance:backfill-property-kind": "node scripts/backfillPropertyKind.js",
     "maintenance:seed-message-automation": "node scripts/seedMessageAutomation.js",

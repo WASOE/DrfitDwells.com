@@ -61,6 +61,8 @@ export default function OpsReservationDetail() {
   const [messagingSummary, setMessagingSummary] = useState(null);
   const [messagingLoading, setMessagingLoading] = useState(false);
   const [messagingError, setMessagingError] = useState('');
+  const [messagingCancelModal, setMessagingCancelModal] = useState({ open: false, jobId: null, ruleKey: '' });
+  const [messagingCancelBusy, setMessagingCancelBusy] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -155,25 +157,38 @@ export default function OpsReservationDetail() {
     fetchLifecycleEmailEvents(lifecycleEmailPage);
   }, [id, lifecycleEmailPage, fetchLifecycleEmailEvents]);
 
-  useEffect(() => {
-    let cancelled = false;
-    if (!id) return undefined;
-    (async () => {
-      setMessagingLoading(true);
-      setMessagingError('');
-      try {
-        const resp = await opsReadAPI.reservationMessagingSummary(id);
-        if (!cancelled) setMessagingSummary(resp.data?.data || null);
-      } catch (err) {
-        if (!cancelled) setMessagingError(err?.response?.data?.message || 'Failed to load guest message automation');
-      } finally {
-        if (!cancelled) setMessagingLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+  const fetchMessagingSummary = useCallback(async () => {
+    if (!id) return;
+    setMessagingLoading(true);
+    setMessagingError('');
+    try {
+      const resp = await opsReadAPI.reservationMessagingSummary(id);
+      setMessagingSummary(resp.data?.data || null);
+    } catch (err) {
+      setMessagingError(err?.response?.data?.message || 'Failed to load guest message automation');
+    } finally {
+      setMessagingLoading(false);
+    }
   }, [id]);
+
+  useEffect(() => {
+    fetchMessagingSummary();
+  }, [fetchMessagingSummary]);
+
+  const confirmCancelMessagingJob = async () => {
+    if (!messagingCancelModal.jobId || !id) return;
+    setMessagingCancelBusy(true);
+    setMessagingError('');
+    try {
+      await opsWriteAPI.cancelMessagingJob(messagingCancelModal.jobId, { bookingId: id });
+      setMessagingCancelModal({ open: false, jobId: null, ruleKey: '' });
+      await fetchMessagingSummary();
+    } catch (err) {
+      setMessagingError(err?.response?.data?.message || 'Failed to cancel job');
+    } finally {
+      setMessagingCancelBusy(false);
+    }
+  };
 
   const closePreviewModal = () => {
     setPreviewModal({ open: false, subject: '', html: '', templateKey: null });
@@ -524,8 +539,8 @@ export default function OpsReservationDetail() {
               <div>
                 <h3 className="text-sm font-semibold text-violet-900">Guest message automation</h3>
                 <p className="text-xs text-violet-800/90 mt-1 max-w-2xl">
-                  New system: scheduled jobs, dispatches, and comms manual-review items (read-only). Separate from legacy
-                  booking lifecycle email below.
+                  Scheduled jobs can be cancelled from here. Dispatches and comms manual-review items are listed below.
+                  Separate from legacy booking lifecycle email.
                 </p>
               </div>
               <Link
@@ -546,13 +561,29 @@ export default function OpsReservationDetail() {
                   ) : (
                     <ul className="space-y-2 max-h-48 overflow-y-auto">
                       {(messagingSummary.jobs || []).map((j) => (
-                        <li key={j.jobId} className="border border-gray-100 rounded-md p-2 bg-gray-50/80">
-                          <div className="font-medium text-gray-900">{j.ruleKey}</div>
-                          <div className="text-gray-600 mt-0.5">
-                            {j.status}
-                            {j.scheduledFor ? <span className="ml-2">{String(j.scheduledFor).slice(0, 16)}</span> : null}
+                        <li
+                          key={j.jobId}
+                          className="border border-gray-100 rounded-md p-2 bg-gray-50/80 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2"
+                        >
+                          <div className="min-w-0">
+                            <div className="font-medium text-gray-900">{j.ruleKey}</div>
+                            <div className="text-gray-600 mt-0.5">
+                              {j.status}
+                              {j.scheduledFor ? <span className="ml-2">{String(j.scheduledFor).slice(0, 16)}</span> : null}
+                            </div>
+                            {j.lastError ? <div className="text-red-700 mt-1">{j.lastError}</div> : null}
                           </div>
-                          {j.lastError ? <div className="text-red-700 mt-1">{j.lastError}</div> : null}
+                          {j.status === 'scheduled' ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setMessagingCancelModal({ open: true, jobId: j.jobId, ruleKey: j.ruleKey || '' })
+                              }
+                              className="text-xs px-2 py-1 rounded border border-red-200 text-red-800 hover:bg-red-50 shrink-0 self-start"
+                            >
+                              Cancel job
+                            </button>
+                          ) : null}
                         </li>
                       ))}
                     </ul>
@@ -795,6 +826,54 @@ export default function OpsReservationDetail() {
           </section>
         </div>
       </div>
+
+      {messagingCancelModal.open ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="ops-messaging-cancel-title"
+        >
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            aria-label="Close cancel dialog"
+            disabled={messagingCancelBusy}
+            onClick={() => {
+              if (!messagingCancelBusy) setMessagingCancelModal({ open: false, jobId: null, ruleKey: '' });
+            }}
+          />
+          <div className="relative w-full max-w-md rounded-xl border border-gray-200 bg-white shadow-xl p-5 space-y-4">
+            <h2 id="ops-messaging-cancel-title" className="text-sm font-semibold text-gray-900">
+              Cancel scheduled job?
+            </h2>
+            <p className="text-xs text-gray-600">
+              Rule: <span className="font-medium text-gray-800">{messagingCancelModal.ruleKey || '—'}</span>
+            </p>
+            <p className="text-sm text-gray-700">
+              This stops this scheduled automation job. It does not unsend messages already accepted by a provider.
+            </p>
+            <div className="flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                disabled={messagingCancelBusy}
+                onClick={() => setMessagingCancelModal({ open: false, jobId: null, ruleKey: '' })}
+                className="px-3 py-1.5 text-sm rounded border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                disabled={messagingCancelBusy}
+                onClick={() => void confirmCancelMessagingJob()}
+                className="px-3 py-1.5 text-sm rounded border border-red-300 bg-red-50 text-red-900 hover:bg-red-100 disabled:opacity-50"
+              >
+                {messagingCancelBusy ? 'Cancelling…' : 'Confirm cancel'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {previewModal.open ? (
         <div
