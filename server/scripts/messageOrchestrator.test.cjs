@@ -326,6 +326,19 @@ test('flag ON, guest rule enabled, paid Stripe confirmed booking schedules one j
   });
 });
 
+test('flag ON, manual_approve rule does not schedule automatic jobs', async () => {
+  await withFlag('1', async () => {
+    const cabinId = await insertCabin({ propertyKind: 'cabin' });
+    const booking = await insertBooking({ cabinId, checkIn: futureDate(10), checkOut: futureDate(13) });
+    await insertGuestCabinRule({
+      mode: 'manual_approve',
+      ruleKey: 'manual_approve_orchestrator_smoke'
+    });
+    await orchestrator.notifyBookingCreated({ bookingId: booking._id });
+    assert.equal(await ScheduledMessageJob.countDocuments({}), 0);
+  });
+});
+
 test('flag ON, rule DISABLED -> no job', async () => {
   await withFlag('1', async () => {
     const cabinId = await insertCabin({ propertyKind: 'cabin' });

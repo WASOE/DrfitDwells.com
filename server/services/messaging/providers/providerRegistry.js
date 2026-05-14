@@ -6,19 +6,20 @@
  * Resolves the provider implementation for a given channel.
  *
  *   - WhatsApp: shadow-only in V1. The real provider integration is Batch 11.
- *   - Email:    shadow by default. The real provider is returned only when
- *               `MESSAGE_EMAIL_PROVIDER_ENABLED='1'` (Batch 9). Any other
- *               value returns the shadow provider.
+ *   - Email:    mode-aware (GMA mode semantics safety batch):
+ *               - `automationMode === 'shadow'` → always dev shadow email.
+ *               - `automationMode === 'auto'`   → real adapter only when
+ *                 `MESSAGE_EMAIL_PROVIDER_ENABLED='1'`, else shadow.
+ *               - `automationMode === 'manual_approve'` → shadow defensively;
+ *                 the dispatcher must not invoke providers for that mode.
+ *               - Missing `automationMode` defaults to `'shadow'` (safest).
+ *                 The dispatcher always passes `rule.mode`.
  *
- * The flag is checked at CALL TIME (not at module load) so tests and OPS
+ * The env flag is checked at CALL TIME (not at module load) so tests and OPS
  * can flip it via `process.env` without a restart.
  *
- * Real email sends additionally require:
- *   - `MESSAGE_DISPATCHER_ENABLED='1'`            (dispatcher entrypoint)
- *   - `MESSAGE_SCHEDULER_WORKER_ENABLED='1'`      (if running via jobs)
- *   - a rule with `enabled: true` AND `mode in {auto, manual_approve}`
- *   - all Batch 8 safety gates passing
- *   - `emailService.isConfigured === true` (real SMTP transport available)
+ * `getEmailProvider()` remains a convenience for `'auto'`-mode resolution
+ * (env gate only), for legacy callers and tests.
  *
  * Any provider that fails to declare `shadow: <boolean>` is treated as
  * shadow by the dispatcher (safer default; new providers that forget the
@@ -41,19 +42,34 @@ function getWhatsAppProvider() {
   return devShadowWhatsApp;
 }
 
-function getEmailProvider() {
-  if (isRealEmailProviderEnabled()) {
-    // Lazy require so test cleanups can mutate the env between calls without
-    // a stale module reference, and so the real adapter (which requires
-    // `emailService`) is never loaded in flag-off processes.
-    return require('./realEmailProvider');
+function resolveEmailProviderForAutomationMode(automationMode) {
+  const mode = automationMode == null || automationMode === '' ? 'shadow' : String(automationMode);
+  if (mode === 'shadow' || mode === 'manual_approve') {
+    return devShadowEmail;
+  }
+  if (mode === 'auto') {
+    if (isRealEmailProviderEnabled()) {
+      // Lazy require so test cleanups can mutate the env between calls without
+      // a stale module reference, and so the real adapter (which requires
+      // `emailService`) is never loaded in flag-off processes.
+      return require('./realEmailProvider');
+    }
+    return devShadowEmail;
   }
   return devShadowEmail;
 }
 
-function getProviderForChannel(channel) {
+/** Resolves email provider for `mode: 'auto'` rules (env gate only). */
+function getEmailProvider() {
+  return resolveEmailProviderForAutomationMode('auto');
+}
+
+function getProviderForChannel(channel, opts = {}) {
   if (channel === 'whatsapp') return getWhatsAppProvider();
-  if (channel === 'email') return getEmailProvider();
+  if (channel === 'email') {
+    const automationMode = opts.automationMode == null || opts.automationMode === '' ? 'shadow' : opts.automationMode;
+    return resolveEmailProviderForAutomationMode(automationMode);
+  }
   throw new Error(`providerRegistry: unknown channel ${JSON.stringify(channel)}`);
 }
 
@@ -61,6 +77,7 @@ module.exports = {
   getWhatsAppProvider,
   getEmailProvider,
   getProviderForChannel,
+  resolveEmailProviderForAutomationMode,
   isRealEmailProviderEnabled,
   ENV_EMAIL_PROVIDER_FLAG
 };

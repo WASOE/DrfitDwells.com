@@ -3,8 +3,10 @@
 /**
  * MessageOrchestrator (Batch 7).
  *
- * Reads enabled `MessageAutomationRule` rows and produces
- * `ScheduledMessageJob` rows from booking lifecycle events. It does NOT
+ * Reads enabled `MessageAutomationRule` rows (`enabled: true` and
+ * `mode` in `shadow` | `auto` only — `manual_approve` is excluded until an
+ * approval workflow exists) and produces `ScheduledMessageJob` rows from
+ * booking lifecycle events. It does NOT
  * send anything, does NOT call any provider, and does NOT write to
  * `MessageDispatch` or `MessageDeliveryEvent`. The scheduler worker
  * (Batch 6) is the only thing that claims these jobs, and it remains
@@ -161,7 +163,7 @@ async function resolveBookingPropertyKind(booking) {
 }
 
 async function loadEnabledRules() {
-  return MessageAutomationRule.find({ enabled: true }).lean();
+  return MessageAutomationRule.find({ enabled: true, mode: { $in: ['shadow', 'auto'] } }).lean();
 }
 
 function pickAnchorDate(rule, booking) {

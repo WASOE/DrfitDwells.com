@@ -44,9 +44,11 @@
  *
  * Feature flag (default OFF):
  *   - `MESSAGE_DISPATCHER_ENABLED=1` → dispatcher runs on claimed jobs.
- *   - `MESSAGE_EMAIL_PROVIDER_ENABLED=1` → email channel resolves to the
- *      real provider. Default OFF: email channel resolves to the shadow
- *      provider regardless of dispatcher state.
+ *   - Email real vs shadow is chosen from `MessageAutomationRule.mode` AND
+ *     `MESSAGE_EMAIL_PROVIDER_ENABLED`: for `mode: 'auto'`, real adapter only
+ *     when the env flag is `'1'`; for `mode: 'shadow'`, always shadow email;
+ *     `mode: 'manual_approve'` is handled in the dispatcher before any provider
+ *     (no automatic sends until approval exists).
  *
  * Job status transitions (only writes terminal statuses when flag on AND
  * job is currently `claimed`):
@@ -483,7 +485,7 @@ async function attemptChannel({
   // Resolve provider and branch on `shadow` flag. Missing flag defaults to
   // shadow for safety — a provider that forgot to declare `shadow:false`
   // cannot accidentally send.
-  const provider = getProviderForChannel(channel);
+  const provider = getProviderForChannel(channel, { automationMode: rule.mode });
   const isRealProvider = provider && provider.shadow === false;
 
   if (!isRealProvider) {
@@ -975,6 +977,14 @@ async function processClaimedJobInner({ job, now }) {
       $set: { status: 'skipped_status_guard', lastError: 'rule_disabled_at_dispatch' }
     });
     return { ran: true, terminal: 'skipped_status_guard', reason: 'rule_disabled' };
+  }
+
+  if (rule.mode === 'manual_approve') {
+    await transitionClaimedJob({
+      jobId: job._id,
+      $set: { status: 'failed', lastError: 'manual_approve_not_supported_yet' }
+    });
+    return { ran: true, terminal: 'failed', reason: 'manual_approve_not_supported_yet' };
   }
 
   // Load booking (or null for no-booking jobs, which V1 does not produce

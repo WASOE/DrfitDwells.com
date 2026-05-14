@@ -489,7 +489,7 @@ test('email_only: only email dispatch, no WA row', async () => {
   await withDispatcherFlag('1', async () => {
     const cabinId = await insertCabin();
     const booking = await insertBooking({ cabinId });
-    const rule = await insertGuestCabinRule({ channelStrategy: 'email_only', templateKeyByChannel: { email: 'arrival_3d_the_cabin' } });
+    const rule = await insertGuestCabinRule({ mode: 'auto', channelStrategy: 'email_only', templateKeyByChannel: { email: 'arrival_3d_the_cabin' } });
     await insertApprovedGuestTemplates();
     const job = await createClaimedJob({ booking, rule, propertyKind: 'cabin' });
     await dispatcher.processClaimedJob(job._id);
@@ -1168,7 +1168,11 @@ test('real-email outbox: pending row is inserted BEFORE emailService.sendEmail i
     await withEmailProviderFlag('1', async () => {
       const cabinId = await insertCabin();
       const booking = await insertBooking({ cabinId });
-      const rule = await insertGuestCabinRule({ channelStrategy: 'email_only', templateKeyByChannel: { email: 'arrival_3d_the_cabin' } });
+      const rule = await insertGuestCabinRule({
+        mode: 'auto',
+        channelStrategy: 'email_only',
+        templateKeyByChannel: { email: 'arrival_3d_the_cabin' }
+      });
       await insertApprovedGuestTemplates();
       const job = await createClaimedJob({ booking, rule, propertyKind: 'cabin' });
 
@@ -1208,7 +1212,11 @@ test('real-email outbox: dispatchId is stamped into Postmark tag and metadata', 
     await withEmailProviderFlag('1', async () => {
       const cabinId = await insertCabin();
       const booking = await insertBooking({ cabinId });
-      const rule = await insertGuestCabinRule({ channelStrategy: 'email_only', templateKeyByChannel: { email: 'arrival_3d_the_cabin' } });
+      const rule = await insertGuestCabinRule({
+        mode: 'auto',
+        channelStrategy: 'email_only',
+        templateKeyByChannel: { email: 'arrival_3d_the_cabin' }
+      });
       await insertApprovedGuestTemplates();
       const job = await createClaimedJob({ booking, rule, propertyKind: 'cabin' });
 
@@ -1245,7 +1253,11 @@ test('real-email outbox: provider failure → SAME row updated to failed, job te
     await withEmailProviderFlag('1', async () => {
       const cabinId = await insertCabin();
       const booking = await insertBooking({ cabinId });
-      const rule = await insertGuestCabinRule({ channelStrategy: 'email_only', templateKeyByChannel: { email: 'arrival_3d_the_cabin' } });
+      const rule = await insertGuestCabinRule({
+        mode: 'auto',
+        channelStrategy: 'email_only',
+        templateKeyByChannel: { email: 'arrival_3d_the_cabin' }
+      });
       await insertApprovedGuestTemplates();
       const job = await createClaimedJob({ booking, rule, propertyKind: 'cabin' });
 
@@ -1286,7 +1298,11 @@ test('real-email outbox: existing ACCEPTED row short-circuits without calling pr
     await withEmailProviderFlag('1', async () => {
       const cabinId = await insertCabin();
       const booking = await insertBooking({ cabinId });
-      const rule = await insertGuestCabinRule({ channelStrategy: 'email_only', templateKeyByChannel: { email: 'arrival_3d_the_cabin' } });
+      const rule = await insertGuestCabinRule({
+        mode: 'auto',
+        channelStrategy: 'email_only',
+        templateKeyByChannel: { email: 'arrival_3d_the_cabin' }
+      });
       await insertApprovedGuestTemplates();
       const job = await createClaimedJob({ booking, rule, propertyKind: 'cabin' });
 
@@ -1321,7 +1337,11 @@ test('real-email outbox: existing PENDING row → no provider call, job failed, 
     await withEmailProviderFlag('1', async () => {
       const cabinId = await insertCabin();
       const booking = await insertBooking({ cabinId });
-      const rule = await insertGuestCabinRule({ channelStrategy: 'email_only', templateKeyByChannel: { email: 'arrival_3d_the_cabin' } });
+      const rule = await insertGuestCabinRule({
+        mode: 'auto',
+        channelStrategy: 'email_only',
+        templateKeyByChannel: { email: 'arrival_3d_the_cabin' }
+      });
       await insertApprovedGuestTemplates();
       const job = await createClaimedJob({ booking, rule, propertyKind: 'cabin' });
 
@@ -1364,7 +1384,11 @@ test('real-email outbox: existing FAILED row → no provider call, job failed', 
     await withEmailProviderFlag('1', async () => {
       const cabinId = await insertCabin();
       const booking = await insertBooking({ cabinId });
-      const rule = await insertGuestCabinRule({ channelStrategy: 'email_only', templateKeyByChannel: { email: 'arrival_3d_the_cabin' } });
+      const rule = await insertGuestCabinRule({
+        mode: 'auto',
+        channelStrategy: 'email_only',
+        templateKeyByChannel: { email: 'arrival_3d_the_cabin' }
+      });
       await insertApprovedGuestTemplates();
       const job = await createClaimedJob({ booking, rule, propertyKind: 'cabin' });
 
@@ -1405,7 +1429,7 @@ test('real-email path: MESSAGE_DISPATCHER_ENABLED off → no provider invocation
   await withEmailProviderFlag('1', async () => {
     const cabinId = await insertCabin();
     const booking = await insertBooking({ cabinId });
-    const rule = await insertGuestCabinRule({ channelStrategy: 'email_only', templateKeyByChannel: { email: 'arrival_3d_the_cabin' } });
+    const rule = await insertGuestCabinRule({ mode: 'auto', channelStrategy: 'email_only', templateKeyByChannel: { email: 'arrival_3d_the_cabin' } });
     await insertApprovedGuestTemplates();
     const job = await createClaimedJob({ booking, rule, propertyKind: 'cabin' });
 
@@ -1427,7 +1451,7 @@ test('real-email path: MESSAGE_EMAIL_PROVIDER_ENABLED off → email channel uses
     delete process.env.MESSAGE_EMAIL_PROVIDER_ENABLED;
     const cabinId = await insertCabin();
     const booking = await insertBooking({ cabinId });
-    const rule = await insertGuestCabinRule({ channelStrategy: 'email_only', templateKeyByChannel: { email: 'arrival_3d_the_cabin' } });
+    const rule = await insertGuestCabinRule({ mode: 'auto', channelStrategy: 'email_only', templateKeyByChannel: { email: 'arrival_3d_the_cabin' } });
     await insertApprovedGuestTemplates();
     const job = await createClaimedJob({ booking, rule, propertyKind: 'cabin' });
 
@@ -1466,19 +1490,96 @@ test('real-email path: WhatsApp channel still shadow even when MESSAGE_EMAIL_PRO
   });
 });
 
-test('invariant: providerRegistry switches email channel to real provider only when MESSAGE_EMAIL_PROVIDER_ENABLED=1', () => {
+test('GMA mode shadow + MESSAGE_EMAIL_PROVIDER_ENABLED=1 still uses shadow email (no emailService)', async () => {
+  await withDispatcherFlag('1', async () => {
+    await withEmailProviderFlag('1', async () => {
+      const cabinId = await insertCabin();
+      const booking = await insertBooking({ cabinId });
+      const rule = await insertGuestCabinRule({
+        mode: 'shadow',
+        channelStrategy: 'email_only',
+        templateKeyByChannel: { email: 'arrival_3d_the_cabin' }
+      });
+      await insertApprovedGuestTemplates();
+      const job = await createClaimedJob({ booking, rule, propertyKind: 'cabin' });
+
+      let called = false;
+      const restore = stubEmailServiceSend(async () => {
+        called = true;
+        return { success: true, method: 'sent', messageId: 'pm_shadow_mode' };
+      });
+      try {
+        const res = await dispatcher.processClaimedJob(job._id);
+        assert.equal(res.terminal, 'sent');
+      } finally {
+        restore();
+      }
+      assert.equal(called, false, 'shadow mode must not call emailService even when MESSAGE_EMAIL_PROVIDER_ENABLED=1');
+      const d = await MessageDispatch.findOne({}).lean();
+      assert.equal(d.details.shadow, true);
+      assert.equal(d.providerName, 'internal');
+    });
+  });
+});
+
+test('GMA mode manual_approve: claimed job fails without MessageDispatch or provider', async () => {
+  await withDispatcherFlag('1', async () => {
+    await withEmailProviderFlag('1', async () => {
+      const cabinId = await insertCabin();
+      const booking = await insertBooking({ cabinId });
+      const rule = await insertGuestCabinRule({
+        mode: 'manual_approve',
+        ruleKey: 'manual_approve_dispatcher_smoke',
+        channelStrategy: 'email_only',
+        templateKeyByChannel: { email: 'arrival_3d_the_cabin' }
+      });
+      await insertApprovedGuestTemplates();
+      const job = await createClaimedJob({ booking, rule, propertyKind: 'cabin' });
+
+      let called = false;
+      const restore = stubEmailServiceSend(async () => {
+        called = true;
+        return { success: true, method: 'sent', messageId: 'x' };
+      });
+      try {
+        const res = await dispatcher.processClaimedJob(job._id);
+        assert.equal(res.terminal, 'failed');
+        assert.equal(res.reason, 'manual_approve_not_supported_yet');
+      } finally {
+        restore();
+      }
+      assert.equal(called, false);
+      assert.equal(await MessageDispatch.countDocuments({}), 0);
+      const after = await ScheduledMessageJob.findById(job._id).lean();
+      assert.equal(after.status, 'failed');
+      assert.equal(after.lastError, 'manual_approve_not_supported_yet');
+    });
+  });
+});
+
+test('invariant: providerRegistry email — auto uses env; shadow ignores real env', () => {
   const prev = process.env.MESSAGE_EMAIL_PROVIDER_ENABLED;
   try {
     const registry = require('../services/messaging/providers/providerRegistry');
     process.env.MESSAGE_EMAIL_PROVIDER_ENABLED = '1';
-    const real = registry.getEmailProvider();
-    assert.equal(real.PROVIDER_NAME, 'postmark');
-    assert.equal(real.shadow, false);
+    const realAuto = registry.getProviderForChannel('email', { automationMode: 'auto' });
+    assert.equal(realAuto.PROVIDER_NAME, 'postmark');
+    assert.equal(realAuto.shadow, false);
+    const shadowMode = registry.getProviderForChannel('email', { automationMode: 'shadow' });
+    assert.equal(shadowMode.PROVIDER_NAME, 'internal');
+    assert.equal(shadowMode.shadow, true);
+    const manualDefensive = registry.getProviderForChannel('email', { automationMode: 'manual_approve' });
+    assert.equal(manualDefensive.shadow, true);
+    assert.equal(manualDefensive.PROVIDER_NAME, 'internal');
+    const emailLegacy = registry.getEmailProvider();
+    assert.equal(emailLegacy.PROVIDER_NAME, 'postmark');
+    assert.equal(emailLegacy.shadow, false);
     for (const v of ['0', 'true', 'TRUE', 'yes', 'on', '']) {
       process.env.MESSAGE_EMAIL_PROVIDER_ENABLED = v;
-      const em = registry.getEmailProvider();
-      assert.equal(em.PROVIDER_NAME, 'internal', `flag="${v}" must stay shadow`);
+      const em = registry.getProviderForChannel('email', { automationMode: 'auto' });
+      assert.equal(em.PROVIDER_NAME, 'internal', `flag="${v}" auto mode must use shadow`);
       assert.equal(em.shadow, true);
+      assert.equal(registry.getProviderForChannel('email', { automationMode: 'shadow' }).shadow, true);
     }
   } finally {
     if (prev === undefined) delete process.env.MESSAGE_EMAIL_PROVIDER_ENABLED;
