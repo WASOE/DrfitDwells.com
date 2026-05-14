@@ -55,7 +55,12 @@ const opsReadAPI = {
   readinessModules: () => api.get('/ops/readiness/modules', { headers: authHeaders() }),
   readinessOverlap: () => api.get('/ops/readiness/overlap', { headers: authHeaders() }),
   readinessParityMismatches: () => api.get('/ops/readiness/parity-mismatches', { headers: authHeaders() }),
-  readinessQa: () => api.get('/ops/readiness/qa', { headers: authHeaders() })
+  readinessQa: () => api.get('/ops/readiness/qa', { headers: authHeaders() }),
+  messagingSystemState: () => api.get('/ops/messaging/system-state', { headers: authHeaders() }),
+  messagingRules: () => api.get('/ops/messaging/rules', { headers: authHeaders() }),
+  reservationMessagingSummary: (id) => api.get(`/ops/reservations/${id}/messaging/summary`, { headers: authHeaders() }),
+  messagingDispatchDeliveryEvents: (dispatchId) =>
+    api.get(`/ops/messaging/dispatches/${dispatchId}/delivery-events`, { headers: authHeaders() })
 };
 
 const opsWriteAPI = {

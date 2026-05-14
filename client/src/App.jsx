@@ -53,6 +53,7 @@ const OpsCabinsDetail = lazy(() => import('./pages/ops/OpsCabins'))
 const OpsCabinsList = lazy(() => import('./pages/ops/OpsCabins').then((m) => ({ default: m.OpsCabinsList })))
 const OpsReviews = lazy(() => import('./pages/ops/OpsReviews'))
 const OpsCommunicationOversight = lazy(() => import('./pages/ops/OpsCommunicationOversight'))
+const OpsMessaging = lazy(() => import('./pages/ops/OpsMessaging'))
 const OpsManualReviewBacklog = lazy(() => import('./pages/ops/OpsManualReviewBacklog'))
 const OpsReadiness = lazy(() => import('./pages/ops/OpsReadiness'))
 const OpsGiftVouchers = lazy(() => import('./pages/ops/OpsGiftVouchers'))
@@ -225,6 +226,7 @@ function App() {
               <Route path="/ops/cabins/:id" element={<OpsCabinsDetail />} />
               <Route path="/ops/reviews" element={<OpsReviews />} />
               <Route path="/ops/communications" element={<OpsCommunicationOversight />} />
+              <Route path="/ops/messaging" element={<OpsMessaging />} />
               <Route path="/ops/manual-review" element={<OpsManualReviewBacklog />} />
               <Route path="/ops/gift-vouchers" element={<OpsGiftVouchers />} />
               <Route path="/ops/gift-vouchers/:id" element={<OpsGiftVoucherDetail />} />

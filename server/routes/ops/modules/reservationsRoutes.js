@@ -21,6 +21,8 @@ const {
   resendBookingLifecycleEmail,
   listBookingEmailEvents
 } = require('../../../controllers/shared/bookingLifecycleEmailController');
+const { requirePermission, ACTIONS } = require('../../../services/permissionService');
+const { getReservationMessagingSummary } = require('../../../services/ops/readModels/guestMessageAutomationOpsReadModel');
 
 const router = express.Router();
 
@@ -151,6 +153,22 @@ router.post(
 );
 
 router.get('/:id/email-events', validateId('id'), listBookingEmailEvents);
+
+router.get('/:id/messaging/summary', validateId('id'), async (req, res) => {
+  try {
+    requirePermission({ role: req.user?.role, action: ACTIONS.OPS_MESSAGING_READ });
+    const data = await getReservationMessagingSummary(req.params.id);
+    if (!data) {
+      return res.status(404).json({ success: false, message: 'Reservation not found' });
+    }
+    return res.json({ success: true, data });
+  } catch (err) {
+    if (err?.code === 'PERMISSION_DENIED') {
+      return res.status(err.status || 403).json({ success: false, errorType: 'permission', message: err.message });
+    }
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
 
 router.get('/:id', async (req, res) => {
   try {

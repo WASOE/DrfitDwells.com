@@ -1,5 +1,21 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { opsReadAPI } from '../../services/opsApi';
+
+function isMongoObjectIdString(value) {
+  return typeof value === 'string' && /^[0-9a-fA-F]{24}$/.test(value);
+}
+
+/** For comms_* categories, link to OPS reservation when booking id is known. */
+function resolveCommsReservationHref(item) {
+  if (!item?.category || !String(item.category).startsWith('comms_')) return null;
+  const fromEvidence = item.evidence?.bookingId;
+  if (isMongoObjectIdString(fromEvidence)) return `/ops/reservations/${fromEvidence}`;
+  if (item.entityType === 'booking' && isMongoObjectIdString(item.entityId)) {
+    return `/ops/reservations/${item.entityId}`;
+  }
+  return null;
+}
 
 export default function OpsManualReviewBacklog() {
   const [data, setData] = useState(null);
@@ -45,7 +61,9 @@ export default function OpsManualReviewBacklog() {
         </div>
 
         <div className="space-y-2">
-          {(data.items || []).map((item) => (
+          {(data.items || []).map((item) => {
+            const reservationHref = resolveCommsReservationHref(item);
+            return (
             <div key={item.manualReviewItemId} className="border border-gray-200 rounded-xl p-3">
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
                 <div className="min-w-0">
@@ -56,6 +74,16 @@ export default function OpsManualReviewBacklog() {
                   <div className="text-xs text-gray-500 mt-1 truncate">
                     Target: {item.entityType || '—'} · {item.entityId || '—'}
                   </div>
+                  {reservationHref ? (
+                    <div className="mt-2">
+                      <Link
+                        to={reservationHref}
+                        className="text-xs text-[#81887A] underline underline-offset-2 font-medium"
+                      >
+                        Open reservation (guest message automation)
+                      </Link>
+                    </div>
+                  ) : null}
                 </div>
                 <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50 self-start">
                   {item.status}
@@ -70,7 +98,8 @@ export default function OpsManualReviewBacklog() {
                 </div>
               ) : null}
             </div>
-          ))}
+            );
+          })}
           {(data.items || []).length === 0 ? (
             <div className="text-sm text-gray-500">Nothing to review right now.</div>
           ) : null}

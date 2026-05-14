@@ -58,6 +58,10 @@ export default function OpsReservationDetail() {
     loading: false
   });
 
+  const [messagingSummary, setMessagingSummary] = useState(null);
+  const [messagingLoading, setMessagingLoading] = useState(false);
+  const [messagingError, setMessagingError] = useState('');
+
   const load = async () => {
     setLoading(true);
     setError('');
@@ -150,6 +154,26 @@ export default function OpsReservationDetail() {
   useEffect(() => {
     fetchLifecycleEmailEvents(lifecycleEmailPage);
   }, [id, lifecycleEmailPage, fetchLifecycleEmailEvents]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!id) return undefined;
+    (async () => {
+      setMessagingLoading(true);
+      setMessagingError('');
+      try {
+        const resp = await opsReadAPI.reservationMessagingSummary(id);
+        if (!cancelled) setMessagingSummary(resp.data?.data || null);
+      } catch (err) {
+        if (!cancelled) setMessagingError(err?.response?.data?.message || 'Failed to load guest message automation');
+      } finally {
+        if (!cancelled) setMessagingLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   const closePreviewModal = () => {
     setPreviewModal({ open: false, subject: '', html: '', templateKey: null });
@@ -495,8 +519,102 @@ export default function OpsReservationDetail() {
         </div>
 
         <div className="space-y-4">
+          <section className="bg-white border border-violet-200 border-l-4 border-l-violet-500 rounded-xl p-4 space-y-4 max-w-2xl lg:max-w-none">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-semibold text-violet-900">Guest message automation</h3>
+                <p className="text-xs text-violet-800/90 mt-1 max-w-2xl">
+                  New system: scheduled jobs, dispatches, and comms manual-review items (read-only). Separate from legacy
+                  booking lifecycle email below.
+                </p>
+              </div>
+              <Link
+                to="/ops/messaging"
+                className="text-xs text-violet-800 underline underline-offset-2 shrink-0 self-start"
+              >
+                Global rules &amp; flags
+              </Link>
+            </div>
+            {messagingLoading ? <p className="text-xs text-gray-500">Loading automation data…</p> : null}
+            {messagingError ? <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-2 py-1">{messagingError}</div> : null}
+            {!messagingLoading && messagingSummary ? (
+              <div className="space-y-4 text-xs text-gray-800">
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-900 uppercase tracking-wide mb-2">Scheduled / recent jobs</h4>
+                  {(messagingSummary.jobs || []).length === 0 ? (
+                    <p className="text-gray-500">No jobs for this booking.</p>
+                  ) : (
+                    <ul className="space-y-2 max-h-48 overflow-y-auto">
+                      {(messagingSummary.jobs || []).map((j) => (
+                        <li key={j.jobId} className="border border-gray-100 rounded-md p-2 bg-gray-50/80">
+                          <div className="font-medium text-gray-900">{j.ruleKey}</div>
+                          <div className="text-gray-600 mt-0.5">
+                            {j.status}
+                            {j.scheduledFor ? <span className="ml-2">{String(j.scheduledFor).slice(0, 16)}</span> : null}
+                          </div>
+                          {j.lastError ? <div className="text-red-700 mt-1">{j.lastError}</div> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-900 uppercase tracking-wide mb-2">Dispatch attempts</h4>
+                  {(messagingSummary.dispatches || []).length === 0 ? (
+                    <p className="text-gray-500">No dispatches recorded.</p>
+                  ) : (
+                    <ul className="space-y-2 max-h-56 overflow-y-auto">
+                      {(messagingSummary.dispatches || []).map((d) => (
+                        <li key={d.dispatchId} className="border border-gray-100 rounded-md p-2 bg-white">
+                          <div className="font-medium text-gray-900">
+                            {d.channel} · {d.status}
+                          </div>
+                          <div className="text-gray-600 mt-0.5">
+                            Rule {d.ruleKey || '—'} · provider {d.providerName}
+                          </div>
+                          <div className="text-gray-500 mt-0.5">Recipient: {d.recipientMasked || '—'}</div>
+                          <div className="text-gray-500 mt-0.5">
+                            Delivery events: {d.deliveryEventCount ?? 0}
+                            {d.latestDeliveryEvent?.eventType ? (
+                              <span className="ml-1">
+                                · latest {d.latestDeliveryEvent.eventType}{' '}
+                                {d.latestDeliveryEvent.occurredAt
+                                  ? `(${String(d.latestDeliveryEvent.occurredAt).slice(0, 19)})`
+                                  : ''}
+                              </span>
+                            ) : null}
+                          </div>
+                          {d.error?.code ? (
+                            <div className="text-red-700 mt-1 text-[11px]">{d.error.code}</div>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-900 uppercase tracking-wide mb-2">Open comms manual review</h4>
+                  {(messagingSummary.manualReviewItems || []).length === 0 ? (
+                    <p className="text-gray-500">No open comms-related items for this booking.</p>
+                  ) : (
+                    <ul className="space-y-2 max-h-40 overflow-y-auto">
+                      {(messagingSummary.manualReviewItems || []).map((m) => (
+                        <li key={m.manualReviewItemId} className="border border-amber-100 rounded-md p-2 bg-amber-50/50">
+                          <div className="font-medium text-gray-900">{m.title}</div>
+                          <div className="text-gray-600 mt-0.5">
+                            {m.category} · {m.severity}
+                          </div>
+                          {m.details ? <div className="text-gray-700 mt-1 line-clamp-3">{m.details}</div> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </section>
+
           <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-4 max-w-2xl lg:max-w-none">
-            <h3 className="text-sm font-semibold text-gray-900">Communication</h3>
             <div className="flex flex-wrap gap-2">
               <button onClick={() => doAction(opsWriteAPI.sendArrivalInstructions, id)} className="px-2.5 py-1.5 text-xs rounded border border-gray-300">
                 Send arrival
