@@ -247,7 +247,25 @@ class EmailService {
     }
   }
 
-  async sendEmail({ to, subject, html, text, trigger, bookingId, skipIdempotencyWindow = false, omitBodyFromLogs = false }) {
+  async sendEmail({
+    to,
+    subject,
+    html,
+    text,
+    trigger,
+    bookingId,
+    skipIdempotencyWindow = false,
+    omitBodyFromLogs = false,
+    // Batch 9 — optional additive parameters used ONLY by the message-automation
+    // realEmailProvider. If neither is supplied, legacy behaviour is byte-
+    // identical to before Batch 9. If supplied, the legacy `booking:*` header
+    // pair is NOT also stamped (custom tag/metadata takes full ownership of
+    // the Postmark header namespace for that send) — this is what lets the
+    // webhook router cleanly route dispatch events to MessageDeliveryEvent
+    // instead of EmailEvent.
+    postmarkTag = null,
+    postmarkMetadata = null
+  }) {
     if (this.initPromise) {
       await this.initPromise;
     }
@@ -306,8 +324,25 @@ class EmailService {
         text: emailData.text
       };
 
-      // Add Postmark tags and metadata for webhook tracking
-      if (emailData.bookingId) {
+      // Postmark tag/metadata.
+      //
+      // Batch 9 (additive): if the caller supplied a custom `postmarkTag`
+      // and/or `postmarkMetadata`, those override the legacy `booking:*`
+      // header pair entirely — the two are mutually exclusive on the wire so
+      // the webhook router can route `dispatch:*` events to
+      // `MessageDeliveryEvent` instead of `EmailEvent`. If neither is
+      // supplied, the legacy behaviour is preserved byte-identically.
+      const hasCustomTag = typeof postmarkTag === 'string' && postmarkTag.trim().length > 0;
+      const hasCustomMetadata = postmarkMetadata
+        && typeof postmarkMetadata === 'object'
+        && !Array.isArray(postmarkMetadata)
+        && Object.keys(postmarkMetadata).length > 0;
+      if (hasCustomTag || hasCustomMetadata) {
+        const headers = {};
+        if (hasCustomTag) headers['X-PM-Tag'] = postmarkTag;
+        if (hasCustomMetadata) headers['X-PM-Metadata'] = JSON.stringify(postmarkMetadata);
+        mailOptions.headers = headers;
+      } else if (emailData.bookingId) {
         mailOptions.headers = {
           'X-PM-Tag': `booking:${emailData.bookingId}`,
           'X-PM-Metadata': JSON.stringify({ 

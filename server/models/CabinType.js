@@ -98,6 +98,14 @@ const cabinTypeSchema = new mongoose.Schema({
     required: [true, 'Location is required'],
     trim: true
   },
+  // Persisted property classification for the guest message automation system.
+  // Optional in V1 (populated via the controlled backfill script); required in a
+  // later strict-mode amendment after backfill is verified. See docs/guest-message-automation/02_V1_SPEC.md §6.
+  propertyKind: {
+    type: String,
+    enum: ['cabin', 'valley'],
+    trim: true
+  },
   geoLocation: {
     latitude: { type: Number },
     longitude: { type: Number },
@@ -262,6 +270,7 @@ const cabinTypeSchema = new mongoose.Schema({
 
 // Indexes
 cabinTypeSchema.index({ isActive: 1 });
+cabinTypeSchema.index({ propertyKind: 1 });
 
 module.exports = mongoose.model('CabinType', cabinTypeSchema);
 

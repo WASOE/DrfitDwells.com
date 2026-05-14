@@ -42,6 +42,24 @@ router.post('/postmark', rawJson, async (req, res) => {
     const tag = body.Tag || (body.Message && body.Message.Tag);
     const stream = body.MessageStream || body.MessageStreamType;
 
+    // ====== ADDITIVE (Batch 9): dispatch-namespace fork ======================
+    // Postmark events for the new message-automation system carry a
+    // `dispatch:<dispatchId>` tag and/or `Metadata.dispatchId`. Those events
+    // MUST route to `MessageDeliveryEvent` and MUST NOT pollute the legacy
+    // `EmailEvent` table. This branch runs after signature verification and
+    // JSON parsing, but BEFORE the legacy `EmailEvent` upsert below. The
+    // legacy branch is unchanged.
+    const isDispatchTag = typeof tag === 'string' && tag.startsWith('dispatch:');
+    const hasDispatchMetaId = body.Metadata
+      && typeof body.Metadata.dispatchId === 'string'
+      && body.Metadata.dispatchId.length > 0;
+    if (isDispatchTag || hasDispatchMetaId) {
+      const { ingestPostmarkEvent } = require('../services/messaging/messageDeliveryEventIngest');
+      const ingest = await ingestPostmarkEvent(body);
+      return res.json({ ok: true, routed: 'message_delivery_event', ingest });
+    }
+    // ====== END ADDITIVE ======================================================
+
     // Try to extract bookingId from Tag or Metadata if we include it in send
     let bookingId;
     if (tag && /^booking:/.test(tag)) {

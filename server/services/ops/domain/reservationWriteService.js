@@ -17,6 +17,35 @@ const { processMetaPurchaseAfterConfirm } = require('../../bookingPurchaseTracki
 const CabinType = require('../../../models/CabinType');
 const bookingLifecycleEmailService = require('../../bookingLifecycleEmailService');
 
+// MessageOrchestrator hooks (Batch 7). Lazy-required inside try/catch wrappers
+// so import failure cannot break any write path. Default OFF
+// (MESSAGE_ORCHESTRATOR_ENABLED=1 to enable).
+function notifyMessageOrchestratorSafely(method, args) {
+  try {
+    const orchestrator = require('../../messaging/messageOrchestrator');
+    if (typeof orchestrator?.[method] !== 'function') return;
+    Promise.resolve()
+      .then(() => orchestrator[method](args))
+      .catch((err) => {
+        console.error(
+          JSON.stringify({
+            source: 'message-orchestrator',
+            phase: `${method}_async_error`,
+            error: err?.message || String(err)
+          })
+        );
+      });
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        source: 'message-orchestrator',
+        phase: `${method}_require_error`,
+        error: err?.message || String(err)
+      })
+    );
+  }
+}
+
 const ALLOWED_TRANSITIONS = {
   confirm: { from: ['pending'], to: 'confirmed', action: ACTIONS.OPS_RESERVATION_CONFIRM },
   checkIn: { from: ['confirmed'], to: 'in_house', action: ACTIONS.OPS_RESERVATION_CHECK_IN },
@@ -161,6 +190,13 @@ async function transitionReservation({ bookingId, kind, reason = null, ctx = {} 
     );
   }
 
+  notifyMessageOrchestratorSafely('notifyBookingStatusChange', {
+    bookingId: booking._id,
+    previousStatus: before.status,
+    nextStatus,
+    transitionKind: kind
+  });
+
   const result = {
     reservationId: String(booking._id),
     status: booking.status
@@ -224,8 +260,14 @@ async function reassignReservation({ bookingId, toCabinId, acceptExternalHoldWar
     { req: ctx.req }
   );
 
+  const previousCabinId = before.cabinId;
   booking.cabinId = toCabinId;
   await booking.save({ validateBeforeSave: false });
+
+  notifyMessageOrchestratorSafely('notifyReservationReassigned', {
+    bookingId: booking._id,
+    previousCabinId
+  });
 
   const result = {
     reservationId: String(booking._id),
@@ -288,6 +330,8 @@ async function editReservationDates({ bookingId, checkInDate, checkOutDate, reas
     { req: ctx.req }
   );
 
+  const previousCheckIn = before.checkIn;
+  const previousCheckOut = before.checkOut;
   booking.checkIn = normalized.startDate;
   booking.checkOut = normalized.endDate;
   await booking.save({ validateBeforeSave: false });
@@ -297,6 +341,12 @@ async function editReservationDates({ bookingId, checkInDate, checkOutDate, reas
     { reservationId: booking._id, blockType: 'reservation', status: 'active' },
     { $set: { startDate: normalized.startDate, endDate: normalized.endDate } }
   );
+
+  notifyMessageOrchestratorSafely('notifyReservationDatesChanged', {
+    bookingId: booking._id,
+    previousCheckIn,
+    previousCheckOut
+  });
 
   const result = {
     reservationId: String(booking._id),
@@ -357,6 +407,20 @@ async function editGuestContact({ bookingId, firstName, lastName, email, phone, 
   booking.guestInfo.email = next.email;
   booking.guestInfo.phone = next.phone;
   await booking.save({ validateBeforeSave: false });
+
+  try {
+    const { syncGuestContactPreferencesForBooking } = require('../../messaging/guestContactPreferenceSync');
+    await syncGuestContactPreferencesForBooking(booking);
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        source: 'guestContactPreferenceSync',
+        phase: 'ops_edit_guest_contact',
+        bookingId: String(booking._id),
+        error: err?.message || String(err)
+      })
+    );
+  }
 
   await Guest.findOneAndUpdate(
     { email: before.email || next.email },
@@ -561,6 +625,20 @@ async function createManualReservation({
     { new: true, upsert: true }
   );
 
+  try {
+    const { syncGuestContactPreferencesForBooking } = require('../../messaging/guestContactPreferenceSync');
+    await syncGuestContactPreferencesForBooking(booking);
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        source: 'guestContactPreferenceSync',
+        phase: 'ops_manual_reservation_create',
+        bookingId: String(booking._id),
+        error: err?.message || String(err)
+      })
+    );
+  }
+
   if (note != null && String(note).trim()) {
     await addReservationNote({
       bookingId: String(booking._id),
@@ -594,6 +672,10 @@ async function createManualReservation({
       });
     }
   }
+
+  notifyMessageOrchestratorSafely('notifyManualReservationCreated', {
+    bookingId: booking._id
+  });
 
   const result = {
     reservationId: String(booking._id),

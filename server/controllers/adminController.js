@@ -1064,6 +1064,39 @@ const updateBookingStatus = async (req, res) => {
       // Don't fail the status update if emails fail
     }
 
+    // MessageOrchestrator hook (Batch 7). Default OFF; never blocks the
+    // admin status update. Lazy-required + try/catch + fire-and-forget so
+    // a require/throw failure cannot break the legacy admin path.
+    try {
+      const { notifyBookingStatusChange } = require('../services/messaging/messageOrchestrator');
+      Promise.resolve()
+        .then(() => notifyBookingStatusChange({
+          bookingId: booking._id,
+          previousStatus: oldStatus,
+          nextStatus: status,
+          transitionKind: 'admin_status_update'
+        }))
+        .catch((err) => {
+          console.error(
+            JSON.stringify({
+              source: 'message-orchestrator',
+              phase: 'admin_status_update_async_error',
+              bookingId: String(booking._id),
+              error: err?.message || String(err)
+            })
+          );
+        });
+    } catch (orchestratorRequireErr) {
+      console.error(
+        JSON.stringify({
+          source: 'message-orchestrator',
+          phase: 'admin_status_update_require_error',
+          bookingId: String(booking._id),
+          error: orchestratorRequireErr?.message || String(orchestratorRequireErr)
+        })
+      );
+    }
+
     res.json({
       success: true,
       data: { booking },

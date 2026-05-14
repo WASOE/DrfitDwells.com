@@ -1629,11 +1629,49 @@ router.post('/', bookingCreateLimiter, [
       }
     })();
 
+    // Guest messaging prefs (phone/email → GuestContactPreference). Fire-and-forget;
+    // never blocks the HTTP response. Gated by MESSAGE_GUEST_CONTACT_PREF_SYNC_ENABLED=1.
+    void (async () => {
+      try {
+        const { syncGuestContactPreferencesForBooking } = require('../services/messaging/guestContactPreferenceSync');
+        await syncGuestContactPreferencesForBooking(booking);
+      } catch (err) {
+        console.error(
+          JSON.stringify({
+            source: 'guestContactPreferenceSync',
+            phase: 'booking_create',
+            bookingId: String(booking._id),
+            error: err?.message || String(err)
+          })
+        );
+      }
+    })();
+
     if (initialStatus === 'confirmed') {
       void processMetaPurchaseAfterConfirm(String(booking._id), req).catch((err) => {
         console.error('[meta-purchase] Post-confirm CAPI error:', err);
       });
     }
+
+    // MessageOrchestrator hook (Batch 7). Default OFF
+    // (MESSAGE_ORCHESTRATOR_ENABLED=1 to enable). Schedules
+    // ScheduledMessageJob rows only; never sends; never blocks the
+    // HTTP response; legacy lifecycle email IIFE above is untouched.
+    void (async () => {
+      try {
+        const { notifyBookingCreated } = require('../services/messaging/messageOrchestrator');
+        await notifyBookingCreated({ bookingId: booking._id });
+      } catch (err) {
+        console.error(
+          JSON.stringify({
+            source: 'message-orchestrator',
+            phase: 'booking_create_hook_error',
+            bookingId: String(booking._id),
+            error: err?.message || String(err)
+          })
+        );
+      }
+    })();
 
   } catch (error) {
     await tryReleaseVoucherOnFailure({

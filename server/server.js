@@ -105,6 +105,16 @@ connectDB().then((conn) => {
     } catch (e) {
       console.error('[ical-sync] Scheduler startup failed:', e?.message || e);
     }
+
+    // Messaging scheduler worker (Batch 6: CLAIM-ONLY; default OFF).
+    // Atomic-claim safety holds across processes, so this can also run from
+    // a separate PM2 worker (scripts/runMessagingWorker.js) once D-13 splits.
+    try {
+      const { startSchedulerWorkerIfEnabled } = require('./services/messaging/schedulerWorker');
+      startSchedulerWorkerIfEnabled();
+    } catch (e) {
+      console.error('[messaging-worker] Startup failed:', e?.message || e);
+    }
   }
 }).catch(() => {});
 
@@ -278,6 +288,12 @@ const server = app.listen(PORT, () => {
 // --- Graceful shutdown ---
 const shutdown = (signal) => {
   console.log(`${signal} received. Shutting down gracefully...`);
+  try {
+    const { stopSchedulerWorkerForTest } = require('./services/messaging/schedulerWorker');
+    stopSchedulerWorkerForTest();
+  } catch (e) {
+    console.error('[messaging-worker] Shutdown stop failed:', e?.message || e);
+  }
   server.close(() => {
     const mongoose = require('mongoose');
     mongoose.connection.close(false).then(() => {
