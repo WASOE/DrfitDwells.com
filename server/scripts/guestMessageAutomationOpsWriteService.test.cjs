@@ -1,5 +1,5 @@
 /**
- * Batch 10B1 — OPS cancel scheduled message job (write service + route wiring via service).
+ * Batch 10B1 / 10B2 — OPS guest message automation writes (cancel job, shadow rule enable).
  *
  * Run: npm run test:ops-messaging-write (from server/)
  */
@@ -19,7 +19,11 @@ const Cabin = require('../models/Cabin');
 const Booking = require('../models/Booking');
 const ScheduledMessageJob = require('../models/ScheduledMessageJob');
 const AuditEvent = require('../models/AuditEvent');
-const { cancelScheduledMessageJobFromOps } = require('../services/ops/domain/guestMessageAutomationOpsWriteService');
+const MessageAutomationRule = require('../models/MessageAutomationRule');
+const {
+  cancelScheduledMessageJobFromOps,
+  setShadowAutomationRuleEnabledFromOps
+} = require('../services/ops/domain/guestMessageAutomationOpsWriteService');
 
 let mongoServer;
 
@@ -67,7 +71,10 @@ async function createFutureBooking(cabinId) {
 test.before(async () => {
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri(), { serverSelectionTimeoutMS: 10000 });
-  await ScheduledMessageJob.syncIndexes();
+  await Promise.all([
+    ScheduledMessageJob.syncIndexes(),
+    MessageAutomationRule.syncIndexes()
+  ]);
 });
 
 test.after(async () => {
@@ -78,7 +85,12 @@ test.after(async () => {
 
 test.beforeEach(async () => {
   // AuditEvent is append-only (no deleteMany). Tests scope audit counts by entityId.
-  await Promise.all([ScheduledMessageJob.deleteMany({}), Booking.deleteMany({}), Cabin.deleteMany({})]);
+  await Promise.all([
+    ScheduledMessageJob.deleteMany({}),
+    Booking.deleteMany({}),
+    Cabin.deleteMany({}),
+    MessageAutomationRule.deleteMany({})
+  ]);
 });
 
 test('write service source does not import dispatcher, providers, email, orchestrator, scheduler', () => {
@@ -92,7 +104,8 @@ test('write service source does not import dispatcher, providers, email, orchest
     'emailService',
     'messageOrchestrator',
     'schedulerWorker',
-    'runMessagingWorker'
+    'runMessagingWorker',
+    'bookingLifecycleEmailService'
   ];
   for (const b of banned) {
     assert.equal(src.includes(b), false, `unexpected reference to ${b}`);
@@ -351,4 +364,142 @@ test('no-booking job cancels without bookingId body', async () => {
     ctx: { req: {}, user: { id: 'op', role: 'operator' }, route: 'test' }
   });
   assert.equal(result.job.status, 'cancelled');
+});
+
+async function insertShadowRule(overrides = {}) {
+  return MessageAutomationRule.create({
+    ruleKey: `shadow_rule_${crypto.randomBytes(6).toString('hex')}`,
+    description: 'test',
+    triggerType: 'time_relative_to_check_in',
+    triggerConfig: { offsetHours: -72, sofiaHour: 17, sofiaMinute: 0 },
+    propertyScope: 'cabin',
+    channelStrategy: 'email_only',
+    templateKeyByChannel: { email: 'arrival_3d_the_cabin' },
+    requiresConsent: 'transactional',
+    enabled: false,
+    mode: 'shadow',
+    audience: 'guest',
+    requiredBookingStatus: ['confirmed'],
+    requirePaidIfStripe: true,
+    ...overrides
+  });
+}
+
+function adminCtx(route) {
+  return { req: {}, user: { id: 'admin-x', email: 'admin@test.com', role: 'admin' }, route };
+}
+
+test('admin enables a shadow rule, audit once', async () => {
+  const rule = await insertShadowRule({ enabled: false });
+  const rk = rule.ruleKey;
+  const beforeAudit = await AuditEvent.countDocuments({
+    entityType: 'MessageAutomationRule',
+    entityId: rk
+  });
+
+  const out = await setShadowAutomationRuleEnabledFromOps({
+    ruleKey: rk,
+    body: { enabled: true, reason: 'rollout test' },
+    ctx: adminCtx('PATCH /rules/enabled')
+  });
+
+  assert.equal(out.idempotent, false);
+  assert.equal(out.audited, true);
+  assert.equal(out.rule.enabled, true);
+  assert.equal(out.rule.mode, 'shadow');
+  assert.deepEqual(out.warnings, []);
+
+  const after = await MessageAutomationRule.findOne({ ruleKey: rk }).lean();
+  assert.equal(after.enabled, true);
+
+  const afterAudit = await AuditEvent.countDocuments({ entityType: 'MessageAutomationRule', entityId: rk });
+  assert.equal(afterAudit, beforeAudit + 1);
+  const ev = await AuditEvent.findOne({ entityType: 'MessageAutomationRule', entityId: rk }).sort({ happenedAt: -1 }).lean();
+  assert.equal(ev.action, 'guest_message_shadow_rule_set_enabled');
+});
+
+test('admin disables a shadow rule, warning returned, audit once', async () => {
+  const rule = await insertShadowRule({ enabled: true });
+  const rk = rule.ruleKey;
+  const beforeAudit = await AuditEvent.countDocuments({ entityType: 'MessageAutomationRule', entityId: rk });
+
+  const out = await setShadowAutomationRuleEnabledFromOps({
+    ruleKey: rk,
+    body: { enabled: false },
+    ctx: adminCtx('PATCH /rules/enabled')
+  });
+
+  assert.equal(out.rule.enabled, false);
+  assert.equal(out.warnings.length, 1);
+  assert.match(out.warnings[0], /not deleted when disabling/);
+
+  const afterAudit = await AuditEvent.countDocuments({ entityType: 'MessageAutomationRule', entityId: rk });
+  assert.equal(afterAudit, beforeAudit + 1);
+});
+
+test('operator cannot toggle shadow rule', async () => {
+  const rule = await insertShadowRule({ enabled: false });
+  await assert.rejects(
+    () =>
+      setShadowAutomationRuleEnabledFromOps({
+        ruleKey: rule.ruleKey,
+        body: { enabled: true },
+        ctx: { req: {}, user: { id: 'op', role: 'operator' }, route: 't' }
+      }),
+    (e) => e.code === 'PERMISSION_DENIED'
+  );
+});
+
+test('reject body with extra fields', async () => {
+  const rule = await insertShadowRule({ enabled: false });
+  await assert.rejects(
+    () =>
+      setShadowAutomationRuleEnabledFromOps({
+        ruleKey: rule.ruleKey,
+        body: { enabled: true, mode: 'auto' },
+        ctx: adminCtx('t')
+      }),
+    (e) => e.status === 400
+  );
+});
+
+test('non-shadow rule returns 409', async () => {
+  const rule = await insertShadowRule({ mode: 'auto', enabled: false });
+  await assert.rejects(
+    () =>
+      setShadowAutomationRuleEnabledFromOps({
+        ruleKey: rule.ruleKey,
+        body: { enabled: true },
+        ctx: adminCtx('t')
+      }),
+    (e) => e.status === 409
+  );
+});
+
+test('unknown rule returns 404', async () => {
+  await assert.rejects(
+    () =>
+      setShadowAutomationRuleEnabledFromOps({
+        ruleKey: 'no_such_rule_key_ever',
+        body: { enabled: true },
+        ctx: adminCtx('t')
+      }),
+    (e) => e.status === 404
+  );
+});
+
+test('idempotent enable: no second audit', async () => {
+  const rule = await insertShadowRule({ enabled: true });
+  const rk = rule.ruleKey;
+  const beforeAudit = await AuditEvent.countDocuments({ entityType: 'MessageAutomationRule', entityId: rk });
+
+  const out = await setShadowAutomationRuleEnabledFromOps({
+    ruleKey: rk,
+    body: { enabled: true },
+    ctx: adminCtx('t')
+  });
+  assert.equal(out.idempotent, true);
+  assert.equal(out.audited, false);
+  const afterAudit = await AuditEvent.countDocuments({ entityType: 'MessageAutomationRule', entityId: rk });
+  assert.equal(afterAudit, beforeAudit);
 });

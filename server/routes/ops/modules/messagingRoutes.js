@@ -8,7 +8,10 @@ const {
   getMessagingRulesWithTemplateReadiness,
   getDeliveryEventsForDispatch
 } = require('../../../services/ops/readModels/guestMessageAutomationOpsReadModel');
-const { cancelScheduledMessageJobFromOps } = require('../../../services/ops/domain/guestMessageAutomationOpsWriteService');
+const {
+  cancelScheduledMessageJobFromOps,
+  setShadowAutomationRuleEnabledFromOps
+} = require('../../../services/ops/domain/guestMessageAutomationOpsWriteService');
 
 const router = express.Router();
 
@@ -33,6 +36,46 @@ router.get('/rules', async (req, res) => {
   } catch (err) {
     if (err?.code === 'PERMISSION_DENIED') {
       return res.status(err.status || 403).json({ success: false, errorType: 'permission', message: err.message });
+    }
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.patch('/rules/:ruleKey/enabled', express.json(), async (req, res) => {
+  try {
+    const result = await setShadowAutomationRuleEnabledFromOps({
+      ruleKey: req.params.ruleKey,
+      body: req.body,
+      ctx: {
+        req,
+        user: req.user,
+        route: 'PATCH /api/ops/messaging/rules/:ruleKey/enabled'
+      }
+    });
+    return res.json({
+      success: true,
+      data: {
+        ruleKey: result.rule.ruleKey,
+        enabled: result.rule.enabled,
+        mode: result.rule.mode,
+        idempotent: result.idempotent,
+        warnings: result.warnings || []
+      }
+    });
+  } catch (err) {
+    if (err?.code === 'PERMISSION_DENIED') {
+      return res.status(err.status || 403).json({ success: false, errorType: 'permission', message: err.message });
+    }
+    if (err?.code === 'AUDIT_WRITE_FAILED') {
+      return res.status(500).json({ success: false, errorType: 'audit_failure', message: err.message });
+    }
+    const status = err.status || 500;
+    if (status >= 400 && status < 500) {
+      return res.status(status).json({
+        success: false,
+        errorType: err.errorType || 'validation',
+        message: err.message
+      });
     }
     return res.status(500).json({ success: false, message: err.message });
   }

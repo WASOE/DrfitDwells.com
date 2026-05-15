@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { opsReadAPI } from '../../services/opsApi';
+import { decodeRoleFromToken, opsReadAPI, opsWriteAPI } from '../../services/opsApi';
 
 function FlagPill({ label, on }) {
   return (
@@ -21,35 +21,77 @@ function readinessBadge(status) {
   return `${base} bg-gray-100 text-gray-700 border-gray-200`;
 }
 
+const SHADOW_TOGGLE_CONFIRM =
+  'This only enables shadow automation. It will not send real email or WhatsApp. Existing scheduled jobs are not deleted when disabling.';
+
 export default function OpsMessaging() {
   const [system, setSystem] = useState(null);
   const [rulesPayload, setRulesPayload] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [ruleConfirm, setRuleConfirm] = useState({ open: false, ruleKey: '', nextEnabled: false });
+  const [ruleSaveBusy, setRuleSaveBusy] = useState(false);
+  const [ruleSaveError, setRuleSaveError] = useState('');
+
+  const isAdmin = decodeRoleFromToken() === 'admin';
+
+  const loadMessaging = useCallback(async () => {
+    setError('');
+    try {
+      const [sysRes, rulesRes] = await Promise.all([
+        opsReadAPI.messagingSystemState(),
+        opsReadAPI.messagingRules()
+      ]);
+      setSystem(sysRes.data?.data || null);
+      setRulesPayload(rulesRes.data?.data || null);
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Failed to load messaging');
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      setError('');
-      try {
-        const [sysRes, rulesRes] = await Promise.all([
-          opsReadAPI.messagingSystemState(),
-          opsReadAPI.messagingRules()
-        ]);
-        if (cancelled) return;
-        setSystem(sysRes.data?.data || null);
-        setRulesPayload(rulesRes.data?.data || null);
-      } catch (err) {
-        if (!cancelled) setError(err?.response?.data?.message || 'Failed to load messaging');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+      await loadMessaging();
+      if (!cancelled) setLoading(false);
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadMessaging]);
+
+  const refetchRules = async () => {
+    setRefreshing(true);
+    setRuleSaveError('');
+    try {
+      await loadMessaging();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const openRuleToggleConfirm = (ruleKey, nextEnabled) => {
+    setRuleSaveError('');
+    setRuleConfirm({ open: true, ruleKey, nextEnabled });
+  };
+
+  const confirmRuleToggle = async () => {
+    const { ruleKey, nextEnabled } = ruleConfirm;
+    if (!ruleKey) return;
+    setRuleSaveBusy(true);
+    setRuleSaveError('');
+    try {
+      await opsWriteAPI.patchMessagingShadowRuleEnabled(ruleKey, { enabled: nextEnabled });
+      setRuleConfirm({ open: false, ruleKey: '', nextEnabled: false });
+      await refetchRules();
+    } catch (err) {
+      setRuleSaveError(err?.response?.data?.message || 'Failed to update rule');
+    } finally {
+      setRuleSaveBusy(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -73,8 +115,9 @@ export default function OpsMessaging() {
       <header className="space-y-2">
         <h1 className="text-xl md:text-2xl font-semibold text-gray-900">Guest message automation</h1>
         <p className="text-sm text-gray-600 max-w-2xl">
-          Read-only view of automation rules and system flags. This is separate from legacy booking lifecycle email and
-          Postmark <code className="text-xs bg-gray-100 px-1 rounded">EmailEvent</code> history.
+          System flags and rules overview. Admins can enable or disable <span className="font-medium">shadow</span>{' '}
+          rules only (internal providers — no real email or WhatsApp). This is separate from legacy booking lifecycle
+          email and Postmark <code className="text-xs bg-gray-100 px-1 rounded">EmailEvent</code> history.
         </p>
       </header>
 
@@ -99,19 +142,25 @@ export default function OpsMessaging() {
         </div>
       </section>
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-6 overflow-x-auto">
+      <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-6 overflow-x-auto relative">
+        {refreshing ? (
+          <p className="absolute top-3 right-4 text-xs text-gray-500 z-10" aria-live="polite">
+            Refreshing…
+          </p>
+        ) : null}
         <h2 className="text-sm font-semibold text-gray-900 mb-3">Rules & template readiness</h2>
         <p className="text-xs text-gray-500 mb-4 max-w-2xl">
           Mode <span className="font-medium">shadow</span> uses internal providers only. <span className="font-medium">auto</span> /{' '}
-          <span className="font-medium">manual_approve</span> are for future rollout. Template readiness is per channel (locale en,
+          <span className="font-medium">manual_approve</span> are not toggled from this page. Template readiness is per channel (locale en,
           property scope from rule).
         </p>
-        <div className="min-w-[720px] md:min-w-0">
+        <div className="min-w-[800px] md:min-w-0">
           <table className="w-full text-left text-xs md:text-sm border-collapse">
             <thead>
               <tr className="border-b border-gray-200 text-gray-600">
                 <th className="py-2 pr-3 font-medium">Rule</th>
                 <th className="py-2 pr-3 font-medium">Enabled</th>
+                <th className="py-2 pr-3 font-medium">Shadow control</th>
                 <th className="py-2 pr-3 font-medium">Mode</th>
                 <th className="py-2 pr-3 font-medium">Audience</th>
                 <th className="py-2 pr-3 font-medium">Scope</th>
@@ -129,6 +178,20 @@ export default function OpsMessaging() {
                     <div className="text-gray-500 mt-0.5">{r.triggerType}</div>
                   </td>
                   <td className="py-2 pr-3">{r.enabled ? 'Yes' : 'No'}</td>
+                  <td className="py-2 pr-3">
+                    {isAdmin && r.mode === 'shadow' ? (
+                      <button
+                        type="button"
+                        className="text-xs px-2 py-1 rounded-md border border-gray-300 text-gray-800 hover:bg-gray-50 disabled:opacity-50 max-w-[140px]"
+                        disabled={ruleSaveBusy}
+                        onClick={() => openRuleToggleConfirm(r.ruleKey, !r.enabled)}
+                      >
+                        {r.enabled ? 'Disable (shadow)' : 'Enable (shadow)'}
+                      </button>
+                    ) : (
+                      <span className="text-gray-400 text-xs">{!isAdmin ? 'Admins only' : '—'}</span>
+                    )}
+                  </td>
                   <td className="py-2 pr-3">
                     <span
                       className={
@@ -166,7 +229,7 @@ export default function OpsMessaging() {
               ))}
               {rules.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-4 text-gray-500">
+                  <td colSpan={10} className="py-4 text-gray-500">
                     No automation rules in database.
                   </td>
                 </tr>
@@ -179,9 +242,48 @@ export default function OpsMessaging() {
           <Link to="/ops/reservations" className="text-[#81887A] underline underline-offset-2">
             reservation
           </Link>{' '}
-          and see the &quot;Guest message automation&quot; panel (read-only).
+          and see the &quot;Guest message automation&quot; panel.
         </p>
       </section>
+
+      {ruleConfirm.open ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="ops-messaging-rule-confirm-title"
+        >
+          <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-4 md:p-6 space-y-4 border border-gray-200">
+            <h2 id="ops-messaging-rule-confirm-title" className="text-sm font-semibold text-gray-900">
+              Confirm rule change
+            </h2>
+            <p className="text-sm text-gray-700">{SHADOW_TOGGLE_CONFIRM}</p>
+            <p className="text-xs text-gray-500">
+              Rule: <span className="font-medium text-gray-800">{ruleConfirm.ruleKey}</span> →{' '}
+              <span className="font-medium text-gray-800">{ruleConfirm.nextEnabled ? 'enabled' : 'disabled'}</span>
+            </p>
+            {ruleSaveError ? <p className="text-sm text-red-600">{ruleSaveError}</p> : null}
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-2">
+              <button
+                type="button"
+                className="text-sm px-3 py-2 rounded-lg border border-gray-300 text-gray-800 hover:bg-gray-50"
+                disabled={ruleSaveBusy}
+                onClick={() => !ruleSaveBusy && setRuleConfirm({ open: false, ruleKey: '', nextEnabled: false })}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="text-sm px-3 py-2 rounded-lg bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50"
+                disabled={ruleSaveBusy}
+                onClick={confirmRuleToggle}
+              >
+                {ruleSaveBusy ? 'Saving…' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

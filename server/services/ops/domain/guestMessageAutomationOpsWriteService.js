@@ -8,6 +8,7 @@
 
 const mongoose = require('mongoose');
 const ScheduledMessageJob = require('../../../models/ScheduledMessageJob');
+const MessageAutomationRule = require('../../../models/MessageAutomationRule');
 const { requirePermission, ACTIONS } = require('../../permissionService');
 const { appendAuditEvent } = require('../../auditWriter');
 
@@ -142,7 +143,111 @@ async function cancelScheduledMessageJobFromOps({ jobId, expectedBookingId, reas
   return { job: jobToDto(updated), idempotent: false, audited: true };
 }
 
+const DISABLE_WARNING =
+  'Existing scheduled jobs are not deleted when disabling a rule.';
+
+/**
+ * OPS-only: set `enabled` on a MessageAutomationRule that is in `mode: 'shadow'`.
+ * Does not accept mode or any other fields (Batch 10B2).
+ *
+ * @param {object} params
+ * @param {string} params.ruleKey
+ * @param {object} params.body — { enabled: boolean, reason?: string } only
+ * @param {object} params.ctx — { req, user, route }
+ */
+async function setShadowAutomationRuleEnabledFromOps({ ruleKey, body, ctx = {} }) {
+  requirePermission({ role: ctx.user?.role, action: ACTIONS.OPS_MESSAGING_SHADOW_RULE_ENABLE });
+
+  const rk = ruleKey != null ? String(ruleKey).trim() : '';
+  if (!rk) {
+    throw createHttpError(400, 'Invalid rule key');
+  }
+
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw createHttpError(400, 'JSON body required');
+  }
+  const keys = Object.keys(body);
+  for (const k of keys) {
+    if (k !== 'enabled' && k !== 'reason') {
+      throw createHttpError(400, `Unsupported field: ${k}`);
+    }
+  }
+  if (!Object.prototype.hasOwnProperty.call(body, 'enabled')) {
+    throw createHttpError(400, 'enabled is required');
+  }
+  if (typeof body.enabled !== 'boolean') {
+    throw createHttpError(400, 'enabled must be a boolean');
+  }
+  const enabledTarget = body.enabled;
+  const reason =
+    body.reason != null && String(body.reason).trim() !== '' ? String(body.reason).trim() : null;
+
+  const before = await MessageAutomationRule.findOne({ ruleKey: rk }).lean();
+  if (!before) {
+    throw createHttpError(404, 'Rule not found');
+  }
+  if (before.mode !== 'shadow') {
+    throw createHttpError(
+      409,
+      'Only shadow-mode rules can be toggled from OPS in this release.',
+      { errorType: 'rule_mode_not_shadow', ruleMode: before.mode }
+    );
+  }
+
+  const warnings = enabledTarget === false ? [DISABLE_WARNING] : [];
+
+  if (before.enabled === enabledTarget) {
+    return {
+      rule: { ruleKey: rk, enabled: before.enabled, mode: before.mode },
+      idempotent: true,
+      audited: false,
+      warnings
+    };
+  }
+
+  const updated = await MessageAutomationRule.findOneAndUpdate(
+    { ruleKey: rk, mode: 'shadow' },
+    { $set: { enabled: enabledTarget } },
+    { new: true }
+  ).lean();
+
+  if (!updated) {
+    throw createHttpError(
+      409,
+      'Rule could not be updated (it may no longer be in shadow mode).',
+      { errorType: 'rule_update_race' }
+    );
+  }
+
+  await appendAuditEvent(
+    {
+      actorType: 'user',
+      actorId: ctx.user?.id || ctx.user?.email || 'admin',
+      entityType: 'MessageAutomationRule',
+      entityId: rk,
+      action: 'guest_message_shadow_rule_set_enabled',
+      beforeSnapshot: { ruleKey: rk, enabled: before.enabled, mode: before.mode },
+      afterSnapshot: { ruleKey: rk, enabled: updated.enabled, mode: updated.mode },
+      metadata: {
+        namespace: 'ops_messaging',
+        route: ctx.route || null
+      },
+      reason,
+      sourceContext: { route: ctx.route || null, namespace: 'ops' }
+    },
+    { req: ctx.req }
+  );
+
+  return {
+    rule: { ruleKey: rk, enabled: updated.enabled, mode: updated.mode },
+    idempotent: false,
+    audited: true,
+    warnings
+  };
+}
+
 module.exports = {
   cancelScheduledMessageJobFromOps,
+  setShadowAutomationRuleEnabledFromOps,
   jobToDto
 };

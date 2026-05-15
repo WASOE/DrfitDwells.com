@@ -102,6 +102,8 @@ const opsWriteAPI = {
     api.post(`/ops/communications/reservations/${id}/actions/mark-arrival-completed`, {}, { headers: authHeaders() }),
   cancelMessagingJob: (jobId, body) =>
     api.post(`/ops/messaging/jobs/${jobId}/actions/cancel`, body || {}, { headers: authHeaders() }),
+  patchMessagingShadowRuleEnabled: (ruleKey, body) =>
+    api.patch(`/ops/messaging/rules/${encodeURIComponent(ruleKey)}/enabled`, body, { headers: authHeaders() }),
   createManualBlock: (payload) => api.post('/ops/availability/manual-blocks', payload, { headers: authHeaders() }),
   editManualBlock: (blockId, payload) =>
     api.post(`/ops/availability/manual-blocks/${blockId}/edit`, payload, { headers: authHeaders() }),

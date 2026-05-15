@@ -26,7 +26,9 @@ const ACTIONS = {
   OPS_GIFT_VOUCHER_READ: 'ops.gift_voucher.read',
   OPS_GIFT_VOUCHER_MANAGE: 'ops.gift_voucher.manage',
   OPS_MESSAGING_READ: 'ops.messaging.read',
-  OPS_MESSAGING_CANCEL_JOB: 'ops.messaging.cancel_job'
+  OPS_MESSAGING_CANCEL_JOB: 'ops.messaging.cancel_job',
+  /** Admin-only: toggle `enabled` on shadow-mode MessageAutomationRule rows (Batch 10B2). */
+  OPS_MESSAGING_SHADOW_RULE_ENABLE: 'ops.messaging.shadow_rule.enable'
 };
 
 const POLICY = {
@@ -53,7 +55,8 @@ const POLICY = {
   [ACTIONS.OPS_GIFT_VOUCHER_READ]: [ROLE_ADMIN, ROLE_OPERATOR],
   [ACTIONS.OPS_GIFT_VOUCHER_MANAGE]: [ROLE_ADMIN, ROLE_OPERATOR],
   [ACTIONS.OPS_MESSAGING_READ]: [ROLE_ADMIN, ROLE_OPERATOR],
-  [ACTIONS.OPS_MESSAGING_CANCEL_JOB]: [ROLE_ADMIN, ROLE_OPERATOR]
+  [ACTIONS.OPS_MESSAGING_CANCEL_JOB]: [ROLE_ADMIN, ROLE_OPERATOR],
+  [ACTIONS.OPS_MESSAGING_SHADOW_RULE_ENABLE]: [ROLE_ADMIN]
 };
 
 function normalizeRole(role) {
