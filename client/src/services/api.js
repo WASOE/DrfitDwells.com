@@ -84,6 +84,11 @@ export const bookingAPI = {
     if (email) params.email = email;
     return api.get(`/bookings/${id}`, { params });
   },
+  getConfirmation: (id, email) => {
+    const params = {};
+    if (email) params.email = email;
+    return api.get(`/bookings/${id}/confirmation`, { params });
+  },
   getRefundStatus: (paymentIntentId, email) =>
     api.get('/bookings/refund-status', { params: { paymentIntentId, email } }),
   submitAddOnRequest: (id, addOnData) => api.post(`/bookings/${id}/addon-request`, addOnData),

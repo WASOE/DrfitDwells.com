@@ -7,8 +7,9 @@ import { localizePath } from '../utils/localizedRoutes';
 import { useSiteLanguage } from '../hooks/useSiteLanguage';
 import { formatStayDayWithWeekday } from '../utils/localeDates';
 import { getGuideCtaLabel } from './guides/guideUtils';
-import { daysBetweenDateOnly, parseDateOnlyLocal } from '../utils/dateOnly';
+import { parseDateOnlyLocal } from '../utils/dateOnly';
 import { formatBookingStayForCsv } from '../utils/csvExport';
+import { formatPaymentSubline, isValleyLocation } from '../utils/bookingConfirmationDisplay';
 import { readConsentChoice } from '../tracking/consent';
 import { fireBrowserPurchase } from '../tracking/purchase';
 import { CONTACT_EMAIL, CONTACT_PHONE, INSTAGRAM_URL, FACEBOOK_URL } from '../data/gmbLocations';
@@ -18,7 +19,7 @@ const BookingSuccess = () => {
   const location = useLocation();
   const { t } = useTranslation('booking');
   const { language: routeLanguage } = useSiteLanguage();
-  const [booking, setBooking] = useState(null);
+  const [confirmation, setConfirmation] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showPackingModal, setShowPackingModal] = useState(false);
@@ -32,20 +33,19 @@ const BookingSuccess = () => {
     .trim()
     .toLowerCase();
 
-  // Fetch booking data (guest email unlocks full PII and matches server purchase gate)
   useEffect(() => {
-    const fetchBooking = async () => {
+    const fetchConfirmation = async () => {
       try {
         setLoading(true);
-        const response = await bookingAPI.getById(id, guestEmail || undefined);
+        const response = await bookingAPI.getConfirmation(id, guestEmail || undefined);
 
         if (response.data.success) {
-          setBooking(response.data.data.booking);
+          setConfirmation(response.data.data.confirmation);
         } else {
           setError(t('success.errorNotFound'));
         }
       } catch (err) {
-        console.error('Fetch booking error:', err);
+        console.error('Fetch booking confirmation error:', err);
         setError(t('success.errorLoadDetails'));
       } finally {
         setLoading(false);
@@ -53,18 +53,17 @@ const BookingSuccess = () => {
     };
 
     if (id) {
-      fetchBooking();
+      fetchConfirmation();
     } else {
       setError(t('success.errorInvalidId'));
       setLoading(false);
     }
   }, [id, guestEmail, t]);
 
-  // Browser purchase tags (GA4 + Pixel); Meta CAPI is sent on server when booking is confirmed — this endpoint supplies payload + CAPI retry if needed
   useEffect(() => {
-    if (!booking || !id || purchaseTrackedRef.current) return;
+    if (!confirmation || !id || purchaseTrackedRef.current) return;
     if (!guestEmail) return;
-    if (booking.status !== 'confirmed') return;
+    if (confirmation.status !== 'confirmed') return;
 
     purchaseTrackedRef.current = true;
     bookingAPI
@@ -82,18 +81,7 @@ const BookingSuccess = () => {
         if (code === 'NOT_ELIGIBLE') return;
         purchaseTrackedRef.current = false;
       });
-  }, [booking, id, guestEmail]);
-
-  // Generate booking reference number
-  const generateBookingRef = (bookingId, checkInDateOnly) => {
-    const date = parseDateOnlyLocal(checkInDateOnly);
-    if (!date) return `DW-UNKNOWN-${bookingId.slice(-3)}`;
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const shortId = bookingId.slice(-3);
-    return `DW-${year}${month}${day}-${shortId}`;
-  };
+  }, [confirmation, id, guestEmail]);
 
   const getTripTypeDisplay = useCallback(
     (tripType) => {
@@ -113,54 +101,48 @@ const BookingSuccess = () => {
     [t]
   );
 
-  // Calculate total nights
-  const getTotalNights = (checkIn, checkOut) => {
-    return daysBetweenDateOnly(checkIn, checkOut);
-  };
-
-  // Generate ICS file for calendar
   const generateICS = () => {
-    if (!booking || !booking.cabinId) return;
-    
-    const cabin = booking.cabinId;
-    const checkIn = new Date(booking.checkIn);
-    const checkOut = new Date(booking.checkOut);
-    
-    // Set default times
-    checkIn.setHours(12, 0, 0, 0); // 12:00 PM check-in
-    checkOut.setHours(11, 0, 0, 0); // 11:00 AM check-out
-    
-    const formatDate = (date) => {
-      return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-    };
-    
-    let location = cabin.meetingPoint?.label || cabin.location;
-    if (cabin.meetingPoint?.lat && cabin.meetingPoint?.lng) {
-      location += ` (GPS: ${cabin.meetingPoint.lat}, ${cabin.meetingPoint.lng})`;
+    if (!confirmation) return;
+
+    const entity = confirmation.displayEntity || {};
+    const checkIn = confirmation.checkIn ? new Date(confirmation.checkIn) : parseDateOnlyLocal(confirmation.checkInDateOnly);
+    const checkOut = confirmation.checkOut ? new Date(confirmation.checkOut) : parseDateOnlyLocal(confirmation.checkOutDateOnly);
+    if (!checkIn || !checkOut) return;
+
+    checkIn.setHours(12, 0, 0, 0);
+    checkOut.setHours(11, 0, 0, 0);
+
+    const formatDate = (date) => date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+
+    const meetingPoint = entity.meetingPoint || {};
+    let icsLocation = meetingPoint.label || entity.location || '';
+    if (meetingPoint.lat && meetingPoint.lng) {
+      icsLocation += ` (GPS: ${meetingPoint.lat}, ${meetingPoint.lng})`;
     }
-    
-    let description = `Drift & Dwells - ${cabin.name}\n\n`;
-    if (cabin.meetingPoint?.googleMapsUrl) {
-      description += `Directions: ${cabin.meetingPoint.googleMapsUrl}\n`;
+
+    const stayName = entity.name || t('success.cabinLabel');
+    let description = `Drift & Dwells - ${stayName}\n\n`;
+    if (meetingPoint.googleMapsUrl) {
+      description += `Directions: ${meetingPoint.googleMapsUrl}\n`;
     }
-    if (cabin.meetingPoint?.what3words) {
-      description += `What3Words: ///${cabin.meetingPoint.what3words}\n`;
+    if (meetingPoint.what3words) {
+      description += `What3Words: ///${meetingPoint.what3words}\n`;
     }
-    if (cabin.emergencyContact) {
-      description += `Emergency: ${cabin.emergencyContact}\n`;
+    if (entity.emergencyContact) {
+      description += `Emergency: ${entity.emergencyContact}\n`;
     }
-    
+
     const icsContent = `BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//Drift & Dwells//Booking Calendar//EN
 BEGIN:VEVENT
-UID:${booking._id}@driftdwells.com
+UID:${confirmation.bookingId}@driftdwells.com
 DTSTAMP:${formatDate(new Date())}
 DTSTART:${formatDate(checkIn)}
 DTEND:${formatDate(checkOut)}
-SUMMARY:Drift & Dwells — ${cabin.name}
+SUMMARY:Drift & Dwells — ${stayName}
 DESCRIPTION:${description.replace(/\n/g, '\\n')}
-LOCATION:${location}
+LOCATION:${icsLocation}
 STATUS:CONFIRMED
 END:VEVENT
 END:VCALENDAR`;
@@ -168,7 +150,7 @@ END:VCALENDAR`;
     const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `drift-dwells-${cabin.name.toLowerCase().replace(/\s+/g, '-')}.ics`;
+    link.download = `drift-dwells-${stayName.toLowerCase().replace(/\s+/g, '-')}.ics`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -186,7 +168,7 @@ END:VCALENDAR`;
         <div className="min-h-screen bg-gradient-to-br from-drift-green/5 to-drift-light-green/5">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
             <div className="text-center">
-              <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-drift-green"></div>
+              <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-drift-green" />
               <p className="mt-4 text-gray-600">{t('success.loadingBody')}</p>
             </div>
           </div>
@@ -195,7 +177,7 @@ END:VCALENDAR`;
     );
   }
 
-  if (error || !booking) {
+  if (error || !confirmation) {
     return (
       <>
         <Seo
@@ -210,10 +192,7 @@ END:VCALENDAR`;
               <div className="text-red-500 text-6xl mb-4">⚠️</div>
               <h1 className="text-3xl font-bold text-gray-900 mb-4">{t('success.errorTitle')}</h1>
               <p className="text-gray-600 mb-8">{error || t('success.errorDefaultMessage')}</p>
-              <Link
-                to="/"
-                className="btn-primary px-8 py-3"
-              >
+              <Link to="/" className="btn-primary px-8 py-3">
                 {t('success.backToHome')}
               </Link>
             </div>
@@ -223,40 +202,45 @@ END:VCALENDAR`;
     );
   }
 
-  const bookingRef = generateBookingRef(booking._id, booking.checkInDateOnly);
-  const totalNights = getTotalNights(booking.checkInDateOnly, booking.checkOutDateOnly);
+  const entity = confirmation.displayEntity || {};
+  const meetingPoint = entity.meetingPoint || {};
+  const packingList = Array.isArray(entity.packingList) ? entity.packingList : [];
+  const paymentSummary = confirmation.paymentSummary || {};
+  const guest = confirmation.guest || {};
+  const totalNights = confirmation.totalNights || 0;
 
   return (
     <>
       <Seo
         title={t('success.seoConfirmedTitle', {
-          cabinName: booking.cabinId?.name || t('success.cabinLabel')
+          cabinName: entity.name || t('success.cabinLabel')
         })}
         description={t('success.seoConfirmedDescription')}
         canonicalPath={`/booking-success/${id}`}
         noindex
       />
       <div className="min-h-screen bg-drift-bg">
-      {/* Inspirational Header */}
       <div className="bg-gradient-to-r from-drift-primary to-drift-light-green text-white">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-20">
           <div className="text-center">
-            <div className="w-28 h-28 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-8">
-              <svg className="w-16 h-16 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <div className="w-20 h-20 md:w-28 md:h-28 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-6 md:mb-8">
+              <svg className="w-12 h-12 md:w-16 md:h-16 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-            
-            <h1 className="text-6xl font-bold mb-6 tracking-widest uppercase">
+
+            <h1 className="text-3xl md:text-5xl lg:text-6xl font-bold mb-4 md:mb-6 tracking-widest uppercase">
               {t('success.heroTitle')}
             </h1>
-            
-            <p className="text-xl text-green-100 mb-8 max-w-3xl mx-auto leading-relaxed">
+
+            <p className="text-lg md:text-xl text-green-100 mb-6 md:mb-8 max-w-2xl lg:max-w-3xl mx-auto leading-relaxed">
               {t('success.heroSubtitle')}
             </p>
-            
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 inline-block">
-              <p className="text-lg font-semibold tracking-wide">{t('success.bookingRef', { ref: bookingRef })}</p>
+
+            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 md:p-6 inline-block max-w-full">
+              <p className="text-base md:text-lg font-semibold tracking-wide">
+                {t('success.bookingRef', { ref: confirmation.bookingRef })}
+              </p>
             </div>
           </div>
         </div>
@@ -264,78 +248,84 @@ END:VCALENDAR`;
 
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Booking Summary */}
           <div className="lg:col-span-2">
-            <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-100 mb-8">
+            <div className="bg-white rounded-xl shadow-lg p-6 md:p-8 border border-gray-100 mb-8">
               <h2 className="text-2xl font-semibold text-gray-900 mb-6">{t('success.summaryTitle')}</h2>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                {/* Cabin & Dates */}
                 <div className="space-y-4">
                   <div>
                     <span className="text-sm text-gray-500 block">{t('success.cabinLabel')}</span>
-                    <h3 className="text-xl font-semibold text-gray-900">{booking.cabinId.name}</h3>
-                    <p className="text-gray-600">📍 {booking.cabinId.location}</p>
+                    <h3 className="text-xl font-semibold text-gray-900">{entity.name}</h3>
+                    {entity.location ? (
+                      <p className="text-gray-600">📍 {entity.location}</p>
+                    ) : null}
+                    {confirmation.unitLabel ? (
+                      <p className="text-sm text-gray-500 mt-1">
+                        {t('success.assignedUnitLabel', { label: confirmation.unitLabel })}
+                      </p>
+                    ) : null}
                   </div>
-                  
+
                   <div>
                     <span className="text-sm text-gray-500 block">{t('fields.checkIn')}</span>
                     <p className="font-medium">
                       {(() => {
-                        const d = parseDateOnlyLocal(booking.checkInDateOnly);
+                        const d = parseDateOnlyLocal(confirmation.checkInDateOnly);
                         if (d) return formatStayDayWithWeekday(d, routeLanguage);
-                        return formatBookingStayForCsv(booking, 'checkIn') || null;
+                        return formatBookingStayForCsv(confirmation, 'checkIn') || null;
                       })()}
                     </p>
                   </div>
-                  
+
                   <div>
                     <span className="text-sm text-gray-500 block">{t('fields.checkOut')}</span>
                     <p className="font-medium">
                       {(() => {
-                        const d = parseDateOnlyLocal(booking.checkOutDateOnly);
+                        const d = parseDateOnlyLocal(confirmation.checkOutDateOnly);
                         if (d) return formatStayDayWithWeekday(d, routeLanguage);
-                        return formatBookingStayForCsv(booking, 'checkOut') || null;
+                        return formatBookingStayForCsv(confirmation, 'checkOut') || null;
                       })()}
                     </p>
                   </div>
-                  
+
                   <div>
                     <span className="text-sm text-gray-500 block">{t('success.durationLabel')}</span>
                     <p className="font-medium">{t('modal.nights', { count: totalNights })}</p>
                   </div>
                 </div>
 
-                {/* Experience & Guest Info */}
                 <div className="space-y-4">
                   <div>
                     <span className="text-sm text-gray-500 block">{t('success.tripTypeLabel')}</span>
-                    <p className="font-medium">{getTripTypeDisplay(booking.tripType)}</p>
+                    <p className="font-medium">{getTripTypeDisplay(confirmation.tripType)}</p>
                   </div>
-                  
-                  {booking.transportMethod && booking.transportMethod !== 'Not selected' && (
+
+                  {confirmation.transportMethod && confirmation.transportMethod !== 'Not selected' && (
                     <div>
                       <span className="text-sm text-gray-500 block">{t('success.arrivalMethodLabel')}</span>
-                      <p className="font-medium">{booking.transportMethod}</p>
+                      <p className="font-medium">{confirmation.transportMethod}</p>
                     </div>
                   )}
-                  
+
                   <div>
                     <span className="text-sm text-gray-500 block">{t('success.primaryGuestLabel')}</span>
-                    <p className="font-medium">{booking.guestInfo.firstName} {booking.guestInfo.lastName}</p>
-                    <p className="text-sm text-gray-600">{booking.guestInfo.email}</p>
+                    <p className="font-medium">
+                      {guest.firstName} {guest.lastName}
+                    </p>
+                    {guest.email ? <p className="text-sm text-gray-600">{guest.email}</p> : null}
                   </div>
-                  
+
                   <div>
                     <span className="text-sm text-gray-500 block">{t('success.guestsSummaryLabel')}</span>
                     <p className="font-medium">
-                      {t('success.adultsCount', { count: booking.adults })}
-                      {booking.children > 0 &&
-                        `, ${t('success.childrenCount', { count: booking.children })}`}
+                      {t('success.adultsCount', { count: confirmation.adults })}
+                      {confirmation.children > 0 &&
+                        `, ${t('success.childrenCount', { count: confirmation.children })}`}
                     </p>
                   </div>
-                  
-                  {booking.romanticSetup && (
+
+                  {confirmation.romanticSetup && (
                     <div className="bg-pink-50 border border-pink-200 rounded-lg p-3">
                       <div className="flex items-center text-pink-700">
                         <span className="text-lg mr-2">💕</span>
@@ -346,274 +336,200 @@ END:VCALENDAR`;
                 </div>
               </div>
 
-              {/* Special Requests */}
-              {booking.specialRequests && (
+              {confirmation.specialRequests && (
                 <div className="mt-6 pt-6 border-t border-gray-200">
                   <span className="text-sm text-gray-500 block">{t('success.specialRequestsLabel')}</span>
-                  <p className="text-gray-700 mt-1">{booking.specialRequests}</p>
+                  <p className="text-gray-700 mt-1">{confirmation.specialRequests}</p>
                 </div>
               )}
             </div>
 
-            {/* Pre-Arrival Guidance */}
-            <div className="bg-white rounded-xl shadow-lg p-8 border border-gray-100">
+            <div className="bg-white rounded-xl shadow-lg p-6 md:p-8 border border-gray-100">
               <h2 className="text-2xl font-semibold text-gray-900 mb-6">{t('success.preArrivalTitle')}</h2>
-              
-              {/* Directions */}
-              {booking.cabinId.meetingPoint?.googleMapsUrl && (
+
+              {meetingPoint.googleMapsUrl && (
                 <div className="mb-6">
                   <h3 className="font-semibold text-gray-900 mb-3">📍 {t('success.directionsTitle')}</h3>
                   <div className="flex flex-wrap gap-3">
                     <a
-                      href={booking.cabinId.meetingPoint.googleMapsUrl}
+                      href={meetingPoint.googleMapsUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center px-4 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition-colors duration-200"
                     >
-                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
                       {t('success.openGoogleMaps')}
                     </a>
-                    
-                    {booking.cabinId.meetingPoint.lat && booking.cabinId.meetingPoint.lng && (
+
+                    {meetingPoint.lat && meetingPoint.lng && (
                       <div className="inline-flex items-center px-4 py-2 bg-gray-100 rounded-lg">
                         <span className="text-sm text-gray-600">
-                          GPS: {booking.cabinId.meetingPoint.lat}, {booking.cabinId.meetingPoint.lng}
+                          GPS: {meetingPoint.lat}, {meetingPoint.lng}
                         </span>
                       </div>
                     )}
-                    
-                    {booking.cabinId.meetingPoint.what3words && (
+
+                    {meetingPoint.what3words && (
                       <a
-                        href={`https://what3words.com/${booking.cabinId.meetingPoint.what3words}`}
+                        href={`https://what3words.com/${meetingPoint.what3words}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center px-4 py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 rounded-lg transition-colors duration-200"
                       >
-                        <span className="text-sm">{`///${booking.cabinId.meetingPoint.what3words}`}</span>
+                        <span className="text-sm">{`///${meetingPoint.what3words}`}</span>
                       </a>
                     )}
                   </div>
                 </div>
               )}
 
-              {/* Valley Guide Link */}
-              {(booking.cabinId?.location || booking.cabinTypeId?.location) && 
-               ['The Valley', 'Valley'].some(loc => 
-                 (booking.cabinId?.location || booking.cabinTypeId?.location || '').toLowerCase().includes(loc.toLowerCase())
-               ) && (
+              {isValleyLocation(entity.location) && (
                 <div className="mb-6">
                   <h3 className="font-semibold text-gray-900 mb-3">🗺️ {t('success.interactiveGuideTitle')}</h3>
                   <Link
-                    to={`/my-trip/${booking._id}/valley-guide`}
+                    to={`/my-trip/${confirmation.bookingId}/valley-guide`}
                     className="inline-flex items-center px-4 py-2 bg-drift-green hover:bg-drift-light-green text-white rounded-lg transition-colors duration-200"
                   >
-                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
                     {t('success.openValleyGuide')}
                   </Link>
                   <p className="text-sm text-gray-600 mt-2">{t('success.valleyGuideBlurb')}</p>
                 </div>
               )}
 
-              {/* Offline Guide */}
-              {booking.cabinId?.arrivalGuideUrl && (
+              {entity.arrivalGuideUrl && (
                 <div className="mb-6">
                   <h3 className="font-semibold text-gray-900 mb-3">📄 {t('success.arrivalGuideTitle')}</h3>
                   <a
-                    href={booking.cabinId.arrivalGuideUrl}
+                    href={entity.arrivalGuideUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center px-4 py-2 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg transition-colors duration-200"
                   >
-                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    {getGuideCtaLabel(booking.cabinId.arrivalGuideUrl)}
+                    {getGuideCtaLabel(entity.arrivalGuideUrl)}
                   </a>
                 </div>
               )}
 
-              {/* Packing & Safety */}
               <div className="mb-6">
                 <h3 className="font-semibold text-gray-900 mb-3">🎒 {t('success.packingSafetyTitle')}</h3>
                 <div className="flex flex-wrap gap-3">
-                  {booking.cabinId.packingList && booking.cabinId.packingList.length > 0 && (
+                  {packingList.length > 0 && (
                     <button
+                      type="button"
                       onClick={() => setShowPackingModal(true)}
                       className="inline-flex items-center px-4 py-2 bg-orange-100 hover:bg-orange-200 text-orange-700 rounded-lg transition-colors duration-200"
                     >
-                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                      </svg>
                       {t('success.viewPackingList')}
                     </button>
                   )}
-                  
-                  {booking.cabinId.safetyNotes && (
+
+                  {entity.safetyNotes && (
                     <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 w-full">
-                      <div className="flex items-start">
-                        <span className="text-yellow-600 mr-2">⚠️</span>
-                        <div>
-                          <h4 className="text-sm font-medium text-yellow-800">{t('success.safetyRulesTitle')}</h4>
-                          <p className="text-sm text-yellow-700 mt-1">{booking.cabinId.safetyNotes}</p>
-                        </div>
-                      </div>
+                      <h4 className="text-sm font-medium text-yellow-800">{t('success.safetyRulesTitle')}</h4>
+                      <p className="text-sm text-yellow-700 mt-1">{entity.safetyNotes}</p>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Arrival Window & Contact */}
               <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                {booking.cabinId.arrivalWindowDefault && (
+                {entity.arrivalWindowDefault && (
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                    <div className="flex items-center">
-                      <span className="text-blue-600 mr-2">🕐</span>
-                      <div>
-                        <h4 className="text-sm font-medium text-blue-800">{t('success.arrivalWindowTitle')}</h4>
-                        <p className="text-sm text-blue-700">{booking.cabinId.arrivalWindowDefault}</p>
-                      </div>
-                    </div>
+                    <h4 className="text-sm font-medium text-blue-800">{t('success.arrivalWindowTitle')}</h4>
+                    <p className="text-sm text-blue-700">{entity.arrivalWindowDefault}</p>
                   </div>
                 )}
-                
-                {booking.cabinId.emergencyContact && (
+
+                {entity.emergencyContact && (
                   <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                    <div className="flex items-center">
-                      <span className="text-red-600 mr-2">🚨</span>
-                      <div>
-                        <h4 className="text-sm font-medium text-red-800">{t('success.emergencyContactTitle')}</h4>
-                        <p className="text-sm text-red-700">{booking.cabinId.emergencyContact}</p>
-                      </div>
-                    </div>
+                    <h4 className="text-sm font-medium text-red-800">{t('success.emergencyContactTitle')}</h4>
+                    <p className="text-sm text-red-700">{entity.emergencyContact}</p>
                   </div>
                 )}
               </div>
 
-              {/* Action Buttons */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <button 
+                <button
+                  type="button"
                   onClick={generateICS}
                   className="flex items-center justify-center px-4 py-3 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors duration-200"
                 >
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
                   {t('success.addToCalendar')}
                 </button>
-                
-                <a 
-                  href="https://wa.me/359881234567" 
-                  target="_blank" 
+
+                <a
+                  href="https://wa.me/359881234567"
+                  target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center justify-center px-4 py-3 bg-green-100 hover:bg-green-200 text-green-700 rounded-lg transition-colors duration-200"
                 >
-                  <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.488"/>
-                  </svg>
                   {t('success.whatsappGroup')}
                 </a>
               </div>
             </div>
           </div>
 
-          {/* Inspiration & Total */}
           <div className="lg:col-span-1">
-            {/* Total Cost */}
             <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100 mb-8">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('success.totalCostTitle')}</h3>
               <div className="text-center">
-                <div className="text-3xl font-bold text-drift-green mb-2">€{booking.totalPrice}</div>
-                <p className="text-sm text-gray-500">{t('success.paymentDueOnArrival')}</p>
+                <div className="text-3xl font-bold text-drift-green mb-2">
+                  €{paymentSummary.displayAmount}
+                </div>
+                <p className="text-sm text-gray-500">{formatPaymentSubline(t, paymentSummary)}</p>
               </div>
             </div>
 
-            {/* Inspiration Section */}
-            <div className="bg-gradient-to-br from-drift-green to-drift-light-green text-white rounded-xl p-8">
+            <div className="bg-gradient-to-br from-drift-green to-drift-light-green text-white rounded-xl p-6 md:p-8">
               <div className="text-center">
                 <div className="text-4xl mb-4">🌲</div>
-                <blockquote className="text-lg italic mb-6">
-                  {t('success.quoteBody')}
-                </blockquote>
-                <p className="text-green-100 text-sm">
-                  {t('success.quoteFooter')}
-                </p>
+                <blockquote className="text-lg italic mb-6">{t('success.quoteBody')}</blockquote>
+                <p className="text-green-100 text-sm">{t('success.quoteFooter')}</p>
               </div>
             </div>
 
-            {/* Contact Info */}
             <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100 mt-8">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('success.needHelpTitle')}</h3>
               <div className="space-y-3 text-sm">
-                <div className="flex items-center">
-                  <svg className="w-4 h-4 mr-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 4.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                  <a href={`mailto:${CONTACT_EMAIL}`} className="text-drift-green hover:underline">
-                    {CONTACT_EMAIL}
-                  </a>
-                </div>
-                <div className="flex items-center">
-                  <svg className="w-4 h-4 mr-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                  </svg>
-                  <a href={`tel:${CONTACT_PHONE.replace(/\s/g, '')}`} className="text-drift-green hover:underline tabular-nums">
-                    {CONTACT_PHONE}
-                  </a>
-                </div>
+                <a href={`mailto:${CONTACT_EMAIL}`} className="text-drift-green hover:underline block">
+                  {CONTACT_EMAIL}
+                </a>
+                <a
+                  href={`tel:${CONTACT_PHONE.replace(/\s/g, '')}`}
+                  className="text-drift-green hover:underline tabular-nums block"
+                >
+                  {CONTACT_PHONE}
+                </a>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Bottom Actions */}
         <div className="text-center mt-12">
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link
-              to={localizePath('/', routeLanguage)}
-              className="btn-primary px-8 py-3"
-            >
+          <div className="flex flex-col sm:flex-row gap-4 justify-center max-w-lg mx-auto">
+            <Link to={localizePath('/', routeLanguage)} className="btn-primary px-8 py-3">
               {t('success.backToHome')}
             </Link>
-            <Link
-              to={localizePath('/search', routeLanguage)}
-              className="btn-secondary px-8 py-3"
-            >
+            <Link to={localizePath('/search', routeLanguage)} className="btn-secondary px-8 py-3">
               {t('success.exploreMoreStays')}
             </Link>
           </div>
-          
-          <p className="text-sm text-gray-500 mt-6">
+
+          <p className="text-sm text-gray-500 mt-6 max-w-2xl mx-auto">
             {t('success.footerNoteLine1')}
             <br />
             {t('success.footerNoteLine2')}
           </p>
           <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 mt-4 text-sm text-drift-green">
-            <a
-              href={INSTAGRAM_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium hover:underline underline-offset-2"
-            >
+            <a href={INSTAGRAM_URL} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline">
               Instagram
             </a>
-            <a
-              href={FACEBOOK_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium hover:underline underline-offset-2"
-            >
+            <a href={FACEBOOK_URL} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline">
               Facebook
             </a>
           </div>
         </div>
       </div>
 
-      {/* Packing List Modal */}
       {showPackingModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-lg max-w-md w-full max-h-96 overflow-hidden">
@@ -625,14 +541,12 @@ END:VCALENDAR`;
                 className="text-gray-400 hover:text-gray-600"
                 aria-label={t('success.closePackingAria')}
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                ×
               </button>
             </div>
             <div className="p-6 overflow-y-auto max-h-64">
               <ul className="space-y-2">
-                {booking.cabinId.packingList.map((item, index) => (
+                {packingList.map((item, index) => (
                   <li key={index} className="flex items-center">
                     <span className="text-green-500 mr-2">✓</span>
                     <span className="text-gray-700">{item}</span>

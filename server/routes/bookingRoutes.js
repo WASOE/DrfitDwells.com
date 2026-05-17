@@ -22,6 +22,10 @@ const { normalizeDateToSofiaDayStart, formatSofiaDateOnly } = require('../utils/
 const { BLOCKING_BOOKING_STATUSES } = require('../services/calendar/blockingStatusConstants');
 const bookingLifecycleEmailService = require('../services/bookingLifecycleEmailService');
 const bookingQuoteService = require('../services/bookingQuoteService');
+const {
+  ENTITY_POPULATE_FIELDS,
+  buildBookingConfirmation
+} = require('../services/bookings/bookingConfirmationReadModel');
 const promoService = require('../services/promoService');
 const emailService = require('../services/emailService');
 const {
@@ -1907,6 +1911,43 @@ router.post('/:id/purchase-tracking', purchaseTrackingLimiter, validateId('id'),
       success: false,
       message: 'Error processing purchase tracking',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// GET /api/bookings/:id/confirmation — guest-facing confirmation read model (no raw cabinId assumptions)
+router.get('/:id/confirmation', validateId('id'), async (req, res) => {
+  try {
+    const booking = await Booking.findById(req.params.id);
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found'
+      });
+    }
+
+    if (booking.cabinId) {
+      await booking.populate('cabinId', ENTITY_POPULATE_FIELDS);
+    } else if (booking.cabinTypeId) {
+      await booking.populate('cabinTypeId', ENTITY_POPULATE_FIELDS);
+      await booking.populate('unitId', 'unitNumber displayName');
+    }
+
+    const confirmation = buildBookingConfirmation(booking, {
+      queryEmail: req.query.email
+    });
+
+    res.json({
+      success: true,
+      data: { confirmation }
+    });
+  } catch (error) {
+    console.error('Get booking confirmation error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error retrieving booking confirmation',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 });
