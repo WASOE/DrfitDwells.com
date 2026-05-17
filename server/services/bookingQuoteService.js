@@ -223,8 +223,41 @@ function verifyPaymentIntentPromoMetadata(pi, quote) {
   return { ok: true };
 }
 
+/**
+ * Whether an existing voucher-checkout PaymentIntent can be safely replayed.
+ * stripeAmountCents must equal pi.amount in all successful paths.
+ */
+function paymentIntentMatchesVoucherCheckout(pi, { quote, stripeAmountCents, voucherAppliedCents, redemptionId }) {
+  if (!pi) {
+    return { ok: false, message: 'missing_payment_intent' };
+  }
+  const expectedStripe = Number(stripeAmountCents);
+  if (!Number.isFinite(expectedStripe) || Number(pi.amount) !== expectedStripe) {
+    return { ok: false, message: 'amount_mismatch' };
+  }
+
+  const promoVerify = verifyPaymentIntentPromoMetadata(pi, quote);
+  if (!promoVerify.ok) {
+    return { ok: false, message: promoVerify.message };
+  }
+
+  const meta = pi.metadata || {};
+  if (Number(meta.voucherAppliedCents || 0) !== Number(voucherAppliedCents || 0)) {
+    return { ok: false, message: 'voucher_applied_mismatch' };
+  }
+
+  if (redemptionId != null && String(redemptionId) !== '') {
+    if (String(meta.redemptionId || '') !== String(redemptionId)) {
+      return { ok: false, message: 'redemption_id_mismatch' };
+    }
+  }
+
+  return { ok: true };
+}
+
 module.exports = {
   computeQuoteFromEntity,
   buildPublicBookingQuote,
-  verifyPaymentIntentPromoMetadata
+  verifyPaymentIntentPromoMetadata,
+  paymentIntentMatchesVoucherCheckout
 };

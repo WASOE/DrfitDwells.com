@@ -642,9 +642,16 @@ const ConfirmBooking = () => {
       setVoucherRedemptionId(res.data.redemptionId || null);
       setFullVoucherCoverage(Boolean(res.data.fullVoucherCoverage));
       setVoucherAppliedCents(Number(res.data.voucherAppliedCents || 0));
-      setStripeAmountCents(Number(res.data.stripeAmountCents || 0));
+      const reportedStripeCents = Number(res.data.stripeAmountCents);
       if (res.data.clientSecret) {
+        if (!Number.isFinite(reportedStripeCents) || reportedStripeCents < 0) {
+          throw new Error(t('confirm.paymentSetupFailed'));
+        }
+        setStripeAmountCents(reportedStripeCents);
         setClientSecret(res.data.clientSecret);
+      } else {
+        setStripeAmountCents(Number.isFinite(reportedStripeCents) ? reportedStripeCents : 0);
+        setClientSecret(null);
       }
     } catch (err) {
       setCheckoutInitError(err.response?.data?.message || t('confirm.paymentSetupFailed'));

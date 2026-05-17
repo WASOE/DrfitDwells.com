@@ -65,6 +65,83 @@ function isValidCheckoutId(value) {
   return CHECKOUT_ID_PATTERN.test(String(value || ''));
 }
 
+const CANCELLABLE_PAYMENT_INTENT_STATUSES = new Set([
+  'requires_payment_method',
+  'requires_confirmation',
+  'requires_action'
+]);
+
+function buildBookingPaymentIntentMetadata({
+  entityType,
+  cabinId,
+  cabinTypeId,
+  checkInDate,
+  checkOutDate,
+  stripeAmountCents,
+  experienceKeys,
+  transportMethod,
+  romanticSetup,
+  appliedPromoCode,
+  subtotalCents,
+  discountAmountCents,
+  amountCents,
+  voucherAppliedCents,
+  checkoutId,
+  redemptionId,
+  giftVoucherId,
+  reservationKey,
+  attribution
+}) {
+  return {
+    entityType,
+    cabinId: cabinId ? cabinId.toString() : '',
+    cabinTypeId: cabinTypeId ? cabinTypeId.toString() : '',
+    checkIn: checkInDate.toISOString(),
+    checkOut: checkOutDate.toISOString(),
+    amountCents: String(stripeAmountCents),
+    experienceKeys: JSON.stringify(experienceKeys || []),
+    transportMethod: String(transportMethod || ''),
+    romanticSetup: String(!!romanticSetup),
+    promoCode: appliedPromoCode || '',
+    subtotalCents: String(subtotalCents),
+    discountAmountCents: String(discountAmountCents),
+    finalTotalCents: String(amountCents),
+    voucherAppliedCents: String(voucherAppliedCents),
+    checkoutId: checkoutId || '',
+    redemptionId: redemptionId || '',
+    giftVoucherId: giftVoucherId || '',
+    reservationKey: reservationKey || '',
+    ...(attribution?.referralCode ? { referralCode: attribution.referralCode } : {}),
+    ...(attribution?.attributionSource ? { attrSource: attribution.attributionSource } : {}),
+    ...(attribution?.utmSource ? { utmSource: attribution.utmSource } : {}),
+    ...(attribution?.utmCampaign ? { utmCampaign: attribution.utmCampaign } : {})
+  };
+}
+
+async function tryCancelStalePaymentIntent(paymentIntentId, existingPi) {
+  const status = existingPi?.status || null;
+  if (!paymentIntentId || !CANCELLABLE_PAYMENT_INTENT_STATUSES.has(status)) {
+    console.warn(JSON.stringify({
+      source: 'booking-payment-intent',
+      phase: 'stale_payment_intent_cancel_skipped',
+      paymentIntentId: paymentIntentId ? String(paymentIntentId) : null,
+      status
+    }));
+    return;
+  }
+  try {
+    await stripe.paymentIntents.cancel(String(paymentIntentId));
+  } catch (err) {
+    console.warn(JSON.stringify({
+      source: 'booking-payment-intent',
+      phase: 'stale_payment_intent_cancel_failed',
+      paymentIntentId: String(paymentIntentId),
+      status,
+      error: err?.message || String(err)
+    }));
+  }
+}
+
 function sameObjectIdish(a, b) {
   if (!a || !b) return false;
   return String(a) === String(b);
@@ -518,6 +595,7 @@ router.post('/create-payment-intent', paymentIntentLimiter, bookingQuoteBodyVali
     let redemptionId = null;
     let giftVoucherId = null;
     let reservationKey = null;
+    let replacedStalePaymentIntent = null;
 
     if (voucherCode) {
       await releaseExpiredVoucherReservations({ now: new Date(), limit: 25 });
@@ -537,19 +615,39 @@ router.post('/create-payment-intent', paymentIntentLimiter, bookingQuoteBodyVali
       reservationKey = reservation.reservationKey;
       if (reservation.paymentIntentId) {
         const existingPi = await stripe.paymentIntents.retrieve(reservation.paymentIntentId);
-        return res.json({
-          success: true,
-          idempotentReplay: true,
-          clientSecret: existingPi.client_secret,
-          paymentIntentId: existingPi.id,
-          redemptionId,
-          fullVoucherCoverage,
-          voucherAppliedCents,
+        const quoteForPiMatch = {
+          subtotalPrice,
+          discountAmount,
+          totalPrice,
+          appliedPromoCode
+        };
+        const piMatch = bookingQuoteService.paymentIntentMatchesVoucherCheckout(existingPi, {
+          quote: quoteForPiMatch,
           stripeAmountCents,
-          subtotalCents,
-          discountAmountCents,
-          totalValueCents: amountCents
+          voucherAppliedCents,
+          redemptionId
         });
+        if (piMatch.ok) {
+          const replayStripeCents = Number(existingPi.amount);
+          return res.json({
+            success: true,
+            idempotentReplay: true,
+            clientSecret: existingPi.client_secret,
+            paymentIntentId: existingPi.id,
+            redemptionId,
+            fullVoucherCoverage,
+            voucherAppliedCents,
+            stripeAmountCents: replayStripeCents,
+            subtotalCents,
+            discountAmountCents,
+            totalValueCents: amountCents
+          });
+        }
+        replacedStalePaymentIntent = {
+          id: String(existingPi.id),
+          amountCents: Number(existingPi.amount)
+        };
+        await tryCancelStalePaymentIntent(existingPi.id, existingPi);
       }
       if (fullVoucherCoverage) {
         return res.json({
@@ -578,31 +676,40 @@ router.post('/create-payment-intent', paymentIntentLimiter, bookingQuoteBodyVali
         amount: stripeAmountCents,
         currency,
         automatic_payment_methods: { enabled: true },
-        metadata: {
+        metadata: buildBookingPaymentIntentMetadata({
           entityType,
-          cabinId: cabinId ? cabinId.toString() : '',
-          cabinTypeId: cabinTypeId ? cabinTypeId.toString() : '',
-          checkIn: checkInDate.toISOString(),
-          checkOut: checkOutDate.toISOString(),
-          amountCents: String(stripeAmountCents),
-          experienceKeys: JSON.stringify(experienceKeys || []),
-          transportMethod: String(req.body.transportMethod || ''),
-          romanticSetup: String(!!req.body.romanticSetup),
-          promoCode: appliedPromoCode || '',
-          subtotalCents: String(subtotalCents),
-          discountAmountCents: String(discountAmountCents),
-          finalTotalCents: String(amountCents),
-          voucherAppliedCents: String(voucherAppliedCents),
-          checkoutId: checkoutId || '',
-          redemptionId: redemptionId || '',
-          giftVoucherId: giftVoucherId || '',
-          reservationKey: reservationKey || '',
-          ...(attribution?.referralCode ? { referralCode: attribution.referralCode } : {}),
-          ...(attribution?.attributionSource ? { attrSource: attribution.attributionSource } : {}),
-          ...(attribution?.utmSource ? { utmSource: attribution.utmSource } : {}),
-          ...(attribution?.utmCampaign ? { utmCampaign: attribution.utmCampaign } : {})
-        }
+          cabinId,
+          cabinTypeId,
+          checkInDate,
+          checkOutDate,
+          stripeAmountCents,
+          experienceKeys,
+          transportMethod: req.body.transportMethod,
+          romanticSetup: req.body.romanticSetup,
+          appliedPromoCode,
+          subtotalCents,
+          discountAmountCents,
+          amountCents,
+          voucherAppliedCents,
+          checkoutId,
+          redemptionId,
+          giftVoucherId,
+          reservationKey,
+          attribution
+        })
       });
+      if (replacedStalePaymentIntent) {
+        console.info(JSON.stringify({
+          source: 'booking-payment-intent',
+          phase: 'stale_voucher_payment_intent_replaced',
+          oldPaymentIntentId: replacedStalePaymentIntent.id,
+          newPaymentIntentId: String(paymentIntent.id),
+          oldAmountCents: replacedStalePaymentIntent.amountCents,
+          newAmountCents: Number(paymentIntent.amount),
+          promoCode: appliedPromoCode || null,
+          redemptionId: redemptionId || null
+        }));
+      }
     } catch (piErr) {
       if (redemptionId) {
         try {
@@ -626,6 +733,8 @@ router.post('/create-payment-intent', paymentIntentLimiter, bookingQuoteBodyVali
       await attachPaymentIntentToReservation({ redemptionId, paymentIntentId: paymentIntent.id });
     }
 
+    const piAmountCents = Number(paymentIntent.amount);
+    const responseStripeCents = Number.isFinite(piAmountCents) ? piAmountCents : stripeAmountCents;
     return res.json({
       success: true,
       clientSecret: paymentIntent.client_secret,
@@ -633,7 +742,7 @@ router.post('/create-payment-intent', paymentIntentLimiter, bookingQuoteBodyVali
       redemptionId,
       fullVoucherCoverage: false,
       voucherAppliedCents,
-      stripeAmountCents,
+      stripeAmountCents: responseStripeCents,
       subtotalCents,
       discountAmountCents,
       totalValueCents: amountCents
