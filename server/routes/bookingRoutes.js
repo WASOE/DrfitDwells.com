@@ -48,6 +48,14 @@ const {
 } = require('../services/bookingPurchaseTracking');
 const { openManualReviewItem } = require('../services/ops/ingestion/manualReviewService');
 const { linkStripePaymentToBooking } = require('../services/payments/paymentLinkingService');
+const { isCheckoutSessionError } = require('../services/checkout/checkoutSessionErrors');
+const {
+  shouldUseCheckoutSessionV2,
+  handleGetCheckoutSession,
+  handleCreatePaymentIntentV2,
+  formatPublicCheckoutSessionState,
+  sendCheckoutSessionError
+} = require('./checkoutSessionRouteAdapter');
 const {
   reserveVoucherForCheckout,
   attachPaymentIntentToReservation,
@@ -532,6 +540,36 @@ router.post('/quote', bookingQuoteLimiter, bookingQuoteBodyValidators, async (re
   }
 });
 
+// GET /api/bookings/checkout-sessions/:checkoutId — safe CheckoutSession V2 state (no Stripe, no secrets)
+router.get('/checkout-sessions/:checkoutId', async (req, res) => {
+  try {
+    const checkoutId = normalizeCheckoutId(req.params.checkoutId);
+    if (!checkoutId || !isValidCheckoutId(checkoutId)) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_CHECKOUT_ID',
+        message: 'Invalid checkout session id',
+        details: null
+      });
+    }
+
+    const state = await handleGetCheckoutSession(checkoutId);
+    return res.json({
+      success: true,
+      checkoutSession: formatPublicCheckoutSessionState(state)
+    });
+  } catch (err) {
+    if (isCheckoutSessionError(err)) {
+      return sendCheckoutSessionError(res, err);
+    }
+    console.error('Get checkout session error:', err);
+    return res.status(500).json({
+      success: false,
+      message: process.env.NODE_ENV === 'development' ? err.message : 'Checkout session lookup failed'
+    });
+  }
+});
+
 // POST /api/bookings/create-payment-intent - Create Stripe PaymentIntent for cabin booking
 router.post('/create-payment-intent', paymentIntentLimiter, bookingQuoteBodyValidators, async (req, res) => {
   try {
@@ -555,6 +593,22 @@ router.post('/create-payment-intent', paymentIntentLimiter, bookingQuoteBodyVali
         error: { code: 'INVALID_CHECKOUT_ID' }
       });
     }
+
+    if (await shouldUseCheckoutSessionV2(checkoutId)) {
+      try {
+        const outcome = await handleCreatePaymentIntentV2(req, stripe);
+        if (!outcome.ok) {
+          return res.status(outcome.status).json(outcome.body);
+        }
+        return res.status(outcome.status).json(outcome.body);
+      } catch (err) {
+        if (isCheckoutSessionError(err)) {
+          return sendCheckoutSessionError(res, err);
+        }
+        throw err;
+      }
+    }
+
     if (voucherCode && !checkoutId) {
       return res.status(400).json({
         success: false,

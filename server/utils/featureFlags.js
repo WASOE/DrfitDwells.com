@@ -55,6 +55,11 @@ const featureFlags = {
 
     const normalized = slug.trim().toLowerCase();
     return configured.includes(normalized);
+  },
+
+  // CheckoutSession V2: canonical PI per session (default off in all environments).
+  isCheckoutSessionV2Enabled() {
+    return this._parseBoolean(process.env.CHECKOUT_SESSION_V2);
   }
 };
 
