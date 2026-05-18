@@ -6,6 +6,7 @@ const CHECKOUT_SESSION_STATUSES = [
   'draft',
   'quoted',
   'payment_required',
+  'payment_not_required',
   'pi_active',
   'voucher_only_reserved',
   'paid',

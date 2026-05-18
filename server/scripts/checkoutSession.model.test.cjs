@@ -67,6 +67,7 @@ test('CheckoutSession model imports cleanly', () => {
   assert.equal(CheckoutSession.modelName, 'CheckoutSession');
   assert.ok(Array.isArray(CheckoutSession.CHECKOUT_SESSION_STATUSES));
   assert.ok(CheckoutSession.CHECKOUT_SESSION_STATUSES.includes('voucher_only_reserved'));
+  assert.ok(CheckoutSession.CHECKOUT_SESSION_STATUSES.includes('payment_not_required'));
 });
 
 test('checkoutId is required', async () => {
@@ -94,6 +95,21 @@ test('full voucher reserved state: voucher_only_reserved + not_required, no cano
     canonicalPaymentIntentId: null
   });
   assert.equal(doc.status, 'voucher_only_reserved');
+  assert.equal(doc.paymentStatus, 'not_required');
+  assert.equal(doc.stripeAmountCents, 0);
+  assert.equal(doc.canonicalPaymentIntentId, null);
+});
+
+test('payment_not_required state: not_required payment, no canonical PI', async () => {
+  const doc = await CheckoutSession.create({
+    checkoutId: 'chk-payment-not-required-001',
+    status: 'payment_not_required',
+    paymentStatus: 'not_required',
+    stripeAmountCents: 0,
+    giftVoucherAppliedCents: 0,
+    canonicalPaymentIntentId: null
+  });
+  assert.equal(doc.status, 'payment_not_required');
   assert.equal(doc.paymentStatus, 'not_required');
   assert.equal(doc.stripeAmountCents, 0);
   assert.equal(doc.canonicalPaymentIntentId, null);
