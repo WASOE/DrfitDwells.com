@@ -302,6 +302,23 @@ const bookingSchema = new mongoose.Schema({
     trim: true,
     default: null
   },
+  /** C3 commercial-stay dedupe fingerprint (guest email + entity + stay dates). */
+  commercialStayFingerprint: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  /** CheckoutSession row that finalized this booking (V2). */
+  checkoutSessionId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'CheckoutSession',
+    default: null
+  },
+  /** Guest booking_confirmed lifecycle email sent at (C3 email-once). */
+  confirmationEmailSentAt: {
+    type: Date,
+    default: null
+  },
   /** First-touch marketing params captured on the client (attribution / ads). */
   attribution: {
     type: new mongoose.Schema(
@@ -366,6 +383,22 @@ bookingSchema.index(
     unique: true,
     partialFilterExpression: {
       stripePaymentIntentId: { $exists: true, $type: 'string', $gt: '' }
+    }
+  }
+);
+bookingSchema.index(
+  { commercialStayFingerprint: 1, status: 1 },
+  {
+    partialFilterExpression: {
+      commercialStayFingerprint: { $exists: true, $type: 'string', $gt: '' }
+    }
+  }
+);
+bookingSchema.index(
+  { checkoutSessionId: 1 },
+  {
+    partialFilterExpression: {
+      checkoutSessionId: { $exists: true, $type: 'objectId' }
     }
   }
 );

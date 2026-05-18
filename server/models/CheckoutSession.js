@@ -105,6 +105,14 @@ const checkoutSessionSchema = new mongoose.Schema(
       type: Date,
       default: null
     },
+    finalizeStartedAt: {
+      type: Date,
+      default: null
+    },
+    finalizedAt: {
+      type: Date,
+      default: null
+    },
     stripeAmountCents: {
       type: Number,
       default: 0,
@@ -154,6 +162,14 @@ checkoutSessionSchema.index(
 );
 
 checkoutSessionSchema.index({ stayFingerprint: 1, finalizeStatus: 1 });
+checkoutSessionSchema.index(
+  { bookingId: 1 },
+  {
+    partialFilterExpression: {
+      bookingId: { $exists: true, $type: 'objectId' }
+    }
+  }
+);
 checkoutSessionSchema.index({ guestEmail: 1, createdAt: -1 });
 checkoutSessionSchema.index({ status: 1, updatedAt: -1 });
 
