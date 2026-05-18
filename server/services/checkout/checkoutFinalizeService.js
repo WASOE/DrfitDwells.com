@@ -11,6 +11,10 @@ const {
 } = require('./checkoutSessionService');
 const { assertCanonicalPaymentIntentForSession } = require('./checkoutCanonicalPaymentIntentService');
 const { assertNoCommercialStayConflict } = require('./commercialStayGuardService');
+const {
+  normalizeGuestEmail,
+  buildCommercialStayFingerprintFromBookingPayload
+} = require('./bookingCommercialStayFingerprint');
 
 const FINALIZE_STATUS = {
   OPEN: 'open',
@@ -59,6 +63,121 @@ function buildFinalizeReplayResponse(session) {
     };
   }
   return null;
+}
+
+function hasPersistedStayFingerprint(session) {
+  return Boolean(String(session?.stayFingerprint || '').trim());
+}
+
+function buildEmptyStayFingerprintFilter() {
+  return {
+    $or: [
+      { stayFingerprint: null },
+      { stayFingerprint: '' },
+      { stayFingerprint: { $exists: false } }
+    ]
+  };
+}
+
+function deriveCommercialStayFingerprintForFinalize({ session, bookingPayload }) {
+  if (hasPersistedStayFingerprint(session)) {
+    return String(session.stayFingerprint).trim();
+  }
+
+  const derived = buildCommercialStayFingerprintFromBookingPayload(bookingPayload);
+  if (!derived) {
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.COMMERCIAL_STAY_FINGERPRINT_REQUIRED,
+      'commercial stay fingerprint could not be derived from booking payload'
+    );
+  }
+  return derived;
+}
+
+function assertStayFingerprintMatchesExisting(existingFingerprint, derivedFingerprint) {
+  const existing = String(existingFingerprint || '').trim();
+  const derived = String(derivedFingerprint || '').trim();
+  if (existing && derived && existing !== derived) {
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.COMMERCIAL_STAY_FINGERPRINT_MISMATCH,
+      'Computed commercial stay fingerprint does not match persisted checkout session fingerprint',
+      { existingFingerprint: existing, derivedFingerprint: derived }
+    );
+  }
+}
+
+async function ensureCheckoutSessionStayFingerprint({ checkoutId, bookingPayload }) {
+  const normalizedId = normalizeCheckoutId(checkoutId);
+  const session = await loadSessionOrThrow(normalizedId);
+  assertV2Flow(session);
+  assertSessionUsable(session);
+
+  const existingFingerprint = hasPersistedStayFingerprint(session)
+    ? String(session.stayFingerprint).trim()
+    : null;
+
+  if (existingFingerprint) {
+    if (bookingPayload) {
+      const derived = buildCommercialStayFingerprintFromBookingPayload(bookingPayload);
+      if (derived) {
+        assertStayFingerprintMatchesExisting(existingFingerprint, derived);
+      }
+    }
+    return session;
+  }
+
+  const derivedFingerprint = deriveCommercialStayFingerprintForFinalize({
+    session,
+    bookingPayload
+  });
+  const guestEmail = normalizeGuestEmail(
+    bookingPayload?.guestInfo?.email || session.guestEmail
+  );
+
+  const set = { stayFingerprint: derivedFingerprint };
+  if (!String(session.guestEmail || '').trim() && guestEmail) {
+    set.guestEmail = guestEmail;
+  }
+
+  const filter = {
+    checkoutId: normalizedId,
+    flowVersion: 'v2',
+    status: { $nin: BLOCKED_ACQUIRE_SESSION_STATUSES },
+    ...buildEmptyStayFingerprintFilter()
+  };
+
+  const updated = await CheckoutSession.findOneAndUpdate(
+    filter,
+    { $set: set, $inc: { sessionVersion: 1 } },
+    { new: true }
+  );
+
+  if (updated) {
+    return updated;
+  }
+
+  const current = await CheckoutSession.findOne({ checkoutId: normalizedId });
+  if (!current) {
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_FOUND,
+      'Checkout session not found'
+    );
+  }
+
+  const reloadedFingerprint = hasPersistedStayFingerprint(current)
+    ? String(current.stayFingerprint).trim()
+    : null;
+
+  if (reloadedFingerprint) {
+    assertStayFingerprintMatchesExisting(reloadedFingerprint, derivedFingerprint);
+    return current;
+  }
+
+  throw new CheckoutSessionError(
+    CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_CONCURRENCY_CONFLICT,
+    'Checkout session stay fingerprint could not be persisted',
+    { checkoutId: normalizedId }
+  );
 }
 
 function assertV2Flow(session) {
@@ -365,22 +484,26 @@ async function assertCheckoutSessionReadyForFinalize({
   const session = await loadFinalizableCheckoutSession({ checkoutId });
   await assertPaymentIntentReadyForFinalize(session, paymentIntentId);
 
-  const fingerprint = session.stayFingerprint;
-  if (fingerprint) {
-    await assertNoCommercialStayConflict({
-      commercialStayFingerprint: fingerprint,
-      checkoutId: session.checkoutId,
-      bookingId: bookingPayload?.bookingId ?? bookingPayload?._id ?? null
-    });
-  }
+  const sessionWithFingerprint = await ensureCheckoutSessionStayFingerprint({
+    checkoutId,
+    bookingPayload
+  });
 
-  return { ok: true, session };
+  await assertNoCommercialStayConflict({
+    commercialStayFingerprint: String(sessionWithFingerprint.stayFingerprint).trim(),
+    checkoutId: sessionWithFingerprint.checkoutId,
+    bookingId: bookingPayload?.bookingId ?? bookingPayload?._id ?? null
+  });
+
+  return { ok: true, session: sessionWithFingerprint };
 }
 
 module.exports = {
   FINALIZE_STATUS,
   NO_PAYMENT_CANONICAL_PI_OPTIONAL_STATUSES,
   buildFinalizeReplayResponse,
+  deriveCommercialStayFingerprintForFinalize,
+  ensureCheckoutSessionStayFingerprint,
   loadFinalizableCheckoutSession,
   acquireFinalizeLock,
   releaseFinalizeLock,

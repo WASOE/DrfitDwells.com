@@ -46,6 +46,24 @@ function normalizeBookingForCommercialStay(booking) {
   };
 }
 
+/**
+ * Derive commercial-stay fingerprint from a trusted server-side booking payload (finalize).
+ * Uses cabinTypeId when present, never unitId for entity identity.
+ */
+function buildCommercialStayFingerprintFromBookingPayload(bookingPayload) {
+  if (!bookingPayload) {
+    return null;
+  }
+  return buildCommercialStayFingerprintFromBooking({
+    cabinId: bookingPayload.cabinId,
+    cabinTypeId: bookingPayload.cabinTypeId,
+    unitId: bookingPayload.unitId,
+    checkIn: bookingPayload.checkIn,
+    checkOut: bookingPayload.checkOut,
+    guestInfo: bookingPayload.guestInfo
+  });
+}
+
 function buildCommercialStayFingerprintFromBooking(booking) {
   const normalized = normalizeBookingForCommercialStay(booking);
   if (!normalized || !normalized.entityType || !normalized.entityId) {
@@ -88,6 +106,7 @@ module.exports = {
   toCheckInOutDateOnly,
   normalizeBookingForCommercialStay,
   buildCommercialStayFingerprintFromBooking,
+  buildCommercialStayFingerprintFromBookingPayload,
   isBlockingBookingStatus,
   isArchivedBooking
 };

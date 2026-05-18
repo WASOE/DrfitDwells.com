@@ -1,5 +1,5 @@
 /**
- * C3-D1 checkout finalize service core (lock/replay, no booking create).
+ * C3-D1/D2 checkout finalize service (lock/replay, stayFingerprint freeze).
  *
  * Run: node --test server/scripts/checkoutFinalize.service.test.cjs
  */
@@ -16,9 +16,12 @@ const Booking = require('../models/Booking');
 const CheckoutSession = require('../models/CheckoutSession');
 const { CHECKOUT_SESSION_ERROR_CODES, CheckoutSessionError } = require('../services/checkout/checkoutSessionErrors');
 const { buildStayFingerprint } = require('../services/checkout/checkoutSessionFingerprints');
+const { buildCommercialStayFingerprintFromBookingPayload } = require('../services/checkout/bookingCommercialStayFingerprint');
 const {
   FINALIZE_STATUS,
   buildFinalizeReplayResponse,
+  deriveCommercialStayFingerprintForFinalize,
+  ensureCheckoutSessionStayFingerprint,
   loadFinalizableCheckoutSession,
   acquireFinalizeLock,
   releaseFinalizeLock,
@@ -43,23 +46,47 @@ function buildFingerprint(cabinId) {
   });
 }
 
+function futureStayDates() {
+  return {
+    checkIn: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000),
+    checkOut: new Date(Date.now() + 24 * 24 * 60 * 60 * 1000)
+  };
+}
+
+function buildBookingPayload({ cabinId, cabinTypeId, email = STAY_EMAIL, checkIn, checkOut } = {}) {
+  const dates = futureStayDates();
+  return {
+    cabinId: cabinId || null,
+    cabinTypeId: cabinTypeId || null,
+    checkIn: checkIn || dates.checkIn,
+    checkOut: checkOut || dates.checkOut,
+    guestInfo: {
+      firstName: 'Finalize',
+      lastName: 'Guest',
+      email,
+      phone: '+359800000003'
+    }
+  };
+}
+
 async function seedSession(overrides = {}) {
   const checkoutId = overrides.checkoutId || `chk_finalize_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const cabinId = overrides.cabinId || new mongoose.Types.ObjectId();
-  return CheckoutSession.create({
+  const base = {
     checkoutId,
     flowVersion: 'v2',
     status: overrides.status ?? 'payment_required',
     paymentStatus: overrides.paymentStatus ?? 'unpaid',
-    stayFingerprint: overrides.stayFingerprint ?? buildFingerprint(cabinId),
     finalizeStatus: overrides.finalizeStatus ?? FINALIZE_STATUS.OPEN,
     stripeAmountCents: overrides.stripeAmountCents ?? 10000,
     canonicalPaymentIntentId: overrides.canonicalPaymentIntentId ?? 'pi_finalize_canonical_1',
     sessionVersion: overrides.sessionVersion ?? 1,
-    expiresAt: overrides.expiresAt ?? new Date(Date.now() + 48 * 60 * 60 * 1000),
-    ...overrides,
-    checkoutId
-  });
+    expiresAt: overrides.expiresAt ?? new Date(Date.now() + 48 * 60 * 60 * 1000)
+  };
+  if (!('stayFingerprint' in overrides)) {
+    base.stayFingerprint = buildFingerprint(cabinId);
+  }
+  return CheckoutSession.create({ ...base, ...overrides, checkoutId });
 }
 
 async function expectError(promise, code) {
@@ -281,6 +308,197 @@ test('assertCheckoutSessionReadyForFinalize rejects superseded/wrong PI', async 
       paymentIntentId: 'pi_wrong_other'
     }),
     CHECKOUT_SESSION_ERROR_CODES.CANONICAL_PAYMENT_INTENT_MISMATCH
+  );
+});
+
+test('derives and persists stayFingerprint when missing using bookingPayload', async () => {
+  const cabinId = new mongoose.Types.ObjectId();
+  const payload = buildBookingPayload({ cabinId });
+  const expected = buildCommercialStayFingerprintFromBookingPayload(payload);
+  const doc = await seedSession({
+    checkoutId: 'chk_ensure_persist_fp',
+    stayFingerprint: null,
+    guestEmail: null
+  });
+
+  const updated = await ensureCheckoutSessionStayFingerprint({
+    checkoutId: doc.checkoutId,
+    bookingPayload: payload
+  });
+
+  assert.equal(updated.stayFingerprint, expected);
+  assert.equal(updated.sessionVersion, 2);
+  const reloaded = await CheckoutSession.findOne({ checkoutId: doc.checkoutId });
+  assert.equal(reloaded.stayFingerprint, expected);
+});
+
+test('stores normalized guestEmail when missing', async () => {
+  const cabinId = new mongoose.Types.ObjectId();
+  const payload = buildBookingPayload({ cabinId, email: '  MixedCase@Example.COM  ' });
+  const doc = await seedSession({
+    checkoutId: 'chk_ensure_guest_email',
+    stayFingerprint: null,
+    guestEmail: null
+  });
+
+  const updated = await ensureCheckoutSessionStayFingerprint({
+    checkoutId: doc.checkoutId,
+    bookingPayload: payload
+  });
+
+  assert.equal(updated.guestEmail, 'mixedcase@example.com');
+});
+
+test('cabinType fingerprint uses cabinTypeId, not unitId', async () => {
+  const cabinTypeId = new mongoose.Types.ObjectId();
+  const unitA = new mongoose.Types.ObjectId();
+  const unitB = new mongoose.Types.ObjectId();
+  const payloadA = buildBookingPayload({ cabinTypeId, cabinId: null });
+  payloadA.unitId = unitA;
+  const payloadB = buildBookingPayload({ cabinTypeId, cabinId: null });
+  payloadB.unitId = unitB;
+
+  const fpA = deriveCommercialStayFingerprintForFinalize({ session: {}, bookingPayload: payloadA });
+  const fpB = deriveCommercialStayFingerprintForFinalize({ session: {}, bookingPayload: payloadB });
+  assert.equal(fpA, fpB);
+  assert.ok(fpA);
+});
+
+test('missing guest email throws COMMERCIAL_STAY_FINGERPRINT_REQUIRED', async () => {
+  const cabinId = new mongoose.Types.ObjectId();
+  const payload = buildBookingPayload({ cabinId, email: '' });
+  const doc = await seedSession({ checkoutId: 'chk_missing_email', stayFingerprint: null });
+
+  await expectError(
+    ensureCheckoutSessionStayFingerprint({ checkoutId: doc.checkoutId, bookingPayload: payload }),
+    CHECKOUT_SESSION_ERROR_CODES.COMMERCIAL_STAY_FINGERPRINT_REQUIRED
+  );
+});
+
+test('missing entity/date data throws COMMERCIAL_STAY_FINGERPRINT_REQUIRED', async () => {
+  const doc = await seedSession({ checkoutId: 'chk_missing_entity', stayFingerprint: null });
+
+  await expectError(
+    ensureCheckoutSessionStayFingerprint({
+      checkoutId: doc.checkoutId,
+      bookingPayload: { guestInfo: { email: STAY_EMAIL } }
+    }),
+    CHECKOUT_SESSION_ERROR_CODES.COMMERCIAL_STAY_FINGERPRINT_REQUIRED
+  );
+});
+
+test('existing stayFingerprint is reused and not overwritten', async () => {
+  const cabinId = new mongoose.Types.ObjectId();
+  const existing = buildFingerprint(cabinId);
+  const otherCabinId = new mongoose.Types.ObjectId();
+  const doc = await seedSession({
+    checkoutId: 'chk_reuse_fp',
+    stayFingerprint: existing,
+    sessionVersion: 3
+  });
+
+  const result = await ensureCheckoutSessionStayFingerprint({
+    checkoutId: doc.checkoutId
+  });
+
+  assert.equal(result.stayFingerprint, existing);
+  assert.equal(result.sessionVersion, 3);
+});
+
+test('existing different stayFingerprint is not overwritten', async () => {
+  const cabinId = new mongoose.Types.ObjectId();
+  const otherCabinId = new mongoose.Types.ObjectId();
+  const doc = await seedSession({
+    checkoutId: 'chk_mismatch_fp',
+    stayFingerprint: buildFingerprint(cabinId)
+  });
+
+  await expectError(
+    ensureCheckoutSessionStayFingerprint({
+      checkoutId: doc.checkoutId,
+      bookingPayload: buildBookingPayload({ cabinId: otherCabinId })
+    }),
+    CHECKOUT_SESSION_ERROR_CODES.COMMERCIAL_STAY_FINGERPRINT_MISMATCH
+  );
+});
+
+test('concurrent calls where one sets fingerprint and second reloads returns same fingerprint', async () => {
+  const cabinId = new mongoose.Types.ObjectId();
+  const payload = buildBookingPayload({ cabinId });
+  const expected = buildCommercialStayFingerprintFromBookingPayload(payload);
+  const doc = await seedSession({
+    checkoutId: 'chk_concurrent_fp',
+    stayFingerprint: null
+  });
+
+  const [a, b] = await Promise.all([
+    ensureCheckoutSessionStayFingerprint({ checkoutId: doc.checkoutId, bookingPayload: payload }),
+    ensureCheckoutSessionStayFingerprint({ checkoutId: doc.checkoutId, bookingPayload: payload })
+  ]);
+
+  assert.equal(a.stayFingerprint, expected);
+  assert.equal(b.stayFingerprint, expected);
+});
+
+test('assertCheckoutSessionReadyForFinalize calls commercial guard even when session initially had null stayFingerprint', async () => {
+  const cabinId = new mongoose.Types.ObjectId();
+  const payload = buildBookingPayload({ cabinId });
+  const doc = await seedSession({
+    checkoutId: 'chk_ready_guard_persist',
+    stayFingerprint: null,
+    guestEmail: null,
+    canonicalPaymentIntentId: 'pi_ready_guard_persist'
+  });
+
+  const result = await assertCheckoutSessionReadyForFinalize({
+    checkoutId: doc.checkoutId,
+    paymentIntentId: 'pi_ready_guard_persist',
+    bookingPayload: payload
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(
+    result.session.stayFingerprint,
+    buildCommercialStayFingerprintFromBookingPayload(payload)
+  );
+});
+
+test('assertCheckoutSessionReadyForFinalize rejects duplicate stay conflict after deriving fingerprint', async () => {
+  const cabinId = new mongoose.Types.ObjectId();
+  const payload = buildBookingPayload({ cabinId });
+  const fingerprint = buildCommercialStayFingerprintFromBookingPayload(payload);
+  const { checkIn, checkOut } = futureStayDates();
+
+  await Booking.create({
+    cabinId,
+    checkIn,
+    checkOut,
+    adults: 2,
+    children: 0,
+    totalPrice: 100,
+    status: 'confirmed',
+    commercialStayFingerprint: fingerprint,
+    guestInfo: {
+      firstName: 'Other',
+      lastName: 'Guest',
+      email: STAY_EMAIL,
+      phone: '+359800000004'
+    }
+  });
+
+  const doc = await seedSession({
+    checkoutId: 'chk_ready_dup_derived',
+    stayFingerprint: null,
+    canonicalPaymentIntentId: 'pi_ready_dup_derived'
+  });
+
+  await expectError(
+    assertCheckoutSessionReadyForFinalize({
+      checkoutId: doc.checkoutId,
+      paymentIntentId: 'pi_ready_dup_derived',
+      bookingPayload: payload
+    }),
+    CHECKOUT_SESSION_ERROR_CODES.DUPLICATE_STAY_CONFLICT
   );
 });
 
