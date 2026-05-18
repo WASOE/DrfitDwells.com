@@ -476,6 +476,204 @@ async function assertPaymentIntentReadyForFinalize(session, paymentIntentId) {
   });
 }
 
+function safeFinalizeErrorDetails(err) {
+  if (!err || typeof err !== 'object') {
+    return null;
+  }
+  return {
+    code: err.code || null,
+    message: err.message || null,
+    needsReview: err.needsReview === true,
+    requiresManualReview: err.requiresManualReview === true
+  };
+}
+
+function shouldMarkNeedsReviewOnFinalizeError(err) {
+  if (!err || typeof err !== 'object') {
+    return false;
+  }
+  if (err.needsReview === true || err.requiresManualReview === true) {
+    return true;
+  }
+  const code = err.code;
+  return code === 'PAID_BOOKING_SAVE_FAILED' || code === 'VOUCHER_CONFIRM_FAILED';
+}
+
+async function assertOrchestrationBookingPayload(checkoutId, bookingPayload) {
+  if (bookingPayload != null && typeof bookingPayload === 'object') {
+    return;
+  }
+
+  const session = await CheckoutSession.findOne({ checkoutId: normalizeCheckoutId(checkoutId) });
+  if (!session) {
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_FOUND,
+      'Checkout session not found'
+    );
+  }
+
+  if (hasPersistedStayFingerprint(session)) {
+    return;
+  }
+
+  throw new CheckoutSessionError(
+    CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_USABLE,
+    'bookingPayload is required when checkout session stayFingerprint is not set',
+    { checkoutId: session.checkoutId }
+  );
+}
+
+async function evaluatePreLockOrchestrationState(checkoutId) {
+  const session = await loadSessionOrThrow(checkoutId);
+  assertV2Flow(session);
+
+  const replay = buildFinalizeReplayResponse(session);
+  if (replay) {
+    return { replay };
+  }
+
+  if (session.finalizeStatus === FINALIZE_STATUS.IN_PROGRESS) {
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.FINALIZE_IN_PROGRESS,
+      'Checkout finalization is already in progress',
+      { checkoutId: session.checkoutId }
+    );
+  }
+
+  if (
+    session.finalizeStatus === FINALIZE_STATUS.NEEDS_REVIEW ||
+    session.status === 'needs_review'
+  ) {
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_USABLE,
+      'Checkout session requires review',
+      { checkoutId: session.checkoutId }
+    );
+  }
+
+  return { session };
+}
+
+async function assertCommercialStayClearAfterLock(lockedSession, checkoutId) {
+  await assertNoCommercialStayConflict({
+    commercialStayFingerprint: String(lockedSession.stayFingerprint).trim(),
+    checkoutId: normalizeCheckoutId(checkoutId),
+    bookingId: null
+  });
+}
+
+async function runCheckoutFinalizeOrchestration({
+  checkoutId,
+  paymentIntentId = null,
+  bookingPayload = null,
+  expectedSessionVersion = null,
+  now = new Date(),
+  finalizeWork,
+  source = 'frontend'
+}) {
+  const normalizedId = normalizeCheckoutId(checkoutId);
+  const at = normalizeNow(now);
+
+  if (!normalizedId) {
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.INVALID_CHECKOUT_ID,
+      'checkoutId is required'
+    );
+  }
+
+  if (typeof finalizeWork !== 'function') {
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_USABLE,
+      'finalizeWork must be a function',
+      { checkoutId: normalizedId }
+    );
+  }
+
+  await assertOrchestrationBookingPayload(normalizedId, bookingPayload);
+
+  const preLock = await evaluatePreLockOrchestrationState(normalizedId);
+  if (preLock.replay) {
+    return preLock.replay;
+  }
+
+  const ready = await assertCheckoutSessionReadyForFinalize({
+    checkoutId: normalizedId,
+    paymentIntentId,
+    bookingPayload
+  });
+
+  const lockedSession = await acquireFinalizeLock({
+    checkoutId: normalizedId,
+    expectedSessionVersion: expectedSessionVersion ?? ready.session.sessionVersion,
+    now: at
+  });
+
+  try {
+    await assertCommercialStayClearAfterLock(lockedSession, normalizedId);
+  } catch (conflictErr) {
+    await releaseFinalizeLock({
+      checkoutId: normalizedId,
+      note: 'commercial_stay_conflict_after_lock'
+    });
+    throw conflictErr;
+  }
+
+  let workResult;
+  try {
+    workResult = await finalizeWork({
+      session: lockedSession,
+      checkoutId: normalizedId,
+      paymentIntentId,
+      bookingPayload,
+      source
+    });
+  } catch (err) {
+    if (shouldMarkNeedsReviewOnFinalizeError(err)) {
+      await markFinalizeNeedsReview({
+        checkoutId: normalizedId,
+        reason: err.code || 'finalize_work_needs_review',
+        details: safeFinalizeErrorDetails(err)
+      });
+      throw err;
+    }
+
+    await releaseFinalizeLock({
+      checkoutId: normalizedId,
+      note: 'finalize_work_failed'
+    });
+    throw err;
+  }
+
+  const workBookingId = workResult?.bookingId;
+  if (!workBookingId) {
+    await markFinalizeNeedsReview({
+      checkoutId: normalizedId,
+      reason: 'finalize_work_missing_booking_id',
+      details: { source }
+    });
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_USABLE,
+      'finalizeWork did not return a bookingId',
+      { checkoutId: normalizedId, source }
+    );
+  }
+
+  const finalizedSession = await markFinalizeSucceeded({
+    checkoutId: normalizedId,
+    bookingId: workBookingId,
+    now: at
+  });
+
+  return {
+    ok: true,
+    bookingId: String(toObjectId(workBookingId)),
+    booking: workResult?.booking ?? null,
+    checkoutId: normalizedId,
+    idempotentReplay: false,
+    session: finalizedSession
+  };
+}
+
 async function assertCheckoutSessionReadyForFinalize({
   checkoutId,
   paymentIntentId = null,
@@ -509,5 +707,6 @@ module.exports = {
   releaseFinalizeLock,
   markFinalizeNeedsReview,
   markFinalizeSucceeded,
-  assertCheckoutSessionReadyForFinalize
+  assertCheckoutSessionReadyForFinalize,
+  runCheckoutFinalizeOrchestration
 };

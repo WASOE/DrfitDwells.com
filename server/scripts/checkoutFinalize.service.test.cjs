@@ -1,5 +1,5 @@
 /**
- * C3-D1/D2 checkout finalize service (lock/replay, stayFingerprint freeze).
+ * C3-D1/D2/D3 checkout finalize service (lock/replay, fingerprint freeze, orchestration).
  *
  * Run: node --test server/scripts/checkoutFinalize.service.test.cjs
  */
@@ -27,8 +27,10 @@ const {
   releaseFinalizeLock,
   markFinalizeNeedsReview,
   markFinalizeSucceeded,
-  assertCheckoutSessionReadyForFinalize
+  assertCheckoutSessionReadyForFinalize,
+  runCheckoutFinalizeOrchestration
 } = require('../services/checkout/checkoutFinalizeService');
+const { assertNoCommercialStayConflict } = require('../services/checkout/commercialStayGuardService');
 
 let mongoServer;
 
@@ -92,6 +94,13 @@ async function seedSession(overrides = {}) {
 async function expectError(promise, code) {
   await assert.rejects(promise, (err) => {
     assert.ok(err instanceof CheckoutSessionError);
+    assert.equal(err.code, code);
+    return true;
+  });
+}
+
+async function expectThrownCode(promise, code) {
+  await assert.rejects(promise, (err) => {
     assert.equal(err.code, code);
     return true;
   });
@@ -559,6 +568,380 @@ test('service does not create Booking rows', async () => {
   await markFinalizeSucceeded({ checkoutId: doc.checkoutId, bookingId, now });
   const after = await Booking.countDocuments({});
   assert.equal(after, before);
+});
+
+function buildSuccessfulFinalizeWork(bookingId = new mongoose.Types.ObjectId()) {
+  return async (ctx) => ({
+    bookingId,
+    booking: { _id: bookingId, checkoutId: ctx.checkoutId },
+    result: { ok: true }
+  });
+}
+
+test('runCheckoutFinalizeOrchestration successful path', async () => {
+  const cabinId = new mongoose.Types.ObjectId();
+  const payload = buildBookingPayload({ cabinId });
+  const bookingId = new mongoose.Types.ObjectId();
+  let workCalls = 0;
+
+  const doc = await seedSession({
+    checkoutId: 'chk_orch_success',
+    stayFingerprint: null,
+    guestEmail: null,
+    canonicalPaymentIntentId: 'pi_orch_success'
+  });
+
+  const result = await runCheckoutFinalizeOrchestration({
+    checkoutId: doc.checkoutId,
+    paymentIntentId: 'pi_orch_success',
+    bookingPayload: payload,
+    finalizeWork: async (ctx) => {
+      workCalls += 1;
+      return {
+        bookingId,
+        booking: { _id: bookingId, checkoutId: ctx.checkoutId },
+        result: { ok: true }
+      };
+    }
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.idempotentReplay, false);
+  assert.equal(String(result.bookingId), String(bookingId));
+  assert.equal(workCalls, 1);
+  assert.equal(result.session.finalizeStatus, FINALIZE_STATUS.FINALIZED);
+  assert.equal(String(result.session.bookingId), String(bookingId));
+});
+
+test('runCheckoutFinalizeOrchestration returns replay when session already finalized with bookingId', async () => {
+  const bookingId = new mongoose.Types.ObjectId();
+  const doc = await seedSession({
+    checkoutId: 'chk_orch_replay',
+    finalizeStatus: FINALIZE_STATUS.FINALIZED,
+    bookingId,
+    finalizedAt: new Date()
+  });
+
+  let workCalls = 0;
+  const result = await runCheckoutFinalizeOrchestration({
+    checkoutId: doc.checkoutId,
+    bookingPayload: buildBookingPayload({ cabinId: new mongoose.Types.ObjectId() }),
+    finalizeWork: async () => {
+      workCalls += 1;
+      return { bookingId: new mongoose.Types.ObjectId() };
+    }
+  });
+
+  assert.equal(result.idempotentReplay, true);
+  assert.equal(String(result.bookingId), String(bookingId));
+  assert.equal(workCalls, 0);
+});
+
+test('runCheckoutFinalizeOrchestration throws FINALIZE_IN_PROGRESS when session already in_progress', async () => {
+  const doc = await seedSession({
+    checkoutId: 'chk_orch_in_progress',
+    finalizeStatus: FINALIZE_STATUS.IN_PROGRESS,
+    finalizeStartedAt: new Date()
+  });
+
+  let workCalls = 0;
+  await expectError(
+    runCheckoutFinalizeOrchestration({
+      checkoutId: doc.checkoutId,
+      bookingPayload: buildBookingPayload({ cabinId: new mongoose.Types.ObjectId() }),
+      finalizeWork: async () => {
+        workCalls += 1;
+        return { bookingId: new mongoose.Types.ObjectId() };
+      }
+    }),
+    CHECKOUT_SESSION_ERROR_CODES.FINALIZE_IN_PROGRESS
+  );
+  assert.equal(workCalls, 0);
+});
+
+test('runCheckoutFinalizeOrchestration does not call finalizeWork when canonical PI mismatches', async () => {
+  const doc = await seedSession({
+    checkoutId: 'chk_orch_pi_mismatch',
+    canonicalPaymentIntentId: 'pi_canonical_orch',
+    stayFingerprint: null
+  });
+
+  let workCalls = 0;
+  await expectError(
+    runCheckoutFinalizeOrchestration({
+      checkoutId: doc.checkoutId,
+      paymentIntentId: 'pi_wrong_orch',
+      bookingPayload: buildBookingPayload({ cabinId: new mongoose.Types.ObjectId() }),
+      finalizeWork: async () => {
+        workCalls += 1;
+        return { bookingId: new mongoose.Types.ObjectId() };
+      }
+    }),
+    CHECKOUT_SESSION_ERROR_CODES.CANONICAL_PAYMENT_INTENT_MISMATCH
+  );
+  assert.equal(workCalls, 0);
+});
+
+test('runCheckoutFinalizeOrchestration does not call finalizeWork when duplicate commercial stay conflict exists before lock', async () => {
+  const cabinId = new mongoose.Types.ObjectId();
+  const fingerprint = buildCommercialStayFingerprintFromBookingPayload(
+    buildBookingPayload({ cabinId })
+  );
+  const { checkIn, checkOut } = futureStayDates();
+
+  await Booking.create({
+    cabinId,
+    checkIn,
+    checkOut,
+    adults: 2,
+    children: 0,
+    totalPrice: 100,
+    status: 'confirmed',
+    commercialStayFingerprint: fingerprint,
+    guestInfo: {
+      firstName: 'Block',
+      lastName: 'Guest',
+      email: STAY_EMAIL,
+      phone: '+359800000010'
+    }
+  });
+
+  const doc = await seedSession({
+    checkoutId: 'chk_orch_prelock_dup',
+    stayFingerprint: fingerprint,
+    canonicalPaymentIntentId: 'pi_prelock_dup'
+  });
+
+  let workCalls = 0;
+  await expectError(
+    runCheckoutFinalizeOrchestration({
+      checkoutId: doc.checkoutId,
+      paymentIntentId: 'pi_prelock_dup',
+      bookingPayload: buildBookingPayload({ cabinId }),
+      finalizeWork: async () => {
+        workCalls += 1;
+        return { bookingId: new mongoose.Types.ObjectId() };
+      }
+    }),
+    CHECKOUT_SESSION_ERROR_CODES.DUPLICATE_STAY_CONFLICT
+  );
+  assert.equal(workCalls, 0);
+});
+
+test('releases lock if duplicate commercial stay conflict appears after lock', async () => {
+  const cabinId = new mongoose.Types.ObjectId();
+  const payload = buildBookingPayload({ cabinId });
+  const doc = await seedSession({
+    checkoutId: 'chk_orch_postlock_dup',
+    stayFingerprint: null,
+    canonicalPaymentIntentId: 'pi_postlock_dup'
+  });
+
+  const ready = await assertCheckoutSessionReadyForFinalize({
+    checkoutId: doc.checkoutId,
+    paymentIntentId: 'pi_postlock_dup',
+    bookingPayload: payload
+  });
+  const locked = await acquireFinalizeLock({
+    checkoutId: doc.checkoutId,
+    expectedSessionVersion: ready.session.sessionVersion
+  });
+
+  const { checkIn, checkOut } = futureStayDates();
+  await Booking.create({
+    cabinId,
+    checkIn,
+    checkOut,
+    adults: 2,
+    children: 0,
+    totalPrice: 100,
+    status: 'confirmed',
+    commercialStayFingerprint: locked.stayFingerprint,
+    guestInfo: {
+      firstName: 'Late',
+      lastName: 'Block',
+      email: STAY_EMAIL,
+      phone: '+359800000011'
+    }
+  });
+
+  await expectError(
+    (async () => {
+      await assertNoCommercialStayConflict({
+        commercialStayFingerprint: String(locked.stayFingerprint).trim(),
+        checkoutId: doc.checkoutId
+      });
+    })(),
+    CHECKOUT_SESSION_ERROR_CODES.DUPLICATE_STAY_CONFLICT
+  );
+
+  const released = await releaseFinalizeLock({
+    checkoutId: doc.checkoutId,
+    note: 'commercial_stay_conflict_after_lock'
+  });
+  assert.equal(released.finalizeStatus, FINALIZE_STATUS.OPEN);
+  assert.equal(released.finalizeStartedAt, null);
+});
+
+test('runCheckoutFinalizeOrchestration releases lock if finalizeWork throws normal error', async () => {
+  const cabinId = new mongoose.Types.ObjectId();
+  const payload = buildBookingPayload({ cabinId });
+  const doc = await seedSession({
+    checkoutId: 'chk_orch_work_fail',
+    stayFingerprint: null,
+    canonicalPaymentIntentId: 'pi_work_fail'
+  });
+
+  await expectThrownCode(
+    runCheckoutFinalizeOrchestration({
+      checkoutId: doc.checkoutId,
+      paymentIntentId: 'pi_work_fail',
+      bookingPayload: payload,
+      finalizeWork: async () => {
+        const err = new Error('worker failed');
+        err.code = 'WORKER_FAILED';
+        throw err;
+      }
+    }),
+    'WORKER_FAILED'
+  );
+
+  const session = await CheckoutSession.findOne({ checkoutId: doc.checkoutId });
+  assert.equal(session.finalizeStatus, FINALIZE_STATUS.OPEN);
+});
+
+test('runCheckoutFinalizeOrchestration marks needs_review if finalizeWork throws needsReview error', async () => {
+  const cabinId = new mongoose.Types.ObjectId();
+  const payload = buildBookingPayload({ cabinId });
+  const doc = await seedSession({
+    checkoutId: 'chk_orch_needs_review_err',
+    stayFingerprint: null,
+    canonicalPaymentIntentId: 'pi_needs_review_err'
+  });
+
+  await expectThrownCode(
+    runCheckoutFinalizeOrchestration({
+      checkoutId: doc.checkoutId,
+      paymentIntentId: 'pi_needs_review_err',
+      bookingPayload: payload,
+      finalizeWork: async () => {
+        const err = new Error('paid save failed');
+        err.code = 'PAID_BOOKING_SAVE_FAILED';
+        err.needsReview = true;
+        throw err;
+      }
+    }),
+    'PAID_BOOKING_SAVE_FAILED'
+  );
+
+  const session = await CheckoutSession.findOne({ checkoutId: doc.checkoutId });
+  assert.equal(session.finalizeStatus, FINALIZE_STATUS.NEEDS_REVIEW);
+  assert.equal(session.status, 'needs_review');
+});
+
+test('runCheckoutFinalizeOrchestration marks needs_review if finalizeWork returns no bookingId', async () => {
+  const cabinId = new mongoose.Types.ObjectId();
+  const payload = buildBookingPayload({ cabinId });
+  const doc = await seedSession({
+    checkoutId: 'chk_orch_no_booking_id',
+    stayFingerprint: null,
+    canonicalPaymentIntentId: 'pi_no_booking_id'
+  });
+
+  await expectError(
+    runCheckoutFinalizeOrchestration({
+      checkoutId: doc.checkoutId,
+      paymentIntentId: 'pi_no_booking_id',
+      bookingPayload: payload,
+      finalizeWork: async () => ({ booking: null, result: null })
+    }),
+    CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_USABLE
+  );
+
+  const session = await CheckoutSession.findOne({ checkoutId: doc.checkoutId });
+  assert.equal(session.finalizeStatus, FINALIZE_STATUS.NEEDS_REVIEW);
+  assert.equal(session.status, 'needs_review');
+  assert.equal(session.metadata?.finalizeNeedsReview?.reason, 'finalize_work_missing_booking_id');
+  assert.ok(session.finalizeStartedAt instanceof Date);
+  assert.equal(session.metadata?.finalizeReleaseNote, undefined);
+});
+
+test('runCheckoutFinalizeOrchestration concurrent same checkout only runs finalizeWork once', async () => {
+  const cabinId = new mongoose.Types.ObjectId();
+  const payload = buildBookingPayload({ cabinId });
+  const doc = await seedSession({
+    checkoutId: 'chk_orch_concurrent',
+    stayFingerprint: null,
+    canonicalPaymentIntentId: 'pi_orch_concurrent'
+  });
+
+  let workCalls = 0;
+  let releaseGate;
+  const releasePromise = new Promise((resolve) => {
+    releaseGate = resolve;
+  });
+
+  const slowWork = async () => {
+    workCalls += 1;
+    await releasePromise;
+    return { bookingId: new mongoose.Types.ObjectId() };
+  };
+
+  const first = runCheckoutFinalizeOrchestration({
+    checkoutId: doc.checkoutId,
+    paymentIntentId: 'pi_orch_concurrent',
+    bookingPayload: payload,
+    finalizeWork: slowWork
+  });
+
+  await new Promise((r) => setTimeout(r, 25));
+
+  await expectError(
+    runCheckoutFinalizeOrchestration({
+      checkoutId: doc.checkoutId,
+      paymentIntentId: 'pi_orch_concurrent',
+      bookingPayload: payload,
+      finalizeWork: buildSuccessfulFinalizeWork()
+    }),
+    CHECKOUT_SESSION_ERROR_CODES.FINALIZE_IN_PROGRESS
+  );
+
+  releaseGate();
+  const firstResult = await first;
+  assert.equal(workCalls, 1);
+  assert.equal(firstResult.ok, true);
+});
+
+test('runCheckoutFinalizeOrchestration does not create Booking rows', async () => {
+  const before = await Booking.countDocuments({});
+  const cabinId = new mongoose.Types.ObjectId();
+  const payload = buildBookingPayload({ cabinId });
+  const doc = await seedSession({
+    checkoutId: 'chk_orch_no_booking_rows',
+    stayFingerprint: null,
+    canonicalPaymentIntentId: 'pi_orch_no_booking_rows'
+  });
+
+  await runCheckoutFinalizeOrchestration({
+    checkoutId: doc.checkoutId,
+    paymentIntentId: 'pi_orch_no_booking_rows',
+    bookingPayload: payload,
+    finalizeWork: buildSuccessfulFinalizeWork()
+  });
+
+  const after = await Booking.countDocuments({});
+  assert.equal(after, before);
+});
+
+test('orchestration does not import bookingLifecycleEmailService or emailService', () => {
+  const source = fs.readFileSync(
+    path.join(__dirname, '../services/checkout/checkoutFinalizeService.js'),
+    'utf8'
+  );
+  assert.doesNotMatch(source, /bookingLifecycleEmailService/);
+  assert.doesNotMatch(source, /emailService/);
+  assert.doesNotMatch(source, /sendBookingLifecycleEmail/);
+  assert.doesNotMatch(source, /require\(['"].*Booking['"]\)/);
 });
 
 test('service does not send email or import bookingLifecycleEmailService', () => {
