@@ -26,6 +26,7 @@ import { isCheckoutSessionV2Enabled } from '../utils/checkoutSessionV2Flags';
 import {
   buildCheckoutSessionV2BoundaryKey,
   clearCheckoutSessionV2Storage,
+  isSameCheckoutSessionV2Identity,
   readCheckoutSessionV2Storage,
   writeCheckoutSessionV2Storage
 } from '../utils/checkoutSessionV2Storage';
@@ -37,6 +38,30 @@ const checkoutSessionV2Enabled = isCheckoutSessionV2Enabled();
 
 export const V2_CHECKOUT_CONFIG_MISMATCH_MESSAGE =
   'Checkout is misconfigured (server did not return a checkout session). Please refresh or contact support.';
+
+export const V2_CHECKOUT_RETRY_PAYMENT_MESSAGE =
+  'Your payment session was refreshed. Please tap Continue to secure payment again.';
+
+export const V2_CHECKOUT_RESTART_MESSAGE =
+  'Your checkout session expired or changed. Please tap Continue to secure payment to start again.';
+
+const V2_CHECKOUT_RESTART_ERROR_CODES = new Set([
+  'CHECKOUT_SESSION_EXPIRED',
+  'CHECKOUT_SESSION_SUPERSEDED',
+  'COMMERCIAL_BOUNDARY_CHANGED'
+]);
+
+const V2_CHECKOUT_CLEAR_PAYMENT_KEEP_SESSION_CODES = new Set([
+  'STALE_CLIENT_SECRET',
+  'SUPERSEDED_PAYMENT_INTENT',
+  'CANONICAL_PAYMENT_INTENT_MISMATCH'
+]);
+
+const V2_CHECKOUT_CLEAR_SECRET_KEEP_CHECKOUT_CODES = new Set([
+  'CHECKOUT_SESSION_CONCURRENCY_CONFLICT',
+  'VOUCHER_PAYMENT_INTENT_ATTACH_FAILED',
+  'CHECKOUT_SESSION_NOT_USABLE'
+]);
 
 function createCheckoutId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -105,6 +130,125 @@ export function shouldBlockCardPaymentPrecheck(
     return false;
   }
   return serverQuote.totalPrice < 0.5;
+}
+
+export function extractCheckoutApiErrorCode(err) {
+  return err?.response?.data?.code || err?.response?.data?.error?.code || err?.code || null;
+}
+
+export function classifyV2CheckoutInitError(code) {
+  if (!code) {
+    return { kind: 'unknown' };
+  }
+  if (V2_CHECKOUT_RESTART_ERROR_CODES.has(code)) {
+    return { kind: 'restart' };
+  }
+  if (V2_CHECKOUT_CLEAR_PAYMENT_KEEP_SESSION_CODES.has(code)) {
+    return { kind: 'clearPaymentKeepCheckout' };
+  }
+  if (V2_CHECKOUT_CLEAR_SECRET_KEEP_CHECKOUT_CODES.has(code)) {
+    return { kind: 'clearSecretKeepCheckout' };
+  }
+  return { kind: 'unknown' };
+}
+
+export function getV2CheckoutInitErrorHandling(code) {
+  const { kind } = classifyV2CheckoutInitError(code);
+  if (kind === 'restart') {
+    return {
+      kind,
+      message: V2_CHECKOUT_RESTART_MESSAGE,
+      clearAll: true,
+      clearPaymentIdentity: true,
+      clearClientSecret: true
+    };
+  }
+  if (kind === 'clearPaymentKeepCheckout') {
+    return {
+      kind,
+      message: V2_CHECKOUT_RETRY_PAYMENT_MESSAGE,
+      clearAll: false,
+      clearPaymentIdentity: true,
+      clearClientSecret: true
+    };
+  }
+  if (kind === 'clearSecretKeepCheckout') {
+    return {
+      kind,
+      message: V2_CHECKOUT_RETRY_PAYMENT_MESSAGE,
+      clearAll: false,
+      clearPaymentIdentity: false,
+      clearClientSecret: true
+    };
+  }
+  return {
+    kind: 'unknown',
+    message: null,
+    clearAll: false,
+    clearPaymentIdentity: false,
+    clearClientSecret: false
+  };
+}
+
+export function buildV2CheckoutIdentity({ checkoutId, canonicalPaymentIntentId, quoteSnapshotHash }) {
+  return {
+    checkoutId: typeof checkoutId === 'string' ? checkoutId.trim() : '',
+    canonicalPaymentIntentId: canonicalPaymentIntentId || null,
+    quoteSnapshotHash: typeof quoteSnapshotHash === 'string' ? quoteSnapshotHash.trim() : ''
+  };
+}
+
+export function buildV2PaymentElementKey({ checkoutId, canonicalPaymentIntentId, quoteSnapshotHash }) {
+  const id = typeof checkoutId === 'string' ? checkoutId.trim() : '';
+  if (!id) {
+    return null;
+  }
+  const pi = canonicalPaymentIntentId || '';
+  const hash = typeof quoteSnapshotHash === 'string' ? quoteSnapshotHash.trim() : '';
+  return `${id}:${pi}:${hash}`;
+}
+
+export function shouldReuseV2ClientSecret({
+  currentIdentity,
+  nextIdentity,
+  idempotentReplay,
+  clientSecret
+}) {
+  if (!clientSecret || !idempotentReplay) {
+    return false;
+  }
+  return isSameCheckoutSessionV2Identity(currentIdentity, nextIdentity);
+}
+
+export function resolveV2ClientSecretAfterPaymentIntent({
+  currentIdentity,
+  responseData,
+  checkoutId,
+  existingClientSecret
+}) {
+  const nextIdentity = buildV2CheckoutIdentity({
+    checkoutId,
+    canonicalPaymentIntentId: responseData.canonicalPaymentIntentId,
+    quoteSnapshotHash: responseData.quoteSnapshotHash
+  });
+  const reuse = shouldReuseV2ClientSecret({
+    currentIdentity,
+    nextIdentity,
+    idempotentReplay: Boolean(responseData.idempotentReplay),
+    clientSecret: existingClientSecret
+  });
+  if (reuse) {
+    return {
+      clientSecret: existingClientSecret,
+      nextIdentity,
+      reused: true
+    };
+  }
+  return {
+    clientSecret: responseData.clientSecret || null,
+    nextIdentity,
+    reused: false
+  };
 }
 
 export function restoreV2SessionFieldsFromStorage(stored) {
@@ -734,12 +878,43 @@ const ConfirmBooking = () => {
     setVoucherAppliedCents(0);
   }, []);
 
+  const clearV2PaymentIdentityState = useCallback(() => {
+    setCanonicalPaymentIntentId(null);
+    setQuoteSnapshotHash('');
+    setClientSecret(null);
+  }, []);
+
+  const persistV2StoragePaymentCleared = useCallback((keepCheckoutId, extras = {}) => {
+    if (!keepCheckoutId) {
+      return;
+    }
+    writeCheckoutSessionV2Storage({
+      checkoutId: keepCheckoutId,
+      commercialBoundaryKey: checkoutSessionV2BoundaryKey,
+      quoteSnapshotHash: '',
+      sessionVersion: extras.sessionVersion ?? 1,
+      canonicalPaymentIntentId: null,
+      clientSecretPresent: false,
+      voucherRedemptionId: extras.voucherRedemptionId ?? null,
+      stripeAmountCents: extras.stripeAmountCents ?? 0,
+      noPaymentRequired: Boolean(extras.noPaymentRequired)
+    });
+  }, [checkoutSessionV2BoundaryKey]);
+
   const initializeCheckoutPayment = useCallback(async () => {
     if (!bookingEntityId || !checkIn || !checkOut || !serverQuote) return;
     setCheckoutInitLoading(true);
     setCheckoutInitError(null);
     setStripeError(null);
-    setClientSecret(null);
+    const existingClientSecret = clientSecret;
+    const currentV2Identity = buildV2CheckoutIdentity({
+      checkoutId,
+      canonicalPaymentIntentId,
+      quoteSnapshotHash
+    });
+    if (!checkoutSessionV2Enabled) {
+      setClientSecret(null);
+    }
     try {
       const payload = {
         checkIn: formatDateOnlyLocal(checkIn),
@@ -780,34 +955,67 @@ const ConfirmBooking = () => {
         }
 
         const noPay = Boolean(res.data.noPaymentRequired);
+        const nextVoucherRedemptionId = res.data.voucherRedemptionId || res.data.redemptionId || null;
+        const giftCents = Number(res.data.giftVoucherAppliedCents ?? res.data.voucherAppliedCents ?? 0);
+        const reportedStripeCents = Number(res.data.stripeAmountCents);
+        const nextSessionVersion = Number(res.data.sessionVersion) || 1;
+
         setCheckoutId(validation.checkoutId);
-        setCanonicalPaymentIntentId(res.data.canonicalPaymentIntentId || null);
-        setQuoteSnapshotHash(String(res.data.quoteSnapshotHash || '').trim());
-        setSessionVersion(Number(res.data.sessionVersion) || 1);
-        setVoucherRedemptionId(res.data.voucherRedemptionId || res.data.redemptionId || null);
+        setSessionVersion(nextSessionVersion);
+        setVoucherRedemptionId(nextVoucherRedemptionId);
         setFullVoucherCoverage(Boolean(res.data.fullVoucherCoverage));
         setNoPaymentRequired(noPay);
-        const giftCents = Number(res.data.giftVoucherAppliedCents ?? res.data.voucherAppliedCents ?? 0);
         setVoucherAppliedCents(giftCents);
-        const reportedStripeCents = Number(res.data.stripeAmountCents);
+
+        let resolvedClientSecret = null;
+        let nextCanonicalPaymentIntentId = res.data.canonicalPaymentIntentId || null;
+        let nextQuoteSnapshotHash = String(res.data.quoteSnapshotHash || '').trim();
 
         if (noPay) {
           setStripeAmountCents(0);
           setClientSecret(null);
-        } else if (res.data.clientSecret) {
-          if (!Number.isFinite(reportedStripeCents) || reportedStripeCents < 0) {
-            throw new Error(t('confirm.paymentSetupFailed'));
-          }
-          setStripeAmountCents(reportedStripeCents);
-          setClientSecret(res.data.clientSecret);
+          nextCanonicalPaymentIntentId = null;
+          nextQuoteSnapshotHash = '';
         } else {
-          setStripeAmountCents(Number.isFinite(reportedStripeCents) ? reportedStripeCents : 0);
-          setClientSecret(null);
+          const resolved = resolveV2ClientSecretAfterPaymentIntent({
+            currentIdentity: currentV2Identity,
+            responseData: res.data,
+            checkoutId: validation.checkoutId,
+            existingClientSecret
+          });
+          nextCanonicalPaymentIntentId = resolved.nextIdentity.canonicalPaymentIntentId;
+          nextQuoteSnapshotHash = resolved.nextIdentity.quoteSnapshotHash;
+          resolvedClientSecret = resolved.clientSecret;
+
+          if (resolvedClientSecret) {
+            if (!Number.isFinite(reportedStripeCents) || reportedStripeCents < 0) {
+              throw new Error(t('confirm.paymentSetupFailed'));
+            }
+            setStripeAmountCents(reportedStripeCents);
+            setClientSecret(resolvedClientSecret);
+          } else {
+            setStripeAmountCents(Number.isFinite(reportedStripeCents) ? reportedStripeCents : 0);
+            setClientSecret(null);
+          }
         }
 
-        writeCheckoutSessionV2Storage(
-          buildV2StorageRecordFromPaymentResponse(res.data, checkoutSessionV2BoundaryKey)
-        );
+        setCanonicalPaymentIntentId(nextCanonicalPaymentIntentId);
+        setQuoteSnapshotHash(nextQuoteSnapshotHash);
+
+        writeCheckoutSessionV2Storage({
+          ...buildV2StorageRecordFromPaymentResponse(
+            {
+              ...res.data,
+              checkoutId: validation.checkoutId,
+              canonicalPaymentIntentId: nextCanonicalPaymentIntentId,
+              quoteSnapshotHash: nextQuoteSnapshotHash,
+              sessionVersion: nextSessionVersion,
+              voucherRedemptionId: nextVoucherRedemptionId
+            },
+            checkoutSessionV2BoundaryKey
+          ),
+          clientSecretPresent: Boolean(resolvedClientSecret) && !noPay
+        });
         return;
       }
 
@@ -826,7 +1034,29 @@ const ConfirmBooking = () => {
         setClientSecret(null);
       }
     } catch (err) {
-      setCheckoutInitError(err.response?.data?.message || t('confirm.paymentSetupFailed'));
+      if (checkoutSessionV2Enabled) {
+        const code = extractCheckoutApiErrorCode(err);
+        const handling = getV2CheckoutInitErrorHandling(code);
+        if (handling.clearAll) {
+          clearV2CheckoutPaymentState();
+        } else {
+          if (handling.clearPaymentIdentity) {
+            clearV2PaymentIdentityState();
+            persistV2StoragePaymentCleared(checkoutId, {
+              voucherRedemptionId,
+              stripeAmountCents: 0,
+              noPaymentRequired: false
+            });
+          } else if (handling.clearClientSecret) {
+            setClientSecret(null);
+          }
+        }
+        setCheckoutInitError(
+          handling.message || err.response?.data?.message || t('confirm.paymentSetupFailed')
+        );
+      } else {
+        setCheckoutInitError(err.response?.data?.message || t('confirm.paymentSetupFailed'));
+      }
     } finally {
       setCheckoutInitLoading(false);
     }
@@ -839,11 +1069,17 @@ const ConfirmBooking = () => {
     children,
     experienceKeysSorted,
     checkoutId,
+    clientSecret,
+    canonicalPaymentIntentId,
+    quoteSnapshotHash,
+    voucherRedemptionId,
     bookingEntityType,
     lockedPromoCode,
     appliedVoucherCode,
     checkoutSessionV2BoundaryKey,
     clearV2CheckoutPaymentState,
+    clearV2PaymentIdentityState,
+    persistV2StoragePaymentCleared,
     t
   ]);
 
@@ -1117,6 +1353,17 @@ const ConfirmBooking = () => {
   const showContinueToPayment =
     (stripeEnabled || appliedVoucherCode) && !skipCardPaymentUi && !clientSecret;
   const showPaymentElement = stripePromise && clientSecret && !skipCardPaymentUi;
+
+  const v2PaymentElementKey = useMemo(() => {
+    if (!checkoutSessionV2Enabled || !showPaymentElement) {
+      return null;
+    }
+    return buildV2PaymentElementKey({
+      checkoutId,
+      canonicalPaymentIntentId,
+      quoteSnapshotHash
+    });
+  }, [checkoutId, canonicalPaymentIntentId, quoteSnapshotHash, showPaymentElement]);
 
   const continueToPayMessages = useMemo(() => {
     const msgs = [...paymentPrecheckMessages];
@@ -1532,7 +1779,11 @@ const ConfirmBooking = () => {
                   ) : null}
                 </div>
               ) : null}
-              <Elements stripe={stripePromise} options={{ clientSecret }}>
+              <Elements
+                key={checkoutSessionV2Enabled ? v2PaymentElementKey : undefined}
+                stripe={stripePromise}
+                options={{ clientSecret }}
+              >
                 <PaymentFormInner
                   onSubmit={handleStripeSubmit}
                   loading={submitLoading}

@@ -7,12 +7,20 @@ import {
   writeCheckoutSessionV2Storage
 } from '../utils/checkoutSessionV2Storage';
 import {
+  buildV2PaymentElementKey,
+  buildV2CheckoutIdentity,
   buildV2StorageRecordFromPaymentResponse,
+  classifyV2CheckoutInitError,
+  getV2CheckoutInitErrorHandling,
   readLegacyCheckoutSession,
+  resolveV2ClientSecretAfterPaymentIntent,
   restoreV2SessionFieldsFromStorage,
   shouldBlockCardPaymentPrecheck,
+  shouldReuseV2ClientSecret,
   validateV2CreatePaymentIntentResponse,
-  V2_CHECKOUT_CONFIG_MISMATCH_MESSAGE
+  V2_CHECKOUT_CONFIG_MISMATCH_MESSAGE,
+  V2_CHECKOUT_RESTART_MESSAGE,
+  V2_CHECKOUT_RETRY_PAYMENT_MESSAGE
 } from './ConfirmBooking.jsx';
 
 const BOUNDARY = buildCheckoutSessionV2BoundaryKey({
@@ -172,6 +180,148 @@ describe('ConfirmBooking V2 helpers', () => {
       voucherCode: 'GIFT'
     });
     expect(withExtras).toBe(BOUNDARY);
+  });
+});
+
+const BASE_IDENTITY = {
+  checkoutId: 'chk_srv_1',
+  canonicalPaymentIntentId: 'pi_canonical_1',
+  quoteSnapshotHash: 'hash_abc'
+};
+
+describe('ConfirmBooking V2 payment element key and clientSecret reuse', () => {
+  it('buildV2PaymentElementKey uses checkoutId, canonical PI, and quote hash', () => {
+    expect(buildV2PaymentElementKey(BASE_IDENTITY)).toBe('chk_srv_1:pi_canonical_1:hash_abc');
+  });
+
+  it('idempotentReplay with same identity keeps existing clientSecret', () => {
+    const current = buildV2CheckoutIdentity(BASE_IDENTITY);
+    const resolved = resolveV2ClientSecretAfterPaymentIntent({
+      currentIdentity: current,
+      responseData: {
+        ...BASE_IDENTITY,
+        idempotentReplay: true,
+        clientSecret: 'cs_new_from_server'
+      },
+      checkoutId: BASE_IDENTITY.checkoutId,
+      existingClientSecret: 'cs_in_memory'
+    });
+    expect(resolved.reused).toBe(true);
+    expect(resolved.clientSecret).toBe('cs_in_memory');
+  });
+
+  it('idempotentReplay with same identity does not change Elements key', () => {
+    const keyBefore = buildV2PaymentElementKey(BASE_IDENTITY);
+    const resolved = resolveV2ClientSecretAfterPaymentIntent({
+      currentIdentity: buildV2CheckoutIdentity(BASE_IDENTITY),
+      responseData: { ...BASE_IDENTITY, idempotentReplay: true, clientSecret: 'cs_other' },
+      checkoutId: BASE_IDENTITY.checkoutId,
+      existingClientSecret: 'cs_in_memory'
+    });
+    const keyAfter = buildV2PaymentElementKey(resolved.nextIdentity);
+    expect(keyAfter).toBe(keyBefore);
+  });
+
+  it('new canonicalPaymentIntentId replaces clientSecret and changes Elements key', () => {
+    const resolved = resolveV2ClientSecretAfterPaymentIntent({
+      currentIdentity: buildV2CheckoutIdentity(BASE_IDENTITY),
+      responseData: {
+        checkoutId: BASE_IDENTITY.checkoutId,
+        canonicalPaymentIntentId: 'pi_canonical_2',
+        quoteSnapshotHash: BASE_IDENTITY.quoteSnapshotHash,
+        idempotentReplay: false,
+        clientSecret: 'cs_new_pi'
+      },
+      checkoutId: BASE_IDENTITY.checkoutId,
+      existingClientSecret: 'cs_in_memory'
+    });
+    expect(resolved.reused).toBe(false);
+    expect(resolved.clientSecret).toBe('cs_new_pi');
+    expect(buildV2PaymentElementKey(resolved.nextIdentity)).toBe('chk_srv_1:pi_canonical_2:hash_abc');
+    expect(buildV2PaymentElementKey(resolved.nextIdentity)).not.toBe(buildV2PaymentElementKey(BASE_IDENTITY));
+  });
+
+  it('new quoteSnapshotHash replaces clientSecret and changes Elements key', () => {
+    const resolved = resolveV2ClientSecretAfterPaymentIntent({
+      currentIdentity: buildV2CheckoutIdentity(BASE_IDENTITY),
+      responseData: {
+        checkoutId: BASE_IDENTITY.checkoutId,
+        canonicalPaymentIntentId: BASE_IDENTITY.canonicalPaymentIntentId,
+        quoteSnapshotHash: 'hash_xyz',
+        idempotentReplay: true,
+        clientSecret: 'cs_new_hash'
+      },
+      checkoutId: BASE_IDENTITY.checkoutId,
+      existingClientSecret: 'cs_in_memory'
+    });
+    expect(resolved.reused).toBe(false);
+    expect(resolved.clientSecret).toBe('cs_new_hash');
+    expect(buildV2PaymentElementKey(resolved.nextIdentity)).toBe('chk_srv_1:pi_canonical_1:hash_xyz');
+  });
+
+  it('shouldReuseV2ClientSecret is false without in-memory clientSecret', () => {
+    expect(
+      shouldReuseV2ClientSecret({
+        currentIdentity: buildV2CheckoutIdentity(BASE_IDENTITY),
+        nextIdentity: buildV2CheckoutIdentity(BASE_IDENTITY),
+        idempotentReplay: true,
+        clientSecret: null
+      })
+    ).toBe(false);
+  });
+});
+
+describe('ConfirmBooking V2 checkout init error handling', () => {
+  it('STALE_CLIENT_SECRET clears payment identity but keeps checkout session', () => {
+    const handling = getV2CheckoutInitErrorHandling('STALE_CLIENT_SECRET');
+    expect(handling.clearPaymentIdentity).toBe(true);
+    expect(handling.clearClientSecret).toBe(true);
+    expect(handling.clearAll).toBe(false);
+    expect(handling.message).toBe(V2_CHECKOUT_RETRY_PAYMENT_MESSAGE);
+  });
+
+  it('SUPERSEDED_PAYMENT_INTENT clears payment identity but keeps checkout session', () => {
+    const handling = getV2CheckoutInitErrorHandling('SUPERSEDED_PAYMENT_INTENT');
+    expect(handling.clearPaymentIdentity).toBe(true);
+    expect(handling.clearAll).toBe(false);
+  });
+
+  it('CANONICAL_PAYMENT_INTENT_MISMATCH clears payment identity but keeps checkout session', () => {
+    expect(classifyV2CheckoutInitError('CANONICAL_PAYMENT_INTENT_MISMATCH').kind).toBe(
+      'clearPaymentKeepCheckout'
+    );
+  });
+
+  it('CHECKOUT_SESSION_EXPIRED clears full V2 session', () => {
+    const handling = getV2CheckoutInitErrorHandling('CHECKOUT_SESSION_EXPIRED');
+    expect(handling.clearAll).toBe(true);
+    expect(handling.message).toBe(V2_CHECKOUT_RESTART_MESSAGE);
+  });
+
+  it('CHECKOUT_SESSION_SUPERSEDED and COMMERCIAL_BOUNDARY_CHANGED restart checkout', () => {
+    expect(getV2CheckoutInitErrorHandling('CHECKOUT_SESSION_SUPERSEDED').clearAll).toBe(true);
+    expect(getV2CheckoutInitErrorHandling('COMMERCIAL_BOUNDARY_CHANGED').clearAll).toBe(true);
+  });
+
+  it('CHECKOUT_SESSION_CONCURRENCY_CONFLICT keeps checkoutId scope but clears clientSecret', () => {
+    const handling = getV2CheckoutInitErrorHandling('CHECKOUT_SESSION_CONCURRENCY_CONFLICT');
+    expect(handling.clearAll).toBe(false);
+    expect(handling.clearPaymentIdentity).toBe(false);
+    expect(handling.clearClientSecret).toBe(true);
+  });
+
+  it('VOUCHER_PAYMENT_INTENT_ATTACH_FAILED and CHECKOUT_SESSION_NOT_USABLE clear clientSecret only', () => {
+    expect(getV2CheckoutInitErrorHandling('VOUCHER_PAYMENT_INTENT_ATTACH_FAILED').clearClientSecret).toBe(
+      true
+    );
+    expect(getV2CheckoutInitErrorHandling('CHECKOUT_SESSION_NOT_USABLE').clearAll).toBe(false);
+  });
+
+  it('config mismatch validation still fails closed', () => {
+    expect(validateV2CreatePaymentIntentResponse({ flowVersion: 'legacy', checkoutId: 'x' })).toEqual({
+      ok: false,
+      error: V2_CHECKOUT_CONFIG_MISMATCH_MESSAGE
+    });
   });
 });
 
