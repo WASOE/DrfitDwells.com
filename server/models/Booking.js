@@ -360,6 +360,15 @@ bookingSchema.index(
   { checkoutId: 1 },
   { unique: true, partialFilterExpression: { checkoutId: { $type: 'string' } } }
 );
+bookingSchema.index(
+  { stripePaymentIntentId: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      stripePaymentIntentId: { $exists: true, $type: 'string', $gt: '' }
+    }
+  }
+);
 
 // Validation: Must have either cabinId OR cabinTypeId, not both
 bookingSchema.pre('validate', function(next) {
