@@ -7,8 +7,10 @@ import {
   writeCheckoutSessionV2Storage
 } from '../utils/checkoutSessionV2Storage';
 import {
+  buildRedirectBookingPayloadFromPending,
   buildV2PaymentElementKey,
   buildV2CheckoutIdentity,
+  buildV2PendingCheckoutPayload,
   buildV2StorageRecordFromPaymentResponse,
   classifyV2CheckoutInitError,
   getV2CheckoutInitErrorHandling,
@@ -16,11 +18,14 @@ import {
   resolveV2ClientSecretAfterPaymentIntent,
   restoreV2SessionFieldsFromStorage,
   shouldBlockCardPaymentPrecheck,
+  shouldHandleRedirectAsV2,
   shouldReuseV2ClientSecret,
   validateV2CreatePaymentIntentResponse,
+  validateV2RedirectPaymentIntent,
   V2_CHECKOUT_CONFIG_MISMATCH_MESSAGE,
   V2_CHECKOUT_RESTART_MESSAGE,
-  V2_CHECKOUT_RETRY_PAYMENT_MESSAGE
+  V2_CHECKOUT_RETRY_PAYMENT_MESSAGE,
+  V2_REDIRECT_PI_MISMATCH_MESSAGE
 } from './ConfirmBooking.jsx';
 
 const BOUNDARY = buildCheckoutSessionV2BoundaryKey({
@@ -322,6 +327,150 @@ describe('ConfirmBooking V2 checkout init error handling', () => {
       ok: false,
       error: V2_CHECKOUT_CONFIG_MISMATCH_MESSAGE
     });
+  });
+});
+
+const PENDING_BASE = {
+  cabinId: 'cab_123',
+  bookingEntityId: 'cab_123',
+  bookingEntityType: 'cabin',
+  checkIn: '2026-06-10',
+  checkOut: '2026-06-12',
+  adults: 2,
+  children: 0,
+  checkoutId: 'chk_srv_redirect',
+  voucherRedemptionId: 'red_redirect',
+  formData: {
+    firstName: 'Ada',
+    lastName: 'Lovelace',
+    email: 'ada@example.com',
+    phone: '+359800000000',
+    agreedToTerms: true,
+    agreedToActivityRisk: true
+  },
+  experiences: [{ key: 'jeep_transfer' }]
+};
+
+const PENDING_V2 = buildV2PendingCheckoutPayload(PENDING_BASE, {
+  checkoutId: 'chk_srv_redirect',
+  canonicalPaymentIntentId: 'pi_canonical_redirect',
+  quoteSnapshotHash: 'hash_redirect',
+  noPaymentRequired: false,
+  voucherRedemptionId: 'red_redirect'
+});
+
+describe('ConfirmBooking V2 redirect-back helpers', () => {
+  it('buildV2PendingCheckoutPayload includes V2 identity fields', () => {
+    expect(PENDING_V2).toMatchObject({
+      flowVersion: 'v2',
+      checkoutId: 'chk_srv_redirect',
+      canonicalPaymentIntentId: 'pi_canonical_redirect',
+      quoteSnapshotHash: 'hash_redirect',
+      noPaymentRequired: false,
+      voucherRedemptionId: 'red_redirect'
+    });
+    expect(PENDING_V2.cabinId).toBe('cab_123');
+  });
+
+  it('legacy pending base does not include flowVersion', () => {
+    expect(PENDING_BASE.flowVersion).toBeUndefined();
+  });
+
+  it('shouldHandleRedirectAsV2 is true only when flag on and redirect succeeded', () => {
+    expect(
+      shouldHandleRedirectAsV2({
+        checkoutSessionV2Enabled: true,
+        paymentIntentId: 'pi_1',
+        redirectStatus: 'succeeded'
+      })
+    ).toBe(true);
+    expect(
+      shouldHandleRedirectAsV2({
+        checkoutSessionV2Enabled: false,
+        paymentIntentId: 'pi_1',
+        redirectStatus: 'succeeded'
+      })
+    ).toBe(false);
+    expect(
+      shouldHandleRedirectAsV2({
+        checkoutSessionV2Enabled: true,
+        paymentIntentId: 'pi_1',
+        redirectStatus: 'failed'
+      })
+    ).toBe(false);
+  });
+
+  it('validateV2RedirectPaymentIntent allows finalize when URL PI matches canonical', () => {
+    expect(
+      validateV2RedirectPaymentIntent({
+        pending: PENDING_V2,
+        urlPaymentIntentId: 'pi_canonical_redirect'
+      })
+    ).toEqual({
+      ok: true,
+      reason: null,
+      checkoutId: 'chk_srv_redirect',
+      paymentIntentId: 'pi_canonical_redirect'
+    });
+  });
+
+  it('buildRedirectBookingPayloadFromPending uses pending checkoutId and URL PI', () => {
+    const payload = buildRedirectBookingPayloadFromPending(PENDING_V2, 'pi_canonical_redirect', {
+      routeId: 'cab_123',
+      language: 'en',
+      attribution: null,
+      metaClientContext: {}
+    });
+    expect(payload.checkoutId).toBe('chk_srv_redirect');
+    expect(payload.paymentIntentId).toBe('pi_canonical_redirect');
+    expect(payload.voucherRedemptionId).toBe('red_redirect');
+    expect(payload.cabinId).toBe('cab_123');
+  });
+
+  it('validateV2RedirectPaymentIntent blocks mismatched PI', () => {
+    expect(
+      validateV2RedirectPaymentIntent({
+        pending: PENDING_V2,
+        urlPaymentIntentId: 'pi_other'
+      }).ok
+    ).toBe(false);
+  });
+
+  it('validateV2RedirectPaymentIntent blocks missing canonicalPaymentIntentId', () => {
+    expect(
+      validateV2RedirectPaymentIntent({
+        pending: { ...PENDING_V2, canonicalPaymentIntentId: null },
+        urlPaymentIntentId: 'pi_canonical_redirect'
+      }).reason
+    ).toBe('missing_canonical_pi');
+  });
+
+  it('validateV2RedirectPaymentIntent blocks legacy pending when V2 expected', () => {
+    expect(
+      validateV2RedirectPaymentIntent({
+        pending: PENDING_BASE,
+        urlPaymentIntentId: 'pi_canonical_redirect'
+      })
+    ).toEqual({ ok: false, reason: 'not_v2_pending' });
+  });
+
+  it('validateV2RedirectPaymentIntent blocks noPaymentRequired with redirect PI', () => {
+    expect(
+      validateV2RedirectPaymentIntent({
+        pending: { ...PENDING_V2, noPaymentRequired: true },
+        urlPaymentIntentId: 'pi_canonical_redirect'
+      })
+    ).toEqual({ ok: false, reason: 'no_payment_required' });
+  });
+
+  it('mismatched PI reason maps to user-facing redirect message constant', () => {
+    const result = validateV2RedirectPaymentIntent({
+      pending: PENDING_V2,
+      urlPaymentIntentId: 'pi_stale'
+    });
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe('pi_mismatch');
+    expect(V2_REDIRECT_PI_MISMATCH_MESSAGE).toContain('Payment session changed');
   });
 });
 

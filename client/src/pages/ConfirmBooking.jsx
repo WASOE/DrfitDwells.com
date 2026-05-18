@@ -220,6 +220,103 @@ export function shouldReuseV2ClientSecret({
   return isSameCheckoutSessionV2Identity(currentIdentity, nextIdentity);
 }
 
+export const V2_REDIRECT_PI_MISMATCH_MESSAGE =
+  'Payment session changed. Please try payment again.';
+
+export function shouldHandleRedirectAsV2({
+  checkoutSessionV2Enabled: v2Enabled = checkoutSessionV2Enabled,
+  paymentIntentId,
+  redirectStatus
+}) {
+  return Boolean(v2Enabled && paymentIntentId && redirectStatus === 'succeeded');
+}
+
+export function buildV2PendingCheckoutPayload(base, v2Fields) {
+  return {
+    ...base,
+    flowVersion: 'v2',
+    checkoutId: v2Fields.checkoutId,
+    canonicalPaymentIntentId: v2Fields.canonicalPaymentIntentId || null,
+    quoteSnapshotHash: v2Fields.quoteSnapshotHash || '',
+    noPaymentRequired: Boolean(v2Fields.noPaymentRequired),
+    voucherRedemptionId: v2Fields.voucherRedemptionId || undefined
+  };
+}
+
+export function validateV2RedirectPaymentIntent({ pending, urlPaymentIntentId }) {
+  if (!pending || pending.flowVersion !== 'v2') {
+    return { ok: false, reason: 'not_v2_pending' };
+  }
+  if (pending.noPaymentRequired) {
+    return { ok: false, reason: 'no_payment_required' };
+  }
+  const pendingCheckoutId = typeof pending.checkoutId === 'string' ? pending.checkoutId.trim() : '';
+  const canonical =
+    typeof pending.canonicalPaymentIntentId === 'string'
+      ? pending.canonicalPaymentIntentId.trim()
+      : '';
+  const urlPi = typeof urlPaymentIntentId === 'string' ? urlPaymentIntentId.trim() : '';
+  if (!pendingCheckoutId) {
+    return { ok: false, reason: 'missing_checkout_id' };
+  }
+  if (!canonical) {
+    return { ok: false, reason: 'missing_canonical_pi' };
+  }
+  if (!urlPi || urlPi !== canonical) {
+    return { ok: false, reason: 'pi_mismatch' };
+  }
+  return {
+    ok: true,
+    reason: null,
+    checkoutId: pendingCheckoutId,
+    paymentIntentId: urlPi
+  };
+}
+
+export function buildRedirectBookingPayloadFromPending(
+  pending,
+  paymentIntentId,
+  { routeId, language, attribution, metaClientContext }
+) {
+  const fd = pending.formData || {};
+  const bookingData = {
+    checkIn: pending.checkIn,
+    checkOut: pending.checkOut,
+    adults: pending.adults ?? 2,
+    children: pending.children ?? 0,
+    paymentIntentId,
+    experienceKeys: (pending.experiences || []).map((e) => e.key).filter(Boolean),
+    guestInfo: {
+      firstName: fd.firstName || '',
+      lastName: fd.lastName || '',
+      email: fd.email || '',
+      phone: fd.phone || ''
+    },
+    specialRequests: fd.specialRequests || '',
+    legalAcceptance: {
+      acceptedTermsAndCancellation: !!fd.agreedToTerms,
+      acceptedActivityRisk: !!fd.agreedToActivityRisk,
+      termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
+      activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+      checkbox1TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
+      checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
+      locale: language || undefined
+    },
+    metaClientContext: metaClientContext || undefined,
+    checkoutId: pending.checkoutId,
+    voucherRedemptionId: pending.voucherRedemptionId || undefined,
+    ...(pending.voucherCode ? { voucherCode: pending.voucherCode } : {}),
+    ...(pending.promoCode ? { promoCode: pending.promoCode } : {}),
+    ...(attribution && Object.values(attribution).some(Boolean) ? { attribution } : {})
+  };
+  if ((pending.bookingEntityType || 'cabin') === 'cabinType') {
+    bookingData.cabinTypeId = pending.bookingEntityId || pending.cabinId;
+  } else {
+    bookingData.cabinId = pending.bookingEntityId || pending.cabinId || routeId;
+  }
+  return bookingData;
+}
+
 export function resolveV2ClientSecretAfterPaymentIntent({
   currentIdentity,
   responseData,
@@ -754,93 +851,6 @@ const ConfirmBooking = () => {
     setSearchParams(params, { replace: true });
   }, [checkIn, checkOut, adults, children, searchParams]);
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const paymentIntentId = params.get('payment_intent');
-    const redirectStatus = params.get('redirect_status');
-    if (paymentIntentId && redirectStatus === 'succeeded') {
-      const stored = sessionStorage.getItem('confirm-booking-pending');
-      if (stored) {
-        try {
-          const data = JSON.parse(stored);
-          sessionStorage.removeItem('confirm-booking-pending');
-          setSubmitLoading(true);
-          const fd = data.formData || {};
-          const attr = getAttributionPayload();
-          const bookingData = {
-            checkIn: data.checkIn,
-            checkOut: data.checkOut,
-            adults: data.adults ?? 2,
-            children: data.children ?? 0,
-            paymentIntentId,
-            experienceKeys: (data.experiences || []).map((e) => e.key).filter(Boolean),
-            guestInfo: {
-              firstName: fd.firstName || '',
-              lastName: fd.lastName || '',
-              email: fd.email || '',
-              phone: fd.phone || ''
-            },
-            specialRequests: fd.specialRequests || '',
-            legalAcceptance: {
-              acceptedTermsAndCancellation: !!fd.agreedToTerms,
-              acceptedActivityRisk: !!fd.agreedToActivityRisk,
-              termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
-              activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
-              checkbox1TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
-              checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
-              locale: language || undefined
-            },
-            metaClientContext: getMetaClientContextPayload(),
-            checkoutId: data.checkoutId || checkoutId,
-            voucherRedemptionId: data.voucherRedemptionId || undefined,
-            ...(data.voucherCode ? { voucherCode: data.voucherCode } : {}),
-            ...(data.promoCode ? { promoCode: data.promoCode } : {}),
-            ...(attr && Object.values(attr).some(Boolean) ? { attribution: attr } : {})
-          };
-          if ((data.bookingEntityType || 'cabin') === 'cabinType') {
-            bookingData.cabinTypeId = data.bookingEntityId || data.cabinId;
-          } else {
-            bookingData.cabinId = data.bookingEntityId || data.cabinId || id;
-          }
-          bookingAPI.create(bookingData)
-            .then((res) => {
-              if (res.data.success && res.data.data?.booking?._id) {
-                const bid = res.data.data.booking._id;
-                const em = (fd.email || '').trim().toLowerCase();
-                if (em) {
-                  try {
-                    sessionStorage.setItem(`dd_booking_guest_${bid}`, em);
-                  } catch (e) { /* ignore */ }
-                }
-                navigate(`/booking-success/${bid}`, { replace: true, state: { guestEmail: em } });
-              } else {
-                setError(t('confirm.bookingCompletedNoConfirmation'));
-              }
-            })
-            .catch((err) => {
-              if (err.response?.status === 409 && err.response?.data?.refundInitiated && err.response?.data?.paymentIntentId) {
-                const d = err.response.data;
-                const params = new URLSearchParams();
-                params.set('payment_intent', d.paymentIntentId);
-                if (d.guestEmail) params.set('email', d.guestEmail);
-                if (d.checkIn) params.set('checkIn', d.checkIn);
-                if (d.checkOut) params.set('checkOut', d.checkOut);
-                if (d.adults != null) params.set('adults', String(d.adults));
-                if (d.children != null) params.set('children', String(d.children));
-                navigate(`/booking-refund?${params.toString()}`, { replace: true });
-              } else {
-                setError(mapCreateBookingErrorMessage(err, t('confirm.bookingFailed')));
-              }
-            })
-            .finally(() => setSubmitLoading(false));
-        } catch (e) {
-          setError(t('confirm.couldNotCompleteBooking'));
-        }
-      }
-      window.history.replaceState({}, '', window.location.pathname);
-    }
-  }, [bookingEntityId, bookingEntityType, id, navigate, t, language, checkoutId]);
-
   const handleApplyVoucher = useCallback(() => {
     const trimmed = voucherDraft.trim().toUpperCase();
     setClientSecret(null);
@@ -900,6 +910,167 @@ const ConfirmBooking = () => {
       noPaymentRequired: Boolean(extras.noPaymentRequired)
     });
   }, [checkoutSessionV2BoundaryKey]);
+
+  const finalizeRedirectBooking = useCallback((pending, paymentIntentIdForBooking) => {
+    const fd = pending.formData || {};
+    const attr = getAttributionPayload();
+    const bookingData = buildRedirectBookingPayloadFromPending(pending, paymentIntentIdForBooking, {
+      routeId: id,
+      language,
+      attribution: attr,
+      metaClientContext: getMetaClientContextPayload()
+    });
+    setSubmitLoading(true);
+    return bookingAPI.create(bookingData)
+      .then((res) => {
+        if (res.data.success && res.data.data?.booking?._id) {
+          const bid = res.data.data.booking._id;
+          const em = (fd.email || '').trim().toLowerCase();
+          if (em) {
+            try {
+              sessionStorage.setItem(`dd_booking_guest_${bid}`, em);
+            } catch (e) { /* ignore */ }
+          }
+          navigate(`/booking-success/${bid}`, { replace: true, state: { guestEmail: em } });
+        } else {
+          setError(t('confirm.bookingCompletedNoConfirmation'));
+        }
+      })
+      .catch((err) => {
+        if (err.response?.status === 409 && err.response?.data?.refundInitiated && err.response?.data?.paymentIntentId) {
+          const d = err.response.data;
+          const refundParams = new URLSearchParams();
+          refundParams.set('payment_intent', d.paymentIntentId);
+          if (d.guestEmail) refundParams.set('email', d.guestEmail);
+          if (d.checkIn) refundParams.set('checkIn', d.checkIn);
+          if (d.checkOut) refundParams.set('checkOut', d.checkOut);
+          if (d.adults != null) refundParams.set('adults', String(d.adults));
+          if (d.children != null) refundParams.set('children', String(d.children));
+          navigate(`/booking-refund?${refundParams.toString()}`, { replace: true });
+        } else {
+          setError(mapCreateBookingErrorMessage(err, t('confirm.bookingFailed')));
+        }
+      })
+      .finally(() => setSubmitLoading(false));
+  }, [id, language, navigate, t]);
+
+  const handleV2RedirectValidationFailure = useCallback((reason, pending) => {
+    if (reason === 'not_v2_pending') {
+      clearV2CheckoutPaymentState();
+      setError(V2_CHECKOUT_CONFIG_MISMATCH_MESSAGE);
+      return;
+    }
+    clearV2PaymentIdentityState();
+    const keepCheckoutId =
+      typeof pending?.checkoutId === 'string' ? pending.checkoutId.trim() : '';
+    if (keepCheckoutId) {
+      setCheckoutId(keepCheckoutId);
+      persistV2StoragePaymentCleared(keepCheckoutId, {
+        voucherRedemptionId: pending?.voucherRedemptionId ?? null,
+        stripeAmountCents: 0,
+        noPaymentRequired: false
+      });
+    }
+    if (reason === 'no_payment_required') {
+      setError(V2_CHECKOUT_RETRY_PAYMENT_MESSAGE);
+      return;
+    }
+    setError(V2_REDIRECT_PI_MISMATCH_MESSAGE);
+  }, [
+    clearV2CheckoutPaymentState,
+    clearV2PaymentIdentityState,
+    persistV2StoragePaymentCleared
+  ]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const paymentIntentId = params.get('payment_intent');
+    const redirectStatus = params.get('redirect_status');
+    if (!paymentIntentId) {
+      return;
+    }
+
+    const clearUrlParams = () => {
+      window.history.replaceState({}, '', window.location.pathname);
+    };
+
+    if (checkoutSessionV2Enabled) {
+      if (redirectStatus !== 'succeeded') {
+        try {
+          const stored = sessionStorage.getItem('confirm-booking-pending');
+          if (stored) {
+            const pending = JSON.parse(stored);
+            if (pending?.flowVersion === 'v2') {
+              sessionStorage.removeItem('confirm-booking-pending');
+            }
+          }
+        } catch {
+          sessionStorage.removeItem('confirm-booking-pending');
+        }
+        if (redirectStatus === 'failed') {
+          setError(t('confirm.paymentFailed'));
+        }
+        clearUrlParams();
+        return;
+      }
+
+      const stored = sessionStorage.getItem('confirm-booking-pending');
+      if (!stored) {
+        clearUrlParams();
+        return;
+      }
+
+      try {
+        const data = JSON.parse(stored);
+        sessionStorage.removeItem('confirm-booking-pending');
+        const validation = validateV2RedirectPaymentIntent({
+          pending: data,
+          urlPaymentIntentId: paymentIntentId
+        });
+        if (!validation.ok) {
+          handleV2RedirectValidationFailure(validation.reason, data);
+          clearUrlParams();
+          return;
+        }
+        const pendingForBooking = {
+          ...data,
+          checkoutId: validation.checkoutId
+        };
+        finalizeRedirectBooking(pendingForBooking, validation.paymentIntentId);
+      } catch {
+        setError(t('confirm.couldNotCompleteBooking'));
+      }
+      clearUrlParams();
+      return;
+    }
+
+    if (redirectStatus === 'succeeded') {
+      const stored = sessionStorage.getItem('confirm-booking-pending');
+      if (stored) {
+        try {
+          const data = JSON.parse(stored);
+          sessionStorage.removeItem('confirm-booking-pending');
+          const pendingForBooking = {
+            ...data,
+            checkoutId: data.checkoutId || checkoutId
+          };
+          finalizeRedirectBooking(pendingForBooking, paymentIntentId);
+        } catch (e) {
+          setError(t('confirm.couldNotCompleteBooking'));
+        }
+      }
+      clearUrlParams();
+    }
+  }, [
+    bookingEntityId,
+    bookingEntityType,
+    checkoutId,
+    finalizeRedirectBooking,
+    handleV2RedirectValidationFailure,
+    id,
+    navigate,
+    t
+  ]);
 
   const initializeCheckoutPayment = useCallback(async () => {
     if (!bookingEntityId || !checkIn || !checkOut || !serverQuote) return;
@@ -1223,7 +1394,7 @@ const ConfirmBooking = () => {
     setError(null);
     setStripeError(null);
     try {
-      sessionStorage.setItem('confirm-booking-pending', JSON.stringify({
+      const pendingBase = {
         cabinId: bookingEntityId,
         bookingEntityId,
         bookingEntityType,
@@ -1243,7 +1414,17 @@ const ConfirmBooking = () => {
           const qty = exp?.unit === 'per_guest' ? adults + children : 1;
           return { key, quantity: qty, priceAtBooking: exp?.price || 0, currency: 'BGN' };
         })
-      }));
+      };
+      const pendingPayload = checkoutSessionV2Enabled
+        ? buildV2PendingCheckoutPayload(pendingBase, {
+            checkoutId,
+            canonicalPaymentIntentId,
+            quoteSnapshotHash,
+            noPaymentRequired,
+            voucherRedemptionId
+          })
+        : pendingBase;
+      sessionStorage.setItem('confirm-booking-pending', JSON.stringify(pendingPayload));
       const { error: stripeError, paymentIntent } = await stripe.confirmPayment({
         elements,
         confirmParams: {
@@ -1316,6 +1497,9 @@ const ConfirmBooking = () => {
     lockedPromoCode,
     appliedVoucherCode,
     voucherRedemptionId,
+    canonicalPaymentIntentId,
+    quoteSnapshotHash,
+    noPaymentRequired,
     navigate,
     t
   ]);
