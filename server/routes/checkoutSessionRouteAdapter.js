@@ -1,7 +1,8 @@
 const CheckoutSession = require('../models/CheckoutSession');
 const featureFlags = require('../utils/featureFlags');
 const {
-  ensureCanonicalPaymentIntent: ensureCanonicalPaymentIntentDefault
+  ensureCanonicalPaymentIntent: ensureCanonicalPaymentIntentDefault,
+  assertCanonicalPaymentIntentForSession
 } = require('../services/checkout/checkoutCanonicalPaymentIntentService');
 
 let ensureCanonicalPaymentIntentFn = ensureCanonicalPaymentIntentDefault;
@@ -11,9 +12,11 @@ const {
   assertSessionUsable,
   CHECKOUT_SESSION_ERROR_CODES
 } = require('../services/checkout/checkoutSessionService');
-const { isCheckoutSessionError } = require('../services/checkout/checkoutSessionErrors');
+const { isCheckoutSessionError, CheckoutSessionError } = require('../services/checkout/checkoutSessionErrors');
 
 const STRIPE_MINIMUM_CHARGE_CENTS = 50;
+
+const NO_PAYMENT_FINALIZE_STATUSES = new Set(['voucher_only_reserved', 'payment_not_required']);
 
 const ROUTE_AMOUNT_ERROR_CODES = {
   CHECKOUT_INVALID_AMOUNT: 'CHECKOUT_INVALID_AMOUNT',
@@ -212,6 +215,66 @@ function validateV2QuoteAmountsBeforeEnsure(quoteResult) {
   return { ok: true, stripeAmountCents, needsCard };
 }
 
+/**
+ * V2 CheckoutSession finalization guard (C2D-B). No-op when no session or non-v2 flow.
+ */
+async function assertV2CheckoutSessionCanFinalize({ checkoutId, paymentIntentId = null }) {
+  const normalized = typeof checkoutId === 'string' ? checkoutId.trim() : '';
+  if (!normalized) {
+    return { applied: false };
+  }
+
+  const sessionLean = await CheckoutSession.findOne({ checkoutId: normalized })
+    .select(
+      'checkoutId flowVersion status paymentStatus canonicalPaymentIntentId supersededPaymentIntentIds finalizeStatus expiresAt'
+    )
+    .lean();
+
+  if (!sessionLean) {
+    return { applied: false };
+  }
+
+  if (sessionLean.flowVersion !== 'v2') {
+    return { applied: false };
+  }
+
+  const session = await loadSessionOrThrow(normalized);
+  assertSessionUsable(session);
+
+  const canonical = session.canonicalPaymentIntentId
+    ? String(session.canonicalPaymentIntentId).trim()
+    : null;
+  const piId = paymentIntentId ? String(paymentIntentId).trim() : '';
+
+  if (NO_PAYMENT_FINALIZE_STATUSES.has(session.status)) {
+    if (!piId) {
+      return { applied: true, ok: true, noPaymentRequired: true };
+    }
+    if (canonical) {
+      await assertCanonicalPaymentIntentForSession({
+        checkoutId: normalized,
+        paymentIntentId: piId
+      });
+    }
+    return { applied: true, ok: true, noPaymentRequired: true };
+  }
+
+  if (!canonical) {
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_USABLE,
+      'Checkout session is not ready for payment finalization',
+      { status: session.status }
+    );
+  }
+
+  await assertCanonicalPaymentIntentForSession({
+    checkoutId: normalized,
+    paymentIntentId: piId
+  });
+
+  return { applied: true, ok: true, noPaymentRequired: false };
+}
+
 async function handleGetCheckoutSession(checkoutId) {
   const session = await loadSessionOrThrow(checkoutId);
   assertSessionUsable(session);
@@ -284,6 +347,8 @@ module.exports = {
   mapCheckoutSessionErrorToHttp,
   sendCheckoutSessionError,
   shouldUseCheckoutSessionV2,
+  assertV2CheckoutSessionCanFinalize,
+  NO_PAYMENT_FINALIZE_STATUSES,
   buildEnsureQuoteFromPublicResult,
   formatPublicCheckoutSessionState,
   formatV2CreatePaymentIntentResponse,

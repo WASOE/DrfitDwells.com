@@ -54,7 +54,8 @@ const {
   handleGetCheckoutSession,
   handleCreatePaymentIntentV2,
   formatPublicCheckoutSessionState,
-  sendCheckoutSessionError
+  sendCheckoutSessionError,
+  assertV2CheckoutSessionCanFinalize
 } = require('./checkoutSessionRouteAdapter');
 const {
   reserveVoucherForCheckout,
@@ -1180,6 +1181,21 @@ router.post('/', bookingCreateLimiter, [
         error: { code: 'INVALID_CHECKOUT_ID' }
       });
     }
+
+    if (checkoutId) {
+      try {
+        await assertV2CheckoutSessionCanFinalize({
+          checkoutId,
+          paymentIntentId: paymentIntentIdForReview
+        });
+      } catch (err) {
+        if (isCheckoutSessionError(err)) {
+          return sendCheckoutSessionError(res, err);
+        }
+        throw err;
+      }
+    }
+
     // Verify Stripe payment if paymentIntentId is provided
     if (paymentIntentId && stripe) {
       try {
