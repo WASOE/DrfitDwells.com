@@ -371,8 +371,107 @@ export function restoreV2SessionFieldsFromStorage(stored) {
   };
 }
 
-function mapCreateBookingErrorMessage(err, fallback) {
-  const code = err?.response?.data?.error?.code;
+export const V2_NO_PAYMENT_MISSING_CHECKOUT_MESSAGE =
+  'Checkout session is missing. Please refresh payment and try again.';
+
+export function shouldAllowV2NoPaymentSubmit({
+  checkoutSessionV2Enabled: v2Enabled = checkoutSessionV2Enabled,
+  noPaymentRequired,
+  checkoutId
+}) {
+  if (!v2Enabled || !noPaymentRequired) {
+    return { allowed: false, reason: 'not_v2_no_payment' };
+  }
+  const id = typeof checkoutId === 'string' ? checkoutId.trim() : '';
+  if (!id) {
+    return { allowed: false, reason: 'missing_checkout_id' };
+  }
+  return { allowed: true, reason: null, checkoutId: id };
+}
+
+export function buildCreateBookingPayload({
+  bookingEntityType,
+  bookingEntityId,
+  checkIn,
+  checkOut,
+  adults,
+  children,
+  selectedExpKeys,
+  formData,
+  checkoutId,
+  voucherRedemptionId,
+  lockedPromoCode,
+  appliedVoucherCode,
+  language,
+  paymentIntentId = null,
+  attribution = null,
+  metaClientContext = null
+}) {
+  const bookingData = {
+    checkIn: formatDateOnlyLocal(checkIn),
+    checkOut: formatDateOnlyLocal(checkOut),
+    adults,
+    children,
+    experienceKeys: Array.from(selectedExpKeys),
+    guestInfo: {
+      firstName: formData.firstName.trim(),
+      lastName: formData.lastName.trim(),
+      email: formData.email.trim(),
+      phone: formData.phone.trim()
+    },
+    specialRequests: formData.specialRequests.trim(),
+    legalAcceptance: {
+      acceptedTermsAndCancellation: !!formData.agreedToTerms,
+      acceptedActivityRisk: !!formData.agreedToActivityRisk,
+      termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
+      activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+      checkbox1TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
+      checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
+      locale: language || undefined
+    },
+    checkoutId,
+    voucherRedemptionId: voucherRedemptionId || undefined,
+    metaClientContext: metaClientContext || undefined,
+    ...(attribution && Object.values(attribution).some(Boolean) ? { attribution } : {})
+  };
+  if (bookingEntityType === 'cabinType') {
+    bookingData.cabinTypeId = bookingEntityId;
+  } else {
+    bookingData.cabinId = bookingEntityId;
+  }
+  if (paymentIntentId) {
+    bookingData.paymentIntentId = paymentIntentId;
+  }
+  if (lockedPromoCode) {
+    bookingData.promoCode = lockedPromoCode;
+  }
+  if (appliedVoucherCode) {
+    bookingData.voucherCode = appliedVoucherCode;
+  }
+  return bookingData;
+}
+
+export function clearCheckoutStorageAfterSuccessfulBooking({
+  checkoutSessionV2Enabled: v2Enabled = checkoutSessionV2Enabled
+} = {}) {
+  try {
+    sessionStorage.removeItem(CONFIRM_BOOKING_SIMPLE_KEY);
+    sessionStorage.removeItem('confirm-booking-pending');
+    sessionStorage.removeItem(CHECKOUT_SESSION_KEY);
+    if (v2Enabled) {
+      clearCheckoutSessionV2Storage();
+    }
+  } catch {
+    // ignore storage failures
+  }
+}
+
+export function mapCreateBookingErrorMessage(err, fallback) {
+  const code = extractCheckoutApiErrorCode(err);
+  const v2Handling = getV2CheckoutInitErrorHandling(code);
+  if (v2Handling.message) {
+    return v2Handling.message;
+  }
   if (code === 'PAYMENT_INTENT_ALREADY_USED') {
     return 'This payment has already been processed. We couldn\'t create another booking from the same payment. If you were charged, please check your booking confirmation email or contact support with your payment reference.';
   }
@@ -1274,59 +1373,75 @@ const ConfirmBooking = () => {
     setSearchParams(params);
   }, [searchParams, setSearchParams]);
 
+  const applyV2CreateBookingErrorState = useCallback((err) => {
+    const code = extractCheckoutApiErrorCode(err);
+    const handling = getV2CheckoutInitErrorHandling(code);
+    if (handling.clearAll) {
+      clearV2CheckoutPaymentState();
+      return;
+    }
+    if (handling.clearPaymentIdentity) {
+      clearV2PaymentIdentityState();
+      setNoPaymentRequired(false);
+      if (checkoutId) {
+        persistV2StoragePaymentCleared(checkoutId, {
+          voucherRedemptionId,
+          stripeAmountCents: 0,
+          noPaymentRequired: false
+        });
+      }
+      return;
+    }
+    if (handling.clearClientSecret) {
+      setClientSecret(null);
+    }
+  }, [
+    checkoutId,
+    voucherRedemptionId,
+    clearV2CheckoutPaymentState,
+    clearV2PaymentIdentityState,
+    persistV2StoragePaymentCleared
+  ]);
+
+  const resetV2NoPaymentSubmitState = useCallback(() => {
+    setNoPaymentRequired(false);
+    setFullVoucherCoverage(false);
+    setVoucherRedemptionId(null);
+    clearV2PaymentIdentityState();
+    if (checkoutId) {
+      persistV2StoragePaymentCleared(checkoutId, {
+        voucherRedemptionId: null,
+        stripeAmountCents: 0,
+        noPaymentRequired: false
+      });
+    } else {
+      clearCheckoutSessionV2Storage();
+    }
+  }, [checkoutId, clearV2PaymentIdentityState, persistV2StoragePaymentCleared]);
+
   const createBooking = useCallback(async (paymentIntentId = null) => {
     const attr = getAttributionPayload();
-    const bookingData = {
-        checkIn: formatDateOnlyLocal(checkIn),
-        checkOut: formatDateOnlyLocal(checkOut),
-        adults,
-        children,
-        experienceKeys: Array.from(selectedExpKeys),
-        guestInfo: {
-          firstName: formData.firstName.trim(),
-          lastName: formData.lastName.trim(),
-          email: formData.email.trim(),
-          phone: formData.phone.trim()
-        },
-        specialRequests: formData.specialRequests.trim(),
-        legalAcceptance: {
-          acceptedTermsAndCancellation: !!formData.agreedToTerms,
-          acceptedActivityRisk: !!formData.agreedToActivityRisk,
-          termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
-          activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
-          checkbox1TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
-          checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
-          locale: language || undefined
-        },
-        checkoutId,
-        voucherRedemptionId: voucherRedemptionId || undefined,
-        metaClientContext: getMetaClientContextPayload(),
-        ...(attr && Object.values(attr).some(Boolean) ? { attribution: attr } : {})
-      };
-    if (bookingEntityType === 'cabinType') {
-      bookingData.cabinTypeId = bookingEntityId;
-    } else {
-      bookingData.cabinId = bookingEntityId;
-    }
-    if (paymentIntentId) {
-      bookingData.paymentIntentId = paymentIntentId;
-    }
-    if (lockedPromoCode) {
-      bookingData.promoCode = lockedPromoCode;
-    }
-    if (appliedVoucherCode) {
-      bookingData.voucherCode = appliedVoucherCode;
-    }
+    const bookingData = buildCreateBookingPayload({
+      bookingEntityType,
+      bookingEntityId,
+      checkIn,
+      checkOut,
+      adults,
+      children,
+      selectedExpKeys,
+      formData,
+      checkoutId,
+      voucherRedemptionId,
+      lockedPromoCode,
+      appliedVoucherCode,
+      language,
+      paymentIntentId,
+      attribution: attr,
+      metaClientContext: getMetaClientContextPayload()
+    });
     const response = await bookingAPI.create(bookingData);
     if (response.data.success) {
-      try {
-        sessionStorage.removeItem(CONFIRM_BOOKING_SIMPLE_KEY);
-        sessionStorage.removeItem('confirm-booking-pending');
-        sessionStorage.removeItem(CHECKOUT_SESSION_KEY);
-        if (checkoutSessionV2Enabled) {
-          clearCheckoutSessionV2Storage();
-        }
-      } catch (e) { /* ignore */ }
+      clearCheckoutStorageAfterSuccessfulBooking();
       const bookingId = response.data.data?.booking?._id;
       if (bookingId) {
         const em = formData.email.trim().toLowerCase();
@@ -1357,6 +1472,14 @@ const ConfirmBooking = () => {
       setError('Please accept both required legal acknowledgments before completing your booking.');
       return;
     }
+    if (checkoutSessionV2Enabled && noPaymentRequired) {
+      const submitCheck = shouldAllowV2NoPaymentSubmit({ noPaymentRequired, checkoutId });
+      if (!submitCheck.allowed) {
+        setError(V2_NO_PAYMENT_MISSING_CHECKOUT_MESSAGE);
+        resetV2NoPaymentSubmitState();
+        return;
+      }
+    }
     setSubmitLoading(true);
     setError(null);
     try {
@@ -1365,11 +1488,31 @@ const ConfirmBooking = () => {
       }
       await createBooking(null);
     } catch (err) {
+      if (checkoutSessionV2Enabled) {
+        applyV2CreateBookingErrorState(err);
+      }
       setError(mapCreateBookingErrorMessage(err, t('confirm.bookingFailed')));
     } finally {
       setSubmitLoading(false);
     }
-  }, [bookingEntityId, checkIn, checkOut, pricing, serverQuote, createBooking, t, formData.agreedToTerms, formData.agreedToActivityRisk, appliedVoucherCode, voucherRedemptionId, noPaymentRequired, fullVoucherCoverage]);
+  }, [
+    bookingEntityId,
+    checkIn,
+    checkOut,
+    pricing,
+    serverQuote,
+    createBooking,
+    t,
+    formData.agreedToTerms,
+    formData.agreedToActivityRisk,
+    appliedVoucherCode,
+    voucherRedemptionId,
+    noPaymentRequired,
+    fullVoucherCoverage,
+    checkoutId,
+    resetV2NoPaymentSubmitState,
+    applyV2CreateBookingErrorState
+  ]);
 
   const handleStripeSubmit = useCallback(async (stripe, elements) => {
     if (

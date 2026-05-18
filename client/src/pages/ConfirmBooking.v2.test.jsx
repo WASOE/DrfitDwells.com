@@ -7,16 +7,20 @@ import {
   writeCheckoutSessionV2Storage
 } from '../utils/checkoutSessionV2Storage';
 import {
+  buildCreateBookingPayload,
   buildRedirectBookingPayloadFromPending,
   buildV2PaymentElementKey,
   buildV2CheckoutIdentity,
   buildV2PendingCheckoutPayload,
   buildV2StorageRecordFromPaymentResponse,
   classifyV2CheckoutInitError,
+  clearCheckoutStorageAfterSuccessfulBooking,
   getV2CheckoutInitErrorHandling,
+  mapCreateBookingErrorMessage,
   readLegacyCheckoutSession,
   resolveV2ClientSecretAfterPaymentIntent,
   restoreV2SessionFieldsFromStorage,
+  shouldAllowV2NoPaymentSubmit,
   shouldBlockCardPaymentPrecheck,
   shouldHandleRedirectAsV2,
   shouldReuseV2ClientSecret,
@@ -25,6 +29,7 @@ import {
   V2_CHECKOUT_CONFIG_MISMATCH_MESSAGE,
   V2_CHECKOUT_RESTART_MESSAGE,
   V2_CHECKOUT_RETRY_PAYMENT_MESSAGE,
+  V2_NO_PAYMENT_MISSING_CHECKOUT_MESSAGE,
   V2_REDIRECT_PI_MISMATCH_MESSAGE
 } from './ConfirmBooking.jsx';
 
@@ -484,5 +489,162 @@ describe('ConfirmBooking V2 flag default', () => {
     vi.resetModules();
     const { isCheckoutSessionV2Enabled } = await import('../utils/checkoutSessionV2Flags.js');
     expect(isCheckoutSessionV2Enabled()).toBe(false);
+  });
+});
+
+const FORM_DATA = {
+  firstName: 'Ada',
+  lastName: 'Lovelace',
+  email: 'ada@example.com',
+  phone: '+359800000000',
+  specialRequests: '',
+  agreedToTerms: true,
+  agreedToActivityRisk: true
+};
+
+const CHECK_IN = new Date('2026-06-10T12:00:00');
+const CHECK_OUT = new Date('2026-06-12T12:00:00');
+
+function buildNoPaymentCreatePayload(overrides = {}) {
+  return buildCreateBookingPayload({
+    bookingEntityType: 'cabin',
+    bookingEntityId: 'cab_123',
+    checkIn: CHECK_IN,
+    checkOut: CHECK_OUT,
+    adults: 2,
+    children: 0,
+    selectedExpKeys: new Set(['jeep_transfer']),
+    formData: FORM_DATA,
+    checkoutId: 'chk_srv_no_pay',
+    voucherRedemptionId: null,
+    lockedPromoCode: null,
+    appliedVoucherCode: '',
+    language: 'en',
+    paymentIntentId: null,
+    ...overrides
+  });
+}
+
+describe('ConfirmBooking V2 no-payment finalization', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    sessionStorage.clear();
+  });
+
+  it('V2 noPaymentRequired booking payload omits paymentIntentId', () => {
+    const payload = buildNoPaymentCreatePayload();
+    expect(payload.paymentIntentId).toBeUndefined();
+    expect('paymentIntentId' in payload).toBe(false);
+  });
+
+  it('V2 noPaymentRequired booking payload includes server checkoutId', () => {
+    const payload = buildNoPaymentCreatePayload();
+    expect(payload.checkoutId).toBe('chk_srv_no_pay');
+  });
+
+  it('V2 full voucher payload includes voucherRedemptionId', () => {
+    const payload = buildNoPaymentCreatePayload({
+      voucherRedemptionId: 'red_full_voucher',
+      appliedVoucherCode: 'GIFT100'
+    });
+    expect(payload.voucherRedemptionId).toBe('red_full_voucher');
+    expect(payload.voucherCode).toBe('GIFT100');
+    expect(payload.paymentIntentId).toBeUndefined();
+  });
+
+  it('V2 zero-due promo payload includes promoCode and no paymentIntentId', () => {
+    const payload = buildNoPaymentCreatePayload({
+      lockedPromoCode: 'ZERODUE',
+      voucherRedemptionId: null
+    });
+    expect(payload.promoCode).toBe('ZERODUE');
+    expect(payload.paymentIntentId).toBeUndefined();
+    expect(payload.voucherRedemptionId).toBeUndefined();
+  });
+
+  it('V2 noPaymentRequired missing checkoutId blocks submit via shouldAllowV2NoPaymentSubmit', () => {
+    expect(
+      shouldAllowV2NoPaymentSubmit({
+        checkoutSessionV2Enabled: true,
+        noPaymentRequired: true,
+        checkoutId: null
+      })
+    ).toEqual({ allowed: false, reason: 'missing_checkout_id' });
+    expect(V2_NO_PAYMENT_MISSING_CHECKOUT_MESSAGE).toContain('refresh payment');
+  });
+
+  it('shouldAllowV2NoPaymentSubmit allows submit with server checkoutId', () => {
+    expect(
+      shouldAllowV2NoPaymentSubmit({
+        checkoutSessionV2Enabled: true,
+        noPaymentRequired: true,
+        checkoutId: 'chk_srv_no_pay'
+      })
+    ).toEqual({ allowed: true, reason: null, checkoutId: 'chk_srv_no_pay' });
+  });
+
+  it('V2 successful no-payment booking clears V2 storage', () => {
+    writeCheckoutSessionV2Storage({
+      checkoutId: 'chk_srv_no_pay',
+      commercialBoundaryKey: BOUNDARY,
+      quoteSnapshotHash: 'hash_no_pay',
+      sessionVersion: 2,
+      canonicalPaymentIntentId: null,
+      clientSecretPresent: false,
+      voucherRedemptionId: 'red_full',
+      stripeAmountCents: 0,
+      noPaymentRequired: true
+    });
+    clearCheckoutStorageAfterSuccessfulBooking({ checkoutSessionV2Enabled: true });
+    expect(sessionStorage.getItem(CHECKOUT_SESSION_V2_STORAGE_KEY)).toBeNull();
+  });
+
+  it('legacy full voucher create payload has no flowVersion requirement', () => {
+    const payload = buildNoPaymentCreatePayload({
+      voucherRedemptionId: 'red_legacy',
+      appliedVoucherCode: 'LEGACYGIFT'
+    });
+    expect(payload.flowVersion).toBeUndefined();
+    expect(payload.voucherRedemptionId).toBe('red_legacy');
+    expect(payload.paymentIntentId).toBeUndefined();
+  });
+
+  it('shouldBlockCardPaymentPrecheck allows V2 noPaymentRequired below €0.50', () => {
+    expect(
+      shouldBlockCardPaymentPrecheck(
+        { totalPrice: 0 },
+        { noPaymentRequired: true, fullVoucherCoverage: false, checkoutSessionV2Enabled: true }
+      )
+    ).toBe(false);
+  });
+
+  it('shouldBlockCardPaymentPrecheck still blocks legacy below €0.50', () => {
+    expect(
+      shouldBlockCardPaymentPrecheck(
+        { totalPrice: 0.1 },
+        { noPaymentRequired: true, fullVoucherCoverage: false, checkoutSessionV2Enabled: false }
+      )
+    ).toBe(true);
+  });
+
+  it('mapCreateBookingErrorMessage uses V2 restart message for CHECKOUT_SESSION_EXPIRED', () => {
+    expect(
+      mapCreateBookingErrorMessage(
+        { response: { data: { error: { code: 'CHECKOUT_SESSION_EXPIRED' } } } },
+        'fallback'
+      )
+    ).toBe(V2_CHECKOUT_RESTART_MESSAGE);
+  });
+
+  it('mapCreateBookingErrorMessage uses V2 retry message for SUPERSEDED_PAYMENT_INTENT', () => {
+    expect(
+      mapCreateBookingErrorMessage(
+        { response: { data: { code: 'SUPERSEDED_PAYMENT_INTENT' } } },
+        'fallback'
+      )
+    ).toBe(V2_CHECKOUT_RETRY_PAYMENT_MESSAGE);
   });
 });
