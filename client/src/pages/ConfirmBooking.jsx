@@ -22,10 +22,21 @@ import {
   LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
   LEGAL_ACCEPTANCE_TERMS_VERSION
 } from '../constants/legalAcceptance';
+import { isCheckoutSessionV2Enabled } from '../utils/checkoutSessionV2Flags';
+import {
+  buildCheckoutSessionV2BoundaryKey,
+  clearCheckoutSessionV2Storage,
+  readCheckoutSessionV2Storage,
+  writeCheckoutSessionV2Storage
+} from '../utils/checkoutSessionV2Storage';
 
 const stripePk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 const stripePromise = stripePk ? loadStripe(stripePk) : null;
 const CHECKOUT_SESSION_KEY = 'confirm-booking-checkout-session';
+const checkoutSessionV2Enabled = isCheckoutSessionV2Enabled();
+
+export const V2_CHECKOUT_CONFIG_MISMATCH_MESSAGE =
+  'Checkout is misconfigured (server did not return a checkout session). Please refresh or contact support.';
 
 function createCheckoutId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -38,6 +49,85 @@ function buildCheckoutAttemptKey({ bookingEntityType, bookingEntityId, checkIn, 
   const inDate = checkIn ? formatDateOnlyLocal(checkIn) : '';
   const outDate = checkOut ? formatDateOnlyLocal(checkOut) : '';
   return [bookingEntityType || '', bookingEntityId || '', inDate, outDate, adults ?? '', children ?? ''].join('|');
+}
+
+export function readLegacyCheckoutSession(attemptKey) {
+  if (!attemptKey) return null;
+  try {
+    const raw = sessionStorage.getItem(CHECKOUT_SESSION_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (
+      parsed &&
+      parsed.attemptKey === attemptKey &&
+      typeof parsed.checkoutId === 'string' &&
+      parsed.checkoutId.trim().length > 0
+    ) {
+      return parsed.checkoutId.trim();
+    }
+  } catch {
+    // ignore storage parse errors
+  }
+  return null;
+}
+
+export function validateV2CreatePaymentIntentResponse(data) {
+  if (!data || data.flowVersion !== 'v2') {
+    return { ok: false, error: V2_CHECKOUT_CONFIG_MISMATCH_MESSAGE };
+  }
+  const checkoutId = typeof data.checkoutId === 'string' ? data.checkoutId.trim() : '';
+  if (!checkoutId) {
+    return { ok: false, error: V2_CHECKOUT_CONFIG_MISMATCH_MESSAGE };
+  }
+  return { ok: true, checkoutId };
+}
+
+export function buildV2StorageRecordFromPaymentResponse(data, commercialBoundaryKey) {
+  const noPaymentRequired = Boolean(data.noPaymentRequired);
+  return {
+    checkoutId: String(data.checkoutId).trim(),
+    commercialBoundaryKey,
+    quoteSnapshotHash: String(data.quoteSnapshotHash || '').trim(),
+    sessionVersion: Number(data.sessionVersion) || 1,
+    canonicalPaymentIntentId: data.canonicalPaymentIntentId || null,
+    clientSecretPresent: Boolean(data.clientSecret) && !noPaymentRequired,
+    voucherRedemptionId: data.voucherRedemptionId || data.redemptionId || null,
+    stripeAmountCents: Number(data.stripeAmountCents) || 0,
+    noPaymentRequired
+  };
+}
+
+export function shouldBlockCardPaymentPrecheck(
+  serverQuote,
+  { noPaymentRequired, fullVoucherCoverage, checkoutSessionV2Enabled: v2Enabled = checkoutSessionV2Enabled }
+) {
+  if (!serverQuote) return true;
+  if (v2Enabled && (noPaymentRequired || fullVoucherCoverage)) {
+    return false;
+  }
+  return serverQuote.totalPrice < 0.5;
+}
+
+export function restoreV2SessionFieldsFromStorage(stored) {
+  if (!stored) {
+    return {
+      checkoutId: null,
+      canonicalPaymentIntentId: null,
+      quoteSnapshotHash: '',
+      sessionVersion: 1,
+      voucherRedemptionId: null,
+      stripeAmountCents: 0,
+      noPaymentRequired: false
+    };
+  }
+  return {
+    checkoutId: stored.checkoutId,
+    canonicalPaymentIntentId: stored.canonicalPaymentIntentId,
+    quoteSnapshotHash: stored.quoteSnapshotHash || '',
+    sessionVersion: stored.sessionVersion || 1,
+    voucherRedemptionId: stored.voucherRedemptionId,
+    stripeAmountCents: stored.stripeAmountCents || 0,
+    noPaymentRequired: Boolean(stored.noPaymentRequired)
+  };
 }
 
 function mapCreateBookingErrorMessage(err, fallback) {
@@ -221,7 +311,13 @@ const ConfirmBooking = () => {
   const [lockedPromoCode, setLockedPromoCode] = useState(promoSeed);
   const [promoDraft, setPromoDraft] = useState(promoSeed || '');
   const [promoMessage, setPromoMessage] = useState(null);
-  const [checkoutId, setCheckoutId] = useState(() => createCheckoutId());
+  const [checkoutId, setCheckoutId] = useState(() => (
+    checkoutSessionV2Enabled ? null : createCheckoutId()
+  ));
+  const [canonicalPaymentIntentId, setCanonicalPaymentIntentId] = useState(null);
+  const [quoteSnapshotHash, setQuoteSnapshotHash] = useState('');
+  const [sessionVersion, setSessionVersion] = useState(1);
+  const [noPaymentRequired, setNoPaymentRequired] = useState(false);
   const [voucherDraft, setVoucherDraft] = useState('');
   const [appliedVoucherCode, setAppliedVoucherCode] = useState('');
   const [checkoutInitLoading, setCheckoutInitLoading] = useState(false);
@@ -297,13 +393,42 @@ const ConfirmBooking = () => {
     return parts.length ? parts.join(', ') : t('guests.addGuests');
   }, [adults, children, babies, pets, t]);
 
+  const checkoutSessionV2BoundaryKey = useMemo(() => buildCheckoutSessionV2BoundaryKey({
+    entityType: bookingEntityType,
+    entityId: bookingEntityId,
+    checkIn,
+    checkOut
+  }), [bookingEntityType, bookingEntityId, checkIn, checkOut]);
+
   useEffect(() => {
+    if (checkoutSessionV2Enabled) {
+      setClientSecret(null);
+      return;
+    }
     setClientSecret(null);
     setVoucherRedemptionId(null);
     setFullVoucherCoverage(false);
     setVoucherAppliedCents(0);
     setStripeAmountCents(0);
   }, [checkIn, checkOut, adults, children, experienceKeysSorted, bookingEntityId, bookingEntityType, lockedPromoCode, appliedVoucherCode]);
+
+  useEffect(() => {
+    if (!checkoutSessionV2Enabled) return;
+    const stored = readCheckoutSessionV2Storage(checkoutSessionV2BoundaryKey);
+    const restored = restoreV2SessionFieldsFromStorage(stored);
+    setCheckoutId(restored.checkoutId);
+    setCanonicalPaymentIntentId(restored.canonicalPaymentIntentId);
+    setQuoteSnapshotHash(restored.quoteSnapshotHash);
+    setSessionVersion(restored.sessionVersion);
+    setVoucherRedemptionId(restored.voucherRedemptionId);
+    setStripeAmountCents(restored.stripeAmountCents);
+    setNoPaymentRequired(restored.noPaymentRequired);
+    setClientSecret(null);
+    if (!stored) {
+      setFullVoucherCoverage(false);
+      setVoucherAppliedCents(0);
+    }
+  }, [checkoutSessionV2BoundaryKey]);
 
   const checkoutAttemptKey = useMemo(() => buildCheckoutAttemptKey({
     bookingEntityType,
@@ -315,22 +440,8 @@ const ConfirmBooking = () => {
   }), [bookingEntityType, bookingEntityId, checkIn, checkOut, adults, children]);
 
   useEffect(() => {
-    if (!checkoutAttemptKey) return;
-    let nextCheckoutId = null;
-    try {
-      const raw = sessionStorage.getItem(CHECKOUT_SESSION_KEY);
-      const parsed = raw ? JSON.parse(raw) : null;
-      if (
-        parsed &&
-        parsed.attemptKey === checkoutAttemptKey &&
-        typeof parsed.checkoutId === 'string' &&
-        parsed.checkoutId.trim().length > 0
-      ) {
-        nextCheckoutId = parsed.checkoutId.trim();
-      }
-    } catch {
-      // ignore storage parse errors
-    }
+    if (checkoutSessionV2Enabled || !checkoutAttemptKey) return;
+    let nextCheckoutId = readLegacyCheckoutSession(checkoutAttemptKey);
     if (!nextCheckoutId) {
       nextCheckoutId = createCheckoutId();
       try {
@@ -609,6 +720,20 @@ const ConfirmBooking = () => {
     setCheckoutInitError(null);
   }, []);
 
+  const clearV2CheckoutPaymentState = useCallback(() => {
+    clearCheckoutSessionV2Storage();
+    setCheckoutId(null);
+    setCanonicalPaymentIntentId(null);
+    setQuoteSnapshotHash('');
+    setSessionVersion(1);
+    setVoucherRedemptionId(null);
+    setFullVoucherCoverage(false);
+    setNoPaymentRequired(false);
+    setClientSecret(null);
+    setStripeAmountCents(0);
+    setVoucherAppliedCents(0);
+  }, []);
+
   const initializeCheckoutPayment = useCallback(async () => {
     if (!bookingEntityId || !checkIn || !checkOut || !serverQuote) return;
     setCheckoutInitLoading(true);
@@ -621,9 +746,15 @@ const ConfirmBooking = () => {
         checkOut: formatDateOnlyLocal(checkOut),
         adults,
         children,
-        experienceKeys: experienceKeysSorted,
-        checkoutId
+        experienceKeys: experienceKeysSorted
       };
+      if (checkoutSessionV2Enabled) {
+        if (checkoutId) {
+          payload.checkoutId = checkoutId;
+        }
+      } else {
+        payload.checkoutId = checkoutId;
+      }
       const attr = getAttributionPayload();
       if (attr && Object.values(attr).some(Boolean)) {
         payload.attribution = attr;
@@ -639,6 +770,47 @@ const ConfirmBooking = () => {
       if (!res.data?.success) {
         throw new Error(t('confirm.paymentSetupFailed'));
       }
+
+      if (checkoutSessionV2Enabled) {
+        const validation = validateV2CreatePaymentIntentResponse(res.data);
+        if (!validation.ok) {
+          clearV2CheckoutPaymentState();
+          setCheckoutInitError(validation.error);
+          return;
+        }
+
+        const noPay = Boolean(res.data.noPaymentRequired);
+        setCheckoutId(validation.checkoutId);
+        setCanonicalPaymentIntentId(res.data.canonicalPaymentIntentId || null);
+        setQuoteSnapshotHash(String(res.data.quoteSnapshotHash || '').trim());
+        setSessionVersion(Number(res.data.sessionVersion) || 1);
+        setVoucherRedemptionId(res.data.voucherRedemptionId || res.data.redemptionId || null);
+        setFullVoucherCoverage(Boolean(res.data.fullVoucherCoverage));
+        setNoPaymentRequired(noPay);
+        const giftCents = Number(res.data.giftVoucherAppliedCents ?? res.data.voucherAppliedCents ?? 0);
+        setVoucherAppliedCents(giftCents);
+        const reportedStripeCents = Number(res.data.stripeAmountCents);
+
+        if (noPay) {
+          setStripeAmountCents(0);
+          setClientSecret(null);
+        } else if (res.data.clientSecret) {
+          if (!Number.isFinite(reportedStripeCents) || reportedStripeCents < 0) {
+            throw new Error(t('confirm.paymentSetupFailed'));
+          }
+          setStripeAmountCents(reportedStripeCents);
+          setClientSecret(res.data.clientSecret);
+        } else {
+          setStripeAmountCents(Number.isFinite(reportedStripeCents) ? reportedStripeCents : 0);
+          setClientSecret(null);
+        }
+
+        writeCheckoutSessionV2Storage(
+          buildV2StorageRecordFromPaymentResponse(res.data, checkoutSessionV2BoundaryKey)
+        );
+        return;
+      }
+
       setVoucherRedemptionId(res.data.redemptionId || null);
       setFullVoucherCoverage(Boolean(res.data.fullVoucherCoverage));
       setVoucherAppliedCents(Number(res.data.voucherAppliedCents || 0));
@@ -670,6 +842,8 @@ const ConfirmBooking = () => {
     bookingEntityType,
     lockedPromoCode,
     appliedVoucherCode,
+    checkoutSessionV2BoundaryKey,
+    clearV2CheckoutPaymentState,
     t
   ]);
 
@@ -742,6 +916,9 @@ const ConfirmBooking = () => {
         sessionStorage.removeItem(CONFIRM_BOOKING_SIMPLE_KEY);
         sessionStorage.removeItem('confirm-booking-pending');
         sessionStorage.removeItem(CHECKOUT_SESSION_KEY);
+        if (checkoutSessionV2Enabled) {
+          clearCheckoutSessionV2Storage();
+        }
       } catch (e) { /* ignore */ }
       const bookingId = response.data.data?.booking?._id;
       if (bookingId) {
@@ -759,7 +936,16 @@ const ConfirmBooking = () => {
   }, [bookingEntityId, bookingEntityType, checkIn, checkOut, adults, children, formData, selectedExpKeys, experiences, navigate, lockedPromoCode, appliedVoucherCode, voucherRedemptionId, t, language, checkoutId]);
 
   const handleConfirmAndPay = useCallback(async () => {
-    if (!bookingEntityId || !checkIn || !checkOut || !pricing || !serverQuote || serverQuote.totalPrice < 0.5) return;
+    if (
+      !bookingEntityId ||
+      !checkIn ||
+      !checkOut ||
+      !pricing ||
+      !serverQuote ||
+      shouldBlockCardPaymentPrecheck(serverQuote, { noPaymentRequired, fullVoucherCoverage })
+    ) {
+      return;
+    }
     if (!formData.agreedToTerms || !formData.agreedToActivityRisk) {
       setError('Please accept both required legal acknowledgments before completing your booking.');
       return;
@@ -776,10 +962,19 @@ const ConfirmBooking = () => {
     } finally {
       setSubmitLoading(false);
     }
-  }, [bookingEntityId, checkIn, checkOut, pricing, serverQuote, createBooking, t, formData.agreedToTerms, formData.agreedToActivityRisk, appliedVoucherCode, voucherRedemptionId]);
+  }, [bookingEntityId, checkIn, checkOut, pricing, serverQuote, createBooking, t, formData.agreedToTerms, formData.agreedToActivityRisk, appliedVoucherCode, voucherRedemptionId, noPaymentRequired, fullVoucherCoverage]);
 
   const handleStripeSubmit = useCallback(async (stripe, elements) => {
-    if (!bookingEntityId || !checkIn || !checkOut || !pricing || !serverQuote || serverQuote.totalPrice < 0.5) return;
+    if (
+      !bookingEntityId ||
+      !checkIn ||
+      !checkOut ||
+      !pricing ||
+      !serverQuote ||
+      shouldBlockCardPaymentPrecheck(serverQuote, { noPaymentRequired, fullVoucherCoverage })
+    ) {
+      return;
+    }
     if (!formData.agreedToTerms || !formData.agreedToActivityRisk) {
       setError('Please accept both required legal acknowledgments before completing your booking.');
       return;
@@ -904,11 +1099,11 @@ const ConfirmBooking = () => {
     if (quoteLoading) msgs.push('Price is still loading—please wait.');
     if (quoteError) msgs.push(`Price could not be loaded: ${quoteError}`);
     if (!serverQuote) msgs.push('No price quote is available yet.');
-    if (serverQuote && serverQuote.totalPrice < 0.5) {
+    if (serverQuote && shouldBlockCardPaymentPrecheck(serverQuote, { noPaymentRequired, fullVoucherCoverage })) {
       msgs.push('No card payment is required for this booking (total is below the minimum for online card payment).');
     }
     return msgs;
-  }, [hasValidGuestInfo, hasLegalAcceptance, quoteLoading, quoteError, serverQuote]);
+  }, [hasValidGuestInfo, hasLegalAcceptance, quoteLoading, quoteError, serverQuote, noPaymentRequired, fullVoucherCoverage]);
 
   const precheckDisabled =
     !hasValidGuestInfo ||
@@ -916,7 +1111,12 @@ const ConfirmBooking = () => {
     quoteLoading ||
     !!quoteError ||
     !serverQuote ||
-    serverQuote.totalPrice < 0.5;
+    shouldBlockCardPaymentPrecheck(serverQuote, { noPaymentRequired, fullVoucherCoverage });
+
+  const skipCardPaymentUi = fullVoucherCoverage || (checkoutSessionV2Enabled && noPaymentRequired);
+  const showContinueToPayment =
+    (stripeEnabled || appliedVoucherCode) && !skipCardPaymentUi && !clientSecret;
+  const showPaymentElement = stripePromise && clientSecret && !skipCardPaymentUi;
 
   const continueToPayMessages = useMemo(() => {
     const msgs = [...paymentPrecheckMessages];
@@ -940,7 +1140,7 @@ const ConfirmBooking = () => {
   }, []);
 
   useEffect(() => {
-    if (!stripePromise || !clientSecret || fullVoucherCoverage) {
+    if (!stripePromise || !clientSecret || skipCardPaymentUi) {
       setPaymentElementReady(false);
       setPaymentElementLoadError(null);
       setStripeSlowHint(false);
@@ -951,7 +1151,7 @@ const ConfirmBooking = () => {
     setStripeSlowHint(false);
     const id = window.setTimeout(() => setStripeSlowHint(true), 9000);
     return () => window.clearTimeout(id);
-  }, [clientSecret, fullVoucherCoverage, stripePromise]);
+  }, [clientSecret, skipCardPaymentUi, stripePromise]);
 
   if (loading || !cabin) {
     return (
@@ -1291,7 +1491,7 @@ const ConfirmBooking = () => {
         {/* Payment - Stripe when configured, else pay on arrival */}
         <div className="mt-6 p-6 bg-white rounded-xl border border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('confirm.paymentTitle')}</h2>
-          {(stripeEnabled || appliedVoucherCode) && !fullVoucherCoverage && !clientSecret ? (
+          {showContinueToPayment ? (
             <>
               <button
                 type="button"
@@ -1311,7 +1511,7 @@ const ConfirmBooking = () => {
             </>
           ) : null}
 
-          {stripePromise && clientSecret && !fullVoucherCoverage ? (
+          {showPaymentElement ? (
             <>
               <p className="text-sm text-gray-600 mb-4">
                 {voucherAppliedCents > 0
@@ -1348,7 +1548,7 @@ const ConfirmBooking = () => {
             </>
           ) : null}
 
-          {fullVoucherCoverage ? (
+          {skipCardPaymentUi ? (
             <>
               <p className="text-sm text-gray-600 mb-4">
                 {voucherAppliedCents > 0
