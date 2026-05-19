@@ -525,14 +525,10 @@ test('worker has no Express res/status/json usage', () => {
   assert.doesNotMatch(source, /require\(['"].*\/routes\//);
 });
 
-test('no route files changed', () => {
-  const bookingRoutesPath = path.join(__dirname, '../routes/bookingRoutes.js');
-  const stat = fs.statSync(bookingRoutesPath);
-  assert.ok(stat.mtimeMs > 0);
-  const { execSync } = require('node:child_process');
-  const diff = execSync('git diff --name-only server/routes/bookingRoutes.js', {
-    cwd: path.join(__dirname, '../..'),
-    encoding: 'utf8'
-  }).trim();
-  assert.equal(diff, '');
+test('bookingRoutes wires runCheckoutFinalizeOrchestration and executeBookingFinalizeWork', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../routes/bookingRoutes.js'), 'utf8');
+  assert.match(source, /runCheckoutFinalizeOrchestration/);
+  assert.match(source, /executeBookingFinalizeWork/);
+  assert.match(source, /buildTrustedBookingPayloadForFinalize/);
+  assert.match(source, /useCheckoutSessionV2Finalize/);
 });

@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const rateLimit = require('express-rate-limit');
 const Booking = require('../models/Booking');
+const CheckoutSession = require('../models/CheckoutSession');
 const PromoCode = require('../models/PromoCode');
 const { normalizeReferralCode } = require('../models/CreatorPartner');
 const Cabin = require('../models/Cabin');
@@ -57,6 +58,17 @@ const {
   sendCheckoutSessionError,
   assertV2CheckoutSessionCanFinalize
 } = require('./checkoutSessionRouteAdapter');
+const { runCheckoutFinalizeOrchestration } = require('../services/checkout/checkoutFinalizeService');
+const {
+  executeBookingFinalizeWork,
+  createDefaultDependencies
+} = require('../services/checkout/executeBookingFinalizeWork');
+const {
+  buildTrustedBookingPayloadForFinalize,
+  mapFinalizeOrchestrationResultToHttp,
+  isFinalizeReplayError,
+  getFinalizeReplayFromError
+} = require('../services/checkout/checkoutFinalizeHttpAdapter');
 const {
   reserveVoucherForCheckout,
   attachPaymentIntentToReservation,
@@ -869,6 +881,7 @@ router.post('/', bookingCreateLimiter, [
   let sanitizedAttribution = null;
   let paymentIntentIdForReview = null;
   let voucherReservationContext = null;
+  let useCheckoutSessionV2Finalize = false;
 
   const handlePaidBookingFailure = async ({ issueType, errorCode, errorSummary }) => {
     if (!stripePaymentVerified || !paymentIntentIdForReview) return false;
@@ -1006,6 +1019,38 @@ router.post('/', bookingCreateLimiter, [
       });
     }
 
+    if (checkoutId && isValidCheckoutId(checkoutId)) {
+      useCheckoutSessionV2Finalize = await shouldUseCheckoutSessionV2(checkoutId);
+      if (useCheckoutSessionV2Finalize) {
+        const finalizedSession = await CheckoutSession.findOne({ checkoutId })
+          .select('finalizeStatus bookingId')
+          .lean();
+        if (finalizedSession?.finalizeStatus === 'finalized' && finalizedSession.bookingId) {
+          const replayBooking = await Booking.findById(finalizedSession.bookingId);
+          const earlyCheckoutFingerprint = {
+            cabinId: cabinId || null,
+            cabinTypeId: cabinTypeId || null,
+            checkInDate,
+            checkOutDate,
+            adults: parseInt(adults, 10),
+            children: parseInt(children ?? 0, 10),
+            paymentIntentId: paymentIntentId ? String(paymentIntentId).trim() : null
+          };
+          if (replayBooking && bookingMatchesCheckoutFingerprint(replayBooking, earlyCheckoutFingerprint)) {
+            return res.status(200).json(
+              buildCreateBookingSuccessPayload({
+                booking: replayBooking,
+                checkInDate,
+                checkOutDate,
+                totalPrice: replayBooking.totalPrice,
+                idempotentReplay: true
+              })
+            );
+          }
+        }
+      }
+    }
+
     const totalGuests = parseInt(adults) + parseInt(children);
     let cabin = null;
     let cabinType = null;
@@ -1047,16 +1092,18 @@ router.post('/', bookingCreateLimiter, [
         });
       }
 
-      try {
-        await assertSingleCabinGuestStayAvailableOrThrow(cabin, checkIn, checkOut);
-      } catch (e) {
-        if (e.code === 'NOT_AVAILABLE') {
-          return res.status(409).json({
-            success: false,
-            message: 'This cabin is not available for the selected dates'
-          });
+      if (!useCheckoutSessionV2Finalize) {
+        try {
+          await assertSingleCabinGuestStayAvailableOrThrow(cabin, checkIn, checkOut);
+        } catch (e) {
+          if (e.code === 'NOT_AVAILABLE') {
+            return res.status(409).json({
+              success: false,
+              message: 'This cabin is not available for the selected dates'
+            });
+          }
+          throw e;
         }
-        throw e;
       }
 
       pricePerNight = cabin.pricePerNight;
@@ -1109,26 +1156,30 @@ router.post('/', bookingCreateLimiter, [
         });
       }
 
-      // If specific unit requested, verify it's available
-      if (unitId) {
-        const isAvailable = await AssignmentEngine.isUnitAvailable(unitId, checkInDate, checkOutDate);
-        if (!isAvailable) {
-          return res.status(409).json({
-            success: false,
-            message: 'The requested unit is not available for the selected dates'
-          });
+      if (!useCheckoutSessionV2Finalize) {
+        // If specific unit requested, verify it's available
+        if (unitId) {
+          const isAvailable = await AssignmentEngine.isUnitAvailable(unitId, checkInDate, checkOutDate);
+          if (!isAvailable) {
+            return res.status(409).json({
+              success: false,
+              message: 'The requested unit is not available for the selected dates'
+            });
+          }
+          assignedUnitId = unitId;
+        } else {
+          // Auto-assign best available unit
+          const assignedUnit = await AssignmentEngine.assignUnit(cabinTypeId, checkInDate, checkOutDate);
+          if (!assignedUnit) {
+            return res.status(409).json({
+              success: false,
+              message: 'No units available for the selected dates'
+            });
+          }
+          assignedUnitId = assignedUnit._id;
         }
+      } else if (unitId) {
         assignedUnitId = unitId;
-      } else {
-        // Auto-assign best available unit
-        const assignedUnit = await AssignmentEngine.assignUnit(cabinTypeId, checkInDate, checkOutDate);
-        if (!assignedUnit) {
-          return res.status(409).json({
-            success: false,
-            message: 'No units available for the selected dates'
-          });
-        }
-        assignedUnitId = assignedUnit._id;
       }
 
       pricePerNight = cabinType.pricePerNight;
@@ -1183,16 +1234,21 @@ router.post('/', bookingCreateLimiter, [
     }
 
     if (checkoutId) {
-      try {
-        await assertV2CheckoutSessionCanFinalize({
-          checkoutId,
-          paymentIntentId: paymentIntentIdForReview
-        });
-      } catch (err) {
-        if (isCheckoutSessionError(err)) {
-          return sendCheckoutSessionError(res, err);
+      if (!useCheckoutSessionV2Finalize) {
+        useCheckoutSessionV2Finalize = await shouldUseCheckoutSessionV2(checkoutId);
+      }
+      if (!useCheckoutSessionV2Finalize) {
+        try {
+          await assertV2CheckoutSessionCanFinalize({
+            checkoutId,
+            paymentIntentId: paymentIntentIdForReview
+          });
+        } catch (err) {
+          if (isCheckoutSessionError(err)) {
+            return sendCheckoutSessionError(res, err);
+          }
+          throw err;
         }
-        throw err;
       }
     }
 
@@ -1338,6 +1394,339 @@ router.post('/', bookingCreateLimiter, [
       }
     }
 
+    const attribution = sanitizeAttribution(req.body.attribution);
+    sanitizedAttribution = attribution;
+    const metaClientContext = sanitizeMetaClientContext(req.body.metaClientContext);
+
+    bookingAttemptContext = {
+      entityType: cabinId ? 'cabin' : 'cabinType',
+      cabinId,
+      cabinTypeId,
+      checkInDate,
+      checkOutDate,
+      adults: parseInt(adults, 10),
+      children: parseInt(children, 10),
+      guestInfo,
+      promoCode: appliedPromoCode || null
+    };
+
+    if (useCheckoutSessionV2Finalize) {
+      const trustedBookingPayload = buildTrustedBookingPayloadForFinalize({
+        cabinId,
+        cabinTypeId,
+        unitId: assignedUnitId,
+        checkInDate,
+        checkOutDate,
+        guestInfo
+      });
+
+      const finalizeContext = {
+        cabinId,
+        cabinTypeId,
+        assignedUnitId,
+        checkInDate,
+        checkOutDate,
+        adults: parseInt(adults, 10),
+        children: parseInt(children, 10),
+        guestInfo,
+        specialRequests,
+        totalPrice,
+        subtotalPrice,
+        discountAmount,
+        subtotalCents,
+        discountAmountCents,
+        giftVoucherAppliedCents,
+        stripePaidAmountCents,
+        totalValueCents,
+        paymentMethod,
+        stripePaymentVerified,
+        paymentIntentId: paymentIntentIdForReview,
+        appliedPromoCode,
+        promoSnapshot,
+        voucherReservationContext,
+        voucherEvidence: buildVoucherEvidence({
+          subtotalCents,
+          discountAmountCents,
+          giftVoucherAppliedCents,
+          stripePaidAmountCents,
+          totalValueCents
+        }),
+        attribution,
+        metaClientContext,
+        legalAcceptance,
+        requestMeta: {
+          ip: String(req.ip || '').trim() || null,
+          userAgent: String(req.get('user-agent') || '').trim() || null,
+          acceptLanguage:
+            typeof req.get('accept-language') === 'string' ? req.get('accept-language') : null
+        },
+        transportOptions,
+        tripType: req.body.tripType,
+        transportMethod: req.body.transportMethod,
+        romanticSetup: req.body.romanticSetup,
+        customTripType: req.body.customTripType
+      };
+
+      const finalizeWorkDependencies = {
+        ...createDefaultDependencies(),
+        stripe,
+        recordPaidBookingResolutionIssue: (params) =>
+          recordPaidBookingResolutionIssue({
+            ...params,
+            paymentIntentId: paymentIntentIdForReview,
+            paymentIntent: verifiedPaymentIntent,
+            bookingAttempt: bookingAttemptContext,
+            attribution: sanitizedAttribution
+          }),
+        openManualReviewItem
+      };
+
+      try {
+        const orchResult = await runCheckoutFinalizeOrchestration({
+          checkoutId,
+          paymentIntentId: paymentIntentIdForReview,
+          bookingPayload: trustedBookingPayload,
+          source: 'frontend',
+          finalizeWork: async (workInput) =>
+            executeBookingFinalizeWork({
+              session: workInput.session,
+              checkoutId: workInput.checkoutId,
+              paymentIntentId: workInput.paymentIntentId,
+              bookingPayload: workInput.bookingPayload,
+              finalizeContext,
+              source: workInput.source,
+              dependencies: finalizeWorkDependencies
+            })
+        });
+
+        const httpMap = mapFinalizeOrchestrationResultToHttp(orchResult);
+        let booking =
+          orchResult.booking ||
+          (orchResult.bookingId ? await Booking.findById(orchResult.bookingId) : null);
+        if (!booking) {
+          return res.status(500).json({
+            success: false,
+            message: 'Booking not found after checkout finalization'
+          });
+        }
+
+        if (cabinId) {
+          await booking.populate(
+            'cabinId',
+            'name description imageUrl location meetingPoint packingList arrivalGuideUrl safetyNotes emergencyContact arrivalWindowDefault transportCutoffs'
+          );
+        } else if (cabinTypeId) {
+          await booking.populate(
+            'cabinTypeId',
+            'name description imageUrl location meetingPoint packingList arrivalGuideUrl safetyNotes emergencyContact arrivalWindowDefault transportCutoffs'
+          );
+          await booking.populate('unitId', 'unitNumber displayName');
+        }
+
+        const idempotentReplay = httpMap.idempotentReplay === true;
+        const initialStatus = booking.status;
+
+        res.status(httpMap.statusCode).json(
+          buildCreateBookingSuccessPayload({
+            booking,
+            checkInDate,
+            checkOutDate,
+            totalPrice: booking.totalPrice ?? totalPrice,
+            idempotentReplay
+          })
+        );
+
+        if (!idempotentReplay) {
+          const entityForEmail = cabin || cabinType;
+
+          void (async () => {
+            try {
+              const guestTemplateKey =
+                initialStatus === 'confirmed'
+                  ? bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_CONFIRMED
+                  : bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_RECEIVED;
+              const guestOutcome = await bookingLifecycleEmailService.sendBookingLifecycleEmail({
+                booking,
+                templateKey: guestTemplateKey,
+                overrideRecipient: null,
+                lifecycleSource: 'automatic',
+                actorContext: null,
+                entity: entityForEmail
+              });
+              if (!guestOutcome.success) {
+                console.error(
+                  initialStatus === 'confirmed'
+                    ? '[booking-email] Guest booking_confirmed not sent:'
+                    : '[booking-email] Guest booking_received not sent:',
+                  {
+                    bookingId: String(booking._id),
+                    method: guestOutcome.sendResult?.method,
+                    error: guestOutcome.sendResult?.error
+                  }
+                );
+              }
+
+              const internalOutcome = await bookingLifecycleEmailService.sendInternalNewBookingNotification({
+                booking,
+                entity: entityForEmail,
+                lifecycleSource: 'automatic'
+              });
+              if (!internalOutcome.success) {
+                console.error('[booking-email] Internal notification not sent:', {
+                  bookingId: String(booking._id),
+                  method: internalOutcome.sendResult?.method,
+                  error: internalOutcome.sendResult?.error
+                });
+              }
+
+              await sendLegalAcceptanceConfirmationWithRetry(booking);
+            } catch (emailError) {
+              console.error('[booking-email] Async delivery error:', emailError);
+            }
+          })();
+
+          void (async () => {
+            try {
+              const { syncGuestContactPreferencesForBooking } = require('../services/messaging/guestContactPreferenceSync');
+              await syncGuestContactPreferencesForBooking(booking);
+            } catch (err) {
+              console.error(
+                JSON.stringify({
+                  source: 'guestContactPreferenceSync',
+                  phase: 'booking_create',
+                  bookingId: String(booking._id),
+                  error: err?.message || String(err)
+                })
+              );
+            }
+          })();
+
+          if (initialStatus === 'confirmed') {
+            void processMetaPurchaseAfterConfirm(String(booking._id), req).catch((err) => {
+              console.error('[meta-purchase] Post-confirm CAPI error:', err);
+            });
+          }
+
+          void (async () => {
+            try {
+              const { notifyBookingCreated } = require('../services/messaging/messageOrchestrator');
+              await notifyBookingCreated({ bookingId: booking._id });
+            } catch (err) {
+              console.error(
+                JSON.stringify({
+                  source: 'message-orchestrator',
+                  phase: 'booking_create_hook_error',
+                  bookingId: String(booking._id),
+                  error: err?.message || String(err)
+                })
+              );
+            }
+          })();
+        }
+
+        return;
+      } catch (v2Err) {
+        if (isFinalizeReplayError(v2Err)) {
+          const replay = getFinalizeReplayFromError(v2Err);
+          const replayBooking = replay?.bookingId
+            ? await Booking.findById(replay.bookingId)
+            : null;
+          if (!replayBooking) {
+            return res.status(500).json({
+              success: false,
+              message: 'Booking not found for checkout replay'
+            });
+          }
+          if (cabinId) {
+            await replayBooking.populate(
+              'cabinId',
+              'name description imageUrl location meetingPoint packingList arrivalGuideUrl safetyNotes emergencyContact arrivalWindowDefault transportCutoffs'
+            );
+          } else if (cabinTypeId) {
+            await replayBooking.populate(
+              'cabinTypeId',
+              'name description imageUrl location meetingPoint packingList arrivalGuideUrl safetyNotes emergencyContact arrivalWindowDefault transportCutoffs'
+            );
+            await replayBooking.populate('unitId', 'unitNumber displayName');
+          }
+          return res.status(200).json(
+            buildCreateBookingSuccessPayload({
+              booking: replayBooking,
+              checkInDate,
+              checkOutDate,
+              totalPrice: replayBooking.totalPrice,
+              idempotentReplay: true
+            })
+          );
+        }
+
+        if (isCheckoutSessionError(v2Err)) {
+          return sendCheckoutSessionError(res, v2Err);
+        }
+
+        if (v2Err?.code === 'CHECKOUT_ID_CONFLICT' || v2Err?.code === 'PAYMENT_INTENT_ALREADY_USED') {
+          return res.status(409).json({
+            success: false,
+            message: v2Err.message,
+            error: { code: v2Err.code },
+            ...(v2Err.bookingId ? { bookingId: String(v2Err.bookingId) } : {})
+          });
+        }
+
+        if (v2Err?.guestPayload) {
+          return res.status(409).json(v2Err.guestPayload);
+        }
+
+        if (v2Err?.code === 'VOUCHER_CONFIRM_FAILED') {
+          await tryReleaseVoucherOnFailure({
+            reason: 'voucher_confirm_failed',
+            note: 'release voucher reservation after voucher confirm failure',
+            paidCard: Boolean(paymentIntentIdForReview),
+            evidence: buildVoucherEvidence({
+              subtotalCents,
+              discountAmountCents,
+              giftVoucherAppliedCents,
+              stripePaidAmountCents,
+              totalValueCents
+            })
+          });
+          if (paymentIntentIdForReview) {
+            const handled = await handlePaidBookingFailure({
+              issueType: 'voucher_confirm_failed',
+              errorCode: v2Err.code,
+              errorSummary: summarizeError(v2Err)
+            });
+            if (handled) return;
+          }
+        }
+
+        if (v2Err?.needsReview) {
+          await tryReleaseVoucherOnFailure({
+            reason: 'booking_finalize_needs_review',
+            note: 'release voucher reservation after finalize needs review',
+            paidCard: Boolean(paymentIntentIdForReview),
+            evidence: buildVoucherEvidence({
+              subtotalCents,
+              discountAmountCents,
+              giftVoucherAppliedCents,
+              stripePaidAmountCents,
+              totalValueCents
+            })
+          });
+          if (paymentIntentIdForReview) {
+            const handled = await handlePaidBookingFailure({
+              issueType: v2Err.code === 'PAID_BOOKING_SAVE_FAILED' ? 'paid_booking_save_failed' : 'paid_booking_unknown_failure',
+              errorCode: v2Err.errorCode || v2Err.code,
+              errorSummary: summarizeError(v2Err)
+            });
+            if (handled) return;
+          }
+        }
+
+        throw v2Err;
+      }
+    }
+
     const checkoutFingerprint = {
       cabinId: cabinId || null,
       cabinTypeId: cabinTypeId || null,
@@ -1396,9 +1785,6 @@ router.post('/', bookingCreateLimiter, [
       }
     }
 
-    const attribution = sanitizeAttribution(req.body.attribution);
-    sanitizedAttribution = attribution;
-    const metaClientContext = sanitizeMetaClientContext(req.body.metaClientContext);
     let initialStatus = 'pending';
     if (stripePaymentVerified) {
       initialStatus = 'confirmed';
@@ -1485,18 +1871,6 @@ router.post('/', bookingCreateLimiter, [
         bookingData.unitId = assignedUnitId;
       }
     }
-    bookingAttemptContext = {
-      entityType: cabinId ? 'cabin' : 'cabinType',
-      cabinId,
-      cabinTypeId,
-      checkInDate,
-      checkOutDate,
-      adults: parseInt(adults, 10),
-      children: parseInt(children, 10),
-      guestInfo,
-      promoCode: appliedPromoCode || null
-    };
-
     let booking;
     try {
       booking = new Booking(bookingData);

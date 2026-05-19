@@ -613,6 +613,42 @@ test('runCheckoutFinalizeOrchestration successful path', async () => {
   assert.equal(String(result.session.bookingId), String(bookingId));
 });
 
+test('runCheckoutFinalizeOrchestration propagates worker idempotentReplay and still marks session finalized', async () => {
+  const cabinId = new mongoose.Types.ObjectId();
+  const payload = buildBookingPayload({ cabinId });
+  const bookingId = new mongoose.Types.ObjectId();
+  const stayFingerprint = buildCommercialStayFingerprintFromBookingPayload(payload);
+
+  const doc = await seedSession({
+    checkoutId: 'chk_orch_worker_replay',
+    stayFingerprint,
+    canonicalPaymentIntentId: 'pi_orch_worker_replay'
+  });
+
+  let workCalls = 0;
+  const result = await runCheckoutFinalizeOrchestration({
+    checkoutId: doc.checkoutId,
+    paymentIntentId: 'pi_orch_worker_replay',
+    bookingPayload: payload,
+    finalizeWork: async () => {
+      workCalls += 1;
+      return {
+        bookingId,
+        booking: { _id: bookingId, checkoutId: doc.checkoutId },
+        result: { idempotentReplay: true }
+      };
+    }
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.idempotentReplay, true);
+  assert.equal(String(result.bookingId), String(bookingId));
+  assert.equal(workCalls, 1);
+  assert.equal(result.session.finalizeStatus, FINALIZE_STATUS.FINALIZED);
+  assert.equal(String(result.session.bookingId), String(bookingId));
+  assert.ok(result.session.finalizedAt);
+});
+
 test('runCheckoutFinalizeOrchestration returns replay when session already finalized with bookingId', async () => {
   const bookingId = new mongoose.Types.ObjectId();
   const doc = await seedSession({

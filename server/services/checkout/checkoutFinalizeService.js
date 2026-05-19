@@ -658,6 +658,8 @@ async function runCheckoutFinalizeOrchestration({
     );
   }
 
+  const workerIdempotentReplay = workResult?.result?.idempotentReplay === true;
+
   const finalizedSession = await markFinalizeSucceeded({
     checkoutId: normalizedId,
     bookingId: workBookingId,
@@ -669,7 +671,7 @@ async function runCheckoutFinalizeOrchestration({
     bookingId: String(toObjectId(workBookingId)),
     booking: workResult?.booking ?? null,
     checkoutId: normalizedId,
-    idempotentReplay: false,
+    idempotentReplay: workerIdempotentReplay,
     session: finalizedSession
   };
 }
