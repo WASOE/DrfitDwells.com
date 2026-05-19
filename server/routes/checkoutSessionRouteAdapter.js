@@ -13,6 +13,10 @@ const {
   CHECKOUT_SESSION_ERROR_CODES
 } = require('../services/checkout/checkoutSessionService');
 const { isCheckoutSessionError, CheckoutSessionError } = require('../services/checkout/checkoutSessionErrors');
+const {
+  CHECKOUT_SESSION_C3_ERROR_HTTP_STATUS,
+  mapCheckoutSessionErrorToHttpStatus: mapFinalizeCheckoutSessionErrorToHttpStatus
+} = require('../services/checkout/checkoutFinalizeHttpAdapter');
 
 const STRIPE_MINIMUM_CHARGE_CENTS = 50;
 
@@ -34,12 +38,16 @@ const CHECKOUT_SESSION_ERROR_HTTP = {
   [CHECKOUT_SESSION_ERROR_CODES.CANONICAL_PAYMENT_INTENT_MISMATCH]: 409,
   [CHECKOUT_SESSION_ERROR_CODES.STALE_CLIENT_SECRET]: 409,
   [CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_CONCURRENCY_CONFLICT]: 409,
-  [CHECKOUT_SESSION_ERROR_CODES.VOUCHER_PAYMENT_INTENT_ATTACH_FAILED]: 409
+  [CHECKOUT_SESSION_ERROR_CODES.VOUCHER_PAYMENT_INTENT_ATTACH_FAILED]: 409,
+  ...CHECKOUT_SESSION_C3_ERROR_HTTP_STATUS
 };
 
 function mapCheckoutSessionErrorToHttp(err) {
   const code = err?.code || CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_USABLE;
-  const status = CHECKOUT_SESSION_ERROR_HTTP[code] || 409;
+  const status =
+    mapFinalizeCheckoutSessionErrorToHttpStatus(code, err) ??
+    CHECKOUT_SESSION_ERROR_HTTP[code] ??
+    409;
   return {
     status,
     body: {
