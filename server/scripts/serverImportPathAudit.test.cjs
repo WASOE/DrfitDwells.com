@@ -79,6 +79,46 @@ function extractBootstrapRelativeRequiresFromServerJs() {
   return out;
 }
 
+// Directory-depth rule: server/middleware/*.js is one level below server/, and
+// server/models/ is under server/. Static imports of models must use ../models/...
+// (e.g. not ../../models/... which resolves outside server/ and breaks at runtime).
+const MIDDLEWARE_DIR = path.join(SERVER_DIR, 'middleware');
+
+/** Files directly under server/middleware/ (not nested subdirs). */
+function listMiddlewareRootJsFiles() {
+  if (!fs.existsSync(MIDDLEWARE_DIR)) return [];
+  return fs
+    .readdirSync(MIDDLEWARE_DIR, { withFileTypes: true })
+    .filter((ent) => ent.isFile() && ent.name.endsWith('.js'))
+    .map((ent) => path.join(MIDDLEWARE_DIR, ent.name));
+}
+
+function targetsServerModels(spec) {
+  return spec.includes('/models/') || spec.endsWith('/models');
+}
+
+/** From server/middleware/*.js, server/models is exactly one directory up: ../models/... */
+function isAllowedMiddlewareModelsSpecifier(spec) {
+  return spec === '../models' || spec.startsWith('../models/');
+}
+
+function auditMiddlewareRootModelImports() {
+  const failures = [];
+  for (const file of listMiddlewareRootJsFiles()) {
+    const src = fs.readFileSync(file, 'utf8');
+    const re = new RegExp(REL_REQUIRE_RE.source, 'g');
+    let m;
+    while ((m = re.exec(src)) !== null) {
+      const spec = m[1];
+      if (!targetsServerModels(spec)) continue;
+      if (!isAllowedMiddlewareModelsSpecifier(spec)) {
+        failures.push({ file: path.relative(SERVER_DIR, file), spec });
+      }
+    }
+  }
+  return failures;
+}
+
 test('static audit: every relative require() under server resolves to a file', () => {
   const failures = auditRelativeRequiresInTree();
   assert.deepEqual(
@@ -86,6 +126,17 @@ test('static audit: every relative require() under server resolves to a file', (
     [],
     failures.length
       ? `Unresolved relative imports:\n${failures.map((f) => `  ${f.file}: require('${f.spec}')`).join('\n')}`
+      : ''
+  );
+});
+
+test('middleware root: model imports use one-hop ../models paths', () => {
+  const failures = auditMiddlewareRootModelImports();
+  assert.deepEqual(
+    failures,
+    [],
+    failures.length
+      ? `Middleware files must reach server/models via ../models/... (one level up from middleware/):\n${failures.map((f) => `  ${f.file}: require('${f.spec}')`).join('\n')}`
       : ''
   );
 });
