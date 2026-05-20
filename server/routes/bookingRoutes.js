@@ -70,6 +70,11 @@ const {
   getFinalizeReplayFromError
 } = require('../services/checkout/checkoutFinalizeHttpAdapter');
 const {
+  claimBookingConfirmationSideEffectsOnce
+} = require('../services/checkout/claimBookingConfirmationSideEffectsOnce');
+
+let claimBookingConfirmationSideEffectsOnceImpl = claimBookingConfirmationSideEffectsOnce;
+const {
   reserveVoucherForCheckout,
   attachPaymentIntentToReservation,
   validateReservedRedemptionForBooking,
@@ -1537,91 +1542,99 @@ router.post('/', bookingCreateLimiter, [
         );
 
         if (!idempotentReplay) {
-          const entityForEmail = cabin || cabinType;
+          const claimResult = await claimBookingConfirmationSideEffectsOnceImpl({
+            bookingId: booking._id,
+            checkoutSessionId: booking.checkoutSessionId || orchResult.session?._id || null,
+            now: new Date()
+          });
 
-          void (async () => {
-            try {
-              const guestTemplateKey =
-                initialStatus === 'confirmed'
-                  ? bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_CONFIRMED
-                  : bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_RECEIVED;
-              const guestOutcome = await bookingLifecycleEmailService.sendBookingLifecycleEmail({
-                booking,
-                templateKey: guestTemplateKey,
-                overrideRecipient: null,
-                lifecycleSource: 'automatic',
-                actorContext: null,
-                entity: entityForEmail
-              });
-              if (!guestOutcome.success) {
-                console.error(
+          if (claimResult.claimed) {
+            const entityForEmail = cabin || cabinType;
+
+            void (async () => {
+              try {
+                const guestTemplateKey =
                   initialStatus === 'confirmed'
-                    ? '[booking-email] Guest booking_confirmed not sent:'
-                    : '[booking-email] Guest booking_received not sent:',
-                  {
+                    ? bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_CONFIRMED
+                    : bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_RECEIVED;
+                const guestOutcome = await bookingLifecycleEmailService.sendBookingLifecycleEmail({
+                  booking,
+                  templateKey: guestTemplateKey,
+                  overrideRecipient: null,
+                  lifecycleSource: 'automatic',
+                  actorContext: null,
+                  entity: entityForEmail
+                });
+                if (!guestOutcome.success) {
+                  console.error(
+                    initialStatus === 'confirmed'
+                      ? '[booking-email] Guest booking_confirmed not sent:'
+                      : '[booking-email] Guest booking_received not sent:',
+                    {
+                      bookingId: String(booking._id),
+                      method: guestOutcome.sendResult?.method,
+                      error: guestOutcome.sendResult?.error
+                    }
+                  );
+                }
+
+                const internalOutcome = await bookingLifecycleEmailService.sendInternalNewBookingNotification({
+                  booking,
+                  entity: entityForEmail,
+                  lifecycleSource: 'automatic'
+                });
+                if (!internalOutcome.success) {
+                  console.error('[booking-email] Internal notification not sent:', {
                     bookingId: String(booking._id),
-                    method: guestOutcome.sendResult?.method,
-                    error: guestOutcome.sendResult?.error
-                  }
+                    method: internalOutcome.sendResult?.method,
+                    error: internalOutcome.sendResult?.error
+                  });
+                }
+
+                await sendLegalAcceptanceConfirmationWithRetry(booking);
+              } catch (emailError) {
+                console.error('[booking-email] Async delivery error:', emailError);
+              }
+            })();
+
+            void (async () => {
+              try {
+                const { syncGuestContactPreferencesForBooking } = require('../services/messaging/guestContactPreferenceSync');
+                await syncGuestContactPreferencesForBooking(booking);
+              } catch (err) {
+                console.error(
+                  JSON.stringify({
+                    source: 'guestContactPreferenceSync',
+                    phase: 'booking_create',
+                    bookingId: String(booking._id),
+                    error: err?.message || String(err)
+                  })
                 );
               }
+            })();
 
-              const internalOutcome = await bookingLifecycleEmailService.sendInternalNewBookingNotification({
-                booking,
-                entity: entityForEmail,
-                lifecycleSource: 'automatic'
+            if (initialStatus === 'confirmed') {
+              void processMetaPurchaseAfterConfirm(String(booking._id), req).catch((err) => {
+                console.error('[meta-purchase] Post-confirm CAPI error:', err);
               });
-              if (!internalOutcome.success) {
-                console.error('[booking-email] Internal notification not sent:', {
-                  bookingId: String(booking._id),
-                  method: internalOutcome.sendResult?.method,
-                  error: internalOutcome.sendResult?.error
-                });
+            }
+
+            void (async () => {
+              try {
+                const { notifyBookingCreated } = require('../services/messaging/messageOrchestrator');
+                await notifyBookingCreated({ bookingId: booking._id });
+              } catch (err) {
+                console.error(
+                  JSON.stringify({
+                    source: 'message-orchestrator',
+                    phase: 'booking_create_hook_error',
+                    bookingId: String(booking._id),
+                    error: err?.message || String(err)
+                  })
+                );
               }
-
-              await sendLegalAcceptanceConfirmationWithRetry(booking);
-            } catch (emailError) {
-              console.error('[booking-email] Async delivery error:', emailError);
-            }
-          })();
-
-          void (async () => {
-            try {
-              const { syncGuestContactPreferencesForBooking } = require('../services/messaging/guestContactPreferenceSync');
-              await syncGuestContactPreferencesForBooking(booking);
-            } catch (err) {
-              console.error(
-                JSON.stringify({
-                  source: 'guestContactPreferenceSync',
-                  phase: 'booking_create',
-                  bookingId: String(booking._id),
-                  error: err?.message || String(err)
-                })
-              );
-            }
-          })();
-
-          if (initialStatus === 'confirmed') {
-            void processMetaPurchaseAfterConfirm(String(booking._id), req).catch((err) => {
-              console.error('[meta-purchase] Post-confirm CAPI error:', err);
-            });
+            })();
           }
-
-          void (async () => {
-            try {
-              const { notifyBookingCreated } = require('../services/messaging/messageOrchestrator');
-              await notifyBookingCreated({ bookingId: booking._id });
-            } catch (err) {
-              console.error(
-                JSON.stringify({
-                  source: 'message-orchestrator',
-                  phase: 'booking_create_hook_error',
-                  bookingId: String(booking._id),
-                  error: err?.message || String(err)
-                })
-              );
-            }
-          })();
         }
 
         return;
@@ -2522,5 +2535,12 @@ module.exports.__setStripeClientForTesting = (client) => {
 };
 module.exports.__resetStripeClientForTesting = () => {
   stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+};
+module.exports.__setClaimBookingConfirmationSideEffectsForTesting = (fn) => {
+  claimBookingConfirmationSideEffectsOnceImpl =
+    typeof fn === 'function' ? fn : claimBookingConfirmationSideEffectsOnce;
+};
+module.exports.__resetClaimBookingConfirmationSideEffectsForTesting = () => {
+  claimBookingConfirmationSideEffectsOnceImpl = claimBookingConfirmationSideEffectsOnce;
 };
 

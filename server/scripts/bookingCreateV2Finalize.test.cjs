@@ -240,10 +240,12 @@ test.beforeEach(async () => {
   ]);
   setCheckoutSessionV2Flag('1');
   bookingRoutes.__resetStripeClientForTesting();
+  bookingRoutes.__resetClaimBookingConfirmationSideEffectsForTesting();
 });
 
 test.afterEach(() => {
   bookingRoutes.__resetStripeClientForTesting();
+  bookingRoutes.__resetClaimBookingConfirmationSideEffectsForTesting();
 });
 
 test.after(async () => {
@@ -306,6 +308,8 @@ test('V2 card finalize creates one Booking and marks session finalized', async (
   const session = await CheckoutSession.findOne({ checkoutId }).lean();
   assert.equal(session.finalizeStatus, 'finalized');
   assert.equal(String(session.bookingId), String(bookings[0]._id));
+  assert.ok(bookings[0].confirmationEmailSentAt);
+  assert.ok(session.confirmationEmailSentAt);
 });
 
 test('retry same checkoutId returns 200 replay with one Booking', async () => {
@@ -422,6 +426,11 @@ test('orphan booking with open session returns 200 worker replay without lifecyc
     })
   );
 
+  let claimCalls = 0;
+  bookingRoutes.__setClaimBookingConfirmationSideEffectsForTesting(async () => {
+    claimCalls += 1;
+    return { claimed: true, claimedAt: new Date() };
+  });
   const sendLifecycleEmail = mock.method(
     bookingLifecycleEmailService,
     'sendBookingLifecycleEmail',
@@ -455,6 +464,7 @@ test('orphan booking with open session returns 200 worker replay without lifecyc
   assert.equal(reloadedSession.finalizeStatus, 'finalized');
   assert.ok(reloadedSession.bookingId);
 
+  assert.equal(claimCalls, 0);
   assert.equal(sendLifecycleEmail.mock.calls.length, 0);
   assert.equal(sendInternal.mock.calls.length, 0);
 
@@ -657,6 +667,12 @@ test('legacy flag-off path does not set V2 commercial-stay fields', async () => 
   const checkOut = nextDate(34);
   const checkoutId = 'chk_v2_legacy_flag_off';
 
+  let claimCalls = 0;
+  bookingRoutes.__setClaimBookingConfirmationSideEffectsForTesting(async () => {
+    claimCalls += 1;
+    return { claimed: true, claimedAt: new Date() };
+  });
+
   const res = await postBooking(
     buildBookingPostBody({
       cabin,
@@ -673,16 +689,17 @@ test('legacy flag-off path does not set V2 commercial-stay fields', async () => 
   assert.equal(booking.commercialStayFingerprint, null);
   assert.equal(booking.checkoutSessionId, null);
   assert.equal(await CheckoutSession.countDocuments({ checkoutId }), 0);
+  assert.equal(claimCalls, 0);
 });
 
-test('V2 replay does not send lifecycle emails', async () => {
+test('first V2 success sends lifecycle email once and claims side effects', async () => {
   const cabin = await createCabin();
-  const checkIn = nextDate(36);
-  const checkOut = nextDate(38);
+  const checkIn = nextDate(35);
+  const checkOut = nextDate(37);
   const { checkInDate, checkOutDate } = normalizeStayDates(checkIn, checkOut);
   const quote = await buildQuote(cabin, checkInDate, checkOutDate);
-  const checkoutId = 'chk_v2_replay_email_01';
-  const paymentIntentId = 'pi_v2_replay_email';
+  const checkoutId = 'chk_v2_first_claim_01';
+  const paymentIntentId = 'pi_v2_first_claim';
   const stripeAmountCents = Math.round(quote.totalPrice * 100);
 
   await seedV2FinalizeSession({
@@ -717,6 +734,76 @@ test('V2 replay does not send lifecycle emails', async () => {
     async () => ({ success: true, sendResult: { method: 'mock' } })
   );
 
+  const res = await postBooking(
+    buildBookingPostBody({
+      cabin,
+      checkIn: checkInDate,
+      checkOut: checkOutDate,
+      overrides: { checkoutId, paymentIntentId }
+    }),
+    80
+  );
+
+  assert.equal(res.status, 201);
+
+  const booking = await Booking.findOne({ checkoutId }).lean();
+  const session = await CheckoutSession.findOne({ checkoutId }).lean();
+  assert.ok(booking.confirmationEmailSentAt);
+  assert.ok(session.confirmationEmailSentAt);
+  assert.ok(sendLifecycleEmail.mock.calls.length >= 1);
+  assert.ok(sendInternal.mock.calls.length >= 1);
+
+  sendLifecycleEmail.mock.restore();
+  sendInternal.mock.restore();
+});
+
+test('V2 replay does not call claim helper and sends zero emails', async () => {
+  const cabin = await createCabin();
+  const checkIn = nextDate(36);
+  const checkOut = nextDate(38);
+  const { checkInDate, checkOutDate } = normalizeStayDates(checkIn, checkOut);
+  const quote = await buildQuote(cabin, checkInDate, checkOutDate);
+  const checkoutId = 'chk_v2_replay_email_01';
+  const paymentIntentId = 'pi_v2_replay_email';
+  const stripeAmountCents = Math.round(quote.totalPrice * 100);
+
+  await seedV2FinalizeSession({
+    checkoutId,
+    cabinId: cabin._id,
+    checkIn: checkInDate,
+    checkOut: checkOutDate,
+    canonicalPaymentIntentId: paymentIntentId,
+    stripeAmountCents
+  });
+
+  bookingRoutes.__setStripeClientForTesting(
+    buildStripeRetrieveMock({
+      cabin,
+      checkInDate,
+      checkOutDate,
+      quote,
+      checkoutId,
+      paymentIntentId,
+      amountCents: stripeAmountCents
+    })
+  );
+
+  let claimCalls = 0;
+  bookingRoutes.__setClaimBookingConfirmationSideEffectsForTesting(async () => {
+    claimCalls += 1;
+    return { claimed: true, claimedAt: new Date() };
+  });
+  const sendLifecycleEmail = mock.method(
+    bookingLifecycleEmailService,
+    'sendBookingLifecycleEmail',
+    async () => ({ success: true, sendResult: { method: 'mock' } })
+  );
+  const sendInternal = mock.method(
+    bookingLifecycleEmailService,
+    'sendInternalNewBookingNotification',
+    async () => ({ success: true, sendResult: { method: 'mock' } })
+  );
+
   const body = buildBookingPostBody({
     cabin,
     checkIn: checkInDate,
@@ -726,6 +813,7 @@ test('V2 replay does not send lifecycle emails', async () => {
 
   const first = await postBooking(body, 81);
   assert.equal(first.status, 201);
+  assert.equal(claimCalls, 1);
   assert.ok(sendLifecycleEmail.mock.calls.length >= 1, 'first finalize should send guest lifecycle email');
 
   sendLifecycleEmail.mock.resetCalls();
@@ -734,6 +822,75 @@ test('V2 replay does not send lifecycle emails', async () => {
   const second = await postBooking(body, 82);
   assert.equal(second.status, 200);
   assert.equal(second.body.idempotentReplay, true);
+  assert.equal(claimCalls, 1);
+  assert.equal(sendLifecycleEmail.mock.calls.length, 0);
+  assert.equal(sendInternal.mock.calls.length, 0);
+
+  sendLifecycleEmail.mock.restore();
+  sendInternal.mock.restore();
+});
+
+test('V2 success skips side effects when booking confirmation already claimed', async () => {
+  const cabin = await createCabin();
+  const checkIn = nextDate(39);
+  const checkOut = nextDate(41);
+  const { checkInDate, checkOutDate } = normalizeStayDates(checkIn, checkOut);
+  const quote = await buildQuote(cabin, checkInDate, checkOutDate);
+  const checkoutId = 'chk_v2_already_claimed_01';
+  const paymentIntentId = 'pi_v2_already_claimed';
+  const stripeAmountCents = Math.round(quote.totalPrice * 100);
+  const existingClaimedAt = new Date('2025-06-01T10:00:00.000Z');
+
+  await seedV2FinalizeSession({
+    checkoutId,
+    cabinId: cabin._id,
+    checkIn: checkInDate,
+    checkOut: checkOutDate,
+    canonicalPaymentIntentId: paymentIntentId,
+    stripeAmountCents,
+    overrides: { confirmationEmailSentAt: existingClaimedAt }
+  });
+
+  bookingRoutes.__setStripeClientForTesting(
+    buildStripeRetrieveMock({
+      cabin,
+      checkInDate,
+      checkOutDate,
+      quote,
+      checkoutId,
+      paymentIntentId,
+      amountCents: stripeAmountCents
+    })
+  );
+
+  let claimCalls = 0;
+  bookingRoutes.__setClaimBookingConfirmationSideEffectsForTesting(async () => {
+    claimCalls += 1;
+    return { claimed: false, reason: 'already_claimed_or_missing' };
+  });
+  const sendLifecycleEmail = mock.method(
+    bookingLifecycleEmailService,
+    'sendBookingLifecycleEmail',
+    async () => ({ success: true, sendResult: { method: 'mock' } })
+  );
+  const sendInternal = mock.method(
+    bookingLifecycleEmailService,
+    'sendInternalNewBookingNotification',
+    async () => ({ success: true, sendResult: { method: 'mock' } })
+  );
+
+  const res = await postBooking(
+    buildBookingPostBody({
+      cabin,
+      checkIn: checkInDate,
+      checkOut: checkOutDate,
+      overrides: { checkoutId, paymentIntentId }
+    }),
+    83
+  );
+
+  assert.equal(res.status, 201);
+  assert.equal(claimCalls, 1);
   assert.equal(sendLifecycleEmail.mock.calls.length, 0);
   assert.equal(sendInternal.mock.calls.length, 0);
 
