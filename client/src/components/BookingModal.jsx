@@ -215,7 +215,7 @@ const BookingModal = () => {
             {/* Inner panel only: motion (slide on mobile, scale on desktop) */}
             <motion.div
               key="booking-modal-panel"
-              className="flex min-h-0 w-full flex-1 flex-col bg-white shadow-none md:h-auto md:max-h-[calc(100vh-4rem)] md:max-w-[980px] lg:max-w-[1040px] md:w-full md:flex-none md:overflow-hidden md:rounded-[28px] md:shadow-2xl"
+              className="flex min-h-0 w-full flex-1 flex-col bg-white shadow-none md:h-auto md:max-h-[min(calc(100vh-4rem),calc(100dvh-4rem))] md:max-w-[980px] lg:max-w-[1040px] md:w-full md:flex-none md:overflow-hidden md:rounded-[28px] md:shadow-2xl"
               initial={isMobile ? { y: '100%' } : { scale: 0.96, opacity: 0 }}
               animate={isMobile ? { y: 0, opacity: 1 } : { scale: 1, opacity: 1 }}
               exit={isMobile ? { y: '100%' } : { scale: 0.96, opacity: 0 }}
@@ -257,7 +257,7 @@ const BookingModal = () => {
 
               {/* Content — min-h-0 so this region shrinks inside the flex column; without it,
                   overflow-y-auto never clips and the footer can sit on top of the last controls (e.g. Promo code). */}
-              <div className="min-h-0 flex-1 overflow-y-auto p-6 md:flex-none md:overflow-visible md:px-8 md:pt-8 md:pb-7 lg:px-10">
+              <div className="min-h-0 flex-1 overflow-y-auto p-6 md:min-h-0 md:flex-1 md:overflow-y-auto md:px-8 md:pt-8 md:pb-7 lg:px-10">
                 <div className="mx-auto w-full pb-4 md:pb-0">
                   <div className="flex flex-col gap-10 md:grid md:grid-cols-[minmax(0,1fr)_280px] lg:grid-cols-[minmax(0,1fr)_300px] md:gap-8 lg:gap-10 md:items-start">
                   {/* Dates Section */}
@@ -406,7 +406,7 @@ const BookingModal = () => {
                   data-testid="booking-modal-submit-search"
                   onClick={handleSearch}
                   disabled={!checkIn || !checkOut}
-                  className={`h-12 md:h-14 px-8 md:px-12 rounded-full bg-black text-white font-semibold text-sm uppercase tracking-[0.3em] hover:bg-stone-800 disabled:opacity-40 disabled:cursor-not-allowed transition-all ${
+                  className={`shrink-0 h-12 md:h-14 px-8 md:px-12 rounded-full bg-black text-white font-semibold text-sm uppercase tracking-[0.3em] hover:bg-stone-800 disabled:opacity-40 disabled:cursor-not-allowed transition-all ${
                     !checkIn || !checkOut ? '' : 'shadow-lg hover:shadow-xl'
                   }`}
                 >
