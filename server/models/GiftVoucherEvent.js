@@ -5,6 +5,7 @@ const GIFT_VOUCHER_EVENT_TYPES = [
   'payment_pending',
   'paid',
   'activated',
+  'compensation_issued',
   'send_attempted',
   'sent',
   'send_failed',

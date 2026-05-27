@@ -167,6 +167,16 @@ giftVoucherSchema.index(
     partialFilterExpression: { sourceReservationId: { $type: 'objectId' } }
   }
 );
+giftVoucherSchema.index(
+  { sourceReservationId: 1, issuanceSource: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      issuanceSource: 'cancellation_compensation',
+      sourceReservationId: { $type: 'objectId' }
+    }
+  }
+);
 
 module.exports = mongoose.model('GiftVoucher', giftVoucherSchema);
 module.exports.GIFT_VOUCHER_STATUSES = VOUCHER_STATUSES;
