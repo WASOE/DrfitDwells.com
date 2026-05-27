@@ -1,5 +1,6 @@
 const GiftVoucher = require('../../models/GiftVoucher');
 const CreatorPartner = require('../../models/CreatorPartner');
+const { purchasedGiftVoucherQuery } = require('../giftVouchers/giftVoucherIssuance');
 const {
   buildSingleCreatorPartnerStats,
   listCreatorPartnerAttributedBookings
@@ -45,10 +46,12 @@ async function listRecentGiftVouchersForPartner(creatorPartnerDoc, limit = 15) {
   const id = creatorPartnerDoc._id;
   const or = [{ 'attribution.creatorPartnerId': id }];
   if (ref) or.push({ 'attribution.referralCode': ref });
-  const rows = await GiftVoucher.find({
-    status: { $in: PAID_VOUCHER_STATUSES },
-    $or: or
-  })
+  const rows = await GiftVoucher.find(
+    purchasedGiftVoucherQuery({
+      status: { $in: PAID_VOUCHER_STATUSES },
+      $or: or
+    })
+  )
     .sort({ createdAt: -1 })
     .limit(Math.max(1, Math.min(50, Number(limit) || 15)))
     .select('createdAt status amountOriginalCents')

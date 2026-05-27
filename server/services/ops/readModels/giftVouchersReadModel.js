@@ -3,6 +3,10 @@ const GiftVoucherEvent = require('../../../models/GiftVoucherEvent');
 const GiftVoucherRedemption = require('../../../models/GiftVoucherRedemption');
 const ManualReviewItem = require('../../../models/ManualReviewItem');
 const { escapeRegex } = require('../../../utils/escapeRegex');
+const {
+  ISSUANCE_SOURCE_PURCHASE,
+  purchasedGiftVoucherQuery
+} = require('../../giftVouchers/giftVoucherIssuance');
 
 const MANUAL_REVIEW_CATEGORIES = ['gift_voucher_email_failed', 'gift_voucher_physical_card_required'];
 
@@ -29,6 +33,15 @@ function buildListFilter(query = {}) {
   return filter;
 }
 
+function mapIssuanceFields(doc) {
+  return {
+    issuanceSource: doc.issuanceSource || ISSUANCE_SOURCE_PURCHASE,
+    sourceReservationId: doc.sourceReservationId ? String(doc.sourceReservationId) : null,
+    issuedByActorId: doc.issuedByActorId || null,
+    compensationNote: doc.compensationNote || null
+  };
+}
+
 function mapListItem(doc) {
   return {
     giftVoucherId: String(doc._id),
@@ -44,6 +57,7 @@ function mapListItem(doc) {
     deliveryMode: doc.deliveryMode || 'email',
     expiresAt: doc.expiresAt || null,
     activatedAt: doc.activatedAt || null,
+    ...mapIssuanceFields(doc),
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt
   };
@@ -51,7 +65,7 @@ function mapListItem(doc) {
 
 async function getGiftVouchersWorkspaceReadModel(query = {}) {
   const { page, limit, skip } = normalizePagination(query);
-  const filter = buildListFilter(query);
+  const filter = purchasedGiftVoucherQuery(buildListFilter(query));
   const [items, total] = await Promise.all([
     GiftVoucher.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
     GiftVoucher.countDocuments(filter)
@@ -89,6 +103,7 @@ function mapVoucherDetail(voucher) {
     stripePaymentIntentId: voucher.stripePaymentIntentId || null,
     purchaseRequestId: voucher.purchaseRequestId || null,
     attribution: voucher.attribution || {},
+    ...mapIssuanceFields(voucher),
     createdAt: voucher.createdAt,
     updatedAt: voucher.updatedAt
   };

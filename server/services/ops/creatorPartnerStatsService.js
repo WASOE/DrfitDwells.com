@@ -16,6 +16,7 @@ const {
   stayCashCommissionBaseCents,
   estimateStayCommissionableRevenueEUR
 } = require('./creatorCommissionLedgerService');
+const { purchasedGiftVoucherQuery } = require('../giftVouchers/giftVoucherIssuance');
 
 const PAID_BOOKING_STATUSES = new Set(['confirmed', 'in_house', 'completed']);
 const PAID_VOUCHER_STATUSES = ['active', 'partially_redeemed', 'redeemed', 'expired'];
@@ -117,13 +118,15 @@ async function buildAllCreatorPartnerStats() {
   );
   const issuesByPaymentIntentId = new Set(openIssues.map((i) => String(i.paymentIntentId || '').trim()).filter(Boolean));
 
-  const giftVouchersForStats = await GiftVoucher.find({
-    status: { $in: PAID_VOUCHER_STATUSES },
-    $or: [
-      { 'attribution.referralCode': { $exists: true, $ne: null } },
-      { 'attribution.creatorPartnerId': { $exists: true, $ne: null } }
-    ]
-  })
+  const giftVouchersForStats = await GiftVoucher.find(
+    purchasedGiftVoucherQuery({
+      status: { $in: PAID_VOUCHER_STATUSES },
+      $or: [
+        { 'attribution.referralCode': { $exists: true, $ne: null } },
+        { 'attribution.creatorPartnerId': { $exists: true, $ne: null } }
+      ]
+    })
+  )
     .select('amountOriginalCents attribution')
     .lean();
 
@@ -132,8 +135,19 @@ async function buildAllCreatorPartnerStats() {
     creatorPartnerId: { $in: creatorObjectIds },
     status: { $ne: 'voided' }
   })
-    .select('creatorPartnerId commissionAmountCents')
+    .select('creatorPartnerId commissionAmountCents giftVoucherId')
     .lean();
+
+  const commVoucherIds = gvCommDocs.map((row) => row.giftVoucherId).filter(Boolean);
+  const purchaseCommVoucherIds = new Set(
+    commVoucherIds.length
+      ? (
+          await GiftVoucher.find(purchasedGiftVoucherQuery({ _id: { $in: commVoucherIds } }))
+            .select('_id')
+            .lean()
+        ).map((doc) => String(doc._id))
+      : []
+  );
 
   const stayCommDocs = await CreatorCommission.find({
     creatorPartnerId: { $in: creatorObjectIds },
@@ -207,6 +221,8 @@ async function buildAllCreatorPartnerStats() {
   for (const row of gvCommDocs) {
     const id = row?.creatorPartnerId ? String(row.creatorPartnerId) : null;
     if (!id || !byCreator.has(id)) continue;
+    const voucherId = row.giftVoucherId ? String(row.giftVoucherId) : null;
+    if (!voucherId || !purchaseCommVoucherIds.has(voucherId)) continue;
     byCreator.get(id).giftVoucherCommissionCents += Math.max(0, Math.trunc(Number(row.commissionAmountCents) || 0));
   }
 

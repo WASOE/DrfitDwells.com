@@ -13,6 +13,8 @@ const VOUCHER_STATUSES = [
 
 const DELIVERY_MODES = ['email', 'postal', 'manual'];
 
+const ISSUANCE_SOURCES = ['purchase', 'cancellation_compensation', 'goodwill_ops'];
+
 function isIntegerNumber(value) {
   return Number.isInteger(value);
 }
@@ -99,7 +101,21 @@ const giftVoucherSchema = new mongoose.Schema(
     stripeCheckoutSessionId: { type: String, trim: true, default: null },
     stripeEventIdsProcessed: { type: [String], default: [] },
     activatedAt: { type: Date, default: null },
-    attribution: { type: attributionSchema, default: undefined }
+    attribution: { type: attributionSchema, default: undefined },
+    issuanceSource: {
+      type: String,
+      enum: ISSUANCE_SOURCES,
+      default: 'purchase',
+      required: true,
+      index: true
+    },
+    sourceReservationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Booking',
+      default: null
+    },
+    issuedByActorId: { type: String, trim: true, default: null },
+    compensationNote: { type: String, trim: true, maxlength: 500, default: null }
   },
   { timestamps: true }
 );
@@ -144,7 +160,15 @@ giftVoucherSchema.index(
 );
 giftVoucherSchema.index({ status: 1, createdAt: -1 });
 giftVoucherSchema.index({ 'attribution.referralCode': 1 });
+giftVoucherSchema.index({ issuanceSource: 1, createdAt: -1 });
+giftVoucherSchema.index(
+  { sourceReservationId: 1 },
+  {
+    partialFilterExpression: { sourceReservationId: { $type: 'objectId' } }
+  }
+);
 
 module.exports = mongoose.model('GiftVoucher', giftVoucherSchema);
 module.exports.GIFT_VOUCHER_STATUSES = VOUCHER_STATUSES;
 module.exports.GIFT_VOUCHER_DELIVERY_MODES = DELIVERY_MODES;
+module.exports.GIFT_VOUCHER_ISSUANCE_SOURCES = ISSUANCE_SOURCES;
