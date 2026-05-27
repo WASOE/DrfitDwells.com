@@ -1,6 +1,39 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { decodeRoleFromToken, opsWriteAPI, opsReadAPI } from '../../services/opsApi';
+import { formatMoneyFromCents } from '../../utils/formatMoney';
+
+const MIN_STAY_CREDIT_CENTS = 10000;
+
+const SETTLEMENT_OUTCOME_OPTIONS = [
+  { value: 'resolution_pending', label: 'Settlement pending' },
+  { value: 'payment_retained', label: 'Payment retained' },
+  { value: 'credits_issued', label: 'Issue stay credit now' }
+];
+
+const SETTLEMENT_WARNINGS = {
+  resolution_pending: 'Refund follow-up stays active until this is resolved later.',
+  payment_retained: 'No refund follow-up will be shown. Payment is retained.',
+  credits_issued:
+    'Creates an active stay credit immediately. Minimum €100. Guest receives only the standard cancellation email for now.'
+};
+
+function settlementOutcomeLabel(outcome) {
+  const labels = {
+    resolution_pending: 'Settlement pending',
+    payment_retained: 'Payment retained',
+    credits_issued: 'Stay credit issued'
+  };
+  return labels[outcome] || outcome || '—';
+}
+
+function eurosToCreditCents(eurosInput) {
+  const trimmed = String(eurosInput || '').trim().replace(',', '.');
+  if (!trimmed) return null;
+  const euros = Number(trimmed);
+  if (!Number.isFinite(euros)) return null;
+  return Math.round(euros * 100);
+}
 
 const TEMPLATE_LABELS = {
   booking_received: 'Booking received email',
@@ -32,6 +65,15 @@ export default function OpsReservationDetail() {
     checkInDate: '',
     checkOutDate: '',
     reason: ''
+  });
+
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelError, setCancelError] = useState('');
+  const [cancelForm, setCancelForm] = useState({
+    reason: '',
+    outcome: 'resolution_pending',
+    creditAmountEuros: ''
   });
 
   const [overrideRecipient, setOverrideRecipient] = useState('');
@@ -103,6 +145,89 @@ export default function OpsReservationDetail() {
     setEditDatesError('');
     setSuccessMessage('');
     setEditDatesOpen(true);
+  };
+
+  const openCancelModal = () => {
+    setCancelForm({
+      reason: '',
+      outcome: 'resolution_pending',
+      creditAmountEuros: ''
+    });
+    setCancelError('');
+    setError('');
+    setSuccessMessage('');
+    setCancelOpen(true);
+  };
+
+  const buildCancelRequestBody = () => {
+    const reason = cancelForm.reason.trim();
+    if (!reason) {
+      return { error: 'Cancel reason is required' };
+    }
+    if (reason.length > 500) {
+      return { error: 'Cancel reason must be at most 500 characters' };
+    }
+
+    if (cancelForm.outcome === 'resolution_pending') {
+      return { body: { reason } };
+    }
+
+    if (cancelForm.outcome === 'payment_retained') {
+      return {
+        body: {
+          reason,
+          settlement: { outcome: 'payment_retained' }
+        }
+      };
+    }
+
+    if (cancelForm.outcome === 'credits_issued') {
+      const creditAmountCents = eurosToCreditCents(cancelForm.creditAmountEuros);
+      if (creditAmountCents == null) {
+        return { error: 'Enter a valid stay credit amount in euros' };
+      }
+      if (creditAmountCents < MIN_STAY_CREDIT_CENTS) {
+        return { error: 'Stay credit must be at least €100' };
+      }
+      return {
+        body: {
+          reason,
+          settlement: {
+            outcome: 'credits_issued',
+            creditAmountCents
+          }
+        }
+      };
+    }
+
+    return { error: 'Choose a valid settlement outcome' };
+  };
+
+  const submitCancelReservation = async (e) => {
+    e.preventDefault();
+    const built = buildCancelRequestBody();
+    if (built.error) {
+      setCancelError(built.error);
+      return;
+    }
+
+    setCancelBusy(true);
+    setCancelError('');
+    setError('');
+    setSuccessMessage('');
+    try {
+      const resp = await opsWriteAPI.cancelReservation(id, built.body);
+      const payload = resp.data?.data;
+      if (payload?.compensationVoucher?.code) {
+        setSuccessMessage(`Stay credit issued. Voucher code: ${payload.compensationVoucher.code}`);
+      }
+      setCancelOpen(false);
+      await load();
+    } catch (err) {
+      setCancelError(err?.response?.data?.message || 'Failed to cancel reservation');
+    } finally {
+      setCancelBusy(false);
+    }
   };
 
   const submitEditDates = async (e) => {
@@ -396,19 +521,71 @@ export default function OpsReservationDetail() {
   if (!data) return <div className="text-sm text-gray-500">Reservation not found.</div>;
 
   const reservation = data.reservation || {};
+  const cancellationSettlement = data.cancellationSettlement || null;
   const isAdmin = role === 'admin';
+  const canCancel =
+    isAdmin && reservation.reservationStatus && reservation.reservationStatus !== 'cancelled';
 
   return (
-    <div className="space-y-4 pb-20">
-      <div className="bg-white border border-gray-200 rounded-xl p-4">
+    <div className="space-y-4 pb-20 max-w-7xl mx-auto">
+      <div className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
         <Link to="/ops/reservations" className="text-sm text-[#81887A] hover:underline">
           Back to reservations
         </Link>
-        <h2 className="mt-1 text-lg font-semibold text-gray-900">Reservation {reservation.reservationId}</h2>
-        <p className="text-sm text-gray-500">
+        <h2 className="mt-1 text-lg md:text-xl font-semibold text-gray-900">Reservation {reservation.reservationId}</h2>
+        <p className="text-sm text-gray-500 max-w-2xl">
           {reservation.checkInDateOnly || '—'} - {reservation.checkOutDateOnly || '—'}
         </p>
       </div>
+
+      {cancellationSettlement ? (
+        <section className="bg-white border border-amber-200 rounded-xl p-4 md:p-5 max-w-3xl">
+          <h3 className="text-sm font-semibold text-gray-900">Cancellation settlement</h3>
+          <dl className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
+            <div>
+              <dt className="text-gray-500">Outcome</dt>
+              <dd className="font-medium text-gray-900">
+                {settlementOutcomeLabel(cancellationSettlement.outcome)}
+              </dd>
+            </div>
+            {cancellationSettlement.creditAmountCents != null ? (
+              <div>
+                <dt className="text-gray-500">Stay credit amount</dt>
+                <dd className="font-medium text-gray-900 tabular-nums">
+                  {formatMoneyFromCents(cancellationSettlement.creditAmountCents, 'EUR')}
+                </dd>
+              </div>
+            ) : null}
+            {cancellationSettlement.settlementRecordedAt ? (
+              <div>
+                <dt className="text-gray-500">Recorded at</dt>
+                <dd className="text-gray-900">
+                  {String(cancellationSettlement.settlementRecordedAt).slice(0, 19).replace('T', ' ')}
+                </dd>
+              </div>
+            ) : null}
+            {cancellationSettlement.compensationGiftVoucherId ? (
+              <div className="sm:col-span-2">
+                <dt className="text-gray-500">Compensation voucher</dt>
+                <dd>
+                  <Link
+                    to={`/ops/gift-vouchers/${cancellationSettlement.compensationGiftVoucherId}`}
+                    className="text-[#81887A] font-medium hover:underline"
+                  >
+                    View voucher {cancellationSettlement.compensationGiftVoucherId}
+                  </Link>
+                </dd>
+              </div>
+            ) : null}
+            {cancellationSettlement.reason ? (
+              <div className="sm:col-span-2">
+                <dt className="text-gray-500">Reason</dt>
+                <dd className="text-gray-900 whitespace-pre-wrap">{cancellationSettlement.reason}</dd>
+              </div>
+            ) : null}
+          </dl>
+        </section>
+      ) : null}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 space-y-4">
@@ -427,16 +604,13 @@ export default function OpsReservationDetail() {
               <button onClick={openEditDatesModal} className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50">
                 Edit dates
               </button>
-              {isAdmin ? (
+              {canCancel ? (
                 <button
-                  onClick={() => {
-                    const reason = window.prompt('Cancel reason (required)');
-                    if (!reason) return;
-                    doAction(opsWriteAPI.cancelReservation, id, reason);
-                  }}
+                  type="button"
+                  onClick={openCancelModal}
                   className="px-3 py-2 text-sm rounded border border-red-200 text-red-700 hover:bg-red-50"
                 >
-                  Cancel
+                  Cancel reservation
                 </button>
               ) : null}
               {isAdmin ? (
@@ -1022,6 +1196,126 @@ export default function OpsReservationDetail() {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      ) : null}
+
+      {cancelOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="cancel-reservation-title"
+        >
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            aria-label="Close cancel reservation modal"
+            onClick={() => {
+              if (!cancelBusy) setCancelOpen(false);
+            }}
+          />
+          <div className="relative w-full max-w-lg rounded-xl bg-white border border-gray-200 shadow-xl p-5 space-y-4">
+            <h3 id="cancel-reservation-title" className="text-base font-semibold text-gray-900">
+              Cancel reservation
+            </h3>
+            <form onSubmit={submitCancelReservation} className="space-y-4">
+              <div>
+                <label htmlFor="cancelReason" className="block text-xs font-medium text-gray-500 mb-1">
+                  Reason <span className="text-red-600">*</span>
+                </label>
+                <textarea
+                  id="cancelReason"
+                  required
+                  maxLength={500}
+                  rows={3}
+                  value={cancelForm.reason}
+                  onChange={(e) => setCancelForm((prev) => ({ ...prev, reason: e.target.value }))}
+                  placeholder="Why is this reservation being cancelled?"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
+                />
+              </div>
+              <fieldset>
+                <legend className="block text-xs font-medium text-gray-500 mb-2">Settlement outcome</legend>
+                <div className="space-y-2">
+                  {SETTLEMENT_OUTCOME_OPTIONS.map((option) => (
+                    <label
+                      key={option.value}
+                      className="flex items-start gap-2 text-sm text-gray-900 cursor-pointer"
+                    >
+                      <input
+                        type="radio"
+                        name="cancelSettlementOutcome"
+                        value={option.value}
+                        checked={cancelForm.outcome === option.value}
+                        onChange={() =>
+                          setCancelForm((prev) => ({
+                            ...prev,
+                            outcome: option.value,
+                            creditAmountEuros:
+                              option.value === 'credits_issued' ? prev.creditAmountEuros : ''
+                          }))
+                        }
+                        className="mt-0.5"
+                      />
+                      <span>{option.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              {cancelForm.outcome === 'credits_issued' ? (
+                <div>
+                  <label htmlFor="cancelCreditEuros" className="block text-xs font-medium text-gray-500 mb-1">
+                    Stay credit amount (EUR) <span className="text-red-600">*</span>
+                  </label>
+                  <input
+                    id="cancelCreditEuros"
+                    type="text"
+                    inputMode="decimal"
+                    required
+                    value={cancelForm.creditAmountEuros}
+                    onChange={(e) =>
+                      setCancelForm((prev) => ({ ...prev, creditAmountEuros: e.target.value }))
+                    }
+                    placeholder="e.g. 120"
+                    className="w-full max-w-xs px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">Minimum €100. Amount is issued immediately.</p>
+                </div>
+              ) : null}
+              <div
+                className={`text-sm rounded-md px-3 py-2 border ${
+                  cancelForm.outcome === 'credits_issued'
+                    ? 'bg-amber-50 border-amber-200 text-amber-900'
+                    : 'bg-gray-50 border-gray-200 text-gray-700'
+                }`}
+                role="note"
+              >
+                {SETTLEMENT_WARNINGS[cancelForm.outcome]}
+              </div>
+              {cancelError ? (
+                <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                  {cancelError}
+                </div>
+              ) : null}
+              <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={cancelBusy}
+                  onClick={() => setCancelOpen(false)}
+                  className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Close
+                </button>
+                <button
+                  type="submit"
+                  disabled={cancelBusy}
+                  className="px-3 py-2 text-sm rounded bg-red-700 text-white hover:bg-red-800 disabled:opacity-50"
+                >
+                  {cancelBusy ? 'Cancelling…' : 'Confirm cancellation'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       ) : null}

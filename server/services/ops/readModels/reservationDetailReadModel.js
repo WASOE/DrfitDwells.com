@@ -12,6 +12,22 @@ const { isPublicIcsStrictEligibility, isPublicIcsExportSafetyEnforced } = requir
 const { isBookingEligibleForPublicIcs, loadPaidOrPartialReservationIdSet } = require('../../calendar/icsBlockingEligibility');
 const { resolveBookingExportSafety } = require('../../calendar/bookingExportSafety');
 
+function mapCancellationSettlementForOps(booking) {
+  const raw = booking?.cancellationSettlement;
+  if (!raw || typeof raw !== 'object') return null;
+
+  return {
+    outcome: raw.outcome || null,
+    reason: raw.reason || null,
+    creditAmountCents: Number.isFinite(raw.creditAmountCents) ? raw.creditAmountCents : null,
+    compensationGiftVoucherId: raw.compensationGiftVoucherId
+      ? String(raw.compensationGiftVoucherId)
+      : null,
+    settlementRecordedAt: raw.settlementRecordedAt || null,
+    settlementRecordedByActorId: raw.settlementRecordedByActorId || null
+  };
+}
+
 async function getReservationDetailReadModel(reservationId) {
   const booking = await Booking.findById(reservationId).lean();
   if (!booking) return null;
@@ -40,6 +56,7 @@ async function getReservationDetailReadModel(reservationId) {
 
   return {
     reservation: mapped,
+    cancellationSettlement: mapCancellationSettlementForOps(booking),
     guestDetail: guest
       ? {
           guestId: String(guest._id),
