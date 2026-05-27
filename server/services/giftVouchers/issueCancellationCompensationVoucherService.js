@@ -84,6 +84,18 @@ function formatSuccess(voucher, idempotentReplay) {
   };
 }
 
+function assertExistingAmountMatches(existing, creditAmountCents) {
+  if (existing.amountOriginalCents !== creditAmountCents) {
+    const err = validationError(
+      `Existing compensation voucher amount (${existing.amountOriginalCents}) does not match requested credit (${creditAmountCents})`,
+      'CREDIT_AMOUNT_MISMATCH'
+    );
+    err.existingAmountCents = existing.amountOriginalCents;
+    err.requestedCreditAmountCents = creditAmountCents;
+    throw err;
+  }
+}
+
 async function issueCancellationCompensationVoucher({
   reservationId,
   creditAmountCents,
@@ -125,6 +137,7 @@ async function issueCancellationCompensationVoucher({
 
   const existing = await findExistingCompensationVoucher(sourceReservationId);
   if (existing) {
+    assertExistingAmountMatches(existing, creditAmountCents);
     return formatSuccess(existing, true);
   }
 
@@ -181,6 +194,7 @@ async function issueCancellationCompensationVoucher({
     if (isDuplicateKeyError(err)) {
       const replay = await findExistingCompensationVoucher(sourceReservationId);
       if (replay) {
+        assertExistingAmountMatches(replay, creditAmountCents);
         return formatSuccess(replay, true);
       }
     }

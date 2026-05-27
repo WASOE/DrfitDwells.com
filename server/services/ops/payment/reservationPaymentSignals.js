@@ -31,6 +31,13 @@ function classifyReservationPaymentStatus({ booking, linkedPaymentTrail, hasUnli
   return 'unknown';
 }
 
+function suppressesCancelledPaidRefundFollowUp(cancellationSettlementOutcome) {
+  return (
+    cancellationSettlementOutcome === 'payment_retained' ||
+    cancellationSettlementOutcome === 'credits_issued'
+  );
+}
+
 function derivePaymentAttention({ reservationStatus, paymentStatus, cancellationSettlementOutcome = null }) {
   const baseAttentionStatuses = new Set([
     'unpaid',
@@ -41,7 +48,8 @@ function derivePaymentAttention({ reservationStatus, paymentStatus, cancellation
   ]);
   const cancelled = reservationStatus === 'cancelled';
   const isCancelledPaidOrPartial = cancelled && (paymentStatus === 'paid' || paymentStatus === 'partial');
-  const suppressCancelledPaidFollowUp = isCancelledPaidOrPartial && cancellationSettlementOutcome === 'payment_retained';
+  const suppressCancelledPaidFollowUp =
+    isCancelledPaidOrPartial && suppressesCancelledPaidRefundFollowUp(cancellationSettlementOutcome);
   const cancelledPaid = suppressCancelledPaidFollowUp ? false : isCancelledPaidOrPartial;
   const refundPending = cancelled
     && (paymentStatus === 'paid' || paymentStatus === 'partial' || paymentStatus === 'pending_verification')
@@ -51,7 +59,7 @@ function derivePaymentAttention({ reservationStatus, paymentStatus, cancellation
 }
 
 function shouldEmitRefundFollowUpAlert({ reservationStatus, paymentStatus, cancellationSettlementOutcome = null }) {
-  if (cancellationSettlementOutcome === 'payment_retained') return false;
+  if (suppressesCancelledPaidRefundFollowUp(cancellationSettlementOutcome)) return false;
   return reservationStatus === 'cancelled' && (paymentStatus === 'paid' || paymentStatus === 'partial');
 }
 
@@ -59,5 +67,6 @@ module.exports = {
   derivePaymentStatusFromTrail,
   classifyReservationPaymentStatus,
   derivePaymentAttention,
-  shouldEmitRefundFollowUpAlert
+  shouldEmitRefundFollowUpAlert,
+  suppressesCancelledPaidRefundFollowUp
 };

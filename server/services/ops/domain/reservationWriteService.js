@@ -16,6 +16,10 @@ const { BLOCKING_BOOKING_STATUSES } = require('../../calendar/blockingStatusCons
 const { processMetaPurchaseAfterConfirm } = require('../../bookingPurchaseTracking');
 const CabinType = require('../../../models/CabinType');
 const bookingLifecycleEmailService = require('../../bookingLifecycleEmailService');
+const {
+  issueCancellationCompensationVoucher,
+  MIN_CREDIT_AMOUNT_CENTS
+} = require('../../giftVouchers/issueCancellationCompensationVoucherService');
 
 // MessageOrchestrator hooks (Batch 7). Lazy-required inside try/catch wrappers
 // so import failure cannot break any write path. Default OFF
@@ -102,36 +106,200 @@ async function sendLifecycleStatusEmail({ booking, kind }) {
   }
 }
 
-const BATCH2_CANCEL_ALLOWED_OUTCOMES = new Set(['resolution_pending', 'payment_retained']);
+const CANCEL_ALLOWED_OUTCOMES = new Set(['resolution_pending', 'payment_retained', 'credits_issued']);
 
-function normalizeBatch2CancelSettlement({ settlement, reason, actorId, recordedAt, booking }) {
+const CANCEL_REJECTED_OUTCOMES = new Set([
+  'unresolved',
+  'cash_refund_pending',
+  'cash_refunded',
+  'rebooked_or_moved'
+]);
+
+function buildCancelFinancialSnapshot(booking, recordedAt) {
+  return {
+    bookingTotalCents: Number.isFinite(booking?.totalPrice) ? Number(booking.totalPrice) : null,
+    stripePaidAmountCents: Number.isFinite(booking?.stripePaidAmountCents)
+      ? Number(booking.stripePaidAmountCents)
+      : null,
+    voucherAppliedCents: Number.isFinite(booking?.giftVoucherAppliedCents)
+      ? Number(booking.giftVoucherAppliedCents)
+      : null,
+    netCashPaidCents: Number.isFinite(booking?.stripePaidAmountCents)
+      ? Number(booking.stripePaidAmountCents)
+      : null,
+    currency: 'EUR',
+    capturedAt: recordedAt
+  };
+}
+
+function normalizeTrimmedReason(reason) {
+  if (reason == null) return null;
+  const value = String(reason).trim();
+  return value || null;
+}
+
+function deriveCancelRecipientEmail(settlement, booking) {
+  if (settlement && typeof settlement === 'object' && settlement.recipientEmail != null) {
+    const fromSettlement = String(settlement.recipientEmail).trim().toLowerCase();
+    if (fromSettlement) return fromSettlement;
+  }
+  const fromGuest = booking?.guestInfo?.email ? String(booking.guestInfo.email).trim().toLowerCase() : '';
+  return fromGuest || null;
+}
+
+function deriveCancelRecipientName(settlement, booking) {
+  if (settlement && typeof settlement === 'object' && settlement.recipientName != null) {
+    const fromSettlement = String(settlement.recipientName).trim();
+    if (fromSettlement) return fromSettlement;
+  }
+  const first = booking?.guestInfo?.firstName ? String(booking.guestInfo.firstName).trim() : '';
+  const last = booking?.guestInfo?.lastName ? String(booking.guestInfo.lastName).trim() : '';
+  const combined = [first, last].filter(Boolean).join(' ');
+  return combined || null;
+}
+
+function mapIssuerError(err) {
+  if (err?.code === 'CREDIT_AMOUNT_MISMATCH') {
+    throw createDomainError(
+      'conflict',
+      err.message,
+      {
+        code: err.code,
+        existingAmountCents: err.existingAmountCents,
+        requestedCreditAmountCents: err.requestedCreditAmountCents
+      },
+      409
+    );
+  }
+  const validationCodes = new Set([
+    'RESERVATION_ID_REQUIRED',
+    'INVALID_RESERVATION_ID',
+    'INVALID_CREDIT_AMOUNT',
+    'CREDIT_AMOUNT_TOO_LOW',
+    'ACTOR_REQUIRED',
+    'REASON_REQUIRED',
+    'REASON_TOO_LONG',
+    'INVALID_EXPIRES_AT'
+  ]);
+  if (validationCodes.has(err?.code)) {
+    throw createDomainError('validation', err.message, { code: err.code }, 400);
+  }
+  throw err;
+}
+
+async function normalizeCancelSettlement({ settlement, reason, actorId, recordedAt, booking, ctx }) {
   const outcomeRaw = settlement && typeof settlement === 'object' ? settlement.outcome : null;
   const outcome = typeof outcomeRaw === 'string' ? outcomeRaw.trim() : '';
   const effectiveOutcome = outcome || 'resolution_pending';
 
-  if (!BATCH2_CANCEL_ALLOWED_OUTCOMES.has(effectiveOutcome)) {
+  if (CANCEL_REJECTED_OUTCOMES.has(effectiveOutcome)) {
     throw createDomainError(
       'validation',
-      'Batch 2 cancel supports settlement outcomes: resolution_pending or payment_retained',
-      { allowedOutcomes: [...BATCH2_CANCEL_ALLOWED_OUTCOMES], providedOutcome: outcome || null },
+      `Cancel settlement outcome "${effectiveOutcome}" is not supported on cancel`,
+      { providedOutcome: effectiveOutcome },
       400
     );
   }
 
-  return {
-    outcome: effectiveOutcome,
-    reason: reason || null,
-    settlementRecordedAt: recordedAt,
-    settlementRecordedByActorId: actorId,
-    financialSnapshot: {
-      bookingTotalCents: Number.isFinite(booking?.totalPrice) ? Number(booking.totalPrice) : null,
-      stripePaidAmountCents: Number.isFinite(booking?.stripePaidAmountCents) ? Number(booking.stripePaidAmountCents) : null,
-      voucherAppliedCents: Number.isFinite(booking?.giftVoucherAppliedCents) ? Number(booking.giftVoucherAppliedCents) : null,
-      // Batch 2 keeps this as the best current cash-paid estimate, not final accounting truth.
-      netCashPaidCents: Number.isFinite(booking?.stripePaidAmountCents) ? Number(booking.stripePaidAmountCents) : null,
-      currency: 'EUR',
-      capturedAt: recordedAt
+  if (!CANCEL_ALLOWED_OUTCOMES.has(effectiveOutcome)) {
+    throw createDomainError(
+      'validation',
+      'Cancel supports settlement outcomes: resolution_pending, payment_retained, or credits_issued',
+      { allowedOutcomes: [...CANCEL_ALLOWED_OUTCOMES], providedOutcome: outcome || null },
+      400
+    );
+  }
+
+  const normalizedReason = normalizeTrimmedReason(reason);
+  const financialSnapshot = buildCancelFinancialSnapshot(booking, recordedAt);
+
+  if (effectiveOutcome === 'credits_issued') {
+    if (!normalizedReason) {
+      throw createDomainError(
+        'validation',
+        'reason is required when issuing stay credit on cancel',
+        { outcome: effectiveOutcome },
+        400
+      );
     }
+
+    const creditRaw = settlement?.creditAmountCents;
+    if (!Number.isInteger(creditRaw)) {
+      throw createDomainError(
+        'validation',
+        'settlement.creditAmountCents is required and must be an integer for credits_issued',
+        { creditAmountCents: creditRaw ?? null },
+        400
+      );
+    }
+    if (creditRaw < MIN_CREDIT_AMOUNT_CENTS) {
+      throw createDomainError(
+        'validation',
+        `settlement.creditAmountCents must be at least ${MIN_CREDIT_AMOUNT_CENTS}`,
+        { creditAmountCents: creditRaw, minimumCreditAmountCents: MIN_CREDIT_AMOUNT_CENTS },
+        400
+      );
+    }
+
+    const recipientEmail = deriveCancelRecipientEmail(settlement, booking);
+    if (!recipientEmail) {
+      throw createDomainError(
+        'validation',
+        'recipientEmail is required for credits_issued (provide settlement.recipientEmail or booking guest email)',
+        { outcome: effectiveOutcome },
+        400
+      );
+    }
+
+    const idempotencyKey =
+      ctx?.idempotencyKey || ctx?.req?.headers?.['x-idempotency-key'] || null;
+
+    let voucherResult;
+    try {
+      voucherResult = await issueCancellationCompensationVoucher({
+        reservationId: booking._id,
+        creditAmountCents: creditRaw,
+        recipientEmail,
+        recipientName: deriveCancelRecipientName(settlement, booking),
+        actor: actorId,
+        reason: normalizedReason,
+        idempotencyKey
+      });
+    } catch (err) {
+      mapIssuerError(err);
+    }
+
+    const cancellationSettlement = {
+      outcome: 'credits_issued',
+      reason: normalizedReason,
+      settlementRecordedAt: recordedAt,
+      settlementRecordedByActorId: actorId,
+      creditAmountCents: creditRaw,
+      compensationGiftVoucherId: voucherResult.giftVoucherId,
+      financialSnapshot
+    };
+
+    return {
+      cancellationSettlement,
+      compensationVoucher: {
+        giftVoucherId: voucherResult.giftVoucherId,
+        code: voucherResult.code,
+        idempotentReplay: voucherResult.idempotentReplay,
+        issuanceSource: voucherResult.issuanceSource,
+        sourceReservationId: voucherResult.sourceReservationId
+      }
+    };
+  }
+
+  return {
+    cancellationSettlement: {
+      outcome: effectiveOutcome,
+      reason: normalizedReason,
+      settlementRecordedAt: recordedAt,
+      settlementRecordedByActorId: actorId,
+      financialSnapshot
+    },
+    compensationVoucher: null
   };
 }
 
@@ -164,16 +332,27 @@ async function transitionReservation({ bookingId, kind, reason = null, settlemen
   const nextStatus = config.to;
   const actorId = ctx.user?.id || 'admin';
   const settlementRecordedAt = new Date();
-  const cancellationSettlement =
-    kind === 'cancel'
-      ? normalizeBatch2CancelSettlement({
-          settlement,
-          reason,
-          actorId,
-          recordedAt: settlementRecordedAt,
-          booking
-        })
-      : null;
+  let cancellationSettlement = null;
+  let compensationVoucher = null;
+
+  if (kind === 'cancel') {
+    const normalized = await normalizeCancelSettlement({
+      settlement,
+      reason,
+      actorId,
+      recordedAt: settlementRecordedAt,
+      booking,
+      ctx
+    });
+    cancellationSettlement = normalized.cancellationSettlement;
+    compensationVoucher = normalized.compensationVoucher;
+  }
+
+  const auditMetadata = { legacyModel: 'Booking' };
+  if (compensationVoucher) {
+    auditMetadata.compensationGiftVoucherId = compensationVoucher.giftVoucherId;
+    auditMetadata.compensationVoucherIdempotentReplay = compensationVoucher.idempotentReplay;
+  }
 
   await appendAuditEvent(
     {
@@ -187,7 +366,7 @@ async function transitionReservation({ bookingId, kind, reason = null, settlemen
         status: nextStatus,
         ...(cancellationSettlement ? { cancellationSettlement } : {})
       },
-      metadata: { legacyModel: 'Booking' },
+      metadata: auditMetadata,
       reason: reason || null,
       sourceContext: {
         route: ctx.route || null,
@@ -251,7 +430,11 @@ async function transitionReservation({ bookingId, kind, reason = null, settlemen
 
   const result = {
     reservationId: String(booking._id),
-    status: booking.status
+    status: booking.status,
+    ...(cancellationSettlement
+      ? { cancellationSettlement: booking.cancellationSettlement || cancellationSettlement }
+      : {}),
+    ...(compensationVoucher ? { compensationVoucher } : {})
   };
   rememberResult(idemKey, result);
   return result;

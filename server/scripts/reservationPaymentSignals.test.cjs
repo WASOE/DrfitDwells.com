@@ -197,6 +197,66 @@ test('Batch 2: resolution_pending or missing outcome keeps legacy behavior', () 
   );
 });
 
+test('Batch 5: credits_issued suppresses cancelled paid/partial follow-up', () => {
+  assert.deepEqual(
+    derivePaymentAttention({
+      reservationStatus: 'cancelled',
+      paymentStatus: 'paid',
+      cancellationSettlementOutcome: 'credits_issued'
+    }),
+    {
+      cancelledPaid: false,
+      refundPending: false,
+      paymentAttention: false
+    }
+  );
+
+  assert.deepEqual(
+    derivePaymentAttention({
+      reservationStatus: 'cancelled',
+      paymentStatus: 'partial',
+      cancellationSettlementOutcome: 'credits_issued'
+    }),
+    {
+      cancelledPaid: false,
+      refundPending: false,
+      paymentAttention: false
+    }
+  );
+
+  assert.deepEqual(
+    derivePaymentAttention({
+      reservationStatus: 'cancelled',
+      paymentStatus: 'pending_verification',
+      cancellationSettlementOutcome: 'credits_issued'
+    }),
+    {
+      cancelledPaid: false,
+      refundPending: true,
+      paymentAttention: true
+    }
+  );
+});
+
+test('Batch 5: refund_follow_up alert suppressed for credits_issued', () => {
+  assert.equal(
+    shouldEmitRefundFollowUpAlert({
+      reservationStatus: 'cancelled',
+      paymentStatus: 'paid',
+      cancellationSettlementOutcome: 'credits_issued'
+    }),
+    false
+  );
+  assert.equal(
+    shouldEmitRefundFollowUpAlert({
+      reservationStatus: 'cancelled',
+      paymentStatus: 'partial',
+      cancellationSettlementOutcome: 'credits_issued'
+    }),
+    false
+  );
+});
+
 test('Batch 2: refund_follow_up alert suppression only for payment_retained', () => {
   assert.equal(
     shouldEmitRefundFollowUpAlert({

@@ -155,6 +155,42 @@ test('does not create paid, activated, or sent events', async () => {
   }
 });
 
+test('rejects existing compensation voucher when creditAmountCents differs', async () => {
+  const reservationId = new mongoose.Types.ObjectId();
+  await issueCancellationCompensationVoucher(issueParams({ reservationId, creditAmountCents: 15000 }));
+
+  await assert.rejects(
+    () => issueCancellationCompensationVoucher(issueParams({ reservationId, creditAmountCents: 12000 })),
+    (err) => err.code === 'CREDIT_AMOUNT_MISMATCH'
+  );
+
+  const count = await GiftVoucher.countDocuments({
+    sourceReservationId: reservationId,
+    issuanceSource: ISSUANCE_SOURCE_CANCELLATION_COMPENSATION
+  });
+  assert.equal(count, 1);
+});
+
+test('parallel conflicting credit amounts reject CREDIT_AMOUNT_MISMATCH with one voucher', async () => {
+  const reservationId = new mongoose.Types.ObjectId();
+  const results = await Promise.allSettled([
+    issueCancellationCompensationVoucher(issueParams({ reservationId, creditAmountCents: 15000 })),
+    issueCancellationCompensationVoucher(issueParams({ reservationId, creditAmountCents: 12000 }))
+  ]);
+
+  const fulfilled = results.filter((r) => r.status === 'fulfilled');
+  const rejected = results.filter((r) => r.status === 'rejected');
+  assert.equal(fulfilled.length, 1);
+  assert.equal(rejected.length, 1);
+  assert.equal(rejected[0].reason.code, 'CREDIT_AMOUNT_MISMATCH');
+
+  const count = await GiftVoucher.countDocuments({
+    sourceReservationId: reservationId,
+    issuanceSource: ISSUANCE_SOURCE_CANCELLATION_COMPENSATION
+  });
+  assert.equal(count, 1);
+});
+
 test('parallel double issue does not create duplicate vouchers', async () => {
   const reservationId = new mongoose.Types.ObjectId();
   const params = issueParams({ reservationId });
