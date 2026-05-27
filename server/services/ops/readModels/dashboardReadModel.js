@@ -318,7 +318,13 @@ async function getDashboardReadModel() {
     const checkIn = booking.checkIn ? new Date(booking.checkIn) : null;
     const within14d = checkIn && checkIn > endOfToday && checkIn <= endOf14Days;
 
-    if (shouldEmitRefundFollowUpAlert({ reservationStatus: row.reservationStatus, paymentStatus })) {
+    if (
+      shouldEmitRefundFollowUpAlert({
+        reservationStatus: row.reservationStatus,
+        paymentStatus,
+        cancellationSettlementOutcome: booking?.cancellationSettlement?.outcome || null
+      })
+    ) {
       alerts.push({
         id: `refund-follow-up-${reservationId}`,
         type: 'refund_follow_up',

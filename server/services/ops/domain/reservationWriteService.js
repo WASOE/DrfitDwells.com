@@ -102,7 +102,40 @@ async function sendLifecycleStatusEmail({ booking, kind }) {
   }
 }
 
-async function transitionReservation({ bookingId, kind, reason = null, ctx = {} }) {
+const BATCH2_CANCEL_ALLOWED_OUTCOMES = new Set(['resolution_pending', 'payment_retained']);
+
+function normalizeBatch2CancelSettlement({ settlement, reason, actorId, recordedAt, booking }) {
+  const outcomeRaw = settlement && typeof settlement === 'object' ? settlement.outcome : null;
+  const outcome = typeof outcomeRaw === 'string' ? outcomeRaw.trim() : '';
+  const effectiveOutcome = outcome || 'resolution_pending';
+
+  if (!BATCH2_CANCEL_ALLOWED_OUTCOMES.has(effectiveOutcome)) {
+    throw createDomainError(
+      'validation',
+      'Batch 2 cancel supports settlement outcomes: resolution_pending or payment_retained',
+      { allowedOutcomes: [...BATCH2_CANCEL_ALLOWED_OUTCOMES], providedOutcome: outcome || null },
+      400
+    );
+  }
+
+  return {
+    outcome: effectiveOutcome,
+    reason: reason || null,
+    settlementRecordedAt: recordedAt,
+    settlementRecordedByActorId: actorId,
+    financialSnapshot: {
+      bookingTotalCents: Number.isFinite(booking?.totalPrice) ? Number(booking.totalPrice) : null,
+      stripePaidAmountCents: Number.isFinite(booking?.stripePaidAmountCents) ? Number(booking.stripePaidAmountCents) : null,
+      voucherAppliedCents: Number.isFinite(booking?.giftVoucherAppliedCents) ? Number(booking.giftVoucherAppliedCents) : null,
+      // Batch 2 keeps this as the best current cash-paid estimate, not final accounting truth.
+      netCashPaidCents: Number.isFinite(booking?.stripePaidAmountCents) ? Number(booking.stripePaidAmountCents) : null,
+      currency: 'EUR',
+      capturedAt: recordedAt
+    }
+  };
+}
+
+async function transitionReservation({ bookingId, kind, reason = null, settlement = null, ctx = {} }) {
   const config = ALLOWED_TRANSITIONS[kind];
   if (!config) {
     throw createDomainError('validation', `Unknown reservation transition kind: ${kind}`);
@@ -127,18 +160,33 @@ async function transitionReservation({ bookingId, kind, reason = null, ctx = {} 
     );
   }
 
-  const before = { status: booking.status };
+  const before = { status: booking.status, cancellationSettlement: booking.cancellationSettlement || null };
   const nextStatus = config.to;
+  const actorId = ctx.user?.id || 'admin';
+  const settlementRecordedAt = new Date();
+  const cancellationSettlement =
+    kind === 'cancel'
+      ? normalizeBatch2CancelSettlement({
+          settlement,
+          reason,
+          actorId,
+          recordedAt: settlementRecordedAt,
+          booking
+        })
+      : null;
 
   await appendAuditEvent(
     {
       actorType: 'user',
-      actorId: ctx.user?.id || 'admin',
+      actorId,
       entityType: 'Reservation',
       entityId: booking._id.toString(),
       action: `reservation_${kind}`,
       beforeSnapshot: before,
-      afterSnapshot: { status: nextStatus },
+      afterSnapshot: {
+        status: nextStatus,
+        ...(cancellationSettlement ? { cancellationSettlement } : {})
+      },
       metadata: { legacyModel: 'Booking' },
       reason: reason || null,
       sourceContext: {
@@ -150,10 +198,14 @@ async function transitionReservation({ bookingId, kind, reason = null, ctx = {} 
   );
 
   booking.status = nextStatus;
+  if (cancellationSettlement) {
+    booking.cancellationSettlement = cancellationSettlement;
+    booking.markModified('cancellationSettlement');
+  }
   if (!booking.provenance) {
     booking.provenance = {};
   }
-  booking.provenance.lastTransitionAt = new Date();
+  booking.provenance.lastTransitionAt = settlementRecordedAt;
   booking.provenance.lastTransition = kind;
   booking.markModified('provenance');
   await booking.save({ validateBeforeSave: false });

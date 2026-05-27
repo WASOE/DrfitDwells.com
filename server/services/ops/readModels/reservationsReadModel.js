@@ -290,7 +290,11 @@ async function getReservationsWorkspaceReadModel(query = {}) {
     });
     const reservationStatus = mapped.reservationStatus;
     const stayTiming = deriveStayTiming(booking, startOfToday);
-    const paymentSignals = derivePaymentAttention({ reservationStatus, paymentStatus });
+    const paymentSignals = derivePaymentAttention({
+      reservationStatus,
+      paymentStatus,
+      cancellationSettlementOutcome: booking?.cancellationSettlement?.outcome || null
+    });
     const opsBucket = deriveOpsBucket({
       reservationStatus,
       stayTiming,

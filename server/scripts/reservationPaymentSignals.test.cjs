@@ -128,3 +128,97 @@ test('shouldEmitRefundFollowUpAlert — dashboard refund_follow_up predicate', (
   assert.equal(shouldEmitRefundFollowUpAlert({ reservationStatus: 'cancelled', paymentStatus: 'refunded' }), false);
   assert.equal(shouldEmitRefundFollowUpAlert({ reservationStatus: 'confirmed', paymentStatus: 'paid' }), false);
 });
+
+test('Batch 2: payment_retained suppresses cancelled paid/partial follow-up only', () => {
+  assert.deepEqual(
+    derivePaymentAttention({
+      reservationStatus: 'cancelled',
+      paymentStatus: 'paid',
+      cancellationSettlementOutcome: 'payment_retained'
+    }),
+    {
+      cancelledPaid: false,
+      refundPending: false,
+      paymentAttention: false
+    }
+  );
+
+  assert.deepEqual(
+    derivePaymentAttention({
+      reservationStatus: 'cancelled',
+      paymentStatus: 'partial',
+      cancellationSettlementOutcome: 'payment_retained'
+    }),
+    {
+      cancelledPaid: false,
+      refundPending: false,
+      paymentAttention: false
+    }
+  );
+
+  assert.deepEqual(
+    derivePaymentAttention({
+      reservationStatus: 'cancelled',
+      paymentStatus: 'pending_verification',
+      cancellationSettlementOutcome: 'payment_retained'
+    }),
+    {
+      cancelledPaid: false,
+      refundPending: true,
+      paymentAttention: true
+    }
+  );
+});
+
+test('Batch 2: resolution_pending or missing outcome keeps legacy behavior', () => {
+  assert.deepEqual(
+    derivePaymentAttention({
+      reservationStatus: 'cancelled',
+      paymentStatus: 'paid',
+      cancellationSettlementOutcome: 'resolution_pending'
+    }),
+    {
+      cancelledPaid: true,
+      refundPending: true,
+      paymentAttention: true
+    }
+  );
+
+  assert.deepEqual(
+    derivePaymentAttention({
+      reservationStatus: 'cancelled',
+      paymentStatus: 'paid'
+    }),
+    {
+      cancelledPaid: true,
+      refundPending: true,
+      paymentAttention: true
+    }
+  );
+});
+
+test('Batch 2: refund_follow_up alert suppression only for payment_retained', () => {
+  assert.equal(
+    shouldEmitRefundFollowUpAlert({
+      reservationStatus: 'cancelled',
+      paymentStatus: 'paid',
+      cancellationSettlementOutcome: 'payment_retained'
+    }),
+    false
+  );
+  assert.equal(
+    shouldEmitRefundFollowUpAlert({
+      reservationStatus: 'cancelled',
+      paymentStatus: 'paid',
+      cancellationSettlementOutcome: 'resolution_pending'
+    }),
+    true
+  );
+  assert.equal(
+    shouldEmitRefundFollowUpAlert({
+      reservationStatus: 'cancelled',
+      paymentStatus: 'paid'
+    }),
+    true
+  );
+});

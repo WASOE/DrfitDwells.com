@@ -1,5 +1,83 @@
 const mongoose = require('mongoose');
 
+const cancellationSettlementSchema = new mongoose.Schema(
+  {
+    outcome: {
+      type: String,
+      enum: [
+        'unresolved',
+        'resolution_pending',
+        'payment_retained',
+        'credits_issued',
+        'cash_refund_pending',
+        'cash_refunded',
+        'rebooked_or_moved'
+      ]
+    },
+    reason: {
+      type: String,
+      trim: true,
+      maxlength: [500, 'Settlement reason cannot exceed 500 characters'],
+      default: null
+    },
+    settlementRecordedAt: { type: Date, default: null },
+    settlementRecordedByActorId: { type: String, trim: true, default: null },
+    creditAmountCents: { type: Number, default: null, min: [0, 'creditAmountCents cannot be negative'] },
+    compensationGiftVoucherId: { type: mongoose.Schema.Types.ObjectId, ref: 'GiftVoucher', default: null },
+    cashRefundAmountCents: { type: Number, default: null, min: [0, 'cashRefundAmountCents cannot be negative'] },
+    cashRefundNote: {
+      type: String,
+      trim: true,
+      maxlength: [500, 'cashRefundNote cannot exceed 500 characters'],
+      default: null
+    },
+    cashRefundEvidence: {
+      type: new mongoose.Schema(
+        {
+          amountCents: { type: Number, default: null, min: [0, 'cashRefundEvidence.amountCents cannot be negative'] },
+          stripeRefundId: { type: String, trim: true, default: null },
+          stripeChargeId: { type: String, trim: true, default: null },
+          stripePaymentIntentId: { type: String, trim: true, default: null },
+          recordedAt: { type: Date, default: null },
+          recordedByActorId: { type: String, trim: true, default: null },
+          note: { type: String, trim: true, maxlength: [500, 'cashRefundEvidence.note cannot exceed 500 characters'], default: null }
+        },
+        { _id: false }
+      ),
+      default: null
+    },
+    offer: {
+      type: new mongoose.Schema(
+        {
+          cashRefundAmountCents: { type: Number, default: null, min: [0, 'offer.cashRefundAmountCents cannot be negative'] },
+          stayCreditAmountCents: { type: Number, default: null, min: [0, 'offer.stayCreditAmountCents cannot be negative'] },
+          offeredAt: { type: Date, default: null },
+          expiresAt: { type: Date, default: null },
+          note: { type: String, trim: true, maxlength: [500, 'offer.note cannot exceed 500 characters'], default: null }
+        },
+        { _id: false }
+      ),
+      default: null
+    },
+    replacementBookingId: { type: mongoose.Schema.Types.ObjectId, ref: 'Booking', default: null },
+    financialSnapshot: {
+      type: new mongoose.Schema(
+        {
+          bookingTotalCents: { type: Number, default: null, min: [0, 'financialSnapshot.bookingTotalCents cannot be negative'] },
+          stripePaidAmountCents: { type: Number, default: null, min: [0, 'financialSnapshot.stripePaidAmountCents cannot be negative'] },
+          voucherAppliedCents: { type: Number, default: null, min: [0, 'financialSnapshot.voucherAppliedCents cannot be negative'] },
+          netCashPaidCents: { type: Number, default: null, min: [0, 'financialSnapshot.netCashPaidCents cannot be negative'] },
+          currency: { type: String, enum: ['EUR'], default: 'EUR' },
+          capturedAt: { type: Date, default: null }
+        },
+        { _id: false }
+      ),
+      default: null
+    }
+  },
+  { _id: false }
+);
+
 const bookingSchema = new mongoose.Schema({
   // Legacy single-cabin bookings (Stone House, Lux Cabin, Bachevo)
   cabinId: {
@@ -288,6 +366,10 @@ const bookingSchema = new mongoose.Schema({
       },
       { _id: false }
     ),
+    default: undefined
+  },
+  cancellationSettlement: {
+    type: cancellationSettlementSchema,
     default: undefined
   },
   /** Set when Stripe PaymentIntent was verified at booking creation (paid flow). */

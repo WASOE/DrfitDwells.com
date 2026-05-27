@@ -227,6 +227,7 @@ router.post('/:id/actions/cancel', async (req, res) => {
       bookingId: req.params.id,
       kind: 'cancel',
       reason: req.body?.reason || null,
+      settlement: req.body?.settlement || null,
       ctx: { req, user: req.user, route: 'POST /api/ops/reservations/:id/actions/cancel' }
     });
     return res.json({ success: true, data });
