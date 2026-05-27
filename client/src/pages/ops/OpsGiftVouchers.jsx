@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { opsReadAPI } from '../../services/opsApi';
+import { formatMoneyFromCents } from '../../utils/formatMoney';
 
 export default function OpsGiftVouchers() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -120,8 +121,9 @@ export default function OpsGiftVouchers() {
               </div>
               <div className="text-xs text-gray-600 flex items-center gap-2">
                 <span className="px-2 py-1 border border-gray-200 rounded bg-gray-50">{row.deliveryMode}</span>
-                <span className="px-2 py-1 border border-gray-200 rounded bg-gray-50">
-                  Balance {row.balanceRemainingCents}/{row.amountOriginalCents} {row.currency}
+                <span className="px-2 py-1 border border-gray-200 rounded bg-gray-50 tabular-nums">
+                  Balance {formatMoneyFromCents(row.balanceRemainingCents, row.currency)} /{' '}
+                  {formatMoneyFromCents(row.amountOriginalCents, row.currency)}
                 </span>
               </div>
             </div>

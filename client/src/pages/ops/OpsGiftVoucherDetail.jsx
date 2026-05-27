@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { opsReadAPI, opsWriteAPI } from '../../services/opsApi';
+import { formatMoneyFromCents } from '../../utils/formatMoney';
 
 function makeIdempotencyKey() {
   return `ops_gv_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -122,8 +123,9 @@ export default function OpsGiftVoucherDetail() {
           <div className="w-full h-2 rounded bg-gray-100 overflow-hidden">
             <div className="h-full bg-[#81887A]" style={{ width: `${balancePct}%` }} />
           </div>
-          <p className="text-xs text-gray-700 mt-1">
-            {voucher.balanceRemainingCents}/{voucher.amountOriginalCents} {voucher.currency}
+          <p className="text-xs text-gray-700 mt-1 tabular-nums">
+            {formatMoneyFromCents(voucher.balanceRemainingCents, voucher.currency)} /{' '}
+            {formatMoneyFromCents(voucher.amountOriginalCents, voucher.currency)}
           </p>
         </div>
       </section>
@@ -318,8 +320,10 @@ export default function OpsGiftVoucherDetail() {
                 <p className="text-gray-600">{event.note || '—'} · {event.actor}</p>
                 <p className="text-gray-500">{new Date(event.createdAt).toLocaleString()}</p>
                 {(event.previousBalanceCents != null || event.newBalanceCents != null) ? (
-                  <p className="text-gray-500">
-                    {event.previousBalanceCents} → {event.newBalanceCents} (delta {event.deltaCents})
+                  <p className="text-gray-500 tabular-nums">
+                    {formatMoneyFromCents(event.previousBalanceCents, voucher.currency)} →{' '}
+                    {formatMoneyFromCents(event.newBalanceCents, voucher.currency)}
+                    {event.deltaCents != null ? ` (Δ ${formatMoneyFromCents(event.deltaCents, voucher.currency)})` : null}
                   </p>
                 ) : null}
               </div>
@@ -334,7 +338,9 @@ export default function OpsGiftVoucherDetail() {
             <div className="mt-2 space-y-2">
               {(data?.redemptions || []).map((row) => (
                 <div key={row.giftVoucherRedemptionId} className="border border-gray-200 rounded-lg p-2 text-xs">
-                  <p className="font-medium text-gray-900">{row.status} · {row.amountAppliedCents} cents</p>
+                  <p className="font-medium text-gray-900 tabular-nums">
+                    {row.status} · {formatMoneyFromCents(row.amountAppliedCents, voucher.currency)}
+                  </p>
                   <p className="text-gray-500">Booking: {row.bookingId || '—'}</p>
                 </div>
               ))}
