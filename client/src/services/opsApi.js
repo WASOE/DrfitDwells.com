@@ -72,6 +72,10 @@ const opsWriteAPI = {
       typeof reasonOrBody === 'string' ? { reason: reasonOrBody } : reasonOrBody || {};
     return api.post(`/ops/reservations/${id}/actions/cancel`, body, { headers: authHeaders() });
   },
+  resolveCancellationSettlement: (id, body) =>
+    api.post(`/ops/reservations/${id}/actions/resolve-cancellation-settlement`, body, {
+      headers: authHeaders()
+    }),
   reassignReservation: (id, payload) => api.post(`/ops/reservations/${id}/actions/reassign`, payload, { headers: authHeaders() }),
   editReservationDates: (id, payload) => api.post(`/ops/reservations/${id}/actions/edit-dates`, payload, { headers: authHeaders() }),
   editGuestContact: (id, payload) => api.post(`/ops/reservations/${id}/actions/edit-guest-contact`, payload, { headers: authHeaders() }),

@@ -11,6 +11,11 @@ const SETTLEMENT_OUTCOME_OPTIONS = [
   { value: 'credits_issued', label: 'Issue stay credit now' }
 ];
 
+const RESOLVE_SETTLEMENT_OUTCOME_OPTIONS = [
+  { value: 'payment_retained', label: 'Payment retained' },
+  { value: 'credits_issued', label: 'Issue stay credit now' }
+];
+
 const SETTLEMENT_WARNINGS = {
   resolution_pending: 'Refund follow-up stays active until this is resolved later.',
   payment_retained: 'No refund follow-up will be shown. Payment is retained.',
@@ -73,6 +78,15 @@ export default function OpsReservationDetail() {
   const [cancelForm, setCancelForm] = useState({
     reason: '',
     outcome: 'resolution_pending',
+    creditAmountEuros: ''
+  });
+
+  const [resolveOpen, setResolveOpen] = useState(false);
+  const [resolveBusy, setResolveBusy] = useState(false);
+  const [resolveError, setResolveError] = useState('');
+  const [resolveForm, setResolveForm] = useState({
+    reason: '',
+    outcome: 'payment_retained',
     creditAmountEuros: ''
   });
 
@@ -227,6 +241,87 @@ export default function OpsReservationDetail() {
       setCancelError(err?.response?.data?.message || 'Failed to cancel reservation');
     } finally {
       setCancelBusy(false);
+    }
+  };
+
+  const openResolveModal = () => {
+    setResolveForm({
+      reason: '',
+      outcome: 'payment_retained',
+      creditAmountEuros: ''
+    });
+    setResolveError('');
+    setError('');
+    setSuccessMessage('');
+    setResolveOpen(true);
+  };
+
+  const buildResolveRequestBody = () => {
+    const reason = resolveForm.reason.trim();
+    if (!reason) {
+      return { error: 'Resolve reason is required' };
+    }
+    if (reason.length > 500) {
+      return { error: 'Resolve reason must be at most 500 characters' };
+    }
+
+    if (resolveForm.outcome === 'payment_retained') {
+      return {
+        body: {
+          reason,
+          settlement: { outcome: 'payment_retained' }
+        }
+      };
+    }
+
+    if (resolveForm.outcome === 'credits_issued') {
+      const creditAmountCents = eurosToCreditCents(resolveForm.creditAmountEuros);
+      if (creditAmountCents == null) {
+        return { error: 'Enter a valid stay credit amount in euros' };
+      }
+      if (creditAmountCents < MIN_STAY_CREDIT_CENTS) {
+        return { error: 'Stay credit must be at least €100' };
+      }
+      return {
+        body: {
+          reason,
+          settlement: {
+            outcome: 'credits_issued',
+            creditAmountCents
+          }
+        }
+      };
+    }
+
+    return { error: 'Choose a valid settlement outcome' };
+  };
+
+  const submitResolveSettlement = async (e) => {
+    e.preventDefault();
+    const built = buildResolveRequestBody();
+    if (built.error) {
+      setResolveError(built.error);
+      return;
+    }
+
+    setResolveBusy(true);
+    setResolveError('');
+    setError('');
+    setSuccessMessage('');
+    try {
+      const resp = await opsWriteAPI.resolveCancellationSettlement(id, built.body);
+      const payload = resp.data?.data;
+      if (payload?.compensationVoucher?.code) {
+        setSuccessMessage(`Stay credit issued. Voucher code: ${payload.compensationVoucher.code}`);
+      } else {
+        setSuccessMessage('Cancellation settlement resolved.');
+      }
+      setResolveOpen(false);
+      await load();
+    } catch (err) {
+      setResolveError(err?.response?.data?.message || 'Failed to resolve cancellation settlement');
+    } finally {
+      setResolveBusy(false);
     }
   };
 
@@ -525,6 +620,18 @@ export default function OpsReservationDetail() {
   const isAdmin = role === 'admin';
   const canCancel =
     isAdmin && reservation.reservationStatus && reservation.reservationStatus !== 'cancelled';
+  const canResolveSettlement =
+    isAdmin &&
+    reservation.reservationStatus === 'cancelled' &&
+    (!cancellationSettlement ||
+      !cancellationSettlement.outcome ||
+      cancellationSettlement.outcome === 'resolution_pending');
+  const showSettlementCard = Boolean(cancellationSettlement) || canResolveSettlement;
+  const displayedSettlementOutcome = !cancellationSettlement
+    ? 'Not recorded yet'
+    : !cancellationSettlement.outcome || cancellationSettlement.outcome === 'resolution_pending'
+      ? settlementOutcomeLabel(cancellationSettlement.outcome || 'resolution_pending')
+      : settlementOutcomeLabel(cancellationSettlement.outcome);
 
   return (
     <div className="space-y-4 pb-20 max-w-7xl mx-auto">
@@ -538,17 +645,31 @@ export default function OpsReservationDetail() {
         </p>
       </div>
 
-      {cancellationSettlement ? (
+      {showSettlementCard ? (
         <section className="bg-white border border-amber-200 rounded-xl p-4 md:p-5 max-w-3xl">
-          <h3 className="text-sm font-semibold text-gray-900">Cancellation settlement</h3>
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <h3 className="text-sm font-semibold text-gray-900">Cancellation settlement</h3>
+            {canResolveSettlement ? (
+              <button
+                type="button"
+                onClick={openResolveModal}
+                className="shrink-0 px-3 py-2 text-sm rounded border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
+              >
+                Resolve settlement
+              </button>
+            ) : null}
+          </div>
+          {canResolveSettlement ? (
+            <p className="mt-2 text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+              Refund follow-up stays active until this settlement is resolved.
+            </p>
+          ) : null}
           <dl className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
             <div>
               <dt className="text-gray-500">Outcome</dt>
-              <dd className="font-medium text-gray-900">
-                {settlementOutcomeLabel(cancellationSettlement.outcome)}
-              </dd>
+              <dd className="font-medium text-gray-900">{displayedSettlementOutcome}</dd>
             </div>
-            {cancellationSettlement.creditAmountCents != null ? (
+            {cancellationSettlement?.creditAmountCents != null ? (
               <div>
                 <dt className="text-gray-500">Stay credit amount</dt>
                 <dd className="font-medium text-gray-900 tabular-nums">
@@ -556,7 +677,7 @@ export default function OpsReservationDetail() {
                 </dd>
               </div>
             ) : null}
-            {cancellationSettlement.settlementRecordedAt ? (
+            {cancellationSettlement?.settlementRecordedAt ? (
               <div>
                 <dt className="text-gray-500">Recorded at</dt>
                 <dd className="text-gray-900">
@@ -564,7 +685,7 @@ export default function OpsReservationDetail() {
                 </dd>
               </div>
             ) : null}
-            {cancellationSettlement.compensationGiftVoucherId ? (
+            {cancellationSettlement?.compensationGiftVoucherId ? (
               <div className="sm:col-span-2">
                 <dt className="text-gray-500">Compensation voucher</dt>
                 <dd>
@@ -577,7 +698,7 @@ export default function OpsReservationDetail() {
                 </dd>
               </div>
             ) : null}
-            {cancellationSettlement.reason ? (
+            {cancellationSettlement?.reason ? (
               <div className="sm:col-span-2">
                 <dt className="text-gray-500">Reason</dt>
                 <dd className="text-gray-900 whitespace-pre-wrap">{cancellationSettlement.reason}</dd>
@@ -1313,6 +1434,126 @@ export default function OpsReservationDetail() {
                   className="px-3 py-2 text-sm rounded bg-red-700 text-white hover:bg-red-800 disabled:opacity-50"
                 >
                   {cancelBusy ? 'Cancelling…' : 'Confirm cancellation'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {resolveOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="resolve-settlement-title"
+        >
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            aria-label="Close resolve settlement modal"
+            onClick={() => {
+              if (!resolveBusy) setResolveOpen(false);
+            }}
+          />
+          <div className="relative w-full max-w-lg rounded-xl bg-white border border-gray-200 shadow-xl p-5 space-y-4">
+            <h3 id="resolve-settlement-title" className="text-base font-semibold text-gray-900">
+              Resolve cancellation settlement
+            </h3>
+            <form onSubmit={submitResolveSettlement} className="space-y-4">
+              <div>
+                <label htmlFor="resolveReason" className="block text-xs font-medium text-gray-500 mb-1">
+                  Reason <span className="text-red-600">*</span>
+                </label>
+                <textarea
+                  id="resolveReason"
+                  required
+                  maxLength={500}
+                  rows={3}
+                  value={resolveForm.reason}
+                  onChange={(e) => setResolveForm((prev) => ({ ...prev, reason: e.target.value }))}
+                  placeholder="Why is this settlement being resolved?"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
+                />
+              </div>
+              <fieldset>
+                <legend className="block text-xs font-medium text-gray-500 mb-2">Settlement outcome</legend>
+                <div className="space-y-2">
+                  {RESOLVE_SETTLEMENT_OUTCOME_OPTIONS.map((option) => (
+                    <label
+                      key={option.value}
+                      className="flex items-start gap-2 text-sm text-gray-900 cursor-pointer"
+                    >
+                      <input
+                        type="radio"
+                        name="resolveSettlementOutcome"
+                        value={option.value}
+                        checked={resolveForm.outcome === option.value}
+                        onChange={() =>
+                          setResolveForm((prev) => ({
+                            ...prev,
+                            outcome: option.value,
+                            creditAmountEuros:
+                              option.value === 'credits_issued' ? prev.creditAmountEuros : ''
+                          }))
+                        }
+                        className="mt-0.5"
+                      />
+                      <span>{option.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+              {resolveForm.outcome === 'credits_issued' ? (
+                <div>
+                  <label htmlFor="resolveCreditEuros" className="block text-xs font-medium text-gray-500 mb-1">
+                    Stay credit amount (EUR) <span className="text-red-600">*</span>
+                  </label>
+                  <input
+                    id="resolveCreditEuros"
+                    type="text"
+                    inputMode="decimal"
+                    required
+                    value={resolveForm.creditAmountEuros}
+                    onChange={(e) =>
+                      setResolveForm((prev) => ({ ...prev, creditAmountEuros: e.target.value }))
+                    }
+                    placeholder="e.g. 120"
+                    className="w-full max-w-xs px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">Minimum €100. Amount is issued immediately.</p>
+                </div>
+              ) : null}
+              <div
+                className={`text-sm rounded-md px-3 py-2 border ${
+                  resolveForm.outcome === 'credits_issued'
+                    ? 'bg-amber-50 border-amber-200 text-amber-900'
+                    : 'bg-gray-50 border-gray-200 text-gray-700'
+                }`}
+                role="note"
+              >
+                {SETTLEMENT_WARNINGS[resolveForm.outcome]}
+              </div>
+              {resolveError ? (
+                <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                  {resolveError}
+                </div>
+              ) : null}
+              <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={resolveBusy}
+                  onClick={() => setResolveOpen(false)}
+                  className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Close
+                </button>
+                <button
+                  type="submit"
+                  disabled={resolveBusy}
+                  className="px-3 py-2 text-sm rounded bg-[#81887A] text-white hover:bg-[#6d7366] disabled:opacity-50"
+                >
+                  {resolveBusy ? 'Resolving…' : 'Resolve settlement'}
                 </button>
               </div>
             </form>
