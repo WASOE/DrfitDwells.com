@@ -10,6 +10,7 @@ const {
 const { getReservationDetailReadModel } = require('../../../services/ops/readModels/reservationDetailReadModel');
 const {
   transitionReservation,
+  resolveCancellationSettlement,
   reassignReservation,
   editReservationDates,
   addReservationNote,
@@ -229,6 +230,24 @@ router.post('/:id/actions/cancel', async (req, res) => {
       reason: req.body?.reason || null,
       settlement: req.body?.settlement || null,
       ctx: { req, user: req.user, route: 'POST /api/ops/reservations/:id/actions/cancel' }
+    });
+    return res.json({ success: true, data });
+  } catch (error) {
+    return handleDomainError(res, error);
+  }
+});
+
+router.post('/:id/actions/resolve-cancellation-settlement', validateId('id'), async (req, res) => {
+  try {
+    const data = await resolveCancellationSettlement({
+      bookingId: req.params.id,
+      reason: req.body?.reason || null,
+      settlement: req.body?.settlement || null,
+      ctx: {
+        req,
+        user: req.user,
+        route: 'POST /api/ops/reservations/:id/actions/resolve-cancellation-settlement'
+      }
     });
     return res.json({ success: true, data });
   } catch (error) {
