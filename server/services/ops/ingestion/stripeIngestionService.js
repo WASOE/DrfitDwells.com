@@ -58,6 +58,15 @@ function amountsMatchWithCentTolerance(left, right) {
   return Math.abs(Number(left) - Number(right)) <= 0.01;
 }
 
+function isGiftVoucherPaymentMetadata(metadata) {
+  if (!metadata || typeof metadata !== 'object') return false;
+  if (metadata.type === 'gift_voucher') return true;
+  if (metadata.giftVoucherId) return true;
+  const purchaseRequestId = metadata.purchaseRequestId;
+  if (typeof purchaseRequestId === 'string' && purchaseRequestId.startsWith('gvr_')) return true;
+  return false;
+}
+
 function extractPayoutReference(event) {
   const obj = event.data?.object || {};
   if (obj.object === 'payout') return obj.id || null;
@@ -180,6 +189,10 @@ async function upsertCanonicalPaymentFromEvent(event) {
         $set: { reservationId: incomingReservationId }
       }
     );
+  }
+
+  if (isGiftVoucherPaymentMetadata(paymentMetadata)) {
+    return payment;
   }
 
   const paymentLatest = await Payment.findById(payment._id).select('_id reservationId providerReference amount status').lean();
