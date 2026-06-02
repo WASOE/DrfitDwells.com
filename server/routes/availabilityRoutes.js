@@ -12,6 +12,7 @@ const {
 } = require('../services/publicAvailabilityService');
 const { guestFacingCabinMatch } = require('../utils/fixtureExclusion');
 const promoService = require('../services/promoService');
+const { findNextSameLengthAvailability } = require('../services/availabilitySuggestionService');
 
 const router = express.Router();
 
@@ -430,6 +431,50 @@ router.get('/cabin-type/:slug', [
     res.status(500).json({
       success: false,
       message: 'Error checking cabin type availability',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+});
+
+// GET /api/availability/suggestions - Next same-length date range for one listing (opt-in; not part of search)
+router.get('/suggestions', [
+  query('checkIn').isISO8601().withMessage('Valid check-in date is required'),
+  query('checkOut').isISO8601().withMessage('Valid check-out date is required'),
+  query('adults').isInt({ min: 1, max: 10 }).withMessage('Adults must be between 1 and 10'),
+  query('children').optional().isInt({ min: 0, max: 10 }).withMessage('Children must be between 0 and 10'),
+  query('cabinId').optional().isMongoId().withMessage('Valid cabin id is required'),
+  query('cabinTypeId').optional().isMongoId().withMessage('Valid cabin type id is required'),
+  query('maxShiftDays').optional().isInt({ min: 1, max: 180 }).withMessage('maxShiftDays must be between 1 and 180'),
+  query('promoCode').optional().isString().isLength({ max: 40 })
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { checkIn, checkOut, adults, children = 0, cabinId, cabinTypeId, maxShiftDays } = req.query;
+
+    const data = await findNextSameLengthAvailability({
+      checkIn,
+      checkOut,
+      adults,
+      children,
+      cabinId,
+      cabinTypeId,
+      maxShiftDays
+    });
+
+    return res.json({ success: true, data });
+  } catch (error) {
+    console.error('Availability suggestions error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error finding availability suggestions',
       error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
