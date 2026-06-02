@@ -62,6 +62,8 @@
     "selectThisCabinCta": "Select this cabin →",
     "viewDetailsCta": "View details →",
     "viewDetailsFirstCta": "View details first →",
+    "nextAvailableLabel": "Next available: {{range}}",
+    "tryTheseDatesCta": "Try these dates",
     "backToHomeArrow": "← Back to home"
   },
   "actions": {

@@ -49,6 +49,10 @@ export const availabilityAPI = {
     const queryParams = new URLSearchParams(params).toString();
     return api.get(`/availability?${queryParams}`);
   },
+  suggestions: (params) => {
+    const queryParams = new URLSearchParams(params).toString();
+    return api.get(`/availability/suggestions?${queryParams}`);
+  },
   checkCabinType: (slug, params) => {
     const queryParams = new URLSearchParams(params).toString();
     return api.get(`/availability/cabin-type/${slug}?${queryParams}`);

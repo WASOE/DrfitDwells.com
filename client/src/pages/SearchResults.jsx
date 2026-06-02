@@ -11,6 +11,8 @@ import { useBookingSearch } from '../context/BookingSearchContext';
 import { startOfDay, addDays, isBefore } from 'date-fns';
 import { formatDateOnlyLocal, parseDateOnlyLocal } from '../utils/dateOnly';
 import { getMinSelectableStayDate } from '../utils/bookingMinStayDate';
+import { getDateFnsLocale } from '../utils/localeDates';
+import { format } from 'date-fns';
 import {
   StayLodgingPriceBlock,
   promoStatusMicrocopyClass
@@ -86,6 +88,42 @@ function stayQueryString(p) {
   });
   if (p.promoCode) q.set('promoCode', p.promoCode);
   return q.toString();
+}
+
+const SUGGESTION_MAX_SHIFT_DAYS = 90;
+
+function getListingSuggestionKey(cabin) {
+  const isMulti = cabin?.inventoryMode === 'multi' || cabin?.inventoryType === 'multi';
+  const typeId = cabin?.cabinTypeRef || cabin?.cabinTypeId;
+  if (isMulti && typeId) return `cabinType:${typeId}`;
+  return `cabin:${cabin._id}`;
+}
+
+function buildSuggestionRequestParams(cabin, searchParams) {
+  const isMulti = cabin?.inventoryMode === 'multi' || cabin?.inventoryType === 'multi';
+  const typeId = cabin?.cabinTypeRef || cabin?.cabinTypeId;
+  const payload = {
+    checkIn: searchParams.checkIn,
+    checkOut: searchParams.checkOut,
+    adults: searchParams.adults,
+    children: searchParams.children,
+    maxShiftDays: SUGGESTION_MAX_SHIFT_DAYS
+  };
+  if (searchParams.promoCode) payload.promoCode = searchParams.promoCode;
+  if (isMulti && typeId) {
+    payload.cabinTypeId = String(typeId);
+  } else {
+    payload.cabinId = String(cabin._id);
+  }
+  return payload;
+}
+
+function formatStaySuggestionRange(checkIn, checkOut, siteLanguage) {
+  const inDate = parseDateOnlyLocal(checkIn);
+  const outDate = parseDateOnlyLocal(checkOut);
+  if (!inDate || !outDate) return '';
+  const loc = getDateFnsLocale(siteLanguage);
+  return `${format(inDate, 'd MMM', { locale: loc })} - ${format(outDate, 'd MMM', { locale: loc })}`;
 }
 
 /**
@@ -182,6 +220,7 @@ const SearchResults = () => {
   const [retryCount, setRetryCount] = useState(0);
   const [showDateAdjustBanner, setShowDateAdjustBanner] = useState(false);
   const [searchPromoMeta, setSearchPromoMeta] = useState(null);
+  const [suggestionsByListingKey, setSuggestionsByListingKey] = useState({});
   const { t } = useTranslation('booking');
 
   // Check if we're returning to craft flow
@@ -440,6 +479,79 @@ const SearchResults = () => {
     return () => { cancelled = true; };
   }, [multiTypeIds]);
 
+  useEffect(() => {
+    if (loading || cabins.length === 0) {
+      if (!loading) setSuggestionsByListingKey({});
+      return undefined;
+    }
+
+    const dateUnavailable = cabins.filter(
+      (c) => c.available === false && c.unavailabilityReason === 'dates'
+    );
+    if (dateUnavailable.length === 0) {
+      setSuggestionsByListingKey({});
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const loadSuggestions = async () => {
+      const results = await Promise.allSettled(
+        dateUnavailable.map(async (cabin) => {
+          const key = getListingSuggestionKey(cabin);
+          try {
+            const res = await availabilityAPI.suggestions(
+              buildSuggestionRequestParams(cabin, currentSearchParams)
+            );
+            const data = res.data?.data;
+            if (data?.sameLength?.checkIn && data?.sameLength?.checkOut) {
+              return {
+                key,
+                suggestion: {
+                  checkIn: data.sameLength.checkIn,
+                  checkOut: data.sameLength.checkOut
+                }
+              };
+            }
+            return { key, suggestion: null };
+          } catch {
+            return { key, suggestion: null };
+          }
+        })
+      );
+
+      if (cancelled) return;
+
+      const next = {};
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value?.suggestion) {
+          next[r.value.key] = r.value.suggestion;
+        }
+      }
+      setSuggestionsByListingKey(next);
+    };
+
+    loadSuggestions();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    cabins,
+    loading,
+    currentSearchParams.checkIn,
+    currentSearchParams.checkOut,
+    currentSearchParams.adults,
+    currentSearchParams.children,
+    currentSearchParams.promoCode
+  ]);
+
+  const applySuggestedDates = (suggestion) => {
+    const params = new URLSearchParams(searchParams);
+    params.set('checkIn', suggestion.checkIn);
+    params.set('checkOut', suggestion.checkOut);
+    navigate(`${searchBase}?${params.toString()}`);
+  };
+
   if (loading) {
     return (
       <>
@@ -549,6 +661,11 @@ const SearchResults = () => {
             {cabins.map((cabin) => {
               const status = getSearchCardStatus(cabin, t);
               const { isBookable } = status;
+              const suggestionKey = getListingSuggestionKey(cabin);
+              const dateSuggestion =
+                !isBookable && status.reasonCode === 'dates'
+                  ? suggestionsByListingKey[suggestionKey]
+                  : null;
               return (
               <div
                 key={cabin._id}
@@ -693,6 +810,26 @@ const SearchResults = () => {
                         >
                           {status.disabledCta}
                         </button>
+                        {dateSuggestion && (
+                          <div className="mt-2 rounded-lg border border-stone-200/80 bg-stone-50/80 px-3 py-2.5 md:px-4 md:py-3">
+                            <p className="text-xs text-stone-600 leading-relaxed">
+                              {t('search.nextAvailableLabel', {
+                                range: formatStaySuggestionRange(
+                                  dateSuggestion.checkIn,
+                                  dateSuggestion.checkOut,
+                                  routeLanguage
+                                )
+                              })}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => applySuggestedDates(dateSuggestion)}
+                              className="mt-2 w-full text-left text-sm font-medium text-stone-800 underline-offset-2 hover:underline md:text-center"
+                            >
+                              {t('search.tryTheseDatesCta')}
+                            </button>
+                          </div>
+                        )}
                         {(status.openPlannerGuests || status.openPlannerStay) && (
                           <button
                             type="button"
