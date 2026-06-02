@@ -62,8 +62,9 @@
     "selectThisCabinCta": "Избери тази къща →",
     "viewDetailsCta": "Виж детайли →",
     "viewDetailsFirstCta": "Първо виж детайли →",
+    "bookTheseDatesCta": "Резервирай за тези дати",
     "nextAvailableLabel": "Следваща наличност: {{range}}",
-    "tryTheseDatesCta": "Опитай с тези дати",
+    "tryTheseDatesCta": "Използвай тези дати →",
     "backToHomeArrow": "← Към началото"
   },
   "actions": {

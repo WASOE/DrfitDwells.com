@@ -783,9 +783,9 @@ const SearchResults = () => {
 
                             navigate(`${localizePath(`/cabin/${cabin._id}`, routeLanguage)}?${searchParams}`);
                           }}
-                          className="w-full btn-editorial text-center block py-3"
+                          className="w-full bg-stone-900 text-[#F1ECE2] py-3 px-2 text-center text-sm font-semibold uppercase tracking-[0.15em] hover:bg-black transition-colors leading-snug"
                         >
-                          {returnTo ? t('search.selectThisCabinCta') : t('search.viewDetailsCta')}
+                          {returnTo ? t('search.selectThisCabinCta') : t('search.bookTheseDatesCta')}
                         </button>
                         {returnTo && (
                           <button
@@ -811,8 +811,8 @@ const SearchResults = () => {
                           {status.disabledCta}
                         </button>
                         {dateSuggestion && (
-                          <div className="mt-2 rounded-lg border border-stone-200/80 bg-stone-50/80 px-3 py-2.5 md:px-4 md:py-3">
-                            <p className="text-xs text-stone-600 leading-relaxed">
+                          <div className="mt-2 border-t border-stone-200 pt-2 space-y-1 md:pt-2.5">
+                            <p className="text-xs text-stone-600 leading-snug">
                               {t('search.nextAvailableLabel', {
                                 range: formatStaySuggestionRange(
                                   dateSuggestion.checkIn,
@@ -824,13 +824,13 @@ const SearchResults = () => {
                             <button
                               type="button"
                               onClick={() => applySuggestedDates(dateSuggestion)}
-                              className="mt-2 w-full text-left text-sm font-medium text-stone-800 underline-offset-2 hover:underline md:text-center"
+                              className="w-full text-left text-sm font-medium text-stone-900 underline-offset-2 hover:underline md:text-center"
                             >
                               {t('search.tryTheseDatesCta')}
                             </button>
                           </div>
                         )}
-                        {(status.openPlannerGuests || status.openPlannerStay) && (
+                        {(status.openPlannerGuests || status.openPlannerStay) && !dateSuggestion && (
                           <button
                             type="button"
                             onClick={openModal}
@@ -857,7 +857,11 @@ const SearchResults = () => {
                             }
                             navigate(`${localizePath(`/cabin/${cabin._id}`, routeLanguage)}?${q}`);
                           }}
-                          className="w-full btn-underline text-center block py-2 mt-1"
+                          className={
+                            dateSuggestion
+                              ? 'w-full text-center text-xs font-medium text-stone-600 underline-offset-2 hover:underline py-1.5 mt-1'
+                              : 'w-full btn-underline text-center block py-2 mt-1'
+                          }
                         >
                           {t('search.viewPropertyAnyway')}
                         </button>
