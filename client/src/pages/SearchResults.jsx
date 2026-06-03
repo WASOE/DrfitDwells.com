@@ -552,6 +552,19 @@ const SearchResults = () => {
     navigate(`${searchBase}?${params.toString()}`);
   };
 
+  const goToProperty = (cabin) => {
+    const isMulti = cabin?.inventoryMode === 'multi' || cabin?.inventoryType === 'multi';
+    const typeSlug = cabin?.slug || cabin?.cabinTypeSlug;
+    const params = new URLSearchParams(stayQueryString(currentSearchParams));
+    if (returnTo) params.set('returnTo', returnTo);
+    const q = params.toString();
+    if (isMulti && typeSlug) {
+      navigate(`${localizePath(`/stays/${typeSlug}`, routeLanguage)}?${q}`);
+      return;
+    }
+    navigate(`${localizePath(`/cabin/${cabin._id}`, routeLanguage)}?${q}`);
+  };
+
   if (loading) {
     return (
       <>
@@ -662,10 +675,23 @@ const SearchResults = () => {
               const status = getSearchCardStatus(cabin, t);
               const { isBookable } = status;
               const suggestionKey = getListingSuggestionKey(cabin);
-              const dateSuggestion =
-                !isBookable && status.reasonCode === 'dates'
-                  ? suggestionsByListingKey[suggestionKey]
-                  : null;
+              const isDateUnavailable = !isBookable && status.reasonCode === 'dates';
+              const dateSuggestion = isDateUnavailable
+                ? suggestionsByListingKey[suggestionKey]
+                : null;
+              const hasDateSuggestion = isDateUnavailable && !!dateSuggestion;
+              const showStatusBanner = !isBookable && !!status.banner;
+              const shouldShowDuplicateStatus = !isBookable && !!status.disabledCta && !showStatusBanner;
+              const shouldShowPlannerAction =
+                (status.openPlannerGuests || status.openPlannerStay) && !hasDateSuggestion;
+              const plannerActionLabel =
+                isDateUnavailable && status.openPlannerStay && !status.openPlannerGuests
+                  ? t('search.changeDatesCta')
+                  : status.openPlannerGuests && !status.openPlannerStay
+                    ? t('search.hintOpenPlannerGuests')
+                    : !status.openPlannerGuests && status.openPlannerStay
+                      ? t('search.hintOpenPlannerStay')
+                      : t('search.hintOpenPlanner');
               return (
               <div
                 key={cabin._id}
@@ -802,16 +828,25 @@ const SearchResults = () => {
                         )}
                       </>
                     ) : (
-                      <>
-                        <button
-                          type="button"
-                          disabled
-                          className="w-full rounded-none border border-stone-300 bg-stone-100 py-3 text-center text-sm font-semibold uppercase tracking-[0.15em] text-stone-600 cursor-not-allowed leading-snug px-2"
-                        >
-                          {status.disabledCta}
-                        </button>
-                        {dateSuggestion && (
-                          <div className="mt-2 border-t border-stone-200 pt-2 space-y-1 md:pt-2.5">
+                      <div
+                        className="flex flex-col items-center text-center gap-2 border-t border-stone-100 pt-4"
+                        aria-labelledby={showStatusBanner ? `search-card-status-${cabin._id}` : undefined}
+                      >
+                        {showStatusBanner && status.disabledCta && (
+                          <span id={`search-card-status-${cabin._id}`} className="sr-only">
+                            {status.disabledCta}
+                          </span>
+                        )}
+                        {shouldShowDuplicateStatus && (
+                          <p
+                            className="text-xs font-medium uppercase tracking-[0.12em] text-stone-500 leading-snug"
+                            role="status"
+                          >
+                            {status.disabledCta}
+                          </p>
+                        )}
+                        {hasDateSuggestion && (
+                          <>
                             <p className="text-xs text-stone-600 leading-snug">
                               {t('search.nextAvailableLabel', {
                                 range: formatStaySuggestionRange(
@@ -824,48 +859,29 @@ const SearchResults = () => {
                             <button
                               type="button"
                               onClick={() => applySuggestedDates(dateSuggestion)}
-                              className="w-full text-left text-sm font-medium text-stone-900 underline-offset-2 hover:underline md:text-center"
+                              className="text-sm font-medium text-stone-900 underline-offset-2 hover:underline"
                             >
                               {t('search.tryTheseDatesCta')}
                             </button>
-                          </div>
+                          </>
                         )}
-                        {(status.openPlannerGuests || status.openPlannerStay) && !dateSuggestion && (
+                        {shouldShowPlannerAction && (
                           <button
                             type="button"
                             onClick={openModal}
-                            className="w-full text-center text-sm font-medium text-stone-800 underline-offset-2 hover:underline py-3"
+                            className="text-sm font-medium text-stone-800 underline-offset-2 hover:underline"
                           >
-                            {status.openPlannerGuests && !status.openPlannerStay
-                              ? t('search.hintOpenPlannerGuests')
-                              : !status.openPlannerGuests && status.openPlannerStay
-                                ? t('search.hintOpenPlannerStay')
-                                : t('search.hintOpenPlanner')}
+                            {plannerActionLabel}
                           </button>
                         )}
                         <button
                           type="button"
-                          onClick={() => {
-                            const isMulti = cabin?.inventoryMode === 'multi' || cabin?.inventoryType === 'multi';
-                            const typeSlug = cabin?.slug || cabin?.cabinTypeSlug;
-                              const params = new URLSearchParams(stayQueryString(currentSearchParams));
-                              if (returnTo) params.set('returnTo', returnTo);
-                            const q = params.toString();
-                            if (isMulti && typeSlug) {
-                              navigate(`${localizePath(`/stays/${typeSlug}`, routeLanguage)}?${q}`);
-                              return;
-                            }
-                            navigate(`${localizePath(`/cabin/${cabin._id}`, routeLanguage)}?${q}`);
-                          }}
-                          className={
-                            dateSuggestion
-                              ? 'w-full text-center text-xs font-medium text-stone-600 underline-offset-2 hover:underline py-1.5 mt-1'
-                              : 'w-full btn-underline text-center block py-2 mt-1'
-                          }
+                          onClick={() => goToProperty(cabin)}
+                          className="text-xs font-medium text-stone-600 underline-offset-2 hover:underline"
                         >
                           {t('search.viewPropertyAnyway')}
                         </button>
-                      </>
+                      </div>
                     )}
                   </div>
                 </div>
