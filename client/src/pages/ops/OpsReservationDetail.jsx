@@ -146,6 +146,7 @@ export default function OpsReservationDetail() {
     open: false,
     templateName: '',
     locale: '',
+    body: '',
     variables: null,
     note: '',
     templateStatus: null,
@@ -458,6 +459,7 @@ export default function OpsReservationDetail() {
       open: false,
       templateName: '',
       locale: '',
+      body: '',
       variables: null,
       note: '',
       templateStatus: null,
@@ -494,6 +496,7 @@ export default function OpsReservationDetail() {
           open: true,
           templateName: d.whatsapp?.templateName || '',
           locale: d.whatsapp?.locale || '',
+          body: d.whatsapp?.body || '',
           variables: d.whatsapp?.variables || d.variables || null,
           note: d.whatsapp?.note || '',
           templateStatus: d.template?.status || null,
@@ -1419,6 +1422,12 @@ export default function OpsReservationDetail() {
                   <dd className="text-gray-900">{gmaWhatsappPreviewModal.locale || '—'}</dd>
                 </div>
               </dl>
+              <div>
+                <p className="text-xs font-medium text-gray-700 mb-2">Bilingual message body (rendered)</p>
+                <pre className="whitespace-pre-wrap rounded-md border border-violet-100 bg-violet-50/50 p-3 text-xs text-gray-900 leading-relaxed max-h-[min(40vh,320px)] overflow-y-auto">
+                  {gmaWhatsappPreviewModal.body || '—'}
+                </pre>
+              </div>
               <div>
                 <p className="text-xs font-medium text-gray-700 mb-2">Filled variables</p>
                 <div className="overflow-x-auto rounded-md border border-gray-200">

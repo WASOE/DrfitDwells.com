@@ -20,8 +20,10 @@ const {
 } = require('./propertyKindResolver');
 
 const DEFAULT_LOCALE = 'en';
+const WHATSAPP_REFERENCE_BODY_MARKER =
+  'WhatsApp reference body (bilingual, for Meta submission — not rendered from DB MessageTemplate fields):';
 const WHATSAPP_PREVIEW_NOTE =
-  'WhatsApp preview shows template name and variables only. The actual Meta template body is not stored in this system yet.';
+  'Compose-only preview. Meta sends using the approved template name; bilingual reference body below is rendered from template notes.';
 
 const PREVIEW_RULE_KEYS = Object.freeze([
   'arrival_instructions_pre_arrival_cabin',
@@ -38,6 +40,14 @@ class MessageTemplatePreviewError extends Error {
     this.errorType = errorType;
     this.details = details;
   }
+}
+
+function extractWhatsappReferenceBodyFromNotes(notes) {
+  if (typeof notes !== 'string' || notes.length === 0) return null;
+  const idx = notes.indexOf(WHATSAPP_REFERENCE_BODY_MARKER);
+  if (idx === -1) return null;
+  const body = notes.slice(idx + WHATSAPP_REFERENCE_BODY_MARKER.length).replace(/^\s+/, '');
+  return body.length > 0 ? body : null;
 }
 
 /** Mustache-style {{key}} substitution (aligned with automation dispatcher; no dispatcher import). */
@@ -233,11 +243,16 @@ async function previewGmaMessageForReservation({ reservationId, ruleKey, channel
     const text = derivePlainTextFromHtml(html);
     email = { subject, html, text };
   } else {
+    const referenceBody = extractWhatsappReferenceBodyFromNotes(template.notes);
+    const body = referenceBody ? renderTemplateString(referenceBody, variables) : null;
     whatsapp = {
       templateName: template.whatsappTemplateName || template.key,
       locale: template.whatsappLocale || template.locale || DEFAULT_LOCALE,
       variables: { ...variables },
-      note: WHATSAPP_PREVIEW_NOTE
+      body,
+      note: referenceBody
+        ? WHATSAPP_PREVIEW_NOTE
+        : `${WHATSAPP_PREVIEW_NOTE} No bilingual reference body found in template notes.`
     };
   }
 
@@ -258,7 +273,9 @@ module.exports = {
   PREVIEW_RULE_KEYS,
   PREVIEW_RULE_KEY_SET,
   WHATSAPP_PREVIEW_NOTE,
+  WHATSAPP_REFERENCE_BODY_MARKER,
   MessageTemplatePreviewError,
+  extractWhatsappReferenceBodyFromNotes,
   renderTemplateString,
   previewGmaMessageForReservation
 };

@@ -50,12 +50,9 @@ const LOCKED_GUEST_VARIABLES = [
   'checkInDate',
   'checkOutDate',
   'arrivalWindow',
-  'guideUrl',
   'meetingPointLabel',
   'googleMapsUrl',
-  'supportPhone',
-  'transportNote',
-  'packingReminderShort'
+  'guideUrl'
 ];
 
 let mongoServer;
@@ -100,7 +97,7 @@ test('every built template uses locale="en", version=1', () => {
   }
 });
 
-test('guest templates declare exactly the locked 11 variables', () => {
+test('guest templates declare exactly the locked 8 variables', () => {
   const rows = buildAllTemplates().filter((r) => GUEST_TEMPLATE_KEYS.includes(r.key));
   assert.equal(rows.length, 4);
   for (const row of rows) {

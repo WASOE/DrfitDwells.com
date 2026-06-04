@@ -14,7 +14,11 @@ const ScheduledMessageJob = require('../models/ScheduledMessageJob');
 const MessageDispatch = require('../models/MessageDispatch');
 const MessageDeliveryEvent = require('../models/MessageDeliveryEvent');
 const ManualReviewItem = require('../models/ManualReviewItem');
-const { GUEST_TEMPLATE_VARIABLE_SCHEMA } = require('../data/messageTemplates/_guestVariableSchema');
+const {
+  GUEST_TEMPLATE_VARIABLE_SCHEMA,
+  CABIN_WHATSAPP_BODY,
+  whatsappNotes
+} = require('../data/messageTemplates/gmaApprovedCopy');
 const {
   previewGmaMessageForReservation,
   MessageTemplatePreviewError,
@@ -61,7 +65,8 @@ async function seedCabinArrivalRuleAndTemplates({ emailStatus = 'draft', whatsap
     status: whatsappStatus,
     whatsappTemplateName: 'arrival_3d_the_cabin_v1',
     whatsappLocale: 'en',
-    variableSchema: GUEST_TEMPLATE_VARIABLE_SCHEMA
+    variableSchema: GUEST_TEMPLATE_VARIABLE_SCHEMA,
+    notes: whatsappNotes('arrival_3d_the_cabin_v1', CABIN_WHATSAPP_BODY)
   });
 }
 
@@ -206,7 +211,12 @@ test('renders draft WhatsApp template variable payload', async () => {
   assert.equal(data.whatsapp.locale, 'en');
   assert.equal(data.variables.guestFirstName, 'Jose');
   assert.equal(data.variables.propertyName, 'The Cabin');
-  assert.ok(data.whatsapp.note.includes('Meta template body'));
+  assert.ok(data.whatsapp.note.includes('template notes'));
+  assert.ok(typeof data.whatsapp.body === 'string' && data.whatsapp.body.length > 0);
+  assert.match(data.whatsapp.body, /Hi Jose/);
+  assert.match(data.whatsapp.body, /Здравейте, Jose/);
+  assert.match(data.whatsapp.body, /https:\/\/driftdwells\.com\/guides\/the-cabin/);
+  assert.ok(!data.whatsapp.body.includes('href="/guides/'));
   assert.equal(data.email, null);
 });
 
