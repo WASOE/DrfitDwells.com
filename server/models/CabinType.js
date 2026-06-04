@@ -208,7 +208,7 @@ const cabinTypeSchema = new mongoose.Schema({
   arrivalWindowDefault: {
     type: String,
     trim: true,
-    maxlength: [50, 'Arrival window cannot exceed 50 characters']
+    maxlength: [200, 'Arrival window cannot exceed 200 characters']
   },
   transportCutoffs: [{
     type: {

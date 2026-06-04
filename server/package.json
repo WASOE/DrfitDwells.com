@@ -44,8 +44,10 @@
     "test:email-webhook-dispatch-routing": "node --test scripts/emailWebhookDispatchRouting.test.cjs",
     "test:ops-messaging-read-model": "node --test scripts/opsGuestMessageAutomationReadModel.test.cjs",
     "test:ops-messaging-write": "node --test scripts/guestMessageAutomationOpsWriteService.test.cjs",
+    "test:gma-arrival-metadata": "node --test scripts/gmaArrivalMetadataBackfill.test.cjs",
     "start:messaging-worker": "node scripts/runMessagingWorker.js",
     "maintenance:backfill-property-kind": "node scripts/backfillPropertyKind.js",
+    "maintenance:gma-arrival-metadata": "node scripts/gmaArrivalMetadataBackfill.cjs",
     "maintenance:seed-message-automation": "node scripts/seedMessageAutomation.js",
     "validate:phase2-lifecycle-email": "node scripts/validatePhase2LifecycleEmailPersistence.js"
   },
