@@ -24,6 +24,10 @@ const {
 } = require('../../../controllers/shared/bookingLifecycleEmailController');
 const { requirePermission, ACTIONS } = require('../../../services/permissionService');
 const { getReservationMessagingSummary } = require('../../../services/ops/readModels/guestMessageAutomationOpsReadModel');
+const {
+  previewGmaMessageForReservation,
+  MessageTemplatePreviewError
+} = require('../../../services/messaging/messageTemplatePreviewService');
 
 const router = express.Router();
 
@@ -170,6 +174,47 @@ router.get('/:id/messaging/summary', validateId('id'), async (req, res) => {
     return res.status(500).json({ success: false, message: err.message });
   }
 });
+
+router.post(
+  '/:id/messaging/preview',
+  validateId('id'),
+  [
+    body('ruleKey')
+      .isString()
+      .trim()
+      .notEmpty()
+      .withMessage('ruleKey is required'),
+    body('channel')
+      .isIn(['email', 'whatsapp'])
+      .withMessage('channel must be email or whatsapp')
+  ],
+  validateLifecycleEmailBody,
+  async (req, res) => {
+    try {
+      requirePermission({ role: req.user?.role, action: ACTIONS.OPS_MESSAGING_READ });
+      const data = await previewGmaMessageForReservation({
+        reservationId: req.params.id,
+        ruleKey: req.body.ruleKey,
+        channel: req.body.channel
+      });
+      res.set('Cache-Control', 'no-store');
+      return res.json({ success: true, data });
+    } catch (err) {
+      if (err?.code === 'PERMISSION_DENIED') {
+        return res.status(err.status || 403).json({ success: false, errorType: 'permission', message: err.message });
+      }
+      if (err instanceof MessageTemplatePreviewError) {
+        return res.status(err.status || 400).json({
+          success: false,
+          errorType: err.errorType || 'validation',
+          message: err.message,
+          details: err.details || null
+        });
+      }
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  }
+);
 
 router.get('/:id', async (req, res) => {
   try {

@@ -48,6 +48,18 @@ const TEMPLATE_LABELS = {
 
 const LIFECYCLE_TEMPLATE_KEYS = ['booking_received', 'booking_confirmed', 'booking_cancelled'];
 
+const GMA_PREVIEW_RULE_OPTIONS = [
+  { value: 'arrival_instructions_pre_arrival_cabin', label: 'Cabin arrival (T-72h)' },
+  { value: 'arrival_instructions_pre_arrival_valley', label: 'Valley arrival (T-72h)' }
+];
+
+function gmaTemplateStatusBadge(status) {
+  const base = 'text-[10px] px-1.5 py-0.5 rounded border font-medium uppercase tracking-wide';
+  if (status === 'approved') return `${base} bg-emerald-50 text-emerald-900 border-emerald-200`;
+  if (status === 'draft') return `${base} bg-amber-50 text-amber-900 border-amber-200`;
+  return `${base} bg-gray-100 text-gray-700 border-gray-200`;
+}
+
 function resolveEffectiveRecipient(overrideInput, guestEmail) {
   const trimmed = (overrideInput || '').trim();
   if (trimmed) return trimmed;
@@ -119,6 +131,26 @@ export default function OpsReservationDetail() {
   const [messagingError, setMessagingError] = useState('');
   const [messagingCancelModal, setMessagingCancelModal] = useState({ open: false, jobId: null, ruleKey: '' });
   const [messagingCancelBusy, setMessagingCancelBusy] = useState(false);
+  const [gmaPreviewRuleKey, setGmaPreviewRuleKey] = useState('arrival_instructions_pre_arrival_cabin');
+  const [gmaPreviewLoading, setGmaPreviewLoading] = useState(null);
+  const [gmaPreviewError, setGmaPreviewError] = useState('');
+  const [gmaEmailPreviewModal, setGmaEmailPreviewModal] = useState({
+    open: false,
+    subject: '',
+    html: '',
+    text: '',
+    templateStatus: null,
+    ruleKey: null
+  });
+  const [gmaWhatsappPreviewModal, setGmaWhatsappPreviewModal] = useState({
+    open: false,
+    templateName: '',
+    locale: '',
+    variables: null,
+    note: '',
+    templateStatus: null,
+    ruleKey: null
+  });
 
   const load = async () => {
     setLoading(true);
@@ -407,6 +439,75 @@ export default function OpsReservationDetail() {
       setMessagingError(err?.response?.data?.message || 'Failed to cancel job');
     } finally {
       setMessagingCancelBusy(false);
+    }
+  };
+
+  const closeGmaEmailPreviewModal = () => {
+    setGmaEmailPreviewModal({
+      open: false,
+      subject: '',
+      html: '',
+      text: '',
+      templateStatus: null,
+      ruleKey: null
+    });
+  };
+
+  const closeGmaWhatsappPreviewModal = () => {
+    setGmaWhatsappPreviewModal({
+      open: false,
+      templateName: '',
+      locale: '',
+      variables: null,
+      note: '',
+      templateStatus: null,
+      ruleKey: null
+    });
+  };
+
+  const handleGmaPreview = async (channel) => {
+    if (!id) return;
+    setGmaPreviewLoading(channel);
+    setGmaPreviewError('');
+    try {
+      const response = await opsReadAPI.previewGmaMessage(id, {
+        ruleKey: gmaPreviewRuleKey,
+        channel
+      });
+      const payload = response.data;
+      if (!payload?.success || !payload.data) {
+        setGmaPreviewError(payload?.message || 'Preview failed');
+        return;
+      }
+      const d = payload.data;
+      if (channel === 'email') {
+        setGmaEmailPreviewModal({
+          open: true,
+          subject: d.email?.subject || '',
+          html: d.email?.html || '',
+          text: d.email?.text || '',
+          templateStatus: d.template?.status || null,
+          ruleKey: d.ruleKey || gmaPreviewRuleKey
+        });
+      } else {
+        setGmaWhatsappPreviewModal({
+          open: true,
+          templateName: d.whatsapp?.templateName || '',
+          locale: d.whatsapp?.locale || '',
+          variables: d.whatsapp?.variables || d.variables || null,
+          note: d.whatsapp?.note || '',
+          templateStatus: d.template?.status || null,
+          ruleKey: d.ruleKey || gmaPreviewRuleKey
+        });
+      }
+    } catch (err) {
+      const d = err?.response?.data;
+      const missing = d?.details?.missing;
+      const extra =
+        Array.isArray(missing) && missing.length > 0 ? ` Missing: ${missing.join(', ')}.` : '';
+      setGmaPreviewError((d?.message || 'Network error while loading GMA preview') + extra);
+    } finally {
+      setGmaPreviewLoading(null);
     }
   };
 
@@ -847,6 +948,48 @@ export default function OpsReservationDetail() {
             </div>
             {messagingLoading ? <p className="text-xs text-gray-500">Loading automation data…</p> : null}
             {messagingError ? <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-2 py-1">{messagingError}</div> : null}
+            <div className="rounded-lg border border-violet-100 bg-violet-50/40 p-3 space-y-3 max-w-2xl">
+              <h4 className="text-xs font-semibold text-violet-900 uppercase tracking-wide">Preview automation message</h4>
+              <p className="text-xs text-violet-900/80 leading-relaxed">
+                Compose-only preview using this booking&apos;s data and draft or approved templates. Nothing is sent.
+              </p>
+              <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-2">
+                <label className="flex flex-col gap-1 text-xs text-gray-700 min-w-0 flex-1 sm:max-w-xs">
+                  <span className="font-medium">Automation rule</span>
+                  <select
+                    value={gmaPreviewRuleKey}
+                    onChange={(e) => setGmaPreviewRuleKey(e.target.value)}
+                    disabled={Boolean(gmaPreviewLoading)}
+                    className="px-2 py-1.5 text-sm border border-gray-200 rounded-md bg-white"
+                  >
+                    {GMA_PREVIEW_RULE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  disabled={Boolean(gmaPreviewLoading)}
+                  onClick={() => void handleGmaPreview('email')}
+                  className="text-xs px-3 py-1.5 rounded-md border border-violet-300 text-violet-900 bg-white hover:bg-violet-50 disabled:opacity-50"
+                >
+                  {gmaPreviewLoading === 'email' ? 'Loading…' : 'Preview GMA email'}
+                </button>
+                <button
+                  type="button"
+                  disabled={Boolean(gmaPreviewLoading)}
+                  onClick={() => void handleGmaPreview('whatsapp')}
+                  className="text-xs px-3 py-1.5 rounded-md border border-violet-300 text-violet-900 bg-white hover:bg-violet-50 disabled:opacity-50"
+                >
+                  {gmaPreviewLoading === 'whatsapp' ? 'Loading…' : 'Preview GMA WhatsApp'}
+                </button>
+              </div>
+              {gmaPreviewError ? (
+                <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-2 py-1">{gmaPreviewError}</div>
+              ) : null}
+            </div>
             {!messagingLoading && messagingSummary ? (
               <div className="space-y-4 text-xs text-gray-800">
                 <div>
@@ -1165,6 +1308,139 @@ export default function OpsReservationDetail() {
               >
                 {messagingCancelBusy ? 'Cancelling…' : 'Confirm cancel'}
               </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {gmaEmailPreviewModal.open ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="ops-gma-email-preview-title"
+        >
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            aria-label="Close GMA preview"
+            onClick={closeGmaEmailPreviewModal}
+          />
+          <div className="relative w-full max-w-4xl max-h-[min(92vh,900px)] flex flex-col rounded-xl border border-violet-200 bg-white shadow-xl overflow-hidden">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-violet-100 px-4 py-3 sm:px-5">
+              <div className="min-w-0 flex-1">
+                <h2 id="ops-gma-email-preview-title" className="text-sm font-semibold text-violet-900">
+                  GMA email preview
+                </h2>
+                <p className="mt-1 text-xs text-gray-500 truncate" title={gmaEmailPreviewModal.subject}>
+                  {gmaEmailPreviewModal.ruleKey || ''}
+                  {gmaEmailPreviewModal.templateStatus ? (
+                    <span className={`ml-2 ${gmaTemplateStatusBadge(gmaEmailPreviewModal.templateStatus)}`}>
+                      {gmaEmailPreviewModal.templateStatus}
+                    </span>
+                  ) : null}
+                </p>
+                <p className="mt-0.5 text-xs text-gray-600 break-words">{gmaEmailPreviewModal.subject}</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeGmaEmailPreviewModal}
+                className="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 border border-gray-200 shrink-0"
+              >
+                Close
+              </button>
+            </div>
+            <p className="px-4 py-2 text-xs text-amber-900 bg-amber-50 border-b border-amber-100/80">
+              GMA preview only — not sent. Fragment HTML (automation templates); not the legacy lifecycle shell.
+            </p>
+            <iframe
+              title="GMA email HTML preview"
+              sandbox="allow-same-origin"
+              srcDoc={gmaEmailPreviewModal.html}
+              className="w-full min-h-[40vh] sm:min-h-[45vh] border-0 bg-zinc-100"
+            />
+            <div className="border-t border-gray-100 px-4 py-3 sm:px-5 max-h-[28vh] overflow-y-auto">
+              <p className="text-xs font-medium text-gray-700 mb-1">Plain text</p>
+              <pre className="text-xs text-gray-800 whitespace-pre-wrap font-sans leading-relaxed">
+                {gmaEmailPreviewModal.text || '—'}
+              </pre>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {gmaWhatsappPreviewModal.open ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="ops-gma-wa-preview-title"
+        >
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            aria-label="Close GMA WhatsApp preview"
+            onClick={closeGmaWhatsappPreviewModal}
+          />
+          <div className="relative w-full max-w-lg max-h-[min(92vh,720px)] flex flex-col rounded-xl border border-violet-200 bg-white shadow-xl overflow-hidden">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-violet-100 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <h2 id="ops-gma-wa-preview-title" className="text-sm font-semibold text-violet-900">
+                  GMA WhatsApp preview
+                </h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  {gmaWhatsappPreviewModal.ruleKey || ''}
+                  {gmaWhatsappPreviewModal.templateStatus ? (
+                    <span className={`ml-2 ${gmaTemplateStatusBadge(gmaWhatsappPreviewModal.templateStatus)}`}>
+                      {gmaWhatsappPreviewModal.templateStatus}
+                    </span>
+                  ) : null}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeGmaWhatsappPreviewModal}
+                className="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 border border-gray-200 shrink-0"
+              >
+                Close
+              </button>
+            </div>
+            <p className="px-4 py-2 text-xs text-amber-900 bg-amber-50 border-b border-amber-100/80">
+              GMA preview only — not sent. {gmaWhatsappPreviewModal.note}
+            </p>
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 text-sm">
+              <dl className="grid grid-cols-1 gap-2 text-xs">
+                <div>
+                  <dt className="text-gray-500">Template name</dt>
+                  <dd className="font-mono text-gray-900 break-all">{gmaWhatsappPreviewModal.templateName || '—'}</dd>
+                </div>
+                <div>
+                  <dt className="text-gray-500">Locale</dt>
+                  <dd className="text-gray-900">{gmaWhatsappPreviewModal.locale || '—'}</dd>
+                </div>
+              </dl>
+              <div>
+                <p className="text-xs font-medium text-gray-700 mb-2">Filled variables</p>
+                <div className="overflow-x-auto rounded-md border border-gray-200">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-gray-200 bg-gray-50 text-gray-600">
+                        <th className="py-1.5 px-2 font-medium">Key</th>
+                        <th className="py-1.5 px-2 font-medium">Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {gmaWhatsappPreviewModal.variables &&
+                        Object.entries(gmaWhatsappPreviewModal.variables).map(([key, value]) => (
+                          <tr key={key} className="border-b border-gray-100 align-top">
+                            <td className="py-1.5 px-2 font-mono text-gray-700 whitespace-nowrap">{key}</td>
+                            <td className="py-1.5 px-2 text-gray-900 break-all">{String(value ?? '')}</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </div>
         </div>

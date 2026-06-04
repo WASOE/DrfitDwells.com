@@ -59,6 +59,8 @@ const opsReadAPI = {
   messagingSystemState: () => api.get('/ops/messaging/system-state', { headers: authHeaders() }),
   messagingRules: () => api.get('/ops/messaging/rules', { headers: authHeaders() }),
   reservationMessagingSummary: (id) => api.get(`/ops/reservations/${id}/messaging/summary`, { headers: authHeaders() }),
+  previewGmaMessage: (id, body) =>
+    api.post(`/ops/reservations/${id}/messaging/preview`, body, { headers: authHeaders() }),
   messagingDispatchDeliveryEvents: (dispatchId) =>
     api.get(`/ops/messaging/dispatches/${dispatchId}/delivery-events`, { headers: authHeaders() })
 };
