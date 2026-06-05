@@ -1,14 +1,13 @@
 import { useEffect, useState } from 'react';
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Outlet, useNavigate } from 'react-router-dom';
 import { decodeRoleFromToken, opsReadAPI } from '../services/opsApi';
 import OpsDesktopNav from './ops/OpsDesktopNav';
-import { OPS_NAV_ITEMS } from './ops/opsNavConfig';
+import OpsMobileTabBar from './ops/OpsMobileTabBar';
 
 export default function OpsLayout() {
   const [ready, setReady] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [health, setHealth] = useState(null);
-  const location = useLocation();
   const navigate = useNavigate();
   const role = decodeRoleFromToken();
 
@@ -109,7 +108,9 @@ export default function OpsLayout() {
               </button>
             </div>
           </div>
-          <OpsDesktopNav />
+          <div className="hidden md:block">
+            <OpsDesktopNav />
+          </div>
         </div>
       </header>
 
@@ -122,30 +123,11 @@ export default function OpsLayout() {
         </div>
       ) : null}
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 md:pt-8 pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-8">
         <Outlet />
       </main>
 
-      {location.pathname.startsWith('/ops/reservations/') ? null : (
-        <div className="fixed bottom-0 inset-x-0 border-t border-gray-200 bg-white/95 backdrop-blur sm:hidden">
-          <div className="max-w-7xl mx-auto px-2 py-1">
-            <div className="flex items-center gap-1 overflow-x-auto min-w-full">
-              {OPS_NAV_ITEMS.map((item) => (
-                <NavLink
-                  key={`mobile-${item.to}`}
-                  to={item.to}
-                  end={item.end === true}
-                  className={({ isActive }) =>
-                    `flex-none text-center text-[11px] px-2 py-2 rounded ${isActive ? 'bg-[#81887A] text-white' : 'text-gray-600 hover:bg-gray-100'}`
-                  }
-                >
-                  {item.label}
-                </NavLink>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+      <OpsMobileTabBar />
     </div>
   );
 }
