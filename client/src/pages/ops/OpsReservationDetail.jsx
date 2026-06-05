@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { decodeRoleFromToken, opsWriteAPI, opsReadAPI } from '../../services/opsApi';
+import api from '../../services/api';
 import { formatMoneyFromCents } from '../../utils/formatMoney';
 import { OpsEmailPreviewModal } from './components/OpsEmailPreviewModal';
 import { OpsWhatsappPreviewModal } from './components/OpsWhatsappPreviewModal';
@@ -108,6 +109,10 @@ export default function OpsReservationDetail() {
   const [successMessage, setSuccessMessage] = useState('');
   const [note, setNote] = useState('');
   const [guestDraft, setGuestDraft] = useState(null);
+  const [cleaningNotesDraft, setCleaningNotesDraft] = useState('');
+  const [cleaningNotesBusy, setCleaningNotesBusy] = useState(false);
+  const [cleaningNotesMsg, setCleaningNotesMsg] = useState('');
+  const [cleaningNotesError, setCleaningNotesError] = useState('');
   const [editDatesOpen, setEditDatesOpen] = useState(false);
   const [editDatesBusy, setEditDatesBusy] = useState(false);
   const [editDatesError, setEditDatesError] = useState('');
@@ -198,6 +203,7 @@ export default function OpsReservationDetail() {
       const payload = resp.data?.data || null;
       setData(payload);
       setGuestDraft(payload?.guestDetail || null);
+      setCleaningNotesDraft(payload?.cleaningNotes || '');
     } catch (err) {
       setError(err?.response?.data?.message || 'Failed to load reservation');
     } finally {
@@ -217,6 +223,25 @@ export default function OpsReservationDetail() {
       await load();
     } catch (err) {
       setError(err?.response?.data?.message || 'Action failed');
+    }
+  };
+
+  const saveCleaningNotes = async () => {
+    setCleaningNotesBusy(true);
+    setCleaningNotesMsg('');
+    setCleaningNotesError('');
+    try {
+      const trimmed = (cleaningNotesDraft || '').trim();
+      const resp = await api.patch(`/ops/reservations/${id}/cleaning-notes`, {
+        cleaningNotes: trimmed ? trimmed : null
+      });
+      const saved = resp.data?.data?.cleaningNotes ?? null;
+      setCleaningNotesDraft(saved || '');
+      setCleaningNotesMsg('Cleaning notes saved.');
+    } catch (err) {
+      setCleaningNotesError(err?.response?.data?.message || 'Failed to save cleaning notes.');
+    } finally {
+      setCleaningNotesBusy(false);
     }
   };
 
@@ -1118,6 +1143,36 @@ export default function OpsReservationDetail() {
                 </div>
               ))}
               {(data.notes?.items || []).length === 0 ? <p className="text-sm text-gray-500">No notes yet.</p> : null}
+            </div>
+          </section>
+
+          <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">Cleaning Notes</h3>
+              <p className="mt-1 text-xs text-gray-500">
+                Internal note for cleaning staff. Shown as a special request on the cleaning calendar.
+              </p>
+            </div>
+            <textarea
+              value={cleaningNotesDraft}
+              onChange={(e) => setCleaningNotesDraft(e.target.value)}
+              maxLength={1000}
+              rows={3}
+              placeholder="e.g. Extra towels, late check-out cleaning, allergy note…"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
+            />
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={saveCleaningNotes}
+                disabled={cleaningNotesBusy}
+                className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+              >
+                {cleaningNotesBusy ? 'Saving…' : 'Save cleaning notes'}
+              </button>
+              <span className="text-xs text-gray-400">{(cleaningNotesDraft || '').length}/1000</span>
+              {cleaningNotesMsg ? <span className="text-xs text-emerald-700">{cleaningNotesMsg}</span> : null}
+              {cleaningNotesError ? <span className="text-xs text-red-700">{cleaningNotesError}</span> : null}
             </div>
           </section>
         </div>

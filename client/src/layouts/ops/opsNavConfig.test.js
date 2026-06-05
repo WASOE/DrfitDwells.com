@@ -11,11 +11,12 @@ import {
 } from './opsNavConfig.js';
 
 describe('opsNavConfig', () => {
-  it('lists 14 desktop nav items in OpsLayout order', () => {
-    expect(OPS_NAV_ITEMS).toHaveLength(14);
+  it('lists 16 desktop nav items in OpsLayout order', () => {
+    expect(OPS_NAV_ITEMS).toHaveLength(16);
     expect(OPS_NAV_ITEMS.map((item) => item.to)).toEqual([
       '/ops',
       '/ops/calendar',
+      '/ops/cleaning',
       '/ops/reservations',
       '/ops/payments',
       '/ops/promo-codes',
@@ -27,7 +28,8 @@ describe('opsNavConfig', () => {
       '/ops/messaging',
       '/ops/gift-vouchers',
       '/ops/manual-review',
-      '/ops/readiness'
+      '/ops/readiness',
+      '/ops/settings/cleaning'
     ]);
     expect(OPS_NAV_ITEMS.find((item) => item.to === '/ops')?.end).toBe(true);
   });
@@ -55,9 +57,9 @@ describe('opsNavConfig', () => {
   describe('OPS_MORE_GROUPS full menu', () => {
     const moreRoutes = () => OPS_MORE_GROUPS.flatMap((group) => group.items.map((item) => item.to));
 
-    it('contains exactly all 14 OPS routes', () => {
-      expect(moreRoutes()).toHaveLength(14);
-      expect(new Set(moreRoutes()).size).toBe(14);
+    it('contains exactly all 16 OPS routes', () => {
+      expect(moreRoutes()).toHaveLength(16);
+      expect(new Set(moreRoutes()).size).toBe(16);
       expect(new Set(moreRoutes())).toEqual(new Set(OPS_NAV_ITEMS.map((item) => item.to)));
     });
 
@@ -73,6 +75,8 @@ describe('opsNavConfig', () => {
         '/ops',
         '/ops/calendar',
         '/ops/sync',
+        '/ops/cleaning',
+        '/ops/settings/cleaning',
         '/ops/reservations',
         '/ops/messaging',
         '/ops/communications',
@@ -136,10 +140,12 @@ describe('opsNavConfig', () => {
       expect(getActiveOpsMobileTabId('/ops/gift-vouchers/v-1')).toBe('finance');
     });
 
-    it('matches More routes including cabin detail', () => {
+    it('matches More routes including cabin detail and cleaning', () => {
       expect(getActiveOpsMobileTabId('/ops/creator-partners')).toBe('more');
       expect(getActiveOpsMobileTabId('/ops/cabins')).toBe('more');
       expect(getActiveOpsMobileTabId('/ops/cabins/cabin-1')).toBe('more');
+      expect(getActiveOpsMobileTabId('/ops/cleaning')).toBe('more');
+      expect(getActiveOpsMobileTabId('/ops/settings/cleaning')).toBe('more');
       expect(getActiveOpsMobileTabId('/ops/manual-review')).toBe('more');
       expect(getActiveOpsMobileTabId('/ops/readiness')).toBe('more');
       expect(isOpsMoreRoute('/ops/cabins/cabin-1')).toBe(true);

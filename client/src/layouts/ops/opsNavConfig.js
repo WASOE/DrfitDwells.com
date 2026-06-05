@@ -9,6 +9,7 @@
 export const OPS_NAV_ITEMS = [
   { to: '/ops', label: 'Dashboard', end: true },
   { to: '/ops/calendar', label: 'Calendar' },
+  { to: '/ops/cleaning', label: 'Cleaning' },
   { to: '/ops/reservations', label: 'Reservations' },
   { to: '/ops/payments', label: 'Payments' },
   { to: '/ops/promo-codes', label: 'Promo codes' },
@@ -20,7 +21,8 @@ export const OPS_NAV_ITEMS = [
   { to: '/ops/messaging', label: 'Messaging' },
   { to: '/ops/gift-vouchers', label: 'Gift vouchers' },
   { to: '/ops/manual-review', label: 'Manual' },
-  { to: '/ops/readiness', label: 'Readiness' }
+  { to: '/ops/readiness', label: 'Readiness' },
+  { to: '/ops/settings/cleaning', label: 'Cleaning settings' }
 ];
 
 /** @type {Record<OpsMobileTabId, readonly string[]>} */
@@ -29,7 +31,14 @@ export const OPS_MOBILE_TAB_ROUTE_PREFIXES = {
   calendar: ['/ops/calendar', '/ops/sync'],
   guests: ['/ops/reservations', '/ops/messaging', '/ops/communications', '/ops/reviews'],
   finance: ['/ops/payments', '/ops/promo-codes', '/ops/gift-vouchers'],
-  more: ['/ops/creator-partners', '/ops/cabins', '/ops/manual-review', '/ops/readiness']
+  more: [
+    '/ops/creator-partners',
+    '/ops/cabins',
+    '/ops/manual-review',
+    '/ops/readiness',
+    '/ops/cleaning',
+    '/ops/settings/cleaning'
+  ]
 };
 
 /** Fixed bottom tab bar entries (< md). More tab opens sheet; active when on a More-group route. */
@@ -87,6 +96,8 @@ export const OPS_MORE_GROUPS = [
     id: 'operations',
     label: 'Operations',
     items: [
+      { to: '/ops/cleaning', label: 'Cleaning' },
+      { to: '/ops/settings/cleaning', label: 'Cleaning settings' },
       { to: '/ops/manual-review', label: 'Manual' },
       { to: '/ops/readiness', label: 'Readiness' }
     ]

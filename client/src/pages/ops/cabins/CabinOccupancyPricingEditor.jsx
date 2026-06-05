@@ -82,6 +82,17 @@ export default function CabinOccupancyPricingEditor({
                 className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-sm"
               />
             </label>
+            <label className="block">
+              <span className="block text-xs text-gray-600 mb-1">Cleaning Fee (BGN)</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={pricingForm.cleaningFee ?? ''}
+                onChange={(e) => setPricingForm((p) => ({ ...p, cleaningFee: e.target.value }))}
+                className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-sm"
+              />
+            </label>
           </div>
           <div className="mt-4 flex items-center gap-2">
             <button

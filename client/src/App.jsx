@@ -56,6 +56,8 @@ const OpsCommunicationOversight = lazy(() => import('./pages/ops/OpsCommunicatio
 const OpsMessaging = lazy(() => import('./pages/ops/OpsMessaging'))
 const OpsManualReviewBacklog = lazy(() => import('./pages/ops/OpsManualReviewBacklog'))
 const OpsReadiness = lazy(() => import('./pages/ops/OpsReadiness'))
+const OpsCleaningCalendar = lazy(() => import('./pages/ops/cleaning/OpsCleaningCalendar'))
+const OpsCleaningSettings = lazy(() => import('./pages/ops/cleaning/OpsCleaningSettings'))
 const OpsGiftVouchers = lazy(() => import('./pages/ops/OpsGiftVouchers'))
 const OpsGiftVoucherDetail = lazy(() => import('./pages/ops/OpsGiftVoucherDetail'))
 const MaintenanceHome = lazy(() => import('./pages/maintenance/MaintenanceHome'))
@@ -231,6 +233,8 @@ function App() {
               <Route path="/ops/gift-vouchers" element={<OpsGiftVouchers />} />
               <Route path="/ops/gift-vouchers/:id" element={<OpsGiftVoucherDetail />} />
               <Route path="/ops/readiness" element={<OpsReadiness />} />
+              <Route path="/ops/cleaning" element={<OpsCleaningCalendar />} />
+              <Route path="/ops/settings/cleaning" element={<OpsCleaningSettings />} />
             </Route>
 
             <Route element={<MaintenanceLayout />}>
