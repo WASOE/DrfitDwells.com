@@ -186,6 +186,10 @@ test('renders draft email template for a booking', async () => {
   assert.match(data.email.subject, /The Cabin/);
   assert.match(data.email.html, /Hi Jose/);
   assert.match(data.email.html, /Park here/);
+  assert.ok(data.email.html.includes('<!DOCTYPE html>'));
+  assert.ok(data.email.html.includes('email-outer'));
+  assert.ok(data.email.html.includes('email-card'));
+  assert.ok(data.email.html.includes('driftdwells.com'));
   assert.ok(data.email.text.length > 0);
   assert.equal(data.whatsapp, null);
   assert.equal(data.propertyKind, 'cabin');
@@ -211,7 +215,7 @@ test('renders draft WhatsApp template variable payload', async () => {
   assert.equal(data.whatsapp.locale, 'en');
   assert.equal(data.variables.guestFirstName, 'Jose');
   assert.equal(data.variables.propertyName, 'The Cabin');
-  assert.ok(data.whatsapp.note.includes('template notes'));
+  assert.ok(data.whatsapp.note.includes('approved reference body'));
   assert.ok(typeof data.whatsapp.body === 'string' && data.whatsapp.body.length > 0);
   assert.match(data.whatsapp.body, /Hi Jose/);
   assert.match(data.whatsapp.body, /Здравейте, Jose/);
@@ -312,4 +316,20 @@ test('preview service module does not require dispatcher or emailService', () =>
   assert.ok(!/require\(['"].*emailService/.test(src));
   assert.ok(!/require\(['"].*providerRegistry/.test(src));
   assert.ok(!/require\(['"].*devShadow/.test(src));
+  assert.ok(/renderGmaEmailHtml/.test(src));
+});
+
+test('preview and dispatcher share the same GMA email shell renderer', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const previewSrc = fs.readFileSync(
+    path.join(__dirname, '../services/messaging/messageTemplatePreviewService.js'),
+    'utf8'
+  );
+  const dispatcherSrc = fs.readFileSync(
+    path.join(__dirname, '../services/messaging/messageDispatcher.js'),
+    'utf8'
+  );
+  assert.ok(previewSrc.includes("require('./gmaEmailHtmlRenderer')"));
+  assert.ok(dispatcherSrc.includes("require('./gmaEmailHtmlRenderer')"));
 });

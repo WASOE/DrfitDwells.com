@@ -12,6 +12,7 @@ const CabinType = require('../../models/CabinType');
 const MessageAutomationRule = require('../../models/MessageAutomationRule');
 const MessageTemplate = require('../../models/MessageTemplate');
 const { derivePlainTextFromHtml } = require('../../utils/manualLifecycleResendContent');
+const { renderGmaEmailHtml } = require('./gmaEmailHtmlRenderer');
 const { resolveVariables } = require('./messageVariableResolver');
 const {
   resolvePropertyKindFromCabinDoc,
@@ -23,7 +24,7 @@ const DEFAULT_LOCALE = 'en';
 const WHATSAPP_REFERENCE_BODY_MARKER =
   'WhatsApp reference body (bilingual, for Meta submission — not rendered from DB MessageTemplate fields):';
 const WHATSAPP_PREVIEW_NOTE =
-  'Compose-only preview. Meta sends using the approved template name; bilingual reference body below is rendered from template notes.';
+  'WhatsApp preview shows the approved reference body stored for review. Final Meta rendering depends on the submitted Meta template.';
 
 const PREVIEW_RULE_KEYS = Object.freeze([
   'arrival_instructions_pre_arrival_cabin',
@@ -239,9 +240,15 @@ async function previewGmaMessageForReservation({ reservationId, ruleKey, channel
 
   if (channel === 'email') {
     const subject = renderTemplateString(template.emailSubject || template.key, variables);
-    const html = renderTemplateString(template.emailBodyMarkup || '', variables);
+    const fragmentHtml = renderTemplateString(template.emailBodyMarkup || '', variables);
+    const html = renderGmaEmailHtml({
+      audience: rule.audience || 'guest',
+      subject,
+      fragmentHtml,
+      propertyName: variables.propertyName
+    });
     const text = derivePlainTextFromHtml(html);
-    email = { subject, html, text };
+    email = { subject, html, text, fragmentHtml };
   } else {
     const referenceBody = extractWhatsappReferenceBodyFromNotes(template.notes);
     const body = referenceBody ? renderTemplateString(referenceBody, variables) : null;

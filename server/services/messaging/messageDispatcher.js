@@ -104,6 +104,7 @@ const {
 } = require('./propertyKindResolver');
 const { normaliseGuestPhoneRaw } = require('./phoneNormalisationService');
 const { findApprovedTemplate } = require('./messageTemplateLookupService');
+const { renderGmaEmailHtml } = require('./gmaEmailHtmlRenderer');
 const { resolveVariables } = require('./messageVariableResolver');
 const { getProviderForChannel } = require('./providers/providerRegistry');
 
@@ -519,11 +520,15 @@ async function attemptShadowChannel({
         variables
       });
     } else {
-      providerResult = await provider.sendEmail({
-        to: recipient,
-        subject: renderTemplateString(approvedTemplate.emailSubject || templateKey, variables),
-        html: renderTemplateString(approvedTemplate.emailBodyMarkup || '', variables)
+      const subject = renderTemplateString(approvedTemplate.emailSubject || templateKey, variables);
+      const fragmentHtml = renderTemplateString(approvedTemplate.emailBodyMarkup || '', variables);
+      const html = renderGmaEmailHtml({
+        audience: rule.audience || 'guest',
+        subject,
+        fragmentHtml,
+        propertyName: variables.propertyName
       });
+      providerResult = await provider.sendEmail({ to: recipient, subject, html });
     }
   } catch (err) {
     const retryable = err?.retryable !== false && (err?.code === 'provider_unavailable' || err?.code === 'rate_limited' || err?.code === 'provider_throw' || err?.code == null);
@@ -578,7 +583,13 @@ async function attemptRealChannel({
 }) {
   const dispatchId = new mongoose.Types.ObjectId();
   const subject = renderTemplateString(approvedTemplate.emailSubject || templateKey, variables);
-  const html = renderTemplateString(approvedTemplate.emailBodyMarkup || '', variables);
+  const fragmentHtml = renderTemplateString(approvedTemplate.emailBodyMarkup || '', variables);
+  const html = renderGmaEmailHtml({
+    audience: rule.audience || 'guest',
+    subject,
+    fragmentHtml,
+    propertyName: variables.propertyName
+  });
 
   // STEP 1: Insert the pending outbox row BEFORE the provider call.
   let pendingRow;

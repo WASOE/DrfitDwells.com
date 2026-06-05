@@ -459,6 +459,9 @@ test('GMA preview renders cabin email with absolute guideUrl', async () => {
   assert.ok(!data.variables.supportPhone);
   assert.ok(data.email.html.includes('lang="en"'));
   assert.ok(data.email.html.includes('lang="bg"'));
+  assert.ok(data.email.html.includes('<!DOCTYPE html>'));
+  assert.ok(data.email.html.includes('email-outer'));
+  assert.ok(data.email.html.includes('email-card'));
 });
 
 test('GMA preview renders cabin WhatsApp body from template notes', async () => {

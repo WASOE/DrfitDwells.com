@@ -1329,13 +1329,13 @@ export default function OpsReservationDetail() {
             aria-label="Close GMA preview"
             onClick={closeGmaEmailPreviewModal}
           />
-          <div className="relative w-full max-w-4xl max-h-[min(92vh,900px)] flex flex-col rounded-xl border border-violet-200 bg-white shadow-xl overflow-hidden">
-            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-violet-100 px-4 py-3 sm:px-5">
+          <div className="relative w-full max-w-4xl max-h-[min(92vh,900px)] flex flex-col rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-100 px-4 py-3 sm:px-5">
               <div className="min-w-0 flex-1">
-                <h2 id="ops-gma-email-preview-title" className="text-sm font-semibold text-violet-900">
+                <h2 id="ops-gma-email-preview-title" className="text-sm font-semibold text-gray-900">
                   GMA email preview
                 </h2>
-                <p className="mt-1 text-xs text-gray-500 truncate" title={gmaEmailPreviewModal.subject}>
+                <p className="mt-1 text-xs text-gray-500 truncate" title={gmaEmailPreviewModal.subject || ''}>
                   {gmaEmailPreviewModal.ruleKey || ''}
                   {gmaEmailPreviewModal.templateStatus ? (
                     <span className={`ml-2 ${gmaTemplateStatusBadge(gmaEmailPreviewModal.templateStatus)}`}>
@@ -1354,20 +1354,14 @@ export default function OpsReservationDetail() {
               </button>
             </div>
             <p className="px-4 py-2 text-xs text-amber-900 bg-amber-50 border-b border-amber-100/80">
-              GMA preview only — not sent. Fragment HTML (automation templates); not the legacy lifecycle shell.
+              GMA preview only — nothing is sent. Sandbox blocks scripts; images may load for preview (same-origin).
             </p>
             <iframe
               title="GMA email HTML preview"
               sandbox="allow-same-origin"
               srcDoc={gmaEmailPreviewModal.html}
-              className="w-full min-h-[40vh] sm:min-h-[45vh] border-0 bg-zinc-100"
+              className="w-full flex-1 min-h-[50vh] sm:min-h-[60vh] border-0 bg-zinc-100"
             />
-            <div className="border-t border-gray-100 px-4 py-3 sm:px-5 max-h-[28vh] overflow-y-auto">
-              <p className="text-xs font-medium text-gray-700 mb-1">Plain text</p>
-              <pre className="text-xs text-gray-800 whitespace-pre-wrap font-sans leading-relaxed">
-                {gmaEmailPreviewModal.text || '—'}
-              </pre>
-            </div>
           </div>
         </div>
       ) : null}
@@ -1385,10 +1379,10 @@ export default function OpsReservationDetail() {
             aria-label="Close GMA WhatsApp preview"
             onClick={closeGmaWhatsappPreviewModal}
           />
-          <div className="relative w-full max-w-lg max-h-[min(92vh,720px)] flex flex-col rounded-xl border border-violet-200 bg-white shadow-xl overflow-hidden">
-            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-violet-100 px-4 py-3">
+          <div className="relative w-full max-w-lg max-h-[min(92vh,720px)] flex flex-col rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-100 px-4 py-3 sm:px-5">
               <div className="min-w-0 flex-1">
-                <h2 id="ops-gma-wa-preview-title" className="text-sm font-semibold text-violet-900">
+                <h2 id="ops-gma-wa-preview-title" className="text-sm font-semibold text-gray-900">
                   GMA WhatsApp preview
                 </h2>
                 <p className="mt-1 text-xs text-gray-500">
@@ -1399,6 +1393,16 @@ export default function OpsReservationDetail() {
                     </span>
                   ) : null}
                 </p>
+                <dl className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                  <div>
+                    <dt className="text-gray-500">Template name</dt>
+                    <dd className="font-mono text-gray-900 break-all">{gmaWhatsappPreviewModal.templateName || '—'}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-gray-500">Locale</dt>
+                    <dd className="text-gray-900">{gmaWhatsappPreviewModal.locale || '—'}</dd>
+                  </div>
+                </dl>
               </div>
               <button
                 type="button"
@@ -1409,31 +1413,27 @@ export default function OpsReservationDetail() {
               </button>
             </div>
             <p className="px-4 py-2 text-xs text-amber-900 bg-amber-50 border-b border-amber-100/80">
-              GMA preview only — not sent. {gmaWhatsappPreviewModal.note}
+              GMA preview only — nothing is sent. WhatsApp preview shows the approved reference body stored for review.
+              Final Meta rendering depends on the submitted Meta template.
             </p>
-            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 text-sm">
-              <dl className="grid grid-cols-1 gap-2 text-xs">
-                <div>
-                  <dt className="text-gray-500">Template name</dt>
-                  <dd className="font-mono text-gray-900 break-all">{gmaWhatsappPreviewModal.templateName || '—'}</dd>
+            <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5 space-y-4 text-sm">
+              <div className="mx-auto w-full max-w-sm">
+                <div className="rounded-2xl border border-[#d1ccc4] bg-[#e5ddd5] p-4 shadow-inner">
+                  <div className="rounded-xl rounded-tl-sm bg-white px-3.5 py-3 text-sm text-gray-900 shadow-sm">
+                    <pre className="whitespace-pre-wrap font-sans leading-relaxed text-[13px] text-gray-900">
+                      {gmaWhatsappPreviewModal.body || '—'}
+                    </pre>
+                  </div>
                 </div>
-                <div>
-                  <dt className="text-gray-500">Locale</dt>
-                  <dd className="text-gray-900">{gmaWhatsappPreviewModal.locale || '—'}</dd>
-                </div>
-              </dl>
-              <div>
-                <p className="text-xs font-medium text-gray-700 mb-2">Bilingual message body (rendered)</p>
-                <pre className="whitespace-pre-wrap rounded-md border border-violet-100 bg-violet-50/50 p-3 text-xs text-gray-900 leading-relaxed max-h-[min(40vh,320px)] overflow-y-auto">
-                  {gmaWhatsappPreviewModal.body || '—'}
-                </pre>
               </div>
-              <div>
-                <p className="text-xs font-medium text-gray-700 mb-2">Filled variables</p>
-                <div className="overflow-x-auto rounded-md border border-gray-200">
+              <details className="rounded-lg border border-gray-200 bg-gray-50/80">
+                <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-gray-700">
+                  Filled variables (secondary)
+                </summary>
+                <div className="border-t border-gray-200 overflow-x-auto">
                   <table className="w-full text-left text-xs">
                     <thead>
-                      <tr className="border-b border-gray-200 bg-gray-50 text-gray-600">
+                      <tr className="border-b border-gray-200 bg-white text-gray-600">
                         <th className="py-1.5 px-2 font-medium">Key</th>
                         <th className="py-1.5 px-2 font-medium">Value</th>
                       </tr>
@@ -1441,7 +1441,7 @@ export default function OpsReservationDetail() {
                     <tbody>
                       {gmaWhatsappPreviewModal.variables &&
                         Object.entries(gmaWhatsappPreviewModal.variables).map(([key, value]) => (
-                          <tr key={key} className="border-b border-gray-100 align-top">
+                          <tr key={key} className="border-b border-gray-100 align-top bg-white">
                             <td className="py-1.5 px-2 font-mono text-gray-700 whitespace-nowrap">{key}</td>
                             <td className="py-1.5 px-2 text-gray-900 break-all">{String(value ?? '')}</td>
                           </tr>
@@ -1449,7 +1449,7 @@ export default function OpsReservationDetail() {
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </details>
             </div>
           </div>
         </div>
