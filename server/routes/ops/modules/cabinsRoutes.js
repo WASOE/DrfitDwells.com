@@ -94,7 +94,8 @@ const OPS_CABIN_OCCUPANCY_EXCLUDED_FIELDS = new Set([
   'units'
 ]);
 const OPS_CABIN_PRICING_ALLOWED_FIELDS = new Set([
-  'pricePerNight'
+  'pricePerNight',
+  'cleaningFee'
 ]);
 const OPS_CABIN_PRICING_EXCLUDED_FIELDS = new Set([
   'pricingModel',
@@ -530,11 +531,11 @@ router.patch('/:id/pricing', validateId('id'), adminModuleWriteGate('cabins'), a
       });
     }
 
-    const result = await updateCabinFromAdminPayload(
-      req.params.id,
-      { pricePerNight: body.pricePerNight },
-      {}
-    );
+    const pricingPayload = { pricePerNight: body.pricePerNight };
+    if (Object.prototype.hasOwnProperty.call(body, 'cleaningFee')) {
+      pricingPayload.cleaningFee = body.cleaningFee;
+    }
+    const result = await updateCabinFromAdminPayload(req.params.id, pricingPayload, {});
     if (!result.ok) {
       return res.status(result.status).json(result.payload);
     }

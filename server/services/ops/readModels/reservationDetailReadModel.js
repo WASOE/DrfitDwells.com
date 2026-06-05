@@ -56,6 +56,8 @@ async function getReservationDetailReadModel(reservationId) {
 
   return {
     reservation: mapped,
+    // Admin-authored note for cleaning staff (not guest PII) — safe to expose to ops.
+    cleaningNotes: booking.cleaningNotes || null,
     cancellationSettlement: mapCancellationSettlementForOps(booking),
     guestDetail: guest
       ? {

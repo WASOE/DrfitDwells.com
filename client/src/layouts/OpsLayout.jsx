@@ -75,6 +75,7 @@ export default function OpsLayout() {
   const navItems = [
     { to: '/ops', label: 'Dashboard' },
     { to: '/ops/calendar', label: 'Calendar' },
+    { to: '/ops/cleaning', label: 'Cleaning' },
     { to: '/ops/reservations', label: 'Reservations' },
     { to: '/ops/payments', label: 'Payments' },
     { to: '/ops/promo-codes', label: 'Promo codes' },
@@ -86,7 +87,8 @@ export default function OpsLayout() {
     { to: '/ops/messaging', label: 'Messaging' },
     { to: '/ops/gift-vouchers', label: 'Gift vouchers' },
     { to: '/ops/manual-review', label: 'Manual' },
-    { to: '/ops/readiness', label: 'Readiness' }
+    { to: '/ops/readiness', label: 'Readiness' },
+    { to: '/ops/settings/cleaning', label: 'Cleaning settings' }
   ];
 
   const staleSync =

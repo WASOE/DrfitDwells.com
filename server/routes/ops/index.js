@@ -18,6 +18,7 @@ const promoCodesRoutes = require('./modules/promoCodesRoutes');
 const creatorCommissionsRoutes = require('./modules/creatorCommissionsRoutes');
 const giftVouchersRoutes = require('./modules/giftVouchersRoutes');
 const messagingRoutes = require('./modules/messagingRoutes');
+const cleaningRoutes = require('./modules/cleaningRoutes');
 
 const router = express.Router();
 
@@ -60,5 +61,6 @@ router.use('/promo-codes', promoCodesRoutes);
 router.use('/creator-commissions', creatorCommissionsRoutes);
 router.use('/gift-vouchers', giftVouchersRoutes);
 router.use('/messaging', messagingRoutes);
+router.use('/cleaning', cleaningRoutes);
 
 module.exports = router;
