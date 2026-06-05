@@ -16,12 +16,28 @@ function mapCancellationSettlementForOps(booking) {
   const raw = booking?.cancellationSettlement;
   if (!raw || typeof raw !== 'object') return null;
 
+  const evidence = raw.cashRefundEvidence && typeof raw.cashRefundEvidence === 'object'
+    ? raw.cashRefundEvidence
+    : null;
+
   return {
     outcome: raw.outcome || null,
     reason: raw.reason || null,
     creditAmountCents: Number.isFinite(raw.creditAmountCents) ? raw.creditAmountCents : null,
     compensationGiftVoucherId: raw.compensationGiftVoucherId
       ? String(raw.compensationGiftVoucherId)
+      : null,
+    cashRefundAmountCents: Number.isFinite(raw.cashRefundAmountCents) ? raw.cashRefundAmountCents : null,
+    cashRefundNote: raw.cashRefundNote || null,
+    cashRefundEvidence: evidence
+      ? {
+          amountCents: Number.isFinite(evidence.amountCents) ? evidence.amountCents : null,
+          method: evidence.method || null,
+          reference: evidence.reference || evidence.stripeRefundId || null,
+          recordedAt: evidence.recordedAt || null,
+          recordedByActorId: evidence.recordedByActorId || null,
+          note: evidence.note || null
+        }
       : null,
     settlementRecordedAt: raw.settlementRecordedAt || null,
     settlementRecordedByActorId: raw.settlementRecordedByActorId || null

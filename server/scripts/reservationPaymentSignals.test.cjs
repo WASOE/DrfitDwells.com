@@ -257,6 +257,54 @@ test('Batch 5: refund_follow_up alert suppressed for credits_issued', () => {
   );
 });
 
+test('Batch 10: cash_refunded suppresses cancelled paid/partial follow-up', () => {
+  assert.deepEqual(
+    derivePaymentAttention({
+      reservationStatus: 'cancelled',
+      paymentStatus: 'paid',
+      cancellationSettlementOutcome: 'cash_refunded'
+    }),
+    {
+      cancelledPaid: false,
+      refundPending: false,
+      paymentAttention: false
+    }
+  );
+
+  assert.equal(
+    shouldEmitRefundFollowUpAlert({
+      reservationStatus: 'cancelled',
+      paymentStatus: 'paid',
+      cancellationSettlementOutcome: 'cash_refunded'
+    }),
+    false
+  );
+});
+
+test('Batch 10: cash_refund_pending keeps cancelled paid follow-up', () => {
+  assert.deepEqual(
+    derivePaymentAttention({
+      reservationStatus: 'cancelled',
+      paymentStatus: 'paid',
+      cancellationSettlementOutcome: 'cash_refund_pending'
+    }),
+    {
+      cancelledPaid: true,
+      refundPending: true,
+      paymentAttention: true
+    }
+  );
+
+  assert.equal(
+    shouldEmitRefundFollowUpAlert({
+      reservationStatus: 'cancelled',
+      paymentStatus: 'paid',
+      cancellationSettlementOutcome: 'cash_refund_pending'
+    }),
+    true
+  );
+});
+
 test('Batch 2: refund_follow_up alert suppression only for payment_retained', () => {
   assert.equal(
     shouldEmitRefundFollowUpAlert({

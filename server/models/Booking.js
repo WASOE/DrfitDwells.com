@@ -35,6 +35,12 @@ const cancellationSettlementSchema = new mongoose.Schema(
       type: new mongoose.Schema(
         {
           amountCents: { type: Number, default: null, min: [0, 'cashRefundEvidence.amountCents cannot be negative'] },
+          method: {
+            type: String,
+            enum: ['bank_transfer', 'stripe_manual', 'cash', 'other', null],
+            default: null
+          },
+          reference: { type: String, trim: true, maxlength: [200, 'cashRefundEvidence.reference cannot exceed 200 characters'], default: null },
           stripeRefundId: { type: String, trim: true, default: null },
           stripeChargeId: { type: String, trim: true, default: null },
           stripePaymentIntentId: { type: String, trim: true, default: null },

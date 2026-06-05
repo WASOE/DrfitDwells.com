@@ -6,33 +6,64 @@ import { OpsEmailPreviewModal } from './components/OpsEmailPreviewModal';
 import { OpsWhatsappPreviewModal } from './components/OpsWhatsappPreviewModal';
 
 const MIN_STAY_CREDIT_CENTS = 10000;
+const CANCELLABLE_RESERVATION_STATUSES = new Set(['pending', 'confirmed', 'in_house']);
+
+const CASH_REFUND_METHOD_OPTIONS = [
+  { value: 'stripe_manual', label: 'Stripe (manual)' },
+  { value: 'bank_transfer', label: 'Bank transfer' },
+  { value: 'cash', label: 'Cash' },
+  { value: 'other', label: 'Other' }
+];
 
 const SETTLEMENT_OUTCOME_OPTIONS = [
-  { value: 'resolution_pending', label: 'Settlement pending' },
+  { value: 'resolution_pending', label: 'Decide later' },
   { value: 'payment_retained', label: 'Payment retained' },
-  { value: 'credits_issued', label: 'Issue stay credit now' }
+  { value: 'credits_issued', label: 'Issue stay credit now' },
+  { value: 'cash_refund_pending', label: 'Cash refund pending' },
+  { value: 'cash_refunded', label: 'Cash refund already paid' }
 ];
 
 const RESOLVE_SETTLEMENT_OUTCOME_OPTIONS = [
   { value: 'payment_retained', label: 'Payment retained' },
-  { value: 'credits_issued', label: 'Issue stay credit now' }
+  { value: 'credits_issued', label: 'Issue stay credit now' },
+  { value: 'cash_refund_pending', label: 'Cash refund pending' },
+  { value: 'cash_refunded', label: 'Cash refund already paid' }
 ];
 
 const SETTLEMENT_WARNINGS = {
   resolution_pending: 'Refund follow-up stays active until this is resolved later.',
   payment_retained: 'No refund follow-up will be shown. Payment is retained.',
   credits_issued:
-    'Creates an active stay credit immediately. Minimum €100. Guest receives only the standard cancellation email for now.'
+    'Creates an active stay credit immediately. Minimum €100. Guest receives only the standard cancellation email for now.',
+  cash_refund_pending:
+    'Manual cash refund still required. Refund follow-up stays active until marked refunded.',
+  cash_refunded:
+    'Records that cash was refunded manually. No Stripe automation. Refund follow-up will clear.'
 };
 
 function settlementOutcomeLabel(outcome) {
   const labels = {
     resolution_pending: 'Settlement pending',
     payment_retained: 'Payment retained',
-    credits_issued: 'Stay credit issued'
+    credits_issued: 'Stay credit issued',
+    cash_refund_pending: 'Cash refund pending',
+    cash_refunded: 'Cash refunded'
   };
   return labels[outcome] || outcome || '—';
 }
+
+function cashRefundMethodLabel(method) {
+  const match = CASH_REFUND_METHOD_OPTIONS.find((option) => option.value === method);
+  return match?.label || method || '—';
+}
+
+const EMPTY_CASH_REFUND_FORM = {
+  amountEuros: '',
+  note: '',
+  reference: '',
+  method: 'stripe_manual',
+  refundedDate: ''
+};
 
 function eurosToCreditCents(eurosInput) {
   const trimmed = String(eurosInput || '').trim().replace(',', '.');
@@ -92,16 +123,19 @@ export default function OpsReservationDetail() {
   const [cancelForm, setCancelForm] = useState({
     reason: '',
     outcome: 'resolution_pending',
-    creditAmountEuros: ''
+    creditAmountEuros: '',
+    cashRefund: { ...EMPTY_CASH_REFUND_FORM }
   });
 
   const [resolveOpen, setResolveOpen] = useState(false);
+  const [resolveModalMode, setResolveModalMode] = useState('settlement');
   const [resolveBusy, setResolveBusy] = useState(false);
   const [resolveError, setResolveError] = useState('');
   const [resolveForm, setResolveForm] = useState({
     reason: '',
     outcome: 'payment_retained',
-    creditAmountEuros: ''
+    creditAmountEuros: '',
+    cashRefund: { ...EMPTY_CASH_REFUND_FORM }
   });
 
   const [overrideRecipient, setOverrideRecipient] = useState('');
@@ -197,11 +231,62 @@ export default function OpsReservationDetail() {
     setEditDatesOpen(true);
   };
 
+  const buildCashRefundSettlementPayload = (outcome, cashRefund) => {
+    if (outcome === 'cash_refund_pending') {
+      const amountCents = eurosToCreditCents(cashRefund.amountEuros);
+      const note = cashRefund.note.trim();
+      const settlement = { outcome: 'cash_refund_pending' };
+      if (amountCents != null) {
+        settlement.cashRefundAmountCents = amountCents;
+      }
+      if (note) {
+        settlement.cashRefundNote = note;
+      }
+      return { settlement };
+    }
+
+    if (outcome === 'cash_refunded') {
+      const amountCents = eurosToCreditCents(cashRefund.amountEuros);
+      if (amountCents == null || amountCents <= 0) {
+        return { error: 'Enter a valid refund amount in euros' };
+      }
+      const method = cashRefund.method;
+      if (!method) {
+        return { error: 'Choose a refund method' };
+      }
+      const note = cashRefund.note.trim();
+      if (!note) {
+        return { error: 'Refund note is required when marking cash refunded' };
+      }
+      const evidence = {
+        amountCents,
+        method,
+        note
+      };
+      if (cashRefund.reference.trim()) {
+        evidence.reference = cashRefund.reference.trim();
+      }
+      if (cashRefund.refundedDate) {
+        evidence.recordedAt = cashRefund.refundedDate;
+      }
+      return {
+        settlement: {
+          outcome: 'cash_refunded',
+          cashRefundAmountCents: amountCents,
+          cashRefundEvidence: evidence
+        }
+      };
+    }
+
+    return { error: 'Choose a valid settlement outcome' };
+  };
+
   const openCancelModal = () => {
     setCancelForm({
       reason: '',
       outcome: 'resolution_pending',
-      creditAmountEuros: ''
+      creditAmountEuros: '',
+      cashRefund: { ...EMPTY_CASH_REFUND_FORM }
     });
     setCancelError('');
     setError('');
@@ -250,6 +335,12 @@ export default function OpsReservationDetail() {
       };
     }
 
+    if (cancelForm.outcome === 'cash_refund_pending' || cancelForm.outcome === 'cash_refunded') {
+      const cashBuilt = buildCashRefundSettlementPayload(cancelForm.outcome, cancelForm.cashRefund);
+      if (cashBuilt.error) return cashBuilt;
+      return { body: { reason, settlement: cashBuilt.settlement } };
+    }
+
     return { error: 'Choose a valid settlement outcome' };
   };
 
@@ -280,11 +371,37 @@ export default function OpsReservationDetail() {
     }
   };
 
+  const centsToEurosInput = (cents) => {
+    if (!Number.isFinite(cents)) return '';
+    return String((cents / 100).toFixed(2)).replace(/\.00$/, '');
+  };
+
   const openResolveModal = () => {
+    setResolveModalMode('settlement');
     setResolveForm({
       reason: '',
       outcome: 'payment_retained',
-      creditAmountEuros: ''
+      creditAmountEuros: '',
+      cashRefund: { ...EMPTY_CASH_REFUND_FORM }
+    });
+    setResolveError('');
+    setError('');
+    setSuccessMessage('');
+    setResolveOpen(true);
+  };
+
+  const openMarkRefundedModal = () => {
+    const pendingAmountEuros = centsToEurosInput(data?.cancellationSettlement?.cashRefundAmountCents);
+    setResolveModalMode('mark_refunded');
+    setResolveForm({
+      reason: '',
+      outcome: 'cash_refunded',
+      creditAmountEuros: '',
+      cashRefund: {
+        ...EMPTY_CASH_REFUND_FORM,
+        amountEuros: pendingAmountEuros,
+        note: data?.cancellationSettlement?.cashRefundNote || ''
+      }
     });
     setResolveError('');
     setError('');
@@ -301,7 +418,10 @@ export default function OpsReservationDetail() {
       return { error: 'Resolve reason must be at most 500 characters' };
     }
 
-    if (resolveForm.outcome === 'payment_retained') {
+    const effectiveOutcome =
+      resolveModalMode === 'mark_refunded' ? 'cash_refunded' : resolveForm.outcome;
+
+    if (effectiveOutcome === 'payment_retained') {
       return {
         body: {
           reason,
@@ -310,7 +430,7 @@ export default function OpsReservationDetail() {
       };
     }
 
-    if (resolveForm.outcome === 'credits_issued') {
+    if (effectiveOutcome === 'credits_issued') {
       const creditAmountCents = eurosToCreditCents(resolveForm.creditAmountEuros);
       if (creditAmountCents == null) {
         return { error: 'Enter a valid stay credit amount in euros' };
@@ -327,6 +447,12 @@ export default function OpsReservationDetail() {
           }
         }
       };
+    }
+
+    if (effectiveOutcome === 'cash_refund_pending' || effectiveOutcome === 'cash_refunded') {
+      const cashBuilt = buildCashRefundSettlementPayload(effectiveOutcome, resolveForm.cashRefund);
+      if (cashBuilt.error) return cashBuilt;
+      return { body: { reason, settlement: cashBuilt.settlement } };
     }
 
     return { error: 'Choose a valid settlement outcome' };
@@ -726,15 +852,20 @@ export default function OpsReservationDetail() {
   const reservation = data.reservation || {};
   const cancellationSettlement = data.cancellationSettlement || null;
   const isAdmin = role === 'admin';
-  const canCancel =
-    isAdmin && reservation.reservationStatus && reservation.reservationStatus !== 'cancelled';
+  const reservationStatus = reservation.reservationStatus || '';
+  const isCompletedReservation = reservationStatus === 'completed';
+  const canCancel = isAdmin && CANCELLABLE_RESERVATION_STATUSES.has(reservationStatus);
   const canResolveSettlement =
     isAdmin &&
     reservation.reservationStatus === 'cancelled' &&
     (!cancellationSettlement ||
       !cancellationSettlement.outcome ||
       cancellationSettlement.outcome === 'resolution_pending');
-  const showSettlementCard = Boolean(cancellationSettlement) || canResolveSettlement;
+  const canMarkCashRefunded =
+    isAdmin &&
+    reservation.reservationStatus === 'cancelled' &&
+    cancellationSettlement?.outcome === 'cash_refund_pending';
+  const showSettlementCard = Boolean(cancellationSettlement) || canResolveSettlement || canMarkCashRefunded;
   const displayedSettlementOutcome = !cancellationSettlement
     ? 'Not recorded yet'
     : !cancellationSettlement.outcome || cancellationSettlement.outcome === 'resolution_pending'
@@ -766,10 +897,24 @@ export default function OpsReservationDetail() {
                 Resolve settlement
               </button>
             ) : null}
+            {canMarkCashRefunded ? (
+              <button
+                type="button"
+                onClick={openMarkRefundedModal}
+                className="shrink-0 px-3 py-2 text-sm rounded border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
+              >
+                Mark as refunded
+              </button>
+            ) : null}
           </div>
           {canResolveSettlement ? (
             <p className="mt-2 text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
               Refund follow-up stays active until this settlement is resolved.
+            </p>
+          ) : null}
+          {canMarkCashRefunded ? (
+            <p className="mt-2 text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+              Manual cash refund is still required. Mark as refunded once completed.
             </p>
           ) : null}
           <dl className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
@@ -783,6 +928,42 @@ export default function OpsReservationDetail() {
                 <dd className="font-medium text-gray-900 tabular-nums">
                   {formatMoneyFromCents(cancellationSettlement.creditAmountCents, 'EUR')}
                 </dd>
+              </div>
+            ) : null}
+            {cancellationSettlement?.cashRefundAmountCents != null ? (
+              <div>
+                <dt className="text-gray-500">Cash refund amount</dt>
+                <dd className="font-medium text-gray-900 tabular-nums">
+                  {formatMoneyFromCents(cancellationSettlement.cashRefundAmountCents, 'EUR')}
+                </dd>
+              </div>
+            ) : null}
+            {cancellationSettlement?.cashRefundEvidence?.method ? (
+              <div>
+                <dt className="text-gray-500">Refund method</dt>
+                <dd className="text-gray-900">
+                  {cashRefundMethodLabel(cancellationSettlement.cashRefundEvidence.method)}
+                </dd>
+              </div>
+            ) : null}
+            {cancellationSettlement?.cashRefundEvidence?.reference ? (
+              <div>
+                <dt className="text-gray-500">Refund reference</dt>
+                <dd className="text-gray-900 break-all">{cancellationSettlement.cashRefundEvidence.reference}</dd>
+              </div>
+            ) : null}
+            {cancellationSettlement?.cashRefundEvidence?.recordedAt ? (
+              <div>
+                <dt className="text-gray-500">Refunded at</dt>
+                <dd className="text-gray-900">
+                  {String(cancellationSettlement.cashRefundEvidence.recordedAt).slice(0, 19).replace('T', ' ')}
+                </dd>
+              </div>
+            ) : null}
+            {cancellationSettlement?.cashRefundNote ? (
+              <div className="sm:col-span-2">
+                <dt className="text-gray-500">Cash refund note</dt>
+                <dd className="text-gray-900 whitespace-pre-wrap">{cancellationSettlement.cashRefundNote}</dd>
               </div>
             ) : null}
             {cancellationSettlement?.settlementRecordedAt ? (
@@ -841,6 +1022,11 @@ export default function OpsReservationDetail() {
                 >
                   Cancel reservation
                 </button>
+              ) : null}
+              {isAdmin && isCompletedReservation ? (
+                <p className="w-full text-xs text-gray-500 mt-1">
+                  Completed reservations cannot be cancelled from OPS.
+                </p>
               ) : null}
               {isAdmin ? (
                 <button
@@ -1539,7 +1725,11 @@ export default function OpsReservationDetail() {
                             ...prev,
                             outcome: option.value,
                             creditAmountEuros:
-                              option.value === 'credits_issued' ? prev.creditAmountEuros : ''
+                              option.value === 'credits_issued' ? prev.creditAmountEuros : '',
+                            cashRefund:
+                              option.value === 'cash_refund_pending' || option.value === 'cash_refunded'
+                                ? prev.cashRefund
+                                : { ...EMPTY_CASH_REFUND_FORM }
                           }))
                         }
                         className="mt-0.5"
@@ -1569,9 +1759,154 @@ export default function OpsReservationDetail() {
                   <p className="mt-1 text-xs text-gray-500">Minimum €100. Amount is issued immediately.</p>
                 </div>
               ) : null}
+              {cancelForm.outcome === 'cash_refund_pending' ? (
+                <div className="space-y-3">
+                  <div>
+                    <label htmlFor="cancelCashRefundAmount" className="block text-xs font-medium text-gray-500 mb-1">
+                      Refund amount (EUR)
+                    </label>
+                    <input
+                      id="cancelCashRefundAmount"
+                      type="text"
+                      inputMode="decimal"
+                      value={cancelForm.cashRefund.amountEuros}
+                      onChange={(e) =>
+                        setCancelForm((prev) => ({
+                          ...prev,
+                          cashRefund: { ...prev.cashRefund, amountEuros: e.target.value }
+                        }))
+                      }
+                      placeholder="e.g. 300"
+                      className="w-full max-w-xs px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">Required when the booking has a recorded cash payment.</p>
+                  </div>
+                  <div>
+                    <label htmlFor="cancelCashRefundNote" className="block text-xs font-medium text-gray-500 mb-1">
+                      Note (optional)
+                    </label>
+                    <input
+                      id="cancelCashRefundNote"
+                      type="text"
+                      value={cancelForm.cashRefund.note}
+                      onChange={(e) =>
+                        setCancelForm((prev) => ({
+                          ...prev,
+                          cashRefund: { ...prev.cashRefund, note: e.target.value }
+                        }))
+                      }
+                      placeholder="e.g. Refund via Stripe dashboard"
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
+                    />
+                  </div>
+                </div>
+              ) : null}
+              {cancelForm.outcome === 'cash_refunded' ? (
+                <div className="space-y-3">
+                  <div>
+                    <label htmlFor="cancelCashRefundedAmount" className="block text-xs font-medium text-gray-500 mb-1">
+                      Refund amount (EUR) <span className="text-red-600">*</span>
+                    </label>
+                    <input
+                      id="cancelCashRefundedAmount"
+                      type="text"
+                      inputMode="decimal"
+                      required
+                      value={cancelForm.cashRefund.amountEuros}
+                      onChange={(e) =>
+                        setCancelForm((prev) => ({
+                          ...prev,
+                          cashRefund: { ...prev.cashRefund, amountEuros: e.target.value }
+                        }))
+                      }
+                      placeholder="e.g. 300"
+                      className="w-full max-w-xs px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="cancelCashRefundedMethod" className="block text-xs font-medium text-gray-500 mb-1">
+                      Refund method <span className="text-red-600">*</span>
+                    </label>
+                    <select
+                      id="cancelCashRefundedMethod"
+                      required
+                      value={cancelForm.cashRefund.method}
+                      onChange={(e) =>
+                        setCancelForm((prev) => ({
+                          ...prev,
+                          cashRefund: { ...prev.cashRefund, method: e.target.value }
+                        }))
+                      }
+                      className="w-full max-w-xs px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
+                    >
+                      {CASH_REFUND_METHOD_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="cancelCashRefundedReference" className="block text-xs font-medium text-gray-500 mb-1">
+                      Reference (optional)
+                    </label>
+                    <input
+                      id="cancelCashRefundedReference"
+                      type="text"
+                      value={cancelForm.cashRefund.reference}
+                      onChange={(e) =>
+                        setCancelForm((prev) => ({
+                          ...prev,
+                          cashRefund: { ...prev.cashRefund, reference: e.target.value }
+                        }))
+                      }
+                      placeholder="e.g. Stripe refund ID"
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="cancelCashRefundedDate" className="block text-xs font-medium text-gray-500 mb-1">
+                      Refunded date
+                    </label>
+                    <input
+                      id="cancelCashRefundedDate"
+                      type="date"
+                      value={cancelForm.cashRefund.refundedDate}
+                      onChange={(e) =>
+                        setCancelForm((prev) => ({
+                          ...prev,
+                          cashRefund: { ...prev.cashRefund, refundedDate: e.target.value }
+                        }))
+                      }
+                      className="w-full max-w-xs px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="cancelCashRefundedNote" className="block text-xs font-medium text-gray-500 mb-1">
+                      Refund note <span className="text-red-600">*</span>
+                    </label>
+                    <input
+                      id="cancelCashRefundedNote"
+                      type="text"
+                      required
+                      value={cancelForm.cashRefund.note}
+                      onChange={(e) =>
+                        setCancelForm((prev) => ({
+                          ...prev,
+                          cashRefund: { ...prev.cashRefund, note: e.target.value }
+                        }))
+                      }
+                      placeholder="How was the refund completed?"
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
+                    />
+                  </div>
+                </div>
+              ) : null}
               <div
                 className={`text-sm rounded-md px-3 py-2 border ${
-                  cancelForm.outcome === 'credits_issued'
+                  cancelForm.outcome === 'credits_issued' ||
+                  cancelForm.outcome === 'cash_refund_pending' ||
+                  cancelForm.outcome === 'cash_refunded'
                     ? 'bg-amber-50 border-amber-200 text-amber-900'
                     : 'bg-gray-50 border-gray-200 text-gray-700'
                 }`}
@@ -1623,7 +1958,9 @@ export default function OpsReservationDetail() {
           />
           <div className="relative w-full max-w-lg rounded-xl bg-white border border-gray-200 shadow-xl p-5 space-y-4">
             <h3 id="resolve-settlement-title" className="text-base font-semibold text-gray-900">
-              Resolve cancellation settlement
+              {resolveModalMode === 'mark_refunded'
+                ? 'Mark cash refund as paid'
+                : 'Resolve cancellation settlement'}
             </h3>
             <form onSubmit={submitResolveSettlement} className="space-y-4">
               <div>
@@ -1637,10 +1974,15 @@ export default function OpsReservationDetail() {
                   rows={3}
                   value={resolveForm.reason}
                   onChange={(e) => setResolveForm((prev) => ({ ...prev, reason: e.target.value }))}
-                  placeholder="Why is this settlement being resolved?"
+                  placeholder={
+                    resolveModalMode === 'mark_refunded'
+                      ? 'Why is this refund being recorded as completed?'
+                      : 'Why is this settlement being resolved?'
+                  }
                   className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
                 />
               </div>
+              {resolveModalMode === 'settlement' ? (
               <fieldset>
                 <legend className="block text-xs font-medium text-gray-500 mb-2">Settlement outcome</legend>
                 <div className="space-y-2">
@@ -1659,7 +2001,11 @@ export default function OpsReservationDetail() {
                             ...prev,
                             outcome: option.value,
                             creditAmountEuros:
-                              option.value === 'credits_issued' ? prev.creditAmountEuros : ''
+                              option.value === 'credits_issued' ? prev.creditAmountEuros : '',
+                            cashRefund:
+                              option.value === 'cash_refund_pending' || option.value === 'cash_refunded'
+                                ? prev.cashRefund
+                                : { ...EMPTY_CASH_REFUND_FORM }
                           }))
                         }
                         className="mt-0.5"
@@ -1669,7 +2015,8 @@ export default function OpsReservationDetail() {
                   ))}
                 </div>
               </fieldset>
-              {resolveForm.outcome === 'credits_issued' ? (
+              ) : null}
+              {resolveModalMode === 'settlement' && resolveForm.outcome === 'credits_issued' ? (
                 <div>
                   <label htmlFor="resolveCreditEuros" className="block text-xs font-medium text-gray-500 mb-1">
                     Stay credit amount (EUR) <span className="text-red-600">*</span>
@@ -1689,15 +2036,163 @@ export default function OpsReservationDetail() {
                   <p className="mt-1 text-xs text-gray-500">Minimum €100. Amount is issued immediately.</p>
                 </div>
               ) : null}
+              {resolveModalMode === 'settlement' && resolveForm.outcome === 'cash_refund_pending' ? (
+                <div className="space-y-3">
+                  <div>
+                    <label htmlFor="resolveCashRefundAmount" className="block text-xs font-medium text-gray-500 mb-1">
+                      Refund amount (EUR)
+                    </label>
+                    <input
+                      id="resolveCashRefundAmount"
+                      type="text"
+                      inputMode="decimal"
+                      value={resolveForm.cashRefund.amountEuros}
+                      onChange={(e) =>
+                        setResolveForm((prev) => ({
+                          ...prev,
+                          cashRefund: { ...prev.cashRefund, amountEuros: e.target.value }
+                        }))
+                      }
+                      placeholder="e.g. 300"
+                      className="w-full max-w-xs px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="resolveCashRefundNote" className="block text-xs font-medium text-gray-500 mb-1">
+                      Note (optional)
+                    </label>
+                    <input
+                      id="resolveCashRefundNote"
+                      type="text"
+                      value={resolveForm.cashRefund.note}
+                      onChange={(e) =>
+                        setResolveForm((prev) => ({
+                          ...prev,
+                          cashRefund: { ...prev.cashRefund, note: e.target.value }
+                        }))
+                      }
+                      placeholder="e.g. Refund via Stripe dashboard"
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
+                    />
+                  </div>
+                </div>
+              ) : null}
+              {(resolveModalMode === 'mark_refunded' ||
+                (resolveModalMode === 'settlement' && resolveForm.outcome === 'cash_refunded')) ? (
+                <div className="space-y-3">
+                  <div>
+                    <label htmlFor="resolveCashRefundedAmount" className="block text-xs font-medium text-gray-500 mb-1">
+                      Refund amount (EUR) <span className="text-red-600">*</span>
+                    </label>
+                    <input
+                      id="resolveCashRefundedAmount"
+                      type="text"
+                      inputMode="decimal"
+                      required
+                      value={resolveForm.cashRefund.amountEuros}
+                      onChange={(e) =>
+                        setResolveForm((prev) => ({
+                          ...prev,
+                          cashRefund: { ...prev.cashRefund, amountEuros: e.target.value }
+                        }))
+                      }
+                      placeholder="e.g. 300"
+                      className="w-full max-w-xs px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="resolveCashRefundedMethod" className="block text-xs font-medium text-gray-500 mb-1">
+                      Refund method <span className="text-red-600">*</span>
+                    </label>
+                    <select
+                      id="resolveCashRefundedMethod"
+                      required
+                      value={resolveForm.cashRefund.method}
+                      onChange={(e) =>
+                        setResolveForm((prev) => ({
+                          ...prev,
+                          cashRefund: { ...prev.cashRefund, method: e.target.value }
+                        }))
+                      }
+                      className="w-full max-w-xs px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
+                    >
+                      {CASH_REFUND_METHOD_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="resolveCashRefundedReference" className="block text-xs font-medium text-gray-500 mb-1">
+                      Reference (optional)
+                    </label>
+                    <input
+                      id="resolveCashRefundedReference"
+                      type="text"
+                      value={resolveForm.cashRefund.reference}
+                      onChange={(e) =>
+                        setResolveForm((prev) => ({
+                          ...prev,
+                          cashRefund: { ...prev.cashRefund, reference: e.target.value }
+                        }))
+                      }
+                      placeholder="e.g. Stripe refund ID"
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="resolveCashRefundedDate" className="block text-xs font-medium text-gray-500 mb-1">
+                      Refunded date
+                    </label>
+                    <input
+                      id="resolveCashRefundedDate"
+                      type="date"
+                      value={resolveForm.cashRefund.refundedDate}
+                      onChange={(e) =>
+                        setResolveForm((prev) => ({
+                          ...prev,
+                          cashRefund: { ...prev.cashRefund, refundedDate: e.target.value }
+                        }))
+                      }
+                      className="w-full max-w-xs px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="resolveCashRefundedNote" className="block text-xs font-medium text-gray-500 mb-1">
+                      Refund note <span className="text-red-600">*</span>
+                    </label>
+                    <input
+                      id="resolveCashRefundedNote"
+                      type="text"
+                      required
+                      value={resolveForm.cashRefund.note}
+                      onChange={(e) =>
+                        setResolveForm((prev) => ({
+                          ...prev,
+                          cashRefund: { ...prev.cashRefund, note: e.target.value }
+                        }))
+                      }
+                      placeholder="How was the refund completed?"
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
+                    />
+                  </div>
+                </div>
+              ) : null}
               <div
                 className={`text-sm rounded-md px-3 py-2 border ${
-                  resolveForm.outcome === 'credits_issued'
+                  resolveModalMode === 'mark_refunded' ||
+                  resolveForm.outcome === 'credits_issued' ||
+                  resolveForm.outcome === 'cash_refund_pending' ||
+                  resolveForm.outcome === 'cash_refunded'
                     ? 'bg-amber-50 border-amber-200 text-amber-900'
                     : 'bg-gray-50 border-gray-200 text-gray-700'
                 }`}
                 role="note"
               >
-                {SETTLEMENT_WARNINGS[resolveForm.outcome]}
+                {resolveModalMode === 'mark_refunded'
+                  ? SETTLEMENT_WARNINGS.cash_refunded
+                  : SETTLEMENT_WARNINGS[resolveForm.outcome]}
               </div>
               {resolveError ? (
                 <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
@@ -1718,7 +2213,11 @@ export default function OpsReservationDetail() {
                   disabled={resolveBusy}
                   className="px-3 py-2 text-sm rounded bg-[#81887A] text-white hover:bg-[#6d7366] disabled:opacity-50"
                 >
-                  {resolveBusy ? 'Resolving…' : 'Resolve settlement'}
+                  {resolveBusy
+                    ? 'Saving…'
+                    : resolveModalMode === 'mark_refunded'
+                      ? 'Mark as refunded'
+                      : 'Resolve settlement'}
                 </button>
               </div>
             </form>

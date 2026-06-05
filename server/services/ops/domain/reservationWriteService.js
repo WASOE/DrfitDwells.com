@@ -106,35 +106,32 @@ async function sendLifecycleStatusEmail({ booking, kind }) {
   }
 }
 
-const CANCEL_ALLOWED_OUTCOMES = new Set(['resolution_pending', 'payment_retained', 'credits_issued']);
-
-const CANCEL_REJECTED_OUTCOMES = new Set([
-  'unresolved',
+const CANCEL_ALLOWED_OUTCOMES = new Set([
+  'resolution_pending',
+  'payment_retained',
+  'credits_issued',
   'cash_refund_pending',
-  'cash_refunded',
-  'rebooked_or_moved'
+  'cash_refunded'
 ]);
+
+const CANCEL_REJECTED_OUTCOMES = new Set(['unresolved', 'rebooked_or_moved']);
 
 const RESOLVE_SETTLEMENT_IDEMPOTENCY_ACTION = 'ops.reservation.resolve_cancellation_settlement';
 
-const RESOLVE_ALLOWED_TARGET_OUTCOMES = new Set(['payment_retained', 'credits_issued']);
-
-const RESOLVE_REJECTED_TARGET_OUTCOMES = new Set([
-  'resolution_pending',
-  'unresolved',
-  'cash_refund_pending',
-  'cash_refunded',
-  'rebooked_or_moved'
-]);
-
-const RESOLVE_UNSUPPORTED_SOURCE_OUTCOMES = new Set([
+const RESOLVE_ALLOWED_TARGET_OUTCOMES = new Set([
   'payment_retained',
   'credits_issued',
-  'unresolved',
   'cash_refund_pending',
-  'cash_refunded',
-  'rebooked_or_moved'
+  'cash_refunded'
 ]);
+
+const RESOLVE_REJECTED_TARGET_OUTCOMES = new Set(['resolution_pending', 'unresolved', 'rebooked_or_moved']);
+
+const RESOLVE_FINALIZED_SOURCE_OUTCOMES = new Set(['payment_retained', 'credits_issued', 'cash_refunded']);
+
+const RESOLVE_UNSUPPORTED_SOURCE_OUTCOMES = new Set(['unresolved', 'rebooked_or_moved']);
+
+const CASH_REFUND_METHODS = new Set(['bank_transfer', 'stripe_manual', 'cash', 'other']);
 
 function buildCancelFinancialSnapshot(booking, recordedAt) {
   return {
@@ -208,6 +205,26 @@ function mapIssuerError(err) {
   throw err;
 }
 
+function deriveSourceSettlementOutcome(cancellationSettlement) {
+  if (!cancellationSettlement || typeof cancellationSettlement !== 'object') {
+    return '';
+  }
+  return typeof cancellationSettlement.outcome === 'string'
+    ? cancellationSettlement.outcome.trim()
+    : '';
+}
+
+function assertResolveTargetAllowedForSource(sourceOutcome, targetOutcome) {
+  if (sourceOutcome === 'cash_refund_pending' && targetOutcome !== 'cash_refunded') {
+    throw createDomainError(
+      'validation',
+      'cash_refund_pending can only be resolved to cash_refunded',
+      { currentOutcome: sourceOutcome, providedOutcome: targetOutcome },
+      400
+    );
+  }
+}
+
 function assertResolveEligibleSourceSettlement(cancellationSettlement) {
   if (!cancellationSettlement || typeof cancellationSettlement !== 'object') {
     return;
@@ -216,10 +233,10 @@ function assertResolveEligibleSourceSettlement(cancellationSettlement) {
     typeof cancellationSettlement.outcome === 'string'
       ? cancellationSettlement.outcome.trim()
       : '';
-  if (!outcome || outcome === 'resolution_pending') {
+  if (!outcome || outcome === 'resolution_pending' || outcome === 'cash_refund_pending') {
     return;
   }
-  if (outcome === 'payment_retained' || outcome === 'credits_issued') {
+  if (RESOLVE_FINALIZED_SOURCE_OUTCOMES.has(outcome)) {
     throw createDomainError(
       'invalid_transition',
       'Cancellation settlement is already finalized',
@@ -279,12 +296,212 @@ function parseResolveTargetOutcome(settlement) {
   if (!RESOLVE_ALLOWED_TARGET_OUTCOMES.has(targetOutcome)) {
     throw createDomainError(
       'validation',
-      'Resolve supports settlement outcomes: payment_retained or credits_issued',
+      'Resolve supports settlement outcomes: payment_retained, credits_issued, cash_refund_pending, or cash_refunded',
       { allowedOutcomes: [...RESOLVE_ALLOWED_TARGET_OUTCOMES], providedOutcome: targetOutcome },
       400
     );
   }
   return targetOutcome;
+}
+
+function bookingHasRecordedCashPayment(booking) {
+  return Number.isFinite(booking?.stripePaidAmountCents) && Number(booking.stripePaidAmountCents) > 0;
+}
+
+function extractCashRefundAmountRaw(settlement) {
+  if (!settlement || typeof settlement !== 'object') return null;
+  if (settlement.cashRefundAmountCents != null) return settlement.cashRefundAmountCents;
+  if (settlement.cashRefund && typeof settlement.cashRefund === 'object') {
+    return settlement.cashRefund.amountCents ?? null;
+  }
+  return null;
+}
+
+function extractCashRefundEvidenceInput(settlement) {
+  if (!settlement || typeof settlement !== 'object') return {};
+  if (settlement.cashRefundEvidence && typeof settlement.cashRefundEvidence === 'object') {
+    return settlement.cashRefundEvidence;
+  }
+  if (settlement.cashRefund && typeof settlement.cashRefund === 'object') {
+    return settlement.cashRefund;
+  }
+  return {};
+}
+
+function parseCashRefundAmountCents(settlement, booking, { required, outcome }) {
+  const raw = extractCashRefundAmountRaw(settlement);
+  if (raw == null) {
+    if (required) {
+      throw createDomainError(
+        'validation',
+        `settlement.cashRefundAmountCents is required for ${outcome} when a cash payment exists on the booking`,
+        { outcome },
+        400
+      );
+    }
+    return null;
+  }
+  if (!Number.isInteger(raw) || raw <= 0) {
+    throw createDomainError(
+      'validation',
+      'settlement.cashRefundAmountCents must be a positive integer',
+      { cashRefundAmountCents: raw },
+      400
+    );
+  }
+  return raw;
+}
+
+function parseCashRefundNote(settlement) {
+  if (!settlement || typeof settlement !== 'object') return null;
+  const fromTop = settlement.cashRefundNote != null ? String(settlement.cashRefundNote).trim() : '';
+  if (fromTop) return fromTop;
+  const evidence = extractCashRefundEvidenceInput(settlement);
+  const fromEvidence = evidence.note != null ? String(evidence.note).trim() : '';
+  if (fromEvidence) return fromEvidence;
+  const fromCashRefund =
+    settlement.cashRefund && settlement.cashRefund.note != null
+      ? String(settlement.cashRefund.note).trim()
+      : '';
+  return fromCashRefund || null;
+}
+
+function parseCashRefundRecordedAt(value, { defaultNow = false } = {}) {
+  if (value == null || value === '') {
+    if (defaultNow) return new Date();
+    return null;
+  }
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw createDomainError(
+      'validation',
+      'cashRefundEvidence.recordedAt must be a valid date',
+      { recordedAt: value },
+      400
+    );
+  }
+  return date;
+}
+
+function buildCashRefundPendingCancellationSettlement({
+  settlement,
+  reason,
+  actorId,
+  recordedAt,
+  booking,
+  missingReasonMessage
+}) {
+  const normalizedReason = normalizeTrimmedReason(reason);
+  if (!normalizedReason) {
+    throw createDomainError('validation', missingReasonMessage, { outcome: 'cash_refund_pending' }, 400);
+  }
+
+  const cashRefundAmountCents = parseCashRefundAmountCents(settlement, booking, {
+    required: bookingHasRecordedCashPayment(booking),
+    outcome: 'cash_refund_pending'
+  });
+  const cashRefundNote = parseCashRefundNote(settlement);
+
+  return {
+    cancellationSettlement: {
+      outcome: 'cash_refund_pending',
+      reason: normalizedReason,
+      settlementRecordedAt: recordedAt,
+      settlementRecordedByActorId: actorId,
+      cashRefundAmountCents,
+      cashRefundNote,
+      financialSnapshot: buildCancelFinancialSnapshot(booking, recordedAt)
+    },
+    compensationVoucher: null
+  };
+}
+
+function buildCashRefundedCancellationSettlement({
+  settlement,
+  reason,
+  actorId,
+  recordedAt,
+  booking,
+  missingReasonMessage
+}) {
+  const normalizedReason = normalizeTrimmedReason(reason);
+  if (!normalizedReason) {
+    throw createDomainError('validation', missingReasonMessage, { outcome: 'cash_refunded' }, 400);
+  }
+
+  const evidenceInput = extractCashRefundEvidenceInput(settlement);
+  const amountRaw =
+    evidenceInput.amountCents != null ? evidenceInput.amountCents : extractCashRefundAmountRaw(settlement);
+  if (!Number.isInteger(amountRaw) || amountRaw <= 0) {
+    throw createDomainError(
+      'validation',
+      'cashRefundEvidence.amountCents is required and must be a positive integer for cash_refunded',
+      { amountCents: amountRaw ?? null },
+      400
+    );
+  }
+
+  const methodRaw = evidenceInput.method != null ? String(evidenceInput.method).trim() : '';
+  if (!methodRaw || !CASH_REFUND_METHODS.has(methodRaw)) {
+    throw createDomainError(
+      'validation',
+      'cashRefundEvidence.method is required for cash_refunded (bank_transfer, stripe_manual, cash, other)',
+      { method: methodRaw || null },
+      400
+    );
+  }
+
+  const evidenceNote = evidenceInput.note != null ? String(evidenceInput.note).trim() : '';
+  if (!evidenceNote) {
+    throw createDomainError(
+      'validation',
+      'cashRefundEvidence.note is required for cash_refunded',
+      { outcome: 'cash_refunded' },
+      400
+    );
+  }
+
+  const reference =
+    evidenceInput.reference != null && String(evidenceInput.reference).trim()
+      ? String(evidenceInput.reference).trim()
+      : evidenceInput.stripeRefundId != null && String(evidenceInput.stripeRefundId).trim()
+        ? String(evidenceInput.stripeRefundId).trim()
+        : null;
+
+  const cashRefundEvidence = {
+    amountCents: amountRaw,
+    method: methodRaw,
+    reference,
+    recordedAt: parseCashRefundRecordedAt(evidenceInput.recordedAt ?? evidenceInput.refundedAt, {
+      defaultNow: true
+    }),
+    recordedByActorId: actorId,
+    note: evidenceNote
+  };
+
+  if (evidenceInput.stripeRefundId != null && String(evidenceInput.stripeRefundId).trim()) {
+    cashRefundEvidence.stripeRefundId = String(evidenceInput.stripeRefundId).trim();
+  }
+  if (evidenceInput.stripeChargeId != null && String(evidenceInput.stripeChargeId).trim()) {
+    cashRefundEvidence.stripeChargeId = String(evidenceInput.stripeChargeId).trim();
+  }
+  if (evidenceInput.stripePaymentIntentId != null && String(evidenceInput.stripePaymentIntentId).trim()) {
+    cashRefundEvidence.stripePaymentIntentId = String(evidenceInput.stripePaymentIntentId).trim();
+  }
+
+  return {
+    cancellationSettlement: {
+      outcome: 'cash_refunded',
+      reason: normalizedReason,
+      settlementRecordedAt: recordedAt,
+      settlementRecordedByActorId: actorId,
+      cashRefundAmountCents: amountRaw,
+      cashRefundNote: evidenceNote,
+      cashRefundEvidence,
+      financialSnapshot: buildCancelFinancialSnapshot(booking, recordedAt)
+    },
+    compensationVoucher: null
+  };
 }
 
 async function buildCreditsIssuedCancellationSettlement({
@@ -391,14 +608,11 @@ async function normalizeCancelSettlement({ settlement, reason, actorId, recorded
   if (!CANCEL_ALLOWED_OUTCOMES.has(effectiveOutcome)) {
     throw createDomainError(
       'validation',
-      'Cancel supports settlement outcomes: resolution_pending, payment_retained, or credits_issued',
+      'Cancel supports settlement outcomes: resolution_pending, payment_retained, credits_issued, cash_refund_pending, or cash_refunded',
       { allowedOutcomes: [...CANCEL_ALLOWED_OUTCOMES], providedOutcome: outcome || null },
       400
     );
   }
-
-  const normalizedReason = normalizeTrimmedReason(reason);
-  const financialSnapshot = buildCancelFinancialSnapshot(booking, recordedAt);
 
   if (effectiveOutcome === 'credits_issued') {
     return buildCreditsIssuedCancellationSettlement({
@@ -411,6 +625,31 @@ async function normalizeCancelSettlement({ settlement, reason, actorId, recorded
       missingReasonMessage: 'reason is required when issuing stay credit on cancel'
     });
   }
+
+  if (effectiveOutcome === 'cash_refund_pending') {
+    return buildCashRefundPendingCancellationSettlement({
+      settlement,
+      reason,
+      actorId,
+      recordedAt,
+      booking,
+      missingReasonMessage: 'reason is required when recording cash refund pending on cancel'
+    });
+  }
+
+  if (effectiveOutcome === 'cash_refunded') {
+    return buildCashRefundedCancellationSettlement({
+      settlement,
+      reason,
+      actorId,
+      recordedAt,
+      booking,
+      missingReasonMessage: 'reason is required when recording cash refunded on cancel'
+    });
+  }
+
+  const normalizedReason = normalizeTrimmedReason(reason);
+  const financialSnapshot = buildCancelFinancialSnapshot(booking, recordedAt);
 
   return {
     cancellationSettlement: {
@@ -592,7 +831,9 @@ async function resolveCancellationSettlement({ bookingId, reason, settlement, ct
 
   const normalizedReason = requireResolveReason(reason);
   const targetOutcome = parseResolveTargetOutcome(settlement);
+  const sourceOutcome = deriveSourceSettlementOutcome(booking.cancellationSettlement);
   assertResolveEligibleSourceSettlement(booking.cancellationSettlement);
+  assertResolveTargetAllowedForSource(sourceOutcome, targetOutcome);
 
   const actorId = ctx.user?.id || 'admin';
   const settlementRecordedAt = new Date();
@@ -612,7 +853,7 @@ async function resolveCancellationSettlement({ bookingId, reason, settlement, ct
       settlementRecordedByActorId: actorId,
       financialSnapshot: buildCancelFinancialSnapshot(booking, settlementRecordedAt)
     };
-  } else {
+  } else if (targetOutcome === 'credits_issued') {
     const built = await buildCreditsIssuedCancellationSettlement({
       settlement,
       reason: normalizedReason,
@@ -624,6 +865,33 @@ async function resolveCancellationSettlement({ bookingId, reason, settlement, ct
     });
     cancellationSettlement = built.cancellationSettlement;
     compensationVoucher = built.compensationVoucher;
+  } else if (targetOutcome === 'cash_refund_pending') {
+    const built = buildCashRefundPendingCancellationSettlement({
+      settlement,
+      reason: normalizedReason,
+      actorId,
+      recordedAt: settlementRecordedAt,
+      booking,
+      missingReasonMessage: 'reason is required when recording cash refund pending on resolve'
+    });
+    cancellationSettlement = built.cancellationSettlement;
+  } else if (targetOutcome === 'cash_refunded') {
+    const built = buildCashRefundedCancellationSettlement({
+      settlement,
+      reason: normalizedReason,
+      actorId,
+      recordedAt: settlementRecordedAt,
+      booking,
+      missingReasonMessage: 'reason is required when recording cash refunded on resolve'
+    });
+    cancellationSettlement = built.cancellationSettlement;
+  } else {
+    throw createDomainError(
+      'validation',
+      `Unsupported resolve settlement outcome: ${targetOutcome}`,
+      { providedOutcome: targetOutcome },
+      400
+    );
   }
 
   const auditMetadata = { legacyModel: 'Booking' };

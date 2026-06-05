@@ -34,7 +34,8 @@ function classifyReservationPaymentStatus({ booking, linkedPaymentTrail, hasUnli
 function suppressesCancelledPaidRefundFollowUp(cancellationSettlementOutcome) {
   return (
     cancellationSettlementOutcome === 'payment_retained' ||
-    cancellationSettlementOutcome === 'credits_issued'
+    cancellationSettlementOutcome === 'credits_issued' ||
+    cancellationSettlementOutcome === 'cash_refunded'
   );
 }
 
