@@ -755,6 +755,113 @@ ${guestEmailFooterText()}
     };
   }
 
+  generateCancellationStayCreditEmail(booking, cabin, { code, creditAmountCents, expiresAt, guestFirstName }) {
+    const checkIn = new Date(booking.checkIn);
+    const amountEuros = Number.isFinite(creditAmountCents)
+      ? (creditAmountCents / 100).toFixed(2).replace(/\.00$/, '')
+      : '-';
+    const firstName = guestFirstName ? String(guestFirstName).trim() : 'there';
+    const expiryLabel =
+      expiresAt && !Number.isNaN(new Date(expiresAt).getTime())
+        ? formatSofiaDisplayDate(new Date(expiresAt), 'en-GB')
+        : null;
+    const bookUrl = `${EMAIL_SITE_ORIGIN}/`;
+
+    const detailRows = [
+      { label: 'Stay', valueHtml: `${htmlEscape(cabin.name)} • ${htmlEscape(cabin.location || '')}` },
+      { label: 'Cancelled check-in', valueHtml: htmlEscape(formatSofiaDisplayDate(checkIn, 'en-GB')) },
+      { label: 'Stay credit amount', valueHtml: htmlEscape(`€${amountEuros}`) },
+      { label: 'Your stay credit code', valueHtml: `<strong style="font-size:18px;letter-spacing:0.06em;">${htmlEscape(code)}</strong>` }
+    ];
+    if (expiryLabel) {
+      detailRows.push({ label: 'Valid until', valueHtml: htmlEscape(expiryLabel) });
+    }
+    const detailsTable = buildDetailRowsTable(detailRows);
+
+    const bodyHtml = `
+            <div class="stay-credit-badge" role="status">Stay credit issued</div>
+
+            <h2 class="email-heading">Hello ${htmlEscape(firstName)}</h2>
+            <p class="lede">Following the cancellation of your stay at <strong>${htmlEscape(cabin.name)}</strong>, we have issued you a <strong>stay credit</strong> toward a future visit. This is account credit for a future booking, not a purchased gift card.</p>
+
+            <div class="booking-details">
+              <h3>Your stay credit</h3>
+              ${detailsTable}
+            </div>
+
+            <p><strong>How to use it:</strong> When you book your next stay at <a href="${htmlEscape(bookUrl)}">driftdwells.com</a>, enter your stay credit code at checkout before you pay.</p>
+
+            <p>If you have questions, reply to this email or contact ${htmlEscape(SUPPORT_CONTACT_EMAIL)}.</p>
+
+            <p>We would be glad to host you another time.</p>
+
+            <p>With warm regards,<br>The Drift &amp; Dwells team</p>
+    `;
+
+    const html = buildGuestTransactionalHtml({
+      title: 'Your stay credit - Drift & Dwells',
+      preheader: `Your €${amountEuros} stay credit code for a future Drift & Dwells booking`,
+      logoUrl: resolveBrandLogoAbsoluteUrl(),
+      siteHomeUrl: EMAIL_SITE_ORIGIN,
+      headerAccentColor: BRAND_SAGE,
+      headerLogoWidth: 208,
+      headerTagline:
+        '<span class="email-kicker">Stay credit</span><span class="email-tagline-lead">Credit toward your next off-grid retreat.</span>',
+      bodyHtml,
+      extraHeadCss: `
+  .lede { color: #45443f; font-size: 16px; }
+  @media only screen and (min-width: 600px) { .lede { font-size: 17px; } }
+  .stay-credit-badge {
+    background: #e8efe9;
+    color: #2d4a38;
+    padding: 8px 14px;
+    border-radius: 8px;
+    display: inline-block;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    font-weight: 600;
+    margin: 2px 0 18px;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    border: 1px solid #c5d6c9;
+  }
+`,
+      footerHtml: guestEmailFooterHtml()
+    });
+
+    const text = `
+Drift & Dwells - Stay credit issued
+
+STAY CREDIT ISSUED
+
+Hello ${firstName},
+
+Following the cancellation of your stay at ${cabin.name}, we have issued you a stay credit toward a future visit. This is account credit for a future booking, not a purchased gift card.
+
+YOUR STAY CREDIT:
+- Stay: ${cabin.name}${cabin.location ? ` • ${cabin.location}` : ''}
+- Cancelled check-in: ${formatSofiaDisplayDate(checkIn, 'en-GB')}
+- Stay credit amount: €${amountEuros}
+- Your stay credit code: ${code}
+${expiryLabel ? `- Valid until: ${expiryLabel}` : ''}
+
+How to use it: When you book your next stay at ${bookUrl}, enter your stay credit code at checkout before you pay.
+
+Questions? ${SUPPORT_CONTACT_EMAIL}
+
+Warm regards,
+The Drift & Dwells team
+
+${guestEmailFooterText()}
+    `;
+
+    return {
+      subject: `Your stay credit: €${amountEuros} toward a future stay`,
+      html,
+      text
+    };
+  }
+
   generateInternalNotificationEmail(booking, cabin) {
     const checkIn = new Date(booking.checkIn);
     const checkOut = new Date(booking.checkOut);

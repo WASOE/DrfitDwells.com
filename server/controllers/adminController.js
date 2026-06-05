@@ -987,6 +987,15 @@ const updateBookingStatus = async (req, res) => {
       });
     }
 
+    if (status === 'cancelled') {
+      return res.status(403).json({
+        success: false,
+        errorType: 'legacy_cancel_blocked',
+        message: 'Use OPS reservation cancellation settlement flow to cancel reservations.',
+        hint: 'POST /api/ops/reservations/:id/actions/cancel'
+      });
+    }
+
     const ALLOWED_TRANSITIONS = {
       pending: ['confirmed', 'cancelled'],
       confirmed: ['cancelled'],

@@ -16,6 +16,7 @@ const { BLOCKING_BOOKING_STATUSES } = require('../../calendar/blockingStatusCons
 const { processMetaPurchaseAfterConfirm } = require('../../bookingPurchaseTracking');
 const CabinType = require('../../../models/CabinType');
 const bookingLifecycleEmailService = require('../../bookingLifecycleEmailService');
+const { sendCancellationStayCreditEmail } = require('../../cancellationStayCreditEmailService');
 const {
   issueCancellationCompensationVoucher,
   MIN_CREDIT_AMOUNT_CENTS
@@ -103,6 +104,31 @@ async function sendLifecycleStatusEmail({ booking, kind }) {
     });
   } catch (err) {
     return { success: false, method: 'error', error: err.message || String(err) };
+  }
+}
+
+async function sendStayCreditEmailSafely({ booking, compensationVoucher, creditAmountCents, phase }) {
+  if (!compensationVoucher?.code) return;
+  try {
+    const result = await sendCancellationStayCreditEmail({
+      booking,
+      compensationVoucher,
+      creditAmountCents
+    });
+    if (!result?.success) {
+      console.error('[reservation-email] Stay credit email failed:', {
+        bookingId: String(booking._id),
+        phase,
+        method: result?.method,
+        error: result?.error
+      });
+    }
+  } catch (err) {
+    console.error('[reservation-email] Stay credit email error:', {
+      bookingId: String(booking._id),
+      phase,
+      error: err?.message || String(err)
+    });
   }
 }
 
@@ -761,6 +787,15 @@ async function transitionReservation({ bookingId, kind, reason = null, settlemen
     }
   }
 
+  if (kind === 'cancel' && compensationVoucher) {
+    await sendStayCreditEmailSafely({
+      booking,
+      compensationVoucher,
+      creditAmountCents: cancellationSettlement?.creditAmountCents,
+      phase: 'cancel'
+    });
+  }
+
   if (kind === 'confirm' && nextStatus === 'confirmed') {
     void processMetaPurchaseAfterConfirm(String(booking._id), ctx.req || {}).catch((err) => {
       console.error('[meta-purchase] OPS confirm CAPI error:', err);
@@ -925,6 +960,15 @@ async function resolveCancellationSettlement({ bookingId, reason, settlement, ct
   booking.cancellationSettlement = cancellationSettlement;
   booking.markModified('cancellationSettlement');
   await booking.save({ validateBeforeSave: false });
+
+  if (targetOutcome === 'credits_issued' && compensationVoucher) {
+    await sendStayCreditEmailSafely({
+      booking,
+      compensationVoucher,
+      creditAmountCents: cancellationSettlement?.creditAmountCents,
+      phase: 'resolve'
+    });
+  }
 
   const result = {
     reservationId: String(booking._id),

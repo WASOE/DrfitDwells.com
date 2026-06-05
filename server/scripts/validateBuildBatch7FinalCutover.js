@@ -126,16 +126,34 @@ async function run() {
         throw new Error('Booking status did not update to confirmed during OPS write');
       }
 
-      const adminReqAllowed = {
+      const adminReqCancelBlocked = {
         params: { id: String(pendingBooking._id) },
         body: { status: 'cancelled' },
+        user: { id: 'admin', role: 'admin' }
+      };
+      const adminResCancelBlocked = makeRes();
+      await adminController.updateBookingStatus(adminReqCancelBlocked, adminResCancelBlocked);
+      const legacyCancelBlocked =
+        adminResCancelBlocked.statusCode === 403 &&
+        adminResCancelBlocked._payload?.errorType === 'legacy_cancel_blocked';
+      if (!legacyCancelBlocked) {
+        throw new Error('Expected legacy /admin booking cancel to be rejected after rollback');
+      }
+
+      const adminReqAllowed = {
+        params: { id: String(pendingBooking._id) },
+        body: { status: 'confirmed' },
         user: { id: 'admin', role: 'admin' }
       };
       const adminResAllowed = makeRes();
       await adminController.updateBookingStatus(adminReqAllowed, adminResAllowed);
 
-      allowedOk = adminResAllowed._payload?.success === true || adminResAllowed.statusCode === 200;
-      if (!allowedOk) throw new Error('Expected legacy /admin booking status update to succeed after rollback');
+      allowedOk =
+        (adminResAllowed._payload?.success === true || adminResAllowed.statusCode === 200) &&
+        adminResAllowed._payload?.message === 'Status unchanged';
+      if (!allowedOk) {
+        throw new Error('Expected legacy /admin non-cancel status update to succeed after rollback');
+      }
     } else {
       // confirmedBooking exists due to earlier guard
       const adminReqBlocked = {
