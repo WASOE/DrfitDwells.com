@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { decodeRoleFromToken, opsReadAPI } from '../services/opsApi';
+import OpsDesktopNav from './ops/OpsDesktopNav';
+import { OPS_NAV_ITEMS } from './ops/opsNavConfig';
 
 export default function OpsLayout() {
   const [ready, setReady] = useState(false);
@@ -72,23 +74,6 @@ export default function OpsLayout() {
 
   if (!isAuthenticated) return null;
 
-  const navItems = [
-    { to: '/ops', label: 'Dashboard' },
-    { to: '/ops/calendar', label: 'Calendar' },
-    { to: '/ops/reservations', label: 'Reservations' },
-    { to: '/ops/payments', label: 'Payments' },
-    { to: '/ops/promo-codes', label: 'Promo codes' },
-    { to: '/ops/creator-partners', label: 'Creator partners' },
-    { to: '/ops/sync', label: 'Sync' },
-    { to: '/ops/cabins', label: 'Cabins' },
-    { to: '/ops/reviews', label: 'Reviews' },
-    { to: '/ops/communications', label: 'Comms' },
-    { to: '/ops/messaging', label: 'Messaging' },
-    { to: '/ops/gift-vouchers', label: 'Gift vouchers' },
-    { to: '/ops/manual-review', label: 'Manual' },
-    { to: '/ops/readiness', label: 'Readiness' }
-  ];
-
   const staleSync =
     (health?.dependencies?.syncLastSeenByCabinChannel || []).some((x) => x.lastSyncOutcome === 'failed' || x.lastSyncOutcome === 'warning');
   const staleWebhook = !health?.dependencies?.stripeWebhookLastSeenAt;
@@ -124,24 +109,7 @@ export default function OpsLayout() {
               </button>
             </div>
           </div>
-          <nav className="-mx-4 px-4 sm:mx-0 sm:px-0 overflow-x-auto border-t border-gray-100">
-            <div className="flex items-center gap-1 min-w-max">
-              {navItems.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.to === '/ops'}
-                  className={({ isActive }) =>
-                    `px-3 py-2 text-sm border-b-2 whitespace-nowrap ${
-                      isActive ? 'text-[#81887A] border-[#81887A] font-medium' : 'text-gray-500 border-transparent hover:text-gray-800'
-                    }`
-                  }
-                >
-                  {item.label}
-                </NavLink>
-              ))}
-            </div>
-          </nav>
+          <OpsDesktopNav />
         </div>
       </header>
 
@@ -162,11 +130,11 @@ export default function OpsLayout() {
         <div className="fixed bottom-0 inset-x-0 border-t border-gray-200 bg-white/95 backdrop-blur sm:hidden">
           <div className="max-w-7xl mx-auto px-2 py-1">
             <div className="flex items-center gap-1 overflow-x-auto min-w-full">
-              {navItems.map((item) => (
+              {OPS_NAV_ITEMS.map((item) => (
                 <NavLink
                   key={`mobile-${item.to}`}
                   to={item.to}
-                  end={item.to === '/ops'}
+                  end={item.end === true}
                   className={({ isActive }) =>
                     `flex-none text-center text-[11px] px-2 py-2 rounded ${isActive ? 'bg-[#81887A] text-white' : 'text-gray-600 hover:bg-gray-100'}`
                   }
