@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { decodeRoleFromToken, opsWriteAPI, opsReadAPI } from '../../services/opsApi';
 import { formatMoneyFromCents } from '../../utils/formatMoney';
+import { OpsEmailPreviewModal } from './components/OpsEmailPreviewModal';
+import { OpsWhatsappPreviewModal } from './components/OpsWhatsappPreviewModal';
 
 const MIN_STAY_CREDIT_CENTS = 10000;
 
@@ -116,7 +118,8 @@ export default function OpsReservationDetail() {
     open: false,
     subject: '',
     html: '',
-    templateKey: null
+    templateKey: null,
+    previewKey: ''
   });
   const [editResendModal, setEditResendModal] = useState({
     open: false,
@@ -138,9 +141,9 @@ export default function OpsReservationDetail() {
     open: false,
     subject: '',
     html: '',
-    text: '',
     templateStatus: null,
-    ruleKey: null
+    ruleKey: null,
+    previewKey: ''
   });
   const [gmaWhatsappPreviewModal, setGmaWhatsappPreviewModal] = useState({
     open: false,
@@ -448,9 +451,9 @@ export default function OpsReservationDetail() {
       open: false,
       subject: '',
       html: '',
-      text: '',
       templateStatus: null,
-      ruleKey: null
+      ruleKey: null,
+      previewKey: ''
     });
   };
 
@@ -487,9 +490,9 @@ export default function OpsReservationDetail() {
           open: true,
           subject: d.email?.subject || '',
           html: d.email?.html || '',
-          text: d.email?.text || '',
           templateStatus: d.template?.status || null,
-          ruleKey: d.ruleKey || gmaPreviewRuleKey
+          ruleKey: d.ruleKey || gmaPreviewRuleKey,
+          previewKey: `gma-email:${d.ruleKey || gmaPreviewRuleKey}:${Date.now()}`
         });
       } else {
         setGmaWhatsappPreviewModal({
@@ -515,7 +518,7 @@ export default function OpsReservationDetail() {
   };
 
   const closePreviewModal = () => {
-    setPreviewModal({ open: false, subject: '', html: '', templateKey: null });
+    setPreviewModal({ open: false, subject: '', html: '', templateKey: null, previewKey: '' });
   };
 
   const closeEditResendModal = () => {
@@ -554,7 +557,8 @@ export default function OpsReservationDetail() {
         open: true,
         subject: payload.data.subject || '',
         html: payload.data.html,
-        templateKey: payload.data.templateKey || templateKey
+        templateKey: payload.data.templateKey || templateKey,
+        previewKey: `lifecycle:${templateKey}:${Date.now()}`
       });
     } catch (err) {
       const d = err?.response?.data;
@@ -1316,199 +1320,75 @@ export default function OpsReservationDetail() {
         </div>
       ) : null}
 
-      {gmaEmailPreviewModal.open ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="ops-gma-email-preview-title"
-        >
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/40"
-            aria-label="Close GMA preview"
-            onClick={closeGmaEmailPreviewModal}
-          />
-          <div className="relative w-full max-w-4xl max-h-[min(92vh,900px)] flex flex-col rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden">
-            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-100 px-4 py-3 sm:px-5">
-              <div className="min-w-0 flex-1">
-                <h2 id="ops-gma-email-preview-title" className="text-sm font-semibold text-gray-900">
-                  GMA email preview
-                </h2>
-                <p className="mt-1 text-xs text-gray-500 truncate" title={gmaEmailPreviewModal.subject || ''}>
-                  {gmaEmailPreviewModal.ruleKey || ''}
-                  {gmaEmailPreviewModal.templateStatus ? (
-                    <span className={`ml-2 ${gmaTemplateStatusBadge(gmaEmailPreviewModal.templateStatus)}`}>
-                      {gmaEmailPreviewModal.templateStatus}
-                    </span>
-                  ) : null}
-                </p>
-                <p className="mt-0.5 text-xs text-gray-600 break-words">{gmaEmailPreviewModal.subject}</p>
-              </div>
-              <button
-                type="button"
-                onClick={closeGmaEmailPreviewModal}
-                className="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 border border-gray-200 shrink-0"
-              >
-                Close
-              </button>
-            </div>
-            <p className="px-4 py-2 text-xs text-amber-900 bg-amber-50 border-b border-amber-100/80">
-              GMA preview only — nothing is sent. Sandbox blocks scripts; images may load for preview (same-origin).
-            </p>
-            <iframe
-              title="GMA email HTML preview"
-              sandbox="allow-same-origin"
-              srcDoc={gmaEmailPreviewModal.html}
-              className="w-full flex-1 min-h-[50vh] sm:min-h-[60vh] border-0 bg-zinc-100"
-            />
-          </div>
-        </div>
-      ) : null}
+      <OpsEmailPreviewModal
+        open={gmaEmailPreviewModal.open}
+        onClose={closeGmaEmailPreviewModal}
+        titleId="ops-gma-email-preview-title"
+        title="GMA email preview"
+        metaLine={gmaEmailPreviewModal.ruleKey || ''}
+        statusBadge={
+          gmaEmailPreviewModal.templateStatus ? (
+            <span className={`ml-2 ${gmaTemplateStatusBadge(gmaEmailPreviewModal.templateStatus)}`}>
+              {gmaEmailPreviewModal.templateStatus}
+            </span>
+          ) : null
+        }
+        subject={gmaEmailPreviewModal.subject}
+        html={gmaEmailPreviewModal.html}
+        bannerText="GMA preview only. Nothing is sent."
+        iframeTitle="GMA email HTML preview"
+        previewKey={gmaEmailPreviewModal.previewKey}
+      />
 
-      {gmaWhatsappPreviewModal.open ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="ops-gma-wa-preview-title"
-        >
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/40"
-            aria-label="Close GMA WhatsApp preview"
-            onClick={closeGmaWhatsappPreviewModal}
-          />
-          <div className="relative w-full max-w-lg max-h-[min(92vh,720px)] flex flex-col rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden">
-            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-100 px-4 py-3 sm:px-5">
-              <div className="min-w-0 flex-1">
-                <h2 id="ops-gma-wa-preview-title" className="text-sm font-semibold text-gray-900">
-                  GMA WhatsApp preview
-                </h2>
-                <p className="mt-1 text-xs text-gray-500">
-                  {gmaWhatsappPreviewModal.ruleKey || ''}
-                  {gmaWhatsappPreviewModal.templateStatus ? (
-                    <span className={`ml-2 ${gmaTemplateStatusBadge(gmaWhatsappPreviewModal.templateStatus)}`}>
-                      {gmaWhatsappPreviewModal.templateStatus}
-                    </span>
-                  ) : null}
-                </p>
-                <dl className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                  <div>
-                    <dt className="text-gray-500">Template name</dt>
-                    <dd className="font-mono text-gray-900 break-all">{gmaWhatsappPreviewModal.templateName || '—'}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-gray-500">Locale</dt>
-                    <dd className="text-gray-900">{gmaWhatsappPreviewModal.locale || '—'}</dd>
-                  </div>
-                </dl>
-              </div>
-              <button
-                type="button"
-                onClick={closeGmaWhatsappPreviewModal}
-                className="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 border border-gray-200 shrink-0"
-              >
-                Close
-              </button>
-            </div>
-            <p className="px-4 py-2 text-xs text-amber-900 bg-amber-50 border-b border-amber-100/80">
-              GMA preview only — nothing is sent. WhatsApp preview shows the approved reference body stored for review.
-              Final Meta rendering depends on the submitted Meta template.
-            </p>
-            <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5 space-y-4 text-sm">
-              <div className="mx-auto w-full max-w-sm">
-                <div className="rounded-2xl border border-[#d1ccc4] bg-[#e5ddd5] p-4 shadow-inner">
-                  <div className="rounded-xl rounded-tl-sm bg-white px-3.5 py-3 text-sm text-gray-900 shadow-sm">
-                    <pre className="whitespace-pre-wrap font-sans leading-relaxed text-[13px] text-gray-900">
-                      {gmaWhatsappPreviewModal.body || '—'}
-                    </pre>
-                  </div>
-                </div>
-              </div>
-              <details className="rounded-lg border border-gray-200 bg-gray-50/80">
-                <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-gray-700">
-                  Filled variables (secondary)
-                </summary>
-                <div className="border-t border-gray-200 overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-gray-200 bg-white text-gray-600">
-                        <th className="py-1.5 px-2 font-medium">Key</th>
-                        <th className="py-1.5 px-2 font-medium">Value</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {gmaWhatsappPreviewModal.variables &&
-                        Object.entries(gmaWhatsappPreviewModal.variables).map(([key, value]) => (
-                          <tr key={key} className="border-b border-gray-100 align-top bg-white">
-                            <td className="py-1.5 px-2 font-mono text-gray-700 whitespace-nowrap">{key}</td>
-                            <td className="py-1.5 px-2 text-gray-900 break-all">{String(value ?? '')}</td>
-                          </tr>
-                        ))}
-                    </tbody>
-                  </table>
-                </div>
-              </details>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <OpsWhatsappPreviewModal
+        open={gmaWhatsappPreviewModal.open}
+        onClose={closeGmaWhatsappPreviewModal}
+        titleId="ops-gma-wa-preview-title"
+        title="GMA WhatsApp preview"
+        ruleKey={gmaWhatsappPreviewModal.ruleKey || ''}
+        statusBadge={
+          gmaWhatsappPreviewModal.templateStatus ? (
+            <span className={`ml-2 ${gmaTemplateStatusBadge(gmaWhatsappPreviewModal.templateStatus)}`}>
+              {gmaWhatsappPreviewModal.templateStatus}
+            </span>
+          ) : null
+        }
+        templateName={gmaWhatsappPreviewModal.templateName}
+        locale={gmaWhatsappPreviewModal.locale}
+        body={gmaWhatsappPreviewModal.body}
+        variables={gmaWhatsappPreviewModal.variables}
+      />
 
-      {previewModal.open ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="ops-email-preview-title"
-        >
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/40"
-            aria-label="Close preview"
-            onClick={closePreviewModal}
-          />
-          <div className="relative w-full max-w-4xl max-h-[min(92vh,900px)] flex flex-col rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden">
-            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-100 px-4 py-3 sm:px-5">
-              <div className="min-w-0 flex-1">
-                <h2 id="ops-email-preview-title" className="text-sm font-semibold text-gray-900">
-                  Email preview
-                </h2>
-                <p className="mt-1 text-xs text-gray-500 truncate" title={previewModal.subject || ''}>
-                  {TEMPLATE_LABELS[previewModal.templateKey] || previewModal.templateKey || ''}
-                </p>
-                <p className="mt-0.5 text-xs text-gray-600 break-words">{previewModal.subject}</p>
-              </div>
-              <div className="flex flex-wrap gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={openEditFromPreview}
-                  disabled={lifecycleActionsBusy}
-                  className="rounded-lg px-3 py-1.5 text-sm font-medium text-white bg-[#81887A] hover:bg-[#6d7366] border border-transparent disabled:opacity-50"
-                >
-                  Edit &amp; resend
-                </button>
-                <button
-                  type="button"
-                  onClick={closePreviewModal}
-                  className="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 border border-gray-200"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-            <p className="px-4 py-2 text-xs text-amber-900 bg-amber-50 border-b border-amber-100/80">
-              Preview only — nothing is sent. Sandbox blocks scripts; images may load for preview (same-origin).
-            </p>
-            <iframe
-              title="Email HTML preview"
-              sandbox="allow-same-origin"
-              srcDoc={previewModal.html}
-              className="w-full flex-1 min-h-[50vh] sm:min-h-[60vh] border-0 bg-zinc-100"
-            />
-          </div>
-        </div>
-      ) : null}
+      <OpsEmailPreviewModal
+        open={previewModal.open}
+        onClose={closePreviewModal}
+        titleId="ops-email-preview-title"
+        title="Email preview"
+        metaLine={TEMPLATE_LABELS[previewModal.templateKey] || previewModal.templateKey || ''}
+        subject={previewModal.subject}
+        html={previewModal.html}
+        iframeTitle="Email HTML preview"
+        previewKey={previewModal.previewKey}
+        headerActions={
+          <>
+            <button
+              type="button"
+              onClick={openEditFromPreview}
+              disabled={lifecycleActionsBusy}
+              className="rounded-lg px-3 py-1.5 text-sm font-medium text-white bg-[#81887A] hover:bg-[#6d7366] border border-transparent disabled:opacity-50"
+            >
+              Edit &amp; resend
+            </button>
+            <button
+              type="button"
+              onClick={closePreviewModal}
+              className="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 border border-gray-200"
+            >
+              Close
+            </button>
+          </>
+        }
+      />
 
       {editResendModal.open ? (
         <div
