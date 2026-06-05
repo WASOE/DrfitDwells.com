@@ -23,7 +23,7 @@ Deferred work tracked outside active implementation batches. **Nothing here is c
 - OPS cancel (`POST /api/ops/reservations/:id/actions/cancel`) sets status `cancelled`, tombstones availability blocks, sends `booking_cancelled` email. **No Stripe refund is triggered.**
 - Cancelled + paid/partial payments surface **Refund follow-up** / **Refund pending** in OPS — operational noise when no refund is intended.
 - Cancellation policy is legal PDF only; not enforced in code.
-- Prepaid **gift voucher** credit exists; cancellation **stay credit** will reuse `GiftVoucher` with `issuanceSource: cancellation_compensation` (no separate guest wallet in this epic — see locked spec).
+- Prepaid **gift voucher** credit exists; cancellation **stay credit** reuses `GiftVoucher` with `issuanceSource: cancellation_compensation` (see locked spec). **OPS manual goodwill gift vouchers** are **not implemented** — tracked as EPIC-002 (adjacent, not part of cancel/resolve).
 
 ---
 
@@ -188,7 +188,7 @@ As ops and engineering, we need **compensation stay credits** to be safe and sep
 
 **Acceptance criteria**
 
-- [ ] Compensation vouchers use **`issuanceSource: cancellation_compensation`** (and optional `goodwill_ops` later); purchased vouchers stay `purchase`.
+- [ ] Compensation vouchers use **`issuanceSource: cancellation_compensation`**; purchased vouchers stay `purchase`. **`goodwill_ops`** manual issuance is **EPIC-002** (separate epic, not implemented).
 - [ ] **Reuse existing checkout voucher redemption** (`voucherCode`, ledger reserve/confirm) — no separate guest wallet / `GuestCreditLedgerEntry` in this epic.
 - [ ] Enforce current **€100 minimum** redeem invariant at issue time unless a later batch explicitly changes `giftVoucherValidationService`.
 - [ ] OPS reservation detail shows **Compensation credit** + link when `compensationGiftVoucherId` is set.
@@ -244,6 +244,78 @@ As ops staff (and eventually the guest, if self-service is added), when a refund
 
 ---
 
+### EPIC-002: OPS manual goodwill gift vouchers
+
+**Status:** `idea` · **Priority:** P2 · **Area:** OPS gift vouchers · **Implementation:** **not implemented**
+
+**Problem**
+
+Staff sometimes need to issue prepaid credit **without** a Stripe purchase, **without** tying it to a cancelled reservation, and **without** going through the public gift-voucher checkout. Today, OPS can only issue reservation-linked compensation credits via cancellation settlement (`credits_issued` → `cancellation_compensation`). There is no path to create a standalone goodwill credit (e.g. service recovery, marketing gesture, ops correction).
+
+**Relationship to cancellation settlement**
+
+Adjacent but **out of scope** for EPIC-001 / [`docs/cancellation_settlement_implementation_plan.md`](cancellation_settlement_implementation_plan.md). Goodwill issuance must **not** use cancel, resolve, or `sourceReservationId` requirements from the compensation flow.
+
+**Vision**
+
+OPS/admin can manually create an active gift voucher credit from the OPS gift-voucher workspace — same `GiftVoucher` collection and checkout redemption path as purchases and compensation credits, but classified as **`issuanceSource: goodwill_ops`** with no payment or reservation linkage.
+
+**Out of scope (unless explicitly added later)**
+
+- Stripe PaymentIntent / checkout session creation
+- Public `/gift-vouchers` purchase flow
+- Creator commission on issuance
+- Purchase revenue / gift-voucher sales attribution
+- Guest delivery email (may ship as a follow-on story; not required for v1 issuance)
+- Cancellation settlement cancel/resolve integration
+
+**Depends on**
+
+- Existing `GiftVoucher` model (`issuanceSource` enum already includes `goodwill_ops` in code — **no issuance API or OPS UI yet**).
+- Reporting / stats exclusion patterns from EPIC-001 STORY-003 (compensation and goodwill must not pollute purchase metrics).
+- [`docs/gift_vouchers_master_spec.md`](gift_vouchers_master_spec.md) for redemption, ledger, and event audit rules.
+
+---
+
+#### STORY-001: OPS manual goodwill gift voucher issuance
+
+**Status:** `idea` · **Priority:** P2 · **Implementation:** **not implemented**
+
+**User story**
+
+As ops staff, I want to **manually create a gift voucher credit** for a guest (goodwill / service recovery) so they receive a redeemable code without a Stripe payment and without cancelling a reservation.
+
+**Acceptance criteria**
+
+- [ ] OPS/admin can create a manual credit from OPS (API + UI — **future batch; not implemented**).
+- [ ] Required fields at creation: **recipient name**, **recipient email**, **amount** (EUR cents), **reason/note**.
+- [ ] Optional fields: **expiry date**, **internal reference** (ops-only metadata; exact field name TBD in spec).
+- [ ] Created voucher has **`issuanceSource: goodwill_ops`**.
+- [ ] **No** `stripePaymentIntentId`, **no** `stripeCheckoutSessionId`, **no** `purchaseRequestId`, **no** checkout or payment activation path.
+- [ ] **No** creator commission hooks (`ensureGiftVoucherCreatorCommissionAfterActivation` and equivalents must not run).
+- [ ] **No** purchase revenue attribution; goodwill vouchers **excluded** from gift-voucher purchase stats, creator gift revenue, and creator commission reporting.
+- [ ] **No** gift-voucher **purchase** emails (buyer receipt / recipient gift-card purchase templates) on issuance.
+- [ ] Initial status is **`active`** (or explicit product choice: draft/manual pending — lock in implementation spec before build).
+- [ ] **`GiftVoucherEvent`** recorded on issuance (e.g. `goodwill_issued` or `manual_issued` — exact event type TBD; must include actor, note/reason, amount).
+- [ ] Voucher appears in **OPS gift voucher list** and **detail** with clear **goodwill** labeling, filterable separately from **purchase** and **cancellation_compensation** vouchers.
+- [ ] Redemption reuses existing checkout voucher path (same as compensation credits); €100 minimum redeem invariant applies unless explicitly changed in a later batch.
+- [ ] Idempotency on create (idempotency key) prevents duplicate vouchers on retry.
+- [ ] Audit trail: actor, timestamp, reason/note, amount, recipient — no silent financial mutations.
+
+**Open questions**
+
+- Minimum issue amount: same €100 as compensation, or lower for goodwill?
+- Should goodwill vouchers support `deliveryMode: manual` only, or also optional email send in v1?
+- Internal reference: free-text ops note vs structured `internalReference` field?
+- Void/adjust: reuse existing OPS gift-voucher lifecycle actions or goodwill-specific rules?
+
+**Notes**
+
+- `goodwill_ops` enum exists on `GiftVoucher` today; **no** `issueGoodwillOpsVoucher` service, **no** OPS create route, **no** create UI.
+- Guest email delivery is a **separate optional batch** after issuance works.
+
+---
+
 ## Backlog index
 
 | ID | Title | Priority | Status |
@@ -255,6 +327,8 @@ As ops staff (and eventually the guest, if self-service is added), when a refund
 | EPIC-001-STORY-002b | Post-cancel settlement resolution | P1 | idea |
 | EPIC-001-STORY-003 | Compensation GiftVoucher support & redemption safety | P1 | idea |
 | EPIC-001-STORY-004 | Cash vs stay credit with bonus incentive | P2 | idea |
+| EPIC-002 | OPS manual goodwill gift vouchers | P2 | idea |
+| EPIC-002-STORY-001 | OPS manual goodwill gift voucher issuance | P2 | idea |
 
 ---
 
@@ -262,6 +336,7 @@ As ops staff (and eventually the guest, if self-service is added), when a refund
 
 | Date | Change |
 |------|--------|
+| 2026-06-05 | Added EPIC-002: OPS manual goodwill gift vouchers (not implemented; adjacent to cancellation settlement). |
 | 2026-05-26 | Spec: `cashRefundEvidence` for manual `cash_refunded` proof (not note-only). |
 | 2026-05-26 | EPIC-001: two-phase cancel (`resolution_pending`) + resolve route; offer ≠ issued credit; rebooked future. |
 | 2026-05-26 | Aligned EPIC-001 stories with locked spec (GiftVoucher compensation subtype; no separate guest wallet). |

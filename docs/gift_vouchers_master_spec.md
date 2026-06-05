@@ -313,6 +313,18 @@ Required features (later batch):
 
 No silent edits for financial state.
 
+### 11.1 Issuance sources (classification)
+
+Vouchers in the same `GiftVoucher` collection are distinguished by **`issuanceSource`**:
+
+| Source | Meaning | Status |
+|--------|---------|--------|
+| `purchase` (or absent / backfilled) | Paid via Stripe checkout | Implemented |
+| `cancellation_compensation` | Stay credit from reservation cancel/resolve | Implemented (cancellation settlement epic) |
+| `goodwill_ops` | OPS manual credit without payment or reservation | **Not implemented** — see [`docs/BACKLOG.md`](BACKLOG.md) **EPIC-002** |
+
+**OPS manual goodwill gift vouchers (EPIC-002, not implemented):** OPS/admin creates credit with recipient name/email, amount, reason/note, optional expiry and internal reference. No Stripe, no checkout, no creator commission, no purchase revenue attribution. `GiftVoucherEvent` on issuance (e.g. `goodwill_issued` / `manual_issued` — TBD). Visible in OPS list/detail, clearly separated from purchase and compensation vouchers. Guest email optional follow-on batch.
+
 ---
 
 ## 12) Attribution and creator commission rules

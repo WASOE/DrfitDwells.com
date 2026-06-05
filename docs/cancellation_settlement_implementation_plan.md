@@ -236,6 +236,15 @@ Called from **resolve** or **cancel** only when transitioning to `credits_issued
 
 Unchanged: filter purchased vs compensation; creator stats exclude compensation; minimum stay credit €100 at issue unless invariant changed.
 
+### 6.5 OPS manual goodwill gift vouchers — **out of scope**
+
+**Not part of this epic.** Staff-issued credits without a reservation (`issuanceSource: goodwill_ops`) are tracked separately in [`docs/BACKLOG.md`](BACKLOG.md) as **EPIC-002** — **not implemented**.
+
+- Must **not** be issued via cancel, resolve, or `issueCancellationCompensationVoucher`.
+- Must **not** require `sourceReservationId`.
+- Must **not** pollute purchase stats, creator gift revenue, creator commission, or Stripe/payment ingestion flows (same exclusion principle as compensation vouchers).
+- Guest email on goodwill issuance may ship in a later batch; cancellation stay-credit email rules in §9 do not apply.
+
 ---
 
 ## 7. API shapes
@@ -456,4 +465,5 @@ Unchanged from prior spec plus `resolveCancellationSettlement` service/route whe
 | 2026-05-26 | `cashRefundEvidence` structured proof for `cash_refunded`; `cashRefundNote` note-only; EUR-only `financialSnapshot.currency`. |
 | 2026-05-26 | Two-phase model: `resolution_pending`, `offer`, `replacementBookingId`, resolve route, `rebooked_or_moved`; offer ≠ issued credit; permissions & hybrid future. |
 | 2026-05-26 | Clarified Batch 1 tests: current behavior only; settlement matrix in Batch 2. |
+| 2026-06-05 | §6.5: OPS manual goodwill gift vouchers out of scope; deferred to BACKLOG EPIC-002. |
 | 2026-05-26 | Initial locked spec: cancellation settlement + GiftVoucher compensation subtype + batches 1–8+ |
