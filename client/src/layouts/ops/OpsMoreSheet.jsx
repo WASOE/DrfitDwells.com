@@ -68,16 +68,23 @@ export default function OpsMoreSheet({ open, onClose, returnFocusRef }) {
 
       const first = focusables[0];
       const last = focusables[focusables.length - 1];
+      const active = document.activeElement;
+
+      if (!dialogRef.current?.contains(active)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+        return;
+      }
 
       if (event.shiftKey) {
-        if (document.activeElement === first) {
+        if (active === first) {
           event.preventDefault();
           last.focus();
         }
         return;
       }
 
-      if (document.activeElement === last) {
+      if (active === last) {
         event.preventDefault();
         first.focus();
       }
@@ -96,10 +103,9 @@ export default function OpsMoreSheet({ open, onClose, returnFocusRef }) {
 
   return (
     <div className="fixed inset-0 z-50 md:hidden" role="presentation">
-      <button
-        type="button"
+      <div
         className="absolute inset-0 bg-black/40"
-        aria-label="Close More navigation"
+        aria-hidden="true"
         onClick={handleClose}
       />
 
@@ -141,7 +147,7 @@ export default function OpsMoreSheet({ open, onClose, returnFocusRef }) {
                       <NavLink
                         to={item.to}
                         onClick={handleClose}
-                        className={`flex h-[52px] w-full items-center gap-3 px-4 text-sm ${
+                        className={`flex h-[52px] w-full touch-manipulation items-center gap-3 px-4 text-sm ${
                           isActive ? 'bg-sage/10 text-sage font-medium' : 'text-gray-900'
                         }`}
                         aria-current={isActive ? 'page' : undefined}

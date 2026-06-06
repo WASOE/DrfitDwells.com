@@ -42,7 +42,7 @@ export default function OpsMobileTabBar({ onMoreClick, moreButtonRef, isMoreOpen
               {tab.to ? (
                 <Link
                   to={tab.to}
-                  className={sharedClasses}
+                  className={`${sharedClasses} touch-manipulation`}
                   aria-current={isActive ? 'page' : undefined}
                 >
                   {content}
@@ -52,7 +52,7 @@ export default function OpsMobileTabBar({ onMoreClick, moreButtonRef, isMoreOpen
                   ref={moreButtonRef}
                   type="button"
                   onClick={onMoreClick}
-                  className={`${sharedClasses} appearance-none bg-transparent`}
+                  className={`${sharedClasses} appearance-none bg-transparent touch-manipulation`}
                   aria-current={isActive ? 'page' : undefined}
                   aria-haspopup="dialog"
                   aria-expanded={isMoreOpen}
