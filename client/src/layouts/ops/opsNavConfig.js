@@ -41,17 +41,47 @@ export const OPS_MOBILE_TABS = [
   { id: 'more', label: 'More', to: null }
 ];
 
-/** More sheet rows grouped for Batch 4; paths and labels match desktop nav. */
+/** Full OPS mobile menu (< md More sheet). All 14 destinations; bottom tabs remain shortcuts. */
 export const OPS_MORE_GROUPS = [
   {
-    id: 'property',
-    label: 'Property & inventory',
-    items: [{ to: '/ops/cabins', label: 'Cabins' }]
+    id: 'dashboard',
+    label: 'Dashboard',
+    items: [{ to: '/ops', label: 'Dashboard', end: true }]
   },
   {
-    id: 'partners',
-    label: 'Partners',
-    items: [{ to: '/ops/creator-partners', label: 'Creator partners' }]
+    id: 'calendar',
+    label: 'Calendar',
+    items: [
+      { to: '/ops/calendar', label: 'Calendar' },
+      { to: '/ops/sync', label: 'Sync' }
+    ]
+  },
+  {
+    id: 'guests',
+    label: 'Guests',
+    items: [
+      { to: '/ops/reservations', label: 'Reservations' },
+      { to: '/ops/messaging', label: 'Messaging' },
+      { to: '/ops/communications', label: 'Comms' },
+      { to: '/ops/reviews', label: 'Reviews' }
+    ]
+  },
+  {
+    id: 'finance',
+    label: 'Finance',
+    items: [
+      { to: '/ops/payments', label: 'Payments' },
+      { to: '/ops/promo-codes', label: 'Promo codes' },
+      { to: '/ops/gift-vouchers', label: 'Gift vouchers' }
+    ]
+  },
+  {
+    id: 'property-partners',
+    label: 'Property & partners',
+    items: [
+      { to: '/ops/cabins', label: 'Cabins' },
+      { to: '/ops/creator-partners', label: 'Creator partners' }
+    ]
   },
   {
     id: 'operations',

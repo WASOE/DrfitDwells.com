@@ -42,28 +42,65 @@ describe('opsNavConfig', () => {
     ]);
   });
 
-  it('covers all nav destinations in mobile tabs or More groups', () => {
+  it('covers all nav destinations in mobile tabs or More sheet', () => {
     const mobilePrimary = OPS_MOBILE_TABS.filter((tab) => tab.to).map((tab) => tab.to);
     const moreRoutes = OPS_MORE_GROUPS.flatMap((group) => group.items.map((item) => item.to));
-    const calendarSync = ['/ops/sync'];
-    const guestRoutes = [
-      '/ops/communications',
-      '/ops/messaging',
-      '/ops/reviews'
-    ];
-    const financeRoutes = ['/ops/promo-codes', '/ops/gift-vouchers'];
-
-    const covered = new Set([
-      ...mobilePrimary,
-      ...moreRoutes,
-      ...calendarSync,
-      ...guestRoutes,
-      ...financeRoutes
-    ]);
+    const covered = new Set([...mobilePrimary, ...moreRoutes]);
 
     for (const item of OPS_NAV_ITEMS) {
       expect(covered.has(item.to), `missing mobile coverage for ${item.to}`).toBe(true);
     }
+  });
+
+  describe('OPS_MORE_GROUPS full menu', () => {
+    const moreRoutes = () => OPS_MORE_GROUPS.flatMap((group) => group.items.map((item) => item.to));
+
+    it('contains exactly all 14 OPS routes', () => {
+      expect(moreRoutes()).toHaveLength(14);
+      expect(new Set(moreRoutes()).size).toBe(14);
+      expect(new Set(moreRoutes())).toEqual(new Set(OPS_NAV_ITEMS.map((item) => item.to)));
+    });
+
+    it('includes every OPS_NAV_ITEMS route', () => {
+      const routes = new Set(moreRoutes());
+      for (const item of OPS_NAV_ITEMS) {
+        expect(routes.has(item.to), `More sheet missing ${item.to}`).toBe(true);
+      }
+    });
+
+    it('includes all required OPS routes explicitly', () => {
+      const required = [
+        '/ops',
+        '/ops/calendar',
+        '/ops/sync',
+        '/ops/reservations',
+        '/ops/messaging',
+        '/ops/communications',
+        '/ops/reviews',
+        '/ops/payments',
+        '/ops/promo-codes',
+        '/ops/gift-vouchers',
+        '/ops/cabins',
+        '/ops/creator-partners',
+        '/ops/manual-review',
+        '/ops/readiness'
+      ];
+      const routes = new Set(moreRoutes());
+      for (const path of required) {
+        expect(routes.has(path), `More sheet missing ${path}`).toBe(true);
+      }
+    });
+
+    it('uses the approved section groups', () => {
+      expect(OPS_MORE_GROUPS.map((group) => group.label)).toEqual([
+        'Dashboard',
+        'Calendar',
+        'Guests',
+        'Finance',
+        'Property & partners',
+        'Operations'
+      ]);
+    });
   });
 
   describe('getActiveOpsMobileTabId', () => {

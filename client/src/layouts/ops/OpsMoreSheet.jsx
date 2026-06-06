@@ -2,15 +2,35 @@ import { useCallback, useEffect, useRef } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   Building2,
+  CalendarDays,
   ChevronRight,
   ClipboardList,
+  Gift,
+  Home,
+  LayoutDashboard,
+  Mail,
+  MessageSquare,
+  RefreshCw,
   ShieldCheck,
+  Star,
+  Tag,
   Users,
+  Wallet,
   X
 } from 'lucide-react';
-import { OPS_MORE_GROUPS } from './opsNavConfig';
+import { OPS_MORE_GROUPS, isOpsHomePath } from './opsNavConfig';
 
 const ROW_ICONS = {
+  '/ops': LayoutDashboard,
+  '/ops/calendar': CalendarDays,
+  '/ops/sync': RefreshCw,
+  '/ops/reservations': Home,
+  '/ops/messaging': MessageSquare,
+  '/ops/communications': Mail,
+  '/ops/reviews': Star,
+  '/ops/payments': Wallet,
+  '/ops/promo-codes': Tag,
+  '/ops/gift-vouchers': Gift,
   '/ops/cabins': Building2,
   '/ops/creator-partners': Users,
   '/ops/manual-review': ClipboardList,
@@ -18,6 +38,9 @@ const ROW_ICONS = {
 };
 
 function isRowActive(pathname, to) {
+  if (to === '/ops') {
+    return isOpsHomePath(pathname);
+  }
   return pathname === to || pathname.startsWith(`${to}/`);
 }
 
@@ -113,13 +136,13 @@ export default function OpsMoreSheet({ open, onClose, returnFocusRef }) {
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label="More OPS navigation"
-        className="absolute bottom-0 left-0 right-0 flex max-h-[min(70vh,520px)] flex-col overflow-hidden rounded-t-2xl border border-gray-200 bg-white shadow-2xl"
+        aria-label="OPS menu"
+        className="absolute bottom-0 left-0 right-0 flex max-h-[min(85vh,640px)] flex-col overflow-hidden rounded-t-2xl border border-gray-200 bg-white shadow-2xl"
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
         onClick={(event) => event.stopPropagation()}
       >
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
-          <h2 className="text-base font-semibold text-gray-900">More</h2>
+          <h2 className="text-base font-semibold text-gray-900">All OPS sections</h2>
           <button
             ref={closeButtonRef}
             type="button"
@@ -146,6 +169,7 @@ export default function OpsMoreSheet({ open, onClose, returnFocusRef }) {
                     <li key={item.to}>
                       <NavLink
                         to={item.to}
+                        end={item.end === true}
                         onClick={handleClose}
                         className={`flex h-[52px] w-full touch-manipulation items-center gap-3 px-4 text-sm ${
                           isActive ? 'bg-sage/10 text-sage font-medium' : 'text-gray-900'
