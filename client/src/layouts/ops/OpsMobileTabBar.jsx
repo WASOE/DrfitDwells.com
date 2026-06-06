@@ -13,9 +13,8 @@ const TAB_ICONS = {
 /**
  * Fixed bottom tab bar for OPS on screens below md (< 768px).
  * Active tab is derived from the router pathname (not local state).
- * Batch 3: More is a no-op button placeholder; the sheet ships in Batch 4.
  */
-export default function OpsMobileTabBar({ onMoreClick }) {
+export default function OpsMobileTabBar({ onMoreClick, moreButtonRef, isMoreOpen = false }) {
   const { pathname } = useLocation();
   const activeTabId = getActiveOpsMobileTabId(pathname);
 
@@ -50,10 +49,13 @@ export default function OpsMobileTabBar({ onMoreClick }) {
                 </Link>
               ) : (
                 <button
+                  ref={moreButtonRef}
                   type="button"
                   onClick={onMoreClick}
                   className={`${sharedClasses} appearance-none bg-transparent`}
                   aria-current={isActive ? 'page' : undefined}
+                  aria-haspopup="dialog"
+                  aria-expanded={isMoreOpen}
                 >
                   {content}
                 </button>

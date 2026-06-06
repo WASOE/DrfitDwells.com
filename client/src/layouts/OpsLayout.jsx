@@ -1,13 +1,17 @@
-import { useEffect, useState } from 'react';
-import { Outlet, useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { decodeRoleFromToken, opsReadAPI } from '../services/opsApi';
 import OpsDesktopNav from './ops/OpsDesktopNav';
 import OpsMobileTabBar from './ops/OpsMobileTabBar';
+import OpsMoreSheet from './ops/OpsMoreSheet';
 
 export default function OpsLayout() {
   const [ready, setReady] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [health, setHealth] = useState(null);
+  const [isMoreOpen, setIsMoreOpen] = useState(false);
+  const moreButtonRef = useRef(null);
+  const { pathname } = useLocation();
   const navigate = useNavigate();
   const role = decodeRoleFromToken();
 
@@ -62,6 +66,10 @@ export default function OpsLayout() {
       navigate('/login', { replace: true });
     }
   }, [ready, isAuthenticated, navigate]);
+
+  useEffect(() => {
+    setIsMoreOpen(false);
+  }, [pathname]);
 
   if (!ready) {
     return (
@@ -127,7 +135,16 @@ export default function OpsLayout() {
         <Outlet />
       </main>
 
-      <OpsMobileTabBar />
+      <OpsMobileTabBar
+        onMoreClick={() => setIsMoreOpen(true)}
+        moreButtonRef={moreButtonRef}
+        isMoreOpen={isMoreOpen}
+      />
+      <OpsMoreSheet
+        open={isMoreOpen}
+        onClose={() => setIsMoreOpen(false)}
+        returnFocusRef={moreButtonRef}
+      />
     </div>
   );
 }
