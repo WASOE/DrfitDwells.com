@@ -57,7 +57,7 @@ function formatLongDate(date) {
 
 function formatMoney(amount) {
   const n = typeof amount === 'number' && Number.isFinite(amount) ? amount : 0;
-  return `${n.toFixed(2)} BGN`;
+  return `€${n.toFixed(2)}`;
 }
 
 /** 12:00–style label from 'HH:MM' (e.g. '11:00' -> '11:00 AM'). */

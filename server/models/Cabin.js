@@ -45,7 +45,7 @@ const cabinSchema = new mongoose.Schema({
     required: [true, 'Price per night is required'],
     min: [0, 'Price cannot be negative']
   },
-  // Per-cabin cleaning fee in BGN (optional). Used by the cleaning portal.
+  // Per-cabin cleaning fee in EUR (optional). Used by the cleaning portal.
   cleaningFee: {
     type: Number,
     min: 0,

@@ -155,6 +155,7 @@ async function getCleaningSchedule({ date, propertyKind = null } = {}) {
 
 /**
  * Compute the day's cleaning payment summary for a property kind (or both).
+ * All monetary amounts are in EUR.
  *
  * @param {Object} opts
  * @param {Date|string} opts.date

@@ -88,7 +88,7 @@ export default function OpsCleaningSettings() {
               >
                 <h3 className="text-sm font-semibold text-gray-900">{label}</h3>
                 <label className="mt-3 block">
-                  <span className="block text-xs text-gray-600 mb-1">Base Fee (BGN)</span>
+                  <span className="block text-xs text-gray-600 mb-1">Base fee (EUR)</span>
                   <input
                     type="number"
                     min="0"

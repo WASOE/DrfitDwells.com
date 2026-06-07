@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 /**
  * Per-location cleaning configuration for the cleaning portal.
- * baseFee is the daily base cleaning fee for a property kind, added on top of
+ * baseFee is the daily base cleaning fee in EUR for a property kind, added on top of
  * individual per-cabin cleaning fees when computing the daily payment summary.
  */
 const cleaningSettingsSchema = new mongoose.Schema(

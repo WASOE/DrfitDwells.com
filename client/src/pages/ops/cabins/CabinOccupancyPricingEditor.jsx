@@ -83,7 +83,7 @@ export default function CabinOccupancyPricingEditor({
               />
             </label>
             <label className="block">
-              <span className="block text-xs text-gray-600 mb-1">Cleaning Fee (BGN)</span>
+              <span className="block text-xs text-gray-600 mb-1">Cleaning fee (EUR)</span>
               <input
                 type="number"
                 min="0"

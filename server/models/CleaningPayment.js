@@ -3,9 +3,10 @@ const mongoose = require('mongoose');
 /**
  * CleaningPayment — daily cleaning payout owed per property kind.
  *
- * One row per (date, propertyKind). `totalAmount` is auto-calculated from the
- * day's cleaning records/fees and stored for audit. `date` is a Sofia day-start
- * (UTC). Tracks how much has been paid out to cleaners for that day.
+ * One row per (date, propertyKind). All amounts are in EUR. `totalAmount` is
+ * auto-calculated from the day's cleaning records/fees and stored for audit.
+ * `date` is a Sofia day-start (UTC). Tracks how much has been paid out to
+ * cleaners for that day.
  */
 const cleaningPaymentSchema = new mongoose.Schema(
   {
