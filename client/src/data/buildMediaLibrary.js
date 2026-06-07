@@ -1,22 +1,20 @@
 /**
- * Build configurator media — hero covers match Valley stay booking cards;
- * option thumbnails use Lux Cabin optimized assets where available.
+ * Build configurator media — sourced from live booking listings on driftdwells.com
+ * (GET /api/availability, Lux Cabin + A-Frame cover + gallery). Verified 2026-06-07.
  */
 
-const LUX_BASE = '/uploads/The Valley/Lux Cabin/optimized';
-
-/** Cover images — same paths as Valley stay cards / booking listings. */
+/** Live search listing covers (isCover / imageUrl from production API). */
 export const BUILD_BOOKING_COVER = {
   'lux-cabin':
-    '/uploads/The%20Valley/Lux-cabin-exterior-watermark-remover-20260113071503.jpg',
+    '/uploads/cabins/69b2ff947f141a71ffa7c492/original/1776454430446-v6zze6vlats-WhatsApp-Image-2026-04-17-at-9.28.21-PM-(4).jpeg',
   aframe:
-    '/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.24%20AM%20(4).jpeg',
+    '/uploads/cabins/69d096b6bd7fb6fc0d3c2a34/original/1775292060909-z9e6zesu9d-WhatsApp-Image-2025-12-03-at-4.36.15-PM-(1).jpeg',
 };
 
-const coverMediaEntry = (id, label, url) => ({
+const urlMediaEntry = (id, label, view, url) => ({
   id,
   label,
-  view: 'exterior',
+  view,
   image: url,
   images: {
     desktop: url,
@@ -25,79 +23,60 @@ const coverMediaEntry = (id, label, url) => ({
   },
 });
 
-const cabinMediaEntry = (id, label, view, filename) => ({
-  id,
-  label,
-  view,
-  image: `${LUX_BASE}/${filename}`,
-  images: {
-    desktop: `${LUX_BASE}/${filename}`,
-    mobile: `${LUX_BASE}/${filename.replace('-desktop', '-mobile')}`,
-    thumbnail: `${LUX_BASE}/${filename.replace('-desktop', '-thumbnail')}`,
-  },
-});
-
-/** Lux Cabin — option/detail thumbnails from optimized library */
+/** Lux Cabin — hero + option-step photos from live listing gallery only. */
 export const BUILD_CABIN_MEDIA = {
-  'exterior-hero': coverMediaEntry(
+  'exterior-hero': urlMediaEntry(
     'exterior-hero',
     'The Lux Cabin',
+    'exterior',
     BUILD_BOOKING_COVER['lux-cabin']
   ),
-  'exterior-roof': cabinMediaEntry('exterior-roof', 'Roof detail', 'exterior', 'exterior-roof-desktop.webp'),
-  'interior-main': cabinMediaEntry('interior-main', 'Interior overview', 'interior', 'interior-main-desktop.webp'),
-  'interior-planks': cabinMediaEntry('interior-planks', 'Interior finish', 'interior', 'interior-planks-desktop.webp'),
-  'exterior-angle': cabinMediaEntry('exterior-angle', 'Exterior angle', 'exterior', 'exterior-angle-desktop.webp'),
+  'exterior-roof': urlMediaEntry(
+    'exterior-roof',
+    'Exterior',
+    'exterior',
+    '/uploads/cabins/69b2ff947f141a71ffa7c492/original/1776456061533-nviyrjuw9y9-WhatsApp-Image-2026-04-17-at-10.00.43-PM.jpeg'
+  ),
+  'exterior-angle': urlMediaEntry(
+    'exterior-angle',
+    'Exterior angle',
+    'exterior',
+    '/uploads/cabins/69b2ff947f141a71ffa7c492/original/1776455431687-8g8rfzxhh3o-WhatsApp-Image-2026-04-17-at-9.49.48-PM.jpeg'
+  ),
+  'interior-main': urlMediaEntry(
+    'interior-main',
+    'Interior overview',
+    'interior',
+    '/uploads/cabins/69b2ff947f141a71ffa7c492/original/1776454278977-jqgp4hfx5q-WhatsApp-Image-2026-04-17-at-9.28.21-PM-(2).jpeg'
+  ),
+  'interior-planks': urlMediaEntry(
+    'interior-planks',
+    'Interior finish',
+    'interior',
+    '/uploads/cabins/69b2ff947f141a71ffa7c492/original/1776454319344-gfmyvd7x1c-WhatsApp-Image-2026-04-17-at-9.28.20-PM-(1).jpeg'
+  ),
 };
 
-const aframePath = (...segments) =>
-  `/${segments.map((part) => encodeURIComponent(part)).join('/')}`;
-
-/** A-Frame — booking cover + gallery paths from Valley uploads */
+/** A Frame — hero + option-step photos from live listing gallery only. */
 export const BUILD_AFRAME_MEDIA = {
-  'aframe-hero': coverMediaEntry(
+  'aframe-hero': urlMediaEntry(
     'aframe-hero',
     'The A Frame',
+    'exterior',
     BUILD_BOOKING_COVER.aframe
   ),
-  'aframe-exterior': {
-    id: 'aframe-exterior',
-    label: 'A-Frame exterior',
-    view: 'exterior',
-    image: aframePath(
-      'uploads',
-      'The Valley',
-      'WhatsApp Image 2025-10-17 at 10.20.24 AM (4).jpeg'
-    ),
-    images: {
-      desktop: aframePath(
-        'uploads',
-        'The Valley',
-        'WhatsApp Image 2025-10-17 at 10.20.24 AM (4).jpeg'
-      ),
-      mobile: aframePath(
-        'uploads',
-        'The Valley',
-        'WhatsApp Image 2025-10-17 at 10.20.24 AM (4).jpeg'
-      ),
-      thumbnail: aframePath(
-        'uploads',
-        'The Valley',
-        'WhatsApp Image 2025-10-17 at 10.20.24 AM (4).jpeg'
-      ),
-    },
-  },
-  'aframe-interior': {
-    id: 'aframe-interior',
-    label: 'A-Frame interior',
-    view: 'interior',
-    image: aframePath('uploads', 'The Valley', 'A frames', '0c78060b-bdd0-40a4-aaad-89869283051d.jpeg'),
-    images: {
-      desktop: aframePath('uploads', 'The Valley', 'A frames', '0c78060b-bdd0-40a4-aaad-89869283051d.jpeg'),
-      mobile: aframePath('uploads', 'The Valley', 'A frames', '0c78060b-bdd0-40a4-aaad-89869283051d.jpeg'),
-      thumbnail: aframePath('uploads', 'The Valley', 'A frames', '0c78060b-bdd0-40a4-aaad-89869283051d.jpeg'),
-    },
-  },
+  'aframe-exterior': urlMediaEntry(
+    'aframe-exterior',
+    'A-Frame exterior',
+    'exterior',
+    '/uploads/cabins/69d096b6bd7fb6fc0d3c2a34/original/1776456229922-aiq1svhdgre-WhatsApp-Image-2026-04-13-at-5.50.08-PM.jpeg'
+  ),
+  'aframe-interior': urlMediaEntry(
+    'aframe-interior',
+    'A-Frame interior',
+    'interior',
+    '/uploads/The%20Valley/A%20frames/0c78060b-bdd0-40a4-aaad-89869283051d.jpeg'
+  ),
 };
 
 const CABIN_MEDIA_ALIASES = {
