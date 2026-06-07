@@ -11,8 +11,6 @@ const { normalizeDateToSofiaDayStart } = require('../../../utils/dateTime');
 
 const router = express.Router();
 
-const SOFIA_DAY_MS = 24 * 60 * 60 * 1000;
-
 function isValidDateInput(value) {
   if (value == null || value === '') return false;
   const d = new Date(value);
@@ -22,6 +20,18 @@ function isValidDateInput(value) {
 function normalizePropertyKind(value) {
   if (value === 'cabin' || value === 'valley') return value;
   return null;
+}
+
+function resolveActorId(req) {
+  const id = req.user?.id;
+  if (id != null && String(id).trim() !== '') {
+    return String(id).trim();
+  }
+  const role = req.user?.role;
+  if (role != null && String(role).trim() !== '') {
+    return String(role).trim();
+  }
+  return 'unknown';
 }
 
 // GET /api/ops/cleaning/schedule?date=ISO&propertyKind=cabin|valley
@@ -60,27 +70,32 @@ router.get('/payment-summary', async (req, res) => {
 
 /**
  * Find-or-create the CleaningRecord for a booking on a Sofia day.
- * Derives cabin/cabinType/unit from the booking to satisfy the model's
- * one-of(cabinId, cabinTypeId) pre-validate rule.
+ * Uses exact cleaningDate + unique index for idempotent, race-safe upsert.
  */
 async function findOrCreateCleaningRecord(bookingId, sofiaStart) {
-  const sofiaEnd = new Date(sofiaStart.getTime() + SOFIA_DAY_MS);
-  let record = await CleaningRecord.findOne({
-    bookingId,
-    cleaningDate: { $gte: sofiaStart, $lt: sofiaEnd }
-  });
+  let record = await CleaningRecord.findOne({ bookingId, cleaningDate: sofiaStart });
   if (record) return record;
 
   const booking = await Booking.findById(bookingId).select('cabinId cabinTypeId unitId');
   if (!booking) return null;
 
-  return new CleaningRecord({
+  const insert = {
     bookingId,
     cabinId: booking.cabinId || null,
     cabinTypeId: booking.cabinTypeId || null,
     unitId: booking.unitId || null,
     cleaningDate: sofiaStart
-  });
+  };
+
+  try {
+    record = await CleaningRecord.create(insert);
+    return record;
+  } catch (error) {
+    if (error?.code === 11000) {
+      return CleaningRecord.findOne({ bookingId, cleaningDate: sofiaStart });
+    }
+    throw error;
+  }
 }
 
 // POST /api/ops/cleaning/records/:bookingId/mark-cleaned  body: { cleaningDate }
@@ -98,7 +113,7 @@ router.post('/records/:bookingId/mark-cleaned', async (req, res) => {
     }
     record.status = 'cleaned';
     record.markedCleanedAt = new Date();
-    record.markedCleanedBy = 'admin';
+    record.markedCleanedBy = resolveActorId(req);
     await record.save();
     return res.json({ success: true, data: { cleaningRecordId: String(record._id), status: record.status } });
   } catch (error) {
@@ -156,7 +171,7 @@ router.post('/payments/mark-paid', async (req, res) => {
     payment.status = 'paid';
     payment.paidAmount = summary.totalAmount;
     payment.markedPaidAt = new Date();
-    payment.markedPaidBy = 'admin';
+    payment.markedPaidBy = resolveActorId(req);
     await payment.save();
     return res.json({ success: true, data: { cleaningPaymentId: String(payment._id), status: payment.status } });
   } catch (error) {

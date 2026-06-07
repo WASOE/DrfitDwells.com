@@ -108,6 +108,8 @@ export default function OpsCleaningCalendar() {
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentError, setPaymentError] = useState('');
   const [paymentBusy, setPaymentBusy] = useState(false);
+  const [toggleCleanedError, setToggleCleanedError] = useState('');
+  const [togglePaidError, setTogglePaidError] = useState('');
 
   const [busyBookingId, setBusyBookingId] = useState(null);
 
@@ -176,6 +178,12 @@ export default function OpsCleaningCalendar() {
   }, [selectedDate, selectedPropertyKind]);
 
   const loadPayment = useCallback(async () => {
+    if (!selectedPropertyKind) {
+      setPaymentSummary(null);
+      setPaymentError('');
+      setPaymentLoading(false);
+      return;
+    }
     setPaymentLoading(true);
     setPaymentError('');
     try {
@@ -219,6 +227,7 @@ export default function OpsCleaningCalendar() {
 
   const handleToggleCleaned = async (ev) => {
     setBusyBookingId(ev.bookingId);
+    setToggleCleanedError('');
     try {
       if (ev.status === 'cleaned') {
         await unmarkCleaned(ev.bookingId, ev.cleaningDate);
@@ -227,8 +236,10 @@ export default function OpsCleaningCalendar() {
       }
       invalidateMonth();
       await Promise.all([loadDay(), loadPayment()]);
-    } catch {
-      // surface via day error path on next load; keep UI responsive
+    } catch (err) {
+      setToggleCleanedError(
+        err?.response?.data?.message || 'Failed to update cleaning status. Please try again.'
+      );
     } finally {
       setBusyBookingId(null);
     }
@@ -237,6 +248,7 @@ export default function OpsCleaningCalendar() {
   const handleTogglePaid = async () => {
     if (!paymentSummary || !selectedPropertyKind) return;
     setPaymentBusy(true);
+    setTogglePaidError('');
     try {
       const args = { date: dateKey(selectedDate), propertyKind: selectedPropertyKind };
       if (paymentSummary.status === 'paid') {
@@ -245,8 +257,10 @@ export default function OpsCleaningCalendar() {
         await markPaid(args);
       }
       await loadPayment();
-    } catch {
-      // ignore; next load reflects state
+    } catch (err) {
+      setTogglePaidError(
+        err?.response?.data?.message || 'Failed to update payment status. Please try again.'
+      );
     } finally {
       setPaymentBusy(false);
     }
@@ -287,6 +301,7 @@ export default function OpsCleaningCalendar() {
                   onClick={() => {
                     setSelectedPropertyKind(opt.value);
                     setShowLocationMenu(false);
+                    setTogglePaidError('');
                   }}
                   className={`block w-full px-4 py-2 text-left text-sm hover:bg-gray-50 ${
                     opt.value === selectedPropertyKind ? 'font-semibold text-gray-900' : 'text-gray-700'
@@ -420,7 +435,14 @@ export default function OpsCleaningCalendar() {
 
       {/* Payment summary card */}
       <div className="mt-5 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-        {paymentError ? (
+        {!selectedPropertyKind ? (
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-600">
+              <Coins className="h-4 w-4" />
+            </div>
+            <p className="text-sm text-gray-500">Select Cabin or Valley to view payment summary.</p>
+          </div>
+        ) : paymentError ? (
           <p className="text-sm text-red-600">{paymentError}</p>
         ) : (
           <div className="flex items-start gap-3">
@@ -449,8 +471,7 @@ export default function OpsCleaningCalendar() {
                 <button
                   type="button"
                   onClick={handleTogglePaid}
-                  disabled={paymentBusy || paymentLoading || !selectedPropertyKind}
-                  title={!selectedPropertyKind ? 'Select a location to mark paid' : undefined}
+                  disabled={paymentBusy || paymentLoading}
                   className={`ml-auto rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 ${
                     isPaid
                       ? 'border border-gray-300 bg-white text-gray-700 hover:border-gray-400'
@@ -461,10 +482,8 @@ export default function OpsCleaningCalendar() {
                   {paymentBusy ? '…' : isPaid ? 'Unmark Paid' : 'Mark Paid'}
                 </button>
               </div>
-              {!selectedPropertyKind ? (
-                <p className="mt-2 text-[11px] text-gray-400">
-                  Select The Cabin or The Valley to record a payment.
-                </p>
+              {togglePaidError ? (
+                <p className="mt-2 text-sm text-red-600">{togglePaidError}</p>
               ) : null}
             </div>
           </div>
@@ -476,6 +495,12 @@ export default function OpsCleaningCalendar() {
         {dayError ? (
           <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
             {dayError}
+          </div>
+        ) : null}
+
+        {toggleCleanedError ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+            {toggleCleanedError}
           </div>
         ) : null}
 
@@ -521,6 +546,8 @@ export default function OpsCleaningCalendar() {
                   </span>
                 ) : null}
               </p>
+
+              {ev.cleaningNotes ? <NoteBox text={ev.cleaningNotes} /> : null}
 
               <button
                 type="button"

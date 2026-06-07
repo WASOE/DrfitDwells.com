@@ -39,7 +39,7 @@ const cleaningRecordSchema = new mongoose.Schema(
       type: Date,
       default: null
     },
-    // 'admin' for now; cleaner id once cleaner accounts exist.
+    // Authenticated OPS actor id (OpsUser id or legacy admin/operator subject).
     markedCleanedBy: {
       type: String,
       default: null
@@ -53,7 +53,7 @@ const cleaningRecordSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-cleaningRecordSchema.index({ bookingId: 1 });
+cleaningRecordSchema.index({ bookingId: 1, cleaningDate: 1 }, { unique: true });
 cleaningRecordSchema.index({ cleaningDate: 1 });
 cleaningRecordSchema.index({ status: 1 });
 
