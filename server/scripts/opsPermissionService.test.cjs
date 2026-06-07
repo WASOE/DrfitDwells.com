@@ -39,6 +39,10 @@ test('operator can view and mark cleaned but not write payment/settings', () => 
     evaluatePermission({ role: ROLE_OPERATOR, modules, action: ACTIONS.OPS_CLEANING_SETTINGS_WRITE }).allowed,
     false
   );
+  assert.equal(
+    evaluatePermission({ role: ROLE_OPERATOR, modules, action: ACTIONS.OPS_CLEANING_DAY_INPUTS_WRITE }).allowed,
+    true
+  );
 });
 
 test('cleaner can only view cleaning and mark cleaned', () => {
@@ -50,6 +54,10 @@ test('cleaner can only view cleaning and mark cleaned', () => {
   );
   assert.equal(
     evaluatePermission({ role: ROLE_CLEANER, modules, action: ACTIONS.OPS_CLEANING_PAYMENT_READ }).allowed,
+    false
+  );
+  assert.equal(
+    evaluatePermission({ role: ROLE_CLEANER, modules, action: ACTIONS.OPS_CLEANING_DAY_INPUTS_WRITE }).allowed,
     false
   );
   assert.equal(
