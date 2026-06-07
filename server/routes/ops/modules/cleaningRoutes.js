@@ -7,6 +7,8 @@ const {
   getCleaningSchedule,
   getCleaningPaymentSummary
 } = require('../../../services/ops/readModels/cleaningReadModel');
+const { calculateForMarkPaid } = require('../../../services/ops/cleaning/cleaningPricingService');
+const CleaningDaySheet = require('../../../models/CleaningDaySheet');
 const { normalizeDateToSofiaDayStart } = require('../../../utils/dateTime');
 const { requirePermission, ACTIONS } = require('../../../services/permissionService');
 
@@ -186,15 +188,30 @@ router.post('/payments/mark-paid', async (req, res) => {
       return res.status(400).json({ success: false, message: "propertyKind must be 'cabin' or 'valley'." });
     }
     const sofiaStart = normalizeDateToSofiaDayStart(date);
-    const summary = await getCleaningPaymentSummary({ date, propertyKind: kind });
-    const payment = await findOrCreateCleaningPayment(sofiaStart, kind, summary.totalAmount);
-    payment.totalAmount = summary.totalAmount;
+    const calc = await calculateForMarkPaid({ date, propertyKind: kind });
+    const payment = await findOrCreateCleaningPayment(sofiaStart, kind, calc.totalAmountEUR);
+    payment.currency = calc.currency || 'EUR';
+    payment.totalAmount = calc.totalAmountEUR;
+    payment.paidAmount = calc.totalAmountEUR;
     payment.status = 'paid';
-    payment.paidAmount = summary.totalAmount;
+    payment.lineItems = calc.lineItems;
+    payment.inputsSnapshot = calc.inputs;
+    payment.pricingPolicyId = calc.pricingPolicyId || null;
+    payment.pricingVersion = calc.pricingVersion || null;
+    payment.calculatedAt = calc.calculatedAt;
     payment.markedPaidAt = new Date();
     payment.markedPaidBy = resolveActorId(req);
     await payment.save();
-    return res.json({ success: true, data: { cleaningPaymentId: String(payment._id), status: payment.status } });
+    return res.json({
+      success: true,
+      data: {
+        cleaningPaymentId: String(payment._id),
+        status: payment.status,
+        totalAmount: payment.totalAmount,
+        currency: payment.currency,
+        lineItems: payment.lineItems
+      }
+    });
   } catch (error) {
     return handleRouteError(error, res);
   }
@@ -218,10 +235,84 @@ router.post('/payments/unmark-paid', async (req, res) => {
     payment.totalAmount = summary.totalAmount;
     payment.status = 'pending';
     payment.paidAmount = 0;
+    payment.lineItems = [];
+    payment.inputsSnapshot = null;
+    payment.pricingPolicyId = null;
+    payment.pricingVersion = null;
+    payment.calculatedAt = null;
     payment.markedPaidAt = null;
     payment.markedPaidBy = null;
     await payment.save();
     return res.json({ success: true, data: { cleaningPaymentId: String(payment._id), status: payment.status } });
+  } catch (error) {
+    return handleRouteError(error, res);
+  }
+});
+
+// PUT /api/ops/cleaning/day-inputs  body: { date, propertyKind, inputs?, perCheckoutInputs? }
+router.put('/day-inputs', async (req, res) => {
+  try {
+    requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_DAY_INPUTS_WRITE });
+    const { date, propertyKind, inputs, perCheckoutInputs } = req.body || {};
+    if (!isValidDateInput(date)) {
+      return res.status(400).json({ success: false, message: 'A valid date is required.' });
+    }
+    const kind = normalizePropertyKind(propertyKind);
+    if (!kind) {
+      return res.status(400).json({ success: false, message: "propertyKind must be 'cabin' or 'valley'." });
+    }
+    const sofiaStart = normalizeDateToSofiaDayStart(date);
+
+    const existingPayment = await CleaningPayment.findOne({ date: sofiaStart, propertyKind: kind }).lean();
+    if (existingPayment?.status === 'paid') {
+      return res.status(409).json({
+        success: false,
+        message: 'Cannot edit day inputs for a paid cleaning payment.'
+      });
+    }
+
+    const update = { updatedBy: resolveActorId(req) };
+    if (inputs !== undefined) {
+      if (inputs !== null && typeof inputs !== 'object') {
+        return res.status(400).json({ success: false, message: 'inputs must be an object.' });
+      }
+      update.inputs = inputs || {};
+    }
+    if (perCheckoutInputs !== undefined) {
+      if (!Array.isArray(perCheckoutInputs)) {
+        return res.status(400).json({ success: false, message: 'perCheckoutInputs must be an array.' });
+      }
+      update.perCheckoutInputs = perCheckoutInputs.map((row) => ({
+        bookingId: row.bookingId,
+        inputs: row.inputs && typeof row.inputs === 'object' ? row.inputs : {}
+      }));
+    }
+
+    const sheet = await CleaningDaySheet.findOneAndUpdate(
+      { date: sofiaStart, propertyKind: kind },
+      { $set: update },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    ).lean();
+
+    const summary = await getCleaningPaymentSummary({ date, propertyKind: kind });
+
+    return res.json({
+      success: true,
+      data: {
+        daySheet: {
+          date: sheet.date.toISOString(),
+          propertyKind: sheet.propertyKind,
+          inputs: sheet.inputs || {},
+          perCheckoutInputs: (sheet.perCheckoutInputs || []).map((p) => ({
+            bookingId: String(p.bookingId),
+            inputs: p.inputs || {}
+          })),
+          updatedBy: sheet.updatedBy,
+          updatedAt: sheet.updatedAt.toISOString()
+        },
+        paymentSummary: summary
+      }
+    });
   } catch (error) {
     return handleRouteError(error, res);
   }

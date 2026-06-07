@@ -1,13 +1,14 @@
 const Booking = require('../../../models/Booking');
 const CleaningRecord = require('../../../models/CleaningRecord');
-const CleaningPayment = require('../../../models/CleaningPayment');
-const CleaningSettings = require('../../../models/CleaningSettings');
 const {
   normalizeDateToSofiaDayStart,
   CHECK_IN_TIME,
   CHECK_OUT_TIME
 } = require('../../../utils/dateTime');
 const { FIXTURE_BOOKING_EMAIL_PATTERN } = require('../../../utils/fixtureExclusion');
+const {
+  calculateCleaningPaymentSummary
+} = require('../cleaning/cleaningPricingService');
 
 const SOFIA_DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -53,6 +54,21 @@ function resolveCleaningFee(booking) {
   return typeof fee === 'number' ? fee : null;
 }
 
+function resolveCleaningTags(booking) {
+  const cabinTags = booking?.cabinId?.cleaningTags;
+  const typeTags = booking?.cabinTypeId?.cleaningTags;
+  const tags = Array.isArray(cabinTags) && cabinTags.length ? cabinTags : typeTags;
+  return Array.isArray(tags) ? tags.map((t) => String(t).trim()).filter(Boolean) : [];
+}
+
+function resolveCleaningMeta(booking) {
+  return {
+    cleaningTags: resolveCleaningTags(booking),
+    cabinId: booking?.cabinId?._id ? String(booking.cabinId._id) : null,
+    cabinTypeId: booking?.cabinTypeId?._id ? String(booking.cabinTypeId._id) : null
+  };
+}
+
 /** Stable per-property key for same-day-turn matching (prefer unit, then cabin/type). */
 function propertyTurnKey(booking) {
   if (booking?.unitId) return `unit:${String(booking.unitId._id || booking.unitId)}`;
@@ -62,8 +78,8 @@ function propertyTurnKey(booking) {
 }
 
 const POPULATE = [
-  { path: 'cabinId', select: 'name propertyKind cleaningFee inventoryMode' },
-  { path: 'cabinTypeId', select: 'name propertyKind cleaningFee' },
+  { path: 'cabinId', select: 'name propertyKind cleaningFee cleaningTags inventoryMode' },
+  { path: 'cabinTypeId', select: 'name propertyKind cleaningFee cleaningTags' },
   { path: 'unitId', select: 'unitNumber displayName' }
 ];
 
@@ -117,6 +133,7 @@ async function getCleaningSchedule({ date, propertyKind = null } = {}) {
     const key = propertyTurnKey(b);
     const sameDayTurn = Boolean(key && checkinKeys.has(key));
     const record = recordByBooking.get(String(b._id)) || null;
+    const cleaningMeta = resolveCleaningMeta(b);
     return {
       type: 'checkout',
       bookingId: String(b._id),
@@ -130,7 +147,10 @@ async function getCleaningSchedule({ date, propertyKind = null } = {}) {
       sameDayTurn,
       nextCheckInTime: sameDayTurn ? CHECK_IN_TIME : null,
       cleaningNotes: b.cleaningNotes || null,
-      cleaningFee: resolveCleaningFee(b)
+      cleaningFee: resolveCleaningFee(b),
+      cleaningTags: cleaningMeta.cleaningTags,
+      cabinId: cleaningMeta.cabinId,
+      cabinTypeId: cleaningMeta.cabinTypeId
     };
   });
 
@@ -155,43 +175,10 @@ async function getCleaningSchedule({ date, propertyKind = null } = {}) {
 
 /**
  * Compute the day's cleaning payment summary for a property kind (or both).
- * All monetary amounts are in EUR.
- *
- * @param {Object} opts
- * @param {Date|string} opts.date
- * @param {('cabin'|'valley'|null)} [opts.propertyKind]
+ * Delegates to cleaningPricingService for line items and snapshot handling.
  */
 async function getCleaningPaymentSummary({ date, propertyKind = null } = {}) {
-  const sofiaStart = normalizeDateToSofiaDayStart(date);
-
-  const { checkouts } = await getCleaningSchedule({ date, propertyKind });
-
-  // Live base fee from CleaningSettings (only meaningful when a kind is given).
-  let baseFee = 0;
-  if (propertyKind) {
-    const settings = await CleaningSettings.findOne({ propertyKind }).lean();
-    baseFee = settings && typeof settings.baseFee === 'number' ? settings.baseFee : 0;
-  }
-  const feeSum = checkouts.reduce(
-    (sum, ev) => sum + (typeof ev.cleaningFee === 'number' ? ev.cleaningFee : 0),
-    0
-  );
-  const totalAmount = baseFee + feeSum;
-
-  // CleaningPayment is per (date, propertyKind); only meaningful when a kind is given.
-  const payment = propertyKind
-    ? await CleaningPayment.findOne({ date: sofiaStart, propertyKind }).lean()
-    : null;
-
-  return {
-    date: sofiaStart.toISOString(),
-    propertyKind: propertyKind || null,
-    totalAmount,
-    paidAmount: payment ? payment.paidAmount || 0 : 0,
-    status: payment ? payment.status : 'pending',
-    cabinCount: checkouts.length,
-    cleaningPaymentId: payment ? String(payment._id) : null
-  };
+  return calculateCleaningPaymentSummary({ date, propertyKind });
 }
 
 module.exports = {

@@ -51,6 +51,11 @@ const cabinSchema = new mongoose.Schema({
     min: 0,
     default: null
   },
+  // Tags for cleaning pricing rule selectors (e.g. a-frame, stone-house).
+  cleaningTags: {
+    type: [{ type: String, trim: true }],
+    default: []
+  },
   pricingModel: {
     type: String,
     enum: ['per_night', 'per_person'],
