@@ -125,6 +125,43 @@ function mergeInputsForSnapshot(daySheet) {
 }
 
 /**
+ * Derive desktop-editable field metadata from policy rules (server-owned prices).
+ */
+function buildEditableInputFields(policy) {
+  if (!policy || !Array.isArray(policy.rules)) return [];
+
+  return policy.rules
+    .filter((rule) => rule.inputKey)
+    .map((rule) => {
+      if (rule.type === 'quantity') {
+        return {
+          inputKey: rule.inputKey,
+          label: rule.label,
+          type: 'quantity',
+          unitAmountEUR:
+            typeof rule.unitAmountEUR === 'number' ? rule.unitAmountEUR : null
+        };
+      }
+      if (rule.type === 'optional_addon') {
+        return {
+          inputKey: rule.inputKey,
+          label: rule.label,
+          type: 'boolean',
+          amountEUR: typeof rule.amountEUR === 'number' ? rule.amountEUR : null
+        };
+      }
+      return null;
+    })
+    .filter(Boolean);
+}
+
+async function loadEditableInputFieldsForPayment(payment) {
+  if (!payment?.pricingPolicyId) return [];
+  const policy = await CleaningPricingPolicy.findById(payment.pricingPolicyId).lean();
+  return buildEditableInputFields(policy);
+}
+
+/**
  * Load the active pricing policy for a property kind on a given date.
  */
 async function loadActivePolicy(propertyKind, sofiaStart) {
@@ -184,14 +221,14 @@ async function calculateLegacyLineItems(checkouts, propertyKind) {
     );
   }
 
-  return {
+  return buildLegacyCalcResult({
     lineItems,
     totalAmountEUR: sumLineItems(lineItems),
     currency: CURRENCY,
     pricingPolicyId: null,
     pricingVersion: 'legacy',
     inputs: { inputs: {}, perCheckoutInputs: [] }
-  };
+  });
 }
 
 function applyDailyFixedRule(rule, lineItems) {
@@ -352,11 +389,20 @@ function calculatePolicyLineItems(checkouts, policy, daySheet) {
     currency: policy.currency || CURRENCY,
     pricingPolicyId: policy._id,
     pricingVersion: policy.version,
-    inputs: mergeInputsForSnapshot(daySheet)
+    inputs: mergeInputsForSnapshot(daySheet),
+    editableInputFields: buildEditableInputFields(policy)
   };
 }
 
-function buildPaidSnapshotResponse(payment, cabinCount) {
+function buildLegacyCalcResult(calcPartial) {
+  return {
+    ...calcPartial,
+    editableInputFields: []
+  };
+}
+
+async function buildPaidSnapshotResponse(payment, cabinCount) {
+  const editableInputFields = await loadEditableInputFieldsForPayment(payment);
   return {
     date: payment.date.toISOString(),
     propertyKind: payment.propertyKind,
@@ -366,6 +412,7 @@ function buildPaidSnapshotResponse(payment, cabinCount) {
     status: payment.status,
     lineItems: payment.lineItems || [],
     inputs: payment.inputsSnapshot || { inputs: {}, perCheckoutInputs: [] },
+    editableInputFields,
     canEditInputs: false,
     isSnapshot: true,
     pricingPolicyId: payment.pricingPolicyId ? String(payment.pricingPolicyId) : null,
@@ -390,6 +437,7 @@ async function calculateCleaningPaymentSummary({ date, propertyKind }) {
       status: 'pending',
       lineItems: [],
       inputs: { inputs: {}, perCheckoutInputs: [] },
+      editableInputFields: [],
       canEditInputs: false,
       isSnapshot: false,
       pricingPolicyId: null,
@@ -425,6 +473,7 @@ async function calculateCleaningPaymentSummary({ date, propertyKind }) {
     status: payment?.status || 'pending',
     lineItems: calc.lineItems,
     inputs: calc.inputs,
+    editableInputFields: calc.editableInputFields || [],
     canEditInputs: true,
     isSnapshot: false,
     pricingPolicyId: calc.pricingPolicyId ? String(calc.pricingPolicyId) : null,
@@ -464,7 +513,8 @@ module.exports = {
   loadDaySheet,
   checkoutMatchesSelector,
   resolveInputValue,
-  mergeInputsForSnapshot,
+  buildEditableInputFields,
+  loadEditableInputFieldsForPayment,
   sumLineItems,
   roundEUR
 };
