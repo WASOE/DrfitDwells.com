@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { formatMoney } from './OpsCleaningLineItemsTable';
 
 function coerceDraftValue(field, raw) {
@@ -39,8 +40,11 @@ export default function OpsCleaningDayInputsForm({
   if (!editableInputFields.length) {
     return (
       <p className="mt-4 text-sm text-gray-500">
-        No selectable cleaning tasks configured for this location. Run the pricing policy seed or use legacy
-        mode.
+        No selectable cleaning tasks configured for this location.{' '}
+        <Link to="/ops/settings/cleaning" className="font-medium text-[#81887A] hover:underline">
+          Configure rates in Cleaning settings
+        </Link>
+        .
       </p>
     );
   }

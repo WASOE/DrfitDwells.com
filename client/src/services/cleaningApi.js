@@ -65,6 +65,18 @@ export function updateDayInputs({ date, propertyKind, inputs, perCheckoutInputs 
   );
 }
 
+export function getPricingPolicy() {
+  return api.get('/ops/cleaning/pricing-policy', { headers: authHeaders() });
+}
+
+export function updatePricingPolicy(propertyKind, amounts) {
+  return api.put(
+    '/ops/cleaning/pricing-policy',
+    { propertyKind, amounts },
+    { headers: authHeaders() }
+  );
+}
+
 export default {
   getCleaningSchedule,
   getCleaningPaymentSummary,
@@ -72,5 +84,7 @@ export default {
   unmarkCleaned,
   markPaid,
   unmarkPaid,
-  updateDayInputs
+  updateDayInputs,
+  getPricingPolicy,
+  updatePricingPolicy
 };

@@ -8,6 +8,10 @@ const {
   getCleaningPaymentSummary
 } = require('../../../services/ops/readModels/cleaningReadModel');
 const { calculateForMarkPaid } = require('../../../services/ops/cleaning/cleaningPricingService');
+const {
+  getPricingPolicySettings,
+  updatePricingPolicyAmounts
+} = require('../../../services/ops/cleaning/cleaningPricingPolicyAdminService');
 const CleaningDaySheet = require('../../../models/CleaningDaySheet');
 const { normalizeDateToSofiaDayStart } = require('../../../utils/dateTime');
 const { requirePermission, ACTIONS } = require('../../../services/permissionService');
@@ -329,6 +333,41 @@ async function loadCleaningBaseFees() {
   });
   return fees;
 }
+
+// GET /api/ops/cleaning/pricing-policy -> cabin + valley pricing DTOs
+router.get('/pricing-policy', async (req, res) => {
+  try {
+    requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_SETTINGS_READ });
+    const data = await getPricingPolicySettings();
+    return res.json({ success: true, data });
+  } catch (error) {
+    if (error?.status === 400) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    return handleRouteError(error, res);
+  }
+});
+
+// PUT /api/ops/cleaning/pricing-policy  body: { propertyKind, amounts }
+router.put('/pricing-policy', async (req, res) => {
+  try {
+    requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_SETTINGS_WRITE });
+    const kind = normalizePropertyKind(req.body?.propertyKind);
+    if (!kind) {
+      return res.status(400).json({ success: false, message: "propertyKind must be 'cabin' or 'valley'." });
+    }
+    const data = await updatePricingPolicyAmounts({
+      propertyKind: kind,
+      amounts: req.body?.amounts
+    });
+    return res.json({ success: true, data });
+  } catch (error) {
+    if (error?.status === 400) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    return handleRouteError(error, res);
+  }
+});
 
 // GET /api/ops/cleaning/settings -> { cabin: number, valley: number }
 router.get('/settings', async (req, res) => {
