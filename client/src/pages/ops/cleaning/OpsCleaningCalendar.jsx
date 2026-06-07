@@ -14,9 +14,11 @@ import {
   markCleaned,
   unmarkCleaned,
   markPaid,
-  unmarkPaid
+  unmarkPaid,
+  updateDayInputs
 } from '../../../services/cleaningApi';
 import { useOpsSession } from '../../../context/OpsSessionContext';
+import OpsCleaningPaymentPanel from './OpsCleaningPaymentPanel';
 
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const MONTHS = [
@@ -93,6 +95,8 @@ function NoteBox({ text }) {
 export default function OpsCleaningCalendar() {
   const session = useOpsSession();
   const canReadPayment = (session?.actions || []).includes('ops.cleaning.payment_read');
+  const canWritePayment = (session?.actions || []).includes('ops.cleaning.payment_write');
+  const canEditDayInputs = (session?.actions || []).includes('ops.cleaning.day_inputs_write');
   const today = useMemo(() => new Date(), []);
 
   const [selectedDate, setSelectedDate] = useState(() => new Date());
@@ -113,6 +117,8 @@ export default function OpsCleaningCalendar() {
   const [paymentBusy, setPaymentBusy] = useState(false);
   const [toggleCleanedError, setToggleCleanedError] = useState('');
   const [togglePaidError, setTogglePaidError] = useState('');
+  const [inputsSaving, setInputsSaving] = useState(false);
+  const [inputsError, setInputsError] = useState('');
 
   const [busyBookingId, setBusyBookingId] = useState(null);
 
@@ -269,6 +275,24 @@ export default function OpsCleaningCalendar() {
     }
   };
 
+  const handleSaveDayInputs = async (inputs) => {
+    if (!selectedPropertyKind || !canEditDayInputs) return;
+    setInputsSaving(true);
+    setInputsError('');
+    try {
+      const res = await updateDayInputs({
+        date: dateKey(selectedDate),
+        propertyKind: selectedPropertyKind,
+        inputs
+      });
+      setPaymentSummary(res.data?.data?.paymentSummary || null);
+    } catch (err) {
+      setInputsError(err?.response?.data?.message || 'Failed to save cleaning tasks.');
+    } finally {
+      setInputsSaving(false);
+    }
+  };
+
   const monthDots = monthCache[monthKey] || {};
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const blanks = leadingBlanks(viewYear, viewMonth);
@@ -282,7 +306,9 @@ export default function OpsCleaningCalendar() {
   const isPaid = paymentSummary?.status === 'paid';
 
   return (
-    <div className="w-full max-w-lg mx-auto pb-24 md:pb-10">
+    <div className="w-full max-w-lg mx-auto pb-24 md:pb-10 lg:max-w-none lg:mx-0 lg:pb-8">
+      <div className="lg:grid lg:grid-cols-12 lg:gap-6 lg:max-w-7xl lg:mx-auto">
+        <div className="lg:col-span-5">
       {/* Top bar */}
       <div className="flex items-center justify-between gap-3 pt-2">
         <div className="relative">
@@ -436,9 +462,9 @@ export default function OpsCleaningCalendar() {
         ) : null}
       </div>
 
-      {/* Payment summary card */}
+      {/* Payment summary card — mobile/tablet only; unchanged below lg */}
       {canReadPayment ? (
-      <div className="mt-5 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="mt-5 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm lg:hidden">
         {!selectedPropertyKind ? (
           <div className="flex items-start gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-600">
@@ -593,6 +619,28 @@ export default function OpsCleaningCalendar() {
             {ev.cleaningNotes ? <NoteBox text={ev.cleaningNotes} /> : null}
           </div>
         ))}
+      </div>
+        </div>
+
+        {canReadPayment && selectedPropertyKind ? (
+          <aside className="hidden lg:block lg:col-span-7">
+            <OpsCleaningPaymentPanel
+              selectedDate={selectedDate}
+              paymentSummary={paymentSummary}
+              paymentLoading={paymentLoading}
+              paymentError={paymentError}
+              paymentBusy={paymentBusy}
+              inputsSaving={inputsSaving}
+              inputsError={inputsError}
+              togglePaidError={togglePaidError}
+              canWritePayment={canWritePayment}
+              canEditDayInputs={canEditDayInputs}
+              formatLongDate={formatLongDate}
+              onTogglePaid={handleTogglePaid}
+              onSaveDayInputs={handleSaveDayInputs}
+            />
+          </aside>
+        ) : null}
       </div>
     </div>
   );

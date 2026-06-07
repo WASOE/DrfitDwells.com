@@ -57,11 +57,20 @@ export function unmarkPaid({ date, propertyKind }) {
   );
 }
 
+export function updateDayInputs({ date, propertyKind, inputs, perCheckoutInputs }) {
+  return api.put(
+    '/ops/cleaning/day-inputs',
+    { date, propertyKind, inputs, perCheckoutInputs },
+    { headers: authHeaders() }
+  );
+}
+
 export default {
   getCleaningSchedule,
   getCleaningPaymentSummary,
   markCleaned,
   unmarkCleaned,
   markPaid,
-  unmarkPaid
+  unmarkPaid,
+  updateDayInputs
 };
