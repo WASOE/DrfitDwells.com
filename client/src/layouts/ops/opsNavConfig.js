@@ -28,7 +28,8 @@ const OPS_FRONTEND_MODULE_ROUTES = [
 
 /** Optional action required to show/use a nav destination. */
 const OPS_ROUTE_ACTIONS = {
-  '/ops/settings/cleaning': 'ops.cleaning.settings_read'
+  '/ops/settings/cleaning': 'ops.cleaning.settings_read',
+  '/ops/users': 'ops.users.manage'
 };
 
 /** All OPS top-nav destinations in current desktop order (OpsLayout.jsx). */
@@ -53,6 +54,12 @@ export const OPS_NAV_ITEMS = [
     label: 'Cleaning settings',
     module: 'cleaning',
     action: 'ops.cleaning.settings_read'
+  },
+  {
+    to: '/ops/users',
+    label: 'Users',
+    module: 'users',
+    action: 'ops.users.manage'
   }
 ];
 
@@ -68,7 +75,8 @@ export const OPS_MOBILE_TAB_ROUTE_PREFIXES = {
     '/ops/manual-review',
     '/ops/readiness',
     '/ops/cleaning',
-    '/ops/settings/cleaning'
+    '/ops/settings/cleaning',
+    '/ops/users'
   ]
 };
 
@@ -130,7 +138,8 @@ export const OPS_MORE_GROUPS = [
       { to: '/ops/cleaning', label: 'Cleaning' },
       { to: '/ops/settings/cleaning', label: 'Cleaning settings' },
       { to: '/ops/manual-review', label: 'Manual' },
-      { to: '/ops/readiness', label: 'Readiness' }
+      { to: '/ops/readiness', label: 'Readiness' },
+      { to: '/ops/users', label: 'Users' }
     ]
   }
 ];

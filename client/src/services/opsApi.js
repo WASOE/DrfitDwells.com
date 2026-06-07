@@ -66,7 +66,8 @@ const opsReadAPI = {
   previewGmaMessage: (id, body) =>
     api.post(`/ops/reservations/${id}/messaging/preview`, body, { headers: authHeaders() }),
   messagingDispatchDeliveryEvents: (dispatchId) =>
-    api.get(`/ops/messaging/dispatches/${dispatchId}/delivery-events`, { headers: authHeaders() })
+    api.get(`/ops/messaging/dispatches/${dispatchId}/delivery-events`, { headers: authHeaders() }),
+  opsUsers: () => api.get('/ops/users', { headers: authHeaders() })
 };
 
 const opsWriteAPI = {
@@ -186,7 +187,11 @@ const opsWriteAPI = {
         ? payloadOrLabel
         : { airbnbListingLabel: payloadOrLabel };
     return api.patch(`/ops/cabins/units/${unitId}`, payload, { headers: authHeaders() });
-  }
+  },
+  createOpsUser: (payload) => api.post('/ops/users', payload, { headers: authHeaders() }),
+  updateOpsUser: (id, payload) => api.patch(`/ops/users/${id}`, payload, { headers: authHeaders() }),
+  setOpsUserPassword: (id, password) =>
+    api.post(`/ops/users/${id}/password`, { password }, { headers: authHeaders() })
 };
 
 export { opsReadAPI, opsWriteAPI, decodeRoleFromToken };
