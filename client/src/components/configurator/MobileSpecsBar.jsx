@@ -3,18 +3,17 @@ import { useState } from 'react';
 import { ChevronUp } from 'lucide-react';
 
 /**
- * Mobile-optimized collapsible specs bar
- * Shows key stats, can expand for more details
+ * Mobile specs bar — matches BuildStickyBar (black, white text).
  */
-const MobileSpecsBar = ({ 
-  dimensions = '7 m × 3 m × 3 m',
-  area = '21 m²',
-  capacity = '2 Persons',
-  price = '€35,000',
+const MobileSpecsBar = ({
+  dimensions = '—',
+  area = '—',
+  capacity = '—',
+  price = '—',
   onDownloadPDF,
   onScheduleConsultation,
   isConfigPanelOpen = false,
-  onExpandedChange
+  onExpandedChange,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -27,13 +26,12 @@ const MobileSpecsBar = ({
   };
 
   const specs = [
-    { label: 'Dimensions', value: dimensions },
-    { label: 'Area', value: area },
-    { label: 'Capacity', value: capacity },
-    { label: 'Price', value: `Starting at ${price}` }
+    { label: 'Dimensions', value: dimensions || '—' },
+    { label: 'Area', value: area || '—' },
+    { label: 'Capacity', value: capacity || '—' },
+    { label: 'Price', value: price || '—' },
   ];
 
-  // Hide specs bar when config panel is open
   if (isConfigPanelOpen) {
     return null;
   }
@@ -42,73 +40,67 @@ const MobileSpecsBar = ({
     <motion.div
       initial={{ y: 100, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
-      className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg lg:hidden"
+      className="fixed bottom-0 left-0 right-0 border-t border-[#333] bg-[#1a1a1a] text-white lg:hidden"
       style={{ zIndex: 30 }}
     >
-      {/* Collapsed View */}
       <div className="px-4 py-3">
         <button
+          type="button"
           onClick={handleToggle}
-          className="w-full flex items-center justify-between touch-manipulation active:bg-gray-50 rounded-lg p-2 -m-2"
+          className="-m-2 flex w-full touch-manipulation items-center justify-between rounded-lg p-2 active:bg-[#2b2b2b]"
         >
-          <div className="flex items-center gap-4 flex-1 overflow-x-auto scrollbar-hide">
+          <div className="scrollbar-hide flex flex-1 items-center gap-3 overflow-x-auto">
             {specs.map((spec) => (
-              <div key={spec.label} className="flex-shrink-0 flex flex-col">
-                <span className="text-[9px] uppercase tracking-[0.2em] text-gray-500 mb-0.5 font-medium">
+              <div key={spec.label} className="flex shrink-0 flex-col">
+                <span className="mb-0.5 text-[0.55rem] uppercase tracking-[0.14em] text-[#888]">
                   {spec.label}
                 </span>
-                <span className="text-sm font-medium text-black whitespace-nowrap">
+                <span className="whitespace-nowrap text-[0.82rem] font-normal text-white">
                   {spec.value}
                 </span>
               </div>
             ))}
           </div>
-          <motion.div
-            animate={{ rotate: isExpanded ? 180 : 0 }}
-            className="ml-4 flex-shrink-0"
-          >
-            <ChevronUp className="w-5 h-5 text-gray-400" />
+          <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} className="ml-3 shrink-0">
+            <ChevronUp className="h-5 w-5 text-[#888]" />
           </motion.div>
         </button>
       </div>
 
-      {/* Expanded View */}
       <AnimatePresence>
         {isExpanded && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden border-t border-gray-100"
+            className="overflow-hidden border-t border-[#333]"
           >
-            <div className="px-4 py-4 space-y-4">
-              {/* Detailed Specs */}
+            <div className="space-y-4 px-4 py-4">
               <div className="grid grid-cols-2 gap-4">
                 {specs.map((spec) => (
                   <div key={spec.label} className="flex flex-col">
-                    <span className="text-xs uppercase tracking-[0.2em] text-gray-500 mb-1 font-medium">
+                    <span className="mb-1 text-[0.55rem] uppercase tracking-[0.14em] text-[#888]">
                       {spec.label}
                     </span>
-                    <span className="text-base font-medium text-black">
-                      {spec.value}
-                    </span>
+                    <span className="text-base font-normal text-white">{spec.value}</span>
                   </div>
                 ))}
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex gap-3 pt-2">
+              <div className="flex gap-2 pt-1">
                 <button
+                  type="button"
                   onClick={onScheduleConsultation}
-                  className="flex-1 px-4 py-3 bg-black text-white rounded-full text-sm uppercase tracking-wider font-medium touch-manipulation active:bg-gray-900"
+                  className="flex-1 touch-manipulation rounded-[2px] bg-white px-4 py-3 text-[0.62rem] font-medium uppercase tracking-[0.1em] text-[#1a1a1a] active:bg-[#eee]"
                 >
-                  Consult
+                  Schedule Consultation
                 </button>
                 <button
+                  type="button"
                   onClick={onDownloadPDF}
-                  className="flex-1 px-4 py-3 border-2 border-black text-black rounded-full text-sm uppercase tracking-wider font-medium touch-manipulation active:bg-gray-100"
+                  className="flex-1 touch-manipulation rounded-[2px] border border-[#555] px-4 py-3 text-[0.62rem] uppercase tracking-[0.1em] text-white active:border-white"
                 >
-                  PDF
+                  Download Spec PDF
                 </button>
               </div>
             </div>

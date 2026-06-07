@@ -2,69 +2,66 @@ import { motion } from 'framer-motion';
 import { useEffect, useRef } from 'react';
 
 /**
- * Mobile step indicator - horizontal scrollable pills
- * Shows all steps with current step highlighted
+ * Mobile step rail — visual match to BuildStepRail (5 steps, scrollable on narrow viewports).
  */
-const MobileStepIndicator = ({ 
-  steps, 
-  currentStep, 
-  onStepClick 
-}) => {
+const MobileStepIndicator = ({ steps, currentStep, onStepClick }) => {
   const scrollRef = useRef(null);
   const stepRefs = useRef([]);
 
-  // Auto-scroll to current step
   useEffect(() => {
     if (stepRefs.current[currentStep] && scrollRef.current) {
       const stepElement = stepRefs.current[currentStep];
       const container = scrollRef.current;
       const containerRect = container.getBoundingClientRect();
       const stepRect = stepElement.getBoundingClientRect();
-      
-      const scrollLeft = stepElement.offsetLeft - (containerRect.width / 2) + (stepRect.width / 2);
-      container.scrollTo({
-        left: scrollLeft,
-        behavior: 'smooth'
-      });
+      const scrollLeft =
+        stepElement.offsetLeft - containerRect.width / 2 + stepRect.width / 2;
+      container.scrollTo({ left: scrollLeft, behavior: 'smooth' });
     }
   }, [currentStep]);
 
   return (
-    <div className="lg:hidden fixed top-16 left-0 right-0 bg-white border-b border-gray-100" style={{ zIndex: 55 }}>
-      <div 
+    <div
+      className="fixed left-0 right-0 top-[var(--header-offset,68px)] z-[55] border-b border-[#e0e0e0] bg-white lg:hidden"
+    >
+      <div
         ref={scrollRef}
-        className="flex gap-2 px-4 py-3 overflow-x-auto scrollbar-hide"
+        className="scrollbar-hide flex overflow-x-auto"
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
         {steps.map((step, index) => {
           const isActive = index === currentStep;
-          const isCompleted = index < currentStep;
-          
+          const isDone = index < currentStep;
+
           return (
             <motion.button
               key={step.id}
-              ref={(el) => (stepRefs.current[index] = el)}
+              type="button"
+              ref={(el) => {
+                stepRefs.current[index] = el;
+              }}
               onClick={() => onStepClick(index)}
-              className={`
-                flex-shrink-0 px-4 py-2 rounded-full text-sm font-medium
-                touch-manipulation active:scale-95 transition-all
-                ${isActive 
-                  ? 'bg-black text-white' 
-                  : isCompleted
-                  ? 'bg-gray-100 text-gray-700'
-                  : 'bg-gray-50 text-gray-500'
-                }
-              `}
-              whileTap={{ scale: 0.95 }}
+              whileTap={{ scale: 0.98 }}
+              className={`min-w-[4.5rem] flex-1 touch-manipulation border-b-2 px-1 py-3 text-center transition-colors ${
+                isActive ? 'border-[#1a1a1a]' : 'border-transparent'
+              }`}
             >
-              <span className="flex items-center gap-2">
-                {isCompleted && (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                )}
-                {step.title}
-              </span>
+              <div
+                className={`mx-auto mb-1 flex h-[18px] w-[18px] items-center justify-center rounded-full text-[0.6rem] font-medium ${
+                  isActive || isDone
+                    ? 'bg-[#1a1a1a] text-white'
+                    : 'bg-[#e0e0e0] text-[#9a9a9a]'
+                }`}
+              >
+                {isDone ? '✓' : index + 1}
+              </div>
+              <div
+                className={`text-[0.6rem] uppercase tracking-[0.1em] ${
+                  isActive ? 'text-[#1a1a1a]' : isDone ? 'text-[#2b2b2b]' : 'text-[#9a9a9a]'
+                }`}
+              >
+                {step.label}
+              </div>
             </motion.button>
           );
         })}
