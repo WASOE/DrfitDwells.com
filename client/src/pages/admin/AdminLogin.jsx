@@ -38,7 +38,9 @@ const AdminLogin = () => {
 
       if (data.success) {
         localStorage.setItem('adminToken', data.token);
-        if (data.role === 'operator') {
+        if (data.role === 'cleaner') {
+          navigate('/ops/cleaning');
+        } else if (data.role === 'operator') {
           navigate('/ops');
         } else {
           navigate('/ops/reservations');

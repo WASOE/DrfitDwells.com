@@ -328,6 +328,13 @@ const bookingSchema = new mongoose.Schema({
     type: String,
     maxlength: [500, 'Special requests cannot exceed 500 characters']
   },
+  /** Admin-authored cleaning note / special request for this booking (cleaning portal). */
+  cleaningNotes: {
+    type: String,
+    default: null,
+    trim: true,
+    maxlength: [1000, 'Cleaning notes cannot exceed 1000 characters']
+  },
   tripType: {
     type: String,
     trim: true

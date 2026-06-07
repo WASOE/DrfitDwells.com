@@ -1,6 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { validateId } = require('../../../middleware/validateId');
+const Booking = require('../../../models/Booking');
 const {
   getReservationsWorkspaceReadModel,
   getReservationsExportRows,
@@ -224,6 +225,46 @@ router.get('/:id', async (req, res) => {
     }
     return res.json({ success: true, data });
   } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// PATCH /api/ops/reservations/:id/cleaning-notes  body: { cleaningNotes: string|null }
+router.patch('/:id/cleaning-notes', validateId('id'), async (req, res) => {
+  try {
+    requirePermission({
+      role: req.user?.role,
+      modules: req.user?.modules,
+      action: ACTIONS.OPS_RESERVATIONS_CLEANING_NOTES_WRITE
+    });
+    let cleaningNotes = req.body?.cleaningNotes;
+    if (cleaningNotes === undefined) cleaningNotes = null;
+    if (cleaningNotes !== null) {
+      if (typeof cleaningNotes !== 'string') {
+        return res.status(400).json({ success: false, message: 'cleaningNotes must be a string or null.' });
+      }
+      cleaningNotes = cleaningNotes.trim();
+      if (cleaningNotes.length > 1000) {
+        return res.status(400).json({ success: false, message: 'cleaningNotes cannot exceed 1000 characters.' });
+      }
+      if (cleaningNotes === '') cleaningNotes = null;
+    }
+    const booking = await Booking.findByIdAndUpdate(
+      req.params.id,
+      { $set: { cleaningNotes } },
+      { new: true, runValidators: true }
+    ).select('_id cleaningNotes');
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Reservation not found.' });
+    }
+    return res.json({
+      success: true,
+      data: { bookingId: String(booking._id), cleaningNotes: booking.cleaningNotes || null }
+    });
+  } catch (error) {
+    if (error?.code === 'PERMISSION_DENIED') {
+      return res.status(error.status || 403).json({ success: false, errorType: 'permission', message: error.message });
+    }
     return res.status(500).json({ success: false, message: error.message });
   }
 });

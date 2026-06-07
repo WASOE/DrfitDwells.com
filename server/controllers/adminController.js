@@ -691,15 +691,31 @@ const syncUnits = async (cabinTypeId, incomingUnits = []) => {
 };
 
 // Admin login
-const login = (req, res) => {
+const login = async (req, res) => {
   try {
     const { username, password } = req.body;
+    const {
+      tryOpsUserLogin,
+      buildTokenPayloadForOpsUser,
+      buildTokenPayloadForLegacy,
+      issueTokenResponse
+    } = require('../services/ops/opsAuthService');
+
+    const opsLogin = await tryOpsUserLogin(username, password);
+    if (opsLogin.ok) {
+      return issueTokenResponse(res, buildTokenPayloadForOpsUser(opsLogin.user));
+    }
+    if (opsLogin.reason === 'inactive') {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
 
     const adminUser = process.env.ADMIN_USER || authDefaults.adminUser;
     const adminPass = process.env.ADMIN_PASS || authDefaults.adminPass;
     const operatorUser = process.env.ADMIN_OPERATOR_USER || authDefaults.operatorUser;
     const operatorPass = process.env.ADMIN_OPERATOR_PASS || authDefaults.operatorPass;
-    const jwtSecret = process.env.ADMIN_JWT_SECRET || authDefaults.adminJwtSecret;
 
     if (!process.env.ADMIN_USER || !process.env.ADMIN_PASS || !process.env.ADMIN_JWT_SECRET) {
       console.warn('Admin login using fallback credentials from config/defaults.js. Set ADMIN_USER, ADMIN_PASS, and ADMIN_JWT_SECRET for production.');
@@ -737,29 +753,7 @@ const login = (req, res) => {
 
     const role = adminMatch ? 'admin' : 'operator';
     const subject = adminMatch ? 'admin' : 'operator';
-
-    // Create token payload (24h TTL; bump ADMIN_TOKEN_VERSION env to revoke all existing tokens)
-    const now = Math.floor(Date.now() / 1000);
-    const ttlSeconds = 24 * 60 * 60;
-    const payload = {
-      sub: subject,
-      role,
-      iat: now,
-      exp: now + ttlSeconds,
-      jti: crypto.randomBytes(16).toString('hex'),
-      tv: String(process.env.ADMIN_TOKEN_VERSION || '1')
-    };
-
-    // Generate token
-    const token = createToken(payload, jwtSecret);
-
-    res.json({
-      success: true,
-      token,
-      role,
-      expiresIn: ttlSeconds
-    });
-    
+    return issueTokenResponse(res, buildTokenPayloadForLegacy(role, subject));
   } catch (error) {
     console.error('Admin login error:', error);
     res.status(500).json({

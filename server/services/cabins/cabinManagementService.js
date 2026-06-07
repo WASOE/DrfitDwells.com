@@ -409,6 +409,19 @@ const sanitizeCabinPayload = (input = {}, { isUpdate = false, allowMulti = false
     }
   }
 
+  if (input.cleaningFee !== undefined) {
+    if (input.cleaningFee === null || input.cleaningFee === '') {
+      sanitized.cleaningFee = null;
+    } else {
+      const fee = normalizeNumber(input.cleaningFee);
+      if (fee === undefined || fee < 0) {
+        errors.push({ field: 'cleaningFee', message: 'Cleaning fee must be a non-negative number or null' });
+      } else {
+        sanitized.cleaningFee = fee;
+      }
+    }
+  }
+
   if (input.minNights !== undefined) {
     const minNights = normalizeNumber(input.minNights);
     if (!Number.isInteger(minNights) || minNights < 1) {
@@ -870,6 +883,9 @@ const updateCabinFromAdminPayload = async (id, body, ctx = {}) => {
     description: sanitized.description ?? cabin.description,
     capacity: sanitized.capacity ?? cabin.capacity,
     pricePerNight: sanitized.pricePerNight ?? cabin.pricePerNight,
+    cleaningFee: Object.prototype.hasOwnProperty.call(sanitized, 'cleaningFee')
+      ? sanitized.cleaningFee
+      : cabin.cleaningFee,
     minNights: sanitized.minNights ?? cabin.minNights,
     imageUrl: sanitized.imageUrl ?? cabin.imageUrl,
     amenities: sanitized.amenities ?? cabin.amenities,
@@ -954,6 +970,7 @@ const updateCabinFromAdminPayload = async (id, body, ctx = {}) => {
         cabinType.description = effectiveBase.description;
         cabinType.capacity = effectiveBase.capacity;
         cabinType.pricePerNight = effectiveBase.pricePerNight;
+        cabinType.cleaningFee = effectiveBase.cleaningFee;
         cabinType.minNights = effectiveBase.minNights ?? cabinType.minNights;
         cabinType.imageUrl = effectiveBase.imageUrl || cabinType.imageUrl;
         cabinType.amenities = effectiveBase.amenities || [];

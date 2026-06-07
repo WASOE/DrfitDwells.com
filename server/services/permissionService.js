@@ -1,5 +1,8 @@
+const { hasModuleAccess, resolveModulesForRole } = require('./ops/opsModuleRegistry');
+
 const ROLE_ADMIN = 'admin';
 const ROLE_OPERATOR = 'operator';
+const ROLE_CLEANER = 'cleaner';
 
 const ACTIONS = {
   BOOKING_STATUS_UPDATE: 'booking.status.update',
@@ -27,8 +30,27 @@ const ACTIONS = {
   OPS_GIFT_VOUCHER_MANAGE: 'ops.gift_voucher.manage',
   OPS_MESSAGING_READ: 'ops.messaging.read',
   OPS_MESSAGING_CANCEL_JOB: 'ops.messaging.cancel_job',
-  /** Admin-only: toggle `enabled` on shadow-mode MessageAutomationRule rows (Batch 10B2). */
-  OPS_MESSAGING_SHADOW_RULE_ENABLE: 'ops.messaging.shadow_rule.enable'
+  OPS_MESSAGING_SHADOW_RULE_ENABLE: 'ops.messaging.shadow_rule.enable',
+  OPS_USERS_MANAGE: 'ops.users.manage',
+  OPS_CLEANING_VIEW: 'ops.cleaning.view',
+  OPS_CLEANING_MARK_CLEANED: 'ops.cleaning.mark_cleaned',
+  OPS_CLEANING_PAYMENT_READ: 'ops.cleaning.payment_read',
+  OPS_CLEANING_PAYMENT_WRITE: 'ops.cleaning.payment_write',
+  OPS_CLEANING_SETTINGS_READ: 'ops.cleaning.settings_read',
+  OPS_CLEANING_SETTINGS_WRITE: 'ops.cleaning.settings_write',
+  OPS_RESERVATIONS_CLEANING_NOTES_WRITE: 'ops.reservations.cleaning_notes_write'
+};
+
+/** Action → module key (for module gate inside permission checks). */
+const ACTION_MODULE = {
+  [ACTIONS.OPS_CLEANING_VIEW]: 'cleaning',
+  [ACTIONS.OPS_CLEANING_MARK_CLEANED]: 'cleaning',
+  [ACTIONS.OPS_CLEANING_PAYMENT_READ]: 'cleaning',
+  [ACTIONS.OPS_CLEANING_PAYMENT_WRITE]: 'cleaning',
+  [ACTIONS.OPS_CLEANING_SETTINGS_READ]: 'cleaning',
+  [ACTIONS.OPS_CLEANING_SETTINGS_WRITE]: 'cleaning',
+  [ACTIONS.OPS_RESERVATIONS_CLEANING_NOTES_WRITE]: 'reservations',
+  [ACTIONS.OPS_USERS_MANAGE]: 'users'
 };
 
 const POLICY = {
@@ -56,23 +78,40 @@ const POLICY = {
   [ACTIONS.OPS_GIFT_VOUCHER_MANAGE]: [ROLE_ADMIN, ROLE_OPERATOR],
   [ACTIONS.OPS_MESSAGING_READ]: [ROLE_ADMIN, ROLE_OPERATOR],
   [ACTIONS.OPS_MESSAGING_CANCEL_JOB]: [ROLE_ADMIN, ROLE_OPERATOR],
-  [ACTIONS.OPS_MESSAGING_SHADOW_RULE_ENABLE]: [ROLE_ADMIN]
+  [ACTIONS.OPS_MESSAGING_SHADOW_RULE_ENABLE]: [ROLE_ADMIN],
+  [ACTIONS.OPS_USERS_MANAGE]: [ROLE_ADMIN],
+  [ACTIONS.OPS_CLEANING_VIEW]: [ROLE_ADMIN, ROLE_OPERATOR, ROLE_CLEANER],
+  [ACTIONS.OPS_CLEANING_MARK_CLEANED]: [ROLE_ADMIN, ROLE_OPERATOR, ROLE_CLEANER],
+  [ACTIONS.OPS_CLEANING_PAYMENT_READ]: [ROLE_ADMIN, ROLE_OPERATOR],
+  [ACTIONS.OPS_CLEANING_PAYMENT_WRITE]: [ROLE_ADMIN],
+  [ACTIONS.OPS_CLEANING_SETTINGS_READ]: [ROLE_ADMIN, ROLE_OPERATOR],
+  [ACTIONS.OPS_CLEANING_SETTINGS_WRITE]: [ROLE_ADMIN],
+  [ACTIONS.OPS_RESERVATIONS_CLEANING_NOTES_WRITE]: [ROLE_ADMIN, ROLE_OPERATOR]
 };
 
 function normalizeRole(role) {
-  if (!role) return ROLE_ADMIN;
+  if (!role) {
+    return null;
+  }
   return String(role).toLowerCase();
 }
 
-function evaluatePermission({ role, action }) {
+function evaluatePermission({ role, modules, action }) {
   const normalizedRole = normalizeRole(role);
   const allowedRoles = POLICY[action] || [];
-  const allowed = allowedRoles.includes(normalizedRole);
-  return { allowed, role: normalizedRole, action };
+  const roleAllowed = normalizedRole === ROLE_ADMIN || allowedRoles.includes(normalizedRole);
+  const effectiveModules =
+    modules != null && modules !== undefined
+      ? modules
+      : resolveModulesForRole(normalizedRole);
+  const moduleKey = ACTION_MODULE[action];
+  const moduleAllowed = !moduleKey || hasModuleAccess(effectiveModules, moduleKey);
+  const allowed = roleAllowed && moduleAllowed;
+  return { allowed, role: normalizedRole, action, moduleKey };
 }
 
-function requirePermission({ role, action }) {
-  const result = evaluatePermission({ role, action });
+function requirePermission({ role, modules, action }) {
+  const result = evaluatePermission({ role, modules, action });
   if (!result.allowed) {
     const err = new Error(`Permission denied for action: ${action}`);
     err.code = 'PERMISSION_DENIED';
@@ -83,10 +122,20 @@ function requirePermission({ role, action }) {
   return result;
 }
 
+function listAllowedActions({ role, modules }) {
+  return Object.values(ACTIONS).filter((action) =>
+    evaluatePermission({ role, modules, action }).allowed
+  );
+}
+
 module.exports = {
   ROLE_ADMIN,
   ROLE_OPERATOR,
+  ROLE_CLEANER,
   ACTIONS,
+  ACTION_MODULE,
+  POLICY,
   evaluatePermission,
-  requirePermission
+  requirePermission,
+  listAllowedActions
 };

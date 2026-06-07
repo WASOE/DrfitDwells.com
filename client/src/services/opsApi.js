@@ -8,14 +8,18 @@ function authHeaders() {
 function decodeRoleFromToken() {
   try {
     const token = localStorage.getItem('adminToken');
-    if (!token) return 'admin';
+    if (!token) return null;
     const parts = token.split('.');
     const payload = parts[1];
-    if (!payload) return 'admin';
+    if (!payload) return null;
     const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
-    return decoded.role === 'operator' ? 'operator' : 'admin';
+    const role = decoded.role;
+    if (role === 'operator' || role === 'cleaner' || role === 'admin') {
+      return role;
+    }
+    return null;
   } catch {
-    return 'admin';
+    return null;
   }
 }
 
@@ -62,7 +66,8 @@ const opsReadAPI = {
   previewGmaMessage: (id, body) =>
     api.post(`/ops/reservations/${id}/messaging/preview`, body, { headers: authHeaders() }),
   messagingDispatchDeliveryEvents: (dispatchId) =>
-    api.get(`/ops/messaging/dispatches/${dispatchId}/delivery-events`, { headers: authHeaders() })
+    api.get(`/ops/messaging/dispatches/${dispatchId}/delivery-events`, { headers: authHeaders() }),
+  opsUsers: () => api.get('/ops/users', { headers: authHeaders() })
 };
 
 const opsWriteAPI = {
@@ -182,7 +187,11 @@ const opsWriteAPI = {
         ? payloadOrLabel
         : { airbnbListingLabel: payloadOrLabel };
     return api.patch(`/ops/cabins/units/${unitId}`, payload, { headers: authHeaders() });
-  }
+  },
+  createOpsUser: (payload) => api.post('/ops/users', payload, { headers: authHeaders() }),
+  updateOpsUser: (id, payload) => api.patch(`/ops/users/${id}`, payload, { headers: authHeaders() }),
+  setOpsUserPassword: (id, password) =>
+    api.post(`/ops/users/${id}/password`, { password }, { headers: authHeaders() })
 };
 
 export { opsReadAPI, opsWriteAPI, decodeRoleFromToken };

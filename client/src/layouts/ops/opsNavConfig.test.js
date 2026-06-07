@@ -3,6 +3,9 @@ import {
   OPS_MORE_GROUPS,
   OPS_MOBILE_TABS,
   OPS_NAV_ITEMS,
+  canAccessNavItem,
+  canAccessOpsFrontendPath,
+  filterOpsNavItems,
   getActiveOpsMobileTabId,
   isOpsHomePath,
   isOpsMoreRoute,
@@ -11,11 +14,12 @@ import {
 } from './opsNavConfig.js';
 
 describe('opsNavConfig', () => {
-  it('lists 14 desktop nav items in OpsLayout order', () => {
-    expect(OPS_NAV_ITEMS).toHaveLength(14);
+  it('lists 17 desktop nav items in OpsLayout order', () => {
+    expect(OPS_NAV_ITEMS).toHaveLength(17);
     expect(OPS_NAV_ITEMS.map((item) => item.to)).toEqual([
       '/ops',
       '/ops/calendar',
+      '/ops/cleaning',
       '/ops/reservations',
       '/ops/payments',
       '/ops/promo-codes',
@@ -27,7 +31,9 @@ describe('opsNavConfig', () => {
       '/ops/messaging',
       '/ops/gift-vouchers',
       '/ops/manual-review',
-      '/ops/readiness'
+      '/ops/readiness',
+      '/ops/settings/cleaning',
+      '/ops/users'
     ]);
     expect(OPS_NAV_ITEMS.find((item) => item.to === '/ops')?.end).toBe(true);
   });
@@ -55,9 +61,9 @@ describe('opsNavConfig', () => {
   describe('OPS_MORE_GROUPS full menu', () => {
     const moreRoutes = () => OPS_MORE_GROUPS.flatMap((group) => group.items.map((item) => item.to));
 
-    it('contains exactly all 14 OPS routes', () => {
-      expect(moreRoutes()).toHaveLength(14);
-      expect(new Set(moreRoutes()).size).toBe(14);
+    it('contains exactly all 17 OPS routes', () => {
+      expect(moreRoutes()).toHaveLength(17);
+      expect(new Set(moreRoutes()).size).toBe(17);
       expect(new Set(moreRoutes())).toEqual(new Set(OPS_NAV_ITEMS.map((item) => item.to)));
     });
 
@@ -73,6 +79,8 @@ describe('opsNavConfig', () => {
         '/ops',
         '/ops/calendar',
         '/ops/sync',
+        '/ops/cleaning',
+        '/ops/settings/cleaning',
         '/ops/reservations',
         '/ops/messaging',
         '/ops/communications',
@@ -83,7 +91,8 @@ describe('opsNavConfig', () => {
         '/ops/cabins',
         '/ops/creator-partners',
         '/ops/manual-review',
-        '/ops/readiness'
+        '/ops/readiness',
+        '/ops/users'
       ];
       const routes = new Set(moreRoutes());
       for (const path of required) {
@@ -136,12 +145,15 @@ describe('opsNavConfig', () => {
       expect(getActiveOpsMobileTabId('/ops/gift-vouchers/v-1')).toBe('finance');
     });
 
-    it('matches More routes including cabin detail', () => {
+    it('matches More routes including cabin detail and cleaning', () => {
       expect(getActiveOpsMobileTabId('/ops/creator-partners')).toBe('more');
       expect(getActiveOpsMobileTabId('/ops/cabins')).toBe('more');
       expect(getActiveOpsMobileTabId('/ops/cabins/cabin-1')).toBe('more');
+      expect(getActiveOpsMobileTabId('/ops/cleaning')).toBe('more');
+      expect(getActiveOpsMobileTabId('/ops/settings/cleaning')).toBe('more');
       expect(getActiveOpsMobileTabId('/ops/manual-review')).toBe('more');
       expect(getActiveOpsMobileTabId('/ops/readiness')).toBe('more');
+      expect(getActiveOpsMobileTabId('/ops/users')).toBe('more');
       expect(isOpsMoreRoute('/ops/cabins/cabin-1')).toBe(true);
     });
 
@@ -158,6 +170,53 @@ describe('opsNavConfig', () => {
       expect(matchOpsMobileTab('/ops/reservations/1', 'finance')).toBe(false);
       expect(matchOpsMobileTab('/ops/cabins/1', 'more')).toBe(true);
       expect(matchOpsMobileTab('/ops/cabins/1', 'guests')).toBe(false);
+    });
+  });
+
+  describe('nav permission filtering', () => {
+    const cleanerSession = {
+      authenticated: true,
+      role: 'cleaner',
+      modules: ['cleaning'],
+      actions: ['ops.cleaning.view', 'ops.cleaning.mark_cleaned']
+    };
+
+    it('shows only cleaning nav items for cleaner session', () => {
+      const filtered = filterOpsNavItems(OPS_NAV_ITEMS, cleanerSession);
+      expect(filtered.map((item) => item.to)).toEqual(['/ops/cleaning']);
+    });
+
+    it('denies cleaning settings without settings_read action', () => {
+      const settingsItem = OPS_NAV_ITEMS.find((item) => item.to === '/ops/settings/cleaning');
+      expect(canAccessNavItem(settingsItem, cleanerSession)).toBe(false);
+    });
+
+    const adminSession = {
+      authenticated: true,
+      role: 'admin',
+      modules: ['*'],
+      actions: ['ops.users.manage']
+    };
+    const operatorSession = {
+      authenticated: true,
+      role: 'operator',
+      modules: ['dashboard', 'calendar', 'reservations', 'finance', 'property', 'guests_comms', 'operations', 'cleaning'],
+      actions: []
+    };
+
+    it('shows Users nav only for admin with ops.users.manage', () => {
+      const usersItem = OPS_NAV_ITEMS.find((item) => item.to === '/ops/users');
+      expect(canAccessNavItem(usersItem, adminSession)).toBe(true);
+      expect(canAccessNavItem(usersItem, operatorSession)).toBe(false);
+      expect(canAccessNavItem(usersItem, cleanerSession)).toBe(false);
+      expect(filterOpsNavItems(OPS_NAV_ITEMS, adminSession).some((item) => item.to === '/ops/users')).toBe(true);
+      expect(filterOpsNavItems(OPS_NAV_ITEMS, operatorSession).some((item) => item.to === '/ops/users')).toBe(false);
+    });
+
+    it('blocks operator and cleaner from /ops/users route', () => {
+      expect(canAccessOpsFrontendPath('/ops/users', adminSession)).toBe(true);
+      expect(canAccessOpsFrontendPath('/ops/users', operatorSession)).toBe(false);
+      expect(canAccessOpsFrontendPath('/ops/users', cleanerSession)).toBe(false);
     });
   });
 });
