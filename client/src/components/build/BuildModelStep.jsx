@@ -27,7 +27,7 @@ const BuildModelStep = ({ state, model, onSelectModel, onCustomDimensionsChange,
           Choose your model
         </h2>
         <p className="text-[0.8rem] leading-relaxed text-[#9a9a9a]">
-          Cabin models from €30,000 all-inclusive. A-Frame shell from €20,000. Delivered and
+          The Lux Cabin from €30,000 all-inclusive. The A Frame shell from €20,000. Delivered and
           installed. No surprises on structural scope.
         </p>
       </div>

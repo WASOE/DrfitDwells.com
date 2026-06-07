@@ -4,21 +4,21 @@ import { createInitialBuildState, sanitizeBuildState } from './buildConfigurator
 
 describe('buildConfiguratorExport', () => {
   it('builds mailto with model in subject and encoded body', () => {
-    const state = createInitialBuildState('7x3');
+    const state = createInitialBuildState('lux-cabin');
     const mailto = buildBuildEnquiryMailto(state, 'hello@driftdwells.com');
 
     expect(mailto).toMatch(/^mailto:hello@driftdwells\.com\?subject=/);
-    expect(decodeURIComponent(mailto)).toContain('Drift & Dwells build enquiry — The 7×3');
-    expect(decodeURIComponent(mailto)).toContain('Model: The 7×3');
+    expect(decodeURIComponent(mailto)).toContain('Drift & Dwells build enquiry — The Lux Cabin');
+    expect(decodeURIComponent(mailto)).toContain('Model: The Lux Cabin');
     expect(decodeURIComponent(mailto)).toContain('Estimate:');
   });
 
   it('uses From prefix when consultation items are selected', () => {
     const state = sanitizeBuildState({
-      modelId: '7x3',
+      modelId: 'lux-cabin',
       customDimensions: null,
       radio: {
-        ...createInitialBuildState('7x3').radio,
+        ...createInitialBuildState('lux-cabin').radio,
         wallFinish: 'finish-pine-planks',
       },
       toggles: [],
@@ -35,9 +35,9 @@ describe('buildConfiguratorExport', () => {
 
   it('keeps body within 8 lines', () => {
     const state = sanitizeBuildState({
-      modelId: '7x3',
+      modelId: 'lux-cabin',
       customDimensions: { length: 8, width: 3 },
-      radio: createInitialBuildState('7x3').radio,
+      radio: createInitialBuildState('lux-cabin').radio,
       toggles: ['heat-ac', 'extra-solar', 'extra-hot-tub'],
     });
     const mailto = buildBuildEnquiryMailto(state, 'hello@driftdwells.com');

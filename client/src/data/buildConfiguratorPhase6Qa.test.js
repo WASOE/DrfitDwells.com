@@ -16,9 +16,9 @@ const CONTACT = 'hello@driftdwells.com';
 
 function cabinWithPlumbingExtras() {
   return sanitizeBuildState({
-    modelId: '7x3',
+    modelId: 'lux-cabin',
     customDimensions: { length: 8, width: 3 },
-    radio: createInitialBuildState('7x3').radio,
+    radio: createInitialBuildState('lux-cabin').radio,
     toggles: ['extra-outdoor-shower', 'extra-rainwater'],
   });
 }
@@ -37,7 +37,7 @@ describe('Phase 6 QA — model switch mid-flow', () => {
   it('keeps stripped toggles cleared and custom dimensions null when switching A-Frame → cabin', () => {
     const cabinState = cabinWithPlumbingExtras();
     const aframeState = sanitizeBuildState({ ...cabinState, modelId: 'aframe' }, 'aframe');
-    const backToCabin = sanitizeBuildState({ ...aframeState, modelId: '7x3' }, '7x3');
+    const backToCabin = sanitizeBuildState({ ...aframeState, modelId: 'lux-cabin' }, 'lux-cabin');
 
     expect(backToCabin.toggles).not.toContain('extra-outdoor-shower');
     expect(backToCabin.toggles).not.toContain('extra-rainwater');
@@ -47,9 +47,9 @@ describe('Phase 6 QA — model switch mid-flow', () => {
 
   it('updates bar price after each model switch in a mixed configuration', () => {
     const cabinState = sanitizeBuildState({
-      modelId: '7x3',
+      modelId: 'lux-cabin',
       customDimensions: null,
-      radio: createInitialBuildState('7x3').radio,
+      radio: createInitialBuildState('lux-cabin').radio,
       toggles: ['extra-solar', 'extra-outdoor-shower'],
     });
     expect(formatBuildBarPrice(computeBuildTotal(cabinState))).toBe('€38,400');
@@ -57,7 +57,7 @@ describe('Phase 6 QA — model switch mid-flow', () => {
     const aframeState = sanitizeBuildState({ ...cabinState, modelId: 'aframe' }, 'aframe');
     expect(formatBuildBarPrice(computeBuildTotal(aframeState))).toBe('€27,200');
 
-    const backToCabin = sanitizeBuildState({ ...cabinState, modelId: '7x3' }, '7x3');
+    const backToCabin = sanitizeBuildState({ ...cabinState, modelId: 'lux-cabin' }, 'lux-cabin');
     expect(formatBuildBarPrice(computeBuildTotal(backToCabin))).toBe('€38,400');
   });
 });
@@ -78,7 +78,7 @@ describe('Phase 6 QA — A-Frame exclusion edge cases', () => {
   });
 
   it('does not list Full bathroom in included items for any model', () => {
-    for (const modelId of ['6x3', '7x3', 'aframe']) {
+    for (const modelId of ['lux-cabin', 'aframe']) {
       const items = getIncludedItemsForModel(modelId);
       expect(items.join(' ')).not.toMatch(/full bathroom/i);
       expect(items.join(' ')).not.toMatch(/bathroom & fixtures/i);
@@ -89,9 +89,9 @@ describe('Phase 6 QA — A-Frame exclusion edge cases', () => {
 describe('Phase 6 QA — price bar accuracy', () => {
   it('shows exact total for fixed-price items only', () => {
     const state = sanitizeBuildState({
-      modelId: '7x3',
+      modelId: 'lux-cabin',
       customDimensions: null,
-      radio: createInitialBuildState('7x3').radio,
+      radio: createInitialBuildState('lux-cabin').radio,
       toggles: ['extra-solar'],
     });
     const pricing = computeBuildTotal(state);
@@ -101,9 +101,9 @@ describe('Phase 6 QA — price bar accuracy', () => {
 
   it('toggles From prefix when pine planks selected, reverts when removed', () => {
     const withPine = sanitizeBuildState({
-      modelId: '7x3',
+      modelId: 'lux-cabin',
       customDimensions: null,
-      radio: { ...createInitialBuildState('7x3').radio, wallFinish: 'finish-pine-planks' },
+      radio: { ...createInitialBuildState('lux-cabin').radio, wallFinish: 'finish-pine-planks' },
       toggles: [],
     });
     expect(formatBuildBarPrice(computeBuildTotal(withPine))).toBe('From €30,000');
@@ -117,25 +117,25 @@ describe('Phase 6 QA — price bar accuracy', () => {
 
   it('toggles From prefix for underfloor heating and wooden planks independently', () => {
     const withUnderfloor = sanitizeBuildState({
-      modelId: '7x3',
+      modelId: 'lux-cabin',
       customDimensions: null,
-      radio: createInitialBuildState('7x3').radio,
+      radio: createInitialBuildState('lux-cabin').radio,
       toggles: ['heat-underfloor'],
     });
     expect(formatBuildBarPrice(computeBuildTotal(withUnderfloor))).toBe('From €30,000');
 
     const withWoodFloor = sanitizeBuildState({
-      modelId: '7x3',
+      modelId: 'lux-cabin',
       customDimensions: null,
-      radio: { ...createInitialBuildState('7x3').radio, flooring: 'floor-wooden-planks' },
+      radio: { ...createInitialBuildState('lux-cabin').radio, flooring: 'floor-wooden-planks' },
       toggles: [],
     });
     expect(formatBuildBarPrice(computeBuildTotal(withWoodFloor))).toBe('From €30,000');
 
     const fixedOnly = sanitizeBuildState({
-      modelId: '7x3',
+      modelId: 'lux-cabin',
       customDimensions: null,
-      radio: createInitialBuildState('7x3').radio,
+      radio: createInitialBuildState('lux-cabin').radio,
       toggles: [],
     });
     expect(formatBuildBarPrice(computeBuildTotal(fixedOnly))).toBe('€30,000');
@@ -146,10 +146,10 @@ describe('Phase 6 QA — price bar accuracy', () => {
 describe('Phase 6 QA — PDF export', () => {
   it('includes all line items, consultation footnote, and matching total for a fully configured cabin', () => {
     const state = sanitizeBuildState({
-      modelId: '7x3',
+      modelId: 'lux-cabin',
       customDimensions: { length: 8, width: 3 },
       radio: {
-        ...createInitialBuildState('7x3').radio,
+        ...createInitialBuildState('lux-cabin').radio,
         cladding: 'cladding-shou-sugi',
         wallFinish: 'finish-pine-planks',
       },
@@ -181,10 +181,10 @@ describe('Phase 6 QA — PDF export', () => {
 describe('Phase 6 QA — mailto export', () => {
   it('encodes subject and body with mixed fixed + consultation items', () => {
     const state = sanitizeBuildState({
-      modelId: '7x3',
+      modelId: 'lux-cabin',
       customDimensions: null,
       radio: {
-        ...createInitialBuildState('7x3').radio,
+        ...createInitialBuildState('lux-cabin').radio,
         wallFinish: 'finish-pine-planks',
       },
       toggles: ['heat-ac'],
@@ -193,7 +193,7 @@ describe('Phase 6 QA — mailto export', () => {
     const decoded = decodeURIComponent(mailto);
 
     expect(mailto).toMatch(/^mailto:hello@driftdwells\.com\?subject=/);
-    expect(decoded).toContain('Drift & Dwells build enquiry — The 7×3');
+    expect(decoded).toContain('Drift & Dwells build enquiry — The Lux Cabin');
     expect(decoded).toContain('Estimate: From €30,000');
     expect(decoded.split('\n').length).toBeLessThanOrEqual(8);
     expect(mailto).not.toMatch(/subject=[^&]*&[^b]/); // subject fully encoded before body=

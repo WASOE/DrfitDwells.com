@@ -19,11 +19,11 @@ describe('buildConfiguratorLogic', () => {
 
     expect(isOptionAvailableForModel(rainwater, 'aframe', 'aframe')).toBe(false);
     expect(isOptionAvailableForModel(outdoorShower, 'aframe', 'aframe')).toBe(false);
-    expect(isOptionAvailableForModel(rainwater, '7x3', 'cabin')).toBe(true);
+    expect(isOptionAvailableForModel(rainwater, 'lux-cabin', 'cabin')).toBe(true);
   });
 
   it('keeps the same interior option sets for cabin and A-Frame', () => {
-    const cabinInterior = getOptionsForCategory('wallFinish', '7x3');
+    const cabinInterior = getOptionsForCategory('wallFinish', 'lux-cabin');
     const aframeInterior = getOptionsForCategory('wallFinish', 'aframe');
 
     expect(cabinInterior.map((o) => o.id)).toEqual(aframeInterior.map((o) => o.id));
@@ -36,16 +36,20 @@ describe('buildConfiguratorLogic', () => {
   });
 
   it('uses PVC laminate and plywood as included defaults', () => {
-    const state = createInitialBuildState('7x3');
+    const state = createInitialBuildState('lux-cabin');
     expect(state.radio.wallFinish).toBe('finish-plywood');
     expect(state.radio.flooring).toBe('floor-pvc-laminate');
   });
 
-  it('computes cabin base price at €30,000 and A-Frame at €20,000', () => {
-    expect(computeBuildTotal(createInitialBuildState('6x3')).total).toBe(30000);
-    expect(computeBuildTotal(createInitialBuildState('7x3')).total).toBe(30000);
+  it('computes Lux Cabin base price at €30,000 and A Frame at €20,000', () => {
+    expect(computeBuildTotal(createInitialBuildState('lux-cabin')).total).toBe(30000);
     expect(computeBuildTotal(createInitialBuildState('aframe')).total).toBe(20000);
-    expect(computeBuildTotal(createInitialBuildState('7x3')).hasConsultationItems).toBe(false);
+    expect(computeBuildTotal(createInitialBuildState('lux-cabin')).hasConsultationItems).toBe(false);
+  });
+
+  it('maps legacy 6x3 and 7x3 model ids to lux-cabin', () => {
+    expect(createInitialBuildState('7x3').modelId).toBe('lux-cabin');
+    expect(createInitialBuildState('6x3').modelId).toBe('lux-cabin');
   });
 
   it('adds custom size surcharge above 21 m² for cabins only', () => {
@@ -55,9 +59,9 @@ describe('buildConfiguratorLogic', () => {
     expect(sized.total).toBe(33600);
 
     const state = sanitizeBuildState({
-      modelId: '7x3',
+      modelId: 'lux-cabin',
       customDimensions: { length: 8, width: 3 },
-      radio: createInitialBuildState('7x3').radio,
+      radio: createInitialBuildState('lux-cabin').radio,
       toggles: [],
     });
     expect(computeBuildTotal(state).total).toBe(33600);
@@ -66,9 +70,9 @@ describe('buildConfiguratorLogic', () => {
   it('clears custom dimensions when switching to A-Frame', () => {
     const state = sanitizeBuildState(
       {
-        modelId: '7x3',
+        modelId: 'lux-cabin',
         customDimensions: { length: 10, width: 4 },
-        radio: createInitialBuildState('7x3').radio,
+        radio: createInitialBuildState('lux-cabin').radio,
         toggles: ['extra-rainwater'],
       },
       'aframe'
@@ -80,10 +84,10 @@ describe('buildConfiguratorLogic', () => {
 
   it('excludes consultation-priced options from numeric total', () => {
     const state = sanitizeBuildState({
-      modelId: '7x3',
+      modelId: 'lux-cabin',
       customDimensions: null,
       radio: {
-        ...createInitialBuildState('7x3').radio,
+        ...createInitialBuildState('lux-cabin').radio,
         wallFinish: 'finish-pine-planks',
         flooring: 'floor-wooden-planks',
       },
@@ -101,10 +105,10 @@ describe('buildConfiguratorLogic', () => {
   it('prefixes bar price with From when consultation items are active', () => {
     const withConsultation = computeBuildTotal(
       sanitizeBuildState({
-        modelId: '7x3',
+        modelId: 'lux-cabin',
         customDimensions: null,
         radio: {
-          ...createInitialBuildState('7x3').radio,
+          ...createInitialBuildState('lux-cabin').radio,
           wallFinish: 'finish-pine-planks',
         },
         toggles: [],
@@ -114,9 +118,9 @@ describe('buildConfiguratorLogic', () => {
 
     const fixedOnly = computeBuildTotal(
       sanitizeBuildState({
-        modelId: '7x3',
+        modelId: 'lux-cabin',
         customDimensions: null,
-        radio: createInitialBuildState('7x3').radio,
+        radio: createInitialBuildState('lux-cabin').radio,
         toggles: ['extra-solar'],
       })
     );
@@ -140,9 +144,9 @@ describe('buildConfiguratorLogic', () => {
 
   it('adds fixed-price toggles to total', () => {
     const state = sanitizeBuildState({
-      modelId: '7x3',
+      modelId: 'lux-cabin',
       customDimensions: null,
-      radio: createInitialBuildState('7x3').radio,
+      radio: createInitialBuildState('lux-cabin').radio,
       toggles: ['extra-solar', 'extra-rainwater'],
     });
 

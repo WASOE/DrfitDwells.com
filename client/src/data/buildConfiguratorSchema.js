@@ -3,7 +3,7 @@
  * UI reads options from here; filter via buildConfiguratorLogic helpers.
  */
 
-export const BUILD_MODEL_IDS = ['6x3', '7x3', 'aframe'];
+export const BUILD_MODEL_IDS = ['lux-cabin', 'aframe'];
 
 export const CUSTOM_SIZING = {
   availableForModelTypes: ['cabin'],
@@ -15,26 +15,10 @@ export const CUSTOM_SIZING = {
 
 export const BUILD_MODELS = [
   {
-    id: '6x3',
+    id: 'lux-cabin',
     type: 'cabin',
-    name: 'The 6×3',
-    badge: 'Base model · Most popular',
-    basePrice: 30000,
-    dims: '6 m × 3 m × 3 m',
-    areaSqm: 18,
-    areaLabel: '18 m²',
-    capacity: '2 persons',
-    description:
-      'Mono-pitch roof · Thermal wood cladding · Mobile · Bedroom, bathroom, kitchen, full fit-out',
-    tags: ['Bedroom', 'Bathroom', 'Kitchen'],
-    heroMediaId: 'exterior-hero',
-    shellOnly: false,
-  },
-  {
-    id: '7x3',
-    type: 'cabin',
-    name: 'The 7×3',
-    badge: 'More space · Same price',
+    name: 'The Lux Cabin',
+    badge: 'All-inclusive · Most popular',
     basePrice: 30000,
     dims: '7 m × 3 m × 3 m',
     areaSqm: 21,
@@ -49,7 +33,7 @@ export const BUILD_MODELS = [
   {
     id: 'aframe',
     type: 'aframe',
-    name: 'The A-Frame',
+    name: 'The A Frame',
     badge: 'Entry model · Signature design',
     basePrice: 20000,
     dims: '6 m × 3 m footprint',
@@ -395,7 +379,7 @@ export const DEFAULT_RADIO_SELECTIONS = {
   flooring: 'floor-pvc-laminate',
 };
 
-export const DEFAULT_MODEL_ID = '7x3';
+export const DEFAULT_MODEL_ID = 'lux-cabin';
 
 export const SUMMARY_REVIEWS = [
   {
@@ -415,8 +399,15 @@ export const SUMMARY_REVIEWS = [
   },
 ];
 
+/** Map legacy model ids from earlier configurator versions. */
+export function normalizeBuildModelId(modelId) {
+  if (modelId === '6x3' || modelId === '7x3') return 'lux-cabin';
+  return modelId;
+}
+
 export function getBuildModel(modelId) {
-  return BUILD_MODELS.find((m) => m.id === modelId) ?? BUILD_MODELS.find((m) => m.id === DEFAULT_MODEL_ID);
+  const id = normalizeBuildModelId(modelId);
+  return BUILD_MODELS.find((m) => m.id === id) ?? BUILD_MODELS.find((m) => m.id === DEFAULT_MODEL_ID);
 }
 
 export function getIncludedItemsForModel(modelId) {

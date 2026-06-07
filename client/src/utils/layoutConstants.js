@@ -24,8 +24,8 @@ const ROUTES_WITH_BOTTOM_BAR = [
   { pattern: /^\/cabin\/[^/]+$/, desktop: false, mobile: true },
   // Craft steps: sticky bar on both
   { pattern: /^\/craft\/step-[1-4]$/, desktop: true, mobile: true },
-  // Build configurator: BuildStickyBar / MobileSpecsBar (60px)
-  { pattern: /^\/build$/, desktop: true, mobile: true, barHeight: 60 },
+  // Build configurator: BuildStickyBar / MobileSpecsBar (~76px)
+  { pattern: /^\/build$/, desktop: true, mobile: true, barHeight: 76 },
   // Home / Valley: booking drawer on mobile only
   { pattern: /^\/$/, desktop: false, mobile: true },
   { pattern: /^\/valley$/, desktop: false, mobile: true },

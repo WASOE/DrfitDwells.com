@@ -1,9 +1,29 @@
 /**
- * Build configurator media — cabin assets from Lux Cabin library;
- * A-Frame assets from the same /uploads/The Valley/A frames/ paths used by AFrameDetails (via cabin type seed).
+ * Build configurator media — hero covers match Valley stay booking cards;
+ * option thumbnails use Lux Cabin optimized assets where available.
  */
 
 const LUX_BASE = '/uploads/The Valley/Lux Cabin/optimized';
+
+/** Cover images — same paths as Valley stay cards / booking listings. */
+export const BUILD_BOOKING_COVER = {
+  'lux-cabin':
+    '/uploads/The%20Valley/Lux-cabin-exterior-watermark-remover-20260113071503.jpg',
+  aframe:
+    '/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.24%20AM%20(4).jpeg',
+};
+
+const coverMediaEntry = (id, label, url) => ({
+  id,
+  label,
+  view: 'exterior',
+  image: url,
+  images: {
+    desktop: url,
+    mobile: url,
+    thumbnail: url,
+  },
+});
 
 const cabinMediaEntry = (id, label, view, filename) => ({
   id,
@@ -17,9 +37,13 @@ const cabinMediaEntry = (id, label, view, filename) => ({
   },
 });
 
-/** Cabin (6×3 / 7×3) — existing Build.jsx MEDIA_LIBRARY paths */
+/** Lux Cabin — option/detail thumbnails from optimized library */
 export const BUILD_CABIN_MEDIA = {
-  'exterior-hero': cabinMediaEntry('exterior-hero', 'Exterior hero', 'exterior', 'exterior-hero-desktop.webp'),
+  'exterior-hero': coverMediaEntry(
+    'exterior-hero',
+    'The Lux Cabin',
+    BUILD_BOOKING_COVER['lux-cabin']
+  ),
   'exterior-roof': cabinMediaEntry('exterior-roof', 'Roof detail', 'exterior', 'exterior-roof-desktop.webp'),
   'interior-main': cabinMediaEntry('interior-main', 'Interior overview', 'interior', 'interior-main-desktop.webp'),
   'interior-planks': cabinMediaEntry('interior-planks', 'Interior finish', 'interior', 'interior-planks-desktop.webp'),
@@ -29,19 +53,13 @@ export const BUILD_CABIN_MEDIA = {
 const aframePath = (...segments) =>
   `/${segments.map((part) => encodeURIComponent(part)).join('/')}`;
 
-/** A-Frame — /uploads/The Valley/A frames/ (same source as upsertAFrameOnly / AFrameDetails gallery) */
+/** A-Frame — booking cover + gallery paths from Valley uploads */
 export const BUILD_AFRAME_MEDIA = {
-  'aframe-hero': {
-    id: 'aframe-hero',
-    label: 'A-Frame exterior',
-    view: 'exterior',
-    image: aframePath('uploads', 'The Valley', 'A frames', '005fb069-3f90-4af6-9552-1332198f7e48.jpeg'),
-    images: {
-      desktop: aframePath('uploads', 'The Valley', 'A frames', '005fb069-3f90-4af6-9552-1332198f7e48.jpeg'),
-      mobile: aframePath('uploads', 'The Valley', 'A frames', '005fb069-3f90-4af6-9552-1332198f7e48.jpeg'),
-      thumbnail: aframePath('uploads', 'The Valley', 'A frames', '005fb069-3f90-4af6-9552-1332198f7e48.jpeg'),
-    },
-  },
+  'aframe-hero': coverMediaEntry(
+    'aframe-hero',
+    'The A Frame',
+    BUILD_BOOKING_COVER.aframe
+  ),
   'aframe-exterior': {
     id: 'aframe-exterior',
     label: 'A-Frame exterior',

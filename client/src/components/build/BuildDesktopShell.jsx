@@ -74,7 +74,7 @@ const BuildDesktopShell = ({
           <BuildStepRail steps={BUILD_STEPS} currentStep={currentStep} onStepClick={goToStep} />
         </div>
 
-        <div className="pb-[96px] pt-[69px]">
+        <div className="pb-[108px] pt-[69px]">
             {stepId === 'model' ? (
               <>
                 <BuildModelStep

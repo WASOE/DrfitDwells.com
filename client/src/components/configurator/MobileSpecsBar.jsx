@@ -52,10 +52,10 @@ const MobileSpecsBar = ({
           <div className="scrollbar-hide flex flex-1 items-center gap-3 overflow-x-auto">
             {specs.map((spec) => (
               <div key={spec.label} className="flex shrink-0 flex-col">
-                <span className="mb-0.5 text-[0.55rem] uppercase tracking-[0.14em] text-[#888]">
+                <span className="mb-0.5 text-[0.65rem] font-medium uppercase tracking-[0.14em] text-[#b5b5b5]">
                   {spec.label}
                 </span>
-                <span className="whitespace-nowrap text-[0.82rem] font-normal text-white">
+                <span className="whitespace-nowrap text-sm font-semibold tabular-nums text-white">
                   {spec.value}
                 </span>
               </div>
@@ -79,10 +79,10 @@ const MobileSpecsBar = ({
               <div className="grid grid-cols-2 gap-4">
                 {specs.map((spec) => (
                   <div key={spec.label} className="flex flex-col">
-                    <span className="mb-1 text-[0.55rem] uppercase tracking-[0.14em] text-[#888]">
+                    <span className="mb-1 text-xs font-medium uppercase tracking-[0.14em] text-[#b5b5b5]">
                       {spec.label}
                     </span>
-                    <span className="text-base font-normal text-white">{spec.value}</span>
+                    <span className="text-base font-semibold tabular-nums text-white">{spec.value}</span>
                   </div>
                 ))}
               </div>
@@ -91,14 +91,14 @@ const MobileSpecsBar = ({
                 <button
                   type="button"
                   onClick={onScheduleConsultation}
-                  className="flex-1 touch-manipulation rounded-[2px] bg-white px-4 py-3 text-[0.62rem] font-medium uppercase tracking-[0.1em] text-[#1a1a1a] active:bg-[#eee]"
+                  className="flex-1 touch-manipulation rounded-[2px] bg-white px-4 py-3 text-xs font-semibold uppercase tracking-[0.08em] text-[#1a1a1a] active:bg-[#eee]"
                 >
                   Schedule Consultation
                 </button>
                 <button
                   type="button"
                   onClick={onDownloadPDF}
-                  className="flex-1 touch-manipulation rounded-[2px] border border-[#555] px-4 py-3 text-[0.62rem] uppercase tracking-[0.1em] text-white active:border-white"
+                  className="flex-1 touch-manipulation rounded-[2px] border border-[#555] px-4 py-3 text-xs font-semibold uppercase tracking-[0.08em] text-white active:border-white"
                 >
                   Download Spec PDF
                 </button>

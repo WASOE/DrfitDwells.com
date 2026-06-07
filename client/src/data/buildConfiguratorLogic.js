@@ -4,6 +4,7 @@ import {
   DEFAULT_RADIO_SELECTIONS,
   DEFAULT_MODEL_ID,
   getBuildModel,
+  normalizeBuildModelId,
 } from './buildConfiguratorSchema.js';
 
 /** @typedef {{ modelId: string, customDimensions: { length: number, width: number } | null, radio: Record<string, string>, toggles: string[] }} BuildConfiguratorState */
@@ -41,28 +42,30 @@ export function getOptionById(optionId) {
 }
 
 export function createInitialBuildState(modelId = DEFAULT_MODEL_ID) {
+  const normalizedId = normalizeBuildModelId(modelId);
   return sanitizeBuildState(
     {
-      modelId,
+      modelId: normalizedId,
       customDimensions: null,
       radio: { ...DEFAULT_RADIO_SELECTIONS },
       toggles: [],
     },
-    modelId
+    normalizedId
   );
 }
 
 export function sanitizeBuildState(state, modelId = state.modelId) {
-  const model = getBuildModel(modelId);
+  const normalizedId = normalizeBuildModelId(modelId);
+  const model = getBuildModel(normalizedId);
   const radio = { ...state.radio };
 
   for (const [categoryId, defaultOptionId] of Object.entries(DEFAULT_RADIO_SELECTIONS)) {
     const currentId = radio[categoryId];
     const current = currentId ? getOptionById(currentId) : null;
-    if (!current || !isOptionAvailableForModel(current, modelId, model.type)) {
+    if (!current || !isOptionAvailableForModel(current, normalizedId, model.type)) {
       const fallback =
-        getOptionsForCategory(categoryId, modelId).find((opt) => opt.included)?.id ??
-        getOptionsForCategory(categoryId, modelId)[0]?.id ??
+        getOptionsForCategory(categoryId, normalizedId).find((opt) => opt.included)?.id ??
+        getOptionsForCategory(categoryId, normalizedId)[0]?.id ??
         defaultOptionId;
       radio[categoryId] = fallback;
     }
@@ -70,14 +73,14 @@ export function sanitizeBuildState(state, modelId = state.modelId) {
 
   const toggles = state.toggles.filter((toggleId) => {
     const opt = getOptionById(toggleId);
-    return opt && isOptionAvailableForModel(opt, modelId, model.type);
+    return opt && isOptionAvailableForModel(opt, normalizedId, model.type);
   });
 
   const customDimensions =
     model.type === 'cabin' ? state.customDimensions : null;
 
   return {
-    modelId,
+    modelId: normalizedId,
     customDimensions,
     radio,
     toggles,
