@@ -235,20 +235,36 @@ export const BUILD_OPTIONS = [
 
   // —— Interior: heating (toggles) ——
   {
+    id: 'heat-ac',
+    categoryId: 'heating',
+    selectionType: 'toggle',
+    name: 'Air conditioning (heating & cooling)',
+    description: 'Split-system A/C — warms and cools, ultra-quiet. Included.',
+    included: true,
+  },
+  {
     id: 'heat-fireplace',
     categoryId: 'heating',
     selectionType: 'toggle',
     name: 'Wood-burning fireplace',
-    description: 'Cast iron fireplace, flue pipe and hearth included',
+    description: 'Cast iron fireplace, flue pipe and hearth. Included.',
+    included: true,
+  },
+  {
+    id: 'heat-pump',
+    categoryId: 'heating',
+    selectionType: 'toggle',
+    name: 'Heat pump',
+    description: 'Central air-source heat pump system. Priced at consultation.',
     priceOnConsultation: true,
   },
   {
-    id: 'heat-ac',
+    id: 'heat-underfloor',
     categoryId: 'heating',
     selectionType: 'toggle',
-    name: 'Air conditioning (heat pump)',
-    description: 'Heat pump for heating & cooling, ultra-quiet',
-    priceDelta: 2800,
+    name: 'Underfloor heating',
+    description: 'Electric underfloor heating with smart thermostat. Priced at consultation.',
+    priceOnConsultation: true,
   },
 
   // —— Options: energy (toggles) ——

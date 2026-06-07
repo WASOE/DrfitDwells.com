@@ -50,15 +50,15 @@ describe('Phase 6 QA — model switch mid-flow', () => {
       modelId: '7x3',
       customDimensions: null,
       radio: createInitialBuildState('7x3').radio,
-      toggles: ['heat-ac', 'extra-outdoor-shower'],
+      toggles: ['extra-solar', 'extra-outdoor-shower'],
     });
-    expect(formatBuildBarPrice(computeBuildTotal(cabinState))).toBe('€34,000');
+    expect(formatBuildBarPrice(computeBuildTotal(cabinState))).toBe('€38,400');
 
     const aframeState = sanitizeBuildState({ ...cabinState, modelId: 'aframe' }, 'aframe');
-    expect(formatBuildBarPrice(computeBuildTotal(aframeState))).toBe('€22,800');
+    expect(formatBuildBarPrice(computeBuildTotal(aframeState))).toBe('€27,200');
 
     const backToCabin = sanitizeBuildState({ ...cabinState, modelId: '7x3' }, '7x3');
-    expect(formatBuildBarPrice(computeBuildTotal(backToCabin))).toBe('€34,000');
+    expect(formatBuildBarPrice(computeBuildTotal(backToCabin))).toBe('€38,400');
   });
 });
 
@@ -92,10 +92,10 @@ describe('Phase 6 QA — price bar accuracy', () => {
       modelId: '7x3',
       customDimensions: null,
       radio: createInitialBuildState('7x3').radio,
-      toggles: ['heat-ac'],
+      toggles: ['extra-solar'],
     });
     const pricing = computeBuildTotal(state);
-    expect(formatBuildBarPrice(pricing)).toBe('€32,800');
+    expect(formatBuildBarPrice(pricing)).toBe('€37,200');
     expect(pricing.hasConsultationItems).toBe(false);
   });
 
@@ -115,14 +115,14 @@ describe('Phase 6 QA — price bar accuracy', () => {
     expect(formatBuildBarPrice(computeBuildTotal(withoutPine))).toBe('€30,000');
   });
 
-  it('toggles From prefix for fireplace and wooden planks independently', () => {
-    const withFireplace = sanitizeBuildState({
+  it('toggles From prefix for underfloor heating and wooden planks independently', () => {
+    const withUnderfloor = sanitizeBuildState({
       modelId: '7x3',
       customDimensions: null,
       radio: createInitialBuildState('7x3').radio,
-      toggles: ['heat-fireplace'],
+      toggles: ['heat-underfloor'],
     });
-    expect(formatBuildBarPrice(computeBuildTotal(withFireplace))).toBe('From €30,000');
+    expect(formatBuildBarPrice(computeBuildTotal(withUnderfloor))).toBe('From €30,000');
 
     const withWoodFloor = sanitizeBuildState({
       modelId: '7x3',
@@ -153,7 +153,7 @@ describe('Phase 6 QA — PDF export', () => {
         cladding: 'cladding-shou-sugi',
         wallFinish: 'finish-pine-planks',
       },
-      toggles: ['heat-ac', 'extra-solar', 'heat-fireplace'],
+      toggles: ['heat-ac', 'extra-solar', 'heat-underfloor'],
     });
     const content = buildBuildSpecPdfContent(state, CONTACT);
 
@@ -161,7 +161,7 @@ describe('Phase 6 QA — PDF export', () => {
       expect.arrayContaining(['Model', 'Size', 'Cladding', 'Wall finish', 'Add-on'])
     );
     expect(content.consultationNames).toEqual(
-      expect.arrayContaining(['Rough pine planks', 'Wood-burning fireplace'])
+      expect.arrayContaining(['Rough pine planks', 'Underfloor heating'])
     );
     expect(content.totalLabel).toBe(formatBuildBarPrice(computeBuildTotal(state)));
     expect(content.hasCustomSizeRow).toBe(true);
@@ -194,7 +194,7 @@ describe('Phase 6 QA — mailto export', () => {
 
     expect(mailto).toMatch(/^mailto:hello@driftdwells\.com\?subject=/);
     expect(decoded).toContain('Drift & Dwells build enquiry — The 7×3');
-    expect(decoded).toContain('Estimate: From €32,800');
+    expect(decoded).toContain('Estimate: From €30,000');
     expect(decoded.split('\n').length).toBeLessThanOrEqual(8);
     expect(mailto).not.toMatch(/subject=[^&]*&[^b]/); // subject fully encoded before body=
     expect(mailto).not.toContain(' '); // no raw spaces in URL

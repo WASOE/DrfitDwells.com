@@ -30,9 +30,9 @@ describe('buildConfiguratorLogic', () => {
     expect(cabinInterior.map((o) => o.id)).toEqual(['finish-plywood', 'finish-pine-planks']);
   });
 
-  it('does not offer SPC, oak, or underfloor heating options', () => {
+  it('does not offer SPC or solid oak flooring options', () => {
     const names = BUILD_OPTIONS.map((o) => o.name.toLowerCase()).join(' ');
-    expect(names).not.toMatch(/spc|stone-core|solid oak|underfloor/);
+    expect(names).not.toMatch(/spc|stone-core|solid oak/);
   });
 
   it('uses PVC laminate and plywood as included defaults', () => {
@@ -87,14 +87,14 @@ describe('buildConfiguratorLogic', () => {
         wallFinish: 'finish-pine-planks',
         flooring: 'floor-wooden-planks',
       },
-      toggles: ['heat-fireplace'],
+      toggles: ['heat-underfloor'],
     });
 
     const result = computeBuildTotal(state);
     expect(result.total).toBe(30000);
     expect(result.hasConsultationItems).toBe(true);
     expect(getConsultationOptionIds(state).sort()).toEqual(
-      ['finish-pine-planks', 'floor-wooden-planks', 'heat-fireplace'].sort()
+      ['finish-pine-planks', 'floor-wooden-planks', 'heat-underfloor'].sort()
     );
   });
 
@@ -117,10 +117,10 @@ describe('buildConfiguratorLogic', () => {
         modelId: '7x3',
         customDimensions: null,
         radio: createInitialBuildState('7x3').radio,
-        toggles: ['heat-ac'],
+        toggles: ['extra-solar'],
       })
     );
-    expect(formatBuildBarPrice(fixedOnly)).toBe('€32,800');
+    expect(formatBuildBarPrice(fixedOnly)).toBe('€37,200');
   });
 
   it('uses From €20,000 for A-Frame when consultation items are active', () => {
@@ -143,10 +143,10 @@ describe('buildConfiguratorLogic', () => {
       modelId: '7x3',
       customDimensions: null,
       radio: createInitialBuildState('7x3').radio,
-      toggles: ['heat-ac', 'extra-solar'],
+      toggles: ['extra-solar', 'extra-rainwater'],
     });
 
-    expect(computeBuildTotal(state).total).toBe(30000 + 2800 + 7200);
+    expect(computeBuildTotal(state).total).toBe(30000 + 7200 + 2800);
   });
 
   it('resets invalid radio when model changes', () => {
