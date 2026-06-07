@@ -18,7 +18,7 @@ const BuildHeroPhoto = ({ imageUrl, alt = 'Your cabin', fillContainer = false })
 
   const containerClass = fillContainer
     ? 'h-full w-full overflow-hidden'
-    : 'sticky top-[var(--header-offset,68px)] h-[50vw] min-h-[240px] overflow-hidden lg:h-[calc(100vh-var(--header-offset,68px))] lg:min-h-0';
+    : 'sticky top-[var(--header-offset,5.5rem)] h-[50vw] min-h-[240px] overflow-hidden lg:h-[calc(100vh-var(--header-offset,5.5rem))] lg:min-h-0';
 
   return (
     <div className={containerClass}>

@@ -34,6 +34,10 @@ export default function SiteLayout() {
   const deferIdleChrome = isHome || isSearchPage;
   const isGuidePage = basePath.startsWith('/guides/');
   const isHeroPage = HERO_PATHS.includes(basePath);
+  // Full-screen app-style configurator: photo + panel fill the viewport with their
+  // own fixed bottom bar, so the marketing footer is hidden on desktop (it would
+  // create a second page scroll and overlap the fixed bar). Kept on mobile.
+  const isAppPage = basePath === '/build';
 
   return (
     <div className="relative overflow-x-hidden">
@@ -59,7 +63,15 @@ export default function SiteLayout() {
         >
           <Outlet />
         </main>
-        {!isHome && !isGuidePage && <Footer />}
+        {!isHome && !isGuidePage && (
+          isAppPage ? (
+            <div className="lg:hidden">
+              <Footer />
+            </div>
+          ) : (
+            <Footer />
+          )
+        )}
         {deferIdleChrome ? (
           <>
             <BookingModalLazy />

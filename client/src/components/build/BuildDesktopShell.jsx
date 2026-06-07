@@ -62,13 +62,19 @@ const BuildDesktopShell = ({
 
   return (
     <>
-      <div className="mx-auto grid min-h-[calc(100vh-var(--header-offset,68px))] max-w-[1600px] grid-cols-1 lg:grid-cols-[1fr_460px]">
-        <BuildHeroPhoto imageUrl={heroImageUrl} alt={model.name} />
+      {/* Photo: pinned to the left, always visible. Uses fixed (not sticky) because
+          SiteLayout's overflow-x ancestor disables sticky. The page itself scrolls. */}
+      <div className="fixed bottom-0 left-0 right-[460px] top-[var(--header-offset,5.5rem)] z-0 overflow-hidden">
+        <BuildHeroPhoto imageUrl={heroImageUrl} alt={model.name} fillContainer />
+      </div>
 
-        <div className="relative flex max-h-[calc(100vh-var(--header-offset,68px))] flex-col border-[#e0e0e0] bg-white lg:border-l lg:overflow-y-auto">
+      {/* Config panel: normal document flow on the right edge — scrolls with the page. */}
+      <div className="relative z-10 ml-auto min-h-[calc(100vh-var(--header-offset,5.5rem))] w-[460px] border-l border-[#e0e0e0] bg-white">
+        <div className="fixed right-0 top-[var(--header-offset,5.5rem)] z-[110] w-[460px]">
           <BuildStepRail steps={BUILD_STEPS} currentStep={currentStep} onStepClick={goToStep} />
+        </div>
 
-          <div className="pb-[120px]">
+        <div className="pb-[96px] pt-[69px]">
             {stepId === 'model' ? (
               <>
                 <BuildModelStep
@@ -125,7 +131,6 @@ const BuildDesktopShell = ({
                 <StepNav onBack={prevStep} backLabel="← Revise choices" showBack />
               </>
             ) : null}
-          </div>
         </div>
       </div>
 

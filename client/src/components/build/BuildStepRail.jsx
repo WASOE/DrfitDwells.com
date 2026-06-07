@@ -1,5 +1,5 @@
 const BuildStepRail = ({ steps, currentStep, onStepClick }) => (
-  <div className="sticky top-0 z-[100] flex border-b border-[#e0e0e0] bg-white">
+  <div className="flex shrink-0 border-b border-[#e0e0e0] bg-white">
     {steps.map((step, index) => {
       const isActive = index === currentStep;
       const isDone = index < currentStep;
