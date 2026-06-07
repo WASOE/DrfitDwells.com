@@ -6,6 +6,10 @@ const crypto = require('crypto');
  * - Short TTL + ADMIN_TOKEN_VERSION allow rotation without changing ADMIN_JWT_SECRET.
  */
 
+const { resolveModulesForRole } = require('../services/ops/opsModuleRegistry');
+
+const VALID_ROLES = new Set(['admin', 'operator', 'cleaner']);
+
 // JWT-like token creation and verification using Node.js crypto
 const createToken = (payload, secret) => {
   const payloadBase64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -75,8 +79,8 @@ const adminAuth = (req, res, next) => {
     });
   }
 
-  const role = payload.role === 'operator' ? 'operator' : 'admin';
-  if (role !== 'operator' && role !== 'admin') {
+  const role = VALID_ROLES.has(payload.role) ? payload.role : null;
+  if (!role) {
     return res.status(401).json({
       success: false,
       message: 'Invalid or expired token'
@@ -86,14 +90,18 @@ const adminAuth = (req, res, next) => {
   const subject =
     payload.sub != null && String(payload.sub).trim() !== ''
       ? String(payload.sub).trim()
-      : role === 'operator'
-        ? 'operator'
-        : 'admin';
+      : role;
+
+  const modules = Array.isArray(payload.modules)
+    ? payload.modules
+    : resolveModulesForRole(role);
 
   req.admin = payload;
   req.user = {
     id: subject,
-    role
+    role,
+    modules,
+    src: payload.src === 'ops_user' ? 'ops_user' : 'legacy_env'
   };
   next();
 };
@@ -103,4 +111,3 @@ module.exports = {
   verifyToken,
   adminAuth
 };
-

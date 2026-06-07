@@ -18,7 +18,8 @@ import {
   Wallet,
   X
 } from 'lucide-react';
-import { OPS_MORE_GROUPS, isOpsHomePath } from './opsNavConfig';
+import { OPS_MORE_GROUPS, filterOpsMoreGroups, isOpsHomePath } from './opsNavConfig';
+import { useOpsSession } from '../../context/OpsSessionContext';
 
 const ROW_ICONS = {
   '/ops': LayoutDashboard,
@@ -57,6 +58,8 @@ function getFocusableElements(container) {
  */
 export default function OpsMoreSheet({ open, onClose, returnFocusRef }) {
   const { pathname } = useLocation();
+  const session = useOpsSession();
+  const groups = filterOpsMoreGroups(OPS_MORE_GROUPS, session);
   const dialogRef = useRef(null);
   const closeButtonRef = useRef(null);
 
@@ -155,7 +158,7 @@ export default function OpsMoreSheet({ open, onClose, returnFocusRef }) {
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
-          {OPS_MORE_GROUPS.map((group) => (
+          {groups.map((group) => (
             <section key={group.id} className="border-b border-gray-100 last:border-b-0">
               <h3 className="px-4 pt-4 pb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
                 {group.label}

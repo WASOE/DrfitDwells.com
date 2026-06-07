@@ -51,6 +51,16 @@ router.post('/login', [
 
 // All other admin routes require authentication
 router.use(adminAuth);
+router.use((req, res, next) => {
+  if (req.user?.role === 'cleaner') {
+    return res.status(403).json({
+      success: false,
+      errorType: 'forbidden',
+      message: 'Access denied.'
+    });
+  }
+  next();
+});
 
 router.use('/promo-codes', adminPromoRoutes);
 

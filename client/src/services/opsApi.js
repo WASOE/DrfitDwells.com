@@ -8,14 +8,18 @@ function authHeaders() {
 function decodeRoleFromToken() {
   try {
     const token = localStorage.getItem('adminToken');
-    if (!token) return 'admin';
+    if (!token) return null;
     const parts = token.split('.');
     const payload = parts[1];
-    if (!payload) return 'admin';
+    if (!payload) return null;
     const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
-    return decoded.role === 'operator' ? 'operator' : 'admin';
+    const role = decoded.role;
+    if (role === 'operator' || role === 'cleaner' || role === 'admin') {
+      return role;
+    }
+    return null;
   } catch {
-    return 'admin';
+    return null;
   }
 }
 

@@ -16,6 +16,7 @@ import {
   markPaid,
   unmarkPaid
 } from '../../../services/cleaningApi';
+import { useOpsSession } from '../../../context/OpsSessionContext';
 
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const MONTHS = [
@@ -90,6 +91,8 @@ function NoteBox({ text }) {
 }
 
 export default function OpsCleaningCalendar() {
+  const session = useOpsSession();
+  const canReadPayment = (session?.actions || []).includes('ops.cleaning.payment_read');
   const today = useMemo(() => new Date(), []);
 
   const [selectedDate, setSelectedDate] = useState(() => new Date());
@@ -178,7 +181,7 @@ export default function OpsCleaningCalendar() {
   }, [selectedDate, selectedPropertyKind]);
 
   const loadPayment = useCallback(async () => {
-    if (!selectedPropertyKind) {
+    if (!canReadPayment || !selectedPropertyKind) {
       setPaymentSummary(null);
       setPaymentError('');
       setPaymentLoading(false);
@@ -198,7 +201,7 @@ export default function OpsCleaningCalendar() {
     } finally {
       setPaymentLoading(false);
     }
-  }, [selectedDate, selectedPropertyKind]);
+  }, [selectedDate, selectedPropertyKind, canReadPayment]);
 
   useEffect(() => {
     loadDay();
@@ -434,6 +437,7 @@ export default function OpsCleaningCalendar() {
       </div>
 
       {/* Payment summary card */}
+      {canReadPayment ? (
       <div className="mt-5 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
         {!selectedPropertyKind ? (
           <div className="flex items-start gap-3">
@@ -489,6 +493,7 @@ export default function OpsCleaningCalendar() {
           </div>
         )}
       </div>
+      ) : null}
 
       {/* Event list */}
       <div className="mt-5 space-y-3" data-testid="cleaning-events">

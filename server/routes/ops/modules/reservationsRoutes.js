@@ -232,6 +232,11 @@ router.get('/:id', async (req, res) => {
 // PATCH /api/ops/reservations/:id/cleaning-notes  body: { cleaningNotes: string|null }
 router.patch('/:id/cleaning-notes', validateId('id'), async (req, res) => {
   try {
+    requirePermission({
+      role: req.user?.role,
+      modules: req.user?.modules,
+      action: ACTIONS.OPS_RESERVATIONS_CLEANING_NOTES_WRITE
+    });
     let cleaningNotes = req.body?.cleaningNotes;
     if (cleaningNotes === undefined) cleaningNotes = null;
     if (cleaningNotes !== null) {
@@ -257,6 +262,9 @@ router.patch('/:id/cleaning-notes', validateId('id'), async (req, res) => {
       data: { bookingId: String(booking._id), cleaningNotes: booking.cleaningNotes || null }
     });
   } catch (error) {
+    if (error?.code === 'PERMISSION_DENIED') {
+      return res.status(error.status || 403).json({ success: false, errorType: 'permission', message: error.message });
+    }
     return res.status(500).json({ success: false, message: error.message });
   }
 });

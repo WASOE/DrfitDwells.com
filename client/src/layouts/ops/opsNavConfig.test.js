@@ -3,6 +3,8 @@ import {
   OPS_MORE_GROUPS,
   OPS_MOBILE_TABS,
   OPS_NAV_ITEMS,
+  canAccessNavItem,
+  filterOpsNavItems,
   getActiveOpsMobileTabId,
   isOpsHomePath,
   isOpsMoreRoute,
@@ -164,6 +166,25 @@ describe('opsNavConfig', () => {
       expect(matchOpsMobileTab('/ops/reservations/1', 'finance')).toBe(false);
       expect(matchOpsMobileTab('/ops/cabins/1', 'more')).toBe(true);
       expect(matchOpsMobileTab('/ops/cabins/1', 'guests')).toBe(false);
+    });
+  });
+
+  describe('nav permission filtering', () => {
+    const cleanerSession = {
+      authenticated: true,
+      role: 'cleaner',
+      modules: ['cleaning'],
+      actions: ['ops.cleaning.view', 'ops.cleaning.mark_cleaned']
+    };
+
+    it('shows only cleaning nav items for cleaner session', () => {
+      const filtered = filterOpsNavItems(OPS_NAV_ITEMS, cleanerSession);
+      expect(filtered.map((item) => item.to)).toEqual(['/ops/cleaning']);
+    });
+
+    it('denies cleaning settings without settings_read action', () => {
+      const settingsItem = OPS_NAV_ITEMS.find((item) => item.to === '/ops/settings/cleaning');
+      expect(canAccessNavItem(settingsItem, cleanerSession)).toBe(false);
     });
   });
 });

@@ -8,8 +8,24 @@ const {
   getCleaningPaymentSummary
 } = require('../../../services/ops/readModels/cleaningReadModel');
 const { normalizeDateToSofiaDayStart } = require('../../../utils/dateTime');
+const { requirePermission, ACTIONS } = require('../../../services/permissionService');
 
 const router = express.Router();
+
+function permissionContext(req) {
+  return { role: req.user?.role, modules: req.user?.modules };
+}
+
+function handleRouteError(error, res) {
+  if (error?.code === 'PERMISSION_DENIED') {
+    return res.status(error.status || 403).json({
+      success: false,
+      errorType: 'permission',
+      message: error.message
+    });
+  }
+  return res.status(500).json({ success: false, message: error.message });
+}
 
 function isValidDateInput(value) {
   if (value == null || value === '') return false;
@@ -37,6 +53,7 @@ function resolveActorId(req) {
 // GET /api/ops/cleaning/schedule?date=ISO&propertyKind=cabin|valley
 router.get('/schedule', async (req, res) => {
   try {
+    requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_VIEW });
     const { date, propertyKind } = req.query;
     if (!isValidDateInput(date)) {
       return res.status(400).json({ success: false, message: 'A valid date query param is required.' });
@@ -47,13 +64,14 @@ router.get('/schedule', async (req, res) => {
     });
     return res.json({ success: true, data });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    return handleRouteError(error, res);
   }
 });
 
 // GET /api/ops/cleaning/payment-summary?date=ISO&propertyKind=cabin|valley
 router.get('/payment-summary', async (req, res) => {
   try {
+    requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_PAYMENT_READ });
     const { date, propertyKind } = req.query;
     if (!isValidDateInput(date)) {
       return res.status(400).json({ success: false, message: 'A valid date query param is required.' });
@@ -64,7 +82,7 @@ router.get('/payment-summary', async (req, res) => {
     });
     return res.json({ success: true, data });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    return handleRouteError(error, res);
   }
 });
 
@@ -101,6 +119,7 @@ async function findOrCreateCleaningRecord(bookingId, sofiaStart) {
 // POST /api/ops/cleaning/records/:bookingId/mark-cleaned  body: { cleaningDate }
 router.post('/records/:bookingId/mark-cleaned', async (req, res) => {
   try {
+    requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_MARK_CLEANED });
     const { bookingId } = req.params;
     const { cleaningDate } = req.body || {};
     if (!isValidDateInput(cleaningDate)) {
@@ -117,13 +136,14 @@ router.post('/records/:bookingId/mark-cleaned', async (req, res) => {
     await record.save();
     return res.json({ success: true, data: { cleaningRecordId: String(record._id), status: record.status } });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    return handleRouteError(error, res);
   }
 });
 
 // POST /api/ops/cleaning/records/:bookingId/unmark-cleaned  body: { cleaningDate }
 router.post('/records/:bookingId/unmark-cleaned', async (req, res) => {
   try {
+    requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_MARK_CLEANED });
     const { bookingId } = req.params;
     const { cleaningDate } = req.body || {};
     if (!isValidDateInput(cleaningDate)) {
@@ -140,7 +160,7 @@ router.post('/records/:bookingId/unmark-cleaned', async (req, res) => {
     await record.save();
     return res.json({ success: true, data: { cleaningRecordId: String(record._id), status: record.status } });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    return handleRouteError(error, res);
   }
 });
 
@@ -156,6 +176,7 @@ async function findOrCreateCleaningPayment(sofiaStart, propertyKind, totalAmount
 // POST /api/ops/cleaning/payments/mark-paid  body: { date, propertyKind }
 router.post('/payments/mark-paid', async (req, res) => {
   try {
+    requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_PAYMENT_WRITE });
     const { date, propertyKind } = req.body || {};
     if (!isValidDateInput(date)) {
       return res.status(400).json({ success: false, message: 'A valid date is required.' });
@@ -175,13 +196,14 @@ router.post('/payments/mark-paid', async (req, res) => {
     await payment.save();
     return res.json({ success: true, data: { cleaningPaymentId: String(payment._id), status: payment.status } });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    return handleRouteError(error, res);
   }
 });
 
 // POST /api/ops/cleaning/payments/unmark-paid  body: { date, propertyKind }
 router.post('/payments/unmark-paid', async (req, res) => {
   try {
+    requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_PAYMENT_WRITE });
     const { date, propertyKind } = req.body || {};
     if (!isValidDateInput(date)) {
       return res.status(400).json({ success: false, message: 'A valid date is required.' });
@@ -201,7 +223,7 @@ router.post('/payments/unmark-paid', async (req, res) => {
     await payment.save();
     return res.json({ success: true, data: { cleaningPaymentId: String(payment._id), status: payment.status } });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    return handleRouteError(error, res);
   }
 });
 
@@ -220,16 +242,18 @@ async function loadCleaningBaseFees() {
 // GET /api/ops/cleaning/settings -> { cabin: number, valley: number }
 router.get('/settings', async (req, res) => {
   try {
+    requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_SETTINGS_READ });
     const fees = await loadCleaningBaseFees();
     return res.json({ success: true, data: fees });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    return handleRouteError(error, res);
   }
 });
 
 // POST /api/ops/cleaning/settings  body: { propertyKind: 'cabin'|'valley', baseFee: number>=0 }
 router.post('/settings', async (req, res) => {
   try {
+    requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_SETTINGS_WRITE });
     const kind = normalizePropertyKind(req.body?.propertyKind);
     if (!kind) {
       return res.status(400).json({ success: false, message: "propertyKind must be 'cabin' or 'valley'." });
@@ -246,7 +270,7 @@ router.post('/settings', async (req, res) => {
     const fees = await loadCleaningBaseFees();
     return res.json({ success: true, data: fees });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    return handleRouteError(error, res);
   }
 });
 

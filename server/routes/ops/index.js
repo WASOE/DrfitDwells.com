@@ -1,5 +1,7 @@
 const express = require('express');
 const { adminAuth } = require('../../middleware/adminAuth');
+const { requireOpsModuleAccess } = require('../../middleware/requireOpsModuleAccess');
+const { buildSessionData } = require('../../services/ops/opsAuthService');
 const foundationRoutes = require('./modules/foundationRoutes');
 const dashboardRoutes = require('./modules/dashboardRoutes');
 const calendarRoutes = require('./modules/calendarRoutes');
@@ -19,6 +21,7 @@ const creatorCommissionsRoutes = require('./modules/creatorCommissionsRoutes');
 const giftVouchersRoutes = require('./modules/giftVouchersRoutes');
 const messagingRoutes = require('./modules/messagingRoutes');
 const cleaningRoutes = require('./modules/cleaningRoutes');
+const usersRoutes = require('./modules/usersRoutes');
 
 const router = express.Router();
 
@@ -36,13 +39,10 @@ router.use(adminAuth);
 router.get('/session', (req, res) => {
   return res.json({
     success: true,
-    data: {
-      authenticated: true,
-      role: req.user?.role || 'admin',
-      actorId: req.user?.id || null
-    }
+    data: buildSessionData(req.user)
   });
 });
+router.use(requireOpsModuleAccess);
 router.use('/foundation', foundationRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/calendar', calendarRoutes);
@@ -62,5 +62,6 @@ router.use('/creator-commissions', creatorCommissionsRoutes);
 router.use('/gift-vouchers', giftVouchersRoutes);
 router.use('/messaging', messagingRoutes);
 router.use('/cleaning', cleaningRoutes);
+router.use('/users', usersRoutes);
 
 module.exports = router;
