@@ -24,6 +24,8 @@ const ROUTES_WITH_BOTTOM_BAR = [
   { pattern: /^\/cabin\/[^/]+$/, desktop: false, mobile: true },
   // Craft steps: sticky bar on both
   { pattern: /^\/craft\/step-[1-4]$/, desktop: true, mobile: true },
+  // Build configurator: BuildStickyBar / MobileSpecsBar (60px)
+  { pattern: /^\/build$/, desktop: true, mobile: true, barHeight: 60 },
   // Home / Valley: booking drawer on mobile only
   { pattern: /^\/$/, desktop: false, mobile: true },
   { pattern: /^\/valley$/, desktop: false, mobile: true },
@@ -40,16 +42,12 @@ import { stripLocaleFromPath } from './localizedRoutes';
  */
 export function getFloatingBottomOffset(pathname, isDesktop = false) {
   const basePath = stripLocaleFromPath(pathname || '/');
-  let hasBottomBar = false;
-  for (const { pattern, desktop, mobile } of ROUTES_WITH_BOTTOM_BAR) {
+  for (const { pattern, desktop, mobile, barHeight = BOTTOM_BAR_HEIGHT } of ROUTES_WITH_BOTTOM_BAR) {
     if (pattern.test(basePath)) {
       const showBar = isDesktop ? desktop : mobile;
-      hasBottomBar = showBar;
-      break;
+      return showBar ? barHeight + FLOATING_GAP : FLOATING_GAP;
     }
   }
 
-  // Base offset: above sticky bar if present, otherwise small gap from viewport edge
-  const baseOffset = hasBottomBar ? FLOATING_BOTTOM_OFFSET : FLOATING_GAP;
-  return baseOffset;
+  return FLOATING_GAP;
 }
