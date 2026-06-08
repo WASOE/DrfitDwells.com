@@ -8,12 +8,13 @@ import MobileSpecsBar from '../components/configurator/MobileSpecsBar';
 import BuildDesktopShell from '../components/build/BuildDesktopShell';
 import { useBuildConfigurator } from '../hooks/useBuildConfigurator';
 import {
-  buildBuildEnquiryMailto,
   downloadBuildSpecPdf,
 } from '../data/buildConfiguratorExport.js';
 import { BUILD_STEPS } from '../data/buildConfiguratorSchema.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { CONTACT_EMAIL } from '../data/gmbLocations';
+
+const BUILD_CONSULTATION_URL = 'https://tidycal.com/jose3/schedule-your-cabin-project-meeting';
 
 const Build = () => {
   const [isMobileConfigOpen, setIsMobileConfigOpen] = useState(false);
@@ -22,8 +23,11 @@ const Build = () => {
   const configurator = useBuildConfigurator();
 
   const handleScheduleConsultation = useCallback(() => {
-    window.location.href = buildBuildEnquiryMailto(configurator.state, CONTACT_EMAIL);
-  }, [configurator.state]);
+    const popup = window.open(BUILD_CONSULTATION_URL, '_blank', 'noopener,noreferrer');
+    if (!popup) {
+      window.location.href = BUILD_CONSULTATION_URL;
+    }
+  }, []);
 
   const handlePdfDownload = useCallback(async () => {
     await downloadBuildSpecPdf(configurator.state, CONTACT_EMAIL);
