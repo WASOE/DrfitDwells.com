@@ -12,6 +12,22 @@ vi.mock('../../../services/cleaningApi', () => ({
 
 import { getPricingPolicy, updatePricingPolicy } from '../../../services/cleaningApi';
 
+const cabinItems = [
+  { ruleKey: 'transport', label: 'Fuel / transport per visit', type: 'fixed', amountEUR: 8, enabled: true },
+  { ruleKey: 'lux_cabin', label: 'Lux cabin / big bungalow', type: 'fixed', amountEUR: 25, enabled: true },
+  { ruleKey: 'house_full', label: 'House 1st + 2nd floor + toilets', type: 'fixed', amountEUR: 25, enabled: true },
+  { ruleKey: 'deep_cleaning', label: 'Deep/general cleaning', type: 'fixed', amountEUR: 150, enabled: true },
+  { ruleKey: 'laundry', label: 'Laundry', type: 'quantity', amountEUR: 2, enabled: true }
+];
+
+const valleyItems = [
+  { ruleKey: 'transport', label: 'Fuel / transport per visit', type: 'fixed', amountEUR: 8, enabled: true },
+  { ruleKey: 'aframe_small', label: 'A-frame small only', type: 'quantity', amountEUR: 10, enabled: true },
+  { ruleKey: 'aframe_full', label: 'A-frame + 1st floor + toilets', type: 'quantity', amountEUR: 20, enabled: true },
+  { ruleKey: 'deep_cleaning', label: 'Deep/general cleaning', type: 'fixed', amountEUR: 150, enabled: true },
+  { ruleKey: 'laundry', label: 'Laundry', type: 'quantity', amountEUR: 2, enabled: true }
+];
+
 const mockPolicyResponse = {
   currency: 'EUR',
   cabin: {
@@ -21,15 +37,7 @@ const mockPolicyResponse = {
     policyId: null,
     version: null,
     isActive: false,
-    rules: [
-      { ruleKey: 'transport', label: 'Fuel / transport per visit', valueType: 'amount', amountEUR: 8 },
-      { ruleKey: 'aframe_small', label: 'A-frame small only', valueType: 'unit', unitAmountEUR: 10 },
-      { ruleKey: 'aframe_full', label: 'A-frame + 1st floor + toilets', valueType: 'unit', unitAmountEUR: 20 },
-      { ruleKey: 'lux_cabin', label: 'Lux cabin / big bungalow', valueType: 'amount', amountEUR: 25 },
-      { ruleKey: 'house_full', label: 'House 1st + 2nd floor + toilets', valueType: 'amount', amountEUR: 25 },
-      { ruleKey: 'deep_cleaning', label: 'Deep/general cleaning', valueType: 'amount', amountEUR: 150 },
-      { ruleKey: 'laundry', label: 'Laundry', valueType: 'unit', unitAmountEUR: 2 }
-    ]
+    items: cabinItems
   },
   valley: {
     mode: 'policy',
@@ -38,15 +46,7 @@ const mockPolicyResponse = {
     policyId: 'valley-policy-id',
     version: '2026-06-default',
     isActive: true,
-    rules: [
-      { ruleKey: 'transport', label: 'Fuel / transport per visit', valueType: 'amount', amountEUR: 8 },
-      { ruleKey: 'aframe_small', label: 'A-frame small only', valueType: 'unit', unitAmountEUR: 10 },
-      { ruleKey: 'aframe_full', label: 'A-frame + 1st floor + toilets', valueType: 'unit', unitAmountEUR: 20 },
-      { ruleKey: 'lux_cabin', label: 'Lux cabin / big bungalow', valueType: 'amount', amountEUR: 25 },
-      { ruleKey: 'house_full', label: 'House 1st + 2nd floor + toilets', valueType: 'amount', amountEUR: 25 },
-      { ruleKey: 'deep_cleaning', label: 'Deep/general cleaning', valueType: 'amount', amountEUR: 150 },
-      { ruleKey: 'laundry', label: 'Laundry', valueType: 'unit', unitAmountEUR: 2 }
-    ]
+    items: valleyItems
   }
 };
 
@@ -72,7 +72,10 @@ beforeEach(() => {
           needsActivation: false,
           policyId: 'cabin-policy-id',
           version: '2026-06-default',
-          isActive: true
+          isActive: true,
+          items: cabinItems.map((item) =>
+            item.ruleKey === 'transport' ? { ...item, amountEUR: 9 } : item
+          )
         }
       }
     }
@@ -85,22 +88,19 @@ afterEach(() => {
 });
 
 describe('OpsCleaningSettings', () => {
-  it('renders 7 rate fields for the active location', async () => {
+  it('renders independent item rows per location', async () => {
     renderSettings({
       actions: ['ops.cleaning.settings_read', 'ops.cleaning.settings_write']
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('rate-cabin-transport')).toBeInTheDocument();
+      expect(screen.getByTestId('label-cabin-0')).toHaveValue('Fuel / transport per visit');
     });
 
-    expect(screen.getByTestId('rate-cabin-transport')).toHaveValue(8);
-    expect(screen.getByTestId('rate-cabin-aframe_small')).toHaveValue(10);
-    expect(screen.getByTestId('rate-cabin-aframe_full')).toHaveValue(20);
-    expect(screen.getByTestId('rate-cabin-lux_cabin')).toHaveValue(25);
-    expect(screen.getByTestId('rate-cabin-house_full')).toHaveValue(25);
-    expect(screen.getByTestId('rate-cabin-deep_cleaning')).toHaveValue(150);
-    expect(screen.getByTestId('rate-cabin-laundry')).toHaveValue(2);
+    expect(screen.getByTestId('label-cabin-1')).toHaveValue('Lux cabin / big bungalow');
+    expect(screen.getByTestId('label-valley-1')).toHaveValue('A-frame small only');
+    expect(screen.getByTestId('amount-cabin-0')).toHaveValue(8);
+    expect(screen.getByTestId('amount-valley-2')).toHaveValue(20);
   });
 
   it('shows legacy mode badge when no policy active', async () => {
@@ -109,7 +109,7 @@ describe('OpsCleaningSettings', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText(/Legacy mode — saving these rates activates policy/i)).toBeInTheDocument();
+      expect(screen.getByText(/Legacy mode — saving activates policy/i)).toBeInTheDocument();
     });
   });
 
@@ -123,31 +123,30 @@ describe('OpsCleaningSettings', () => {
     });
 
     expect(screen.queryByText(/Base fee/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/base cleaning fee/i)).not.toBeInTheDocument();
   });
 
-  it('admin can edit and save rates', async () => {
+  it('admin can add item and save only cabin items', async () => {
     renderSettings({
       actions: ['ops.cleaning.settings_read', 'ops.cleaning.settings_write']
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('rate-cabin-transport')).toBeInTheDocument();
+      expect(screen.getByTestId('save-rates-cabin')).toBeInTheDocument();
     });
 
-    fireEvent.change(screen.getByTestId('rate-cabin-transport'), { target: { value: '9' } });
+    fireEvent.change(screen.getByTestId('amount-cabin-0'), { target: { value: '9' } });
+    fireEvent.click(screen.getByTestId('add-item-cabin'));
+    fireEvent.change(screen.getByTestId('label-cabin-5'), { target: { value: 'Extra task' } });
     fireEvent.click(screen.getByTestId('save-rates-cabin'));
 
     await waitFor(() => {
-      expect(updatePricingPolicy).toHaveBeenCalledWith('cabin', {
-        transport: 9,
-        aframe_small: 10,
-        aframe_full: 20,
-        lux_cabin: 25,
-        house_full: 25,
-        deep_cleaning: 150,
-        laundry: 2
-      });
+      expect(updatePricingPolicy).toHaveBeenCalledWith(
+        'cabin',
+        expect.arrayContaining([
+          expect.objectContaining({ ruleKey: 'transport', amountEUR: 9 }),
+          expect.objectContaining({ label: 'Extra task', ruleKey: '', type: 'fixed' })
+        ])
+      );
     });
   });
 
@@ -155,10 +154,10 @@ describe('OpsCleaningSettings', () => {
     renderSettings({ actions: ['ops.cleaning.settings_read'] });
 
     await waitFor(() => {
-      expect(screen.getByTestId('rate-cabin-transport')).toBeInTheDocument();
+      expect(screen.getByTestId('label-cabin-0')).toBeInTheDocument();
     });
 
-    expect(screen.getByTestId('rate-cabin-transport')).toBeDisabled();
+    expect(screen.getByTestId('label-cabin-0')).toBeDisabled();
     expect(screen.queryByTestId('save-rates-cabin')).not.toBeInTheDocument();
     expect(screen.getAllByText(/Read-only. Contact an admin/i).length).toBeGreaterThan(0);
   });

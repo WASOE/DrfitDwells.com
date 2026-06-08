@@ -10,7 +10,7 @@ const {
 const { calculateForMarkPaid } = require('../../../services/ops/cleaning/cleaningPricingService');
 const {
   getPricingPolicySettings,
-  updatePricingPolicyAmounts
+  updatePricingPolicyItems
 } = require('../../../services/ops/cleaning/cleaningPricingPolicyAdminService');
 const CleaningDaySheet = require('../../../models/CleaningDaySheet');
 const { normalizeDateToSofiaDayStart } = require('../../../utils/dateTime');
@@ -348,7 +348,7 @@ router.get('/pricing-policy', async (req, res) => {
   }
 });
 
-// PUT /api/ops/cleaning/pricing-policy  body: { propertyKind, amounts }
+// PUT /api/ops/cleaning/pricing-policy  body: { propertyKind, items }
 router.put('/pricing-policy', async (req, res) => {
   try {
     requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_SETTINGS_WRITE });
@@ -356,9 +356,9 @@ router.put('/pricing-policy', async (req, res) => {
     if (!kind) {
       return res.status(400).json({ success: false, message: "propertyKind must be 'cabin' or 'valley'." });
     }
-    const data = await updatePricingPolicyAmounts({
+    const data = await updatePricingPolicyItems({
       propertyKind: kind,
-      amounts: req.body?.amounts
+      items: req.body?.items
     });
     return res.json({ success: true, data });
   } catch (error) {

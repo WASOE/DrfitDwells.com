@@ -13,7 +13,8 @@ const {
 } = require('../services/ops/cleaning/cleaningPricingService');
 const {
   DEFAULT_CLEANING_POLICY_VERSION,
-  defaultCleaningPricingRules
+  defaultRulesForPropertyKind,
+  defaultItemsForPropertyKind
 } = require('../data/cleaning/defaultCleaningPricingPolicy');
 const { seedPolicies } = require('./cleaningPricingPolicySeed.cjs');
 
@@ -30,35 +31,25 @@ test.after(async () => {
 });
 
 test('default cleaning pricing policy rules', async (t) => {
-  const policy = {
+  const cabinPolicy = {
     _id: new mongoose.Types.ObjectId(),
     version: DEFAULT_CLEANING_POLICY_VERSION,
     currency: 'EUR',
-    rules: defaultCleaningPricingRules()
+    rules: defaultRulesForPropertyKind('cabin')
   };
 
-  await t.test('editableInputFields derived from policy', () => {
-    const fields = buildEditableInputFields(policy);
-    assert.equal(fields.length, 7);
+  await t.test('cabin editableInputFields derived from policy', () => {
+    const fields = buildEditableInputFields(cabinPolicy);
+    assert.equal(fields.length, 5);
     assert.ok(fields.some((f) => f.inputKey === 'transport' && f.type === 'boolean' && f.amountEUR === 8));
-    assert.ok(
-      fields.some(
-        (f) => f.inputKey === 'aframeSmallOnlyCount' && f.type === 'quantity' && f.unitAmountEUR === 10
-      )
-    );
-    assert.ok(
-      fields.some(
-        (f) => f.inputKey === 'laundryCount' && f.type === 'quantity' && f.unitAmountEUR === 2
-      )
-    );
+    assert.ok(fields.some((f) => f.inputKey === 'luxCabinClean'));
+    assert.ok(!fields.some((f) => f.inputKey === 'aframeSmallOnlyCount'));
   });
 
-  await t.test('all business tasks produce expected line items', () => {
+  await t.test('cabin business tasks produce expected line items', () => {
     const daySheet = {
       inputs: {
         transport: true,
-        aframeSmallOnlyCount: 1,
-        aframeFullCount: 2,
         luxCabinClean: true,
         houseFullClean: true,
         deepCleaning: true,
@@ -66,21 +57,14 @@ test('default cleaning pricing policy rules', async (t) => {
       },
       perCheckoutInputs: []
     };
-    const calc = calculatePolicyLineItems([], policy, daySheet);
-    assert.equal(calc.totalAmountEUR, 264);
-    const amounts = calc.lineItems.map((li) => li.amountEUR).sort((a, b) => a - b);
-    assert.deepEqual(amounts, [6, 8, 10, 25, 25, 40, 150]);
+    const calc = calculatePolicyLineItems([], cabinPolicy, daySheet);
+    assert.equal(calc.totalAmountEUR, 214);
     assert.ok(calc.lineItems.some((li) => li.ruleKey === 'transport' && li.amountEUR === 8));
-    assert.ok(calc.lineItems.some((li) => li.ruleKey === 'aframe_small' && li.amountEUR === 10));
-    assert.ok(calc.lineItems.some((li) => li.ruleKey === 'aframe_full' && li.amountEUR === 40));
-    assert.ok(calc.lineItems.some((li) => li.ruleKey === 'lux_cabin' && li.amountEUR === 25));
-    assert.ok(calc.lineItems.some((li) => li.ruleKey === 'house_full' && li.amountEUR === 25));
-    assert.ok(calc.lineItems.some((li) => li.ruleKey === 'deep_cleaning' && li.amountEUR === 150));
     assert.ok(calc.lineItems.some((li) => li.ruleKey === 'laundry' && li.amountEUR === 6));
-    assert.equal(calc.editableInputFields.length, 7);
+    assert.equal(calc.editableInputFields.length, 5);
   });
 
-  await t.test('seed script creates cabin and valley policies', async () => {
+  await t.test('seed script creates location-specific policies', async () => {
     await CleaningPricingPolicy.deleteMany({});
     await seedPolicies();
     const cabin = await CleaningPricingPolicy.findOne({
@@ -93,7 +77,21 @@ test('default cleaning pricing policy rules', async (t) => {
     }).lean();
     assert.ok(cabin?.isActive);
     assert.ok(valley?.isActive);
-    assert.equal(cabin.rules.length, 7);
+    assert.equal(cabin.rules.length, 5);
+    assert.equal(valley.rules.length, 5);
+    assert.ok(cabin.rules.some((r) => r.ruleKey === 'lux_cabin'));
+    assert.ok(valley.rules.some((r) => r.ruleKey === 'aframe_small'));
+  });
+
+  await t.test('default items differ per location', () => {
+    const cabin = defaultItemsForPropertyKind('cabin');
+    const valley = defaultItemsForPropertyKind('valley');
+    assert.equal(cabin.length, 5);
+    assert.equal(valley.length, 5);
+    assert.ok(cabin.some((i) => i.ruleKey === 'lux_cabin'));
+    assert.ok(!cabin.some((i) => i.ruleKey === 'aframe_small'));
+    assert.ok(valley.some((i) => i.ruleKey === 'aframe_small'));
+    assert.ok(!valley.some((i) => i.ruleKey === 'lux_cabin'));
   });
 
   await t.test('payment-summary returns editableInputFields when policy active', async () => {
@@ -104,13 +102,13 @@ test('default cleaning pricing policy rules', async (t) => {
       isActive: true,
       effectiveFrom: new Date('2020-01-01'),
       currency: 'EUR',
-      rules: defaultCleaningPricingRules()
+      rules: defaultRulesForPropertyKind('cabin')
     });
     const summary = await calculateCleaningPaymentSummary({
       date: '2026-08-01',
       propertyKind: 'cabin'
     });
     assert.ok(Array.isArray(summary.editableInputFields));
-    assert.equal(summary.editableInputFields.length, 7);
+    assert.equal(summary.editableInputFields.length, 5);
   });
 });

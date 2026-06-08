@@ -69,10 +69,10 @@ export function getPricingPolicy() {
   return api.get('/ops/cleaning/pricing-policy', { headers: authHeaders() });
 }
 
-export function updatePricingPolicy(propertyKind, amounts) {
+export function updatePricingPolicy(propertyKind, items) {
   return api.put(
     '/ops/cleaning/pricing-policy',
-    { propertyKind, amounts },
+    { propertyKind, items },
     { headers: authHeaders() }
   );
 }

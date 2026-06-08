@@ -11,7 +11,7 @@ const CleaningPricingPolicy = require('../models/CleaningPricingPolicy');
 const CleaningDaySheet = require('../models/CleaningDaySheet');
 const {
   DEFAULT_CLEANING_POLICY_VERSION,
-  defaultCleaningPricingRules
+  defaultRulesForPropertyKind
 } = require('../data/cleaning/defaultCleaningPricingPolicy');
 
 const PROPERTY_KINDS = ['cabin', 'valley'];
@@ -24,7 +24,6 @@ async function ensureIndexes() {
 
 async function seedPolicies({ dryRun = false } = {}) {
   const effectiveFrom = new Date('2020-01-01T00:00:00.000Z');
-  const rules = defaultCleaningPricingRules();
 
   for (const propertyKind of PROPERTY_KINDS) {
     const existing = await CleaningPricingPolicy.findOne({
@@ -43,7 +42,7 @@ async function seedPolicies({ dryRun = false } = {}) {
       isActive: true,
       effectiveFrom,
       currency: 'EUR',
-      rules
+      rules: defaultRulesForPropertyKind(propertyKind)
     };
 
     if (dryRun) {
