@@ -1,8 +1,9 @@
 const CleaningPricingPolicy = require('../../../models/CleaningPricingPolicy');
 const {
   DEFAULT_CLEANING_POLICY_VERSION,
-  ALLOWED_RULE_KEYS,
-  defaultCleaningPricingRules
+  KNOWN_INPUT_KEYS,
+  defaultItemsForPropertyKind,
+  itemToPolicyRule
 } = require('../../../data/cleaning/defaultCleaningPricingPolicy');
 const { roundEUR } = require('./cleaningPricingService');
 
@@ -16,46 +17,67 @@ function createHttpError(status, message) {
   return error;
 }
 
-function ruleToSettingsDto(rule) {
+function slugifyRuleKey(label) {
+  const slug = String(label || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '')
+    .slice(0, 64);
+  return slug || 'custom_item';
+}
+
+function ruleKeyToInputKey(ruleKey, itemType) {
+  if (KNOWN_INPUT_KEYS[ruleKey]) {
+    return KNOWN_INPUT_KEYS[ruleKey];
+  }
+  const camel = ruleKey.replace(/_([a-z])/g, (_, char) => char.toUpperCase());
+  return itemType === 'quantity' ? `${camel}Count` : camel;
+}
+
+function policyRuleToItem(rule) {
+  const enabled = rule.enabled !== false;
+
   if (rule.type === 'quantity') {
     return {
       ruleKey: rule.ruleKey,
       label: rule.label,
-      valueType: 'unit',
-      unitAmountEUR:
-        typeof rule.unitAmountEUR === 'number' ? rule.unitAmountEUR : null
+      type: 'quantity',
+      amountEUR: typeof rule.unitAmountEUR === 'number' ? rule.unitAmountEUR : 0,
+      enabled
     };
   }
 
   return {
     ruleKey: rule.ruleKey,
     label: rule.label,
-    valueType: 'amount',
-    amountEUR: typeof rule.amountEUR === 'number' ? rule.amountEUR : null
+    type: 'fixed',
+    amountEUR: typeof rule.amountEUR === 'number' ? rule.amountEUR : 0,
+    enabled
   };
 }
 
-function buildLegacyDto(propertyKind) {
-  return {
-    mode: 'legacy',
-    needsActivation: true,
-    propertyKind,
-    policyId: null,
-    version: null,
-    isActive: false,
-    rules: defaultCleaningPricingRules().map(ruleToSettingsDto)
-  };
-}
+function buildLocationDto(propertyKind, policy) {
+  if (!policy) {
+    return {
+      mode: 'legacy',
+      needsActivation: true,
+      propertyKind,
+      policyId: null,
+      version: null,
+      isActive: false,
+      items: defaultItemsForPropertyKind(propertyKind)
+    };
+  }
 
-function buildPolicyDto(policy) {
   return {
     mode: 'policy',
     needsActivation: false,
-    propertyKind: policy.propertyKind,
+    propertyKind,
     policyId: String(policy._id),
     version: policy.version,
     isActive: Boolean(policy.isActive),
-    rules: (policy.rules || []).map(ruleToSettingsDto)
+    items: (policy.rules || []).map(policyRuleToItem)
   };
 }
 
@@ -75,79 +97,85 @@ async function getPricingPolicySettings() {
 
   for (const propertyKind of PROPERTY_KINDS) {
     const policy = await loadActivePolicy(propertyKind);
-    result[propertyKind] = policy ? buildPolicyDto(policy) : buildLegacyDto(propertyKind);
+    result[propertyKind] = buildLocationDto(propertyKind, policy);
   }
 
   return result;
 }
 
-function normalizeRuleDocument(rule) {
-  if (!rule) return rule;
-  if (typeof rule.toObject === 'function') return rule.toObject();
-  return rule;
-}
-
-function validateAmounts(amounts) {
-  if (!amounts || typeof amounts !== 'object' || Array.isArray(amounts)) {
-    throw createHttpError(400, 'amounts must be an object.');
-  }
-
-  for (const ruleKey of ALLOWED_RULE_KEYS) {
-    if (!Object.prototype.hasOwnProperty.call(amounts, ruleKey)) {
-      throw createHttpError(400, `Missing required rule key: ${ruleKey}.`);
+function assignUniqueRuleKeys(items) {
+  const used = new Set();
+  return items.map((item) => {
+    let ruleKey = String(item.ruleKey || '').trim();
+    if (!ruleKey) {
+      ruleKey = slugifyRuleKey(item.label);
     }
-  }
-
-  for (const key of Object.keys(amounts)) {
-    if (!ALLOWED_RULE_KEYS.includes(key)) {
-      throw createHttpError(400, `Unknown rule key: ${key}.`);
+    let candidate = ruleKey;
+    let suffix = 2;
+    while (used.has(candidate)) {
+      candidate = `${ruleKey}_${suffix}`;
+      suffix += 1;
     }
-    const value = Number(amounts[key]);
-    if (!Number.isFinite(value) || value < 0) {
-      throw createHttpError(400, `Invalid amount for ${key}: must be a number >= 0.`);
-    }
-  }
-
-  return amounts;
-}
-
-function applyAmountsToRules(baseRules, amounts) {
-  const catalogByKey = new Map(defaultCleaningPricingRules().map((rule) => [rule.ruleKey, rule]));
-
-  return baseRules.map((rawRule) => {
-    const rule = normalizeRuleDocument(rawRule);
-    const catalogRule = catalogByKey.get(rule.ruleKey);
-    if (!catalogRule) {
-      return { ...rule };
-    }
-
-    const amount = roundEUR(Number(amounts[rule.ruleKey]));
-
-    return {
-      ruleKey: catalogRule.ruleKey,
-      type: catalogRule.type,
-      label: catalogRule.label,
-      inputKey: catalogRule.inputKey,
-      selector: catalogRule.selector ? { ...catalogRule.selector } : {},
-      ...(catalogRule.type === 'quantity'
-        ? { unitAmountEUR: amount, amountEUR: null }
-        : { amountEUR: amount, unitAmountEUR: null })
-    };
+    used.add(candidate);
+    return { ...item, ruleKey: candidate };
   });
 }
 
-async function updatePricingPolicyAmounts({ propertyKind, amounts }) {
-  validateAmounts(amounts);
+function validateItems(items) {
+  if (!Array.isArray(items)) {
+    throw createHttpError(400, 'items must be an array.');
+  }
+
+  items.forEach((item, index) => {
+    if (!item || typeof item !== 'object') {
+      throw createHttpError(400, `items[${index}] must be an object.`);
+    }
+    if (item.type !== 'fixed' && item.type !== 'quantity') {
+      throw createHttpError(400, `items[${index}].type must be "fixed" or "quantity".`);
+    }
+    const amount = Number(item.amountEUR);
+    if (!Number.isFinite(amount) || amount < 0) {
+      throw createHttpError(400, `items[${index}].amountEUR must be a number >= 0.`);
+    }
+    if (item.enabled !== undefined && typeof item.enabled !== 'boolean') {
+      throw createHttpError(400, `items[${index}].enabled must be a boolean.`);
+    }
+    const label = String(item.label || '').trim();
+    if (item.enabled !== false && !label) {
+      throw createHttpError(400, `items[${index}].label is required for enabled items.`);
+    }
+  });
+
+  return items;
+}
+
+function itemsToPolicyRules(items) {
+  const normalized = assignUniqueRuleKeys(items);
+
+  return normalized.map((item) => {
+    const label = String(item.label || '').trim() || item.ruleKey;
+    const inputKey = ruleKeyToInputKey(item.ruleKey, item.type);
+    return itemToPolicyRule(
+      {
+        ruleKey: item.ruleKey,
+        label,
+        type: item.type,
+        amountEUR: roundEUR(Number(item.amountEUR)),
+        enabled: item.enabled !== false
+      },
+      inputKey
+    );
+  });
+}
+
+async function updatePricingPolicyItems({ propertyKind, items }) {
+  validateItems(items);
+  const rules = itemsToPolicyRules(items);
 
   let policy = await CleaningPricingPolicy.findOne({
     propertyKind,
     isActive: true
   }).sort({ effectiveFrom: -1, updatedAt: -1 });
-
-  const baseRules = policy
-    ? policy.rules.map(normalizeRuleDocument)
-    : defaultCleaningPricingRules();
-  const updatedRules = applyAmountsToRules(baseRules, amounts);
 
   if (!policy) {
     policy = await CleaningPricingPolicy.create({
@@ -156,11 +184,11 @@ async function updatePricingPolicyAmounts({ propertyKind, amounts }) {
       isActive: true,
       effectiveFrom: DEFAULT_EFFECTIVE_FROM,
       currency: CURRENCY,
-      rules: updatedRules
+      rules
     });
   } else {
     policy.currency = CURRENCY;
-    policy.rules = updatedRules;
+    policy.rules = rules;
     policy.isActive = true;
     await policy.save();
   }
@@ -172,9 +200,12 @@ module.exports = {
   CURRENCY,
   PROPERTY_KINDS,
   getPricingPolicySettings,
-  updatePricingPolicyAmounts,
+  updatePricingPolicyItems,
   loadActivePolicy,
-  buildPolicyDto,
-  buildLegacyDto,
-  validateAmounts
+  buildLocationDto,
+  validateItems,
+  itemsToPolicyRules,
+  policyRuleToItem,
+  slugifyRuleKey,
+  ruleKeyToInputKey
 };

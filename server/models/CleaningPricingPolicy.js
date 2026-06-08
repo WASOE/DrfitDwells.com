@@ -34,7 +34,8 @@ const pricingRuleSchema = new mongoose.Schema(
     unitAmountEUR: { type: Number, min: 0, default: null },
     inputKey: { type: String, trim: true, default: null },
     selector: { type: ruleSelectorSchema, default: () => ({}) },
-    tiers: { type: [tierSchema], default: undefined }
+    tiers: { type: [tierSchema], default: undefined },
+    enabled: { type: Boolean, default: true }
   },
   { _id: false }
 );

@@ -131,7 +131,7 @@ function buildEditableInputFields(policy) {
   if (!policy || !Array.isArray(policy.rules)) return [];
 
   return policy.rules
-    .filter((rule) => rule.inputKey)
+    .filter((rule) => rule.enabled !== false && rule.inputKey)
     .map((rule) => {
       if (rule.type === 'quantity') {
         return {
@@ -359,7 +359,9 @@ function applyOptionalAddonRule(rule, daySheet, checkouts, lineItems) {
  */
 function calculatePolicyLineItems(checkouts, policy, daySheet) {
   const lineItems = [];
-  const rules = Array.isArray(policy.rules) ? policy.rules : [];
+  const rules = (Array.isArray(policy.rules) ? policy.rules : []).filter(
+    (rule) => rule.enabled !== false
+  );
 
   for (const rule of rules) {
     switch (rule.type) {
