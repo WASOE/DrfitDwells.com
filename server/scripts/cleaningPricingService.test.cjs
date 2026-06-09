@@ -554,13 +554,21 @@ test('cleaning pricing Batch 1 — checkout-driven engine', async (t) => {
     assert.equal(summaryRes.status, 200);
     assert.equal(summaryRes.body.data.totalAmount, 28);
     assert.equal(summaryRes.body.data.isSnapshot, true);
-    assert.equal(summaryRes.body.data.canEditInputs, false);
     assert.ok(summaryRes.body.data.lineItems.some((li) => li.amountEUR === 8));
+    assert.ok(
+      summaryRes.body.data.lineItems.every(
+        (li) => li.amountType === 'cleaner_payout' && li.propertyKind === 'valley'
+      )
+    );
+    assert.equal(summaryRes.body.data.editableInputFields, undefined);
+    assert.equal(summaryRes.body.data.inputs, undefined);
 
     const payment = await CleaningPayment.findOne({ date: sofiaStart, propertyKind: 'valley' }).lean();
     assert.equal(payment.pricingVersion, 'v1-test');
     assert.ok(payment.lineItems.length >= 2);
-    assert.ok(payment.inputsSnapshot);
+    assert.ok(
+      payment.lineItems.every((li) => li.amountType === 'cleaner_payout' && li.propertyKind === 'valley')
+    );
     assert.ok(payment.calculatedAt);
   });
 

@@ -280,48 +280,6 @@ function priceDay(checkouts, policy) {
   };
 }
 
-function mergeInputsForSnapshot() {
-  return { inputs: {}, perCheckoutInputs: [] };
-}
-
-/**
- * Derive desktop-editable field metadata from policy rules (server-owned prices).
- * Manual quantity/optional_addon rules are legacy; payout calc no longer reads them.
- */
-function buildEditableInputFields(policy) {
-  if (!policy || !Array.isArray(policy.rules)) return [];
-
-  return policy.rules
-    .filter((rule) => rule.enabled !== false && rule.inputKey)
-    .map((rule) => {
-      if (rule.type === 'quantity') {
-        return {
-          inputKey: rule.inputKey,
-          label: rule.label,
-          type: 'quantity',
-          unitAmountEUR:
-            typeof rule.unitAmountEUR === 'number' ? rule.unitAmountEUR : null
-        };
-      }
-      if (rule.type === 'optional_addon') {
-        return {
-          inputKey: rule.inputKey,
-          label: rule.label,
-          type: 'boolean',
-          amountEUR: typeof rule.amountEUR === 'number' ? rule.amountEUR : null
-        };
-      }
-      return null;
-    })
-    .filter(Boolean);
-}
-
-async function loadEditableInputFieldsForPayment(payment) {
-  if (!payment?.pricingPolicyId) return [];
-  const policy = await CleaningPricingPolicy.findById(payment.pricingPolicyId).lean();
-  return buildEditableInputFields(policy);
-}
-
 /**
  * Load the active pricing policy for a property kind on a given date.
  */
@@ -345,9 +303,7 @@ function buildPolicyCalcResult(checkouts, policy) {
     unmatchedCheckouts: priced.unmatchedCheckouts,
     currency: policy.currency || CURRENCY,
     pricingPolicyId: policy._id,
-    pricingVersion: policy.version,
-    inputs: mergeInputsForSnapshot(),
-    editableInputFields: buildEditableInputFields(policy)
+    pricingVersion: policy.version
   };
 }
 
@@ -368,7 +324,6 @@ function tagLineItemsWithPropertyKind(lineItems, propertyKind) {
 }
 
 async function buildPaidSnapshotResponse(payment, cabinCount) {
-  const editableInputFields = await loadEditableInputFieldsForPayment(payment);
   return {
     date: payment.date.toISOString(),
     propertyKind: payment.propertyKind,
@@ -377,9 +332,6 @@ async function buildPaidSnapshotResponse(payment, cabinCount) {
     paidAmount: payment.paidAmount || 0,
     status: payment.status,
     lineItems: tagLineItemsWithPropertyKind(payment.lineItems, payment.propertyKind),
-    inputs: payment.inputsSnapshot || { inputs: {}, perCheckoutInputs: [] },
-    editableInputFields,
-    canEditInputs: false,
     isSnapshot: true,
     noPolicy: false,
     unmatchedCheckouts: [],
@@ -400,9 +352,6 @@ function buildNoPolicySummary({ sofiaStart, propertyKind, payment, checkouts }) 
     paidAmount: payment?.paidAmount || 0,
     status: payment?.status || 'pending',
     lineItems: [],
-    inputs: { inputs: {}, perCheckoutInputs: [] },
-    editableInputFields: [],
-    canEditInputs: false,
     isSnapshot: false,
     noPolicy: true,
     noPolicyMessage: `No active pricing policy for ${propertyKind}`,
@@ -428,9 +377,6 @@ async function calculateCleaningPaymentSummary({ date, propertyKind }) {
       paidAmount: 0,
       status: 'pending',
       lineItems: [],
-      inputs: { inputs: {}, perCheckoutInputs: [] },
-      editableInputFields: [],
-      canEditInputs: false,
       isSnapshot: false,
       noPolicy: false,
       unmatchedCheckouts: [],
@@ -467,9 +413,6 @@ async function calculateCleaningPaymentSummary({ date, propertyKind }) {
     paidAmount: payment?.paidAmount || 0,
     status: payment?.status || 'pending',
     lineItems: calc.lineItems,
-    inputs: calc.inputs,
-    editableInputFields: calc.editableInputFields || [],
-    canEditInputs: true,
     isSnapshot: false,
     noPolicy: false,
     unmatchedCheckouts: calc.unmatchedCheckouts,
@@ -575,8 +518,6 @@ module.exports = {
   loadActivePolicy,
   checkoutMatchesSelector,
   selectorHasTargeting,
-  buildEditableInputFields,
-  loadEditableInputFieldsForPayment,
   normalizeStoredLineItem,
   sumLineItems,
   roundEUR

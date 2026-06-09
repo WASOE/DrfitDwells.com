@@ -34,7 +34,7 @@ const lineItemSchema = new mongoose.Schema(
  *
  * One row per (date, propertyKind). All amounts are in EUR. `totalAmount` is
  * calculated from pricing rules and stored for audit. When marked paid, line
- * items and inputs are snapshotted so future rule changes do not rewrite history.
+ * items are snapshotted so future rule changes do not rewrite history.
  * `date` is a Sofia day-start (UTC).
  */
 const cleaningPaymentSchema = new mongoose.Schema(
@@ -72,6 +72,7 @@ const cleaningPaymentSchema = new mongoose.Schema(
       type: [lineItemSchema],
       default: []
     },
+    /** @deprecated Legacy manual day-sheet inputs; no longer written. Kept for old documents. */
     inputsSnapshot: {
       type: mongoose.Schema.Types.Mixed,
       default: null

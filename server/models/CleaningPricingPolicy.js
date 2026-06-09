@@ -34,6 +34,7 @@ const pricingRuleSchema = new mongoose.Schema(
     label: { type: String, required: true, trim: true },
     amountEUR: { type: Number, min: 0, default: null },
     unitAmountEUR: { type: Number, min: 0, default: null },
+    /** @deprecated Legacy manual-input rules; editor no longer produces these. */
     inputKey: { type: String, trim: true, default: null },
     selector: { type: ruleSelectorSchema, default: () => ({}) },
     tiers: { type: [tierSchema], default: undefined },
