@@ -8,7 +8,6 @@
  */
 const mongoose = require('mongoose');
 const CleaningPricingPolicy = require('../models/CleaningPricingPolicy');
-const CleaningDaySheet = require('../models/CleaningDaySheet');
 const {
   DEFAULT_CLEANING_POLICY_VERSION,
   defaultRulesForPropertyKind
@@ -18,7 +17,6 @@ const PROPERTY_KINDS = ['cabin', 'valley'];
 
 async function ensureIndexes() {
   await CleaningPricingPolicy.createIndexes();
-  await CleaningDaySheet.createIndexes();
   console.log('Indexes ensured via createIndexes().');
 }
 

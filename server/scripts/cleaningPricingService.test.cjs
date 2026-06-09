@@ -12,7 +12,6 @@ const Cabin = require('../models/Cabin');
 const CabinType = require('../models/CabinType');
 const Booking = require('../models/Booking');
 const CleaningPayment = require('../models/CleaningPayment');
-const CleaningDaySheet = require('../models/CleaningDaySheet');
 const CleaningPricingPolicy = require('../models/CleaningPricingPolicy');
 const { createOpsUser } = require('../services/ops/opsUserService');
 const { normalizeDateToSofiaDayStart } = require('../utils/dateTime');
@@ -503,7 +502,6 @@ test('cleaning pricing Batch 1 — checkout-driven engine', async (t) => {
 
     await CleaningPricingPolicy.deleteMany({});
     await CleaningPayment.deleteMany({});
-    await CleaningDaySheet.deleteMany({});
     await Booking.deleteMany({});
 
     const cabinType = await createValleyCabinType({ cleaningTags: ['a-frame'] });
