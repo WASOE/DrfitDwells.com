@@ -70,8 +70,9 @@
  * Idempotency (CRITICAL):
  *   - Automatic dispatches use:
  *       MessageDispatch.idempotencyKey = `${scheduledMessageJobId}:${channel}`
- *     This is STABLE across retries / backoff (the job _id never changes)
- *     so a retry of the same job cannot create a duplicate real send.
+ *     Guest/ops single-recipient jobs use that two-part key.
+ *     Cleaner fan-out (C4) appends `:${recipientKey}` (OpsUser id) so each
+ *     cleaner gets a stable per-recipient key across retries.
  *   - Existing-row handling for the same key:
  *       * accepted:    do not call provider; treat channel as successful.
  *       * pending:     do not call provider; mark job failed and open MRI
@@ -107,6 +108,10 @@ const { findApprovedTemplate } = require('./messageTemplateLookupService');
 const { renderGmaEmailHtml } = require('./gmaEmailHtmlRenderer');
 const { resolveVariables } = require('./messageVariableResolver');
 const { getProviderForChannel } = require('./providers/providerRegistry');
+const {
+  listAssignedCleanersForPropertyKind,
+  resolveCleanerChannelTargets
+} = require('./cleanerRecipientResolver');
 
 const ENV_FLAG = 'MESSAGE_DISPATCHER_ENABLED';
 const ENV_INTERNAL_EMAIL = 'EMAIL_TO_INTERNAL';
@@ -289,10 +294,22 @@ function isSuppressed(contactPref) {
  * The legacy `ruleKey:bookingId:iso:channel` shape from Batch 8 is removed
  * because it failed this property: `scheduledFor` can move on retry.
  */
-function buildIdempotencyKey({ jobId, channel }) {
+function buildIdempotencyKey({ jobId, channel, recipientKey }) {
   if (!jobId) throw new Error('buildIdempotencyKey: missing jobId');
   if (!channel) throw new Error('buildIdempotencyKey: missing channel');
-  return `${String(jobId)}:${channel}`;
+  const base = `${String(jobId)}:${channel}`;
+  if (recipientKey) {
+    return `${base}:${String(recipientKey)}`;
+  }
+  return base;
+}
+
+function shouldApplyPaymentProofGuard(rule, job) {
+  const audience = rule?.audience || job?.audience;
+  if (audience === 'cleaner' && rule?.requirePaidIfStripe === false) {
+    return false;
+  }
+  return true;
 }
 
 async function findExistingDispatch(idempotencyKey) {
@@ -371,9 +388,11 @@ async function attemptChannel({
   booking,
   stayTarget,
   propertyKind,
-  channel
+  channel,
+  recipientOverride = null,
+  recipientKey = null
 }) {
-  const idempotencyKey = buildIdempotencyKey({ jobId: job._id, channel });
+  const idempotencyKey = buildIdempotencyKey({ jobId: job._id, channel, recipientKey });
 
   const existing = await findExistingDispatch(idempotencyKey);
   if (existing) {
@@ -383,8 +402,10 @@ async function attemptChannel({
     return outcomeForExistingDispatch(existing);
   }
 
-  // Resolve recipient + contact preferences.
-  const recipientInfo = await resolveRecipient({ channel, rule, booking });
+  // Resolve recipient + contact preferences (or use fan-out override).
+  const recipientInfo = recipientOverride
+    ? { ok: true, ...recipientOverride }
+    : await resolveRecipient({ channel, rule, booking });
   if (!recipientInfo.ok) {
     if (recipientInfo.outcome === CHANNEL_OUTCOME.SKIPPED_NO_RECIPIENT) {
       const row = await writeDispatchRow({
@@ -850,6 +871,121 @@ async function runChannelPlan({ job, rule, booking, stayTarget, propertyKind }) 
 }
 
 /**
+ * Cleaner audience: fan-out one dispatch (or skip row) per assigned cleaner.
+ */
+async function runCleanerFanOutPlan({ job, rule, booking, stayTarget, propertyKind }) {
+  const cleaners = await listAssignedCleanersForPropertyKind(propertyKind);
+  if (cleaners.length === 0) {
+    logLine('log', 'cleaner_no_assigned_recipients', {
+      jobId: String(job._id),
+      ruleKey: rule.ruleKey,
+      propertyKind
+    });
+    return { outcomes: [], assignedCount: 0 };
+  }
+
+  const outcomes = [];
+  for (const cleaner of cleaners) {
+    const targets = resolveCleanerChannelTargets(cleaner, rule.channelStrategy);
+    for (const target of targets) {
+      if (target.skip) {
+        const recordChannel = target.recordChannel || 'email';
+        const idempotencyKey = buildIdempotencyKey({
+          jobId: job._id,
+          channel: recordChannel,
+          recipientKey: String(cleaner._id)
+        });
+        const existing = await findExistingDispatch(idempotencyKey);
+        if (existing) {
+          outcomes.push(outcomeForExistingDispatch(existing));
+          continue;
+        }
+        const row = await writeDispatchRow({
+          job,
+          rule,
+          channel: recordChannel,
+          propertyKind,
+          recipient: cleaner.email || String(cleaner._id),
+          recipientChannelId: null,
+          templateKey: rule.templateKeyByChannel?.[recordChannel] || 'unknown',
+          templateVersion: 1,
+          status: 'skipped_no_recipient',
+          idempotencyKey,
+          error: { code: 'cleaner_contact_unavailable', detail: target.reason || null },
+          details: {
+            shadow: true,
+            cleanerId: String(cleaner._id),
+            skipReason: target.reason || null
+          }
+        });
+        outcomes.push({
+          outcome: CHANNEL_OUTCOME.SKIPPED_NO_RECIPIENT,
+          retryable: false,
+          dispatchRow: row,
+          cleanerId: String(cleaner._id),
+          skipReason: target.reason || null
+        });
+        continue;
+      }
+
+      const result = await attemptChannel({
+        job,
+        rule,
+        booking,
+        stayTarget,
+        propertyKind,
+        channel: target.channel,
+        recipientOverride: {
+          recipient: target.recipient,
+          recipientType: target.recipientType,
+          contactPref: null
+        },
+        recipientKey: String(cleaner._id)
+      });
+      outcomes.push({ ...result, cleanerId: String(cleaner._id) });
+    }
+  }
+  return { outcomes, assignedCount: cleaners.length };
+}
+
+/**
+ * Job-level decision for cleaner fan-out. Zero assigned cleaners is a quiet
+ * noop (suppressed, no dispatch rows). Partial skips do not fail the job when
+ * at least one cleaner was accepted.
+ */
+function reduceCleanerFanOutOutcomes(outcomes, { assignedCount = 0 } = {}) {
+  if (assignedCount === 0) {
+    return {
+      kind: 'terminal',
+      jobStatus: 'suppressed',
+      lastError: null,
+      noop: 'cleaner_no_assigned_recipients'
+    };
+  }
+  const anyAccepted = outcomes.some((o) => o.outcome === CHANNEL_OUTCOME.ACCEPTED);
+  if (anyAccepted) {
+    return { kind: 'terminal', jobStatus: 'sent', lastError: null };
+  }
+  const anyRetryable = outcomes.some((o) => o.retryable);
+  if (anyRetryable) {
+    const first = outcomes.find((o) => o.retryable);
+    return { kind: 'retryable', errorCode: first?.errorCode || 'provider_throw' };
+  }
+  const allSkippedNoRecipient =
+    outcomes.length > 0 &&
+    outcomes.every((o) => o.outcome === CHANNEL_OUTCOME.SKIPPED_NO_RECIPIENT);
+  if (allSkippedNoRecipient) {
+    return {
+      kind: 'terminal',
+      jobStatus: 'suppressed',
+      lastError: null,
+      noop: 'cleaner_all_recipients_skipped'
+    };
+  }
+  return reduceChannelOutcomes(outcomes, 'cleaner');
+}
+
+/**
  * Transition a job's status atomically from 'claimed' to the requested
  * terminal status. Returns true if the update was applied, false if the
  * row was not in 'claimed' (lost the race).
@@ -998,14 +1134,6 @@ async function processClaimedJobInner({ job, now }) {
     return { ran: true, terminal: 'failed', reason: 'manual_approve_not_supported_yet' };
   }
 
-  if (job.audience === 'cleaner' || rule.audience === 'cleaner') {
-    await transitionClaimedJob({
-      jobId: job._id,
-      $set: { status: 'failed', lastError: 'cleaner_recipient_not_supported_yet' }
-    });
-    return { ran: true, terminal: 'failed', reason: 'cleaner_recipient_not_supported_yet' };
-  }
-
   // Load booking (or null for no-booking jobs, which V1 does not produce
   // but the schema allows).
   let booking = null;
@@ -1049,7 +1177,7 @@ async function processClaimedJobInner({ job, now }) {
       });
       return { ran: true, terminal: 'skipped_status_guard', reason: 'status_guard' };
     }
-    if (!passesPaymentProofGuard(booking)) {
+    if (shouldApplyPaymentProofGuard(rule, job) && !passesPaymentProofGuard(booking)) {
       await transitionClaimedJob({
         jobId: job._id,
         $set: { status: 'failed', lastError: 'payment_proof_guard_blocked' }
@@ -1125,9 +1253,17 @@ async function processClaimedJobInner({ job, now }) {
     }
   }
 
-  // Run the channel plan.
-  const outcomes = await runChannelPlan({ job, rule, booking, stayTarget, propertyKind });
-  const decision = reduceChannelOutcomes(outcomes, rule.channelStrategy);
+  const isCleanerAudience = job.audience === 'cleaner' || rule.audience === 'cleaner';
+  let outcomes;
+  let decision;
+  if (isCleanerAudience) {
+    const fanOut = await runCleanerFanOutPlan({ job, rule, booking, stayTarget, propertyKind });
+    outcomes = fanOut.outcomes;
+    decision = reduceCleanerFanOutOutcomes(outcomes, { assignedCount: fanOut.assignedCount });
+  } else {
+    outcomes = await runChannelPlan({ job, rule, booking, stayTarget, propertyKind });
+    decision = reduceChannelOutcomes(outcomes, rule.channelStrategy);
+  }
 
   // MRIs for template_not_available / missing_required_variables / the new
   // "pending dispatch found on retry" surface. The "once per rule/channel/day"
@@ -1190,7 +1326,12 @@ async function processClaimedJobInner({ job, now }) {
     jobId: job._id,
     $set: {
       status: decision.jobStatus,
-      lastError: decision.jobStatus === 'sent' ? null : (outcomes.find((o) => o.errorCode)?.errorCode || decision.jobStatus)
+      lastError:
+        decision.lastError !== undefined
+          ? decision.lastError
+          : decision.jobStatus === 'sent' || decision.jobStatus === 'suppressed'
+            ? null
+            : outcomes.find((o) => o.errorCode)?.errorCode || decision.jobStatus
     }
   });
   logLine('log', 'job_terminal', {
@@ -1223,6 +1364,9 @@ module.exports = {
     attemptRealChannel,
     outcomeForExistingDispatch,
     resolveRecipient,
+    runCleanerFanOutPlan,
+    reduceCleanerFanOutOutcomes,
+    shouldApplyPaymentProofGuard,
     rescheduleClaimedJobForRetry,
     CHANNEL_OUTCOME,
     MRI_TEMPLATE_NOT_APPROVED,

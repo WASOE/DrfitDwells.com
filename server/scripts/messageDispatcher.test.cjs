@@ -40,8 +40,10 @@ const MessageDispatch = require('../models/MessageDispatch');
 const MessageDeliveryEvent = require('../models/MessageDeliveryEvent');
 const GuestContactPreference = require('../models/GuestContactPreference');
 const ManualReviewItem = require('../models/ManualReviewItem');
+const OpsUser = require('../models/OpsUser');
 
 const dispatcher = require('../services/messaging/messageDispatcher');
+const { hashPassword } = require('../services/ops/opsPasswordService');
 const schedulerWorker = require('../services/messaging/schedulerWorker');
 
 const { ENV_FLAG } = dispatcher;
@@ -209,6 +211,41 @@ async function insertApprovedOpsTemplate() {
   });
 }
 
+async function insertCleaner(overrides = {}) {
+  const email = overrides.email || `cleaner.${new mongoose.Types.ObjectId()}@test.com`;
+  const { email: _e, ...rest } = overrides;
+  return OpsUser.create({
+    email,
+    name: 'Test Cleaner',
+    passwordHash: hashPassword('password1234'),
+    role: 'cleaner',
+    modules: ['cleaning'],
+    isActive: true,
+    phone: null,
+    propertyKinds: [],
+    ...rest
+  });
+}
+
+async function insertCleanerValleyRule(overrides = {}) {
+  return MessageAutomationRule.create({
+    ruleKey: 'cleaner_checkout_t24h_valley_dispatcher',
+    description: 'C4 valley cleaner test rule',
+    triggerType: 'time_relative_to_check_out',
+    triggerConfig: { offsetHours: -24, sofiaHour: 9, sofiaMinute: 0 },
+    propertyScope: 'valley',
+    channelStrategy: 'whatsapp_first_email_fallback',
+    templateKeyByChannel: { whatsapp: 'arrival_3d_the_valley', email: 'arrival_3d_the_valley' },
+    requiresConsent: 'transactional',
+    enabled: true,
+    mode: 'shadow',
+    audience: 'cleaner',
+    requiredBookingStatus: ['confirmed'],
+    requirePaidIfStripe: false,
+    ...overrides
+  });
+}
+
 async function createClaimedJob({ booking, rule, propertyKind, payloadSnapshotOverrides = {} } = {}) {
   const persistedPk = rule.propertyScope === 'any' ? 'any' : propertyKind;
   const job = await ScheduledMessageJob.create({
@@ -250,7 +287,8 @@ test.before(async () => {
     MessageAutomationRule.syncIndexes(),
     MessageTemplate.syncIndexes(),
     GuestContactPreference.syncIndexes(),
-    ManualReviewItem.syncIndexes()
+    ManualReviewItem.syncIndexes(),
+    OpsUser.syncIndexes()
   ]);
 });
 
@@ -275,7 +313,8 @@ test.beforeEach(async () => {
     MessageDispatch.deleteMany({}),
     MessageDeliveryEvent.deleteMany({}),
     GuestContactPreference.deleteMany({}),
-    ManualReviewItem.deleteMany({})
+    ManualReviewItem.deleteMany({}),
+    OpsUser.deleteMany({})
   ]);
 });
 
@@ -1522,48 +1561,172 @@ test('GMA mode shadow + MESSAGE_EMAIL_PROVIDER_ENABLED=1 still uses shadow email
   });
 });
 
-test('GMA audience cleaner: claimed job fails closed before resolveRecipient (C4 guard)', async () => {
-  await withDispatcherFlag('1', async () => {
-    await withEmailProviderFlag('1', async () => {
-      const cabinId = await insertCabin();
-      const booking = await insertBooking({ cabinId });
-      const rule = await MessageAutomationRule.create({
-        ruleKey: 'cleaner_checkout_t24h_cabin_dispatcher_smoke',
-        description: 'C3 dispatcher smoke — not in seed',
-        triggerType: 'time_relative_to_check_out',
-        triggerConfig: { offsetHours: -24, sofiaHour: 9, sofiaMinute: 0 },
-        propertyScope: 'cabin',
-        channelStrategy: 'email_only',
-        templateKeyByChannel: { email: 'cleaner_t24h_cabin' },
-        requiresConsent: 'transactional',
-        enabled: true,
-        mode: 'shadow',
-        audience: 'cleaner',
-        requiredBookingStatus: ['confirmed'],
-        requirePaidIfStripe: false
-      });
-      await insertApprovedGuestTemplates();
-      const job = await createClaimedJob({ booking, rule, propertyKind: 'cabin' });
-      assert.equal(job.audience, 'cleaner');
+// ---------------------------------------------------------------------------
+// Cleaner audience fan-out (C4)
+// ---------------------------------------------------------------------------
 
-      let called = false;
-      const restore = stubEmailServiceSend(async () => {
-        called = true;
-        return { success: true, method: 'sent', messageId: 'x' };
-      });
-      try {
-        const res = await dispatcher.processClaimedJob(job._id);
-        assert.equal(res.terminal, 'failed');
-        assert.equal(res.reason, 'cleaner_recipient_not_supported_yet');
-      } finally {
-        restore();
-      }
-      assert.equal(called, false);
-      assert.equal(await MessageDispatch.countDocuments({}), 0);
-      const after = await ScheduledMessageJob.findById(job._id).lean();
-      assert.equal(after.status, 'failed');
-      assert.equal(after.lastError, 'cleaner_recipient_not_supported_yet');
+test('GMA audience cleaner: C3 fail-closed guard removed — job resolves recipients', async () => {
+  await withDispatcherFlag('1', async () => {
+    const cabinId = await insertCabin();
+    const booking = await insertBooking({ cabinId });
+    const rule = await insertGuestCabinRule({
+      ruleKey: 'cleaner_cabin_email_only_smoke',
+      propertyScope: 'cabin',
+      audience: 'cleaner',
+      channelStrategy: 'email_only',
+      requirePaidIfStripe: false,
+      templateKeyByChannel: { email: 'arrival_3d_the_cabin' }
     });
+    await insertCleaner({
+      email: 'cleaner.c3-gone@test.com',
+      propertyKinds: ['cabin']
+    });
+    await insertApprovedGuestTemplates();
+    const job = await createClaimedJob({ booking, rule, propertyKind: 'cabin' });
+
+    const res = await dispatcher.processClaimedJob(job._id);
+    assert.equal(res.terminal, 'sent');
+    assert.equal(await MessageDispatch.countDocuments({}), 1);
+    const after = await ScheduledMessageJob.findById(job._id).lean();
+    assert.notEqual(after.lastError, 'cleaner_recipient_not_supported_yet');
+    assert.equal(after.status, 'sent');
+  });
+});
+
+test('cleaner fan-out: two valley cleaners with phone → two shadow whatsapp dispatches', async () => {
+  await withDispatcherFlag('1', async () => {
+    const cabinTypeId = await insertCabinType({ propertyKind: 'valley' });
+    const booking = await insertBooking({ cabinId: null, cabinTypeId });
+    const c1 = await insertCleaner({
+      email: 'valley.cleaner1@test.com',
+      phone: '+359881111111',
+      propertyKinds: ['valley']
+    });
+    const c2 = await insertCleaner({
+      email: 'valley.cleaner2@test.com',
+      phone: '+359882222222',
+      propertyKinds: ['valley']
+    });
+    const rule = await insertCleanerValleyRule();
+    await insertApprovedGuestTemplates({ propertyKind: 'valley' });
+    const job = await createClaimedJob({ booking, rule, propertyKind: 'valley' });
+
+    const res = await dispatcher.processClaimedJob(job._id);
+    assert.equal(res.terminal, 'sent');
+
+    const rows = await MessageDispatch.find({}).sort({ recipient: 1 }).lean();
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0].channel, 'whatsapp');
+    assert.equal(rows[1].channel, 'whatsapp');
+    assert.equal(rows[0].status, 'accepted');
+    assert.equal(rows[0].details.shadow, true);
+    assert.equal(rows[0].idempotencyKey, `${String(job._id)}:whatsapp:${String(c1._id)}`);
+    assert.equal(rows[1].idempotencyKey, `${String(job._id)}:whatsapp:${String(c2._id)}`);
+  });
+});
+
+test('cleaner fan-out: whatsapp_first_email_fallback routes per cleaner contact', async () => {
+  await withDispatcherFlag('1', async () => {
+    const cabinTypeId = await insertCabinType({ propertyKind: 'valley' });
+    const booking = await insertBooking({ cabinId: null, cabinTypeId });
+    const withPhone = await insertCleaner({
+      email: 'wa.cleaner@test.com',
+      phone: '+359883333333',
+      propertyKinds: ['valley']
+    });
+    const emailOnly = await insertCleaner({
+      email: 'email.cleaner@test.com',
+      phone: null,
+      propertyKinds: ['valley']
+    });
+    const noContact = await insertCleaner({
+      email: 'no.contact@test.com',
+      phone: null,
+      propertyKinds: ['valley']
+    });
+    await OpsUser.updateOne({ _id: noContact._id }, { $set: { email: 'not-an-email' } });
+
+    const rule = await insertCleanerValleyRule();
+    await insertApprovedGuestTemplates({ propertyKind: 'valley' });
+    const job = await createClaimedJob({ booking, rule, propertyKind: 'valley' });
+
+    const res = await dispatcher.processClaimedJob(job._id);
+    assert.equal(res.terminal, 'sent');
+
+    const rows = await MessageDispatch.find({}).lean();
+    assert.equal(rows.length, 3);
+
+    const wa = rows.find((r) => r.idempotencyKey === `${String(job._id)}:whatsapp:${String(withPhone._id)}`);
+    const em = rows.find((r) => r.idempotencyKey === `${String(job._id)}:email:${String(emailOnly._id)}`);
+    const skipped = rows.find((r) => r.idempotencyKey === `${String(job._id)}:whatsapp:${String(noContact._id)}`);
+
+    assert.equal(wa.channel, 'whatsapp');
+    assert.equal(wa.status, 'accepted');
+    assert.equal(em.channel, 'email');
+    assert.equal(em.status, 'accepted');
+    assert.equal(skipped.status, 'skipped_no_recipient');
+    assert.equal(skipped.error.code, 'cleaner_contact_unavailable');
+  });
+});
+
+test('cleaner fan-out: zero assigned cleaners → suppressed noop, no dispatch rows', async () => {
+  await withDispatcherFlag('1', async () => {
+    const cabinTypeId = await insertCabinType({ propertyKind: 'valley' });
+    const booking = await insertBooking({ cabinId: null, cabinTypeId });
+    const rule = await insertCleanerValleyRule();
+    await insertApprovedGuestTemplates({ propertyKind: 'valley' });
+    const job = await createClaimedJob({ booking, rule, propertyKind: 'valley' });
+
+    const res = await dispatcher.processClaimedJob(job._id);
+    assert.equal(res.terminal, 'suppressed');
+    assert.equal(await MessageDispatch.countDocuments({}), 0);
+    const after = await ScheduledMessageJob.findById(job._id).lean();
+    assert.equal(after.status, 'suppressed');
+    assert.equal(after.lastError, null);
+  });
+});
+
+test('cleaner fan-out: idempotency keys are per-recipient on retry', async () => {
+  await withDispatcherFlag('1', async () => {
+    const cabinTypeId = await insertCabinType({ propertyKind: 'valley' });
+    const booking = await insertBooking({ cabinId: null, cabinTypeId });
+    const c1 = await insertCleaner({
+      email: 'idem1@test.com',
+      phone: '+359884444444',
+      propertyKinds: ['valley']
+    });
+    const c2 = await insertCleaner({
+      email: 'idem2@test.com',
+      phone: '+359885555555',
+      propertyKinds: ['valley']
+    });
+    const rule = await insertCleanerValleyRule();
+    await insertApprovedGuestTemplates({ propertyKind: 'valley' });
+    const job = await createClaimedJob({ booking, rule, propertyKind: 'valley' });
+
+    await dispatcher.processClaimedJob(job._id);
+    assert.equal(await MessageDispatch.countDocuments({}), 2);
+
+    await ScheduledMessageJob.updateOne(
+      { _id: job._id },
+      {
+        $set: {
+          status: 'claimed',
+          claimedBy: 't',
+          claimedAt: new Date(),
+          visibilityTimeoutAt: futureDate(0.001)
+        }
+      }
+    );
+    const res = await dispatcher.processClaimedJob(job._id);
+    assert.equal(res.terminal, 'sent');
+    assert.equal(await MessageDispatch.countDocuments({}), 2);
+
+    const keys = (await MessageDispatch.find({}).lean()).map((r) => r.idempotencyKey).sort();
+    assert.deepEqual(keys, [
+      `${String(job._id)}:whatsapp:${String(c1._id)}`,
+      `${String(job._id)}:whatsapp:${String(c2._id)}`
+    ]);
   });
 });
 
