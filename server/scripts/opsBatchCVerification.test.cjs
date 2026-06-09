@@ -148,13 +148,6 @@ test('Batch C verification matrix', async (t) => {
         { date: '2026-06-07', propertyKind: 'cabin' }
       ],
       ['payment summary', 'get', '/api/ops/cleaning/payment-summary?date=2026-06-07&propertyKind=cabin'],
-      ['cleaning settings GET', 'get', '/api/ops/cleaning/settings'],
-      [
-        'cleaning settings POST',
-        'post',
-        '/api/ops/cleaning/settings',
-        { propertyKind: 'cabin', baseFee: 10 }
-      ],
       [
         'create ops user',
         'post',
@@ -203,12 +196,6 @@ test('Batch C verification matrix', async (t) => {
     });
     assert.notEqual(markPaid.status, 403);
 
-    const settings = await authed('post', '/api/ops/cleaning/settings', adminToken, {
-      propertyKind: 'cabin',
-      baseFee: 25
-    });
-    assert.equal(settings.status, 200, settings.body?.message);
-
     const reservations = await authed('get', '/api/ops/reservations', adminToken);
     assert.notEqual(reservations.status, 403);
   });
@@ -232,11 +219,6 @@ test('Batch C verification matrix', async (t) => {
     });
     assert.equal(markPaid.status, 403);
 
-    const settingsWrite = await authed('post', '/api/ops/cleaning/settings', operatorToken, {
-      propertyKind: 'cabin',
-      baseFee: 99
-    });
-    assert.equal(settingsWrite.status, 403);
   });
 
   await t.test('11 password hashing rules', async () => {

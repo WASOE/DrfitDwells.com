@@ -476,6 +476,17 @@ test('cleaning pricing Batch 1 — checkout-driven engine', async (t) => {
     assert.equal(markRes.body.errorType, 'no_policy');
   });
 
+  await t.test('removed legacy cleaning settings routes return 404', async () => {
+    const adminToken = await login('admin', 'securepassword123');
+    const getRes = await authed('get', '/api/ops/cleaning/settings', adminToken);
+    assert.equal(getRes.status, 404);
+    const postRes = await authed('post', '/api/ops/cleaning/settings', adminToken, {
+      propertyKind: 'cabin',
+      baseFee: 10
+    });
+    assert.equal(postRes.status, 404);
+  });
+
   await t.test('removed day-inputs route returns 404', async () => {
     const operatorToken = await login('operator', 'operatorpassword123');
     const res = await authed('put', '/api/ops/cleaning/day-inputs', operatorToken, {

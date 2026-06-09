@@ -2,7 +2,6 @@ const express = require('express');
 const Booking = require('../../../models/Booking');
 const CleaningRecord = require('../../../models/CleaningRecord');
 const CleaningPayment = require('../../../models/CleaningPayment');
-const CleaningSettings = require('../../../models/CleaningSettings');
 const {
   getCleaningSchedule,
   getCleaningPaymentSummary,
@@ -278,18 +277,6 @@ router.post('/payments/unmark-paid', async (req, res) => {
   }
 });
 
-/** Load the base fees for both property kinds, defaulting missing rows to 0. */
-async function loadCleaningBaseFees() {
-  const docs = await CleaningSettings.find({}).lean();
-  const fees = { cabin: 0, valley: 0 };
-  docs.forEach((d) => {
-    if (d.propertyKind === 'cabin' || d.propertyKind === 'valley') {
-      fees[d.propertyKind] = typeof d.baseFee === 'number' ? d.baseFee : 0;
-    }
-  });
-  return fees;
-}
-
 // GET /api/ops/cleaning/pricing-policy -> cabin + valley pricing DTOs
 router.get('/pricing-policy', async (req, res) => {
   try {
@@ -365,41 +352,6 @@ router.patch('/inventory-tags/cabin-type/:id', async (req, res) => {
     if (error?.status === 400 || error?.status === 404) {
       return res.status(error.status).json({ success: false, message: error.message });
     }
-    return handleRouteError(error, res);
-  }
-});
-
-// GET /api/ops/cleaning/settings -> { cabin: number, valley: number }
-router.get('/settings', async (req, res) => {
-  try {
-    requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_SETTINGS_READ });
-    const fees = await loadCleaningBaseFees();
-    return res.json({ success: true, data: fees });
-  } catch (error) {
-    return handleRouteError(error, res);
-  }
-});
-
-// POST /api/ops/cleaning/settings  body: { propertyKind: 'cabin'|'valley', baseFee: number>=0 }
-router.post('/settings', async (req, res) => {
-  try {
-    requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_SETTINGS_WRITE });
-    const kind = normalizePropertyKind(req.body?.propertyKind);
-    if (!kind) {
-      return res.status(400).json({ success: false, message: "propertyKind must be 'cabin' or 'valley'." });
-    }
-    const baseFee = Number(req.body?.baseFee);
-    if (!Number.isFinite(baseFee) || baseFee < 0) {
-      return res.status(400).json({ success: false, message: 'baseFee must be a number >= 0.' });
-    }
-    await CleaningSettings.findOneAndUpdate(
-      { propertyKind: kind },
-      { $set: { baseFee } },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
-    );
-    const fees = await loadCleaningBaseFees();
-    return res.json({ success: true, data: fees });
-  } catch (error) {
     return handleRouteError(error, res);
   }
 });
