@@ -2,6 +2,11 @@ const mongoose = require('mongoose');
 const OpsUser = require('../../models/OpsUser');
 const { hashPassword, verifyPassword } = require('./opsPasswordService');
 const { normalizeModulesForRole } = require('./opsModuleRegistry');
+const {
+  resolveOpsUserContactInput,
+  applyResolvedContactFields,
+  propertyKindsForRole
+} = require('../../utils/opsUserContactFields');
 
 function normalizeEmail(email) {
   return String(email || '')
@@ -21,6 +26,9 @@ function toPublicOpsUser(doc) {
     role,
     modules: normalizeModulesForRole(role, doc.modules),
     isActive: doc.isActive !== false,
+    phone: doc.phone ?? null,
+    locale: doc.locale ?? null,
+    propertyKinds: Array.isArray(doc.propertyKinds) ? [...doc.propertyKinds] : [],
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt
   };
@@ -70,7 +78,17 @@ async function listOpsUsers() {
   return users.map(toPublicOpsUser);
 }
 
-async function createOpsUser({ email, name, password, role, modules, isActive = true }) {
+async function createOpsUser({
+  email,
+  name,
+  password,
+  role,
+  modules,
+  isActive = true,
+  phone,
+  locale,
+  propertyKinds
+}) {
   const normalizedEmail = normalizeEmail(email);
   const normalizedName = String(name || '').trim();
   const normalizedRole = String(role || '').toLowerCase();
@@ -93,16 +111,26 @@ async function createOpsUser({ email, name, password, role, modules, isActive = 
 
   const resolvedModules = normalizeModulesForRole(normalizedRole, modules);
   const passwordHash = hashPassword(password);
+  const resolvedContact = resolveOpsUserContactInput({
+    role: normalizedRole,
+    phone,
+    locale,
+    propertyKinds
+  });
 
   try {
-    const created = await OpsUser.create({
+    const payload = {
       email: normalizedEmail,
       name: normalizedName,
       passwordHash,
       role: normalizedRole,
       modules: resolvedModules,
-      isActive: isActive !== false
-    });
+      isActive: isActive !== false,
+      propertyKinds: propertyKindsForRole(normalizedRole, [])
+    };
+    applyResolvedContactFields(payload, resolvedContact);
+
+    const created = await OpsUser.create(payload);
 
     return toPublicOpsUser(created);
   } catch (error) {
@@ -115,7 +143,7 @@ async function createOpsUser({ email, name, password, role, modules, isActive = 
   }
 }
 
-async function updateOpsUser(id, { name, role, modules, isActive }) {
+async function updateOpsUser(id, { name, role, modules, isActive, phone, locale, propertyKinds }) {
   const user = await OpsUser.findById(id);
   if (!user) {
     const err = new Error('OPS user not found.');
@@ -158,6 +186,18 @@ async function updateOpsUser(id, { name, role, modules, isActive }) {
 
   if (bumpToken) {
     user.tokenVersion = (user.tokenVersion || 1) + 1;
+  }
+
+  const effectiveRole = user.role;
+  const resolvedContact = resolveOpsUserContactInput({
+    role: effectiveRole,
+    phone,
+    locale,
+    propertyKinds
+  });
+  applyResolvedContactFields(user, resolvedContact);
+  if (effectiveRole !== 'cleaner') {
+    user.propertyKinds = [];
   }
 
   await user.save();

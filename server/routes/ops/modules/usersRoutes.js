@@ -60,7 +60,10 @@ router.post(
     body('password').isString().isLength({ min: 8 }).withMessage('Password must be at least 8 characters.'),
     body('role').isIn(OPS_USER_ROLES).withMessage(`Role must be one of: ${OPS_USER_ROLES.join(', ')}`),
     body('modules').optional().isArray(),
-    body('isActive').optional().isBoolean()
+    body('isActive').optional().isBoolean(),
+    body('phone').optional({ values: 'null' }).isString(),
+    body('locale').optional({ values: 'null' }).isString(),
+    body('propertyKinds').optional().isArray()
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -75,7 +78,10 @@ router.post(
         password: req.body.password,
         role: req.body.role,
         modules: req.body.modules,
-        isActive: req.body.isActive
+        isActive: req.body.isActive,
+        phone: req.body.phone,
+        locale: req.body.locale,
+        propertyKinds: req.body.propertyKinds
       });
 
       return res.status(201).json({ success: true, data });
@@ -93,7 +99,10 @@ router.patch(
     body('name').optional().isString().trim().isLength({ min: 1, max: 120 }).withMessage('Name must be 1–120 characters.'),
     body('role').optional().isIn(OPS_USER_ROLES).withMessage(`Role must be one of: ${OPS_USER_ROLES.join(', ')}`),
     body('modules').optional().isArray(),
-    body('isActive').optional().isBoolean()
+    body('isActive').optional().isBoolean(),
+    body('phone').optional({ values: 'null' }).isString(),
+    body('locale').optional({ values: 'null' }).isString(),
+    body('propertyKinds').optional().isArray()
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -101,13 +110,29 @@ router.patch(
       return res.status(400).json({ success: false, message: 'Validation failed', errors: errors.array() });
     }
 
-    const { name, role, modules, isActive } = req.body || {};
-    if (name === undefined && role === undefined && modules === undefined && isActive === undefined) {
+    const { name, role, modules, isActive, phone, locale, propertyKinds } = req.body || {};
+    if (
+      name === undefined &&
+      role === undefined &&
+      modules === undefined &&
+      isActive === undefined &&
+      phone === undefined &&
+      locale === undefined &&
+      propertyKinds === undefined
+    ) {
       return res.status(400).json({ success: false, message: 'At least one field is required.' });
     }
 
     try {
-      const data = await updateOpsUser(req.params.id, { name, role, modules, isActive });
+      const data = await updateOpsUser(req.params.id, {
+        name,
+        role,
+        modules,
+        isActive,
+        phone,
+        locale,
+        propertyKinds
+      });
       return res.json({ success: true, data });
     } catch (err) {
       return handleUserRouteErrors(err, res);

@@ -83,11 +83,98 @@ function propertyKindsForRole(role, propertyKinds) {
   return norm.ok ? norm.value : norm.value;
 }
 
+function contactValidationError(message) {
+  const err = new Error(message);
+  err.status = 400;
+  return err;
+}
+
+function hasCleanerContactInput({ phone, locale, propertyKinds }) {
+  if (phone !== undefined && phone != null && String(phone).trim() !== '') {
+    return true;
+  }
+  if (locale !== undefined && locale != null && String(locale).trim() !== '') {
+    return true;
+  }
+  if (propertyKinds !== undefined && Array.isArray(propertyKinds) && propertyKinds.length > 0) {
+    return true;
+  }
+  return phone !== undefined || locale !== undefined || propertyKinds !== undefined;
+}
+
+/**
+ * Normalize cleaner contact fields for service-layer writes (create/update via save()).
+ * Rejects invalid values and non-cleaner attempts to set contact/assignment fields.
+ * Returns null when no contact keys were provided; otherwise partial normalized fields.
+ */
+function resolveOpsUserContactInput({ role, phone, locale, propertyKinds }) {
+  const normalizedRole = String(role || '').toLowerCase();
+  const isCleaner = normalizedRole === 'cleaner';
+
+  if (!hasCleanerContactInput({ phone, locale, propertyKinds })) {
+    return null;
+  }
+
+  if (!isCleaner) {
+    const attempted =
+      (phone !== undefined && phone != null && String(phone).trim() !== '') ||
+      (locale !== undefined && locale != null && String(locale).trim() !== '') ||
+      (propertyKinds !== undefined && Array.isArray(propertyKinds) && propertyKinds.length > 0);
+    if (attempted) {
+      throw contactValidationError(
+        'Phone, locale, and propertyKinds are only configurable for cleaner users.'
+      );
+    }
+    return { phone: null, locale: null, propertyKinds: [] };
+  }
+
+  const resolved = {};
+  if (phone !== undefined) {
+    const norm = normalizeOpsUserPhone(phone);
+    if (!norm.ok) {
+      throw contactValidationError(norm.message);
+    }
+    resolved.phone = norm.value;
+  }
+  if (locale !== undefined) {
+    const norm = normalizeOpsUserLocale(locale);
+    if (!norm.ok) {
+      throw contactValidationError(norm.message);
+    }
+    resolved.locale = norm.value;
+  }
+  if (propertyKinds !== undefined) {
+    const norm = normalizePropertyKinds(propertyKinds);
+    if (!norm.ok) {
+      throw contactValidationError(norm.message);
+    }
+    resolved.propertyKinds = norm.value;
+  }
+  return resolved;
+}
+
+function applyResolvedContactFields(doc, resolved) {
+  if (!resolved) {
+    return;
+  }
+  if (Object.prototype.hasOwnProperty.call(resolved, 'phone')) {
+    doc.phone = resolved.phone;
+  }
+  if (Object.prototype.hasOwnProperty.call(resolved, 'locale')) {
+    doc.locale = resolved.locale;
+  }
+  if (Object.prototype.hasOwnProperty.call(resolved, 'propertyKinds')) {
+    doc.propertyKinds = resolved.propertyKinds;
+  }
+}
+
 module.exports = {
   OPS_USER_LOCALES,
   OPS_USER_PROPERTY_KINDS,
   normalizeOpsUserPhone,
   normalizeOpsUserLocale,
   normalizePropertyKinds,
-  propertyKindsForRole
+  propertyKindsForRole,
+  resolveOpsUserContactInput,
+  applyResolvedContactFields
 };

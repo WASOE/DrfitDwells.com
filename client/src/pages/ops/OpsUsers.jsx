@@ -20,6 +20,19 @@ const OPERATOR_MODULE_OPTIONS = [
 
 const DEFAULT_OPERATOR_MODULES = OPERATOR_MODULE_OPTIONS.map((m) => m.key);
 
+const PROPERTY_KIND_OPTIONS = [
+  { value: 'cabin', label: 'Cabin' },
+  { value: 'valley', label: 'Valley' }
+];
+
+const LOCALE_OPTIONS = [
+  { value: '', label: 'Not set' },
+  { value: 'en', label: 'English' },
+  { value: 'bg', label: 'Bulgarian' }
+];
+
+const E164_HINT = /^\+[1-9]\d{6,14}$/;
+
 const emptyForm = {
   email: '',
   name: '',
@@ -27,8 +40,36 @@ const emptyForm = {
   resetPassword: '',
   role: 'operator',
   modules: [...DEFAULT_OPERATOR_MODULES],
-  isActive: true
+  isActive: true,
+  phone: '',
+  locale: '',
+  propertyKinds: []
 };
+
+function cleanerContactPayload(form) {
+  if (form.role !== 'cleaner') {
+    return {};
+  }
+  return {
+    phone: form.phone.trim() || null,
+    locale: form.locale || null,
+    propertyKinds: [...form.propertyKinds]
+  };
+}
+
+function phoneFormatHint(phone) {
+  const trimmed = String(phone || '').trim();
+  if (!trimmed) {
+    return { tone: 'muted', text: 'International E.164 format, e.g. +359881234567' };
+  }
+  if (trimmed.startsWith('+') && E164_HINT.test(trimmed)) {
+    return { tone: 'ok', text: 'Looks like valid E.164.' };
+  }
+  return {
+    tone: 'warn',
+    text: 'Use international E.164 (+country code). Local numbers are normalized on save when possible.'
+  };
+}
 
 function modulesSummary(role, modules) {
   if (role === 'admin') return 'All modules';
@@ -89,7 +130,10 @@ export default function OpsUsers() {
         row.role === 'operator' && Array.isArray(row.modules) && row.modules.length > 0
           ? [...row.modules]
           : [...DEFAULT_OPERATOR_MODULES],
-      isActive: row.isActive !== false
+      isActive: row.isActive !== false,
+      phone: row.phone || '',
+      locale: row.locale || '',
+      propertyKinds: Array.isArray(row.propertyKinds) ? [...row.propertyKinds] : []
     });
     setBanner({ type: '', message: '' });
     setDrawerOpen(true);
@@ -130,6 +174,21 @@ export default function OpsUsers() {
     return 'Select which OPS modules this operator can access.';
   }, [form.role]);
 
+  const phoneHint = useMemo(() => phoneFormatHint(form.phone), [form.phone]);
+
+  function togglePropertyKind(value) {
+    setForm((prev) => {
+      if (prev.role !== 'cleaner') return prev;
+      const set = new Set(prev.propertyKinds);
+      if (set.has(value)) {
+        set.delete(value);
+      } else {
+        set.add(value);
+      }
+      return { ...prev, propertyKinds: [...set] };
+    });
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setSaving(true);
@@ -147,7 +206,8 @@ export default function OpsUsers() {
           name,
           role: form.role,
           modules: form.role === 'operator' ? form.modules : undefined,
-          isActive: form.isActive
+          isActive: form.isActive,
+          ...cleanerContactPayload(form)
         });
         if (form.resetPassword.trim()) {
           if (form.resetPassword.length < 8) {
@@ -173,7 +233,8 @@ export default function OpsUsers() {
           password: form.password,
           role: form.role,
           modules: form.role === 'operator' ? form.modules : undefined,
-          isActive: form.isActive
+          isActive: form.isActive,
+          ...cleanerContactPayload(form)
         });
         setBanner({ type: 'success', message: 'User created.' });
       }
@@ -361,6 +422,67 @@ export default function OpsUsers() {
                   ))}
                 </select>
               </div>
+              {form.role === 'cleaner' ? (
+                <div className="space-y-4 rounded-lg border border-emerald-100 bg-emerald-50/40 p-4">
+                  <p className="text-xs font-medium text-emerald-900">Cleaner contact &amp; assignment</p>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Phone (WhatsApp)</label>
+                    <input
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                      value={form.phone}
+                      onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                      placeholder="+359881234567"
+                    />
+                    <p
+                      className={`mt-1 text-xs ${
+                        phoneHint.tone === 'ok'
+                          ? 'text-emerald-700'
+                          : phoneHint.tone === 'warn'
+                            ? 'text-amber-700'
+                            : 'text-gray-500'
+                      }`}
+                    >
+                      {phoneHint.text}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Notification locale</label>
+                    <select
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                      value={form.locale}
+                      onChange={(e) => setForm((f) => ({ ...f, locale: e.target.value }))}
+                    >
+                      {LOCALE_OPTIONS.map((opt) => (
+                        <option key={opt.value || 'none'} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-gray-500">Optional. Used for cleaner notifications in later batches.</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-gray-600 mb-2">Property kinds</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {PROPERTY_KIND_OPTIONS.map(({ value, label }) => (
+                        <label key={value} className="flex items-center gap-2 text-sm text-gray-800">
+                          <input
+                            type="checkbox"
+                            checked={form.propertyKinds.includes(value)}
+                            onChange={() => togglePropertyKind(value)}
+                          />
+                          {label}
+                        </label>
+                      ))}
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Assign which property kinds this cleaner receives notifications for.
+                    </p>
+                  </div>
+                </div>
+              ) : null}
               <div>
                 <p className="text-xs font-medium text-gray-600 mb-2">Modules</p>
                 <p className="text-xs text-gray-500 mb-2">{moduleHint}</p>
