@@ -23,10 +23,15 @@ const Build = () => {
   const configurator = useBuildConfigurator();
 
   const handleScheduleConsultation = useCallback(() => {
-    const popup = window.open(BUILD_CONSULTATION_URL, '_blank', 'noopener,noreferrer');
-    if (!popup) {
-      window.location.href = BUILD_CONSULTATION_URL;
-    }
+    // Use a transient <a> — window.open with noopener returns null even on success,
+    // which made the old popup-blocked fallback navigate /build away too.
+    const link = document.createElement('a');
+    link.href = BUILD_CONSULTATION_URL;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   }, []);
 
   const handlePdfDownload = useCallback(async () => {
