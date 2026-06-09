@@ -135,12 +135,6 @@ async function previewGmaMessageForReservation({ reservationId, ruleKey, channel
   if (!mongoose.isValidObjectId(reservationId)) {
     throw new MessageTemplatePreviewError('Invalid reservation id', { status: 400 });
   }
-  if (!PREVIEW_RULE_KEY_SET.has(ruleKey)) {
-    throw new MessageTemplatePreviewError(`Unknown or unsupported ruleKey: ${ruleKey}`, {
-      status: 400,
-      errorType: 'validation'
-    });
-  }
   if (channel !== 'email' && channel !== 'whatsapp') {
     throw new MessageTemplatePreviewError('channel must be email or whatsapp', {
       status: 400,
@@ -158,6 +152,16 @@ async function previewGmaMessageForReservation({ reservationId, ruleKey, channel
     throw new MessageTemplatePreviewError(`Rule not found: ${ruleKey}`, {
       status: 404,
       errorType: 'not_found'
+    });
+  }
+  // C5 temporary: cleaner rules are not seeded until C6, so any DB row with
+  // audience:'cleaner' may be previewed (compose-only; no send path here).
+  // C6: add seeded cleaner rule keys to PREVIEW_RULE_KEYS and delete this
+  // audience bypass so cleaner preview is allowlisted like guest.
+  if (rule.audience !== 'cleaner' && !PREVIEW_RULE_KEY_SET.has(ruleKey)) {
+    throw new MessageTemplatePreviewError(`Unknown or unsupported ruleKey: ${ruleKey}`, {
+      status: 400,
+      errorType: 'validation'
     });
   }
 
@@ -206,7 +210,7 @@ async function previewGmaMessageForReservation({ reservationId, ruleKey, channel
     propertyKind: templatePropertyKind
   });
 
-  const varResult = resolveVariables({ booking, stayTarget });
+  const varResult = await resolveVariables({ booking, stayTarget, audience: rule.audience });
   if (!varResult.ok) {
     throw new MessageTemplatePreviewError('Required template variables are missing', {
       status: 422,

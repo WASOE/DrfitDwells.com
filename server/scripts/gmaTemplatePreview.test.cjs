@@ -16,6 +16,7 @@ const MessageDeliveryEvent = require('../models/MessageDeliveryEvent');
 const ManualReviewItem = require('../models/ManualReviewItem');
 const {
   GUEST_TEMPLATE_VARIABLE_SCHEMA,
+  CLEANER_VARIABLE_SCHEMA,
   CABIN_WHATSAPP_BODY,
   whatsappNotes
 } = require('../data/messageTemplates/gmaApprovedCopy');
@@ -167,6 +168,57 @@ test('renderTemplateString matches dispatcher substitution semantics', () => {
   assert.equal(renderTemplateString(tpl, vars), dispatcherRender(tpl, vars));
 });
 
+test('preview uses cleaner variable bag when rule audience is cleaner', async () => {
+  await MessageAutomationRule.create({
+    ruleKey: 'cleaner_checkout_t24h_cabin',
+    description: 'C5 preview smoke',
+    triggerType: 'time_relative_to_check_out',
+    triggerConfig: { offsetHours: -24, sofiaHour: 9, sofiaMinute: 0 },
+    propertyScope: 'cabin',
+    channelStrategy: 'email_only',
+    templateKeyByChannel: { email: 'cleaner_t24h_cabin' },
+    requiresConsent: 'transactional',
+    enabled: false,
+    mode: 'shadow',
+    audience: 'cleaner',
+    requiredBookingStatus: ['confirmed'],
+    requirePaidIfStripe: false
+  });
+
+  await MessageTemplate.create({
+    key: 'cleaner_t24h_cabin',
+    version: 1,
+    channel: 'email',
+    locale: 'en',
+    propertyKind: 'cabin',
+    status: 'draft',
+    emailSubject: 'Clean {{propertyName}} checkout {{checkOutDate}}',
+    emailBodyMarkup:
+      '<p>{{propertyName}} · {{unitLabel}} · checkout {{checkOutDate}} at {{checkoutTime}}. Notes: {{cleaningNotes}}. Meet: {{meetingPointLabel}}. Access: {{accessNote}}</p>',
+    variableSchema: CLEANER_VARIABLE_SCHEMA
+  });
+
+  const cabin = await createCabinWithArrivalMetadata({
+    arrivalWindowDefault: 'From 15:00. Park and walk to cabin.'
+  });
+  const booking = await createConfirmedBooking(cabin._id);
+  await Booking.updateOne({ _id: booking._id }, { cleaningNotes: 'Strip linens' });
+
+  const data = await previewGmaMessageForReservation({
+    reservationId: String(booking._id),
+    ruleKey: 'cleaner_checkout_t24h_cabin',
+    channel: 'email'
+  });
+
+  assert.equal(data.variables.guestFirstName, undefined);
+  assert.equal(data.variables.propertyName, 'The Cabin');
+  assert.equal(data.variables.cleaningNotes, 'Strip linens');
+  assert.equal(data.variables.checkoutTime, '11:00');
+  assert.match(data.email.html, /Strip linens/);
+  assert.match(data.email.html, /Park here/);
+  assert.equal(data.email.html.includes('Jose'), false);
+});
+
 test('renders draft email template for a booking', async () => {
   await seedCabinArrivalRuleAndTemplates();
   const cabin = await createCabinWithArrivalMetadata();
@@ -260,6 +312,36 @@ test('rejects unknown ruleKey', async () => {
       previewGmaMessageForReservation({
         reservationId: String(booking._id),
         ruleKey: 'not_a_real_rule',
+        channel: 'email'
+      }),
+    (err) => {
+      assert.ok(err instanceof MessageTemplatePreviewError);
+      assert.equal(err.status, 404);
+      return true;
+    }
+  );
+});
+
+test('rejects guest ruleKey not on preview allowlist', async () => {
+  await seedCabinArrivalRuleAndTemplates();
+  const cabin = await createCabinWithArrivalMetadata();
+  const booking = await createConfirmedBooking(cabin._id);
+  await MessageAutomationRule.create({
+    ruleKey: 'guest_rule_not_allowlisted',
+    triggerType: 'time_relative_to_check_in',
+    triggerConfig: { offsetHours: -72 },
+    propertyScope: 'cabin',
+    channelStrategy: 'email_only',
+    templateKeyByChannel: { email: 'arrival_3d_the_cabin' },
+    audience: 'guest',
+    requiresConsent: 'transactional'
+  });
+
+  await assert.rejects(
+    () =>
+      previewGmaMessageForReservation({
+        reservationId: String(booking._id),
+        ruleKey: 'guest_rule_not_allowlisted',
         channel: 'email'
       }),
     (err) => {

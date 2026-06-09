@@ -40,6 +40,7 @@
     "test:scheduler-worker": "node --test scripts/schedulerWorker.test.cjs",
     "test:message-orchestrator": "node --test scripts/messageOrchestrator.test.cjs",
     "test:message-dispatcher": "node --test scripts/messageDispatcher.test.cjs",
+    "test:message-variable-resolver": "node --test scripts/messageVariableResolver.test.cjs",
     "test:email-provider-adapter": "node --test scripts/realEmailProvider.test.cjs",
     "test:email-webhook-dispatch-routing": "node --test scripts/emailWebhookDispatchRouting.test.cjs",
     "test:ops-messaging-read-model": "node --test scripts/opsGuestMessageAutomationReadModel.test.cjs",

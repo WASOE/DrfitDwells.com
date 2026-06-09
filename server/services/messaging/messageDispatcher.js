@@ -484,7 +484,7 @@ async function attemptChannel({
   const approvedTemplate = lookup.approved;
 
   // Variable resolution.
-  const varResult = resolveVariables({ booking, stayTarget });
+  const varResult = await resolveVariables({ booking, stayTarget, audience: rule.audience });
   if (!varResult.ok) {
     const row = await writeDispatchRow({
       job, rule, channel, propertyKind,

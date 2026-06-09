@@ -379,6 +379,32 @@ const OPS_VARIABLE_SCHEMA = Object.freeze({
   additionalProperties: false
 });
 
+/** Cleaning notifications (C5) — operational only; no guest PII. */
+const CLEANER_VARIABLE_SCHEMA = Object.freeze({
+  type: 'object',
+  required: [
+    'propertyName',
+    'checkOutDate',
+    'checkoutTime',
+    'meetingPointLabel',
+    'googleMapsUrl'
+  ],
+  properties: {
+    propertyName: { type: 'string' },
+    unitLabel: { type: 'string' },
+    checkOutDate: { type: 'string' },
+    checkInDate: { type: 'string' },
+    checkoutTime: { type: 'string' },
+    cleaningNotes: { type: 'string' },
+    meetingPointLabel: { type: 'string' },
+    googleMapsUrl: { type: 'string' },
+    meetingPointWhat3words: { type: 'string' },
+    guideUrl: { type: 'string' },
+    accessNote: { type: 'string' }
+  },
+  additionalProperties: false
+});
+
 /** Desired copy slices keyed for maintenance script identity matching. */
 const GMA_TEMPLATE_COPY_TARGETS = Object.freeze([
   {
@@ -484,6 +510,7 @@ const GMA_TEMPLATE_COPY_TARGETS = Object.freeze([
 module.exports = {
   COPY_SOURCE_NOTE,
   OPS_VARIABLE_SCHEMA,
+  CLEANER_VARIABLE_SCHEMA,
   GUEST_TEMPLATE_VARIABLE_SCHEMA,
   CABIN_EMAIL_SUBJECT,
   CABIN_EMAIL_BODY,
