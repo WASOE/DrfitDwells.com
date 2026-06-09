@@ -115,6 +115,7 @@ async function createCabin(overrides = {}) {
     minNights: 1,
     imageUrl: 'https://example.com/cabin.jpg',
     propertyKind: 'cabin',
+    cleaningTags: ['the-cabin'],
     ...overrides
   });
 }
@@ -790,7 +791,7 @@ test('cleaning pricing Batch 1 — checkout-driven engine', async (t) => {
     };
     const daySheet = { inputs: { laundryLoads: 99 }, perCheckoutInputs: [] };
     const calc = calculatePolicyLineItems(
-      [{ bookingId: 'b1', cabinName: 'Cabin', propertyKind: 'cabin', cleaningTags: [] }],
+      [{ bookingId: 'b1', cabinName: 'Cabin', propertyKind: 'cabin', cleaningTags: ['the-cabin'] }],
       policy,
       daySheet
     );

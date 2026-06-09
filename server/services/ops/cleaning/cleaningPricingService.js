@@ -136,8 +136,14 @@ function ruleAmountType(rule) {
   return resolveAmountType(rule?.amountType);
 }
 
-function applyDailyFixedRule(rule, checkouts, lineItems, propertyKind) {
-  if (rule.requiresCheckouts && checkouts.length === 0) return;
+function applyDailyFixedRule(rule, checkouts, lineItems, propertyKind, taggedBookingIds) {
+  const matching = selectorHasTargeting(rule.selector)
+    ? checkouts.filter((checkout) =>
+        checkoutMatchesSelector(factsFromCheckout(checkout), rule.selector)
+      )
+    : checkouts;
+
+  if (rule.requiresCheckouts && matching.length === 0) return;
 
   const amount = typeof rule.amountEUR === 'number' ? rule.amountEUR : 0;
   if (amount <= 0) return;
@@ -155,6 +161,13 @@ function applyDailyFixedRule(rule, checkouts, lineItems, propertyKind) {
       source: 'policy'
     })
   );
+
+  if (selectorHasTargeting(rule.selector)) {
+    for (const checkout of matching) {
+      const facts = factsFromCheckout(checkout);
+      if (facts.bookingId) taggedBookingIds.add(facts.bookingId);
+    }
+  }
 }
 
 function applyPerEventFixedRule(rule, checkouts, lineItems, propertyKind, taggedBookingIds) {
@@ -258,7 +271,7 @@ function priceDay(checkouts, policy) {
   for (const rule of rules) {
     switch (rule.type) {
       case 'daily_fixed':
-        applyDailyFixedRule(rule, checkouts, lineItems, propertyKind);
+        applyDailyFixedRule(rule, checkouts, lineItems, propertyKind, taggedBookingIds);
         break;
       case 'per_event_fixed':
         applyPerEventFixedRule(rule, checkouts, lineItems, propertyKind, taggedBookingIds);

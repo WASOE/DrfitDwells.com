@@ -19,15 +19,18 @@ const CabinType = require('../models/CabinType');
 const { seedPolicies } = require('./cleaningPricingPolicySeed.cjs');
 const { sanitizeCleaningTags } = require('../data/cleaning/cleaningTagVocabulary');
 
-const VALLEY_TAG_RULES = [
-  { kind: 'cabin_type', match: { slug: 'a-frame' }, tags: ['a-frame'] },
-  { kind: 'cabin_type', match: { name: /^a-?frame$/i }, tags: ['a-frame'] },
-  { kind: 'cabin', match: { name: /^stone house$/i }, tags: ['stone-house'] },
-  { kind: 'cabin', match: { name: /^lux cabin$/i }, tags: ['lux-cabin'] }
+const INVENTORY_TAG_RULES = [
+  { kind: 'cabin', match: { name: /^the cabin$/i }, tags: ['the-cabin'], propertyKind: 'cabin' },
+  { kind: 'cabin', match: { propertyKind: 'cabin' }, tags: ['the-cabin'], propertyKind: 'cabin' },
+  { kind: 'cabin_type', match: { slug: 'a-frame' }, tags: ['a-frame'], propertyKind: 'valley' },
+  { kind: 'cabin_type', match: { name: /^a-?frame$/i }, tags: ['a-frame'], propertyKind: 'valley' },
+  { kind: 'cabin', match: { name: /^stone house$/i }, tags: ['stone-house'], propertyKind: 'valley' },
+  { kind: 'cabin', match: { name: /^lux cabin$/i }, tags: ['lux-cabin'], propertyKind: 'valley' }
 ];
 
 function matches(doc, rule) {
   if (rule.match.slug && doc.slug !== rule.match.slug) return false;
+  if (rule.match.propertyKind && doc.propertyKind !== rule.match.propertyKind) return false;
   if (rule.match.name) {
     const name = String(doc.name || '');
     if (rule.match.name instanceof RegExp) return rule.match.name.test(name);
@@ -36,10 +39,10 @@ function matches(doc, rule) {
   return true;
 }
 
-async function tagValleyInventory({ dryRun = false } = {}) {
+async function tagCleaningInventory({ dryRun = false } = {}) {
   const summary = { updated: [], skipped: [], unmatched: [] };
 
-  for (const rule of VALLEY_TAG_RULES) {
+  for (const rule of INVENTORY_TAG_RULES) {
     if (rule.kind === 'cabin_type') {
       const types = await CabinType.find({ isActive: { $ne: false } }).lean();
       for (const row of types) {
@@ -53,7 +56,10 @@ async function tagValleyInventory({ dryRun = false } = {}) {
           continue;
         }
         if (!dryRun) {
-          await CabinType.updateOne({ _id: row._id }, { $set: { cleaningTags: tags, propertyKind: 'valley' } });
+          await CabinType.updateOne(
+            { _id: row._id },
+            { $set: { cleaningTags: tags, propertyKind: rule.propertyKind || 'valley' } }
+          );
         }
         summary.updated.push({ kind: 'cabin_type', id: String(row._id), name: row.name, tags, was: current });
       }
@@ -70,7 +76,10 @@ async function tagValleyInventory({ dryRun = false } = {}) {
           continue;
         }
         if (!dryRun) {
-          await Cabin.updateOne({ _id: row._id }, { $set: { cleaningTags: tags, propertyKind: 'valley' } });
+          await Cabin.updateOne(
+            { _id: row._id },
+            { $set: { cleaningTags: tags, propertyKind: rule.propertyKind || row.propertyKind || 'valley' } }
+          );
         }
         summary.updated.push({ kind: 'cabin', id: String(row._id), name: row.name, tags, was: current });
       }
@@ -83,8 +92,11 @@ async function tagValleyInventory({ dryRun = false } = {}) {
   const valleyCabins = await Cabin.find({ propertyKind: 'valley' })
     .select('name cleaningTags propertyKind')
     .lean();
+  const cabinInventory = await Cabin.find({ propertyKind: 'cabin' })
+    .select('name cleaningTags propertyKind')
+    .lean();
 
-  for (const row of [...valleyTypes, ...valleyCabins]) {
+  for (const row of [...valleyTypes, ...valleyCabins, ...cabinInventory]) {
     const tags = Array.isArray(row.cleaningTags) ? row.cleaningTags : [];
     if (!tags.length) {
       summary.unmatched.push({
@@ -127,8 +139,8 @@ async function main() {
     }
 
     if (!skipTags) {
-      console.log('--- Tagging Valley inventory ---');
-      const result = await tagValleyInventory({ dryRun });
+      console.log('--- Tagging cleaning inventory ---');
+      const result = await tagCleaningInventory({ dryRun });
       console.log(JSON.stringify(result, null, 2));
     }
   } finally {
@@ -136,7 +148,7 @@ async function main() {
   }
 }
 
-module.exports = { tagValleyInventory, VALLEY_TAG_RULES };
+module.exports = { tagCleaningInventory, INVENTORY_TAG_RULES };
 
 if (require.main === module) {
   main().catch((err) => {

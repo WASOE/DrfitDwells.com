@@ -20,6 +20,7 @@ import {
 import { useOpsSession } from '../../../context/OpsSessionContext';
 import OpsCleaningPaymentPanel from './OpsCleaningPaymentPanel';
 import OpsCleaningPayoutBreakdown from './OpsCleaningPayoutBreakdown';
+import OpsCleaningDailyFeeCard from './OpsCleaningDailyFeeCard';
 
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const MONTHS = [
@@ -211,8 +212,9 @@ export default function OpsCleaningCalendar() {
     }
   }, [selectedDate, selectedPropertyKind, canReadPayment]);
 
-  const loadPayout = useCallback(async () => {
-    if (!canReadPayout || canReadPayment) {
+  const loadGlobalPayout = useCallback(async () => {
+    const wantsGlobal = (canReadPayout || canReadPayment) && !selectedPropertyKind;
+    if (!wantsGlobal) {
       setPayoutSummary(null);
       setPayoutError('');
       setPayoutLoading(false);
@@ -229,13 +231,13 @@ export default function OpsCleaningCalendar() {
     } finally {
       setPayoutLoading(false);
     }
-  }, [selectedDate, canReadPayout, canReadPayment]);
+  }, [selectedDate, selectedPropertyKind, canReadPayout, canReadPayment]);
 
   useEffect(() => {
     loadDay();
     loadPayment();
-    loadPayout();
-  }, [loadDay, loadPayment, loadPayout]);
+    loadGlobalPayout();
+  }, [loadDay, loadPayment, loadGlobalPayout]);
 
   // Invalidate the cached dots for the current month so they re-fetch.
   const invalidateMonth = useCallback(() => {
@@ -267,7 +269,7 @@ export default function OpsCleaningCalendar() {
         await markCleaned(ev.bookingId, ev.cleaningDate);
       }
       invalidateMonth();
-      await Promise.all([loadDay(), loadPayment()]);
+      await Promise.all([loadDay(), loadPayment(), loadGlobalPayout()]);
     } catch (err) {
       setToggleCleanedError(
         err?.response?.data?.message || 'Failed to update cleaning status. Please try again.'
@@ -310,7 +312,13 @@ export default function OpsCleaningCalendar() {
   const pendingAmount = Math.max(0, totalAmount - paidAmount);
   const isPaid = paymentSummary?.status === 'paid';
 
-  const showCleanerPayout = canReadPayout && !canReadPayment;
+  const showGlobalPayout = (canReadPayout || canReadPayment) && !selectedPropertyKind;
+  const globalTotal = payoutSummary?.totalAmount ?? 0;
+  const globalCheckoutCount = payoutSummary?.checkoutCount ?? checkouts.length;
+  const globalPaidAmount = payoutSummary?.paidAmount ?? 0;
+  const globalNoPolicyZones = payoutSummary?.noPolicyZones || [];
+  const showCleanerPayout = showGlobalPayout && !canReadPayment;
+  const showOperatorGlobalPayout = showGlobalPayout && canReadPayment;
 
   return (
     <div className="w-full max-w-lg mx-auto pb-24 md:pb-10 lg:max-w-none lg:mx-0 lg:pb-8">
@@ -469,17 +477,29 @@ export default function OpsCleaningCalendar() {
         ) : null}
       </div>
 
-      {/* Payment summary card — mobile/tablet only; unchanged below lg */}
-      {canReadPayment ? (
+      {/* Global daily fee — mobile/tablet when All locations (original design: big total on day select) */}
+      {showOperatorGlobalPayout ? (
+      <div className="mt-5 lg:hidden">
+        <OpsCleaningDailyFeeCard
+          selectedDate={selectedDate}
+          totalAmount={globalTotal}
+          checkoutCount={globalCheckoutCount}
+          paidAmount={globalPaidAmount}
+          loading={payoutLoading}
+          error={payoutError}
+          noPolicyZones={globalNoPolicyZones}
+          hasCheckouts={checkouts.length > 0}
+          formatLongDate={formatLongDate}
+          showPaidPending
+          testId="global-daily-fee-card"
+        />
+      </div>
+      ) : null}
+
+      {/* Zone payment summary — mobile/tablet only; unchanged below lg */}
+      {canReadPayment && selectedPropertyKind ? (
       <div className="mt-5 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm lg:hidden">
-        {!selectedPropertyKind ? (
-          <div className="flex items-start gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-600">
-              <Coins className="h-4 w-4" />
-            </div>
-            <p className="text-sm text-gray-500">Select Cabin or Valley to view payment summary.</p>
-          </div>
-        ) : paymentError ? (
+        {paymentError ? (
           <p className="text-sm text-red-600">{paymentError}</p>
         ) : (
           <div className="flex items-start gap-3">
@@ -642,6 +662,21 @@ export default function OpsCleaningCalendar() {
         ))}
       </div>
         </div>
+
+        {showOperatorGlobalPayout ? (
+          <aside className="hidden lg:block lg:col-span-7">
+            <OpsCleaningPayoutBreakdown
+              selectedDate={selectedDate}
+              payoutSummary={payoutSummary}
+              loading={payoutLoading}
+              error={payoutError}
+              formatLongDate={formatLongDate}
+              className="lg:sticky lg:top-6"
+              headlineLabel="Total Daily Cleaning Fee"
+              testId="operator-global-payout-desktop"
+            />
+          </aside>
+        ) : null}
 
         {showCleanerPayout ? (
           <aside className="hidden lg:block lg:col-span-7">

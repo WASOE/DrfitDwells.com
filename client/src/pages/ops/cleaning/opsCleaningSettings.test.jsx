@@ -60,7 +60,7 @@ const valleyRules = [
 
 const mockPolicyResponse = {
   currency: 'EUR',
-  vocabulary: ['a-frame', 'lux-cabin', 'stone-house'],
+  vocabulary: ['the-cabin', 'a-frame', 'lux-cabin', 'stone-house'],
   cabin: {
     mode: 'policy',
     needsActivation: false,
@@ -84,7 +84,7 @@ const mockPolicyResponse = {
 };
 
 const mockInventoryResponse = {
-  vocabulary: ['a-frame', 'lux-cabin', 'stone-house'],
+  vocabulary: ['the-cabin', 'a-frame', 'lux-cabin', 'stone-house'],
   inventory: [
     {
       id: 'valley-1',

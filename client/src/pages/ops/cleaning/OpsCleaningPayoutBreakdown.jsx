@@ -55,7 +55,8 @@ export default function OpsCleaningPayoutBreakdown({
   error,
   formatLongDate,
   className = '',
-  testId = 'cleaner-payout-breakdown'
+  testId = 'cleaner-payout-breakdown',
+  headlineLabel = 'Daily Payout'
 }) {
   const currency = payoutSummary?.currency || 'EUR';
   const totalAmount = payoutSummary?.totalAmount ?? 0;
@@ -77,7 +78,7 @@ export default function OpsCleaningPayoutBreakdown({
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-                Daily Payout
+                {headlineLabel}
               </p>
               <p className="mt-0.5 text-sm text-gray-600">
                 {formatLongDate(selectedDate)} · {checkoutCount}{' '}

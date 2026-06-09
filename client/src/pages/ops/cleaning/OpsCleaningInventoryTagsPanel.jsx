@@ -169,6 +169,22 @@ export default function OpsCleaningInventoryTagsPanel({ canWrite }) {
         </div>
       ) : null}
 
+      {data?.untaggedCabinCount > 0 ? (
+        <div
+          className="mt-4 max-w-4xl rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          data-testid="untagged-cabin-banner"
+        >
+          <p className="font-semibold">
+            {data.untaggedCabinCount} Cabin {data.untaggedCabinCount === 1 ? 'unit has' : 'units have'} no
+            pricing tag
+          </p>
+          <p className="mt-1 text-amber-800">
+            Untagged Cabin checkouts will not match cabin cleaning rules — only transport will apply when
+            checkouts exist.
+          </p>
+        </div>
+      ) : null}
+
       <div className="mt-4 flex flex-wrap gap-2">
         {['valley', 'cabin'].map((kind) => (
           <button

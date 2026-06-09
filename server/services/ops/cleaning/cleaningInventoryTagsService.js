@@ -23,7 +23,9 @@ function mapCabinRow(cabin) {
     propertyKind: cabin.propertyKind || 'cabin',
     cleaningTags,
     missingPricingTag:
-      cabin.propertyKind === 'valley' ? !inventoryHasPricingTag(cleaningTags) : false
+      (cabin.propertyKind === 'valley' || cabin.propertyKind === 'cabin')
+        ? !inventoryHasPricingTag(cleaningTags)
+        : false
   };
 }
 
@@ -92,12 +94,17 @@ async function getCleaningInventoryTags({ propertyKind = null } = {}) {
   const untaggedValley = inventory.filter(
     (row) => row.propertyKind === 'valley' && row.missingPricingTag
   );
+  const untaggedCabin = inventory.filter(
+    (row) => row.propertyKind === 'cabin' && row.missingPricingTag
+  );
 
   return {
     vocabulary: [...CLEANING_TAG_VOCABULARY],
     inventory,
     untaggedValley,
-    untaggedValleyCount: untaggedValley.length
+    untaggedValleyCount: untaggedValley.length,
+    untaggedCabin,
+    untaggedCabinCount: untaggedCabin.length
   };
 }
 

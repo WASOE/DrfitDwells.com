@@ -39,7 +39,7 @@ test.after(async () => {
 });
 
 test('default checkout-driven payout rules', async (t) => {
-  await t.test('cabin checkout produces transport + clean lines', () => {
+  await t.test('cabin checkout without the-cabin tag is unmatched with €0 payout', () => {
     const cabinPolicy = policyDoc('cabin');
     const checkouts = [
       {
@@ -47,6 +47,22 @@ test('default checkout-driven payout rules', async (t) => {
         cabinName: 'Main Cabin',
         propertyKind: 'cabin',
         cleaningTags: []
+      }
+    ];
+    const calc = priceDay(checkouts, cabinPolicy);
+    assert.equal(calc.totalAmountEUR, 0);
+    assert.equal(calc.unmatchedCheckouts.length, 1);
+    assert.equal(calc.unmatchedCheckouts[0].bookingId, 'b1');
+  });
+
+  await t.test('cabin checkout produces transport + clean lines', () => {
+    const cabinPolicy = policyDoc('cabin');
+    const checkouts = [
+      {
+        bookingId: 'b1',
+        cabinName: 'Main Cabin',
+        propertyKind: 'cabin',
+        cleaningTags: ['the-cabin']
       }
     ];
     const calc = priceDay(checkouts, cabinPolicy);

@@ -12,7 +12,7 @@ const CABIN_PAYOUT_RULES = [
     amountEUR: 15,
     requiresCheckouts: true,
     amountType: 'cleaner_payout',
-    selector: {},
+    selector: { cleaningTags: ['the-cabin'] },
     enabled: true
   },
   {
@@ -21,7 +21,7 @@ const CABIN_PAYOUT_RULES = [
     label: 'Cabin cleaning',
     amountEUR: 20,
     amountType: 'cleaner_payout',
-    selector: {},
+    selector: { cleaningTags: ['the-cabin'] },
     enabled: true
   }
 ];

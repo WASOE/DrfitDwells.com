@@ -103,5 +103,7 @@ describe('OpsCleaningCalendar mobile payment card', () => {
     const source = fs.readFileSync(path.join(dir, 'OpsCleaningCalendar.jsx'), 'utf8');
     expect(source).toMatch(/lg:hidden/);
     expect(source).toMatch(/hidden lg:block lg:col-span-7/);
+    expect(source).toMatch(/getCleaningPayoutSummary/);
+    expect(source).not.toMatch(/Select Cabin or Valley to view payment summary/);
   });
 });

@@ -7,6 +7,7 @@ import vocabulary from '../../../shared/cleaning/cleaningTagVocabulary.json';
 export const CLEANING_TAG_VOCABULARY = Object.freeze([...vocabulary.tags]);
 
 export const CLEANING_TAG_LABELS = Object.freeze({
+  'the-cabin': 'The Cabin',
   'a-frame': 'A-frame',
   'lux-cabin': 'Lux cabin',
   'stone-house': 'Stone house'

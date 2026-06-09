@@ -77,7 +77,7 @@ test('GET pricing-policy returns checkout-linked default rules per location', as
   const data = await getPricingPolicySettings();
 
   assert.equal(data.currency, 'EUR');
-  assert.deepEqual(data.vocabulary, ['a-frame', 'lux-cabin', 'stone-house']);
+  assert.deepEqual(data.vocabulary, ['the-cabin', 'a-frame', 'lux-cabin', 'stone-house']);
   assert.equal(data.cabin.mode, 'needs_activation');
   assert.equal(data.cabin.rules.length, 2);
   assert.equal(data.valley.rules.length, 5);
