@@ -7,47 +7,105 @@ import { OpsSessionProvider } from '../../../context/OpsSessionContext';
 
 vi.mock('../../../services/cleaningApi', () => ({
   getPricingPolicy: vi.fn(),
-  updatePricingPolicy: vi.fn()
+  updatePricingPolicy: vi.fn(),
+  getCleaningInventoryTags: vi.fn(),
+  updateCabinCleaningTags: vi.fn(),
+  updateCabinTypeCleaningTags: vi.fn()
 }));
 
-import { getPricingPolicy, updatePricingPolicy } from '../../../services/cleaningApi';
+import {
+  getPricingPolicy,
+  updatePricingPolicy,
+  getCleaningInventoryTags
+} from '../../../services/cleaningApi';
 
-const cabinItems = [
-  { ruleKey: 'transport', label: 'Fuel / transport per visit', type: 'fixed', amountEUR: 8, enabled: true },
-  { ruleKey: 'lux_cabin', label: 'Lux cabin / big bungalow', type: 'fixed', amountEUR: 25, enabled: true },
-  { ruleKey: 'house_full', label: 'House 1st + 2nd floor + toilets', type: 'fixed', amountEUR: 25, enabled: true },
-  { ruleKey: 'deep_cleaning', label: 'Deep/general cleaning', type: 'fixed', amountEUR: 150, enabled: true },
-  { ruleKey: 'laundry', label: 'Laundry', type: 'quantity', amountEUR: 2, enabled: true }
+const cabinRules = [
+  {
+    ruleKey: 'transport',
+    label: 'Transport',
+    type: 'daily_fixed',
+    enabled: true,
+    amountType: 'cleaner_payout',
+    amountEUR: 15,
+    requiresCheckouts: true,
+    selector: { cleaningTags: [] },
+    tiers: []
+  },
+  {
+    ruleKey: 'cabin_clean',
+    label: 'Cabin cleaning',
+    type: 'per_event_fixed',
+    enabled: true,
+    amountType: 'cleaner_payout',
+    amountEUR: 20,
+    requiresCheckouts: false,
+    selector: { cleaningTags: [] },
+    tiers: []
+  }
 ];
 
-const valleyItems = [
-  { ruleKey: 'transport', label: 'Fuel / transport per visit', type: 'fixed', amountEUR: 8, enabled: true },
-  { ruleKey: 'aframe_small', label: 'A-frame small only', type: 'quantity', amountEUR: 10, enabled: true },
-  { ruleKey: 'aframe_full', label: 'A-frame + 1st floor + toilets', type: 'quantity', amountEUR: 20, enabled: true },
-  { ruleKey: 'deep_cleaning', label: 'Deep/general cleaning', type: 'fixed', amountEUR: 150, enabled: true },
-  { ruleKey: 'laundry', label: 'Laundry', type: 'quantity', amountEUR: 2, enabled: true }
+const valleyRules = [
+  {
+    ruleKey: 'aframe_clean',
+    label: 'A-frame cleaning',
+    type: 'tiered_per_event',
+    enabled: true,
+    amountType: 'cleaner_payout',
+    amountEUR: null,
+    requiresCheckouts: false,
+    selector: { cleaningTags: ['a-frame'] },
+    tiers: [{ amountEUR: 20 }, { amountEUR: 10 }]
+  }
 ];
 
 const mockPolicyResponse = {
   currency: 'EUR',
+  vocabulary: ['a-frame', 'lux-cabin', 'stone-house'],
   cabin: {
-    mode: 'legacy',
-    needsActivation: true,
+    mode: 'policy',
+    needsActivation: false,
     propertyKind: 'cabin',
+    policyId: 'cabin-policy-id',
+    version: '2026-06-checkout-payout-v1',
+    isActive: true,
+    rules: cabinRules,
+    warnings: []
+  },
+  valley: {
+    mode: 'needs_activation',
+    needsActivation: true,
+    propertyKind: 'valley',
     policyId: null,
     version: null,
     isActive: false,
-    items: cabinItems
-  },
-  valley: {
-    mode: 'policy',
-    needsActivation: false,
-    propertyKind: 'valley',
-    policyId: 'valley-policy-id',
-    version: '2026-06-default',
-    isActive: true,
-    items: valleyItems
+    rules: valleyRules,
+    warnings: []
   }
+};
+
+const mockInventoryResponse = {
+  vocabulary: ['a-frame', 'lux-cabin', 'stone-house'],
+  inventory: [
+    {
+      id: 'valley-1',
+      kind: 'cabin',
+      name: 'Untagged Unit',
+      propertyKind: 'valley',
+      cleaningTags: [],
+      missingPricingTag: true
+    }
+  ],
+  untaggedValley: [
+    {
+      id: 'valley-1',
+      kind: 'cabin',
+      name: 'Untagged Unit',
+      propertyKind: 'valley',
+      cleaningTags: [],
+      missingPricingTag: true
+    }
+  ],
+  untaggedValleyCount: 1
 };
 
 function renderSettings(session) {
@@ -62,19 +120,15 @@ function renderSettings(session) {
 
 beforeEach(() => {
   getPricingPolicy.mockResolvedValue({ data: { data: mockPolicyResponse } });
+  getCleaningInventoryTags.mockResolvedValue({ data: { data: mockInventoryResponse } });
   updatePricingPolicy.mockResolvedValue({
     data: {
       data: {
         ...mockPolicyResponse,
         cabin: {
           ...mockPolicyResponse.cabin,
-          mode: 'policy',
-          needsActivation: false,
-          policyId: 'cabin-policy-id',
-          version: '2026-06-default',
-          isActive: true,
-          items: cabinItems.map((item) =>
-            item.ruleKey === 'transport' ? { ...item, amountEUR: 9 } : item
+          rules: cabinRules.map((rule) =>
+            rule.ruleKey === 'transport' ? { ...rule, amountEUR: 16 } : rule
           )
         }
       }
@@ -88,77 +142,66 @@ afterEach(() => {
 });
 
 describe('OpsCleaningSettings', () => {
-  it('renders independent item rows per location', async () => {
+  it('renders rate-card rule editors and inventory tagging', async () => {
     renderSettings({
       actions: ['ops.cleaning.settings_read', 'ops.cleaning.settings_write']
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('label-cabin-0')).toHaveValue('Fuel / transport per visit');
-    });
-
-    expect(screen.getByTestId('label-cabin-1')).toHaveValue('Lux cabin / big bungalow');
-    expect(screen.getByTestId('label-valley-1')).toHaveValue('A-frame small only');
-    expect(screen.getByTestId('amount-cabin-0')).toHaveValue(8);
-    expect(screen.getByTestId('amount-valley-2')).toHaveValue(20);
-  });
-
-  it('shows legacy mode badge when no policy active', async () => {
-    renderSettings({
-      actions: ['ops.cleaning.settings_read', 'ops.cleaning.settings_write']
+      expect(screen.getByText('Inventory cleaning tags')).toBeInTheDocument();
     });
 
     await waitFor(() => {
-      expect(screen.getByText(/Legacy mode — saving activates policy/i)).toBeInTheDocument();
+      expect(screen.getByTestId('label-cabin-0')).toHaveValue('Transport');
+    });
+
+    expect(screen.getByTestId('type-valley-0')).toHaveValue('tiered_per_event');
+    expect(screen.getByTestId('tier-valley-0-0')).toHaveValue(20);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('untagged-valley-banner')).toBeInTheDocument();
     });
   });
 
-  it('does not show base fee UI', async () => {
+  it('shows needs-activation badge when valley policy not saved', async () => {
     renderSettings({
       actions: ['ops.cleaning.settings_read', 'ops.cleaning.settings_write']
     });
 
     await waitFor(() => {
-      expect(screen.getByText('Cleaning payment rates')).toBeInTheDocument();
+      expect(screen.getByText(/Not saved yet/i)).toBeInTheDocument();
     });
-
-    expect(screen.queryByText(/Base fee/i)).not.toBeInTheDocument();
   });
 
-  it('admin can add item and save only cabin items', async () => {
+  it('saves cabin rules via checkout-linked payload', async () => {
     renderSettings({
       actions: ['ops.cleaning.settings_read', 'ops.cleaning.settings_write']
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId('save-rates-cabin')).toBeInTheDocument();
+      expect(screen.getByTestId('save-rules-cabin')).toBeInTheDocument();
     });
 
-    fireEvent.change(screen.getByTestId('amount-cabin-0'), { target: { value: '9' } });
-    fireEvent.click(screen.getByTestId('add-item-cabin'));
-    fireEvent.change(screen.getByTestId('label-cabin-5'), { target: { value: 'Extra task' } });
-    fireEvent.click(screen.getByTestId('save-rates-cabin'));
+    fireEvent.click(screen.getByTestId('save-rules-cabin'));
 
     await waitFor(() => {
       expect(updatePricingPolicy).toHaveBeenCalledWith(
         'cabin',
         expect.arrayContaining([
-          expect.objectContaining({ ruleKey: 'transport', amountEUR: 9 }),
-          expect.objectContaining({ label: 'Extra task', ruleKey: '', type: 'fixed' })
+          expect.objectContaining({ type: 'daily_fixed', ruleKey: 'transport' }),
+          expect.objectContaining({ type: 'per_event_fixed', ruleKey: 'cabin_clean' })
         ])
       );
     });
   });
 
-  it('operator sees read-only fields without save button', async () => {
+  it('read-only users cannot save rules', async () => {
     renderSettings({ actions: ['ops.cleaning.settings_read'] });
 
     await waitFor(() => {
-      expect(screen.getByTestId('label-cabin-0')).toBeInTheDocument();
+      expect(screen.queryByTestId('save-rules-cabin')).not.toBeInTheDocument();
     });
 
-    expect(screen.getByTestId('label-cabin-0')).toBeDisabled();
-    expect(screen.queryByTestId('save-rates-cabin')).not.toBeInTheDocument();
-    expect(screen.getAllByText(/Read-only. Contact an admin/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Read-only/i).length).toBeGreaterThan(0);
   });
 });

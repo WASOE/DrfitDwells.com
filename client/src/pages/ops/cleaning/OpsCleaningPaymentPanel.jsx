@@ -1,6 +1,5 @@
 import { Coins } from 'lucide-react';
 import OpsCleaningLineItemsTable, { formatMoney } from './OpsCleaningLineItemsTable';
-import OpsCleaningDayInputsForm from './OpsCleaningDayInputsForm';
 
 export default function OpsCleaningPaymentPanel({
   selectedDate,
@@ -8,14 +7,10 @@ export default function OpsCleaningPaymentPanel({
   paymentLoading,
   paymentError,
   paymentBusy,
-  inputsSaving,
-  inputsError,
   togglePaidError,
   canWritePayment,
-  canEditDayInputs,
   formatLongDate,
-  onTogglePaid,
-  onSaveDayInputs
+  onTogglePaid
 }) {
   const currency = paymentSummary?.currency || 'EUR';
   const totalAmount = paymentSummary?.totalAmount ?? 0;
@@ -25,9 +20,6 @@ export default function OpsCleaningPaymentPanel({
   const isSnapshot = paymentSummary?.isSnapshot === true;
   const cabinCount = paymentSummary?.cabinCount ?? 0;
   const lineItems = paymentSummary?.lineItems || [];
-  const editableInputFields = paymentSummary?.editableInputFields || [];
-  const dayInputs = paymentSummary?.inputs?.inputs || {};
-  const canEditInputs = Boolean(paymentSummary?.canEditInputs && canEditDayInputs);
 
   return (
     <div
@@ -108,15 +100,6 @@ export default function OpsCleaningPaymentPanel({
             lineItems={lineItems}
             currency={currency}
             totalAmount={totalAmount}
-          />
-          <OpsCleaningDayInputsForm
-            editableInputFields={editableInputFields}
-            inputs={dayInputs}
-            canEditInputs={canEditInputs}
-            currency={currency}
-            saving={inputsSaving}
-            error={inputsError}
-            onSave={onSaveDayInputs}
           />
         </>
       ) : null}

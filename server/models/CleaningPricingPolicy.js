@@ -8,6 +8,8 @@ const RULE_TYPES = [
   'optional_addon'
 ];
 
+const AMOUNT_TYPES = ['cleaner_payout', 'customer_charge'];
+
 const ruleSelectorSchema = new mongoose.Schema(
   {
     cleaningTags: [{ type: String, trim: true }],
@@ -35,6 +37,12 @@ const pricingRuleSchema = new mongoose.Schema(
     inputKey: { type: String, trim: true, default: null },
     selector: { type: ruleSelectorSchema, default: () => ({}) },
     tiers: { type: [tierSchema], default: undefined },
+    amountType: {
+      type: String,
+      enum: AMOUNT_TYPES,
+      default: 'cleaner_payout'
+    },
+    requiresCheckouts: { type: Boolean, default: false },
     enabled: { type: Boolean, default: true }
   },
   { _id: false }
@@ -82,3 +90,4 @@ cleaningPricingPolicySchema.index({ propertyKind: 1, version: 1 }, { unique: tru
 
 module.exports = mongoose.model('CleaningPricingPolicy', cleaningPricingPolicySchema);
 module.exports.RULE_TYPES = RULE_TYPES;
+module.exports.AMOUNT_TYPES = AMOUNT_TYPES;

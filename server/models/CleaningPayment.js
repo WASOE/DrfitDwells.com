@@ -14,6 +14,16 @@ const lineItemSchema = new mongoose.Schema(
       type: String,
       enum: ['policy', 'legacy', 'manual'],
       default: 'policy'
+    },
+    amountType: {
+      type: String,
+      enum: ['cleaner_payout', 'customer_charge'],
+      default: 'cleaner_payout'
+    },
+    propertyKind: {
+      type: String,
+      enum: ['cabin', 'valley'],
+      default: null
     }
   },
   { _id: false }

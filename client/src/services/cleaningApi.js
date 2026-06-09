@@ -25,6 +25,13 @@ export function getCleaningPaymentSummary({ date, propertyKind }) {
   });
 }
 
+export function getCleaningPayoutSummary({ date }) {
+  return api.get('/ops/cleaning/payout-summary', {
+    params: { date },
+    headers: authHeaders()
+  });
+}
+
 export function markCleaned(bookingId, cleaningDate) {
   return api.post(
     `/ops/cleaning/records/${bookingId}/mark-cleaned`,
@@ -57,22 +64,35 @@ export function unmarkPaid({ date, propertyKind }) {
   );
 }
 
-export function updateDayInputs({ date, propertyKind, inputs, perCheckoutInputs }) {
-  return api.put(
-    '/ops/cleaning/day-inputs',
-    { date, propertyKind, inputs, perCheckoutInputs },
-    { headers: authHeaders() }
-  );
-}
-
 export function getPricingPolicy() {
   return api.get('/ops/cleaning/pricing-policy', { headers: authHeaders() });
 }
 
-export function updatePricingPolicy(propertyKind, items) {
+export function updatePricingPolicy(propertyKind, rules) {
   return api.put(
     '/ops/cleaning/pricing-policy',
-    { propertyKind, items },
+    { propertyKind, rules },
+    { headers: authHeaders() }
+  );
+}
+
+export function getCleaningInventoryTags(propertyKind = null) {
+  const params = propertyKind ? { propertyKind } : {};
+  return api.get('/ops/cleaning/inventory-tags', { params, headers: authHeaders() });
+}
+
+export function updateCabinCleaningTags(cabinId, cleaningTags) {
+  return api.patch(
+    `/ops/cleaning/inventory-tags/cabin/${cabinId}`,
+    { cleaningTags },
+    { headers: authHeaders() }
+  );
+}
+
+export function updateCabinTypeCleaningTags(cabinTypeId, cleaningTags) {
+  return api.patch(
+    `/ops/cleaning/inventory-tags/cabin-type/${cabinTypeId}`,
+    { cleaningTags },
     { headers: authHeaders() }
   );
 }
@@ -84,7 +104,9 @@ export default {
   unmarkCleaned,
   markPaid,
   unmarkPaid,
-  updateDayInputs,
   getPricingPolicy,
-  updatePricingPolicy
+  updatePricingPolicy,
+  getCleaningInventoryTags,
+  updateCabinCleaningTags,
+  updateCabinTypeCleaningTags
 };

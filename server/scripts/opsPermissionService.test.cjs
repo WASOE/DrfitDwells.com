@@ -11,11 +11,15 @@ const {
 } = require('../services/permissionService');
 const { resolveModulesForRole } = require('../services/ops/opsModuleRegistry');
 
-test('admin has all cleaning actions', () => {
+test('admin has all cleaning actions including payout read', () => {
   const modules = resolveModulesForRole(ROLE_ADMIN);
   assert.equal(evaluatePermission({ role: ROLE_ADMIN, modules, action: ACTIONS.OPS_CLEANING_VIEW }).allowed, true);
   assert.equal(
     evaluatePermission({ role: ROLE_ADMIN, modules, action: ACTIONS.OPS_CLEANING_PAYMENT_WRITE }).allowed,
+    true
+  );
+  assert.equal(
+    evaluatePermission({ role: ROLE_ADMIN, modules, action: ACTIONS.OPS_CLEANING_PAYOUT_READ }).allowed,
     true
   );
 });
@@ -32,6 +36,10 @@ test('operator can view and mark cleaned but not write payment/settings', () => 
     true
   );
   assert.equal(
+    evaluatePermission({ role: ROLE_OPERATOR, modules, action: ACTIONS.OPS_CLEANING_PAYOUT_READ }).allowed,
+    true
+  );
+  assert.equal(
     evaluatePermission({ role: ROLE_OPERATOR, modules, action: ACTIONS.OPS_CLEANING_PAYMENT_WRITE }).allowed,
     false
   );
@@ -39,26 +47,22 @@ test('operator can view and mark cleaned but not write payment/settings', () => 
     evaluatePermission({ role: ROLE_OPERATOR, modules, action: ACTIONS.OPS_CLEANING_SETTINGS_WRITE }).allowed,
     false
   );
-  assert.equal(
-    evaluatePermission({ role: ROLE_OPERATOR, modules, action: ACTIONS.OPS_CLEANING_DAY_INPUTS_WRITE }).allowed,
-    true
-  );
 });
 
-test('cleaner can only view cleaning and mark cleaned', () => {
+test('cleaner can view and mark cleaned plus read global payout (not zone payment)', () => {
   const modules = resolveModulesForRole(ROLE_CLEANER);
   const allowed = listAllowedActions({ role: ROLE_CLEANER, modules });
   assert.deepEqual(
     allowed.sort(),
-    [ACTIONS.OPS_CLEANING_MARK_CLEANED, ACTIONS.OPS_CLEANING_VIEW].sort()
+    [ACTIONS.OPS_CLEANING_MARK_CLEANED, ACTIONS.OPS_CLEANING_PAYOUT_READ, ACTIONS.OPS_CLEANING_VIEW].sort()
   );
   assert.equal(
     evaluatePermission({ role: ROLE_CLEANER, modules, action: ACTIONS.OPS_CLEANING_PAYMENT_READ }).allowed,
     false
   );
   assert.equal(
-    evaluatePermission({ role: ROLE_CLEANER, modules, action: ACTIONS.OPS_CLEANING_DAY_INPUTS_WRITE }).allowed,
-    false
+    evaluatePermission({ role: ROLE_CLEANER, modules, action: ACTIONS.OPS_CLEANING_PAYOUT_READ }).allowed,
+    true
   );
   assert.equal(
     evaluatePermission({ role: ROLE_CLEANER, modules, action: ACTIONS.OPS_RESERVATIONS_CLEANING_NOTES_WRITE })

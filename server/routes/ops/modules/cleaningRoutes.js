@@ -5,14 +5,19 @@ const CleaningPayment = require('../../../models/CleaningPayment');
 const CleaningSettings = require('../../../models/CleaningSettings');
 const {
   getCleaningSchedule,
-  getCleaningPaymentSummary
+  getCleaningPaymentSummary,
+  getGlobalPayoutSummary
 } = require('../../../services/ops/readModels/cleaningReadModel');
 const { calculateForMarkPaid } = require('../../../services/ops/cleaning/cleaningPricingService');
 const {
   getPricingPolicySettings,
-  updatePricingPolicyItems
+  updatePricingPolicyRules
 } = require('../../../services/ops/cleaning/cleaningPricingPolicyAdminService');
-const CleaningDaySheet = require('../../../models/CleaningDaySheet');
+const {
+  getCleaningInventoryTags,
+  updateCabinCleaningTags,
+  updateCabinTypeCleaningTags
+} = require('../../../services/ops/cleaning/cleaningInventoryTagsService');
 const { normalizeDateToSofiaDayStart } = require('../../../utils/dateTime');
 const { requirePermission, ACTIONS } = require('../../../services/permissionService');
 
@@ -68,6 +73,21 @@ router.get('/schedule', async (req, res) => {
       date,
       propertyKind: normalizePropertyKind(propertyKind)
     });
+    return res.json({ success: true, data });
+  } catch (error) {
+    return handleRouteError(error, res);
+  }
+});
+
+// GET /api/ops/cleaning/payout-summary?date=ISO — global Cabin + Valley cleaner payout (read-only)
+router.get('/payout-summary', async (req, res) => {
+  try {
+    requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_PAYOUT_READ });
+    const { date } = req.query;
+    if (!isValidDateInput(date)) {
+      return res.status(400).json({ success: false, message: 'A valid date query param is required.' });
+    }
+    const data = await getGlobalPayoutSummary({ date });
     return res.json({ success: true, data });
   } catch (error) {
     return handleRouteError(error, res);
@@ -217,6 +237,13 @@ router.post('/payments/mark-paid', async (req, res) => {
       }
     });
   } catch (error) {
+    if (error?.code === 'NO_ACTIVE_PRICING_POLICY') {
+      return res.status(error.status || 422).json({
+        success: false,
+        errorType: 'no_policy',
+        message: error.message
+      });
+    }
     return handleRouteError(error, res);
   }
 });
@@ -253,75 +280,6 @@ router.post('/payments/unmark-paid', async (req, res) => {
   }
 });
 
-// PUT /api/ops/cleaning/day-inputs  body: { date, propertyKind, inputs?, perCheckoutInputs? }
-router.put('/day-inputs', async (req, res) => {
-  try {
-    requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_DAY_INPUTS_WRITE });
-    const { date, propertyKind, inputs, perCheckoutInputs } = req.body || {};
-    if (!isValidDateInput(date)) {
-      return res.status(400).json({ success: false, message: 'A valid date is required.' });
-    }
-    const kind = normalizePropertyKind(propertyKind);
-    if (!kind) {
-      return res.status(400).json({ success: false, message: "propertyKind must be 'cabin' or 'valley'." });
-    }
-    const sofiaStart = normalizeDateToSofiaDayStart(date);
-
-    const existingPayment = await CleaningPayment.findOne({ date: sofiaStart, propertyKind: kind }).lean();
-    if (existingPayment?.status === 'paid') {
-      return res.status(409).json({
-        success: false,
-        message: 'Cannot edit day inputs for a paid cleaning payment.'
-      });
-    }
-
-    const update = { updatedBy: resolveActorId(req) };
-    if (inputs !== undefined) {
-      if (inputs !== null && typeof inputs !== 'object') {
-        return res.status(400).json({ success: false, message: 'inputs must be an object.' });
-      }
-      update.inputs = inputs || {};
-    }
-    if (perCheckoutInputs !== undefined) {
-      if (!Array.isArray(perCheckoutInputs)) {
-        return res.status(400).json({ success: false, message: 'perCheckoutInputs must be an array.' });
-      }
-      update.perCheckoutInputs = perCheckoutInputs.map((row) => ({
-        bookingId: row.bookingId,
-        inputs: row.inputs && typeof row.inputs === 'object' ? row.inputs : {}
-      }));
-    }
-
-    const sheet = await CleaningDaySheet.findOneAndUpdate(
-      { date: sofiaStart, propertyKind: kind },
-      { $set: update },
-      { new: true, upsert: true, setDefaultsOnInsert: true }
-    ).lean();
-
-    const summary = await getCleaningPaymentSummary({ date, propertyKind: kind });
-
-    return res.json({
-      success: true,
-      data: {
-        daySheet: {
-          date: sheet.date.toISOString(),
-          propertyKind: sheet.propertyKind,
-          inputs: sheet.inputs || {},
-          perCheckoutInputs: (sheet.perCheckoutInputs || []).map((p) => ({
-            bookingId: String(p.bookingId),
-            inputs: p.inputs || {}
-          })),
-          updatedBy: sheet.updatedBy,
-          updatedAt: sheet.updatedAt.toISOString()
-        },
-        paymentSummary: summary
-      }
-    });
-  } catch (error) {
-    return handleRouteError(error, res);
-  }
-});
-
 /** Load the base fees for both property kinds, defaulting missing rows to 0. */
 async function loadCleaningBaseFees() {
   const docs = await CleaningSettings.find({}).lean();
@@ -348,7 +306,7 @@ router.get('/pricing-policy', async (req, res) => {
   }
 });
 
-// PUT /api/ops/cleaning/pricing-policy  body: { propertyKind, items }
+// PUT /api/ops/cleaning/pricing-policy  body: { propertyKind, rules }
 router.put('/pricing-policy', async (req, res) => {
   try {
     requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_SETTINGS_WRITE });
@@ -356,14 +314,58 @@ router.put('/pricing-policy', async (req, res) => {
     if (!kind) {
       return res.status(400).json({ success: false, message: "propertyKind must be 'cabin' or 'valley'." });
     }
-    const data = await updatePricingPolicyItems({
+    const data = await updatePricingPolicyRules({
       propertyKind: kind,
-      items: req.body?.items
+      rules: req.body?.rules
     });
     return res.json({ success: true, data });
   } catch (error) {
     if (error?.status === 400) {
       return res.status(400).json({ success: false, message: error.message });
+    }
+    return handleRouteError(error, res);
+  }
+});
+
+// GET /api/ops/cleaning/inventory-tags?propertyKind=cabin|valley
+router.get('/inventory-tags', async (req, res) => {
+  try {
+    requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_SETTINGS_READ });
+    const data = await getCleaningInventoryTags({
+      propertyKind: normalizePropertyKind(req.query?.propertyKind)
+    });
+    return res.json({ success: true, data });
+  } catch (error) {
+    if (error?.status === 400) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    return handleRouteError(error, res);
+  }
+});
+
+// PATCH /api/ops/cleaning/inventory-tags/cabin/:id  body: { cleaningTags: string[] }
+router.patch('/inventory-tags/cabin/:id', async (req, res) => {
+  try {
+    requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_SETTINGS_WRITE });
+    const data = await updateCabinCleaningTags(req.params.id, req.body?.cleaningTags);
+    return res.json({ success: true, data });
+  } catch (error) {
+    if (error?.status === 400 || error?.status === 404) {
+      return res.status(error.status).json({ success: false, message: error.message });
+    }
+    return handleRouteError(error, res);
+  }
+});
+
+// PATCH /api/ops/cleaning/inventory-tags/cabin-type/:id  body: { cleaningTags: string[] }
+router.patch('/inventory-tags/cabin-type/:id', async (req, res) => {
+  try {
+    requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_SETTINGS_WRITE });
+    const data = await updateCabinTypeCleaningTags(req.params.id, req.body?.cleaningTags);
+    return res.json({ success: true, data });
+  } catch (error) {
+    if (error?.status === 400 || error?.status === 404) {
+      return res.status(error.status).json({ success: false, message: error.message });
     }
     return handleRouteError(error, res);
   }

@@ -5,6 +5,9 @@ const assert = require('node:assert/strict');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
+const Cabin = require('../models/Cabin');
+const CabinType = require('../models/CabinType');
+const Unit = require('../models/Unit');
 const CleaningPricingPolicy = require('../models/CleaningPricingPolicy');
 const {
   ACTIONS,
@@ -16,17 +19,42 @@ const {
 const { resolveModulesForRole } = require('../services/ops/opsModuleRegistry');
 const {
   getPricingPolicySettings,
-  updatePricingPolicyItems,
-  validateItems,
+  updatePricingPolicyRules,
+  validateRules,
+  policyRuleToDto,
+  rulesToStoredPolicyRules,
   slugifyRuleKey
 } = require('../services/ops/cleaning/cleaningPricingPolicyAdminService');
-const { calculateCleaningPaymentSummary } = require('../services/ops/cleaning/cleaningPricingService');
-const { defaultItemsForPropertyKind } = require('../data/cleaning/defaultCleaningPricingPolicy');
+const { priceDay } = require('../services/ops/cleaning/cleaningPricingService');
+const {
+  defaultRulesForPropertyKind,
+  VALLEY_PAYOUT_RULES
+} = require('../data/cleaning/defaultCleaningPricingPolicy');
+const {
+  getCleaningInventoryTags,
+  updateCabinCleaningTags,
+  updateCabinTypeCleaningTags
+} = require('../services/ops/cleaning/cleaningInventoryTagsService');
 
 let mongoServer;
 
-const CABIN_ITEMS = defaultItemsForPropertyKind('cabin');
-const VALLEY_ITEMS = defaultItemsForPropertyKind('valley');
+function normalizeRuleForCompare(rule) {
+  return {
+    ruleKey: rule.ruleKey,
+    type: rule.type,
+    label: rule.label,
+    enabled: rule.enabled !== false,
+    amountType: rule.amountType || 'cleaner_payout',
+    amountEUR: rule.amountEUR ?? null,
+    requiresCheckouts: Boolean(rule.requiresCheckouts),
+    selector: { cleaningTags: [...(rule.selector?.cleaningTags || [])].sort() },
+    tiers: (rule.tiers || []).map((tier) => ({ amountEUR: tier.amountEUR }))
+  };
+}
+
+function normalizeRulesForCompare(rules) {
+  return rules.map(normalizeRuleForCompare).sort((a, b) => a.ruleKey.localeCompare(b.ruleKey));
+}
 
 test.before(async () => {
   mongoServer = await MongoMemoryServer.create();
@@ -40,120 +68,269 @@ test.after(async () => {
 
 test.beforeEach(async () => {
   await CleaningPricingPolicy.deleteMany({});
+  await Cabin.deleteMany({});
+  await CabinType.deleteMany({});
+  await Unit.deleteMany({});
 });
 
-test('GET pricing-policy returns independent cabin and valley default items', async () => {
+test('GET pricing-policy returns checkout-linked default rules per location', async () => {
   const data = await getPricingPolicySettings();
 
   assert.equal(data.currency, 'EUR');
-  assert.equal(data.cabin.mode, 'legacy');
-  assert.equal(data.cabin.needsActivation, true);
-  assert.equal(data.valley.mode, 'legacy');
-  assert.equal(data.cabin.items.length, 5);
-  assert.equal(data.valley.items.length, 5);
-  assert.ok(data.cabin.items.some((r) => r.ruleKey === 'lux_cabin'));
-  assert.ok(!data.cabin.items.some((r) => r.ruleKey === 'aframe_small'));
-  assert.ok(data.valley.items.some((r) => r.ruleKey === 'aframe_small'));
-  assert.ok(!data.valley.items.some((r) => r.ruleKey === 'lux_cabin'));
+  assert.deepEqual(data.vocabulary, ['a-frame', 'lux-cabin', 'stone-house']);
+  assert.equal(data.cabin.mode, 'needs_activation');
+  assert.equal(data.cabin.rules.length, 2);
+  assert.equal(data.valley.rules.length, 5);
+  assert.ok(data.valley.rules.some((r) => r.type === 'tiered_per_event'));
 });
 
-test('PUT creates active policy if missing', async () => {
-  const data = await updatePricingPolicyItems({
-    propertyKind: 'cabin',
-    items: CABIN_ITEMS
-  });
+test('PUT creates active policy with real rule shape', async () => {
+  const rules = defaultRulesForPropertyKind('cabin').map(policyRuleToDto);
+  const data = await updatePricingPolicyRules({ propertyKind: 'cabin', rules });
 
   assert.equal(data.cabin.mode, 'policy');
-  assert.equal(data.cabin.needsActivation, false);
   assert.ok(data.cabin.policyId);
-  assert.equal(data.cabin.isActive, true);
-  assert.equal(data.valley.mode, 'legacy');
+  assert.equal(data.cabin.rules.length, 2);
 
   const stored = await CleaningPricingPolicy.findById(data.cabin.policyId).lean();
-  assert.ok(stored);
-  assert.equal(stored.currency, 'EUR');
-  assert.equal(stored.rules.length, 5);
+  assert.equal(stored.rules[0].type, 'daily_fixed');
+  assert.equal(stored.rules[1].type, 'per_event_fixed');
 });
 
-test('PUT updates only the requested location', async () => {
-  await updatePricingPolicyItems({ propertyKind: 'cabin', items: CABIN_ITEMS });
+test('tiered + per-event + gated daily rules round-trip losslessly', async () => {
+  const inputRules = [
+    {
+      ruleKey: 'transport',
+      label: 'Transport',
+      type: 'daily_fixed',
+      enabled: true,
+      amountType: 'cleaner_payout',
+      amountEUR: 8,
+      requiresCheckouts: true,
+      selector: { cleaningTags: [] },
+      tiers: []
+    },
+    {
+      ruleKey: 'aframe_clean',
+      label: 'A-frame cleaning',
+      type: 'tiered_per_event',
+      enabled: true,
+      amountType: 'cleaner_payout',
+      amountEUR: null,
+      requiresCheckouts: false,
+      selector: { cleaningTags: ['a-frame'] },
+      tiers: [{ amountEUR: 20 }, { amountEUR: 10 }]
+    },
+    {
+      ruleKey: 'lux_cabin',
+      label: 'Lux cabin',
+      type: 'per_event_fixed',
+      enabled: true,
+      amountType: 'cleaner_payout',
+      amountEUR: 25,
+      requiresCheckouts: false,
+      selector: { cleaningTags: ['lux-cabin'] },
+      tiers: []
+    }
+  ];
 
-  const updatedCabin = CABIN_ITEMS.map((item) =>
-    item.ruleKey === 'transport' ? { ...item, amountEUR: 9 } : item
+  await updatePricingPolicyRules({ propertyKind: 'valley', rules: inputRules });
+  const reloaded = await getPricingPolicySettings();
+
+  assert.deepEqual(
+    normalizeRulesForCompare(reloaded.valley.rules),
+    normalizeRulesForCompare(inputRules)
   );
-  const data = await updatePricingPolicyItems({
-    propertyKind: 'cabin',
-    items: updatedCabin
+});
+
+test('saved valley policy prices €81 day via priceDay', async () => {
+  const rules = defaultRulesForPropertyKind('valley').map(policyRuleToDto);
+  await updatePricingPolicyRules({ propertyKind: 'valley', rules });
+
+  const policy = await CleaningPricingPolicy.findOne({ propertyKind: 'valley', isActive: true }).lean();
+  const checkouts = [
+    { bookingId: 'b1', cabinName: 'AF-01', propertyKind: 'valley', cleaningTags: ['a-frame'] },
+    { bookingId: 'b2', cabinName: 'AF-02', propertyKind: 'valley', cleaningTags: ['a-frame'] },
+    { bookingId: 'b3', cabinName: 'AF-03', propertyKind: 'valley', cleaningTags: ['a-frame'] },
+    { bookingId: 'b4', cabinName: 'Lux', propertyKind: 'valley', cleaningTags: ['lux-cabin'] }
+  ];
+
+  const priced = priceDay(checkouts, { propertyKind: 'valley', rules: policy.rules });
+  assert.equal(priced.totalAmountEUR, 81);
+});
+
+test('seed rules and editor save produce structurally identical valley policy', async () => {
+  const seedDto = defaultRulesForPropertyKind('valley').map(policyRuleToDto);
+  await updatePricingPolicyRules({ propertyKind: 'valley', rules: seedDto });
+
+  const stored = await CleaningPricingPolicy.findOne({ propertyKind: 'valley' }).lean();
+  const storedDto = stored.rules.map(policyRuleToDto);
+  const seedNormalized = normalizeRulesForCompare(
+    VALLEY_PAYOUT_RULES.map((rule) => policyRuleToDto(rule))
+  );
+  const storedNormalized = normalizeRulesForCompare(storedDto);
+
+  assert.deepEqual(storedNormalized, seedNormalized);
+});
+
+test('validation rejects tiered rule without selector tags', () => {
+  assert.throws(
+    () =>
+      validateRules([
+        {
+          ruleKey: 'bad',
+          label: 'Bad tiered',
+          type: 'tiered_per_event',
+          enabled: true,
+          selector: { cleaningTags: [] },
+          tiers: [{ amountEUR: 20 }, { amountEUR: 10 }]
+        }
+      ]),
+    /at least one selector tag/i
+  );
+});
+
+test('validation rejects off-vocabulary selector tags', () => {
+  assert.throws(
+    () =>
+      validateRules([
+        {
+          ruleKey: 'bad',
+          label: 'Bad tag',
+          type: 'per_event_fixed',
+          enabled: true,
+          amountEUR: 10,
+          selector: { cleaningTags: ['mystery-tag'] },
+          tiers: []
+        }
+      ]),
+    /unknown tags/i
+  );
+});
+
+test('validation rejects requiresCheckouts on non-daily rules', () => {
+  assert.throws(
+    () =>
+      validateRules([
+        {
+          ruleKey: 'bad',
+          label: 'Bad gate',
+          type: 'per_event_fixed',
+          enabled: true,
+          amountEUR: 10,
+          requiresCheckouts: true,
+          selector: { cleaningTags: [] },
+          tiers: []
+        }
+      ]),
+    /requiresCheckouts is only valid for daily_fixed/i
+  );
+});
+
+test('inventory tag write/read and inheritance on cabinId booking', async () => {
+  const cabin = await Cabin.create({
+    name: 'Stone House',
+    description: 'test',
+    location: 'The Valley',
+    capacity: 4,
+    minGuests: 1,
+    pricePerNight: 100,
+    minNights: 1,
+    imageUrl: 'https://example.com/cabin.jpg',
+    propertyKind: 'valley'
   });
 
-  const transport = data.cabin.items.find((r) => r.ruleKey === 'transport');
-  assert.equal(transport.amountEUR, 9);
-  assert.equal(data.valley.mode, 'legacy');
-  assert.equal(await CleaningPricingPolicy.countDocuments({ propertyKind: 'cabin', isActive: true }), 1);
-  assert.equal(await CleaningPricingPolicy.countDocuments({ propertyKind: 'valley', isActive: true }), 0);
+  const updated = await updateCabinCleaningTags(cabin._id, ['stone-house', 'invalid-tag']);
+  assert.deepEqual(updated.cleaningTags, ['stone-house']);
+
+  const listing = await getCleaningInventoryTags({ propertyKind: 'valley' });
+  assert.ok(listing.inventory.some((row) => row.id === String(cabin._id)));
+  assert.equal(listing.untaggedValleyCount, 0);
+
+  const { getCleaningSchedule } = require('../services/ops/readModels/cleaningReadModel');
+  const Booking = require('../models/Booking');
+  const crypto = require('crypto');
+  const { normalizeDateToSofiaDayStart } = require('../utils/dateTime');
+  const day = normalizeDateToSofiaDayStart('2026-09-15');
+  await Booking.create({
+    checkIn: new Date(day.getTime() - 86400000),
+    checkOut: new Date(day.getTime() + 43200000),
+    adults: 2,
+    children: 0,
+    cabinId: cabin._id,
+    guestInfo: {
+      firstName: 'Tag',
+      lastName: 'Test',
+      email: `tag.${crypto.randomBytes(4).toString('hex')}@example.com`,
+      phone: '+359881234567'
+    },
+    status: 'confirmed',
+    totalPrice: 200,
+    subtotalPrice: 200,
+    discountAmount: 0,
+    totalValueCents: 20000,
+    giftVoucherAppliedCents: 0,
+    stripePaidAmountCents: 20000,
+    stripePaymentIntentId: `pi_${crypto.randomBytes(6).toString('hex')}`
+  });
+
+  const schedule = await getCleaningSchedule({ date: day, propertyKind: 'valley' });
+  assert.equal(schedule.checkouts[0].cleaningTags[0], 'stone-house');
 });
 
-test('PUT derives ruleKey from label for new items', async () => {
-  const items = [
-    ...CABIN_ITEMS,
-    { ruleKey: '', label: 'Extra towels', type: 'fixed', amountEUR: 5, enabled: true }
-  ];
-  const data = await updatePricingPolicyItems({ propertyKind: 'cabin', items });
+test('untagged valley cabin is flagged in inventory listing', async () => {
+  await Cabin.create({
+    name: 'Untagged Valley Unit',
+    description: 'test',
+    location: 'The Valley',
+    capacity: 4,
+    minGuests: 1,
+    pricePerNight: 100,
+    minNights: 1,
+    imageUrl: 'https://example.com/cabin.jpg',
+    propertyKind: 'valley',
+    cleaningTags: []
+  });
 
-  assert.ok(data.cabin.items.some((r) => r.ruleKey === 'extra_towels' && r.amountEUR === 5));
+  const listing = await getCleaningInventoryTags({ propertyKind: 'valley' });
+  assert.equal(listing.untaggedValleyCount, 1);
+  assert.ok(listing.untaggedValley.some((row) => row.name === 'Untagged Valley Unit'));
 });
 
-test('PUT rejects invalid item type', () => {
-  assert.throws(
-    () =>
-      validateItems([
-        { ruleKey: 'x', label: 'Bad', type: 'formula', amountEUR: 1, enabled: true }
-      ]),
-    /type must be "fixed" or "quantity"/
-  );
-});
+test('cabin type tags can be updated', async () => {
+  const cabinType = await CabinType.create({
+    name: 'A-frames',
+    slug: 'a-frames-test',
+    description: 'test',
+    location: 'The Valley',
+    capacity: 4,
+    pricePerNight: 120,
+    imageUrl: 'https://example.com/type.jpg',
+    propertyKind: 'valley'
+  });
+  await Unit.create({
+    cabinTypeId: cabinType._id,
+    unitNumber: 'AF-01',
+    displayName: 'AF-01',
+    isActive: true
+  });
 
-test('PUT rejects negative amount', () => {
-  assert.throws(
-    () =>
-      validateItems([
-        { ruleKey: 'transport', label: 'Fuel', type: 'fixed', amountEUR: -1, enabled: true }
-      ]),
-    /amountEUR must be a number >= 0/
-  );
-});
-
-test('PUT rejects enabled item without label', () => {
-  assert.throws(
-    () =>
-      validateItems([{ ruleKey: '', label: '', type: 'fixed', amountEUR: 0, enabled: true }]),
-    /label is required for enabled items/
-  );
+  const updated = await updateCabinTypeCleaningTags(cabinType._id, ['a-frame']);
+  assert.deepEqual(updated.cleaningTags, ['a-frame']);
 });
 
 test('slugifyRuleKey produces stable keys', () => {
   assert.equal(slugifyRuleKey('Fuel / transport per visit'), 'fuel_transport_per_visit');
 });
 
-test('PUT enforces EUR currency on stored policy', async () => {
-  const data = await updatePricingPolicyItems({
-    propertyKind: 'valley',
-    items: VALLEY_ITEMS
-  });
-
-  const stored = await CleaningPricingPolicy.findById(data.valley.policyId).lean();
-  assert.equal(stored.currency, 'EUR');
-});
-
 test('permissions: admin can write settings, operator and cleaner cannot', () => {
-  const adminModules = resolveModulesForRole(ROLE_ADMIN);
   const operatorModules = resolveModulesForRole(ROLE_OPERATOR);
   const cleanerModules = resolveModulesForRole(ROLE_CLEANER);
 
   assert.equal(
     evaluatePermission({
       role: ROLE_ADMIN,
-      modules: adminModules,
+      modules: resolveModulesForRole(ROLE_ADMIN),
       action: ACTIONS.OPS_CLEANING_SETTINGS_WRITE
     }).allowed,
     true
@@ -176,41 +353,11 @@ test('permissions: admin can write settings, operator and cleaner cannot', () =>
   );
 });
 
-test('disabled items are excluded from payment-summary editable fields', async () => {
-  const items = CABIN_ITEMS.map((item) =>
-    item.ruleKey === 'laundry' ? { ...item, enabled: false } : item
+test('rulesToStoredPolicyRules never produces optional_addon or quantity types', () => {
+  const stored = rulesToStoredPolicyRules(
+    defaultRulesForPropertyKind('valley').map(policyRuleToDto)
   );
-  await updatePricingPolicyItems({ propertyKind: 'cabin', items });
-
-  const summary = await calculateCleaningPaymentSummary({
-    date: '2026-08-01',
-    propertyKind: 'cabin'
-  });
-
-  assert.equal(summary.editableInputFields.length, 4);
-  assert.ok(!summary.editableInputFields.some((f) => f.inputKey === 'laundryCount'));
-});
-
-test('updated amounts flow into payment-summary line items', async () => {
-  const items = CABIN_ITEMS.map((item) =>
-    item.ruleKey === 'transport' ? { ...item, amountEUR: 12 } : item
-  );
-  await updatePricingPolicyItems({ propertyKind: 'cabin', items });
-
-  const CleaningDaySheet = require('../models/CleaningDaySheet');
-  const { normalizeDateToSofiaDayStart } = require('../utils/dateTime');
-  const sofiaStart = normalizeDateToSofiaDayStart('2026-08-03');
-  await CleaningDaySheet.findOneAndUpdate(
-    { date: sofiaStart, propertyKind: 'cabin' },
-    { $set: { inputs: { transport: true } } },
-    { upsert: true, new: true }
-  );
-
-  const withLineItem = await calculateCleaningPaymentSummary({
-    date: '2026-08-03',
-    propertyKind: 'cabin'
-  });
-  const transportLine = withLineItem.lineItems.find((li) => li.ruleKey === 'transport');
-  assert.ok(transportLine);
-  assert.equal(transportLine.amountEUR, 12);
+  assert.ok(stored.every((rule) => ['daily_fixed', 'per_event_fixed', 'tiered_per_event'].includes(rule.type)));
+  assert.ok(stored.every((rule) => rule.type !== 'optional_addon'));
+  assert.ok(stored.every((rule) => rule.type !== 'quantity'));
 });

@@ -7,7 +7,8 @@ const {
 } = require('../../../utils/dateTime');
 const { FIXTURE_BOOKING_EMAIL_PATTERN } = require('../../../utils/fixtureExclusion');
 const {
-  calculateCleaningPaymentSummary
+  calculateCleaningPaymentSummary,
+  calculateGlobalPayoutSummary
 } = require('../cleaning/cleaningPricingService');
 
 const SOFIA_DAY_MS = 24 * 60 * 60 * 1000;
@@ -181,8 +182,13 @@ async function getCleaningPaymentSummary({ date, propertyKind = null } = {}) {
   return calculateCleaningPaymentSummary({ date, propertyKind });
 }
 
+async function getGlobalPayoutSummary({ date } = {}) {
+  return calculateGlobalPayoutSummary({ date });
+}
+
 module.exports = {
   getCleaningSchedule,
   getCleaningPaymentSummary,
+  getGlobalPayoutSummary,
   baseCleaningBookingFilter
 };

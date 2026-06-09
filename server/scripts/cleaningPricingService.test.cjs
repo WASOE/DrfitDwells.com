@@ -11,19 +11,22 @@ const crypto = require('crypto');
 const Cabin = require('../models/Cabin');
 const CabinType = require('../models/CabinType');
 const Booking = require('../models/Booking');
-const CleaningSettings = require('../models/CleaningSettings');
 const CleaningPayment = require('../models/CleaningPayment');
 const CleaningDaySheet = require('../models/CleaningDaySheet');
 const CleaningPricingPolicy = require('../models/CleaningPricingPolicy');
 const { createOpsUser } = require('../services/ops/opsUserService');
 const { normalizeDateToSofiaDayStart } = require('../utils/dateTime');
 const {
-  calculateLegacyLineItems,
+  priceDay,
+  toPricingFacts,
   calculatePolicyLineItems,
   calculateCleaningPaymentSummary,
+  calculateGlobalPayoutSummary,
   calculateForMarkPaid,
-  checkoutMatchesSelector
+  checkoutMatchesSelector,
+  NoActivePricingPolicyError
 } = require('../services/ops/cleaning/cleaningPricingService');
+const { defaultRulesForPropertyKind } = require('../data/cleaning/defaultCleaningPricingPolicy');
 
 let mongoServer;
 let app;
@@ -63,6 +66,16 @@ function checkoutOnDay(dayIso, overrides = {}) {
     stripePaidAmountCents: 20000,
     stripePaymentIntentId: `pi_${crypto.randomBytes(6).toString('hex')}`,
     ...overrides
+  };
+}
+
+function valleyPolicy(rules) {
+  return {
+    propertyKind: 'valley',
+    _id: new mongoose.Types.ObjectId(),
+    version: 'v1',
+    currency: 'EUR',
+    rules
   };
 }
 
@@ -134,52 +147,26 @@ test.after(async () => {
   if (mongoServer) await mongoServer.stop();
 });
 
-test('cleaning pricing Batch E', async (t) => {
+test('cleaning pricing Batch 1 — checkout-driven engine', async (t) => {
   const TEST_DAY = testDayIso(14);
 
-  await t.test('legacy fallback returns base fee and property line items', async () => {
+  await t.test('no active policy returns noPolicy summary (no legacy fallback)', async () => {
     await CleaningPricingPolicy.updateMany({ propertyKind: 'cabin' }, { $set: { isActive: false } });
-    await CleaningSettings.findOneAndUpdate(
-      { propertyKind: 'cabin' },
-      { $set: { baseFee: 15 } },
-      { upsert: true }
-    );
-    const cabin = await createCabin({ cleaningFee: 40, propertyKind: 'cabin' });
+    const cabin = await createCabin({ propertyKind: 'cabin' });
     await Booking.create(checkoutOnDay(TEST_DAY, { cabinId: cabin._id }));
-
-    const calc = await calculateLegacyLineItems(
-      [
-        {
-          bookingId: 'b1',
-          cabinName: 'Test Cabin',
-          cleaningFee: 40
-        }
-      ],
-      'cabin'
-    );
-
-    assert.equal(calc.pricingVersion, 'legacy');
-    assert.ok(calc.lineItems.some((li) => li.ruleKey === 'legacy_base_fee' && li.amountEUR === 15));
-    assert.ok(calc.lineItems.some((li) => li.ruleKey === 'legacy_property_fee' && li.amountEUR === 40));
-    assert.equal(calc.totalAmountEUR, 55);
 
     const summary = await calculateCleaningPaymentSummary({
       date: TEST_DAY,
       propertyKind: 'cabin'
     });
-    assert.equal(summary.currency, 'EUR');
-    assert.ok(Array.isArray(summary.lineItems));
-    assert.equal(summary.lineItems.length, 2);
-    assert.equal(summary.totalAmount, 55);
-    assert.equal(summary.canEditInputs, true);
+    assert.equal(summary.noPolicy, true);
+    assert.equal(summary.totalAmount, 0);
+    assert.equal(summary.lineItems.length, 0);
   });
 
-  await t.test('daily_fixed rule', async () => {
-    const lineItems = [];
+  await t.test('daily_fixed without requiresCheckouts still emits on zero checkouts', () => {
     const policy = {
-      _id: new mongoose.Types.ObjectId(),
-      version: 'v1',
-      currency: 'EUR',
+      propertyKind: 'cabin',
       rules: [
         {
           ruleKey: 'transport',
@@ -189,16 +176,22 @@ test('cleaning pricing Batch E', async (t) => {
         }
       ]
     };
-    const calc = calculatePolicyLineItems([], policy, null);
+    const calc = priceDay([], policy);
     assert.equal(calc.totalAmountEUR, 8);
     assert.equal(calc.lineItems[0].ruleKey, 'transport');
+    assert.equal(calc.lineItems[0].amountType, 'cleaner_payout');
   });
 
-  await t.test('quantity rule uses day sheet inputs', async () => {
+  await t.test('daily_fixed with requiresCheckouts skips transport when no checkouts', () => {
+    const policy = valleyPolicy(defaultRulesForPropertyKind('valley'));
+    const calc = priceDay([], policy);
+    assert.equal(calc.totalAmountEUR, 0);
+    assert.ok(!calc.lineItems.some((li) => li.ruleKey === 'transport'));
+  });
+
+  await t.test('priceDay ignores quantity and optional_addon rules', () => {
     const policy = {
-      _id: new mongoose.Types.ObjectId(),
-      version: 'v1',
-      currency: 'EUR',
+      propertyKind: 'cabin',
       rules: [
         {
           ruleKey: 'laundry',
@@ -206,89 +199,174 @@ test('cleaning pricing Batch E', async (t) => {
           label: 'Laundry',
           unitAmountEUR: 2,
           inputKey: 'laundryLoads'
-        }
-      ]
-    };
-    const daySheet = { inputs: { laundryLoads: 3 }, perCheckoutInputs: [] };
-    const calc = calculatePolicyLineItems([], policy, daySheet);
-    assert.equal(calc.totalAmountEUR, 6);
-    assert.equal(calc.lineItems[0].quantity, 3);
-  });
-
-  await t.test('tiered_per_event rule for a-frame tag', async () => {
-    const policy = {
-      _id: new mongoose.Types.ObjectId(),
-      version: 'v1',
-      currency: 'EUR',
-      rules: [
+        },
         {
-          ruleKey: 'aframe_clean',
-          type: 'tiered_per_event',
-          label: 'A-frame cleaning',
-          selector: { cleaningTags: ['a-frame'] },
-          tiers: [{ amountEUR: 25 }, { amountEUR: 10 }]
-        }
-      ]
-    };
-    const checkouts = [
-      { bookingId: 'b2', cabinName: 'AF-02', cleaningTags: ['a-frame'] },
-      { bookingId: 'b1', cabinName: 'AF-01', cleaningTags: ['a-frame'] },
-      { bookingId: 'b3', cabinName: 'Stone', cleaningTags: ['stone-house'] }
-    ];
-    const calc = calculatePolicyLineItems(checkouts, policy, null);
-    assert.equal(calc.lineItems.length, 2);
-    assert.equal(calc.totalAmountEUR, 35);
-    const amounts = calc.lineItems.map((li) => li.amountEUR).sort((a, b) => b - a);
-    assert.deepEqual(amounts, [25, 10]);
-  });
-
-  await t.test('optional_addon rule day-level and per-checkout', async () => {
-    const policy = {
-      _id: new mongoose.Types.ObjectId(),
-      version: 'v1',
-      currency: 'EUR',
-      rules: [
-        {
-          ruleKey: 'stone_kitchen',
+          ruleKey: 'deep_cleaning',
           type: 'optional_addon',
-          label: 'Stone kitchen',
-          amountEUR: 12,
-          inputKey: 'stoneKitchen'
+          label: 'Deep cleaning',
+          amountEUR: 150,
+          inputKey: 'deepCleaning'
         }
       ]
     };
-    const daySheet = {
-      inputs: {},
-      perCheckoutInputs: [{ bookingId: 'b1', inputs: { stoneKitchen: true } }]
-    };
-    const checkouts = [{ bookingId: 'b1', cabinName: 'Stone House' }];
-    const calc = calculatePolicyLineItems(checkouts, policy, daySheet);
-    assert.equal(calc.totalAmountEUR, 12);
+    const calc = priceDay([], policy);
+    assert.equal(calc.totalAmountEUR, 0);
+    assert.equal(calc.lineItems.length, 0);
   });
 
-  await t.test('per_event_fixed rule standalone', async () => {
-    const policy = {
-      _id: new mongoose.Types.ObjectId(),
-      version: 'v1',
-      currency: 'EUR',
-      rules: [
-        {
-          ruleKey: 'turnover',
-          type: 'per_event_fixed',
-          label: 'Turnover clean',
-          amountEUR: 18,
-          selector: { cleaningTags: ['a-frame'] }
-        }
-      ]
-    };
+  await t.test('tiered_per_event rule for a-frame tag uses 20/10 tiers', () => {
+    const policy = valleyPolicy([
+      {
+        ruleKey: 'aframe_clean',
+        type: 'tiered_per_event',
+        label: 'A-frame cleaning',
+        selector: { cleaningTags: ['a-frame'] },
+        tiers: [{ amountEUR: 20 }, { amountEUR: 10 }]
+      }
+    ]);
     const checkouts = [
-      { bookingId: 'b1', cabinName: 'AF-01', cleaningTags: ['a-frame'] },
-      { bookingId: 'b2', cabinName: 'Stone', cleaningTags: ['stone-house'] }
+      { bookingId: 'b2', cabinName: 'AF-02', propertyKind: 'valley', cleaningTags: ['a-frame'] },
+      { bookingId: 'b1', cabinName: 'AF-01', propertyKind: 'valley', cleaningTags: ['a-frame'] },
+      { bookingId: 'b3', cabinName: 'Stone', propertyKind: 'valley', cleaningTags: ['stone-house'] }
     ];
-    const calc = calculatePolicyLineItems(checkouts, policy, null);
+    const calc = priceDay(checkouts, policy);
+    assert.equal(calc.lineItems.length, 2);
+    assert.equal(calc.totalAmountEUR, 30);
+    const amounts = calc.lineItems.map((li) => li.amountEUR).sort((a, b) => b - a);
+    assert.deepEqual(amounts, [20, 10]);
+  });
+
+  await t.test('a-frame tier edge cases: 0, 1, 2, N', () => {
+    const policy = valleyPolicy([
+      {
+        ruleKey: 'aframe_clean',
+        type: 'tiered_per_event',
+        label: 'A-frame cleaning',
+        selector: { cleaningTags: ['a-frame'] },
+        tiers: [{ amountEUR: 20 }, { amountEUR: 10 }]
+      }
+    ]);
+
+    assert.equal(priceDay([], policy).totalAmountEUR, 0);
+
+    const one = priceDay(
+      [{ bookingId: 'b1', cabinName: 'AF-01', propertyKind: 'valley', cleaningTags: ['a-frame'] }],
+      policy
+    );
+    assert.equal(one.totalAmountEUR, 20);
+
+    const two = priceDay(
+      [
+        { bookingId: 'b1', cabinName: 'AF-01', propertyKind: 'valley', cleaningTags: ['a-frame'] },
+        { bookingId: 'b2', cabinName: 'AF-02', propertyKind: 'valley', cleaningTags: ['a-frame'] }
+      ],
+      policy
+    );
+    assert.equal(two.totalAmountEUR, 30);
+
+    const four = priceDay(
+      ['b1', 'b2', 'b3', 'b4'].map((id, i) => ({
+        bookingId: id,
+        cabinName: `AF-0${i + 1}`,
+        propertyKind: 'valley',
+        cleaningTags: ['a-frame']
+      })),
+      policy
+    );
+    assert.equal(four.totalAmountEUR, 50);
+  });
+
+  await t.test('€81 valley day: 3 a-frames + 1 lux + laundry', () => {
+    const policy = valleyPolicy(defaultRulesForPropertyKind('valley'));
+    const checkouts = [
+      { bookingId: 'b1', cabinName: 'AF-01', propertyKind: 'valley', cleaningTags: ['a-frame'] },
+      { bookingId: 'b2', cabinName: 'AF-02', propertyKind: 'valley', cleaningTags: ['a-frame'] },
+      { bookingId: 'b3', cabinName: 'AF-03', propertyKind: 'valley', cleaningTags: ['a-frame'] },
+      { bookingId: 'b4', cabinName: 'Lux', propertyKind: 'valley', cleaningTags: ['lux-cabin'] }
+    ];
+    const calc = priceDay(checkouts, policy);
+    assert.equal(calc.totalAmountEUR, 81);
+    assert.ok(calc.lineItems.some((li) => li.ruleKey === 'transport' && li.amountEUR === 8));
+    assert.equal(
+      calc.lineItems.filter((li) => li.ruleKey === 'aframe_clean').reduce((s, li) => s + li.amountEUR, 0),
+      40
+    );
+    assert.ok(calc.lineItems.some((li) => li.ruleKey === 'lux_cabin' && li.amountEUR === 25));
+    assert.equal(
+      calc.lineItems.filter((li) => li.ruleKey === 'laundry').reduce((s, li) => s + li.amountEUR, 0),
+      8
+    );
+  });
+
+  await t.test('unmatchedCheckouts when valley checkout has no priced tag', () => {
+    const policy = valleyPolicy(defaultRulesForPropertyKind('valley'));
+    const checkouts = [
+      { bookingId: 'b1', cabinName: 'Mystery unit', propertyKind: 'valley', cleaningTags: [] }
+    ];
+    const calc = priceDay(checkouts, policy);
+    assert.equal(calc.unmatchedCheckouts.length, 1);
+    assert.equal(calc.unmatchedCheckouts[0].bookingId, 'b1');
+    assert.ok(calc.lineItems.some((li) => li.ruleKey === 'laundry'));
+  });
+
+  await t.test('cabinId-only booking with tags matches tag selector', () => {
+    const policy = valleyPolicy([
+      {
+        ruleKey: 'aframe_clean',
+        type: 'tiered_per_event',
+        label: 'A-frame cleaning',
+        selector: { cleaningTags: ['a-frame'] },
+        tiers: [{ amountEUR: 20 }, { amountEUR: 10 }]
+      }
+    ]);
+    const checkouts = [
+      {
+        bookingId: 'b1',
+        cabinId: String(new mongoose.Types.ObjectId()),
+        cabinName: 'AF cabin',
+        propertyKind: 'valley',
+        cleaningTags: ['a-frame']
+      }
+    ];
+    const calc = priceDay(checkouts, policy);
+    assert.equal(calc.lineItems.length, 1);
+    assert.equal(calc.totalAmountEUR, 20);
+    assert.deepEqual(calc.unmatchedCheckouts, []);
+  });
+
+  await t.test('toPricingFacts normalizes tags like the read model', () => {
+    const facts = toPricingFacts({
+      bookingId: 'b1',
+      cabinName: 'AF-01',
+      propertyKind: 'valley',
+      cleaningTags: ['A-Frame', 'lux-cabin'],
+      cabinId: 'abc',
+      cabinTypeId: null
+    });
+    assert.deepEqual(facts.tags, ['a-frame', 'lux-cabin']);
+    assert.equal(facts.cabinId, 'abc');
+    assert.equal(facts.cabinTypeId, null);
+  });
+
+  await t.test('per_event_fixed rule standalone', () => {
+    const policy = valleyPolicy([
+      {
+        ruleKey: 'turnover',
+        type: 'per_event_fixed',
+        label: 'Turnover clean',
+        amountEUR: 18,
+        selector: { cleaningTags: ['a-frame'] }
+      }
+    ]);
+    const checkouts = [
+      { bookingId: 'b1', cabinName: 'AF-01', propertyKind: 'valley', cleaningTags: ['a-frame'] },
+      { bookingId: 'b2', cabinName: 'Stone', propertyKind: 'valley', cleaningTags: ['stone-house'] }
+    ];
+    const calc = priceDay(checkouts, policy);
     assert.equal(calc.lineItems.length, 1);
     assert.equal(calc.totalAmountEUR, 18);
     assert.equal(calc.lineItems[0].bookingId, 'b1');
+    assert.equal(calc.lineItems[0].propertyKind, 'valley');
   });
 
   await t.test('cabinId selector matches only targeted checkout', () => {
@@ -305,32 +383,6 @@ test('cleaning pricing Batch E', async (t) => {
     const ev = { bookingId: 'b1', cabinTypeId: String(cabinTypeId), cleaningTags: [] };
     assert.equal(checkoutMatchesSelector(ev, { cabinTypeId }), true);
     assert.equal(checkoutMatchesSelector(ev, { cabinTypeId: otherTypeId }), false);
-  });
-
-  await t.test('cabinTypeId selector applies per_event_fixed amount', () => {
-    const cabinTypeId = new mongoose.Types.ObjectId();
-    const policy = {
-      _id: new mongoose.Types.ObjectId(),
-      version: 'v1',
-      currency: 'EUR',
-      rules: [
-        {
-          ruleKey: 'type_clean',
-          type: 'per_event_fixed',
-          label: 'Type clean',
-          amountEUR: 22,
-          selector: { cabinTypeId }
-        }
-      ]
-    };
-    const checkouts = [
-      { bookingId: 'b1', cabinName: 'Unit A', cabinTypeId: String(cabinTypeId), cleaningTags: [] },
-      { bookingId: 'b2', cabinName: 'Other', cabinTypeId: String(new mongoose.Types.ObjectId()), cleaningTags: [] }
-    ];
-    const calc = calculatePolicyLineItems(checkouts, policy, null);
-    assert.equal(calc.lineItems.length, 1);
-    assert.equal(calc.totalAmountEUR, 22);
-    assert.equal(calc.lineItems[0].bookingId, 'b1');
   });
 
   await t.test('pre-Batch-E paid row returns stored total without recalculation', async () => {
@@ -411,30 +463,27 @@ test('cleaning pricing Batch E', async (t) => {
     assert.equal(payment.currency, 'EUR');
   });
 
-  await t.test('PUT day-inputs returns 409 when payment is already paid', async () => {
-    const operatorToken = await login('operator', 'operatorpassword123');
-    const dayIso = testDayIso(35);
-    const sofiaStart = normalizeDateToSofiaDayStart(dayIso);
+  await t.test('mark-paid returns 422 when no active policy', async () => {
+    const adminToken = await login('admin', 'securepassword123');
+    const dayIso = testDayIso(29);
+    await CleaningPricingPolicy.updateMany({ propertyKind: 'cabin' }, { $set: { isActive: false } });
 
-    await CleaningPayment.deleteMany({ date: sofiaStart, propertyKind: 'cabin' });
-    await CleaningDaySheet.deleteMany({ date: sofiaStart, propertyKind: 'cabin' });
-
-    await CleaningPayment.create({
-      date: sofiaStart,
-      propertyKind: 'cabin',
-      totalAmount: 10,
-      paidAmount: 10,
-      status: 'paid',
-      currency: 'EUR'
-    });
-
-    const res = await authed('put', '/api/ops/cleaning/day-inputs', operatorToken, {
+    const markRes = await authed('post', '/api/ops/cleaning/payments/mark-paid', adminToken, {
       date: dayIso,
+      propertyKind: 'cabin'
+    });
+    assert.equal(markRes.status, 422);
+    assert.equal(markRes.body.errorType, 'no_policy');
+  });
+
+  await t.test('removed day-inputs route returns 404', async () => {
+    const operatorToken = await login('operator', 'operatorpassword123');
+    const res = await authed('put', '/api/ops/cleaning/day-inputs', operatorToken, {
+      date: TEST_DAY,
       propertyKind: 'cabin',
       inputs: { laundryLoads: 1 }
     });
-    assert.equal(res.status, 409);
-    assert.match(res.body.message, /paid/i);
+    assert.equal(res.status, 404);
   });
 
   await t.test('mark-paid freezes snapshot; policy change does not alter paid summary', async () => {
@@ -445,13 +494,8 @@ test('cleaning pricing Batch E', async (t) => {
     await CleaningPayment.deleteMany({});
     await CleaningDaySheet.deleteMany({});
     await Booking.deleteMany({});
-    await CleaningSettings.findOneAndUpdate(
-      { propertyKind: 'valley' },
-      { $set: { baseFee: 0 } },
-      { upsert: true }
-    );
 
-    const cabinType = await createValleyCabinType({ cleaningFee: 20, cleaningTags: ['a-frame'] });
+    const cabinType = await createValleyCabinType({ cleaningTags: ['a-frame'] });
     await Booking.create(checkoutOnDay(TEST_DAY, { cabinTypeId: cabinType._id }));
 
     await CleaningPricingPolicy.create({
@@ -522,6 +566,16 @@ test('cleaning pricing Batch E', async (t) => {
 
   await t.test('payment summary returns lineItems via API', async () => {
     const adminToken = await login('admin', 'securepassword123');
+    await CleaningPricingPolicy.updateMany({ propertyKind: 'cabin' }, { $set: { isActive: false } });
+    await CleaningPricingPolicy.create({
+      propertyKind: 'cabin',
+      version: 'api-line-items',
+      isActive: true,
+      effectiveFrom: new Date('2020-01-01'),
+      currency: 'EUR',
+      rules: defaultRulesForPropertyKind('cabin')
+    });
+
     const res = await authed(
       'get',
       `/api/ops/cleaning/payment-summary?date=${TEST_DAY}&propertyKind=cabin`,
@@ -533,33 +587,6 @@ test('cleaning pricing Batch E', async (t) => {
     assert.equal(res.body.data.currency, 'EUR');
   });
 
-  await t.test('operator can update day inputs; cleaner cannot', async () => {
-    const operatorToken = await login('operator', 'operatorpassword123');
-    const cleanerToken = await login('cleaner.batch-e@test.com', 'cleaner-pass-123');
-
-    const putOp = await authed('put', '/api/ops/cleaning/day-inputs', operatorToken, {
-      date: TEST_DAY,
-      propertyKind: 'cabin',
-      inputs: { laundryLoads: 2 }
-    });
-    assert.equal(putOp.status, 200, putOp.body?.message);
-    assert.equal(putOp.body.data.daySheet.inputs.laundryLoads, 2);
-    assert.ok(Array.isArray(putOp.body.data.paymentSummary.lineItems));
-
-    const putCleaner = await authed('put', '/api/ops/cleaning/day-inputs', cleanerToken, {
-      date: TEST_DAY,
-      propertyKind: 'cabin',
-      inputs: { laundryLoads: 5 }
-    });
-    assert.equal(putCleaner.status, 403);
-
-    const sheet = await CleaningDaySheet.findOne({
-      date: normalizeDateToSofiaDayStart(TEST_DAY),
-      propertyKind: 'cabin'
-    }).lean();
-    assert.equal(sheet.inputs.laundryLoads, 2);
-  });
-
   await t.test('cleaner cannot mark paid', async () => {
     const cleanerToken = await login('cleaner.batch-e@test.com', 'cleaner-pass-123');
     const res = await authed('post', '/api/ops/cleaning/payments/mark-paid', cleanerToken, {
@@ -569,35 +596,188 @@ test('cleaning pricing Batch E', async (t) => {
     assert.equal(res.status, 403);
   });
 
-  await t.test('calculateForMarkPaid uses active policy with quantity inputs', async () => {
+  await t.test('global payout equals sum of cabin and valley zones', async () => {
+    const dayIso = testDayIso(35);
     await CleaningPricingPolicy.deleteMany({});
-    await CleaningDaySheet.deleteMany({});
+    await Booking.deleteMany({});
+
+    const cabin = await createCabin({ propertyKind: 'cabin' });
+    await Booking.create(checkoutOnDay(dayIso, { cabinId: cabin._id }));
+
+    const valleyType = await createValleyCabinType({ cleaningTags: ['a-frame'] });
+    await Booking.create(
+      checkoutOnDay(dayIso, { cabinTypeId: valleyType._id, unitId: new mongoose.Types.ObjectId() })
+    );
 
     await CleaningPricingPolicy.create({
       propertyKind: 'cabin',
-      version: 'qty-v1',
+      version: 'global-cabin',
+      isActive: true,
+      effectiveFrom: new Date('2020-01-01'),
+      currency: 'EUR',
+      rules: defaultRulesForPropertyKind('cabin')
+    });
+    await CleaningPricingPolicy.create({
+      propertyKind: 'valley',
+      version: 'global-valley',
+      isActive: true,
+      effectiveFrom: new Date('2020-01-01'),
+      currency: 'EUR',
+      rules: defaultRulesForPropertyKind('valley')
+    });
+
+    const cabinSummary = await calculateCleaningPaymentSummary({ date: dayIso, propertyKind: 'cabin' });
+    const valleySummary = await calculateCleaningPaymentSummary({ date: dayIso, propertyKind: 'valley' });
+    const global = await calculateGlobalPayoutSummary({ date: dayIso });
+
+    assert.equal(cabinSummary.totalAmount, 35);
+    assert.equal(valleySummary.totalAmount, 30);
+    assert.equal(global.totalAmount, 65);
+    assert.equal(global.totalAmount, cabinSummary.totalAmount + valleySummary.totalAmount);
+    assert.ok(global.lineItems.some((li) => li.propertyKind === 'cabin'));
+    assert.ok(global.lineItems.some((li) => li.propertyKind === 'valley'));
+    assert.equal(global.readOnly, true);
+  });
+
+  await t.test('zone without active policy contributes €0 to global payout', async () => {
+    const dayIso = testDayIso(36);
+    await CleaningPricingPolicy.deleteMany({});
+    await Booking.deleteMany({});
+
+    const cabin = await createCabin({ propertyKind: 'cabin' });
+    await Booking.create(checkoutOnDay(dayIso, { cabinId: cabin._id }));
+
+    await CleaningPricingPolicy.create({
+      propertyKind: 'cabin',
+      version: 'global-cabin-only',
+      isActive: true,
+      effectiveFrom: new Date('2020-01-01'),
+      currency: 'EUR',
+      rules: defaultRulesForPropertyKind('cabin')
+    });
+
+    const global = await calculateGlobalPayoutSummary({ date: dayIso });
+    assert.equal(global.totalAmount, 35);
+    assert.deepEqual(global.noPolicyZones, ['valley']);
+    assert.equal(global.zones.valley.noPolicy, true);
+    assert.equal(global.zones.valley.totalAmount, 0);
+    assert.ok(global.zones.cabin.totalAmount > 0);
+  });
+
+  await t.test('cleaner can read global payout via API; not zone payment summary', async () => {
+    const dayIso = testDayIso(37);
+    await CleaningPricingPolicy.deleteMany({});
+    await Booking.deleteMany({});
+
+    await CleaningPricingPolicy.create({
+      propertyKind: 'cabin',
+      version: 'cleaner-payout-cabin',
+      isActive: true,
+      effectiveFrom: new Date('2020-01-01'),
+      currency: 'EUR',
+      rules: defaultRulesForPropertyKind('cabin')
+    });
+    await CleaningPricingPolicy.create({
+      propertyKind: 'valley',
+      version: 'cleaner-payout-valley',
       isActive: true,
       effectiveFrom: new Date('2020-01-01'),
       currency: 'EUR',
       rules: [
         {
-          ruleKey: 'laundry',
-          type: 'quantity',
-          label: 'Laundry',
-          unitAmountEUR: 2,
-          inputKey: 'laundryLoads'
+          ruleKey: 'transport',
+          type: 'daily_fixed',
+          label: 'Transport',
+          amountEUR: 8,
+          requiresCheckouts: true,
+          amountType: 'cleaner_payout',
+          selector: {},
+          enabled: true
         }
       ]
     });
 
-    await CleaningDaySheet.findOneAndUpdate(
-      { date: normalizeDateToSofiaDayStart(TEST_DAY), propertyKind: 'cabin' },
-      { $set: { inputs: { laundryLoads: 4 } } },
-      { upsert: true }
+    const cleanerToken = await login('cleaner.batch-e@test.com', 'cleaner-pass-123');
+
+    const payoutRes = await authed('get', `/api/ops/cleaning/payout-summary?date=${dayIso}`, cleanerToken);
+    assert.equal(payoutRes.status, 200);
+    assert.ok(typeof payoutRes.body.data.totalAmount === 'number');
+    assert.ok(Array.isArray(payoutRes.body.data.lineItems));
+    assert.equal(payoutRes.body.data.readOnly, true);
+    assert.ok(Array.isArray(payoutRes.body.data.noPolicyZones));
+
+    const paymentRes = await authed(
+      'get',
+      `/api/ops/cleaning/payment-summary?date=${dayIso}&propertyKind=cabin`,
+      cleanerToken
     );
+    assert.equal(paymentRes.status, 403);
+  });
+
+  await t.test('admin retains mark-paid on zone payment', async () => {
+    const dayIso = testDayIso(38);
+    const adminToken = await login('admin', 'securepassword123');
+    await CleaningPricingPolicy.deleteMany({ propertyKind: 'cabin' });
+    await CleaningPricingPolicy.create({
+      propertyKind: 'cabin',
+      version: 'admin-mark-paid',
+      isActive: true,
+      effectiveFrom: new Date('2020-01-01'),
+      currency: 'EUR',
+      rules: defaultRulesForPropertyKind('cabin')
+    });
+
+    const markRes = await authed('post', '/api/ops/cleaning/payments/mark-paid', adminToken, {
+      date: dayIso,
+      propertyKind: 'cabin'
+    });
+    assert.equal(markRes.status, 200, markRes.body?.message);
+  });
+
+  await t.test('calculateForMarkPaid throws when no active policy', async () => {
+    await CleaningPricingPolicy.updateMany({ propertyKind: 'cabin' }, { $set: { isActive: false } });
+    await assert.rejects(
+      () => calculateForMarkPaid({ date: TEST_DAY, propertyKind: 'cabin' }),
+      (err) => err instanceof NoActivePricingPolicyError
+    );
+  });
+
+  await t.test('calculateForMarkPaid uses checkout-driven policy rules', async () => {
+    await CleaningPricingPolicy.deleteMany({});
+    await Booking.deleteMany({});
+    const cabin = await createCabin({ propertyKind: 'cabin' });
+    await Booking.create(checkoutOnDay(TEST_DAY, { cabinId: cabin._id }));
+
+    await CleaningPricingPolicy.create({
+      propertyKind: 'cabin',
+      version: 'checkout-v1',
+      isActive: true,
+      effectiveFrom: new Date('2020-01-01'),
+      currency: 'EUR',
+      rules: defaultRulesForPropertyKind('cabin')
+    });
 
     const calc = await calculateForMarkPaid({ date: TEST_DAY, propertyKind: 'cabin' });
-    assert.equal(calc.totalAmountEUR, 8);
-    assert.equal(calc.pricingVersion, 'qty-v1');
+    assert.equal(calc.totalAmountEUR, 35);
+    assert.equal(calc.pricingVersion, 'checkout-v1');
+    assert.ok(calc.lineItems.some((li) => li.ruleKey === 'cabin_clean'));
+  });
+
+  await t.test('calculatePolicyLineItems delegates to priceDay (day sheet ignored)', () => {
+    const policy = {
+      propertyKind: 'cabin',
+      _id: new mongoose.Types.ObjectId(),
+      version: 'v1',
+      currency: 'EUR',
+      rules: defaultRulesForPropertyKind('cabin')
+    };
+    const daySheet = { inputs: { laundryLoads: 99 }, perCheckoutInputs: [] };
+    const calc = calculatePolicyLineItems(
+      [{ bookingId: 'b1', cabinName: 'Cabin', propertyKind: 'cabin', cleaningTags: [] }],
+      policy,
+      daySheet
+    );
+    assert.equal(calc.totalAmountEUR, 35);
+    assert.equal(calc.lineItems.length, 2);
   });
 });

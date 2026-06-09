@@ -15,8 +15,7 @@ import {
   markCleaned,
   unmarkCleaned,
   markPaid,
-  unmarkPaid,
-  updateDayInputs
+  unmarkPaid
 } from '../../../services/cleaningApi';
 import { useOpsSession } from '../../../context/OpsSessionContext';
 import OpsCleaningPaymentPanel from './OpsCleaningPaymentPanel';
@@ -99,7 +98,6 @@ export default function OpsCleaningCalendar() {
   const canReadPayment = (session?.actions || []).includes('ops.cleaning.payment_read');
   const canReadPayout = (session?.actions || []).includes('ops.cleaning.payout_read');
   const canWritePayment = (session?.actions || []).includes('ops.cleaning.payment_write');
-  const canEditDayInputs = (session?.actions || []).includes('ops.cleaning.day_inputs_write');
   const today = useMemo(() => new Date(), []);
 
   const [selectedDate, setSelectedDate] = useState(() => new Date());
@@ -123,8 +121,6 @@ export default function OpsCleaningCalendar() {
   const [paymentBusy, setPaymentBusy] = useState(false);
   const [toggleCleanedError, setToggleCleanedError] = useState('');
   const [togglePaidError, setTogglePaidError] = useState('');
-  const [inputsSaving, setInputsSaving] = useState(false);
-  const [inputsError, setInputsError] = useState('');
 
   const [busyBookingId, setBusyBookingId] = useState(null);
 
@@ -299,24 +295,6 @@ export default function OpsCleaningCalendar() {
       );
     } finally {
       setPaymentBusy(false);
-    }
-  };
-
-  const handleSaveDayInputs = async (inputs) => {
-    if (!selectedPropertyKind || !canEditDayInputs) return;
-    setInputsSaving(true);
-    setInputsError('');
-    try {
-      const res = await updateDayInputs({
-        date: dateKey(selectedDate),
-        propertyKind: selectedPropertyKind,
-        inputs
-      });
-      setPaymentSummary(res.data?.data?.paymentSummary || null);
-    } catch (err) {
-      setInputsError(err?.response?.data?.message || 'Failed to save cleaning tasks.');
-    } finally {
-      setInputsSaving(false);
     }
   };
 
@@ -687,14 +665,10 @@ export default function OpsCleaningCalendar() {
               paymentLoading={paymentLoading}
               paymentError={paymentError}
               paymentBusy={paymentBusy}
-              inputsSaving={inputsSaving}
-              inputsError={inputsError}
               togglePaidError={togglePaidError}
               canWritePayment={canWritePayment}
-              canEditDayInputs={canEditDayInputs}
               formatLongDate={formatLongDate}
               onTogglePaid={handleTogglePaid}
-              onSaveDayInputs={handleSaveDayInputs}
             />
           </aside>
         ) : null}

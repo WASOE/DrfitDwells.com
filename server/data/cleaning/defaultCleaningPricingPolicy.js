@@ -1,140 +1,97 @@
 /**
- * Default OPS cleaning pricing rules per location.
+ * Checkout-driven cleaner payout rules per location.
  * Amounts and rule shapes are server-side only — never duplicate in React.
  */
-const DEFAULT_CLEANING_POLICY_VERSION = '2026-06-default';
+const DEFAULT_CLEANING_POLICY_VERSION = '2026-06-checkout-payout-v1';
 
-/** Stable inputKey map for known rule keys (day-sheet + calendar compatibility). */
-const KNOWN_INPUT_KEYS = {
-  transport: 'transport',
-  aframe_small: 'aframeSmallOnlyCount',
-  aframe_full: 'aframeFullCount',
-  lux_cabin: 'luxCabinClean',
-  house_full: 'houseFullClean',
-  deep_cleaning: 'deepCleaning',
-  laundry: 'laundryCount'
-};
-
-const CABIN_DEFAULT_ITEMS = [
+const CABIN_PAYOUT_RULES = [
   {
     ruleKey: 'transport',
-    label: 'Fuel / transport per visit',
-    type: 'fixed',
+    type: 'daily_fixed',
+    label: 'Transport',
+    amountEUR: 15,
+    requiresCheckouts: true,
+    amountType: 'cleaner_payout',
+    selector: {},
+    enabled: true
+  },
+  {
+    ruleKey: 'cabin_clean',
+    type: 'per_event_fixed',
+    label: 'Cabin cleaning',
+    amountEUR: 20,
+    amountType: 'cleaner_payout',
+    selector: {},
+    enabled: true
+  }
+];
+
+const VALLEY_PAYOUT_RULES = [
+  {
+    ruleKey: 'transport',
+    type: 'daily_fixed',
+    label: 'Transport',
     amountEUR: 8,
+    requiresCheckouts: true,
+    amountType: 'cleaner_payout',
+    selector: {},
+    enabled: true
+  },
+  {
+    ruleKey: 'aframe_clean',
+    type: 'tiered_per_event',
+    label: 'A-frame cleaning',
+    amountType: 'cleaner_payout',
+    selector: { cleaningTags: ['a-frame'] },
+    tiers: [{ amountEUR: 20 }, { amountEUR: 10 }],
     enabled: true
   },
   {
     ruleKey: 'lux_cabin',
-    label: 'Lux cabin / big bungalow',
-    type: 'fixed',
+    type: 'per_event_fixed',
+    label: 'Lux cabin',
     amountEUR: 25,
+    amountType: 'cleaner_payout',
+    selector: { cleaningTags: ['lux-cabin'] },
     enabled: true
   },
   {
     ruleKey: 'house_full',
-    label: 'House 1st + 2nd floor + toilets',
-    type: 'fixed',
+    type: 'per_event_fixed',
+    label: 'House cleaning',
     amountEUR: 25,
-    enabled: true
-  },
-  {
-    ruleKey: 'deep_cleaning',
-    label: 'Deep/general cleaning',
-    type: 'fixed',
-    amountEUR: 150,
+    amountType: 'cleaner_payout',
+    selector: { cleaningTags: ['stone-house'] },
     enabled: true
   },
   {
     ruleKey: 'laundry',
+    type: 'per_event_fixed',
     label: 'Laundry',
-    type: 'quantity',
     amountEUR: 2,
-    enabled: true
-  }
-];
-
-const VALLEY_DEFAULT_ITEMS = [
-  {
-    ruleKey: 'transport',
-    label: 'Fuel / transport per visit',
-    type: 'fixed',
-    amountEUR: 8,
-    enabled: true
-  },
-  {
-    ruleKey: 'aframe_small',
-    label: 'A-frame small only',
-    type: 'quantity',
-    amountEUR: 10,
-    enabled: true
-  },
-  {
-    ruleKey: 'aframe_full',
-    label: 'A-frame + 1st floor + toilets',
-    type: 'quantity',
-    amountEUR: 20,
-    enabled: true
-  },
-  {
-    ruleKey: 'deep_cleaning',
-    label: 'Deep/general cleaning',
-    type: 'fixed',
-    amountEUR: 150,
-    enabled: true
-  },
-  {
-    ruleKey: 'laundry',
-    label: 'Laundry',
-    type: 'quantity',
-    amountEUR: 2,
-    enabled: true
-  }
-];
-
-function cloneItem(item) {
-  return { ...item };
-}
-
-function defaultItemsForPropertyKind(propertyKind) {
-  if (propertyKind === 'valley') {
-    return VALLEY_DEFAULT_ITEMS.map(cloneItem);
-  }
-  return CABIN_DEFAULT_ITEMS.map(cloneItem);
-}
-
-function itemToPolicyRule(item, inputKey) {
-  const enabled = item.enabled !== false;
-  const amount = typeof item.amountEUR === 'number' ? item.amountEUR : 0;
-
-  if (item.type === 'quantity') {
-    return {
-      ruleKey: item.ruleKey,
-      type: 'quantity',
-      label: item.label,
-      unitAmountEUR: amount,
-      amountEUR: null,
-      inputKey,
-      selector: {},
-      enabled
-    };
-  }
-
-  return {
-    ruleKey: item.ruleKey,
-    type: 'optional_addon',
-    label: item.label,
-    amountEUR: amount,
-    unitAmountEUR: null,
-    inputKey,
+    amountType: 'cleaner_payout',
     selector: {},
-    enabled
-  };
+    enabled: true
+  }
+];
+
+function cloneRule(rule) {
+  const copy = { ...rule };
+  if (Array.isArray(rule.tiers)) {
+    copy.tiers = rule.tiers.map((t) => ({ ...t }));
+  }
+  if (rule.selector) {
+    copy.selector = { ...rule.selector };
+    if (Array.isArray(rule.selector.cleaningTags)) {
+      copy.selector.cleaningTags = [...rule.selector.cleaningTags];
+    }
+  }
+  return copy;
 }
 
 function defaultRulesForPropertyKind(propertyKind) {
-  return defaultItemsForPropertyKind(propertyKind).map((item) =>
-    itemToPolicyRule(item, KNOWN_INPUT_KEYS[item.ruleKey] || item.ruleKey)
-  );
+  const rules = propertyKind === 'valley' ? VALLEY_PAYOUT_RULES : CABIN_PAYOUT_RULES;
+  return rules.map(cloneRule);
 }
 
 /** @deprecated Use defaultRulesForPropertyKind(propertyKind) */
@@ -144,11 +101,8 @@ function defaultCleaningPricingRules() {
 
 module.exports = {
   DEFAULT_CLEANING_POLICY_VERSION,
-  KNOWN_INPUT_KEYS,
-  CABIN_DEFAULT_ITEMS,
-  VALLEY_DEFAULT_ITEMS,
-  defaultItemsForPropertyKind,
+  CABIN_PAYOUT_RULES,
+  VALLEY_PAYOUT_RULES,
   defaultRulesForPropertyKind,
-  defaultCleaningPricingRules,
-  itemToPolicyRule
+  defaultCleaningPricingRules
 };

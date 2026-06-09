@@ -1,6 +1,6 @@
-import { describe, expect, it, vi, afterEach } from 'vitest';
+import { describe, expect, it, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import OpsCleaningLineItemsTable from './OpsCleaningLineItemsTable.jsx';
 import OpsCleaningPaymentPanel from './OpsCleaningPaymentPanel.jsx';
 
@@ -33,11 +33,6 @@ describe('OpsCleaningPaymentPanel', () => {
     status: 'pending',
     cabinCount: 2,
     lineItems: [{ label: 'Fuel / transport', quantity: 1, unitAmountEUR: 8, amountEUR: 8 }],
-    inputs: { inputs: { transport: true }, perCheckoutInputs: [] },
-    editableInputFields: [
-      { inputKey: 'transport', label: 'Fuel / transport', type: 'boolean', amountEUR: 8 }
-    ],
-    canEditInputs: true,
     isSnapshot: false
   };
 
@@ -49,14 +44,10 @@ describe('OpsCleaningPaymentPanel', () => {
         paymentLoading={false}
         paymentError=""
         paymentBusy={false}
-        inputsSaving={false}
-        inputsError=""
         togglePaidError=""
         canWritePayment={true}
-        canEditDayInputs={true}
         formatLongDate={(d) => d.toDateString()}
         onTogglePaid={() => {}}
-        onSaveDayInputs={() => {}}
       />
     );
     expect(screen.getByTestId('cleaning-payment-panel-desktop')).toBeTruthy();
@@ -70,42 +61,14 @@ describe('OpsCleaningPaymentPanel', () => {
         paymentLoading={false}
         paymentError=""
         paymentBusy={false}
-        inputsSaving={false}
-        inputsError=""
         togglePaidError=""
         canWritePayment={false}
-        canEditDayInputs={true}
         formatLongDate={(d) => d.toDateString()}
         onTogglePaid={() => {}}
-        onSaveDayInputs={() => {}}
       />
     );
     expect(screen.queryByTestId('toggle-paid-desktop')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /mark paid/i })).not.toBeInTheDocument();
-  });
-
-  it('calls onSaveDayInputs when saving tasks', () => {
-    const onSaveDayInputs = vi.fn();
-    render(
-      <OpsCleaningPaymentPanel
-        selectedDate={new Date('2026-08-01')}
-        paymentSummary={baseSummary}
-        paymentLoading={false}
-        paymentError=""
-        paymentBusy={false}
-        inputsSaving={false}
-        inputsError=""
-        togglePaidError=""
-        canWritePayment={false}
-        canEditDayInputs={true}
-        formatLongDate={(d) => d.toDateString()}
-        onTogglePaid={() => {}}
-        onSaveDayInputs={onSaveDayInputs}
-      />
-    );
-    const panel = screen.getByTestId('cleaning-payment-panel-desktop');
-    fireEvent.submit(within(panel).getByTestId('cleaning-day-inputs-form'));
-    expect(onSaveDayInputs).toHaveBeenCalledWith({ transport: true });
   });
 
   it('shows frozen snapshot badge when paid', () => {
@@ -116,24 +79,18 @@ describe('OpsCleaningPaymentPanel', () => {
           ...baseSummary,
           status: 'paid',
           isSnapshot: true,
-          pricingVersion: '2026-06-default',
-          canEditInputs: false
+          pricingVersion: '2026-06-default'
         }}
         paymentLoading={false}
         paymentError=""
         paymentBusy={false}
-        inputsSaving={false}
-        inputsError=""
         togglePaidError=""
         canWritePayment={true}
-        canEditDayInputs={false}
         formatLongDate={(d) => d.toDateString()}
         onTogglePaid={() => {}}
-        onSaveDayInputs={() => {}}
       />
     );
     expect(screen.getByText(/Frozen snapshot/)).toBeInTheDocument();
-    expect(screen.queryByTestId('save-day-inputs')).not.toBeInTheDocument();
   });
 });
 
