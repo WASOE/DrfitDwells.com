@@ -50,6 +50,7 @@ const cabinTypeSchema = new mongoose.Schema({
     min: [0, 'Price cannot be negative']
   },
   // Per-cabin cleaning fee in EUR (optional). Used by the cleaning portal.
+  /** @deprecated Legacy cleaning input; payout uses pricing policy. Kept for old documents. */
   cleaningFee: {
     type: Number,
     min: 0,

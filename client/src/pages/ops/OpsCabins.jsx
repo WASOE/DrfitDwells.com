@@ -756,8 +756,7 @@ export default function OpsCabinDetail() {
 
   const openPricingEdit = () => {
     setPricingEditForm({
-      pricePerNight: op.pricePerNight != null ? String(op.pricePerNight) : '',
-      cleaningFee: op.cleaningFee ?? null
+      pricePerNight: op.pricePerNight != null ? String(op.pricePerNight) : ''
     });
     setPricingEditError('');
     setPricingEditSuccess('');
@@ -770,11 +769,7 @@ export default function OpsCabinDetail() {
     setPricingEditSuccess('');
     try {
       const payload = {
-        pricePerNight: Number(pricingEditForm.pricePerNight),
-        cleaningFee:
-          pricingEditForm.cleaningFee === '' || pricingEditForm.cleaningFee == null
-            ? null
-            : Number(pricingEditForm.cleaningFee)
+        pricePerNight: Number(pricingEditForm.pricePerNight)
       };
       await opsWriteAPI.updateCabinPricing(id, payload);
       await loadDetail();

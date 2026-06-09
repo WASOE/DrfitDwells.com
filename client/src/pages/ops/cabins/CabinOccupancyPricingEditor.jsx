@@ -70,7 +70,7 @@ export default function CabinOccupancyPricingEditor({
         <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5 max-w-4xl mx-auto w-full">
           <h3 className="text-sm font-semibold text-gray-900">Edit pricing</h3>
           <p className="mt-1 text-xs text-amber-700">This changes guest quote totals and payment amounts.</p>
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="mt-3 max-w-sm">
             <label className="block">
               <span className="block text-xs text-gray-600 mb-1">Price per night</span>
               <input
@@ -79,17 +79,6 @@ export default function CabinOccupancyPricingEditor({
                 step="0.01"
                 value={pricingForm.pricePerNight}
                 onChange={(e) => setPricingForm((p) => ({ ...p, pricePerNight: e.target.value }))}
-                className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-sm"
-              />
-            </label>
-            <label className="block">
-              <span className="block text-xs text-gray-600 mb-1">Cleaning fee (EUR)</span>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={pricingForm.cleaningFee ?? ''}
-                onChange={(e) => setPricingForm((p) => ({ ...p, cleaningFee: e.target.value }))}
                 className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-sm"
               />
             </label>

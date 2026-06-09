@@ -50,11 +50,6 @@ function resolvePropertyKind(booking) {
   return booking?.cabinId?.propertyKind || booking?.cabinTypeId?.propertyKind || null;
 }
 
-function resolveCleaningFee(booking) {
-  const fee = booking?.cabinId?.cleaningFee ?? booking?.cabinTypeId?.cleaningFee ?? null;
-  return typeof fee === 'number' ? fee : null;
-}
-
 function resolveCleaningTags(booking) {
   const cabinTags = booking?.cabinId?.cleaningTags;
   const typeTags = booking?.cabinTypeId?.cleaningTags;
@@ -79,8 +74,8 @@ function propertyTurnKey(booking) {
 }
 
 const POPULATE = [
-  { path: 'cabinId', select: 'name propertyKind cleaningFee cleaningTags inventoryMode' },
-  { path: 'cabinTypeId', select: 'name propertyKind cleaningFee cleaningTags' },
+  { path: 'cabinId', select: 'name propertyKind cleaningTags inventoryMode' },
+  { path: 'cabinTypeId', select: 'name propertyKind cleaningTags' },
   { path: 'unitId', select: 'unitNumber displayName' }
 ];
 
@@ -148,7 +143,6 @@ async function getCleaningSchedule({ date, propertyKind = null } = {}) {
       sameDayTurn,
       nextCheckInTime: sameDayTurn ? CHECK_IN_TIME : null,
       cleaningNotes: b.cleaningNotes || null,
-      cleaningFee: resolveCleaningFee(b),
       cleaningTags: cleaningMeta.cleaningTags,
       cabinId: cleaningMeta.cabinId,
       cabinTypeId: cleaningMeta.cabinTypeId
