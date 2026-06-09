@@ -101,12 +101,83 @@ const opsAlertGuestCheckoutTodayRule = Object.freeze({
   requirePaidIfStripe: false
 });
 
+const CLEANER_CHECKOUT_PREP_SOFIA_HOUR = 9;
+const CLEANER_CHECKOUT_TODAY_SOFIA_HOUR = 8;
+
+const cleanerCheckoutPrepCabinRule = Object.freeze({
+  ruleKey: 'cleaner_checkout_prep_cabin',
+  description: 'Cleaner alert: checkout prep T-24h for cabin properties (Sofia morning).',
+  triggerType: 'time_relative_to_check_out',
+  triggerConfig: { offsetHours: -24, sofiaHour: CLEANER_CHECKOUT_PREP_SOFIA_HOUR, sofiaMinute: 0 },
+  propertyScope: 'cabin',
+  channelStrategy: 'whatsapp_first_email_fallback',
+  templateKeyByChannel: { whatsapp: 'cleaner_checkout_prep_cabin', email: 'cleaner_checkout_prep_cabin' },
+  requiresConsent: 'transactional',
+  enabled: false,
+  mode: 'shadow',
+  audience: 'cleaner',
+  requiredBookingStatus: ['confirmed', 'in_house'],
+  requirePaidIfStripe: false
+});
+
+const cleanerCheckoutPrepValleyRule = Object.freeze({
+  ruleKey: 'cleaner_checkout_prep_valley',
+  description: 'Cleaner alert: checkout prep T-24h for valley properties (Sofia morning).',
+  triggerType: 'time_relative_to_check_out',
+  triggerConfig: { offsetHours: -24, sofiaHour: CLEANER_CHECKOUT_PREP_SOFIA_HOUR, sofiaMinute: 0 },
+  propertyScope: 'valley',
+  channelStrategy: 'whatsapp_first_email_fallback',
+  templateKeyByChannel: { whatsapp: 'cleaner_checkout_prep_valley', email: 'cleaner_checkout_prep_valley' },
+  requiresConsent: 'transactional',
+  enabled: false,
+  mode: 'shadow',
+  audience: 'cleaner',
+  requiredBookingStatus: ['confirmed', 'in_house'],
+  requirePaidIfStripe: false
+});
+
+const cleanerCheckoutTodayCabinRule = Object.freeze({
+  ruleKey: 'cleaner_checkout_today_cabin',
+  description: 'Cleaner alert: checkout today for cabin properties (Sofia 08:00).',
+  triggerType: 'time_relative_to_check_out',
+  triggerConfig: { offsetHours: 0, sofiaHour: CLEANER_CHECKOUT_TODAY_SOFIA_HOUR, sofiaMinute: 0 },
+  propertyScope: 'cabin',
+  channelStrategy: 'whatsapp_first_email_fallback',
+  templateKeyByChannel: { whatsapp: 'cleaner_checkout_today_cabin', email: 'cleaner_checkout_today_cabin' },
+  requiresConsent: 'transactional',
+  enabled: false,
+  mode: 'shadow',
+  audience: 'cleaner',
+  requiredBookingStatus: ['confirmed', 'in_house'],
+  requirePaidIfStripe: false
+});
+
+const cleanerCheckoutTodayValleyRule = Object.freeze({
+  ruleKey: 'cleaner_checkout_today_valley',
+  description: 'Cleaner alert: checkout today for valley properties (Sofia 08:00).',
+  triggerType: 'time_relative_to_check_out',
+  triggerConfig: { offsetHours: 0, sofiaHour: CLEANER_CHECKOUT_TODAY_SOFIA_HOUR, sofiaMinute: 0 },
+  propertyScope: 'valley',
+  channelStrategy: 'whatsapp_first_email_fallback',
+  templateKeyByChannel: { whatsapp: 'cleaner_checkout_today_valley', email: 'cleaner_checkout_today_valley' },
+  requiresConsent: 'transactional',
+  enabled: false,
+  mode: 'shadow',
+  audience: 'cleaner',
+  requiredBookingStatus: ['confirmed', 'in_house'],
+  requirePaidIfStripe: false
+});
+
 const MESSAGE_AUTOMATION_RULES = Object.freeze([
   arrivalInstructionsPreArrivalCabinRule,
   arrivalInstructionsPreArrivalValleyRule,
   opsAlertGuestArrivingIn8DaysRule,
   opsAlertGuestCheckInTomorrowRule,
-  opsAlertGuestCheckoutTodayRule
+  opsAlertGuestCheckoutTodayRule,
+  cleanerCheckoutPrepCabinRule,
+  cleanerCheckoutPrepValleyRule,
+  cleanerCheckoutTodayCabinRule,
+  cleanerCheckoutTodayValleyRule
 ]);
 
 module.exports = {
@@ -115,5 +186,9 @@ module.exports = {
   arrivalInstructionsPreArrivalValleyRule,
   opsAlertGuestArrivingIn8DaysRule,
   opsAlertGuestCheckInTomorrowRule,
-  opsAlertGuestCheckoutTodayRule
+  opsAlertGuestCheckoutTodayRule,
+  cleanerCheckoutPrepCabinRule,
+  cleanerCheckoutPrepValleyRule,
+  cleanerCheckoutTodayCabinRule,
+  cleanerCheckoutTodayValleyRule
 };

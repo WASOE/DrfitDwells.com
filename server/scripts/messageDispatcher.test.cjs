@@ -45,6 +45,8 @@ const OpsUser = require('../models/OpsUser');
 const dispatcher = require('../services/messaging/messageDispatcher');
 const { hashPassword } = require('../services/ops/opsPasswordService');
 const schedulerWorker = require('../services/messaging/schedulerWorker');
+const { cleanerCheckoutPrepCabinRule } = require('../data/messageAutomationRules');
+const { CLEANER_VARIABLE_SCHEMA } = require('../data/messageTemplates/gmaApprovedCopy');
 
 const { ENV_FLAG } = dispatcher;
 
@@ -1727,6 +1729,48 @@ test('cleaner fan-out: idempotency keys are per-recipient on retry', async () =>
       `${String(job._id)}:whatsapp:${String(c1._id)}`,
       `${String(job._id)}:whatsapp:${String(c2._id)}`
     ]);
+  });
+});
+
+test('seeded cleaner rule: unpaid booking skips payment guard → shadow dispatch (C6 E2E)', async () => {
+  await withDispatcherFlag('1', async () => {
+    const cabinId = await insertCabin();
+    const booking = await insertBooking({
+      cabinId,
+      status: 'in_house',
+      paymentMethod: 'gift_voucher',
+      giftVoucherRedemptionId: null,
+      stripePaymentIntentId: null
+    });
+    const rule = await MessageAutomationRule.create({
+      ...cleanerCheckoutPrepCabinRule,
+      enabled: true
+    });
+    await insertCleaner({
+      email: 'payguard.cleaner@test.com',
+      propertyKinds: ['cabin']
+    });
+    await MessageTemplate.create({
+      key: 'cleaner_checkout_prep_cabin',
+      version: 1,
+      channel: 'email',
+      locale: 'en',
+      propertyKind: 'cabin',
+      status: 'approved',
+      emailSubject: 'Prep {{propertyName}} · {{checkOutDate}}',
+      emailBodyMarkup:
+        '<p>{{propertyName}} {{checkOutDate}} {{checkoutTime}} {{meetingPointLabel}} {{googleMapsUrl}}</p>',
+      variableSchema: CLEANER_VARIABLE_SCHEMA
+    });
+    const job = await createClaimedJob({ booking, rule, propertyKind: 'cabin' });
+
+    const res = await dispatcher.processClaimedJob(job._id);
+    assert.equal(res.terminal, 'sent', res.body?.message || JSON.stringify(res));
+    assert.equal(await MessageDispatch.countDocuments({}), 1);
+    const d = await MessageDispatch.findOne({}).lean();
+    assert.equal(d.status, 'accepted');
+    assert.equal(d.details.shadow, true);
+    assert.equal(d.ruleKey, 'cleaner_checkout_prep_cabin');
   });
 });
 

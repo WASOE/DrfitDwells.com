@@ -21,6 +21,7 @@ const {
 } = require('../services/messaging/messageVariableResolver');
 
 let mongoServer;
+let bookingSeq = 0;
 
 function futureDate(days) {
   const d = new Date();
@@ -72,6 +73,7 @@ async function insertCabinType(overrides = {}) {
 }
 
 async function insertBooking({ cabin, cabinType, overrides = {} }) {
+  bookingSeq += 1;
   return Booking.create({
     cabinId: cabin?._id || null,
     cabinTypeId: cabinType?._id || null,
@@ -92,7 +94,7 @@ async function insertBooking({ cabin, cabinType, overrides = {} }) {
     totalValueCents: 30000,
     giftVoucherAppliedCents: 0,
     stripePaidAmountCents: 30000,
-    stripePaymentIntentId: 'pi_test_cleaner_vars',
+    stripePaymentIntentId: `pi_test_cleaner_vars_${bookingSeq}`,
     cleaningNotes: overrides.cleaningNotes,
     ...overrides
   });

@@ -42,6 +42,7 @@ const {
   opsAlertCheckoutTodayTemplate
 } = require('../data/messageTemplates/opsAlerts');
 const { MESSAGE_AUTOMATION_RULES } = require('../data/messageAutomationRules');
+const { buildAllCleanerTemplates } = require('../data/messageTemplates/cleanerNotifications');
 
 const TEMPLATE_MODEL_FIELDS = Object.freeze([
   'key',
@@ -94,7 +95,8 @@ function buildAllTemplates() {
     valleyEmailTemplate,
     opsAlertArriving8dTemplate,
     opsAlertCheckInTomorrowTemplate,
-    opsAlertCheckoutTodayTemplate
+    opsAlertCheckoutTodayTemplate,
+    ...buildAllCleanerTemplates()
   ].map((row) => pickModelFields(row, TEMPLATE_MODEL_FIELDS));
 }
 

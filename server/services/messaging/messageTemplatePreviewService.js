@@ -28,7 +28,11 @@ const WHATSAPP_PREVIEW_NOTE =
 
 const PREVIEW_RULE_KEYS = Object.freeze([
   'arrival_instructions_pre_arrival_cabin',
-  'arrival_instructions_pre_arrival_valley'
+  'arrival_instructions_pre_arrival_valley',
+  'cleaner_checkout_prep_cabin',
+  'cleaner_checkout_prep_valley',
+  'cleaner_checkout_today_cabin',
+  'cleaner_checkout_today_valley'
 ]);
 
 const PREVIEW_RULE_KEY_SET = new Set(PREVIEW_RULE_KEYS);
@@ -154,11 +158,7 @@ async function previewGmaMessageForReservation({ reservationId, ruleKey, channel
       errorType: 'not_found'
     });
   }
-  // C5 temporary: cleaner rules are not seeded until C6, so any DB row with
-  // audience:'cleaner' may be previewed (compose-only; no send path here).
-  // C6: add seeded cleaner rule keys to PREVIEW_RULE_KEYS and delete this
-  // audience bypass so cleaner preview is allowlisted like guest.
-  if (rule.audience !== 'cleaner' && !PREVIEW_RULE_KEY_SET.has(ruleKey)) {
+  if (!PREVIEW_RULE_KEY_SET.has(ruleKey)) {
     throw new MessageTemplatePreviewError(`Unknown or unsupported ruleKey: ${ruleKey}`, {
       status: 400,
       errorType: 'validation'

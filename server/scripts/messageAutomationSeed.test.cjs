@@ -29,8 +29,8 @@ const {
   runSeed
 } = require('./seedMessageAutomation');
 
-const EXPECTED_TEMPLATE_COUNT = 7;
-const EXPECTED_RULE_COUNT = 5;
+const EXPECTED_TEMPLATE_COUNT = 23;
+const EXPECTED_RULE_COUNT = 9;
 
 const GUEST_RULE_KEYS = [
   'arrival_instructions_pre_arrival_cabin',
@@ -41,8 +41,27 @@ const OPS_RULE_KEYS = [
   'ops_alert_guest_check_in_tomorrow',
   'ops_alert_guest_checkout_today'
 ];
+const OPS_TEMPLATE_KEYS = [
+  'ops_alert_arriving_8d',
+  'ops_alert_check_in_tomorrow',
+  'ops_alert_checkout_today'
+];
 
 const GUEST_TEMPLATE_KEYS = ['arrival_3d_the_cabin', 'arrival_3d_the_valley'];
+
+const CLEANER_RULE_KEYS = [
+  'cleaner_checkout_prep_cabin',
+  'cleaner_checkout_prep_valley',
+  'cleaner_checkout_today_cabin',
+  'cleaner_checkout_today_valley'
+];
+
+const CLEANER_TEMPLATE_KEYS = [
+  'cleaner_checkout_prep_cabin',
+  'cleaner_checkout_prep_valley',
+  'cleaner_checkout_today_cabin',
+  'cleaner_checkout_today_valley'
+];
 
 const LOCKED_GUEST_VARIABLES = [
   'guestFirstName',
@@ -77,7 +96,7 @@ test.beforeEach(async () => {
 // Pure builder contracts
 // ---------------------------------------------------------------------------
 
-test('buildAllTemplates returns exactly 7 rows', () => {
+test('buildAllTemplates returns exactly 23 rows (7 guest/ops + 16 cleaner)', () => {
   const rows = buildAllTemplates();
   assert.equal(rows.length, EXPECTED_TEMPLATE_COUNT);
 });
@@ -89,11 +108,15 @@ test('every built template is status="draft"', () => {
   }
 });
 
-test('every built template uses locale="en", version=1', () => {
+test('every built template uses version=1; guest/ops locale en, cleaner en+bg', () => {
   const rows = buildAllTemplates();
   for (const row of rows) {
-    assert.equal(row.locale, 'en');
     assert.equal(row.version, 1);
+    if (CLEANER_TEMPLATE_KEYS.includes(row.key)) {
+      assert.ok(['en', 'bg'].includes(row.locale), `cleaner template ${row.key}/${row.channel} locale`);
+    } else {
+      assert.equal(row.locale, 'en');
+    }
   }
 });
 
@@ -108,9 +131,7 @@ test('guest templates declare exactly the locked 8 variables', () => {
 });
 
 test('OPS alert templates use propertyKind="any"', () => {
-  const rows = buildAllTemplates().filter(
-    (r) => !GUEST_TEMPLATE_KEYS.includes(r.key)
-  );
+  const rows = buildAllTemplates().filter((r) => OPS_TEMPLATE_KEYS.includes(r.key));
   assert.equal(rows.length, 3);
   for (const row of rows) {
     assert.equal(row.propertyKind, 'any');
@@ -120,10 +141,18 @@ test('OPS alert templates use propertyKind="any"', () => {
 
 test('WhatsApp templates carry whatsappTemplateName + whatsappLocale', () => {
   const rows = buildAllTemplates().filter((r) => r.channel === 'whatsapp');
-  assert.equal(rows.length, 2);
-  for (const row of rows) {
+  assert.equal(rows.length, 10);
+  const guestWa = rows.filter((r) => GUEST_TEMPLATE_KEYS.includes(r.key));
+  assert.equal(guestWa.length, 2);
+  for (const row of guestWa) {
     assert.equal(row.whatsappLocale, 'en');
     assert.match(row.whatsappTemplateName, /_v1$/);
+  }
+  const cleanerWa = rows.filter((r) => CLEANER_TEMPLATE_KEYS.includes(r.key));
+  assert.equal(cleanerWa.length, 8);
+  for (const row of cleanerWa) {
+    assert.equal(row.whatsappLocale, row.locale);
+    assert.match(row.whatsappTemplateName, /_v1_(en|bg)$/);
   }
 });
 
@@ -138,7 +167,7 @@ test('email templates carry emailSubject + emailBodyMarkup', () => {
   }
 });
 
-test('buildAllRules returns exactly 5 rows, all inert', () => {
+test('buildAllRules returns exactly 9 rows, all inert', () => {
   const rows = buildAllRules();
   assert.equal(rows.length, EXPECTED_RULE_COUNT);
   for (const row of rows) {
@@ -171,9 +200,33 @@ test('OPS rules: requirePaidIfStripe=false, requiredBookingStatus=["confirmed","
   }
 });
 
-test('seeded rules: no cleaner audience rows (C3 inert until C4+)', () => {
-  const rows = buildAllRules();
-  assert.equal(rows.filter((r) => r.audience === 'cleaner').length, 0);
+test('cleaner rules: audience cleaner, requirePaidIfStripe false, whatsapp_first_email_fallback', () => {
+  const rows = buildAllRules().filter((r) => CLEANER_RULE_KEYS.includes(r.ruleKey));
+  assert.equal(rows.length, 4);
+  for (const row of rows) {
+    assert.equal(row.audience, 'cleaner');
+    assert.equal(row.requirePaidIfStripe, false);
+    assert.equal(row.enabled, false);
+    assert.equal(row.mode, 'shadow');
+    assert.equal(row.channelStrategy, 'whatsapp_first_email_fallback');
+    assert.deepEqual(row.requiredBookingStatus.slice().sort(), ['confirmed', 'in_house']);
+    assert.ok(row.propertyScope === 'cabin' || row.propertyScope === 'valley');
+    assert.equal(row.templateKeyByChannel.whatsapp, row.ruleKey);
+    assert.equal(row.templateKeyByChannel.email, row.ruleKey);
+  }
+});
+
+test('cleaner templates: 16 draft rows with CLEANER_VARIABLE_SCHEMA', () => {
+  const { CLEANER_VARIABLE_SCHEMA } = require('../data/messageTemplates/gmaApprovedCopy');
+  const rows = buildAllTemplates().filter((r) => CLEANER_TEMPLATE_KEYS.includes(r.key));
+  assert.equal(rows.length, 16);
+  for (const row of rows) {
+    assert.equal(row.status, 'draft');
+    assert.equal(row.approvedBy, null);
+    assert.equal(row.approvedAt, null);
+    assert.deepEqual(row.variableSchema, CLEANER_VARIABLE_SCHEMA);
+    assert.equal(row.variableSchema.properties.guestFirstName, undefined);
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -193,7 +246,7 @@ test('runSeed dry-run on empty DB inserts nothing', async () => {
   assert.equal(rCount, 0);
 });
 
-test('runSeed apply on empty DB inserts 7 templates and 5 rules', async () => {
+test('runSeed apply on empty DB inserts 23 templates and 9 rules', async () => {
   const res = await runSeed({ apply: true });
   assert.equal(res.exitCode, 0);
   assert.ok(res.writes);
@@ -256,7 +309,7 @@ test('runSeed apply does NOT overwrite an existing APPROVED template', async () 
   assert.equal(reread.emailSubject, customSubject, 'subject was mutated');
   assert.equal(reread.emailBodyMarkup, customBody, 'body was mutated');
 
-  // The seed still inserts the other 6 templates around it.
+  // The seed still inserts the other templates around it.
   const tCount = await MessageTemplate.countDocuments({});
   assert.equal(tCount, EXPECTED_TEMPLATE_COUNT);
 });

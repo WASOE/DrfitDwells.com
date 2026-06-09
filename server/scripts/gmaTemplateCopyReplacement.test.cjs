@@ -505,7 +505,7 @@ test('GMA preview renders valley email from draft template', async () => {
 
 test('seed source templates match approved copy targets', () => {
   const rows = buildAllTemplates();
-  assert.equal(rows.length, 7);
+  assert.equal(rows.length, 23);
   for (const target of GMA_TEMPLATE_COPY_TARGETS) {
     const row = rows.find(
       (r) =>

@@ -23,8 +23,11 @@ const {
 const {
   previewGmaMessageForReservation,
   MessageTemplatePreviewError,
-  renderTemplateString
+  renderTemplateString,
+  PREVIEW_RULE_KEY_SET
 } = require('../services/messaging/messageTemplatePreviewService');
+const { buildAllRules, buildAllTemplates } = require('./seedMessageAutomation');
+const { cleanerCheckoutPrepCabinRule } = require('../data/messageAutomationRules');
 
 let mongoServer;
 
@@ -168,35 +171,14 @@ test('renderTemplateString matches dispatcher substitution semantics', () => {
   assert.equal(renderTemplateString(tpl, vars), dispatcherRender(tpl, vars));
 });
 
-test('preview uses cleaner variable bag when rule audience is cleaner', async () => {
-  await MessageAutomationRule.create({
-    ruleKey: 'cleaner_checkout_t24h_cabin',
-    description: 'C5 preview smoke',
-    triggerType: 'time_relative_to_check_out',
-    triggerConfig: { offsetHours: -24, sofiaHour: 9, sofiaMinute: 0 },
-    propertyScope: 'cabin',
-    channelStrategy: 'email_only',
-    templateKeyByChannel: { email: 'cleaner_t24h_cabin' },
-    requiresConsent: 'transactional',
-    enabled: false,
-    mode: 'shadow',
-    audience: 'cleaner',
-    requiredBookingStatus: ['confirmed'],
-    requirePaidIfStripe: false
-  });
-
-  await MessageTemplate.create({
-    key: 'cleaner_t24h_cabin',
-    version: 1,
-    channel: 'email',
-    locale: 'en',
-    propertyKind: 'cabin',
-    status: 'draft',
-    emailSubject: 'Clean {{propertyName}} checkout {{checkOutDate}}',
-    emailBodyMarkup:
-      '<p>{{propertyName}} · {{unitLabel}} · checkout {{checkOutDate}} at {{checkoutTime}}. Notes: {{cleaningNotes}}. Meet: {{meetingPointLabel}}. Access: {{accessNote}}</p>',
-    variableSchema: CLEANER_VARIABLE_SCHEMA
-  });
+test('preview: allowlisted cleaner rule uses cleaner variable bag (C6, no audience bypass)', async () => {
+  assert.ok(PREVIEW_RULE_KEY_SET.has('cleaner_checkout_prep_cabin'));
+  const ruleRow = buildAllRules().find((r) => r.ruleKey === 'cleaner_checkout_prep_cabin');
+  const templateRow = buildAllTemplates().find(
+    (r) => r.key === 'cleaner_checkout_prep_cabin' && r.channel === 'email' && r.locale === 'en'
+  );
+  await MessageAutomationRule.create(ruleRow);
+  await MessageTemplate.create(templateRow);
 
   const cabin = await createCabinWithArrivalMetadata({
     arrivalWindowDefault: 'From 15:00. Park and walk to cabin.'
@@ -206,7 +188,7 @@ test('preview uses cleaner variable bag when rule audience is cleaner', async ()
 
   const data = await previewGmaMessageForReservation({
     reservationId: String(booking._id),
-    ruleKey: 'cleaner_checkout_t24h_cabin',
+    ruleKey: 'cleaner_checkout_prep_cabin',
     channel: 'email'
   });
 
@@ -217,6 +199,30 @@ test('preview uses cleaner variable bag when rule audience is cleaner', async ()
   assert.match(data.email.html, /Strip linens/);
   assert.match(data.email.html, /Park here/);
   assert.equal(data.email.html.includes('Jose'), false);
+});
+
+test('preview: cleaner rule not on allowlist is rejected (audience bypass removed)', async () => {
+  await MessageAutomationRule.create({
+    ...cleanerCheckoutPrepCabinRule,
+    ruleKey: 'cleaner_shadow_only_not_previewable',
+    description: 'not on PREVIEW_RULE_KEYS'
+  });
+  const cabin = await createCabinWithArrivalMetadata();
+  const booking = await createConfirmedBooking(cabin._id);
+
+  await assert.rejects(
+    () =>
+      previewGmaMessageForReservation({
+        reservationId: String(booking._id),
+        ruleKey: 'cleaner_shadow_only_not_previewable',
+        channel: 'email'
+      }),
+    (err) => {
+      assert.ok(err instanceof MessageTemplatePreviewError);
+      assert.equal(err.status, 400);
+      return true;
+    }
+  );
 });
 
 test('renders draft email template for a booking', async () => {
