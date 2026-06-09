@@ -1522,6 +1522,51 @@ test('GMA mode shadow + MESSAGE_EMAIL_PROVIDER_ENABLED=1 still uses shadow email
   });
 });
 
+test('GMA audience cleaner: claimed job fails closed before resolveRecipient (C4 guard)', async () => {
+  await withDispatcherFlag('1', async () => {
+    await withEmailProviderFlag('1', async () => {
+      const cabinId = await insertCabin();
+      const booking = await insertBooking({ cabinId });
+      const rule = await MessageAutomationRule.create({
+        ruleKey: 'cleaner_checkout_t24h_cabin_dispatcher_smoke',
+        description: 'C3 dispatcher smoke — not in seed',
+        triggerType: 'time_relative_to_check_out',
+        triggerConfig: { offsetHours: -24, sofiaHour: 9, sofiaMinute: 0 },
+        propertyScope: 'cabin',
+        channelStrategy: 'email_only',
+        templateKeyByChannel: { email: 'cleaner_t24h_cabin' },
+        requiresConsent: 'transactional',
+        enabled: true,
+        mode: 'shadow',
+        audience: 'cleaner',
+        requiredBookingStatus: ['confirmed'],
+        requirePaidIfStripe: false
+      });
+      await insertApprovedGuestTemplates();
+      const job = await createClaimedJob({ booking, rule, propertyKind: 'cabin' });
+      assert.equal(job.audience, 'cleaner');
+
+      let called = false;
+      const restore = stubEmailServiceSend(async () => {
+        called = true;
+        return { success: true, method: 'sent', messageId: 'x' };
+      });
+      try {
+        const res = await dispatcher.processClaimedJob(job._id);
+        assert.equal(res.terminal, 'failed');
+        assert.equal(res.reason, 'cleaner_recipient_not_supported_yet');
+      } finally {
+        restore();
+      }
+      assert.equal(called, false);
+      assert.equal(await MessageDispatch.countDocuments({}), 0);
+      const after = await ScheduledMessageJob.findById(job._id).lean();
+      assert.equal(after.status, 'failed');
+      assert.equal(after.lastError, 'cleaner_recipient_not_supported_yet');
+    });
+  });
+});
+
 test('GMA mode manual_approve: claimed job fails without MessageDispatch or provider', async () => {
   await withDispatcherFlag('1', async () => {
     await withEmailProviderFlag('1', async () => {

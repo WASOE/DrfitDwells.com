@@ -31,7 +31,7 @@ const AUTOMATION_RULE_CHANNEL_STRATEGIES = Object.freeze([
 ]);
 const AUTOMATION_RULE_REQUIRES_CONSENT = Object.freeze(['transactional', 'marketing']);
 const AUTOMATION_RULE_MODES = Object.freeze(['auto', 'shadow', 'manual_approve']);
-const AUTOMATION_RULE_AUDIENCES = Object.freeze(['guest', 'ops']);
+const AUTOMATION_RULE_AUDIENCES = Object.freeze(['guest', 'ops', 'cleaner']);
 
 const SCHEDULED_JOB_STATUSES = Object.freeze([
   'scheduled',

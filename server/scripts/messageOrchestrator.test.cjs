@@ -738,6 +738,35 @@ test('OPS rule manually enabled in test schedules one OPS job (engine generality
   });
 });
 
+test('cleaner audience rule (test-only, not seeded) persists audience on scheduled job', async () => {
+  await withFlag('1', async () => {
+    const cabinId = await insertCabin({ propertyKind: 'cabin' });
+    const booking = await insertBooking({ cabinId });
+    await MessageAutomationRule.create({
+      ruleKey: 'cleaner_checkout_t24h_cabin_orchestrator_smoke',
+      description: 'C3 orchestrator smoke — not in seed',
+      triggerType: 'time_relative_to_check_out',
+      triggerConfig: { offsetHours: -24, sofiaHour: 9, sofiaMinute: 0 },
+      propertyScope: 'cabin',
+      channelStrategy: 'whatsapp_first_email_fallback',
+      templateKeyByChannel: { whatsapp: 'cleaner_t24h_cabin', email: 'cleaner_t24h_cabin' },
+      requiresConsent: 'transactional',
+      enabled: true,
+      mode: 'shadow',
+      audience: 'cleaner',
+      requiredBookingStatus: ['confirmed', 'in_house'],
+      requirePaidIfStripe: false
+    });
+
+    await orchestrator.notifyBookingCreated({ bookingId: booking._id });
+    const jobs = await ScheduledMessageJob.find({}).lean();
+    assert.equal(jobs.length, 1);
+    assert.equal(jobs[0].audience, 'cleaner');
+    assert.equal(jobs[0].propertyKind, 'cabin');
+    assert.equal(jobs[0].ruleKey, 'cleaner_checkout_t24h_cabin_orchestrator_smoke');
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Past targets
 // ---------------------------------------------------------------------------

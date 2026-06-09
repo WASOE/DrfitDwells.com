@@ -178,6 +178,31 @@ test('MessageAutomationRule ruleKey is unique', async () => {
   await assertDuplicateKey(() => MessageAutomationRule.create(row));
 });
 
+test('MessageAutomationRule accepts audience cleaner', async () => {
+  const rule = await MessageAutomationRule.create({
+    ruleKey: 'cleaner_checkout_t24h_cabin_test',
+    triggerType: 'time_relative_to_check_out',
+    triggerConfig: { offsetHours: -24, sofiaHour: 9, sofiaMinute: 0 },
+    propertyScope: 'cabin',
+    channelStrategy: 'whatsapp_first_email_fallback',
+    templateKeyByChannel: { whatsapp: 'cleaner_t24h_cabin', email: 'cleaner_t24h_cabin' },
+    audience: 'cleaner',
+    requirePaidIfStripe: false
+  });
+  assert.equal(rule.audience, 'cleaner');
+  const err = rule.validateSync();
+  assert.equal(err, undefined);
+});
+
+test('ScheduledMessageJob accepts audience cleaner', async () => {
+  const job = await ScheduledMessageJob.create(
+    bookingJob({ audience: 'cleaner', ruleKey: 'cleaner_checkout_t24h_cabin_test' })
+  );
+  assert.equal(job.audience, 'cleaner');
+  const err = job.validateSync();
+  assert.equal(err, undefined);
+});
+
 test('MessageAutomationRule rejects unknown enums', async () => {
   const doc = new MessageAutomationRule({
     ruleKey: 'x',

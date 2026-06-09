@@ -171,6 +171,11 @@ test('OPS rules: requirePaidIfStripe=false, requiredBookingStatus=["confirmed","
   }
 });
 
+test('seeded rules: no cleaner audience rows (C3 inert until C4+)', () => {
+  const rows = buildAllRules();
+  assert.equal(rows.filter((r) => r.audience === 'cleaner').length, 0);
+});
+
 // ---------------------------------------------------------------------------
 // runSeed against in-memory Mongo
 // ---------------------------------------------------------------------------

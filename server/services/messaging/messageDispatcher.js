@@ -998,6 +998,14 @@ async function processClaimedJobInner({ job, now }) {
     return { ran: true, terminal: 'failed', reason: 'manual_approve_not_supported_yet' };
   }
 
+  if (job.audience === 'cleaner' || rule.audience === 'cleaner') {
+    await transitionClaimedJob({
+      jobId: job._id,
+      $set: { status: 'failed', lastError: 'cleaner_recipient_not_supported_yet' }
+    });
+    return { ran: true, terminal: 'failed', reason: 'cleaner_recipient_not_supported_yet' };
+  }
+
   // Load booking (or null for no-booking jobs, which V1 does not produce
   // but the schema allows).
   let booking = null;
