@@ -11,6 +11,7 @@ import {
 import {
   getCleaningSchedule,
   getCleaningPaymentSummary,
+  getCleaningPayoutSummary,
   markCleaned,
   unmarkCleaned,
   markPaid,
@@ -19,6 +20,7 @@ import {
 } from '../../../services/cleaningApi';
 import { useOpsSession } from '../../../context/OpsSessionContext';
 import OpsCleaningPaymentPanel from './OpsCleaningPaymentPanel';
+import OpsCleaningPayoutBreakdown from './OpsCleaningPayoutBreakdown';
 
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const MONTHS = [
@@ -95,6 +97,7 @@ function NoteBox({ text }) {
 export default function OpsCleaningCalendar() {
   const session = useOpsSession();
   const canReadPayment = (session?.actions || []).includes('ops.cleaning.payment_read');
+  const canReadPayout = (session?.actions || []).includes('ops.cleaning.payout_read');
   const canWritePayment = (session?.actions || []).includes('ops.cleaning.payment_write');
   const canEditDayInputs = (session?.actions || []).includes('ops.cleaning.day_inputs_write');
   const today = useMemo(() => new Date(), []);
@@ -114,6 +117,9 @@ export default function OpsCleaningCalendar() {
   const [paymentSummary, setPaymentSummary] = useState(null);
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [paymentError, setPaymentError] = useState('');
+  const [payoutSummary, setPayoutSummary] = useState(null);
+  const [payoutLoading, setPayoutLoading] = useState(false);
+  const [payoutError, setPayoutError] = useState('');
   const [paymentBusy, setPaymentBusy] = useState(false);
   const [toggleCleanedError, setToggleCleanedError] = useState('');
   const [togglePaidError, setTogglePaidError] = useState('');
@@ -209,10 +215,31 @@ export default function OpsCleaningCalendar() {
     }
   }, [selectedDate, selectedPropertyKind, canReadPayment]);
 
+  const loadPayout = useCallback(async () => {
+    if (!canReadPayout || canReadPayment) {
+      setPayoutSummary(null);
+      setPayoutError('');
+      setPayoutLoading(false);
+      return;
+    }
+    setPayoutLoading(true);
+    setPayoutError('');
+    try {
+      const res = await getCleaningPayoutSummary({ date: dateKey(selectedDate) });
+      setPayoutSummary(res.data?.data || null);
+    } catch (err) {
+      setPayoutError(err?.response?.data?.message || 'Failed to load payout summary.');
+      setPayoutSummary(null);
+    } finally {
+      setPayoutLoading(false);
+    }
+  }, [selectedDate, canReadPayout, canReadPayment]);
+
   useEffect(() => {
     loadDay();
     loadPayment();
-  }, [loadDay, loadPayment]);
+    loadPayout();
+  }, [loadDay, loadPayment, loadPayout]);
 
   // Invalidate the cached dots for the current month so they re-fetch.
   const invalidateMonth = useCallback(() => {
@@ -304,6 +331,8 @@ export default function OpsCleaningCalendar() {
   const paidAmount = paymentSummary?.paidAmount ?? 0;
   const pendingAmount = Math.max(0, totalAmount - paidAmount);
   const isPaid = paymentSummary?.status === 'paid';
+
+  const showCleanerPayout = canReadPayout && !canReadPayment;
 
   return (
     <div className="w-full max-w-lg mx-auto pb-24 md:pb-10 lg:max-w-none lg:mx-0 lg:pb-8">
@@ -521,6 +550,20 @@ export default function OpsCleaningCalendar() {
       </div>
       ) : null}
 
+      {/* Cleaner payout breakdown — mobile/tablet */}
+      {showCleanerPayout ? (
+        <div className="mt-5 lg:hidden">
+          <OpsCleaningPayoutBreakdown
+            selectedDate={selectedDate}
+            payoutSummary={payoutSummary}
+            loading={payoutLoading}
+            error={payoutError}
+            formatLongDate={formatLongDate}
+            testId="global-payout-card"
+          />
+        </div>
+      ) : null}
+
       {/* Event list */}
       <div className="mt-5 space-y-3" data-testid="cleaning-events">
         {dayError ? (
@@ -621,6 +664,20 @@ export default function OpsCleaningCalendar() {
         ))}
       </div>
         </div>
+
+        {showCleanerPayout ? (
+          <aside className="hidden lg:block lg:col-span-7">
+            <OpsCleaningPayoutBreakdown
+              selectedDate={selectedDate}
+              payoutSummary={payoutSummary}
+              loading={payoutLoading}
+              error={payoutError}
+              formatLongDate={formatLongDate}
+              className="lg:sticky lg:top-6"
+              testId="cleaner-payout-breakdown-desktop"
+            />
+          </aside>
+        ) : null}
 
         {canReadPayment && selectedPropertyKind ? (
           <aside className="hidden lg:block lg:col-span-7">
