@@ -1,10 +1,11 @@
+import { BUILD_CONSULTATION_URL } from '../../data/buildConsultation.js';
+
 const BuildStickyBar = ({
   dimensions,
   area,
   capacity,
   price,
   onDownloadPDF,
-  onScheduleConsultation,
 }) => {
   const stats = [
     { label: 'Dimensions', value: dimensions || '—' },
@@ -40,13 +41,14 @@ const BuildStickyBar = ({
           >
             Download Spec PDF
           </button>
-          <button
-            type="button"
-            onClick={onScheduleConsultation}
-            className="whitespace-nowrap rounded-[2px] bg-white px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-[#1a1a1a] transition-colors hover:bg-[#eee] md:px-5 md:py-3 md:text-sm"
+          <a
+            href={BUILD_CONSULTATION_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="whitespace-nowrap rounded-[2px] bg-white px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-[#1a1a1a] no-underline transition-colors hover:bg-[#eee] md:px-5 md:py-3 md:text-sm"
           >
             Schedule Consultation
-          </button>
+          </a>
         </div>
       </div>
     </div>

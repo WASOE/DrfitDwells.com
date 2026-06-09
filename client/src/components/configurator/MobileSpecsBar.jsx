@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
 import { ChevronUp } from 'lucide-react';
+import { BUILD_CONSULTATION_URL } from '../../data/buildConsultation.js';
 
 /**
  * Mobile specs bar — matches BuildStickyBar (black, white text).
@@ -11,7 +12,6 @@ const MobileSpecsBar = ({
   capacity = '—',
   price = '—',
   onDownloadPDF,
-  onScheduleConsultation,
   isConfigPanelOpen = false,
   onExpandedChange,
 }) => {
@@ -88,13 +88,14 @@ const MobileSpecsBar = ({
               </div>
 
               <div className="flex gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={onScheduleConsultation}
-                  className="flex-1 touch-manipulation rounded-[2px] bg-white px-4 py-3 text-xs font-semibold uppercase tracking-[0.08em] text-[#1a1a1a] active:bg-[#eee]"
+                <a
+                  href={BUILD_CONSULTATION_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex flex-1 touch-manipulation items-center justify-center rounded-[2px] bg-white px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.08em] text-[#1a1a1a] no-underline active:bg-[#eee]"
                 >
                   Schedule Consultation
-                </button>
+                </a>
                 <button
                   type="button"
                   onClick={onDownloadPDF}

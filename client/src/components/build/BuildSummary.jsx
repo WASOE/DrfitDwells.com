@@ -3,13 +3,13 @@ import {
   computeBuildTotal,
   formatBuildBarPrice,
 } from '../../data/buildConfiguratorLogic.js';
+import { BUILD_CONSULTATION_URL } from '../../data/buildConsultation.js';
 import { SUMMARY_REVIEWS } from '../../data/buildConfiguratorSchema.js';
 
 const BuildSummary = ({
   state,
   model,
   onDownloadPDF,
-  onScheduleConsultation,
   padX = 'px-8',
   omitActions = false,
 }) => {
@@ -57,13 +57,14 @@ const BuildSummary = ({
 
       {omitActions ? null : (
         <>
-          <button
-            type="button"
-            onClick={onScheduleConsultation}
-            className="mb-3 w-full rounded-[2px] bg-[#1a1a1a] px-4 py-4 text-[0.7rem] font-medium uppercase tracking-[0.14em] text-white transition-colors hover:bg-[#2b2b2b]"
+          <a
+            href={BUILD_CONSULTATION_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mb-3 block w-full rounded-[2px] bg-[#1a1a1a] px-4 py-4 text-center text-[0.7rem] font-medium uppercase tracking-[0.14em] text-white no-underline transition-colors hover:bg-[#2b2b2b]"
           >
             Schedule a free consultation
-          </button>
+          </a>
           <button
             type="button"
             onClick={onDownloadPDF}

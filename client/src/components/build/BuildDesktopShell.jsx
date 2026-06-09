@@ -38,7 +38,6 @@ const StepNav = ({ onBack, onNext, backLabel = '← Back', nextLabel, showBack =
 const BuildDesktopShell = ({
   configurator,
   onDownloadPDF,
-  onScheduleConsultation,
 }) => {
   const {
     state,
@@ -126,7 +125,6 @@ const BuildDesktopShell = ({
                   state={state}
                   model={model}
                   onDownloadPDF={onDownloadPDF}
-                  onScheduleConsultation={onScheduleConsultation}
                 />
                 <StepNav onBack={prevStep} backLabel="← Revise choices" showBack />
               </>
@@ -140,7 +138,6 @@ const BuildDesktopShell = ({
         capacity={capacity}
         price={barPrice}
         onDownloadPDF={onDownloadPDF}
-        onScheduleConsultation={onScheduleConsultation}
       />
     </>
   );

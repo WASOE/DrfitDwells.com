@@ -7,6 +7,7 @@ import BuildExteriorStep from '../build/BuildExteriorStep';
 import BuildInteriorStep from '../build/BuildInteriorStep';
 import BuildOptionsStep from '../build/BuildOptionsStep';
 import BuildSummary from '../build/BuildSummary';
+import { BUILD_CONSULTATION_URL } from '../../data/buildConsultation.js';
 
 const STEP_HEADERS = {
   model: 'Choose your model',
@@ -21,7 +22,6 @@ const MobileConfigPanel = ({
   onClose,
   configurator,
   onDownloadPDF,
-  onScheduleConsultation,
 }) => {
   const {
     state,
@@ -127,7 +127,6 @@ const MobileConfigPanel = ({
             state={state}
             model={model}
             onDownloadPDF={onDownloadPDF}
-            onScheduleConsultation={onScheduleConsultation}
             padX={padX}
             omitActions
           />
@@ -203,13 +202,14 @@ const MobileConfigPanel = ({
             <div className="shrink-0 border-t border-[#e0e0e0] bg-white px-6 py-4">
               {isSummaryStep ? (
                 <div className="flex flex-col gap-2">
-                  <button
-                    type="button"
-                    onClick={onScheduleConsultation}
-                    className="w-full touch-manipulation rounded-[2px] bg-[#1a1a1a] px-4 py-3.5 text-[0.68rem] font-medium uppercase tracking-[0.1em] text-white active:bg-[#2b2b2b]"
+                  <a
+                    href={BUILD_CONSULTATION_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block w-full touch-manipulation rounded-[2px] bg-[#1a1a1a] px-4 py-3.5 text-center text-[0.68rem] font-medium uppercase tracking-[0.1em] text-white no-underline active:bg-[#2b2b2b]"
                   >
                     Schedule consultation
-                  </button>
+                  </a>
                   <div className="flex gap-2">
                     <button
                       type="button"

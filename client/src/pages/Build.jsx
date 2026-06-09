@@ -14,20 +14,11 @@ import { BUILD_STEPS } from '../data/buildConfiguratorSchema.js';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { CONTACT_EMAIL } from '../data/gmbLocations';
 
-const BUILD_CONSULTATION_URL = 'https://tidycal.com/jose3/schedule-your-cabin-project-meeting';
-
 const Build = () => {
   const [isMobileConfigOpen, setIsMobileConfigOpen] = useState(false);
   const [isSpecsBarExpanded, setIsSpecsBarExpanded] = useState(false);
   const { language } = useLanguage();
   const configurator = useBuildConfigurator();
-
-  const handleScheduleConsultation = useCallback(() => {
-    const popup = window.open(BUILD_CONSULTATION_URL, '_blank', 'noopener,noreferrer');
-    if (!popup) {
-      window.location.href = BUILD_CONSULTATION_URL;
-    }
-  }, []);
 
   const handlePdfDownload = useCallback(async () => {
     await downloadBuildSpecPdf(configurator.state, CONTACT_EMAIL);
@@ -99,7 +90,6 @@ const Build = () => {
           <BuildDesktopShell
             configurator={configurator}
             onDownloadPDF={handlePdfDownload}
-            onScheduleConsultation={handleScheduleConsultation}
           />
         </section>
 
@@ -108,7 +98,6 @@ const Build = () => {
           onClose={() => setIsMobileConfigOpen(false)}
           configurator={configurator}
           onDownloadPDF={handlePdfDownload}
-          onScheduleConsultation={handleScheduleConsultation}
         />
 
         <MobileSpecsBar
@@ -117,7 +106,6 @@ const Build = () => {
           capacity={configurator.capacity}
           price={configurator.barPrice}
           onDownloadPDF={handlePdfDownload}
-          onScheduleConsultation={handleScheduleConsultation}
           isConfigPanelOpen={isMobileConfigOpen}
           onExpandedChange={setIsSpecsBarExpanded}
         />
