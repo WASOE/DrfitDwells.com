@@ -14,6 +14,15 @@ const cabinSchema = new mongoose.Schema({
     required: [true, 'Cabin description is required'],
     maxlength: [1000, 'Description cannot exceed 1000 characters']
   },
+  // Optional per-locale content overrides for guest-facing text.
+  // Missing/empty values fall back to the base (English) fields. See utils/cabinLocalization.js.
+  i18n: {
+    bg: {
+      name: { type: String, trim: true, maxlength: [100, 'Cabin name cannot exceed 100 characters'] },
+      location: { type: String, trim: true },
+      description: { type: String, maxlength: [1000, 'Description cannot exceed 1000 characters'] }
+    }
+  },
   inventoryType: {
     type: String,
     enum: ['single', 'multi'],

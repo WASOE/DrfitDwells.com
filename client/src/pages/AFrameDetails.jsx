@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import '../i18n/ns/booking';
+import { useSiteLanguage } from '../hooks/useSiteLanguage';
 import { cabinTypeAPI, availabilityAPI, unitAPI } from '../services/api';
 import { useBookingSearch } from '../context/BookingSearchContext';
 import { useBookingNavigation } from '../hooks/useBookingNavigation';
@@ -28,6 +29,7 @@ const AFrameDetails = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { t } = useTranslation('booking');
+  const { language: siteLanguage } = useSiteLanguage();
   const { openModal: openDateModal, setGuestPromoCode } = useBookingSearch();
 
   const [cabinType, setCabinType] = useState(null);
@@ -238,8 +240,11 @@ const AFrameDetails = () => {
         setError(null);
         setAvailability(null);
 
-        // Load cabin type
-        const typeResponse = await cabinTypeAPI.getBySlug(MULTI_UNIT_SLUG);
+        // Load cabin type (localized listing content for the BG site)
+        const typeResponse = await cabinTypeAPI.getBySlug(
+          MULTI_UNIT_SLUG,
+          siteLanguage === 'bg' ? { locale: 'bg' } : undefined
+        );
         if (cancelled) return;
         
         if (!typeResponse.data.success) {
@@ -282,6 +287,7 @@ const AFrameDetails = () => {
               children: searchCriteria.children
             };
             if (searchCriteria.promoCode) availParams.promoCode = searchCriteria.promoCode;
+            if (siteLanguage === 'bg') availParams.locale = 'bg';
             const availResponse = await availabilityAPI.checkCabinType(MULTI_UNIT_SLUG, availParams);
             
             if (!cancelled && availResponse.data.success) {
@@ -316,6 +322,7 @@ const AFrameDetails = () => {
     searchCriteria.adults,
     searchCriteria.children,
     searchCriteria.promoCode,
+    siteLanguage,
     t,
   ]);
 

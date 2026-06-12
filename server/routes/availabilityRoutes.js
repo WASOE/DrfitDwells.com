@@ -11,6 +11,7 @@ const {
   isSingleCabinGuestStayAvailable
 } = require('../services/publicAvailabilityService');
 const { guestFacingCabinMatch } = require('../utils/fixtureExclusion');
+const { localizeCabinContent, normalizeContentLocale } = require('../utils/cabinLocalization');
 const promoService = require('../services/promoService');
 const { findNextSameLengthAvailability } = require('../services/availabilitySuggestionService');
 
@@ -22,7 +23,8 @@ router.get('/', [
   query('checkOut').isISO8601().withMessage('Valid check-out date is required'),
   query('adults').isInt({ min: 1, max: 10 }).withMessage('Adults must be between 1 and 10'),
   query('children').optional().isInt({ min: 0, max: 10 }).withMessage('Children must be between 0 and 10'),
-  query('promoCode').optional().isString().isLength({ max: 40 })
+  query('promoCode').optional().isString().isLength({ max: 40 }),
+  query('locale').optional().isIn(['en', 'bg']).withMessage('Locale must be en or bg')
 ], async (req, res) => {
   try {
     // Check for validation errors
@@ -36,6 +38,7 @@ router.get('/', [
     }
 
     const { checkIn, checkOut, adults, children = 0, promoCode: promoCodeRaw } = req.query;
+    const contentLocale = normalizeContentLocale(req.query.locale);
 
     let promoDocForSearch = null;
     let promoResponse = { applied: false, invalidReason: null, label: null };
@@ -94,7 +97,7 @@ router.get('/', [
       }
 
       const baseRow = {
-        ...cabin.toObject(),
+        ...localizeCabinContent(cabin, contentLocale),
         totalNights,
         totalPrice,
         lodgingSubtotalBeforePromo
@@ -171,7 +174,7 @@ router.get('/', [
         }
 
         const baseMulti = {
-          ...cabinType.toObject(),
+          ...localizeCabinContent(cabinType, contentLocale),
           totalNights,
           totalPrice,
           lodgingSubtotalBeforePromo,
@@ -289,7 +292,8 @@ router.get('/cabin-type/:slug', [
   query('checkOut').isISO8601().withMessage('Valid check-out date is required'),
   query('adults').isInt({ min: 1, max: 10 }).withMessage('Adults must be between 1 and 10'),
   query('children').optional().isInt({ min: 0, max: 10 }).withMessage('Children must be between 0 and 10'),
-  query('promoCode').optional().isString().isLength({ max: 40 })
+  query('promoCode').optional().isString().isLength({ max: 40 }),
+  query('locale').optional().isIn(['en', 'bg']).withMessage('Locale must be en or bg')
 ], async (req, res) => {
   try {
     if (!featureFlags.isMultiUnitGloballyEnabled()) {
@@ -406,7 +410,7 @@ router.get('/cabin-type/:slug', [
       success: true,
       data: {
         cabinType: {
-          ...cabinType.toObject(),
+          ...localizeCabinContent(cabinType, normalizeContentLocale(req.query.locale)),
           totalNights,
           totalPrice,
           lodgingSubtotalBeforePromo,

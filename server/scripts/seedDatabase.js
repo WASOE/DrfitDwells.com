@@ -99,6 +99,14 @@ const seedDatabase = async () => {
       slug: 'a-frame',
       description:
         'Off-grid A-frame cabins in a hidden mountain valley below Ortsevo, the highest inhabited village in the Balkans. Designed for quiet stays, nature immersion, and switching off. Simple, warm, and private, with shared facilities in the heart of the valley.',
+      i18n: {
+        bg: {
+          name: 'А-фрейм',
+          location: 'Черешово / Орцево, Родопите, България',
+          description:
+            'Офгрид А-фрейм къщички в скрита планинска долина под Орцево — най-високото обитаемо село на Балканите. Създадени за тихи престои, потапяне в природата и изключване от ежедневието. Семпли, топли и уединени, с общи съоръжения в сърцето на долината.'
+        }
+      },
       capacity: 2,
       minGuests: 1,
       pricePerNight: 60,
@@ -157,6 +165,14 @@ const seedDatabase = async () => {
         name: 'Stone House',
         description:
           'A restored 400-year-old stone house at the center of the valley, surrounded by forest, water, and open meadow. Features a 360-degree balcony, shared kitchen, outdoor bathrooms, and communal spaces for groups, families, or retreats.',
+        i18n: {
+          bg: {
+            name: 'Каменна къща',
+            location: 'Черешово / Орцево, Родопите, България',
+            description:
+              'Реставрирана 400-годишна каменна къща в центъра на долината, заобиколена от гора, вода и открити поляни. Разполага с панорамен балкон на 360 градуса, обща кухня, външни бани и общи пространства за групи, семейства или ритрийти.'
+          }
+        },
         capacity: 6,
         minGuests: 3,
         pricePerNight: 25,
@@ -207,6 +223,14 @@ const seedDatabase = async () => {
         name: 'Lux Cabin',
         description:
           'A fully private off-grid cabin with its own kitchen, bathroom, and floor-to-ceiling windows overlooking the forest and creek. Built for couples who want real comfort in nature — spacious, warm, and completely self-contained, with running water right beside the cabin.',
+        i18n: {
+          bg: {
+            name: 'Лукс къща',
+            location: 'Черешово / Орцево, Родопите, България',
+            description:
+              'Напълно самостоятелна офгрид къща със собствена кухня, баня и панорамни прозорци от пода до тавана с изглед към гората и потока. Създадена за двойки, които търсят истински комфорт сред природата — просторна, топла и изцяло независима, с течаща вода непосредствено до къщата.'
+          }
+        },
         capacity: 2,
         minGuests: 1,
         pricePerNight: 85,

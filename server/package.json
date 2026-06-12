@@ -51,6 +51,8 @@
     "test:gma-template-approval": "node --test scripts/gmaApproveCabinArrivalTemplates.test.cjs",
     "test:gma-template-preview": "node --test scripts/gmaTemplatePreview.test.cjs scripts/gmaEmailHtmlRenderer.test.cjs",
     "test:gma-template-copy-replacement": "node --test scripts/gmaTemplateCopyReplacement.test.cjs",
+    "test:cabin-localization": "node --test scripts/cabinLocalization.test.cjs scripts/cabinContentLocale.test.cjs",
+    "maintenance:backfill-cabin-i18n-bg": "node scripts/backfillCabinI18nBg.cjs",
     "start:messaging-worker": "node scripts/runMessagingWorker.js",
     "maintenance:backfill-property-kind": "node scripts/backfillPropertyKind.js",
     "maintenance:gma-arrival-metadata": "node scripts/gmaArrivalMetadataBackfill.cjs",

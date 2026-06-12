@@ -368,6 +368,9 @@ export default function OpsCabinDetail() {
     name: '',
     description: '',
     hostName: '',
+    i18nBgName: '',
+    i18nBgLocation: '',
+    i18nBgDescription: '',
     avgResponseTimeHours: '',
     highlightsText: '',
     superhostEnabled: false,
@@ -491,6 +494,9 @@ export default function OpsCabinDetail() {
       name: content.name || '',
       description: content.description || '',
       hostName: content.hostName || '',
+      i18nBgName: content.i18n?.bg?.name || '',
+      i18nBgLocation: content.i18n?.bg?.location || '',
+      i18nBgDescription: content.i18n?.bg?.description || '',
       avgResponseTimeHours:
         op?.avgResponseTimeHours != null
           ? String(op.avgResponseTimeHours)
@@ -522,6 +528,13 @@ export default function OpsCabinDetail() {
         name: contentEditForm.name.trim(),
         description: contentEditForm.description.trim(),
         hostName: contentEditForm.hostName.trim(),
+        i18n: {
+          bg: {
+            name: contentEditForm.i18nBgName.trim(),
+            location: contentEditForm.i18nBgLocation.trim(),
+            description: contentEditForm.i18nBgDescription.trim()
+          }
+        },
         highlights,
         badges: {
           superhost: {

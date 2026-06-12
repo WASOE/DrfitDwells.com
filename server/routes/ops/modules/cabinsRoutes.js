@@ -24,6 +24,7 @@ const router = express.Router();
 const OPS_CABIN_CONTENT_ALLOWED_FIELDS = new Set([
   'name',
   'description',
+  'i18n',
   'hostName',
   'avgResponseTimeHours',
   'highlights',

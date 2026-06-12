@@ -284,6 +284,8 @@ const SearchResults = () => {
 
       const searchPayload = { ...currentSearchParams };
       if (!searchPayload.promoCode) delete searchPayload.promoCode;
+      // Localized listing content (name/location/description) for the BG site.
+      if (routeLanguage === 'bg') searchPayload.locale = 'bg';
 
       const response = await availabilityAPI.search(searchPayload);
 
@@ -424,6 +426,7 @@ const SearchResults = () => {
     currentSearchParams.adults,
     currentSearchParams.children,
     currentSearchParams.promoCode,
+    routeLanguage,
     homeBase,
     navigate
   ]);

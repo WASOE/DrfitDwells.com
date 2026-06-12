@@ -1,6 +1,7 @@
 const express = require('express');
 const CabinType = require('../models/CabinType');
 const featureFlags = require('../utils/featureFlags');
+const { localizeCabinContent } = require('../utils/cabinLocalization');
 
 const router = express.Router();
 
@@ -25,7 +26,7 @@ router.get('/', async (req, res) => {
     res.json({
       success: true,
       data: {
-        cabinTypes: cabinTypes.map(addMultiUnitMeta)
+        cabinTypes: cabinTypes.map((ct) => addMultiUnitMeta(localizeCabinContent(ct, req.query.locale)))
       }
     });
   } catch (error) {
@@ -55,7 +56,7 @@ router.get('/:slug', async (req, res) => {
 
     res.json({
       success: true,
-      data: { cabinType: addMultiUnitMeta(cabinType) }
+      data: { cabinType: addMultiUnitMeta(localizeCabinContent(cabinType, req.query.locale)) }
     });
   } catch (error) {
     console.error('Get cabin type error:', error);

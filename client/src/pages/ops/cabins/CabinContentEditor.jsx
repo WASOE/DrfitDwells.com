@@ -65,6 +65,45 @@ export default function CabinContentEditor({
         </label>
       </div>
 
+      <div className="mt-4 border border-gray-100 rounded-md p-3">
+        <h4 className="text-xs font-semibold text-gray-900">Bulgarian translation (BG)</h4>
+        <p className="text-[11px] text-gray-500 mt-0.5">
+          Shown on the /bg site. Empty fields fall back to the English text.
+        </p>
+        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label className="block">
+            <span className="block text-xs text-gray-600 mb-1">Name (BG)</span>
+            <input
+              type="text"
+              value={contentForm.i18nBgName}
+              onChange={(e) => setContentForm((p) => ({ ...p, i18nBgName: e.target.value }))}
+              className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-sm"
+              maxLength={100}
+            />
+          </label>
+          <label className="block">
+            <span className="block text-xs text-gray-600 mb-1">Location (BG)</span>
+            <input
+              type="text"
+              value={contentForm.i18nBgLocation}
+              onChange={(e) => setContentForm((p) => ({ ...p, i18nBgLocation: e.target.value }))}
+              className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-sm"
+              maxLength={200}
+            />
+          </label>
+          <label className="block md:col-span-2">
+            <span className="block text-xs text-gray-600 mb-1">Description (BG)</span>
+            <textarea
+              rows={4}
+              value={contentForm.i18nBgDescription}
+              onChange={(e) => setContentForm((p) => ({ ...p, i18nBgDescription: e.target.value }))}
+              className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-sm"
+              maxLength={1000}
+            />
+          </label>
+        </div>
+      </div>
+
       <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="border border-gray-100 rounded-md p-3">
           <label className="flex items-center gap-2 text-xs text-gray-700">

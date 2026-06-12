@@ -2,6 +2,7 @@ const express = require('express');
 const Cabin = require('../models/Cabin');
 const { validateId } = require('../middleware/validateId');
 const { guestFacingCabinMatch, isFixtureCabinName } = require('../utils/fixtureExclusion');
+const { localizeCabinContent } = require('../utils/cabinLocalization');
 
 const router = express.Router();
 
@@ -18,7 +19,7 @@ router.get('/:id', validateId('id'), async (req, res) => {
 
     res.json({
       success: true,
-      data: { cabin }
+      data: { cabin: localizeCabinContent(cabin, req.query.locale) }
     });
 
   } catch (error) {
@@ -37,7 +38,7 @@ router.get('/', async (req, res) => {
 
     res.json({
       success: true,
-      data: { cabins }
+      data: { cabins: cabins.map((cabin) => localizeCabinContent(cabin, req.query.locale)) }
     });
 
   } catch (error) {

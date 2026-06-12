@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense } fro
 import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import '../i18n/ns/booking';
+import { useSiteLanguage } from '../hooks/useSiteLanguage';
 import { cabinAPI, bookingAPI } from '../services/api';
 import { useBookingContext } from '../context/BookingContext';
 import { useBookingSearch } from '../context/BookingSearchContext';
@@ -34,6 +35,7 @@ const CabinDetails = () => {
   const { setBasicInfo } = useBookingContext();
   const { openModal: openDateModal, setGuestPromoCode } = useBookingSearch();
   const { t } = useTranslation('booking');
+  const { language: siteLanguage } = useSiteLanguage();
 
   // Check if we're returning to craft flow
   const returnTo = searchParams.get('returnTo');
@@ -697,8 +699,11 @@ const CabinDetails = () => {
       try {
         setLoading(true);
         setError(null);
-        const response = await cabinAPI.getById(id);
-        
+        const response = await cabinAPI.getById(
+          id,
+          siteLanguage === 'bg' ? { locale: 'bg' } : undefined
+        );
+
         if (cancelled) return;
         
         if (response.data.success) {
@@ -722,7 +727,7 @@ const CabinDetails = () => {
     return () => {
       cancelled = true;
     };
-  }, [id, t]);
+  }, [id, siteLanguage, t]);
 
   // Keyboard navigation and focus trap for lightbox
   useEffect(() => {

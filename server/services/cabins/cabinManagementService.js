@@ -10,7 +10,7 @@ const { aggregateNonDeletedReviewStatsForContext } = require('../reviewOwnership
 const DEFAULT_CABIN_IMAGE_URL = 'https://placehold.co/1200x800.jpg';
 
 const CABIN_ALLOWED_FIELDS = [
-  'name', 'description', 'location', 'hostName', 'capacity', 'pricePerNight', 'minNights',
+  'name', 'description', 'location', 'i18n', 'hostName', 'capacity', 'pricePerNight', 'minNights',
   'transportOptions', 'blockedDates', 'meetingPoint', 'packingList',
   'arrivalGuideUrl', 'safetyNotes', 'emergencyContact', 'arrivalWindowDefault',
   'transportCutoffs', 'badges', 'highlights', 'experiences',
@@ -202,6 +202,36 @@ const sanitizeBadges = (badges) => {
   };
 };
 
+const I18N_TEXT_FIELDS = ['name', 'location', 'description'];
+
+// Per-locale content overrides (currently only `bg`). Empty strings are kept so
+// translations can be cleared; guest endpoints fall back to English for empties.
+const sanitizeI18n = (i18n) => {
+  if (i18n === undefined) return { value: undefined };
+  if (i18n === null || typeof i18n !== 'object' || Array.isArray(i18n)) {
+    return { error: { field: 'i18n', message: 'Translations must be an object' } };
+  }
+
+  const bg = i18n.bg;
+  if (bg === undefined || bg === null) {
+    return { value: { bg: {} } };
+  }
+  if (typeof bg !== 'object' || Array.isArray(bg)) {
+    return { error: { field: 'i18n', message: 'Bulgarian translations must be an object' } };
+  }
+
+  const sanitizedBg = {};
+  for (const field of I18N_TEXT_FIELDS) {
+    if (bg[field] === undefined || bg[field] === null) continue;
+    if (typeof bg[field] !== 'string') {
+      return { error: { field: 'i18n', message: `Bulgarian ${field} must be a string` } };
+    }
+    sanitizedBg[field] = bg[field].trim();
+  }
+
+  return { value: { bg: sanitizedBg } };
+};
+
 const sanitizeMeetingPoint = (meetingPoint) => {
   if (meetingPoint === undefined) return { value: undefined };
   if (meetingPoint === null) return { value: undefined };
@@ -381,6 +411,12 @@ const sanitizeCabinPayload = (input = {}, { isUpdate = false, allowMulti = false
     } else {
       sanitized.location = input.location.trim();
     }
+  }
+
+  if (input.i18n !== undefined) {
+    const { value, error } = sanitizeI18n(input.i18n);
+    if (error) errors.push(error);
+    else sanitized.i18n = value;
   }
 
   if (input.hostName !== undefined) {
@@ -711,6 +747,7 @@ const createCabinFromAdminPayload = async (body, ctx = {}) => {
     slug,
     description: sanitized.description,
     location: sanitized.location,
+    i18n: sanitized.i18n || undefined,
     hostName: sanitized.hostName || 'Drift & Dwells',
     capacity: sanitized.capacity,
     pricePerNight: sanitized.pricePerNight,
@@ -868,6 +905,7 @@ const updateCabinFromAdminPayload = async (id, body, ctx = {}) => {
   const effectiveBase = {
     name: sanitized.name ?? cabin.name,
     description: sanitized.description ?? cabin.description,
+    i18n: sanitized.i18n ?? cabin.i18n,
     capacity: sanitized.capacity ?? cabin.capacity,
     pricePerNight: sanitized.pricePerNight ?? cabin.pricePerNight,
     minNights: sanitized.minNights ?? cabin.minNights,
@@ -952,6 +990,7 @@ const updateCabinFromAdminPayload = async (id, body, ctx = {}) => {
       if (cabinType) {
         cabinType.name = effectiveBase.name;
         cabinType.description = effectiveBase.description;
+        cabinType.i18n = effectiveBase.i18n || undefined;
         cabinType.capacity = effectiveBase.capacity;
         cabinType.pricePerNight = effectiveBase.pricePerNight;
         cabinType.minNights = effectiveBase.minNights ?? cabinType.minNights;

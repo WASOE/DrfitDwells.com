@@ -60,13 +60,13 @@ export const availabilityAPI = {
 };
 
 export const cabinAPI = {
-  getById: (id) => api.get(`/cabins/${id}`),
-  getAll: () => api.get('/cabins')
+  getById: (id, params) => api.get(`/cabins/${id}`, { params }),
+  getAll: (params) => api.get('/cabins', { params })
 };
 
 export const cabinTypeAPI = {
-  getBySlug: (slug) => api.get(`/cabin-types/${slug}`),
-  getAll: () => api.get('/cabin-types')
+  getBySlug: (slug, params) => api.get(`/cabin-types/${slug}`, { params }),
+  getAll: (params) => api.get('/cabin-types', { params })
 };
 
 export const publicGuideAPI = {
