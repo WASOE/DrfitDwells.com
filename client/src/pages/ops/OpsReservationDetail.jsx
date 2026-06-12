@@ -5,6 +5,7 @@ import api from '../../services/api';
 import { formatMoneyFromCents } from '../../utils/formatMoney';
 import { OpsEmailPreviewModal } from './components/OpsEmailPreviewModal';
 import { OpsWhatsappPreviewModal } from './components/OpsWhatsappPreviewModal';
+import { buildGmaPreviewRuleOptions } from '../../../shared/messaging/gmaPreviewRules.js';
 
 const MIN_STAY_CREDIT_CENTS = 10000;
 const CANCELLABLE_RESERVATION_STATUSES = new Set(['pending', 'confirmed', 'in_house']);
@@ -81,11 +82,6 @@ const TEMPLATE_LABELS = {
 };
 
 const LIFECYCLE_TEMPLATE_KEYS = ['booking_received', 'booking_confirmed', 'booking_cancelled'];
-
-const GMA_PREVIEW_RULE_OPTIONS = [
-  { value: 'arrival_instructions_pre_arrival_cabin', label: 'Cabin arrival (T-72h)' },
-  { value: 'arrival_instructions_pre_arrival_valley', label: 'Valley arrival (T-72h)' }
-];
 
 function gmaTemplateStatusBadge(status) {
   const base = 'text-[10px] px-1.5 py-0.5 rounded border font-medium uppercase tracking-wide';
@@ -174,6 +170,18 @@ export default function OpsReservationDetail() {
   const [messagingCancelModal, setMessagingCancelModal] = useState({ open: false, jobId: null, ruleKey: '' });
   const [messagingCancelBusy, setMessagingCancelBusy] = useState(false);
   const [gmaPreviewRuleKey, setGmaPreviewRuleKey] = useState('arrival_instructions_pre_arrival_cabin');
+  const gmaPreviewRuleOptions = useMemo(
+    () => buildGmaPreviewRuleOptions(data?.stayPropertyKind),
+    [data?.stayPropertyKind]
+  );
+
+  useEffect(() => {
+    if (gmaPreviewRuleOptions.length === 0) return;
+    const allowed = new Set(gmaPreviewRuleOptions.map((opt) => opt.value));
+    if (!allowed.has(gmaPreviewRuleKey)) {
+      setGmaPreviewRuleKey(gmaPreviewRuleOptions[0].value);
+    }
+  }, [gmaPreviewRuleOptions, gmaPreviewRuleKey]);
   const [gmaPreviewLoading, setGmaPreviewLoading] = useState(null);
   const [gmaPreviewError, setGmaPreviewError] = useState('');
   const [gmaEmailPreviewModal, setGmaEmailPreviewModal] = useState({
@@ -1210,7 +1218,7 @@ export default function OpsReservationDetail() {
                     disabled={Boolean(gmaPreviewLoading)}
                     className="px-2 py-1.5 text-sm border border-gray-200 rounded-md bg-white"
                   >
-                    {GMA_PREVIEW_RULE_OPTIONS.map((opt) => (
+                    {gmaPreviewRuleOptions.map((opt) => (
                       <option key={opt.value} value={opt.value}>
                         {opt.label}
                       </option>

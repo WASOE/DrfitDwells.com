@@ -1,4 +1,6 @@
 const Booking = require('../../../models/Booking');
+const Cabin = require('../../../models/Cabin');
+const CabinType = require('../../../models/CabinType');
 const Guest = require('../../../models/Guest');
 const Payment = require('../../../models/Payment');
 const Payout = require('../../../models/Payout');
@@ -11,6 +13,26 @@ const { mapEmailEventToCommunicationCompatible } = require('../../../mappers/ema
 const { isPublicIcsStrictEligibility, isPublicIcsExportSafetyEnforced } = require('../../../config/publicIcsConfig');
 const { isBookingEligibleForPublicIcs, loadPaidOrPartialReservationIdSet } = require('../../calendar/icsBlockingEligibility');
 const { resolveBookingExportSafety } = require('../../calendar/bookingExportSafety');
+const {
+  resolvePropertyKindFromCabinDoc,
+  resolvePropertyKindFromCabinTypeDoc
+} = require('../../messaging/propertyKindResolver');
+
+async function resolveStayPropertyKindForBooking(booking) {
+  try {
+    if (booking?.cabinId) {
+      const cabin = await Cabin.findById(booking.cabinId).select('propertyKind').lean();
+      return resolvePropertyKindFromCabinDoc(cabin);
+    }
+    if (booking?.cabinTypeId) {
+      const cabinType = await CabinType.findById(booking.cabinTypeId).select('propertyKind').lean();
+      return resolvePropertyKindFromCabinTypeDoc(cabinType);
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
 
 function mapCancellationSettlementForOps(booking) {
   const raw = booking?.cancellationSettlement;
@@ -50,7 +72,8 @@ async function getReservationDetailReadModel(reservationId) {
   if (booking.isTest || booking.archivedAt) return null;
 
   const mapped = mapBookingToReservationCompatible(booking);
-  const [guest, availability, payments, payouts, emailEvents, auditSummary, notes] = await Promise.all([
+  const [guest, availability, payments, payouts, emailEvents, auditSummary, notes, stayPropertyKind] =
+    await Promise.all([
     Guest.findOne({ email: booking.guestInfo?.email || null }).lean(),
     AvailabilityBlock.find({ reservationId: booking._id }).lean(),
     Payment.find({ reservationId: booking._id }).sort({ createdAt: -1 }).lean(),
@@ -63,6 +86,7 @@ async function getReservationDetailReadModel(reservationId) {
     ReservationNote.find({ reservationId: booking._id, 'tombstone.isTombstoned': false })
       .sort({ createdAt: -1 })
       .lean(),
+    resolveStayPropertyKindForBooking(booking)
   ]);
 
   const strictIcs = isPublicIcsStrictEligibility();
@@ -72,6 +96,7 @@ async function getReservationDetailReadModel(reservationId) {
 
   return {
     reservation: mapped,
+    stayPropertyKind,
     // Admin-authored note for cleaning staff (not guest PII) — safe to expose to ops.
     cleaningNotes: booking.cleaningNotes || null,
     cancellationSettlement: mapCancellationSettlementForOps(booking),

@@ -21,6 +21,14 @@ function readinessBadge(status) {
   return `${base} bg-gray-100 text-gray-700 border-gray-200`;
 }
 
+function audienceBadgeClass(audience) {
+  const base = 'inline-flex text-xs px-1.5 py-0.5 rounded border font-medium capitalize';
+  if (audience === 'guest') return `${base} bg-sky-50 text-sky-900 border-sky-200`;
+  if (audience === 'ops') return `${base} bg-slate-100 text-slate-800 border-slate-200`;
+  if (audience === 'cleaner') return `${base} bg-teal-50 text-teal-900 border-teal-200`;
+  return `${base} bg-gray-100 text-gray-700 border-gray-200`;
+}
+
 const SHADOW_TOGGLE_CONFIRM =
   'This only enables shadow automation. It will not send real email or WhatsApp. Existing scheduled jobs are not deleted when disabling.';
 
@@ -115,9 +123,10 @@ export default function OpsMessaging() {
       <header className="space-y-2">
         <h1 className="text-xl md:text-2xl font-semibold text-gray-900">Guest message automation</h1>
         <p className="text-sm text-gray-600 max-w-2xl">
-          System flags and rules overview. Admins can enable or disable <span className="font-medium">shadow</span>{' '}
-          rules only (internal providers — no real email or WhatsApp). This is separate from legacy booking lifecycle
-          email and Postmark <code className="text-xs bg-gray-100 px-1 rounded">EmailEvent</code> history.
+          System flags and rules overview (guest, ops, and cleaner audiences). Admins can enable or disable{' '}
+          <span className="font-medium">shadow</span> rules only (internal providers — no real email or WhatsApp). This
+          is separate from legacy booking lifecycle email and Postmark{' '}
+          <code className="text-xs bg-gray-100 px-1 rounded">EmailEvent</code> history.
         </p>
       </header>
 
@@ -203,7 +212,9 @@ export default function OpsMessaging() {
                       {r.mode}
                     </span>
                   </td>
-                  <td className="py-2 pr-3">{r.audience || '—'}</td>
+                  <td className="py-2 pr-3">
+                    <span className={audienceBadgeClass(r.audience)}>{r.audience || '—'}</span>
+                  </td>
                   <td className="py-2 pr-3">{r.propertyScope}</td>
                   <td className="py-2 pr-3">{r.channelStrategy}</td>
                   <td className="py-2 pr-3">

@@ -326,3 +326,31 @@ test('getDeliveryEventsForDispatch lists events for dispatch', async () => {
 test('getDeliveryEventsForDispatch returns null for invalid id', async () => {
   assert.equal(await getDeliveryEventsForDispatch('bad'), null);
 });
+
+test('getMessagingRulesWithTemplateReadiness includes cleaner rules with draft template readiness (C7)', async () => {
+  const { buildAllRules, buildAllTemplates } = require('./seedMessageAutomation');
+  const cleanerRules = buildAllRules().filter((r) => r.audience === 'cleaner');
+  const cleanerTemplates = buildAllTemplates().filter((t) => t.key.startsWith('cleaner_'));
+  assert.equal(cleanerRules.length, 4);
+  assert.equal(cleanerTemplates.length, 16);
+  for (const row of cleanerTemplates) {
+    await MessageTemplate.create(row);
+  }
+  for (const row of cleanerRules) {
+    await MessageAutomationRule.create(row);
+  }
+
+  const { rules } = await getMessagingRulesWithTemplateReadiness();
+  const cleanerRows = rules.filter((r) => r.audience === 'cleaner');
+  assert.equal(cleanerRows.length, 4);
+
+  const prepCabin = rules.find((r) => r.ruleKey === 'cleaner_checkout_prep_cabin');
+  assert.ok(prepCabin);
+  assert.equal(prepCabin.audience, 'cleaner');
+  assert.equal(prepCabin.propertyScope, 'cabin');
+  assert.equal(prepCabin.enabled, false);
+  assert.equal(prepCabin.mode, 'shadow');
+  assert.equal(prepCabin.templateReadinessByChannel.whatsapp, 'draft');
+  assert.equal(prepCabin.templateReadinessByChannel.email, 'draft');
+  assert.equal(prepCabin.templateKeyByChannel.whatsapp, 'cleaner_checkout_prep_cabin');
+});
