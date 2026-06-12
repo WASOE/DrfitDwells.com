@@ -27,6 +27,7 @@
     "test:e2e:availability-contract": "playwright test tests/e2e/api/availability-contract.spec.js --project=chromium",
     "ensure:index:booking-checkout-id": "node server/scripts/ensureBookingCheckoutIdIndex.js",
     "guard:legal-paths": "node scripts/check-legacy-legal-paths.mjs",
+    "crawl:bg": "node scripts/crawlBgPages.cjs",
     "k6:smoke": "k6 run k6/smoke.js",
     "k6:average-load": "k6 run k6/average-load.js",
     "k6:stress": "k6 run k6/stress.js"
