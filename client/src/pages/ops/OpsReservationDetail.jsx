@@ -5,7 +5,7 @@ import api from '../../services/api';
 import { formatMoneyFromCents } from '../../utils/formatMoney';
 import { OpsEmailPreviewModal } from './components/OpsEmailPreviewModal';
 import { OpsWhatsappPreviewModal } from './components/OpsWhatsappPreviewModal';
-import { buildGmaPreviewRuleOptions } from '../../../shared/messaging/gmaPreviewRules.js';
+import { buildGmaPreviewRuleOptions } from '../../../../shared/messaging/gmaPreviewRules.js';
 
 const MIN_STAY_CREDIT_CENTS = 10000;
 const CANCELLABLE_RESERVATION_STATUSES = new Set(['pending', 'confirmed', 'in_house']);

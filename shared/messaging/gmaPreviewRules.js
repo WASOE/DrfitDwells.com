@@ -1,10 +1,11 @@
-'use strict';
-
 /**
  * Allowlisted GMA preview rules exposed in OPS reservation compose-only preview (C6/C7).
  * Must stay aligned with PREVIEW_RULE_KEYS in messageTemplatePreviewService.js.
+ *
+ * ESM module: consumed by the Vite client build (CommonJS here breaks rollup
+ * named-import resolution for files outside node_modules).
  */
-const GMA_PREVIEW_RULE_DEFINITIONS = Object.freeze([
+export const GMA_PREVIEW_RULE_DEFINITIONS = Object.freeze([
   {
     value: 'arrival_instructions_pre_arrival_cabin',
     label: 'Guest · Cabin arrival (T-72h)',
@@ -47,14 +48,9 @@ const GMA_PREVIEW_RULE_DEFINITIONS = Object.freeze([
  * @param {'cabin'|'valley'|null|undefined} stayPropertyKind
  * @returns {typeof GMA_PREVIEW_RULE_DEFINITIONS[number][]}
  */
-function buildGmaPreviewRuleOptions(stayPropertyKind) {
+export function buildGmaPreviewRuleOptions(stayPropertyKind) {
   if (!stayPropertyKind) {
     return GMA_PREVIEW_RULE_DEFINITIONS.filter((r) => r.audience === 'guest');
   }
   return GMA_PREVIEW_RULE_DEFINITIONS.filter((r) => r.propertyScope === stayPropertyKind);
 }
-
-module.exports = {
-  GMA_PREVIEW_RULE_DEFINITIONS,
-  buildGmaPreviewRuleOptions
-};
