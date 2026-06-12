@@ -53,6 +53,7 @@
     "test:gma-template-copy-replacement": "node --test scripts/gmaTemplateCopyReplacement.test.cjs",
     "test:cabin-localization": "node --test scripts/cabinLocalization.test.cjs scripts/cabinContentLocale.test.cjs",
     "maintenance:backfill-cabin-i18n-bg": "node scripts/backfillCabinI18nBg.cjs",
+    "check:cabin-i18n": "node scripts/checkCabinI18nCompleteness.cjs",
     "start:messaging-worker": "node scripts/runMessagingWorker.js",
     "maintenance:backfill-property-kind": "node scripts/backfillPropertyKind.js",
     "maintenance:gma-arrival-metadata": "node scripts/gmaArrivalMetadataBackfill.cjs",

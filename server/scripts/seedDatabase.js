@@ -73,6 +73,28 @@ const seedDatabase = async () => {
       { $set: { pricePerNight: 55, minNights: 2 } }
     );
 
+    // Ensure the kept "The Cabin" carries Bulgarian content (parity with
+    // scripts/backfillCabinI18nBg.cjs). Only fills missing/empty fields so
+    // ops-edited translations are never clobbered by a reseed.
+    const theCabinBg = {
+      name: 'Къщата',
+      location: 'Пирин планина, край Бачево',
+      description:
+        'Скътана в суровите гънки на Пирин, Къщата е доказателство за красотата на изваждането. Позната преди като „Буцефал“, тя е убежище за свръхсвързаните. Офгрид, с печка на дърва, компостна тоалетна и джакузи, подгрявано на дърва.'
+    };
+    for (const [field, value] of Object.entries(theCabinBg)) {
+      await Cabin.updateMany(
+        {
+          name: 'The Cabin',
+          $or: [
+            { [`i18n.bg.${field}`]: { $exists: false } },
+            { [`i18n.bg.${field}`]: '' }
+          ]
+        },
+        { $set: { [`i18n.bg.${field}`]: value } }
+      );
+    }
+
     await Booking.deleteMany({
       $or: [
         { cabinTypeId: { $ne: null } },

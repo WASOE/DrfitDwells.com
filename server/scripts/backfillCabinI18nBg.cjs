@@ -3,9 +3,11 @@
 /**
  * Cabin content Bulgarian translation backfill — controlled, idempotent.
  *
- * Sets `i18n.bg.{name,location,description}` on the three live listings
- * (A-Frame cabin type, Stone House, Lux Cabin). Existing non-empty
- * translations are preserved unless --force is passed.
+ * Sets `i18n.bg.{name,location,description}` on the four live listings
+ * (A-Frame cabin type, Stone House, Lux Cabin, The Cabin). Existing
+ * non-empty translations are preserved unless --force is passed.
+ * The dry-run prints a per-field diff (current English source, current
+ * Bulgarian value, proposed Bulgarian value) for review before applying.
  *
  * Modes:
  *   Dry-run (default — NO WRITES):
@@ -57,6 +59,18 @@ const TRANSLATIONS = Object.freeze([
       description:
         'Напълно самостоятелна офгрид къща със собствена кухня, баня и панорамни прозорци от пода до тавана с изглед към гората и потока. Създадена за двойки, които търсят истински комфорт сред природата — просторна, топла и изцяло независима, с течаща вода непосредствено до къщата.'
     }
+  },
+  {
+    // The Cabin lives in Pirin near Bachevo (not the Chereshovo valley).
+    // BG voice mirrors the existing site copy in client/src/i18n/locales/bg/cabin.json.
+    model: 'Cabin',
+    match: { name: 'The Cabin' },
+    bg: {
+      name: 'Къщата',
+      location: 'Пирин планина, край Бачево',
+      description:
+        'Скътана в суровите гънки на Пирин, Къщата е доказателство за красотата на изваждането. Позната преди като „Буцефал“, тя е убежище за свръхсвързаните. Офгрид, с печка на дърва, компостна тоалетна и джакузи, подгрявано на дърва.'
+    }
   }
 ]);
 
@@ -103,12 +117,25 @@ const main = async () => {
       updates.push(field);
     }
 
+    console.log(`\n[i18n-backfill] ${doc.name} (${label})`);
+    for (const field of FIELDS) {
+      const existing = typeof currentBg[field] === 'string' ? currentBg[field].trim() : '';
+      console.log(`  ${field}`);
+      console.log(`    en      : ${doc[field] || '(empty)'}`);
+      if (updates.includes(field)) {
+        console.log(`    bg (old): ${existing || '(empty)'}`);
+        console.log(`    bg (new): ${nextBg[field]}`);
+      } else {
+        console.log(`    bg (kept): ${existing || '(empty)'}`);
+      }
+    }
+
     if (updates.length === 0) {
-      console.log(`[i18n-backfill] OK (already translated): ${label}`);
+      console.log(`  => OK (already translated, no changes)`);
       continue;
     }
 
-    console.log(`[i18n-backfill] ${apply ? 'UPDATE' : 'WOULD UPDATE'}: ${label} → bg.{${updates.join(', ')}}`);
+    console.log(`  => ${apply ? 'UPDATE' : 'WOULD UPDATE'}: bg.{${updates.join(', ')}}`);
     if (apply) {
       doc.i18n = { ...(doc.i18n || {}), bg: nextBg };
       await doc.save();

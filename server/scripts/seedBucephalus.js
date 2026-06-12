@@ -65,6 +65,14 @@ const seedBucephalus = async () => {
       name: 'The Cabin',
       description:
         'Nestled in the rugged folds of the Pirin Mountains, The Cabin is a testament to the beauty of subtraction. Formerly Bucephalus, this is a sanctuary for the over-connected. Off-grid, wood stove, composting toilet, and a wood-fired hot tub.',
+      i18n: {
+        bg: {
+          name: 'Къщата',
+          location: 'Край Бачево, Пирин планина, България',
+          description:
+            'Скътана в суровите гънки на Пирин, Къщата е доказателство за красотата на изваждането. Позната преди като „Буцефал“, тя е убежище за свръхсвързаните. Офгрид, с печка на дърва, компостна тоалетна и джакузи, подгрявано на дърва.'
+        }
+      },
       inventoryType: 'single',
       inventoryMode: 'single',
       capacity: 2,
