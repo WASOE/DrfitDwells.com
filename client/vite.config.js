@@ -7,6 +7,9 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
       registerType: 'autoUpdate',
       includeAssets: [],
       manifest: {
@@ -19,10 +22,7 @@ export default defineConfig({
         scope: '/',
         lang: 'en'
       },
-      workbox: {
-        clientsClaim: true,
-        skipWaiting: true,
-        cleanupOutdatedCaches: true,
+      injectManifest: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,json,geojson,gpx,kml,webmanifest}'],
         globIgnores: [
           '**/assets/jspdf*.js',
@@ -39,20 +39,6 @@ export default defineConfig({
           '**/assets/ReviewsList*.js',
           // Live may not have this asset; exclude to avoid Workbox precaching 404s.
           '**/uploads/headers/cabin-memory-header.png'
-        ],
-        // Iframe PDF navigations must not receive index.html (Workbox NavigationRoute).
-        // Without /uploads/ and .pdf here, embedded legal PDFs load the SPA inside the iframe.
-        // Match .pdf before end or query (pathname-only matchers may still see search in some paths).
-        navigateFallbackDenylist: [/^\/api\//, /^\/uploads\//, /\.pdf($|\?)/i],
-        runtimeCaching: [
-          {
-            urlPattern: ({ url }) => url.pathname.startsWith('/guides/the-cabin/'),
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'cabin-arrival-assets',
-              expiration: { maxEntries: 48, maxAgeSeconds: 60 * 60 * 24 * 365 }
-            }
-          }
         ]
       }
     })

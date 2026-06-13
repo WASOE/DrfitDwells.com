@@ -22,6 +22,7 @@ const giftVouchersRoutes = require('./modules/giftVouchersRoutes');
 const messagingRoutes = require('./modules/messagingRoutes');
 const cleaningRoutes = require('./modules/cleaningRoutes');
 const usersRoutes = require('./modules/usersRoutes');
+const pushSubscriptionsRoutes = require('./modules/pushSubscriptionsRoutes');
 
 const router = express.Router();
 
@@ -63,5 +64,6 @@ router.use('/gift-vouchers', giftVouchersRoutes);
 router.use('/messaging', messagingRoutes);
 router.use('/cleaning', cleaningRoutes);
 router.use('/users', usersRoutes);
+router.use('/push-subscriptions', pushSubscriptionsRoutes);
 
 module.exports = router;

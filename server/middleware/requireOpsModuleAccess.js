@@ -6,10 +6,20 @@ const {
 
 const MODULE_EXEMPT_PATHS = new Set(['/session']);
 
+function isModuleExemptPath(relativePath) {
+  if (MODULE_EXEMPT_PATHS.has(relativePath)) {
+    return true;
+  }
+  if (relativePath === '/push-subscriptions' || relativePath.startsWith('/push-subscriptions/')) {
+    return true;
+  }
+  return false;
+}
+
 function requireOpsModuleAccess(req, res, next) {
   const relativePath = req.path || '';
 
-  if (MODULE_EXEMPT_PATHS.has(relativePath)) {
+  if (isModuleExemptPath(relativePath)) {
     return next();
   }
 
@@ -54,4 +64,4 @@ function requireOpsModuleAccess(req, res, next) {
   return next();
 }
 
-module.exports = { requireOpsModuleAccess };
+module.exports = { requireOpsModuleAccess, isModuleExemptPath };

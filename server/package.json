@@ -47,6 +47,7 @@
     "test:ops-messaging-write": "node --test scripts/guestMessageAutomationOpsWriteService.test.cjs",
     "test:ops-user-cleaner-contact": "node --test scripts/opsUserCleanerContact.test.cjs",
     "test:ops-user-cleaner-contact-write": "node --test scripts/opsUserCleanerContactWrite.test.cjs",
+    "test:ops-push": "node --test scripts/opsPushPlatform.test.cjs",
     "test:gma-arrival-metadata": "node --test scripts/gmaArrivalMetadataBackfill.test.cjs",
     "test:gma-template-approval": "node --test scripts/gmaApproveCabinArrivalTemplates.test.cjs",
     "test:gma-template-preview": "node --test scripts/gmaTemplatePreview.test.cjs scripts/gmaEmailHtmlRenderer.test.cjs",
@@ -82,7 +83,8 @@
     "morgan": "^1.10.1",
     "multer": "^2.0.2",
     "nodemailer": "^7.0.6",
-    "stripe": "^14.25.0"
+    "stripe": "^14.25.0",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "mongodb-memory-server": "^11.1.0",
