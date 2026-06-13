@@ -66,6 +66,22 @@ async function registerPushSubscription({ opsUserId, body, userAgent = null }) {
   });
 }
 
+function serializePushSubscriptionForMine(doc) {
+  return {
+    id: String(doc._id),
+    endpoint: doc.endpoint,
+    createdAt: doc.createdAt,
+    lastSuccessAt: doc.lastSuccessAt ?? null,
+    invalidatedAt: doc.invalidatedAt ?? null,
+    userAgent: doc.userAgent ?? null
+  };
+}
+
+async function listPushSubscriptionsForUser(opsUserId) {
+  const rows = await OpsPushSubscription.find({ opsUserId }).sort({ createdAt: -1 }).lean();
+  return rows.map(serializePushSubscriptionForMine);
+}
+
 async function deletePushSubscriptionForUser({ subscriptionId, opsUserId }) {
   if (!mongoose.Types.ObjectId.isValid(String(subscriptionId))) {
     const err = new Error('Invalid subscription id');
@@ -92,5 +108,7 @@ async function deletePushSubscriptionForUser({ subscriptionId, opsUserId }) {
 module.exports = {
   requireSessionOpsUserId,
   registerPushSubscription,
+  listPushSubscriptionsForUser,
+  serializePushSubscriptionForMine,
   deletePushSubscriptionForUser
 };

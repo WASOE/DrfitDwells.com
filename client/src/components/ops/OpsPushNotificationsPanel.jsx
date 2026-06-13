@@ -1,0 +1,67 @@
+import { useOpsPushNotifications } from '../../hooks/useOpsPushNotifications';
+
+const READINESS_COPY = {
+  unsupported: 'This browser does not support push notifications.',
+  needs_install:
+    'Add Drift & Dwells to Home Screen, open it from the icon, then enable notifications.',
+  permission_denied: 'Notifications are blocked for this site. Enable them in browser settings to use OPS push.',
+  push_not_configured: 'Push is not configured on the server yet.',
+  ready_to_subscribe: 'Receive OPS alerts on this device when you are signed in.',
+  subscribed: 'Push notifications are enabled on this device.',
+  error: 'Push setup failed. Try again or contact an admin.',
+  ops_user_required: 'Push requires an OPS user account. Sign in with a cleaner, operator, or admin user.'
+};
+
+export default function OpsPushNotificationsPanel({ actorId }) {
+  const { loading, busy, readiness, errorMessage, subscribe, unsubscribe } = useOpsPushNotifications(actorId);
+
+  if (loading) {
+    return null;
+  }
+
+  if (readiness === 'subscribed') {
+    return (
+      <div
+        className="border-b border-gray-100 bg-gray-50/80"
+        data-testid="ops-push-panel-subscribed"
+      >
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-1.5 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs text-gray-600">{READINESS_COPY.subscribed}</p>
+          <button
+            type="button"
+            onClick={unsubscribe}
+            disabled={busy}
+            className="text-xs px-2 py-1 rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            data-testid="ops-push-disable"
+          >
+            {busy ? 'Turning off…' : 'Turn off'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const showEnable = readiness === 'ready_to_subscribe' || readiness === 'error';
+
+  return (
+    <div className="border-b border-gray-200 bg-white" data-testid="ops-push-panel">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <p className="text-xs text-gray-600 max-w-2xl">
+          {READINESS_COPY[readiness] || READINESS_COPY.error}
+          {errorMessage && readiness === 'error' ? ` ${errorMessage}` : ''}
+        </p>
+        {showEnable ? (
+          <button
+            type="button"
+            onClick={subscribe}
+            disabled={busy}
+            className="shrink-0 text-xs px-3 py-1.5 rounded border border-[#81887A] bg-[#81887A] text-white hover:bg-[#707668] disabled:opacity-50"
+            data-testid="ops-push-enable"
+          >
+            {busy ? 'Enabling…' : 'Enable notifications'}
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}

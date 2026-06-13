@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { opsReadAPI, opsWriteAPI } from '../../services/opsApi';
+import { formatPushLastSuccess, pushHealthLabel } from '../../utils/opsPushReadiness';
 
 const ROLES = [
   { value: 'operator', label: 'Operator' },
@@ -82,6 +83,26 @@ function roleBadgeClass(role) {
   if (role === 'cleaner') return 'bg-emerald-50 text-emerald-800';
   if (role === 'operator') return 'bg-sky-50 text-sky-800';
   return 'bg-amber-50 text-amber-900';
+}
+
+function pushHealthBadgeClass(label) {
+  if (label === 'Ready') return 'bg-emerald-50 text-emerald-800';
+  if (label === 'Expired') return 'bg-amber-50 text-amber-800';
+  return 'bg-gray-100 text-gray-600';
+}
+
+function pushHealthSummary(row) {
+  const health = row.pushHealth || {};
+  const label = pushHealthLabel(health);
+  const parts = [label];
+  if (health.activeCount > 0) {
+    parts.push(`${health.activeCount} device${health.activeCount === 1 ? '' : 's'}`);
+  }
+  const lastSuccess = formatPushLastSuccess(health.lastSuccessAt);
+  if (health.lastSuccessAt) {
+    parts.push(`Last OK ${lastSuccess}`);
+  }
+  return parts.join(' · ');
 }
 
 export default function OpsUsers() {
@@ -292,6 +313,7 @@ export default function OpsUsers() {
                   <th className="px-4 py-3 text-left font-medium text-gray-600">Name</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-600">Role</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-600">Modules</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-600">Push</th>
                   <th className="px-4 py-3 text-center font-medium text-gray-600">Active</th>
                   <th className="px-4 py-3 text-right font-medium text-gray-600">Actions</th>
                 </tr>
@@ -299,7 +321,7 @@ export default function OpsUsers() {
               <tbody className="divide-y divide-gray-100">
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-gray-500">
+                    <td colSpan={7} className="px-4 py-10 text-center text-gray-500">
                       No OPS users yet.
                     </td>
                   </tr>
@@ -315,6 +337,22 @@ export default function OpsUsers() {
                       </td>
                       <td className="px-4 py-3 text-gray-600 text-xs max-w-xs truncate" title={modulesSummary(row.role, row.modules)}>
                         {modulesSummary(row.role, row.modules)}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-600">
+                        <span
+                          className={`inline-flex px-2 py-0.5 rounded font-medium ${pushHealthBadgeClass(pushHealthLabel(row.pushHealth))}`}
+                          title={pushHealthSummary(row)}
+                        >
+                          {pushHealthLabel(row.pushHealth)}
+                        </span>
+                        {row.pushHealth?.activeCount > 0 ? (
+                          <p className="mt-0.5 text-[11px] text-gray-500 tabular-nums">
+                            {row.pushHealth.activeCount} active
+                            {row.pushHealth.lastSuccessAt
+                              ? ` · ${formatPushLastSuccess(row.pushHealth.lastSuccessAt)}`
+                              : ''}
+                          </p>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <span

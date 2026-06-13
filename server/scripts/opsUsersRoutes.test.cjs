@@ -7,6 +7,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 
 const { verifyToken } = require('../middleware/adminAuth');
 const { createOpsUser } = require('../services/ops/opsUserService');
+const OpsPushSubscription = require('../models/OpsPushSubscription');
 const {
   canAccessNavItem,
   canAccessOpsFrontendPath,
@@ -48,6 +49,7 @@ test.before(async () => {
   process.env.MONGODB_URI = mongoServer.getUri();
   process.env.ADMIN_JWT_SECRET = 'batch-d-users-test-secret';
   await mongoose.connect(mongoServer.getUri(), { serverSelectionTimeoutMS: 10000 });
+  await OpsPushSubscription.syncIndexes();
 
   delete require.cache[require.resolve('../routes/adminRoutes')];
   delete require.cache[require.resolve('../routes/ops/index')];
@@ -83,8 +85,54 @@ test('Batch D OPS users routes', async (t) => {
     assert.ok(Array.isArray(res.body.data.users));
     assert.ok(res.body.data.users.length >= 1);
     assertNoPasswordHash(res.body);
-    cleanerId = res.body.data.users.find((u) => u.email === 'cleaner.batchd@test.com')?.id;
+    const cleanerRow = res.body.data.users.find((u) => u.email === 'cleaner.batchd@test.com');
+    assert.ok(cleanerRow);
+    assert.ok(cleanerRow.pushHealth);
+    assert.equal(typeof cleanerRow.pushHealth.activeCount, 'number');
+    assert.equal(typeof cleanerRow.pushHealth.invalidatedCount, 'number');
+    assert.equal(cleanerRow.pushHealth.lastSuccessAt, null);
+    assert.equal(cleanerRow.pushHealth.latestUserAgent, null);
+    const usersJson = JSON.stringify(res.body);
+    assert.equal(usersJson.includes('endpoint'), false);
+    assert.equal(usersJson.includes('p256dh'), false);
+    cleanerId = cleanerRow.id;
     assert.ok(cleanerId);
+  });
+
+  await t.test('admin users list includes pushHealth aggregates', async () => {
+    await createOpsUser({
+      email: 'admin.pushhealth@test.com',
+      name: 'Admin Push Health',
+      password: 'admin-pass-123',
+      role: 'admin'
+    });
+
+    const adminToken = await login('admin', 'securepassword123');
+    const adminUser = (await authed('get', '/api/ops/users', adminToken)).body.data.users.find(
+      (u) => u.email === 'admin.pushhealth@test.com'
+    );
+    assert.ok(adminUser?.id);
+
+    await OpsPushSubscription.create({
+      opsUserId: adminUser.id,
+      endpoint: 'https://push.batchd.test/active',
+      keys: { p256dh: 'k1', auth: 'a1' },
+      userAgent: 'BatchD/1.0',
+      lastSuccessAt: new Date('2026-06-01T12:00:00.000Z')
+    });
+    await OpsPushSubscription.create({
+      opsUserId: adminUser.id,
+      endpoint: 'https://push.batchd.test/expired',
+      keys: { p256dh: 'k2', auth: 'a2' },
+      invalidatedAt: new Date('2026-05-01T12:00:00.000Z')
+    });
+
+    const res = await authed('get', '/api/ops/users', adminToken);
+    const row = res.body.data.users.find((u) => u.id === adminUser.id);
+    assert.equal(row.pushHealth.activeCount, 1);
+    assert.equal(row.pushHealth.invalidatedCount, 1);
+    assert.ok(row.pushHealth.lastSuccessAt);
+    assert.equal(row.pushHealth.latestUserAgent, 'BatchD/1.0');
   });
 
   await t.test('admin can create user', async () => {

@@ -4,6 +4,7 @@ const { validateId } = require('../../../middleware/validateId');
 const {
   requireSessionOpsUserId,
   registerPushSubscription,
+  listPushSubscriptionsForUser,
   deletePushSubscriptionForUser
 } = require('../../../services/ops/push/opsPushSubscriptionService');
 
@@ -25,6 +26,20 @@ function handleRouteError(err, res) {
   console.error('OPS push subscription route error:', err);
   return res.status(500).json({ success: false, message: err.message || 'Internal server error' });
 }
+
+// GET /api/ops/push-subscriptions/mine — own-user subscriptions only.
+router.get('/mine', async (req, res) => {
+  try {
+    const opsUserId = requireSessionOpsUserId(req.user);
+    const subscriptions = await listPushSubscriptionsForUser(opsUserId);
+    return res.json({
+      success: true,
+      data: { subscriptions }
+    });
+  } catch (err) {
+    return handleRouteError(err, res);
+  }
+});
 
 // POST /api/ops/push-subscriptions — any authenticated OPS user (adminAuth + module exempt).
 router.post(

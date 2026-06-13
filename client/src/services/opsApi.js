@@ -70,6 +70,22 @@ const opsReadAPI = {
   opsUsers: () => api.get('/ops/users', { headers: authHeaders() })
 };
 
+export function getOpsPushConfig() {
+  return api.get('/ops/push-config', { headers: authHeaders() });
+}
+
+export function getMyOpsPushSubscriptions() {
+  return api.get('/ops/push-subscriptions/mine', { headers: authHeaders() });
+}
+
+export function registerOpsPushSubscription(payload) {
+  return api.post('/ops/push-subscriptions', payload, { headers: authHeaders() });
+}
+
+export function deleteOpsPushSubscription(id) {
+  return api.delete(`/ops/push-subscriptions/${id}`, { headers: authHeaders() });
+}
+
 const opsWriteAPI = {
   confirmReservation: (id) => api.post(`/ops/reservations/${id}/actions/confirm`, {}, { headers: authHeaders() }),
   checkInReservation: (id) => api.post(`/ops/reservations/${id}/actions/check-in`, {}, { headers: authHeaders() }),

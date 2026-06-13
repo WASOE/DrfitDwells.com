@@ -13,6 +13,9 @@ function isModuleExemptPath(relativePath) {
   if (relativePath === '/push-subscriptions' || relativePath.startsWith('/push-subscriptions/')) {
     return true;
   }
+  if (relativePath === '/push-config' || relativePath.startsWith('/push-config/')) {
+    return true;
+  }
   return false;
 }
 

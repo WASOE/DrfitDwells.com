@@ -18,7 +18,16 @@ function getVapidConfig() {
   };
 }
 
+function getPublicPushConfig() {
+  const configured = isVapidConfigured();
+  return {
+    pushEnabled: configured,
+    vapidPublicKey: configured ? String(process.env.WEB_PUSH_VAPID_PUBLIC_KEY).trim() : null
+  };
+}
+
 module.exports = {
   isVapidConfigured,
-  getVapidConfig
+  getVapidConfig,
+  getPublicPushConfig
 };

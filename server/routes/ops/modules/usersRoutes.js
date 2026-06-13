@@ -7,6 +7,7 @@ const {
   updateOpsUser,
   setOpsUserPassword
 } = require('../../../services/ops/opsUserService');
+const { getPushHealthMapForUserIds } = require('../../../services/ops/push/opsPushSubscriptionReadModel');
 const { OPS_USER_ROLES } = require('../../../models/OpsUser');
 const { validateId } = require('../../../middleware/validateId');
 
@@ -45,7 +46,17 @@ router.use(requireUsersManage);
 router.get('/', async (req, res) => {
   try {
     const users = await listOpsUsers();
-    return res.json({ success: true, data: { users } });
+    const healthMap = await getPushHealthMapForUserIds(users.map((user) => user.id));
+    const usersWithHealth = users.map((user) => ({
+      ...user,
+      pushHealth: healthMap.get(user.id) || {
+        activeCount: 0,
+        invalidatedCount: 0,
+        lastSuccessAt: null,
+        latestUserAgent: null
+      }
+    }));
+    return res.json({ success: true, data: { users: usersWithHealth } });
   } catch (err) {
     return handleUserRouteErrors(err, res);
   }

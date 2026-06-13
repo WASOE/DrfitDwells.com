@@ -5,6 +5,7 @@ import { OpsSessionProvider } from '../context/OpsSessionContext';
 import OpsDesktopNav from './ops/OpsDesktopNav';
 import OpsMobileTabBar from './ops/OpsMobileTabBar';
 import OpsMoreSheet from './ops/OpsMoreSheet';
+import OpsPushNotificationsPanel from '../components/ops/OpsPushNotificationsPanel';
 import { canAccessOpsFrontendPath, isCleanerOnlySession } from './ops/opsNavConfig';
 
 function roleLabel(role) {
@@ -153,6 +154,8 @@ export default function OpsLayout() {
             ) : null}
           </div>
         </header>
+
+        <OpsPushNotificationsPanel actorId={session.actorId} />
 
         {!cleanerOnly && hasDegraded ? (
           <div className="bg-amber-50 border-b border-amber-200">

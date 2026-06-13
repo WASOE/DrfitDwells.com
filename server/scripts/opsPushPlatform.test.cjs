@@ -463,4 +463,79 @@ test('requireOpsModuleAccess exempts /push-subscriptions for cleaners', () => {
   const { isModuleExemptPath } = require('../middleware/requireOpsModuleAccess');
   assert.equal(isModuleExemptPath('/push-subscriptions'), true);
   assert.equal(isModuleExemptPath('/push-subscriptions/abc'), true);
+  assert.equal(isModuleExemptPath('/push-config'), true);
+});
+
+test('GET /push-config returns pushEnabled and public key only', async () => {
+  const saved = saveVapidEnv();
+  try {
+    delete process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
+    delete process.env.WEB_PUSH_VAPID_PRIVATE_KEY;
+    delete process.env.WEB_PUSH_VAPID_SUBJECT;
+
+    await createOpsUser({
+      email: 'config.off@test.local',
+      name: 'Config Off',
+      password: 'pass-123456',
+      role: 'operator'
+    });
+    const token = await login('config.off@test.local', 'pass-123456');
+    const off = await authed('get', '/api/ops/push-config', token);
+    assert.equal(off.status, 200);
+    assert.equal(off.body.data.pushEnabled, false);
+    assert.equal(off.body.data.vapidPublicKey, null);
+
+    process.env.WEB_PUSH_VAPID_PUBLIC_KEY = vapidKeys.publicKey;
+    process.env.WEB_PUSH_VAPID_PRIVATE_KEY = vapidKeys.privateKey;
+    process.env.WEB_PUSH_VAPID_SUBJECT = 'mailto:ops@test.local';
+
+    const on = await authed('get', '/api/ops/push-config', token);
+    assert.equal(on.status, 200);
+    assert.equal(on.body.data.pushEnabled, true);
+    assert.equal(on.body.data.vapidPublicKey, vapidKeys.publicKey);
+    const json = JSON.stringify(on.body);
+    assert.equal(json.includes(vapidKeys.privateKey), false);
+    assert.equal(json.includes('privateKey'), false);
+    assert.equal(json.includes('WEB_PUSH_VAPID_SUBJECT'), false);
+  } finally {
+    restoreVapidEnv(saved);
+  }
+});
+
+test('GET /push-subscriptions/mine is scoped to session user and omits keys', async () => {
+  await createOpsUser({
+    email: 'mine.admin@test.local',
+    name: 'Mine Admin',
+    password: 'pass-123456',
+    role: 'admin'
+  });
+  await createOpsUser({
+    email: 'mine.cleaner@test.local',
+    name: 'Mine Cleaner',
+    password: 'pass-123456',
+    role: 'cleaner',
+    propertyKinds: ['cabin']
+  });
+
+  const adminToken = await login('mine.admin@test.local', 'pass-123456');
+  const cleanerToken = await login('mine.cleaner@test.local', 'pass-123456');
+
+  const adminRegister = await authed('post', '/api/ops/push-subscriptions', adminToken, SUBSCRIPTION_A);
+  assert.equal(adminRegister.status, 201);
+  const cleanerRegister = await authed('post', '/api/ops/push-subscriptions', cleanerToken, SUBSCRIPTION_B);
+  assert.equal(cleanerRegister.status, 201);
+
+  const adminMine = await authed('get', '/api/ops/push-subscriptions/mine', adminToken);
+  assert.equal(adminMine.status, 200);
+  assert.equal(adminMine.body.data.subscriptions.length, 1);
+  assert.equal(adminMine.body.data.subscriptions[0].endpoint, SUBSCRIPTION_A.endpoint);
+  assert.equal(adminMine.body.data.subscriptions[0].keys, undefined);
+  const adminJson = JSON.stringify(adminMine.body);
+  assert.equal(adminJson.includes('p256dh'), false);
+  assert.equal(adminJson.includes('"auth"'), false);
+
+  const cleanerMine = await authed('get', '/api/ops/push-subscriptions/mine', cleanerToken);
+  assert.equal(cleanerMine.status, 200);
+  assert.equal(cleanerMine.body.data.subscriptions.length, 1);
+  assert.equal(cleanerMine.body.data.subscriptions[0].endpoint, SUBSCRIPTION_B.endpoint);
 });
