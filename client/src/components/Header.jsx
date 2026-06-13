@@ -5,6 +5,7 @@ import { useBookingSearch } from '../context/BookingSearchContext';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { useSiteLanguage } from '../hooks/useSiteLanguage';
 import { localizePath, stripLocaleFromPath } from '../utils/localizedRoutes';
+import { BRANDING, BRANDING_DIMENSIONS } from '../config/brandingAssets';
 
 const Header = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -83,18 +84,28 @@ const Header = () => {
             <div className="flex-shrink-0">
               <Link to={localizePath('/', language)} className="flex items-center" onClick={() => setIsMobileMenuOpen(false)}>
                 {useDarkTheme ? (
-                  <img
-                    src="/uploads/Logo/DRIFTS-ai.png"
-                    alt="Drift & Dwells"
-                    className="h-8 sm:h-10 w-auto transition-opacity duration-300"
-                    style={{ filter: 'contrast(1.1) brightness(0.95)' }}
-                  />
+                  <picture>
+                    <source srcSet={BRANDING.headerDarkWebp} type="image/webp" />
+                    <img
+                      src={BRANDING.headerDarkPng}
+                      alt="Drift & Dwells"
+                      width={BRANDING_DIMENSIONS.header.width}
+                      height={BRANDING_DIMENSIONS.header.height}
+                      className="h-8 sm:h-10 w-auto transition-opacity duration-300"
+                      style={{ filter: 'contrast(1.1) brightness(0.95)' }}
+                    />
+                  </picture>
                 ) : (
-                  <img
-                    src="/uploads/Logo/Drift-Dwell-white.png"
-                    alt="Drift & Dwells"
-                    className="h-8 sm:h-10 w-auto transition-opacity duration-300 drop-shadow-md"
-                  />
+                  <picture>
+                    <source srcSet={BRANDING.headerWhiteWebp} type="image/webp" />
+                    <img
+                      src={BRANDING.headerWhitePng}
+                      alt="Drift & Dwells"
+                      width={BRANDING_DIMENSIONS.header.width}
+                      height={BRANDING_DIMENSIONS.header.height}
+                      className="h-8 sm:h-10 w-auto transition-opacity duration-300 drop-shadow-md"
+                    />
+                  </picture>
                 )}
               </Link>
             </div>

@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import { BRANDING, BRANDING_DIMENSIONS } from '../config/brandingAssets';
 
 const AuthorityStrip = () => {
   const { t } = useTranslation('common');
@@ -9,10 +10,14 @@ const AuthorityStrip = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-12 md:gap-0 items-start justify-items-center">
           {/* COLUMN 1: Airbnb Guest Favorite */}
           <div className="flex flex-col items-center text-center w-full px-8 md:border-r md:border-[#D6D6D3]">
-            <img 
-              src="/uploads/Icons%20trival/hd-white-airbnb-official-logo-brand-png-image-701751694789792pszdgb4qdy.png" 
-              alt="Airbnb" 
-              className="h-12 w-auto object-contain mb-6 mix-blend-multiply brightness-0" 
+            <img
+              src={BRANDING.partnerAirbnbWebp}
+              alt="Airbnb"
+              width={BRANDING_DIMENSIONS.partnerAirbnb.width}
+              height={BRANDING_DIMENSIONS.partnerAirbnb.height}
+              className="h-12 w-auto object-contain mb-6 mix-blend-multiply brightness-0"
+              loading="lazy"
+              decoding="async"
             />
             <div className="text-4xl font-serif text-[#1c1917] mb-2">4.95</div>
             <div className="text-[10px] uppercase tracking-[0.25em] text-stone-500 font-medium">{t('authority.airbnbTopHomes')}</div>
@@ -32,10 +37,14 @@ const AuthorityStrip = () => {
           <div className="flex flex-col items-center text-center w-full px-8">
             {/* TripAdvisor Logo */}
             <div className="h-14 flex items-center mb-4">
-              <img 
-                src="/uploads/Icons%20trival/trip%20advisor%20logo.png" 
-                alt="TripAdvisor" 
-                className="h-14 w-auto object-contain" 
+              <img
+                src={BRANDING.partnerTripadvisorWebp}
+                alt="TripAdvisor"
+                width={BRANDING_DIMENSIONS.partnerTripadvisor.width}
+                height={BRANDING_DIMENSIONS.partnerTripadvisor.height}
+                className="h-14 w-auto object-contain"
+                loading="lazy"
+                decoding="async"
               />
             </div>
             <div className="text-4xl font-serif text-[#1c1917] mb-2">5.0</div>

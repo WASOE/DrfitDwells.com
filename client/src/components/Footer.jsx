@@ -3,6 +3,7 @@ import { useTranslation, Trans } from 'react-i18next';
 import { localizePath, stripLocaleFromPath } from '../utils/localizedRoutes';
 import { useSiteLanguage } from '../hooks/useSiteLanguage';
 import { CONTACT_EMAIL, CONTACT_PHONE, INSTAGRAM_URL, FACEBOOK_URL } from '../data/gmbLocations';
+import { BRANDING, BRANDING_DIMENSIONS } from '../config/brandingAssets';
 
 const bottomStripConfig = [
   { image: '/uploads/Icons%20trival/campfire.png', i18nKey: 'footer.bottomStrip.mountainEscape' },
@@ -311,9 +312,13 @@ const Footer = () => {
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-10 lg:gap-12">
             <div className="flex flex-col items-center text-center md:items-start md:text-left px-6 md:px-10">
               <img
-                src="/uploads/Icons%20trival/hd-white-airbnb-official-logo-brand-png-image-701751694789792pszdgb4qdy.png"
+                src={BRANDING.partnerAirbnbWebp}
                 alt="Airbnb"
+                width={BRANDING_DIMENSIONS.partnerAirbnb.width}
+                height={BRANDING_DIMENSIONS.partnerAirbnb.height}
                 className="h-12 w-auto object-contain mb-4 mix-blend-multiply brightness-0"
+                loading="lazy"
+                decoding="async"
               />
               <div className="text-4xl font-['Montserrat'] text-[#1c1917] mb-1" style={{ fontWeight: 600 }}>
                 4.95
@@ -342,9 +347,13 @@ const Footer = () => {
             <div className="flex flex-col items-center text-center md:items-end md:text-right px-6 md:px-10">
               <div className="h-14 flex items-center mb-3">
                 <img
-                  src="/uploads/Icons%20trival/trip%20advisor%20logo.png"
+                  src={BRANDING.partnerTripadvisorWebp}
                   alt="TripAdvisor"
+                  width={BRANDING_DIMENSIONS.partnerTripadvisor.width}
+                  height={BRANDING_DIMENSIONS.partnerTripadvisor.height}
                   className="h-14 w-auto object-contain"
+                  loading="lazy"
+                  decoding="async"
                 />
               </div>
               <div className="text-4xl font-['Montserrat'] text-[#1c1917] mb-1" style={{ fontWeight: 600 }}>

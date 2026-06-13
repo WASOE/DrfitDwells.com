@@ -9,6 +9,7 @@ import { getCabinHeroPreloadUrl, getHomeHeroMobilePosterUrls } from '../config/h
 import { CONTACT_PHONE, INSTAGRAM_URL, FACEBOOK_URL } from '../data/gmbLocations';
 import { buildHreflangAlternates } from '../utils/localizedRoutes';
 import { getSiteUrl } from '../utils/siteUrl';
+import { BRANDING } from '../config/brandingAssets';
 
 const MemoryStream = lazy(() => import('../components/MemoryStream'));
 const BookingDrawer = lazy(() => import('../components/BookingDrawer'));
@@ -80,7 +81,7 @@ const Home = () => {
             name: 'Drift & Dwells',
             url: origin,
             telephone: CONTACT_PHONE,
-            logo: `${origin}/uploads/Logo/DRIFTS-01.png`,
+            logo: `${origin}${BRANDING.schemaLogoWebp}`,
             sameAs: [INSTAGRAM_URL, FACEBOOK_URL]
           }
         ]}
