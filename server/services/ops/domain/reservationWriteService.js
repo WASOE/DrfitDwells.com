@@ -1452,6 +1452,22 @@ async function createManualReservation({
     bookingId: booking._id
   });
 
+  void (async () => {
+    try {
+      const { notifyOpsPushManualReservationCreated } = require('../push/opsPushEventNotifications');
+      await notifyOpsPushManualReservationCreated({ bookingId: booking._id });
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          source: 'ops-push',
+          phase: 'manual_reservation_hook_error',
+          bookingId: String(booking._id),
+          error: err?.message || String(err)
+        })
+      );
+    }
+  })();
+
   const result = {
     reservationId: String(booking._id),
     status: booking.status,

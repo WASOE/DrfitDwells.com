@@ -595,6 +595,21 @@ async function activatePaidVoucherFromStripeEvent(event) {
         error: eventErr.message
       }
     });
+    void (async () => {
+      try {
+        const { notifyOpsPushGiftVoucherSold } = require('../ops/push/opsPushEventNotifications');
+        await notifyOpsPushGiftVoucherSold({ giftVoucherId: latestVoucher._id });
+      } catch (err) {
+        console.error(
+          JSON.stringify({
+            source: 'ops-push',
+            phase: 'gift_voucher_sold_hook_error',
+            giftVoucherId: String(latestVoucher._id),
+            error: err?.message || String(err)
+          })
+        );
+      }
+    })();
     return {
       ok: true,
       activationCompleted: true,
@@ -602,6 +617,22 @@ async function activatePaidVoucherFromStripeEvent(event) {
       code: 'ACTIVATION_EVENT_WRITE_FAILED'
     };
   }
+
+  void (async () => {
+    try {
+      const { notifyOpsPushGiftVoucherSold } = require('../ops/push/opsPushEventNotifications');
+      await notifyOpsPushGiftVoucherSold({ giftVoucherId: latestVoucher._id });
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          source: 'ops-push',
+          phase: 'gift_voucher_sold_hook_error',
+          giftVoucherId: String(latestVoucher._id),
+          error: err?.message || String(err)
+        })
+      );
+    }
+  })();
 
   let emailDelivery = null;
   try {

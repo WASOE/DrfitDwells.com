@@ -293,6 +293,22 @@ async function createReviewForModeration({ body = {}, ctx = {} }) {
     throw error;
   }
 
+  void (async () => {
+    try {
+      const { notifyOpsPushReviewCreated } = require('../ops/push/opsPushEventNotifications');
+      await notifyOpsPushReviewCreated({ reviewId: review._id });
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          source: 'ops-push',
+          phase: 'review_created_hook_error',
+          reviewId: String(review._id),
+          error: err?.message || String(err)
+        })
+      );
+    }
+  })();
+
   if (ownerResponse && ownerResponse.text && String(ownerResponse.text).trim()) {
     const identity = ctx.editedBy || ctx.identity || process.env.ADMIN_EMAIL || 'admin';
     review.ownerResponse = {

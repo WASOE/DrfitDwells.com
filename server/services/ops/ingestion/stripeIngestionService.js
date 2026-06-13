@@ -7,6 +7,7 @@ const PaymentFinalization = require('../../../models/PaymentFinalization');
 const { openManualReviewItem } = require('./manualReviewService');
 const { activatePaidVoucherFromStripeEvent } = require('../../giftVouchers/giftVoucherPaymentService');
 const { linkStripePaymentToBooking } = require('../../payments/paymentLinkingService');
+const { notifyOpsPushPaymentAlert } = require('../push/opsPushEventNotifications');
 
 function digestEvent(event) {
   return crypto.createHash('sha256').update(JSON.stringify(event)).digest('hex');
@@ -463,6 +464,14 @@ async function processStripeWebhookEvent(event) {
     upsertCanonicalPayoutFromEvent(event)
   ]);
   await applyLegacyFinalizationCompatibility(event);
+
+  if (!alreadyProcessed && payment?._id) {
+    void notifyOpsPushPaymentAlert({
+      eventId: event.id,
+      eventType: event.type,
+      paymentId: payment._id
+    });
+  }
 
   return {
     ok: true,
