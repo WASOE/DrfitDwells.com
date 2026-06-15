@@ -51,6 +51,32 @@ function notifyMessageOrchestratorSafely(method, args) {
   }
 }
 
+function scheduleOpsPushSafely(method, args) {
+  try {
+    const orchestrator = require('../push/opsPushScheduleOrchestrator');
+    if (typeof orchestrator?.[method] !== 'function') return;
+    Promise.resolve()
+      .then(() => orchestrator[method](args))
+      .catch((err) => {
+        console.error(
+          JSON.stringify({
+            source: 'ops-push-scheduler',
+            phase: `${method}_async_error`,
+            error: err?.message || String(err)
+          })
+        );
+      });
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        source: 'ops-push-scheduler',
+        phase: `${method}_require_error`,
+        error: err?.message || String(err)
+      })
+    );
+  }
+}
+
 const ALLOWED_TRANSITIONS = {
   confirm: { from: ['pending'], to: 'confirmed', action: ACTIONS.OPS_RESERVATION_CONFIRM },
   checkIn: { from: ['confirmed'], to: 'in_house', action: ACTIONS.OPS_RESERVATION_CHECK_IN },
@@ -823,6 +849,12 @@ async function transitionReservation({ bookingId, kind, reason = null, settlemen
     transitionKind: kind
   });
 
+  scheduleOpsPushSafely('notifyOpsPushBookingStatusChange', {
+    bookingId: booking._id,
+    previousStatus: before.status,
+    nextStatus
+  });
+
   const result = {
     reservationId: String(booking._id),
     status: booking.status,
@@ -1044,6 +1076,10 @@ async function reassignReservation({ bookingId, toCabinId, acceptExternalHoldWar
     previousCabinId
   });
 
+  scheduleOpsPushSafely('notifyOpsPushReservationReassigned', {
+    bookingId: booking._id
+  });
+
   const result = {
     reservationId: String(booking._id),
     cabinId: String(booking.cabinId),
@@ -1121,6 +1157,10 @@ async function editReservationDates({ bookingId, checkInDate, checkOutDate, reas
     bookingId: booking._id,
     previousCheckIn,
     previousCheckOut
+  });
+
+  scheduleOpsPushSafely('notifyOpsPushReservationDatesChanged', {
+    bookingId: booking._id
   });
 
   const result = {
@@ -1467,6 +1507,10 @@ async function createManualReservation({
       );
     }
   })();
+
+  scheduleOpsPushSafely('scheduleOpsPushForBooking', {
+    bookingId: booking._id
+  });
 
   const result = {
     reservationId: String(booking._id),

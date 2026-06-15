@@ -115,6 +115,13 @@ connectDB().then((conn) => {
     } catch (e) {
       console.error('[messaging-worker] Startup failed:', e?.message || e);
     }
+
+    try {
+      const { startOpsPushSchedulerWorkerIfEnabled } = require('./services/ops/push/opsPushSchedulerWorker');
+      startOpsPushSchedulerWorkerIfEnabled();
+    } catch (e) {
+      console.error('[ops-push-worker] Startup failed:', e?.message || e);
+    }
   }
 }).catch(() => {});
 
@@ -293,6 +300,12 @@ const shutdown = (signal) => {
     stopSchedulerWorkerForTest();
   } catch (e) {
     console.error('[messaging-worker] Shutdown stop failed:', e?.message || e);
+  }
+  try {
+    const { stopOpsPushSchedulerWorkerForTest } = require('./services/ops/push/opsPushSchedulerWorker');
+    stopOpsPushSchedulerWorkerForTest();
+  } catch (e) {
+    console.error('[ops-push-worker] Shutdown stop failed:', e?.message || e);
   }
   server.close(() => {
     const mongoose = require('mongoose');

@@ -1650,6 +1650,22 @@ router.post('/', bookingCreateLimiter, [
                 );
               }
             })();
+
+            void (async () => {
+              try {
+                const { scheduleOpsPushForBooking } = require('../services/ops/push/opsPushScheduleOrchestrator');
+                await scheduleOpsPushForBooking({ bookingId: booking._id });
+              } catch (err) {
+                console.error(
+                  JSON.stringify({
+                    source: 'ops-push-scheduler',
+                    phase: 'booking_create_schedule_error',
+                    bookingId: String(booking._id),
+                    error: err?.message || String(err)
+                  })
+                );
+              }
+            })();
           }
         }
 
@@ -2268,6 +2284,22 @@ router.post('/', bookingCreateLimiter, [
           JSON.stringify({
             source: 'ops-push',
             phase: 'booking_create_hook_error',
+            bookingId: String(booking._id),
+            error: err?.message || String(err)
+          })
+        );
+      }
+    })();
+
+    void (async () => {
+      try {
+        const { scheduleOpsPushForBooking } = require('../services/ops/push/opsPushScheduleOrchestrator');
+        await scheduleOpsPushForBooking({ bookingId: booking._id });
+      } catch (err) {
+        console.error(
+          JSON.stringify({
+            source: 'ops-push-scheduler',
+            phase: 'booking_create_schedule_error',
             bookingId: String(booking._id),
             error: err?.message || String(err)
           })

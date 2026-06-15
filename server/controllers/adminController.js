@@ -1100,6 +1100,35 @@ const updateBookingStatus = async (req, res) => {
       );
     }
 
+    try {
+      const { notifyOpsPushBookingStatusChange } = require('../services/ops/push/opsPushScheduleOrchestrator');
+      Promise.resolve()
+        .then(() => notifyOpsPushBookingStatusChange({
+          bookingId: booking._id,
+          previousStatus: oldStatus,
+          nextStatus: status
+        }))
+        .catch((err) => {
+          console.error(
+            JSON.stringify({
+              source: 'ops-push-scheduler',
+              phase: 'admin_status_update_async_error',
+              bookingId: String(booking._id),
+              error: err?.message || String(err)
+            })
+          );
+        });
+    } catch (scheduleRequireErr) {
+      console.error(
+        JSON.stringify({
+          source: 'ops-push-scheduler',
+          phase: 'admin_status_update_require_error',
+          bookingId: String(booking._id),
+          error: scheduleRequireErr?.message || String(scheduleRequireErr)
+        })
+      );
+    }
+
     res.json({
       success: true,
       data: { booking },
