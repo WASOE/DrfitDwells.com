@@ -23,6 +23,7 @@ function truncateBody(body, max = 120) {
 }
 
 export default function OpsNotificationDropdown({
+  style,
   notifications,
   loading,
   error,
@@ -34,7 +35,8 @@ export default function OpsNotificationDropdown({
 }) {
   return (
     <div
-      className="absolute right-0 z-50 mt-2 w-[min(100vw-2rem,22rem)] max-w-sm rounded-lg border border-gray-200 bg-white shadow-lg"
+      style={style}
+      className="z-50 rounded-lg border border-gray-200 bg-white shadow-lg fixed left-4 right-4 top-[var(--ops-notification-dropdown-top,3.5rem)] md:absolute md:inset-x-auto md:left-auto md:right-0 md:top-full md:mt-2 md:w-80 md:max-w-sm"
       data-testid="ops-notification-dropdown"
     >
       <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-3 py-2">
@@ -80,9 +82,9 @@ export default function OpsNotificationDropdown({
                     }`}
                     data-testid={`ops-notification-row-${notification.id}`}
                   >
-                    <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start justify-between gap-2 min-w-0">
                       <p
-                        className={`text-sm leading-snug ${
+                        className={`text-sm leading-snug min-w-0 break-words ${
                           unread ? 'font-semibold text-gray-900' : 'font-medium text-gray-800'
                         }`}
                       >
@@ -92,7 +94,7 @@ export default function OpsNotificationDropdown({
                         {formatWhen(notification.createdAt)}
                       </span>
                     </div>
-                    <p className="mt-1 text-xs text-gray-600 leading-relaxed">
+                    <p className="mt-1 text-xs text-gray-600 leading-relaxed min-w-0 break-words">
                       {truncateBody(notification.body)}
                     </p>
                   </button>

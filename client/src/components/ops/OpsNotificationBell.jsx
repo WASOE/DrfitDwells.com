@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useOpsNotifications } from '../../hooks/useOpsNotifications';
 import { resolveOpsNotificationNavigationUrl } from '../../utils/opsNotificationNavigation';
@@ -34,7 +34,20 @@ function BellIcon() {
 export default function OpsNotificationBell({ actorId }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [dropdownStyle, setDropdownStyle] = useState(undefined);
   const rootRef = useRef(null);
+  const buttonRef = useRef(null);
+
+  const updateDropdownPosition = useCallback(() => {
+    const button = buttonRef.current;
+    if (!button) {
+      return;
+    }
+    const rect = button.getBoundingClientRect();
+    setDropdownStyle({
+      '--ops-notification-dropdown-top': `${rect.bottom + 8}px`
+    });
+  }, []);
   const {
     enabled,
     unreadCount,
@@ -72,12 +85,31 @@ export default function OpsNotificationBell({ actorId }) {
     };
   }, [open]);
 
+  useLayoutEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+    updateDropdownPosition();
+    const onReposition = () => {
+      updateDropdownPosition();
+    };
+    window.addEventListener('resize', onReposition);
+    window.addEventListener('scroll', onReposition, true);
+    return () => {
+      window.removeEventListener('resize', onReposition);
+      window.removeEventListener('scroll', onReposition, true);
+    };
+  }, [open, updateDropdownPosition]);
+
   if (!enabled) {
     return null;
   }
 
   const handleToggle = async () => {
     const nextOpen = !open;
+    if (nextOpen) {
+      updateDropdownPosition();
+    }
     setOpen(nextOpen);
     if (nextOpen) {
       await refreshInbox();
@@ -97,6 +129,7 @@ export default function OpsNotificationBell({ actorId }) {
   return (
     <div ref={rootRef} className="relative">
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => {
           void handleToggle();
@@ -119,6 +152,7 @@ export default function OpsNotificationBell({ actorId }) {
 
       {open ? (
         <OpsNotificationDropdown
+          style={dropdownStyle}
           notifications={notifications}
           loading={listLoading}
           error={listError}
