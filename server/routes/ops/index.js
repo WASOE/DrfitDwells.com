@@ -24,6 +24,7 @@ const cleaningRoutes = require('./modules/cleaningRoutes');
 const usersRoutes = require('./modules/usersRoutes');
 const pushSubscriptionsRoutes = require('./modules/pushSubscriptionsRoutes');
 const pushConfigRoutes = require('./modules/pushConfigRoutes');
+const notificationsRoutes = require('./modules/notificationsRoutes');
 
 const router = express.Router();
 
@@ -67,5 +68,6 @@ router.use('/cleaning', cleaningRoutes);
 router.use('/users', usersRoutes);
 router.use('/push-config', pushConfigRoutes);
 router.use('/push-subscriptions', pushSubscriptionsRoutes);
+router.use('/notifications', notificationsRoutes);
 
 module.exports = router;

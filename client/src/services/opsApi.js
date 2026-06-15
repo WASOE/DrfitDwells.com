@@ -86,6 +86,26 @@ export function deleteOpsPushSubscription(id) {
   return api.delete(`/ops/push-subscriptions/${id}`, { headers: authHeaders() });
 }
 
+export function getOpsNotifications({ limit, cursor, unreadOnly } = {}) {
+  const params = {};
+  if (limit != null) params.limit = limit;
+  if (cursor) params.cursor = cursor;
+  if (unreadOnly) params.unreadOnly = '1';
+  return api.get('/ops/notifications', { params, headers: authHeaders() });
+}
+
+export function getOpsNotificationsUnreadCount() {
+  return api.get('/ops/notifications/unread-count', { headers: authHeaders() });
+}
+
+export function markOpsNotificationRead(id) {
+  return api.patch(`/ops/notifications/${id}/read`, {}, { headers: authHeaders() });
+}
+
+export function markAllOpsNotificationsRead() {
+  return api.post('/ops/notifications/read-all', {}, { headers: authHeaders() });
+}
+
 const opsWriteAPI = {
   confirmReservation: (id) => api.post(`/ops/reservations/${id}/actions/confirm`, {}, { headers: authHeaders() }),
   checkInReservation: (id) => api.post(`/ops/reservations/${id}/actions/check-in`, {}, { headers: authHeaders() }),

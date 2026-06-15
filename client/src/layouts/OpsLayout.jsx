@@ -6,6 +6,7 @@ import OpsDesktopNav from './ops/OpsDesktopNav';
 import OpsMobileTabBar from './ops/OpsMobileTabBar';
 import OpsMoreSheet from './ops/OpsMoreSheet';
 import OpsPushNotificationsPanel from '../components/ops/OpsPushNotificationsPanel';
+import OpsNotificationBell from '../components/ops/OpsNotificationBell';
 import { canAccessOpsFrontendPath, isCleanerOnlySession } from './ops/opsNavConfig';
 
 function roleLabel(role) {
@@ -131,6 +132,7 @@ export default function OpsLayout() {
                 </h1>
               </div>
               <div className="flex items-center gap-2">
+                <OpsNotificationBell actorId={session.actorId} />
                 <div
                   className={`text-xs px-2 py-1 rounded border tabular-nums ${roleBadgeClass(session.role)}`}
                   title="Session role from login"

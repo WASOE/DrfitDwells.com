@@ -16,6 +16,9 @@ function isModuleExemptPath(relativePath) {
   if (relativePath === '/push-config' || relativePath.startsWith('/push-config/')) {
     return true;
   }
+  if (relativePath === '/notifications' || relativePath.startsWith('/notifications/')) {
+    return true;
+  }
   return false;
 }
 
