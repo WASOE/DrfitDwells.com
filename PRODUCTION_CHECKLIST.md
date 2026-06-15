@@ -22,6 +22,20 @@ Verify these before deploying.
 | `CONTACT_EMAIL` | No | Support email in backend-generated emails (e.g. refunds); fallback: info@driftdwells.com |
 | `APP_URL` | No | Base URL for links in emails (e.g. https://driftdwells.com) |
 
+### OPS push (optional — default OFF until go-live)
+
+Full runbook: [docs/ops-push/GO_LIVE_RUNBOOK.md](docs/ops-push/GO_LIVE_RUNBOOK.md)
+
+| Variable | Required | Notes |
+|----------|----------|-------|
+| `WEB_PUSH_VAPID_PUBLIC_KEY` | For push | All three VAPID vars required together |
+| `WEB_PUSH_VAPID_PRIVATE_KEY` | For push | Server only — never commit |
+| `WEB_PUSH_VAPID_SUBJECT` | For push | `mailto:…` or `https://…` |
+| `OPS_PUSH_SCHEDULED_ENABLED` | No | `=1` to schedule arrival/cleaning jobs |
+| `OPS_PUSH_SCHEDULER_WORKER_ENABLED` | No | `=1` to run worker tick/sweeper |
+
+**One worker only:** enable `OPS_PUSH_SCHEDULER_WORKER_ENABLED=1` on a single process (integrated `server.js` **or** standalone `runOpsPushWorker.js`, not both). Multiple enabled workers risk duplicate job claims.
+
 ## 2. Client env (Vite, optional overrides)
 
 | Variable | Purpose |
