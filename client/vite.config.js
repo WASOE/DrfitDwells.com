@@ -11,16 +11,37 @@ export default defineConfig({
       srcDir: 'src',
       filename: 'sw.js',
       registerType: 'autoUpdate',
-      includeAssets: [],
+      includeAssets: ['media/branding/pwa/*.png'],
       manifest: {
         name: 'Drift & Dwells',
         short_name: 'Drift & Dwells',
+        description: 'Drift & Dwells operations portal',
         theme_color: '#1a1a1a',
         background_color: '#ffffff',
         display: 'standalone',
-        start_url: '/',
+        start_url: '/ops',
         scope: '/',
-        lang: 'en'
+        lang: 'en',
+        icons: [
+          {
+            src: '/media/branding/pwa/icon-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any'
+          },
+          {
+            src: '/media/branding/pwa/icon-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any'
+          },
+          {
+            src: '/media/branding/pwa/icon-512-maskable.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable'
+          }
+        ]
       },
       injectManifest: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2,json,geojson,gpx,kml,webmanifest}'],

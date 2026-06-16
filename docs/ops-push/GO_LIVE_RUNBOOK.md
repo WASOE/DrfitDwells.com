@@ -164,18 +164,34 @@ Prerequisites: HTTPS, valid OpsUser login (24-char ObjectId `actorId`), VAPID co
 9. **Mark all read** → badge clears.
 10. **Turn off** push → subscription removed.
 
-### Android (Chrome or installed PWA)
+### Install OPS as a web app
+
+The PWA manifest launches at `/ops` with standalone display. Install while signed in on a real device.
+
+#### Android (Chrome)
+
+1. Open `https://driftdwells.com/ops` in Chrome.
+2. Log in with your OpsUser account.
+3. **Install app** (Chrome menu → Install app, or the install banner when offered).
+4. Open Drift & Dwells **from the app icon** on the home screen.
+5. Enable notifications from the OPS push strip.
+6. Send a **test notification** (admin) or trigger a real OPS event.
 
 - Permission prompt → Allow.
-- Background push should appear when tab closed (if OS allows).
+- Background push should appear when the app is closed (if the OS allows).
 
-### iOS 16.4+
+#### iOS 16.4+ (Safari)
 
-1. Safari → **Add to Home Screen**.
-2. Open app **from Home Screen icon** (not Safari tab).
-3. Then enable notifications.
+iOS Web Push requires an installed Home Screen app. A normal Safari tab alone is **not** enough.
 
-If permission denied: iOS Settings → Notifications → app → enable.
+1. Open `https://driftdwells.com/ops` in Safari.
+2. Tap **Share** → **Add to Home Screen**.
+3. Open Drift & Dwells **from the Home Screen icon** (not the Safari tab).
+4. Log in with your OpsUser account.
+5. Enable notifications from the OPS push strip.
+6. Send a **test notification** (admin) or trigger a real OPS event.
+
+If permission denied: iOS Settings → Notifications → Drift & Dwells → enable.
 
 ### Known limitations
 
