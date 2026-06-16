@@ -106,6 +106,10 @@ export function markAllOpsNotificationsRead() {
   return api.post('/ops/notifications/read-all', {}, { headers: authHeaders() });
 }
 
+export function sendOpsPushTestNotification() {
+  return api.post('/ops/notifications/test', {}, { headers: authHeaders() });
+}
+
 const opsWriteAPI = {
   confirmReservation: (id) => api.post(`/ops/reservations/${id}/actions/confirm`, {}, { headers: authHeaders() }),
   checkInReservation: (id) => api.post(`/ops/reservations/${id}/actions/check-in`, {}, { headers: authHeaders() }),

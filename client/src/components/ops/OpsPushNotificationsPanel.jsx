@@ -1,4 +1,7 @@
+import { useState } from 'react';
 import { useOpsPushNotifications } from '../../hooks/useOpsPushNotifications';
+import { useOpsSession } from '../../context/OpsSessionContext';
+import { sendOpsPushTestNotification } from '../../services/opsApi';
 
 const READINESS_COPY = {
   unsupported: 'This browser does not support push notifications.',
@@ -12,8 +15,53 @@ const READINESS_COPY = {
   ops_user_required: 'Push requires an OPS user account. Sign in with a cleaner, operator, or admin user.'
 };
 
+function formatTestFeedback(response, err) {
+  if (err) {
+    const status = err?.response?.status;
+    const message = err?.response?.data?.message;
+    if (status === 429) {
+      return message || 'Test notification already sent this minute.';
+    }
+    if (status === 403) {
+      return message || 'You do not have permission to send a test notification.';
+    }
+    return message || 'Could not send test notification.';
+  }
+
+  const data = response?.data?.data;
+  if (response?.data?.success === false) {
+    return response?.data?.message || 'Could not send test notification.';
+  }
+  if (data?.skipped) {
+    return 'Push is not configured on the server.';
+  }
+  if ((data?.notificationsCreated || 0) > 0) {
+    return 'Test notification sent. Check your device and the bell inbox.';
+  }
+  return 'Test notification request completed.';
+}
+
 export default function OpsPushNotificationsPanel({ actorId }) {
+  const session = useOpsSession();
   const { loading, busy, readiness, errorMessage, subscribe, unsubscribe } = useOpsPushNotifications(actorId);
+  const [testBusy, setTestBusy] = useState(false);
+  const [testFeedback, setTestFeedback] = useState('');
+
+  const isAdmin = session?.role === 'admin';
+  const showTestButton = isAdmin && readiness === 'subscribed';
+
+  const handleSendTest = async () => {
+    setTestBusy(true);
+    setTestFeedback('');
+    try {
+      const response = await sendOpsPushTestNotification();
+      setTestFeedback(formatTestFeedback(response, null));
+    } catch (err) {
+      setTestFeedback(formatTestFeedback(null, err));
+    } finally {
+      setTestBusy(false);
+    }
+  };
 
   if (loading) {
     return null;
@@ -25,17 +73,37 @@ export default function OpsPushNotificationsPanel({ actorId }) {
         className="border-b border-gray-100 bg-gray-50/80"
         data-testid="ops-push-panel-subscribed"
       >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-1.5 flex flex-wrap items-center justify-between gap-2">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-1.5 flex flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <p className="text-xs text-gray-600">{READINESS_COPY.subscribed}</p>
-          <button
-            type="button"
-            onClick={unsubscribe}
-            disabled={busy}
-            className="text-xs px-2 py-1 rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-            data-testid="ops-push-disable"
-          >
-            {busy ? 'Turning off…' : 'Turn off'}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {showTestButton ? (
+              <button
+                type="button"
+                onClick={() => {
+                  void handleSendTest();
+                }}
+                disabled={busy || testBusy}
+                className="text-xs px-2 py-1 rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                data-testid="ops-push-send-test"
+              >
+                {testBusy ? 'Sending…' : 'Send test notification'}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={unsubscribe}
+              disabled={busy || testBusy}
+              className="text-xs px-2 py-1 rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              data-testid="ops-push-disable"
+            >
+              {busy ? 'Turning off…' : 'Turn off'}
+            </button>
+          </div>
+          {testFeedback ? (
+            <p className="w-full text-xs text-gray-600" data-testid="ops-push-test-feedback" role="status">
+              {testFeedback}
+            </p>
+          ) : null}
         </div>
       </div>
     );
