@@ -24,6 +24,7 @@ const state = {
   sweeperTimer: null,
   enabled: false,
   workerId: null,
+  startedAt: null,
   tickMs: DEFAULT_TICK_MS,
   sweeperTickMs: DEFAULT_SWEEPER_TICK_MS,
   batchSize: DEFAULT_BATCH_SIZE,
@@ -230,6 +231,7 @@ function startOpsPushSchedulerWorkerIfEnabled() {
   state.visibilityTimeoutMs = cfg.visibilityTimeoutMs;
 
   if (!cfg.enabled) {
+    state.startedAt = null;
     logLine('log', 'disabled', {
       reason: `${ENV_FLAG} is not '1'`
     });
@@ -269,6 +271,8 @@ function startOpsPushSchedulerWorkerIfEnabled() {
   }, state.sweeperTickMs);
   if (typeof state.sweeperTimer.unref === 'function') state.sweeperTimer.unref();
 
+  state.startedAt = new Date();
+
   return { started: true };
 }
 
@@ -281,6 +285,7 @@ function stopOpsPushSchedulerWorkerForTest() {
     clearInterval(state.sweeperTimer);
     state.sweeperTimer = null;
   }
+  state.startedAt = null;
 }
 
 function getOpsPushSchedulerWorkerState() {
@@ -288,6 +293,7 @@ function getOpsPushSchedulerWorkerState() {
     enabled: Boolean(state.enabled),
     running: Boolean(state.tickTimer && state.sweeperTimer),
     workerId: state.workerId,
+    startedAt: state.startedAt,
     tickMs: state.tickMs,
     sweeperTickMs: state.sweeperTickMs,
     batchSize: state.batchSize,

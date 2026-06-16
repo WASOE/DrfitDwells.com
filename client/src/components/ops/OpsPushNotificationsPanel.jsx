@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useOpsPushNotifications } from '../../hooks/useOpsPushNotifications';
 import { useOpsSession } from '../../context/OpsSessionContext';
-import { sendOpsPushTestNotification } from '../../services/opsApi';
+import { getOpsPushHealth, sendOpsPushTestNotification } from '../../services/opsApi';
 
 const READINESS_COPY = {
   unsupported: 'This browser does not support push notifications.',
@@ -39,6 +39,60 @@ function formatTestFeedback(response, err) {
     return 'Test notification sent. Check your device and the bell inbox.';
   }
   return 'Test notification request completed.';
+}
+
+function formatWorkerHealth(health) {
+  if (!health?.workerEnabled) {
+    return 'off';
+  }
+  return health.worker?.running ? 'yes' : 'no';
+}
+
+function OpsPushHealthSummary() {
+  const [health, setHealth] = useState(null);
+  const [healthError, setHealthError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    void getOpsPushHealth()
+      .then((resp) => {
+        if (cancelled) {
+          return;
+        }
+        setHealth(resp?.data?.data || null);
+        setHealthError('');
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+        setHealth(null);
+        setHealthError('Could not load push health.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (healthError) {
+    return (
+      <p className="w-full text-[11px] text-gray-500" data-testid="ops-push-health">
+        {healthError}
+      </p>
+    );
+  }
+
+  if (!health) {
+    return null;
+  }
+
+  return (
+    <p className="w-full text-[11px] text-gray-500 tabular-nums" data-testid="ops-push-health">
+      Push configured: {health.pushEnabled ? 'yes' : 'no'} · Scheduled:{' '}
+      {health.scheduledEnabled ? 'yes' : 'no'} · Worker: {formatWorkerHealth(health)} · Active subs:{' '}
+      {health.subscriptions?.active ?? 0} · Failed jobs: {health.scheduledJobs?.failed ?? 0}
+    </p>
+  );
 }
 
 export default function OpsPushNotificationsPanel({ actorId }) {
@@ -99,6 +153,7 @@ export default function OpsPushNotificationsPanel({ actorId }) {
               {busy ? 'Turning off…' : 'Turn off'}
             </button>
           </div>
+          {isAdmin ? <OpsPushHealthSummary /> : null}
           {testFeedback ? (
             <p className="w-full text-xs text-gray-600" data-testid="ops-push-test-feedback" role="status">
               {testFeedback}
@@ -113,7 +168,7 @@ export default function OpsPushNotificationsPanel({ actorId }) {
 
   return (
     <div className="border-b border-gray-200 bg-white" data-testid="ops-push-panel">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs text-gray-600 max-w-2xl">
           {READINESS_COPY[readiness] || READINESS_COPY.error}
           {errorMessage && readiness === 'error' ? ` ${errorMessage}` : ''}
@@ -129,6 +184,7 @@ export default function OpsPushNotificationsPanel({ actorId }) {
             {busy ? 'Enabling…' : 'Enable notifications'}
           </button>
         ) : null}
+        {isAdmin ? <OpsPushHealthSummary /> : null}
       </div>
     </div>
   );

@@ -110,6 +110,10 @@ export function sendOpsPushTestNotification() {
   return api.post('/ops/notifications/test', {}, { headers: authHeaders() });
 }
 
+export function getOpsPushHealth() {
+  return api.get('/ops/push-health', { headers: authHeaders() });
+}
+
 const opsWriteAPI = {
   confirmReservation: (id) => api.post(`/ops/reservations/${id}/actions/confirm`, {}, { headers: authHeaders() }),
   checkInReservation: (id) => api.post(`/ops/reservations/${id}/actions/check-in`, {}, { headers: authHeaders() }),
