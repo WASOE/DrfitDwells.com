@@ -10,7 +10,7 @@ export const CUSTOM_SIZING = {
   length: { min: 6, max: 14, step: 1, default: 7 },
   width: { min: 3, max: 5, step: 0.5, default: 3 },
   standardAreaSqm: 21,
-  ratePerSqmAboveStandard: 1200,
+  ratePerSqmAboveStandard: 1500,
 };
 
 export const BUILD_MODELS = [
@@ -19,7 +19,7 @@ export const BUILD_MODELS = [
     type: 'cabin',
     name: 'The Lux Cabin',
     badge: 'All-inclusive · Most popular',
-    basePrice: 30000,
+    basePrice: 32000,
     dims: '7 m × 3 m × 3 m',
     areaSqm: 21,
     areaLabel: '21 m²',

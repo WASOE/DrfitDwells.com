@@ -42,7 +42,7 @@ describe('Phase 6 QA — model switch mid-flow', () => {
     expect(backToCabin.toggles).not.toContain('extra-outdoor-shower');
     expect(backToCabin.toggles).not.toContain('extra-rainwater');
     expect(backToCabin.customDimensions).toBeNull();
-    expect(formatBuildBarPrice(computeBuildTotal(backToCabin))).toBe('€30,000');
+    expect(formatBuildBarPrice(computeBuildTotal(backToCabin))).toBe('€32,000');
   });
 
   it('updates bar price after each model switch in a mixed configuration', () => {
@@ -52,13 +52,13 @@ describe('Phase 6 QA — model switch mid-flow', () => {
       radio: createInitialBuildState('lux-cabin').radio,
       toggles: ['extra-solar', 'extra-outdoor-shower'],
     });
-    expect(formatBuildBarPrice(computeBuildTotal(cabinState))).toBe('€38,400');
+    expect(formatBuildBarPrice(computeBuildTotal(cabinState))).toBe('€40,400');
 
     const aframeState = sanitizeBuildState({ ...cabinState, modelId: 'aframe' }, 'aframe');
     expect(formatBuildBarPrice(computeBuildTotal(aframeState))).toBe('€27,200');
 
     const backToCabin = sanitizeBuildState({ ...cabinState, modelId: 'lux-cabin' }, 'lux-cabin');
-    expect(formatBuildBarPrice(computeBuildTotal(backToCabin))).toBe('€38,400');
+    expect(formatBuildBarPrice(computeBuildTotal(backToCabin))).toBe('€40,400');
   });
 });
 
@@ -95,7 +95,7 @@ describe('Phase 6 QA — price bar accuracy', () => {
       toggles: ['extra-solar'],
     });
     const pricing = computeBuildTotal(state);
-    expect(formatBuildBarPrice(pricing)).toBe('€37,200');
+    expect(formatBuildBarPrice(pricing)).toBe('€39,200');
     expect(pricing.hasConsultationItems).toBe(false);
   });
 
@@ -106,13 +106,13 @@ describe('Phase 6 QA — price bar accuracy', () => {
       radio: { ...createInitialBuildState('lux-cabin').radio, wallFinish: 'finish-pine-planks' },
       toggles: [],
     });
-    expect(formatBuildBarPrice(computeBuildTotal(withPine))).toBe('From €30,000');
+    expect(formatBuildBarPrice(computeBuildTotal(withPine))).toBe('From €32,000');
 
     const withoutPine = sanitizeBuildState({
       ...withPine,
       radio: { ...withPine.radio, wallFinish: 'finish-plywood' },
     });
-    expect(formatBuildBarPrice(computeBuildTotal(withoutPine))).toBe('€30,000');
+    expect(formatBuildBarPrice(computeBuildTotal(withoutPine))).toBe('€32,000');
   });
 
   it('toggles From prefix for underfloor heating and wooden planks independently', () => {
@@ -122,7 +122,7 @@ describe('Phase 6 QA — price bar accuracy', () => {
       radio: createInitialBuildState('lux-cabin').radio,
       toggles: ['heat-underfloor'],
     });
-    expect(formatBuildBarPrice(computeBuildTotal(withUnderfloor))).toBe('From €30,000');
+    expect(formatBuildBarPrice(computeBuildTotal(withUnderfloor))).toBe('From €32,000');
 
     const withWoodFloor = sanitizeBuildState({
       modelId: 'lux-cabin',
@@ -130,7 +130,7 @@ describe('Phase 6 QA — price bar accuracy', () => {
       radio: { ...createInitialBuildState('lux-cabin').radio, flooring: 'floor-wooden-planks' },
       toggles: [],
     });
-    expect(formatBuildBarPrice(computeBuildTotal(withWoodFloor))).toBe('From €30,000');
+    expect(formatBuildBarPrice(computeBuildTotal(withWoodFloor))).toBe('From €32,000');
 
     const fixedOnly = sanitizeBuildState({
       modelId: 'lux-cabin',
@@ -138,7 +138,7 @@ describe('Phase 6 QA — price bar accuracy', () => {
       radio: createInitialBuildState('lux-cabin').radio,
       toggles: [],
     });
-    expect(formatBuildBarPrice(computeBuildTotal(fixedOnly))).toBe('€30,000');
+    expect(formatBuildBarPrice(computeBuildTotal(fixedOnly))).toBe('€32,000');
     expect(computeBuildTotal(fixedOnly).hasConsultationItems).toBe(false);
   });
 });
@@ -194,7 +194,7 @@ describe('Phase 6 QA — mailto export', () => {
 
     expect(mailto).toMatch(/^mailto:hello@driftdwells\.com\?subject=/);
     expect(decoded).toContain('Drift & Dwells build enquiry — The Lux Cabin');
-    expect(decoded).toContain('Estimate: From €30,000');
+    expect(decoded).toContain('Estimate: From €32,000');
     expect(decoded.split('\n').length).toBeLessThanOrEqual(8);
     expect(mailto).not.toMatch(/subject=[^&]*&[^b]/); // subject fully encoded before body=
     expect(mailto).not.toContain(' '); // no raw spaces in URL

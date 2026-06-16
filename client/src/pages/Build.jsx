@@ -34,12 +34,12 @@ const Build = () => {
 
   const seoTitle =
     language === 'bg'
-      ? 'Модулни къщи Drift & Dwells – оф-грид домове (~30 000 €)'
+      ? 'Модулни къщи Drift & Dwells – оф-грид домове (~32 000 €)'
       : 'Custom Modular Cabins Bulgaria – Drift & Dwells';
   const seoDescription =
     language === 'bg'
-      ? 'Искате собствена оф-грид къща? Проектираме и доставяме напълно обзаведени модулни домове в България (от около 30 000 €). Холандски дизайн, готови за живеене.'
-      : 'Design your own off-grid cabin: turnkey modular timber homes in Bulgaria from around €30,000, Dutch-designed and furnished. Configure finishes and systems here.';
+      ? 'Искате собствена оф-грид къща? Проектираме и доставяме напълно обзаведени модулни домове в България (от около 32 000 €). Холандски дизайн, готови за живеене.'
+      : 'Design your own off-grid cabin: turnkey modular timber homes in Bulgaria from around €32,000, Dutch-designed and furnished. Configure finishes and systems here.';
 
   return (
     <>

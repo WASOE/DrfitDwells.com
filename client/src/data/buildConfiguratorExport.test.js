@@ -24,7 +24,7 @@ describe('buildConfiguratorExport', () => {
       toggles: [],
     });
     const mailto = buildBuildEnquiryMailto(state, 'hello@driftdwells.com');
-    expect(decodeURIComponent(mailto)).toContain('Estimate: From €30,000');
+    expect(decodeURIComponent(mailto)).toContain('Estimate: From €32,000');
   });
 
   it('includes A-Frame summaryNote in body', () => {

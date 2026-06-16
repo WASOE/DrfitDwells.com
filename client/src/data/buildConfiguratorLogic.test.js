@@ -41,8 +41,8 @@ describe('buildConfiguratorLogic', () => {
     expect(state.radio.flooring).toBe('floor-pvc-laminate');
   });
 
-  it('computes Lux Cabin base price at €30,000 and A Frame at €20,000', () => {
-    expect(computeBuildTotal(createInitialBuildState('lux-cabin')).total).toBe(30000);
+  it('computes Lux Cabin base price at €32,000 and A Frame at €20,000', () => {
+    expect(computeBuildTotal(createInitialBuildState('lux-cabin')).total).toBe(32000);
     expect(computeBuildTotal(createInitialBuildState('aframe')).total).toBe(20000);
     expect(computeBuildTotal(createInitialBuildState('lux-cabin')).hasConsultationItems).toBe(false);
   });
@@ -53,10 +53,10 @@ describe('buildConfiguratorLogic', () => {
   });
 
   it('adds custom size surcharge above 21 m² for cabins only', () => {
-    const sized = computeCustomSizePrice(30000, 8, 3);
+    const sized = computeCustomSizePrice(32000, 8, 3);
     expect(sized.areaSqm).toBe(24);
-    expect(sized.extraPrice).toBe(3600);
-    expect(sized.total).toBe(33600);
+    expect(sized.extraPrice).toBe(4500);
+    expect(sized.total).toBe(36500);
 
     const state = sanitizeBuildState({
       modelId: 'lux-cabin',
@@ -64,7 +64,12 @@ describe('buildConfiguratorLogic', () => {
       radio: createInitialBuildState('lux-cabin').radio,
       toggles: [],
     });
-    expect(computeBuildTotal(state).total).toBe(33600);
+    expect(computeBuildTotal(state).total).toBe(36500);
+
+    const large = computeCustomSizePrice(32000, 10, 4);
+    expect(large.areaSqm).toBe(40);
+    expect(large.extraPrice).toBe(28500);
+    expect(large.total).toBe(60500);
   });
 
   it('clears custom dimensions when switching to A-Frame', () => {
@@ -95,7 +100,7 @@ describe('buildConfiguratorLogic', () => {
     });
 
     const result = computeBuildTotal(state);
-    expect(result.total).toBe(30000);
+    expect(result.total).toBe(32000);
     expect(result.hasConsultationItems).toBe(true);
     expect(getConsultationOptionIds(state).sort()).toEqual(
       ['finish-pine-planks', 'floor-wooden-planks', 'heat-underfloor'].sort()
@@ -114,7 +119,7 @@ describe('buildConfiguratorLogic', () => {
         toggles: [],
       })
     );
-    expect(formatBuildBarPrice(withConsultation)).toBe('From €30,000');
+    expect(formatBuildBarPrice(withConsultation)).toBe('From €32,000');
 
     const fixedOnly = computeBuildTotal(
       sanitizeBuildState({
@@ -124,7 +129,7 @@ describe('buildConfiguratorLogic', () => {
         toggles: ['extra-solar'],
       })
     );
-    expect(formatBuildBarPrice(fixedOnly)).toBe('€37,200');
+    expect(formatBuildBarPrice(fixedOnly)).toBe('€39,200');
   });
 
   it('uses From €20,000 for A-Frame when consultation items are active', () => {
@@ -150,7 +155,7 @@ describe('buildConfiguratorLogic', () => {
       toggles: ['extra-solar', 'extra-rainwater'],
     });
 
-    expect(computeBuildTotal(state).total).toBe(30000 + 7200 + 2800);
+    expect(computeBuildTotal(state).total).toBe(32000 + 7200 + 2800);
   });
 
   it('resets invalid radio when model changes', () => {

@@ -27,7 +27,7 @@ const BuildModelStep = ({ state, model, onSelectModel, onCustomDimensionsChange,
           Choose your model
         </h2>
         <p className="text-[0.8rem] leading-relaxed text-[#9a9a9a]">
-          The Lux Cabin from €30,000 all-inclusive. The A Frame shell from €20,000. Delivered and
+          The Lux Cabin from €32,000 all-inclusive. The A Frame shell from €20,000. Delivered and
           installed. No surprises on structural scope.
         </p>
       </div>
@@ -109,8 +109,8 @@ const BuildModelStep = ({ state, model, onSelectModel, onCustomDimensionsChange,
             Need a custom size?
           </div>
           <p className="mb-5 text-[0.76rem] leading-relaxed text-[#9a9a9a]">
-            Going bigger? We calculate extra area at €1,200/m² above 21m². Going smaller? The
-            price stays at €30,000.
+            Going bigger? We calculate extra area at €1,500/m² above 21m². Going smaller? The
+            price stays at €32,000.
           </p>
           <div className="mb-4 grid grid-cols-1 gap-5 sm:grid-cols-2">
             <label className="block">
