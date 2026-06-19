@@ -185,6 +185,7 @@ main() {
   drop_restore_test_db "$DRIFTDWELLS_MONGODB_URI"
 
   if ! mongorestore \
+    --quiet \
     --uri="$DRIFTDWELLS_MONGODB_URI" \
     --gzip \
     --archive="$mongo_archive" \

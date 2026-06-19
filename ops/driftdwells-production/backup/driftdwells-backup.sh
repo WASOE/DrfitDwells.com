@@ -125,7 +125,7 @@ main() {
   chmod 700 "$backup_set" "$mongo_dir" "$uploads_dir"
 
   log "mongodump archive -> $(basename "$mongo_file")"
-  mongodump --uri="$DRIFTDWELLS_MONGODB_URI" --gzip --archive="$mongo_file"
+  mongodump --quiet --uri="$DRIFTDWELLS_MONGODB_URI" --gzip --archive="$mongo_file"
 
   if ! non_empty_file "$mongo_file"; then
     die "mongo backup file missing or empty: $mongo_file"
