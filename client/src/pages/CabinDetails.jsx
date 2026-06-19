@@ -17,6 +17,7 @@ import Seo from '../components/Seo';
 import { daysBetweenDateOnly, parseDateOnlyLocal } from '../utils/dateOnly';
 import './CabinDetails.css';
 import { INSTAGRAM_URL, FACEBOOK_URL } from '../data/gmbLocations';
+import { trackFunnelEvent } from '../tracking/funnel';
 
 // Constants
 const SCROLL_DELAY_MS = 100;
@@ -728,6 +729,17 @@ const CabinDetails = () => {
       cancelled = true;
     };
   }, [id, siteLanguage, t]);
+
+  useEffect(() => {
+    if (!cabin?._id) return;
+    trackFunnelEvent('property_view', {
+      cabinId: cabin._id,
+      ...(searchCriteria.checkIn ? { checkInDateOnly: String(searchCriteria.checkIn).slice(0, 10) } : {}),
+      ...(searchCriteria.checkOut ? { checkOutDateOnly: String(searchCriteria.checkOut).slice(0, 10) } : {}),
+      adults: searchCriteria.adults,
+      children: searchCriteria.children
+    });
+  }, [cabin?._id]);
 
   // Keyboard navigation and focus trap for lightbox
   useEffect(() => {

@@ -49,6 +49,10 @@ const {
 } = require('../services/bookingPurchaseTracking');
 const { openManualReviewItem } = require('../services/ops/ingestion/manualReviewService');
 const { linkStripePaymentToBooking } = require('../services/payments/paymentLinkingService');
+const {
+  recordQuoteFunnelOutcome,
+  recordBookingFunnelConversion
+} = require('../services/conversion/funnelEventService');
 const { isCheckoutSessionError } = require('../services/checkout/checkoutSessionErrors');
 const {
   shouldUseCheckoutSessionV2,
@@ -502,14 +506,37 @@ const bookingQuoteBodyValidators = [
   body('children').optional().isInt({ min: 0, max: 10 }).withMessage('Children must be between 0 and 10'),
   body('experienceKeys').optional().isArray().withMessage('experienceKeys must be an array'),
   body('promoCode').optional().isString().isLength({ max: 40 }).withMessage('promoCode is too long'),
-  body('voucherCode').optional().isString().isLength({ max: 64 }).withMessage('voucherCode is too long')
+  body('voucherCode').optional().isString().isLength({ max: 64 }).withMessage('voucherCode is too long'),
+  body('funnelSessionKey').optional().isString().isLength({ max: 120 }),
+  body('funnelVisitorKey').optional().isString().isLength({ max: 120 })
 ];
+
+function scheduleBookingFunnelConversion(booking, req, { idempotentReplay = false } = {}) {
+  if (idempotentReplay || !booking) return;
+  void recordBookingFunnelConversion(booking, {
+    funnelSessionKey: req?.body?.funnelSessionKey,
+    funnelVisitorKey: req?.body?.funnelVisitorKey
+  }).catch((err) => {
+    console.error('[funnel] booking conversion record failed', {
+      bookingId: booking?._id ? String(booking._id) : null,
+      message: err?.message || String(err)
+    });
+  });
+}
 
 // POST /api/bookings/quote — server-owned price + optional promo (display / PI / booking must match)
 router.post('/quote', bookingQuoteLimiter, bookingQuoteBodyValidators, async (req, res) => {
+  let funnelOutcome = null;
+
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      funnelOutcome = {
+        kind: 'failed',
+        quoteFailureClass: 'validation_error',
+        httpStatus: 400,
+        validationFailed: true
+      };
       return res.status(400).json({
         success: false,
         message: 'Validation failed',
@@ -519,12 +546,19 @@ router.post('/quote', bookingQuoteLimiter, bookingQuoteBodyValidators, async (re
 
     const result = await bookingQuoteService.buildPublicBookingQuote(req.body);
     if (!result.ok) {
+      funnelOutcome = {
+        kind: 'failed',
+        httpStatus: result.status,
+        result
+      };
       return res.status(result.status).json({
         success: false,
         message: result.message,
         errors: result.errors
       });
     }
+
+    funnelOutcome = { kind: 'received', httpStatus: 200, result };
 
     const {
       subtotalPrice,
@@ -551,10 +585,23 @@ router.post('/quote', bookingQuoteLimiter, bookingQuoteBodyValidators, async (re
     });
   } catch (err) {
     console.error('Booking quote error:', err);
+    funnelOutcome = {
+      kind: 'failed',
+      quoteFailureClass: 'server_error',
+      httpStatus: 500
+    };
     return res.status(500).json({
       success: false,
       message: process.env.NODE_ENV === 'development' ? err.message : 'Quote failed'
     });
+  } finally {
+    if (funnelOutcome) {
+      void recordQuoteFunnelOutcome(req, funnelOutcome).catch((funnelErr) => {
+        console.error('[funnel] quote outcome record failed', {
+          message: funnelErr?.message || String(funnelErr)
+        });
+      });
+    }
   }
 });
 
@@ -876,7 +923,9 @@ router.post('/', bookingCreateLimiter, [
   body('promoCode').optional().isString().isLength({ max: 40 }).withMessage('promoCode is too long'),
   body('checkoutId').optional().isString().isLength({ min: 8, max: 128 }).withMessage('checkoutId is invalid'),
   body('voucherCode').optional().isString().isLength({ max: 64 }).withMessage('voucherCode is too long'),
-  body('voucherRedemptionId').optional().isMongoId().withMessage('voucherRedemptionId is invalid')
+  body('voucherRedemptionId').optional().isMongoId().withMessage('voucherRedemptionId is invalid'),
+  body('funnelSessionKey').optional().isString().isLength({ max: 120 }),
+  body('funnelVisitorKey').optional().isString().isLength({ max: 120 })
 ], async (req, res) => {
   let stripePaymentVerified = false;
   let verifiedPaymentIntent = null;
@@ -1666,6 +1715,8 @@ router.post('/', bookingCreateLimiter, [
                 );
               }
             })();
+
+            scheduleBookingFunnelConversion(booking, req, { idempotentReplay });
           }
         }
 
@@ -2183,6 +2234,8 @@ router.post('/', bookingCreateLimiter, [
         idempotentReplay: false
       })
     );
+
+    scheduleBookingFunnelConversion(booking, req, { idempotentReplay: false });
 
     // Decouple SMTP latency from the HTTP response; booking is already persisted.
     void (async () => {

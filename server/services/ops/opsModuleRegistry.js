@@ -24,6 +24,7 @@ const OPS_API_MODULE_ROUTES = [
   { prefix: '/gift-vouchers', module: 'finance' },
   { prefix: '/promo-codes', module: 'finance' },
   { prefix: '/payments', module: 'finance' },
+  { prefix: '/insights', module: 'finance' },
   { prefix: '/creator-partners', module: 'property' },
   { prefix: '/cabins', module: 'property' },
   { prefix: '/messaging', module: 'guests_comms' },

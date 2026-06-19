@@ -11,6 +11,7 @@ import { useBookingSearch } from '../context/BookingSearchContext';
 import { startOfDay, addDays, isBefore } from 'date-fns';
 import { formatDateOnlyLocal, parseDateOnlyLocal } from '../utils/dateOnly';
 import { getMinSelectableStayDate } from '../utils/bookingMinStayDate';
+import { trackFunnelEvent } from '../tracking/funnel';
 import { getDateFnsLocale } from '../utils/localeDates';
 import { format } from 'date-fns';
 import {
@@ -312,6 +313,13 @@ const SearchResults = () => {
         }
         setCabins(cabinsData);
         setRetryCount(0);
+        trackFunnelEvent('search_results', {
+          checkInDateOnly: String(currentSearchParams.checkIn).slice(0, 10),
+          checkOutDateOnly: String(currentSearchParams.checkOut).slice(0, 10),
+          adults: currentSearchParams.adults,
+          children: currentSearchParams.children || 0,
+          searchResultCount: cabinsData.length
+        });
       } else {
         setErrorMessage(response.data.message || t('search.errorSearchFailed'));
       }

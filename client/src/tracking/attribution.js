@@ -114,6 +114,14 @@ function getOrCreateVisitSessionKey() {
   }
 }
 
+export function getFunnelVisitorKey() {
+  return getOrCreateVisitVisitorKey();
+}
+
+export function getFunnelSessionKey() {
+  return getOrCreateVisitSessionKey();
+}
+
 function trackReferralVisit(referralCode, landingPath, referrer) {
   if (!referralCode || typeof window === 'undefined') return;
   const payload = {

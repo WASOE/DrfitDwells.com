@@ -12,6 +12,7 @@ import PriceDetailsModal from '../components/booking/PriceDetailsModal';
 import Seo from '../components/Seo';
 import { daysBetweenDateOnly, formatDateOnlyLocal, parseDateOnlyLocal } from '../utils/dateOnly';
 import { getAttributionPayload } from '../tracking/attribution';
+import { trackFunnelEvent } from '../tracking/funnel';
 import { getMetaClientContextPayload } from '../tracking/metaClientContext';
 import { readGuestPromo, writeGuestPromo } from '../utils/guestPromo';
 import { useSiteLanguage } from '../hooks/useSiteLanguage';
@@ -925,6 +926,22 @@ const ConfirmBooking = () => {
 
     loadStay();
   }, [bookingEntityId, bookingEntitySlug, bookingEntityType, t]);
+
+  useEffect(() => {
+    if (!bookingEntityId || !checkIn || !checkOut) return;
+    const payload = {
+      checkInDateOnly: formatDateOnlyLocal(checkIn),
+      checkOutDateOnly: formatDateOnlyLocal(checkOut),
+      adults,
+      children
+    };
+    if (bookingEntityType === 'cabinType') {
+      payload.cabinTypeId = bookingEntityId;
+    } else {
+      payload.cabinId = bookingEntityId;
+    }
+    trackFunnelEvent('confirm_page_view', payload);
+  }, [bookingEntityId, bookingEntityType, checkIn, checkOut, adults, children]);
 
   useEffect(() => {
     bookingAPI.getConfig()

@@ -36,6 +36,8 @@ const publicCalendarRoutes = require('./routes/publicCalendarRoutes');
 const publicGuideRoutes = require('./routes/publicGuideRoutes');
 const creatorReferralVisitRoutes = require('./routes/creatorReferralVisitRoutes');
 const creatorPortalRoutes = require('./routes/creatorPortalRoutes');
+const funnelEventRoutes = require('./routes/funnelEventRoutes');
+const { funnelEventLimiter } = require('./routes/funnelEventRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -185,6 +187,12 @@ const bookingLimiter = rateLimit({
   message: { success: false, message: 'Too many booking requests, please slow down.' }
 });
 
+// DB availability check (used by route mounts below global JSON parser)
+const requireDb = (req, res, next) => {
+  if (db.isConnected && db.isConnected()) return next();
+  res.status(503).json({ success: false, message: 'Database unavailable. Please try again shortly.' });
+};
+
 // --- Middleware ---
 app.use(helmet({
   contentSecurityPolicy: false,
@@ -195,6 +203,15 @@ app.use(compression());
 
 // Stripe webhook: raw body for signature verification (before express.json)
 app.use('/api/stripe', express.raw({ type: 'application/json' }), stripeWebhookRoutes);
+
+// Funnel events: strict JSON limit and dedicated rate limit before global parser
+app.use(
+  '/api/funnel-events',
+  funnelEventLimiter,
+  express.json({ limit: '8kb' }),
+  requireDb,
+  funnelEventRoutes
+);
 
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
@@ -232,12 +249,6 @@ app.get(['/terms-and-conditions-drift-dwells', '/terms-and-conditions-drift-dwel
 app.get('/uploads/PDFs/drift-dwells-docs-v2/terms.pdf', (req, res) => {
   res.redirect(301, '/legal/terms-2026-04-19-v2.pdf');
 });
-
-// DB availability check
-const requireDb = (req, res, next) => {
-  if (db.isConnected && db.isConnected()) return next();
-  res.status(503).json({ success: false, message: 'Database unavailable. Please try again shortly.' });
-};
 
 // Health check (no DB required)
 app.get('/api/health', (req, res) => {

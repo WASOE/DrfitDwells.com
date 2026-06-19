@@ -13,6 +13,7 @@ import StickyBookingBar from '../components/StickyBookingBar';
 import { StayLodgingPriceBlock } from '../components/booking/StayLodgingPriceBlock';
 import Seo from '../components/Seo';
 import { daysBetweenDateOnly, parseDateOnlyLocal } from '../utils/dateOnly';
+import { trackFunnelEvent } from '../tracking/funnel';
 import './CabinDetails.css';
 import '../components/gallery/lightbox.css';
 
@@ -325,6 +326,17 @@ const AFrameDetails = () => {
     siteLanguage,
     t,
   ]);
+
+  useEffect(() => {
+    if (!cabinType?._id) return;
+    trackFunnelEvent('property_view', {
+      cabinTypeId: cabinType._id,
+      ...(searchCriteria.checkIn ? { checkInDateOnly: String(searchCriteria.checkIn).slice(0, 10) } : {}),
+      ...(searchCriteria.checkOut ? { checkOutDateOnly: String(searchCriteria.checkOut).slice(0, 10) } : {}),
+      adults: searchCriteria.adults,
+      children: searchCriteria.children
+    });
+  }, [cabinType?._id]);
 
   // Early returns
   if (loading) {

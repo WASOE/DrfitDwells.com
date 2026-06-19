@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getFunnelIdentityPayload } from '../tracking/funnel';
 
 const api = axios.create({
   baseURL: '/api',
@@ -79,9 +80,9 @@ export const unitAPI = {
 };
 
 export const bookingAPI = {
-  create: (bookingData) => api.post('/bookings', bookingData),
+  create: (bookingData) => api.post('/bookings', { ...bookingData, ...getFunnelIdentityPayload() }),
   getConfig: () => api.get('/bookings/config'),
-  quote: (data) => api.post('/bookings/quote', data),
+  quote: (data) => api.post('/bookings/quote', { ...data, ...getFunnelIdentityPayload() }),
   createPaymentIntent: (data) => api.post('/bookings/create-payment-intent', data),
   getCheckoutSession: async (checkoutId) => {
     const id = String(checkoutId ?? '').trim();
