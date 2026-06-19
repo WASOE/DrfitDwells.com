@@ -98,6 +98,21 @@ function buildBookingConvertedDedupeKey(bookingId) {
   return `bc:${String(bookingId)}`;
 }
 
+function buildCheckoutStartedDedupeKey({
+  sessionKey,
+  checkoutId,
+  entityType,
+  entityId,
+  checkInDateOnly,
+  checkOutDateOnly
+}) {
+  const checkout = sanitizeKey(checkoutId);
+  if (checkout) {
+    return `cs:${sessionKey}:${checkout}`;
+  }
+  return `cs:${sessionKey}:${entityType}:${entityId}:${checkInDateOnly || ''}:${checkOutDateOnly || ''}`;
+}
+
 module.exports = {
   resolveFunnelIdentity,
   dayBucket,
@@ -108,5 +123,6 @@ module.exports = {
   buildConfirmPageViewDedupeKey,
   buildQuoteReceivedDedupeKey,
   buildQuoteFailedDedupeKey,
-  buildBookingConvertedDedupeKey
+  buildBookingConvertedDedupeKey,
+  buildCheckoutStartedDedupeKey
 };

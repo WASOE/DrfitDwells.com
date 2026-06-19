@@ -55,6 +55,11 @@ const opsReadAPI = {
   manualReview: (params) => api.get('/ops/manual-review', { params, headers: authHeaders() }),
   giftVouchers: (params) => api.get('/ops/gift-vouchers', { params, headers: authHeaders() }),
   giftVoucherDetail: (id) => api.get(`/ops/gift-vouchers/${id}`, { headers: authHeaders() }),
+  insightsSummary: (params) => api.get('/ops/insights/summary', { params, headers: authHeaders() }),
+  insightsDataQuality: (params) =>
+    api.get('/ops/insights/data-quality', { params, headers: authHeaders() }),
+  conversionSummary: (params) =>
+    api.get('/ops/conversion/summary', { params, headers: authHeaders() }),
   readinessSummary: () => api.get('/ops/readiness/summary', { headers: authHeaders() }),
   readinessModules: () => api.get('/ops/readiness/modules', { headers: authHeaders() }),
   readinessOverlap: () => api.get('/ops/readiness/overlap', { headers: authHeaders() }),

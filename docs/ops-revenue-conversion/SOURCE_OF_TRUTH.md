@@ -880,21 +880,37 @@ Do not build these in Batch 1:
 
 ### Batch 2
 
-Likely scope:
+Delivered scope:
 
 - `/ops/insights` UI for Track A summary and data quality
 - `checkout_started` client event
-- possibly `GET /api/ops/conversion/summary`
+- `GET /api/ops/conversion/summary`
+- minimal `/ops/conversion` page
+
+Zone funnel (propertyKind-scoped drop-off):
+
+```txt
+property_view → confirm_page_view → quote_received → checkout_started → booking_converted
+```
+
+`search_results` is supplementary only in Batch 2:
+
+- site-wide session and event counts
+- not included in Cabin/Valley drop-off
+- do not fake propertyKind attribution
+
+Conversion summary guardrails:
+
+- default UI date range: current month
+- max API query range: 180 days (funnel TTL)
+- `checkout_started` has no historical data before Batch 2 deployment
 
 ### Batch 3
 
 Likely scope:
 
-- minimal `/ops/conversion` page
-- funnel step counts
-- drop-off rates
-- propertyKind and entity filters
-- date range filters
+- richer conversion filters (entity-level)
+- optional zone-scoped search attribution
 
 ### Batch 4
 

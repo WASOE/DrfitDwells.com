@@ -31,7 +31,8 @@ const {
   buildConfirmPageViewDedupeKey,
   buildQuoteReceivedDedupeKey,
   buildQuoteFailedDedupeKey,
-  buildBookingConvertedDedupeKey
+  buildBookingConvertedDedupeKey,
+  buildCheckoutStartedDedupeKey
 } = require('./funnelEventDedupe');
 
 async function resolvePropertyKindFromEntity({ cabinId, cabinTypeId }) {
@@ -147,6 +148,26 @@ function buildClientEventDoc(body) {
       checkInDateOnly: dates.checkInDateOnly,
       checkOutDateOnly: dates.checkOutDateOnly
     });
+  } else if (eventType === 'checkout_started') {
+    if (!entity.cabinId && !entity.cabinTypeId) {
+      const error = new Error('cabinId or cabinTypeId required');
+      error.code = 'VALIDATION_ERROR';
+      throw error;
+    }
+    if (!dates.checkInDateOnly || !dates.checkOutDateOnly) {
+      const error = new Error('checkInDateOnly and checkOutDateOnly required');
+      error.code = 'VALIDATION_ERROR';
+      throw error;
+    }
+    const checkoutId = sanitizeCheckoutId(body.checkoutId);
+    dedupeKey = buildCheckoutStartedDedupeKey({
+      sessionKey,
+      checkoutId,
+      entityType: entity.entityType,
+      entityId: entity.entityId,
+      checkInDateOnly: dates.checkInDateOnly,
+      checkOutDateOnly: dates.checkOutDateOnly
+    });
   }
 
   const doc = {
@@ -159,10 +180,14 @@ function buildClientEventDoc(body) {
     cabinTypeId: entity.cabinTypeId,
     checkInDateOnly: dates.checkInDateOnly,
     checkOutDateOnly: dates.checkOutDateOnly,
-    adults: eventType === 'search_results' || eventType === 'confirm_page_view' ? adults : sanitizeGuestCount(body.adults, { min: 0, max: 10 }),
+    adults:
+      eventType === 'search_results' || eventType === 'confirm_page_view' || eventType === 'checkout_started'
+        ? adults
+        : sanitizeGuestCount(body.adults, { min: 0, max: 10 }),
     children,
     searchResultCount:
       eventType === 'search_results' ? sanitizeGuestCount(body.searchResultCount, { min: 0, max: 500 }) : null,
+    checkoutId: eventType === 'checkout_started' ? sanitizeCheckoutId(body.checkoutId) : null,
     currency: 'EUR',
     schemaVersion: SCHEMA_VERSION
   };

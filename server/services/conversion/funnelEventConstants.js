@@ -3,7 +3,8 @@
 const CLIENT_EVENT_TYPES = Object.freeze([
   'property_view',
   'search_results',
-  'confirm_page_view'
+  'confirm_page_view',
+  'checkout_started'
 ]);
 
 const SERVER_EVENT_TYPES = Object.freeze([
@@ -76,6 +77,19 @@ const CLIENT_PAYLOAD_ALLOWLIST = Object.freeze({
     'eventType',
     'sessionKey',
     'visitorKey',
+    'cabinId',
+    'cabinTypeId',
+    'checkInDateOnly',
+    'checkOutDateOnly',
+    'adults',
+    'children',
+    'attribution'
+  ],
+  checkout_started: [
+    'eventType',
+    'sessionKey',
+    'visitorKey',
+    'checkoutId',
     'cabinId',
     'cabinTypeId',
     'checkInDateOnly',

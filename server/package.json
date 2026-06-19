@@ -36,6 +36,7 @@
     "test:property-kind": "node --test scripts/propertyKindResolver.test.cjs",
     "test:funnel-events": "node --test scripts/funnelEventDedupe.test.cjs scripts/funnelEventService.test.cjs scripts/funnelEventRoutes.test.cjs scripts/bookingQuoteFunnelHook.test.cjs",
     "test:insights": "node --test scripts/propertyKindJoin.test.cjs scripts/insightsReadModel.test.cjs",
+    "test:conversion": "node --test scripts/conversionSummaryService.test.cjs",
     "test:messaging-models": "node --test scripts/messageAutomationModels.test.cjs",
     "test:phone-normalisation": "node --test scripts/phoneNormalisationService.test.cjs",
     "test:messaging-seed": "node --test scripts/messageAutomationSeed.test.cjs",

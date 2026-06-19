@@ -1188,6 +1188,30 @@ const ConfirmBooking = () => {
     t
   ]);
 
+  const emitCheckoutStartedFunnel = useCallback(
+    (checkoutIdValue) => {
+      if (!bookingEntityId || !checkIn || !checkOut) return;
+      const payload = {
+        checkInDateOnly: formatDateOnlyLocal(checkIn),
+        checkOutDateOnly: formatDateOnlyLocal(checkOut),
+        adults,
+        children
+      };
+      if (bookingEntityType === 'cabinType') {
+        payload.cabinTypeId = bookingEntityId;
+      } else {
+        payload.cabinId = bookingEntityId;
+      }
+      const resolvedCheckoutId =
+        typeof checkoutIdValue === 'string' ? checkoutIdValue.trim() : '';
+      if (resolvedCheckoutId) {
+        payload.checkoutId = resolvedCheckoutId;
+      }
+      trackFunnelEvent('checkout_started', payload);
+    },
+    [bookingEntityId, bookingEntityType, checkIn, checkOut, adults, children]
+  );
+
   const initializeCheckoutPayment = useCallback(async () => {
     if (!bookingEntityId || !checkIn || !checkOut || !serverQuote) return;
     setCheckoutInitLoading(true);
@@ -1303,6 +1327,7 @@ const ConfirmBooking = () => {
           ),
           clientSecretPresent: Boolean(resolvedClientSecret) && !noPay
         });
+        emitCheckoutStartedFunnel(validation.checkoutId);
         return;
       }
 
@@ -1320,6 +1345,12 @@ const ConfirmBooking = () => {
         setStripeAmountCents(Number.isFinite(reportedStripeCents) ? reportedStripeCents : 0);
         setClientSecret(null);
       }
+      const legacyCheckoutId =
+        typeof res.data.checkoutId === 'string' ? res.data.checkoutId.trim() : '';
+      if (legacyCheckoutId) {
+        setCheckoutId(legacyCheckoutId);
+      }
+      emitCheckoutStartedFunnel(legacyCheckoutId || checkoutId);
     } catch (err) {
       if (checkoutSessionV2Enabled) {
         const code = extractCheckoutApiErrorCode(err);
@@ -1367,6 +1398,7 @@ const ConfirmBooking = () => {
     clearV2CheckoutPaymentState,
     clearV2PaymentIdentityState,
     persistV2StoragePaymentCleared,
+    emitCheckoutStartedFunnel,
     t
   ]);
 
@@ -1500,6 +1532,9 @@ const ConfirmBooking = () => {
     setSubmitLoading(true);
     setError(null);
     try {
+      if (!stripeEnabled) {
+        emitCheckoutStartedFunnel(checkoutId || null);
+      }
       if (appliedVoucherCode && !voucherRedemptionId) {
         throw new Error('Please continue to payment first so we can reserve your voucher.');
       }
@@ -1527,6 +1562,8 @@ const ConfirmBooking = () => {
     noPaymentRequired,
     fullVoucherCoverage,
     checkoutId,
+    stripeEnabled,
+    emitCheckoutStartedFunnel,
     resetV2NoPaymentSubmitState,
     applyV2CreateBookingErrorState
   ]);

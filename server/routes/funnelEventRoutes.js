@@ -34,6 +34,7 @@ const clientEventValidators = [
   body('adults').optional().isInt({ min: 0, max: 10 }),
   body('children').optional().isInt({ min: 0, max: 10 }),
   body('searchResultCount').optional().isInt({ min: 0, max: 500 }),
+  body('checkoutId').optional().isString().isLength({ max: 64 }),
   body('propertyKind').optional().isIn(['cabin', 'valley']),
   body('attribution').optional().isObject()
 ];

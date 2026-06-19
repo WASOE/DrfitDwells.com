@@ -12,6 +12,8 @@ const OPS_FRONTEND_MODULE_ROUTES = [
   { prefix: '/ops/users', module: 'users' },
   { prefix: '/ops/reservations', module: 'reservations' },
   { prefix: '/ops/gift-vouchers', module: 'finance' },
+  { prefix: '/ops/conversion', module: 'finance' },
+  { prefix: '/ops/insights', module: 'finance' },
   { prefix: '/ops/promo-codes', module: 'finance' },
   { prefix: '/ops/payments', module: 'finance' },
   { prefix: '/ops/creator-partners', module: 'property' },
@@ -47,6 +49,8 @@ export const OPS_NAV_ITEMS = [
   { to: '/ops/communications', label: 'Comms', module: 'guests_comms' },
   { to: '/ops/messaging', label: 'Messaging', module: 'guests_comms' },
   { to: '/ops/gift-vouchers', label: 'Gift vouchers', module: 'finance' },
+  { to: '/ops/insights', label: 'Insights', module: 'finance' },
+  { to: '/ops/conversion', label: 'Conversion', module: 'finance' },
   { to: '/ops/manual-review', label: 'Manual', module: 'operations' },
   { to: '/ops/readiness', label: 'Readiness', module: 'operations' },
   {
@@ -68,7 +72,7 @@ export const OPS_MOBILE_TAB_ROUTE_PREFIXES = {
   home: ['/ops'],
   calendar: ['/ops/calendar', '/ops/sync'],
   guests: ['/ops/reservations', '/ops/messaging', '/ops/communications', '/ops/reviews'],
-  finance: ['/ops/payments', '/ops/promo-codes', '/ops/gift-vouchers'],
+  finance: ['/ops/payments', '/ops/promo-codes', '/ops/gift-vouchers', '/ops/insights', '/ops/conversion'],
   more: [
     '/ops/creator-partners',
     '/ops/cabins',
@@ -120,7 +124,9 @@ export const OPS_MORE_GROUPS = [
     items: [
       { to: '/ops/payments', label: 'Payments' },
       { to: '/ops/promo-codes', label: 'Promo codes' },
-      { to: '/ops/gift-vouchers', label: 'Gift vouchers' }
+      { to: '/ops/gift-vouchers', label: 'Gift vouchers' },
+      { to: '/ops/insights', label: 'Insights' },
+      { to: '/ops/conversion', label: 'Conversion' }
     ]
   },
   {

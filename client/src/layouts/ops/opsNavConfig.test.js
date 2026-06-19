@@ -14,8 +14,8 @@ import {
 } from './opsNavConfig.js';
 
 describe('opsNavConfig', () => {
-  it('lists 17 desktop nav items in OpsLayout order', () => {
-    expect(OPS_NAV_ITEMS).toHaveLength(17);
+  it('lists 19 desktop nav items in OpsLayout order', () => {
+    expect(OPS_NAV_ITEMS).toHaveLength(19);
     expect(OPS_NAV_ITEMS.map((item) => item.to)).toEqual([
       '/ops',
       '/ops/calendar',
@@ -30,6 +30,8 @@ describe('opsNavConfig', () => {
       '/ops/communications',
       '/ops/messaging',
       '/ops/gift-vouchers',
+      '/ops/insights',
+      '/ops/conversion',
       '/ops/manual-review',
       '/ops/readiness',
       '/ops/settings/cleaning',
@@ -61,9 +63,9 @@ describe('opsNavConfig', () => {
   describe('OPS_MORE_GROUPS full menu', () => {
     const moreRoutes = () => OPS_MORE_GROUPS.flatMap((group) => group.items.map((item) => item.to));
 
-    it('contains exactly all 17 OPS routes', () => {
-      expect(moreRoutes()).toHaveLength(17);
-      expect(new Set(moreRoutes()).size).toBe(17);
+    it('contains exactly all 19 OPS routes', () => {
+      expect(moreRoutes()).toHaveLength(19);
+      expect(new Set(moreRoutes()).size).toBe(19);
       expect(new Set(moreRoutes())).toEqual(new Set(OPS_NAV_ITEMS.map((item) => item.to)));
     });
 
