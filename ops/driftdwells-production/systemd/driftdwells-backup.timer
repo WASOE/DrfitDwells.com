@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Drift & Dwells production backup at 03:45 UTC
+
+[Timer]
+OnCalendar=*-*-* 03:45:00 UTC
+Persistent=true
+Unit=driftdwells-backup.service
+
+[Install]
+WantedBy=timers.target

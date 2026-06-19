@@ -1,0 +1,17 @@
+[Unit]
+Description=Drift & Dwells production backup (MongoDB + uploads)
+Documentation=file:///home/illoc/apps/driftdwells-booking-portal/ops/driftdwells-production/BACKUP.md
+After=network-online.target mongod.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=illoc
+Group=illoc
+ExecStart=/home/illoc/bin/driftdwells-backup.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+
+[Install]
+WantedBy=multi-user.target

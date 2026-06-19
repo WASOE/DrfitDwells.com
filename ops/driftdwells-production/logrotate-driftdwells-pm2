@@ -1,0 +1,9 @@
+/home/illoc/.pm2/logs/driftdwells*.log {
+    daily
+    rotate 14
+    compress
+    missingok
+    notifempty
+    copytruncate
+    su illoc illoc
+}
