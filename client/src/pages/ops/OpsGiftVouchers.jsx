@@ -15,10 +15,19 @@ export default function OpsGiftVouchers() {
       limit: searchParams.get('limit') || 20,
       search: searchParams.get('search') || '',
       status: searchParams.get('status') || '',
-      deliveryMode: searchParams.get('deliveryMode') || ''
+      deliveryMode: searchParams.get('deliveryMode') || '',
+      visibility: searchParams.get('visibility') || '',
+      includeSmoke: searchParams.get('includeSmoke') || '',
+      includeAbandoned: searchParams.get('includeAbandoned') || ''
     }),
     [searchParams]
   );
+
+  const statusSelectValue = filters.status
+    ? filters.status
+    : filters.visibility === 'all'
+      ? '__all__'
+      : '';
 
   useEffect(() => {
     let cancelled = false;
@@ -50,6 +59,26 @@ export default function OpsGiftVouchers() {
     setSearchParams(next);
   };
 
+  const updateStatusFilter = (value) => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('page');
+    next.delete('status');
+    next.delete('visibility');
+    next.delete('includeSmoke');
+    next.delete('includeAbandoned');
+
+    if (value === '__all__') {
+      next.set('visibility', 'all');
+    } else if (value) {
+      next.set('status', value);
+      if (value === 'pending_payment' || value === 'voided') {
+        next.set('includeAbandoned', '1');
+      }
+    }
+
+    setSearchParams(next);
+  };
+
   const resetFilters = () => setSearchParams(new URLSearchParams());
 
   if (loading) return <div className="text-sm text-gray-500">Loading gift vouchers...</div>;
@@ -58,7 +87,9 @@ export default function OpsGiftVouchers() {
     <div className="space-y-4 pb-16 sm:pb-0">
       <section className="bg-white border border-gray-200 rounded-xl p-4">
         <h2 className="text-lg font-semibold text-gray-900">Gift vouchers</h2>
-        <p className="text-sm text-gray-500 mt-1">Search and manage voucher lifecycle operations.</p>
+        <p className="text-sm text-gray-500 mt-1">
+          Operational vouchers shown by default (active, partially redeemed, redeemed, expired).
+        </p>
         <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
           <input
             value={filters.search}
@@ -67,18 +98,19 @@ export default function OpsGiftVouchers() {
             className="px-3 py-2 text-sm border rounded-lg sm:col-span-2 lg:col-span-2"
           />
           <select
-            value={filters.status}
-            onChange={(e) => updateFilter('status', e.target.value)}
+            value={statusSelectValue}
+            onChange={(e) => updateStatusFilter(e.target.value)}
             className="px-3 py-2 text-sm border rounded-lg"
           >
-            <option value="">All status</option>
-            <option value="pending_payment">Pending payment</option>
+            <option value="">Operational (default)</option>
             <option value="active">Active</option>
             <option value="partially_redeemed">Partially redeemed</option>
             <option value="redeemed">Redeemed</option>
             <option value="expired">Expired</option>
+            <option value="pending_payment">Pending payment (abandoned checkout)</option>
             <option value="voided">Voided</option>
             <option value="refunded">Refunded</option>
+            <option value="__all__">All statuses</option>
           </select>
           <select
             value={filters.deliveryMode}

@@ -60,6 +60,9 @@ router.get(
   [
     query('search').optional().isString().isLength({ max: 120 }).withMessage('search is invalid'),
     query('status').optional().isString().isLength({ max: 60 }).withMessage('status is invalid'),
+    query('visibility').optional().isIn(['operational', 'all']).withMessage('visibility is invalid'),
+    query('includeSmoke').optional().isIn(['0', '1', 'true', 'false']).withMessage('includeSmoke is invalid'),
+    query('includeAbandoned').optional().isIn(['0', '1', 'true', 'false']).withMessage('includeAbandoned is invalid'),
     query('deliveryMode').optional().isString().isLength({ max: 40 }).withMessage('deliveryMode is invalid'),
     query('page').optional().isInt({ min: 1 }).withMessage('page must be >= 1'),
     query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('limit must be 1-100')

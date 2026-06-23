@@ -87,6 +87,43 @@ test('list vouchers', async () => {
   assert.equal(data.items.length, 2);
 });
 
+test('default list hides pending_payment, voided, and smoke vouchers', async () => {
+  await GiftVoucher.create(buildVoucher({ code: 'DD-VIS-ACT1-AAAA', status: 'active' }));
+  await GiftVoucher.create(buildVoucher({ code: 'DD-VIS-PEND-BBBB', status: 'pending_payment', activatedAt: null }));
+  await GiftVoucher.create(buildVoucher({ code: 'DD-VIS-VOID-CCCC', status: 'voided', activatedAt: null }));
+  await GiftVoucher.create(
+    buildVoucher({
+      code: 'DD-VIS-SMOK-DDDD',
+      status: 'pending_payment',
+      purchaseRequestId: 'gvr_smoke_test_1',
+      buyerName: 'SMOKE PAYMENTS (auto cleanup)',
+      buyerEmail: 'smoke-payments+run@example.com',
+      activatedAt: null
+    })
+  );
+
+  const data = await getGiftVouchersWorkspaceReadModel({ page: 1, limit: 20 });
+  assert.equal(data.items.length, 1);
+  assert.equal(data.items[0].status, 'active');
+  assert.equal(data.filtersApplied.visibility, 'operational');
+});
+
+test('pending_payment filter reveals abandoned checkout attempts', async () => {
+  await GiftVoucher.create(buildVoucher({ code: 'DD-VIS-ACT2-AAAA', status: 'active' }));
+  await GiftVoucher.create(
+    buildVoucher({
+      code: null,
+      status: 'pending_payment',
+      activatedAt: null,
+      purchaseRequestId: 'gvr_abandoned_checkout_1'
+    })
+  );
+
+  const data = await getGiftVouchersWorkspaceReadModel({ status: 'pending_payment', page: 1, limit: 20 });
+  assert.equal(data.items.length, 1);
+  assert.equal(data.items[0].status, 'pending_payment');
+});
+
 test('search vouchers', async () => {
   await GiftVoucher.create(buildVoucher({ code: 'DD-SEARCH-AAAA-BBBB', buyerName: 'Alice Search' }));
   await GiftVoucher.create(buildVoucher({ code: 'DD-OTHER-AAAA-BBBB', buyerName: 'Bob Other' }));

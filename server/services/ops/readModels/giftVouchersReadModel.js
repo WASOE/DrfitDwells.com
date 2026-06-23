@@ -7,6 +7,10 @@ const {
   ISSUANCE_SOURCE_PURCHASE,
   purchasedGiftVoucherQuery
 } = require('../../giftVouchers/giftVoucherIssuance');
+const {
+  buildOpsWorkspaceVisibilityFilter,
+  describeAppliedWorkspaceVisibility
+} = require('../../giftVouchers/giftVoucherOpsVisibility');
 
 const MANUAL_REVIEW_CATEGORIES = ['gift_voucher_email_failed', 'gift_voucher_physical_card_required'];
 
@@ -17,20 +21,26 @@ function normalizePagination(query = {}) {
 }
 
 function buildListFilter(query = {}) {
-  const filter = {};
-  if (query.status) filter.status = String(query.status);
-  if (query.deliveryMode) filter.deliveryMode = String(query.deliveryMode);
+  const clauses = [buildOpsWorkspaceVisibilityFilter(query)];
+  if (query.deliveryMode) {
+    clauses.push({ deliveryMode: String(query.deliveryMode) });
+  }
   if (query.search && String(query.search).trim()) {
     const pattern = new RegExp(escapeRegex(String(query.search).trim()), 'i');
-    filter.$or = [
-      { code: pattern },
-      { buyerName: pattern },
-      { buyerEmail: pattern },
-      { recipientName: pattern },
-      { recipientEmail: pattern }
-    ];
+    clauses.push({
+      $or: [
+        { code: pattern },
+        { buyerName: pattern },
+        { buyerEmail: pattern },
+        { recipientName: pattern },
+        { recipientEmail: pattern }
+      ]
+    });
   }
-  return filter;
+  const normalized = clauses.filter((clause) => clause && Object.keys(clause).length > 0);
+  if (normalized.length === 0) return {};
+  if (normalized.length === 1) return normalized[0];
+  return { $and: normalized };
 }
 
 function mapIssuanceFields(doc) {
@@ -78,7 +88,8 @@ async function getGiftVouchersWorkspaceReadModel(query = {}) {
       limit,
       total,
       totalPages: Math.max(1, Math.ceil(total / limit))
-    }
+    },
+    filtersApplied: describeAppliedWorkspaceVisibility(query)
   };
 }
 

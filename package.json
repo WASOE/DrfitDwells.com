@@ -31,7 +31,8 @@
     "k6:smoke": "k6 run k6/smoke.js",
     "k6:average-load": "k6 run k6/average-load.js",
     "k6:stress": "k6 run k6/stress.js",
-    "smoke:payments": "node server/scripts/smokePaymentsInit.cjs"
+    "smoke:payments": "node server/scripts/smokePaymentsInit.cjs",
+    "cleanup:gift-voucher-noise": "node server/scripts/cleanupGiftVoucherNoise.cjs"
   },
   "keywords": [
     "booking",
