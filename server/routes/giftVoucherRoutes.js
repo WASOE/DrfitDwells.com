@@ -5,6 +5,9 @@ const {
   quoteGiftVoucherPurchase,
   createGiftVoucherPaymentIntent
 } = require('../services/giftVouchers/giftVoucherPaymentService');
+const { attachPaymentFlowMonitor } = require('../services/ops/paymentFlowMonitorService');
+
+const GIFT_VOUCHER_PAYMENT_INTENT_ROUTE = '/api/gift-vouchers/create-payment-intent';
 
 const router = express.Router();
 
@@ -125,6 +128,7 @@ router.post('/quote', quoteLimiter, quoteValidators, async (req, res) => {
 
 // POST /api/gift-vouchers/create-payment-intent
 router.post('/create-payment-intent', paymentIntentLimiter, paymentIntentValidators, async (req, res) => {
+  attachPaymentFlowMonitor(res, GIFT_VOUCHER_PAYMENT_INTENT_ROUTE);
   try {
     const fail = sendValidationErrors(req, res);
     if (fail) return fail;

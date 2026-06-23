@@ -271,6 +271,51 @@ async function notifyOpsPushPaymentAlert({ eventId, eventType, paymentId }) {
   }
 }
 
+async function notifyOpsPushPaymentFlowAlert({
+  route,
+  statusCode,
+  errorReason,
+  count,
+  windowMinutes,
+  immediate = false,
+  suggestedAction,
+  dedupeKey
+}) {
+  const title = immediate ? 'Payment flow error' : 'Payment flow warning';
+  const body = [
+    immediate
+      ? 'Payment initialization failed.'
+      : `Checkout failed ${count} times in ${windowMinutes} minutes.`,
+    `Route: ${route}`,
+    `Status: ${statusCode}`,
+    `Reason: ${errorReason}`,
+    `Action: ${suggestedAction}`
+  ].join(' · ');
+
+  try {
+    await safePush({
+      role: 'admin',
+      title,
+      body,
+      url: '/ops/manual-review',
+      tag: 'payment-flow-alert',
+      dedupeKey: dedupeKey || `payment_flow:${route}:${errorReason}`,
+      source: immediate ? 'payment_flow_immediate' : 'payment_flow_threshold'
+    });
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        source: 'ops-push',
+        phase: 'payment_flow_alert_notify_error',
+        route,
+        statusCode,
+        errorReason,
+        error: err?.message || String(err)
+      })
+    );
+  }
+}
+
 async function notifyOpsPushReviewCreated({ reviewId }) {
   if (!reviewId || !mongoose.Types.ObjectId.isValid(String(reviewId))) {
     return;
@@ -312,6 +357,7 @@ module.exports = {
   notifyOpsPushManualReservationCreated,
   notifyOpsPushGiftVoucherSold,
   notifyOpsPushPaymentAlert,
+  notifyOpsPushPaymentFlowAlert,
   notifyOpsPushReviewCreated,
   __setSendOpsPushSafelyForTesting,
   __resetSendOpsPushSafelyForTesting

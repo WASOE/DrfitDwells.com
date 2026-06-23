@@ -48,6 +48,9 @@ const {
   processMetaPurchaseAfterConfirm
 } = require('../services/bookingPurchaseTracking');
 const { openManualReviewItem } = require('../services/ops/ingestion/manualReviewService');
+const { attachPaymentFlowMonitor } = require('../services/ops/paymentFlowMonitorService');
+
+const BOOKING_PAYMENT_INTENT_ROUTE = '/api/bookings/create-payment-intent';
 const { linkStripePaymentToBooking } = require('../services/payments/paymentLinkingService');
 const {
   recordQuoteFunnelOutcome,
@@ -637,6 +640,7 @@ router.get('/checkout-sessions/:checkoutId', async (req, res) => {
 
 // POST /api/bookings/create-payment-intent - Create Stripe PaymentIntent for cabin booking
 router.post('/create-payment-intent', paymentIntentLimiter, bookingQuoteBodyValidators, async (req, res) => {
+  attachPaymentFlowMonitor(res, BOOKING_PAYMENT_INTENT_ROUTE);
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {

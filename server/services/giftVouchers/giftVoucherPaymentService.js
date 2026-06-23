@@ -5,6 +5,7 @@ const GiftVoucherEvent = require('../../models/GiftVoucherEvent');
 const { appendVoucherEvent } = require('./giftVoucherEventService');
 const { generateUniqueVoucherCode } = require('./giftVoucherCodeService');
 const { openManualReviewItem } = require('../ops/ingestion/manualReviewService');
+const { notifyGiftVoucherWebhookActivationFailure } = require('../ops/paymentFlowMonitorService');
 const { handleActivatedGiftVoucherDelivery } = require('./giftVoucherEmailService');
 const { ensureGiftVoucherCreatorCommissionAfterActivation } = require('./giftVoucherCommissionService');
 
@@ -406,7 +407,8 @@ async function openVoucherPaymentManualReview({
   event,
   voucherId = null,
   paymentIntentId = null,
-  evidence = {}
+  evidence = {},
+  activationCode = null
 }) {
   await openManualReviewItem({
     category,
@@ -425,6 +427,13 @@ async function openVoucherPaymentManualReview({
       ...evidence
     }
   });
+  if (activationCode) {
+    void notifyGiftVoucherWebhookActivationFailure({
+      code: activationCode,
+      eventId: event?.id,
+      giftVoucherId: voucherId
+    });
+  }
 }
 
 async function activatePaidVoucherFromStripeEvent(event) {
@@ -446,7 +455,8 @@ async function activatePaidVoucherFromStripeEvent(event) {
       details: 'Stripe payment_intent.succeeded metadata does not include giftVoucherId',
       event,
       paymentIntentId,
-      evidence: { metadata }
+      evidence: { metadata },
+      activationCode: 'VOUCHER_REFERENCE_MISSING'
     });
     return { ok: false, code: 'VOUCHER_REFERENCE_MISSING' };
   }
@@ -461,7 +471,8 @@ async function activatePaidVoucherFromStripeEvent(event) {
       event,
       voucherId,
       paymentIntentId,
-      evidence: { metadata }
+      evidence: { metadata },
+      activationCode: 'VOUCHER_NOT_FOUND'
     });
     return { ok: false, code: 'VOUCHER_NOT_FOUND' };
   }
@@ -478,7 +489,8 @@ async function activatePaidVoucherFromStripeEvent(event) {
       evidence: {
         expectedPurchaseRequestId: voucher.purchaseRequestId,
         receivedPurchaseRequestId: purchaseRequestId
-      }
+      },
+      activationCode: 'PURCHASE_REQUEST_MISMATCH'
     });
     return { ok: false, code: 'PURCHASE_REQUEST_MISMATCH' };
   }
@@ -495,7 +507,8 @@ async function activatePaidVoucherFromStripeEvent(event) {
       evidence: {
         expectedPaymentIntentId: voucher.stripePaymentIntentId,
         receivedPaymentIntentId: paymentIntentId
-      }
+      },
+      activationCode: 'PAYMENT_INTENT_MISMATCH'
     });
     return { ok: false, code: 'PAYMENT_INTENT_MISMATCH' };
   }
@@ -518,7 +531,8 @@ async function activatePaidVoucherFromStripeEvent(event) {
         voucherValueCents: voucher.amountOriginalCents,
         physicalCardFeeCents: voucher.physicalCardFeeCents || 0,
         receivedAmountCents: amountCents
-      }
+      },
+      activationCode: 'PAYMENT_AMOUNT_MISMATCH'
     });
     return { ok: false, code: 'PAYMENT_AMOUNT_MISMATCH' };
   }
@@ -534,7 +548,8 @@ async function activatePaidVoucherFromStripeEvent(event) {
       evidence: {
         expectedCurrency: EUR,
         receivedCurrency: currency
-      }
+      },
+      activationCode: 'PAYMENT_CURRENCY_MISMATCH'
     });
     return { ok: false, code: 'PAYMENT_CURRENCY_MISMATCH' };
   }
@@ -575,7 +590,8 @@ async function activatePaidVoucherFromStripeEvent(event) {
           details: 'Could not apply guarded activation update for paid voucher',
           event,
           voucherId: voucher._id,
-          paymentIntentId
+          paymentIntentId,
+          activationCode: 'ACTIVATION_UPDATE_FAILED'
         });
         return { ok: false, code: 'ACTIVATION_UPDATE_FAILED' };
       }
@@ -625,7 +641,8 @@ async function activatePaidVoucherFromStripeEvent(event) {
       paymentIntentId,
       evidence: {
         error: eventErr.message
-      }
+      },
+      activationCode: 'ACTIVATION_EVENT_WRITE_FAILED'
     });
     void (async () => {
       try {
