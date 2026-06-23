@@ -273,8 +273,7 @@ export default function GiftVouchers() {
         buyerName: buyerName.trim(),
         buyerEmail: buyerEmail.trim(),
         recipientName: recipientName.trim(),
-        recipientEmail: recipientEmail.trim() || null,
-        message: message.trim() || null,
+        recipientEmail: recipientEmail.trim(),
         deliveryMode,
         ...(deliveryMode === 'postal'
           ? {
@@ -287,7 +286,8 @@ export default function GiftVouchers() {
               }
             }
           : {}),
-        deliveryDate: deliveryDate || null,
+        ...(message.trim() ? { message: message.trim() } : {}),
+        ...(deliveryDate ? { deliveryDate } : {}),
         purchaseRequestId,
         termsAccepted: true,
         termsVersion: 'v1',
