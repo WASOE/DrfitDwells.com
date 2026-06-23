@@ -96,6 +96,14 @@ export default function OpsGiftVoucherDetail() {
             <p className="text-gray-500">Delivery mode</p>
             <p className="font-medium text-gray-900">{voucher.deliveryMode}</p>
           </div>
+          {voucher.deliveryMode === 'postal' && (voucher.physicalCardFeeCents || 0) > 0 ? (
+            <div>
+              <p className="text-gray-500">Physical card fee</p>
+              <p className="font-medium text-gray-900">
+                {formatMoneyFromCents(voucher.physicalCardFeeCents, voucher.currency)}
+              </p>
+            </div>
+          ) : null}
           <div>
             <p className="text-gray-500">Payment reference</p>
             <p className="font-medium text-gray-900">{voucher.stripePaymentIntentId || '—'}</p>

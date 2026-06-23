@@ -11,6 +11,7 @@ const { ensureGiftVoucherCreatorCommissionAfterActivation } = require('./giftVou
 const DEFAULT_TERMS_VERSION = 'v1';
 const EUR = 'EUR';
 const MIN_AMOUNT_CENTS = 1500;
+const PHYSICAL_CARD_FEE_CENTS = 500;
 const PURCHASE_ID_PATTERN = /^[A-Za-z0-9:_-]{8,128}$/;
 
 let stripeClient = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
@@ -135,12 +136,26 @@ function normalizeQuoteInput(input = {}) {
   return { amountOriginalCents, currency };
 }
 
+function computeGiftVoucherPricing({ amountOriginalCents, deliveryMode }) {
+  const physicalCardFeeCents = deliveryMode === 'postal' ? PHYSICAL_CARD_FEE_CENTS : 0;
+  return {
+    amountOriginalCents,
+    physicalCardFeeCents,
+    totalDueCents: amountOriginalCents + physicalCardFeeCents,
+    currency: EUR
+  };
+}
+
 function quoteGiftVoucherPurchase(input = {}) {
   const normalized = normalizeQuoteInput(input);
+  const deliveryMode = normalizeDeliveryMode(input.deliveryMode);
+  const pricing = computeGiftVoucherPricing({
+    amountOriginalCents: normalized.amountOriginalCents,
+    deliveryMode
+  });
   return {
     ok: true,
-    amountOriginalCents: normalized.amountOriginalCents,
-    currency: normalized.currency,
+    ...pricing,
     minimumAmountCents: MIN_AMOUNT_CENTS
   };
 }
@@ -175,11 +190,15 @@ async function ensureVoucherEventOnce({ giftVoucherId, type, stripeEventId = nul
   }
 }
 
-function buildStripeMetadata({ voucher, purchaseRequestId, attribution }) {
+function buildStripeMetadata({ voucher, purchaseRequestId, attribution, pricing }) {
   return {
     type: 'gift_voucher',
     giftVoucherId: String(voucher._id),
     purchaseRequestId: String(purchaseRequestId),
+    deliveryMode: voucher.deliveryMode || 'email',
+    voucherValueCents: String(pricing.amountOriginalCents),
+    physicalCardFeeCents: String(pricing.physicalCardFeeCents),
+    totalDueCents: String(pricing.totalDueCents),
     referralCode: attribution?.referralCode || '',
     creatorPartnerId: attribution?.creatorPartnerId ? String(attribution.creatorPartnerId) : '',
     landingPath: attribution?.landingPath || '',
@@ -253,6 +272,10 @@ async function createGiftVoucherPaymentIntent(input = {}) {
   }
 
   const normalized = normalizeCreateInput(input);
+  const pricing = computeGiftVoucherPricing({
+    amountOriginalCents: normalized.amountOriginalCents,
+    deliveryMode: normalized.deliveryMode
+  });
   const purchaseFingerprint = buildPurchaseFingerprint(normalized);
   const existing = await GiftVoucher.findOne({ purchaseRequestId: normalized.purchaseRequestId });
   if (existing) {
@@ -286,6 +309,7 @@ async function createGiftVoucherPaymentIntent(input = {}) {
     code: null,
     amountOriginalCents: normalized.amountOriginalCents,
     balanceRemainingCents: normalized.amountOriginalCents,
+    physicalCardFeeCents: pricing.physicalCardFeeCents,
     currency: normalized.currency,
     status: 'pending_payment',
     buyerName: normalized.buyerName,
@@ -316,10 +340,15 @@ async function createGiftVoucherPaymentIntent(input = {}) {
 
   try {
     const paymentIntent = await stripeClient.paymentIntents.create({
-      amount: normalized.amountOriginalCents,
+      amount: pricing.totalDueCents,
       currency: 'eur',
       automatic_payment_methods: { enabled: true },
-      metadata: buildStripeMetadata({ voucher, purchaseRequestId: normalized.purchaseRequestId, attribution: normalized.attribution })
+      metadata: buildStripeMetadata({
+        voucher,
+        purchaseRequestId: normalized.purchaseRequestId,
+        attribution: normalized.attribution,
+        pricing
+      })
     });
 
     await GiftVoucher.updateOne(
@@ -474,17 +503,20 @@ async function activatePaidVoucherFromStripeEvent(event) {
   const amountCents = Number(paymentIntent.amount_received || paymentIntent.amount || 0);
   const currency = String(paymentIntent.currency || '').toUpperCase();
 
-  if (amountCents !== voucher.amountOriginalCents) {
+  const expectedTotalDueCents = voucher.amountOriginalCents + (voucher.physicalCardFeeCents || 0);
+  if (amountCents !== expectedTotalDueCents) {
     await openVoucherPaymentManualReview({
       category: 'payment_finalization_failure',
       severity: 'high',
       title: 'Gift voucher payment amount mismatch',
-      details: 'Payment amount does not match voucher original amount',
+      details: 'Payment amount does not match voucher value plus physical card fee',
       event,
       voucherId: voucher._id,
       paymentIntentId,
       evidence: {
-        expectedAmountCents: voucher.amountOriginalCents,
+        expectedTotalDueCents,
+        voucherValueCents: voucher.amountOriginalCents,
+        physicalCardFeeCents: voucher.physicalCardFeeCents || 0,
         receivedAmountCents: amountCents
       }
     });
@@ -692,7 +724,9 @@ async function activatePaidVoucherFromStripeEvent(event) {
 }
 
 module.exports = {
+  PHYSICAL_CARD_FEE_CENTS,
   setStripeClientForTesting,
+  computeGiftVoucherPricing,
   quoteGiftVoucherPurchase,
   createGiftVoucherPaymentIntent,
   activatePaidVoucherFromStripeEvent,

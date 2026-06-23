@@ -26,7 +26,8 @@ const paymentIntentLimiter = rateLimit({
 
 const quoteValidators = [
   body('amountOriginalCents').isInt({ min: 1 }).withMessage('amountOriginalCents must be an integer'),
-  body('currency').optional().isString().withMessage('currency must be a string')
+  body('currency').optional().isString().withMessage('currency must be a string'),
+  body('deliveryMode').optional().isIn(['email', 'postal', 'manual']).withMessage('deliveryMode must be email, postal, or manual')
 ];
 
 const paymentIntentValidators = [
@@ -83,8 +84,15 @@ const paymentIntentValidators = [
     }
     return true;
   }),
-  body('deliveryDate').optional().isISO8601().withMessage('deliveryDate must be a valid ISO date'),
-  body('message').optional().isString().isLength({ max: 1000 }).withMessage('message is too long'),
+  body('deliveryDate')
+    .optional({ nullable: true, checkFalsy: true })
+    .isISO8601()
+    .withMessage('deliveryDate must be a valid ISO date'),
+  body('message')
+    .optional({ nullable: true, checkFalsy: true })
+    .isString()
+    .isLength({ max: 1000 })
+    .withMessage('message is too long'),
   body('purchaseRequestId').optional().isString().isLength({ min: 8, max: 128 }).withMessage('purchaseRequestId is invalid'),
   body('termsAccepted').custom((value) => value === true).withMessage('termsAccepted must be true'),
   body('termsVersion').optional().isString().isLength({ max: 50 }).withMessage('termsVersion is too long')

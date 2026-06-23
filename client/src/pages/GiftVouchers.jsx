@@ -11,6 +11,7 @@ const stripePk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 const stripePromise = stripePk ? loadStripe(stripePk) : null;
 
 const MIN_AMOUNT_CENTS = 1500;
+const PHYSICAL_CARD_FEE_CENTS = 500;
 const PRESET_AMOUNTS = [1500, 5000, 10000, 25000];
 
 const SOFT_ERROR_FALLBACK =
@@ -167,6 +168,8 @@ export default function GiftVouchers() {
     postalCode: isBg ? 'Пощенски код' : 'Postal code',
     country: isBg ? 'Държава' : 'Country',
     total: isBg ? 'Общо' : 'Total',
+    summaryVoucherValue: isBg ? 'Стойност на ваучера' : 'Gift voucher value',
+    summaryPhysicalFee: isBg ? 'Такса за физическа карта' : 'Physical card fee',
     summary: isBg
       ? 'Подаръчен ваучер Drift & Dwells · предплатен кредит · валиден 12 месеца от издаване.'
       : 'Drift & Dwells gift voucher · prepaid credit · valid 12 months from issuance.',
@@ -224,6 +227,8 @@ export default function GiftVouchers() {
 
   const [purchaseRequestId, setPurchaseRequestId] = useState(createPurchaseRequestId());
   const [quotedAmountCents, setQuotedAmountCents] = useState(null);
+  const [quotedPhysicalCardFeeCents, setQuotedPhysicalCardFeeCents] = useState(null);
+  const [quotedTotalDueCents, setQuotedTotalDueCents] = useState(null);
   const [clientSecret, setClientSecret] = useState('');
   const [paymentIntentId, setPaymentIntentId] = useState('');
   const [loading, setLoading] = useState(false);
@@ -261,10 +266,13 @@ export default function GiftVouchers() {
     try {
       const quoteRes = await giftVoucherAPI.quote({
         amountOriginalCents: effectiveAmountCents,
-        currency: 'EUR'
+        currency: 'EUR',
+        deliveryMode
       });
       const q = quoteRes?.data?.data;
       setQuotedAmountCents(q?.amountOriginalCents ?? null);
+      setQuotedPhysicalCardFeeCents(q?.physicalCardFeeCents ?? null);
+      setQuotedTotalDueCents(q?.totalDueCents ?? null);
 
       const attr = getAttributionPayload();
       const payload = {
@@ -334,12 +342,21 @@ export default function GiftVouchers() {
     setClientSecret('');
     setPaymentIntentId('');
     setQuotedAmountCents(null);
+    setQuotedPhysicalCardFeeCents(null);
+    setQuotedTotalDueCents(null);
     setPurchaseRequestId(createPurchaseRequestId());
   }
 
-  const summaryAmount = (quotedAmountCents ?? effectiveAmountCents) || 0;
-  const formattedSummary = Number.isFinite(summaryAmount)
-    ? (summaryAmount / 100).toLocaleString('en-GB')
+  const previewPhysicalCardFeeCents = deliveryMode === 'postal' ? PHYSICAL_CARD_FEE_CENTS : 0;
+  const voucherValueCents = quotedAmountCents ?? effectiveAmountCents;
+  const physicalCardFeeCents = quotedPhysicalCardFeeCents ?? previewPhysicalCardFeeCents;
+  const totalDueCents = quotedTotalDueCents ?? (Number.isFinite(voucherValueCents) ? voucherValueCents + physicalCardFeeCents : NaN);
+  const formattedVoucherValue = Number.isFinite(voucherValueCents)
+    ? (voucherValueCents / 100).toLocaleString('en-GB')
+    : '—';
+  const formattedPhysicalFee = (physicalCardFeeCents / 100).toLocaleString('en-GB');
+  const formattedSummary = Number.isFinite(totalDueCents)
+    ? (totalDueCents / 100).toLocaleString('en-GB')
     : '—';
 
   return (
@@ -632,15 +649,37 @@ export default function GiftVouchers() {
 
             {/* Summary */}
             <div className="mt-12 rounded-2xl border border-stone-200 bg-white p-6 md:mt-16 md:p-8">
-              <div className="flex items-baseline justify-between gap-4">
-                <p className="text-[11px] uppercase tracking-[0.28em] text-stone-500">{copy.total}</p>
-                <p
-                  className="font-serif text-3xl tracking-tight text-stone-900 md:text-4xl"
-                  style={{ fontFamily: 'var(--valley-font-primary, Georgia, serif)' }}
-                >
-                  €{formattedSummary}
-                </p>
-              </div>
+              {deliveryMode === 'postal' ? (
+                <div className="space-y-3 text-sm text-stone-700">
+                  <div className="flex items-baseline justify-between gap-4">
+                    <p className="text-[11px] uppercase tracking-[0.28em] text-stone-500">{copy.summaryVoucherValue}</p>
+                    <p className="font-serif text-xl tracking-tight text-stone-900">€{formattedVoucherValue}</p>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-4">
+                    <p className="text-[11px] uppercase tracking-[0.28em] text-stone-500">{copy.summaryPhysicalFee}</p>
+                    <p className="font-serif text-xl tracking-tight text-stone-900">€{formattedPhysicalFee}</p>
+                  </div>
+                  <div className="border-t border-stone-200 pt-3 flex items-baseline justify-between gap-4">
+                    <p className="text-[11px] uppercase tracking-[0.28em] text-stone-500">{copy.total}</p>
+                    <p
+                      className="font-serif text-3xl tracking-tight text-stone-900 md:text-4xl"
+                      style={{ fontFamily: 'var(--valley-font-primary, Georgia, serif)' }}
+                    >
+                      €{formattedSummary}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-baseline justify-between gap-4">
+                  <p className="text-[11px] uppercase tracking-[0.28em] text-stone-500">{copy.total}</p>
+                  <p
+                    className="font-serif text-3xl tracking-tight text-stone-900 md:text-4xl"
+                    style={{ fontFamily: 'var(--valley-font-primary, Georgia, serif)' }}
+                  >
+                    €{formattedSummary}
+                  </p>
+                </div>
+              )}
               <p className="mt-3 text-xs leading-relaxed text-stone-500">
                 {copy.summary}
               </p>

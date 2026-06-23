@@ -12,10 +12,13 @@ const {
   setStripeClientForTesting,
   quoteGiftVoucherPurchase,
   createGiftVoucherPaymentIntent,
-  activatePaidVoucherFromStripeEvent
+  activatePaidVoucherFromStripeEvent,
+  PHYSICAL_CARD_FEE_CENTS,
+  computeGiftVoucherPricing
 } = require('../services/giftVouchers/giftVoucherPaymentService');
 
 let mongoServer;
+let lastStripeCreatePayload = null;
 
 function buildCreatePayload(overrides = {}) {
   return {
@@ -96,9 +99,13 @@ test.beforeEach(async () => {
   await mongoose.connection.db.collection('giftvoucherevents').deleteMany({});
   await ManualReviewItem.deleteMany({});
   await GiftVoucher.deleteMany({});
+  lastStripeCreatePayload = null;
   setStripeClientForTesting({
     paymentIntents: {
-      create: async () => ({ id: 'pi_1', client_secret: 'cs_1' }),
+      create: async (payload) => {
+        lastStripeCreatePayload = payload;
+        return { id: 'pi_1', client_secret: 'cs_1' };
+      },
       retrieve: async () => ({ id: 'pi_1', client_secret: 'cs_1' })
     }
   });
@@ -476,4 +483,131 @@ test('no public activate route exists', async () => {
   const routeFile = path.join(__dirname, '..', 'routes', 'giftVoucherRoutes.js');
   const content = fs.readFileSync(routeFile, 'utf8');
   assert.equal(content.includes('/activate'), false);
+});
+
+test('quote email returns zero physical fee and totalDueCents 5000 for EUR 50', () => {
+  const result = quoteGiftVoucherPurchase({
+    amountOriginalCents: 5000,
+    currency: 'EUR',
+    deliveryMode: 'email'
+  });
+  assert.equal(result.physicalCardFeeCents, 0);
+  assert.equal(result.totalDueCents, 5000);
+});
+
+test('quote postal returns physical fee 500 and totalDueCents 5500 for EUR 50', () => {
+  const result = quoteGiftVoucherPurchase({
+    amountOriginalCents: 5000,
+    currency: 'EUR',
+    deliveryMode: 'postal'
+  });
+  assert.equal(result.physicalCardFeeCents, PHYSICAL_CARD_FEE_CENTS);
+  assert.equal(result.totalDueCents, 5500);
+});
+
+test('email EUR 50 charges 5000 with voucher balance 5000 and fee 0', async () => {
+  const result = await createGiftVoucherPaymentIntent(
+    buildCreatePayload({
+      amountOriginalCents: 5000,
+      purchaseRequestId: 'gvr_email_fee_50'
+    })
+  );
+  assert.equal(result.ok, true);
+  assert.equal(lastStripeCreatePayload.amount, 5000);
+  const voucher = await GiftVoucher.findById(result.giftVoucherId).lean();
+  assert.equal(voucher.amountOriginalCents, 5000);
+  assert.equal(voucher.balanceRemainingCents, 5000);
+  assert.equal(voucher.physicalCardFeeCents, 0);
+  assert.equal(lastStripeCreatePayload.metadata.voucherValueCents, '5000');
+  assert.equal(lastStripeCreatePayload.metadata.physicalCardFeeCents, '0');
+  assert.equal(lastStripeCreatePayload.metadata.totalDueCents, '5000');
+  assert.equal(lastStripeCreatePayload.metadata.deliveryMode, 'email');
+});
+
+test('postal EUR 50 charges 5500 with voucher balance 5000 and fee 500', async () => {
+  const result = await createGiftVoucherPaymentIntent(
+    buildPostalPayload({
+      amountOriginalCents: 5000,
+      purchaseRequestId: 'gvr_postal_fee_50'
+    })
+  );
+  assert.equal(result.ok, true);
+  assert.equal(lastStripeCreatePayload.amount, 5500);
+  const voucher = await GiftVoucher.findById(result.giftVoucherId).lean();
+  assert.equal(voucher.amountOriginalCents, 5000);
+  assert.equal(voucher.balanceRemainingCents, 5000);
+  assert.equal(voucher.physicalCardFeeCents, 500);
+  assert.equal(lastStripeCreatePayload.metadata.voucherValueCents, '5000');
+  assert.equal(lastStripeCreatePayload.metadata.physicalCardFeeCents, '500');
+  assert.equal(lastStripeCreatePayload.metadata.totalDueCents, '5500');
+  assert.equal(lastStripeCreatePayload.metadata.deliveryMode, 'postal');
+});
+
+test('postal webhook activation succeeds when paid amount is voucher value plus fee', async () => {
+  const created = await createGiftVoucherPaymentIntent(
+    buildPostalPayload({
+      amountOriginalCents: 5000,
+      purchaseRequestId: 'gvr_postal_webhook_ok'
+    })
+  );
+  const event = buildWebhookEvent({
+    id: 'evt_postal_ok',
+    data: {
+      object: {
+        object: 'payment_intent',
+        id: created.stripePaymentIntentId,
+        amount: 5500,
+        amount_received: 5500,
+        currency: 'eur',
+        metadata: {
+          type: 'gift_voucher',
+          giftVoucherId: created.giftVoucherId,
+          purchaseRequestId: created.purchaseRequestId
+        }
+      }
+    }
+  });
+  const result = await activatePaidVoucherFromStripeEvent(event);
+  assert.equal(result.ok, true);
+  const voucher = await GiftVoucher.findById(created.giftVoucherId).lean();
+  assert.equal(voucher.status, 'active');
+  assert.equal(voucher.balanceRemainingCents, 5000);
+});
+
+test('postal paid amount equal to voucher value only triggers amount mismatch', async () => {
+  const created = await createGiftVoucherPaymentIntent(
+    buildPostalPayload({
+      amountOriginalCents: 5000,
+      purchaseRequestId: 'gvr_postal_value_only_mismatch'
+    })
+  );
+  const event = buildWebhookEvent({
+    id: 'evt_postal_value_only',
+    data: {
+      object: {
+        object: 'payment_intent',
+        id: created.stripePaymentIntentId,
+        amount: 5000,
+        amount_received: 5000,
+        currency: 'eur',
+        metadata: {
+          type: 'gift_voucher',
+          giftVoucherId: created.giftVoucherId,
+          purchaseRequestId: created.purchaseRequestId
+        }
+      }
+    }
+  });
+  const result = await activatePaidVoucherFromStripeEvent(event);
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'PAYMENT_AMOUNT_MISMATCH');
+  const review = await ManualReviewItem.findOne({ category: 'payment_finalization_failure' }).lean();
+  assert.ok(review);
+});
+
+test('computeGiftVoucherPricing keeps fee out of redeemable voucher value', () => {
+  const pricing = computeGiftVoucherPricing({ amountOriginalCents: 5000, deliveryMode: 'postal' });
+  assert.equal(pricing.amountOriginalCents, 5000);
+  assert.equal(pricing.physicalCardFeeCents, 500);
+  assert.equal(pricing.totalDueCents, 5500);
 });

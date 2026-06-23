@@ -70,6 +70,15 @@ const giftVoucherSchema = new mongoose.Schema(
         message: 'balanceRemainingCents must be an integer'
       }
     },
+    physicalCardFeeCents: {
+      type: Number,
+      default: 0,
+      min: 0,
+      validate: {
+        validator: integerValidator,
+        message: 'physicalCardFeeCents must be an integer'
+      }
+    },
     currency: {
       type: String,
       enum: ['EUR'],
