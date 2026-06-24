@@ -12,6 +12,7 @@ const {
   classifyReservationPaymentStatus,
   shouldEmitRefundFollowUpAlert
 } = require('../payment/reservationPaymentSignals');
+const { aggregateGiftVoucherPulseMetrics } = require('../reporting/giftVoucherPulseMetricsService');
 
 function dayRange(dateInput = new Date()) {
   const start = normalizeDateToSofiaDayStart(dateInput);
@@ -173,6 +174,8 @@ async function getDashboardReadModel() {
     alertBookings,
     pulseActiveBookings,
     pulseMonthAgg,
+    pulseMonthBookingCashAgg,
+    giftVoucherPulse,
     upcoming7Count,
     cancellationsMTD,
     refundsMTD,
@@ -196,6 +199,18 @@ async function getDashboardReadModel() {
       { $match: pulseMonthFilter },
       { $group: { _id: null, bookingsMTD: { $sum: 1 }, bookingValueMTD: { $sum: '$totalPrice' } } }
     ]),
+    Booking.aggregate([
+      { $match: pulseMonthFilter },
+      {
+        $group: {
+          _id: null,
+          bookingStripeCashMTDCents: {
+            $sum: { $ifNull: ['$stripePaidAmountCents', 0] }
+          }
+        }
+      }
+    ]),
+    aggregateGiftVoucherPulseMetrics({ now }),
     Booking.countDocuments({
       ...bookingBase,
       status: { $ne: 'cancelled' },
@@ -469,6 +484,16 @@ async function getDashboardReadModel() {
   const criticalAlerts = hydrateAlerts(alerts);
 
   const pulseAgg = pulseMonthAgg[0] || { bookingsMTD: 0, bookingValueMTD: 0 };
+  const pulseBookingCashAgg = pulseMonthBookingCashAgg[0] || { bookingStripeCashMTDCents: 0 };
+  const bookingStripeCashMTDCents = Math.max(
+    0,
+    Math.trunc(pulseBookingCashAgg.bookingStripeCashMTDCents || 0)
+  );
+  const voucherCashCollectedMTDCents = Math.max(
+    0,
+    Math.trunc(giftVoucherPulse?.cashCollectedMTDCents || 0)
+  );
+  const totalCashCollectedMTDCents = bookingStripeCashMTDCents + voucherCashCollectedMTDCents;
   const paidActiveCount = pulseActiveBookings.filter((b) => paymentStatusByReservation.get(String(b._id)) === 'paid').length;
   const activeUnpaidCount = Math.max(0, pulseActiveBookings.length - paidActiveCount);
 
@@ -498,10 +523,26 @@ async function getDashboardReadModel() {
       month: `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}`,
       bookingsMTD: pulseAgg.bookingsMTD || 0,
       bookingValueMTD: pulseAgg.bookingValueMTD || 0,
+      grossBookedMTD: pulseAgg.bookingValueMTD || 0,
       activePaidCount: paidActiveCount,
       activeUnpaidCount,
       cancellationsMTD,
-      refundsMTD
+      refundsMTD,
+      giftVouchers: {
+        month: giftVoucherPulse?.month || null,
+        salesMTDCents: giftVoucherPulse?.salesMTDCents || 0,
+        cashCollectedMTDCents: voucherCashCollectedMTDCents,
+        physicalCardFeesMTDCents: giftVoucherPulse?.physicalCardFeesMTDCents || 0,
+        liabilityOutstandingCents: giftVoucherPulse?.liabilityOutstandingCents || 0,
+        redemptionsMTDCents: giftVoucherPulse?.redemptionsMTDCents || 0,
+        provenance: giftVoucherPulse?.provenance || null
+      },
+      cashCollected: {
+        bookingStripeCashMTDCents,
+        voucherCashCollectedMTDCents,
+        totalCashCollectedMTDCents,
+        note: 'Cash collected is Stripe booking payments plus voucher purchase cash. Not gross booked stay value.'
+      }
     },
     health: {
       status: healthStatus,

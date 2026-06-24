@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { opsReadAPI } from '../../services/opsApi';
+import { formatMoneyFromCents } from '../../utils/formatMoney';
 
 function paymentStatusLabel(status) {
   const labels = {
@@ -197,33 +198,80 @@ export default function OpsDashboard() {
         )}
       </section>
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <h3 className="text-sm font-semibold text-gray-900 mb-2">Business pulse</h3>
-        <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 text-xs">
-          <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
-            <p className="text-gray-500">Bookings MTD</p>
-            <p className="text-sm font-semibold text-gray-900">{d.pulse?.bookingsMTD ?? 0}</p>
+      <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900 mb-2">Business pulse — stays</h3>
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 text-xs">
+            <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
+              <p className="text-gray-500">Bookings MTD</p>
+              <p className="text-sm font-semibold text-gray-900">{d.pulse?.bookingsMTD ?? 0}</p>
+            </div>
+            <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
+              <p className="text-gray-500">Gross booked MTD</p>
+              <p className="text-sm font-semibold text-gray-900">€{Number(d.pulse?.grossBookedMTD ?? d.pulse?.bookingValueMTD ?? 0).toFixed(0)}</p>
+            </div>
+            <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
+              <p className="text-gray-500">Paid active stays</p>
+              <p className="text-sm font-semibold text-gray-900">{d.pulse?.activePaidCount ?? 0}</p>
+            </div>
+            <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
+              <p className="text-gray-500">Open payment active stays</p>
+              <p className="text-sm font-semibold text-gray-900">{d.pulse?.activeUnpaidCount ?? 0}</p>
+            </div>
+            <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
+              <p className="text-gray-500">Cancellations MTD</p>
+              <p className="text-sm font-semibold text-gray-900">{d.pulse?.cancellationsMTD ?? 0}</p>
+            </div>
+            <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
+              <p className="text-gray-500">Refunds MTD</p>
+              <p className="text-sm font-semibold text-gray-900">{d.pulse?.refundsMTD ?? 0}</p>
+            </div>
           </div>
-          <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
-            <p className="text-gray-500">Booking value MTD</p>
-            <p className="text-sm font-semibold text-gray-900">€{Number(d.pulse?.bookingValueMTD || 0).toFixed(0)}</p>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900 mb-2">Business pulse — gift vouchers &amp; cash</h3>
+          <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 text-xs">
+            <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
+              <p className="text-gray-500">Gift voucher sales MTD</p>
+              <p className="text-sm font-semibold text-gray-900">
+                {formatMoneyFromCents(d.pulse?.giftVouchers?.salesMTDCents ?? 0)}
+              </p>
+            </div>
+            <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
+              <p className="text-gray-500">Voucher cash collected MTD</p>
+              <p className="text-sm font-semibold text-gray-900">
+                {formatMoneyFromCents(d.pulse?.giftVouchers?.cashCollectedMTDCents ?? 0)}
+              </p>
+            </div>
+            <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
+              <p className="text-gray-500">Physical card fees MTD</p>
+              <p className="text-sm font-semibold text-gray-900">
+                {formatMoneyFromCents(d.pulse?.giftVouchers?.physicalCardFeesMTDCents ?? 0)}
+              </p>
+            </div>
+            <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
+              <p className="text-gray-500">Voucher liability outstanding</p>
+              <p className="text-sm font-semibold text-gray-900">
+                {formatMoneyFromCents(d.pulse?.giftVouchers?.liabilityOutstandingCents ?? 0)}
+              </p>
+            </div>
+            <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
+              <p className="text-gray-500">Voucher redemptions MTD</p>
+              <p className="text-sm font-semibold text-gray-900">
+                {formatMoneyFromCents(d.pulse?.giftVouchers?.redemptionsMTDCents ?? 0)}
+              </p>
+            </div>
+            <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
+              <p className="text-gray-500">Total cash collected MTD</p>
+              <p className="text-sm font-semibold text-gray-900">
+                {formatMoneyFromCents(d.pulse?.cashCollected?.totalCashCollectedMTDCents ?? 0)}
+              </p>
+            </div>
           </div>
-          <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
-            <p className="text-gray-500">Paid active</p>
-            <p className="text-sm font-semibold text-gray-900">{d.pulse?.activePaidCount ?? 0}</p>
-          </div>
-          <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
-            <p className="text-gray-500">Open payment active</p>
-            <p className="text-sm font-semibold text-gray-900">{d.pulse?.activeUnpaidCount ?? 0}</p>
-          </div>
-          <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
-            <p className="text-gray-500">Cancellations MTD</p>
-            <p className="text-sm font-semibold text-gray-900">{d.pulse?.cancellationsMTD ?? 0}</p>
-          </div>
-          <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
-            <p className="text-gray-500">Refunds MTD</p>
-            <p className="text-sm font-semibold text-gray-900">{d.pulse?.refundsMTD ?? 0}</p>
-          </div>
+          <p className="mt-3 text-xs text-gray-500 max-w-3xl">
+            Gift voucher sales are prepaid credit. Gross booked stays and cash collected are shown separately.
+          </p>
         </div>
       </section>
 
