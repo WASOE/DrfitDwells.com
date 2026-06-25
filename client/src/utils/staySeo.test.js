@@ -27,12 +27,12 @@ describe('staySeo', () => {
       description: 'Private cabin with views',
       location: 'The Valley',
       pricePerNight: 85,
-      imageUrl: '/uploads/test.jpg',
+      imageUrl: '/media/hero/cabin-summer-960w.webp',
       slug: 'lux-cabin'
     });
     expect(schema.url).toBe('https://driftdwells.com/stays/lux-cabin');
     expect(schema.priceRange).toBe('€85');
-    expect(schema.image[0]).toContain('https://driftdwells.com/uploads/test.jpg');
+    expect(schema.image[0]).toContain('https://driftdwells.com/media/hero/cabin-summer-960w.webp');
   });
 
   it('buildStayBreadcrumbJsonLd follows Home > Stays > Stay Name', () => {
