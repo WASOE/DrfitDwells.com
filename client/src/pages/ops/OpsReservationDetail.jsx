@@ -1,14 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { decodeRoleFromToken, opsWriteAPI, opsReadAPI } from '../../services/opsApi';
+import { opsWriteAPI, opsReadAPI } from '../../services/opsApi';
 import api from '../../services/api';
+import { useOpsSession } from '../../context/OpsSessionContext';
 import { formatMoneyFromCents } from '../../utils/formatMoney';
 import { OpsEmailPreviewModal } from './components/OpsEmailPreviewModal';
 import { OpsWhatsappPreviewModal } from './components/OpsWhatsappPreviewModal';
 import { buildGmaPreviewRuleOptions } from '../../../../shared/messaging/gmaPreviewRules.js';
+import {
+  canCancelReservation,
+  canMarkCashRefunded,
+  canReassignReservation,
+  canResolveCancellationSettlement,
+  showCompletedNotCancellableMessage
+} from './utils/opsReservationPermissions';
 
 const MIN_STAY_CREDIT_CENTS = 10000;
-const CANCELLABLE_RESERVATION_STATUSES = new Set(['pending', 'confirmed', 'in_house']);
 
 const CASH_REFUND_METHOD_OPTIONS = [
   { value: 'stripe_manual', label: 'Stripe (manual)' },
@@ -98,7 +105,7 @@ function resolveEffectiveRecipient(overrideInput, guestEmail) {
 
 export default function OpsReservationDetail() {
   const { id } = useParams();
-  const role = useMemo(() => decodeRoleFromToken(), []);
+  const session = useOpsSession();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -884,21 +891,22 @@ export default function OpsReservationDetail() {
 
   const reservation = data.reservation || {};
   const cancellationSettlement = data.cancellationSettlement || null;
-  const isAdmin = role === 'admin';
   const reservationStatus = reservation.reservationStatus || '';
-  const isCompletedReservation = reservationStatus === 'completed';
-  const canCancel = isAdmin && CANCELLABLE_RESERVATION_STATUSES.has(reservationStatus);
-  const canResolveSettlement =
-    isAdmin &&
-    reservation.reservationStatus === 'cancelled' &&
-    (!cancellationSettlement ||
-      !cancellationSettlement.outcome ||
-      cancellationSettlement.outcome === 'resolution_pending');
-  const canMarkCashRefunded =
-    isAdmin &&
-    reservation.reservationStatus === 'cancelled' &&
-    cancellationSettlement?.outcome === 'cash_refund_pending';
-  const showSettlementCard = Boolean(cancellationSettlement) || canResolveSettlement || canMarkCashRefunded;
+  const canCancel = canCancelReservation(session, reservationStatus);
+  const canReassign = canReassignReservation(session);
+  const canResolveSettlement = canResolveCancellationSettlement(
+    session,
+    reservationStatus,
+    cancellationSettlement
+  );
+  const canMarkCashRefundedSettlement = canMarkCashRefunded(
+    session,
+    reservationStatus,
+    cancellationSettlement
+  );
+  const showCompletedNotCancellableNote = showCompletedNotCancellableMessage(session, reservationStatus);
+  const showSettlementCard =
+    Boolean(cancellationSettlement) || canResolveSettlement || canMarkCashRefundedSettlement;
   const displayedSettlementOutcome = !cancellationSettlement
     ? 'Not recorded yet'
     : !cancellationSettlement.outcome || cancellationSettlement.outcome === 'resolution_pending'
@@ -930,7 +938,7 @@ export default function OpsReservationDetail() {
                 Resolve settlement
               </button>
             ) : null}
-            {canMarkCashRefunded ? (
+            {canMarkCashRefundedSettlement ? (
               <button
                 type="button"
                 onClick={openMarkRefundedModal}
@@ -945,7 +953,7 @@ export default function OpsReservationDetail() {
               Refund follow-up stays active until this settlement is resolved.
             </p>
           ) : null}
-          {canMarkCashRefunded ? (
+          {canMarkCashRefundedSettlement ? (
             <p className="mt-2 text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
               Manual cash refund is still required. Mark as refunded once completed.
             </p>
@@ -1056,12 +1064,12 @@ export default function OpsReservationDetail() {
                   Cancel reservation
                 </button>
               ) : null}
-              {isAdmin && isCompletedReservation ? (
+              {showCompletedNotCancellableNote ? (
                 <p className="w-full text-xs text-gray-500 mt-1">
                   Completed reservations cannot be cancelled from OPS.
                 </p>
               ) : null}
-              {isAdmin ? (
+              {canReassign ? (
                 <button
                   onClick={() => {
                     const toCabinId = window.prompt('Target cabinId');

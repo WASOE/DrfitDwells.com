@@ -5,14 +5,22 @@ function authHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+function decodeBase64UrlSegment(segment) {
+  let base64 = segment.replace(/-/g, '+').replace(/_/g, '/');
+  while (base64.length % 4) {
+    base64 += '=';
+  }
+  return atob(base64);
+}
+
 function decodeRoleFromToken() {
   try {
     const token = localStorage.getItem('adminToken');
     if (!token) return null;
     const parts = token.split('.');
-    const payload = parts[1];
-    if (!payload) return null;
-    const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    const payloadSegment = parts[0];
+    if (!payloadSegment) return null;
+    const decoded = JSON.parse(decodeBase64UrlSegment(payloadSegment));
     const role = decoded.role;
     if (role === 'operator' || role === 'cleaner' || role === 'admin') {
       return role;
