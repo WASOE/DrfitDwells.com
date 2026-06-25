@@ -253,7 +253,110 @@
     "errorLoadAvailability": "Error loading availability",
     "backToHome": "back to home →",
     "backToHomeAria": "Return to homepage",
-    "savedToTripList": "Saved to Trip List"
+    "savedToTripList": "Saved to Trip List",
+    "whyYoullLoveIt": "Why you'll love it",
+    "amenitiesHeading": "Amenities",
+    "guestReviews": "Guest Reviews"
+  },
+  "reviews": {
+    "title": "Guest Reviews",
+    "loading": "Loading reviews...",
+    "loadError": "Failed to load reviews",
+    "sortLabel": "Sort reviews",
+    "sortRelevant": "Most relevant",
+    "sortRecent": "Most recent",
+    "sortHigh": "Highest rated",
+    "sortLow": "Lowest rated",
+    "reviewCount_one": "{{count}} review",
+    "reviewCount_other": "{{count}} reviews",
+    "readMore": "Read more",
+    "readLess": "Read less",
+    "verified": "Verified",
+    "verifiedReviewer": "Verified reviewer",
+    "ownerResponse": "Owner response",
+    "from": "from",
+    "pinnedReview": "Pinned review",
+    "previous": "Previous",
+    "next": "Next",
+    "pageOf": "Page {{page}} of {{total}}"
+  },
+  "stayContent": {
+    "the-cabin": {
+      "highlights": [
+        "Firepit + starry sky in a protected valley",
+        "Off-grid comfort: wood stove, steaming hot tub",
+        "1 km protected walk-in → true seclusion"
+      ],
+      "amenities": [
+        "Double bed",
+        "Wood stove",
+        "Steaming hot tub",
+        "Private kitchen",
+        "Spring water",
+        "Solar electricity",
+        "Mountain and forest views",
+        "Bed linen and towels"
+      ]
+    },
+    "lux-cabin": {
+      "highlights": [
+        "Private luxury cabin in a protected valley",
+        "Large windows, forest views, and complete tranquility",
+        "1 km protected walk to the site",
+        "Off-grid comfort: wood stove, kitchen, and private bathroom"
+      ],
+      "amenities": [
+        "Double bed",
+        "Private fully equipped kitchen",
+        "Private bathroom with hot shower",
+        "Floor-to-ceiling windows",
+        "Wood stove",
+        "Private terrace",
+        "Bed linen and towels",
+        "Solar electricity",
+        "Mountain and forest views",
+        "Starlink internet"
+      ]
+    },
+    "stone-house": {
+      "highlights": [
+        "Historic stone house with generous shared living spaces",
+        "Starlink internet and coworking in the valley hub",
+        "Perfect for families or small groups",
+        "Panoramic valley setting at 1,550 m"
+      ],
+      "amenities": [
+        "Sleeps up to 6",
+        "Shared kitchen",
+        "Fireplace",
+        "Starlink internet",
+        "Coworking space",
+        "Historic stone construction",
+        "Valley access trails",
+        "Bed linen and towels"
+      ]
+    },
+    "a-frame": {
+      "highlights": [
+        "Minimal cabins immersed in nature",
+        "Focused on simplicity and quiet",
+        "Perfect for couples and solo travelers",
+        "Heart of the valley with shared fire pit"
+      ],
+      "amenities": [
+        "Double bed",
+        "Wood stove",
+        "Private terrace",
+        "Electricity (solar, limited)",
+        "Mountain and meadow view",
+        "Bed linen and towels",
+        "Shared rustic kitchen",
+        "Shared outdoor showers",
+        "Shared toilets",
+        "Fire pit",
+        "Starlink internet in communal area"
+      ]
+    }
   },
   "details": {
     "priceTotalSuffix": "total",

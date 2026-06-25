@@ -25,6 +25,7 @@ import {
   buildStayCanonicalUrl,
   buildStayLodgingJsonLd
 } from '../utils/staySeo';
+import { resolveStayAmenities, resolveStayHighlights } from '../utils/stayPageContent';
 
 // Constants
 const SCROLL_DELAY_MS = 100;
@@ -270,15 +271,26 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
     return list;
   }, [cabin?.experiences]);
 
-  // Highlights
-  const highlights = useMemo(() => {
-    const fallback = [
-      'Firepit + starry sky in a protected valley',
-      'Off-grid comfort: wood stove, steaming hot tub',
-      '1km protected walk-in → true seclusion'
-    ];
-    return Array.isArray(cabin?.highlights) && cabin.highlights.length ? cabin.highlights.slice(0,5) : fallback;
-  }, [cabin?.highlights]);
+  // Highlights & amenities — property-specific per stay slug
+  const highlights = useMemo(
+    () =>
+      resolveStayHighlights({
+        slug: effectiveStaySlug,
+        apiHighlights: cabin?.highlights,
+        t
+      }),
+    [effectiveStaySlug, cabin?.highlights, t]
+  );
+
+  const amenities = useMemo(
+    () =>
+      resolveStayAmenities({
+        slug: effectiveStaySlug,
+        apiAmenities: cabin?.amenities,
+        t
+      }),
+    [effectiveStaySlug, cabin?.amenities, t]
+  );
 
   // Even/odd columns match former 2-col grid placement without shared row heights (grid row = max cell height → messy gaps).
   const highlightColumns = useMemo(() => {
@@ -1179,7 +1191,7 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
         {/* Why you'll love it — mobile: single column; md+: two independent columns (avoids CSS grid row-height coupling) */}
         {highlights && highlights.length > 0 && (
           <div className="mt-12 md:mt-16">
-            <h2 className="section-title mb-4">Why you'll love it</h2>
+            <h2 className="section-title mb-4">{t('detailPage.whyYoullLoveIt')}</h2>
             <ul className="md:hidden space-y-3 text-gray-700 text-sm leading-snug max-w-[65ch]">
               {highlights.map((h, i) => (
                 <li key={`hl-m-${i}`} className="flex items-start gap-2.5">
@@ -1206,13 +1218,13 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
         )}
 
         {/* Amenities */}
-        {cabin.amenities && cabin.amenities.length > 0 && (
+        {amenities.length > 0 && (
           <div className="space-y-4 mt-12 md:mt-16">
             <h2 className="section-title" id="amenities">
-              Amenities
+              {t('detailPage.amenitiesHeading')}
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {cabin.amenities.map((amenity, index) => (
+                  {amenities.map((amenity, index) => (
                 <div key={`amenity-${index}`} className="flex items-center text-sm text-gray-600">
                   <span className="w-1.5 h-1.5 bg-sage rounded-full mr-2 flex-shrink-0" aria-hidden="true"></span>
                   <span>{amenity}</span>
@@ -1225,7 +1237,7 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
         {/* Guest Reviews — in left column flow */}
         <div className="mt-12 md:mt-16 reviews-col" id="details">
           <h2 className="section-title" id="guest-reviews">
-            Guest Reviews
+            {t('detailPage.guestReviews')}
           </h2>
           <Suspense
             fallback={

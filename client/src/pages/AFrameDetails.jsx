@@ -20,6 +20,7 @@ import {
   buildStayCanonicalPath,
   buildStayLodgingJsonLd
 } from '../utils/staySeo';
+import { resolveStayAmenities, resolveStayHighlights } from '../utils/stayPageContent';
 import './CabinDetails.css';
 import '../components/gallery/lightbox.css';
 
@@ -219,15 +220,26 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
     setGuestPromoCode(searchCriteria.promoCode || '');
   }, [searchCriteria.promoCode, setGuestPromoCode]);
 
-  // Highlights
-  const highlights = useMemo(() => {
-    const fallback = [
-      'Firepit + starry sky in a protected valley',
-      'Off-grid comfort: wood stove, steaming hot tub',
-      '1km protected walk-in → true seclusion'
-    ];
-    return Array.isArray(cabinType?.highlights) && cabinType.highlights.length ? cabinType.highlights.slice(0,5) : fallback;
-  }, [cabinType?.highlights]);
+  // Highlights & amenities — property-specific per stay slug
+  const highlights = useMemo(
+    () =>
+      resolveStayHighlights({
+        slug: staySlug,
+        apiHighlights: cabinType?.highlights,
+        t
+      }),
+    [staySlug, cabinType?.highlights, t]
+  );
+
+  const amenities = useMemo(
+    () =>
+      resolveStayAmenities({
+        slug: staySlug,
+        apiAmenities: cabinType?.amenities,
+        t
+      }),
+    [staySlug, cabinType?.amenities, t]
+  );
 
   const highlightColumns = useMemo(() => {
     const left = [];
@@ -617,7 +629,7 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
 
           {highlights && highlights.length > 0 && (
             <div className="mt-12 md:mt-16">
-              <h2 className="section-title mb-4">Why you'll love it</h2>
+              <h2 className="section-title mb-4">{t('detailPage.whyYoullLoveIt')}</h2>
               <ul className="md:hidden space-y-3 text-gray-700 text-sm leading-snug max-w-[65ch]">
                 {highlights.map((h, i) => (
                   <li key={`hl-m-${i}`} className="flex items-start gap-2.5">
@@ -643,11 +655,11 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
             </div>
           )}
 
-          {cabinType.amenities && cabinType.amenities.length > 0 && (
+          {amenities.length > 0 && (
             <div className="space-y-4 mt-12 md:mt-16">
-              <h2 className="section-title">Amenities</h2>
+              <h2 className="section-title">{t('detailPage.amenitiesHeading')}</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {cabinType.amenities.map((amenity, index) => (
+                {amenities.map((amenity, index) => (
                   <div key={`amenity-${index}`} className="flex items-center text-sm text-gray-600">
                     <span className="w-1.5 h-1.5 bg-sage rounded-full mr-2" aria-hidden="true"></span>
                     <span>{amenity}</span>
@@ -659,7 +671,7 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
 
           {/* Guest Reviews and map now live in the main content flow, like CabinDetails */}
           <div className="mt-12 md:mt-16 reviews-col" id="details">
-            <h2 className="section-title" id="guest-reviews">Guest Reviews</h2>
+            <h2 className="section-title" id="guest-reviews">{t('detailPage.guestReviews')}</h2>
             <ReviewsSection 
               cabinId={cabinType._id}
               averageRating={cabinType.averageRating}
