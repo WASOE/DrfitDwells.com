@@ -39,7 +39,8 @@ const ACTIONS = {
   OPS_CLEANING_PAYMENT_WRITE: 'ops.cleaning.payment_write',
   OPS_CLEANING_SETTINGS_READ: 'ops.cleaning.settings_read',
   OPS_CLEANING_SETTINGS_WRITE: 'ops.cleaning.settings_write',
-  OPS_RESERVATIONS_CLEANING_NOTES_WRITE: 'ops.reservations.cleaning_notes_write'
+  OPS_RESERVATIONS_CLEANING_NOTES_WRITE: 'ops.reservations.cleaning_notes_write',
+  OPS_MANUAL_REVIEW_RESOLVE: 'ops.manual_review.resolve'
 };
 
 /** Action → module key (for module gate inside permission checks). */
@@ -89,7 +90,8 @@ const POLICY = {
   [ACTIONS.OPS_CLEANING_PAYMENT_WRITE]: [ROLE_ADMIN],
   [ACTIONS.OPS_CLEANING_SETTINGS_READ]: [ROLE_ADMIN, ROLE_OPERATOR],
   [ACTIONS.OPS_CLEANING_SETTINGS_WRITE]: [ROLE_ADMIN],
-  [ACTIONS.OPS_RESERVATIONS_CLEANING_NOTES_WRITE]: [ROLE_ADMIN, ROLE_OPERATOR]
+  [ACTIONS.OPS_RESERVATIONS_CLEANING_NOTES_WRITE]: [ROLE_ADMIN, ROLE_OPERATOR],
+  [ACTIONS.OPS_MANUAL_REVIEW_RESOLVE]: [ROLE_ADMIN, ROLE_OPERATOR]
 };
 
 function normalizeRole(role) {

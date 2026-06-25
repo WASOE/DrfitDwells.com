@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const ManualReviewItem = require('../../../models/ManualReviewItem');
 
 async function openManualReviewItem({
@@ -175,9 +176,136 @@ async function resolveSmtpHealthManualReviews({
   };
 }
 
+const MIN_MANUAL_REVIEW_RESOLUTION_NOTE_LENGTH = 3;
+const MAX_MANUAL_REVIEW_RESOLUTION_NOTE_LENGTH = 500;
+
+function normalizeResolutionNote(note) {
+  if (note == null) return '';
+  return String(note).trim();
+}
+
+function mapManualReviewItemResponse(item) {
+  if (!item) return null;
+  const doc = item.toObject ? item.toObject() : item;
+  return {
+    manualReviewItemId: String(doc._id),
+    category: doc.category,
+    severity: doc.severity,
+    status: doc.status,
+    title: doc.title,
+    details: doc.details,
+    entityType: doc.entityType || null,
+    entityId: doc.entityId || null,
+    provenance: doc.provenance || null,
+    evidence: doc.evidence || {},
+    resolution: doc.resolution || null,
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt
+  };
+}
+
+async function resolveManualReviewItem({ manualReviewItemId, resolvedBy, note }) {
+  if (!manualReviewItemId || !mongoose.Types.ObjectId.isValid(String(manualReviewItemId))) {
+    const err = new Error('Invalid manual review item id');
+    err.code = 'INVALID_MANUAL_REVIEW_ID';
+    err.status = 400;
+    throw err;
+  }
+
+  const trimmedNote = normalizeResolutionNote(note);
+  if (trimmedNote.length < MIN_MANUAL_REVIEW_RESOLUTION_NOTE_LENGTH) {
+    const err = new Error(
+      `Resolution note must be at least ${MIN_MANUAL_REVIEW_RESOLUTION_NOTE_LENGTH} characters`
+    );
+    err.code = 'INVALID_RESOLUTION_NOTE';
+    err.status = 400;
+    throw err;
+  }
+  if (trimmedNote.length > MAX_MANUAL_REVIEW_RESOLUTION_NOTE_LENGTH) {
+    const err = new Error(
+      `Resolution note must be at most ${MAX_MANUAL_REVIEW_RESOLUTION_NOTE_LENGTH} characters`
+    );
+    err.code = 'INVALID_RESOLUTION_NOTE';
+    err.status = 400;
+    throw err;
+  }
+
+  const existing = await ManualReviewItem.findById(manualReviewItemId).lean();
+  if (!existing) {
+    const err = new Error('Manual review item not found');
+    err.code = 'MANUAL_REVIEW_NOT_FOUND';
+    err.status = 404;
+    throw err;
+  }
+
+  if (existing.status === 'resolved') {
+    return {
+      status: 'already_resolved',
+      item: mapManualReviewItemResponse(existing)
+    };
+  }
+
+  if (existing.status === 'ignored') {
+    const err = new Error('Manual review item is ignored and cannot be resolved');
+    err.code = 'MANUAL_REVIEW_NOT_OPEN';
+    err.status = 409;
+    throw err;
+  }
+
+  if (existing.status !== 'open') {
+    const err = new Error('Manual review item is not open');
+    err.code = 'MANUAL_REVIEW_NOT_OPEN';
+    err.status = 409;
+    throw err;
+  }
+
+  const now = new Date();
+  const resolvedByValue =
+    resolvedBy != null && String(resolvedBy).trim() ? String(resolvedBy).trim() : 'ops_user';
+
+  const updated = await ManualReviewItem.findOneAndUpdate(
+    { _id: manualReviewItemId, status: 'open' },
+    {
+      $set: {
+        status: 'resolved',
+        resolution: {
+          resolvedAt: now,
+          resolvedBy: resolvedByValue,
+          note: trimmedNote
+        },
+        updatedAt: now
+      }
+    },
+    { new: true }
+  );
+
+  if (!updated) {
+    const current = await ManualReviewItem.findById(manualReviewItemId).lean();
+    if (current?.status === 'resolved') {
+      return {
+        status: 'already_resolved',
+        item: mapManualReviewItemResponse(current)
+      };
+    }
+    const err = new Error('Manual review item is not open');
+    err.code = 'MANUAL_REVIEW_NOT_OPEN';
+    err.status = 409;
+    throw err;
+  }
+
+  return {
+    status: 'resolved',
+    item: mapManualReviewItemResponse(updated)
+  };
+}
+
 module.exports = {
   openManualReviewItem,
   openEmailDeliveryManualReview,
   resolveEmailDeliveryManualReviews,
-  resolveSmtpHealthManualReviews
+  resolveSmtpHealthManualReviews,
+  resolveManualReviewItem,
+  mapManualReviewItemResponse,
+  MIN_MANUAL_REVIEW_RESOLUTION_NOTE_LENGTH,
+  MAX_MANUAL_REVIEW_RESOLUTION_NOTE_LENGTH
 };

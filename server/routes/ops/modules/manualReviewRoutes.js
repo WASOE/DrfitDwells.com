@@ -1,5 +1,14 @@
 const express = require('express');
+const { body, validationResult } = require('express-validator');
 const ManualReviewItem = require('../../../models/ManualReviewItem');
+const { validateId } = require('../../../middleware/validateId');
+const { requirePermission, ACTIONS } = require('../../../services/permissionService');
+const {
+  resolveManualReviewItem,
+  mapManualReviewItemResponse,
+  MIN_MANUAL_REVIEW_RESOLUTION_NOTE_LENGTH,
+  MAX_MANUAL_REVIEW_RESOLUTION_NOTE_LENGTH
+} = require('../../../services/ops/ingestion/manualReviewService');
 
 const router = express.Router();
 
@@ -22,21 +31,7 @@ router.get('/', async (req, res) => {
     return res.json({
       success: true,
       data: {
-        items: items.map((item) => ({
-          manualReviewItemId: String(item._id),
-          category: item.category,
-          severity: item.severity,
-          status: item.status,
-          title: item.title,
-          details: item.details,
-          entityType: item.entityType || null,
-          entityId: item.entityId || null,
-          provenance: item.provenance || null,
-          evidence: item.evidence || {},
-          resolution: item.resolution || null,
-          createdAt: item.createdAt,
-          updatedAt: item.updatedAt
-        })),
+        items: items.map((item) => mapManualReviewItemResponse(item)),
         pagination: {
           page,
           limit,
@@ -49,5 +44,85 @@ router.get('/', async (req, res) => {
     return res.status(500).json({ success: false, message: error.message });
   }
 });
+
+router.post(
+  '/:id/resolve',
+  validateId('id'),
+  [
+    body('note')
+      .isString()
+      .trim()
+      .isLength({
+        min: MIN_MANUAL_REVIEW_RESOLUTION_NOTE_LENGTH,
+        max: MAX_MANUAL_REVIEW_RESOLUTION_NOTE_LENGTH
+      })
+      .withMessage(
+        `note must be ${MIN_MANUAL_REVIEW_RESOLUTION_NOTE_LENGTH}-${MAX_MANUAL_REVIEW_RESOLUTION_NOTE_LENGTH} characters`
+      )
+  ],
+  async (req, res) => {
+    try {
+      requirePermission({
+        role: req.user?.role,
+        modules: req.user?.modules,
+        action: ACTIONS.OPS_MANUAL_REVIEW_RESOLVE
+      });
+
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          message: errors.array()[0]?.msg || 'Invalid resolution note',
+          errors: errors.array()
+        });
+      }
+
+      const result = await resolveManualReviewItem({
+        manualReviewItemId: req.params.id,
+        resolvedBy: req.user?.id || req.user?.role || 'ops_user',
+        note: req.body.note
+      });
+
+      if (result.status === 'already_resolved') {
+        return res.status(409).json({
+          success: false,
+          errorType: 'already_resolved',
+          message: 'Manual review item is already resolved',
+          data: { item: result.item }
+        });
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          status: result.status,
+          item: result.item
+        }
+      });
+    } catch (error) {
+      if (error.code === 'PERMISSION_DENIED') {
+        return res.status(error.status || 403).json({ success: false, message: error.message });
+      }
+      if (error.code === 'INVALID_MANUAL_REVIEW_ID' || error.code === 'INVALID_RESOLUTION_NOTE') {
+        return res.status(error.status || 400).json({
+          success: false,
+          errorType: error.code,
+          message: error.message
+        });
+      }
+      if (error.code === 'MANUAL_REVIEW_NOT_FOUND') {
+        return res.status(404).json({ success: false, message: error.message });
+      }
+      if (error.code === 'MANUAL_REVIEW_NOT_OPEN') {
+        return res.status(409).json({
+          success: false,
+          errorType: error.code,
+          message: error.message
+        });
+      }
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  }
+);
 
 module.exports = router;

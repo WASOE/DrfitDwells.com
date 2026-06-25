@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { opsReadAPI } from '../../services/opsApi';
+import ManualReviewResolveAction from '../../components/ops/ManualReviewResolveAction';
 
 function isMongoObjectIdString(value) {
   return typeof value === 'string' && /^[0-9a-fA-F]{24}$/.test(value);
@@ -22,26 +23,22 @@ export default function OpsManualReviewBacklog() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const resp = await opsReadAPI.manualReview({ page: 1, limit: 50, status: 'open' });
-        if (cancelled) return;
-        setData(resp.data?.data || null);
-      } catch (err) {
-        if (!cancelled) setError(err?.response?.data?.message || 'Failed to load manual review backlog');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-    load();
-    return () => {
-      cancelled = true;
-    };
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const resp = await opsReadAPI.manualReview({ page: 1, limit: 50, status: 'open' });
+      setData(resp.data?.data || null);
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Failed to load manual review backlog');
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   if (loading) return <div className="text-sm text-gray-500">Loading manual review backlog...</div>;
   if (error) return <div className="text-sm text-red-600">{error}</div>;
@@ -51,7 +48,7 @@ export default function OpsManualReviewBacklog() {
     <div className="space-y-4 pb-16 sm:pb-0">
       <section className="bg-white border border-gray-200 rounded-xl p-4">
         <h2 className="text-lg font-semibold text-gray-900">Manual review backlog</h2>
-        <p className="text-sm text-gray-500 mt-1">Open operational items (read-only).</p>
+        <p className="text-sm text-gray-500 mt-1">Open operational items requiring operator action.</p>
       </section>
 
       <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
@@ -96,6 +93,13 @@ export default function OpsManualReviewBacklog() {
                 <div className="text-xs text-gray-500 mt-2">
                   Provenance: {item.provenance.source || '—'} {item.provenance.sourceReference ? `(${item.provenance.sourceReference})` : ''}
                 </div>
+              ) : null}
+
+              {item.status === 'open' ? (
+                <ManualReviewResolveAction
+                  manualReviewItemId={item.manualReviewItemId}
+                  onResolved={() => load()}
+                />
               ) : null}
             </div>
             );

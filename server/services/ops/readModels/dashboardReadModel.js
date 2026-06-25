@@ -495,7 +495,8 @@ async function getDashboardReadModel() {
       href: '/ops/manual-review',
       createdAt: item.createdAt,
       entityType: 'manual_review',
-      entityId: String(item._id)
+      entityId: String(item._id),
+      manualReviewItemId: String(item._id)
     });
   }
 

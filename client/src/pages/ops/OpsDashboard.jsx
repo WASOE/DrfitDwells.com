@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { opsReadAPI } from '../../services/opsApi';
 import { formatMoneyFromCents } from '../../utils/formatMoney';
+import ManualReviewResolveAction from '../../components/ops/ManualReviewResolveAction';
 
 function paymentStatusLabel(status) {
   const labels = {
@@ -72,25 +73,22 @@ export default function OpsDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const resp = await opsReadAPI.dashboard();
-        if (!cancelled) setData(resp.data?.data || null);
-      } catch (err) {
-        if (!cancelled) setError(err?.response?.data?.message || 'Failed to load dashboard');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-    load();
-    return () => {
-      cancelled = true;
-    };
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const resp = await opsReadAPI.dashboard();
+      setData(resp.data?.data || null);
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Failed to load dashboard');
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   if (loading) return <div className="text-sm text-gray-500">Loading dashboard...</div>;
   if (error) return <div className="text-sm text-red-600">{error}</div>;
@@ -145,17 +143,24 @@ export default function OpsDashboard() {
         ) : (
           <div className="space-y-2">
             {criticalAlerts.map((alert) => (
-              <Link
+              <div
                 key={alert.id}
-                to={alert.href || '/ops/reservations'}
-                className={`block border rounded-lg px-3 py-2 ${alertTone(alert.severity)}`}
+                className={`border rounded-lg px-3 py-2 ${alertTone(alert.severity)}`}
               >
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold truncate">{alert.title}</p>
-                  <span className="text-[11px] uppercase tracking-wide">{alert.severity || 'low'}</span>
-                </div>
-                <p className="text-xs mt-1 line-clamp-2">{alert.detail}</p>
-              </Link>
+                <Link to={alert.href || '/ops/reservations'} className="block">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold truncate">{alert.title}</p>
+                    <span className="text-[11px] uppercase tracking-wide">{alert.severity || 'low'}</span>
+                  </div>
+                  <p className="text-xs mt-1 line-clamp-2">{alert.detail}</p>
+                </Link>
+                {alert.type === 'manual_review' && alert.manualReviewItemId ? (
+                  <ManualReviewResolveAction
+                    manualReviewItemId={alert.manualReviewItemId}
+                    onResolved={() => load()}
+                  />
+                ) : null}
+              </div>
             ))}
           </div>
         )}

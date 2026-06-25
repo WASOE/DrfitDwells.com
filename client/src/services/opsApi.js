@@ -248,7 +248,9 @@ const opsWriteAPI = {
   createOpsUser: (payload) => api.post('/ops/users', payload, { headers: authHeaders() }),
   updateOpsUser: (id, payload) => api.patch(`/ops/users/${id}`, payload, { headers: authHeaders() }),
   setOpsUserPassword: (id, password) =>
-    api.post(`/ops/users/${id}/password`, { password }, { headers: authHeaders() })
+    api.post(`/ops/users/${id}/password`, { password }, { headers: authHeaders() }),
+  resolveManualReviewItem: (id, body) =>
+    api.post(`/ops/manual-review/${id}/resolve`, body, { headers: authHeaders() })
 };
 
 export { opsReadAPI, opsWriteAPI, decodeRoleFromToken };
