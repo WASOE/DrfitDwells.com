@@ -38,6 +38,7 @@ const creatorReferralVisitRoutes = require('./routes/creatorReferralVisitRoutes'
 const creatorPortalRoutes = require('./routes/creatorPortalRoutes');
 const funnelEventRoutes = require('./routes/funnelEventRoutes');
 const { funnelEventLimiter } = require('./routes/funnelEventRoutes');
+const { legacyCabinDetailRedirectMiddleware } = require('./middleware/legacyCabinDetailRedirects');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -248,6 +249,9 @@ const staticOptions = {
   }
 };
 app.use('/uploads', express.static(uploadsDir, staticOptions));
+
+// Legacy public cabin ID detail URLs → canonical /stays/:slug (301 for crawlers & old links).
+app.use(legacyCabinDetailRedirectMiddleware);
 
 // Legacy SEO URL hard redirect to canonical terms page.
 app.get(['/terms-and-conditions-drift-dwells', '/terms-and-conditions-drift-dwells/'], (req, res) => {
