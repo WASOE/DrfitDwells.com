@@ -7,6 +7,8 @@ const {
   derivePlainTextFromHtml,
   hashManualResendHtml
 } = require('../utils/manualLifecycleResendContent');
+const { bookingLifecycleCorrelationKey } = require('./email/emailDeliveryCorrelation');
+const { applyEmailDeliveryAttempt } = require('./email/emailDeliveryStateService');
 
 const TEMPLATE_KEYS = {
   BOOKING_RECEIVED: 'booking_received',
@@ -95,7 +97,8 @@ async function persistLifecycleEmailEvent({
   actorId,
   actorRole,
   messageId,
-  manualEditDetails = null
+  manualEditDetails = null,
+  deliveryCorrelationKey = null
 }) {
   const doc = {
     provider: 'app',
@@ -123,6 +126,9 @@ async function persistLifecycleEmailEvent({
       ...(manualEditDetails && typeof manualEditDetails === 'object' ? manualEditDetails : {})
     }
   };
+  if (deliveryCorrelationKey) {
+    doc.deliveryCorrelationKey = deliveryCorrelationKey;
+  }
   if (messageId) {
     doc.messageId = messageId;
   }
@@ -229,6 +235,12 @@ async function sendBookingLifecycleEmail({
 
   const { sendStatus, deliveryMethod } = resolveSendStatus(sendResult);
 
+  const deliveryCorrelationKey = bookingLifecycleCorrelationKey({
+    bookingId: booking._id,
+    templateKey,
+    recipientEmail: recipient
+  });
+
   const emailEvent = await persistLifecycleEmailEvent({
     bookingId: booking._id,
     templateKey,
@@ -244,7 +256,22 @@ async function sendBookingLifecycleEmail({
     actorId: actorContext?.actorId,
     actorRole: actorContext?.actorRole,
     messageId: sendResult.messageId,
-    manualEditDetails
+    manualEditDetails,
+    deliveryCorrelationKey
+  });
+
+  await applyEmailDeliveryAttempt({
+    correlationKey: deliveryCorrelationKey,
+    domain: 'booking_lifecycle',
+    bookingId: booking._id,
+    templateKey,
+    recipient,
+    sendStatus,
+    lifecycleSource,
+    emailEventId: emailEvent?._id,
+    errorMessage: sendResult.success ? undefined : sendResult.error,
+    actorId: actorContext?.actorId,
+    actorRole: actorContext?.actorRole
   });
 
   return {

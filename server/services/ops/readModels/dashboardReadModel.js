@@ -2,7 +2,6 @@ const Booking = require('../../../models/Booking');
 const Payment = require('../../../models/Payment');
 const Payout = require('../../../models/Payout');
 const ChannelSyncEvent = require('../../../models/ChannelSyncEvent');
-const EmailEvent = require('../../../models/EmailEvent');
 const ManualReviewItem = require('../../../models/ManualReviewItem');
 const StripeEventEvidence = require('../../../models/StripeEventEvidence');
 const { mapBookingToReservationCompatible } = require('../../../mappers/bookingToReservationMapper');
@@ -13,6 +12,12 @@ const {
   shouldEmitRefundFollowUpAlert
 } = require('../payment/reservationPaymentSignals');
 const { aggregateGiftVoucherPulseMetrics } = require('../reporting/giftVoucherPulseMetricsService');
+const {
+  countActiveFailedDeliveryStates,
+  listActiveFailedDeliveryStates,
+  EMAIL_FAILURE_CATEGORIES
+} = require('../../email/emailDeliveryStateService');
+const { isGuestBookingTemplateKey } = require('../../email/emailDeliveryCorrelation');
 
 function dayRange(dateInput = new Date()) {
   const start = normalizeDateToSofiaDayStart(dateInput);
@@ -179,8 +184,8 @@ async function getDashboardReadModel() {
     upcoming7Count,
     cancellationsMTD,
     refundsMTD,
-    failedEmailCountRecent,
-    failedEmailEvents,
+    activeEmailDeliveryFailureCount,
+    activeEmailDeliveryFailures,
     syncEventsRecent,
     syncWarningsRecent,
     manualReviewOpenCount,
@@ -218,17 +223,8 @@ async function getDashboardReadModel() {
     }),
     Booking.countDocuments({ ...bookingBase, status: 'cancelled', updatedAt: { $gte: monthStart, $lt: nextMonthStart } }),
     Payment.countDocuments({ status: 'refunded', updatedAt: { $gte: monthStart, $lt: nextMonthStart } }),
-    EmailEvent.countDocuments({
-      createdAt: { $gte: twoWeeksAgo },
-      $or: [{ type: { $in: ['Bounce', 'SpamComplaint'] } }, { sendStatus: 'failed' }]
-    }),
-    EmailEvent.find({
-      createdAt: { $gte: twoWeeksAgo },
-      $or: [{ type: { $in: ['Bounce', 'SpamComplaint'] } }, { sendStatus: 'failed' }]
-    })
-      .sort({ createdAt: -1 })
-      .limit(5)
-      .lean(),
+    countActiveFailedDeliveryStates(),
+    listActiveFailedDeliveryStates({ limit: 20 }),
     ChannelSyncEvent.find({ runAt: { $gte: oneWeekAgo }, outcome: { $in: ['warning', 'failed'] } }).sort({ runAt: -1 }).limit(5).lean(),
     ChannelSyncEvent.countDocuments({ runAt: { $gte: oneWeekAgo }, outcome: { $in: ['warning', 'failed'] } }),
     ManualReviewItem.countDocuments({ status: 'open' }),
@@ -419,17 +415,38 @@ async function getDashboardReadModel() {
     }
   }
 
-  for (const evt of failedEmailEvents) {
+  const emailAlertKeys = new Set();
+
+  for (const state of activeEmailDeliveryFailures) {
+    if (state.domain === 'booking_lifecycle' && !isGuestBookingTemplateKey(state.templateKey)) {
+      continue;
+    }
+    if (emailAlertKeys.has(state.correlationKey)) continue;
+    emailAlertKeys.add(state.correlationKey);
+
+    const templateLabel = state.templateKey || state.templateKind || 'email';
+    const href =
+      state.domain === 'gift_voucher' && state.giftVoucherId
+        ? `/ops/gift-vouchers/${String(state.giftVoucherId)}`
+        : state.bookingId
+          ? `/ops/reservations/${String(state.bookingId)}`
+          : '/ops/communications';
+
     alerts.push({
-      id: `email-failed-${String(evt._id)}`,
-      type: 'guest_email_failed',
+      id: `email-delivery-${state.correlationKey}`,
+      type: state.domain === 'gift_voucher' ? 'gift_voucher_email_failed' : 'guest_email_failed',
       severity: 'high',
-      title: 'Guest email failed',
-      detail: `${evt.to || 'Unknown recipient'} · ${evt.type || evt.sendStatus || 'email failure'}`,
-      href: evt.bookingId ? `/ops/reservations/${String(evt.bookingId)}` : '/ops/communications',
-      createdAt: evt.createdAt,
-      entityType: 'email',
-      entityId: String(evt._id)
+      title: state.domain === 'gift_voucher' ? 'Gift voucher email failed' : 'Guest email failed',
+      detail: `${state.recipient || 'Unknown recipient'} · ${templateLabel}${state.latestErrorMessage ? ` · ${state.latestErrorMessage}` : ''}`,
+      href,
+      createdAt: state.latestEventAt || state.updatedAt || state.createdAt,
+      entityType: 'email_delivery',
+      entityId: state.correlationKey,
+      metadata: {
+        deliveryCorrelationKey: state.correlationKey,
+        templateKey: state.templateKey || null,
+        templateKind: state.templateKind || null
+      }
     });
   }
 
@@ -468,6 +485,7 @@ async function getDashboardReadModel() {
   for (const item of manualReviewOpenItems) {
     const category = typeof item.category === 'string' ? item.category.trim() : '';
     if (category.startsWith('sync_')) continue;
+    if (EMAIL_FAILURE_CATEGORIES.includes(category)) continue;
     alerts.push({
       id: `manual-review-${String(item._id)}`,
       type: 'manual_review',
@@ -553,7 +571,7 @@ async function getDashboardReadModel() {
         href: '/ops/sync'
       },
       email: {
-        recentFailuresCount: failedEmailCountRecent,
+        recentFailuresCount: activeEmailDeliveryFailureCount,
         href: '/ops/communications'
       },
       payments: {
@@ -586,7 +604,7 @@ async function getDashboardReadModel() {
       cancelledRefundPending: dashboard.alerts.filter((a) => a.type === 'refund_follow_up').length,
       pendingActions: manualReviewOpenCount,
       failedPayments: dashboard.alerts.filter((a) => a.type === 'payment_failed').length,
-      failedEmails: failedEmailCountRecent,
+      failedEmails: activeEmailDeliveryFailureCount,
       upcomingPayouts,
       syncWarnings: syncWarningsRecent
     },

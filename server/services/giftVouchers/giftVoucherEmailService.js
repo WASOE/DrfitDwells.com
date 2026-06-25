@@ -1,7 +1,12 @@
 const GiftVoucher = require('../../models/GiftVoucher');
 const GiftVoucherEvent = require('../../models/GiftVoucherEvent');
 const { appendVoucherEvent } = require('./giftVoucherEventService');
-const { openManualReviewItem } = require('../ops/ingestion/manualReviewService');
+const {
+  openManualReviewItem,
+  openEmailDeliveryManualReview
+} = require('../ops/ingestion/manualReviewService');
+const { giftVoucherCorrelationKey } = require('../email/emailDeliveryCorrelation');
+const { applyEmailDeliveryAttempt } = require('../email/emailDeliveryStateService');
 const emailService = require('../emailService');
 const {
   buildBuyerReceiptTemplate,
@@ -71,8 +76,9 @@ async function ensureLifecycleProgressOrEscalate({ voucher, emailLifecycleKey, t
       voucher,
       title: 'Gift voucher email lifecycle is incomplete',
       details: `${templateKind} has send_attempted without sent/send_failed terminal event`,
+      templateKind,
+      recipientEmail,
       evidence: {
-        giftVoucherId: String(voucher._id),
         templateKind,
         recipientEmail: recipientEmail || null,
         emailLifecycleKey,
@@ -93,19 +99,51 @@ async function recordManualReviewCreatedEvent({ giftVoucherId, actor, note, meta
   });
 }
 
-async function openEmailFailureReview({ voucher, title, details, evidence }) {
-  const item = await openManualReviewItem({
-    category: EMAIL_FAILED_CATEGORY,
-    severity: 'high',
-    entityType: 'GiftVoucher',
-    entityId: voucher._id,
-    title,
-    details,
-    provenance: {
-      source: 'gift_voucher_email'
-    },
-    evidence
-  });
+async function openEmailFailureReview({ voucher, title, details, evidence, templateKind = null, recipientEmail = null }) {
+  let deliveryCorrelationKey = evidence?.deliveryCorrelationKey || null;
+  if (!deliveryCorrelationKey && templateKind && recipientEmail) {
+    deliveryCorrelationKey = giftVoucherCorrelationKey({
+      giftVoucherId: voucher._id,
+      templateKind,
+      recipientEmail
+    });
+  }
+
+  const mergedEvidence = {
+    ...evidence,
+    giftVoucherId: String(voucher._id),
+    ...(deliveryCorrelationKey ? { deliveryCorrelationKey } : {})
+  };
+
+  let item;
+  if (deliveryCorrelationKey) {
+    item = await openEmailDeliveryManualReview({
+      category: EMAIL_FAILED_CATEGORY,
+      severity: 'high',
+      entityType: 'GiftVoucher',
+      entityId: voucher._id,
+      title,
+      details,
+      provenance: {
+        source: 'gift_voucher_email'
+      },
+      evidence: mergedEvidence
+    });
+  } else {
+    item = await openManualReviewItem({
+      category: EMAIL_FAILED_CATEGORY,
+      severity: 'high',
+      entityType: 'GiftVoucher',
+      entityId: voucher._id,
+      title,
+      details,
+      provenance: {
+        source: 'gift_voucher_email'
+      },
+      evidence: mergedEvidence
+    });
+  }
+
   await recordManualReviewCreatedEvent({
     giftVoucherId: voucher._id,
     actor: 'system',
@@ -156,6 +194,12 @@ async function performLifecycleSend({
   }
 
   const template = templateBuilder({ voucher, recipientEmail });
+  const normalizedRecipient = String(recipientEmail || '').trim().toLowerCase();
+  const deliveryCorrelationKey = giftVoucherCorrelationKey({
+    giftVoucherId: voucher._id,
+    templateKind,
+    recipientEmail: normalizedRecipient
+  });
   let sendResult;
   try {
     sendResult = await emailService.sendEmail({
@@ -175,22 +219,21 @@ async function performLifecycleSend({
       metadata: {
         emailLifecycleKey: key,
         templateKind,
-        recipientEmail,
+        recipientEmail: normalizedRecipient,
         error: sendErr.message || 'unknown_send_exception',
         thrown: true
       }
     });
-    await openEmailFailureReview({
-      voucher,
-      title: 'Gift voucher email delivery failed',
-      details: `${templateKind} email threw while sending`,
-      evidence: {
-        giftVoucherId: String(voucher._id),
-        templateKind,
-        recipientEmail,
-        error: sendErr.message || null,
-        thrown: true
-      }
+    await applyEmailDeliveryAttempt({
+      correlationKey: deliveryCorrelationKey,
+      domain: 'gift_voucher',
+      giftVoucherId: voucher._id,
+      templateKind,
+      recipient: normalizedRecipient,
+      sendStatus: 'failed',
+      lifecycleSource: 'automatic',
+      errorMessage: sendErr.message || 'unknown_send_exception',
+      actorRole: actor
     });
     return {
       ok: false,
@@ -209,9 +252,19 @@ async function performLifecycleSend({
       metadata: {
         emailLifecycleKey: key,
         templateKind,
-        recipientEmail,
+        recipientEmail: normalizedRecipient,
         messageId: sendResult.messageId || null
       }
+    });
+    await applyEmailDeliveryAttempt({
+      correlationKey: deliveryCorrelationKey,
+      domain: 'gift_voucher',
+      giftVoucherId: voucher._id,
+      templateKind,
+      recipient: normalizedRecipient,
+      sendStatus: 'success',
+      lifecycleSource: 'automatic',
+      actorRole: actor
     });
     return {
       ok: true,
@@ -228,20 +281,20 @@ async function performLifecycleSend({
     metadata: {
       emailLifecycleKey: key,
       templateKind,
-      recipientEmail,
+      recipientEmail: normalizedRecipient,
       error: sendResult.error || 'unknown_send_failure'
     }
   });
-  await openEmailFailureReview({
-    voucher,
-    title: 'Gift voucher email delivery failed',
-    details: `${templateKind} email could not be delivered`,
-    evidence: {
-      giftVoucherId: String(voucher._id),
-      templateKind,
-      recipientEmail,
-      error: sendResult.error || null
-    }
+  await applyEmailDeliveryAttempt({
+    correlationKey: deliveryCorrelationKey,
+    domain: 'gift_voucher',
+    giftVoucherId: voucher._id,
+    templateKind,
+    recipient: normalizedRecipient,
+    sendStatus: 'failed',
+    lifecycleSource: 'automatic',
+    errorMessage: sendResult.error || 'unknown_send_failure',
+    actorRole: actor
   });
   return {
     ok: false,
@@ -390,6 +443,12 @@ async function resendRecipientGiftVoucherEmail({ giftVoucherId, actor = 'ops', r
     throw err;
   }
 
+  const deliveryCorrelationKey = giftVoucherCorrelationKey({
+    giftVoucherId: voucher._id,
+    templateKind: 'recipient_voucher',
+    recipientEmail
+  });
+
   const template = buildRecipientResendTemplate({ voucher, recipientEmail });
   const sendResult = await emailService.sendEmail({
     to: recipientEmail,
@@ -412,17 +471,16 @@ async function resendRecipientGiftVoucherEmail({ giftVoucherId, actor = 'ops', r
         error: sendResult.error || 'unknown_send_failure'
       }
     });
-    await openEmailFailureReview({
-      voucher,
-      title: 'Gift voucher resend failed',
-      details: 'Recipient voucher resend could not be delivered',
-      evidence: {
-        giftVoucherId: String(voucher._id),
-        resend: true,
-        recipientOverrideUsed: Boolean(recipientOverride),
-        recipientEmail,
-        error: sendResult.error || null
-      }
+    await applyEmailDeliveryAttempt({
+      correlationKey: deliveryCorrelationKey,
+      domain: 'gift_voucher',
+      giftVoucherId: voucher._id,
+      templateKind: 'recipient_voucher',
+      recipient: recipientEmail,
+      sendStatus: 'failed',
+      lifecycleSource: 'manual_resend',
+      errorMessage: sendResult.error || 'unknown_send_failure',
+      actorRole: actor
     });
     const err = new Error('Recipient voucher resend failed');
     err.code = 'EMAIL_SEND_FAILED';
@@ -440,6 +498,16 @@ async function resendRecipientGiftVoucherEmail({ giftVoucherId, actor = 'ops', r
       recipientEmail,
       messageId: sendResult.messageId || null
     }
+  });
+  await applyEmailDeliveryAttempt({
+    correlationKey: deliveryCorrelationKey,
+    domain: 'gift_voucher',
+    giftVoucherId: voucher._id,
+    templateKind: 'recipient_voucher',
+    recipient: recipientEmail,
+    sendStatus: 'success',
+    lifecycleSource: 'manual_resend',
+    actorRole: actor
   });
   return {
     ok: true,

@@ -33,6 +33,7 @@
     "test:server-imports": "node --test scripts/serverImportPathAudit.test.cjs",
     "test:meta-tracking": "node --test scripts/metaTrackingHardening.test.cjs",
     "test:lifecycle-email": "node --test scripts/bookingLifecycleEmail.contract.test.cjs",
+    "test:email-delivery": "node --test scripts/emailDeliveryHardening.test.cjs",
     "test:property-kind": "node --test scripts/propertyKindResolver.test.cjs",
     "test:funnel-events": "node --test scripts/funnelEventDedupe.test.cjs scripts/funnelEventService.test.cjs scripts/funnelEventRoutes.test.cjs scripts/bookingQuoteFunnelHook.test.cjs",
     "test:insights": "node --test scripts/propertyKindJoin.test.cjs scripts/insightsReadModel.test.cjs",

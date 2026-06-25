@@ -22,6 +22,8 @@ const EmailEventSchema = new mongoose.Schema({
   errorMessage: { type: String },
   actorId: { type: String },
   actorRole: { type: String },
+  giftVoucherId: { type: mongoose.Schema.Types.ObjectId, ref: 'GiftVoucher', index: true },
+  deliveryCorrelationKey: { type: String, index: true },
   createdAt:{ type: Date, default: Date.now, index: true }
 });
 

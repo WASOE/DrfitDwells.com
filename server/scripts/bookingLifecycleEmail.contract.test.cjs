@@ -10,9 +10,15 @@ const mongoose = require('mongoose');
 
 const emailService = require('../services/emailService');
 const EmailEvent = require('../models/EmailEvent');
+const emailDeliveryStateService = require('../services/email/emailDeliveryStateService');
 
 const originalSendEmail = emailService.sendEmail.bind(emailService);
 const originalEmailCreate = EmailEvent.create.bind(EmailEvent);
+const originalApplyDeliveryAttempt = emailDeliveryStateService.applyEmailDeliveryAttempt.bind(
+  emailDeliveryStateService
+);
+
+emailDeliveryStateService.applyEmailDeliveryAttempt = async () => ({});
 
 const bookingLifecycleEmailService = require('../services/bookingLifecycleEmailService');
 
@@ -39,6 +45,7 @@ const minimalEntity = {
 afterEach(() => {
   emailService.sendEmail = originalSendEmail;
   EmailEvent.create = originalEmailCreate;
+  emailDeliveryStateService.applyEmailDeliveryAttempt = async () => ({});
 });
 
 describe('resolveSendStatus', () => {
