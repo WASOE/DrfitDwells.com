@@ -136,8 +136,48 @@ async function resolveEmailDeliveryManualReviews({
   };
 }
 
+async function resolveSmtpHealthManualReviews({
+  category,
+  entityId,
+  resolvedBy = 'smtp_health_service',
+  note = 'Auto-resolved: SMTP health check passed.'
+}) {
+  const categoryValue = category != null ? String(category).trim() : '';
+  const entityIdValue = entityId != null ? String(entityId).trim() : '';
+  if (!categoryValue || !entityIdValue) {
+    return { attempted: false, resolvedCount: 0, reason: 'missing_category_or_entity' };
+  }
+
+  const now = new Date();
+  const updateResult = await ManualReviewItem.updateMany(
+    {
+      status: 'open',
+      category: categoryValue,
+      entityType: 'SmtpHealth',
+      entityId: entityIdValue
+    },
+    {
+      $set: {
+        status: 'resolved',
+        resolution: {
+          resolvedAt: now,
+          resolvedBy: resolvedBy || 'smtp_health_service',
+          note: note || 'Auto-resolved: SMTP health check passed.'
+        },
+        updatedAt: now
+      }
+    }
+  );
+
+  return {
+    attempted: true,
+    resolvedCount: Number(updateResult.modifiedCount || 0)
+  };
+}
+
 module.exports = {
   openManualReviewItem,
   openEmailDeliveryManualReview,
-  resolveEmailDeliveryManualReviews
+  resolveEmailDeliveryManualReviews,
+  resolveSmtpHealthManualReviews
 };

@@ -977,5 +977,9 @@ Facebook: ${FACEBOOK_URL}
   }
 }
 
-module.exports = new EmailService();
+const emailServiceInstance = new EmailService();
+emailServiceInstance.buildSmtpTransportConfig = buildSmtpTransportConfig;
+emailServiceInstance.parseBooleanEnv = parseBooleanEnv;
+
+module.exports = emailServiceInstance;
 

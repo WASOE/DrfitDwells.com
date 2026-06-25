@@ -8,6 +8,8 @@ const ManualReviewItem = require('../../../models/ManualReviewItem');
 const StripeEventEvidence = require('../../../models/StripeEventEvidence');
 const CabinChannelSyncState = require('../../../models/CabinChannelSyncState');
 const { getIcalSyncSchedulerState } = require('../ingestion/icalSyncScheduler');
+const { getSmtpHealthSchedulerState } = require('../../email/smtpHealthScheduler');
+const { getSafeSmtpDiagnostics } = require('../../email/smtpHealthService');
 const { getReservationIntegritySignals } = require('../readiness/reservationIntegritySignals');
 
 async function getOpsHealthReadModel() {
@@ -67,6 +69,10 @@ async function getOpsHealthReadModel() {
       }))
     },
     calendarSyncScheduler: getIcalSyncSchedulerState(),
+    smtpHealth: {
+      scheduler: getSmtpHealthSchedulerState(),
+      diagnostics: getSafeSmtpDiagnostics()
+    },
     reservationIntegrity,
     generatedAt: new Date().toISOString()
   };
