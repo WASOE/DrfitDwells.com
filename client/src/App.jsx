@@ -151,8 +151,6 @@ function App() {
               <Route path="/bg/gift-vouchers/success" element={<GiftVoucherSuccess />} />
               <Route path="/gift-vouchers/redeem" element={<GiftVoucherRedeem />} />
               <Route path="/bg/gift-vouchers/redeem" element={<GiftVoucherRedeem />} />
-              <Route path="/stays/:slug" element={<StayDetails />} />
-              <Route path="/bg/stays/:slug" element={<StayDetails />} />
               <Route path="/booking-success/:id" element={<BookingSuccess />} />
               <Route path="/bg/booking-success/:id" element={<BookingSuccess />} />
               <Route path="/my-trip/:bookingId/valley-guide" element={<ValleyGuide />} />
@@ -178,6 +176,8 @@ function App() {
               <Route element={<BookingProviderLayout />}>
                 <Route path="/search" element={<SearchResults />} />
                 <Route path="/bg/search" element={<SearchResults />} />
+                <Route path="/stays/:slug" element={<StayDetails />} />
+                <Route path="/bg/stays/:slug" element={<StayDetails />} />
                 <Route path="/cabin/:id/confirm" element={<ConfirmBooking />} />
                 <Route path="/bg/cabin/:id/confirm" element={<ConfirmBooking />} />
                 <Route path="/cabin/:id" element={<CabinIdRedirect />} />
