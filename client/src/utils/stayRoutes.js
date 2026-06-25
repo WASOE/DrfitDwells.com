@@ -62,10 +62,7 @@ export function resolveListingStayPathBase(cabin) {
   }
 
   const slug = resolveCabinStaySlug(cabin);
-  if (slug) return `/stays/${slug}`;
-
-  const id = cabin?._id || cabin?.id;
-  return id ? `/cabin/${id}` : null;
+  return slug ? `/stays/${slug}` : null;
 }
 
 export function resolveListingStayPath(cabin, language = 'en') {

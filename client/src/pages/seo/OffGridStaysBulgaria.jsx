@@ -29,7 +29,7 @@ export default function OffGridStaysBulgaria() {
   const { t } = useTranslation('seo');
   const lp = useLocalizedPath();
   const { openModal } = useBookingSearch();
-  const { nameToId, primaryCabinId, loading: linksLoading } = useCabinNameToIdMap();
+  const { primaryCabinId, loading: linksLoading } = useCabinNameToIdMap();
   const { slidesByStayId, firstSlideUrl } = usePaidTrafficListingSlides();
   const staysRef = useRef(null);
   const [reviewSnippets, setReviewSnippets] = useState([]);
@@ -46,21 +46,12 @@ export default function OffGridStaysBulgaria() {
   const bookingHrefById = useMemo(() => {
     const map = {};
     PAID_TRAFFIC_STAY_META.forEach((stay) => {
-      if (stay.linkKind === 'route') {
+      if (stay.route) {
         map[stay.id] = lp(stay.route);
-        return;
-      }
-      if (stay.linkKind === 'primary') {
-        map[stay.id] = primaryCabinId ? lp(`/cabin/${primaryCabinId}`) : null;
-        return;
-      }
-      if (stay.linkKind === 'backend' && stay.backendName) {
-        const id = nameToId[stay.backendName.trim().toLowerCase()];
-        map[stay.id] = id ? lp(`/cabin/${id}`) : null;
       }
     });
     return map;
-  }, [lp, nameToId, primaryCabinId]);
+  }, [lp]);
 
   const detailsHrefById = useMemo(() => {
     const map = {};

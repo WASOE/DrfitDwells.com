@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useBookingSearch } from '../../../context/BookingSearchContext';
@@ -11,49 +11,17 @@ const StaysSection = ({ accommodationsRef }) => {
   const { openModal } = useBookingSearch();
   const navigate = useNavigate();
   const lp = useLocalizedPath();
-  const [cabinIdByName, setCabinIdByName] = useState({});
   const { t } = useTranslation('valley');
-
-  useEffect(() => {
-    let active = true;
-
-    const loadCabins = async () => {
-      try {
-        const response = await fetch('/api/cabins');
-        const payload = await response.json();
-        if (!active || !payload?.success) return;
-
-        const map = {};
-        (payload.data?.cabins || []).forEach((cabin) => {
-          if (!cabin?.name || !cabin?._id) return;
-          map[cabin.name.trim().toLowerCase()] = cabin._id;
-        });
-        setCabinIdByName(map);
-      } catch (error) {
-        console.error('Failed to load cabins for stay cards:', error);
-      }
-    };
-
-    loadCabins();
-    return () => {
-      active = false;
-    };
-  }, []);
 
   const cardLinks = useMemo(() => {
     const map = {};
     STAY_CARDS.forEach((card) => {
       if (card.route) {
         map[card.id] = card.route;
-        return;
-      }
-      const lookupName = (card.backendName || card.title || '').trim().toLowerCase();
-      if (lookupName && cabinIdByName[lookupName]) {
-        map[card.id] = `/cabin/${cabinIdByName[lookupName]}`;
       }
     });
     return map;
-  }, [cabinIdByName]);
+  }, []);
 
   const handleCardAction = (card) => {
     const href = cardLinks[card.id];

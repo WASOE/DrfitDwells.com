@@ -16,8 +16,15 @@ import { StayLodgingPriceBlock } from '../components/booking/StayLodgingPriceBlo
 import Seo from '../components/Seo';
 import { daysBetweenDateOnly, parseDateOnlyLocal } from '../utils/dateOnly';
 import './CabinDetails.css';
-import { INSTAGRAM_URL, FACEBOOK_URL } from '../data/gmbLocations';
 import { trackFunnelEvent } from '../tracking/funnel';
+import { buildHreflangAlternates } from '../utils/localizedRoutes';
+import { resolveCabinStaySlug } from '../utils/stayRoutes';
+import {
+  buildStayBreadcrumbJsonLd,
+  buildStayCanonicalPath,
+  buildStayCanonicalUrl,
+  buildStayLodgingJsonLd
+} from '../utils/staySeo';
 
 // Constants
 const SCROLL_DELAY_MS = 100;
@@ -28,7 +35,7 @@ const DEFAULT_EXPERIENCES = [
   { key: 'jeep_transfer', name: 'Jeep transfer', price: 60, currency: 'BGN', unit: 'flat_per_stay', active: true, sortOrder: 2 },
 ];
 
-const CabinDetails = ({ cabinId: cabinIdProp, staySlug: _staySlugProp }) => {
+const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
   // ===== A) Router & Context hooks (always first) =====
   const { id: routeId } = useParams();
   const id = cabinIdProp || routeId;
@@ -201,42 +208,38 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: _staySlugProp }) => {
     return `/uploads/cabins/${u}`;
   }, []);
 
-  // JSON-LD for SEO (must be before early returns)
-  const jsonLd = useMemo(() => {
-    if (!cabin) return '{}';
-    const hasAgg = typeof cabin?.averageRating === 'number' && 
-                   typeof cabin?.reviewsCount === 'number' && 
-                   cabin.reviewsCount > 0;
-    const data = {
-      '@context': 'https://schema.org',
-      '@type': 'LodgingBusiness',
+  // JSON-LD + canonical helpers (must be before early returns)
+  const effectiveStaySlug = useMemo(
+    () => staySlugProp || resolveCabinStaySlug(cabin),
+    [staySlugProp, cabin]
+  );
+
+  const canonicalPath = useMemo(
+    () => buildStayCanonicalPath(effectiveStaySlug),
+    [effectiveStaySlug]
+  );
+
+  const stayJsonLd = useMemo(() => {
+    if (!cabin || !effectiveStaySlug) return [];
+    const lodging = buildStayLodgingJsonLd({
       name: cabin?.name || '',
       description: cabin?.description || '',
-      address: {
-        '@type': 'PostalAddress',
-        addressLocality: cabin?.location || ''
-      },
-      url: typeof window !== 'undefined' ? window.location.href : undefined,
-      priceRange: `€${cabin?.pricePerNight || 0}`,
-      numberOfRooms: 1,
-      sameAs: [INSTAGRAM_URL, FACEBOOK_URL]
-    };
-    if (hasAgg) {
-      data.aggregateRating = {
-        '@type': 'AggregateRating',
-        ratingValue: Number(cabin.averageRating.toFixed(2)),
-        reviewCount: cabin.reviewsCount,
-        bestRating: 5,
-        worstRating: 1
-      };
-    }
-    if (cabin?.images && cabin.images.length > 0) {
-      data.image = cabin.images.slice(0, 5).map(img => 
-        typeof img === 'string' ? img : img.url
-      );
-    }
-    return JSON.stringify(data);
-  }, [cabin]);
+      location: cabin?.location || '',
+      pricePerNight: cabin?.pricePerNight,
+      images: cabin?.images,
+      imageUrl: cabin?.imageUrl,
+      averageRating: cabin?.averageRating,
+      reviewsCount: cabin?.reviewsCount,
+      slug: effectiveStaySlug,
+      language: siteLanguage
+    });
+    const breadcrumbs = buildStayBreadcrumbJsonLd({
+      stayName: cabin?.name || 'Stay',
+      slug: effectiveStaySlug,
+      language: siteLanguage
+    });
+    return [lodging, breadcrumbs].filter(Boolean);
+  }, [cabin, effectiveStaySlug, siteLanguage]);
 
   // SEO meta tags
   const pageTitle = useMemo(() => {
@@ -609,50 +612,6 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: _staySlugProp }) => {
   }, [gallery, lightboxIndex, lightboxMode, getPrimaryTag, imageIdToIndexMap]);
 
   // ===== F) All useEffect hooks (ALL before early returns) =====
-  // SEO: Update document head
-  useEffect(() => {
-    if (!cabin) return;
-    
-    // Update title
-    document.title = pageTitle;
-    
-    // Update or create meta tags
-    const updateMetaTag = (name, content, isProperty = false) => {
-      const attr = isProperty ? 'property' : 'name';
-      let meta = document.querySelector(`meta[${attr}="${name}"]`);
-      if (!meta) {
-        meta = document.createElement('meta');
-        meta.setAttribute(attr, name);
-        document.head.appendChild(meta);
-      }
-      meta.setAttribute('content', content);
-    };
-    
-    updateMetaTag('description', pageDescription);
-    updateMetaTag('og:title', pageTitle, true);
-    updateMetaTag('og:description', pageDescription, true);
-    updateMetaTag('og:type', 'website', true);
-    updateMetaTag('og:url', window.location.href, true);
-    if (pageImage) {
-      updateMetaTag('og:image', pageImage, true);
-    }
-    updateMetaTag('twitter:card', 'summary_large_image');
-    updateMetaTag('twitter:title', pageTitle);
-    updateMetaTag('twitter:description', pageDescription);
-    if (pageImage) {
-      updateMetaTag('twitter:image', pageImage);
-    }
-    
-    // Canonical link
-    let canonical = document.querySelector('link[rel="canonical"]');
-    if (!canonical) {
-      canonical = document.createElement('link');
-      canonical.setAttribute('rel', 'canonical');
-      document.head.appendChild(canonical);
-    }
-    canonical.setAttribute('href', window.location.href);
-  }, [cabin, pageTitle, pageDescription, pageImage]);
-
   // Listen for global "openCraftExperience" band click (bottom sticky band)
   // Duplicate the minimal logic here to avoid referencing callbacks
   useEffect(() => {
@@ -880,7 +839,8 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: _staySlugProp }) => {
   }, [cabin?._id]);
 
   const handleShare = useCallback(async () => {
-    const shareUrl = window.location.href;
+    const shareUrl =
+      buildStayCanonicalUrl(effectiveStaySlug, siteLanguage) || window.location.href.split('?')[0];
     const title = cabin?.name ? `${cabin.name} – Drift & Dwells` : 'Drift & Dwells';
     const text = cabin?.location ? `Stay in ${cabin.location}` : 'Book your stay';
 
@@ -911,7 +871,7 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: _staySlugProp }) => {
         console.warn('Share failed:', err);
       }
     }
-  }, [cabin?.name, cabin?.location]);
+  }, [cabin?.name, cabin?.location, effectiveStaySlug, siteLanguage]);
 
   // ===== H) Early returns (ONLY after ALL hooks are declared) =====
   if (loading) {
@@ -961,13 +921,14 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: _staySlugProp }) => {
   return (
     <div className="min-h-screen bg-white cabin-details-page pb-32 md:pb-24">
       <Seo
-        title={`${cabin.name} | Drift & Dwells`}
+        title={pageTitle}
         description={pageDescription}
-        canonicalPath={`/cabin/${id}`}
+        canonicalPath={canonicalPath}
+        hreflangAlternates={canonicalPath ? buildHreflangAlternates(canonicalPath) : []}
         ogImage={pageImage}
         ogType="product"
+        jsonLd={stayJsonLd}
       />
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd }} />
       
       {/* Save Toast */}
       {saveToast && (

@@ -14,6 +14,12 @@ import { StayLodgingPriceBlock } from '../components/booking/StayLodgingPriceBlo
 import Seo from '../components/Seo';
 import { daysBetweenDateOnly, parseDateOnlyLocal } from '../utils/dateOnly';
 import { trackFunnelEvent } from '../tracking/funnel';
+import { buildHreflangAlternates } from '../utils/localizedRoutes';
+import {
+  buildStayBreadcrumbJsonLd,
+  buildStayCanonicalPath,
+  buildStayLodgingJsonLd
+} from '../utils/staySeo';
 import './CabinDetails.css';
 import '../components/gallery/lightbox.css';
 
@@ -340,6 +346,50 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
     });
   }, [cabinType?._id]);
 
+  const canonicalPath = useMemo(() => buildStayCanonicalPath(staySlug), [staySlug]);
+
+  const pageTitle = useMemo(() => {
+    const name = cabinType?.name || 'A-Frame';
+    return `${name} | Drift & Dwells`;
+  }, [cabinType?.name]);
+
+  const pageDescription = useMemo(() => {
+    return (
+      cabinType?.description?.substring(0, 160) || 'Book an A-frame cabin with Drift & Dwells.'
+    );
+  }, [cabinType?.description]);
+
+  const pageImage = useMemo(() => {
+    if (!cabinType) return '';
+    if (Array.isArray(cabinType.images) && cabinType.images.length > 0) {
+      const first = cabinType.images[0];
+      return typeof first === 'string' ? first : first?.url || '';
+    }
+    return cabinType.imageUrl || '';
+  }, [cabinType]);
+
+  const stayJsonLd = useMemo(() => {
+    if (!cabinType || !staySlug) return [];
+    const lodging = buildStayLodgingJsonLd({
+      name: cabinType?.name || 'A-Frame',
+      description: cabinType?.description || '',
+      location: cabinType?.location || '',
+      pricePerNight: cabinType?.pricePerNight,
+      images: cabinType?.images,
+      imageUrl: cabinType?.imageUrl,
+      averageRating: cabinType?.averageRating,
+      reviewsCount: cabinType?.reviewsCount,
+      slug: staySlug,
+      language: siteLanguage
+    });
+    const breadcrumbs = buildStayBreadcrumbJsonLd({
+      stayName: cabinType?.name || 'A-Frame',
+      slug: staySlug,
+      language: siteLanguage
+    });
+    return [lodging, breadcrumbs].filter(Boolean);
+  }, [cabinType, siteLanguage, staySlug]);
+
   // Early returns
   if (loading) {
     return (
@@ -399,10 +449,13 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
   return (
     <div className="min-h-screen bg-white cabin-details-page">
       <Seo
-        title={`${cabinType?.name || 'A-Frame'} | Drift & Dwells`}
-        description={cabinType?.description?.substring(0, 160) || 'Book an A-frame cabin with Drift & Dwells.'}
-        canonicalPath="/stays/a-frame"
-        ogImage={cabinType?.imageUrl}
+        title={pageTitle}
+        description={pageDescription}
+        canonicalPath={canonicalPath}
+        hreflangAlternates={canonicalPath ? buildHreflangAlternates(canonicalPath) : []}
+        ogImage={pageImage}
+        ogType="product"
+        jsonLd={stayJsonLd}
       />
       {/* Hero + intro — now using the same grid geometry as CabinDetails */}
       <div className="cabin-page-outer cabin-hero-grid mt-8 mb-24">
