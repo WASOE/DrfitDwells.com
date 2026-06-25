@@ -10,7 +10,8 @@ function hasStickyBottomBar(pathname) {
   if (pathname === '/') return true;           // Home: BookingDrawer (mobile)
   if (pathname === '/valley') return true;     // Valley: BookingDrawer (mobile)
   if (pathname === '/off-grid-stays-bulgaria') return true; // Paid landing: sticky mobile CTA
-  if (/^\/cabin\/[^/]+$/.test(pathname)) return true;  // CabinDetails: StickyBookingBar
+  if (/^\/stays\/[^/]+$/.test(pathname)) return true;  // StayDetails: StickyBookingBar
+  if (/^\/cabin\/[^/]+$/.test(pathname)) return true;  // Legacy cabin redirect target
   if (/^\/craft\/step-[1-4]$/.test(pathname)) return true; // Craft steps: StickyBookingBar
   return false;
 }
@@ -18,6 +19,7 @@ function hasStickyBottomBar(pathname) {
 /** Desktop: only CabinDetails have a visible sticky bar; Home/Valley use BookingDrawer md:hidden. Craft steps have no desktop sticky bar. */
 function hasStickyBottomBarOnDesktop(pathname) {
   pathname = stripLocaleFromPath(pathname);
+  if (/^\/stays\/[^/]+$/.test(pathname)) return true;
   if (/^\/cabin\/[^/]+$/.test(pathname)) return true;
   return false;
 }
@@ -42,7 +44,7 @@ const AnnouncementBar = () => {
   const location = useLocation();
   const basePath = stripLocaleFromPath(location.pathname);
   const isBuildPage = basePath === '/build';
-  const isCabinDetails = /^\/cabin\/[^/]+$/.test(basePath);
+  const isCabinDetails = /^\/stays\/[^/]+$/.test(basePath) || /^\/cabin\/[^/]+$/.test(basePath);
   const isConfirmPage = /^\/cabin\/[^/]+\/confirm$/.test(basePath);
   const isGuidePage = basePath.startsWith('/guides/');
   const isMyTripPage = basePath.startsWith('/my-trip/');

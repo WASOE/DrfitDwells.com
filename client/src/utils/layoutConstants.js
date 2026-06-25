@@ -21,6 +21,7 @@ export const FLOATING_BOTTOM_OFFSET = BOTTOM_BAR_HEIGHT + FLOATING_GAP;
 /** Routes that show a fixed bottom bar (StickyBookingBar or BookingDrawer) */
 const ROUTES_WITH_BOTTOM_BAR = [
   // Cabin details: sticky bar only on mobile; desktop uses card + bands
+  { pattern: /^\/stays\/[^/]+$/, desktop: false, mobile: true },
   { pattern: /^\/cabin\/[^/]+$/, desktop: false, mobile: true },
   // Craft steps: sticky bar on both
   { pattern: /^\/craft\/step-[1-4]$/, desktop: true, mobile: true },

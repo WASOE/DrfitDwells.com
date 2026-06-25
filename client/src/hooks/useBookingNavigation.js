@@ -68,7 +68,8 @@ export function useBookingNavigation({
       // ignore storage errors
     }
 
-    navigate?.(`${targetConfirmPath}?${params.toString()}`, {
+    const qs = params.toString();
+    navigate?.(qs ? `${targetConfirmPath}?${qs}` : targetConfirmPath, {
       state: {
         cabinId: entityId,
         bookingEntityId: entityId,

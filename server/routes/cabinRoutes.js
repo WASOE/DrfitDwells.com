@@ -1,10 +1,48 @@
 const express = require('express');
 const Cabin = require('../models/Cabin');
 const { validateId } = require('../middleware/validateId');
-const { guestFacingCabinMatch, isFixtureCabinName } = require('../utils/fixtureExclusion');
+const { guestFacingCabinMatch } = require('../utils/fixtureExclusion');
 const { localizeCabinContent } = require('../utils/cabinLocalization');
+const { normalizeSlug, resolveCabinSlugFromDoc } = require('../utils/staySlug');
 
 const router = express.Router();
+
+router.get('/by-slug/:slug', async (req, res) => {
+  try {
+    const slug = normalizeSlug(req.params.slug);
+    if (!slug) {
+      return res.status(400).json({ success: false, message: 'Cabin slug is required' });
+    }
+
+    let cabin = await Cabin.findOne({ slug, isActive: true });
+    if (!cabin) {
+      const candidates = await Cabin.find({ isActive: true });
+      cabin = candidates.find((doc) => resolveCabinSlugFromDoc(doc) === slug) || null;
+    }
+
+    if (!cabin) {
+      return res.status(404).json({ success: false, message: 'Cabin not found' });
+    }
+
+    const localized = localizeCabinContent(cabin, req.query.locale);
+    const resolvedSlug = resolveCabinSlugFromDoc(cabin);
+    if (resolvedSlug && !localized.slug) {
+      localized.slug = resolvedSlug;
+    }
+
+    return res.json({
+      success: true,
+      data: { cabin: localized }
+    });
+  } catch (error) {
+    console.error('Get cabin by slug error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error retrieving cabin details',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+});
 
 router.get('/:id', validateId('id'), async (req, res) => {
   try {
@@ -17,9 +55,15 @@ router.get('/:id', validateId('id'), async (req, res) => {
       });
     }
 
+    const localized = localizeCabinContent(cabin, req.query.locale);
+    const resolvedSlug = resolveCabinSlugFromDoc(cabin);
+    if (resolvedSlug && !localized.slug) {
+      localized.slug = resolvedSlug;
+    }
+
     res.json({
       success: true,
-      data: { cabin: localizeCabinContent(cabin, req.query.locale) }
+      data: { cabin: localized }
     });
 
   } catch (error) {
@@ -38,7 +82,16 @@ router.get('/', async (req, res) => {
 
     res.json({
       success: true,
-      data: { cabins: cabins.map((cabin) => localizeCabinContent(cabin, req.query.locale)) }
+      data: {
+        cabins: cabins.map((cabin) => {
+          const localized = localizeCabinContent(cabin, req.query.locale);
+          const resolvedSlug = resolveCabinSlugFromDoc(cabin);
+          if (resolvedSlug && !localized.slug) {
+            localized.slug = resolvedSlug;
+          }
+          return localized;
+        })
+      }
     });
 
   } catch (error) {

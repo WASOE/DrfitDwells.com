@@ -5,7 +5,8 @@
 export const PAID_TRAFFIC_STAY_META = [
   {
     id: 'the-cabin',
-    linkKind: 'primary',
+    linkKind: 'route',
+    route: '/stays/the-cabin',
     detailsPath: '/cabin',
     image: '/uploads/Content%20website/drift-dwells-bulgaria-bucephalus-suite.avif',
     imagePath: '/uploads/Content website/drift-dwells-bulgaria-bucephalus-suite.avif',
@@ -22,20 +23,18 @@ export const PAID_TRAFFIC_STAY_META = [
   },
   {
     id: 'valley-stone-house',
-    linkKind: 'backend',
-    backendName: 'Stone House',
-    detailsPath: '/valley',
-    detailsHash: 'accommodations',
+    linkKind: 'route',
+    route: '/stays/stone-house',
+    detailsPath: '/stays/stone-house',
     image: '/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.24%20AM.jpeg',
     imagePath: '/uploads/The Valley/WhatsApp Image 2025-10-17 at 10.20.24 AM.jpeg',
     showDetailsLink: true
   },
   {
     id: 'valley-lux-cabin',
-    linkKind: 'backend',
-    backendName: 'Lux Cabin',
-    detailsPath: '/valley',
-    detailsHash: 'accommodations',
+    linkKind: 'route',
+    route: '/stays/lux-cabin',
+    detailsPath: '/stays/lux-cabin',
     image: '/uploads/The%20Valley/Lux-cabin-exterior-watermark-remover-20260113071503.jpg',
     imagePath: '/uploads/The Valley/Lux-cabin-exterior-watermark-remover-20260113071503.jpg',
     showDetailsLink: true

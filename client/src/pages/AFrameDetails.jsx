@@ -26,7 +26,8 @@ const DEFAULT_EXPERIENCES = [
 
 const MULTI_UNIT_SLUG = 'a-frame';
 
-const AFrameDetails = () => {
+const AFrameDetails = ({ staySlug: staySlugProp }) => {
+  const staySlug = staySlugProp || MULTI_UNIT_SLUG;
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { t } = useTranslation('booking');
@@ -69,8 +70,8 @@ const AFrameDetails = () => {
   const { goToConfirmOrOpenDates } = useBookingNavigation({
     bookingEntityId: cabinType?._id,
     bookingEntityType: 'cabinType',
-    bookingEntitySlug: MULTI_UNIT_SLUG,
-    confirmPath: '/stays/a-frame/confirm',
+    bookingEntitySlug: staySlug,
+    confirmPath: `/stays/${staySlug}/confirm`,
     searchCriteria,
     selectedExpKeys,
     openDateModal,
@@ -243,7 +244,7 @@ const AFrameDetails = () => {
 
         // Load cabin type (localized listing content for the BG site)
         const typeResponse = await cabinTypeAPI.getBySlug(
-          MULTI_UNIT_SLUG,
+          staySlug,
           siteLanguage === 'bg' ? { locale: 'bg' } : undefined
         );
         if (cancelled) return;
@@ -289,7 +290,7 @@ const AFrameDetails = () => {
             };
             if (searchCriteria.promoCode) availParams.promoCode = searchCriteria.promoCode;
             if (siteLanguage === 'bg') availParams.locale = 'bg';
-            const availResponse = await availabilityAPI.checkCabinType(MULTI_UNIT_SLUG, availParams);
+            const availResponse = await availabilityAPI.checkCabinType(staySlug, availParams);
             
             if (!cancelled && availResponse.data.success) {
               setAvailability(availResponse.data.data);
@@ -324,6 +325,7 @@ const AFrameDetails = () => {
     searchCriteria.children,
     searchCriteria.promoCode,
     siteLanguage,
+    staySlug,
     t,
   ]);
 

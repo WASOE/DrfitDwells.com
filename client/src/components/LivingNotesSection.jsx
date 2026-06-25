@@ -7,6 +7,7 @@ import { getPrimaryCabin } from '../services/cabinContent';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { deriveDisplayName } from '../utils/nameUtils';
 import { localizePath } from '../utils/localizedRoutes';
+import { STAY_SLUG, stayPathForSlug } from '../utils/stayRoutes';
 
 function Stars({ value }) {
   const full = Math.round(value);
@@ -139,7 +140,7 @@ const LivingNotesSection = () => {
             className="text-center mt-8 md:mt-10"
           >
             <Link
-              to={cabinId ? localizePath(`/cabin/${cabinId}`, language) : localizePath('/search', language)}
+              to={stayPathForSlug(STAY_SLUG.THE_CABIN, language) || localizePath('/search', language)}
               className="inline-flex items-center gap-2 text-[#F1ECE2] font-medium text-sm md:text-base border-b border-[#F1ECE2]/50 hover:border-[#F1ECE2] transition-colors pb-1"
             >
               {t('livingNotes.more', 'See all reviews & book')}

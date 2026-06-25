@@ -276,6 +276,7 @@ app.use('/api/creator-portal', requireDb, creatorPortalRoutes);
 app.use('/api/bookings', requireDb, bookingRoutes);
 app.use('/api/gift-vouchers', requireDb, giftVoucherRoutes);
 app.use('/api/cabins', requireDb, cabinRoutes);
+app.use('/api/stays', requireDb, require('./routes/stayRoutes'));
 app.use('/api/cabin-types', requireDb, cabinTypeRoutes);
 app.use('/api/units', requireDb, unitRoutes);
 app.use('/api', requireDb, reviewRoutes);

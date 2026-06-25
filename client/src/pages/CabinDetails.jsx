@@ -28,9 +28,10 @@ const DEFAULT_EXPERIENCES = [
   { key: 'jeep_transfer', name: 'Jeep transfer', price: 60, currency: 'BGN', unit: 'flat_per_stay', active: true, sortOrder: 2 },
 ];
 
-const CabinDetails = () => {
+const CabinDetails = ({ cabinId: cabinIdProp, staySlug: _staySlugProp }) => {
   // ===== A) Router & Context hooks (always first) =====
-  const { id } = useParams();
+  const { id: routeId } = useParams();
+  const id = cabinIdProp || routeId;
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { setBasicInfo } = useBookingContext();

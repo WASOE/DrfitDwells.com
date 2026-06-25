@@ -62,7 +62,12 @@ export const availabilityAPI = {
 
 export const cabinAPI = {
   getById: (id, params) => api.get(`/cabins/${id}`, { params }),
+  getBySlug: (slug, params) => api.get(`/cabins/by-slug/${slug}`, { params }),
   getAll: (params) => api.get('/cabins', { params })
+};
+
+export const stayAPI = {
+  resolve: (slug) => api.get(`/stays/${slug}`)
 };
 
 export const cabinTypeAPI = {

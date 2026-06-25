@@ -3,6 +3,10 @@ import '../i18n/ns/booking';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { localizePath } from '../utils/localizedRoutes';
+import {
+  appendQueryString,
+  resolveListingStayPath
+} from '../utils/stayRoutes';
 import { useSiteLanguage } from '../hooks/useSiteLanguage';
 import { availabilityAPI, unitAPI } from '../services/api';
 import Seo from '../components/Seo';
@@ -564,16 +568,12 @@ const SearchResults = () => {
   };
 
   const goToProperty = (cabin) => {
-    const isMulti = cabin?.inventoryMode === 'multi' || cabin?.inventoryType === 'multi';
-    const typeSlug = cabin?.slug || cabin?.cabinTypeSlug;
     const params = new URLSearchParams(stayQueryString(currentSearchParams));
     if (returnTo) params.set('returnTo', returnTo);
     const q = params.toString();
-    if (isMulti && typeSlug) {
-      navigate(`${localizePath(`/stays/${typeSlug}`, routeLanguage)}?${q}`);
-      return;
-    }
-    navigate(`${localizePath(`/cabin/${cabin._id}`, routeLanguage)}?${q}`);
+    const path = resolveListingStayPath(cabin, routeLanguage);
+    if (!path) return;
+    navigate(appendQueryString(path, q));
   };
 
   if (loading) {
@@ -797,8 +797,6 @@ const SearchResults = () => {
                         <button
                           type="button"
                           onClick={() => {
-                            const isMulti = cabin?.inventoryMode === 'multi' || cabin?.inventoryType === 'multi';
-                            const typeSlug = cabin?.slug || cabin?.cabinTypeSlug;
                             const searchParams = stayQueryString(currentSearchParams);
 
                             if (returnTo) {
@@ -813,12 +811,10 @@ const SearchResults = () => {
                               return;
                             }
 
-                            if (isMulti && typeSlug) {
-                              navigate(`${localizePath(`/stays/${typeSlug}`, routeLanguage)}?${searchParams}`);
-                              return;
+                            const path = resolveListingStayPath(cabin, routeLanguage);
+                            if (path) {
+                              navigate(appendQueryString(path, searchParams));
                             }
-
-                            navigate(`${localizePath(`/cabin/${cabin._id}`, routeLanguage)}?${searchParams}`);
                           }}
                           className="w-full bg-stone-900 text-[#F1ECE2] py-3 px-2 text-center text-sm font-semibold uppercase tracking-[0.15em] hover:bg-black transition-colors leading-snug"
                         >
@@ -830,7 +826,10 @@ const SearchResults = () => {
                             onClick={() => {
                               const params = new URLSearchParams(stayQueryString(currentSearchParams));
                               params.set('returnTo', returnTo);
-                              navigate(`${localizePath(`/cabin/${cabin._id}`, routeLanguage)}?${params.toString()}`);
+                              const path = resolveListingStayPath(cabin, routeLanguage);
+                              if (path) {
+                                navigate(appendQueryString(path, params.toString()));
+                              }
                             }}
                             className="w-full btn-underline text-center block py-2 mt-2"
                           >

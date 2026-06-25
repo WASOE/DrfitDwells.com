@@ -16,6 +16,8 @@ const Home = lazy(() => import('./pages/Home'))
 const SearchResults = lazy(() => import('./pages/SearchResults'))
 const CabinDetails = lazy(() => import('./pages/CabinDetails'))
 const AFrameDetails = lazy(() => import('./pages/AFrameDetails'))
+const StayDetails = lazy(() => import('./pages/StayDetails'))
+const CabinIdRedirect = lazy(() => import('./pages/CabinIdRedirect'))
 const BookingSuccess = lazy(() => import('./pages/BookingSuccess'))
 const ValleyGuide = lazy(() => import('./pages/ValleyGuide'))
 const ValleyPublicGuide = lazy(() => import('./pages/guides/ValleyPublicGuide'))
@@ -139,8 +141,8 @@ function App() {
               <Route path="/cancellation-policy" element={<CancellationPolicy />} />
               <Route path="/career" element={<Career />} />
               <Route path="/press" element={<Press />} />
-              <Route path="/stays/a-frame/confirm" element={<ConfirmBooking />} />
-              <Route path="/bg/stays/a-frame/confirm" element={<ConfirmBooking />} />
+              <Route path="/stays/:slug/confirm" element={<ConfirmBooking />} />
+              <Route path="/bg/stays/:slug/confirm" element={<ConfirmBooking />} />
               <Route path="/booking-refund" element={<BookingRefundResolution />} />
               <Route path="/bg/booking-refund" element={<BookingRefundResolution />} />
               <Route path="/gift-vouchers" element={<GiftVouchers />} />
@@ -149,8 +151,8 @@ function App() {
               <Route path="/bg/gift-vouchers/success" element={<GiftVoucherSuccess />} />
               <Route path="/gift-vouchers/redeem" element={<GiftVoucherRedeem />} />
               <Route path="/bg/gift-vouchers/redeem" element={<GiftVoucherRedeem />} />
-              <Route path="/stays/a-frame" element={<AFrameDetails />} />
-              <Route path="/bg/stays/a-frame" element={<AFrameDetails />} />
+              <Route path="/stays/:slug" element={<StayDetails />} />
+              <Route path="/bg/stays/:slug" element={<StayDetails />} />
               <Route path="/booking-success/:id" element={<BookingSuccess />} />
               <Route path="/bg/booking-success/:id" element={<BookingSuccess />} />
               <Route path="/my-trip/:bookingId/valley-guide" element={<ValleyGuide />} />
@@ -178,8 +180,8 @@ function App() {
                 <Route path="/bg/search" element={<SearchResults />} />
                 <Route path="/cabin/:id/confirm" element={<ConfirmBooking />} />
                 <Route path="/bg/cabin/:id/confirm" element={<ConfirmBooking />} />
-                <Route path="/cabin/:id" element={<CabinDetails />} />
-                <Route path="/bg/cabin/:id" element={<CabinDetails />} />
+                <Route path="/cabin/:id" element={<CabinIdRedirect />} />
+                <Route path="/bg/cabin/:id" element={<CabinIdRedirect />} />
                 <Route path="/craft/step-1" element={<Step1TripType />} />
                 <Route path="/craft/step-2" element={<Step2ArrivalMethod />} />
                 <Route path="/craft/step-3" element={<Step3GuestDetails />} />

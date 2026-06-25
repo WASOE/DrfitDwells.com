@@ -9,6 +9,15 @@ const cabinSchema = new mongoose.Schema({
     trim: true,
     maxlength: [100, 'Cabin name cannot exceed 100 characters']
   },
+  /** Public URL slug for /stays/:slug (single-unit listings). */
+  slug: {
+    type: String,
+    trim: true,
+    lowercase: true,
+    sparse: true,
+    unique: true,
+    match: [/^[a-z0-9-]+$/, 'Slug must contain only lowercase letters, numbers, and hyphens']
+  },
   description: {
     type: String,
     required: [true, 'Cabin description is required'],
