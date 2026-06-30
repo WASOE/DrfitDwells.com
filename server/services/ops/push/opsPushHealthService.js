@@ -24,16 +24,25 @@ function toIsoString(value) {
 }
 
 async function countSubscriptions() {
-  const [active, invalidated, total] = await Promise.all([
+  const [active, invalidated, total, lastSuccessRows] = await Promise.all([
     OpsPushSubscription.countDocuments({ invalidatedAt: null }),
     OpsPushSubscription.countDocuments({ invalidatedAt: { $ne: null } }),
-    OpsPushSubscription.countDocuments({})
+    OpsPushSubscription.countDocuments({}),
+    OpsPushSubscription.aggregate([
+      { $match: { lastSuccessAt: { $ne: null } } },
+      { $group: { _id: null, lastSuccessAtMax: { $max: '$lastSuccessAt' } } }
+    ])
   ]);
+
+  const lastSuccessAtMax = lastSuccessRows[0]?.lastSuccessAtMax
+    ? toIsoString(lastSuccessRows[0].lastSuccessAtMax)
+    : null;
 
   return {
     active,
     invalidated,
-    total
+    total,
+    lastSuccessAtMax
   };
 }
 

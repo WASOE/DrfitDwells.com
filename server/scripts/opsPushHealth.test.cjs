@@ -117,7 +117,8 @@ test('admin receives OPS push health payload without secrets', async () => {
   await OpsPushSubscription.create({
     opsUserId: new mongoose.Types.ObjectId(admin.id),
     endpoint: 'https://push.example.test/active',
-    keys: { p256dh: 'a', auth: 'b' }
+    keys: { p256dh: 'a', auth: 'b' },
+    lastSuccessAt: new Date('2026-06-16T08:00:00.000Z')
   });
   await OpsPushSubscription.create({
     opsUserId: new mongoose.Types.ObjectId(admin.id),
@@ -167,6 +168,7 @@ test('admin receives OPS push health payload without secrets', async () => {
   assert.equal(data.subscriptions.active, 1);
   assert.equal(data.subscriptions.invalidated, 1);
   assert.equal(data.subscriptions.total, 2);
+  assert.equal(data.subscriptions.lastSuccessAtMax, '2026-06-16T08:00:00.000Z');
   assert.equal(data.scheduledJobs.scheduled, 1);
   assert.equal(data.scheduledJobs.failed, 1);
   assert.equal(data.scheduledJobs.canceled, 1);

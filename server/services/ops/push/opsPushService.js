@@ -7,8 +7,32 @@ const OpsNotification = require('../../../models/OpsNotification');
 const { listAssignedCleanersForPropertyKind } = require('../../messaging/cleanerRecipientResolver');
 const { isVapidConfigured, getVapidConfig } = require('./opsPushVapidConfig');
 
+const OPS_PUSH_DELIVERY_OPTIONS = Object.freeze({
+  TTL: 86400,
+  urgency: 'high'
+});
+
 let webPushModule = null;
 let webPushConfigured = false;
+let logSendAttemptImpl = logSendAttemptDefault;
+
+function logSendAttemptDefault(fields) {
+  console.log(
+    JSON.stringify({
+      source: 'ops-push',
+      phase: 'send_attempt',
+      ...fields
+    })
+  );
+}
+
+function __setLogSendAttemptForTesting(fn) {
+  logSendAttemptImpl = typeof fn === 'function' ? fn : logSendAttemptDefault;
+}
+
+function __resetLogSendAttemptForTesting() {
+  logSendAttemptImpl = logSendAttemptDefault;
+}
 
 function getWebPushModule() {
   if (!webPushModule) {
@@ -137,7 +161,7 @@ async function pushToSubscription({ subscription, title, body, url, tag }) {
     tag: tag || undefined
   });
 
-  await webpush.sendNotification(pushSubscription, payload);
+  await webpush.sendNotification(pushSubscription, payload, OPS_PUSH_DELIVERY_OPTIONS);
   await OpsPushSubscription.updateOne(
     { _id: subscription._id },
     { $set: { lastSuccessAt: new Date() } }
@@ -145,9 +169,47 @@ async function pushToSubscription({ subscription, title, body, url, tag }) {
   return { ok: true, subscriptionId: String(subscription._id) };
 }
 
-async function pushToSubscriptionSafe({ subscription, title, body, url, tag }) {
+function logPushSendAttempt({
+  outcome,
+  sourceEvent,
+  subscriptionId,
+  opsUserId,
+  statusCode,
+  dedupeKey,
+  skipReason
+}) {
+  logSendAttemptImpl({
+    outcome,
+    sourceEvent: sourceEvent || null,
+    subscriptionId: subscriptionId || null,
+    opsUserId: opsUserId ? String(opsUserId) : null,
+    statusCode: statusCode ?? null,
+    dedupeKey: dedupeKey || null,
+    ...(skipReason ? { skipReason } : {})
+  });
+}
+
+async function pushToSubscriptionSafe({
+  subscription,
+  title,
+  body,
+  url,
+  tag,
+  sourceEvent,
+  dedupeKey,
+  opsUserId
+}) {
+  const subscriptionId = String(subscription._id);
   try {
-    return await pushToSubscription({ subscription, title, body, url, tag });
+    const result = await pushToSubscription({ subscription, title, body, url, tag });
+    logPushSendAttempt({
+      outcome: 'accepted',
+      sourceEvent,
+      subscriptionId,
+      opsUserId,
+      dedupeKey
+    });
+    return result;
   } catch (err) {
     const statusCode = err?.statusCode || err?.status;
     if (statusCode === 410) {
@@ -155,17 +217,33 @@ async function pushToSubscriptionSafe({ subscription, title, body, url, tag }) {
         { _id: subscription._id },
         { $set: { invalidatedAt: new Date() } }
       );
+      logPushSendAttempt({
+        outcome: 'invalidated',
+        sourceEvent,
+        subscriptionId,
+        opsUserId,
+        statusCode: 410,
+        dedupeKey
+      });
       return {
         ok: false,
-        subscriptionId: String(subscription._id),
+        subscriptionId,
         statusCode: 410,
         invalidated: true,
         error: err?.message || 'subscription_gone'
       };
     }
+    logPushSendAttempt({
+      outcome: 'failed',
+      sourceEvent,
+      subscriptionId,
+      opsUserId,
+      statusCode: statusCode || null,
+      dedupeKey
+    });
     return {
       ok: false,
-      subscriptionId: String(subscription._id),
+      subscriptionId,
       statusCode: statusCode || null,
       invalidated: false,
       error: err?.message || String(err)
@@ -272,6 +350,13 @@ async function sendOpsPush(params = {}) {
 
     if (!notification) {
       summary.notificationsDeduped += 1;
+      logPushSendAttempt({
+        outcome: 'skipped',
+        sourceEvent: source,
+        opsUserId,
+        dedupeKey,
+        skipReason: 'deduped'
+      });
       summary.results.push({
         opsUserId: String(opsUserId),
         notificationCreated: false,
@@ -301,7 +386,10 @@ async function sendOpsPush(params = {}) {
         title,
         body,
         url,
-        tag
+        tag,
+        sourceEvent: source,
+        dedupeKey,
+        opsUserId
       });
       if (attempt.ok) {
         summary.pushAccepted += 1;
@@ -347,7 +435,10 @@ module.exports = {
   sendOpsPush,
   sendOpsPushSafely,
   resolveTargetUserIds,
+  OPS_PUSH_DELIVERY_OPTIONS,
   __resetWebPushForTesting,
   __setWebPushModuleForTesting,
+  __setLogSendAttemptForTesting,
+  __resetLogSendAttemptForTesting,
   __ensureWebPushConfiguredForTesting: ensureWebPushConfigured
 };

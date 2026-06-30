@@ -20,8 +20,11 @@ const {
   sendOpsPush,
   sendOpsPushSafely,
   resolveTargetUserIds,
+  OPS_PUSH_DELIVERY_OPTIONS,
   __resetWebPushForTesting,
-  __setWebPushModuleForTesting
+  __setWebPushModuleForTesting,
+  __setLogSendAttemptForTesting,
+  __resetLogSendAttemptForTesting
 } = require('../services/ops/push/opsPushService');
 const { isVapidConfigured } = require('../services/ops/push/opsPushVapidConfig');
 
@@ -97,6 +100,7 @@ test.after(async () => {
 
 test.beforeEach(async () => {
   __resetWebPushForTesting();
+  __resetLogSendAttemptForTesting();
   delete process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
   delete process.env.WEB_PUSH_VAPID_PRIVATE_KEY;
   delete process.env.WEB_PUSH_VAPID_SUBJECT;
@@ -145,8 +149,8 @@ test('VAPID set -> pushes once per active subscription (mock web-push)', async (
   const calls = [];
   __setWebPushModuleForTesting({
     setVapidDetails() {},
-    sendNotification(endpoint, payload) {
-      calls.push({ endpoint, payload });
+    sendNotification(endpoint, payload, options) {
+      calls.push({ endpoint, payload, options });
       return Promise.resolve();
     }
   });
@@ -166,7 +170,56 @@ test('VAPID set -> pushes once per active subscription (mock web-push)', async (
   assert.equal(result.pushAttempts, 2);
   assert.equal(result.pushAccepted, 2);
   assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0].options, OPS_PUSH_DELIVERY_OPTIONS);
+  assert.deepEqual(calls[1].options, OPS_PUSH_DELIVERY_OPTIONS);
+  assert.equal(calls[0].options.urgency, 'high');
+  assert.equal(calls[0].options.TTL, 86400);
   assert.equal(await OpsNotification.countDocuments({ opsUserId: admin._id }), 1);
+});
+
+test('sendOpsPush logs structured send_attempt for accepted pushes', async () => {
+  process.env.WEB_PUSH_VAPID_PUBLIC_KEY = vapidKeys.publicKey;
+  process.env.WEB_PUSH_VAPID_PRIVATE_KEY = vapidKeys.privateKey;
+  process.env.WEB_PUSH_VAPID_SUBJECT = 'mailto:ops@test.local';
+
+  const admin = await OpsUser.create({
+    email: 'admin-log@test.local',
+    name: 'Admin Log',
+    passwordHash: 'hash',
+    role: 'admin',
+    isActive: true
+  });
+
+  const sub = await OpsPushSubscription.create({
+    opsUserId: admin._id,
+    ...SUBSCRIPTION_A
+  });
+
+  const logCalls = [];
+  __setLogSendAttemptForTesting((fields) => logCalls.push(fields));
+  __setWebPushModuleForTesting({
+    setVapidDetails() {},
+    sendNotification() {
+      return Promise.resolve();
+    }
+  });
+
+  await sendOpsPush({
+    opsUserIds: [admin._id],
+    title: 'Log test',
+    body: 'Body',
+    url: '/ops',
+    dedupeKey: 'log:test:1',
+    source: 'ops_push_test'
+  });
+
+  assert.equal(logCalls.length, 1);
+  assert.equal(logCalls[0].outcome, 'accepted');
+  assert.equal(logCalls[0].sourceEvent, 'ops_push_test');
+  assert.equal(logCalls[0].subscriptionId, String(sub._id));
+  assert.equal(logCalls[0].opsUserId, String(admin._id));
+  assert.equal(logCalls[0].dedupeKey, 'log:test:1');
+  assert.equal(logCalls[0].endpoint, undefined);
 });
 
 test('410 Gone invalidates subscription and excludes it on next send', async () => {

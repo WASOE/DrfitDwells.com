@@ -195,6 +195,8 @@ If permission denied: iOS Settings → Notifications → Drift & Dwells → enab
 
 ### Known limitations
 
+- **Android/Chrome/PWA delivery timing:** Web Push can still be delayed by Doze, battery saver, and OS notification settings — especially when the device is idle or the app is backgrounded. The OPS inbox `createdAt` timestamp is the **server-side send time** and is the source of truth for scheduler timing. `urgency: high` improves delivery priority but does **not** guarantee exact wall-clock system notification display.
+- **Staff devices:** Install OPS as a PWA (`/ops`) and disable battery optimization for Drift & Dwells on Android if timely alerts are important.
 - **Cleaner reservation deep-links:** notifications linking to `/ops/reservations/:id` may redirect cleaners to `/ops/cleaning` due to existing frontend module guards. Push and inbox still deliver; destination access is unchanged from pre-PUSH behavior.
 - **Legacy env-admin login:** no bell/push — requires OpsUser record with valid ObjectId.
 
