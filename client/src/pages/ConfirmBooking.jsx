@@ -133,6 +133,72 @@ export function shouldBlockCardPaymentPrecheck(
   return serverQuote.totalPrice < 0.5;
 }
 
+/**
+ * Normalized pricing outcome from POST /bookings/quote (used for dedupe + display helpers).
+ */
+export function normalizeBookingQuoteOutcome(quote) {
+  if (!quote || typeof quote !== 'object') return null;
+
+  const totalPrice = Number(quote.totalPrice);
+  const subtotalPrice = Number(quote.subtotalPrice);
+  const discountAmount = Number(quote.discountAmount ?? 0);
+  const voucherAppliedCents = Number(quote.voucherAppliedCents ?? 0);
+  const remainingDueCents =
+    quote.remainingDueCents != null && Number.isFinite(Number(quote.remainingDueCents))
+      ? Number(quote.remainingDueCents)
+      : Math.round((Number.isFinite(totalPrice) ? totalPrice : 0) * 100);
+
+  return {
+    subtotalPrice: Number.isFinite(subtotalPrice) ? subtotalPrice : null,
+    discountAmount: Number.isFinite(discountAmount) ? discountAmount : 0,
+    totalPrice: Number.isFinite(totalPrice) ? totalPrice : null,
+    promoApplied: Boolean(quote.promo?.applied),
+    promoInvalidReason: quote.promo?.invalidReason || null,
+    voucherAppliedCents: Number.isFinite(voucherAppliedCents) ? voucherAppliedCents : 0,
+    remainingDueCents,
+    fullVoucherCoverage: Boolean(quote.fullVoucherCoverage),
+    voucherMessage: quote.voucherMessage || null
+  };
+}
+
+export function isSameBookingQuoteOutcome(prev, next) {
+  if (prev === next) return true;
+  if (!prev || !next) return false;
+
+  const a = normalizeBookingQuoteOutcome(prev);
+  const b = normalizeBookingQuoteOutcome(next);
+  if (!a || !b) return false;
+
+  return (
+    a.subtotalPrice === b.subtotalPrice &&
+    a.discountAmount === b.discountAmount &&
+    a.totalPrice === b.totalPrice &&
+    a.promoApplied === b.promoApplied &&
+    a.promoInvalidReason === b.promoInvalidReason &&
+    a.voucherAppliedCents === b.voucherAppliedCents &&
+    a.remainingDueCents === b.remainingDueCents &&
+    a.fullVoucherCoverage === b.fullVoucherCoverage &&
+    a.voucherMessage === b.voucherMessage
+  );
+}
+
+export function mergeServerQuoteUpdate(prev, next) {
+  if (!next) return next;
+  if (prev && isSameBookingQuoteOutcome(prev, next)) return prev;
+  return next;
+}
+
+export function resolveAmountDueTodayCents(serverQuote, fallbackTotalEuros = 0) {
+  if (!serverQuote) {
+    return Math.max(0, Math.round(Number(fallbackTotalEuros || 0) * 100));
+  }
+  if (serverQuote.remainingDueCents != null && Number.isFinite(Number(serverQuote.remainingDueCents))) {
+    return Math.max(0, Number(serverQuote.remainingDueCents));
+  }
+  const total = Number(serverQuote.totalPrice ?? fallbackTotalEuros ?? 0);
+  return Math.max(0, Math.round((Number.isFinite(total) ? total : 0) * 100));
+}
+
 export function extractCheckoutApiErrorCode(err) {
   return err?.response?.data?.code || err?.response?.data?.error?.code || err?.code || null;
 }
@@ -712,7 +778,7 @@ const ConfirmBooking = () => {
   const displaySubtotal = serverQuote?.subtotalPrice;
   const displayDiscount = serverQuote?.discountAmount ?? 0;
   const previewVoucherAppliedCents = Number(serverQuote?.voucherAppliedCents || 0);
-  const previewRemainingDueCents = Number(serverQuote?.remainingDueCents || Math.round((displayTotal || 0) * 100));
+  const amountDueTodayCents = resolveAmountDueTodayCents(serverQuote, displayTotal);
   const previewFullVoucherCoverage = Boolean(serverQuote?.fullVoucherCoverage);
 
   const experienceExtras = useMemo(() => {
@@ -828,19 +894,7 @@ const ConfirmBooking = () => {
         if (cancelled) return;
         if (res.data.success) {
           const d = res.data.data;
-          setServerQuote((prev) => {
-            if (
-              prev &&
-              prev.subtotalPrice === d.subtotalPrice &&
-              prev.discountAmount === d.discountAmount &&
-              prev.totalPrice === d.totalPrice &&
-              prev.promo?.applied === d.promo?.applied &&
-              prev.promo?.invalidReason === d.promo?.invalidReason
-            ) {
-              return prev;
-            }
-            return d;
-          });
+          setServerQuote((prev) => mergeServerQuoteUpdate(prev, d));
           if (lockedPromoCode && d.promo?.invalidReason) {
             setPromoMessage(d.promo.invalidReason);
             setLockedPromoCode(null);
@@ -2026,8 +2080,6 @@ const ConfirmBooking = () => {
           </div>
           {appliedVoucherCode ? (
             <div className="mt-3 text-sm text-gray-700 space-y-1">
-              <p>Preview applied: €{(previewVoucherAppliedCents / 100).toLocaleString()}</p>
-              <p>Remaining card amount: €{(previewRemainingDueCents / 100).toLocaleString()}</p>
               {previewFullVoucherCoverage ? <p>This voucher can fully cover the booking.</p> : null}
               {serverQuote?.voucherMessage ? <p className="text-amber-700">{serverQuote.voucherMessage}</p> : null}
             </div>
@@ -2057,6 +2109,16 @@ const ConfirmBooking = () => {
                 <p className="font-medium text-gray-900 tabular-nums">
                   €{Number(displayTotal).toLocaleString()} EUR
                 </p>
+                {previewVoucherAppliedCents > 0 ? (
+                  <>
+                    <p className="text-xs text-gray-600 tabular-nums">
+                      Gift voucher applied: €{(previewVoucherAppliedCents / 100).toLocaleString()}
+                    </p>
+                    <p className="font-semibold text-gray-900 tabular-nums">
+                      Amount due today: €{(amountDueTodayCents / 100).toLocaleString()} EUR
+                    </p>
+                  </>
+                ) : null}
               </div>
             )}
           </div>
