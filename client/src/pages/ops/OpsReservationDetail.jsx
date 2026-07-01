@@ -14,6 +14,10 @@ import {
   canResolveCancellationSettlement,
   showCompletedNotCancellableMessage
 } from './utils/opsReservationPermissions';
+import {
+  manualReservationPurposeLabel,
+  guestConfirmationEmailPolicyLabel
+} from '../../utils/manualReservationPurpose';
 
 const MIN_STAY_CREDIT_CENTS = 10000;
 
@@ -890,6 +894,13 @@ export default function OpsReservationDetail() {
   if (!data) return <div className="text-sm text-gray-500">Reservation not found.</div>;
 
   const reservation = data.reservation || {};
+  const manualPurpose = reservation.manualReservationPurpose || data.manualReservationPurpose || null;
+  const sendGuestConfirmationEmail =
+    reservation.sendGuestConfirmationEmail === true || reservation.sendGuestConfirmationEmail === false
+      ? reservation.sendGuestConfirmationEmail
+      : data.sendGuestConfirmationEmail === true || data.sendGuestConfirmationEmail === false
+        ? data.sendGuestConfirmationEmail
+        : null;
   const cancellationSettlement = data.cancellationSettlement || null;
   const reservationStatus = reservation.reservationStatus || '';
   const canCancel = canCancelReservation(session, reservationStatus);
@@ -923,6 +934,26 @@ export default function OpsReservationDetail() {
         <p className="text-sm text-gray-500 max-w-2xl">
           {reservation.checkInDateOnly || '—'} - {reservation.checkOutDateOnly || '—'}
         </p>
+        {manualPurpose || sendGuestConfirmationEmail != null ? (
+          <div className="mt-3 flex flex-wrap gap-2 max-w-2xl">
+            {manualPurpose ? (
+              <span className="text-xs px-2 py-1 rounded border border-indigo-200 bg-indigo-50 text-indigo-800">
+                {manualReservationPurposeLabel(manualPurpose)}
+              </span>
+            ) : null}
+            {sendGuestConfirmationEmail != null ? (
+              <span
+                className={`text-xs px-2 py-1 rounded border ${
+                  sendGuestConfirmationEmail
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                    : 'border-slate-200 bg-slate-50 text-slate-700'
+                }`}
+              >
+                {guestConfirmationEmailPolicyLabel(sendGuestConfirmationEmail)}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       {showSettlementCard ? (

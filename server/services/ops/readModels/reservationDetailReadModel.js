@@ -181,6 +181,11 @@ async function getReservationDetailReadModel(reservationId) {
       payoutLinkageIncomplete: payouts.length === 0
     },
     provenance: booking.provenance || null,
+    manualReservationPurpose: booking.manualReservationPurpose || null,
+    sendGuestConfirmationEmail:
+      booking.sendGuestConfirmationEmail === true || booking.sendGuestConfirmationEmail === false
+        ? booking.sendGuestConfirmationEmail
+        : null,
     outboundCalendar: {
       publicIcsStrictEligibility: strictIcs,
       exportSafetyEnforced: isPublicIcsExportSafetyEnforced(),

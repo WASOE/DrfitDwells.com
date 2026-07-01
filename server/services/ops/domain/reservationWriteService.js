@@ -21,6 +21,11 @@ const {
   issueCancellationCompensationVoucher,
   MIN_CREDIT_AMOUNT_CENTS
 } = require('../../giftVouchers/issueCancellationCompensationVoucherService');
+const {
+  shouldSendAutomaticGuestConfirmation,
+  normalizeManualReservationPurpose,
+  resolveSendGuestConfirmationEmailAtIntake
+} = require('../manualReservationEmailPolicy');
 
 // MessageOrchestrator hooks (Batch 7). Lazy-required inside try/catch wrappers
 // so import failure cannot break any write path. Default OFF
@@ -119,6 +124,14 @@ async function sendLifecycleStatusEmail({ booking, kind }) {
     kind === 'confirm'
       ? bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_CONFIRMED
       : bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_CANCELLED;
+
+  if (
+    kind === 'confirm' &&
+    templateKey === bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_CONFIRMED &&
+    !shouldSendAutomaticGuestConfirmation(booking)
+  ) {
+    return { success: true, method: 'skipped-policy', skipped: true };
+  }
 
   try {
     return await bookingLifecycleEmailService.sendBookingLifecycleEmail({
@@ -1274,6 +1287,8 @@ async function createManualReservation({
   note = null,
   acceptExternalHoldWarnings = false,
   paymentPlaceholderNote = null,
+  manualReservationPurpose = null,
+  sendGuestConfirmationEmail = null,
   reason = null,
   ctx = {}
 }) {
@@ -1348,6 +1363,17 @@ async function createManualReservation({
     ? String(paymentPlaceholderNote).trim().slice(0, 450)
     : '';
 
+  let normalizedPurpose = null;
+  try {
+    normalizedPurpose = normalizeManualReservationPurpose(manualReservationPurpose);
+  } catch (err) {
+    throw createDomainError('validation', err.message, { manualReservationPurpose }, 400);
+  }
+  const resolvedSendGuestConfirmationEmail = resolveSendGuestConfirmationEmailAtIntake(
+    normalizedPurpose,
+    sendGuestConfirmationEmail
+  );
+
   const booking = new Booking({
     _id: new mongoose.Types.ObjectId(),
     cabinId,
@@ -1371,7 +1397,9 @@ async function createManualReservation({
       channel: 'staff',
       intakeRevision: 1,
       createdByRoute: ctx.route || null
-    }
+    },
+    manualReservationPurpose: normalizedPurpose,
+    sendGuestConfirmationEmail: resolvedSendGuestConfirmationEmail
   });
 
   await appendAuditEvent(
@@ -1388,7 +1416,9 @@ async function createManualReservation({
         checkOut: normalized.endDate,
         initialStatus,
         guestEmail: booking.guestInfo.email,
-        provenanceSource
+        provenanceSource,
+        manualReservationPurpose: normalizedPurpose,
+        sendGuestConfirmationEmail: resolvedSendGuestConfirmationEmail
       },
       metadata: { legacyModel: 'Booking' },
       reason: reason || null,
@@ -1463,7 +1493,7 @@ async function createManualReservation({
     });
   }
 
-  if (initialStatus === 'confirmed') {
+  if (initialStatus === 'confirmed' && shouldSendAutomaticGuestConfirmation(booking)) {
     try {
       const guestOutcome = await bookingLifecycleEmailService.sendBookingLifecycleEmail({
         booking,
@@ -1516,7 +1546,9 @@ async function createManualReservation({
     reservationId: String(booking._id),
     status: booking.status,
     cabinId: String(booking.cabinId),
-    provenanceSource
+    provenanceSource,
+    manualReservationPurpose: booking.manualReservationPurpose || null,
+    sendGuestConfirmationEmail: booking.sendGuestConfirmationEmail ?? null
   };
   rememberResult(idemKey, result);
   return result;

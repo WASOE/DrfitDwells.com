@@ -2,6 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { opsReadAPI, opsWriteAPI } from '../../services/opsApi';
 import { exportToCSV } from '../../utils/csvExport';
+import {
+  MANUAL_RESERVATION_PURPOSE_OPTIONS,
+  defaultSendGuestConfirmationForPurpose,
+  manualReservationPurposeLabel
+} from '../../utils/manualReservationPurpose';
 
 export default function OpsReservations() {
   const navigate = useNavigate();
@@ -26,7 +31,9 @@ export default function OpsReservations() {
     initialStatus: 'pending',
     note: '',
     paymentPlaceholder: '',
-    acceptExternalHoldWarnings: false
+    acceptExternalHoldWarnings: false,
+    manualReservationPurpose: 'paid_guest',
+    sendGuestConfirmationEmail: true
   });
 
   const filters = useMemo(
@@ -192,7 +199,9 @@ export default function OpsReservations() {
         initialStatus: form.initialStatus,
         note: form.note.trim() || undefined,
         paymentPlaceholderNote: form.paymentPlaceholder.trim() || undefined,
-        acceptExternalHoldWarnings: form.acceptExternalHoldWarnings
+        acceptExternalHoldWarnings: form.acceptExternalHoldWarnings,
+        manualReservationPurpose: form.manualReservationPurpose,
+        sendGuestConfirmationEmail: form.sendGuestConfirmationEmail
       });
       const id = res.data?.data?.reservationId;
       setCreateOpen(false);
@@ -443,6 +452,36 @@ export default function OpsReservations() {
                 />
               </div>
               <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Reservation purpose</label>
+                <select
+                  value={form.manualReservationPurpose}
+                  onChange={(e) => {
+                    const purpose = e.target.value;
+                    setForm((f) => ({
+                      ...f,
+                      manualReservationPurpose: purpose,
+                      sendGuestConfirmationEmail: defaultSendGuestConfirmationForPurpose(purpose)
+                    }));
+                  }}
+                  className="w-full px-3 py-2 text-sm border rounded-lg"
+                >
+                  {MANUAL_RESERVATION_PURPOSE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <label className="flex items-start gap-2 text-xs text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={form.sendGuestConfirmationEmail}
+                  onChange={(e) => setForm((f) => ({ ...f, sendGuestConfirmationEmail: e.target.checked }))}
+                  className="mt-0.5"
+                />
+                <span>Send guest confirmation email when this reservation is confirmed</span>
+              </label>
+              <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Initial status</label>
                 <select
                   value={form.initialStatus}
@@ -549,6 +588,16 @@ export default function OpsReservations() {
               <div className="flex flex-wrap gap-2">
                 <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50">{row.reservationStatus || 'unknown'}</span>
                 <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50">{paymentStatusLabel(row.paymentStatus)}</span>
+                {row.manualReservationPurpose ? (
+                  <span className="text-xs px-2 py-1 rounded border border-indigo-200 bg-indigo-50 text-indigo-800">
+                    {manualReservationPurposeLabel(row.manualReservationPurpose)}
+                  </span>
+                ) : null}
+                {row.sendGuestConfirmationEmail === false ? (
+                  <span className="text-xs px-2 py-1 rounded border border-slate-200 bg-slate-50 text-slate-700">
+                    No auto confirmation email
+                  </span>
+                ) : null}
                 {buildOperationalBadges(row).map((badge) => (
                   <span key={badge.label} className={`text-xs px-2 py-1 rounded border ${badgeToneClass(badge.tone)}`}>
                     {badge.label}

@@ -320,6 +320,11 @@ async function getReservationsWorkspaceReadModel(query = {}) {
       currency: mapped.currency,
       paymentStatus,
       arrivalStatus: deriveArrivalStatus(booking),
+      manualReservationPurpose: booking.manualReservationPurpose || null,
+      sendGuestConfirmationEmail:
+        booking.sendGuestConfirmationEmail === true || booking.sendGuestConfirmationEmail === false
+          ? booking.sendGuestConfirmationEmail
+          : null,
       conflict: {
         hasConflict: conflictByReservation.get(String(booking._id)) || false,
         severity: conflictByReservation.get(String(booking._id)) ? 'hard' : null

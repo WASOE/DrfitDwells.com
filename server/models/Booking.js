@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { MANUAL_RESERVATION_PURPOSES } = require('../services/ops/manualReservationEmailPolicy');
 
 const cancellationSettlementSchema = new mongoose.Schema(
   {
@@ -412,6 +413,20 @@ const bookingSchema = new mongoose.Schema({
   /** Guest booking_confirmed lifecycle email sent at (C3 email-once). */
   confirmationEmailSentAt: {
     type: Date,
+    default: null
+  },
+  /** OPS manual reservation stay purpose (admin_manual / operator_manual only). */
+  manualReservationPurpose: {
+    type: String,
+    enum: MANUAL_RESERVATION_PURPOSES,
+    default: null
+  },
+  /**
+   * OPS manual reservation: send automatic booking_confirmed on confirm/create.
+   * null = legacy (send); false = skip automatic; true = send. Manual resend unaffected.
+   */
+  sendGuestConfirmationEmail: {
+    type: Boolean,
     default: null
   },
   /** First-touch marketing params captured on the client (attribution / ads). */

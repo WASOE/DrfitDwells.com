@@ -32,6 +32,11 @@ function mapBookingToReservationCompatible(bookingDoc = {}) {
     isProductionSafe: booking.isProductionSafe !== undefined ? booking.isProductionSafe : null,
     isTest: booking.isTest === true,
     intakeProvenance: booking.provenance || null,
+    manualReservationPurpose: booking.manualReservationPurpose || null,
+    sendGuestConfirmationEmail:
+      booking.sendGuestConfirmationEmail === true || booking.sendGuestConfirmationEmail === false
+        ? booking.sendGuestConfirmationEmail
+        : null,
     provenance: {
       mappedFrom: 'Booking',
       mappingVersion: 1

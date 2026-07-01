@@ -124,6 +124,8 @@ router.post('/manual', async (req, res) => {
       note: req.body?.note,
       acceptExternalHoldWarnings: Boolean(req.body?.acceptExternalHoldWarnings),
       paymentPlaceholderNote: req.body?.paymentPlaceholderNote,
+      manualReservationPurpose: req.body?.manualReservationPurpose,
+      sendGuestConfirmationEmail: req.body?.sendGuestConfirmationEmail,
       reason: req.body?.reason || null,
       ctx: { req, user: req.user, route: 'POST /api/ops/reservations/manual' }
     });
