@@ -1,12 +1,13 @@
 'use strict';
 
 /**
- * Approved GMA bilingual copy (source: GMA_bilingual_message_copy_for_Cursor.md).
- * Used by seed data and gmaReplaceTemplateCopy.cjs. Templates remain draft.
+ * Approved GMA copy (source: GMA_bilingual_message_copy_for_Cursor.md).
+ * Guest arrival EMAIL is English-only; WhatsApp reference bodies remain bilingual.
+ * Used by seed data and gmaReplaceTemplateCopy.cjs. Templates remain draft until approved.
  */
 
 const COPY_SOURCE_NOTE =
-  'Approved copy from GMA_bilingual_message_copy_for_Cursor.md. Status must remain draft until human approval.';
+  'Approved copy from GMA_bilingual_message_copy_for_Cursor.md. Guest arrival email is English-only; WhatsApp reference body remains bilingual. Status must remain draft until human approval.';
 
 const GUEST_TEMPLATE_VARIABLE_SCHEMA = Object.freeze({
   type: 'object',
@@ -34,7 +35,7 @@ const GUEST_TEMPLATE_VARIABLE_SCHEMA = Object.freeze({
 });
 
 const CABIN_EMAIL_SUBJECT =
-  'Your arrival to The Cabin / Пристигане в The Cabin - {{checkInDate}}';
+  'Your arrival to The Cabin - {{checkInDate}}';
 
 const CABIN_EMAIL_BODY = [
   '<section lang="en">',
@@ -63,37 +64,6 @@ const CABIN_EMAIL_BODY = [
   '  <p>If you have questions before arrival, reply to this email.</p>',
   '',
   '  <p>We look forward to hosting you.<br>',
-  '  Drift & Dwells</p>',
-  '</section>',
-  '',
-  '<hr>',
-  '',
-  '<section lang="bg">',
-  '  <p>Здравейте, {{guestFirstName}},</p>',
-  '',
-  '  <p>Остават само няколко дни до престоя ви в <strong>The Cabin</strong>. Очакваме ви на <strong>{{checkInDate}}</strong>, а напускането е на <strong>{{checkOutDate}}</strong>.</p>',
-  '',
-  '  <p><strong>Настаняване:</strong> {{arrivalWindow}}</p>',
-  '',
-  '  <p>The Cabin е истинско off-grid преживяване сред природата. Мястото е в тиха горска долина, с пълно уединение и без магазини или удобства наблизо. Моля, подгответе храна, вода и всичко необходимо за престоя предварително.</p>',
-  '',
-  '  <p><strong>Място за пристигане:</strong><br>',
-  '  {{meetingPointLabel}}<br>',
-  '  Google Maps: <a href="{{googleMapsUrl}}">{{googleMapsUrl}}</a></p>',
-  '',
-  '  <p>Моля, не търсете друг маршрут в Google Maps. Следвайте линка и наръчника за пристигане, защото достъпът до The Cabin е специфичен.</p>',
-  '',
-  '  <p><strong>Пълен наръчник за пристигане:</strong><br>',
-  '  <a href="{{guideUrl}}">{{guideUrl}}</a></p>',
-  '',
-  '  <p>Паркира се на определеното място и последната част до кабината е пеша. Препоръчваме практичен багаж, който може лесно да се носи. Ако пристигате по-късно през деня, моля, пишете ни предварително, за да координираме всичко спокойно.</p>',
-  '',
-  '  <p><strong>Какво да подготвите:</strong><br>',
-  '  Удобни обувки, дрехи на слоеве, яке за дъжд, челник или фенер, храна, напитки и лични неща за off-grid престой.</p>',
-  '',
-  '  <p>Ако имате въпроси преди пристигането, отговорете на този имейл.</p>',
-  '',
-  '  <p>Очакваме ви с радост.<br>',
   '  Drift & Dwells</p>',
   '</section>'
 ].join('\n');
@@ -151,7 +121,7 @@ const CABIN_WHATSAPP_BODY = [
 ].join('\n');
 
 const VALLEY_EMAIL_SUBJECT =
-  'Your arrival to The Valley / Пристигане в The Valley - {{checkInDate}}';
+  'Your arrival to The Valley - {{checkInDate}}';
 
 const VALLEY_EMAIL_BODY = [
   '<section lang="en">',
@@ -182,39 +152,6 @@ const VALLEY_EMAIL_BODY = [
   '  <p>If you have questions before arrival, reply to this email.</p>',
   '',
   '  <p>We look forward to hosting you.<br>',
-  '  Drift & Dwells</p>',
-  '</section>',
-  '',
-  '<hr>',
-  '',
-  '<section lang="bg">',
-  '  <p>Здравейте, {{guestFirstName}},</p>',
-  '',
-  '  <p>Остават само няколко дни до престоя ви в <strong>{{propertyName}}</strong> в The Valley. Очакваме ви на <strong>{{checkInDate}}</strong>, а напускането е на <strong>{{checkOutDate}}</strong>.</p>',
-  '',
-  '  <p><strong>Настаняване:</strong> {{arrivalWindow}}</p>',
-  '',
-  '  <p>The Valley е спокойно off-grid място в планината, заобиколено от гора и природа. Наблизо няма магазини или удобства, затова е важно да дойдете подготвени с храна, напитки и лични неща за престоя.</p>',
-  '',
-  '  <p><strong>Маршрут и място за пристигане:</strong><br>',
-  '  {{meetingPointLabel}}<br>',
-  '  Google Maps: <a href="{{googleMapsUrl}}">{{googleMapsUrl}}</a></p>',
-  '',
-  '  <p>Моля, използвайте линка за маршрут, който ви изпращаме. Не разчитайте на случаен маршрут в Google Maps. Google Maps може да изпрати гостите по грешен път, особено през Kraishte. Правилният маршрут минава през Eleshnitsa, Palatik и Chereshovo.</p>',
-  '',
-  '  <p>Последният участък до The Valley е около 1 км и не е стандартен автомобилен достъп. Може да се стигне пеша, с джип, кон или ATV, според предварителната организация и условията на място.</p>',
-  '',
-  '  <p><strong>Пълен наръчник за пристигане:</strong><br>',
-  '  <a href="{{guideUrl}}">{{guideUrl}}</a></p>',
-  '',
-  '  <p>Моля, планирайте багажа си практично. Ако имате повече багаж или пристигате по-късно през деня, пишете ни предварително, за да координираме пристигането спокойно.</p>',
-  '',
-  '  <p><strong>Какво да подготвите:</strong><br>',
-  '  Удобни обувки, дрехи на слоеве, яке за дъжд, храна, напитки и всичко лично необходимо за престой сред природата.</p>',
-  '',
-  '  <p>Ако имате въпроси преди пристигането, отговорете на този имейл.</p>',
-  '',
-  '  <p>Очакваме ви с радост.<br>',
   '  Drift & Dwells</p>',
   '</section>'
 ].join('\n');

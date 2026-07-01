@@ -11,7 +11,7 @@ const {
 
 /**
  * V1 guest arrival template — The Valley (propertyKind: 'valley').
- * Applies to A-Frame, Lux Cabin, Stone House. Approved bilingual copy.
+ * Applies to A-Frame, Lux Cabin, Stone House. English-only email (WhatsApp reference body remains bilingual).
  */
 
 const SHARED = {

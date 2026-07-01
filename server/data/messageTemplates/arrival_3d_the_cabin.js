@@ -11,7 +11,7 @@ const {
 
 /**
  * V1 guest arrival template — The Cabin (propertyKind: 'cabin').
- * Approved bilingual copy. Seeded as draft. Insert-only seed does not update existing DB rows.
+ * Approved English-only email copy (WhatsApp reference body remains bilingual). Seeded as draft.
  */
 
 const SHARED = {

@@ -458,7 +458,8 @@ test('GMA preview renders cabin email with absolute guideUrl', async () => {
   assert.equal(data.variables.guideUrl, 'https://driftdwells.com/guides/the-cabin');
   assert.ok(!data.variables.supportPhone);
   assert.ok(data.email.html.includes('lang="en"'));
-  assert.ok(data.email.html.includes('lang="bg"'));
+  assert.ok(!data.email.fragmentHtml.includes('lang="bg"'));
+  assert.ok(!data.email.text.includes('Здравейте'));
   assert.ok(data.email.html.includes('<!DOCTYPE html>'));
   assert.ok(data.email.html.includes('email-outer'));
   assert.ok(data.email.html.includes('email-card'));
