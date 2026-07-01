@@ -29,12 +29,14 @@ const {
   runSeed
 } = require('./seedMessageAutomation');
 
-const EXPECTED_TEMPLATE_COUNT = 23;
-const EXPECTED_RULE_COUNT = 9;
+const EXPECTED_TEMPLATE_COUNT = 25;
+const EXPECTED_RULE_COUNT = 11;
 
 const GUEST_RULE_KEYS = [
   'arrival_instructions_pre_arrival_cabin',
-  'arrival_instructions_pre_arrival_valley'
+  'arrival_instructions_pre_arrival_valley',
+  'check_in_access_day_before_cabin',
+  'check_in_access_day_before_valley'
 ];
 const OPS_RULE_KEYS = [
   'ops_alert_guest_arriving_in_8_days',
@@ -47,7 +49,32 @@ const OPS_TEMPLATE_KEYS = [
   'ops_alert_checkout_today'
 ];
 
-const GUEST_TEMPLATE_KEYS = ['arrival_3d_the_cabin', 'arrival_3d_the_valley'];
+const GUEST_TEMPLATE_KEYS = [
+  'arrival_3d_the_cabin',
+  'arrival_3d_the_valley',
+  'access_day_before_the_cabin',
+  'access_day_before_the_valley'
+];
+
+const PREPARATION_GUEST_TEMPLATE_KEYS = [
+  'arrival_3d_the_cabin',
+  'arrival_3d_the_valley'
+];
+
+const ACCESS_GUEST_TEMPLATE_KEYS = [
+  'access_day_before_the_cabin',
+  'access_day_before_the_valley'
+];
+
+const PREPARATION_GUEST_RULE_KEYS = [
+  'arrival_instructions_pre_arrival_cabin',
+  'arrival_instructions_pre_arrival_valley'
+];
+
+const ACCESS_GUEST_RULE_KEYS = [
+  'check_in_access_day_before_cabin',
+  'check_in_access_day_before_valley'
+];
 
 const CLEANER_RULE_KEYS = [
   'cleaner_checkout_prep_cabin',
@@ -120,14 +147,27 @@ test('every built template uses version=1; guest/ops locale en, cleaner en+bg', 
   }
 });
 
-test('guest templates declare exactly the locked 8 variables', () => {
-  const rows = buildAllTemplates().filter((r) => GUEST_TEMPLATE_KEYS.includes(r.key));
+test('preparation guest templates declare exactly the locked 8 variables', () => {
+  const rows = buildAllTemplates().filter((r) => PREPARATION_GUEST_TEMPLATE_KEYS.includes(r.key));
   assert.equal(rows.length, 4);
   for (const row of rows) {
     const schema = row.variableSchema || {};
     const required = (schema.required || []).slice().sort();
     assert.deepEqual(required, [...LOCKED_GUEST_VARIABLES].sort(), `template ${row.key}/${row.channel} variables drift`);
   }
+});
+
+test('access guest email templates declare extended access variable schemas', () => {
+  const {
+    ACCESS_CABIN_VARIABLE_SCHEMA,
+    ACCESS_VALLEY_VARIABLE_SCHEMA
+  } = require('../data/messageTemplates/gmaApprovedCopy');
+  const rows = buildAllTemplates().filter((r) => ACCESS_GUEST_TEMPLATE_KEYS.includes(r.key));
+  assert.equal(rows.length, 2);
+  const cabin = rows.find((r) => r.key === 'access_day_before_the_cabin');
+  const valley = rows.find((r) => r.key === 'access_day_before_the_valley');
+  assert.deepEqual(cabin.variableSchema, ACCESS_CABIN_VARIABLE_SCHEMA);
+  assert.deepEqual(valley.variableSchema, ACCESS_VALLEY_VARIABLE_SCHEMA);
 });
 
 test('OPS alert templates use propertyKind="any"', () => {
@@ -142,7 +182,7 @@ test('OPS alert templates use propertyKind="any"', () => {
 test('WhatsApp templates carry whatsappTemplateName + whatsappLocale', () => {
   const rows = buildAllTemplates().filter((r) => r.channel === 'whatsapp');
   assert.equal(rows.length, 10);
-  const guestWa = rows.filter((r) => GUEST_TEMPLATE_KEYS.includes(r.key));
+  const guestWa = rows.filter((r) => PREPARATION_GUEST_TEMPLATE_KEYS.includes(r.key));
   assert.equal(guestWa.length, 2);
   for (const row of guestWa) {
     assert.equal(row.whatsappLocale, 'en');
@@ -167,7 +207,7 @@ test('email templates carry emailSubject + emailBodyMarkup', () => {
   }
 });
 
-test('buildAllRules returns exactly 9 rows, all inert', () => {
+test('buildAllRules returns exactly 11 rows, all inert', () => {
   const rows = buildAllRules();
   assert.equal(rows.length, EXPECTED_RULE_COUNT);
   for (const row of rows) {
@@ -176,8 +216,8 @@ test('buildAllRules returns exactly 9 rows, all inert', () => {
   }
 });
 
-test('guest rules: requirePaidIfStripe=true, requiredBookingStatus=["confirmed"], whatsapp_first_email_fallback', () => {
-  const rows = buildAllRules().filter((r) => GUEST_RULE_KEYS.includes(r.ruleKey));
+test('preparation guest rules: T-72h whatsapp_first_email_fallback', () => {
+  const rows = buildAllRules().filter((r) => PREPARATION_GUEST_RULE_KEYS.includes(r.ruleKey));
   assert.equal(rows.length, 2);
   for (const row of rows) {
     assert.equal(row.requirePaidIfStripe, true);
@@ -185,6 +225,21 @@ test('guest rules: requirePaidIfStripe=true, requiredBookingStatus=["confirmed"]
     assert.equal(row.channelStrategy, 'whatsapp_first_email_fallback');
     assert.equal(row.audience, 'guest');
     assert.deepEqual(row.triggerConfig, { offsetHours: -72, sofiaHour: 17, sofiaMinute: 0 });
+  }
+});
+
+test('access guest rules: T-24h email_only shadow-gated', () => {
+  const rows = buildAllRules().filter((r) => ACCESS_GUEST_RULE_KEYS.includes(r.ruleKey));
+  assert.equal(rows.length, 2);
+  for (const row of rows) {
+    assert.equal(row.requirePaidIfStripe, true);
+    assert.deepEqual(row.requiredBookingStatus, ['confirmed']);
+    assert.equal(row.channelStrategy, 'email_only');
+    assert.equal(row.audience, 'guest');
+    assert.equal(row.enabled, false);
+    assert.equal(row.mode, 'shadow');
+    assert.deepEqual(row.triggerConfig, { offsetHours: -24, sofiaHour: 9, sofiaMinute: 0 });
+    assert.equal(row.templateKeyByChannel.email.startsWith('access_day_before'), true);
   }
 });
 
@@ -246,7 +301,7 @@ test('runSeed dry-run on empty DB inserts nothing', async () => {
   assert.equal(rCount, 0);
 });
 
-test('runSeed apply on empty DB inserts 23 templates and 9 rules', async () => {
+test('runSeed apply on empty DB inserts 25 templates and 11 rules', async () => {
   const res = await runSeed({ apply: true });
   assert.equal(res.exitCode, 0);
   assert.ok(res.writes);

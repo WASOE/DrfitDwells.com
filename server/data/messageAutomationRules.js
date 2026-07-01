@@ -20,6 +20,7 @@
  */
 
 const GUEST_SOFIA_HOUR = 17; // §23.A working default. OPS may re-tune on the rule row without re-seeding.
+const GUEST_ACCESS_SOFIA_HOUR = 9; // Day-before check-in access email (GMA-GUEST-ACCESS-1).
 
 const arrivalInstructionsPreArrivalCabinRule = Object.freeze({
   ruleKey: 'arrival_instructions_pre_arrival_cabin',
@@ -29,6 +30,38 @@ const arrivalInstructionsPreArrivalCabinRule = Object.freeze({
   propertyScope: 'cabin',
   channelStrategy: 'whatsapp_first_email_fallback',
   templateKeyByChannel: { whatsapp: 'arrival_3d_the_cabin', email: 'arrival_3d_the_cabin' },
+  requiresConsent: 'transactional',
+  enabled: false,
+  mode: 'shadow',
+  audience: 'guest',
+  requiredBookingStatus: ['confirmed'],
+  requirePaidIfStripe: true
+});
+
+const checkInAccessDayBeforeCabinRule = Object.freeze({
+  ruleKey: 'check_in_access_day_before_cabin',
+  description: 'Check-in access details for The Cabin, T-24h before check-in (Europe/Sofia 09:00).',
+  triggerType: 'time_relative_to_check_in',
+  triggerConfig: { offsetHours: -24, sofiaHour: GUEST_ACCESS_SOFIA_HOUR, sofiaMinute: 0 },
+  propertyScope: 'cabin',
+  channelStrategy: 'email_only',
+  templateKeyByChannel: { email: 'access_day_before_the_cabin' },
+  requiresConsent: 'transactional',
+  enabled: false,
+  mode: 'shadow',
+  audience: 'guest',
+  requiredBookingStatus: ['confirmed'],
+  requirePaidIfStripe: true
+});
+
+const checkInAccessDayBeforeValleyRule = Object.freeze({
+  ruleKey: 'check_in_access_day_before_valley',
+  description: 'Check-in access details for The Valley, T-24h before check-in (Europe/Sofia 09:00).',
+  triggerType: 'time_relative_to_check_in',
+  triggerConfig: { offsetHours: -24, sofiaHour: GUEST_ACCESS_SOFIA_HOUR, sofiaMinute: 0 },
+  propertyScope: 'valley',
+  channelStrategy: 'email_only',
+  templateKeyByChannel: { email: 'access_day_before_the_valley' },
   requiresConsent: 'transactional',
   enabled: false,
   mode: 'shadow',
@@ -171,6 +204,8 @@ const cleanerCheckoutTodayValleyRule = Object.freeze({
 const MESSAGE_AUTOMATION_RULES = Object.freeze([
   arrivalInstructionsPreArrivalCabinRule,
   arrivalInstructionsPreArrivalValleyRule,
+  checkInAccessDayBeforeCabinRule,
+  checkInAccessDayBeforeValleyRule,
   opsAlertGuestArrivingIn8DaysRule,
   opsAlertGuestCheckInTomorrowRule,
   opsAlertGuestCheckoutTodayRule,
@@ -184,6 +219,8 @@ module.exports = {
   MESSAGE_AUTOMATION_RULES,
   arrivalInstructionsPreArrivalCabinRule,
   arrivalInstructionsPreArrivalValleyRule,
+  checkInAccessDayBeforeCabinRule,
+  checkInAccessDayBeforeValleyRule,
   opsAlertGuestArrivingIn8DaysRule,
   opsAlertGuestCheckInTomorrowRule,
   opsAlertGuestCheckoutTodayRule,

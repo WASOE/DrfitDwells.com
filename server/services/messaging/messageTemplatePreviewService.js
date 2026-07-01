@@ -29,6 +29,8 @@ const WHATSAPP_PREVIEW_NOTE =
 const PREVIEW_RULE_KEYS = Object.freeze([
   'arrival_instructions_pre_arrival_cabin',
   'arrival_instructions_pre_arrival_valley',
+  'check_in_access_day_before_cabin',
+  'check_in_access_day_before_valley',
   'cleaner_checkout_prep_cabin',
   'cleaner_checkout_prep_valley',
   'cleaner_checkout_today_cabin',
@@ -210,7 +212,13 @@ async function previewGmaMessageForReservation({ reservationId, ruleKey, channel
     propertyKind: templatePropertyKind
   });
 
-  const varResult = await resolveVariables({ booking, stayTarget, audience: rule.audience });
+  const varResult = await resolveVariables({
+    booking,
+    stayTarget,
+    audience: rule.audience,
+    ruleKey: rule.ruleKey,
+    propertyKind
+  });
   if (!varResult.ok) {
     throw new MessageTemplatePreviewError('Required template variables are missing', {
       status: 422,

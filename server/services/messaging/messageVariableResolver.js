@@ -12,6 +12,8 @@ const Booking = require('../../models/Booking');
 const { PROPERTY_TIMEZONE, CHECK_OUT_TIME } = require('../../utils/dateTime');
 const { resolveGuideUrl } = require('../../utils/arrivalGuideUrl');
 const { CLEANER_VARIABLE_SCHEMA } = require('../../data/messageTemplates/gmaApprovedCopy');
+const { isGuestAccessRuleKey } = require('../../data/stayAccessCredentials');
+const { resolveStayAccessCredentials } = require('./stayAccessCredentialResolver');
 const moment = require('moment-timezone');
 
 const ARRIVAL_WINDOW_FALLBACK = 'as confirmed by your host';
@@ -177,9 +179,45 @@ async function resolveCleanerVariables({ booking, stayTarget } = {}) {
   return { ok: true, variables, audience: 'cleaner' };
 }
 
-async function resolveVariables({ booking, stayTarget, audience } = {}) {
+async function resolveGuestAccessVariables({ booking, stayTarget, propertyKind } = {}) {
+  const base = resolveGuestVariables({ booking, stayTarget });
+  if (!base.ok) {
+    return base;
+  }
+
+  const access = await resolveStayAccessCredentials({ booking, stayTarget, propertyKind });
+  if (!access.ok) {
+    return {
+      ok: false,
+      missing: access.missing,
+      partial: { ...base.partial, ...base.variables },
+      blockReason: access.blockReason,
+      resolutionSource: access.resolutionSource
+    };
+  }
+
+  const variables = {
+    ...base.variables,
+    ...access.credentials
+  };
+
+  if (access.credentials.unitLabel) {
+    variables.propertyName = access.credentials.unitLabel;
+  }
+
+  return {
+    ok: true,
+    variables,
+    resolutionSource: access.resolutionSource
+  };
+}
+
+async function resolveVariables({ booking, stayTarget, audience, ruleKey, propertyKind } = {}) {
   if (audience === 'cleaner') {
     return resolveCleanerVariables({ booking, stayTarget });
+  }
+  if (isGuestAccessRuleKey(ruleKey)) {
+    return resolveGuestAccessVariables({ booking, stayTarget, propertyKind });
   }
   return resolveGuestVariables({ booking, stayTarget });
 }
@@ -187,6 +225,7 @@ async function resolveVariables({ booking, stayTarget, audience } = {}) {
 module.exports = {
   resolveVariables,
   resolveGuestVariables,
+  resolveGuestAccessVariables,
   resolveCleanerVariables,
   CLEANER_FORBIDDEN_GUEST_PII_KEYS,
   ARRIVAL_WINDOW_FALLBACK

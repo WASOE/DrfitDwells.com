@@ -444,17 +444,159 @@ const GMA_TEMPLATE_COPY_TARGETS = Object.freeze([
   }
 ]);
 
+const ACCESS_SHARED_VARIABLE_PROPERTIES = Object.freeze({
+  guestFirstName: { type: 'string' },
+  propertyName: { type: 'string' },
+  checkInDate: { type: 'string' },
+  checkOutDate: { type: 'string' },
+  arrivalWindow: { type: 'string' },
+  meetingPointLabel: { type: 'string' },
+  googleMapsUrl: { type: 'string' },
+  guideUrl: { type: 'string' },
+  lockCode: { type: 'string' },
+  unitLabel: { type: 'string' },
+  wifiNetworkName: { type: 'string' },
+  wifiAccessBlock: { type: 'string' },
+  googleEarthUrl: { type: 'string' },
+  transferOfferNote: { type: 'string' }
+});
+
+const ACCESS_CABIN_VARIABLE_SCHEMA = Object.freeze({
+  type: 'object',
+  required: [
+    'guestFirstName',
+    'propertyName',
+    'checkInDate',
+    'checkOutDate',
+    'arrivalWindow',
+    'meetingPointLabel',
+    'googleMapsUrl',
+    'guideUrl',
+    'lockCode',
+    'googleEarthUrl'
+  ],
+  properties: ACCESS_SHARED_VARIABLE_PROPERTIES,
+  additionalProperties: false
+});
+
+const ACCESS_VALLEY_VARIABLE_SCHEMA = Object.freeze({
+  type: 'object',
+  required: [
+    'guestFirstName',
+    'propertyName',
+    'checkInDate',
+    'checkOutDate',
+    'arrivalWindow',
+    'meetingPointLabel',
+    'googleMapsUrl',
+    'guideUrl',
+    'lockCode',
+    'transferOfferNote'
+  ],
+  properties: ACCESS_SHARED_VARIABLE_PROPERTIES,
+  additionalProperties: false
+});
+
+const ACCESS_CABIN_EMAIL_SUBJECT =
+  'Check-in details for The Cabin - {{checkInDate}}';
+
+const ACCESS_CABIN_EMAIL_BODY = [
+  '<section lang="en">',
+  '  <p>Hi {{guestFirstName}},</p>',
+  '',
+  '  <p>You check in to <strong>The Cabin</strong> tomorrow, <strong>{{checkInDate}}</strong>. Check-out is <strong>{{checkOutDate}}</strong>.</p>',
+  '',
+  '  <p><strong>Check-in:</strong><br>',
+  '  {{arrivalWindow}}</p>',
+  '',
+  '  <p><strong>Access code:</strong><br>',
+  '  {{lockCode}}</p>',
+  '',
+  '  <p><strong>Important:</strong><br>',
+  '  The Cabin is in a different location from The Valley.</p>',
+  '',
+  '  <p>For the final approach, the Google Earth map is the source of truth.<br>',
+  '  Please open it before driving and read the comments/points on the map:<br>',
+  '  <a href="{{googleEarthUrl}}">{{googleEarthUrl}}</a></p>',
+  '',
+  '  <p>Do not rely only on a normal Google Maps search.</p>',
+  '',
+  '  <p><strong>Arrival point:</strong><br>',
+  '  {{meetingPointLabel}}<br>',
+  '  <a href="{{googleMapsUrl}}">{{googleMapsUrl}}</a></p>',
+  '',
+  '  <p>You will park at the marked point and continue on foot to the cabin. Bring luggage that is easy to carry, especially if arriving later in the day.</p>',
+  '',
+  '  <p>There is no WiFi at The Cabin. Phone signal can be weak, so save these details offline before arrival.</p>',
+  '',
+  '  <p><strong>Full arrival guide:</strong><br>',
+  '  <a href="{{guideUrl}}">{{guideUrl}}</a></p>',
+  '',
+  '  <p>If your ETA changes or anything is unclear before arrival, reply to this email.</p>',
+  '',
+  '  <p>Drift &amp; Dwells</p>',
+  '</section>'
+].join('\n');
+
+const ACCESS_VALLEY_EMAIL_SUBJECT =
+  'Check-in details for {{propertyName}} - {{checkInDate}}';
+
+const ACCESS_VALLEY_EMAIL_BODY = [
+  '<section lang="en">',
+  '  <p>Hi {{guestFirstName}},</p>',
+  '',
+  '  <p>You check in to <strong>{{propertyName}}</strong> tomorrow, <strong>{{checkInDate}}</strong>. Check-out is <strong>{{checkOutDate}}</strong>.</p>',
+  '',
+  '  <p><strong>Check-in:</strong><br>',
+  '  {{arrivalWindow}}</p>',
+  '',
+  '  <p><strong>Access code:</strong><br>',
+  '  {{lockCode}}</p>',
+  '',
+  '  {{wifiAccessBlock}}',
+  '',
+  '  <p><strong>Route reminder:</strong><br>',
+  '  Use the route through Eleshnitsa, Palatik, and Chereshovo.</p>',
+  '',
+  '  <p>Do not follow Google Maps if it sends you through Kraishte. That is the wrong way.</p>',
+  '',
+  '  <p><strong>Arrival point:</strong><br>',
+  '  {{meetingPointLabel}}<br>',
+  '  <a href="{{googleMapsUrl}}">{{googleMapsUrl}}</a></p>',
+  '',
+  '  <p>The last 1 km is not standard car access. You can walk from the parking, or we can arrange transfer depending on timing and conditions.</p>',
+  '',
+  '  <p>If you arrive with groceries or heavy luggage, many guests choose a transfer on arrival.<br>',
+  '  Transfer: {{transferOfferNote}}</p>',
+  '',
+  '  <p>You can still hike back down later if you want to experience the walk without carrying everything.</p>',
+  '',
+  '  <p><strong>Full arrival guide:</strong><br>',
+  '  <a href="{{guideUrl}}">{{guideUrl}}</a></p>',
+  '',
+  '  <p>If you want transfer, reply to this email with your ETA.</p>',
+  '',
+  '  <p>Drift &amp; Dwells</p>',
+  '</section>'
+].join('\n');
+
 module.exports = {
   COPY_SOURCE_NOTE,
   OPS_VARIABLE_SCHEMA,
   CLEANER_VARIABLE_SCHEMA,
   GUEST_TEMPLATE_VARIABLE_SCHEMA,
+  ACCESS_CABIN_VARIABLE_SCHEMA,
+  ACCESS_VALLEY_VARIABLE_SCHEMA,
   CABIN_EMAIL_SUBJECT,
   CABIN_EMAIL_BODY,
   CABIN_WHATSAPP_BODY,
   VALLEY_EMAIL_SUBJECT,
   VALLEY_EMAIL_BODY,
   VALLEY_WHATSAPP_BODY,
+  ACCESS_CABIN_EMAIL_SUBJECT,
+  ACCESS_CABIN_EMAIL_BODY,
+  ACCESS_VALLEY_EMAIL_SUBJECT,
+  ACCESS_VALLEY_EMAIL_BODY,
   OPS_ARRIVING_8D_SUBJECT,
   OPS_ARRIVING_8D_BODY,
   OPS_CHECKIN_TOMORROW_SUBJECT,
