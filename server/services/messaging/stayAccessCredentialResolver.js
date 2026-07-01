@@ -45,6 +45,93 @@ function resolveAFrameUnitIndex(unit) {
   return null;
 }
 
+function parseIndexFromDisplayName(displayName) {
+  const match = String(displayName || '').trim().match(/a-?\s*frame\s*#?\s*(\d+)/i);
+  return match ? Number.parseInt(match[1], 10) : null;
+}
+
+function parseIndexFromUnitNumber(unitNumber) {
+  const value = String(unitNumber || '').trim();
+  let match = value.match(/AF-0*(\d+)/i);
+  if (match) return Number.parseInt(match[1], 10);
+  match = value.match(/^(\d+)$/);
+  return match ? Number.parseInt(match[1], 10) : null;
+}
+
+/**
+ * Read-only diagnostic for preview / inspection scripts.
+ */
+function describeAFrameUnitResolution(unit, booking = null) {
+  const unitDoc = unit && typeof unit === 'object' ? unit : null;
+  const unitId = unitDoc?._id ? String(unitDoc._id) : (booking?.unitId ? String(booking.unitId._id || booking.unitId) : null);
+  const unitNumber = unitDoc?.unitNumber != null ? String(unitDoc.unitNumber) : null;
+  const displayName = unitDoc?.displayName != null ? String(unitDoc.displayName) : null;
+  const parsedFromDisplayName = parseIndexFromDisplayName(displayName);
+  const parsedFromUnitNumber = parseIndexFromUnitNumber(unitNumber);
+  const parsedUnitIndex = unitDoc ? resolveAFrameUnitIndex(unitDoc) : null;
+  const resolvedUnitLabel = unitDoc ? buildUnitLabel(unitDoc) : null;
+
+  let blockReason = null;
+  let whyIndexProduced = null;
+
+  if (!booking?.unitId && !unitDoc) {
+    blockReason = 'a_frame_unit_unassigned';
+    whyIndexProduced = 'booking.unitId is missing (A-frame bookings may be saved without unit assignment)';
+  } else if (!unitDoc) {
+    blockReason = 'a_frame_unit_not_found';
+    whyIndexProduced = `booking.unitId ${unitId || '(unknown)'} does not resolve to a Unit document`;
+  } else if (parsedUnitIndex == null) {
+    blockReason = 'a_frame_unit_unidentified';
+    whyIndexProduced = `Could not parse a guest/inventory index from displayName=${JSON.stringify(displayName)} unitNumber=${JSON.stringify(unitNumber)}`;
+  } else {
+    const parts = [];
+    if (parsedFromDisplayName != null) {
+      parts.push(`displayName "${displayName}" → index ${parsedFromDisplayName}`);
+    }
+    if (parsedFromUnitNumber != null) {
+      parts.push(`unitNumber "${unitNumber}" → index ${parsedFromUnitNumber}`);
+    }
+    whyIndexProduced = `${parts.join('; ')}; resolver uses ${parsedFromDisplayName != null ? 'displayName' : 'unitNumber'} first → unit_index_${parsedUnitIndex}`;
+
+    if (parsedUnitIndex === 1) {
+      blockReason = 'a_frame_1_not_automated';
+      whyIndexProduced += ' (A-Frame 1 is not built — no automated lock code)';
+    } else if (!A_FRAME_LOCK_CODES_BY_UNIT_INDEX[parsedUnitIndex]) {
+      blockReason = 'a_frame_unit_not_supported';
+      whyIndexProduced += ` (only guest ordinals 2 and 3 have lock codes; index ${parsedUnitIndex} is not mapped)`;
+    }
+  }
+
+  const lockCode = parsedUnitIndex != null
+    ? (A_FRAME_LOCK_CODES_BY_UNIT_INDEX[parsedUnitIndex] || null)
+    : null;
+
+  return {
+    bookingId: booking?._id ? String(booking._id) : null,
+    cabinTypeId: booking?.cabinTypeId ? String(booking.cabinTypeId._id || booking.cabinTypeId) : null,
+    unitId: booking?.unitId ? String(booking.unitId._id || booking.unitId) : unitId,
+    unit: unitDoc
+      ? {
+          _id: unitId,
+          unitNumber,
+          displayName,
+          name: unitDoc.name ?? null,
+          slug: unitDoc.slug ?? null,
+          isActive: unitDoc.isActive ?? null,
+          sortOrder: unitDoc.sortOrder ?? null,
+          cabinTypeId: unitDoc.cabinTypeId ? String(unitDoc.cabinTypeId) : null
+        }
+      : null,
+    parsedFromDisplayName,
+    parsedFromUnitNumber,
+    parsedUnitIndex,
+    resolvedUnitLabel,
+    lockCode,
+    blockReason,
+    whyIndexProduced
+  };
+}
+
 function buildUnitLabel(unit) {
   if (!unit || typeof unit !== 'object') return '';
   const displayName = String(unit.displayName || '').trim();
@@ -59,15 +146,24 @@ function buildUnitLabel(unit) {
   return `Unit ${unitNumber}`;
 }
 
-function buildWifiAccessBlock(staySlug) {
-  if (staySlug === STAY_SLUGS.STONE_HOUSE) {
-    return [
-      '<p>WiFi is available in the communal space of the Stone House.<br>',
-      'WiFi:<br>',
-      `${STONE_HOUSE_WIFI_NETWORK}</p>`
-    ].join('');
-  }
-  return '';
+function buildValleyWifiAccessBlock() {
+  return [
+    '<p>WiFi is available in the communal space of the Stone House.<br>',
+    'WiFi:<br>',
+    `${STONE_HOUSE_WIFI_NETWORK}</p>`
+  ].join('');
+}
+
+/** @deprecated use buildValleyWifiAccessBlock — kept for tests that referenced stay slug */
+function buildWifiAccessBlock(_staySlug) {
+  return buildValleyWifiAccessBlock();
+}
+
+function valleyWifiCredentials() {
+  return {
+    wifiNetworkName: STONE_HOUSE_WIFI_NETWORK,
+    wifiAccessBlock: buildValleyWifiAccessBlock()
+  };
 }
 
 async function loadBookingUnit(booking) {
@@ -131,15 +227,14 @@ async function resolveStayAccessCredentials({ booking, stayTarget, propertyKind 
         resolutionSource: staySlug || 'unresolved_cabin_slug'
       };
     }
-    const wifiAccessBlock = buildWifiAccessBlock(staySlug);
+    const wifi = valleyWifiCredentials();
     return {
       ok: true,
       resolutionSource: `valley:cabin:${staySlug}`,
       credentials: {
         lockCode,
         unitLabel: '',
-        wifiNetworkName: staySlug === STAY_SLUGS.STONE_HOUSE ? STONE_HOUSE_WIFI_NETWORK : '',
-        wifiAccessBlock,
+        ...wifi,
         googleEarthUrl: '',
         transferOfferNote: VALLEY_TRANSFER_OFFER_NOTE
       }
@@ -196,14 +291,14 @@ async function resolveStayAccessCredentials({ booking, stayTarget, propertyKind 
     }
 
     const unitLabel = buildUnitLabel(unit);
+    const wifi = valleyWifiCredentials();
     return {
       ok: true,
       resolutionSource: `valley:a-frame:unit_index_${unitIndex}`,
       credentials: {
         lockCode,
         unitLabel,
-        wifiNetworkName: '',
-        wifiAccessBlock: '',
+        ...wifi,
         googleEarthUrl: '',
         transferOfferNote: VALLEY_TRANSFER_OFFER_NOTE
       }
@@ -222,6 +317,10 @@ module.exports = {
   resolveStayAccessCredentials,
   resolveAFrameUnitIndex,
   buildWifiAccessBlock,
+  buildValleyWifiAccessBlock,
   buildUnitLabel,
-  isAFrameCabinType
+  isAFrameCabinType,
+  describeAFrameUnitResolution,
+  parseIndexFromDisplayName,
+  parseIndexFromUnitNumber
 };

@@ -72,6 +72,7 @@
     "maintenance:gma-replace-template-copy": "node scripts/gmaReplaceTemplateCopy.cjs",
     "maintenance:gma-apply-guest-access": "node scripts/gmaApplyGuestAccessEmail.cjs",
     "maintenance:gma-preview-guest-access": "node scripts/gmaPreviewGuestAccessEmails.cjs",
+    "maintenance:gma-inspect-guest-access": "node scripts/gmaInspectGuestAccessBookings.cjs",
     "maintenance:seed-message-automation": "node scripts/seedMessageAutomation.js",
     "validate:phase2-lifecycle-email": "node scripts/validatePhase2LifecycleEmailPersistence.js"
   },

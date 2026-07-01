@@ -33,6 +33,10 @@ const {
   resolvePropertyKindFromCabinDoc,
   resolvePropertyKindFromCabinTypeDoc
 } = require('../services/messaging/propertyKindResolver');
+const {
+  describeAFrameUnitResolution,
+  isAFrameCabinType
+} = require('../services/messaging/stayAccessCredentialResolver');
 
 const RULE_BY_KIND = Object.freeze({
   cabin: checkInAccessDayBeforeCabinRule,
@@ -116,6 +120,15 @@ async function previewOneBooking(booking) {
   }
 
   const rule = RULE_BY_KIND[propertyKind];
+  const unit =
+    booking.unitId && typeof booking.unitId === 'object' && booking.unitId.unitNumber
+      ? booking.unitId
+      : null;
+  const aFrameContext =
+    stayKind === 'cabinType' && isAFrameCabinType(stayTarget)
+      ? describeAFrameUnitResolution(unit, booking)
+      : null;
+
   const varResult = await resolveGuestAccessVariables({ booking, stayTarget, propertyKind });
   if (!varResult.ok) {
     return {
@@ -126,6 +139,9 @@ async function previewOneBooking(booking) {
       guestEmailRedacted: redactEmail(booking.guestInfo?.email),
       checkIn: booking.checkIn,
       propertyName: stayTarget.name,
+      cabinTypeId: booking.cabinTypeId ? String(booking.cabinTypeId) : null,
+      unitId: booking.unitId ? String(booking.unitId._id || booking.unitId) : null,
+      aFrameInspection: aFrameContext,
       blockReason: varResult.blockReason || null,
       missing: varResult.missing || [],
       resolutionSource: varResult.resolutionSource || null
@@ -153,6 +169,8 @@ async function previewOneBooking(booking) {
     propertyName: varResult.variables.propertyName,
     resolutionSource: varResult.resolutionSource,
     lockCode: varResult.variables.lockCode,
+    hasWifiBlock: Boolean(varResult.variables.wifiAccessBlock),
+    aFrameInspection: aFrameContext,
     subject,
     text,
     bodyRedactedInLogs: true

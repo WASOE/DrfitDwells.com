@@ -173,7 +173,7 @@ test('access rules ship shadow-gated and email_only', () => {
   }
 });
 
-test('Lux Cabin resolves lock code 0707', async () => {
+test('Lux Cabin resolves lock code 0707 and Valley WiFi', async () => {
   const cabin = await insertLuxCabin();
   const booking = await insertBooking({ cabin });
   const result = await resolveGuestAccessVariables({
@@ -184,6 +184,10 @@ test('Lux Cabin resolves lock code 0707', async () => {
   assert.equal(result.ok, true);
   assert.equal(result.variables.lockCode, '0707');
   assert.equal(result.resolutionSource, 'valley:cabin:lux-cabin');
+  assert.equal(result.variables.wifiNetworkName, 'Drift&Dwells');
+  assert.match(result.variables.wifiAccessBlock, /Stone House/);
+  const body = renderAccessBody(ACCESS_VALLEY_EMAIL_BODY, result.variables);
+  assert.match(body, /Drift&Dwells/);
 });
 
 test('Stone House resolves lock code 9797 and WiFi', async () => {
@@ -200,7 +204,7 @@ test('Stone House resolves lock code 9797 and WiFi', async () => {
   assert.match(result.variables.wifiAccessBlock, /Stone House/);
 });
 
-test('A-Frame 2 resolves lock code 2727', async () => {
+test('A-Frame 2 resolves lock code 2727 and Valley WiFi', async () => {
   const cabinType = await insertAFrameType();
   const unit = await insertAFrameUnit(cabinType._id, {
     unitNumber: 'AF-02',
@@ -215,9 +219,10 @@ test('A-Frame 2 resolves lock code 2727', async () => {
   assert.equal(result.ok, true);
   assert.equal(result.variables.lockCode, '2727');
   assert.equal(result.variables.propertyName, 'A-Frame 2');
+  assert.match(result.variables.wifiAccessBlock, /Drift&Dwells/);
 });
 
-test('A-Frame 3 resolves lock code 3737', async () => {
+test('A-Frame 3 resolves lock code 3737 and Valley WiFi', async () => {
   const cabinType = await insertAFrameType();
   const unit = await insertAFrameUnit(cabinType._id, {
     unitNumber: 'AF-03',
@@ -231,6 +236,7 @@ test('A-Frame 3 resolves lock code 3737', async () => {
   });
   assert.equal(result.ok, true);
   assert.equal(result.variables.lockCode, '3737');
+  assert.match(result.variables.wifiAccessBlock, /communal space of the Stone House/);
 });
 
 test('A-Frame without unit assignment blocks access resolution', async () => {
@@ -260,6 +266,63 @@ test('A-Frame 1 blocks automated access code', async () => {
   });
   assert.equal(result.ok, false);
   assert.equal(result.blockReason, 'a_frame_1_not_automated');
+});
+
+test('A-Frame 4 (AF-04) remains blocked as unit_index_4', async () => {
+  const cabinType = await insertAFrameType();
+  const unit = await insertAFrameUnit(cabinType._id, {
+    unitNumber: 'AF-04',
+    displayName: 'A-Frame 04'
+  });
+  const booking = await insertBooking({ cabinType, unit });
+  const result = await resolveGuestAccessVariables({
+    booking,
+    stayTarget: cabinType,
+    propertyKind: 'valley'
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.blockReason, 'a_frame_unit_not_supported');
+  assert.equal(result.resolutionSource, 'valley:a-frame:unit_index_4');
+});
+
+test('The Cabin access email does not include Valley WiFi', async () => {
+  const cabin = await insertCabin();
+  const booking = await insertBooking({ cabin });
+  const result = await resolveGuestAccessVariables({
+    booking,
+    stayTarget: cabin,
+    propertyKind: 'cabin'
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.variables.wifiAccessBlock, '');
+  assert.equal(result.variables.wifiNetworkName, '');
+  const body = renderAccessBody(ACCESS_CABIN_EMAIL_BODY, result.variables);
+  assert.equal(body.includes('Drift&Dwells'), false);
+  assert.match(body, /no WiFi at The Cabin/i);
+});
+
+test('describeAFrameUnitResolution explains unit_index_4', async () => {
+  const { describeAFrameUnitResolution } = require('../services/messaging/stayAccessCredentialResolver');
+  const cabinType = await insertAFrameType();
+  const unit = await insertAFrameUnit(cabinType._id, {
+    unitNumber: 'AF-04',
+    displayName: 'A-Frame 04'
+  });
+  const booking = await insertBooking({ cabinType, unit });
+  const inspection = describeAFrameUnitResolution(unit, booking);
+  assert.equal(inspection.parsedUnitIndex, 4);
+  assert.equal(inspection.blockReason, 'a_frame_unit_not_supported');
+  assert.match(inspection.whyIndexProduced, /unit_index_4/);
+  assert.match(inspection.whyIndexProduced, /only guest ordinals 2 and 3/);
+});
+
+test('describeAFrameUnitResolution explains unassigned booking', async () => {
+  const { describeAFrameUnitResolution } = require('../services/messaging/stayAccessCredentialResolver');
+  const cabinType = await insertAFrameType();
+  const booking = await insertBooking({ cabinType, unit: null });
+  const inspection = describeAFrameUnitResolution(null, booking);
+  assert.equal(inspection.blockReason, 'a_frame_unit_unassigned');
+  assert.match(inspection.whyIndexProduced, /unitId is missing/);
 });
 
 test('The Cabin resolves 2727 and Google Earth URL', async () => {
