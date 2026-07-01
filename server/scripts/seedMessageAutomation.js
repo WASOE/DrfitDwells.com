@@ -41,6 +41,8 @@ const {
   opsAlertCheckInTomorrowTemplate,
   opsAlertCheckoutTodayTemplate
 } = require('../data/messageTemplates/opsAlerts');
+const { cabinAccessEmailTemplate } = require('../data/messageTemplates/access_day_before_the_cabin');
+const { valleyAccessEmailTemplate } = require('../data/messageTemplates/access_day_before_the_valley');
 const { MESSAGE_AUTOMATION_RULES } = require('../data/messageAutomationRules');
 const { buildAllCleanerTemplates } = require('../data/messageTemplates/cleanerNotifications');
 
@@ -96,6 +98,8 @@ function buildAllTemplates() {
     opsAlertArriving8dTemplate,
     opsAlertCheckInTomorrowTemplate,
     opsAlertCheckoutTodayTemplate,
+    cabinAccessEmailTemplate,
+    valleyAccessEmailTemplate,
     ...buildAllCleanerTemplates()
   ].map((row) => pickModelFields(row, TEMPLATE_MODEL_FIELDS));
 }
