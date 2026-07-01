@@ -11,7 +11,7 @@ const { ensureGiftVoucherCreatorCommissionAfterActivation } = require('./giftVou
 
 const DEFAULT_TERMS_VERSION = 'v1';
 const EUR = 'EUR';
-const MIN_AMOUNT_CENTS = 1500;
+const { MIN_GIFT_VOUCHER_AMOUNT_CENTS } = require('./giftVoucherConstants');
 const PHYSICAL_CARD_FEE_CENTS = 500;
 const PURCHASE_ID_PATTERN = /^[A-Za-z0-9:_-]{8,128}$/;
 
@@ -123,7 +123,7 @@ function assertIntegerCents(value, fieldName) {
 function normalizeQuoteInput(input = {}) {
   const amountOriginalCents = Number(input.amountOriginalCents);
   assertIntegerCents(amountOriginalCents, 'amountOriginalCents');
-  if (amountOriginalCents < MIN_AMOUNT_CENTS) {
+  if (amountOriginalCents < MIN_GIFT_VOUCHER_AMOUNT_CENTS) {
     const err = new Error('Minimum amount is EUR 15');
     err.code = 'AMOUNT_BELOW_MINIMUM';
     throw err;
@@ -157,7 +157,7 @@ function quoteGiftVoucherPurchase(input = {}) {
   return {
     ok: true,
     ...pricing,
-    minimumAmountCents: MIN_AMOUNT_CENTS
+    minimumAmountCents: MIN_GIFT_VOUCHER_AMOUNT_CENTS
   };
 }
 

@@ -86,9 +86,12 @@ const {
   attachPaymentIntentToReservation,
   validateReservedRedemptionForBooking,
   releaseVoucherReservation,
-  confirmVoucherReservation,
-  releaseExpiredVoucherReservations
+  confirmVoucherReservation
 } = require('../services/bookings/bookingVoucherRedemptionService');
+const {
+  isGuestSafeVoucherFailureCode,
+  PUBLIC_VOUCHER_ERROR_MESSAGE
+} = require('../services/giftVouchers/giftVoucherConstants');
 
 const router = express.Router();
 const CHECKOUT_ID_PATTERN = /^[A-Za-z0-9:_-]{8,128}$/;
@@ -725,7 +728,6 @@ router.post('/create-payment-intent', paymentIntentLimiter, bookingQuoteBodyVali
     let replacedStalePaymentIntent = null;
 
     if (voucherCode) {
-      await releaseExpiredVoucherReservations({ now: new Date(), limit: 25 });
       const holdExpiry = new Date(Date.now() + 30 * 60 * 1000);
       const reservation = await reserveVoucherForCheckout({
         voucherCode,
@@ -878,8 +880,12 @@ router.post('/create-payment-intent', paymentIntentLimiter, bookingQuoteBodyVali
     if (err?.code === 'CHECKOUT_ID_CONFLICT') {
       return res.status(409).json({ success: false, message: err.message, error: { code: err.code } });
     }
-    if (['NOT_FOUND', 'NOT_REDEEMABLE_STATUS', 'MISSING_EXPIRY', 'EXPIRED', 'NO_BALANCE', 'VOUCHER_CODE_REQUIRED'].includes(err?.code)) {
-      return res.status(400).json({ success: false, message: 'This voucher cannot be used.' });
+    if (isGuestSafeVoucherFailureCode(err?.code)) {
+      console.warn('[booking-voucher] create-payment-intent voucher validation failed', {
+        internalCode: err.code,
+        checkoutId
+      });
+      return res.status(400).json({ success: false, message: PUBLIC_VOUCHER_ERROR_MESSAGE });
     }
     console.error('Create payment intent error:', err);
     return res.status(500).json({

@@ -41,6 +41,7 @@
     "test:funnel-events": "node --test scripts/funnelEventDedupe.test.cjs scripts/funnelEventService.test.cjs scripts/funnelEventRoutes.test.cjs scripts/bookingQuoteFunnelHook.test.cjs",
     "test:insights": "node --test scripts/propertyKindJoin.test.cjs scripts/insightsReadModel.test.cjs",
     "test:gift-voucher-pulse": "node --test scripts/giftVoucherPulseMetrics.test.cjs",
+    "test:gift-voucher-redemption-lifecycle": "node --test scripts/giftVoucherBookingRedemptionLifecycle.test.cjs scripts/giftVoucherBatch7BookingRedemption.test.cjs",
     "test:conversion": "node --test scripts/conversionSummaryService.test.cjs",
     "test:messaging-models": "node --test scripts/messageAutomationModels.test.cjs",
     "test:phone-normalisation": "node --test scripts/phoneNormalisationService.test.cjs",

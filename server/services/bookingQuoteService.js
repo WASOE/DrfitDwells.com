@@ -157,6 +157,7 @@ async function buildPublicBookingQuote(body) {
   let remainingDueCents = Math.round(quote.totalPrice * 100);
   let fullVoucherCoverage = false;
   let voucherPreviewError = null;
+  let voucherPreviewInternalCode = null;
   if (typeof body.voucherCode === 'string' && body.voucherCode.trim()) {
     const voucherPreview = await previewVoucherApplication({
       voucherCode: body.voucherCode,
@@ -165,8 +166,13 @@ async function buildPublicBookingQuote(body) {
     voucherAppliedCents = Number(voucherPreview.voucherAppliedCents || 0);
     remainingDueCents = Number(voucherPreview.remainingDueCents || remainingDueCents);
     fullVoucherCoverage = Boolean(voucherPreview.fullVoucherCoverage);
-    if (voucherPreview.success === false) {
-      voucherPreviewError = voucherPreview.message || 'This voucher cannot be used.';
+    if (voucherPreview.ok === false || voucherPreview.success === false) {
+      voucherPreviewError = voucherPreview.publicMessage || voucherPreview.message || 'This voucher cannot be used.';
+      voucherPreviewInternalCode = voucherPreview.internalCode || null;
+      console.warn('[booking-quote] voucher preview rejected', {
+        internalCode: voucherPreviewInternalCode,
+        voucherCode: body.voucherCode.trim().toUpperCase()
+      });
     }
   }
 

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { MIN_GIFT_VOUCHER_AMOUNT_CENTS } = require('../services/giftVouchers/giftVoucherConstants');
 
 const VOUCHER_STATUSES = [
   'draft',
@@ -55,7 +56,7 @@ const giftVoucherSchema = new mongoose.Schema(
     amountOriginalCents: {
       type: Number,
       required: true,
-      min: 1500,
+      min: MIN_GIFT_VOUCHER_AMOUNT_CENTS,
       validate: {
         validator: integerValidator,
         message: 'amountOriginalCents must be an integer'
@@ -136,8 +137,8 @@ giftVoucherSchema.pre('validate', function validateBalance(next) {
   if (!isIntegerNumber(this.balanceRemainingCents)) {
     return next(new Error('balanceRemainingCents must be an integer'));
   }
-  if (this.amountOriginalCents < 1500) {
-    return next(new Error('amountOriginalCents must be at least 1500'));
+  if (this.amountOriginalCents < MIN_GIFT_VOUCHER_AMOUNT_CENTS) {
+    return next(new Error(`amountOriginalCents must be at least ${MIN_GIFT_VOUCHER_AMOUNT_CENTS}`));
   }
   if (this.balanceRemainingCents < 0) {
     return next(new Error('balanceRemainingCents cannot be negative'));

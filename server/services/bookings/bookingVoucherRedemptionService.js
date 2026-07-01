@@ -4,9 +4,7 @@ const GiftVoucherRedemption = require('../../models/GiftVoucherRedemption');
 const { reserveVoucherAmount, confirmReservedRedemption, releaseReservedRedemption } = require('../giftVouchers/giftVoucherLedgerService');
 const {
   assertIntegerCents,
-  assertVoucherRedeemable,
-  computeRedeemableAmountCents,
-  buildPublicGenericVoucherError
+  evaluateVoucherForBookingAmount
 } = require('../giftVouchers/giftVoucherValidationService');
 const { openManualReviewItem } = require('../ops/ingestion/manualReviewService');
 
@@ -31,11 +29,24 @@ function isExpired(redemption, now = new Date()) {
   return !Number.isNaN(expiry.getTime()) && expiry <= now;
 }
 
+/**
+ * Effective voucher availability: balance after releasing expired holds globally.
+ */
+async function getVoucherAvailableBalanceCents(giftVoucherId, { now = new Date(), limit = 25 } = {}) {
+  await releaseExpiredVoucherReservations({ now, limit });
+  const voucher = await GiftVoucher.findById(giftVoucherId).select('balanceRemainingCents').lean();
+  return Number(voucher?.balanceRemainingCents || 0);
+}
+
 async function previewVoucherApplication({ voucherCode, totalValueCents, now = new Date() }) {
   assertIntegerCents(totalValueCents, 'totalValueCents');
+  await releaseExpiredVoucherReservations({ now, limit: 25 });
+
   const normalizedVoucherCode = normalizeVoucherCode(voucherCode);
   if (!normalizedVoucherCode || totalValueCents <= 0) {
     return {
+      ok: true,
+      success: true,
       voucherAppliedCents: 0,
       remainingDueCents: Math.max(0, totalValueCents),
       fullVoucherCoverage: false
@@ -43,24 +54,12 @@ async function previewVoucherApplication({ voucherCode, totalValueCents, now = n
   }
 
   const voucher = await GiftVoucher.findOne({ code: normalizedVoucherCode }).lean();
-  try {
-    assertVoucherRedeemable(voucher, { now });
-    const voucherAppliedCents = computeRedeemableAmountCents({ voucher, amountDueCents: totalValueCents });
-    return {
-      voucherAppliedCents,
-      remainingDueCents: Math.max(0, totalValueCents - voucherAppliedCents),
-      fullVoucherCoverage: voucherAppliedCents >= totalValueCents,
-      giftVoucherId: String(voucher._id),
-      voucherCode: normalizedVoucherCode
-    };
-  } catch {
-    return {
-      ...buildPublicGenericVoucherError(),
-      voucherAppliedCents: 0,
-      remainingDueCents: Math.max(0, totalValueCents),
-      fullVoucherCoverage: false
-    };
-  }
+  return evaluateVoucherForBookingAmount({
+    voucher,
+    voucherCode: normalizedVoucherCode,
+    totalValueCents,
+    now
+  });
 }
 
 async function releaseExpiredVoucherReservations({
@@ -126,6 +125,9 @@ async function reserveVoucherForCheckout({
   actor = 'guest'
 }) {
   assertIntegerCents(totalValueCents, 'totalValueCents');
+  const now = new Date();
+  await releaseExpiredVoucherReservations({ now, limit: 25 });
+
   const normalizedVoucherCode = normalizeVoucherCode(voucherCode);
   if (!normalizedVoucherCode) {
     const err = new Error('voucherCode is required');
@@ -139,14 +141,15 @@ async function reserveVoucherForCheckout({
   }
 
   const existingByCheckout = await GiftVoucherRedemption.findOne({ checkoutId }).sort({ createdAt: -1 });
-  const voucher = await GiftVoucher.findOne({ code: normalizedVoucherCode });
-  const giftVoucherId = voucher?._id ? String(voucher._id) : 'missing_voucher';
+  const voucherLookup = await GiftVoucher.findOne({ code: normalizedVoucherCode }).lean();
+  const giftVoucherId = voucherLookup?._id ? String(voucherLookup._id) : 'missing_voucher';
   const reservationKey = buildReservationKey({
     checkoutId,
     normalizedVoucherCode,
     totalValueCents,
     giftVoucherId
   });
+
   if (existingByCheckout) {
     if (existingByCheckout.reservationKey !== reservationKey) {
       const err = new Error('checkoutId conflicts with existing voucher reservation');
@@ -154,30 +157,58 @@ async function reserveVoucherForCheckout({
       throw err;
     }
 
-    if (existingByCheckout.status === 'reserved' && !isExpired(existingByCheckout)) {
-      return {
-        ok: true,
-        idempotentReplay: true,
-        redemptionId: String(existingByCheckout._id),
-        giftVoucherId: String(existingByCheckout.giftVoucherId),
-        voucherAppliedCents: existingByCheckout.amountAppliedCents,
-        remainingDueCents: Math.max(0, totalValueCents - existingByCheckout.amountAppliedCents),
-        fullVoucherCoverage: existingByCheckout.amountAppliedCents >= totalValueCents,
-        paymentIntentId: existingByCheckout.paymentIntentId || null,
-        reservationKey
-      };
+    if (existingByCheckout.status === 'reserved') {
+      if (!isExpired(existingByCheckout, now)) {
+        return {
+          ok: true,
+          idempotentReplay: true,
+          redemptionId: String(existingByCheckout._id),
+          giftVoucherId: String(existingByCheckout.giftVoucherId),
+          voucherAppliedCents: existingByCheckout.amountAppliedCents,
+          remainingDueCents: Math.max(0, totalValueCents - existingByCheckout.amountAppliedCents),
+          fullVoucherCoverage: existingByCheckout.amountAppliedCents >= totalValueCents,
+          paymentIntentId: existingByCheckout.paymentIntentId || null,
+          reservationKey
+        };
+      }
+
+      await releaseVoucherReservation({
+        redemptionId: existingByCheckout._id,
+        reason: 'expired_hold',
+        actor: 'system',
+        note: 'release expired hold before new reservation for same checkout'
+      });
     }
   }
-  assertVoucherRedeemable(voucher, { now: new Date() });
-  const voucherAppliedCents = computeRedeemableAmountCents({ voucher, amountDueCents: totalValueCents });
 
+  const voucher = await GiftVoucher.findOne({ code: normalizedVoucherCode });
+  const evaluation = evaluateVoucherForBookingAmount({
+    voucher: voucher ? voucher.toObject() : null,
+    voucherCode: normalizedVoucherCode,
+    totalValueCents,
+    now
+  });
+  if (!evaluation.ok) {
+    const err = new Error(evaluation.publicMessage);
+    err.code = evaluation.internalCode;
+    throw err;
+  }
+
+  const voucherAppliedCents = evaluation.voucherAppliedCents;
   const holdExpiry = redemptionExpiresAt instanceof Date ? redemptionExpiresAt : null;
   const reservation = await reserveVoucherAmount({
     giftVoucherId: voucher._id,
     amountToReserveCents: voucherAppliedCents,
+    holdExpiresAt: holdExpiry,
     actor,
     note: 'reserve voucher for booking checkout'
   });
+
+  if (!reservation.ok) {
+    const err = new Error('Voucher reserve failed');
+    err.code = reservation.code === 'RESERVE_REDEMPTION_CREATE_FAILED' ? 'RESERVE_FAILED' : (reservation.code || 'RESERVE_FAILED');
+    throw err;
+  }
 
   await GiftVoucherRedemption.updateOne(
     { _id: reservation.redemptionId },
@@ -197,8 +228,8 @@ async function reserveVoucherForCheckout({
     redemptionId: String(reservation.redemptionId),
     giftVoucherId: String(voucher._id),
     voucherAppliedCents,
-    remainingDueCents: Math.max(0, totalValueCents - voucherAppliedCents),
-    fullVoucherCoverage: voucherAppliedCents >= totalValueCents,
+    remainingDueCents: evaluation.remainingDueCents,
+    fullVoucherCoverage: evaluation.fullVoucherCoverage,
     paymentIntentId: null,
     reservationKey
   };
@@ -265,6 +296,7 @@ async function confirmVoucherReservation({ redemptionId, actor = 'system', note 
 module.exports = {
   normalizeVoucherCode,
   buildReservationKey,
+  getVoucherAvailableBalanceCents,
   previewVoucherApplication,
   reserveVoucherForCheckout,
   attachPaymentIntentToReservation,
