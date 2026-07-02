@@ -5,6 +5,12 @@ const {
   quoteGiftVoucherPurchase,
   createGiftVoucherPaymentIntent
 } = require('../services/giftVouchers/giftVoucherPaymentService');
+const {
+  resolveVoucherByCardAccessToken,
+  CARD_ACCESS_NOT_FOUND
+} = require('../services/giftVouchers/giftVoucherCardAccessService');
+const { renderGiftVoucherCard } = require('../services/giftVouchers/giftVoucherCardRenderer');
+const { buildGiftVoucherPrintDocument } = require('../services/giftVouchers/giftVoucherCardPrintDocument');
 const { attachPaymentFlowMonitor } = require('../services/ops/paymentFlowMonitorService');
 const {
   CARD_OCCASIONS,
@@ -32,6 +38,14 @@ const paymentIntentLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: 'Too many payment attempts. Please try again in a minute.' }
+});
+
+const cardAccessLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: CARD_ACCESS_NOT_FOUND
 });
 
 function isPostalPurchase(body = {}) {
@@ -197,4 +211,30 @@ router.post('/create-payment-intent', paymentIntentLimiter, paymentIntentValidat
   }
 });
 
+// GET /api/gift-vouchers/card/:accessToken — printable card HTML (opaque token, no voucher code in URL)
+router.get('/card/:accessToken', cardAccessLimiter, async (req, res) => {
+  try {
+    const voucher = await resolveVoucherByCardAccessToken(req.params.accessToken);
+    if (!voucher) {
+      return res.status(404).json(CARD_ACCESS_NOT_FOUND);
+    }
+    const { html: cardHtml, templateId } = renderGiftVoucherCard({
+      voucher,
+      mode: 'print'
+    });
+    const documentHtml = buildGiftVoucherPrintDocument({
+      cardHtml,
+      title: `Drift & Dwells gift voucher — ${templateId}`
+    });
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.set('Cache-Control', 'private, no-store');
+    res.set('X-Robots-Tag', 'noindex');
+    return res.status(200).send(documentHtml);
+  } catch (error) {
+    console.error('[gift voucher] card download render failed:', error?.message || error);
+    return res.status(404).json(CARD_ACCESS_NOT_FOUND);
+  }
+});
+
 module.exports = router;
+module.exports.cardAccessLimiter = cardAccessLimiter;

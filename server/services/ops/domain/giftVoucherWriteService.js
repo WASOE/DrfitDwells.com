@@ -2,6 +2,7 @@ const GiftVoucher = require('../../../models/GiftVoucher');
 const GiftVoucherEvent = require('../../../models/GiftVoucherEvent');
 const { appendVoucherEvent, appendFinancialVoucherEvent } = require('../../giftVouchers/giftVoucherEventService');
 const { resendRecipientGiftVoucherEmail } = require('../../giftVouchers/giftVoucherEmailService');
+const { revokeCardAccessToken } = require('../../giftVouchers/giftVoucherCardAccessService');
 const { requirePermission, ACTIONS } = require('../../permissionService');
 
 const ALLOWED_VOID_STATUSES = new Set(['pending_payment', 'active', 'partially_redeemed', 'expired']);
@@ -162,6 +163,7 @@ async function voidVoucher({
 
   voucher.status = 'voided';
   await voucher.save();
+  await revokeCardAccessToken(voucher._id);
 
   await appendVoucherEvent({
     giftVoucherId: voucher._id,

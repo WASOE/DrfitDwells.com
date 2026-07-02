@@ -8,6 +8,7 @@ const { openManualReviewItem } = require('../ops/ingestion/manualReviewService')
 const { notifyGiftVoucherWebhookActivationFailure } = require('../ops/paymentFlowMonitorService');
 const { handleActivatedGiftVoucherDelivery } = require('./giftVoucherEmailService');
 const { ensureGiftVoucherCreatorCommissionAfterActivation } = require('./giftVoucherCommissionService');
+const { issueCardAccessToken } = require('./giftVoucherCardAccessService');
 
 const DEFAULT_TERMS_VERSION = 'v1';
 const EUR = 'EUR';
@@ -596,8 +597,10 @@ async function activatePaidVoucherFromStripeEvent(event) {
   expiresAt.setFullYear(expiresAt.getFullYear() + 1);
 
   let latestVoucher = voucher;
+  let issuedCardAccessToken = null;
   if (!(voucher.status === 'active' && voucher.code && voucher.activatedAt)) {
     const { code } = await generateUniqueVoucherCode();
+    const { rawToken, tokenHash } = issueCardAccessToken();
     const updated = await GiftVoucher.findOneAndUpdate(
       {
         _id: voucher._id,
@@ -609,7 +612,8 @@ async function activatePaidVoucherFromStripeEvent(event) {
           status: 'active',
           code,
           activatedAt: now,
-          expiresAt
+          expiresAt,
+          cardAccessTokenHash: tokenHash
         },
         $addToSet: {
           stripeEventIdsProcessed: String(event.id)
@@ -634,6 +638,7 @@ async function activatePaidVoucherFromStripeEvent(event) {
       }
     } else {
       latestVoucher = updated;
+      issuedCardAccessToken = rawToken;
     }
   } else {
     await GiftVoucher.updateOne(
@@ -773,7 +778,8 @@ async function activatePaidVoucherFromStripeEvent(event) {
     status: latestVoucher.status,
     emailDelivery,
     commissionStatus,
-    giftVoucherCommission
+    giftVoucherCommission,
+    ...(issuedCardAccessToken ? { cardAccessToken: issuedCardAccessToken } : {})
   };
 }
 

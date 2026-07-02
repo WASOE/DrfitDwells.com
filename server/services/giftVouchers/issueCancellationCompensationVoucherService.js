@@ -5,6 +5,7 @@ const {
 } = require('./giftVoucherIssuance');
 const { generateUniqueVoucherCode } = require('./giftVoucherCodeService');
 const { appendVoucherEvent } = require('./giftVoucherEventService');
+const { issueCardAccessToken } = require('./giftVoucherCardAccessService');
 
 const MIN_CREDIT_AMOUNT_CENTS = 10000;
 const DEFAULT_EXPIRY_YEARS = 1;
@@ -142,6 +143,7 @@ async function issueCancellationCompensationVoucher({
   }
 
   const { code } = await generateUniqueVoucherCode();
+  const { tokenHash } = issueCardAccessToken();
   const now = new Date();
 
   const voucherPayload = {
@@ -149,6 +151,7 @@ async function issueCancellationCompensationVoucher({
     code,
     activatedAt: now,
     expiresAt: expiresAtDate,
+    cardAccessTokenHash: tokenHash,
     amountOriginalCents: creditAmountCents,
     balanceRemainingCents: creditAmountCents,
     currency: 'EUR',
