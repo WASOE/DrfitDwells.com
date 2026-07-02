@@ -19,6 +19,7 @@ const {
   DELIVERY_OPTIONS,
   MESSAGE_MAX_LENGTH
 } = require('../services/giftVouchers/giftVoucherCustomizationConstants');
+const { isGiftVoucherScheduledEnabled } = require('../services/giftVouchers/giftVoucherDeliveryOption');
 
 const GIFT_VOUCHER_PAYMENT_INTENT_ROUTE = '/api/gift-vouchers/create-payment-intent';
 
@@ -167,6 +168,16 @@ function handleDomainError(res, error, fallbackMessage) {
   }
   return res.status(500).json({ success: false, message: fallbackMessage });
 }
+
+// GET /api/gift-vouchers/config — public purchase UI flags (no secrets)
+router.get('/config', (req, res) => {
+  res.json({
+    success: true,
+    data: {
+      scheduledDeliveryEnabled: isGiftVoucherScheduledEnabled()
+    }
+  });
+});
 
 // POST /api/gift-vouchers/quote
 router.post('/quote', quoteLimiter, quoteValidators, async (req, res) => {

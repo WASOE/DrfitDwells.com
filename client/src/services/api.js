@@ -116,6 +116,7 @@ export const bookingAPI = {
 };
 
 export const giftVoucherAPI = {
+  getConfig: () => api.get('/gift-vouchers/config'),
   quote: (data) => api.post('/gift-vouchers/quote', data),
   createPaymentIntent: (data) => api.post('/gift-vouchers/create-payment-intent', data)
 };

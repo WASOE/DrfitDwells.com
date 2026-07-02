@@ -1,0 +1,152 @@
+{
+  "seo": {
+    "title": "The Gift of Time Offline | Drift & Dwells Gift Vouchers",
+    "description": "Give someone a few days away from noise, screens, and schedules. A Drift & Dwells gift voucher, delivered by email or as a physical card by post."
+  },
+  "hero": {
+    "kicker": "Drift & Dwells · Gift Vouchers",
+    "title": "The Gift of Time Offline",
+    "lead": "Give someone a few days away from noise, screens, and schedules.",
+    "textBefore": "A Drift & Dwells gift voucher, delivered by email or as a physical card by post — prepaid credit toward a future stay at",
+    "cabin": "The Cabin",
+    "or": "or",
+    "valley": "The Valley",
+    "tail": "It is not a discount. It is a quiet invitation, redeemable when the moment is right.",
+    "deliveryTag": "Email or post delivery",
+    "validTag": "Valid 12 months",
+    "fromTag": "From €15",
+    "imageAlt": "The Valley postcard view"
+  },
+  "howItWorks": {
+    "title": "How it works",
+    "line1": "You choose an amount. We send your gift by email or prepare a physical card by post.",
+    "line2": "They redeem it during booking when they decide where and when to slow down.",
+    "line3": "Vouchers are valid for twelve months and can be applied to any available night at The Cabin or The Valley. The remaining balance stays on the voucher for future stays until it is fully used or expires."
+  },
+  "order": {
+    "kicker": "Order your gift voucher",
+    "chooseAmount": "Choose an amount",
+    "minimumText": "Minimum €15. Vouchers are issued in EUR.",
+    "previewLabel": "Your gift card",
+    "customize": "Personalise your card"
+  },
+  "amount": {
+    "voucher": "Voucher",
+    "prepaid": "Prepaid credit",
+    "customAmount": "Choose a custom amount",
+    "customPlaceholder": "e.g. 75"
+  },
+  "templates": {
+    "label": "Card design",
+    "forest": "Forest",
+    "romantic": "Romantic",
+    "minimal": "Minimal"
+  },
+  "occasions": {
+    "label": "Occasion",
+    "birthday": "Birthday",
+    "anniversary": "Anniversary",
+    "thank_you": "Thank you",
+    "wedding": "Wedding",
+    "last_minute": "Last minute",
+    "custom": "Just because"
+  },
+  "fields": {
+    "message": "A short message (optional)",
+    "messagePlaceholder": "A few quiet words to go with the voucher",
+    "messageCounter": "{{count}} / {{max}}",
+    "for": "For",
+    "from": "From",
+    "recipientName": "Recipient name",
+    "recipientNamePlaceholder": "Their name",
+    "buyerName": "Your name",
+    "buyerNamePlaceholder": "Full name",
+    "buyerEmail": "Your email",
+    "emailPlaceholder": "email@example.com",
+    "recipientEmail": "Recipient email",
+    "recipientEmailOptional": "Recipient email (optional)"
+  },
+  "cardLocale": {
+    "label": "Card language",
+    "en": "English",
+    "bg": "Bulgarian"
+  },
+  "delivery": {
+    "title": "Delivery",
+    "hint": "Let us know how to deliver the gift.",
+    "sendMethod": "How to send it",
+    "recipientNow": "Send now to recipient",
+    "sendToBuyer": "Send gift card to me",
+    "sendToBuyerHint": "The gift card will be sent to your email after payment.",
+    "scheduled": "Schedule email delivery",
+    "postal": "Physical card by post",
+    "scheduledDate": "Delivery date",
+    "scheduledDateHint": "We will email the gift card on this date (Sofia time)."
+  },
+  "postal": {
+    "address1": "Address line 1",
+    "address1Placeholder": "Street and number",
+    "address2": "Address line 2 (optional)",
+    "address2Placeholder": "Apartment, suite, unit",
+    "city": "City",
+    "postalCode": "Postal code",
+    "country": "Country"
+  },
+  "summary": {
+    "total": "Total",
+    "voucherValue": "Gift voucher value",
+    "physicalFee": "Physical card fee",
+    "line": "Drift & Dwells gift voucher · prepaid credit · valid 12 months from issuance.",
+    "reference": "Reference"
+  },
+  "reassurance": {
+    "prepaidTitle": "PREPAID CREDIT",
+    "prepaidText": "A voucher is real credit on a Drift & Dwells stay, not a marketing discount.",
+    "durationTitle": "TWELVE MONTHS",
+    "durationText": "Recipients have a full year to choose their dates and stay at The Cabin or The Valley.",
+    "helpTitle": "NEED HELP?",
+    "helpText": "We are happy to assist with custom amounts or larger gifts.",
+    "contactUs": "Contact us"
+  },
+  "terms": {
+    "prefix": "I accept the ",
+    "terms": "Terms & Conditions",
+    "and": " and ",
+    "cancellation": "Cancellation Policy"
+  },
+  "payment": {
+    "preparing": "Preparing secure payment…",
+    "continue": "Continue to secure payment",
+    "processing": "Processing payment…",
+    "paySecurely": "Pay securely",
+    "editDetails": "Edit details"
+  },
+  "errors": {
+    "wholeAmount": "Please enter a whole-euro amount.",
+    "minimum": "The minimum gift voucher amount is EUR 15.",
+    "namesRequired": "Please add a buyer and recipient name.",
+    "buyerEmail": "Please add a valid buyer email.",
+    "recipientEmail": "Please add a valid recipient email.",
+    "postalRequired": "Please add a full postal address for physical delivery.",
+    "termsRequired": "Please accept the Terms & Conditions to continue.",
+    "messageTooLong": "Message must be 250 characters or fewer.",
+    "scheduledDateRequired": "Please choose a delivery date for scheduled delivery.",
+    "scheduledDateInvalid": "Please choose a valid delivery date (tomorrow through 11 months).",
+    "scheduledNotEnabled": "Scheduled delivery is not available yet.",
+    "paymentFallback": "We could not prepare the payment right now. Please try again in a moment.",
+    "AMOUNT_BELOW_MINIMUM": "The minimum gift voucher amount is EUR 15.",
+    "TERMS_NOT_ACCEPTED": "Please accept the Terms & Conditions to continue.",
+    "PURCHASE_REQUEST_CONFLICT": "This purchase attempt has changed. Please refresh the page and try again.",
+    "PURCHASE_REQUEST_CLOSED": "This purchase attempt is no longer available. Please refresh the page and try again."
+  },
+  "success": {
+    "title": "Gift Voucher Payment Received | Drift & Dwells",
+    "description": "Your gift voucher payment has been received and is being securely processed.",
+    "kicker": "Gift Voucher",
+    "heading": "Payment received",
+    "body": "Your voucher is being securely processed. The gift voucher email will be sent once payment is confirmed.",
+    "help": "If you do not receive an email shortly, contact us at",
+    "buyAnother": "Buy another voucher",
+    "backHome": "Back to home"
+  }
+}

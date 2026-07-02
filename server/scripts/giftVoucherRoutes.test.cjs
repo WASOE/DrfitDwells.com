@@ -163,3 +163,22 @@ test('POST /create-payment-intent legacy email payload with deliveryDate still s
   assert.equal(voucher.deliveryOption, 'recipient_now');
   assert.ok(voucher.deliveryDate);
 });
+
+test('GET /config returns scheduledDeliveryEnabled from env flag', async () => {
+  const { SCHEDULED_DELIVERY_ENV_FLAG } = require('../services/giftVouchers/giftVoucherCustomizationConstants');
+  const original = process.env[SCHEDULED_DELIVERY_ENV_FLAG];
+  try {
+    delete process.env[SCHEDULED_DELIVERY_ENV_FLAG];
+    const off = await request(app).get('/api/gift-vouchers/config');
+    assert.equal(off.status, 200);
+    assert.equal(off.body.data.scheduledDeliveryEnabled, false);
+
+    process.env[SCHEDULED_DELIVERY_ENV_FLAG] = '1';
+    const on = await request(app).get('/api/gift-vouchers/config');
+    assert.equal(on.status, 200);
+    assert.equal(on.body.data.scheduledDeliveryEnabled, true);
+  } finally {
+    if (original === undefined) delete process.env[SCHEDULED_DELIVERY_ENV_FLAG];
+    else process.env[SCHEDULED_DELIVERY_ENV_FLAG] = original;
+  }
+});

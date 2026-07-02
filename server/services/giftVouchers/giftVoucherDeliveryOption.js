@@ -38,32 +38,12 @@ function normalizeEnumField(value, allowed, fieldName) {
   return v;
 }
 
-function sofiaDateIso(date = new Date()) {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Sofia',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit'
-  }).format(date instanceof Date ? date : new Date(date));
-}
-
-function addCalendarDaysIso(isoDate, days) {
-  const [y, m, d] = String(isoDate).split('-').map(Number);
-  const next = new Date(Date.UTC(y, m - 1, d + days));
-  const ny = next.getUTCFullYear();
-  const nm = String(next.getUTCMonth() + 1).padStart(2, '0');
-  const nd = String(next.getUTCDate()).padStart(2, '0');
-  return `${ny}-${nm}-${nd}`;
-}
-
-function addCalendarMonthsIso(isoDate, months) {
-  const [y, m, d] = String(isoDate).split('-').map(Number);
-  const next = new Date(Date.UTC(y, m - 1 + months, d));
-  const ny = next.getUTCFullYear();
-  const nm = String(next.getUTCMonth() + 1).padStart(2, '0');
-  const nd = String(next.getUTCDate()).padStart(2, '0');
-  return `${ny}-${nm}-${nd}`;
-}
+const {
+  sofiaDateIso,
+  addCalendarDaysIso,
+  addCalendarMonthsIso,
+  validateScheduledDeliveryDateIso
+} = require('../../../shared/giftVoucher/scheduledDeliveryRules');
 
 function validateScheduledDeliveryDate({ deliveryDate, createdAt = new Date() }) {
   if (!deliveryDate || Number.isNaN(deliveryDate.getTime())) {
@@ -71,17 +51,9 @@ function validateScheduledDeliveryDate({ deliveryDate, createdAt = new Date() })
   }
   const selectedIso = sofiaDateIso(deliveryDate);
   const purchaseIso = sofiaDateIso(createdAt);
-  const earliestIso = addCalendarDaysIso(purchaseIso, 1);
-  if (selectedIso < earliestIso) {
-    throw validationError('Scheduled delivery date must be tomorrow or later', 'INVALID_SCHEDULED_DELIVERY_DATE');
-  }
-  const latestIso = addCalendarMonthsIso(purchaseIso, 11);
-  if (selectedIso > latestIso) {
-    throw validationError('Scheduled delivery date must be within 11 months of purchase', 'INVALID_SCHEDULED_DELIVERY_DATE');
-  }
-  const projectedExpiryIso = addCalendarMonthsIso(purchaseIso, 12);
-  if (selectedIso >= projectedExpiryIso) {
-    throw validationError('Scheduled delivery date must be before voucher expiry', 'INVALID_SCHEDULED_DELIVERY_DATE');
+  const result = validateScheduledDeliveryDateIso(selectedIso, purchaseIso);
+  if (!result.ok) {
+    throw validationError(result.message, result.code);
   }
   return deliveryDate;
 }
