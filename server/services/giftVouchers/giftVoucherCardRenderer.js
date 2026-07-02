@@ -33,18 +33,31 @@ function formatExpiryDate(value, locale = 'en') {
   });
 }
 
-function buildHeadlineHtml(occasion, locale) {
+function buildHeadlineHtml(occasion, locale, { color, marginBottom = '12px' } = {}) {
   if (!occasion) return '';
   const headline = getOccasionHeadline(occasion, locale);
   if (!headline) return '';
   const safe = userHtml(headline);
-  return `<p ${HEADLINE_ATTR}="1" style="margin:0 0 12px;font-family:${CARD_TYPOGRAPHY.fontSans};font-size:${CARD_LAYOUT.headlinePx}px;letter-spacing:${CARD_TYPOGRAPHY.trackingKicker};text-transform:uppercase;font-weight:600;">${safe}</p>`;
+  const ink = color || CARD_TOKENS.ink;
+  return `<p ${HEADLINE_ATTR}="1" style="margin:0 0 ${marginBottom};font-family:${CARD_TYPOGRAPHY.fontSans};font-size:${CARD_LAYOUT.headlinePx}px;letter-spacing:${CARD_TYPOGRAPHY.trackingKicker};text-transform:uppercase;font-weight:600;color:${ink};">${safe}</p>`;
 }
 
-function buildMessageHtml(message, locale, { color, textShadow = 'none' } = {}) {
+function buildMessageHtml(message, locale, { color, textShadow = 'none', italic = false, marginBottom = '16px' } = {}) {
   const labels = getCardLabels(locale);
   const safe = userHtml(message, labels.defaultMessage);
-  return `<p data-gv-card-message="1" style="margin:0 0 16px;font-family:${CARD_TYPOGRAPHY.fontSerif};font-size:${CARD_LAYOUT.messagePx}px;line-height:1.35;font-weight:500;color:${color};text-shadow:${textShadow};">${safe}</p>`;
+  const fontStyle = italic ? 'italic' : 'normal';
+  return `<p data-gv-card-message="1" style="margin:0 0 ${marginBottom};font-family:${CARD_TYPOGRAPHY.fontSerif};font-size:${CARD_LAYOUT.messagePx}px;line-height:1.45;font-weight:500;font-style:${fontStyle};color:${color};text-shadow:${textShadow};">${safe}</p>`;
+}
+
+function wrapRomanticDoubleFrame(innerHtml, t) {
+  const border = `${t.frameBorderPx}px solid ${t.warmAccent}`;
+  const gap = t.frameGapPx;
+  return `<div data-gv-card-romantic-frame="1" style="border:${border};padding:${gap}px;box-sizing:border-box;background:${t.bg};"><div style="border:${border};padding:${CARD_LAYOUT.print.padding};box-sizing:border-box;background:${t.surface};">${innerHtml}</div></div>`;
+}
+
+function buildRomanticMessageBlock(headline, message, locale, t) {
+  const padY = CARD_LAYOUT.romanticMessageBlockPaddingY;
+  return `<div data-gv-card-message-block="1" style="padding:${padY} 8px;text-align:center;">${headline}${message}</div>`;
 }
 
 function buildAmountHtml(cents, currency, locale, { color } = {}) {
@@ -157,27 +170,30 @@ function renderForestPrint(fields, labels, locale) {
 
 function renderRomanticEmail(fields, labels, locale) {
   const t = CARD_TOKENS.romantic;
-  const headline = buildHeadlineHtml(fields.occasion, locale);
-  const message = buildMessageHtml(fields.message, locale, { color: t.text });
+  const headline = buildHeadlineHtml(fields.occasion, locale, {
+    color: t.warmAccent,
+    marginBottom: '14px'
+  });
+  const message = buildMessageHtml(fields.message, locale, { color: t.text, italic: true, marginBottom: '0' });
+  const messageBlock = buildRomanticMessageBlock(headline, message, locale, t);
   const names = buildNamesHtml(fields, labels, { color: t.text, mutedColor: CARD_TOKENS.inkMuted });
-  const amount = buildAmountHtml(fields.amountOriginalCents, fields.currency, locale, { color: t.text });
+  const amount = buildAmountHtml(fields.amountOriginalCents, fields.currency, locale, {
+    color: CARD_TOKENS.inkMuted
+  });
   const footer = buildFooterHtml(fields, labels, locale, { color: t.text, mutedColor: CARD_TOKENS.inkMuted });
   const wordmark = userHtml(labels.brandWordmark);
+  const inner = `
+      <p style="margin:0 0 16px;text-align:center;font-family:${CARD_TYPOGRAPHY.fontSerif};font-size:18px;color:${t.warmAccent};letter-spacing:0.08em;">${wordmark}</p>
+      ${messageBlock}
+      ${names ? `<div style="text-align:center;margin:0 0 16px;">${names}</div>` : ''}
+      ${amount}
+      ${footer}`;
 
   return `
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;width:100%;margin:0 auto;border-collapse:collapse;background:${t.bg};">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;width:100%;margin:0 auto;border-collapse:collapse;">
   <tr>
-    <td style="padding:28px 28px 8px;text-align:center;border-bottom:1px solid ${t.rule};">
-      <p style="margin:0;font-family:${CARD_TYPOGRAPHY.fontSerif};font-size:18px;color:${t.warmAccent};letter-spacing:0.06em;">${wordmark}</p>
-    </td>
-  </tr>
-  <tr>
-    <td style="padding:28px;background:${t.surface};">
-      ${headline}
-      ${message}
-      ${names}
-      ${amount}
-      ${footer}
+    <td style="padding:0;">
+      ${wrapRomanticDoubleFrame(inner, t)}
     </td>
   </tr>
 </table>`;
@@ -186,21 +202,28 @@ function renderRomanticEmail(fields, labels, locale) {
 function renderRomanticPrint(fields, labels, locale) {
   const t = CARD_TOKENS.romantic;
   const print = CARD_LAYOUT.print;
-  const headline = buildHeadlineHtml(fields.occasion, locale);
-  const message = buildMessageHtml(fields.message, locale, { color: t.text });
+  const headline = buildHeadlineHtml(fields.occasion, locale, {
+    color: t.warmAccent,
+    marginBottom: '14px'
+  });
+  const message = buildMessageHtml(fields.message, locale, { color: t.text, italic: true, marginBottom: '0' });
+  const messageBlock = buildRomanticMessageBlock(headline, message, locale, t);
   const names = buildNamesHtml(fields, labels, { color: t.text, mutedColor: CARD_TOKENS.inkMuted });
-  const amount = buildAmountHtml(fields.amountOriginalCents, fields.currency, locale, { color: t.text });
+  const amount = buildAmountHtml(fields.amountOriginalCents, fields.currency, locale, {
+    color: CARD_TOKENS.inkMuted
+  });
   const footer = buildFooterHtml(fields, labels, locale, { color: t.text, mutedColor: CARD_TOKENS.inkMuted });
   const wordmark = userHtml(labels.brandWordmark);
+  const inner = `
+  <p style="margin:0 0 12px;text-align:center;font-family:${CARD_TYPOGRAPHY.fontSerif};font-size:20px;color:${t.warmAccent};letter-spacing:0.08em;">${wordmark}</p>
+  ${messageBlock}
+  ${names ? `<div style="text-align:center;margin-bottom:12px;">${names}</div>` : ''}
+  ${amount}
+  ${footer}`;
 
   return `
-<div data-gv-card-template="romantic" data-gv-card-mode="print" style="width:${print.width};height:${print.height};margin:0 auto;padding:${print.padding};box-sizing:border-box;background:${t.bg};font-family:${CARD_TYPOGRAPHY.fontSans};border:1px solid ${t.rule};">
-  <p style="margin:0 0 20px;text-align:center;font-family:${CARD_TYPOGRAPHY.fontSerif};font-size:20px;color:${t.warmAccent};letter-spacing:0.06em;">${wordmark}</p>
-  ${headline}
-  ${message}
-  ${names}
-  ${amount}
-  ${footer}
+<div data-gv-card-template="romantic" data-gv-card-mode="print" style="width:${print.width};height:${print.height};margin:0 auto;box-sizing:border-box;font-family:${CARD_TYPOGRAPHY.fontSans};">
+  ${wrapRomanticDoubleFrame(inner, t)}
 </div>`;
 }
 

@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gift voucher — forest</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Playfair+Display:wght@500;600&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      background: #ebeae6;
+      font-family: Inter, system-ui, sans-serif;
+    }
+    .preview-note {
+      max-width: 210mm;
+      margin: 0 auto 16px;
+      padding: 12px 16px;
+      background: #fff;
+      border: 1px solid #dedbd4;
+      font-size: 13px;
+      color: #6b6a64;
+      line-height: 1.5;
+    }
+    @media print {
+      body { padding: 0; background: #fff; }
+      .preview-note { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="preview-note">
+  Early design check — Batch 3 print mode, EN. Sample: Anna / Jose, €200, birthday.
+  Open in browser; use Print preview. Formal Batch 9 gate will follow.
+  </div>
+  <div data-gv-card-template="forest" data-gv-card-mode="print" style="width:210mm;height:148mm;margin:0 auto;overflow:hidden;font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;background:#fdfcfa;box-sizing:border-box;display:flex;flex-direction:column;">
+  <div style="position:relative;flex:0 0 68%;min-height:0;overflow:hidden;">
+    <img src="../../../client/public/media/gift-vouchers/gift-voucher-card-bg.jpg" alt="Drift & Dwells gift card" width="1200" height="800" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;z-index:0;display:block;" />
+    <div style="position:relative;z-index:1;padding:12mm;box-sizing:border-box;height:100%;display:flex;flex-direction:column;justify-content:flex-end;">
+      <p data-gv-card-headline="1" style="margin:0 0 12px;font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:11px;letter-spacing:0.24em;text-transform:uppercase;font-weight:600;color:#1a1918;">Happy birthday</p>
+      <p data-gv-card-message="1" style="margin:0 0 16px;font-family:'Playfair Display', Georgia, 'Times New Roman', serif;font-size:28px;line-height:1.45;font-weight:500;font-style:normal;color:#f7f5f0;text-shadow:0 1px 4px rgba(0,0,0,0.65), 0 0 12px rgba(0,0,0,0.35);">Time offline together.
+A gift for your next escape.</p>
+      <p style="margin:0 0 12px;font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;line-height:1.5;color:#f7f5f0;"><span style="color:rgba(247, 245, 240, 0.85);">For</span> Anna<br/><span style="color:rgba(247, 245, 240, 0.85);">From</span> Jose</p>
+    </div>
+  </div>
+  <div style="flex:1 1 auto;padding:12mm;padding-top:10px;box-sizing:border-box;background:#fdfcfa;">
+    <p data-gv-card-amount="1" style="margin:0 0 8px;font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:22px;color:#1a1918;"><span style="letter-spacing:0.24em;text-transform:uppercase;font-size:11px;">Gift value</span><br/><strong style="font-size:22px;">€200.00</strong></p>
+    
+    <div data-gv-card-footer="1" style="margin-top:0;padding-top:12px;font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:11px;color:#1a1918;">
+      <p style="margin:0 0 6px;color:#6b6a64;"><span style="text-transform:uppercase;letter-spacing:0.24em;">Voucher code</span></p>
+      <p style="margin:0 0 10px;"><span style="font-family:monospace;font-size:13px;font-weight:700;letter-spacing:0.08em;color:#1a1918;border:1px solid #d6d3d1;display:inline-block;padding:6px 10px;background:transparent;">DD-EARLY-2000</span></p>
+      <p style="margin:0 0 6px;color:#6b6a64;"><span style="text-transform:uppercase;letter-spacing:0.24em;">Valid until</span> 1 June 2027</p>
+      <p style="margin:8px 0 0;color:#6b6a64;font-size:11px;line-height:1.45;">Redeem at driftdwells.com when you are ready to book.</p>
+    </div>
+  </div>
+</div>
+</body>
+</html>

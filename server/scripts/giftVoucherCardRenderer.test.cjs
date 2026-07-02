@@ -108,6 +108,14 @@ test('forest print uses img base layer not CSS background-image on card root', (
   assert.match(html, /DD-ABCD-1234/);
 });
 
+test('romantic template uses invitation double frame and italic message', () => {
+  const html = render({ cardTemplateId: 'romantic', cardOccasion: 'wedding' }, 'print');
+  assert.match(html, /data-gv-card-romantic-frame="1"/);
+  assert.match(html, /font-style:italic/);
+  assert.match(html, /#a8957a/);
+  assert.match(html, /data-gv-card-message-block="1"/);
+});
+
 test('message font size exceeds amount font size in output', () => {
   const html = render({ cardTemplateId: 'minimal', cardOccasion: 'thank_you' });
   const messageMatch = html.match(/data-gv-card-message="1"[^>]*font-size:(\d+)px/);

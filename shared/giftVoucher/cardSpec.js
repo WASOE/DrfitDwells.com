@@ -47,7 +47,9 @@ export const CARD_TOKENS = Object.freeze({
     surface: '#fdfcfa',
     rule: '#dedbd4',
     warmAccent: '#a8957a',
-    text: '#1a1918'
+    text: '#1a1918',
+    frameBorderPx: 1,
+    frameGapPx: 6
   },
   minimal: {
     bg: '#ffffff',
@@ -77,7 +79,8 @@ export const CARD_LAYOUT = Object.freeze({
     height: '148mm',
     padding: '12mm',
     forestVisualRatio: '68%'
-  }
+  },
+  romanticMessageBlockPaddingY: '24px'
 });
 
 const DEFAULT_SITE_ORIGIN = 'https://driftdwells.com';
