@@ -20,6 +20,9 @@ const GIFT_VOUCHER_EVENT_TYPES = [
   'expiry_extended',
   'recipient_email_updated',
   'recipient_delivery_deferred',
+  'scheduled_delivery_attempt_failed',
+  'scheduled_delivery_exhausted',
+  'scheduled_delivery_date_past_expiry',
   'manual_review_created'
 ];
 

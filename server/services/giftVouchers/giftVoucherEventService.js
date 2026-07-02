@@ -31,7 +31,8 @@ async function appendVoucherEvent({
   previousBalanceCents = null,
   newBalanceCents = null,
   deltaCents = null,
-  metadata = {}
+  metadata = {},
+  createdAt = null
 }) {
   const normalizedActor = normalizeActor(actor);
   if (!normalizedActor) {
@@ -59,7 +60,8 @@ async function appendVoucherEvent({
     previousBalanceCents,
     newBalanceCents,
     deltaCents,
-    metadata: metadata || {}
+    metadata: metadata || {},
+    ...(createdAt ? { createdAt } : {})
   });
 }
 

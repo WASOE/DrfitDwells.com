@@ -158,6 +158,27 @@ async function markSentAtIfNeeded(voucherId, templateKind) {
   await GiftVoucher.updateOne({ _id: voucherId, sentAt: null }, { $set: { sentAt: new Date() } });
 }
 
+async function findLifecycleState(giftVoucherId, emailLifecycleKey) {
+  const [sent, sendFailed, sendAttempted] = await Promise.all([
+    GiftVoucherEvent.findOne({
+      giftVoucherId,
+      type: 'sent',
+      'metadata.emailLifecycleKey': emailLifecycleKey
+    }).lean(),
+    GiftVoucherEvent.findOne({
+      giftVoucherId,
+      type: 'send_failed',
+      'metadata.emailLifecycleKey': emailLifecycleKey
+    }).lean(),
+    GiftVoucherEvent.findOne({
+      giftVoucherId,
+      type: 'send_attempted',
+      'metadata.emailLifecycleKey': emailLifecycleKey
+    }).lean()
+  ]);
+  return { sent, sendFailed, sendAttempted };
+}
+
 function buildTemplatePayload({
   templateKind,
   voucher,
@@ -183,7 +204,9 @@ async function performLifecycleSend({
   templateKind,
   actor = 'system',
   cardDownloadUrl = null,
-  variant = null
+  variant = null,
+  allowRetryAfterFailure = false,
+  lifecycleSource = 'automatic'
 }) {
   if (templateKind === 'recipient_voucher' && !String(recipientEmail || '').trim()) {
     const err = new Error('Recipient email is required for recipient voucher delivery');
@@ -192,19 +215,72 @@ async function performLifecycleSend({
   }
 
   const key = lifecycleKey(templateKind, voucher._id);
-  const attempted = await appendEventOnce({
-    giftVoucherId: voucher._id,
-    type: 'send_attempted',
-    actor,
-    note: `${templateKind} delivery attempted`,
-    metadata: {
-      emailLifecycleKey: key,
-      templateKind,
-      recipientEmail
-    }
-  });
+  let lifecycleState = await findLifecycleState(voucher._id, key);
 
-  if (!attempted.inserted) {
+  if (lifecycleState.sent) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: 'already_sent',
+      emailLifecycleKey: key
+    };
+  }
+
+  const isRetryAfterFailure =
+    allowRetryAfterFailure && lifecycleState.sendAttempted && lifecycleState.sendFailed;
+
+  if (lifecycleState.sendAttempted && lifecycleState.sendFailed && !allowRetryAfterFailure) {
+    return {
+      ok: true,
+      skipped: true,
+      reason: 'already_failed',
+      emailLifecycleKey: key
+    };
+  }
+
+  if (!isRetryAfterFailure) {
+    const attempted = await appendEventOnce({
+      giftVoucherId: voucher._id,
+      type: 'send_attempted',
+      actor,
+      note: `${templateKind} delivery attempted`,
+      metadata: {
+        emailLifecycleKey: key,
+        templateKind,
+        recipientEmail,
+        ...(lifecycleSource !== 'automatic' ? { lifecycleSource } : {})
+      }
+    });
+
+    if (!attempted.inserted) {
+      lifecycleState = await findLifecycleState(voucher._id, key);
+      if (lifecycleState.sent) {
+        return {
+          ok: true,
+          skipped: true,
+          reason: 'already_sent',
+          emailLifecycleKey: key
+        };
+      }
+      if (allowRetryAfterFailure && lifecycleState.sendAttempted && lifecycleState.sendFailed) {
+        // Another worker won send_attempted first; continue as retry.
+      } else {
+        const terminal = await ensureLifecycleProgressOrEscalate({
+          voucher,
+          emailLifecycleKey: key,
+          templateKind,
+          recipientEmail,
+          actor
+        });
+        return {
+          ok: true,
+          skipped: true,
+          reason: terminal.type === 'sent' ? 'already_sent' : 'already_failed',
+          emailLifecycleKey: key
+        };
+      }
+    }
+  } else if (lifecycleState.sendAttempted && !lifecycleState.sendFailed) {
     const terminal = await ensureLifecycleProgressOrEscalate({
       voucher,
       emailLifecycleKey: key,
@@ -246,35 +322,39 @@ async function performLifecycleSend({
       skipIdempotencyWindow: true
     });
   } catch (sendErr) {
-    await appendEventOnce({
-      giftVoucherId: voucher._id,
-      type: 'send_failed',
-      actor,
-      note: `${templateKind} delivery failed`,
-      metadata: {
-        emailLifecycleKey: key,
+    if (!isRetryAfterFailure) {
+      await appendEventOnce({
+        giftVoucherId: voucher._id,
+        type: 'send_failed',
+        actor,
+        note: `${templateKind} delivery failed`,
+        metadata: {
+          emailLifecycleKey: key,
+          templateKind,
+          recipientEmail: normalizedRecipient,
+          error: sendErr.message || 'unknown_send_exception',
+          thrown: true,
+          ...(lifecycleSource !== 'automatic' ? { lifecycleSource } : {})
+        }
+      });
+      await applyEmailDeliveryAttempt({
+        correlationKey: deliveryCorrelationKey,
+        domain: 'gift_voucher',
+        giftVoucherId: voucher._id,
         templateKind,
-        recipientEmail: normalizedRecipient,
-        error: sendErr.message || 'unknown_send_exception',
-        thrown: true
-      }
-    });
-    await applyEmailDeliveryAttempt({
-      correlationKey: deliveryCorrelationKey,
-      domain: 'gift_voucher',
-      giftVoucherId: voucher._id,
-      templateKind,
-      recipient: normalizedRecipient,
-      sendStatus: 'failed',
-      lifecycleSource: 'automatic',
-      errorMessage: sendErr.message || 'unknown_send_exception',
-      actorRole: actor
-    });
+        recipient: normalizedRecipient,
+        sendStatus: 'failed',
+        lifecycleSource,
+        errorMessage: sendErr.message || 'unknown_send_exception',
+        actorRole: actor
+      });
+    }
     return {
       ok: false,
       status: 'failed',
       code: 'EMAIL_SEND_FAILED',
-      emailLifecycleKey: key
+      emailLifecycleKey: key,
+      isRetryAfterFailure
     };
   }
 
@@ -288,7 +368,8 @@ async function performLifecycleSend({
         emailLifecycleKey: key,
         templateKind,
         recipientEmail: normalizedRecipient,
-        messageId: sendResult.messageId || null
+        messageId: sendResult.messageId || null,
+        ...(lifecycleSource !== 'automatic' ? { lifecycleSource } : {})
       }
     });
     await applyEmailDeliveryAttempt({
@@ -298,45 +379,50 @@ async function performLifecycleSend({
       templateKind,
       recipient: normalizedRecipient,
       sendStatus: 'success',
-      lifecycleSource: 'automatic',
+      lifecycleSource,
       actorRole: actor
     });
     await markSentAtIfNeeded(voucher._id, templateKind);
     return {
       ok: true,
       status: 'sent',
-      emailLifecycleKey: key
+      emailLifecycleKey: key,
+      isRetryAfterFailure
     };
   }
 
-  await appendEventOnce({
-    giftVoucherId: voucher._id,
-    type: 'send_failed',
-    actor,
-    note: `${templateKind} delivery failed`,
-    metadata: {
-      emailLifecycleKey: key,
+  if (!isRetryAfterFailure) {
+    await appendEventOnce({
+      giftVoucherId: voucher._id,
+      type: 'send_failed',
+      actor,
+      note: `${templateKind} delivery failed`,
+      metadata: {
+        emailLifecycleKey: key,
+        templateKind,
+        recipientEmail: normalizedRecipient,
+        error: sendResult.error || 'unknown_send_failure',
+        ...(lifecycleSource !== 'automatic' ? { lifecycleSource } : {})
+      }
+    });
+    await applyEmailDeliveryAttempt({
+      correlationKey: deliveryCorrelationKey,
+      domain: 'gift_voucher',
+      giftVoucherId: voucher._id,
       templateKind,
-      recipientEmail: normalizedRecipient,
-      error: sendResult.error || 'unknown_send_failure'
-    }
-  });
-  await applyEmailDeliveryAttempt({
-    correlationKey: deliveryCorrelationKey,
-    domain: 'gift_voucher',
-    giftVoucherId: voucher._id,
-    templateKind,
-    recipient: normalizedRecipient,
-    sendStatus: 'failed',
-    lifecycleSource: 'automatic',
-    errorMessage: sendResult.error || 'unknown_send_failure',
-    actorRole: actor
-  });
+      recipient: normalizedRecipient,
+      sendStatus: 'failed',
+      lifecycleSource,
+      errorMessage: sendResult.error || 'unknown_send_failure',
+      actorRole: actor
+    });
+  }
   return {
     ok: false,
     status: 'failed',
     code: 'EMAIL_SEND_FAILED',
-    emailLifecycleKey: key
+    emailLifecycleKey: key,
+    isRetryAfterFailure
   };
 }
 
@@ -588,6 +674,10 @@ module.exports = {
   handleActivatedGiftVoucherDelivery,
   resendRecipientGiftVoucherEmail,
   performLifecycleSend,
+  findLifecycleState,
+  lifecycleKey,
+  appendEventOnce,
+  openEmailFailureReview,
   EMAIL_FAILED_CATEGORY,
   PHYSICAL_CARD_REQUIRED_CATEGORY
 };

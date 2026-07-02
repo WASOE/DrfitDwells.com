@@ -38,6 +38,24 @@ async function revokeCardAccessToken(giftVoucherId) {
   await GiftVoucher.updateOne({ _id: giftVoucherId }, { $unset: { cardAccessTokenHash: 1 } });
 }
 
+async function rotateCardAccessTokenForVoucher(giftVoucherId) {
+  const { rawToken, tokenHash } = issueCardAccessToken();
+  const updated = await GiftVoucher.findOneAndUpdate(
+    {
+      _id: giftVoucherId,
+      status: { $in: ['active', 'partially_redeemed'] }
+    },
+    { $set: { cardAccessTokenHash: tokenHash } },
+    { new: true }
+  ).lean();
+  if (!updated) {
+    const err = new Error('Gift voucher not eligible for card access token rotation');
+    err.code = 'CARD_ACCESS_ROTATION_REJECTED';
+    throw err;
+  }
+  return { rawToken, tokenHash, voucher: updated };
+}
+
 function voucherFailsCardAccess(voucher) {
   if (!voucher) return true;
   if (!voucher.cardAccessTokenHash) return true;
@@ -63,6 +81,7 @@ module.exports = {
   isValidAccessTokenFormat,
   buildCardDownloadUrl,
   revokeCardAccessToken,
+  rotateCardAccessTokenForVoucher,
   resolveVoucherByCardAccessToken,
   voucherFailsCardAccess,
   CARD_ACCESS_NOT_FOUND,
