@@ -1,4 +1,9 @@
-const { htmlEscape } = require('../../utils/htmlEscape');
+const {
+  userPlain,
+  userHtml,
+  subjectSafe,
+  resolveRecipientPlain
+} = require('../../utils/giftVoucherTextSafe');
 
 function formatCurrency(cents, currency = 'EUR') {
   const amount = Number(cents || 0) / 100;
@@ -21,26 +26,6 @@ function formatDate(value) {
 
 function deliveryModeLabel(mode) {
   return mode === 'postal' ? 'Physical card by post' : 'Digital voucher by email';
-}
-
-function userPlain(value, fallback = '') {
-  if (value == null) return fallback;
-  const trimmed = String(value).trim();
-  return trimmed === '' ? fallback : trimmed;
-}
-
-function userHtml(value, fallback = '') {
-  return htmlEscape(userPlain(value, fallback));
-}
-
-/** Strip CR/LF and other control characters before email subject interpolation. */
-function subjectSafe(value, fallback = '') {
-  const plain = userPlain(value, fallback);
-  return plain.replace(/[\x00-\x1F\x7F]/g, '');
-}
-
-function resolveRecipientPlain(voucher, recipientEmail) {
-  return userPlain(voucher.recipientName) || userPlain(recipientEmail) || 'Guest';
 }
 
 function buildBuyerReceiptTemplate({ voucher }) {
@@ -76,7 +61,7 @@ function buildRecipientVoucherTemplate({ voucher, recipientEmail }) {
   const expiresAt = formatDate(voucher.expiresAt);
   const recipientPlain = resolveRecipientPlain(voucher, recipientEmail);
   const recipientHtml =
-    userHtml(voucher.recipientName) || userHtml(recipientEmail) || htmlEscape('Guest');
+    userHtml(voucher.recipientName) || userHtml(recipientEmail) || userHtml('', 'Guest');
   const buyerPlain = userPlain(voucher.buyerName, 'Someone');
   const buyerHtml = userHtml(voucher.buyerName, 'Someone');
   const messagePlain = userPlain(voucher.message, 'Enjoy your stay at Drift & Dwells.');
