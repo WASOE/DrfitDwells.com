@@ -10,7 +10,8 @@ const emailService = require('../services/emailService');
 const {
   setStripeClientForTesting,
   createGiftVoucherPaymentIntent,
-  activatePaidVoucherFromStripeEvent
+  activatePaidVoucherFromStripeEvent,
+  computeGiftVoucherPricing
 } = require('../services/giftVouchers/giftVoucherPaymentService');
 const {
   handleActivatedGiftVoucherDelivery,
@@ -37,7 +38,15 @@ function buildCreatePayload(overrides = {}) {
   };
 }
 
-function buildWebhookEvent({ voucherId, purchaseRequestId, paymentIntentId, eventId }) {
+function buildWebhookEvent({
+  voucherId,
+  purchaseRequestId,
+  paymentIntentId,
+  eventId,
+  amountOriginalCents = 15000,
+  deliveryMode = 'email'
+}) {
+  const { totalDueCents } = computeGiftVoucherPricing({ amountOriginalCents, deliveryMode });
   return {
     id: eventId,
     type: 'payment_intent.succeeded',
@@ -45,8 +54,8 @@ function buildWebhookEvent({ voucherId, purchaseRequestId, paymentIntentId, even
       object: {
         object: 'payment_intent',
         id: paymentIntentId,
-        amount: 15000,
-        amount_received: 15000,
+        amount: totalDueCents,
+        amount_received: totalDueCents,
         currency: 'eur',
         metadata: {
           type: 'gift_voucher',
@@ -214,7 +223,8 @@ test('postal mode sends buyer receipt only', async () => {
     voucherId: created.giftVoucherId,
     purchaseRequestId: created.purchaseRequestId,
     paymentIntentId: created.stripePaymentIntentId,
-    eventId: 'evt_b5_postal_only'
+    eventId: 'evt_b5_postal_only',
+    deliveryMode: 'postal'
   });
 
   await activatePaidVoucherFromStripeEvent(event);
@@ -246,7 +256,8 @@ test('postal mode does not send recipient voucher email by default', async () =>
     voucherId: created.giftVoucherId,
     purchaseRequestId: created.purchaseRequestId,
     paymentIntentId: created.stripePaymentIntentId,
-    eventId: 'evt_b5_postal_no_recipient'
+    eventId: 'evt_b5_postal_no_recipient',
+    deliveryMode: 'postal'
   });
 
   await activatePaidVoucherFromStripeEvent(event);
@@ -272,7 +283,8 @@ test('postal mode opens gift_voucher_physical_card_required manual review', asyn
     voucherId: created.giftVoucherId,
     purchaseRequestId: created.purchaseRequestId,
     paymentIntentId: created.stripePaymentIntentId,
-    eventId: 'evt_b5_postal_review'
+    eventId: 'evt_b5_postal_review',
+    deliveryMode: 'postal'
   });
 
   await activatePaidVoucherFromStripeEvent(event);
@@ -454,7 +466,8 @@ test('duplicate postal handling treats physical_card_required as already_process
     voucherId: created.giftVoucherId,
     purchaseRequestId: created.purchaseRequestId,
     paymentIntentId: created.stripePaymentIntentId,
-    eventId: 'evt_b5_postal_duplicate_final'
+    eventId: 'evt_b5_postal_duplicate_final',
+    deliveryMode: 'postal'
   });
 
   const first = await activatePaidVoucherFromStripeEvent(event);
