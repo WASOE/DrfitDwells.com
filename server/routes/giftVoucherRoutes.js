@@ -6,6 +6,13 @@ const {
   createGiftVoucherPaymentIntent
 } = require('../services/giftVouchers/giftVoucherPaymentService');
 const { attachPaymentFlowMonitor } = require('../services/ops/paymentFlowMonitorService');
+const {
+  CARD_OCCASIONS,
+  CARD_TEMPLATE_IDS,
+  CARD_LOCALES,
+  DELIVERY_OPTIONS,
+  MESSAGE_MAX_LENGTH
+} = require('../services/giftVouchers/giftVoucherCustomizationConstants');
 
 const GIFT_VOUCHER_PAYMENT_INTENT_ROUTE = '/api/gift-vouchers/create-payment-intent';
 
@@ -27,10 +34,22 @@ const paymentIntentLimiter = rateLimit({
   message: { success: false, message: 'Too many payment attempts. Please try again in a minute.' }
 });
 
+function isPostalPurchase(body = {}) {
+  if (body.deliveryOption === 'postal') return true;
+  return (body.deliveryMode || 'email') === 'postal';
+}
+
+function recipientEmailRequiredOnRequest(body = {}) {
+  if (body.deliveryOption === 'send_to_buyer' || body.deliveryOption === 'postal') return false;
+  if (body.deliveryOption === 'recipient_now' || body.deliveryOption === 'scheduled') return true;
+  return (body.deliveryMode || 'email') === 'email';
+}
+
 const quoteValidators = [
   body('amountOriginalCents').isInt({ min: 1 }).withMessage('amountOriginalCents must be an integer'),
   body('currency').optional().isString().withMessage('currency must be a string'),
-  body('deliveryMode').optional().isIn(['email', 'postal', 'manual']).withMessage('deliveryMode must be email, postal, or manual')
+  body('deliveryMode').optional().isIn(['email', 'postal']).withMessage('deliveryMode must be email or postal'),
+  body('deliveryOption').optional().isIn(DELIVERY_OPTIONS).withMessage('deliveryOption is invalid')
 ];
 
 const paymentIntentValidators = [
@@ -44,11 +63,15 @@ const paymentIntentValidators = [
     .isEmail()
     .normalizeEmail()
     .withMessage('recipientEmail must be valid'),
-  body('deliveryMode').optional().isIn(['email', 'postal', 'manual']).withMessage('deliveryMode must be email, postal, or manual'),
+  body('deliveryMode').optional().isIn(['email', 'postal']).withMessage('deliveryMode must be email or postal'),
+  body('deliveryOption').optional().isIn(DELIVERY_OPTIONS).withMessage('deliveryOption is invalid'),
+  body('cardOccasion').optional({ checkFalsy: true }).isIn(CARD_OCCASIONS).withMessage('cardOccasion is invalid'),
+  body('cardTemplateId').optional({ checkFalsy: true }).isIn(CARD_TEMPLATE_IDS).withMessage('cardTemplateId is invalid'),
+  body('cardLocale').optional({ checkFalsy: true }).isIn(CARD_LOCALES).withMessage('cardLocale is invalid'),
   body('recipientEmail').custom((value, { req }) => {
-    const mode = req.body?.deliveryMode || 'email';
-    if (mode === 'email' && (!value || !String(value).trim())) {
-      throw new Error('recipientEmail is required for email delivery');
+    if (!recipientEmailRequiredOnRequest(req.body)) return true;
+    if (!value || !String(value).trim()) {
+      throw new Error('recipientEmail is required for this delivery option');
     }
     return true;
   }),
@@ -78,12 +101,10 @@ const paymentIntentValidators = [
     .isLength({ max: 120 })
     .withMessage('deliveryAddress.country is invalid'),
   body('deliveryAddress').custom((value, { req }) => {
-    const mode = req.body?.deliveryMode || 'email';
-    if (mode === 'postal') {
-      const address = value || {};
-      if (!address.addressLine1 || !address.city || !address.postalCode || !address.country) {
-        throw new Error('deliveryAddress.addressLine1, city, postalCode and country are required for postal delivery');
-      }
+    if (!isPostalPurchase(req.body)) return true;
+    const address = value || {};
+    if (!address.addressLine1 || !address.city || !address.postalCode || !address.country) {
+      throw new Error('deliveryAddress.addressLine1, city, postalCode and country are required for postal delivery');
     }
     return true;
   }),
@@ -94,12 +115,27 @@ const paymentIntentValidators = [
   body('message')
     .optional({ nullable: true, checkFalsy: true })
     .isString()
-    .isLength({ max: 1000 })
+    .isLength({ max: MESSAGE_MAX_LENGTH })
     .withMessage('message is too long'),
   body('purchaseRequestId').optional().isString().isLength({ min: 8, max: 128 }).withMessage('purchaseRequestId is invalid'),
   body('termsAccepted').custom((value) => value === true).withMessage('termsAccepted must be true'),
   body('termsVersion').optional().isString().isLength({ max: 50 }).withMessage('termsVersion is too long')
 ];
+
+const DOMAIN_BAD_REQUEST_CODES = new Set([
+  'INVALID_AMOUNT_CENTS',
+  'AMOUNT_BELOW_MINIMUM',
+  'UNSUPPORTED_CURRENCY',
+  'MISSING_REQUIRED_FIELDS',
+  'TERMS_NOT_ACCEPTED',
+  'INVALID_PURCHASE_REQUEST_ID',
+  'INVALID_DELIVERY_MODE',
+  'INVALID_DELIVERY_OPTION',
+  'INVALID_CUSTOMIZATION_FIELD',
+  'SCHEDULED_DELIVERY_NOT_ENABLED',
+  'MISSING_SCHEDULED_DELIVERY_DATE',
+  'INVALID_SCHEDULED_DELIVERY_DATE'
+]);
 
 function sendValidationErrors(req, res) {
   const errors = validationResult(req);
@@ -109,6 +145,13 @@ function sendValidationErrors(req, res) {
     message: 'Validation failed',
     errors: errors.array()
   });
+}
+
+function handleDomainError(res, error, fallbackMessage) {
+  if (DOMAIN_BAD_REQUEST_CODES.has(error.code)) {
+    return res.status(400).json({ success: false, message: error.message, code: error.code });
+  }
+  return res.status(500).json({ success: false, message: fallbackMessage });
 }
 
 // POST /api/gift-vouchers/quote
@@ -122,7 +165,7 @@ router.post('/quote', quoteLimiter, quoteValidators, async (req, res) => {
     if (['INVALID_AMOUNT_CENTS', 'AMOUNT_BELOW_MINIMUM', 'UNSUPPORTED_CURRENCY'].includes(error.code)) {
       return res.status(400).json({ success: false, message: error.message, code: error.code });
     }
-    return res.status(500).json({ success: false, message: 'Quote failed' });
+    return handleDomainError(res, error, 'Quote failed');
   }
 });
 
@@ -141,7 +184,7 @@ router.post('/create-payment-intent', paymentIntentLimiter, paymentIntentValidat
     if (error.code === 'PURCHASE_REQUEST_CLOSED') {
       return res.status(409).json({ success: false, message: error.message, code: error.code });
     }
-    if (['INVALID_AMOUNT_CENTS', 'AMOUNT_BELOW_MINIMUM', 'UNSUPPORTED_CURRENCY', 'MISSING_REQUIRED_FIELDS', 'TERMS_NOT_ACCEPTED', 'INVALID_PURCHASE_REQUEST_ID', 'INVALID_DELIVERY_MODE'].includes(error.code)) {
+    if (DOMAIN_BAD_REQUEST_CODES.has(error.code)) {
       return res.status(400).json({ success: false, message: error.message, code: error.code });
     }
     if (error.code === 'PAYMENT_NOT_CONFIGURED') {

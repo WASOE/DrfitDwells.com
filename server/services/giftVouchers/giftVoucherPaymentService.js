@@ -12,6 +12,14 @@ const { ensureGiftVoucherCreatorCommissionAfterActivation } = require('./giftVou
 const DEFAULT_TERMS_VERSION = 'v1';
 const EUR = 'EUR';
 const { MIN_GIFT_VOUCHER_AMOUNT_CENTS } = require('./giftVoucherConstants');
+const { MESSAGE_MAX_LENGTH } = require('./giftVoucherCustomizationConstants');
+const {
+  resolveDeliveryOption,
+  deliveryModeFromOption,
+  recipientEmailRequiredForOption,
+  normalizeCustomizationFields,
+  validateScheduledDeliveryDate
+} = require('./giftVoucherDeliveryOption');
 const PHYSICAL_CARD_FEE_CENTS = 500;
 const PURCHASE_ID_PATTERN = /^[A-Za-z0-9:_-]{8,128}$/;
 
@@ -92,7 +100,7 @@ function normalizePurchaseRequestId(value) {
 }
 
 function buildPurchaseFingerprint(payload) {
-  const canonical = JSON.stringify({
+  const canonical = {
     amountOriginalCents: payload.amountOriginalCents,
     currency: payload.currency,
     buyerName: payload.buyerName,
@@ -100,7 +108,11 @@ function buildPurchaseFingerprint(payload) {
     recipientName: payload.recipientName,
     recipientEmail: payload.recipientEmail,
     deliveryMode: payload.deliveryMode,
-    deliveryDate: payload.deliveryDate ? payload.deliveryDate.toISOString() : null,
+    deliveryOption: payload.deliveryOption,
+    cardOccasion: payload.cardOccasion || null,
+    cardTemplateId: payload.cardTemplateId || null,
+    cardLocale: payload.cardLocale || null,
+    message: payload.message || null,
     deliveryAddress: {
       addressLine1: payload.deliveryAddress?.addressLine1 || null,
       addressLine2: payload.deliveryAddress?.addressLine2 || null,
@@ -108,8 +120,11 @@ function buildPurchaseFingerprint(payload) {
       postalCode: payload.deliveryAddress?.postalCode || null,
       country: payload.deliveryAddress?.country || null
     }
-  });
-  return crypto.createHash('sha256').update(canonical).digest('hex');
+  };
+  if (payload.deliveryOption === 'scheduled' && payload.deliveryDate) {
+    canonical.scheduledDeliveryDate = payload.deliveryDate.toISOString();
+  }
+  return crypto.createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
 }
 
 function assertIntegerCents(value, fieldName) {
@@ -149,7 +164,8 @@ function computeGiftVoucherPricing({ amountOriginalCents, deliveryMode }) {
 
 function quoteGiftVoucherPurchase(input = {}) {
   const normalized = normalizeQuoteInput(input);
-  const deliveryMode = normalizeDeliveryMode(input.deliveryMode);
+  const deliveryOption = resolveDeliveryOption(input);
+  const deliveryMode = deliveryModeFromOption(deliveryOption);
   const pricing = computeGiftVoucherPricing({
     amountOriginalCents: normalized.amountOriginalCents,
     deliveryMode
@@ -197,6 +213,7 @@ function buildStripeMetadata({ voucher, purchaseRequestId, attribution, pricing 
     giftVoucherId: String(voucher._id),
     purchaseRequestId: String(purchaseRequestId),
     deliveryMode: voucher.deliveryMode || 'email',
+    deliveryOption: voucher.deliveryOption || '',
     voucherValueCents: String(pricing.amountOriginalCents),
     physicalCardFeeCents: String(pricing.physicalCardFeeCents),
     totalDueCents: String(pricing.totalDueCents),
@@ -216,12 +233,16 @@ function normalizeCreateInput(input = {}) {
   const buyerName = normalizeText(input.buyerName, 120);
   const buyerEmail = normalizeEmail(input.buyerEmail);
   const recipientName = normalizeText(input.recipientName, 120);
-  const recipientEmail = normalizeEmail(input.recipientEmail);
-  const message = normalizeText(input.message, 1000);
-  const deliveryMode = normalizeDeliveryMode(input.deliveryMode);
+  let recipientEmail = normalizeEmail(input.recipientEmail);
+  const message = normalizeText(input.message, MESSAGE_MAX_LENGTH);
+  const customization = normalizeCustomizationFields(input);
+  const deliveryOption = resolveDeliveryOption(input);
+  const deliveryMode = deliveryModeFromOption(deliveryOption);
   const deliveryAddress = normalizeDeliveryAddress(input.deliveryAddress);
-  const deliveryDate = parseDate(input.deliveryDate);
+  const rawDeliveryDate = parseDate(input.deliveryDate);
   const termsAccepted = input.termsAccepted === true;
+  const createdAt = new Date();
+
   if (!termsAccepted) {
     const err = new Error('Terms acceptance is required');
     err.code = 'TERMS_NOT_ACCEPTED';
@@ -232,18 +253,28 @@ function normalizeCreateInput(input = {}) {
     err.code = 'MISSING_REQUIRED_FIELDS';
     throw err;
   }
-  if (deliveryMode === 'email' && !recipientEmail) {
-    const err = new Error('recipientEmail is required for email delivery mode');
+
+  if (deliveryOption === 'send_to_buyer') {
+    recipientEmail = null;
+  } else if (recipientEmailRequiredForOption(deliveryOption) && !recipientEmail) {
+    const err = new Error('recipientEmail is required for this delivery option');
     err.code = 'MISSING_REQUIRED_FIELDS';
     throw err;
   }
-  if (deliveryMode === 'postal') {
+
+  if (deliveryOption === 'postal') {
     if (!deliveryAddress?.addressLine1 || !deliveryAddress?.city || !deliveryAddress?.postalCode || !deliveryAddress?.country) {
       const err = new Error('deliveryAddress.addressLine1, city, postalCode and country are required for postal delivery mode');
       err.code = 'MISSING_REQUIRED_FIELDS';
       throw err;
     }
   }
+
+  let deliveryDate = rawDeliveryDate;
+  if (deliveryOption === 'scheduled') {
+    deliveryDate = validateScheduledDeliveryDate({ deliveryDate: rawDeliveryDate, createdAt });
+  }
+
   const purchaseRequestId = normalizePurchaseRequestId(input.purchaseRequestId);
   const attribution = normalizeAttribution(input.attribution);
   const termsVersion = normalizeText(input.termsVersion, 50) || DEFAULT_TERMS_VERSION;
@@ -255,12 +286,14 @@ function normalizeCreateInput(input = {}) {
     recipientName,
     recipientEmail,
     message,
+    ...customization,
+    deliveryOption,
     deliveryMode,
     deliveryAddress,
     deliveryDate,
     purchaseRequestId,
     attribution,
-    termsAcceptedAt: new Date(),
+    termsAcceptedAt: createdAt,
     termsVersion
   };
 }
@@ -318,7 +351,11 @@ async function createGiftVoucherPaymentIntent(input = {}) {
     recipientName: normalized.recipientName,
     recipientEmail: normalized.recipientEmail,
     message: normalized.message,
+    deliveryOption: normalized.deliveryOption,
     deliveryMode: normalized.deliveryMode,
+    cardOccasion: normalized.cardOccasion,
+    cardTemplateId: normalized.cardTemplateId,
+    cardLocale: normalized.cardLocale,
     deliveryAddress: normalized.deliveryAddress,
     deliveryDate: normalized.deliveryDate,
     purchaseRequestId: normalized.purchaseRequestId,

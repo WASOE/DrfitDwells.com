@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 const { MIN_GIFT_VOUCHER_AMOUNT_CENTS } = require('../services/giftVouchers/giftVoucherConstants');
+const { CARD_OCCASIONS, CARD_TEMPLATE_IDS, CARD_LOCALES, DELIVERY_OPTIONS, MESSAGE_MAX_LENGTH } = require('../services/giftVouchers/giftVoucherCustomizationConstants');
+const { effectiveDeliveryOption, recipientEmailRequiredForOption } = require('../services/giftVouchers/giftVoucherDeliveryOption');
 
 const VOUCHER_STATUSES = [
   'draft',
@@ -97,8 +99,13 @@ const giftVoucherSchema = new mongoose.Schema(
     buyerEmail: { type: String, trim: true, lowercase: true, default: null, index: true },
     recipientName: { type: String, trim: true, default: null },
     recipientEmail: { type: String, trim: true, lowercase: true, default: null, index: true },
-    message: { type: String, trim: true, default: null },
+    message: { type: String, trim: true, maxlength: MESSAGE_MAX_LENGTH, default: null },
+    deliveryOption: { type: String, enum: DELIVERY_OPTIONS, default: null, index: true },
     deliveryMode: { type: String, enum: DELIVERY_MODES, default: 'email' },
+    cardOccasion: { type: String, enum: CARD_OCCASIONS, default: null },
+    cardTemplateId: { type: String, enum: CARD_TEMPLATE_IDS, default: null },
+    cardLocale: { type: String, enum: CARD_LOCALES, default: null },
+    cardAccessTokenHash: { type: String, trim: true, default: null, index: true },
     deliveryAddress: { type: deliveryAddressSchema, default: undefined },
     deliveryDate: { type: Date, default: null },
     sentAt: { type: Date, default: null },
@@ -146,10 +153,11 @@ giftVoucherSchema.pre('validate', function validateBalance(next) {
   if (this.balanceRemainingCents > this.amountOriginalCents) {
     return next(new Error('balanceRemainingCents cannot exceed amountOriginalCents'));
   }
-  if (this.deliveryMode === 'email' && !this.recipientEmail) {
-    return next(new Error('recipientEmail is required for email delivery mode'));
+  const deliveryOption = effectiveDeliveryOption(this);
+  if (deliveryOption && recipientEmailRequiredForOption(deliveryOption) && !this.recipientEmail) {
+    return next(new Error('recipientEmail is required for this delivery option'));
   }
-  if (this.deliveryMode === 'postal') {
+  if (this.deliveryMode === 'postal' || deliveryOption === 'postal') {
     const address = this.deliveryAddress || {};
     if (!this.recipientName) {
       return next(new Error('recipientName is required for postal delivery mode'));
@@ -191,4 +199,5 @@ giftVoucherSchema.index(
 module.exports = mongoose.model('GiftVoucher', giftVoucherSchema);
 module.exports.GIFT_VOUCHER_STATUSES = VOUCHER_STATUSES;
 module.exports.GIFT_VOUCHER_DELIVERY_MODES = DELIVERY_MODES;
+module.exports.GIFT_VOUCHER_DELIVERY_OPTIONS = DELIVERY_OPTIONS;
 module.exports.GIFT_VOUCHER_ISSUANCE_SOURCES = ISSUANCE_SOURCES;

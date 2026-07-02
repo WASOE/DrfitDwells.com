@@ -149,4 +149,17 @@ test('POST /create-payment-intent default browser payload without message or del
     .send(browserEmailPayload());
   assert.equal(response.status, 200);
   assert.ok(response.body.data.clientSecret);
+  const voucher = await GiftVoucher.findById(response.body.data.giftVoucherId).lean();
+  assert.equal(voucher.deliveryOption, 'recipient_now');
+});
+
+test('POST /create-payment-intent legacy email payload with deliveryDate still succeeds', async () => {
+  const response = await request(app)
+    .post('/api/gift-vouchers/create-payment-intent')
+    .set('X-Forwarded-For', '10.20.0.4')
+    .send(browserEmailPayload({ deliveryDate: '2026-09-20' }));
+  assert.equal(response.status, 200);
+  const voucher = await GiftVoucher.findById(response.body.data.giftVoucherId).lean();
+  assert.equal(voucher.deliveryOption, 'recipient_now');
+  assert.ok(voucher.deliveryDate);
 });
