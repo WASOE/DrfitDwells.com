@@ -394,6 +394,31 @@ test('recipient email update after sent is blocked', async () => {
   );
 });
 
+test('scheduled voucher with deferral only allows recipient email update before send', async () => {
+  const voucher = await GiftVoucher.create(
+    buildVoucher({
+      code: 'DD-EMUP-SCHD-AAAA',
+      deliveryOption: 'scheduled',
+      deliveryDate: new Date(Date.now() + 7 * 86400000)
+    })
+  );
+  await GiftVoucherEvent.create({
+    giftVoucherId: voucher._id,
+    type: 'recipient_delivery_deferred',
+    actor: 'system',
+    note: 'deferred',
+    metadata: { deliveryOption: 'scheduled' }
+  });
+  const result = await updateRecipientEmailBeforeSend({
+    giftVoucherId: voucher._id,
+    recipientEmail: 'scheduled-new@example.com',
+    note: 'fix typo before send date',
+    ctx: opsCtx({ idempotencyKey: 'email-key-scheduled' })
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.recipientEmail, 'scheduled-new@example.com');
+});
+
 test('duplicate idempotencyKey does not duplicate mutation/event', async () => {
   const voucher = await GiftVoucher.create(
     buildVoucher({

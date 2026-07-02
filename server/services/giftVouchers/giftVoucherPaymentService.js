@@ -729,7 +729,8 @@ async function activatePaidVoucherFromStripeEvent(event) {
   try {
     emailDelivery = await handleActivatedGiftVoucherDelivery({
       giftVoucherId: latestVoucher._id,
-      actor: 'system'
+      actor: 'system',
+      cardAccessToken: issuedCardAccessToken || null
     });
   } catch (emailErr) {
     emailDelivery = {

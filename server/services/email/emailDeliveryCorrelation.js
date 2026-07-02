@@ -33,10 +33,22 @@ function giftVoucherBuyerReceiptCorrelationKey({ giftVoucherId, buyerEmail }) {
   return `gift_voucher:${id}:buyer_receipt:${recipient}`;
 }
 
+function giftVoucherBuyerGiftCardCorrelationKey({ giftVoucherId, buyerEmail }) {
+  const id = giftVoucherId != null ? String(giftVoucherId) : '';
+  const recipient = normalizeRecipientEmail(buyerEmail);
+  if (!id || !recipient) {
+    throw new Error('giftVoucherBuyerGiftCardCorrelationKey requires giftVoucherId and buyerEmail');
+  }
+  return `gift_voucher:${id}:buyer_gift_card:${recipient}`;
+}
+
 function giftVoucherCorrelationKey({ giftVoucherId, templateKind, recipientEmail }) {
   const kind = templateKind != null ? String(templateKind).trim() : '';
   if (kind === 'buyer_receipt') {
     return giftVoucherBuyerReceiptCorrelationKey({ giftVoucherId, buyerEmail: recipientEmail });
+  }
+  if (kind === 'buyer_gift_card') {
+    return giftVoucherBuyerGiftCardCorrelationKey({ giftVoucherId, buyerEmail: recipientEmail });
   }
   if (kind === 'recipient_voucher' || kind === 'recipient_resend') {
     return giftVoucherRecipientCorrelationKey({ giftVoucherId, recipientEmail });
@@ -59,6 +71,7 @@ module.exports = {
   bookingLifecycleCorrelationKey,
   giftVoucherRecipientCorrelationKey,
   giftVoucherBuyerReceiptCorrelationKey,
+  giftVoucherBuyerGiftCardCorrelationKey,
   giftVoucherCorrelationKey,
   isGuestBookingTemplateKey,
   GUEST_BOOKING_TEMPLATE_KEYS

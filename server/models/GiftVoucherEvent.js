@@ -19,6 +19,7 @@ const GIFT_VOUCHER_EVENT_TYPES = [
   'refunded',
   'expiry_extended',
   'recipient_email_updated',
+  'recipient_delivery_deferred',
   'manual_review_created'
 ];
 

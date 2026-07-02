@@ -7,15 +7,27 @@ const {
 } = require('../ops/ingestion/manualReviewService');
 const { giftVoucherCorrelationKey } = require('../email/emailDeliveryCorrelation');
 const { applyEmailDeliveryAttempt } = require('../email/emailDeliveryStateService');
-const emailService = require('../emailService');
+const { buildCardDownloadUrl } = require('./giftVoucherCardAccessService');
 const {
-  buildBuyerReceiptTemplate,
-  buildRecipientVoucherTemplate,
-  buildRecipientResendTemplate
-} = require('../emailTemplates/giftVoucherEmailTemplates');
+  resolveActivationDeliverySteps,
+  templateKindSetsSentAt
+} = require('./giftVoucherDeliveryRouter');
+const {
+  buildBuyerReceiptDesignedEmail,
+  buildRecipientVoucherDesignedEmail,
+  buildBuyerGiftCardDesignedEmail,
+  buildRecipientResendDesignedEmail
+} = require('./giftVoucherDesignedEmailBuilder');
+const emailService = require('../emailService');
 
 const EMAIL_FAILED_CATEGORY = 'gift_voucher_email_failed';
 const PHYSICAL_CARD_REQUIRED_CATEGORY = 'gift_voucher_physical_card_required';
+
+const TEMPLATE_TRIGGERS = {
+  buyer_receipt: 'gift_voucher_buyer_receipt',
+  recipient_voucher: 'gift_voucher_recipient',
+  buyer_gift_card: 'gift_voucher_buyer_gift_card'
+};
 
 function lifecycleKey(kind, giftVoucherId) {
   return `${kind}:${String(giftVoucherId)}`;
@@ -31,21 +43,6 @@ async function appendEventOnce(payload) {
     }
     throw error;
   }
-}
-
-async function ensureLifecycleProgressOrThrow({ giftVoucherId, emailLifecycleKey }) {
-  const terminal = await GiftVoucherEvent.findOne({
-    giftVoucherId,
-    type: { $in: ['sent', 'send_failed'] },
-    'metadata.emailLifecycleKey': emailLifecycleKey
-  }).lean();
-  if (terminal) return terminal;
-
-  const err = new Error('Email send was previously attempted but terminal state is missing');
-  err.code = 'EMAIL_SEND_STATE_INCOMPLETE_REQUIRES_REVIEW';
-  err.giftVoucherId = String(giftVoucherId);
-  err.emailLifecycleKey = emailLifecycleKey;
-  throw err;
 }
 
 async function ensureLifecycleProgressOrEscalate({ voucher, emailLifecycleKey, templateKind, recipientEmail, actor = 'system' }) {
@@ -156,14 +153,44 @@ async function openEmailFailureReview({ voucher, title, details, evidence, templ
   return item;
 }
 
+async function markSentAtIfNeeded(voucherId, templateKind) {
+  if (!templateKindSetsSentAt(templateKind)) return;
+  await GiftVoucher.updateOne({ _id: voucherId, sentAt: null }, { $set: { sentAt: new Date() } });
+}
+
+function buildTemplatePayload({
+  templateKind,
+  voucher,
+  recipientEmail,
+  cardDownloadUrl,
+  variant = null
+}) {
+  switch (templateKind) {
+    case 'buyer_receipt':
+      return buildBuyerReceiptDesignedEmail({ voucher, cardDownloadUrl, variant });
+    case 'recipient_voucher':
+      return buildRecipientVoucherDesignedEmail({ voucher, recipientEmail, cardDownloadUrl });
+    case 'buyer_gift_card':
+      return buildBuyerGiftCardDesignedEmail({ voucher, cardDownloadUrl });
+    default:
+      throw new Error(`Unsupported templateKind ${templateKind}`);
+  }
+}
+
 async function performLifecycleSend({
   voucher,
   recipientEmail,
   templateKind,
-  templateBuilder,
   actor = 'system',
-  trigger
+  cardDownloadUrl = null,
+  variant = null
 }) {
+  if (templateKind === 'recipient_voucher' && !String(recipientEmail || '').trim()) {
+    const err = new Error('Recipient email is required for recipient voucher delivery');
+    err.code = 'MISSING_RECIPIENT_EMAIL';
+    throw err;
+  }
+
   const key = lifecycleKey(templateKind, voucher._id);
   const attempted = await appendEventOnce({
     giftVoucherId: voucher._id,
@@ -193,13 +220,21 @@ async function performLifecycleSend({
     };
   }
 
-  const template = templateBuilder({ voucher, recipientEmail });
+  const template = buildTemplatePayload({
+    templateKind,
+    voucher,
+    recipientEmail,
+    cardDownloadUrl,
+    variant
+  });
   const normalizedRecipient = String(recipientEmail || '').trim().toLowerCase();
   const deliveryCorrelationKey = giftVoucherCorrelationKey({
     giftVoucherId: voucher._id,
     templateKind,
     recipientEmail: normalizedRecipient
   });
+  const trigger = TEMPLATE_TRIGGERS[templateKind] || `gift_voucher_${templateKind}`;
+
   let sendResult;
   try {
     sendResult = await emailService.sendEmail({
@@ -266,6 +301,7 @@ async function performLifecycleSend({
       lifecycleSource: 'automatic',
       actorRole: actor
     });
+    await markSentAtIfNeeded(voucher._id, templateKind);
     return {
       ok: true,
       status: 'sent',
@@ -376,7 +412,31 @@ async function createPhysicalCardManualReview({ voucher, actor = 'system' }) {
   return { ok: true, status: 'manual_review_created', emailLifecycleKey: key };
 }
 
-async function handleActivatedGiftVoucherDelivery({ giftVoucherId, actor = 'system' }) {
+async function recordRecipientDeliveryDeferred({ voucher, actor = 'system', scheduledDeliveryDate = null }) {
+  const key = lifecycleKey('recipient_delivery_deferred', voucher._id);
+  const inserted = await appendEventOnce({
+    giftVoucherId: voucher._id,
+    type: 'recipient_delivery_deferred',
+    actor,
+    note: 'recipient gift card delivery deferred until scheduled date',
+    metadata: {
+      emailLifecycleKey: key,
+      deliveryOption: 'scheduled',
+      scheduledDeliveryDate: scheduledDeliveryDate ? new Date(scheduledDeliveryDate).toISOString() : null,
+      reason: 'awaiting_scheduled_delivery_worker'
+    }
+  });
+  if (!inserted.inserted) {
+    return { ok: true, skipped: true, reason: 'already_deferred', emailLifecycleKey: key };
+  }
+  return { ok: true, status: 'deferred', emailLifecycleKey: key };
+}
+
+async function handleActivatedGiftVoucherDelivery({
+  giftVoucherId,
+  actor = 'system',
+  cardAccessToken = null
+} = {}) {
   const voucher = await GiftVoucher.findById(giftVoucherId);
   if (!voucher) {
     const err = new Error('Gift voucher not found for delivery');
@@ -389,31 +449,38 @@ async function handleActivatedGiftVoucherDelivery({ giftVoucherId, actor = 'syst
     throw err;
   }
 
-  const outcomes = [];
-  outcomes.push(
-    await performLifecycleSend({
-      voucher,
-      recipientEmail: voucher.buyerEmail,
-      templateKind: 'buyer_receipt',
-      templateBuilder: buildBuyerReceiptTemplate,
-      actor,
-      trigger: 'gift_voucher_buyer_receipt'
-    })
-  );
+  const route = resolveActivationDeliverySteps(voucher);
+  if (route.skip) {
+    return { ok: true, skipped: true, reason: route.reason, steps: [] };
+  }
 
-  if (voucher.deliveryMode === 'postal') {
-    outcomes.push(await createPhysicalCardManualReview({ voucher, actor }));
-  } else {
-    outcomes.push(
-      await performLifecycleSend({
-        voucher,
-        recipientEmail: voucher.recipientEmail,
-        templateKind: 'recipient_voucher',
-        templateBuilder: buildRecipientVoucherTemplate,
-        actor,
-        trigger: 'gift_voucher_recipient'
-      })
-    );
+  const cardDownloadUrl = cardAccessToken ? buildCardDownloadUrl(cardAccessToken) : null;
+  const outcomes = [];
+
+  for (const step of route.steps) {
+    if (step.type === 'email') {
+      const downloadUrl = step.includeDownloadLink ? cardDownloadUrl : null;
+      outcomes.push(
+        await performLifecycleSend({
+          voucher,
+          recipientEmail: step.recipientEmail,
+          templateKind: step.templateKind,
+          actor,
+          cardDownloadUrl: downloadUrl,
+          variant: step.variant || null
+        })
+      );
+    } else if (step.type === 'defer_recipient') {
+      outcomes.push(
+        await recordRecipientDeliveryDeferred({
+          voucher,
+          actor,
+          scheduledDeliveryDate: step.scheduledDeliveryDate
+        })
+      );
+    } else if (step.type === 'physical_card_review') {
+      outcomes.push(await createPhysicalCardManualReview({ voucher, actor }));
+    }
   }
 
   const failed = outcomes.filter((o) => o && o.ok === false);
@@ -449,7 +516,7 @@ async function resendRecipientGiftVoucherEmail({ giftVoucherId, actor = 'ops', r
     recipientEmail
   });
 
-  const template = buildRecipientResendTemplate({ voucher, recipientEmail });
+  const template = buildRecipientResendDesignedEmail({ voucher, recipientEmail });
   const sendResult = await emailService.sendEmail({
     to: recipientEmail,
     subject: template.subject,
@@ -520,6 +587,7 @@ async function resendRecipientGiftVoucherEmail({ giftVoucherId, actor = 'ops', r
 module.exports = {
   handleActivatedGiftVoucherDelivery,
   resendRecipientGiftVoucherEmail,
+  performLifecycleSend,
   EMAIL_FAILED_CATEGORY,
   PHYSICAL_CARD_REQUIRED_CATEGORY
 };

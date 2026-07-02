@@ -89,7 +89,7 @@ test('resend template inherits escaped recipient HTML', () => {
   assert.doesNotMatch(html, /<script>/);
 });
 
-test('normal user content renders unchanged in HTML', () => {
+test('normal user content renders unchanged in designed card HTML', () => {
   const { html } = buildRecipientVoucherTemplate({
     voucher: {
       ...BASE_VOUCHER,
@@ -99,9 +99,10 @@ test('normal user content renders unchanged in HTML', () => {
     },
     recipientEmail: 'recipient@example.com'
   });
-  assert.match(html, /<strong>For:<\/strong> Anna/);
-  assert.match(html, /<strong>From:<\/strong> Bob/);
-  assert.match(html, /<strong>Message:<\/strong> Enjoy your stay/);
+  assert.match(html, />\s*Anna/);
+  assert.match(html, />\s*Bob/);
+  assert.match(html, /Enjoy your stay/);
+  assert.match(html, /data-gv-card/);
 });
 
 test('subject strips CR/LF and control chars from recipientName', () => {
@@ -119,7 +120,7 @@ test('subject strips CR/LF and control chars from recipientName', () => {
   assert.match(subject, /for Bcc: evil@x\.com/);
 });
 
-test('whitespace-only recipientName renders Guest fallback in HTML', () => {
+test('whitespace-only recipientName uses Guest in email lead without empty For block', () => {
   const { html } = buildRecipientVoucherTemplate({
     voucher: {
       ...BASE_VOUCHER,
@@ -129,8 +130,9 @@ test('whitespace-only recipientName renders Guest fallback in HTML', () => {
     },
     recipientEmail: ''
   });
-  assert.match(html, /<strong>For:<\/strong> Guest/);
-  assert.doesNotMatch(html, /<strong>For:<\/strong>\s*<\/p>/);
+  assert.match(html, /Guest/);
+  assert.match(html, />\s*Bob/);
+  assert.doesNotMatch(html, /<span[^>]*>For<\/span>\s*<\/p>/);
 });
 
 test('whitespace-only recipientName renders Recipient fallback in buyer receipt HTML', () => {
