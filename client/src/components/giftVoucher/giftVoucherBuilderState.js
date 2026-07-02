@@ -1,4 +1,4 @@
-import { PREVIEW_EXAMPLE } from '@shared/giftVoucher/cardCopy';
+import { PREVIEW_EXAMPLE, getPreviewExampleMessage } from '@shared/giftVoucher/cardCopy';
 import {
   CARD_OCCASIONS,
   CARD_TEMPLATE_IDS,
@@ -62,7 +62,9 @@ export function buildPreviewVoucher(state, effectiveAmountCents) {
     {
       recipientName: state.recipientName.trim() || PREVIEW_EXAMPLE.recipientName,
       buyerName: state.buyerName.trim() || PREVIEW_EXAMPLE.buyerName,
-      message: state.message.trim() || PREVIEW_EXAMPLE.message,
+      // Example message follows the card locale so toggling cardLocale
+      // switches the whole card, not just the labels.
+      message: state.message.trim() || getPreviewExampleMessage(state.cardLocale),
       amountOriginalCents: amount,
       currency: 'EUR',
       cardTemplateId: state.cardTemplateId,
@@ -186,7 +188,8 @@ export function payloadContainsPreviewExampleStrings(payload) {
   return (
     serialized.includes(PREVIEW_EXAMPLE.recipientName) ||
     serialized.includes(PREVIEW_EXAMPLE.buyerName) ||
-    serialized.includes(PREVIEW_EXAMPLE.message)
+    serialized.includes(PREVIEW_EXAMPLE.message.en) ||
+    serialized.includes(PREVIEW_EXAMPLE.message.bg)
   );
 }
 

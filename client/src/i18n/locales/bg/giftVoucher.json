@@ -38,9 +38,9 @@
   },
   "templates": {
     "label": "Дизайн на картата",
-    "forest": "Гора",
-    "romantic": "Романтичен",
-    "minimal": "Минимален"
+    "forest": "Картичка",
+    "romantic": "Писмо",
+    "minimal": "Мастило"
   },
   "occasions": {
     "label": "Повод",

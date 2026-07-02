@@ -38,9 +38,9 @@
   },
   "templates": {
     "label": "Card design",
-    "forest": "Forest",
-    "romantic": "Romantic",
-    "minimal": "Minimal"
+    "forest": "Postcard",
+    "romantic": "Letter",
+    "minimal": "Ink"
   },
   "occasions": {
     "label": "Occasion",

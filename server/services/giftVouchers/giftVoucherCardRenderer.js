@@ -1,15 +1,48 @@
+const fs = require('node:fs');
+const path = require('node:path');
 const {
   CARD_TOKENS,
-  CARD_TYPOGRAPHY,
   CARD_LAYOUT,
-  CARD_BG_ALT,
-  forestBackgroundUrl,
+  CARD_ASSETS,
+  cardAssetUrl,
+  cardFontFamily,
+  cardFontStyle,
   resolveCardDisplayFields
 } = require('../../../shared/giftVoucher/cardSpec');
 const { userHtml } = require('../../utils/giftVoucherTextSafe');
-const { getOccasionHeadline, getCardLabels } = require('../../data/giftVoucherCardCopy');
+const { htmlEscape } = require('../../utils/htmlEscape');
+const {
+  getOccasionHeadline,
+  getCardLabels,
+  getBrandLine,
+  getBrandLineCircledWord,
+  getFormLabels
+} = require('../../data/giftVoucherCardCopy');
+const { INK_FOOTER } = require('../../../shared/giftVoucher/cardCopy');
 
 const HEADLINE_ATTR = 'data-gv-card-headline';
+const BRAND_LINE_ATTR = 'data-gv-card-brand-line';
+const FORM_BLOCK_ATTR = 'data-gv-card-form-block';
+
+const CLIENT_PUBLIC_DIR = path.join(__dirname, '../../../client/public');
+
+const assetAvailabilityCache = new Map();
+
+/**
+ * Artifact assets are Canva exports produced by the owner. Until a file lands,
+ * its slot renders the flat fallback — never substitute artwork.
+ */
+function isCardAssetAvailable(assetKey) {
+  if (assetAvailabilityCache.has(assetKey)) return assetAvailabilityCache.get(assetKey);
+  const assetPath = CARD_ASSETS[assetKey];
+  const available = Boolean(assetPath) && fs.existsSync(path.join(CLIENT_PUBLIC_DIR, assetPath));
+  assetAvailabilityCache.set(assetKey, available);
+  return available;
+}
+
+function resetCardAssetAvailabilityCacheForTesting() {
+  assetAvailabilityCache.clear();
+}
 
 function formatCurrency(cents, currency = 'EUR', locale = 'en') {
   const amount = Number(cents || 0) / 100;
@@ -33,251 +66,262 @@ function formatExpiryDate(value, locale = 'en') {
   });
 }
 
-function buildHeadlineHtml(occasion, locale, { color, marginBottom = '12px' } = {}) {
+function fontCss(role, mode) {
+  const style = cardFontStyle(role, mode);
+  return `font-family:${cardFontFamily(role, mode)};font-style:${style};`;
+}
+
+/**
+ * Brand line. Voice: script (Marck Script) on Postcard/Letter, statement
+ * (Playfair) on Ink. In print/preview the Letter draws a hand-drawn ellipse
+ * stroke (inline SVG) around the "offline" word; email clients skip the SVG.
+ */
+function buildBrandLineHtml(locale, { voice = 'script', mode, color, sizePx, circled = false } = {}) {
+  const line = getBrandLine(locale);
+  const size = sizePx || (voice === 'statement' ? CARD_LAYOUT.brandStatementPx : CARD_LAYOUT.brandScriptPx);
+  const leading = voice === 'statement' ? 1.08 : 1.3;
+  let inner = userHtml(line);
+
+  if (circled && mode !== 'email') {
+    const word = getBrandLineCircledWord(locale);
+    const idx = line.toLowerCase().indexOf(word.toLowerCase());
+    if (idx >= 0) {
+      // htmlEscape (not userHtml): fragments keep their surrounding spaces.
+      const before = htmlEscape(line.slice(0, idx));
+      const target = htmlEscape(line.slice(idx, idx + word.length));
+      const after = htmlEscape(line.slice(idx + word.length));
+      const circleSvg =
+        `<svg viewBox="0 0 120 52" preserveAspectRatio="none" style="position:absolute;left:-10%;top:-22%;width:120%;height:150%;overflow:visible;" aria-hidden="true">` +
+        `<path d="M12 27 C 14 10, 58 4, 88 9 C 112 13, 116 30, 96 41 C 72 51, 22 49, 12 36 C 6 29, 10 22, 18 18" fill="none" stroke="${color}" stroke-width="2.4" stroke-linecap="round" opacity="0.9"/></svg>`;
+      inner = `${before}<span style="position:relative;display:inline-block;white-space:nowrap;">${circleSvg}<span style="position:relative;">${target}</span></span>${after}`;
+    }
+  }
+
+  return `<p ${BRAND_LINE_ATTR}="1" style="margin:0 0 14px;${fontCss(voice === 'statement' ? 'statement' : 'script', mode)}font-size:${size}px;line-height:${leading};font-weight:${voice === 'statement' ? 600 : 400};color:${color};">${inner}</p>`;
+}
+
+/** Occasion headline — small utility-caps voice (Oswald), optional. */
+function buildOccasionHtml(occasion, locale, mode, { color } = {}) {
   if (!occasion) return '';
   const headline = getOccasionHeadline(occasion, locale);
   if (!headline) return '';
-  const safe = userHtml(headline);
-  const ink = color || CARD_TOKENS.ink;
-  return `<p ${HEADLINE_ATTR}="1" style="margin:0 0 ${marginBottom};font-family:${CARD_TYPOGRAPHY.fontSans};font-size:${CARD_LAYOUT.headlinePx}px;letter-spacing:${CARD_TYPOGRAPHY.trackingKicker};text-transform:uppercase;font-weight:600;color:${ink};">${safe}</p>`;
+  return `<p ${HEADLINE_ATTR}="1" style="margin:0 0 10px;${fontCss('utilityCaps', mode)}font-size:${CARD_LAYOUT.occasionPx}px;letter-spacing:0.22em;text-transform:uppercase;font-weight:500;color:${color};">${userHtml(headline)}</p>`;
 }
 
-function buildMessageHtml(message, locale, { color, textShadow = 'none', italic = false, marginBottom = '16px' } = {}) {
+/** The message — Caveat, always the largest text element. */
+function buildMessageHtml(message, locale, mode, { color, lineHeight = 1.45 } = {}) {
   const labels = getCardLabels(locale);
   const safe = userHtml(message, labels.defaultMessage);
-  const fontStyle = italic ? 'italic' : 'normal';
-  return `<p data-gv-card-message="1" style="margin:0 0 ${marginBottom};font-family:${CARD_TYPOGRAPHY.fontSerif};font-size:${CARD_LAYOUT.messagePx}px;line-height:1.45;font-weight:500;font-style:${fontStyle};color:${color};text-shadow:${textShadow};">${safe}</p>`;
+  return `<p data-gv-card-message="1" style="margin:0 0 10px;${fontCss('message', mode)}font-size:${CARD_LAYOUT.messagePx}px;line-height:${lineHeight};font-weight:500;color:${color};">${safe}</p>`;
 }
 
-function wrapRomanticDoubleFrame(innerHtml, t) {
-  const border = `${t.frameBorderPx}px solid ${t.warmAccent}`;
-  const gap = t.frameGapPx;
-  return `<div data-gv-card-romantic-frame="1" style="border:${border};padding:${gap}px;box-sizing:border-box;background:${t.bg};"><div style="border:${border};padding:${CARD_LAYOUT.print.padding};box-sizing:border-box;background:${t.surface};">${innerHtml}</div></div>`;
+/** Signature line under the message, handwritten voice. */
+function buildSignatureHtml(buyerName, mode, { color } = {}) {
+  if (!buyerName) return '';
+  return `<p data-gv-card-signature="1" style="margin:0 0 16px;${fontCss('message', mode)}font-size:${CARD_LAYOUT.namesPx}px;line-height:1.4;color:${color};">— ${userHtml(buyerName)}</p>`;
 }
 
-function buildRomanticMessageBlock(headline, message, locale, t) {
-  const padY = CARD_LAYOUT.romanticMessageBlockPaddingY;
-  return `<div data-gv-card-message-block="1" style="padding:${padY} 8px;text-align:center;">${headline}${message}</div>`;
+/**
+ * The voucher form block: TO / VALID UNTIL / CODE / VALUE. Oswald caps labels
+ * left, handwritten values on dotted underlines. One function, all templates,
+ * all modes — this block is the voucher identity.
+ */
+function buildFormBlockHtml(fields, locale, mode, { color, mutedColor, framed = false } = {}) {
+  const labels = getFormLabels(locale);
+  const rows = [
+    { label: labels.to, value: fields.recipientName || '', attr: '' },
+    { label: labels.validUntil, value: formatExpiryDate(fields.expiresAt, locale), attr: '' },
+    { label: labels.code, value: fields.code, attr: ' data-gv-card-code="1"' },
+    {
+      label: labels.value,
+      value: formatCurrency(fields.amountOriginalCents, fields.currency, locale),
+      attr: ` data-gv-card-amount="1" data-gv-font-size="${CARD_LAYOUT.formValuePx}"`
+    }
+  ];
+
+  const labelCss = `${fontCss('utilityCaps', mode)}font-size:${CARD_LAYOUT.formLabelPx}px;letter-spacing:0.18em;text-transform:uppercase;font-weight:500;color:${mutedColor};`;
+  const valueCss = `${fontCss('message', mode)}font-size:${CARD_LAYOUT.formValuePx}px;line-height:1.3;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:${color};border-bottom:2px dotted ${mutedColor};`;
+
+  const rowsHtml = rows
+    .map(
+      (row) => `
+    <tr>
+      <td style="padding:7px 14px 7px 0;vertical-align:bottom;white-space:nowrap;${labelCss}">${userHtml(row.label)}</td>
+      <td${row.attr} style="padding:7px 0;vertical-align:bottom;width:100%;${valueCss}">${userHtml(row.value)}</td>
+    </tr>`
+    )
+    .join('');
+
+  const table = `<table ${FORM_BLOCK_ATTR}="1" role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;">${rowsHtml}</table>`;
+
+  if (framed && mode !== 'email') {
+    return `<div data-gv-card-form-frame="1" style="border:2px solid ${color};border-radius:14px 18px 14px 16px;padding:14px 18px;transform:rotate(-0.4deg);">${table}</div>`;
+  }
+  if (framed) {
+    return `<div data-gv-card-form-frame="1" style="border:2px solid ${color};border-radius:14px;padding:14px 18px;">${table}</div>`;
+  }
+  return table;
 }
 
-function buildAmountHtml(cents, currency, locale, { color } = {}) {
+/** Small utility footer: redeem instruction (Inter). */
+function buildRedeemHtml(locale, mode, { color } = {}) {
   const labels = getCardLabels(locale);
-  const amount = formatCurrency(cents, currency, locale);
-  const safeAmount = userHtml(amount);
-  const safeLabel = userHtml(labels.amountLabel);
-  return `<p data-gv-card-amount="1" style="margin:0 0 8px;font-family:${CARD_TYPOGRAPHY.fontSans};font-size:${CARD_LAYOUT.amountPx}px;color:${color};"><span style="letter-spacing:${CARD_TYPOGRAPHY.trackingKicker};text-transform:uppercase;font-size:${CARD_LAYOUT.footerPx}px;">${safeLabel}</span><br/><strong style="font-size:${CARD_LAYOUT.amountPx}px;">${safeAmount}</strong></p>`;
+  return `<p data-gv-card-redeem="1" style="margin:12px 0 0;${fontCss('smallUtility', mode)}font-size:${CARD_LAYOUT.footerPx}px;line-height:1.5;color:${color};">${userHtml(labels.redeemInstruction)}</p>`;
 }
 
-function buildNamesHtml(fields, labels, { color, mutedColor } = {}) {
-  const parts = [];
-  if (fields.recipientName) {
-    parts.push(
-      `<span style="color:${mutedColor || color};">${userHtml(labels.forLabel)}</span> ${userHtml(fields.recipientName)}`
-    );
+/** Small wordmark, utility-caps voice. */
+function buildWordmarkHtml(locale, mode, { color } = {}) {
+  const labels = getCardLabels(locale);
+  return `<p data-gv-card-wordmark="1" style="margin:0 0 12px;${fontCss('utilityCaps', mode)}font-size:11px;letter-spacing:0.28em;text-transform:uppercase;font-weight:500;color:${color};">${userHtml(labels.brandWordmark)}</p>`;
+}
+
+function containerDimensions(mode) {
+  if (mode === 'print') {
+    return `width:${CARD_LAYOUT.print.width};height:${CARD_LAYOUT.print.height};margin:0 auto;box-sizing:border-box;overflow:hidden;`;
   }
-  if (fields.buyerName) {
-    parts.push(
-      `<span style="color:${mutedColor || color};">${userHtml(labels.fromLabel)}</span> ${userHtml(fields.buyerName)}`
-    );
+  return 'max-width:600px;width:100%;margin:0 auto;box-sizing:border-box;';
+}
+
+function textureBackgroundCss(assetKey, fallbackColor, mode, siteOrigin) {
+  // Email mode: textures degrade to solid warm background colors.
+  if (mode === 'email' || !isCardAssetAvailable(assetKey)) {
+    return `background-color:${fallbackColor};`;
   }
-  if (!parts.length) return '';
-  return `<p style="margin:0 0 12px;font-family:${CARD_TYPOGRAPHY.fontSans};font-size:${CARD_LAYOUT.namesPx}px;line-height:1.5;color:${color};">${parts.join('<br/>')}</p>`;
+  const url = cardAssetUrl(assetKey, { mode, siteOrigin });
+  return `background-color:${fallbackColor};background-image:url('${url}');background-size:cover;background-position:center;`;
 }
 
-function buildFooterHtml(fields, labels, locale, { color, mutedColor, onPlainPaper = false } = {}) {
-  const code = userHtml(fields.code);
-  const expires = userHtml(formatExpiryDate(fields.expiresAt, locale));
-  const redeem = userHtml(labels.redeemInstruction);
-  const codeLabel = userHtml(labels.codeLabel);
-  const expiresLabel = userHtml(labels.expiresLabel);
-  const footerColor = onPlainPaper ? CARD_TOKENS.ink : color;
-  const footerMuted = onPlainPaper ? CARD_TOKENS.inkMuted : mutedColor;
-  const codeStyle = onPlainPaper
-    ? `font-family:monospace;font-size:${CARD_LAYOUT.codePx}px;font-weight:700;letter-spacing:0.08em;color:${CARD_TOKENS.ink};border:1px solid ${CARD_TOKENS.minimal.rule};display:inline-block;padding:6px 10px;background:transparent;`
-    : `font-family:monospace;font-size:${CARD_LAYOUT.codePx}px;font-weight:700;letter-spacing:0.08em;color:${footerColor};`;
-  return `
-    <div data-gv-card-footer="1" style="margin-top:${onPlainPaper ? '0' : '16px'};padding-top:12px;font-family:${CARD_TYPOGRAPHY.fontSans};font-size:${CARD_LAYOUT.footerPx}px;color:${footerColor};">
-      <p style="margin:0 0 6px;color:${footerMuted};"><span style="text-transform:uppercase;letter-spacing:${CARD_TYPOGRAPHY.trackingKicker};">${codeLabel}</span></p>
-      <p style="margin:0 0 10px;"><span style="${codeStyle}">${code}</span></p>
-      <p style="margin:0 0 6px;color:${footerMuted};"><span style="text-transform:uppercase;letter-spacing:${CARD_TYPOGRAPHY.trackingKicker};">${expiresLabel}</span> ${expires}</p>
-      <p style="margin:8px 0 0;color:${footerMuted};font-size:${CARD_LAYOUT.footerPx}px;line-height:1.45;">${redeem}</p>
-    </div>`;
-}
-
-function renderForestEmail(fields, labels, locale, siteOrigin) {
-  const bgUrl = forestBackgroundUrl({ mode: 'email', siteOrigin });
+/**
+ * Postcard (stored: forest). Warm paper texture, black line-art mountain scene
+ * top third, brand line in script, message in Caveat, form block bottom.
+ */
+function renderPostcard(fields, locale, mode, siteOrigin) {
   const t = CARD_TOKENS.forest;
-  const textShadow = '0 1px 3px rgba(0,0,0,0.45)';
-  const headline = buildHeadlineHtml(fields.occasion, locale);
-  const message = buildMessageHtml(fields.message, locale, { color: t.text, textShadow });
-  const names = buildNamesHtml(fields, labels, { color: t.text, mutedColor: t.textMuted });
-  const amount = buildAmountHtml(fields.amountOriginalCents, fields.currency, locale, { color: t.text });
-  const footer = buildFooterHtml(fields, labels, locale, { color: t.text, mutedColor: t.textMuted });
+  const bg = textureBackgroundCss('paperTexture', t.fallbackBg, mode, siteOrigin);
+
+  let artHtml = '';
+  if (isCardAssetAvailable('mountainLineArt')) {
+    const artUrl = cardAssetUrl('mountainLineArt', { mode, siteOrigin });
+    artHtml = `<img data-gv-card-art="mountain" src="${artUrl}" alt="" width="520" style="display:block;width:100%;max-width:520px;height:auto;margin:0 auto 12px;" />`;
+  }
+
+  const occasion = buildOccasionHtml(fields.occasion, locale, mode, { color: t.muted });
+  const brand = buildBrandLineHtml(locale, { voice: 'script', mode, color: t.ink });
+  const message = buildMessageHtml(fields.message, locale, mode, { color: t.ink });
+  const signature = buildSignatureHtml(fields.buyerName, mode, { color: t.ink });
+  const formBlock = buildFormBlockHtml(fields, locale, mode, { color: t.ink, mutedColor: t.muted });
+  const redeem = buildRedeemHtml(locale, mode, { color: t.muted });
+  const wordmark = buildWordmarkHtml(locale, mode, { color: t.muted });
+
+  const pad = mode === 'print' ? CARD_LAYOUT.print.padding : '32px 28px';
 
   return `
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;width:100%;margin:0 auto;border-collapse:collapse;">
-  <tr>
-    <td bgcolor="${t.fallbackBg}" background="${bgUrl}" style="background-color:${t.fallbackBg};background-image:url('${bgUrl}');background-size:cover;background-position:center;padding:0;">
-      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;">
-        <tr>
-          <td style="background:${t.overlayTop};padding:32px 28px 20px;">
-            ${headline}
-            ${message}
-            ${names}
-          </td>
-        </tr>
-        <tr>
-          <td style="background:${t.overlayBottom};padding:20px 28px 28px;">
-            ${amount}
-            ${footer}
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>`;
-}
-
-function renderForestPrint(fields, labels, locale) {
-  const bgPath = forestBackgroundUrl({ mode: 'print' });
-  const t = CARD_TOKENS.forest;
-  const textShadow = '0 1px 4px rgba(0,0,0,0.65), 0 0 12px rgba(0,0,0,0.35)';
-  const headline = buildHeadlineHtml(fields.occasion, locale);
-  const message = buildMessageHtml(fields.message, locale, { color: t.text, textShadow });
-  const names = buildNamesHtml(fields, labels, { color: t.text, mutedColor: t.textMuted });
-  const amount = buildAmountHtml(fields.amountOriginalCents, fields.currency, locale, {
-    color: CARD_TOKENS.ink
-  });
-  const footer = buildFooterHtml(fields, labels, locale, { onPlainPaper: true });
-  const print = CARD_LAYOUT.print;
-
-  return `
-<div data-gv-card-template="forest" data-gv-card-mode="print" style="width:${print.width};height:${print.height};margin:0 auto;overflow:hidden;font-family:${CARD_TYPOGRAPHY.fontSans};background:${CARD_TOKENS.paper};box-sizing:border-box;display:flex;flex-direction:column;">
-  <div style="position:relative;flex:0 0 ${print.forestVisualRatio};min-height:0;overflow:hidden;">
-    <img src="${bgPath}" alt="${CARD_BG_ALT}" width="1200" height="800" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;z-index:0;display:block;" />
-    <div style="position:relative;z-index:1;padding:${print.padding};box-sizing:border-box;height:100%;display:flex;flex-direction:column;justify-content:flex-end;">
-      ${headline}
-      ${message}
-      ${names}
-    </div>
-  </div>
-  <div style="flex:1 1 auto;padding:${print.padding};padding-top:10px;box-sizing:border-box;background:${CARD_TOKENS.paper};">
-    ${amount}
-    ${footer}
-  </div>
-</div>`;
-}
-
-function renderRomanticEmail(fields, labels, locale) {
-  const t = CARD_TOKENS.romantic;
-  const headline = buildHeadlineHtml(fields.occasion, locale, {
-    color: t.warmAccent,
-    marginBottom: '14px'
-  });
-  const message = buildMessageHtml(fields.message, locale, { color: t.text, italic: true, marginBottom: '0' });
-  const messageBlock = buildRomanticMessageBlock(headline, message, locale, t);
-  const names = buildNamesHtml(fields, labels, { color: t.text, mutedColor: CARD_TOKENS.inkMuted });
-  const amount = buildAmountHtml(fields.amountOriginalCents, fields.currency, locale, {
-    color: CARD_TOKENS.inkMuted
-  });
-  const footer = buildFooterHtml(fields, labels, locale, { color: t.text, mutedColor: CARD_TOKENS.inkMuted });
-  const wordmark = userHtml(labels.brandWordmark);
-  const inner = `
-      <p style="margin:0 0 16px;text-align:center;font-family:${CARD_TYPOGRAPHY.fontSerif};font-size:18px;color:${t.warmAccent};letter-spacing:0.08em;">${wordmark}</p>
-      ${messageBlock}
-      ${names ? `<div style="text-align:center;margin:0 0 16px;">${names}</div>` : ''}
-      ${amount}
-      ${footer}`;
-
-  return `
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;width:100%;margin:0 auto;border-collapse:collapse;">
-  <tr>
-    <td style="padding:0;">
-      ${wrapRomanticDoubleFrame(inner, t)}
-    </td>
-  </tr>
-</table>`;
-}
-
-function renderRomanticPrint(fields, labels, locale) {
-  const t = CARD_TOKENS.romantic;
-  const print = CARD_LAYOUT.print;
-  const headline = buildHeadlineHtml(fields.occasion, locale, {
-    color: t.warmAccent,
-    marginBottom: '14px'
-  });
-  const message = buildMessageHtml(fields.message, locale, { color: t.text, italic: true, marginBottom: '0' });
-  const messageBlock = buildRomanticMessageBlock(headline, message, locale, t);
-  const names = buildNamesHtml(fields, labels, { color: t.text, mutedColor: CARD_TOKENS.inkMuted });
-  const amount = buildAmountHtml(fields.amountOriginalCents, fields.currency, locale, {
-    color: CARD_TOKENS.inkMuted
-  });
-  const footer = buildFooterHtml(fields, labels, locale, { color: t.text, mutedColor: CARD_TOKENS.inkMuted });
-  const wordmark = userHtml(labels.brandWordmark);
-  const inner = `
-  <p style="margin:0 0 12px;text-align:center;font-family:${CARD_TYPOGRAPHY.fontSerif};font-size:20px;color:${t.warmAccent};letter-spacing:0.08em;">${wordmark}</p>
-  ${messageBlock}
-  ${names ? `<div style="text-align:center;margin-bottom:12px;">${names}</div>` : ''}
-  ${amount}
-  ${footer}`;
-
-  return `
-<div data-gv-card-template="romantic" data-gv-card-mode="print" style="width:${print.width};height:${print.height};margin:0 auto;box-sizing:border-box;font-family:${CARD_TYPOGRAPHY.fontSans};">
-  ${wrapRomanticDoubleFrame(inner, t)}
-</div>`;
-}
-
-function renderMinimalEmail(fields, labels, locale) {
-  const t = CARD_TOKENS.minimal;
-  const headline = buildHeadlineHtml(fields.occasion, locale);
-  const message = buildMessageHtml(fields.message, locale, { color: t.ink });
-  const names = buildNamesHtml(fields, labels, { color: t.ink, mutedColor: t.muted });
-  const amount = buildAmountHtml(fields.amountOriginalCents, fields.currency, locale, { color: t.ink });
-  const footer = buildFooterHtml(fields, labels, locale, { color: t.ink, mutedColor: t.muted });
-
-  return `
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;width:100%;margin:0 auto;border-collapse:collapse;background:${t.bg};border:1px solid ${t.rule};">
-  <tr>
-    <td style="padding:32px 28px;">
-      ${headline}
-      ${message}
-      ${names}
-      <hr style="border:none;border-top:1px solid ${t.rule};margin:20px 0;" />
-      ${amount}
-      ${footer}
-    </td>
-  </tr>
-</table>`;
-}
-
-function renderMinimalPrint(fields, labels, locale) {
-  const t = CARD_TOKENS.minimal;
-  const print = CARD_LAYOUT.print;
-  const headline = buildHeadlineHtml(fields.occasion, locale);
-  const message = buildMessageHtml(fields.message, locale, { color: t.ink });
-  const names = buildNamesHtml(fields, labels, { color: t.ink, mutedColor: t.muted });
-  const amount = buildAmountHtml(fields.amountOriginalCents, fields.currency, locale, { color: t.ink });
-  const footer = buildFooterHtml(fields, labels, locale, { color: t.ink, mutedColor: t.muted });
-
-  return `
-<div data-gv-card-template="minimal" data-gv-card-mode="print" style="width:${print.width};height:${print.height};margin:0 auto;padding:${print.padding};box-sizing:border-box;background:${t.bg};font-family:${CARD_TYPOGRAPHY.fontSans};border:1px solid ${t.rule};">
-  ${headline}
+<div data-gv-card-template="forest" data-gv-card-mode="${mode}" style="${containerDimensions(mode)}${bg}padding:${pad};">
+  ${artHtml}
+  ${wordmark}
+  ${brand}
+  ${occasion}
   ${message}
-  ${names}
-  <hr style="border:none;border-top:1px solid ${t.rule};margin:20px 0;" />
-  ${amount}
+  ${signature}
+  ${formBlock}
+  ${redeem}
+</div>`;
+}
+
+/**
+ * Letter (stored: romantic). Crumpled paper, script brand line with circled
+ * word, message set as a letter with generous spacing, stamp top right,
+ * form block bottom inside a hand-drawn frame stroke.
+ */
+function renderLetter(fields, locale, mode, siteOrigin) {
+  const t = CARD_TOKENS.romantic;
+  const bg = textureBackgroundCss('crumpledTexture', t.fallbackBg, mode, siteOrigin);
+
+  let stampHtml = '';
+  if (isCardAssetAvailable('stampFrame')) {
+    const stampUrl = cardAssetUrl('stampFrame', { mode, siteOrigin });
+    stampHtml =
+      mode === 'email'
+        ? `<img data-gv-card-art="stamp" src="${stampUrl}" alt="" width="72" align="right" style="display:block;width:72px;height:auto;" />`
+        : `<img data-gv-card-art="stamp" src="${stampUrl}" alt="" style="position:absolute;top:14px;right:16px;width:84px;height:auto;transform:rotate(3deg);" />`;
+  }
+
+  let flowerHtml = '';
+  if (mode !== 'email' && isCardAssetAvailable('pressedFlower')) {
+    const flowerUrl = cardAssetUrl('pressedFlower', { mode, siteOrigin });
+    flowerHtml = `<img data-gv-card-art="flower" src="${flowerUrl}" alt="" style="position:absolute;bottom:18px;right:20px;width:64px;height:auto;opacity:0.9;" />`;
+  }
+
+  const occasion = buildOccasionHtml(fields.occasion, locale, mode, { color: t.warmAccent });
+  const brand = buildBrandLineHtml(locale, { voice: 'script', mode, color: t.ink, circled: true });
+  const message = buildMessageHtml(fields.message, locale, mode, {
+    color: t.ink,
+    lineHeight: CARD_LAYOUT.letterLineHeight
+  });
+  const signature = buildSignatureHtml(fields.buyerName, mode, { color: t.ink });
+  const formBlock = buildFormBlockHtml(fields, locale, mode, {
+    color: t.ink,
+    mutedColor: t.muted,
+    framed: true
+  });
+  const redeem = buildRedeemHtml(locale, mode, { color: t.muted });
+  const wordmark = buildWordmarkHtml(locale, mode, { color: t.warmAccent });
+
+  const pad = mode === 'print' ? CARD_LAYOUT.print.padding : '32px 28px';
+  const positioning = mode === 'email' ? '' : 'position:relative;';
+
+  return `
+<div data-gv-card-template="romantic" data-gv-card-mode="${mode}" style="${containerDimensions(mode)}${bg}${positioning}padding:${pad};">
+  ${stampHtml}
+  ${wordmark}
+  ${brand}
+  ${occasion}
+  ${message}
+  ${signature}
+  ${formBlock}
+  ${redeem}
+  ${flowerHtml}
+</div>`;
+}
+
+/**
+ * Ink (stored: minimal). Solid black, brand line large in Playfair white with
+ * tight leading, message in white Caveat, white dotted form block, small-caps
+ * footer. Zero image assets; prints on any office printer.
+ */
+function renderInk(fields, locale, mode) {
+  const t = CARD_TOKENS.minimal;
+
+  const occasion = buildOccasionHtml(fields.occasion, locale, mode, { color: t.muted });
+  const brand = buildBrandLineHtml(locale, { voice: 'statement', mode, color: t.text });
+  const message = buildMessageHtml(fields.message, locale, mode, { color: t.text });
+  const signature = buildSignatureHtml(fields.buyerName, mode, { color: t.text });
+  const formBlock = buildFormBlockHtml(fields, locale, mode, { color: t.text, mutedColor: t.muted });
+  const redeem = buildRedeemHtml(locale, mode, { color: t.muted });
+  const footer = `<p data-gv-card-ink-footer="1" style="margin:16px 0 0;${fontCss('utilityCaps', mode)}font-size:11px;letter-spacing:0.3em;text-transform:uppercase;font-weight:500;color:${t.muted};">${userHtml(INK_FOOTER)}</p>`;
+
+  const pad = mode === 'print' ? CARD_LAYOUT.print.padding : '36px 28px';
+
+  return `
+<div data-gv-card-template="minimal" data-gv-card-mode="${mode}" style="${containerDimensions(mode)}background-color:${t.bg};padding:${pad};">
+  ${brand}
+  ${occasion}
+  ${message}
+  ${signature}
+  ${formBlock}
+  ${redeem}
   ${footer}
 </div>`;
 }
 
 const RENDERERS = {
-  forest: { email: renderForestEmail, print: renderForestPrint },
-  romantic: { email: renderRomanticEmail, print: renderRomanticPrint },
-  minimal: { email: renderMinimalEmail, print: renderMinimalPrint }
+  forest: renderPostcard,
+  romantic: renderLetter,
+  minimal: renderInk
 };
 
 /**
- * Render designed gift voucher card HTML (email or print). Not wired to delivery yet (Batch 5).
+ * Render designed gift voucher card HTML (email or print).
  */
 function renderGiftVoucherCard({
   voucher,
@@ -287,12 +331,11 @@ function renderGiftVoucherCard({
 } = {}) {
   const normalizedMode = mode === 'print' ? 'print' : 'email';
   const fields = resolveCardDisplayFields(voucher, { recipientEmail });
-  const labels = getCardLabels(fields.locale);
-  const renderer = RENDERERS[fields.templateId]?.[normalizedMode];
+  const renderer = RENDERERS[fields.templateId];
   if (!renderer) {
     throw new Error(`Unsupported card render: ${fields.templateId}/${normalizedMode}`);
   }
-  const html = renderer(fields, labels, fields.locale, siteOrigin).trim();
+  const html = renderer(fields, fields.locale, normalizedMode, siteOrigin).trim();
   return {
     html,
     templateId: fields.templateId,
@@ -303,5 +346,9 @@ function renderGiftVoucherCard({
 
 module.exports = {
   renderGiftVoucherCard,
-  HEADLINE_ATTR
+  isCardAssetAvailable,
+  resetCardAssetAvailabilityCacheForTesting,
+  HEADLINE_ATTR,
+  BRAND_LINE_ATTR,
+  FORM_BLOCK_ATTR
 };

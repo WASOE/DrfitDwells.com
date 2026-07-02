@@ -45,12 +45,68 @@ export const LABELS = Object.freeze({
   })
 });
 
+/**
+ * The brand line — appears on every card. Short, declarative, second person.
+ * The card never says "voucher" first; the commercial part comes last.
+ */
+export const BRAND_LINE = Object.freeze({
+  en: 'The gift of time offline.',
+  bg: 'Подари време офлайн.'
+});
+
+/** The word inside the brand line that receives the hand-drawn circle stroke. */
+export const BRAND_LINE_CIRCLED_WORD = Object.freeze({
+  en: 'offline',
+  bg: 'офлайн'
+});
+
+/**
+ * Voucher form block labels — TO / VALID UNTIL / CODE / VALUE. This block is
+ * the voucher identity, shared identically across all templates.
+ */
+export const FORM_LABELS = Object.freeze({
+  en: Object.freeze({
+    to: 'TO',
+    validUntil: 'VALID UNTIL',
+    code: 'CODE',
+    value: 'VALUE'
+  }),
+  bg: Object.freeze({
+    to: 'ЗА',
+    validUntil: 'ВАЛИДНО ДО',
+    code: 'КОД',
+    value: 'СТОЙНОСТ'
+  })
+});
+
+/** Ink template footer — brand handles, identical in both locales. */
+export const INK_FOOTER = 'driftdwells.com  ·  @driftdwells';
+
 /** Preview-only example content — never submitted in purchase payloads. */
 export const PREVIEW_EXAMPLE = Object.freeze({
   recipientName: 'Anna',
   buyerName: 'James',
-  message: 'Wishing you peaceful days away from the noise.'
+  message: Object.freeze({
+    en: 'Wishing you peaceful days away from the noise.',
+    bg: 'Пожелавам ти спокойни дни далеч от шума.'
+  })
 });
+
+export function getBrandLine(locale) {
+  return BRAND_LINE[normalizeCardCopyLocale(locale)];
+}
+
+export function getBrandLineCircledWord(locale) {
+  return BRAND_LINE_CIRCLED_WORD[normalizeCardCopyLocale(locale)];
+}
+
+export function getFormLabels(locale) {
+  return FORM_LABELS[normalizeCardCopyLocale(locale)];
+}
+
+export function getPreviewExampleMessage(locale) {
+  return PREVIEW_EXAMPLE.message[normalizeCardCopyLocale(locale)];
+}
 
 export function normalizeCardCopyLocale(locale) {
   return locale === 'bg' ? 'bg' : 'en';

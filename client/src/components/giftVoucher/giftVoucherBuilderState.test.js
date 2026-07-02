@@ -40,6 +40,7 @@ describe('giftVoucherBuilderState payload separation', () => {
     expect(payloadContainsPreviewExampleStrings(payload)).toBe(false);
     expect(payload.recipientName).not.toBe(PREVIEW_EXAMPLE.recipientName);
     expect(payload.buyerName).not.toBe(PREVIEW_EXAMPLE.buyerName);
-    expect(payload.message).not.toBe(PREVIEW_EXAMPLE.message);
+    expect(payload.message).not.toBe(PREVIEW_EXAMPLE.message.en);
+    expect(payload.message).not.toBe(PREVIEW_EXAMPLE.message.bg);
   });
 });

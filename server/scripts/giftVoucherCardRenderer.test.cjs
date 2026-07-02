@@ -4,12 +4,16 @@ const path = require('node:path');
 const fs = require('node:fs');
 const {
   renderGiftVoucherCard,
-  HEADLINE_ATTR
+  isCardAssetAvailable,
+  HEADLINE_ATTR,
+  BRAND_LINE_ATTR,
+  FORM_BLOCK_ATTR
 } = require('../services/giftVouchers/giftVoucherCardRenderer');
 const {
   CARD_BG_ASSET_PATH,
   PLACEHOLDER_VOUCHER_CODE
 } = require('../../shared/giftVoucher/cardSpec');
+const { BRAND_LINE, FORM_LABELS } = require('../../shared/giftVoucher/cardCopy');
 
 const BASE_VOUCHER = {
   amountOriginalCents: 15000,
@@ -24,6 +28,7 @@ const BASE_VOUCHER = {
 
 const SCRIPT_PAYLOAD = '<script>alert(1)</script>';
 const SITE_ORIGIN = 'https://driftdwells.com';
+const TEMPLATES = ['forest', 'romantic', 'minimal'];
 
 function render(voucher, mode = 'email', extra = {}) {
   return renderGiftVoucherCard({
@@ -34,20 +39,29 @@ function render(voucher, mode = 'email', extra = {}) {
   }).html;
 }
 
-test('renders all three templates in EN and BG', () => {
-  for (const templateId of ['forest', 'romantic', 'minimal']) {
+test('renders all three templates in EN and BG with brand line and form block', () => {
+  for (const templateId of TEMPLATES) {
     for (const locale of ['en', 'bg']) {
-      const html = render({ cardTemplateId: templateId, cardLocale: locale });
-      assert.ok(html.length > 200, `${templateId}/${locale} should produce HTML`);
-      if (templateId === 'forest') {
-        assert.match(html, /gift-voucher-card-bg\.jpg/);
+      for (const mode of ['email', 'print']) {
+        const html = render({ cardTemplateId: templateId, cardLocale: locale }, mode);
+        assert.ok(html.length > 200, `${templateId}/${locale}/${mode} should produce HTML`);
+        assert.match(html, new RegExp(BRAND_LINE_ATTR), `${templateId}/${locale}/${mode} brand line`);
+        // Circled-word treatment wraps part of the line in spans/SVG; compare tag-stripped text.
+        const textOnly = html.replace(/<[^>]+>/g, '');
+        assert.ok(textOnly.includes(BRAND_LINE[locale]), `${templateId}/${locale}/${mode} brand line copy`);
+        assert.match(html, new RegExp(FORM_BLOCK_ATTR), `${templateId}/${locale}/${mode} form block`);
+        for (const label of Object.values(FORM_LABELS[locale])) {
+          assert.ok(html.includes(label), `${templateId}/${locale}/${mode} form label ${label}`);
+        }
+        assert.match(html, /border-bottom:2px dotted/, `${templateId}/${locale}/${mode} dotted underlines`);
       }
     }
   }
 });
 
-test('legacy null template id resolves to minimal', () => {
+test('legacy null template id resolves to minimal (Ink)', () => {
   const html = render({ cardTemplateId: null, cardOccasion: null });
+  assert.match(html, /data-gv-card-template="minimal"/);
   assert.doesNotMatch(html, new RegExp(HEADLINE_ATTR));
   assert.match(html, /data-gv-card-message="1"/);
 });
@@ -89,43 +103,85 @@ test('user fields are HTML-escaped', () => {
   assert.doesNotMatch(html, /<script>/);
 });
 
-test('forest email uses absolute URL to card derivative not page hero', () => {
-  const html = render({ cardTemplateId: 'forest' }, 'email');
-  const expected = `${SITE_ORIGIN}${CARD_BG_ASSET_PATH}`;
-  assert.match(html, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
-  assert.doesNotMatch(html, /gift-voucher-hero\.jpg/);
-  assert.match(html, /background="/);
-  assert.match(html, /bgcolor="/);
+test('missing artifact assets render flat fallback with no substitute art', () => {
+  // Until Canva exports land, no /media/gift-vouchers/card/ URLs may appear.
+  for (const templateId of ['forest', 'romantic']) {
+    for (const mode of ['email', 'print']) {
+      const html = render({ cardTemplateId: templateId }, mode);
+      if (!isCardAssetAvailable('paperTexture')) {
+        assert.doesNotMatch(html, /gift-voucher-paper-texture/, `${templateId}/${mode}`);
+      }
+      if (!isCardAssetAvailable('mountainLineArt')) {
+        assert.doesNotMatch(html, /gift-voucher-mountain-lineart/, `${templateId}/${mode}`);
+      }
+      assert.match(html, /background-color:#F7F4EE/, `${templateId}/${mode} flat paper fallback`);
+    }
+  }
 });
 
-test('forest print uses img base layer not CSS background-image on card root', () => {
-  const html = render({ cardTemplateId: 'forest' }, 'print');
-  assert.match(html, /<img[^>]+gift-voucher-card-bg\.jpg/);
-  assert.match(html, /position:absolute/);
-  assert.doesNotMatch(html, /background-image:url/);
-  assert.doesNotMatch(html, /opacity:\s*0\.35/);
-  assert.match(html, /data-gv-card-footer="1"/);
-  assert.match(html, /DD-ABCD-1234/);
+test('email mode degrades textures to solid colors and skips custom fonts', () => {
+  for (const templateId of ['forest', 'romantic']) {
+    const html = render({ cardTemplateId: templateId }, 'email');
+    assert.doesNotMatch(html, /background-image/, `${templateId} email must not use texture bg`);
+    assert.doesNotMatch(html, /Marck Script/, `${templateId} email falls back for script role`);
+    assert.doesNotMatch(html, /Caveat/, `${templateId} email falls back for message role`);
+    assert.match(html, /Playfair Display/, `${templateId} email serif fallback present`);
+    assert.match(html, /font-style:italic/, `${templateId} email script fallback is italic`);
+  }
 });
 
-test('romantic template uses invitation double frame and italic message', () => {
-  const html = render({ cardTemplateId: 'romantic', cardOccasion: 'wedding' }, 'print');
-  assert.match(html, /data-gv-card-romantic-frame="1"/);
-  assert.match(html, /font-style:italic/);
-  assert.match(html, /#a8957a/);
-  assert.match(html, /data-gv-card-message-block="1"/);
+test('print mode uses the webfont voices', () => {
+  const postcard = render({ cardTemplateId: 'forest' }, 'print');
+  assert.match(postcard, /Marck Script/);
+  assert.match(postcard, /Caveat/);
+  assert.match(postcard, /Oswald/);
 });
 
-test('message font size exceeds amount font size in output', () => {
+test('ink template is solid black with zero image assets', () => {
+  for (const mode of ['email', 'print']) {
+    const html = render({ cardTemplateId: 'minimal' }, mode);
+    assert.match(html, /background-color:#000000/);
+    assert.doesNotMatch(html, /<img/);
+    assert.match(html, /driftdwells\.com/);
+    assert.match(html, /@driftdwells/);
+  }
+});
+
+test('ink brand line uses statement voice (Playfair) in print', () => {
+  const html = render({ cardTemplateId: 'minimal' }, 'print');
+  const brandMatch = html.match(new RegExp(`${BRAND_LINE_ATTR}="1"[^>]*font-family:'Playfair Display'`));
+  assert.ok(brandMatch, 'Ink brand line set in Playfair');
+});
+
+test('letter circled word SVG present in print, absent in email', () => {
+  const printHtml = render({ cardTemplateId: 'romantic' }, 'print');
+  assert.match(printHtml, /<svg/);
+  const emailHtml = render({ cardTemplateId: 'romantic' }, 'email');
+  assert.doesNotMatch(emailHtml, /<svg/);
+});
+
+test('letter form block is framed with hand-drawn stroke', () => {
+  const html = render({ cardTemplateId: 'romantic' }, 'print');
+  assert.match(html, /data-gv-card-form-frame="1"/);
+});
+
+test('message font size exceeds form value font size in output', () => {
   const html = render({ cardTemplateId: 'minimal', cardOccasion: 'thank_you' });
   const messageMatch = html.match(/data-gv-card-message="1"[^>]*font-size:(\d+)px/);
-  const amountMatch = html.match(/data-gv-card-amount="1"[^>]*font-size:(\d+)px/);
+  const valueMatch = html.match(/data-gv-card-amount="1"[^>]*font-size:(\d+)px/);
   assert.ok(messageMatch, 'message element with font-size');
-  assert.ok(amountMatch, 'amount element with font-size');
+  assert.ok(valueMatch, 'form value element with font-size');
   assert.ok(
-    Number(messageMatch[1]) > Number(amountMatch[1]),
-    `message ${messageMatch[1]}px should exceed amount ${amountMatch[1]}px`
+    Number(messageMatch[1]) > Number(valueMatch[1]),
+    `message ${messageMatch[1]}px should exceed form value ${valueMatch[1]}px`
   );
+});
+
+test('form block carries amount, code and expiry', () => {
+  const html = render({ cardTemplateId: 'forest' });
+  assert.match(html, /data-gv-card-amount="1"/);
+  assert.match(html, /DD-ABCD-1234/);
+  assert.match(html, /2027/);
 });
 
 test('null code renders preview placeholder', () => {
@@ -134,14 +190,21 @@ test('null code renders preview placeholder', () => {
   assert.doesNotMatch(html, /N\/A/);
 });
 
-test('card derivative asset exists and is under 250KB', () => {
-  const assetPath = path.join(
-    __dirname,
-    '../../client/public/media/gift-vouchers/gift-voucher-card-bg.jpg'
-  );
+test('legacy card bg derivative stays on disk — already-sent emails hot-link it', () => {
+  const assetPath = path.join(__dirname, '../../client/public', CARD_BG_ASSET_PATH);
   assert.ok(fs.existsSync(assetPath), 'gift-voucher-card-bg.jpg must exist');
   const { size } = fs.statSync(assetPath);
   assert.ok(size < 250 * 1024, `card bg should be under 250KB, got ${size} bytes`);
+});
+
+test('card webfont files exist and are under 150KB each', () => {
+  const { CARD_WEBFONTS, CARD_WEBFONT_BASE } = require('../../shared/giftVoucher/cardSpec');
+  for (const font of CARD_WEBFONTS) {
+    const fontPath = path.join(__dirname, '../../client/public', CARD_WEBFONT_BASE, font.file);
+    assert.ok(fs.existsSync(fontPath), `${font.file} must exist`);
+    const { size } = fs.statSync(fontPath);
+    assert.ok(size < 150 * 1024, `${font.file} should be under 150KB, got ${size}`);
+  }
 });
 
 test('giftVoucherTextSafe is shared by email templates', () => {

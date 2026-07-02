@@ -1,13 +1,19 @@
 import {
-  CARD_BG_ALT,
-  CARD_BG_ASSET_PATH,
+  CARD_ASSETS,
   CARD_LAYOUT,
   CARD_TOKENS,
-  CARD_TYPOGRAPHY,
-  PLACEHOLDER_VOUCHER_CODE,
-  forestBackgroundUrl
+  cardFontFamily,
+  PLACEHOLDER_VOUCHER_CODE
 } from '@shared/giftVoucher/cardSpec';
-import { getCardLabels, getOccasionHeadline } from '@shared/giftVoucher/cardCopy';
+import {
+  getBrandLine,
+  getBrandLineCircledWord,
+  getCardLabels,
+  getFormLabels,
+  getOccasionHeadline,
+  INK_FOOTER
+} from '@shared/giftVoucher/cardCopy';
+import './giftVoucherCardFonts.css';
 
 function formatCurrency(cents, currency = 'EUR', locale = 'en') {
   const amount = Number(cents || 0) / 100;
@@ -31,260 +37,345 @@ function formatExpiryDate(value, locale = 'en') {
   });
 }
 
-function CardHeadline({ occasion, locale, className = '', style = {} }) {
+/** Hide artifact slots until the Canva export lands — never substitute art. */
+function hideOnError(e) {
+  e.currentTarget.style.display = 'none';
+}
+
+function BrandLine({ locale, voice = 'script', color, circled = false }) {
+  const line = getBrandLine(locale);
+  const isStatement = voice === 'statement';
+  const style = {
+    fontFamily: cardFontFamily(isStatement ? 'statement' : 'script'),
+    fontSize: `${isStatement ? CARD_LAYOUT.brandStatementPx : CARD_LAYOUT.brandScriptPx}px`,
+    lineHeight: isStatement ? 1.08 : 1.3,
+    fontWeight: isStatement ? 600 : 400,
+    color
+  };
+
+  if (circled) {
+    const word = getBrandLineCircledWord(locale);
+    const idx = line.toLowerCase().indexOf(word.toLowerCase());
+    if (idx >= 0) {
+      return (
+        <p className="mb-3" style={style} data-gv-card-brand-line="1">
+          {line.slice(0, idx)}
+          <span className="relative inline-block whitespace-nowrap">
+            <svg
+              viewBox="0 0 120 52"
+              preserveAspectRatio="none"
+              aria-hidden="true"
+              className="pointer-events-none absolute overflow-visible"
+              style={{ left: '-10%', top: '-22%', width: '120%', height: '150%' }}
+            >
+              <path
+                d="M12 27 C 14 10, 58 4, 88 9 C 112 13, 116 30, 96 41 C 72 51, 22 49, 12 36 C 6 29, 10 22, 18 18"
+                fill="none"
+                stroke={color}
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                opacity="0.9"
+              />
+            </svg>
+            <span className="relative">{line.slice(idx, idx + word.length)}</span>
+          </span>
+          {line.slice(idx + word.length)}
+        </p>
+      );
+    }
+  }
+
+  return (
+    <p className="mb-3" style={style} data-gv-card-brand-line="1">
+      {line}
+    </p>
+  );
+}
+
+function OccasionLine({ occasion, locale, color }) {
   const headline = getOccasionHeadline(occasion, locale);
   if (!headline) return null;
   return (
     <p
-      className={`text-[11px] font-semibold uppercase tracking-[0.24em] ${className}`}
-      style={{ fontFamily: CARD_TYPOGRAPHY.fontSans, ...style }}
+      className="mb-2 uppercase"
+      style={{
+        fontFamily: cardFontFamily('utilityCaps'),
+        fontSize: `${CARD_LAYOUT.occasionPx}px`,
+        letterSpacing: '0.22em',
+        fontWeight: 500,
+        color
+      }}
     >
       {headline}
     </p>
   );
 }
 
-function CardMessage({ message, locale, className = '', style = {}, italic = false }) {
+function CardMessage({ message, locale, color, lineHeight = 1.45 }) {
   const labels = getCardLabels(locale);
   const text = message?.trim() || labels.defaultMessage;
   return (
     <p
-      className={`font-serif leading-snug ${italic ? 'italic' : ''} ${className}`}
+      className="mb-2 whitespace-pre-line"
       style={{
-        fontFamily: CARD_TYPOGRAPHY.fontSerif,
+        fontFamily: cardFontFamily('message'),
         fontSize: `${CARD_LAYOUT.messagePx}px`,
-        ...style
+        lineHeight,
+        fontWeight: 500,
+        color
       }}
+      data-gv-card-message="1"
     >
       {text}
     </p>
   );
 }
 
-function CardNames({ fields, labels, className = '', style = {}, mutedClassName = '' }) {
-  const parts = [];
-  if (fields.recipientName) {
-    parts.push(
-      <span key="for">
-        <span className={mutedClassName}>{labels.forLabel}</span> {fields.recipientName}
-      </span>
-    );
-  }
-  if (fields.buyerName) {
-    parts.push(
-      <span key="from">
-        <span className={mutedClassName}>{labels.fromLabel}</span> {fields.buyerName}
-      </span>
-    );
-  }
-  if (!parts.length) return null;
+function Signature({ buyerName, color }) {
+  if (!buyerName) return null;
   return (
     <p
-      className={`text-sm leading-relaxed ${className}`}
-      style={{ fontFamily: CARD_TYPOGRAPHY.fontSans, fontSize: `${CARD_LAYOUT.namesPx}px`, ...style }}
+      className="mb-4"
+      style={{
+        fontFamily: cardFontFamily('message'),
+        fontSize: `${CARD_LAYOUT.namesPx}px`,
+        color
+      }}
     >
-      {parts.map((part, i) => (
-        <span key={part.key} className={i > 0 ? 'mt-1 block' : ''}>
-          {part}
-        </span>
-      ))}
+      — {buyerName}
     </p>
   );
 }
 
-function CardAmount({ fields, labels, locale, className = '', style = {} }) {
-  const amount = formatCurrency(fields.amountOriginalCents, fields.currency, locale);
-  return (
-    <div className={className} style={{ fontFamily: CARD_TYPOGRAPHY.fontSans, ...style }}>
-      <p
-        className="text-[11px] uppercase tracking-[0.24em]"
-        style={{ fontSize: `${CARD_LAYOUT.footerPx}px` }}
+/**
+ * The voucher form block: TO / VALID UNTIL / CODE / VALUE. Oswald caps labels,
+ * handwritten values on dotted underlines. Shared identity across templates.
+ */
+function FormBlock({ fields, locale, color, mutedColor, framed = false }) {
+  const labels = getFormLabels(locale);
+  const rows = [
+    { key: 'to', label: labels.to, value: fields.recipientName || '' },
+    { key: 'validUntil', label: labels.validUntil, value: formatExpiryDate(fields.expiresAt, locale) },
+    { key: 'code', label: labels.code, value: fields.code || PLACEHOLDER_VOUCHER_CODE },
+    {
+      key: 'value',
+      label: labels.value,
+      value: formatCurrency(fields.amountOriginalCents, fields.currency, locale)
+    }
+  ];
+
+  const table = (
+    <table className="w-full border-collapse" data-gv-card-form-block="1">
+      <tbody>
+        {rows.map((row) => (
+          <tr key={row.key}>
+            <td
+              className="whitespace-nowrap pr-4 align-bottom uppercase"
+              style={{
+                fontFamily: cardFontFamily('utilityCaps'),
+                fontSize: `${CARD_LAYOUT.formLabelPx}px`,
+                letterSpacing: '0.18em',
+                fontWeight: 500,
+                color: mutedColor,
+                padding: '7px 14px 7px 0'
+              }}
+            >
+              {row.label}
+            </td>
+            <td
+              className="w-full align-bottom uppercase"
+              style={{
+                fontFamily: cardFontFamily('message'),
+                fontSize: `${CARD_LAYOUT.formValuePx}px`,
+                lineHeight: 1.3,
+                fontWeight: 700,
+                letterSpacing: '0.04em',
+                color,
+                borderBottom: `2px dotted ${mutedColor}`,
+                padding: '7px 0'
+              }}
+            >
+              {row.value}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+
+  if (framed) {
+    return (
+      <div
+        style={{
+          border: `2px solid ${color}`,
+          borderRadius: '14px 18px 14px 16px',
+          padding: '14px 18px',
+          transform: 'rotate(-0.4deg)'
+        }}
       >
-        {labels.amountLabel}
-      </p>
-      <p className="font-semibold" style={{ fontSize: `${CARD_LAYOUT.amountPx}px` }}>
-        {amount}
-      </p>
-    </div>
-  );
+        {table}
+      </div>
+    );
+  }
+  return table;
 }
 
-function CardFooter({ fields, labels, locale, className = '', onPlainPaper = false }) {
-  const ink = onPlainPaper ? CARD_TOKENS.ink : undefined;
-  const muted = onPlainPaper ? CARD_TOKENS.inkMuted : undefined;
-  const code = fields.code || PLACEHOLDER_VOUCHER_CODE;
-  const expires = formatExpiryDate(fields.expiresAt, locale);
-
+function RedeemLine({ locale, color }) {
+  const labels = getCardLabels(locale);
   return (
-    <div
-      className={`pt-3 text-[11px] leading-relaxed ${className}`}
+    <p
+      className="mt-3"
       style={{
-        fontFamily: CARD_TYPOGRAPHY.fontSans,
+        fontFamily: cardFontFamily('smallUtility'),
         fontSize: `${CARD_LAYOUT.footerPx}px`,
-        color: ink
+        lineHeight: 1.5,
+        color
       }}
     >
-      <p className="uppercase tracking-[0.24em]" style={{ color: muted }}>
-        {labels.codeLabel}
-      </p>
-      <p className="mt-1">
-        <span
-          className="inline-block font-mono font-bold tracking-wider"
-          style={{
-            fontSize: `${CARD_LAYOUT.codePx}px`,
-            border: onPlainPaper ? `1px solid ${CARD_TOKENS.minimal.rule}` : 'none',
-            padding: onPlainPaper ? '6px 10px' : 0
-          }}
-        >
-          {code}
-        </span>
-      </p>
-      <p className="mt-2" style={{ color: muted }}>
-        <span className="uppercase tracking-[0.24em]">{labels.expiresLabel}</span> {expires}
-      </p>
-      <p className="mt-2" style={{ color: muted }}>
-        {labels.redeemInstruction}
-      </p>
-    </div>
+      {labels.redeemInstruction}
+    </p>
   );
 }
 
-function ForestCard({ fields, labels, locale }) {
-  const t = CARD_TOKENS.forest;
-  const bgUrl = forestBackgroundUrl({ mode: 'print' });
-
+function Wordmark({ locale, color }) {
+  const labels = getCardLabels(locale);
   return (
-    <div
-      className="mx-auto flex w-full max-w-md flex-col overflow-hidden rounded-lg shadow-lg"
-      data-gv-card-template="forest"
-      style={{ background: CARD_TOKENS.paper, fontFamily: CARD_TYPOGRAPHY.fontSans }}
-    >
-      <div className="relative min-h-[220px] flex-[0_0_68%] overflow-hidden md:min-h-[280px]">
-        <img
-          src={bgUrl}
-          alt={CARD_BG_ALT}
-          className="absolute inset-0 h-full w-full object-cover"
-          loading="lazy"
-        />
-        <div
-          className="relative z-10 flex h-full flex-col justify-end p-6"
-          style={{
-            background: `linear-gradient(to bottom, ${t.overlayTop}, ${t.overlayBottom})`
-          }}
-        >
-          <CardHeadline occasion={fields.occasion} locale={locale} className="mb-3 text-[#f7f5f0]" />
-          <CardMessage
-            message={fields.message}
-            locale={locale}
-            className="mb-4 text-[#f7f5f0]"
-            style={{ textShadow: '0 1px 3px rgba(0,0,0,0.45)' }}
-          />
-          <CardNames
-            fields={fields}
-            labels={labels}
-            className="text-[#f7f5f0]"
-            mutedClassName="text-white/80"
-          />
-        </div>
-      </div>
-      <div className="flex-1 bg-[#fdfcfa] p-6">
-        <CardAmount fields={fields} labels={labels} locale={locale} className="mb-2 text-stone-900" />
-        <CardFooter fields={fields} labels={labels} locale={locale} onPlainPaper />
-      </div>
-    </div>
-  );
-}
-
-function RomanticCard({ fields, labels, locale }) {
-  const t = CARD_TOKENS.romantic;
-  const border = `${t.frameBorderPx}px solid ${t.warmAccent}`;
-
-  return (
-    <div
-      className="mx-auto w-full max-w-md"
-      data-gv-card-template="romantic"
-      style={{ fontFamily: CARD_TYPOGRAPHY.fontSans, background: t.bg }}
-    >
-      <div style={{ border, padding: t.frameGapPx }}>
-        <div style={{ border, padding: '24px', background: t.surface }}>
-          <p
-            className="mb-4 text-center font-serif text-lg tracking-widest"
-            style={{ color: t.warmAccent, fontFamily: CARD_TYPOGRAPHY.fontSerif }}
-          >
-            {labels.brandWordmark}
-          </p>
-          <div className="py-6 text-center">
-            <CardHeadline
-              occasion={fields.occasion}
-              locale={locale}
-              className="mb-3"
-              style={{ color: t.warmAccent }}
-            />
-            <CardMessage
-              message={fields.message}
-              locale={locale}
-              className="text-stone-900"
-              italic
-            />
-          </div>
-          <CardNames
-            fields={fields}
-            labels={labels}
-            className="mb-4 text-center text-stone-900"
-            mutedClassName="text-stone-500"
-          />
-          <CardAmount fields={fields} labels={labels} locale={locale} className="mb-2 text-stone-600" />
-          <CardFooter fields={fields} labels={labels} locale={locale} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MinimalCard({ fields, labels, locale }) {
-  const t = CARD_TOKENS.minimal;
-
-  return (
-    <div
-      className="mx-auto w-full max-w-md border p-6 md:p-8"
-      data-gv-card-template="minimal"
+    <p
+      className="mb-3 uppercase"
       style={{
-        fontFamily: CARD_TYPOGRAPHY.fontSans,
-        background: t.bg,
-        borderColor: t.rule
+        fontFamily: cardFontFamily('utilityCaps'),
+        fontSize: '11px',
+        letterSpacing: '0.28em',
+        fontWeight: 500,
+        color
       }}
     >
-      <CardHeadline occasion={fields.occasion} locale={locale} className="mb-3 text-stone-900" />
-      <CardMessage message={fields.message} locale={locale} className="mb-4 text-stone-900" />
-      <CardNames
-        fields={fields}
-        labels={labels}
-        className="mb-4 text-stone-900"
-        mutedClassName="text-stone-500"
+      {labels.brandWordmark}
+    </p>
+  );
+}
+
+/** Postcard (stored: forest) — warm paper, line-art mountains, script brand line. */
+function PostcardCard({ fields, locale }) {
+  const t = CARD_TOKENS.forest;
+  return (
+    <div
+      className="w-full overflow-hidden rounded-md p-7 shadow-lg md:p-9"
+      data-gv-card-template="forest"
+      style={{
+        backgroundColor: t.fallbackBg,
+        backgroundImage: `url('${CARD_ASSETS.paperTexture}')`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center'
+      }}
+    >
+      <img
+        src={CARD_ASSETS.mountainLineArt}
+        alt=""
+        className="mx-auto mb-3 block h-auto w-full max-w-md"
+        loading="lazy"
+        onError={hideOnError}
       />
-      <hr className="my-5 border-stone-300" />
-      <CardAmount fields={fields} labels={labels} locale={locale} className="mb-2 text-stone-900" />
-      <CardFooter fields={fields} labels={labels} locale={locale} onPlainPaper />
+      <Wordmark locale={locale} color={t.muted} />
+      <BrandLine locale={locale} voice="script" color={t.ink} />
+      <OccasionLine occasion={fields.occasion} locale={locale} color={t.muted} />
+      <CardMessage message={fields.message} locale={locale} color={t.ink} />
+      <Signature buyerName={fields.buyerName} color={t.ink} />
+      <FormBlock fields={fields} locale={locale} color={t.ink} mutedColor={t.muted} />
+      <RedeemLine locale={locale} color={t.muted} />
+    </div>
+  );
+}
+
+/** Letter (stored: romantic) — crumpled paper, stamp, circled word, framed form block. */
+function LetterCard({ fields, locale }) {
+  const t = CARD_TOKENS.romantic;
+  return (
+    <div
+      className="relative w-full overflow-hidden rounded-md p-7 shadow-lg md:p-9"
+      data-gv-card-template="romantic"
+      style={{
+        backgroundColor: t.fallbackBg,
+        backgroundImage: `url('${CARD_ASSETS.crumpledTexture}')`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center'
+      }}
+    >
+      <img
+        src={CARD_ASSETS.stampFrame}
+        alt=""
+        className="absolute right-4 top-4 h-auto w-16 rotate-3 md:w-20"
+        loading="lazy"
+        onError={hideOnError}
+      />
+      <Wordmark locale={locale} color={t.warmAccent} />
+      <BrandLine locale={locale} voice="script" color={t.ink} circled />
+      <OccasionLine occasion={fields.occasion} locale={locale} color={t.warmAccent} />
+      <CardMessage
+        message={fields.message}
+        locale={locale}
+        color={t.ink}
+        lineHeight={CARD_LAYOUT.letterLineHeight}
+      />
+      <Signature buyerName={fields.buyerName} color={t.ink} />
+      <FormBlock fields={fields} locale={locale} color={t.ink} mutedColor={t.muted} framed />
+      <RedeemLine locale={locale} color={t.muted} />
+      <img
+        src={CARD_ASSETS.pressedFlower}
+        alt=""
+        className="absolute bottom-4 right-5 h-auto w-14 opacity-90"
+        loading="lazy"
+        onError={hideOnError}
+      />
+    </div>
+  );
+}
+
+/** Ink (stored: minimal) — solid black cover card, zero image assets. */
+function InkCard({ fields, locale }) {
+  const t = CARD_TOKENS.minimal;
+  return (
+    <div
+      className="w-full overflow-hidden rounded-md p-8 shadow-lg md:p-10"
+      data-gv-card-template="minimal"
+      style={{ backgroundColor: t.bg }}
+    >
+      <BrandLine locale={locale} voice="statement" color={t.text} />
+      <OccasionLine occasion={fields.occasion} locale={locale} color={t.muted} />
+      <CardMessage message={fields.message} locale={locale} color={t.text} />
+      <Signature buyerName={fields.buyerName} color={t.text} />
+      <FormBlock fields={fields} locale={locale} color={t.text} mutedColor={t.muted} />
+      <RedeemLine locale={locale} color={t.muted} />
+      <p
+        className="mt-4 uppercase"
+        style={{
+          fontFamily: cardFontFamily('utilityCaps'),
+          fontSize: '11px',
+          letterSpacing: '0.3em',
+          fontWeight: 500,
+          color: t.muted
+        }}
+      >
+        {INK_FOOTER}
+      </p>
     </div>
   );
 }
 
 const TEMPLATE_COMPONENTS = {
-  forest: ForestCard,
-  romantic: RomanticCard,
-  minimal: MinimalCard
+  forest: PostcardCard,
+  romantic: LetterCard,
+  minimal: InkCard
 };
 
 export default function GiftVoucherCardPreview({ fields }) {
   const locale = fields.locale || 'en';
   const labels = getCardLabels(locale);
-  const Template = TEMPLATE_COMPONENTS[fields.templateId] || MinimalCard;
+  const Template = TEMPLATE_COMPONENTS[fields.templateId] || InkCard;
 
   return (
     <div className="w-full" aria-live="polite" aria-label={labels.brandWordmark}>
-      <Template fields={fields} labels={labels} locale={locale} />
+      <Template fields={fields} locale={locale} />
     </div>
   );
 }
-
-export { CARD_BG_ASSET_PATH };

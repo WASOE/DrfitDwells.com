@@ -100,7 +100,7 @@ test('normal user content renders unchanged in designed card HTML', () => {
     recipientEmail: 'recipient@example.com'
   });
   assert.match(html, />\s*Anna/);
-  assert.match(html, />\s*Bob/);
+  assert.match(html, /— Bob/);
   assert.match(html, /Enjoy your stay/);
   assert.match(html, /data-gv-card/);
 });
@@ -131,7 +131,7 @@ test('whitespace-only recipientName uses Guest in email lead without empty For b
     recipientEmail: ''
   });
   assert.match(html, /Guest/);
-  assert.match(html, />\s*Bob/);
+  assert.match(html, /— Bob/);
   assert.doesNotMatch(html, /<span[^>]*>For<\/span>\s*<\/p>/);
 });
 

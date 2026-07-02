@@ -1,4 +1,4 @@
-const { CARD_BG_ASSET_PATH } = require('../../../shared/giftVoucher/cardSpec');
+const { CARD_WEBFONTS, CARD_WEBFONT_BASE } = require('../../../shared/giftVoucher/cardSpec');
 
 function escapeHtml(value) {
   return String(value || '')
@@ -13,17 +13,31 @@ function getPublicAppBaseUrl() {
   return String(u).replace(/\/$/, '');
 }
 
+/** Self-hosted @font-face rules for the card script/handwritten/caps voices. */
+function buildCardFontFaces(origin) {
+  return CARD_WEBFONTS.map(
+    (f) => `@font-face {
+      font-family: '${f.family}';
+      font-style: normal;
+      font-weight: ${f.weight};
+      font-display: swap;
+      src: url('${origin}${CARD_WEBFONT_BASE}/${f.file}') format('woff2');
+      unicode-range: ${f.unicodeRange};
+    }`
+  ).join('\n    ');
+}
+
 /**
  * Wrap print-mode card fragment in a minimal printable HTML document.
  */
 function buildGiftVoucherPrintDocument({ cardHtml, title = 'Drift & Dwells gift voucher' } = {}) {
   const origin = getPublicAppBaseUrl();
-  const forestAsset = `${origin}${CARD_BG_ASSET_PATH}`;
   const safeTitle = escapeHtml(title);
-  const resolvedCardHtml = String(cardHtml || '').replace(
-    `src="${CARD_BG_ASSET_PATH}"`,
-    `src="${forestAsset}"`
-  );
+  // Renderer emits site-relative asset paths in print mode; absolutize so the
+  // document works when saved locally or opened from a mail attachment.
+  const resolvedCardHtml = String(cardHtml || '')
+    .replace(/src="\/media\//g, `src="${origin}/media/`)
+    .replace(/url\('\/media\//g, `url('${origin}/media/`);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -36,6 +50,7 @@ function buildGiftVoucherPrintDocument({ cardHtml, title = 'Drift & Dwells gift 
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Playfair+Display:ital,wght@0,500;0,600;1,500&display=swap" rel="stylesheet" />
   <style>
+    ${buildCardFontFaces(origin)}
     * { box-sizing: border-box; }
     body { margin: 0; padding: 16px; background: #ebeae6; }
     @media print {

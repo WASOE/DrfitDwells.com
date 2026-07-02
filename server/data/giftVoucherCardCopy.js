@@ -1,8 +1,13 @@
 const {
   getOccasionHeadline,
   getCardLabels,
+  getBrandLine,
+  getBrandLineCircledWord,
+  getFormLabels,
   OCCASION_HEADLINES,
-  LABELS
+  LABELS,
+  BRAND_LINE,
+  FORM_LABELS
 } = require('../../shared/giftVoucher/cardCopy');
 
 const EMAIL_COPY = {
@@ -57,8 +62,13 @@ function getEmailCopy(locale) {
 module.exports = {
   getOccasionHeadline,
   getCardLabels,
+  getBrandLine,
+  getBrandLineCircledWord,
+  getFormLabels,
   getEmailCopy,
   OCCASION_HEADLINES,
   LABELS,
+  BRAND_LINE,
+  FORM_LABELS,
   EMAIL_COPY
 };
