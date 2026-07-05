@@ -1223,12 +1223,20 @@ router.post('/', bookingCreateLimiter, [
       if (!useCheckoutSessionV2Finalize) {
         // If specific unit requested, verify it's available
         if (unitId) {
-          const isAvailable = await AssignmentEngine.isUnitAvailable(unitId, checkInDate, checkOutDate);
-          if (!isAvailable) {
-            return res.status(409).json({
-              success: false,
-              message: 'The requested unit is not available for the selected dates'
-            });
+          const validation = await AssignmentEngine.validateUnitForCabinTypeBooking(
+            unitId,
+            cabinTypeId,
+            checkInDate,
+            checkOutDate
+          );
+          if (!validation.ok) {
+            const message =
+              validation.code === 'UNIT_CABIN_TYPE_MISMATCH'
+                ? 'The requested unit does not belong to this stay type'
+                : validation.code === 'UNIT_NOT_FOUND_OR_INACTIVE'
+                  ? 'The requested unit is not active or does not exist'
+                  : 'The requested unit is not available for the selected dates';
+            return res.status(409).json({ success: false, message });
           }
           assignedUnitId = unitId;
         } else {
@@ -1243,13 +1251,6 @@ router.post('/', bookingCreateLimiter, [
           assignedUnitId = assignedUnit._id;
         }
       } else if (unitId) {
-        const isAvailable = await AssignmentEngine.isUnitAvailable(unitId, checkInDate, checkOutDate);
-        if (!isAvailable) {
-          return res.status(409).json({
-            success: false,
-            message: 'The requested unit is not available for the selected dates'
-          });
-        }
         assignedUnitId = unitId;
       }
 
@@ -1986,6 +1987,25 @@ router.post('/', bookingCreateLimiter, [
         bookingData.unitId = assignedUnitId;
       }
     }
+    if (
+      bookingData.cabinTypeId &&
+      (bookingData.status === 'confirmed' || bookingData.status === 'in_house') &&
+      !bookingData.unitId
+    ) {
+      if (stripePaymentVerified && paymentIntentIdForReview) {
+        const handled = await handlePaidBookingFailure({
+          issueType: 'paid_booking_save_failed',
+          errorCode: 'CABIN_TYPE_UNIT_REQUIRED',
+          errorSummary: 'Multi-unit booking cannot be confirmed without an assigned unit'
+        });
+        if (handled) return;
+      }
+      return res.status(409).json({
+        success: false,
+        message: 'Multi-unit booking cannot be confirmed without an assigned unit',
+        error: { code: 'CABIN_TYPE_UNIT_REQUIRED' }
+      });
+    }
     let booking;
     try {
       booking = new Booking(bookingData);
@@ -2115,41 +2135,52 @@ router.post('/', bookingCreateLimiter, [
       }
     }
     if (assignedUnitId) {
-      const overlaps = await Booking.countDocuments({
+      const overlapQuery = {
         unitId: assignedUnitId,
-        _id: { $ne: booking._id },
         status: { $in: BLOCKING_BOOKING_STATUSES },
         checkIn: { $lt: checkOutDate },
         checkOut: { $gt: checkInDate }
+      };
+      const overlaps = await Booking.countDocuments({
+        ...overlapQuery,
+        _id: { $ne: booking._id }
       });
       let blockRace = 0;
       if (parentCabinForUnit) {
         blockRace = await countBlockingBlocksForUnit(parentCabinForUnit._id, assignedUnitId, checkInDate, checkOutDate);
       }
       if (overlaps > 0 || blockRace > 0) {
-        await Booking.deleteOne({ _id: booking._id });
-        await tryReleaseVoucherOnFailure({
-          reason: 'booking_conflict_after_save',
-          note: 'release voucher reservation after unit overlap conflict',
-          paidCard: Boolean(paymentIntentIdForReview),
-          evidence: {
-            subtotalCents,
-            discountAmountCents,
-            giftVoucherAppliedCents,
-            stripePaidAmountCents,
-            totalValueCents
-          }
-        });
-        const handledPaidConflict = await handlePaidBookingFailure({
-          issueType: 'paid_booking_conflict',
-          errorCode: 'UNIT_OVERLAP_AFTER_SAVE',
-          errorSummary: `overlaps=${overlaps}, blockRace=${blockRace}`
-        });
-        if (handledPaidConflict) return;
-        return res.status(409).json({
-          success: false,
-          message: 'This unit was just booked by another guest. Please choose different dates.'
-        });
+        const oldestOverlap = overlaps > 0
+          ? await Booking.findOne(overlapQuery).sort({ createdAt: 1, _id: 1 }).select('_id')
+          : null;
+        const lostUnitRace =
+          oldestOverlap && String(oldestOverlap._id) !== String(booking._id);
+
+        if (blockRace > 0 || lostUnitRace) {
+          await Booking.deleteOne({ _id: booking._id });
+          await tryReleaseVoucherOnFailure({
+            reason: 'booking_conflict_after_save',
+            note: 'release voucher reservation after unit overlap conflict',
+            paidCard: Boolean(paymentIntentIdForReview),
+            evidence: {
+              subtotalCents,
+              discountAmountCents,
+              giftVoucherAppliedCents,
+              stripePaidAmountCents,
+              totalValueCents
+            }
+          });
+          const handledPaidConflict = await handlePaidBookingFailure({
+            issueType: 'paid_booking_conflict',
+            errorCode: 'UNIT_OVERLAP_AFTER_SAVE',
+            errorSummary: `overlaps=${overlaps}, blockRace=${blockRace}`
+          });
+          if (handledPaidConflict) return;
+          return res.status(409).json({
+            success: false,
+            message: 'This unit was just booked by another guest. Please choose different dates.'
+          });
+        }
       }
     }
 

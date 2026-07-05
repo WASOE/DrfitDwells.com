@@ -189,7 +189,7 @@ test('already_linked path resolves stale payment_unlinked review', async () => {
 test('conflict: does not overwrite existing reservation and does not resolve review', async () => {
   const paymentIntentId = `pi_conflict_${Date.now()}`;
   const bookingA = await createBooking({ stripePaymentIntentId: paymentIntentId, totalPrice: 199, status: 'confirmed' });
-  const bookingB = await createBooking({ stripePaymentIntentId: paymentIntentId, totalPrice: 199, status: 'cancelled' });
+  const bookingB = await createBooking({ totalPrice: 199, status: 'cancelled' });
   const payment = await Payment.create({
     reservationId: bookingA._id,
     provider: 'stripe',
@@ -210,7 +210,7 @@ test('conflict: does not overwrite existing reservation and does not resolve rev
   });
 
   const result = await linkStripePaymentToBooking({
-    booking: bookingB,
+    booking: { _id: bookingB._id, stripePaymentIntentId: paymentIntentId },
     linkedBy: 'test_conflict'
   });
 
@@ -221,14 +221,26 @@ test('conflict: does not overwrite existing reservation and does not resolve rev
   assert.equal(review.status, 'open');
 });
 
-test('multiple booking candidates: webhook does not auto-link and opens high-severity review', async () => {
-  const paymentIntentId = `pi_multi_${Date.now()}`;
+test('booking schema rejects duplicate stripePaymentIntentId rows', async () => {
+  const paymentIntentId = `pi_unique_${Date.now()}`;
   await createBooking({ stripePaymentIntentId: paymentIntentId, totalPrice: 100, status: 'confirmed' });
-  await createBooking({ stripePaymentIntentId: paymentIntentId, totalPrice: 100, status: 'cancelled' });
+
+  await assert.rejects(
+    () => createBooking({ stripePaymentIntentId: paymentIntentId, totalPrice: 100, status: 'cancelled' }),
+    (err) => err?.code === 11000
+  );
+
+  const candidates = await Booking.find({ stripePaymentIntentId: paymentIntentId }).lean();
+  assert.equal(candidates.length, 1);
+});
+
+test('webhook auto-links when exactly one booking candidate exists for payment intent', async () => {
+  const paymentIntentId = `pi_single_candidate_${Date.now()}`;
+  const booking = await createBooking({ stripePaymentIntentId: paymentIntentId, totalPrice: 100, status: 'confirmed' });
 
   await processStripeWebhookEvent(
     makeStripeEvent({
-      id: `evt_multi_${Date.now()}`,
+      id: `evt_single_candidate_${Date.now()}`,
       paymentIntentId,
       amountCents: 10000
     })
@@ -236,17 +248,11 @@ test('multiple booking candidates: webhook does not auto-link and opens high-sev
 
   const payment = await Payment.findOne({ providerReference: paymentIntentId }).lean();
   assert.ok(payment);
-  assert.equal(payment.reservationId, null);
-  const review = await ManualReviewItem.findOne({
-    category: 'payment_unlinked',
-    status: 'open',
-    entityType: 'Payment',
-    entityId: String(payment._id)
-  }).lean();
-  assert.ok(review);
-  assert.equal(review.severity, 'high');
-  assert.ok(Array.isArray(review.evidence?.bookingCandidateIds));
-  assert.equal(review.evidence.bookingCandidateIds.length, 2);
+  assert.equal(String(payment.reservationId), String(booking._id));
+  assert.equal(
+    await ManualReviewItem.countDocuments({ category: 'payment_unlinked', status: 'open' }),
+    0
+  );
 });
 
 test('zero booking match keeps payment unlinked and review open', async () => {
@@ -383,7 +389,7 @@ test('later webhook without reservation metadata must not clear existing reserva
 test('later webhook metadata conflict must not overwrite existing reservation linkage', async () => {
   const paymentIntentId = `pi_conflict_meta_${Date.now()}`;
   const bookingA = await createBooking({ stripePaymentIntentId: paymentIntentId, totalPrice: 333, status: 'confirmed' });
-  const bookingB = await createBooking({ stripePaymentIntentId: paymentIntentId, totalPrice: 333, status: 'cancelled' });
+  const bookingB = await createBooking({ totalPrice: 333, status: 'cancelled' });
   await Payment.create({
     reservationId: bookingA._id,
     provider: 'stripe',

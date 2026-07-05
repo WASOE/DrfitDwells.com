@@ -19,6 +19,7 @@ const Booking = require('../models/Booking');
 const CheckoutSession = require('../models/CheckoutSession');
 const ManualReviewItem = require('../models/ManualReviewItem');
 const PaymentResolutionIssue = require('../models/PaymentResolutionIssue');
+const Payment = require('../models/Payment');
 const bookingRoutes = require('../routes/bookingRoutes');
 const bookingQuoteService = require('../services/bookingQuoteService');
 const { buildStayFingerprint } = require('../services/checkout/checkoutSessionFingerprints');
@@ -154,6 +155,42 @@ async function seedV2FinalizeSession({
   });
 }
 
+function buildStripeRetrieveMockMulti(entries) {
+  const byId = new Map(entries.map((entry) => [entry.paymentIntentId, entry]));
+  return {
+    paymentIntents: {
+      retrieve: async (id) => {
+        const entry = byId.get(id);
+        if (!entry) {
+          throw new Error(`unexpected payment intent ${id}`);
+        }
+        return {
+          id,
+          status: 'succeeded',
+          amount: entry.amountCents,
+          currency: 'eur',
+          metadata: entry.metadata
+        };
+      },
+      update: async () => ({ ok: true })
+    }
+  };
+}
+
+function buildStripeMetadata({ cabinType, checkInDate, checkOutDate, quote, checkoutId }) {
+  return {
+    entityType: 'cabinType',
+    cabinTypeId: String(cabinType._id),
+    checkIn: checkInDate.toISOString(),
+    checkOut: checkOutDate.toISOString(),
+    subtotalCents: String(Math.round(quote.subtotalPrice * 100)),
+    discountAmountCents: String(Math.round((quote.discountAmount || 0) * 100)),
+    finalTotalCents: String(Math.round(quote.totalPrice * 100)),
+    promoCode: quote.appliedPromoCode || '',
+    checkoutId: checkoutId || ''
+  };
+}
+
 function buildStripeRetrieveMock({
   cabinType,
   checkInDate,
@@ -270,7 +307,8 @@ test.before(async () => {
     Booking.syncIndexes(),
     CheckoutSession.syncIndexes(),
     ManualReviewItem.syncIndexes(),
-    PaymentResolutionIssue.syncIndexes()
+    PaymentResolutionIssue.syncIndexes(),
+    Payment.syncIndexes()
   ]);
   app = buildApp();
 });
@@ -282,7 +320,8 @@ test.beforeEach(async () => {
     CabinType.deleteMany({}),
     Unit.deleteMany({}),
     ManualReviewItem.deleteMany({}),
-    PaymentResolutionIssue.deleteMany({})
+    PaymentResolutionIssue.deleteMany({}),
+    Payment.deleteMany({})
   ]);
   setCheckoutSessionV2Flag('1');
   bookingRoutes.__resetStripeClientForTesting();
@@ -457,4 +496,349 @@ test('V2 cabinType paid finalize with all units occupied creates ManualReviewIte
   const reviewItems = await ManualReviewItem.find({ category: 'payment_finalization_failure' });
   assert.equal(reviewItems.length, 1);
   assert.equal(reviewItems[0].entityType, 'PaymentResolutionIssue');
+});
+
+test('V2 cabinType paid finalize links Payment record to booking after unit assignment', async () => {
+  const cabinType = await createCabinType({ slug: 'a-frame' });
+  await createUnit(cabinType._id, { unitNumber: 'AF-01', displayName: 'A-Frame 1' });
+
+  const checkIn = nextDate(20);
+  const checkOut = nextDate(22);
+  const { checkInDate, checkOutDate } = normalizeStayDates(checkIn, checkOut);
+  const quote = await buildQuote(cabinType, checkInDate, checkOutDate);
+  const checkoutId = 'chk_cabin_type_payment_link';
+  const paymentIntentId = 'pi_cabin_type_payment_link';
+  const stripeAmountCents = Math.round(quote.totalPrice * 100);
+
+  await Payment.create({
+    provider: 'stripe',
+    providerReference: paymentIntentId,
+    status: 'paid',
+    amount: quote.totalPrice,
+    currency: 'eur',
+    source: 'webhook',
+    metadata: { stripePaymentIntentId: paymentIntentId }
+  });
+
+  await seedV2FinalizeSession({
+    checkoutId,
+    cabinTypeId: cabinType._id,
+    checkIn: checkInDate,
+    checkOut: checkOutDate,
+    canonicalPaymentIntentId: paymentIntentId,
+    stripeAmountCents
+  });
+
+  bookingRoutes.__setStripeClientForTesting(
+    buildStripeRetrieveMock({
+      cabinType,
+      checkInDate,
+      checkOutDate,
+      quote,
+      checkoutId,
+      paymentIntentId,
+      amountCents: stripeAmountCents
+    })
+  );
+
+  const res = await postBooking(
+    buildBookingPostBody({
+      cabinType,
+      checkIn: checkInDate,
+      checkOut: checkOutDate,
+      overrides: { checkoutId, paymentIntentId }
+    }),
+    31
+  );
+
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  const bookingId = res.body.data?.booking?._id || res.body.data?.booking?.id;
+  assert.ok(bookingId);
+
+  const payment = await Payment.findOne({ providerReference: paymentIntentId }).lean();
+  assert.ok(payment);
+  assert.equal(String(payment.reservationId), String(bookingId));
+});
+
+test('V2 cabinType replay returns same booking and does not reassign unit', async () => {
+  const cabinType = await createCabinType({ slug: 'a-frame' });
+  const unit = await createUnit(cabinType._id, { unitNumber: 'AF-01', displayName: 'A-Frame 1' });
+
+  const checkIn = nextDate(25);
+  const checkOut = nextDate(27);
+  const { checkInDate, checkOutDate } = normalizeStayDates(checkIn, checkOut);
+  const quote = await buildQuote(cabinType, checkInDate, checkOutDate);
+  const checkoutId = 'chk_cabin_type_replay_unit';
+  const paymentIntentId = 'pi_cabin_type_replay_unit';
+  const stripeAmountCents = Math.round(quote.totalPrice * 100);
+
+  await seedV2FinalizeSession({
+    checkoutId,
+    cabinTypeId: cabinType._id,
+    checkIn: checkInDate,
+    checkOut: checkOutDate,
+    canonicalPaymentIntentId: paymentIntentId,
+    stripeAmountCents
+  });
+
+  bookingRoutes.__setStripeClientForTesting(
+    buildStripeRetrieveMock({
+      cabinType,
+      checkInDate,
+      checkOutDate,
+      quote,
+      checkoutId,
+      paymentIntentId,
+      amountCents: stripeAmountCents
+    })
+  );
+
+  const body = buildBookingPostBody({
+    cabinType,
+    checkIn: checkInDate,
+    checkOut: checkOutDate,
+    overrides: { checkoutId, paymentIntentId }
+  });
+
+  const first = await postBooking(body, 41);
+  assert.equal(first.status, 201);
+  const firstUnitId = first.body.data?.booking?.unitId?._id || first.body.data?.booking?.unitId;
+  assert.equal(String(firstUnitId), String(unit._id));
+
+  const second = await postBooking(body, 42);
+  assert.equal(second.status, 200);
+  const secondUnitId = second.body.data?.booking?.unitId?._id || second.body.data?.booking?.unitId;
+  assert.equal(String(secondUnitId), String(unit._id));
+
+  const bookings = await Booking.find({ stripePaymentIntentId: paymentIntentId });
+  assert.equal(bookings.length, 1);
+});
+
+test('legacy cabinType finalize assigns unit when V2 orchestration is disabled', async () => {
+  setCheckoutSessionV2Flag('0');
+
+  const cabinType = await createCabinType({ slug: 'a-frame' });
+  const unit1 = await createUnit(cabinType._id, { unitNumber: 'AF-01', displayName: 'A-Frame 1' });
+  const unit2 = await createUnit(cabinType._id, { unitNumber: 'AF-02', displayName: 'A-Frame 2' });
+
+  const checkIn = nextDate(30);
+  const checkOut = nextDate(32);
+  const { checkInDate, checkOutDate } = normalizeStayDates(checkIn, checkOut);
+
+  await createOccupyingBooking({
+    cabinTypeId: cabinType._id,
+    unitId: unit1._id,
+    checkInDate,
+    checkOutDate,
+    guestEmail: 'legacy-existing@example.com'
+  });
+
+  const res = await postBooking(
+    buildBookingPostBody({
+      cabinType,
+      checkIn: checkInDate,
+      checkOut: checkOutDate
+    }),
+    51
+  );
+
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  const responseUnitId = res.body.data?.booking?.unitId?._id || res.body.data?.booking?.unitId;
+  assert.equal(String(responseUnitId), String(unit2._id));
+});
+
+test('explicit unitId from another cabinType is rejected', async () => {
+  const savedMultiUnitTypes = process.env.MULTI_UNIT_TYPES;
+  process.env.MULTI_UNIT_TYPES = 'a-frame,a-frame-alt';
+
+  const cabinTypeA = await createCabinType({ slug: 'a-frame' });
+  const cabinTypeB = await createCabinType({ slug: 'a-frame-alt' });
+  await createUnit(cabinTypeA._id, { unitNumber: 'AF-A1', displayName: 'A-Frame A1' });
+  const unitB = await createUnit(cabinTypeB._id, { unitNumber: 'AF-B1', displayName: 'Other A-Frame' });
+
+  const checkIn = nextDate(35);
+  const checkOut = nextDate(37);
+  const { checkInDate, checkOutDate } = normalizeStayDates(checkIn, checkOut);
+  const quote = await buildQuote(cabinTypeA, checkInDate, checkOutDate);
+  assert.equal(quote.ok, true);
+
+  const checkoutId = 'chk_wrong_unit_type';
+  const paymentIntentId = 'pi_wrong_unit_type';
+  const stripeAmountCents = Math.round(quote.totalPrice * 100);
+
+  try {
+    await seedV2FinalizeSession({
+      checkoutId,
+      cabinTypeId: cabinTypeA._id,
+      checkIn: checkInDate,
+      checkOut: checkOutDate,
+      canonicalPaymentIntentId: paymentIntentId,
+      stripeAmountCents
+    });
+
+    bookingRoutes.__setStripeClientForTesting(
+      buildStripeRetrieveMock({
+        cabinType: cabinTypeA,
+        checkInDate,
+        checkOutDate,
+        quote,
+        checkoutId,
+        paymentIntentId,
+        amountCents: stripeAmountCents
+      })
+    );
+
+    const res = await postBooking(
+      buildBookingPostBody({
+        cabinType: cabinTypeA,
+        checkIn: checkInDate,
+        checkOut: checkOutDate,
+        overrides: { checkoutId, paymentIntentId, unitId: String(unitB._id) }
+      }),
+      61
+    );
+
+    assert.equal(res.status, 409);
+    assert.equal(res.body.code, 'PAYMENT_RECEIVED_BOOKING_NEEDS_REVIEW');
+    assert.equal(await Booking.countDocuments({ stripePaymentIntentId: paymentIntentId }), 0);
+  } finally {
+    if (savedMultiUnitTypes === undefined) {
+      delete process.env.MULTI_UNIT_TYPES;
+    } else {
+      process.env.MULTI_UNIT_TYPES = savedMultiUnitTypes;
+    }
+  }
+});
+
+test('concurrent V2 cabinType finalizations with one free unit yield one booking and one manual review', async () => {
+  const cabinType = await createCabinType({ slug: 'a-frame' });
+  const unit1 = await createUnit(cabinType._id, { unitNumber: 'AF-01', displayName: 'A-Frame 1' });
+  const unit2 = await createUnit(cabinType._id, { unitNumber: 'AF-02', displayName: 'A-Frame 2' });
+
+  const checkIn = nextDate(40);
+  const checkOut = nextDate(42);
+  const { checkInDate, checkOutDate } = normalizeStayDates(checkIn, checkOut);
+
+  await createOccupyingBooking({
+    cabinTypeId: cabinType._id,
+    unitId: unit1._id,
+    checkInDate,
+    checkOutDate,
+    guestEmail: 'occupied-unit-guest@example.com'
+  });
+
+  const quote = await buildQuote(cabinType, checkInDate, checkOutDate);
+  const stripeAmountCents = Math.round(quote.totalPrice * 100);
+
+  const guestA = {
+    checkoutId: 'chk_concurrent_a',
+    paymentIntentId: 'pi_concurrent_a',
+    email: 'concurrent-a@example.com'
+  };
+  const guestB = {
+    checkoutId: 'chk_concurrent_b',
+    paymentIntentId: 'pi_concurrent_b',
+    email: 'concurrent-b@example.com'
+  };
+
+  await Promise.all([
+    seedV2FinalizeSession({
+      checkoutId: guestA.checkoutId,
+      cabinTypeId: cabinType._id,
+      checkIn: checkInDate,
+      checkOut: checkOutDate,
+      guestEmail: guestA.email,
+      canonicalPaymentIntentId: guestA.paymentIntentId,
+      stripeAmountCents
+    }),
+    seedV2FinalizeSession({
+      checkoutId: guestB.checkoutId,
+      cabinTypeId: cabinType._id,
+      checkIn: checkInDate,
+      checkOut: checkOutDate,
+      guestEmail: guestB.email,
+      canonicalPaymentIntentId: guestB.paymentIntentId,
+      stripeAmountCents
+    })
+  ]);
+
+  bookingRoutes.__setStripeClientForTesting(
+    buildStripeRetrieveMockMulti([
+      {
+        paymentIntentId: guestA.paymentIntentId,
+        amountCents: stripeAmountCents,
+        metadata: buildStripeMetadata({
+          cabinType,
+          checkInDate,
+          checkOutDate,
+          quote,
+          checkoutId: guestA.checkoutId
+        })
+      },
+      {
+        paymentIntentId: guestB.paymentIntentId,
+        amountCents: stripeAmountCents,
+        metadata: buildStripeMetadata({
+          cabinType,
+          checkInDate,
+          checkOutDate,
+          quote,
+          checkoutId: guestB.checkoutId
+        })
+      }
+    ])
+  );
+
+  const [resA, resB] = await Promise.all([
+    postBooking(
+      buildBookingPostBody({
+        cabinType,
+        checkIn: checkInDate,
+        checkOut: checkOutDate,
+        overrides: {
+          checkoutId: guestA.checkoutId,
+          paymentIntentId: guestA.paymentIntentId,
+          guestInfo: buildGuestInfo({ email: guestA.email })
+        }
+      }),
+      71
+    ),
+    postBooking(
+      buildBookingPostBody({
+        cabinType,
+        checkIn: checkInDate,
+        checkOut: checkOutDate,
+        overrides: {
+          checkoutId: guestB.checkoutId,
+          paymentIntentId: guestB.paymentIntentId,
+          guestInfo: buildGuestInfo({ email: guestB.email })
+        }
+      }),
+      72
+    )
+  ]);
+
+  const newPaidBookings = await Booking.find({
+    stripePaymentIntentId: { $in: [guestA.paymentIntentId, guestB.paymentIntentId] }
+  });
+  assert.equal(newPaidBookings.length, 1, `statuses A=${resA.status} B=${resB.status}`);
+  assert.equal(String(newPaidBookings[0].unitId), String(unit2._id));
+
+  const unit2Overlaps = await Booking.countDocuments({
+    unitId: unit2._id,
+    status: { $in: ['pending', 'confirmed', 'in_house'] },
+    checkIn: { $lt: checkOutDate },
+    checkOut: { $gt: checkInDate }
+  });
+  assert.equal(unit2Overlaps, 1);
+
+  const reviewCount = await ManualReviewItem.countDocuments({ category: 'payment_finalization_failure' });
+  assert.equal(reviewCount, 1);
+
+  const successCount = [resA.status, resB.status].filter((status) => status === 201).length;
+  const reviewCountHttp = [resA.status, resB.status].filter((status) => status === 409).length;
+  assert.equal(successCount, 1);
+  assert.equal(reviewCountHttp, 1);
+  const failed = resA.status === 409 ? resA : resB;
+  assert.equal(failed.body.code, 'PAYMENT_RECEIVED_BOOKING_NEEDS_REVIEW');
 });

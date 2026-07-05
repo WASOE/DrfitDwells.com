@@ -276,30 +276,35 @@ async function resolveCabinTypeUnitForFinalize(deps, ctx, { paymentIntentIdForRe
   const requestedUnitId = ctx.assignedUnitId || ctx.unitId || null;
 
   if (requestedUnitId) {
-    const isAvailable = await AssignmentEngine.isUnitAvailable(
+    const validation = await AssignmentEngine.validateUnitForCabinTypeBooking(
       requestedUnitId,
+      ctx.cabinTypeId,
       ctx.checkInDate,
       ctx.checkOutDate
     );
-    if (!isAvailable) {
+    if (!validation.ok) {
+      const errorCode = validation.code || 'UNIT_NOT_AVAILABLE';
+      const errorSummary =
+        errorCode === 'UNIT_CABIN_TYPE_MISMATCH'
+          ? 'Requested unit does not belong to this stay type'
+          : errorCode === 'UNIT_NOT_FOUND_OR_INACTIVE'
+            ? 'Requested unit is not active or does not exist'
+            : 'Requested unit is not available for the selected dates';
       if (paymentIntentIdForReview) {
         await deps.recordPaidBookingResolutionIssue({
           issueType: 'paid_booking_conflict',
-          errorCode: 'UNIT_NOT_AVAILABLE',
-          errorSummary: 'Requested unit is not available for the selected dates',
+          errorCode,
+          errorSummary,
           paymentIntentId: paymentIntentIdForReview,
           bookingAttempt: ctx.bookingAttemptContext || null
         });
         throw createPaidBookingSaveFailedError({
-          errorCode: 'UNIT_NOT_AVAILABLE',
-          errorSummary: 'Requested unit is not available for the selected dates',
+          errorCode,
+          errorSummary,
           paymentIntentId: paymentIntentIdForReview
         });
       }
-      throw createRouteStyleError(
-        'NOT_AVAILABLE',
-        'The requested unit is not available for the selected dates'
-      );
+      throw createRouteStyleError('NOT_AVAILABLE', errorSummary);
     }
     return {
       ...ctx,
@@ -340,6 +345,29 @@ async function resolveCabinTypeUnitForFinalize(deps, ctx, { paymentIntentIdForRe
     assignedUnitId: assignedUnit._id,
     parentCabinForUnit
   };
+}
+
+function assertCabinTypeBookingHasUnitBeforeSave(bookingData, { paymentIntentIdForReview }) {
+  if (!bookingData?.cabinTypeId) {
+    return;
+  }
+  if (bookingData.status !== 'confirmed' && bookingData.status !== 'in_house') {
+    return;
+  }
+  if (bookingData.unitId) {
+    return;
+  }
+  if (paymentIntentIdForReview) {
+    throw createPaidBookingSaveFailedError({
+      errorCode: 'CABIN_TYPE_UNIT_REQUIRED',
+      errorSummary: 'Multi-unit booking cannot be confirmed without an assigned unit',
+      paymentIntentId: paymentIntentIdForReview
+    });
+  }
+  throw createRouteStyleError(
+    'CABIN_TYPE_UNIT_REQUIRED',
+    'Multi-unit booking cannot be confirmed without an assigned unit'
+  );
 }
 
 async function tryReleaseVoucherOnFailure(deps, { voucherReservationContext, reason, note }) {
@@ -497,12 +525,15 @@ async function runPostSaveOverlapChecks(deps, {
   }
 
   if (assignedUnitId) {
-    const overlaps = await deps.Booking.countDocuments({
+    const overlapQuery = {
       unitId: assignedUnitId,
-      _id: { $ne: booking._id },
       status: { $in: blocking },
       checkIn: { $lt: checkOutDate },
       checkOut: { $gt: checkInDate }
+    };
+    const overlaps = await deps.Booking.countDocuments({
+      ...overlapQuery,
+      _id: { $ne: booking._id }
     });
     let blockRace = 0;
     if (parentCabinForUnit?._id) {
@@ -514,30 +545,38 @@ async function runPostSaveOverlapChecks(deps, {
       );
     }
     if (overlaps > 0 || blockRace > 0) {
-      await deps.Booking.deleteOne({ _id: booking._id });
-      await tryReleaseVoucherOnFailure(deps, {
-        voucherReservationContext,
-        reason: 'booking_conflict_after_save',
-        note: 'release voucher reservation after unit overlap conflict'
-      });
-      if (paymentIntentIdForReview) {
-        await deps.recordPaidBookingResolutionIssue({
-          issueType: 'paid_booking_conflict',
-          errorCode: 'UNIT_OVERLAP_AFTER_SAVE',
-          errorSummary: `overlaps=${overlaps}, blockRace=${blockRace}`,
-          paymentIntentId: paymentIntentIdForReview,
-          bookingAttempt: ctx.bookingAttemptContext || null
+      const oldestOverlap = overlaps > 0
+        ? await deps.Booking.findOne(overlapQuery).sort({ createdAt: 1, _id: 1 }).select('_id')
+        : null;
+      const lostUnitRace =
+        oldestOverlap && String(oldestOverlap._id) !== String(booking._id);
+
+      if (blockRace > 0 || lostUnitRace) {
+        await deps.Booking.deleteOne({ _id: booking._id });
+        await tryReleaseVoucherOnFailure(deps, {
+          voucherReservationContext,
+          reason: 'booking_conflict_after_save',
+          note: 'release voucher reservation after unit overlap conflict'
         });
-        throw createPaidBookingSaveFailedError({
-          errorCode: 'UNIT_OVERLAP_AFTER_SAVE',
-          errorSummary: `overlaps=${overlaps}, blockRace=${blockRace}`,
-          paymentIntentId: paymentIntentIdForReview
-        });
+        if (paymentIntentIdForReview) {
+          await deps.recordPaidBookingResolutionIssue({
+            issueType: 'paid_booking_conflict',
+            errorCode: 'UNIT_OVERLAP_AFTER_SAVE',
+            errorSummary: `overlaps=${overlaps}, blockRace=${blockRace}`,
+            paymentIntentId: paymentIntentIdForReview,
+            bookingAttempt: ctx.bookingAttemptContext || null
+          });
+          throw createPaidBookingSaveFailedError({
+            errorCode: 'UNIT_OVERLAP_AFTER_SAVE',
+            errorSummary: `overlaps=${overlaps}, blockRace=${blockRace}`,
+            paymentIntentId: paymentIntentIdForReview
+          });
+        }
+        throw createRouteStyleError(
+          'NOT_AVAILABLE',
+          'This unit was just booked by another guest. Please choose different dates.'
+        );
       }
-      throw createRouteStyleError(
-        'NOT_AVAILABLE',
-        'This unit was just booked by another guest. Please choose different dates.'
-      );
     }
   }
 }
@@ -696,6 +735,8 @@ async function executeBookingFinalizeWork({
     finalizeContext: ctx
   });
 
+  assertCabinTypeBookingHasUnitBeforeSave(bookingData, { paymentIntentIdForReview });
+
   const voucherReservationContext = ctx.voucherReservationContext || null;
   const voucherEvidence = ctx.voucherEvidence || {};
 
@@ -776,6 +817,7 @@ module.exports = {
   buildCheckoutFingerprintFromContext,
   buildBookingData,
   resolveCabinTypeUnitForFinalize,
+  assertCabinTypeBookingHasUnitBeforeSave,
   createDefaultDependencies,
   __setExecuteBookingFinalizeWorkDependenciesForTesting,
   __resetExecuteBookingFinalizeWorkDependenciesForTesting

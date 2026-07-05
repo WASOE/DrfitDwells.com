@@ -94,6 +94,34 @@ class AssignmentEngine {
   }
 
   /**
+   * Validate a client-requested unit against a cabin type stay (ownership, active, availability).
+   * @returns {Promise<{ ok: true, unit: object } | { ok: false, code: string }>}
+   */
+  static async validateUnitForCabinTypeBooking(unitId, cabinTypeId, checkIn, checkOut) {
+    const unit = await Unit.findById(unitId);
+    if (!unit || !unit.isActive) {
+      return { ok: false, code: 'UNIT_NOT_FOUND_OR_INACTIVE' };
+    }
+    if (String(unit.cabinTypeId) !== String(cabinTypeId)) {
+      return { ok: false, code: 'UNIT_CABIN_TYPE_MISMATCH' };
+    }
+
+    const parentCabin = await findParentCabinForCabinType(cabinTypeId);
+    const available = await isUnitGuestStayAvailable(
+      unit._id,
+      cabinTypeId,
+      checkIn,
+      checkOut,
+      parentCabin
+    );
+    if (!available) {
+      return { ok: false, code: 'UNIT_NOT_AVAILABLE' };
+    }
+
+    return { ok: true, unit };
+  }
+
+  /**
    * Get availability summary for all units of a cabin type
    * @param {ObjectId} cabinTypeId - The cabin type ID
    * @param {Date} checkIn - Check-in date
