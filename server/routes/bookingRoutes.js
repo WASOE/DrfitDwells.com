@@ -1243,6 +1243,13 @@ router.post('/', bookingCreateLimiter, [
           assignedUnitId = assignedUnit._id;
         }
       } else if (unitId) {
+        const isAvailable = await AssignmentEngine.isUnitAvailable(unitId, checkInDate, checkOutDate);
+        if (!isAvailable) {
+          return res.status(409).json({
+            success: false,
+            message: 'The requested unit is not available for the selected dates'
+          });
+        }
         assignedUnitId = unitId;
       }
 
@@ -1488,6 +1495,8 @@ router.post('/', bookingCreateLimiter, [
         cabinId,
         cabinTypeId,
         assignedUnitId,
+        parentCabinForUnit,
+        bookingAttemptContext,
         checkInDate,
         checkOutDate,
         adults: parseInt(adults, 10),

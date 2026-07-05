@@ -12,8 +12,10 @@ const {
 } = require('../bookings/bookingVoucherRedemptionService');
 const {
   countBlockingBlocksForSingleCabin,
-  countBlockingBlocksForUnit
+  countBlockingBlocksForUnit,
+  findParentCabinForCabinType
 } = require('../publicAvailabilityService');
+const AssignmentEngine = require('../assignmentEngine');
 
 function sameObjectIdish(a, b) {
   if (!a || !b) return false;
@@ -259,6 +261,85 @@ function __setExecuteBookingFinalizeWorkDependenciesForTesting(overrides = {}) {
 
 function __resetExecuteBookingFinalizeWorkDependenciesForTesting() {
   activeDependencies = createDefaultDependencies();
+}
+
+async function resolveCabinTypeUnitForFinalize(deps, ctx, { paymentIntentIdForReview }) {
+  if (!ctx.cabinTypeId) {
+    return ctx;
+  }
+
+  const parentCabinForUnit =
+    ctx.parentCabinForUnit !== undefined
+      ? ctx.parentCabinForUnit
+      : await findParentCabinForCabinType(ctx.cabinTypeId);
+
+  const requestedUnitId = ctx.assignedUnitId || ctx.unitId || null;
+
+  if (requestedUnitId) {
+    const isAvailable = await AssignmentEngine.isUnitAvailable(
+      requestedUnitId,
+      ctx.checkInDate,
+      ctx.checkOutDate
+    );
+    if (!isAvailable) {
+      if (paymentIntentIdForReview) {
+        await deps.recordPaidBookingResolutionIssue({
+          issueType: 'paid_booking_conflict',
+          errorCode: 'UNIT_NOT_AVAILABLE',
+          errorSummary: 'Requested unit is not available for the selected dates',
+          paymentIntentId: paymentIntentIdForReview,
+          bookingAttempt: ctx.bookingAttemptContext || null
+        });
+        throw createPaidBookingSaveFailedError({
+          errorCode: 'UNIT_NOT_AVAILABLE',
+          errorSummary: 'Requested unit is not available for the selected dates',
+          paymentIntentId: paymentIntentIdForReview
+        });
+      }
+      throw createRouteStyleError(
+        'NOT_AVAILABLE',
+        'The requested unit is not available for the selected dates'
+      );
+    }
+    return {
+      ...ctx,
+      assignedUnitId: requestedUnitId,
+      parentCabinForUnit
+    };
+  }
+
+  const assignedUnit = await AssignmentEngine.assignUnit(
+    ctx.cabinTypeId,
+    ctx.checkInDate,
+    ctx.checkOutDate
+  );
+
+  if (!assignedUnit) {
+    if (paymentIntentIdForReview) {
+      await deps.recordPaidBookingResolutionIssue({
+        issueType: 'paid_booking_conflict',
+        errorCode: 'NO_UNITS_AVAILABLE',
+        errorSummary: 'All units are occupied for the selected dates',
+        paymentIntentId: paymentIntentIdForReview,
+        bookingAttempt: ctx.bookingAttemptContext || null
+      });
+      throw createPaidBookingSaveFailedError({
+        errorCode: 'NO_UNITS_AVAILABLE',
+        errorSummary: 'All units are occupied for the selected dates',
+        paymentIntentId: paymentIntentIdForReview
+      });
+    }
+    throw createRouteStyleError(
+      'NOT_AVAILABLE',
+      'No units available for the selected dates'
+    );
+  }
+
+  return {
+    ...ctx,
+    assignedUnitId: assignedUnit._id,
+    parentCabinForUnit
+  };
 }
 
 async function tryReleaseVoucherOnFailure(deps, { voucherReservationContext, reason, note }) {
@@ -576,7 +657,7 @@ async function executeBookingFinalizeWork({
     );
   }
 
-  const ctx = { ...finalizeContext, checkoutId: checkoutId || finalizeContext.checkoutId };
+  let ctx = { ...finalizeContext, checkoutId: checkoutId || finalizeContext.checkoutId };
   const paymentIntentIdForReview = paymentIntentId
     ? String(paymentIntentId).trim()
     : ctx.paymentIntentId
@@ -604,6 +685,8 @@ async function executeBookingFinalizeWork({
   if (replayByPi) {
     return replayByPi;
   }
+
+  ctx = await resolveCabinTypeUnitForFinalize(deps, ctx, { paymentIntentIdForReview });
 
   const { bookingData, initialStatus, stripePaymentVerified } = buildBookingData({
     session,
@@ -692,6 +775,7 @@ module.exports = {
   bookingMatchesCheckoutFingerprint,
   buildCheckoutFingerprintFromContext,
   buildBookingData,
+  resolveCabinTypeUnitForFinalize,
   createDefaultDependencies,
   __setExecuteBookingFinalizeWorkDependenciesForTesting,
   __resetExecuteBookingFinalizeWorkDependenciesForTesting
