@@ -117,7 +117,7 @@ function enrichBlockRender(block, bookingById, windowStart, windowEndExclusive) 
     }
   }
   if (!labelShort) {
-    labelShort = labelShortForBlockType(block.blockType);
+    labelShort = block.isLocationWideBlock ? 'Location-wide' : labelShortForBlockType(block.blockType);
   }
 
   return {
@@ -293,6 +293,9 @@ async function buildBlocksForRange(normalized, propertyId) {
     endDate: normalizeDateToSofiaDayStart(blk.endDate).toISOString(),
     status: blk.status,
     tombstonedAt: blk.tombstonedAt || null,
+    locationBlockGroupId: blk.metadata?.locationBlockGroupId || null,
+    locationKey: blk.metadata?.locationKey || null,
+    isLocationWideBlock: blk.metadata?.scope === 'location_wide',
     provenance: {
       source: blk.source,
       sourceReference: blk.sourceReference || null

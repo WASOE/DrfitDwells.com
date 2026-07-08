@@ -22,6 +22,11 @@ const WEEKDAYS_SHORT = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const navBtnCls =
   'inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-800 shadow-sm hover:border-gray-400 transition-colors';
 
+const LOCATION_KEY_LABELS = {
+  valley: 'The Valley',
+  cabin: 'The Cabin'
+};
+
 function extractMongoIdFromBlockId(id) {
   const s = String(id || '');
   if (s.startsWith('block:')) return s.slice('block:'.length);
@@ -32,6 +37,34 @@ function blockRangeTitle(b) {
   const s = String(b?.startDate || '').slice(0, 10);
   const e = String(b?.endDate || '').slice(0, 10);
   return `${s} → ${e} (exclusive end)`;
+}
+
+function getLocationBlockGroupId(block) {
+  const id = block?.locationBlockGroupId;
+  if (!id) return null;
+  const trimmed = String(id).trim();
+  return trimmed || null;
+}
+
+function isLocationWideManualBlock(block) {
+  if (block?.blockType !== 'manual_block') return false;
+  if (block.isLocationWideBlock) return true;
+  return Boolean(getLocationBlockGroupId(block));
+}
+
+function blockDisplayLabel(block) {
+  if (isLocationWideManualBlock(block)) return 'Location-wide';
+  return block.render?.labelShort || block.blockType;
+}
+
+function blockTooltip(block) {
+  const dates = blockRangeTitle(block);
+  if (isLocationWideManualBlock(block)) {
+    const locLabel = LOCATION_KEY_LABELS[block.locationKey] || block.locationKey;
+    const locPart = locLabel ? ` (${locLabel})` : '';
+    return `Location-wide block${locPart} — blocks entire location — ${dates}`;
+  }
+  return `${blockDisplayLabel(block)} — ${dates}`;
 }
 
 export default function OpsCalendarMonth() {
@@ -49,6 +82,7 @@ export default function OpsCalendarMonth() {
   const [openBlockKey, setOpenBlockKey] = useState(null);
   const [sheetKind, setSheetKind] = useState(null);
   const [sheetBlock, setSheetBlock] = useState(null);
+  const [locationRemoveFlash, setLocationRemoveFlash] = useState('');
 
   const { weeks, monthStartYmd, monthEndExclusiveYmd } = useMemo(
     () => buildSofiaMonthGrid(year, monthIndex),
@@ -145,6 +179,7 @@ export default function OpsCalendarMonth() {
   };
 
   const requestEditBlockDates = (b) => {
+    if (isLocationWideManualBlock(b)) return;
     const id = extractMongoIdFromBlockId(b?.id);
     if (!id) return;
     setActionError('');
@@ -157,6 +192,7 @@ export default function OpsCalendarMonth() {
   };
 
   const requestRemoveBlock = (b) => {
+    if (isLocationWideManualBlock(b)) return;
     const id = extractMongoIdFromBlockId(b?.id);
     if (!id) return;
     setActionError('');
@@ -165,8 +201,22 @@ export default function OpsCalendarMonth() {
     setSheetKind('remove');
   };
 
+  const requestRemoveLocationGroup = (b) => {
+    const groupId = getLocationBlockGroupId(b);
+    if (!groupId) {
+      setOpenBlockKey(null);
+      setActionError('Cannot remove location-wide block: group id is missing.');
+      return;
+    }
+    setActionError('');
+    setOpenBlockKey(null);
+    setSheetBlock(b);
+    setSheetKind('remove_location_group');
+  };
+
   const removeBlock = async () => {
     const b = sheetBlock;
+    if (isLocationWideManualBlock(b)) return;
     const id = extractMongoIdFromBlockId(b?.id);
     if (!id) return;
 
@@ -176,6 +226,24 @@ export default function OpsCalendarMonth() {
       if (b?.blockType === 'maintenance') await opsWriteAPI.removeMaintenanceBlock(id, 'ops_calendar');
       await load();
       closeSheet();
+    } catch (err) {
+      setActionError(err?.response?.data?.message || 'Remove failed');
+    }
+  };
+
+  const removeLocationBlockGroup = async () => {
+    const groupId = getLocationBlockGroupId(sheetBlock);
+    if (!groupId) {
+      setActionError('Cannot remove location-wide block: group id is missing.');
+      return;
+    }
+
+    setActionError('');
+    try {
+      await opsWriteAPI.removeLocationBlockGroup(groupId, 'ops_calendar');
+      closeSheet();
+      setLocationRemoveFlash('Location-wide block removed.');
+      await load();
     } catch (err) {
       setActionError(err?.response?.data?.message || 'Remove failed');
     }
@@ -259,6 +327,11 @@ export default function OpsCalendarMonth() {
 
           {error ? (
             <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>
+          ) : null}
+          {locationRemoveFlash ? (
+            <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+              {locationRemoveFlash}
+            </div>
           ) : null}
           {actionError && !sheetKind ? (
             <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{actionError}</div>
@@ -391,6 +464,46 @@ export default function OpsCalendarMonth() {
           </div>
         </CalendarBottomSheet>
 
+        <CalendarBottomSheet
+          open={sheetKind === 'remove_location_group'}
+          title="Remove entire location block?"
+          subtitle="This removes the block from every property in this location."
+          onClose={closeSheet}
+          footer={
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={removeLocationBlockGroup}
+                className="h-11 flex-1 rounded-lg bg-red-700 px-4 text-sm font-semibold text-white hover:bg-red-800 sm:flex-none"
+              >
+                Remove entire location block
+              </button>
+              <button
+                type="button"
+                onClick={closeSheet}
+                className="h-11 flex-1 rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-gray-800 sm:flex-none"
+              >
+                Cancel
+              </button>
+            </div>
+          }
+        >
+          <div className="space-y-2">
+            <div className="text-sm font-medium text-gray-800">Location-wide block</div>
+            <div className="text-xs text-gray-500">{blockRangeTitle(sheetBlock)}</div>
+            {sheetBlock?.locationKey ? (
+              <div className="text-xs text-gray-600">
+                Location: {LOCATION_KEY_LABELS[sheetBlock.locationKey] || sheetBlock.locationKey}
+              </div>
+            ) : null}
+            {actionError ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                {actionError}
+              </div>
+            ) : null}
+          </div>
+        </CalendarBottomSheet>
+
         <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
           <div className="grid grid-cols-7 gap-px border-b border-gray-100 bg-white px-1 pt-3 pb-2">
             {WEEKDAYS.map((d, i) => (
@@ -445,14 +558,16 @@ export default function OpsCalendarMonth() {
                         : b.render?.conflictToken === 'warning'
                           ? CONFLICT_RING.warning
                           : '';
-                    const label = b.render?.labelShort || b.blockType;
+                    const label = blockDisplayLabel(b);
                     const top = 5 + s.lane * 28;
                     const rowKey = `${wi}-${b.id}`;
+                    const isLocationWide = isLocationWideManualBlock(b);
+                    const locationGroupId = getLocationBlockGroupId(b);
                     const canAct =
                       (b.blockType === 'manual_block' || b.blockType === 'maintenance') &&
                       extractMongoIdFromBlockId(b.id);
                     const menuOpen = openBlockKey === rowKey;
-                    const tip = `${label} — ${blockRangeTitle(b)}`;
+                    const tip = blockTooltip(b);
 
                     if (b.blockType === 'reservation') {
                       return (
@@ -481,29 +596,47 @@ export default function OpsCalendarMonth() {
                         </button>
                         {menuOpen && canAct ? (
                           <div
-                            className="absolute z-20 flex min-w-[140px] flex-col gap-1 rounded-xl border border-gray-200 bg-white p-2 text-xs shadow-lg"
+                            className="absolute z-20 flex min-w-[180px] max-w-[min(240px,calc(100vw-2rem))] flex-col gap-1 rounded-xl border border-gray-200 bg-white p-2 text-xs shadow-lg"
                             style={{ left: `${s.leftPct}%`, top: top + 26 }}
                           >
-                            <button
-                              type="button"
-                              className="flex h-9 items-center rounded-lg px-2 text-left hover:bg-gray-50"
-                              onClick={() => {
-                                setOpenBlockKey(null);
-                                requestEditBlockDates(b);
-                              }}
-                            >
-                              Edit dates
-                            </button>
-                            <button
-                              type="button"
-                              className="flex h-9 items-center rounded-lg px-2 text-left text-red-700 hover:bg-red-50"
-                              onClick={() => {
-                                setOpenBlockKey(null);
-                                requestRemoveBlock(b);
-                              }}
-                            >
-                              Remove
-                            </button>
+                            {isLocationWide ? (
+                              locationGroupId ? (
+                                <button
+                                  type="button"
+                                  className="flex min-h-9 items-center rounded-lg px-2 text-left text-red-700 hover:bg-red-50"
+                                  onClick={() => requestRemoveLocationGroup(b)}
+                                >
+                                  Remove entire location block
+                                </button>
+                              ) : (
+                                <p className="px-2 py-1.5 text-amber-800 leading-snug">
+                                  This location-wide block is missing a group id and cannot be removed as a group.
+                                </p>
+                              )
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  className="flex h-9 items-center rounded-lg px-2 text-left hover:bg-gray-50"
+                                  onClick={() => {
+                                    setOpenBlockKey(null);
+                                    requestEditBlockDates(b);
+                                  }}
+                                >
+                                  Edit dates
+                                </button>
+                                <button
+                                  type="button"
+                                  className="flex h-9 items-center rounded-lg px-2 text-left text-red-700 hover:bg-red-50"
+                                  onClick={() => {
+                                    setOpenBlockKey(null);
+                                    requestRemoveBlock(b);
+                                  }}
+                                >
+                                  Remove
+                                </button>
+                              </>
+                            )}
                           </div>
                         ) : null}
                       </Fragment>
