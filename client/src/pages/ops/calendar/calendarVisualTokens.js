@@ -17,6 +17,22 @@ export const BLOCK_DOT = {
   external_hold: 'bg-violet-500'
 };
 
+/** Index preview strip: empty day, conflict overrides */
+export const PREVIEW_DOT_EMPTY = 'bg-gray-100';
+export const PREVIEW_DOT_CONFLICT = 'bg-red-500';
+export const PREVIEW_DOT_WARNING = 'bg-amber-400';
+export const PREVIEW_DOT_SIZE = 'h-1.5 w-1.5';
+
+/** Compact legend entries for OpsCalendarIndex (dot + label, no boxed pills). */
+export const INDEX_LEGEND_ITEMS = [
+  { key: 'reservation', label: 'Reservation', dot: BLOCK_DOT.reservation },
+  { key: 'manual_block', label: 'Manual block', dot: BLOCK_DOT.manual_block },
+  { key: 'maintenance', label: 'Maintenance', dot: BLOCK_DOT.maintenance },
+  { key: 'external_hold', label: 'External hold', dot: BLOCK_DOT.external_hold },
+  { key: 'conflict', label: 'Conflict', dot: PREVIEW_DOT_CONFLICT },
+  { key: 'warning', label: 'Warning', dot: PREVIEW_DOT_WARNING }
+];
+
 export const CONFLICT_RING = {
   hard: 'ring-2 ring-red-500 ring-offset-1',
   warning: 'ring-2 ring-amber-400 ring-offset-1'

@@ -1,15 +1,32 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ChevronRight } from 'lucide-react';
 import { opsReadAPI } from '../../../services/opsApi';
-import { BLOCK_DOT, CONFLICT_RING, SYNC_BADGE } from './calendarVisualTokens';
+import {
+  BLOCK_DOT,
+  CONFLICT_RING,
+  PREVIEW_DOT_CONFLICT,
+  PREVIEW_DOT_EMPTY,
+  PREVIEW_DOT_SIZE,
+  PREVIEW_DOT_WARNING,
+  SYNC_BADGE
+} from './calendarVisualTokens';
 import { eachDayKeyInRange, parseIsoDay } from './opsCalendarDateUtils';
 import LocationBlockSheet from './LocationBlockSheet';
+import OpsCalendarLegend from './OpsCalendarLegend';
 
 function dayStripCells(fromIso, toIso) {
   const a = parseIsoDay(fromIso);
   const b = parseIsoDay(toIso);
   if (!a || !b) return [];
   return eachDayKeyInRange(a, b);
+}
+
+function formatStripDayLabel(dayKey) {
+  const d = parseIsoDay(dayKey);
+  if (!d) return '';
+  const weekdays = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+  return weekdays[d.getUTCDay()];
 }
 
 function cellToneForDay(dayKey, blocks) {
@@ -23,13 +40,13 @@ function cellToneForDay(dayKey, blocks) {
     if (b.render?.conflictToken === 'warning') warn = true;
     types.add(b.blockType);
   }
-  if (hard) return { dot: 'bg-red-500', ring: CONFLICT_RING.hard };
-  if (warn) return { dot: 'bg-amber-400', ring: CONFLICT_RING.warning };
+  if (hard) return { dot: PREVIEW_DOT_CONFLICT, ring: CONFLICT_RING.hard };
+  if (warn) return { dot: PREVIEW_DOT_WARNING, ring: CONFLICT_RING.warning };
   if (types.has('maintenance')) return { dot: BLOCK_DOT.maintenance, ring: '' };
   if (types.has('reservation')) return { dot: BLOCK_DOT.reservation, ring: '' };
   if (types.has('manual_block')) return { dot: BLOCK_DOT.manual_block, ring: '' };
   if (types.has('external_hold')) return { dot: BLOCK_DOT.external_hold, ring: '' };
-  return { dot: 'bg-gray-100', ring: '' };
+  return { dot: PREVIEW_DOT_EMPTY, ring: '' };
 }
 
 function initialsFromName(name) {
@@ -40,6 +57,12 @@ function initialsFromName(name) {
   const b = parts.length > 1 ? parts[parts.length - 1]?.[0] || '' : '';
   const out = `${a}${b}`.toUpperCase();
   return out || '—';
+}
+
+function conflictAccentClass(hardN, warnN) {
+  if (hardN > 0) return 'border-l-red-500';
+  if (warnN > 0) return 'border-l-amber-400';
+  return 'border-l-transparent';
 }
 
 /** Stable id for calendar routes (single cabin or multi-unit type from ops cabins list). */
@@ -112,174 +135,197 @@ export default function OpsCalendarIndex() {
     return rows;
   }, [preview, cabinsExtra]);
 
+  const previewDays = preview?.request?.previewDays || 14;
+  const timezone = preview?.meta?.propertyTimezone || 'Europe/Sofia';
+
   if (loading) {
-    return <div className="text-sm text-gray-500 py-8">Loading properties…</div>;
+    return (
+      <div className="w-full max-w-lg mx-auto pb-24 lg:max-w-none lg:mx-0">
+        <p className="py-8 text-center text-sm text-gray-400">Loading properties…</p>
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-4 w-full pb-20 md:pb-8">
-      <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5 text-left">
-        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 md:gap-4">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-lg font-semibold text-gray-900">Calendar</h1>
-            <p className="text-sm text-gray-600 mt-1 max-w-3xl">
-              Pick a property for the operational month view. Preview shows the next {preview?.request?.previewDays || 14} nights (
-              {preview?.meta?.propertyTimezone || 'Europe/Sofia'}).
-            </p>
-            {preview?.meta?.today ? (
-              <p className="text-xs text-gray-500 mt-2">
-                Today: <span className="font-mono">{preview.meta.today}</span>
-              </p>
-            ) : null}
-          </div>
-          <button
-            type="button"
-            onClick={() => setLocationBlockOpen(true)}
-            className="w-full md:w-auto shrink-0 px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors"
-          >
-            Block location
-          </button>
-        </div>
-
-        <div className="mt-4 pt-4 border-t border-gray-100 flex flex-wrap gap-x-4 gap-y-2 text-[10px] uppercase tracking-wide text-gray-500">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" /> Res.
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" /> Manual
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-gray-800 shrink-0" /> Maint.
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-violet-500 shrink-0" /> Ext.
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" /> Conflict
-          </span>
-        </div>
-      </section>
-
-      {locationBlockFlash ? (
-        <div className="text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 max-w-3xl">
-          {locationBlockFlash}
-        </div>
-      ) : null}
-
-      {error ? (
-        <div className="text-sm text-red-600 rounded-xl border border-red-200 bg-red-50 px-4 py-3">{error}</div>
-      ) : null}
-
-      <ul className="space-y-3">
-        {mergedRows.length === 0 ? (
-          <li className="text-sm text-gray-500 border border-dashed border-gray-200 rounded-xl p-8 text-center bg-white">
-            No properties found.
-          </li>
-        ) : null}
-        {mergedRows.map(({ cabin, preview: pr }) => {
-          const routeId = propertyRouteId(cabin);
-          const rowKey = routeId || `row-${cabin.name}`;
-          const blocks = pr?.blocks || [];
-          const sync = pr?.syncIndicators?.syncStatus || 'stale';
-          const syncCls = SYNC_BADGE[sync] || SYNC_BADGE.stale;
-          const img = cabin.content?.imageUrl || pr?.listing?.imageUrl;
-          const hardN = pr?.summary?.hardConflictCount ?? pr?.conflictMarkers?.hard?.length ?? 0;
-          const warnN = pr?.summary?.warningCount ?? pr?.conflictMarkers?.warnings?.length ?? 0;
-
-          return (
-            <li key={rowKey}>
-              <Link
-                to={routeId ? `/ops/calendar/${routeId}` : '#'}
-                className={`flex flex-col lg:grid lg:grid-cols-12 lg:gap-6 lg:items-center bg-white border border-gray-200 rounded-xl p-4 md:p-5 min-w-0 text-left transition-shadow ${
-                  routeId ? 'hover:border-gray-300 hover:shadow-sm' : 'opacity-60 pointer-events-none'
-                }`}
+    <div className="w-full max-w-lg mx-auto pb-24 md:pb-10 lg:max-w-none lg:mx-0 lg:pb-8">
+      <div className="space-y-4 lg:max-w-7xl lg:mx-auto">
+        <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm md:p-5 text-left">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 md:gap-4">
+            <div className="min-w-0 flex-1">
+              <h1
+                className="text-2xl font-semibold text-gray-900"
+                style={{ fontFamily: 'Playfair Display, serif' }}
               >
-                <div className="lg:col-span-2 flex lg:block shrink-0 mb-3 lg:mb-0">
-                  <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-lg bg-gray-100 overflow-hidden border border-gray-100">
-                    {img ? (
-                      <img src={img} alt="" className="w-full h-full object-cover" loading="lazy" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-sm font-semibold text-gray-700 bg-gray-50">
-                        {initialsFromName(cabin.name)}
-                      </div>
-                    )}
-                  </div>
-                </div>
+                Calendar
+              </h1>
+              <p className="text-sm text-gray-600 mt-1 max-w-2xl">
+                Pick a property to open the month view. Preview shows the next {previewDays} nights ({timezone}).
+              </p>
+              {preview?.meta?.today ? (
+                <p className="text-xs text-gray-500 mt-2">
+                  Today: <span className="font-medium text-gray-700">{preview.meta.today}</span>
+                </p>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => setLocationBlockOpen(true)}
+              className="w-full md:w-auto shrink-0 inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-gray-800 border border-gray-300 rounded-lg bg-white shadow-sm hover:border-gray-400 hover:bg-gray-50 transition-colors"
+            >
+              Block location
+            </button>
+          </div>
 
-                <div className="lg:col-span-4 min-w-0 space-y-2 mb-3 lg:mb-0">
-                  <div className="flex flex-wrap items-start gap-x-2 gap-y-1">
-                    <span className="text-base font-semibold text-gray-900 leading-snug">{cabin.name}</span>
-                    {cabin.kind === 'multi_unit_type' ? (
-                      <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded border bg-indigo-50 text-indigo-800 border-indigo-100 shrink-0">
-                        Multi-unit
-                      </span>
-                    ) : null}
-                    <span
-                      className={`text-[10px] px-2 py-0.5 rounded-full border shrink-0 ${
-                        cabin.isActive !== false
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                          : 'bg-gray-100 text-gray-600 border-gray-200'
-                      }`}
-                    >
-                      {cabin.isActive !== false ? 'Active' : 'Inactive'}
-                    </span>
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full border shrink-0 ${syncCls}`}>Sync: {sync}</span>
-                  </div>
-                  <p className="text-sm text-gray-600">{cabin.location || '—'}</p>
-                </div>
+          <div className="mt-4 pt-4 border-t border-gray-100">
+            <OpsCalendarLegend />
+          </div>
+        </section>
 
-                <div className="lg:col-span-6 min-w-0 space-y-2">
-                  <div className="overflow-x-auto -mx-1 px-1">
-                    <div className="flex gap-1 min-w-max py-1">
-                      {stripKeys.map((dk) => {
-                        const { dot, ring } = cellToneForDay(dk, blocks);
-                        const isToday = dk === preview?.meta?.today;
-                        return (
-                          <div
-                            key={dk}
-                            title={dk}
-                            className={`w-2.5 h-7 rounded-sm flex items-end justify-center pb-0.5 shrink-0 ${
-                              isToday ? 'outline outline-2 outline-amber-400 outline-offset-1' : ''
-                            }`}
-                          >
-                            <span className={`w-1.5 h-1.5 rounded-full ${dot} ${ring}`} />
+        {locationBlockFlash ? (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            {locationBlockFlash}
+          </div>
+        ) : null}
+
+        {error ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>
+        ) : null}
+
+        <ul className="space-y-3">
+          {mergedRows.length === 0 ? (
+            <li className="rounded-xl border border-dashed border-gray-200 bg-white p-8 text-center text-sm text-gray-500">
+              No properties found.
+            </li>
+          ) : null}
+          {mergedRows.map(({ cabin, preview: pr }) => {
+            const routeId = propertyRouteId(cabin);
+            const rowKey = routeId || `row-${cabin.name}`;
+            const blocks = pr?.blocks || [];
+            const sync = pr?.syncIndicators?.syncStatus || 'stale';
+            const syncCls = SYNC_BADGE[sync] || SYNC_BADGE.stale;
+            const img = cabin.content?.imageUrl || pr?.listing?.imageUrl;
+            const hardN = pr?.summary?.hardConflictCount ?? pr?.conflictMarkers?.hard?.length ?? 0;
+            const warnN = pr?.summary?.warningCount ?? pr?.conflictMarkers?.warnings?.length ?? 0;
+            const accentCls = conflictAccentClass(hardN, warnN);
+
+            return (
+              <li key={rowKey}>
+                <Link
+                  to={routeId ? `/ops/calendar/${routeId}` : '#'}
+                  className={`group block rounded-2xl border border-gray-200 bg-white p-4 shadow-sm border-l-4 min-w-0 text-left transition-all md:p-5 ${accentCls} ${
+                    routeId
+                      ? 'hover:border-gray-300 hover:shadow-md'
+                      : 'opacity-60 pointer-events-none'
+                  }`}
+                >
+                  <div className="flex gap-4">
+                    <div className="shrink-0">
+                      <div className="h-16 w-16 sm:h-20 sm:w-20 overflow-hidden rounded-xl border border-gray-100 bg-gray-100">
+                        {img ? (
+                          <img src={img} alt="" className="h-full w-full object-cover" loading="lazy" />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center bg-gray-50 text-sm font-semibold text-gray-700">
+                            {initialsFromName(cabin.name)}
                           </div>
-                        );
-                      })}
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <h2 className="text-base font-bold leading-snug text-gray-900 group-hover:text-gray-950">
+                            {cabin.name}
+                          </h2>
+                          <p className="mt-0.5 text-sm text-gray-600 truncate">{cabin.location || '—'}</p>
+                        </div>
+                        {routeId ? (
+                          <ChevronRight className="h-5 w-5 shrink-0 text-gray-300 group-hover:text-gray-500 mt-0.5" />
+                        ) : null}
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                        {cabin.kind === 'multi_unit_type' ? (
+                          <span className="rounded-md bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-800">
+                            Multi-unit
+                          </span>
+                        ) : null}
+                        <span
+                          className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                            cabin.isActive !== false
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : 'bg-gray-100 text-gray-600'
+                          }`}
+                        >
+                          {cabin.isActive !== false ? 'Active' : 'Inactive'}
+                        </span>
+                        <span
+                          className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide border ${syncCls}`}
+                        >
+                          Sync {sync}
+                        </span>
+                        {hardN > 0 ? (
+                          <span className="rounded-md bg-red-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-700">
+                            {hardN} conflict{hardN === 1 ? '' : 's'}
+                          </span>
+                        ) : null}
+                        {warnN > 0 ? (
+                          <span className="rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                            {warnN} warning{warnN === 1 ? '' : 's'}
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
 
-                  {pr?.summary?.hasConflict ? (
-                    <div className="flex flex-wrap gap-2">
-                      {hardN > 0 ? (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full border border-red-200 bg-red-50 text-red-800 font-medium">
-                          Hard {hardN}
-                        </span>
-                      ) : null}
-                      {warnN > 0 ? (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-900 font-medium">
-                          Warn {warnN}
-                        </span>
-                      ) : null}
+                  {stripKeys.length > 0 ? (
+                    <div className="mt-4 pt-3 border-t border-gray-100">
+                      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                        Next {previewDays} nights
+                      </p>
+                      <div className="overflow-x-auto -mx-1 px-1">
+                        <div className="flex min-w-max gap-1.5 py-0.5">
+                          {stripKeys.map((dk) => {
+                            const { dot, ring } = cellToneForDay(dk, blocks);
+                            const isToday = dk === preview?.meta?.today;
+                            return (
+                              <div
+                                key={dk}
+                                title={dk}
+                                className="flex w-7 shrink-0 flex-col items-center gap-1 sm:w-8"
+                              >
+                                <span className="hidden text-[10px] font-medium text-gray-400 sm:block">
+                                  {formatStripDayLabel(dk)}
+                                </span>
+                                <span
+                                  className={`flex h-6 w-6 items-center justify-center rounded-full sm:h-7 sm:w-7 ${
+                                    isToday ? 'ring-2 ring-gray-900 ring-offset-1' : ''
+                                  }`}
+                                >
+                                  <span className={`${PREVIEW_DOT_SIZE} rounded-full ${dot} ${ring}`} />
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
                   ) : null}
-                </div>
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
 
-      <LocationBlockSheet
-        open={locationBlockOpen}
-        onClose={() => setLocationBlockOpen(false)}
-        onSuccess={(data) => {
-          setLocationBlockFlash(
-            `Entire location blocked for ${data?.targetCount || 0} properties.`
-          );
-          load();
-        }}
-      />
+        <LocationBlockSheet
+          open={locationBlockOpen}
+          onClose={() => setLocationBlockOpen(false)}
+          onSuccess={(data) => {
+            setLocationBlockFlash(`Entire location blocked for ${data?.targetCount || 0} properties.`);
+            load();
+          }}
+        />
+      </div>
     </div>
   );
 }
