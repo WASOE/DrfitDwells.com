@@ -20,10 +20,7 @@ const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const WEEKDAYS_SHORT = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
 const navBtnCls =
-  'inline-flex items-center justify-center gap-1 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 text-sm font-medium text-gray-800 hover:border-gray-400 transition-colors';
-
-const actionBtnCls =
-  'inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:border-gray-400 transition-colors';
+  'inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-800 shadow-sm hover:border-gray-400 transition-colors';
 
 const LOCATION_KEY_LABELS = {
   valley: 'The Valley',
@@ -262,18 +259,57 @@ export default function OpsCalendarMonth() {
 
   return (
     <div className="w-full max-w-lg mx-auto pb-24 md:pb-10 lg:max-w-none lg:mx-0 lg:pb-8 text-left">
-      <div className="flex flex-col gap-3 lg:max-w-7xl lg:mx-auto">
-        {/* Compact control area */}
-        <section className="order-1 rounded-xl border border-gray-200 bg-white px-3 py-2.5 shadow-sm">
-          <div className="flex items-center justify-between gap-2">
-            <Link
-              to="/ops/calendar"
-              className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-800 transition-colors"
-            >
-              <ChevronLeft className="h-3.5 w-3.5 shrink-0" />
-              All properties
-            </Link>
-            <div className="flex shrink-0 items-center gap-1.5">
+      <div className="space-y-4 lg:max-w-7xl lg:mx-auto">
+        <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm md:p-5">
+          <Link
+            to="/ops/calendar"
+            className="inline-flex items-center gap-1 text-sm font-medium text-gray-500 hover:text-gray-800 transition-colors"
+          >
+            <ChevronLeft className="h-4 w-4 shrink-0" />
+            All properties
+          </Link>
+
+          <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 flex-1">
+              <h1
+                className="text-2xl font-semibold text-gray-900"
+                style={{ fontFamily: 'Playfair Display, serif' }}
+                title={rangeTooltip}
+              >
+                {monthTitle}
+              </h1>
+              <p className="mt-1 text-base font-bold text-gray-900 leading-snug">{cabinLabel}</p>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <span
+                  className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${syncCls}`}
+                >
+                  Sync {sync}
+                </span>
+                <span className="rounded-md bg-gray-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+                  {OPS_CALENDAR_TZ}
+                </span>
+                {hardN > 0 ? (
+                  <span className="rounded-md bg-red-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-700">
+                    {hardN} conflict{hardN === 1 ? '' : 's'}
+                  </span>
+                ) : null}
+                {warnN > 0 ? (
+                  <span className="rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                    {warnN} warning{warnN === 1 ? '' : 's'}
+                  </span>
+                ) : null}
+              </div>
+              {priceHint?.nightPrice != null ? (
+                <p className="mt-2 text-sm text-gray-600">
+                  List night:{' '}
+                  <span className="font-semibold text-gray-900">
+                    {priceHint.nightPrice} {priceHint.currency?.toUpperCase()}
+                  </span>
+                </p>
+              ) : null}
+            </div>
+
+            <div className="flex shrink-0 items-center gap-2">
               <button type="button" onClick={goPrevMonth} className={navBtnCls} aria-label="Previous month">
                 <ChevronLeft className="h-4 w-4 text-gray-500" />
                 <span className="hidden sm:inline">Prev</span>
@@ -289,64 +325,38 @@ export default function OpsCalendarMonth() {
             </div>
           </div>
 
-          <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <h1 className="text-lg font-semibold text-gray-900 sm:text-xl" title={rangeTooltip}>
-              {monthTitle}
-            </h1>
-            <span className="min-w-0 truncate text-sm font-semibold text-gray-700">· {cabinLabel}</span>
-            {priceHint?.nightPrice != null ? (
-              <span className="text-xs text-gray-500">
-                · {priceHint.nightPrice} {priceHint.currency?.toUpperCase()}/night
-              </span>
-            ) : null}
-          </div>
-
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-            <span
-              className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${syncCls}`}
-            >
-              Sync {sync}
-            </span>
-            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
-              {OPS_CALENDAR_TZ}
-            </span>
-            {hardN > 0 ? (
-              <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-700">
-                {hardN} conflict{hardN === 1 ? '' : 's'}
-              </span>
-            ) : null}
-            {warnN > 0 ? (
-              <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
-                {warnN} warning{warnN === 1 ? '' : 's'}
-              </span>
-            ) : null}
-          </div>
-
           {error ? (
-            <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>
+            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>
           ) : null}
           {locationRemoveFlash ? (
-            <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+            <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
               {locationRemoveFlash}
             </div>
           ) : null}
           {actionError && !sheetKind ? (
-            <div className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{actionError}</div>
+            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{actionError}</div>
           ) : null}
-        </section>
 
-        {/* Actions + legend: top on desktop, below grid on mobile */}
-        <div className="order-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between lg:order-2">
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => openPanel('manual')} className={`${actionBtnCls} flex-1 sm:flex-none`}>
-              Add manual block
-            </button>
-            <button type="button" onClick={() => openPanel('maintenance')} className={`${actionBtnCls} flex-1 sm:flex-none`}>
-              Add maintenance
-            </button>
+          <div className="mt-4 flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => openPanel('manual')}
+                className="inline-flex w-full items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 shadow-sm hover:border-gray-400 sm:w-auto"
+              >
+                Add manual block
+              </button>
+              <button
+                type="button"
+                onClick={() => openPanel('maintenance')}
+                className="inline-flex w-full items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 shadow-sm hover:border-gray-400 sm:w-auto"
+              >
+                Add maintenance
+              </button>
+            </div>
+            <OpsCalendarLegend ariaLabel="Month calendar block legend" className="sm:justify-end" />
           </div>
-          <OpsCalendarLegend ariaLabel="Month calendar block legend" className="sm:justify-end" />
-        </div>
+        </section>
 
         <CalendarBottomSheet
           open={
@@ -494,8 +504,8 @@ export default function OpsCalendarMonth() {
           </div>
         </CalendarBottomSheet>
 
-        <div className="order-2 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm lg:order-3">
-          <div className="grid grid-cols-7 gap-px border-b border-gray-100 bg-white px-1 pt-2 pb-1.5">
+        <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+          <div className="grid grid-cols-7 gap-px border-b border-gray-100 bg-white px-1 pt-3 pb-2">
             {WEEKDAYS.map((d, i) => (
               <div key={d} className="text-center text-[10px] font-medium text-gray-400 sm:text-xs">
                 <span className="sm:hidden">{WEEKDAYS_SHORT[i]}</span>
@@ -516,12 +526,12 @@ export default function OpsCalendarMonth() {
                     return (
                       <div
                         key={cell.ymd}
-                        className={`flex min-h-[34px] items-start justify-center px-0.5 py-1 sm:min-h-[40px] ${
+                        className={`flex min-h-[48px] items-start justify-center px-0.5 py-1.5 sm:min-h-[56px] ${
                           !inMonth ? 'bg-gray-50/80' : 'bg-white'
                         }`}
                       >
                         <span
-                          className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold tabular-nums sm:h-8 sm:w-8 sm:text-sm ${
+                          className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold tabular-nums sm:h-9 sm:w-9 sm:text-sm ${
                             isToday
                               ? 'border-2 border-gray-900 text-gray-900'
                               : inMonth
