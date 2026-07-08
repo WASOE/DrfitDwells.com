@@ -191,78 +191,70 @@ export default function OpsCalendarIndex() {
 
   return (
     <div className="w-full max-w-lg mx-auto pb-24 md:pb-10 lg:max-w-none lg:mx-0 lg:pb-8">
-      <div className="space-y-4 lg:max-w-7xl lg:mx-auto">
-        <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm md:p-5 text-left">
-          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 md:gap-4">
-            <div className="min-w-0 flex-1">
-              <h1
-                className="text-2xl font-semibold text-gray-900"
-                style={{ fontFamily: 'Playfair Display, serif' }}
-              >
-                Calendar
-              </h1>
-              <p className="text-sm text-gray-600 mt-1 max-w-2xl">
-                Pick a property to open the month view. Preview shows the next {previewDays} nights ({timezone}).
-              </p>
-              {preview?.meta?.today ? (
-                <p className="text-xs text-gray-500 mt-2">
-                  Today: <span className="font-medium text-gray-700">{preview.meta.today}</span>
-                </p>
-              ) : null}
+      <div className="space-y-3 lg:max-w-7xl lg:mx-auto">
+        <section className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 shadow-sm text-left">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <h1 className="text-lg font-semibold text-gray-900 sm:text-xl">Calendar</h1>
+              <span className="text-xs text-gray-500">
+                Next {previewDays} nights · {timezone}
+                {preview?.meta?.today ? (
+                  <> · Today <span className="font-medium text-gray-700">{preview.meta.today}</span></>
+                ) : null}
+              </span>
             </div>
             <button
               type="button"
               onClick={() => setLocationBlockOpen(true)}
-              className="w-full md:w-auto shrink-0 inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-gray-800 border border-gray-300 rounded-lg bg-white shadow-sm hover:border-gray-400 hover:bg-gray-50 transition-colors"
+              className="shrink-0 inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:border-gray-400 hover:bg-gray-50 transition-colors"
             >
               Block location
             </button>
           </div>
 
-          <div className="mt-4 pt-4 border-t border-gray-100">
+          <div className="mt-2 border-t border-gray-100 pt-2">
             <OpsCalendarLegend />
           </div>
         </section>
 
         {locationBlockFlash ? (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
             {locationBlockFlash}
           </div>
         ) : null}
 
         {error ? (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>
+          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{error}</div>
         ) : null}
 
         {activeLocationBlockGroups.length > 0 ? (
-          <section className="space-y-3">
-            <h2 className="text-sm font-semibold text-gray-900">Active location blocks</h2>
-            <ul className="space-y-3">
+          <section className="space-y-2">
+            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Active location blocks</h2>
+            <ul className="space-y-2">
               {activeLocationBlockGroups.map((group) => {
                 const label = group.locationLabel || group.locationKey || 'Location';
                 const count = group.targetCount ?? 0;
                 return (
                   <li
                     key={group.locationBlockGroupId}
-                    className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm border-l-4 border-l-amber-500 md:p-5"
+                    className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 shadow-sm border-l-4 border-l-amber-500"
                   >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-base font-bold text-gray-900">{label}</h3>
-                          <span className="rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
-                            Location-wide block
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <h3 className="text-sm font-semibold text-gray-900">{label}</h3>
+                          <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                            Location-wide
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            {formatGroupDateRange(group.startDate, group.endDate)} · {count} propert{count === 1 ? 'y' : 'ies'}
                           </span>
                         </div>
-                        <p className="mt-1 text-sm text-gray-600">{formatGroupDateRange(group.startDate, group.endDate)}</p>
-                        <p className="mt-1 text-sm text-gray-500">
-                          {count} propert{count === 1 ? 'y' : 'ies'} blocked
-                        </p>
                       </div>
                       <button
                         type="button"
                         onClick={() => openRemoveGroup(group)}
-                        className="w-full shrink-0 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-red-700 shadow-sm hover:border-red-200 hover:bg-red-50 sm:w-auto"
+                        className="shrink-0 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:border-red-200 hover:bg-red-50"
                       >
                         Remove
                       </button>
@@ -274,7 +266,7 @@ export default function OpsCalendarIndex() {
           </section>
         ) : null}
 
-        <ul className="space-y-3">
+        <ul className="space-y-2">
           {mergedRows.length === 0 ? (
             <li className="rounded-xl border border-dashed border-gray-200 bg-white p-8 text-center text-sm text-gray-500">
               No properties found.
@@ -295,19 +287,19 @@ export default function OpsCalendarIndex() {
               <li key={rowKey}>
                 <Link
                   to={routeId ? `/ops/calendar/${routeId}` : '#'}
-                  className={`group block rounded-2xl border border-gray-200 bg-white p-4 shadow-sm border-l-4 min-w-0 text-left transition-all md:p-5 ${accentCls} ${
+                  className={`group block rounded-xl border border-gray-200 bg-white px-3 py-2.5 shadow-sm border-l-4 min-w-0 text-left transition-all ${accentCls} ${
                     routeId
                       ? 'hover:border-gray-300 hover:shadow-md'
                       : 'opacity-60 pointer-events-none'
                   }`}
                 >
-                  <div className="flex gap-4">
+                  <div className="flex items-center gap-3">
                     <div className="shrink-0">
-                      <div className="h-16 w-16 sm:h-20 sm:w-20 overflow-hidden rounded-xl border border-gray-100 bg-gray-100">
+                      <div className="h-11 w-11 overflow-hidden rounded-lg border border-gray-100 bg-gray-100 sm:h-12 sm:w-12">
                         {img ? (
                           <img src={img} alt="" className="h-full w-full object-cover" loading="lazy" />
                         ) : (
-                          <div className="flex h-full w-full items-center justify-center bg-gray-50 text-sm font-semibold text-gray-700">
+                          <div className="flex h-full w-full items-center justify-center bg-gray-50 text-xs font-semibold text-gray-700">
                             {initialsFromName(cabin.name)}
                           </div>
                         )}
@@ -315,26 +307,26 @@ export default function OpsCalendarIndex() {
                     </div>
 
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <h2 className="text-base font-bold leading-snug text-gray-900 group-hover:text-gray-950">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                          <h2 className="truncate text-sm font-semibold leading-snug text-gray-900 group-hover:text-gray-950">
                             {cabin.name}
                           </h2>
-                          <p className="mt-0.5 text-sm text-gray-600 truncate">{cabin.location || '—'}</p>
+                          <span className="truncate text-xs text-gray-500">{cabin.location || '—'}</span>
                         </div>
                         {routeId ? (
-                          <ChevronRight className="h-5 w-5 shrink-0 text-gray-300 group-hover:text-gray-500 mt-0.5" />
+                          <ChevronRight className="h-4 w-4 shrink-0 text-gray-300 group-hover:text-gray-500" />
                         ) : null}
                       </div>
 
-                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <div className="mt-1 flex flex-wrap items-center gap-1">
                         {cabin.kind === 'multi_unit_type' ? (
-                          <span className="rounded-md bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-800">
+                          <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-800">
                             Multi-unit
                           </span>
                         ) : null}
                         <span
-                          className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
                             cabin.isActive !== false
                               ? 'bg-emerald-50 text-emerald-700'
                               : 'bg-gray-100 text-gray-600'
@@ -343,45 +335,56 @@ export default function OpsCalendarIndex() {
                           {cabin.isActive !== false ? 'Active' : 'Inactive'}
                         </span>
                         <span
-                          className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide border ${syncCls}`}
+                          className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide border ${syncCls}`}
                         >
                           Sync {sync}
                         </span>
                         {hardN > 0 ? (
-                          <span className="rounded-md bg-red-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-700">
+                          <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-700">
                             {hardN} conflict{hardN === 1 ? '' : 's'}
                           </span>
                         ) : null}
                         {warnN > 0 ? (
-                          <span className="rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                          <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
                             {warnN} warning{warnN === 1 ? '' : 's'}
                           </span>
                         ) : null}
                       </div>
                     </div>
+
+                    {stripKeys.length > 0 ? (
+                      <div className="hidden shrink-0 items-center gap-1 border-l border-gray-100 pl-3 lg:flex" title={`Next ${previewDays} nights`}>
+                        {stripKeys.map((dk) => {
+                          const { dot, ring } = cellToneForDay(dk, blocks);
+                          const isToday = dk === preview?.meta?.today;
+                          return (
+                            <span
+                              key={dk}
+                              title={dk}
+                              className={`flex h-4 w-4 items-center justify-center rounded-full ${
+                                isToday ? 'ring-2 ring-gray-900 ring-offset-1' : ''
+                              }`}
+                            >
+                              <span className={`${PREVIEW_DOT_SIZE} rounded-full ${dot} ${ring}`} />
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ) : null}
                   </div>
 
                   {stripKeys.length > 0 ? (
-                    <div className="mt-4 pt-3 border-t border-gray-100">
-                      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-                        Next {previewDays} nights
-                      </p>
+                    <div className="mt-2 border-t border-gray-100 pt-2 lg:hidden">
                       <div className="overflow-x-auto -mx-1 px-1">
-                        <div className="flex min-w-max gap-1.5 py-0.5">
+                        <div className="flex min-w-max gap-1">
                           {stripKeys.map((dk) => {
                             const { dot, ring } = cellToneForDay(dk, blocks);
                             const isToday = dk === preview?.meta?.today;
                             return (
-                              <div
-                                key={dk}
-                                title={dk}
-                                className="flex w-7 shrink-0 flex-col items-center gap-1 sm:w-8"
-                              >
-                                <span className="hidden text-[10px] font-medium text-gray-400 sm:block">
-                                  {formatStripDayLabel(dk)}
-                                </span>
+                              <div key={dk} title={dk} className="flex w-5 shrink-0 flex-col items-center gap-0.5">
+                                <span className="text-[9px] font-medium text-gray-400">{formatStripDayLabel(dk)}</span>
                                 <span
-                                  className={`flex h-6 w-6 items-center justify-center rounded-full sm:h-7 sm:w-7 ${
+                                  className={`flex h-4 w-4 items-center justify-center rounded-full ${
                                     isToday ? 'ring-2 ring-gray-900 ring-offset-1' : ''
                                   }`}
                                 >
