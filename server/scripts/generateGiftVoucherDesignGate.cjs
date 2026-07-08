@@ -134,7 +134,7 @@ ${html}
 
 const readme = `# Gift voucher design gate — Batch 9 release
 
-Frozen at commit: \`${GATE_COMMIT}\`
+Frozen at commit: \`${GATE_COMMIT}\` (card design frozen at \`${CARD_DESIGN_FREEZE_COMMIT}\`)
 
 Card design is frozen (logo top-right, textures, no stamp/flower/mountain). Forest-as-texture deviation from original spec is **accepted**; this gate judges the frozen design.
 
