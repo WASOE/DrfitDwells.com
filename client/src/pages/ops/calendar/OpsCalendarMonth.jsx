@@ -115,6 +115,7 @@ export default function OpsCalendarMonth() {
   }, [load]);
 
   const blocks = data?.blocks || [];
+  const renderCabinId = data?.calendarScope?.renderCabinId ?? cabinId;
   const todayYmd = data?.meta?.today;
   const sync = data?.syncIndicators?.syncStatus || 'stale';
   const syncCls = SYNC_BADGE[sync] || SYNC_BADGE.stale;
@@ -515,7 +516,7 @@ export default function OpsCalendarMonth() {
           </div>
 
           {weeks.map((weekCells, wi) => {
-            const { segs, laneCount } = computeWeekBarSegments(weekCells, blocks, cabinId);
+            const { segs, laneCount } = computeWeekBarSegments(weekCells, blocks, renderCabinId);
             const barAreaH = Math.min(12, laneCount) * 28 + 10;
             return (
               <div key={wi} className="border-b border-gray-100 last:border-b-0">

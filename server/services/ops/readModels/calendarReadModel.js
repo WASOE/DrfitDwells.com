@@ -5,6 +5,7 @@ const ChannelSyncEvent = require('../../../models/ChannelSyncEvent');
 const CabinChannelSyncState = require('../../../models/CabinChannelSyncState'); // default export model
 const Cabin = require('../../../models/Cabin');
 const CabinType = require('../../../models/CabinType');
+const Unit = require('../../../models/Unit');
 const {
   PROPERTY_TIMEZONE,
   normalizeExclusiveDateRange,
@@ -230,6 +231,44 @@ async function resolveCalendarPropertyScope(propertyId) {
   };
 }
 
+/**
+ * Explicit calendar render/filter identity for OPS UI (month grid bar matching).
+ * For cabin_type scope, renderCabinId is the parent multi Cabin id stamped on block.cabinId.
+ */
+function buildCalendarScope(requestedId, scope) {
+  const requested = requestedId ? String(requestedId) : null;
+  if (!requested || scope.scope === 'all') {
+    return {
+      requestedId: requested,
+      scope: scope.scope || 'all',
+      renderCabinId: scope.calendarCabinId || null,
+      cabinTypeId: null
+    };
+  }
+  if (scope.scope === 'cabin_type') {
+    return {
+      requestedId: requested,
+      scope: 'cabin_type',
+      renderCabinId: scope.calendarCabinId || null,
+      cabinTypeId: requested
+    };
+  }
+  return {
+    requestedId: requested,
+    scope: scope.scope === 'cabin' ? 'cabin' : 'unknown',
+    renderCabinId: scope.calendarCabinId || requested,
+    cabinTypeId: null
+  };
+}
+
+function isMultiInventoryParentCabin(cabin, multiTypeIds) {
+  const typeRef = cabin.cabinTypeId || cabin.cabinTypeRef;
+  if (!typeRef) return false;
+  const typeKey = String(typeRef);
+  if (!multiTypeIds.has(typeKey)) return false;
+  return cabin.inventoryType === 'multi' || Boolean(cabin.cabinTypeId || cabin.cabinTypeRef);
+}
+
 async function buildBlocksForRange(normalized, propertyId) {
   const scope = await resolveCalendarPropertyScope(propertyId);
 
@@ -436,18 +475,35 @@ async function getCalendarReadModel({ from, to, cabinId = null, indexPreview = f
 
     const activeLocationBlockGroupsPromise = listActiveLocationBlockGroups();
 
-    const cabins = await Cabin.find(guestFacingCabinMatch())
-      .sort({ name: 1 })
-      .select('_id name isActive imageUrl')
-      .lean();
+    const [cabins, distinctTypeIds] = await Promise.all([
+      Cabin.find(guestFacingCabinMatch())
+        .sort({ name: 1 })
+        .select('_id name isActive imageUrl inventoryType cabinTypeId cabinTypeRef')
+        .lean(),
+      Unit.distinct('cabinTypeId')
+    ]);
+
+    const multiTypeIds = new Set(distinctTypeIds.map((id) => String(id)));
+    const cabinTypes =
+      multiTypeIds.size > 0
+        ? await CabinType.find({ _id: { $in: [...multiTypeIds] } })
+            .sort({ name: 1 })
+            .select('_id name isActive imageUrl')
+            .lean()
+        : [];
 
     const previewByCabin = [];
+
     for (const c of cabins) {
+      if (isMultiInventoryParentCabin(c, multiTypeIds)) continue;
+
       const cid = String(c._id);
+      const scope = await resolveCalendarPropertyScope(cid);
       const { blocks, conflictMarkers } = await buildBlocksForRange(normalized, cid);
       const syncIndicators = await syncIndicatorsForCabin(cid);
       previewByCabin.push({
         cabinId: cid,
+        calendarScope: buildCalendarScope(cid, scope),
         listing: {
           name: c.name || null,
           isActive: c.isActive !== false,
@@ -459,6 +515,33 @@ async function getCalendarReadModel({ from, to, cabinId = null, indexPreview = f
         summary: summarizePreview(blocks, conflictMarkers.hard, conflictMarkers.warnings)
       });
     }
+
+    for (const ct of cabinTypes) {
+      const typeId = String(ct._id);
+      const scope = await resolveCalendarPropertyScope(typeId);
+      const { blocks, conflictMarkers } = await buildBlocksForRange(normalized, typeId);
+      const syncParentId = scope.calendarCabinId || typeId;
+      const syncIndicators = await syncIndicatorsForCabin(syncParentId);
+      previewByCabin.push({
+        cabinId: typeId,
+        calendarScope: buildCalendarScope(typeId, scope),
+        listing: {
+          name: ct.name || null,
+          isActive: ct.isActive !== false,
+          imageUrl: ct.imageUrl || null
+        },
+        blocks,
+        conflictMarkers,
+        syncIndicators,
+        summary: summarizePreview(blocks, conflictMarkers.hard, conflictMarkers.warnings)
+      });
+    }
+
+    previewByCabin.sort((a, b) =>
+      String(a.listing?.name || '').localeCompare(String(b.listing?.name || ''), undefined, {
+        sensitivity: 'base'
+      })
+    );
 
     const activeLocationBlockGroups = await activeLocationBlockGroupsPromise;
 
@@ -487,6 +570,8 @@ async function getCalendarReadModel({ from, to, cabinId = null, indexPreview = f
 
   const normalized = normalizeExclusiveDateRange(from, to);
   assertExclusiveCalendarRangeWithinMax(normalized.startDate, normalized.endDate);
+  const scope = await resolveCalendarPropertyScope(cabinId || null);
+  const calendarScope = buildCalendarScope(cabinId || null, scope);
   const { blocks, conflictMarkers } = await buildBlocksForRange(normalized, cabinId || null);
   const latestScoped = await ChannelSyncEvent.findOne(cabinId ? { cabinId } : {}).sort({ runAt: -1 }).lean();
   const mergedSync = cabinId
@@ -515,6 +600,7 @@ async function getCalendarReadModel({ from, to, cabinId = null, indexPreview = f
       cabinId: cabinId || null,
       indexPreview: false
     },
+    calendarScope,
     blocks,
     conflictMarkers,
     syncIndicators: mergedSync,
@@ -533,5 +619,7 @@ async function getCalendarReadModel({ from, to, cabinId = null, indexPreview = f
 module.exports = {
   getCalendarReadModel,
   syncIndicatorsForCabin,
-  listActiveLocationBlockGroups
+  listActiveLocationBlockGroups,
+  buildCalendarScope,
+  resolveCalendarPropertyScope
 };

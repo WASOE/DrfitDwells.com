@@ -123,13 +123,14 @@ export function addOneMonth(year, monthIndex, delta) {
 
 /**
  * Bar segments for one week row; placement uses Sofia YMD keys (API occupiedDayKeys or local fallback).
+ * @param {string} renderCabinId - canonical block.cabinId from API calendarScope.renderCabinId
  */
-export function computeWeekBarSegments(weekCells, blocks, cabinId) {
+export function computeWeekBarSegments(weekCells, blocks, renderCabinId) {
   const weekYmcs = weekCells.map((c) => c.ymd);
   const segs = [];
 
   for (const b of blocks) {
-    if (String(b.cabinId) !== String(cabinId)) continue;
+    if (String(b.cabinId) !== String(renderCabinId)) continue;
     if (b.status === 'tombstoned') continue;
     const keys = new Set(resolveOccupiedKeys(b));
 
