@@ -4,6 +4,7 @@ const AvailabilityBlock = require('../../../models/AvailabilityBlock');
 const ChannelSyncEvent = require('../../../models/ChannelSyncEvent');
 const CabinChannelSyncState = require('../../../models/CabinChannelSyncState'); // default export model
 const Cabin = require('../../../models/Cabin');
+const CabinType = require('../../../models/CabinType');
 const {
   PROPERTY_TIMEZONE,
   normalizeExclusiveDateRange,
@@ -12,6 +13,7 @@ const {
 const { assertExclusiveCalendarRangeWithinMax } = require('../../../utils/calendarExclusiveRangeGuard');
 const { BLOCKING_BOOKING_STATUSES } = require('../../calendar/blockingStatusConstants');
 const { guestFacingCabinMatch } = require('../../../utils/fixtureExclusion');
+const { findParentCabinForCabinType } = require('../../publicAvailabilityService');
 
 function overlaps(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && aEnd > bStart;
@@ -191,19 +193,57 @@ async function pricingHintForCabin(cabinId) {
   };
 }
 
-async function buildBlocksForRange(normalized, cabinId) {
+async function resolveCalendarPropertyScope(propertyId) {
+  if (!propertyId) {
+    return { scope: 'all', blockCabinId: null, bookingFilter: {}, calendarCabinId: null };
+  }
+
+  const cabin = await Cabin.findById(propertyId).select('_id').lean();
+  if (cabin) {
+    const cid = String(cabin._id);
+    return {
+      scope: 'cabin',
+      blockCabinId: cabin._id,
+      bookingFilter: { cabinId: cabin._id },
+      calendarCabinId: cid
+    };
+  }
+
+  const cabinType = await CabinType.findById(propertyId).select('_id').lean();
+  if (cabinType) {
+    const parentCabin = await findParentCabinForCabinType(cabinType._id);
+    const calendarCabinId = parentCabin ? String(parentCabin._id) : String(cabinType._id);
+    return {
+      scope: 'cabin_type',
+      blockCabinId: parentCabin?._id || null,
+      bookingFilter: { cabinTypeId: cabinType._id },
+      calendarCabinId
+    };
+  }
+
+  return {
+    scope: 'unknown',
+    blockCabinId: propertyId,
+    bookingFilter: { cabinId: propertyId },
+    calendarCabinId: String(propertyId)
+  };
+}
+
+async function buildBlocksForRange(normalized, propertyId) {
+  const scope = await resolveCalendarPropertyScope(propertyId);
+
   const filters = {
     startDate: { $lt: normalized.endDate },
     endDate: { $gt: normalized.startDate },
     status: 'active'
   };
-  if (cabinId) filters.cabinId = cabinId;
+  if (scope.blockCabinId) filters.cabinId = scope.blockCabinId;
 
   const bookingFilters = {
     checkIn: { $lt: normalized.endDate },
-    checkOut: { $gt: normalized.startDate }
+    checkOut: { $gt: normalized.startDate },
+    ...scope.bookingFilter
   };
-  if (cabinId) bookingFilters.cabinId = cabinId;
 
   const [availabilityBlocks, bookings] = await Promise.all([
     AvailabilityBlock.find(filters).lean(),
@@ -219,7 +259,7 @@ async function buildBlocksForRange(normalized, cabinId) {
   );
 
   const reservationBacked = bookings
-    .filter((b) => b.cabinId && BLOCKING_BOOKING_STATUSES.includes(b.status))
+    .filter((b) => BLOCKING_BOOKING_STATUSES.includes(b.status))
     .filter((b) => !reservationBlockBookingIds.has(String(b._id)))
     .map((b) => {
       const range = normalizeExclusiveDateRange(b.checkIn, b.checkOut);
@@ -228,7 +268,7 @@ async function buildBlocksForRange(normalized, cabinId) {
         blockType: 'reservation',
         sourceType: 'reservation',
         sourceReference: String(b._id),
-        cabinId: String(b.cabinId),
+        cabinId: scope.calendarCabinId || (b.cabinId ? String(b.cabinId) : null),
         unitId: b.unitId ? String(b.unitId) : null,
         startDate: range.startDate.toISOString(),
         endDate: range.endDate.toISOString(),

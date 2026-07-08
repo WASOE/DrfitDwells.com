@@ -1,5 +1,10 @@
 const express = require('express');
 const { createBlock, editBlock, tombstoneBlock } = require('../../../services/ops/domain/availabilityWriteService');
+const {
+  previewLocationBlock,
+  createLocationBlock,
+  removeLocationBlockGroup
+} = require('../../../services/ops/domain/locationBlockService');
 
 const router = express.Router();
 
@@ -104,6 +109,48 @@ router.post('/maintenance-blocks/:id/remove', async (req, res) => {
       blockId: req.params.id,
       reason: req.body?.reason || 'maintenance_block_remove',
       ctx: { req, user: req.user, route: 'POST /api/ops/availability/maintenance-blocks/:id/remove' }
+    });
+    return res.json({ success: true, data });
+  } catch (error) {
+    return handleDomainError(res, error);
+  }
+});
+
+router.post('/location-blocks/preview', async (req, res) => {
+  try {
+    const data = await previewLocationBlock({
+      locationKey: req.body?.locationKey,
+      startDate: req.body?.startDate,
+      endDate: req.body?.endDate
+    });
+    return res.json({ success: true, data });
+  } catch (error) {
+    return handleDomainError(res, error);
+  }
+});
+
+router.post('/location-blocks', async (req, res) => {
+  try {
+    const data = await createLocationBlock({
+      locationKey: req.body?.locationKey,
+      startDate: req.body?.startDate,
+      endDate: req.body?.endDate,
+      blockType: req.body?.blockType || 'manual_block',
+      reason: req.body?.reason || null,
+      ctx: { req, user: req.user, route: 'POST /api/ops/availability/location-blocks' }
+    });
+    return res.status(201).json({ success: true, data });
+  } catch (error) {
+    return handleDomainError(res, error);
+  }
+});
+
+router.post('/location-blocks/:groupId/remove', async (req, res) => {
+  try {
+    const data = await removeLocationBlockGroup({
+      locationBlockGroupId: req.params.groupId,
+      reason: req.body?.reason || 'location_block_group_remove',
+      ctx: { req, user: req.user, route: 'POST /api/ops/availability/location-blocks/:groupId/remove' }
     });
     return res.json({ success: true, data });
   } catch (error) {

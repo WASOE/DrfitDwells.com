@@ -184,6 +184,12 @@ const opsWriteAPI = {
     api.post(`/ops/availability/maintenance-blocks/${blockId}/edit`, payload, { headers: authHeaders() }),
   removeMaintenanceBlock: (blockId, reason) =>
     api.post(`/ops/availability/maintenance-blocks/${blockId}/remove`, { reason }, { headers: authHeaders() }),
+  previewLocationBlock: (payload) =>
+    api.post('/ops/availability/location-blocks/preview', payload, { headers: authHeaders() }),
+  createLocationBlock: (payload) =>
+    api.post('/ops/availability/location-blocks', payload, { headers: authHeaders() }),
+  removeLocationBlockGroup: (groupId, reason) =>
+    api.post(`/ops/availability/location-blocks/${groupId}/remove`, { reason }, { headers: authHeaders() }),
   createManualReservation: (payload) =>
     api.post('/ops/reservations/manual', payload, { headers: authHeaders() }),
   createCabin: (payload) => api.post('/ops/cabins', payload, { headers: authHeaders() }),

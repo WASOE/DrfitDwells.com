@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { opsReadAPI } from '../../../services/opsApi';
 import { BLOCK_DOT, CONFLICT_RING, SYNC_BADGE } from './calendarVisualTokens';
 import { eachDayKeyInRange, parseIsoDay } from './opsCalendarDateUtils';
+import LocationBlockSheet from './LocationBlockSheet';
 
 function dayStripCells(fromIso, toIso) {
   const a = parseIsoDay(fromIso);
@@ -51,6 +52,8 @@ export default function OpsCalendarIndex() {
   const [cabinsExtra, setCabinsExtra] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [locationBlockOpen, setLocationBlockOpen] = useState(false);
+  const [locationBlockFlash, setLocationBlockFlash] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -144,7 +147,26 @@ export default function OpsCalendarIndex() {
             <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" /> Conflict
           </span>
         </div>
+
+        <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-3 max-w-2xl">
+          <button
+            type="button"
+            onClick={() => setLocationBlockOpen(true)}
+            className="inline-flex items-center justify-center px-4 py-2.5 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors"
+          >
+            Location-wide block
+          </button>
+          <p className="text-xs text-gray-500">
+            Block every active property in a location (e.g. full buyout). Checks all cabins and units first.
+          </p>
+        </div>
       </section>
+
+      {locationBlockFlash ? (
+        <div className="text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 max-w-3xl">
+          {locationBlockFlash}
+        </div>
+      ) : null}
 
       {error ? (
         <div className="text-sm text-red-600 rounded-xl border border-red-200 bg-red-50 px-4 py-3">{error}</div>
@@ -249,6 +271,17 @@ export default function OpsCalendarIndex() {
           );
         })}
       </ul>
+
+      <LocationBlockSheet
+        open={locationBlockOpen}
+        onClose={() => setLocationBlockOpen(false)}
+        onSuccess={(data) => {
+          setLocationBlockFlash(
+            `Location-wide block created for ${data?.targetCount || 0} properties (group ${data?.locationBlockGroupId || ''}).`
+          );
+          load();
+        }}
+      />
     </div>
   );
 }
