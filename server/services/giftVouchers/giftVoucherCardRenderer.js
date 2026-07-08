@@ -119,49 +119,57 @@ function buildMessageHtml(message, locale, mode, { color, lineHeight = 1.45 } = 
 /** Signature line under the message, handwritten voice. */
 function buildSignatureHtml(buyerName, mode, { color } = {}) {
   if (!buyerName) return '';
-  return `<p data-gv-card-signature="1" style="margin:0 0 16px;${fontCss('message', mode)}font-size:${CARD_LAYOUT.namesPx}px;line-height:1.4;color:${color};">— ${userHtml(buyerName)}</p>`;
+  return `<p data-gv-card-signature="1" style="margin:0 0 ${CARD_LAYOUT.signatureGapPx}px;${fontCss('message', mode)}font-size:${CARD_LAYOUT.namesPx}px;line-height:1.4;color:${color};">— ${userHtml(buyerName)}</p>`;
+}
+
+/**
+ * Letter-only pressed-flower accent between signature and form block.
+ * Skipped in email mode (decorative image; email stays images-blocked-legible)
+ * and when the Canva export has not landed.
+ */
+function buildLetterFlowerHtml(mode, siteOrigin) {
+  if (mode === 'email' || !isCardAssetAvailable('pressedFlower')) return '';
+  const url = cardAssetUrl('pressedFlower', { mode, siteOrigin });
+  return `<img data-gv-card-flower="1" src="${url}" alt="" aria-hidden="true" style="display:block;margin:0 0 ${CARD_LAYOUT.signatureGapPx}px auto;width:${CARD_LAYOUT.letterFlowerWidthPx}px;height:auto;" />`;
 }
 
 /**
  * The voucher form block: TO / VALID UNTIL / CODE / VALUE. Oswald caps labels
  * left, handwritten values on dotted underlines. One function, all templates,
- * all modes — this block is the voucher identity.
+ * all modes — this block is the voucher identity. No outer frame: the dotted
+ * underlines are the hand-drawn treatment (a solid rounded frame read like a
+ * web form group, and SVG frames do not survive email clients). TO + VALUE
+ * are emphasized — the two things a recipient looks for.
  */
-function buildFormBlockHtml(fields, locale, mode, { color, mutedColor, framed = false } = {}) {
+function buildFormBlockHtml(fields, locale, mode, { color, mutedColor } = {}) {
   const labels = getFormLabels(locale);
   const rows = [
-    { label: labels.to, value: fields.recipientName || '', attr: '' },
+    { label: labels.to, value: fields.recipientName || '', attr: '', emphasized: true },
     { label: labels.validUntil, value: formatExpiryDate(fields.expiresAt, locale), attr: '' },
     { label: labels.code, value: fields.code, attr: ' data-gv-card-code="1"' },
     {
       label: labels.value,
       value: formatCurrency(fields.amountOriginalCents, fields.currency, locale),
-      attr: ` data-gv-card-amount="1" data-gv-font-size="${CARD_LAYOUT.formValuePx}"`
+      attr: ` data-gv-card-amount="1" data-gv-font-size="${CARD_LAYOUT.formValueEmphasisPx}"`,
+      emphasized: true
     }
   ];
 
   const labelCss = `${fontCss('utilityCaps', mode)}font-size:${CARD_LAYOUT.formLabelPx}px;letter-spacing:0.18em;text-transform:uppercase;font-weight:500;color:${mutedColor};`;
-  const valueCss = `${fontCss('message', mode)}font-size:${CARD_LAYOUT.formValuePx}px;line-height:1.3;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:${color};border-bottom:2px dotted ${mutedColor};`;
+  const valueCss = (emphasized) =>
+    `${fontCss('message', mode)}font-size:${emphasized ? CARD_LAYOUT.formValueEmphasisPx : CARD_LAYOUT.formValuePx}px;line-height:1.3;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:${color};border-bottom:2px dotted ${mutedColor};`;
 
   const rowsHtml = rows
     .map(
       (row) => `
     <tr>
       <td style="padding:7px 14px 7px 0;vertical-align:bottom;white-space:nowrap;${labelCss}">${userHtml(row.label)}</td>
-      <td${row.attr} style="padding:7px 0;vertical-align:bottom;width:100%;${valueCss}">${userHtml(row.value)}</td>
+      <td${row.attr} style="padding:7px 0;vertical-align:bottom;width:100%;${valueCss(row.emphasized)}">${userHtml(row.value)}</td>
     </tr>`
     )
     .join('');
 
-  const table = `<table ${FORM_BLOCK_ATTR}="1" role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;">${rowsHtml}</table>`;
-
-  if (framed && mode !== 'email') {
-    return `<div data-gv-card-form-frame="1" style="border:2px solid ${color};border-radius:14px 18px 14px 16px;padding:14px 18px;transform:rotate(-0.4deg);">${table}</div>`;
-  }
-  if (framed) {
-    return `<div data-gv-card-form-frame="1" style="border:2px solid ${color};border-radius:14px;padding:14px 18px;">${table}</div>`;
-  }
-  return table;
+  return `<table ${FORM_BLOCK_ATTR}="1" role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:collapse;">${rowsHtml}</table>`;
 }
 
 /** Small utility footer: redeem instruction (Inter). */
@@ -230,8 +238,8 @@ function renderPostcard(fields, locale, mode, siteOrigin) {
 
 /**
  * Letter (stored: romantic). Crumpled paper, script brand line with circled
- * word, message set as a letter with generous spacing, stamp top right,
- * form block bottom inside a hand-drawn frame stroke.
+ * word, message set as a letter with generous spacing, pressed-flower accent
+ * above the frameless form block (dotted underlines only).
  */
 function renderLetter(fields, locale, mode, siteOrigin) {
   const t = CARD_TOKENS.romantic;
@@ -245,10 +253,10 @@ function renderLetter(fields, locale, mode, siteOrigin) {
     lineHeight: CARD_LAYOUT.letterLineHeight
   });
   const signature = buildSignatureHtml(fields.buyerName, mode, { color: t.ink });
+  const flower = buildLetterFlowerHtml(mode, siteOrigin);
   const formBlock = buildFormBlockHtml(fields, locale, mode, {
     color: t.ink,
-    mutedColor: t.muted,
-    framed: true
+    mutedColor: t.muted
   });
   const redeem = buildRedeemHtml(locale, mode, { color: t.muted });
 
@@ -262,6 +270,7 @@ function renderLetter(fields, locale, mode, siteOrigin) {
   ${occasion}
   ${message}
   ${signature}
+  ${flower}
   ${formBlock}
   ${redeem}
 </div>`;

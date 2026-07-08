@@ -47,9 +47,25 @@ export const CARD_LOGO = Object.freeze({
   dark: '/media/branding/logo-header-dark.png',
   white: '/media/branding/logo-header-white.png',
   widthPx: 160,
+  /** Narrow-card (<500px card width) logo size; brand line drops below it. */
+  narrowWidthPx: 100,
   /** Right inset on brand line so script/statement text clears the logo. */
   brandLineClearancePx: 188,
   alt: 'Drift & Dwells'
+});
+
+/**
+ * Card-as-object treatment — client preview only. The card reads as paper
+ * lying on the page: soft shadow + a fixed slight rotation per template.
+ * Print renders flat/straight; email clients handle shadows poorly.
+ */
+export const CARD_OBJECT = Object.freeze({
+  shadow: '0 8px 24px rgba(0,0,0,0.12)',
+  rotationDeg: Object.freeze({
+    forest: -0.5,
+    romantic: 0.75,
+    minimal: 0
+  })
 });
 
 /**
@@ -166,7 +182,13 @@ export const CARD_LAYOUT = Object.freeze({
   namesPx: 20,
   formLabelPx: 11,
   formValuePx: 20,
+  /** TO + VALUE rows — the two things a recipient looks for. Still < messagePx. */
+  formValueEmphasisPx: 24,
   footerPx: 11,
+  /** Gap between the signature line and the form block (was 16). */
+  signatureGapPx: 8,
+  /** Letter-only pressed-flower accent between signature and form block. */
+  letterFlowerWidthPx: 64,
   print: {
     width: '210mm',
     height: '148mm',

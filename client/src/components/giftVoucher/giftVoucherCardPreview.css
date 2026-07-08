@@ -1,0 +1,29 @@
+/*
+ * Live-preview layout rules driven by the card's own width (container query),
+ * not the viewport — the preview column can be narrow on desktop too.
+ */
+.gv-card-object {
+  container-type: inline-size;
+}
+
+[data-gv-card-brand-line='1'] {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  /* Breathing room so the circled-word stroke never clips against the clamp. */
+  padding-top: 8px;
+  padding-bottom: 10px;
+}
+
+@container (max-width: 500px) {
+  [data-gv-card-logo='1'] {
+    width: 100px !important;
+  }
+
+  /* Brand line moves below the logo: full card width, max two lines. */
+  [data-gv-card-brand-line='1'] {
+    padding-right: 0 !important;
+    margin-top: 36px;
+  }
+}

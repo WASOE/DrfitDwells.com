@@ -80,13 +80,46 @@ test.describe('public site', () => {
 
     expect(logoBox.width).toBeGreaterThanOrEqual(92);
     expect(logoBox.width).toBeLessThanOrEqual(108);
+    // Narrow card: brand line sits below the logo at full card width.
+    expect(brandBox.y).toBeGreaterThanOrEqual(logoBox.y + logoBox.height - 2);
     expect(brandBox.width).toBeGreaterThanOrEqual(cardBox.width * 0.6);
 
     const lineCount = await brandLine.evaluate((el) => {
       const style = window.getComputedStyle(el);
       const lineHeight = parseFloat(style.lineHeight || '0') || 1;
-      return el.clientHeight / lineHeight;
+      const padding =
+        (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+      return (el.clientHeight - padding) / lineHeight;
     });
     expect(lineCount).toBeLessThanOrEqual(2.1);
+  });
+
+  test('gift voucher Letter circled word renders fully inside the card at 390px', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/bg/gift-vouchers');
+
+    // Select the Letter template (stored id: romantic).
+    await page.getByRole('button', { name: 'Писмо' }).click();
+    const card = page.locator('[data-gv-card-template="romantic"]').first();
+    await expect(card).toBeVisible();
+
+    const circle = card.locator('[data-gv-card-brand-line="1"] svg').first();
+    await expect(circle).toBeVisible();
+
+    const [cardBox, circleBox] = await Promise.all([card.boundingBox(), circle.boundingBox()]);
+    expect(cardBox).not.toBeNull();
+    expect(circleBox).not.toBeNull();
+
+    // Stroke must sit fully inside the card bounds (never clipped at the edge).
+    expect(circleBox.x).toBeGreaterThanOrEqual(cardBox.x);
+    expect(circleBox.y).toBeGreaterThanOrEqual(cardBox.y);
+    expect(circleBox.x + circleBox.width).toBeLessThanOrEqual(cardBox.x + cardBox.width + 0.5);
+    expect(circleBox.y + circleBox.height).toBeLessThanOrEqual(cardBox.y + cardBox.height + 0.5);
+
+    // And must not be cut by the brand line's own clamp box.
+    const brandLine = card.locator('[data-gv-card-brand-line="1"]').first();
+    const brandBox = await brandLine.boundingBox();
+    expect(circleBox.y).toBeGreaterThanOrEqual(brandBox.y - 0.5);
+    expect(circleBox.y + circleBox.height).toBeLessThanOrEqual(brandBox.y + brandBox.height + 0.5);
   });
 });

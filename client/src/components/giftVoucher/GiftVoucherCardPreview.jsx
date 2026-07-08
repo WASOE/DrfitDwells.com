@@ -2,6 +2,7 @@ import {
   CARD_ASSETS,
   CARD_LAYOUT,
   CARD_LOGO,
+  CARD_OBJECT,
   CARD_TOKENS,
   cardFontFamily,
   PLACEHOLDER_VOUCHER_CODE
@@ -15,6 +16,16 @@ import {
   INK_FOOTER
 } from '@shared/giftVoucher/cardCopy';
 import './giftVoucherCardFonts.css';
+import './giftVoucherCardPreview.css';
+
+/** Preview-only: soft shadow + fixed slight rotation so the card reads as paper. */
+function cardObjectStyle(templateId) {
+  const deg = CARD_OBJECT.rotationDeg[templateId] || 0;
+  return {
+    boxShadow: CARD_OBJECT.shadow,
+    transform: deg ? `rotate(${deg}deg)` : undefined
+  };
+}
 
 function formatCurrency(cents, currency = 'EUR', locale = 'en') {
   const amount = Number(cents || 0) / 100;
@@ -46,7 +57,7 @@ function CardLogo({ variant = 'dark' }) {
       src={src}
       alt={CARD_LOGO.alt}
       width={CARD_LOGO.widthPx}
-      className="absolute right-4 top-4 h-auto w-40 max-[500px]:w-[100px]"
+      className="absolute right-4 top-4 h-auto w-40"
       data-gv-card-logo="1"
       loading="lazy"
     />
@@ -71,14 +82,7 @@ function BrandLine({ locale, voice = 'script', color, circled = false }) {
       return (
         <p
           className="mb-3"
-          style={{
-            ...style,
-            paddingRight: `min(40%, ${CARD_LOGO.brandLineClearancePx}px)`,
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden'
-          }}
+          style={{ ...style, paddingRight: `min(40%, ${CARD_LOGO.brandLineClearancePx}px)` }}
           data-gv-card-brand-line="1"
         >
           {line.slice(0, idx)}
@@ -110,14 +114,7 @@ function BrandLine({ locale, voice = 'script', color, circled = false }) {
   return (
     <p
       className="mb-3"
-      style={{
-        ...style,
-        paddingRight: `min(40%, ${CARD_LOGO.brandLineClearancePx}px)`,
-        display: '-webkit-box',
-        WebkitLineClamp: 2,
-        WebkitBoxOrient: 'vertical',
-        overflow: 'hidden'
-      }}
+      style={{ ...style, paddingRight: `min(40%, ${CARD_LOGO.brandLineClearancePx}px)` }}
       data-gv-card-brand-line="1"
     >
       {line}
@@ -168,11 +165,11 @@ function Signature({ buyerName, color }) {
   if (!buyerName) return null;
   return (
     <p
-      className="mb-4"
       style={{
         fontFamily: cardFontFamily('message'),
         fontSize: `${CARD_LAYOUT.namesPx}px`,
-        color
+        color,
+        marginBottom: `${CARD_LAYOUT.signatureGapPx}px`
       }}
     >
       — {buyerName}
@@ -180,20 +177,41 @@ function Signature({ buyerName, color }) {
   );
 }
 
-function FormBlock({ fields, locale, color, mutedColor, framed = false }) {
+/** Letter-only pressed-flower accent in the signature → form-block zone. */
+function LetterFlower() {
+  return (
+    <img
+      src={CARD_ASSETS.pressedFlower}
+      alt=""
+      aria-hidden="true"
+      className="ml-auto block h-auto"
+      style={{ width: CARD_LAYOUT.letterFlowerWidthPx, marginBottom: `${CARD_LAYOUT.signatureGapPx}px` }}
+      data-gv-card-flower="1"
+      loading="lazy"
+    />
+  );
+}
+
+/**
+ * TO / VALID UNTIL / CODE / VALUE. No outer frame — the dotted underlines are
+ * the hand-drawn treatment (a solid rounded frame read like a web form group).
+ * TO + VALUE are emphasized: the two things a recipient looks for.
+ */
+function FormBlock({ fields, locale, color, mutedColor }) {
   const labels = getFormLabels(locale);
   const rows = [
-    { key: 'to', label: labels.to, value: fields.recipientName || '' },
+    { key: 'to', label: labels.to, value: fields.recipientName || '', emphasized: true },
     { key: 'validUntil', label: labels.validUntil, value: formatExpiryDate(fields.expiresAt, locale) },
     { key: 'code', label: labels.code, value: fields.code || PLACEHOLDER_VOUCHER_CODE },
     {
       key: 'value',
       label: labels.value,
-      value: formatCurrency(fields.amountOriginalCents, fields.currency, locale)
+      value: formatCurrency(fields.amountOriginalCents, fields.currency, locale),
+      emphasized: true
     }
   ];
 
-  const table = (
+  return (
     <table className="w-full border-collapse" data-gv-card-form-block="1">
       <tbody>
         {rows.map((row) => (
@@ -215,7 +233,7 @@ function FormBlock({ fields, locale, color, mutedColor, framed = false }) {
               className="w-full align-bottom uppercase"
               style={{
                 fontFamily: cardFontFamily('message'),
-                fontSize: `${CARD_LAYOUT.formValuePx}px`,
+                fontSize: `${row.emphasized ? CARD_LAYOUT.formValueEmphasisPx : CARD_LAYOUT.formValuePx}px`,
                 lineHeight: 1.3,
                 fontWeight: 700,
                 letterSpacing: '0.04em',
@@ -231,22 +249,6 @@ function FormBlock({ fields, locale, color, mutedColor, framed = false }) {
       </tbody>
     </table>
   );
-
-  if (framed) {
-    return (
-      <div
-        style={{
-          border: `2px solid ${color}`,
-          borderRadius: '14px 18px 14px 16px',
-          padding: '14px 18px',
-          transform: 'rotate(-0.4deg)'
-        }}
-      >
-        {table}
-      </div>
-    );
-  }
-  return table;
 }
 
 function RedeemLine({ locale, color }) {
@@ -270,13 +272,14 @@ function PostcardCard({ fields, locale }) {
   const t = CARD_TOKENS.forest;
   return (
     <div
-      className="relative w-full overflow-hidden rounded-md p-7 shadow-lg md:p-9"
+      className="relative w-full overflow-hidden rounded-md p-7 md:p-9"
       data-gv-card-template="forest"
       style={{
         backgroundColor: t.fallbackBg,
         backgroundImage: `url('${CARD_ASSETS.paperTexture}')`,
         backgroundSize: 'cover',
-        backgroundPosition: 'center'
+        backgroundPosition: 'center',
+        ...cardObjectStyle('forest')
       }}
     >
       <CardLogo variant="dark" />
@@ -294,13 +297,14 @@ function LetterCard({ fields, locale }) {
   const t = CARD_TOKENS.romantic;
   return (
     <div
-      className="relative w-full overflow-hidden rounded-md p-7 shadow-lg md:p-9"
+      className="relative w-full overflow-hidden rounded-md p-7 md:p-9"
       data-gv-card-template="romantic"
       style={{
         backgroundColor: t.fallbackBg,
         backgroundImage: `url('${CARD_ASSETS.crumpledTexture}')`,
         backgroundSize: 'cover',
-        backgroundPosition: 'center'
+        backgroundPosition: 'center',
+        ...cardObjectStyle('romantic')
       }}
     >
       <CardLogo variant="dark" />
@@ -313,7 +317,8 @@ function LetterCard({ fields, locale }) {
         lineHeight={CARD_LAYOUT.letterLineHeight}
       />
       <Signature buyerName={fields.buyerName} color={t.ink} />
-      <FormBlock fields={fields} locale={locale} color={t.ink} mutedColor={t.muted} framed />
+      <LetterFlower />
+      <FormBlock fields={fields} locale={locale} color={t.ink} mutedColor={t.muted} />
       <RedeemLine locale={locale} color={t.muted} />
     </div>
   );
@@ -323,9 +328,9 @@ function InkCard({ fields, locale }) {
   const t = CARD_TOKENS.minimal;
   return (
     <div
-      className="relative w-full overflow-hidden rounded-md p-8 shadow-lg md:p-10"
+      className="relative w-full overflow-hidden rounded-md p-8 md:p-10"
       data-gv-card-template="minimal"
-      style={{ backgroundColor: t.bg }}
+      style={{ backgroundColor: t.bg, ...cardObjectStyle('minimal') }}
     >
       <CardLogo variant="white" />
       <BrandLine locale={locale} voice="statement" color={t.text} />
@@ -362,7 +367,7 @@ export default function GiftVoucherCardPreview({ fields }) {
   const Template = TEMPLATE_COMPONENTS[fields.templateId] || InkCard;
 
   return (
-    <div className="w-full" aria-live="polite" aria-label={labels.brandWordmark}>
+    <div className="gv-card-object w-full" aria-live="polite" aria-label={labels.brandWordmark}>
       <Template fields={fields} locale={locale} />
     </div>
   );

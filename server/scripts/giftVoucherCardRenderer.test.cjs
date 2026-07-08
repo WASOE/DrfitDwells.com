@@ -114,13 +114,24 @@ test('all templates include site logo at consistent width', () => {
   }
 });
 
-test('templates do not render stamp, flower, or mountain line-art', () => {
+test('templates do not render stamp or mountain line-art; flower is Letter print only', () => {
   for (const templateId of TEMPLATES) {
-    const html = render({ cardTemplateId: templateId }, 'print');
-    assert.doesNotMatch(html, /gift-voucher-stamp-frame/);
-    assert.doesNotMatch(html, /gift-voucher-pressed-flower/);
-    assert.doesNotMatch(html, /gift-voucher-mountain-lineart/);
-    assert.doesNotMatch(html, /data-gv-card-art=/);
+    for (const mode of ['email', 'print']) {
+      const html = render({ cardTemplateId: templateId }, mode);
+      assert.doesNotMatch(html, /gift-voucher-stamp-frame/);
+      assert.doesNotMatch(html, /gift-voucher-mountain-lineart/);
+      assert.doesNotMatch(html, /data-gv-card-art=/);
+      if (templateId === 'romantic' && mode === 'print') {
+        assert.match(html, /gift-voucher-pressed-flower/, 'Letter print carries the pressed flower');
+        assert.match(html, /data-gv-card-flower="1"/);
+      } else {
+        assert.doesNotMatch(
+          html,
+          /gift-voucher-pressed-flower/,
+          `${templateId}/${mode} must not carry the pressed flower`
+        );
+      }
+    }
   }
 });
 
@@ -178,9 +189,30 @@ test('letter circled word SVG present in print, absent in email', () => {
   assert.doesNotMatch(emailHtml, /<svg/);
 });
 
-test('letter form block is framed with hand-drawn stroke', () => {
-  const html = render({ cardTemplateId: 'romantic' }, 'print');
-  assert.match(html, /data-gv-card-form-frame="1"/);
+test('form block has no outer frame in any template or mode — dotted underlines only', () => {
+  for (const templateId of TEMPLATES) {
+    for (const mode of ['email', 'print']) {
+      const html = render({ cardTemplateId: templateId }, mode);
+      assert.doesNotMatch(html, /data-gv-card-form-frame/, `${templateId}/${mode} frameless`);
+      assert.match(html, /border-bottom:2px dotted/, `${templateId}/${mode} dotted underlines`);
+    }
+  }
+});
+
+test('TO and VALUE rows are emphasized above the other form rows', () => {
+  const { CARD_LAYOUT } = require('../../shared/giftVoucher/cardSpec');
+  const html = render({ cardTemplateId: 'forest' }, 'print');
+  const amountMatch = html.match(/data-gv-card-amount="1"[^>]*font-size:(\d+)px/);
+  assert.ok(amountMatch, 'amount row with font-size');
+  assert.equal(Number(amountMatch[1]), CARD_LAYOUT.formValueEmphasisPx);
+  assert.ok(
+    CARD_LAYOUT.formValueEmphasisPx > CARD_LAYOUT.formValuePx,
+    'emphasis size exceeds base form value size'
+  );
+  assert.ok(
+    CARD_LAYOUT.messagePx > CARD_LAYOUT.formValueEmphasisPx,
+    'message stays the largest text element'
+  );
 });
 
 test('message font size exceeds form value font size in output', () => {

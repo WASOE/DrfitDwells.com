@@ -26,6 +26,7 @@
 | 9 | GiftVoucherRedeem placeholder | Deferred post-track polish. Redemption lives in booking checkout (`giftVoucherBatch7BookingRedemption.test.cjs`); locked spec forbade touching redeem page. After track ships: add one line + link to booking flow. |
 | 9 | Success page download hint | Buyer success page includes i18n `success.downloadHint` (EN/BG): email includes link to download and print the gift card. |
 | 9 | Full recipient email gate | Design gate includes `romantic-email-full-en.html` and `romantic-email-full-bg.html` — complete assembled `recipient_voucher` email (guestLifecycleLayout + card + CTA) for visual sign-off. |
+| 9 | Design freeze amendment | Design freeze amended post-launch with mobile polish pass (card-as-object, brand line layout, form block treatment). Gate renders regenerated. Details: preview cards get soft shadow + fixed slight rotation (`CARD_OBJECT`, Postcard −0.5°, Letter 0.75°, Ink 0°; print stays flat, email unchanged); under 500px card width the brand line drops below the 100px logo at full width (container query); signature→form gap halved to 8px with the pressed-flower accent (~64px, right-aligned) on Letter print/preview only; form block outer frame dropped everywhere — dotted underlines are the hand-drawn treatment (SVG frames don't survive email clients); TO + VALUE rows emphasized at 24px (message stays largest at 30px). |
 
 ## Deploy runbook (customization track)
 
