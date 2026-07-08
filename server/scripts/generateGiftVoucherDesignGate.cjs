@@ -13,7 +13,9 @@ const { buildCardDownloadUrl } = require('../services/giftVouchers/giftVoucherCa
 const OUT_DIR = path.join(__dirname, '../../design-gate/batch9-release');
 const PUBLIC_REL = '../../client/public';
 const GATE_COMMIT = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
-const CARD_DESIGN_FREEZE_COMMIT = '6c23a9d';
+// Amended post-launch with the mobile polish pass (card-as-object, brand
+// line layout, form block treatment) — see decisions doc, Batch 9.
+const CARD_DESIGN_FREEZE_COMMIT = '612eba0';
 
 const SAMPLE_VOUCHER = {
   recipientName: 'Anna',
@@ -136,7 +138,7 @@ const readme = `# Gift voucher design gate — Batch 9 release
 
 Frozen at commit: \`${GATE_COMMIT}\` (card design frozen at \`${CARD_DESIGN_FREEZE_COMMIT}\`)
 
-Card design is frozen (logo top-right, textures, no stamp/flower/mountain). Forest-as-texture deviation from original spec is **accepted**; this gate judges the frozen design.
+Card design is frozen (logo top-right, textures, no stamp/mountain; pressed-flower accent on Letter print only). Forest-as-texture deviation from original spec is **accepted**; this gate judges the frozen design as amended by the post-launch mobile polish pass (card-as-object preview treatment, brand line layout, frameless form block, TO/VALUE emphasis).
 
 ## Files (${written.length} HTML)
 

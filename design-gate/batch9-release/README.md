@@ -1,8 +1,8 @@
 # Gift voucher design gate — Batch 9 release
 
-Frozen at commit: `632eaf8ae410e0774d3325877b694aeb6da74712` (card design frozen at `6c23a9d`)
+Frozen at commit: `612eba0261222238699bee4759c82477b072620e` (card design frozen at `612eba0`)
 
-Card design is frozen (logo top-right, textures, no stamp/flower/mountain). Forest-as-texture deviation from original spec is **accepted**; this gate judges the frozen design.
+Card design is frozen (logo top-right, textures, no stamp/mountain; pressed-flower accent on Letter print only). Forest-as-texture deviation from original spec is **accepted**; this gate judges the frozen design as amended by the post-launch mobile polish pass (card-as-object preview treatment, brand line layout, frameless form block, TO/VALUE emphasis).
 
 ## Files (14 HTML)
 
