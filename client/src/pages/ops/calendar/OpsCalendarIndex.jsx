@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
-import { opsReadAPI } from '../../../services/opsApi';
+import { opsReadAPI, opsWriteAPI } from '../../../services/opsApi';
 import {
   BLOCK_DOT,
   CONFLICT_RING,
@@ -14,6 +14,7 @@ import {
 import { eachDayKeyInRange, parseIsoDay } from './opsCalendarDateUtils';
 import LocationBlockSheet from './LocationBlockSheet';
 import OpsCalendarLegend from './OpsCalendarLegend';
+import CalendarBottomSheet from './CalendarBottomSheet';
 
 function dayStripCells(fromIso, toIso) {
   const a = parseIsoDay(fromIso);
@@ -70,6 +71,12 @@ function propertyRouteId(cabinLike) {
   return cabinLike.cabinId || cabinLike.cabinTypeId || '';
 }
 
+function formatGroupDateRange(startIso, endIso) {
+  const s = String(startIso || '').slice(0, 10);
+  const e = String(endIso || '').slice(0, 10);
+  return `${s} → ${e} (exclusive end)`;
+}
+
 export default function OpsCalendarIndex() {
   const [preview, setPreview] = useState(null);
   const [cabinsExtra, setCabinsExtra] = useState(null);
@@ -77,6 +84,9 @@ export default function OpsCalendarIndex() {
   const [error, setError] = useState('');
   const [locationBlockOpen, setLocationBlockOpen] = useState(false);
   const [locationBlockFlash, setLocationBlockFlash] = useState('');
+  const [removeGroup, setRemoveGroup] = useState(null);
+  const [removeError, setRemoveError] = useState('');
+  const [removeLoading, setRemoveLoading] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -137,6 +147,39 @@ export default function OpsCalendarIndex() {
 
   const previewDays = preview?.request?.previewDays || 14;
   const timezone = preview?.meta?.propertyTimezone || 'Europe/Sofia';
+  const activeLocationBlockGroups = preview?.activeLocationBlockGroups || [];
+
+  const openRemoveGroup = (group) => {
+    if (!group?.locationBlockGroupId) return;
+    setRemoveError('');
+    setRemoveGroup(group);
+  };
+
+  const closeRemoveGroup = () => {
+    setRemoveGroup(null);
+    setRemoveError('');
+  };
+
+  const confirmRemoveGroup = async () => {
+    const groupId = removeGroup?.locationBlockGroupId;
+    if (!groupId) {
+      setRemoveError('Cannot remove location-wide block: group id is missing.');
+      return;
+    }
+
+    setRemoveLoading(true);
+    setRemoveError('');
+    try {
+      await opsWriteAPI.removeLocationBlockGroup(groupId, 'ops_calendar_index');
+      closeRemoveGroup();
+      setLocationBlockFlash('Location-wide block removed from all properties in this group.');
+      await load();
+    } catch (err) {
+      setRemoveError(err?.response?.data?.message || 'Remove failed');
+    } finally {
+      setRemoveLoading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -189,6 +232,46 @@ export default function OpsCalendarIndex() {
 
         {error ? (
           <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>
+        ) : null}
+
+        {activeLocationBlockGroups.length > 0 ? (
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold text-gray-900">Active location blocks</h2>
+            <ul className="space-y-3">
+              {activeLocationBlockGroups.map((group) => {
+                const label = group.locationLabel || group.locationKey || 'Location';
+                const count = group.targetCount ?? 0;
+                return (
+                  <li
+                    key={group.locationBlockGroupId}
+                    className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm border-l-4 border-l-amber-500 md:p-5"
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-base font-bold text-gray-900">{label}</h3>
+                          <span className="rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                            Location-wide block
+                          </span>
+                        </div>
+                        <p className="mt-1 text-sm text-gray-600">{formatGroupDateRange(group.startDate, group.endDate)}</p>
+                        <p className="mt-1 text-sm text-gray-500">
+                          {count} propert{count === 1 ? 'y' : 'ies'} blocked
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openRemoveGroup(group)}
+                        className="w-full shrink-0 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-red-700 shadow-sm hover:border-red-200 hover:bg-red-50 sm:w-auto"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
         ) : null}
 
         <ul className="space-y-3">
@@ -325,6 +408,52 @@ export default function OpsCalendarIndex() {
             load();
           }}
         />
+
+        <CalendarBottomSheet
+          open={Boolean(removeGroup)}
+          title="Remove entire location block?"
+          subtitle="This removes the location-wide block from every property/unit included in this group. Existing reservations, external holds, maintenance blocks, and separate manual blocks remain unchanged."
+          onClose={closeRemoveGroup}
+          footer={
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={confirmRemoveGroup}
+                disabled={removeLoading}
+                className="h-11 flex-1 rounded-lg bg-red-700 px-4 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50 sm:flex-none"
+              >
+                {removeLoading ? 'Removing…' : 'Remove entire location block'}
+              </button>
+              <button
+                type="button"
+                onClick={closeRemoveGroup}
+                disabled={removeLoading}
+                className="h-11 flex-1 rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-gray-800 disabled:opacity-50 sm:flex-none"
+              >
+                Cancel
+              </button>
+            </div>
+          }
+        >
+          <div className="space-y-2">
+            <div className="text-sm font-medium text-gray-800">
+              {removeGroup?.locationLabel || removeGroup?.locationKey || 'Location-wide block'}
+            </div>
+            <div className="text-xs text-gray-500">
+              {formatGroupDateRange(removeGroup?.startDate, removeGroup?.endDate)}
+            </div>
+            {removeGroup?.targetCount != null ? (
+              <div className="text-xs text-gray-600">
+                {removeGroup.targetCount} propert{removeGroup.targetCount === 1 ? 'y' : 'ies'} in this group
+              </div>
+            ) : null}
+            {removeError ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+                {removeError}
+              </div>
+            ) : null}
+          </div>
+        </CalendarBottomSheet>
       </div>
     </div>
   );

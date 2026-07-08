@@ -14,6 +14,7 @@ const { assertExclusiveCalendarRangeWithinMax } = require('../../../utils/calend
 const { BLOCKING_BOOKING_STATUSES } = require('../../calendar/blockingStatusConstants');
 const { guestFacingCabinMatch } = require('../../../utils/fixtureExclusion');
 const { findParentCabinForCabinType } = require('../../publicAvailabilityService');
+const { LOCATION_REGISTRY, isAllowedLocationKey } = require('../domain/locationRegistry');
 
 function overlaps(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && aEnd > bStart;
@@ -372,6 +373,53 @@ function summarizePreview(blocks, hardConflicts, warnings) {
 }
 
 /**
+ * Active location-wide manual block groups for the calendar index (not tied to preview window).
+ */
+async function listActiveLocationBlockGroups() {
+  const nowStart = moment.tz(PROPERTY_TIMEZONE).startOf('day').toDate();
+
+  const rows = await AvailabilityBlock.aggregate([
+    {
+      $match: {
+        status: 'active',
+        blockType: 'manual_block',
+        'metadata.scope': 'location_wide',
+        'metadata.locationBlockGroupId': { $exists: true, $nin: [null, ''] },
+        endDate: { $gt: nowStart }
+      }
+    },
+    {
+      $group: {
+        _id: '$metadata.locationBlockGroupId',
+        locationKey: { $first: '$metadata.locationKey' },
+        startDate: { $first: '$startDate' },
+        endDate: { $first: '$endDate' },
+        targetCount: { $sum: 1 }
+      }
+    },
+    { $sort: { startDate: 1 } }
+  ]);
+
+  return rows.map((row) => {
+    const locationKey = row.locationKey ? String(row.locationKey) : null;
+    const locationLabel =
+      locationKey && isAllowedLocationKey(locationKey)
+        ? LOCATION_REGISTRY[locationKey].label
+        : locationKey;
+
+    return {
+      locationBlockGroupId: String(row._id),
+      locationKey,
+      locationLabel,
+      startDate: normalizeDateToSofiaDayStart(row.startDate).toISOString(),
+      endDate: normalizeDateToSofiaDayStart(row.endDate).toISOString(),
+      targetCount: row.targetCount,
+      blockType: 'manual_block'
+    };
+  });
+}
+
+/**
  * @param {Object} opts
  * @param {string|Date} opts.from
  * @param {string|Date} opts.to
@@ -385,6 +433,8 @@ async function getCalendarReadModel({ from, to, cabinId = null, indexPreview = f
     const startM = moment.tz(PROPERTY_TIMEZONE).startOf('day');
     const endM = startM.clone().add(days, 'days');
     const normalized = normalizeExclusiveDateRange(startM.toDate(), endM.toDate());
+
+    const activeLocationBlockGroupsPromise = listActiveLocationBlockGroups();
 
     const cabins = await Cabin.find(guestFacingCabinMatch())
       .sort({ name: 1 })
@@ -410,6 +460,8 @@ async function getCalendarReadModel({ from, to, cabinId = null, indexPreview = f
       });
     }
 
+    const activeLocationBlockGroups = await activeLocationBlockGroupsPromise;
+
     return {
       mode: 'index_preview',
       meta: buildMeta(normalized),
@@ -421,6 +473,7 @@ async function getCalendarReadModel({ from, to, cabinId = null, indexPreview = f
         previewDays: days
       },
       previewByCabin,
+      activeLocationBlockGroups,
       degraded: {
         conflictEnginePartial: false,
         reason: null
@@ -479,5 +532,6 @@ async function getCalendarReadModel({ from, to, cabinId = null, indexPreview = f
 
 module.exports = {
   getCalendarReadModel,
-  syncIndicatorsForCabin
+  syncIndicatorsForCabin,
+  listActiveLocationBlockGroups
 };
