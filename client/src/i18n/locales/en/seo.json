@@ -118,6 +118,10 @@
       "stickyCheckAvailability": "Check availability",
       "loading": "Loading…"
     },
+    "secondaryExit": {
+      "giftPrefix": "Not sure about dates?",
+      "giftLink": "Gift a stay instead."
+    },
     "stays": {
       "the-cabin": {
         "title": "The Cabin",

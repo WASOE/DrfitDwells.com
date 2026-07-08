@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { useSiteLanguage } from '../hooks/useSiteLanguage';
 import { localizePath } from '../utils/localizedRoutes';
-import { PAID_TRAFFIC_LANDING_PATH, scrollToPaidTrafficStays } from '../utils/paidTrafficRoutes';
+import { scrollToPaidTrafficStays } from '../utils/paidTrafficRoutes';
 import { BRANDING, BRANDING_DIMENSIONS } from '../config/brandingAssets';
 
 export default function PaidTrafficHeader() {
@@ -12,13 +12,13 @@ export default function PaidTrafficHeader() {
   const { setLanguage } = useLanguage();
   const { language } = useSiteLanguage();
 
-  const landingPath = localizePath(PAID_TRAFFIC_LANDING_PATH, language);
+  const homePath = localizePath('/', language);
   const chooseStayLabel = t('paidStaysBulgaria.cta.chooseStay');
 
   return (
     <header className="fixed top-0 w-full z-50 px-4 sm:px-6 py-4 md:py-5 bg-white/95 backdrop-blur-md border-b border-black/[0.06] shadow-sm">
       <div className="max-w-7xl mx-auto flex justify-between items-center gap-3">
-        <Link to={landingPath} className="flex-shrink-0" aria-label="Drift & Dwells">
+        <Link to={homePath} className="flex-shrink-0" aria-label="Drift & Dwells">
           <picture>
             <source srcSet={BRANDING.headerDarkWebp} type="image/webp" />
             <img

@@ -26,6 +26,7 @@ import {
   buildStayLodgingJsonLd
 } from '../utils/staySeo';
 import { resolveStayAmenities, resolveStayHighlights } from '../utils/stayPageContent';
+import { isStayBookingHash, scrollToVisibleBookingAnchor } from '../utils/stayBookingHashScroll';
 
 // Constants
 const SCROLL_DELAY_MS = 100;
@@ -788,14 +789,8 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
         return () => clearTimeout(timeoutId);
       }
     }
-    if (hash === '#details' && cabin) {
-      const el = document.getElementById('details');
-      if (el) {
-        const timeoutId = setTimeout(() => {
-          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, SCROLL_DELAY_MS);
-        return () => clearTimeout(timeoutId);
-      }
+    if (isStayBookingHash(hash) && cabin) {
+      scrollToVisibleBookingAnchor(SCROLL_DELAY_MS);
     }
   }, [cabin]); // Re-run when cabin loads
 
@@ -1117,7 +1112,10 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
         {/* Row 3 left: content block (location, description, etc.) */}
         <div className="cabin-hero-content">
         {/* Quick Book Strip — mobile only; desktop has single booking card on right */}
-        <div className="mt-6 p-4 md:p-5 bg-gradient-to-br from-sage/10 via-white to-sage/5 border border-sage/20 rounded-xl shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 lg:hidden">
+        <div
+          data-booking-anchor
+          className="mt-6 p-4 md:p-5 bg-gradient-to-br from-sage/10 via-white to-sage/5 border border-sage/20 rounded-xl shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 lg:hidden scroll-mt-[var(--header-offset,5.5rem)]"
+        >
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
             <div>
               <span className="text-[10px] uppercase tracking-[0.2em] text-gray-500 font-medium">Price</span>
@@ -1245,7 +1243,7 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
             )}
 
         {/* Guest Reviews — in left column flow */}
-        <div className="mt-12 md:mt-16 reviews-col scroll-mt-[var(--header-offset,5.5rem)]" id="details">
+        <div className="mt-12 md:mt-16 reviews-col scroll-mt-[var(--header-offset,5.5rem)]">
           <h2 className="section-title" id="guest-reviews">
             {t('detailPage.guestReviews')}
           </h2>
@@ -1273,7 +1271,11 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
         {/* END cabin-hero-content */}
 
         {/* RIGHT: booking card — starts below gallery, aligns with content row (desktop only) */}
-        <aside className="cabin-hero-right hidden lg:block" aria-label="Reservation">
+        <aside
+          data-booking-anchor
+          className="cabin-hero-right hidden lg:block scroll-mt-[var(--header-offset,5.5rem)]"
+          aria-label="Reservation"
+        >
           <div className="booking-card-compact rounded-2xl border border-gray-200/80 shadow-sm bg-white p-5">
             {/* Price as anchor — not "Booking Summary" */}
             {pricing ? (

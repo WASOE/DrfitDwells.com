@@ -122,6 +122,10 @@
       "stickyCheckAvailability": "Провери наличност",
       "loading": "Зареждане…"
     },
+    "secondaryExit": {
+      "giftPrefix": "Не си сигурен за датите?",
+      "giftLink": "Подари престой."
+    },
     "stays": {
       "the-cabin": {
         "title": "The Cabin",

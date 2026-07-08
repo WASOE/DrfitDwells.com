@@ -24,7 +24,16 @@ describe('paidTrafficRoutes', () => {
       })
     ).toEqual({
       pathname: '/bg/stays/the-cabin',
-      hash: '#details'
+      hash: '#booking'
+    });
+  });
+
+  it('buildPaidTrafficStayNavTarget details path has no hash', () => {
+    expect(buildPaidTrafficStayNavTarget('/stays/lux-cabin', 'en')).toEqual({
+      pathname: '/stays/lux-cabin'
+    });
+    expect(buildPaidTrafficStayNavTarget('/stays/stone-house', 'bg')).toEqual({
+      pathname: '/bg/stays/stone-house'
     });
   });
 

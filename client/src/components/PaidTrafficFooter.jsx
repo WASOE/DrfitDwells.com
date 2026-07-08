@@ -8,7 +8,11 @@ import { BRANDING, BRANDING_DIMENSIONS } from '../config/brandingAssets';
 /** Minimal footer for paid-traffic landing — legal + contact only. */
 export default function PaidTrafficFooter() {
   const { t: tc } = useTranslation('common');
+  const { t: ts } = useTranslation('seo');
   const { language } = useSiteLanguage();
+
+  const homePath = localizePath('/', language);
+  const giftPath = localizePath('/gift-vouchers', language);
 
   const linkClass =
     "font-['Montserrat'] text-[#111] hover:opacity-60 transition-opacity uppercase text-[11px] tracking-[0.12em] font-semibold";
@@ -18,7 +22,7 @@ export default function PaidTrafficFooter() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 md:py-10">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-6 md:gap-10">
           <div className="flex flex-col gap-3 max-w-sm">
-            <div className="w-fit shrink-0">
+            <Link to={homePath} className="w-fit shrink-0" aria-label="Drift & Dwells">
               <picture>
                 <source srcSet={BRANDING.headerDarkWebp} type="image/webp" />
                 <img
@@ -31,7 +35,7 @@ export default function PaidTrafficFooter() {
                   decoding="async"
                 />
               </picture>
-            </div>
+            </Link>
             <div
               className="font-['Montserrat'] text-[#111] text-sm"
               style={{ opacity: 0.85, lineHeight: 1.6 }}
@@ -47,6 +51,15 @@ export default function PaidTrafficFooter() {
                 </a>
               </p>
             </div>
+            <p className="font-['Montserrat'] text-[12px] text-[#111] leading-snug" style={{ opacity: 0.7 }}>
+              {ts('paidStaysBulgaria.secondaryExit.giftPrefix')}{' '}
+              <Link
+                to={giftPath}
+                className="underline underline-offset-4 hover:opacity-60 transition-opacity"
+              >
+                {ts('paidStaysBulgaria.secondaryExit.giftLink')}
+              </Link>
+            </p>
           </div>
 
           <nav aria-label="Legal" className="flex flex-wrap gap-x-6 gap-y-3">

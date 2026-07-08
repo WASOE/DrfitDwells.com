@@ -1,7 +1,7 @@
 import { localizePath, stripLocaleFromPath } from './localizedRoutes';
 
 export const PAID_TRAFFIC_LANDING_PATH = '/off-grid-stays-bulgaria';
-export const PAID_TRAFFIC_BOOKING_HASH = 'details';
+export const PAID_TRAFFIC_BOOKING_HASH = 'booking';
 
 /**
  * Mobile sticky CTA clearance: pt-3 + min-h-44 button + pb min 1rem + small tap buffer.
