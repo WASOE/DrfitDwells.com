@@ -162,48 +162,53 @@ export default function OffGridStaysBulgaria() {
           '--paid-sticky-clearance': PAID_TRAFFIC_MOBILE_STICKY_CLEARANCE
         }}
       >
-        {/* Hero: image-led brand promise (left) + visual stay selector (right) */}
+        {/* Hero: dominant image + overlay copy (left) + visual stay selector (right) */}
         <section className="border-b border-[rgba(0,0,0,0.08)]">
           <div className="valley-container py-4 md:py-8">
-            <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_1fr] lg:gap-10 lg:items-center">
-              <div>
-                <div className="relative w-full overflow-hidden rounded-2xl bg-neutral-200 aspect-[16/10] md:aspect-[16/9]">
-                  {heroImage ? (
-                    <img
-                      src={heroImage}
-                      alt={p('compact.title')}
-                      className="absolute inset-0 h-full w-full object-cover"
-                      fetchpriority="high"
-                      decoding="async"
-                    />
-                  ) : null}
-                  <span className="pointer-events-none absolute top-3 left-3 rounded-full bg-white/90 backdrop-blur-sm px-2.5 py-1 text-[11px] font-semibold text-neutral-900 shadow-sm border border-black/5">
+            <div className="grid grid-cols-1 lg:grid-cols-2 lg:gap-8 lg:items-stretch lg:min-h-[560px]">
+              <div className="relative overflow-hidden rounded-2xl bg-neutral-900 min-h-[300px] md:min-h-[400px] lg:min-h-full">
+                {heroImage ? (
+                  <img
+                    src={heroImage}
+                    alt={p('compact.title')}
+                    className="absolute inset-0 h-full w-full object-cover"
+                    fetchPriority="high"
+                    decoding="async"
+                  />
+                ) : null}
+                <div
+                  className="absolute inset-0"
+                  style={{
+                    background:
+                      'linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.4) 45%, rgba(0,0,0,0.08) 100%)'
+                  }}
+                />
+                <div className="relative flex h-full flex-col justify-end p-5 md:p-7 lg:p-9">
+                  <p className="text-[10px] md:text-xs uppercase tracking-[0.16em] text-white/80 mb-2">
                     {p('compact.kicker')}
-                  </span>
+                  </p>
+                  <h1 className="text-2xl md:text-3xl lg:text-4xl font-semibold text-white tracking-tight leading-tight max-w-xl">
+                    {p('compact.title')}
+                  </h1>
+                  <p className="mt-2 max-w-md text-[13px] md:text-sm text-white/85 leading-snug">
+                    {p('compact.subline')}
+                  </p>
+                  <p className="mt-1.5 max-w-md text-[13px] md:text-sm text-white/90 leading-snug">
+                    {p('directBenefit')}
+                  </p>
+                  <PaidTrafficTrustStrip tone="light" className="mt-3" />
                 </div>
-                <h1 className="mt-4 text-xl md:text-2xl font-semibold text-[#1a1a1a] tracking-tight leading-snug max-w-2xl">
-                  {p('compact.title')}
-                </h1>
-                <p className="valley-caption mt-1.5 max-w-xl !text-[13px] leading-snug text-[#717171]">
-                  {p('compact.subline')}
-                </p>
-                <p className="mt-2 max-w-xl text-[13px] md:text-sm text-[#4a4a4a] leading-snug">
-                  {p('directBenefit')}
-                </p>
-                <PaidTrafficTrustStrip className="mt-3" />
               </div>
 
-              <div className="mt-6 lg:mt-0">
-                <div className="lg:max-w-md lg:ml-auto">
-                  <h2 className="text-[13px] font-semibold uppercase tracking-[0.12em] text-[#717171] mb-3">
-                    {p('selector.heading')}
-                  </h2>
-                  <div className="lg:hidden">
-                    <PaidTrafficStaySelector items={selectorItems} labels={ctaLabels} layout="grid" />
-                  </div>
-                  <div className="hidden lg:block">
-                    <PaidTrafficStaySelector items={selectorItems} labels={ctaLabels} layout="rows" />
-                  </div>
+              <div className="mt-6 lg:mt-0 lg:flex lg:flex-col lg:justify-center">
+                <h2 className="text-[13px] font-semibold uppercase tracking-[0.12em] text-[#717171] mb-3">
+                  {p('selector.heading')}
+                </h2>
+                <div className="lg:hidden">
+                  <PaidTrafficStaySelector items={selectorItems} labels={ctaLabels} layout="stack" />
+                </div>
+                <div className="hidden lg:block">
+                  <PaidTrafficStaySelector items={selectorItems} labels={ctaLabels} layout="rows" />
                 </div>
               </div>
             </div>
@@ -222,6 +227,9 @@ export default function OffGridStaysBulgaria() {
           }}
         >
           <div className="valley-container">
+            <h2 className="text-xl md:text-2xl font-semibold text-[#1a1a1a] tracking-tight mb-5 md:mb-8">
+              {p('exploreTitle')}
+            </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-x-8 md:gap-y-10">
               {PAID_TRAFFIC_STAY_META.map((stay, index) => {
                 const ns = `paidStaysBulgaria.stays.${stay.id}`;
