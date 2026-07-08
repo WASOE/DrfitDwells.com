@@ -82,26 +82,26 @@ function AmountCard({ cents, selected, onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className={`group relative flex flex-col items-start justify-between overflow-hidden rounded-2xl border px-5 py-6 text-left transition-all duration-300 md:px-6 md:py-7 ${
+      className={`group relative flex min-h-[6.75rem] flex-col items-start justify-between overflow-hidden rounded-2xl border px-4 py-5 text-left transition-all duration-300 ${
         selected
           ? 'border-stone-900 bg-stone-900 text-white shadow-[0_8px_32px_-12px_rgba(0,0,0,0.25)]'
           : 'border-stone-200 bg-white text-stone-800 hover:border-stone-400 hover:shadow-[0_4px_20px_-12px_rgba(0,0,0,0.15)]'
       }`}
     >
       <span
-        className={`text-[10px] uppercase tracking-[0.24em] ${
+        className={`text-[10px] uppercase tracking-[0.2em] ${
           selected ? 'text-white/70' : 'text-stone-500'
         }`}
       >
         {t('amount.voucher')}
       </span>
       <span
-        className="mt-3 font-serif text-3xl leading-none tracking-tight md:text-4xl"
+        className="mt-2 whitespace-nowrap font-serif text-2xl leading-none tracking-tight"
         style={{ fontFamily: 'var(--valley-font-primary, Georgia, serif)' }}
       >
         €{eur}
       </span>
-      <span className={`mt-2 text-xs ${selected ? 'text-white/70' : 'text-stone-500'}`}>
+      <span className={`mt-1 text-[11px] leading-snug ${selected ? 'text-white/70' : 'text-stone-500'}`}>
         {t('amount.prepaid')}
       </span>
     </button>
@@ -379,10 +379,10 @@ export default function GiftVouchers() {
                 <GiftVoucherCardPreview fields={previewFields} />
               </div>
 
-              <div className="mx-auto w-full max-w-lg space-y-12 lg:mx-0">
+              <div className="min-w-0 w-full space-y-10 lg:space-y-12">
                 <div>
                   <p className="text-[11px] uppercase tracking-[0.28em] text-stone-500">{t('order.chooseAmount')}</p>
-                  <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+                  <div className="mt-4 grid grid-cols-2 gap-3">
                     {PRESET_AMOUNTS.map((preset) => (
                       <AmountCard
                         key={preset}

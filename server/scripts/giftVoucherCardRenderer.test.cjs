@@ -103,18 +103,34 @@ test('user fields are HTML-escaped', () => {
   assert.doesNotMatch(html, /<script>/);
 });
 
-test('missing artifact assets render flat fallback with no substitute art', () => {
-  // Until Canva exports land, no /media/gift-vouchers/card/ URLs may appear.
+test('all templates include site logo at consistent width', () => {
+  for (const templateId of TEMPLATES) {
+    for (const mode of ['email', 'print']) {
+      const html = render({ cardTemplateId: templateId }, mode);
+      assert.match(html, /data-gv-card-logo="1"/, `${templateId}/${mode} logo`);
+      assert.match(html, /logo-header-(dark|white)/, `${templateId}/${mode} logo asset`);
+      assert.match(html, /width:160px|width="160"/, `${templateId}/${mode} logo width`);
+    }
+  }
+});
+
+test('templates do not render stamp, flower, or mountain line-art', () => {
+  for (const templateId of TEMPLATES) {
+    const html = render({ cardTemplateId: templateId }, 'print');
+    assert.doesNotMatch(html, /gift-voucher-stamp-frame/);
+    assert.doesNotMatch(html, /gift-voucher-pressed-flower/);
+    assert.doesNotMatch(html, /gift-voucher-mountain-lineart/);
+    assert.doesNotMatch(html, /data-gv-card-art=/);
+  }
+});
+
+test('missing texture assets render flat fallback', () => {
   for (const templateId of ['forest', 'romantic']) {
     for (const mode of ['email', 'print']) {
       const html = render({ cardTemplateId: templateId }, mode);
-      if (!isCardAssetAvailable('paperTexture')) {
-        assert.doesNotMatch(html, /gift-voucher-paper-texture/, `${templateId}/${mode}`);
+      if (!isCardAssetAvailable('paperTexture') && templateId === 'forest') {
+        assert.match(html, /background-color:#F7F4EE/, `${templateId}/${mode} flat paper fallback`);
       }
-      if (!isCardAssetAvailable('mountainLineArt')) {
-        assert.doesNotMatch(html, /gift-voucher-mountain-lineart/, `${templateId}/${mode}`);
-      }
-      assert.match(html, /background-color:#F7F4EE/, `${templateId}/${mode} flat paper fallback`);
     }
   }
 });
@@ -137,11 +153,13 @@ test('print mode uses the webfont voices', () => {
   assert.match(postcard, /Oswald/);
 });
 
-test('ink template is solid black with zero image assets', () => {
+test('ink template is solid black with logo only (no decorative art)', () => {
   for (const mode of ['email', 'print']) {
     const html = render({ cardTemplateId: 'minimal' }, mode);
     assert.match(html, /background-color:#000000/);
-    assert.doesNotMatch(html, /<img/);
+    assert.doesNotMatch(html, /gift-voucher-stamp-frame/);
+    assert.doesNotMatch(html, /gift-voucher-mountain-lineart/);
+    assert.match(html, /logo-header-white/);
     assert.match(html, /driftdwells\.com/);
     assert.match(html, /@driftdwells/);
   }

@@ -4,6 +4,7 @@ const {
   CARD_TOKENS,
   CARD_LAYOUT,
   CARD_ASSETS,
+  CARD_LOGO,
   cardAssetUrl,
   cardFontFamily,
   cardFontStyle,
@@ -97,7 +98,7 @@ function buildBrandLineHtml(locale, { voice = 'script', mode, color, sizePx, cir
     }
   }
 
-  return `<p ${BRAND_LINE_ATTR}="1" style="margin:0 0 14px;${fontCss(voice === 'statement' ? 'statement' : 'script', mode)}font-size:${size}px;line-height:${leading};font-weight:${voice === 'statement' ? 600 : 400};color:${color};">${inner}</p>`;
+  return `<p ${BRAND_LINE_ATTR}="1" style="margin:0 0 14px;padding-right:${CARD_LOGO.brandLineClearancePx}px;${fontCss(voice === 'statement' ? 'statement' : 'script', mode)}font-size:${size}px;line-height:${leading};font-weight:${voice === 'statement' ? 600 : 400};color:${color};">${inner}</p>`;
 }
 
 /** Occasion headline — small utility-caps voice (Oswald), optional. */
@@ -169,10 +170,15 @@ function buildRedeemHtml(locale, mode, { color } = {}) {
   return `<p data-gv-card-redeem="1" style="margin:12px 0 0;${fontCss('smallUtility', mode)}font-size:${CARD_LAYOUT.footerPx}px;line-height:1.5;color:${color};">${userHtml(labels.redeemInstruction)}</p>`;
 }
 
-/** Small wordmark, utility-caps voice. */
-function buildWordmarkHtml(locale, mode, { color } = {}) {
-  const labels = getCardLabels(locale);
-  return `<p data-gv-card-wordmark="1" style="margin:0 0 12px;${fontCss('utilityCaps', mode)}font-size:11px;letter-spacing:0.28em;text-transform:uppercase;font-weight:500;color:${color};">${userHtml(labels.brandWordmark)}</p>`;
+/** Site logo — top right on every template, same width as the former stamp slot. */
+function buildCardLogoHtml(variant, mode, siteOrigin) {
+  const path = variant === 'white' ? CARD_LOGO.white : CARD_LOGO.dark;
+  const url = mode === 'email' ? `${String(siteOrigin).replace(/\/$/, '')}${path}` : path;
+  const w = CARD_LOGO.widthPx;
+  if (mode === 'email') {
+    return `<img data-gv-card-logo="1" src="${url}" alt="${userHtml(CARD_LOGO.alt)}" width="${w}" align="right" style="display:block;width:${w}px;height:auto;margin:0 0 12px auto;" />`;
+  }
+  return `<img data-gv-card-logo="1" src="${url}" alt="${userHtml(CARD_LOGO.alt)}" width="${w}" style="position:absolute;top:14px;right:16px;width:${w}px;height:auto;" />`;
 }
 
 function containerDimensions(mode) {
@@ -198,12 +204,7 @@ function textureBackgroundCss(assetKey, fallbackColor, mode, siteOrigin) {
 function renderPostcard(fields, locale, mode, siteOrigin) {
   const t = CARD_TOKENS.forest;
   const bg = textureBackgroundCss('paperTexture', t.fallbackBg, mode, siteOrigin);
-
-  let artHtml = '';
-  if (isCardAssetAvailable('mountainLineArt')) {
-    const artUrl = cardAssetUrl('mountainLineArt', { mode, siteOrigin });
-    artHtml = `<img data-gv-card-art="mountain" src="${artUrl}" alt="" width="520" style="display:block;width:100%;max-width:520px;height:auto;margin:0 auto 12px;" />`;
-  }
+  const logo = buildCardLogoHtml('dark', mode, siteOrigin);
 
   const occasion = buildOccasionHtml(fields.occasion, locale, mode, { color: t.muted });
   const brand = buildBrandLineHtml(locale, { voice: 'script', mode, color: t.ink });
@@ -211,14 +212,13 @@ function renderPostcard(fields, locale, mode, siteOrigin) {
   const signature = buildSignatureHtml(fields.buyerName, mode, { color: t.ink });
   const formBlock = buildFormBlockHtml(fields, locale, mode, { color: t.ink, mutedColor: t.muted });
   const redeem = buildRedeemHtml(locale, mode, { color: t.muted });
-  const wordmark = buildWordmarkHtml(locale, mode, { color: t.muted });
 
   const pad = mode === 'print' ? CARD_LAYOUT.print.padding : '32px 28px';
+  const positioning = mode === 'email' ? '' : 'position:relative;';
 
   return `
-<div data-gv-card-template="forest" data-gv-card-mode="${mode}" style="${containerDimensions(mode)}${bg}padding:${pad};">
-  ${artHtml}
-  ${wordmark}
+<div data-gv-card-template="forest" data-gv-card-mode="${mode}" style="${containerDimensions(mode)}${bg}${positioning}padding:${pad};">
+  ${logo}
   ${brand}
   ${occasion}
   ${message}
@@ -236,21 +236,7 @@ function renderPostcard(fields, locale, mode, siteOrigin) {
 function renderLetter(fields, locale, mode, siteOrigin) {
   const t = CARD_TOKENS.romantic;
   const bg = textureBackgroundCss('crumpledTexture', t.fallbackBg, mode, siteOrigin);
-
-  let stampHtml = '';
-  if (isCardAssetAvailable('stampFrame')) {
-    const stampUrl = cardAssetUrl('stampFrame', { mode, siteOrigin });
-    stampHtml =
-      mode === 'email'
-        ? `<img data-gv-card-art="stamp" src="${stampUrl}" alt="" width="72" align="right" style="display:block;width:72px;height:auto;" />`
-        : `<img data-gv-card-art="stamp" src="${stampUrl}" alt="" style="position:absolute;top:14px;right:16px;width:84px;height:auto;transform:rotate(3deg);" />`;
-  }
-
-  let flowerHtml = '';
-  if (mode !== 'email' && isCardAssetAvailable('pressedFlower')) {
-    const flowerUrl = cardAssetUrl('pressedFlower', { mode, siteOrigin });
-    flowerHtml = `<img data-gv-card-art="flower" src="${flowerUrl}" alt="" style="position:absolute;bottom:18px;right:20px;width:64px;height:auto;opacity:0.9;" />`;
-  }
+  const logo = buildCardLogoHtml('dark', mode, siteOrigin);
 
   const occasion = buildOccasionHtml(fields.occasion, locale, mode, { color: t.warmAccent });
   const brand = buildBrandLineHtml(locale, { voice: 'script', mode, color: t.ink, circled: true });
@@ -265,22 +251,19 @@ function renderLetter(fields, locale, mode, siteOrigin) {
     framed: true
   });
   const redeem = buildRedeemHtml(locale, mode, { color: t.muted });
-  const wordmark = buildWordmarkHtml(locale, mode, { color: t.warmAccent });
 
   const pad = mode === 'print' ? CARD_LAYOUT.print.padding : '32px 28px';
   const positioning = mode === 'email' ? '' : 'position:relative;';
 
   return `
 <div data-gv-card-template="romantic" data-gv-card-mode="${mode}" style="${containerDimensions(mode)}${bg}${positioning}padding:${pad};">
-  ${stampHtml}
-  ${wordmark}
+  ${logo}
   ${brand}
   ${occasion}
   ${message}
   ${signature}
   ${formBlock}
   ${redeem}
-  ${flowerHtml}
 </div>`;
 }
 
@@ -289,8 +272,9 @@ function renderLetter(fields, locale, mode, siteOrigin) {
  * tight leading, message in white Caveat, white dotted form block, small-caps
  * footer. Zero image assets; prints on any office printer.
  */
-function renderInk(fields, locale, mode) {
+function renderInk(fields, locale, mode, siteOrigin) {
   const t = CARD_TOKENS.minimal;
+  const logo = buildCardLogoHtml('white', mode, siteOrigin);
 
   const occasion = buildOccasionHtml(fields.occasion, locale, mode, { color: t.muted });
   const brand = buildBrandLineHtml(locale, { voice: 'statement', mode, color: t.text });
@@ -301,9 +285,11 @@ function renderInk(fields, locale, mode) {
   const footer = `<p data-gv-card-ink-footer="1" style="margin:16px 0 0;${fontCss('utilityCaps', mode)}font-size:11px;letter-spacing:0.3em;text-transform:uppercase;font-weight:500;color:${t.muted};">${userHtml(INK_FOOTER)}</p>`;
 
   const pad = mode === 'print' ? CARD_LAYOUT.print.padding : '36px 28px';
+  const positioning = mode === 'email' ? '' : 'position:relative;';
 
   return `
-<div data-gv-card-template="minimal" data-gv-card-mode="${mode}" style="${containerDimensions(mode)}background-color:${t.bg};padding:${pad};">
+<div data-gv-card-template="minimal" data-gv-card-mode="${mode}" style="${containerDimensions(mode)}background-color:${t.bg};${positioning}padding:${pad};">
+  ${logo}
   ${brand}
   ${occasion}
   ${message}

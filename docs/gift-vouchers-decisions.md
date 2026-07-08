@@ -18,5 +18,6 @@
 | 7 | Card fonts | Self-hosted woff2 (OFL, Latin + Cyrillic): Marck Script (script), Caveat (message), Oswald (utility caps); Playfair (statement) + Inter (small utility) stay. Roles documented in `CARD_FONT_ROLES`. Email mode: script/message fall back to Playfair italic, textures degrade to solid warm colors. |
 | 7 | Card artifact assets | Canva exports owned by the business go in `client/public/media/gift-vouchers/card/` (paper texture, crumpled texture, mountain line-art, stamp frame; optional flower, signpost — each <150KB). Until a file lands its slot renders the flat `#F7F4EE` fallback; no substitute artwork ever. |
 | 7 | Legacy card bg | `gift-voucher-card-bg.jpg` stays on disk permanently — already-sent emails hot-link it (test-enforced). |
+| 7 | Template design direction (Batch 7 QA) | Decorative assets (stamp, flower, mountain line-art) removed; site logo top-right on all three templates; textures retained. Design gate in Batch 9 judges against this direction. |
 | 8 | Ops resend token mint | When `cardAccessTokenHash` is null on legacy voucher, mint token at ops resend so download link can be included. |
 | 8 | Resend token rotation | **Permanent rule:** any resend rotates the card access token (mint new, overwrite `cardAccessTokenHash`); old links invalidate. Newest email always carries the working link. |

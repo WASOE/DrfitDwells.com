@@ -42,6 +42,16 @@ export const CARD_ASSETS = Object.freeze({
   signpostSketch: `${CARD_ASSET_BASE}/gift-voucher-signpost.png`
 });
 
+/** Site logo on every card — top right, same size on Postcard, Letter, and Ink. */
+export const CARD_LOGO = Object.freeze({
+  dark: '/media/branding/logo-header-dark.png',
+  white: '/media/branding/logo-header-white.png',
+  widthPx: 160,
+  /** Right inset on brand line so script/statement text clears the logo. */
+  brandLineClearancePx: 188,
+  alt: 'Drift & Dwells'
+});
+
 /**
  * Self-hosted webfonts (Google Fonts OFL, Cyrillic + Latin subsets) under
  * client/public/fonts/gift-voucher/. Caveat is a variable font: one file per

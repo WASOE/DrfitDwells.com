@@ -1,6 +1,7 @@
 import {
   CARD_ASSETS,
   CARD_LAYOUT,
+  CARD_LOGO,
   CARD_TOKENS,
   cardFontFamily,
   PLACEHOLDER_VOUCHER_CODE
@@ -37,9 +38,20 @@ function formatExpiryDate(value, locale = 'en') {
   });
 }
 
-/** Hide artifact slots until the Canva export lands — never substitute art. */
-function hideOnError(e) {
-  e.currentTarget.style.display = 'none';
+/** Site logo — top right on every template, same width as the former stamp slot. */
+function CardLogo({ variant = 'dark' }) {
+  const src = variant === 'white' ? CARD_LOGO.white : CARD_LOGO.dark;
+  return (
+    <img
+      src={src}
+      alt={CARD_LOGO.alt}
+      width={CARD_LOGO.widthPx}
+      className="absolute right-4 top-4 h-auto"
+      style={{ width: CARD_LOGO.widthPx }}
+      data-gv-card-logo="1"
+      loading="lazy"
+    />
+  );
 }
 
 function BrandLine({ locale, voice = 'script', color, circled = false }) {
@@ -58,7 +70,11 @@ function BrandLine({ locale, voice = 'script', color, circled = false }) {
     const idx = line.toLowerCase().indexOf(word.toLowerCase());
     if (idx >= 0) {
       return (
-        <p className="mb-3" style={style} data-gv-card-brand-line="1">
+        <p
+          className="mb-3"
+          style={{ ...style, paddingRight: CARD_LOGO.brandLineClearancePx }}
+          data-gv-card-brand-line="1"
+        >
           {line.slice(0, idx)}
           <span className="relative inline-block whitespace-nowrap">
             <svg
@@ -86,7 +102,11 @@ function BrandLine({ locale, voice = 'script', color, circled = false }) {
   }
 
   return (
-    <p className="mb-3" style={style} data-gv-card-brand-line="1">
+    <p
+      className="mb-3"
+      style={{ ...style, paddingRight: CARD_LOGO.brandLineClearancePx }}
+      data-gv-card-brand-line="1"
+    >
       {line}
     </p>
   );
@@ -147,10 +167,6 @@ function Signature({ buyerName, color }) {
   );
 }
 
-/**
- * The voucher form block: TO / VALID UNTIL / CODE / VALUE. Oswald caps labels,
- * handwritten values on dotted underlines. Shared identity across templates.
- */
 function FormBlock({ fields, locale, color, mutedColor, framed = false }) {
   const labels = getFormLabels(locale);
   const rows = [
@@ -237,30 +253,11 @@ function RedeemLine({ locale, color }) {
   );
 }
 
-function Wordmark({ locale, color }) {
-  const labels = getCardLabels(locale);
-  return (
-    <p
-      className="mb-3 uppercase"
-      style={{
-        fontFamily: cardFontFamily('utilityCaps'),
-        fontSize: '11px',
-        letterSpacing: '0.28em',
-        fontWeight: 500,
-        color
-      }}
-    >
-      {labels.brandWordmark}
-    </p>
-  );
-}
-
-/** Postcard (stored: forest) — warm paper, line-art mountains, script brand line. */
 function PostcardCard({ fields, locale }) {
   const t = CARD_TOKENS.forest;
   return (
     <div
-      className="w-full overflow-hidden rounded-md p-7 shadow-lg md:p-9"
+      className="relative w-full overflow-hidden rounded-md p-7 shadow-lg md:p-9"
       data-gv-card-template="forest"
       style={{
         backgroundColor: t.fallbackBg,
@@ -269,14 +266,7 @@ function PostcardCard({ fields, locale }) {
         backgroundPosition: 'center'
       }}
     >
-      <img
-        src={CARD_ASSETS.mountainLineArt}
-        alt=""
-        className="mx-auto mb-3 block h-auto w-full max-w-md"
-        loading="lazy"
-        onError={hideOnError}
-      />
-      <Wordmark locale={locale} color={t.muted} />
+      <CardLogo variant="dark" />
       <BrandLine locale={locale} voice="script" color={t.ink} />
       <OccasionLine occasion={fields.occasion} locale={locale} color={t.muted} />
       <CardMessage message={fields.message} locale={locale} color={t.ink} />
@@ -287,7 +277,6 @@ function PostcardCard({ fields, locale }) {
   );
 }
 
-/** Letter (stored: romantic) — crumpled paper, stamp, circled word, framed form block. */
 function LetterCard({ fields, locale }) {
   const t = CARD_TOKENS.romantic;
   return (
@@ -301,14 +290,7 @@ function LetterCard({ fields, locale }) {
         backgroundPosition: 'center'
       }}
     >
-      <img
-        src={CARD_ASSETS.stampFrame}
-        alt=""
-        className="absolute right-4 top-4 h-auto w-16 rotate-3 md:w-20"
-        loading="lazy"
-        onError={hideOnError}
-      />
-      <Wordmark locale={locale} color={t.warmAccent} />
+      <CardLogo variant="dark" />
       <BrandLine locale={locale} voice="script" color={t.ink} circled />
       <OccasionLine occasion={fields.occasion} locale={locale} color={t.warmAccent} />
       <CardMessage
@@ -320,26 +302,19 @@ function LetterCard({ fields, locale }) {
       <Signature buyerName={fields.buyerName} color={t.ink} />
       <FormBlock fields={fields} locale={locale} color={t.ink} mutedColor={t.muted} framed />
       <RedeemLine locale={locale} color={t.muted} />
-      <img
-        src={CARD_ASSETS.pressedFlower}
-        alt=""
-        className="absolute bottom-4 right-5 h-auto w-14 opacity-90"
-        loading="lazy"
-        onError={hideOnError}
-      />
     </div>
   );
 }
 
-/** Ink (stored: minimal) — solid black cover card, zero image assets. */
 function InkCard({ fields, locale }) {
   const t = CARD_TOKENS.minimal;
   return (
     <div
-      className="w-full overflow-hidden rounded-md p-8 shadow-lg md:p-10"
+      className="relative w-full overflow-hidden rounded-md p-8 shadow-lg md:p-10"
       data-gv-card-template="minimal"
       style={{ backgroundColor: t.bg }}
     >
+      <CardLogo variant="white" />
       <BrandLine locale={locale} voice="statement" color={t.text} />
       <OccasionLine occasion={fields.occasion} locale={locale} color={t.muted} />
       <CardMessage message={fields.message} locale={locale} color={t.text} />
