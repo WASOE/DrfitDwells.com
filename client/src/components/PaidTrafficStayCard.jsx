@@ -4,10 +4,7 @@ import PaidTrafficCardGallery from './PaidTrafficCardGallery';
 const sans = { fontFamily: 'var(--valley-font-primary, Montserrat, system-ui, sans-serif)' };
 
 /**
- * Paid-traffic listing: inline snap gallery + compact sans meta.
- * The whole card (image, copy, price / check dates) opens booking or check-dates flow.
- * Gallery: drag swipes photos without navigating; tap on the image track still navigates.
- * Dots jump slides; "View details" is a separate link (stops propagation).
+ * Paid-traffic listing card: gallery + explicit primary CTA to stay booking section.
  */
 export default function PaidTrafficStayCard({
   slides = [],
@@ -19,7 +16,6 @@ export default function PaidTrafficStayCard({
   detailsHref,
   showDetailsLink,
   linksLoaded,
-  onAvailabilityFallback,
   labels,
   ratingDisplay,
   imageBadge,
@@ -27,33 +23,14 @@ export default function PaidTrafficStayCard({
 }) {
   const navigate = useNavigate();
   const bookingReady = Boolean(linksLoaded && bookingHref);
-  const fallbackReady = Boolean(linksLoaded && !bookingHref && onAvailabilityFallback);
-  const actionable = bookingReady || fallbackReady;
 
-  const go = () => {
-    if (bookingReady) navigate(bookingHref);
-    else if (fallbackReady) onAvailabilityFallback();
-  };
-
-  const onArticleClick = (_e) => {
-    if (!actionable) return;
-    go();
-  };
-
-  const onArticleKeyDown = (e) => {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    if (!actionable) return;
-    if (e.target !== e.currentTarget && e.target.closest?.('a[href]')) return;
-    if (e.repeat) return;
-    e.preventDefault();
-    go();
+  const goToAvailability = () => {
+    if (!bookingReady) return;
+    navigate(bookingHref);
   };
 
   const textBlock = (
-    <div
-      className={`mt-2.5 space-y-0.5 ${actionable ? 'cursor-pointer' : ''}`}
-      style={sans}
-    >
+    <div className="mt-2.5 space-y-1" style={sans}>
       <div className="flex justify-between items-start gap-3">
         <h3 className="text-[15px] font-semibold text-neutral-900 leading-tight tracking-tight pr-1">
           {title}
@@ -76,13 +53,8 @@ export default function PaidTrafficStayCard({
       {specLine ? (
         <p className="text-[12px] text-neutral-500 leading-snug">{specLine}</p>
       ) : null}
-      <p className="pt-1 leading-tight">
-        <span className="text-[15px] font-semibold text-neutral-900 underline decoration-neutral-900 underline-offset-2">
-          {price}
-        </span>
-        <span className="text-[13px] font-medium text-neutral-500"> · {labels.checkDates}</span>
-      </p>
-      {!actionable ? (
+      <p className="pt-0.5 text-[15px] font-semibold text-neutral-900 leading-tight">{price}</p>
+      {!bookingReady ? (
         <p className="text-[13px] text-neutral-400 pt-1">{labels.loading}</p>
       ) : null}
     </div>
@@ -92,8 +64,7 @@ export default function PaidTrafficStayCard({
     showDetailsLink && detailsHref ? (
       <Link
         to={detailsHref}
-        onClick={(e) => e.stopPropagation()}
-        className="mt-2 inline-block text-[13px] text-neutral-500 underline underline-offset-4 hover:text-neutral-900"
+        className="mt-2 inline-block text-[12px] text-neutral-500 underline underline-offset-4 hover:text-neutral-800"
         style={sans}
       >
         {labels.viewDetails}
@@ -101,19 +72,12 @@ export default function PaidTrafficStayCard({
     ) : null;
 
   return (
-    <article
-      className={`flex flex-col max-w-lg mx-auto w-full md:max-w-none rounded-2xl ${actionable ? 'cursor-pointer' : ''}`}
-      onClick={onArticleClick}
-      onKeyDown={onArticleKeyDown}
-      role={actionable ? 'button' : undefined}
-      tabIndex={actionable ? 0 : undefined}
-      aria-label={actionable ? `${title} — ${labels.checkDates}` : undefined}
-    >
+    <article className="flex flex-col max-w-lg mx-auto w-full md:max-w-none rounded-2xl">
       <div className="relative shadow-sm rounded-2xl">
         <PaidTrafficCardGallery
           slides={slides}
           eagerFirst={eagerGallery}
-          pointerCursor={actionable}
+          pointerCursor={false}
         />
         {imageBadge ? (
           <span className="pointer-events-none absolute top-3 left-3 z-10 rounded-full bg-white/90 backdrop-blur-sm px-2.5 py-1 text-[11px] font-semibold text-neutral-900 shadow-sm border border-black/5">
@@ -122,6 +86,16 @@ export default function PaidTrafficStayCard({
         ) : null}
       </div>
       {textBlock}
+      {bookingReady ? (
+        <button
+          type="button"
+          onClick={goToAvailability}
+          className="mt-3 w-full min-h-[44px] px-4 py-3 bg-[#1a1a1a] text-white text-[13px] font-semibold tracking-wide rounded-lg hover:bg-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81887A] focus-visible:ring-offset-2 active:scale-[0.99] transition-all touch-manipulation"
+          style={sans}
+        >
+          {labels.checkAvailability}
+        </button>
+      ) : null}
       {detailsLink}
     </article>
   );

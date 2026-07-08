@@ -8,7 +8,7 @@ export const PAID_TRAFFIC_STAY_META = [
     id: 'the-cabin',
     listingSlug: 'the-cabin',
     route: '/stays/the-cabin',
-    detailsPath: '/cabin',
+    detailsPath: '/stays/the-cabin',
     fallbackImage: '/uploads/Content%20website/drift-dwells-bulgaria-bucephalus-suite.avif',
     showDetailsLink: true
   },

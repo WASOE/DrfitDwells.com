@@ -67,6 +67,10 @@
       "title": "Off-grid stays in Bulgaria",
       "subline": "Four stays · Check dates on the next step"
     },
+    "directBenefit": "Book direct with us — no platform fees. Clear pricing on the next step.",
+    "trustStrip": {
+      "aria": "Guest ratings on Airbnb, Booking.com, and TripAdvisor"
+    },
     "card": {
       "ratingDisplay": "4.95",
       "imageBadge": "Direct"
@@ -94,6 +98,7 @@
     },
     "cta": {
       "checkDates": "Check dates",
+      "checkAvailability": "Check availability",
       "viewDetails": "View details",
       "chooseStay": "Choose your stay",
       "stickyCheckAvailability": "Check availability",

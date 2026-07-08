@@ -358,6 +358,16 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
     });
   }, [cabinType?._id]);
 
+  useEffect(() => {
+    if (window.location.hash !== '#details' || !cabinType) return;
+    const el = document.getElementById('details');
+    if (!el) return;
+    const timeoutId = setTimeout(() => {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+    return () => clearTimeout(timeoutId);
+  }, [cabinType]);
+
   const canonicalPath = useMemo(() => buildStayCanonicalPath(staySlug), [staySlug]);
 
   const pageTitle = useMemo(() => {

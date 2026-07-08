@@ -1,7 +1,9 @@
 import { useEffect } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import Header from "../components/Header";
+import PaidTrafficHeader from "../components/PaidTrafficHeader";
 import Footer from "../components/Footer";
+import PaidTrafficFooter from "../components/PaidTrafficFooter";
 import AudioPlayer from "../components/AudioPlayer";
 import BookingModalLazy from "../components/BookingModalLazy";
 import AnnouncementBar from "../components/AnnouncementBar";
@@ -9,6 +11,7 @@ import ChatWidgetLazy from "../components/ChatWidgetLazy";
 import ConsentBanner from "../components/ConsentBanner";
 import DeferredIdleSiteChrome from "../components/DeferredIdleSiteChrome";
 import { stripLocaleFromPath } from "../utils/localizedRoutes";
+import { isPaidTrafficLandingPath } from "../utils/paidTrafficRoutes";
 import { useFloatingSafeArea } from "../hooks/useFloatingSafeArea";
 import { captureAttributionFromUrl } from "../tracking/attribution";
 
@@ -19,7 +22,6 @@ export default function SiteLayout() {
   const location = useLocation();
   const { bottomOffset } = useFloatingSafeArea();
 
-  // Sync CSS variable for components that use raw CSS (e.g. var(--floating-bottom-offset))
   useEffect(() => {
     document.documentElement.style.setProperty('--floating-bottom-offset', `${bottomOffset}px`);
     return () => document.documentElement.style.removeProperty('--floating-bottom-offset');
@@ -28,15 +30,14 @@ export default function SiteLayout() {
   useEffect(() => {
     captureAttributionFromUrl();
   }, [location.pathname, location.search]);
+
   const basePath = stripLocaleFromPath(location.pathname);
+  const isPaidTrafficLanding = isPaidTrafficLandingPath(location.pathname);
   const isHome = basePath === '/';
   const isSearchPage = basePath === '/search';
   const deferIdleChrome = isHome || isSearchPage;
   const isGuidePage = basePath.startsWith('/guides/');
   const isHeroPage = HERO_PATHS.includes(basePath);
-  // Full-screen app-style configurator: photo + panel fill the viewport with their
-  // own fixed bottom bar, so the marketing footer is hidden on desktop (it would
-  // create a second page scroll and overlap the fixed bar). Kept on mobile.
   const isAppPage = basePath === '/build';
 
   return (
@@ -55,7 +56,7 @@ export default function SiteLayout() {
         }}
       />
       <div className="relative z-10">
-        <Header />
+        {isPaidTrafficLanding ? <PaidTrafficHeader /> : <Header />}
         <main
           id="main"
           style={isHeroPage ? undefined : { paddingTop: 'var(--header-offset)' }}
@@ -66,10 +67,10 @@ export default function SiteLayout() {
         {!isHome && !isGuidePage && (
           isAppPage ? (
             <div className="lg:hidden">
-              <Footer />
+              {isPaidTrafficLanding ? <PaidTrafficFooter /> : <Footer />}
             </div>
           ) : (
-            <Footer />
+            isPaidTrafficLanding ? <PaidTrafficFooter /> : <Footer />
           )
         )}
         {deferIdleChrome ? (
@@ -80,9 +81,9 @@ export default function SiteLayout() {
           </>
         ) : (
           <>
-            <AudioPlayer />
+            {!isPaidTrafficLanding && <AudioPlayer />}
             <BookingModalLazy />
-            <AnnouncementBar />
+            {!isPaidTrafficLanding && <AnnouncementBar />}
             <ChatWidgetLazy />
             <ConsentBanner />
           </>

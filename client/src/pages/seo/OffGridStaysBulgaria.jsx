@@ -6,15 +6,17 @@ import { buildHreflangAlternates } from '../../utils/localizedRoutes';
 import { useLocalizedPath } from '../../hooks/useLocalizedPath';
 import { useCabinNameToIdMap } from '../../hooks/useCabinNameToIdMap';
 import { usePaidTrafficListingSlides } from '../../hooks/usePaidTrafficListingSlides';
-import { useBookingSearch } from '../../context/BookingSearchContext';
 import PaidTrafficStayCard from '../../components/PaidTrafficStayCard';
+import PaidTrafficTrustStrip from '../../components/PaidTrafficTrustStrip';
 import { PAID_TRAFFIC_STAY_META } from '../../data/paidTrafficLandingStays';
 import { reviewAPI } from '../../services/api';
 import { deriveDisplayName } from '../../utils/nameUtils';
+import { scrollToPaidTrafficStays } from '../../utils/paidTrafficRoutes';
 import '../the-valley/the-valley.css';
 import '../../i18n/ns/seo';
 
-const OG_IMAGE = CABIN_MEDIA.heroPoster.winter;
+const OG_IMAGE_FALLBACK = CABIN_MEDIA.heroPoster.winter;
+const BOOKING_SECTION_HASH = 'details';
 
 const CMP_KEYS = ['bestFor', 'sleeps', 'privacy', 'comfort', 'access'];
 
@@ -28,7 +30,6 @@ function sanitizeReviewText(text = '') {
 export default function OffGridStaysBulgaria() {
   const { t } = useTranslation('seo');
   const lp = useLocalizedPath();
-  const { openModal } = useBookingSearch();
   const { primaryCabinId, loading: linksLoading } = useCabinNameToIdMap();
   const { slidesByStayId, firstSlideUrl } = usePaidTrafficListingSlides();
   const staysRef = useRef(null);
@@ -38,16 +39,19 @@ export default function OffGridStaysBulgaria() {
 
   const scrollToStays = useCallback(() => {
     staysRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    scrollToPaidTrafficStays();
   }, []);
 
   const lcpPreloadHref =
-    firstSlideUrl || PAID_TRAFFIC_STAY_META[0]?.fallbackImage || OG_IMAGE;
+    firstSlideUrl || PAID_TRAFFIC_STAY_META[0]?.fallbackImage || OG_IMAGE_FALLBACK;
+
+  const ogImage = firstSlideUrl || PAID_TRAFFIC_STAY_META[0]?.fallbackImage || OG_IMAGE_FALLBACK;
 
   const bookingHrefById = useMemo(() => {
     const map = {};
     PAID_TRAFFIC_STAY_META.forEach((stay) => {
       if (stay.route) {
-        map[stay.id] = lp(stay.route);
+        map[stay.id] = `${lp(stay.route)}#${BOOKING_SECTION_HASH}`;
       }
     });
     return map;
@@ -56,10 +60,8 @@ export default function OffGridStaysBulgaria() {
   const detailsHrefById = useMemo(() => {
     const map = {};
     PAID_TRAFFIC_STAY_META.forEach((stay) => {
-      if (!stay.detailsPath) return;
-      let path = lp(stay.detailsPath);
-      if (stay.detailsHash) path += `#${stay.detailsHash}`;
-      map[stay.id] = path;
+      if (!stay.showDetailsLink || !stay.route) return;
+      map[stay.id] = lp(stay.route);
     });
     return map;
   }, [lp]);
@@ -91,7 +93,7 @@ export default function OffGridStaysBulgaria() {
 
   const linksLoaded = !linksLoading;
   const ctaLabels = {
-    checkDates: p('cta.checkDates'),
+    checkAvailability: p('cta.checkAvailability'),
     viewDetails: p('cta.viewDetails'),
     loading: p('cta.loading')
   };
@@ -109,15 +111,17 @@ export default function OffGridStaysBulgaria() {
         title={p('metaTitle')}
         description={p('metaDescription')}
         canonicalPath="/off-grid-stays-bulgaria"
-        ogImage={OG_IMAGE}
+        ogImage={ogImage}
         hreflangAlternates={buildHreflangAlternates('/off-grid-stays-bulgaria')}
         preloadImages={
           lcpPreloadHref ? [{ href: lcpPreloadHref, fetchPriority: 'high' }] : []
         }
       />
 
-      <div className="valley-page" style={{ backgroundColor: 'var(--valley-canvas)' }}>
-        {/* Compact header — no full-bleed image; stays visible immediately below */}
+      <div
+        className="valley-page pb-[calc(70px+env(safe-area-inset-bottom,0px))] md:pb-0"
+        style={{ backgroundColor: 'var(--valley-canvas)' }}
+      >
         <header className="border-b border-[rgba(0,0,0,0.08)] bg-[var(--valley-canvas)]">
           <div className="valley-container py-3 md:py-4">
             <p className="valley-label !text-[10px] md:!text-xs !tracking-[0.12em] text-[#717171] mb-1">
@@ -129,14 +133,17 @@ export default function OffGridStaysBulgaria() {
             <p className="valley-caption mt-1 max-w-xl !text-[13px] leading-snug text-[#717171]">
               {p('compact.subline')}
             </p>
+            <p className="mt-2 max-w-xl text-[13px] md:text-sm text-[#4a4a4a] leading-snug">
+              {p('directBenefit')}
+            </p>
+            <PaidTrafficTrustStrip />
           </div>
         </header>
 
-        {/* Listing feed — first screen is accommodations */}
         <section
           ref={staysRef}
           id="stays"
-          className="scroll-mt-20 border-t border-[rgba(0,0,0,0.06)]"
+          className="scroll-mt-24 border-t border-[rgba(0,0,0,0.06)]"
           style={{
             paddingTop: 'var(--valley-space-sm)',
             paddingBottom: 'var(--valley-section-padding-mobile)'
@@ -162,7 +169,6 @@ export default function OffGridStaysBulgaria() {
                     detailsHref={detailsHrefById[stay.id]}
                     showDetailsLink={stay.showDetailsLink}
                     linksLoaded={linksLoaded}
-                    onAvailabilityFallback={openModal}
                     labels={ctaLabels}
                     ratingDisplay={ratingDisplay}
                     imageBadge={imageBadge}
@@ -257,13 +263,13 @@ export default function OffGridStaysBulgaria() {
           </div>
         </section>
 
-        <div className="fixed bottom-0 left-0 w-full h-[70px] z-50 bg-stone-900/90 backdrop-blur-md border-t border-white/10 p-4 safe-area-bottom md:hidden flex items-center">
+        <div className="fixed bottom-0 left-0 w-full z-50 bg-stone-900/90 backdrop-blur-md border-t border-white/10 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:hidden">
           <button
             type="button"
-            onClick={openModal}
-            className="w-full bg-[#F1ECE2] text-stone-900 py-3 rounded-none uppercase tracking-[0.2em] text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#F1ECE2]/50 active:scale-[0.98] transition-all duration-150 touch-manipulation"
+            onClick={scrollToStays}
+            className="w-full min-h-[44px] bg-[#F1ECE2] text-stone-900 py-3 rounded-none uppercase tracking-[0.2em] text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#F1ECE2]/50 active:scale-[0.98] transition-all duration-150 touch-manipulation"
           >
-            {p('cta.stickyCheckAvailability')}
+            {p('cta.chooseStay')}
           </button>
         </div>
       </div>

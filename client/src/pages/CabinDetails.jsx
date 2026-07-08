@@ -776,10 +776,20 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [lightboxOpen, lightboxMode, goToPrevious, goToNext, closeLightbox, backToGrid]);
 
-  // Anchor to reviews if hash present
+  // Anchor to reviews or booking section if hash present
   useEffect(() => {
-    if (window.location.hash === '#guest-reviews') {
+    const hash = window.location.hash;
+    if (hash === '#guest-reviews') {
       const el = document.getElementById('guest-reviews');
+      if (el) {
+        const timeoutId = setTimeout(() => {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, SCROLL_DELAY_MS);
+        return () => clearTimeout(timeoutId);
+      }
+    }
+    if (hash === '#details' && cabin) {
+      const el = document.getElementById('details');
       if (el) {
         const timeoutId = setTimeout(() => {
           el.scrollIntoView({ behavior: 'smooth', block: 'start' });
