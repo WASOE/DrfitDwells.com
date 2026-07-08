@@ -164,6 +164,30 @@ test('POST /create-payment-intent legacy email payload with deliveryDate still s
   assert.ok(voucher.deliveryDate);
 });
 
+test('POST /create-payment-intent persists full customization fields', async () => {
+  const response = await request(app)
+    .post('/api/gift-vouchers/create-payment-intent')
+    .set('X-Forwarded-For', '10.20.0.5')
+    .send(
+      browserEmailPayload({
+        amountOriginalCents: 20000,
+        message: 'Time offline together.',
+        cardTemplateId: 'romantic',
+        cardOccasion: 'birthday',
+        cardLocale: 'bg',
+        deliveryOption: 'recipient_now'
+      })
+    );
+  assert.equal(response.status, 200);
+  const voucher = await GiftVoucher.findById(response.body.data.giftVoucherId).lean();
+  assert.equal(voucher.amountOriginalCents, 20000);
+  assert.equal(voucher.cardTemplateId, 'romantic');
+  assert.equal(voucher.cardOccasion, 'birthday');
+  assert.equal(voucher.cardLocale, 'bg');
+  assert.equal(voucher.deliveryOption, 'recipient_now');
+  assert.equal(voucher.message, 'Time offline together.');
+});
+
 test('GET /config returns scheduledDeliveryEnabled from env flag', async () => {
   const { SCHEDULED_DELIVERY_ENV_FLAG } = require('../services/giftVouchers/giftVoucherCustomizationConstants');
   const original = process.env[SCHEDULED_DELIVERY_ENV_FLAG];

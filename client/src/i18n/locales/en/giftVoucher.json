@@ -145,6 +145,7 @@
     "kicker": "Gift Voucher",
     "heading": "Payment received",
     "body": "Your voucher is being securely processed. The gift voucher email will be sent once payment is confirmed.",
+    "downloadHint": "Your email includes a link to download and print the gift card.",
     "help": "If you do not receive an email shortly, contact us at",
     "buyAnother": "Buy another voucher",
     "backHome": "Back to home"

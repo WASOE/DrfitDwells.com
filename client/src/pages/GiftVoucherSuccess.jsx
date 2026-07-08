@@ -21,6 +21,7 @@ export default function GiftVoucherSuccess() {
           <p className="text-xs uppercase tracking-[0.24em] text-gray-500">{t('success.kicker')}</p>
           <h1 className="mt-2 text-3xl font-semibold text-gray-900 md:text-4xl">{t('success.heading')}</h1>
           <p className="mt-4 text-sm text-gray-700 md:text-base">{t('success.body')}</p>
+          <p className="mt-3 text-sm text-gray-700 md:text-base">{t('success.downloadHint')}</p>
           <p className="mt-4 text-sm text-gray-600">
             {t('success.help')}{' '}
             <a className="underline" href="mailto:hello@driftdwells.com">

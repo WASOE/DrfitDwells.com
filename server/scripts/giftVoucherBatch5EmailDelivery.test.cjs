@@ -120,6 +120,12 @@ test('activation sends buyer receipt once', async () => {
 });
 
 test('activation sends recipient voucher once for deliveryMode=email', async () => {
+  const emailCalls = [];
+  emailService.sendEmail = async (payload) => {
+    emailCalls.push(payload);
+    return { success: true, method: 'sent', messageId: `msg_${emailCalls.length}` };
+  };
+
   const created = await createGiftVoucherPaymentIntent(buildCreatePayload());
   const event = buildWebhookEvent({
     voucherId: created.giftVoucherId,
@@ -132,6 +138,9 @@ test('activation sends recipient voucher once for deliveryMode=email', async () 
 
   const sentCount = await countEmailEvents(created.giftVoucherId, 'sent', 'recipient_voucher');
   assert.equal(sentCount, 1);
+  const recipientEmail = emailCalls.find((c) => /recipient|voucher|gift/i.test(c.subject || ''));
+  assert.ok(recipientEmail?.html);
+  assert.match(recipientEmail.html, /data-gv-card/);
 });
 
 test('duplicate webhook does not duplicate buyer/recipient sends', async () => {

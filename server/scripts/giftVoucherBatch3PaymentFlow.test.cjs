@@ -30,6 +30,7 @@ function buildCreatePayload(overrides = {}) {
     recipientEmail: 'recipient@example.com',
     message: 'Enjoy your stay',
     deliveryMode: 'email',
+    deliveryOption: 'recipient_now',
     termsAccepted: true,
     termsVersion: 'v1',
     purchaseRequestId: 'gvr_req_12345678',
@@ -47,6 +48,7 @@ function buildCreatePayload(overrides = {}) {
 function buildPostalPayload(overrides = {}) {
   return buildCreatePayload({
     deliveryMode: 'postal',
+    deliveryOption: 'postal',
     recipientEmail: null,
     deliveryAddress: {
       addressLine1: '16 Forest Lane',
