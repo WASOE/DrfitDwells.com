@@ -1,13 +1,13 @@
-import { BLOCK_DOT, INDEX_LEGEND_ITEMS } from './calendarVisualTokens';
+import { INDEX_LEGEND_ITEMS } from './calendarVisualTokens';
 
 /**
- * Compact inline legend for calendar index preview strips.
+ * Compact inline legend for calendar index preview strips and month Gantt view.
  */
-export default function OpsCalendarLegend({ className = '' }) {
+export default function OpsCalendarLegend({ className = '', ariaLabel = 'Calendar legend' }) {
   return (
     <div
       className={`flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-gray-500 ${className}`.trim()}
-      aria-label="Calendar preview legend"
+      aria-label={ariaLabel}
     >
       {INDEX_LEGEND_ITEMS.map((item) => (
         <span key={item.key} className="inline-flex items-center gap-1.5">

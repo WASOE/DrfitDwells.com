@@ -30,7 +30,7 @@ export default function CalendarBottomSheet({ open, title, subtitle, onClose, ch
           transition={{ type: 'spring', damping: 26, stiffness: 220 }}
           onClick={(e) => e.stopPropagation()}
         >
-          <header className="px-5 pt-4 pb-3 border-b border-gray-200">
+          <header className="px-5 pt-4 pb-3 border-b border-gray-100">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h2 className="text-base font-semibold text-gray-900 truncate">{title}</h2>
@@ -54,7 +54,7 @@ export default function CalendarBottomSheet({ open, title, subtitle, onClose, ch
           </div>
 
           {footer ? (
-            <div className="px-5 py-4 border-t border-gray-200 bg-white">
+            <div className="px-5 py-4 border-t border-gray-100 bg-white">
               {footer}
             </div>
           ) : null}
