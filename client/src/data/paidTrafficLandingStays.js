@@ -19,17 +19,17 @@ export const PAID_TRAFFIC_STAY_META = [
     showDetailsLink: false
   },
   {
-    id: 'valley-stone-house',
-    listingSlug: 'stone-house',
-    route: '/stays/stone-house',
-    fallbackImage: '/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.24%20AM.jpeg',
-    showDetailsLink: true
-  },
-  {
     id: 'valley-lux-cabin',
     listingSlug: 'lux-cabin',
     route: '/stays/lux-cabin',
     fallbackImage: '/uploads/The%20Valley/Lux-cabin-exterior-watermark-remover-20260113071503.jpg',
+    showDetailsLink: true
+  },
+  {
+    id: 'valley-stone-house',
+    listingSlug: 'stone-house',
+    route: '/stays/stone-house',
+    fallbackImage: '/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.24%20AM.jpeg',
     showDetailsLink: true
   }
 ];

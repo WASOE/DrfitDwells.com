@@ -67,9 +67,21 @@
       "title": "Off-grid stays in Bulgaria",
       "subline": "Four stays · Check dates on the next step"
     },
-    "directBenefit": "Book direct with us — no platform fees. Clear pricing on the next step.",
+    "directBenefit": "Book direct — skip the platform service fee. Clear pricing on the next step.",
     "trustStrip": {
       "aria": "Guest ratings on Airbnb, Booking.com, and TripAdvisor"
+    },
+    "selector": {
+      "heading": "Pick your stay",
+      "sheetTitle": "Pick your stay",
+      "sheetAria": "Choose one of four stays",
+      "close": "Close",
+      "stays": {
+        "the-cabin": { "fit": "Couples · max remoteness", "price": "From €55/night" },
+        "valley-a-frame": { "fit": "Couples · comfort + views", "price": "From €60/night" },
+        "valley-lux-cabin": { "fit": "Couples · top comfort", "price": "From €85/night" },
+        "valley-stone-house": { "fit": "Groups & families", "price": "From €75/night · min 3 guests" }
+      }
     },
     "card": {
       "ratingDisplay": "4.95",
@@ -101,6 +113,7 @@
       "checkAvailability": "Check availability",
       "viewDetails": "View details",
       "chooseStay": "Choose your stay",
+      "viewFourStays": "View 4 stays",
       "stickyCheckAvailability": "Check availability",
       "loading": "Loading…"
     },

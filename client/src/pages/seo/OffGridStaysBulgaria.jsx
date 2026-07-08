@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CABIN_MEDIA } from '../../config/mediaConfig';
 import Seo from '../../components/Seo';
@@ -8,6 +8,8 @@ import { useConsentBannerOpen } from '../../hooks/useConsentBannerOpen';
 import { useSiteLanguage } from '../../hooks/useSiteLanguage';
 import { usePaidTrafficListingSlides } from '../../hooks/usePaidTrafficListingSlides';
 import PaidTrafficStayCard from '../../components/PaidTrafficStayCard';
+import PaidTrafficStaySelector from '../../components/PaidTrafficStaySelector';
+import PaidTrafficStaysSheet from '../../components/PaidTrafficStaysSheet';
 import PaidTrafficTrustStrip from '../../components/PaidTrafficTrustStrip';
 import { PAID_TRAFFIC_STAY_META } from '../../data/paidTrafficLandingStays';
 import { reviewAPI } from '../../services/api';
@@ -15,15 +17,12 @@ import { deriveDisplayName } from '../../utils/nameUtils';
 import {
   buildPaidTrafficStayNavTarget,
   PAID_TRAFFIC_BOOKING_HASH,
-  PAID_TRAFFIC_MOBILE_STICKY_CLEARANCE,
-  scrollToPaidTrafficStays
+  PAID_TRAFFIC_MOBILE_STICKY_CLEARANCE
 } from '../../utils/paidTrafficRoutes';
 import '../the-valley/the-valley.css';
 import '../../i18n/ns/seo';
 
 const OG_IMAGE_FALLBACK = CABIN_MEDIA.heroPoster.winter;
-
-const CMP_KEYS = ['bestFor', 'sleeps', 'privacy', 'comfort', 'access'];
 
 function sanitizeReviewText(text = '') {
   return String(text)
@@ -38,20 +37,18 @@ export default function OffGridStaysBulgaria() {
   const consentBannerOpen = useConsentBannerOpen();
   const { primaryCabinId } = useCabinNameToIdMap();
   const { slidesByStayId, firstSlideUrl } = usePaidTrafficListingSlides();
-  const staysRef = useRef(null);
   const [reviewSnippets, setReviewSnippets] = useState([]);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [pastHero, setPastHero] = useState(false);
+  const heroEndRef = useRef(null);
 
   const p = (key, opts) => t(`paidStaysBulgaria.${key}`, opts);
-
-  const scrollToStays = useCallback(() => {
-    staysRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    scrollToPaidTrafficStays();
-  }, []);
 
   const lcpPreloadHref =
     firstSlideUrl || PAID_TRAFFIC_STAY_META[0]?.fallbackImage || OG_IMAGE_FALLBACK;
 
   const ogImage = firstSlideUrl || PAID_TRAFFIC_STAY_META[0]?.fallbackImage || OG_IMAGE_FALLBACK;
+  const heroImage = lcpPreloadHref;
 
   const bookingToById = useMemo(() => {
     const map = {};
@@ -74,8 +71,50 @@ export default function OffGridStaysBulgaria() {
     return map;
   }, [language]);
 
+  const ctaLabels = {
+    checkAvailability: p('cta.checkAvailability'),
+    viewDetails: p('cta.viewDetails')
+  };
+
+  const sleepsLabel = p('comparison.labels.sleeps');
+
+  const selectorItems = useMemo(
+    () =>
+      PAID_TRAFFIC_STAY_META.map((stay) => {
+        const slide = slidesByStayId[stay.id]?.[0];
+        const sleeps = t(`paidStaysBulgaria.stays.${stay.id}.comparison.sleeps`);
+        return {
+          id: stay.id,
+          title: t(`paidStaysBulgaria.stays.${stay.id}.title`),
+          fit: p(`selector.stays.${stay.id}.fit`),
+          sleepsLabel: sleeps ? `${sleepsLabel} ${sleeps}` : '',
+          price: p(`selector.stays.${stay.id}.price`),
+          thumb: slide?.url,
+          thumbAlt: slide?.alt,
+          bookingTo: bookingToById[stay.id],
+          detailsTo: detailsToById[stay.id],
+          showDetailsLink: stay.showDetailsLink
+        };
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [slidesByStayId, bookingToById, detailsToById, language]
+  );
+
   useEffect(() => {
-    if (!primaryCabinId) return;
+    const el = heroEndRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return undefined;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        setPastHero(!entry.isIntersecting && entry.boundingClientRect.top < 0);
+      },
+      { threshold: 0 }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!primaryCabinId) return undefined;
     let active = true;
     (async () => {
       try {
@@ -99,17 +138,9 @@ export default function OffGridStaysBulgaria() {
     };
   }, [primaryCabinId]);
 
-  const ctaLabels = {
-    checkAvailability: p('cta.checkAvailability'),
-    viewDetails: p('cta.viewDetails')
-  };
-
-  const reassuranceLines = t('paidStaysBulgaria.reassurance', { returnObjects: true });
-  const reassurance =
-    Array.isArray(reassuranceLines) && reassuranceLines.length > 0 ? reassuranceLines : [];
-
   const ratingDisplay = p('card.ratingDisplay');
   const imageBadge = p('card.imageBadge');
+  const stickyVisible = !consentBannerOpen && pastHero;
 
   return (
     <>
@@ -131,26 +162,58 @@ export default function OffGridStaysBulgaria() {
           '--paid-sticky-clearance': PAID_TRAFFIC_MOBILE_STICKY_CLEARANCE
         }}
       >
-        <header className="border-b border-[rgba(0,0,0,0.08)] bg-[var(--valley-canvas)]">
-          <div className="valley-container py-3 md:py-4">
-            <p className="valley-label !text-[10px] md:!text-xs !tracking-[0.12em] text-[#717171] mb-1">
-              {p('compact.kicker')}
-            </p>
-            <h1 className="text-lg md:text-xl font-semibold text-[#1a1a1a] tracking-tight leading-snug max-w-2xl">
-              {p('compact.title')}
-            </h1>
-            <p className="valley-caption mt-1 max-w-xl !text-[13px] leading-snug text-[#717171]">
-              {p('compact.subline')}
-            </p>
-            <p className="mt-2 max-w-xl text-[13px] md:text-sm text-[#4a4a4a] leading-snug">
-              {p('directBenefit')}
-            </p>
-            <PaidTrafficTrustStrip />
-          </div>
-        </header>
+        {/* Hero: image-led brand promise (left) + visual stay selector (right) */}
+        <section className="border-b border-[rgba(0,0,0,0.08)]">
+          <div className="valley-container py-4 md:py-8">
+            <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_1fr] lg:gap-10 lg:items-center">
+              <div>
+                <div className="relative w-full overflow-hidden rounded-2xl bg-neutral-200 aspect-[16/10] md:aspect-[16/9]">
+                  {heroImage ? (
+                    <img
+                      src={heroImage}
+                      alt={p('compact.title')}
+                      className="absolute inset-0 h-full w-full object-cover"
+                      fetchpriority="high"
+                      decoding="async"
+                    />
+                  ) : null}
+                  <span className="pointer-events-none absolute top-3 left-3 rounded-full bg-white/90 backdrop-blur-sm px-2.5 py-1 text-[11px] font-semibold text-neutral-900 shadow-sm border border-black/5">
+                    {p('compact.kicker')}
+                  </span>
+                </div>
+                <h1 className="mt-4 text-xl md:text-2xl font-semibold text-[#1a1a1a] tracking-tight leading-snug max-w-2xl">
+                  {p('compact.title')}
+                </h1>
+                <p className="valley-caption mt-1.5 max-w-xl !text-[13px] leading-snug text-[#717171]">
+                  {p('compact.subline')}
+                </p>
+                <p className="mt-2 max-w-xl text-[13px] md:text-sm text-[#4a4a4a] leading-snug">
+                  {p('directBenefit')}
+                </p>
+                <PaidTrafficTrustStrip className="mt-3" />
+              </div>
 
+              <div className="mt-6 lg:mt-0">
+                <div className="lg:max-w-md lg:ml-auto">
+                  <h2 className="text-[13px] font-semibold uppercase tracking-[0.12em] text-[#717171] mb-3">
+                    {p('selector.heading')}
+                  </h2>
+                  <div className="lg:hidden">
+                    <PaidTrafficStaySelector items={selectorItems} labels={ctaLabels} layout="grid" />
+                  </div>
+                  <div className="hidden lg:block">
+                    <PaidTrafficStaySelector items={selectorItems} labels={ctaLabels} layout="rows" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div ref={heroEndRef} aria-hidden className="h-px w-full" />
+
+        {/* Detailed emotional cards */}
         <section
-          ref={staysRef}
           id="stays"
           className="scroll-mt-24 border-t border-[rgba(0,0,0,0.06)]"
           style={{
@@ -163,9 +226,9 @@ export default function OffGridStaysBulgaria() {
               {PAID_TRAFFIC_STAY_META.map((stay, index) => {
                 const ns = `paidStaysBulgaria.stays.${stay.id}`;
                 const title = t(`${ns}.title`);
-                const price = t(`${ns}.price`);
+                const price = p(`selector.stays.${stay.id}.price`);
                 const fitLine = t(`${ns}.fitLine`);
-                const specLine = `${p('comparison.labels.sleeps')} ${t(`${ns}.comparison.sleeps`)}`;
+                const specLine = `${sleepsLabel} ${t(`${ns}.comparison.sleeps`)}`;
                 return (
                   <PaidTrafficStayCard
                     key={stay.id}
@@ -188,26 +251,10 @@ export default function OffGridStaysBulgaria() {
           </div>
         </section>
 
-        {reassurance.length > 0 ? (
+        {reviewSnippets.length > 0 ? (
           <section className="valley-section">
             <div className="valley-container">
-              <div className="border border-[rgba(0,0,0,0.12)] rounded-xl overflow-hidden bg-white">
-                <ul className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-[rgba(0,0,0,0.12)]">
-                  {reassurance.map((line) => (
-                    <li key={line} className="p-5 md:p-6 valley-body text-[#4a4a4a] text-sm md:text-[15px]">
-                      {line}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          </section>
-        ) : null}
-
-        <section className="valley-section">
-          <div className="valley-container">
-            <p className="valley-caption mb-6 max-w-3xl">{p('reviews.caption')}</p>
-            {reviewSnippets.length > 0 ? (
+              <p className="valley-caption mb-6 max-w-3xl">{p('reviews.caption')}</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10">
                 {reviewSnippets.map((r) => {
                   const raw = sanitizeReviewText(r.text);
@@ -223,65 +270,31 @@ export default function OffGridStaysBulgaria() {
                   );
                 })}
               </div>
-            ) : null}
-          </div>
-        </section>
-
-        <section className="valley-section">
-          <div className="valley-container">
-            <h2 className="valley-h2 mb-2">{p('comparison.title')}</h2>
-            <p className="valley-intro mb-8 md:mb-10 max-w-2xl">{p('comparison.hint')}</p>
-
-            <div className="border border-[rgba(0,0,0,0.12)] rounded-xl overflow-hidden bg-white mb-8">
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-[rgba(0,0,0,0.12)]">
-                {PAID_TRAFFIC_STAY_META.map((stay) => {
-                  const ns = `paidStaysBulgaria.stays.${stay.id}`;
-                  const title = t(`${ns}.title`);
-                  return (
-                    <div key={stay.id} className="p-6 md:p-8">
-                      <h3
-                        className="text-base md:text-lg font-semibold text-[#1a1a1a] mb-4 tracking-tight"
-                        style={{ fontFamily: 'var(--valley-font-primary, Montserrat, sans-serif)' }}
-                      >
-                        {title}
-                      </h3>
-                      <div className="space-y-2 valley-body text-[#4a4a4a]">
-                        {CMP_KEYS.map((key) => (
-                          <div key={key}>
-                            <span className="font-semibold text-[#1a1a1a]">
-                              {p(`comparison.labels.${key}`)}:{' '}
-                            </span>
-                            {t(`${ns}.comparison.${key}`)}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
             </div>
+          </section>
+        ) : null}
 
-            <button
-              type="button"
-              onClick={scrollToStays}
-              className="text-[#1a1a1a] font-semibold hover:text-[#81887A] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81887A] valley-body"
-            >
-              {p('comparison.ctaBack')}
-            </button>
-          </div>
-        </section>
-
-        {!consentBannerOpen ? (
+        {stickyVisible ? (
           <div className="fixed bottom-0 left-0 w-full z-50 bg-stone-900/90 backdrop-blur-md border-t border-white/10 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:hidden">
             <button
               type="button"
-              onClick={scrollToStays}
+              onClick={() => setSheetOpen(true)}
               className="w-full min-h-[44px] bg-[#F1ECE2] text-stone-900 py-3 rounded-none uppercase tracking-[0.2em] text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#F1ECE2]/50 active:scale-[0.98] transition-all duration-150 touch-manipulation"
             >
-              {p('cta.chooseStay')}
+              {p('cta.viewFourStays')}
             </button>
           </div>
         ) : null}
+
+        <PaidTrafficStaysSheet
+          open={sheetOpen}
+          onClose={() => setSheetOpen(false)}
+          items={selectorItems}
+          title={p('selector.sheetTitle')}
+          ariaLabel={p('selector.sheetAria')}
+          closeLabel={p('selector.close')}
+          labels={ctaLabels}
+        />
       </div>
     </>
   );
