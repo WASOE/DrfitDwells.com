@@ -680,7 +680,7 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
           )}
 
           {/* Guest Reviews and map now live in the main content flow, like CabinDetails */}
-          <div className="mt-12 md:mt-16 reviews-col" id="details">
+          <div className="mt-12 md:mt-16 reviews-col scroll-mt-[var(--header-offset,5.5rem)]" id="details">
             <h2 className="section-title" id="guest-reviews">{t('detailPage.guestReviews')}</h2>
             <ReviewsSection 
               cabinId={cabinType._id}

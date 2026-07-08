@@ -8,7 +8,6 @@ export const PAID_TRAFFIC_STAY_META = [
     id: 'the-cabin',
     listingSlug: 'the-cabin',
     route: '/stays/the-cabin',
-    detailsPath: '/stays/the-cabin',
     fallbackImage: '/uploads/Content%20website/drift-dwells-bulgaria-bucephalus-suite.avif',
     showDetailsLink: true
   },
@@ -16,7 +15,6 @@ export const PAID_TRAFFIC_STAY_META = [
     id: 'valley-a-frame',
     listingSlug: 'a-frame',
     route: '/stays/a-frame',
-    detailsPath: '/stays/a-frame',
     fallbackImage: '/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.24%20AM%20(4).jpeg',
     showDetailsLink: false
   },
@@ -24,7 +22,6 @@ export const PAID_TRAFFIC_STAY_META = [
     id: 'valley-stone-house',
     listingSlug: 'stone-house',
     route: '/stays/stone-house',
-    detailsPath: '/stays/stone-house',
     fallbackImage: '/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.24%20AM.jpeg',
     showDetailsLink: true
   },
@@ -32,7 +29,6 @@ export const PAID_TRAFFIC_STAY_META = [
     id: 'valley-lux-cabin',
     listingSlug: 'lux-cabin',
     route: '/stays/lux-cabin',
-    detailsPath: '/stays/lux-cabin',
     fallbackImage: '/uploads/The%20Valley/Lux-cabin-exterior-watermark-remover-20260113071503.jpg',
     showDetailsLink: true
   }

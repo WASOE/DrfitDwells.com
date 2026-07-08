@@ -84,7 +84,7 @@ export default function SiteLayout() {
             {!isPaidTrafficLanding && <AudioPlayer />}
             <BookingModalLazy />
             {!isPaidTrafficLanding && <AnnouncementBar />}
-            <ChatWidgetLazy />
+            {!isPaidTrafficLanding && <ChatWidgetLazy />}
             <ConsentBanner />
           </>
         )}

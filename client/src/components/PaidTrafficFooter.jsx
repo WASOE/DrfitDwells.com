@@ -18,15 +18,20 @@ export default function PaidTrafficFooter() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 md:py-10">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-6 md:gap-10">
           <div className="flex flex-col gap-3 max-w-sm">
-            <img
-              src={BRANDING.headerDarkPng}
-              alt="Drift & Dwells"
-              width={BRANDING_DIMENSIONS.header.width}
-              height={BRANDING_DIMENSIONS.header.height}
-              className="h-7 w-auto opacity-90"
-              loading="lazy"
-              decoding="async"
-            />
+            <div className="w-fit shrink-0">
+              <picture>
+                <source srcSet={BRANDING.headerDarkWebp} type="image/webp" />
+                <img
+                  src={BRANDING.headerDarkPng}
+                  alt="Drift & Dwells"
+                  width={BRANDING_DIMENSIONS.header.width}
+                  height={BRANDING_DIMENSIONS.header.height}
+                  className="h-7 w-auto max-h-7 object-contain object-left opacity-90"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </picture>
+            </div>
             <div
               className="font-['Montserrat'] text-[#111] text-sm"
               style={{ opacity: 0.85, lineHeight: 1.6 }}

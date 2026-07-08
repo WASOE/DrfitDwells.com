@@ -1245,7 +1245,7 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
             )}
 
         {/* Guest Reviews — in left column flow */}
-        <div className="mt-12 md:mt-16 reviews-col" id="details">
+        <div className="mt-12 md:mt-16 reviews-col scroll-mt-[var(--header-offset,5.5rem)]" id="details">
           <h2 className="section-title" id="guest-reviews">
             {t('detailPage.guestReviews')}
           </h2>

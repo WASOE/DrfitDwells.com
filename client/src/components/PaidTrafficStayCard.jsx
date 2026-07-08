@@ -12,21 +12,20 @@ export default function PaidTrafficStayCard({
   price,
   fitLine,
   specLine,
-  bookingHref,
-  detailsHref,
+  bookingTo,
+  detailsTo,
   showDetailsLink,
-  linksLoaded,
   labels,
   ratingDisplay,
   imageBadge,
   eagerGallery
 }) {
   const navigate = useNavigate();
-  const bookingReady = Boolean(linksLoaded && bookingHref);
+  const bookingReady = Boolean(bookingTo?.pathname);
 
   const goToAvailability = () => {
     if (!bookingReady) return;
-    navigate(bookingHref);
+    navigate(bookingTo);
   };
 
   const textBlock = (
@@ -54,16 +53,13 @@ export default function PaidTrafficStayCard({
         <p className="text-[12px] text-neutral-500 leading-snug">{specLine}</p>
       ) : null}
       <p className="pt-0.5 text-[15px] font-semibold text-neutral-900 leading-tight">{price}</p>
-      {!bookingReady ? (
-        <p className="text-[13px] text-neutral-400 pt-1">{labels.loading}</p>
-      ) : null}
     </div>
   );
 
   const detailsLink =
-    showDetailsLink && detailsHref ? (
+    showDetailsLink && detailsTo?.pathname ? (
       <Link
-        to={detailsHref}
+        to={detailsTo}
         className="mt-2 inline-block text-[12px] text-neutral-500 underline underline-offset-4 hover:text-neutral-800"
         style={sans}
       >

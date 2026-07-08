@@ -1,5 +1,7 @@
 const STORAGE_KEY = 'dd_consent_v1';
 
+export const CONSENT_UPDATED_EVENT = 'dd-consent-updated';
+
 /** @typedef {{ analytics: boolean; ads: boolean }} ConsentChoice */
 
 export function readConsentChoice() {
@@ -20,6 +22,9 @@ export function writeConsentChoice(choice) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(choice));
   } catch {
     /* ignore */
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(CONSENT_UPDATED_EVENT));
   }
 }
 

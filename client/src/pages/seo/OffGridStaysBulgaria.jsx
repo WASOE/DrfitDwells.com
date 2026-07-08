@@ -3,20 +3,25 @@ import { useTranslation } from 'react-i18next';
 import { CABIN_MEDIA } from '../../config/mediaConfig';
 import Seo from '../../components/Seo';
 import { buildHreflangAlternates } from '../../utils/localizedRoutes';
-import { useLocalizedPath } from '../../hooks/useLocalizedPath';
 import { useCabinNameToIdMap } from '../../hooks/useCabinNameToIdMap';
+import { useConsentBannerOpen } from '../../hooks/useConsentBannerOpen';
+import { useSiteLanguage } from '../../hooks/useSiteLanguage';
 import { usePaidTrafficListingSlides } from '../../hooks/usePaidTrafficListingSlides';
 import PaidTrafficStayCard from '../../components/PaidTrafficStayCard';
 import PaidTrafficTrustStrip from '../../components/PaidTrafficTrustStrip';
 import { PAID_TRAFFIC_STAY_META } from '../../data/paidTrafficLandingStays';
 import { reviewAPI } from '../../services/api';
 import { deriveDisplayName } from '../../utils/nameUtils';
-import { scrollToPaidTrafficStays } from '../../utils/paidTrafficRoutes';
+import {
+  buildPaidTrafficStayNavTarget,
+  PAID_TRAFFIC_BOOKING_HASH,
+  PAID_TRAFFIC_MOBILE_STICKY_CLEARANCE,
+  scrollToPaidTrafficStays
+} from '../../utils/paidTrafficRoutes';
 import '../the-valley/the-valley.css';
 import '../../i18n/ns/seo';
 
 const OG_IMAGE_FALLBACK = CABIN_MEDIA.heroPoster.winter;
-const BOOKING_SECTION_HASH = 'details';
 
 const CMP_KEYS = ['bestFor', 'sleeps', 'privacy', 'comfort', 'access'];
 
@@ -29,8 +34,9 @@ function sanitizeReviewText(text = '') {
 
 export default function OffGridStaysBulgaria() {
   const { t } = useTranslation('seo');
-  const lp = useLocalizedPath();
-  const { primaryCabinId, loading: linksLoading } = useCabinNameToIdMap();
+  const { language } = useSiteLanguage();
+  const consentBannerOpen = useConsentBannerOpen();
+  const { primaryCabinId } = useCabinNameToIdMap();
   const { slidesByStayId, firstSlideUrl } = usePaidTrafficListingSlides();
   const staysRef = useRef(null);
   const [reviewSnippets, setReviewSnippets] = useState([]);
@@ -47,24 +53,26 @@ export default function OffGridStaysBulgaria() {
 
   const ogImage = firstSlideUrl || PAID_TRAFFIC_STAY_META[0]?.fallbackImage || OG_IMAGE_FALLBACK;
 
-  const bookingHrefById = useMemo(() => {
+  const bookingToById = useMemo(() => {
     const map = {};
     PAID_TRAFFIC_STAY_META.forEach((stay) => {
       if (stay.route) {
-        map[stay.id] = `${lp(stay.route)}#${BOOKING_SECTION_HASH}`;
+        map[stay.id] = buildPaidTrafficStayNavTarget(stay.route, language, {
+          hash: PAID_TRAFFIC_BOOKING_HASH
+        });
       }
     });
     return map;
-  }, [lp]);
+  }, [language]);
 
-  const detailsHrefById = useMemo(() => {
+  const detailsToById = useMemo(() => {
     const map = {};
     PAID_TRAFFIC_STAY_META.forEach((stay) => {
       if (!stay.showDetailsLink || !stay.route) return;
-      map[stay.id] = lp(stay.route);
+      map[stay.id] = buildPaidTrafficStayNavTarget(stay.route, language);
     });
     return map;
-  }, [lp]);
+  }, [language]);
 
   useEffect(() => {
     if (!primaryCabinId) return;
@@ -91,11 +99,9 @@ export default function OffGridStaysBulgaria() {
     };
   }, [primaryCabinId]);
 
-  const linksLoaded = !linksLoading;
   const ctaLabels = {
     checkAvailability: p('cta.checkAvailability'),
-    viewDetails: p('cta.viewDetails'),
-    loading: p('cta.loading')
+    viewDetails: p('cta.viewDetails')
   };
 
   const reassuranceLines = t('paidStaysBulgaria.reassurance', { returnObjects: true });
@@ -119,8 +125,11 @@ export default function OffGridStaysBulgaria() {
       />
 
       <div
-        className="valley-page pb-[calc(70px+env(safe-area-inset-bottom,0px))] md:pb-0"
-        style={{ backgroundColor: 'var(--valley-canvas)' }}
+        className="valley-page pb-[var(--paid-sticky-clearance)] md:pb-0"
+        style={{
+          backgroundColor: 'var(--valley-canvas)',
+          '--paid-sticky-clearance': PAID_TRAFFIC_MOBILE_STICKY_CLEARANCE
+        }}
       >
         <header className="border-b border-[rgba(0,0,0,0.08)] bg-[var(--valley-canvas)]">
           <div className="valley-container py-3 md:py-4">
@@ -165,10 +174,9 @@ export default function OffGridStaysBulgaria() {
                     price={price}
                     fitLine={fitLine}
                     specLine={specLine}
-                    bookingHref={bookingHrefById[stay.id]}
-                    detailsHref={detailsHrefById[stay.id]}
+                    bookingTo={bookingToById[stay.id]}
+                    detailsTo={detailsToById[stay.id]}
                     showDetailsLink={stay.showDetailsLink}
-                    linksLoaded={linksLoaded}
                     labels={ctaLabels}
                     ratingDisplay={ratingDisplay}
                     imageBadge={imageBadge}
@@ -263,15 +271,17 @@ export default function OffGridStaysBulgaria() {
           </div>
         </section>
 
-        <div className="fixed bottom-0 left-0 w-full z-50 bg-stone-900/90 backdrop-blur-md border-t border-white/10 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:hidden">
-          <button
-            type="button"
-            onClick={scrollToStays}
-            className="w-full min-h-[44px] bg-[#F1ECE2] text-stone-900 py-3 rounded-none uppercase tracking-[0.2em] text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#F1ECE2]/50 active:scale-[0.98] transition-all duration-150 touch-manipulation"
-          >
-            {p('cta.chooseStay')}
-          </button>
-        </div>
+        {!consentBannerOpen ? (
+          <div className="fixed bottom-0 left-0 w-full z-50 bg-stone-900/90 backdrop-blur-md border-t border-white/10 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:hidden">
+            <button
+              type="button"
+              onClick={scrollToStays}
+              className="w-full min-h-[44px] bg-[#F1ECE2] text-stone-900 py-3 rounded-none uppercase tracking-[0.2em] text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#F1ECE2]/50 active:scale-[0.98] transition-all duration-150 touch-manipulation"
+            >
+              {p('cta.chooseStay')}
+            </button>
+          </div>
+        ) : null}
       </div>
     </>
   );
