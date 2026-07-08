@@ -87,7 +87,7 @@ export default function LocationBlockSheet({ open, onClose, onSuccess }) {
       if (details?.conflicts?.length) {
         setPreview(details);
       }
-      setActionError(err?.response?.data?.message || 'Could not create location-wide block');
+      setActionError(err?.response?.data?.message || 'Could not block entire location');
     } finally {
       setSubmitLoading(false);
     }
@@ -100,8 +100,8 @@ export default function LocationBlockSheet({ open, onClose, onSuccess }) {
   return (
     <CalendarBottomSheet
       open={open}
-      title="Location-wide block"
-      subtitle={`Block every active property in ${locationLabel}. Checkout day is exclusive.`}
+      title="Block entire location"
+      subtitle="Use this for weddings, retreats, private events, or full-location buyouts. The system checks all cabins and units before blocking."
       onClose={onClose}
       footer={
         <div className="flex flex-col sm:flex-row gap-2 max-w-2xl mx-auto w-full">
@@ -111,7 +111,7 @@ export default function LocationBlockSheet({ open, onClose, onSuccess }) {
             disabled={previewLoading || !formStart || !formEnd}
             className="flex-1 px-4 py-3 rounded-lg border border-gray-300 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
           >
-            {previewLoading ? 'Checking…' : 'Check availability'}
+            {previewLoading ? 'Checking…' : 'Check dates'}
           </button>
           <button
             type="button"
@@ -119,7 +119,7 @@ export default function LocationBlockSheet({ open, onClose, onSuccess }) {
             disabled={!canSubmit}
             className="flex-1 px-4 py-3 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 disabled:opacity-50"
           >
-            {submitLoading ? 'Creating…' : 'Create location-wide block'}
+            {submitLoading ? 'Blocking…' : 'Block entire location'}
           </button>
         </div>
       }
@@ -207,7 +207,7 @@ export default function LocationBlockSheet({ open, onClose, onSuccess }) {
                     : 'bg-red-100 text-red-800'
                 }`}
               >
-                {preview.canBlock ? 'Ready to block' : 'Cannot block location'}
+                {preview.canBlock ? 'Ready to block' : 'Some properties are already booked or blocked'}
               </span>
               <span className="text-xs text-gray-600">
                 {preview.targetCount} propert{preview.targetCount === 1 ? 'y' : 'ies'} checked
@@ -217,7 +217,7 @@ export default function LocationBlockSheet({ open, onClose, onSuccess }) {
             {!preview.canBlock && preview.conflicts?.length ? (
               <div className="space-y-2">
                 <p className="text-sm text-gray-800">
-                  One or more properties are not fully available for a location-wide block:
+                  Some properties are already booked or blocked for these dates:
                 </p>
                 <ul className="space-y-2 max-h-48 overflow-y-auto">
                   {preview.conflicts.map((row) => (

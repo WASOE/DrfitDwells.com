@@ -119,16 +119,27 @@ export default function OpsCalendarIndex() {
   return (
     <div className="space-y-4 w-full pb-20 md:pb-8">
       <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5 text-left">
-        <h1 className="text-lg font-semibold text-gray-900">Calendar</h1>
-        <p className="text-sm text-gray-600 mt-1 max-w-3xl">
-          Pick a property for the operational month view. Preview shows the next {preview?.request?.previewDays || 14} nights (
-          {preview?.meta?.propertyTimezone || 'Europe/Sofia'}).
-        </p>
-        {preview?.meta?.today ? (
-          <p className="text-xs text-gray-500 mt-2">
-            Today: <span className="font-mono">{preview.meta.today}</span>
-          </p>
-        ) : null}
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 md:gap-4">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-lg font-semibold text-gray-900">Calendar</h1>
+            <p className="text-sm text-gray-600 mt-1 max-w-3xl">
+              Pick a property for the operational month view. Preview shows the next {preview?.request?.previewDays || 14} nights (
+              {preview?.meta?.propertyTimezone || 'Europe/Sofia'}).
+            </p>
+            {preview?.meta?.today ? (
+              <p className="text-xs text-gray-500 mt-2">
+                Today: <span className="font-mono">{preview.meta.today}</span>
+              </p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={() => setLocationBlockOpen(true)}
+            className="w-full md:w-auto shrink-0 px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors"
+          >
+            Block location
+          </button>
+        </div>
 
         <div className="mt-4 pt-4 border-t border-gray-100 flex flex-wrap gap-x-4 gap-y-2 text-[10px] uppercase tracking-wide text-gray-500">
           <span className="inline-flex items-center gap-1.5">
@@ -146,19 +157,6 @@ export default function OpsCalendarIndex() {
           <span className="inline-flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" /> Conflict
           </span>
-        </div>
-
-        <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-3 max-w-2xl">
-          <button
-            type="button"
-            onClick={() => setLocationBlockOpen(true)}
-            className="inline-flex items-center justify-center px-4 py-2.5 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors"
-          >
-            Location-wide block
-          </button>
-          <p className="text-xs text-gray-500">
-            Block every active property in a location (e.g. full buyout). Checks all cabins and units first.
-          </p>
         </div>
       </section>
 
@@ -277,7 +275,7 @@ export default function OpsCalendarIndex() {
         onClose={() => setLocationBlockOpen(false)}
         onSuccess={(data) => {
           setLocationBlockFlash(
-            `Location-wide block created for ${data?.targetCount || 0} properties (group ${data?.locationBlockGroupId || ''}).`
+            `Entire location blocked for ${data?.targetCount || 0} properties.`
           );
           load();
         }}
