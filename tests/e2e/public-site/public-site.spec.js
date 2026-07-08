@@ -39,4 +39,54 @@ test.describe('public site', () => {
     await page.getByRole('button', { name: /^search$/i }).first().click();
     await expect(page.getByRole('heading', { name: /plan your stay/i })).toBeVisible();
   });
+
+  test('gift voucher preview switches to BG card copy with BG route toggle', async ({ page }) => {
+    await page.goto('/gift-vouchers');
+    await expect(page.locator('[data-gv-card-brand-line="1"]').first()).toContainText(
+      'The gift of time offline.'
+    );
+
+    await page.getByRole('button', { name: /^BG$/ }).first().click();
+    await expect(page).toHaveURL(/\/bg\/gift-vouchers$/);
+
+    const brandLine = page.locator('[data-gv-card-brand-line="1"]').first();
+    await expect(brandLine).toContainText('Подари време офлайн.');
+    await expect(brandLine).not.toContainText('The gift of time offline.');
+    await expect(page.locator('[data-gv-card-form-block="1"]').first()).toContainText('ЗА');
+    await expect(page.locator('[data-gv-card-form-block="1"]').first()).toContainText('СТОЙНОСТ');
+  });
+
+  test('gift voucher mobile preview keeps logo and brand line readable', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/bg/gift-vouchers');
+
+    const card = page.locator('[data-gv-card-template]').first();
+    const logo = page.locator('[data-gv-card-logo="1"]').first();
+    const brandLine = page.locator('[data-gv-card-brand-line="1"]').first();
+
+    await expect(card).toBeVisible();
+    await expect(logo).toBeVisible();
+    await expect(brandLine).toBeVisible();
+
+    const [cardBox, logoBox, brandBox] = await Promise.all([
+      card.boundingBox(),
+      logo.boundingBox(),
+      brandLine.boundingBox()
+    ]);
+
+    expect(cardBox).not.toBeNull();
+    expect(logoBox).not.toBeNull();
+    expect(brandBox).not.toBeNull();
+
+    expect(logoBox.width).toBeGreaterThanOrEqual(92);
+    expect(logoBox.width).toBeLessThanOrEqual(108);
+    expect(brandBox.width).toBeGreaterThanOrEqual(cardBox.width * 0.6);
+
+    const lineCount = await brandLine.evaluate((el) => {
+      const style = window.getComputedStyle(el);
+      const lineHeight = parseFloat(style.lineHeight || '0') || 1;
+      return el.clientHeight / lineHeight;
+    });
+    expect(lineCount).toBeLessThanOrEqual(2.1);
+  });
 });

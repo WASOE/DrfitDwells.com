@@ -46,8 +46,7 @@ function CardLogo({ variant = 'dark' }) {
       src={src}
       alt={CARD_LOGO.alt}
       width={CARD_LOGO.widthPx}
-      className="absolute right-4 top-4 h-auto"
-      style={{ width: CARD_LOGO.widthPx }}
+      className="absolute right-4 top-4 h-auto w-40 max-[500px]:w-[100px]"
       data-gv-card-logo="1"
       loading="lazy"
     />
@@ -72,7 +71,14 @@ function BrandLine({ locale, voice = 'script', color, circled = false }) {
       return (
         <p
           className="mb-3"
-          style={{ ...style, paddingRight: CARD_LOGO.brandLineClearancePx }}
+          style={{
+            ...style,
+            paddingRight: `min(40%, ${CARD_LOGO.brandLineClearancePx}px)`,
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden'
+          }}
           data-gv-card-brand-line="1"
         >
           {line.slice(0, idx)}
@@ -104,7 +110,14 @@ function BrandLine({ locale, voice = 'script', color, circled = false }) {
   return (
     <p
       className="mb-3"
-      style={{ ...style, paddingRight: CARD_LOGO.brandLineClearancePx }}
+      style={{
+        ...style,
+        paddingRight: `min(40%, ${CARD_LOGO.brandLineClearancePx}px)`,
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
+        overflow: 'hidden'
+      }}
       data-gv-card-brand-line="1"
     >
       {line}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
@@ -21,6 +21,7 @@ import {
 import { giftVoucherAPI } from '../services/api';
 import { getAttributionPayload } from '../tracking/attribution';
 import { useSiteLanguage } from '../hooks/useSiteLanguage';
+import { getLanguageFromPath } from '../utils/localizedRoutes';
 import '../i18n/ns/giftVoucher';
 
 const stripePk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
@@ -111,9 +112,11 @@ function AmountCard({ cents, selected, onClick }) {
 export default function GiftVouchers() {
   const { t } = useTranslation('giftVoucher');
   const { language } = useSiteLanguage();
+  const location = useLocation();
   const isBg = language === 'bg';
+  const routeLanguage = getLanguageFromPath(location.pathname);
 
-  const [builder, setBuilder] = useState(() => createInitialBuilderState(language));
+  const [builder, setBuilder] = useState(() => createInitialBuilderState(routeLanguage));
   const [scheduledDeliveryEnabled, setScheduledDeliveryEnabled] = useState(false);
   const [configLoaded, setConfigLoaded] = useState(false);
 
@@ -158,6 +161,13 @@ export default function GiftVouchers() {
       setBuilder((prev) => ({ ...prev, deliveryOption: 'recipient_now', deliveryDate: '' }));
     }
   }, [configLoaded, scheduledDeliveryEnabled, builder.deliveryOption]);
+
+  useEffect(() => {
+    setBuilder((prev) => {
+      if (prev.cardLocale === routeLanguage) return prev;
+      return { ...prev, cardLocale: routeLanguage };
+    });
+  }, [routeLanguage]);
 
   const effectiveAmountCents = useMemo(() => computeEffectiveAmountCents(builder), [builder]);
 
