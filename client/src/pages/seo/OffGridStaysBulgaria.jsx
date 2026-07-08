@@ -41,7 +41,7 @@ export default function OffGridStaysBulgaria() {
   }, []);
 
   const lcpPreloadHref =
-    firstSlideUrl || PAID_TRAFFIC_STAY_META[0]?.image || OG_IMAGE;
+    firstSlideUrl || PAID_TRAFFIC_STAY_META[0]?.fallbackImage || OG_IMAGE;
 
   const bookingHrefById = useMemo(() => {
     const map = {};

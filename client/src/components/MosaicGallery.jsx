@@ -1,47 +1,19 @@
 import { useMemo } from 'react';
-
-// Safe URL normalization helper
-function normalizeSrc(u) {
-  if (!u) return '';
-  // Absolute http(s)
-  if (/^https?:\/\//i.test(u)) return u;
-  // Already rooted (/uploads/…)
-  if (u.startsWith('/')) return u;
-  // Bare filename -> assume uploads/cabins (admin upload default)
-  return `/uploads/cabins/${u}`;
-}
+import {
+  normalizeListingImageSrc,
+  pickListingCoverImageRecord
+} from '../utils/listingGalleryUtils';
 
 // Helper to get primary tag (first tag or null)
 function getPrimaryTag(img) {
   return Array.isArray(img.tags) && img.tags.length > 0 ? img.tags[0] : null;
 }
 
-function pickHeroImage(images) {
-  if (!images || images.length === 0) return null;
-
-  const cover = images.find((img) => img.isCover) || null;
-  const heroPriorityTags = ['outdoor', 'view', 'living_room', 'bedroom'];
-
-  const prioritized = images.find((img) => heroPriorityTags.includes(getPrimaryTag(img)));
-
-  if (!cover) {
-    return prioritized || images[0];
-  }
-
-  const coverTag = getPrimaryTag(cover);
-  if (heroPriorityTags.includes(coverTag)) {
-    return cover;
-  }
-
-  return prioritized || cover;
-}
-
-// Smart selection for 5-photo cover collage
+// Smart selection for 5-photo cover collage — hero is always the listing cover
 function selectCoverCollage(images) {
   if (!images || images.length === 0) return [];
-  
-  // Pick a visually strong hero first; don't blindly trust cover metadata.
-  const cover = pickHeroImage(images);
+
+  const cover = pickListingCoverImageRecord(images);
   if (!cover) return [];
   
   // Priority spaces for diversity
@@ -98,7 +70,7 @@ export default function MosaicGallery({ images = [], onOpenLightbox }) {
     
     const normalized = collage.map(img => ({
       ...img,
-      url: normalizeSrc(img.url || img)
+      url: normalizeListingImageSrc(img.url || img)
     }));
     
     return { top5: normalized, indices: selectedIndices };

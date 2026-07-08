@@ -1,111 +1,71 @@
 import { useEffect, useMemo, useState } from 'react';
-import { fetchCabins } from '../services/cabinContent';
-import { cabinTypeAPI } from '../services/api';
 import { PAID_TRAFFIC_STAY_META } from '../data/paidTrafficLandingStays';
+import { fetchSlugListingIndex } from '../services/listingContent';
 import {
-  buildPaidTrafficSlides,
-  normalizeListingImageSrc
+  buildListingCardSlides,
+  getListingCoverImage
 } from '../utils/listingGalleryUtils';
 
-const PRIMARY_NAMES = ['the cabin', 'bucephalus', 'the cabin (bucephalus)'];
-
-function findPrimaryCabin(cabins) {
-  if (!Array.isArray(cabins) || cabins.length === 0) return null;
-  return (
-    cabins.find((c) => c?.name && PRIMARY_NAMES.includes(c.name.trim().toLowerCase())) ||
-    cabins[0]
-  );
+function emergencyFallbackSlides(meta) {
+  if (!meta.fallbackImage) return [];
+  const cover = getListingCoverImage(null, {
+    fallbackUrl: meta.fallbackImage,
+    alt: meta.id
+  });
+  return cover.url ? [{ url: cover.url, alt: cover.alt }] : [];
 }
 
-function staticFallbackSlides(meta) {
-  return [
-    {
-      url: normalizeListingImageSrc(meta.image),
-      alt: meta.id
-    }
-  ];
+function initialFallbackState() {
+  const init = {};
+  PAID_TRAFFIC_STAY_META.forEach((meta) => {
+    init[meta.id] = emergencyFallbackSlides(meta);
+  });
+  return init;
 }
 
 /**
- * Resolves 3–5 slides per paid-traffic stay from the same API sources as listing pages,
- * with MosaicGallery-aligned hero ordering. Falls back to static marketing URLs.
+ * Resolves 3–5 slides per paid-traffic stay from listing API by slug.
+ * Static URLs are emergency fallback only (initial paint / API failure).
  */
 export function usePaidTrafficListingSlides() {
-  const [byId, setById] = useState(() => {
-    const init = {};
-    PAID_TRAFFIC_STAY_META.forEach((m) => {
-      init[m.id] = staticFallbackSlides(m);
-    });
-    return init;
-  });
+  const [byId, setById] = useState(initialFallbackState);
+
   useEffect(() => {
     let active = true;
 
     (async () => {
       try {
-        const cabins = await fetchCabins();
+        const index = await fetchSlugListingIndex();
         if (!active) return;
-
-        const nameToCabin = {};
-        (cabins || []).forEach((c) => {
-          if (c?.name && c?._id) nameToCabin[c.name.trim().toLowerCase()] = c;
-        });
-
-        const primary = findPrimaryCabin(cabins);
-
-        let cabinType = null;
-        try {
-          const res = await cabinTypeAPI.getBySlug('a-frame');
-          if (res?.data?.success && res.data?.data?.cabinType) {
-            cabinType = res.data.data.cabinType;
-          }
-        } catch {
-          cabinType = null;
-        }
 
         const next = {};
         for (const meta of PAID_TRAFFIC_STAY_META) {
-          let slides = [];
+          const entry = index[meta.listingSlug];
+          const slides = entry
+            ? buildListingCardSlides(entry.listing, {
+                kind: entry.kind,
+                maxSlides: 5,
+                fallbackUrl: meta.fallbackImage
+              })
+            : emergencyFallbackSlides(meta);
 
-          if (meta.id === 'the-cabin' && primary) {
-            slides = buildPaidTrafficSlides(primary, 'cabin', 5);
-          } else if (meta.id === 'valley-a-frame' && cabinType) {
-            slides = buildPaidTrafficSlides(cabinType, 'cabinType', 5);
-          } else if (meta.linkKind === 'backend' && meta.backendName) {
-            const c = nameToCabin[meta.backendName.trim().toLowerCase()];
-            if (c) slides = buildPaidTrafficSlides(c, 'cabin', 5);
-          }
-
-          if (!slides.length) {
-            slides = staticFallbackSlides(meta);
-          }
-
-          next[meta.id] = slides;
+          next[meta.id] = slides.length ? slides : emergencyFallbackSlides(meta);
         }
 
-        if (active) {
-          if (import.meta.env.DEV) {
-            const counts = Object.fromEntries(
-              Object.entries(next).map(([id, slides]) => [id, slides.length])
-            );
-            console.debug('[paid-landing] slides per stay (after API)', counts);
-          }
-          setById(next);
+        if (import.meta.env.DEV) {
+          const counts = Object.fromEntries(
+            Object.entries(next).map(([id, slides]) => [id, slides.length])
+          );
+          console.debug('[paid-landing] slides per stay (after API)', counts);
         }
+
+        setById(next);
       } catch {
-        if (active) {
-          const next = {};
-          PAID_TRAFFIC_STAY_META.forEach((m) => {
-            next[m.id] = staticFallbackSlides(m);
-          });
-          if (import.meta.env.DEV) {
-            console.debug(
-              '[paid-landing] slides per stay (fallback — API/cabins failed)',
-              Object.fromEntries(Object.entries(next).map(([id, s]) => [id, s.length]))
-            );
-          }
-          setById(next);
+        if (!active) return;
+        if (import.meta.env.DEV) {
+          console.debug('[paid-landing] slides per stay (fallback — API failed)');
         }
+        setById(initialFallbackState());
       }
     })();
 

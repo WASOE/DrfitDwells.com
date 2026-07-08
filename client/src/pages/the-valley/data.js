@@ -44,16 +44,16 @@ export const LOCATION_CALLOUTS = [
   }
 ];
 
-// Stay cards data
+// Stay cards data — images resolve live via `listingSlug`; `fallbackImage` is emergency only.
 export const STAY_CARDS = [
   {
     id: 'luxury-cabin',
     title: 'Luxury Cabin',
-    backendName: 'Lux Cabin',
+    listingSlug: 'lux-cabin',
     route: '/stays/lux-cabin',
     sleeps: '2',
     price: '€85/night',
-    image: '/uploads/The%20Valley/Lux-cabin-exterior-watermark-remover-20260113071503.jpg',
+    fallbackImage: '/uploads/The%20Valley/Lux-cabin-exterior-watermark-remover-20260113071503.jpg',
     imagePath: '/uploads/The Valley/Lux-cabin-exterior-watermark-remover-20260113071503.jpg',
     bullets: [
       'Full comfort with heating and modern amenities',
@@ -64,11 +64,11 @@ export const STAY_CARDS = [
   {
     id: 'stone-house',
     title: 'Stone House',
-    backendName: 'Stone House',
+    listingSlug: 'stone-house',
     route: '/stays/stone-house',
     sleeps: 'up to 6',
     price: '€25/person (min 3)',
-    image: '/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.24%20AM.jpeg',
+    fallbackImage: '/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.24%20AM.jpeg',
     imagePath: '/uploads/The Valley/WhatsApp Image 2025-10-17 at 10.20.24 AM.jpeg',
     bullets: [
       'Historic stone construction with generous shared spaces',
@@ -79,11 +79,11 @@ export const STAY_CARDS = [
   {
     id: 'a-frames',
     title: 'A-Frames',
-    backendName: null,
+    listingSlug: 'a-frame',
     route: '/stays/a-frame',
     sleeps: '2 per cabin',
     price: '€60/night',
-    image: '/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.24%20AM%20(4).jpeg',
+    fallbackImage: '/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.24%20AM%20(4).jpeg',
     imagePath: '/uploads/The Valley/WhatsApp Image 2025-10-17 at 10.20.24 AM (4).jpeg',
     bullets: [
       'Minimal design immersed in nature',

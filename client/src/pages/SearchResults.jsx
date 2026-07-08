@@ -22,23 +22,12 @@ import {
   StayLodgingPriceBlock,
   promoStatusMicrocopyClass
 } from '../components/booking/StayLodgingPriceBlock';
+import { getListingCoverImage } from '../utils/listingGalleryUtils';
 
 const SearchBar = lazy(() => import('../components/SearchBar'));
 
-// Safe URL normalization helper
-function normalizeSrc(u) {
-  if (!u) return '';
-  if (/^https?:\/\//i.test(u)) return u;
-  if (u.startsWith('/')) return u;
-  return `/uploads/cabins/${u}`;
-}
-
-// Get cover image from images array with fallback to legacy imageUrl
 function getCoverImage(cabin) {
-  const arr = Array.isArray(cabin.images) ? cabin.images : [];
-  const cover = arr.find(i => i && i.isCover) || arr[0];
-  const url = cover?.url || cabin.imageUrl || '';
-  return normalizeSrc(url);
+  return getListingCoverImage(cabin).url;
 }
 
 /** URL query → validated stay params (same rules as booking pickers). */

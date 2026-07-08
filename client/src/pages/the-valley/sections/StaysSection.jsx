@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useBookingSearch } from '../../../context/BookingSearchContext';
 import { useLocalizedPath } from '../../../hooks/useLocalizedPath';
+import { useListingCoversBySlug } from '../../../hooks/useListingCoversBySlug';
 import { getSEOAlt, getSEOTitle } from '../../../data/imageMetadata';
 import { STAY_CARDS } from '../data';
 
@@ -22,6 +23,17 @@ const StaysSection = ({ accommodationsRef }) => {
     });
     return map;
   }, []);
+
+  const coverConfigs = useMemo(
+    () =>
+      STAY_CARDS.filter((card) => card.listingSlug).map((card) => ({
+        slug: card.listingSlug,
+        fallbackUrl: card.fallbackImage,
+        alt: card.title
+      })),
+    []
+  );
+  const coversBySlug = useListingCoversBySlug(coverConfigs);
 
   const handleCardAction = (card) => {
     const href = cardLinks[card.id];
@@ -97,7 +109,11 @@ const StaysSection = ({ accommodationsRef }) => {
 
         {/* 3 Stay Cards - Same Baseline, Same Ratios, Same Spacing */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-12">
-          {STAY_CARDS.map((card, index) => (
+          {STAY_CARDS.map((card, index) => {
+            const slugKey = String(card.listingSlug || '').trim().toLowerCase();
+            const liveCover = slugKey ? coversBySlug[slugKey] : null;
+            const imageSrc = liveCover?.url || card.fallbackImage;
+            return (
             <motion.div
               key={card.id}
               initial={{ opacity: 0, y: 20 }}
@@ -113,8 +129,8 @@ const StaysSection = ({ accommodationsRef }) => {
                 onClick={() => handleCardAction(card)}
               >
                 <img 
-                  src={card.image}
-                  alt={getSEOAlt(card.imagePath) || `${card.title} at The Valley showing comfortable space and mountain views`}
+                  src={imageSrc}
+                  alt={getSEOAlt(card.imagePath) || liveCover?.alt || `${card.title} at The Valley showing comfortable space and mountain views`}
                   title={getSEOTitle(card.imagePath) || `${card.title} - Mountain Retreat at The Valley`}
                   className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
                   loading="lazy"
@@ -165,7 +181,8 @@ const StaysSection = ({ accommodationsRef }) => {
                 </div>
               </div>
             </motion.div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </section>

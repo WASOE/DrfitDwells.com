@@ -1,42 +1,39 @@
 /**
- * Paid-traffic landing: routing + media only. Copy lives in i18n (`seo` → paidStaysBulgaria).
+ * Paid-traffic landing: routing + emergency fallbacks only. Copy lives in i18n (`seo` → paidStaysBulgaria).
+ * Cover images resolve from listing API via `listingSlug`.
  */
 
 export const PAID_TRAFFIC_STAY_META = [
   {
     id: 'the-cabin',
-    linkKind: 'route',
+    listingSlug: 'the-cabin',
     route: '/stays/the-cabin',
     detailsPath: '/cabin',
-    image: '/uploads/Content%20website/drift-dwells-bulgaria-bucephalus-suite.avif',
-    imagePath: '/uploads/Content website/drift-dwells-bulgaria-bucephalus-suite.avif',
+    fallbackImage: '/uploads/Content%20website/drift-dwells-bulgaria-bucephalus-suite.avif',
     showDetailsLink: true
   },
   {
     id: 'valley-a-frame',
-    linkKind: 'route',
+    listingSlug: 'a-frame',
     route: '/stays/a-frame',
     detailsPath: '/stays/a-frame',
-    image: '/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.24%20AM%20(4).jpeg',
-    imagePath: '/uploads/The Valley/WhatsApp Image 2025-10-17 at 10.20.24 AM (4).jpeg',
+    fallbackImage: '/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.24%20AM%20(4).jpeg',
     showDetailsLink: false
   },
   {
     id: 'valley-stone-house',
-    linkKind: 'route',
+    listingSlug: 'stone-house',
     route: '/stays/stone-house',
     detailsPath: '/stays/stone-house',
-    image: '/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.24%20AM.jpeg',
-    imagePath: '/uploads/The Valley/WhatsApp Image 2025-10-17 at 10.20.24 AM.jpeg',
+    fallbackImage: '/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.24%20AM.jpeg',
     showDetailsLink: true
   },
   {
     id: 'valley-lux-cabin',
-    linkKind: 'route',
+    listingSlug: 'lux-cabin',
     route: '/stays/lux-cabin',
     detailsPath: '/stays/lux-cabin',
-    image: '/uploads/The%20Valley/Lux-cabin-exterior-watermark-remover-20260113071503.jpg',
-    imagePath: '/uploads/The Valley/Lux-cabin-exterior-watermark-remover-20260113071503.jpg',
+    fallbackImage: '/uploads/The%20Valley/Lux-cabin-exterior-watermark-remover-20260113071503.jpg',
     showDetailsLink: true
   }
 ];

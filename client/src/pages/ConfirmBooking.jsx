@@ -23,6 +23,7 @@ import {
   LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
   LEGAL_ACCEPTANCE_TERMS_VERSION
 } from '../constants/legalAcceptance';
+import { getListingCoverImage } from '../utils/listingGalleryUtils';
 import { isCheckoutSessionV2Enabled } from '../utils/checkoutSessionV2Flags';
 import {
   buildCheckoutSessionV2BoundaryKey,
@@ -1851,7 +1852,7 @@ const ConfirmBooking = () => {
     );
   }
 
-  const coverImage = cabin.images?.[0]?.url || cabin.imageUrl;
+  const coverImage = getListingCoverImage(cabin).url;
   const cabinName = cabin.name || t('confirm.cabinFallback');
 
   return (

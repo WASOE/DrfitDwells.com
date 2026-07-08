@@ -1,6 +1,6 @@
 /**
- * Shared listing image ordering + hero pick (aligned with CabinDetails gallery + MosaicGallery hero).
- * Used by paid-traffic cards so cover/first slide matches property pages.
+ * Shared listing image helpers — single source of truth for card covers site-wide.
+ * Cover resolution: isCover → first image → imageUrl → optional static fallback.
  */
 
 export const LISTING_SPACE_ORDER = [
@@ -27,6 +27,39 @@ export function normalizeListingImageSrc(u) {
 
 export function getPrimaryTag(img) {
   return Array.isArray(img?.tags) && img.tags.length > 0 ? img.tags[0] : null;
+}
+
+/** Pick cover record from a gallery array (no listing wrapper). */
+export function pickListingCoverImageRecord(images) {
+  if (!Array.isArray(images) || images.length === 0) return null;
+  return images.find((img) => img?.isCover) || images[0] || null;
+}
+
+/**
+ * Resolve the public cover image for a cabin or cabinType-shaped listing.
+ * @param {{ images?: any[], imageUrl?: string, name?: string } | null} listing
+ * @param {{ fallbackUrl?: string, alt?: string }} [options]
+ * @returns {{ url: string, alt: string, image: object | null }}
+ */
+export function getListingCoverImage(listing, options = {}) {
+  const fallbackUrl = options.fallbackUrl || '';
+
+  if (!listing) {
+    const url = normalizeListingImageSrc(fallbackUrl);
+    return {
+      url,
+      alt: (options.alt || '').trim() || 'Stay photo',
+      image: null
+    };
+  }
+
+  const images = Array.isArray(listing.images) ? listing.images : [];
+  const coverImage = pickListingCoverImageRecord(images);
+  const rawUrl = coverImage?.url || listing.imageUrl || fallbackUrl;
+  const url = normalizeListingImageSrc(rawUrl);
+  const alt = (coverImage?.alt || listing.name || options.alt || '').trim() || 'Stay photo';
+
+  return { url, alt, image: coverImage };
 }
 
 /** Full gallery sort — same rules as `CabinDetails` `gallery` useMemo. */
@@ -72,63 +105,67 @@ export function sortCabinTypeImages(images, imageUrl, name = '') {
   return [];
 }
 
-/** Same heuristic as `MosaicGallery` `pickHeroImage`. */
-export function pickHeroImage(images) {
-  if (!images || images.length === 0) return null;
-
-  const cover = images.find((img) => img.isCover) || null;
-  const heroPriorityTags = ['outdoor', 'view', 'living_room', 'bedroom'];
-
-  const prioritized = images.find((img) => heroPriorityTags.includes(getPrimaryTag(img)));
-
-  if (!cover) {
-    return prioritized || images[0];
-  }
-
-  const coverTag = getPrimaryTag(cover);
-  if (heroPriorityTags.includes(coverTag)) {
-    return cover;
-  }
-
-  return prioritized || cover;
-}
-
 /**
- * @param {{ images?: any[], imageUrl?: string, name?: string }} entity — cabin or cabinType-shaped
- * @param {'cabin'|'cabinType'} kind
- * @param {number} maxSlides
+ * Build card gallery slides: cover first, then remaining gallery images.
+ * @param {{ images?: any[], imageUrl?: string, name?: string } | null} listing
+ * @param {{ kind?: 'cabin'|'cabinType', maxSlides?: number, fallbackUrl?: string }} [options]
  * @returns {{ url: string, alt: string }[]}
  */
-export function buildPaidTrafficSlides(entity, kind = 'cabin', maxSlides = 5) {
-  if (!entity) return [];
+export function buildListingCardSlides(listing, options = {}) {
+  const maxSlides = options.maxSlides ?? 5;
+  const fallbackUrl = options.fallbackUrl || '';
+  const kind = options.kind || 'cabin';
+
+  if (!listing) {
+    const cover = getListingCoverImage(null, { fallbackUrl });
+    return cover.url ? [{ url: cover.url, alt: cover.alt }] : [];
+  }
 
   const sorted =
     kind === 'cabinType'
-      ? sortCabinTypeImages(entity.images, entity.imageUrl, entity.name)
-      : sortCabinImages(entity.images, entity.imageUrl, entity.name);
+      ? sortCabinTypeImages(listing.images, listing.imageUrl, listing.name)
+      : sortCabinImages(listing.images, listing.imageUrl, listing.name);
 
-  if (sorted.length === 0) return [];
-
-  const hero = pickHeroImage(sorted);
-  if (!hero) return [];
+  const cover = getListingCoverImage(listing, { fallbackUrl });
+  if (!cover.url && sorted.length === 0) return [];
 
   const sameImage = (a, b) =>
-    normalizeListingImageSrc(a.url || a) === normalizeListingImageSrc(b.url || b);
-  const sameId = (a, b) => a._id && b._id && String(a._id) === String(b._id);
-
-  const rest = sorted.filter((img) => !sameId(img, hero) && !sameImage(img, hero));
-
-  const ordered = [hero, ...rest];
+    normalizeListingImageSrc(a?.url || a) === normalizeListingImageSrc(b?.url || b);
+  const sameId = (a, b) => a?._id && b?._id && String(a._id) === String(b._id);
 
   const seen = new Set();
   const out = [];
-  for (const img of ordered) {
-    const url = normalizeListingImageSrc(img.url || img);
-    if (!url || seen.has(url)) continue;
+
+  const pushImg = (img) => {
+    const url = normalizeListingImageSrc(img?.url || img);
+    if (!url || seen.has(url)) return;
     seen.add(url);
-    out.push({ url, alt: (img.alt || entity.name || '').trim() || 'Stay photo' });
-    if (out.length >= maxSlides) break;
+    out.push({
+      url,
+      alt: (img?.alt || listing.name || '').trim() || 'Stay photo'
+    });
+  };
+
+  if (cover.image) {
+    pushImg(cover.image);
+  } else if (cover.url) {
+    pushImg({ url: cover.url, alt: cover.alt });
   }
 
-  return out;
+  for (const img of sorted) {
+    if (out.length >= maxSlides) break;
+    if (cover.image && (sameId(img, cover.image) || sameImage(img, cover.image))) continue;
+    pushImg(img);
+  }
+
+  if (out.length === 0 && fallbackUrl) {
+    pushImg({ url: fallbackUrl, alt: listing.name || 'Stay photo' });
+  }
+
+  return out.slice(0, maxSlides);
+}
+
+/** @deprecated Use buildListingCardSlides */
+export function buildPaidTrafficSlides(entity, kind = 'cabin', maxSlides = 5, fallbackUrl = '') {
+  return buildListingCardSlides(entity, { kind, maxSlides, fallbackUrl });
 }
