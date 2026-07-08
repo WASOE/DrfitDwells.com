@@ -14,6 +14,37 @@ const {
 
 const MANUAL_REVIEW_CATEGORIES = ['gift_voucher_email_failed', 'gift_voucher_physical_card_required'];
 
+const CARD_TEMPLATE_LABELS = Object.freeze({
+  forest: 'Postcard',
+  romantic: 'Letter',
+  minimal: 'Ink'
+});
+
+const DELIVERY_OPTION_LABELS = Object.freeze({
+  recipient_now: 'Send now to recipient',
+  send_to_buyer: 'Send gift card to me',
+  scheduled: 'Scheduled delivery',
+  postal: 'Physical card by post'
+});
+
+function deriveRecipientCardSent(events = []) {
+  return events.some(
+    (event) =>
+      event.type === 'resent' ||
+      (event.type === 'sent' && event.metadata?.templateKind === 'recipient_voucher')
+  );
+}
+
+function cardTemplateLabel(templateId) {
+  if (!templateId) return 'Ink (fallback)';
+  return CARD_TEMPLATE_LABELS[templateId] || templateId;
+}
+
+function deliveryOptionLabel(deliveryOption) {
+  if (!deliveryOption) return null;
+  return DELIVERY_OPTION_LABELS[deliveryOption] || deliveryOption;
+}
+
 function normalizePagination(query = {}) {
   const page = Math.max(1, parseInt(query.page, 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(query.limit, 10) || 20));
@@ -97,7 +128,7 @@ async function getGiftVouchersWorkspaceReadModel(query = {}) {
   };
 }
 
-function mapVoucherDetail(voucher) {
+function mapVoucherDetail(voucher, { events = [] } = {}) {
   return {
     giftVoucherId: String(voucher._id),
     code: voucher.code || null,
@@ -112,13 +143,17 @@ function mapVoucherDetail(voucher) {
     recipientEmail: voucher.recipientEmail || null,
     message: voucher.message || null,
     deliveryOption: voucher.deliveryOption || null,
+    deliveryOptionLabel: deliveryOptionLabel(voucher.deliveryOption),
     deliveryMode: voucher.deliveryMode || 'email',
     cardOccasion: voucher.cardOccasion || null,
     cardTemplateId: voucher.cardTemplateId || null,
+    cardTemplateLabel: cardTemplateLabel(voucher.cardTemplateId),
     cardLocale: voucher.cardLocale || null,
     deliveryDate: voucher.deliveryDate || null,
     deliveryAddress: voucher.deliveryMode === 'postal' ? voucher.deliveryAddress || null : null,
     sentAt: voucher.sentAt || null,
+    recipientCardSent: deriveRecipientCardSent(events),
+    hasCardAccessToken: Boolean(voucher.cardAccessTokenHash),
     expiresAt: voucher.expiresAt || null,
     activatedAt: voucher.activatedAt || null,
     stripePaymentIntentId: voucher.stripePaymentIntentId || null,
@@ -147,7 +182,7 @@ async function getGiftVoucherDetailReadModel(giftVoucherId) {
   ]);
 
   return {
-    voucher: mapVoucherDetail(voucher),
+    voucher: mapVoucherDetail(voucher, { events }),
     events: events.map((event) => ({
       giftVoucherEventId: String(event._id),
       type: event.type,

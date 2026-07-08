@@ -16,6 +16,7 @@ const {
 } = require('../services/ops/readModels/giftVouchersReadModel');
 const {
   resendVoucher,
+  printGiftVoucherCard,
   voidVoucher,
   extendVoucherExpiry,
   adjustVoucherBalance,
@@ -443,6 +444,208 @@ test('duplicate idempotencyKey does not duplicate mutation/event', async () => {
     'metadata.idempotencyKey': 'adjust-idem-1'
   });
   assert.equal(count, 1);
+});
+
+test('resend email includes download link after token rotation (Batch 8)', async () => {
+  const voucher = await GiftVoucher.create(
+    buildVoucher({
+      code: 'DD-RESD-LINK-AAAA',
+      cardAccessTokenHash: null
+    })
+  );
+  assert.equal((await GiftVoucher.findById(voucher._id).lean()).cardAccessTokenHash, null);
+
+  let hashAtSendTime = null;
+  let resendPayload;
+  emailService.sendEmail = async (payload) => {
+    const current = await GiftVoucher.findById(voucher._id).lean();
+    hashAtSendTime = current.cardAccessTokenHash;
+    resendPayload = payload;
+    return { success: true, method: 'sent', messageId: 'resend_link_1' };
+  };
+
+  await resendVoucher({
+    giftVoucherId: voucher._id,
+    note: 'ops resend with link',
+    ctx: opsCtx({ idempotencyKey: 'resend-link-key-1' })
+  });
+
+  assert.ok(hashAtSendTime, 'cardAccessTokenHash must be persisted before sendEmail runs');
+  assert.match(resendPayload.html, /\/api\/gift-vouchers\/card\//);
+  assert.match(resendPayload.text, /\/api\/gift-vouchers\/card\//);
+
+  const updated = await GiftVoucher.findById(voucher._id).lean();
+  assert.equal(updated.cardAccessTokenHash, hashAtSendTime);
+
+  const opsEvent = await GiftVoucherEvent.findOne({
+    giftVoucherId: voucher._id,
+    type: 'sent',
+    'metadata.action': 'ops_resend'
+  }).lean();
+  assert.equal(opsEvent.metadata.cardAccessTokenRotated, true);
+});
+
+test('resend idempotency replay does not resend or rotate hash again', async () => {
+  const voucher = await GiftVoucher.create(buildVoucher({ code: 'DD-RESD-IDEM-AAAA' }));
+  let sendCount = 0;
+  emailService.sendEmail = async () => {
+    sendCount += 1;
+    return { success: true, method: 'sent', messageId: `idem_${sendCount}` };
+  };
+
+  const first = await resendVoucher({
+    giftVoucherId: voucher._id,
+    note: 'first resend',
+    ctx: opsCtx({ idempotencyKey: 'resend-idem-key' })
+  });
+  const hashAfterFirst = (await GiftVoucher.findById(voucher._id).lean()).cardAccessTokenHash;
+
+  const second = await resendVoucher({
+    giftVoucherId: voucher._id,
+    note: 'replay resend',
+    ctx: opsCtx({ idempotencyKey: 'resend-idem-key' })
+  });
+  const hashAfterSecond = (await GiftVoucher.findById(voucher._id).lean()).cardAccessTokenHash;
+
+  assert.equal(first.idempotentReplay, false);
+  assert.equal(second.idempotentReplay, true);
+  assert.equal(sendCount, 1);
+  assert.equal(hashAfterFirst, hashAfterSecond);
+});
+
+test('detail exposes card customization fields and recipientCardSent', async () => {
+  const voucher = await GiftVoucher.create(
+    buildVoucher({
+      code: 'DD-DET-CARD-AAAA',
+      cardTemplateId: 'romantic',
+      cardOccasion: 'birthday',
+      cardLocale: 'en',
+      deliveryOption: 'recipient_now',
+      sentAt: new Date()
+    })
+  );
+  await GiftVoucherEvent.create({
+    giftVoucherId: voucher._id,
+    type: 'sent',
+    actor: 'system',
+    note: 'recipient sent',
+    metadata: { templateKind: 'recipient_voucher' }
+  });
+
+  const detail = await getGiftVoucherDetailReadModel(voucher._id);
+  assert.equal(detail.voucher.cardTemplateId, 'romantic');
+  assert.equal(detail.voucher.cardTemplateLabel, 'Letter');
+  assert.equal(detail.voucher.cardOccasion, 'birthday');
+  assert.equal(detail.voucher.cardLocale, 'en');
+  assert.equal(detail.voucher.deliveryOption, 'recipient_now');
+  assert.ok(detail.voucher.sentAt);
+  assert.equal(detail.voucher.recipientCardSent, true);
+});
+
+test('recipientCardSent is false when only buyer_gift_card was sent', async () => {
+  const voucher = await GiftVoucher.create(
+    buildVoucher({
+      code: 'DD-DET-BUYR-AAAA',
+      deliveryOption: 'send_to_buyer',
+      sentAt: new Date()
+    })
+  );
+  await GiftVoucherEvent.create({
+    giftVoucherId: voucher._id,
+    type: 'sent',
+    actor: 'system',
+    note: 'buyer gift card',
+    metadata: { templateKind: 'buyer_gift_card' }
+  });
+
+  const detail = await getGiftVoucherDetailReadModel(voucher._id);
+  assert.ok(detail.voucher.sentAt);
+  assert.equal(detail.voucher.recipientCardSent, false);
+});
+
+test('ops print returns designed HTML and appends card_printed event', async () => {
+  const voucher = await GiftVoucher.create(
+    buildVoucher({
+      code: 'DD-PRNT-EVNT-AAAA',
+      cardTemplateId: 'forest',
+      status: 'active'
+    })
+  );
+
+  const result = await printGiftVoucherCard({
+    giftVoucherId: voucher._id,
+    ctx: opsCtx()
+  });
+
+  assert.match(result.html, /data-gv-card-template="forest"/);
+  const printed = await GiftVoucherEvent.findOne({
+    giftVoucherId: voucher._id,
+    type: 'card_printed'
+  }).lean();
+  assert.ok(printed);
+  assert.equal(printed.metadata.action, 'ops_print');
+});
+
+test('ops print blocks voided vouchers without audit event', async () => {
+  const voucher = await GiftVoucher.create(
+    buildVoucher({ code: 'DD-PRNT-VOID-AAAA', status: 'voided' })
+  );
+
+  await assert.rejects(
+    () =>
+      printGiftVoucherCard({
+        giftVoucherId: voucher._id,
+        ctx: opsCtx()
+      }),
+    (err) => err.code === 'GIFT_VOUCHER_NOT_PRINTABLE'
+  );
+
+  const count = await GiftVoucherEvent.countDocuments({
+    giftVoucherId: voucher._id,
+    type: 'card_printed'
+  });
+  assert.equal(count, 0);
+});
+
+test('ops print allows expired vouchers', async () => {
+  const voucher = await GiftVoucher.create(
+    buildVoucher({ code: 'DD-PRNT-EXPD-AAAA', status: 'expired' })
+  );
+
+  const result = await printGiftVoucherCard({
+    giftVoucherId: voucher._id,
+    ctx: opsCtx()
+  });
+  assert.match(result.html, /data-gv-card/);
+});
+
+test('ops print uses minimal fallback when cardTemplateId is null', async () => {
+  const voucher = await GiftVoucher.create(
+    buildVoucher({ code: 'DD-PRNT-FALL-AAAA', cardTemplateId: null })
+  );
+
+  const result = await printGiftVoucherCard({
+    giftVoucherId: voucher._id,
+    ctx: opsCtx()
+  });
+  assert.match(result.html, /data-gv-card-template="minimal"/);
+});
+
+test('partially_redeemed voucher can be resent', async () => {
+  const voucher = await GiftVoucher.create(
+    buildVoucher({
+      code: 'DD-RESD-PART-AAAA',
+      status: 'partially_redeemed',
+      balanceRemainingCents: 10000
+    })
+  );
+
+  const result = await resendVoucher({
+    giftVoucherId: voucher._id,
+    note: 'partial resend',
+    ctx: opsCtx({ idempotencyKey: 'resend-partial-key' })
+  });
+  assert.equal(result.ok, true);
 });
 
 test('permission denied returns correct response', async () => {

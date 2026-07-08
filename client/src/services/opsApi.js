@@ -158,6 +158,11 @@ const opsWriteAPI = {
     api.post(`/ops/gift-vouchers/${id}/actions/adjust-balance`, payload, { headers: authHeaders() }),
   updateGiftVoucherRecipientEmail: (id, payload) =>
     api.post(`/ops/gift-vouchers/${id}/actions/update-recipient-email`, payload, { headers: authHeaders() }),
+  printGiftVoucherCard: (id) =>
+    api.get(`/ops/gift-vouchers/${id}/card/print`, {
+      headers: authHeaders(),
+      responseType: 'text'
+    }),
   sendArrivalInstructions: (id) =>
     api.post(`/ops/communications/reservations/${id}/actions/send-arrival-instructions`, {}, { headers: authHeaders() }),
   resendArrivalInstructions: (id) =>

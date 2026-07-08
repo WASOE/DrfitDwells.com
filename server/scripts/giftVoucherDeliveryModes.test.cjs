@@ -328,7 +328,7 @@ test('manual compensation voucher skips designed email delivery', async () => {
   assert.equal(calls.length, 0);
 });
 
-test('resend email omits download link (Batch 5 interim rule)', async () => {
+test('resend email includes download link after token rotation (Batch 8)', async () => {
   const created = await createGiftVoucherPaymentIntent(
     buildCreatePayload({ purchaseRequestId: 'gvr_dm_resend_nolink' })
   );
@@ -353,10 +353,11 @@ test('resend email omits download link (Batch 5 interim rule)', async () => {
   });
 
   assert.ok(resendPayload);
-  assert.doesNotMatch(resendPayload.html, /\/api\/gift-vouchers\/card\//);
-  assert.doesNotMatch(resendPayload.text, /\/api\/gift-vouchers\/card\//);
+  assert.match(resendPayload.html, /\/api\/gift-vouchers\/card\//);
+  assert.match(resendPayload.text, /\/api\/gift-vouchers\/card\//);
   assert.match(resendPayload.html, /data-gv-card/);
-  assertPlainTextParity(resendPayload.text, { names: true, downloadUrl: null });
+  assertPlainTextParity(resendPayload.text, { names: true });
+  assert.match(resendPayload.text, /\/api\/gift-vouchers\/card\//);
 });
 
 test('activation emails include designed card HTML and plain-text parity for recipient_now', async () => {

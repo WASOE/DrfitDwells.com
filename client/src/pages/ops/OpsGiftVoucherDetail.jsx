@@ -96,6 +96,40 @@ export default function OpsGiftVoucherDetail() {
             <p className="text-gray-500">Delivery mode</p>
             <p className="font-medium text-gray-900">{voucher.deliveryMode}</p>
           </div>
+          <div>
+            <p className="text-gray-500">Delivery option</p>
+            <p className="font-medium text-gray-900">{voucher.deliveryOptionLabel || voucher.deliveryOption || '—'}</p>
+          </div>
+          <div>
+            <p className="text-gray-500">Card design</p>
+            <p className="font-medium text-gray-900">{voucher.cardTemplateLabel || '—'}</p>
+          </div>
+          <div>
+            <p className="text-gray-500">Occasion</p>
+            <p className="font-medium text-gray-900">{voucher.cardOccasion || '—'}</p>
+          </div>
+          <div>
+            <p className="text-gray-500">Card language</p>
+            <p className="font-medium text-gray-900">{voucher.cardLocale ? voucher.cardLocale.toUpperCase() : '—'}</p>
+          </div>
+          <div>
+            <p className="text-gray-500">Scheduled date</p>
+            <p className="font-medium text-gray-900">
+              {voucher.deliveryDate ? new Date(voucher.deliveryDate).toLocaleDateString() : '—'}
+            </p>
+          </div>
+          <div>
+            <p className="text-gray-500">Sent at</p>
+            <p className="font-medium text-gray-900">{voucher.sentAt ? new Date(voucher.sentAt).toLocaleString() : '—'}</p>
+          </div>
+          <div>
+            <p className="text-gray-500">Recipient card sent</p>
+            <p className="font-medium text-gray-900">{voucher.recipientCardSent ? 'Yes' : 'No'}</p>
+          </div>
+          <div>
+            <p className="text-gray-500">Download token</p>
+            <p className="font-medium text-gray-900">{voucher.hasCardAccessToken ? 'Active' : 'None'}</p>
+          </div>
           {voucher.deliveryMode === 'postal' && (voucher.physicalCardFeeCents || 0) > 0 ? (
             <div>
               <p className="text-gray-500">Physical card fee</p>
@@ -141,6 +175,24 @@ export default function OpsGiftVoucherDetail() {
       <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
         <h3 className="text-sm font-semibold text-gray-900">Actions</h3>
         {actionError ? <div className="text-sm text-red-600">{actionError}</div> : null}
+        <div className="mb-3">
+          <button
+            type="button"
+            disabled={busyAction === 'print'}
+            onClick={() =>
+              runAction('print', async () => {
+                const resp = await opsReadAPI.printGiftVoucherCard(voucher.giftVoucherId);
+                const blob = new Blob([resp.data], { type: 'text/html;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                window.open(url, '_blank', 'noopener,noreferrer');
+                setTimeout(() => URL.revokeObjectURL(url), 60_000);
+              })
+            }
+            className="px-3 py-2 text-sm rounded-lg border border-stone-300 bg-white text-stone-800 hover:border-stone-500 disabled:opacity-50"
+          >
+            {busyAction === 'print' ? 'Opening print...' : 'Print card'}
+          </button>
+        </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <div className="border border-gray-200 rounded-lg p-3 space-y-2">
             <p className="text-sm font-medium text-gray-900">Resend recipient voucher</p>

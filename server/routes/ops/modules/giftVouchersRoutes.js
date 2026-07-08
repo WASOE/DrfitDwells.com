@@ -8,6 +8,7 @@ const {
 const {
   ensureReadPermission,
   resendVoucher,
+  printGiftVoucherCard,
   voidVoucher,
   extendVoucherExpiry,
   adjustVoucherBalance,
@@ -40,6 +41,7 @@ function handleDomainError(res, error) {
     GIFT_VOUCHER_NOT_FOUND: 404,
     RECIPIENT_EMAIL_ALREADY_SENT: 409,
     GIFT_VOUCHER_NOT_RESENDABLE: 409,
+    GIFT_VOUCHER_NOT_PRINTABLE: 409,
     INVALID_VOUCHER_STATUS_FOR_VOID: 409,
     INVALID_VOUCHER_STATUS_FOR_EXPIRY_EXTENSION: 409,
     INVALID_VOUCHER_STATUS_FOR_ADJUSTMENT: 409,
@@ -78,6 +80,25 @@ router.get(
     }
   }
 );
+
+router.get('/:id/card/print', validateId('id'), async (req, res) => {
+  try {
+    const data = await printGiftVoucherCard({
+      giftVoucherId: req.params.id,
+      ctx: {
+        req,
+        user: req.user,
+        route: 'GET /api/ops/gift-vouchers/:id/card/print'
+      }
+    });
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.set('Cache-Control', 'private, no-store');
+    res.set('X-Robots-Tag', 'noindex');
+    return res.status(200).send(data.html);
+  } catch (error) {
+    return handleDomainError(res, error);
+  }
+});
 
 router.get('/:id', validateId('id'), async (req, res) => {
   try {

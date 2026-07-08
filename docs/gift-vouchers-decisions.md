@@ -21,3 +21,4 @@
 | 7 | Template design direction (Batch 7 QA) | Decorative assets (stamp, flower, mountain line-art) removed; site logo top-right on all three templates; textures retained. Design gate in Batch 9 judges against this direction. |
 | 8 | Ops resend token mint | When `cardAccessTokenHash` is null on legacy voucher, mint token at ops resend so download link can be included. |
 | 8 | Resend token rotation | **Permanent rule:** any resend rotates the card access token (mint new, overwrite `cardAccessTokenHash`); old links invalidate. Newest email always carries the working link. |
+| 8 | Failed resend rotation | If ops resend fails after rotation, the hash stays rotated and old download links are dead. A retry rotates again; newest link wins. Same rule as Batch 6 scheduled delivery. |

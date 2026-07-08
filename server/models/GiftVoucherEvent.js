@@ -23,7 +23,8 @@ const GIFT_VOUCHER_EVENT_TYPES = [
   'scheduled_delivery_attempt_failed',
   'scheduled_delivery_exhausted',
   'scheduled_delivery_date_past_expiry',
-  'manual_review_created'
+  'manual_review_created',
+  'card_printed'
 ];
 
 function integerOrNull(value) {

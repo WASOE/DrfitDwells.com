@@ -269,13 +269,13 @@ function buildBuyerGiftCardDesignedEmail({ voucher, cardDownloadUrl = null }) {
   });
 }
 
-function buildRecipientResendDesignedEmail({ voucher, recipientEmail }) {
+function buildRecipientResendDesignedEmail({ voucher, recipientEmail, cardDownloadUrl = null }) {
   const locale = cardLocaleFor(voucher);
   const copy = getEmailCopy(locale);
   const payload = buildDesignedGiftCardEmail({
     voucher,
     recipientEmail,
-    cardDownloadUrl: null,
+    cardDownloadUrl,
     kind: 'recipient'
   });
   const noteParagraph = `<p style="margin:16px 0 0;color:#6b6a64;">${userHtml(copy.resendNote)}</p>`;

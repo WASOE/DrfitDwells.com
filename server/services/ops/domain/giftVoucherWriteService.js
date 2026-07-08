@@ -3,6 +3,7 @@ const GiftVoucherEvent = require('../../../models/GiftVoucherEvent');
 const { appendVoucherEvent, appendFinancialVoucherEvent } = require('../../giftVouchers/giftVoucherEventService');
 const { resendRecipientGiftVoucherEmail } = require('../../giftVouchers/giftVoucherEmailService');
 const { revokeCardAccessToken } = require('../../giftVouchers/giftVoucherCardAccessService');
+const { renderOpsGiftVoucherPrintHtml } = require('../../giftVouchers/giftVoucherOpsCardPrintService');
 const { requirePermission, ACTIONS } = require('../../permissionService');
 
 const ALLOWED_VOID_STATUSES = new Set(['pending_payment', 'active', 'partially_redeemed', 'expired']);
@@ -118,6 +119,7 @@ async function resendVoucher({
     metadata: {
       action: 'ops_resend',
       idempotencyKey,
+      cardAccessTokenRotated: true,
       recipientOverride: recipientOverride ? normalizeEmail(recipientOverride) : null,
       recipientOverrideUsed: Boolean(recipientOverride)
     }
@@ -127,8 +129,23 @@ async function resendVoucher({
     ok: true,
     idempotentReplay: false,
     recipientEmail: result.recipientEmail,
-    recipientOverrideUsed: result.recipientOverrideUsed
+    recipientOverrideUsed: result.recipientOverrideUsed,
+    cardAccessTokenRotated: result.cardAccessTokenRotated
   };
+}
+
+async function printGiftVoucherCard({ giftVoucherId, ctx = {} }) {
+  ensureReadPermission(ctx);
+  const actor = actorFromCtx(ctx);
+  const html = await renderOpsGiftVoucherPrintHtml(giftVoucherId);
+  await appendVoucherEvent({
+    giftVoucherId,
+    type: 'card_printed',
+    actor,
+    note: 'ops card print',
+    metadata: { action: 'ops_print' }
+  });
+  return { ok: true, html };
 }
 
 async function voidVoucher({
@@ -404,6 +421,7 @@ async function updateRecipientEmailBeforeSend({
 module.exports = {
   ensureReadPermission,
   resendVoucher,
+  printGiftVoucherCard,
   voidVoucher,
   extendVoucherExpiry,
   adjustVoucherBalance,

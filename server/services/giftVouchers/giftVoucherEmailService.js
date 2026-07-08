@@ -7,7 +7,7 @@ const {
 } = require('../ops/ingestion/manualReviewService');
 const { giftVoucherCorrelationKey } = require('../email/emailDeliveryCorrelation');
 const { applyEmailDeliveryAttempt } = require('../email/emailDeliveryStateService');
-const { buildCardDownloadUrl } = require('./giftVoucherCardAccessService');
+const { buildCardDownloadUrl, rotateCardAccessTokenForVoucher } = require('./giftVoucherCardAccessService');
 const {
   resolveActivationDeliverySteps,
   templateKindSetsSentAt
@@ -583,7 +583,8 @@ async function resendRecipientGiftVoucherEmail({ giftVoucherId, actor = 'ops', r
     err.code = 'GIFT_VOUCHER_NOT_FOUND';
     throw err;
   }
-  if (voucher.status !== 'active' || !voucher.code) {
+  const resendableStatuses = new Set(['active', 'partially_redeemed']);
+  if (!resendableStatuses.has(voucher.status) || !voucher.code) {
     const err = new Error('Only active vouchers with code can be resent');
     err.code = 'GIFT_VOUCHER_NOT_RESENDABLE';
     throw err;
@@ -596,13 +597,16 @@ async function resendRecipientGiftVoucherEmail({ giftVoucherId, actor = 'ops', r
     throw err;
   }
 
+  const { rawToken } = await rotateCardAccessTokenForVoucher(voucher._id);
+  const cardDownloadUrl = buildCardDownloadUrl(rawToken);
+
   const deliveryCorrelationKey = giftVoucherCorrelationKey({
     giftVoucherId: voucher._id,
     templateKind: 'recipient_voucher',
     recipientEmail
   });
 
-  const template = buildRecipientResendDesignedEmail({ voucher, recipientEmail });
+  const template = buildRecipientResendDesignedEmail({ voucher, recipientEmail, cardDownloadUrl });
   const sendResult = await emailService.sendEmail({
     to: recipientEmail,
     subject: template.subject,
@@ -649,7 +653,8 @@ async function resendRecipientGiftVoucherEmail({ giftVoucherId, actor = 'ops', r
       recipientOverrideUsed: Boolean(recipientOverride),
       recipientOverride: recipientOverride ? String(recipientOverride).trim().toLowerCase() : null,
       recipientEmail,
-      messageId: sendResult.messageId || null
+      messageId: sendResult.messageId || null,
+      cardAccessTokenRotated: true
     }
   });
   await applyEmailDeliveryAttempt({
@@ -666,7 +671,9 @@ async function resendRecipientGiftVoucherEmail({ giftVoucherId, actor = 'ops', r
     ok: true,
     giftVoucherId: String(voucher._id),
     recipientEmail,
-    recipientOverrideUsed: Boolean(recipientOverride)
+    recipientOverrideUsed: Boolean(recipientOverride),
+    cardAccessTokenRotated: true,
+    cardDownloadUrl
   };
 }
 
