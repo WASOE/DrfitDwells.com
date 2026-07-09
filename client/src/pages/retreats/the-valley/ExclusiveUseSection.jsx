@@ -21,7 +21,7 @@ const ExclusiveUseSection = () => {
   const { t } = useTranslation('valley');
 
   return (
-    <section className="valley-section" style={{ paddingTop: 0 }}>
+    <section className="valley-section retreat-section-first">
       <div className="valley-container max-w-6xl mx-auto">
         <div className="max-w-3xl mb-10 md:mb-12">
           <p className="text-xs uppercase tracking-[0.35em] text-[#81887A] mb-4 font-serif">

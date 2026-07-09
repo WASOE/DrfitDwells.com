@@ -216,7 +216,7 @@ const TheValleyRetreatPage = () => {
         jsonLd={[structuredData, breadcrumbs]}
       />
       <div
-        className="valley-page"
+        className="valley-page retreat-page"
         style={{
           backgroundColor: 'var(--valley-canvas)',
           minHeight: '100vh',
@@ -252,7 +252,7 @@ const TheValleyRetreatPage = () => {
 
         <section className="valley-section" aria-labelledby="retreat-booking-heading">
           <div className="valley-container max-w-xl mx-auto">
-            <div className="mb-8 md:mb-10 text-center max-w-2xl mx-auto">
+            <div className="mb-6 text-center max-w-2xl mx-auto">
               <p className="text-xs uppercase tracking-[0.35em] text-[#81887A] mb-3 font-serif">
                 {tv('retreat.quote.panelEyebrow')}
               </p>
@@ -278,6 +278,8 @@ const TheValleyRetreatPage = () => {
         <BookingCTABand
           onPrimaryClick={scrollToQuotePanel}
           primaryLabel={tb('cta.checkAvailability')}
+          onSecondaryClick={scrollToAccommodations}
+          secondaryLabel={tv('retreat.hero.whatsIncluded')}
         />
 
         {showStickyBar && (

@@ -43,7 +43,7 @@ const RetreatUseCasesSection = () => {
                   loading="lazy"
                 />
               </div>
-              <div className="p-5 md:p-6">
+              <div className="p-6 md:p-8">
                 <h3 className="font-serif text-lg md:text-xl text-[#1a1a1a] font-semibold mb-2">
                   {t(`retreat.useCases.items.${id}.title`)}
                 </h3>

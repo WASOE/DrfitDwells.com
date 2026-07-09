@@ -82,6 +82,32 @@
   }
 }
 
+/* Retreat page: one consistent vertical rhythm between every major section,
+   no stacked dividers, and a clean full-height break after the hero. */
+.retreat-page .valley-section {
+  border-top: none;
+  padding-top: var(--valley-space-md);
+  padding-bottom: var(--valley-space-md);
+}
+
+@media (min-width: 768px) {
+  .retreat-page .valley-section {
+    padding-top: 4.5rem; /* 72px — single shared section token */
+    padding-bottom: 4.5rem;
+  }
+}
+
+/* First content section must fully clear the full-screen hero video. */
+.retreat-page .retreat-section-first {
+  padding-top: 4rem; /* 64px */
+}
+
+@media (min-width: 768px) {
+  .retreat-page .retreat-section-first {
+    padding-top: 7rem; /* 112px — generous separation from hero */
+  }
+}
+
 /* Typography Scale - Exact Specifications */
 
 /* H1 (Hero) */

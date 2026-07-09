@@ -30,7 +30,6 @@ const RetreatStaysSection = ({
       ref={accommodationsRef}
       id="accommodations"
       className="valley-section"
-      style={{ paddingTop: 0, borderTop: 'none' }}
     >
       <div className="valley-container max-w-5xl mx-auto">
         <h2 className="font-serif text-[#1a1a1a] mb-4 text-3xl md:text-5xl font-bold">
@@ -63,7 +62,11 @@ const RetreatStaysSection = ({
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
               {targets.map((target, index) => {
-                const bedsLine = formatBedConfigSummary(target.bedConfig, target.capacity);
+                const hasBedConfig =
+                  Array.isArray(target.bedConfig) && target.bedConfig.length > 0;
+                const bedsLine = hasBedConfig
+                  ? formatBedConfigSummary(target.bedConfig, target.capacity)
+                  : null;
                 const sleeps = resolveTargetSleeps(target);
                 const unitLabel =
                   target.unitCount > 1 ? `${target.name} × ${target.unitCount}` : target.name;
@@ -100,9 +103,7 @@ const RetreatStaysSection = ({
                       {bedsLine && (
                         <div className="flex justify-between gap-3">
                           <dt className="text-[#1a1a1a] font-semibold shrink-0">
-                            {Array.isArray(target.bedConfig) && target.bedConfig.length > 0
-                              ? t('retreat.stays.labels.beds')
-                              : t('retreat.stays.labels.capacity')}
+                            {t('retreat.stays.labels.beds')}
                           </dt>
                           <dd className="text-right">{bedsLine}</dd>
                         </div>

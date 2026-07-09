@@ -13,7 +13,7 @@ const RetreatTrustSection = ({ trustRef }) => {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ duration: 0.6 }}
-          className="rounded-xl border border-[rgba(0,0,0,0.12)] bg-white px-6 py-10 md:px-12 md:py-14"
+          className="rounded-xl border border-[rgba(0,0,0,0.12)] bg-white p-8 md:p-10"
         >
           <p className="text-xs uppercase tracking-[0.35em] text-[#81887A] mb-4 font-serif">
             {t('retreat.trust.eyebrow')}
