@@ -86,7 +86,6 @@ const RhodopesCabinRetreat = lazy(() => import('./pages/seo/RhodopesCabinRetreat
 const BanskoRemoteWorkRetreat = lazy(() => import('./pages/seo/BanskoRemoteWorkRetreat'))
 const RetreatVenueBulgaria = lazy(() => import('./pages/seo/RetreatVenueBulgaria'))
 const OffGridStaysBulgaria = lazy(() => import('./pages/seo/OffGridStaysBulgaria'))
-const TheValleyRetreatPage = lazy(() => import('./pages/retreats/TheValleyRetreatPage'))
 const CreatorPortal = lazy(() => import('./pages/creator/CreatorPortal'))
 
 const PageLoader = () => (
@@ -131,8 +130,6 @@ function App() {
               <Route path="/bg/cabin/faq" element={<CabinFaqPage />} />
               <Route path="/valley" element={<TheValleyPage />} />
               <Route path="/bg/valley" element={<TheValleyPage />} />
-              <Route path="/retreats/the-valley" element={<TheValleyRetreatPage />} />
-              <Route path="/bg/retreats/the-valley" element={<TheValleyRetreatPage />} />
               <Route path="/about" element={<About />} />
               <Route path="/bg/about" element={<About />} />
               <Route path="/build" element={<Build />} />
