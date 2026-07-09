@@ -7,7 +7,7 @@ const { normalizeExclusiveDateRange } = require('../../../utils/dateTime');
 const { availabilityBlockUnitScopeClause } = require('../../calendar/unitCalendarShared');
 const { BLOCKING_BOOKING_STATUSES } = require('../../calendar/blockingStatusConstants');
 
-const HARD_BLOCK_TYPES = ['manual_block', 'maintenance', 'reservation', 'external_hold'];
+const HARD_BLOCK_TYPES = ['manual_block', 'maintenance', 'reservation', 'external_hold', 'checkout_hold'];
 
 function rangesOverlap(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && aEnd > bStart;
@@ -42,7 +42,8 @@ async function evaluateTargetConflicts({
   cabinTypeId = null,
   startDate,
   endDate,
-  treatExternalHoldAsHard = false
+  treatExternalHoldAsHard = false,
+  excludeCheckoutSessionId = null
 }) {
   const normalized = normalizeExclusiveDateRange(startDate, endDate);
   const hardConflicts = [];
@@ -116,7 +117,9 @@ async function evaluateTargetConflicts({
 
   const [bookings, blocks] = await Promise.all([
     bookingFilter ? Booking.find(bookingFilter).select('_id checkIn checkOut status unitId cabinTypeId guestInfo').lean() : [],
-    AvailabilityBlock.find(blockFilter).select('_id blockType startDate endDate unitId').lean()
+    AvailabilityBlock.find(blockFilter)
+      .select('_id blockType startDate endDate unitId checkoutSessionId expiresAt')
+      .lean()
   ]);
 
   for (const booking of bookings) {
@@ -134,8 +137,17 @@ async function evaluateTargetConflicts({
     }
   }
 
+  const now = new Date();
+  const excludedSession = excludeCheckoutSessionId ? String(excludeCheckoutSessionId).trim() : '';
+
   for (const block of blocks) {
     if (!rangesOverlap(block.startDate, block.endDate, normalized.startDate, normalized.endDate)) continue;
+
+    if (block.blockType === 'checkout_hold') {
+      if (block.expiresAt && block.expiresAt <= now) continue;
+      if (excludedSession && String(block.checkoutSessionId || '') === excludedSession) continue;
+    }
+
     const entry = {
       kind: 'availability_block',
       blockId: String(block._id),

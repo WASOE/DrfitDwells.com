@@ -274,6 +274,8 @@ app.get('/api/health', (req, res) => {
 app.use('/api/chat', chatRoutes); // No DB required—FAQ retrieval only
 app.use('/api/public', requireDb, publicCalendarRoutes);
 app.use('/api/public', requireDb, publicGuideRoutes);
+app.use('/api/public', requireDb, require('./routes/publicLocationQuoteRoutes'));
+app.use('/api/public', requireDb, require('./routes/publicLocationCheckoutRoutes'));
 app.use('/api/availability', requireDb, availabilityRoutes);
 app.use('/api/creator-referral-visits', requireDb, creatorReferralVisitRoutes);
 app.use('/api/creator-portal', requireDb, creatorPortalRoutes);

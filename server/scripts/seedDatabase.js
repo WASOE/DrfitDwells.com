@@ -131,6 +131,7 @@ const seedDatabase = async () => {
       },
       capacity: 2,
       minGuests: 1,
+      bedConfig: [{ bedType: 'double', count: 1 }],
       pricePerNight: 60,
       pricingModel: 'per_night',
       minNights: 2,
@@ -197,6 +198,10 @@ const seedDatabase = async () => {
         },
         capacity: 6,
         minGuests: 3,
+        bedConfig: [
+          { bedType: 'double', count: 2 },
+          { bedType: 'single', count: 2 }
+        ],
         pricePerNight: 25,
         pricingModel: 'per_person',
         minNights: 2,
@@ -255,6 +260,7 @@ const seedDatabase = async () => {
         },
         capacity: 2,
         minGuests: 1,
+        bedConfig: [{ bedType: 'double', count: 1 }],
         pricePerNight: 85,
         pricingModel: 'per_night',
         minNights: 2,

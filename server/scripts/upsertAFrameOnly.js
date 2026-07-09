@@ -90,6 +90,7 @@ function buildAFrameCabinTypePayload(images) {
       'Off-grid A-frame cabins in a hidden mountain valley below Ortsevo, the highest inhabited village in the Balkans. Designed for quiet stays, nature immersion, and switching off. Simple, warm, and private, with shared facilities in the heart of the valley.',
     capacity: 2,
     minGuests: 1,
+    bedConfig: [{ bedType: 'double', count: 1 }],
     pricePerNight: 60,
     pricingModel: 'per_night',
     minNights: 2,

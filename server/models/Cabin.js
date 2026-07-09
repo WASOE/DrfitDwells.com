@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const { isSafeArrivalGuideUrl } = require('../utils/arrivalGuideUrl');
 const { isSafeGoogleMapsUrl } = require('../utils/googleMapsUrl');
+const { bedConfigField } = require('./schemas/bedConfigSchema');
 
 const cabinSchema = new mongoose.Schema({
   name: {
@@ -52,6 +53,8 @@ const cabinSchema = new mongoose.Schema({
     min: [1, 'Capacity must be at least 1'],
     max: [20, 'Capacity cannot exceed 20']
   },
+  /** Repeatable bed type + count entries for guest-facing inventory display. */
+  bedConfig: bedConfigField,
   minGuests: {
     type: Number,
     min: [1, 'Minimum guests must be at least 1'],
@@ -62,6 +65,15 @@ const cabinSchema = new mongoose.Schema({
     type: Number,
     required: [true, 'Price per night is required'],
     min: [0, 'Price cannot be negative']
+  },
+  /**
+   * Whole-location flat buyout nightly rate. When set, Valley location quotes use this
+   * instead of pricePerNight (pricingModel is ignored for buyout quotes).
+   */
+  buyoutPricePerNight: {
+    type: Number,
+    min: [0, 'Buyout price cannot be negative'],
+    default: null
   },
   /** @deprecated Legacy cleaning input; payout uses pricing policy. Kept for old documents. */
   cleaningFee: {

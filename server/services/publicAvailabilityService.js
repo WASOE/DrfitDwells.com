@@ -11,7 +11,7 @@ const { availabilityBlockUnitScopeClause } = require('./calendar/unitCalendarSha
 const { normalizeExclusiveDateRange } = require('../utils/dateTime');
 const { BLOCKING_BOOKING_STATUSES } = require('./calendar/blockingStatusConstants');
 
-const BLOCKING_BLOCK_TYPES = ['external_hold', 'manual_block', 'maintenance', 'reservation'];
+const BLOCKING_BLOCK_TYPES = ['external_hold', 'manual_block', 'maintenance', 'reservation', 'checkout_hold'];
 
 function cabinLegacyBlockedDatesOverlap(blockedDates, startDate, endDate) {
   const moment = require('moment');
@@ -31,6 +31,19 @@ async function findParentCabinForCabinType(cabinTypeId) {
     .lean();
 }
 
+function activeCheckoutHoldClause() {
+  const now = new Date();
+  return {
+    $or: [
+      { blockType: { $ne: 'checkout_hold' } },
+      {
+        blockType: 'checkout_hold',
+        $or: [{ expiresAt: null }, { expiresAt: { $exists: false } }, { expiresAt: { $gt: now } }]
+      }
+    ]
+  };
+}
+
 async function countBlockingBlocksForSingleCabin(cabinId, startDate, endDate) {
   return AvailabilityBlock.countDocuments({
     cabinId,
@@ -38,7 +51,10 @@ async function countBlockingBlocksForSingleCabin(cabinId, startDate, endDate) {
     blockType: { $in: BLOCKING_BLOCK_TYPES },
     startDate: { $lt: endDate },
     endDate: { $gt: startDate },
-    $or: [{ unitId: null }, { unitId: { $exists: false } }]
+    $and: [
+      { $or: [{ unitId: null }, { unitId: { $exists: false } }] },
+      activeCheckoutHoldClause()
+    ]
   });
 }
 
@@ -49,7 +65,7 @@ async function countBlockingBlocksForUnit(parentCabinId, unitId, startDate, endD
     blockType: { $in: BLOCKING_BLOCK_TYPES },
     startDate: { $lt: endDate },
     endDate: { $gt: startDate },
-    ...availabilityBlockUnitScopeClause(unitId)
+    $and: [availabilityBlockUnitScopeClause(unitId), activeCheckoutHoldClause()]
   });
 }
 

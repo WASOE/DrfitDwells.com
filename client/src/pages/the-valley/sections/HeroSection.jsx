@@ -13,11 +13,22 @@ const HeroSection = ({
   videoRef, 
   shouldPlayVideo, 
   scrollToAccommodations,
-  noiseTexture: _noiseTexture 
+  noiseTexture: _noiseTexture,
+  primaryAction = null,
+  secondaryAction = null
 }) => {
   const { openModal } = useBookingSearch();
   const { season } = useSeason();
   const { t } = useTranslation('valley');
+
+  const resolvedPrimary = primaryAction || {
+    label: t('hero.ctaPrimary'),
+    onClick: openModal
+  };
+  const resolvedSecondary = secondaryAction || {
+    label: t('hero.ctaSecondary'),
+    onClick: scrollToAccommodations
+  };
 
   return (
     <section 
@@ -151,16 +162,16 @@ const HeroSection = ({
           className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-8 px-4"
         >
           <button
-            onClick={openModal}
+            onClick={resolvedPrimary.onClick}
             className="bg-white text-stone-900 px-6 sm:px-8 py-3 sm:py-4 font-bold uppercase tracking-[0.3em] text-xs sm:text-sm hover:scale-105 transition-transform shadow-xl border-none rounded-full min-h-[44px] touch-manipulation"
           >
-            {t('hero.ctaPrimary')}
+            {resolvedPrimary.label}
           </button>
           <button
-            onClick={scrollToAccommodations}
+            onClick={resolvedSecondary.onClick}
             className="border border-white/30 text-white px-6 sm:px-8 py-3 sm:py-4 font-medium uppercase tracking-[0.3em] text-xs sm:text-sm hover:bg-white/10 transition-all backdrop-blur-sm rounded-full min-h-[44px] touch-manipulation"
           >
-            {t('hero.ctaSecondary')}
+            {resolvedSecondary.label}
           </button>
         </motion.div>
       </div>

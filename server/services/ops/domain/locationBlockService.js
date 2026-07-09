@@ -9,21 +9,7 @@ const { resolveLocationTargets } = require('./locationInventoryService');
 const { assertAllowedLocationKey } = require('./locationRegistry');
 const { createDomainError } = require('./errors');
 
-async function canUseMongoTransactions() {
-  try {
-    const session = await mongoose.startSession();
-    try {
-      await session.withTransaction(async () => {});
-      return true;
-    } catch {
-      return false;
-    } finally {
-      await session.endSession();
-    }
-  } catch {
-    return false;
-  }
-}
+const { canUseMongoTransactions } = require('../../../utils/mongoTransactions');
 
 async function insertLocationBlockGroup(blockPayloads) {
   /** @type {string[]} */

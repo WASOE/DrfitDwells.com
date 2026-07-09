@@ -26,6 +26,7 @@ const ValleyStayPublicGuide = lazy(() => import('./pages/guides/ValleyStayPublic
 const TheCabin = lazy(() => import('./pages/TheCabin'))
 const CabinFaqPage = lazy(() => import('./pages/CabinFaqPage'))
 const TheValleyPage = lazy(() => import('./pages/the-valley/TheValleyPage'))
+const TheValleyRetreatPage = lazy(() => import('./pages/retreats/the-valley/TheValleyRetreatPage'))
 const About = lazy(() => import('./pages/About'))
 const Build = lazy(() => import('./pages/Build'))
 const Terms = lazy(() => import('./pages/legal/Terms'))
@@ -130,6 +131,8 @@ function App() {
               <Route path="/bg/cabin/faq" element={<CabinFaqPage />} />
               <Route path="/valley" element={<TheValleyPage />} />
               <Route path="/bg/valley" element={<TheValleyPage />} />
+              <Route path="/retreats/the-valley" element={<TheValleyRetreatPage />} />
+              <Route path="/bg/retreats/the-valley" element={<TheValleyRetreatPage />} />
               <Route path="/about" element={<About />} />
               <Route path="/bg/about" element={<About />} />
               <Route path="/build" element={<Build />} />

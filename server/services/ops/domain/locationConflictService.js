@@ -10,7 +10,8 @@ const { createDomainError } = require('./errors');
  * @param {string|Date} startDate
  * @param {string|Date} endDate
  */
-async function evaluateLocationConflicts(locationKey, startDate, endDate) {
+async function evaluateLocationConflicts(locationKey, startDate, endDate, options = {}) {
+  const { excludeCheckoutSessionId = null } = options || {};
   const normalized = normalizeExclusiveDateRange(startDate, endDate);
   const inventory = await resolveLocationTargets(locationKey);
 
@@ -31,7 +32,8 @@ async function evaluateLocationConflicts(locationKey, startDate, endDate) {
         cabinTypeId: target.cabinTypeId,
         startDate: normalized.startDate,
         endDate: normalized.endDate,
-        treatExternalHoldAsHard: true
+        treatExternalHoldAsHard: true,
+        excludeCheckoutSessionId
       });
       return {
         targetKey: target.targetKey,

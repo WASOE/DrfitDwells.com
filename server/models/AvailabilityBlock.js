@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const BLOCK_TYPES = ['reservation', 'manual_block', 'maintenance', 'external_hold'];
+const BLOCK_TYPES = ['reservation', 'manual_block', 'maintenance', 'external_hold', 'checkout_hold'];
 const BLOCK_STATUS = ['active', 'tombstoned'];
 
 const availabilityBlockSchema = new mongoose.Schema(
@@ -77,6 +77,19 @@ const availabilityBlockSchema = new mongoose.Schema(
     metadata: {
       type: Object,
       default: {}
+    },
+    /** Location-checkout session id grouping pre-payment holds across Valley targets. */
+    checkoutSessionId: {
+      type: String,
+      trim: true,
+      default: null,
+      index: true
+    },
+    /** When set on checkout_hold rows, block is ignored after expiry (sweeper tombstones). */
+    expiresAt: {
+      type: Date,
+      default: null,
+      index: true
     }
   },
   { timestamps: true }
@@ -84,6 +97,8 @@ const availabilityBlockSchema = new mongoose.Schema(
 
 availabilityBlockSchema.index({ cabinId: 1, startDate: 1, endDate: 1, status: 1 });
 availabilityBlockSchema.index({ source: 1, sourceReference: 1 }, { sparse: true });
+availabilityBlockSchema.index({ checkoutSessionId: 1, status: 1, blockType: 1 });
+availabilityBlockSchema.index({ blockType: 1, status: 1, expiresAt: 1 });
 
 availabilityBlockSchema.pre('validate', function validateExclusiveEnd(next) {
   if (!this.startDate || !this.endDate) {

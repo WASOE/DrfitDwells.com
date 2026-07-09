@@ -175,6 +175,48 @@
     "headline": "Ready to experience The Valley?",
     "intro": "Check availability or compare stays.",
     "compareStays": "Compare stays"
+  },
+  "retreat": {
+    "seo": {
+      "title": "Book The Valley — Exclusive Private Retreat | Drift & Dwells",
+      "description": "Reserve the entire Valley for your group. Flat buyout pricing, direct checkout, and every cabin and the stone house included for your dates."
+    },
+    "hero": {
+      "whatsIncluded": "What's included"
+    },
+    "exclusiveUse": {
+      "eyebrow": "Exclusive use",
+      "title": "The whole Valley, reserved for your group",
+      "intro": "When you book this retreat, every cabin and the stone house across the village are held exclusively for your party. Shared land, private stays — one flat buyout for the full location."
+    },
+    "stays": {
+      "title": "What's included in your buyout",
+      "intro": "Every active stay in The Valley is part of your reservation — capacity and bed layout shown per accommodation.",
+      "emptyHint": "Select dates and check availability to see the accommodations included in your buyout.",
+      "perUnit": "per unit",
+      "labels": {
+        "sleeps": "Sleeps",
+        "capacity": "Capacity",
+        "beds": "Beds"
+      }
+    },
+    "quote": {
+      "panelEyebrow": "Book the Valley",
+      "panelTitle": "Check availability & checkout",
+      "sleepsTotal": "Up to {{count}} guests across the village",
+      "holdExpiredTitle": "Your hold expired",
+      "holdExpiredBody": "Your checkout hold expired. Please re-check dates and continue when you're ready.",
+      "roomAllocationToggle": "Room allocation (optional, for our team)",
+      "roomAllocationHint": "Optional — helps our team prepare bedding. This never changes your price.",
+      "roomNotesLabel": "Notes for the team",
+      "plannedGuests": "Planned guests",
+      "decreaseGuests": "Decrease planned guests",
+      "increaseGuests": "Increase planned guests",
+      "confirmedEyebrow": "Confirmed",
+      "confirmedTitle": "Your Valley retreat is booked",
+      "confirmedBody": "We've sent a confirmation email with your stay details.",
+      "reference": "Reference {{id}}"
+    }
   }
 }
 

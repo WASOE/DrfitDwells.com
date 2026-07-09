@@ -4,10 +4,20 @@ import { useBookingSearch } from '../../../context/BookingSearchContext';
 import '../../../i18n/ns/booking';
 import '../../../i18n/ns/valley';
 
-const BookingCTABand = () => {
+const BookingCTABand = ({
+  onPrimaryClick,
+  onSecondaryClick,
+  primaryLabel,
+  secondaryLabel
+}) => {
   const { openModal } = useBookingSearch();
   const { t: tv } = useTranslation('valley');
   const { t: tb } = useTranslation('booking');
+
+  const handlePrimary = onPrimaryClick || openModal;
+  const handleSecondary = onSecondaryClick || openModal;
+  const resolvedPrimaryLabel = primaryLabel || tb('cta.checkAvailability');
+  const resolvedSecondaryLabel = secondaryLabel || tv('bookingBand.compareStays');
 
   return (
     <section 
@@ -67,16 +77,16 @@ const BookingCTABand = () => {
               className="flex flex-col sm:flex-row gap-4 justify-center items-center"
             >
               <button
-                onClick={openModal}
+                onClick={handlePrimary}
                 className="bg-[#1a1a1a] text-white px-12 py-4 font-semibold uppercase tracking-wider text-sm hover:bg-[#2a2a2a] transition-colors min-h-[52px] shadow-lg"
               >
-                {tb('cta.checkAvailability')}
+                {resolvedPrimaryLabel}
               </button>
               <button
-                onClick={openModal}
+                onClick={handleSecondary}
                 className="border border-[#1a1a1a]/30 text-[#1a1a1a] px-10 py-4 font-medium uppercase tracking-wider text-sm hover:bg-[#1a1a1a]/5 transition-colors min-h-[52px]"
               >
-                {tv('bookingBand.compareStays')}
+                {resolvedSecondaryLabel}
               </button>
             </motion.div>
           </div>

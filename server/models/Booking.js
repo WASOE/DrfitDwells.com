@@ -415,6 +415,41 @@ const bookingSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  /** Whole-location buyout: links child stay rows to master LocationBooking. */
+  locationBookingId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'LocationBooking',
+    default: null
+  },
+  /**
+   * True only when this Booking row is the commercial master (reserved for future use).
+   * Whole-location masters live on LocationBooking; child rows keep false.
+   */
+  isMasterBooking: {
+    type: Boolean,
+    default: false
+  },
+  /** When true, skip automatic guest confirmation email (whole-location child rows). */
+  suppressGuestEmail: {
+    type: Boolean,
+    default: false
+  },
+  /** Per-target allocated lodging share for reporting context on child rows. */
+  childPriceShare: {
+    type: Number,
+    min: [0, 'childPriceShare cannot be negative'],
+    default: null
+  },
+  /** When true, revenue reporting should count the master LocationBooking only. */
+  excludeFromRevenueReporting: {
+    type: Boolean,
+    default: false
+  },
+  /** OPS-only guest room distribution for whole-location child rows. */
+  roomAllocation: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
   /** OPS manual reservation stay purpose (admin_manual / operator_manual only). */
   manualReservationPurpose: {
     type: String,
@@ -509,6 +544,14 @@ bookingSchema.index(
   {
     partialFilterExpression: {
       checkoutSessionId: { $exists: true, $type: 'objectId' }
+    }
+  }
+);
+bookingSchema.index(
+  { locationBookingId: 1 },
+  {
+    partialFilterExpression: {
+      locationBookingId: { $exists: true, $type: 'objectId' }
     }
   }
 );
