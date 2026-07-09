@@ -1,21 +1,20 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useLanguage } from '../../../context/LanguageContext.jsx';
 import { useSeason } from '../../../context/SeasonContext';
 import { locations } from '../../../data/content';
-import { NOISE_TEXTURE } from '../../the-valley/data';
-import HeroSection from '../../the-valley/sections/HeroSection';
-import EditorialHookSection from '../../the-valley/sections/EditorialHookSection';
+import RetreatHeroSection from './RetreatHeroSection';
 import ExclusiveUseSection from './ExclusiveUseSection';
 import RetreatStaysSection from './RetreatStaysSection';
-import VibeSection from '../../the-valley/sections/VibeSection';
-import ReviewsSection from '../../the-valley/sections/ReviewsSection';
+import RetreatUseCasesSection from './RetreatUseCasesSection';
+import RetreatGroupVibeSection from './RetreatGroupVibeSection';
+import RetreatTrustSection from './RetreatTrustSection';
 import LocationRetreatQuotePanel from './LocationRetreatQuotePanel';
-import PracticalDetailsAccordion from '../../the-valley/sections/PracticalDetailsAccordion';
+import RetreatPracticalDetailsSection from './RetreatPracticalDetailsSection';
 import BookingCTABand from '../../the-valley/sections/BookingCTABand';
 import StickyBookingBar from '../../../components/StickyBookingBar';
 import { GMB_LOCATIONS, CONTACT_PHONE, INSTAGRAM_URL, FACEBOOK_URL } from '../../../data/gmbLocations';
 import { getSiteUrl } from '../../../utils/siteUrl';
+import { locationInventoryAPI } from '../../../services/locationApi';
 import '../../the-valley/the-valley.css';
 import Seo from '../../../components/Seo';
 import { buildHreflangAlternates } from '../../../utils/localizedRoutes';
@@ -25,7 +24,6 @@ import '../../../i18n/ns/booking';
 const TheValleyRetreatPage = () => {
   const valley = locations.find((loc) => loc.id === 'valley');
   const { season } = useSeason();
-  const { language } = useLanguage();
   const { t: tb } = useTranslation('booking');
   const { t: tv } = useTranslation('valley');
 
@@ -34,12 +32,15 @@ const TheValleyRetreatPage = () => {
   const videoRef = useRef(null);
   const accommodationsRef = useRef(null);
   const galleryRef = useRef(null);
-  const trustBadgesRef = useRef(null);
+  const trustRef = useRef(null);
   const quotePanelRef = useRef(null);
 
   const [shouldLoadMedia, setShouldLoadMedia] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [isLowBandwidth, setIsLowBandwidth] = useState(false);
+  const [inventory, setInventory] = useState(null);
+  const [inventoryLoading, setInventoryLoading] = useState(true);
+  const [inventoryError, setInventoryError] = useState(null);
   const [quote, setQuote] = useState(null);
 
   const scrollToAccommodations = useCallback(() => {
@@ -48,6 +49,38 @@ const TheValleyRetreatPage = () => {
 
   const scrollToQuotePanel = useCallback(() => {
     quotePanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      setInventoryLoading(true);
+      setInventoryError(null);
+      try {
+        const res = await locationInventoryAPI.getInventory('the-valley');
+        if (cancelled) return;
+        if (res.data?.success) {
+          setInventory(res.data.data);
+        } else {
+          setInventoryError(res.data?.message || 'Failed to load inventory');
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setInventoryError(
+            err.response?.data?.message || err.message || 'Failed to load inventory'
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setInventoryLoading(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -190,46 +223,57 @@ const TheValleyRetreatPage = () => {
           paddingBottom: showStickyBar ? '5.5rem' : undefined
         }}
       >
-        <HeroSection
+        <RetreatHeroSection
           containerRef={containerRef}
           heroRef={heroRef}
           videoRef={videoRef}
           shouldPlayVideo={shouldPlayVideo}
           scrollToAccommodations={scrollToAccommodations}
-          noiseTexture={NOISE_TEXTURE}
-          primaryAction={{
-            label: tb('cta.checkAvailability'),
-            onClick: scrollToQuotePanel
-          }}
-          secondaryAction={{
-            label: tv('retreat.hero.whatsIncluded'),
-            onClick: scrollToAccommodations
-          }}
+          scrollToQuotePanel={scrollToQuotePanel}
+          inventory={inventory}
+          inventoryLoading={inventoryLoading}
         />
-
-        <EditorialHookSection />
 
         <ExclusiveUseSection />
 
         <RetreatStaysSection
           accommodationsRef={accommodationsRef}
-          includedTargets={quote?.includedTargets}
+          includedTargets={inventory?.includedTargets}
+          loading={inventoryLoading}
+          error={inventoryError}
+          totalSleeps={inventory?.totalSleeps}
         />
 
-        <VibeSection galleryRef={galleryRef} />
+        <RetreatUseCasesSection />
 
-        <ReviewsSection trustBadgesRef={trustBadgesRef} />
+        <RetreatGroupVibeSection galleryRef={galleryRef} />
+
+        <RetreatTrustSection trustRef={trustRef} />
 
         <section className="valley-section" aria-labelledby="retreat-booking-heading">
           <div className="valley-container max-w-xl mx-auto">
-            <h2 id="retreat-booking-heading" className="sr-only">
-              {tv('retreat.quote.panelTitle')}
-            </h2>
+            <div className="mb-8 md:mb-10 text-center max-w-2xl mx-auto">
+              <p className="text-xs uppercase tracking-[0.35em] text-[#81887A] mb-3 font-serif">
+                {tv('retreat.quote.panelEyebrow')}
+              </p>
+              <h2
+                id="retreat-booking-heading"
+                className="font-serif text-[#1a1a1a] text-3xl md:text-4xl font-semibold mb-3"
+              >
+                {tv('retreat.quote.panelTitle')}
+              </h2>
+              <p className="text-sm md:text-base text-[#4a4a4a] max-w-xl mx-auto">
+                {tv('retreat.quote.panelIntro')}
+              </p>
+            </div>
             <LocationRetreatQuotePanel panelRef={quotePanelRef} onQuoteChange={setQuote} />
           </div>
         </section>
 
-        <PracticalDetailsAccordion />
+        <RetreatPracticalDetailsSection
+          totalSleeps={inventory?.totalSleeps}
+          maxMinNights={inventory?.maxMinNights}
+        />
 
         <BookingCTABand
           onPrimaryClick={scrollToQuotePanel}

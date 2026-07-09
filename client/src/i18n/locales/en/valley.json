@@ -182,17 +182,33 @@
       "description": "Reserve the entire Valley for your group. Flat buyout pricing, direct checkout, and every cabin and the stone house included for your dates."
     },
     "hero": {
+      "eyebrow": "Private group buyout",
+      "title": "The whole Valley, exclusively yours",
+      "capacity": "Sleeps up to {{sleeps}} across {{buildings}} buildings",
+      "fromPrice": "from €{{nightly}}/night, {{nights}}-night minimum",
       "whatsIncluded": "What's included"
     },
     "exclusiveUse": {
       "eyebrow": "Exclusive use",
       "title": "The whole Valley, reserved for your group",
-      "intro": "When you book this retreat, every cabin and the stone house across the village are held exclusively for your party. Shared land, private stays — one flat buyout for the full location."
+      "intro": "Your buyout holds every active building in the village — stone house, cabins, and shared outdoor spaces — for your group alone.",
+      "images": {
+        "panorama": "Panoramic summer view of The Valley village with stone house and A-frame cabins",
+        "fireside": "Fireside lounge at The Valley with seating for group gatherings",
+        "firepit": "Communal firepit at The Valley for evening gatherings"
+      },
+      "captions": {
+        "panorama": "The full village layout",
+        "fireside": "Indoor gathering space",
+        "firepit": "Evenings around the fire"
+      }
     },
     "stays": {
       "title": "What's included in your buyout",
       "intro": "Every active stay in The Valley is part of your reservation — capacity and bed layout shown per accommodation.",
-      "emptyHint": "Select dates and check availability to see the accommodations included in your buyout.",
+      "totalCapacity": "{{count}} guests total across the village",
+      "confirmNote": "Your exact total for selected dates is confirmed in the booking panel below.",
+      "loadError": "We couldn't load the accommodation list right now. Please refresh or try again shortly.",
       "perUnit": "per unit",
       "labels": {
         "sleeps": "Sleeps",
@@ -200,9 +216,98 @@
         "beds": "Beds"
       }
     },
+    "useCases": {
+      "title": "Who it's for",
+      "intro": "Picture your group taking over the village — offsites, reunions, retreats, and residencies all work here.",
+      "items": {
+        "offsite": {
+          "title": "Corporate offsites",
+          "body": "Bring the team to 1,550m with the whole village as your offsite venue.",
+          "imageAlt": "Panoramic view of The Valley village for a corporate offsite buyout"
+        },
+        "reunion": {
+          "title": "Family reunions",
+          "body": "Spread across multiple buildings while sharing fireside evenings together.",
+          "imageAlt": "Communal firepit at The Valley for a family reunion buyout"
+        },
+        "friends": {
+          "title": "Friend groups",
+          "body": "Book the full valley for a private getaway with room to spread out.",
+          "imageAlt": "Fireside lounge at The Valley for a friends group buyout"
+        },
+        "wellness": {
+          "title": "Wellness retreats",
+          "body": "A quiet mountain setting with shared outdoor space for your program.",
+          "imageAlt": "Starlit mountain view at The Valley for a wellness retreat buyout"
+        },
+        "creative": {
+          "title": "Creative residencies",
+          "body": "Space to focus, gather, and stay on-site across a multi-day agenda.",
+          "imageAlt": "Valley landscape at The Valley for a creative residency buyout"
+        }
+      }
+    },
+    "groupVibe": {
+      "title": "Life together in the village",
+      "intro": "A retreat is about the group — shared tables, fireside evenings, and time outdoors together.",
+      "moments": {
+        "firepit": {
+          "caption": "Evenings around the communal firepit",
+          "imageAlt": "Group gathering at the communal firepit at The Valley"
+        },
+        "fireside": {
+          "caption": "Fireside lounge for your group",
+          "imageAlt": "Fireside lounge seating for group gatherings at The Valley"
+        },
+        "village": {
+          "caption": "The whole village, yours to explore",
+          "imageAlt": "Panoramic view of The Valley village reserved for a private group buyout"
+        },
+        "evening": {
+          "caption": "Mountain nights under the stars",
+          "imageAlt": "Starlit mountain sky over The Valley during a group stay"
+        }
+      }
+    },
+    "trust": {
+      "eyebrow": "Private group buyout",
+      "quote": "One reservation. Every building. Your group only.",
+      "body": "Flat buyout pricing covers all active stays in the village. Pick your dates, see the exact total, and checkout directly — no enquiry back-and-forth."
+    },
+    "practical": {
+      "title": "Practical details for your group",
+      "intro": "What to plan for when the whole Valley is yours.",
+      "locationTitle": "Meeting point, address & contact",
+      "locationBody": "Transfers and directions use the Chereshovo area listing below — the same pin and phone we publish for wayfinding.",
+      "directionsCta": "Get directions",
+      "callCta": "Call",
+      "items": {
+        "capacity": {
+          "title": "Maximum group capacity",
+          "content": "Your buyout includes up to {{sleeps}} guests across every active building in the village. Guest count does not change the flat buyout price."
+        },
+        "gathering": {
+          "title": "Group meals & gathering spaces",
+          "content": "Stone House has a shared kitchen and fireplace for group meals and indoor gatherings. The village also has a communal firepit and shared outdoor spaces."
+        },
+        "arrival": {
+          "title": "Group arrival & parking",
+          "content": "The Valley is accessible year-round. Parking is at the designated area, with a 1 km walk to the village — assistance is available for group arrivals."
+        },
+        "multiday": {
+          "title": "Multi-day stays",
+          "content": "Buyouts require a minimum stay of {{nights}} nights. One reservation holds the entire village for your dates, with a single confirmation for your group."
+        },
+        "support": {
+          "title": "On-site support",
+          "content": "Support is available for weather changes, access questions, or emergencies. Remote does not mean unprepared — systems are maintained year-round."
+        }
+      }
+    },
     "quote": {
       "panelEyebrow": "Book the Valley",
       "panelTitle": "Check availability & checkout",
+      "panelIntro": "Choose your dates to confirm availability and see the exact total for your group.",
       "sleepsTotal": "Up to {{count}} guests across the village",
       "holdExpiredTitle": "Your hold expired",
       "holdExpiredBody": "Your checkout hold expired. Please re-check dates and continue when you're ready.",

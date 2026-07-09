@@ -1,5 +1,10 @@
 import api from './api';
 
+export const locationInventoryAPI = {
+  getInventory: (locationKeyOrSlug = 'the-valley') =>
+    api.get(`/public/location-inventory/${locationKeyOrSlug}`)
+};
+
 export const locationQuoteAPI = {
   quoteTheValley: (data) => api.post('/public/location-quotes/the-valley', data)
 };
