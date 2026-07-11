@@ -199,7 +199,8 @@
         "availabilityError": "We couldn't load the calendar right now. You can try again or use the booking panel below.",
         "retryAvailability": "Try again",
         "useQuotePanel": "Use booking panel",
-        "closeSheet": "Close calendar"
+        "closeSheet": "Close calendar",
+        "selectCheckout": "Select checkout"
       }
     },
     "exclusiveUse": {

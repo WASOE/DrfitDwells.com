@@ -20,6 +20,41 @@ export function toBlockedNightSet(blockedNights) {
 }
 
 /**
+ * @param {Date|string|null|undefined} from
+ * @param {Date|string|null|undefined} to
+ */
+export function isSameDayStayRange(from, to) {
+  if (!from || !to) return false;
+  const fromOnly =
+    from instanceof Date ? formatDateOnlyLocal(from) : String(from).trim();
+  const toOnly = to instanceof Date ? formatDateOnlyLocal(to) : String(to).trim();
+  return Boolean(fromOnly && toOnly && fromOnly === toOnly);
+}
+
+/**
+ * Check-in chosen, checkout not yet chosen. Same-day from/to from DayPicker counts as checkout stage.
+ *
+ * @param {Date|string|null|undefined} from
+ * @param {Date|string|null|undefined} to
+ */
+export function isRetreatStaySelectingCheckout(from, to) {
+  if (!from) return false;
+  if (!to) return true;
+  return isSameDayStayRange(from, to);
+}
+
+/**
+ * Completed guest stay range (distinct check-in and checkout).
+ *
+ * @param {Date|string|null|undefined} from
+ * @param {Date|string|null|undefined} to
+ */
+export function isRetreatStayRangeComplete(from, to) {
+  if (!from || !to) return false;
+  return !isSameDayStayRange(from, to);
+}
+
+/**
  * Whether night `dateOnly` (YYYY-MM-DD) is free.
  * @param {string} dateOnly
  * @param {Set<string>} blockedSet
@@ -65,7 +100,6 @@ export function isValidCheckInStart(dateOnly, blockedSet, minNights, horizonDays
     if (!night || blockedSet.has(night)) return false;
   }
 
-  // Ensure the min-stay window stays inside the searched horizon.
   const lastRequired = addDaysDateOnly(dateOnly, minNights - 1);
   const horizonEnd = addDaysDateOnly(dateOnly, horizonDays - 1);
   if (compareDateOnly(lastRequired, horizonEnd) > 0) return false;
@@ -158,10 +192,11 @@ export function isRetreatStayDateEnabled(
   if (!dateOnly || compareDateOnly(dateOnly, minStayDate) < 0) return false;
 
   if (selectingCheckout && rangeFrom) {
-    return (
-      isValidCheckInStart(dateOnly, blockedSet, minNights, horizonDays) ||
-      isValidCheckoutForCheckIn(dateOnly, rangeFrom, blockedSet, minNights, horizonDays)
-    );
+    if (dateOnly === rangeFrom) return true;
+    if (compareDateOnly(dateOnly, rangeFrom) < 0) {
+      return isValidCheckInStart(dateOnly, blockedSet, minNights, horizonDays);
+    }
+    return isValidCheckoutForCheckIn(dateOnly, rangeFrom, blockedSet, minNights, horizonDays);
   }
 
   return isValidCheckInStart(dateOnly, blockedSet, minNights, horizonDays);
@@ -190,7 +225,7 @@ export function isRetreatStayCalendarDateDisabled(
   const dateOnly = formatDateOnlyLocal(date);
   const minStayDateOnly = formatDateOnlyLocal(minStayDate);
   const rangeFromOnly = rangeFrom ? formatDateOnlyLocal(rangeFrom) : null;
-  const selectingCheckout = Boolean(rangeFromOnly && !rangeTo);
+  const selectingCheckout = isRetreatStaySelectingCheckout(rangeFrom, rangeTo);
 
   return !isRetreatStayDateEnabled(dateOnly, {
     minStayDate: minStayDateOnly,
@@ -200,6 +235,23 @@ export function isRetreatStayCalendarDateDisabled(
     selectingCheckout,
     horizonDays
   });
+}
+
+/**
+ * Normalize DayPicker range selection: same-day from/to means checkout stage only.
+ *
+ * @param {{ from?: Date, to?: Date }|undefined|null} selectedRange
+ * @returns {{ from: Date, to?: Date }|undefined}
+ */
+export function normalizeRetreatStayRangeSelection(selectedRange) {
+  if (!selectedRange?.from) return undefined;
+  if (!selectedRange.to) {
+    return { from: selectedRange.from };
+  }
+  if (isSameDayStayRange(selectedRange.from, selectedRange.to)) {
+    return { from: selectedRange.from };
+  }
+  return { from: selectedRange.from, to: selectedRange.to };
 }
 
 /**

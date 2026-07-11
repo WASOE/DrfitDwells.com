@@ -5,10 +5,16 @@ import { Elements } from '@stripe/react-stripe-js';
 import { Minus, Plus, X } from 'lucide-react';
 import LocationPaymentForm from './LocationPaymentForm';
 import useLocationRetreatBooking from '../../../hooks/useLocationRetreatBooking';
+import { useBookingSearch } from '../../../context/BookingSearchContext';
 import { useSiteLanguage } from '../../../hooks/useSiteLanguage';
 import { StayLodgingPriceBlock } from '../../../components/booking/StayLodgingPriceBlock';
-import { isRetreatStayCalendarDateDisabled } from '../../../utils/stayWindows';
-import { getDateFnsLocale } from '../../../utils/localeDates';
+import {
+  isRetreatStayRangeComplete,
+  isRetreatStaySelectingCheckout,
+  isRetreatStayCalendarDateDisabled,
+  normalizeRetreatStayRangeSelection
+} from '../../../utils/stayWindows';
+import { formatStayDay, formatStayRangeSummary, getDateFnsLocale } from '../../../utils/localeDates';
 import '../../../styles/daypicker-theme.css';
 import '../../../i18n/ns/booking';
 import '../../../i18n/ns/valley';
@@ -129,6 +135,7 @@ const RetreatBookingCalendar = ({
   const { t: tb } = useTranslation('booking');
   const { t: tv } = useTranslation('valley');
   const { language } = useSiteLanguage();
+  const { updateDates } = useBookingSearch();
   const isSheet = variant === 'sheet';
   const minNights = resolveMinNights(inventory);
 
@@ -200,7 +207,51 @@ const RetreatBookingCalendar = ({
     [minStayDate, isCalendarReady, blockedDateSet, minNights, range?.from, range?.to]
   );
 
-  const hasCompleteRange = Boolean(checkIn && checkOut);
+  const pickerSelected = useMemo(
+    () => normalizeRetreatStayRangeSelection(range),
+    [range]
+  );
+
+  const onCalendarSelect = useCallback(
+    (selectedRange) => {
+      if (selectedRange === undefined) {
+        handleSelect(undefined);
+        updateDates(null, null);
+        return;
+      }
+
+      const normalized = normalizeRetreatStayRangeSelection(selectedRange);
+      if (!normalized) {
+        handleSelect(undefined);
+        updateDates(null, null);
+        return;
+      }
+
+      if (!normalized.to) {
+        updateDates(null, null);
+      }
+
+      handleSelect(normalized);
+    },
+    [handleSelect, updateDates]
+  );
+
+  const calendarDateSummary = useMemo(() => {
+    if (isRetreatStayRangeComplete(range?.from, range?.to)) {
+      return formatStayRangeSummary(range.from, range.to, language);
+    }
+    if (isRetreatStaySelectingCheckout(range?.from, range?.to)) {
+      return `${formatStayDay(range.from, language)} → ${tv('retreat.hero.calendar.selectCheckout')}`;
+    }
+    if (checkIn && checkOut) {
+      return formatStayRangeSummary(checkIn, checkOut, language);
+    }
+    return dateSummary;
+  }, [range?.from, range?.to, checkIn, checkOut, language, dateSummary, tv]);
+
+  const hasCompleteRange = Boolean(
+    isRetreatStayRangeComplete(range?.from, range?.to) || (checkIn && checkOut)
+  );
   const isUnderMinStay = hasCompleteRange && nights > 0 && nights < minNights;
   const showPriceShimmer =
     quoteLoading && hasCompleteRange && !isUnderMinStay && availabilityStatus !== 'error';
@@ -321,8 +372,8 @@ const RetreatBookingCalendar = ({
       >
         <DayPicker
           mode="range"
-          selected={range}
-          onSelect={handleSelect}
+          selected={pickerSelected}
+          onSelect={onCalendarSelect}
           numberOfMonths={1}
           pagedNavigation
           captionLayout="dropdown-buttons"
@@ -399,7 +450,7 @@ const RetreatBookingCalendar = ({
             {tv('retreat.hero.calendar.datesLabel')}
           </p>
           <p className={`text-sm text-gray-700 mb-3 ${isSheet ? 'text-base' : ''}`}>
-            {dateSummary}
+            {calendarDateSummary}
           </p>
           {renderCalendarArea()}
           {dateError && <p className="text-red-600 text-sm mt-2">{dateError}</p>}

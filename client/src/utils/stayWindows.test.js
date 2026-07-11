@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   isRetreatStayDateEnabled,
+  isRetreatStaySelectingCheckout,
+  isSameDayStayRange,
   isValidCheckInStart,
   isValidCheckoutForCheckIn,
+  normalizeRetreatStayRangeSelection,
   toBlockedNightSet
 } from './stayWindows';
 
@@ -69,18 +72,79 @@ describe('stayWindows', () => {
     ).toBe(true);
   });
 
-  it('allows restarting check-in while selecting checkout', () => {
-    const blocked = toBlockedNightSet(['2026-06-04', '2026-06-08']);
-    const currentFrom = '2026-06-01';
+  it('treats same-day from/to as checkout stage, not a completed range', () => {
+    const from = new Date(2026, 6, 20);
+    const to = new Date(2026, 6, 20);
 
+    expect(isSameDayStayRange(from, to)).toBe(true);
+    expect(isRetreatStaySelectingCheckout(from, to)).toBe(true);
+    expect(isRetreatStaySelectingCheckout(from, undefined)).toBe(true);
+    expect(normalizeRetreatStayRangeSelection({ from, to })).toEqual({ from });
+  });
+
+  it('enables only valid checkouts during checkout stage', () => {
+    const blocked = toBlockedNightSet(['2026-06-04', '2026-06-08']);
+    const checkIn = '2026-06-01';
+
+    expect(
+      isRetreatStayDateEnabled('2026-06-03', {
+        minStayDate: minStay,
+        blockedSet: blocked,
+        minNights,
+        rangeFrom: checkIn,
+        selectingCheckout: true
+      })
+    ).toBe(true);
+    expect(
+      isRetreatStayDateEnabled('2026-06-04', {
+        minStayDate: minStay,
+        blockedSet: blocked,
+        minNights,
+        rangeFrom: checkIn,
+        selectingCheckout: true
+      })
+    ).toBe(true);
     expect(
       isRetreatStayDateEnabled('2026-06-06', {
         minStayDate: minStay,
         blockedSet: blocked,
         minNights,
-        rangeFrom: currentFrom,
+        rangeFrom: checkIn,
+        selectingCheckout: true
+      })
+    ).toBe(false);
+  });
+
+  it('allows reset via current check-in and earlier valid check-in dates during checkout stage', () => {
+    const blocked = toBlockedNightSet(['2026-06-04']);
+    const checkIn = '2026-06-10';
+
+    expect(
+      isRetreatStayDateEnabled(checkIn, {
+        minStayDate: minStay,
+        blockedSet: blocked,
+        minNights,
+        rangeFrom: checkIn,
         selectingCheckout: true
       })
     ).toBe(true);
+    expect(
+      isRetreatStayDateEnabled('2026-06-08', {
+        minStayDate: minStay,
+        blockedSet: blocked,
+        minNights,
+        rangeFrom: checkIn,
+        selectingCheckout: true
+      })
+    ).toBe(true);
+    expect(
+      isRetreatStayDateEnabled('2026-06-03', {
+        minStayDate: minStay,
+        blockedSet: blocked,
+        minNights,
+        rangeFrom: checkIn,
+        selectingCheckout: true
+      })
+    ).toBe(false);
   });
 });
