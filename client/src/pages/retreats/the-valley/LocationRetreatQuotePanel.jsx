@@ -1,4 +1,4 @@
-import { useEffect, useState, lazy, Suspense } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements } from '@stripe/react-stripe-js';
@@ -8,35 +8,31 @@ import { StayLodgingPriceBlock } from '../../../components/booking/StayLodgingPr
 import PriceDetailsModal from '../../../components/booking/PriceDetailsModal';
 import LocationPaymentForm from './LocationPaymentForm';
 import useLocationRetreatBooking from '../../../hooks/useLocationRetreatBooking';
-import { useSiteLanguage } from '../../../hooks/useSiteLanguage';
-import { getDateFnsLocale } from '../../../utils/localeDates';
-import '../../../styles/daypicker-theme.css';
+import { formatDateOnlyLocal } from '../../../utils/dateOnly';
 import '../../../i18n/ns/booking';
 import '../../../i18n/ns/valley';
-
-const DayPicker = lazy(() =>
-  import('react-day-picker').then((m) => {
-    import('react-day-picker/dist/style.css');
-    return { default: m.DayPicker };
-  })
-);
 
 const stripePk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 const stripePromise = stripePk ? loadStripe(stripePk) : null;
 
+function quoteMatchesContextDates(quote, checkIn, checkOut) {
+  if (!quote?.checkIn || !quote?.checkOut || !checkIn || !checkOut) return false;
+  return (
+    quote.checkIn === formatDateOnlyLocal(checkIn) &&
+    quote.checkOut === formatDateOnlyLocal(checkOut)
+  );
+}
+
 const LocationRetreatQuotePanel = ({ onQuoteChange, panelRef }) => {
   const { t: tb } = useTranslation('booking');
   const { t: tv } = useTranslation('valley');
-  const { language } = useSiteLanguage();
-  const [isMobile, setIsMobile] = useState(false);
   const [showPriceDetails, setShowPriceDetails] = useState(false);
   const [roomAllocationOpen, setRoomAllocationOpen] = useState(false);
 
   const {
+    checkIn,
+    checkOut,
     nights,
-    range,
-    handleSelect,
-    minStayDate,
     quote,
     quoteLoading,
     quoteError,
@@ -59,17 +55,24 @@ const LocationRetreatQuotePanel = ({ onQuoteChange, panelRef }) => {
     setRoomAssignments,
     dateSummary,
     priceExtras,
-    guestFormValid,
-    showUnavailable,
-    showAvailablePrice
+    guestFormValid
   } = useLocationRetreatBooking({ onQuoteChange });
 
+  const quoteIsCurrent = useMemo(
+    () => quoteMatchesContextDates(quote, checkIn, checkOut),
+    [quote, checkIn, checkOut]
+  );
+
+  const displayQuote = quoteIsCurrent ? quote : null;
+  const showStaleQuoteHint = Boolean(quote && !quoteIsCurrent);
+  const showPanelUnavailable = Boolean(displayQuote && displayQuote.available === false);
+  const showPanelAvailablePrice = Boolean(displayQuote && displayQuote.available === true);
+
   useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    if (quote && !quoteIsCurrent) {
+      onQuoteChange?.(null);
+    }
+  }, [quote, quoteIsCurrent, onQuoteChange]);
 
   return (
     <div
@@ -91,15 +94,6 @@ const LocationRetreatQuotePanel = ({ onQuoteChange, panelRef }) => {
         </div>
       ) : (
         <>
-          <div className="mb-4">
-            <p className="text-xs uppercase tracking-[0.3em] text-gray-500 mb-1">
-              {tv('retreat.quote.panelEyebrow')}
-            </p>
-            <h3 className="font-serif text-xl md:text-2xl text-gray-900">
-              {tv('retreat.quote.panelTitle')}
-            </h3>
-          </div>
-
           {holdExpired && (
             <div
               className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
@@ -115,36 +109,8 @@ const LocationRetreatQuotePanel = ({ onQuoteChange, panelRef }) => {
               <p className="text-xs uppercase tracking-[0.3em] text-gray-500 mb-2">
                 {tb('mobile.datesLabel')}
               </p>
-              <p className="text-sm text-gray-700 mb-3">{dateSummary}</p>
-              <Suspense
-                fallback={
-                  <div className="h-48 flex items-center justify-center text-gray-400 text-sm">
-                    {tb('modal.loadingCalendar')}
-                  </div>
-                }
-              >
-                <DayPicker
-                  mode="range"
-                  selected={range}
-                  onSelect={handleSelect}
-                  numberOfMonths={isMobile ? 1 : 2}
-                  pagedNavigation
-                  captionLayout="dropdown-buttons"
-                  locale={getDateFnsLocale(language)}
-                  fromDate={minStayDate}
-                  disabled={{ before: minStayDate }}
-                  className="booking-modal-daypicker w-full mx-auto"
-                  styles={{
-                    caption: { textAlign: 'left', fontFamily: 'Playfair Display' },
-                    months: {
-                      display: 'flex',
-                      flexDirection: isMobile ? 'column' : 'row',
-                      flexWrap: 'nowrap',
-                      gap: isMobile ? '1rem' : '1.5rem'
-                    }
-                  }}
-                />
-              </Suspense>
+              <p className="text-sm md:text-base text-gray-700">{dateSummary}</p>
+              <p className="text-xs text-gray-500 mt-2 max-w-prose">{tv('retreat.quote.panelDateHint')}</p>
               {dateError && <p className="text-red-600 text-sm mt-2">{dateError}</p>}
             </div>
 
@@ -159,13 +125,19 @@ const LocationRetreatQuotePanel = ({ onQuoteChange, panelRef }) => {
               {quoteLoading ? `${tb('cta.checkAvailability')}…` : tb('cta.checkAvailability')}
             </button>
 
+            {showStaleQuoteHint && (
+              <p className="text-sm text-gray-600" role="status">
+                {tv('retreat.quote.staleQuoteHint')}
+              </p>
+            )}
+
             {quoteError && (
               <p className="text-sm text-red-600" role="alert">
                 {quoteError}
               </p>
             )}
 
-            {showUnavailable && (
+            {showPanelUnavailable && (
               <div
                 className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-5 text-center"
                 role="status"
@@ -174,15 +146,15 @@ const LocationRetreatQuotePanel = ({ onQuoteChange, panelRef }) => {
                   {tb('search.unavailableForDates')}
                 </p>
                 <p className="text-sm text-stone-700 leading-relaxed">
-                  {quote.unavailableReason || tb('search.unavailableForDates')}
+                  {tv('retreat.quote.unavailableBuyout')}
                 </p>
               </div>
             )}
 
-            {showAvailablePrice && (
+            {showPanelAvailablePrice && (
               <div className="border-t border-gray-100 pt-4">
                 <StayLodgingPriceBlock
-                  finalAmount={quote.totalPrice}
+                  finalAmount={displayQuote.totalPrice}
                   priceClassName="text-2xl font-semibold text-gray-900"
                   priceSuffix={
                     <span className="text-base font-normal text-gray-500 ml-1">
@@ -191,9 +163,9 @@ const LocationRetreatQuotePanel = ({ onQuoteChange, panelRef }) => {
                   }
                   footnote={
                     <p className="text-sm text-gray-500 mt-0.5">
-                      {tb('modal.nights', { count: quote.nights || nights })}
-                      {quote.totalSleeps
-                        ? ` · ${tv('retreat.quote.sleepsTotal', { count: quote.totalSleeps })}`
+                      {tb('modal.nights', { count: displayQuote.nights || nights })}
+                      {displayQuote.totalSleeps
+                        ? ` · ${tv('retreat.quote.sleepsTotal', { count: displayQuote.totalSleeps })}`
                         : ''}
                     </p>
                   }
@@ -208,7 +180,7 @@ const LocationRetreatQuotePanel = ({ onQuoteChange, panelRef }) => {
               </div>
             )}
 
-            {showAvailablePrice && !checkoutStep && (
+            {showPanelAvailablePrice && !checkoutStep && (
               <button
                 type="button"
                 data-booking-primary-cta="true"
@@ -295,7 +267,7 @@ const LocationRetreatQuotePanel = ({ onQuoteChange, panelRef }) => {
               </div>
             )}
 
-            {showAvailablePrice && (
+            {showPanelAvailablePrice && (
               <div className="border-t border-gray-100 pt-4">
                 <button
                   type="button"
@@ -320,7 +292,10 @@ const LocationRetreatQuotePanel = ({ onQuoteChange, panelRef }) => {
                       />
                     </div>
                     {roomAssignments.map((row, index) => (
-                      <div key={`${row.accommodationName}-${index}`} className="rounded-lg border border-gray-100 p-3 space-y-2">
+                      <div
+                        key={`${row.accommodationName}-${index}`}
+                        className="rounded-lg border border-gray-100 p-3 space-y-2"
+                      >
                         <p className="text-sm font-medium text-gray-900">{row.accommodationName}</p>
                         <div className="flex items-center justify-between gap-3">
                           <span className="text-xs text-gray-500">
@@ -335,10 +310,7 @@ const LocationRetreatQuotePanel = ({ onQuoteChange, panelRef }) => {
                                     i === index
                                       ? {
                                           ...r,
-                                          plannedGuests: Math.max(
-                                            0,
-                                            (r.plannedGuests ?? 0) - 1
-                                          )
+                                          plannedGuests: Math.max(0, (r.plannedGuests ?? 0) - 1)
                                         }
                                       : r
                                   )
@@ -384,10 +356,10 @@ const LocationRetreatQuotePanel = ({ onQuoteChange, panelRef }) => {
           <PriceDetailsModal
             isOpen={showPriceDetails}
             onClose={() => setShowPriceDetails(false)}
-            nights={quote?.nights}
-            totalPrice={quote?.totalPrice}
-            serverSubtotal={quote?.lodgingSubtotal ?? quote?.totalPrice}
-            extras={priceExtras}
+            nights={displayQuote?.nights}
+            totalPrice={displayQuote?.totalPrice}
+            serverSubtotal={displayQuote?.lodgingSubtotal ?? displayQuote?.totalPrice}
+            extras={quoteIsCurrent ? priceExtras : []}
           />
         </>
       )}

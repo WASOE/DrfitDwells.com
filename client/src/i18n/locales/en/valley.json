@@ -319,9 +319,12 @@
       }
     },
     "quote": {
-      "panelEyebrow": "Book the Valley",
-      "panelTitle": "Check availability & checkout",
-      "panelIntro": "Choose your dates to confirm availability and see the exact total for your group.",
+      "panelEyebrow": "Confirm booking",
+      "panelTitle": "Your booking summary",
+      "panelIntro": "Review your selected dates, refresh the quote, and complete checkout here if the calendar above is unavailable.",
+      "panelDateHint": "Dates follow your selection in the booking calendar above. Use Check availability to refresh the total for these dates.",
+      "staleQuoteHint": "Your dates changed — check availability again to update the total.",
+      "unavailableBuyout": "The Valley is not available for these dates.",
       "sleepsTotal": "Up to {{count}} guests across the village",
       "holdExpiredTitle": "Your hold expired",
       "holdExpiredBody": "Your checkout hold expired. Please re-check dates and continue when you're ready.",

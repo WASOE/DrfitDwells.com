@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
-import { startOfDay, isBefore } from 'date-fns';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements } from '@stripe/react-stripe-js';
 import { Minus, Plus, X } from 'lucide-react';
@@ -8,7 +7,7 @@ import LocationPaymentForm from './LocationPaymentForm';
 import useLocationRetreatBooking from '../../../hooks/useLocationRetreatBooking';
 import { useSiteLanguage } from '../../../hooks/useSiteLanguage';
 import { StayLodgingPriceBlock } from '../../../components/booking/StayLodgingPriceBlock';
-import { formatDateOnlyLocal } from '../../../utils/dateOnly';
+import { isRetreatStayCalendarDateDisabled } from '../../../utils/stayWindows';
 import { getDateFnsLocale } from '../../../utils/localeDates';
 import '../../../styles/daypicker-theme.css';
 import '../../../i18n/ns/booking';
@@ -189,13 +188,16 @@ const RetreatBookingCalendar = ({
   const isCalendarReady = availabilityStatus === 'loaded';
 
   const isDateDisabled = useCallback(
-    (date) => {
-      const day = startOfDay(date);
-      if (isBefore(day, minStayDate)) return true;
-      if (!isCalendarReady) return true;
-      return blockedDateSet.has(formatDateOnlyLocal(day));
-    },
-    [minStayDate, isCalendarReady, blockedDateSet]
+    (date) =>
+      isRetreatStayCalendarDateDisabled(date, {
+        minStayDate,
+        blockedSet: blockedDateSet,
+        minNights,
+        rangeFrom: range?.from ?? null,
+        rangeTo: range?.to ?? null,
+        calendarReady: isCalendarReady
+      }),
+    [minStayDate, isCalendarReady, blockedDateSet, minNights, range?.from, range?.to]
   );
 
   const hasCompleteRange = Boolean(checkIn && checkOut);
@@ -454,7 +456,7 @@ const RetreatBookingCalendar = ({
               {tb('search.unavailableForDates')}
             </p>
             <p className="text-sm text-stone-700 leading-relaxed">
-              {quote.unavailableReason || tb('search.unavailableForDates')}
+              {tv('retreat.quote.unavailableBuyout')}
             </p>
           </div>
         )}

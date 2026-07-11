@@ -259,7 +259,7 @@ const TheValleyRetreatPage = () => {
               </p>
               <h2
                 id="retreat-booking-heading"
-                className="font-serif text-[#1a1a1a] text-3xl md:text-4xl font-semibold mb-3"
+                className="font-serif text-[#1a1a1a] text-2xl md:text-3xl font-semibold mb-3"
               >
                 {tv('retreat.quote.panelTitle')}
               </h2>
