@@ -246,6 +246,8 @@ async function evaluateCabinConflicts({ cabinId, startDate, endDate, excludeRese
 }
 
 module.exports = {
+  BLOCKING_BOOKING_STATUSES,
+  HARD_BLOCK_TYPES,
   evaluateCabinConflicts,
   evaluateTargetConflicts
 };

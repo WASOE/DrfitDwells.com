@@ -186,7 +186,21 @@
       "title": "The whole Valley, exclusively yours",
       "capacity": "Sleeps up to {{sleeps}} across {{buildings}} buildings",
       "fromPrice": "from €{{nightly}}/night, {{nights}}-night minimum",
-      "whatsIncluded": "What's included"
+      "whatsIncluded": "What's included",
+      "calendar": {
+        "eyebrow": "Book the Valley",
+        "title": "Choose your dates",
+        "datesLabel": "Dates",
+        "guestsLabel": "Guests",
+        "fromPrice": "from €{{nightly}}/night",
+        "fromPriceMinStay": "{{nights}}-night minimum stay",
+        "minStayRequired": "Select at least {{count}} nights for a buyout stay",
+        "availabilityLoading": "Loading availability…",
+        "availabilityError": "We couldn't load the calendar right now. You can try again or use the booking panel below.",
+        "retryAvailability": "Try again",
+        "useQuotePanel": "Use booking panel",
+        "closeSheet": "Close calendar"
+      }
     },
     "exclusiveUse": {
       "eyebrow": "Exclusive use",

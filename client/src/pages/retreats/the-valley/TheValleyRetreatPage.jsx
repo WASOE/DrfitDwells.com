@@ -223,6 +223,7 @@ const TheValleyRetreatPage = () => {
           paddingBottom: showStickyBar ? '5.5rem' : undefined
         }}
       >
+        {/* Inventory from single page fetch; hero calendar + quote panel share dates via BookingSearchContext */}
         <RetreatHeroSection
           containerRef={containerRef}
           heroRef={heroRef}

@@ -186,7 +186,21 @@
       "title": "Цялата Долина, само за вашата група",
       "capacity": "Спи до {{sleeps}} в {{buildings}} сгради",
       "fromPrice": "от €{{nightly}}/нощувка, минимум {{nights}} нощувки",
-      "whatsIncluded": "Какво е включено"
+      "whatsIncluded": "Какво е включено",
+      "calendar": {
+        "eyebrow": "Резервирай Долината",
+        "title": "Избери датите си",
+        "datesLabel": "Дати",
+        "guestsLabel": "Гости",
+        "fromPrice": "от €{{nightly}}/нощувка",
+        "fromPriceMinStay": "минимум {{nights}} нощувки",
+        "minStayRequired": "Изберете поне {{count}} нощувки за buyout престой",
+        "availabilityLoading": "Зареждане на наличност…",
+        "availabilityError": "Календарът не може да се зареди в момента. Опитайте отново или използвайте панела за резервация по-долу.",
+        "retryAvailability": "Опитай отново",
+        "useQuotePanel": "Към панела за резервация",
+        "closeSheet": "Затвори календара"
+      }
     },
     "exclusiveUse": {
       "eyebrow": "Ексклузивно ползване",
