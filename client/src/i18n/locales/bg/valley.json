@@ -200,7 +200,8 @@
         "retryAvailability": "Опитай отново",
         "useQuotePanel": "Към панела за резервация",
         "closeSheet": "Затвори календара",
-        "selectCheckout": "Изберете напускане"
+        "selectCheckout": "Изберете напускане",
+        "singleCheckoutHint": "Напускане на {{date}} — по-ранните нощи са част от престоя ви"
       }
     },
     "exclusiveUse": {

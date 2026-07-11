@@ -123,6 +123,49 @@
   opacity: 0.18;
 }
 
+.retreat-booking-daypicker .rdp-disabled .rdp-day_button[disabled],
+.retreat-booking-daypicker .rdp-day_button[disabled] {
+  text-decoration: none;
+}
+
+.retreat-booking-daypicker .rdp-retreat_blocked .rdp-day_button[disabled] {
+  opacity: 0.38;
+  color: #a8a29e !important;
+  text-decoration: line-through;
+  text-decoration-color: rgba(120, 113, 108, 0.55);
+}
+
+.retreat-booking-daypicker .rdp-retreat_blocked .rdp-day_button[disabled]:hover {
+  background-color: transparent !important;
+  color: #a8a29e !important;
+}
+
+.retreat-booking-daypicker .rdp-retreat_constraint .rdp-day_button[disabled] {
+  opacity: 0.48;
+  color: #d6d3d1 !important;
+  text-decoration: none;
+}
+
+.retreat-booking-daypicker .rdp-retreat_constraint .rdp-day_button[disabled]:hover {
+  background-color: transparent !important;
+  color: #d6d3d1 !important;
+}
+
+.retreat-booking-daypicker .rdp-retreat_prospective .rdp-day_button[disabled] {
+  opacity: 1;
+  color: #111827 !important;
+  background-color: #f3f4f6;
+  border-radius: 0;
+  text-decoration: none;
+  cursor: not-allowed !important;
+  font-weight: 500;
+}
+
+.retreat-booking-daypicker .rdp-retreat_prospective .rdp-day_button[disabled]:hover {
+  background-color: #f3f4f6 !important;
+  color: #111827 !important;
+}
+
 @media (max-width: 767px) {
   .booking-modal-daypicker .rdp-month {
     min-width: 100%;

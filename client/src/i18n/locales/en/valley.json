@@ -200,7 +200,8 @@
         "retryAvailability": "Try again",
         "useQuotePanel": "Use booking panel",
         "closeSheet": "Close calendar",
-        "selectCheckout": "Select checkout"
+        "selectCheckout": "Select checkout",
+        "singleCheckoutHint": "Checkout on {{date}} — earlier nights are part of your stay"
       }
     },
     "exclusiveUse": {
