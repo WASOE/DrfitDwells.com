@@ -12,8 +12,7 @@
  * 10. ✅ Spacing scale: fixed increments (8px, 16px, 24px, 32px, 48px, 64px, 80px)
  */
 
-import { useRef, useEffect, useLayoutEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Suspense, lazy, useRef, useEffect, useLayoutEffect, useState } from 'react';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useSeason } from '../../context/SeasonContext';
 import { locations } from '../../data/content';
@@ -31,11 +30,12 @@ import Seo from '../../components/Seo';
 import { buildHreflangAlternates } from '../../utils/localizedRoutes';
 import '../../i18n/ns/valley';
 
+const BookingDrawer = lazy(() => import('../../components/BookingDrawer'));
+
 const TheValleyPage = () => {
   const valley = locations.find(loc => loc.id === 'valley');
   const { season } = useSeason();
   const { language } = useLanguage();
-  const { t: tv } = useTranslation('valley');
   const heroRef = useRef(null);
   const videoRef = useRef(null);
   const containerRef = useRef(null);
@@ -220,18 +220,12 @@ const TheValleyPage = () => {
 
         <PracticalDetailsAccordion />
 
-        <BookingCTABand onSecondaryClick={scrollToAccommodations} />
+        <BookingCTABand />
 
-        {/* Mobile sticky — View stays (BookingDrawer removed: it hardcodes openModal) */}
-        <div className="fixed bottom-0 left-0 w-full h-[70px] z-50 bg-stone-900/90 backdrop-blur-md border-t border-white/10 p-4 safe-area-bottom md:hidden flex items-center">
-          <button
-            type="button"
-            onClick={scrollToAccommodations}
-            className="w-full bg-[#F1ECE2] text-stone-900 py-3 rounded-none uppercase tracking-[0.2em] text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#F1ECE2]/50 active:scale-[0.98] transition-all duration-150 touch-manipulation"
-          >
-            {tv('hero.browse.ctaViewStays')}
-          </button>
-        </div>
+        {/* Mobile Sticky CTA - Same as Home */}
+        <Suspense fallback={null}>
+          <BookingDrawer />
+        </Suspense>
       </div>
     </>
   );

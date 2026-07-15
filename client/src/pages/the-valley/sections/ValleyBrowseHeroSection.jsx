@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
+import { useBookingSearch } from '../../../context/BookingSearchContext';
 import { useSeason } from '../../../context/SeasonContext';
 import { getSEOAlt, getSEOTitle } from '../../../data/imageMetadata';
 import SplitVideoHeroSection from '../../../components/hero/SplitVideoHeroSection';
@@ -32,10 +33,22 @@ const ValleyBrowseHeroSection = ({
   heroRef,
   videoRef,
   shouldPlayVideo,
-  scrollToAccommodations
+  scrollToAccommodations,
+  primaryAction = null,
+  secondaryAction = null
 }) => {
+  const { openModal } = useBookingSearch();
   const { season } = useSeason();
   const { t } = useTranslation('valley');
+
+  const resolvedPrimary = primaryAction || {
+    label: t('hero.ctaPrimary'),
+    onClick: openModal
+  };
+  const resolvedSecondary = secondaryAction || {
+    label: t('hero.ctaSecondary'),
+    onClick: scrollToAccommodations
+  };
 
   return (
     <SplitVideoHeroSection
@@ -56,7 +69,7 @@ const ValleyBrowseHeroSection = ({
       altitudeBadgeText={t('hero.altitudeBadge')}
       videoAriaLabel="Video showing The Valley mountain village with fireplace and mountain landscape at 1,550m altitude, Chereshovo/Ortsevo, Rhodope Mountains, Bulgaria"
     >
-      {/* Mobile / tablet: browse copy + single scroll CTA (no openModal) */}
+      {/* Mobile / tablet: preserve existing centered browse hero */}
       <div className="relative z-10 text-center px-4 max-w-4xl mx-auto lg:hidden w-full">
         <motion.p
           initial={{ opacity: 0, y: 20 }}
@@ -71,32 +84,57 @@ const ValleyBrowseHeroSection = ({
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.3 }}
-          className="font-['Playfair_Display'] text-4xl sm:text-5xl md:text-6xl text-white font-semibold tracking-tight leading-tight drop-shadow-2xl mb-5 max-w-3xl mx-auto"
+          className="font-['Playfair_Display'] text-5xl md:text-7xl text-white font-semibold tracking-tight leading-tight drop-shadow-2xl mb-3"
         >
-          {t('hero.browse.headline')}
+          {t('hero.title')}
         </motion.h1>
+
+        <motion.h2
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.35 }}
+          className="font-serif text-xl md:text-2xl text-white/95 font-normal tracking-tight mb-6 drop-shadow-sm"
+        >
+          {t('hero.subtitle')}
+        </motion.h2>
 
         <motion.p
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.38 }}
+          transition={{ duration: 0.8, delay: 0.4 }}
+          className="text-base md:text-lg text-white/90 max-w-2xl mx-auto font-serif leading-relaxed drop-shadow-sm mb-3"
+        >
+          {t('hero.body1')}
+        </motion.p>
+
+        <motion.p
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.45 }}
           className="text-base md:text-lg text-white/90 max-w-2xl mx-auto font-serif leading-relaxed drop-shadow-sm mb-8"
         >
-          {t('hero.browse.subline')}
+          {t('hero.body2')}
         </motion.p>
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, delay: 0.5 }}
-          className="flex justify-center items-center mb-8 px-4"
+          className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-8 px-4"
         >
           <button
             type="button"
-            onClick={scrollToAccommodations}
+            onClick={resolvedPrimary.onClick}
             className="bg-white text-stone-900 px-6 sm:px-8 py-3 sm:py-4 font-bold uppercase tracking-[0.3em] text-xs sm:text-sm hover:scale-105 transition-transform shadow-xl border-none rounded-full min-h-[44px] touch-manipulation"
           >
-            {t('hero.browse.ctaViewStays')}
+            {resolvedPrimary.label}
+          </button>
+          <button
+            type="button"
+            onClick={resolvedSecondary.onClick}
+            className="border border-white/30 text-white px-6 sm:px-8 py-3 sm:py-4 font-medium uppercase tracking-[0.3em] text-xs sm:text-sm hover:bg-white/10 transition-all backdrop-blur-sm rounded-full min-h-[44px] touch-manipulation"
+          >
+            {resolvedSecondary.label}
           </button>
         </motion.div>
       </div>
