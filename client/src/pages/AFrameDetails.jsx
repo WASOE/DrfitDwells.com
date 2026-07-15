@@ -272,33 +272,38 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
           setError('Cabin type not found');
           return;
         }
-        
+
         const type = typeResponse.data.data.cabinType;
-        setCabinType(type);
-
         const isMultiUnit = Boolean(type?.meta?.isMultiUnit);
-        setIsMultiUnitEnabled(isMultiUnit);
 
-        // Load unit stats for explanatory copy
+        // Secondary fetches complete before we commit cabinType + loading=false.
+        // CabinDetails batches setCabin with setLoading(false) so hash-scroll runs
+        // after [data-booking-anchor] is in the DOM. Committing cabinType while
+        // still showing the loading spinner makes the scroll effect no-op.
+        let nextUnitStats = null;
         if (type?._id) {
           try {
             const unitsResp = await unitAPI.getByCabinType(type._id);
             const items = unitsResp?.data?.data?.units || [];
-            const active = items.filter(u => u?.isActive).length;
-            if (!cancelled) {
-              setUnitStats({ total: items.length, active });
-            }
+            const active = items.filter((u) => u?.isActive).length;
+            nextUnitStats = { total: items.length, active };
           } catch {
-            if (!cancelled) setUnitStats(null);
+            nextUnitStats = null;
           }
         }
 
+        if (cancelled) return;
+
         if (!isMultiUnit) {
+          setCabinType(type);
+          setIsMultiUnitEnabled(false);
+          setUnitStats(nextUnitStats);
           setError(t('detailPage.errorMultiUnitUnavailable'));
           return;
         }
-        
-        // Load availability if dates are provided
+
+        let nextAvailability = null;
+        let availabilityError = null;
         if (searchCriteria.checkIn && searchCriteria.checkOut) {
           try {
             const availParams = {
@@ -310,17 +315,23 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
             if (searchCriteria.promoCode) availParams.promoCode = searchCriteria.promoCode;
             if (siteLanguage === 'bg') availParams.locale = 'bg';
             const availResponse = await availabilityAPI.checkCabinType(staySlug, availParams);
-            
-            if (!cancelled && availResponse.data.success) {
-              setAvailability(availResponse.data.data);
+
+            if (availResponse.data.success) {
+              nextAvailability = availResponse.data.data;
             }
           } catch (availErr) {
-            if (cancelled) return;
             console.error('Availability load error:', availErr);
-            setAvailability(null);
-            setError(availErr.response?.data?.message || 'Error loading availability');
+            availabilityError = availErr.response?.data?.message || 'Error loading availability';
           }
         }
+
+        if (cancelled) return;
+
+        setCabinType(type);
+        setIsMultiUnitEnabled(true);
+        setUnitStats(nextUnitStats);
+        setAvailability(nextAvailability);
+        if (availabilityError) setError(availabilityError);
       } catch (err) {
         if (cancelled) return;
         console.error('Load error:', err);
@@ -360,8 +371,11 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
   }, [cabinType?._id]);
 
   useEffect(() => {
+    // Wait until the loaded page (with booking anchors) is mounted — not the spinner.
+    if (loading || !cabinType) return undefined;
+
     const hash = window.location.hash;
-    if (hash === '#guest-reviews' && cabinType) {
+    if (hash === '#guest-reviews') {
       const el = document.getElementById('guest-reviews');
       if (!el) return undefined;
       const timeoutId = setTimeout(() => {
@@ -369,11 +383,11 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
       }, 100);
       return () => clearTimeout(timeoutId);
     }
-    if (isStayBookingHash(hash) && cabinType) {
+    if (isStayBookingHash(hash)) {
       scrollToVisibleBookingAnchor(100);
     }
     return undefined;
-  }, [cabinType]);
+  }, [cabinType, loading]);
 
   const canonicalPath = useMemo(() => buildStayCanonicalPath(staySlug), [staySlug]);
 

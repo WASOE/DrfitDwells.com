@@ -17,7 +17,36 @@
     "ctaExploreLayout": "Explore the village layout",
     "chipPrivateValley": "Private valley",
     "chipOffGridComfort": "Off-grid comfort",
-    "chipAltitude": "1,550m altitude"
+    "chipAltitude": "1,550m altitude",
+    "browse": {
+      "headline": "One valley, three ways to stay",
+      "subline": "A private off-grid mountain village with individual cabins, a historic stone house, and shared outdoor spaces in the Rhodope Mountains, Bulgaria.",
+      "ctaExploreStays": "Explore stays",
+      "ctaViewStays": "View stays"
+    },
+    "selector": {
+      "label": "Pick your stay",
+      "checkAvailability": "Check availability",
+      "sleepsPrefix": "Sleeps",
+      "stays": {
+        "aFrame": {
+          "title": "A-Frames",
+          "fit": "Solo travelers or couples"
+        },
+        "luxCabin": {
+          "title": "Luxury Cabin",
+          "fit": "Couples"
+        },
+        "stoneHouse": {
+          "title": "Stone House",
+          "fit": "Families or small groups"
+        }
+      },
+      "buyout": {
+        "title": "The whole Valley",
+        "fromPrice": "from €{{nightly}}/night, {{nights}}-night minimum"
+      }
+    }
   },
   "editorial": {
     "title": "The Secret Valley",
