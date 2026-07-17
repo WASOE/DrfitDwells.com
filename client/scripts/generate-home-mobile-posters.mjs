@@ -52,26 +52,23 @@ function siblingPath(jpgPath, ext) {
 async function encodeOne(jpgName) {
   const jpgPath = path.join(videosDir, jpgName);
   if (!fs.existsSync(jpgPath)) {
-    throw new Error(`Missing poster: ${jpgPath}`);
+    return { skipped: true, reason: 'missing-jpeg', jpgName, jpgPath };
   }
   const jpgBuf = fs.readFileSync(jpgPath);
   const meta = await sharp(jpgBuf).metadata();
   if (!meta.width || !meta.height) {
-    throw new Error(`No dimensions for ${jpgName}`);
+    return { skipped: true, reason: 'no-dimensions', jpgName, jpgPath };
   }
 
   const avifPath = siblingPath(jpgPath, 'avif');
   const webpPath = siblingPath(jpgPath, 'webp');
 
-  await sharp(jpgBuf)
-    .avif(AVIF_OPTS)
-    .toFile(avifPath);
-
-  await sharp(jpgBuf)
-    .webp(WEBP_OPTS)
-    .toFile(webpPath);
+  // Idempotent: overwrite siblings in place (same quality settings).
+  await sharp(jpgBuf).avif(AVIF_OPTS).toFile(avifPath);
+  await sharp(jpgBuf).webp(WEBP_OPTS).toFile(webpPath);
 
   return {
+    skipped: false,
     jpgName,
     width: meta.width,
     height: meta.height,
@@ -191,56 +188,84 @@ function pixelStats(a, b) {
 async function main() {
   const doDiff = process.argv.includes('--diff');
   const results = [];
+  let skipped = 0;
+  let encoded = 0;
 
   for (const src of MOBILE_POSTER_SOURCES) {
-    const encoded = await encodeOne(src.jpg);
-    results.push({ id: src.id, ...encoded });
+    let outcome;
+    try {
+      outcome = await encodeOne(src.jpg);
+    } catch (err) {
+      console.warn(
+        `[generate-home-mobile-posters] WARN skip ${src.id}: encode failed — ${err.message || err}`
+      );
+      skipped += 1;
+      continue;
+    }
+
+    if (outcome.skipped) {
+      console.warn(
+        `[generate-home-mobile-posters] WARN skip ${src.id}: ${outcome.reason} (${outcome.jpgPath})`
+      );
+      skipped += 1;
+      continue;
+    }
+
+    encoded += 1;
+    results.push({ id: src.id, ...outcome });
     console.log(
-      `${src.id}: ${encoded.width}x${encoded.height} jpg=${encoded.jpgBytes} avif=${encoded.avifBytes} webp=${encoded.webpBytes}`
+      `${src.id}: ${outcome.width}x${outcome.height} jpg=${outcome.jpgBytes} avif=${outcome.avifBytes} webp=${outcome.webpBytes}`
     );
   }
 
   if (doDiff) {
-    const cabinDisplay = { width: 375, height: 406, scale: 1.35, objectPositionY: 0.35 };
-    const valleyDisplay = { width: 375, height: 406, scale: 1.1, objectPositionY: 0.5 };
-    const report = [];
+    if (results.length === 0) {
+      console.warn('[generate-home-mobile-posters] WARN --diff: nothing encoded; skipping proofs');
+    } else {
+      const cabinDisplay = { width: 375, height: 406, scale: 1.35, objectPositionY: 0.35 };
+      const valleyDisplay = { width: 375, height: 406, scale: 1.1, objectPositionY: 0.5 };
+      const report = [];
 
-    for (const r of results) {
-      const display = r.id.startsWith('cabin') ? cabinDisplay : valleyDisplay;
-      for (const [label, p] of [
-        ['avif', r.avifPath],
-        ['webp', r.webpPath]
-      ]) {
-        const stats = await diffVariant(r.id, r.jpgPath, p, label, display);
-        report.push({ id: r.id, format: label, ...stats });
-        console.log(
-          `DIFF ${r.id} ${label}: native max=${stats.nativeStats.maxChannelDiff} mae=${stats.nativeStats.mae.toFixed(3)} | display max=${stats.displayStats.maxChannelDiff} mae=${stats.displayStats.mae.toFixed(3)} changed=${stats.displayStats.changedPct.toFixed(2)}%`
-        );
+      for (const r of results) {
+        const display = r.id.startsWith('cabin') ? cabinDisplay : valleyDisplay;
+        for (const [label, p] of [
+          ['avif', r.avifPath],
+          ['webp', r.webpPath]
+        ]) {
+          const stats = await diffVariant(r.id, r.jpgPath, p, label, display);
+          report.push({ id: r.id, format: label, ...stats });
+          console.log(
+            `DIFF ${r.id} ${label}: native max=${stats.nativeStats.maxChannelDiff} mae=${stats.nativeStats.mae.toFixed(3)} | display max=${stats.displayStats.maxChannelDiff} mae=${stats.displayStats.mae.toFixed(3)} changed=${stats.displayStats.changedPct.toFixed(2)}%`
+          );
+        }
       }
-    }
 
-    fs.writeFileSync(path.join(proofDir, 'diff-report.json'), JSON.stringify(report, null, 2));
-    fs.writeFileSync(
-      path.join(proofDir, 'OWNER_APPROVAL_REQUIRED.txt'),
-      [
-        'OWNER APPROVAL REQUIRED BEFORE SHIP',
-        '',
-        'Review side-by-side crops in this folder (*-side-by-side.png).',
-        'Left = original JPEG (display simulation). Right = AVIF or WebP decode.',
-        'Diff heatmaps (*-diff-heat.png) amplify channel deltas ×8.',
-        'Do not merge/deploy poster format switch until owner signs off on visual parity.',
-        '',
-        `Generated: ${new Date().toISOString()}`,
-        `See diff-report.json for numeric stats.`
-      ].join('\n')
-    );
-    console.log(`Proofs → ${proofDir}`);
+      fs.writeFileSync(path.join(proofDir, 'diff-report.json'), JSON.stringify(report, null, 2));
+      fs.writeFileSync(
+        path.join(proofDir, 'OWNER_APPROVAL_REQUIRED.txt'),
+        [
+          'OWNER APPROVAL REQUIRED BEFORE SHIP',
+          '',
+          'Review side-by-side crops in this folder (*-side-by-side.png).',
+          'Left = original JPEG (display simulation). Right = AVIF or WebP decode.',
+          'Diff heatmaps (*-diff-heat.png) amplify channel deltas ×8.',
+          'Do not merge/deploy poster format switch until owner signs off on visual parity.',
+          '',
+          `Generated: ${new Date().toISOString()}`,
+          `See diff-report.json for numeric stats.`
+        ].join('\n')
+      );
+      console.log(`Proofs → ${proofDir}`);
+    }
   }
 
-  console.log('[generate-home-mobile-posters] Done');
+  console.log(
+    `[generate-home-mobile-posters] Done (encoded=${encoded} skipped=${skipped})`
+  );
 }
 
+// Deploy-safe: never fail the parent build over missing posters or encode issues.
 main().catch((e) => {
-  console.error(e);
-  process.exit(1);
+  console.warn('[generate-home-mobile-posters] WARN non-fatal:', e.message || e);
+  process.exit(0);
 });

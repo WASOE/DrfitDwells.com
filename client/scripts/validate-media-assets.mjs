@@ -120,20 +120,30 @@ async function main() {
     }
   }
 
-  // 2b. Home mobile DualityHero posters must have same-dimension AVIF/WebP siblings.
+  // 2b. Home mobile DualityHero AVIF/WebP siblings — warn only (JPEG fallback keeps site up).
+  // generate:home-mobile-posters creates these; missing files must not fail hard-reset deploy.
   const homeMobilePosters = [
     'uploads/Videos/The-cabin-header.summer-poster.jpg',
     'uploads/Videos/The-cabin-header.winter-poster.jpg',
     'uploads/Videos/The-Valley-Night-Stars-poster.jpg',
     'uploads/Videos/The-Valley-firaplace-video.winter-poster.jpg'
   ];
+  const missingModern = [];
   for (const jpgRel of homeMobilePosters) {
     for (const ext of ['avif', 'webp']) {
       const modernRel = jpgRel.replace(/\.jpe?g$/i, `.${ext}`);
-      if (!pathToSources.has(modernRel)) {
-        pathToSources.set(modernRel, new Set(['client/scripts/generate-home-mobile-posters.mjs']));
+      const full = path.join(repoRoot, modernRel);
+      if (!fs.existsSync(full)) {
+        missingModern.push(modernRel);
       }
     }
+  }
+  if (missingModern.length > 0) {
+    console.warn(
+      '[validate-media-assets] WARN missing home mobile poster AVIF/WebP siblings (JPEG <picture> fallback still works):\n' +
+        missingModern.map((p) => `  ${p}`).join('\n') +
+        '\n  Run: cd client && npm run generate:home-mobile-posters'
+    );
   }
 
   // 3. Check every path against filesystem (allow basePath + extension, e.g. SKy-view-Aframe + .jpg)

@@ -66,10 +66,48 @@ Full runbook: [docs/ops-push/GO_LIVE_RUNBOOK.md](docs/ops-push/GO_LIVE_RUNBOOK.m
 ## 6. Pre-deploy commands
 
 ```bash
-npm run build          # Must pass
+npm run build          # Must pass (includes generate:home-mobile-posters — see §6a)
 npm run lint           # Must pass (in client/)
 npm run check:i18n     # Must pass (in client/)
 ```
+
+### 6a. Hard-reset production deploy (illoc @ VPS)
+
+Canonical sequence used on `driftdwells.com` (DirectAdmin `public_html` + PM2 `driftdwells`):
+
+```bash
+cd /home/illoc/apps/driftdwells-booking-portal
+
+git fetch origin
+git reset --hard origin/master   # or origin/<branch> when shipping a feature branch
+git rev-parse --short HEAD
+
+npm install --legacy-peer-deps
+rm -rf node_modules/.vite
+
+# Client build — generate:home-mobile-posters runs HERE (inside client npm run build),
+# after generate:hero-media and before validate:media / vite build.
+# Script is idempotent; missing source JPEGs log a WARN and do not fail the build.
+PRERENDER_SKIP=1 npm run build
+
+# Optional explicit re-run (same as the build step; safe to repeat):
+# cd client && npm run generate:home-mobile-posters && cd ..
+
+rsync -av \
+  --exclude='.htaccess' \
+  client/dist/ \
+  /home/illoc/domains/driftdwells.com/public_html/
+
+cd server
+npm install --legacy-peer-deps
+cd ..
+
+pm2 restart driftdwells --update-env
+pm2 save
+pm2 status driftdwells
+```
+
+**Where posters land:** `uploads/Videos/*-poster.avif|.webp` next to the existing JPEGs (served by Node `/uploads`, not copied by rsync of `client/dist/`).
 
 ## 7. Definition of ready
 
@@ -81,3 +119,4 @@ npm run check:i18n     # Must pass (in client/)
 - [ ] If A-Frame / multi-unit is live: `MULTI_UNIT_ENABLED=true` and `MULTI_UNIT_TYPES=a-frame` set explicitly  
 - [ ] Canonical domain and CORS/iframe origin verified  
 - [ ] Sitemap and robots.txt served at root  
+- [ ] After homepage poster perf merge: `uploads/Videos/*-poster.avif` exist on the VPS (or accept JPEG-only fallback until `generate:home-mobile-posters` has run once)
