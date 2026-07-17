@@ -5,7 +5,10 @@ import Seo from '../components/Seo';
 import { useTranslation } from 'react-i18next';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { useSeason } from '../context/SeasonContext';
-import { getCabinHeroPreloadUrl, getHomeHeroMobilePosterUrls } from '../config/heroResponsive';
+import {
+  getCabinHeroPreloadUrl,
+  getHomeHeroMobileCabinPreload
+} from '../config/heroResponsive';
 import { CONTACT_PHONE, INSTAGRAM_URL, FACEBOOK_URL } from '../data/gmbLocations';
 import { buildHreflangAlternates } from '../utils/localizedRoutes';
 import { getSiteUrl } from '../utils/siteUrl';
@@ -25,9 +28,8 @@ const Home = () => {
   const { t: tc } = useTranslation('common');
   const { language } = useLanguage();
   const { season } = useSeason();
-  // Mobile hero first paint is always the poster JPGs (left cabin, right valley),
-  // so we only preload those on small viewports.
-  const { cabin: mobileCabinPoster, valley: mobileValleyPoster } = getHomeHeroMobilePosterUrls(season);
+  // Mobile hero first paint is the cabin LCP poster (AVIF preferred).
+  const mobileCabinPreload = getHomeHeroMobileCabinPreload(season);
   const seoTitle =
     language === 'bg'
       ? 'Планински оф-грид ретрийт България – Drift & Dwells'
@@ -53,15 +55,10 @@ const Home = () => {
             media: '(min-width: 768px)'
           },
           {
-            href: mobileCabinPoster,
+            href: mobileCabinPreload.href,
+            type: mobileCabinPreload.type,
             as: 'image',
             fetchPriority: 'high',
-            media: '(max-width: 767px)'
-          },
-          {
-            href: mobileValleyPoster,
-            as: 'image',
-            fetchPriority: 'low',
             media: '(max-width: 767px)'
           }
         ]}

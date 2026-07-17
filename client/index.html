@@ -8,13 +8,6 @@
     <meta name="theme-color" content="#1a1a1a" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Drift & Dwells" />
-    <link
-      rel="preload"
-      as="image"
-      href="/uploads/Videos/The-cabin-header.summer-poster.jpg"
-      fetchpriority="high"
-      media="(max-width: 767px)"
-    />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="facebook-domain-verification" content="ppp5k792rzb773eiz1ac7g14wiczl4" />
     <title>Drift & Dwells - Book Your Eco-Retreat</title>
@@ -23,7 +16,100 @@
       html { overflow-x: hidden; }
       body { margin: 0; -webkit-font-smoothing: antialiased; }
       #root { min-height: 100vh; }
+      /* Mobile LCP shell — mirrors DualityHero mobile stack CSS treatment exactly. */
+      #dd-home-lcp-shell {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 35;
+        flex-direction: column;
+        width: 100%;
+        height: 100svh;
+        height: 100vh;
+        overflow: hidden;
+        background: #000;
+        pointer-events: none;
+      }
+      @media (max-width: 767px) {
+        #dd-home-lcp-shell:not([hidden]) {
+          display: flex;
+        }
+      }
+      #dd-home-lcp-shell .dd-lcp-pane {
+        position: relative;
+        flex: 1 1 0;
+        width: 100%;
+        overflow: hidden;
+        background: #000;
+      }
+      #dd-home-lcp-shell .dd-lcp-pane--cabin {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+      }
+      #dd-home-lcp-shell .dd-lcp-media {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        min-width: 100%;
+        min-height: 100%;
+      }
+      #dd-home-lcp-shell .dd-lcp-media--cabin {
+        object-position: center 35%;
+        transform: scale(1.35);
+        transform-origin: center center;
+      }
+      #dd-home-lcp-shell .dd-lcp-media--valley {
+        transform: scale(1.1);
+        transform-origin: center center;
+      }
+      #dd-home-lcp-shell .dd-lcp-veil--cabin {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.4);
+      }
+      #dd-home-lcp-shell .dd-lcp-veil--valley {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.2);
+      }
+      #dd-home-lcp-shell[data-season='summer'] [data-season-panel='winter'],
+      #dd-home-lcp-shell[data-season='winter'] [data-season-panel='summer'] {
+        display: none !important;
+      }
     </style>
+    <script>
+      /* Season + LCP preload: mirrors SeasonContext (localStorage then Dec/Jan/Feb → winter). */
+      (function () {
+        var KEY = 'drift-dwells-season';
+        var season = null;
+        try {
+          season = localStorage.getItem(KEY);
+        } catch (e) {}
+        if (season !== 'summer' && season !== 'winter') {
+          var month = new Date().getMonth();
+          season = month === 0 || month === 1 || month === 11 ? 'winter' : 'summer';
+        }
+        window.__DD_SHELL_SEASON__ = season;
+
+        var cabinAvif =
+          season === 'winter'
+            ? '/uploads/Videos/The-cabin-header.winter-poster.avif'
+            : '/uploads/Videos/The-cabin-header.summer-poster.avif';
+
+        /* Only preload AVIF with type — non-AVIF browsers skip this link (no double-download). */
+        if (window.matchMedia && window.matchMedia('(max-width: 767px)').matches) {
+          var link = document.createElement('link');
+          link.rel = 'preload';
+          link.as = 'image';
+          link.type = 'image/avif';
+          link.href = cabinAvif;
+          link.setAttribute('fetchpriority', 'high');
+          link.media = '(max-width: 767px)';
+          document.head.appendChild(link);
+        }
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <!-- Playfair + Inter ship from @fontsource (main.jsx). Deferred auxiliary families for below-fold / inner pages. -->
@@ -31,6 +117,93 @@
     <noscript><link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Merriweather:wght@300;400;700&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
   </head>
   <body>
+    <!--
+      Static mobile LCP shell. Hidden on md+ via CSS.
+      Season panels gated to match SeasonContext. Dismissed by DualityHero when React poster is ready.
+      OWNER: poster AVIF/WebP must be owner-approved before production ship.
+    -->
+    <div id="dd-home-lcp-shell" hidden aria-hidden="true">
+      <div data-season-panel="summer" class="dd-lcp-stack" style="display:flex;flex-direction:column;flex:1;min-height:0;width:100%;height:100%">
+        <div class="dd-lcp-pane dd-lcp-pane--cabin">
+          <picture>
+            <source type="image/avif" srcset="/uploads/Videos/The-cabin-header.summer-poster.avif" />
+            <source type="image/webp" srcset="/uploads/Videos/The-cabin-header.summer-poster.webp" />
+            <img
+              class="dd-lcp-media dd-lcp-media--cabin"
+              src="/uploads/Videos/The-cabin-header.summer-poster.jpg"
+              alt=""
+              width="1280"
+              height="720"
+              decoding="async"
+              fetchpriority="high"
+            />
+          </picture>
+          <div class="dd-lcp-veil--cabin"></div>
+        </div>
+        <div class="dd-lcp-pane">
+          <picture>
+            <source type="image/avif" srcset="/uploads/Videos/The-Valley-Night-Stars-poster.avif" />
+            <source type="image/webp" srcset="/uploads/Videos/The-Valley-Night-Stars-poster.webp" />
+            <img
+              class="dd-lcp-media dd-lcp-media--valley"
+              src="/uploads/Videos/The-Valley-Night-Stars-poster.jpg"
+              alt=""
+              width="1280"
+              height="720"
+              decoding="async"
+              fetchpriority="low"
+            />
+          </picture>
+          <div class="dd-lcp-veil--valley"></div>
+        </div>
+      </div>
+      <div data-season-panel="winter" class="dd-lcp-stack" style="display:flex;flex-direction:column;flex:1;min-height:0;width:100%;height:100%">
+        <div class="dd-lcp-pane dd-lcp-pane--cabin">
+          <picture>
+            <source type="image/avif" srcset="/uploads/Videos/The-cabin-header.winter-poster.avif" />
+            <source type="image/webp" srcset="/uploads/Videos/The-cabin-header.winter-poster.webp" />
+            <img
+              class="dd-lcp-media dd-lcp-media--cabin"
+              src="/uploads/Videos/The-cabin-header.winter-poster.jpg"
+              alt=""
+              width="1280"
+              height="720"
+              decoding="async"
+              fetchpriority="high"
+            />
+          </picture>
+          <div class="dd-lcp-veil--cabin"></div>
+        </div>
+        <div class="dd-lcp-pane">
+          <picture>
+            <source type="image/avif" srcset="/uploads/Videos/The-Valley-firaplace-video.winter-poster.avif" />
+            <source type="image/webp" srcset="/uploads/Videos/The-Valley-firaplace-video.winter-poster.webp" />
+            <img
+              class="dd-lcp-media dd-lcp-media--valley"
+              src="/uploads/Videos/The-Valley-firaplace-video.winter-poster.jpg"
+              alt=""
+              width="1280"
+              height="720"
+              decoding="async"
+              fetchpriority="low"
+            />
+          </picture>
+          <div class="dd-lcp-veil--valley"></div>
+        </div>
+      </div>
+    </div>
+    <script>
+      (function () {
+        var shell = document.getElementById('dd-home-lcp-shell');
+        if (!shell) return;
+        var season = window.__DD_SHELL_SEASON__ || 'summer';
+        shell.setAttribute('data-season', season);
+        if (window.matchMedia && window.matchMedia('(max-width: 767px)').matches) {
+          shell.hidden = false;
+          shell.removeAttribute('aria-hidden');
+        }
+      })();
+    </script>
     <div id="root"></div>
     <div id="datepicker-portal"></div>
     <script type="module" src="/src/main.jsx"></script>

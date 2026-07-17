@@ -1,0 +1,46 @@
+{
+  "generatedAt": "2026-07-17T07:57:00Z",
+  "branch": "perf/homepage-invisible-lcp",
+  "ownerApprovalRequired": true,
+  "posterDiffProofs": ".scratch/perf-poster-proofs/",
+  "posterDiffSummary": {
+    "cabin-summer-avif": { "displayMae": 1.093, "displayMax": 14, "jpgBytes": 187165, "avifBytes": 113567 },
+    "cabin-summer-webp": { "displayMae": 1.604, "displayMax": 27, "webpBytes": 146736 },
+    "cabin-winter-avif": { "displayMae": 0.818, "displayMax": 13 },
+    "valley-summer-avif": { "displayMae": 1.26, "displayMax": 11 },
+    "valley-winter-avif": { "displayMae": 1.127, "displayMax": 12 },
+    "note": "JPEG sources byte-identical to git. AVIF/WebP are same 1280x720 frame. Owner must approve side-by-side crops before ship."
+  },
+  "shell": {
+    "ae375_consecutive_final_frames": 0,
+    "ae1280_consecutive_final_frames": 0,
+    "earlyPaint": "slow4g 300–1500ms top-half mean luminance stable (~73.7) indicating poster present before full JS settle; shell dismissed after React poster ready",
+    "shellDismissedAfterHydration": true,
+    "shellHiddenOnDesktop1280": true
+  },
+  "videos": {
+    "preloadAttribute": ["auto", "auto"],
+    "firstCabinMp4MsFromNav": 2814,
+    "firstValleyMp4MsFromNav": 2835,
+    "note": "preload=auto untouched; requests begin after mount+~200ms gate as before. Extra later MP4s are range/follow-on and /valley navigation."
+  },
+  "clickthrough": {
+    "seasonToggleOk": true,
+    "soundToggleReachedStopAudio": true,
+    "navCabin": true,
+    "navValley": true,
+    "heroExploreLinks": ["/cabin Explore The Cabin", "/valley Explore The Valley"]
+  },
+  "lighthouse": {
+    "before_prod_driftdwells": { "score": 0.72, "FCP": "1.7s", "LCP": "4.7s", "TBT": "360ms", "CLS": 0, "SI": "4.0s" },
+    "after_local_4173_no_cdn": { "score": 0.45, "FCP": "3.4s", "LCP": "5.5s", "TBT": "1360ms", "CLS": 0, "SI": "4.7s" },
+    "caveat": "Local proof server has no Cloudflare brotli/HTTP2 edge cache; absolute scores are not comparable to production. Use structural proofs + prod re-measure after deploy."
+  },
+  "buildInjections": {
+    "modulepreloadHome": true,
+    "modulepreloadSiteLayout": true,
+    "fontPreloadInter400": true,
+    "fontPreloadPlayfair600": true,
+    "lcpShellInIndexHtml": true
+  }
+}

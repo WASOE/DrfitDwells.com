@@ -1,0 +1,18 @@
+{
+  "seasonBefore": "summer",
+  "seasonAfter": "winter",
+  "seasonToggleOk": true,
+  "soundState": "Stop audio",
+  "cabinOk": true,
+  "valleyOk": true,
+  "hrefs": [
+    {
+      "href": "/cabin",
+      "text": "Explore The Cabin"
+    },
+    {
+      "href": "/valley",
+      "text": "Explore The Valley"
+    }
+  ]
+}

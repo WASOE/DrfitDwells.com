@@ -215,8 +215,62 @@ async function writePrerenderedRoute(route, html) {
       ? path.join(DIST_DIR, 'index.html')
       : path.join(DIST_DIR, route.replace(/^\//, ''), 'index.html');
 
+  // Preserve the static mobile LCP shell from the Vite-built document (prerender captures
+  // post-hydration DOM where the shell is already dismissed/hidden or absent from React tree).
+  if (route === '/' || route === '/bg') {
+    html = await mergeHomeLcpShell(html);
+  }
+
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
   await fs.writeFile(outputPath, html, 'utf8');
+}
+
+async function mergeHomeLcpShell(prerenderedHtml) {
+  const viteShellPath = path.join(DIST_DIR, 'index.vite-shell.html');
+  let shellSource;
+  try {
+    shellSource = await fs.readFile(viteShellPath, 'utf8');
+  } catch {
+    return prerenderedHtml;
+  }
+
+  let html = prerenderedHtml;
+
+  const styleBlock = shellSource.match(
+    /(<style>\s*html \{ overflow-x: hidden; \}[\s\S]*?#dd-home-lcp-shell\[data-season[\s\S]*?<\/style>)/
+  );
+  const seasonPreload = shellSource.match(
+    /(<script>\s*\/\* Season \+ LCP preload[\s\S]*?<\/script>)/
+  );
+  const shellBlock = shellSource.match(
+    /(<div id="dd-home-lcp-shell"[\s\S]*?<\/div>\s*<script>\s*\(function \(\) \{[\s\S]*?getElementById\('dd-home-lcp-shell'\)[\s\S]*?<\/script>)/
+  );
+
+  // Drop any dismissed shell leftover from the prerendered DOM snapshot.
+  html = html.replace(/<div id="dd-home-lcp-shell"[\s\S]*?<\/div>\s*(?=<div id="root"|<div id="datepicker|<script)/, '');
+
+  if (styleBlock && !html.includes('#dd-home-lcp-shell {')) {
+    html = html.replace('</head>', `${styleBlock[1]}\n</head>`);
+  }
+  if (seasonPreload && !html.includes('__DD_SHELL_SEASON__')) {
+    html = html.replace('</head>', `${seasonPreload[1]}\n</head>`);
+  }
+  if (shellBlock) {
+    html = html.replace(/<body([^>]*)>/i, `<body$1>\n${shellBlock[1]}\n`);
+  }
+
+  return html;
+}
+
+async function captureViteShellBeforePrerender() {
+  const indexPath = path.join(DIST_DIR, 'index.html');
+  const backupPath = path.join(DIST_DIR, 'index.vite-shell.html');
+  try {
+    await fs.copyFile(indexPath, backupPath);
+    console.log('[prerender] Saved Vite index shell backup for home LCP merge');
+  } catch (e) {
+    console.warn('[prerender] Could not backup Vite index for LCP shell merge:', e.message);
+  }
 }
 
 async function prerenderRoute(browser, route, port) {
@@ -266,6 +320,8 @@ async function run() {
 
   const server = createStaticServer();
   const port = await startServer(server);
+
+  await captureViteShellBeforePrerender();
 
   const browser = await puppeteer.launch({
     executablePath,

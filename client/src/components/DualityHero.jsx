@@ -1,6 +1,7 @@
 import { useState, useEffect, lazy, Suspense, useRef, useLayoutEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import HeroSeasonToggle from './HeroSeasonToggle';
+import MobilePosterPicture from './MobilePosterPicture';
 import { useSeason } from '../context/SeasonContext';
 import { useLanguage } from '../context/LanguageContext.jsx';
 import { CABIN_MEDIA, VALLEY_MEDIA } from '../config/mediaConfig';
@@ -20,32 +21,74 @@ const VALLEY_STILLS = {
   summer: VALLEY_MEDIA.altSummerPair.poster
 };
 
+const LCP_SHELL_ID = 'dd-home-lcp-shell';
+
+function dismissLcpShell() {
+  if (typeof document === 'undefined') return;
+  const shell = document.getElementById(LCP_SHELL_ID);
+  if (!shell) return;
+  shell.setAttribute('hidden', '');
+  shell.setAttribute('aria-hidden', 'true');
+  shell.style.display = 'none';
+}
+
 /**
- * One mobile pane: poster JPG always (immediate paint), video layered on top when allowed.
+ * One mobile pane: poster always (immediate paint), video layered on top when allowed.
  * Video stays opacity-0 until `playing` so the still never flashes to an empty decoder.
  */
-function MobileStackPaneMedia({ side, season, shouldPlayVideo, videoRef, poster, videoSource, altText, isPrimary, mediaStyle }) {
+function MobileStackPaneMedia({
+  side,
+  season,
+  shouldPlayVideo,
+  videoRef,
+  poster,
+  videoSource,
+  altText,
+  isPrimary,
+  mediaStyle,
+  onPrimaryPosterReady
+}) {
   const [videoRevealed, setVideoRevealed] = useState(false);
+  const imgRef = useRef(null);
 
   useEffect(() => {
     setVideoRevealed(false);
   }, [season, shouldPlayVideo, side]);
 
+  useLayoutEffect(() => {
+    if (!isPrimary || typeof onPrimaryPosterReady !== 'function') return;
+    const el = imgRef.current;
+    if (!el) return;
+
+    const notify = () => {
+      if (el.complete && el.naturalWidth > 0) onPrimaryPosterReady();
+    };
+
+    notify();
+    el.addEventListener('load', notify);
+    return () => el.removeEventListener('load', notify);
+  }, [isPrimary, onPrimaryPosterReady, poster, season]);
+
   const setImgFetchPriorityRef = (el) => {
+    imgRef.current = el;
     if (!el) return;
     el.setAttribute('fetchpriority', isPrimary ? 'high' : 'low');
   };
 
   return (
     <>
-      <img
-        ref={setImgFetchPriorityRef}
-        src={poster}
+      <MobilePosterPicture
+        posterJpg={poster}
         alt={altText}
         className="absolute inset-0 z-0 w-full h-full object-cover"
         style={mediaStyle}
         loading={isPrimary ? 'eager' : 'lazy'}
+        fetchPriority={isPrimary ? 'high' : 'low'}
         decoding="async"
+        imgRef={setImgFetchPriorityRef}
+        width={1280}
+        height={720}
+        id={isPrimary ? 'dd-home-lcp-img' : undefined}
       />
       {shouldPlayVideo ? (
         <video
@@ -84,6 +127,14 @@ function MobileDualityHeroStack() {
   const [shouldLoadMedia, setShouldLoadMedia] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [isLowBandwidth, setIsLowBandwidth] = useState(false);
+  const shellDismissedRef = useRef(false);
+  const onPrimaryPosterReadyRef = useRef(() => {});
+  onPrimaryPosterReadyRef.current = () => {
+    if (shellDismissedRef.current) return;
+    shellDismissedRef.current = true;
+    dismissLcpShell();
+  };
+  const onPrimaryPosterReady = () => onPrimaryPosterReadyRef.current();
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia) return;
@@ -195,6 +246,7 @@ function MobileDualityHeroStack() {
             altText="Cabin exterior"
             isPrimary
             mediaStyle={leftMediaStyle}
+            onPrimaryPosterReady={onPrimaryPosterReady}
           />
           <div className="absolute inset-0 bg-black/40" />
 
@@ -259,6 +311,11 @@ const DualityHero = () => {
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  // Desktop never uses the mobile LCP shell — dismiss immediately so it cannot overlay.
+  useLayoutEffect(() => {
+    if (!isMobile) dismissLcpShell();
+  }, [isMobile]);
 
   if (!isMobile) {
     return (

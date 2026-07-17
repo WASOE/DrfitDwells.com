@@ -120,6 +120,22 @@ async function main() {
     }
   }
 
+  // 2b. Home mobile DualityHero posters must have same-dimension AVIF/WebP siblings.
+  const homeMobilePosters = [
+    'uploads/Videos/The-cabin-header.summer-poster.jpg',
+    'uploads/Videos/The-cabin-header.winter-poster.jpg',
+    'uploads/Videos/The-Valley-Night-Stars-poster.jpg',
+    'uploads/Videos/The-Valley-firaplace-video.winter-poster.jpg'
+  ];
+  for (const jpgRel of homeMobilePosters) {
+    for (const ext of ['avif', 'webp']) {
+      const modernRel = jpgRel.replace(/\.jpe?g$/i, `.${ext}`);
+      if (!pathToSources.has(modernRel)) {
+        pathToSources.set(modernRel, new Set(['client/scripts/generate-home-mobile-posters.mjs']));
+      }
+    }
+  }
+
   // 3. Check every path against filesystem (allow basePath + extension, e.g. SKy-view-Aframe + .jpg)
   const extTry = ['.jpg', '.jpeg', '.png', '.webp', '.avif', '.gif', '.pdf'];
   const exists = (normPath) => {

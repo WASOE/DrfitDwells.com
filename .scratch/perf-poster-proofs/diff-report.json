@@ -1,0 +1,154 @@
+[
+  {
+    "id": "cabin-summer",
+    "format": "avif",
+    "nativeStats": {
+      "pixels": 921600,
+      "maxChannelDiff": 29,
+      "mae": 1.2495341435185492,
+      "changedPct": 71.17176649305556,
+      "identical": false
+    },
+    "displayStats": {
+      "pixels": 152250,
+      "maxChannelDiff": 14,
+      "mae": 1.093374931581832,
+      "changedPct": 77.73267651888341,
+      "identical": false
+    },
+    "sideBySide": "/home/wasoe/drift-dwells-booking-portal/.scratch/perf-poster-proofs/cabin-summer-avif-side-by-side.png"
+  },
+  {
+    "id": "cabin-summer",
+    "format": "webp",
+    "nativeStats": {
+      "pixels": 921600,
+      "maxChannelDiff": 21,
+      "mae": 1.4296741174769163,
+      "changedPct": 82.34874131944444,
+      "identical": false
+    },
+    "displayStats": {
+      "pixels": 152250,
+      "maxChannelDiff": 27,
+      "mae": 1.604310892172961,
+      "changedPct": 85.5047619047619,
+      "identical": false
+    },
+    "sideBySide": "/home/wasoe/drift-dwells-booking-portal/.scratch/perf-poster-proofs/cabin-summer-webp-side-by-side.png"
+  },
+  {
+    "id": "cabin-winter",
+    "format": "avif",
+    "nativeStats": {
+      "pixels": 921600,
+      "maxChannelDiff": 17,
+      "mae": 0.845457537615699,
+      "changedPct": 54.997287326388886,
+      "identical": false
+    },
+    "displayStats": {
+      "pixels": 152250,
+      "maxChannelDiff": 13,
+      "mae": 0.817624521072786,
+      "changedPct": 67.1415435139573,
+      "identical": false
+    },
+    "sideBySide": "/home/wasoe/drift-dwells-booking-portal/.scratch/perf-poster-proofs/cabin-winter-avif-side-by-side.png"
+  },
+  {
+    "id": "cabin-winter",
+    "format": "webp",
+    "nativeStats": {
+      "pixels": 921600,
+      "maxChannelDiff": 16,
+      "mae": 1.0184852430563025,
+      "changedPct": 77.28732638888889,
+      "identical": false
+    },
+    "displayStats": {
+      "pixels": 152250,
+      "maxChannelDiff": 28,
+      "mae": 1.4241050903119594,
+      "changedPct": 82.15172413793104,
+      "identical": false
+    },
+    "sideBySide": "/home/wasoe/drift-dwells-booking-portal/.scratch/perf-poster-proofs/cabin-winter-webp-side-by-side.png"
+  },
+  {
+    "id": "valley-summer",
+    "format": "avif",
+    "nativeStats": {
+      "pixels": 921600,
+      "maxChannelDiff": 16,
+      "mae": 1.6570453559028857,
+      "changedPct": 89.77495659722223,
+      "identical": false
+    },
+    "displayStats": {
+      "pixels": 152250,
+      "maxChannelDiff": 11,
+      "mae": 1.2602824302134445,
+      "changedPct": 94.83809523809525,
+      "identical": false
+    },
+    "sideBySide": "/home/wasoe/drift-dwells-booking-portal/.scratch/perf-poster-proofs/valley-summer-avif-side-by-side.png"
+  },
+  {
+    "id": "valley-summer",
+    "format": "webp",
+    "nativeStats": {
+      "pixels": 921600,
+      "maxChannelDiff": 18,
+      "mae": 1.7903237123842786,
+      "changedPct": 98.40787760416667,
+      "identical": false
+    },
+    "displayStats": {
+      "pixels": 152250,
+      "maxChannelDiff": 31,
+      "mae": 2.1654187192118655,
+      "changedPct": 98.57668308702792,
+      "identical": false
+    },
+    "sideBySide": "/home/wasoe/drift-dwells-booking-portal/.scratch/perf-poster-proofs/valley-summer-webp-side-by-side.png"
+  },
+  {
+    "id": "valley-winter",
+    "format": "avif",
+    "nativeStats": {
+      "pixels": 921600,
+      "maxChannelDiff": 14,
+      "mae": 1.428609302662067,
+      "changedPct": 80.59765625,
+      "identical": false
+    },
+    "displayStats": {
+      "pixels": 152250,
+      "maxChannelDiff": 12,
+      "mae": 1.1271505199781033,
+      "changedPct": 87.09819376026272,
+      "identical": false
+    },
+    "sideBySide": "/home/wasoe/drift-dwells-booking-portal/.scratch/perf-poster-proofs/valley-winter-avif-side-by-side.png"
+  },
+  {
+    "id": "valley-winter",
+    "format": "webp",
+    "nativeStats": {
+      "pixels": 921600,
+      "maxChannelDiff": 18,
+      "mae": 1.5305508535875163,
+      "changedPct": 97.00217013888889,
+      "identical": false
+    },
+    "displayStats": {
+      "pixels": 152250,
+      "maxChannelDiff": 26,
+      "mae": 2.1198576902026454,
+      "changedPct": 97.02791461412151,
+      "identical": false
+    },
+    "sideBySide": "/home/wasoe/drift-dwells-booking-portal/.scratch/perf-poster-proofs/valley-winter-webp-side-by-side.png"
+  }
+]

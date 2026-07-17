@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { homepageCriticalPreloadsPlugin } from './vite-plugins/homepageCriticalPreloads.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -15,6 +16,7 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    homepageCriticalPreloadsPlugin(),
     VitePWA({
       strategies: 'injectManifest',
       srcDir: 'src',

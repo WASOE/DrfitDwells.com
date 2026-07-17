@@ -1,0 +1,50 @@
+{
+  "shell": {
+    "exists": true,
+    "hidden": true,
+    "display": "none",
+    "season": "summer"
+  },
+  "preloadAuto": [
+    "auto",
+    "auto"
+  ],
+  "videos": [
+    {
+      "url": "/uploads/Videos/The-cabin-header.summer.mp4",
+      "ms": 2814
+    },
+    {
+      "url": "/uploads/Videos/The-Valley-Night-Stars.mp4",
+      "ms": 2835
+    },
+    {
+      "url": "/uploads/Videos/The-cabin-header.summer.mp4",
+      "ms": 3243
+    },
+    {
+      "url": "/uploads/Videos/The-cabin-header.summer.mp4",
+      "ms": 3286
+    },
+    {
+      "url": "/uploads/Videos/The-cabin-header.summer.mp4",
+      "ms": 3671
+    },
+    {
+      "url": "/uploads/Videos/The-cabin-header.summer.mp4",
+      "ms": 6204
+    },
+    {
+      "url": "/uploads/Videos/The-Valley-Night-Stars.mp4",
+      "ms": 6205
+    },
+    {
+      "url": "/uploads/Videos/The-Valley-firaplace-video.mp4",
+      "ms": 9513
+    }
+  ],
+  "seasonOk": false,
+  "cabin": true,
+  "valley": true,
+  "shellDesk": true
+}

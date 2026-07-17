@@ -1,0 +1,9 @@
+OWNER APPROVAL REQUIRED BEFORE SHIP
+
+Review side-by-side crops in this folder (*-side-by-side.png).
+Left = original JPEG (display simulation). Right = AVIF or WebP decode.
+Diff heatmaps (*-diff-heat.png) amplify channel deltas ×8.
+Do not merge/deploy poster format switch until owner signs off on visual parity.
+
+Generated: 2026-07-17T07:42:09.597Z
+See diff-report.json for numeric stats.

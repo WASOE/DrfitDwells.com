@@ -1,4 +1,5 @@
 import { CABIN_MEDIA, VALLEY_MEDIA } from './mediaConfig';
+import { posterModernSources } from '../utils/posterModernSources';
 
 /** Must match generate-hero-variants.mjs WIDTHS (subset used in srcset). */
 export const HERO_SRCSET_WIDTHS = [480, 720, 960, 1200, 1920];
@@ -60,5 +61,22 @@ export function getHomeHeroMobilePosterUrls(season) {
       s === 'summer'
         ? VALLEY_MEDIA.altSummerPair.poster
         : VALLEY_MEDIA.heroPoster.winter
+  };
+}
+
+/**
+ * Mobile LCP preload target: AVIF sibling of the cabin poster (same frame/dims).
+ * Browsers that lack AVIF ignore type=image/avif preloads and use <picture> fallback.
+ */
+export function getHomeHeroMobileCabinPreload(season) {
+  const { cabin } = getHomeHeroMobilePosterUrls(season);
+  const { avif, webp, jpg } = posterModernSources(cabin);
+  return {
+    avif,
+    webp,
+    jpg,
+    /** Prefer AVIF for preload when present. */
+    href: avif || webp || jpg,
+    type: avif ? 'image/avif' : webp ? 'image/webp' : 'image/jpeg'
   };
 }
