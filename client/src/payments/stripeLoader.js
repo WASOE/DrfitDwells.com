@@ -14,10 +14,28 @@ let state = {
   generation: 0
 };
 
+/** Cached snapshot for useSyncExternalStore referential stability. */
+let cachedSnapshot = {
+  status: state.status,
+  stripe: state.stripe,
+  error: state.error,
+  stripePromise: state.promise
+};
+
 const listeners = new Set();
 
+function rebuildSnapshot() {
+  cachedSnapshot = {
+    status: state.status,
+    stripe: state.stripe,
+    error: state.error,
+    stripePromise: state.promise
+  };
+}
+
 function emit() {
-  const snapshot = getStripeLoaderSnapshot();
+  rebuildSnapshot();
+  const snapshot = cachedSnapshot;
   listeners.forEach((listener) => {
     try {
       listener(snapshot);
@@ -59,12 +77,7 @@ function resolvePublishableKey(pk) {
 }
 
 export function getStripeLoaderSnapshot() {
-  return {
-    status: state.status,
-    stripe: state.stripe,
-    error: state.error,
-    stripePromise: state.promise
-  };
+  return cachedSnapshot;
 }
 
 export function subscribeStripeLoader(listener) {
@@ -206,6 +219,7 @@ export function __resetStripeLoaderForTests() {
     error: null,
     generation: 0
   };
+  rebuildSnapshot();
   listeners.clear();
 }
 
