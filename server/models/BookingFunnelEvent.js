@@ -4,7 +4,8 @@ const mongoose = require('mongoose');
 const {
   ALL_EVENT_TYPES,
   QUOTE_FAILURE_CLASSES,
-  PROPERTY_KINDS
+  PROPERTY_KINDS,
+  UA_CLASSES
 } = require('../services/conversion/funnelEventConstants');
 
 const attributionSchema = new mongoose.Schema(
@@ -57,6 +58,7 @@ const bookingFunnelEventSchema = new mongoose.Schema(
     convertedBookingId: { type: mongoose.Schema.Types.ObjectId, ref: 'Booking' },
     checkoutId: { type: String, trim: true, default: null },
     searchResultCount: { type: Number, default: null, min: 0 },
+    uaClass: { type: String, enum: [...UA_CLASSES, null], default: null },
     schemaVersion: { type: Number, default: 1 }
   },
   { timestamps: { createdAt: true, updatedAt: false } }

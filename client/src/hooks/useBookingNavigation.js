@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { readGuestPromo } from '../utils/guestPromo';
+import { ensureStripeLoaded } from '../payments/stripeLoader';
 
 // Centralized keys + query param builder for cabin → confirm flow
 export const CONFIRM_BOOKING_SIMPLE_KEY = 'confirm-booking-simple';
@@ -69,6 +70,7 @@ export function useBookingNavigation({
     }
 
     const qs = params.toString();
+    ensureStripeLoaded();
     navigate?.(qs ? `${targetConfirmPath}?${qs}` : targetConfirmPath, {
       state: {
         cabinId: entityId,

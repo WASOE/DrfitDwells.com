@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
-import { loadStripe } from '@stripe/stripe-js';
 import { Elements } from '@stripe/react-stripe-js';
 import { Minus, Plus, X } from 'lucide-react';
 import LocationPaymentForm from './LocationPaymentForm';
+import PaymentRecoveryNotice from '../../../payments/PaymentRecoveryNotice';
+import { useValleyStripePaymentShell } from '../../../payments/useValleyStripePaymentShell';
 import useLocationRetreatBooking from '../../../hooks/useLocationRetreatBooking';
 import { useBookingSearch } from '../../../context/BookingSearchContext';
 import { useSiteLanguage } from '../../../hooks/useSiteLanguage';
@@ -74,9 +75,6 @@ const DayPicker = lazy(() =>
     return { default: m.DayPicker };
   })
 );
-
-const stripePk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
-const stripePromise = stripePk ? loadStripe(stripePk) : null;
 
 function formatEuroAmount(value) {
   const amount = Number(value);
@@ -219,6 +217,23 @@ const RetreatBookingCalendar = ({
   } = useLocationRetreatBooking({
     autoQuote: true,
     minNights
+  });
+
+  const paymentActive = Boolean(checkoutStep && clientSecret);
+  const {
+    stripeLoadStatus,
+    stripePromise,
+    paymentElementReady,
+    stripeSlowHint,
+    elementsRemountKey,
+    handlePaymentElementReady,
+    handlePaymentElementLoadError,
+    handlePaymentRecoveryRetry,
+    inAppBrowser,
+    showTerminalRecovery
+  } = useValleyStripePaymentShell({
+    active: paymentActive,
+    stripeAmountCents: quote?.totalPrice != null ? Math.round(Number(quote.totalPrice) * 100) : null
   });
 
   useEffect(() => {
@@ -656,8 +671,9 @@ const RetreatBookingCalendar = ({
           </p>
         )}
 
-        {checkoutStep && clientSecret && stripePromise && (
+        {checkoutStep && clientSecret && (
           <div className="border-t border-gray-100 pt-4 space-y-4">
+            {inAppBrowser ? <PaymentRecoveryNotice variant="webview" /> : null}
             <div className="grid grid-cols-1 gap-3">
               <div>
                 <label htmlFor="hero-retreat-first-name" className="label-editorial">
@@ -721,14 +737,33 @@ const RetreatBookingCalendar = ({
               </div>
             </div>
 
-            <Elements stripe={stripePromise} options={{ clientSecret }}>
-              <LocationPaymentForm
-                onSubmit={handlePay}
-                loading={payLoading}
-                disabled={!guestFormValid}
-                isSheet={isSheet}
-              />
-            </Elements>
+            {showTerminalRecovery ? (
+              <PaymentRecoveryNotice variant="terminal" onRetry={handlePaymentRecoveryRetry} />
+            ) : null}
+            {!showTerminalRecovery && !paymentElementReady ? (
+              <div className="space-y-2">
+                <p className="text-sm text-gray-600">{tb('confirm.payment.loadingForm')}</p>
+                {stripeSlowHint ? <PaymentRecoveryNotice variant="slow" /> : null}
+              </div>
+            ) : null}
+
+            {stripeLoadStatus !== 'failed' && stripePromise ? (
+              <Elements
+                key={`valley-calendar:${elementsRemountKey}`}
+                stripe={stripePromise}
+                options={{ clientSecret }}
+              >
+                <LocationPaymentForm
+                  onSubmit={handlePay}
+                  loading={payLoading}
+                  disabled={!guestFormValid}
+                  isSheet={isSheet}
+                  onPaymentElementReady={handlePaymentElementReady}
+                  onPaymentElementLoadError={handlePaymentElementLoadError}
+                  suppressStripeLoadingHint={showTerminalRecovery}
+                />
+              </Elements>
+            ) : null}
           </div>
         )}
       </div>

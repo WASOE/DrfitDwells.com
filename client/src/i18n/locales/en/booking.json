@@ -166,7 +166,23 @@
     "bookingCompletedNoConfirmation": "Booking completed but could not retrieve confirmation",
     "bookingFailed": "Booking failed",
     "couldNotCompleteBooking": "Could not complete booking",
-    "paymentSetupFailed": "Payment setup failed"
+    "paymentSetupFailed": "Payment setup failed",
+    "payment": {
+      "loadingForm": "Loading secure card form…",
+      "formNotReady": "The secure card form is not ready yet.",
+      "slowHint": "The secure card form is taking longer than expected to load. If you are using the Instagram or Facebook browser, please open this page in Safari or Chrome and try again.",
+      "webviewTitle": "You are using an in-app browser",
+      "webviewBody": "In-app browsers such as Instagram or Facebook may block the secure card form. For a reliable payment, please open this page in Safari or Chrome.",
+      "webviewHint": "On iPhone: tap the menu or Share icon, then choose Open in Safari or Chrome.",
+      "copyLink": "Copy link",
+      "copyPageLink": "Copy page link",
+      "linkCopied": "Link copied",
+      "contactWhatsapp": "Contact us on WhatsApp",
+      "terminalTitle": "The secure card form could not be loaded",
+      "terminalBody": "This is usually caused by a network issue or an in-app browser. Your dates and price are not affected.",
+      "tryAgain": "Try again",
+      "whatsappPrefill": "Hello, I need assistance completing my booking payment."
+    }
   },
   "success": {
     "seoLoadingTitle": "Booking confirmation | Drift & Dwells",

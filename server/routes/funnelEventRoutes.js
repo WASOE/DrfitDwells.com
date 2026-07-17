@@ -36,6 +36,9 @@ const clientEventValidators = [
   body('searchResultCount').optional().isInt({ min: 0, max: 500 }),
   body('checkoutId').optional().isString().isLength({ max: 64 }),
   body('propertyKind').optional().isIn(['cabin', 'valley']),
+  body('priceShownCents').optional().isInt({ min: 0, max: 50_000_000 }),
+  body('stripeAmountCents').optional().isInt({ min: 0, max: 50_000_000 }),
+  body('uaClass').optional().isIn(['instagram', 'facebook', 'safari', 'other']),
   body('attribution').optional().isObject()
 ];
 

@@ -6,6 +6,9 @@ const {
   getPayoutDetailReadModel,
   getPayoutReconciliationSummaryReadModel
 } = require('../../../services/ops/readModels/paymentsReadModel');
+const {
+  getAbandonedCheckoutsReadModel
+} = require('../../../services/ops/readModels/abandonedCheckoutsReadModel');
 
 const router = express.Router();
 
@@ -21,6 +24,18 @@ router.get('/summary', async (req, res) => {
 router.get('/ledger', async (req, res) => {
   try {
     const data = await getPaymentsLedgerReadModel(req.query);
+    return res.json({ success: true, data });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/abandoned-checkouts', async (req, res) => {
+  try {
+    const data = await getAbandonedCheckoutsReadModel({
+      sinceHours: req.query.sinceHours,
+      limit: req.query.limit
+    });
     return res.json({ success: true, data });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });

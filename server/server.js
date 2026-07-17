@@ -38,6 +38,8 @@ const creatorReferralVisitRoutes = require('./routes/creatorReferralVisitRoutes'
 const creatorPortalRoutes = require('./routes/creatorPortalRoutes');
 const funnelEventRoutes = require('./routes/funnelEventRoutes');
 const { funnelEventLimiter } = require('./routes/funnelEventRoutes');
+const clientErrorRoutes = require('./routes/clientErrorRoutes');
+const { clientErrorLimiter } = require('./routes/clientErrorRoutes');
 const { legacyCabinDetailRedirectMiddleware } = require('./middleware/legacyCabinDetailRedirects');
 
 const app = express();
@@ -219,6 +221,15 @@ app.use(
   express.json({ limit: '8kb' }),
   requireDb,
   funnelEventRoutes
+);
+
+// Client payment-resilience errors: cookie-free, allowlisted, short TTL
+app.use(
+  '/api/client-errors',
+  clientErrorLimiter,
+  express.json({ limit: '4kb' }),
+  requireDb,
+  clientErrorRoutes
 );
 
 app.use(express.json({ limit: '1mb' }));
