@@ -16,7 +16,7 @@ import { useFloatingSafeArea } from "../hooks/useFloatingSafeArea";
 import { captureAttributionFromUrl } from "../tracking/attribution";
 
 /** Routes where the first section is a full-bleed hero (content intentionally under the nav). No top padding. */
-const HERO_PATHS = ['/', '/cabin', '/valley', '/enduro', '/bg/enduro'];
+const HERO_PATHS = ['/', '/cabin', '/valley'];
 
 /** Festival/paid landings: keep consent, but don't let it steal first-paint LCP on 3G. */
 function PaidTrafficConsentBanner() {

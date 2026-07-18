@@ -10,8 +10,8 @@ describe('paidTrafficRoutes', () => {
   it('isPaidTrafficLandingPath matches localized and default routes', () => {
     expect(isPaidTrafficLandingPath('/off-grid-stays-bulgaria')).toBe(true);
     expect(isPaidTrafficLandingPath('/bg/off-grid-stays-bulgaria')).toBe(true);
-    expect(isPaidTrafficLandingPath('/enduro')).toBe(true);
-    expect(isPaidTrafficLandingPath('/bg/enduro')).toBe(true);
+    expect(isPaidTrafficLandingPath('/enduro')).toBe(false);
+    expect(isPaidTrafficLandingPath('/bg/enduro')).toBe(false);
     expect(isPaidTrafficLandingPath('/valley')).toBe(false);
     expect(isPaidTrafficLandingPath('/')).toBe(false);
   });
