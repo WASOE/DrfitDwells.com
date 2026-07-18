@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import Header from "../components/Header";
 import PaidTrafficHeader from "../components/PaidTrafficHeader";
@@ -16,7 +16,26 @@ import { useFloatingSafeArea } from "../hooks/useFloatingSafeArea";
 import { captureAttributionFromUrl } from "../tracking/attribution";
 
 /** Routes where the first section is a full-bleed hero (content intentionally under the nav). No top padding. */
-const HERO_PATHS = ['/', '/cabin', '/valley'];
+const HERO_PATHS = ['/', '/cabin', '/valley', '/enduro', '/bg/enduro'];
+
+/** Festival/paid landings: keep consent, but don't let it steal first-paint LCP on 3G. */
+function PaidTrafficConsentBanner() {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let timeoutId = 0;
+    const show = () => setReady(true);
+    if (typeof window.requestIdleCallback === 'function') {
+      const idleId = window.requestIdleCallback(show, { timeout: 2500 });
+      return () => window.cancelIdleCallback(idleId);
+    }
+    timeoutId = window.setTimeout(show, 2500);
+    return () => window.clearTimeout(timeoutId);
+  }, []);
+
+  if (!ready) return null;
+  return <ConsentBanner />;
+}
 
 export default function SiteLayout() {
   const location = useLocation();
@@ -85,7 +104,7 @@ export default function SiteLayout() {
             <BookingModalLazy />
             {!isPaidTrafficLanding && <AnnouncementBar />}
             {!isPaidTrafficLanding && <ChatWidgetLazy />}
-            <ConsentBanner />
+            {isPaidTrafficLanding ? <PaidTrafficConsentBanner /> : <ConsentBanner />}
           </>
         )}
       </div>

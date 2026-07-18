@@ -87,12 +87,11 @@ const RhodopesCabinRetreat = lazy(() => import('./pages/seo/RhodopesCabinRetreat
 const BanskoRemoteWorkRetreat = lazy(() => import('./pages/seo/BanskoRemoteWorkRetreat'))
 const RetreatVenueBulgaria = lazy(() => import('./pages/seo/RetreatVenueBulgaria'))
 const OffGridStaysBulgaria = lazy(() => import('./pages/seo/OffGridStaysBulgaria'))
+const Enduro = lazy(() => import('./pages/seo/Enduro'))
 const CreatorPortal = lazy(() => import('./pages/creator/CreatorPortal'))
 
 const PageLoader = () => (
-  <div className="min-h-screen flex items-center justify-center">
-    <div className="text-sm tracking-[0.3em] uppercase text-gray-400">Loading...</div>
-  </div>
+  <div className="min-h-[100svh] bg-stone-900" aria-hidden="true" />
 )
 
 const AdminBookingDetailRedirect = () => {
@@ -174,6 +173,8 @@ function App() {
               <Route path="/bg/retreat-venue-bulgaria" element={<RetreatVenueBulgaria />} />
               <Route path="/off-grid-stays-bulgaria" element={<OffGridStaysBulgaria />} />
               <Route path="/bg/off-grid-stays-bulgaria" element={<OffGridStaysBulgaria />} />
+              <Route path="/enduro" element={<Enduro />} />
+              <Route path="/bg/enduro" element={<Enduro />} />
 
               {/* Booking state only where useBookingContext is required */}
               <Route element={<BookingProviderLayout />}>
