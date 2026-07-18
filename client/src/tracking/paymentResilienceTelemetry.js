@@ -21,13 +21,10 @@ function buildDedupeKey(eventType, checkoutId) {
 }
 
 function sendClientErrorBeacon(payload) {
+  // Always use fetch with credentials:'omit'. sendBeacon cannot omit cookies on
+  // same-origin posts and would leak Stripe mid/sid into /api/client-errors.
   const body = JSON.stringify(payload);
   try {
-    if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
-      const blob = new Blob([body], { type: 'application/json' });
-      navigator.sendBeacon(CLIENT_ERRORS_ENDPOINT, blob);
-      return;
-    }
     fetch(CLIENT_ERRORS_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
