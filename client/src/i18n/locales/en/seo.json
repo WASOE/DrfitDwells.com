@@ -253,11 +253,8 @@
       "eyebrow": "THE VALLEY",
       "title": "Ride out. Come home to this.",
       "intro": "Dirt tracks from the door, fire when you get back, cabins deep in the Rhodopes.",
-      "bands": {
-        "afterRide": "AFTER THE RIDE",
-        "land": "THE LAND",
-        "cabin": "INSIDE THE CABIN"
-      },
+      "showAll": "Show all photos",
+      "close": "Close",
       "items": {
         "aframes-sunset": {
           "alt": "A-frame cabins at The Valley in golden hour light, Rhodope Mountains",
@@ -290,6 +287,22 @@
         "morning-flowers": {
           "alt": "Wildflowers and cabin window view at The Valley",
           "caption": "Slow mornings"
+        },
+        "lux-cabin": {
+          "alt": "Luxury Cabin exterior at The Valley, Rhodope Mountains",
+          "caption": "Luxury Cabin"
+        },
+        "lux-cabin-sunset": {
+          "alt": "Luxury Cabin at golden hour at The Valley",
+          "caption": "Luxury Cabin at sunset"
+        },
+        "stone-house": {
+          "alt": "Stone House exterior at The Valley, Rhodope Mountains",
+          "caption": "Stone House"
+        },
+        "stone-house-deck": {
+          "alt": "Stone House deck overlooking The Valley",
+          "caption": "Stone House deck"
         }
       }
     }
