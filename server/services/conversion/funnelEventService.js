@@ -8,10 +8,12 @@ const {
   isFunnelTrackingEnabled,
   isClientEventType,
   isAllowedEventType,
+  isPaymentResilienceEventType,
   QUOTE_FAILURE_CLASSES,
   CLIENT_PAYLOAD_ALLOWLIST,
   MAX_BODY_BYTES,
-  SCHEMA_VERSION
+  SCHEMA_VERSION,
+  UA_CLASSES
 } = require('./funnelEventConstants');
 const {
   sanitizeKey,
@@ -32,7 +34,8 @@ const {
   buildQuoteReceivedDedupeKey,
   buildQuoteFailedDedupeKey,
   buildBookingConvertedDedupeKey,
-  buildCheckoutStartedDedupeKey
+  buildCheckoutStartedDedupeKey,
+  buildPaymentResilienceDedupeKey
 } = require('./funnelEventDedupe');
 
 async function resolvePropertyKindFromEntity({ cabinId, cabinTypeId }) {
@@ -168,7 +171,25 @@ function buildClientEventDoc(body) {
       checkInDateOnly: dates.checkInDateOnly,
       checkOutDateOnly: dates.checkOutDateOnly
     });
+  } else if (isPaymentResilienceEventType(eventType)) {
+    const checkoutId = sanitizeCheckoutId(body.checkoutId);
+    dedupeKey = buildPaymentResilienceDedupeKey({
+      eventType,
+      checkoutId,
+      sessionKey
+    });
   }
+
+  const isResilience = isPaymentResilienceEventType(eventType);
+  const priceFromBody = Number(body.priceShownCents ?? body.stripeAmountCents);
+  const priceShownCents =
+    isResilience && Number.isFinite(priceFromBody) && priceFromBody >= 0
+      ? Math.round(priceFromBody)
+      : null;
+  const uaClass =
+    isResilience && typeof body.uaClass === 'string' && UA_CLASSES.includes(body.uaClass)
+      ? body.uaClass
+      : null;
 
   const doc = {
     eventType,
@@ -176,18 +197,24 @@ function buildClientEventDoc(body) {
     dedupeKey,
     sessionKey,
     visitorKey: visitorKey || null,
-    cabinId: entity.cabinId,
-    cabinTypeId: entity.cabinTypeId,
-    checkInDateOnly: dates.checkInDateOnly,
-    checkOutDateOnly: dates.checkOutDateOnly,
-    adults:
-      eventType === 'search_results' || eventType === 'confirm_page_view' || eventType === 'checkout_started'
+    cabinId: isResilience ? null : entity.cabinId,
+    cabinTypeId: isResilience ? null : entity.cabinTypeId,
+    checkInDateOnly: isResilience ? null : dates.checkInDateOnly,
+    checkOutDateOnly: isResilience ? null : dates.checkOutDateOnly,
+    adults: isResilience
+      ? null
+      : eventType === 'search_results' || eventType === 'confirm_page_view' || eventType === 'checkout_started'
         ? adults
         : sanitizeGuestCount(body.adults, { min: 0, max: 10 }),
-    children,
+    children: isResilience ? null : children,
     searchResultCount:
       eventType === 'search_results' ? sanitizeGuestCount(body.searchResultCount, { min: 0, max: 500 }) : null,
-    checkoutId: eventType === 'checkout_started' ? sanitizeCheckoutId(body.checkoutId) : null,
+    checkoutId:
+      eventType === 'checkout_started' || isResilience
+        ? sanitizeCheckoutId(body.checkoutId)
+        : null,
+    priceShownCents,
+    uaClass,
     currency: 'EUR',
     schemaVersion: SCHEMA_VERSION
   };
@@ -195,7 +222,7 @@ function buildClientEventDoc(body) {
   const resolvedKind = sanitizePropertyKind(body.propertyKind);
   if (resolvedKind) doc.propertyKind = resolvedKind;
 
-  if (attribution) doc.attribution = attribution;
+  if (attribution && !isResilience) doc.attribution = attribution;
   return doc;
 }
 

@@ -113,6 +113,12 @@ function buildCheckoutStartedDedupeKey({
   return `cs:${sessionKey}:${entityType}:${entityId}:${checkInDateOnly || ''}:${checkOutDateOnly || ''}`;
 }
 
+function buildPaymentResilienceDedupeKey({ eventType, checkoutId, sessionKey }) {
+  const checkout = sanitizeKey(checkoutId) || 'none';
+  const session = sanitizeKey(sessionKey) || 'nosession';
+  return `pr:${eventType}:${checkout}:${session}`;
+}
+
 module.exports = {
   resolveFunnelIdentity,
   dayBucket,
@@ -124,5 +130,6 @@ module.exports = {
   buildQuoteReceivedDedupeKey,
   buildQuoteFailedDedupeKey,
   buildBookingConvertedDedupeKey,
-  buildCheckoutStartedDedupeKey
+  buildCheckoutStartedDedupeKey,
+  buildPaymentResilienceDedupeKey
 };

@@ -4,7 +4,11 @@ const CLIENT_EVENT_TYPES = Object.freeze([
   'property_view',
   'search_results',
   'confirm_page_view',
-  'checkout_started'
+  'checkout_started',
+  'payment_element_slow',
+  'payment_element_load_error',
+  'stripe_js_load_failed',
+  'payment_element_escalated'
 ]);
 
 const SERVER_EVENT_TYPES = Object.freeze([
@@ -14,6 +18,15 @@ const SERVER_EVENT_TYPES = Object.freeze([
 ]);
 
 const ALL_EVENT_TYPES = Object.freeze([...CLIENT_EVENT_TYPES, ...SERVER_EVENT_TYPES]);
+
+const PAYMENT_RESILIENCE_EVENT_TYPES = Object.freeze([
+  'payment_element_slow',
+  'payment_element_load_error',
+  'stripe_js_load_failed',
+  'payment_element_escalated'
+]);
+
+const UA_CLASSES = Object.freeze(['instagram', 'facebook', 'safari', 'other']);
 
 const QUOTE_FAILURE_CLASSES = Object.freeze([
   'validation_error',
@@ -47,6 +60,18 @@ const ATTRIBUTION_ALLOWLIST = Object.freeze([
   'referrer',
   'landingPath',
   'referralCode'
+]);
+
+const PAYMENT_RESILIENCE_PAYLOAD_FIELDS = Object.freeze([
+  'eventType',
+  'sessionKey',
+  'visitorKey',
+  'checkoutId',
+  'priceShownCents',
+  'stripeAmountCents',
+  'uaClass',
+  'propertyKind',
+  'attribution'
 ]);
 
 const CLIENT_PAYLOAD_ALLOWLIST = Object.freeze({
@@ -97,7 +122,11 @@ const CLIENT_PAYLOAD_ALLOWLIST = Object.freeze({
     'adults',
     'children',
     'attribution'
-  ]
+  ],
+  payment_element_slow: [...PAYMENT_RESILIENCE_PAYLOAD_FIELDS],
+  payment_element_load_error: [...PAYMENT_RESILIENCE_PAYLOAD_FIELDS],
+  stripe_js_load_failed: [...PAYMENT_RESILIENCE_PAYLOAD_FIELDS],
+  payment_element_escalated: [...PAYMENT_RESILIENCE_PAYLOAD_FIELDS]
 });
 
 const MAX_BODY_BYTES = 8192;
@@ -115,10 +144,16 @@ function isAllowedEventType(eventType) {
   return ALL_EVENT_TYPES.includes(eventType);
 }
 
+function isPaymentResilienceEventType(eventType) {
+  return PAYMENT_RESILIENCE_EVENT_TYPES.includes(eventType);
+}
+
 module.exports = {
   CLIENT_EVENT_TYPES,
   SERVER_EVENT_TYPES,
   ALL_EVENT_TYPES,
+  PAYMENT_RESILIENCE_EVENT_TYPES,
+  UA_CLASSES,
   QUOTE_FAILURE_CLASSES,
   PROPERTY_KINDS,
   PII_REJECT_FIELDS,
@@ -128,5 +163,6 @@ module.exports = {
   SCHEMA_VERSION,
   isFunnelTrackingEnabled,
   isClientEventType,
-  isAllowedEventType
+  isAllowedEventType,
+  isPaymentResilienceEventType
 };

@@ -46,6 +46,8 @@ const opsReadAPI = {
   sync: (params) => api.get('/ops/sync', { params, headers: authHeaders() }),
   paymentsSummary: () => api.get('/ops/payments/summary', { headers: authHeaders() }),
   paymentsLedger: (params) => api.get('/ops/payments/ledger', { params, headers: authHeaders() }),
+  abandonedCheckouts: (params) =>
+    api.get('/ops/payments/abandoned-checkouts', { params, headers: authHeaders() }),
   payoutsList: (params) => api.get('/ops/payments/payouts', { params, headers: authHeaders() }),
   payoutDetail: (id) => api.get(`/ops/payments/payouts/${id}`, { headers: authHeaders() }),
   payoutReconciliationSummary: () => api.get('/ops/payments/payouts/reconciliation-summary', { headers: authHeaders() }),

@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
 import { X } from 'lucide-react';
-import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { cabinAPI, cabinTypeAPI, bookingAPI } from '../services/api';
 import { CONFIRM_BOOKING_SIMPLE_KEY } from '../hooks/useBookingNavigation';
@@ -13,10 +12,15 @@ import Seo from '../components/Seo';
 import { daysBetweenDateOnly, formatDateOnlyLocal, parseDateOnlyLocal } from '../utils/dateOnly';
 import { getAttributionPayload } from '../tracking/attribution';
 import { trackFunnelEvent } from '../tracking/funnel';
+import { trackPaymentResilienceEvent } from '../tracking/paymentResilienceTelemetry';
 import { getMetaClientContextPayload } from '../tracking/metaClientContext';
 import { readGuestPromo, writeGuestPromo } from '../utils/guestPromo';
 import { useSiteLanguage } from '../hooks/useSiteLanguage';
 import { formatStayDayLong } from '../utils/localeDates';
+import { isInAppBrowser } from '../utils/inAppBrowser';
+import { useStripeLoader } from '../payments/useStripeLoader';
+import { useStripeElementsGuard } from '../payments/useStripeElementsGuard';
+import PaymentRecoveryNotice from '../payments/PaymentRecoveryNotice';
 import {
   LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
   LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
@@ -34,7 +38,6 @@ import {
 } from '../utils/checkoutSessionV2Storage';
 
 const stripePk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
-const stripePromise = stripePk ? loadStripe(stripePk) : null;
 const CHECKOUT_SESSION_KEY = 'confirm-booking-checkout-session';
 const checkoutSessionV2Enabled = isCheckoutSessionV2Enabled();
 
@@ -568,7 +571,8 @@ function PaymentFormInner({
   precheckDisabled = false,
   precheckMessages = [],
   onPaymentElementReady,
-  onPaymentElementLoadError
+  onPaymentElementLoadError,
+  suppressStripeLoadingHint = false
 }) {
   const { t } = useTranslation('booking');
   const stripe = useStripe();
@@ -583,11 +587,11 @@ function PaymentFormInner({
   const submitDisabled = !stripe || loading || precheckDisabled;
   const disabledReasons = useMemo(() => {
     const m = [...precheckMessages];
-    if (!stripe) {
-      m.push('The secure card form is not ready yet (Stripe is still loading).');
+    if (!stripe && !suppressStripeLoadingHint) {
+      m.push(t('confirm.payment.formNotReady'));
     }
     return m;
-  }, [precheckMessages, stripe]);
+  }, [precheckMessages, stripe, suppressStripeLoadingHint, t]);
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -734,9 +738,12 @@ const ConfirmBooking = () => {
   const [fullVoucherCoverage, setFullVoucherCoverage] = useState(false);
   const [voucherAppliedCents, setVoucherAppliedCents] = useState(0);
   const [stripeAmountCents, setStripeAmountCents] = useState(0);
-  const [paymentElementReady, setPaymentElementReady] = useState(false);
-  const [paymentElementLoadError, setPaymentElementLoadError] = useState(null);
-  const [stripeSlowHint, setStripeSlowHint] = useState(false);
+
+  const {
+    status: stripeLoadStatus,
+    stripePromise,
+    retry: retryStripeJs
+  } = useStripeLoader(stripePk);
 
   const handleFormChange = useCallback((field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -1307,6 +1314,8 @@ const ConfirmBooking = () => {
       }
       if (lockedPromoCode) payload.promoCode = lockedPromoCode;
       if (appliedVoucherCode) payload.voucherCode = appliedVoucherCode;
+      const guestEmail = formData.email?.trim().toLowerCase();
+      if (guestEmail) payload.guestEmail = guestEmail;
       const res = await bookingAPI.createPaymentIntent(payload);
       if (!res.data?.success) {
         throw new Error(t('confirm.paymentSetupFailed'));
@@ -1449,6 +1458,7 @@ const ConfirmBooking = () => {
     bookingEntityType,
     lockedPromoCode,
     appliedVoucherCode,
+    formData.email,
     checkoutSessionV2BoundaryKey,
     clearV2CheckoutPaymentState,
     clearV2PaymentIdentityState,
@@ -1788,7 +1798,70 @@ const ConfirmBooking = () => {
   const skipCardPaymentUi = fullVoucherCoverage || (checkoutSessionV2Enabled && noPaymentRequired);
   const showContinueToPayment =
     (stripeEnabled || appliedVoucherCode) && !skipCardPaymentUi && !clientSecret;
-  const showPaymentElement = stripePromise && clientSecret && !skipCardPaymentUi;
+  const showPaymentElement = Boolean(clientSecret) && !skipCardPaymentUi;
+  const inAppBrowser = useMemo(() => isInAppBrowser(), []);
+  const showWebviewNotice =
+    inAppBrowser && (showContinueToPayment || showPaymentElement) && hasValidGuestInfo && hasLegalAcceptance;
+
+  const elementsGuardActive = showPaymentElement && stripeLoadStatus !== 'failed';
+  const {
+    ready: paymentElementReady,
+    loadError: paymentElementLoadError,
+    slowHint: stripeSlowHint,
+    escalated: paymentElementEscalated,
+    terminal: paymentElementTerminal,
+    elementsRemountKey,
+    onReady: handlePaymentElementReady,
+    onLoadError: handlePaymentElementLoadErrorRaw,
+    retryElements
+  } = useStripeElementsGuard({ active: elementsGuardActive });
+
+  const handlePaymentElementLoadError = useCallback(
+    (event) => {
+      handlePaymentElementLoadErrorRaw(event);
+      trackPaymentResilienceEvent('payment_element_load_error', {
+        checkoutId,
+        stripeAmountCents,
+        propertyKind: 'cabin'
+      });
+    },
+    [handlePaymentElementLoadErrorRaw, checkoutId, stripeAmountCents]
+  );
+
+  useEffect(() => {
+    if (!stripeSlowHint || paymentElementReady || paymentElementLoadError) return;
+    trackPaymentResilienceEvent('payment_element_slow', {
+      checkoutId,
+      stripeAmountCents,
+      propertyKind: 'cabin'
+    });
+  }, [stripeSlowHint, paymentElementReady, paymentElementLoadError, checkoutId, stripeAmountCents]);
+
+  useEffect(() => {
+    if (!paymentElementEscalated || paymentElementReady || paymentElementLoadError) return;
+    trackPaymentResilienceEvent('payment_element_escalated', {
+      checkoutId,
+      stripeAmountCents,
+      propertyKind: 'cabin'
+    });
+  }, [paymentElementEscalated, paymentElementReady, paymentElementLoadError, checkoutId, stripeAmountCents]);
+
+  useEffect(() => {
+    if (stripeLoadStatus !== 'failed') return;
+    trackPaymentResilienceEvent('stripe_js_load_failed', {
+      checkoutId,
+      stripeAmountCents,
+      propertyKind: 'cabin'
+    });
+  }, [stripeLoadStatus, checkoutId, stripeAmountCents]);
+
+  const handlePaymentRecoveryRetry = useCallback(() => {
+    if (stripeLoadStatus === 'failed') {
+      retryStripeJs();
+      return;
+    }
+    retryElements();
+  }, [stripeLoadStatus, retryStripeJs, retryElements]);
 
   const v2PaymentElementKey = useMemo(() => {
     if (!checkoutSessionV2Enabled || !showPaymentElement) {
@@ -1801,6 +1874,8 @@ const ConfirmBooking = () => {
     });
   }, [checkoutId, canonicalPaymentIntentId, quoteSnapshotHash, showPaymentElement]);
 
+  const elementsReactKey = `${checkoutSessionV2Enabled && v2PaymentElementKey ? v2PaymentElementKey : 'elements'}:${elementsRemountKey}`;
+
   const continueToPayMessages = useMemo(() => {
     const msgs = [...paymentPrecheckMessages];
     if (!pricing) msgs.push('Stay and dates are incomplete so we cannot calculate the price yet.');
@@ -1809,32 +1884,6 @@ const ConfirmBooking = () => {
 
   const continueToPayDisabled =
     checkoutInitLoading || !pricing || precheckDisabled;
-
-  const handlePaymentElementReady = useCallback(() => {
-    setPaymentElementReady(true);
-    setStripeSlowHint(false);
-  }, []);
-
-  const handlePaymentElementLoadError = useCallback(() => {
-    setPaymentElementLoadError(
-      'The secure card form could not load. Please refresh the page or open it in Chrome/Safari.'
-    );
-    setStripeSlowHint(false);
-  }, []);
-
-  useEffect(() => {
-    if (!stripePromise || !clientSecret || skipCardPaymentUi) {
-      setPaymentElementReady(false);
-      setPaymentElementLoadError(null);
-      setStripeSlowHint(false);
-      return;
-    }
-    setPaymentElementReady(false);
-    setPaymentElementLoadError(null);
-    setStripeSlowHint(false);
-    const id = window.setTimeout(() => setStripeSlowHint(true), 9000);
-    return () => window.clearTimeout(id);
-  }, [clientSecret, skipCardPaymentUi, stripePromise]);
 
   if (loading || !cabin) {
     return (
@@ -2182,6 +2231,9 @@ const ConfirmBooking = () => {
         {/* Payment - Stripe when configured, else pay on arrival */}
         <div className="mt-6 p-6 bg-white rounded-xl border border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('confirm.paymentTitle')}</h2>
+          {showWebviewNotice ? (
+            <PaymentRecoveryNotice variant="webview" className="mb-4" />
+          ) : null}
           {showContinueToPayment ? (
             <>
               <button
@@ -2209,34 +2261,36 @@ const ConfirmBooking = () => {
                   ? `Voucher applied: €${(voucherAppliedCents / 100).toLocaleString()} | Remaining card payment: €${(stripeAmountCents / 100).toLocaleString()}`
                   : `Card payment: €${(stripeAmountCents / 100).toLocaleString()}`}
               </p>
-              {paymentElementLoadError ? (
-                <p className="text-sm text-red-600 mb-3">{paymentElementLoadError}</p>
+              {stripeLoadStatus === 'failed' || paymentElementTerminal ? (
+                <PaymentRecoveryNotice
+                  variant="terminal"
+                  onRetry={handlePaymentRecoveryRetry}
+                  className="mb-4"
+                />
               ) : null}
-              {!paymentElementLoadError && !paymentElementReady ? (
+              {!paymentElementTerminal && stripeLoadStatus !== 'failed' && !paymentElementReady ? (
                 <div className="mb-4 space-y-2">
-                  <p className="text-sm text-gray-600">Loading secure card form…</p>
-                  {stripeSlowHint ? (
-                    <p className="text-sm text-amber-800">
-                      The secure card form is taking longer than expected. If you are using Instagram or Facebook&apos;s
-                      in-app browser, open this page in Chrome or Safari and try again.
-                    </p>
-                  ) : null}
+                  <p className="text-sm text-gray-600">{t('confirm.payment.loadingForm')}</p>
+                  {stripeSlowHint ? <PaymentRecoveryNotice variant="slow" /> : null}
                 </div>
               ) : null}
-              <Elements
-                key={checkoutSessionV2Enabled ? v2PaymentElementKey : undefined}
-                stripe={stripePromise}
-                options={{ clientSecret }}
-              >
-                <PaymentFormInner
-                  onSubmit={handleStripeSubmit}
-                  loading={submitLoading}
-                  precheckDisabled={precheckDisabled}
-                  precheckMessages={paymentPrecheckMessages}
-                  onPaymentElementReady={handlePaymentElementReady}
-                  onPaymentElementLoadError={handlePaymentElementLoadError}
-                />
-              </Elements>
+              {stripeLoadStatus !== 'failed' && stripePromise ? (
+                <Elements
+                  key={elementsReactKey}
+                  stripe={stripePromise}
+                  options={{ clientSecret }}
+                >
+                  <PaymentFormInner
+                    onSubmit={handleStripeSubmit}
+                    loading={submitLoading}
+                    precheckDisabled={precheckDisabled}
+                    precheckMessages={paymentPrecheckMessages}
+                    onPaymentElementReady={handlePaymentElementReady}
+                    onPaymentElementLoadError={handlePaymentElementLoadError}
+                    suppressStripeLoadingHint={paymentElementTerminal}
+                  />
+                </Elements>
+              ) : null}
               {stripeError && (
                 <p className="mt-2 text-sm text-red-600">{stripeError}</p>
               )}

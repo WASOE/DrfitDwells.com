@@ -6,6 +6,7 @@ export default function OpsPayments() {
   const [ledger, setLedger] = useState([]);
   const [payouts, setPayouts] = useState([]);
   const [reconciliation, setReconciliation] = useState(null);
+  const [abandoned, setAbandoned] = useState([]);
   const [selectedPayout, setSelectedPayout] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -14,16 +15,18 @@ export default function OpsPayments() {
     setLoading(true);
     setError('');
     try {
-      const [s, l, p, r] = await Promise.all([
+      const [s, l, p, r, a] = await Promise.all([
         opsReadAPI.paymentsSummary(),
         opsReadAPI.paymentsLedger({ page: 1, limit: 20 }),
         opsReadAPI.payoutsList({ page: 1, limit: 20 }),
-        opsReadAPI.payoutReconciliationSummary()
+        opsReadAPI.payoutReconciliationSummary(),
+        opsReadAPI.abandonedCheckouts({ sinceHours: 48, limit: 40 })
       ]);
       setSummary(s.data?.data || null);
       setLedger(l.data?.data?.items || []);
       setPayouts(p.data?.data?.items || []);
       setReconciliation(r.data?.data || null);
+      setAbandoned(a.data?.data?.items || []);
     } catch (err) {
       setError(err?.response?.data?.message || 'Failed to load payments module');
     } finally {
@@ -102,6 +105,52 @@ export default function OpsPayments() {
           </div>
         </section>
       ) : null}
+
+      <section className="bg-white border border-gray-200 rounded-xl p-4">
+        <h3 className="text-sm font-semibold text-gray-900 mb-3">Abandoned card checkouts (48h)</h3>
+        <p className="text-xs text-gray-500 mb-3">
+          Unpaid CheckoutSessions whose PaymentIntent is still awaiting a card (
+          <code className="text-[11px]">requires_payment_method</code> /{' '}
+          <code className="text-[11px]">requires_action</code>). Read-only follow-up list.
+        </p>
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 text-xs uppercase text-gray-500">
+                <th className="py-2 pr-3 font-medium">Updated</th>
+                <th className="py-2 pr-3 font-medium">Email</th>
+                <th className="py-2 pr-3 font-medium">Amount</th>
+                <th className="py-2 pr-3 font-medium">PI status</th>
+                <th className="py-2 pr-3 font-medium">Checkout</th>
+                <th className="py-2 font-medium">PaymentIntent</th>
+              </tr>
+            </thead>
+            <tbody>
+              {abandoned.map((item) => (
+                <tr key={item.checkoutId} className="border-b border-gray-100 align-top">
+                  <td className="py-2 pr-3 text-xs text-gray-600 whitespace-nowrap">
+                    {item.updatedAt ? String(item.updatedAt) : '—'}
+                  </td>
+                  <td className="py-2 pr-3 text-xs text-gray-900">{item.guestEmail || '—'}</td>
+                  <td className="py-2 pr-3 text-xs tabular-nums text-gray-900">
+                    {item.stripeAmountCents != null
+                      ? `€${(Number(item.stripeAmountCents) / 100).toLocaleString()}`
+                      : '—'}
+                  </td>
+                  <td className="py-2 pr-3 text-xs text-gray-700">{item.paymentIntentStatus || '—'}</td>
+                  <td className="py-2 pr-3 text-xs font-mono text-gray-700 break-all">{item.checkoutId}</td>
+                  <td className="py-2 text-xs font-mono text-gray-700 break-all">
+                    {item.canonicalPaymentIntentId || '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {abandoned.length === 0 ? (
+            <p className="text-sm text-gray-500 mt-2">No abandoned card checkouts in this window.</p>
+          ) : null}
+        </div>
+      </section>
 
       <section className="bg-white border border-gray-200 rounded-xl p-4">
         <h3 className="text-sm font-semibold text-gray-900 mb-3">Payment ledger</h3>

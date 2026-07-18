@@ -1,19 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { loadStripe } from '@stripe/stripe-js';
 import { Elements } from '@stripe/react-stripe-js';
 import { Minus, Plus } from 'lucide-react';
 import GuestSelect from '../../../components/GuestSelect';
 import { StayLodgingPriceBlock } from '../../../components/booking/StayLodgingPriceBlock';
 import PriceDetailsModal from '../../../components/booking/PriceDetailsModal';
 import LocationPaymentForm from './LocationPaymentForm';
+import PaymentRecoveryNotice from '../../../payments/PaymentRecoveryNotice';
+import { useValleyStripePaymentShell } from '../../../payments/useValleyStripePaymentShell';
 import useLocationRetreatBooking from '../../../hooks/useLocationRetreatBooking';
 import { formatDateOnlyLocal } from '../../../utils/dateOnly';
 import '../../../i18n/ns/booking';
 import '../../../i18n/ns/valley';
-
-const stripePk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
-const stripePromise = stripePk ? loadStripe(stripePk) : null;
 
 function quoteMatchesContextDates(quote, checkIn, checkOut) {
   if (!quote?.checkIn || !quote?.checkOut || !checkIn || !checkOut) return false;
@@ -67,6 +65,24 @@ const LocationRetreatQuotePanel = ({ onQuoteChange, panelRef }) => {
   const showStaleQuoteHint = Boolean(quote && !quoteIsCurrent);
   const showPanelUnavailable = Boolean(displayQuote && displayQuote.available === false);
   const showPanelAvailablePrice = Boolean(displayQuote && displayQuote.available === true);
+
+  const paymentActive = Boolean(checkoutStep && clientSecret);
+  const {
+    stripeLoadStatus,
+    stripePromise,
+    paymentElementReady,
+    stripeSlowHint,
+    elementsRemountKey,
+    handlePaymentElementReady,
+    handlePaymentElementLoadError,
+    handlePaymentRecoveryRetry,
+    inAppBrowser,
+    showTerminalRecovery
+  } = useValleyStripePaymentShell({
+    active: paymentActive,
+    stripeAmountCents:
+      displayQuote?.totalPrice != null ? Math.round(Number(displayQuote.totalPrice) * 100) : null
+  });
 
   useEffect(() => {
     if (quote && !quoteIsCurrent) {
@@ -200,8 +216,9 @@ const LocationRetreatQuotePanel = ({ onQuoteChange, panelRef }) => {
               </p>
             )}
 
-            {checkoutStep && clientSecret && stripePromise && (
+            {checkoutStep && clientSecret && (
               <div className="border-t border-gray-100 pt-4 space-y-4">
+                {inAppBrowser ? <PaymentRecoveryNotice variant="webview" /> : null}
                 <div className="grid grid-cols-1 gap-3">
                   <div>
                     <label htmlFor="retreat-first-name" className="label-editorial">
@@ -257,13 +274,35 @@ const LocationRetreatQuotePanel = ({ onQuoteChange, panelRef }) => {
                   </div>
                 </div>
 
-                <Elements stripe={stripePromise} options={{ clientSecret }}>
-                  <LocationPaymentForm
-                    onSubmit={handlePay}
-                    loading={payLoading}
-                    disabled={!guestFormValid}
+                {showTerminalRecovery ? (
+                  <PaymentRecoveryNotice
+                    variant="terminal"
+                    onRetry={handlePaymentRecoveryRetry}
                   />
-                </Elements>
+                ) : null}
+                {!showTerminalRecovery && !paymentElementReady ? (
+                  <div className="space-y-2">
+                    <p className="text-sm text-gray-600">{tb('confirm.payment.loadingForm')}</p>
+                    {stripeSlowHint ? <PaymentRecoveryNotice variant="slow" /> : null}
+                  </div>
+                ) : null}
+
+                {stripeLoadStatus !== 'failed' && stripePromise ? (
+                  <Elements
+                    key={`valley-panel:${elementsRemountKey}`}
+                    stripe={stripePromise}
+                    options={{ clientSecret }}
+                  >
+                    <LocationPaymentForm
+                      onSubmit={handlePay}
+                      loading={payLoading}
+                      disabled={!guestFormValid}
+                      onPaymentElementReady={handlePaymentElementReady}
+                      onPaymentElementLoadError={handlePaymentElementLoadError}
+                      suppressStripeLoadingHint={showTerminalRecovery}
+                    />
+                  </Elements>
+                ) : null}
               </div>
             )}
 
