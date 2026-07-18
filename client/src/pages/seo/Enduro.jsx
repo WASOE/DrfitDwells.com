@@ -7,7 +7,8 @@ import HeroResponsivePicture from '../../components/HeroResponsivePicture';
 import PaidTrafficStaySelector from '../../components/PaidTrafficStaySelector';
 import PaidTrafficStaysSheet from '../../components/PaidTrafficStaysSheet';
 import BookingCTABand from '../the-valley/sections/BookingCTABand';
-import { getValleyHeroResponsive, HERO_LCP_PRELOAD_WIDTH } from '../../config/heroResponsive';
+import EnduroGallerySection from './EnduroGallerySection';
+import { ENDURO_HERO_LCP_PRELOAD, getEnduroHeroResponsive } from '../../data/enduroMedia';
 import { INSTAGRAM_URL } from '../../data/gmbLocations';
 import useValleyHeroStayItems from '../../hooks/useValleyHeroStayItems';
 import { useLocalizedPath } from '../../hooks/useLocalizedPath';
@@ -21,7 +22,6 @@ const PROMO_CODE = 'ENDURO';
 const BOOK_PATH = '/stays/a-frame';
 const BUYOUT_PATH = '/retreats/the-valley';
 const UNIT_BOOKING_SEARCH = `promoCode=${PROMO_CODE}`;
-const LCP_PRELOAD_HREF = `/media/hero/valley-summer-night-${HERO_LCP_PRELOAD_WIDTH}w.avif`;
 const PROOF_KEYS = ['one', 'two', 'three'];
 
 export default function Enduro() {
@@ -41,7 +41,7 @@ export default function Enduro() {
     search: `?${UNIT_BOOKING_SEARCH}`
   };
   const buyoutTo = lp(BUYOUT_PATH);
-  const hero = getValleyHeroResponsive('summer');
+  const hero = getEnduroHeroResponsive();
   const heroAlt = `${e('hero.titleSmall')} ${e('hero.title')}`;
 
   const selectorLoading =
@@ -86,7 +86,7 @@ export default function Enduro() {
         description={e('metaDescription')}
         canonicalPath="/enduro"
         ogImage={hero.fallbackSrc}
-        preloadImages={[{ href: LCP_PRELOAD_HREF, type: 'image/avif', fetchPriority: 'high' }]}
+        preloadImages={[{ href: ENDURO_HERO_LCP_PRELOAD, type: 'image/avif', fetchPriority: 'high' }]}
         hreflangAlternates={buildHreflangAlternates('/enduro')}
       />
 
@@ -98,7 +98,6 @@ export default function Enduro() {
           '--enduro-sticky-clearance': PAID_TRAFFIC_MOBILE_STICKY_CLEARANCE
         }}
       >
-        {/* Conversion hero — same selling shell as paid stays: media + selector */}
         <section className="border-b border-[rgba(0,0,0,0.08)]">
           <div className="valley-container py-5 md:py-8 lg:py-10">
             <div className="grid grid-cols-1 lg:grid-cols-2 lg:gap-10 lg:items-stretch lg:min-h-[560px]">
@@ -200,7 +199,8 @@ export default function Enduro() {
           </div>
         </section>
 
-        {/* Instagram — primary festival goal, not a footer afterthought */}
+        <EnduroGallerySection />
+
         <section className="bg-stone-900 text-white">
           <div className="valley-container py-12 md:py-16 lg:py-20">
             <div className="mx-auto max-w-2xl text-center">
@@ -276,7 +276,6 @@ export default function Enduro() {
           onSecondaryClick={() => navigate(buyoutTo)}
         />
 
-        {/* Mobile sticky: follow + book — festival QR goals */}
         <div className="fixed bottom-0 left-0 w-full z-50 bg-stone-900/95 backdrop-blur-md border-t border-white/10 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
           <div className="mx-auto grid max-w-lg grid-cols-2 gap-2">
             <a

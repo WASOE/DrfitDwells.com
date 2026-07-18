@@ -248,6 +248,50 @@
       "lead": "See the valley before you ride it.",
       "handle": "@driftdwells",
       "cta": "Follow on Instagram"
+    },
+    "gallery": {
+      "eyebrow": "THE VALLEY",
+      "title": "Ride out. Come home to this.",
+      "intro": "Dirt tracks from the door, fire when you get back, cabins deep in the Rhodopes.",
+      "bands": {
+        "afterRide": "AFTER THE RIDE",
+        "land": "THE LAND",
+        "cabin": "INSIDE THE CABIN"
+      },
+      "items": {
+        "aframes-sunset": {
+          "alt": "A-frame cabins at The Valley in golden hour light, Rhodope Mountains",
+          "caption": "A-frames at golden hour"
+        },
+        "swing-couple": {
+          "alt": "Couple on the panoramic swing overlooking The Valley",
+          "caption": "Or come back with her"
+        },
+        "firepit-night": {
+          "alt": "Night firepit under the stars at The Valley",
+          "caption": "Fire after the ride"
+        },
+        "firepit-sunset": {
+          "alt": "Sunset firepit circle at The Valley",
+          "caption": "The pit is lit when you get back"
+        },
+        "swing-solo": {
+          "alt": "Overlook swing above The Valley A-frames",
+          "caption": "The view from your base"
+        },
+        "wildflowers-meadow": {
+          "alt": "Standing in The Valley meadow with cabin and A-frames behind",
+          "caption": "Deep in the Rhodopes"
+        },
+        "bathroom-mirror": {
+          "alt": "Cabin bathroom mirror reflecting an A-frame at The Valley",
+          "caption": "Sleep off-grid"
+        },
+        "morning-flowers": {
+          "alt": "Wildflowers and cabin window view at The Valley",
+          "caption": "Slow mornings"
+        }
+      }
     }
   }
 }

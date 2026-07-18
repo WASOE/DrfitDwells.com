@@ -252,6 +252,50 @@
       "lead": "Виж долината, преди да дойдеш.",
       "handle": "@driftdwells",
       "cta": "Последвай в Instagram"
+    },
+    "gallery": {
+      "eyebrow": "THE VALLEY",
+      "title": "Карай навън. Прибери се тук.",
+      "intro": "Пътеки от двора, огън когато се върнеш, къщички дълбоко в Родопите.",
+      "bands": {
+        "afterRide": "СЛЕД КАРАНЕТО",
+        "land": "ЗЕМЯТА",
+        "cabin": "В КАБИНАТА"
+      },
+      "items": {
+        "aframes-sunset": {
+          "alt": "A-frame къщички в The Valley при залез, Родопите",
+          "caption": "A-frame при златен час"
+        },
+        "swing-couple": {
+          "alt": "Двойка на панорамната люлка над The Valley",
+          "caption": "Или се върни с нея"
+        },
+        "firepit-night": {
+          "alt": "Огнище през нощта под звездите в The Valley",
+          "caption": "Огън след карането"
+        },
+        "firepit-sunset": {
+          "alt": "Огнище при залез в The Valley",
+          "caption": "Огънят гори, когато се върнеш"
+        },
+        "swing-solo": {
+          "alt": "Люлка с гледка към A-frame къщичките в The Valley",
+          "caption": "Гледката от базата"
+        },
+        "wildflowers-meadow": {
+          "alt": "Ливада в The Valley с кабина и A-frame на заден план",
+          "caption": "Дълбоко в Родопите"
+        },
+        "bathroom-mirror": {
+          "alt": "Огледало в кабината, отразяващо A-frame в The Valley",
+          "caption": "Спи офгрид"
+        },
+        "morning-flowers": {
+          "alt": "Полски цветя и изглед от прозореца в The Valley",
+          "caption": "Бавни сутрини"
+        }
+      }
     }
   }
 }
