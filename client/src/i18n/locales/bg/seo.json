@@ -257,8 +257,6 @@
       "eyebrow": "THE VALLEY",
       "title": "Карай навън. Прибери се тук.",
       "intro": "Пътеки от двора, огън когато се върнеш, къщички дълбоко в Родопите.",
-      "showAll": "Виж всички снимки",
-      "close": "Затвори",
       "items": {
         "aframes-sunset": {
           "alt": "A-frame къщички в The Valley при залез, Родопите",
@@ -271,6 +269,14 @@
         "firepit-night": {
           "alt": "Огнище през нощта под звездите в The Valley",
           "caption": "Огън след карането"
+        },
+        "lux-cabin": {
+          "alt": "Luxury Cabin отвън в The Valley, Родопите",
+          "caption": "Luxury Cabin"
+        },
+        "stone-house": {
+          "alt": "Stone House отвън в The Valley, Родопите",
+          "caption": "Stone House"
         },
         "firepit-sunset": {
           "alt": "Огнище при залез в The Valley",
@@ -291,22 +297,6 @@
         "morning-flowers": {
           "alt": "Полски цветя и изглед от прозореца в The Valley",
           "caption": "Бавни сутрини"
-        },
-        "lux-cabin": {
-          "alt": "Luxury Cabin отвън в The Valley, Родопите",
-          "caption": "Luxury Cabin"
-        },
-        "lux-cabin-sunset": {
-          "alt": "Luxury Cabin при златен час в The Valley",
-          "caption": "Luxury Cabin при залез"
-        },
-        "stone-house": {
-          "alt": "Stone House отвън в The Valley, Родопите",
-          "caption": "Stone House"
-        },
-        "stone-house-deck": {
-          "alt": "Терасата на Stone House с гледка към The Valley",
-          "caption": "Терасата на Stone House"
         }
       }
     }

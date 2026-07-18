@@ -32,9 +32,9 @@ export function getEnduroHeroResponsive() {
 }
 
 /**
- * Hospitality mosaic sequence for /enduro.
- * Order: place → people → fire → units → land → cabin details.
- * Captions / alts in i18n `enduro.gallery.items.*`.
+ * Valley gallery sequence for /enduro.
+ * Lux Cabin + Stone House use the listing cover images.
+ * Captions live in i18n `enduro.gallery.items.*`.
  */
 export const ENDURO_GALLERY = Object.freeze([
   galleryItem('aframes-sunset'),
@@ -42,17 +42,9 @@ export const ENDURO_GALLERY = Object.freeze([
   galleryItem('firepit-night', 1200, 1500),
   galleryItem('lux-cabin', 1200, 1500),
   galleryItem('stone-house', 1200, 1500),
-  galleryItem('firepit-sunset'),
   galleryItem('swing-solo'),
+  galleryItem('firepit-sunset'),
   galleryItem('wildflowers-meadow'),
   galleryItem('bathroom-mirror'),
-  galleryItem('morning-flowers'),
-  galleryItem('lux-cabin-sunset', 1200, 1500),
-  galleryItem('stone-house-deck', 1200, 1500)
+  galleryItem('morning-flowers')
 ]);
-
-/** First 5 = Airbnb-style cover mosaic (1 lead + 4 tiles). */
-export const ENDURO_MOSAIC_COUNT = 5;
-
-/** Next 4 = dense secondary strip on-page. Remainder lightbox-only. */
-export const ENDURO_STRIP_COUNT = 4;
