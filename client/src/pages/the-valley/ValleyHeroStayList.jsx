@@ -34,9 +34,12 @@ function ValleyHeroStayListSkeleton() {
 /**
  * /valley hero card stay list — label, three units, promoted buyout row.
  * Consumes {@link useValleyHeroStayItems}; mounted in {@link ValleyBrowseHeroSection} on desktop.
+ * @param {{ unitBookingSearch?: string }} [props]
  */
-export default function ValleyHeroStayList() {
-  const { units, buyout, listings, buyoutInventory } = useValleyHeroStayItems();
+export default function ValleyHeroStayList({ unitBookingSearch } = {}) {
+  const { units, buyout, listings, buyoutInventory } = useValleyHeroStayItems({
+    unitBookingSearch
+  });
   const { t } = useTranslation('valley');
 
   const isLoading =

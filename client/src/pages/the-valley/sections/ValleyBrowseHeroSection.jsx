@@ -28,6 +28,10 @@ function ValleyHeroStayListCardFallback() {
   );
 }
 
+/**
+ * /valley browse hero — copy left, stay selector card right on desktop.
+ * Optional `copy` / `stayListProps` let campaign pages reuse the same shell.
+ */
 const ValleyBrowseHeroSection = ({
   containerRef,
   heroRef,
@@ -35,7 +39,10 @@ const ValleyBrowseHeroSection = ({
   shouldPlayVideo,
   scrollToAccommodations,
   primaryAction = null,
-  secondaryAction = null
+  secondaryAction = null,
+  copy = null,
+  stayListProps = null,
+  forceStill = false
 }) => {
   const { openModal } = useBookingSearch();
   const { season } = useSeason();
@@ -50,12 +57,23 @@ const ValleyBrowseHeroSection = ({
     onClick: scrollToAccommodations
   };
 
+  const microLabel = copy?.microLabel ?? t('hero.microLabel');
+  const mobileTitle = copy?.mobileTitle ?? t('hero.title');
+  const mobileSubtitle = copy?.mobileSubtitle ?? t('hero.subtitle');
+  const mobileBody1 = copy?.mobileBody1 ?? t('hero.body1');
+  const mobileBody2 = copy?.mobileBody2 ?? t('hero.body2');
+  const desktopHeadline = copy?.desktopHeadline ?? t('hero.browse.headline');
+  const desktopSubline = copy?.desktopSubline ?? t('hero.browse.subline');
+  const desktopExploreLabel = copy?.desktopExploreLabel ?? t('hero.browse.ctaExploreStays');
+  const showMobileBodies = copy?.hideMobileBodies !== true;
+  const playVideo = forceStill ? false : shouldPlayVideo;
+
   return (
     <SplitVideoHeroSection
       containerRef={containerRef}
       heroRef={heroRef}
       videoRef={videoRef}
-      shouldPlayVideo={shouldPlayVideo}
+      shouldPlayVideo={playVideo}
       videoSrc={VALLEY_VIDEOS[season]}
       stillSrc={VALLEY_STILLS[season]}
       stillAlt={
@@ -77,7 +95,7 @@ const ValleyBrowseHeroSection = ({
           transition={{ duration: 0.8, delay: 0.2 }}
           className="font-serif text-xs md:text-sm tracking-[0.2em] uppercase text-white/70 mb-4 drop-shadow-sm"
         >
-          {t('hero.microLabel')}
+          {microLabel}
         </motion.p>
 
         <motion.h1
@@ -86,35 +104,43 @@ const ValleyBrowseHeroSection = ({
           transition={{ duration: 0.8, delay: 0.3 }}
           className="font-['Playfair_Display'] text-5xl md:text-7xl text-white font-semibold tracking-tight leading-tight drop-shadow-2xl mb-3"
         >
-          {t('hero.title')}
+          {mobileTitle}
         </motion.h1>
 
-        <motion.h2
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.35 }}
-          className="font-serif text-xl md:text-2xl text-white/95 font-normal tracking-tight mb-6 drop-shadow-sm"
-        >
-          {t('hero.subtitle')}
-        </motion.h2>
+        {mobileSubtitle ? (
+          <motion.h2
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.35 }}
+            className="font-serif text-xl md:text-2xl text-white/95 font-normal tracking-tight mb-6 drop-shadow-sm"
+          >
+            {mobileSubtitle}
+          </motion.h2>
+        ) : null}
 
-        <motion.p
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.4 }}
-          className="text-base md:text-lg text-white/90 max-w-2xl mx-auto font-serif leading-relaxed drop-shadow-sm mb-3"
-        >
-          {t('hero.body1')}
-        </motion.p>
+        {showMobileBodies ? (
+          <>
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.4 }}
+              className="text-base md:text-lg text-white/90 max-w-2xl mx-auto font-serif leading-relaxed drop-shadow-sm mb-3"
+            >
+              {mobileBody1}
+            </motion.p>
 
-        <motion.p
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.45 }}
-          className="text-base md:text-lg text-white/90 max-w-2xl mx-auto font-serif leading-relaxed drop-shadow-sm mb-8"
-        >
-          {t('hero.body2')}
-        </motion.p>
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.45 }}
+              className="text-base md:text-lg text-white/90 max-w-2xl mx-auto font-serif leading-relaxed drop-shadow-sm mb-8"
+            >
+              {mobileBody2}
+            </motion.p>
+          </>
+        ) : (
+          <div className="mb-8" />
+        )}
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -148,7 +174,7 @@ const ValleyBrowseHeroSection = ({
               transition={{ duration: 0.8, delay: 0.2 }}
               className="font-serif text-sm tracking-[0.2em] uppercase text-white/70 mb-4 drop-shadow-sm"
             >
-              {t('hero.microLabel')}
+              {microLabel}
             </motion.p>
 
             <motion.h1
@@ -157,7 +183,7 @@ const ValleyBrowseHeroSection = ({
               transition={{ duration: 0.8, delay: 0.3 }}
               className="font-['Playfair_Display'] text-5xl xl:text-6xl 2xl:text-7xl text-white font-semibold tracking-tight leading-tight drop-shadow-2xl mb-5 max-w-2xl"
             >
-              {t('hero.browse.headline')}
+              {desktopHeadline}
             </motion.h1>
 
             <motion.p
@@ -166,7 +192,7 @@ const ValleyBrowseHeroSection = ({
               transition={{ duration: 0.8, delay: 0.38 }}
               className="text-base md:text-lg text-white/90 max-w-2xl font-serif leading-relaxed drop-shadow-sm mb-8"
             >
-              {t('hero.browse.subline')}
+              {desktopSubline}
             </motion.p>
 
             <motion.div
@@ -177,10 +203,10 @@ const ValleyBrowseHeroSection = ({
             >
               <button
                 type="button"
-                onClick={scrollToAccommodations}
+                onClick={resolvedSecondary.onClick}
                 className="border border-white/30 text-white px-8 py-4 font-medium uppercase tracking-[0.3em] text-sm hover:bg-white/10 transition-all backdrop-blur-sm rounded-full min-h-[44px] touch-manipulation"
               >
-                {t('hero.browse.ctaExploreStays')}
+                {desktopExploreLabel}
               </button>
             </motion.div>
           </>
@@ -189,7 +215,7 @@ const ValleyBrowseHeroSection = ({
           isDesktopHero ? (
             <Suspense fallback={<ValleyHeroStayListCardFallback />}>
               <HeroBookingCardShell>
-                <ValleyHeroStayList />
+                <ValleyHeroStayList {...(stayListProps || {})} />
               </HeroBookingCardShell>
             </Suspense>
           ) : (

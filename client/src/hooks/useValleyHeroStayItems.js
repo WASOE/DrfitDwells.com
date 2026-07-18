@@ -46,7 +46,7 @@ import '../i18n/ns/booking';
  *   buyoutInventory: { status: 'idle'|'loading'|'loaded'|'error', error: string|null }
  * }}
  */
-export function useValleyHeroStayItems() {
+export function useValleyHeroStayItems({ unitBookingSearch } = {}) {
   const { language } = useSiteLanguage();
   const { t: tValley } = useTranslation('valley');
   const { t: tBooking } = useTranslation('booking');
@@ -162,8 +162,11 @@ export function useValleyHeroStayItems() {
   }, []);
 
   const units = useMemo(
-    () => buildValleyHeroUnitItems(listingsBySlug, coversBySlug, language, tValley, tBooking),
-    [listingsBySlug, coversBySlug, language, tValley, tBooking]
+    () =>
+      buildValleyHeroUnitItems(listingsBySlug, coversBySlug, language, tValley, tBooking, {
+        unitBookingSearch
+      }),
+    [listingsBySlug, coversBySlug, language, tValley, tBooking, unitBookingSearch]
   );
 
   const buyout = useMemo(

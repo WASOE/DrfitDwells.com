@@ -21,11 +21,17 @@ export const PAID_TRAFFIC_MOBILE_STICKY_CLEARANCE =
  * @param {{ hash?: string }} [options]
  * @returns {{ pathname: string, hash?: string }}
  */
-export function buildPaidTrafficStayNavTarget(route, language, { hash } = {}) {
+export function buildPaidTrafficStayNavTarget(route, language, { hash, search } = {}) {
   const pathname = localizePath(route, language);
-  if (!hash) return { pathname };
-  const normalizedHash = hash.startsWith('#') ? hash : `#${hash}`;
-  return { pathname, hash: normalizedHash };
+  /** @type {{ pathname: string, hash?: string, search?: string }} */
+  const target = { pathname };
+  if (hash) {
+    target.hash = hash.startsWith('#') ? hash : `#${hash}`;
+  }
+  if (search) {
+    target.search = search.startsWith('?') ? search : `?${search}`;
+  }
+  return target;
 }
 
 export function isPaidTrafficLandingPath(pathname) {

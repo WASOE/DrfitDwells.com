@@ -34,9 +34,10 @@ export function formatValleyHeroSleepsLabel(capacity, tValley) {
  * @param {string} route
  * @param {'en'|'bg'} language
  */
-export function buildValleyHeroUnitBookingTo(route, language) {
+export function buildValleyHeroUnitBookingTo(route, language, { search } = {}) {
   return buildPaidTrafficStayNavTarget(route, language, {
-    hash: PAID_TRAFFIC_BOOKING_HASH
+    hash: PAID_TRAFFIC_BOOKING_HASH,
+    search
   });
 }
 
@@ -55,7 +56,15 @@ export function buildValleyHeroBuyoutBookingTo(language) {
  * @param {(key: string, options?: object) => string} tValley
  * @param {(key: string, options?: object) => string} tBooking
  */
-export function buildValleyHeroUnitItem(meta, listingEntry, cover, language, tValley, tBooking) {
+export function buildValleyHeroUnitItem(
+  meta,
+  listingEntry,
+  cover,
+  language,
+  tValley,
+  tBooking,
+  { unitBookingSearch } = {}
+) {
   const listing = listingEntry?.listing ?? null;
   const title = tValley(`hero.selector.stays.${meta.i18nKey}.title`);
   const fit = tValley(`hero.selector.stays.${meta.i18nKey}.fit`);
@@ -71,7 +80,9 @@ export function buildValleyHeroUnitItem(meta, listingEntry, cover, language, tVa
     sleeps: formatValleyHeroSleepsLabel(listing?.capacity, tValley),
     fromPrice: formatListingFromPrice(listing, tBooking),
     cover: cover?.url ? { url: cover.url, alt: cover.alt || title } : null,
-    bookingTo: buildValleyHeroUnitBookingTo(meta.route, language)
+    bookingTo: buildValleyHeroUnitBookingTo(meta.route, language, {
+      search: unitBookingSearch
+    })
   };
 }
 
@@ -115,7 +126,8 @@ export function buildValleyHeroUnitItems(
   coversBySlug,
   language,
   tValley,
-  tBooking
+  tBooking,
+  { unitBookingSearch } = {}
 ) {
   return VALLEY_STAY_SELECTOR_META.map((meta) => {
     const listingEntry = listingsBySlug[meta.listingSlug] ?? null;
@@ -132,7 +144,8 @@ export function buildValleyHeroUnitItems(
       cover?.url ? cover : null,
       language,
       tValley,
-      tBooking
+      tBooking,
+      { unitBookingSearch }
     );
   });
 }
