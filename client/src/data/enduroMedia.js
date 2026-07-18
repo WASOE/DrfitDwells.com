@@ -33,7 +33,7 @@ export function getEnduroHeroResponsive() {
 
 /**
  * Valley gallery sequence for /enduro.
- * Lux Cabin + Stone House use the listing cover images.
+ * Lux Cabin + Stone House use the listing cover stills provided for the page.
  * Captions live in i18n `enduro.gallery.items.*`.
  */
 export const ENDURO_GALLERY = Object.freeze([
