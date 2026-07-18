@@ -32,10 +32,10 @@ const emailService = require('../services/emailService');
 const {
   LEGAL_ACCEPTANCE_TERMS_VERSION,
   LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
-  LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
-  LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
   LEGAL_ACCEPTANCE_TERMS_URL,
-  LEGAL_ACCEPTANCE_CANCELLATION_URL
+  LEGAL_ACCEPTANCE_CANCELLATION_URL,
+  getLegalAcceptanceCheckboxTexts,
+  normalizeLegalAcceptanceLocale
 } = require('../config/legalAcceptance');
 const Stripe = require('stripe');
 
@@ -923,10 +923,22 @@ router.post('/', bookingCreateLimiter, [
     .equals(LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION)
     .withMessage('Invalid activity risk version'),
   body('legalAcceptance.checkbox1TextSnapshot')
-    .equals(LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT)
+    .custom((value, { req }) => {
+      const expected = getLegalAcceptanceCheckboxTexts(req.body?.legalAcceptance?.locale);
+      if (value !== expected.checkbox1) {
+        throw new Error('Invalid checkbox 1 text');
+      }
+      return true;
+    })
     .withMessage('Invalid checkbox 1 text'),
   body('legalAcceptance.checkbox2TextSnapshot')
-    .equals(LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT)
+    .custom((value, { req }) => {
+      const expected = getLegalAcceptanceCheckboxTexts(req.body?.legalAcceptance?.locale);
+      if (value !== expected.checkbox2) {
+        throw new Error('Invalid checkbox 2 text');
+      }
+      return true;
+    })
     .withMessage('Invalid checkbox 2 text'),
   body('legalAcceptance.locale').optional().isString().isLength({ max: 50 }).withMessage('locale is too long'),
   body('specialRequests').optional().isLength({ max: 500 }).withMessage('Special requests cannot exceed 500 characters'),
@@ -1961,11 +1973,11 @@ router.post('/', bookingCreateLimiter, [
         lastName: String(guestInfo.lastName || '').trim(),
         ip: String(req.ip || '').trim() || null,
         userAgent: String(req.get('user-agent') || '').trim() || null,
-        locale: typeof legalAcceptance.locale === 'string' && legalAcceptance.locale.trim()
-          ? legalAcceptance.locale.trim().slice(0, 50)
-          : (typeof req.get('accept-language') === 'string' && req.get('accept-language').trim()
-            ? req.get('accept-language').trim().slice(0, 50)
-            : null),
+        locale: normalizeLegalAcceptanceLocale(
+          typeof legalAcceptance.locale === 'string' && legalAcceptance.locale.trim()
+            ? legalAcceptance.locale.trim()
+            : req.get('accept-language')
+        ),
         checkbox1TextSnapshot: legalAcceptance.checkbox1TextSnapshot,
         checkbox2TextSnapshot: legalAcceptance.checkbox2TextSnapshot
       }

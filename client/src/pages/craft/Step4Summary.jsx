@@ -8,12 +8,7 @@ import { useSiteLanguage } from '../../hooks/useSiteLanguage';
 import { formatStayDayWithWeekday } from '../../utils/localeDates';
 import { getAttributionPayload } from '../../tracking/attribution';
 import { getMetaClientContextPayload } from '../../tracking/metaClientContext';
-import {
-  LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
-  LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
-  LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
-  LEGAL_ACCEPTANCE_TERMS_VERSION
-} from '../../constants/legalAcceptance';
+import { buildLegalAcceptancePayload } from '../../constants/legalAcceptance';
 
 const Step4Summary = () => {
   const navigate = useNavigate();
@@ -209,15 +204,11 @@ const Step4Summary = () => {
             specialRequests: guestInfo.specialRequests || ''
           }
         },
-        legalAcceptance: {
-          acceptedTermsAndCancellation: !!guestInfo.agreedToTerms,
-          acceptedActivityRisk: !!guestInfo.agreedToActivityRisk,
-          termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
-          activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
-          checkbox1TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
-          checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
-          locale: language || undefined
-        }
+        legalAcceptance: buildLegalAcceptancePayload({
+          agreedToTerms: guestInfo.agreedToTerms,
+          agreedToActivityRisk: guestInfo.agreedToActivityRisk,
+          locale: language
+        })
       };
 
       console.log('[Step4] Submitting booking data:', {

@@ -1,10 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
 import { useBookingContext } from '../../context/BookingContext';
 import { cabinAPI } from '../../services/api';
-import {
-  LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT
-} from '../../constants/legalAcceptance';
+import LegalAcceptanceCheckboxes from '../../components/booking/LegalAcceptanceCheckboxes';
 
 // Nature-inspired icons (reused from Step1)
 const HeartIcon = () => (
@@ -604,49 +601,21 @@ const CraftEmbedded = () => {
                     )}
 
                     {/* Terms and Conditions */}
-                    <div>
-                      <label className="flex items-start cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={formData.agreedToTerms}
-                          onChange={(e) => handleInputChange('agreedToTerms', e.target.checked)}
-                          className={`w-5 h-5 text-drift-green border-gray-300 rounded focus:ring-drift-green focus:ring-2 mt-0.5 ${
-                            errors.agreedToTerms ? 'border-red-500' : ''
-                          }`}
-                        />
-                        <span className="ml-4 text-sm text-gray-900 leading-relaxed">
-                          I agree to the{' '}
-                          <Link to="/terms" target="_blank" rel="noopener noreferrer" className="text-drift-green hover:text-drift-light-green underline">
-                            retreat terms and conditions
-                          </Link>{' '}
-                          and understand the{' '}
-                          <Link to="/cancellation-policy" target="_blank" rel="noopener noreferrer" className="text-drift-green hover:text-drift-light-green underline">
-                            cancellation policy
-                          </Link> *
-                        </span>
-                      </label>
-                      {errors.agreedToTerms && (
-                        <p className="mt-1 text-sm text-red-600">{errors.agreedToTerms}</p>
-                      )}
-                    </div>
-                    <div>
-                      <label className="flex items-start cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={formData.agreedToActivityRisk}
-                          onChange={(e) => handleInputChange('agreedToActivityRisk', e.target.checked)}
-                          className={`w-5 h-5 text-drift-green border-gray-300 rounded focus:ring-drift-green focus:ring-2 mt-0.5 ${
-                            errors.agreedToActivityRisk ? 'border-red-500' : ''
-                          }`}
-                        />
-                        <span className="ml-4 text-sm text-gray-900 leading-relaxed">
-                          {LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT}
-                        </span>
-                      </label>
-                      {errors.agreedToActivityRisk && (
-                        <p className="mt-1 text-sm text-red-600">{errors.agreedToActivityRisk}</p>
-                      )}
-                    </div>
+                    <LegalAcceptanceCheckboxes
+                      agreedToTerms={formData.agreedToTerms}
+                      agreedToActivityRisk={formData.agreedToActivityRisk}
+                      onAgreedToTermsChange={(checked) => handleInputChange('agreedToTerms', checked)}
+                      onAgreedToActivityRiskChange={(checked) => handleInputChange('agreedToActivityRisk', checked)}
+                      termsError={errors.agreedToTerms}
+                      activityRiskError={errors.agreedToActivityRisk}
+                      requiredMarker
+                      className="space-y-4"
+                      labelClassName="flex items-start cursor-pointer"
+                      checkboxClassName="w-5 h-5 text-drift-green border-gray-300 rounded focus:ring-drift-green focus:ring-2 mt-0.5"
+                      textClassName="ml-4 text-sm text-gray-900 leading-relaxed"
+                      linkClassName="text-drift-green hover:text-drift-light-green underline"
+                      errorClassName="mt-1 text-sm text-red-600"
+                    />
                   </div>
                 </div>
               </div>

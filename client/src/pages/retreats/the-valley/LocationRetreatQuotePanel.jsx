@@ -8,7 +8,9 @@ import PriceDetailsModal from '../../../components/booking/PriceDetailsModal';
 import LocationPaymentForm from './LocationPaymentForm';
 import PaymentRecoveryNotice from '../../../payments/PaymentRecoveryNotice';
 import { useValleyStripePaymentShell } from '../../../payments/useValleyStripePaymentShell';
+import { getStripeElementsLocale } from '../../../payments/stripeElementsLocale';
 import useLocationRetreatBooking from '../../../hooks/useLocationRetreatBooking';
+import { useSiteLanguage } from '../../../hooks/useSiteLanguage';
 import { formatDateOnlyLocal } from '../../../utils/dateOnly';
 import '../../../i18n/ns/booking';
 import '../../../i18n/ns/valley';
@@ -24,6 +26,8 @@ function quoteMatchesContextDates(quote, checkIn, checkOut) {
 const LocationRetreatQuotePanel = ({ onQuoteChange, panelRef }) => {
   const { t: tb } = useTranslation('booking');
   const { t: tv } = useTranslation('valley');
+  const { language } = useSiteLanguage();
+  const stripeElementsLocale = getStripeElementsLocale(language);
   const [showPriceDetails, setShowPriceDetails] = useState(false);
   const [roomAllocationOpen, setRoomAllocationOpen] = useState(false);
 
@@ -289,9 +293,9 @@ const LocationRetreatQuotePanel = ({ onQuoteChange, panelRef }) => {
 
                 {stripeLoadStatus !== 'failed' && stripePromise ? (
                   <Elements
-                    key={`valley-panel:${elementsRemountKey}`}
+                    key={`valley-panel:${elementsRemountKey}:${language}`}
                     stripe={stripePromise}
-                    options={{ clientSecret }}
+                    options={{ clientSecret, locale: stripeElementsLocale }}
                   >
                     <LocationPaymentForm
                       onSubmit={handlePay}

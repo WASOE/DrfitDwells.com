@@ -5,6 +5,7 @@ import { Minus, Plus, X } from 'lucide-react';
 import LocationPaymentForm from './LocationPaymentForm';
 import PaymentRecoveryNotice from '../../../payments/PaymentRecoveryNotice';
 import { useValleyStripePaymentShell } from '../../../payments/useValleyStripePaymentShell';
+import { getStripeElementsLocale } from '../../../payments/stripeElementsLocale';
 import useLocationRetreatBooking from '../../../hooks/useLocationRetreatBooking';
 import { useBookingSearch } from '../../../context/BookingSearchContext';
 import { useSiteLanguage } from '../../../hooks/useSiteLanguage';
@@ -178,6 +179,7 @@ const RetreatBookingCalendar = ({
   const { t: tb } = useTranslation('booking');
   const { t: tv } = useTranslation('valley');
   const { language } = useSiteLanguage();
+  const stripeElementsLocale = getStripeElementsLocale(language);
   const { updateDates } = useBookingSearch();
   const isSheet = variant === 'sheet';
   const minNights = resolveMinNights(inventory);
@@ -749,9 +751,9 @@ const RetreatBookingCalendar = ({
 
             {stripeLoadStatus !== 'failed' && stripePromise ? (
               <Elements
-                key={`valley-calendar:${elementsRemountKey}`}
+                key={`valley-calendar:${elementsRemountKey}:${language}`}
                 stripe={stripePromise}
-                options={{ clientSecret }}
+                options={{ clientSecret, locale: stripeElementsLocale }}
               >
                 <LocationPaymentForm
                   onSubmit={handlePay}

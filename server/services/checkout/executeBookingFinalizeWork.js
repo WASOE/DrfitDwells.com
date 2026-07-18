@@ -16,6 +16,7 @@ const {
   findParentCabinForCabinType
 } = require('../publicAvailabilityService');
 const AssignmentEngine = require('../assignmentEngine');
+const { normalizeLegalAcceptanceLocale } = require('../../config/legalAcceptance');
 
 function sameObjectIdish(a, b) {
   if (!a || !b) return false;
@@ -204,12 +205,11 @@ function buildBookingData({
       lastName: String(guestInfo?.lastName || '').trim(),
       ip: String(requestMeta.ip || '').trim() || null,
       userAgent: String(requestMeta.userAgent || '').trim() || null,
-      locale:
+      locale: normalizeLegalAcceptanceLocale(
         typeof legalAcceptance.locale === 'string' && legalAcceptance.locale.trim()
-          ? legalAcceptance.locale.trim().slice(0, 50)
-          : typeof requestMeta.acceptLanguage === 'string' && requestMeta.acceptLanguage.trim()
-            ? requestMeta.acceptLanguage.trim().slice(0, 50)
-            : null,
+          ? legalAcceptance.locale.trim()
+          : requestMeta.acceptLanguage
+      ),
       checkbox1TextSnapshot: legalAcceptance.checkbox1TextSnapshot,
       checkbox2TextSnapshot: legalAcceptance.checkbox2TextSnapshot
     }

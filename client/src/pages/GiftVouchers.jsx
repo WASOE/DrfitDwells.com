@@ -21,6 +21,7 @@ import {
 import { giftVoucherAPI } from '../services/api';
 import { getAttributionPayload } from '../tracking/attribution';
 import { useSiteLanguage } from '../hooks/useSiteLanguage';
+import { getStripeElementsLocale } from '../payments/stripeElementsLocale';
 import { getLanguageFromPath } from '../utils/localizedRoutes';
 import '../i18n/ns/giftVoucher';
 
@@ -112,6 +113,7 @@ function AmountCard({ cents, selected, onClick }) {
 export default function GiftVouchers() {
   const { t } = useTranslation('giftVoucher');
   const { language } = useSiteLanguage();
+  const stripeElementsLocale = getStripeElementsLocale(language);
   const location = useLocation();
   const isBg = language === 'bg';
   const routeLanguage = getLanguageFromPath(location.pathname);
@@ -749,7 +751,11 @@ export default function GiftVouchers() {
                     </button>
                   ) : (
                     <div className="space-y-4">
-                      <Elements stripe={stripePromise} options={{ clientSecret }}>
+                      <Elements
+                        key={`gift-voucher:${language}`}
+                        stripe={stripePromise}
+                        options={{ clientSecret, locale: stripeElementsLocale }}
+                      >
                         <PaymentForm
                           submitDisabled={!validation.ok}
                           onSubmit={handleStripeSubmit}

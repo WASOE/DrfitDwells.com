@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams, useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { X } from 'lucide-react';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { cabinAPI, cabinTypeAPI, bookingAPI } from '../services/api';
@@ -20,13 +20,12 @@ import { formatStayDayLong } from '../utils/localeDates';
 import { isInAppBrowser } from '../utils/inAppBrowser';
 import { useStripeLoader } from '../payments/useStripeLoader';
 import { useStripeElementsGuard } from '../payments/useStripeElementsGuard';
+import { getStripeElementsLocale } from '../payments/stripeElementsLocale';
 import PaymentRecoveryNotice from '../payments/PaymentRecoveryNotice';
 import {
-  LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
-  LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
-  LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
-  LEGAL_ACCEPTANCE_TERMS_VERSION
+  buildLegalAcceptancePayload
 } from '../constants/legalAcceptance';
+import LegalAcceptanceCheckboxes from '../components/booking/LegalAcceptanceCheckboxes';
 import { getListingCoverImage } from '../utils/listingGalleryUtils';
 import { isCheckoutSessionV2Enabled } from '../utils/checkoutSessionV2Flags';
 import {
@@ -364,15 +363,11 @@ export function buildRedirectBookingPayloadFromPending(
       phone: fd.phone || ''
     },
     specialRequests: fd.specialRequests || '',
-    legalAcceptance: {
-      acceptedTermsAndCancellation: !!fd.agreedToTerms,
-      acceptedActivityRisk: !!fd.agreedToActivityRisk,
-      termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
-      activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
-      checkbox1TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
-      checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
-      locale: language || undefined
-    },
+    legalAcceptance: buildLegalAcceptancePayload({
+      agreedToTerms: fd.agreedToTerms,
+      agreedToActivityRisk: fd.agreedToActivityRisk,
+      locale: language
+    }),
     metaClientContext: metaClientContext || undefined,
     checkoutId: pending.checkoutId,
     voucherRedemptionId: pending.voucherRedemptionId || undefined,
@@ -491,15 +486,11 @@ export function buildCreateBookingPayload({
       phone: formData.phone.trim()
     },
     specialRequests: formData.specialRequests.trim(),
-    legalAcceptance: {
-      acceptedTermsAndCancellation: !!formData.agreedToTerms,
-      acceptedActivityRisk: !!formData.agreedToActivityRisk,
-      termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
-      activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
-      checkbox1TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
-      checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
-      locale: language || undefined
-    },
+    legalAcceptance: buildLegalAcceptancePayload({
+      agreedToTerms: formData.agreedToTerms,
+      agreedToActivityRisk: formData.agreedToActivityRisk,
+      locale: language
+    }),
     checkoutId,
     voucherRedemptionId: voucherRedemptionId || undefined,
     metaClientContext: metaClientContext || undefined,
@@ -1583,7 +1574,7 @@ const ConfirmBooking = () => {
       return;
     }
     if (!formData.agreedToTerms || !formData.agreedToActivityRisk) {
-      setError('Please accept both required legal acknowledgments before completing your booking.');
+      setError(t('confirm.legalAcceptanceRequired'));
       return;
     }
     if (checkoutSessionV2Enabled && noPaymentRequired) {
@@ -1601,7 +1592,7 @@ const ConfirmBooking = () => {
         emitCheckoutStartedFunnel(checkoutId || null);
       }
       if (appliedVoucherCode && !voucherRedemptionId) {
-        throw new Error('Please continue to payment first so we can reserve your voucher.');
+        throw new Error(t('confirm.continueToPaymentForVoucher'));
       }
       await createBooking(null);
     } catch (err) {
@@ -1645,11 +1636,11 @@ const ConfirmBooking = () => {
       return;
     }
     if (!formData.agreedToTerms || !formData.agreedToActivityRisk) {
-      setError('Please accept both required legal acknowledgments before completing your booking.');
+      setError(t('confirm.legalAcceptanceRequired'));
       return;
     }
     if (appliedVoucherCode && !voucherRedemptionId) {
-      setError('Please continue to payment first so we can reserve your voucher.');
+      setError(t('confirm.continueToPaymentForVoucher'));
       return;
     }
     setSubmitLoading(true);
@@ -1776,16 +1767,16 @@ const ConfirmBooking = () => {
 
   const paymentPrecheckMessages = useMemo(() => {
     const msgs = [];
-    if (!hasValidGuestInfo) msgs.push('Add valid guest details (name, email, phone) above.');
-    if (!hasLegalAcceptance) msgs.push('Tick both legal acknowledgement checkboxes above.');
-    if (quoteLoading) msgs.push('Price is still loading—please wait.');
-    if (quoteError) msgs.push(`Price could not be loaded: ${quoteError}`);
-    if (!serverQuote) msgs.push('No price quote is available yet.');
+    if (!hasValidGuestInfo) msgs.push(t('confirm.precheckGuestDetails'));
+    if (!hasLegalAcceptance) msgs.push(t('confirm.precheckLegal'));
+    if (quoteLoading) msgs.push(t('confirm.precheckPriceLoading'));
+    if (quoteError) msgs.push(t('confirm.precheckPriceError', { error: quoteError }));
+    if (!serverQuote) msgs.push(t('confirm.precheckNoQuote'));
     if (serverQuote && shouldBlockCardPaymentPrecheck(serverQuote, { noPaymentRequired, fullVoucherCoverage })) {
-      msgs.push('No card payment is required for this booking (total is below the minimum for online card payment).');
+      msgs.push(t('confirm.precheckNoCardNeeded'));
     }
     return msgs;
-  }, [hasValidGuestInfo, hasLegalAcceptance, quoteLoading, quoteError, serverQuote, noPaymentRequired, fullVoucherCoverage]);
+  }, [hasValidGuestInfo, hasLegalAcceptance, quoteLoading, quoteError, serverQuote, noPaymentRequired, fullVoucherCoverage, t]);
 
   const precheckDisabled =
     !hasValidGuestInfo ||
@@ -1874,13 +1865,15 @@ const ConfirmBooking = () => {
     });
   }, [checkoutId, canonicalPaymentIntentId, quoteSnapshotHash, showPaymentElement]);
 
-  const elementsReactKey = `${checkoutSessionV2Enabled && v2PaymentElementKey ? v2PaymentElementKey : 'elements'}:${elementsRemountKey}`;
+  const elementsReactKey = `${checkoutSessionV2Enabled && v2PaymentElementKey ? v2PaymentElementKey : 'elements'}:${elementsRemountKey}:${language}`;
 
   const continueToPayMessages = useMemo(() => {
     const msgs = [...paymentPrecheckMessages];
-    if (!pricing) msgs.push('Stay and dates are incomplete so we cannot calculate the price yet.');
+    if (!pricing) msgs.push(t('confirm.precheckIncompleteStay'));
     return msgs;
-  }, [paymentPrecheckMessages, pricing]);
+  }, [paymentPrecheckMessages, pricing, t]);
+
+  const stripeElementsLocale = getStripeElementsLocale(language);
 
   const continueToPayDisabled =
     checkoutInitLoading || !pricing || precheckDisabled;
@@ -2099,7 +2092,7 @@ const ConfirmBooking = () => {
         <div className="py-4 border-b border-gray-200">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="min-w-0 flex-1 w-full">
-              <p className="text-sm text-gray-600 mb-2">Gift voucher code</p>
+              <p className="text-sm text-gray-600 mb-2">{t('confirm.giftVoucherCode')}</p>
               <input
                 type="text"
                 value={voucherDraft}
@@ -2115,7 +2108,7 @@ const ConfirmBooking = () => {
                 onClick={handleApplyVoucher}
                 className="h-9 self-start rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-800 hover:bg-gray-50 md:h-auto md:rounded-none md:border-0 md:bg-transparent md:p-0 md:hover:bg-transparent md:text-gray-700 md:underline"
               >
-                Apply
+                {t('cta.apply')}
               </button>
               {appliedVoucherCode ? (
                 <button
@@ -2123,14 +2116,14 @@ const ConfirmBooking = () => {
                   onClick={handleRemoveVoucher}
                   className="h-9 self-start rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-800 hover:bg-gray-50 md:h-auto md:rounded-none md:border-0 md:bg-transparent md:p-0 md:hover:bg-transparent md:text-gray-700 md:underline"
                 >
-                  Remove
+                  {t('actions.remove')}
                 </button>
               ) : null}
             </div>
           </div>
           {appliedVoucherCode ? (
             <div className="mt-3 text-sm text-gray-700 space-y-1">
-              {previewFullVoucherCoverage ? <p>This voucher can fully cover the booking.</p> : null}
+              {previewFullVoucherCoverage ? <p>{t('confirm.voucherFullyCovers')}</p> : null}
               {serverQuote?.voucherMessage ? <p className="text-amber-700">{serverQuote.voucherMessage}</p> : null}
             </div>
           ) : null}
@@ -2162,10 +2155,14 @@ const ConfirmBooking = () => {
                 {previewVoucherAppliedCents > 0 ? (
                   <>
                     <p className="text-xs text-gray-600 tabular-nums">
-                      Gift voucher applied: €{(previewVoucherAppliedCents / 100).toLocaleString()}
+                      {t('confirm.giftVoucherApplied', {
+                        amount: (previewVoucherAppliedCents / 100).toLocaleString()
+                      })}
                     </p>
                     <p className="font-semibold text-gray-900 tabular-nums">
-                      Amount due today: €{(amountDueTodayCents / 100).toLocaleString()} EUR
+                      {t('confirm.amountDueToday', {
+                        amount: (amountDueTodayCents / 100).toLocaleString()
+                      })}
                     </p>
                   </>
                 ) : null}
@@ -2196,36 +2193,13 @@ const ConfirmBooking = () => {
           </a>
         </div>
 
-        <div className="py-4 border-t border-gray-200 space-y-4">
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={!!formData.agreedToTerms}
-              onChange={(e) => handleFormChange('agreedToTerms', e.target.checked)}
-              className="mt-0.5 w-5 h-5 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
-            />
-            <span className="text-sm text-gray-800 leading-relaxed">
-              I have read and accept the{' '}
-              <Link to="/terms" target="_blank" rel="noopener noreferrer" className="underline">
-                Terms & Conditions
-              </Link>{' '}
-              and{' '}
-              <Link to="/cancellation-policy" target="_blank" rel="noopener noreferrer" className="underline">
-                Cancellation Policy
-              </Link>.
-            </span>
-          </label>
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={!!formData.agreedToActivityRisk}
-              onChange={(e) => handleFormChange('agreedToActivityRisk', e.target.checked)}
-              className="mt-0.5 w-5 h-5 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
-            />
-            <span className="text-sm text-gray-800 leading-relaxed">
-              {LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT}
-            </span>
-          </label>
+        <div className="py-4 border-t border-gray-200">
+          <LegalAcceptanceCheckboxes
+            agreedToTerms={formData.agreedToTerms}
+            agreedToActivityRisk={formData.agreedToActivityRisk}
+            onAgreedToTermsChange={(checked) => handleFormChange('agreedToTerms', checked)}
+            onAgreedToActivityRiskChange={(checked) => handleFormChange('agreedToActivityRisk', checked)}
+          />
         </div>
 
         {/* Payment - Stripe when configured, else pay on arrival */}
@@ -2242,7 +2216,7 @@ const ConfirmBooking = () => {
                 disabled={continueToPayDisabled}
                 className="w-full h-12 rounded-xl bg-[#81887A] text-white font-semibold hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {checkoutInitLoading ? t('confirm.processingPayment') : 'Continue to secure payment'}
+                {checkoutInitLoading ? t('confirm.processingPayment') : t('confirm.continueToSecurePayment')}
               </button>
               {continueToPayDisabled && !checkoutInitLoading ? (
                 <div className="mt-3 space-y-1 text-sm text-gray-700" role="status" aria-live="polite">
@@ -2258,8 +2232,13 @@ const ConfirmBooking = () => {
             <>
               <p className="text-sm text-gray-600 mb-4">
                 {voucherAppliedCents > 0
-                  ? `Voucher applied: €${(voucherAppliedCents / 100).toLocaleString()} | Remaining card payment: €${(stripeAmountCents / 100).toLocaleString()}`
-                  : `Card payment: €${(stripeAmountCents / 100).toLocaleString()}`}
+                  ? t('confirm.voucherAndCardPayment', {
+                      voucherAmount: (voucherAppliedCents / 100).toLocaleString(),
+                      cardAmount: (stripeAmountCents / 100).toLocaleString()
+                    })
+                  : t('confirm.cardPayment', {
+                      amount: (stripeAmountCents / 100).toLocaleString()
+                    })}
               </p>
               {stripeLoadStatus === 'failed' || paymentElementTerminal ? (
                 <PaymentRecoveryNotice
@@ -2278,7 +2257,7 @@ const ConfirmBooking = () => {
                 <Elements
                   key={elementsReactKey}
                   stripe={stripePromise}
-                  options={{ clientSecret }}
+                  options={{ clientSecret, locale: stripeElementsLocale }}
                 >
                   <PaymentFormInner
                     onSubmit={handleStripeSubmit}
@@ -2301,8 +2280,11 @@ const ConfirmBooking = () => {
             <>
               <p className="text-sm text-gray-600 mb-4">
                 {voucherAppliedCents > 0
-                  ? `Voucher applied: €${(voucherAppliedCents / 100).toLocaleString()} | Remaining card payment: €0`
-                  : 'Card payment: €0'}
+                  ? t('confirm.voucherAndCardPayment', {
+                      voucherAmount: (voucherAppliedCents / 100).toLocaleString(),
+                      cardAmount: '0'
+                    })
+                  : t('confirm.cardPayment', { amount: '0' })}
               </p>
               <button
                 type="button"
@@ -2314,7 +2296,7 @@ const ConfirmBooking = () => {
                 }
                 className="w-full h-12 rounded-xl bg-[#81887A] text-white font-semibold hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {submitLoading ? t('confirm.submittingPayment') : 'Complete booking'}
+                {submitLoading ? t('confirm.submittingPayment') : t('confirm.completeBooking')}
               </button>
               {!submitLoading && (!pricing || precheckDisabled) ? (
                 <div className="mt-3 space-y-1 text-sm text-gray-700" role="status" aria-live="polite">
