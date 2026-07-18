@@ -7,13 +7,11 @@ function buildSrcSet(id, ext, widths) {
   return widths.map((w) => `/media/enduro/${id}-${w}w.${ext} ${w}w`).join(', ');
 }
 
-function galleryItem(id, role, { width, height }) {
+function galleryItem(id) {
   return {
     id,
-    role,
-    width,
-    height,
-    ratio: `${width} / ${height}`,
+    width: 1200,
+    height: 1600,
     avifSrcSet: buildSrcSet(id, 'avif', GALLERY_WIDTHS),
     webpSrcSet: buildSrcSet(id, 'webp', GALLERY_WIDTHS),
     fallbackSrc: `/media/enduro/${id}.jpg`
@@ -34,17 +32,16 @@ export function getEnduroHeroResponsive() {
 }
 
 /**
- * Editorial gallery story for /enduro.
- * Ratios match source files so frames never crop the view.
+ * Valley gallery sequence for /enduro.
  * Captions live in i18n `enduro.gallery.items.*`.
  */
 export const ENDURO_GALLERY = Object.freeze([
-  galleryItem('aframes-sunset', 'feature', { width: 1200, height: 1600 }),
-  galleryItem('swing-couple', 'emotion', { width: 1200, height: 1600 }),
-  galleryItem('firepit-night', 'emotion', { width: 1200, height: 1500 }),
-  galleryItem('swing-solo', 'moment', { width: 1200, height: 1600 }),
-  galleryItem('firepit-sunset', 'moment', { width: 1200, height: 1600 }),
-  galleryItem('wildflowers-meadow', 'moment', { width: 1200, height: 1600 }),
-  galleryItem('bathroom-mirror', 'detail', { width: 1200, height: 1600 }),
-  galleryItem('morning-flowers', 'detail', { width: 1200, height: 1600 })
+  galleryItem('aframes-sunset'),
+  galleryItem('swing-couple'),
+  galleryItem('firepit-night'),
+  galleryItem('swing-solo'),
+  galleryItem('firepit-sunset'),
+  galleryItem('wildflowers-meadow'),
+  galleryItem('bathroom-mirror'),
+  galleryItem('morning-flowers')
 ]);
