@@ -1,0 +1,141 @@
+/* Premium editorial gallery — natural ratios, no forced crops */
+
+.enduro-gallery {
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(241, 236, 226, 0.9) 0%, transparent 55%),
+    #faf8f4;
+}
+
+.enduro-gallery__frame {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1rem;
+  background: #e6e1d8;
+  box-shadow:
+    0 1px 0 rgba(26, 26, 26, 0.04),
+    0 18px 40px -28px rgba(26, 26, 26, 0.45);
+}
+
+.enduro-gallery__frame img {
+  display: block;
+  width: 100%;
+  height: auto;
+  vertical-align: middle;
+}
+
+.enduro-gallery__caption {
+  margin-top: 0.75rem;
+  font-family: Montserrat, system-ui, sans-serif;
+  font-size: 0.8125rem;
+  letter-spacing: 0.02em;
+  color: #3a3a3a;
+}
+
+@media (min-width: 768px) {
+  .enduro-gallery__caption {
+    font-size: 0.9375rem;
+  }
+}
+
+/* Mobile / tablet: cinematic horizontal strip that keeps full portraits */
+.enduro-gallery__rail {
+  display: flex;
+  gap: 0.875rem;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 1.25rem;
+  padding-inline: 1.25rem;
+  padding-bottom: 0.5rem;
+  margin-inline: -1.25rem;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.enduro-gallery__rail::-webkit-scrollbar {
+  display: none;
+}
+
+.enduro-gallery__rail-item {
+  flex: 0 0 min(72vw, 320px);
+  scroll-snap-align: center;
+}
+
+@media (min-width: 640px) {
+  .enduro-gallery__rail-item {
+    flex-basis: min(46vw, 340px);
+  }
+}
+
+@media (min-width: 1024px) {
+  .enduro-gallery__rail {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1.5rem;
+    overflow: visible;
+    scroll-snap-type: none;
+    padding-inline: 0;
+    margin-inline: 0;
+  }
+
+  .enduro-gallery__rail-item {
+    flex: none;
+    width: auto;
+  }
+}
+
+.enduro-gallery__pair {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.75rem;
+}
+
+@media (min-width: 768px) {
+  .enduro-gallery__pair {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.75rem 2rem;
+    align-items: start;
+  }
+}
+
+.enduro-gallery__feature {
+  max-width: min(100%, 26rem);
+  margin-inline: auto;
+}
+
+@media (min-width: 768px) {
+  .enduro-gallery__feature {
+    max-width: 34rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .enduro-gallery__feature {
+    max-width: 40rem;
+  }
+}
+
+/* Desktop: staggered editorial pair — larger presence, still uncropped */
+@media (min-width: 1024px) {
+  .enduro-gallery__pair--stagger {
+    max-width: 68rem;
+    gap: 2.5rem 2.75rem;
+  }
+
+  .enduro-gallery__pair--stagger > *:first-child {
+    transform: translateY(1.5rem);
+  }
+
+  .enduro-gallery__pair--stagger > *:last-child {
+    transform: translateY(-0.5rem);
+  }
+}
+
+.enduro-gallery__band-label {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 0.6875rem;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: #81887a;
+  margin-bottom: 1.25rem;
+}

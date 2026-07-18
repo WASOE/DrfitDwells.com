@@ -100,8 +100,11 @@ export default function Enduro() {
       >
         <section className="border-b border-[rgba(0,0,0,0.08)]">
           <div className="valley-container py-5 md:py-8 lg:py-10">
-            <div className="grid grid-cols-1 lg:grid-cols-2 lg:gap-10 lg:items-stretch lg:min-h-[560px]">
-              <div className="relative overflow-hidden rounded-2xl bg-neutral-900 min-h-[320px] md:min-h-[420px] lg:min-h-full">
+            <div className="grid grid-cols-1 lg:grid-cols-2 lg:gap-10 lg:items-start">
+              <div
+                className="relative overflow-hidden rounded-2xl bg-neutral-900 w-full"
+                style={{ aspectRatio: '16 / 10' }}
+              >
                 <HeroResponsivePicture
                   avifSrcSet={hero.avifSrcSet}
                   webpSrcSet={hero.webpSrcSet}
@@ -110,7 +113,7 @@ export default function Enduro() {
                   height={hero.height}
                   sizes="(max-width: 1023px) 100vw, 50vw"
                   alt={heroAlt}
-                  className="absolute inset-0 h-full w-full object-cover"
+                  className="absolute inset-0 h-full w-full object-cover object-center"
                   loading="eager"
                   fetchPriority="high"
                   decoding="async"
@@ -119,10 +122,10 @@ export default function Enduro() {
                   className="absolute inset-0"
                   style={{
                     background:
-                      'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.45) 48%, rgba(0,0,0,0.15) 100%)'
+                      'linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.35) 52%, rgba(0,0,0,0.12) 100%)'
                   }}
                 />
-                <div className="relative flex h-full min-h-[320px] md:min-h-[420px] lg:min-h-full flex-col justify-end p-5 md:p-7 lg:p-9">
+                <div className="absolute inset-0 flex flex-col justify-end p-5 md:p-7 lg:p-9">
                   <p className="font-serif text-[10px] md:text-xs uppercase tracking-[0.2em] text-white/75 mb-2">
                     {e('hero.eyebrow')} · {e('hero.location')}
                   </p>
