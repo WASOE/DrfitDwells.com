@@ -81,7 +81,9 @@ const ROUTES = [
   '/retreat-venue-bulgaria',
   '/bg/retreat-venue-bulgaria',
   '/off-grid-stays-bulgaria',
-  '/bg/off-grid-stays-bulgaria'
+  '/bg/off-grid-stays-bulgaria',
+  '/enduro',
+  '/bg/enduro'
 ];
 
 const CONTENT_TYPES = {
@@ -219,13 +221,34 @@ async function writePrerenderedRoute(route, html) {
   await fs.writeFile(outputPath, html, 'utf8');
 }
 
+/** Festival QR landings: drop competing homepage preload + hydrated modulepreload weight. */
+function finalizeEnduroHtml(route, html) {
+  if (route !== '/enduro' && route !== '/bg/enduro') return html;
+  let next = html.replace(
+    /<link\b[^>]*href="\/uploads\/Videos\/The-cabin-header\.summer-poster\.jpg"[^>]*>\s*/gi,
+    ''
+  );
+  // Hydrated capture injects every lazy chunk as modulepreload — lethal on 3G. Keep entry discovery.
+  next = next.replace(/<link\b[^>]*rel="modulepreload"[^>]*>\s*/gi, '');
+  next = next.replace(
+    /<link\b[^>]*href="\/assets\/daypicker-theme-[^"]+\.css"[^>]*>\s*/gi,
+    ''
+  );
+  // Consent mounts deferred on paid traffic — strip hydrated banner from static first paint.
+  next = next.replace(
+    /<div[^>]*role="dialog"[^>]*aria-label="Cookie and privacy choices"[^>]*>[\s\S]*?<\/div><\/div><\/div>/i,
+    ''
+  );
+  return next;
+}
+
 async function prerenderRoute(browser, route, port) {
   const page = await browser.newPage();
   const targetUrl = `http://${HOST}:${port}${route}`;
 
   try {
-    // Mobile-first HTML for home so hero markup matches real phones (split panes + poster LCP, not desktop video).
-    if (route === '/' || route === '/bg') {
+    // Mobile-first HTML for home + enduro so hero LCP matches festival phones.
+    if (route === '/' || route === '/bg' || route === '/enduro' || route === '/bg/enduro') {
       await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true });
     } else {
       await page.setViewport({ width: 1280, height: 720, deviceScaleFactor: 1 });
@@ -235,6 +258,7 @@ async function prerenderRoute(browser, route, port) {
 
     let html = await page.evaluate(() => `<!DOCTYPE html>${document.documentElement.outerHTML}`);
     html = revertDeferredGoogleFontMedia(html);
+    html = finalizeEnduroHtml(route, html);
     await writePrerenderedRoute(route, html);
 
     const title = await page.title();

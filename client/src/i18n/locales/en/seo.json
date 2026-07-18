@@ -202,5 +202,52 @@
     "howItWorks": "Request availability and capacity. We respond within 48 hours with options and pricing.",
     "valleyLink": "The Valley: workation & retreat setting",
     "cta": "Request availability"
+  },
+  "enduro": {
+    "metaTitle": "The Valley | Off-Grid Enduro Basecamp in the Rhodopes",
+    "metaDescription": "Ride from your door. Single track and forest roads out the gate, off-grid cabins deep in the Rhodope Mountains. 10% off with code ENDURO.",
+    "hero": {
+      "eyebrow": "DRIFT & DWELLS",
+      "location": "RHODOPE MTS · BULGARIA",
+      "titleSmall": "THE",
+      "title": "VALLEY",
+      "subline": "the basecamp riders keep to themselves"
+    },
+    "promo": {
+      "offer": "10% OFF · CODE ENDURO",
+      "validity": "book this week",
+      "code": "ENDURO"
+    },
+    "cta": {
+      "primary": "Book your base",
+      "secondary": "Ask about the whole place"
+    },
+    "proof": {
+      "heading": "RIDE FROM YOUR DOOR",
+      "one": {
+        "title": "Ride from your door",
+        "body": "Single track and forest roads out the gate."
+      },
+      "two": {
+        "title": "Sleep off-grid",
+        "body": "Off-grid cabins deep in the Rhodopes."
+      },
+      "three": {
+        "title": "Fire after the ride",
+        "body": "The fire pit is lit when you get back. A-frames, the stone house and the luxury cabin."
+      }
+    },
+    "crew": {
+      "eyebrow": "THE WHOLE PLACE · ONE BOOKING",
+      "titleLine1": "ONE VALLEY.",
+      "titleLine2": "YOUR CREW ONLY.",
+      "body": "Every cabin, one booking, zero strangers. A-frames, the stone house and the luxury cabin.",
+      "hook": "Or come back with her."
+    },
+    "instagram": {
+      "lead": "See the valley before you ride it.",
+      "handle": "@driftdwells",
+      "cta": "Follow on Instagram"
+    }
   }
 }
