@@ -48,121 +48,134 @@ const EXPANDED_PARAGRAPHS = [
 ];
 
 /*
- * Art-directed collage — fixed pixel coordinates on a 440×506 artboard.
- * Pixel values are the exact equivalent of the percentage-based layout
- * that produced the approved screenshot (container was 440px wide at
- * the user's viewport with aspect-ratio 1/1.15 = 506px tall).
- *
- * 5 images, no duplicates, no auto-layout.
- * Heights are intentionally omitted so each photo keeps its natural
- * aspect ratio (just like the approved version did).
+ * Memory-lane collage — percentage layout on a fixed aspect artboard.
+ * Every slot has width + height so portraits cannot blow past the frame.
+ * Slight rotations and layered z-index keep the “scattered prints” feel
+ * without looking like a broken absolute layout.
  */
-const DESKTOP_COLLAGE = [
+const MEMORY_COLLAGE = [
   {
     src: '/uploads/The%20Cabin/22a9d01c-3e9a-4f5f-83b1-ef08b84ad473.jpeg',
-    alt: 'Cabin interior',
-    left: 0,
+    alt: 'Green hills above the cabin',
+    left: 2,
     top: 0,
-    width: 211,
-    rotate: -3,
+    width: 40,
+    height: 44,
+    rotate: -3.5,
     zIndex: 1,
+    objectPosition: 'center 18%',
   },
   {
     src: '/uploads/Content%20website/Picture-jose-valley.png',
     alt: 'Jose at the valley',
-    left: 132,
-    top: 10,
-    width: 242,
+    left: 26,
+    top: 8,
+    width: 48,
+    height: 54,
     rotate: 2,
-    zIndex: 3,
+    zIndex: 5,
+    objectPosition: 'center 20%',
   },
   {
     src: '/uploads/The%20Cabin/2b036140-b9f1-48c8-80fe-155be58a9d6a.jpeg',
-    alt: 'Hot tub in the mountains',
-    left: -22,
-    top: 278,
-    width: 194,
+    alt: 'Cabin interior',
+    left: 0,
+    top: 50,
+    width: 44,
+    height: 34,
     rotate: -2,
-    zIndex: 1,
+    zIndex: 2,
+    objectPosition: 'center 45%',
   },
   {
     src: '/uploads/Content%20website/SKy-view-Aframe.jpg',
     alt: 'A-frame cabin view',
-    left: 154,
-    top: 263,
-    width: 167,
-    rotate: 4,
-    zIndex: 2,
-  },
-  {
-    src: '/uploads/The%20Cabin/011f4645-32ce-4739-ac8e-16a900612ac7.jpeg',
-    alt: 'Cabin exterior',
-    left: 264,
-    top: 293,
-    width: 176,
-    rotate: -3,
-    zIndex: 1,
-  },
-];
-
-const MOBILE_COLLAGE = [
-  {
-    src: '/uploads/The%20Cabin/22a9d01c-3e9a-4f5f-83b1-ef08b84ad473.jpeg',
-    alt: 'Cabin interior',
-    left: 0,
-    top: 0,
-    width: 140,
-    rotate: -3,
-    zIndex: 1,
-  },
-  {
-    src: '/uploads/Content%20website/Picture-jose-valley.png',
-    alt: 'Jose at the valley',
-    left: 88,
-    top: 8,
-    width: 168,
-    rotate: 2,
+    left: 38,
+    top: 58,
+    width: 40,
+    height: 28,
+    rotate: 3,
     zIndex: 3,
-  },
-  {
-    src: '/uploads/The%20Cabin/2b036140-b9f1-48c8-80fe-155be58a9d6a.jpeg',
-    alt: 'Hot tub in the mountains',
-    left: -10,
-    top: 192,
-    width: 134,
-    rotate: -2,
-    zIndex: 1,
+    objectPosition: 'center 40%',
   },
   {
     src: '/uploads/The%20Cabin/011f4645-32ce-4739-ac8e-16a900612ac7.jpeg',
-    alt: 'Cabin exterior',
-    left: 178,
-    top: 200,
-    width: 120,
-    rotate: -3,
-    zIndex: 1,
+    alt: 'Cabin exterior at sunset',
+    left: 66,
+    top: 34,
+    width: 32,
+    height: 50,
+    rotate: -2.5,
+    zIndex: 2,
+    objectPosition: 'center 30%',
   },
 ];
 
-const CollageImage = ({ image, eager = false }) => (
+const CollagePhoto = ({ image, index, isInView }) => (
   <div
-    className="absolute overflow-hidden rounded-lg shadow-lg"
+    className="group absolute"
     style={{
-      left: `${image.left}px`,
-      top: `${image.top}px`,
-      width: `${image.width}px`,
+      left: `${image.left}%`,
+      top: `${image.top}%`,
+      width: `${image.width}%`,
+      height: `${image.height}%`,
       zIndex: image.zIndex,
-      transform: `rotate(${image.rotate}deg)`,
-      transformOrigin: 'center center',
+      // CSS rotate keeps motion transforms free for entrance animation
+      rotate: `${image.rotate}deg`,
     }}
   >
-    <img
-      src={image.src}
-      alt={image.alt}
-      className="w-full h-auto object-cover"
-      loading={eager ? 'eager' : 'lazy'}
-      decoding="async"
+    <motion.div
+      className="flex h-full w-full flex-col rounded-[10px] bg-white p-[3px]
+        shadow-[0_14px_34px_rgba(28,25,23,0.16),0_3px_8px_rgba(28,25,23,0.07)]
+        transition-shadow duration-300
+        md:rounded-xl md:p-1
+        lg:group-hover:shadow-[0_22px_48px_rgba(28,25,23,0.22),0_6px_14px_rgba(28,25,23,0.1)]"
+      initial={{ opacity: 0, scale: 0.92, y: 18 }}
+      animate={
+        isInView
+          ? { opacity: 1, scale: 1, y: 0 }
+          : { opacity: 0, scale: 0.92, y: 18 }
+      }
+      transition={{
+        duration: 0.7,
+        delay: 0.16 + index * 0.09,
+        ease: [0.22, 1, 0.36, 1],
+      }}
+    >
+      <div className="relative min-h-0 flex-1 overflow-hidden rounded-[7px] bg-stone-100 md:rounded-[10px]">
+        <img
+          src={image.src}
+          alt={image.alt}
+          className="h-full w-full object-cover transition-transform duration-500 ease-out lg:group-hover:scale-[1.03]"
+          style={{ objectPosition: image.objectPosition }}
+          loading={index < 2 ? 'eager' : 'lazy'}
+          decoding="async"
+          draggable={false}
+        />
+      </div>
+    </motion.div>
+  </div>
+);
+
+const MemoryCollage = ({ isInView }) => (
+  <div
+    className="relative mx-auto w-full max-w-[300px] sm:max-w-[340px] md:max-w-[400px] lg:max-w-[460px] xl:max-w-[500px]"
+    style={{ aspectRatio: '5 / 6' }}
+    aria-label="A scattered collection of photos from the Drift & Dwells story"
+  >
+    {/* Soft ground shadow so the cluster reads as one composition */}
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-[10%] rounded-[45%] bg-stone-900/[0.05] blur-3xl"
     />
+    {MEMORY_COLLAGE.map((image, index) => (
+      <CollagePhoto
+        key={image.alt}
+        image={image}
+        index={index}
+        isInView={isInView}
+      />
+    ))}
   </div>
 );
 
@@ -172,9 +185,9 @@ const HeroSection = () => {
   const isInView = useInView(ref, { once: true, margin: '-50px' });
 
   return (
-    <section ref={ref} className="py-16 md:py-24 lg:py-32 overflow-hidden">
-      <div className="max-w-7xl mx-auto px-4 sm:px-8 xl:px-12">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-start">
+    <section ref={ref} className="overflow-hidden py-16 md:py-24 lg:py-32">
+      <div className="mx-auto max-w-7xl px-4 sm:px-8 xl:px-12">
+        <div className="grid grid-cols-1 items-center gap-12 md:gap-16 lg:grid-cols-2 lg:gap-20 xl:gap-24">
           {/* Left column — story text */}
           <motion.div
             initial={{ opacity: 0, y: 30 }}
@@ -183,13 +196,13 @@ const HeroSection = () => {
             className="max-w-lg"
           >
             <h1
-              className="text-3xl md:text-4xl lg:text-[2.75rem] font-bold leading-[1.15] text-gray-900 mb-10"
+              className="mb-10 text-3xl font-bold leading-[1.15] text-gray-900 md:text-4xl lg:text-[2.75rem]"
               style={{ fontFamily: 'var(--valley-font-primary, Georgia, serif)' }}
             >
               The story of Drift &amp;&nbsp;Dwells
             </h1>
 
-            <div className="space-y-5 text-base md:text-[17px] leading-relaxed text-gray-700">
+            <div className="space-y-5 text-base leading-relaxed text-gray-700 md:text-[17px]">
               {INTRO_PARAGRAPHS.map((p, i) => (
                 <p key={i}>{p}</p>
               ))}
@@ -197,9 +210,12 @@ const HeroSection = () => {
 
             <button
               type="button"
-              onClick={() => setExpanded(prev => !prev)}
-              className="mt-8 text-[#c25530] hover:text-[#a8432a] text-base font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-[#c25530]/40 rounded"
-              style={{ fontFamily: 'var(--valley-font-primary, Georgia, serif)', fontStyle: 'italic' }}
+              onClick={() => setExpanded((prev) => !prev)}
+              className="mt-8 rounded text-base font-medium text-[#c25530] transition-colors hover:text-[#a8432a] focus:outline-none focus:ring-2 focus:ring-[#c25530]/40"
+              style={{
+                fontFamily: 'var(--valley-font-primary, Georgia, serif)',
+                fontStyle: 'italic',
+              }}
             >
               {expanded ? 'Close the story' : 'Read the story'}
             </button>
@@ -213,7 +229,7 @@ const HeroSection = () => {
                   transition={{ duration: 0.5, ease: 'easeInOut' }}
                   className="overflow-hidden"
                 >
-                  <div className="space-y-5 text-base md:text-[17px] leading-relaxed text-gray-700 pt-6">
+                  <div className="space-y-5 pt-6 text-base leading-relaxed text-gray-700 md:text-[17px]">
                     {EXPANDED_PARAGRAPHS.map((p, i) => (
                       <p key={`exp-${i}`}>{p}</p>
                     ))}
@@ -223,38 +239,20 @@ const HeroSection = () => {
             </AnimatePresence>
 
             <p
-              className="mt-12 text-2xl md:text-3xl text-gray-900"
-              style={{ fontFamily: 'var(--valley-font-primary, Georgia, serif)', fontStyle: 'italic' }}
+              className="mt-12 text-2xl text-gray-900 md:text-3xl"
+              style={{
+                fontFamily: 'var(--valley-font-primary, Georgia, serif)',
+                fontStyle: 'italic',
+              }}
             >
               Jose
             </p>
           </motion.div>
 
-          {/* Right column — art-directed collage (desktop) */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.96 }}
-            animate={isInView ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.96 }}
-            transition={{ duration: 0.8, delay: 0.3 }}
-            className="relative hidden md:block"
-            style={{ aspectRatio: '1 / 1.15' }}
-          >
-            {DESKTOP_COLLAGE.map((image, i) => (
-              <CollageImage key={image.alt} image={image} eager={i < 2} />
-            ))}
-          </motion.div>
-
-          {/* Mobile — separate manually tuned collage */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={isInView ? { opacity: 1 } : { opacity: 0 }}
-            transition={{ duration: 0.6, delay: 0.3 }}
-            className="relative md:hidden mx-auto w-full max-w-[310px]"
-            style={{ aspectRatio: '310 / 310' }}
-          >
-            {MOBILE_COLLAGE.map((image, i) => (
-              <CollageImage key={`${image.alt}-m`} image={image} eager={i < 2} />
-            ))}
-          </motion.div>
+          {/* Right column — memory-lane collage */}
+          <div className="w-full lg:justify-self-end">
+            <MemoryCollage isInView={isInView} />
+          </div>
         </div>
       </div>
     </section>
