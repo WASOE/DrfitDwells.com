@@ -58,6 +58,7 @@ export default function OpsInsights() {
   const [summary, setSummary] = useState(null);
   const [dataQuality, setDataQuality] = useState(null);
   const [bookings, setBookings] = useState(null);
+  const [reconciliation, setReconciliation] = useState(null);
   const [filterOptions, setFilterOptions] = useState({ cabins: [], cabinTypes: [], units: [] });
   const [loading, setLoading] = useState(true);
   const [bookingsLoading, setBookingsLoading] = useState(true);
@@ -123,18 +124,21 @@ export default function OpsInsights() {
         if (filters.cabinTypeId) summaryParams.cabinTypeId = filters.cabinTypeId;
         if (filters.unitId) summaryParams.unitId = filters.unitId;
 
-        const [summaryRes, qualityRes] = await Promise.all([
+        const [summaryRes, qualityRes, reconRes] = await Promise.all([
           opsReadAPI.insightsSummary(summaryParams),
-          opsReadAPI.insightsDataQuality({ propertyKind: filters.propertyKind })
+          opsReadAPI.insightsDataQuality({ propertyKind: filters.propertyKind }),
+          opsReadAPI.insightsReconciliation(summaryParams)
         ]);
         if (cancelled) return;
         setSummary(summaryRes.data?.data || null);
         setDataQuality(qualityRes.data?.data || null);
+        setReconciliation(reconRes.data?.data || null);
       } catch (err) {
         if (cancelled) return;
         setError(err?.response?.data?.message || 'Failed to load insights');
         setSummary(null);
         setDataQuality(null);
+        setReconciliation(null);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -382,6 +386,102 @@ export default function OpsInsights() {
             {formatMoneyFromCents(metrics.cancelledRevenueCents)}
           </p>
         </div>
+      </section>
+
+      <section className="bg-white border border-gray-200 rounded-xl p-4">
+        <h3 className="text-sm font-semibold text-gray-900 mb-1">Cash reconciliation (read-only)</h3>
+        <p className="text-xs text-gray-500 mb-3">
+          Additive comparison of commercial value, booking payment snapshot, and linked Stripe Payment
+          ledger. Not a full accounting P&amp;L.
+        </p>
+        {reconciliation ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
+              <div className="border border-gray-100 rounded-lg p-3">
+                <p className="text-xs text-gray-500 uppercase">Gross booked commercial</p>
+                <p className="text-lg font-semibold text-gray-900">
+                  {formatMoneyFromCents(reconciliation.commercial?.grossBookedRevenueCents?.value)}
+                </p>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  {reconciliation.commercial?.grossBookedRevenueCents?.source} ·{' '}
+                  {reconciliation.commercial?.grossBookedRevenueCents?.basis}
+                </p>
+              </div>
+              <div className="border border-gray-100 rounded-lg p-3">
+                <p className="text-xs text-gray-500 uppercase">Payment snapshot at booking</p>
+                <p className="text-lg font-semibold text-gray-900">
+                  {formatMoneyFromCents(reconciliation.paymentSnapshotAtBooking?.amountCents?.value)}
+                </p>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  {reconciliation.paymentSnapshotAtBooking?.amountCents?.source} ·{' '}
+                  {reconciliation.paymentSnapshotAtBooking?.amountCents?.basis}
+                </p>
+              </div>
+              <div className="border border-gray-100 rounded-lg p-3">
+                <p className="text-xs text-gray-500 uppercase">Linked ledger gross</p>
+                <p className="text-lg font-semibold text-gray-900">
+                  {formatMoneyFromCents(
+                    reconciliation.linkedPaymentLedger?.grossPaidAmountCents?.value
+                  )}
+                </p>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  {reconciliation.linkedPaymentLedger?.grossPaidAmountCents?.basis}
+                </p>
+              </div>
+              <div className="border border-gray-100 rounded-lg p-3">
+                <p className="text-xs text-gray-500 uppercase">Linked refunds</p>
+                <p className="text-lg font-semibold text-gray-900">
+                  {formatMoneyFromCents(
+                    reconciliation.linkedPaymentLedger?.refundedAmountCents?.value
+                  )}
+                </p>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  {reconciliation.linkedPaymentLedger?.refundedAmountCents?.basis}
+                </p>
+              </div>
+              <div className="border border-gray-100 rounded-lg p-3">
+                <p className="text-xs text-gray-500 uppercase">Linked ledger net</p>
+                <p className="text-lg font-semibold text-gray-900">
+                  {formatMoneyFromCents(reconciliation.linkedPaymentLedger?.netPaidAmountCents?.value)}
+                </p>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  {reconciliation.linkedPaymentLedger?.linkedPaymentCount ?? 0} linked payments
+                </p>
+              </div>
+              <div className="border border-gray-100 rounded-lg p-3">
+                <p className="text-xs text-gray-500 uppercase">Snapshot vs linked net</p>
+                <p className="text-lg font-semibold text-gray-900">
+                  {formatMoneyFromCents(reconciliation.variance?.snapshotVsLinkedLedgerCents)}
+                </p>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Commercial vs linked net:{' '}
+                  {formatMoneyFromCents(reconciliation.variance?.commercialVsLinkedNetPaidCents)}
+                </p>
+              </div>
+            </div>
+            <div className="border border-dashed border-gray-300 rounded-lg p-3 bg-gray-50">
+              <p className="text-xs font-semibold text-gray-700 uppercase">
+                Site-wide unlinked payments (not attributed to Cabin/Valley)
+              </p>
+              <p className="text-sm text-gray-800 mt-1">
+                Count: {reconciliation.siteWideUnlinkedPayments?.count ?? 0} · Amount shown for ops
+                review only:{' '}
+                {formatMoneyFromCents(reconciliation.siteWideUnlinkedPayments?.amountCents)}
+              </p>
+              <p className="text-[11px] text-gray-500 mt-1">
+                Excluded from zone variance. {reconciliation.siteWideUnlinkedPayments?.source}
+              </p>
+              <Link to="/ops/payments" className="inline-block mt-2 text-sm text-gray-900 underline">
+                Review payments ledger
+              </Link>
+            </div>
+            {reconciliation.exclusions?.locationBookingTreatment ? (
+              <p className="text-xs text-gray-500">{reconciliation.exclusions.locationBookingTreatment}</p>
+            ) : null}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">Reconciliation unavailable.</p>
+        )}
       </section>
 
       <section className="bg-white border border-gray-200 rounded-xl p-4">

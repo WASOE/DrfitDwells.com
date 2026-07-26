@@ -5,7 +5,8 @@ const {
   getInsightsSummaryReadModel,
   getInsightsDataQualityReadModel,
   getInsightsBookingsReadModel,
-  getInsightsFilterOptionsReadModel
+  getInsightsFilterOptionsReadModel,
+  getInsightsReconciliationReadModel
 } = require('../../../services/ops/readModels/insightsReadModel');
 
 const router = express.Router();
@@ -115,6 +116,32 @@ router.get('/bookings', async (req, res) => {
   } catch (error) {
     const statusCode = error.statusCode || 500;
     return res.status(statusCode).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/reconciliation', async (req, res) => {
+  try {
+    const { propertyKind, from, to, revenueBasis, cabinId, cabinTypeId, unitId } = req.query;
+    if (!propertyKind || !from || !to) {
+      return res.status(400).json({
+        success: false,
+        message: 'propertyKind, from, and to are required'
+      });
+    }
+
+    const data = await getInsightsReconciliationReadModel({
+      propertyKind,
+      from,
+      to,
+      revenueBasis: parseRevenueBasis(revenueBasis),
+      cabinId,
+      cabinTypeId,
+      unitId
+    });
+    return res.json({ success: true, data });
+  } catch (error) {
+    const status = error.statusCode || 500;
+    return res.status(status).json({ success: false, message: error.message });
   }
 });
 

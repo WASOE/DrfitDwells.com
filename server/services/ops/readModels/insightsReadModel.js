@@ -4,6 +4,7 @@ const { aggregateRevenueSummary } = require('../reporting/revenueMetricsService'
 const { buildInsightsDataQuality } = require('../reporting/insightsDataQualityService');
 const { aggregateInsightsBookings } = require('../reporting/insightsBookingsService');
 const { getInsightsFilterOptions } = require('../reporting/insightsFilterOptionsService');
+const { aggregateInsightsReconciliation } = require('../reporting/insightsReconciliationService');
 
 function revenueBasisNote(revenueBasis) {
   if (revenueBasis === 'booked') {
@@ -79,9 +80,14 @@ async function getInsightsFilterOptionsReadModel({ propertyKind }) {
   return getInsightsFilterOptions({ propertyKind });
 }
 
+async function getInsightsReconciliationReadModel(params) {
+  return aggregateInsightsReconciliation(params);
+}
+
 module.exports = {
   getInsightsSummaryReadModel,
   getInsightsDataQualityReadModel,
   getInsightsBookingsReadModel,
-  getInsightsFilterOptionsReadModel
+  getInsightsFilterOptionsReadModel,
+  getInsightsReconciliationReadModel
 };

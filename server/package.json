@@ -39,7 +39,7 @@
     "test:manual-reservation-email-policy": "node --test scripts/manualReservationEmailPolicy.test.cjs",
     "test:property-kind": "node --test scripts/propertyKindResolver.test.cjs",
     "test:funnel-events": "node --test scripts/funnelEventDedupe.test.cjs scripts/funnelEventService.test.cjs scripts/funnelEventRoutes.test.cjs scripts/bookingQuoteFunnelHook.test.cjs",
-    "test:insights": "node --test scripts/propertyKindJoin.test.cjs scripts/insightsReadModel.test.cjs scripts/batch3aInsightsConversion.test.cjs",
+    "test:insights": "node --test scripts/propertyKindJoin.test.cjs scripts/insightsReadModel.test.cjs scripts/batch3aInsightsConversion.test.cjs scripts/batch3bInsightsReconciliation.test.cjs",
     "test:gift-voucher-email-escape": "node --test scripts/giftVoucherEmailEscape.test.cjs",
     "test:gift-voucher-delivery-modes": "node --test scripts/giftVoucherDeliveryModes.test.cjs",
     "test:gift-voucher-scheduled-delivery": "node --test scripts/giftVoucherScheduledDelivery.test.cjs",
