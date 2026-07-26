@@ -52,6 +52,12 @@ async function buildInsightsDataQuality({ propertyKind }) {
 
   const issues = {
     missing_property_kind: { code: 'missing_property_kind', count: 0, sampleBookingIds: [] },
+    both_cabin_and_cabin_type: {
+      code: 'both_cabin_and_cabin_type',
+      count: 0,
+      sampleBookingIds: []
+    },
+    missing_inventory_ref: { code: 'missing_inventory_ref', count: 0, sampleBookingIds: [] },
     zero_price_manual: { code: 'zero_price_manual', count: 0, sampleBookingIds: [] },
     missing_unit_on_valley_booking: {
       code: 'missing_unit_on_valley_booking',
@@ -62,6 +68,18 @@ async function buildInsightsDataQuality({ propertyKind }) {
 
   for (const booking of bookings) {
     const row = normalizeStayRow(booking, maps);
+
+    if (row.propertyKindIssue === 'both_cabin_and_cabin_type') {
+      issues.both_cabin_and_cabin_type.count += 1;
+      pushSample(issues.both_cabin_and_cabin_type.sampleBookingIds, booking._id);
+      continue;
+    }
+
+    if (row.propertyKindIssue === 'missing_inventory_ref') {
+      issues.missing_inventory_ref.count += 1;
+      pushSample(issues.missing_inventory_ref.sampleBookingIds, booking._id);
+      continue;
+    }
 
     if (row.propertyKindIssue === 'missing_property_kind' || row.propertyKind == null) {
       issues.missing_property_kind.count += 1;

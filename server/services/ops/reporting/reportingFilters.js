@@ -37,7 +37,7 @@ function buildRevenueBasisDateFilter(revenueBasis, from, to) {
     return {
       range,
       filter: {
-        createdAt: { $gte: range.start, $lte: range.endInclusive }
+        createdAt: { $gte: range.start, $lt: range.endExclusive }
       }
     };
   }
@@ -45,7 +45,7 @@ function buildRevenueBasisDateFilter(revenueBasis, from, to) {
   return {
     range,
     filter: {
-      checkIn: { $gte: range.start, $lte: range.endInclusive }
+      checkIn: { $gte: range.start, $lt: range.endExclusive }
     }
   };
 }

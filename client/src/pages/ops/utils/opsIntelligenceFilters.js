@@ -15,6 +15,14 @@ export function currentMonthDateRange() {
   return { from, to };
 }
 
+export function daysBetweenInclusive(from, to) {
+  if (!from || !to) return null;
+  const start = new Date(`${String(from).slice(0, 10)}T00:00:00.000Z`);
+  const end = new Date(`${String(to).slice(0, 10)}T00:00:00.000Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return null;
+  return Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+}
+
 export function formatPercent(rate) {
   if (rate == null || !Number.isFinite(rate)) return '—';
   return `${(rate * 100).toFixed(1)}%`;

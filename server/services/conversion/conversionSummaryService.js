@@ -3,6 +3,7 @@
 const BookingFunnelEvent = require('../../models/BookingFunnelEvent');
 const { buildInclusiveDateRange } = require('../ops/reporting/reportingFilters');
 const { isAllowedPropertyKind } = require('../ops/reporting/propertyKindJoin');
+const { validateConversionEntityFilters } = require('../ops/reporting/entityFilterValidation');
 
 const MAIN_FUNNEL_STEPS = Object.freeze([
   { eventType: 'property_view', label: 'Property view', source: 'client' },
@@ -15,7 +16,7 @@ const MAIN_FUNNEL_STEPS = Object.freeze([
 const MAX_RANGE_DAYS = 180;
 
 const SEARCH_RESULTS_NOTE =
-  'Search results are site-wide in Batch 2 and not included in Cabin/Valley drop-off.';
+  'Search results are site-wide and not included in Cabin/Valley drop-off. Entity filters never apply.';
 
 function daySpan(range) {
   return Math.round((range.endExclusive.getTime() - range.start.getTime()) / (24 * 60 * 60 * 1000));
@@ -48,11 +49,24 @@ function validateConversionQuery({ propertyKind, from, to }) {
   };
 }
 
-async function countIdentifiedStep({ eventType, propertyKind, range }) {
+function buildZoneMatch({ eventType, propertyKind, range, entity }) {
   const match = {
     eventType,
     propertyKind,
-    createdAt: { $gte: range.start, $lt: range.endExclusive },
+    createdAt: { $gte: range.start, $lt: range.endExclusive }
+  };
+  if (entity?.cabinId) {
+    match.cabinId = entity.cabinId;
+  }
+  if (entity?.cabinTypeId) {
+    match.cabinTypeId = entity.cabinTypeId;
+  }
+  return match;
+}
+
+async function countIdentifiedStep({ eventType, propertyKind, range, entity }) {
+  const match = {
+    ...buildZoneMatch({ eventType, propertyKind, range, entity }),
     sessionKey: { $type: 'string' }
   };
 
@@ -71,11 +85,9 @@ async function countIdentifiedStep({ eventType, propertyKind, range }) {
   };
 }
 
-async function countOrphanEvents({ eventType, propertyKind, range, prefix }) {
+async function countOrphanEvents({ eventType, propertyKind, range, prefix, entity }) {
   const match = {
-    eventType,
-    propertyKind,
-    createdAt: { $gte: range.start, $lt: range.endExclusive },
+    ...buildZoneMatch({ eventType, propertyKind, range, entity }),
     dedupeKey: { $regex: `^${prefix}:orphan:` }
   };
   return BookingFunnelEvent.countDocuments(match);
@@ -103,12 +115,10 @@ async function countSearchResultsSupplementary({ range }) {
   };
 }
 
-async function countQuoteFailed({ propertyKind, range }) {
-  const events = await BookingFunnelEvent.find({
-    eventType: 'quote_failed',
-    propertyKind,
-    createdAt: { $gte: range.start, $lt: range.endExclusive }
-  })
+async function countQuoteFailed({ propertyKind, range, entity }) {
+  const events = await BookingFunnelEvent.find(
+    buildZoneMatch({ eventType: 'quote_failed', propertyKind, range, entity })
+  )
     .select('quoteFailureClass dedupeKey')
     .lean();
 
@@ -154,14 +164,18 @@ function sessionContinuedSequential(timeline, fromType, toType) {
   );
 }
 
-async function computeDropOff({ propertyKind, range }) {
+async function computeDropOff({ propertyKind, range, entity }) {
   const eventTypes = MAIN_FUNNEL_STEPS.map((step) => step.eventType);
-  const events = await BookingFunnelEvent.find({
+  const match = {
     eventType: { $in: eventTypes },
     propertyKind,
     createdAt: { $gte: range.start, $lt: range.endExclusive },
     sessionKey: { $type: 'string' }
-  })
+  };
+  if (entity?.cabinId) match.cabinId = entity.cabinId;
+  if (entity?.cabinTypeId) match.cabinTypeId = entity.cabinTypeId;
+
+  const events = await BookingFunnelEvent.find(match)
     .select('sessionKey eventType createdAt')
     .lean();
 
@@ -200,15 +214,29 @@ async function computeDropOff({ propertyKind, range }) {
   return dropOff;
 }
 
-async function aggregateConversionSummary({ propertyKind, from, to }) {
+async function aggregateConversionSummary({
+  propertyKind,
+  from,
+  to,
+  cabinId = null,
+  cabinTypeId = null,
+  unitId = null
+}) {
   const { range, from: fromDate, to: toDate } = validateConversionQuery({ propertyKind, from, to });
+  const entity = await validateConversionEntityFilters({
+    propertyKind,
+    cabinId,
+    cabinTypeId,
+    unitId
+  });
 
   const steps = [];
   for (const step of MAIN_FUNNEL_STEPS) {
     const counts = await countIdentifiedStep({
       eventType: step.eventType,
       propertyKind,
-      range
+      range,
+      entity
     });
     const entry = {
       ...step,
@@ -220,26 +248,33 @@ async function aggregateConversionSummary({ propertyKind, from, to }) {
         eventType: 'quote_received',
         propertyKind,
         range,
-        prefix: 'qr'
+        prefix: 'qr',
+        entity
       });
     }
     steps.push(entry);
   }
 
   const searchResults = await countSearchResultsSupplementary({ range });
-  const quoteFailed = await countQuoteFailed({ propertyKind, range });
-  const dropOff = await computeDropOff({ propertyKind, range });
+  const quoteFailed = await countQuoteFailed({ propertyKind, range, entity });
+  const dropOff = await computeDropOff({ propertyKind, range, entity });
 
   return {
     propertyKind,
     period: { from: fromDate, to: toDate },
+    filters: {
+      cabinId: entity.cabinId ? String(entity.cabinId) : null,
+      cabinTypeId: entity.cabinTypeId ? String(entity.cabinTypeId) : null
+    },
     steps,
     dropOff,
     supplementary: {
       searchResults: {
         sessionCount: searchResults.sessionCount,
         eventCount: searchResults.eventCount,
-        note: SEARCH_RESULTS_NOTE
+        note: SEARCH_RESULTS_NOTE,
+        siteWide: true,
+        entityFiltersApplied: false
       },
       quoteFailed: {
         eventCount: quoteFailed.eventCount,
@@ -253,6 +288,8 @@ async function aggregateConversionSummary({ propertyKind, from, to }) {
       funnelModelNote:
         'Zone funnel excludes search_results. Drop-off uses sessions that reached step N and also reached step N+1 in order within the period.',
       propertyKindFilterNote: 'Main funnel steps are filtered by propertyKind.',
+      entityFilterNote:
+        'Optional cabinId/cabinTypeId scope zone funnel and quote_failed only. unitId is not supported. search_results remain site-wide.',
       consentNote:
         'Client steps require analytics consent. Server quote/conversion events may lack sessionKey when consent declined.',
       checkoutStartedNote: 'checkout_started has no historical data before Batch 2 deployment.',

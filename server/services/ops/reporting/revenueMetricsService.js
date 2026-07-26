@@ -3,9 +3,15 @@
 const Booking = require('../../../models/Booking');
 const LocationBooking = require('../../../models/LocationBooking');
 const { baseBookingFilter, buildRevenueBasisDateFilter } = require('./reportingFilters');
-const { loadPropertyKindMaps, isAllowedPropertyKind } = require('./propertyKindJoin');
-const { normalizeStayRow } = require('./normalizedStayRow');
+const { isAllowedPropertyKind } = require('./propertyKindJoin');
+const { normalizeStayRow, resolveChannel } = require('./normalizedStayRow');
 const { FIXTURE_BOOKING_EMAIL_PATTERN } = require('../../../utils/fixtureExclusion');
+const {
+  validateInsightsEntityFilters,
+  buildBookingEntityMatch,
+  shouldIncludeLocationBookings,
+  parseChannelFilter
+} = require('./entityFilterValidation');
 
 function emptyChannelBucket() {
   return { count: 0, revenueCents: 0 };
@@ -61,7 +67,25 @@ function buildEmptySummary({ propertyKind, from, to, revenueBasis }) {
   };
 }
 
-async function aggregateRevenueSummary({ propertyKind, from, to, revenueBasis = 'checkIn' }) {
+function statusIsCancelled(status) {
+  return String(status || '') === 'cancelled';
+}
+
+function channelMatches(rowChannel, channelFilter) {
+  if (!channelFilter) return true;
+  return rowChannel === channelFilter;
+}
+
+async function resolveSummaryContext({
+  propertyKind,
+  from,
+  to,
+  revenueBasis = 'checkIn',
+  cabinId = null,
+  cabinTypeId = null,
+  unitId = null,
+  channel = null
+}) {
   if (!isAllowedPropertyKind(propertyKind)) {
     const error = new Error('propertyKind must be cabin or valley');
     error.statusCode = 400;
@@ -76,36 +100,92 @@ async function aggregateRevenueSummary({ propertyKind, from, to, revenueBasis = 
     throw error;
   }
 
-  const maps = await loadPropertyKindMaps();
-  const bookings = await Booking.find({
+  const channelFilter = parseChannelFilter(channel);
+  const entity = await validateInsightsEntityFilters({
+    propertyKind,
+    cabinId,
+    cabinTypeId,
+    unitId
+  });
+  const includeLocationBookings = shouldIncludeLocationBookings(propertyKind, entity);
+  const bookingEntityMatch = buildBookingEntityMatch(propertyKind, entity, entity.maps);
+
+  return {
+    propertyKind,
+    from,
+    to,
+    basis,
+    dateFilterResult,
+    channelFilter,
+    entity,
+    includeLocationBookings,
+    bookingEntityMatch
+  };
+}
+
+async function loadSummaryBookings(ctx) {
+  return Booking.find({
     ...baseBookingFilter(),
     excludeFromRevenueReporting: { $ne: true },
-    ...dateFilterResult.filter
+    ...ctx.dateFilterResult.filter,
+    ...ctx.bookingEntityMatch
   })
     .select(
       '_id status checkIn checkOut totalPrice totalValueCents stripePaidAmountCents provenance cabinId cabinTypeId unitId createdAt excludeFromRevenueReporting'
     )
     .lean();
+}
 
-  const locationBookings =
-    propertyKind === 'valley'
-      ? await LocationBooking.find({
-          ...baseLocationBookingRevenueFilter(),
-          ...dateFilterResult.filter
-        })
-          .select(
-            '_id status checkIn checkOut totalPrice stripePaymentIntentId source locationKey createdAt'
-          )
-          .lean()
-      : [];
+async function loadSummaryLocationBookings(ctx) {
+  if (!ctx.includeLocationBookings) return [];
+  return LocationBooking.find({
+    ...baseLocationBookingRevenueFilter(),
+    ...ctx.dateFilterResult.filter,
+    locationKey: 'valley'
+  })
+    .select('_id status checkIn checkOut totalPrice stripePaymentIntentId source locationKey createdAt')
+    .lean();
+}
 
-  const summary = buildEmptySummary({ propertyKind, from, to, revenueBasis: basis });
+async function aggregateRevenueSummary({
+  propertyKind,
+  from,
+  to,
+  revenueBasis = 'checkIn',
+  cabinId = null,
+  cabinTypeId = null,
+  unitId = null,
+  channel = null
+}) {
+  const ctx = await resolveSummaryContext({
+    propertyKind,
+    from,
+    to,
+    revenueBasis,
+    cabinId,
+    cabinTypeId,
+    unitId,
+    channel
+  });
+
+  const [bookings, locationBookings] = await Promise.all([
+    loadSummaryBookings(ctx),
+    loadSummaryLocationBookings(ctx)
+  ]);
+
+  const summary = buildEmptySummary({
+    propertyKind: ctx.propertyKind,
+    from: ctx.from,
+    to: ctx.to,
+    revenueBasis: ctx.basis
+  });
 
   for (const booking of bookings) {
-    const row = normalizeStayRow(booking, maps);
-    if (row.propertyKind !== propertyKind) continue;
+    const row = normalizeStayRow(booking, ctx.entity.maps);
+    if (row.propertyKind !== ctx.propertyKind) continue;
+    if (!channelMatches(row.channel, ctx.channelFilter)) continue;
 
-    if (row.status === 'cancelled') {
+    if (statusIsCancelled(row.status)) {
       summary.metrics.cancelledCount += 1;
       summary.metrics.cancelledRevenueCents += row.bookedRevenueCents;
       continue;
@@ -121,13 +201,14 @@ async function aggregateRevenueSummary({ propertyKind, from, to, revenueBasis = 
   }
 
   for (const locationBooking of locationBookings) {
-    if (locationBookingPropertyKind(locationBooking) !== propertyKind) continue;
+    if (locationBookingPropertyKind(locationBooking) !== ctx.propertyKind) continue;
+    const channelValue = locationBookingChannel(locationBooking);
+    if (!channelMatches(channelValue, ctx.channelFilter)) continue;
 
     const bookedRevenueCents = locationBookingRevenueCents(locationBooking);
     const cashCollectedCents = locationBookingCashCollectedCents(locationBooking);
-    const channel = locationBookingChannel(locationBooking);
 
-    if (locationBooking.status === 'cancelled') {
+    if (statusIsCancelled(locationBooking.status)) {
       summary.metrics.cancelledCount += 1;
       summary.metrics.cancelledRevenueCents += bookedRevenueCents;
       continue;
@@ -137,7 +218,7 @@ async function aggregateRevenueSummary({ propertyKind, from, to, revenueBasis = 
     summary.metrics.grossBookedRevenueCents += bookedRevenueCents;
     summary.metrics.cashCollectedCents += cashCollectedCents;
 
-    const bucket = summary.channelBreakdown[channel] || summary.channelBreakdown.other;
+    const bucket = summary.channelBreakdown[channelValue] || summary.channelBreakdown.other;
     bucket.count += 1;
     bucket.revenueCents += bookedRevenueCents;
   }
@@ -148,9 +229,23 @@ async function aggregateRevenueSummary({ propertyKind, from, to, revenueBasis = 
     );
   }
 
+  summary.entityFilters = {
+    cabinId: ctx.entity.cabinId ? String(ctx.entity.cabinId) : null,
+    cabinTypeId: ctx.entity.cabinTypeId ? String(ctx.entity.cabinTypeId) : null,
+    unitId: ctx.entity.unitId ? String(ctx.entity.unitId) : null,
+    channel: ctx.channelFilter
+  };
+  summary.locationBookingIncluded = ctx.includeLocationBookings;
+
   return summary;
 }
 
 module.exports = {
-  aggregateRevenueSummary
+  aggregateRevenueSummary,
+  resolveSummaryContext,
+  baseLocationBookingRevenueFilter,
+  locationBookingRevenueCents,
+  locationBookingCashCollectedCents,
+  locationBookingChannel,
+  locationBookingPropertyKind
 };

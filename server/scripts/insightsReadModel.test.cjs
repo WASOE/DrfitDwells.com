@@ -40,8 +40,8 @@ test('revenueBasis=checkIn filters by check-in date', async () => {
 
   await Booking.create({
     cabinId: cabin._id,
-    checkIn: new Date('2026-07-10T00:00:00.000Z'),
-    checkOut: new Date('2026-07-12T00:00:00.000Z'),
+    checkIn: new Date('2026-09-10T00:00:00.000Z'),
+    checkOut: new Date('2026-09-12T00:00:00.000Z'),
     adults: 2,
     children: 0,
     guestInfo: { firstName: 'A', lastName: 'B', email: 'insights@test.com', phone: '+359800000001' },
@@ -53,8 +53,8 @@ test('revenueBasis=checkIn filters by check-in date', async () => {
 
   const data = await getInsightsSummaryReadModel({
     propertyKind: 'cabin',
-    from: '2026-07-01',
-    to: '2026-07-31',
+    from: '2026-09-01',
+    to: '2026-09-30',
     revenueBasis: 'checkIn'
   });
 
@@ -78,8 +78,8 @@ test('revenueBasis=booked filters by createdAt', async () => {
 
   const booking = await Booking.create({
     cabinId: cabin._id,
-    checkIn: new Date('2026-08-10T00:00:00.000Z'),
-    checkOut: new Date('2026-08-12T00:00:00.000Z'),
+    checkIn: new Date('2026-09-10T00:00:00.000Z'),
+    checkOut: new Date('2026-09-12T00:00:00.000Z'),
     adults: 2,
     children: 0,
     guestInfo: { firstName: 'A', lastName: 'B', email: 'insights-booked@test.com', phone: '+359800000002' },
@@ -89,13 +89,15 @@ test('revenueBasis=booked filters by createdAt', async () => {
     provenance: { source: 'guest_portal' }
   });
 
-  booking.createdAt = new Date('2026-06-15T12:00:00.000Z');
-  await booking.save();
+  await Booking.collection.updateOne(
+    { _id: booking._id },
+    { $set: { createdAt: new Date('2026-06-15T12:00:00.000Z') } }
+  );
 
   const checkInData = await getInsightsSummaryReadModel({
     propertyKind: 'cabin',
-    from: '2026-08-01',
-    to: '2026-08-31',
+    from: '2026-09-01',
+    to: '2026-09-30',
     revenueBasis: 'checkIn'
   });
   assert.equal(checkInData.metrics.bookingCount, 1);
@@ -123,8 +125,8 @@ test('cancelled bookings excluded from gross revenue', async () => {
 
   await Booking.create({
     cabinId: cabin._id,
-    checkIn: new Date('2026-07-15T00:00:00.000Z'),
-    checkOut: new Date('2026-07-17T00:00:00.000Z'),
+    checkIn: new Date('2026-09-15T00:00:00.000Z'),
+    checkOut: new Date('2026-09-17T00:00:00.000Z'),
     adults: 2,
     children: 0,
     guestInfo: { firstName: 'A', lastName: 'B', email: 'cancel@test.com', phone: '+359800000003' },
@@ -136,8 +138,8 @@ test('cancelled bookings excluded from gross revenue', async () => {
 
   const data = await getInsightsSummaryReadModel({
     propertyKind: 'cabin',
-    from: '2026-07-01',
-    to: '2026-07-31',
+    from: '2026-09-01',
+    to: '2026-09-30',
     revenueBasis: 'checkIn'
   });
 

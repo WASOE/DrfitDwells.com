@@ -66,6 +66,9 @@ const opsReadAPI = {
   insightsSummary: (params) => api.get('/ops/insights/summary', { params, headers: authHeaders() }),
   insightsDataQuality: (params) =>
     api.get('/ops/insights/data-quality', { params, headers: authHeaders() }),
+  insightsBookings: (params) => api.get('/ops/insights/bookings', { params, headers: authHeaders() }),
+  insightsFilterOptions: (params) =>
+    api.get('/ops/insights/filter-options', { params, headers: authHeaders() }),
   conversionSummary: (params) =>
     api.get('/ops/conversion/summary', { params, headers: authHeaders() }),
   readinessSummary: () => api.get('/ops/readiness/summary', { headers: authHeaders() }),

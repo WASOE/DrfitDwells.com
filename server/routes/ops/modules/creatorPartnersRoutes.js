@@ -106,6 +106,8 @@ function formatCreatorPartnerStats(stats) {
     paidConfirmedBookings: Number(stats?.paidConfirmedBookings || 0),
     cancelledRefundedVoidBookings: Number(stats?.cancelledRefundedVoidBookings || 0),
     grossBookingRevenue: Number(stats?.grossBookingRevenue || 0),
+    attributedBookingValue: Number(stats?.attributedBookingValue || 0),
+    paidStayRevenue: Number(stats?.paidStayRevenue || 0),
     commissionableRevenueEstimate: Number(stats?.commissionableRevenueEstimate || 0),
     giftVoucherPurchases: Number(stats?.giftVoucherPurchases || 0),
     giftVoucherRevenueCents: Number(stats?.giftVoucherRevenueCents || 0),

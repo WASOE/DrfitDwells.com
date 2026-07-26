@@ -151,6 +151,13 @@ async function ensureGiftVoucherCreatorCommissionAfterActivation(voucherDoc, { a
     return { ok: false, code: 'missing_voucher' };
   }
 
+  const issuanceSource = String(voucherDoc?.issuanceSource || '').trim();
+  // Purchase-only accrual. Legacy rows missing issuanceSource are treated as purchase elsewhere;
+  // require explicit purchase here so compensation/goodwill can never accrue commission.
+  if (issuanceSource !== 'purchase') {
+    return { ok: true, skipped: true, code: 'issuance_source_not_purchase' };
+  }
+
   const existing = await GiftVoucherCreatorCommission.findOne({ giftVoucherId: voucherId }).lean();
   if (existing) {
     return { ok: true, idempotent: true, giftVoucherCreatorCommissionId: String(existing._id) };

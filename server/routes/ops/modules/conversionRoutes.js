@@ -7,7 +7,7 @@ const router = express.Router();
 
 router.get('/summary', async (req, res) => {
   try {
-    const { propertyKind, from, to } = req.query;
+    const { propertyKind, from, to, cabinId, cabinTypeId, unitId } = req.query;
     if (!propertyKind || !from || !to) {
       return res.status(400).json({
         success: false,
@@ -15,7 +15,14 @@ router.get('/summary', async (req, res) => {
       });
     }
 
-    const data = await getConversionSummaryReadModel({ propertyKind, from, to });
+    const data = await getConversionSummaryReadModel({
+      propertyKind,
+      from,
+      to,
+      cabinId,
+      cabinTypeId,
+      unitId
+    });
     return res.json({ success: true, data });
   } catch (error) {
     const status = error.statusCode || 500;

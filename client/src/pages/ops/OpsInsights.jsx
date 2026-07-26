@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { opsReadAPI } from '../../services/opsApi';
 import { formatMoneyFromCents } from '../../utils/formatMoney';
 import {
@@ -12,6 +12,30 @@ const REVENUE_BASIS_OPTIONS = [
   { value: 'booked', label: 'Booked date' }
 ];
 
+const CHANNEL_OPTIONS = [
+  { value: '', label: 'All channels' },
+  { value: 'website', label: 'Website' },
+  { value: 'staff', label: 'Staff' },
+  { value: 'other', label: 'Other' }
+];
+
+const STATUS_OPTIONS = [
+  { value: 'active', label: 'Active' },
+  { value: 'cancelled', label: 'Cancelled' },
+  { value: 'all', label: 'All' }
+];
+
+function issueLabel(code) {
+  const labels = {
+    missing_property_kind: 'Missing propertyKind on inventory',
+    both_cabin_and_cabin_type: 'Both cabinId and cabinTypeId set',
+    missing_inventory_ref: 'Missing cabinId and cabinTypeId',
+    zero_price_manual: 'Zero-price manual booking',
+    missing_unit_on_valley_booking: 'Valley booking missing unitId'
+  };
+  return labels[code] || code;
+}
+
 export default function OpsInsights() {
   const [searchParams, setSearchParams] = useSearchParams();
   const defaults = useMemo(() => currentMonthDateRange(), []);
@@ -20,25 +44,67 @@ export default function OpsInsights() {
       propertyKind: searchParams.get('propertyKind') || 'cabin',
       from: searchParams.get('from') || defaults.from,
       to: searchParams.get('to') || defaults.to,
-      revenueBasis: searchParams.get('revenueBasis') || 'checkIn'
+      revenueBasis: searchParams.get('revenueBasis') || 'checkIn',
+      cabinId: searchParams.get('cabinId') || '',
+      cabinTypeId: searchParams.get('cabinTypeId') || '',
+      unitId: searchParams.get('unitId') || '',
+      channel: searchParams.get('channel') || '',
+      status: searchParams.get('status') || 'active',
+      page: searchParams.get('page') || '1'
     }),
     [searchParams, defaults]
   );
 
   const [summary, setSummary] = useState(null);
   const [dataQuality, setDataQuality] = useState(null);
+  const [bookings, setBookings] = useState(null);
+  const [filterOptions, setFilterOptions] = useState({ cabins: [], cabinTypes: [], units: [] });
   const [loading, setLoading] = useState(true);
+  const [bookingsLoading, setBookingsLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const updateFilter = (key, value) => {
+  const updateFilter = (key, value, { resetPage = true } = {}) => {
     const next = new URLSearchParams(searchParams);
     if (!value) {
       next.delete(key);
     } else {
       next.set(key, value);
     }
+    if (key === 'cabinId' && value) {
+      next.delete('cabinTypeId');
+      next.delete('unitId');
+    }
+    if (key === 'cabinTypeId') {
+      next.delete('cabinId');
+      if (!value) next.delete('unitId');
+    }
+    if (key === 'propertyKind') {
+      next.delete('cabinId');
+      next.delete('cabinTypeId');
+      next.delete('unitId');
+    }
+    if (resetPage && key !== 'page') {
+      next.delete('page');
+    }
     setSearchParams(next);
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadOptions = async () => {
+      try {
+        const res = await opsReadAPI.insightsFilterOptions({ propertyKind: filters.propertyKind });
+        if (cancelled) return;
+        setFilterOptions(res.data?.data || { cabins: [], cabinTypes: [], units: [] });
+      } catch {
+        if (!cancelled) setFilterOptions({ cabins: [], cabinTypes: [], units: [] });
+      }
+    };
+    loadOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, [filters.propertyKind]);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,13 +113,18 @@ export default function OpsInsights() {
       setLoading(true);
       setError('');
       try {
+        const summaryParams = {
+          propertyKind: filters.propertyKind,
+          from: filters.from,
+          to: filters.to,
+          revenueBasis: filters.revenueBasis
+        };
+        if (filters.cabinId) summaryParams.cabinId = filters.cabinId;
+        if (filters.cabinTypeId) summaryParams.cabinTypeId = filters.cabinTypeId;
+        if (filters.unitId) summaryParams.unitId = filters.unitId;
+
         const [summaryRes, qualityRes] = await Promise.all([
-          opsReadAPI.insightsSummary({
-            propertyKind: filters.propertyKind,
-            from: filters.from,
-            to: filters.to,
-            revenueBasis: filters.revenueBasis
-          }),
+          opsReadAPI.insightsSummary(summaryParams),
           opsReadAPI.insightsDataQuality({ propertyKind: filters.propertyKind })
         ]);
         if (cancelled) return;
@@ -73,7 +144,67 @@ export default function OpsInsights() {
     return () => {
       cancelled = true;
     };
-  }, [filters.propertyKind, filters.from, filters.to, filters.revenueBasis]);
+  }, [
+    filters.propertyKind,
+    filters.from,
+    filters.to,
+    filters.revenueBasis,
+    filters.cabinId,
+    filters.cabinTypeId,
+    filters.unitId
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadBookings = async () => {
+      setBookingsLoading(true);
+      try {
+        const params = {
+          propertyKind: filters.propertyKind,
+          from: filters.from,
+          to: filters.to,
+          revenueBasis: filters.revenueBasis,
+          status: filters.status,
+          page: filters.page,
+          limit: 50
+        };
+        if (filters.cabinId) params.cabinId = filters.cabinId;
+        if (filters.cabinTypeId) params.cabinTypeId = filters.cabinTypeId;
+        if (filters.unitId) params.unitId = filters.unitId;
+        if (filters.channel) params.channel = filters.channel;
+
+        const res = await opsReadAPI.insightsBookings(params);
+        if (cancelled) return;
+        setBookings(res.data?.data || null);
+      } catch (err) {
+        if (cancelled) return;
+        setBookings(null);
+        setError(err?.response?.data?.message || 'Failed to load bookings');
+      } finally {
+        if (!cancelled) setBookingsLoading(false);
+      }
+    };
+    loadBookings();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    filters.propertyKind,
+    filters.from,
+    filters.to,
+    filters.revenueBasis,
+    filters.cabinId,
+    filters.cabinTypeId,
+    filters.unitId,
+    filters.channel,
+    filters.status,
+    filters.page
+  ]);
+
+  const unitsForType = useMemo(() => {
+    if (!filters.cabinTypeId) return filterOptions.units || [];
+    return (filterOptions.units || []).filter((u) => u.cabinTypeId === filters.cabinTypeId);
+  }, [filterOptions.units, filters.cabinTypeId]);
 
   if (loading) {
     return <div className="text-sm text-gray-500">Loading insights...</div>;
@@ -83,6 +214,8 @@ export default function OpsInsights() {
   const channels = summary?.channelBreakdown || {};
   const issues = dataQuality?.issues || [];
   const totalIssues = issues.reduce((sum, issue) => sum + (issue.count || 0), 0);
+  const page = Number(bookings?.pagination?.page || 1);
+  const hasMore = Boolean(bookings?.pagination?.hasMore);
 
   return (
     <div className="space-y-4 pb-16 sm:pb-0">
@@ -145,6 +278,55 @@ export default function OpsInsights() {
             </select>
           </label>
         </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <label className="text-sm text-gray-700">
+            <span className="block text-xs text-gray-500 mb-1">Cabin</span>
+            <select
+              value={filters.cabinId}
+              onChange={(event) => updateFilter('cabinId', event.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2"
+            >
+              <option value="">All cabins</option>
+              {(filterOptions.cabins || []).map((cabin) => (
+                <option key={cabin.id} value={cabin.id}>
+                  {cabin.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm text-gray-700">
+            <span className="block text-xs text-gray-500 mb-1">Cabin type</span>
+            <select
+              value={filters.cabinTypeId}
+              onChange={(event) => updateFilter('cabinTypeId', event.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2"
+              disabled={Boolean(filters.cabinId)}
+            >
+              <option value="">All cabin types</option>
+              {(filterOptions.cabinTypes || []).map((type) => (
+                <option key={type.id} value={type.id}>
+                  {type.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm text-gray-700">
+            <span className="block text-xs text-gray-500 mb-1">Unit</span>
+            <select
+              value={filters.unitId}
+              onChange={(event) => updateFilter('unitId', event.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2"
+              disabled={Boolean(filters.cabinId)}
+            >
+              <option value="">All units</option>
+              {unitsForType.map((unit) => (
+                <option key={unit.id} value={unit.id}>
+                  {unit.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </section>
 
       {totalIssues > 0 ? (
@@ -155,14 +337,15 @@ export default function OpsInsights() {
               .filter((issue) => issue.count > 0)
               .map((issue) => (
                 <li key={issue.code}>
-                  {issue.code}: {issue.count}
+                  <span className="font-mono text-xs">{issue.code}</span>: {issueLabel(issue.code)} —{' '}
+                  {issue.count}
                 </li>
               ))}
           </ul>
         </section>
       ) : null}
 
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
         <div className="bg-white border border-gray-200 rounded-xl p-4">
           <p className="text-xs text-gray-500 uppercase">Bookings</p>
           <p className="text-2xl font-semibold text-gray-900">{metrics.bookingCount ?? 0}</p>
@@ -174,9 +357,13 @@ export default function OpsInsights() {
           </p>
         </div>
         <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <p className="text-xs text-gray-500 uppercase">Cash collected</p>
+          <p className="text-xs text-gray-500 uppercase">Payment snapshot at booking</p>
           <p className="text-2xl font-semibold text-gray-900">
             {formatMoneyFromCents(metrics.cashCollectedCents)}
+          </p>
+          <p className="text-xs text-gray-500 mt-2">
+            Captured from booking finalization. Does not reflect later refunds or payment changes.
+            Not live Stripe balance.
           </p>
         </div>
         <div className="bg-white border border-gray-200 rounded-xl p-4">
@@ -188,6 +375,12 @@ export default function OpsInsights() {
         <div className="bg-white border border-gray-200 rounded-xl p-4">
           <p className="text-xs text-gray-500 uppercase">Cancelled</p>
           <p className="text-2xl font-semibold text-gray-900">{metrics.cancelledCount ?? 0}</p>
+        </div>
+        <div className="bg-white border border-gray-200 rounded-xl p-4">
+          <p className="text-xs text-gray-500 uppercase">Cancelled revenue</p>
+          <p className="text-2xl font-semibold text-gray-900">
+            {formatMoneyFromCents(metrics.cancelledRevenueCents)}
+          </p>
         </div>
       </section>
 
@@ -211,6 +404,119 @@ export default function OpsInsights() {
             ))}
           </tbody>
         </table>
+      </section>
+
+      <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <h3 className="text-sm font-semibold text-gray-900">Bookings / stays</h3>
+          <div className="flex flex-wrap gap-2">
+            <select
+              value={filters.channel}
+              onChange={(event) => updateFilter('channel', event.target.value)}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+            >
+              {CHANNEL_OPTIONS.map((option) => (
+                <option key={option.value || 'all'} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={filters.status}
+              onChange={(event) => updateFilter('status', event.target.value)}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+            >
+              {STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {bookingsLoading ? (
+          <p className="text-sm text-gray-500">Loading bookings...</p>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="text-left text-gray-500 border-b border-gray-200">
+                    <th className="py-2 pr-3">Stay</th>
+                    <th className="py-2 pr-3">Status</th>
+                    <th className="py-2 pr-3">Channel</th>
+                    <th className="py-2 pr-3">Check-in</th>
+                    <th className="py-2 pr-3">Revenue</th>
+                    <th className="py-2">Snapshot</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(bookings?.rows || []).map((row) => (
+                    <tr
+                      key={`${row.stayKind}-${row.bookingId}`}
+                      className="border-b border-gray-100 hover:bg-gray-50"
+                    >
+                      <td className="py-2 pr-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {row.detailHref ? (
+                            <Link
+                              to={row.detailHref}
+                              className="font-mono text-xs text-gray-900 hover:underline"
+                            >
+                              {String(row.bookingId).slice(-8)}
+                            </Link>
+                          ) : (
+                            <span className="font-mono text-xs text-gray-700">
+                              {String(row.bookingId).slice(-8)}
+                            </span>
+                          )}
+                          {row.stayKind === 'location_booking' ? (
+                            <span className="inline-flex items-center rounded-md bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[11px] font-medium text-amber-900">
+                              Valley buyout
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="py-2 pr-3 capitalize">{row.status}</td>
+                      <td className="py-2 pr-3 capitalize">{row.channel}</td>
+                      <td className="py-2 pr-3">{row.checkInDateOnly || '—'}</td>
+                      <td className="py-2 pr-3">{formatMoneyFromCents(row.bookedRevenueCents)}</td>
+                      <td className="py-2">
+                        {formatMoneyFromCents(row.paymentSnapshotAtBookingCents)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex items-center justify-between text-sm text-gray-600">
+              <span>
+                Page {page} · {bookings?.pagination?.total ?? 0} total
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={page <= 1}
+                  onClick={() => updateFilter('page', String(page - 1), { resetPage: false })}
+                  className="px-3 py-1.5 border border-gray-200 rounded-lg disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  disabled={!hasMore}
+                  onClick={() => updateFilter('page', String(page + 1), { resetPage: false })}
+                  className="px-3 py-1.5 border border-gray-200 rounded-lg disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+            {bookings?.provenance?.locationBookingLimitations ? (
+              <p className="text-xs text-gray-500">{bookings.provenance.locationBookingLimitations}</p>
+            ) : null}
+          </>
+        )}
       </section>
 
       <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
@@ -244,8 +550,8 @@ export default function OpsInsights() {
         {summary?.provenance ? (
           <p className="text-xs text-gray-500 pt-2">{summary.provenance.revenueBasisNote}</p>
         ) : null}
-        {summary?.provenance?.cashCollectedNote ? (
-          <p className="text-xs text-gray-500">{summary.provenance.cashCollectedNote}</p>
+        {summary?.provenance?.paymentSnapshotNote ? (
+          <p className="text-xs text-gray-500">{summary.provenance.paymentSnapshotNote}</p>
         ) : null}
       </section>
     </div>
