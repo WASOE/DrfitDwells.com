@@ -51,6 +51,7 @@ export const OPS_NAV_ITEMS = [
   { to: '/ops/gift-vouchers', label: 'Gift vouchers', module: 'finance' },
   { to: '/ops/insights', label: 'Insights', module: 'finance' },
   { to: '/ops/conversion', label: 'Conversion', module: 'finance' },
+  { to: '/ops/conversion/recovery', label: 'Quote recovery', module: 'finance' },
   { to: '/ops/manual-review', label: 'Manual', module: 'operations' },
   { to: '/ops/readiness', label: 'Readiness', module: 'operations' },
   {
@@ -72,7 +73,14 @@ export const OPS_MOBILE_TAB_ROUTE_PREFIXES = {
   home: ['/ops'],
   calendar: ['/ops/calendar', '/ops/sync'],
   guests: ['/ops/reservations', '/ops/messaging', '/ops/communications', '/ops/reviews'],
-  finance: ['/ops/payments', '/ops/promo-codes', '/ops/gift-vouchers', '/ops/insights', '/ops/conversion'],
+  finance: [
+    '/ops/payments',
+    '/ops/promo-codes',
+    '/ops/gift-vouchers',
+    '/ops/insights',
+    '/ops/conversion',
+    '/ops/conversion/recovery'
+  ],
   more: [
     '/ops/creator-partners',
     '/ops/cabins',
@@ -126,7 +134,8 @@ export const OPS_MORE_GROUPS = [
       { to: '/ops/promo-codes', label: 'Promo codes' },
       { to: '/ops/gift-vouchers', label: 'Gift vouchers' },
       { to: '/ops/insights', label: 'Insights' },
-      { to: '/ops/conversion', label: 'Conversion' }
+      { to: '/ops/conversion', label: 'Conversion' },
+      { to: '/ops/conversion/recovery', label: 'Quote recovery' }
     ]
   },
   {

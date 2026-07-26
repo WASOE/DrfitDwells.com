@@ -9,6 +9,10 @@ const {
   toDateOnly
 } = require('./checkoutSessionFingerprints');
 const { buildQuoteSnapshot, hashQuoteSnapshot } = require('./checkoutSessionSnapshot');
+const {
+  linkSavedQuoteToCheckout,
+  scheduleSavedQuoteTask
+} = require('../savedQuotes/savedQuoteService');
 
 const CHECKOUT_ID_PATTERN = /^[A-Za-z0-9:_-]{8,128}$/;
 const DEFAULT_SESSION_TTL_MS = 48 * 60 * 60 * 1000;
@@ -203,6 +207,23 @@ async function createCheckoutSession({ input, quote, metadata = null }) {
     }
   });
 
+  scheduleSavedQuoteTask('link-checkout-create', () =>
+    linkSavedQuoteToCheckout({
+      checkoutId: session.checkoutId,
+      checkoutSessionId: session._id,
+      sessionKey: normalizedInput.funnelSessionKey || metadata?.funnelSessionKey || null,
+      visitorKey: normalizedInput.funnelVisitorKey || metadata?.funnelVisitorKey || null,
+      cabinId: quoteSnapshot.cabinId || null,
+      cabinTypeId: quoteSnapshot.cabinTypeId || null,
+      checkInDateOnly: quoteSnapshot.checkInDateOnly,
+      checkOutDateOnly: quoteSnapshot.checkOutDateOnly,
+      adults: quoteSnapshot.adults,
+      children: quoteSnapshot.children,
+      quotedTotalCents: quoteSnapshot.totalValueCents,
+      guestEmail: normalizedInput.guestEmail || null
+    })
+  );
+
   return {
     session,
     quoteSnapshotHash,
@@ -252,6 +273,21 @@ async function refreshCheckoutSessionQuote({ checkoutId, input, quote }) {
   };
 
   await session.save();
+
+  scheduleSavedQuoteTask('link-checkout-refresh', () =>
+    linkSavedQuoteToCheckout({
+      checkoutId: session.checkoutId,
+      checkoutSessionId: session._id,
+      cabinId: quoteSnapshot.cabinId || null,
+      cabinTypeId: quoteSnapshot.cabinTypeId || null,
+      checkInDateOnly: quoteSnapshot.checkInDateOnly,
+      checkOutDateOnly: quoteSnapshot.checkOutDateOnly,
+      adults: quoteSnapshot.adults,
+      children: quoteSnapshot.children,
+      quotedTotalCents: quoteSnapshot.totalValueCents,
+      guestEmail: session.guestEmail || normalizedInput.guestEmail || null
+    })
+  );
 
   return {
     session,

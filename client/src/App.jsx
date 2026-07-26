@@ -66,6 +66,7 @@ const OpsGiftVouchers = lazy(() => import('./pages/ops/OpsGiftVouchers'))
 const OpsGiftVoucherDetail = lazy(() => import('./pages/ops/OpsGiftVoucherDetail'))
 const OpsInsights = lazy(() => import('./pages/ops/OpsInsights'))
 const OpsConversion = lazy(() => import('./pages/ops/OpsConversion'))
+const OpsConversionRecovery = lazy(() => import('./pages/ops/OpsConversionRecovery'))
 const MaintenanceHome = lazy(() => import('./pages/maintenance/MaintenanceHome'))
 const MaintenanceCabins = lazy(() => import('./pages/maintenance/MaintenanceCabins'))
 const MaintenanceReservations = lazy(() => import('./pages/maintenance/MaintenanceReservations'))
@@ -243,6 +244,7 @@ function App() {
               <Route path="/ops/gift-vouchers/:id" element={<OpsGiftVoucherDetail />} />
               <Route path="/ops/insights" element={<OpsInsights />} />
               <Route path="/ops/conversion" element={<OpsConversion />} />
+              <Route path="/ops/conversion/recovery" element={<OpsConversionRecovery />} />
               <Route path="/ops/readiness" element={<OpsReadiness />} />
               <Route path="/ops/cleaning" element={<OpsCleaningCalendar />} />
               <Route path="/ops/settings/cleaning" element={<OpsCleaningSettings />} />

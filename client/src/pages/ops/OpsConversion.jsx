@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { opsReadAPI } from '../../services/opsApi';
 import {
   PROPERTY_KIND_OPTIONS,
@@ -118,15 +118,26 @@ export default function OpsConversion() {
 
   const searchResults = summary?.supplementary?.searchResults;
   const quoteFailed = summary?.supplementary?.quoteFailed;
+  const savedQuotes = summary?.supplementary?.savedQuotes;
   const provenance = summary?.provenance || {};
 
   return (
     <div className="space-y-4 pb-16 sm:pb-0">
       <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <h2 className="text-lg font-semibold text-gray-900">Conversion funnel</h2>
-        <p className="text-xs text-gray-500 mt-1">
-          Zone-specific funnel for {filters.propertyKind === 'valley' ? 'The Valley' : 'The Cabin'}.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Conversion funnel</h2>
+            <p className="text-xs text-gray-500 mt-1">
+              Zone-specific funnel for {filters.propertyKind === 'valley' ? 'The Valley' : 'The Cabin'}.
+            </p>
+          </div>
+          <Link
+            to={`/ops/conversion/recovery?propertyKind=${filters.propertyKind}&from=${filters.from}&to=${filters.to}`}
+            className="text-sm text-gray-700 underline"
+          >
+            Quote recovery
+          </Link>
+        </div>
         {error ? <p className="text-sm text-red-600 mt-2">{error}</p> : null}
       </section>
 
@@ -282,6 +293,18 @@ export default function OpsConversion() {
                 ))}
               </ul>
             ) : null}
+          </section>
+
+          <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
+            <h3 className="text-sm font-semibold text-gray-900">Supplementary: saved quotes</h3>
+            <p className="text-sm text-gray-700">
+              Valid: {savedQuotes?.savedValidQuotes ?? 0} · Checkout started:{' '}
+              {savedQuotes?.checkoutStartedSavedQuotes ?? 0} · Converted:{' '}
+              {savedQuotes?.convertedSavedQuotes ?? 0} · Abandoned:{' '}
+              {savedQuotes?.abandonedSavedQuotes ?? 0} · Recovery-eligible:{' '}
+              {savedQuotes?.recoveryEligibleJourneys ?? 0}
+            </p>
+            <p className="text-xs text-gray-500">{savedQuotes?.note}</p>
           </section>
 
           <section className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-xs text-gray-600 space-y-1">

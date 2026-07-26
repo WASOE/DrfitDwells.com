@@ -4,6 +4,7 @@ const BookingFunnelEvent = require('../../models/BookingFunnelEvent');
 const { buildInclusiveDateRange } = require('../ops/reporting/reportingFilters');
 const { isAllowedPropertyKind } = require('../ops/reporting/propertyKindJoin');
 const { validateConversionEntityFilters } = require('../ops/reporting/entityFilterValidation');
+const { aggregateRecoverySupplementaryCounts } = require('../ops/readModels/recoveryReadModel');
 
 const MAIN_FUNNEL_STEPS = Object.freeze([
   { eventType: 'property_view', label: 'Property view', source: 'client' },
@@ -258,6 +259,7 @@ async function aggregateConversionSummary({
   const searchResults = await countSearchResultsSupplementary({ range });
   const quoteFailed = await countQuoteFailed({ propertyKind, range, entity });
   const dropOff = await computeDropOff({ propertyKind, range, entity });
+  const recovery = await aggregateRecoverySupplementaryCounts({ propertyKind, range, entity });
 
   return {
     propertyKind,
@@ -280,7 +282,8 @@ async function aggregateConversionSummary({
         eventCount: quoteFailed.eventCount,
         orphanEventCount: quoteFailed.orphanEventCount,
         byClass: quoteFailed.byClass
-      }
+      },
+      savedQuotes: recovery
     },
     provenance: {
       computedAt: new Date().toISOString(),
@@ -294,6 +297,8 @@ async function aggregateConversionSummary({
         'Client steps require analytics consent. Server quote/conversion events may lack sessionKey when consent declined.',
       checkoutStartedNote: 'checkout_started has no historical data before Batch 2 deployment.',
       searchResultsNote: SEARCH_RESULTS_NOTE,
+      savedQuotesNote:
+        'Supplementary SavedBookingQuote counts only. Not part of session-sequential funnel drop-off. Batch 4A does not send recovery messages.',
       maxRangeDays: MAX_RANGE_DAYS
     }
   };

@@ -912,22 +912,91 @@ Conversion summary guardrails:
 - Additive reconciliation panel on `/ops/insights`
 - Unlinked Payments remain site-wide and unattributed
 
-### Batch 4
+### Batch 4A (delivered)
 
-Likely scope:
+Purpose: persist recoverable commercial quote/checkout intent. **No automated sending.**
 
-- saved quote concept
-- availability alert concept
-- early email capture only if data proves it is worth the friction
+#### Saved quote source of truth
+
+- Model: `SavedBookingQuote`
+- Distinct from append-only `BookingFunnelEvent` analytics
+- Persists the exact quoted commercial snapshot at quote time; never recalculate from live prices after abandonment
+- Does not reserve inventory; does not lock price beyond `expiresAt` representation
+- Cabin `POST /api/bookings/quote` hooked; Valley `location-quotes` not yet hooked
+
+#### Analytics events vs recovery state
+
+| Concern | Store |
+| --- | --- |
+| Funnel drop-off / session counts | `BookingFunnelEvent` (append-only, 180d TTL) |
+| Recoverable quote + checkout link + conversion suppress | `SavedBookingQuote` |
+
+#### Consent model (Batch 4A)
+
+- `analyticsConsent`: whether browser identity keys were available (not email permission)
+- `marketingConsent`: defaults `false` (no approved marketing capture UX on booking form)
+- `transactionalContinuationEligible`: defaults `false` (do not assume transactional continuation is permitted)
+- Guest email at checkout does **not** set marketing or transactional-continuation flags
+- Eligibility reasons include `missing_email`, `no_valid_consent`, `already_converted`, `suppressed`, `quote_expired_too_long`, `checkout_still_active`, `already_recovered`, `test_or_internal`, plus eligible_* only when explicit flags are true
+
+#### Dedupe model
+
+```
+sq:{propertyKind}:{entityType}:{entityId}:{checkIn}:{checkOut}:{adults}:{children}:{quotedTotalCents}:{promoHash8}:{s:session|v:visitor|orphan:uuid}
+```
+
+- With session/visitor: upsert by fingerprint (refresh active quote; skip if already converted)
+- Anonymous orphan: insert-only unique fingerprint per request (never merge strangers)
+
+#### Quote expiry
+
+- `expiresAt = quotedAt + 48h` (aligned with CheckoutSession soft expiry)
+- Display status may derive `expired` from timestamps without a write job
+- Eligibility uses timestamps; a later maintenance job may mark status but is not required for correctness
+
+#### Retention
+
+- Operational retention target: 180 days for active/recent saved quotes
+- Converted references: retain only as long as operationally required
+- Email/direct identifiers: anonymize earlier when no longer required
+- Suppressed contacts: retain minimum identifier needed to prevent future contact
+- **No Mongo TTL index in Batch 4A** until purge effects on converted refs, suppression, and auditability are designed
+
+#### APIs and UI
+
+- `GET /api/ops/conversion/recovery` — list (masked email only; no sessionKey/visitorKey)
+- `GET /api/ops/conversion/recovery/:id` — detail (email for finance-permitted OPS)
+- Supplementary saved-quote counts on `GET /api/ops/conversion/summary`
+- UI: `/ops/conversion/recovery` under finance module
+- Notice: eligibility does not guarantee a message may legally be sent; automated sending is not enabled
+
+#### No-send limitation
+
+- No send endpoints, templates, schedulers, or UI send/bulk actions in Batch 4A
+- `recoveryState.sendCount` exists for future Batch 4B; remains zero
+
+#### Known limitations
+
+- Valley location quotes not persisted yet
+- No GuestContactPreference live join in eligibility (flags default false; suppression local to recoveryState)
+- Checkout linking relies on stay fields and optional funnel keys (may miss if quote never saved)
+- List scan filters derived status/eligibility in memory (bounded)
+
+#### Batch 4B requirements (future)
+
+- Approved consent UX for transactional continuation and/or marketing
+- Respect `GuestContactPreference` unsubscribe/suppression
+- Send infrastructure, templates, rate limits, audit
+- Manual OPS send only after legal review
+- Valley location-quote hooks
 
 ### Batch 5
 
-Likely scope:
+Likely scope (may merge with 4B naming):
 
-- abandoned booking recovery
-- `AbandonedBookingLead`
+- abandoned booking recovery messaging
 - transactional recovery emails
-- unsubscribe and consent handling
+- unsubscribe and consent handling end-to-end
 
 ### Batch 6
 

@@ -73,6 +73,10 @@ const opsReadAPI = {
     api.get('/ops/insights/reconciliation', { params, headers: authHeaders() }),
   conversionSummary: (params) =>
     api.get('/ops/conversion/summary', { params, headers: authHeaders() }),
+  conversionRecovery: (params) =>
+    api.get('/ops/conversion/recovery', { params, headers: authHeaders() }),
+  conversionRecoveryDetail: (id) =>
+    api.get(`/ops/conversion/recovery/${id}`, { headers: authHeaders() }),
   readinessSummary: () => api.get('/ops/readiness/summary', { headers: authHeaders() }),
   readinessModules: () => api.get('/ops/readiness/modules', { headers: authHeaders() }),
   readinessOverlap: () => api.get('/ops/readiness/overlap', { headers: authHeaders() }),

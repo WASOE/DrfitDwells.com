@@ -56,6 +56,11 @@ const {
   recordQuoteFunnelOutcome,
   recordBookingFunnelConversion
 } = require('../services/conversion/funnelEventService');
+const {
+  upsertSavedQuoteFromSuccessfulQuote,
+  markSavedQuoteConverted,
+  scheduleSavedQuoteTask
+} = require('../services/savedQuotes/savedQuoteService');
 const { isCheckoutSessionError } = require('../services/checkout/checkoutSessionErrors');
 const {
   shouldUseCheckoutSessionV2,
@@ -519,15 +524,32 @@ const bookingQuoteBodyValidators = [
 
 function scheduleBookingFunnelConversion(booking, req, { idempotentReplay = false } = {}) {
   if (idempotentReplay || !booking) return;
+  const body = req?.body || {};
   void recordBookingFunnelConversion(booking, {
-    funnelSessionKey: req?.body?.funnelSessionKey,
-    funnelVisitorKey: req?.body?.funnelVisitorKey
+    funnelSessionKey: body.funnelSessionKey,
+    funnelVisitorKey: body.funnelVisitorKey,
+    checkoutId: body.checkoutId || booking.checkoutId
   }).catch((err) => {
     console.error('[funnel] booking conversion record failed', {
       bookingId: booking?._id ? String(booking._id) : null,
       message: err?.message || String(err)
     });
   });
+
+  const { formatSofiaDateOnly } = require('../utils/dateTime');
+  scheduleSavedQuoteTask('mark-converted', () =>
+    markSavedQuoteConverted({
+      bookingId: booking._id,
+      checkoutId: body.checkoutId || booking.checkoutId || null,
+      sessionKey: body.funnelSessionKey || null,
+      visitorKey: body.funnelVisitorKey || null,
+      guestEmail: booking.guestInfo?.email || null,
+      cabinId: booking.cabinId || null,
+      cabinTypeId: booking.cabinTypeId || null,
+      checkInDateOnly: booking.checkIn ? formatSofiaDateOnly(booking.checkIn) : null,
+      checkOutDateOnly: booking.checkOut ? formatSofiaDateOnly(booking.checkOut) : null
+    })
+  );
 }
 
 // POST /api/bookings/quote — server-owned price + optional promo (display / PI / booking must match)
@@ -607,6 +629,11 @@ router.post('/quote', bookingQuoteLimiter, bookingQuoteBodyValidators, async (re
           message: funnelErr?.message || String(funnelErr)
         });
       });
+      if (funnelOutcome.kind === 'received' && funnelOutcome.result?.ok) {
+        scheduleSavedQuoteTask('upsert-from-quote', () =>
+          upsertSavedQuoteFromSuccessfulQuote({ req, result: funnelOutcome.result })
+        );
+      }
     }
   }
 });
