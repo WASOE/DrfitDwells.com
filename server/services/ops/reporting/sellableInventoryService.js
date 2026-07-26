@@ -8,6 +8,7 @@ const CabinType = require('../../../models/CabinType');
 const Unit = require('../../../models/Unit');
 const { PROPERTY_TIMEZONE } = require('../../../utils/dateTime');
 const { eachSofiaNightInclusive } = require('./stayNights');
+const { FIXTURE_CABIN_NAME_PATTERN } = require('../../../utils/fixtureExclusion');
 
 /**
  * Verified non-sellable operational block types.
@@ -45,40 +46,157 @@ async function loadOperatingPeriods({ propertyKind, entityType = null, entityId 
   return InventoryOperatingPeriod.find(match).lean();
 }
 
+function isMultiListingCabin(cabin) {
+  return (
+    cabin.inventoryType === 'multi' ||
+    cabin.inventoryMode === 'multi' ||
+    Boolean(cabin.cabinTypeId) ||
+    Boolean(cabin.cabinTypeRef)
+  );
+}
+
+/**
+ * Canonical inventory rows for the occupancy denominator.
+ *
+ * Cabin propertyKind: single Cabin documents only.
+ * Valley propertyKind: standalone Valley cabins (inventoryType !== multi, no cabinType link)
+ *   PLUS unit-backed inventory. Aggregate multi listing Cabins are excluded (not guessed by name).
+ */
 async function resolveInventoryEntities(propertyKind) {
+  const archivedClause = { $or: [{ archivedAt: null }, { archivedAt: { $exists: false } }] };
+  const fixtureExclusion = { name: { $not: FIXTURE_CABIN_NAME_PATTERN } };
+  const excludedAggregateListings = [];
+
   if (propertyKind === 'cabin') {
     const cabins = await Cabin.find({
       propertyKind: 'cabin',
-      $or: [{ archivedAt: null }, { archivedAt: { $exists: false } }],
+      ...archivedClause,
+      ...fixtureExclusion,
       isActive: { $ne: false }
     })
-      .select('_id name')
+      .select('_id name inventoryType inventoryMode cabinTypeId')
       .lean();
-    return cabins.map((c) => ({
-      entityType: 'cabin',
-      entityId: String(c._id),
-      displayName: c.name || String(c._id),
-      cabinId: c._id,
-      unitId: null
-    }));
+    return {
+      entities: cabins.map((c) => ({
+        entityType: 'cabin',
+        entityId: String(c._id),
+        displayName: c.name || String(c._id),
+        cabinId: c._id,
+        cabinTypeId: null,
+        unitId: null
+      })),
+      excludedAggregateListings
+    };
   }
 
-  const types = await CabinType.find({ propertyKind: 'valley', isActive: { $ne: false } })
-    .select('_id name')
-    .lean();
-  const typeIds = types.map((t) => t._id);
-  const units = await Unit.find({ cabinTypeId: { $in: typeIds }, isActive: { $ne: false } })
-    .select('_id unitNumber cabinTypeId')
-    .lean();
-  const typeName = new Map(types.map((t) => [String(t._id), t.name || String(t._id)]));
-  return units.map((u) => ({
-    entityType: 'unit',
-    entityId: String(u._id),
-    displayName: `${typeName.get(String(u.cabinTypeId)) || 'Valley'} · ${u.unitNumber || u._id}`,
-    cabinId: null,
-    cabinTypeId: u.cabinTypeId,
-    unitId: u._id
-  }));
+  // Valley: standalone cabins + units
+  const [allValleyCabins, cabinTypes] = await Promise.all([
+    Cabin.find({
+      propertyKind: 'valley',
+      ...archivedClause,
+      ...fixtureExclusion,
+      isActive: { $ne: false }
+    })
+      .select('_id name inventoryType inventoryMode cabinTypeId cabinTypeRef')
+      .lean(),
+    CabinType.find({ propertyKind: 'valley', isActive: { $ne: false } })
+      .select('_id name')
+      .lean()
+  ]);
+
+  const entities = [];
+  for (const cabin of allValleyCabins) {
+    if (isMultiListingCabin(cabin)) {
+      excludedAggregateListings.push({
+        entityType: 'cabin',
+        entityId: String(cabin._id),
+        displayName: cabin.name || String(cabin._id),
+        reason: 'aggregate_listing_excluded',
+        detail:
+          'Cabin is a multi/listing parent (inventoryType multi or cabinTypeId link). Unit-backed inventory is the canonical denominator.'
+      });
+      continue;
+    }
+    entities.push({
+      entityType: 'cabin',
+      entityId: String(cabin._id),
+      displayName: cabin.name || String(cabin._id),
+      cabinId: cabin._id,
+      cabinTypeId: null,
+      unitId: null
+    });
+  }
+
+  const typeIds = cabinTypes.map((t) => t._id);
+  const units = typeIds.length
+    ? await Unit.find({ cabinTypeId: { $in: typeIds }, isActive: { $ne: false } })
+        .select('_id unitNumber displayName cabinTypeId')
+        .lean()
+    : [];
+  const typeName = new Map(cabinTypes.map((t) => [String(t._id), t.name || String(t._id)]));
+  for (const u of units) {
+    entities.push({
+      entityType: 'unit',
+      entityId: String(u._id),
+      displayName: `${typeName.get(String(u.cabinTypeId)) || 'Valley'} · ${u.displayName || u.unitNumber || u._id}`,
+      cabinId: null,
+      cabinTypeId: u.cabinTypeId,
+      unitId: u._id
+    });
+  }
+
+  return { entities, excludedAggregateListings };
+}
+
+function filterEntities(entities, { cabinId = null, cabinTypeId = null, unitId = null } = {}) {
+  let out = entities;
+  if (cabinId) {
+    out = out.filter((e) => e.cabinId && String(e.cabinId) === String(cabinId));
+  }
+  if (unitId) {
+    out = out.filter((e) => e.unitId && String(e.unitId) === String(unitId));
+  }
+  if (cabinTypeId) {
+    // Cabin-type filter uses canonical units only (not standalone cabins).
+    out = out.filter((e) => e.unitId && e.cabinTypeId && String(e.cabinTypeId) === String(cabinTypeId));
+  }
+  return out;
+}
+
+function periodsForEntity(periods, entity, propertyKind) {
+  const entityPeriods = periods.filter((p) => {
+    if (p.entityType === 'location' && propertyKind === 'valley') {
+      // Location buyout periods are not part of the mixed cabin+unit denominator.
+      return false;
+    }
+    return p.entityType === entity.entityType && String(p.entityId) === String(entity.entityId);
+  });
+
+  // Intentional fallback: cabin_type period covers all units of that type (each unit-night once).
+  if (entity.entityType === 'unit' && entity.cabinTypeId) {
+    for (const p of periods) {
+      if (p.entityType === 'cabin_type' && String(p.entityId) === String(entity.cabinTypeId)) {
+        entityPeriods.push(p);
+      }
+    }
+  }
+  return entityPeriods;
+}
+
+function blockMatchesEntity(block, entity) {
+  if (entity.cabinId) {
+    if (!block.cabinId || String(block.cabinId) !== String(entity.cabinId)) return false;
+    // Standalone cabin blocks should not require a unitId match.
+    if (block.unitId) return false;
+    return true;
+  }
+  if (entity.unitId) {
+    if (block.unitId && String(block.unitId) !== String(entity.unitId)) return false;
+    if (!block.unitId && block.cabinId) return false;
+    if (block.unitId && String(block.unitId) === String(entity.unitId)) return true;
+    return false;
+  }
+  return false;
 }
 
 /**
@@ -100,6 +218,7 @@ async function computeSellableNights({
       occupancyDenominatorAvailable: false,
       reason: 'unknown_operating_start',
       entitySellable: [],
+      excludedAggregateListings: [],
       excludedUnknownBlocks: 0,
       limitations: [
         'No InventoryOperatingPeriod rows configured. Occupancy cannot be verified.',
@@ -108,16 +227,8 @@ async function computeSellableNights({
     };
   }
 
-  let entities = await resolveInventoryEntities(propertyKind);
-  if (cabinId) {
-    entities = entities.filter((e) => String(e.cabinId) === String(cabinId));
-  }
-  if (unitId) {
-    entities = entities.filter((e) => String(e.unitId) === String(unitId));
-  }
-  if (cabinTypeId) {
-    entities = entities.filter((e) => String(e.cabinTypeId) === String(cabinTypeId));
-  }
+  const resolved = await resolveInventoryEntities(propertyKind);
+  let entities = filterEntities(resolved.entities, { cabinId, cabinTypeId, unitId });
 
   if (!entities.length) {
     return {
@@ -125,6 +236,7 @@ async function computeSellableNights({
       occupancyDenominatorAvailable: false,
       reason: 'no_inventory_entities',
       entitySellable: [],
+      excludedAggregateListings: resolved.excludedAggregateListings,
       excludedUnknownBlocks: 0,
       limitations: ['No inventory entities matched the requested filters.']
     };
@@ -133,7 +245,6 @@ async function computeSellableNights({
   const cabinIds = [
     ...new Set(entities.map((e) => (e.cabinId ? String(e.cabinId) : null)).filter(Boolean))
   ];
-  // Valley units may share cabinType-level blocks keyed by a representative cabin — load by unitId too
   const unitIds = entities.map((e) => e.unitId).filter(Boolean);
 
   const blockQuery = {
@@ -142,13 +253,12 @@ async function computeSellableNights({
     startDate: { $lt: moment.tz(toDateOnly, 'YYYY-MM-DD', PROPERTY_TIMEZONE).add(1, 'day').toDate() },
     endDate: { $gt: moment.tz(fromDateOnly, 'YYYY-MM-DD', PROPERTY_TIMEZONE).toDate() }
   };
-  if (propertyKind === 'cabin' && cabinIds.length) {
-    blockQuery.cabinId = { $in: cabinIds };
-  } else if (unitIds.length) {
-    blockQuery.$or = [{ unitId: { $in: unitIds } }, { cabinId: { $in: cabinIds } }];
-  }
+  const or = [];
+  if (cabinIds.length) or.push({ cabinId: { $in: cabinIds } });
+  if (unitIds.length) or.push({ unitId: { $in: unitIds } });
+  if (or.length) blockQuery.$or = or;
 
-  const blocks = await AvailabilityBlock.find(blockQuery).lean();
+  const blocks = or.length ? await AvailabilityBlock.find(blockQuery).lean() : [];
   let excludedUnknownBlocks = 0;
   const verifiedBlocks = [];
   for (const b of blocks) {
@@ -166,37 +276,17 @@ async function computeSellableNights({
   let anyCovered = false;
 
   for (const entity of entities) {
-    const entityPeriods = periods.filter((p) => {
-      if (p.entityType === 'location' && propertyKind === 'valley') {
-        return String(p.entityId) === 'valley' || String(p.entityId) === entity.entityId;
-      }
-      return p.entityType === entity.entityType && String(p.entityId) === String(entity.entityId);
-    });
-
-    // Also allow cabin_type periods to cover units
-    if (entity.entityType === 'unit' && entity.cabinTypeId) {
-      for (const p of periods) {
-        if (p.entityType === 'cabin_type' && String(p.entityId) === String(entity.cabinTypeId)) {
-          entityPeriods.push(p);
-        }
-      }
-    }
-
+    const entityPeriods = periodsForEntity(periods, entity, propertyKind);
     let sellable = 0;
     let coveredNights = 0;
-    eachSofiaNightInclusive(fromDateOnly, toDateOnly, (dateOnly, nightMoment) => {
+    eachSofiaNightInclusive(fromDateOnly, toDateOnly, (_dateOnly, nightMoment) => {
       const covered = entityPeriods.some((p) => periodCoversNight(p, nightMoment));
       if (!covered) return;
       coveredNights += 1;
       anyCovered = true;
-      const blocked = verifiedBlocks.some((b) => {
-        if (entity.cabinId && b.cabinId && String(b.cabinId) !== String(entity.cabinId)) return false;
-        if (entity.unitId) {
-          if (b.unitId && String(b.unitId) !== String(entity.unitId)) return false;
-          if (!b.unitId && b.cabinId) return false;
-        }
-        return blockCoversNight(b, nightMoment);
-      });
+      const blocked = verifiedBlocks.some(
+        (b) => blockMatchesEntity(b, entity) && blockCoversNight(b, nightMoment)
+      );
       if (!blocked) sellable += 1;
     });
 
@@ -213,22 +303,28 @@ async function computeSellableNights({
     if (coveredNights > 0) total += sellable;
   }
 
+  const limitations = anyCovered
+    ? [
+        'Sellable nights = operating nights minus verified maintenance and manual (owner/ops) blocks.',
+        'Unidentified iCal external_hold blocks are not subtracted.',
+        'Direct bookings only — Airbnb stays are excluded from occupied nights and revenue.',
+        propertyKind === 'valley'
+          ? 'Valley denominator mixes standalone Valley cabins and unit-backed inventory; multi/listing parent Cabins are excluded.'
+          : null
+      ].filter(Boolean)
+    : [
+        'Operating periods exist but do not cover the requested date range for matched inventory.',
+        'Occupancy unavailable until operating periods are configured for this window.'
+      ];
+
   return {
     sellableNights: anyCovered ? total : null,
     occupancyDenominatorAvailable: anyCovered,
     reason: anyCovered ? null : 'unknown_operating_start',
     entitySellable,
+    excludedAggregateListings: resolved.excludedAggregateListings,
     excludedUnknownBlocks,
-    limitations: anyCovered
-      ? [
-          'Sellable nights = operating nights minus verified maintenance and manual (owner/ops) blocks.',
-          'Unidentified iCal external_hold blocks are not subtracted.',
-          'Direct bookings only — Airbnb stays are excluded from occupied nights and revenue.'
-        ]
-      : [
-          'Operating periods exist but do not cover the requested date range for matched inventory.',
-          'Occupancy unavailable until operating periods are configured for this window.'
-        ]
+    limitations
   };
 }
 
@@ -259,12 +355,9 @@ async function computeSellableNightsSeries({
   const { periodKeyForDate } = require('./stayNights');
   const seriesByPeriod = new Map();
 
-  // Recompute per-night attribution into period buckets (entity-summed).
   const periods = await loadOperatingPeriods({ propertyKind });
-  let entities = await resolveInventoryEntities(propertyKind);
-  if (cabinId) entities = entities.filter((e) => String(e.cabinId) === String(cabinId));
-  if (unitId) entities = entities.filter((e) => String(e.unitId) === String(unitId));
-  if (cabinTypeId) entities = entities.filter((e) => String(e.cabinTypeId) === String(cabinTypeId));
+  const resolved = await resolveInventoryEntities(propertyKind);
+  const entities = filterEntities(resolved.entities, { cabinId, cabinTypeId, unitId });
 
   const cabinIds = [
     ...new Set(entities.map((e) => (e.cabinId ? String(e.cabinId) : null)).filter(Boolean))
@@ -276,31 +369,21 @@ async function computeSellableNightsSeries({
     startDate: { $lt: moment.tz(toDateOnly, 'YYYY-MM-DD', PROPERTY_TIMEZONE).add(1, 'day').toDate() },
     endDate: { $gt: moment.tz(fromDateOnly, 'YYYY-MM-DD', PROPERTY_TIMEZONE).toDate() }
   };
-  if (propertyKind === 'cabin' && cabinIds.length) blockQuery.cabinId = { $in: cabinIds };
-  else if (unitIds.length) blockQuery.$or = [{ unitId: { $in: unitIds } }];
+  const or = [];
+  if (cabinIds.length) or.push({ cabinId: { $in: cabinIds } });
+  if (unitIds.length) or.push({ unitId: { $in: unitIds } });
+  if (or.length) blockQuery.$or = or;
 
-  const verifiedBlocks = await AvailabilityBlock.find(blockQuery).lean();
+  const verifiedBlocks = or.length ? await AvailabilityBlock.find(blockQuery).lean() : [];
 
   for (const entity of entities) {
-    const entityPeriods = periods.filter(
-      (p) => p.entityType === entity.entityType && String(p.entityId) === String(entity.entityId)
-    );
-    if (entity.entityType === 'unit' && entity.cabinTypeId) {
-      for (const p of periods) {
-        if (p.entityType === 'cabin_type' && String(p.entityId) === String(entity.cabinTypeId)) {
-          entityPeriods.push(p);
-        }
-      }
-    }
+    const entityPeriods = periodsForEntity(periods, entity, propertyKind);
     eachSofiaNightInclusive(fromDateOnly, toDateOnly, (dateOnly, nightMoment) => {
       const covered = entityPeriods.some((p) => periodCoversNight(p, nightMoment));
       if (!covered) return;
-      const blocked = verifiedBlocks.some((b) => {
-        if (entity.cabinId && b.cabinId && String(b.cabinId) !== String(entity.cabinId)) return false;
-        if (entity.unitId && b.unitId && String(b.unitId) !== String(entity.unitId)) return false;
-        if (entity.unitId && !b.unitId) return false;
-        return blockCoversNight(b, nightMoment);
-      });
+      const blocked = verifiedBlocks.some(
+        (b) => blockMatchesEntity(b, entity) && blockCoversNight(b, nightMoment)
+      );
       if (blocked) return;
       const key = periodKeyForDate(dateOnly, groupBy);
       seriesByPeriod.set(key, (seriesByPeriod.get(key) || 0) + 1);
@@ -315,5 +398,7 @@ module.exports = {
   computeSellableNights,
   computeSellableNightsSeries,
   loadOperatingPeriods,
-  resolveInventoryEntities
+  resolveInventoryEntities,
+  filterEntities,
+  isMultiListingCabin
 };

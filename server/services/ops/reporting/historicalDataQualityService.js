@@ -13,6 +13,9 @@ const { computeStayNights } = require('./stayNights');
 const { CONFIDENCE } = require('./historicalStayFactsService');
 const { FIXTURE_BOOKING_EMAIL_PATTERN } = require('../../../utils/fixtureExclusion');
 const { formatSofiaDateOnly } = require('../../../utils/dateTime');
+const {
+  resolveInventoryEntities
+} = require('./sellableInventoryService');
 
 function pushSample(arr, id, limit = 5) {
   if (arr.length >= limit) return;
@@ -43,6 +46,8 @@ async function buildHistoricalDataQuality({ propertyKind }) {
     missing_property_kind: emptyIssue('missing_property_kind'),
     missing_inventory_assignment: emptyIssue('missing_inventory_assignment'),
     missing_unit: emptyIssue('missing_unit'),
+    unallocated_valley_occupied_nights: emptyIssue('unallocated_valley_occupied_nights'),
+    excluded_aggregate_listing_cabins: emptyIssue('excluded_aggregate_listing_cabins'),
     overlapping_inventory_attribution: emptyIssue('overlapping_inventory_attribution'),
     duplicate_location_booking_children: emptyIssue('duplicate_location_booking_children'),
     invalid_date_ranges: emptyIssue('invalid_date_ranges'),
@@ -107,6 +112,9 @@ async function buildHistoricalDataQuality({ propertyKind }) {
       issues.missing_unit.count += 1;
       pushSample(issues.missing_unit.sampleIds, booking._id);
       noteMonth('missing_unit');
+      issues.unallocated_valley_occupied_nights.count += 1;
+      pushSample(issues.unallocated_valley_occupied_nights.sampleIds, booking._id);
+      noteMonth('unallocated_valley_occupied_nights');
       repairable += 1;
     }
     if (row.isZeroPriceManual || row.bookedRevenueCents === 0) {
@@ -164,6 +172,12 @@ async function buildHistoricalDataQuality({ propertyKind }) {
         earliestReliableRevenue = loc.checkIn;
       }
     }
+  }
+
+  const inventoryResolved = await resolveInventoryEntities(propertyKind);
+  for (const listing of inventoryResolved.excludedAggregateListings || []) {
+    issues.excluded_aggregate_listing_cabins.count += 1;
+    pushSample(issues.excluded_aggregate_listing_cabins.sampleIds, listing.entityId);
   }
 
   const periods = await InventoryOperatingPeriod.find({ propertyKind }).lean();
@@ -249,6 +263,18 @@ async function buildHistoricalDataQuality({ propertyKind }) {
     provenance: {
       directBookingsOnly: true,
       externalChannelsIncluded: false,
+      valleyDenominator:
+        propertyKind === 'valley'
+          ? 'standalone_valley_cabins_plus_canonical_units'
+          : null,
+      excludedAggregateListings: inventoryResolved.excludedAggregateListings || [],
+      notes: [
+        propertyKind === 'valley'
+          ? 'Valley occupancy denominator mixes standalone Valley cabins and unit-backed units; multi/listing parent Cabins are excluded rather than guessed by name.'
+          : null,
+        'Valley bookings with cabinTypeId but no unitId are unallocated occupied nights — they never fabricate unit occupancy.',
+        'Mongo createdAt is not an approved operating start.'
+      ].filter(Boolean),
       computedAt: new Date().toISOString()
     }
   };

@@ -1,0 +1,67 @@
+[
+  {
+    "propertyKind": "cabin",
+    "entityType": "cabin",
+    "entityId": "69b2ff933a7fff6621e785cc",
+    "operatingFrom": "2026-06-10",
+    "operatingTo": null,
+    "sellableWeekdays": [0, 1, 2, 3, 4, 5, 6],
+    "defaultSellable": true,
+    "reason": "opened",
+    "source": "first_verified_booking",
+    "confidence": "usable_with_limitations",
+    "notes": "The Cabin. propertyKind=cabin entityType=cabin. First verified booking check-in."
+  },
+  {
+    "propertyKind": "valley",
+    "entityType": "cabin",
+    "entityId": "69b2ff947f141a71ffa7c492",
+    "operatingFrom": "2026-04-17",
+    "operatingTo": null,
+    "sellableWeekdays": [0, 1, 2, 3, 4, 5, 6],
+    "defaultSellable": true,
+    "reason": "opened",
+    "source": "first_verified_booking",
+    "confidence": "usable_with_limitations",
+    "notes": "Lux Cabin. propertyKind=valley entityType=cabin (standalone Valley cabin). First verified booking check-in."
+  },
+  {
+    "propertyKind": "valley",
+    "entityType": "cabin",
+    "entityId": "69b2ff947f141a71ffa7c452",
+    "operatingFrom": "2026-07-23",
+    "operatingTo": null,
+    "sellableWeekdays": [0, 1, 2, 3, 4, 5, 6],
+    "defaultSellable": true,
+    "reason": "opened",
+    "source": "first_verified_booking",
+    "confidence": "usable_with_limitations",
+    "notes": "Stone House. propertyKind=valley entityType=cabin (standalone Valley cabin). First verified booking check-in."
+  },
+  {
+    "propertyKind": "valley",
+    "entityType": "unit",
+    "entityId": "69b2ff947f141a71ffa7c444",
+    "operatingFrom": "2026-05-02",
+    "operatingTo": null,
+    "sellableWeekdays": [0, 1, 2, 3, 4, 5, 6],
+    "defaultSellable": true,
+    "reason": "opened",
+    "source": "first_verified_booking",
+    "confidence": "usable_with_limitations",
+    "notes": "A-Frame 2. propertyKind=valley entityType=unit. Unit-level only — do not also apply cabin_type period for the same type in this apply set."
+  },
+  {
+    "propertyKind": "valley",
+    "entityType": "unit",
+    "entityId": "69b2ff947f141a71ffa7c445",
+    "operatingFrom": "2026-05-15",
+    "operatingTo": null,
+    "sellableWeekdays": [0, 1, 2, 3, 4, 5, 6],
+    "defaultSellable": true,
+    "reason": "opened",
+    "source": "first_verified_booking",
+    "confidence": "usable_with_limitations",
+    "notes": "A-Frame 3. propertyKind=valley entityType=unit. Unit-level only — do not also apply cabin_type period for the same type in this apply set."
+  }
+]

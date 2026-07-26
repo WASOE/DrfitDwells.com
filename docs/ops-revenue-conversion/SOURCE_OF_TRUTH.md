@@ -1109,6 +1109,8 @@ Purpose: historical direct sales and occupancy intelligence. **Direct bookings o
 - Never auto-derived from Mongo `createdAt` without review
 - Sellable night = operating night − verified `maintenance` / `manual_block`
 - `external_hold` (iCal) is **not** subtracted and is **not** paid-stay revenue
+- **Valley mixed inventory:** standalone Valley cabins (`entityType: cabin`, not multi/listing) **plus** canonical units; multi/listing parent Cabins are excluded (persisted `inventoryType` / `cabinTypeId` only — never name/slug inference). CabinType operating periods may cover all units of that type; each unit-night is counted once.
+- Valley bookings with `cabinTypeId` but no `unitId` are unallocated occupied nights (never fabricate unit occupancy)
 
 #### Normalized stay facts
 

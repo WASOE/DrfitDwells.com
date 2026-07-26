@@ -357,9 +357,210 @@ test('zero-value handled; missing unit does not fabricate unit occupancy', async
     confidence: 'all'
   });
   assert.equal(perf.summary.bookingCount, 1);
-  const entity = perf.entities.find((e) => e.entityType === 'cabin_type');
+  assert.equal(perf.summary.unallocatedOccupiedNights, 2);
+  const entity = perf.entities.find((e) => e.entityType === 'unallocated_missing_unit');
   assert.ok(entity);
+  assert.equal(entity.occupancyRate, null);
   assert.ok(!perf.entities.some((e) => e.entityType === 'unit'));
+  assert.ok(!perf.entities.some((e) => e.entityType === 'cabin_type'));
+});
+
+test('Valley mixed denominator: standalone cabins + units; listing excluded; filters; no double-count', async () => {
+  const theCabin = await createCabin({
+    name: 'The Cabin',
+    propertyKind: 'cabin',
+    inventoryType: 'single',
+    inventoryMode: 'single'
+  });
+  const lux = await createCabin({
+    name: 'Lux Cabin',
+    propertyKind: 'valley',
+    inventoryType: 'single',
+    inventoryMode: 'single'
+  });
+  const stone = await createCabin({
+    name: 'Stone House',
+    propertyKind: 'valley',
+    inventoryType: 'single',
+    inventoryMode: 'single'
+  });
+  const aframeType = await createCabinType({ name: 'A-Frame', slug: `aframe-${Date.now()}` });
+  const listing = await createCabin({
+    name: 'A-Frame',
+    propertyKind: 'valley',
+    inventoryType: 'multi',
+    inventoryMode: 'multi',
+    cabinTypeId: aframeType._id
+  });
+  const unit2 = await Unit.create({
+    cabinTypeId: aframeType._id,
+    unitNumber: '2',
+    displayName: 'A-Frame 2',
+    isActive: true
+  });
+  const unit3 = await Unit.create({
+    cabinTypeId: aframeType._id,
+    unitNumber: '3',
+    displayName: 'A-Frame 3',
+    isActive: true
+  });
+  const syncValidation = await createCabin({
+    name: 'SyncValidation Cabin X',
+    propertyKind: 'valley',
+    inventoryType: 'single'
+  });
+
+  // Operating periods for May 2026 (31 nights)
+  for (const [entityType, entityId, propertyKind] of [
+    ['cabin', theCabin._id, 'cabin'],
+    ['cabin', lux._id, 'valley'],
+    ['cabin', stone._id, 'valley'],
+    ['cabin', listing._id, 'valley'], // should not inflate even if present
+    ['unit', unit2._id, 'valley'],
+    ['unit', unit3._id, 'valley'],
+    ['cabin_type', aframeType._id, 'valley'] // covers units; must not double-count with unit periods
+  ]) {
+    await InventoryOperatingPeriod.create({
+      propertyKind,
+      entityType,
+      entityId: String(entityId),
+      operatingFrom: sofia('2026-05-01'),
+      operatingTo: sofia('2026-05-31'),
+      reason: 'opened',
+      source: 'test'
+    });
+  }
+
+  const { computeSellableNights, resolveInventoryEntities } = require('../services/ops/reporting/sellableInventoryService');
+
+  const resolved = await resolveInventoryEntities('valley');
+  const entityKeys = resolved.entities.map((e) => `${e.entityType}:${e.entityId}`);
+  assert.ok(entityKeys.includes(`cabin:${lux._id}`));
+  assert.ok(entityKeys.includes(`cabin:${stone._id}`));
+  assert.ok(entityKeys.includes(`unit:${unit2._id}`));
+  assert.ok(entityKeys.includes(`unit:${unit3._id}`));
+  assert.ok(!entityKeys.includes(`cabin:${listing._id}`), 'A-Frame listing must not be in denominator');
+  assert.ok(!entityKeys.includes(`cabin:${syncValidation._id}`), 'SyncValidation fixture excluded');
+  assert.ok(
+    resolved.excludedAggregateListings.some((r) => r.entityId === String(listing._id)),
+    'listing surfaced as excluded aggregate'
+  );
+
+  const overall = await computeSellableNights({
+    propertyKind: 'valley',
+    fromDateOnly: '2026-05-01',
+    toDateOnly: '2026-05-31'
+  });
+  // lux + stone + unit2 + unit3 = 4 * 31 = 124 (cabin_type periods apply to units once; listing ignored)
+  assert.equal(overall.sellableNights, 124);
+  assert.equal(overall.entitySellable.length, 4);
+
+  const luxOnly = await computeSellableNights({
+    propertyKind: 'valley',
+    fromDateOnly: '2026-05-01',
+    toDateOnly: '2026-05-31',
+    cabinId: String(lux._id)
+  });
+  assert.equal(luxOnly.sellableNights, 31);
+  assert.equal(luxOnly.entitySellable.length, 1);
+  assert.equal(luxOnly.entitySellable[0].entityId, String(lux._id));
+
+  const stoneOnly = await computeSellableNights({
+    propertyKind: 'valley',
+    fromDateOnly: '2026-05-01',
+    toDateOnly: '2026-05-31',
+    cabinId: String(stone._id)
+  });
+  assert.equal(stoneOnly.sellableNights, 31);
+
+  const typeOnly = await computeSellableNights({
+    propertyKind: 'valley',
+    fromDateOnly: '2026-05-01',
+    toDateOnly: '2026-05-31',
+    cabinTypeId: String(aframeType._id)
+  });
+  assert.equal(typeOnly.sellableNights, 62);
+  assert.ok(typeOnly.entitySellable.every((e) => e.entityType === 'unit'));
+  assert.ok(!typeOnly.entitySellable.some((e) => e.entityType === 'cabin'));
+
+  const unitOnly = await computeSellableNights({
+    propertyKind: 'valley',
+    fromDateOnly: '2026-05-01',
+    toDateOnly: '2026-05-31',
+    unitId: String(unit2._id)
+  });
+  assert.equal(unitOnly.sellableNights, 31);
+
+  // cabin_type-only coverage (no unit periods) still yields one night per unit, not double
+  await InventoryOperatingPeriod.deleteMany({
+    propertyKind: 'valley',
+    entityType: 'unit'
+  });
+  const typeFallback = await computeSellableNights({
+    propertyKind: 'valley',
+    fromDateOnly: '2026-05-01',
+    toDateOnly: '2026-05-31',
+    cabinTypeId: String(aframeType._id)
+  });
+  assert.equal(typeFallback.sellableNights, 62);
+
+  // The Cabin remains isolated under propertyKind=cabin
+  const cabinZone = await computeSellableNights({
+    propertyKind: 'cabin',
+    fromDateOnly: '2026-05-01',
+    toDateOnly: '2026-05-31'
+  });
+  assert.equal(cabinZone.sellableNights, 31);
+  assert.ok(cabinZone.entitySellable.every((e) => e.entityId === String(theCabin._id)));
+  assert.ok(!cabinZone.entitySellable.some((e) => e.entityId === String(lux._id)));
+
+  // Occupied attribution: lux → cabin; unit booking → unit; missing unitId → unallocated
+  await insertBooking({
+    cabinId: lux._id,
+    checkIn: sofia('2026-05-10'),
+    checkOut: sofia('2026-05-12'),
+    guestInfo: { firstName: 'L', lastName: 'X', email: 'lux@test.com', phone: '+3591' },
+    totalPrice: 200,
+    totalValueCents: 20000
+  });
+  await insertBooking({
+    cabinTypeId: aframeType._id,
+    unitId: unit2._id,
+    checkIn: sofia('2026-05-10'),
+    checkOut: sofia('2026-05-11'),
+    guestInfo: { firstName: 'U', lastName: '2', email: 'u2@test.com', phone: '+3591' },
+    totalPrice: 100,
+    totalValueCents: 10000
+  });
+  await insertBooking({
+    cabinTypeId: aframeType._id,
+    checkIn: sofia('2026-05-10'),
+    checkOut: sofia('2026-05-12'),
+    guestInfo: { firstName: 'M', lastName: 'U', email: 'missing@test.com', phone: '+3591' },
+    totalPrice: 150,
+    totalValueCents: 15000
+  });
+
+  const perf = await aggregateHistoricalPerformance({
+    propertyKind: 'valley',
+    from: '2026-05-01',
+    to: '2026-05-31'
+  });
+  assert.ok(perf.entities.some((e) => e.entityType === 'cabin' && e.entityId === String(lux._id)));
+  assert.ok(perf.entities.some((e) => e.entityType === 'unit' && e.entityId === String(unit2._id)));
+  assert.ok(perf.entities.some((e) => e.entityType === 'unallocated_missing_unit'));
+  assert.equal(perf.summary.unallocatedOccupiedNights, 2);
+  assert.ok(!perf.entities.some((e) => e.entityType === 'unit' && e.entityId === String(unit3._id) && e.occupiedNights > 0));
+
+  const typeFiltered = await aggregateHistoricalPerformance({
+    propertyKind: 'valley',
+    from: '2026-05-01',
+    to: '2026-05-31',
+    cabinTypeId: String(aframeType._id)
+  });
+  assert.equal(typeFiltered.summary.occupancyRate, null);
+  assert.equal(typeFiltered.summary.dataConfidence, 'usable_with_limitations');
+  assert.ok(typeFiltered.summary.unallocatedOccupiedNights >= 2);
 });
 
 test('historical data quality reports missing inventory and earliest dates', async () => {

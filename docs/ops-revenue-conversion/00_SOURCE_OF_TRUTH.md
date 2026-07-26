@@ -28,6 +28,7 @@ See the full specification in `SOURCE_OF_TRUTH.md`. All future AI and engineerin
 
 - Audit: `server/scripts/auditHistoricalDirectSales.cjs`
 - Denominator: `InventoryOperatingPeriod` + verified maintenance/manual blocks
+- Valley denominator: standalone Valley cabins + unit-backed inventory (listing aggregates excluded)
 - APIs: `GET /api/ops/insights/performance`, `GET /api/ops/insights/historical-data-quality`
 - UI: `/ops/insights/performance`
 - Repair: operating-period upsert + reporting metadata correction scripts (dry-run default)

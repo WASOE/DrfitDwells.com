@@ -116,8 +116,9 @@ function buildBookingStayFact(booking, maps, { fromDateOnly, toDateOnly, occupan
 
   let occupancyAttribution = 'unknown';
   if (base.unitId) occupancyAttribution = 'unit';
+  else if (base.isMissingUnitOnValley) occupancyAttribution = 'unallocated_missing_unit';
+  else if (base.cabinId) occupancyAttribution = 'cabin';
   else if (base.cabinTypeId) occupancyAttribution = 'cabin_type';
-  else if (base.cabinId) occupancyAttribution = 'cabin_type';
 
   const revenueCents = base.bookedRevenueCents;
   const dataConfidence = classifyStayConfidence({

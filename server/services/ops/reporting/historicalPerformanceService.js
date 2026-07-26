@@ -26,13 +26,30 @@ function emptyMetrics() {
     bookingCount: 0,
     soldNights: 0,
     occupiedNights: 0,
+    unallocatedOccupiedNights: 0,
     sellableNights: null,
     occupancyRate: null,
     grossBookedRevenueCents: 0,
     cancelledRevenueCents: 0,
     adrCents: null,
-    revenuePerSellableNightCents: null
+    revenuePerSellableNightCents: null,
+    dataConfidence: CONFIDENCE.VERIFIED
   };
+}
+
+function worstConfidence(...values) {
+  const order = [
+    CONFIDENCE.VERIFIED,
+    CONFIDENCE.USABLE,
+    CONFIDENCE.REVENUE_ONLY,
+    CONFIDENCE.UNRELIABLE
+  ];
+  let worst = CONFIDENCE.VERIFIED;
+  for (const v of values) {
+    if (!v) continue;
+    if (order.indexOf(v) > order.indexOf(worst)) worst = v;
+  }
+  return worst;
 }
 
 function periodBucket() {
@@ -137,12 +154,18 @@ async function aggregateHistoricalPerformance({
     cursor.add(1, 'day');
   }
 
+  const summaryConfidences = new Set();
+
   for (const fact of facts) {
     summary.bookingCount += 1;
     summary.soldNights += fact.soldNightsInWindow || 0;
     summary.occupiedNights += fact.occupiedNightsInWindow || 0;
     summary.grossBookedRevenueCents += fact.bookedRevenueCents || 0;
     summary.cancelledRevenueCents += fact.cancelledRevenueCents || 0;
+    summaryConfidences.add(fact.dataConfidence);
+    if (fact.occupancyAttribution === 'unallocated_missing_unit') {
+      summary.unallocatedOccupiedNights += fact.occupiedNightsInWindow || 0;
+    }
 
     // Period attribution: use check-in date for booked/checkIn basis alignment with revenue series
     const anchor =
@@ -175,6 +198,11 @@ async function aggregateHistoricalPerformance({
       entityType = 'unit';
       entityId = fact.unitId;
       displayName = `Unit ${fact.unitId.slice(-6)}`;
+      entityKey = `${entityType}:${entityId}`;
+    } else if (fact.occupancyAttribution === 'unallocated_missing_unit') {
+      entityType = 'unallocated_missing_unit';
+      entityId = fact.cabinTypeId || 'unknown';
+      displayName = 'Unallocated Valley nights (missing unitId)';
       entityKey = `${entityType}:${entityId}`;
     } else if (fact.cabinId) {
       entityType = 'cabin';
@@ -214,7 +242,28 @@ async function aggregateHistoricalPerformance({
     for (const issue of fact.dataQualityIssues || []) e.issues.add(issue);
   }
 
-  summary.occupancyRate = safeRate(summary.occupiedNights, summary.sellableNights);
+  const entityFiltered = Boolean(cabinTypeId || unitId);
+  const hasUnallocated = summary.unallocatedOccupiedNights > 0;
+
+  let summaryConfidence = CONFIDENCE.VERIFIED;
+  if (summaryConfidences.has(CONFIDENCE.UNRELIABLE)) summaryConfidence = CONFIDENCE.UNRELIABLE;
+  else if (
+    summaryConfidences.has(CONFIDENCE.REVENUE_ONLY) ||
+    !sellable.occupancyDenominatorAvailable
+  ) {
+    summaryConfidence = CONFIDENCE.REVENUE_ONLY;
+  } else if (summaryConfidences.has(CONFIDENCE.USABLE) || hasUnallocated) {
+    summaryConfidence = CONFIDENCE.USABLE;
+  }
+
+  // Precise unit/type occupancy is unreliable when unallocated missing-unit nights are in the filter.
+  if (entityFiltered && hasUnallocated) {
+    summary.occupancyRate = null;
+    summaryConfidence = worstConfidence(summaryConfidence, CONFIDENCE.USABLE);
+  } else {
+    summary.occupancyRate = safeRate(summary.occupiedNights, summary.sellableNights);
+  }
+  summary.dataConfidence = summaryConfidence;
   summary.adrCents =
     summary.occupiedNights > 0
       ? Math.round(summary.grossBookedRevenueCents / summary.occupiedNights)
@@ -249,23 +298,49 @@ async function aggregateHistoricalPerformance({
       dataConfidence = CONFIDENCE.REVENUE_ONLY;
     } else if (e.confidences.has(CONFIDENCE.USABLE)) dataConfidence = CONFIDENCE.USABLE;
 
+    const isUnallocated = e.entityType === 'unallocated_missing_unit';
     return {
       entityType: e.entityType,
       entityId: e.entityId,
       displayName: e.displayName,
       bookingCount: e.bookingCount,
       occupiedNights: e.occupiedNights,
-      sellableNights,
-      occupancyRate: safeRate(e.occupiedNights, sellableNights),
+      sellableNights: isUnallocated ? null : sellableNights,
+      occupancyRate: isUnallocated ? null : safeRate(e.occupiedNights, sellableNights),
       grossBookedRevenueCents: e.grossBookedRevenueCents,
       adrCents:
         e.occupiedNights > 0
           ? Math.round(e.grossBookedRevenueCents / e.occupiedNights)
           : null,
-      dataConfidence,
+      dataConfidence: isUnallocated
+        ? worstConfidence(dataConfidence, CONFIDENCE.USABLE)
+        : dataConfidence,
       issues: [...e.issues]
     };
   });
+
+  const limitations = [
+    ...(sellable.limitations || []),
+    'Direct revenue per sellable night is not total RevPAR — Airbnb and other external channels are excluded.',
+    'iCal external_hold blocks are availability signals only and are not treated as paid stays.',
+    'Location buyouts count once; represented child bookings do not duplicate revenue or nights.',
+    'Cancelled bookings contribute cancelled revenue, not occupied nights.'
+  ];
+  if (propertyKind === 'valley') {
+    limitations.push(
+      'Valley sellable nights mix standalone Valley cabins and unit-backed inventory; multi/listing parent Cabins are excluded from the denominator.'
+    );
+  }
+  if ((sellable.excludedAggregateListings || []).length) {
+    limitations.push(
+      `Excluded ${sellable.excludedAggregateListings.length} aggregate listing Cabin(s) from the occupancy denominator (unit-backed inventory is canonical).`
+    );
+  }
+  if (hasUnallocated) {
+    limitations.push(
+      'Some Valley occupied nights lack unitId and are surfaced as unallocated_missing_unit — they do not fabricate unit occupancy.'
+    );
+  }
 
   return {
     propertyKind,
@@ -280,14 +355,14 @@ async function aggregateHistoricalPerformance({
       externalChannelsIncluded: false,
       occupancyMethod:
         'operating_periods_minus_verified_maintenance_and_manual_blocks',
+      valleyDenominator:
+        propertyKind === 'valley'
+          ? 'standalone_valley_cabins_plus_canonical_units'
+          : null,
+      excludedAggregateListings: sellable.excludedAggregateListings || [],
+      unallocatedOccupiedNights: summary.unallocatedOccupiedNights,
       excludedUnknownBlocks: sellable.excludedUnknownBlocks || 0,
-      limitations: [
-        ...(sellable.limitations || []),
-        'Direct revenue per sellable night is not total RevPAR — Airbnb and other external channels are excluded.',
-        'iCal external_hold blocks are availability signals only and are not treated as paid stays.',
-        'Location buyouts count once; represented child bookings do not duplicate revenue or nights.',
-        'Cancelled bookings contribute cancelled revenue, not occupied nights.'
-      ],
+      limitations,
       occupancyUnavailableMessage: sellable.occupancyDenominatorAvailable
         ? null
         : 'Occupancy unavailable for this period because historical sellable inventory cannot be verified.',
