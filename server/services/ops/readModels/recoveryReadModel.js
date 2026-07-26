@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const SavedBookingQuote = require('../../../models/SavedBookingQuote');
 const CheckoutSession = require('../../../models/CheckoutSession');
 const QuoteContactConsentEvent = require('../../../models/QuoteContactConsentEvent');
+const RecoveryMessageDelivery = require('../../../models/RecoveryMessageDelivery');
 const { buildInclusiveDateRange } = require('../reporting/reportingFilters');
 const { isAllowedPropertyKind } = require('../reporting/propertyKindJoin');
 const { validateConversionEntityFilters } = require('../reporting/entityFilterValidation');
@@ -117,7 +118,8 @@ async function mapRecoveryListRow(doc, now = new Date()) {
     anonymized: Boolean(doc.anonymizedAt),
     bookingId: doc.bookingId ? String(doc.bookingId) : null,
     locationBookingId: doc.locationBookingId ? String(doc.locationBookingId) : null,
-    detailHref: `/ops/conversion/recovery/${doc._id}`
+    detailHref: `/ops/conversion/recovery/${doc._id}`,
+    deliveryDisabled: true
   };
 }
 
@@ -214,25 +216,136 @@ async function listRecoveryQuotes({
     throw badRequest('consentBasis must be quote_delivery, booking_reminder, marketing, or none');
   }
 
-  // DB pagination first — do not scan the full date window into memory.
-  const total = await SavedBookingQuote.countDocuments(match);
-  const skip = (pagination.page - 1) * pagination.limit;
-  const docs = await SavedBookingQuote.find(match)
-    .sort({ quotedAt: -1, _id: -1 })
-    .skip(skip)
-    .limit(pagination.limit)
-    .lean();
+  const needsDerivedFill =
+    Boolean(eligibility) ||
+    (status === 'expired' && !match.status) ||
+    (status && !['quoted', 'checkout_started', 'converted', 'superseded', 'ineligible', 'expired'].includes(status));
 
+  const BATCH = Math.min(100, Math.max(pagination.limit * 2, 40));
+  const MAX_SCAN = 2000;
+  let scanned = 0;
+  let matchedBeforePage = 0;
+  const targetSkip = (pagination.page - 1) * pagination.limit;
   const rows = [];
-  for (const doc of docs) {
-    const row = await mapRecoveryListRow(doc, now);
-    // Derived eligibility filter applied after pagination (may thin the page).
-    if (eligibility && row.eligibilityReason !== eligibility) continue;
-    // Derived display status when not already constrained by persisted status.
-    if (status && !match.status && row.status !== status) continue;
-    if (status === 'expired' && row.status !== 'expired') continue;
-    rows.push(row);
+  let cursorQuotedAt = null;
+  let cursorId = null;
+  let exhausted = false;
+  let scanTruncated = false;
+
+  const passesDerived = (row) => {
+    if (eligibility && row.eligibilityReason !== eligibility) return false;
+    if (status === 'expired' && row.status !== 'expired') return false;
+    if (
+      status &&
+      status !== 'expired' &&
+      !match.status &&
+      row.status !== status
+    ) {
+      return false;
+    }
+    return true;
+  };
+
+  if (!needsDerivedFill && !eligibility && !(status === 'expired')) {
+    // Pure persisted pagination — totals are exact for persisted filters.
+    const total = await SavedBookingQuote.countDocuments(match);
+    const skip = (pagination.page - 1) * pagination.limit;
+    const docs = await SavedBookingQuote.find(match)
+      .sort({ quotedAt: -1, _id: -1 })
+      .skip(skip)
+      .limit(pagination.limit)
+      .lean();
+    for (const doc of docs) {
+      rows.push(await mapRecoveryListRow(doc, now));
+    }
+    return {
+      propertyKind,
+      period: { from: String(from).slice(0, 10), to: String(to).slice(0, 10) },
+      filters: {
+        status: status || null,
+        eligibility: eligibility || null,
+        consentBasis: consentBasis || null,
+        suppressed: suppressedFilter,
+        hasEmail: hasEmailFilter,
+        entityType: entityType || null,
+        cabinId: entity.cabinId ? String(entity.cabinId) : null,
+        cabinTypeId: entity.cabinTypeId ? String(entity.cabinTypeId) : null
+      },
+      pagination: {
+        page: pagination.page,
+        limit: pagination.limit,
+        returned: rows.length,
+        total,
+        totalBasis: 'persisted_filters',
+        hasMore: skip + docs.length < total
+      },
+      rows,
+      provenance: {
+        computedAt: now.toISOString(),
+        notice:
+          'Recovery delivery is disabled. Previews do not send messages. Recovery eligibility does not guarantee that a message may legally be sent.',
+        noSend: true,
+        listOmitsRawEmail: true,
+        listOmitsSessionKeys: true,
+        paginationBeforeDerivedEligibility: false,
+        derivedFilters: ['effective contact preference on each row'],
+        persistedFilters: [
+          'propertyKind',
+          'quotedAt range',
+          'status (stored)',
+          'cabinId',
+          'cabinTypeId',
+          'entityType',
+          'hasEmail',
+          'suppressed (recoveryState)',
+          'consentBasis (snapshot flags)'
+        ]
+      }
+    };
   }
+
+  // Derived eligibility (and similar): fill batches until page is complete or scan exhausted.
+  while (rows.length < pagination.limit && scanned < MAX_SCAN) {
+    const batchMatch = { ...match };
+    if (cursorQuotedAt && cursorId) {
+      batchMatch.$and = (batchMatch.$and || []).concat([
+        {
+          $or: [
+            { quotedAt: { $lt: cursorQuotedAt } },
+            { quotedAt: cursorQuotedAt, _id: { $lt: cursorId } }
+          ]
+        }
+      ]);
+    }
+    const batch = await SavedBookingQuote.find(batchMatch)
+      .sort({ quotedAt: -1, _id: -1 })
+      .limit(BATCH)
+      .lean();
+    if (!batch.length) {
+      exhausted = true;
+      break;
+    }
+    scanned += batch.length;
+    for (const doc of batch) {
+      cursorQuotedAt = doc.quotedAt;
+      cursorId = doc._id;
+      const row = await mapRecoveryListRow(doc, now);
+      if (!passesDerived(row)) continue;
+      if (matchedBeforePage < targetSkip) {
+        matchedBeforePage += 1;
+        continue;
+      }
+      rows.push(row);
+      if (rows.length >= pagination.limit) break;
+    }
+    if (batch.length < BATCH) {
+      exhausted = true;
+      break;
+    }
+  }
+  if (!exhausted && scanned >= MAX_SCAN) scanTruncated = true;
+
+  const hasMore = rows.length >= pagination.limit && (!exhausted || scanTruncated);
 
   return {
     propertyKind,
@@ -250,18 +363,23 @@ async function listRecoveryQuotes({
     pagination: {
       page: pagination.page,
       limit: pagination.limit,
-      total,
-      hasMore: skip + docs.length < total
+      returned: rows.length,
+      total: null,
+      totalBasis: 'derived_filters',
+      hasMore,
+      scanned,
+      scanTruncated
     },
     rows,
     provenance: {
       computedAt: now.toISOString(),
       notice:
-        'Recovery eligibility does not guarantee that a message may legally be sent. Automated sending is not enabled in this batch.',
+        'Recovery delivery is disabled. Previews do not send messages. Derived eligibility uses fill-batch pagination; total is omitted because it is not a persisted count.',
       noSend: true,
       listOmitsRawEmail: true,
       listOmitsSessionKeys: true,
-      paginationBeforeDerivedEligibility: true,
+      paginationBeforeDerivedEligibility: false,
+      fillBatchPagination: true,
       derivedFilters: ['eligibility', 'display status nuances', 'effective contact preference'],
       persistedFilters: [
         'propertyKind',
@@ -310,6 +428,27 @@ async function getRecoveryQuoteDetail({ id }) {
         .select('consentType granted textVersion textSnapshot capturedAt sourceSurface')
         .lean()
     : [];
+
+  const deliveries = await RecoveryMessageDelivery.find({
+    savedQuoteId: doc._id,
+    isPreview: { $ne: true }
+  })
+    .sort({ createdAt: -1 })
+    .limit(20)
+    .select(
+      'messagePurpose templateKey templateVersion status eligibilitySnapshot preparedAt scheduledFor sentAt cancelledAt cancelReason sequence idempotencyKey recipientDomain'
+    )
+    .lean();
+
+  const { evaluateRecoveryDeliveryGate } = require('../../savedQuotes/recoveryDeliveryGateService');
+  const quoteDeliveryGate = await evaluateRecoveryDeliveryGate({
+    savedQuoteId: doc._id,
+    messagePurpose: 'quote_delivery'
+  });
+  const reminderGate = await evaluateRecoveryDeliveryGate({
+    savedQuoteId: doc._id,
+    messagePurpose: 'booking_reminder'
+  });
 
   return {
     savedQuoteId: String(doc._id),
@@ -366,6 +505,33 @@ async function getRecoveryQuoteDetail({ id }) {
     recoveryEligible: eligibility.eligible,
     recoveryEligibilityReason: eligibility.reason,
     eligibilityReason: eligibility.reason,
+    deliveryGates: {
+      quote_delivery: {
+        allowed: quoteDeliveryGate.allowed,
+        reason: quoteDeliveryGate.reason,
+        consentBasis: quoteDeliveryGate.consentBasis
+      },
+      booking_reminder: {
+        allowed: reminderGate.allowed,
+        reason: reminderGate.reason,
+        consentBasis: reminderGate.consentBasis
+      }
+    },
+    deliveries: deliveries.map((d) => ({
+      id: String(d._id),
+      messagePurpose: d.messagePurpose,
+      templateKey: d.templateKey,
+      templateVersion: d.templateVersion,
+      status: d.status,
+      blockedReason: d.eligibilitySnapshot?.reason || d.cancelReason || null,
+      consentBasis: d.eligibilitySnapshot?.consentBasis || null,
+      preparedAt: d.preparedAt,
+      scheduledFor: d.scheduledFor,
+      sentAt: d.sentAt,
+      cancelledAt: d.cancelledAt,
+      sequence: d.sequence,
+      recipientDomain: d.recipientDomain || null
+    })),
     recoveryState: {
       sendCount: Number(doc.recoveryState?.sendCount || 0),
       lastSentAt: doc.recoveryState?.lastSentAt || null,
@@ -376,10 +542,16 @@ async function getRecoveryQuoteDetail({ id }) {
     attribution: doc.attribution || {},
     provenance: {
       notice:
-        'Recovery eligibility does not guarantee that a message may legally be sent. Automated sending is not enabled in this batch.',
+        'Recovery delivery is disabled. Previews do not send messages. Automated sending is not enabled in this batch.',
       noSend: true,
       sessionKeyOmitted: true,
-      visitorKeyOmitted: true
+      visitorKeyOmitted: true,
+      featureFlags: {
+        RECOVERY_QUOTE_DELIVERY_ENABLED: false,
+        RECOVERY_BOOKING_REMINDER_ENABLED: false,
+        RECOVERY_EMAIL_PROVIDER_ENABLED: false,
+        note: 'Defaults shown; live values read from env at gate evaluation.'
+      }
     }
   };
 }

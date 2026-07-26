@@ -381,7 +381,7 @@ test('no email is sent anywhere in Batch 4A saved-quote modules', () => {
     }
   }
   const routesSrc = fs.readFileSync(path.join(root, 'routes/ops/modules/conversionRoutes.js'), 'utf8');
-  assert.equal(/router\.(post|put|patch)\s*\(\s*['"`].*recovery/.test(routesSrc), false);
+  assert.equal(/router\.(post|put|patch)\s*\(\s*['"`].*recovery.*\/send/.test(routesSrc), false);
   assert.match(routesSrc, /router\.get\(\s*['"]\/recovery['"]/);
   assert.equal(/lastMessageType\s*[:=]/.test(fs.readFileSync(path.join(root, 'services/savedQuotes/savedQuoteService.js'), 'utf8')), false);
 });

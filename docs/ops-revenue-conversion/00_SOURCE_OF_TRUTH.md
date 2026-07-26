@@ -1,7 +1,7 @@
 # Drift & Dwells OPS Revenue and Conversion Intelligence
 
 **Status:** Active source of truth for implementation  
-**Last updated:** Batch 4A.1 delivered
+**Last updated:** Batch 4B delivered
 
 See the full specification in `SOURCE_OF_TRUTH.md`. All future AI and engineering work on OPS revenue and conversion intelligence must read this file first.
 
@@ -9,13 +9,14 @@ See the full specification in `SOURCE_OF_TRUTH.md`. All future AI and engineerin
 
 - **Track A:** Revenue Intelligence — `GET /api/ops/insights/summary`, `GET /api/ops/insights/data-quality`, `GET /api/ops/insights/bookings`, `GET /api/ops/insights/reconciliation`, `GET /api/ops/insights/filter-options`, UI at `/ops/insights`
 - **Track B:** Conversion Intelligence — `POST /api/funnel-events`, `GET /api/ops/conversion/summary`, `GET /api/ops/conversion/recovery`, `GET /api/ops/conversion/recovery/:id`, UI at `/ops/conversion` and `/ops/conversion/recovery`
-- **Feature flags:** `FUNNEL_TRACKING_ENABLED=1` (server), `VITE_FUNNEL_TRACKING_ENABLED=true` (client)
+- **Public withdrawal:** `GET/POST /api/public/communication-preferences/:token` → `/communication-preferences/:token`
+- **Continuation:** `GET /api/public/booking-continuation/:token` → `/booking-continuation/:token`
+- **OPS preview (no send):** `POST /api/ops/conversion/recovery/:id/preview`, `POST /api/ops/conversion/recovery/:id/links`
+- **Feature flags (all default OFF):** `RECOVERY_QUOTE_DELIVERY_ENABLED`, `RECOVERY_BOOKING_REMINDER_ENABLED`, `RECOVERY_EMAIL_PROVIDER_ENABLED`
 - **Consent:** Client funnel events require analytics consent; analytics consent is never email permission
-- **Quote contact consents (Batch 4A.1):** separate optional checkboxes for quote delivery, booking reminder, and marketing — none preselected; declining does not block booking
+- **Quote contact consents:** separate optional checkboxes for quote delivery, booking reminder, and marketing — none preselected
 - **revenueBasis:** `checkIn` | `booked` (Sofia day, end-exclusive; not `stay`)
 - **Conversion query max range:** 180 days
-- **Conversion entity filters:** `cabinId` | `cabinTypeId` only (no `unitId`)
-- **Insights entity filters:** `cabinId` | `cabinTypeId` | `unitId` (strict persisted propertyKind validation)
 
 ## Architecture rules
 
@@ -23,73 +24,79 @@ See the full specification in `SOURCE_OF_TRUTH.md`. All future AI and engineerin
 2. Funnel tracking is append-only (`BookingFunnelEvent`) — not durable recovery state
 3. Durable recovery commercial state lives in `SavedBookingQuote`
 4. Consent audit trail lives in append-only `QuoteContactConsentEvent`; current preference on `GuestContactPreference`
-5. Keep The Cabin (`propertyKind: cabin`) and The Valley (`propertyKind: valley`) separate
-6. Never infer `propertyKind` from names, slugs or listing labels
-7. No occupancy, Airbnb import, forecasting, or automated recovery emails until Batch 4B entry criteria are met
-8. Do not reconstruct quote prices from current prices after abandonment
+5. Delivery attempts live in append-only `RecoveryMessageDelivery` (Batch 4B never writes `sent` via real send)
+6. Keep The Cabin (`propertyKind: cabin`) and The Valley (`propertyKind: valley`) separate
+7. Never expose raw browser identity (`sessionKey` / `visitorKey`) in OPS list or public URLs
+8. Consent must be rechecked at delivery time; global suppression always wins; conversion cancels future recovery
+9. **No guest recovery emails, quote delivery emails, reminders, manual send, live scheduler, or automatic discounts in Batch 4B**
 
-## Saved quotes
+## Batch 4B (delivered) — Recovery Delivery Safety Layer
 
-- Model: `SavedBookingQuote`
-- Cabin path: `POST /api/bookings/quote`
-- Valley path: `POST /api/public/location-quotes/:slug` (`entityType: location`, `locationKey`, location buyout snapshot)
-- Quote TTL: 48h (`expiresAt`) — distinct from checkout hold / CheckoutSession soft expiry (`checkoutExpiresAt`)
-- Dedupe by fingerprint when browser identity present; anonymous orphans insert-only
-- Conversion suppresses related abandoned quotes for the same commercial journey
-- **No send APIs, templates, schedulers, or UI send controls**
+Prepares recovery delivery infrastructure **without sending**.
 
-## Consent types (exact)
+### Public preference withdrawal
 
-| Type | Field | Meaning |
-| --- | --- | --- |
-| Quote delivery | `quoteDeliveryRequested` | Permission to email the requested quote only |
-| Booking reminder | `bookingReminderConsent` | Limited abandoned-booking reminder |
-| Marketing | `marketingConsent` | Promotional offers / news |
+- Opaque hashed token (`GuestPreferenceAccessToken`); URL never contains email or internal IDs
+- Withdraw quote delivery / booking reminder / marketing; suppress-all optional contact
+- Appends `QuoteContactConsentEvent`; updates `GuestContactPreference`; propagates to all quotes for normalized email
+- Public token **cannot grant** consent; repeated withdrawal is idempotent
+- Confirmation pages for success / invalid / expired
 
-Audit: `QuoteContactConsentEvent` stores `consentType`, `granted`, `textVersion`, `textSnapshot`, `capturedAt`, `sourceSurface`, links.
+### Delivery ledger
 
-Effective preference: `resolveGuestContactStatus(email)` — latest withdrawal wins; global suppression overrides all optional sends.
+- Model: `RecoveryMessageDelivery`
+- Idempotency: `recovery:{savedQuoteId}:{messagePurpose}:{templateVersion}:{sequence}`
+- Statuses prepared for future provider lifecycle; Batch 4B writes `prepared` / `prepared_preview` / `blocked` / `cancelled` only
+- No full recipient email in list-facing data (hash + domain only)
+- Conversion / suppression cancels unsent prepared/blocked rows
 
-Eligibility reasons include: `quote_delivery_requested`, `booking_reminder_consent`, `marketing_consent`, `no_valid_consent`, `consent_withdrawn`, `globally_suppressed`, `already_converted`, `missing_email`, `expired`, `checkout_still_active`, `already_recovered`, `test_or_internal`, `invalid_quote`.
+### Send-time gate
 
-Quote delivery eligibility does **not** authorize repeated reminder drips.
+- `evaluateRecoveryDeliveryGate` — final decision only; does not send
+- Rechecks consent, suppression, convert, anonymized, window, idempotency, flags, test/internal
 
-## Retention
+### Templates & OPS preview
 
-- Operational target: 180 days
-- Script: `node server/scripts/purgeSavedBookingQuotes.cjs` (dry-run default; `--execute` to anonymize)
-- Anonymizes email + browser keys; retains booking/locationBooking linkage and suppression markers
-- No Mongo TTL index
+- Versioned: `quote_delivery_v1`, `booking_reminder_v1`
+- Not connected to email provider
+- Preview renders subject/HTML/text + eligibility; may write `prepared_preview` audit only
 
-## Recovery query
+### Continuation links
 
-- DB pagination on persisted filters (`propertyKind`, dates, status, entity, hasEmail, suppressed, consent snapshot flags)
-- Derived eligibility evaluated **after** pagination
-- Indexes: propertyKind+quotedAt, status, locationKey, expiresAt+status, emailNormalized, checkoutId, session/visitor sparse keys
+- Opaque `RecoveryContinuationToken` → Cabin or Valley journey
+- Revalidates availability; shows immutable original quote; never silently overwrites
 
-## Batch 4A.1 delivered
+### Pagination
 
-- Valley location quote persistence + checkout/convert hooks
-- Explicit consent UX on ConfirmBooking + Valley checkout
-- Consent events + GuestContactPreference fields + live eligibility resolution
-- Retention purge tooling
-- Scalable recovery list query + OPS UI consent/suppression columns
+- Persisted filters → exact `total`, `totalBasis: "persisted_filters"`
+- Derived eligibility → fill-batch scan (cap 2000), `total: null`, `totalBasis: "derived_filters"`, `returned`, `hasMore`
 
-## Batch 4B entry requirements
+### Disabled preparation
 
-Do not start Batch 4B until all are true:
+- `findQuoteDeliveryCandidates` / `findBookingReminderCandidates` / `prepareRecoveryDelivery`
+- No cron, queue, or provider calls; flags default false
 
-1. Cabin and Valley saved quote coverage exists
-2. Explicit reminder consent can be captured
-3. Consent withdrawal is respected
-4. Global suppression is respected
-5. Recovery queries are paginated and bounded
-6. Retention tooling exists
-7. No-send tests pass
+### Batch 4B no-send limitation
+
+Still no production send path, no scheduler, no send/resend/bulk UI, no List-Unsubscribe headers (prepared for 4C).
+
+## Batch 4C activation requirements
+
+Do not start production sending until:
+
+1. Public withdrawal is live
+2. Template wording is approved
+3. Legal basis and consent wording are reviewed
+4. Provider bounce and complaint handling is connected to `RecoveryMessageDelivery` + preference suppression
+5. Idempotency tests pass
+6. Feature flags default disabled
+7. Staging preview is approved
+8. A capped rollout plan exists
+9. Monitoring and emergency shutoff exist
 
 ## Future
 
-- **Batch 4B:** send infrastructure only after legal/consent review
+- **Batch 4C:** capped recovery send with provider status mapping
 - **Later:** Airbnb import, forecast, occupancy
 
 For the complete specification, refer to `SOURCE_OF_TRUTH.md`.

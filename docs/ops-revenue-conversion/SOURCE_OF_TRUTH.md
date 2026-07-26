@@ -965,15 +965,15 @@ UX: three separate optional checkboxes (default unchecked) on ConfirmBooking and
 
 #### Recovery query limitations
 
-- Persisted filters paginated in MongoDB
-- Derived eligibility / effective preference applied after page load (eligibility filter may thin a page)
+- Persisted filters paginated in MongoDB with exact totals (`totalBasis: persisted_filters`)
+- Derived eligibility uses bounded fill-batch scan (`totalBasis: derived_filters`, `total: null`)
 - Provenance documents which filters are persisted vs derived
 
-#### No-send limitation
+#### No-send limitation (superseded by Batch 4B safety layer)
 
-Still no send endpoints, templates, schedulers, or UI send controls.
+Batch 4A.1 had no send endpoints. Batch 4B adds preview/links/preparation only — still no guest send.
 
-#### Batch 4B entry requirements
+#### Batch 4B entry requirements (met)
 
 1. Cabin and Valley saved quote coverage exists
 2. Explicit reminder consent can be captured
@@ -983,15 +983,115 @@ Still no send endpoints, templates, schedulers, or UI send controls.
 6. Retention tooling exists
 7. No-send tests pass
 
+### Batch 4B (delivered)
+
+Purpose: recovery delivery safety layer. **No guest emails. No live scheduler. No provider send.**
+
+#### Public preference withdrawal
+
+- Model: `GuestPreferenceAccessToken` (SHA-256 of opaque token; email stored server-side only)
+- Routes: `GET/POST /api/public/communication-preferences/:token`
+- UI: `/communication-preferences/:token` (unauthenticated)
+- Actions: withdraw quote delivery / booking reminder / marketing; suppress-all optional contact
+- Effects: append `QuoteContactConsentEvent`; update `GuestContactPreference`; propagate to every `SavedBookingQuote` for normalized email; cancel unsent ledger rows
+- Hard rule: public token cannot grant consent
+- Expired / invalid / revoked tokens change nothing
+
+#### Immutable delivery ledger
+
+- Model: `RecoveryMessageDelivery`
+- Idempotency key: `recovery:{savedQuoteId}:{messagePurpose}:{templateKey:version}:{sequence}`
+- Statuses: `prepared` | `prepared_preview` | `blocked` | `cancelled` | `sent` | `delivered` | `bounced` | `complained` | `failed`
+- Batch 4B never writes `sent` via a real send path; preview uses `prepared_preview`
+- Stores `recipientHash` + `recipientDomain` only (no full email in list-facing delivery data)
+- Conversion and global suppression cancel unsent `prepared`/`blocked` rows
+
+#### Send-time gate
+
+- Service: `evaluateRecoveryDeliveryGate`
+- Rechecks immediately before any future send; does not send
+- Reasons include: `allowed`, `missing_email`, `missing_consent`, `consent_withdrawn`, `globally_suppressed`, `already_converted`, `already_sent`, `outside_send_window`, `checkout_active`, `quote_expired`, `anonymized`, `test_or_internal`, `feature_disabled`, `invalid_record`
+- Feature flags are evaluated after consent/lifecycle so preparation can still record dry-run candidates
+
+#### Template registry and OPS preview
+
+- Templates: `quote_delivery_v1`, `booking_reminder_v1` (identifiable after future edits)
+- No fabricated urgency, availability reservation, post-expiry price guarantee, automatic discount, or marketing in quote-delivery
+- Reminder templates include preference withdrawal URL
+- `POST /api/ops/conversion/recovery/:id/preview` — subject/HTML/text + eligibility; no provider call
+- `POST /api/ops/conversion/recovery/:id/links` — preference + continuation URL indicators for OPS
+
+#### Continuation links
+
+- Model: `RecoveryContinuationToken`
+- Route: `GET /api/public/booking-continuation/:token` → `/booking-continuation/:token`
+- Resolves Cabin confirm journey or Valley retreat journey
+- Revalidates availability; shows immutable original quote; never creates booking or reserves inventory
+- No raw sessionKey/visitorKey in URL or payload
+
+#### Pagination semantics (corrected)
+
+```js
+{
+  page,
+  limit,
+  returned,
+  total,              // exact when totalBasis === 'persisted_filters'; null when derived
+  totalBasis: 'persisted_filters' | 'derived_filters',
+  hasMore
+}
+```
+
+#### Disabled preparation services
+
+- `findQuoteDeliveryCandidates`, `findBookingReminderCandidates`, `prepareRecoveryDelivery`
+- No cron, queue producer, or provider calls
+- Feature flags (default false / unset):
+  - `RECOVERY_QUOTE_DELIVERY_ENABLED=0`
+  - `RECOVERY_BOOKING_REMINDER_ENABLED=0`
+  - `RECOVERY_EMAIL_PROVIDER_ENABLED=0`
+
+#### Provider webhook preparation (not connected for recovery)
+
+Existing Postmark webhook at `/api/email/webhook/postmark` routes:
+
+- Legacy → `EmailEvent`
+- Dispatch-tagged automation → `MessageDeliveryEvent`
+
+**Batch 4C plan:** recovery sends must tag messages with `recovery:{deliveryId}` (or Metadata.recoveryDeliveryId). Webhook fork maps:
+
+| Provider event | RecoveryMessageDelivery status | Side effects |
+| --- | --- | --- |
+| Delivery | `delivered` | set `deliveredAt` |
+| Bounce (hard) | `bounced` | set `failedAt` / failureClass; prefer global suppression |
+| SpamComplaint | `complained` | suppress optional contact |
+| Open/Click | ignore for ledger status | optional analytics only if consented |
+
+Match by `providerMessageId` stored at send time. Never invent delivery rows from webhooks. Re-run send gate is irrelevant for status updates; only lifecycle fields change.
+
+#### Batch 4B no-send limitation
+
+- No recovery mailer call
+- No provider call for recovery
+- No scheduled task / cron / queue
+- No send / resend / bulk UI controls
+- All recovery email feature flags default disabled
+
+#### Batch 4C activation requirements
+
+Do not enable production sending until:
+
+1. Public withdrawal is live
+2. Template wording is approved
+3. Legal basis and consent wording are reviewed
+4. Provider bounce and complaint handling is connected
+5. Idempotency tests pass
+6. Feature flags default disabled
+7. Staging preview is approved
+8. A capped rollout plan exists
+9. Monitoring and emergency shutoff exist
+
 ### Batch 5
-
-Likely scope (may merge with 4B naming):
-
-- abandoned booking recovery messaging
-- transactional recovery emails
-- unsubscribe and consent handling end-to-end
-
-### Batch 6
 
 Likely scope:
 

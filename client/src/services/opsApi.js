@@ -77,6 +77,10 @@ const opsReadAPI = {
     api.get('/ops/conversion/recovery', { params, headers: authHeaders() }),
   conversionRecoveryDetail: (id) =>
     api.get(`/ops/conversion/recovery/${id}`, { headers: authHeaders() }),
+  conversionRecoveryPreview: (id, body) =>
+    api.post(`/ops/conversion/recovery/${id}/preview`, body, { headers: authHeaders() }),
+  conversionRecoveryLinks: (id) =>
+    api.post(`/ops/conversion/recovery/${id}/links`, {}, { headers: authHeaders() }),
   readinessSummary: () => api.get('/ops/readiness/summary', { headers: authHeaders() }),
   readinessModules: () => api.get('/ops/readiness/modules', { headers: authHeaders() }),
   readinessOverlap: () => api.get('/ops/readiness/overlap', { headers: authHeaders() }),

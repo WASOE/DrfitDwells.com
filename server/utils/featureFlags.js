@@ -60,6 +60,21 @@ const featureFlags = {
   // CheckoutSession V2: canonical PI per session (default off in all environments).
   isCheckoutSessionV2Enabled() {
     return this._parseBoolean(process.env.CHECKOUT_SESSION_V2);
+  },
+
+  /** Batch 4B: quote-delivery recovery emails. Default OFF. */
+  isRecoveryQuoteDeliveryEnabled() {
+    return this._parseBoolean(process.env.RECOVERY_QUOTE_DELIVERY_ENABLED);
+  },
+
+  /** Batch 4B: booking-reminder recovery emails. Default OFF. */
+  isRecoveryBookingReminderEnabled() {
+    return this._parseBoolean(process.env.RECOVERY_BOOKING_REMINDER_ENABLED);
+  },
+
+  /** Batch 4B: provider send path for recovery. Default OFF. */
+  isRecoveryEmailProviderEnabled() {
+    return this._parseBoolean(process.env.RECOVERY_EMAIL_PROVIDER_ENABLED);
   }
 };
 

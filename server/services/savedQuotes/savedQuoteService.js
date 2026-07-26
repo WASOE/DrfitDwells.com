@@ -380,6 +380,17 @@ async function markSavedQuoteConverted({
   doc.recoveryEligibility = await evaluateRecoveryEligibility(doc);
   await doc.save();
 
+  try {
+    const {
+      cancelUnsentDeliveriesForQuote
+    } = require('./recoveryPreparationService');
+    await cancelUnsentDeliveriesForQuote(doc._id, 'converted');
+  } catch (err) {
+    console.error('[saved-quote] cancel unsent deliveries failed', {
+      message: err?.message || String(err)
+    });
+  }
+
   // One converted booking suppresses all related abandoned quotes for the journey.
   const suppressRelated = {
     _id: { $ne: doc._id },

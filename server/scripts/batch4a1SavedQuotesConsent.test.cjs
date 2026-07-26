@@ -479,7 +479,7 @@ test('Purge defaults to dry run and anonymizes on execute', async () => {
   assert.ok(anon.anonymizedAt);
 });
 
-test('Pagination is applied before derived eligibility evaluation', async () => {
+test('Pagination reports exact totals for persisted filters', async () => {
   for (let i = 0; i < 3; i += 1) {
     await upsertSavedQuoteFromLocationQuote({
       req: valleyReq({ funnelSessionKey: `page-sess-${i}` }),
@@ -495,9 +495,11 @@ test('Pagination is applied before derived eligibility evaluation', async () => 
     page: 1,
     limit: 2
   });
-  assert.equal(page1.provenance.paginationBeforeDerivedEligibility, true);
-  assert.ok(page1.pagination.total >= 3);
+  assert.equal(page1.pagination.totalBasis, 'persisted_filters');
+  assert.equal(page1.pagination.returned, page1.rows.length);
   assert.ok(page1.rows.length <= 2);
+  assert.equal(page1.pagination.total, 3);
+  assert.equal(page1.pagination.hasMore, true);
 });
 
 test('Cross-zone filters remain rejected', async () => {
@@ -543,7 +545,10 @@ test('No email is sent anywhere in Batch 4A.1 saved-quote modules', () => {
     }
   }
   const routesSrc = fs.readFileSync(path.join(root, 'routes/ops/modules/conversionRoutes.js'), 'utf8');
-  assert.equal(/router\.(post|put|patch)\s*\(\s*['"`].*recovery/.test(routesSrc), false);
+  assert.equal(/router\.(post|put|patch)\s*\(\s*['"`].*recovery.*\/send/.test(routesSrc), false);
+  assert.equal(/Send now|Resend|Bulk send/i.test(
+    fs.readFileSync(path.join(root, '../client/src/pages/ops/OpsConversionRecovery.jsx'), 'utf8')
+  ), false);
   const uiSrc = fs.readFileSync(
     path.join(root, '../client/src/pages/ops/OpsConversionRecovery.jsx'),
     'utf8'

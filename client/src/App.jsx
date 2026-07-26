@@ -31,6 +31,8 @@ const About = lazy(() => import('./pages/About'))
 const Build = lazy(() => import('./pages/Build'))
 const Terms = lazy(() => import('./pages/legal/Terms'))
 const Privacy = lazy(() => import('./pages/legal/Privacy'))
+const CommunicationPreferences = lazy(() => import('./pages/CommunicationPreferences'))
+const BookingContinuation = lazy(() => import('./pages/BookingContinuation'))
 const CancellationPolicy = lazy(() => import('./pages/legal/CancellationPolicy'))
 const Career = lazy(() => import('./pages/legal/Career'))
 const Press = lazy(() => import('./pages/legal/Press'))
@@ -141,6 +143,13 @@ function App() {
               <Route path="/terms-and-conditions-drift-dwells" element={<Navigate to="/terms" replace />} />
               <Route path="/terms-and-conditions-drift-dwells/" element={<Navigate to="/terms" replace />} />
               <Route path="/privacy" element={<Privacy />} />
+              <Route
+                path="/communication-preferences/:token"
+                element={<CommunicationPreferences />}
+              />
+              <Route path="/bg/communication-preferences/:token" element={<CommunicationPreferences />} />
+              <Route path="/booking-continuation/:token" element={<BookingContinuation />} />
+              <Route path="/bg/booking-continuation/:token" element={<BookingContinuation />} />
               <Route path="/cancellation-policy" element={<CancellationPolicy />} />
               <Route path="/career" element={<Career />} />
               <Route path="/press" element={<Press />} />
