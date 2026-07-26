@@ -67,6 +67,7 @@ const OpsUsers = lazy(() => import('./pages/ops/OpsUsers'))
 const OpsGiftVouchers = lazy(() => import('./pages/ops/OpsGiftVouchers'))
 const OpsGiftVoucherDetail = lazy(() => import('./pages/ops/OpsGiftVoucherDetail'))
 const OpsInsights = lazy(() => import('./pages/ops/OpsInsights'))
+const OpsInsightsPerformance = lazy(() => import('./pages/ops/OpsInsightsPerformance'))
 const OpsConversion = lazy(() => import('./pages/ops/OpsConversion'))
 const OpsConversionRecovery = lazy(() => import('./pages/ops/OpsConversionRecovery'))
 const MaintenanceHome = lazy(() => import('./pages/maintenance/MaintenanceHome'))
@@ -252,6 +253,7 @@ function App() {
               <Route path="/ops/gift-vouchers" element={<OpsGiftVouchers />} />
               <Route path="/ops/gift-vouchers/:id" element={<OpsGiftVoucherDetail />} />
               <Route path="/ops/insights" element={<OpsInsights />} />
+              <Route path="/ops/insights/performance" element={<OpsInsightsPerformance />} />
               <Route path="/ops/conversion" element={<OpsConversion />} />
               <Route path="/ops/conversion/recovery" element={<OpsConversionRecovery />} />
               <Route path="/ops/readiness" element={<OpsReadiness />} />

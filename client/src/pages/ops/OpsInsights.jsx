@@ -224,10 +224,17 @@ export default function OpsInsights() {
   return (
     <div className="space-y-4 pb-16 sm:pb-0">
       <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <h2 className="text-lg font-semibold text-gray-900">Revenue insights</h2>
-        <p className="text-xs text-gray-500 mt-1">
-          Direct booking revenue for {filters.propertyKind === 'valley' ? 'The Valley' : 'The Cabin'}.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Revenue insights</h2>
+            <p className="text-xs text-gray-500 mt-1">
+              Direct booking revenue for {filters.propertyKind === 'valley' ? 'The Valley' : 'The Cabin'}.
+            </p>
+          </div>
+          <Link to="/ops/insights/performance" className="text-sm text-gray-700 underline">
+            Historical performance
+          </Link>
+        </div>
         {error ? <p className="text-sm text-red-600 mt-2">{error}</p> : null}
       </section>
 

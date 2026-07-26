@@ -1091,16 +1091,87 @@ Do not enable production sending until:
 8. A capped rollout plan exists
 9. Monitoring and emergency shutoff exist
 
-### Batch 5
+### Batch 5A (delivered)
 
-Likely scope:
+Purpose: historical direct sales and occupancy intelligence. **Direct bookings only. No Airbnb / ExternalChannelStay.**
 
-- Airbnb/manual import via `ExternalChannelStay`
-- external channel revenue in Track A
+#### Historical data audit
+
+- Script: `node server/scripts/auditHistoricalDirectSales.cjs` (read-only JSON)
+- Classifies coverage, missing inventory, cancellations, blocks, operating periods
+- Confidence: `verified` | `usable_with_limitations` | `revenue_only` | `unreliable`
+- Does not silently drop ambiguous records from quality reporting
+
+#### Inventory denominator
+
+- Model: `InventoryOperatingPeriod` (reporting metadata only; no public booking behaviour)
+- Upsert: `node server/scripts/upsertInventoryOperatingPeriods.cjs --file periods.json [--apply]`
+- Never auto-derived from Mongo `createdAt` without review
+- Sellable night = operating night − verified `maintenance` / `manual_block`
+- `external_hold` (iCal) is **not** subtracted and is **not** paid-stay revenue
+
+#### Normalized stay facts
+
+- Live aggregation via `historicalStayFactsService` / `historicalPerformanceService`
+- Checkout excluded from occupied nights; cancelled → cancelled revenue, zero occupied nights
+- LocationBooking buyouts count once; children with `excludeFromRevenueReporting` omitted
+- Missing unit does not fabricate unit occupancy
+
+#### APIs
+
+- `GET /api/ops/insights/performance` — summary, series, entities, provenance
+- `GET /api/ops/insights/historical-data-quality` — issue counts, earliest reliable revenue/occupancy, monthly confidence
+- Finance OPS module permission; no guest PII
+
+#### Metrics
+
+- Sold nights, occupied nights, sellable nights, occupancy (null when denominator unverified)
+- Gross booked / cancelled revenue, ADR, direct revenue per sellable night (not total RevPAR)
+
+#### UI
+
+- `/ops/insights/performance` (+ link from `/ops/insights`)
+- Occupancy unavailable banner when sellable inventory cannot be verified
+- Clear notice that external channels are excluded
+
+#### Repair tooling
+
+- `upsertInventoryOperatingPeriods.cjs` — operating dates
+- `correctHistoricalReportingMetadata.cjs` — mark isTest / archive (audited)
+- Existing `backfillPropertyKind.js` for inventory propertyKind
+- No automatic mutation of prices, payments, guest data, or booking status for cosmetics
+
+#### Query performance notes
+
+- Live aggregation; date range capped at 800 days
+- Booking indexes exist on cabinId/cabinTypeId/unitId + checkIn/checkOut; **no dedicated createdAt index** (booked basis may scan)
+- LocationBooking lacks checkIn index — recommend `{ locationKey: 1, checkIn: 1 }` and `{ createdAt: 1 }` if production volume grows
+- InventoryOperatingPeriod indexed on propertyKind + entity + operatingFrom
+- AvailabilityBlock already indexed on cabinId/unitId/startDate/endDate/status/blockType
+
+#### Batch 5A known gaps
+
+- Production earliest reliable dates require running the audit script against production Mongo (local env may be empty)
+- Occupancy is `revenue_only` / unavailable until operating periods are explicitly configured
+- iCal blocks remain unclassified as paid external stays (Batch 5B)
+
+#### Batch 5B entry requirements
+
+1. Batch 5A reviewed
+2. Operating periods configured for live properties
+3. Historical audit run on production and gaps accepted or repaired
+4. Explicit approval to start `ExternalChannelStay` / Airbnb import
+
+### Batch 5B (not started)
+
+- `ExternalChannelStay`
+- Airbnb and manual external-stay import
+- Duplicate detection and iCal reconciliation
+- External revenue + combined occupancy
+- Total ADR / RevPAN
 
 ### Later
 
-- occupancy metrics
 - forecast engine
 - deposit payments
 - BNPL only if payment friction is proven

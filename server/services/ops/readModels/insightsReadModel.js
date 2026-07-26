@@ -5,6 +5,8 @@ const { buildInsightsDataQuality } = require('../reporting/insightsDataQualitySe
 const { aggregateInsightsBookings } = require('../reporting/insightsBookingsService');
 const { getInsightsFilterOptions } = require('../reporting/insightsFilterOptionsService');
 const { aggregateInsightsReconciliation } = require('../reporting/insightsReconciliationService');
+const { aggregateHistoricalPerformance } = require('../reporting/historicalPerformanceService');
+const { buildHistoricalDataQuality } = require('../reporting/historicalDataQualityService');
 
 function revenueBasisNote(revenueBasis) {
   if (revenueBasis === 'booked') {
@@ -84,10 +86,20 @@ async function getInsightsReconciliationReadModel(params) {
   return aggregateInsightsReconciliation(params);
 }
 
+async function getInsightsPerformanceReadModel(params) {
+  return aggregateHistoricalPerformance(params);
+}
+
+async function getInsightsHistoricalDataQualityReadModel({ propertyKind }) {
+  return buildHistoricalDataQuality({ propertyKind });
+}
+
 module.exports = {
   getInsightsSummaryReadModel,
   getInsightsDataQualityReadModel,
   getInsightsBookingsReadModel,
   getInsightsFilterOptionsReadModel,
-  getInsightsReconciliationReadModel
+  getInsightsReconciliationReadModel,
+  getInsightsPerformanceReadModel,
+  getInsightsHistoricalDataQualityReadModel
 };

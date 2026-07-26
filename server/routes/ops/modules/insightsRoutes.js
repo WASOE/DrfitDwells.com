@@ -6,7 +6,9 @@ const {
   getInsightsDataQualityReadModel,
   getInsightsBookingsReadModel,
   getInsightsFilterOptionsReadModel,
-  getInsightsReconciliationReadModel
+  getInsightsReconciliationReadModel,
+  getInsightsPerformanceReadModel,
+  getInsightsHistoricalDataQualityReadModel
 } = require('../../../services/ops/readModels/insightsReadModel');
 
 const router = express.Router();
@@ -138,6 +140,72 @@ router.get('/reconciliation', async (req, res) => {
       cabinTypeId,
       unitId
     });
+    return res.json({ success: true, data });
+  } catch (error) {
+    const status = error.statusCode || 500;
+    return res.status(status).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/performance', async (req, res) => {
+  try {
+    const {
+      propertyKind,
+      from,
+      to,
+      groupBy,
+      cabinId,
+      cabinTypeId,
+      unitId,
+      channel,
+      confidence,
+      revenueBasis
+    } = req.query;
+    if (!propertyKind || !from || !to) {
+      return res.status(400).json({
+        success: false,
+        message: 'propertyKind, from, and to are required'
+      });
+    }
+    if (confidence && !['all', 'verified', 'usable'].includes(String(confidence))) {
+      return res.status(400).json({
+        success: false,
+        message: 'confidence must be all, verified, or usable'
+      });
+    }
+    if (groupBy && !['day', 'week', 'month'].includes(String(groupBy))) {
+      return res.status(400).json({
+        success: false,
+        message: 'groupBy must be day, week, or month'
+      });
+    }
+
+    const data = await getInsightsPerformanceReadModel({
+      propertyKind,
+      from,
+      to,
+      groupBy: groupBy || 'month',
+      cabinId,
+      cabinTypeId,
+      unitId,
+      channel,
+      confidence: confidence || 'all',
+      revenueBasis: parseRevenueBasis(revenueBasis)
+    });
+    return res.json({ success: true, data });
+  } catch (error) {
+    const status = error.statusCode || 500;
+    return res.status(status).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/historical-data-quality', async (req, res) => {
+  try {
+    const { propertyKind } = req.query;
+    if (!propertyKind) {
+      return res.status(400).json({ success: false, message: 'propertyKind is required' });
+    }
+    const data = await getInsightsHistoricalDataQualityReadModel({ propertyKind });
     return res.json({ success: true, data });
   } catch (error) {
     const status = error.statusCode || 500;

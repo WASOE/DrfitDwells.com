@@ -50,6 +50,7 @@ export const OPS_NAV_ITEMS = [
   { to: '/ops/messaging', label: 'Messaging', module: 'guests_comms' },
   { to: '/ops/gift-vouchers', label: 'Gift vouchers', module: 'finance' },
   { to: '/ops/insights', label: 'Insights', module: 'finance' },
+  { to: '/ops/insights/performance', label: 'Historical performance', module: 'finance' },
   { to: '/ops/conversion', label: 'Conversion', module: 'finance' },
   { to: '/ops/conversion/recovery', label: 'Quote recovery', module: 'finance' },
   { to: '/ops/manual-review', label: 'Manual', module: 'operations' },

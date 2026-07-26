@@ -71,6 +71,10 @@ const opsReadAPI = {
     api.get('/ops/insights/filter-options', { params, headers: authHeaders() }),
   insightsReconciliation: (params) =>
     api.get('/ops/insights/reconciliation', { params, headers: authHeaders() }),
+  insightsPerformance: (params) =>
+    api.get('/ops/insights/performance', { params, headers: authHeaders() }),
+  insightsHistoricalDataQuality: (params) =>
+    api.get('/ops/insights/historical-data-quality', { params, headers: authHeaders() }),
   conversionSummary: (params) =>
     api.get('/ops/conversion/summary', { params, headers: authHeaders() }),
   conversionRecovery: (params) =>
