@@ -5,10 +5,10 @@ const rateLimit = require('express-rate-limit');
 const {
   getPublicPreferenceState,
   applyPublicPreferenceWithdrawal
-} = require('../../services/savedQuotes/preferenceAccessTokenService');
+} = require('../services/savedQuotes/preferenceAccessTokenService');
 const {
   resolveContinuationDestination
-} = require('../../services/savedQuotes/recoveryContinuationService');
+} = require('../services/savedQuotes/recoveryContinuationService');
 
 const router = express.Router();
 
