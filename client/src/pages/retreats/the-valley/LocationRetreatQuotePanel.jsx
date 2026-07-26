@@ -257,6 +257,54 @@ const LocationRetreatQuotePanel = ({ onQuoteChange, panelRef }) => {
                   </div>
                 </div>
 
+                <div className="space-y-3 pt-1">
+                  <p className="text-xs text-gray-500">
+                    Optional contact preferences. Declining does not block booking.
+                  </p>
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!formData.quoteDeliveryRequested}
+                      onChange={(e) =>
+                        setFormData((f) => ({ ...f, quoteDeliveryRequested: e.target.checked }))
+                      }
+                      className="mt-0.5 w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+                    />
+                    <span className="text-xs text-gray-700 leading-relaxed">
+                      Email me this quote. This only covers sending the quote I requested — not
+                      marketing or booking reminders.
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!formData.bookingReminderConsent}
+                      onChange={(e) =>
+                        setFormData((f) => ({ ...f, bookingReminderConsent: e.target.checked }))
+                      }
+                      className="mt-0.5 w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+                    />
+                    <span className="text-xs text-gray-700 leading-relaxed">
+                      If I do not finish booking, you may email me a limited reminder about this stay.
+                      This is not marketing consent.
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!formData.marketingConsent}
+                      onChange={(e) =>
+                        setFormData((f) => ({ ...f, marketingConsent: e.target.checked }))
+                      }
+                      className="mt-0.5 w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+                    />
+                    <span className="text-xs text-gray-700 leading-relaxed">
+                      Send me occasional offers and news from Drift & Dwells. I can unsubscribe at any
+                      time.
+                    </span>
+                  </label>
+                </div>
+
                 <Elements stripe={stripePromise} options={{ clientSecret }}>
                   <LocationPaymentForm
                     onSubmit={handlePay}

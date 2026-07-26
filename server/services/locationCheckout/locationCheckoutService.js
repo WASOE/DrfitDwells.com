@@ -26,6 +26,13 @@ const {
   sendLocationBookingConfirmationEmail,
   sendLocationBookingInternalNotification
 } = require('./locationCheckoutEmailService');
+const {
+  linkSavedQuoteToCheckout,
+  markSavedQuoteConverted,
+  scheduleSavedQuoteTask
+} = require('../savedQuotes/savedQuoteService');
+const { captureQuoteContactConsent } = require('../savedQuotes/quoteContactConsentService');
+const { formatSofiaDateOnly } = require('../../utils/dateTime');
 
 function defaultCurrency() {
   return (process.env.STRIPE_CURRENCY || 'eur').toLowerCase();
@@ -258,6 +265,23 @@ async function createLocationCheckoutPaymentIntent(body, { stripe }) {
         children: String(quote.children || body.children || 0)
       }
     });
+
+    const holdExpiresAt = new Date(Date.now() + 30 * 60 * 1000);
+    scheduleSavedQuoteTask('link-location-checkout', () =>
+      linkSavedQuoteToCheckout({
+        checkoutId: checkoutSessionId,
+        checkoutExpiresAt: holdExpiresAt,
+        sessionKey: body.funnelSessionKey || null,
+        visitorKey: body.funnelVisitorKey || null,
+        locationKey,
+        checkInDateOnly: formatSofiaDateOnly(startDate),
+        checkOutDateOnly: formatSofiaDateOnly(endDate),
+        adults: quote.adults || body.adults || 1,
+        children: quote.children || body.children || 0,
+        quotedTotalCents: amountCents,
+        guestEmail: body.guestEmail || body.guestInfo?.email || null
+      })
+    );
 
     return {
       checkoutSessionId,
@@ -502,6 +526,28 @@ async function finalizeLocationCheckout(body, { stripe }) {
       childCount: childBookingIds.length
     });
   }
+
+  scheduleSavedQuoteTask('location-consent-then-convert', async () => {
+    await captureQuoteContactConsent({
+      email: guestInfo?.email,
+      quoteDeliveryRequested: body.quoteDeliveryRequested,
+      bookingReminderConsent: body.bookingReminderConsent,
+      marketingConsent: body.marketingConsent,
+      sourceSurface: 'valley_checkout',
+      checkoutSessionId,
+      locationBookingId,
+      propertyKind: 'valley',
+      recordDeclines: true
+    });
+    await markSavedQuoteConverted({
+      locationBookingId,
+      checkoutId: checkoutSessionId,
+      guestEmail: guestInfo?.email || null,
+      locationKey: 'valley',
+      checkInDateOnly: formatSofiaDateOnly(checkInDate),
+      checkOutDateOnly: formatSofiaDateOnly(checkOutDate)
+    });
+  });
 
   return {
     idempotentReplay: false,

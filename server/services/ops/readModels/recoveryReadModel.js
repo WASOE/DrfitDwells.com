@@ -3,13 +3,16 @@
 const mongoose = require('mongoose');
 const SavedBookingQuote = require('../../../models/SavedBookingQuote');
 const CheckoutSession = require('../../../models/CheckoutSession');
+const QuoteContactConsentEvent = require('../../../models/QuoteContactConsentEvent');
 const { buildInclusiveDateRange } = require('../reporting/reportingFilters');
 const { isAllowedPropertyKind } = require('../reporting/propertyKindJoin');
 const { validateConversionEntityFilters } = require('../reporting/entityFilterValidation');
 const {
   evaluateRecoveryEligibility,
-  resolveDisplayStatus
+  resolveDisplayStatus,
+  isCheckoutExpired
 } = require('../../savedQuotes/recoveryEligibilityService');
+const { resolveGuestContactStatus } = require('../../savedQuotes/contactPreferenceResolutionService');
 
 function badRequest(message) {
   const error = new Error(message);
@@ -37,21 +40,34 @@ function parsePagination({ page, limit }) {
   return { page: parsedPage, limit: parsedLimit };
 }
 
-function consentBasisLabel(doc) {
-  if (doc.marketingConsent) return 'marketing';
-  if (doc.transactionalContinuationEligible) return 'transactional_continuation';
+function parseBoolFilter(value) {
+  if (value == null || value === '') return null;
+  if (value === true || value === 'true' || value === '1') return true;
+  if (value === false || value === 'false' || value === '0') return false;
+  throw badRequest('Boolean filter must be true or false');
+}
+
+function consentBasisLabel(doc, effective) {
+  if (effective?.globallySuppressed) return 'globally_suppressed';
+  if (effective?.bookingReminderAllowed || doc.bookingReminderConsent) return 'booking_reminder';
+  if (effective?.quoteDeliveryAllowed || doc.quoteDeliveryRequested) return 'quote_delivery';
+  if (effective?.marketingAllowed || doc.marketingConsent) return 'marketing';
   if (doc.emailNormalized || doc.email) return 'email_present_no_send_basis';
   return 'none';
 }
 
-function mapRecoveryListRow(doc, now = new Date()) {
-  const eligibility = evaluateRecoveryEligibility(doc, { now });
+async function mapRecoveryListRow(doc, now = new Date()) {
+  const contactStatus = doc.emailNormalized
+    ? await resolveGuestContactStatus(doc.emailNormalized, { now })
+    : null;
+  const eligibility = await evaluateRecoveryEligibility(doc, { now, contactStatus });
   const status = resolveDisplayStatus(doc, now);
   return {
     savedQuoteId: String(doc._id),
     propertyKind: doc.propertyKind,
     entityType: doc.entityType,
     entityId: String(doc.entityId),
+    locationKey: doc.locationKey || null,
     cabinId: doc.cabinId ? String(doc.cabinId) : null,
     cabinTypeId: doc.cabinTypeId ? String(doc.cabinTypeId) : null,
     checkIn: doc.checkInDateOnly,
@@ -64,14 +80,43 @@ function mapRecoveryListRow(doc, now = new Date()) {
     quotedAt: doc.quotedAt,
     expiresAt: doc.expiresAt,
     checkoutStartedAt: doc.checkoutStartedAt || null,
+    checkoutExpiresAt: doc.checkoutExpiresAt || null,
+    checkoutExpired: isCheckoutExpired(doc, now),
+    quoteExpired: status === 'expired',
     convertedAt: doc.convertedAt || null,
     hasEmail: Boolean(doc.emailNormalized || doc.email),
     emailMasked: maskEmail(doc.emailNormalized || doc.email),
-    consentBasis: consentBasisLabel(doc),
+    consentBasis: consentBasisLabel(doc, contactStatus),
+    consentSnapshot: {
+      quoteDeliveryRequested: Boolean(doc.quoteDeliveryRequested || doc.consentSnapshot?.quoteDeliveryRequested),
+      bookingReminderConsent: Boolean(
+        doc.bookingReminderConsent || doc.consentSnapshot?.bookingReminderConsent
+      ),
+      marketingConsent: Boolean(doc.marketingConsent || doc.consentSnapshot?.marketingConsent),
+      consentCapturedAt: doc.consentSnapshot?.consentCapturedAt || null,
+      consentTextVersion: doc.consentSnapshot?.consentTextVersion || null
+    },
+    effectiveContactPreference: contactStatus
+      ? {
+          quoteDeliveryAllowed: contactStatus.quoteDeliveryAllowed,
+          bookingReminderAllowed: contactStatus.bookingReminderAllowed,
+          marketingAllowed: contactStatus.marketingAllowed,
+          globallySuppressed: contactStatus.globallySuppressed
+        }
+      : {
+          quoteDeliveryAllowed: false,
+          bookingReminderAllowed: false,
+          marketingAllowed: false,
+          globallySuppressed: false
+        },
     recoveryEligible: eligibility.eligible,
     recoveryEligibilityReason: eligibility.reason,
+    eligibilityReason: eligibility.reason,
     recoverySendCount: Number(doc.recoveryState?.sendCount || 0),
+    suppressed: Boolean(doc.recoveryState?.suppressedAt || contactStatus?.globallySuppressed),
+    anonymized: Boolean(doc.anonymizedAt),
     bookingId: doc.bookingId ? String(doc.bookingId) : null,
+    locationBookingId: doc.locationBookingId ? String(doc.locationBookingId) : null,
     detailHref: `/ops/conversion/recovery/${doc._id}`
   };
 }
@@ -82,6 +127,10 @@ async function listRecoveryQuotes({
   to,
   status = null,
   eligibility = null,
+  consentBasis = null,
+  suppressed = null,
+  hasEmail = null,
+  entityType = null,
   cabinId = null,
   cabinTypeId = null,
   page = 1,
@@ -101,6 +150,8 @@ async function listRecoveryQuotes({
   });
   const pagination = parsePagination({ page, limit });
   const now = new Date();
+  const suppressedFilter = parseBoolFilter(suppressed);
+  const hasEmailFilter = parseBoolFilter(hasEmail);
 
   const match = {
     propertyKind,
@@ -109,26 +160,79 @@ async function listRecoveryQuotes({
   };
   if (entity.cabinId) match.cabinId = entity.cabinId;
   if (entity.cabinTypeId) match.cabinTypeId = entity.cabinTypeId;
-
-  // Load a bounded window then filter derived status/eligibility in memory.
-  // Cap scan to pagination depth * 20 to avoid unbounded loads.
-  const scanLimit = Math.min(2000, pagination.page * pagination.limit * 20);
-  const docs = await SavedBookingQuote.find(match)
-    .sort({ quotedAt: -1 })
-    .limit(scanLimit)
-    .lean();
-
-  const filtered = [];
-  for (const doc of docs) {
-    const row = mapRecoveryListRow(doc, now);
-    if (status && row.status !== status) continue;
-    if (eligibility && row.recoveryEligibilityReason !== eligibility) continue;
-    filtered.push(row);
+  if (entityType) {
+    const allowed = ['cabin', 'cabin_type', 'location'];
+    if (!allowed.includes(String(entityType))) {
+      throw badRequest('entityType must be cabin, cabin_type, or location');
+    }
+    match.entityType = String(entityType);
   }
 
-  const total = filtered.length;
+  // Persisted lifecycle status filter (exact stored status).
+  // Derived display statuses expired/checkout_started may still differ; documented below.
+  if (status && ['quoted', 'checkout_started', 'converted', 'superseded', 'ineligible'].includes(status)) {
+    match.status = status;
+  } else if (status === 'expired') {
+    match.expiresAt = { $lte: now };
+    match.status = { $nin: ['converted', 'superseded'] };
+  }
+
+  if (hasEmailFilter === true) {
+    match.emailNormalized = { $type: 'string', $ne: '' };
+  } else if (hasEmailFilter === false) {
+    match.$and = (match.$and || []).concat([
+      {
+        $or: [{ emailNormalized: null }, { emailNormalized: { $exists: false } }, { emailNormalized: '' }]
+      }
+    ]);
+  }
+
+  if (suppressedFilter === true) {
+    match['recoveryState.suppressedAt'] = { $ne: null };
+  } else if (suppressedFilter === false) {
+    match.$and = (match.$and || []).concat([
+      {
+        $or: [
+          { 'recoveryState.suppressedAt': null },
+          { 'recoveryState.suppressedAt': { $exists: false } }
+        ]
+      }
+    ]);
+  }
+
+  if (consentBasis === 'quote_delivery') {
+    match.quoteDeliveryRequested = true;
+  } else if (consentBasis === 'booking_reminder') {
+    match.bookingReminderConsent = true;
+  } else if (consentBasis === 'marketing') {
+    match.marketingConsent = true;
+  } else if (consentBasis === 'none') {
+    match.quoteDeliveryRequested = { $ne: true };
+    match.bookingReminderConsent = { $ne: true };
+    match.marketingConsent = { $ne: true };
+  } else if (consentBasis) {
+    throw badRequest('consentBasis must be quote_delivery, booking_reminder, marketing, or none');
+  }
+
+  // DB pagination first — do not scan the full date window into memory.
+  const total = await SavedBookingQuote.countDocuments(match);
   const skip = (pagination.page - 1) * pagination.limit;
-  const rows = filtered.slice(skip, skip + pagination.limit);
+  const docs = await SavedBookingQuote.find(match)
+    .sort({ quotedAt: -1, _id: -1 })
+    .skip(skip)
+    .limit(pagination.limit)
+    .lean();
+
+  const rows = [];
+  for (const doc of docs) {
+    const row = await mapRecoveryListRow(doc, now);
+    // Derived eligibility filter applied after pagination (may thin the page).
+    if (eligibility && row.eligibilityReason !== eligibility) continue;
+    // Derived display status when not already constrained by persisted status.
+    if (status && !match.status && row.status !== status) continue;
+    if (status === 'expired' && row.status !== 'expired') continue;
+    rows.push(row);
+  }
 
   return {
     propertyKind,
@@ -136,6 +240,10 @@ async function listRecoveryQuotes({
     filters: {
       status: status || null,
       eligibility: eligibility || null,
+      consentBasis: consentBasis || null,
+      suppressed: suppressedFilter,
+      hasEmail: hasEmailFilter,
+      entityType: entityType || null,
       cabinId: entity.cabinId ? String(entity.cabinId) : null,
       cabinTypeId: entity.cabinTypeId ? String(entity.cabinTypeId) : null
     },
@@ -143,7 +251,7 @@ async function listRecoveryQuotes({
       page: pagination.page,
       limit: pagination.limit,
       total,
-      hasMore: skip + rows.length < total
+      hasMore: skip + docs.length < total
     },
     rows,
     provenance: {
@@ -152,7 +260,20 @@ async function listRecoveryQuotes({
         'Recovery eligibility does not guarantee that a message may legally be sent. Automated sending is not enabled in this batch.',
       noSend: true,
       listOmitsRawEmail: true,
-      listOmitsSessionKeys: true
+      listOmitsSessionKeys: true,
+      paginationBeforeDerivedEligibility: true,
+      derivedFilters: ['eligibility', 'display status nuances', 'effective contact preference'],
+      persistedFilters: [
+        'propertyKind',
+        'quotedAt range',
+        'status (stored)',
+        'cabinId',
+        'cabinTypeId',
+        'entityType',
+        'hasEmail',
+        'suppressed (recoveryState)',
+        'consentBasis (snapshot flags)'
+      ]
     }
   };
 }
@@ -171,18 +292,31 @@ async function getRecoveryQuoteDetail({ id }) {
   }
 
   const now = new Date();
-  const eligibility = evaluateRecoveryEligibility(doc, { now });
-  let checkoutExpiresAt = null;
-  if (doc.checkoutSessionId) {
+  const contactStatus = doc.emailNormalized
+    ? await resolveGuestContactStatus(doc.emailNormalized, { now })
+    : null;
+  const eligibility = await evaluateRecoveryEligibility(doc, { now, contactStatus });
+
+  let checkoutExpiresAt = doc.checkoutExpiresAt || null;
+  if (!checkoutExpiresAt && doc.checkoutSessionId) {
     const session = await CheckoutSession.findById(doc.checkoutSessionId).select('expiresAt').lean();
     checkoutExpiresAt = session?.expiresAt || null;
   }
+
+  const consentEvents = doc.emailNormalized
+    ? await QuoteContactConsentEvent.find({ emailNormalized: doc.emailNormalized })
+        .sort({ capturedAt: -1 })
+        .limit(20)
+        .select('consentType granted textVersion textSnapshot capturedAt sourceSurface')
+        .lean()
+    : [];
 
   return {
     savedQuoteId: String(doc._id),
     propertyKind: doc.propertyKind,
     entityType: doc.entityType,
     entityId: String(doc.entityId),
+    locationKey: doc.locationKey || null,
     cabinId: doc.cabinId ? String(doc.cabinId) : null,
     cabinTypeId: doc.cabinTypeId ? String(doc.cabinTypeId) : null,
     checkIn: doc.checkInDateOnly,
@@ -196,18 +330,42 @@ async function getRecoveryQuoteDetail({ id }) {
     quotedAt: doc.quotedAt,
     expiresAt: doc.expiresAt,
     checkoutStartedAt: doc.checkoutStartedAt,
+    checkoutExpiresAt,
+    checkoutExpired: isCheckoutExpired({ ...doc, checkoutExpiresAt }, now),
     convertedAt: doc.convertedAt,
     checkoutId: doc.checkoutId,
-    checkoutExpiresAt,
     bookingId: doc.bookingId ? String(doc.bookingId) : null,
+    locationBookingId: doc.locationBookingId ? String(doc.locationBookingId) : null,
     email: doc.emailNormalized || doc.email || null,
     hasEmail: Boolean(doc.emailNormalized || doc.email),
+    anonymized: Boolean(doc.anonymizedAt),
     analyticsConsent: doc.analyticsConsent,
-    marketingConsent: doc.marketingConsent,
-    transactionalContinuationEligible: doc.transactionalContinuationEligible,
-    consentBasis: consentBasisLabel(doc),
+    consentSnapshot: {
+      quoteDeliveryRequested: Boolean(doc.quoteDeliveryRequested),
+      bookingReminderConsent: Boolean(doc.bookingReminderConsent),
+      marketingConsent: Boolean(doc.marketingConsent),
+      consentCapturedAt: doc.consentSnapshot?.consentCapturedAt || null,
+      consentTextVersion: doc.consentSnapshot?.consentTextVersion || null,
+      quoteDeliveryTextVersion: doc.consentSnapshot?.quoteDeliveryTextVersion || null,
+      bookingReminderTextVersion: doc.consentSnapshot?.bookingReminderTextVersion || null,
+      marketingTextVersion: doc.consentSnapshot?.marketingTextVersion || null
+    },
+    effectiveContactPreference: contactStatus
+      ? {
+          quoteDeliveryAllowed: contactStatus.quoteDeliveryAllowed,
+          bookingReminderAllowed: contactStatus.bookingReminderAllowed,
+          marketingAllowed: contactStatus.marketingAllowed,
+          globallySuppressed: contactStatus.globallySuppressed,
+          suppressionReason: contactStatus.suppressionReason,
+          source: contactStatus.source,
+          effectiveAt: contactStatus.effectiveAt
+        }
+      : null,
+    consentEvents,
+    consentBasis: consentBasisLabel(doc, contactStatus),
     recoveryEligible: eligibility.eligible,
     recoveryEligibilityReason: eligibility.reason,
+    eligibilityReason: eligibility.reason,
     recoveryState: {
       sendCount: Number(doc.recoveryState?.sendCount || 0),
       lastSentAt: doc.recoveryState?.lastSentAt || null,
@@ -237,8 +395,9 @@ async function aggregateRecoverySupplementaryCounts({ propertyKind, range, entit
 
   const docs = await SavedBookingQuote.find(match)
     .select(
-      'status bookingId checkoutId expiresAt email emailNormalized marketingConsent transactionalContinuationEligible recoveryState quotedTotalCents isTest'
+      'status bookingId locationBookingId checkoutId expiresAt email emailNormalized marketingConsent quoteDeliveryRequested bookingReminderConsent transactionalContinuationEligible recoveryState quotedTotalCents isTest anonymizedAt'
     )
+    .sort({ quotedAt: -1 })
     .limit(5000)
     .lean();
 
@@ -257,7 +416,7 @@ async function aggregateRecoverySupplementaryCounts({ propertyKind, range, entit
     if (status === 'checkout_started') checkoutStarted += 1;
     if (status === 'converted') converted += 1;
     if (status === 'quoted' || status === 'expired') abandoned += 1;
-    const eligibility = evaluateRecoveryEligibility(doc, { now });
+    const eligibility = await evaluateRecoveryEligibility(doc, { now });
     if (eligibility.eligible) recoveryEligible += 1;
   }
 
@@ -267,7 +426,7 @@ async function aggregateRecoverySupplementaryCounts({ propertyKind, range, entit
     convertedSavedQuotes: converted,
     abandonedSavedQuotes: abandoned,
     recoveryEligibleJourneys: recoveryEligible,
-    note: 'Supplementary saved-quote counts. Not part of session-sequential funnel drop-off. Batch 4A does not send recovery messages.'
+    note: 'Supplementary saved-quote counts. Not part of session-sequential funnel drop-off. Batch 4A.1 does not send recovery messages.'
   };
 }
 

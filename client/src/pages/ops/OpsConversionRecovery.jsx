@@ -22,15 +22,27 @@ const STATUS_OPTIONS = [
 
 const ELIGIBILITY_OPTIONS = [
   { value: '', label: 'All eligibility' },
+  { value: 'quote_delivery_requested', label: 'Quote delivery' },
+  { value: 'booking_reminder_consent', label: 'Booking reminder' },
+  { value: 'marketing_consent', label: 'Marketing' },
   { value: 'missing_email', label: 'Missing email' },
   { value: 'no_valid_consent', label: 'No valid consent' },
+  { value: 'consent_withdrawn', label: 'Consent withdrawn' },
+  { value: 'globally_suppressed', label: 'Globally suppressed' },
   { value: 'already_converted', label: 'Already converted' },
-  { value: 'quote_expired_too_long', label: 'Quote expired' },
+  { value: 'expired', label: 'Quote expired' },
   { value: 'checkout_still_active', label: 'Checkout still active' },
   { value: 'already_recovered', label: 'Already recovered' },
   { value: 'suppressed', label: 'Suppressed' },
-  { value: 'eligible_marketing', label: 'Eligible marketing' },
-  { value: 'eligible_transactional_continuation', label: 'Eligible transactional' }
+  { value: 'test_or_internal', label: 'Test / internal' }
+];
+
+const CONSENT_BASIS_OPTIONS = [
+  { value: '', label: 'All consent basis' },
+  { value: 'quote_delivery', label: 'Quote delivery snapshot' },
+  { value: 'booking_reminder', label: 'Reminder snapshot' },
+  { value: 'marketing', label: 'Marketing snapshot' },
+  { value: 'none', label: 'No snapshot consent' }
 ];
 
 function ageLabel(iso) {
@@ -40,6 +52,10 @@ function ageLabel(iso) {
   const hours = Math.floor(ms / (60 * 60 * 1000));
   if (hours < 48) return `${hours}h`;
   return `${Math.floor(hours / 24)}d`;
+}
+
+function yn(value) {
+  return value ? 'Yes' : 'No';
 }
 
 export default function OpsConversionRecovery() {
@@ -52,6 +68,10 @@ export default function OpsConversionRecovery() {
       to: searchParams.get('to') || defaults.to,
       status: searchParams.get('status') || '',
       eligibility: searchParams.get('eligibility') || '',
+      consentBasis: searchParams.get('consentBasis') || '',
+      suppressed: searchParams.get('suppressed') || '',
+      hasEmail: searchParams.get('hasEmail') || '',
+      entityType: searchParams.get('entityType') || '',
       cabinId: searchParams.get('cabinId') || '',
       cabinTypeId: searchParams.get('cabinTypeId') || '',
       page: searchParams.get('page') || '1'
@@ -123,6 +143,10 @@ export default function OpsConversionRecovery() {
         };
         if (filters.status) params.status = filters.status;
         if (filters.eligibility) params.eligibility = filters.eligibility;
+        if (filters.consentBasis) params.consentBasis = filters.consentBasis;
+        if (filters.suppressed) params.suppressed = filters.suppressed;
+        if (filters.hasEmail) params.hasEmail = filters.hasEmail;
+        if (filters.entityType) params.entityType = filters.entityType;
         if (filters.cabinId) params.cabinId = filters.cabinId;
         if (filters.cabinTypeId) params.cabinTypeId = filters.cabinTypeId;
         const res = await opsReadAPI.conversionRecovery(params);
@@ -146,6 +170,10 @@ export default function OpsConversionRecovery() {
     filters.to,
     filters.status,
     filters.eligibility,
+    filters.consentBasis,
+    filters.suppressed,
+    filters.hasEmail,
+    filters.entityType,
     filters.cabinId,
     filters.cabinTypeId,
     filters.page
@@ -170,7 +198,8 @@ export default function OpsConversionRecovery() {
         </div>
         <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
           Recovery eligibility does not guarantee that a message may legally be sent. Automated
-          sending is not enabled in this batch.
+          sending is not enabled in this batch. Snapshot consent and effective preference may differ
+          after withdrawal or suppression.
         </div>
         {error ? <p className="text-sm text-red-600 mt-2">{error}</p> : null}
       </section>
@@ -226,7 +255,7 @@ export default function OpsConversionRecovery() {
             </select>
           </label>
           <label className="text-sm text-gray-700">
-            <span className="block text-xs text-gray-500 mb-1">Eligibility</span>
+            <span className="block text-xs text-gray-500 mb-1">Eligibility (derived)</span>
             <select
               value={filters.eligibility}
               onChange={(e) => updateFilter('eligibility', e.target.value)}
@@ -237,6 +266,57 @@ export default function OpsConversionRecovery() {
                   {o.label}
                 </option>
               ))}
+            </select>
+          </label>
+          <label className="text-sm text-gray-700">
+            <span className="block text-xs text-gray-500 mb-1">Consent basis (snapshot)</span>
+            <select
+              value={filters.consentBasis}
+              onChange={(e) => updateFilter('consentBasis', e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2"
+            >
+              {CONSENT_BASIS_OPTIONS.map((o) => (
+                <option key={o.value || 'all'} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm text-gray-700">
+            <span className="block text-xs text-gray-500 mb-1">Suppressed</span>
+            <select
+              value={filters.suppressed}
+              onChange={(e) => updateFilter('suppressed', e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2"
+            >
+              <option value="">All</option>
+              <option value="true">Suppressed</option>
+              <option value="false">Not suppressed</option>
+            </select>
+          </label>
+          <label className="text-sm text-gray-700">
+            <span className="block text-xs text-gray-500 mb-1">Has email</span>
+            <select
+              value={filters.hasEmail}
+              onChange={(e) => updateFilter('hasEmail', e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2"
+            >
+              <option value="">All</option>
+              <option value="true">Has email</option>
+              <option value="false">No email</option>
+            </select>
+          </label>
+          <label className="text-sm text-gray-700">
+            <span className="block text-xs text-gray-500 mb-1">Entity type</span>
+            <select
+              value={filters.entityType}
+              onChange={(e) => updateFilter('entityType', e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2"
+            >
+              <option value="">All</option>
+              <option value="cabin">Cabin</option>
+              <option value="cabin_type">Cabin type</option>
+              <option value="location">Location buyout</option>
             </select>
           </label>
           <label className="text-sm text-gray-700">
@@ -283,32 +363,71 @@ export default function OpsConversionRecovery() {
                 <thead>
                   <tr className="text-left text-gray-500 border-b border-gray-200">
                     <th className="py-2 pr-3">Stage</th>
+                    <th className="py-2 pr-3">Source</th>
                     <th className="py-2 pr-3">Stay</th>
-                    <th className="py-2 pr-3">Dates</th>
                     <th className="py-2 pr-3">Quote</th>
-                    <th className="py-2 pr-3">Age</th>
-                    <th className="py-2 pr-3">Checkout</th>
-                    <th className="py-2 pr-3">Consent</th>
+                    <th className="py-2 pr-3">Quote exp</th>
+                    <th className="py-2 pr-3">Checkout exp</th>
+                    <th className="py-2 pr-3">Snapshot</th>
+                    <th className="py-2 pr-3">Effective</th>
                     <th className="py-2 pr-3">Eligibility</th>
-                    <th className="py-2">Attempts</th>
+                    <th className="py-2">Flags</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(data?.rows || []).map((row) => (
-                    <tr key={row.savedQuoteId} className="border-b border-gray-100">
+                    <tr key={row.savedQuoteId} className="border-b border-gray-100 align-top">
                       <td className="py-2 pr-3 capitalize">{String(row.status).replaceAll('_', ' ')}</td>
-                      <td className="py-2 pr-3 font-mono text-xs">
-                        {String(row.entityId).slice(-6)}
+                      <td className="py-2 pr-3 text-xs">
+                        {row.propertyKind === 'valley' ? 'Valley' : 'Cabin'}
+                        {row.entityType === 'location' ? ' buyout' : ''}
                       </td>
                       <td className="py-2 pr-3">
-                        {row.checkIn} → {row.checkOut}
+                        <div className="font-mono text-xs">
+                          {row.locationKey || String(row.entityId).slice(-6)}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {row.checkIn} → {row.checkOut}
+                        </div>
                       </td>
-                      <td className="py-2 pr-3">{formatMoneyFromCents(row.quotedTotalCents)}</td>
-                      <td className="py-2 pr-3">{ageLabel(row.quotedAt)}</td>
-                      <td className="py-2 pr-3">{row.checkoutStartedAt ? 'Yes' : '—'}</td>
-                      <td className="py-2 pr-3 text-xs">{row.consentBasis}</td>
-                      <td className="py-2 pr-3 text-xs">{row.recoveryEligibilityReason}</td>
-                      <td className="py-2">{row.recoverySendCount}</td>
+                      <td className="py-2 pr-3">
+                        <div>{formatMoneyFromCents(row.quotedTotalCents)}</div>
+                        <div className="text-xs text-gray-500">{ageLabel(row.quotedAt)}</div>
+                      </td>
+                      <td className="py-2 pr-3 text-xs">
+                        {row.expiresAt ? new Date(row.expiresAt).toISOString().slice(0, 10) : '—'}
+                        {row.quoteExpired ? ' · expired' : ''}
+                      </td>
+                      <td className="py-2 pr-3 text-xs">
+                        {row.checkoutExpiresAt
+                          ? new Date(row.checkoutExpiresAt).toISOString().slice(0, 10)
+                          : '—'}
+                        {row.checkoutExpired ? ' · expired' : ''}
+                      </td>
+                      <td className="py-2 pr-3 text-xs">
+                        Q:{yn(row.consentSnapshot?.quoteDeliveryRequested)} · R:
+                        {yn(row.consentSnapshot?.bookingReminderConsent)} · M:
+                        {yn(row.consentSnapshot?.marketingConsent)}
+                        {row.consentSnapshot?.consentTextVersion ? (
+                          <div className="text-[10px] text-gray-400 mt-0.5">
+                            {row.consentSnapshot.consentTextVersion}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="py-2 pr-3 text-xs">
+                        Q:{yn(row.effectiveContactPreference?.quoteDeliveryAllowed)} · R:
+                        {yn(row.effectiveContactPreference?.bookingReminderAllowed)} · M:
+                        {yn(row.effectiveContactPreference?.marketingAllowed)}
+                        {row.effectiveContactPreference?.globallySuppressed ? (
+                          <div className="text-red-700">suppressed</div>
+                        ) : null}
+                      </td>
+                      <td className="py-2 pr-3 text-xs">{row.eligibilityReason}</td>
+                      <td className="py-2 text-xs">
+                        {row.anonymized ? 'anonymized · ' : ''}
+                        {row.suppressed ? 'suppressed · ' : ''}
+                        attempts:{row.recoverySendCount}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -319,7 +438,7 @@ export default function OpsConversionRecovery() {
             ) : null}
             <div className="flex items-center justify-between text-sm text-gray-600 mt-3">
               <span>
-                Page {page} · {data?.pagination?.total ?? 0} total
+                Page {page} · {data?.pagination?.total ?? 0} total (DB-paginated)
               </span>
               <div className="flex gap-2">
                 <button

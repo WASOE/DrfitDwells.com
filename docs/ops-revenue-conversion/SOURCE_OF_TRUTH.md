@@ -916,79 +916,72 @@ Conversion summary guardrails:
 
 Purpose: persist recoverable commercial quote/checkout intent. **No automated sending.**
 
-#### Saved quote source of truth
+See Batch 4A.1 for Valley coverage, consent foundation, retention, and query performance.
 
-- Model: `SavedBookingQuote`
-- Distinct from append-only `BookingFunnelEvent` analytics
-- Persists the exact quoted commercial snapshot at quote time; never recalculate from live prices after abandonment
-- Does not reserve inventory; does not lock price beyond `expiresAt` representation
-- Cabin `POST /api/bookings/quote` hooked; Valley `location-quotes` not yet hooked
+### Batch 4A.1 (delivered)
 
-#### Analytics events vs recovery state
+Purpose: close foundation gaps before any recovery send is allowed.
 
-| Concern | Store |
-| --- | --- |
-| Funnel drop-off / session counts | `BookingFunnelEvent` (append-only, 180d TTL) |
-| Recoverable quote + checkout link + conversion suppress | `SavedBookingQuote` |
+#### Valley quote coverage
 
-#### Consent model (Batch 4A)
+- Hooked `POST /api/public/location-quotes/:slug` → `upsertSavedQuoteFromLocationQuote`
+- `propertyKind: valley`, `entityType: location`, `locationKey`, deterministic location entity id
+- Immutable buyout snapshot includes `includedTargets` summary (no per-unit duplicate journeys)
+- Location checkout create links `checkoutId` + `checkoutExpiresAt`; finalize sets `locationBookingId` and suppresses related quotes
+- Client attaches funnel identity on Valley quote/checkout requests
 
-- `analyticsConsent`: whether browser identity keys were available (not email permission)
-- `marketingConsent`: defaults `false` (no approved marketing capture UX on booking form)
-- `transactionalContinuationEligible`: defaults `false` (do not assume transactional continuation is permitted)
-- Guest email at checkout does **not** set marketing or transactional-continuation flags
-- Eligibility reasons include `missing_email`, `no_valid_consent`, `already_converted`, `suppressed`, `quote_expired_too_long`, `checkout_still_active`, `already_recovered`, `test_or_internal`, plus eligible_* only when explicit flags are true
+#### Exact consent types
 
-#### Dedupe model
+1. `quote_delivery` — email the requested quote only
+2. `booking_reminder` — limited abandoned-booking reminder
+3. `marketing` — promotional email
 
-```
-sq:{propertyKind}:{entityType}:{entityId}:{checkIn}:{checkOut}:{adults}:{children}:{quotedTotalCents}:{promoHash8}:{s:session|v:visitor|orphan:uuid}
-```
+UX: three separate optional checkboxes (default unchecked) on ConfirmBooking and Valley checkout. Declining does not block booking.
 
-- With session/visitor: upsert by fingerprint (refresh active quote; skip if already converted)
-- Anonymous orphan: insert-only unique fingerprint per request (never merge strangers)
+#### Consent audit trail
 
-#### Quote expiry
+- Model: `QuoteContactConsentEvent` (append-only)
+- Fields: consentType, granted, textVersion, textSnapshot, capturedAt, sourceSurface, emailNormalized, savedQuoteId, checkoutSessionId, bookingId, locationBookingId
+- Journey snapshot copied onto `SavedBookingQuote.consentSnapshot` + boolean flags for fast display
 
-- `expiresAt = quotedAt + 48h` (aligned with CheckoutSession soft expiry)
-- Display status may derive `expired` from timestamps without a write job
-- Eligibility uses timestamps; a later maintenance job may mark status but is not required for correctness
+#### Current preference resolution
 
-#### Retention
+- Service: `resolveGuestContactStatus(email)`
+- Sources: `GuestContactPreference` (quoteDelivery, bookingReminder, marketing, suppressed) with fallback to latest consent events
+- Precedence: global suppression > latest explicit withdrawal > earlier grants
+- Saved quote snapshot alone must not keep a journey eligible after withdrawal
 
-- Operational retention target: 180 days for active/recent saved quotes
-- Converted references: retain only as long as operationally required
-- Email/direct identifiers: anonymize earlier when no longer required
-- Suppressed contacts: retain minimum identifier needed to prevent future contact
-- **No Mongo TTL index in Batch 4A** until purge effects on converted refs, suppression, and auditability are designed
+#### Quote expiry versus checkout expiry
 
-#### APIs and UI
+- `expiresAt` — commercial quote TTL (48h)
+- `checkoutExpiresAt` — checkout session / hold soft expiry (distinct)
+- Display and eligibility distinguish `expired` (quote) vs `checkout_still_active`
 
-- `GET /api/ops/conversion/recovery` — list (masked email only; no sessionKey/visitorKey)
-- `GET /api/ops/conversion/recovery/:id` — detail (email for finance-permitted OPS)
-- Supplementary saved-quote counts on `GET /api/ops/conversion/summary`
-- UI: `/ops/conversion/recovery` under finance module
-- Notice: eligibility does not guarantee a message may legally be sent; automated sending is not enabled
+#### Retention and anonymization
+
+- `purgeSavedBookingQuotes` service + `server/scripts/purgeSavedBookingQuotes.cjs`
+- Dry-run by default; `--execute` anonymizes email/session/visitor; keeps suppression + booking links
+- No automatic scheduler in this batch; no TTL index
+
+#### Recovery query limitations
+
+- Persisted filters paginated in MongoDB
+- Derived eligibility / effective preference applied after page load (eligibility filter may thin a page)
+- Provenance documents which filters are persisted vs derived
 
 #### No-send limitation
 
-- No send endpoints, templates, schedulers, or UI send/bulk actions in Batch 4A
-- `recoveryState.sendCount` exists for future Batch 4B; remains zero
+Still no send endpoints, templates, schedulers, or UI send controls.
 
-#### Known limitations
+#### Batch 4B entry requirements
 
-- Valley location quotes not persisted yet
-- No GuestContactPreference live join in eligibility (flags default false; suppression local to recoveryState)
-- Checkout linking relies on stay fields and optional funnel keys (may miss if quote never saved)
-- List scan filters derived status/eligibility in memory (bounded)
-
-#### Batch 4B requirements (future)
-
-- Approved consent UX for transactional continuation and/or marketing
-- Respect `GuestContactPreference` unsubscribe/suppression
-- Send infrastructure, templates, rate limits, audit
-- Manual OPS send only after legal review
-- Valley location-quote hooks
+1. Cabin and Valley saved quote coverage exists
+2. Explicit reminder consent can be captured
+3. Consent withdrawal is respected
+4. Global suppression is respected
+5. Recovery queries are paginated and bounded
+6. Retention tooling exists
+7. No-send tests pass
 
 ### Batch 5
 

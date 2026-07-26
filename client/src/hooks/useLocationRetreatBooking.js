@@ -85,7 +85,10 @@ export function useLocationRetreatBooking({
     firstName: '',
     lastName: '',
     email: '',
-    phone: ''
+    phone: '',
+    quoteDeliveryRequested: false,
+    bookingReminderConsent: false,
+    marketingConsent: false
   });
   const [roomNotes, setRoomNotes] = useState('');
   const [roomAssignments, setRoomAssignments] = useState([]);
@@ -351,6 +354,9 @@ export function useLocationRetreatBooking({
             email: formData.email.trim(),
             phone: formData.phone.trim() || undefined
           },
+          quoteDeliveryRequested: !!formData.quoteDeliveryRequested,
+          bookingReminderConsent: !!formData.bookingReminderConsent,
+          marketingConsent: !!formData.marketingConsent,
           ...(roomAllocationPayload ? { roomAllocation: roomAllocationPayload } : {})
         });
 

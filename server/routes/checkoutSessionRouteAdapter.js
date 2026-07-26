@@ -344,6 +344,27 @@ async function handleCreatePaymentIntentV2(req, stripeClient) {
     stripe: stripeClient
   });
 
+  const guestEmail =
+    req.body.guestEmail || req.body.guestInfo?.email || dto?.guestEmail || null;
+  if (guestEmail) {
+    const {
+      scheduleSavedQuoteTask
+    } = require('../services/savedQuotes/savedQuoteService');
+    const { captureQuoteContactConsent } = require('../services/savedQuotes/quoteContactConsentService');
+    scheduleSavedQuoteTask('capture-consent-on-pi', () =>
+      captureQuoteContactConsent({
+        email: guestEmail,
+        quoteDeliveryRequested: req.body.quoteDeliveryRequested,
+        bookingReminderConsent: req.body.bookingReminderConsent,
+        marketingConsent: req.body.marketingConsent,
+        sourceSurface: 'confirm_booking',
+        checkoutSessionId: dto.checkoutId || checkoutId,
+        propertyKind: quoteResult.entity?.propertyKind || null,
+        recordDeclines: true
+      })
+    );
+  }
+
   return {
     ok: true,
     status: 200,

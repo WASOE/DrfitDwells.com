@@ -1,4 +1,5 @@
 import api from './api';
+import { getFunnelIdentityPayload } from '../tracking/funnel';
 
 /** Thrown when location availability cannot be loaded (incl. 422 inventory gaps). */
 export class LocationAvailabilityError extends Error {
@@ -47,12 +48,24 @@ export const locationAvailabilityAPI = {
 };
 
 export const locationQuoteAPI = {
-  quoteTheValley: (data) => api.post('/public/location-quotes/the-valley', data)
+  quoteTheValley: (data) =>
+    api.post('/public/location-quotes/the-valley', {
+      ...data,
+      ...getFunnelIdentityPayload()
+    })
 };
 
 export const locationCheckoutAPI = {
-  createPaymentIntent: (data) => api.post('/public/location-checkout/create-payment-intent', data),
-  finalize: (data) => api.post('/public/location-checkout/finalize', data)
+  createPaymentIntent: (data) =>
+    api.post('/public/location-checkout/create-payment-intent', {
+      ...data,
+      ...getFunnelIdentityPayload()
+    }),
+  finalize: (data) =>
+    api.post('/public/location-checkout/finalize', {
+      ...data,
+      ...getFunnelIdentityPayload()
+    })
 };
 
 /** Map finalize / checkout 409s to hold-expiry UX (not raw API errors). */

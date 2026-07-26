@@ -211,6 +211,7 @@ async function createCheckoutSession({ input, quote, metadata = null }) {
     linkSavedQuoteToCheckout({
       checkoutId: session.checkoutId,
       checkoutSessionId: session._id,
+      checkoutExpiresAt: session.expiresAt,
       sessionKey: normalizedInput.funnelSessionKey || metadata?.funnelSessionKey || null,
       visitorKey: normalizedInput.funnelVisitorKey || metadata?.funnelVisitorKey || null,
       cabinId: quoteSnapshot.cabinId || null,
@@ -278,6 +279,7 @@ async function refreshCheckoutSessionQuote({ checkoutId, input, quote }) {
     linkSavedQuoteToCheckout({
       checkoutId: session.checkoutId,
       checkoutSessionId: session._id,
+      checkoutExpiresAt: session.expiresAt,
       cabinId: quoteSnapshot.cabinId || null,
       cabinTypeId: quoteSnapshot.cabinTypeId || null,
       checkInDateOnly: quoteSnapshot.checkInDateOnly,

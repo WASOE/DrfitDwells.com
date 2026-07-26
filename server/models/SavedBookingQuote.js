@@ -39,7 +39,28 @@ const pricingSnapshotSchema = new mongoose.Schema(
     voucherAppliedCents: { type: Number, default: 0 },
     remainingDueCents: { type: Number, default: 0 },
     subtotalCents: { type: Number, default: 0 },
-    experienceKeys: { type: [String], default: [] }
+    experienceKeys: { type: [String], default: [] },
+    // Valley location buyout extensions
+    locationKey: { type: String, default: null, trim: true },
+    nights: { type: Number, default: null },
+    lodgingSubtotalCents: { type: Number, default: null },
+    priceDisclaimer: { type: String, default: null, trim: true, maxlength: 500 },
+    includedTargets: { type: mongoose.Schema.Types.Mixed, default: null },
+    isLocationBuyout: { type: Boolean, default: false }
+  },
+  { _id: false }
+);
+
+const consentSnapshotSchema = new mongoose.Schema(
+  {
+    quoteDeliveryRequested: { type: Boolean, default: false },
+    bookingReminderConsent: { type: Boolean, default: false },
+    marketingConsent: { type: Boolean, default: false },
+    consentCapturedAt: { type: Date, default: null },
+    consentTextVersion: { type: String, default: null, trim: true },
+    quoteDeliveryTextVersion: { type: String, default: null, trim: true },
+    bookingReminderTextVersion: { type: String, default: null, trim: true },
+    marketingTextVersion: { type: String, default: null, trim: true }
   },
   { _id: false }
 );
@@ -63,7 +84,7 @@ const savedBookingQuoteSchema = new mongoose.Schema(
     },
     entityType: {
       type: String,
-      enum: ['cabin', 'cabin_type'],
+      enum: ['cabin', 'cabin_type', 'location'],
       required: true
     },
     entityId: {
@@ -71,6 +92,7 @@ const savedBookingQuoteSchema = new mongoose.Schema(
       required: true,
       index: true
     },
+    locationKey: { type: String, default: null, trim: true, index: true },
     cabinId: { type: mongoose.Schema.Types.ObjectId, ref: 'Cabin', default: null },
     cabinTypeId: { type: mongoose.Schema.Types.ObjectId, ref: 'CabinType', default: null },
     unitId: { type: mongoose.Schema.Types.ObjectId, ref: 'Unit', default: null },
@@ -91,14 +113,25 @@ const savedBookingQuoteSchema = new mongoose.Schema(
     emailNormalized: { type: String, default: null, trim: true, lowercase: true },
     analyticsConsent: { type: Boolean, default: null },
     marketingConsent: { type: Boolean, default: false },
+    quoteDeliveryRequested: { type: Boolean, default: false },
+    bookingReminderConsent: { type: Boolean, default: false },
+    /** @deprecated Batch 4A flag; prefer bookingReminderConsent */
     transactionalContinuationEligible: { type: Boolean, default: false },
+    consentSnapshot: { type: consentSnapshotSchema, default: () => ({}) },
     checkoutId: { type: String, default: null, trim: true, index: true },
     checkoutSessionId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'CheckoutSession',
       default: null
     },
+    /** Soft checkout expiry when known (Cabin CheckoutSession.expiresAt or hold TTL). */
+    checkoutExpiresAt: { type: Date, default: null },
     bookingId: { type: mongoose.Schema.Types.ObjectId, ref: 'Booking', default: null },
+    locationBookingId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'LocationBooking',
+      default: null
+    },
     status: {
       type: String,
       enum: SAVED_QUOTE_STATUSES,
@@ -111,6 +144,8 @@ const savedBookingQuoteSchema = new mongoose.Schema(
     expiresAt: { type: Date, required: true, index: true },
     checkoutStartedAt: { type: Date, default: null },
     convertedAt: { type: Date, default: null },
+    supersededAt: { type: Date, default: null },
+    anonymizedAt: { type: Date, default: null },
     attribution: { type: attributionSchema, default: () => ({}) },
     isTest: { type: Boolean, default: false, index: true },
     schemaVersion: { type: Number, default: SAVED_QUOTE_SCHEMA_VERSION }
@@ -119,12 +154,23 @@ const savedBookingQuoteSchema = new mongoose.Schema(
 );
 
 savedBookingQuoteSchema.index({ quoteFingerprint: 1 }, { unique: true });
-savedBookingQuoteSchema.index({ propertyKind: 1, quotedAt: -1 });
+savedBookingQuoteSchema.index({ propertyKind: 1, isTest: 1, quotedAt: -1 });
 savedBookingQuoteSchema.index({ propertyKind: 1, status: 1, quotedAt: -1 });
+savedBookingQuoteSchema.index({ propertyKind: 1, locationKey: 1, quotedAt: -1 }, { sparse: true });
 savedBookingQuoteSchema.index({ cabinId: 1, quotedAt: -1 }, { sparse: true });
 savedBookingQuoteSchema.index({ cabinTypeId: 1, quotedAt: -1 }, { sparse: true });
 savedBookingQuoteSchema.index({ emailNormalized: 1, quotedAt: -1 }, { sparse: true });
 savedBookingQuoteSchema.index({ bookingId: 1 }, { sparse: true });
+savedBookingQuoteSchema.index({ locationBookingId: 1 }, { sparse: true });
+savedBookingQuoteSchema.index({ checkoutId: 1, quotedAt: -1 }, { sparse: true });
+savedBookingQuoteSchema.index({ expiresAt: 1, status: 1 });
+savedBookingQuoteSchema.index({ sessionKey: 1, quotedAt: -1 }, { sparse: true });
+savedBookingQuoteSchema.index({ visitorKey: 1, quotedAt: -1 }, { sparse: true });
+savedBookingQuoteSchema.index({
+  propertyKind: 1,
+  'recoveryState.suppressedAt': 1,
+  quotedAt: -1
+});
 
 module.exports = mongoose.model('SavedBookingQuote', savedBookingQuoteSchema);
 module.exports.SAVED_QUOTE_STATUSES = SAVED_QUOTE_STATUSES;

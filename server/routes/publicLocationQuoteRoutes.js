@@ -2,6 +2,10 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { buildPublicLocationQuote } = require('../services/locationQuote/locationQuoteService');
 const { resolveLocationKeyFromParam } = require('../services/locationQuote/locationSlugRegistry');
+const {
+  upsertSavedQuoteFromLocationQuote,
+  scheduleSavedQuoteTask
+} = require('../services/savedQuotes/savedQuoteService');
 
 const router = express.Router();
 
@@ -30,6 +34,11 @@ router.post('/location-quotes/:locationKeyOrSlug', locationQuoteLimiter, async (
   try {
     const locationKey = resolveLocationKeyFromParam(req.params.locationKeyOrSlug);
     const quote = await buildPublicLocationQuote(locationKey, req.body);
+    if (quote?.available) {
+      scheduleSavedQuoteTask('upsert-from-location-quote', () =>
+        upsertSavedQuoteFromLocationQuote({ req, quote })
+      );
+    }
     return res.json({ success: true, data: quote });
   } catch (err) {
     if (err?.code === 'validation' && err?.status === 404) {

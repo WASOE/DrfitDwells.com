@@ -51,6 +51,26 @@ const guestContactPreferenceSchema = new mongoose.Schema(
       required: true,
       default: 'denied'
     },
+    /** Quote delivery (requested quote email only — not reminders or marketing). */
+    quoteDelivery: {
+      type: String,
+      enum: CONTACT_CONSENT_STATES,
+      required: true,
+      default: 'unknown'
+    },
+    quoteDeliveryWordingVersion: { type: String, default: null },
+    quoteDeliveryCapturedAt: { type: Date, default: null },
+    /** Limited abandoned-booking reminder consent. */
+    bookingReminder: {
+      type: String,
+      enum: CONTACT_CONSENT_STATES,
+      required: true,
+      default: 'unknown'
+    },
+    bookingReminderWordingVersion: { type: String, default: null },
+    bookingReminderCapturedAt: { type: Date, default: null },
+    marketingWordingVersion: { type: String, default: null },
+    marketingCapturedAt: { type: Date, default: null },
     suppressed: { type: Boolean, required: true, default: false },
     suppressedReason: {
       type: String,

@@ -23,6 +23,11 @@ import {
   LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
   LEGAL_ACCEPTANCE_TERMS_VERSION
 } from '../constants/legalAcceptance';
+import {
+  QUOTE_DELIVERY_CONSENT_TEXT,
+  BOOKING_REMINDER_CONSENT_TEXT,
+  MARKETING_CONSENT_TEXT
+} from '../constants/quoteContactConsent';
 import { getListingCoverImage } from '../utils/listingGalleryUtils';
 import { isCheckoutSessionV2Enabled } from '../utils/checkoutSessionV2Flags';
 import {
@@ -361,6 +366,9 @@ export function buildRedirectBookingPayloadFromPending(
       phone: fd.phone || ''
     },
     specialRequests: fd.specialRequests || '',
+    quoteDeliveryRequested: !!fd.quoteDeliveryRequested,
+    bookingReminderConsent: !!fd.bookingReminderConsent,
+    marketingConsent: !!fd.marketingConsent,
     legalAcceptance: {
       acceptedTermsAndCancellation: !!fd.agreedToTerms,
       acceptedActivityRisk: !!fd.agreedToActivityRisk,
@@ -488,6 +496,9 @@ export function buildCreateBookingPayload({
       phone: formData.phone.trim()
     },
     specialRequests: formData.specialRequests.trim(),
+    quoteDeliveryRequested: !!formData.quoteDeliveryRequested,
+    bookingReminderConsent: !!formData.bookingReminderConsent,
+    marketingConsent: !!formData.marketingConsent,
     legalAcceptance: {
       acceptedTermsAndCancellation: !!formData.agreedToTerms,
       acceptedActivityRisk: !!formData.agreedToActivityRisk,
@@ -684,7 +695,10 @@ const ConfirmBooking = () => {
     phone: '',
     specialRequests: '',
     agreedToTerms: initialState.legalAcceptance?.agreedToTerms || false,
-    agreedToActivityRisk: initialState.legalAcceptance?.agreedToActivityRisk || false
+    agreedToActivityRisk: initialState.legalAcceptance?.agreedToActivityRisk || false,
+    quoteDeliveryRequested: false,
+    bookingReminderConsent: false,
+    marketingConsent: false
   });
 
   const [checkIn, setCheckIn] = useState(() => {
@@ -1307,6 +1321,12 @@ const ConfirmBooking = () => {
       }
       if (lockedPromoCode) payload.promoCode = lockedPromoCode;
       if (appliedVoucherCode) payload.voucherCode = appliedVoucherCode;
+      if (formData.email?.trim()) {
+        payload.guestEmail = formData.email.trim().toLowerCase();
+      }
+      payload.quoteDeliveryRequested = !!formData.quoteDeliveryRequested;
+      payload.bookingReminderConsent = !!formData.bookingReminderConsent;
+      payload.marketingConsent = !!formData.marketingConsent;
       const res = await bookingAPI.createPaymentIntent(payload);
       if (!res.data?.success) {
         throw new Error(t('confirm.paymentSetupFailed'));
@@ -1454,6 +1474,10 @@ const ConfirmBooking = () => {
     clearV2PaymentIdentityState,
     persistV2StoragePaymentCleared,
     emitCheckoutStartedFunnel,
+    formData.email,
+    formData.quoteDeliveryRequested,
+    formData.bookingReminderConsent,
+    formData.marketingConsent,
     t
   ]);
 
@@ -2177,6 +2201,44 @@ const ConfirmBooking = () => {
               {LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT}
             </span>
           </label>
+          <div className="pt-2 space-y-3 border-t border-gray-100">
+            <p className="text-xs text-gray-500">
+              Optional contact preferences. Declining does not block booking.
+            </p>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={!!formData.quoteDeliveryRequested}
+                onChange={(e) => handleFormChange('quoteDeliveryRequested', e.target.checked)}
+                className="mt-0.5 w-5 h-5 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+              />
+              <span className="text-sm text-gray-800 leading-relaxed">
+                {QUOTE_DELIVERY_CONSENT_TEXT}
+              </span>
+            </label>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={!!formData.bookingReminderConsent}
+                onChange={(e) => handleFormChange('bookingReminderConsent', e.target.checked)}
+                className="mt-0.5 w-5 h-5 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+              />
+              <span className="text-sm text-gray-800 leading-relaxed">
+                {BOOKING_REMINDER_CONSENT_TEXT}
+              </span>
+            </label>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={!!formData.marketingConsent}
+                onChange={(e) => handleFormChange('marketingConsent', e.target.checked)}
+                className="mt-0.5 w-5 h-5 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+              />
+              <span className="text-sm text-gray-800 leading-relaxed">
+                {MARKETING_CONSENT_TEXT}
+              </span>
+            </label>
+          </div>
         </div>
 
         {/* Payment - Stripe when configured, else pay on arrival */}

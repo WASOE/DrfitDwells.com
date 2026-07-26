@@ -4,7 +4,10 @@ const mongoose = require('mongoose');
 const SavedBookingQuote = require('../../models/SavedBookingQuote');
 const { QUOTE_TTL_MS } = require('./savedQuoteConstants');
 const { buildQuoteFingerprint, resolveIdentitySegment } = require('./savedQuoteFingerprint');
-const { buildSavedQuoteSnapshotFromQuoteResult } = require('./savedQuoteSnapshot');
+const {
+  buildSavedQuoteSnapshotFromQuoteResult,
+  buildSavedQuoteSnapshotFromLocationQuote
+} = require('./savedQuoteSnapshot');
 const {
   evaluateRecoveryEligibility,
   normalizeEmail,
@@ -43,45 +46,34 @@ function isFixtureEmail(email) {
   return value.endsWith('@example.com') || value.includes('+fixture') || value.includes('test+');
 }
 
-/**
- * Fire-and-forget safe: never throws to caller of booking flow.
- */
-async function upsertSavedQuoteFromSuccessfulQuote({ req, result }) {
-  if (!result?.ok || !result.entity) {
-    return { skipped: true, reason: 'invalid_quote_result' };
-  }
+function toObjectId(value) {
+  if (!value) return null;
+  if (value instanceof mongoose.Types.ObjectId) return value;
+  const raw = String(value);
+  return mongoose.Types.ObjectId.isValid(raw) ? new mongoose.Types.ObjectId(raw) : null;
+}
 
-  const body = req?.body || {};
-  const snapshot = buildSavedQuoteSnapshotFromQuoteResult(result, body);
-  if (!snapshot.propertyKind) {
+async function persistUpsertFromSnapshot({ snapshot, reqBody = {}, sessionKey, visitorKey }) {
+  if (!snapshot?.propertyKind) {
     return { skipped: true, reason: 'missing_property_kind' };
   }
 
-  const sessionKey = sanitizeKey(body.funnelSessionKey);
-  const visitorKey = sanitizeKey(body.funnelVisitorKey);
   const identity = resolveIdentitySegment({ sessionKey, visitorKey });
   const analyticsConsent = Boolean(sessionKey || visitorKey);
-
   const fingerprint = buildQuoteFingerprint({
     propertyKind: snapshot.propertyKind,
-    entityType: snapshot.entityType === 'cabin_type' ? 'cabin_type' : 'cabin',
+    entityType: snapshot.entityType,
     entityId: snapshot.entityId,
     checkInDateOnly: snapshot.checkInDateOnly,
     checkOutDateOnly: snapshot.checkOutDateOnly,
     adults: snapshot.adults,
     children: snapshot.children,
     quotedTotalCents: snapshot.quotedTotalCents,
-    promoCode: snapshot.pricingSnapshot.promoCode,
-    voucherCode: snapshot.pricingSnapshot.voucherCode,
+    promoCode: snapshot.pricingSnapshot?.promoCode,
+    voucherCode: snapshot.pricingSnapshot?.voucherCode,
     sessionKey,
     visitorKey
   });
-
-  const toObjectId = (value) => {
-    if (!value) return null;
-    const raw = String(value);
-    return mongoose.Types.ObjectId.isValid(raw) ? new mongoose.Types.ObjectId(raw) : null;
-  };
 
   const entityObjectId = toObjectId(snapshot.entityId);
   if (!entityObjectId) {
@@ -90,12 +82,13 @@ async function upsertSavedQuoteFromSuccessfulQuote({ req, result }) {
 
   const quotedAt = new Date();
   const expiresAt = computeExpiresAt(quotedAt);
-  const attribution = sanitizeAttribution(body.attribution || {});
+  const attribution = sanitizeAttribution(reqBody.attribution || {});
 
   const baseDoc = {
     propertyKind: snapshot.propertyKind,
     entityType: snapshot.entityType,
     entityId: entityObjectId,
+    locationKey: snapshot.locationKey || null,
     cabinId: toObjectId(snapshot.cabinId),
     cabinTypeId: toObjectId(snapshot.cabinTypeId),
     unitId: toObjectId(snapshot.unitId),
@@ -113,34 +106,42 @@ async function upsertSavedQuoteFromSuccessfulQuote({ req, result }) {
     visitorKey: visitorKey || null,
     analyticsConsent,
     marketingConsent: false,
+    quoteDeliveryRequested: false,
+    bookingReminderConsent: false,
     transactionalContinuationEligible: false,
     quotedAt,
     expiresAt,
     attribution,
     isTest: false,
-    status: 'quoted'
+    status: 'quoted',
+    schemaVersion: snapshot.schemaVersion
   };
 
   if (identity.hasBrowserIdentity) {
     const existing = await SavedBookingQuote.findOne({ quoteFingerprint: fingerprint }).lean();
-    if (existing?.status === 'converted' || existing?.bookingId) {
+    if (existing?.status === 'converted' || existing?.bookingId || existing?.locationBookingId) {
       return { skipped: true, reason: 'already_converted', savedQuoteId: String(existing._id) };
     }
 
-    const eligibility = evaluateRecoveryEligibility({ ...existing, ...baseDoc, status: 'quoted' });
+    const eligibility = await evaluateRecoveryEligibility({
+      ...existing,
+      ...baseDoc,
+      status: existing?.checkoutId ? 'checkout_started' : 'quoted'
+    });
+
     const updated = await SavedBookingQuote.findOneAndUpdate(
       { quoteFingerprint: fingerprint },
       {
         $set: {
           ...baseDoc,
           recoveryEligibility: eligibility,
-          // Keep prior checkout/booking links if present and not converted.
           ...(existing?.checkoutId
             ? {
                 checkoutId: existing.checkoutId,
                 checkoutSessionId: existing.checkoutSessionId,
                 checkoutStartedAt: existing.checkoutStartedAt,
-                status: existing.checkoutId ? 'checkout_started' : 'quoted'
+                checkoutExpiresAt: existing.checkoutExpiresAt,
+                status: 'checkout_started'
               }
             : {})
         },
@@ -159,8 +160,7 @@ async function upsertSavedQuoteFromSuccessfulQuote({ req, result }) {
     };
   }
 
-  // Anonymous: insert only (never merge strangers).
-  const eligibility = evaluateRecoveryEligibility(baseDoc);
+  const eligibility = await evaluateRecoveryEligibility(baseDoc);
   const created = await SavedBookingQuote.create({
     ...baseDoc,
     recoveryEligibility: eligibility,
@@ -175,13 +175,44 @@ async function upsertSavedQuoteFromSuccessfulQuote({ req, result }) {
   };
 }
 
+async function upsertSavedQuoteFromSuccessfulQuote({ req, result }) {
+  if (!result?.ok || !result.entity) {
+    return { skipped: true, reason: 'invalid_quote_result' };
+  }
+  const body = req?.body || {};
+  const snapshot = buildSavedQuoteSnapshotFromQuoteResult(result, body);
+  return persistUpsertFromSnapshot({
+    snapshot,
+    reqBody: body,
+    sessionKey: sanitizeKey(body.funnelSessionKey),
+    visitorKey: sanitizeKey(body.funnelVisitorKey)
+  });
+}
+
+async function upsertSavedQuoteFromLocationQuote({ req, quote }) {
+  if (!quote?.available) {
+    return { skipped: true, reason: 'location_unavailable' };
+  }
+  const body = req?.body || {};
+  const snapshot = buildSavedQuoteSnapshotFromLocationQuote(quote, body);
+  if (!snapshot) return { skipped: true, reason: 'invalid_location_quote' };
+  return persistUpsertFromSnapshot({
+    snapshot,
+    reqBody: body,
+    sessionKey: sanitizeKey(body.funnelSessionKey),
+    visitorKey: sanitizeKey(body.funnelVisitorKey)
+  });
+}
+
 async function linkSavedQuoteToCheckout({
   checkoutId,
-  checkoutSessionId,
+  checkoutSessionId = null,
+  checkoutExpiresAt = null,
   sessionKey = null,
   visitorKey = null,
   cabinId = null,
   cabinTypeId = null,
+  locationKey = null,
   checkInDateOnly = null,
   checkOutDateOnly = null,
   adults = null,
@@ -192,16 +223,14 @@ async function linkSavedQuoteToCheckout({
   if (!checkoutId) return { skipped: true, reason: 'missing_checkout_id' };
 
   const emailNormalized = normalizeEmail(guestEmail);
-  const query = { status: { $in: ['quoted', 'checkout_started'] }, bookingId: null };
-
-  const toObjectId = (value) => {
-    if (!value) return null;
-    const raw = String(value);
-    return mongoose.Types.ObjectId.isValid(raw) ? new mongoose.Types.ObjectId(raw) : null;
+  const query = {
+    status: { $in: ['quoted', 'checkout_started'] },
+    bookingId: null,
+    locationBookingId: null
   };
+
   const cabinObjectId = toObjectId(cabinId);
   const cabinTypeObjectId = toObjectId(cabinTypeId);
-
   const or = [];
   if (sessionKey) or.push({ sessionKey: String(sessionKey) });
   if (visitorKey) or.push({ visitorKey: String(visitorKey) });
@@ -225,14 +254,35 @@ async function linkSavedQuoteToCheckout({
       ...(quotedTotalCents != null ? { quotedTotalCents: Number(quotedTotalCents) } : {})
     });
   }
+  if (locationKey && checkInDateOnly && checkOutDateOnly) {
+    or.push({
+      locationKey: String(locationKey),
+      entityType: 'location',
+      checkInDateOnly,
+      checkOutDateOnly,
+      ...(adults != null ? { adults: Number(adults) } : {}),
+      ...(children != null ? { children: Number(children) } : {}),
+      ...(quotedTotalCents != null ? { quotedTotalCents: Number(quotedTotalCents) } : {})
+    });
+  }
   if (!or.length) return { skipped: true, reason: 'insufficient_link_keys' };
   query.$or = or;
 
+  // Prefer the most recent open quote; repeated checkout reuses rather than duplicating.
   const doc = await SavedBookingQuote.findOne(query).sort({ quotedAt: -1 });
   if (!doc) return { skipped: true, reason: 'no_matching_saved_quote' };
 
+  // If another open quote already owns this checkoutId, keep the newer commercial link
+  // and supersede older siblings for the same stay+identity (audit retained).
+  if (doc.checkoutId && doc.checkoutId !== String(checkoutId)) {
+    // Multiple checkout attempts: keep history on this record; update to latest checkout.
+  }
+
   doc.checkoutId = String(checkoutId);
-  doc.checkoutSessionId = checkoutSessionId || doc.checkoutSessionId;
+  if (checkoutSessionId && mongoose.Types.ObjectId.isValid(String(checkoutSessionId))) {
+    doc.checkoutSessionId = checkoutSessionId;
+  }
+  if (checkoutExpiresAt) doc.checkoutExpiresAt = new Date(checkoutExpiresAt);
   doc.checkoutStartedAt = doc.checkoutStartedAt || new Date();
   if (doc.status !== 'converted') doc.status = 'checkout_started';
   if (emailNormalized) {
@@ -240,24 +290,57 @@ async function linkSavedQuoteToCheckout({
     doc.emailNormalized = emailNormalized;
     doc.isTest = doc.isTest || isFixtureEmail(emailNormalized);
   }
-  doc.recoveryEligibility = evaluateRecoveryEligibility(doc);
+  doc.recoveryEligibility = await evaluateRecoveryEligibility(doc);
   await doc.save();
+
+  // Supersede older open quotes for same identity + stay (retain audit rows).
+  if (doc.sessionKey || doc.visitorKey || doc.emailNormalized || doc.locationKey) {
+    const supersedeQuery = {
+      _id: { $ne: doc._id },
+      status: { $in: ['quoted', 'checkout_started'] },
+      checkInDateOnly: doc.checkInDateOnly,
+      checkOutDateOnly: doc.checkOutDateOnly,
+      propertyKind: doc.propertyKind,
+      $or: []
+    };
+    if (doc.sessionKey) supersedeQuery.$or.push({ sessionKey: doc.sessionKey });
+    if (doc.visitorKey) supersedeQuery.$or.push({ visitorKey: doc.visitorKey });
+    if (doc.emailNormalized) supersedeQuery.$or.push({ emailNormalized: doc.emailNormalized });
+    if (doc.locationKey) {
+      supersedeQuery.$or.push({ locationKey: doc.locationKey, entityType: 'location' });
+    }
+    if (supersedeQuery.$or.length) {
+      await SavedBookingQuote.updateMany(supersedeQuery, {
+        $set: {
+          status: 'superseded',
+          supersededAt: new Date(),
+          'recoveryEligibility.eligible': false,
+          'recoveryEligibility.reason': 'already_converted',
+          'recoveryEligibility.evaluatedAt': new Date()
+        }
+      });
+    }
+  }
 
   return { skipped: false, savedQuoteId: String(doc._id) };
 }
 
 async function markSavedQuoteConverted({
-  bookingId,
+  bookingId = null,
+  locationBookingId = null,
   checkoutId = null,
   sessionKey = null,
   visitorKey = null,
   guestEmail = null,
   cabinId = null,
   cabinTypeId = null,
+  locationKey = null,
   checkInDateOnly = null,
   checkOutDateOnly = null
 }) {
-  if (!bookingId) return { skipped: true, reason: 'missing_booking_id' };
+  if (!bookingId && !locationBookingId) {
+    return { skipped: true, reason: 'missing_booking_id' };
+  }
 
   const emailNormalized = normalizeEmail(guestEmail);
   const query = { status: { $ne: 'converted' } };
@@ -271,13 +354,17 @@ async function markSavedQuoteConverted({
   if (cabinTypeId && checkInDateOnly && checkOutDateOnly) {
     or.push({ cabinTypeId, checkInDateOnly, checkOutDateOnly });
   }
+  if (locationKey && checkInDateOnly && checkOutDateOnly) {
+    or.push({ locationKey: String(locationKey), entityType: 'location', checkInDateOnly, checkOutDateOnly });
+  }
   if (!or.length) return { skipped: true, reason: 'insufficient_link_keys' };
   query.$or = or;
 
   const doc = await SavedBookingQuote.findOne(query).sort({ quotedAt: -1 });
   if (!doc) return { skipped: true, reason: 'no_matching_saved_quote' };
 
-  doc.bookingId = bookingId;
+  if (bookingId) doc.bookingId = bookingId;
+  if (locationBookingId) doc.locationBookingId = locationBookingId;
   doc.status = 'converted';
   doc.convertedAt = new Date();
   if (checkoutId) doc.checkoutId = String(checkoutId);
@@ -290,32 +377,39 @@ async function markSavedQuoteConverted({
     suppressedAt: new Date(),
     suppressionReason: 'converted'
   };
-  doc.recoveryEligibility = evaluateRecoveryEligibility(doc);
+  doc.recoveryEligibility = await evaluateRecoveryEligibility(doc);
   await doc.save();
 
-  // Supersede other open quotes for same identity + stay.
-  if (doc.sessionKey || doc.visitorKey || doc.emailNormalized) {
-    const supersedeQuery = {
-      _id: { $ne: doc._id },
-      status: { $in: ['quoted', 'checkout_started'] },
-      checkInDateOnly: doc.checkInDateOnly,
-      checkOutDateOnly: doc.checkOutDateOnly,
-      propertyKind: doc.propertyKind,
-      $or: []
-    };
-    if (doc.sessionKey) supersedeQuery.$or.push({ sessionKey: doc.sessionKey });
-    if (doc.visitorKey) supersedeQuery.$or.push({ visitorKey: doc.visitorKey });
-    if (doc.emailNormalized) supersedeQuery.$or.push({ emailNormalized: doc.emailNormalized });
-    if (supersedeQuery.$or.length) {
-      await SavedBookingQuote.updateMany(supersedeQuery, {
-        $set: {
-          status: 'superseded',
-          'recoveryEligibility.eligible': false,
-          'recoveryEligibility.reason': 'already_converted',
-          'recoveryEligibility.evaluatedAt': new Date()
-        }
-      });
-    }
+  // One converted booking suppresses all related abandoned quotes for the journey.
+  const suppressRelated = {
+    _id: { $ne: doc._id },
+    status: { $in: ['quoted', 'checkout_started', 'expired', 'superseded'] },
+    propertyKind: doc.propertyKind,
+    checkInDateOnly: doc.checkInDateOnly,
+    checkOutDateOnly: doc.checkOutDateOnly,
+    $or: []
+  };
+  if (doc.sessionKey) suppressRelated.$or.push({ sessionKey: doc.sessionKey });
+  if (doc.visitorKey) suppressRelated.$or.push({ visitorKey: doc.visitorKey });
+  if (doc.emailNormalized) suppressRelated.$or.push({ emailNormalized: doc.emailNormalized });
+  if (doc.locationKey) {
+    suppressRelated.$or.push({ locationKey: doc.locationKey, entityType: 'location' });
+  }
+  if (doc.cabinId) suppressRelated.$or.push({ cabinId: doc.cabinId });
+  if (doc.cabinTypeId) suppressRelated.$or.push({ cabinTypeId: doc.cabinTypeId });
+
+  if (suppressRelated.$or.length) {
+    await SavedBookingQuote.updateMany(suppressRelated, {
+      $set: {
+        status: 'superseded',
+        supersededAt: new Date(),
+        'recoveryState.suppressedAt': new Date(),
+        'recoveryState.suppressionReason': 'converted',
+        'recoveryEligibility.eligible': false,
+        'recoveryEligibility.reason': 'already_converted',
+        'recoveryEligibility.evaluatedAt': new Date()
+      }
+    });
   }
 
   return { skipped: false, savedQuoteId: String(doc._id) };
@@ -333,6 +427,7 @@ function scheduleSavedQuoteTask(label, promiseFactory) {
 
 module.exports = {
   upsertSavedQuoteFromSuccessfulQuote,
+  upsertSavedQuoteFromLocationQuote,
   linkSavedQuoteToCheckout,
   markSavedQuoteConverted,
   scheduleSavedQuoteTask,

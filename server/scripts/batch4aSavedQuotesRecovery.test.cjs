@@ -207,7 +207,7 @@ test('conversion links booking and suppresses recovery', async () => {
   assert.equal(doc.status, 'converted');
   assert.equal(String(doc.bookingId), String(bookingId));
   assert.equal(doc.recoveryState.suppressionReason, 'converted');
-  const eligibility = evaluateRecoveryEligibility(doc);
+  const eligibility = await evaluateRecoveryEligibility(doc);
   assert.equal(eligibility.eligible, false);
   assert.equal(eligibility.reason, 'already_converted');
 });
@@ -222,8 +222,8 @@ test('saved quote persistence failure does not block quoting via schedule', asyn
   await new Promise((r) => setTimeout(r, 30));
 });
 
-test('recovery eligibility rejects missing email', () => {
-  const result = evaluateRecoveryEligibility({
+test('recovery eligibility rejects missing email', async () => {
+  const result = await evaluateRecoveryEligibility({
     quotedTotalCents: 10000,
     expiresAt: new Date(Date.now() + 60_000),
     status: 'quoted',
@@ -233,8 +233,8 @@ test('recovery eligibility rejects missing email', () => {
   assert.equal(result.reason, 'missing_email');
 });
 
-test('recovery eligibility rejects missing consent basis', () => {
-  const result = evaluateRecoveryEligibility({
+test('recovery eligibility rejects missing consent basis', async () => {
+  const result = await evaluateRecoveryEligibility({
     quotedTotalCents: 10000,
     expiresAt: new Date(Date.now() + 60_000),
     status: 'quoted',
@@ -246,8 +246,8 @@ test('recovery eligibility rejects missing consent basis', () => {
   assert.equal(result.reason, 'no_valid_consent');
 });
 
-test('recovery eligibility rejects converted records', () => {
-  const result = evaluateRecoveryEligibility({
+test('recovery eligibility rejects converted records', async () => {
+  const result = await evaluateRecoveryEligibility({
     quotedTotalCents: 10000,
     expiresAt: new Date(Date.now() + 60_000),
     status: 'converted',
@@ -259,8 +259,8 @@ test('recovery eligibility rejects converted records', () => {
   assert.equal(result.reason, 'already_converted');
 });
 
-test('recovery eligibility rejects suppressed records', () => {
-  const result = evaluateRecoveryEligibility({
+test('recovery eligibility rejects suppressed records', async () => {
+  const result = await evaluateRecoveryEligibility({
     quotedTotalCents: 10000,
     expiresAt: new Date(Date.now() + 60_000),
     status: 'quoted',
@@ -272,8 +272,8 @@ test('recovery eligibility rejects suppressed records', () => {
   assert.equal(result.reason, 'suppressed');
 });
 
-test('recovery eligibility rejects internal/test records', () => {
-  const result = evaluateRecoveryEligibility({
+test('recovery eligibility rejects internal/test records', async () => {
+  const result = await evaluateRecoveryEligibility({
     quotedTotalCents: 10000,
     expiresAt: new Date(Date.now() + 60_000),
     status: 'quoted',

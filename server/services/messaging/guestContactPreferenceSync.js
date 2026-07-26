@@ -67,6 +67,8 @@ async function syncGuestContactPreferencesForBooking(booking) {
           $setOnInsert: {
             transactional: 'unknown',
             marketing: 'denied',
+            quoteDelivery: 'unknown',
+            bookingReminder: 'unknown',
             suppressed: false
           },
           $addToSet: { linkedBookingIds: bookingId }
@@ -86,6 +88,8 @@ async function syncGuestContactPreferencesForBooking(booking) {
           $setOnInsert: {
             transactional: 'unknown',
             marketing: 'denied',
+            quoteDelivery: 'unknown',
+            bookingReminder: 'unknown',
             suppressed: false
           },
           $addToSet: { linkedBookingIds: bookingId }
@@ -111,6 +115,8 @@ async function syncGuestContactPreferencesForBooking(booking) {
           $setOnInsert: {
             transactional: 'unknown',
             marketing: 'denied',
+            quoteDelivery: 'unknown',
+            bookingReminder: 'unknown',
             suppressed: false,
             rawValueLastSeen: null,
             phoneStatus: 'unknown'

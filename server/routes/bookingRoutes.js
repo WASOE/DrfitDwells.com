@@ -537,8 +537,21 @@ function scheduleBookingFunnelConversion(booking, req, { idempotentReplay = fals
   });
 
   const { formatSofiaDateOnly } = require('../utils/dateTime');
-  scheduleSavedQuoteTask('mark-converted', () =>
-    markSavedQuoteConverted({
+  const { captureQuoteContactConsent } = require('../services/savedQuotes/quoteContactConsentService');
+
+  scheduleSavedQuoteTask('consent-then-convert', async () => {
+    await captureQuoteContactConsent({
+      email: booking.guestInfo?.email || body.guestInfo?.email,
+      quoteDeliveryRequested: body.quoteDeliveryRequested,
+      bookingReminderConsent: body.bookingReminderConsent,
+      marketingConsent: body.marketingConsent,
+      sourceSurface: 'confirm_booking',
+      checkoutSessionId: body.checkoutId || booking.checkoutId || null,
+      bookingId: booking._id,
+      propertyKind: booking.propertyKind || null,
+      recordDeclines: true
+    });
+    await markSavedQuoteConverted({
       bookingId: booking._id,
       checkoutId: body.checkoutId || booking.checkoutId || null,
       sessionKey: body.funnelSessionKey || null,
@@ -548,8 +561,8 @@ function scheduleBookingFunnelConversion(booking, req, { idempotentReplay = fals
       cabinTypeId: booking.cabinTypeId || null,
       checkInDateOnly: booking.checkIn ? formatSofiaDateOnly(booking.checkIn) : null,
       checkOutDateOnly: booking.checkOut ? formatSofiaDateOnly(booking.checkOut) : null
-    })
-  );
+    });
+  });
 }
 
 // POST /api/bookings/quote — server-owned price + optional promo (display / PI / booking must match)

@@ -1,7 +1,7 @@
 # Drift & Dwells OPS Revenue and Conversion Intelligence
 
 **Status:** Active source of truth for implementation  
-**Last updated:** Batch 4A delivered
+**Last updated:** Batch 4A.1 delivered
 
 See the full specification in `SOURCE_OF_TRUTH.md`. All future AI and engineering work on OPS revenue and conversion intelligence must read this file first.
 
@@ -10,10 +10,10 @@ See the full specification in `SOURCE_OF_TRUTH.md`. All future AI and engineerin
 - **Track A:** Revenue Intelligence — `GET /api/ops/insights/summary`, `GET /api/ops/insights/data-quality`, `GET /api/ops/insights/bookings`, `GET /api/ops/insights/reconciliation`, `GET /api/ops/insights/filter-options`, UI at `/ops/insights`
 - **Track B:** Conversion Intelligence — `POST /api/funnel-events`, `GET /api/ops/conversion/summary`, `GET /api/ops/conversion/recovery`, `GET /api/ops/conversion/recovery/:id`, UI at `/ops/conversion` and `/ops/conversion/recovery`
 - **Feature flags:** `FUNNEL_TRACKING_ENABLED=1` (server), `VITE_FUNNEL_TRACKING_ENABLED=true` (client)
-- **Consent:** Client funnel events require analytics consent; server quote events do not attach browser identity unless identity keys were sent with consent
-- **Analytics consent ≠ email/marketing consent.** Entering an email at checkout does not authorize promotional or recovery email.
+- **Consent:** Client funnel events require analytics consent; analytics consent is never email permission
+- **Quote contact consents (Batch 4A.1):** separate optional checkboxes for quote delivery, booking reminder, and marketing — none preselected; declining does not block booking
 - **revenueBasis:** `checkIn` | `booked` (Sofia day, end-exclusive; not `stay`)
-- **Conversion query max range:** 180 days (matches funnel TTL)
+- **Conversion query max range:** 180 days
 - **Conversion entity filters:** `cabinId` | `cabinTypeId` only (no `unitId`)
 - **Insights entity filters:** `cabinId` | `cabinTypeId` | `unitId` (strict persisted propertyKind validation)
 
@@ -21,102 +21,75 @@ See the full specification in `SOURCE_OF_TRUTH.md`. All future AI and engineerin
 
 1. Do not mutate `Booking`, `Payment`, `CheckoutSession`, or availability source data for reporting
 2. Funnel tracking is append-only (`BookingFunnelEvent`) — not durable recovery state
-3. Durable recovery commercial state lives in `SavedBookingQuote` (Batch 4A)
-4. Stripe = payment truth; Booking = direct commercial truth; iCal = availability only
+3. Durable recovery commercial state lives in `SavedBookingQuote`
+4. Consent audit trail lives in append-only `QuoteContactConsentEvent`; current preference on `GuestContactPreference`
 5. Keep The Cabin (`propertyKind: cabin`) and The Valley (`propertyKind: valley`) separate
 6. Never infer `propertyKind` from names, slugs or listing labels
-7. No occupancy, Airbnb import, forecasting, or automated recovery emails in Batch 4A
-8. Do not reconstruct quote prices from current prices after abandonment — persist the exact snapshot
+7. No occupancy, Airbnb import, forecasting, or automated recovery emails until Batch 4B entry criteria are met
+8. Do not reconstruct quote prices from current prices after abandonment
 
-## Saved quotes (Batch 4A)
+## Saved quotes
 
 - Model: `SavedBookingQuote`
-- Source of truth for recoverable quote/checkout intent (not `BookingFunnelEvent`)
-- Quote TTL: 48h (`expiresAt`), aligned with CheckoutSession soft expiry
-- Display status may be derived from timestamps; no write job required to show expired
-- Dedupe: deterministic `quoteFingerprint` when `sessionKey`/`visitorKey` present; anonymous orphans insert-only (never merge strangers)
-- Consent defaults: `marketingConsent=false`, `transactionalContinuationEligible=false`
-- Email alone → `missing_email` or `no_valid_consent` — never send-eligible from analytics consent alone
-- **Batch 4A does not send any recovery or marketing messages** (no send APIs, no templates, no UI send controls)
-- Retention: active/recent quotes 180 days operational retention documented; no Mongo TTL index yet (converted refs + suppression need deliberate purge design)
-- Cabin public quote path hooked (`POST /api/bookings/quote`); Valley location-quote path not yet hooked
+- Cabin path: `POST /api/bookings/quote`
+- Valley path: `POST /api/public/location-quotes/:slug` (`entityType: location`, `locationKey`, location buyout snapshot)
+- Quote TTL: 48h (`expiresAt`) — distinct from checkout hold / CheckoutSession soft expiry (`checkoutExpiresAt`)
+- Dedupe by fingerprint when browser identity present; anonymous orphans insert-only
+- Conversion suppresses related abandoned quotes for the same commercial journey
+- **No send APIs, templates, schedulers, or UI send controls**
 
-## Payment snapshot (Track A)
+## Consent types (exact)
 
-- API field `cashCollectedCents` is retained for compatibility
-- UI label: **Payment snapshot at booking**
-- Source: `Booking.stripePaidAmountCents` at finalize (LocationBooking uses `totalPrice` when `stripePaymentIntentId` is present)
-- Limitations: does not reflect later refunds or later payment changes; not live Stripe balance
+| Type | Field | Meaning |
+| --- | --- | --- |
+| Quote delivery | `quoteDeliveryRequested` | Permission to email the requested quote only |
+| Booking reminder | `bookingReminderConsent` | Limited abandoned-booking reminder |
+| Marketing | `marketingConsent` | Promotional offers / news |
 
-## Reconciliation (Batch 3B)
+Audit: `QuoteContactConsentEvent` stores `consentType`, `granted`, `textVersion`, `textSnapshot`, `capturedAt`, `sourceSurface`, links.
 
-- `GET /api/ops/insights/reconciliation` is **read-only** and **additive**
-- Does not replace summary `cashCollectedCents`
-- Linked Payment ledger joins `Payment.reservationId` to Booking stays only
-- Unlinked Payments are **site-wide**, never attributed to Cabin/Valley/entity, and never included in zone variance
-- Gift voucher product-sale Payments are excluded from stay ledger totals
+Effective preference: `resolveGuestContactStatus(email)` — latest withdrawal wins; global suppression overrides all optional sends.
 
-## Valley LocationBooking masters
+Eligibility reasons include: `quote_delivery_requested`, `booking_reminder_consent`, `marketing_consent`, `no_valid_consent`, `consent_withdrawn`, `globally_suppressed`, `already_converted`, `missing_email`, `expired`, `checkout_still_active`, `already_recovered`, `test_or_internal`, `invalid_quote`.
 
-- Track A Valley summaries and drill-down include `LocationBooking` masters once
-- Child Bookings with `excludeFromRevenueReporting: true` are omitted
-- Drill-down rows use `stayKind: 'location_booking'`, `detailHref: null`, and a Valley buyout badge
-- Entity filters that cannot apply to LocationBooking omit those rows (stated in provenance)
+Quote delivery eligibility does **not** authorize repeated reminder drips.
 
-## Zone funnel
+## Retention
 
-Primary zone-specific funnel — **excludes `search_results`**:
+- Operational target: 180 days
+- Script: `node server/scripts/purgeSavedBookingQuotes.cjs` (dry-run default; `--execute` to anonymize)
+- Anonymizes email + browser keys; retains booking/locationBooking linkage and suppression markers
+- No Mongo TTL index
 
-```
-property_view → confirm_page_view → quote_received → checkout_started → booking_converted
-```
+## Recovery query
 
-`search_results` is **supplementary only**:
+- DB pagination on persisted filters (`propertyKind`, dates, status, entity, hasEmail, suppressed, consent snapshot flags)
+- Derived eligibility evaluated **after** pagination
+- Indexes: propertyKind+quotedAt, status, locationKey, expiresAt+status, emailNormalized, checkoutId, session/visitor sparse keys
 
-- Site-wide session and event counts
-- Not propertyKind-scoped
-- Not included in Cabin/Valley drop-off
-- Entity filters never apply
-- Do not fake propertyKind attribution for search_results
+## Batch 4A.1 delivered
 
-Saved-quote recovery counts on conversion summary are also **supplementary only** and must not be mixed into session-sequential drop-off.
+- Valley location quote persistence + checkout/convert hooks
+- Explicit consent UX on ConfirmBooking + Valley checkout
+- Consent events + GuestContactPreference fields + live eligibility resolution
+- Retention purge tooling
+- Scalable recovery list query + OPS UI consent/suppression columns
 
-## Dedupe (quote + checkout events)
+## Batch 4B entry requirements
 
-```
-quote_received: qr:{sessionKeyOrVisitorKey}:{entityType}:{entityId}:{checkIn}:{checkOut}:{adults}:{children}:{priceCents}:{promoHash8}
-quote_failed (with identity): qf:{identity}:{entityType}:{entityId}:{checkIn}:{checkOut}:{class}:{YYYY-MM-DD}:{HHmm}
-orphan (no session/visitor): qr:orphan:{uuid} / qf:orphan:{uuid}
-checkout_started: cs:{sessionKey}:{checkoutId}
-checkout_started (pay-on-arrival): cs:{sessionKey}:{entityType}:{entityId}:{checkIn}:{checkOut}
-```
+Do not start Batch 4B until all are true:
 
-## Batch 3 delivered
+1. Cabin and Valley saved quote coverage exists
+2. Explicit reminder consent can be captured
+3. Consent withdrawal is respected
+4. Global suppression is respected
+5. Recovery queries are paginated and bounded
+6. Retention tooling exists
+7. No-send tests pass
 
-### Batch 3A
-- Booked date range end-exclusive fix
-- `GET /api/ops/insights/bookings` paginated drill-down
-- Entity filters on insights summary + conversion summary
-- Insights/Conversion UI filters, payment-snapshot labelling, cancelled revenue, distinct DQ codes
-- Creator stats DTO preserves `paidStayRevenue` / `attributedBookingValue`
-- Gift commission accrual requires `issuanceSource === 'purchase'`
+## Future
 
-### Batch 3B
-- `GET /api/ops/insights/reconciliation`
-- Compact reconciliation panel on `/ops/insights`
-
-## Batch 4A delivered
-
-- `SavedBookingQuote` model + immutable pricing snapshot
-- Fire-and-forget hooks: quote upsert, checkout link, booking conversion suppress
-- Pure recovery eligibility engine (no send)
-- `GET /api/ops/conversion/recovery` (+ detail)
-- Supplementary saved-quote counts on conversion summary
-- UI `/ops/conversion/recovery` (finance module; no send controls)
-
-## Future batches
-
-- **Batch 4B:** automated/manual recovery messaging only after approved consent UX and legal basis; GuestContactPreference checks; Valley location-quote hooks
-- **Later:** Airbnb import (`ExternalChannelStay`), forecast, occupancy, ADR, RevPAN
+- **Batch 4B:** send infrastructure only after legal/consent review
+- **Later:** Airbnb import, forecast, occupancy
 
 For the complete specification, refer to `SOURCE_OF_TRUTH.md`.

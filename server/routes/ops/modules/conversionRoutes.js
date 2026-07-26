@@ -36,8 +36,21 @@ router.get('/summary', async (req, res) => {
 
 router.get('/recovery', async (req, res) => {
   try {
-    const { propertyKind, from, to, status, eligibility, cabinId, cabinTypeId, page, limit } =
-      req.query;
+    const {
+      propertyKind,
+      from,
+      to,
+      status,
+      eligibility,
+      consentBasis,
+      suppressed,
+      hasEmail,
+      entityType,
+      cabinId,
+      cabinTypeId,
+      page,
+      limit
+    } = req.query;
     if (!propertyKind || !from || !to) {
       return res.status(400).json({
         success: false,
@@ -51,6 +64,10 @@ router.get('/recovery', async (req, res) => {
       to,
       status,
       eligibility,
+      consentBasis,
+      suppressed,
+      hasEmail,
+      entityType,
       cabinId,
       cabinTypeId,
       page,
