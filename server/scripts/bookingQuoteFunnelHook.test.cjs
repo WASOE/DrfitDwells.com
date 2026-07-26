@@ -46,12 +46,14 @@ test('quote validation failure records quote_failed without blocking response', 
 
   assert.equal(response.status, 400);
   await new Promise((resolve) => setTimeout(resolve, 50));
-  const failed = await BookingFunnelEvent.findOne({ eventType: 'quote_failed' }).lean();
+  const failed = await BookingFunnelEvent.findOne({
+    eventType: { $in: ['quote_failed', 'pricing_error'] }
+  }).lean();
   assert.ok(failed);
   assert.equal(failed.quoteFailureClass, 'validation_error');
 });
 
-test('successful quote records quote_received', async () => {
+test('successful quote records quote_created', async () => {
   const cabin = await Cabin.create({
     name: 'Quote Hook Cabin',
     description: 'd',
@@ -77,7 +79,9 @@ test('successful quote records quote_received', async () => {
 
   assert.equal(response.status, 200);
   await new Promise((resolve) => setTimeout(resolve, 50));
-  const received = await BookingFunnelEvent.findOne({ eventType: 'quote_received' }).lean();
+  const received = await BookingFunnelEvent.findOne({
+    eventType: { $in: ['quote_received', 'quote_created'] }
+  }).lean();
   assert.ok(received);
   assert.equal(received.sessionKey, 'quote-hook-session');
   assert.ok(received.priceShownCents > 0);

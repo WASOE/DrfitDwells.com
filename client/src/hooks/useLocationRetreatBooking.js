@@ -9,6 +9,7 @@ import {
   locationAvailabilityAPI,
   isLocationHoldExpiredError
 } from '../services/locationApi';
+import { trackFunnelEvent } from '../tracking/funnel';
 import { formatDateOnlyLocal } from '../utils/dateOnly';
 import { formatStayRangeSummary } from '../utils/localeDates';
 import { getMinSelectableStayDate } from '../utils/bookingMinStayDate';
@@ -190,6 +191,30 @@ export function useLocationRetreatBooking({
       setQuote(nextQuote);
       syncAssignmentsFromQuote(nextQuote);
       onQuoteChange?.(nextQuote);
+      trackFunnelEvent('quote_viewed', {
+        locationId: 'valley',
+        propertyKind: 'valley',
+        checkInDateOnly: payload.checkIn,
+        checkOutDateOnly: payload.checkOut,
+        adults,
+        children,
+        quotedTotal: nextQuote?.available
+          ? Math.round(Number(nextQuote.totalPrice || 0) * 100)
+          : undefined,
+        availabilityResult: nextQuote?.available ? 'available' : 'unavailable',
+        unavailableReason: nextQuote?.unavailableReason || undefined
+      });
+      if (!nextQuote?.available) {
+        trackFunnelEvent('availability_unavailable', {
+          locationId: 'valley',
+          propertyKind: 'valley',
+          checkInDateOnly: payload.checkIn,
+          checkOutDateOnly: payload.checkOut,
+          adults,
+          children,
+          unavailableReason: nextQuote?.unavailableReason || 'unavailable'
+        });
+      }
       return nextQuote;
     } catch (err) {
       const message =
@@ -287,6 +312,32 @@ export function useLocationRetreatBooking({
         onQuoteChange?.(data.quote);
       }
       setCheckoutStep(true);
+      trackFunnelEvent('checkout_ui_started', {
+        locationId: 'valley',
+        propertyKind: 'valley',
+        checkoutId: data.checkoutSessionId,
+        checkInDateOnly: payload.checkIn,
+        checkOutDateOnly: payload.checkOut,
+        adults,
+        children
+      });
+      trackFunnelEvent('payment_ui_opened', {
+        locationId: 'valley',
+        propertyKind: 'valley',
+        checkoutId: data.checkoutSessionId,
+        checkInDateOnly: payload.checkIn,
+        checkOutDateOnly: payload.checkOut,
+        adults,
+        children
+      });
+      trackFunnelEvent('guest_details_started', {
+        locationId: 'valley',
+        propertyKind: 'valley',
+        checkInDateOnly: payload.checkIn,
+        checkOutDateOnly: payload.checkOut,
+        adults,
+        children
+      });
     } catch (err) {
       if (isLocationHoldExpiredError(err)) {
         setHoldExpired(true);
@@ -296,6 +347,12 @@ export function useLocationRetreatBooking({
         setCheckoutError(
           err.response?.data?.message || err.message || tb('confirm.paymentSetupFailed')
         );
+        trackFunnelEvent('checkout_error', {
+          locationId: 'valley',
+          propertyKind: 'valley',
+          errorClass: 'checkout_init_failed',
+          httpStatus: err.response?.status || null
+        });
       }
     } finally {
       setCheckoutLoading(false);
@@ -334,6 +391,12 @@ export function useLocationRetreatBooking({
 
         if (stripeError) {
           setCheckoutError(stripeError.message || tb('confirm.paymentFailed'));
+          trackFunnelEvent('payment_ui_cancelled', {
+            locationId: 'valley',
+            propertyKind: 'valley',
+            checkoutId: checkoutSessionId,
+            errorClass: 'stripe_confirm_error'
+          });
           return;
         }
 

@@ -117,7 +117,13 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
     setLightboxIndex(safeIndex);
     setLightboxOpen(true);
     document.body.classList.add('lightbox-open');
-  }, [lightboxGallery.length]);
+    if (cabinType?._id) {
+      trackFunnelEvent('gallery_opened', {
+        cabinTypeId: cabinType._id,
+        propertyKind: 'valley'
+      });
+    }
+  }, [lightboxGallery.length, cabinType?._id]);
 
   const closeLightbox = useCallback(() => {
     setLightboxOpen(false);
@@ -363,12 +369,35 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
     if (!cabinType?._id) return;
     trackFunnelEvent('property_view', {
       cabinTypeId: cabinType._id,
+      propertyKind: 'valley',
       ...(searchCriteria.checkIn ? { checkInDateOnly: String(searchCriteria.checkIn).slice(0, 10) } : {}),
       ...(searchCriteria.checkOut ? { checkOutDateOnly: String(searchCriteria.checkOut).slice(0, 10) } : {}),
       adults: searchCriteria.adults,
       children: searchCriteria.children
     });
   }, [cabinType?._id]);
+
+  useEffect(() => {
+    if (!cabinType?._id || !searchCriteria.checkIn || !searchCriteria.checkOut) return;
+    trackFunnelEvent('dates_selected', {
+      cabinTypeId: cabinType._id,
+      propertyKind: 'valley',
+      checkInDateOnly: String(searchCriteria.checkIn).slice(0, 10),
+      checkOutDateOnly: String(searchCriteria.checkOut).slice(0, 10),
+      adults: searchCriteria.adults,
+      children: searchCriteria.children
+    });
+  }, [cabinType?._id, searchCriteria.checkIn, searchCriteria.checkOut]);
+
+  useEffect(() => {
+    if (!cabinType?._id) return;
+    trackFunnelEvent('guest_count_selected', {
+      cabinTypeId: cabinType._id,
+      propertyKind: 'valley',
+      adults: searchCriteria.adults,
+      children: searchCriteria.children
+    });
+  }, [cabinType?._id, searchCriteria.adults, searchCriteria.children]);
 
   useEffect(() => {
     // Wait until the loaded page (with booking anchors) is mounted — not the spinner.

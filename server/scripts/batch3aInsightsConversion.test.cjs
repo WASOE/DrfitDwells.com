@@ -359,6 +359,7 @@ test('conversion entity filter scopes zone funnel but not search_results; unitId
 
   await BookingFunnelEvent.insertMany([
     {
+      eventId: '33333333-3333-4333-8333-333333333331',
       eventType: 'property_view',
       source: 'client',
       dedupeKey: 'pv:1',
@@ -368,6 +369,7 @@ test('conversion entity filter scopes zone funnel but not search_results; unitId
       createdAt: new Date('2026-06-05T10:00:00.000Z')
     },
     {
+      eventId: '33333333-3333-4333-8333-333333333332',
       eventType: 'property_view',
       source: 'client',
       dedupeKey: 'pv:2',
@@ -377,6 +379,7 @@ test('conversion entity filter scopes zone funnel but not search_results; unitId
       createdAt: new Date('2026-06-05T11:00:00.000Z')
     },
     {
+      eventId: '33333333-3333-4333-8333-333333333333',
       eventType: 'search_results',
       source: 'client',
       dedupeKey: 'sr:1',

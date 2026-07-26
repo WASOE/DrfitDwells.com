@@ -1009,7 +1009,21 @@ const ConfirmBooking = () => {
     } else {
       payload.cabinId = bookingEntityId;
     }
-    trackFunnelEvent('confirm_page_view', payload);
+    trackFunnelEvent('checkout_ui_started', payload);
+  }, [bookingEntityId, bookingEntityType, checkIn, checkOut, adults, children]);
+
+  useEffect(() => {
+    if (!bookingEntityId || !checkIn || !checkOut) return;
+    // Guest details stage when form is shown with stay loaded
+    trackFunnelEvent('guest_details_started', {
+      ...(bookingEntityType === 'cabinType'
+        ? { cabinTypeId: bookingEntityId }
+        : { cabinId: bookingEntityId }),
+      checkInDateOnly: formatDateOnlyLocal(checkIn),
+      checkOutDateOnly: formatDateOnlyLocal(checkOut),
+      adults,
+      children
+    });
   }, [bookingEntityId, bookingEntityType, checkIn, checkOut, adults, children]);
 
   useEffect(() => {
@@ -1276,7 +1290,8 @@ const ConfirmBooking = () => {
       if (resolvedCheckoutId) {
         payload.checkoutId = resolvedCheckoutId;
       }
-      trackFunnelEvent('checkout_started', payload);
+      trackFunnelEvent('checkout_ui_started', payload);
+      trackFunnelEvent('payment_ui_opened', payload);
     },
     [bookingEntityId, bookingEntityType, checkIn, checkOut, adults, children]
   );

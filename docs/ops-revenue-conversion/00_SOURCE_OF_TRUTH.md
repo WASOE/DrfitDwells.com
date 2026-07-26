@@ -1,7 +1,7 @@
 # Drift & Dwells OPS Revenue and Conversion Intelligence
 
 **Status:** Active source of truth for implementation  
-**Last updated:** Batch 5A delivered
+**Last updated:** Batch 6A delivered
 
 See the full specification in `SOURCE_OF_TRUTH.md`. All future AI and engineering work on OPS revenue and conversion intelligence must read this file first.
 
@@ -33,6 +33,19 @@ See the full specification in `SOURCE_OF_TRUTH.md`. All future AI and engineerin
 - UI: `/ops/insights/performance`
 - Repair: operating-period upsert + reporting metadata correction scripts (dry-run default)
 - Live aggregation (no materialized commercial-truth collection)
+
+## Batch 6A (delivered)
+
+Purpose: canonical first-party journey instrumentation for Cabin and Valley (behavioural + server-verified commercial events). No abandonment engine, no full session explorer UI, no recovery send.
+
+- Contract: `BookingFunnelEvent` schemaVersion 2 with dedicated `eventId` (UUID, unique), `canonicalEventName`, `eventSource`, `verificationStatus`, `origin`
+- Client ingest rejects server-truth event names; behavioural idempotency is `eventId`-only
+- Server commercial events use deterministic `dedupeKey` (quote / checkout / payment / booking)
+- Legacy event names remain readable; OPS summary maps legacy + canonical into the existing main funnel (search_results still supplementary only)
+- Valley location quote/checkout/finalize emit server commercial events; Cabin PI create emits checkout/payment_started
+- Flags unchanged; recovery send remains OFF
+
+Do not start Batch 6B until Batch 6A is reviewed.
 
 ## Batch 5B entry requirements
 

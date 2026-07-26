@@ -449,6 +449,12 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
     // Open lightbox
     setLightboxOpen(true);
     document.body.classList.add('lightbox-open');
+    if (cabin?._id) {
+      trackFunnelEvent('gallery_opened', {
+        cabinId: cabin._id,
+        propertyKind: cabin.propertyKind || undefined
+      });
+    }
     
     // Update URL (consolidated logic)
     const url = new URL(window.location);
@@ -707,12 +713,38 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
     if (!cabin?._id) return;
     trackFunnelEvent('property_view', {
       cabinId: cabin._id,
+      propertyKind: cabin.propertyKind || undefined,
       ...(searchCriteria.checkIn ? { checkInDateOnly: String(searchCriteria.checkIn).slice(0, 10) } : {}),
       ...(searchCriteria.checkOut ? { checkOutDateOnly: String(searchCriteria.checkOut).slice(0, 10) } : {}),
       adults: searchCriteria.adults,
       children: searchCriteria.children
     });
   }, [cabin?._id]);
+
+  useEffect(() => {
+    if (!cabin?._id) return;
+    if (!searchCriteria.checkIn || !searchCriteria.checkOut) return;
+    trackFunnelEvent('dates_selected', {
+      cabinId: cabin._id,
+      propertyKind: cabin.propertyKind || undefined,
+      checkInDateOnly: String(searchCriteria.checkIn).slice(0, 10),
+      checkOutDateOnly: String(searchCriteria.checkOut).slice(0, 10),
+      adults: searchCriteria.adults,
+      children: searchCriteria.children
+    });
+  }, [cabin?._id, searchCriteria.checkIn, searchCriteria.checkOut]);
+
+  useEffect(() => {
+    if (!cabin?._id) return;
+    trackFunnelEvent('guest_count_selected', {
+      cabinId: cabin._id,
+      propertyKind: cabin.propertyKind || undefined,
+      adults: searchCriteria.adults,
+      children: searchCriteria.children,
+      ...(searchCriteria.checkIn ? { checkInDateOnly: String(searchCriteria.checkIn).slice(0, 10) } : {}),
+      ...(searchCriteria.checkOut ? { checkOutDateOnly: String(searchCriteria.checkOut).slice(0, 10) } : {})
+    });
+  }, [cabin?._id, searchCriteria.adults, searchCriteria.children]);
 
   // Keyboard navigation and focus trap for lightbox
   useEffect(() => {

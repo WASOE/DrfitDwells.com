@@ -283,6 +283,44 @@ async function createLocationCheckoutPaymentIntent(body, { stripe }) {
       })
     );
 
+    try {
+      const {
+        recordServerCheckoutStarted,
+        recordServerPaymentEvent
+      } = require('../conversion/funnelEventService');
+      const checkInDateOnly = formatSofiaDateOnly(startDate);
+      const checkOutDateOnly = formatSofiaDateOnly(endDate);
+      void recordServerCheckoutStarted({
+        checkoutId: checkoutSessionId,
+        paymentId: paymentIntent.id,
+        sessionKey: body.funnelSessionKey || null,
+        visitorKey: body.funnelVisitorKey || null,
+        locationId: locationKey,
+        propertyKind: 'valley',
+        checkInDateOnly,
+        checkOutDateOnly,
+        adults: quote.adults || body.adults || 1,
+        children: quote.children || body.children || 0,
+        quotedTotalCents: amountCents
+      }).catch(() => {});
+      void recordServerPaymentEvent({
+        eventName: 'payment_started',
+        paymentId: paymentIntent.id,
+        stateCode: 'requires_payment_method',
+        sessionKey: body.funnelSessionKey || null,
+        visitorKey: body.funnelVisitorKey || null,
+        checkoutId: checkoutSessionId,
+        locationId: locationKey,
+        propertyKind: 'valley',
+        checkInDateOnly,
+        checkOutDateOnly,
+        quotedTotalCents: amountCents,
+        origin: 'api'
+      }).catch(() => {});
+    } catch {
+      /* analytics must never block checkout */
+    }
+
     return {
       checkoutSessionId,
       clientSecret: paymentIntent.client_secret,
@@ -311,6 +349,31 @@ async function finalizeLocationCheckout(body, { stripe }) {
 
   const existing = await LocationBooking.findOne({ checkoutSessionId }).lean();
   if (existing) {
+    try {
+      const {
+        recordServerPaymentEvent,
+        recordLocationBookingFunnelConversion
+      } = require('../conversion/funnelEventService');
+      void recordServerPaymentEvent({
+        eventName: 'payment_succeeded',
+        paymentId: paymentIntentId,
+        stateCode: 'succeeded',
+        sessionKey: body.funnelSessionKey || null,
+        visitorKey: body.funnelVisitorKey || null,
+        checkoutId: checkoutSessionId,
+        locationId: 'valley',
+        propertyKind: 'valley',
+        origin: 'api'
+      }).catch(() => {});
+      void recordLocationBookingFunnelConversion(existing, {
+        funnelSessionKey: body.funnelSessionKey || null,
+        funnelVisitorKey: body.funnelVisitorKey || null,
+        checkoutId: checkoutSessionId,
+        paymentId: paymentIntentId
+      }).catch(() => {});
+    } catch {
+      /* ignore */
+    }
     return {
       idempotentReplay: true,
       locationBookingId: String(existing._id),
@@ -548,6 +611,40 @@ async function finalizeLocationCheckout(body, { stripe }) {
       checkOutDateOnly: formatSofiaDateOnly(checkOutDate)
     });
   });
+
+  try {
+    const {
+      recordServerPaymentEvent,
+      recordLocationBookingFunnelConversion
+    } = require('../conversion/funnelEventService');
+    const locDoc =
+      masterDoc ||
+      (await LocationBooking.findById(locationBookingId).lean());
+    void recordServerPaymentEvent({
+      eventName: 'payment_succeeded',
+      paymentId: paymentIntentId,
+      stateCode: 'succeeded',
+      sessionKey: body.funnelSessionKey || null,
+      visitorKey: body.funnelVisitorKey || null,
+      checkoutId: checkoutSessionId,
+      locationId: 'valley',
+      propertyKind: 'valley',
+      checkInDateOnly: formatSofiaDateOnly(checkInDate),
+      checkOutDateOnly: formatSofiaDateOnly(checkOutDate),
+      quotedTotalCents: Math.round(Number(locDoc?.totalPrice || quote.totalPrice || 0) * 100),
+      origin: 'api'
+    }).catch(() => {});
+    if (locDoc) {
+      void recordLocationBookingFunnelConversion(locDoc, {
+        funnelSessionKey: body.funnelSessionKey || null,
+        funnelVisitorKey: body.funnelVisitorKey || null,
+        checkoutId: checkoutSessionId,
+        paymentId: paymentIntentId
+      }).catch(() => {});
+    }
+  } catch {
+    /* analytics must never block finalize */
+  }
 
   return {
     idempotentReplay: false,

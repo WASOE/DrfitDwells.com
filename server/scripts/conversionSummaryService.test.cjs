@@ -63,6 +63,7 @@ test('aggregateConversionSummary counts zone funnel and supplementary search_res
 
   await BookingFunnelEvent.insertMany([
     {
+      eventId: '11111111-1111-4111-8111-111111111111',
       eventType: 'property_view',
       source: 'client',
       dedupeKey: 'pv:a',
@@ -71,6 +72,7 @@ test('aggregateConversionSummary counts zone funnel and supplementary search_res
       createdAt: at(5, 10)
     },
     {
+      eventId: '11111111-1111-4111-8111-111111111112',
       eventType: 'confirm_page_view',
       source: 'client',
       dedupeKey: 'cp:a',
@@ -79,6 +81,7 @@ test('aggregateConversionSummary counts zone funnel and supplementary search_res
       createdAt: at(5, 11)
     },
     {
+      eventId: '11111111-1111-4111-8111-111111111113',
       eventType: 'quote_received',
       source: 'server',
       dedupeKey: 'qr:a',
@@ -87,14 +90,17 @@ test('aggregateConversionSummary counts zone funnel and supplementary search_res
       createdAt: at(5, 12)
     },
     {
+      eventId: '11111111-1111-4111-8111-111111111114',
       eventType: 'checkout_started',
-      source: 'client',
+      source: 'server',
+      verificationStatus: 'server_verified',
       dedupeKey: 'cs:a',
       sessionKey: sessionA,
       propertyKind: 'valley',
       createdAt: at(5, 13)
     },
     {
+      eventId: '11111111-1111-4111-8111-111111111115',
       eventType: 'booking_converted',
       source: 'server',
       dedupeKey: 'bc:a',
@@ -103,6 +109,7 @@ test('aggregateConversionSummary counts zone funnel and supplementary search_res
       createdAt: at(5, 14)
     },
     {
+      eventId: '11111111-1111-4111-8111-111111111116',
       eventType: 'search_results',
       source: 'client',
       dedupeKey: 'sr:b',
@@ -110,6 +117,7 @@ test('aggregateConversionSummary counts zone funnel and supplementary search_res
       createdAt: at(6, 10)
     },
     {
+      eventId: '11111111-1111-4111-8111-111111111117',
       eventType: 'quote_received',
       source: 'server',
       dedupeKey: 'qr:orphan:1',
@@ -118,6 +126,7 @@ test('aggregateConversionSummary counts zone funnel and supplementary search_res
       createdAt: at(6, 11)
     },
     {
+      eventId: '11111111-1111-4111-8111-111111111118',
       eventType: 'quote_failed',
       source: 'server',
       dedupeKey: 'qf:orphan:1',
@@ -153,6 +162,7 @@ test('aggregateConversionSummary counts zone funnel and supplementary search_res
 test('aggregateConversionSummary excludes other propertyKind from zone funnel', async () => {
   await BookingFunnelEvent.insertMany([
     {
+      eventId: '22222222-2222-4222-8222-222222222221',
       eventType: 'property_view',
       source: 'client',
       dedupeKey: 'pv:cabin',
@@ -161,6 +171,7 @@ test('aggregateConversionSummary excludes other propertyKind from zone funnel', 
       createdAt: at(8, 10)
     },
     {
+      eventId: '22222222-2222-4222-8222-222222222222',
       eventType: 'property_view',
       source: 'client',
       dedupeKey: 'pv:valley',

@@ -306,7 +306,7 @@ const SearchResults = () => {
         }
         setCabins(cabinsData);
         setRetryCount(0);
-        trackFunnelEvent('search_results', {
+        trackFunnelEvent('search_results_viewed', {
           checkInDateOnly: String(currentSearchParams.checkIn).slice(0, 10),
           checkOutDateOnly: String(currentSearchParams.checkOut).slice(0, 10),
           adults: currentSearchParams.adults,

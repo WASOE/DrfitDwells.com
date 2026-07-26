@@ -344,6 +344,57 @@ async function handleCreatePaymentIntentV2(req, stripeClient) {
     stripe: stripeClient
   });
 
+  try {
+    const {
+      recordServerCheckoutStarted,
+      recordServerPaymentEvent
+    } = require('../services/conversion/funnelEventService');
+    const { formatSofiaDateOnly } = require('../utils/dateTime');
+    const entity = quoteResult.entity || {};
+    const checkInDateOnly = req.body.checkIn
+      ? formatSofiaDateOnly(new Date(req.body.checkIn))
+      : null;
+    const checkOutDateOnly = req.body.checkOut
+      ? formatSofiaDateOnly(new Date(req.body.checkOut))
+      : null;
+    const quotedTotalCents = Number.isFinite(Number(quoteResult.totalPrice))
+      ? Math.round(Number(quoteResult.totalPrice) * 100)
+      : null;
+    void recordServerCheckoutStarted({
+      checkoutId: dto.checkoutId || checkoutId,
+      paymentId: dto.paymentIntentId || dto.canonicalPaymentIntentId || null,
+      sessionKey: req.body.funnelSessionKey || null,
+      visitorKey: req.body.funnelVisitorKey || null,
+      cabinId: entity.cabinId || req.body.cabinId || null,
+      cabinTypeId: entity.cabinTypeId || req.body.cabinTypeId || null,
+      propertyKind: entity.propertyKind || null,
+      checkInDateOnly,
+      checkOutDateOnly,
+      adults: req.body.adults,
+      children: req.body.children,
+      quotedTotalCents
+    }).catch(() => {});
+    if (dto.paymentIntentId || dto.canonicalPaymentIntentId) {
+      void recordServerPaymentEvent({
+        eventName: 'payment_started',
+        paymentId: dto.paymentIntentId || dto.canonicalPaymentIntentId,
+        stateCode: 'requires_payment_method',
+        sessionKey: req.body.funnelSessionKey || null,
+        visitorKey: req.body.funnelVisitorKey || null,
+        checkoutId: dto.checkoutId || checkoutId,
+        cabinId: entity.cabinId || req.body.cabinId || null,
+        cabinTypeId: entity.cabinTypeId || req.body.cabinTypeId || null,
+        propertyKind: entity.propertyKind || null,
+        checkInDateOnly,
+        checkOutDateOnly,
+        quotedTotalCents,
+        origin: 'api'
+      }).catch(() => {});
+    }
+  } catch {
+    /* analytics must never block PI create */
+  }
+
   const guestEmail =
     req.body.guestEmail || req.body.guestInfo?.email || dto?.guestEmail || null;
   if (guestEmail) {

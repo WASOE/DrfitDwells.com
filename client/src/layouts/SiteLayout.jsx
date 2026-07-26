@@ -14,6 +14,7 @@ import { stripLocaleFromPath } from "../utils/localizedRoutes";
 import { isPaidTrafficLandingPath } from "../utils/paidTrafficRoutes";
 import { useFloatingSafeArea } from "../hooks/useFloatingSafeArea";
 import { captureAttributionFromUrl } from "../tracking/attribution";
+import { trackPageViewForPath } from "../tracking/funnel";
 
 /** Routes where the first section is a full-bleed hero (content intentionally under the nav). No top padding. */
 const HERO_PATHS = ['/', '/cabin', '/valley'];
@@ -48,6 +49,7 @@ export default function SiteLayout() {
 
   useEffect(() => {
     captureAttributionFromUrl();
+    trackPageViewForPath(location.pathname);
   }, [location.pathname, location.search]);
 
   const basePath = stripLocaleFromPath(location.pathname);
