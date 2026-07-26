@@ -192,9 +192,9 @@ As ops and engineering, we need **compensation stay credits** to be safe and sep
 - [ ] **Reuse existing checkout voucher redemption** (`voucherCode`, ledger reserve/confirm) — no separate guest wallet / `GuestCreditLedgerEntry` in this epic.
 - [ ] Enforce current **€100 minimum** redeem invariant at issue time unless a later batch explicitly changes `giftVoucherValidationService`.
 - [ ] OPS reservation detail shows **Compensation credit** + link when `compensationGiftVoucherId` is set.
-- [ ] OPS gift voucher list **defaults to purchased** vouchers only, or clearly separates compensation credits.
-- [ ] **Creator stats / gift revenue reporting** exclude compensation (and goodwill) vouchers.
-- [ ] Dedicated `issueCancellationCompensationVoucher` path never calls Stripe activation, purchase emails, or commission hooks (per locked spec).
+- [x] OPS gift voucher list **defaults to purchased** vouchers only, or clearly separates compensation credits.
+- [x] **Creator stats / gift revenue reporting** exclude compensation (and goodwill) vouchers. (Batch 3A: purchase-only query + commission accrual requires `issuanceSource === 'purchase'`)
+- [x] Dedicated `issueCancellationCompensationVoucher` path never calls Stripe activation, purchase emails, or commission hooks (per locked spec).
 
 **Open questions**
 
@@ -293,7 +293,7 @@ As ops staff, I want to **manually create a gift voucher credit** for a guest (g
 - [ ] Created voucher has **`issuanceSource: goodwill_ops`**.
 - [ ] **No** `stripePaymentIntentId`, **no** `stripeCheckoutSessionId`, **no** `purchaseRequestId`, **no** checkout or payment activation path.
 - [ ] **No** creator commission hooks (`ensureGiftVoucherCreatorCommissionAfterActivation` and equivalents must not run).
-- [ ] **No** purchase revenue attribution; goodwill vouchers **excluded** from gift-voucher purchase stats, creator gift revenue, and creator commission reporting.
+- [x] **No** purchase revenue attribution; goodwill vouchers **excluded** from gift-voucher purchase stats, creator gift revenue, and creator commission reporting. (Reporting filters + commission accrual guard shipped in Batch 3A; goodwill issuance API/UI still open)
 - [ ] **No** gift-voucher **purchase** emails (buyer receipt / recipient gift-card purchase templates) on issuance.
 - [ ] Initial status is **`active`** (or explicit product choice: draft/manual pending — lock in implementation spec before build).
 - [ ] **`GiftVoucherEvent`** recorded on issuance (e.g. `goodwill_issued` or `manual_issued` — exact event type TBD; must include actor, note/reason, amount).

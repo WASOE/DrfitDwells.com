@@ -350,8 +350,11 @@ Response shape:
 - Exclude archived bookings.
 - Cancelled bookings are counted separately and excluded from gross active revenue.
 - Manual zero-price bookings are counted under staff and flagged.
-- `cashCollectedCents` in V1 uses `Booking.stripePaidAmountCents` and must be labelled as finalize snapshot.
-- Do not use `Payment` ledger in Track A V1.
+- `cashCollectedCents` in V1+ uses `Booking.stripePaidAmountCents` (API compatibility name) and must be labelled in UI as **Payment snapshot at booking**
+- Payment snapshot does not reflect later refunds or payment changes; it is not live Stripe balance
+- Valley Track A also includes `LocationBooking` masters once; children with `excludeFromRevenueReporting` are omitted
+- Do not use `Payment` ledger as a silent replacement for `cashCollectedCents`
+- Batch 3B adds read-only additive reconciliation against linked Payment rows
 
 ### 7.6 Track A tests
 
@@ -490,6 +493,7 @@ Client-allowed events:
 - `property_view`
 - `search_results`
 - `confirm_page_view`
+- `checkout_started`
 
 Server-only events:
 
@@ -655,25 +659,14 @@ qr:{sessionKeyOrVisitorKey}:{entityType}:{entityId}:{checkIn}:{checkOut}:{adults
 
 If neither sessionKey nor visitorKey exists, do not globally dedupe across all users.
 
-Safe fallback option:
+Safe orphan fallback (shipped):
 
 ```txt
-qr:anon:{entityType}:{entityId}:{checkIn}:{checkOut}:{adults}:{children}:{priceCents}:{promoHash8}:{YYYY-MM-DD}:{HHmm}
+qr:orphan:{uuid}
+qf:orphan:{uuid}
 ```
 
-This dedupes only inside a one-minute anonymous bucket.
-
-`quote_failed`
-
-```txt
-qf:{sessionKeyOrVisitorKey}:{entityType}:{entityId}:{checkIn}:{checkOut}:{quoteFailureClass}:{YYYY-MM-DD}:{HHmm}
-```
-
-Anonymous fallback:
-
-```txt
-qf:anon:{entityType}:{entityId}:{checkIn}:{checkOut}:{quoteFailureClass}:{YYYY-MM-DD}:{HHmm}
-```
+Each orphan event gets a unique UUID so unrelated anonymous visitors are never merged.
 
 `booking_converted`
 
@@ -905,12 +898,19 @@ Conversion summary guardrails:
 - max API query range: 180 days (funnel TTL)
 - `checkout_started` has no historical data before Batch 2 deployment
 
-### Batch 3
+### Batch 3A (delivered)
 
-Likely scope:
+- Paginated `GET /api/ops/insights/bookings` drill-down (includes Valley `LocationBooking` rows with null detailHref)
+- Entity filters on insights (`cabinId` / `cabinTypeId` / `unitId`) and conversion (`cabinId` / `cabinTypeId` only)
+- Distinct data-quality issue codes: `missing_property_kind`, `both_cabin_and_cabin_type`, `missing_inventory_ref`
+- Booked/checkIn Sofia end-exclusive date bounds
+- Creator DTO + purchase-only gift commission accrual fixes
 
-- richer conversion filters (entity-level)
-- optional zone-scoped search attribution
+### Batch 3B (delivered)
+
+- Read-only `GET /api/ops/insights/reconciliation`
+- Additive reconciliation panel on `/ops/insights`
+- Unlinked Payments remain site-wide and unattributed
 
 ### Batch 4
 
@@ -938,11 +938,11 @@ Likely scope:
 
 ### Later
 
-- Stripe reconciliation
 - occupancy metrics
 - forecast engine
 - deposit payments
 - BNPL only if payment friction is proven
+- UTM / device / checkout-type conversion breakdowns that require new capture fields
 
 ## 12. How future AIs should work on this
 
