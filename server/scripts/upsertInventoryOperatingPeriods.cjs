@@ -4,24 +4,16 @@
  * Controlled InventoryOperatingPeriod upsert for Batch 5A.
  *
  * Dry-run (default):
- *   node server/scripts/upsertInventoryOperatingPeriods.cjs --file ./periods.json
+ *   MONGODB_URI=... node server/scripts/upsertInventoryOperatingPeriods.cjs --file ./periods.json
  *
- * Apply:
- *   node server/scripts/upsertInventoryOperatingPeriods.cjs --file ./periods.json --apply
+ * Apply (development):
+ *   MONGODB_URI=... node server/scripts/upsertInventoryOperatingPeriods.cjs --file ./periods.json --apply
  *
- * JSON array items:
- * {
- *   "propertyKind": "cabin",
- *   "entityType": "cabin",
- *   "entityId": "<ObjectId>",
- *   "operatingFrom": "2024-01-01",
- *   "operatingTo": null,
- *   "reason": "opened",
- *   "source": "ops_manual",
- *   "notes": "Confirmed opening"
- * }
+ * Apply (production / APP_ENV=production):
+ *   ... --apply --confirm-production-write
  *
  * Does not mutate Booking/Payment. Does not affect public booking behaviour.
+ * Connection banner is written to stderr.
  */
 'use strict';
 
@@ -29,32 +21,42 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
-const { DEFAULT_MONGO_URI } = require('../config/dbDefaults');
 const InventoryOperatingPeriod = require('../models/InventoryOperatingPeriod');
 const { appendAuditEvent } = require('../services/auditWriter');
 const { normalizeDateToSofiaDayStart } = require('../utils/dateTime');
+const {
+  connectScriptMongo,
+  exitFromScriptError
+} = require('./lib/scriptMongoSafety.cjs');
 
 function parseArgs(argv) {
-  const args = { apply: false, file: null };
+  const args = { apply: false, confirmProductionWrite: false, file: null };
   for (let i = 2; i < argv.length; i += 1) {
     if (argv[i] === '--apply') args.apply = true;
+    if (argv[i] === '--confirm-production-write') args.confirmProductionWrite = true;
     if (argv[i] === '--file') args.file = argv[++i];
   }
   return args;
 }
 
-async function main() {
-  const args = parseArgs(process.argv);
+async function main(argv = process.argv, env = process.env) {
+  const args = parseArgs(argv);
   if (!args.file) {
-    console.error('Usage: node upsertInventoryOperatingPeriods.cjs --file <path> [--apply]');
+    console.error(
+      'Usage: node upsertInventoryOperatingPeriods.cjs --file <path> [--apply] [--confirm-production-write]'
+    );
     process.exit(1);
   }
   const abs = path.resolve(args.file);
   const rows = JSON.parse(fs.readFileSync(abs, 'utf8'));
   if (!Array.isArray(rows)) throw new Error('File must contain a JSON array');
 
-  const uri = process.env.MONGODB_URI || process.env.MONGO_URI || DEFAULT_MONGO_URI;
-  await mongoose.connect(uri, { serverSelectionTimeoutMS: 12000 });
+  await connectScriptMongo(mongoose, {
+    apply: args.apply,
+    confirmProductionWrite: args.confirmProductionWrite,
+    mode: args.apply ? 'apply' : 'dry-run',
+    env
+  });
 
   const proposals = [];
   for (const row of rows) {
@@ -68,7 +70,9 @@ async function main() {
       propertyKind: row.propertyKind,
       entityType: row.entityType,
       entityId: row.entityId,
-      operatingFrom: normalizeDateToSofiaDayStart(`${String(row.operatingFrom).slice(0, 10)}T00:00:00.000Z`),
+      operatingFrom: normalizeDateToSofiaDayStart(
+        `${String(row.operatingFrom).slice(0, 10)}T00:00:00.000Z`
+      ),
       operatingTo: row.operatingTo
         ? normalizeDateToSofiaDayStart(`${String(row.operatingTo).slice(0, 10)}T00:00:00.000Z`)
         : null,
@@ -94,7 +98,7 @@ async function main() {
 
   if (!args.apply) {
     await mongoose.disconnect();
-    return;
+    return { written: 0, mode: 'dry-run', proposals };
   }
 
   let written = 0;
@@ -128,13 +132,17 @@ async function main() {
 
   console.log(JSON.stringify({ ok: true, written }, null, 2));
   await mongoose.disconnect();
+  return { written, mode: 'apply', proposals };
 }
 
 if (require.main === module) {
   main().catch((err) => {
+    if (err?.code === 'MONGO_URI_REQUIRED' || err?.code === 'PRODUCTION_WRITE_CONFIRM_REQUIRED') {
+      exitFromScriptError(err);
+    }
     console.error(err);
     process.exit(2);
   });
 }
 
-module.exports = { main };
+module.exports = { main, parseArgs };

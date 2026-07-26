@@ -3,21 +3,24 @@
 /**
  * Batch 5A historical data audit (read-only).
  *
- *   node server/scripts/auditHistoricalDirectSales.cjs
+ *   MONGODB_URI=... node server/scripts/auditHistoricalDirectSales.cjs
  *
  * Prints JSON covering Booking / LocationBooking coverage, inventory, blocks,
  * and confidence classification hints. Does not mutate data.
+ * Connection banner is written to stderr so stdout remains valid JSON.
  */
 'use strict';
 
 require('dotenv').config();
 const mongoose = require('mongoose');
-const { DEFAULT_MONGO_URI } = require('../config/dbDefaults');
 const { FIXTURE_BOOKING_EMAIL_PATTERN } = require('../utils/fixtureExclusion');
+const {
+  connectScriptMongo,
+  exitFromScriptError
+} = require('./lib/scriptMongoSafety.cjs');
 
 async function runAudit() {
-  const uri = process.env.MONGODB_URI || process.env.MONGO_URI || DEFAULT_MONGO_URI;
-  await mongoose.connect(uri, { serverSelectionTimeoutMS: 12000 });
+  await connectScriptMongo(mongoose, { readOnly: true, mode: 'read-only' });
   const db = mongoose.connection.db;
 
   const bookings = db.collection('bookings');
@@ -204,6 +207,9 @@ async function runAudit() {
 
 if (require.main === module) {
   runAudit().catch((err) => {
+    if (err?.code === 'MONGO_URI_REQUIRED' || err?.code === 'PRODUCTION_WRITE_CONFIRM_REQUIRED') {
+      exitFromScriptError(err);
+    }
     console.error(JSON.stringify({ ok: false, error: err.message }));
     process.exit(2);
   });

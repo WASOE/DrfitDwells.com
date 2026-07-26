@@ -7,46 +7,60 @@
  * except optional isTest / archive flags when explicitly requested.
  *
  * Examples:
- *   node server/scripts/correctHistoricalReportingMetadata.cjs --mark-test <bookingId>
- *   node server/scripts/correctHistoricalReportingMetadata.cjs --mark-test <bookingId> --apply
+ *   MONGODB_URI=... node server/scripts/correctHistoricalReportingMetadata.cjs --mark-test <bookingId>
+ *   MONGODB_URI=... node server/scripts/correctHistoricalReportingMetadata.cjs --mark-test <bookingId> --apply
+ *   # production also requires: --confirm-production-write
  *
- * propertyKind inventory corrections remain in backfillPropertyKind.js.
- * Operating periods remain in upsertInventoryOperatingPeriods.cjs.
+ * Connection banner is written to stderr.
  */
 'use strict';
 
 require('dotenv').config();
 const mongoose = require('mongoose');
-const { DEFAULT_MONGO_URI } = require('../config/dbDefaults');
 const Booking = require('../models/Booking');
 const { appendAuditEvent } = require('../services/auditWriter');
+const {
+  connectScriptMongo,
+  exitFromScriptError
+} = require('./lib/scriptMongoSafety.cjs');
 
 function parseArgs(argv) {
-  const args = { apply: false, markTest: null, archive: null };
+  const args = {
+    apply: false,
+    confirmProductionWrite: false,
+    markTest: null,
+    archive: null
+  };
   for (let i = 2; i < argv.length; i += 1) {
     if (argv[i] === '--apply') args.apply = true;
+    if (argv[i] === '--confirm-production-write') args.confirmProductionWrite = true;
     if (argv[i] === '--mark-test') args.markTest = argv[++i];
     if (argv[i] === '--archive') args.archive = argv[++i];
   }
   return args;
 }
 
-async function main() {
-  const args = parseArgs(process.argv);
+async function main(argv = process.argv, env = process.env) {
+  const args = parseArgs(argv);
   if (!args.markTest && !args.archive) {
     console.error(
-      'Usage: correctHistoricalReportingMetadata.cjs (--mark-test|--archive) <bookingId> [--apply]'
+      'Usage: correctHistoricalReportingMetadata.cjs (--mark-test|--archive) <bookingId> [--apply] [--confirm-production-write]'
     );
     process.exit(1);
   }
 
-  const uri = process.env.MONGODB_URI || process.env.MONGO_URI || DEFAULT_MONGO_URI;
-  await mongoose.connect(uri, { serverSelectionTimeoutMS: 12000 });
+  await connectScriptMongo(mongoose, {
+    apply: args.apply,
+    confirmProductionWrite: args.confirmProductionWrite,
+    mode: args.apply ? 'apply' : 'dry-run',
+    env
+  });
 
   const id = args.markTest || args.archive;
   const booking = await Booking.findById(id).lean();
   if (!booking) {
     console.error(JSON.stringify({ ok: false, error: 'booking_not_found' }));
+    await mongoose.disconnect();
     process.exit(1);
   }
 
@@ -68,7 +82,7 @@ async function main() {
 
   if (!args.apply) {
     await mongoose.disconnect();
-    return;
+    return { mode: 'dry-run', proposal, written: false };
   }
 
   await Booking.updateOne({ _id: booking._id }, { $set: proposal.next });
@@ -81,13 +95,17 @@ async function main() {
   });
   console.log(JSON.stringify({ ok: true, applied: proposal.next }, null, 2));
   await mongoose.disconnect();
+  return { mode: 'apply', proposal, written: true };
 }
 
 if (require.main === module) {
   main().catch((err) => {
+    if (err?.code === 'MONGO_URI_REQUIRED' || err?.code === 'PRODUCTION_WRITE_CONFIRM_REQUIRED') {
+      exitFromScriptError(err);
+    }
     console.error(err);
     process.exit(2);
   });
 }
 
-module.exports = { main };
+module.exports = { main, parseArgs };
