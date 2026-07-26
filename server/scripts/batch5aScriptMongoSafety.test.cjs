@@ -324,3 +324,105 @@ test('upsert and correction scripts honour dry-run and production confirm flags'
   fs.unlinkSync(periodsFile);
   await mongoServer.stop();
 });
+
+function writeTempPeriodsFile() {
+  const periodsFile = path.join(os.tmpdir(), `periods-stdout-${Date.now()}-${Math.random()}.json`);
+  fs.writeFileSync(
+    periodsFile,
+    JSON.stringify([
+      {
+        propertyKind: 'cabin',
+        entityType: 'cabin',
+        entityId: '507f1f77bcf86cd799439011',
+        operatingFrom: '2026-01-01',
+        operatingTo: null,
+        reason: 'opened',
+        source: 'test',
+        notes: ''
+      }
+    ])
+  );
+  return periodsFile;
+}
+
+test('upsert dry-run stdout is exactly one JSON.parse-able document; banner on stderr', async () => {
+  await ensureDisconnected();
+  const mongoServer = await MongoMemoryServer.create();
+  const uri = mongoServer.getUri();
+  const periodsFile = writeTempPeriodsFile();
+
+  const result = spawnSync(process.execPath, [upsertScript, '--file', periodsFile], {
+    env: {
+      ...process.env,
+      NODE_ENV: 'test',
+      MONGODB_URI: uri,
+      MONGO_URI: ''
+    },
+    cwd: path.join(__dirname, '..'),
+    encoding: 'utf8'
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  const parsed = JSON.parse(result.stdout);
+  assert.equal(parsed.mode, 'dry-run');
+  assert.equal(parsed.count, 1);
+  assert.ok(Array.isArray(parsed.proposals));
+  assert.equal(parsed.ok, undefined);
+  assert.match(result.stderr || '', /"mongoHost"/);
+  assert.match(result.stderr || '', /"mode": "dry-run"/);
+  assert.doesNotMatch(result.stdout || '', /"mongoHost"/);
+
+  fs.unlinkSync(periodsFile);
+  await mongoServer.stop();
+});
+
+test('upsert apply stdout is exactly one JSON.parse-able document with mocked writes', async () => {
+  await ensureDisconnected();
+  const mongoServer = await MongoMemoryServer.create();
+  const uri = mongoServer.getUri();
+  const periodsFile = writeTempPeriodsFile();
+
+  const { main: upsertMain } = require('./upsertInventoryOperatingPeriods.cjs');
+  const InventoryOperatingPeriod = require('../models/InventoryOperatingPeriod');
+  const auditWriter = require('../services/auditWriter');
+
+  const origFindOneAndUpdate = InventoryOperatingPeriod.findOneAndUpdate;
+  const origAppendAudit = auditWriter.appendAuditEvent;
+  let writeCalls = 0;
+  InventoryOperatingPeriod.findOneAndUpdate = async () => {
+    writeCalls += 1;
+    return { _id: new mongoose.Types.ObjectId() };
+  };
+  auditWriter.appendAuditEvent = async () => {};
+
+  const stdoutChunks = [];
+  const origLog = console.log;
+  console.log = (...args) => {
+    stdoutChunks.push(args.map((a) => (typeof a === 'string' ? a : String(a))).join(' '));
+  };
+
+  try {
+    const applied = await upsertMain(
+      ['node', upsertScript, '--file', periodsFile, '--apply'],
+      { MONGODB_URI: uri, NODE_ENV: 'development' }
+    );
+    assert.equal(applied.mode, 'apply');
+    assert.equal(applied.written, 1);
+    assert.equal(writeCalls, 1);
+    assert.equal(stdoutChunks.length, 1, 'apply must emit a single console.log');
+    const parsed = JSON.parse(stdoutChunks[0]);
+    assert.equal(parsed.mode, 'apply');
+    assert.equal(parsed.ok, true);
+    assert.equal(parsed.written, 1);
+    assert.equal(parsed.count, 1);
+    assert.ok(Array.isArray(parsed.proposals));
+    assert.equal(parsed.proposals.length, 1);
+  } finally {
+    console.log = origLog;
+    InventoryOperatingPeriod.findOneAndUpdate = origFindOneAndUpdate;
+    auditWriter.appendAuditEvent = origAppendAudit;
+    fs.unlinkSync(periodsFile);
+    await ensureDisconnected();
+    await mongoServer.stop();
+  }
+});

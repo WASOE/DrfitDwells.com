@@ -84,19 +84,19 @@ async function main(argv = process.argv, env = process.env) {
     });
   }
 
-  console.log(
-    JSON.stringify(
-      {
-        mode: args.apply ? 'apply' : 'dry-run',
-        count: proposals.length,
-        proposals
-      },
-      null,
-      2
-    )
-  );
-
   if (!args.apply) {
+    // Exactly one JSON document on stdout (banner remains on stderr).
+    console.log(
+      JSON.stringify(
+        {
+          mode: 'dry-run',
+          count: proposals.length,
+          proposals
+        },
+        null,
+        2
+      )
+    );
     await mongoose.disconnect();
     return { written: 0, mode: 'dry-run', proposals };
   }
@@ -130,7 +130,20 @@ async function main(argv = process.argv, env = process.env) {
     });
   }
 
-  console.log(JSON.stringify({ ok: true, written }, null, 2));
+  // Exactly one JSON document on stdout — proposals + apply result combined.
+  console.log(
+    JSON.stringify(
+      {
+        mode: 'apply',
+        count: proposals.length,
+        proposals,
+        ok: true,
+        written
+      },
+      null,
+      2
+    )
+  );
   await mongoose.disconnect();
   return { written, mode: 'apply', proposals };
 }
