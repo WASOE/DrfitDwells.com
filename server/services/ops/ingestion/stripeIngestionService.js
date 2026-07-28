@@ -8,6 +8,9 @@ const { openManualReviewItem } = require('./manualReviewService');
 const { activatePaidVoucherFromStripeEvent } = require('../../giftVouchers/giftVoucherPaymentService');
 const { linkStripePaymentToBooking } = require('../../payments/paymentLinkingService');
 const { notifyOpsPushPaymentAlert } = require('../push/opsPushEventNotifications');
+const {
+  buildPaymentUnlinkedObservabilityEvidence
+} = require('../../payments/paidBookingFinalizationObservability');
 
 function digestEvent(event) {
   return crypto.createHash('sha256').update(JSON.stringify(event)).digest('hex');
@@ -319,10 +322,12 @@ async function upsertCanonicalPaymentFromEvent(event) {
         source: 'stripe_webhook',
         sourceReference: event.id
       },
-      evidence: {
-        providerReference: payment.providerReference,
-        status: payment.status
-      }
+      evidence: buildPaymentUnlinkedObservabilityEvidence({
+        payment,
+        paymentIntentId,
+        eventId: event.id,
+        metadata: paymentMetadata
+      })
     });
   }
 

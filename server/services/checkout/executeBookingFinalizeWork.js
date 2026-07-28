@@ -82,13 +82,17 @@ function createPaidBookingSaveFailedError({
   errorCode,
   errorSummary,
   paymentIntentId,
-  guestPayload
+  guestPayload,
+  finalizationStage = null,
+  observabilityRecorded = false
 }) {
   const err = new Error(errorSummary || 'Paid booking finalization failed');
   err.code = 'PAID_BOOKING_SAVE_FAILED';
   err.needsReview = true;
   err.errorCode = errorCode || null;
   err.guestPayload = guestPayload || defaultGuestNeedsReviewPayload(paymentIntentId);
+  err.finalizationStage = finalizationStage || null;
+  err.observabilityRecorded = Boolean(observabilityRecorded);
   return err;
 }
 
@@ -296,12 +300,16 @@ async function resolveCabinTypeUnitForFinalize(deps, ctx, { paymentIntentIdForRe
           errorCode,
           errorSummary,
           paymentIntentId: paymentIntentIdForReview,
-          bookingAttempt: ctx.bookingAttemptContext || null
+          bookingAttempt: ctx.bookingAttemptContext || null,
+          finalizationStage: 'unit_assignment',
+          checkoutId: ctx.checkoutId || null
         });
         throw createPaidBookingSaveFailedError({
           errorCode,
           errorSummary,
-          paymentIntentId: paymentIntentIdForReview
+          paymentIntentId: paymentIntentIdForReview,
+          finalizationStage: 'unit_assignment',
+          observabilityRecorded: true
         });
       }
       throw createRouteStyleError('NOT_AVAILABLE', errorSummary);
@@ -321,19 +329,23 @@ async function resolveCabinTypeUnitForFinalize(deps, ctx, { paymentIntentIdForRe
 
   if (!assignedUnit) {
     if (paymentIntentIdForReview) {
-      await deps.recordPaidBookingResolutionIssue({
-        issueType: 'paid_booking_conflict',
-        errorCode: 'NO_UNITS_AVAILABLE',
-        errorSummary: 'All units are occupied for the selected dates',
-        paymentIntentId: paymentIntentIdForReview,
-        bookingAttempt: ctx.bookingAttemptContext || null
-      });
-      throw createPaidBookingSaveFailedError({
-        errorCode: 'NO_UNITS_AVAILABLE',
-        errorSummary: 'All units are occupied for the selected dates',
-        paymentIntentId: paymentIntentIdForReview
-      });
-    }
+        await deps.recordPaidBookingResolutionIssue({
+          issueType: 'paid_booking_conflict',
+          errorCode: 'NO_UNITS_AVAILABLE',
+          errorSummary: 'All units are occupied for the selected dates',
+          paymentIntentId: paymentIntentIdForReview,
+          bookingAttempt: ctx.bookingAttemptContext || null,
+          finalizationStage: 'unit_assignment',
+          checkoutId: ctx.checkoutId || null
+        });
+        throw createPaidBookingSaveFailedError({
+          errorCode: 'NO_UNITS_AVAILABLE',
+          errorSummary: 'All units are occupied for the selected dates',
+          paymentIntentId: paymentIntentIdForReview,
+          finalizationStage: 'unit_assignment',
+          observabilityRecorded: true
+        });
+      }
     throw createRouteStyleError(
       'NOT_AVAILABLE',
       'No units available for the selected dates'
@@ -509,12 +521,17 @@ async function runPostSaveOverlapChecks(deps, {
           errorCode: 'CABIN_OVERLAP_AFTER_SAVE',
           errorSummary: `overlaps=${overlaps}, blockRace=${blockRace}`,
           paymentIntentId: paymentIntentIdForReview,
-          bookingAttempt: ctx.bookingAttemptContext || null
+          bookingAttempt: ctx.bookingAttemptContext || null,
+          finalizationStage: 'overlap_check',
+          checkoutId: ctx.checkoutId || null,
+          bookingId: booking?._id ? String(booking._id) : null
         });
         throw createPaidBookingSaveFailedError({
           errorCode: 'CABIN_OVERLAP_AFTER_SAVE',
           errorSummary: `overlaps=${overlaps}, blockRace=${blockRace}`,
-          paymentIntentId: paymentIntentIdForReview
+          paymentIntentId: paymentIntentIdForReview,
+          finalizationStage: 'overlap_check',
+          observabilityRecorded: true
         });
       }
       throw createRouteStyleError(
@@ -564,12 +581,17 @@ async function runPostSaveOverlapChecks(deps, {
             errorCode: 'UNIT_OVERLAP_AFTER_SAVE',
             errorSummary: `overlaps=${overlaps}, blockRace=${blockRace}`,
             paymentIntentId: paymentIntentIdForReview,
-            bookingAttempt: ctx.bookingAttemptContext || null
+            bookingAttempt: ctx.bookingAttemptContext || null,
+            finalizationStage: 'overlap_check',
+            checkoutId: ctx.checkoutId || null,
+            bookingId: booking?._id ? String(booking._id) : null
           });
           throw createPaidBookingSaveFailedError({
             errorCode: 'UNIT_OVERLAP_AFTER_SAVE',
             errorSummary: `overlaps=${overlaps}, blockRace=${blockRace}`,
-            paymentIntentId: paymentIntentIdForReview
+            paymentIntentId: paymentIntentIdForReview,
+            finalizationStage: 'overlap_check',
+            observabilityRecorded: true
           });
         }
         throw createRouteStyleError(
@@ -620,12 +642,17 @@ async function incrementPromoUsageIfNeeded(deps, {
         errorCode: 'PROMO_USAGE_CONFLICT_AFTER_SAVE',
         errorSummary: 'Promo usage limit reached after booking save',
         paymentIntentId: paymentIntentIdForReview,
-        bookingAttempt: ctx.bookingAttemptContext || null
+        bookingAttempt: ctx.bookingAttemptContext || null,
+        finalizationStage: 'booking_save',
+        checkoutId: ctx.checkoutId || null,
+        bookingId: booking?._id ? String(booking._id) : null
       });
       throw createPaidBookingSaveFailedError({
         errorCode: 'PROMO_USAGE_CONFLICT_AFTER_SAVE',
         errorSummary: 'Promo usage limit reached after booking save',
-        paymentIntentId: paymentIntentIdForReview
+        paymentIntentId: paymentIntentIdForReview,
+        finalizationStage: 'booking_save',
+        observabilityRecorded: true
       });
     }
     throw createRouteStyleError(

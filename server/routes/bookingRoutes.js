@@ -8,8 +8,12 @@ const { normalizeReferralCode } = require('../models/CreatorPartner');
 const Cabin = require('../models/Cabin');
 const CabinType = require('../models/CabinType');
 const PaymentFinalization = require('../models/PaymentFinalization');
-const PaymentResolutionIssue = require('../models/PaymentResolutionIssue');
 const AssignmentEngine = require('../services/assignmentEngine');
+const {
+  recordPaidBookingResolutionIssueSafe,
+  PAID_BOOKING_FINALIZATION_STAGES,
+  safeErrorSummary
+} = require('../services/payments/paidBookingFinalizationObservability');
 const featureFlags = require('../utils/featureFlags');
 const moment = require('moment');
 const {
@@ -288,9 +292,7 @@ function sanitizeAttribution(raw) {
 }
 
 function summarizeError(err) {
-  if (!err) return null;
-  const msg = err?.message || String(err);
-  return msg ? String(msg).slice(0, 500) : null;
+  return safeErrorSummary(err?.message || err);
 }
 
 function bookingNeedsReviewGuestResponse(paymentIntentId) {
@@ -304,81 +306,44 @@ function bookingNeedsReviewGuestResponse(paymentIntentId) {
   };
 }
 
-async function recordPaidBookingResolutionIssue({
-  issueType,
-  errorCode,
-  errorSummary,
-  paymentIntentId,
-  paymentIntent,
-  bookingAttempt,
-  attribution
-}) {
-  if (!paymentIntentId) return null;
-  const totalGuests = Number(bookingAttempt?.adults || 0) + Number(bookingAttempt?.children || 0);
-  const guestFirstName = String(bookingAttempt?.guestInfo?.firstName || '').trim();
-  const guestLastName = String(bookingAttempt?.guestInfo?.lastName || '').trim();
-  const guestName = [guestFirstName, guestLastName].filter(Boolean).join(' ').trim();
-  const issue = await PaymentResolutionIssue.findOneAndUpdate(
-    { paymentIntentId: String(paymentIntentId).trim() },
-    {
-      $set: {
-        status: 'needs_review',
-        issueType,
-        amount: typeof paymentIntent?.amount === 'number' ? paymentIntent.amount / 100 : null,
-        currency: paymentIntent?.currency ? String(paymentIntent.currency).toLowerCase() : null,
-        guest: {
-          name: guestName || null,
-          email: String(bookingAttempt?.guestInfo?.email || '').trim().toLowerCase() || null,
-          phone: String(bookingAttempt?.guestInfo?.phone || '').trim() || null
-        },
-        bookingAttempt: {
-          entityType: bookingAttempt?.entityType || null,
-          cabinId: bookingAttempt?.cabinId ? String(bookingAttempt.cabinId) : null,
-          cabinTypeId: bookingAttempt?.cabinTypeId ? String(bookingAttempt.cabinTypeId) : null,
-          checkIn: bookingAttempt?.checkInDate || null,
-          checkOut: bookingAttempt?.checkOutDate || null,
-          guests: Number.isFinite(totalGuests) ? totalGuests : null,
-          promoCode: bookingAttempt?.promoCode || null
-        },
-        attribution: attribution || {},
-        errorSummary: errorSummary || null,
-        errorCode: errorCode || null,
-        metadata: {
-          sourceRoute: 'POST /api/bookings',
-          paymentIntentStatus: paymentIntent?.status || null
-        }
-      },
-      $setOnInsert: {
-        resolvedAt: null,
-        resolutionNote: null
-      }
-    },
-    { new: true, upsert: true }
-  );
-
-  await openManualReviewItem({
-    category: 'payment_finalization_failure',
-    severity: 'high',
-    entityType: 'PaymentResolutionIssue',
-    entityId: String(issue._id),
-    title: 'Paid booking could not be finalized automatically',
-    details: `PaymentIntent ${String(paymentIntentId)} requires manual booking/payment resolution`,
-    provenance: {
-      source: 'booking_route',
-      sourceReference: String(paymentIntentId)
-    },
-    evidence: {
-      paymentIntentId: String(paymentIntentId),
-      issueType,
-      errorCode: errorCode || null,
-      errorSummary: errorSummary || null,
-      issueId: String(issue._id),
-      guest: issue.guest || {},
-      bookingAttempt: issue.bookingAttempt || {}
-    }
-  });
-
-  return issue;
+function mapV2FinalizeErrorToStage(err) {
+  const code = err?.errorCode || err?.code || '';
+  if (
+    code === 'NO_UNITS_AVAILABLE' ||
+    code === 'UNIT_NOT_AVAILABLE' ||
+    code === 'UNIT_CABIN_TYPE_MISMATCH' ||
+    code === 'UNIT_NOT_FOUND_OR_INACTIVE' ||
+    code === 'CABIN_TYPE_UNIT_REQUIRED'
+  ) {
+    return PAID_BOOKING_FINALIZATION_STAGES.UNIT_ASSIGNMENT;
+  }
+  if (code === 'CABIN_OVERLAP_AFTER_SAVE' || code === 'UNIT_OVERLAP_AFTER_SAVE') {
+    return PAID_BOOKING_FINALIZATION_STAGES.OVERLAP_CHECK;
+  }
+  if (code === 'PROMO_USAGE_CONFLICT_AFTER_SAVE') {
+    return PAID_BOOKING_FINALIZATION_STAGES.BOOKING_SAVE;
+  }
+  if (err?.code === 'VOUCHER_CONFIRM_FAILED') {
+    return PAID_BOOKING_FINALIZATION_STAGES.VOUCHER_CONFIRM;
+  }
+  if (err?.code === 'FINALIZE_IN_PROGRESS' || err?.code === 'CHECKOUT_SESSION_CONCURRENCY_CONFLICT') {
+    return PAID_BOOKING_FINALIZATION_STAGES.FINALIZE_LOCK;
+  }
+  if (err?.code === 'DUPLICATE_STAY_CONFLICT') {
+    return PAID_BOOKING_FINALIZATION_STAGES.COMMERCIAL_STAY_GUARD;
+  }
+  if (
+    err?.code === 'CANONICAL_PAYMENT_INTENT_MISMATCH' ||
+    err?.code === 'SUPERSEDED_PAYMENT_INTENT' ||
+    err?.code === 'CHECKOUT_SESSION_EXPIRED' ||
+    err?.code === 'CHECKOUT_SESSION_NOT_USABLE'
+  ) {
+    return PAID_BOOKING_FINALIZATION_STAGES.FINALIZE_PRECHECK;
+  }
+  if (err?.code === 'PAID_BOOKING_SAVE_FAILED') {
+    return PAID_BOOKING_FINALIZATION_STAGES.BOOKING_SAVE;
+  }
+  return PAID_BOOKING_FINALIZATION_STAGES.UNKNOWN;
 }
 
 const ACCEPTANCE_EMAIL_RETRY_DELAY_MS = 5000;
@@ -987,39 +952,41 @@ router.post('/', bookingCreateLimiter, [
   let voucherReservationContext = null;
   let useCheckoutSessionV2Finalize = false;
 
-  const handlePaidBookingFailure = async ({ issueType, errorCode, errorSummary }) => {
+  const handlePaidBookingFailure = async ({
+    issueType,
+    errorCode,
+    errorSummary,
+    finalizationStage = null,
+    bookingId = null,
+    sourceError = null
+  }) => {
     if (!stripePaymentVerified || !paymentIntentIdForReview) return false;
-    const structuredCtx = {
-      paymentIntentId: String(paymentIntentIdForReview),
-      cabinId: bookingAttemptContext?.cabinId ? String(bookingAttemptContext.cabinId) : null,
-      cabinTypeId: bookingAttemptContext?.cabinTypeId ? String(bookingAttemptContext.cabinTypeId) : null,
-      checkIn: bookingAttemptContext?.checkInDate ? bookingAttemptContext.checkInDate.toISOString() : null,
-      checkOut: bookingAttemptContext?.checkOutDate ? bookingAttemptContext.checkOutDate.toISOString() : null,
-      errorCode: errorCode || null
-    };
-    console.error('[booking-payment-safety] paid booking finalization failed', structuredCtx);
-    try {
-      const issue = await recordPaidBookingResolutionIssue({
+    const stage =
+      finalizationStage ||
+      sourceError?.finalizationStage ||
+      (sourceError ? mapV2FinalizeErrorToStage(sourceError) : PAID_BOOKING_FINALIZATION_STAGES.UNKNOWN);
+    const checkoutIdForIssue =
+      (typeof req.body?.checkoutId === 'string' && req.body.checkoutId.trim()) ||
+      bookingAttemptContext?.checkoutId ||
+      null;
+    // Worker may already have recorded exact cause — do not double-count occurrenceCount.
+    if (!sourceError?.observabilityRecorded) {
+      await recordPaidBookingResolutionIssueSafe({
         issueType,
         errorCode,
         errorSummary,
         paymentIntentId: paymentIntentIdForReview,
         paymentIntent: verifiedPaymentIntent,
         bookingAttempt: bookingAttemptContext,
-        attribution: sanitizedAttribution
-      });
-      console.info('[booking-payment-safety] payment resolution issue upserted', {
-        ...structuredCtx,
-        issueId: issue ? String(issue._id) : null
-      });
-    } catch (issueErr) {
-      console.error('[booking-payment-safety] failed to create payment resolution issue', {
-        ...structuredCtx,
-        issueError: summarizeError(issueErr)
+        attribution: sanitizedAttribution,
+        checkoutId: checkoutIdForIssue,
+        finalizationStage: stage,
+        failureSource: 'booking_route',
+        stripePaymentVerified: true,
+        bookingId
       });
     }
     const responsePayload = bookingNeedsReviewGuestResponse(paymentIntentIdForReview);
-    console.info('[booking-payment-safety] returned manual review response to guest', structuredCtx);
     res.status(409).json(responsePayload);
     return true;
   };
@@ -1585,12 +1552,18 @@ router.post('/', bookingCreateLimiter, [
         ...createDefaultDependencies(),
         stripe,
         recordPaidBookingResolutionIssue: (params) =>
-          recordPaidBookingResolutionIssue({
+          recordPaidBookingResolutionIssueSafe({
             ...params,
-            paymentIntentId: paymentIntentIdForReview,
+            paymentIntentId: params.paymentIntentId || paymentIntentIdForReview,
             paymentIntent: verifiedPaymentIntent,
-            bookingAttempt: bookingAttemptContext,
-            attribution: sanitizedAttribution
+            bookingAttempt: params.bookingAttempt || bookingAttemptContext,
+            attribution: sanitizedAttribution,
+            checkoutId:
+              params.checkoutId ||
+              (typeof req.body?.checkoutId === 'string' ? req.body.checkoutId.trim() : null),
+            finalizationStage: params.finalizationStage || PAID_BOOKING_FINALIZATION_STAGES.UNKNOWN,
+            failureSource: 'booking_finalize_worker',
+            stripePaymentVerified: true
           }),
         openManualReviewItem
       };
@@ -1848,9 +1821,11 @@ router.post('/', bookingCreateLimiter, [
           });
           if (paymentIntentIdForReview) {
             const handled = await handlePaidBookingFailure({
-              issueType: 'voucher_confirm_failed',
+              issueType: 'paid_booking_unknown_failure',
               errorCode: v2Err.code,
-              errorSummary: summarizeError(v2Err)
+              errorSummary: summarizeError(v2Err),
+              finalizationStage: PAID_BOOKING_FINALIZATION_STAGES.VOUCHER_CONFIRM,
+              sourceError: v2Err
             });
             if (handled) return;
           }
@@ -1873,7 +1848,8 @@ router.post('/', bookingCreateLimiter, [
             const handled = await handlePaidBookingFailure({
               issueType: v2Err.code === 'PAID_BOOKING_SAVE_FAILED' ? 'paid_booking_save_failed' : 'paid_booking_unknown_failure',
               errorCode: v2Err.errorCode || v2Err.code,
-              errorSummary: summarizeError(v2Err)
+              errorSummary: summarizeError(v2Err),
+              sourceError: v2Err
             });
             if (handled) return;
           }
@@ -2036,7 +2012,8 @@ router.post('/', bookingCreateLimiter, [
         const handled = await handlePaidBookingFailure({
           issueType: 'paid_booking_save_failed',
           errorCode: 'CABIN_TYPE_UNIT_REQUIRED',
-          errorSummary: 'Multi-unit booking cannot be confirmed without an assigned unit'
+          errorSummary: 'Multi-unit booking cannot be confirmed without an assigned unit',
+          finalizationStage: PAID_BOOKING_FINALIZATION_STAGES.UNIT_ASSIGNMENT
         });
         if (handled) return;
       }
@@ -2165,7 +2142,9 @@ router.post('/', bookingCreateLimiter, [
         const handledPaidConflict = await handlePaidBookingFailure({
           issueType: 'paid_booking_conflict',
           errorCode: 'CABIN_OVERLAP_AFTER_SAVE',
-          errorSummary: `overlaps=${overlaps}, blockRace=${blockRace}`
+          errorSummary: `overlaps=${overlaps}, blockRace=${blockRace}`,
+          finalizationStage: PAID_BOOKING_FINALIZATION_STAGES.OVERLAP_CHECK,
+          bookingId: booking?._id ? String(booking._id) : null
         });
         if (handledPaidConflict) return;
         return res.status(409).json({
@@ -2213,7 +2192,9 @@ router.post('/', bookingCreateLimiter, [
           const handledPaidConflict = await handlePaidBookingFailure({
             issueType: 'paid_booking_conflict',
             errorCode: 'UNIT_OVERLAP_AFTER_SAVE',
-            errorSummary: `overlaps=${overlaps}, blockRace=${blockRace}`
+            errorSummary: `overlaps=${overlaps}, blockRace=${blockRace}`,
+            finalizationStage: PAID_BOOKING_FINALIZATION_STAGES.OVERLAP_CHECK,
+            bookingId: booking?._id ? String(booking._id) : null
           });
           if (handledPaidConflict) return;
           return res.status(409).json({
@@ -2253,7 +2234,9 @@ router.post('/', bookingCreateLimiter, [
         const handledPaidConflict = await handlePaidBookingFailure({
           issueType: 'paid_booking_conflict',
           errorCode: 'PROMO_USAGE_CONFLICT_AFTER_SAVE',
-          errorSummary: 'Promo usage limit reached after booking save'
+          errorSummary: 'Promo usage limit reached after booking save',
+          finalizationStage: PAID_BOOKING_FINALIZATION_STAGES.BOOKING_SAVE,
+          bookingId: booking?._id ? String(booking._id) : null
         });
         if (handledPaidConflict) return;
         return res.status(409).json({
@@ -2295,6 +2278,14 @@ router.post('/', bookingCreateLimiter, [
           }
         });
         if (paymentIntentIdForReview) {
+          const handled = await handlePaidBookingFailure({
+            issueType: 'paid_booking_unknown_failure',
+            errorCode: 'VOUCHER_CONFIRM_FAILED',
+            errorSummary: summarizeError(confirmErr),
+            finalizationStage: PAID_BOOKING_FINALIZATION_STAGES.VOUCHER_CONFIRM,
+            bookingId: booking?._id ? String(booking._id) : null
+          });
+          if (handled) return;
           return res.status(409).json(bookingNeedsReviewGuestResponse(paymentIntentIdForReview));
         }
         return res.status(500).json({
@@ -2470,7 +2461,9 @@ router.post('/', bookingCreateLimiter, [
     const paidFailureHandled = await handlePaidBookingFailure({
       issueType: mappedIssueType,
       errorCode: error?.name || 'BOOKING_CREATE_ERROR',
-      errorSummary: summarizeError(error)
+      errorSummary: summarizeError(error),
+      finalizationStage: PAID_BOOKING_FINALIZATION_STAGES.BOOKING_SAVE,
+      sourceError: error
     });
     if (paidFailureHandled) return;
     console.error('Booking creation error:', error);
