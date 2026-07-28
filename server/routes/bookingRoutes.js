@@ -651,6 +651,45 @@ router.get('/checkout-sessions/:checkoutId', async (req, res) => {
   }
 });
 
+// GET /api/bookings/checkout-sessions/:checkoutId/status — Batch 9 public recovery status (read-only)
+router.get('/checkout-sessions/:checkoutId/status', async (req, res) => {
+  const {
+    getPublicCheckoutRecoveryStatus,
+    CheckoutRecoveryStatusError
+  } = require('../services/checkout/checkoutRecoveryStatusService');
+
+  try {
+    const checkoutId = normalizeCheckoutId(req.params.checkoutId);
+    if (!checkoutId || !isValidCheckoutId(checkoutId)) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_CHECKOUT_ID',
+        message: 'Invalid checkout session id'
+      });
+    }
+
+    // Auth = knowledge of unguessable checkoutId (same credential as other checkout-session routes).
+    const status = await getPublicCheckoutRecoveryStatus(checkoutId);
+    return res.json({
+      success: true,
+      ...status
+    });
+  } catch (err) {
+    if (err instanceof CheckoutRecoveryStatusError) {
+      return res.status(err.httpStatus).json({
+        success: false,
+        code: err.code,
+        message: err.message
+      });
+    }
+    console.error('Get checkout recovery status error:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Checkout status lookup failed'
+    });
+  }
+});
+
 // PUT /api/bookings/checkout-sessions/:checkoutId/finalize-intent — Batch 2 persist finalizeIntent
 router.put('/checkout-sessions/:checkoutId/finalize-intent', paymentIntentLimiter, async (req, res) => {
   try {

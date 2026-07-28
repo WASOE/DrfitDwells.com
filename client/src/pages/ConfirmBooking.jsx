@@ -34,6 +34,19 @@ import {
   isFinalizeIntentPersistEnabled,
   isFinalizeIntentRequiredForPiEnabled
 } from '../utils/finalizeIntentFlags';
+import { isCheckoutRecoveryUxEnabled } from '../utils/checkoutRecoveryUxFlags';
+import {
+  readCheckoutRecoveryState,
+  writeCheckoutRecoveryState,
+  clearCheckoutRecoveryState
+} from '../utils/checkoutRecoveryStorage';
+import {
+  mapStatusToPanelPhase,
+  shouldHidePaymentControls,
+  shouldStartPollingAfterBookingCreateFailure
+} from '../utils/checkoutRecoveryFlow';
+import { useCheckoutRecoveryPolling } from '../hooks/useCheckoutRecoveryPolling';
+import CheckoutRecoveryPanel from '../components/booking/CheckoutRecoveryPanel';
 import {
   buildCheckoutSessionV2BoundaryKey,
   clearCheckoutSessionV2Storage,
@@ -46,6 +59,7 @@ const stripePk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 const stripePromise = stripePk ? loadStripe(stripePk) : null;
 const CHECKOUT_SESSION_KEY = 'confirm-booking-checkout-session';
 const checkoutSessionV2Enabled = isCheckoutSessionV2Enabled();
+const checkoutRecoveryUxEnabled = isCheckoutRecoveryUxEnabled();
 const finalizeIntentPersistEnabled = isFinalizeIntentPersistEnabled();
 const finalizeIntentRequiredForPiEnabled = isFinalizeIntentRequiredForPiEnabled();
 
@@ -706,6 +720,8 @@ const ConfirmBooking = () => {
   const [loading, setLoading] = useState(true);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [recoveryActive, setRecoveryActive] = useState(false);
+  const [paymentMayHaveSucceeded, setPaymentMayHaveSucceeded] = useState(false);
 
   // From location.state (passed from CabinDetails) or sessionStorage (on refresh)
   const passedState = location.state || {};
@@ -1174,6 +1190,19 @@ const ConfirmBooking = () => {
 
   const finalizeRedirectBooking = useCallback((pending, paymentIntentIdForBooking) => {
     const fd = pending.formData || {};
+    if (checkoutRecoveryUxEnabled) {
+      const cid = String(pending?.checkoutId || checkoutId || '').trim();
+      if (cid) {
+        writeCheckoutRecoveryState(cid, {
+          paymentMayHaveSucceeded: true,
+          startedAt: new Date().toISOString(),
+          guestEmail: fd.email || ''
+        });
+        setPaymentMayHaveSucceeded(true);
+        setRecoveryActive(true);
+        setError(null);
+      }
+    }
     const attr = getAttributionPayload();
     const bookingData = buildRedirectBookingPayloadFromPending(pending, paymentIntentIdForBooking, {
       routeId: id,
@@ -1208,12 +1237,26 @@ const ConfirmBooking = () => {
           if (d.adults != null) refundParams.set('adults', String(d.adults));
           if (d.children != null) refundParams.set('children', String(d.children));
           navigate(`/booking-refund?${refundParams.toString()}`, { replace: true });
+        } else if (checkoutRecoveryUxEnabled) {
+          const cid = String(pending?.checkoutId || checkoutId || '').trim();
+          if (cid) {
+            writeCheckoutRecoveryState(cid, {
+              paymentMayHaveSucceeded: true,
+              startedAt: new Date().toISOString(),
+              guestEmail: fd.email || ''
+            });
+            setPaymentMayHaveSucceeded(true);
+            setRecoveryActive(true);
+            setError(null);
+          } else {
+            setError(mapCreateBookingErrorMessage(err, t('confirm.bookingFailed')));
+          }
         } else {
           setError(mapCreateBookingErrorMessage(err, t('confirm.bookingFailed')));
         }
       })
       .finally(() => setSubmitLoading(false));
-  }, [id, language, navigate, t]);
+  }, [id, language, navigate, t, checkoutId]);
 
   const handleV2RedirectValidationFailure = useCallback((reason, pending) => {
     if (reason === 'not_v2_pending') {
@@ -1702,7 +1745,87 @@ const ConfirmBooking = () => {
     }
   }, [checkoutId, clearV2PaymentIdentityState, persistV2StoragePaymentCleared]);
 
+  const enterCheckoutRecovery = useCallback((cid, guestEmail = '') => {
+    if (!checkoutRecoveryUxEnabled) return false;
+    const id = String(cid || checkoutId || '').trim();
+    if (!id) return false;
+    writeCheckoutRecoveryState(id, {
+      paymentMayHaveSucceeded: true,
+      startedAt: new Date().toISOString(),
+      guestEmail: guestEmail || formData.email || ''
+    });
+    setPaymentMayHaveSucceeded(true);
+    setRecoveryActive(true);
+    setError(null);
+    setStripeError(null);
+    setSubmitLoading(false);
+    return true;
+  }, [checkoutId, formData.email]);
+
+  const handleRecoveryConfirmed = useCallback((payload) => {
+    const bid = payload?.bookingId;
+    if (!bid) return;
+    const em =
+      (formData.email || '').trim().toLowerCase() ||
+      readCheckoutRecoveryState(checkoutId)?.guestEmail ||
+      '';
+    if (em) {
+      try {
+        sessionStorage.setItem(`dd_booking_guest_${bid}`, em);
+      } catch (e) { /* ignore */ }
+    }
+    clearCheckoutRecoveryState(checkoutId);
+    clearCheckoutStorageAfterSuccessfulBooking();
+    navigate(`/booking-success/${bid}`, { replace: true, state: { guestEmail: em } });
+  }, [checkoutId, formData.email, navigate]);
+
+  const handleRecoveryNeedsReview = useCallback(() => {
+    setRecoveryActive(true);
+    setSubmitLoading(false);
+  }, []);
+
+  const handleRecoveryPaymentFailed = useCallback((payload) => {
+    setRecoveryActive(true);
+    setPaymentMayHaveSucceeded(false);
+    if (payload?.canRetryPayment) {
+      setError(t('confirm.paymentFailed'));
+    }
+  }, [t]);
+
+  const {
+    statusPayload: recoveryStatus,
+    delayed: recoveryDelayed,
+    networkError: recoveryNetworkError
+  } = useCheckoutRecoveryPolling({
+    checkoutId,
+    enabled: checkoutRecoveryUxEnabled && recoveryActive && Boolean(checkoutId),
+    onConfirmed: handleRecoveryConfirmed,
+    onNeedsReview: handleRecoveryNeedsReview,
+    onPaymentFailed: handleRecoveryPaymentFailed
+  });
+
+  const recoveryPanelPhase = mapStatusToPanelPhase({
+    status: recoveryStatus?.status,
+    delayed: recoveryDelayed
+  });
+
+  const hidePaymentControls = shouldHidePaymentControls({
+    flagEnabled: checkoutRecoveryUxEnabled,
+    recoveryActive,
+    paymentMayHaveSucceeded
+  });
+
+  useEffect(() => {
+    if (!checkoutRecoveryUxEnabled || !checkoutId) return;
+    const stored = readCheckoutRecoveryState(checkoutId);
+    if (stored?.paymentMayHaveSucceeded) {
+      setPaymentMayHaveSucceeded(true);
+      setRecoveryActive(true);
+    }
+  }, [checkoutId]);
+
   const createBooking = useCallback(async (paymentIntentId = null) => {
+
     const attr = getAttributionPayload();
     const bookingData = buildCreateBookingPayload({
       bookingEntityType,
@@ -1999,6 +2122,9 @@ const ConfirmBooking = () => {
         return;
       }
       if (paymentIntent?.status === 'succeeded') {
+        if (checkoutRecoveryUxEnabled) {
+          enterCheckoutRecovery(checkoutId, formData.email);
+        }
         try {
           await createBooking(paymentIntent.id);
         } catch (bookErr) {
@@ -2012,6 +2138,15 @@ const ConfirmBooking = () => {
             if (d.adults != null) params.set('adults', String(d.adults));
             if (d.children != null) params.set('children', String(d.children));
             navigate(`/booking-refund?${params.toString()}`, { replace: true });
+            return;
+          }
+          if (
+            shouldStartPollingAfterBookingCreateFailure({
+              flagEnabled: checkoutRecoveryUxEnabled,
+              paymentMayHaveSucceeded: true
+            })
+          ) {
+            enterCheckoutRecovery(checkoutId, formData.email);
             return;
           }
           throw bookErr;
@@ -2048,6 +2183,7 @@ const ConfirmBooking = () => {
     selectedExpKeys,
     experiences,
     createBooking,
+    enterCheckoutRecovery,
     confirmPath,
     lockedPromoCode,
     appliedVoucherCode,
@@ -2545,7 +2681,44 @@ const ConfirmBooking = () => {
             </>
           ) : null}
 
-          {showPaymentElement ? (
+          {checkoutRecoveryUxEnabled && recoveryActive ? (
+            <div className="mb-6">
+              <CheckoutRecoveryPanel
+                phase={recoveryPanelPhase === 'confirmed' ? 'finalizing' : recoveryPanelPhase}
+                checkoutId={checkoutId || ''}
+                bookingReference={recoveryStatus?.bookingReference || null}
+                onCheckStatus={async () => {
+                  if (!checkoutId) return;
+                  try {
+                    const result = await bookingAPI.getCheckoutRecoveryStatus(checkoutId);
+                    if (result?.status === 'confirmed' && result.bookingId) {
+                      handleRecoveryConfirmed(result);
+                    }
+                  } catch (e) {
+                    /* keep calm checking state */
+                  }
+                }}
+                canRetryPayment={
+                  recoveryStatus?.status === 'payment_failed' &&
+                  recoveryStatus?.canRetryPayment === true
+                }
+                onRetryPayment={() => {
+                  clearCheckoutRecoveryState(checkoutId);
+                  setRecoveryActive(false);
+                  setPaymentMayHaveSucceeded(false);
+                  setError(null);
+                }}
+              />
+              {recoveryNetworkError ? (
+                <p className="mt-3 text-center text-sm text-stone-500" role="status">
+                  Still checking your reservation status…
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {showPaymentElement && !hidePaymentControls ? (
+
             <>
               <p className="text-sm text-gray-600 mb-4">
                 {voucherAppliedCents > 0
@@ -2586,7 +2759,7 @@ const ConfirmBooking = () => {
             </>
           ) : null}
 
-          {skipCardPaymentUi ? (
+          {skipCardPaymentUi && !hidePaymentControls ? (
             <>
               <p className="text-sm text-gray-600 mb-4">
                 {voucherAppliedCents > 0
@@ -2615,7 +2788,7 @@ const ConfirmBooking = () => {
             </>
           ) : null}
 
-          {!stripeEnabled ? (
+          {!stripeEnabled && !hidePaymentControls ? (
             <>
               <p className="text-sm text-gray-600 mb-4">
                 {t('confirm.payOnArrivalNote')}

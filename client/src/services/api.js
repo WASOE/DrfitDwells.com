@@ -102,6 +102,23 @@ export const bookingAPI = {
       checkoutSession: res.data?.checkoutSession ?? null
     };
   },
+  /** Batch 9 — public post-payment recovery status (read-only). */
+  getCheckoutRecoveryStatus: async (checkoutId, { signal } = {}) => {
+    const id = String(checkoutId ?? '').trim();
+    const res = await api.get(`/bookings/checkout-sessions/${encodeURIComponent(id)}/status`, {
+      signal
+    });
+    return {
+      success: res.data?.success === true,
+      checkoutId: res.data?.checkoutId ?? id,
+      status: res.data?.status ?? null,
+      paymentReceived: res.data?.paymentReceived === true,
+      bookingId: res.data?.bookingId ?? null,
+      bookingReference: res.data?.bookingReference ?? null,
+      updatedAt: res.data?.updatedAt ?? null,
+      canRetryPayment: res.data?.canRetryPayment === true
+    };
+  },
   getById: (id, email) => {
     const params = {};
     if (email) params.email = email;

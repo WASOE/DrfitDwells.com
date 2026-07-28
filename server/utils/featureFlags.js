@@ -173,6 +173,15 @@ const featureFlags = {
   },
 
   /**
+   * Batch 9: customer-facing post-payment recovery UX (polling / intermediate states).
+   * Default OFF. Status endpoint is read-only and may be deployed independently;
+   * this flag primarily gates guest-visible UX when mirrored as VITE_CHECKOUT_RECOVERY_UX.
+   */
+  isCheckoutRecoveryUxEnabled() {
+    return this._parseBooleanWithDefault(process.env.CHECKOUT_RECOVERY_UX, false);
+  },
+
+  /**
    * Batch 4: V2 frontend booking create uses finalizePaidCheckout domain service.
    * Default OFF (dual-path rollback). Enable: 1|true|on|yes.
    */
