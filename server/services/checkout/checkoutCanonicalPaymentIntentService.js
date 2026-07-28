@@ -62,7 +62,8 @@ function buildPaymentIntentMetadata({ session, snapshot, redemptionId = null }) 
     voucherAppliedCents: String(snapshot.voucherAppliedCents || 0),
     redemptionId: redemptionId ? String(redemptionId) : '',
     giftVoucherId: '',
-    reservationKey: ''
+    reservationKey: '',
+    finalizeIntentHash: session.finalizeIntentHash || ''
   };
 }
 
@@ -167,6 +168,7 @@ function buildEnsureDto(session, extras = {}) {
     paymentStatus: session.paymentStatus,
     quoteSnapshotHash: session.quoteSnapshotHash,
     sessionVersion: session.sessionVersion,
+    finalizeIntentHash: session.finalizeIntentHash || null,
     canonicalPaymentIntentId: session.canonicalPaymentIntentId || null,
     clientSecret: extras.clientSecret ?? null,
     stripeAmountCents: session.stripeAmountCents,
@@ -579,6 +581,16 @@ async function ensureCanonicalPaymentIntent({
 
   const reuseResult = await tryReuseCanonicalPaymentIntent({ session, stripe, redemptionId });
   if (reuseResult?.reuse) {
+    const {
+      assertFinalizeIntentAvailableForPi,
+      syncFinalizeIntentHashToPaymentIntent
+    } = require('./finalizeIntentService');
+    assertFinalizeIntentAvailableForPi(session);
+    await syncFinalizeIntentHashToPaymentIntent({
+      stripe,
+      session,
+      finalizeIntentHash: session.finalizeIntentHash || ''
+    });
     if (redemptionId) {
       await attachCanonicalPaymentIntentToVoucher({
         redemptionId,
@@ -610,6 +622,9 @@ async function ensureCanonicalPaymentIntent({
     });
     session = await loadSessionOrThrow(session.checkoutId);
   }
+
+  const { assertFinalizeIntentAvailableForPi } = require('./finalizeIntentService');
+  assertFinalizeIntentAvailableForPi(session);
 
   const versionForClaim = session.sessionVersion;
   const pi = await createStripePaymentIntent(stripe, {

@@ -70,6 +70,7 @@ const {
   shouldUseCheckoutSessionV2,
   handleGetCheckoutSession,
   handleCreatePaymentIntentV2,
+  handlePersistFinalizeIntent,
   formatPublicCheckoutSessionState,
   sendCheckoutSessionError,
   assertV2CheckoutSessionCanFinalize
@@ -642,6 +643,37 @@ router.get('/checkout-sessions/:checkoutId', async (req, res) => {
     return res.status(500).json({
       success: false,
       message: process.env.NODE_ENV === 'development' ? err.message : 'Checkout session lookup failed'
+    });
+  }
+});
+
+// PUT /api/bookings/checkout-sessions/:checkoutId/finalize-intent — Batch 2 persist finalizeIntent
+router.put('/checkout-sessions/:checkoutId/finalize-intent', paymentIntentLimiter, async (req, res) => {
+  try {
+    const checkoutId = normalizeCheckoutId(req.params.checkoutId);
+    if (!checkoutId || !isValidCheckoutId(checkoutId)) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_CHECKOUT_ID',
+        message: 'Invalid checkout session id',
+        details: null
+      });
+    }
+
+    const outcome = await handlePersistFinalizeIntent(req, stripe);
+    return res.status(outcome.status).json(outcome.body);
+  } catch (err) {
+    if (isCheckoutSessionError(err)) {
+      return sendCheckoutSessionError(res, err);
+    }
+    console.error('Persist finalize intent error:', {
+      checkoutId: normalizeCheckoutId(req.params.checkoutId) || null,
+      code: err?.code || null,
+      message: err?.message ? String(err.message).slice(0, 200) : null
+    });
+    return res.status(500).json({
+      success: false,
+      message: process.env.NODE_ENV === 'development' ? err.message : 'Finalize intent persistence failed'
     });
   }
 });

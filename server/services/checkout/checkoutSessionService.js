@@ -316,6 +316,8 @@ function getCheckoutSessionState(sessionDoc) {
     giftVoucherAppliedCents: session.giftVoucherAppliedCents,
     fullVoucherCoverage: Boolean(session.quoteSnapshot?.fullVoucherCoverage),
     canonicalPaymentIntentId: session.canonicalPaymentIntentId || null,
+    finalizeIntentHash: session.finalizeIntentHash || null,
+    finalizeIntentCapturedAt: session.finalizeIntentCapturedAt || null,
     expiresAt: session.expiresAt,
     guestEmail: session.guestEmail || null,
     stayFingerprint: session.stayFingerprint || null,

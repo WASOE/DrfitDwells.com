@@ -39,6 +39,14 @@ const CHECKOUT_SESSION_ERROR_HTTP = {
   [CHECKOUT_SESSION_ERROR_CODES.STALE_CLIENT_SECRET]: 409,
   [CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_CONCURRENCY_CONFLICT]: 409,
   [CHECKOUT_SESSION_ERROR_CODES.VOUCHER_PAYMENT_INTENT_ATTACH_FAILED]: 409,
+  [CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_PERSIST_DISABLED]: 403,
+  [CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_INVALID]: 400,
+  [CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_MISSING]: 400,
+  [CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_HASH_MISMATCH]: 409,
+  [CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_IMMUTABLE]: 409,
+  [CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_REQUIRED]: 409,
+  [CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_METADATA_SYNC_FAILED]: 409,
+  [CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_SESSION_VERSION_CONFLICT]: 409,
   ...CHECKOUT_SESSION_C3_ERROR_HTTP_STATUS
 };
 
@@ -112,6 +120,7 @@ function formatPublicCheckoutSessionState(state) {
     quoteSnapshotHash: state.quoteSnapshotHash,
     sessionVersion: state.sessionVersion,
     canonicalPaymentIntentId: state.canonicalPaymentIntentId,
+    finalizeIntentHash: state.finalizeIntentHash || null,
     stripeAmountCents: state.stripeAmountCents,
     giftVoucherAppliedCents: state.giftVoucherAppliedCents,
     fullVoucherCoverage: Boolean(state.fullVoucherCoverage),
@@ -133,6 +142,7 @@ function formatV2CreatePaymentIntentResponse(dto) {
     sessionVersion: dto.sessionVersion,
     clientSecret: dto.clientSecret ?? null,
     canonicalPaymentIntentId: dto.canonicalPaymentIntentId ?? null,
+    finalizeIntentHash: dto.finalizeIntentHash ?? null,
     stripeAmountCents: dto.stripeAmountCents,
     giftVoucherAppliedCents: dto.giftVoucherAppliedCents,
     fullVoucherCoverage: Boolean(dto.fullVoucherCoverage),
@@ -423,6 +433,51 @@ async function handleCreatePaymentIntentV2(req, stripeClient) {
   };
 }
 
+async function handlePersistFinalizeIntent(req, stripeClient) {
+  const {
+    persistFinalizeIntent,
+    buildRequestMetaFromReq,
+    isFinalizeIntentPersistEnabled
+  } = require('../services/checkout/finalizeIntentService');
+
+  if (!isFinalizeIntentPersistEnabled()) {
+    const { CheckoutSessionError, CHECKOUT_SESSION_ERROR_CODES } = require('../services/checkout/checkoutSessionErrors');
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_PERSIST_DISABLED,
+      'Finalize intent persistence is disabled'
+    );
+  }
+
+  const checkoutId =
+    typeof req.params.checkoutId === 'string' ? req.params.checkoutId.trim() : '';
+  const result = await persistFinalizeIntent({
+    checkoutId,
+    body: req.body || {},
+    requestMeta: buildRequestMetaFromReq(req),
+    expectedSessionVersion: req.body?.expectedSessionVersion ?? req.body?.sessionVersion ?? null,
+    stripe: stripeClient
+  });
+
+  return {
+    ok: true,
+    status: 200,
+    body: {
+      success: true,
+      checkoutId: result.checkoutId,
+      finalizeIntentHash: result.finalizeIntentHash,
+      sessionVersion: result.sessionVersion,
+      schemaVersion: result.schemaVersion,
+      idempotentReplay: Boolean(result.idempotentReplay),
+      metadataSync: result.metadataSync
+        ? {
+            synced: Boolean(result.metadataSync.synced),
+            reason: result.metadataSync.reason || null
+          }
+        : null
+    }
+  };
+}
+
 module.exports = {
   mapCheckoutSessionErrorToHttp,
   sendCheckoutSessionError,
@@ -439,6 +494,7 @@ module.exports = {
   cardPaymentRequiredFromQuote,
   handleGetCheckoutSession,
   handleCreatePaymentIntentV2,
+  handlePersistFinalizeIntent,
   __setEnsureCanonicalPaymentIntentForTesting(fn) {
     ensureCanonicalPaymentIntentFn = fn || ensureCanonicalPaymentIntentDefault;
   },

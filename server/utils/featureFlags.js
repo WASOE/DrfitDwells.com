@@ -10,7 +10,24 @@ const featureFlags = {
   _parseBoolean(value) {
     if (typeof value !== 'string') return false;
     const normalized = value.trim().toLowerCase();
-    return normalized === 'true' || normalized === '1';
+    return normalized === 'true' || normalized === '1' || normalized === 'on' || normalized === 'yes';
+  },
+
+  /**
+   * Parse env flag with explicit on/off tokens.
+   * on: 1|true|on|yes ; off: 0|false|off|no ; unset/unknown → defaultValue
+   */
+  _parseBooleanWithDefault(value, defaultValue = false) {
+    if (value == null || value === '') return defaultValue;
+    if (typeof value !== 'string') return defaultValue;
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1' || normalized === 'on' || normalized === 'yes') {
+      return true;
+    }
+    if (normalized === 'false' || normalized === '0' || normalized === 'off' || normalized === 'no') {
+      return false;
+    }
+    return defaultValue;
   },
 
   // Returns whether multi-unit functionality is globally enabled
@@ -75,6 +92,25 @@ const featureFlags = {
   /** Batch 4B: provider send path for recovery. Default OFF. */
   isRecoveryEmailProviderEnabled() {
     return this._parseBoolean(process.env.RECOVERY_EMAIL_PROVIDER_ENABLED);
+  },
+
+  /**
+   * Batch 2: persist finalizeIntent via API before payment confirm.
+   * Default OFF (safe staged rollout). Unset → false.
+   * Enabled: 1|true|on|yes. Disabled: 0|false|off|no.
+   * Pair with client VITE_FINALIZE_INTENT_PERSIST (requires frontend rebuild/redeploy).
+   */
+  isFinalizeIntentPersistEnabled() {
+    return this._parseBooleanWithDefault(process.env.FINALIZE_INTENT_PERSIST, false);
+  },
+
+  /**
+   * Batch 2: refuse accommodation canonical PI create/reuse when finalizeIntent/hash incomplete.
+   * Default OFF. Enable only after persist soak. Gift-voucher PIs unaffected.
+   * Pair with client VITE_FINALIZE_INTENT_REQUIRED_FOR_PI (requires frontend rebuild/redeploy).
+   */
+  isFinalizeIntentRequiredForPiEnabled() {
+    return this._parseBooleanWithDefault(process.env.FINALIZE_INTENT_REQUIRED_FOR_PI, false);
   }
 };
 

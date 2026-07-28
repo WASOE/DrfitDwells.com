@@ -141,6 +141,27 @@ const checkoutSessionSchema = new mongoose.Schema(
       default: 1,
       min: 1
     },
+    /**
+     * Batch 2: versioned guest/legal finalize payload (server-owned capture).
+     * See docs/checkout-payment-architecture/02_PAID_BOOKING_FINALIZATION_IMPLEMENTATION_SPEC.md §B
+     */
+    finalizeIntent: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null
+    },
+    finalizeIntentHash: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    finalizeIntentCapturedAt: {
+      type: Date,
+      default: null
+    },
+    finalizeIntentImmutableAt: {
+      type: Date,
+      default: null
+    },
     metadata: {
       type: mongoose.Schema.Types.Mixed,
       default: null

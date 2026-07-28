@@ -31,6 +31,10 @@ import {
 import { getListingCoverImage } from '../utils/listingGalleryUtils';
 import { isCheckoutSessionV2Enabled } from '../utils/checkoutSessionV2Flags';
 import {
+  isFinalizeIntentPersistEnabled,
+  isFinalizeIntentRequiredForPiEnabled
+} from '../utils/finalizeIntentFlags';
+import {
   buildCheckoutSessionV2BoundaryKey,
   clearCheckoutSessionV2Storage,
   isSameCheckoutSessionV2Identity,
@@ -42,6 +46,8 @@ const stripePk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 const stripePromise = stripePk ? loadStripe(stripePk) : null;
 const CHECKOUT_SESSION_KEY = 'confirm-booking-checkout-session';
 const checkoutSessionV2Enabled = isCheckoutSessionV2Enabled();
+const finalizeIntentPersistEnabled = isFinalizeIntentPersistEnabled();
+const finalizeIntentRequiredForPiEnabled = isFinalizeIntentRequiredForPiEnabled();
 
 export const V2_CHECKOUT_CONFIG_MISMATCH_MESSAGE =
   'Checkout is misconfigured (server did not return a checkout session). Please refresh or contact support.';
@@ -528,6 +534,62 @@ export function buildCreateBookingPayload({
     bookingData.voucherCode = appliedVoucherCode;
   }
   return bookingData;
+}
+
+/**
+ * Client payload for finalizeIntent persistence. Server owns capturedAt, IP, hash.
+ */
+export function buildFinalizeIntentClientPayload({
+  formData,
+  selectedExpKeys,
+  language,
+  attribution = null,
+  metaClientContext = null,
+  expectedSessionVersion = null,
+  tripType = null,
+  customTripType = null,
+  transportMethod = null,
+  romanticSetup = false
+}) {
+  return {
+    guestInfo: {
+      firstName: formData.firstName.trim(),
+      lastName: formData.lastName.trim(),
+      email: formData.email.trim(),
+      phone: formData.phone.trim()
+    },
+    specialRequests: formData.specialRequests?.trim() || '',
+    legalAcceptance: {
+      acceptedTermsAndCancellation: !!formData.agreedToTerms,
+      acceptedActivityRisk: !!formData.agreedToActivityRisk,
+      termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
+      activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+      checkbox1TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
+      checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
+      locale: language || undefined
+    },
+    consents: {
+      quoteDeliveryRequested: !!formData.quoteDeliveryRequested,
+      bookingReminderConsent: !!formData.bookingReminderConsent,
+      marketingConsent: !!formData.marketingConsent
+    },
+    experienceKeys: Array.from(selectedExpKeys),
+    tripType: tripType || null,
+    customTripType: customTripType || null,
+    transportMethod: transportMethod || null,
+    romanticSetup: !!romanticSetup,
+    attribution: attribution || undefined,
+    metaClientContext: metaClientContext || undefined,
+    ...(expectedSessionVersion != null ? { expectedSessionVersion } : {})
+  };
+}
+
+export function shouldPersistFinalizeIntent({
+  checkoutSessionV2Enabled: v2Enabled = checkoutSessionV2Enabled,
+  persistEnabled = finalizeIntentPersistEnabled,
+  requiredForPiEnabled = finalizeIntentRequiredForPiEnabled
+} = {}) {
+  return Boolean(v2Enabled && (persistEnabled || requiredForPiEnabled));
 }
 
 export function clearCheckoutStorageAfterSuccessfulBooking({
@@ -1298,6 +1360,21 @@ const ConfirmBooking = () => {
 
   const initializeCheckoutPayment = useCallback(async () => {
     if (!bookingEntityId || !checkIn || !checkOut || !serverQuote) return;
+    if (finalizeIntentRequiredForPiEnabled && checkoutSessionV2Enabled) {
+      const guestOk =
+        !!formData.firstName?.trim() &&
+        !!formData.lastName?.trim() &&
+        !!formData.email?.trim() &&
+        !!formData.phone?.trim() &&
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim());
+      const legalOk = !!formData.agreedToTerms && !!formData.agreedToActivityRisk;
+      if (!guestOk || !legalOk) {
+        setCheckoutInitError(
+          'Please complete guest details and legal acknowledgments before continuing to payment.'
+        );
+        return;
+      }
+    }
     setCheckoutInitLoading(true);
     setCheckoutInitError(null);
     setStripeError(null);
@@ -1342,7 +1419,61 @@ const ConfirmBooking = () => {
       payload.quoteDeliveryRequested = !!formData.quoteDeliveryRequested;
       payload.bookingReminderConsent = !!formData.bookingReminderConsent;
       payload.marketingConsent = !!formData.marketingConsent;
-      const res = await bookingAPI.createPaymentIntent(payload);
+
+      const persistIntentIfNeeded = async (targetCheckoutId, expectedVersion = sessionVersion) => {
+        if (!shouldPersistFinalizeIntent() || !targetCheckoutId) return expectedVersion;
+        const attrPayload = getAttributionPayload();
+        const persistBody = buildFinalizeIntentClientPayload({
+          formData,
+          selectedExpKeys,
+          language,
+          attribution: attrPayload && Object.values(attrPayload).some(Boolean) ? attrPayload : null,
+          metaClientContext: getMetaClientContextPayload(),
+          expectedSessionVersion: expectedVersion
+        });
+        const persistRes = await bookingAPI.persistFinalizeIntent(targetCheckoutId, persistBody);
+        if (!persistRes.data?.success || !persistRes.data?.finalizeIntentHash) {
+          throw new Error(persistRes.data?.message || 'Could not save booking details before payment.');
+        }
+        const nextVersion = Number(persistRes.data.sessionVersion) || expectedVersion;
+        setSessionVersion(nextVersion);
+        return nextVersion;
+      };
+
+      if (
+        finalizeIntentRequiredForPiEnabled &&
+        checkoutSessionV2Enabled &&
+        checkoutId &&
+        formData.agreedToTerms &&
+        formData.agreedToActivityRisk
+      ) {
+        await persistIntentIfNeeded(checkoutId, sessionVersion);
+        payload.checkoutId = checkoutId;
+      }
+
+      let res;
+      try {
+        res = await bookingAPI.createPaymentIntent(payload);
+      } catch (firstErr) {
+        const code = extractCheckoutApiErrorCode(firstErr);
+        const detailCheckoutId =
+          firstErr?.response?.data?.details?.checkoutId ||
+          firstErr?.response?.data?.checkoutId ||
+          null;
+        if (
+          code === 'FINALIZE_INTENT_REQUIRED' &&
+          checkoutSessionV2Enabled &&
+          (detailCheckoutId || checkoutId)
+        ) {
+          const resolvedId = String(detailCheckoutId || checkoutId).trim();
+          setCheckoutId(resolvedId);
+          await persistIntentIfNeeded(resolvedId, sessionVersion);
+          payload.checkoutId = resolvedId;
+          res = await bookingAPI.createPaymentIntent(payload);
+        } else {
+          throw firstErr;
+        }
+      }
       if (!res.data?.success) {
         throw new Error(t('confirm.paymentSetupFailed'));
       }
@@ -1490,9 +1621,18 @@ const ConfirmBooking = () => {
     persistV2StoragePaymentCleared,
     emitCheckoutStartedFunnel,
     formData.email,
+    formData.firstName,
+    formData.lastName,
+    formData.phone,
+    formData.agreedToTerms,
+    formData.agreedToActivityRisk,
     formData.quoteDeliveryRequested,
     formData.bookingReminderConsent,
     formData.marketingConsent,
+    formData.specialRequests,
+    selectedExpKeys,
+    language,
+    sessionVersion,
     t
   ]);
 
@@ -1600,6 +1740,123 @@ const ConfirmBooking = () => {
     }
   }, [bookingEntityId, bookingEntityType, checkIn, checkOut, adults, children, formData, selectedExpKeys, experiences, navigate, lockedPromoCode, appliedVoucherCode, voucherRedemptionId, t, language, checkoutId]);
 
+  /**
+   * Batch 2 sequence: persist finalizeIntent → receive hash/version → ensure/sync canonical PI.
+   * Client never computes the authoritative hash.
+   */
+  const persistFinalizeIntentAndSyncPayment = useCallback(async () => {
+    if (!shouldPersistFinalizeIntent()) {
+      return { skipped: true };
+    }
+    if (!checkoutId) {
+      throw new Error('Checkout session is missing. Please continue to payment first.');
+    }
+    if (!formData.agreedToTerms || !formData.agreedToActivityRisk) {
+      throw new Error('Please accept both required legal acknowledgments before completing your booking.');
+    }
+
+    const attr = getAttributionPayload();
+    const payload = buildFinalizeIntentClientPayload({
+      formData,
+      selectedExpKeys,
+      language,
+      attribution: attr && Object.values(attr).some(Boolean) ? attr : null,
+      metaClientContext: getMetaClientContextPayload(),
+      expectedSessionVersion: sessionVersion
+    });
+
+    const persistRes = await bookingAPI.persistFinalizeIntent(checkoutId, payload);
+    if (!persistRes.data?.success || !persistRes.data?.finalizeIntentHash) {
+      throw new Error(persistRes.data?.message || 'Could not save booking details before payment.');
+    }
+
+    const nextSessionVersion = Number(persistRes.data.sessionVersion) || sessionVersion;
+    setSessionVersion(nextSessionVersion);
+
+    if (noPaymentRequired || fullVoucherCoverage) {
+      return {
+        skipped: false,
+        finalizeIntentHash: persistRes.data.finalizeIntentHash,
+        sessionVersion: nextSessionVersion,
+        metadataSync: persistRes.data.metadataSync || null
+      };
+    }
+
+    // Re-ensure canonical PI so metadata carries finalizeIntentHash before confirmPayment.
+    const ensurePayload = {
+      checkIn: formatDateOnlyLocal(checkIn),
+      checkOut: formatDateOnlyLocal(checkOut),
+      adults,
+      children,
+      experienceKeys: Array.from(selectedExpKeys).sort(),
+      checkoutId
+    };
+    if (bookingEntityType === 'cabinType') {
+      ensurePayload.cabinTypeId = bookingEntityId;
+    } else {
+      ensurePayload.cabinId = bookingEntityId;
+    }
+    if (lockedPromoCode) ensurePayload.promoCode = lockedPromoCode;
+    if (appliedVoucherCode) ensurePayload.voucherCode = appliedVoucherCode;
+    if (formData.email?.trim()) {
+      ensurePayload.guestEmail = formData.email.trim().toLowerCase();
+    }
+
+    const ensureRes = await bookingAPI.createPaymentIntent(ensurePayload);
+    if (!ensureRes.data?.success) {
+      throw new Error(ensureRes.data?.message || 'Could not synchronize payment before confirmation.');
+    }
+    if (
+      ensureRes.data.metadataSync?.synced === false &&
+      ensureRes.data.finalizeIntentHash &&
+      !ensureRes.data.noPaymentRequired
+    ) {
+      // Server may not surface metadataSync on ensure; rely on persist result + hash presence.
+    }
+    if (persistRes.data.metadataSync && persistRes.data.metadataSync.synced === false) {
+      const reason = persistRes.data.metadataSync.reason;
+      if (reason && reason !== 'no_canonical_pi' && reason !== 'idempotent_no_change' && reason !== 'already_current') {
+        throw new Error('Could not synchronize payment details. Please try again before paying.');
+      }
+    }
+
+    const nextCanonical = ensureRes.data.canonicalPaymentIntentId || canonicalPaymentIntentId;
+    const nextHash = String(ensureRes.data.quoteSnapshotHash || quoteSnapshotHash || '').trim();
+    const nextSecret = ensureRes.data.clientSecret || clientSecret;
+    if (nextCanonical) setCanonicalPaymentIntentId(nextCanonical);
+    if (nextHash) setQuoteSnapshotHash(nextHash);
+    if (nextSecret) setClientSecret(nextSecret);
+    if (ensureRes.data.sessionVersion != null) {
+      setSessionVersion(Number(ensureRes.data.sessionVersion) || nextSessionVersion);
+    }
+
+    return {
+      skipped: false,
+      finalizeIntentHash: persistRes.data.finalizeIntentHash,
+      sessionVersion: Number(ensureRes.data.sessionVersion) || nextSessionVersion,
+      metadataSync: persistRes.data.metadataSync || null
+    };
+  }, [
+    checkoutId,
+    formData,
+    selectedExpKeys,
+    language,
+    sessionVersion,
+    noPaymentRequired,
+    fullVoucherCoverage,
+    checkIn,
+    checkOut,
+    adults,
+    children,
+    bookingEntityType,
+    bookingEntityId,
+    lockedPromoCode,
+    appliedVoucherCode,
+    canonicalPaymentIntentId,
+    quoteSnapshotHash,
+    clientSecret
+  ]);
+
   const handleConfirmAndPay = useCallback(async () => {
     if (
       !bookingEntityId ||
@@ -1632,6 +1889,9 @@ const ConfirmBooking = () => {
       if (appliedVoucherCode && !voucherRedemptionId) {
         throw new Error('Please continue to payment first so we can reserve your voucher.');
       }
+      if (shouldPersistFinalizeIntent()) {
+        await persistFinalizeIntentAndSyncPayment();
+      }
       await createBooking(null);
     } catch (err) {
       if (checkoutSessionV2Enabled) {
@@ -1659,7 +1919,8 @@ const ConfirmBooking = () => {
     stripeEnabled,
     emitCheckoutStartedFunnel,
     resetV2NoPaymentSubmitState,
-    applyV2CreateBookingErrorState
+    applyV2CreateBookingErrorState,
+    persistFinalizeIntentAndSyncPayment
   ]);
 
   const handleStripeSubmit = useCallback(async (stripe, elements) => {
@@ -1685,6 +1946,9 @@ const ConfirmBooking = () => {
     setError(null);
     setStripeError(null);
     try {
+      if (shouldPersistFinalizeIntent()) {
+        await persistFinalizeIntentAndSyncPayment();
+      }
       const pendingBase = {
         cabinId: bookingEntityId,
         bookingEntityId,
@@ -1792,7 +2056,9 @@ const ConfirmBooking = () => {
     quoteSnapshotHash,
     noPaymentRequired,
     navigate,
-    t
+    t,
+    persistFinalizeIntentAndSyncPayment,
+    checkoutId
   ]);
 
   const hasGuestInfo =
