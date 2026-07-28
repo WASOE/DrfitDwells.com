@@ -165,6 +165,14 @@ const featureFlags = {
   },
 
   /**
+   * Batch 8: controlled historical recovery may mutate allowlisted subjects only
+   * when CLI passes --execute and --allowlist. Default OFF.
+   */
+  isFinalizeReconcileHistoricalEnabled() {
+    return this._parseBooleanWithDefault(process.env.FINALIZE_RECONCILE_HISTORICAL, false);
+  },
+
+  /**
    * Batch 4: V2 frontend booking create uses finalizePaidCheckout domain service.
    * Default OFF (dual-path rollback). Enable: 1|true|on|yes.
    */

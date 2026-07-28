@@ -1,0 +1,15 @@
+[
+  {
+    "checkoutId": "chk_example_historical_001",
+    "paymentIntentId": "pi_example_historical_001",
+    "reason": "operator-approved historical recovery (example only)"
+  },
+  {
+    "checkoutId": "chk_example_historical_002",
+    "reason": "PI known in Stripe dashboard; fill paymentIntentId before execute"
+  },
+  {
+    "paymentIntentId": "pi_example_historical_003",
+    "reason": "checkoutId will be resolved from PaymentIntent metadata when present"
+  }
+]

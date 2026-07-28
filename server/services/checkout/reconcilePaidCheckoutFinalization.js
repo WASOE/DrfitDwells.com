@@ -7,7 +7,8 @@
  *
  * Dry-run by default. Mutations require FINALIZE_RECONCILE_ENQUEUE=1 AND execute=true.
  * Reuses existing services only — never duplicates Booking/payment/finalization logic.
- * Does not run from server startup. Does not implement Batch 8 historical recovery.
+ * Does not run from server startup. Batch 8 historical recovery is a separate
+ * allowlist CLI that calls reconcilePaidCheckoutSubject with mutationFlag=historical.
  */
 
 const Stripe = require('stripe');
@@ -848,17 +849,25 @@ async function executeRepair(inspection, { stripe = null, now = new Date() } = {
 }
 
 /**
- * Reconcile one subject. Dry-run unless execute=true AND FINALIZE_RECONCILE_ENQUEUE.
+ * Reconcile one subject. Dry-run unless execute=true AND the selected mutation flag is on.
+ * @param {'enqueue'|'historical'} [mutationFlag='enqueue']
+ *   enqueue → FINALIZE_RECONCILE_ENQUEUE (Batch 7)
+ *   historical → FINALIZE_RECONCILE_HISTORICAL (Batch 8)
  */
 async function reconcilePaidCheckoutSubject({
   checkoutId = null,
   paymentIntentId = null,
   execute = false,
+  mutationFlag = 'enqueue',
   stripe = null,
   paymentIntent = null,
   now = new Date()
 } = {}) {
-  const dryRun = !(execute === true && isReconcileEnqueueEnabled());
+  const historical = mutationFlag === 'historical';
+  const flagEnabled = historical
+    ? featureFlags.isFinalizeReconcileHistoricalEnabled()
+    : isReconcileEnqueueEnabled();
+  const dryRun = !(execute === true && flagEnabled);
   const inspection = await inspectPaidCheckoutSubject({
     checkoutId,
     paymentIntentId,
@@ -870,7 +879,8 @@ async function reconcilePaidCheckoutSubject({
   const outcome = {
     dryRun,
     executeRequested: execute === true,
-    flagEnabled: isReconcileEnqueueEnabled(),
+    flagEnabled,
+    mutationFlag: historical ? 'historical' : 'enqueue',
     classification: inspection.classification,
     reason: inspection.reason,
     failureStage: inspection.failureStage,
@@ -889,7 +899,9 @@ async function reconcilePaidCheckoutSubject({
       mutated: false,
       skipped: true,
       reason: execute
-        ? 'FINALIZE_RECONCILE_ENQUEUE_disabled'
+        ? historical
+          ? 'FINALIZE_RECONCILE_HISTORICAL_disabled'
+          : 'FINALIZE_RECONCILE_ENQUEUE_disabled'
         : 'dry_run',
       wouldAction: inspection.repairAction
     };
