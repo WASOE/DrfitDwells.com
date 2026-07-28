@@ -141,10 +141,18 @@ const featureFlags = {
 
   /**
    * Batch 5–6: worker may enqueue/send confirmation email after finalize.
-   * Default OFF in Batch 5 — booking finalizes; email remains frontend/pending until Batch 6.
+   * Default OFF — no confirmation SMTP from worker while off.
    */
   isFinalizeWorkerSendConfirmationEnabled() {
     return this._parseBooleanWithDefault(process.env.FINALIZE_WORKER_SEND_CONFIRMATION, false);
+  },
+
+  /**
+   * Batch 6: quote convert, alert resolve, and durable confirmation enqueue.
+   * Default OFF (dual-path rollback). Enable: 1|true|on|yes.
+   */
+  isFinalizeSideEffectsEnabled() {
+    return this._parseBooleanWithDefault(process.env.FINALIZE_SIDE_EFFECTS, false);
   },
 
   /**

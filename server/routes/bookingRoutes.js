@@ -90,6 +90,9 @@ const {
 const {
   claimBookingConfirmationSideEffectsOnce
 } = require('../services/checkout/claimBookingConfirmationSideEffectsOnce');
+const {
+  runCheckoutFinalizeSideEffects
+} = require('../services/checkout/checkoutFinalizeSideEffects');
 
 let claimBookingConfirmationSideEffectsOnceImpl = claimBookingConfirmationSideEffectsOnce;
 const {
@@ -1685,47 +1688,31 @@ router.post('/', bookingCreateLimiter, [
         );
 
         if (!idempotentReplay) {
-          const claimResult = await claimBookingConfirmationSideEffectsOnceImpl({
-            bookingId: booking._id,
-            checkoutSessionId: booking.checkoutSessionId || orchResult.session?._id || null,
-            now: new Date()
-          });
+          const useCrashSafeConfirmation = featureFlags.isFinalizeSideEffectsEnabled();
+          let runSecondarySideEffects = false;
 
-          if (claimResult.claimed) {
+          if (useCrashSafeConfirmation) {
+            runSecondarySideEffects = true;
             const entityForEmail = cabin || cabinType;
-
             void (async () => {
               try {
-                const guestTemplateKey =
-                  initialStatus === 'confirmed'
-                    ? bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_CONFIRMED
-                    : bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_RECEIVED;
-                const guestOutcome = await bookingLifecycleEmailService.sendBookingLifecycleEmail({
+                await runCheckoutFinalizeSideEffects({
                   booking,
-                  templateKey: guestTemplateKey,
-                  overrideRecipient: null,
-                  lifecycleSource: 'automatic',
-                  actorContext: null,
-                  entity: entityForEmail
-                });
-                if (!guestOutcome.success) {
-                  console.error(
-                    initialStatus === 'confirmed'
-                      ? '[booking-email] Guest booking_confirmed not sent:'
-                      : '[booking-email] Guest booking_received not sent:',
-                    {
-                      bookingId: String(booking._id),
-                      method: guestOutcome.sendResult?.method,
-                      error: guestOutcome.sendResult?.error
-                    }
-                  );
-                }
-
-                const internalOutcome = await bookingLifecycleEmailService.sendInternalNewBookingNotification({
-                  booking,
+                  session: orchResult.session || null,
+                  source: 'frontend',
+                  adoptedExisting: orchResult.adoptedExisting === true,
+                  sendConfirmation: true,
+                  workerId: `frontend#${process.pid}`,
                   entity: entityForEmail,
-                  lifecycleSource: 'automatic'
+                  now: new Date()
                 });
+
+                const internalOutcome =
+                  await bookingLifecycleEmailService.sendInternalNewBookingNotification({
+                    booking,
+                    entity: entityForEmail,
+                    lifecycleSource: 'automatic'
+                  });
                 if (!internalOutcome.success) {
                   console.error('[booking-email] Internal notification not sent:', {
                     bookingId: String(booking._id),
@@ -1736,13 +1723,15 @@ router.post('/', bookingCreateLimiter, [
 
                 await sendLegalAcceptanceConfirmationWithRetry(booking);
               } catch (emailError) {
-                console.error('[booking-email] Async delivery error:', emailError);
+                console.error('[booking-email] Async delivery error (side-effects path):', emailError);
               }
             })();
 
             void (async () => {
               try {
-                const { syncGuestContactPreferencesForBooking } = require('../services/messaging/guestContactPreferenceSync');
+                const {
+                  syncGuestContactPreferencesForBooking
+                } = require('../services/messaging/guestContactPreferenceSync');
                 await syncGuestContactPreferencesForBooking(booking);
               } catch (err) {
                 console.error(
@@ -1755,7 +1744,85 @@ router.post('/', bookingCreateLimiter, [
                 );
               }
             })();
+          } else {
+            const claimResult = await claimBookingConfirmationSideEffectsOnceImpl({
+              bookingId: booking._id,
+              checkoutSessionId: booking.checkoutSessionId || orchResult.session?._id || null,
+              now: new Date()
+            });
 
+            if (claimResult.claimed) {
+              runSecondarySideEffects = true;
+              const entityForEmail = cabin || cabinType;
+
+              void (async () => {
+                try {
+                  const guestTemplateKey =
+                    initialStatus === 'confirmed'
+                      ? bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_CONFIRMED
+                      : bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_RECEIVED;
+                  const guestOutcome = await bookingLifecycleEmailService.sendBookingLifecycleEmail({
+                    booking,
+                    templateKey: guestTemplateKey,
+                    overrideRecipient: null,
+                    lifecycleSource: 'automatic',
+                    actorContext: null,
+                    entity: entityForEmail
+                  });
+                  if (!guestOutcome.success) {
+                    console.error(
+                      initialStatus === 'confirmed'
+                        ? '[booking-email] Guest booking_confirmed not sent:'
+                        : '[booking-email] Guest booking_received not sent:',
+                      {
+                        bookingId: String(booking._id),
+                        method: guestOutcome.sendResult?.method,
+                        error: guestOutcome.sendResult?.error
+                      }
+                    );
+                  }
+
+                  const internalOutcome =
+                    await bookingLifecycleEmailService.sendInternalNewBookingNotification({
+                      booking,
+                      entity: entityForEmail,
+                      lifecycleSource: 'automatic'
+                    });
+                  if (!internalOutcome.success) {
+                    console.error('[booking-email] Internal notification not sent:', {
+                      bookingId: String(booking._id),
+                      method: internalOutcome.sendResult?.method,
+                      error: internalOutcome.sendResult?.error
+                    });
+                  }
+
+                  await sendLegalAcceptanceConfirmationWithRetry(booking);
+                } catch (emailError) {
+                  console.error('[booking-email] Async delivery error:', emailError);
+                }
+              })();
+
+              void (async () => {
+                try {
+                  const {
+                    syncGuestContactPreferencesForBooking
+                  } = require('../services/messaging/guestContactPreferenceSync');
+                  await syncGuestContactPreferencesForBooking(booking);
+                } catch (err) {
+                  console.error(
+                    JSON.stringify({
+                      source: 'guestContactPreferenceSync',
+                      phase: 'booking_create',
+                      bookingId: String(booking._id),
+                      error: err?.message || String(err)
+                    })
+                  );
+                }
+              })();
+            }
+          }
+
+          if (runSecondarySideEffects) {
             if (initialStatus === 'confirmed') {
               void processMetaPurchaseAfterConfirm(String(booking._id), req).catch((err) => {
                 console.error('[meta-purchase] Post-confirm CAPI error:', err);

@@ -1,12 +1,13 @@
 'use strict';
 
 /**
- * CheckoutFinalizationJob worker (Batch 5).
+ * CheckoutFinalizationJob worker (Batch 5–6).
  * Binding: docs/checkout-payment-architecture/02_PAID_BOOKING_FINALIZATION_IMPLEMENTATION_SPEC.md
  *
  * - Claims due jobs atomically; reclaims stale claimed jobs.
  * - Executes exclusively via finalizePaidCheckout (no Booking insert here).
- * - No email send (FINALIZE_WORKER_SEND_CONFIRMATION stays off in Batch 5).
+ * - Confirmation send only when FINALIZE_WORKER_SEND_CONFIRMATION=1 (default off),
+ *   via centralized checkoutFinalizeSideEffects (never duplicates Booking/payment).
  * - No gift-voucher execution; no refund; no new PaymentIntent.
  *
  * Feature flag: FINALIZE_JOB_EXECUTE=1 (default off).
@@ -31,11 +32,15 @@ const {
 } = require('./checkoutFinalizationJobService');
 const { finalizePaidCheckout } = require('./finalizePaidCheckout');
 const {
+  runCheckoutFinalizeSideEffects
+} = require('./checkoutFinalizeSideEffects');
+const {
   recordPaidBookingResolutionIssueSafe,
   PAID_BOOKING_FINALIZATION_STAGES
 } = require('../payments/paidBookingFinalizationObservability');
 const { openManualReviewItem } = require('../ops/ingestion/manualReviewService');
 const { createDefaultDependencies } = require('./executeBookingFinalizeWork');
+const Booking = require('../../models/Booking');
 
 const ENV_TICK_MS = 'FINALIZE_JOB_WORKER_TICK_MS';
 const ENV_SWEEPER_TICK_MS = 'FINALIZE_JOB_WORKER_SWEEPER_TICK_MS';
@@ -148,60 +153,37 @@ function getStripeClient() {
 }
 
 /**
- * Hard ban: never send confirmation email from this worker in Batch 5.
+ * Confirmation SMTP only when FINALIZE_WORKER_SEND_CONFIRMATION is on.
+ * Default off: never send.
  */
-function assertNoWorkerEmailSend() {
-  if (featureFlags.isFinalizeWorkerSendConfirmationEnabled()) {
-    logLine('error', 'email_send_blocked_batch5', {
-      note: 'FINALIZE_WORKER_SEND_CONFIRMATION is on but Batch 5 worker must not send email'
-    });
-  }
-  state.lastEmailSendAttempted = false;
-}
-
-async function isGiftVoucherOrNonAccommodationJob(job) {
-  const session = await CheckoutSession.findOne({ checkoutId: job.checkoutId })
-    .select('flowVersion')
-    .lean();
-  if (session && session.flowVersion !== 'v2') {
-    return { excluded: true, reason: 'NOT_V2_ACCOMMODATION_FLOW' };
+function maybeRunWorkerConfirmationSideEffects({
+  booking,
+  session,
+  jobId,
+  adoptedExisting,
+  now
+}) {
+  const sendConfirmation = featureFlags.isFinalizeWorkerSendConfirmationEnabled();
+  if (!sendConfirmation && !featureFlags.isFinalizeSideEffectsEnabled()) {
+    state.lastEmailSendAttempted = false;
+    return Promise.resolve({ skipped: true, reason: 'side_effects_and_send_off' });
   }
 
-  // Heuristic: gift-voucher PIs are never enqueued for V2 accommodation, but defend in depth.
-  const stripe = getStripeClient();
-  if (stripe?.paymentIntents?.retrieve && job.paymentIntentId) {
-    try {
-      const pi = await stripe.paymentIntents.retrieve(String(job.paymentIntentId));
-      if (pi?.metadata?.type === 'gift_voucher') {
-        return { excluded: true, reason: 'GIFT_VOUCHER_EXCLUDED' };
-      }
-    } catch {
-      // Retrieve failure is handled by domain finalize; do not exclude here.
-    }
-  }
-  return { excluded: false };
-}
-
-function buildWorkerDependencies({ job }) {
-  const stripe = getStripeClient();
-  return {
-    ...createDefaultDependencies(),
-    stripe,
-    recordPaidBookingResolutionIssue: (params) =>
-      recordPaidBookingResolutionIssueSafe({
-        ...params,
-        paymentIntentId: params.paymentIntentId || job.paymentIntentId,
-        checkoutId: params.checkoutId || job.checkoutId,
-        finalizationStage: params.finalizationStage || PAID_BOOKING_FINALIZATION_STAGES.UNKNOWN,
-        failureSource: 'checkout_finalization_worker',
-        stripePaymentVerified: true
-      }),
-    openManualReviewItem
-  };
+  state.lastEmailSendAttempted = sendConfirmation === true;
+  return runCheckoutFinalizeSideEffects({
+    booking,
+    session,
+    source: 'webhook_worker',
+    adoptedExisting: adoptedExisting === true,
+    jobId,
+    sendConfirmation,
+    workerId: ensureWorkerId(),
+    now
+  });
 }
 
 async function executeClaimedJob(job, { now = new Date() } = {}) {
-  assertNoWorkerEmailSend();
+  state.lastEmailSendAttempted = false;
   state.lastRefundAttempted = false;
   state.lastPaymentIntentCreateAttempted = false;
 
@@ -259,12 +241,44 @@ async function executeClaimedJob(job, { now = new Date() } = {}) {
       paymentLinkedAt: at
     });
 
+    const bookingDoc =
+      result.booking ||
+      (await Booking.findById(result.bookingId).catch(() => null));
+
+    let sideEffects = null;
+    try {
+      sideEffects = await maybeRunWorkerConfirmationSideEffects({
+        booking: bookingDoc,
+        session: result.session,
+        jobId,
+        adoptedExisting: result.adoptedExisting === true,
+        now: at
+      });
+    } catch (sideErr) {
+      // Email / quote / alert failures must never fail the paid finalize job.
+      logLine('error', 'side_effects_failed', {
+        jobId: String(jobId),
+        bookingId: String(result.bookingId),
+        error: sideErr?.message || String(sideErr)
+      });
+      sideEffects = {
+        ok: false,
+        error: sideErr?.message || String(sideErr),
+        refundAttempted: false,
+        paymentIntentCreateAttempted: false
+      };
+    }
+
     return {
       ok: true,
       job: succeeded,
       bookingId: String(result.bookingId),
       adoptedExisting: result.adoptedExisting === true,
-      idempotentReplay: result.idempotentReplay === true
+      idempotentReplay: result.idempotentReplay === true,
+      sideEffects,
+      emailSendAttempted: state.lastEmailSendAttempted,
+      refundAttempted: false,
+      paymentIntentCreateAttempted: false
     };
   } catch (err) {
     const classified = classifyFinalizeJobError(err);
@@ -309,6 +323,47 @@ async function executeClaimedJob(job, { now = new Date() } = {}) {
       errorCode: classified.errorCode
     };
   }
+}
+
+async function isGiftVoucherOrNonAccommodationJob(job) {
+  const session = await CheckoutSession.findOne({ checkoutId: job.checkoutId })
+    .select('flowVersion')
+    .lean();
+  if (session && session.flowVersion !== 'v2') {
+    return { excluded: true, reason: 'NOT_V2_ACCOMMODATION_FLOW' };
+  }
+
+  // Heuristic: gift-voucher PIs are never enqueued for V2 accommodation, but defend in depth.
+  const stripe = getStripeClient();
+  if (stripe?.paymentIntents?.retrieve && job.paymentIntentId) {
+    try {
+      const pi = await stripe.paymentIntents.retrieve(String(job.paymentIntentId));
+      if (pi?.metadata?.type === 'gift_voucher') {
+        return { excluded: true, reason: 'GIFT_VOUCHER_EXCLUDED' };
+      }
+    } catch {
+      // Retrieve failure is handled by domain finalize; do not exclude here.
+    }
+  }
+  return { excluded: false };
+}
+
+function buildWorkerDependencies({ job }) {
+  const stripe = getStripeClient();
+  return {
+    ...createDefaultDependencies(),
+    stripe,
+    recordPaidBookingResolutionIssue: (params) =>
+      recordPaidBookingResolutionIssueSafe({
+        ...params,
+        paymentIntentId: params.paymentIntentId || job.paymentIntentId,
+        checkoutId: params.checkoutId || job.checkoutId,
+        finalizationStage: params.finalizationStage || PAID_BOOKING_FINALIZATION_STAGES.UNKNOWN,
+        failureSource: 'checkout_finalization_worker',
+        stripePaymentVerified: true
+      }),
+    openManualReviewItem
+  };
 }
 
 async function tickOnce({ now = new Date() } = {}) {

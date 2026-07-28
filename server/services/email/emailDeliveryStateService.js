@@ -64,6 +64,14 @@ async function applyEmailDeliveryAttempt({
   if (sendStatus === 'skipped' && existing?.latestStatus === 'failed') {
     latestStatus = 'failed';
   }
+  // Normalize definitive success onto legacy `success` for existing dashboards,
+  // unless the row is already on the Batch 6 confirmation SM (`succeeded`).
+  if (sendStatus === 'success' && existing?.latestStatus === 'succeeded') {
+    latestStatus = 'succeeded';
+  }
+  if (sendStatus === 'succeeded') {
+    latestStatus = 'succeeded';
+  }
 
   const stateUpdate = {
     correlationKey,
@@ -80,7 +88,7 @@ async function applyEmailDeliveryAttempt({
     latestErrorMessage: sendStatus === 'failed' ? errorMessage || undefined : undefined
   };
 
-  if (sendStatus === 'success') {
+  if (sendStatus === 'success' || sendStatus === 'succeeded') {
     stateUpdate.resolvedAt = now;
     stateUpdate.resolvedBy = actorId || actorRole || 'system';
     stateUpdate.resolutionNote =
@@ -118,7 +126,7 @@ async function applyEmailDeliveryAttempt({
         errorMessage: errorMessage || null
       }
     });
-  } else if (sendStatus === 'success') {
+  } else if (sendStatus === 'success' || sendStatus === 'succeeded') {
     await resolveEmailDeliveryManualReviews({
       deliveryCorrelationKey: correlationKey,
       categories: EMAIL_FAILURE_CATEGORIES,
@@ -134,11 +142,13 @@ async function applyEmailDeliveryAttempt({
 }
 
 async function countActiveFailedDeliveryStates() {
-  return EmailDeliveryState.countDocuments({ latestStatus: 'failed' });
+  return EmailDeliveryState.countDocuments({
+    latestStatus: { $in: ['failed', 'ambiguous'] }
+  });
 }
 
 async function listActiveFailedDeliveryStates({ limit = 50 } = {}) {
-  return EmailDeliveryState.find({ latestStatus: 'failed' })
+  return EmailDeliveryState.find({ latestStatus: { $in: ['failed', 'ambiguous'] } })
     .sort({ latestEventAt: -1 })
     .limit(limit)
     .lean();

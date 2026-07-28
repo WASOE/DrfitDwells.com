@@ -153,7 +153,9 @@ async function sendBookingLifecycleEmail({
   lifecycleSource,
   actorContext = null,
   entity = null,
-  manualContentOverride = null
+  manualContentOverride = null,
+  /** Batch 6: confirmation delivery SM owns EmailDeliveryState; skip legacy apply. */
+  skipDeliveryStateApply = false
 }) {
   if (!booking?._id) {
     throw new Error('booking with _id is required');
@@ -260,19 +262,21 @@ async function sendBookingLifecycleEmail({
     deliveryCorrelationKey
   });
 
-  await applyEmailDeliveryAttempt({
-    correlationKey: deliveryCorrelationKey,
-    domain: 'booking_lifecycle',
-    bookingId: booking._id,
-    templateKey,
-    recipient,
-    sendStatus,
-    lifecycleSource,
-    emailEventId: emailEvent?._id,
-    errorMessage: sendResult.success ? undefined : sendResult.error,
-    actorId: actorContext?.actorId,
-    actorRole: actorContext?.actorRole
-  });
+  if (!skipDeliveryStateApply) {
+    await applyEmailDeliveryAttempt({
+      correlationKey: deliveryCorrelationKey,
+      domain: 'booking_lifecycle',
+      bookingId: booking._id,
+      templateKey,
+      recipient,
+      sendStatus,
+      lifecycleSource,
+      emailEventId: emailEvent?._id,
+      errorMessage: sendResult.success ? undefined : sendResult.error,
+      actorId: actorContext?.actorId,
+      actorRole: actorContext?.actorRole
+    });
+  }
 
   return {
     success: sendResult.success,
