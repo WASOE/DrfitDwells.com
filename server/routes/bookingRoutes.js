@@ -80,6 +80,7 @@ const {
   executeBookingFinalizeWork,
   createDefaultDependencies
 } = require('../services/checkout/executeBookingFinalizeWork');
+const { finalizePaidCheckout } = require('../services/checkout/finalizePaidCheckout');
 const {
   buildTrustedBookingPayloadForFinalize,
   mapFinalizeOrchestrationResultToHttp,
@@ -1522,64 +1523,6 @@ router.post('/', bookingCreateLimiter, [
     };
 
     if (useCheckoutSessionV2Finalize) {
-      const trustedBookingPayload = buildTrustedBookingPayloadForFinalize({
-        cabinId,
-        cabinTypeId,
-        unitId: assignedUnitId,
-        checkInDate,
-        checkOutDate,
-        guestInfo
-      });
-
-      const finalizeContext = {
-        cabinId,
-        cabinTypeId,
-        assignedUnitId,
-        parentCabinForUnit,
-        bookingAttemptContext,
-        checkInDate,
-        checkOutDate,
-        adults: parseInt(adults, 10),
-        children: parseInt(children, 10),
-        guestInfo,
-        specialRequests,
-        totalPrice,
-        subtotalPrice,
-        discountAmount,
-        subtotalCents,
-        discountAmountCents,
-        giftVoucherAppliedCents,
-        stripePaidAmountCents,
-        totalValueCents,
-        paymentMethod,
-        stripePaymentVerified,
-        paymentIntentId: paymentIntentIdForReview,
-        appliedPromoCode,
-        promoSnapshot,
-        voucherReservationContext,
-        voucherEvidence: buildVoucherEvidence({
-          subtotalCents,
-          discountAmountCents,
-          giftVoucherAppliedCents,
-          stripePaidAmountCents,
-          totalValueCents
-        }),
-        attribution,
-        metaClientContext,
-        legalAcceptance,
-        requestMeta: {
-          ip: String(req.ip || '').trim() || null,
-          userAgent: String(req.get('user-agent') || '').trim() || null,
-          acceptLanguage:
-            typeof req.get('accept-language') === 'string' ? req.get('accept-language') : null
-        },
-        transportOptions,
-        tripType: req.body.tripType,
-        transportMethod: req.body.transportMethod,
-        romanticSetup: req.body.romanticSetup,
-        customTripType: req.body.customTripType
-      };
-
       const finalizeWorkDependencies = {
         ...createDefaultDependencies(),
         stripe,
@@ -1601,22 +1544,108 @@ router.post('/', bookingCreateLimiter, [
       };
 
       try {
-        const orchResult = await runCheckoutFinalizeOrchestration({
-          checkoutId,
-          paymentIntentId: paymentIntentIdForReview,
-          bookingPayload: trustedBookingPayload,
-          source: 'frontend',
-          finalizeWork: async (workInput) =>
-            executeBookingFinalizeWork({
-              session: workInput.session,
-              checkoutId: workInput.checkoutId,
-              paymentIntentId: workInput.paymentIntentId,
-              bookingPayload: workInput.bookingPayload,
-              finalizeContext,
-              source: workInput.source,
-              dependencies: finalizeWorkDependencies
-            })
-        });
+        let orchResult;
+
+        if (featureFlags.isFinalizeDomainServiceEnabled()) {
+          orchResult = await finalizePaidCheckout({
+            checkoutId,
+            paymentIntentId: paymentIntentIdForReview,
+            source: 'frontend',
+            confirmBody: {
+              guestInfo,
+              legalAcceptance,
+              specialRequests,
+              cabinId: cabinId || null,
+              cabinTypeId: cabinTypeId || null,
+              checkIn: checkInDate,
+              checkOut: checkOutDate,
+              adults: parseInt(adults, 10),
+              children: parseInt(children, 10),
+              tripType: req.body.tripType,
+              transportMethod: req.body.transportMethod,
+              romanticSetup: req.body.romanticSetup,
+              customTripType: req.body.customTripType,
+              attribution,
+              metaClientContext
+            },
+            dependencies: finalizeWorkDependencies
+          });
+        } else {
+          const trustedBookingPayload = buildTrustedBookingPayloadForFinalize({
+            cabinId,
+            cabinTypeId,
+            unitId: assignedUnitId,
+            checkInDate,
+            checkOutDate,
+            guestInfo
+          });
+
+          const finalizeContext = {
+            cabinId,
+            cabinTypeId,
+            assignedUnitId,
+            parentCabinForUnit,
+            bookingAttemptContext,
+            checkInDate,
+            checkOutDate,
+            adults: parseInt(adults, 10),
+            children: parseInt(children, 10),
+            guestInfo,
+            specialRequests,
+            totalPrice,
+            subtotalPrice,
+            discountAmount,
+            subtotalCents,
+            discountAmountCents,
+            giftVoucherAppliedCents,
+            stripePaidAmountCents,
+            totalValueCents,
+            paymentMethod,
+            stripePaymentVerified,
+            paymentIntentId: paymentIntentIdForReview,
+            appliedPromoCode,
+            promoSnapshot,
+            voucherReservationContext,
+            voucherEvidence: buildVoucherEvidence({
+              subtotalCents,
+              discountAmountCents,
+              giftVoucherAppliedCents,
+              stripePaidAmountCents,
+              totalValueCents
+            }),
+            attribution,
+            metaClientContext,
+            legalAcceptance,
+            requestMeta: {
+              ip: String(req.ip || '').trim() || null,
+              userAgent: String(req.get('user-agent') || '').trim() || null,
+              acceptLanguage:
+                typeof req.get('accept-language') === 'string' ? req.get('accept-language') : null
+            },
+            transportOptions,
+            tripType: req.body.tripType,
+            transportMethod: req.body.transportMethod,
+            romanticSetup: req.body.romanticSetup,
+            customTripType: req.body.customTripType
+          };
+
+          orchResult = await runCheckoutFinalizeOrchestration({
+            checkoutId,
+            paymentIntentId: paymentIntentIdForReview,
+            bookingPayload: trustedBookingPayload,
+            source: 'frontend',
+            finalizeWork: async (workInput) =>
+              executeBookingFinalizeWork({
+                session: workInput.session,
+                checkoutId: workInput.checkoutId,
+                paymentIntentId: workInput.paymentIntentId,
+                bookingPayload: workInput.bookingPayload,
+                finalizeContext,
+                source: workInput.source,
+                dependencies: finalizeWorkDependencies
+              })
+          });
+        }
 
         const httpMap = mapFinalizeOrchestrationResultToHttp(orchResult);
         let booking =

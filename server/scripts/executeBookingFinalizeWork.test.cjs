@@ -317,7 +317,7 @@ test('missing session.stayFingerprint throws CHECKOUT_SESSION_NOT_USABLE', async
   );
 });
 
-test('paid cabin overlap after save throws PAID_BOOKING_SAVE_FAILED with needsReview', async () => {
+test('paid cabin overlap after save keeps Booking and marks paidOverlapConflict', async () => {
   const { checkIn, checkOut } = futureStayDates();
   const ctx = buildFinalizeContext({
     checkInDate: checkIn,
@@ -328,6 +328,7 @@ test('paid cabin overlap after save throws PAID_BOOKING_SAVE_FAILED with needsRe
   const session = await seedSession({ cabinId: ctx.cabinId });
   let recordCalls = 0;
   let recordPayload = null;
+  let reviewCalls = 0;
 
   __setExecuteBookingFinalizeWorkDependenciesForTesting({
     countBlockingBlocksForSingleCabin: async () => 1,
@@ -337,6 +338,10 @@ test('paid cabin overlap after save throws PAID_BOOKING_SAVE_FAILED with needsRe
     recordPaidBookingResolutionIssue: async (payload) => {
       recordCalls += 1;
       recordPayload = payload;
+      return { _id: new mongoose.Types.ObjectId() };
+    },
+    openManualReviewItem: async () => {
+      reviewCalls += 1;
       return { _id: new mongoose.Types.ObjectId() };
     }
   });
@@ -363,9 +368,12 @@ test('paid cabin overlap after save throws PAID_BOOKING_SAVE_FAILED with needsRe
   assert.equal(recordPayload.issueType, 'paid_booking_conflict');
   assert.equal(recordPayload.errorCode, 'CABIN_OVERLAP_AFTER_SAVE');
   assert.equal(recordPayload.paymentIntentId, 'pi_paid_overlap');
+  assert.equal(reviewCalls, 1);
 
   const remaining = await Booking.find({ checkoutId: session.checkoutId });
-  assert.equal(remaining.length, 0);
+  assert.equal(remaining.length, 1);
+  assert.equal(remaining[0].metadata?.paidOverlapConflict, true);
+  assert.equal(remaining[0].stripePaymentIntentId, 'pi_paid_overlap');
 });
 
 test('calls linkStripePaymentToBooking when paymentIntentId exists', async () => {

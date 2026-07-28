@@ -136,6 +136,15 @@ const featureFlags = {
    */
   isFinalizeJobExecuteEnabled() {
     return this._parseBooleanWithDefault(process.env.FINALIZE_JOB_EXECUTE, false);
+  },
+
+  /**
+   * Batch 4: V2 frontend booking create uses finalizePaidCheckout domain service.
+   * Default OFF (dual-path rollback). Enable: 1|true|on|yes.
+   * FINALIZE_JOB_EXECUTE remains off — no worker.
+   */
+  isFinalizeDomainServiceEnabled() {
+    return this._parseBooleanWithDefault(process.env.FINALIZE_DOMAIN_SERVICE, false);
   }
 };
 

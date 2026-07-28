@@ -29,6 +29,21 @@ const NO_PAYMENT_CANONICAL_PI_OPTIONAL_STATUSES = new Set([
 ]);
 
 const BLOCKED_ACQUIRE_SESSION_STATUSES = ['expired', 'superseded', 'needs_review'];
+const BLOCKED_ACQUIRE_SESSION_STATUSES_PAID_OVERRIDE = ['superseded', 'needs_review'];
+
+const DEFAULT_FINALIZE_LOCK_VISIBILITY_MS = 5 * 60 * 1000;
+
+function getFinalizeLockVisibilityMs() {
+  const raw = process.env.FINALIZE_LOCK_VISIBILITY_MS;
+  if (raw == null || raw === '') {
+    return DEFAULT_FINALIZE_LOCK_VISIBILITY_MS;
+  }
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) {
+    return DEFAULT_FINALIZE_LOCK_VISIBILITY_MS;
+  }
+  return Math.floor(n);
+}
 
 function normalizeCheckoutId(checkoutId) {
   return String(checkoutId || '').trim();
@@ -36,6 +51,13 @@ function normalizeCheckoutId(checkoutId) {
 
 function normalizeNow(now) {
   return now instanceof Date ? now : new Date();
+}
+
+function isPaidFinalizeOverrideEligible(session, paidFinalizeOverride = false) {
+  if (paidFinalizeOverride === true) {
+    return true;
+  }
+  return String(session?.paymentStatus || '').trim() === 'paid';
 }
 
 function toObjectId(value) {
@@ -106,11 +128,19 @@ function assertStayFingerprintMatchesExisting(existingFingerprint, derivedFinger
   }
 }
 
-async function ensureCheckoutSessionStayFingerprint({ checkoutId, bookingPayload }) {
+async function ensureCheckoutSessionStayFingerprint({
+  checkoutId,
+  bookingPayload,
+  paidFinalizeOverride = false
+}) {
   const normalizedId = normalizeCheckoutId(checkoutId);
   const session = await loadSessionOrThrow(normalizedId);
   assertV2Flow(session);
-  assertSessionUsable(session);
+  if (paidFinalizeOverride || isPaidFinalizeOverrideEligible(session, false)) {
+    assertSessionUsableForFinalize(session, { paidFinalizeOverride: true });
+  } else {
+    assertSessionUsable(session);
+  }
 
   const existingFingerprint = hasPersistedStayFingerprint(session)
     ? String(session.stayFingerprint).trim()
@@ -190,25 +220,41 @@ function assertV2Flow(session) {
   }
 }
 
-function buildAcquireLockFilter(checkoutId, expectedSessionVersion, now) {
+function buildAcquireLockFilter(
+  checkoutId,
+  expectedSessionVersion,
+  now,
+  { paidFinalizeOverride = false } = {}
+) {
+  const blocked = paidFinalizeOverride
+    ? BLOCKED_ACQUIRE_SESSION_STATUSES_PAID_OVERRIDE
+    : BLOCKED_ACQUIRE_SESSION_STATUSES;
+
   const filter = {
     checkoutId: normalizeCheckoutId(checkoutId),
     flowVersion: 'v2',
     finalizeStatus: FINALIZE_STATUS.OPEN,
-    status: { $nin: BLOCKED_ACQUIRE_SESSION_STATUSES },
-    $or: [
+    status: { $nin: blocked }
+  };
+
+  if (paidFinalizeOverride) {
+    // Verified paid / paymentStatus=paid: allow finalize after expiresAt.
+  } else {
+    filter.$or = [
       { expiresAt: null },
       { expiresAt: { $exists: false } },
-      { expiresAt: { $gte: now } }
-    ]
-  };
+      { expiresAt: { $gte: now } },
+      { paymentStatus: 'paid' }
+    ];
+  }
+
   if (expectedSessionVersion != null && expectedSessionVersion !== '') {
     filter.sessionVersion = Number(expectedSessionVersion);
   }
   return filter;
 }
 
-function classifyAcquireLockFailure(session) {
+function classifyAcquireLockFailure(session, { paidFinalizeOverride = false } = {}) {
   if (!session) {
     throw new CheckoutSessionError(
       CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_FOUND,
@@ -253,7 +299,10 @@ function classifyAcquireLockFailure(session) {
     );
   }
 
-  if (isSessionExpired(session)) {
+  if (
+    isSessionExpired(session) &&
+    !isPaidFinalizeOverrideEligible(session, paidFinalizeOverride)
+  ) {
     throw new CheckoutSessionError(
       CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_EXPIRED,
       'Checkout session has expired'
@@ -280,14 +329,103 @@ function classifyAcquireLockFailure(session) {
   );
 }
 
-async function loadFinalizableCheckoutSession({ checkoutId }) {
+/**
+ * Reclaim stale in_progress finalize locks so crash recovery can continue.
+ * @returns {Promise<object|null>} updated session when reclaim succeeded
+ */
+async function reclaimStaleFinalizeLock({
+  checkoutId,
+  now = new Date(),
+  visibilityMs = getFinalizeLockVisibilityMs()
+} = {}) {
+  const at = normalizeNow(now);
+  const normalizedId = normalizeCheckoutId(checkoutId);
+  if (!normalizedId) {
+    return null;
+  }
+
+  const cutoff = new Date(at.getTime() - visibilityMs);
+  return CheckoutSession.findOneAndUpdate(
+    {
+      checkoutId: normalizedId,
+      flowVersion: 'v2',
+      finalizeStatus: FINALIZE_STATUS.IN_PROGRESS,
+      finalizeStartedAt: { $ne: null, $lte: cutoff }
+    },
+    {
+      $set: {
+        finalizeStatus: FINALIZE_STATUS.OPEN,
+        finalizeStartedAt: null,
+        'metadata.finalizeLockReclaimedAt': at,
+        'metadata.finalizeLockReclaimReason': 'stale_visibility_timeout'
+      },
+      $inc: { sessionVersion: 1 }
+    },
+    { new: true }
+  );
+}
+
+function assertSessionUsableForFinalize(session, { paidFinalizeOverride = false } = {}) {
+  if (!session) {
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_FOUND,
+      'Checkout session not found'
+    );
+  }
+
+  if (session.status === 'superseded') {
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_SUPERSEDED,
+      'Checkout session was superseded'
+    );
+  }
+
+  if (
+    isSessionExpired(session) &&
+    !isPaidFinalizeOverrideEligible(session, paidFinalizeOverride)
+  ) {
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_EXPIRED,
+      'Checkout session has expired'
+    );
+  }
+
+  if (session.status === 'needs_review') {
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_USABLE,
+      'Checkout session requires review'
+    );
+  }
+
+  if (session.finalizeStatus === 'finalized') {
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_USABLE,
+      'Checkout session is already finalized'
+    );
+  }
+}
+
+async function loadFinalizableCheckoutSession({
+  checkoutId,
+  paidFinalizeOverride = false
+} = {}) {
   const session = await loadSessionOrThrow(checkoutId);
   assertV2Flow(session);
-  assertSessionUsable(session);
+  if (paidFinalizeOverride || isPaidFinalizeOverrideEligible(session, false)) {
+    assertSessionUsableForFinalize(session, { paidFinalizeOverride: true });
+  } else {
+    assertSessionUsable(session);
+  }
   return session;
 }
 
-async function acquireFinalizeLock({ checkoutId, expectedSessionVersion, now = new Date() }) {
+async function acquireFinalizeLock({
+  checkoutId,
+  expectedSessionVersion,
+  now = new Date(),
+  paidFinalizeOverride = false,
+  visibilityMs = getFinalizeLockVisibilityMs()
+} = {}) {
   const at = normalizeNow(now);
   const normalizedId = normalizeCheckoutId(checkoutId);
   if (!normalizedId) {
@@ -297,9 +435,18 @@ async function acquireFinalizeLock({ checkoutId, expectedSessionVersion, now = n
     );
   }
 
-  const filter = buildAcquireLockFilter(normalizedId, expectedSessionVersion, at);
+  await reclaimStaleFinalizeLock({
+    checkoutId: normalizedId,
+    now: at,
+    visibilityMs
+  });
+
+  const acquireFilter = buildAcquireLockFilter(normalizedId, expectedSessionVersion, at, {
+    paidFinalizeOverride: paidFinalizeOverride === true
+  });
+
   const updated = await CheckoutSession.findOneAndUpdate(
-    filter,
+    acquireFilter,
     {
       $set: {
         finalizeStatus: FINALIZE_STATUS.IN_PROGRESS,
@@ -315,7 +462,10 @@ async function acquireFinalizeLock({ checkoutId, expectedSessionVersion, now = n
   }
 
   const current = await CheckoutSession.findOne({ checkoutId: normalizedId });
-  classifyAcquireLockFailure(current);
+  classifyAcquireLockFailure(current, {
+    paidFinalizeOverride:
+      paidFinalizeOverride === true || isPaidFinalizeOverrideEligible(current, false)
+  });
 }
 
 async function releaseFinalizeLock({ checkoutId, note = null }) {
@@ -390,7 +540,12 @@ async function markFinalizeNeedsReview({ checkoutId, reason, details = null }) {
   return updated;
 }
 
-async function markFinalizeSucceeded({ checkoutId, bookingId, now = new Date() }) {
+async function markFinalizeSucceeded({
+  checkoutId,
+  bookingId,
+  now = new Date(),
+  setPaymentStatusPaid = false
+} = {}) {
   const normalizedId = normalizeCheckoutId(checkoutId);
   const bookingObjectId = toObjectId(bookingId);
   if (!bookingObjectId) {
@@ -401,14 +556,19 @@ async function markFinalizeSucceeded({ checkoutId, bookingId, now = new Date() }
   }
 
   const at = normalizeNow(now);
+  const set = {
+    finalizeStatus: FINALIZE_STATUS.FINALIZED,
+    bookingId: bookingObjectId,
+    finalizedAt: at
+  };
+  if (setPaymentStatusPaid === true) {
+    set.paymentStatus = 'paid';
+  }
+
   const updated = await CheckoutSession.findOneAndUpdate(
     { checkoutId: normalizedId, finalizeStatus: FINALIZE_STATUS.IN_PROGRESS },
     {
-      $set: {
-        finalizeStatus: FINALIZE_STATUS.FINALIZED,
-        bookingId: bookingObjectId,
-        finalizedAt: at
-      },
+      $set: set,
       $inc: { sessionVersion: 1 }
     },
     { new: true }
@@ -443,7 +603,11 @@ async function markFinalizeSucceeded({ checkoutId, bookingId, now = new Date() }
   return updated;
 }
 
-async function assertPaymentIntentReadyForFinalize(session, paymentIntentId) {
+async function assertPaymentIntentReadyForFinalize(
+  session,
+  paymentIntentId,
+  { paidFinalizeOverride = false } = {}
+) {
   const piId = paymentIntentId ? String(paymentIntentId).trim() : '';
   const canonical = session.canonicalPaymentIntentId
     ? String(session.canonicalPaymentIntentId).trim()
@@ -456,7 +620,8 @@ async function assertPaymentIntentReadyForFinalize(session, paymentIntentId) {
     if (canonical) {
       await assertCanonicalPaymentIntentForSession({
         checkoutId: session.checkoutId,
-        paymentIntentId: piId
+        paymentIntentId: piId,
+        skipSessionUsableGuard: paidFinalizeOverride === true
       });
     }
     return;
@@ -472,7 +637,9 @@ async function assertPaymentIntentReadyForFinalize(session, paymentIntentId) {
 
   await assertCanonicalPaymentIntentForSession({
     checkoutId: session.checkoutId,
-    paymentIntentId: piId
+    paymentIntentId: piId,
+    skipSessionUsableGuard:
+      paidFinalizeOverride === true || isPaidFinalizeOverrideEligible(session, false)
   });
 }
 
@@ -523,8 +690,20 @@ async function assertOrchestrationBookingPayload(checkoutId, bookingPayload) {
   );
 }
 
-async function evaluatePreLockOrchestrationState(checkoutId) {
-  const session = await loadSessionOrThrow(checkoutId);
+async function evaluatePreLockOrchestrationState(
+  checkoutId,
+  { now = new Date(), visibilityMs = getFinalizeLockVisibilityMs() } = {}
+) {
+  const at = normalizeNow(now);
+  const normalizedId = normalizeCheckoutId(checkoutId);
+
+  await reclaimStaleFinalizeLock({
+    checkoutId: normalizedId,
+    now: at,
+    visibilityMs
+  });
+
+  const session = await loadSessionOrThrow(normalizedId);
   assertV2Flow(session);
 
   const replay = buildFinalizeReplayResponse(session);
@@ -569,7 +748,10 @@ async function runCheckoutFinalizeOrchestration({
   expectedSessionVersion = null,
   now = new Date(),
   finalizeWork,
-  source = 'frontend'
+  source = 'frontend',
+  paidFinalizeOverride = false,
+  setPaymentStatusPaid = false,
+  visibilityMs = getFinalizeLockVisibilityMs()
 }) {
   const normalizedId = normalizeCheckoutId(checkoutId);
   const at = normalizeNow(now);
@@ -591,7 +773,10 @@ async function runCheckoutFinalizeOrchestration({
 
   await assertOrchestrationBookingPayload(normalizedId, bookingPayload);
 
-  const preLock = await evaluatePreLockOrchestrationState(normalizedId);
+  const preLock = await evaluatePreLockOrchestrationState(normalizedId, {
+    now: at,
+    visibilityMs
+  });
   if (preLock.replay) {
     return preLock.replay;
   }
@@ -599,13 +784,18 @@ async function runCheckoutFinalizeOrchestration({
   const ready = await assertCheckoutSessionReadyForFinalize({
     checkoutId: normalizedId,
     paymentIntentId,
-    bookingPayload
+    bookingPayload,
+    paidFinalizeOverride
   });
 
   const lockedSession = await acquireFinalizeLock({
     checkoutId: normalizedId,
     expectedSessionVersion: expectedSessionVersion ?? ready.session.sessionVersion,
-    now: at
+    now: at,
+    paidFinalizeOverride:
+      paidFinalizeOverride === true ||
+      isPaidFinalizeOverrideEligible(ready.session, false),
+    visibilityMs
   });
 
   try {
@@ -660,10 +850,16 @@ async function runCheckoutFinalizeOrchestration({
 
   const workerIdempotentReplay = workResult?.result?.idempotentReplay === true;
 
+  const shouldSetPaid =
+    setPaymentStatusPaid === true ||
+    String(lockedSession.paymentStatus || '').trim() === 'paid' ||
+    Boolean(paymentIntentId);
+
   const finalizedSession = await markFinalizeSucceeded({
     checkoutId: normalizedId,
     bookingId: workBookingId,
-    now: at
+    now: at,
+    setPaymentStatusPaid: shouldSetPaid && Boolean(paymentIntentId)
   });
 
   return {
@@ -679,14 +875,23 @@ async function runCheckoutFinalizeOrchestration({
 async function assertCheckoutSessionReadyForFinalize({
   checkoutId,
   paymentIntentId = null,
-  bookingPayload = null
+  bookingPayload = null,
+  paidFinalizeOverride = false
 }) {
-  const session = await loadFinalizableCheckoutSession({ checkoutId });
-  await assertPaymentIntentReadyForFinalize(session, paymentIntentId);
+  const session = await loadFinalizableCheckoutSession({
+    checkoutId,
+    paidFinalizeOverride
+  });
+  await assertPaymentIntentReadyForFinalize(session, paymentIntentId, {
+    paidFinalizeOverride:
+      paidFinalizeOverride === true || isPaidFinalizeOverrideEligible(session, false)
+  });
 
   const sessionWithFingerprint = await ensureCheckoutSessionStayFingerprint({
     checkoutId,
-    bookingPayload
+    bookingPayload,
+    paidFinalizeOverride:
+      paidFinalizeOverride === true || isPaidFinalizeOverrideEligible(session, false)
   });
 
   await assertNoCommercialStayConflict({
@@ -701,10 +906,14 @@ async function assertCheckoutSessionReadyForFinalize({
 module.exports = {
   FINALIZE_STATUS,
   NO_PAYMENT_CANONICAL_PI_OPTIONAL_STATUSES,
+  DEFAULT_FINALIZE_LOCK_VISIBILITY_MS,
+  getFinalizeLockVisibilityMs,
+  isPaidFinalizeOverrideEligible,
   buildFinalizeReplayResponse,
   deriveCommercialStayFingerprintForFinalize,
   ensureCheckoutSessionStayFingerprint,
   loadFinalizableCheckoutSession,
+  reclaimStaleFinalizeLock,
   acquireFinalizeLock,
   releaseFinalizeLock,
   markFinalizeNeedsReview,

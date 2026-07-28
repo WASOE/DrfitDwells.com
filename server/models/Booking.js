@@ -115,9 +115,14 @@ const bookingSchema = new mongoose.Schema({
     required: [true, 'Check-in date is required'],
     validate: {
       validator: function(v) {
-        return v > new Date();
+        // Binding: Europe/Sofia calendar-day — same-day check-in allowed.
+        const { formatSofiaDateOnly } = require('../utils/dateTime');
+        const checkInDay = formatSofiaDateOnly(v);
+        const today = formatSofiaDateOnly(new Date());
+        if (!checkInDay || !today) return false;
+        return checkInDay >= today;
       },
-      message: 'Check-in date must be in the future'
+      message: 'Check-in date must be today or in the future (Europe/Sofia)'
     }
   },
   checkOut: {
@@ -125,7 +130,12 @@ const bookingSchema = new mongoose.Schema({
     required: [true, 'Check-out date is required'],
     validate: {
       validator: function(v) {
-        return v > this.checkIn;
+        const { formatSofiaDateOnly } = require('../utils/dateTime');
+        if (!this.checkIn) return false;
+        const outDay = formatSofiaDateOnly(v);
+        const inDay = formatSofiaDateOnly(this.checkIn);
+        if (!outDay || !inDay) return false;
+        return outDay > inDay;
       },
       message: 'Check-out date must be after check-in date'
     }
@@ -506,6 +516,13 @@ const bookingSchema = new mongoose.Schema({
   /** Meta CAPI Purchase succeeded at least once (set only on Graph API success, not when CAPI is skipped). */
   metaPurchaseSentAt: {
     type: Date,
+    default: null
+  },
+  /**
+   * Durable ops/review flags (e.g. paidOverlapConflict) — never used to delete a paid Booking.
+   */
+  metadata: {
+    type: mongoose.Schema.Types.Mixed,
     default: null
   }
 }, {

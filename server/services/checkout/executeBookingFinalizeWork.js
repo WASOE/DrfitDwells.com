@@ -131,12 +131,27 @@ function resolveInitialStatus({ finalizeContext, paymentIntentId }) {
   return 'pending';
 }
 
+function createdByRouteForSource(source) {
+  switch (String(source || '').trim()) {
+    case 'webhook_worker':
+      return 'checkout_finalization_worker';
+    case 'reconcile':
+      return 'reconcile_paid_checkout';
+    case 'manual':
+      return 'manual_paid_checkout_finalize';
+    case 'frontend':
+    default:
+      return 'POST /api/bookings';
+  }
+}
+
 function buildBookingData({
   session,
   checkoutId,
   paymentIntentId,
   bookingPayload,
-  finalizeContext
+  finalizeContext,
+  source = 'frontend'
 }) {
   const ctx = finalizeContext || {};
   const payload = bookingPayload || {};
@@ -198,7 +213,7 @@ function buildBookingData({
     provenance: {
       source: 'guest_portal',
       intakeRevision: 1,
-      createdByRoute: 'POST /api/bookings'
+      createdByRoute: createdByRouteForSource(source)
     },
     legalAcceptance: {
       termsVersion: legalAcceptance.termsVersion,
@@ -484,6 +499,88 @@ async function saveBookingWithReplay(deps, {
   }
 }
 
+function isPaidOverlapPath({ paymentIntentIdForReview, finalizeContext, booking }) {
+  if (paymentIntentIdForReview) return true;
+  if (booking?.stripePaymentIntentId) return true;
+  if (finalizeContext?.stripePaymentVerified) return true;
+  if (String(finalizeContext?.sessionPaymentStatus || '').trim() === 'paid') return true;
+  return false;
+}
+
+async function retainPaidBookingOnOverlap(deps, {
+  booking,
+  finalizeContext,
+  paymentIntentIdForReview,
+  errorCode,
+  errorSummary
+}) {
+  const ctx = finalizeContext || {};
+  const checkoutId = ctx.checkoutId || booking?.checkoutId || null;
+  const existingMeta =
+    booking.metadata && typeof booking.metadata === 'object' && !Array.isArray(booking.metadata)
+      ? booking.metadata
+      : {};
+
+  await deps.Booking.updateOne(
+    { _id: booking._id },
+    {
+      $set: {
+        metadata: {
+          ...existingMeta,
+          paidOverlapConflict: true,
+          paidOverlapConflictAt: new Date(),
+          paidOverlapConflictCode: errorCode,
+          paidOverlapConflictSummary: errorSummary
+        }
+      }
+    }
+  );
+
+  if (typeof deps.openManualReviewItem === 'function') {
+    await deps.openManualReviewItem({
+      category: 'paid_booking_overlap_conflict',
+      severity: 'critical',
+      entityType: 'Booking',
+      entityId: String(booking._id),
+      title: 'Paid booking overlap conflict after save',
+      details: errorSummary,
+      provenance: {
+        source: 'booking_finalize_worker',
+        sourceReference: checkoutId ? String(checkoutId) : null
+      },
+      evidence: {
+        paymentIntentId: paymentIntentIdForReview || booking.stripePaymentIntentId || null,
+        checkoutId,
+        errorCode,
+        errorSummary,
+        bookingId: String(booking._id)
+      }
+    });
+  }
+
+  if (paymentIntentIdForReview && typeof deps.recordPaidBookingResolutionIssue === 'function') {
+    await deps.recordPaidBookingResolutionIssue({
+      issueType: 'paid_booking_conflict',
+      errorCode,
+      errorSummary,
+      paymentIntentId: paymentIntentIdForReview,
+      bookingAttempt: ctx.bookingAttemptContext || null,
+      finalizationStage: 'overlap_check',
+      checkoutId,
+      bookingId: booking?._id ? String(booking._id) : null
+    });
+  }
+
+  throw createPaidBookingSaveFailedError({
+    errorCode,
+    errorSummary,
+    paymentIntentId: paymentIntentIdForReview || booking.stripePaymentIntentId || null,
+    finalizationStage: 'overlap_check',
+    observabilityRecorded: true,
+    bookingId: booking?._id ? String(booking._id) : null
+  });
+}
+
 async function runPostSaveOverlapChecks(deps, {
   booking,
   finalizeContext,
@@ -494,6 +591,11 @@ async function runPostSaveOverlapChecks(deps, {
   const ctx = finalizeContext || {};
   const { checkInDate, checkOutDate, cabinId, assignedUnitId, parentCabinForUnit } = ctx;
   const blocking = deps.blockingBookingStatuses || BLOCKING_BOOKING_STATUSES;
+  const paidPath = isPaidOverlapPath({
+    paymentIntentIdForReview,
+    finalizeContext: ctx,
+    booking
+  });
 
   if (cabinId) {
     const overlaps = await deps.Booking.countDocuments({
@@ -509,6 +611,19 @@ async function runPostSaveOverlapChecks(deps, {
       checkOutDate
     );
     if (overlaps > 0 || blockRace > 0) {
+      const errorCode = 'CABIN_OVERLAP_AFTER_SAVE';
+      const errorSummary = `overlaps=${overlaps}, blockRace=${blockRace}`;
+
+      if (paidPath) {
+        await retainPaidBookingOnOverlap(deps, {
+          booking,
+          finalizeContext: ctx,
+          paymentIntentIdForReview,
+          errorCode,
+          errorSummary
+        });
+      }
+
       await deps.Booking.deleteOne({ _id: booking._id });
       await tryReleaseVoucherOnFailure(deps, {
         voucherReservationContext,
@@ -518,8 +633,8 @@ async function runPostSaveOverlapChecks(deps, {
       if (paymentIntentIdForReview) {
         await deps.recordPaidBookingResolutionIssue({
           issueType: 'paid_booking_conflict',
-          errorCode: 'CABIN_OVERLAP_AFTER_SAVE',
-          errorSummary: `overlaps=${overlaps}, blockRace=${blockRace}`,
+          errorCode,
+          errorSummary,
           paymentIntentId: paymentIntentIdForReview,
           bookingAttempt: ctx.bookingAttemptContext || null,
           finalizationStage: 'overlap_check',
@@ -527,8 +642,8 @@ async function runPostSaveOverlapChecks(deps, {
           bookingId: booking?._id ? String(booking._id) : null
         });
         throw createPaidBookingSaveFailedError({
-          errorCode: 'CABIN_OVERLAP_AFTER_SAVE',
-          errorSummary: `overlaps=${overlaps}, blockRace=${blockRace}`,
+          errorCode,
+          errorSummary,
           paymentIntentId: paymentIntentIdForReview,
           finalizationStage: 'overlap_check',
           observabilityRecorded: true
@@ -569,6 +684,19 @@ async function runPostSaveOverlapChecks(deps, {
         oldestOverlap && String(oldestOverlap._id) !== String(booking._id);
 
       if (blockRace > 0 || lostUnitRace) {
+        const errorCode = 'UNIT_OVERLAP_AFTER_SAVE';
+        const errorSummary = `overlaps=${overlaps}, blockRace=${blockRace}`;
+
+        if (paidPath) {
+          await retainPaidBookingOnOverlap(deps, {
+            booking,
+            finalizeContext: ctx,
+            paymentIntentIdForReview,
+            errorCode,
+            errorSummary
+          });
+        }
+
         await deps.Booking.deleteOne({ _id: booking._id });
         await tryReleaseVoucherOnFailure(deps, {
           voucherReservationContext,
@@ -578,8 +706,8 @@ async function runPostSaveOverlapChecks(deps, {
         if (paymentIntentIdForReview) {
           await deps.recordPaidBookingResolutionIssue({
             issueType: 'paid_booking_conflict',
-            errorCode: 'UNIT_OVERLAP_AFTER_SAVE',
-            errorSummary: `overlaps=${overlaps}, blockRace=${blockRace}`,
+            errorCode,
+            errorSummary,
             paymentIntentId: paymentIntentIdForReview,
             bookingAttempt: ctx.bookingAttemptContext || null,
             finalizationStage: 'overlap_check',
@@ -587,8 +715,8 @@ async function runPostSaveOverlapChecks(deps, {
             bookingId: booking?._id ? String(booking._id) : null
           });
           throw createPaidBookingSaveFailedError({
-            errorCode: 'UNIT_OVERLAP_AFTER_SAVE',
-            errorSummary: `overlaps=${overlaps}, blockRace=${blockRace}`,
+            errorCode,
+            errorSummary,
             paymentIntentId: paymentIntentIdForReview,
             finalizationStage: 'overlap_check',
             observabilityRecorded: true
@@ -712,7 +840,6 @@ async function executeBookingFinalizeWork({
   dependencies = null
 }) {
   const deps = dependencies || activeDependencies;
-  void source;
 
   const stayFingerprint = String(session?.stayFingerprint || '').trim();
   if (!stayFingerprint) {
@@ -759,7 +886,8 @@ async function executeBookingFinalizeWork({
     checkoutId,
     paymentIntentId: paymentIntentIdForReview,
     bookingPayload,
-    finalizeContext: ctx
+    finalizeContext: ctx,
+    source
   });
 
   assertCabinTypeBookingHasUnitBeforeSave(bookingData, { paymentIntentIdForReview });

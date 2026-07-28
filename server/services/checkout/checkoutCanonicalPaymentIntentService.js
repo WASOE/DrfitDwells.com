@@ -651,9 +651,20 @@ async function ensureCanonicalPaymentIntent({
   });
 }
 
-async function assertCanonicalPaymentIntentForSession({ checkoutId, paymentIntentId }) {
+async function assertCanonicalPaymentIntentForSession({
+  checkoutId,
+  paymentIntentId,
+  skipSessionUsableGuard = false
+} = {}) {
   const session = await loadSessionOrThrow(checkoutId);
-  assertSessionUsable(session);
+  if (!skipSessionUsableGuard) {
+    assertSessionUsable(session);
+  } else if (session.status === 'superseded') {
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_SUPERSEDED,
+      'Checkout session was superseded'
+    );
+  }
 
   const piId = String(paymentIntentId || '').trim();
   if (!piId) {
