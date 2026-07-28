@@ -126,6 +126,16 @@ connectDB().then((conn) => {
       console.error('[ops-push-worker] Startup failed:', e?.message || e);
     }
 
+    // Paid checkout finalization worker (Batch 5: finalize only; no email). Default OFF.
+    try {
+      const {
+        startCheckoutFinalizationWorkerIfEnabled
+      } = require('./services/checkout/checkoutFinalizationWorker');
+      startCheckoutFinalizationWorkerIfEnabled();
+    } catch (e) {
+      console.error('[checkout-finalization-worker] Startup failed:', e?.message || e);
+    }
+
     try {
       const { startSmtpHealthSchedulerIfEnabled } = require('./services/email/smtpHealthScheduler');
       startSmtpHealthSchedulerIfEnabled();

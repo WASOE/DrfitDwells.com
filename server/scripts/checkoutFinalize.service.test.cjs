@@ -930,7 +930,18 @@ test('runCheckoutFinalizeOrchestration concurrent same checkout only runs finali
     finalizeWork: slowWork
   });
 
-  await new Promise((r) => setTimeout(r, 25));
+  // Wait until the first orchestration actually holds the finalize lock
+  // (fixed sleep is flaky under parallel suite load).
+  let locked = false;
+  for (let i = 0; i < 50; i += 1) {
+    const current = await CheckoutSession.findOne({ checkoutId: doc.checkoutId }).lean();
+    if (current?.finalizeStatus === FINALIZE_STATUS.IN_PROGRESS) {
+      locked = true;
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  assert.equal(locked, true);
 
   await expectError(
     runCheckoutFinalizeOrchestration({

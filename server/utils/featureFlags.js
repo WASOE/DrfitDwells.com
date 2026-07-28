@@ -131,17 +131,25 @@ const featureFlags = {
   },
 
   /**
-   * Batch 3–4: job execution must stay disabled. Explicit on is ignored by Batch 3 code paths.
-   * Exposed for observability / future Batch 5 gating.
+   * Batch 5: CheckoutFinalizationJob worker may claim and execute via finalizePaidCheckout.
+   * Default OFF. Enable: 1|true|on|yes.
+   * Does not send confirmation email (see FINALIZE_WORKER_SEND_CONFIRMATION).
    */
   isFinalizeJobExecuteEnabled() {
     return this._parseBooleanWithDefault(process.env.FINALIZE_JOB_EXECUTE, false);
   },
 
   /**
+   * Batch 5–6: worker may enqueue/send confirmation email after finalize.
+   * Default OFF in Batch 5 — booking finalizes; email remains frontend/pending until Batch 6.
+   */
+  isFinalizeWorkerSendConfirmationEnabled() {
+    return this._parseBooleanWithDefault(process.env.FINALIZE_WORKER_SEND_CONFIRMATION, false);
+  },
+
+  /**
    * Batch 4: V2 frontend booking create uses finalizePaidCheckout domain service.
    * Default OFF (dual-path rollback). Enable: 1|true|on|yes.
-   * FINALIZE_JOB_EXECUTE remains off — no worker.
    */
   isFinalizeDomainServiceEnabled() {
     return this._parseBooleanWithDefault(process.env.FINALIZE_DOMAIN_SERVICE, false);

@@ -821,8 +821,20 @@ test('concurrent V2 cabinType finalizations with one free unit yield one booking
   const newPaidBookings = await Booking.find({
     stripePaymentIntentId: { $in: [guestA.paymentIntentId, guestB.paymentIntentId] }
   });
-  assert.equal(newPaidBookings.length, 1, `statuses A=${resA.status} B=${resB.status}`);
-  assert.equal(String(newPaidBookings[0].unitId), String(unit2._id));
+  // Batch 4 paid-overlap policy: post-save conflict keeps the paid Booking (no delete).
+  // Pre-save NO_UNITS_AVAILABLE still yields a single booking.
+  assert.ok(
+    newPaidBookings.length === 1 || newPaidBookings.length === 2,
+    `expected 1 or 2 paid bookings, got ${newPaidBookings.length}; statuses A=${resA.status} B=${resB.status}`
+  );
+  const successBooking = newPaidBookings.find((b) => !b.metadata?.paidOverlapConflict);
+  assert.ok(successBooking, 'expected one non-conflict booking');
+  assert.equal(String(successBooking.unitId), String(unit2._id));
+
+  if (newPaidBookings.length === 2) {
+    const conflictBooking = newPaidBookings.find((b) => b.metadata?.paidOverlapConflict === true);
+    assert.ok(conflictBooking, 'second paid booking must retain paidOverlapConflict metadata');
+  }
 
   const unit2Overlaps = await Booking.countDocuments({
     unitId: unit2._id,
@@ -830,10 +842,12 @@ test('concurrent V2 cabinType finalizations with one free unit yield one booking
     checkIn: { $lt: checkOutDate },
     checkOut: { $gt: checkInDate }
   });
-  assert.equal(unit2Overlaps, 1);
+  assert.ok(unit2Overlaps >= 1);
 
-  const reviewCount = await ManualReviewItem.countDocuments({ category: 'payment_finalization_failure' });
-  assert.equal(reviewCount, 1);
+  const reviewCount = await ManualReviewItem.countDocuments({
+    category: { $in: ['payment_finalization_failure', 'paid_booking_overlap_conflict'] }
+  });
+  assert.ok(reviewCount >= 1);
 
   const successCount = [resA.status, resB.status].filter((status) => status === 201).length;
   const reviewCountHttp = [resA.status, resB.status].filter((status) => status === 409).length;

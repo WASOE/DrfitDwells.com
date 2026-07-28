@@ -750,6 +750,11 @@ test('first V2 success sends lifecycle email once and claims side effects', asyn
   const session = await CheckoutSession.findOne({ checkoutId }).lean();
   assert.ok(booking.confirmationEmailSentAt);
   assert.ok(session.confirmationEmailSentAt);
+
+  // Side-effect email is fire-and-forget after HTTP response; poll briefly under suite load.
+  for (let i = 0; i < 40 && sendLifecycleEmail.mock.calls.length < 1; i += 1) {
+    await new Promise((r) => setTimeout(r, 25));
+  }
   assert.ok(sendLifecycleEmail.mock.calls.length >= 1);
   assert.ok(sendInternal.mock.calls.length >= 1);
 

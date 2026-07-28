@@ -1,10 +1,10 @@
 'use strict';
 
 /**
- * CheckoutFinalizationJob — durable paid-finalization work queue (Batch 3).
+ * CheckoutFinalizationJob — durable paid-finalization work queue (Batch 3–5).
  * Binding: docs/checkout-payment-architecture/02_PAID_BOOKING_FINALIZATION_IMPLEMENTATION_SPEC.md §C
  *
- * Batch 3: enqueue only (status remains scheduled). No live claim/execute.
+ * Batch 3: enqueue (scheduled). Batch 5: claim/execute via checkoutFinalizationWorker.
  */
 
 const mongoose = require('mongoose');

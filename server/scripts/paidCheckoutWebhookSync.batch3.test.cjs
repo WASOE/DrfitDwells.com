@@ -864,13 +864,9 @@ test('26d) cancelled job is not silently revived; a new scheduled job may be cre
   );
 });
 
-test('27–31) no Booking, worker claim, email, refund, or new PaymentIntent in Batch 3 modules', () => {
+test('27–31) Batch 3 webhook sync still does not create Booking / email / refund / PI', () => {
   const syncSrc = fs.readFileSync(
     path.join(__dirname, '../services/checkout/paidCheckoutWebhookSyncService.js'),
-    'utf8'
-  );
-  const jobSrc = fs.readFileSync(
-    path.join(__dirname, '../services/checkout/checkoutFinalizationJobService.js'),
     'utf8'
   );
   const ingestionSrc = fs.readFileSync(
@@ -878,14 +874,15 @@ test('27–31) no Booking, worker claim, email, refund, or new PaymentIntent in 
     'utf8'
   );
 
+  // Batch 3 sync path must remain enqueue-only (no Booking / finalize / email / refund / new PI).
   assert.equal(syncSrc.includes('Booking.create'), false);
   assert.equal(syncSrc.includes('runCheckoutFinalizeOrchestration'), false);
-  assert.equal(jobSrc.includes('claimDueJob'), false);
-  assert.equal(jobSrc.includes("status: 'claimed'"), false);
+  assert.equal(syncSrc.includes('finalizePaidCheckout'), false);
   assert.equal(syncSrc.includes('sendMail'), false);
   assert.equal(syncSrc.includes('refunds.create'), false);
   assert.equal(syncSrc.includes('paymentIntents.create'), false);
   assert.equal(ingestionSrc.includes('runCheckoutFinalizeOrchestration'), false);
+  assert.equal(ingestionSrc.includes('finalizePaidCheckout'), false);
   assert.equal(ingestionSrc.includes('CheckoutFinalizationJob.findOneAndUpdate'), false);
 });
 
