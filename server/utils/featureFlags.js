@@ -156,6 +156,15 @@ const featureFlags = {
   },
 
   /**
+   * Batch 7: paid-checkout reconciliation may mutate (mark paid / ensure job / finalize)
+   * when CLI/API passes execute=true. Default OFF. Dry-run always allowed.
+   * Does not enable Batch 8 historical recovery.
+   */
+  isFinalizeReconcileEnqueueEnabled() {
+    return this._parseBooleanWithDefault(process.env.FINALIZE_RECONCILE_ENQUEUE, false);
+  },
+
+  /**
    * Batch 4: V2 frontend booking create uses finalizePaidCheckout domain service.
    * Default OFF (dual-path rollback). Enable: 1|true|on|yes.
    */
