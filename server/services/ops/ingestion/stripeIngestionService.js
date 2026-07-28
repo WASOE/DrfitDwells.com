@@ -11,6 +11,10 @@ const { notifyOpsPushPaymentAlert } = require('../push/opsPushEventNotifications
 const {
   buildPaymentUnlinkedObservabilityEvidence
 } = require('../../payments/paidBookingFinalizationObservability');
+const {
+  isAccommodationPaymentIntentSucceededEvent,
+  syncAccommodationCheckoutPaidFromWebhook
+} = require('../../checkout/paidCheckoutWebhookSyncService');
 
 function digestEvent(event) {
   return crypto.createHash('sha256').update(JSON.stringify(event)).digest('hex');
@@ -446,21 +450,48 @@ async function applyLegacyFinalizationCompatibility(event) {
 }
 
 async function processStripeWebhookEvent(event) {
+  /**
+   * Execution order (Batch 3 crash-safety):
+   * 1. Persist StripeEventEvidence (dedupe key).
+   * 2. Gift-voucher activation (idempotent) — always, even on retries.
+   * 3. If alreadyProcessed:
+   *    - For accommodation payment_intent.succeeded: re-run Payment upsert + paid session sync
+   *      (idempotent mark-paid + ensure job) so a crash after evidence cannot leave session/job unrepaired.
+   *    - Otherwise return deduped without re-running unrelated side effects.
+   * 4. First pass: Payment + Payout upsert, legacy finalization compatibility.
+   * 5. Accommodation paid sync (mark paid + ensure scheduled job) when flags allow.
+   * 6. Ops push payment alert (first pass only).
+   *
+   * Never creates Booking, never claims/executes CheckoutFinalizationJob, never waits on email.
+   */
   const { alreadyProcessed, evidence } = await ensureStripeEventEvidence(event);
   const isGiftVoucherSucceeded =
     event?.type === 'payment_intent.succeeded'
     && event?.data?.object?.object === 'payment_intent'
     && event?.data?.object?.metadata?.type === 'gift_voucher';
+  const isAccommodationSucceeded = isAccommodationPaymentIntentSucceededEvent(event);
 
   if (isGiftVoucherSucceeded) {
     await activatePaidVoucherFromStripeEvent(event);
   }
 
   if (alreadyProcessed) {
+    let paymentId = null;
+    let accommodationSync = null;
+    if (isAccommodationSucceeded) {
+      const payment = await upsertCanonicalPaymentFromEvent(event);
+      paymentId = payment ? String(payment._id) : null;
+      accommodationSync = await syncAccommodationCheckoutPaidFromWebhook({
+        event,
+        payment
+      });
+    }
     return {
       ok: true,
       deduped: true,
-      eventId: event.id
+      eventId: event.id,
+      paymentId,
+      accommodationSync
     };
   }
 
@@ -469,6 +500,14 @@ async function processStripeWebhookEvent(event) {
     upsertCanonicalPayoutFromEvent(event)
   ]);
   await applyLegacyFinalizationCompatibility(event);
+
+  let accommodationSync = null;
+  if (isAccommodationSucceeded) {
+    accommodationSync = await syncAccommodationCheckoutPaidFromWebhook({
+      event,
+      payment
+    });
+  }
 
   if (!alreadyProcessed && payment?._id) {
     void notifyOpsPushPaymentAlert({
@@ -484,7 +523,8 @@ async function processStripeWebhookEvent(event) {
     eventId: event.id,
     paymentId: payment ? String(payment._id) : null,
     payoutId: payout ? String(payout._id) : null,
-    evidenceId: String(evidence._id)
+    evidenceId: String(evidence._id),
+    accommodationSync
   };
 }
 

@@ -162,6 +162,18 @@ const checkoutSessionSchema = new mongoose.Schema(
       type: Date,
       default: null
     },
+    /**
+     * Batch 3: verified accommodation PaymentIntent success evidence (webhook).
+     * Safe IDs/hashes only — never full Stripe objects or guest PII.
+     */
+    paymentSucceededAt: {
+      type: Date,
+      default: null
+    },
+    paymentEvidence: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null
+    },
     metadata: {
       type: mongoose.Schema.Types.Mixed,
       default: null

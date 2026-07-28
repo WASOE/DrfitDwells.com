@@ -858,14 +858,17 @@ test('21) no worker, webhook booking creation or session paid writer exists in B
   assert.equal(finalizeSvc.includes('CheckoutFinalizationJob'), false);
   assert.equal(finalizeSvc.includes("paymentStatus: 'paid'"), false);
   assert.equal(finalizeSvc.includes('paymentStatus: "paid"'), false);
+  assert.equal(finalizeSvc.includes('runCheckoutFinalizeOrchestration'), false);
+  assert.equal(finalizeSvc.includes('Booking.create'), false);
 
+  // Batch 3 may wire paid sync into ingestion; Batch 2 must still not execute finalize/booking there.
   const ingestion = fs.readFileSync(
     path.join(__dirname, '../services/ops/ingestion/stripeIngestionService.js'),
     'utf8'
   );
-  assert.equal(ingestion.includes('CheckoutFinalizationJob'), false);
-  assert.equal(ingestion.includes('markCheckoutSessionPaid'), false);
-  assert.equal(ingestion.includes('enqueueCheckoutFinalization'), false);
+  assert.equal(ingestion.includes('runCheckoutFinalizeOrchestration'), false);
+  assert.equal(ingestion.includes('Booking.create'), false);
+  assert.equal(ingestion.includes('claimDueJob'), false);
 });
 
 test('22) logs redact guest/legal/request data (structured log fields only)', () => {

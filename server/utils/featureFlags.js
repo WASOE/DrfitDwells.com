@@ -111,6 +111,31 @@ const featureFlags = {
    */
   isFinalizeIntentRequiredForPiEnabled() {
     return this._parseBooleanWithDefault(process.env.FINALIZE_INTENT_REQUIRED_FOR_PI, false);
+  },
+
+  /**
+   * Batch 3: mark CheckoutSession.paymentStatus=paid from verified accommodation webhook.
+   * Default OFF. Gift-voucher PIs never use this path.
+   */
+  isCheckoutMarkPaidOnWebhookEnabled() {
+    return this._parseBooleanWithDefault(process.env.CHECKOUT_MARK_PAID_ON_WEBHOOK, false);
+  },
+
+  /**
+   * Batch 3: ensure CheckoutFinalizationJob (scheduled only). Default OFF.
+   * Requires CHECKOUT_MARK_PAID_ON_WEBHOOK — enqueue alone fails closed.
+   * FINALIZE_JOB_EXECUTE remains off; no worker claims jobs in Batch 3.
+   */
+  isFinalizeJobEnqueueEnabled() {
+    return this._parseBooleanWithDefault(process.env.FINALIZE_JOB_ENQUEUE, false);
+  },
+
+  /**
+   * Batch 3–4: job execution must stay disabled. Explicit on is ignored by Batch 3 code paths.
+   * Exposed for observability / future Batch 5 gating.
+   */
+  isFinalizeJobExecuteEnabled() {
+    return this._parseBooleanWithDefault(process.env.FINALIZE_JOB_EXECUTE, false);
   }
 };
 
