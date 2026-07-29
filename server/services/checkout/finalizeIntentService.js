@@ -442,7 +442,10 @@ function assertFinalizeIntentAvailableForPi(session) {
     throw new CheckoutSessionError(
       CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_REQUIRED,
       'finalizeIntent is required before creating a payable PaymentIntent',
-      { checkoutId: session?.checkoutId || null }
+      {
+        checkoutId: session?.checkoutId || null,
+        sessionVersion: session?.sessionVersion ?? null
+      }
     );
   }
   return { ok: true, required: true };
@@ -506,7 +509,10 @@ async function ensureFinalizeIntentForPaymentPreparation({
       throw new CheckoutSessionError(
         CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_REQUIRED,
         'finalizeIntent is required before creating a payable PaymentIntent',
-        { checkoutId: session?.checkoutId || null }
+        {
+          checkoutId: session?.checkoutId || null,
+          sessionVersion: session?.sessionVersion ?? null
+        }
       );
     }
     return { session, reused: false, persisted: false, skipped: true };
@@ -525,17 +531,44 @@ async function ensureFinalizeIntentForPaymentPreparation({
     consents: normalizeOptionalAccommodationConsents(body)
   };
 
-  try {
-    const result = await persistFinalizeIntent({
-      checkoutId: session.checkoutId,
+  const persistOnce = async (targetSession, versionHint) =>
+    persistFinalizeIntent({
+      checkoutId: targetSession.checkoutId,
       body: persistBody,
       requestMeta,
       expectedSessionVersion:
-        expectedSessionVersion != null
-          ? expectedSessionVersion
-          : body?.expectedSessionVersion ?? body?.sessionVersion ?? null,
+        versionHint != null
+          ? versionHint
+          : expectedSessionVersion != null
+            ? expectedSessionVersion
+            : body?.expectedSessionVersion ?? body?.sessionVersion ?? null,
       stripe
     });
+
+  try {
+    let result;
+    try {
+      result = await persistOnce(
+        session,
+        expectedSessionVersion != null
+          ? expectedSessionVersion
+          : body?.expectedSessionVersion ?? body?.sessionVersion ?? null
+      );
+    } catch (firstErr) {
+      // Concurrent quote-refresh races can bump sessionVersion before either peer
+      // finishes persist. Reload and retry once with the authoritative version.
+      if (
+        firstErr?.code === CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_SESSION_VERSION_CONFLICT
+      ) {
+        const raced = await loadSessionOrThrow(session.checkoutId);
+        if (sessionHasCompleteFinalizeIntent(raced)) {
+          throw firstErr; // handled by outer concurrent-resolve catch
+        }
+        result = await persistOnce(raced, Number(raced.sessionVersion) || 1);
+      } else {
+        throw firstErr;
+      }
+    }
 
     const refreshed = await loadSessionOrThrow(session.checkoutId);
     return {

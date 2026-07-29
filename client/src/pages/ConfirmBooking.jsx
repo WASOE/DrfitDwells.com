@@ -663,14 +663,83 @@ function sleep(ms) {
 export function shouldRetryPaymentPreparation(err) {
   const status = err?.response?.status;
   const code = extractCheckoutApiErrorCode(err);
-  if (code === 'FINALIZE_INTENT_INVALID' || code === 'FINALIZE_INTENT_IMMUTABLE') {
+  // Validation / identity conflicts are not transient.
+  if (
+    code === 'FINALIZE_INTENT_INVALID' ||
+    code === 'FINALIZE_INTENT_IMMUTABLE' ||
+    code === 'FINALIZE_INTENT_SESSION_VERSION_CONFLICT' ||
+    code === 'COMMERCIAL_BOUNDARY_CHANGED' ||
+    code === 'CHECKOUT_SESSION_SUPERSEDED' ||
+    code === 'CHECKOUT_SESSION_EXPIRED'
+  ) {
     return false;
+  }
+  // FINALIZE_INTENT_REQUIRED is only retryable after adopting a server checkoutId
+  // (handled by the caller). Do not retry blindly — that creates orphan sessions.
+  if (code === 'FINALIZE_INTENT_REQUIRED') {
+    const adoptedId =
+      err?.response?.data?.details?.checkoutId ||
+      err?.response?.data?.checkoutId ||
+      null;
+    return Boolean(adoptedId && String(adoptedId).trim());
   }
   if (status == null) return true;
   if (status === 429 || status >= 500) return true;
-  if (status === 409 && code === 'FINALIZE_INTENT_REQUIRED') return true;
   if (status === 409 && code === 'CHECKOUT_SESSION_CONCURRENCY_CONFLICT') return true;
   return false;
+}
+
+export function adoptCheckoutIdentityFromError(err, current = {}) {
+  const details = err?.response?.data?.details || {};
+  const nextCheckoutId =
+    (typeof details.checkoutId === 'string' && details.checkoutId.trim()) ||
+    (typeof err?.response?.data?.checkoutId === 'string' && err.response.data.checkoutId.trim()) ||
+    current.checkoutId ||
+    null;
+  const rawVersion = details.sessionVersion ?? current.sessionVersion ?? null;
+  const nextSessionVersion = Number.isFinite(Number(rawVersion)) ? Number(rawVersion) : current.sessionVersion;
+  return {
+    checkoutId: nextCheckoutId,
+    sessionVersion: nextSessionVersion,
+    adopted: Boolean(nextCheckoutId && nextCheckoutId !== current.checkoutId)
+  };
+}
+
+/** Map FINALIZE_INTENT_INVALID field paths to confirm-booking form element ids. */
+export function resolveFinalizeIntentInvalidFocusTarget(err) {
+  const field = err?.response?.data?.details?.field || err?.details?.field || '';
+  const normalized = String(field);
+  if (normalized.includes('phone')) return 'confirm-phone';
+  if (normalized.includes('email')) return 'confirm-email';
+  if (normalized.includes('firstName')) return 'confirm-first-name';
+  if (normalized.includes('lastName')) return 'confirm-last-name';
+  if (normalized.includes('acceptedTerms') || normalized.includes('termsVersion') || normalized.includes('checkbox1')) {
+    return 'confirm-agreed-to-terms';
+  }
+  if (normalized.includes('acceptedActivityRisk') || normalized.includes('activityRisk') || normalized.includes('checkbox2')) {
+    return 'confirm-agreed-to-activity-risk';
+  }
+  if (normalized.includes('guestInfo')) return 'confirm-first-name';
+  return null;
+}
+
+export function focusCheckoutValidationField(fieldId) {
+  if (!fieldId || typeof document === 'undefined') return false;
+  const el = document.getElementById(fieldId);
+  if (!el) return false;
+  try {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } catch {
+    // ignore scroll failures
+  }
+  if (typeof el.focus === 'function') {
+    try {
+      el.focus({ preventScroll: true });
+    } catch {
+      el.focus();
+    }
+  }
+  return true;
 }
 
 export function mapCreateBookingErrorMessage(err, fallback) {
@@ -874,9 +943,7 @@ const ConfirmBooking = () => {
   const [lockedPromoCode, setLockedPromoCode] = useState(promoSeed);
   const [promoDraft, setPromoDraft] = useState(promoSeed || '');
   const [promoMessage, setPromoMessage] = useState(null);
-  const [checkoutId, setCheckoutId] = useState(() => (
-    checkoutSessionV2Enabled ? null : createCheckoutId()
-  ));
+  const [checkoutId, setCheckoutId] = useState(() => createCheckoutId());
   const [canonicalPaymentIntentId, setCanonicalPaymentIntentId] = useState(null);
   const [quoteSnapshotHash, setQuoteSnapshotHash] = useState('');
   const [sessionVersion, setSessionVersion] = useState(1);
@@ -979,10 +1046,28 @@ const ConfirmBooking = () => {
     if (!checkoutSessionV2Enabled) return;
     const stored = readCheckoutSessionV2Storage(checkoutSessionV2BoundaryKey);
     const restored = restoreV2SessionFieldsFromStorage(stored);
-    setCheckoutId(restored.checkoutId);
+    if (restored.checkoutId) {
+      setCheckoutId(restored.checkoutId);
+      setSessionVersion(restored.sessionVersion || 1);
+    } else {
+      // Mint a stable V2 identity before the first payment-preparation request.
+      const minted = createCheckoutId();
+      setCheckoutId(minted);
+      setSessionVersion(1);
+      writeCheckoutSessionV2Storage({
+        commercialBoundaryKey: checkoutSessionV2BoundaryKey,
+        checkoutId: minted,
+        canonicalPaymentIntentId: null,
+        quoteSnapshotHash: '',
+        sessionVersion: 1,
+        voucherRedemptionId: null,
+        stripeAmountCents: 0,
+        noPaymentRequired: false,
+        clientSecretPresent: false
+      });
+    }
     setCanonicalPaymentIntentId(restored.canonicalPaymentIntentId);
     setQuoteSnapshotHash(restored.quoteSnapshotHash);
-    setSessionVersion(restored.sessionVersion);
     setVoucherRedemptionId(restored.voucherRedemptionId);
     setStripeAmountCents(restored.stripeAmountCents);
     setNoPaymentRequired(restored.noPaymentRequired);
@@ -1216,7 +1301,8 @@ const ConfirmBooking = () => {
 
   const clearV2CheckoutPaymentState = useCallback(() => {
     clearCheckoutSessionV2Storage();
-    setCheckoutId(null);
+    const minted = createCheckoutId();
+    setCheckoutId(minted);
     setCanonicalPaymentIntentId(null);
     setQuoteSnapshotHash('');
     setSessionVersion(1);
@@ -1527,7 +1613,16 @@ const ConfirmBooking = () => {
       payload.bookingReminderConsent = false;
       payload.marketingConsent = false;
 
-      if (shouldPersistFinalizeIntent()) {
+      // Always attach finalize payload when guest+legal are ready so payment preparation
+      // does not depend on Vite flag skew with server FINALIZE_INTENT_REQUIRED_FOR_PI.
+      const guestOk =
+        !!formData.firstName?.trim() &&
+        !!formData.lastName?.trim() &&
+        !!formData.email?.trim() &&
+        !!formData.phone?.trim() &&
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim());
+      const legalOk = !!formData.agreedToTerms && !!formData.agreedToActivityRisk;
+      if (checkoutSessionV2Enabled && guestOk && legalOk) {
         const attrPayload = getAttributionPayload();
         const finalizeBody = buildFinalizeIntentClientPayload({
           formData,
@@ -1542,19 +1637,43 @@ const ConfirmBooking = () => {
 
       let res;
       let lastErr = null;
+      let activeCheckoutId = checkoutId;
+      let activeSessionVersion = sessionVersion;
       for (let attempt = 1; attempt <= PAYMENT_PREP_MAX_ATTEMPTS; attempt += 1) {
         try {
+          if (activeCheckoutId) {
+            payload.checkoutId = activeCheckoutId;
+          }
+          if (payload.expectedSessionVersion != null || payload.guestInfo) {
+            payload.expectedSessionVersion = activeSessionVersion;
+          }
           res = await bookingAPI.createPaymentIntent(payload);
           lastErr = null;
           break;
         } catch (attemptErr) {
           lastErr = attemptErr;
+          const adopted = adoptCheckoutIdentityFromError(attemptErr, {
+            checkoutId: activeCheckoutId,
+            sessionVersion: activeSessionVersion
+          });
+          if (adopted.checkoutId) {
+            activeCheckoutId = adopted.checkoutId;
+            payload.checkoutId = adopted.checkoutId;
+            if (adopted.checkoutId !== checkoutId) {
+              setCheckoutId(adopted.checkoutId);
+            }
+          }
+          if (adopted.sessionVersion != null && Number.isFinite(Number(adopted.sessionVersion))) {
+            activeSessionVersion = Number(adopted.sessionVersion);
+            payload.expectedSessionVersion = activeSessionVersion;
+            if (activeSessionVersion !== sessionVersion) {
+              setSessionVersion(activeSessionVersion);
+            }
+          }
           if (attempt >= PAYMENT_PREP_MAX_ATTEMPTS || !shouldRetryPaymentPreparation(attemptErr)) {
             throw attemptErr;
           }
           await sleep(PAYMENT_PREP_RETRY_DELAY_MS * attempt);
-          // Keep the same checkout identity for idempotent retry.
-          if (checkoutId) payload.checkoutId = checkoutId;
         }
       }
       if (lastErr) throw lastErr;
@@ -1659,6 +1778,12 @@ const ConfirmBooking = () => {
     } catch (err) {
       if (checkoutSessionV2Enabled) {
         const code = extractCheckoutApiErrorCode(err);
+        if (code === 'FINALIZE_INTENT_INVALID') {
+          const focusId = resolveFinalizeIntentInvalidFocusTarget(err);
+          if (focusId) {
+            focusCheckoutValidationField(focusId);
+          }
+        }
         const handling = getV2CheckoutInitErrorHandling(code);
         if (handling.clearAll) {
           clearV2CheckoutPaymentState();
@@ -2639,6 +2764,7 @@ const ConfirmBooking = () => {
         <div className="py-4 border-t border-gray-200 space-y-4">
           <label className="flex items-start gap-3 cursor-pointer">
             <input
+              id="confirm-agreed-to-terms"
               type="checkbox"
               checked={!!formData.agreedToTerms}
               onChange={(e) => handleFormChange('agreedToTerms', e.target.checked)}
@@ -2657,6 +2783,7 @@ const ConfirmBooking = () => {
           </label>
           <label className="flex items-start gap-3 cursor-pointer">
             <input
+              id="confirm-agreed-to-activity-risk"
               type="checkbox"
               checked={!!formData.agreedToActivityRisk}
               onChange={(e) => handleFormChange('agreedToActivityRisk', e.target.checked)}

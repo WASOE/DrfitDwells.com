@@ -476,10 +476,21 @@ async function syncVoucherReservation({
 }
 
 async function ensureSessionFromQuote({ checkoutId, input, quote, metadata }) {
-  if (checkoutId) {
-    return refreshCheckoutSessionQuote({ checkoutId, input, quote });
+  if (!checkoutId) {
+    return createCheckoutSession({ input, quote, metadata });
   }
-  return createCheckoutSession({ input, quote, metadata });
+
+  try {
+    await loadSessionOrThrow(checkoutId);
+  } catch (err) {
+    if (err?.code !== CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_FOUND) {
+      throw err;
+    }
+    // Client-minted cold-start identity: adopt the supplied checkoutId.
+    return createCheckoutSession({ input, quote, metadata, checkoutId });
+  }
+
+  return refreshCheckoutSessionQuote({ checkoutId, input, quote });
 }
 
 async function clearCanonicalForNoPayment({ session, stripe }) {
@@ -538,6 +549,50 @@ async function ensureCanonicalPaymentIntent({
   voucherAdapter = defaultVoucherAdapter,
   attachPaymentIntent = defaultAttachPaymentIntent
 }) {
+  const clientExpectedRaw =
+    input?.expectedSessionVersion ?? input?.sessionVersion ?? null;
+
+  // Capture pre-existing session version before any same-request quote refresh.
+  let versionBeforeQuoteSync = null;
+  if (checkoutId) {
+    try {
+      const existing = await loadSessionOrThrow(checkoutId);
+      versionBeforeQuoteSync = Number(existing.sessionVersion) || 1;
+    } catch (err) {
+      if (err?.code !== CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_FOUND) {
+        throw err;
+      }
+      // Cold-start with client-minted id: no prior server session.
+      versionBeforeQuoteSync = null;
+    }
+  }
+
+  if (
+    versionBeforeQuoteSync != null &&
+    clientExpectedRaw != null &&
+    clientExpectedRaw !== ''
+  ) {
+    const clientExpected = Number(clientExpectedRaw);
+    if (!Number.isInteger(clientExpected) || clientExpected < 1) {
+      throw new CheckoutSessionError(
+        CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_INVALID,
+        'expectedSessionVersion is invalid',
+        { field: 'expectedSessionVersion', checkoutId }
+      );
+    }
+    if (clientExpected !== versionBeforeQuoteSync) {
+      throw new CheckoutSessionError(
+        CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_SESSION_VERSION_CONFLICT,
+        'Checkout session version conflict',
+        {
+          expectedSessionVersion: clientExpected,
+          sessionVersion: versionBeforeQuoteSync,
+          checkoutId
+        }
+      );
+    }
+  }
+
   let sessionResult = await ensureSessionFromQuote({ checkoutId, input, quote, metadata });
   let session = sessionResult.session;
   assertSessionUsable(session);
@@ -558,6 +613,8 @@ async function ensureCanonicalPaymentIntent({
   const {
     ensureFinalizeIntentForPaymentPreparation
   } = require('./finalizeIntentService');
+  // Persist against the authoritative session version after create/load/refresh.
+  // Cold-start browser defaults must not invalidate a session created in this request.
   const finalizePrep = await ensureFinalizeIntentForPaymentPreparation({
     session,
     body: input || {},
@@ -566,7 +623,7 @@ async function ensureCanonicalPaymentIntent({
       userAgent: null,
       acceptLanguage: null
     },
-    expectedSessionVersion: input?.expectedSessionVersion ?? input?.sessionVersion ?? null,
+    expectedSessionVersion: Number(session.sessionVersion) || 1,
     stripe
   });
   session = finalizePrep.session || session;

@@ -179,15 +179,24 @@ async function loadSessionOrThrow(checkoutId) {
 /**
  * Create session after a successful quote (C2D: first payment-intent request).
  * Skips `quoted` — payable state is set immediately from snapshot cents.
+ * Optional `checkoutId` lets a client-minted identity be adopted on cold start.
  */
-async function createCheckoutSession({ input, quote, metadata = null }) {
+async function createCheckoutSession({ input, quote, metadata = null, checkoutId = null } = {}) {
   const normalizedInput = normalizeCheckoutSessionInput(input);
   const quoteSnapshot = buildQuoteSnapshot({ normalizedInput, quote });
   const quoteSnapshotHash = hashQuoteSnapshot(quoteSnapshot);
   const payable = resolvePayableState(quoteSnapshot);
 
+  const resolvedCheckoutId =
+    typeof checkoutId === 'string' && checkoutId.trim()
+      ? (() => {
+          assertValidCheckoutId(checkoutId.trim());
+          return checkoutId.trim();
+        })()
+      : mintCheckoutId();
+
   const session = await CheckoutSession.create({
-    checkoutId: mintCheckoutId(),
+    checkoutId: resolvedCheckoutId,
     flowVersion: 'v2',
     status: payable.status,
     paymentStatus: payable.paymentStatus,
@@ -228,7 +237,8 @@ async function createCheckoutSession({ input, quote, metadata = null }) {
   return {
     session,
     quoteSnapshotHash,
-    requiresPaymentIntentRefresh: false
+    requiresPaymentIntentRefresh: false,
+    created: true
   };
 }
 
@@ -296,7 +306,8 @@ async function refreshCheckoutSessionQuote({ checkoutId, input, quote }) {
     previousQuoteSnapshotHash,
     quoteSnapshotHash,
     quoteSnapshotHashChanged: hashChanged,
-    requiresPaymentIntentRefresh
+    requiresPaymentIntentRefresh,
+    created: false
   };
 }
 

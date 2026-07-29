@@ -7,7 +7,9 @@ import {
   buildFinalizeIntentClientPayload,
   mapPaymentPreparationErrorMessage,
   shouldRetryPaymentPreparation,
-  shouldPersistFinalizeIntent
+  shouldPersistFinalizeIntent,
+  adoptCheckoutIdentityFromError,
+  resolveFinalizeIntentInvalidFocusTarget
 } from './ConfirmBooking';
 import {
   LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
@@ -53,6 +55,8 @@ describe('ConfirmBooking payment preparation helpers', () => {
     expect(payload.legalAcceptance.checkbox2TextSnapshot).toBe(LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT);
     expect(payload.legalAcceptance.termsVersion).toBe(LEGAL_ACCEPTANCE_TERMS_VERSION);
     expect(payload.legalAcceptance.activityRiskVersion).toBe(LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION);
+    expect(payload.guestInfo.phone).toBe('+359888000111');
+    expect(payload.guestInfo.phoneNumber).toBeUndefined();
   });
 
   it('29-30. raw FINALIZE_INTENT_MISSING / internal messages are never returned', () => {
@@ -88,11 +92,54 @@ describe('ConfirmBooking payment preparation helpers', () => {
 
   it('27. transient failures are retryable; validation is not', () => {
     expect(
-      shouldRetryPaymentPreparation({ response: { status: 503, data: { code: 'FINALIZE_INTENT_REQUIRED' } } })
+      shouldRetryPaymentPreparation({ response: { status: 503, data: { code: 'UPSTREAM_TIMEOUT' } } })
     ).toBe(true);
+    expect(
+      shouldRetryPaymentPreparation({
+        response: {
+          status: 409,
+          data: { code: 'FINALIZE_INTENT_REQUIRED', details: { checkoutId: 'chk_adopt_me' } }
+        }
+      })
+    ).toBe(true);
+    expect(
+      shouldRetryPaymentPreparation({
+        response: { status: 409, data: { code: 'FINALIZE_INTENT_REQUIRED' } }
+      })
+    ).toBe(false);
     expect(
       shouldRetryPaymentPreparation({ response: { status: 400, data: { code: 'FINALIZE_INTENT_INVALID' } } })
     ).toBe(false);
+    expect(
+      shouldRetryPaymentPreparation({
+        response: { status: 409, data: { code: 'FINALIZE_INTENT_SESSION_VERSION_CONFLICT' } }
+      })
+    ).toBe(false);
+  });
+
+  it('11. adopts checkoutId from safe error details before retry', () => {
+    const adopted = adoptCheckoutIdentityFromError(
+      {
+        response: {
+          data: {
+            code: 'FINALIZE_INTENT_REQUIRED',
+            details: { checkoutId: 'chk_server_minted', sessionVersion: 2 }
+          }
+        }
+      },
+      { checkoutId: null, sessionVersion: 1 }
+    );
+    expect(adopted.checkoutId).toBe('chk_server_minted');
+    expect(adopted.sessionVersion).toBe(2);
+    expect(adopted.adopted).toBe(true);
+  });
+
+  it('focuses the invalid phone field instead of generic-only handling', () => {
+    expect(
+      resolveFinalizeIntentInvalidFocusTarget({
+        response: { data: { details: { field: 'guestInfo.phone' } } }
+      })
+    ).toBe('confirm-phone');
   });
 
   it('persist flag helper stays aligned for strict mode', () => {

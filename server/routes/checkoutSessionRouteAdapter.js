@@ -78,13 +78,19 @@ function mapCheckoutSessionErrorToHttp(err) {
 
   const publicMessage = PUBLIC_SAFE_MESSAGES[code] || null;
   const details = err?.details ?? null;
-  const safeDetails =
-    details && typeof details === 'object'
-      ? {
-          ...(details.field ? { field: details.field } : {}),
-          ...(details.checkoutId ? { checkoutId: details.checkoutId } : {})
-        }
-      : null;
+  const safeDetails = {};
+  if (details && typeof details === 'object') {
+    if (details.field) safeDetails.field = details.field;
+    if (details.checkoutId) safeDetails.checkoutId = details.checkoutId;
+    if (details.sessionVersion != null) safeDetails.sessionVersion = details.sessionVersion;
+    if (details.expectedSessionVersion != null) {
+      safeDetails.expectedSessionVersion = details.expectedSessionVersion;
+    }
+  }
+  // Always surface checkoutId when the server already minted a session for this attempt.
+  if (!safeDetails.checkoutId && err?.details?.checkoutId) {
+    safeDetails.checkoutId = err.details.checkoutId;
+  }
 
   return {
     status,
@@ -92,7 +98,7 @@ function mapCheckoutSessionErrorToHttp(err) {
       success: false,
       code,
       message: publicMessage || err?.message || code,
-      details: safeDetails && Object.keys(safeDetails).length ? safeDetails : null
+      details: Object.keys(safeDetails).length ? safeDetails : null
     }
   };
 }
