@@ -417,9 +417,9 @@ export function useLocationRetreatBooking({
             email: formData.email.trim(),
             phone: formData.phone.trim() || undefined
           },
-          quoteDeliveryRequested: !!formData.quoteDeliveryRequested,
-          bookingReminderConsent: !!formData.bookingReminderConsent,
-          marketingConsent: !!formData.marketingConsent,
+          quoteDeliveryRequested: false,
+          bookingReminderConsent: false,
+          marketingConsent: false,
           ...(roomAllocationPayload ? { roomAllocation: roomAllocationPayload } : {})
         });
 

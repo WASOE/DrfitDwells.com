@@ -279,16 +279,12 @@ function buildValidatedFinalizeIntent({ body, requestMeta, capturedAt, quoteSnap
   const transportMethod = normalizeTransportMethod(body.transportMethod);
   const romanticSetup = Boolean(body.romanticSetup);
 
-  const consentsRaw = body.consents && typeof body.consents === 'object' ? body.consents : body;
-  const consents = {
-    quoteDeliveryRequested: Boolean(
-      consentsRaw.quoteDeliveryRequested ?? body.quoteDeliveryRequested
-    ),
-    bookingReminderConsent: Boolean(
-      consentsRaw.bookingReminderConsent ?? body.bookingReminderConsent
-    ),
-    marketingConsent: Boolean(consentsRaw.marketingConsent ?? body.marketingConsent)
-  };
+  const consents = normalizeOptionalAccommodationConsents({
+    consents: body.consents,
+    quoteDeliveryRequested: body.quoteDeliveryRequested,
+    bookingReminderConsent: body.bookingReminderConsent,
+    marketingConsent: body.marketingConsent
+  });
 
   const attribution = sanitizeAttribution(body.attribution);
   const metaClientContext = sanitizeMetaClientContext(body.metaClientContext) || null;
@@ -410,6 +406,34 @@ function sessionHasCompleteFinalizeIntent(session) {
   }
 }
 
+/**
+ * True when the payment-preparation request carries enough fields to build finalizeIntent.
+ */
+function paymentRequestHasFinalizeIntentPayload(body) {
+  if (!body || typeof body !== 'object') return false;
+  const guest = body.guestInfo;
+  const legal = body.legalAcceptance;
+  return Boolean(guest && typeof guest === 'object' && legal && typeof legal === 'object');
+}
+
+/**
+ * Normalize optional accommodation consents for new finalize intents.
+ * Absent/invalid values become false; never coerced to true from non-boolean truthy junk.
+ */
+function normalizeOptionalAccommodationConsents(body = {}) {
+  const consentsRaw = body.consents && typeof body.consents === 'object' ? body.consents : body;
+  const asExplicitTrue = (value) => value === true;
+  return {
+    quoteDeliveryRequested: asExplicitTrue(
+      consentsRaw.quoteDeliveryRequested ?? body.quoteDeliveryRequested
+    ),
+    bookingReminderConsent: asExplicitTrue(
+      consentsRaw.bookingReminderConsent ?? body.bookingReminderConsent
+    ),
+    marketingConsent: asExplicitTrue(consentsRaw.marketingConsent ?? body.marketingConsent)
+  };
+}
+
 function assertFinalizeIntentAvailableForPi(session) {
   if (!isFinalizeIntentRequiredForPiEnabled()) {
     return { ok: true, required: false };
@@ -422,6 +446,141 @@ function assertFinalizeIntentAvailableForPi(session) {
     );
   }
   return { ok: true, required: true };
+}
+
+/**
+ * Server-owned orchestration: ensure CheckoutSession has a complete finalizeIntent
+ * before a payable PaymentIntent is created/reused. Uses existing persistFinalizeIntent.
+ *
+ * - Reuses an existing matching intent.
+ * - Persists from payment-request payload when missing.
+ * - Rejects material conflicts with an immutable existing intent.
+ */
+async function ensureFinalizeIntentForPaymentPreparation({
+  session,
+  body,
+  requestMeta,
+  expectedSessionVersion = null,
+  stripe = null
+} = {}) {
+  const required = isFinalizeIntentRequiredForPiEnabled();
+  const persistEnabled = isFinalizeIntentPersistEnabled();
+  const hasPayload = paymentRequestHasFinalizeIntentPayload(body);
+
+  if (sessionHasCompleteFinalizeIntent(session)) {
+    if (hasPayload) {
+      const candidate = buildValidatedFinalizeIntent({
+        body,
+        requestMeta: session.finalizeIntent.requestMeta || {
+          ip: null,
+          userAgent: null,
+          acceptLanguage: null
+        },
+        capturedAt: session.finalizeIntentCapturedAt || session.finalizeIntent.capturedAt || new Date(),
+        quoteSnapshot: session.quoteSnapshot
+      });
+      // Preserve server-owned meta on the stored intent for material comparison.
+      candidate.requestMeta = session.finalizeIntent.requestMeta;
+      if (!materialFinalizeIntentEqual(session.finalizeIntent, candidate)) {
+        throw new CheckoutSessionError(
+          CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_IMMUTABLE,
+          'Submitted finalizeIntent conflicts with the persisted intent for this checkout',
+          { checkoutId: session.checkoutId }
+        );
+      }
+    }
+    return {
+      session,
+      reused: true,
+      persisted: false,
+      finalizeIntentHash: session.finalizeIntentHash
+    };
+  }
+
+  if (!required && !persistEnabled) {
+    return { session, reused: false, persisted: false, skipped: true };
+  }
+
+  if (!hasPayload) {
+    if (required) {
+      throw new CheckoutSessionError(
+        CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_REQUIRED,
+        'finalizeIntent is required before creating a payable PaymentIntent',
+        { checkoutId: session?.checkoutId || null }
+      );
+    }
+    return { session, reused: false, persisted: false, skipped: true };
+  }
+
+  if (!persistEnabled && required) {
+    // Strict PI requirement still needs persistence capability.
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_PERSIST_DISABLED,
+      'Finalize intent persistence is disabled'
+    );
+  }
+
+  const persistBody = {
+    ...body,
+    consents: normalizeOptionalAccommodationConsents(body)
+  };
+
+  try {
+    const result = await persistFinalizeIntent({
+      checkoutId: session.checkoutId,
+      body: persistBody,
+      requestMeta,
+      expectedSessionVersion:
+        expectedSessionVersion != null
+          ? expectedSessionVersion
+          : body?.expectedSessionVersion ?? body?.sessionVersion ?? null,
+      stripe
+    });
+
+    const refreshed = await loadSessionOrThrow(session.checkoutId);
+    return {
+      session: refreshed,
+      reused: Boolean(result.idempotentReplay),
+      persisted: true,
+      finalizeIntentHash: result.finalizeIntentHash,
+      sessionVersion: result.sessionVersion,
+      metadataSync: result.metadataSync || null
+    };
+  } catch (err) {
+    // Concurrent identical preparation: peer won the persist race.
+    if (err?.code === CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_SESSION_VERSION_CONFLICT) {
+      const refreshed = await loadSessionOrThrow(session.checkoutId);
+      if (sessionHasCompleteFinalizeIntent(refreshed)) {
+        if (hasPayload) {
+          const candidate = buildValidatedFinalizeIntent({
+            body,
+            requestMeta: refreshed.finalizeIntent.requestMeta || {
+              ip: null,
+              userAgent: null,
+              acceptLanguage: null
+            },
+            capturedAt:
+              refreshed.finalizeIntentCapturedAt ||
+              refreshed.finalizeIntent.capturedAt ||
+              new Date(),
+            quoteSnapshot: refreshed.quoteSnapshot
+          });
+          candidate.requestMeta = refreshed.finalizeIntent.requestMeta;
+          if (!materialFinalizeIntentEqual(refreshed.finalizeIntent, candidate)) {
+            throw err;
+          }
+        }
+        return {
+          session: refreshed,
+          reused: true,
+          persisted: false,
+          finalizeIntentHash: refreshed.finalizeIntentHash,
+          concurrentPersistResolved: true
+        };
+      }
+    }
+    throw err;
+  }
 }
 
 async function retrieveCanonicalPiStatus(stripe, paymentIntentId) {
@@ -721,7 +880,10 @@ module.exports = {
   hashFinalizeIntent,
   materialFinalizeIntentEqual,
   sessionHasCompleteFinalizeIntent,
+  paymentRequestHasFinalizeIntentPayload,
+  normalizeOptionalAccommodationConsents,
   assertFinalizeIntentAvailableForPi,
+  ensureFinalizeIntentForPaymentPreparation,
   syncFinalizeIntentHashToPaymentIntent,
   persistFinalizeIntent,
   normalizeExperienceKeys,

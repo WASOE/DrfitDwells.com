@@ -23,11 +23,6 @@ import {
   LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
   LEGAL_ACCEPTANCE_TERMS_VERSION
 } from '../constants/legalAcceptance';
-import {
-  QUOTE_DELIVERY_CONSENT_TEXT,
-  BOOKING_REMINDER_CONSENT_TEXT,
-  MARKETING_CONSENT_TEXT
-} from '../constants/quoteContactConsent';
 import { getListingCoverImage } from '../utils/listingGalleryUtils';
 import { isCheckoutSessionV2Enabled } from '../utils/checkoutSessionV2Flags';
 import {
@@ -386,9 +381,9 @@ export function buildRedirectBookingPayloadFromPending(
       phone: fd.phone || ''
     },
     specialRequests: fd.specialRequests || '',
-    quoteDeliveryRequested: !!fd.quoteDeliveryRequested,
-    bookingReminderConsent: !!fd.bookingReminderConsent,
-    marketingConsent: !!fd.marketingConsent,
+    quoteDeliveryRequested: false,
+    bookingReminderConsent: false,
+    marketingConsent: false,
     legalAcceptance: {
       acceptedTermsAndCancellation: !!fd.agreedToTerms,
       acceptedActivityRisk: !!fd.agreedToActivityRisk,
@@ -516,9 +511,9 @@ export function buildCreateBookingPayload({
       phone: formData.phone.trim()
     },
     specialRequests: formData.specialRequests.trim(),
-    quoteDeliveryRequested: !!formData.quoteDeliveryRequested,
-    bookingReminderConsent: !!formData.bookingReminderConsent,
-    marketingConsent: !!formData.marketingConsent,
+    quoteDeliveryRequested: false,
+    bookingReminderConsent: false,
+    marketingConsent: false,
     legalAcceptance: {
       acceptedTermsAndCancellation: !!formData.agreedToTerms,
       acceptedActivityRisk: !!formData.agreedToActivityRisk,
@@ -583,9 +578,9 @@ export function buildFinalizeIntentClientPayload({
       locale: language || undefined
     },
     consents: {
-      quoteDeliveryRequested: !!formData.quoteDeliveryRequested,
-      bookingReminderConsent: !!formData.bookingReminderConsent,
-      marketingConsent: !!formData.marketingConsent
+      quoteDeliveryRequested: false,
+      bookingReminderConsent: false,
+      marketingConsent: false
     },
     experienceKeys: Array.from(selectedExpKeys),
     tripType: tripType || null,
@@ -621,7 +616,72 @@ export function clearCheckoutStorageAfterSuccessfulBooking({
   }
 }
 
+export function mapPaymentPreparationErrorMessage(err, fallback) {
+  const code = extractCheckoutApiErrorCode(err);
+  if (
+    code === 'FINALIZE_INTENT_REQUIRED' ||
+    code === 'FINALIZE_INTENT_MISSING' ||
+    code === 'FINALIZE_INTENT_HASH_MISMATCH' ||
+    code === 'FINALIZE_INTENT_METADATA_SYNC_FAILED' ||
+    code === 'FINALIZE_INTENT_PERSIST_DISABLED'
+  ) {
+    return 'We couldn’t prepare the secure payment form. Please try again.';
+  }
+  if (code === 'FINALIZE_INTENT_INVALID') {
+    return 'Please check your guest details and legal acknowledgments, then try again.';
+  }
+  if (code === 'FINALIZE_INTENT_IMMUTABLE') {
+    return 'Your booking details were already locked for payment. Please refresh and continue, or start a new checkout if you need to change them.';
+  }
+  if (code === 'FINALIZE_INTENT_SESSION_VERSION_CONFLICT') {
+    return 'This checkout was updated elsewhere. Please refresh and try again.';
+  }
+  const raw = err?.response?.data?.message || err?.message || '';
+  if (
+    typeof raw === 'string' &&
+    (/finalizeIntent/i.test(raw) ||
+      /FINALIZE_INTENT/i.test(raw) ||
+      /Missing or invalid field/i.test(raw) ||
+      /mongoose/i.test(raw) ||
+      /stack/i.test(raw) ||
+      /client_secret/i.test(raw))
+  ) {
+    return fallback || 'We couldn’t prepare the secure payment form. Please try again.';
+  }
+  const v2Handling = getV2CheckoutInitErrorHandling(code);
+  if (v2Handling.message) return v2Handling.message;
+  return fallback || 'We couldn’t prepare the secure payment form. Please try again.';
+}
+
+const PAYMENT_PREP_MAX_ATTEMPTS = 3;
+const PAYMENT_PREP_RETRY_DELAY_MS = 400;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function shouldRetryPaymentPreparation(err) {
+  const status = err?.response?.status;
+  const code = extractCheckoutApiErrorCode(err);
+  if (code === 'FINALIZE_INTENT_INVALID' || code === 'FINALIZE_INTENT_IMMUTABLE') {
+    return false;
+  }
+  if (status == null) return true;
+  if (status === 429 || status >= 500) return true;
+  if (status === 409 && code === 'FINALIZE_INTENT_REQUIRED') return true;
+  if (status === 409 && code === 'CHECKOUT_SESSION_CONCURRENCY_CONFLICT') return true;
+  return false;
+}
+
 export function mapCreateBookingErrorMessage(err, fallback) {
+  const prepMessage = mapPaymentPreparationErrorMessage(err, null);
+  if (
+    prepMessage &&
+    extractCheckoutApiErrorCode(err) &&
+    String(extractCheckoutApiErrorCode(err)).startsWith('FINALIZE_INTENT')
+  ) {
+    return prepMessage;
+  }
   const code = extractCheckoutApiErrorCode(err);
   const v2Handling = getV2CheckoutInitErrorHandling(code);
   if (v2Handling.message) {
@@ -633,7 +693,10 @@ export function mapCreateBookingErrorMessage(err, fallback) {
   if (code === 'CHECKOUT_ID_CONFLICT') {
     return 'We already received this booking attempt. Please refresh to view the latest result.';
   }
-  return err?.response?.data?.message || err?.message || fallback;
+  return mapPaymentPreparationErrorMessage(
+    err,
+    err?.response?.data?.message || err?.message || fallback
+  );
 }
 
 const DEFAULT_EXPERIENCES = [
@@ -1459,65 +1522,43 @@ const ConfirmBooking = () => {
       if (formData.email?.trim()) {
         payload.guestEmail = formData.email.trim().toLowerCase();
       }
-      payload.quoteDeliveryRequested = !!formData.quoteDeliveryRequested;
-      payload.bookingReminderConsent = !!formData.bookingReminderConsent;
-      payload.marketingConsent = !!formData.marketingConsent;
+      // Optional marketing/quote consents are no longer collected on accommodation checkout.
+      payload.quoteDeliveryRequested = false;
+      payload.bookingReminderConsent = false;
+      payload.marketingConsent = false;
 
-      const persistIntentIfNeeded = async (targetCheckoutId, expectedVersion = sessionVersion) => {
-        if (!shouldPersistFinalizeIntent() || !targetCheckoutId) return expectedVersion;
+      if (shouldPersistFinalizeIntent()) {
         const attrPayload = getAttributionPayload();
-        const persistBody = buildFinalizeIntentClientPayload({
+        const finalizeBody = buildFinalizeIntentClientPayload({
           formData,
           selectedExpKeys,
           language,
           attribution: attrPayload && Object.values(attrPayload).some(Boolean) ? attrPayload : null,
           metaClientContext: getMetaClientContextPayload(),
-          expectedSessionVersion: expectedVersion
+          expectedSessionVersion: sessionVersion
         });
-        const persistRes = await bookingAPI.persistFinalizeIntent(targetCheckoutId, persistBody);
-        if (!persistRes.data?.success || !persistRes.data?.finalizeIntentHash) {
-          throw new Error(persistRes.data?.message || 'Could not save booking details before payment.');
-        }
-        const nextVersion = Number(persistRes.data.sessionVersion) || expectedVersion;
-        setSessionVersion(nextVersion);
-        return nextVersion;
-      };
-
-      if (
-        finalizeIntentRequiredForPiEnabled &&
-        checkoutSessionV2Enabled &&
-        checkoutId &&
-        formData.agreedToTerms &&
-        formData.agreedToActivityRisk
-      ) {
-        await persistIntentIfNeeded(checkoutId, sessionVersion);
-        payload.checkoutId = checkoutId;
+        Object.assign(payload, finalizeBody);
       }
 
       let res;
-      try {
-        res = await bookingAPI.createPaymentIntent(payload);
-      } catch (firstErr) {
-        const code = extractCheckoutApiErrorCode(firstErr);
-        const detailCheckoutId =
-          firstErr?.response?.data?.details?.checkoutId ||
-          firstErr?.response?.data?.checkoutId ||
-          null;
-        if (
-          code === 'FINALIZE_INTENT_REQUIRED' &&
-          checkoutSessionV2Enabled &&
-          (detailCheckoutId || checkoutId)
-        ) {
-          const resolvedId = String(detailCheckoutId || checkoutId).trim();
-          setCheckoutId(resolvedId);
-          await persistIntentIfNeeded(resolvedId, sessionVersion);
-          payload.checkoutId = resolvedId;
+      let lastErr = null;
+      for (let attempt = 1; attempt <= PAYMENT_PREP_MAX_ATTEMPTS; attempt += 1) {
+        try {
           res = await bookingAPI.createPaymentIntent(payload);
-        } else {
-          throw firstErr;
+          lastErr = null;
+          break;
+        } catch (attemptErr) {
+          lastErr = attemptErr;
+          if (attempt >= PAYMENT_PREP_MAX_ATTEMPTS || !shouldRetryPaymentPreparation(attemptErr)) {
+            throw attemptErr;
+          }
+          await sleep(PAYMENT_PREP_RETRY_DELAY_MS * attempt);
+          // Keep the same checkout identity for idempotent retry.
+          if (checkoutId) payload.checkoutId = checkoutId;
         }
       }
-      if (!res.data?.success) {
+      if (lastErr) throw lastErr;
+      if (!res?.data?.success) {
         throw new Error(t('confirm.paymentSetupFailed'));
       }
 
@@ -1634,10 +1675,15 @@ const ConfirmBooking = () => {
           }
         }
         setCheckoutInitError(
-          handling.message || err.response?.data?.message || t('confirm.paymentSetupFailed')
+          mapPaymentPreparationErrorMessage(
+            err,
+            handling.message || t('confirm.paymentSetupFailed')
+          )
         );
       } else {
-        setCheckoutInitError(err.response?.data?.message || t('confirm.paymentSetupFailed'));
+        setCheckoutInitError(
+          mapPaymentPreparationErrorMessage(err, t('confirm.paymentSetupFailed'))
+        );
       }
     } finally {
       setCheckoutInitLoading(false);
@@ -1669,9 +1715,6 @@ const ConfirmBooking = () => {
     formData.phone,
     formData.agreedToTerms,
     formData.agreedToActivityRisk,
-    formData.quoteDeliveryRequested,
-    formData.bookingReminderConsent,
-    formData.marketingConsent,
     formData.specialRequests,
     selectedExpKeys,
     language,
@@ -1906,13 +1949,18 @@ const ConfirmBooking = () => {
     }
 
     // Re-ensure canonical PI so metadata carries finalizeIntentHash before confirmPayment.
+    // Server persists finalizeIntent from this same payload when missing (no two-request race).
     const ensurePayload = {
       checkIn: formatDateOnlyLocal(checkIn),
       checkOut: formatDateOnlyLocal(checkOut),
       adults,
       children,
       experienceKeys: Array.from(selectedExpKeys).sort(),
-      checkoutId
+      checkoutId,
+      ...payload,
+      quoteDeliveryRequested: false,
+      bookingReminderConsent: false,
+      marketingConsent: false
     };
     if (bookingEntityType === 'cabinType') {
       ensurePayload.cabinTypeId = bookingEntityId;
@@ -2618,44 +2666,6 @@ const ConfirmBooking = () => {
               {LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT}
             </span>
           </label>
-          <div className="pt-2 space-y-3 border-t border-gray-100">
-            <p className="text-xs text-gray-500">
-              Optional contact preferences. Declining does not block booking.
-            </p>
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={!!formData.quoteDeliveryRequested}
-                onChange={(e) => handleFormChange('quoteDeliveryRequested', e.target.checked)}
-                className="mt-0.5 w-5 h-5 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
-              />
-              <span className="text-sm text-gray-800 leading-relaxed">
-                {QUOTE_DELIVERY_CONSENT_TEXT}
-              </span>
-            </label>
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={!!formData.bookingReminderConsent}
-                onChange={(e) => handleFormChange('bookingReminderConsent', e.target.checked)}
-                className="mt-0.5 w-5 h-5 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
-              />
-              <span className="text-sm text-gray-800 leading-relaxed">
-                {BOOKING_REMINDER_CONSENT_TEXT}
-              </span>
-            </label>
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={!!formData.marketingConsent}
-                onChange={(e) => handleFormChange('marketingConsent', e.target.checked)}
-                className="mt-0.5 w-5 h-5 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
-              />
-              <span className="text-sm text-gray-800 leading-relaxed">
-                {MARKETING_CONSENT_TEXT}
-              </span>
-            </label>
-          </div>
         </div>
 
         {/* Payment - Stripe when configured, else pay on arrival */}
@@ -2669,7 +2679,9 @@ const ConfirmBooking = () => {
                 disabled={continueToPayDisabled}
                 className="w-full h-12 rounded-xl bg-[#81887A] text-white font-semibold hover:opacity-95 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {checkoutInitLoading ? t('confirm.processingPayment') : 'Continue to secure payment'}
+                {checkoutInitLoading
+                  ? 'Preparing secure payment…'
+                  : 'Continue to secure payment'}
               </button>
               {continueToPayDisabled && !checkoutInitLoading ? (
                 <div className="mt-3 space-y-1 text-sm text-gray-700" role="status" aria-live="polite">
@@ -2816,7 +2828,19 @@ const ConfirmBooking = () => {
               ) : null}
             </>
           ) : null}
-          {checkoutInitError ? <p className="mt-2 text-sm text-red-600">{checkoutInitError}</p> : null}
+          {checkoutInitError ? (
+            <div className="mt-3 space-y-2">
+              <p className="text-sm text-red-600">{checkoutInitError}</p>
+              <button
+                type="button"
+                onClick={initializeCheckoutPayment}
+                disabled={checkoutInitLoading || continueToPayDisabled}
+                className="text-sm font-semibold text-[#81887A] underline disabled:opacity-50"
+              >
+                Retry
+              </button>
+            </div>
+          ) : null}
         </div>
         </div>
 

@@ -56,13 +56,43 @@ function mapCheckoutSessionErrorToHttp(err) {
     mapFinalizeCheckoutSessionErrorToHttpStatus(code, err) ??
     CHECKOUT_SESSION_ERROR_HTTP[code] ??
     409;
+
+  const PUBLIC_SAFE_MESSAGES = {
+    [CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_REQUIRED]:
+      'We couldn’t prepare the secure payment form. Please try again.',
+    [CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_MISSING]:
+      'We couldn’t prepare the secure payment form. Please try again.',
+    [CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_INVALID]:
+      'Please check your guest details and legal acknowledgments, then try again.',
+    [CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_HASH_MISMATCH]:
+      'We couldn’t prepare the secure payment form. Please try again.',
+    [CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_IMMUTABLE]:
+      'Your booking details were already locked for payment. Please refresh and continue, or start a new checkout if you need to change them.',
+    [CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_METADATA_SYNC_FAILED]:
+      'We couldn’t prepare the secure payment form. Please try again.',
+    [CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_SESSION_VERSION_CONFLICT]:
+      'This checkout was updated elsewhere. Please refresh and try again.',
+    [CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_PERSIST_DISABLED]:
+      'We couldn’t prepare the secure payment form. Please try again.'
+  };
+
+  const publicMessage = PUBLIC_SAFE_MESSAGES[code] || null;
+  const details = err?.details ?? null;
+  const safeDetails =
+    details && typeof details === 'object'
+      ? {
+          ...(details.field ? { field: details.field } : {}),
+          ...(details.checkoutId ? { checkoutId: details.checkoutId } : {})
+        }
+      : null;
+
   return {
     status,
     body: {
       success: false,
       code,
-      message: err?.message || code,
-      details: err?.details ?? null
+      message: publicMessage || err?.message || code,
+      details: safeDetails && Object.keys(safeDetails).length ? safeDetails : null
     }
   };
 }
@@ -347,9 +377,13 @@ async function handleCreatePaymentIntentV2(req, stripeClient) {
       ? req.body.checkoutId.trim()
       : null;
 
+  const { buildRequestMetaFromReq } = require('../services/checkout/finalizeIntentService');
   const dto = await ensureCanonicalPaymentIntentFn({
     checkoutId,
-    input: req.body,
+    input: {
+      ...(req.body || {}),
+      __requestMeta: buildRequestMetaFromReq(req)
+    },
     quote: buildEnsureQuoteFromPublicResult(quoteResult),
     stripe: stripeClient
   });
@@ -415,9 +449,9 @@ async function handleCreatePaymentIntentV2(req, stripeClient) {
     scheduleSavedQuoteTask('capture-consent-on-pi', () =>
       captureQuoteContactConsent({
         email: guestEmail,
-        quoteDeliveryRequested: req.body.quoteDeliveryRequested,
-        bookingReminderConsent: req.body.bookingReminderConsent,
-        marketingConsent: req.body.marketingConsent,
+        quoteDeliveryRequested: req.body.quoteDeliveryRequested === true,
+        bookingReminderConsent: req.body.bookingReminderConsent === true,
+        marketingConsent: req.body.marketingConsent === true,
         sourceSurface: 'confirm_booking',
         checkoutSessionId: dto.checkoutId || checkoutId,
         propertyKind: quoteResult.entity?.propertyKind || null,

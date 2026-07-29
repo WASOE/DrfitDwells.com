@@ -555,6 +555,22 @@ async function ensureCanonicalPaymentIntent({
     session = await loadSessionOrThrow(session.checkoutId);
   }
 
+  const {
+    ensureFinalizeIntentForPaymentPreparation
+  } = require('./finalizeIntentService');
+  const finalizePrep = await ensureFinalizeIntentForPaymentPreparation({
+    session,
+    body: input || {},
+    requestMeta: (input && input.__requestMeta) || {
+      ip: null,
+      userAgent: null,
+      acceptLanguage: null
+    },
+    expectedSessionVersion: input?.expectedSessionVersion ?? input?.sessionVersion ?? null,
+    stripe
+  });
+  session = finalizePrep.session || session;
+
   const snapshot = session.quoteSnapshot || {};
   const needsCard = session.stripeAmountCents > 0;
   const noPaymentRequired =
