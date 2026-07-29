@@ -1,4 +1,7 @@
 const ManualReviewItem = require('../../models/ManualReviewItem');
+const {
+  NON_PAID_PAYMENT_UNLINKED_RESOLUTION_NOTE
+} = require('./paymentLinkageRequirementPolicy');
 
 function normalizeString(value) {
   if (value == null) return null;
@@ -6,22 +9,17 @@ function normalizeString(value) {
   return next || null;
 }
 
-async function resolvePaymentUnlinkedReviews({
+async function resolveOpenPaymentUnlinkedReviews({
   paymentId,
   paymentIntentId,
-  reservationId,
-  resolvedBy = 'payment_linking_service',
-  note = 'Auto-resolved: payment now linked to booking.'
+  resolvedBy,
+  note
 }) {
   const paymentIdStr = normalizeString(paymentId);
   const paymentIntentIdStr = normalizeString(paymentIntentId);
-  const reservationIdStr = normalizeString(reservationId);
 
   if (!paymentIdStr && !paymentIntentIdStr) {
     return { attempted: false, resolvedCount: 0, reason: 'missing_lookup_keys' };
-  }
-  if (!reservationIdStr) {
-    return { attempted: false, resolvedCount: 0, reason: 'missing_reservation_id' };
   }
 
   const now = new Date();
@@ -35,6 +33,9 @@ async function resolvePaymentUnlinkedReviews({
   if (paymentIntentIdStr) {
     orFilters.push({
       'evidence.providerReference': paymentIntentIdStr
+    });
+    orFilters.push({
+      'evidence.paymentIntentId': paymentIntentIdStr
     });
   }
 
@@ -63,6 +64,46 @@ async function resolvePaymentUnlinkedReviews({
   };
 }
 
+async function resolvePaymentUnlinkedReviews({
+  paymentId,
+  paymentIntentId,
+  reservationId,
+  resolvedBy = 'payment_linking_service',
+  note = 'Auto-resolved: payment now linked to booking.'
+}) {
+  const reservationIdStr = normalizeString(reservationId);
+  if (!reservationIdStr) {
+    return { attempted: false, resolvedCount: 0, reason: 'missing_reservation_id' };
+  }
+
+  return resolveOpenPaymentUnlinkedReviews({
+    paymentId,
+    paymentIntentId,
+    resolvedBy,
+    note
+  });
+}
+
+/**
+ * Idempotently resolve open payment_unlinked reviews when payment evidence is non-paid.
+ * Preserves audit history (resolve, do not delete).
+ */
+async function resolvePaymentUnlinkedReviewsForNonPaidPayment({
+  paymentId,
+  paymentIntentId,
+  resolvedBy = 'stripe_ingestion_non_paid',
+  note = NON_PAID_PAYMENT_UNLINKED_RESOLUTION_NOTE
+} = {}) {
+  return resolveOpenPaymentUnlinkedReviews({
+    paymentId,
+    paymentIntentId,
+    resolvedBy,
+    note: normalizeString(note) || NON_PAID_PAYMENT_UNLINKED_RESOLUTION_NOTE
+  });
+}
+
 module.exports = {
-  resolvePaymentUnlinkedReviews
+  resolvePaymentUnlinkedReviews,
+  resolvePaymentUnlinkedReviewsForNonPaidPayment,
+  NON_PAID_PAYMENT_UNLINKED_RESOLUTION_NOTE
 };

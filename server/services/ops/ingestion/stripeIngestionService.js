@@ -7,6 +7,14 @@ const PaymentFinalization = require('../../../models/PaymentFinalization');
 const { openManualReviewItem } = require('./manualReviewService');
 const { activatePaidVoucherFromStripeEvent } = require('../../giftVouchers/giftVoucherPaymentService');
 const { linkStripePaymentToBooking } = require('../../payments/paymentLinkingService');
+const {
+  resolvePaymentUnlinkedReviewsForNonPaidPayment
+} = require('../../payments/paymentReviewResolutionService');
+const {
+  isDefinitivelySuccessfulPaymentStatus,
+  shouldRequireBookingLinkage,
+  shouldResolvePaymentUnlinkedAsNonPaid
+} = require('../../payments/paymentLinkageRequirementPolicy');
 const { notifyOpsPushPaymentAlert } = require('../push/opsPushEventNotifications');
 const {
   buildPaymentUnlinkedObservabilityEvidence
@@ -25,7 +33,11 @@ function mapPaymentStatusFromStripeEvent(event) {
   const obj = event.data?.object || {};
   if (type === 'payment_intent.succeeded') return 'paid';
   if (type === 'payment_intent.payment_failed') return 'failed';
+  if (type === 'payment_intent.canceled') return 'failed';
   if (type === 'payment_intent.created') return 'unpaid';
+  if (type === 'payment_intent.processing' || type === 'payment_intent.requires_action') {
+    return 'unpaid';
+  }
   if (type === 'charge.dispute.created') return 'disputed';
   if (type === 'charge.refunded') {
     const amount = Number(obj.amount || 0);
@@ -36,6 +48,20 @@ function mapPaymentStatusFromStripeEvent(event) {
     if (obj.status === 'failed' || type === 'refund.failed') return 'failed';
     if (obj.status === 'succeeded') return 'refunded';
     return 'partial';
+  }
+  // Fallback for other payment_intent.* events using Stripe PI status.
+  if (obj.object === 'payment_intent' && typeof type === 'string' && type.startsWith('payment_intent.')) {
+    const stripeStatus = String(obj.status || '').toLowerCase();
+    if (isDefinitivelySuccessfulPaymentStatus(stripeStatus)) return 'paid';
+    if (stripeStatus === 'canceled' || stripeStatus === 'cancelled') return 'failed';
+    if (
+      stripeStatus === 'requires_payment_method'
+      || stripeStatus === 'requires_confirmation'
+      || stripeStatus === 'requires_action'
+      || stripeStatus === 'processing'
+    ) {
+      return 'unpaid';
+    }
   }
   return null;
 }
@@ -58,7 +84,8 @@ function extractCanonicalPaymentIntentId(event) {
 }
 
 function isPaidLikeStatus(status) {
-  return status === 'paid' || status === 'partial';
+  // Auto-link attempts: paid money or remaining partial capture/refund residue.
+  return isDefinitivelySuccessfulPaymentStatus(status) || status === 'partial';
 }
 
 function amountsMatchWithCentTolerance(left, right) {
@@ -128,8 +155,9 @@ async function upsertCanonicalPaymentFromEvent(event) {
 
   const providerReference = extractPaymentReference(event);
   if (!providerReference) {
+    // Missing reference is not a paid-unlinked case; do not open payment_unlinked.
     await openManualReviewItem({
-      category: 'payment_unlinked',
+      category: 'provider_reference_inconsistent',
       severity: 'high',
       entityType: 'Payment',
       entityId: null,
@@ -199,7 +227,24 @@ async function upsertCanonicalPaymentFromEvent(event) {
     );
   }
 
-  if (isGiftVoucherPaymentMetadata(paymentMetadata)) {
+  const isGiftVoucher = isGiftVoucherPaymentMetadata(paymentMetadata);
+  if (isGiftVoucher) {
+    return payment;
+  }
+
+  const requiresBookingLinkage = shouldRequireBookingLinkage({
+    paymentStatus,
+    amountReceived: amount,
+    isGiftVoucher: false
+  });
+
+  if (!requiresBookingLinkage) {
+    if (shouldResolvePaymentUnlinkedAsNonPaid(paymentStatus)) {
+      await resolvePaymentUnlinkedReviewsForNonPaidPayment({
+        paymentId: payment._id,
+        paymentIntentId: paymentIntentId || providerReference
+      });
+    }
     return payment;
   }
 
