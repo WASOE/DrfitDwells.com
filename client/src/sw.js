@@ -2,7 +2,7 @@
 import { clientsClaim } from 'workbox-core';
 import { cleanupOutdatedCaches, createHandlerBoundToURL, precacheAndRoute } from 'workbox-precaching';
 import { NavigationRoute, registerRoute } from 'workbox-routing';
-import { StaleWhileRevalidate } from 'workbox-strategies';
+import { NetworkOnly, StaleWhileRevalidate } from 'workbox-strategies';
 import { sanitizeOpsPushClickUrl } from '../../shared/ops/sanitizeOpsPushClickUrl.js';
 
 self.skipWaiting();
@@ -16,6 +16,15 @@ const navigationRoute = new NavigationRoute(navigationHandler, {
   denylist: [/^\/api\//, /^\/uploads\//, /\.pdf($|\?)/i]
 });
 registerRoute(navigationRoute);
+
+// Payment/API routes are network-only — never serve cached create-payment-intent responses.
+registerRoute(
+  ({ url }) =>
+    url.pathname.startsWith('/api/') ||
+    url.pathname.includes('create-payment-intent') ||
+    url.pathname.includes('checkout-session'),
+  new NetworkOnly()
+);
 
 registerRoute(
   ({ url }) => url.pathname.startsWith('/guides/the-cabin/'),

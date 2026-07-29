@@ -89,6 +89,7 @@ export const bookingAPI = {
   getConfig: () => api.get('/bookings/config'),
   quote: (data) => api.post('/bookings/quote', { ...data, ...getFunnelIdentityPayload() }),
   createPaymentIntent: (data) => api.post('/bookings/create-payment-intent', data),
+  getCheckoutCapabilities: () => api.get('/bookings/checkout-capabilities'),
   persistFinalizeIntent: (checkoutId, data) =>
     api.put(
       `/bookings/checkout-sessions/${encodeURIComponent(String(checkoutId ?? '').trim())}/finalize-intent`,

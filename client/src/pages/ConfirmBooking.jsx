@@ -29,6 +29,10 @@ import {
   isFinalizeIntentPersistEnabled,
   isFinalizeIntentRequiredForPiEnabled
 } from '../utils/finalizeIntentFlags';
+import {
+  evaluateCheckoutCapabilityCompatibility,
+  getClientCheckoutCapabilitySnapshot
+} from '../utils/checkoutCapabilityHandshake';
 import { isCheckoutRecoveryUxEnabled } from '../utils/checkoutRecoveryUxFlags';
 import {
   readCheckoutRecoveryState,
@@ -1580,6 +1584,24 @@ const ConfirmBooking = () => {
       setClientSecret(null);
     }
     try {
+      try {
+        const capsRes = await bookingAPI.getCheckoutCapabilities();
+        const compat = evaluateCheckoutCapabilityCompatibility(
+          capsRes?.data,
+          getClientCheckoutCapabilitySnapshot()
+        );
+        if (!compat.ok && compat.shouldReload) {
+          setCheckoutInitError(
+            'A newer version of checkout is required. Reloading to continue securely…'
+          );
+          window.setTimeout(() => {
+            window.location.reload();
+          }, 600);
+          return;
+        }
+      } catch {
+        // Capabilities are advisory; continue with payment preparation.
+      }
       const payload = {
         checkIn: formatDateOnlyLocal(checkIn),
         checkOut: formatDateOnlyLocal(checkOut),
@@ -1613,8 +1635,10 @@ const ConfirmBooking = () => {
       payload.bookingReminderConsent = false;
       payload.marketingConsent = false;
 
-      // Always attach finalize payload when guest+legal are ready so payment preparation
-      // does not depend on Vite flag skew with server FINALIZE_INTENT_REQUIRED_FOR_PI.
+      // Always attach finalize payload when guest+legal are ready. Do not gate on
+      // checkoutSessionV2Enabled alone — a strict finalize server with a client that
+      // omitted VITE_CHECKOUT_SESSION_V2 previously skipped this and returned
+      // FINALIZE_INTENT_REQUIRED before Stripe Elements could load.
       const guestOk =
         !!formData.firstName?.trim() &&
         !!formData.lastName?.trim() &&
@@ -1622,7 +1646,7 @@ const ConfirmBooking = () => {
         !!formData.phone?.trim() &&
         /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim());
       const legalOk = !!formData.agreedToTerms && !!formData.agreedToActivityRisk;
-      if (checkoutSessionV2Enabled && guestOk && legalOk) {
+      if (guestOk && legalOk) {
         const attrPayload = getAttributionPayload();
         const finalizeBody = buildFinalizeIntentClientPayload({
           formData,

@@ -69,6 +69,7 @@ const { isCheckoutSessionError } = require('../services/checkout/checkoutSession
 const {
   shouldUseCheckoutSessionV2,
   handleGetCheckoutSession,
+  getCheckoutPaymentCapabilities,
   handleCreatePaymentIntentV2,
   handlePersistFinalizeIntent,
   formatPublicCheckoutSessionState,
@@ -621,6 +622,11 @@ router.post('/quote', bookingQuoteLimiter, bookingQuoteBodyValidators, async (re
   }
 });
 
+// GET /api/bookings/checkout-capabilities — release handshake / flag contract
+router.get('/checkout-capabilities', async (req, res) => {
+  return res.status(200).json(getCheckoutPaymentCapabilities());
+});
+
 // GET /api/bookings/checkout-sessions/:checkoutId — safe CheckoutSession V2 state (no Stripe, no secrets)
 router.get('/checkout-sessions/:checkoutId', async (req, res) => {
   try {
@@ -727,9 +733,29 @@ router.post('/create-payment-intent', paymentIntentLimiter, bookingQuoteBodyVali
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      const {
+        mintPaymentPrepCorrelationId,
+        logPaymentPreparationFailure
+      } = require('../services/checkout/paymentPreparationObservability');
+      const correlationId = mintPaymentPrepCorrelationId();
+      const first = errors.array()[0] || {};
+      logPaymentPreparationFailure({
+        correlationId,
+        checkoutId: normalizeCheckoutId(req.body?.checkoutId) || null,
+        httpStatus: 400,
+        code: 'PAYMENT_PREP_VALIDATION_FAILED',
+        stage: 'express_validator',
+        retryable: false
+      });
       return res.status(400).json({
         success: false,
-        message: 'Validation failed',
+        code: 'PAYMENT_PREP_VALIDATION_FAILED',
+        message: 'Please check your booking details and try again.',
+        details: {
+          correlationId,
+          field: first.path || first.param || null,
+          checkoutId: normalizeCheckoutId(req.body?.checkoutId) || null
+        },
         errors: errors.array()
       });
     }

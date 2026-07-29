@@ -74,9 +74,16 @@ const featureFlags = {
     return configured.includes(normalized);
   },
 
-  // CheckoutSession V2: canonical PI per session (default off in all environments).
+  // CheckoutSession V2: canonical PI per session.
+  // Explicit CHECKOUT_SESSION_V2 wins; otherwise strict finalize-intent flags imply V2
+  // so REQUIRED_FOR_PI cannot run on the legacy create-PI path.
   isCheckoutSessionV2Enabled() {
-    return this._parseBoolean(process.env.CHECKOUT_SESSION_V2);
+    if (this._parseBoolean(process.env.CHECKOUT_SESSION_V2)) {
+      return true;
+    }
+    return (
+      this.isFinalizeIntentPersistEnabled() || this.isFinalizeIntentRequiredForPiEnabled()
+    );
   },
 
   /** Batch 4B: quote-delivery recovery emails. Default OFF. */

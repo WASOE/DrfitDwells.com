@@ -486,9 +486,20 @@ describe('ConfirmBooking V2 flag default', () => {
 
   it('flag off means isCheckoutSessionV2Enabled is false by default', async () => {
     vi.stubEnv('VITE_CHECKOUT_SESSION_V2', undefined);
+    vi.stubEnv('VITE_FINALIZE_INTENT_PERSIST', undefined);
+    vi.stubEnv('VITE_FINALIZE_INTENT_REQUIRED_FOR_PI', undefined);
     vi.resetModules();
     const { isCheckoutSessionV2Enabled } = await import('../utils/checkoutSessionV2Flags.js');
     expect(isCheckoutSessionV2Enabled()).toBe(false);
+  });
+
+  it('infers V2 when strict finalize Vite flags are compiled on', async () => {
+    vi.stubEnv('VITE_CHECKOUT_SESSION_V2', undefined);
+    vi.stubEnv('VITE_FINALIZE_INTENT_PERSIST', '1');
+    vi.stubEnv('VITE_FINALIZE_INTENT_REQUIRED_FOR_PI', '1');
+    vi.resetModules();
+    const { isCheckoutSessionV2Enabled } = await import('../utils/checkoutSessionV2Flags.js');
+    expect(isCheckoutSessionV2Enabled()).toBe(true);
   });
 });
 

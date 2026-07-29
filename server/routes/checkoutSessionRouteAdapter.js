@@ -22,6 +22,13 @@ const STRIPE_MINIMUM_CHARGE_CENTS = 50;
 
 const NO_PAYMENT_FINALIZE_STATUSES = new Set(['voucher_only_reserved', 'payment_not_required']);
 
+const {
+  mintPaymentPrepCorrelationId,
+  logPaymentPreparationFailure,
+  isRetryablePaymentPrepCode,
+  applicationRelease
+} = require('../services/checkout/paymentPreparationObservability');
+
 const ROUTE_AMOUNT_ERROR_CODES = {
   CHECKOUT_INVALID_AMOUNT: 'CHECKOUT_INVALID_AMOUNT',
   CHECKOUT_AMOUNT_BELOW_STRIPE_MINIMUM: 'CHECKOUT_AMOUNT_BELOW_STRIPE_MINIMUM'
@@ -91,6 +98,23 @@ function mapCheckoutSessionErrorToHttp(err) {
   if (!safeDetails.checkoutId && err?.details?.checkoutId) {
     safeDetails.checkoutId = err.details.checkoutId;
   }
+
+  const correlationId = mintPaymentPrepCorrelationId();
+  safeDetails.correlationId = correlationId;
+
+  logPaymentPreparationFailure({
+    correlationId,
+    checkoutId: safeDetails.checkoutId || null,
+    httpStatus: status,
+    code,
+    stage: 'checkout_session_error',
+    sessionVersion: safeDetails.sessionVersion ?? null,
+    finalizeIntentPresent: false,
+    finalizeIntentHashPresent: false,
+    canonicalPaymentIntentPresent: false,
+    retryable: isRetryablePaymentPrepCode(code),
+    frontendRelease: null
+  });
 
   return {
     status,
@@ -341,6 +365,23 @@ async function handleGetCheckoutSession(checkoutId) {
   };
 }
 
+/**
+ * Public capability contract for checkout payment preparation.
+ * Used by the client release handshake to detect incompatible bundles.
+ */
+function getCheckoutPaymentCapabilities() {
+  return {
+    success: true,
+    flowVersion: featureFlags.isCheckoutSessionV2Enabled() ? 'v2' : 'legacy',
+    checkoutSessionV2: featureFlags.isCheckoutSessionV2Enabled(),
+    finalizeIntentPersist: featureFlags.isFinalizeIntentPersistEnabled(),
+    finalizeIntentRequiredForPi: featureFlags.isFinalizeIntentRequiredForPiEnabled(),
+    requiresFinalizeIntentPayload: featureFlags.isFinalizeIntentRequiredForPiEnabled(),
+    applicationRelease: applicationRelease(),
+    contractVersion: 1
+  };
+}
+
 async function handleCreatePaymentIntentV2(req, stripeClient) {
   const quoteResult = await require('../services/bookingQuoteService').buildPublicBookingQuote(
     req.body
@@ -533,6 +574,7 @@ module.exports = {
   validateV2QuoteAmountsBeforeEnsure,
   cardPaymentRequiredFromQuote,
   handleGetCheckoutSession,
+  getCheckoutPaymentCapabilities,
   handleCreatePaymentIntentV2,
   handlePersistFinalizeIntent,
   __setEnsureCanonicalPaymentIntentForTesting(fn) {
