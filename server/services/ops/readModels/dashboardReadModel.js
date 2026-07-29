@@ -114,6 +114,82 @@ function hydrateAlerts(alerts = []) {
     .slice(0, 8);
 }
 
+/**
+ * Stable sync-source identity for dashboard recovery logic.
+ * Outcome / anomalyType are intentionally excluded so a later success
+ * for the same feed suppresses earlier warnings/failures.
+ */
+function buildSyncSourceKey(event) {
+  const cabinId = event?.cabinId != null ? String(event.cabinId) : '';
+  const channel = event?.channel != null ? String(event.channel) : '';
+  const feedUrl =
+    event?.metadata?.feedUrl != null && String(event.metadata.feedUrl).trim()
+      ? String(event.metadata.feedUrl).trim()
+      : '';
+  const unitId =
+    event?.metadata?.unitId != null && String(event.metadata.unitId).trim()
+      ? String(event.metadata.unitId).trim()
+      : '';
+  return `${cabinId}|${channel}|${feedUrl}|${unitId}`;
+}
+
+/**
+ * Latest ChannelSyncEvent per sync source within [since, now], retaining only
+ * sources whose newest outcome is still warning/failed. History is never mutated.
+ */
+async function queryUnresolvedLatestSyncIssues({ since, limit = 5 } = {}) {
+  const sinceDate = since instanceof Date ? since : new Date(since);
+  const maxEvents = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 5;
+
+  const [facet] = await ChannelSyncEvent.aggregate([
+    { $match: { runAt: { $gte: sinceDate } } },
+    { $sort: { runAt: -1, _id: -1 } },
+    {
+      $group: {
+        _id: {
+          cabinId: '$cabinId',
+          channel: '$channel',
+          feedUrl: { $ifNull: ['$metadata.feedUrl', ''] },
+          unitId: {
+            $let: {
+              vars: { raw: { $ifNull: ['$metadata.unitId', ''] } },
+              in: {
+                $cond: [
+                  { $eq: [{ $type: '$$raw' }, 'string'] },
+                  '$$raw',
+                  {
+                    $convert: {
+                      input: '$$raw',
+                      to: 'string',
+                      onError: '',
+                      onNull: ''
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        latest: { $first: '$$ROOT' }
+      }
+    },
+    { $replaceRoot: { newRoot: '$latest' } },
+    { $match: { outcome: { $in: ['warning', 'failed'] } } },
+    { $sort: { runAt: -1, _id: -1 } },
+    {
+      $facet: {
+        count: [{ $count: 'n' }],
+        events: [{ $limit: maxEvents }]
+      }
+    }
+  ]);
+
+  return {
+    unresolvedCount: Number(facet?.count?.[0]?.n || 0),
+    unresolvedEvents: Array.isArray(facet?.events) ? facet.events : []
+  };
+}
+
 async function getDashboardReadModel() {
   const now = new Date();
   const { start: startOfToday } = dayRange(now);
@@ -186,8 +262,7 @@ async function getDashboardReadModel() {
     refundsMTD,
     activeEmailDeliveryFailureCount,
     activeEmailDeliveryFailures,
-    syncEventsRecent,
-    syncWarningsRecent,
+    unresolvedSyncIssues,
     manualReviewOpenCount,
     manualReviewOpenItems,
     upcomingPayouts,
@@ -225,13 +300,15 @@ async function getDashboardReadModel() {
     Payment.countDocuments({ status: 'refunded', updatedAt: { $gte: monthStart, $lt: nextMonthStart } }),
     countActiveFailedDeliveryStates(),
     listActiveFailedDeliveryStates({ limit: 20 }),
-    ChannelSyncEvent.find({ runAt: { $gte: oneWeekAgo }, outcome: { $in: ['warning', 'failed'] } }).sort({ runAt: -1 }).limit(5).lean(),
-    ChannelSyncEvent.countDocuments({ runAt: { $gte: oneWeekAgo }, outcome: { $in: ['warning', 'failed'] } }),
+    queryUnresolvedLatestSyncIssues({ since: oneWeekAgo, limit: 5 }),
     ManualReviewItem.countDocuments({ status: 'open' }),
     ManualReviewItem.find({ status: 'open' }).sort({ severity: -1, createdAt: -1 }).limit(5).lean(),
     Payout.countDocuments({ expectedArrivalDate: { $gte: startOfToday } }),
     StripeEventEvidence.findOne({}).sort({ createdAtProvider: -1 }).lean()
   ]);
+
+  const syncEventsRecent = unresolvedSyncIssues.unresolvedEvents;
+  const syncWarningsRecent = unresolvedSyncIssues.unresolvedCount;
 
   const allBookingRefs = [
     ...arrivingBookings,
@@ -451,20 +528,10 @@ async function getDashboardReadModel() {
   }
 
   if (syncEventsRecent.length > 0) {
-    const rawCount = syncEventsRecent.length;
+    const rawCount = syncWarningsRecent;
     const hasFailed = syncEventsRecent.some((evt) => evt.outcome === 'failed');
     const newestEvent = syncEventsRecent[0];
-    const uniqueSignatureCount = new Set(
-      syncEventsRecent.map((evt) => {
-        const cabinId = evt.cabinId ? String(evt.cabinId) : '';
-        const channel = evt.channel || '';
-        const anomalyType = evt.anomalyType || '';
-        const outcome = evt.outcome || '';
-        const feedUrl = evt.metadata?.feedUrl || '';
-        const unitId = evt.metadata?.unitId || '';
-        return `${cabinId}|${channel}|${anomalyType}|${outcome}|${feedUrl}|${unitId}`;
-      })
-    ).size;
+    const uniqueSignatureCount = new Set(syncEventsRecent.map((evt) => buildSyncSourceKey(evt))).size;
     alerts.push({
       id: 'sync-summary-recent-issues',
       type: 'sync_issue',
@@ -637,5 +704,7 @@ async function getDashboardReadModel() {
 }
 
 module.exports = {
-  getDashboardReadModel
+  getDashboardReadModel,
+  buildSyncSourceKey,
+  queryUnresolvedLatestSyncIssues
 };
