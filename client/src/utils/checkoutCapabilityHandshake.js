@@ -1,5 +1,6 @@
 /**
  * Release handshake: compare compiled client checkout flags with live API capabilities.
+ * Advisory only — never force-reload (that caused customer-visible instability).
  */
 import { isCheckoutSessionV2Enabled } from './checkoutSessionV2Flags';
 import {
@@ -17,8 +18,8 @@ export function getClientCheckoutCapabilitySnapshot() {
 }
 
 /**
- * Returns { ok, reason, shouldReload } when the server requires finalize payload
- * but this bundle cannot satisfy that contract.
+ * Returns { ok, reason, shouldReload }.
+ * shouldReload is always false — callers must not auto-reload the tab.
  */
 export function evaluateCheckoutCapabilityCompatibility(serverCaps, clientCaps = getClientCheckoutCapabilitySnapshot()) {
   if (!serverCaps || typeof serverCaps !== 'object') {
@@ -29,7 +30,7 @@ export function evaluateCheckoutCapabilityCompatibility(serverCaps, clientCaps =
       return {
         ok: false,
         reason: 'stale_client_missing_finalize_support',
-        shouldReload: true
+        shouldReload: false
       };
     }
   }
@@ -37,7 +38,7 @@ export function evaluateCheckoutCapabilityCompatibility(serverCaps, clientCaps =
     return {
       ok: false,
       reason: 'stale_client_missing_v2',
-      shouldReload: true
+      shouldReload: false
     };
   }
   return { ok: true, reason: null, shouldReload: false };

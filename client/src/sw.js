@@ -5,7 +5,13 @@ import { NavigationRoute, registerRoute } from 'workbox-routing';
 import { NetworkOnly, StaleWhileRevalidate } from 'workbox-strategies';
 import { sanitizeOpsPushClickUrl } from '../../shared/ops/sanitizeOpsPushClickUrl.js';
 
-self.skipWaiting();
+// Do not call skipWaiting() on install — that replaces open checkout tabs mid-payment.
+// Clients opt in via postMessage({ type: 'SKIP_WAITING' }) outside active payment flows.
+self.addEventListener('message', (event) => {
+  if (event?.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
 clientsClaim();
 
 precacheAndRoute(self.__WB_MANIFEST);

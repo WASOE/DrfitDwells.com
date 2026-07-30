@@ -1035,6 +1035,21 @@ const ConfirmBooking = () => {
   }), [bookingEntityType, bookingEntityId, checkIn, checkOut]);
 
   useEffect(() => {
+    try {
+      sessionStorage.setItem('dd_payment_flow_active', '1');
+    } catch {
+      /* ignore */
+    }
+    return () => {
+      try {
+        sessionStorage.removeItem('dd_payment_flow_active');
+      } catch {
+        /* ignore */
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (checkoutSessionV2Enabled) {
       setClientSecret(null);
       return;
@@ -1590,13 +1605,10 @@ const ConfirmBooking = () => {
           capsRes?.data,
           getClientCheckoutCapabilitySnapshot()
         );
-        if (!compat.ok && compat.shouldReload) {
+        if (!compat.ok) {
           setCheckoutInitError(
-            'A newer version of checkout is required. Reloading to continue securely…'
+            'This page is out of date for secure checkout. Please refresh once, then try again.'
           );
-          window.setTimeout(() => {
-            window.location.reload();
-          }, 600);
           return;
         }
       } catch {

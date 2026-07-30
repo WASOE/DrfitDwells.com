@@ -137,6 +137,21 @@ export default function GiftVouchers() {
   const scheduledBounds = useMemo(() => getScheduledDeliveryDateBounds(), []);
 
   useEffect(() => {
+    try {
+      sessionStorage.setItem('dd_payment_flow_active', '1');
+    } catch {
+      /* ignore */
+    }
+    return () => {
+      try {
+        sessionStorage.removeItem('dd_payment_flow_active');
+      } catch {
+        /* ignore */
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     giftVoucherAPI
       .getConfig()

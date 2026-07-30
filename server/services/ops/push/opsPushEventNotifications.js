@@ -316,6 +316,41 @@ async function notifyOpsPushPaymentFlowAlert({
   }
 }
 
+async function notifyOpsPushManualReviewOpened({
+  manualReviewItemId,
+  category,
+  failedInvariant = null,
+  correlationId = null
+}) {
+  if (!manualReviewItemId) return;
+  const invariant = failedInvariant ? String(failedInvariant) : 'unspecified';
+  const corr = correlationId ? String(correlationId) : String(manualReviewItemId);
+  try {
+    await safePush({
+      role: 'admin',
+      title: 'Manual review required',
+      body: [
+        `Category: ${category || 'unknown'}`,
+        `Invariant: ${invariant}`,
+        `Ref: ${corr}`
+      ].join(' · '),
+      url: '/ops/manual-review',
+      tag: 'manual-review-opened',
+      dedupeKey: `manual_review:${String(manualReviewItemId)}`,
+      source: 'manual_review_opened'
+    });
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        source: 'ops-push',
+        phase: 'manual_review_opened_notify_error',
+        manualReviewItemId: String(manualReviewItemId),
+        error: err?.message || String(err)
+      })
+    );
+  }
+}
+
 async function notifyOpsPushReviewCreated({ reviewId }) {
   if (!reviewId || !mongoose.Types.ObjectId.isValid(String(reviewId))) {
     return;
@@ -358,6 +393,7 @@ module.exports = {
   notifyOpsPushGiftVoucherSold,
   notifyOpsPushPaymentAlert,
   notifyOpsPushPaymentFlowAlert,
+  notifyOpsPushManualReviewOpened,
   notifyOpsPushReviewCreated,
   __setSendOpsPushSafelyForTesting,
   __resetSendOpsPushSafelyForTesting

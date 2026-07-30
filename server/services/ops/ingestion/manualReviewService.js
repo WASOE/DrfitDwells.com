@@ -44,6 +44,24 @@ async function openManualReviewItem({
     upsert: true,
     new: true
   });
+
+  // Immediate ops push for payment finalization failures (scheduled-job health is a separate track).
+  if (category === 'payment_finalization_failure' && item) {
+    try {
+      const {
+        notifyOpsPushManualReviewOpened
+      } = require('../push/opsPushEventNotifications');
+      await notifyOpsPushManualReviewOpened({
+        manualReviewItemId: item._id,
+        category,
+        failedInvariant: evidence?.failedInvariant || null,
+        correlationId: evidence?.correlationId || provenance?.sourceReference || null
+      });
+    } catch {
+      /* non-fatal */
+    }
+  }
+
   return item;
 }
 

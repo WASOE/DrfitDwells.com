@@ -164,7 +164,11 @@ async function buildPublicBookingQuote(body) {
       totalValueCents: Math.round(quote.totalPrice * 100)
     });
     voucherAppliedCents = Number(voucherPreview.voucherAppliedCents || 0);
-    remainingDueCents = Number(voucherPreview.remainingDueCents || remainingDueCents);
+    // remainingDueCents may be 0 for full voucher coverage — do not use || (falsy trap).
+    remainingDueCents =
+      voucherPreview.remainingDueCents != null && Number.isFinite(Number(voucherPreview.remainingDueCents))
+        ? Number(voucherPreview.remainingDueCents)
+        : remainingDueCents;
     fullVoucherCoverage = Boolean(voucherPreview.fullVoucherCoverage);
     if (voucherPreview.ok === false || voucherPreview.success === false) {
       voucherPreviewError = voucherPreview.publicMessage || voucherPreview.message || 'This voucher cannot be used.';

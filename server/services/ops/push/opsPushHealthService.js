@@ -2,6 +2,7 @@
 
 const OpsPushSubscription = require('../../../models/OpsPushSubscription');
 const OpsPushScheduledJob = require('../../../models/OpsPushScheduledJob');
+const OpsNotification = require('../../../models/OpsNotification');
 const { isVapidConfigured } = require('./opsPushVapidConfig');
 const { getOpsPushSchedulerWorkerState } = require('./opsPushSchedulerWorker');
 
@@ -96,11 +97,26 @@ function buildWorkerHealth() {
   };
 }
 
+async function countImmediateNotifications() {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const [createdLast24h, total] = await Promise.all([
+    OpsNotification.countDocuments({ createdAt: { $gte: since } }),
+    OpsNotification.countDocuments({})
+  ]);
+  return {
+    total,
+    createdLast24h,
+    note:
+      'Immediate pushes create OpsNotification rows. scheduledJobs.failed=0 with createdLast24h=0 means no work, not healthy delivery.'
+  };
+}
+
 async function getOpsPushHealthReadModel() {
   const publicKey = String(process.env.WEB_PUSH_VAPID_PUBLIC_KEY || '').trim();
-  const [subscriptions, scheduledJobs] = await Promise.all([
+  const [subscriptions, scheduledJobs, immediateNotifications] = await Promise.all([
     countSubscriptions(),
-    countScheduledJobsByStatus()
+    countScheduledJobsByStatus(),
+    countImmediateNotifications()
   ]);
 
   return {
@@ -110,7 +126,12 @@ async function getOpsPushHealthReadModel() {
     workerEnabled: isEnvFlagEnabled(ENV_WORKER_FLAG),
     worker: buildWorkerHealth(),
     subscriptions,
-    scheduledJobs
+    scheduledJobs,
+    immediateNotifications,
+    interpretation: {
+      scheduledFailedZeroIsNotProofOfDelivery: true,
+      noJobsMeansNoScheduledWork: scheduledJobs.total === 0
+    }
   };
 }
 

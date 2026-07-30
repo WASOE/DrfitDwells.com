@@ -38,7 +38,13 @@ function buildQuoteFromSnapshot(snapshot) {
   };
 }
 
-function buildPaymentIntentMetadata({ session, snapshot, redemptionId = null }) {
+function buildPaymentIntentMetadata({
+  session,
+  snapshot,
+  redemptionId = null,
+  giftVoucherId = null,
+  reservationKey = null
+}) {
   const checkInDate = snapshot.checkInISO ? new Date(snapshot.checkInISO) : null;
   const checkOutDate = snapshot.checkOutISO ? new Date(snapshot.checkOutISO) : null;
   return {
@@ -61,8 +67,8 @@ function buildPaymentIntentMetadata({ session, snapshot, redemptionId = null }) 
     finalTotalCents: String(snapshot.totalValueCents || 0),
     voucherAppliedCents: String(snapshot.voucherAppliedCents || 0),
     redemptionId: redemptionId ? String(redemptionId) : '',
-    giftVoucherId: '',
-    reservationKey: '',
+    giftVoucherId: giftVoucherId ? String(giftVoucherId) : '',
+    reservationKey: reservationKey ? String(reservationKey) : '',
     finalizeIntentHash: session.finalizeIntentHash || ''
   };
 }
@@ -470,6 +476,11 @@ async function syncVoucherReservation({
 
   if (reservation?.redemptionId) {
     session.voucherRedemptionId = reservation.redemptionId;
+    session.metadata = {
+      ...(session.metadata || {}),
+      giftVoucherId: reservation.giftVoucherId ? String(reservation.giftVoucherId) : null,
+      reservationKey: reservation.reservationKey ? String(reservation.reservationKey) : null
+    };
     await saveSession(session);
   }
   return reservation;
@@ -597,6 +608,52 @@ async function ensureCanonicalPaymentIntent({
   let session = sessionResult.session;
   assertSessionUsable(session);
 
+  // Refuse voucher attach / quote drift after a payment already succeeded on this session.
+  // Otherwise we reserve a voucher against a full-amount paid PI and booking finalization opens MRI.
+  if (session.canonicalPaymentIntentId && stripe?.paymentIntents?.retrieve) {
+    let paidPi = null;
+    try {
+      paidPi = await stripe.paymentIntents.retrieve(String(session.canonicalPaymentIntentId));
+    } catch {
+      paidPi = null;
+    }
+    if (paidPi && TERMINAL_NON_CANCEL_PI_STATUSES.has(paidPi.status)) {
+      const normalizedIncoming = normalizeCheckoutSessionInput(input);
+      const incomingVoucher = Boolean(normalizedIncoming.voucherCode);
+      const sessionAlreadyVouchered =
+        Boolean(session.voucherRedemptionId) || Number(session.giftVoucherAppliedCents || 0) > 0;
+      if (incomingVoucher && !sessionAlreadyVouchered) {
+        throw new CheckoutSessionError(
+          CHECKOUT_SESSION_ERROR_CODES.CANONICAL_PAYMENT_INTENT_MISMATCH,
+          'Payment already completed; voucher cannot be applied to this paid checkout',
+          {
+            checkoutId: session.checkoutId,
+            paymentIntentId: String(paidPi.id),
+            reason: 'voucher_after_paid_pi',
+            mismatchedInvariant: 'voucherAppliedCents'
+          }
+        );
+      }
+      const paidMatch = paymentIntentMatchesSession(
+        paidPi,
+        session,
+        session.voucherRedemptionId ? String(session.voucherRedemptionId) : null
+      );
+      if (!paidMatch.ok && (incomingVoucher || sessionAlreadyVouchered)) {
+        throw new CheckoutSessionError(
+          CHECKOUT_SESSION_ERROR_CODES.CANONICAL_PAYMENT_INTENT_MISMATCH,
+          'Paid payment intent does not match the current voucher reservation or quote',
+          {
+            checkoutId: session.checkoutId,
+            paymentIntentId: String(paidPi.id),
+            reason: paidMatch.message || 'paid_pi_quote_voucher_mismatch',
+            mismatchedInvariant: paidMatch.message || null
+          }
+        );
+      }
+    }
+  }
+
   const voucherReservation = await syncVoucherReservation({ session, input, quote, voucherAdapter });
   if (voucherReservation) {
     sessionResult = await refreshCheckoutSessionQuote({
@@ -644,10 +701,44 @@ async function ensureCanonicalPaymentIntent({
   }
 
   const redemptionId = session.voucherRedemptionId ? String(session.voucherRedemptionId) : null;
+  const giftVoucherId = session.metadata?.giftVoucherId
+    ? String(session.metadata.giftVoucherId)
+    : null;
+  const reservationKey = session.metadata?.reservationKey
+    ? String(session.metadata.reservationKey)
+    : null;
   const hashChanged = Boolean(sessionResult.quoteSnapshotHashChanged);
   const mustSupersede = hashChanged && Boolean(session.canonicalPaymentIntentId);
 
   if (mustSupersede) {
+    // Never supersede a succeeded/processing PI into a second charge after quote/voucher drift.
+    let terminalPi = null;
+    try {
+      terminalPi = await stripe.paymentIntents.retrieve(String(session.canonicalPaymentIntentId));
+    } catch {
+      terminalPi = null;
+    }
+    if (terminalPi && TERMINAL_NON_CANCEL_PI_STATUSES.has(terminalPi.status)) {
+      const match = paymentIntentMatchesSession(terminalPi, session, redemptionId);
+      if (!match.ok) {
+        throw new CheckoutSessionError(
+          CHECKOUT_SESSION_ERROR_CODES.CANONICAL_PAYMENT_INTENT_MISMATCH,
+          'Paid payment intent does not match the current voucher reservation or quote',
+          {
+            checkoutId: session.checkoutId,
+            paymentIntentId: String(terminalPi.id),
+            reason: match.message || 'paid_pi_quote_voucher_mismatch',
+            mismatchedInvariant: match.message || null
+          }
+        );
+      }
+      return buildEnsureDto(session, {
+        clientSecret: terminalPi.client_secret || null,
+        idempotentReplay: true,
+        requiresPaymentIntentRefresh: false,
+        canonicalPaymentIntentSucceeded: terminalPi.status === 'succeeded'
+      });
+    }
     await supersedeCanonicalPaymentIntent({ session, reason: 'quote_snapshot_hash_changed', stripe });
     session = await loadSessionOrThrow(session.checkoutId);
   }
@@ -679,6 +770,19 @@ async function ensureCanonicalPaymentIntent({
   }
 
   if (reuseResult?.succeeded || reuseResult?.processing) {
+    const match = paymentIntentMatchesSession(reuseResult.pi, session, redemptionId);
+    if (!match.ok) {
+      throw new CheckoutSessionError(
+        CHECKOUT_SESSION_ERROR_CODES.CANONICAL_PAYMENT_INTENT_MISMATCH,
+        'Paid payment intent does not match the current voucher reservation or quote',
+        {
+          checkoutId: session.checkoutId,
+          paymentIntentId: String(reuseResult.pi?.id || ''),
+          reason: match.message || 'paid_pi_quote_voucher_mismatch',
+          mismatchedInvariant: match.message || null
+        }
+      );
+    }
     return buildEnsureDto(session, {
       clientSecret: reuseResult.pi?.client_secret || null,
       idempotentReplay: false,
@@ -703,7 +807,13 @@ async function ensureCanonicalPaymentIntent({
   const pi = await createStripePaymentIntent(stripe, {
     amountCents: session.stripeAmountCents,
     currency: defaultCurrency(),
-    metadata: buildPaymentIntentMetadata({ session, snapshot, redemptionId }),
+    metadata: buildPaymentIntentMetadata({
+      session,
+      snapshot,
+      redemptionId,
+      giftVoucherId,
+      reservationKey
+    }),
     checkoutId: session.checkoutId,
     quoteSnapshotHash: session.quoteSnapshotHash
   });

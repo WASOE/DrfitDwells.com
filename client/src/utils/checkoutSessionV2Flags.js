@@ -1,29 +1,17 @@
 /**
  * Client feature flag for CheckoutSession V2 (must align with server CHECKOUT_SESSION_V2).
  *
- * Strict finalize-intent builds imply V2 payment preparation: if the Vite finalize
- * flags are on but VITE_CHECKOUT_SESSION_V2 was omitted from the build env, treat V2
- * as enabled so guestInfo/legalAcceptance are still submitted.
+ * Explicit VITE_CHECKOUT_SESSION_V2 only. Finalize-intent Vite flags must not imply V2:
+ * that hid misconfigured builds and made client behavior diverge from ops intent.
+ * Payment preparation still attaches guestInfo/legalAcceptance whenever guest+legal
+ * are ready (ConfirmBooking), independent of this flag.
  */
-import {
-  isFinalizeIntentPersistEnabled,
-  isFinalizeIntentRequiredForPiEnabled
-} from './finalizeIntentFlags';
-
-function parseEnvFlag(raw) {
-  if (typeof raw !== 'string') return false;
-  const normalized = raw.trim().toLowerCase();
-  return normalized === 'true' || normalized === '1' || normalized === 'on' || normalized === 'yes';
-}
+import { parseBooleanFlag } from '@shared/env/parseBooleanFlag';
 
 export function isCheckoutSessionV2FlagExplicitlyEnabled() {
-  return parseEnvFlag(import.meta.env.VITE_CHECKOUT_SESSION_V2);
+  return parseBooleanFlag(import.meta.env.VITE_CHECKOUT_SESSION_V2);
 }
 
 export function isCheckoutSessionV2Enabled() {
-  if (isCheckoutSessionV2FlagExplicitlyEnabled()) {
-    return true;
-  }
-  // Infer V2 when strict finalize flags are compiled into the bundle.
-  return isFinalizeIntentPersistEnabled() || isFinalizeIntentRequiredForPiEnabled();
+  return isCheckoutSessionV2FlagExplicitlyEnabled();
 }

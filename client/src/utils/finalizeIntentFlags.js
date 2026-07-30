@@ -9,22 +9,12 @@
  * for the same release, otherwise persist/required mismatch fails closed
  * (persist 403 / FINALIZE_INTENT_REQUIRED) and must not charge without required persistence.
  */
-
-function parseEnvFlag(raw) {
-  if (typeof raw !== 'string') return false;
-  const normalized = raw.trim().toLowerCase();
-  return (
-    normalized === 'true' ||
-    normalized === '1' ||
-    normalized === 'on' ||
-    normalized === 'yes'
-  );
-}
+import { parseBooleanFlag } from '@shared/env/parseBooleanFlag';
 
 export function isFinalizeIntentPersistEnabled() {
-  return parseEnvFlag(import.meta.env.VITE_FINALIZE_INTENT_PERSIST);
+  return parseBooleanFlag(import.meta.env.VITE_FINALIZE_INTENT_PERSIST);
 }
 
 export function isFinalizeIntentRequiredForPiEnabled() {
-  return parseEnvFlag(import.meta.env.VITE_FINALIZE_INTENT_REQUIRED_FOR_PI);
+  return parseBooleanFlag(import.meta.env.VITE_FINALIZE_INTENT_REQUIRED_FOR_PI);
 }

@@ -33,11 +33,21 @@ const scheduleSwRegister = () => {
       const updateSW = registerSW({
         immediate: true,
         onNeedRefresh() {
-          // Auto-activate the new SW and reload once so stale bundles are dropped quickly.
-          updateSW(true);
-          window.location.reload();
+          // Controlled update only — never force-reload (breaks Stripe Elements / form state).
+          // Payment flows set sessionStorage dd_payment_flow_active=1; skip activation there.
+          const paymentActive =
+            typeof sessionStorage !== 'undefined' &&
+            sessionStorage.getItem('dd_payment_flow_active') === '1';
+          window.dispatchEvent(
+            new CustomEvent('dd:sw-update-available', {
+              detail: { updateSW, paymentActive }
+            })
+          );
+          if (paymentActive) return;
+          // Outside payment: activate on next navigation opportunity — still no hard reload.
         }
       });
+      window.__ddUpdateSW = updateSW;
     })
     .catch(() => {});
 };

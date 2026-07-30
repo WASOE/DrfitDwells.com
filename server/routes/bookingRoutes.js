@@ -52,6 +52,9 @@ const {
   processMetaPurchaseAfterConfirm
 } = require('../services/bookingPurchaseTracking');
 const { openManualReviewItem } = require('../services/ops/ingestion/manualReviewService');
+const {
+  diagnoseVoucherPaymentIntentAlignment
+} = require('../services/checkout/voucherPaymentIntentAlignment');
 const { attachPaymentFlowMonitor } = require('../services/ops/paymentFlowMonitorService');
 
 const BOOKING_PAYMENT_INTENT_ROUTE = '/api/bookings/create-payment-intent';
@@ -1534,15 +1537,15 @@ router.post('/', bookingCreateLimiter, [
     }
 
     if (stripePaymentVerified && paymentIntentIdForReview && voucherReservationContext?.redemptionId) {
-      const piMeta = verifiedPaymentIntent?.metadata || {};
-      const paymentAmountCents = Number(verifiedPaymentIntent?.amount || 0);
-      const metaVoucherAppliedCents = Number(piMeta.voucherAppliedCents || 0);
-      const redemptionAligned =
-        String(piMeta.redemptionId || '') === String(voucherReservationContext.redemptionId || '') &&
-        String(piMeta.checkoutId || '') === String(checkoutId || '') &&
-        metaVoucherAppliedCents === giftVoucherAppliedCents &&
-        paymentAmountCents === stripePaidAmountCents;
-      if (!redemptionAligned) {
+      const alignment = diagnoseVoucherPaymentIntentAlignment({
+        paymentIntent: verifiedPaymentIntent,
+        checkoutId,
+        redemptionId: voucherReservationContext.redemptionId,
+        giftVoucherAppliedCents,
+        stripePaidAmountCents
+      });
+      if (!alignment.aligned) {
+        const piMeta = verifiedPaymentIntent?.metadata || {};
         await openManualReviewItem({
           category: 'payment_finalization_failure',
           severity: 'high',
@@ -1562,11 +1565,19 @@ router.post('/', bookingCreateLimiter, [
               stripePaidAmountCents,
               totalValueCents
             }),
-            paymentIntentAmountCents: paymentAmountCents,
+            correlationId: checkoutId || paymentIntentIdForReview,
+            failedInvariant: alignment.primaryMismatchField,
+            mismatchedFields: alignment.mismatchedFields,
+            alignmentFields: alignment.fields,
+            paymentIntentAmountCents: Number(verifiedPaymentIntent?.amount || 0),
             paymentIntentMetadata: {
               redemptionId: piMeta.redemptionId || null,
               checkoutId: piMeta.checkoutId || null,
-              voucherAppliedCents: piMeta.voucherAppliedCents || null
+              voucherAppliedCents: piMeta.voucherAppliedCents || null,
+              giftVoucherId: piMeta.giftVoucherId || null,
+              reservationKey: piMeta.reservationKey || null,
+              quoteSnapshotHash: piMeta.quoteSnapshotHash || null,
+              finalizeIntentHash: piMeta.finalizeIntentHash || null
             }
           }
         });

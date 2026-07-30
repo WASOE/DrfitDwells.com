@@ -158,6 +158,19 @@ async function enqueuePostFinalizeSideEffects({
     ).catch(() => {});
   }
 
+  // Worker/domain finalize path historically omitted booking-created push (HTTP route only).
+  if (adoptedExisting !== true && booking?._id) {
+    try {
+      const { notifyOpsPushBookingCreated } = require('../ops/push/opsPushEventNotifications');
+      await notifyOpsPushBookingCreated({
+        bookingId: booking._id,
+        source: source || 'checkout_finalize_side_effects'
+      });
+    } catch {
+      /* non-fatal */
+    }
+  }
+
   return {
     deferred: false,
     adoptedExisting: adoptedExisting === true,

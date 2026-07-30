@@ -5,12 +5,15 @@
  * without code changes.
  */
 
+const {
+  parseBooleanFlag,
+  parseBooleanFlagWithDefault
+} = require('../../shared/env/parseBooleanFlag.js');
+
 const featureFlags = {
-  // Generic helper to parse boolean env flags
+  // Generic helper — shared parser (1|true|on|yes).
   _parseBoolean(value) {
-    if (typeof value !== 'string') return false;
-    const normalized = value.trim().toLowerCase();
-    return normalized === 'true' || normalized === '1' || normalized === 'on' || normalized === 'yes';
+    return parseBooleanFlag(value);
   },
 
   /**
@@ -18,16 +21,7 @@ const featureFlags = {
    * on: 1|true|on|yes ; off: 0|false|off|no ; unset/unknown → defaultValue
    */
   _parseBooleanWithDefault(value, defaultValue = false) {
-    if (value == null || value === '') return defaultValue;
-    if (typeof value !== 'string') return defaultValue;
-    const normalized = value.trim().toLowerCase();
-    if (normalized === 'true' || normalized === '1' || normalized === 'on' || normalized === 'yes') {
-      return true;
-    }
-    if (normalized === 'false' || normalized === '0' || normalized === 'off' || normalized === 'no') {
-      return false;
-    }
-    return defaultValue;
+    return parseBooleanFlagWithDefault(value, defaultValue);
   },
 
   // Returns whether multi-unit functionality is globally enabled
@@ -75,15 +69,11 @@ const featureFlags = {
   },
 
   // CheckoutSession V2: canonical PI per session.
-  // Explicit CHECKOUT_SESSION_V2 wins; otherwise strict finalize-intent flags imply V2
-  // so REQUIRED_FOR_PI cannot run on the legacy create-PI path.
+  // Explicit CHECKOUT_SESSION_V2 only. Do NOT infer from finalize-intent flags —
+  // that made V2 impossible to disable (CHECKOUT_SESSION_V2=0 was ignored) and
+  // coupled unrelated ops controls. Finalize attach is a separate concern.
   isCheckoutSessionV2Enabled() {
-    if (this._parseBoolean(process.env.CHECKOUT_SESSION_V2)) {
-      return true;
-    }
-    return (
-      this.isFinalizeIntentPersistEnabled() || this.isFinalizeIntentRequiredForPiEnabled()
-    );
+    return this._parseBoolean(process.env.CHECKOUT_SESSION_V2);
   },
 
   /** Batch 4B: quote-delivery recovery emails. Default OFF. */

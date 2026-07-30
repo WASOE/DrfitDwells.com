@@ -378,7 +378,9 @@ function getCheckoutPaymentCapabilities() {
     finalizeIntentRequiredForPi: featureFlags.isFinalizeIntentRequiredForPiEnabled(),
     requiresFinalizeIntentPayload: featureFlags.isFinalizeIntentRequiredForPiEnabled(),
     applicationRelease: applicationRelease(),
-    contractVersion: 1
+    frontendReleaseHint: String(process.env.FRONTEND_RELEASE || process.env.VITE_FRONTEND_RELEASE || '').trim() || null,
+    paymentContractVersion: 'checkout-payment-v2-finalize-1',
+    contractVersion: 2
   };
 }
 
