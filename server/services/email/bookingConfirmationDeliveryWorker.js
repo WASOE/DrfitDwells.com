@@ -25,7 +25,7 @@ const {
   findDueConfirmationDeliveries,
   claimConfirmationDeliveryAttempt,
   sendClaimedConfirmationDelivery,
-  markConfirmationDeliverySucceeded,
+  finalizeAuthoritativeConfirmationDelivery,
   markConfirmationDeliveryAbandoned,
   isDefinitiveSentStatus,
   getVisibilityTimeoutMs,
@@ -376,7 +376,23 @@ async function abandonRow(stateRow, errorCode, errorSummary, now) {
   return { outcome: 'abandoned', state: updated, errorCode };
 }
 
-async function processDueRow(stateRow, { now, sendFn } = {}) {
+function isClaimReadinessGateOpen({ expectedGeneration, forceReady = false } = {}) {
+  if (forceReady === true) return true;
+  if (state.stopping) return false;
+  if (!isBookingConfirmationDeliveryReady()) return false;
+  if (
+    expectedGeneration != null &&
+    state.readinessGeneration !== expectedGeneration
+  ) {
+    return false;
+  }
+  return true;
+}
+
+async function processDueRow(
+  stateRow,
+  { now, sendFn, expectedGeneration = null, forceReady = false } = {}
+) {
   const at = now instanceof Date ? now : new Date(now);
 
   if (isDefinitiveSentStatus(stateRow.latestStatus)) {
@@ -446,24 +462,39 @@ async function processDueRow(stateRow, { now, sendFn } = {}) {
   }
 
   if (booking.confirmationEmailSentAt) {
-    const adopted = await markConfirmationDeliverySucceeded({
+    const finalized = await finalizeAuthoritativeConfirmationDelivery({
       correlationKey: stateRow.correlationKey,
       bookingId: booking._id,
       checkoutSessionId: booking.checkoutSessionId || null,
       providerMessageId: stateRow.providerMessageId || null,
       emailEventId: stateRow.latestEmailEventId || null,
-      now: at
+      now: at,
+      mode: 'adopt_prior'
     });
-    state.succeededTotal += 1;
-    state.lastTickSucceeded += 1;
-    logEvent('booking_confirmation_worker_succeeded', {
-      outcome: 'adopted_sent',
+    if (finalized.definitiveSucceeded) {
+      state.succeededTotal += 1;
+      state.lastTickSucceeded += 1;
+      logEvent('booking_confirmation_worker_succeeded', {
+        outcome: 'adopted_sent',
+        correlationKey: stateRow.correlationKey,
+        bookingId: String(booking._id)
+      });
+      return { outcome: 'adopted_sent', state: finalized.state, finalized };
+    }
+    state.ambiguousTotal += 1;
+    state.lastTickAmbiguous += 1;
+    logEvent('booking_confirmation_worker_ambiguous', {
+      outcome: 'adopt_prior_persistence',
       correlationKey: stateRow.correlationKey,
-      bookingId: String(booking._id)
+      errorCode: finalized.errorCode || null
     });
-    return { outcome: 'adopted_sent', state: adopted };
+    return { outcome: 'ambiguous', finalized };
   }
 
+  // R2.2: final synchronous readiness gate — no await between check and claim invoke.
+  if (!isClaimReadinessGateOpen({ expectedGeneration, forceReady })) {
+    return { outcome: 'not_ready', stoppedEarly: true };
+  }
   const claimed = await claimConfirmationDeliveryAttempt({
     correlationKey: stateRow.correlationKey,
     workerId: state.workerId,
@@ -601,7 +632,7 @@ async function runConfirmationDeliveryTickOnce({
       return { dueCount: 0, results: [], skippedReason: 'not_ready' };
     }
 
-    const tickGeneration = state.readinessGeneration;
+    const expectedGeneration = state.readinessGeneration;
 
     const due = await findDueConfirmationDeliveries({
       now: at,
@@ -615,7 +646,7 @@ async function runConfirmationDeliveryTickOnce({
       if (
         !forceReady &&
         (!isBookingConfirmationDeliveryReady() ||
-          state.readinessGeneration !== tickGeneration)
+          state.readinessGeneration !== expectedGeneration)
       ) {
         stoppedEarly = true;
         logEvent('booking_confirmation_worker_tick', {
@@ -623,7 +654,7 @@ async function runConfirmationDeliveryTickOnce({
           reason: 'readiness_changed',
           readinessState: state.readinessState,
           readinessGeneration: state.readinessGeneration,
-          tickGeneration
+          expectedGeneration
         });
         break;
       }
@@ -631,8 +662,24 @@ async function runConfirmationDeliveryTickOnce({
       state.lastTickProcessed += 1;
       const fresh = await EmailDeliveryState.findById(row._id);
       if (!fresh) continue;
-      const result = await processDueRow(fresh, { now: at, sendFn });
+      const result = await processDueRow(fresh, {
+        now: at,
+        sendFn,
+        expectedGeneration,
+        forceReady
+      });
       results.push({ correlationKey: fresh.correlationKey, ...result });
+      if (result?.outcome === 'not_ready' || result?.stoppedEarly === true) {
+        stoppedEarly = true;
+        logEvent('booking_confirmation_worker_tick', {
+          phase: 'batch_stopped',
+          reason: 'pre_claim_gate',
+          readinessState: state.readinessState,
+          readinessGeneration: state.readinessGeneration,
+          expectedGeneration
+        });
+        break;
+      }
     }
 
     state.lastSuccessfulTickAt = new Date();

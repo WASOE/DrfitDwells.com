@@ -260,16 +260,73 @@ async function markSmtpAttemptStarted({ correlationKey, now = new Date() } = {})
   );
 }
 
-async function markConfirmationDeliverySucceeded({
+function sanitizePersistenceError(err) {
+  const message = String(err?.message || err || 'persistence_error').slice(0, 300);
+  return { message, code: err?.code ? String(err.code).slice(0, 80) : null };
+}
+
+function emptyFinalizeResult(extra = {}) {
+  return {
+    definitiveSucceeded: false,
+    ambiguous: false,
+    repaired: false,
+    state: null,
+    bookingStamped: false,
+    sessionStamped: false,
+    jobStamped: false,
+    providerMessageIdPersisted: false,
+    emailEventLinked: false,
+    errorCode: null,
+    error: null,
+    ...extra
+  };
+}
+
+/**
+ * Atomic EDS → succeeded. Never clears non-null providerMessageId / latestEmailEventId.
+ * Returns { state, missing } — state may be null without throw if filter misses.
+ */
+async function transitionEmailDeliveryStateToSucceeded({
   correlationKey,
-  bookingId,
-  checkoutSessionId = null,
-  jobId = null,
   providerMessageId = null,
   emailEventId = null,
-  now = new Date()
+  now = new Date(),
+  resolutionNote = 'Provider accepted confirmation email'
 } = {}) {
   const at = normalizeNow(now);
+  const current = await EmailDeliveryState.findOne({ correlationKey });
+  if (!current) {
+    return { state: null, missing: true };
+  }
+
+  const $set = {
+    latestStatus: 'succeeded',
+    latestEventAt: at,
+    resolvedAt: at,
+    resolvedBy: 'confirmation_delivery',
+    resolutionNote: redactSummary(resolutionNote),
+    claimedBy: null,
+    claimedAt: null,
+    visibilityTimeoutAt: null,
+    smtpAttemptStartedAt: null,
+    nextAttemptAt: null,
+    ambiguousAt: null,
+    ambiguousReason: null,
+    latestErrorMessage: null,
+    lastErrorCode: null
+  };
+
+  const msg =
+    providerMessageId != null && String(providerMessageId).trim()
+      ? String(providerMessageId).trim().slice(0, 500)
+      : null;
+  if (msg && !current.providerMessageId) {
+    $set.providerMessageId = msg;
+  }
+  if (emailEventId && !current.latestEmailEventId) {
+    $set.latestEmailEventId = emailEventId;
+  }
+
   const state = await EmailDeliveryState.findOneAndUpdate(
     {
       correlationKey,
@@ -277,31 +334,74 @@ async function markConfirmationDeliverySucceeded({
         $in: ['sending', 'pending', 'failed', 'ambiguous', 'success', 'succeeded']
       }
     },
-    {
-      $set: {
-        latestStatus: 'succeeded',
-        latestEventAt: at,
-        resolvedAt: at,
-        resolvedBy: 'confirmation_delivery',
-        resolutionNote: 'Provider accepted confirmation email',
-        providerMessageId: providerMessageId ? String(providerMessageId).slice(0, 500) : null,
-        latestEmailEventId: emailEventId || undefined,
-        claimedBy: null,
-        claimedAt: null,
-        visibilityTimeoutAt: null,
-        smtpAttemptStartedAt: null,
-        nextAttemptAt: null,
-        ambiguousAt: null,
-        ambiguousReason: null,
-        latestErrorMessage: null,
-        lastErrorCode: null
-      }
-    },
+    { $set },
     { new: true }
   );
+  return { state, missing: false };
+}
 
-  if (bookingId) {
-    await Booking.updateOne(
+async function repairSecondaryConfirmationStamps({
+  correlationKey,
+  bookingId = null,
+  checkoutSessionId = null,
+  jobId = null,
+  providerMessageId = null,
+  emailEventId = null,
+  now = new Date()
+} = {}) {
+  const at = normalizeNow(now);
+  let repaired = false;
+  let bookingStamped = false;
+  let sessionStamped = false;
+  let jobStamped = false;
+  let providerMessageIdPersisted = false;
+  let emailEventLinked = false;
+  const errors = [];
+
+  const msg =
+    providerMessageId != null && String(providerMessageId).trim()
+      ? String(providerMessageId).trim().slice(0, 500)
+      : null;
+
+  if (msg) {
+    try {
+      const r = await EmailDeliveryState.updateOne(
+        {
+          correlationKey,
+          $or: [{ providerMessageId: null }, { providerMessageId: { $exists: false } }]
+        },
+        { $set: { providerMessageId: msg } }
+      );
+      if (r.modifiedCount > 0) {
+        repaired = true;
+        providerMessageIdPersisted = true;
+      }
+    } catch (err) {
+      errors.push(sanitizePersistenceError(err).message);
+    }
+  }
+
+  if (emailEventId) {
+    try {
+      const r = await EmailDeliveryState.updateOne(
+        {
+          correlationKey,
+          $or: [{ latestEmailEventId: null }, { latestEmailEventId: { $exists: false } }]
+        },
+        { $set: { latestEmailEventId: emailEventId } }
+      );
+      if (r.modifiedCount > 0) {
+        repaired = true;
+        emailEventLinked = true;
+      }
+    } catch (err) {
+      errors.push(sanitizePersistenceError(err).message);
+    }
+  }
+
+  async function stampBooking() {
+    if (!bookingId) return;
+    const r = await Booking.updateOne(
       {
         _id: bookingId,
         $or: [
@@ -311,10 +411,17 @@ async function markConfirmationDeliverySucceeded({
       },
       { $set: { confirmationEmailSentAt: at } }
     );
+    if (r.modifiedCount > 0 || r.matchedCount === 0) {
+      /* matchedCount 0 = missing booking; modified 0 may already stamped */
+    }
+    const b = await Booking.findById(bookingId).select('confirmationEmailSentAt').lean();
+    bookingStamped = Boolean(b?.confirmationEmailSentAt);
+    if (r.modifiedCount > 0) repaired = true;
   }
 
-  if (checkoutSessionId) {
-    await CheckoutSession.updateOne(
+  async function stampSession() {
+    if (!checkoutSessionId) return;
+    const r = await CheckoutSession.updateOne(
       {
         _id: checkoutSessionId,
         $or: [
@@ -324,16 +431,276 @@ async function markConfirmationDeliverySucceeded({
       },
       { $set: { confirmationEmailSentAt: at } }
     );
+    const s = await CheckoutSession.findById(checkoutSessionId)
+      .select('confirmationEmailSentAt')
+      .lean();
+    sessionStamped = Boolean(s?.confirmationEmailSentAt);
+    if (r.modifiedCount > 0) repaired = true;
   }
 
-  if (jobId) {
-    await CheckoutFinalizationJob.updateOne(
+  async function stampJob() {
+    if (!jobId) return;
+    const r = await CheckoutFinalizationJob.updateOne(
       { _id: jobId },
       { $set: { confirmationSentAt: at } }
     );
+    const j = await CheckoutFinalizationJob.findById(jobId).select('confirmationSentAt').lean();
+    jobStamped = Boolean(j?.confirmationSentAt);
+    if (r.modifiedCount > 0) repaired = true;
   }
 
-  return state;
+  for (const fn of [stampBooking, stampSession, stampJob]) {
+    try {
+      await fn();
+    } catch (err) {
+      errors.push(sanitizePersistenceError(err).message);
+      try {
+        await fn();
+      } catch (err2) {
+        errors.push(sanitizePersistenceError(err2).message);
+      }
+    }
+  }
+
+  const fresh = await EmailDeliveryState.findOne({ correlationKey });
+  if (fresh?.providerMessageId) providerMessageIdPersisted = true;
+  if (fresh?.latestEmailEventId) emailEventLinked = true;
+
+  let errorCode = null;
+  let error = null;
+  if (bookingId && !bookingStamped) {
+    errorCode = 'SECONDARY_STAMP_REPAIR_INCOMPLETE';
+    error = 'Booking.confirmationEmailSentAt missing after repair';
+  } else if (checkoutSessionId && !sessionStamped) {
+    errorCode = 'SECONDARY_STAMP_REPAIR_INCOMPLETE';
+    error = 'CheckoutSession.confirmationEmailSentAt missing after repair';
+  } else if (jobId && !jobStamped) {
+    errorCode = 'SECONDARY_STAMP_REPAIR_INCOMPLETE';
+    error = 'CheckoutFinalizationJob.confirmationSentAt missing after repair';
+  } else if (errors.length) {
+    errorCode = 'SECONDARY_STAMP_REPAIR_ERROR';
+    error = errors.join('; ').slice(0, 300);
+  }
+
+  return {
+    repaired,
+    bookingStamped,
+    sessionStamped,
+    jobStamped,
+    providerMessageIdPersisted,
+    emailEventLinked,
+    state: fresh,
+    errorCode,
+    error
+  };
+}
+
+/**
+ * R2.1 — single owner of post-provider success persistence and repair.
+ * mode: 'provider_sent' | 'adopt_prior'
+ */
+async function finalizeAuthoritativeConfirmationDelivery({
+  correlationKey,
+  bookingId = null,
+  checkoutSessionId = null,
+  jobId = null,
+  providerMessageId = null,
+  emailEventId = null,
+  now = new Date(),
+  mode = 'provider_sent'
+} = {}) {
+  const at = normalizeNow(now);
+  const evidenceMsg =
+    mode === 'adopt_prior'
+      ? null
+      : providerMessageId != null && String(providerMessageId).trim()
+        ? String(providerMessageId).trim().slice(0, 500)
+        : null;
+  const evidenceEventId = mode === 'adopt_prior' ? emailEventId || null : emailEventId || null;
+  const adoptMsg =
+    mode === 'adopt_prior' && providerMessageId != null && String(providerMessageId).trim()
+      ? String(providerMessageId).trim().slice(0, 500)
+      : null;
+  const msgForWrite = evidenceMsg || adoptMsg;
+
+  const resolutionNote =
+    mode === 'adopt_prior'
+      ? 'Adopted prior definitive confirmation delivery'
+      : 'Provider accepted confirmation email';
+
+  let transitionError = null;
+  let transition = null;
+  try {
+    transition = await transitionEmailDeliveryStateToSucceeded({
+      correlationKey,
+      providerMessageId: msgForWrite,
+      emailEventId: evidenceEventId,
+      now: at,
+      resolutionNote
+    });
+  } catch (err) {
+    transitionError = err;
+  }
+
+  const needsReadBack =
+    Boolean(transitionError) ||
+    !transition ||
+    transition.missing === true ||
+    transition.state == null;
+
+  async function readBack() {
+    return EmailDeliveryState.findOne({ correlationKey });
+  }
+
+  let stateAfter = transition?.state || null;
+  if (needsReadBack) {
+    stateAfter = await readBack();
+  }
+
+  if (!stateAfter) {
+    const sanitized = sanitizePersistenceError(
+      transitionError || new Error('EmailDeliveryState missing after provider acceptance')
+    );
+    return emptyFinalizeResult({
+      ambiguous: true,
+      errorCode: 'EDS_MISSING_AFTER_PROVIDER_SENT',
+      error: sanitized.message
+    });
+  }
+
+  async function asDefinitive(stateDoc, stampError = null) {
+    let repair;
+    try {
+      repair = await repairSecondaryConfirmationStamps({
+        correlationKey,
+        bookingId,
+        checkoutSessionId,
+        jobId,
+        providerMessageId: msgForWrite,
+        emailEventId: evidenceEventId,
+        now: at
+      });
+    } catch (stampErr) {
+      const rb = await readBack();
+      if (rb && isDefinitiveSentStatus(rb.latestStatus)) {
+        repair = await repairSecondaryConfirmationStamps({
+          correlationKey,
+          bookingId,
+          checkoutSessionId,
+          jobId,
+          providerMessageId: msgForWrite,
+          emailEventId: evidenceEventId,
+          now: at
+        });
+        stampError = sanitizePersistenceError(stampErr).message;
+      } else {
+        throw stampErr;
+      }
+    }
+    return {
+      definitiveSucceeded: true,
+      ambiguous: false,
+      repaired: repair.repaired,
+      state: repair.state || stateDoc,
+      bookingStamped: repair.bookingStamped,
+      sessionStamped: repair.sessionStamped,
+      jobStamped: repair.jobStamped,
+      providerMessageIdPersisted: repair.providerMessageIdPersisted,
+      emailEventLinked: repair.emailEventLinked,
+      errorCode: repair.errorCode || (stampError ? 'SECONDARY_STAMP_ERROR' : null),
+      error: repair.error || stampError
+    };
+  }
+
+  if (isDefinitiveSentStatus(stateAfter.latestStatus)) {
+    return asDefinitive(stateAfter);
+  }
+
+  if (stateAfter.latestStatus === 'ambiguous') {
+    await markConfirmationDeliveryAmbiguous({
+      correlationKey,
+      reason: 'PERSISTENCE_AFTER_PROVIDER_SENT',
+      now: at,
+      providerMessageId: msgForWrite,
+      emailEventId: evidenceEventId,
+      allowedStatuses: ['ambiguous']
+    });
+    const fresh = await readBack();
+    return emptyFinalizeResult({
+      ambiguous: true,
+      state: fresh,
+      providerMessageIdPersisted: Boolean(fresh?.providerMessageId),
+      emailEventLinked: Boolean(fresh?.latestEmailEventId),
+      errorCode: 'ALREADY_AMBIGUOUS_AFTER_PROVIDER_SENT',
+      error: 'EmailDeliveryState already ambiguous after provider acceptance'
+    });
+  }
+
+  if (stateAfter.latestStatus === 'sending') {
+    const updated = await markConfirmationDeliveryAmbiguous({
+      correlationKey,
+      reason: 'PERSISTENCE_AFTER_PROVIDER_SENT',
+      now: at,
+      providerMessageId: msgForWrite,
+      emailEventId: evidenceEventId,
+      allowedStatuses: ['sending']
+    });
+    return emptyFinalizeResult({
+      ambiguous: true,
+      state: updated,
+      providerMessageIdPersisted: Boolean(updated?.providerMessageId),
+      emailEventLinked: Boolean(updated?.latestEmailEventId),
+      errorCode: 'PERSISTENCE_AFTER_PROVIDER_SENT',
+      error: transitionError
+        ? sanitizePersistenceError(transitionError).message
+        : 'EDS remained sending after provider acceptance'
+    });
+  }
+
+  // Unexpected non-definitive (pending/failed/etc.) — fail closed to ambiguous
+  const updated = await markConfirmationDeliveryAmbiguous({
+    correlationKey,
+    reason: 'UNEXPECTED_STATE_AFTER_PROVIDER_SENT',
+    now: at,
+    providerMessageId: msgForWrite,
+    emailEventId: evidenceEventId,
+    allowedStatuses: ['sending', 'pending', 'failed']
+  });
+  const fresh = updated || (await readBack());
+  return emptyFinalizeResult({
+    ambiguous: true,
+    state: fresh,
+    providerMessageIdPersisted: Boolean(fresh?.providerMessageId),
+    emailEventLinked: Boolean(fresh?.latestEmailEventId),
+    errorCode: 'UNEXPECTED_STATE_AFTER_PROVIDER_SENT',
+    error: `Unexpected EDS status ${stateAfter.latestStatus} after provider acceptance`
+  });
+}
+
+/**
+ * @deprecated Prefer finalizeAuthoritativeConfirmationDelivery for provider-sent paths.
+ * Kept for tests that call the low-level helper directly.
+ */
+async function markConfirmationDeliverySucceeded({
+  correlationKey,
+  bookingId,
+  checkoutSessionId = null,
+  jobId = null,
+  providerMessageId = null,
+  emailEventId = null,
+  now = new Date()
+} = {}) {
+  const result = await finalizeAuthoritativeConfirmationDelivery({
+    correlationKey,
+    bookingId,
+    checkoutSessionId,
+    jobId,
+    providerMessageId,
+    emailEventId,
+    now,
+    mode: 'provider_sent'
+  });
+  return result.state;
 }
 
 async function markConfirmationDeliveryFailedRetryable({
@@ -403,39 +770,84 @@ async function markConfirmationDeliveryFailedRetryable({
 async function markConfirmationDeliveryAmbiguous({
   correlationKey,
   reason = 'AMBIGUOUS_SMTP_RETRY',
-  now = new Date()
+  now = new Date(),
+  providerMessageId = null,
+  emailEventId = null,
+  allowedStatuses = ['sending']
 } = {}) {
   const at = normalizeNow(now);
   const current = await EmailDeliveryState.findOne({ correlationKey });
   if (!current) return null;
 
+  const statuses = Array.isArray(allowedStatuses) && allowedStatuses.length
+    ? allowedStatuses
+    : ['sending'];
+
+  // Additive evidence only when already ambiguous
+  if (current.latestStatus === 'ambiguous' && statuses.includes('ambiguous')) {
+    const $set = { latestEventAt: at };
+    const msg =
+      providerMessageId != null && String(providerMessageId).trim()
+        ? String(providerMessageId).trim().slice(0, 500)
+        : null;
+    if (msg && !current.providerMessageId) $set.providerMessageId = msg;
+    if (emailEventId && !current.latestEmailEventId) $set.latestEmailEventId = emailEventId;
+    if (Object.keys($set).length === 1) return current;
+    return EmailDeliveryState.findOneAndUpdate(
+      { correlationKey, latestStatus: 'ambiguous' },
+      { $set },
+      { new: true }
+    );
+  }
+
+  if (isDefinitiveSentStatus(current.latestStatus)) {
+    return current;
+  }
+
+  if (!statuses.includes(current.latestStatus)) {
+    return null;
+  }
+
   const history = appendFailureHistory(current.failureHistory, {
     at,
     errorCode: reason,
-    errorSummary: 'Sending lease expired after SMTP attempt started; outcome ambiguous',
+    errorSummary: redactSummary(
+      reason === 'AMBIGUOUS_SMTP_RETRY'
+        ? 'Sending lease expired after SMTP attempt started; outcome ambiguous'
+        : `Ambiguous confirmation delivery: ${reason}`
+    ),
     attemptCount: current.attemptCount,
-    stage: 'visibility_reclaim'
+    stage:
+      reason === 'AMBIGUOUS_SMTP_RETRY' ? 'visibility_reclaim' : 'persistence_after_provider'
   });
 
+  const $set = {
+    latestStatus: 'ambiguous',
+    latestEventAt: at,
+    ambiguousAt: current.ambiguousAt || at,
+    ambiguousReason: redactSummary(reason),
+    lastErrorCode: reason,
+    latestErrorMessage: redactSummary(
+      'Confirmation may have been accepted by provider; suppressed automatic resend'
+    ),
+    failureHistory: history,
+    claimedBy: null,
+    claimedAt: null,
+    visibilityTimeoutAt: null,
+    nextAttemptAt: null
+    // smtpAttemptStartedAt intentionally preserved
+  };
+
+  const msg =
+    providerMessageId != null && String(providerMessageId).trim()
+      ? String(providerMessageId).trim().slice(0, 500)
+      : null;
+  if (msg && !current.providerMessageId) $set.providerMessageId = msg;
+  if (emailEventId && !current.latestEmailEventId) $set.latestEmailEventId = emailEventId;
+
   return EmailDeliveryState.findOneAndUpdate(
-    { correlationKey, latestStatus: 'sending' },
-    {
-      $set: {
-        latestStatus: 'ambiguous',
-        latestEventAt: at,
-        ambiguousAt: at,
-        ambiguousReason: redactSummary(reason),
-        lastErrorCode: reason,
-        latestErrorMessage: redactSummary(
-          'Confirmation may have been accepted by provider; suppressed automatic resend'
-        ),
-        failureHistory: history,
-        claimedBy: null,
-        claimedAt: null,
-        visibilityTimeoutAt: null,
-        nextAttemptAt: null
-      }
-    },
+    { correlationKey, latestStatus: { $in: statuses.filter((s) => s !== 'ambiguous') } },
+    { $set },
     { new: true }
   );
 }
@@ -604,33 +1016,66 @@ async function sendClaimedConfirmationDelivery({
   });
 
   if (classified.authoritativeDelivered) {
-    const succeeded = await markConfirmationDeliverySucceeded({
+    const finalized = await finalizeAuthoritativeConfirmationDelivery({
       correlationKey: state.correlationKey,
       bookingId: booking._id,
       checkoutSessionId,
       jobId,
       providerMessageId: classified.providerMessageId,
       emailEventId: outcome?.emailEvent?._id || null,
-      now: at
+      now: at,
+      mode: 'provider_sent'
     });
-    return { ok: true, sent: true, state: succeeded, classification: classified };
+    if (finalized.definitiveSucceeded) {
+      return {
+        ok: true,
+        sent: true,
+        state: finalized.state,
+        finalized,
+        classification: classified
+      };
+    }
+    return {
+      ok: false,
+      retryable: false,
+      ambiguous: true,
+      errorCode: finalized.errorCode || 'PERSISTENCE_AFTER_PROVIDER_SENT',
+      error: finalized.error,
+      state: finalized.state,
+      finalized,
+      classification: classified
+    };
   }
 
   if (classified.adoptPriorDelivery === true && hasDefinitivePriorDelivery) {
-    const succeeded = await markConfirmationDeliverySucceeded({
+    const finalized = await finalizeAuthoritativeConfirmationDelivery({
       correlationKey: state.correlationKey,
       bookingId: booking._id,
       checkoutSessionId,
       jobId,
       providerMessageId: state.providerMessageId || null,
       emailEventId: outcome?.emailEvent?._id || state.latestEmailEventId || null,
-      now: at
+      now: at,
+      mode: 'adopt_prior'
     });
+    if (finalized.definitiveSucceeded) {
+      return {
+        ok: true,
+        sent: true,
+        skippedDuplicate: true,
+        state: finalized.state,
+        finalized,
+        classification: classified
+      };
+    }
     return {
-      ok: true,
-      sent: true,
-      skippedDuplicate: true,
-      state: succeeded,
+      ok: false,
+      retryable: false,
+      ambiguous: true,
+      errorCode: finalized.errorCode || 'ADOPT_PRIOR_PERSISTENCE_FAILED',
+      error: finalized.error,
+      state: finalized.state,
+      finalized,
       classification: classified
     };
   }
@@ -881,6 +1326,9 @@ module.exports = {
   claimConfirmationDeliveryAttempt,
   markSmtpAttemptStarted,
   markConfirmationDeliverySucceeded,
+  finalizeAuthoritativeConfirmationDelivery,
+  transitionEmailDeliveryStateToSucceeded,
+  repairSecondaryConfirmationStamps,
   markConfirmationDeliveryFailedRetryable,
   markConfirmationDeliveryAmbiguous,
   markConfirmationDeliveryAbandoned,

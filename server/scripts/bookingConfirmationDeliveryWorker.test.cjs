@@ -1132,3 +1132,63 @@ test('B1R) degrade mid-batch stops further claims', async () => {
   });
   assert.equal(pendingLeft, 2);
 });
+
+test('R2.2 M/N) degrade during Booking.load before claim → not_ready, pending untouched', async () => {
+  const booking = await createConfirmedBooking({ email: 'r22.m@example.com' });
+  const pending = await createOverduePendingState(booking);
+  const sendFn = mockSendSuccess();
+  const originalFindById = Booking.findById.bind(Booking);
+  Booking.findById = async function patched(...args) {
+    __degradeConfirmationDeliveryWorkerForTesting('during_booking_load');
+    return originalFindById(...args);
+  };
+  try {
+    const tick = await runConfirmationDeliveryTickOnce({ sendFn });
+    assert.equal(tick.stoppedEarly, true);
+    assert.equal(sendFn.getCalls(), 0);
+    assert.ok(tick.results.some((r) => r.outcome === 'not_ready'));
+    const fresh = await EmailDeliveryState.findOne({ correlationKey: pending.correlationKey }).lean();
+    assert.equal(fresh.latestStatus, 'pending');
+    assert.equal(fresh.attemptCount, 0);
+  } finally {
+    Booking.findById = originalFindById;
+  }
+});
+
+test('R2.2 O) shutdown before tick → no claim', async () => {
+  const booking = await createConfirmedBooking({ email: 'r22.o@example.com' });
+  await createOverduePendingState(booking);
+  stopBookingConfirmationDeliveryWorkerForTest();
+  const sendFn = mockSendSuccess();
+  const tick = await runConfirmationDeliveryTickOnce({ sendFn });
+  assert.equal(tick.skippedReason, 'not_ready');
+  assert.equal(sendFn.getCalls(), 0);
+  assert.equal(await EmailDeliveryState.countDocuments({ latestStatus: 'sending' }), 0);
+});
+
+test('R2.2 P) degrade after claim issued → in-flight may finish; no further claims', async () => {
+  const b1 = await createConfirmedBooking({ email: 'r22.p1@example.com' });
+  const b2 = await createConfirmedBooking({ email: 'r22.p2@example.com' });
+  await createOverduePendingState(b1);
+  await createOverduePendingState(b2);
+  let sendCalls = 0;
+  const tick = await runConfirmationDeliveryTickOnce({
+    sendFn: async ({ onProviderAttemptStarted } = {}) => {
+      sendCalls += 1;
+      if (typeof onProviderAttemptStarted === 'function') await onProviderAttemptStarted();
+      if (sendCalls === 1) {
+        __degradeConfirmationDeliveryWorkerForTesting('after_claim');
+      }
+      return {
+        success: true,
+        method: 'sent',
+        messageId: `msg_p_${sendCalls}`,
+        emailEvent: { _id: new mongoose.Types.ObjectId() }
+      };
+    }
+  });
+  assert.equal(tick.stoppedEarly, true);
+  assert.equal(sendCalls, 1);
+  assert.equal(tick.results[0].outcome, 'succeeded');
+  assert.equal(await EmailDeliveryState.countDocuments({ latestStatus: 'pending' }), 1);
+});
