@@ -29,16 +29,25 @@ async function getReviewsReadModel({ page = 1, limit = 20 }) {
 }
 
 async function getCommunicationOversightReadModel() {
-  const [recentFailures, recentEvents] = await Promise.all([
+  const {
+    getBookingConfirmationDeliveryHealthReadModel
+  } = require('../../email/bookingConfirmationDeliveryHealthService');
+
+  const [recentFailures, recentEvents, confirmationDelivery] = await Promise.all([
     EmailEvent.countDocuments({ type: { $in: ['Bounce', 'SpamComplaint'] } }),
-    EmailEvent.find({}).sort({ createdAt: -1 }).limit(50).lean()
+    EmailEvent.find({}).sort({ createdAt: -1 }).limit(50).lean(),
+    getBookingConfirmationDeliveryHealthReadModel()
   ]);
 
   return {
     summary: {
       failedEvents: recentFailures,
-      totalRecentEvents: recentEvents.length
+      totalRecentEvents: recentEvents.length,
+      confirmationPendingDue: confirmationDelivery.backlog?.pendingDueCount ?? 0,
+      confirmationAmbiguous: confirmationDelivery.backlog?.ambiguousCount ?? 0,
+      confirmationFailed: confirmationDelivery.backlog?.failedCount ?? 0
     },
+    confirmationDelivery,
     recent: recentEvents.map((evt) => ({
       eventId: String(evt._id),
       type: evt.type || null,
@@ -47,7 +56,11 @@ async function getCommunicationOversightReadModel() {
       happenedAt: evt.createdAt
     })),
     degraded: {
-      eventTrackingGapsPossible: true
+      eventTrackingGapsPossible: true,
+      overdueConfirmationBacklog: Boolean(
+        confirmationDelivery.backlog?.pendingDueCount > 0
+      ),
+      confirmationWorkerUnhealthy: confirmationDelivery.healthy !== true
     }
   };
 }

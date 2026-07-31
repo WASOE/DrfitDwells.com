@@ -78,6 +78,8 @@
     "check:cabin-i18n": "node scripts/checkCabinI18nCompleteness.cjs",
     "start:messaging-worker": "node scripts/runMessagingWorker.js",
     "start:gift-voucher-delivery-worker": "node scripts/runGiftVoucherDeliveryWorker.js",
+    "start:booking-confirmation-delivery-worker": "node scripts/runBookingConfirmationDeliveryWorker.js",
+    "test:booking-confirmation-delivery-worker": "node --test --test-concurrency=1 scripts/bookingConfirmationDeliveryWorker.test.cjs",
     "maintenance:backfill-property-kind": "node scripts/backfillPropertyKind.js",
     "maintenance:gma-arrival-metadata": "node scripts/gmaArrivalMetadataBackfill.cjs",
     "maintenance:gma-approve-cabin-arrival-templates": "node scripts/gmaApproveCabinArrivalTemplates.cjs",

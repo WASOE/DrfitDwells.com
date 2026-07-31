@@ -184,6 +184,18 @@ const featureFlags = {
    */
   isFinalizeDomainServiceEnabled() {
     return this._parseBooleanWithDefault(process.env.FINALIZE_DOMAIN_SERVICE, false);
+  },
+
+  /**
+   * Dedicated booking-confirmation EmailDeliveryState backlog worker.
+   * Default OFF. Not inferred from FINALIZE_* flags — must be enabled on the
+   * standalone PM2 process (driftdwells-confirmation-worker).
+   */
+  isBookingConfirmationDeliveryWorkerEnabled() {
+    return this._parseBooleanWithDefault(
+      process.env.BOOKING_CONFIRMATION_DELIVERY_WORKER_ENABLED,
+      false
+    );
   }
 };
 

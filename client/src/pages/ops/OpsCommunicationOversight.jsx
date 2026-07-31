@@ -58,6 +58,58 @@ export default function OpsCommunicationOversight() {
         </div>
       </section>
 
+      <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+        <h3 className="text-sm font-semibold text-gray-900">Booking confirmation delivery</h3>
+        <p className="text-xs text-gray-500">
+          SMTP credentials alone do not mean confirmations are draining. Overdue pending rows require the confirmation worker.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="rounded-lg border border-gray-200 p-3">
+            <div className="text-xs text-gray-500 uppercase tracking-wide">SMTP configured</div>
+            <div className="mt-1 text-lg font-semibold text-gray-900">
+              {data.confirmationDelivery?.smtpConfigured ? 'Yes' : 'No'}
+            </div>
+          </div>
+          <div className="rounded-lg border border-gray-200 p-3">
+            <div className="text-xs text-gray-500 uppercase tracking-wide">Worker</div>
+            <div className="mt-1 text-lg font-semibold text-gray-900">
+              {data.confirmationDelivery?.workerRunning
+                ? 'Running'
+                : data.confirmationDelivery?.workerEnabled
+                  ? 'Enabled (not running)'
+                  : 'Disabled'}
+            </div>
+          </div>
+          <div className="rounded-lg border border-gray-200 p-3">
+            <div className="text-xs text-gray-500 uppercase tracking-wide">Overdue pending</div>
+            <div
+              className={`mt-1 text-lg font-semibold ${
+                (data.summary?.confirmationPendingDue ?? 0) > 0 ? 'text-amber-800' : 'text-gray-900'
+              }`}
+            >
+              {data.summary?.confirmationPendingDue ?? 0}
+            </div>
+          </div>
+          <div className="rounded-lg border border-gray-200 p-3">
+            <div className="text-xs text-gray-500 uppercase tracking-wide">Failed / ambiguous</div>
+            <div className="mt-1 text-lg font-semibold text-gray-900">
+              {(data.summary?.confirmationFailed ?? 0) + (data.summary?.confirmationAmbiguous ?? 0)}
+            </div>
+          </div>
+        </div>
+        {data.degraded?.overdueConfirmationBacklog ? (
+          <p className="text-sm text-amber-800">
+            Unhealthy: overdue booking confirmation states are waiting for the confirmation worker.
+          </p>
+        ) : null}
+        <p className="text-xs text-gray-500">
+          Health: {data.confirmationDelivery?.deliveryHealth || 'unknown'}
+          {data.confirmationDelivery?.worker?.workerId
+            ? ` · workerId ${data.confirmationDelivery.worker.workerId}`
+            : ''}
+        </p>
+      </section>
+
       <section className="bg-white border border-gray-200 rounded-xl p-4">
         <h3 className="text-sm font-semibold text-gray-900">Recent email events</h3>
         <div className="mt-3 space-y-2">

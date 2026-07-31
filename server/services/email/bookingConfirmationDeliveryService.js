@@ -607,6 +607,83 @@ async function sendClaimedConfirmationDelivery({
 }
 
 /**
+ * Terminal abandon without SMTP — missing/cancelled booking, recipient mismatch, etc.
+ * Leaves latestStatus=failed with nextAttemptAt=null so the backlog worker will not loop.
+ */
+async function markConfirmationDeliveryAbandoned({
+  correlationKey,
+  errorCode = 'CONFIRMATION_ABANDONED',
+  errorSummary = 'Confirmation delivery abandoned',
+  now = new Date()
+} = {}) {
+  const at = normalizeNow(now);
+  const current = await EmailDeliveryState.findOne({ correlationKey });
+  if (!current) return null;
+  if (isDefinitiveSentStatus(current.latestStatus) || current.latestStatus === 'ambiguous') {
+    return current;
+  }
+
+  const history = appendFailureHistory(current.failureHistory, {
+    at,
+    errorCode,
+    errorSummary,
+    attemptCount: current.attemptCount,
+    stage: 'abandon'
+  });
+
+  return EmailDeliveryState.findOneAndUpdate(
+    {
+      correlationKey,
+      latestStatus: { $in: ['pending', 'failed', 'sending'] }
+    },
+    {
+      $set: {
+        latestStatus: 'failed',
+        latestEventAt: at,
+        lastErrorCode: errorCode,
+        latestErrorMessage: redactSummary(errorSummary),
+        failureHistory: history,
+        nextAttemptAt: null,
+        claimedBy: null,
+        claimedAt: null,
+        visibilityTimeoutAt: null,
+        smtpAttemptStartedAt: null,
+        resolvedAt: at,
+        resolvedBy: 'confirmation_delivery_worker',
+        resolutionNote: redactSummary(errorSummary)
+      }
+    },
+    { new: true }
+  );
+}
+
+/**
+ * Due confirmation rows for the backlog worker (pending/failed with nextAttemptAt due).
+ */
+async function findDueConfirmationDeliveries({
+  now = new Date(),
+  limit = 20,
+  templateKeys = null
+} = {}) {
+  const at = normalizeNow(now);
+  const keys = Array.isArray(templateKeys) && templateKeys.length
+    ? templateKeys
+    : [
+        bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_CONFIRMED,
+        bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_RECEIVED
+      ];
+  const batch = Math.min(100, Math.max(1, Number(limit) || 20));
+  return EmailDeliveryState.find({
+    domain: 'booking_lifecycle',
+    templateKey: { $in: keys },
+    latestStatus: { $in: ['pending', 'failed'] },
+    $or: [{ nextAttemptAt: null }, { nextAttemptAt: { $lte: at } }]
+  })
+    .sort({ nextAttemptAt: 1, latestEventAt: 1 })
+    .limit(batch);
+}
+
+/**
  * High-level: ensure pending, optionally claim+send.
  * Never creates PaymentIntent, refunds, or deletes Booking.
  */
@@ -737,7 +814,9 @@ module.exports = {
   markConfirmationDeliverySucceeded,
   markConfirmationDeliveryFailedRetryable,
   markConfirmationDeliveryAmbiguous,
+  markConfirmationDeliveryAbandoned,
   reclaimStaleSendingConfirmationDeliveries,
+  findDueConfirmationDeliveries,
   sendClaimedConfirmationDelivery,
   processBookingConfirmationDelivery,
   resolveConfirmationTemplateKey,
