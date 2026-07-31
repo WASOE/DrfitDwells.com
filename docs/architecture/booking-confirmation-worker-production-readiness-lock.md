@@ -818,7 +818,74 @@ Process-local `providerAttemptStarted` in `sendClaimedConfirmationDelivery`:
 |-------|------------|
 | Before `onProviderAttemptStarted` succeeds | `markConfirmationDeliveryFailedRetryable`; `smtpAttemptStartedAt` null; auto-retry OK |
 | During/after successful boundary callback | thrown/uncertain → `markConfirmationDeliveryAmbiguous`; no auto-resend |
-| `sendMail` returns authoritative success, later persistence fails | **ambiguous** (SMTP may have delivered) |
+| `sendMail` returns authoritative success, later persistence fails | See **R2.1** (read-after-error; never auto-resend; never downgrade `succeeded`) |
+
+### R2.1 Authoritative-success persistence and R2.2 final claim readiness gate
+
+**Status:** BINDING — supersedes the coarse R2 row that treated every post-send persistence failure as immediate ambiguous without read-back
+
+#### R2.1 Authoritative-success persistence
+
+Once Nodemailer has returned an authoritative result (`success === true` and `method === "sent"`), automatic SMTP retry is **permanently forbidden** for that attempt solely because later database persistence failed.
+
+**Owner:** one authoritative helper in `server/services/email/bookingConfirmationDeliveryService.js` (suggested name: `finalizeAuthoritativeConfirmationDelivery`). This is **not** a second state machine; it is the single owner of post-provider success persistence and repair. All provider-sent and adopted-sent callers must route through it.
+
+**Required input:**
+
+```text
+{ correlationKey, bookingId, checkoutSessionId, jobId, providerMessageId, emailEventId, now }
+```
+
+**Required structured result:**
+
+```text
+{
+  definitiveSucceeded, ambiguous, repaired, state,
+  bookingStamped, sessionStamped, jobStamped,
+  providerMessageIdPersisted, emailEventLinked,
+  errorCode, error
+}
+```
+
+**Algorithm:**
+
+1. Attempt the atomic `EmailDeliveryState` transition to `succeeded`.
+2. When the EDS update throws, returns `null`, returns an unknown result, **or** any subsequent Booking / CheckoutSession / CheckoutFinalizationJob write throws → **mandatory read-back** of `EmailDeliveryState` by `correlationKey`.
+3. If read-back status is `succeeded` or `success`:
+   - authoritative delivery is definitive
+   - **never** call `markConfirmationDeliveryAmbiguous`
+   - **never** downgrade to `sending`, `pending`, `failed`, or `ambiguous`
+   - **never** clear `providerMessageId` or EmailEvent linkage
+   - idempotently repair: `Booking.confirmationEmailSentAt`, CheckoutSession confirmation stamp if the model owns one, `CheckoutFinalizationJob.confirmationSentAt`, missing `providerMessageId` / `latestEmailEventId` from the **current invocation only**
+   - return `definitiveSucceeded: true`
+   - failed secondary-stamp repair must **not** trigger SMTP retry; report structured partial-repair error when incomplete
+4. If read-back status is still `sending` after provider acceptance:
+   - transition to `ambiguous` matching **only** `latestStatus: "sending"`
+   - preserve `smtpAttemptStartedAt`; set `nextAttemptAt: null`
+   - attach `providerMessageId` / EmailEvent id when known and currently absent
+   - retain failure/ambiguity history; return `ambiguous: true`; **never** schedule automatic SMTP retry
+5. If read-back status is already `ambiguous`: preserve ambiguous; optionally attach missing provider evidence additively; do not resend or reset.
+6. If read-back status is `pending`, `failed`, or another unexpected non-definitive state after authoritative provider delivery: fail closed to ambiguous (narrow allowed transition); never schedule retry; never infer SMTP did not send.
+7. A write error **cannot** be assumed to mean the write did not commit. Mandatory read-after-error applies to network interruption, write timeout, write-concern error, Mongoose update throw, `findOneAndUpdate` null, unknown commit outcome, and matched-but-not-modified races.
+8. **No** Mongo multi-document transaction is required; remain safe without replica-set transactions.
+9. Provider evidence: `providerMessageId` optional for authoritative success; never overwrite existing non-null `providerMessageId` or EmailEvent linkage with null; repair only from current authoritative invocation; an unrelated historical EmailEvent is not sufficient; EmailEvent alone must not promote EDS to succeeded unless the current invocation already has authoritative provider-sent evidence.
+10. Secondary stamps: EDS success is the authoritative durable delivery state. After EDS succeeds, Booking / CheckoutSession / job stamp failures are repairable, do **not** make delivery ambiguous, and do **not** trigger SMTP retry. Repairs are idempotent and set-once where appropriate.
+11. Crash fallback: a `sending` row with `smtpAttemptStartedAt` remains eligible only for stale-lease → ambiguous (never pending). Immediate persistence-error handling improves latency but does not replace stale-lease protection.
+
+#### R2.2 Final claim readiness gate
+
+**Requirement:** No new claim may be initiated after the worker has observed degradation or shutdown.
+
+1. Tick captures `expectedGeneration` when beginning a ready batch.
+2. `expectedGeneration` is passed into `processDueRow()`.
+3. Immediately before invoking `claimConfirmationDeliveryAttempt()`: **synchronously** verify worker is ready, `readinessGeneration === expectedGeneration`, and `stopping === false`.
+4. There must be **no `await`** between this final synchronous check and invoking `claimConfirmationDeliveryAttempt()`.
+5. When the gate fails: return `{ outcome: "not_ready", stoppedEarly: true }` (or equivalent); do not mutate the pending row.
+6. The tick stops processing the remaining batch.
+7. A Mongo claim already issued before degradation is **in flight** and may finish under the existing delivery state machine.
+8. Process-local readiness must **not** be added to the Mongo claim filter.
+9. Atomic `EmailDeliveryState` claiming remains the cross-process concurrency authority.
+10. Degradation or shutdown after a row was claimed must **not** return that row to `pending` merely because readiness changed.
 
 ### R3. EmailEvent truth contract
 
@@ -906,7 +973,7 @@ Durable `EmailDeliveryState` atomic claims remain the authoritative cross-proces
 | Field | Value |
 |-------|-------|
 | Binding | Yes |
-| Amendment | Runtime decisions locked 2026-07-31; Batch 1 remediation architecture locked |
+| Amendment | Runtime decisions locked 2026-07-31; Batch 1 remediation architecture locked; R2.1/R2.2 persistence recovery + claim gate locked |
 | Rejected implementation | `7e0b2f1` — must not deploy; remediate before Batch 2 |
 | Production worker | Must remain **stopped** until Batches 1–3 (including remediation) deploy |
 | Forbidden without revision | Second email sender; API-started confirmation worker; success on logged/unavailable; EmailEvent success for logged; pre-provider ambiguity; health truth from API memory alone; root `.env` fallback in production |
