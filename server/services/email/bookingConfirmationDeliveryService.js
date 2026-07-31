@@ -531,8 +531,6 @@ async function sendClaimedConfirmationDelivery({
   }
 
   const at = normalizeNow(now);
-  // Bound: after this stamp, throws / uncertain handoffs become ambiguous.
-  await markSmtpAttemptStarted({ correlationKey: state.correlationKey, now: at });
 
   const templateKey =
     state.templateKey || resolveConfirmationTemplateKey(booking);
@@ -541,6 +539,7 @@ async function sendClaimedConfirmationDelivery({
     booking?.confirmationEmailSentAt || isDefinitiveSentStatus(state.latestStatus)
   );
 
+  let providerAttemptStarted = false;
   let outcome;
   try {
     const runner =
@@ -556,20 +555,46 @@ async function sendClaimedConfirmationDelivery({
       lifecycleSource: 'automatic',
       actorContext: null,
       entity,
-      skipDeliveryStateApply: true
+      skipDeliveryStateApply: true,
+      hasDefinitivePriorDelivery,
+      onProviderAttemptStarted: async () => {
+        const updated = await markSmtpAttemptStarted({
+          correlationKey: state.correlationKey,
+          now: at
+        });
+        if (!updated) {
+          const err = new Error('Failed to record SMTP attempt boundary');
+          err.code = 'PROVIDER_ATTEMPT_CALLBACK_FAILED';
+          throw err;
+        }
+        providerAttemptStarted = true;
+      }
     });
   } catch (err) {
-    // Provider handoff may have begun (smtpAttemptStartedAt set).
-    await markConfirmationDeliveryAmbiguous({
+    if (providerAttemptStarted || err?.providerAccepted === true) {
+      await markConfirmationDeliveryAmbiguous({
+        correlationKey: state.correlationKey,
+        reason: err?.code || 'AMBIGUOUS_SEND_THROW',
+        now: at
+      });
+      return {
+        ok: false,
+        retryable: false,
+        ambiguous: true,
+        errorCode: err?.code || 'AMBIGUOUS_SEND_THROW',
+        error: err?.message || String(err)
+      };
+    }
+    await markConfirmationDeliveryFailedRetryable({
       correlationKey: state.correlationKey,
-      reason: 'AMBIGUOUS_SEND_THROW',
+      errorCode: err?.code || 'PRE_PROVIDER_FAILURE',
+      errorSummary: err?.message || 'Confirmation send failed before provider attempt',
       now: at
     });
     return {
       ok: false,
-      retryable: false,
-      ambiguous: true,
-      errorCode: 'AMBIGUOUS_SEND_THROW',
+      retryable: true,
+      errorCode: err?.code || 'PRE_PROVIDER_FAILURE',
       error: err?.message || String(err)
     };
   }

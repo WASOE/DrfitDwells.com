@@ -9,6 +9,7 @@ const {
 } = require('../utils/manualLifecycleResendContent');
 const { bookingLifecycleCorrelationKey } = require('./email/emailDeliveryCorrelation');
 const { applyEmailDeliveryAttempt } = require('./email/emailDeliveryStateService');
+const { classifyEmailDeliveryResult } = require('./email/emailDeliveryResultContract');
 
 const TEMPLATE_KEYS = {
   BOOKING_RECEIVED: 'booking_received',
@@ -71,15 +72,35 @@ function composePayload(templateKey, booking, entity) {
   throw new Error(`Unknown templateKey: ${templateKey}`);
 }
 
-function resolveSendStatus(sendResult) {
+/**
+ * Map emailService outcomes to EmailEvent sendStatus using the shared classifier.
+ * Logged / unavailable / generic success are never EmailEvent success.
+ */
+function resolveSendStatus(sendResult, context = {}) {
   if (!sendResult) return { sendStatus: 'failed', deliveryMethod: 'unknown' };
-  if (sendResult.success && sendResult.method === 'skipped-duplicate') {
-    return { sendStatus: 'skipped', deliveryMethod: sendResult.method };
+  const classified = classifyEmailDeliveryResult(sendResult, context);
+  const method = classified.method || sendResult.method || 'failed';
+
+  if (classified.authoritativeDelivered) {
+    return { sendStatus: 'success', deliveryMethod: 'sent', classification: classified };
   }
-  if (sendResult.success) {
-    return { sendStatus: 'success', deliveryMethod: sendResult.method || 'sent' };
+  if (classified.classification === 'skipped_duplicate' && classified.adoptPriorDelivery) {
+    return { sendStatus: 'skipped', deliveryMethod: method, classification: classified };
   }
-  return { sendStatus: 'failed', deliveryMethod: sendResult.method || 'failed' };
+  if (classified.classification === 'skipped_duplicate') {
+    return {
+      sendStatus: 'failed',
+      deliveryMethod: method,
+      classification: classified,
+      errorMessage: classified.reason
+    };
+  }
+  return {
+    sendStatus: 'failed',
+    deliveryMethod: method || 'failed',
+    classification: classified,
+    errorMessage: classified.reason || sendResult.error || 'non_authoritative_delivery'
+  };
 }
 
 async function persistLifecycleEmailEvent({
@@ -155,7 +176,11 @@ async function sendBookingLifecycleEmail({
   entity = null,
   manualContentOverride = null,
   /** Batch 6: confirmation delivery SM owns EmailDeliveryState; skip legacy apply. */
-  skipDeliveryStateApply = false
+  skipDeliveryStateApply = false,
+  /** Confirmation SM: invoked by emailService immediately before sendMail */
+  onProviderAttemptStarted = null,
+  /** When true, skipped-duplicate may map to EmailEvent skipped (prior delivery) */
+  hasDefinitivePriorDelivery = false
 }) {
   if (!booking?._id) {
     throw new Error('booking with _id is required');
@@ -232,10 +257,15 @@ async function sendBookingLifecycleEmail({
     text: finalText,
     trigger: emailTrigger,
     bookingId: booking._id,
-    skipIdempotencyWindow
+    skipIdempotencyWindow,
+    onProviderAttemptStarted:
+      typeof onProviderAttemptStarted === 'function' ? onProviderAttemptStarted : null
   });
 
-  const { sendStatus, deliveryMethod } = resolveSendStatus(sendResult);
+  const resolved = resolveSendStatus(sendResult, {
+    hasDefinitivePriorDelivery: Boolean(hasDefinitivePriorDelivery)
+  });
+  const { sendStatus, deliveryMethod } = resolved;
 
   const deliveryCorrelationKey = bookingLifecycleCorrelationKey({
     bookingId: booking._id,
@@ -243,24 +273,39 @@ async function sendBookingLifecycleEmail({
     recipientEmail: recipient
   });
 
-  const emailEvent = await persistLifecycleEmailEvent({
-    bookingId: booking._id,
-    templateKey,
-    lifecycleSource,
-    emailTrigger,
-    sendStatus,
-    deliveryMethod,
-    to: recipient,
-    subject: finalSubject,
-    overrideRecipientUsed: Boolean(normalizedOverride),
-    guestEmailAtSend: guestEmail || null,
-    errorMessage: sendResult.success ? undefined : sendResult.error,
-    actorId: actorContext?.actorId,
-    actorRole: actorContext?.actorRole,
-    messageId: sendResult.messageId,
-    manualEditDetails,
-    deliveryCorrelationKey
-  });
+  let emailEvent;
+  try {
+    emailEvent = await persistLifecycleEmailEvent({
+      bookingId: booking._id,
+      templateKey,
+      lifecycleSource,
+      emailTrigger,
+      sendStatus,
+      deliveryMethod,
+      to: recipient,
+      subject: finalSubject,
+      overrideRecipientUsed: Boolean(normalizedOverride),
+      guestEmailAtSend: guestEmail || null,
+      errorMessage:
+        sendStatus === 'success'
+          ? undefined
+          : resolved.errorMessage || sendResult.error || undefined,
+      actorId: actorContext?.actorId,
+      actorRole: actorContext?.actorRole,
+      messageId: sendStatus === 'success' ? sendResult.messageId : undefined,
+      manualEditDetails,
+      deliveryCorrelationKey
+    });
+  } catch (persistErr) {
+    // If SMTP already accepted, persistence failure is uncertain for confirmation SM.
+    if (resolved.classification?.authoritativeDelivered) {
+      const err = persistErr instanceof Error ? persistErr : new Error(String(persistErr));
+      err.code = 'EMAIL_EVENT_PERSIST_AFTER_SEND';
+      err.providerAccepted = true;
+      throw err;
+    }
+    throw persistErr;
+  }
 
   if (!skipDeliveryStateApply) {
     await applyEmailDeliveryAttempt({
@@ -272,21 +317,22 @@ async function sendBookingLifecycleEmail({
       sendStatus,
       lifecycleSource,
       emailEventId: emailEvent?._id,
-      errorMessage: sendResult.success ? undefined : sendResult.error,
+      errorMessage: sendStatus === 'success' ? undefined : resolved.errorMessage || sendResult.error,
       actorId: actorContext?.actorId,
       actorRole: actorContext?.actorRole
     });
   }
 
   return {
-    success: sendResult.success,
+    success: sendStatus === 'success',
     method: sendResult.method || deliveryMethod,
     sendResult,
     emailEvent,
     recipient,
     templateKey,
     sendStatus,
-    deliveryMethod
+    deliveryMethod,
+    classification: resolved.classification || null
   };
 }
 
@@ -326,17 +372,22 @@ async function sendInternalNewBookingNotification({ booking, entity, lifecycleSo
     subject: internalEmail.subject,
     overrideRecipientUsed: false,
     guestEmailAtSend: (booking.guestInfo?.email && String(booking.guestInfo.email).trim().toLowerCase()) || null,
-    errorMessage: sendResult.success ? undefined : sendResult.error,
+    errorMessage:
+      sendStatus === 'success'
+        ? undefined
+        : resolvedInternal.errorMessage || sendResult.error || undefined,
     actorId: undefined,
     actorRole: undefined,
-    messageId: sendResult.messageId
+    messageId: sendStatus === 'success' ? sendResult.messageId : undefined
   });
 
   return {
-    success: sendResult.success,
+    success: sendStatus === 'success',
     method: sendResult.method || deliveryMethod,
     sendResult,
-    emailEvent
+    emailEvent,
+    sendStatus,
+    deliveryMethod
   };
 }
 

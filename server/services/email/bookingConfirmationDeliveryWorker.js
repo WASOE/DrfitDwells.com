@@ -97,8 +97,14 @@ const state = {
   sendFn: null,
   verifyFn: null,
   emailServiceRef: null,
-  releaseId: null
+  releaseId: null,
+  readinessGeneration: 0
 };
+
+function bumpReadinessGeneration(reason) {
+  state.readinessGeneration += 1;
+  return state.readinessGeneration;
+}
 
 function parsePositiveIntEnv(name, fallback) {
   const raw = process.env[name];
@@ -252,16 +258,21 @@ async function runSmtpVerificationOnce({ reason = 'periodic' } = {}) {
     state.readinessState = READINESS.READY;
     if (!wasReady) {
       logEvent('booking_confirmation_worker_smtp_verified', {
-        verifyReason: reason
+        verifyReason: reason,
+        readinessGeneration: state.readinessGeneration
       });
     }
     scheduleReverify(cfg.readyReverifyMs);
     return { ok: true, result };
   }
 
+  const wasReady = state.readinessState === READINESS.READY;
   state.smtpVerified = false;
   state.lastVerifyError = result.error || 'SMTP verify failed';
   state.readinessState = READINESS.DEGRADED;
+  if (wasReady) {
+    bumpReadinessGeneration('smtp_verify_failed');
+  }
   const now = Date.now();
   if (
     !state.lastDegradedLogAt ||
@@ -590,6 +601,8 @@ async function runConfirmationDeliveryTickOnce({
       return { dueCount: 0, results: [], skippedReason: 'not_ready' };
     }
 
+    const tickGeneration = state.readinessGeneration;
+
     const due = await findDueConfirmationDeliveries({
       now: at,
       limit: state.batchSize,
@@ -597,8 +610,21 @@ async function runConfirmationDeliveryTickOnce({
     });
 
     const results = [];
+    let stoppedEarly = false;
     for (const row of due) {
-      if (!forceReady && !isBookingConfirmationDeliveryReady()) {
+      if (
+        !forceReady &&
+        (!isBookingConfirmationDeliveryReady() ||
+          state.readinessGeneration !== tickGeneration)
+      ) {
+        stoppedEarly = true;
+        logEvent('booking_confirmation_worker_tick', {
+          phase: 'batch_stopped',
+          reason: 'readiness_changed',
+          readinessState: state.readinessState,
+          readinessGeneration: state.readinessGeneration,
+          tickGeneration
+        });
         break;
       }
       state.processedTotal += 1;
@@ -618,9 +644,10 @@ async function runConfirmationDeliveryTickOnce({
       retryable: state.lastTickRetryable,
       abandoned: state.lastTickAbandoned,
       skipped: state.lastTickSkipped,
-      ambiguous: state.lastTickAmbiguous
+      ambiguous: state.lastTickAmbiguous,
+      stoppedEarly
     });
-    return { dueCount: due.length, results };
+    return { dueCount: due.length, results, stoppedEarly };
   } catch (err) {
     setLastError(err);
     logEvent('booking_confirmation_worker_error', {
@@ -742,8 +769,10 @@ function startBookingConfirmationDeliveryWorkerIfEnabled(options = {}) {
 }
 
 function stopBookingConfirmationDeliveryWorkerForTest() {
+  const wasReady = state.readinessState === READINESS.READY;
   state.stopping = true;
   state.readinessState = READINESS.STOPPING;
+  if (wasReady) bumpReadinessGeneration('stopping');
   clearTimers();
   const wasRunning = state.running;
   state.running = false;
@@ -753,6 +782,16 @@ function stopBookingConfirmationDeliveryWorkerForTest() {
     logEvent('booking_confirmation_worker_stopped', {});
   }
   return { stopped: true };
+}
+
+/** Test helper: force degrade and bump generation (mid-batch safety). */
+function __degradeConfirmationDeliveryWorkerForTesting(reason = 'test_degrade') {
+  if (state.readinessState === READINESS.READY) {
+    bumpReadinessGeneration(reason);
+  }
+  state.smtpVerified = false;
+  state.readinessState = READINESS.DEGRADED;
+  state.lastVerifyError = reason;
 }
 
 function __setConfirmationDeliverySendFnForTesting(fn) {
@@ -808,6 +847,7 @@ function __resetConfirmationDeliveryWorkerStateForTesting() {
   state.sendFn = null;
   state.verifyFn = null;
   state.releaseId = null;
+  state.readinessGeneration = 0;
 }
 
 function setMongoConnectedForWorker(connected) {
@@ -848,7 +888,8 @@ function getBookingConfirmationDeliveryWorkerState() {
     lastTickAmbiguous: state.lastTickAmbiguous,
     lastTickSkipped: state.lastTickSkipped,
     lastTickAbandoned: state.lastTickAbandoned,
-    releaseId: state.releaseId
+    releaseId: state.releaseId,
+    readinessGeneration: state.readinessGeneration
   };
 }
 
@@ -928,5 +969,6 @@ module.exports = {
   __setConfirmationDeliverySendFnForTesting,
   __setConfirmationDeliveryVerifyFnForTesting,
   __setConfirmationDeliveryWorkerReadyForTesting,
+  __degradeConfirmationDeliveryWorkerForTesting,
   __resetConfirmationDeliveryWorkerStateForTesting
 };

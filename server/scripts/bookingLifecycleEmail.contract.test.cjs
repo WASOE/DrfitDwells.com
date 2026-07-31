@@ -52,38 +52,43 @@ describe('resolveSendStatus', () => {
   const { resolveSendStatus } = bookingLifecycleEmailService;
 
   test('maps success + sent', () => {
-    assert.deepStrictEqual(resolveSendStatus({ success: true, method: 'sent', messageId: 'm1' }), {
-      sendStatus: 'success',
-      deliveryMethod: 'sent'
-    });
+    const r = resolveSendStatus({ success: true, method: 'sent', messageId: 'm1' });
+    assert.strictEqual(r.sendStatus, 'success');
+    assert.strictEqual(r.deliveryMethod, 'sent');
   });
 
-  test('maps success + logged (no SMTP)', () => {
-    assert.deepStrictEqual(resolveSendStatus({ success: true, method: 'logged' }), {
-      sendStatus: 'success',
-      deliveryMethod: 'logged'
-    });
+  test('maps success + logged to non-success EmailEvent (not delivered)', () => {
+    const r = resolveSendStatus({ success: true, method: 'logged' });
+    assert.strictEqual(r.sendStatus, 'failed');
+    assert.strictEqual(r.deliveryMethod, 'logged');
+    assert.ok(r.errorMessage);
   });
 
-  test('maps skipped-duplicate to skipped sendStatus', () => {
-    assert.deepStrictEqual(resolveSendStatus({ success: true, method: 'skipped-duplicate' }), {
-      sendStatus: 'skipped',
-      deliveryMethod: 'skipped-duplicate'
-    });
+  test('maps skipped-duplicate without prior evidence to non-success', () => {
+    const r = resolveSendStatus({ success: true, method: 'skipped-duplicate' });
+    assert.strictEqual(r.sendStatus, 'failed');
+    assert.strictEqual(r.deliveryMethod, 'skipped-duplicate');
+  });
+
+  test('maps skipped-duplicate with prior evidence to skipped', () => {
+    const r = resolveSendStatus(
+      { success: true, method: 'skipped-duplicate' },
+      { hasDefinitivePriorDelivery: true }
+    );
+    assert.strictEqual(r.sendStatus, 'skipped');
+    assert.strictEqual(r.deliveryMethod, 'skipped-duplicate');
   });
 
   test('maps failure', () => {
-    assert.deepStrictEqual(resolveSendStatus({ success: false, method: 'failed', error: 'x' }), {
-      sendStatus: 'failed',
-      deliveryMethod: 'failed'
-    });
+    const r = resolveSendStatus({ success: false, method: 'failed', error: 'x' });
+    assert.strictEqual(r.sendStatus, 'failed');
+    assert.strictEqual(r.deliveryMethod, 'failed');
   });
 
   test('maps missing sendResult', () => {
-    assert.deepStrictEqual(resolveSendStatus(null), {
-      sendStatus: 'failed',
-      deliveryMethod: 'unknown'
-    });
+    const r = resolveSendStatus(null);
+    assert.strictEqual(r.sendStatus, 'failed');
+    assert.strictEqual(r.deliveryMethod, 'unknown');
   });
 });
 
@@ -182,7 +187,7 @@ describe('sendBookingLifecycleEmail', () => {
     assert.strictEqual(capturedSend.skipIdempotencyWindow, true);
   });
 
-  test('automatic + skipped-duplicate maps to skipped persist', async () => {
+  test('automatic + skipped-duplicate without prior evidence persists failed', async () => {
     let capturedCreate = null;
     emailService.sendEmail = async () => ({ success: true, method: 'skipped-duplicate' });
     EmailEvent.create = async (doc) => {
@@ -200,8 +205,54 @@ describe('sendBookingLifecycleEmail', () => {
       entity: minimalEntity
     });
 
+    assert.strictEqual(capturedCreate.sendStatus, 'failed');
+    assert.strictEqual(capturedCreate.deliveryMethod, 'skipped-duplicate');
+  });
+
+  test('automatic + skipped-duplicate with prior evidence persists skipped', async () => {
+    let capturedCreate = null;
+    emailService.sendEmail = async () => ({ success: true, method: 'skipped-duplicate' });
+    EmailEvent.create = async (doc) => {
+      capturedCreate = doc;
+      return { ...doc, _id: new mongoose.Types.ObjectId() };
+    };
+
+    const booking = minimalBooking();
+    await bookingLifecycleEmailService.sendBookingLifecycleEmail({
+      booking,
+      templateKey: bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_CONFIRMED,
+      overrideRecipient: null,
+      lifecycleSource: 'automatic',
+      actorContext: null,
+      entity: minimalEntity,
+      hasDefinitivePriorDelivery: true
+    });
+
     assert.strictEqual(capturedCreate.sendStatus, 'skipped');
     assert.strictEqual(capturedCreate.deliveryMethod, 'skipped-duplicate');
+  });
+
+  test('logged outcome persists EmailEvent sendStatus failed (not success)', async () => {
+    let capturedCreate = null;
+    emailService.sendEmail = async () => ({ success: true, method: 'logged' });
+    EmailEvent.create = async (doc) => {
+      capturedCreate = doc;
+      return { ...doc, _id: new mongoose.Types.ObjectId() };
+    };
+
+    const booking = minimalBooking();
+    const result = await bookingLifecycleEmailService.sendBookingLifecycleEmail({
+      booking,
+      templateKey: bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_CONFIRMED,
+      lifecycleSource: 'automatic',
+      entity: minimalEntity
+    });
+
+    assert.strictEqual(result.success, false);
+    assert.strictEqual(result.sendStatus, 'failed');
+    assert.strictEqual(capturedCreate.sendStatus, 'failed');
+    assert.strictEqual(capturedCreate.deliveryMethod, 'logged');
+    assert.ok(capturedCreate.errorMessage);
   });
 
   test('send failure persists failed + errorMessage', async () => {

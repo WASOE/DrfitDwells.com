@@ -135,6 +135,11 @@ function internalEmailSocialFooterHtml() {
           </div>`;
 }
 
+/**
+ * In-memory dedupe reservation store.
+ * Entries: { status: 'inFlight'|'definitivelySent'|'ambiguous', at: number }
+ * Only `definitivelySent` causes skipped-duplicate.
+ */
 const sentEvents = new Map();
 const EVENT_TTL_MS = 10 * 60 * 1000;
 
@@ -185,20 +190,74 @@ function buildSmtpTransportConfig() {
 
 function cleanupSentEvents() {
   const now = Date.now();
-  for (const [k, t] of sentEvents) {
-    if (now - t >= EVENT_TTL_MS) sentEvents.delete(k);
+  for (const [k, entry] of sentEvents) {
+    const at = entry && typeof entry === 'object' ? entry.at : entry;
+    if (typeof at === 'number' && now - at >= EVENT_TTL_MS) sentEvents.delete(k);
   }
 }
 
 const _cleanupInterval = setInterval(cleanupSentEvents, EVENT_TTL_MS);
 if (_cleanupInterval.unref) _cleanupInterval.unref();
 
+function getDedupeEntry(key) {
+  const entry = sentEvents.get(key);
+  if (!entry) return null;
+  // Legacy numeric timestamp = definitivelySent
+  if (typeof entry === 'number') {
+    if (Date.now() - entry >= EVENT_TTL_MS) {
+      sentEvents.delete(key);
+      return null;
+    }
+    return { status: 'definitivelySent', at: entry };
+  }
+  if (typeof entry === 'object' && entry.at != null) {
+    if (Date.now() - entry.at >= EVENT_TTL_MS) {
+      sentEvents.delete(key);
+      return null;
+    }
+    return entry;
+  }
+  return null;
+}
+
+/**
+ * Reserve in-flight or detect definitive prior send.
+ * @returns {'ok'|'definitivelySent'|'inFlight'}
+ */
+function reserveSendAttempt(key) {
+  const existing = getDedupeEntry(key);
+  if (existing?.status === 'definitivelySent') return 'definitivelySent';
+  if (existing?.status === 'inFlight') return 'inFlight';
+  // ambiguous does not block a new attempt as "sent"
+  sentEvents.set(key, { status: 'inFlight', at: Date.now() });
+  return 'ok';
+}
+
+function markDefinitivelySent(key) {
+  sentEvents.set(key, { status: 'definitivelySent', at: Date.now() });
+}
+
+function releaseSendReservation(key) {
+  const existing = getDedupeEntry(key);
+  if (!existing || existing.status === 'inFlight' || existing.status === 'ambiguous') {
+    sentEvents.delete(key);
+  }
+}
+
+function markAmbiguousReservation(key) {
+  sentEvents.set(key, { status: 'ambiguous', at: Date.now() });
+}
+
+/** @deprecated — kept for any external callers; prefers definitive-sent check only */
 function markAndCheckEventRecentlySent(key) {
-  const now = Date.now();
-  const prev = sentEvents.get(key);
-  if (prev && now - prev < EVENT_TTL_MS) return true;
-  sentEvents.set(key, now);
+  const existing = getDedupeEntry(key);
+  if (existing?.status === 'definitivelySent') return true;
+  sentEvents.set(key, { status: 'inFlight', at: Date.now() });
   return false;
+}
+
+function __resetEmailDedupeForTesting() {
+  sentEvents.clear();
 }
 
 class EmailService {
@@ -232,9 +291,8 @@ class EmailService {
           await this.transporter.verify();
           console.log('📧 Email transporter verified');
         } catch (verifyErr) {
+          // Keep singleton transporter; temporary verify failure must not discard it.
           console.error('📧 Email transporter verification failed:', verifyErr.message);
-          this.transporter = null;
-          this.isConfigured = false;
           this.lastInitError = verifyErr.message || 'SMTP verify failed';
           if (isEmailDeliveryRequired()) {
             console.error('📧 EMAIL DELIVERY REQUIRED and transporter verification failed');
@@ -264,20 +322,34 @@ class EmailService {
     // webhook router cleanly route dispatch events to MessageDeliveryEvent
     // instead of EmailEvent.
     postmarkTag = null,
-    postmarkMetadata = null
-  }) {
+    postmarkMetadata = null,
+    /** Optional: called exactly once immediately before transporter.sendMail */
+    onProviderAttemptStarted = null
+  } = {}) {
     if (this.initPromise) {
       await this.initPromise;
     }
 
-    // Idempotency: avoid duplicate sends for same booking+event in short window (bypassed for explicit manual resends)
-    if (!skipIdempotencyWindow && bookingId && trigger) {
-      const key = `${bookingId}:${trigger}`;
-      if (markAndCheckEventRecentlySent(key)) {
+    const dedupeKey =
+      !skipIdempotencyWindow && bookingId && trigger
+        ? `${bookingId}:${trigger}`
+        : null;
+    let reserved = false;
+    let providerAttemptInvoked = false;
+
+    if (dedupeKey) {
+      const reserve = reserveSendAttempt(dedupeKey);
+      if (reserve === 'definitivelySent') {
         console.log('📧 Skipping duplicate email (idempotency):', { bookingId, trigger });
         return { success: true, method: 'skipped-duplicate' };
       }
+      if (reserve === 'inFlight') {
+        console.log('📧 Skipping duplicate email (in-flight):', { bookingId, trigger });
+        return { success: true, method: 'skipped-duplicate' };
+      }
+      reserved = true;
     }
+
     const emailData = {
       from: process.env.EMAIL_FROM || 'Drift & Dwells <bookings@driftdwells.com>',
       to,
@@ -291,6 +363,7 @@ class EmailService {
 
     if (!this.isConfigured || !this.transporter) {
       const missingTransportError = this.lastInitError || 'SMTP transport unavailable';
+      if (reserved && dedupeKey) releaseSendReservation(dedupeKey);
       if (isEmailDeliveryRequired()) {
         console.error('📧 Required email delivery failed before send:', {
           trigger,
@@ -324,14 +397,6 @@ class EmailService {
         text: emailData.text
       };
 
-      // Postmark tag/metadata.
-      //
-      // Batch 9 (additive): if the caller supplied a custom `postmarkTag`
-      // and/or `postmarkMetadata`, those override the legacy `booking:*`
-      // header pair entirely — the two are mutually exclusive on the wire so
-      // the webhook router can route `dispatch:*` events to
-      // `MessageDeliveryEvent` instead of `EmailEvent`. If neither is
-      // supplied, the legacy behaviour is preserved byte-identically.
       const hasCustomTag = typeof postmarkTag === 'string' && postmarkTag.trim().length > 0;
       const hasCustomMetadata = postmarkMetadata
         && typeof postmarkMetadata === 'object'
@@ -345,12 +410,17 @@ class EmailService {
       } else if (emailData.bookingId) {
         mailOptions.headers = {
           'X-PM-Tag': `booking:${emailData.bookingId}`,
-          'X-PM-Metadata': JSON.stringify({ 
+          'X-PM-Metadata': JSON.stringify({
             bookingId: emailData.bookingId,
-            trigger: emailData.trigger 
+            trigger: emailData.trigger
           })
         };
       }
+
+      if (typeof onProviderAttemptStarted === 'function') {
+        await onProviderAttemptStarted();
+      }
+      providerAttemptInvoked = true;
 
       const info = await this.transporter.sendMail(mailOptions);
 
@@ -361,6 +431,7 @@ class EmailService {
         to
       });
 
+      if (reserved && dedupeKey) markDefinitivelySent(dedupeKey);
       return { success: true, method: 'sent', messageId: info.messageId };
     } catch (error) {
       console.error('📧 Failed to send email:', {
@@ -369,6 +440,23 @@ class EmailService {
         bookingId,
         to
       });
+
+      if (reserved && dedupeKey) {
+        if (providerAttemptInvoked) markAmbiguousReservation(dedupeKey);
+        else releaseSendReservation(dedupeKey);
+      }
+
+      const err = error instanceof Error ? error : new Error(String(error));
+      // Callback threw before sendMail — pre-provider failure for callers using the seam.
+      if (!providerAttemptInvoked && typeof onProviderAttemptStarted === 'function') {
+        err.code = err.code || 'PROVIDER_ATTEMPT_CALLBACK_FAILED';
+        throw err;
+      }
+      // After boundary callback, sendMail rejection is uncertain for confirmation SM.
+      if (providerAttemptInvoked && typeof onProviderAttemptStarted === 'function') {
+        err.code = err.code || 'SMTP_SEND_THROW';
+        throw err;
+      }
 
       if (isEmailDeliveryRequired()) {
         return { success: false, method: 'failed', error: error.message };
@@ -380,12 +468,7 @@ class EmailService {
 
   /**
    * Readiness verify for the singleton transporter. No sendMail. No MRI.
-   * Rebuilds this.transporter from buildSmtpTransportConfig when config exists
-   * but the transporter was cleared after a prior verify failure.
-   *
-   * @param {object} [options]
-   * @param {number} [options.timeoutMs]
-   * @param {function} [options.verifyFn] test injection
+   * Does not null the transporter on temporary verify failure.
    */
   async verifyTransportReady(options = {}) {
     if (typeof this._verifyTransportReadyForTesting === 'function') {
@@ -396,6 +479,7 @@ class EmailService {
       ? Math.max(1, Number(options.timeoutMs))
       : 15_000;
     const checkedAt = new Date();
+    const generation = (this._verifyGeneration = (this._verifyGeneration || 0) + 1);
 
     if (this.initPromise) {
       try {
@@ -407,8 +491,6 @@ class EmailService {
 
     const transportConfig = buildSmtpTransportConfig();
     if (!transportConfig) {
-      this.isConfigured = false;
-      this.transporter = null;
       this.lastInitError = 'SMTP transport not configured';
       return {
         ok: false,
@@ -430,68 +512,122 @@ class EmailService {
       };
     }
 
-    try {
-      if (!this.transporter) {
+    if (!this.transporter) {
+      try {
         this.transporter = nodemailer.createTransport(transportConfig.config);
+        this.isConfigured = true;
+        this.lastInitError = null;
+      } catch (err) {
+        const message = String(err?.message || 'SMTP transport init failed').slice(0, 500);
+        this.lastInitError = message;
+        return {
+          ok: false,
+          configured: true,
+          verified: false,
+          checkedAt,
+          errorCode: 'SMTP_INIT_FAILED',
+          error: message,
+          source: transportConfig.source,
+          diagnostics: {
+            configured: true,
+            host: transportConfig.config.host || null,
+            port: transportConfig.config.port || null,
+            secure: Boolean(transportConfig.config.secure),
+            tlsServername: transportConfig.config.tls?.servername || null,
+            source: transportConfig.source,
+            hasAuth: Boolean(transportConfig.config.auth)
+          }
+        };
       }
+    }
 
+    let timeoutHandle = null;
+    let settled = false;
+    const diagnostics = {
+      configured: true,
+      host: transportConfig.config.host || null,
+      port: transportConfig.config.port || null,
+      secure: Boolean(transportConfig.config.secure),
+      tlsServername: transportConfig.config.tls?.servername || null,
+      source: transportConfig.source,
+      hasAuth: Boolean(transportConfig.config.auth)
+    };
+
+    try {
       const verifyFn =
         typeof options.verifyFn === 'function'
           ? options.verifyFn
           : () => this.transporter.verify();
 
-      await Promise.race([
-        Promise.resolve().then(() => verifyFn()),
-        new Promise((_, reject) => {
+      const verifyPromise = Promise.resolve()
+        .then(() => verifyFn())
+        .then((value) => {
+          if (settled || this._verifyGeneration !== generation) return null;
+          return { ok: true, value };
+        })
+        .catch((err) => {
+          if (settled || this._verifyGeneration !== generation) return null;
+          return { ok: false, err };
+        });
+
+      const timeoutPromise = new Promise((resolve) => {
+        timeoutHandle = setTimeout(() => {
+          if (settled || this._verifyGeneration !== generation) {
+            resolve(null);
+            return;
+          }
           const err = new Error(`SMTP verify timed out after ${timeoutMs}ms`);
           err.code = 'SMTP_VERIFY_TIMEOUT';
-          setTimeout(() => reject(err), timeoutMs);
-        })
-      ]);
+          resolve({ ok: false, err });
+        }, timeoutMs);
+      });
 
-      this.isConfigured = true;
-      this.lastInitError = null;
-      return {
-        ok: true,
-        configured: true,
-        verified: true,
-        checkedAt,
-        errorCode: null,
-        error: null,
-        source: transportConfig.source,
-        diagnostics: {
+      const outcome = await Promise.race([verifyPromise, timeoutPromise]);
+      settled = true;
+
+      if (!outcome || this._verifyGeneration !== generation) {
+        return {
+          ok: false,
           configured: true,
-          host: transportConfig.config.host || null,
-          port: transportConfig.config.port || null,
-          secure: Boolean(transportConfig.config.secure),
-          tlsServername: transportConfig.config.tls?.servername || null,
+          verified: false,
+          checkedAt,
+          errorCode: 'SMTP_VERIFY_SUPERSEDED',
+          error: 'SMTP verify superseded',
           source: transportConfig.source,
-          hasAuth: Boolean(transportConfig.config.auth)
-        }
-      };
-    } catch (err) {
-      const message = String(err?.message || 'SMTP verify failed').slice(0, 500);
-      this.transporter = null;
-      this.isConfigured = false;
+          diagnostics
+        };
+      }
+
+      if (outcome.ok) {
+        this.isConfigured = true;
+        this.lastInitError = null;
+        return {
+          ok: true,
+          configured: true,
+          verified: true,
+          checkedAt,
+          errorCode: null,
+          error: null,
+          source: transportConfig.source,
+          diagnostics
+        };
+      }
+
+      const message = String(outcome.err?.message || 'SMTP verify failed').slice(0, 500);
       this.lastInitError = message;
       return {
         ok: false,
         configured: true,
         verified: false,
         checkedAt,
-        errorCode: err?.code || 'SMTP_VERIFY_FAILED',
+        errorCode: outcome.err?.code || 'SMTP_VERIFY_FAILED',
         error: message,
         source: transportConfig.source,
-        diagnostics: {
-          configured: true,
-          host: transportConfig.config.host || null,
-          port: transportConfig.config.port || null,
-          secure: Boolean(transportConfig.config.secure),
-          tlsServername: transportConfig.config.tls?.servername || null,
-          source: transportConfig.source,
-          hasAuth: Boolean(transportConfig.config.auth)
-        }
+        diagnostics
       };
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      settled = true;
     }
   }
 
@@ -1102,6 +1238,7 @@ emailServiceInstance.__setVerifyTransportReadyForTesting = function setVerifyTra
 ) {
   this._verifyTransportReadyForTesting = typeof fn === 'function' ? fn : null;
 };
+emailServiceInstance.__resetEmailDedupeForTesting = __resetEmailDedupeForTesting;
 
 module.exports = emailServiceInstance;
 

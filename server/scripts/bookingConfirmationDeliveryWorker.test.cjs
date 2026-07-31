@@ -13,7 +13,9 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const Booking = require('../models/Booking');
 const CheckoutSession = require('../models/CheckoutSession');
 const EmailDeliveryState = require('../models/EmailDeliveryState');
+const EmailEvent = require('../models/EmailEvent');
 const ManualReviewItem = require('../models/ManualReviewItem');
+const emailService = require('../services/emailService');
 const featureFlags = require('../utils/featureFlags');
 const { bookingLifecycleCorrelationKey } = require('../services/email/emailDeliveryCorrelation');
 const {
@@ -36,7 +38,8 @@ const {
   __resetConfirmationDeliveryWorkerStateForTesting,
   __setConfirmationDeliverySendFnForTesting,
   __setConfirmationDeliveryVerifyFnForTesting,
-  __setConfirmationDeliveryWorkerReadyForTesting
+  __setConfirmationDeliveryWorkerReadyForTesting,
+  __degradeConfirmationDeliveryWorkerForTesting
 } = require('../services/email/bookingConfirmationDeliveryWorker');
 const {
   getBookingConfirmationDeliveryHealthReadModel
@@ -137,8 +140,11 @@ async function createOverduePendingState(booking, { overdueMs = 60 * 60 * 1000 }
 
 function mockSendSuccess({ messageId = 'msg_worker_ok' } = {}) {
   let calls = 0;
-  const fn = async () => {
+  const fn = async ({ onProviderAttemptStarted } = {}) => {
     calls += 1;
+    if (typeof onProviderAttemptStarted === 'function') {
+      await onProviderAttemptStarted();
+    }
     const id = `${messageId}_${calls}`;
     return {
       success: true,
@@ -214,8 +220,10 @@ test.beforeEach(async () => {
     Booking.deleteMany({}),
     CheckoutSession.deleteMany({}),
     EmailDeliveryState.deleteMany({}),
+    EmailEvent.deleteMany({}),
     ManualReviewItem.deleteMany({})
   ]);
+  emailService.__resetEmailDedupeForTesting();
   // Existing SM tests invoke ticks directly — mark process-local ready.
   process.env.BOOKING_CONFIRMATION_DELIVERY_WORKER_ENABLED = '1';
   __setConfirmationDeliveryWorkerReadyForTesting(true);
@@ -768,16 +776,74 @@ test('B1) throw after SMTP attempt started becomes ambiguous (no auto-resend)', 
   const result = await sendClaimedConfirmationDelivery({
     state: claimed,
     booking,
-    sendFn: async () => {
+    sendFn: async ({ onProviderAttemptStarted } = {}) => {
+      await onProviderAttemptStarted();
       throw new Error('connection reset after submit');
     }
   });
   assert.equal(result.ambiguous, true);
   const state = await EmailDeliveryState.findOne({ correlationKey: pending.correlationKey }).lean();
   assert.equal(state.latestStatus, 'ambiguous');
+  assert.ok(state.smtpAttemptStartedAt);
   const sendFn = mockSendSuccess();
   await runConfirmationDeliveryTickOnce({ sendFn });
   assert.equal(sendFn.getCalls(), 0);
+});
+
+test('B1R) throw before provider attempt boundary is retryable', async () => {
+  const booking = await createConfirmedBooking({ email: 'b1r.pre@example.com' });
+  const pending = await createOverduePendingState(booking);
+  const claimed = await claimConfirmationDeliveryAttempt({
+    correlationKey: pending.correlationKey,
+    workerId: 'test',
+    now: new Date()
+  });
+  const result = await sendClaimedConfirmationDelivery({
+    state: claimed,
+    booking,
+    sendFn: async () => {
+      throw new Error('template composition failed');
+    }
+  });
+  assert.equal(result.retryable, true);
+  assert.equal(result.ambiguous, undefined);
+  const state = await EmailDeliveryState.findOne({ correlationKey: pending.correlationKey }).lean();
+  assert.equal(state.latestStatus, 'failed');
+  assert.equal(state.smtpAttemptStartedAt, null);
+  assert.ok(state.nextAttemptAt);
+  const refreshed = await Booking.findById(booking._id).lean();
+  assert.equal(refreshed.confirmationEmailSentAt == null, true);
+});
+
+test('B1R) markSmtpAttemptStarted failure is retryable and sendMail not invoked', async () => {
+  const booking = await createConfirmedBooking({ email: 'b1r.markfail@example.com' });
+  const pending = await createOverduePendingState(booking);
+  const claimed = await claimConfirmationDeliveryAttempt({
+    correlationKey: pending.correlationKey,
+    workerId: 'test',
+    now: new Date()
+  });
+  // Pre-set stamp so mark filter (smtpAttemptStartedAt: null) misses → callback throws
+  await EmailDeliveryState.updateOne(
+    { correlationKey: claimed.correlationKey },
+    { $set: { smtpAttemptStartedAt: new Date('2000-01-01T00:00:00.000Z') } }
+  );
+  let sendMailInvoked = false;
+  const result = await sendClaimedConfirmationDelivery({
+    state: claimed,
+    booking,
+    sendFn: async ({ onProviderAttemptStarted } = {}) => {
+      await onProviderAttemptStarted();
+      sendMailInvoked = true;
+      return mockSendSuccess()();
+    }
+  });
+  assert.equal(result.retryable, true);
+  assert.notEqual(result.ambiguous, true);
+  assert.equal(sendMailInvoked, false);
+  const state = await EmailDeliveryState.findOne({ correlationKey: pending.correlationKey }).lean();
+  assert.equal(state.latestStatus, 'failed');
+  assert.ok(state.nextAttemptAt);
 });
 
 test('B1) shutdown stops timers and prevents new claims', async () => {
@@ -803,4 +869,266 @@ test('B1) shutdown stops timers and prevents new claims', async () => {
   const tick = await runConfirmationDeliveryTickOnce({ sendFn });
   assert.equal(tick.skippedReason, 'not_ready');
   assert.equal(sendFn.getCalls(), 0);
+});
+
+const MINIMAL_ENTITY = {
+  name: 'Remediation Cabin',
+  location: 'Test Valley',
+  arrivalWindowDefault: '15:00–18:00'
+};
+
+test('B1R) real lifecycle logged path: EmailEvent non-success + retryable SM', async () => {
+  const originalSend = emailService.sendEmail.bind(emailService);
+  emailService.sendEmail = async (opts) => {
+    assert.equal(typeof opts.onProviderAttemptStarted, 'function');
+    // Logged path must not invoke the provider-attempt callback
+    return { success: true, method: 'logged' };
+  };
+  try {
+    const booking = await createConfirmedBooking({ email: 'b1r.life.logged@example.com' });
+    const pending = await createOverduePendingState(booking);
+    const claimed = await claimConfirmationDeliveryAttempt({
+      correlationKey: pending.correlationKey,
+      workerId: 'test',
+      now: new Date()
+    });
+    const result = await sendClaimedConfirmationDelivery({
+      state: claimed,
+      booking,
+      entity: MINIMAL_ENTITY,
+      sendFn: null
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.retryable, true);
+    assert.equal(result.errorCode, 'LOGGED_FALLBACK');
+    const state = await EmailDeliveryState.findOne({ correlationKey: pending.correlationKey }).lean();
+    assert.equal(state.latestStatus, 'failed');
+    assert.equal(state.smtpAttemptStartedAt, null);
+    assert.ok(state.nextAttemptAt);
+    assert.equal(state.providerMessageId, null);
+    const events = await EmailEvent.find({ bookingId: booking._id }).lean();
+    assert.equal(events.length, 1);
+    assert.notEqual(events[0].sendStatus, 'success');
+    assert.equal(events[0].deliveryMethod, 'logged');
+    const refreshed = await Booking.findById(booking._id).lean();
+    assert.equal(refreshed.confirmationEmailSentAt == null, true);
+  } finally {
+    emailService.sendEmail = originalSend;
+  }
+});
+
+test('B1R) real lifecycle unavailable path: EmailEvent non-success + retryable SM', async () => {
+  const originalSend = emailService.sendEmail.bind(emailService);
+  emailService.sendEmail = async () => ({
+    success: false,
+    method: 'unavailable',
+    error: 'SMTP transport unavailable'
+  });
+  try {
+    const booking = await createConfirmedBooking({ email: 'b1r.life.unavail@example.com' });
+    const pending = await createOverduePendingState(booking);
+    const claimed = await claimConfirmationDeliveryAttempt({
+      correlationKey: pending.correlationKey,
+      workerId: 'test',
+      now: new Date()
+    });
+    const result = await sendClaimedConfirmationDelivery({
+      state: claimed,
+      booking,
+      entity: MINIMAL_ENTITY,
+      sendFn: null
+    });
+    assert.equal(result.retryable, true);
+    assert.equal(result.errorCode, 'SMTP_UNAVAILABLE');
+    const events = await EmailEvent.find({ bookingId: booking._id }).lean();
+    assert.equal(events.length, 1);
+    assert.notEqual(events[0].sendStatus, 'success');
+    assert.equal(events[0].deliveryMethod, 'unavailable');
+  } finally {
+    emailService.sendEmail = originalSend;
+  }
+});
+
+test('B1R) provider sent then EmailEvent persist failure is ambiguous', async () => {
+  const originalSend = emailService.sendEmail.bind(emailService);
+  const originalCreate = EmailEvent.create.bind(EmailEvent);
+  emailService.sendEmail = async ({ onProviderAttemptStarted } = {}) => {
+    if (typeof onProviderAttemptStarted === 'function') {
+      await onProviderAttemptStarted();
+    }
+    return { success: true, method: 'sent', messageId: 'msg_persist_fail' };
+  };
+  EmailEvent.create = async () => {
+    throw new Error('EmailEvent write failed');
+  };
+  try {
+    const booking = await createConfirmedBooking({ email: 'b1r.persist@example.com' });
+    const pending = await createOverduePendingState(booking);
+    const claimed = await claimConfirmationDeliveryAttempt({
+      correlationKey: pending.correlationKey,
+      workerId: 'test',
+      now: new Date()
+    });
+    const result = await sendClaimedConfirmationDelivery({
+      state: claimed,
+      booking,
+      entity: MINIMAL_ENTITY,
+      sendFn: null
+    });
+    assert.equal(result.ambiguous, true);
+    const state = await EmailDeliveryState.findOne({ correlationKey: pending.correlationKey }).lean();
+    assert.equal(state.latestStatus, 'ambiguous');
+    assert.ok(state.smtpAttemptStartedAt);
+    const refreshed = await Booking.findById(booking._id).lean();
+    assert.equal(refreshed.confirmationEmailSentAt == null, true);
+  } finally {
+    emailService.sendEmail = originalSend;
+    EmailEvent.create = originalCreate;
+  }
+});
+
+test('B1R) logged then retry inside window succeeds once (no false success Event)', async () => {
+  const originalSend = emailService.sendEmail.bind(emailService);
+  let calls = 0;
+  emailService.sendEmail = async ({ onProviderAttemptStarted } = {}) => {
+    calls += 1;
+    if (calls === 1) {
+      return { success: true, method: 'logged' };
+    }
+    if (typeof onProviderAttemptStarted === 'function') {
+      await onProviderAttemptStarted();
+    }
+    return { success: true, method: 'sent', messageId: 'msg_retry_ok' };
+  };
+  try {
+    const booking = await createConfirmedBooking({ email: 'b1r.retry.logged@example.com' });
+    const pending = await createOverduePendingState(booking);
+    const claimed1 = await claimConfirmationDeliveryAttempt({
+      correlationKey: pending.correlationKey,
+      workerId: 'test',
+      now: new Date()
+    });
+    const first = await sendClaimedConfirmationDelivery({
+      state: claimed1,
+      booking,
+      entity: MINIMAL_ENTITY,
+      sendFn: null
+    });
+    assert.equal(first.retryable, true);
+    const eventsAfterFirst = await EmailEvent.find({ bookingId: booking._id }).lean();
+    assert.equal(eventsAfterFirst.length, 1);
+    assert.notEqual(eventsAfterFirst[0].sendStatus, 'success');
+
+    await EmailDeliveryState.updateOne(
+      { correlationKey: pending.correlationKey },
+      { $set: { nextAttemptAt: new Date(Date.now() - 1000), latestStatus: 'failed' } }
+    );
+    const claimed2 = await claimConfirmationDeliveryAttempt({
+      correlationKey: pending.correlationKey,
+      workerId: 'test',
+      now: new Date()
+    });
+    const second = await sendClaimedConfirmationDelivery({
+      state: claimed2,
+      booking: await Booking.findById(booking._id),
+      entity: MINIMAL_ENTITY,
+      sendFn: null
+    });
+    assert.equal(second.ok, true);
+    assert.equal(second.sent, true);
+    assert.equal(calls, 2);
+    const state = await EmailDeliveryState.findOne({ correlationKey: pending.correlationKey }).lean();
+    assert.equal(state.latestStatus, 'succeeded');
+    assert.equal(state.attemptCount, 2);
+    const events = await EmailEvent.find({ bookingId: booking._id }).sort({ createdAt: 1 }).lean();
+    assert.equal(events.length, 2);
+    assert.notEqual(events[0].sendStatus, 'success');
+    assert.equal(events[1].sendStatus, 'success');
+  } finally {
+    emailService.sendEmail = originalSend;
+  }
+});
+
+test('B1R) SMTP rejection result then retry succeeds', async () => {
+  let calls = 0;
+  const booking = await createConfirmedBooking({ email: 'b1r.retry.smtp@example.com' });
+  const pending = await createOverduePendingState(booking);
+  const claimed1 = await claimConfirmationDeliveryAttempt({
+    correlationKey: pending.correlationKey,
+    workerId: 'test',
+    now: new Date()
+  });
+  const first = await sendClaimedConfirmationDelivery({
+    state: claimed1,
+    booking,
+    sendFn: async () => {
+      calls += 1;
+      return {
+        success: false,
+        method: 'failed',
+        sendStatus: 'failed',
+        sendResult: { success: false, method: 'failed', error: 'smtp rejected' }
+      };
+    }
+  });
+  assert.equal(first.retryable, true);
+  await EmailDeliveryState.updateOne(
+    { correlationKey: pending.correlationKey },
+    { $set: { nextAttemptAt: new Date(Date.now() - 1000) } }
+  );
+  const claimed2 = await claimConfirmationDeliveryAttempt({
+    correlationKey: pending.correlationKey,
+    workerId: 'test',
+    now: new Date()
+  });
+  const second = await sendClaimedConfirmationDelivery({
+    state: claimed2,
+    booking: await Booking.findById(booking._id),
+    sendFn: mockSendSuccess({ messageId: 'msg_after_reject' })
+  });
+  assert.equal(second.ok, true);
+  assert.equal(calls, 1);
+  assert.equal(second.sent, true);
+});
+
+test('B1R) degrade mid-batch stops further claims', async () => {
+  const b1 = await createConfirmedBooking({ email: 'b1r.degrade1@example.com' });
+  const b2 = await createConfirmedBooking({ email: 'b1r.degrade2@example.com' });
+  const b3 = await createConfirmedBooking({ email: 'b1r.degrade3@example.com' });
+  await createOverduePendingState(b1);
+  await createOverduePendingState(b2);
+  await createOverduePendingState(b3);
+
+  let calls = 0;
+  const sendFn = async ({ onProviderAttemptStarted } = {}) => {
+    calls += 1;
+    if (typeof onProviderAttemptStarted === 'function') {
+      await onProviderAttemptStarted();
+    }
+    if (calls === 1) {
+      __degradeConfirmationDeliveryWorkerForTesting('mid_batch');
+    }
+    return {
+      success: true,
+      method: 'sent',
+      messageId: `msg_deg_${calls}`,
+      sendStatus: 'success',
+      sendResult: { success: true, method: 'sent', messageId: `msg_deg_${calls}` },
+      emailEvent: { _id: new mongoose.Types.ObjectId() }
+    };
+  };
+
+  const genBefore = getBookingConfirmationDeliveryWorkerState().readinessGeneration;
+  const tick = await runConfirmationDeliveryTickOnce({ sendFn });
+  assert.equal(tick.stoppedEarly, true);
+  assert.equal(calls, 1);
+  assert.equal(tick.results.length, 1);
+  assert.equal(tick.results[0].outcome, 'succeeded');
+  const genAfter = getBookingConfirmationDeliveryWorkerState().readinessGeneration;
+  assert.ok(genAfter > genBefore);
+
+  const pendingLeft = await EmailDeliveryState.countDocuments({
+    latestStatus: 'pending'
+  });
+  assert.equal(pendingLeft, 2);
 });
