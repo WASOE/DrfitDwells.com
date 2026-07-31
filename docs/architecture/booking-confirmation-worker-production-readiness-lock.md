@@ -759,7 +759,7 @@ npm run verify:checkout-payment-prep-build
 | EMAIL_DELIVERY_REQUIRED | Locked: mandatory fatal for prod enabled worker |
 | Release variable | Locked: APP_RELEASE → … → npm_package_version; no git spawn |
 | Heartbeat identity | Locked: per workerType+instanceId; freshest ready; multi-instance warning |
-| lifecycle service change | Locked: **no** Batch 1 change |
+| lifecycle service change | **Superseded by BATCH 1 REMEDIATION ARCHITECTURE** — narrow EmailEvent classifier required |
 | emailService.js in Batch 1 | Locked: **yes** (verify API essential) |
 
 ### Genuinely repository-unanswerable (ops facts only)
@@ -772,12 +772,141 @@ These do **not** block Batch 1 implementation.
 
 ---
 
+## BATCH 1 REMEDIATION ARCHITECTURE
+
+**Status:** BINDING — supersedes conflicting earlier Batch 1 notes where they disagree
+**Basis:** Audit rejection of `7e0b2f1` (pre-provider ambiguity, false-success EmailEvent, dedupe poison, verify timeout, mid-tick degrade claims)
+
+### R1. True provider-attempt boundary
+
+`EmailDeliveryState.smtpAttemptStartedAt` means:
+
+> Nodemailer `sendMail` is about to be invoked and provider interaction may begin.
+
+It must **not** be set before recipient resolution, entity loading, payload composition, HTML/text rendering, attachment generation, transporter availability checks, or synchronous validation before `sendMail`.
+
+**Required call flow:**
+
+```text
+bookingConfirmationDeliveryService.sendClaimedConfirmationDelivery
+  → bookingLifecycleEmailService.sendBookingLifecycleEmail({ onProviderAttemptStarted })
+    → emailService.sendEmail({ onProviderAttemptStarted })
+      → await onProviderAttemptStarted()   // exactly once, immediately before sendMail
+      → transporter.sendMail(...)
+```
+
+**Callback rules:**
+
+- Optional for existing callers (default: no-op / absent).
+- Invoked exactly once, immediately before `transporter.sendMail()`.
+- Only when a real configured SMTP transporter will be invoked.
+- Never for `method:"logged"`, `method:"unavailable"`, skipped-duplicate, or local validation failure.
+- Receives no SMTP credentials and no unnecessary guest PII.
+- Ownership of `smtpAttemptStartedAt` remains in `bookingConfirmationDeliveryService` / `markSmtpAttemptStarted`.
+- `emailService` must **not** import `EmailDeliveryState` or write delivery-state rows.
+
+If the callback throws: **do not** call `sendMail`; treat as pre-provider failure (retryable).
+
+### R2. Exception classification by attempt phase
+
+Process-local `providerAttemptStarted` in `sendClaimedConfirmationDelivery`:
+
+- Set `true` only after `onProviderAttemptStarted` successfully completes `markSmtpAttemptStarted`.
+- Callback failure ⇒ `providerAttemptStarted` stays `false`; `sendMail` not invoked; **retryable**.
+
+| Phase | Transition |
+|-------|------------|
+| Before `onProviderAttemptStarted` succeeds | `markConfirmationDeliveryFailedRetryable`; `smtpAttemptStartedAt` null; auto-retry OK |
+| During/after successful boundary callback | thrown/uncertain → `markConfirmationDeliveryAmbiguous`; no auto-resend |
+| `sendMail` returns authoritative success, later persistence fails | **ambiguous** (SMTP may have delivered) |
+
+### R3. EmailEvent truth contract
+
+`bookingLifecycleEmailService` **must** classify via `emailDeliveryResultContract.js` before persisting `EmailEvent.sendStatus`:
+
+| Outcome | EmailEvent.sendStatus |
+|---------|----------------------|
+| `provider_sent` | `success` |
+| `logged_fallback` | `failed` (non-success); `deliveryMethod` may be `logged`; error/reason = non-delivery |
+| `unavailable` | non-success / `failed` |
+| generic success without `method:"sent"` | non-success / `failed` |
+| SMTP rejection | `failed` |
+| ambiguous provider attempt | failed with explicit ambiguity error code (model has no `ambiguous` enum) — **never** `success` |
+
+`EmailEvent` existence alone is never authoritative delivery evidence. Logged/unavailable must not appear successful in Ops, lifecycle history, duplicate detection, or recovery.
+
+### R4. Single classifier ownership
+
+`server/services/email/emailDeliveryResultContract.js` is shared by:
+
+- confirmation `EmailDeliveryState` transitions
+- booking lifecycle `EmailEvent` `sendStatus` classification
+
+No independent success rules. Classifier remains side-effect free.
+
+### R5. In-memory deduplication semantics
+
+Mark-before-send is **invalid**.
+
+**Chosen design (preferred):** reservation lifecycle in `emailService`:
+
+- Reserve an **inFlight** key before attempting a real send (when not skipping the window).
+- Distinguish `inFlight` from `definitivelySent`.
+- On authoritative `method:"sent"`: convert to `definitivelySent`.
+- On logged / unavailable / rejection / local throw / retryable failure: **release** reservation.
+- On ambiguous provider attempt: short ambiguity-safe reservation that is **not** treated as sent (does not cause `skipped-duplicate` as delivered).
+- TTL cleans stale entries.
+
+**Invariant:** A non-authoritative result must never create a “recently sent” / `definitivelySent` marker.
+
+Durable `EmailDeliveryState` atomic claims remain the authoritative cross-process confirmation dedupe. Do not “solve” by lengthening retry beyond the window.
+
+### R6. `verifyTransportReady` lifecycle
+
+- One singleton transporter; init when absent and config exists.
+- No second long-lived transporter.
+- Do **not** null/replace a valid transporter solely because verify temporarily fails.
+- Do not close a transporter that may be handling an active send.
+- Config changes ⇒ process restart (no hot-reload requirement).
+- Store timeout handle; **clear in `finally`**; ignore late verify resolution/rejection after timeout result is final.
+- No sendMail, no MRI, no credentials/config logged.
+- Timeout remains **15_000 ms**.
+
+### R7. Readiness generation / tick safety
+
+- Monotonic `readinessGeneration` increments whenever readiness **leaves** `ready`.
+- Tick captures generation when starting a ready batch.
+- Before **each** due row: recheck `isBookingConfirmationDeliveryReady()` and generation match.
+- On mismatch/degrade: stop batch immediately; no new claims.
+- In-flight claimed send may finish under SM rules.
+- Atomic DB claims remain cross-process authority.
+- Stale-lease reclaim while degraded unchanged.
+
+### R8. Remediation file boundary
+
+**In scope:**
+
+- this architecture document
+- `server/services/emailService.js`
+- `server/services/bookingLifecycleEmailService.js`
+- `server/services/email/emailDeliveryResultContract.js`
+- `server/services/email/bookingConfirmationDeliveryService.js`
+- `server/services/email/bookingConfirmationDeliveryWorker.js`
+- `server/scripts/emailDeliveryResultContract.test.cjs`
+- `server/scripts/bookingConfirmationDeliveryWorker.test.cjs`
+- `server/scripts/bookingLifecycleEmail.contract.test.cjs`
+- narrowly created/updated emailService tests if needed
+
+**Out of scope:** ecosystem, heartbeat, API health, Ops UI/read models, payment/checkout production logic, messaging/voucher workers, PM2, deploy docs beyond this lock.
+
+---
+
 ## Document control
 
 | Field | Value |
 |-------|-------|
 | Binding | Yes |
-| Amendment | Runtime decisions locked 2026-07-31 |
-| Implementation | Not started |
-| Production worker | Must remain **stopped** until Batches 1–3 deploy |
-| Forbidden without revision | Second email sender; API-started confirmation worker; success on logged/unavailable; health truth from API memory alone; root `.env` fallback in production |
+| Amendment | Runtime decisions locked 2026-07-31; Batch 1 remediation architecture locked |
+| Rejected implementation | `7e0b2f1` — must not deploy; remediate before Batch 2 |
+| Production worker | Must remain **stopped** until Batches 1–3 (including remediation) deploy |
+| Forbidden without revision | Second email sender; API-started confirmation worker; success on logged/unavailable; EmailEvent success for logged; pre-provider ambiguity; health truth from API memory alone; root `.env` fallback in production |
