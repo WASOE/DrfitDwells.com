@@ -378,6 +378,123 @@ class EmailService {
     }
   }
 
+  /**
+   * Readiness verify for the singleton transporter. No sendMail. No MRI.
+   * Rebuilds this.transporter from buildSmtpTransportConfig when config exists
+   * but the transporter was cleared after a prior verify failure.
+   *
+   * @param {object} [options]
+   * @param {number} [options.timeoutMs]
+   * @param {function} [options.verifyFn] test injection
+   */
+  async verifyTransportReady(options = {}) {
+    if (typeof this._verifyTransportReadyForTesting === 'function') {
+      return this._verifyTransportReadyForTesting(options);
+    }
+
+    const timeoutMs = Number.isFinite(Number(options.timeoutMs))
+      ? Math.max(1, Number(options.timeoutMs))
+      : 15_000;
+    const checkedAt = new Date();
+
+    if (this.initPromise) {
+      try {
+        await this.initPromise;
+      } catch {
+        /* init errors are reflected on instance fields */
+      }
+    }
+
+    const transportConfig = buildSmtpTransportConfig();
+    if (!transportConfig) {
+      this.isConfigured = false;
+      this.transporter = null;
+      this.lastInitError = 'SMTP transport not configured';
+      return {
+        ok: false,
+        configured: false,
+        verified: false,
+        checkedAt,
+        errorCode: 'SMTP_NOT_CONFIGURED',
+        error: 'SMTP transport not configured',
+        source: null,
+        diagnostics: {
+          configured: false,
+          host: null,
+          port: null,
+          secure: null,
+          tlsServername: null,
+          source: null,
+          hasAuth: false
+        }
+      };
+    }
+
+    try {
+      if (!this.transporter) {
+        this.transporter = nodemailer.createTransport(transportConfig.config);
+      }
+
+      const verifyFn =
+        typeof options.verifyFn === 'function'
+          ? options.verifyFn
+          : () => this.transporter.verify();
+
+      await Promise.race([
+        Promise.resolve().then(() => verifyFn()),
+        new Promise((_, reject) => {
+          const err = new Error(`SMTP verify timed out after ${timeoutMs}ms`);
+          err.code = 'SMTP_VERIFY_TIMEOUT';
+          setTimeout(() => reject(err), timeoutMs);
+        })
+      ]);
+
+      this.isConfigured = true;
+      this.lastInitError = null;
+      return {
+        ok: true,
+        configured: true,
+        verified: true,
+        checkedAt,
+        errorCode: null,
+        error: null,
+        source: transportConfig.source,
+        diagnostics: {
+          configured: true,
+          host: transportConfig.config.host || null,
+          port: transportConfig.config.port || null,
+          secure: Boolean(transportConfig.config.secure),
+          tlsServername: transportConfig.config.tls?.servername || null,
+          source: transportConfig.source,
+          hasAuth: Boolean(transportConfig.config.auth)
+        }
+      };
+    } catch (err) {
+      const message = String(err?.message || 'SMTP verify failed').slice(0, 500);
+      this.transporter = null;
+      this.isConfigured = false;
+      this.lastInitError = message;
+      return {
+        ok: false,
+        configured: true,
+        verified: false,
+        checkedAt,
+        errorCode: err?.code || 'SMTP_VERIFY_FAILED',
+        error: message,
+        source: transportConfig.source,
+        diagnostics: {
+          configured: true,
+          host: transportConfig.config.host || null,
+          port: transportConfig.config.port || null,
+          secure: Boolean(transportConfig.config.secure),
+          tlsServername: transportConfig.config.tls?.servername || null,
+          source: transportConfig.source,
+          hasAuth: Boolean(transportConfig.config.auth)
+        }
+      };
+    }
+  }
+
   generateBookingReceivedEmail(booking, cabin) {
     const checkIn = new Date(booking.checkIn);
     const checkOut = new Date(booking.checkOut);
@@ -980,6 +1097,11 @@ Facebook: ${FACEBOOK_URL}
 const emailServiceInstance = new EmailService();
 emailServiceInstance.buildSmtpTransportConfig = buildSmtpTransportConfig;
 emailServiceInstance.parseBooleanEnv = parseBooleanEnv;
+emailServiceInstance.__setVerifyTransportReadyForTesting = function setVerifyTransportReadyForTesting(
+  fn
+) {
+  this._verifyTransportReadyForTesting = typeof fn === 'function' ? fn : null;
+};
 
 module.exports = emailServiceInstance;
 

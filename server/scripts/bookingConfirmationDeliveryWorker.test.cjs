@@ -21,27 +21,39 @@ const {
   reclaimStaleSendingConfirmationDeliveries,
   markSmtpAttemptStarted,
   claimConfirmationDeliveryAttempt,
+  sendClaimedConfirmationDelivery,
   getVisibilityTimeoutMs
 } = require('../services/email/bookingConfirmationDeliveryService');
 const {
   startBookingConfirmationDeliveryWorker,
   stopBookingConfirmationDeliveryWorkerForTest,
   runConfirmationDeliveryTickOnce,
+  runSmtpVerificationOnce,
+  isBookingConfirmationDeliveryReady,
+  assertProductionWorkerConfigOrThrow,
   getBookingConfirmationDeliveryWorkerState,
   countConfirmationDeliveryBacklog,
   __resetConfirmationDeliveryWorkerStateForTesting,
-  __setConfirmationDeliverySendFnForTesting
+  __setConfirmationDeliverySendFnForTesting,
+  __setConfirmationDeliveryVerifyFnForTesting,
+  __setConfirmationDeliveryWorkerReadyForTesting
 } = require('../services/email/bookingConfirmationDeliveryWorker');
 const {
   getBookingConfirmationDeliveryHealthReadModel
 } = require('../services/email/bookingConfirmationDeliveryHealthService');
+const fs = require('fs');
+const path = require('path');
 
 let mongoServer;
 const ORIG = {
   WORKER: process.env.BOOKING_CONFIRMATION_DELIVERY_WORKER_ENABLED,
   VT: process.env.CONFIRMATION_DELIVERY_VISIBILITY_TIMEOUT_MS,
   SIDE: process.env.FINALIZE_SIDE_EFFECTS,
-  SEND: process.env.FINALIZE_WORKER_SEND_CONFIRMATION
+  SEND: process.env.FINALIZE_WORKER_SEND_CONFIRMATION,
+  SMTP_HOST: process.env.SMTP_HOST,
+  SMTP_URL: process.env.SMTP_URL,
+  EMAIL_DELIVERY_REQUIRED: process.env.EMAIL_DELIVERY_REQUIRED,
+  NODE_ENV: process.env.NODE_ENV
 };
 
 function restoreEnv() {
@@ -49,7 +61,11 @@ function restoreEnv() {
     ['WORKER', 'BOOKING_CONFIRMATION_DELIVERY_WORKER_ENABLED'],
     ['VT', 'CONFIRMATION_DELIVERY_VISIBILITY_TIMEOUT_MS'],
     ['SIDE', 'FINALIZE_SIDE_EFFECTS'],
-    ['SEND', 'FINALIZE_WORKER_SEND_CONFIRMATION']
+    ['SEND', 'FINALIZE_WORKER_SEND_CONFIRMATION'],
+    ['SMTP_HOST', 'SMTP_HOST'],
+    ['SMTP_URL', 'SMTP_URL'],
+    ['EMAIL_DELIVERY_REQUIRED', 'EMAIL_DELIVERY_REQUIRED'],
+    ['NODE_ENV', 'NODE_ENV']
   ]) {
     if (ORIG[key] === undefined) delete process.env[env];
     else process.env[env] = ORIG[key];
@@ -123,10 +139,13 @@ function mockSendSuccess({ messageId = 'msg_worker_ok' } = {}) {
   let calls = 0;
   const fn = async () => {
     calls += 1;
+    const id = `${messageId}_${calls}`;
     return {
       success: true,
+      method: 'sent',
+      messageId: id,
       sendStatus: 'success',
-      sendResult: { messageId: `${messageId}_${calls}`, method: 'smtp', success: true },
+      sendResult: { messageId: id, method: 'sent', success: true },
       emailEvent: { _id: new mongoose.Types.ObjectId() }
     };
   };
@@ -140,8 +159,34 @@ function mockSendFailure(message = 'SMTP rejected') {
     calls += 1;
     return {
       success: false,
+      method: 'failed',
       sendStatus: 'failed',
-      sendResult: { error: message, method: 'smtp', success: false }
+      sendResult: { error: message, method: 'failed', success: false }
+    };
+  };
+  fn.getCalls = () => calls;
+  return fn;
+}
+
+function mockSendLogged() {
+  let calls = 0;
+  const fn = async () => {
+    calls += 1;
+    return { success: true, method: 'logged', sendStatus: 'success', sendResult: { success: true, method: 'logged' } };
+  };
+  fn.getCalls = () => calls;
+  return fn;
+}
+
+function mockSendUnavailable() {
+  let calls = 0;
+  const fn = async () => {
+    calls += 1;
+    return {
+      success: false,
+      method: 'unavailable',
+      sendStatus: 'failed',
+      sendResult: { success: false, method: 'unavailable', error: 'SMTP transport unavailable' }
     };
   };
   fn.getCalls = () => calls;
@@ -171,6 +216,9 @@ test.beforeEach(async () => {
     EmailDeliveryState.deleteMany({}),
     ManualReviewItem.deleteMany({})
   ]);
+  // Existing SM tests invoke ticks directly — mark process-local ready.
+  process.env.BOOKING_CONFIRMATION_DELIVERY_WORKER_ENABLED = '1';
+  __setConfirmationDeliveryWorkerReadyForTesting(true);
 });
 
 test('A) pending confirmation is delivered once with sent stamps', async () => {
@@ -416,6 +464,8 @@ test('K) health metrics reflect activity and overdue backlog', async () => {
   startBookingConfirmationDeliveryWorker({
     force: true,
     skipImmediateTick: true,
+    skipSmtpVerifyForTest: true,
+    skipProductionFatalCheck: true,
     sendFn,
     tickMs: 60_000,
     sweeperTickMs: 60_000
@@ -442,6 +492,8 @@ test('L) process restart drains previously overdue pending rows', async () => {
   startBookingConfirmationDeliveryWorker({
     force: true,
     skipImmediateTick: true,
+    skipSmtpVerifyForTest: true,
+    skipProductionFatalCheck: true,
     sendFn,
     tickMs: 60_000,
     sweeperTickMs: 60_000
@@ -515,4 +567,240 @@ test('flag parser accepts shared boolean tokens for confirmation worker', () => 
   assert.equal(featureFlags.isBookingConfirmationDeliveryWorkerEnabled(), false);
   delete process.env.BOOKING_CONFIRMATION_DELIVERY_WORKER_ENABLED;
   assert.equal(featureFlags.isBookingConfirmationDeliveryWorkerEnabled(), false);
+});
+
+test('B1) entrypoint source loads loadServerEnv before email worker require', () => {
+  const src = fs.readFileSync(
+    path.join(__dirname, 'runBookingConfirmationDeliveryWorker.js'),
+    'utf8'
+  );
+  const envIdx = src.indexOf("require('../config/loadServerEnv')");
+  const workerIdx = src.indexOf(
+    "require('../services/email/bookingConfirmationDeliveryWorker')"
+  );
+  assert.ok(envIdx >= 0);
+  assert.ok(workerIdx > envIdx);
+});
+
+test('B1) production missing SMTP is fatal', () => {
+  process.env.BOOKING_CONFIRMATION_DELIVERY_WORKER_ENABLED = '1';
+  delete process.env.SMTP_HOST;
+  delete process.env.SMTP_URL;
+  process.env.EMAIL_DELIVERY_REQUIRED = '1';
+  assert.throws(
+    () => assertProductionWorkerConfigOrThrow({ nodeEnv: 'production' }),
+    (err) => err.fatal === true && err.code === 'SMTP_NOT_CONFIGURED'
+  );
+});
+
+test('B1) production missing EMAIL_DELIVERY_REQUIRED is fatal', () => {
+  process.env.BOOKING_CONFIRMATION_DELIVERY_WORKER_ENABLED = '1';
+  process.env.SMTP_HOST = 'smtp.example.test';
+  delete process.env.EMAIL_DELIVERY_REQUIRED;
+  assert.throws(
+    () => assertProductionWorkerConfigOrThrow({ nodeEnv: 'production' }),
+    (err) => err.fatal === true && err.code === 'EMAIL_DELIVERY_REQUIRED_MISSING'
+  );
+});
+
+test('B1) verify failure enters degraded and claims zero rows', async () => {
+  process.env.BOOKING_CONFIRMATION_DELIVERY_WORKER_ENABLED = '1';
+  process.env.SMTP_HOST = 'smtp.example.test';
+  __resetConfirmationDeliveryWorkerStateForTesting();
+  __setConfirmationDeliveryVerifyFnForTesting(async () => ({
+    ok: false,
+    configured: true,
+    verified: false,
+    errorCode: 'SMTP_VERIFY_FAILED',
+    error: 'verify boom'
+  }));
+  const booking = await createConfirmedBooking({ email: 'b1.degraded@example.com' });
+  await createOverduePendingState(booking);
+  const sendFn = mockSendSuccess();
+
+  startBookingConfirmationDeliveryWorker({
+    force: true,
+    skipImmediateTick: true,
+    skipProductionFatalCheck: true,
+    mongoConnected: true,
+    bootstrapCompleted: true,
+    sendFn,
+    tickMs: 60_000,
+    sweeperTickMs: 60_000
+  });
+  await runSmtpVerificationOnce({ reason: 'test' });
+  assert.equal(isBookingConfirmationDeliveryReady(), false);
+  assert.equal(getBookingConfirmationDeliveryWorkerState().readinessState, 'degraded');
+
+  const tick = await runConfirmationDeliveryTickOnce({ sendFn });
+  assert.equal(tick.skippedReason, 'not_ready');
+  assert.equal(sendFn.getCalls(), 0);
+  const state = await EmailDeliveryState.findOne({ bookingId: booking._id }).lean();
+  assert.equal(state.latestStatus, 'pending');
+  stopBookingConfirmationDeliveryWorkerForTest();
+});
+
+test('B1) later verify success becomes ready and drains overdue pending', async () => {
+  process.env.BOOKING_CONFIRMATION_DELIVERY_WORKER_ENABLED = '1';
+  process.env.SMTP_HOST = 'smtp.example.test';
+  __resetConfirmationDeliveryWorkerStateForTesting();
+  let verifyOk = false;
+  __setConfirmationDeliveryVerifyFnForTesting(async () => ({
+    ok: verifyOk,
+    configured: true,
+    verified: verifyOk,
+    error: verifyOk ? null : 'down'
+  }));
+  const booking = await createConfirmedBooking({ email: 'b1.recover@example.com' });
+  await createOverduePendingState(booking);
+  const sendFn = mockSendSuccess({ messageId: 'msg_recover' });
+
+  startBookingConfirmationDeliveryWorker({
+    force: true,
+    skipImmediateTick: true,
+    skipProductionFatalCheck: true,
+    mongoConnected: true,
+    bootstrapCompleted: true,
+    sendFn,
+    tickMs: 60_000,
+    sweeperTickMs: 60_000
+  });
+  await runSmtpVerificationOnce({ reason: 'fail' });
+  assert.equal(isBookingConfirmationDeliveryReady(), false);
+
+  verifyOk = true;
+  await runSmtpVerificationOnce({ reason: 'ok' });
+  assert.equal(isBookingConfirmationDeliveryReady(), true);
+  await runConfirmationDeliveryTickOnce({ sendFn });
+  assert.equal(sendFn.getCalls(), 1);
+  const state = await EmailDeliveryState.findOne({ bookingId: booking._id }).lean();
+  assert.equal(state.latestStatus, 'succeeded');
+  stopBookingConfirmationDeliveryWorkerForTest();
+});
+
+test('B1) ready worker losing verification stops claims', async () => {
+  process.env.BOOKING_CONFIRMATION_DELIVERY_WORKER_ENABLED = '1';
+  process.env.SMTP_HOST = 'smtp.example.test';
+  __resetConfirmationDeliveryWorkerStateForTesting();
+  let verifyOk = true;
+  __setConfirmationDeliveryVerifyFnForTesting(async () => ({
+    ok: verifyOk,
+    configured: true,
+    verified: verifyOk,
+    error: verifyOk ? null : 'lost'
+  }));
+  startBookingConfirmationDeliveryWorker({
+    force: true,
+    skipImmediateTick: true,
+    skipProductionFatalCheck: true,
+    mongoConnected: true,
+    bootstrapCompleted: true,
+    tickMs: 60_000,
+    sweeperTickMs: 60_000
+  });
+  await runSmtpVerificationOnce({ reason: 'ok' });
+  assert.equal(isBookingConfirmationDeliveryReady(), true);
+
+  const booking = await createConfirmedBooking({ email: 'b1.lost@example.com' });
+  await createOverduePendingState(booking);
+  const sendFn = mockSendSuccess();
+
+  verifyOk = false;
+  await runSmtpVerificationOnce({ reason: 'lost' });
+  assert.equal(isBookingConfirmationDeliveryReady(), false);
+  const tick = await runConfirmationDeliveryTickOnce({ sendFn });
+  assert.equal(tick.skippedReason, 'not_ready');
+  assert.equal(sendFn.getCalls(), 0);
+  stopBookingConfirmationDeliveryWorkerForTest();
+});
+
+test('B1) logged fallback never succeeds and does not stamp confirmationEmailSentAt', async () => {
+  const booking = await createConfirmedBooking({ email: 'b1.logged@example.com' });
+  const pending = await createOverduePendingState(booking);
+  const claimed = await claimConfirmationDeliveryAttempt({
+    correlationKey: pending.correlationKey,
+    workerId: 'test',
+    now: new Date()
+  });
+  const result = await sendClaimedConfirmationDelivery({
+    state: claimed,
+    booking,
+    sendFn: mockSendLogged()
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.retryable, true);
+  assert.equal(result.errorCode, 'LOGGED_FALLBACK');
+  const state = await EmailDeliveryState.findOne({ correlationKey: pending.correlationKey }).lean();
+  assert.equal(state.latestStatus, 'failed');
+  assert.equal(state.providerMessageId, null);
+  const refreshed = await Booking.findById(booking._id).lean();
+  assert.equal(refreshed.confirmationEmailSentAt == null, true);
+});
+
+test('B1) unavailable fallback never succeeds', async () => {
+  const booking = await createConfirmedBooking({ email: 'b1.unavail@example.com' });
+  const pending = await createOverduePendingState(booking);
+  const claimed = await claimConfirmationDeliveryAttempt({
+    correlationKey: pending.correlationKey,
+    workerId: 'test',
+    now: new Date()
+  });
+  const result = await sendClaimedConfirmationDelivery({
+    state: claimed,
+    booking,
+    sendFn: mockSendUnavailable()
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.errorCode, 'SMTP_UNAVAILABLE');
+  const state = await EmailDeliveryState.findOne({ correlationKey: pending.correlationKey }).lean();
+  assert.equal(state.latestStatus, 'failed');
+  assert.equal(state.nextAttemptAt != null, true);
+});
+
+test('B1) throw after SMTP attempt started becomes ambiguous (no auto-resend)', async () => {
+  const booking = await createConfirmedBooking({ email: 'b1.throw@example.com' });
+  const pending = await createOverduePendingState(booking);
+  const claimed = await claimConfirmationDeliveryAttempt({
+    correlationKey: pending.correlationKey,
+    workerId: 'test',
+    now: new Date()
+  });
+  const result = await sendClaimedConfirmationDelivery({
+    state: claimed,
+    booking,
+    sendFn: async () => {
+      throw new Error('connection reset after submit');
+    }
+  });
+  assert.equal(result.ambiguous, true);
+  const state = await EmailDeliveryState.findOne({ correlationKey: pending.correlationKey }).lean();
+  assert.equal(state.latestStatus, 'ambiguous');
+  const sendFn = mockSendSuccess();
+  await runConfirmationDeliveryTickOnce({ sendFn });
+  assert.equal(sendFn.getCalls(), 0);
+});
+
+test('B1) shutdown stops timers and prevents new claims', async () => {
+  process.env.BOOKING_CONFIRMATION_DELIVERY_WORKER_ENABLED = '1';
+  __resetConfirmationDeliveryWorkerStateForTesting();
+  startBookingConfirmationDeliveryWorker({
+    force: true,
+    skipImmediateTick: true,
+    skipSmtpVerifyForTest: true,
+    skipProductionFatalCheck: true,
+    tickMs: 60_000,
+    sweeperTickMs: 60_000
+  });
+  assert.equal(getBookingConfirmationDeliveryWorkerState().running, true);
+  stopBookingConfirmationDeliveryWorkerForTest();
+  assert.equal(getBookingConfirmationDeliveryWorkerState().running, false);
+  assert.equal(getBookingConfirmationDeliveryWorkerState().readinessState, 'stopped');
+
+  const booking = await createConfirmedBooking({ email: 'b1.shutdown@example.com' });
+  await createOverduePendingState(booking);
+  const sendFn = mockSendSuccess();
+  // Not ready after stop
+  const tick = await runConfirmationDeliveryTickOnce({ sendFn });
+  assert.equal(tick.skippedReason, 'not_ready');
+  assert.equal(sendFn.getCalls(), 0);
 });

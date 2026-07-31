@@ -24,6 +24,9 @@ const {
 } = require('./emailDeliveryCorrelation');
 const bookingLifecycleEmailService = require('../bookingLifecycleEmailService');
 const CheckoutFinalizationJob = require('../../models/CheckoutFinalizationJob');
+const {
+  classifyEmailDeliveryResult
+} = require('./emailDeliveryResultContract');
 
 const DEFAULT_VISIBILITY_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_MAX_ATTEMPTS = 10;
@@ -528,10 +531,15 @@ async function sendClaimedConfirmationDelivery({
   }
 
   const at = normalizeNow(now);
+  // Bound: after this stamp, throws / uncertain handoffs become ambiguous.
   await markSmtpAttemptStarted({ correlationKey: state.correlationKey, now: at });
 
   const templateKey =
     state.templateKey || resolveConfirmationTemplateKey(booking);
+
+  const hasDefinitivePriorDelivery = Boolean(
+    booking?.confirmationEmailSentAt || isDefinitiveSentStatus(state.latestStatus)
+  );
 
   let outcome;
   try {
@@ -551,58 +559,94 @@ async function sendClaimedConfirmationDelivery({
       skipDeliveryStateApply: true
     });
   } catch (err) {
-    await markConfirmationDeliveryFailedRetryable({
+    // Provider handoff may have begun (smtpAttemptStartedAt set).
+    await markConfirmationDeliveryAmbiguous({
       correlationKey: state.correlationKey,
-      errorCode: err?.code || 'SMTP_FAILURE',
-      errorSummary: err?.message || 'Confirmation send threw',
+      reason: 'AMBIGUOUS_SEND_THROW',
       now: at
     });
     return {
       ok: false,
-      retryable: true,
-      errorCode: err?.code || 'SMTP_FAILURE',
+      retryable: false,
+      ambiguous: true,
+      errorCode: 'AMBIGUOUS_SEND_THROW',
       error: err?.message || String(err)
     };
   }
 
-  if (outcome?.success || outcome?.sendStatus === 'success') {
+  const classified = classifyEmailDeliveryResult(outcome, {
+    hasDefinitivePriorDelivery
+  });
+
+  if (classified.authoritativeDelivered) {
     const succeeded = await markConfirmationDeliverySucceeded({
       correlationKey: state.correlationKey,
       bookingId: booking._id,
       checkoutSessionId,
       jobId,
-      providerMessageId: outcome?.sendResult?.messageId || outcome?.messageId || null,
+      providerMessageId: classified.providerMessageId,
       emailEventId: outcome?.emailEvent?._id || null,
       now: at
     });
-    return { ok: true, sent: true, state: succeeded };
+    return { ok: true, sent: true, state: succeeded, classification: classified };
   }
 
-  // skipped-duplicate from in-memory window: treat as success if already delivered
-  if (outcome?.sendStatus === 'skipped') {
+  if (classified.adoptPriorDelivery === true && hasDefinitivePriorDelivery) {
     const succeeded = await markConfirmationDeliverySucceeded({
       correlationKey: state.correlationKey,
       bookingId: booking._id,
       checkoutSessionId,
       jobId,
-      providerMessageId: null,
-      emailEventId: outcome?.emailEvent?._id || null,
+      providerMessageId: state.providerMessageId || null,
+      emailEventId: outcome?.emailEvent?._id || state.latestEmailEventId || null,
       now: at
     });
-    return { ok: true, sent: true, skippedDuplicate: true, state: succeeded };
+    return {
+      ok: true,
+      sent: true,
+      skippedDuplicate: true,
+      state: succeeded,
+      classification: classified
+    };
   }
+
+  if (classified.ambiguous) {
+    await markConfirmationDeliveryAmbiguous({
+      correlationKey: state.correlationKey,
+      reason: classified.reason || 'AMBIGUOUS_SEND_OUTCOME',
+      now: at
+    });
+    return {
+      ok: false,
+      retryable: false,
+      ambiguous: true,
+      errorCode: classified.classification,
+      error: classified.reason,
+      classification: classified
+    };
+  }
+
+  const errorCode =
+    classified.classification === 'logged_fallback'
+      ? 'LOGGED_FALLBACK'
+      : classified.classification === 'unavailable'
+        ? 'SMTP_UNAVAILABLE'
+        : classified.classification === 'skipped_duplicate'
+          ? 'SKIPPED_WITHOUT_EVIDENCE'
+          : 'SMTP_FAILURE';
 
   await markConfirmationDeliveryFailedRetryable({
     correlationKey: state.correlationKey,
-    errorCode: 'SMTP_FAILURE',
-    errorSummary: outcome?.sendResult?.error || outcome?.method || 'SMTP send failed',
+    errorCode,
+    errorSummary: classified.reason || errorCode,
     now: at
   });
   return {
     ok: false,
     retryable: true,
-    errorCode: 'SMTP_FAILURE',
-    error: outcome?.sendResult?.error || 'SMTP send failed'
+    errorCode,
+    error: classified.reason,
+    classification: classified
   };
 }
 

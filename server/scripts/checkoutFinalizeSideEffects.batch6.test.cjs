@@ -94,8 +94,10 @@ async function createBooking(overrides = {}) {
 function mockSendSuccess({ messageId = 'msg_ok' } = {}) {
   return async () => ({
     success: true,
+    method: 'sent',
+    messageId,
     sendStatus: 'success',
-    sendResult: { messageId, method: 'smtp', success: true },
+    sendResult: { messageId, method: 'sent', success: true },
     emailEvent: { _id: new mongoose.Types.ObjectId() }
   });
 }
@@ -103,8 +105,9 @@ function mockSendSuccess({ messageId = 'msg_ok' } = {}) {
 function mockSendFailure(message = 'SMTP rejected') {
   return async () => ({
     success: false,
+    method: 'failed',
     sendStatus: 'failed',
-    sendResult: { error: message, method: 'smtp', success: false }
+    sendResult: { error: message, method: 'failed', success: false }
   });
 }
 
