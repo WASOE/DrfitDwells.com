@@ -1,15 +1,16 @@
 # Architecture Lock: Multi-Unit CabinType Capacity Guard and Paid Orphan Recovery
 
-**Status:** BINDING DESIGN — implementation must follow this document  
-**Created:** 2026-08-01  
-**Remediated:** 2026-08-03 (post REJECTED audit — trust boundary, recovery lease, dry-run purity, paid-loser retention, self-exclusion, MRI suppression)  
-**Scope:** Immediate allowlisted recovery of one paid multi-unit orphan (R0 / S0), permanent capacity-aware same-cabinType booking behavior (R1 / S1), deferred quantity-two UX (R2 / S2)  
-**Branch basis:** `origin/master`  
+**Status:** BINDING DESIGN — implementation must follow this document
+**Created:** 2026-08-01
+**Remediated:** 2026-08-03 (post REJECTED audit)
+**Clarified:** 2026-08-03 (post APPROVED AFTER MINOR — capability module, digest freshness, confirmationQueuedAt split, S1 grouping, paid-overlap readers, disputed capacity, lease indexes)
+**Scope:** Immediate allowlisted recovery of one paid multi-unit orphan (R0 / S0), permanent capacity-aware same-cabinType booking behavior (R1 / S1), deferred quantity-two UX (R2 / S2)
+**Branch basis:** `origin/master`
 **Out of scope:** Confirmation-worker Batches 1–3, PM2 confirmation-worker process, automatic refunds, public quantity=2 checkout
 
 This document is the single source of truth for the multi-unit cabinType capacity and paid-orphan recovery sidequest. Application code must not diverge from these decisions without an explicit architecture revision.
 
-**Prior audit verdict addressed:** `REJECTED — ARCHITECTURE REMEDIATION REQUIRED`. This remediation supersedes the 2026-08-01 draft where it conflicts.
+**Audit trail:** Prior `REJECTED` findings addressed 2026-08-03; this clarification addresses `APPROVED AFTER MINOR ARCHITECTURE REMEDIATION` for commit `7e70a5f`.
 
 ---
 
@@ -77,53 +78,75 @@ Confirmation-worker Batches 1–3 remain a separate lock.
 
 | Layer | Path |
 |-------|------|
-| Authoritative recovery entrypoint | `server/services/checkout/multiUnitPaidOrphanRecoveryService.js` → **`recoverAllowlistedMultiUnitPaidOrphanCheckout(...)`** |
-| CLI (only calls recovery entrypoint) | `server/scripts/recoverMultiUnitPaidOrphanCheckout.js` |
-| Private capability token | Unexported `Symbol` (or closure-only object) defined inside `multiUnitPaidOrphanRecoveryService.js` and accepted **only** by narrow internal hooks |
-| Commercial guard | `commercialStayGuardService.js` — bypass only when private capability present |
+| CLI | `server/scripts/recoverMultiUnitPaidOrphanCheckout.js` — calls recovery service only |
+| Recovery service | `server/services/checkout/multiUnitPaidOrphanRecoveryService.js` → **`recoverAllowlistedMultiUnitPaidOrphanCheckout(...)`** |
+| Private capability module | `server/services/checkout/multiUnitPaidOrphanRecoveryCapability.js` |
+| Commercial guard | `commercialStayGuardService.js` — exclusivity bypass only after `assertMultiUnitPaidOrphanRecoveryCapability` |
 | Exact-unit injection | Private recovery path sets `finalizeContext.assignedUnitId` after live validation |
-| Job lease / success | New recovery-specific helpers in `checkoutFinalizationJobService.js` |
+| Job lease / success / confirmationQueuedAt | Recovery-specific helpers in `checkoutFinalizationJobService.js` |
+| Payment link MRI suppress | `paymentLinkingService.js` — validates capability via exported predicate |
+| Side effects | `checkoutFinalizeSideEffects.js` — `send:false` + MRI suppress under capability |
 | Confirmation | `ensurePendingConfirmationDelivery` / `processBookingConfirmationDelivery({ send: false })` |
 
-### 1.2 Capability rules (binding)
+### 1.2 Private capability module (binding Pattern B)
 
-The recovery module creates a **module-private** capability, preferably:
+File: `server/services/checkout/multiUnitPaidOrphanRecoveryCapability.js`
 
 ```js
-// multiUnitPaidOrphanRecoveryService.js — NOT exported
-const RECOVERY_CAPABILITY = Symbol('multiUnitPaidOrphanRecoveryCapability');
+// Module-private — NEVER exported
+const CAPABILITY = Symbol('multiUnitPaidOrphanRecoveryCapability');
+
+function runWithMultiUnitPaidOrphanRecoveryCapability(callback) {
+  return callback(CAPABILITY);
+}
+
+function isMultiUnitPaidOrphanRecoveryCapability(value) {
+  return value === CAPABILITY;
+}
+
+function assertMultiUnitPaidOrphanRecoveryCapability(value) {
+  if (!isMultiUnitPaidOrphanRecoveryCapability(value)) {
+    throw new Error('MULTI_UNIT_PAID_ORPHAN_RECOVERY_CAPABILITY_REQUIRED');
+  }
+}
+
+module.exports = {
+  runWithMultiUnitPaidOrphanRecoveryCapability,
+  isMultiUnitPaidOrphanRecoveryCapability,
+  assertMultiUnitPaidOrphanRecoveryCapability
+  // CAPABILITY / Symbol intentionally NOT exported
+};
 ```
 
 Rules:
 
-- Commercial-stay exclusivity bypass and exact-unit assignment are accepted **only** when this private capability is present on an internal options bag that never leaves the recovery call stack.
-- The capability must **never** be:
-  - stored in MongoDB
-  - serialized to JSON / logs / allowlists
-  - accepted from CLI arguments as a forgeable flag
-  - accepted from HTTP bodies / query / headers
-  - accepted from Stripe metadata
-  - accepted from CheckoutSession fields
-  - accepted from CheckoutFinalizationJob payloads
-  - accepted by webhook, reconciliation, or the normal finalization worker
-- A caller passing `{ bypassCommercialStayExclusivity: true }` (or any similar plain boolean) **without** the private capability must have **no effect**.
-- The recovery CLI calls **only** `recoverAllowlistedMultiUnitPaidOrphanCheckout`. It must **never** call `finalizePaidCheckout` with user-controlled bypass options.
-- Normal `finalizePaidCheckout`, `runCheckoutFinalizeOrchestration`, webhook worker, and reconcile paths must not export or accept the Symbol.
+- The Symbol is owned only by this module and is **never** exported.
+- The recovery entrypoint obtains the capability only by calling `runWithMultiUnitPaidOrphanRecoveryCapability`.
+- Guard, exact-unit injection path, payment-linking, and side-effect modules validate **only** via `assertMultiUnitPaidOrphanRecoveryCapability` / `isMultiUnitPaidOrphanRecoveryCapability`.
+- No normal caller can construct or obtain the capability.
+- Plain properties such as `{ bypassCommercialStayExclusivity: true, expectedUnitId: '...' }` have **no effect** without a valid capability.
+- The capability must **never** be: stored in MongoDB, serialized, accepted from CLI args as a forgeable token, HTTP bodies/query/headers, Stripe metadata, CheckoutSession fields, job payloads, webhook, reconcile, or the normal worker.
+- The CLI calls **only** `recoverAllowlistedMultiUnitPaidOrphanCheckout(...)`.
+- Capability checks live inside **real** production guard / link / side-effect functions. Dependency injection must not replace those validators with a mock that always returns true. Tests must exercise the real predicate.
 
-### 1.3 Call boundary
+### 1.3 Exact ownership call boundary
 
 ```text
 CLI recoverMultiUnitPaidOrphanCheckout.js
-  └─ recoverAllowlistedMultiUnitPaidOrphanCheckout({ allowlist, digest, intent, execute, actor, ... })
-       ├─ read-only preflight / digest verify
-       ├─ claimRecoveryLeaseOnFinalizationJob(...)     // failed_permanent stays failed_permanent
-       ├─ with private RECOVERY_CAPABILITY:
-       │    ├─ validateUnitForCabinTypeBooking(AF-03…)
-       │    ├─ assertNoCommercialStayConflict(..., { capability }) // exclusivity only
-       │    ├─ execute authoritative booking finalize with assignedUnitId
-       │    ├─ linkStripePaymentToBooking(..., { suppressPaymentUnlinkedResolve: capability })
-       │    └─ enqueue side effects with send:false + MRI suppress until verify gate
-       └─ recovery-specific job success transition + MRI resolve after verify
+  └─ recoverAllowlistedMultiUnitPaidOrphanCheckout({ allowlist, originalEvidence, digest, intent, execute, actor, ... })
+       ├─ read-only preflight / digest verify / live recheck
+       ├─ claimRecoveryLeaseOnFinalizationJob(...)   // status stays failed_permanent
+       └─ runWithMultiUnitPaidOrphanRecoveryCapability(async (capability) => {
+            ├─ validateUnitForCabinTypeBooking(AF-03…)
+            ├─ assertNoCommercialStayConflict(..., { capability })  // exclusivity only
+            ├─ private recovery finalize path sets assignedUnitId + asserts capability
+            ├─ linkStripePaymentToBooking(..., { recoveryCapability: capability }) // MRI suppress
+            ├─ side effects send:false + MRI suppress (assert capability)
+            ├─ recovery-specific job success (may leave confirmationQueuedAt null)
+            ├─ ensure pending EDS
+            ├─ markCheckoutFinalizationJobConfirmationQueued(...)
+            └─ verify gate → resolve MRI
+          })
 ```
 
 ---
@@ -141,8 +164,6 @@ Therefore S0 **must not** move the incident job to `claimed` and **must not** ca
 
 ### 2.2 Proposed fields (S0 schema additions on `CheckoutFinalizationJob`)
 
-Add recovery-only fields (names binding):
-
 | Field | Type | Purpose |
 |-------|------|---------|
 | `recoveryStatus` | enum: `null\|none\|leased\|succeeded\|failed` (default null/none) | Recovery lease state; independent of worker `status` |
@@ -151,16 +172,33 @@ Add recovery-only fields (names binding):
 | `recoveryVisibilityTimeoutAt` | Date \| null | Lease expiry for crash retry |
 | `recoveryAttemptCount` | Number ≥ 0 | Execute attempts |
 | `recoveryLastErrorCode` | String \| null | Last recovery error |
-| `recoveryLastErrorSummary` | String \| null | Truncated ≤500 |
-| `recoveryHistory` | Array of Mixed | Append-only execute history (never written on dry-run) |
+| `recoveryLastErrorSummary` | String \| null | Truncated ≤500 (same convention as `truncateSummary`) |
+| `recoveryHistory` | Array of Mixed | Bounded execute history (never written on dry-run) |
 | `recoveredAt` | Date \| null | Success timestamp |
 | `recoveredBy` | String \| null | Actor / run identity |
 
 **Normal `status` remains `failed_permanent` until the recovery-specific success transition sets it to `succeeded`.**
 
-Worker and reconcile must ignore jobs with active non-expired `recoveryStatus=leased` for mutation; worker already ignores non-`scheduled|claimed` statuses for poll — keeping `failed_permanent` prevents worker race.
+### 2.3 Bounded recoveryHistory
 
-### 2.3 Atomic recovery claim
+- Maximum **40** entries (aligned with truncated summary / bounded-history conventions elsewhere).
+- On append beyond the cap, drop oldest entries deterministically (`slice(-40)`).
+- Each entry may contain only: `at` (ISO), `runId`, `actor` (`ops:<username>`), `phase`, `code`, `summary` (≤500), `digestPrefix` (first 16 hex of digest), `bookingId` (string|null).
+- No guest email, phone, secrets, Stripe client secrets, or unbounded payloads.
+
+### 2.4 Indexes
+
+Add:
+
+```js
+{ recoveryStatus: 1, recoveryVisibilityTimeoutAt: 1 }
+```
+
+Purpose: lease acquisition / reclaim / expiry scans. Must **not** make normal worker poll recovery jobs (worker continues to filter `status ∈ scheduled|claimed` only).
+
+Existing incident lookup by `checkoutId` / `paymentIntentId` remains authoritative.
+
+### 2.5 Atomic recovery claim
 
 Match **all** of:
 
@@ -168,18 +206,18 @@ Match **all** of:
 - `checkoutId` = allowlisted checkout ID
 - `paymentIntentId` = allowlisted PI
 - `status` = `failed_permanent`
-- `lastErrorCode` = `DUPLICATE_STAY_CONFLICT` (allowlisted expected failure)
+- `lastErrorCode` = `DUPLICATE_STAY_CONFLICT`
 - and either:
   - `recoveryStatus` ∈ `{ null, none, failed }` with no active lease, **or**
   - `recoveryStatus=leased` **and** `recoveryVisibilityTimeoutAt < now` (expired lease reclaim)
 
-On success of claim: set `recoveryStatus=leased`, `recoveryClaimedBy`, `recoveryClaimedAt`, `recoveryVisibilityTimeoutAt`, increment `recoveryAttemptCount`. Do **not** set normal `claimedBy` / `status=claimed`.
+On claim success: set `recoveryStatus=leased`, `recoveryClaimedBy`, `recoveryClaimedAt`, `recoveryVisibilityTimeoutAt`, increment `recoveryAttemptCount`. Do **not** set normal `claimedBy` / `status=claimed`.
 
-### 2.4 Success transition (recovery-specific helper)
+### 2.6 Recovery-specific job completion (separate from confirmationQueuedAt)
 
-New helper e.g. `markCheckoutFinalizationJobSucceededFromMultiUnitRecovery`:
+Helper: `markCheckoutFinalizationJobSucceededFromMultiUnitRecovery`
 
-Filter:
+After Booking, Payment, and CheckoutSession authoritative linkage succeed, match:
 
 - `_id` = jobId
 - `status` = `failed_permanent`
@@ -194,19 +232,47 @@ Set:
 - `bookingId`
 - `paymentLinkedAt`, `sessionFinalizedAt`
 - `quoteConvertedAt` when applicable
-- `confirmationQueuedAt` **only after** pending EDS exists
+- **`confirmationQueuedAt` may remain null**
 - `recoveredAt`, `recoveredBy`
 - `recoveryStatus: succeeded`
 - clear recovery lease fields (`recoveryClaimedBy/At/VisibilityTimeoutAt` → null)
-- **Preserve** original failure: copy `{ lastErrorCode, lastErrorSummary, stage, firstFailedAt, lastFailedAt }` into `safeDetails.priorPermanentFailure` **before** any clear; append success entry to `recoveryHistory`
+- Preserve original failure into `safeDetails.priorPermanentFailure` before any clear; append success entry to `recoveryHistory`
 - Do **not** erase `firstFailedAt`
 
-### 2.5 Dry-run vs execute history
+### 2.7 Confirmation queue patch (separate idempotent helper)
 
-- **Dry-run:** zero writes — including **no** `recoveryHistory` append, no lease claim.
-- **Execute:** append `recoveryHistory` entries for claim, steps, success/failure.
+After one pending or already-succeeded `EmailDeliveryState` exists:
 
-### 2.6 Crash / concurrency
+```js
+markCheckoutFinalizationJobConfirmationQueued({ jobId, bookingId, queuedAt })
+```
+
+Required behavior:
+
+- Matches only the expected **succeeded** job + `bookingId`
+- Sets `confirmationQueuedAt` only when currently `null`
+- Does **not** reopen recovery lease
+- Does **not** change job `status`
+- Does **not** set `confirmationSentAt`
+- Idempotent; second recovery execution may finish this patch
+- MRI remains open until this evidence exists (§11)
+
+### 2.8 Reconciliation during active recovery lease
+
+While `recoveryStatus=leased` and `recoveryVisibilityTimeoutAt >= now`:
+
+- Generic Batch 7/8 reconciliation **must no-op** for that job’s mutations.
+- Must not open duplicate ManualReviewItems for the same leased recovery.
+- Must not alter job `status` or clear recovery lease fields.
+- After lease expiry, ordinary reconcile may still classify as permanent failure / manual-review required, but **must not** execute recovery; only the recovery CLI may reclaim the lease.
+- Worker remains unable to poll (`failed_permanent` ∉ executable statuses).
+
+### 2.9 Dry-run vs execute history
+
+- **Dry-run:** zero writes — including no `recoveryHistory` append, no lease claim.
+- **Execute:** append bounded `recoveryHistory` entries for claim, steps, success/failure.
+
+### 2.10 Crash / concurrency
 
 - Lease expiry → another execute may reclaim.
 - Two concurrent executes: only one claim wins; loser gets `RECOVERY_JOB_LEASE_CONFLICT`.
@@ -231,50 +297,88 @@ Dry-run must not:
 - write AuditEvent
 - update any document timestamps via save
 
-Dry-run uses **read-only** loaders and pure validators only.
+Dry-run uses **read-only** loaders and pure validators only. Avoid writey helpers even if named like validators (`ensureCheckoutFinalizationJob`, `ensurePendingConfirmationDelivery`, quote refresh that `session.save()`s, etc.).
 
-### 3.2 Digest
+### 3.2 Two distinct evidence objects
 
-`recoverySchemaVersion` = `multi-unit-paid-orphan-recovery/v1`
+#### A. Original dry-run evidence
 
-Digest = sha256 over a **canonical JSON** of digest inputs (sorted keys, no PII). Inputs at minimum:
+Dry-run produces:
 
-- recoverySchemaVersion
+```js
+{
+  schemaVersion: 'multi-unit-paid-orphan-recovery/v1',
+  dryRunGeneratedAt, // fixed ISO UTC at dry-run time
+  canonicalEvidence, // includes the same dryRunGeneratedAt
+  digest             // SHA-256 of canonical serialization of canonicalEvidence
+}
+```
+
+#### B. Execute-time live evidence
+
+Execute receives the **original** `canonicalEvidence` + `digest`, plus phrase, actor, intent timestamp, reason, execute flag.
+
+Execute must:
+
+1. Recompute SHA-256 from the **received original** `canonicalEvidence`.
+2. Verify it matches the submitted digest.
+3. Enforce maximum digest age (binding default **24 hours**) using original `dryRunGeneratedAt`.
+4. Independently reread all live evidence.
+5. Compare live material fields with the original `canonicalEvidence`.
+6. Abort (`RECOVERY_DIGEST_MISMATCH`) when any material field changed.
+
+The execute-time clock must **not** replace `dryRunGeneratedAt` inside the original digest.
+
+### 3.3 Material live fields
+
+Material changes include:
+
+- target unit `isActive`
+- target unit `updatedAt` (freshness signal)
+- target unit availability result
+- first Booking status / unit / dates
+- Payment status / `reservationId`
+- CheckoutSession status / finalizeStatus / bookingId / paymentStatus
+- finalization-job status / lastErrorCode / recovery lease fields
+- ManualReviewItem status / category
+- PI identity and paid evidence
+- amount / currency
+- quoteSnapshotHash / finalizeIntentHash
+- dates / cabinTypeId
+- guestIdentityMatch / stayFingerprintMatch booleans
+- appearance of any Booking for the orphan checkoutId or PI
+
+### 3.4 Canonical serialization
+
+- Stable lexicographic object-key order
+- Arrays sorted where semantic order is irrelevant
+- ObjectIds → lowercase hex strings
+- Dates → UTC ISO-8601
+- `undefined` omitted; `null` preserved
+- Numbers remain numbers
+- Strings NFC Unicode-normalized
+- `schemaVersion` included
+- Algorithm: SHA-256 hex
+- No guest email or reversible guest identifier
+
+### 3.5 `canonicalEvidence` minimum contents
+
+- schemaVersion, dryRunGeneratedAt
 - checkoutId, checkoutSessionMongoId, paymentIntentId, paymentRecordId, finalizationJobId, manualReviewItemId
 - expectedCabinTypeId, expectedTargetUnitId
 - expectedCheckInDateOnly, expectedCheckOutDateOnly
 - expectedAmountCents, expectedCurrency
 - expectedQuoteSnapshotHash, expectedFinalizeIntentHash
 - expectedFailureCode
-- live: session.status, session.finalizeStatus, session.paymentStatus, session.bookingId
-- live: job.status, job.lastErrorCode, job.stage
-- live: payment.status, payment.reservationId (null/string)
-- live: MRI.status, MRI.category
+- session.status, finalizeStatus, paymentStatus, bookingId
+- job.status, lastErrorCode, stage, recoveryStatus
+- payment.status, reservationId
+- MRI.status, MRI.category
 - firstBookingId, firstBookingUnitId, firstBookingStatus
-- targetUnit.isActive, targetUnit.updatedAt (ISO)
-- targetUnitAvailabilityResult (`available`\|`unavailable` + reason code)
-- guestIdentityMatch (boolean only)
-- stayFingerprintMatch (boolean \| null)
-- dryRunAt (ISO)
-- operatorActorId
-- recoveryReason
-
-**Never** include raw guest email or reversible email material in digest inputs or report output beyond booleans.
-
-### 3.3 Execute gates
-
-Execute requires **all** of:
-
-- `--execute`
-- env `MULTI_UNIT_PAID_ORPHAN_RECOVERY=1`
-- exact allowlist match
-- exact dry-run digest re-verified against freshly recomputed evidence
-- fixed confirmation phrase (§5)
-- operator actor ID
-- operator intent-confirmed timestamp
-- non-empty recovery reason
-
-If any digest input changed (including AF-03 availability) → `RECOVERY_DIGEST_MISMATCH`; require new dry-run.
+- targetUnit.isActive, targetUnit.updatedAt
+- targetUnitAvailabilityResult
+- guestIdentityMatch, stayFingerprintMatch
+- operatorActorId, recoveryReason
 
 ---
 
@@ -298,17 +402,21 @@ Also used by CheckoutSession creation (`guestEmail` lowercased in `checkoutSessi
 5. Never print or persist a reversible email hash.
 6. Dry-run / execute reports record only:
    - `guestIdentityMatch: true|false`
-   - `stayFingerprintMatch: true|false|null` (compare `Booking.commercialStayFingerprint` to `CheckoutSession.stayFingerprint` when both non-empty)
+   - `stayFingerprintMatch: true|false|null`
 7. Mismatch → `RECOVERY_GUEST_IDENTITY_MISMATCH` / `RECOVERY_FINGERPRINT_MISMATCH` — abort.
-8. Missing guest identity on either side → abort (`RECOVERY_GUEST_IDENTITY_MISMATCH`).
+8. Missing guest identity on either side → abort.
+
+Proof hierarchy:
+
+1. Direct normalized identity comparison
+2. Compatible fingerprint equality as corroborating evidence
+3. Mismatch or missing identity aborts
 
 No new salted hash store.
 
 ---
 
 ## 5. Operator intent confirmation
-
-Free boolean is insufficient.
 
 Execute requires the **exact** fixed phrase:
 
@@ -318,18 +426,14 @@ I CONFIRM THE GUEST INTENDS TO PURCHASE A SECOND PHYSICAL A-FRAME
 
 Plus:
 
-- `operatorActorId` (non-empty string)
+- `operatorActorId` — **operator-supplied CLI evidence string**, format `ops:<username>` (non-empty). Not cryptographically authenticated identity (repository has no authenticated CLI actor). Persisted in redacted recovery history/audit only. Must not contain guest data or secrets.
 - `operatorIntentConfirmedAt` (ISO timestamp)
 - non-empty `recoveryReason`
-- matching dry-run digest
+- matching original dry-run digest + received original evidence
 - exact incident allowlist identities
+- `--execute` and `MULTI_UNIT_PAID_ORPHAN_RECOVERY=1`
 
-Distinguish:
-
-- **Technical eligibility** (paid, hashes, AF-03 free, fingerprint match, …)
-- **Confirmed commercial intent** (phrase + actor + timestamp)
-
-If intent is not confirmed → `RECOVERY_INTENT_NOT_CONFIRMED`; **no Booking**.
+Distinguish technical eligibility from confirmed commercial intent. If intent is not confirmed → `RECOVERY_INTENT_NOT_CONFIRMED`; **no Booking**.
 
 ---
 
@@ -337,9 +441,9 @@ If intent is not confirmed → `RECOVERY_INTENT_NOT_CONFIRMED`; **no Booking**.
 
 ### 6.1 Flow (binding)
 
-1. Read and validate immutable `quoteSnapshot` + `finalizeIntent` (hashes must match allowlist).
-2. Recalculate target-unit availability via `AssignmentEngine.validateUnitForCabinTypeBooking(expectedTargetUnitId, cabinTypeId, checkIn, checkOut)` (uses `isUnitGuestStayAvailable`: active unit, cabinType match, bookings, AvailabilityBlocks, unit `blockedDates`).
-3. Inside the private recovery entrypoint only, set:
+1. Read and validate immutable `quoteSnapshot` + `finalizeIntent` (hashes must match allowlist / evidence).
+2. Recalculate target-unit availability via `AssignmentEngine.validateUnitForCabinTypeBooking(expectedTargetUnitId, cabinTypeId, checkIn, checkOut)`.
+3. Inside the capability-gated private recovery path only, set:
 
    ```js
    finalizeContext.assignedUnitId = expectedTargetUnitId
@@ -350,41 +454,62 @@ If intent is not confirmed → `RECOVERY_INTENT_NOT_CONFIRMED`; **no Booking**.
 ### 6.2 Rules
 
 - Do **not** modify `quoteSnapshot`, `finalizeIntent`, or Stripe PaymentIntent metadata as authority for unit selection.
-- Do **not** fabricate historical unit selection on the checkout.
-- Unit ID becomes authoritative on the resulting **Booking** (and finalization result) only.
+- Unit ID becomes authoritative on the resulting **Booking** only.
 - Inactive / wrong cabinType / blocked / AvailabilityBlock / overlap / changed availability → `RECOVERY_TARGET_UNIT_UNAVAILABLE`.
 - This incident requires exact unit `69b2ff947f141a71ffa7c444` (AF-03). **No silent alternate unit.**
 
+### 6.3 S0 exact-unit scope (not S1 provisional capacity)
+
+S0 does **not** depend on the global S1 provisional-capacity algorithm.
+
+S0 exact-unit recovery checks only:
+
+- target AF-03 active
+- target belongs to cabin type
+- no blockedDates conflict
+- no AvailabilityBlock conflict
+- no blocking Booking overlap (excluding `metadata.paidOverlapConflict === true` losers if already present)
+- no existing Booking for orphan checkout/PI
+- current paid orphan session does **not** make AF-03 unavailable merely because the session exists (it has no assigned unit)
+
+Aggregate provisional-slot self-exclusion tests belong to **S1**. Keep one S0 test proving the orphan paid session alone does not occupy AF-03.
+
 ---
 
-## 7. Self-exclusion and capacity deduplication (S1 + R0 checks)
+## 7. Self-exclusion and capacity deduplication (S1)
 
-### 7.1 Exclusion identities
+### 7.1 Current-purchase exclusion object
 
-When evaluating capacity for a subject checkout, exclude that purchase using **all** available identities:
+When evaluating capacity for a subject checkout, exclude that purchase using:
 
 - `checkoutId`
 - CheckoutSession `_id`
 - canonical PaymentIntent ID
-- CheckoutFinalizationJob `_id`
+- finalization-job `_id`
 
-### 7.2 Counting rules
+Apply exclusion **before** counting.
 
-| Record | Counts toward capacity? |
-|--------|-------------------------|
-| First confirmed Booking on AF-04 | **Yes** (occupies that unit) |
-| Its linked finalized CheckoutSession | **No** (dedupe) |
-| Its finalization job | **No** |
-| Second paid orphan under recovery | **Excluded** from its own decision |
-| Unrelated paid unfinalized checkout | **Yes** — one provisional aggregate slot |
-| Multiple jobs for one session | **Once** (group by checkoutId / canonical PI) |
-| Session already linked to Booking | **No** provisional (Booking counts) |
+### 7.2 Deterministic grouping precedence
 
-One purchase consumes **at most one** provisional slot (group by checkoutId or canonical PaymentIntent).
+One purchase consumes **at most one** provisional capacity slot. Grouping key precedence:
 
-### 7.3 Shared function
+1. Existing linked Booking `_id`
+2. Canonical PaymentIntent ID
+3. Checkout `checkoutId`
+4. CheckoutSession `_id`
+5. Finalization-job `_id` only when none of the stronger purchase identities exist
 
-One authoritative `buildCabinTypeCapacityEvidence({ cabinTypeId, checkIn, checkOut, excludeIdentities })` shared by pre-charge and finalization. R0 exact-unit validation remains per-unit; when aggregate evidence is consulted, apply the same exclusion.
+Required deduplication:
+
+- Booking and linked CheckoutSession count once
+- CheckoutSession and all its jobs count once
+- Payment and CheckoutSession for the same canonical PI count once
+- Multiple Stripe events for one PI count once
+- Multiple jobs for one checkout count once
+
+### 7.3 Authoritative builder
+
+One shared function: `buildCabinTypeCapacityEvidence({ cabinTypeId, checkIn, checkOut, excludeIdentities })` used by pre-charge and finalization. Applies the hierarchy above.
 
 ---
 
@@ -392,24 +517,39 @@ One authoritative `buildCabinTypeCapacityEvidence({ cabinTypeId, checkIn, checkO
 
 Paid unfinalized checkouts have **no unitId** → they consume **aggregate** capacity (one slot), not a pinned unit.
 
-### 8.1 Lifecycle
+### 8.1 Status / release rules (Payment model enums: unpaid|partial|paid|failed|refunded|disputed)
 
-Each distinct paid + unfinalized purchase consumes one provisional aggregate slot until one of:
+| Situation | Provisional capacity |
+|-----------|----------------------|
+| `paymentStatus=paid` + unfinalized, no Booking | Consumes one slot |
+| Linked Booking created | Slot converts to unit occupancy |
+| `Payment.status='refunded'` with authoritative refund evidence (ingestion sets refunded on refund events) | Releases slot |
+| `Payment.status='disputed'` | **Does not** release; remains blocked |
+| Chargeback / dispute unresolved | Remains blocked until dispute resolution, refund/cancel evidence, or explicit audited operator release |
+| Partial refund | Does **not** auto-release full slot unless purchase authoritatively cancelled |
+| CheckoutSession `expiresAt` passed while still paid/unfinalized | **Does not** release |
+| Unpaid expired / abandoned / superseded | No capacity |
+| ManualReview resolved alone | **Not** sufficient release evidence |
 
-1. Linked Booking is created (slot converts to unit occupancy), **or**
-2. Payment status becomes `refunded` (Payment model enum includes `refunded`) with recorded refund evidence, **or**
-3. Checkout/payment is administratively cancelled through an authoritative ops process with audit evidence, **or**
-4. Operator explicitly releases the provisional slot with audit evidence (ops tool; fields TBD in S1 implementation but must be durable)
+### 8.2 Explicit operator release (new durable evidence)
 
-### 8.2 Non-expiry
+When no stronger release field applies, S0/S1 must add an authoritative release representation on CheckoutSession (proposed):
 
-- Paid provisional capacity **must not** expire merely because CheckoutSession `expiresAt` passed.
-- Unpaid expired / abandoned / superseded sessions consume **no** capacity.
-- `failed_permanent` paid orphans **continue** to consume capacity until recovery, refund, or explicit release.
+```js
+metadata.provisionalCapacityRelease = {
+  releasedAt: Date,
+  releasedBy: 'ops:<username>',
+  reason: String, // ≤500
+  paymentIntentId: String,
+  checkoutId: String
+}
+```
+
+Required: operator actor, reason, timestamp, linked payment/checkout identity, audit evidence. MRI resolution alone is insufficient.
 
 ### 8.3 Operational consequence
 
-Unresolved paid orphans can **intentionally block** future inventory until money disposition is resolved. That is preferred to silent oversell.
+Unresolved paid orphans (including disputed) can **intentionally block** future inventory until money disposition is resolved.
 
 ---
 
@@ -422,39 +562,39 @@ Unresolved paid orphans can **intentionally block** future inventory until money
 - On paid path, loser Booking is **retained** (not deleted).
 - Sets `metadata.paidOverlapConflict`, `paidOverlapConflictAt`, `paidOverlapConflictCode`, `paidOverlapConflictSummary`.
 - Opens MRI `paid_booking_overlap_conflict`.
-- Throws; unpaid path may `deleteOne`.
+- Status remains a normal blocking enum value (`confirmed`/`pending`/…) today.
 
-`isUnitGuestStayAvailable` today counts `status ∈ pending|confirmed|in_house` and does **not** exclude `paidOverlapConflict` — **S1 must fix this**.
+### 9.2 Preferred narrow policy (binding)
 
-### 9.2 Locked target behavior
+- Retain current paid-overlap Booking for financial evidence.
+- Retain / enrich `metadata.paidOverlapConflict === true` plus winning Booking ID, unitId, dates, payment/checkout linkage, timestamp.
+- **Every** inventory / blocking / guest-stay reader excludes those records.
+- Operational / MRI readers may still show them as financial conflicts.
+- No confirmation, arrival, cleaning, lifecycle, or guest-stay side effects.
+- Payment and checkout evidence remain linked for manual disposition.
+- Loser classification: `INVENTORY_EXHAUSTED_AFTER_PAYMENT` (permanent, MRI, no indefinite retry).
+- No automatic refund in this sidequest.
 
-- Concurrent finalizers may temporarily create competing Bookings.
-- Authoritative winner = existing deterministic oldest-by-`createdAt,_id` overlap logic.
-- Paid loser Booking is **retained** for financial evidence; **never silently deleted**.
-- Enrich conflict metadata (extend retain helper in S1):
+### 9.3 Complete reader change list (S1 must update all)
 
-  - `paidOverlapConflict: true`
-  - `paidOverlapConflictWinningBookingId`
-  - `paidOverlapConflictUnitId`
-  - `paidOverlapConflictCheckIn` / `CheckOut` (date-only)
-  - paymentIntentId / checkoutId
-  - conflict timestamp (existing `paidOverlapConflictAt`)
+Inventory/blocking/guest-stay exclusion of `metadata.paidOverlapConflict === true` is required in at least:
 
-- Loser must **not**: receive confirmation; trigger normal guest confirmation side effects; appear as a valid guest stay; consume sellable inventory.
+- `server/services/publicAvailabilityService.js`
+- `server/services/assignmentEngine.js`
+- `server/services/calendar/selectBlockingSpans.js`
+- `server/services/calendar/selectBlockingSpansForUnit.js`
+- `server/services/ops/domain/conflictService.js`
+- `server/services/ops/readModels/calendarReadModel.js`
+- `server/services/ops/domain/reservationWriteService.js`
+- `server/services/cabins/cabinVisibilityService.js`
+- `server/services/locationQuote/locationAvailabilityService.js`
+- `server/routes/bookingRoutes.js` (overlap guards)
+- `server/services/checkout/commercialStayGuardService.js` (when counting inventory occupancy, not fingerprint exclusivity diagnostics)
+- capacity-evidence builders (`buildCabinTypeCapacityEvidence`)
+- administrative availability/calendar readers that treat `pending|confirmed|in_house` as blocking
+- any other query discovered in S1 implementation that treats those statuses as sellable occupancy without the conflict exclusion
 
-### 9.3 Inventory exclusion rule (required S1)
-
-Availability, AssignmentEngine, and capacity evidence **must exclude** Bookings where:
-
-```js
-metadata.paidOverlapConflict === true
-```
-
-from blocking inventory (treat as non-occupying for sellable capacity), while retaining the row for money/ops evidence.
-
-Loser job / classification: `INVENTORY_EXHAUSTED_AFTER_PAYMENT` (permanent, MRI, no indefinite retry loop). Payment remains `paid`. No automatic refund in this sidequest.
-
-Do **not** require a new Booking status enum value for S1 minimum; metadata exclusion is the binding inventory rule. Optional later: ops UI filter + archive tooling.
+Do not leave this as a generic “exclude from inventory” statement without updating this list (extend the list if new readers are found).
 
 ---
 
@@ -462,19 +602,19 @@ Do **not** require a new Booking status enum value for S1 minimum; metadata excl
 
 ### 10.1 Exact execute order
 
-0. Recompute read-only preflight; verify digest, intent phrase, actor, timestamps.
+0. Verify original digest against received original `canonicalEvidence`; enforce max age; reread live evidence; abort on material diffs; verify intent phrase/actor/reason.
 1. Atomically acquire recovery-specific lease (`failed_permanent` remains).
 2. Search existing Booking by: `checkoutId`, `checkoutSessionId`, `stripePaymentIntentId`, `Payment.reservationId`.
-3. Create Booking through authoritative finalize **only** if none exists (with capability + `assignedUnitId`).
+3. Create Booking through capability-gated authoritative finalize **only** if none exists (`assignedUnitId` set).
 4. Link `Payment.reservationId` (MRI auto-resolve **suppressed** — §11).
 5. Finalize / link CheckoutSession (`bookingId`, `finalizeStatus=finalized`, `finalizedAt`).
-6. Recovery-specific job success transition (after links verified enough for bookingId).
-7. Convert SavedQuote where applicable (non-fatal toward overall money truth).
-8. Ensure one pending confirmation EDS with `send:false`; set `confirmationQueuedAt` only after pending exists.
-9. Verify all authoritative links (Booking unit AF-03, Payment, session, job, EDS).
-10. Resolve incident MRI under §11.
-11. Write redacted recovery audit evidence.
-12. Complete recovery lease (`recoveryStatus=succeeded`).
+6. Recovery-specific job success transition (confirmationQueuedAt may be null).
+7. Convert SavedQuote where applicable (non-fatal toward money truth).
+8. Ensure one pending confirmation EDS with `send:false`.
+9. `markCheckoutFinalizationJobConfirmationQueued(...)`.
+10. Verify all authoritative links (Booking unit AF-03, Payment, session, job succeeded, EDS, confirmationQueuedAt).
+11. Resolve incident MRI under §11.
+12. Write redacted recovery audit evidence.
 
 ### 10.2 Crash behavior
 
@@ -483,13 +623,13 @@ Do **not** require a new Booking status enum value for S1 minimum; metadata excl
 - Booking without Payment link → recoverable.
 - Payment linked without session finalize → recoverable.
 - Session finalized without job success → recoverable.
-- Job success without confirmation enqueue → recoverable; **MRI stays open**.
+- Job success without confirmation enqueue / confirmationQueuedAt → recoverable; **MRI stays open**.
 - MRI is **not** the transaction boundary.
 - No second charge; no second Booking (unique indexes on checkoutId / stripePaymentIntentId).
 
 ---
 
-## 11. MRI auto-resolution policy (S0 preferred)
+## 11. MRI auto-resolution policy (S0)
 
 ### 11.1 Problem
 
@@ -497,19 +637,19 @@ Do **not** require a new Booking status enum value for S1 minimum; metadata excl
 
 ### 11.2 Locked policy
 
-- Recovery passes the private capability into payment-linking and side-effects to **suppress** automatic `payment_unlinked` resolution during recovery.
+- Recovery passes capability into payment-linking and side-effects; those modules call `assertMultiUnitPaidOrphanRecoveryCapability` before suppressing auto-resolve.
 - Incident MRI remains **open** until the final verification gate passes.
 - Final verification requires **all** of:
-  - Booking exists
-  - `unitId` = expected AF-03
+  - Booking exists with `unitId` = expected AF-03
   - `Payment.reservationId` matches Booking
   - `CheckoutSession.bookingId` matches Booking
   - session `finalizeStatus=finalized`
   - job `status=succeeded` with recovery success evidence
-  - confirmation EmailDeliveryState exists in `pending` (or already `succeeded`/`success` if somehow sent out-of-band)
-- Only then resolve MRI with controlled note (no secrets), `resolvedBy` = recovery service / actor.
-- If confirmation enqueue fails → keep MRI open; preserve Booking/Payment/session links; second run may finish enqueue then resolve.
-- Narrow hooks in payment-linking + side-effects are **in S0 scope**.
+  - confirmation EmailDeliveryState exists (`pending` or already definitive sent)
+  - `confirmationQueuedAt` set (or EDS adopted-sent path equivalent)
+- Only then resolve MRI with controlled note (no secrets).
+- If confirmation enqueue / confirmationQueuedAt patch fails → keep MRI open; preserve Booking/Payment/session/job success links; second run may finish then resolve.
+- Concurrent non-recovery callers of `linkStripePaymentToBooking` (ingestion/reconcile scripts) do **not** receive capability and must not suppress MRI during S0 execute window; ops should avoid concurrent link scripts on this PI while recovery runs.
 
 ---
 
@@ -518,20 +658,18 @@ Do **not** require a new Booking status enum value for S1 minimum; metadata excl
 - S0 calls existing delivery SM with **`send: false`**.
 - Ensures one durable pending `EmailDeliveryState` (`correlationKey` unique).
 - Must not invoke SMTP; must not set `Booking.confirmationEmailSentAt`; must not set job `confirmationSentAt`.
-- Set job `confirmationQueuedAt` only after pending state exists.
+- Set job `confirmationQueuedAt` only via §2.7 helper after pending/succeeded EDS exists.
 - Confirmation worker remains stopped.
 - Second run adopts existing pending/succeeded EDS.
 - Enqueue failure does not undo Booking/Payment/session; MRI stays open (§11).
-
-Feature-flag note: even if `FINALIZE_SIDE_EFFECTS=1`, recovery must force `send:false` and MRI suppress. Do not rely on ambient worker send flags.
 
 ---
 
 ## 13. Error taxonomy (single authoritative module)
 
-Introduce `server/services/checkout/multiUnitRecoveryAndCapacityErrorTaxonomy.js` (or shared finalize taxonomy module extended in S0/S1) used by recovery, job classifier, `safeDetails`, CLI, MRI evidence.
+Introduce `server/services/checkout/multiUnitRecoveryAndCapacityErrorTaxonomy.js` (S0 recovery codes first; S1 expands shared finalize permanence). Used by recovery, job classifier hooks for S0 codes, `safeDetails`, CLI, MRI evidence.
 
-`safeDetails.permanent` and job permanence **must** use this source.
+`safeDetails.permanent` and job permanence **must** use this source for codes this module owns.
 
 | Code | Retryable | Permanent | Job effect | Recovery lease | MRI | HTTP | Refund rec. |
 |------|-----------|-----------|------------|----------------|-----|------|-------------|
@@ -554,8 +692,6 @@ Introduce `server/services/checkout/multiUnitRecoveryAndCapacityErrorTaxonomy.js
 | `RECOVERY_CONFIRMATION_ENQUEUE_FAILED` | yes via re-run | until fixed | job may already succeeded | complete/re-run side effects | **keep open** | CLI | none |
 | `RECOVERY_ALREADY_COMPLETED` | n/a success | n/a | already succeeded | n/a | may already resolved | CLI | none |
 
-Client-safe messages: generic “payment received / booking needs review” patterns for guest HTTP; CLI shows operator-safe codes without PII.
-
 ---
 
 ## 14. S0 independence and deployment order
@@ -563,26 +699,25 @@ Client-safe messages: generic “payment received / booking needs review” patt
 ### 14.1 Independence
 
 - S0 does **not** require `MULTI_UNIT_CAPACITY_STAY_GUARD`.
-- S0 works while legacy commercial exclusivity remains enabled (private capability bypasses only same-guest exclusivity for the allowlisted orphan).
+- S0 works while legacy commercial exclusivity remains enabled (capability-gated exclusivity bypass only for the allowlisted orphan).
 - S0 does not require client deploy or confirmation worker running.
+- S0 does not require the S1 provisional-capacity algorithm.
 - S0 must deploy before incident execute.
 
 ### 14.2 Ordering
 
 - **Incident execute before enabling S1 capacity flag**, unless self-exclusion + provisional rules are already verified in the deployed build.
-- S1 may deploy first only with §7–§8 complete and tested.
 
 ### 14.3 S3 production order
 
-1. Deploy approved S0 server/tooling.  
-2. Production dry-run (zero writes).  
-3. Confirm operator intent (fixed phrase).  
-4. Recheck digest + AF-03 availability.  
-5. Execute recovery.  
-6. Verify Booking / Payment / session / job / unit / EDS.  
-7. Resolve MRI only after verification.  
-8. Leave confirmation pending.  
-9. Continue S1/S2 separately.
+1. Deploy approved S0 server/tooling.
+2. Production dry-run (zero writes) → original evidence + digest.
+3. Confirm operator intent (fixed phrase + `ops:<username>`).
+4. Execute with original evidence/digest; live recheck AF-03.
+5. Verify Booking / Payment / session / job / unit / EDS / confirmationQueuedAt.
+6. Resolve MRI only after verification.
+7. Leave confirmation pending.
+8. Continue S1/S2 separately.
 
 ---
 
@@ -590,19 +725,13 @@ Client-safe messages: generic “payment received / booking needs review” patt
 
 ### 15.1 Client risk
 
-`commercialBoundaryKey` is entity+dates only (`checkoutSessionV2Storage.js`). Restoring sessionStorage for the same boundary can restore a **prior completed checkoutId**.
+`commercialBoundaryKey` is entity+dates only. Restoring sessionStorage for the same boundary can restore a prior completed checkoutId.
 
-S2 must:
-
-- Clear completed/finalized checkout storage before starting a second sequential one-unit checkout.
-- Mint a **new** `checkoutId` for the second purchase.
-- Keep communicating remaining unit availability honestly.
+S2 must clear completed/finalized checkout storage before a second sequential one-unit checkout and mint a **new** `checkoutId`.
 
 ### 15.2 Quantity
 
-- Quantity remains **absent** from the public product model (no field in quote snapshot / ConfirmBooking cabinType path today).
-- Defensive API validation rejects `quantity > 1` if supplied.
-- Do **not** build quantity-two support in this sidequest.
+Quantity remains absent from the public product model. Defensive API validation rejects `quantity > 1` if supplied. Do **not** build quantity-two support in this sidequest.
 
 ---
 
@@ -613,7 +742,7 @@ S2 must:
 | `MULTI_UNIT_PAID_ORPHAN_RECOVERY` | false | S0 execute gate (with `--execute` + allowlist + digest + phrase) |
 | `MULTI_UNIT_CAPACITY_STAY_GUARD` | false | S1 capacity-aware guard + pre-charge |
 
-S0 recovery does **not** depend solely on the capacity flag. Logs must show `policy=legacy_exclusivity|capacity_aware` and never log PII.
+S0 recovery does **not** depend solely on the capacity flag. Capability remains required. Logs show boolean policy only; no PII.
 
 ---
 
@@ -621,22 +750,24 @@ S0 recovery does **not** depend solely on the capacity flag. Logs must show `pol
 
 ### 17.1 Add
 
+- `server/services/checkout/multiUnitPaidOrphanRecoveryCapability.js`
 - `server/services/checkout/multiUnitPaidOrphanRecoveryService.js`
 - `server/scripts/recoverMultiUnitPaidOrphanCheckout.js`
 - `server/scripts/multiUnitPaidOrphanRecovery.test.cjs`
 - `docs/checkout-payment-architecture/04_MULTI_UNIT_PAID_ORPHAN_RECOVERY_CLI.md` (fake IDs only)
 - `docs/checkout-payment-architecture/examples/multi-unit-paid-orphan-allowlist.example.json` (fake IDs)
-- `server/services/checkout/multiUnitRecoveryAndCapacityErrorTaxonomy.js` (or equivalent shared taxonomy module)
+- `server/services/checkout/multiUnitRecoveryAndCapacityErrorTaxonomy.js`
 
 ### 17.2 Narrow modify
 
-- `server/models/CheckoutFinalizationJob.js` — recovery lease fields (§2.2)
-- `server/services/checkout/checkoutFinalizationJobService.js` — claim + success-from-`failed_permanent` helpers; **do not** weaken normal worker succeed-from-`claimed`
-- `server/services/checkout/commercialStayGuardService.js` — capability-gated exclusivity bypass only
-- `server/services/checkout/finalizePaidCheckout.js` / `checkoutFinalizeService.js` — internal hooks callable only with capability (no HTTP-shaped bypass)
-- `server/services/checkout/executeBookingFinalizeWork.js` — only if needed to honor pre-assigned unit (already supported via `assignedUnitId`)
-- `server/services/payments/paymentLinkingService.js` — suppress `payment_unlinked` auto-resolve when capability present
-- `server/services/checkout/checkoutFinalizeSideEffects.js` — force `send:false`; suppress MRI auto-resolve under capability; controlled ordering
+- `server/models/CheckoutFinalizationJob.js` — recovery fields + lease index + bounded history
+- `server/services/checkout/checkoutFinalizationJobService.js` — claim, succeed-from-`failed_permanent`, confirmationQueuedAt patch; reconcile no-op while leased
+- `server/services/checkout/commercialStayGuardService.js` — exclusivity bypass only after capability assert
+- `server/services/checkout/finalizePaidCheckout.js` / `checkoutFinalizeService.js` — private recovery path hooks only under capability
+- `server/services/checkout/executeBookingFinalizeWork.js` — only if needed to honor pre-assigned unit (already supported)
+- `server/services/payments/paymentLinkingService.js` — suppress `payment_unlinked` auto-resolve only when capability asserts
+- `server/services/checkout/checkoutFinalizeSideEffects.js` — force `send:false`; suppress MRI auto-resolve under capability
+- `server/services/checkout/reconcilePaidCheckoutFinalization.js` — no-op mutate path while recovery lease active
 - `server/utils/featureFlags.js` — `isMultiUnitPaidOrphanRecoveryEnabled()`
 
 ### 17.3 Explicitly exclude
@@ -646,44 +777,52 @@ S0 recovery does **not** depend solely on the capacity flag. Logs must show `pol
 - Client quantity product
 - Payment amount / Stripe charge or refund creation
 - Unrelated voucher or messaging code
-- Calling Batch 8 `reconcilePaidCheckoutSubject` as the mutator for this `failed_permanent` incident
+- Using Batch 8 `reconcilePaidCheckoutSubject` as the mutator for this incident
 
 ---
 
 ## 18. Exact S0 acceptance tests
 
-1. Dry-run performs **zero** Mongo mutations (job/session/payment/MRI/EDS/Booking/AuditEvent).  
-2. Exact allowlist required; wildcards rejected.  
-3. Fixed operator confirmation phrase required.  
-4. Actor / timestamp / reason required.  
-5. Digest generated deterministically from canonical inputs.  
-6. Changed unit availability invalidates digest.  
-7. Wrong identifiers / hashes / amount / dates reject (`RECOVERY_ALLOWLIST_MISMATCH`).  
-8. Guest identity mismatch rejects without exposing email.  
-9. Private capability cannot be forged through normal finalizer arguments / plain `bypassCommercialStayExclusivity: true`.  
-10. Normal HTTP / webhook / worker / reconcile paths cannot bypass guard.  
-11. Recovery lease acquired **without** job `status=claimed`.  
-12. Normal worker cannot execute recovery-leased `failed_permanent` job.  
-13. Expired recovery lease can be reclaimed.  
-14. Original permanent failure evidence preserved after success.  
-15. Exact AF-03 validation passes when available.  
-16. Inactive / wrong-type / blocked / overlapping unit rejects.  
-17. Current orphan excluded from its own capacity/availability decision.  
-18. Unrelated paid orphan still counts toward capacity evidence.  
-19. No new PaymentIntent, charge, or refund.  
-20. Existing Booking by checkoutId/PI is adopted.  
-21. Concurrent creation race creates/adopts only one Booking.  
-22. Partial failure after Booking creation reconciles forward (no delete).  
-23. Payment link failure reconciles on second run.  
-24. Session link failure reconciles on second run.  
-25. Job completion failure reconciles on second run.  
-26. MRI remains open until full verification.  
-27. Payment-link auto-resolution suppressed during recovery.  
-28. One pending confirmation EDS with `send:false`.  
-29. Confirmation enqueue failure leaves MRI open and links intact.  
-30. Second run idempotent.  
-31. No SMTP invoked.  
-32. No production identifiers / emails in tests.
+S0 tests (exact-unit / recovery; **not** S1 provisional algorithm):
+
+1. Dry-run performs **zero** Mongo mutations.
+2. Exact allowlist required; wildcards rejected.
+3. Fixed operator confirmation phrase required.
+4. Actor (`ops:<username>`) / timestamp / reason required.
+5. Digest generated deterministically from original canonicalEvidence.
+6. Execute rejects when submitted digest ≠ H(received original evidence).
+7. Execute rejects when live material fields diverge from original evidence (including AF-03 availability / unit updatedAt).
+8. Digest older than max age rejects.
+9. Wrong identifiers / hashes / amount / dates reject.
+10. Guest identity mismatch rejects without exposing email.
+11. Real capability predicate: normal finalizer args / plain bypass flags cannot forge bypass.
+12. HTTP / webhook / worker / reconcile paths cannot bypass guard.
+13. Recovery lease acquired **without** job `status=claimed`.
+14. Normal worker cannot execute recovery-leased `failed_permanent` job.
+15. Active lease → reconcile mutates nothing / opens no duplicate MRI.
+16. Expired recovery lease can be reclaimed by recovery CLI only.
+17. Original permanent failure evidence preserved after success.
+18. Exact AF-03 validation passes when available.
+19. Inactive / wrong-type / blocked / overlapping unit rejects.
+20. Orphan paid session alone does **not** make AF-03 unavailable (no assigned unit).
+21. No new PaymentIntent, charge, or refund.
+22. Existing Booking by checkoutId/PI is adopted.
+23. Concurrent creation race creates/adopts only one Booking.
+24. Partial failure after Booking creation reconciles forward (no delete).
+25. Payment link failure reconciles on second run.
+26. Session link failure reconciles on second run.
+27. Job completion failure reconciles on second run.
+28. Job may succeed with `confirmationQueuedAt` null; patch sets it after EDS.
+29. MRI remains open until full verification including confirmationQueuedAt/EDS.
+30. Payment-link auto-resolution suppressed during recovery (real capability).
+31. One pending confirmation EDS with `send:false`.
+32. Confirmation enqueue failure leaves MRI open and links intact.
+33. Second run idempotent.
+34. No SMTP invoked.
+35. No production identifiers / emails in tests.
+36. `recoveryHistory` never exceeds 40 entries.
+
+**S1-only:** aggregate provisional-slot self-exclusion, grouping precedence, disputed release, multi-reader paidOverlapConflict exclusion, concurrent last-unit loser inventory exclusion.
 
 ---
 
@@ -691,63 +830,34 @@ S0 recovery does **not** depend solely on the capacity flag. Logs must show `pol
 
 ### 19.1 Behavior
 
-- Self-exclusion identities (§7)
-- Session/job/Booking deduplication
-- Aggregate provisional-slot semantics + non-auto-expiry (§8)
-- Manual / refund / recovery release rules
-- Paid-loser retention + `metadata.paidOverlapConflict` inventory exclusion (§9)
+- Self-exclusion + grouping precedence (§7)
+- Provisional lifecycle including disputed / explicit release (§8)
+- Paid-loser retention + **full reader list** exclusion (§9)
 - Pre-charge checks: quote, session refresh, before PI create
 - Finalizer capacity recheck
 - `INVENTORY_EXHAUSTED` / `INVENTORY_EXHAUSTED_AFTER_PAYMENT`
-- Unified taxonomy permanence (`safeDetails.permanent` == job permanence)
+- Unified taxonomy permanence for inventory codes
 - Feature flag `MULTI_UNIT_CAPACITY_STAY_GUARD` default false
 - Single-cabin inventory keeps exclusivity
 - Sequential same-guest multi-unit allowed when capacity remains (flag on)
 
-### 19.2 S1 files (modify/add)
+### 19.2 S1 files
 
-- `commercialStayGuardService.js` (capacity-aware result object)
-- `bookingQuoteService.js`, `checkoutSessionService.js`, `checkoutCanonicalPaymentIntentService.js`
-- `finalizePaidCheckout.js`, `checkoutFinalizeService.js`, `executeBookingFinalizeWork.js` (loser metadata enrichment + taxonomy)
-- `publicAvailabilityService.js` / `assignmentEngine.js` — exclude `paidOverlapConflict` from blocking occupancy
+- Guard / quote / session / PI services as previously listed
+- All §9.3 readers
 - `featureFlags.js`
-- Docs: update I5/P1/T17 in checkout target architecture + finalization spec taxonomy rows
-- Tests: `multiUnitCapacityStayGuard.test.cjs` + extensions to commercialStay / cabinType allocation / finalize / worker taxonomy tests
-
-### 19.3 S1 acceptance tests (minimum)
-
-- Two active units, zero bookings → two same-guest sequential checkouts, different unitIds (flag on)
-- One booked → second succeeds on remaining unit
-- Both occupied → reject before PI
-- Different guests unchanged
-- Same checkout / same PI replay → one Booking
-- Concurrent last unit → one clean occupant; loser retained with conflict metadata + excluded from inventory; `INVENTORY_EXHAUSTED_AFTER_PAYMENT`
-- Inactive units excluded
-- Expired unpaid does not consume capacity
-- Paid unfinalized consumes one provisional slot; non-auto-expiry
-- Self-exclusion identities
-- Finalized session+booking counted once
-- Flag off = legacy exclusivity
-- Flag on = capacity policy; logs without PII
-- `safeDetails.permanent` matches classifier
+- Docs I5/P1/T17 + finalization taxonomy rows
+- Tests: capacity matrix, grouping precedence, disputed, paidOverlapConflict across readers, flag off/on
 
 ---
 
 ## 20. Pre-charge behavior (S1)
 
-Capacity checked at:
-
-1. Quote refresh (`bookingQuoteService`)
-2. CheckoutSession refresh (`checkoutSessionService`)
-3. Immediately before canonical PI creation (`checkoutCanonicalPaymentIntentService`)
-
-When exhausted: no new PI; clear 409/`INVENTORY_EXHAUSTED`; refresh stale quote/session. Same-guest second-unit with capacity remaining must **not** be classified as `DUPLICATE_STAY_CONFLICT`. Finalizer always rechecks.
-
-Existing PI for same checkout may still be reused per canonical PI ownership rules when capacity remains for that session’s provisional slot.
+Capacity checked at quote refresh, CheckoutSession refresh, and immediately before canonical PI creation. When exhausted: no new PI; clear conflict. Same-guest second-unit with capacity remaining must not be `DUPLICATE_STAY_CONFLICT`. Finalizer always rechecks. Existing PI reuse for same checkout follows canonical PI ownership when that session’s provisional slot still applies.
 
 ---
 
-## 21. Replay identity vs inventory capacity (R1 concept)
+## 21. Replay identity vs inventory capacity
 
 **Replay:** checkoutId, canonical PI, replayFingerprint, finalizeIntentHash, quoteSnapshotHash, Booking unique PI/checkout indexes.
 
@@ -763,10 +873,11 @@ Existing PI for same checkout may still be reused per canonical PI ownership rul
 
 - Booking unique `checkoutId` (partial string)
 - Booking unique `stripePaymentIntentId` (partial)
-- Booking `{ unitId, checkIn, checkOut }` (non-unique; overlap via query)
+- Booking `{ unitId, checkIn, checkOut }` (non-unique)
 - Booking `{ commercialStayFingerprint, status }` **non-unique**
 - CheckoutSession unique `checkoutId`; partial unique canonical PI
 - CheckoutFinalizationJob unique active executable (`scheduled|claimed`) per checkoutId
+- CheckoutFinalizationJob `{ recoveryStatus, recoveryVisibilityTimeoutAt }` (new)
 - Payment unique `{ provider, providerReference }`
 - EmailDeliveryState unique `correlationKey`
 
@@ -782,11 +893,11 @@ Do **not** add a unique index on commercialStayFingerprint that reintroduces cab
 
 ## 24. Repository-unanswerable questions
 
-1. Production in-memory guest-identity / stayFingerprint equality for the two checkouts.  
-2. Operator-confirmed guest intent for a second physical A-frame.  
-3. Exact live MRI category for `6a6da522d383478dc62c43cf`.  
-4. Production `FINALIZE_SIDE_EFFECTS` / send flag values at execute time.  
-5. Whether AF-03 remains free at dry-run and execute.  
+1. Production in-memory guest-identity / stayFingerprint equality for the two checkouts.
+2. Operator-confirmed guest intent for a second physical A-frame.
+3. Exact live MRI category for `6a6da522d383478dc62c43cf`.
+4. Production `FINALIZE_SIDE_EFFECTS` / send flag values at execute time.
+5. Whether AF-03 remains free at dry-run and execute.
 6. Whether any out-of-band ops mutation occurred since audit.
 
 ---
@@ -795,16 +906,20 @@ Do **not** add a unique index on commercialStayFingerprint that reintroduces cab
 
 | Topic | Decision |
 |-------|----------|
-| Trust boundary | Recovery-only entrypoint + unexported Symbol capability |
-| Job lease | Recovery fields; stay `failed_permanent` until recovery-specific succeed; never worker `claimed` |
-| Dry-run | Zero writes; deterministic digest; execute re-verifies |
-| Guest identity | In-memory normalize + compare; booleans only in reports |
-| Intent | Fixed phrase + actor + timestamp + reason + digest |
-| Unit | Exact AF-03 via `assignedUnitId` after `validateUnitForCabinTypeBooking` |
-| MRI | Suppress auto-resolve under capability; resolve after verify gate |
+| Trust boundary | Dedicated capability module; Symbol never exported; assert via predicate |
+| Digest | Original evidence + digest; execute rematch original; live recheck separate |
+| Job success | From `failed_permanent` via recovery helper; `confirmationQueuedAt` may be null |
+| confirmationQueuedAt | Separate idempotent patch after EDS |
+| Lease | recoveryStatus fields; worker never claimed; reconcile no-op while leased |
+| Dry-run | Zero writes |
+| Guest identity | In-memory normalize + compare; booleans only |
+| Intent | Fixed phrase + `ops:<username>` evidence + timestamp + reason + digest |
+| Unit | Exact AF-03 via `assignedUnitId` after validateUnitForCabinTypeBooking |
+| MRI | Suppress auto-resolve under capability; resolve after verify including queued confirmation |
 | Confirmation | `send:false` pending EDS; worker stopped |
-| Paid loser | Retain Booking; exclude `paidOverlapConflict` from inventory |
-| Provisional capacity | Aggregate slot; no auto-expiry on paid; self-exclude |
+| Paid loser | Retain Booking; exclude paidOverlapConflict in **all** listed readers |
+| Provisional | Aggregate slot; no auto-expiry; disputed stays blocked; explicit release field |
+| Grouping | Booking → PI → checkoutId → session → job |
 | Deploy | S0 deploy → dry-run → intent → execute → verify → MRI; then S1 flag |
 
-**End of binding architecture lock (remediated 2026-08-03).**
+**End of binding architecture lock (clarified 2026-08-03).**
