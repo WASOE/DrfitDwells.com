@@ -19,6 +19,109 @@ const SCHEMA_VERSION = 'multi-unit-paid-orphan-recovery-context/v1';
 const OBJECT_ID_RE = /^[a-f0-9]{24}$/;
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/;
 
+/**
+ * Privileged operation → mandatory expectedScope fields.
+ * Every listed field must be present, valid, and match the ALS store
+ * (bookingId matches options.authoritativeBookingId — not stored in ALS).
+ */
+const OPERATION_REQUIRED_FIELDS = Object.freeze({
+  commercial_stay_bypass: Object.freeze([
+    'checkoutId',
+    'checkoutSessionId',
+    'paymentIntentId',
+    'cabinTypeId',
+    'evidenceDigest'
+  ]),
+  exact_unit_injection: Object.freeze([
+    'checkoutId',
+    'checkoutSessionId',
+    'paymentIntentId',
+    'cabinTypeId',
+    'expectedTargetUnitId',
+    'evidenceDigest'
+  ]),
+  payment_link_review_suppression: Object.freeze([
+    'checkoutId',
+    'checkoutSessionId',
+    'paymentId',
+    'paymentIntentId',
+    'manualReviewItemId',
+    'evidenceDigest'
+  ]),
+  recovery_job_lease: Object.freeze([
+    'checkoutId',
+    'checkoutSessionId',
+    'paymentIntentId',
+    'finalizationJobId',
+    'recoveryExecutionId',
+    'evidenceDigest'
+  ]),
+  recovery_job_transition: Object.freeze([
+    'checkoutId',
+    'checkoutSessionId',
+    'paymentIntentId',
+    'finalizationJobId',
+    'recoveryExecutionId',
+    'evidenceDigest'
+  ]),
+  completion_review_create_or_adopt: Object.freeze([
+    'checkoutId',
+    'checkoutSessionId',
+    'paymentId',
+    'paymentIntentId',
+    'finalizationJobId',
+    'manualReviewItemId',
+    'recoveryExecutionId',
+    'evidenceDigest'
+  ]),
+  active_review_update: Object.freeze([
+    'checkoutId',
+    'checkoutSessionId',
+    'paymentIntentId',
+    'finalizationJobId',
+    'recoveryExecutionId',
+    'evidenceDigest'
+  ]),
+  confirmation_queue_transition: Object.freeze([
+    'checkoutId',
+    'checkoutSessionId',
+    'paymentIntentId',
+    'finalizationJobId',
+    'recoveryExecutionId',
+    'evidenceDigest',
+    'bookingId'
+  ]),
+  recovery_review_resolution: Object.freeze([
+    'checkoutId',
+    'checkoutSessionId',
+    'paymentId',
+    'paymentIntentId',
+    'finalizationJobId',
+    'manualReviewItemId',
+    'recoveryExecutionId',
+    'evidenceDigest',
+    'bookingId'
+  ]),
+  mri_hold_acquire: Object.freeze([
+    'checkoutId',
+    'checkoutSessionId',
+    'paymentIntentId',
+    'finalizationJobId',
+    'manualReviewItemId',
+    'recoveryExecutionId',
+    'evidenceDigest'
+  ]),
+  mri_hold_transfer: Object.freeze([
+    'checkoutId',
+    'checkoutSessionId',
+    'paymentIntentId',
+    'finalizationJobId',
+    'manualReviewItemId',
+    'recoveryExecutionId',
+    'evidenceDigest'
+  ])
+});
+
 function canonicalizeObjectId(value) {
   if (value == null) return null;
   if (Array.isArray(value)) return null;
@@ -42,7 +145,7 @@ function canonicalizeObjectId(value) {
   return s;
 }
 
-function requireExactNonEmptyString(value, fieldName) {
+function requireExactNonEmptyString(value) {
   if (value == null) return null;
   if (typeof value !== 'string') return null;
   if (value.length === 0) return null;
@@ -70,15 +173,9 @@ function canonicalizeScope(scope) {
     });
   }
 
-  const recoveryExecutionId = requireExactNonEmptyString(
-    scope.recoveryExecutionId,
-    'recoveryExecutionId'
-  );
-  const checkoutId = requireExactNonEmptyString(scope.checkoutId, 'checkoutId');
-  const paymentIntentId = requireExactNonEmptyString(
-    scope.paymentIntentId,
-    'paymentIntentId'
-  );
+  const recoveryExecutionId = requireExactNonEmptyString(scope.recoveryExecutionId);
+  const checkoutId = requireExactNonEmptyString(scope.checkoutId);
+  const paymentIntentId = requireExactNonEmptyString(scope.paymentIntentId);
   const checkoutSessionId = canonicalizeObjectId(scope.checkoutSessionId);
   const paymentId = canonicalizeObjectId(scope.paymentId);
   const finalizationJobId = canonicalizeObjectId(scope.finalizationJobId);
@@ -119,89 +216,68 @@ function canonicalizeScope(scope) {
   };
 }
 
-function compareScalarExact(a, b) {
-  if (a == null || b == null) return false;
-  if (typeof a !== 'string' || typeof b !== 'string') return false;
-  return a === b;
-}
-
-function compareObjectIdField(storeValue, expectedRaw) {
-  const expected = canonicalizeObjectId(expectedRaw);
-  if (!expected || !storeValue) return false;
-  return storeValue === expected;
+function fieldMatchesStore(store, field, expectedRaw) {
+  switch (field) {
+    case 'recoveryExecutionId':
+    case 'checkoutId':
+    case 'paymentIntentId':
+      return (
+        requireExactNonEmptyString(expectedRaw) != null &&
+        store[field] === requireExactNonEmptyString(expectedRaw)
+      );
+    case 'evidenceDigest':
+      return (
+        canonicalizeEvidenceDigest(expectedRaw) != null &&
+        store.evidenceDigest === canonicalizeEvidenceDigest(expectedRaw)
+      );
+    case 'checkoutSessionId':
+    case 'paymentId':
+    case 'finalizationJobId':
+    case 'manualReviewItemId':
+    case 'cabinTypeId':
+    case 'expectedTargetUnitId': {
+      const expected = canonicalizeObjectId(expectedRaw);
+      return expected != null && store[field] === expected;
+    }
+    case 'bookingId':
+      // Compared against authoritativeBookingId in options, not ALS.
+      return canonicalizeObjectId(expectedRaw) != null;
+    case 'recoveryMode':
+      return expectedRaw === 'initial' || expectedRaw === 'resume'
+        ? store.recoveryMode === expectedRaw
+        : false;
+    default:
+      return false;
+  }
 }
 
 /**
- * Binding equality: ObjectIds → lowercase hex; provider IDs / checkoutId exact;
- * evidenceDigest lowercase SHA-256; missing/null/array/object fail closed.
+ * Privileged match: every operation-required field must be present and match.
+ * Unknown / missing operation → fail closed.
  */
-function matchesIncidentScope(store, expectedScope) {
+function matchesOperationScope(store, expectedScope, operation, options = {}) {
   if (!store || store.brand !== BRAND) return false;
   if (!expectedScope || typeof expectedScope !== 'object' || Array.isArray(expectedScope)) {
     return false;
   }
+  const required = OPERATION_REQUIRED_FIELDS[operation];
+  if (!required) return false;
 
-  const checks = [
-    ['recoveryExecutionId', () =>
-      compareScalarExact(
-        store.recoveryExecutionId,
-        requireExactNonEmptyString(expectedScope.recoveryExecutionId)
-      )],
-    ['checkoutId', () =>
-      compareScalarExact(
-        store.checkoutId,
-        requireExactNonEmptyString(expectedScope.checkoutId)
-      )],
-    ['paymentIntentId', () =>
-      compareScalarExact(
-        store.paymentIntentId,
-        requireExactNonEmptyString(expectedScope.paymentIntentId)
-      )],
-    ['checkoutSessionId', () =>
-      compareObjectIdField(store.checkoutSessionId, expectedScope.checkoutSessionId)],
-    ['paymentId', () => compareObjectIdField(store.paymentId, expectedScope.paymentId)],
-    ['finalizationJobId', () =>
-      compareObjectIdField(store.finalizationJobId, expectedScope.finalizationJobId)],
-    ['manualReviewItemId', () =>
-      compareObjectIdField(store.manualReviewItemId, expectedScope.manualReviewItemId)],
-    ['cabinTypeId', () => compareObjectIdField(store.cabinTypeId, expectedScope.cabinTypeId)],
-    ['expectedTargetUnitId', () =>
-      compareObjectIdField(store.expectedTargetUnitId, expectedScope.expectedTargetUnitId)],
-    ['evidenceDigest', () =>
-      compareScalarExact(
-        store.evidenceDigest,
-        canonicalizeEvidenceDigest(expectedScope.evidenceDigest)
-      )]
-  ];
-
-  // Only compare fields present on expectedScope (subset allowed for seam-specific checks),
-  // but privileged callers must pass a complete expectedScope per architecture.
-  // Presence of any invalid/mismatched provided field fails closed.
-  let compared = 0;
-  for (const [field, fn] of checks) {
-    if (expectedScope[field] === undefined) continue;
-    compared += 1;
-    if (!fn()) return false;
-  }
-  if (compared === 0) return false;
-
-  if (expectedScope.recoveryMode !== undefined) {
-    if (
-      expectedScope.recoveryMode !== 'initial' &&
-      expectedScope.recoveryMode !== 'resume'
-    ) {
+  for (const field of required) {
+    if (expectedScope[field] === undefined || expectedScope[field] === null) {
       return false;
     }
-    if (store.recoveryMode !== expectedScope.recoveryMode) return false;
+    if (field === 'bookingId') {
+      const expectedBookingId = canonicalizeObjectId(expectedScope.bookingId);
+      const authoritative = canonicalizeObjectId(options.authoritativeBookingId);
+      if (!expectedBookingId || !authoritative) return false;
+      if (expectedBookingId !== authoritative) return false;
+      continue;
+    }
+    if (!fieldMatchesStore(store, field, expectedScope[field])) {
+      return false;
+    }
   }
-
-  if (expectedScope.bookingId !== undefined) {
-    const expectedBookingId = canonicalizeObjectId(expectedScope.bookingId);
-    if (!expectedBookingId) return false;
-    // bookingId is post-create identity; store does not hold it — callers compare after assert of other fields
-    // via explicit argument checks. Require canonical form only here when provided alongside store match.
-  }
-
   return true;
 }
 
@@ -229,27 +305,59 @@ function getMultiUnitPaidOrphanRecoveryContext() {
 function isMultiUnitPaidOrphanRecoveryContext(expectedScope) {
   const store = getMultiUnitPaidOrphanRecoveryContext();
   if (!store) return false;
-  if (!expectedScope) return true; // presence-only diagnostic — MUST NOT authorize privileged mutations
-  return matchesIncidentScope(store, expectedScope);
+  if (!expectedScope) return true; // presence-only — MUST NOT authorize privileged mutations
+  // Diagnostic full-store equality without operation — still non-authorizing for privilege.
+  const keys = [
+    'recoveryExecutionId',
+    'checkoutId',
+    'paymentIntentId',
+    'checkoutSessionId',
+    'paymentId',
+    'finalizationJobId',
+    'manualReviewItemId',
+    'cabinTypeId',
+    'expectedTargetUnitId',
+    'evidenceDigest'
+  ];
+  for (const key of keys) {
+    if (expectedScope[key] === undefined) continue;
+    if (!fieldMatchesStore(store, key, expectedScope[key])) return false;
+  }
+  return true;
 }
 
-function assertMultiUnitPaidOrphanRecoveryContext(expectedScope) {
+/**
+ * Privileged assert. Requires { operation } and operation-complete expectedScope.
+ * options.authoritativeBookingId required when operation lists bookingId.
+ */
+function assertMultiUnitPaidOrphanRecoveryContext(expectedScope, options = {}) {
   const store = getMultiUnitPaidOrphanRecoveryContext();
   if (!store || store.brand !== BRAND) {
     throw createSanitizedRecoveryError('MULTI_UNIT_PAID_ORPHAN_RECOVERY_CONTEXT_REQUIRED');
   }
-  if (!expectedScope || !matchesIncidentScope(store, expectedScope)) {
-    throw createSanitizedRecoveryError('RECOVERY_SCOPE_MISMATCH');
+  const operation = options && options.operation;
+  if (!operation || !OPERATION_REQUIRED_FIELDS[operation]) {
+    throw createSanitizedRecoveryError('RECOVERY_SCOPE_MISMATCH', {
+      reason: 'unknown_or_missing_operation'
+    });
+  }
+  if (!expectedScope || !matchesOperationScope(store, expectedScope, operation, options)) {
+    throw createSanitizedRecoveryError('RECOVERY_SCOPE_MISMATCH', {
+      reason: 'operation_scope_mismatch',
+      operation
+    });
   }
   return store;
 }
 
-/**
- * Exit ALS for explicitly non-privileged scheduling only.
- * Must not call recovery-sensitive functions inside the callback.
- */
 function exitMultiUnitPaidOrphanRecoveryContext(callback) {
   return recoveryContext.exit(callback);
+}
+
+function getRequiredFieldsForOperation(operation) {
+  return OPERATION_REQUIRED_FIELDS[operation]
+    ? OPERATION_REQUIRED_FIELDS[operation].slice()
+    : null;
 }
 
 module.exports = {
@@ -258,7 +366,6 @@ module.exports = {
   isMultiUnitPaidOrphanRecoveryContext,
   assertMultiUnitPaidOrphanRecoveryContext,
   exitMultiUnitPaidOrphanRecoveryContext,
-  // Test/helpers: pure compare without exposing BRAND
-  matchesIncidentScopeForTests: matchesIncidentScope,
-  canonicalizeObjectIdForTests: canonicalizeObjectId
+  OPERATION_REQUIRED_FIELDS,
+  getRequiredFieldsForOperation
 };

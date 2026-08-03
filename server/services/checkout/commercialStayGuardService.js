@@ -1,3 +1,5 @@
+'use strict';
+
 const mongoose = require('mongoose');
 const Booking = require('../../models/Booking');
 const CheckoutSession = require('../../models/CheckoutSession');
@@ -150,31 +152,34 @@ async function findCommercialStayConflicts({
 
 /**
  * Throws when a blocking commercial stay conflict exists; otherwise returns { ok: true }.
- * S0 recovery: exclusivity bypass only after branded ALS context + argument identity match.
+ *
+ * S0 recovery exclusivity bypass requires branded ALS + independently derived identities
+ * from finalization data (NOT copied from the ALS store).
  */
 async function assertNoCommercialStayConflict({
   commercialStayFingerprint,
   checkoutId,
-  bookingId
+  bookingId,
+  checkoutSessionId = null,
+  paymentIntentId = null,
+  cabinTypeId = null,
+  evidenceDigest = null
 }) {
   requireCommercialStayFingerprint(commercialStayFingerprint);
 
   const store = getMultiUnitPaidOrphanRecoveryContext();
   if (store) {
-    // Privileged bypass requires complete expectedScope matching this checkout.
-    assertMultiUnitPaidOrphanRecoveryContext({
-      recoveryMode: store.recoveryMode,
-      recoveryExecutionId: store.recoveryExecutionId,
-      checkoutId: String(checkoutId || ''),
-      checkoutSessionId: store.checkoutSessionId,
-      paymentIntentId: store.paymentIntentId,
-      paymentId: store.paymentId,
-      finalizationJobId: store.finalizationJobId,
-      manualReviewItemId: store.manualReviewItemId,
-      cabinTypeId: store.cabinTypeId,
-      expectedTargetUnitId: store.expectedTargetUnitId,
-      evidenceDigest: store.evidenceDigest
-    });
+    // Independently supplied identities only — never echo store fields into expectedScope.
+    assertMultiUnitPaidOrphanRecoveryContext(
+      {
+        checkoutId: String(checkoutId || ''),
+        checkoutSessionId,
+        paymentIntentId,
+        cabinTypeId,
+        evidenceDigest
+      },
+      { operation: 'commercial_stay_bypass' }
+    );
     return { ok: true, recoveryBypass: true };
   }
 

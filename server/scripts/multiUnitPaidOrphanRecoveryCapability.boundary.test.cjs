@@ -394,14 +394,24 @@ test('ALS: a setTimeout scheduled inside the runner retains the store (real Node
 test('ALS: incident A cannot authorize incident B — mismatched scope throws RECOVERY_SCOPE_MISMATCH', async () => {
   const scopeA = buildFakeScope();
   const scopeB = buildFakeScopeB();
+  const op = { operation: 'recovery_job_lease' };
 
   await runInMultiUnitPaidOrphanRecoveryContext(scopeA, async () => {
     assert.throws(
-      () => assertMultiUnitPaidOrphanRecoveryContext(scopeB),
+      () => assertMultiUnitPaidOrphanRecoveryContext(scopeB, op),
       (err) => err && err.code === 'RECOVERY_SCOPE_MISMATCH'
     );
-    // Same-incident scope must still authorize successfully.
-    assert.doesNotThrow(() => assertMultiUnitPaidOrphanRecoveryContext(scopeA));
+    // Same-incident complete operation scope must authorize.
+    assert.doesNotThrow(() => assertMultiUnitPaidOrphanRecoveryContext(scopeA, op));
+    // Partial scope must fail closed even for the matching incident.
+    assert.throws(
+      () =>
+        assertMultiUnitPaidOrphanRecoveryContext(
+          { checkoutId: scopeA.checkoutId },
+          { operation: 'commercial_stay_bypass' }
+        ),
+      (err) => err && err.code === 'RECOVERY_SCOPE_MISMATCH'
+    );
   });
 });
 
@@ -416,7 +426,10 @@ test('ALS: parallel recoveries (Promise.all) have fully independent stores', asy
       observed.a = getMultiUnitPaidOrphanRecoveryContext();
       // Cross-check: incident A's context must never satisfy incident B's scope.
       assert.throws(
-        () => assertMultiUnitPaidOrphanRecoveryContext(scopeB),
+        () =>
+          assertMultiUnitPaidOrphanRecoveryContext(scopeB, {
+            operation: 'recovery_job_lease'
+          }),
         (err) => err && err.code === 'RECOVERY_SCOPE_MISMATCH'
       );
     }),
@@ -424,7 +437,10 @@ test('ALS: parallel recoveries (Promise.all) have fully independent stores', asy
       await new Promise((r) => setTimeout(r, 1));
       observed.b = getMultiUnitPaidOrphanRecoveryContext();
       assert.throws(
-        () => assertMultiUnitPaidOrphanRecoveryContext(scopeA),
+        () =>
+          assertMultiUnitPaidOrphanRecoveryContext(scopeA, {
+            operation: 'recovery_job_lease'
+          }),
         (err) => err && err.code === 'RECOVERY_SCOPE_MISMATCH'
       );
     })
@@ -437,20 +453,29 @@ test('ALS: parallel recoveries (Promise.all) have fully independent stores', asy
 
 test('ALS: assertMultiUnitPaidOrphanRecoveryContext without expectedScope throws', async () => {
   const scope = buildFakeScope();
+  const op = { operation: 'recovery_job_lease' };
 
   // Outside any context: required-context error, not a scope-mismatch error.
   assert.throws(
-    () => assertMultiUnitPaidOrphanRecoveryContext(undefined),
+    () => assertMultiUnitPaidOrphanRecoveryContext(undefined, op),
     (err) => err && err.code === 'MULTI_UNIT_PAID_ORPHAN_RECOVERY_CONTEXT_REQUIRED'
   );
 
   await runInMultiUnitPaidOrphanRecoveryContext(scope, async () => {
     assert.throws(
-      () => assertMultiUnitPaidOrphanRecoveryContext(undefined),
+      () => assertMultiUnitPaidOrphanRecoveryContext(undefined, op),
       (err) => err && err.code === 'RECOVERY_SCOPE_MISMATCH'
     );
     assert.throws(
-      () => assertMultiUnitPaidOrphanRecoveryContext(null),
+      () => assertMultiUnitPaidOrphanRecoveryContext(null, op),
+      (err) => err && err.code === 'RECOVERY_SCOPE_MISMATCH'
+    );
+    assert.throws(
+      () => assertMultiUnitPaidOrphanRecoveryContext(scope, { operation: 'not_a_real_operation' }),
+      (err) => err && err.code === 'RECOVERY_SCOPE_MISMATCH'
+    );
+    assert.throws(
+      () => assertMultiUnitPaidOrphanRecoveryContext(scope),
       (err) => err && err.code === 'RECOVERY_SCOPE_MISMATCH'
     );
   });

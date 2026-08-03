@@ -364,7 +364,9 @@ test('A4. dry-run performs zero writes across all recovery-relevant collections'
     ManualReviewItem.countDocuments({}),
     Booking.countDocuments({}),
     Payment.countDocuments({}),
-    EmailDeliveryState.countDocuments({})
+    EmailDeliveryState.countDocuments({}),
+    CheckoutSession.countDocuments({}),
+    Unit.countDocuments({})
   ]);
 
   await dryRunMultiUnitPaidOrphanRecovery({ allowlist, now: new Date() });
@@ -375,7 +377,9 @@ test('A4. dry-run performs zero writes across all recovery-relevant collections'
     ManualReviewItem.countDocuments({}),
     Booking.countDocuments({}),
     Payment.countDocuments({}),
-    EmailDeliveryState.countDocuments({})
+    EmailDeliveryState.countDocuments({}),
+    CheckoutSession.countDocuments({}),
+    Unit.countDocuments({})
   ]);
 
   assert.deepEqual(countsAfter, countsBefore);
@@ -727,6 +731,7 @@ test('D4. markCheckoutFinalizationJobConfirmationQueued rejects without a valid 
     recipientEmail: 'guest-d4@example.com'
   });
 
+  const expectedScope = { ...scope, bookingId: String(bookingId) };
   await runInMultiUnitPaidOrphanRecoveryContext(scope, async () => {
     await assert.rejects(
       () =>
@@ -735,7 +740,7 @@ test('D4. markCheckoutFinalizationJobConfirmationQueued rejects without a valid 
           bookingId,
           recoveryExecutionId: scope.recoveryExecutionId,
           expectedCorrelationKey: correlationKey,
-          expectedScope: scope
+          expectedScope
         }),
       (err) => {
         assert.equal(err.code, 'RECOVERY_CONFIRMATION_STATE_INVALID');
@@ -782,13 +787,14 @@ test('D5. markCheckoutFinalizationJobConfirmationQueued succeeds with a pending 
     latestEventAt: new Date()
   });
 
+  const expectedScope = { ...scope, bookingId: String(bookingId) };
   const firstResult = await runInMultiUnitPaidOrphanRecoveryContext(scope, () =>
     markCheckoutFinalizationJobConfirmationQueued({
       finalizationJobId: scope.finalizationJobId,
       bookingId,
       recoveryExecutionId: scope.recoveryExecutionId,
       expectedCorrelationKey: correlationKey,
-      expectedScope: scope
+      expectedScope
     })
   );
 
@@ -803,7 +809,7 @@ test('D5. markCheckoutFinalizationJobConfirmationQueued succeeds with a pending 
       bookingId,
       recoveryExecutionId: scope.recoveryExecutionId,
       expectedCorrelationKey: correlationKey,
-      expectedScope: scope
+      expectedScope
     })
   );
 

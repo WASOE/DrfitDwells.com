@@ -170,6 +170,7 @@ const RECOVERY_ERROR_CATALOG = Object.freeze({
     reviewHoldEffect: 'already_released',
     permanent: false
   },
+  /** @deprecated Alias of RECOVERY_TARGET_UNIT_UNAVAILABLE — same metadata. */
   RECOVERY_UNIT_UNAVAILABLE: {
     summary: 'Target unit unavailable for exact-unit recovery',
     retryable: false,
@@ -177,7 +178,8 @@ const RECOVERY_ERROR_CATALOG = Object.freeze({
     recoveryStatusEffect: 'failed_or_abort',
     leaseEffect: 'fail',
     reviewHoldEffect: 'keep',
-    permanent: true
+    permanent: true,
+    aliasOf: 'RECOVERY_TARGET_UNIT_UNAVAILABLE'
   },
   RECOVERY_TARGET_UNIT_UNAVAILABLE: {
     summary: 'Target unit unavailable for exact-unit recovery',
@@ -349,12 +351,23 @@ function sanitizeSafeDetails(input) {
   return out;
 }
 
+function resolveCanonicalRecoveryErrorCode(code) {
+  const entry = RECOVERY_ERROR_CATALOG[code];
+  if (!entry) return code;
+  if (entry.aliasOf && RECOVERY_ERROR_CATALOG[entry.aliasOf]) {
+    return entry.aliasOf;
+  }
+  return code;
+}
+
 function createSanitizedRecoveryError(code, safeDetails = null) {
-  return new MultiUnitPaidOrphanRecoveryError(code, safeDetails);
+  const canonical = resolveCanonicalRecoveryErrorCode(code);
+  return new MultiUnitPaidOrphanRecoveryError(canonical, safeDetails);
 }
 
 function getRecoveryErrorCatalogEntry(code) {
-  return RECOVERY_ERROR_CATALOG[code] || null;
+  const canonical = resolveCanonicalRecoveryErrorCode(code);
+  return RECOVERY_ERROR_CATALOG[canonical] || RECOVERY_ERROR_CATALOG[code] || null;
 }
 
 module.exports = {

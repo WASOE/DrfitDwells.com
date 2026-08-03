@@ -5,9 +5,7 @@
  * Binding: docs/architecture/multi-unit-cabin-type-capacity-and-paid-recovery-lock.md §11.4
  */
 
-const mongoose = require('mongoose');
 const ManualReviewItem = require('../../models/ManualReviewItem');
-const CheckoutFinalizationJob = require('../../models/CheckoutFinalizationJob');
 const {
   MULTI_UNIT_PAID_ORPHAN_HOLD_KIND,
   buildRecoveryOnlyManualReviewResolutionFilter
@@ -18,6 +16,9 @@ const {
 const {
   assertMultiUnitPaidOrphanRecoveryContext
 } = require('./multiUnitPaidOrphanRecoveryCapability');
+const {
+  setActiveRecoveryReviewItemId
+} = require('./checkoutFinalizationJobService');
 
 const COMPLETION_CATEGORY = 'multi_unit_paid_orphan_recovery_completion';
 const COMPLETION_SOURCE = 'multi_unit_paid_orphan_recovery';
@@ -26,13 +27,18 @@ function buildCompletionRecoveryDedupeKey(recoveryExecutionId) {
   return `multi_unit_paid_orphan_completion:${String(recoveryExecutionId)}`;
 }
 
-function assertScope(expectedScope) {
-  assertMultiUnitPaidOrphanRecoveryContext(expectedScope);
+function requireOperationScope(expectedScope, operation, extra = {}) {
+  if (expectedScope == null) {
+    throw createSanitizedRecoveryError('RECOVERY_SCOPE_MISMATCH', {
+      reason: 'expected_scope_required'
+    });
+  }
+  assertMultiUnitPaidOrphanRecoveryContext(expectedScope, { operation, ...extra });
 }
 
 /**
  * Create or adopt the unique completion MRI for a recoveryExecutionId.
- * Does not use generic openManualReviewItem (weaker identity).
+ * expectedScope is mandatory; assertion runs before any mutation.
  */
 async function ensureMultiUnitPaidOrphanCompletionReview({
   originalManualReviewItemId,
@@ -45,9 +51,7 @@ async function ensureMultiUnitPaidOrphanCompletionReview({
   bookingId = null,
   expectedScope
 } = {}) {
-  if (expectedScope) {
-    assertScope(expectedScope);
-  }
+  requireOperationScope(expectedScope, 'completion_review_create_or_adopt');
 
   const executionId = String(recoveryExecutionId || '');
   if (!executionId) {
@@ -130,7 +134,7 @@ async function acquireManualReviewResolutionHold({
   expectedScope,
   now = new Date()
 } = {}) {
-  assertScope(expectedScope);
+  requireOperationScope(expectedScope, 'mri_hold_acquire');
 
   const at = now instanceof Date ? now : new Date(now);
   const hold = {
@@ -146,7 +150,6 @@ async function acquireManualReviewResolutionHold({
     transferredAt: null
   };
 
-  // Idempotent same execution: already held by us
   const existing = await ManualReviewItem.findById(manualReviewItemId).lean();
   if (!existing) {
     throw createSanitizedRecoveryError('RECOVERY_IDENTITY_MISMATCH', {
@@ -218,9 +221,6 @@ async function acquireManualReviewResolutionHold({
   };
 }
 
-/**
- * Hold transfer: completion hold first, then release/transfer original.
- */
 async function transferRecoveryHoldToCompletionReview({
   originalManualReviewItemId,
   completionManualReviewItemId,
@@ -231,7 +231,7 @@ async function transferRecoveryHoldToCompletionReview({
   expectedScope,
   now = new Date()
 } = {}) {
-  assertScope(expectedScope);
+  requireOperationScope(expectedScope, 'mri_hold_transfer');
   const at = now instanceof Date ? now : new Date(now);
 
   await acquireManualReviewResolutionHold({
@@ -272,17 +272,21 @@ async function transferRecoveryHoldToCompletionReview({
     }
   );
 
-  await CheckoutFinalizationJob.findOneAndUpdate(
-    {
-      _id: finalizationJobId,
-      recoveryExecutionId: String(recoveryExecutionId)
-    },
-    {
-      $set: {
-        activeRecoveryReviewItemId: completionManualReviewItemId
-      }
+  await setActiveRecoveryReviewItemId({
+    jobId: finalizationJobId,
+    recoveryExecutionId,
+    expectedScope,
+    targetManualReviewItemId: completionManualReviewItemId,
+    expectedCurrentActiveReviewItemId: undefined,
+    now: at,
+    historyEntry: {
+      at: at.toISOString(),
+      recoveryExecutionId,
+      phase: 'hold_transfer',
+      code: 'ACTIVE_REVIEW_TRANSFERRED',
+      summary: 'activeRecoveryReviewItemId set to completion MRI after hold transfer'
     }
-  );
+  });
 
   return {
     activeRecoveryReviewItemId: String(completionManualReviewItemId),
@@ -290,9 +294,6 @@ async function transferRecoveryHoldToCompletionReview({
   };
 }
 
-/**
- * Recovery-only atomic resolve of the active held review.
- */
 async function resolveActiveRecoveryHeldManualReview({
   manualReviewItemId,
   recoveryExecutionId,
@@ -302,9 +303,12 @@ async function resolveActiveRecoveryHeldManualReview({
   resolvedBy,
   note,
   expectedScope,
+  bookingId = null,
   now = new Date()
 } = {}) {
-  assertScope(expectedScope);
+  requireOperationScope(expectedScope, 'recovery_review_resolution', {
+    authoritativeBookingId: bookingId || expectedScope?.bookingId
+  });
   const at = now instanceof Date ? now : new Date(now);
 
   const filter = buildRecoveryOnlyManualReviewResolutionFilter({

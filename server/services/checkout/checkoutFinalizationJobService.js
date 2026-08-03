@@ -877,7 +877,7 @@ async function acquireInitialMultiUnitRecoveryLease({
   now = new Date(),
   historyEntry = null
 } = {}) {
-  assertMultiUnitPaidOrphanRecoveryContext(expectedScope);
+  assertMultiUnitPaidOrphanRecoveryContext(expectedScope, { operation: 'recovery_job_lease' });
 
   if (!jobId || !checkoutId || !paymentIntentId || !recoveryExecutionId || !evidenceDigest) {
     throw createSanitizedRecoveryError('RECOVERY_SCOPE_MISMATCH', {
@@ -970,7 +970,7 @@ async function reclaimMultiUnitRecoveryLease({
   resumedBy = null,
   historyEntry = null
 } = {}) {
-  assertMultiUnitPaidOrphanRecoveryContext(expectedScope);
+  assertMultiUnitPaidOrphanRecoveryContext(expectedScope, { operation: 'recovery_job_lease' });
 
   if (!jobId || !recoveryExecutionId || !evidenceDigest) {
     throw createSanitizedRecoveryError('RECOVERY_SCOPE_MISMATCH', {
@@ -1039,7 +1039,7 @@ async function renewMultiUnitRecoveryLease({
   expectedScope,
   now = new Date()
 } = {}) {
-  assertMultiUnitPaidOrphanRecoveryContext(expectedScope);
+  assertMultiUnitPaidOrphanRecoveryContext(expectedScope, { operation: 'recovery_job_lease' });
 
   if (!jobId || !recoveryExecutionId || !expectedRecoveryStatus) {
     throw createSanitizedRecoveryError('RECOVERY_SCOPE_MISMATCH', {
@@ -1092,7 +1092,7 @@ async function markCheckoutFinalizationJobSucceededFromMultiUnitRecovery({
   quoteConvertedAt = null,
   historyEntry = null
 } = {}) {
-  assertMultiUnitPaidOrphanRecoveryContext(expectedScope);
+  assertMultiUnitPaidOrphanRecoveryContext(expectedScope, { operation: 'recovery_job_transition' });
 
   if (!jobId || !bookingId || !recoveryExecutionId) {
     throw createSanitizedRecoveryError('RECOVERY_SCOPE_MISMATCH', {
@@ -1189,7 +1189,7 @@ async function advanceMultiUnitRecoveryStatus({
   historyEntry = null,
   extraSet = null
 } = {}) {
-  assertMultiUnitPaidOrphanRecoveryContext(expectedScope);
+  assertMultiUnitPaidOrphanRecoveryContext(expectedScope, { operation: 'recovery_job_transition' });
 
   if (!jobId || !recoveryExecutionId || !fromStatus || !toStatus) {
     throw createSanitizedRecoveryError('RECOVERY_SCOPE_MISMATCH', {
@@ -1267,7 +1267,10 @@ async function markCheckoutFinalizationJobConfirmationQueued({
   now = new Date(),
   historyEntry = null
 } = {}) {
-  assertMultiUnitPaidOrphanRecoveryContext(expectedScope);
+  assertMultiUnitPaidOrphanRecoveryContext(expectedScope, {
+    operation: 'confirmation_queue_transition',
+    authoritativeBookingId: bookingId
+  });
 
   if (!finalizationJobId || !bookingId || !recoveryExecutionId || !expectedCorrelationKey) {
     throw createSanitizedRecoveryError('RECOVERY_SCOPE_MISMATCH', {
@@ -1366,7 +1369,7 @@ async function markMultiUnitRecoveryComplete({
   now = new Date(),
   historyEntry = null
 } = {}) {
-  assertMultiUnitPaidOrphanRecoveryContext(expectedScope);
+  assertMultiUnitPaidOrphanRecoveryContext(expectedScope, { operation: 'recovery_job_transition' });
 
   if (!jobId || !recoveryExecutionId || !recoveredBy) {
     throw createSanitizedRecoveryError('RECOVERY_SCOPE_MISMATCH', {
@@ -1430,7 +1433,7 @@ async function markMultiUnitRecoveryFailed({
   now = new Date(),
   historyEntry = null
 } = {}) {
-  assertMultiUnitPaidOrphanRecoveryContext(expectedScope);
+  assertMultiUnitPaidOrphanRecoveryContext(expectedScope, { operation: 'recovery_job_transition' });
 
   if (!jobId || !recoveryExecutionId) {
     throw createSanitizedRecoveryError('RECOVERY_SCOPE_MISMATCH', {
@@ -1479,6 +1482,102 @@ async function markMultiUnitRecoveryFailed({
   return updated;
 }
 
+/**
+ * Atomic owner for CheckoutFinalizationJob.activeRecoveryReviewItemId.
+ * Requires ALS + active unexpired lease + execution identity.
+ */
+async function setActiveRecoveryReviewItemId({
+  jobId,
+  recoveryExecutionId,
+  expectedScope,
+  targetManualReviewItemId,
+  expectedCurrentActiveReviewItemId = undefined,
+  now = new Date(),
+  historyEntry = null
+} = {}) {
+  assertMultiUnitPaidOrphanRecoveryContext(expectedScope, {
+    operation: 'active_review_update'
+  });
+
+  if (!jobId || !recoveryExecutionId || !targetManualReviewItemId) {
+    throw createSanitizedRecoveryError('RECOVERY_SCOPE_MISMATCH', {
+      reason: 'missing_active_review_update_fields'
+    });
+  }
+
+  const at = normalizeRecoveryNow(now);
+  const claimedBy = buildRecoveryClaimedBy(recoveryExecutionId);
+  const targetId = String(targetManualReviewItemId);
+
+  const filter = {
+    _id: jobId,
+    recoveryExecutionId: String(recoveryExecutionId),
+    recoveryClaimedBy: claimedBy,
+    recoveryVisibilityTimeoutAt: { $gt: at },
+    recoveryStatus: { $in: INCOMPLETE_RECOVERY_STATUSES },
+    recoveryEvidenceDigest: expectedScope.evidenceDigest
+  };
+
+  if (expectedCurrentActiveReviewItemId === null) {
+    filter.$or = [
+      { activeRecoveryReviewItemId: null },
+      { activeRecoveryReviewItemId: { $exists: false } }
+    ];
+  } else if (expectedCurrentActiveReviewItemId !== undefined) {
+    filter.activeRecoveryReviewItemId = expectedCurrentActiveReviewItemId;
+  }
+
+  const current = await CheckoutFinalizationJob.findById(jobId).select('recoveryHistory').lean();
+  const history = appendBoundedRecoveryHistory(current?.recoveryHistory, {
+    ...(historyEntry || {}),
+    at: historyEntry?.at || at,
+    recoveryExecutionId,
+    phase: historyEntry?.phase || 'active_review_update',
+    code: historyEntry?.code || 'ACTIVE_REVIEW_SET',
+    summary: historyEntry?.summary || 'activeRecoveryReviewItemId updated'
+  });
+
+  const updated = await CheckoutFinalizationJob.findOneAndUpdate(
+    filter,
+    {
+      $set: {
+        activeRecoveryReviewItemId: targetId,
+        recoveryClaimedAt: at,
+        recoveryVisibilityTimeoutAt: new Date(at.getTime() + RECOVERY_LEASE_TTL_MS),
+        recoveryHistory: history
+      }
+    },
+    { new: true }
+  );
+
+  if (updated) {
+    return { job: updated, alreadySet: false };
+  }
+
+  const reread = await CheckoutFinalizationJob.findById(jobId).lean();
+  if (
+    reread &&
+    String(reread.recoveryExecutionId || '') === String(recoveryExecutionId) &&
+    String(reread.activeRecoveryReviewItemId || '') === targetId &&
+    INCOMPLETE_RECOVERY_STATUSES.includes(reread.recoveryStatus)
+  ) {
+    return { job: reread, alreadySet: true };
+  }
+
+  if (
+    reread?.activeRecoveryReviewItemId &&
+    String(reread.activeRecoveryReviewItemId) !== targetId
+  ) {
+    throw createSanitizedRecoveryError('RECOVERY_HOSTILE_STATE_DRIFT', {
+      reason: 'foreign_active_recovery_review'
+    });
+  }
+
+  throw createSanitizedRecoveryError('RECOVERY_JOB_LEASE_CONFLICT', {
+    reason: 'active_review_update_zero_match'
+  });
+}
+
 module.exports = {
   PRESERVED_EXISTING_STATUSES,
   ACTIVE_EXECUTABLE_STATUSES,
@@ -1519,5 +1618,6 @@ module.exports = {
   advanceMultiUnitRecoveryStatus,
   markCheckoutFinalizationJobConfirmationQueued,
   markMultiUnitRecoveryComplete,
-  markMultiUnitRecoveryFailed
+  markMultiUnitRecoveryFailed,
+  setActiveRecoveryReviewItemId
 };

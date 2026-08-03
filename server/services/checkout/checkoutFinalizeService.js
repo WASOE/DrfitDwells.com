@@ -733,11 +733,45 @@ async function evaluatePreLockOrchestrationState(
   return { session };
 }
 
-async function assertCommercialStayClearAfterLock(lockedSession, checkoutId) {
+function deriveCommercialStayGuardIdentities(session, recoveryCommercialStayIdentity = null) {
+  const cabinTypeId =
+    session?.quoteSnapshot?.cabinTypeId ||
+    session?.finalizeIntent?.cabinTypeId ||
+    session?.cabinTypeId ||
+    null;
+  const paymentIntentId =
+    session?.canonicalPaymentIntentId ||
+    (recoveryCommercialStayIdentity && recoveryCommercialStayIdentity.paymentIntentId) ||
+    null;
+  return {
+    checkoutSessionId: session?._id != null ? String(session._id) : null,
+    paymentIntentId: paymentIntentId != null ? String(paymentIntentId) : null,
+    cabinTypeId: cabinTypeId != null ? String(cabinTypeId) : null,
+    // evidenceDigest must come from recovery orchestration — never from ALS/session echo
+    evidenceDigest:
+      recoveryCommercialStayIdentity?.evidenceDigest != null
+        ? String(recoveryCommercialStayIdentity.evidenceDigest)
+        : null
+  };
+}
+
+async function assertCommercialStayClearAfterLock(
+  lockedSession,
+  checkoutId,
+  recoveryCommercialStayIdentity = null
+) {
+  const identities = deriveCommercialStayGuardIdentities(
+    lockedSession,
+    recoveryCommercialStayIdentity
+  );
   await assertNoCommercialStayConflict({
     commercialStayFingerprint: String(lockedSession.stayFingerprint).trim(),
     checkoutId: normalizeCheckoutId(checkoutId),
-    bookingId: null
+    bookingId: null,
+    checkoutSessionId: identities.checkoutSessionId,
+    paymentIntentId: identities.paymentIntentId,
+    cabinTypeId: identities.cabinTypeId,
+    evidenceDigest: identities.evidenceDigest
   });
 }
 
@@ -751,7 +785,9 @@ async function runCheckoutFinalizeOrchestration({
   source = 'frontend',
   paidFinalizeOverride = false,
   setPaymentStatusPaid = false,
-  visibilityMs = getFinalizeLockVisibilityMs()
+  visibilityMs = getFinalizeLockVisibilityMs(),
+  /** Ordinary non-authorizing bag: { evidenceDigest, paymentIntentId? } for S0 recovery only */
+  recoveryCommercialStayIdentity = null
 }) {
   const normalizedId = normalizeCheckoutId(checkoutId);
   const at = normalizeNow(now);
@@ -785,7 +821,8 @@ async function runCheckoutFinalizeOrchestration({
     checkoutId: normalizedId,
     paymentIntentId,
     bookingPayload,
-    paidFinalizeOverride
+    paidFinalizeOverride,
+    recoveryCommercialStayIdentity
   });
 
   const lockedSession = await acquireFinalizeLock({
@@ -799,7 +836,11 @@ async function runCheckoutFinalizeOrchestration({
   });
 
   try {
-    await assertCommercialStayClearAfterLock(lockedSession, normalizedId);
+    await assertCommercialStayClearAfterLock(
+      lockedSession,
+      normalizedId,
+      recoveryCommercialStayIdentity
+    );
   } catch (conflictErr) {
     await releaseFinalizeLock({
       checkoutId: normalizedId,
@@ -876,7 +917,8 @@ async function assertCheckoutSessionReadyForFinalize({
   checkoutId,
   paymentIntentId = null,
   bookingPayload = null,
-  paidFinalizeOverride = false
+  paidFinalizeOverride = false,
+  recoveryCommercialStayIdentity = null
 }) {
   const session = await loadFinalizableCheckoutSession({
     checkoutId,
@@ -894,10 +936,20 @@ async function assertCheckoutSessionReadyForFinalize({
       paidFinalizeOverride === true || isPaidFinalizeOverrideEligible(session, false)
   });
 
+  const identities = deriveCommercialStayGuardIdentities(
+    sessionWithFingerprint,
+    recoveryCommercialStayIdentity
+  );
   await assertNoCommercialStayConflict({
     commercialStayFingerprint: String(sessionWithFingerprint.stayFingerprint).trim(),
     checkoutId: sessionWithFingerprint.checkoutId,
-    bookingId: bookingPayload?.bookingId ?? bookingPayload?._id ?? null
+    bookingId: bookingPayload?.bookingId ?? bookingPayload?._id ?? null,
+    checkoutSessionId: identities.checkoutSessionId,
+    paymentIntentId:
+      identities.paymentIntentId ||
+      (paymentIntentId != null ? String(paymentIntentId) : null),
+    cabinTypeId: identities.cabinTypeId,
+    evidenceDigest: identities.evidenceDigest
   });
 
   return { ok: true, session: sessionWithFingerprint };
