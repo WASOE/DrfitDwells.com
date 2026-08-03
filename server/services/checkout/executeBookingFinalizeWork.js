@@ -839,7 +839,11 @@ async function executeBookingFinalizeWork({
   source = 'frontend',
   dependencies = null
 }) {
-  const deps = dependencies || activeDependencies;
+  // Callers may supply a partial override bag (e.g. S0 recovery suppresses MRI opens).
+  // Always merge onto the active defaults so Booking/link helpers remain defined.
+  const deps = dependencies
+    ? { ...activeDependencies, ...dependencies }
+    : activeDependencies;
 
   const stayFingerprint = String(session?.stayFingerprint || '').trim();
   if (!stayFingerprint) {

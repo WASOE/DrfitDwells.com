@@ -38,13 +38,21 @@ const Unit = require('../models/Unit');
 const Booking = require('../models/Booking');
 const EmailDeliveryState = require('../models/EmailDeliveryState');
 const SavedBookingQuote = require('../models/SavedBookingQuote');
+const AvailabilityBlock = require('../models/AvailabilityBlock');
+const AuditEvent = require('../models/AuditEvent');
+const Cabin = require('../models/Cabin');
+const CabinType = require('../models/CabinType');
 
 const {
   recoverAllowlistedMultiUnitPaidOrphanCheckout,
   dryRunMultiUnitPaidOrphanRecovery,
   INTENT_PHRASE,
-  MultiUnitPaidOrphanRecoveryError
+  MultiUnitPaidOrphanRecoveryError,
+  __resetRecoveryFaultInjectorForTesting
 } = require('../services/checkout/multiUnitPaidOrphanRecoveryService');
+const {
+  __resetReviewFaultInjectorForTesting
+} = require('../services/checkout/multiUnitPaidOrphanRecoveryReviewService');
 
 const {
   getRecoveryErrorCatalogEntry
@@ -108,16 +116,24 @@ test.before(async () => {
   await Booking.syncIndexes();
   await EmailDeliveryState.syncIndexes();
   await SavedBookingQuote.syncIndexes();
+  await AvailabilityBlock.syncIndexes();
+  await AuditEvent.syncIndexes();
+  await Cabin.syncIndexes();
+  await CabinType.syncIndexes();
 });
 
 test.after(async () => {
   restoreFeatureFlagEnv();
+  __resetRecoveryFaultInjectorForTesting();
+  __resetReviewFaultInjectorForTesting();
   await mongoose.disconnect();
   if (mongoServer) await mongoServer.stop();
 });
 
 test.beforeEach(async () => {
   restoreFeatureFlagEnv();
+  __resetRecoveryFaultInjectorForTesting();
+  __resetReviewFaultInjectorForTesting();
   await Promise.all([
     CheckoutSession.deleteMany({}),
     CheckoutFinalizationJob.deleteMany({}),
@@ -126,7 +142,12 @@ test.beforeEach(async () => {
     Unit.deleteMany({}),
     Booking.deleteMany({}),
     EmailDeliveryState.deleteMany({}),
-    SavedBookingQuote.deleteMany({})
+    SavedBookingQuote.deleteMany({}),
+    AvailabilityBlock.deleteMany({}),
+    // AuditEvent blocks document deletes via middleware — bypass for test isolation.
+    AuditEvent.collection.deleteMany({}),
+    Cabin.deleteMany({}),
+    CabinType.deleteMany({})
   ]);
 });
 
@@ -949,9 +970,13 @@ test('acceptance: RECOVERY_UNIT_UNAVAILABLE aliases RECOVERY_TARGET_UNIT_UNAVAIL
 
   // Constructing the error itself must also resolve to the canonical code.
   const constructedFromAlias = new MultiUnitPaidOrphanRecoveryError('RECOVERY_UNIT_UNAVAILABLE');
+  assert.equal(constructedFromAlias.code, 'RECOVERY_TARGET_UNIT_UNAVAILABLE');
   assert.equal(constructedFromAlias.summary, canonicalEntry.summary);
   assert.equal(constructedFromAlias.permanent, canonicalEntry.permanent);
 });
+
+/* Load supplemental acceptance proof suites (happy-path, resume matrix, etc.). */
+require('./multiUnitPaidOrphanRecovery.acceptance.proof.cjs');
 
 /* ======================================================================== *
  * 12. Money-safety: recovery service source never calls finalizePaidCheckout(.

@@ -70,6 +70,22 @@ const MAX_DIGEST_AGE_MS = 24 * 60 * 60 * 1000;
 const INTENT_PHRASE =
   'I CONFIRM THE GUEST INTENDS TO PURCHASE A SECOND PHYSICAL A-FRAME';
 
+/** Test-only fault injector: async (boundaryName) => void|Promise. Throws to abort after durable writes. */
+let recoveryFaultInjectorForTesting = null;
+
+function __setRecoveryFaultInjectorForTesting(fn) {
+  recoveryFaultInjectorForTesting = typeof fn === 'function' ? fn : null;
+}
+
+function __resetRecoveryFaultInjectorForTesting() {
+  recoveryFaultInjectorForTesting = null;
+}
+
+async function maybeInjectRecoveryFault(boundary) {
+  if (typeof recoveryFaultInjectorForTesting !== 'function') return;
+  await recoveryFaultInjectorForTesting(String(boundary));
+}
+
 function stableStringify(value) {
   return JSON.stringify(canonicalize(value));
 }
@@ -712,16 +728,25 @@ async function ensurePaymentAndSessionLinked({
     });
   }
 
-  if (
-    !session.bookingId ||
-    session.finalizeStatus !== 'finalized' ||
-    String(session.status) !== 'finalized'
-  ) {
+  let sessionDirty = false;
+  if (!session.bookingId || session.finalizeStatus !== 'finalized') {
     session.bookingId = booking._id;
     session.finalizeStatus = 'finalized';
-    session.status = 'finalized';
     session.paymentStatus = 'paid';
     session.finalizedAt = session.finalizedAt || now;
+    sessionDirty = true;
+  }
+  // `finalized` is finalizeStatus only — CheckoutSession.status has no such enum value.
+  // Clear durable needs_review so ordinary writers no longer treat the session as blocked.
+  if (String(session.status || '') === 'needs_review') {
+    session.status = 'paid';
+    sessionDirty = true;
+  }
+  if (session.paymentStatus !== 'paid') {
+    session.paymentStatus = 'paid';
+    sessionDirty = true;
+  }
+  if (sessionDirty) {
     await session.save();
   }
 
@@ -868,6 +893,7 @@ async function executeRecoveryInsideContext({
         mode: 'initial'
       }
     });
+    await maybeInjectRecoveryFault('recovery_lease');
   } else {
     job = await reclaimMultiUnitRecoveryLease({
       jobId: allowlist.finalizationJobId,
@@ -890,6 +916,7 @@ async function executeRecoveryInsideContext({
         mode: 'resume'
       }
     });
+    await maybeInjectRecoveryFault('recovery_lease');
   }
 
   // Hold on incident MRI (or verify existing / completion path)
@@ -914,6 +941,7 @@ async function executeRecoveryInsideContext({
       bookingId: job.bookingId || null,
       expectedScope
     });
+    await maybeInjectRecoveryFault('completion_mri_create');
     await transferRecoveryHoldToCompletionReview({
       originalManualReviewItemId: allowlist.manualReviewItemId,
       completionManualReviewItemId: completion._id,
@@ -936,6 +964,7 @@ async function executeRecoveryInsideContext({
         expectedScope,
         now: at
       });
+      await maybeInjectRecoveryFault('original_mri_hold');
     } catch (err) {
       if (err?.code === 'RECOVERY_REVIEW_RESOLVED_PREMATURELY') {
         const { review: completion } = await ensureMultiUnitPaidOrphanCompletionReview({
@@ -949,6 +978,7 @@ async function executeRecoveryInsideContext({
           bookingId: job.bookingId || null,
           expectedScope
         });
+        await maybeInjectRecoveryFault('completion_mri_create');
         await transferRecoveryHoldToCompletionReview({
           originalManualReviewItemId: allowlist.manualReviewItemId,
           completionManualReviewItemId: completion._id,
@@ -1023,6 +1053,7 @@ async function executeRecoveryInsideContext({
       now: at
     });
     booking = orch.booking || (await Booking.findById(orch.bookingId).lean());
+    await maybeInjectRecoveryFault('booking_creation');
   }
 
   await renewMultiUnitRecoveryLease({
@@ -1041,6 +1072,8 @@ async function executeRecoveryInsideContext({
     expectedScope,
     now: new Date()
   });
+  await maybeInjectRecoveryFault('payment_link');
+  await maybeInjectRecoveryFault('session_finalization');
 
   job = await CheckoutFinalizationJob.findById(allowlist.finalizationJobId).lean();
   if (job.status !== 'succeeded') {
@@ -1062,6 +1095,8 @@ async function executeRecoveryInsideContext({
         mode
       }
     });
+    await maybeInjectRecoveryFault('normal_job_success');
+    await maybeInjectRecoveryFault('linkage_complete');
   } else if (job.recoveryStatus === 'leased') {
     job = await advanceMultiUnitRecoveryStatus({
       jobId: allowlist.finalizationJobId,
@@ -1071,6 +1106,7 @@ async function executeRecoveryInsideContext({
       expectedScope,
       now: new Date()
     });
+    await maybeInjectRecoveryFault('linkage_complete');
   }
 
   // SavedQuote convert (non-blocking toward money truth)
@@ -1083,6 +1119,7 @@ async function executeRecoveryInsideContext({
   } catch {
     /* non-blocking */
   }
+  await maybeInjectRecoveryFault('saved_quote_conversion');
 
   job = await CheckoutFinalizationJob.findById(allowlist.finalizationJobId).lean();
   if (job.recoveryStatus === 'linkage_complete') {
@@ -1105,6 +1142,7 @@ async function executeRecoveryInsideContext({
         mode
       }
     });
+    await maybeInjectRecoveryFault('awaiting_confirmation_queue');
   }
 
   // Ensure-only EDS
@@ -1115,6 +1153,7 @@ async function executeRecoveryInsideContext({
     session: sessionForEds,
     now: new Date()
   });
+  await maybeInjectRecoveryFault('eds_ensure');
 
   const correlationKey = await buildCorrelationKeyForBooking(bookingDoc, sessionForEds);
   const queued = await markCheckoutFinalizationJobConfirmationQueued({
@@ -1137,9 +1176,34 @@ async function executeRecoveryInsideContext({
       mode
     }
   });
+  await maybeInjectRecoveryFault('confirmation_queued_at');
 
   job = queued.job || (await CheckoutFinalizationJob.findById(allowlist.finalizationJobId).lean());
   activeReviewId = String(job.activeRecoveryReviewItemId || activeReviewId);
+
+  async function buildCompleteResult(completedJob) {
+    return {
+      ok: true,
+      mode,
+      recoveryExecutionId,
+      recoveryStatus: 'complete',
+      bookingId: String(booking._id),
+      finalizationJobId: String(allowlist.finalizationJobId),
+      activeRecoveryReviewItemId: activeReviewId,
+      confirmationQueuedAt:
+        completedJob?.confirmationQueuedAt || job.confirmationQueuedAt || null,
+      paymentLinked: true,
+      sessionFinalized: true,
+      refundAttempted: false,
+      chargeAttempted: false,
+      smtpAttempted: false
+    };
+  }
+
+  // Peer finisher may have already completed while we were in-flight.
+  if (job.recoveryStatus === 'complete') {
+    return buildCompleteResult(job);
+  }
 
   // Final gate + resolve
   let gate;
@@ -1151,53 +1215,88 @@ async function executeRecoveryInsideContext({
       expectedScope
     });
   } catch (err) {
+    const latestJob = await CheckoutFinalizationJob.findById(allowlist.finalizationJobId).lean();
+    if (
+      latestJob &&
+      String(latestJob.recoveryStatus || '') === 'complete' &&
+      String(latestJob.recoveryExecutionId || '') === String(recoveryExecutionId)
+    ) {
+      return buildCompleteResult(latestJob);
+    }
+
     if (err?.code === 'RECOVERY_REVIEW_RESOLVED_PREMATURELY') {
-      const { review: completion } = await ensureMultiUnitPaidOrphanCompletionReview({
-        originalManualReviewItemId: allowlist.manualReviewItemId,
-        recoveryExecutionId,
-        finalizationJobId: allowlist.finalizationJobId,
-        checkoutId: allowlist.checkoutId,
-        checkoutSessionId: allowlist.checkoutSessionId,
-        paymentId: allowlist.paymentId,
-        paymentIntentId: allowlist.paymentIntentId,
-        bookingId: booking._id,
-        expectedScope
-      });
-      await transferRecoveryHoldToCompletionReview({
-        originalManualReviewItemId: allowlist.manualReviewItemId,
-        completionManualReviewItemId: completion._id,
-        recoveryExecutionId,
-        finalizationJobId: allowlist.finalizationJobId,
-        checkoutId: allowlist.checkoutId,
-        paymentIntentId: allowlist.paymentIntentId,
-        expectedScope,
-        now: new Date()
-      });
-      activeReviewId = String(completion._id);
-      job = await CheckoutFinalizationJob.findById(allowlist.finalizationJobId).lean();
-      gate = await verifyCompletionGate({
-        allowlist,
-        booking: await Booking.findById(booking._id).lean(),
-        job,
-        expectedScope
-      });
+      const activeReview = await ManualReviewItem.findById(activeReviewId).lean();
+      const resolvedByRecovery =
+        activeReview?.status === 'resolved' &&
+        String(activeReview.resolution?.resolvedBy || '').includes(
+          'multi_unit_paid_orphan_recovery'
+        ) &&
+        activeReview.resolutionHold?.recoveryExecutionId === String(recoveryExecutionId);
+
+      if (resolvedByRecovery) {
+        // Peer finisher already resolved the held review — finish or adopt complete.
+        job = latestJob || job;
+      } else {
+        const { review: completion } = await ensureMultiUnitPaidOrphanCompletionReview({
+          originalManualReviewItemId: allowlist.manualReviewItemId,
+          recoveryExecutionId,
+          finalizationJobId: allowlist.finalizationJobId,
+          checkoutId: allowlist.checkoutId,
+          checkoutSessionId: allowlist.checkoutSessionId,
+          paymentId: allowlist.paymentId,
+          paymentIntentId: allowlist.paymentIntentId,
+          bookingId: booking._id,
+          expectedScope
+        });
+        await maybeInjectRecoveryFault('completion_mri_create');
+        await transferRecoveryHoldToCompletionReview({
+          originalManualReviewItemId: allowlist.manualReviewItemId,
+          completionManualReviewItemId: completion._id,
+          recoveryExecutionId,
+          finalizationJobId: allowlist.finalizationJobId,
+          checkoutId: allowlist.checkoutId,
+          paymentIntentId: allowlist.paymentIntentId,
+          expectedScope,
+          now: new Date()
+        });
+        activeReviewId = String(completion._id);
+        job = await CheckoutFinalizationJob.findById(allowlist.finalizationJobId).lean();
+        gate = await verifyCompletionGate({
+          allowlist,
+          booking: await Booking.findById(booking._id).lean(),
+          job,
+          expectedScope
+        });
+      }
     } else {
       throw err;
     }
   }
 
-  await resolveActiveRecoveryHeldManualReview({
-    manualReviewItemId: activeReviewId,
-    recoveryExecutionId,
-    checkoutId: allowlist.checkoutId,
-    paymentIntentId: allowlist.paymentIntentId,
-    finalizationJobId: allowlist.finalizationJobId,
-    resolvedBy: 'multi_unit_paid_orphan_recovery',
-    note: 'Resolved after verified multi-unit paid-orphan recovery completion gate',
-    bookingId: booking._id,
-    expectedScope: { ...expectedScope, bookingId: String(booking._id) },
-    now: new Date()
-  });
+  const activeBeforeResolve = await ManualReviewItem.findById(activeReviewId).lean();
+  if (
+    !(
+      activeBeforeResolve?.status === 'resolved' &&
+      String(activeBeforeResolve.resolution?.resolvedBy || '').includes(
+        'multi_unit_paid_orphan_recovery'
+      )
+    )
+  ) {
+    await resolveActiveRecoveryHeldManualReview({
+      manualReviewItemId: activeReviewId,
+      recoveryExecutionId,
+      checkoutId: allowlist.checkoutId,
+      paymentIntentId: allowlist.paymentIntentId,
+      finalizationJobId: allowlist.finalizationJobId,
+      resolvedBy: 'multi_unit_paid_orphan_recovery',
+      note: 'Resolved after verified multi-unit paid-orphan recovery completion gate',
+      bookingId: booking._id,
+      expectedScope: { ...expectedScope, bookingId: String(booking._id) },
+      now: new Date()
+    });
+  }
+  await maybeInjectRecoveryFault('recovery_mri_resolution');
+  await maybeInjectRecoveryFault('recovery_complete_before_release');
 
   const completed = await markMultiUnitRecoveryComplete({
     jobId: allowlist.finalizationJobId,
@@ -1218,21 +1317,7 @@ async function executeRecoveryInsideContext({
     }
   });
 
-  return {
-    ok: true,
-    mode,
-    recoveryExecutionId,
-    recoveryStatus: 'complete',
-    bookingId: String(booking._id),
-    finalizationJobId: String(allowlist.finalizationJobId),
-    activeRecoveryReviewItemId: activeReviewId,
-    confirmationQueuedAt: completed?.confirmationQueuedAt || job.confirmationQueuedAt,
-    paymentLinked: true,
-    sessionFinalized: true,
-    refundAttempted: false,
-    chargeAttempted: false,
-    smtpAttempted: false
-  };
+  return buildCompleteResult(completed);
 }
 
 /**
@@ -1376,6 +1461,8 @@ module.exports = {
   recoverAllowlistedMultiUnitPaidOrphanCheckout,
   dryRunMultiUnitPaidOrphanRecovery,
   runMultiUnitPaidOrphanRecoveryBookingFinalizeCore,
+  __setRecoveryFaultInjectorForTesting,
+  __resetRecoveryFaultInjectorForTesting,
   sha256Hex,
   stableStringify,
   hashAllowlistIdentity,

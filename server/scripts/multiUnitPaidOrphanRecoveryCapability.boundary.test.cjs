@@ -78,7 +78,11 @@ function walkJsCjsFiles(rootDir) {
 }
 
 function isTestFile(absPath) {
-  return /\.test\.(js|cjs)$/.test(absPath);
+  return (
+    /\.test\.(js|cjs)$/.test(absPath) ||
+    /\.acceptance\.proof\.cjs$/.test(absPath) ||
+    /\.acceptance\.helpers\.cjs$/.test(absPath)
+  );
 }
 
 /** Whether `source` references the ALS runner identifier at all (require/use). */
@@ -199,6 +203,83 @@ test('detector self-test: isTestFile excludes *.test.cjs / *.test.js from runner
   assert.equal(isTestFile('/x/y/multiUnitPaidOrphanRecovery.test.cjs'), true);
   assert.equal(isTestFile('/x/y/multiUnitPaidOrphanRecoveryCapability.boundary.test.cjs'), true);
   assert.equal(isTestFile('/x/y/multiUnitPaidOrphanRecoveryService.js'), false);
+});
+
+test('detector self-test: requiresCapabilityModuleLiterally matches direct and multiline require', () => {
+  const direct = `const cap = require('./multiUnitPaidOrphanRecoveryCapability');`;
+  assert.equal(requiresCapabilityModuleLiterally(direct), true);
+
+  const multiline = `const cap = require(\n  './services/checkout/multiUnitPaidOrphanRecoveryCapability'\n);`;
+  assert.equal(requiresCapabilityModuleLiterally(multiline), true);
+
+  const unrelated = `const x = require('./otherModule');`;
+  assert.equal(requiresCapabilityModuleLiterally(unrelated), false);
+});
+
+test('detector self-test: referencesRunnerIdentifier matches aliased re-export usage', () => {
+  const aliased = `
+    const { runInMultiUnitPaidOrphanRecoveryContext: runRecovery } = require('./multiUnitPaidOrphanRecoveryCapability');
+    module.exports = { runRecovery };
+  `;
+  assert.equal(referencesRunnerIdentifier(aliased), true);
+  assert.equal(requiresCapabilityModuleLiterally(aliased), true);
+});
+
+test('detector self-test: findDynamicRequireOfCapability + runner reference covers variable-path hostile import', () => {
+  const fixture = `
+    const mod = './checkout/multiUnitPaidOrphanRecoveryCapability';
+    const { runInMultiUnitPaidOrphanRecoveryContext } = require(mod);
+module.exports = {
+  runInMultiUnitPaidOrphanRecoveryContext
+};
+`;
+  assert.ok(findDynamicRequireOfCapability(fixture).includes('mod'));
+  assert.equal(referencesRunnerIdentifier(fixture), true);
+  assert.equal(exportsBlockReexportsRunner(extractModuleExportsBlock(fixture)), true);
+});
+
+test('boundary: no first-party server .mjs files exist outside node_modules', () => {
+  const firstPartyMjs = [];
+  (function walk(dir) {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (EXCLUDED_DIR_NAMES.has(entry.name)) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile() && entry.name.endsWith('.mjs')) firstPartyMjs.push(full);
+    }
+  })(SERVER_ROOT);
+  assert.deepEqual(firstPartyMjs, [], 'first-party server ESM .mjs files are not expected in S0 CJS tree');
+});
+
+test('boundary: CLI must not import the capability module (fixture + live file)', () => {
+  const hostileCliFixture = `
+    const { assertMultiUnitPaidOrphanRecoveryContext } = require('../services/checkout/multiUnitPaidOrphanRecoveryCapability');
+  `;
+  assert.equal(requiresCapabilityModuleLiterally(hostileCliFixture), true);
+  assert.equal(mentionsCapabilityModuleToken(hostileCliFixture), true);
+
+  const cliSource = fs.readFileSync(CLI_ABS_PATH, 'utf8');
+  assert.equal(requiresCapabilityModuleLiterally(cliSource), false);
+  assert.equal(referencesRunnerIdentifier(cliSource), false);
+});
+
+test('boundary: recovery service must not re-export the ALS runner (fixture + live file)', () => {
+  const hostileExport = `
+module.exports = {
+  recoverAllowlistedMultiUnitPaidOrphanCheckout,
+  runInMultiUnitPaidOrphanRecoveryContext
+};
+`;
+  assert.equal(exportsBlockReexportsRunner(extractModuleExportsBlock(hostileExport)), true);
+
+  const serviceSource = fs.readFileSync(RECOVERY_SERVICE_ABS_PATH, 'utf8');
+  assert.equal(exportsBlockReexportsRunner(extractModuleExportsBlock(serviceSource)), false);
 });
 
 /* ---------------------------------------------------------------------- *

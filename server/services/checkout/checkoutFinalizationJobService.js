@@ -1410,6 +1410,14 @@ async function markMultiUnitRecoveryComplete({
   );
 
   if (!updated) {
+    const reread = await CheckoutFinalizationJob.findById(jobId).lean();
+    if (
+      reread &&
+      String(reread.recoveryStatus || '') === 'complete' &&
+      String(reread.recoveryExecutionId || '') === String(recoveryExecutionId)
+    ) {
+      return reread;
+    }
     throw createSanitizedRecoveryError('RECOVERY_JOB_LEASE_CONFLICT', {
       jobId: String(jobId),
       reason: 'complete_filter_mismatch'

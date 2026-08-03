@@ -23,6 +23,22 @@ const {
 const COMPLETION_CATEGORY = 'multi_unit_paid_orphan_recovery_completion';
 const COMPLETION_SOURCE = 'multi_unit_paid_orphan_recovery';
 
+/** Test-only: inject after a named transfer boundary. */
+let reviewFaultInjectorForTesting = null;
+
+function __setReviewFaultInjectorForTesting(fn) {
+  reviewFaultInjectorForTesting = typeof fn === 'function' ? fn : null;
+}
+
+function __resetReviewFaultInjectorForTesting() {
+  reviewFaultInjectorForTesting = null;
+}
+
+async function maybeInjectReviewFault(boundary) {
+  if (typeof reviewFaultInjectorForTesting !== 'function') return;
+  await reviewFaultInjectorForTesting(String(boundary));
+}
+
 function buildCompletionRecoveryDedupeKey(recoveryExecutionId) {
   return `multi_unit_paid_orphan_completion:${String(recoveryExecutionId)}`;
 }
@@ -255,6 +271,9 @@ async function transferRecoveryHoldToCompletionReview({
     });
   }
 
+  await maybeInjectReviewFault('completion_mri_hold');
+  await maybeInjectReviewFault('hold_transfer_before_original_release');
+
   await ManualReviewItem.findOneAndUpdate(
     {
       _id: originalManualReviewItemId,
@@ -271,6 +290,8 @@ async function transferRecoveryHoldToCompletionReview({
       }
     }
   );
+
+  await maybeInjectReviewFault('hold_transfer');
 
   await setActiveRecoveryReviewItemId({
     jobId: finalizationJobId,
@@ -370,5 +391,7 @@ module.exports = {
   ensureMultiUnitPaidOrphanCompletionReview,
   acquireManualReviewResolutionHold,
   transferRecoveryHoldToCompletionReview,
-  resolveActiveRecoveryHeldManualReview
+  resolveActiveRecoveryHeldManualReview,
+  __setReviewFaultInjectorForTesting,
+  __resetReviewFaultInjectorForTesting
 };

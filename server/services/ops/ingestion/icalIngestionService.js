@@ -521,5 +521,7 @@ module.exports = {
   parseIcalEvents,
   deriveDeterministicKey,
   resolveInboundUnitForImport,
-  syncStateFilter
+  syncStateFilter,
+  // Exported for S0 hold-aware persistence acceptance tests (ordinary sync resolver).
+  resolveRecoverableSyncManualReviews
 };

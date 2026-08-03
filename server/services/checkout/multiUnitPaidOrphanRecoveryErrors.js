@@ -273,9 +273,19 @@ const RECOVERY_ERROR_CATALOG = Object.freeze({
   }
 });
 
+function resolveCanonicalRecoveryErrorCode(code) {
+  const entry = RECOVERY_ERROR_CATALOG[code];
+  if (!entry) return code;
+  if (entry.aliasOf && RECOVERY_ERROR_CATALOG[entry.aliasOf]) {
+    return entry.aliasOf;
+  }
+  return code;
+}
+
 class MultiUnitPaidOrphanRecoveryError extends Error {
   constructor(code, safeDetails = null) {
-    const entry = RECOVERY_ERROR_CATALOG[code] || {
+    const canonical = resolveCanonicalRecoveryErrorCode(code);
+    const entry = RECOVERY_ERROR_CATALOG[canonical] || {
       summary: 'Recovery aborted',
       retryable: false,
       resumable: false,
@@ -286,7 +296,7 @@ class MultiUnitPaidOrphanRecoveryError extends Error {
     };
     super(entry.summary);
     this.name = 'MultiUnitPaidOrphanRecoveryError';
-    this.code = code;
+    this.code = canonical;
     this.summary = entry.summary;
     this.retryable = entry.retryable === true;
     this.resumable = entry.resumable === true;
@@ -349,15 +359,6 @@ function sanitizeSafeDetails(input) {
     }
   }
   return out;
-}
-
-function resolveCanonicalRecoveryErrorCode(code) {
-  const entry = RECOVERY_ERROR_CATALOG[code];
-  if (!entry) return code;
-  if (entry.aliasOf && RECOVERY_ERROR_CATALOG[entry.aliasOf]) {
-    return entry.aliasOf;
-  }
-  return code;
 }
 
 function createSanitizedRecoveryError(code, safeDetails = null) {

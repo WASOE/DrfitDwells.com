@@ -131,13 +131,17 @@ function assertStayFingerprintMatchesExisting(existingFingerprint, derivedFinger
 async function ensureCheckoutSessionStayFingerprint({
   checkoutId,
   bookingPayload,
-  paidFinalizeOverride = false
+  paidFinalizeOverride = false,
+  recoveryCommercialStayIdentity = null
 }) {
   const normalizedId = normalizeCheckoutId(checkoutId);
   const session = await loadSessionOrThrow(normalizedId);
   assertV2Flow(session);
   if (paidFinalizeOverride || isPaidFinalizeOverrideEligible(session, false)) {
-    assertSessionUsableForFinalize(session, { paidFinalizeOverride: true });
+    assertSessionUsableForFinalize(session, {
+      paidFinalizeOverride: true,
+      recoveryCommercialStayIdentity
+    });
   } else {
     assertSessionUsable(session);
   }
@@ -220,20 +224,35 @@ function assertV2Flow(session) {
   }
 }
 
+function isRecoveryFinalizeIdentity(recoveryCommercialStayIdentity) {
+  return Boolean(
+    recoveryCommercialStayIdentity &&
+      typeof recoveryCommercialStayIdentity === 'object' &&
+      recoveryCommercialStayIdentity.evidenceDigest != null
+  );
+}
+
 function buildAcquireLockFilter(
   checkoutId,
   expectedSessionVersion,
   now,
-  { paidFinalizeOverride = false } = {}
+  { paidFinalizeOverride = false, recoveryCommercialStayIdentity = null } = {}
 ) {
-  const blocked = paidFinalizeOverride
-    ? BLOCKED_ACQUIRE_SESSION_STATUSES_PAID_OVERRIDE
-    : BLOCKED_ACQUIRE_SESSION_STATUSES;
+  const recoveryFinalizeAllowed =
+    paidFinalizeOverride === true && isRecoveryFinalizeIdentity(recoveryCommercialStayIdentity);
+
+  const blocked = recoveryFinalizeAllowed
+    ? ['superseded']
+    : paidFinalizeOverride
+      ? BLOCKED_ACQUIRE_SESSION_STATUSES_PAID_OVERRIDE
+      : BLOCKED_ACQUIRE_SESSION_STATUSES;
 
   const filter = {
     checkoutId: normalizeCheckoutId(checkoutId),
     flowVersion: 'v2',
-    finalizeStatus: FINALIZE_STATUS.OPEN,
+    finalizeStatus: recoveryFinalizeAllowed
+      ? { $in: [FINALIZE_STATUS.OPEN, FINALIZE_STATUS.NEEDS_REVIEW] }
+      : FINALIZE_STATUS.OPEN,
     status: { $nin: blocked }
   };
 
@@ -254,7 +273,10 @@ function buildAcquireLockFilter(
   return filter;
 }
 
-function classifyAcquireLockFailure(session, { paidFinalizeOverride = false } = {}) {
+function classifyAcquireLockFailure(
+  session,
+  { paidFinalizeOverride = false, recoveryCommercialStayIdentity = null } = {}
+) {
   if (!session) {
     throw new CheckoutSessionError(
       CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_FOUND,
@@ -281,9 +303,13 @@ function classifyAcquireLockFailure(session, { paidFinalizeOverride = false } = 
     );
   }
 
+  const recoveryFinalizeAllowed =
+    paidFinalizeOverride === true && isRecoveryFinalizeIdentity(recoveryCommercialStayIdentity);
+
   if (
-    session.finalizeStatus === FINALIZE_STATUS.NEEDS_REVIEW ||
-    session.status === 'needs_review'
+    !recoveryFinalizeAllowed &&
+    (session.finalizeStatus === FINALIZE_STATUS.NEEDS_REVIEW ||
+      session.status === 'needs_review')
   ) {
     throw new CheckoutSessionError(
       CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_USABLE,
@@ -365,7 +391,10 @@ async function reclaimStaleFinalizeLock({
   );
 }
 
-function assertSessionUsableForFinalize(session, { paidFinalizeOverride = false } = {}) {
+function assertSessionUsableForFinalize(
+  session,
+  { paidFinalizeOverride = false, recoveryCommercialStayIdentity = null } = {}
+) {
   if (!session) {
     throw new CheckoutSessionError(
       CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_FOUND,
@@ -390,7 +419,13 @@ function assertSessionUsableForFinalize(session, { paidFinalizeOverride = false 
     );
   }
 
-  if (session.status === 'needs_review') {
+  const recoveryFinalizeAllowed =
+    paidFinalizeOverride === true &&
+    recoveryCommercialStayIdentity &&
+    typeof recoveryCommercialStayIdentity === 'object' &&
+    recoveryCommercialStayIdentity.evidenceDigest != null;
+
+  if (session.status === 'needs_review' && !recoveryFinalizeAllowed) {
     throw new CheckoutSessionError(
       CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_USABLE,
       'Checkout session requires review'
@@ -407,12 +442,16 @@ function assertSessionUsableForFinalize(session, { paidFinalizeOverride = false 
 
 async function loadFinalizableCheckoutSession({
   checkoutId,
-  paidFinalizeOverride = false
+  paidFinalizeOverride = false,
+  recoveryCommercialStayIdentity = null
 } = {}) {
   const session = await loadSessionOrThrow(checkoutId);
   assertV2Flow(session);
   if (paidFinalizeOverride || isPaidFinalizeOverrideEligible(session, false)) {
-    assertSessionUsableForFinalize(session, { paidFinalizeOverride: true });
+    assertSessionUsableForFinalize(session, {
+      paidFinalizeOverride: true,
+      recoveryCommercialStayIdentity
+    });
   } else {
     assertSessionUsable(session);
   }
@@ -424,7 +463,8 @@ async function acquireFinalizeLock({
   expectedSessionVersion,
   now = new Date(),
   paidFinalizeOverride = false,
-  visibilityMs = getFinalizeLockVisibilityMs()
+  visibilityMs = getFinalizeLockVisibilityMs(),
+  recoveryCommercialStayIdentity = null
 } = {}) {
   const at = normalizeNow(now);
   const normalizedId = normalizeCheckoutId(checkoutId);
@@ -442,7 +482,8 @@ async function acquireFinalizeLock({
   });
 
   const acquireFilter = buildAcquireLockFilter(normalizedId, expectedSessionVersion, at, {
-    paidFinalizeOverride: paidFinalizeOverride === true
+    paidFinalizeOverride: paidFinalizeOverride === true,
+    recoveryCommercialStayIdentity
   });
 
   const updated = await CheckoutSession.findOneAndUpdate(
@@ -464,7 +505,8 @@ async function acquireFinalizeLock({
   const current = await CheckoutSession.findOne({ checkoutId: normalizedId });
   classifyAcquireLockFailure(current, {
     paidFinalizeOverride:
-      paidFinalizeOverride === true || isPaidFinalizeOverrideEligible(current, false)
+      paidFinalizeOverride === true || isPaidFinalizeOverrideEligible(current, false),
+    recoveryCommercialStayIdentity
   });
 }
 
@@ -692,7 +734,12 @@ async function assertOrchestrationBookingPayload(checkoutId, bookingPayload) {
 
 async function evaluatePreLockOrchestrationState(
   checkoutId,
-  { now = new Date(), visibilityMs = getFinalizeLockVisibilityMs() } = {}
+  {
+    now = new Date(),
+    visibilityMs = getFinalizeLockVisibilityMs(),
+    paidFinalizeOverride = false,
+    recoveryCommercialStayIdentity = null
+  } = {}
 ) {
   const at = normalizeNow(now);
   const normalizedId = normalizeCheckoutId(checkoutId);
@@ -719,9 +766,19 @@ async function evaluatePreLockOrchestrationState(
     );
   }
 
+  // S0 paid-orphan recovery finalizes allowlisted needs_review sessions via
+  // paidFinalizeOverride + independently scoped recoveryCommercialStayIdentity.
+  // Ordinary callers must still hard-stop on needs_review.
+  const recoveryFinalizeAllowed =
+    paidFinalizeOverride === true &&
+    recoveryCommercialStayIdentity &&
+    typeof recoveryCommercialStayIdentity === 'object' &&
+    recoveryCommercialStayIdentity.evidenceDigest != null;
+
   if (
-    session.finalizeStatus === FINALIZE_STATUS.NEEDS_REVIEW ||
-    session.status === 'needs_review'
+    !recoveryFinalizeAllowed &&
+    (session.finalizeStatus === FINALIZE_STATUS.NEEDS_REVIEW ||
+      session.status === 'needs_review')
   ) {
     throw new CheckoutSessionError(
       CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_USABLE,
@@ -811,7 +868,9 @@ async function runCheckoutFinalizeOrchestration({
 
   const preLock = await evaluatePreLockOrchestrationState(normalizedId, {
     now: at,
-    visibilityMs
+    visibilityMs,
+    paidFinalizeOverride,
+    recoveryCommercialStayIdentity
   });
   if (preLock.replay) {
     return preLock.replay;
@@ -832,7 +891,8 @@ async function runCheckoutFinalizeOrchestration({
     paidFinalizeOverride:
       paidFinalizeOverride === true ||
       isPaidFinalizeOverrideEligible(ready.session, false),
-    visibilityMs
+    visibilityMs,
+    recoveryCommercialStayIdentity
   });
 
   try {
@@ -922,7 +982,8 @@ async function assertCheckoutSessionReadyForFinalize({
 }) {
   const session = await loadFinalizableCheckoutSession({
     checkoutId,
-    paidFinalizeOverride
+    paidFinalizeOverride,
+    recoveryCommercialStayIdentity
   });
   await assertPaymentIntentReadyForFinalize(session, paymentIntentId, {
     paidFinalizeOverride:
@@ -933,7 +994,8 @@ async function assertCheckoutSessionReadyForFinalize({
     checkoutId,
     bookingPayload,
     paidFinalizeOverride:
-      paidFinalizeOverride === true || isPaidFinalizeOverrideEligible(session, false)
+      paidFinalizeOverride === true || isPaidFinalizeOverrideEligible(session, false),
+    recoveryCommercialStayIdentity
   });
 
   const identities = deriveCommercialStayGuardIdentities(
