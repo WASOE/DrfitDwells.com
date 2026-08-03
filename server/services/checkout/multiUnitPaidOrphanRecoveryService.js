@@ -1,0 +1,1296 @@
+'use strict';
+
+/**
+ * S0 allowlisted multi-unit paid-orphan recovery service.
+ * Binding: docs/architecture/multi-unit-cabin-type-capacity-and-paid-recovery-lock.md
+ *
+ * Sole importer of runInMultiUnitPaidOrphanRecoveryContext.
+ * Does not export the runner.
+ */
+
+const crypto = require('crypto');
+const mongoose = require('mongoose');
+
+const Booking = require('../../models/Booking');
+const CheckoutSession = require('../../models/CheckoutSession');
+const CheckoutFinalizationJob = require('../../models/CheckoutFinalizationJob');
+const Payment = require('../../models/Payment');
+const ManualReviewItem = require('../../models/ManualReviewItem');
+const Unit = require('../../models/Unit');
+const EmailDeliveryState = require('../../models/EmailDeliveryState');
+
+const featureFlags = require('../../utils/featureFlags');
+const {
+  runInMultiUnitPaidOrphanRecoveryContext,
+  assertMultiUnitPaidOrphanRecoveryContext
+} = require('./multiUnitPaidOrphanRecoveryCapability');
+const {
+  createSanitizedRecoveryError,
+  MultiUnitPaidOrphanRecoveryError
+} = require('./multiUnitPaidOrphanRecoveryErrors');
+const {
+  acquireManualReviewResolutionHold,
+  ensureMultiUnitPaidOrphanCompletionReview,
+  transferRecoveryHoldToCompletionReview,
+  resolveActiveRecoveryHeldManualReview
+} = require('./multiUnitPaidOrphanRecoveryReviewService');
+const {
+  acquireInitialMultiUnitRecoveryLease,
+  reclaimMultiUnitRecoveryLease,
+  renewMultiUnitRecoveryLease,
+  markCheckoutFinalizationJobSucceededFromMultiUnitRecovery,
+  advanceMultiUnitRecoveryStatus,
+  markCheckoutFinalizationJobConfirmationQueued,
+  markMultiUnitRecoveryComplete,
+  RECOVERY_LEASE_TTL_MS,
+  INCOMPLETE_RECOVERY_STATUSES
+} = require('./checkoutFinalizationJobService');
+const { runCheckoutFinalizeOrchestration } = require('./checkoutFinalizeService');
+const { executeBookingFinalizeWork } = require('./executeBookingFinalizeWork');
+const {
+  buildFinalizeContextFromPersisted,
+  findAdoptableBooking,
+  verifySucceededPaymentIntentAgainstSession
+} = require('./finalizePaidCheckout');
+const { convertSavedQuoteForBooking } = require('./checkoutFinalizeSideEffects');
+const { linkStripePaymentToBooking } = require('../payments/paymentLinkingService');
+const { normalizeGuestEmail } = require('./bookingCommercialStayFingerprint');
+const AssignmentEngine = require('../assignmentEngine');
+const {
+  ensurePendingConfirmationDelivery,
+  resolveConfirmationTemplateKey
+} = require('../email/bookingConfirmationDeliveryService');
+const {
+  bookingLifecycleCorrelationKey
+} = require('../email/emailDeliveryCorrelation');
+
+const SCHEMA_VERSION = 'multi-unit-paid-orphan-recovery/v1';
+const MAX_DIGEST_AGE_MS = 24 * 60 * 60 * 1000;
+const INTENT_PHRASE =
+  'I CONFIRM THE GUEST INTENDS TO PURCHASE A SECOND PHYSICAL A-FRAME';
+
+function stableStringify(value) {
+  return JSON.stringify(canonicalize(value));
+}
+
+function canonicalize(value) {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+  if (typeof value === 'string') return value.normalize('NFC');
+  if (value instanceof Date) return value.toISOString();
+  if (value instanceof mongoose.Types.ObjectId) {
+    return String(value).toLowerCase();
+  }
+  if (Array.isArray(value)) {
+    const mapped = value
+      .map((v) => canonicalize(v))
+      .filter((v) => v !== undefined);
+    const allScalar = mapped.every(
+      (v) => v === null || typeof v !== 'object'
+    );
+    if (allScalar) {
+      return mapped.slice().sort((a, b) => {
+        const sa = JSON.stringify(a);
+        const sb = JSON.stringify(b);
+        return sa < sb ? -1 : sa > sb ? 1 : 0;
+      });
+    }
+    return mapped;
+  }
+  if (typeof value === 'object') {
+    const out = {};
+    for (const key of Object.keys(value).sort()) {
+      const next = canonicalize(value[key]);
+      if (next !== undefined) out[key] = next;
+    }
+    return out;
+  }
+  return String(value);
+}
+
+function sha256Hex(canonicalEvidence) {
+  return crypto
+    .createHash('sha256')
+    .update(stableStringify(canonicalEvidence), 'utf8')
+    .digest('hex');
+}
+
+function hashAllowlistIdentity(allowlist) {
+  return sha256Hex({
+    checkoutId: allowlist.checkoutId,
+    checkoutSessionId: String(allowlist.checkoutSessionId),
+    paymentIntentId: allowlist.paymentIntentId,
+    paymentId: String(allowlist.paymentId),
+    finalizationJobId: String(allowlist.finalizationJobId),
+    manualReviewItemId: String(allowlist.manualReviewItemId),
+    cabinTypeId: String(allowlist.cabinTypeId),
+    expectedTargetUnitId: String(allowlist.expectedTargetUnitId)
+  });
+}
+
+function requireAllowlist(allowlist) {
+  if (!allowlist || typeof allowlist !== 'object') {
+    throw createSanitizedRecoveryError('RECOVERY_ALLOWLIST_MISMATCH');
+  }
+  const required = [
+    'checkoutId',
+    'checkoutSessionId',
+    'paymentIntentId',
+    'paymentId',
+    'finalizationJobId',
+    'manualReviewItemId',
+    'cabinTypeId',
+    'expectedTargetUnitId'
+  ];
+  for (const key of required) {
+    if (allowlist[key] == null || String(allowlist[key]).trim() === '') {
+      throw createSanitizedRecoveryError('RECOVERY_ALLOWLIST_MISMATCH', {
+        reason: `missing_${key}`
+      });
+    }
+  }
+  return allowlist;
+}
+
+function dateOnly(value) {
+  if (!value) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 10);
+}
+
+async function loadIncidentDocuments(allowlist) {
+  const [
+    session,
+    job,
+    payment,
+    review,
+    targetUnit,
+    firstBooking
+  ] = await Promise.all([
+    CheckoutSession.findById(allowlist.checkoutSessionId).lean(),
+    CheckoutFinalizationJob.findById(allowlist.finalizationJobId).lean(),
+    Payment.findById(allowlist.paymentId).lean(),
+    ManualReviewItem.findById(allowlist.manualReviewItemId).lean(),
+    Unit.findById(allowlist.expectedTargetUnitId).lean(),
+    allowlist.firstBookingId
+      ? Booking.findById(allowlist.firstBookingId).lean()
+      : null
+  ]);
+
+  if (!session || String(session.checkoutId) !== String(allowlist.checkoutId)) {
+    throw createSanitizedRecoveryError('RECOVERY_ALLOWLIST_MISMATCH', {
+      reason: 'checkout_session'
+    });
+  }
+  if (
+    !job ||
+    String(job.checkoutId) !== String(allowlist.checkoutId) ||
+    String(job.paymentIntentId) !== String(allowlist.paymentIntentId)
+  ) {
+    throw createSanitizedRecoveryError('RECOVERY_ALLOWLIST_MISMATCH', {
+      reason: 'finalization_job'
+    });
+  }
+  if (!payment) {
+    throw createSanitizedRecoveryError('RECOVERY_ALLOWLIST_MISMATCH', {
+      reason: 'payment'
+    });
+  }
+  if (!review) {
+    throw createSanitizedRecoveryError('RECOVERY_ALLOWLIST_MISMATCH', {
+      reason: 'manual_review'
+    });
+  }
+  if (!targetUnit) {
+    throw createSanitizedRecoveryError('RECOVERY_UNIT_UNAVAILABLE', {
+      reason: 'unit_missing'
+    });
+  }
+
+  return { session, job, payment, review, targetUnit, firstBooking };
+}
+
+function computeGuestIdentityProof({ firstBooking, session }) {
+  const firstEmail = normalizeGuestEmail(firstBooking?.guestInfo?.email);
+  const sessionEmail = normalizeGuestEmail(session?.guestEmail);
+  const intentEmail = normalizeGuestEmail(session?.finalizeIntent?.guestInfo?.email);
+
+  if (!firstEmail || !sessionEmail) {
+    return { guestIdentityMatch: false, stayFingerprintMatch: null, missing: true };
+  }
+  if (intentEmail && intentEmail !== sessionEmail) {
+    return { guestIdentityMatch: false, stayFingerprintMatch: null, missing: false };
+  }
+  const guestIdentityMatch = firstEmail === sessionEmail;
+  let stayFingerprintMatch = null;
+  if (firstBooking?.commercialStayFingerprint && session?.stayFingerprint) {
+    stayFingerprintMatch =
+      String(firstBooking.commercialStayFingerprint) === String(session.stayFingerprint);
+  }
+  return { guestIdentityMatch, stayFingerprintMatch, missing: false };
+}
+
+async function evaluateTargetUnitAvailability({
+  expectedTargetUnitId,
+  cabinTypeId,
+  checkIn,
+  checkOut
+}) {
+  const result = await AssignmentEngine.validateUnitForCabinTypeBooking(
+    expectedTargetUnitId,
+    cabinTypeId,
+    checkIn,
+    checkOut
+  );
+  return {
+    ok: result?.ok === true,
+    code: result?.ok ? null : result?.code || 'UNIT_NOT_AVAILABLE'
+  };
+}
+
+async function buildCanonicalEvidence(allowlist, docs, dryRunGeneratedAt) {
+  const { session, job, payment, review, targetUnit, firstBooking } = docs;
+  const checkIn =
+    session.quoteSnapshot?.checkInDate ||
+    session.finalizeIntent?.checkInDate ||
+    session.checkInDate;
+  const checkOut =
+    session.quoteSnapshot?.checkOutDate ||
+    session.finalizeIntent?.checkOutDate ||
+    session.checkOutDate;
+
+  const availability = await evaluateTargetUnitAvailability({
+    expectedTargetUnitId: allowlist.expectedTargetUnitId,
+    cabinTypeId: allowlist.cabinTypeId,
+    checkIn,
+    checkOut
+  });
+
+  const identity = computeGuestIdentityProof({ firstBooking, session });
+
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    dryRunGeneratedAt:
+      dryRunGeneratedAt instanceof Date
+        ? dryRunGeneratedAt.toISOString()
+        : String(dryRunGeneratedAt),
+    checkoutId: String(allowlist.checkoutId),
+    checkoutSessionMongoId: String(session._id),
+    paymentIntentId: String(allowlist.paymentIntentId),
+    paymentRecordId: String(payment._id),
+    finalizationJobId: String(job._id),
+    manualReviewItemId: String(review._id),
+    expectedCabinTypeId: String(allowlist.cabinTypeId),
+    expectedTargetUnitId: String(allowlist.expectedTargetUnitId),
+    expectedCheckInDateOnly: dateOnly(checkIn),
+    expectedCheckOutDateOnly: dateOnly(checkOut),
+    expectedAmountCents:
+      payment.amountCents != null
+        ? Number(payment.amountCents)
+        : session.quoteSnapshot?.totalCents != null
+          ? Number(session.quoteSnapshot.totalCents)
+          : null,
+    expectedCurrency: String(
+      payment.currency || session.quoteSnapshot?.currency || 'eur'
+    ).toLowerCase(),
+    expectedQuoteSnapshotHash: session.quoteSnapshotHash || null,
+    expectedFinalizeIntentHash: session.finalizeIntentHash || null,
+    expectedFailureCode: allowlist.expectedFailureCode || 'DUPLICATE_STAY_CONFLICT',
+    session: {
+      status: session.status || null,
+      finalizeStatus: session.finalizeStatus || null,
+      paymentStatus: session.paymentStatus || null,
+      bookingId: session.bookingId ? String(session.bookingId) : null
+    },
+    job: {
+      status: job.status || null,
+      lastErrorCode: job.lastErrorCode || null,
+      stage: job.stage || null,
+      recoveryStatus: job.recoveryStatus || 'idle'
+    },
+    payment: {
+      status: payment.status || null,
+      reservationId: payment.reservationId ? String(payment.reservationId) : null
+    },
+    MRI: {
+      status: review.status || null,
+      category: review.category || null
+    },
+    firstBookingId: firstBooking ? String(firstBooking._id) : null,
+    firstBookingUnitId: firstBooking?.unitId ? String(firstBooking.unitId) : null,
+    firstBookingStatus: firstBooking?.status || null,
+    targetUnit: {
+      isActive: targetUnit.isActive !== false,
+      updatedAt: targetUnit.updatedAt
+        ? new Date(targetUnit.updatedAt).toISOString()
+        : null
+    },
+    targetUnitAvailabilityResult: availability,
+    guestIdentityMatch: identity.guestIdentityMatch === true,
+    stayFingerprintMatch: identity.stayFingerprintMatch
+  };
+}
+
+async function dryRunMultiUnitPaidOrphanRecovery({
+  allowlist,
+  now = new Date()
+} = {}) {
+  const row = requireAllowlist(allowlist);
+  const docs = await loadIncidentDocuments(row);
+  const at = now instanceof Date ? now : new Date(now);
+  const canonicalEvidence = await buildCanonicalEvidence(row, docs, at);
+  const digest = sha256Hex(canonicalEvidence);
+
+  if (canonicalEvidence.dryRunGeneratedAt !== String(at.toISOString())) {
+    // invariant enforced by construction
+  }
+
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    dryRunGeneratedAt: canonicalEvidence.dryRunGeneratedAt,
+    canonicalEvidence,
+    digest,
+    writes: 0
+  };
+}
+
+function verifyOriginalEvidence({ originalEvidence, digest }) {
+  if (!originalEvidence || typeof originalEvidence !== 'object') {
+    throw createSanitizedRecoveryError('RECOVERY_DIGEST_MISMATCH');
+  }
+  const { schemaVersion, dryRunGeneratedAt, canonicalEvidence } = originalEvidence;
+  if (schemaVersion !== SCHEMA_VERSION || !canonicalEvidence) {
+    throw createSanitizedRecoveryError('RECOVERY_DIGEST_MISMATCH', {
+      reason: 'schema'
+    });
+  }
+  if (dryRunGeneratedAt !== canonicalEvidence.dryRunGeneratedAt) {
+    throw createSanitizedRecoveryError('RECOVERY_DIGEST_MISMATCH', {
+      reason: 'envelope_timestamp'
+    });
+  }
+  const recomputed = sha256Hex(canonicalEvidence);
+  const provided = String(digest || originalEvidence.digest || '').toLowerCase();
+  if (recomputed !== provided) {
+    throw createSanitizedRecoveryError('RECOVERY_DIGEST_MISMATCH');
+  }
+  return { canonicalEvidence, digest: recomputed };
+}
+
+function verifyDigestAge(canonicalEvidence, now) {
+  const generatedAt = new Date(canonicalEvidence.dryRunGeneratedAt);
+  if (Number.isNaN(generatedAt.getTime())) {
+    throw createSanitizedRecoveryError('RECOVERY_DIGEST_MISMATCH', {
+      reason: 'bad_timestamp'
+    });
+  }
+  if (now.getTime() - generatedAt.getTime() > MAX_DIGEST_AGE_MS) {
+    throw createSanitizedRecoveryError('RECOVERY_DIGEST_EXPIRED');
+  }
+}
+
+function verifyIntentOverlay(intentOverlay) {
+  if (!intentOverlay || typeof intentOverlay !== 'object') {
+    throw createSanitizedRecoveryError('RECOVERY_INTENT_NOT_CONFIRMED');
+  }
+  if (String(intentOverlay.confirmationPhrase || '') !== INTENT_PHRASE) {
+    throw createSanitizedRecoveryError('RECOVERY_INTENT_MISMATCH');
+  }
+  const actor = String(intentOverlay.operatorActorId || '');
+  if (!/^ops:[A-Za-z0-9._-]{1,64}$/.test(actor)) {
+    throw createSanitizedRecoveryError('RECOVERY_INTENT_NOT_CONFIRMED', {
+      reason: 'operator_actor'
+    });
+  }
+  const intentAt = new Date(intentOverlay.operatorIntentConfirmedAt);
+  if (Number.isNaN(intentAt.getTime())) {
+    throw createSanitizedRecoveryError('RECOVERY_INTENT_NOT_CONFIRMED', {
+      reason: 'intent_timestamp'
+    });
+  }
+  const reason = String(intentOverlay.recoveryReason || '').trim();
+  if (!reason || reason.length > 500) {
+    throw createSanitizedRecoveryError('RECOVERY_INTENT_NOT_CONFIRMED', {
+      reason: 'recovery_reason'
+    });
+  }
+  return {
+    operatorActorId: actor,
+    operatorIntentConfirmedAt: intentAt,
+    recoveryReason: reason,
+    resumedBy: intentOverlay.resumedBy
+      ? String(intentOverlay.resumedBy)
+      : null
+  };
+}
+
+function materialEvidenceEqual(a, b) {
+  const keys = [
+    'checkoutId',
+    'checkoutSessionMongoId',
+    'paymentIntentId',
+    'paymentRecordId',
+    'finalizationJobId',
+    'manualReviewItemId',
+    'expectedCabinTypeId',
+    'expectedTargetUnitId',
+    'expectedCheckInDateOnly',
+    'expectedCheckOutDateOnly',
+    'expectedAmountCents',
+    'expectedCurrency',
+    'expectedQuoteSnapshotHash',
+    'expectedFinalizeIntentHash',
+    'expectedFailureCode',
+    'guestIdentityMatch'
+  ];
+  for (const key of keys) {
+    if (JSON.stringify(a[key]) !== JSON.stringify(b[key])) return false;
+  }
+  if (JSON.stringify(a.session) !== JSON.stringify(b.session)) return false;
+  if (JSON.stringify(a.job) !== JSON.stringify(b.job)) return false;
+  if (JSON.stringify(a.payment) !== JSON.stringify(b.payment)) return false;
+  if (JSON.stringify(a.MRI) !== JSON.stringify(b.MRI)) return false;
+  if (a.firstBookingId !== b.firstBookingId) return false;
+  if (a.targetUnit?.isActive !== b.targetUnit?.isActive) return false;
+  if (
+    JSON.stringify(a.targetUnitAvailabilityResult) !==
+    JSON.stringify(b.targetUnitAvailabilityResult)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function buildExpectedScope({
+  recoveryMode,
+  recoveryExecutionId,
+  allowlist,
+  evidenceDigest
+}) {
+  return {
+    recoveryMode,
+    recoveryExecutionId,
+    checkoutId: String(allowlist.checkoutId),
+    checkoutSessionId: String(allowlist.checkoutSessionId),
+    paymentIntentId: String(allowlist.paymentIntentId),
+    paymentId: String(allowlist.paymentId),
+    finalizationJobId: String(allowlist.finalizationJobId),
+    manualReviewItemId: String(allowlist.manualReviewItemId),
+    cabinTypeId: String(allowlist.cabinTypeId),
+    expectedTargetUnitId: String(allowlist.expectedTargetUnitId),
+    evidenceDigest: String(evidenceDigest).toLowerCase()
+  };
+}
+
+function getStripeClient(stripeOverride) {
+  if (stripeOverride) return stripeOverride;
+  // Lazy require to avoid hard Stripe dependency in dry-run/unit tests
+  // eslint-disable-next-line global-require
+  const stripeLib = require('../../config/stripe');
+  return stripeLib.stripe || stripeLib;
+}
+
+async function runMultiUnitPaidOrphanRecoveryBookingFinalizeCore({
+  checkoutId,
+  paymentIntentId,
+  expectedScope,
+  expectedTargetUnitId,
+  stripe = null,
+  now = new Date(),
+  source = 'multi_unit_paid_orphan_recovery'
+}) {
+  assertMultiUnitPaidOrphanRecoveryContext(expectedScope);
+
+  const session = await CheckoutSession.findOne({ checkoutId }).lean();
+  if (!session) {
+    throw createSanitizedRecoveryError('RECOVERY_HOSTILE_STATE_DRIFT', {
+      reason: 'session_missing'
+    });
+  }
+
+  const stripeClient = getStripeClient(stripe);
+  const pi = await stripeClient.paymentIntents.retrieve(String(paymentIntentId));
+  verifySucceededPaymentIntentAgainstSession({
+    session,
+    paymentIntent: pi
+  });
+
+  const finalizeContext = await buildFinalizeContextFromPersisted({
+    session,
+    paymentIntent: pi,
+    stripePaymentVerified: true,
+    source
+  });
+
+  assertMultiUnitPaidOrphanRecoveryContext({
+    ...expectedScope,
+    expectedTargetUnitId: String(expectedTargetUnitId),
+    checkoutId: String(checkoutId),
+    paymentIntentId: String(paymentIntentId),
+    cabinTypeId: expectedScope.cabinTypeId
+  });
+  finalizeContext.assignedUnitId = String(expectedTargetUnitId);
+
+  const bookingPayload = {
+    cabinId: finalizeContext.cabinId,
+    cabinTypeId: finalizeContext.cabinTypeId,
+    unitId: finalizeContext.assignedUnitId,
+    checkInDate: finalizeContext.checkInDate,
+    checkOutDate: finalizeContext.checkOutDate,
+    guestInfo: finalizeContext.guestInfo
+  };
+
+  const orchResult = await runCheckoutFinalizeOrchestration({
+    checkoutId: String(checkoutId),
+    paymentIntentId: String(paymentIntentId),
+    bookingPayload,
+    now,
+    source,
+    paidFinalizeOverride: true,
+    setPaymentStatusPaid: true,
+    finalizeWork: async (workInput) =>
+      executeBookingFinalizeWork({
+        session: workInput.session,
+        checkoutId: workInput.checkoutId,
+        paymentIntentId: workInput.paymentIntentId,
+        bookingPayload: workInput.bookingPayload,
+        finalizeContext,
+        source: workInput.source || source,
+        dependencies: {
+          openManualReviewItem: async () => null
+        }
+      })
+  });
+
+  return orchResult;
+}
+
+async function findExistingRecoveryBooking(allowlist) {
+  const byCheckout = await Booking.findOne({
+    checkoutId: String(allowlist.checkoutId)
+  }).lean();
+  if (byCheckout) return byCheckout;
+  return findAdoptableBooking({
+    checkoutId: String(allowlist.checkoutId),
+    paymentIntentId: String(allowlist.paymentIntentId),
+    BookingModel: Booking
+  });
+}
+
+async function ensurePaymentAndSessionLinked({
+  booking,
+  allowlist,
+  expectedScope,
+  now
+}) {
+  assertMultiUnitPaidOrphanRecoveryContext(expectedScope);
+
+  const payment = await Payment.findById(allowlist.paymentId);
+  if (!payment) {
+    throw createSanitizedRecoveryError('RECOVERY_IDENTITY_MISMATCH', {
+      reason: 'payment_missing'
+    });
+  }
+  if (String(payment.status) !== 'paid') {
+    throw createSanitizedRecoveryError('RECOVERY_PAYMENT_NOT_PAID');
+  }
+
+  const existingReservationId = payment.reservationId
+    ? String(payment.reservationId)
+    : null;
+  if (existingReservationId && existingReservationId !== String(booking._id)) {
+    throw createSanitizedRecoveryError('RECOVERY_PAYMENT_ALREADY_LINKED_ELSEWHERE');
+  }
+
+  // Link via authoritative helper; MRI auto-resolve is hold-blocked.
+  await linkStripePaymentToBooking({
+    booking,
+    linkedBy: 'multi_unit_paid_orphan_recovery',
+    apply: true
+  });
+
+  const session = await CheckoutSession.findById(allowlist.checkoutSessionId);
+  if (!session) {
+    throw createSanitizedRecoveryError('RECOVERY_HOSTILE_STATE_DRIFT', {
+      reason: 'session_missing_link'
+    });
+  }
+  if (session.bookingId && String(session.bookingId) !== String(booking._id)) {
+    throw createSanitizedRecoveryError('RECOVERY_HOSTILE_STATE_DRIFT', {
+      reason: 'foreign_session_booking'
+    });
+  }
+
+  if (
+    !session.bookingId ||
+    session.finalizeStatus !== 'finalized' ||
+    String(session.status) !== 'finalized'
+  ) {
+    session.bookingId = booking._id;
+    session.finalizeStatus = 'finalized';
+    session.status = 'finalized';
+    session.paymentStatus = 'paid';
+    session.finalizedAt = session.finalizedAt || now;
+    await session.save();
+  }
+
+  return { payment, session };
+}
+
+async function verifyCompletionGate({
+  allowlist,
+  booking,
+  job,
+  expectedScope
+}) {
+  assertMultiUnitPaidOrphanRecoveryContext(expectedScope);
+
+  if (!booking || String(booking.unitId) !== String(allowlist.expectedTargetUnitId)) {
+    throw createSanitizedRecoveryError('RECOVERY_HOSTILE_STATE_DRIFT', {
+      reason: 'booking_unit'
+    });
+  }
+
+  const payment = await Payment.findById(allowlist.paymentId).lean();
+  if (!payment || String(payment.reservationId) !== String(booking._id)) {
+    throw createSanitizedRecoveryError('RECOVERY_PARTIAL_LINKAGE', {
+      reason: 'payment'
+    });
+  }
+
+  const session = await CheckoutSession.findById(allowlist.checkoutSessionId).lean();
+  if (
+    !session ||
+    String(session.bookingId) !== String(booking._id) ||
+    session.finalizeStatus !== 'finalized'
+  ) {
+    throw createSanitizedRecoveryError('RECOVERY_PARTIAL_LINKAGE', {
+      reason: 'session'
+    });
+  }
+
+  if (job.status !== 'succeeded') {
+    throw createSanitizedRecoveryError('RECOVERY_PARTIAL_STATE', {
+      reason: 'job_not_succeeded'
+    });
+  }
+  if (job.recoveryStatus !== 'awaiting_review_resolution') {
+    throw createSanitizedRecoveryError('RECOVERY_RESUME_PHASE_MISMATCH', {
+      reason: 'not_awaiting_review_resolution'
+    });
+  }
+  if (!job.confirmationQueuedAt) {
+    throw createSanitizedRecoveryError('RECOVERY_CONFIRMATION_STATE_INVALID', {
+      reason: 'missing_queued_at'
+    });
+  }
+  if (!job.activeRecoveryReviewItemId) {
+    throw createSanitizedRecoveryError('RECOVERY_MRI_HOLD_CONFLICT', {
+      reason: 'missing_active_review'
+    });
+  }
+
+  const review = await ManualReviewItem.findById(job.activeRecoveryReviewItemId).lean();
+  if (
+    !review ||
+    review.status !== 'open' ||
+    review.resolutionHold?.status !== 'active' ||
+    review.resolutionHold?.recoveryExecutionId !== job.recoveryExecutionId
+  ) {
+    if (review?.status === 'resolved') {
+      // may be premature — handled by caller
+      throw createSanitizedRecoveryError('RECOVERY_REVIEW_RESOLVED_PREMATURELY');
+    }
+    throw createSanitizedRecoveryError('RECOVERY_MRI_HOLD_CONFLICT', {
+      reason: 'active_hold_missing'
+    });
+  }
+
+  return { payment, session, review };
+}
+
+async function ensureConfirmationEds({ booking, session, now }) {
+  const templateKey = resolveConfirmationTemplateKey(booking);
+  const ensured = await ensurePendingConfirmationDelivery({
+    booking,
+    session,
+    templateKey,
+    source: 'automatic',
+    now
+  });
+  return ensured;
+}
+
+async function buildCorrelationKeyForBooking(booking, session) {
+  const templateKey = resolveConfirmationTemplateKey(booking);
+  const recipient =
+    normalizeGuestEmail(booking?.guestInfo?.email) ||
+    normalizeGuestEmail(session?.guestEmail);
+  return bookingLifecycleCorrelationKey({
+    bookingId: String(booking._id),
+    templateKey,
+    recipientEmail: recipient
+  });
+}
+
+async function executeRecoveryInsideContext({
+  mode,
+  allowlist,
+  expectedScope,
+  recoveryExecutionId,
+  evidenceDigest,
+  allowlistHash,
+  operator,
+  stripe,
+  now
+}) {
+  const at = now instanceof Date ? now : new Date(now);
+  assertMultiUnitPaidOrphanRecoveryContext(expectedScope);
+
+  let job;
+  if (mode === 'initial') {
+    job = await acquireInitialMultiUnitRecoveryLease({
+      jobId: allowlist.finalizationJobId,
+      checkoutId: allowlist.checkoutId,
+      paymentIntentId: allowlist.paymentIntentId,
+      expectedLastErrorCode: allowlist.expectedFailureCode || 'DUPLICATE_STAY_CONFLICT',
+      recoveryExecutionId,
+      evidenceDigest,
+      allowlistHash,
+      operatorActorId: operator.operatorActorId,
+      operatorIntentConfirmedAt: operator.operatorIntentConfirmedAt,
+      recoveryReason: operator.recoveryReason,
+      expectedScope,
+      now: at,
+      historyEntry: {
+        at: at.toISOString(),
+        recoveryExecutionId,
+        actor: operator.operatorActorId,
+        phase: 'leased',
+        code: 'LEASE_ACQUIRED',
+        summary: 'Initial recovery lease acquired',
+        digestPrefix: evidenceDigest.slice(0, 16),
+        mode: 'initial'
+      }
+    });
+  } else {
+    job = await reclaimMultiUnitRecoveryLease({
+      jobId: allowlist.finalizationJobId,
+      checkoutId: allowlist.checkoutId,
+      paymentIntentId: allowlist.paymentIntentId,
+      recoveryExecutionId,
+      evidenceDigest,
+      expectedScope,
+      now: at,
+      resumedBy: operator.resumedBy || operator.operatorActorId,
+      historyEntry: {
+        at: at.toISOString(),
+        recoveryExecutionId,
+        actor: operator.operatorActorId,
+        resumedBy: operator.resumedBy || operator.operatorActorId,
+        phase: 'lease_reclaim',
+        code: 'LEASE_RECLAIMED',
+        summary: 'Recovery lease reclaimed',
+        digestPrefix: evidenceDigest.slice(0, 16),
+        mode: 'resume'
+      }
+    });
+  }
+
+  // Hold on incident MRI (or verify existing / completion path)
+  let activeReviewId = job.activeRecoveryReviewItemId
+    ? String(job.activeRecoveryReviewItemId)
+    : String(allowlist.manualReviewItemId);
+
+  const incidentReview = await ManualReviewItem.findById(
+    allowlist.manualReviewItemId
+  ).lean();
+
+  if (incidentReview?.status === 'resolved' && mode === 'resume') {
+    // Premature path — ensure completion MRI + transfer
+    const { review: completion } = await ensureMultiUnitPaidOrphanCompletionReview({
+      originalManualReviewItemId: allowlist.manualReviewItemId,
+      recoveryExecutionId,
+      finalizationJobId: allowlist.finalizationJobId,
+      checkoutId: allowlist.checkoutId,
+      checkoutSessionId: allowlist.checkoutSessionId,
+      paymentId: allowlist.paymentId,
+      paymentIntentId: allowlist.paymentIntentId,
+      bookingId: job.bookingId || null,
+      expectedScope
+    });
+    await transferRecoveryHoldToCompletionReview({
+      originalManualReviewItemId: allowlist.manualReviewItemId,
+      completionManualReviewItemId: completion._id,
+      recoveryExecutionId,
+      finalizationJobId: allowlist.finalizationJobId,
+      checkoutId: allowlist.checkoutId,
+      paymentIntentId: allowlist.paymentIntentId,
+      expectedScope,
+      now: at
+    });
+    activeReviewId = String(completion._id);
+  } else {
+    try {
+      await acquireManualReviewResolutionHold({
+        manualReviewItemId: activeReviewId,
+        recoveryExecutionId,
+        finalizationJobId: allowlist.finalizationJobId,
+        checkoutId: allowlist.checkoutId,
+        paymentIntentId: allowlist.paymentIntentId,
+        expectedScope,
+        now: at
+      });
+    } catch (err) {
+      if (err?.code === 'RECOVERY_REVIEW_RESOLVED_PREMATURELY') {
+        const { review: completion } = await ensureMultiUnitPaidOrphanCompletionReview({
+          originalManualReviewItemId: allowlist.manualReviewItemId,
+          recoveryExecutionId,
+          finalizationJobId: allowlist.finalizationJobId,
+          checkoutId: allowlist.checkoutId,
+          checkoutSessionId: allowlist.checkoutSessionId,
+          paymentId: allowlist.paymentId,
+          paymentIntentId: allowlist.paymentIntentId,
+          bookingId: job.bookingId || null,
+          expectedScope
+        });
+        await transferRecoveryHoldToCompletionReview({
+          originalManualReviewItemId: allowlist.manualReviewItemId,
+          completionManualReviewItemId: completion._id,
+          recoveryExecutionId,
+          finalizationJobId: allowlist.finalizationJobId,
+          checkoutId: allowlist.checkoutId,
+          paymentIntentId: allowlist.paymentIntentId,
+          expectedScope,
+          now: at
+        });
+        activeReviewId = String(completion._id);
+      } else {
+        throw err;
+      }
+    }
+
+    if (!job.activeRecoveryReviewItemId) {
+      await CheckoutFinalizationJob.findOneAndUpdate(
+        { _id: allowlist.finalizationJobId, recoveryExecutionId },
+        { $set: { activeRecoveryReviewItemId: activeReviewId } }
+      );
+    }
+  }
+
+  await renewMultiUnitRecoveryLease({
+    jobId: allowlist.finalizationJobId,
+    recoveryExecutionId,
+    expectedRecoveryStatus: job.recoveryStatus || 'leased',
+    expectedScope,
+    now: at
+  });
+
+  // Adopt or create Booking
+  let booking = await findExistingRecoveryBooking(allowlist);
+  if (booking) {
+    if (String(booking.unitId) !== String(allowlist.expectedTargetUnitId)) {
+      throw createSanitizedRecoveryError('RECOVERY_HOSTILE_STATE_DRIFT', {
+        reason: 'booking_wrong_unit'
+      });
+    }
+    if (
+      booking.stripePaymentIntentId &&
+      String(booking.stripePaymentIntentId) !== String(allowlist.paymentIntentId)
+    ) {
+      throw createSanitizedRecoveryError('RECOVERY_EXISTING_BOOKING_CONFLICT');
+    }
+  } else {
+    if (mode === 'resume' && INCOMPLETE_RECOVERY_STATUSES.includes(job.recoveryStatus) &&
+        ['linkage_complete', 'awaiting_confirmation_queue', 'awaiting_review_resolution'].includes(job.recoveryStatus)) {
+      throw createSanitizedRecoveryError('RECOVERY_HOSTILE_STATE_DRIFT', {
+        reason: 'booking_missing_after_linkage'
+      });
+    }
+    const orch = await runMultiUnitPaidOrphanRecoveryBookingFinalizeCore({
+      checkoutId: allowlist.checkoutId,
+      paymentIntentId: allowlist.paymentIntentId,
+      expectedScope,
+      expectedTargetUnitId: allowlist.expectedTargetUnitId,
+      stripe,
+      now: at
+    });
+    booking = orch.booking || (await Booking.findById(orch.bookingId).lean());
+  }
+
+  await renewMultiUnitRecoveryLease({
+    jobId: allowlist.finalizationJobId,
+    recoveryExecutionId,
+    expectedRecoveryStatus: (
+      await CheckoutFinalizationJob.findById(allowlist.finalizationJobId).lean()
+    )?.recoveryStatus || 'leased',
+    expectedScope,
+    now: new Date()
+  });
+
+  await ensurePaymentAndSessionLinked({
+    booking,
+    allowlist,
+    expectedScope,
+    now: new Date()
+  });
+
+  job = await CheckoutFinalizationJob.findById(allowlist.finalizationJobId).lean();
+  if (job.status !== 'succeeded') {
+    job = await markCheckoutFinalizationJobSucceededFromMultiUnitRecovery({
+      jobId: allowlist.finalizationJobId,
+      bookingId: booking._id,
+      recoveryExecutionId,
+      expectedScope,
+      now: new Date(),
+      historyEntry: {
+        at: new Date().toISOString(),
+        recoveryExecutionId,
+        actor: operator.operatorActorId,
+        phase: 'linkage_complete',
+        code: 'JOB_SUCCEEDED',
+        summary: 'Normal finalization job marked succeeded from recovery',
+        digestPrefix: evidenceDigest.slice(0, 16),
+        bookingId: String(booking._id),
+        mode
+      }
+    });
+  } else if (job.recoveryStatus === 'leased') {
+    job = await advanceMultiUnitRecoveryStatus({
+      jobId: allowlist.finalizationJobId,
+      recoveryExecutionId,
+      fromStatus: 'leased',
+      toStatus: 'linkage_complete',
+      expectedScope,
+      now: new Date()
+    });
+  }
+
+  // SavedQuote convert (non-blocking toward money truth)
+  try {
+    const sessionDoc = await CheckoutSession.findById(allowlist.checkoutSessionId);
+    await convertSavedQuoteForBooking({
+      booking,
+      session: sessionDoc
+    });
+  } catch {
+    /* non-blocking */
+  }
+
+  job = await CheckoutFinalizationJob.findById(allowlist.finalizationJobId).lean();
+  if (job.recoveryStatus === 'linkage_complete') {
+    job = await advanceMultiUnitRecoveryStatus({
+      jobId: allowlist.finalizationJobId,
+      recoveryExecutionId,
+      fromStatus: 'linkage_complete',
+      toStatus: 'awaiting_confirmation_queue',
+      expectedScope,
+      now: new Date(),
+      historyEntry: {
+        at: new Date().toISOString(),
+        recoveryExecutionId,
+        actor: operator.operatorActorId,
+        phase: 'awaiting_confirmation_queue',
+        code: 'PHASE_ADVANCE',
+        summary: 'Advanced to awaiting_confirmation_queue',
+        digestPrefix: evidenceDigest.slice(0, 16),
+        bookingId: String(booking._id),
+        mode
+      }
+    });
+  }
+
+  // Ensure-only EDS
+  const sessionForEds = await CheckoutSession.findById(allowlist.checkoutSessionId).lean();
+  const bookingDoc = await Booking.findById(booking._id);
+  await ensureConfirmationEds({
+    booking: bookingDoc,
+    session: sessionForEds,
+    now: new Date()
+  });
+
+  const correlationKey = await buildCorrelationKeyForBooking(bookingDoc, sessionForEds);
+  const queued = await markCheckoutFinalizationJobConfirmationQueued({
+    finalizationJobId: allowlist.finalizationJobId,
+    bookingId: booking._id,
+    recoveryExecutionId,
+    expectedCorrelationKey: correlationKey,
+    queuedAt: new Date(),
+    expectedScope,
+    now: new Date(),
+    historyEntry: {
+      at: new Date().toISOString(),
+      recoveryExecutionId,
+      actor: operator.operatorActorId,
+      phase: 'awaiting_review_resolution',
+      code: 'CONFIRMATION_QUEUED',
+      summary: 'confirmationQueuedAt phase transition',
+      digestPrefix: evidenceDigest.slice(0, 16),
+      bookingId: String(booking._id),
+      mode
+    }
+  });
+
+  job = queued.job || (await CheckoutFinalizationJob.findById(allowlist.finalizationJobId).lean());
+  activeReviewId = String(job.activeRecoveryReviewItemId || activeReviewId);
+
+  // Final gate + resolve
+  let gate;
+  try {
+    gate = await verifyCompletionGate({
+      allowlist,
+      booking: await Booking.findById(booking._id).lean(),
+      job,
+      expectedScope
+    });
+  } catch (err) {
+    if (err?.code === 'RECOVERY_REVIEW_RESOLVED_PREMATURELY') {
+      const { review: completion } = await ensureMultiUnitPaidOrphanCompletionReview({
+        originalManualReviewItemId: allowlist.manualReviewItemId,
+        recoveryExecutionId,
+        finalizationJobId: allowlist.finalizationJobId,
+        checkoutId: allowlist.checkoutId,
+        checkoutSessionId: allowlist.checkoutSessionId,
+        paymentId: allowlist.paymentId,
+        paymentIntentId: allowlist.paymentIntentId,
+        bookingId: booking._id,
+        expectedScope
+      });
+      await transferRecoveryHoldToCompletionReview({
+        originalManualReviewItemId: allowlist.manualReviewItemId,
+        completionManualReviewItemId: completion._id,
+        recoveryExecutionId,
+        finalizationJobId: allowlist.finalizationJobId,
+        checkoutId: allowlist.checkoutId,
+        paymentIntentId: allowlist.paymentIntentId,
+        expectedScope,
+        now: new Date()
+      });
+      activeReviewId = String(completion._id);
+      job = await CheckoutFinalizationJob.findById(allowlist.finalizationJobId).lean();
+      gate = await verifyCompletionGate({
+        allowlist,
+        booking: await Booking.findById(booking._id).lean(),
+        job,
+        expectedScope
+      });
+    } else {
+      throw err;
+    }
+  }
+
+  await resolveActiveRecoveryHeldManualReview({
+    manualReviewItemId: activeReviewId,
+    recoveryExecutionId,
+    checkoutId: allowlist.checkoutId,
+    paymentIntentId: allowlist.paymentIntentId,
+    finalizationJobId: allowlist.finalizationJobId,
+    resolvedBy: 'multi_unit_paid_orphan_recovery',
+    note: 'Resolved after verified multi-unit paid-orphan recovery completion gate',
+    expectedScope,
+    now: new Date()
+  });
+
+  const completed = await markMultiUnitRecoveryComplete({
+    jobId: allowlist.finalizationJobId,
+    recoveryExecutionId,
+    expectedScope,
+    recoveredBy: operator.operatorActorId,
+    now: new Date(),
+    historyEntry: {
+      at: new Date().toISOString(),
+      recoveryExecutionId,
+      actor: operator.operatorActorId,
+      phase: 'complete',
+      code: 'RECOVERY_COMPLETE',
+      summary: 'Recovery completed',
+      digestPrefix: evidenceDigest.slice(0, 16),
+      bookingId: String(booking._id),
+      mode
+    }
+  });
+
+  return {
+    ok: true,
+    mode,
+    recoveryExecutionId,
+    recoveryStatus: 'complete',
+    bookingId: String(booking._id),
+    finalizationJobId: String(allowlist.finalizationJobId),
+    activeRecoveryReviewItemId: activeReviewId,
+    confirmationQueuedAt: completed?.confirmationQueuedAt || job.confirmationQueuedAt,
+    paymentLinked: true,
+    sessionFinalized: true,
+    refundAttempted: false,
+    chargeAttempted: false,
+    smtpAttempted: false
+  };
+}
+
+/**
+ * Public entry: dry-run or execute (initial|resume).
+ */
+async function recoverAllowlistedMultiUnitPaidOrphanCheckout({
+  mode = 'dry-run',
+  allowlist,
+  originalEvidence = null,
+  digest = null,
+  intentOverlay = null,
+  execute = false,
+  stripe = null,
+  now = new Date()
+} = {}) {
+  const row = requireAllowlist(allowlist);
+  const at = now instanceof Date ? now : new Date(now);
+
+  if (mode === 'dry-run' || (!execute && mode !== 'resume' && mode !== 'initial')) {
+    return dryRunMultiUnitPaidOrphanRecovery({ allowlist: row, now: at });
+  }
+
+  if (mode !== 'initial' && mode !== 'resume') {
+    throw createSanitizedRecoveryError('RECOVERY_RESUME_PHASE_MISMATCH', {
+      reason: 'invalid_mode'
+    });
+  }
+
+  if (!featureFlags.isMultiUnitPaidOrphanRecoveryEnabled()) {
+    throw createSanitizedRecoveryError('RECOVERY_FLAG_DISABLED');
+  }
+
+  const operator = verifyIntentOverlay(intentOverlay);
+  const { canonicalEvidence, digest: verifiedDigest } = verifyOriginalEvidence({
+    originalEvidence,
+    digest
+  });
+
+  const docs = await loadIncidentDocuments(row);
+  const liveEvidence = await buildCanonicalEvidence(row, docs, at);
+
+  if (mode === 'initial') {
+    verifyDigestAge(canonicalEvidence, at);
+    if (!materialEvidenceEqual(canonicalEvidence, {
+      ...liveEvidence,
+      dryRunGeneratedAt: canonicalEvidence.dryRunGeneratedAt,
+      // compare material fields from live against original (ignore generatedAt on live)
+      schemaVersion: SCHEMA_VERSION
+    })) {
+      // Compare without timestamps that always change
+      const strip = (e) => {
+        const copy = { ...e };
+        delete copy.dryRunGeneratedAt;
+        if (copy.targetUnit) {
+          copy.targetUnit = { ...copy.targetUnit, updatedAt: canonicalEvidence.targetUnit?.updatedAt };
+        }
+        return copy;
+      };
+      if (stableStringify(strip(canonicalEvidence)) !== stableStringify(strip({
+        ...liveEvidence,
+        dryRunGeneratedAt: canonicalEvidence.dryRunGeneratedAt
+      }))) {
+        // More precise material check
+        if (!materialEvidenceEqual(canonicalEvidence, liveEvidence)) {
+          throw createSanitizedRecoveryError('RECOVERY_HOSTILE_STATE_DRIFT', {
+            reason: 'initial_live_mismatch'
+          });
+        }
+      }
+    }
+
+    if (!liveEvidence.guestIdentityMatch) {
+      throw createSanitizedRecoveryError('RECOVERY_GUEST_IDENTITY_MISMATCH');
+    }
+    if (liveEvidence.stayFingerprintMatch === false) {
+      throw createSanitizedRecoveryError('RECOVERY_FINGERPRINT_MISMATCH');
+    }
+    if (!liveEvidence.targetUnitAvailabilityResult?.ok) {
+      throw createSanitizedRecoveryError('RECOVERY_TARGET_UNIT_UNAVAILABLE');
+    }
+    if (liveEvidence.payment.status !== 'paid' || liveEvidence.payment.reservationId) {
+      throw createSanitizedRecoveryError('RECOVERY_HOSTILE_STATE_DRIFT', {
+        reason: 'payment_state'
+      });
+    }
+    if (await findExistingRecoveryBooking(row)) {
+      throw createSanitizedRecoveryError('RECOVERY_EXISTING_BOOKING_CONFLICT');
+    }
+    if (
+      docs.job.recoveryStatus &&
+      docs.job.recoveryStatus !== 'idle' &&
+      docs.job.recoveryStatus !== 'failed'
+    ) {
+      throw createSanitizedRecoveryError('RECOVERY_RESUME_PHASE_MISMATCH', {
+        reason: 'use_resume_mode'
+      });
+    }
+  } else {
+    // resume
+    if (docs.job.recoveryStatus === 'complete') {
+      return {
+        ok: true,
+        mode: 'resume',
+        code: 'RECOVERY_ALREADY_COMPLETE',
+        recoveryExecutionId: docs.job.recoveryExecutionId,
+        recoveryStatus: 'complete',
+        bookingId: docs.job.bookingId ? String(docs.job.bookingId) : null
+      };
+    }
+    if (!INCOMPLETE_RECOVERY_STATUSES.includes(docs.job.recoveryStatus)) {
+      throw createSanitizedRecoveryError('RECOVERY_RESUME_PHASE_MISMATCH');
+    }
+    if (
+      String(docs.job.recoveryEvidenceDigest || '').toLowerCase() !==
+      verifiedDigest
+    ) {
+      throw createSanitizedRecoveryError('RECOVERY_DIGEST_MISMATCH', {
+        reason: 'stored_digest'
+      });
+    }
+    if (String(docs.job.recoveryAllowlistHash || '') !== hashAllowlistIdentity(row)) {
+      throw createSanitizedRecoveryError('RECOVERY_ALLOWLIST_MISMATCH', {
+        reason: 'stored_allowlist_hash'
+      });
+    }
+  }
+
+  const recoveryExecutionId =
+    mode === 'resume'
+      ? String(docs.job.recoveryExecutionId)
+      : crypto.randomUUID();
+
+  const expectedScope = buildExpectedScope({
+    recoveryMode: mode,
+    recoveryExecutionId,
+    allowlist: row,
+    evidenceDigest: verifiedDigest
+  });
+
+  return runInMultiUnitPaidOrphanRecoveryContext(expectedScope, async () =>
+    executeRecoveryInsideContext({
+      mode,
+      allowlist: row,
+      expectedScope,
+      recoveryExecutionId,
+      evidenceDigest: verifiedDigest,
+      allowlistHash: hashAllowlistIdentity(row),
+      operator,
+      stripe,
+      now: at
+    })
+  );
+}
+
+module.exports = {
+  SCHEMA_VERSION,
+  MAX_DIGEST_AGE_MS,
+  INTENT_PHRASE,
+  RECOVERY_LEASE_TTL_MS,
+  recoverAllowlistedMultiUnitPaidOrphanCheckout,
+  dryRunMultiUnitPaidOrphanRecovery,
+  runMultiUnitPaidOrphanRecoveryBookingFinalizeCore,
+  sha256Hex,
+  stableStringify,
+  hashAllowlistIdentity,
+  MultiUnitPaidOrphanRecoveryError
+};

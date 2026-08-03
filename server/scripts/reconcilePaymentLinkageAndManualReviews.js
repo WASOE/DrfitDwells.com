@@ -4,6 +4,9 @@ const { DEFAULT_MONGO_URI } = require('../config/dbDefaults');
 const Booking = require('../models/Booking');
 const Payment = require('../models/Payment');
 const ManualReviewItem = require('../models/ManualReviewItem');
+const {
+  buildOrdinaryManualReviewResolutionFilter
+} = require('../services/ops/ingestion/manualReviewResolutionHoldFilter');
 
 function parseArgs(argv) {
   const args = new Set(argv.slice(2));
@@ -250,7 +253,7 @@ async function run() {
 
       try {
         const updateRes = await ManualReviewItem.updateOne(
-          { _id: review._id, status: 'open' },
+          buildOrdinaryManualReviewResolutionFilter({ manualReviewItemId: review._id }),
           {
             $set: {
               status: 'resolved',

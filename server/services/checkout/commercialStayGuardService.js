@@ -5,6 +5,10 @@ const {
   CHECKOUT_SESSION_ERROR_CODES,
   CheckoutSessionError
 } = require('./checkoutSessionErrors');
+const {
+  getMultiUnitPaidOrphanRecoveryContext,
+  assertMultiUnitPaidOrphanRecoveryContext
+} = require('./multiUnitPaidOrphanRecoveryCapability');
 
 const BLOCKING_COMMERCIAL_STAY_BOOKING_STATUSES = ['pending', 'confirmed', 'in_house'];
 
@@ -146,6 +150,7 @@ async function findCommercialStayConflicts({
 
 /**
  * Throws when a blocking commercial stay conflict exists; otherwise returns { ok: true }.
+ * S0 recovery: exclusivity bypass only after branded ALS context + argument identity match.
  */
 async function assertNoCommercialStayConflict({
   commercialStayFingerprint,
@@ -153,6 +158,25 @@ async function assertNoCommercialStayConflict({
   bookingId
 }) {
   requireCommercialStayFingerprint(commercialStayFingerprint);
+
+  const store = getMultiUnitPaidOrphanRecoveryContext();
+  if (store) {
+    // Privileged bypass requires complete expectedScope matching this checkout.
+    assertMultiUnitPaidOrphanRecoveryContext({
+      recoveryMode: store.recoveryMode,
+      recoveryExecutionId: store.recoveryExecutionId,
+      checkoutId: String(checkoutId || ''),
+      checkoutSessionId: store.checkoutSessionId,
+      paymentIntentId: store.paymentIntentId,
+      paymentId: store.paymentId,
+      finalizationJobId: store.finalizationJobId,
+      manualReviewItemId: store.manualReviewItemId,
+      cabinTypeId: store.cabinTypeId,
+      expectedTargetUnitId: store.expectedTargetUnitId,
+      evidenceDigest: store.evidenceDigest
+    });
+    return { ok: true, recoveryBypass: true };
+  }
 
   const conflicts = await findCommercialStayConflicts({
     commercialStayFingerprint,

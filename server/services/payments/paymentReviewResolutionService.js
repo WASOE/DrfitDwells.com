@@ -2,6 +2,9 @@ const ManualReviewItem = require('../../models/ManualReviewItem');
 const {
   NON_PAID_PAYMENT_UNLINKED_RESOLUTION_NOTE
 } = require('./paymentLinkageRequirementPolicy');
+const {
+  withOrdinaryManualReviewHoldExclusion
+} = require('../ops/ingestion/manualReviewResolutionHoldFilter');
 
 function normalizeString(value) {
   if (value == null) return null;
@@ -40,11 +43,11 @@ async function resolveOpenPaymentUnlinkedReviews({
   }
 
   const updateResult = await ManualReviewItem.updateMany(
-    {
+    withOrdinaryManualReviewHoldExclusion({
       status: 'open',
       category: 'payment_unlinked',
       $or: orFilters
-    },
+    }),
     {
       $set: {
         status: 'resolved',

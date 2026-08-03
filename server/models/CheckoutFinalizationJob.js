@@ -41,6 +41,16 @@ const CHECKOUT_FINALIZATION_JOB_CREATED_REASONS = Object.freeze([
 
 const ACTIVE_EXECUTABLE_STATUSES = Object.freeze(['scheduled', 'claimed']);
 
+const CHECKOUT_FINALIZATION_RECOVERY_STATUSES = Object.freeze([
+  'idle',
+  'leased',
+  'linkage_complete',
+  'awaiting_confirmation_queue',
+  'awaiting_review_resolution',
+  'complete',
+  'failed'
+]);
+
 const checkoutFinalizationJobSchema = new mongoose.Schema(
   {
     checkoutId: {
@@ -160,6 +170,80 @@ const checkoutFinalizationJobSchema = new mongoose.Schema(
       type: String,
       enum: CHECKOUT_FINALIZATION_JOB_CREATED_REASONS,
       required: true
+    },
+    // S0 multi-unit paid-orphan recovery lifecycle (independent of worker status)
+    recoveryStatus: {
+      type: String,
+      enum: CHECKOUT_FINALIZATION_RECOVERY_STATUSES,
+      default: 'idle'
+    },
+    recoveryExecutionId: {
+      type: String,
+      default: null
+    },
+    recoveryEvidenceDigest: {
+      type: String,
+      default: null
+    },
+    recoveryAllowlistHash: {
+      type: String,
+      default: null
+    },
+    recoveryClaimedBy: {
+      type: String,
+      default: null
+    },
+    recoveryClaimedAt: {
+      type: Date,
+      default: null
+    },
+    recoveryVisibilityTimeoutAt: {
+      type: Date,
+      default: null
+    },
+    recoveryAttemptCount: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    recoveryLastErrorCode: {
+      type: String,
+      default: null
+    },
+    recoveryLastErrorSummary: {
+      type: String,
+      maxlength: 500,
+      default: null
+    },
+    recoveryHistory: {
+      type: [mongoose.Schema.Types.Mixed],
+      default: []
+    },
+    recoveryOperatorActorId: {
+      type: String,
+      default: null
+    },
+    recoveryOperatorIntentConfirmedAt: {
+      type: Date,
+      default: null
+    },
+    recoveryReason: {
+      type: String,
+      maxlength: 500,
+      default: null
+    },
+    activeRecoveryReviewItemId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ManualReviewItem',
+      default: null
+    },
+    recoveredAt: {
+      type: Date,
+      default: null
+    },
+    recoveredBy: {
+      type: String,
+      default: null
     }
   },
   { timestamps: true }
@@ -188,8 +272,16 @@ checkoutFinalizationJobSchema.index({ paymentIntentId: 1, createdAt: -1 });
 // 5. Optional ops filter
 checkoutFinalizationJobSchema.index({ createdReason: 1, status: 1, createdAt: -1 });
 
+// 6. S0 recovery lease / phase scans (worker continues scheduled|claimed only)
+checkoutFinalizationJobSchema.index({
+  recoveryStatus: 1,
+  recoveryVisibilityTimeoutAt: 1
+});
+checkoutFinalizationJobSchema.index({ recoveryExecutionId: 1 });
+
 module.exports = mongoose.model('CheckoutFinalizationJob', checkoutFinalizationJobSchema);
 module.exports.CHECKOUT_FINALIZATION_JOB_STATUSES = CHECKOUT_FINALIZATION_JOB_STATUSES;
 module.exports.CHECKOUT_FINALIZATION_JOB_STAGES = CHECKOUT_FINALIZATION_JOB_STAGES;
 module.exports.CHECKOUT_FINALIZATION_JOB_CREATED_REASONS = CHECKOUT_FINALIZATION_JOB_CREATED_REASONS;
 module.exports.ACTIVE_EXECUTABLE_STATUSES = ACTIVE_EXECUTABLE_STATUSES;
+module.exports.CHECKOUT_FINALIZATION_RECOVERY_STATUSES = CHECKOUT_FINALIZATION_RECOVERY_STATUSES;

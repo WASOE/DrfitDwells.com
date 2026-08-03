@@ -28,7 +28,8 @@ const {
   ensureCheckoutFinalizationJob,
   findPreservedJobForCheckout,
   reclaimStaleClaimedCheckoutFinalizationJob,
-  markCheckoutFinalizationJobSucceeded
+  markCheckoutFinalizationJobSucceeded,
+  INCOMPLETE_RECOVERY_STATUSES
 } = require('./checkoutFinalizationJobService');
 const { finalizePaidCheckout } = require('./finalizePaidCheckout');
 const { createDefaultDependencies } = require('./executeBookingFinalizeWork');
@@ -643,6 +644,23 @@ async function executeRepair(inspection, { stripe = null, now = new Date() } = {
   };
 
   if (action === 'none') return result;
+
+  // Binding §2.10: while an S0 multi-unit paid-orphan recovery is incomplete
+  // for this job, generic reconciliation must no-op its mutations (report only)
+  // and must not alter job status or lease/hold fields.
+  if (inspection.job?.id) {
+    const recoveryState = await CheckoutFinalizationJob.findById(inspection.job.id)
+      .select('recoveryStatus')
+      .lean();
+    if (recoveryState && INCOMPLETE_RECOVERY_STATUSES.includes(recoveryState.recoveryStatus)) {
+      result.details = {
+        skipped: true,
+        reason: 'incomplete_multi_unit_recovery_in_progress',
+        recoveryStatus: recoveryState.recoveryStatus
+      };
+      return result;
+    }
+  }
 
   if (action === 'open_manual_review') {
     result.details = await openUnsafeReview(inspection);

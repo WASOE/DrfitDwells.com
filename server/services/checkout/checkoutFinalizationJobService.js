@@ -14,6 +14,14 @@ const {
   CHECKOUT_FINALIZATION_JOB_STAGES
 } = require('../../models/CheckoutFinalizationJob');
 const { CHECKOUT_SESSION_ERROR_CODES } = require('./checkoutSessionErrors');
+const {
+  assertMultiUnitPaidOrphanRecoveryContext
+} = require('./multiUnitPaidOrphanRecoveryCapability');
+const {
+  createSanitizedRecoveryError
+} = require('./multiUnitPaidOrphanRecoveryErrors');
+const EmailDeliveryState = require('../../models/EmailDeliveryState');
+const { isDefinitiveSentStatus } = EmailDeliveryState;
 
 const PRESERVED_EXISTING_STATUSES = Object.freeze([
   'scheduled',
@@ -780,6 +788,697 @@ async function listCheckoutFinalizationJobsByPaymentIntentId(paymentIntentId, { 
   return rows.map(toJobDto);
 }
 
+/**
+ * S0 multi-unit paid-orphan recovery lease / phase helpers.
+ * Binding: docs/architecture/multi-unit-cabin-type-capacity-and-paid-recovery-lock.md §2
+ *
+ * These helpers own the recovery-specific lifecycle (`recoveryStatus` / lease /
+ * `recoveryHistory`) that runs independently of the normal `status`/`claimedBy`
+ * worker lease. They never move a job to normal `claimed`, never call the
+ * unmodified `markCheckoutFinalizationJobSucceeded`, and every privileged
+ * mutation requires an already-established incident-scoped ALS context
+ * (`assertMultiUnitPaidOrphanRecoveryContext`).
+ */
+
+/** Binding §2.4: fixed 15 minute recovery lease TTL; no arbitrary caller-supplied duration. */
+const RECOVERY_LEASE_TTL_MS = 15 * 60 * 1000;
+
+/** Binding §2.2/§2.7: recoveryStatus values that represent an in-flight, unfinished recovery. */
+const INCOMPLETE_RECOVERY_STATUSES = Object.freeze([
+  'leased',
+  'linkage_complete',
+  'awaiting_confirmation_queue',
+  'awaiting_review_resolution'
+]);
+
+/** Binding §2.5: bounded recoveryHistory cap. */
+const MAX_RECOVERY_HISTORY = 40;
+
+/** Binding §2.5: only these fields may ever be persisted on a recoveryHistory entry. */
+function sanitizeRecoveryHistoryEntry(entry) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return null;
+  const out = {};
+  if (entry.at != null) {
+    out.at = entry.at instanceof Date ? entry.at.toISOString() : String(entry.at);
+  }
+  if (entry.recoveryExecutionId != null) out.recoveryExecutionId = String(entry.recoveryExecutionId);
+  if (entry.actor != null) out.actor = String(entry.actor);
+  if (entry.resumedBy != null) out.resumedBy = String(entry.resumedBy);
+  if (entry.phase != null) out.phase = String(entry.phase);
+  if (entry.code != null) out.code = String(entry.code);
+  if (entry.summary != null) out.summary = truncateSummary(entry.summary, 500);
+  if (entry.digestPrefix != null) out.digestPrefix = String(entry.digestPrefix).slice(0, 16);
+  if (entry.bookingId != null) out.bookingId = String(entry.bookingId);
+  if (entry.mode != null) out.mode = String(entry.mode);
+  return out;
+}
+
+/**
+ * Append a sanitized entry to a bounded recoveryHistory array (§2.5: max 40, drop oldest).
+ * Dry-run callers must never call this (no writes on dry-run).
+ */
+function appendBoundedRecoveryHistory(history, entry) {
+  const prev = Array.isArray(history) ? history.slice() : [];
+  const sanitized = sanitizeRecoveryHistoryEntry(entry);
+  if (sanitized && Object.keys(sanitized).length > 0) {
+    prev.push(sanitized);
+  }
+  if (prev.length > MAX_RECOVERY_HISTORY) {
+    return prev.slice(-MAX_RECOVERY_HISTORY);
+  }
+  return prev;
+}
+
+/** Binding §2.3: `recoveryClaimedBy` shape — e.g. `multi-unit-paid-orphan-recovery:<recoveryExecutionId>`. */
+function buildRecoveryClaimedBy(recoveryExecutionId) {
+  return `multi-unit-paid-orphan-recovery:${recoveryExecutionId}`;
+}
+
+function normalizeRecoveryNow(now) {
+  return now instanceof Date ? now : new Date(now);
+}
+
+/**
+ * Binding §2.7 initial claim. Requires an already-established incident-scoped ALS
+ * context matching expectedScope. Does NOT set normal `claimedBy` / `status: claimed`.
+ */
+async function acquireInitialMultiUnitRecoveryLease({
+  jobId,
+  checkoutId,
+  paymentIntentId,
+  expectedLastErrorCode = 'DUPLICATE_STAY_CONFLICT',
+  recoveryExecutionId,
+  evidenceDigest,
+  allowlistHash = null,
+  operatorActorId = null,
+  operatorIntentConfirmedAt = null,
+  recoveryReason = null,
+  expectedScope,
+  now = new Date(),
+  historyEntry = null
+} = {}) {
+  assertMultiUnitPaidOrphanRecoveryContext(expectedScope);
+
+  if (!jobId || !checkoutId || !paymentIntentId || !recoveryExecutionId || !evidenceDigest) {
+    throw createSanitizedRecoveryError('RECOVERY_SCOPE_MISMATCH', {
+      reason: 'missing_required_initial_lease_fields'
+    });
+  }
+
+  const at = normalizeRecoveryNow(now);
+  const current = await CheckoutFinalizationJob.findById(jobId).select('recoveryHistory').lean();
+  const history = appendBoundedRecoveryHistory(current?.recoveryHistory, {
+    ...(historyEntry || {}),
+    at: historyEntry?.at || at,
+    recoveryExecutionId,
+    phase: historyEntry?.phase || 'leased',
+    mode: 'initial'
+  });
+
+  const updated = await CheckoutFinalizationJob.findOneAndUpdate(
+    {
+      _id: jobId,
+      checkoutId: String(checkoutId).trim(),
+      paymentIntentId: String(paymentIntentId).trim(),
+      status: 'failed_permanent',
+      lastErrorCode: expectedLastErrorCode,
+      $and: [
+        {
+          $or: [
+            { recoveryStatus: { $exists: false } },
+            { recoveryStatus: null },
+            { recoveryStatus: 'idle' },
+            { recoveryStatus: 'failed' }
+          ]
+        },
+        {
+          // No foreign incomplete unexpired lease: any recoveryVisibilityTimeoutAt
+          // left over from a prior execution must already be expired (or absent).
+          $or: [
+            { recoveryVisibilityTimeoutAt: { $exists: false } },
+            { recoveryVisibilityTimeoutAt: null },
+            { recoveryVisibilityTimeoutAt: { $lte: at } }
+          ]
+        }
+      ]
+    },
+    {
+      $set: {
+        recoveryStatus: 'leased',
+        recoveryExecutionId: String(recoveryExecutionId),
+        recoveryEvidenceDigest: String(evidenceDigest),
+        recoveryAllowlistHash: allowlistHash ? String(allowlistHash) : null,
+        recoveryClaimedBy: buildRecoveryClaimedBy(recoveryExecutionId),
+        recoveryClaimedAt: at,
+        recoveryVisibilityTimeoutAt: new Date(at.getTime() + RECOVERY_LEASE_TTL_MS),
+        recoveryOperatorActorId: operatorActorId ? String(operatorActorId) : null,
+        recoveryOperatorIntentConfirmedAt: operatorIntentConfirmedAt || null,
+        recoveryReason: recoveryReason ? truncateSummary(recoveryReason, 500) : null,
+        recoveryLastErrorCode: null,
+        recoveryLastErrorSummary: null,
+        recoveryHistory: history
+      },
+      $inc: { recoveryAttemptCount: 1 }
+    },
+    { new: true }
+  );
+
+  if (!updated) {
+    throw createSanitizedRecoveryError('RECOVERY_LEASE_CONFLICT', {
+      jobId: String(jobId),
+      reason: 'initial_claim_filter_mismatch'
+    });
+  }
+
+  return updated;
+}
+
+/**
+ * Binding §2.4/§2.7 resume reclaim. Retains the SAME recoveryExecutionId; only
+ * `recoveryClaimedBy` and lease timestamps change. Matches whether the lease is
+ * still owned-and-unexpired (idempotent renew) or has expired (resume reclaim).
+ * Normal job `status` may be `failed_permanent` OR `succeeded`.
+ */
+async function reclaimMultiUnitRecoveryLease({
+  jobId,
+  checkoutId = null,
+  paymentIntentId = null,
+  recoveryExecutionId,
+  evidenceDigest,
+  expectedScope,
+  now = new Date(),
+  resumedBy = null,
+  historyEntry = null
+} = {}) {
+  assertMultiUnitPaidOrphanRecoveryContext(expectedScope);
+
+  if (!jobId || !recoveryExecutionId || !evidenceDigest) {
+    throw createSanitizedRecoveryError('RECOVERY_SCOPE_MISMATCH', {
+      reason: 'missing_required_reclaim_fields'
+    });
+  }
+
+  const at = normalizeRecoveryNow(now);
+  const current = await CheckoutFinalizationJob.findById(jobId).select('recoveryHistory').lean();
+  const history = appendBoundedRecoveryHistory(current?.recoveryHistory, {
+    ...(historyEntry || {}),
+    at: historyEntry?.at || at,
+    recoveryExecutionId,
+    resumedBy: resumedBy || historyEntry?.resumedBy || null,
+    phase: historyEntry?.phase || 'reclaim',
+    mode: 'resume'
+  });
+
+  const filter = {
+    _id: jobId,
+    status: { $in: ['failed_permanent', 'succeeded'] },
+    recoveryExecutionId: String(recoveryExecutionId),
+    recoveryEvidenceDigest: String(evidenceDigest),
+    recoveryStatus: { $in: [...INCOMPLETE_RECOVERY_STATUSES] },
+    // Owned-and-unexpired (renew) OR expired (resume reclaim). A missing/null
+    // visibilityTimeoutAt on an "incomplete" recoveryStatus is a hostile/corrupt
+    // state and must fail closed (matches neither branch).
+    $or: [{ recoveryVisibilityTimeoutAt: { $gt: at } }, { recoveryVisibilityTimeoutAt: { $lt: at } }]
+  };
+  if (checkoutId) filter.checkoutId = String(checkoutId).trim();
+  if (paymentIntentId) filter.paymentIntentId = String(paymentIntentId).trim();
+
+  const updated = await CheckoutFinalizationJob.findOneAndUpdate(
+    filter,
+    {
+      $set: {
+        recoveryClaimedBy: buildRecoveryClaimedBy(recoveryExecutionId),
+        recoveryClaimedAt: at,
+        recoveryVisibilityTimeoutAt: new Date(at.getTime() + RECOVERY_LEASE_TTL_MS),
+        recoveryHistory: history
+      },
+      $inc: { recoveryAttemptCount: 1 }
+    },
+    { new: true }
+  );
+
+  if (!updated) {
+    throw createSanitizedRecoveryError('RECOVERY_JOB_LEASE_CONFLICT', {
+      jobId: String(jobId),
+      reason: 'reclaim_filter_mismatch'
+    });
+  }
+
+  return updated;
+}
+
+/**
+ * Binding §2.4: renew the recovery lease before each major mutation phase.
+ * Matches exact job, exact recoveryExecutionId, exact current recoveryStatus,
+ * and an unexpired lease owned by this execution.
+ */
+async function renewMultiUnitRecoveryLease({
+  jobId,
+  recoveryExecutionId,
+  expectedRecoveryStatus,
+  expectedScope,
+  now = new Date()
+} = {}) {
+  assertMultiUnitPaidOrphanRecoveryContext(expectedScope);
+
+  if (!jobId || !recoveryExecutionId || !expectedRecoveryStatus) {
+    throw createSanitizedRecoveryError('RECOVERY_SCOPE_MISMATCH', {
+      reason: 'missing_required_renew_fields'
+    });
+  }
+
+  const at = normalizeRecoveryNow(now);
+  const updated = await CheckoutFinalizationJob.findOneAndUpdate(
+    {
+      _id: jobId,
+      recoveryExecutionId: String(recoveryExecutionId),
+      recoveryStatus: expectedRecoveryStatus,
+      recoveryClaimedBy: buildRecoveryClaimedBy(recoveryExecutionId),
+      recoveryVisibilityTimeoutAt: { $gt: at }
+    },
+    {
+      $set: {
+        recoveryVisibilityTimeoutAt: new Date(at.getTime() + RECOVERY_LEASE_TTL_MS)
+      }
+    },
+    { new: true }
+  );
+
+  if (!updated) {
+    throw createSanitizedRecoveryError('RECOVERY_JOB_LEASE_CONFLICT', {
+      jobId: String(jobId),
+      reason: 'renew_filter_mismatch'
+    });
+  }
+
+  return updated;
+}
+
+/**
+ * Binding §2.1/§2.8: recovery-specific success transition. This is the ONLY way
+ * S0 recovery may move the normal job `status` from `failed_permanent` to
+ * `succeeded` — never via the unmodified `markCheckoutFinalizationJobSucceeded`.
+ * Recovery ownership / lease are NOT released here; `recoveryStatus` only
+ * advances to `linkage_complete` and `confirmationQueuedAt` stays untouched.
+ */
+async function markCheckoutFinalizationJobSucceededFromMultiUnitRecovery({
+  jobId,
+  bookingId,
+  recoveryExecutionId,
+  expectedScope,
+  now = new Date(),
+  paymentLinkedAt = null,
+  sessionFinalizedAt = null,
+  quoteConvertedAt = null,
+  historyEntry = null
+} = {}) {
+  assertMultiUnitPaidOrphanRecoveryContext(expectedScope);
+
+  if (!jobId || !bookingId || !recoveryExecutionId) {
+    throw createSanitizedRecoveryError('RECOVERY_SCOPE_MISMATCH', {
+      reason: 'missing_required_recovery_success_fields'
+    });
+  }
+
+  const at = normalizeRecoveryNow(now);
+  const current = await CheckoutFinalizationJob.findById(jobId);
+  if (!current) {
+    throw createSanitizedRecoveryError('RECOVERY_JOB_LEASE_CONFLICT', {
+      jobId: String(jobId),
+      reason: 'job_not_found'
+    });
+  }
+
+  const history = appendBoundedRecoveryHistory(current.recoveryHistory, {
+    ...(historyEntry || {}),
+    at: historyEntry?.at || at,
+    recoveryExecutionId,
+    bookingId: String(bookingId),
+    phase: historyEntry?.phase || 'linkage_complete'
+  });
+
+  // Preserve the original permanent-failure evidence rather than erasing it.
+  const priorPermanentFailure = {
+    errorCode: current.lastErrorCode || null,
+    errorSummary: current.lastErrorSummary || null,
+    stage: current.stage || null,
+    lastFailedAt: current.lastFailedAt || null
+  };
+  const safeDetails = {
+    ...(current.safeDetails && typeof current.safeDetails === 'object' && !Array.isArray(current.safeDetails)
+      ? current.safeDetails
+      : {}),
+    priorPermanentFailure
+  };
+
+  const updated = await CheckoutFinalizationJob.findOneAndUpdate(
+    {
+      _id: jobId,
+      status: 'failed_permanent',
+      recoveryStatus: 'leased',
+      recoveryExecutionId: String(recoveryExecutionId),
+      recoveryClaimedBy: buildRecoveryClaimedBy(recoveryExecutionId),
+      recoveryVisibilityTimeoutAt: { $gt: at }
+    },
+    {
+      $set: {
+        status: 'succeeded',
+        stage: 'succeeded',
+        bookingId,
+        paymentLinkedAt: paymentLinkedAt || at,
+        sessionFinalizedAt: sessionFinalizedAt || at,
+        quoteConvertedAt: quoteConvertedAt || current.quoteConvertedAt || null,
+        claimedBy: null,
+        claimedAt: null,
+        visibilityTimeoutAt: null,
+        lastErrorCode: null,
+        lastErrorSummary: null,
+        safeDetails,
+        // confirmationQueuedAt intentionally left untouched (may remain null).
+        recoveryStatus: 'linkage_complete',
+        recoveryClaimedAt: at,
+        recoveryVisibilityTimeoutAt: new Date(at.getTime() + RECOVERY_LEASE_TTL_MS),
+        recoveryHistory: history
+      }
+    },
+    { new: true }
+  );
+
+  if (!updated) {
+    throw createSanitizedRecoveryError('RECOVERY_JOB_LEASE_CONFLICT', {
+      jobId: String(jobId),
+      reason: 'success_transition_filter_mismatch'
+    });
+  }
+
+  return updated;
+}
+
+/**
+ * Generic atomic recovery phase transition (§2.2 progression) with lease renewal.
+ * `fromStatus` must be one of the incomplete statuses; `extraSet` allows narrow
+ * additional fields (e.g. `quoteConvertedAt`) for a specific phase advance.
+ */
+async function advanceMultiUnitRecoveryStatus({
+  jobId,
+  recoveryExecutionId,
+  fromStatus,
+  toStatus,
+  expectedScope,
+  now = new Date(),
+  historyEntry = null,
+  extraSet = null
+} = {}) {
+  assertMultiUnitPaidOrphanRecoveryContext(expectedScope);
+
+  if (!jobId || !recoveryExecutionId || !fromStatus || !toStatus) {
+    throw createSanitizedRecoveryError('RECOVERY_SCOPE_MISMATCH', {
+      reason: 'missing_required_advance_fields'
+    });
+  }
+  if (!INCOMPLETE_RECOVERY_STATUSES.includes(fromStatus)) {
+    throw createSanitizedRecoveryError('RECOVERY_RESUME_PHASE_MISMATCH', {
+      reason: 'invalid_from_status'
+    });
+  }
+
+  const at = normalizeRecoveryNow(now);
+  const current = await CheckoutFinalizationJob.findById(jobId).select('recoveryHistory').lean();
+  const history = appendBoundedRecoveryHistory(current?.recoveryHistory, {
+    ...(historyEntry || {}),
+    at: historyEntry?.at || at,
+    recoveryExecutionId,
+    phase: historyEntry?.phase || toStatus
+  });
+
+  const set = {
+    recoveryStatus: toStatus,
+    recoveryClaimedBy: buildRecoveryClaimedBy(recoveryExecutionId),
+    recoveryClaimedAt: at,
+    recoveryVisibilityTimeoutAt: new Date(at.getTime() + RECOVERY_LEASE_TTL_MS),
+    recoveryHistory: history
+  };
+  if (extraSet && typeof extraSet === 'object' && !Array.isArray(extraSet)) {
+    Object.assign(set, extraSet);
+  }
+
+  const updated = await CheckoutFinalizationJob.findOneAndUpdate(
+    {
+      _id: jobId,
+      recoveryExecutionId: String(recoveryExecutionId),
+      recoveryStatus: fromStatus,
+      recoveryClaimedBy: buildRecoveryClaimedBy(recoveryExecutionId),
+      recoveryVisibilityTimeoutAt: { $gt: at }
+    },
+    { $set: set },
+    { new: true }
+  );
+
+  if (!updated) {
+    throw createSanitizedRecoveryError('RECOVERY_JOB_LEASE_CONFLICT', {
+      jobId: String(jobId),
+      reason: 'advance_filter_mismatch'
+    });
+  }
+
+  return updated;
+}
+
+/**
+ * Binding §2.9: sole S0 owner of `CheckoutFinalizationJob.confirmationQueuedAt`.
+ * Prerequisite (before any job mutation): the EmailDeliveryState for
+ * `expectedCorrelationKey` must be `pending` or truthfully succeeded
+ * (`isDefinitiveSentStatus`). Absent / logged-only / unavailable / contradictory
+ * evidence is rejected with `RECOVERY_CONFIRMATION_STATE_INVALID`.
+ *
+ * The job transition is a single atomic update-pipeline `findOneAndUpdate` that
+ * preserves-or-sets `confirmationQueuedAt` (never overwritten once set) and
+ * advances `recoveryStatus` to `awaiting_review_resolution`. It never sets
+ * `confirmationSentAt`. On zero match, rereads and returns `alreadyAdvanced: true`
+ * when a concurrent finisher already completed the same transition.
+ */
+async function markCheckoutFinalizationJobConfirmationQueued({
+  finalizationJobId,
+  bookingId,
+  recoveryExecutionId,
+  expectedCorrelationKey,
+  queuedAt = null,
+  expectedScope,
+  now = new Date(),
+  historyEntry = null
+} = {}) {
+  assertMultiUnitPaidOrphanRecoveryContext(expectedScope);
+
+  if (!finalizationJobId || !bookingId || !recoveryExecutionId || !expectedCorrelationKey) {
+    throw createSanitizedRecoveryError('RECOVERY_SCOPE_MISMATCH', {
+      reason: 'missing_required_confirmation_queue_fields'
+    });
+  }
+
+  const at = normalizeRecoveryNow(now);
+  const queuedAtValue = queuedAt instanceof Date ? queuedAt : queuedAt ? new Date(queuedAt) : at;
+
+  // Prerequisite EDS read (§2.9 "Prerequisite read"): must be pending or
+  // truthfully succeeded. Missing / ambiguous / failed / sending is rejected.
+  const eds = await EmailDeliveryState.findOne({
+    correlationKey: String(expectedCorrelationKey)
+  }).lean();
+  const edsValid =
+    Boolean(eds) && (eds.latestStatus === 'pending' || isDefinitiveSentStatus(eds.latestStatus));
+  if (!edsValid) {
+    throw createSanitizedRecoveryError('RECOVERY_CONFIRMATION_STATE_INVALID', {
+      reason: eds ? `eds_status_${eds.latestStatus}` : 'eds_missing'
+    });
+  }
+
+  const claimedBy = buildRecoveryClaimedBy(recoveryExecutionId);
+  const current = await CheckoutFinalizationJob.findById(finalizationJobId);
+  if (!current) {
+    throw createSanitizedRecoveryError('RECOVERY_JOB_LEASE_CONFLICT', {
+      jobId: String(finalizationJobId),
+      reason: 'job_not_found'
+    });
+  }
+
+  const history = appendBoundedRecoveryHistory(current.recoveryHistory, {
+    ...(historyEntry || {}),
+    at: historyEntry?.at || at,
+    recoveryExecutionId,
+    bookingId: String(bookingId),
+    phase: historyEntry?.phase || 'awaiting_review_resolution'
+  });
+
+  const updated = await CheckoutFinalizationJob.findOneAndUpdate(
+    {
+      _id: finalizationJobId,
+      status: 'succeeded',
+      bookingId,
+      recoveryExecutionId: String(recoveryExecutionId),
+      recoveryStatus: 'awaiting_confirmation_queue',
+      recoveryClaimedBy: claimedBy,
+      recoveryVisibilityTimeoutAt: { $gt: at }
+    },
+    [
+      {
+        $set: {
+          confirmationQueuedAt: { $ifNull: ['$confirmationQueuedAt', queuedAtValue] },
+          recoveryStatus: 'awaiting_review_resolution',
+          recoveryClaimedAt: at,
+          recoveryVisibilityTimeoutAt: new Date(at.getTime() + RECOVERY_LEASE_TTL_MS),
+          recoveryHistory: history
+        }
+      }
+    ],
+    { new: true }
+  );
+
+  if (updated) {
+    return { job: updated, alreadyAdvanced: false };
+  }
+
+  const reread = await CheckoutFinalizationJob.findById(finalizationJobId).lean();
+  if (
+    reread &&
+    reread.recoveryStatus === 'awaiting_review_resolution' &&
+    String(reread.recoveryExecutionId || '') === String(recoveryExecutionId) &&
+    reread.bookingId &&
+    String(reread.bookingId) === String(bookingId) &&
+    reread.confirmationQueuedAt
+  ) {
+    return { job: reread, alreadyAdvanced: true };
+  }
+
+  throw createSanitizedRecoveryError('RECOVERY_JOB_LEASE_CONFLICT', {
+    jobId: String(finalizationJobId),
+    reason: 'confirmation_queue_filter_mismatch'
+  });
+}
+
+/**
+ * Binding §2.2 `complete` phase: recovery-only final transition. Releases the
+ * recovery lease. Does not touch normal `status`/`stage` (already `succeeded`).
+ */
+async function markMultiUnitRecoveryComplete({
+  jobId,
+  recoveryExecutionId,
+  expectedScope,
+  recoveredBy,
+  now = new Date(),
+  historyEntry = null
+} = {}) {
+  assertMultiUnitPaidOrphanRecoveryContext(expectedScope);
+
+  if (!jobId || !recoveryExecutionId || !recoveredBy) {
+    throw createSanitizedRecoveryError('RECOVERY_SCOPE_MISMATCH', {
+      reason: 'missing_required_complete_fields'
+    });
+  }
+
+  const at = normalizeRecoveryNow(now);
+  const claimedBy = buildRecoveryClaimedBy(recoveryExecutionId);
+  const current = await CheckoutFinalizationJob.findById(jobId).select('recoveryHistory').lean();
+  const history = appendBoundedRecoveryHistory(current?.recoveryHistory, {
+    ...(historyEntry || {}),
+    at: historyEntry?.at || at,
+    recoveryExecutionId,
+    phase: historyEntry?.phase || 'complete'
+  });
+
+  const updated = await CheckoutFinalizationJob.findOneAndUpdate(
+    {
+      _id: jobId,
+      recoveryExecutionId: String(recoveryExecutionId),
+      recoveryStatus: 'awaiting_review_resolution',
+      recoveryClaimedBy: claimedBy,
+      recoveryVisibilityTimeoutAt: { $gt: at }
+    },
+    {
+      $set: {
+        recoveryStatus: 'complete',
+        recoveredAt: at,
+        recoveredBy: String(recoveredBy),
+        recoveryClaimedBy: null,
+        recoveryClaimedAt: null,
+        recoveryVisibilityTimeoutAt: null,
+        recoveryHistory: history
+      }
+    },
+    { new: true }
+  );
+
+  if (!updated) {
+    throw createSanitizedRecoveryError('RECOVERY_JOB_LEASE_CONFLICT', {
+      jobId: String(jobId),
+      reason: 'complete_filter_mismatch'
+    });
+  }
+
+  return updated;
+}
+
+/**
+ * Terminal / operator-paused recovery condition with preserved evidence.
+ * Releases the recovery lease but leaves MRI hold fields untouched — the
+ * resolution hold lives on ManualReviewItem, not on this job.
+ */
+async function markMultiUnitRecoveryFailed({
+  jobId,
+  recoveryExecutionId,
+  errorCode,
+  errorSummary,
+  expectedScope,
+  now = new Date(),
+  historyEntry = null
+} = {}) {
+  assertMultiUnitPaidOrphanRecoveryContext(expectedScope);
+
+  if (!jobId || !recoveryExecutionId) {
+    throw createSanitizedRecoveryError('RECOVERY_SCOPE_MISMATCH', {
+      reason: 'missing_required_failed_fields'
+    });
+  }
+
+  const at = normalizeRecoveryNow(now);
+  const current = await CheckoutFinalizationJob.findById(jobId).select('recoveryHistory').lean();
+  const history = appendBoundedRecoveryHistory(current?.recoveryHistory, {
+    ...(historyEntry || {}),
+    at: historyEntry?.at || at,
+    recoveryExecutionId,
+    code: errorCode || historyEntry?.code || null,
+    summary: errorSummary || historyEntry?.summary || null,
+    phase: historyEntry?.phase || 'failed'
+  });
+
+  const updated = await CheckoutFinalizationJob.findOneAndUpdate(
+    {
+      _id: jobId,
+      recoveryExecutionId: String(recoveryExecutionId),
+      recoveryStatus: { $in: [...INCOMPLETE_RECOVERY_STATUSES] }
+    },
+    {
+      $set: {
+        recoveryStatus: 'failed',
+        recoveryLastErrorCode: errorCode ? String(errorCode) : null,
+        recoveryLastErrorSummary: truncateSummary(errorSummary || errorCode || 'recovery failed', 500),
+        recoveryClaimedBy: null,
+        recoveryClaimedAt: null,
+        recoveryVisibilityTimeoutAt: null,
+        recoveryHistory: history
+      }
+    },
+    { new: true }
+  );
+
+  if (!updated) {
+    throw createSanitizedRecoveryError('RECOVERY_JOB_LEASE_CONFLICT', {
+      jobId: String(jobId),
+      reason: 'mark_failed_filter_mismatch'
+    });
+  }
+
+  return updated;
+}
+
 module.exports = {
   PRESERVED_EXISTING_STATUSES,
   ACTIVE_EXECUTABLE_STATUSES,
@@ -806,5 +1505,19 @@ module.exports = {
   getCheckoutFinalizationJobById,
   getCheckoutFinalizationJobByCheckoutId,
   listCheckoutFinalizationJobsByPaymentIntentId,
-  toJobDto
+  toJobDto,
+  // S0 multi-unit paid-orphan recovery (binding §2)
+  RECOVERY_LEASE_TTL_MS,
+  INCOMPLETE_RECOVERY_STATUSES,
+  MAX_RECOVERY_HISTORY,
+  appendBoundedRecoveryHistory,
+  buildRecoveryClaimedBy,
+  acquireInitialMultiUnitRecoveryLease,
+  reclaimMultiUnitRecoveryLease,
+  renewMultiUnitRecoveryLease,
+  markCheckoutFinalizationJobSucceededFromMultiUnitRecovery,
+  advanceMultiUnitRecoveryStatus,
+  markCheckoutFinalizationJobConfirmationQueued,
+  markMultiUnitRecoveryComplete,
+  markMultiUnitRecoveryFailed
 };

@@ -1,5 +1,10 @@
 const mongoose = require('mongoose');
 const ManualReviewItem = require('../../../models/ManualReviewItem');
+const {
+  buildOrdinaryManualReviewResolutionFilter,
+  withOrdinaryManualReviewHoldExclusion,
+  classifyOrdinaryResolutionZeroMatch
+} = require('./manualReviewResolutionHoldFilter');
 
 async function openManualReviewItem({
   category,
@@ -137,17 +142,20 @@ async function resolveEmailDeliveryManualReviews({
     query.category = { $in: categoryFilter };
   }
 
-  const updateResult = await ManualReviewItem.updateMany(query, {
-    $set: {
-      status: 'resolved',
-      resolution: {
-        resolvedAt: now,
-        resolvedBy: resolvedBy || 'system',
-        note: note || 'Auto-resolved: email delivered successfully.'
-      },
-      updatedAt: now
+  const updateResult = await ManualReviewItem.updateMany(
+    withOrdinaryManualReviewHoldExclusion(query),
+    {
+      $set: {
+        status: 'resolved',
+        resolution: {
+          resolvedAt: now,
+          resolvedBy: resolvedBy || 'system',
+          note: note || 'Auto-resolved: email delivered successfully.'
+        },
+        updatedAt: now
+      }
     }
-  });
+  );
 
   return {
     attempted: true,
@@ -169,12 +177,12 @@ async function resolveSmtpHealthManualReviews({
 
   const now = new Date();
   const updateResult = await ManualReviewItem.updateMany(
-    {
+    withOrdinaryManualReviewHoldExclusion({
       status: 'open',
       category: categoryValue,
       entityType: 'SmtpHealth',
       entityId: entityIdValue
-    },
+    }),
     {
       $set: {
         status: 'resolved',
@@ -282,7 +290,7 @@ async function resolveManualReviewItem({ manualReviewItemId, resolvedBy, note })
     resolvedBy != null && String(resolvedBy).trim() ? String(resolvedBy).trim() : 'ops_user';
 
   const updated = await ManualReviewItem.findOneAndUpdate(
-    { _id: manualReviewItemId, status: 'open' },
+    buildOrdinaryManualReviewResolutionFilter({ manualReviewItemId }),
     {
       $set: {
         status: 'resolved',
@@ -299,11 +307,18 @@ async function resolveManualReviewItem({ manualReviewItemId, resolvedBy, note })
 
   if (!updated) {
     const current = await ManualReviewItem.findById(manualReviewItemId).lean();
-    if (current?.status === 'resolved') {
+    const classification = classifyOrdinaryResolutionZeroMatch(current);
+    if (classification === 'already_resolved') {
       return {
         status: 'already_resolved',
         item: mapManualReviewItemResponse(current)
       };
+    }
+    if (classification === 'held') {
+      const err = new Error('Manual review item has an active recovery resolution hold');
+      err.code = 'MANUAL_REVIEW_RESOLUTION_HELD';
+      err.status = 409;
+      throw err;
     }
     const err = new Error('Manual review item is not open');
     err.code = 'MANUAL_REVIEW_NOT_OPEN';

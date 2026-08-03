@@ -1,0 +1,13 @@
+{
+  "checkoutId": "chk_example_multi_unit_orphan_001",
+  "checkoutSessionId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+  "paymentIntentId": "pi_example_multi_unit_orphan_001",
+  "paymentId": "bbbbbbbbbbbbbbbbbbbbbbbb",
+  "finalizationJobId": "cccccccccccccccccccccccc",
+  "manualReviewItemId": "dddddddddddddddddddddddd",
+  "cabinTypeId": "eeeeeeeeeeeeeeeeeeeeeeee",
+  "expectedTargetUnitId": "ffffffffffffffffffffffff",
+  "firstBookingId": "111111111111111111111111",
+  "expectedFailureCode": "DUPLICATE_STAY_CONFLICT",
+  "reason": "example-only fake identifiers — never use production IDs in fixtures"
+}

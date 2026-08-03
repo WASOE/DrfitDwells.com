@@ -196,6 +196,31 @@ const featureFlags = {
       process.env.BOOKING_CONFIRMATION_DELIVERY_WORKER_ENABLED,
       false
     );
+  },
+
+  /**
+   * S0: allowlisted multi-unit paid-orphan recovery execute gate.
+   * Default OFF. Flag alone grants no privilege — still requires allowlist,
+   * dry-run digest, intent phrase, operator evidence, lease, and ALS context.
+   * Logs Boolean state only; no incident identifiers.
+   */
+  isMultiUnitPaidOrphanRecoveryEnabled() {
+    return this._parseBooleanWithDefault(
+      process.env.MULTI_UNIT_PAID_ORPHAN_RECOVERY,
+      false
+    );
+  },
+
+  /**
+   * S1: capacity-aware same-cabinType commercial stay guard.
+   * Default OFF. Must remain false during S0 incident recovery.
+   * Not implemented in S0.
+   */
+  isMultiUnitCapacityStayGuardEnabled() {
+    return this._parseBooleanWithDefault(
+      process.env.MULTI_UNIT_CAPACITY_STAY_GUARD,
+      false
+    );
   }
 };
 

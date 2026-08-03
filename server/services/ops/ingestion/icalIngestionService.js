@@ -5,6 +5,9 @@ const AvailabilityBlock = require('../../../models/AvailabilityBlock');
 const ChannelSyncEvent = require('../../../models/ChannelSyncEvent');
 const CabinChannelSyncState = require('../../../models/CabinChannelSyncState');
 const ManualReviewItem = require('../../../models/ManualReviewItem');
+const {
+  withOrdinaryManualReviewHoldExclusion
+} = require('./manualReviewResolutionHoldFilter');
 const Cabin = require('../../../models/Cabin');
 const Unit = require('../../../models/Unit');
 const { findParentCabinForCabinType } = require('../../publicAvailabilityService');
@@ -215,7 +218,7 @@ async function resolveRecoverableSyncManualReviews({
     });
   }
 
-  return ManualReviewItem.updateMany(query, {
+  return ManualReviewItem.updateMany(withOrdinaryManualReviewHoldExclusion(query), {
     $set: {
       status: 'resolved',
       updatedAt: resolvedAt,
