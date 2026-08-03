@@ -5,13 +5,14 @@
 **Remediated:** 2026-08-03 (post REJECTED audit)
 **Clarified:** 2026-08-03 (capability module, digest freshness, confirmationQueuedAt split, S1 grouping, paid-overlap readers, disputed capacity, lease indexes)
 **Ownership-restricted:** 2026-08-03 (AsyncLocalStorage recovery context; runner import ownership; paid-overlap guest-stay predicates; dry-run envelope timestamp equality)
+**Resume-scoped:** 2026-08-03 (incident-scoped ALS; real Node ALS semantics; initial/resume modes; recoveryStatus through EDS/MRI; durable MRI hold; 15-minute lease)
 **Scope:** Immediate allowlisted recovery of one paid multi-unit orphan (R0 / S0), permanent capacity-aware same-cabinType booking behavior (R1 / S1), deferred quantity-two UX (R2 / S2)
 **Branch basis:** `origin/master`
 **Out of scope:** Confirmation-worker Batches 1–3, PM2 confirmation-worker process, automatic refunds, public quantity=2 checkout
 
 This document is the single source of truth for the multi-unit cabinType capacity and paid-orphan recovery sidequest. Application code must not diverge from these decisions without an explicit architecture revision.
 
-**Audit trail:** Prior `REJECTED` findings addressed; commit `ce18bd5` addressed digest/confirmationQueuedAt/grouping; this revision addresses `APPROVED AFTER MINOR` for public `runWith` minting, paid-overlap guest-stay coverage, and dry-run envelope timestamp binding.
+**Audit trail:** Prior findings addressed through `35535ef`; this revision remediates `REJECTED — FURTHER ARCHITECTURE REMEDIATION REQUIRED` for ALS semantics, incident scope, resume lifecycle, lease ownership through EDS/MRI, and concurrent MRI hold.
 
 ---
 
@@ -85,23 +86,25 @@ Confirmation-worker Batches 1–3 remain a separate lock.
   - static import restrictions
   - source-boundary tests
   - code review
-- **No** database field, HTTP field, Stripe metadata, CLI argument, webhook payload, job payload, CheckoutSession field, CheckoutFinalizationJob field, Payment field, or other persisted value is treated as an authorization capability.
+- Source-boundary scanning protects the trusted repository against **accidental privilege widening**. It does **not** claim to stop malicious committed code.
+- **No** database field, HTTP field, Stripe metadata, CLI argument, webhook payload, job payload, CheckoutSession field, CheckoutFinalizationJob field, Payment field, ManualReviewItem field, or other persisted value is treated as an authorization capability. Persisted incident identifiers and MRI holds are **scope and coordination** evidence only.
 
 ### 1.1 Module ownership
 
 | Layer | Path |
 |-------|------|
-| CLI | `server/scripts/recoverMultiUnitPaidOrphanCheckout.js` — calls recovery service only; **must not** import the capability module |
+| CLI | `server/scripts/recoverMultiUnitPaidOrphanCheckout.js` — calls recovery service only; **must not** import any capability-module API |
 | Recovery service | `server/services/checkout/multiUnitPaidOrphanRecoveryService.js` → **`recoverAllowlistedMultiUnitPaidOrphanCheckout(...)`** — **sole** importer of `runInMultiUnitPaidOrphanRecoveryContext` |
 | Private capability module | `server/services/checkout/multiUnitPaidOrphanRecoveryCapability.js` |
-| Commercial guard | `commercialStayGuardService.js` — exclusivity bypass only after `assertMultiUnitPaidOrphanRecoveryContext()` |
-| Exact-unit injection | Private recovery path sets `finalizeContext.assignedUnitId` only after `assertMultiUnitPaidOrphanRecoveryContext()` |
-| Job lease / success / confirmationQueuedAt | Recovery-specific helpers in `checkoutFinalizationJobService.js` — assert context before privileged lease/complete |
-| Payment link MRI suppress | `paymentLinkingService.js` — asserts active recovery context before suppress |
-| Side effects | `checkoutFinalizeSideEffects.js` — `send:false` + MRI suppress after context assert |
+| Recovery errors | `server/services/checkout/multiUnitPaidOrphanRecoveryErrors.js` |
+| Commercial guard | `commercialStayGuardService.js` — exclusivity bypass only after branded context + argument identity match |
+| Exact-unit injection | Private recovery path sets `finalizeContext.assignedUnitId` only after context + identity assert |
+| Job lease / phase / confirmationQueuedAt | Recovery-specific helpers in `checkoutFinalizationJobService.js` |
+| Payment link MRI suppress / hold | Central ManualReview resolution + payment-linking — ALS + durable hold |
+| Side effects | `checkoutFinalizeSideEffects.js` — `send:false`; MRI resolve via hold-aware service |
 | Confirmation | `ensurePendingConfirmationDelivery` / `processBookingConfirmationDelivery({ send: false })` |
 
-### 1.2 Private capability module (binding AsyncLocalStorage context)
+### 1.2 Private capability module (incident-scoped AsyncLocalStorage)
 
 File: `server/services/checkout/multiUnitPaidOrphanRecoveryCapability.js`
 
@@ -109,157 +112,229 @@ File: `server/services/checkout/multiUnitPaidOrphanRecoveryCapability.js`
 const { AsyncLocalStorage } = require('async_hooks');
 
 // Module-private — NEVER exported, returned, thrown, logged, serialized, or persisted
-const CAPABILITY = Symbol('multiUnitPaidOrphanRecoveryCapability');
+const BRAND = Symbol('multiUnitPaidOrphanRecoveryCapability');
 const recoveryContext = new AsyncLocalStorage();
 
-function runInMultiUnitPaidOrphanRecoveryContext(callback) {
-  // Callback receives NO capability argument.
-  return recoveryContext.run(CAPABILITY, callback);
+function runInMultiUnitPaidOrphanRecoveryContext(scope, callback) {
+  // scope = validated immutable incident fields from recovery service (no brand yet)
+  // Runner constructs brand internally. Callback receives NO context argument.
+  const store = Object.freeze({
+    brand: BRAND,
+    schemaVersion: 'multi-unit-paid-orphan-recovery-context/v1',
+    recoveryMode: scope.recoveryMode, // 'initial' | 'resume'
+    recoveryExecutionId: scope.recoveryExecutionId,
+    checkoutId: scope.checkoutId,
+    checkoutSessionId: scope.checkoutSessionId,
+    paymentIntentId: scope.paymentIntentId,
+    paymentId: scope.paymentId,
+    finalizationJobId: scope.finalizationJobId,
+    manualReviewItemId: scope.manualReviewItemId,
+    cabinTypeId: scope.cabinTypeId,
+    expectedTargetUnitId: scope.expectedTargetUnitId,
+    evidenceDigest: scope.evidenceDigest
+  });
+  return recoveryContext.run(store, callback);
 }
 
-function isMultiUnitPaidOrphanRecoveryContext() {
-  return recoveryContext.getStore() === CAPABILITY;
+function getMultiUnitPaidOrphanRecoveryContext() {
+  const store = recoveryContext.getStore();
+  if (!store || store.brand !== BRAND) return null;
+  return store;
 }
 
-function assertMultiUnitPaidOrphanRecoveryContext() {
-  if (!isMultiUnitPaidOrphanRecoveryContext()) {
-    throw new Error('MULTI_UNIT_PAID_ORPHAN_RECOVERY_CONTEXT_REQUIRED');
+function isMultiUnitPaidOrphanRecoveryContext(expectedScope) {
+  const store = getMultiUnitPaidOrphanRecoveryContext();
+  if (!store) return false;
+  if (!expectedScope) return true; // presence-only probe; privileged seams must pass expectedScope
+  return matchesIncidentScope(store, expectedScope);
+}
+
+function assertMultiUnitPaidOrphanRecoveryContext(expectedScope) {
+  const store = getMultiUnitPaidOrphanRecoveryContext();
+  if (!store || store.brand !== BRAND) {
+    throw createSanitizedRecoveryError('MULTI_UNIT_PAID_ORPHAN_RECOVERY_CONTEXT_REQUIRED');
+  }
+  if (!expectedScope || !matchesIncidentScope(store, expectedScope)) {
+    throw createSanitizedRecoveryError('MULTI_UNIT_PAID_ORPHAN_RECOVERY_SCOPE_MISMATCH');
   }
 }
 
 module.exports = {
   runInMultiUnitPaidOrphanRecoveryContext,
+  getMultiUnitPaidOrphanRecoveryContext,
   isMultiUnitPaidOrphanRecoveryContext,
   assertMultiUnitPaidOrphanRecoveryContext
-  // CAPABILITY / Symbol / AsyncLocalStorage instance intentionally NOT exported
+  // BRAND / Symbol / AsyncLocalStorage instance intentionally NOT exported
 };
 ```
 
+#### Final incident-scoped context schema (binding)
+
+```js
+{
+  brand,                 // private Symbol — never exported
+  schemaVersion,         // 'multi-unit-paid-orphan-recovery-context/v1'
+  recoveryMode,          // 'initial' | 'resume'
+  recoveryExecutionId,   // unique per recovery execution; retained across lease reclaim
+  checkoutId,
+  checkoutSessionId,
+  paymentIntentId,
+  paymentId,
+  finalizationJobId,
+  manualReviewItemId,
+  cabinTypeId,
+  expectedTargetUnitId,
+  evidenceDigest         // SHA-256 hex of canonicalEvidence
+}
+```
+
+Rules:
+
+- Complete store is created only by the approved recovery service calling the runner.
+- Store is frozen before entering AsyncLocalStorage; no field is mutable during the run.
+- Store is never serialized, persisted, logged, returned, thrown, or placed in model/service options.
+- Identifiers are ordinary incident **scope**, not independent authorization.
+- Private brand + approved runner establishes trusted recovery execution.
+- Exact incident fields prevent recovery context for incident A from affecting incident B.
+
 #### Capability-value ban (absolute)
 
-The private Symbol / store value is **never**:
+The private brand Symbol and the ALS store are **never**:
 
 - exported
-- returned from any function
+- returned from any function (except `getMultiUnitPaidOrphanRecoveryContext` returning the frozen in-memory store to trusted callers during the active run — never across the CLI/HTTP boundary)
 - thrown as an error payload
 - logged
 - serialized
 - persisted
-- passed through function parameters
+- passed through function parameters as a capability token
 - placed on dependency objects / service options
-- placed on finalization context as a capability token
-- stored on CheckoutSession, CheckoutFinalizationJob, Payment, Stripe metadata
+- stored on CheckoutSession, CheckoutFinalizationJob, Payment, Stripe metadata, ManualReviewItem (MRI hold stores only ordinary IDs, not the brand)
 - accepted from HTTP, webhook, CLI, reconcile, or worker input
 - exposed to tests as a forgeable token
 
-Plain options such as:
+Plain options such as `{ bypassCommercialStayExclusivity: true, expectedUnitId: '...', suppressPaymentUnlinkedResolution: true }` remain **ineffective** without branded ALS context **and** argument identity match.
 
-```js
-{
-  bypassCommercialStayExclusivity: true,
-  expectedUnitId: '...',
-  suppressPaymentUnlinkedResolution: true
-}
-```
+### 1.3 Correct Node AsyncLocalStorage semantics (binding)
 
-remain **ineffective** outside an active recovery AsyncLocalStorage context. Downstream code may still accept such option shapes for readability, but each privileged behavior must call `assertMultiUnitPaidOrphanRecoveryContext()` (or `isMultiUnitPaidOrphanRecoveryContext()`) immediately before applying the privilege.
+Lock the **actual** Node behavior:
 
-#### Required behavior
+- The ordinary caller outside `run()` has **no** recovery store after the awaited runner completes.
+- Awaited operations created and completed inside the runner **retain** the recovery store as intended.
+- Timers, Promise continuations, microtasks, detached async functions, and other async resources created inside the runner **may retain** that recovery store after the outer callback returns.
+- EventEmitter callbacks use the context active when **emitted**, not necessarily when registered.
+- A later worker process or separately invoked queue consumer does **not** inherit the in-process ALS store.
 
-- `runInMultiUnitPaidOrphanRecoveryContext` creates an asynchronous context containing the private Symbol.
-- The callback receives **no** capability argument.
-- Async context must propagate through **awaited** recovery operations.
-- Normal HTTP, webhook, worker, reconciliation, and ordinary finalization execution have **no** recovery context and therefore cannot enable:
-  - commercial-stay exclusivity bypass
-  - exact-unit recovery injection
-  - MRI auto-resolution suppression
-  - recovery-only job transitions
+Therefore S0 safety relies on a **hard orchestration rule**, not automatic context removal.
+
+#### Orchestration rules (absolute)
+
+- Recovery orchestration must **not** create unawaited privileged work.
+- No privileged `setTimeout`, `setImmediate`, `queueMicrotask`, detached Promise, unawaited async IIFE, event-emitter continuation, queue publish, worker spawn, or fire-and-forget callback may be created inside the recovery context.
+- Every call that can use recovery privilege must be **awaited** before the recovery runner returns.
+- Recovery must not return until all privileged Booking, payment, session, job, EDS, and MRI work is complete **or** durably recorded for resume (phase + lease + hold + history).
+- Non-privileged asynchronous scheduling, where unavoidable, must execute through `AsyncLocalStorage.exit()` and must **not** call any recovery-sensitive function.
+- Confirmation delivery remains durable only:
+  - create or ensure EmailDeliveryState with `send:false`
+  - do not invoke SMTP
+  - do not launch an in-process confirmation task
+  - later confirmation worker execution has no ALS recovery context
 - Logging and error serialization must **not** inspect or include the AsyncLocalStorage store.
 - The runner returns **only** the recovery result, never context internals.
-- Confirmation delivery is queued with `send:false`; no worker task inherits recovery context.
-- The durable EmailDeliveryState contains **no** recovery capability or bypass marker.
 
-### 1.3 Runner import ownership (static)
-
-Acknowledge: repository ownership of the context **runner** must be statically enforced because Node cannot prevent one trusted module from importing another.
+### 1.4 Runner import ownership (static)
 
 **Lock:**
 
 - **Only** `server/services/checkout/multiUnitPaidOrphanRecoveryService.js` may import `runInMultiUnitPaidOrphanRecoveryContext`.
-- Guard, finalization, payment-linking, job, and side-effect modules may import **only**:
+- Guard, finalization, payment-linking, job, MRI, and side-effect modules may import **only**:
   - `assertMultiUnitPaidOrphanRecoveryContext`
   - `isMultiUnitPaidOrphanRecoveryContext`
-- Routes, webhook handlers, workers, reconciliation, scripts other than the approved recovery CLI, and unrelated services **must not** import the runner.
-- The CLI **must not** import the capability module. It calls only the recovery service.
-- The recovery service **must not** re-export the runner.
-- The capability module **must not** export the Symbol.
+  - `getMultiUnitPaidOrphanRecoveryContext` (when needed for identity match helpers)
+- Capability-module imports must use a **literal static module path**.
+- Dynamic `require(variable)` or computed imports resolving to the capability module are **forbidden**.
+- Re-exporting the runner is forbidden.
+- Aliasing the runner and re-exporting the alias is forbidden.
+- The recovery service must **not** export the runner.
+- The CLI must **not** import any capability-module API.
+- Routes, webhooks, workers, reconciliation, and unrelated services must **not** import the runner.
 
 #### Implementation enforcement
 
-**A.** Existing ESLint `no-restricted-imports` (or an equivalent repository import-boundary rule), **when** current lint infrastructure supports it. Do **not** invent a new lint system solely for this sidequest. Server application lint today is not guaranteed to host this rule; if unavailable, skip inventing one.
+**A.** Existing ESLint `no-restricted-imports` when current lint infrastructure supports it. Do not invent a new lint system solely for this sidequest.
 
-**B. Mandatory regardless of lint:** a deterministic architecture / source-boundary test that scans application `import` / `require` graphs and **fails** unless the runner import appears only in the approved recovery service.
+**B. Mandatory:** deterministic architecture / source-boundary test that detects:
 
-The source-boundary test must also fail when:
+- CommonJS direct `require(...)`
+- destructured requires
+- multiline requires
+- aliases
+- direct or indirect re-exports
+- ESM imports if present
+- dynamic/computed require of the capability-module path
+- runner export from the recovery service
+- CLI / route / webhook / worker / reconcile importing the runner
 
-- another module imports the runner
-- another module re-exports the runner
-- the private capability module exports the Symbol
-- the recovery service re-exports the runner
-- a route, webhook, worker, or reconcile module imports the capability runner
+Use AST-based inspection when an existing repository parser supports it. Otherwise require:
+
+- literal-import allowlist checking
+- rejection of dynamic require/import in files touching the capability module
+- explicit source review
 
 Tests must prove real production ownership. They must **not** mock the capability validator to always succeed.
 
-### 1.4 Sensitive inner functions that must assert context
+### 1.5 Context and argument identity matching
 
-Do **not** rely on assertion only in the outer recovery service. Active recovery context must be asserted inside the **real production function** that performs each privileged seam, **immediately before** applying the privileged behavior:
+Every privileged inner function must assert:
 
-| Privileged seam | Assert inside |
-|-----------------|---------------|
-| Bypass of same-guest commercial-stay exclusivity | Real commercial-stay guard path that would otherwise throw `DUPLICATE_STAY_CONFLICT` |
-| Insertion of `expectedTargetUnitId` into `finalizeContext.assignedUnitId` | Real recovery finalize injection helper / path that assigns the unit |
-| Suppression of payment-unlinked MRI auto-resolution during Payment linking | Real `linkStripePaymentToBooking` (or equivalent production linker) suppress branch |
-| Suppression of payment-unlinked MRI auto-resolution during finalize side effects | Real `checkoutFinalizeSideEffects` / `resolveAlertsForBooking` suppress branch |
-| Recovery-specific acquisition of a failed-permanent job lease | Real recovery lease claim helper |
-| Recovery-specific completion of the failed-permanent job | Real `markCheckoutFinalizationJobSucceededFromMultiUnitRecovery` (or equivalent) |
-| Recovery-only ManualReview resolution after final verification | Real recovery MRI resolve helper |
+**A.** a valid branded recovery context exists
+**and**
+**B.** its current arguments match the immutable incident scope.
 
-Normal behavior must remain unchanged when no active context exists.
+| Privileged seam | Minimum identity checks |
+|-----------------|-------------------------|
+| Commercial-stay exclusivity bypass | checkoutId, CheckoutSession ID, PaymentIntent ID, cabinTypeId, dates or evidenceDigest where applicable |
+| Exact-unit injection (`assignedUnitId`) | checkoutId, PaymentIntent ID, expectedTargetUnitId, cabinTypeId |
+| Payment-link MRI suppression | paymentId, PaymentIntent ID, Booking/checkout linkage, ManualReviewItem ID |
+| Finalize-side-effect MRI suppression | checkoutId, Booking ID after creation, finalizationJobId, ManualReviewItem ID |
+| Recovery lease acquisition / renewal | finalizationJobId, checkoutId, PaymentIntent ID, recoveryExecutionId, evidenceDigest |
+| Recovery-specific job transitions | same job + recoveryExecutionId + expected current recoveryStatus phase |
+| confirmationQueuedAt patch | finalizationJobId, Booking ID, recoveryExecutionId, expected EDS correlation key |
+| Recovery-only MRI resolution | ManualReviewItem ID, Booking ID, paymentId, checkoutId, finalizationJobId, recoveryExecutionId |
 
-### 1.5 Asynchronous-context escape prevention
+**Required invariant:** A valid recovery context for incident A cannot bypass a guard, suppress MRI resolution, mutate a job, queue confirmation, or resolve review evidence for incident B.
 
-- Recovery must **not** start unawaited background work inside the capability context.
-- No callback, timer, queue task, event emitter, or detached Promise may retain recovery privileges after the authoritative recovery call completes.
-- All privileged work must be **awaited** before `runInMultiUnitPaidOrphanRecoveryContext` returns.
-- Parallel normal finalization must remain outside recovery context.
-- Parallel recovery executions must not share incident state (each run has its own allowlist/evidence; ALS stores only the private Symbol, not incident payloads).
+Assertion failure must:
+
+- fail closed
+- use a sanitized recovery error
+- perform no privileged mutation
+- not expose the ALS store
+
+Do **not** rely on assertion only in the outer recovery service. Assert immediately before applying the privileged behavior. Normal behavior remains unchanged when no active matching context exists.
 
 ### 1.6 Exact ownership call boundary
 
 ```text
 CLI recoverMultiUnitPaidOrphanCheckout.js
-  └─ recoverAllowlistedMultiUnitPaidOrphanCheckout({ allowlist, originalEvidence, digest, intent, execute, actor, ... })
-       ├─ read-only preflight / digest verify / live recheck
-       ├─ claimRecoveryLeaseOnFinalizationJob(...)   // asserts context OR is invoked only under runner; see §1.4
-       └─ runInMultiUnitPaidOrphanRecoveryContext(async () => {
-            // callback receives NO capability argument
-            ├─ validateUnitForCabinTypeBooking(AF-03…)
-            ├─ assertNoCommercialStayConflict(...)  // inner guard asserts ALS context before exclusivity bypass
-            ├─ private recovery finalize path sets assignedUnitId (asserts ALS before inject)
-            ├─ linkStripePaymentToBooking(...)      // asserts ALS before MRI suppress
-            ├─ side effects send:false + MRI suppress (asserts ALS)
-            ├─ recovery-specific job success (asserts ALS; confirmationQueuedAt may remain null)
-            ├─ ensure pending EDS
-            ├─ markCheckoutFinalizationJobConfirmationQueued(...)
-            └─ verify gate → resolve MRI (asserts ALS)
+  └─ recoverAllowlistedMultiUnitPaidOrphanCheckout({ mode, allowlist, originalEvidence, digest, intentOverlay, execute, ... })
+       ├─ read-only preflight (initial or resume) / digest verify / live classify
+       └─ runInMultiUnitPaidOrphanRecoveryContext(frozenScopeWithoutBrand, async () => {
+            // callback receives NO context argument
+            ├─ acquire/reclaim lease + renew TTL
+            ├─ acquire/verify MRI resolution hold
+            ├─ adopt/create Booking (exact unit after assert+match)
+            ├─ link Payment / finalize session (hold-aware MRI paths)
+            ├─ recovery job success → linkage_complete (lease retained)
+            ├─ EDS send:false → confirmationQueuedAt → awaiting_review_resolution
+            ├─ verify gate → recovery-only MRI resolve
+            └─ recoveryStatus complete; release lease + hold
           })
 ```
 
-Lease claim may occur immediately before or inside the runner; if lease claim performs recovery-only privileged mutation, it must assert active context (prefer claiming inside the runner after context starts, or start context before claim). Authoritative rule: every recovery-only privileged seam asserts ALS immediately before the privilege.
-
 ---
 
-## 2. Recovery-specific job ownership
+## 2. Recovery-specific job ownership and lifecycle
 
 ### 2.1 Why not normal `claimed`
 
@@ -270,68 +345,181 @@ Repository facts:
 
 Therefore S0 **must not** move the incident job to `claimed` and **must not** call unmodified `markCheckoutFinalizationJobSucceeded()` for this transition.
 
-### 2.2 Proposed fields (S0 schema additions on `CheckoutFinalizationJob`)
+### 2.2 RecoveryStatus lifecycle (binding)
+
+Exact `recoveryStatus` values:
+
+- `idle`
+- `leased`
+- `linkage_complete`
+- `awaiting_confirmation_queue`
+- `awaiting_review_resolution`
+- `complete`
+- `failed`
+
+Authoritative progression:
+
+```text
+idle
+→ leased
+→ linkage_complete
+→ awaiting_confirmation_queue
+→ awaiting_review_resolution
+→ complete
+```
+
+`failed` is used only for a terminal or operator-paused recovery condition with preserved evidence.
+
+**Required invariant:** Normal job status `succeeded` does **not** imply `recoveryStatus: complete`.
+
+A recovery may have:
+
+- job `status: succeeded`
+- `recoveryStatus: awaiting_confirmation_queue`
+- `confirmationQueuedAt: null`
+- MRI open (or held)
+
+and still be safely resumable.
+
+#### Phase behavior
+
+**`leased`**
+
+- exclusive recovery ownership acquired
+- MRI resolution hold acquired
+- Booking / payment / session linkage work may run
+- normal job may still be `failed_permanent`
+
+**`linkage_complete`**
+
+- Booking exists
+- Payment linked
+- CheckoutSession linked / finalized
+- normal finalization job may now be set `succeeded`
+- recovery ownership and lease **remain active**
+
+**`awaiting_confirmation_queue`**
+
+- normal job succeeded
+- SavedQuote conversion may be completed or recorded as non-blocking
+- confirmation EDS not yet verified
+- recovery lease **remains active**
+
+**`awaiting_review_resolution`**
+
+- pending or already-succeeded EDS exists
+- `confirmationQueuedAt` patch exists
+- authoritative links verified
+- MRI resolution hold remains active
+- recovery lease **remains active**
+
+**`complete`**
+
+- incident MRI (or recovery-completion MRI — §11) resolved by the recovery-only path
+- final completion history / audit evidence persisted
+- MRI hold released / completed
+- recovery lease released
+- no further mutation required
+
+### 2.3 Proposed fields (S0 schema additions on `CheckoutFinalizationJob`)
 
 | Field | Type | Purpose |
 |-------|------|---------|
-| `recoveryStatus` | enum: `null\|none\|leased\|succeeded\|failed` (default null/none) | Recovery lease state; independent of worker `status` |
-| `recoveryClaimedBy` | String \| null | e.g. `multi-unit-paid-orphan-recovery:<runId>` |
-| `recoveryClaimedAt` | Date \| null | Lease start |
-| `recoveryVisibilityTimeoutAt` | Date \| null | Lease expiry for crash retry |
-| `recoveryAttemptCount` | Number ≥ 0 | Execute attempts |
+| `recoveryStatus` | enum above (default `idle` / null treated as idle) | Recovery lifecycle; independent of worker `status` |
+| `recoveryExecutionId` | String \| null | Stable execution id retained across lease reclaim |
+| `recoveryEvidenceDigest` | String \| null | Bound dry-run digest for this execution |
+| `recoveryAllowlistHash` | String \| null | Hash / identity of allowlist used |
+| `recoveryClaimedBy` | String \| null | e.g. `multi-unit-paid-orphan-recovery:<recoveryExecutionId>` |
+| `recoveryClaimedAt` | Date \| null | Lease start / last reclaim |
+| `recoveryVisibilityTimeoutAt` | Date \| null | Lease expiry (`now + 15 minutes`) |
+| `recoveryAttemptCount` | Number ≥ 0 | Execute / resume attempts |
 | `recoveryLastErrorCode` | String \| null | Last recovery error |
-| `recoveryLastErrorSummary` | String \| null | Truncated ≤500 (same convention as `truncateSummary`) |
+| `recoveryLastErrorSummary` | String \| null | Truncated ≤500 |
 | `recoveryHistory` | Array of Mixed | Bounded execute history (never written on dry-run) |
-| `recoveredAt` | Date \| null | Success timestamp |
-| `recoveredBy` | String \| null | Actor / run identity |
+| `recoveryOperatorActorId` | String \| null | Original `ops:<username>` |
+| `recoveryOperatorIntentConfirmedAt` | Date \| null | Original intent timestamp |
+| `recoveryReason` | String \| null | Original reason ≤500 |
+| `recoveredAt` | Date \| null | `complete` timestamp |
+| `recoveredBy` | String \| null | Actor / run identity at complete |
 
-**Normal `status` remains `failed_permanent` until the recovery-specific success transition sets it to `succeeded`.**
+**Normal `status` remains `failed_permanent` until the recovery-specific success transition sets it to `succeeded` during/after linkage.** Lease and `recoveryStatus` continue past that point.
 
-### 2.3 Bounded recoveryHistory
+### 2.4 Lease duration and renewal (binding)
 
-- Maximum **40** entries (aligned with truncated summary / bounded-history conventions elsewhere).
+- Default recovery lease duration: **15 minutes**.
+- One shared constant owned by the recovery job service.
+- No arbitrary caller-supplied duration.
+- Tests may inject a deterministic clock, not an unsafe production duration.
+
+Required behavior:
+
+- Lease acquisition sets `recoveryVisibilityTimeoutAt = now + 15 minutes`.
+- Lease owner is `recoveryExecutionId` plus `recoveryClaimedBy`.
+- Lease is renewed atomically before each major mutation phase:
+  - Booking creation / adoption
+  - Payment / session linkage
+  - job success transition
+  - EDS ensure
+  - MRI resolution
+- Renewal matches: exact job, exact `recoveryExecutionId`, exact current `recoveryStatus`.
+- Expired incomplete leases may be reclaimed **only** by the recovery CLI in **resume** mode.
+- **Ownership rule (preferred, locked):** retain the **same** `recoveryExecutionId` for lease reclaim of the same incomplete recovery; only `recoveryClaimedBy` and lease timestamps change.
+- Normal worker and generic reconciliation never execute or complete the recovery.
+- Generic reconcile may **report** the unfinished recovery but may **not** acquire it.
+- Recovery ownership is released only at `complete`, or explicitly moved to `failed`.
+
+If lease expires after job success but before EDS / MRI:
+
+- resume mode reclaims the **same** incomplete `recoveryExecutionId`
+- must not create another Booking
+- must adopt the succeeded job and continue EDS / MRI work
+
+### 2.5 Bounded recoveryHistory
+
+- Maximum **40** entries.
 - On append beyond the cap, drop oldest entries deterministically (`slice(-40)`).
-- Each entry may contain only: `at` (ISO), `runId`, `actor` (`ops:<username>`), `phase`, `code`, `summary` (≤500), `digestPrefix` (first 16 hex of digest), `bookingId` (string|null).
+- Each entry may contain only: `at` (ISO), `recoveryExecutionId`, `actor` (`ops:<username>`), `resumedBy` (optional), `phase`, `code`, `summary` (≤500), `digestPrefix` (first 16 hex), `bookingId` (string|null), `mode` (`initial`|`resume`).
 - No guest email, phone, secrets, Stripe client secrets, or unbounded payloads.
 
-### 2.4 Indexes
+### 2.6 Indexes
 
 Add:
 
 ```js
 { recoveryStatus: 1, recoveryVisibilityTimeoutAt: 1 }
+{ recoveryExecutionId: 1 }
 ```
 
-Purpose: lease acquisition / reclaim / expiry scans. Must **not** make normal worker poll recovery jobs (worker continues to filter `status ∈ scheduled|claimed` only).
+Purpose: lease acquisition / reclaim / expiry scans and execution lookup. Must **not** make normal worker poll recovery jobs (worker continues to filter `status ∈ scheduled|claimed` only).
 
-Existing incident lookup by `checkoutId` / `paymentIntentId` remains authoritative.
+### 2.7 Atomic recovery claim / reclaim
 
-### 2.5 Atomic recovery claim
+**Initial claim** match all of:
 
-Match **all** of:
-
-- `_id` = allowlisted job ID (`6a6da522b6410db9d013ec7c`)
-- `checkoutId` = allowlisted checkout ID
-- `paymentIntentId` = allowlisted PI
+- `_id` = allowlisted job ID
+- `checkoutId` / `paymentIntentId` = allowlisted
 - `status` = `failed_permanent`
 - `lastErrorCode` = `DUPLICATE_STAY_CONFLICT`
-- and either:
-  - `recoveryStatus` ∈ `{ null, none, failed }` with no active lease, **or**
-  - `recoveryStatus=leased` **and** `recoveryVisibilityTimeoutAt < now` (expired lease reclaim)
+- `recoveryStatus` ∈ `{ idle, null, none, failed }` with no active incomplete foreign execution, **or** expired incomplete lease reclaim rules below
 
-On claim success: set `recoveryStatus=leased`, `recoveryClaimedBy`, `recoveryClaimedAt`, `recoveryVisibilityTimeoutAt`, increment `recoveryAttemptCount`. Do **not** set normal `claimedBy` / `status=claimed`.
+On initial claim success: set `recoveryStatus=leased`, mint/persist `recoveryExecutionId`, `recoveryEvidenceDigest`, allowlist hash, operator evidence, lease timestamps, increment `recoveryAttemptCount`. Do **not** set normal `claimedBy` / `status=claimed`.
 
-### 2.6 Recovery-specific job completion (separate from confirmationQueuedAt)
+**Resume reclaim** (preferred ownership rule) may match when:
+
+- same allowlisted job / checkout / PI
+- same `recoveryExecutionId`
+- same `recoveryEvidenceDigest`
+- `recoveryStatus` ∈ incomplete set (`leased` | `linkage_complete` | `awaiting_confirmation_queue` | `awaiting_review_resolution`)
+- and either active lease owned by this execution (renew), **or** `recoveryVisibilityTimeoutAt < now` (expired reclaim)
+- normal job may be `failed_permanent` **or** `succeeded` (incomplete recovery after linkage)
+
+On reclaim: refresh `recoveryClaimedBy` / lease timestamps; **do not** change `recoveryExecutionId`.
+
+### 2.8 Recovery-specific job completion (does not end recovery ownership)
 
 Helper: `markCheckoutFinalizationJobSucceededFromMultiUnitRecovery`
 
-After Booking, Payment, and CheckoutSession authoritative linkage succeed, match:
-
-- `_id` = jobId
-- `status` = `failed_permanent`
-- `recoveryStatus` = `leased`
-- `recoveryClaimedBy` = this run’s claim identity
-- `recoveryVisibilityTimeoutAt` ≥ now
+After Booking, Payment, and CheckoutSession authoritative linkage succeed, match leased ownership + `recoveryExecutionId` + phase expectations.
 
 Set:
 
@@ -341,54 +529,67 @@ Set:
 - `paymentLinkedAt`, `sessionFinalizedAt`
 - `quoteConvertedAt` when applicable
 - **`confirmationQueuedAt` may remain null**
-- `recoveredAt`, `recoveredBy`
-- `recoveryStatus: succeeded`
-- clear recovery lease fields (`recoveryClaimedBy/At/VisibilityTimeoutAt` → null)
-- Preserve original failure into `safeDetails.priorPermanentFailure` before any clear; append success entry to `recoveryHistory`
+- advance `recoveryStatus` to `linkage_complete` (then orchestration advances to `awaiting_confirmation_queue` as appropriate)
+- **retain** lease fields and renew TTL
+- Preserve original failure into `safeDetails.priorPermanentFailure`
 - Do **not** erase `firstFailedAt`
+- Do **not** set `recoveryStatus: complete` here
 
-### 2.7 Confirmation queue patch (separate idempotent helper)
-
-After one pending or already-succeeded `EmailDeliveryState` exists:
+### 2.9 Confirmation queue patch (privileged phase transition)
 
 ```js
-markCheckoutFinalizationJobConfirmationQueued({ jobId, bookingId, queuedAt })
+markCheckoutFinalizationJobConfirmationQueued({ jobId, bookingId, queuedAt, recoveryExecutionId, edsCorrelationKey })
 ```
 
 Required behavior:
 
-- Matches only the expected **succeeded** job + `bookingId`
-- Sets `confirmationQueuedAt` only when currently `null`
-- Does **not** reopen recovery lease
-- Does **not** change job `status`
-- Does **not** set `confirmationSentAt`
-- Idempotent; second recovery execution may finish this patch
-- MRI remains open until this evidence exists (§11)
+- assert incident-scoped recovery context + argument identity match
+- match finalizationJobId, Booking ID, recoveryExecutionId
+- require `recoveryStatus: awaiting_confirmation_queue`
+- verify EDS pending or succeeded for expected correlation key
+- set `confirmationQueuedAt` only when currently `null`
+- never set `confirmationSentAt`
+- advance `recoveryStatus` to `awaiting_review_resolution`
+- retain lease and MRI hold; renew lease TTL
+- idempotent
+- A normal non-recovery caller must not use this helper to advance the recovery phase
 
-### 2.8 Reconciliation during active recovery lease
+### 2.10 Reconciliation during incomplete recovery
 
-While `recoveryStatus=leased` and `recoveryVisibilityTimeoutAt >= now`:
+While `recoveryStatus` is incomplete (`leased` … `awaiting_review_resolution`):
 
-- Generic Batch 7/8 reconciliation **must no-op** for that job’s mutations.
-- Must not open duplicate ManualReviewItems for the same leased recovery.
-- Must not alter job `status` or clear recovery lease fields.
-- After lease expiry, ordinary reconcile may still classify as permanent failure / manual-review required, but **must not** execute recovery; only the recovery CLI may reclaim the lease.
-- Worker remains unable to poll (`failed_permanent` ∉ executable statuses).
+- Generic Batch 7/8 reconciliation **must no-op** for that job’s mutations (may report unfinished recovery).
+- Must not open duplicate ManualReviewItems for the same recovery execution (except the locked premature-resolution completion MRI in §11).
+- Must not alter job `status` or clear recovery lease / hold fields.
+- After lease expiry, ordinary reconcile may still classify / report, but **must not** execute recovery; only the recovery CLI may reclaim.
+- Worker remains unable to poll when job is still `failed_permanent`; when job is `succeeded`, worker still must not run recovery completion.
 
-### 2.9 Dry-run vs execute history
+### 2.11 Dry-run vs execute history
 
-- **Dry-run:** zero writes — including no `recoveryHistory` append, no lease claim.
-- **Execute:** append bounded `recoveryHistory` entries for claim, steps, success/failure.
+- **Dry-run:** zero writes — including no `recoveryHistory` append, no lease claim, no MRI hold.
+- **Execute / resume:** append bounded `recoveryHistory` entries for claim, phases, success/failure.
 
-### 2.10 Crash / concurrency
+### 2.12 Phase-aware resume next actions
 
-- Lease expiry → another execute may reclaim.
-- Two concurrent executes: only one claim wins; loser gets `RECOVERY_JOB_LEASE_CONFLICT`.
-- Second successful execute after full success is idempotent (`RECOVERY_ALREADY_COMPLETED` / adopt path).
+| recoveryStatus | Required next action |
+|----------------|----------------------|
+| `leased` | adopt/create Booking; complete Payment/session links |
+| `linkage_complete` | ensure normal job succeeded; quote conversion where appropriate; advance toward confirmation queue |
+| `awaiting_confirmation_queue` | ensure EDS with `send:false`; patch confirmationQueuedAt |
+| `awaiting_review_resolution` | verify links and EDS; resolve held MRI; complete recovery |
+| `complete` | return idempotent already-complete; no writes except optional read-only verification; no new lease |
+| `failed` | require operator decision; no automatic continuation unless failure code is explicitly resumable |
+
+### 2.13 Crash / concurrency
+
+- Lease expiry → resume reclaim of same `recoveryExecutionId`.
+- Two concurrent executes: only one claim/renew wins; loser gets `RECOVERY_JOB_LEASE_CONFLICT`.
+- No concurrent finisher for EDS/MRI while lease is active.
+- After `complete`, further executes return `RECOVERY_ALREADY_COMPLETE`.
 
 ---
 
-## 3. Dry-run purity and evidence digest
+## 3. Dry-run purity, evidence digest, and execute modes
 
 ### 3.1 Dry-run write ban (absolute)
 
@@ -398,26 +599,24 @@ Dry-run must not:
 - claim a job / update job history
 - change CheckoutSession
 - link Payment / create Booking
-- resolve or create ManualReviewItem
+- resolve, create, or hold ManualReviewItem
 - create EmailDeliveryState
 - convert SavedQuote
 - allocate or hold a Unit
 - write AuditEvent
 - update any document timestamps via save
 
-Dry-run uses **read-only** loaders and pure validators only. Avoid writey helpers even if named like validators (`ensureCheckoutFinalizationJob`, `ensurePendingConfirmationDelivery`, quote refresh that `session.save()`s, etc.).
+Dry-run uses **read-only** loaders and pure validators only.
 
 ### 3.2 Two distinct evidence objects
 
 #### A. Original dry-run evidence
 
-Dry-run produces:
-
 ```js
 {
   schemaVersion: 'multi-unit-paid-orphan-recovery/v1',
-  dryRunGeneratedAt, // outer display/convenience — MUST equal canonicalEvidence.dryRunGeneratedAt
-  canonicalEvidence, // includes dryRunGeneratedAt; sole digest input
+  dryRunGeneratedAt, // MUST equal canonicalEvidence.dryRunGeneratedAt
+  canonicalEvidence, // sole digest input
   digest             // SHA-256 of canonical serialization of canonicalEvidence ONLY
 }
 ```
@@ -425,47 +624,119 @@ Dry-run produces:
 **Envelope timestamp equality (binding):**
 
 - Invariant: `dryRunGeneratedAt === canonicalEvidence.dryRunGeneratedAt`
-- Execute **must reject** when those values differ (`RECOVERY_DIGEST_MISMATCH` or a dedicated envelope-integrity code that aborts before mutation).
-- The digest hashes **only** `canonicalEvidence`.
-- The outer timestamp is a display/convenience field and **must not** create a second independent time value.
-- Maximum age is calculated from the timestamp **inside** `canonicalEvidence` **after** envelope equality is verified.
+- Execute **must reject** when those values differ.
+- Digest hashes **only** `canonicalEvidence`.
+- Maximum age (binding default **24 hours**) is calculated from `canonicalEvidence.dryRunGeneratedAt` after envelope equality is verified.
 
-#### B. Execute-time live evidence
+#### B. Execute overlay evidence (not part of digest)
 
-Execute receives the **original** envelope (`dryRunGeneratedAt`, `canonicalEvidence`, `digest`), plus phrase, actor, intent timestamp, reason, execute flag.
+Execute validates **after** digest verification and **before** lease acquisition:
 
-Execute must:
+- fixed confirmation phrase
+- `operatorActorId` (`ops:<username>`)
+- `operatorIntentConfirmedAt`
+- non-empty `recoveryReason`
+- `mode: 'initial' | 'resume'`
+- `--execute` and `MULTI_UNIT_PAID_ORPHAN_RECOVERY=1`
 
-1. Verify `envelope.dryRunGeneratedAt === canonicalEvidence.dryRunGeneratedAt`.
-2. Recompute SHA-256 from the **received original** `canonicalEvidence`.
-3. Verify it matches the submitted digest.
-4. Enforce maximum digest age (binding default **24 hours**) using `canonicalEvidence.dryRunGeneratedAt`.
-5. Independently reread all live evidence.
-6. Compare live material fields with the original `canonicalEvidence`.
-7. Abort (`RECOVERY_DIGEST_MISMATCH`) when any material field changed.
+These fields are **not** in dry-run `canonicalEvidence` unless genuinely known and fixed at dry-run time (they are not for this incident).
 
-The execute-time clock must **not** replace `dryRunGeneratedAt` inside the original digest.
+### 3.3 Modes: `initial` vs `resume`
 
-### 3.3 Material live fields
+#### Initial mode
 
-Material changes include:
+Allowed only when:
+
+- original `canonicalEvidence` and digest authenticate correctly
+- envelope timestamps match
+- digest age ≤ 24 hours
+- live material evidence still matches the original **pre-mutation** evidence
+- no prior recovery progress exists
+- no Booking exists for the orphan checkout or PaymentIntent
+- job has no unfinished recovery execution
+- MRI remains in the expected pre-recovery state
+- target AF-03 remains valid and available
+
+After successful initial validation:
+
+- generate a unique `recoveryExecutionId`
+- enter incident-scoped ALS context
+- atomically acquire the recovery lease
+- persist: recoveryExecutionId, evidenceDigest, allowlist hash/identity, operatorActorId, operator intent timestamp, recovery reason, initial phase `leased`
+- acquire the MRI resolution hold **before** Booking creation
+- begin forward mutation
+
+#### Resume mode
+
+Used only when durable recovery progress already exists for the same allowlisted incident.
+
+Resume must verify:
+
+- original `canonicalEvidence` and digest are authentic
+- incident identifiers match exactly
+- stored job `recoveryEvidenceDigest` matches the submitted digest
+- stored `recoveryExecutionId` exists
+- stored allowlist identity matches
+- fixed intent phrase was previously accepted or is resubmitted
+- operator evidence is compatible with the original execution (same original actor/intent preserved; optional new `resumedBy`)
+- recovery is incomplete (`recoveryStatus` ≠ `complete`)
+- current state is a valid monotonic continuation of the stored recovery phase
+
+Resume **does not** require the live database to equal the original pre-recovery snapshot.
+
+Expected recovery progress is adoptable evidence, including:
+
+- Booking now exists for the expected checkout / PI
+- Payment now links to that Booking
+- CheckoutSession now links / finalizes
+- normal job status is `succeeded`
+- EDS now exists
+- `confirmationQueuedAt` now exists
+- MRI may be resolved only when the stored phase permits it
+
+Resume must abort on hostile or contradictory drift (`RECOVERY_HOSTILE_STATE_DRIFT`), including:
+
+- Booking belongs to a different PaymentIntent
+- Booking uses a different unit
+- Payment links to a foreign Booking
+- CheckoutSession links to a foreign Booking
+- amount / currency / hash / date / cabinType changed
+- target unit changed unexpectedly
+- another `recoveryExecutionId` owns the incident
+- MRI was resolved without the required recovery completion evidence
+- recovery evidence digest or allowlist identity changed
+
+**Do not** require a new dry-run for ordinary resume of the same incomplete `recoveryExecutionId`.
+
+**Require a new dry-run when:**
+
+- no compatible recovery progress exists
+- the previous execution was explicitly abandoned (`failed` / operator abandon)
+- operator changes the target unit, amount, dates, cabin type, or intent
+- allowlist identity changes
+- hostile drift must be manually remediated
+- the recovery digest is older than the locked maximum **and** no active incomplete recovery owns it
+
+### 3.4 Material live fields (initial equality)
+
+For **initial** mode, material changes include:
 
 - target unit `isActive`
-- target unit `updatedAt` (freshness signal)
+- target unit `updatedAt`
 - target unit availability result
 - first Booking status / unit / dates
 - Payment status / `reservationId`
 - CheckoutSession status / finalizeStatus / bookingId / paymentStatus
-- finalization-job status / lastErrorCode / recovery lease fields
-- ManualReviewItem status / category
+- finalization-job status / lastErrorCode / recovery lease / recoveryStatus fields
+- ManualReviewItem status / category / resolutionHold
 - PI identity and paid evidence
 - amount / currency
 - quoteSnapshotHash / finalizeIntentHash
 - dates / cabinTypeId
 - guestIdentityMatch / stayFingerprintMatch booleans
-- appearance of any Booking for the orphan checkoutId or PI
+- appearance of any Booking for the orphan checkoutId or PI (**aborts initial**; may enter resume only if durable recovery progress already exists — otherwise abort)
 
-### 3.4 Canonical serialization
+### 3.5 Canonical serialization
 
 - Stable lexicographic object-key order
 - Arrays sorted where semantic order is irrelevant
@@ -478,7 +749,7 @@ Material changes include:
 - Algorithm: SHA-256 hex
 - No guest email or reversible guest identifier
 
-### 3.5 `canonicalEvidence` minimum contents
+### 3.6 `canonicalEvidence` minimum contents
 
 - schemaVersion, dryRunGeneratedAt
 - checkoutId, checkoutSessionMongoId, paymentIntentId, paymentRecordId, finalizationJobId, manualReviewItemId
@@ -495,7 +766,8 @@ Material changes include:
 - targetUnit.isActive, targetUnit.updatedAt
 - targetUnitAvailabilityResult
 - guestIdentityMatch, stayFingerprintMatch
-- operatorActorId, recoveryReason
+
+**Exclude from dry-run canonicalEvidence:** operatorActorId, operatorIntentConfirmedAt, recoveryReason, confirmation phrase (execute overlay only).
 
 ---
 
@@ -535,20 +807,24 @@ No new salted hash store.
 
 ## 5. Operator intent confirmation
 
-Execute requires the **exact** fixed phrase:
+Execute / resume requires the **exact** fixed phrase (execute overlay; not part of digest):
 
 ```text
 I CONFIRM THE GUEST INTENDS TO PURCHASE A SECOND PHYSICAL A-FRAME
 ```
 
-Plus:
+Plus execute-overlay fields validated after digest verification and before lease acquisition:
 
-- `operatorActorId` — **operator-supplied CLI evidence string**, format `ops:<username>` (non-empty). Not cryptographically authenticated identity (repository has no authenticated CLI actor). Persisted in redacted recovery history/audit only. Must not contain guest data or secrets.
+- `operatorActorId` — **operator-supplied CLI evidence string**, format `ops:<username>` (non-empty). Not cryptographically authenticated identity. Persisted in redacted recovery history/audit only. Must not contain guest data or secrets.
 - `operatorIntentConfirmedAt` (ISO timestamp)
 - non-empty `recoveryReason`
 - matching original dry-run digest + received original evidence
 - exact incident allowlist identities
 - `--execute` and `MULTI_UNIT_PAID_ORPHAN_RECOVERY=1`
+
+At **initial** lease acquisition, persist sanitized operator evidence into bounded recovery history and job fields.
+
+**Resume** may require the same original operator evidence **or** a new `resumedBy` operator entry, but must preserve the original actor / intent evidence.
 
 Distinguish technical eligibility from confirmed commercial intent. If intent is not confirmed → `RECOVERY_INTENT_NOT_CONFIRMED`; **no Booking**.
 
@@ -560,13 +836,13 @@ Distinguish technical eligibility from confirmed commercial intent. If intent is
 
 1. Read and validate immutable `quoteSnapshot` + `finalizeIntent` (hashes must match allowlist / evidence).
 2. Recalculate target-unit availability via `AssignmentEngine.validateUnitForCabinTypeBooking(expectedTargetUnitId, cabinTypeId, checkIn, checkOut)`.
-3. Inside the ALS recovery context only, after `assertMultiUnitPaidOrphanRecoveryContext()`, set:
+3. Inside the ALS recovery context only, after `assertMultiUnitPaidOrphanRecoveryContext({ checkoutId, paymentIntentId, expectedTargetUnitId, cabinTypeId, ... })`, set:
 
    ```js
    finalizeContext.assignedUnitId = expectedTargetUnitId
    ```
 
-   Do **not** pass a capability Symbol into finalize context. Context presence is proven only via ALS assert.
+   Do **not** pass a capability Symbol into finalize context. Context presence and incident identity are proven only via ALS assert + argument match.
 4. Continue through authoritative finalize work (`executeBookingFinalizeWork` → `resolveCabinTypeUnitForFinalize` honors requested unit).
 
 ### 6.2 Rules
@@ -649,9 +925,9 @@ Paid unfinalized checkouts have **no unitId** → they consume **aggregate** cap
 | Unpaid expired / abandoned / superseded | No capacity |
 | ManualReview resolved alone | **Not** sufficient release evidence |
 
-### 8.2 Explicit operator release (new durable evidence)
+### 8.2 Explicit operator release (S1 only)
 
-When no stronger release field applies, S0/S1 must add an authoritative release representation on CheckoutSession (proposed):
+`metadata.provisionalCapacityRelease` belongs **exclusively to S1** capacity implementation.
 
 ```js
 metadata.provisionalCapacityRelease = {
@@ -664,6 +940,8 @@ metadata.provisionalCapacityRelease = {
 ```
 
 Required: operator actor, reason, timestamp, linked payment/checkout identity, audit evidence. MRI resolution alone is insufficient.
+
+**S0 must not** create, modify, consume, or depend on this field. S0 uses exact-unit validation only. S1 owns refund / dispute / admin-release capacity semantics.
 
 ### 8.3 Operational consequence
 
@@ -784,56 +1062,173 @@ Extend §9.4 / §9.5 lists when new readers are found.
 
 ## 10. Recovery mutation order and forward reconciliation
 
-### 10.1 Exact execute order
+### 10.1 Exact execute / resume order
 
-0. Verify original digest against received original `canonicalEvidence`; enforce max age; reread live evidence; abort on material diffs; verify intent phrase/actor/reason.
-1. Atomically acquire recovery-specific lease (`failed_permanent` remains).
-2. Search existing Booking by: `checkoutId`, `checkoutSessionId`, `stripePaymentIntentId`, `Payment.reservationId`.
-3. Create Booking through ALS-gated authoritative finalize **only** if none exists (`assignedUnitId` set after context assert).
-4. Link `Payment.reservationId` (MRI auto-resolve **suppressed** after ALS assert — §11).
-5. Finalize / link CheckoutSession (`bookingId`, `finalizeStatus=finalized`, `finalizedAt`).
-6. Recovery-specific job success transition (confirmationQueuedAt may be null).
-7. Convert SavedQuote where applicable (non-fatal toward money truth).
-8. Ensure one pending confirmation EDS with `send:false`.
-9. `markCheckoutFinalizationJobConfirmationQueued(...)`.
-10. Verify all authoritative links (Booking unit AF-03, Payment, session, job succeeded, EDS, confirmationQueuedAt).
-11. Resolve incident MRI under §11.
-12. Write redacted recovery audit evidence.
+0. Initial or resume preflight (digest authenticity; mode-specific live rules; intent overlay).
+1. Enter incident-scoped recovery context (`runInMultiUnitPaidOrphanRecoveryContext`).
+2. Acquire or reclaim the recovery lease (15-minute TTL; same `recoveryExecutionId` on reclaim).
+3. Acquire or verify the MRI resolution hold.
+4. Search / adopt existing Booking by checkoutId, CheckoutSession ID, PaymentIntent, and Payment.reservationId.
+5. Create Booking through authoritative finalization only when no valid Booking exists (exact-unit inject after assert + match).
+6. Link Payment.reservationId (hold-aware; no premature auto-resolve).
+7. Link / finalize CheckoutSession.
+8. Verify authoritative linkage.
+9. Mark normal finalization job succeeded through recovery-specific transition.
+10. Advance `recoveryStatus` to `linkage_complete`, retaining lease.
+11. Convert SavedQuote where applicable (non-blocking toward money truth).
+12. Advance to `awaiting_confirmation_queue`.
+13. Ensure one pending or already-succeeded confirmation EmailDeliveryState with `send:false`.
+14. Apply confirmationQueuedAt patch (privileged; advances to `awaiting_review_resolution`).
+15. Perform final authoritative verification.
+16. Resolve MRI through recovery-only held resolution (§11).
+17. Persist final sanitized recovery history / audit evidence.
+18. Advance `recoveryStatus` to `complete`.
+19. Release recovery lease and MRI hold.
+
+All steps must be idempotent and forward-reconciling.
+
+**Never** delete a successfully created paid Booking.
+
+No step creates:
+
+- a new PaymentIntent
+- another charge
+- a refund
+- a second Booking
+- direct SMTP delivery
 
 ### 10.2 Crash behavior
 
-- **Never** delete a paid Booking created successfully.
-- Second execution adopts partial work and reconciles forward.
-- Booking without Payment link → recoverable.
-- Payment linked without session finalize → recoverable.
-- Session finalized without job success → recoverable.
-- Job success without confirmation enqueue / confirmationQueuedAt → recoverable; **MRI stays open**.
-- MRI is **not** the transaction boundary.
+- Second execution uses **resume** mode and reconciles forward from stored `recoveryStatus`.
+- Booking without Payment link → resumable from `leased`.
+- Payment linked without session finalize → resumable.
+- Session finalized without job success → resumable.
+- Job success without confirmation enqueue / confirmationQueuedAt → resumable (`awaiting_confirmation_queue`); MRI stays open / held.
+- MRI is **not** the transaction boundary for money/Booking truth.
 - No second charge; no second Booking (unique indexes on checkoutId / stripePaymentIntentId).
+- Original digest remains bound to the same `recoveryExecutionId` for resume; no new dry-run for ordinary incomplete resume.
 
 ---
 
-## 11. MRI auto-resolution policy (S0)
+## 11. MRI resolution hold and concurrent writers (S0)
 
 ### 11.1 Problem
 
-`linkStripePaymentToBooking` and `checkoutFinalizeSideEffects.resolveAlertsForBooking` auto-resolve open `payment_unlinked` reviews when a reservationId is present.
+ALS suppresses only calls inside the recovery stack. It cannot block unrelated processes.
 
-### 11.2 Locked policy
+Repository auto-resolution / resolve paths include at least:
 
-- Recovery runs payment-linking and side-effects **inside** `runInMultiUnitPaidOrphanRecoveryContext`. Those modules call `assertMultiUnitPaidOrphanRecoveryContext()` immediately before suppressing auto-resolve. No capability value is passed as an argument.
-- Incident MRI remains **open** until the final verification gate passes.
-- Final verification requires **all** of:
-  - Booking exists with `unitId` = expected AF-03
-  - `Payment.reservationId` matches Booking
-  - `CheckoutSession.bookingId` matches Booking
-  - session `finalizeStatus=finalized`
-  - job `status=succeeded` with recovery success evidence
-  - confirmation EmailDeliveryState exists (`pending` or already definitive sent)
-  - `confirmationQueuedAt` set (or EDS adopted-sent path equivalent)
-- Only then resolve MRI with controlled note (no secrets), after ALS assert in the recovery MRI resolve helper.
-- If confirmation enqueue / confirmationQueuedAt patch fails → keep MRI open; preserve Booking/Payment/session/job success links; second run may finish then resolve.
-- Concurrent non-recovery callers of `linkStripePaymentToBooking` (ingestion/reconcile scripts) have **no** recovery ALS context and must not suppress MRI during S0 execute window; ops should avoid concurrent link scripts on this PI while recovery runs.
+- `paymentLinkingService` → `resolvePaymentUnlinkedReviews`
+- `checkoutFinalizeSideEffects.resolveAlertsForBooking`
+- Stripe ingestion / link reconciliation
+- `reconcilePaymentLinkageAndManualReviews.js`
+- Ops UI `resolveManualReviewItem` (`manualReviewService` / `manualReviewRoutes`)
+- any script or admin route resolving ManualReviewItem directly
+
+`ManualReviewItem` statuses are `open | resolved | ignored`. There is **no** first-class reopen helper in `manualReviewService` (resolve matches `status: 'open'` only).
+
+### 11.2 Durable MRI resolution hold (binding)
+
+S0 adds proposed fields on `ManualReviewItem` (strict schema addition):
+
+```js
+resolutionHold: {
+  kind: String,                 // 'multi_unit_paid_orphan_recovery'
+  recoveryExecutionId: String,
+  finalizationJobId: String,
+  checkoutId: String,
+  paymentIntentId: String,
+  heldAt: Date,
+  status: String                // 'active' | 'released'
+}
+```
+
+Required values:
+
+- `kind: "multi_unit_paid_orphan_recovery"`
+- `status: "active" | "released"`
+
+Required behavior:
+
+- Hold acquisition occurs atomically after recovery job lease acquisition and **before** Booking creation.
+- Hold acquisition matches the exact open incident MRI and incident IDs.
+- Hold is idempotent for the same `recoveryExecutionId`.
+- A different `recoveryExecutionId` cannot replace an active hold (`RECOVERY_MRI_HOLD_CONFLICT`).
+- Hold remains active across recovery-lease expiry.
+- Hold remains active until `recoveryStatus` becomes `complete` or an explicit audited operator override occurs.
+- Lease expiry alone does **not** release the MRI hold.
+
+Index (proposed): `{ 'resolutionHold.status': 1, 'resolutionHold.paymentIntentId': 1 }` or equivalent for hold lookups.
+
+### 11.3 Authoritative resolution service
+
+Every automatic and manual resolution path for the relevant `payment_unlinked` (and recovery-completion) MRI must use one authoritative resolution service that checks the hold.
+
+At minimum, cover:
+
+- payment-linking auto-resolution
+- finalize-side-effect auto-resolution
+- Stripe ingestion / link reconciliation
+- payment-link reconciliation
+- ManualReview reconciliation
+- Ops UI Resolve action
+- scripts or admin routes resolving ManualReviewItem directly
+
+**Normal resolution behavior with active recovery hold:**
+
+- no-op or explicit held result
+- no mutation to resolved status
+- no duplicate completion claim
+
+**Recovery-only resolution behavior:**
+
+- requires active incident-scoped ALS context
+- arguments match ALS incident scope
+- `recoveryStatus` is `awaiting_review_resolution`
+- Booking / payment / session / job / EDS / confirmationQueuedAt verification passes
+- hold belongs to same `recoveryExecutionId`
+- resolves MRI idempotently
+- advances recovery to `complete`
+- releases / completes hold
+
+The Ops instruction “do not click Resolve” remains an operational safeguard, **not** the only technical protection.
+
+### 11.4 Premature / out-of-band MRI resolution policy (locked)
+
+Architecture must **not** treat `MRI.status === resolved` alone as recovery success.
+
+If the MRI is found resolved before the recovery verification gate:
+
+- inspect resolution evidence
+- if resolution was performed by the same `recoveryExecutionId` after the correct verification gate, adoption is allowed
+- otherwise treat as premature / out-of-band (`RECOVERY_REVIEW_RESOLVED_PREMATURELY`)
+
+**Chosen policy (repository-aligned):** create a **new** recovery-completion ManualReviewItem (do **not** reopen the original), linked to:
+
+- original MRI `_id`
+- `recoveryExecutionId`
+- checkoutId
+- PaymentIntent
+- Booking when present
+- reason / category evidence `RECOVERY_REVIEW_RESOLVED_PREMATURELY`
+
+Place / transfer the active `resolutionHold` onto the new open recovery-completion MRI (or keep hold metadata that points to the open completion item). Do **not** report recovery complete until that open / held recovery review reaches the controlled final resolution gate.
+
+Rationale: `ManualReviewItem` has no reopen helper; statuses are `open|resolved|ignored`; reopen is not a safe shared convention for this model.
+
+### 11.5 Final verification before recovery-only resolve
+
+Requires **all** of:
+
+- Booking exists with `unitId` = expected AF-03
+- `Payment.reservationId` matches Booking
+- `CheckoutSession.bookingId` matches Booking
+- session `finalizeStatus=finalized`
+- job `status=succeeded` with recovery linkage evidence
+- confirmation EmailDeliveryState exists (`pending` or already definitive sent)
+- `confirmationQueuedAt` set
+- `recoveryStatus=awaiting_review_resolution`
+- active hold for this `recoveryExecutionId`
 
 ---
 
@@ -842,16 +1237,18 @@ Extend §9.4 / §9.5 lists when new readers are found.
 - S0 calls existing delivery SM with **`send: false`**.
 - Ensures one durable pending `EmailDeliveryState` (`correlationKey` unique).
 - Must not invoke SMTP; must not set `Booking.confirmationEmailSentAt`; must not set job `confirmationSentAt`.
-- Set job `confirmationQueuedAt` only via §2.7 helper after pending/succeeded EDS exists.
-- Confirmation worker remains stopped.
-- Second run adopts existing pending/succeeded EDS.
-- Enqueue failure does not undo Booking/Payment/session; MRI stays open (§11).
+- Must not launch an in-process confirmation task.
+- Set job `confirmationQueuedAt` only via §2.9 privileged helper after pending/succeeded EDS exists.
+- Confirmation worker remains stopped; later worker has no ALS recovery context.
+- Durable EDS contains **no** recovery capability or bypass marker.
+- Second run (resume) adopts existing pending/succeeded EDS.
+- Enqueue failure does not undo Booking/Payment/session/job success; recovery remains incomplete and held.
 
 ---
 
 ## 13. Error taxonomy (single authoritative module)
 
-Introduce `server/services/checkout/multiUnitRecoveryAndCapacityErrorTaxonomy.js` (S0 recovery codes first; S1 expands shared finalize permanence). Used by recovery, job classifier hooks for S0 codes, `safeDetails`, CLI, MRI evidence.
+Introduce `server/services/checkout/multiUnitRecoveryAndCapacityErrorTaxonomy.js` and `multiUnitPaidOrphanRecoveryErrors.js` (S0 recovery codes first; S1 expands shared finalize permanence). Used by recovery, job classifier hooks for S0 codes, `safeDetails`, CLI, MRI evidence.
 
 `safeDetails.permanent` and job permanence **must** use this source for codes this module owns.
 
@@ -872,9 +1269,15 @@ Introduce `server/services/checkout/multiUnitRecoveryAndCapacityErrorTaxonomy.js
 | `RECOVERY_PAYMENT_NOT_PAID` | no | abort | no | no | keep open | CLI | none |
 | `RECOVERY_PAYMENT_ALREADY_LINKED_ELSEWHERE` | no | abort | no | fail | **yes** | CLI | investigate |
 | `RECOVERY_EXISTING_BOOKING_CONFLICT` | no | abort | no | fail | **yes** | CLI | investigate |
-| `RECOVERY_PARTIAL_LINKAGE` | yes via re-run | until fixed | may stay leased/failed | reclaimable | **yes** keep open | CLI | none |
-| `RECOVERY_CONFIRMATION_ENQUEUE_FAILED` | yes via re-run | until fixed | job may already succeeded | complete/re-run side effects | **keep open** | CLI | none |
-| `RECOVERY_ALREADY_COMPLETED` | n/a success | n/a | already succeeded | n/a | may already resolved | CLI | none |
+| `RECOVERY_PARTIAL_LINKAGE` | yes via re-run | until fixed | may stay incomplete | reclaimable | **yes** keep open/held | CLI | none |
+| `RECOVERY_CONFIRMATION_ENQUEUE_FAILED` | yes via re-run | until fixed | job may already succeeded | reclaimable | **keep open/held** | CLI | none |
+| `RECOVERY_ALREADY_COMPLETE` | n/a success | n/a | already complete | n/a | already resolved | CLI | none |
+| `RECOVERY_RESUME_PHASE_MISMATCH` | no | abort | no phase jump | keep/fail | keep held | CLI | none |
+| `RECOVERY_EXECUTION_ID_CONFLICT` | no | abort | no | contested | keep held | CLI | none |
+| `RECOVERY_LEASE_EXPIRED` | yes via resume reclaim | no | no auto-complete | reclaimable | keep held | CLI | none |
+| `RECOVERY_MRI_HOLD_CONFLICT` | no | abort | no | fail/keep | contested | CLI | none |
+| `RECOVERY_REVIEW_RESOLVED_PREMATURELY` | yes via completion MRI | until fixed | continue incomplete | reclaimable | new completion MRI | CLI | none |
+| `RECOVERY_HOSTILE_STATE_DRIFT` | no | abort | no | fail/keep | keep held | CLI | investigate |
 
 ---
 
@@ -885,23 +1288,27 @@ Introduce `server/services/checkout/multiUnitRecoveryAndCapacityErrorTaxonomy.js
 - S0 does **not** require `MULTI_UNIT_CAPACITY_STAY_GUARD`.
 - S0 works while legacy commercial exclusivity remains enabled (ALS-gated exclusivity bypass only for the allowlisted orphan).
 - S0 does not require client deploy or confirmation worker running.
-- S0 does not require the S1 provisional-capacity algorithm.
+- S0 does not require the S1 provisional-capacity algorithm or paid-overlap predicates.
+- The current incident does **not** yet contain a retained paid-overlap loser Booking.
+- S0 exact AF-03 recovery is independent of S1 paid-overlap predicates.
+- S1 remains independently blocked until its own implementation audit.
+- `MULTI_UNIT_CAPACITY_STAY_GUARD` remains **false** during S0 incident recovery.
 - S0 must deploy before incident execute.
 
 ### 14.2 Ordering
 
-- **Incident execute before enabling S1 capacity flag**, unless self-exclusion + provisional rules are already verified in the deployed build.
+- **Incident execute / resume before enabling S1 capacity flag**, unless self-exclusion + provisional rules are already verified in the deployed build.
 
 ### 14.3 S3 production order
 
 1. Deploy approved S0 server/tooling.
 2. Production dry-run (zero writes) → original evidence + digest.
-3. Confirm operator intent (fixed phrase + `ops:<username>`).
-4. Execute with original evidence/digest; live recheck AF-03.
-5. Verify Booking / Payment / session / job / unit / EDS / confirmationQueuedAt.
-6. Resolve MRI only after verification.
-7. Leave confirmation pending.
-8. Continue S1/S2 separately.
+3. Confirm operator intent (fixed phrase + `ops:<username>` overlay).
+4. Initial execute with original evidence/digest; live recheck AF-03; or resume incomplete recoveryExecutionId.
+5. Verify Booking / Payment / session / job / unit / EDS / confirmationQueuedAt / recoveryStatus.
+6. Resolve held MRI only after verification gate.
+7. Leave confirmation EDS pending; confirmation worker remains stopped.
+8. Continue S1/S2 separately with capacity flag still false until S1 audit.
 
 ---
 
@@ -926,7 +1333,7 @@ Quantity remains absent from the public product model. Defensive API validation 
 | `MULTI_UNIT_PAID_ORPHAN_RECOVERY` | false | S0 execute gate (with `--execute` + allowlist + digest + phrase) |
 | `MULTI_UNIT_CAPACITY_STAY_GUARD` | false | S1 capacity-aware guard + pre-charge |
 
-S0 recovery does **not** depend solely on the capacity flag. Active ALS recovery context remains required for privileged seams. Logs show boolean policy only; no PII.
+S0 recovery does **not** depend solely on the capacity flag. Active incident-scoped ALS context + lease + MRI hold remain required for privileged seams. Logs show boolean policy only; no PII.
 
 ---
 
@@ -936,90 +1343,151 @@ S0 recovery does **not** depend solely on the capacity flag. Active ALS recovery
 
 - `server/services/checkout/multiUnitPaidOrphanRecoveryCapability.js`
 - `server/services/checkout/multiUnitPaidOrphanRecoveryService.js`
+- `server/services/checkout/multiUnitPaidOrphanRecoveryErrors.js`
 - `server/scripts/recoverMultiUnitPaidOrphanCheckout.js`
 - `server/scripts/multiUnitPaidOrphanRecovery.test.cjs`
-- `server/services/checkout/multiUnitPaidOrphanRecoveryCapability.boundary.test.cjs` (or equivalent under `server/tests` / `server/services/checkout` — exact path chosen in S0; **mandatory** source-boundary test)
+- capability source-boundary test (exact path chosen in S0; mandatory)
 - `docs/checkout-payment-architecture/04_MULTI_UNIT_PAID_ORPHAN_RECOVERY_CLI.md` (fake IDs only)
 - `docs/checkout-payment-architecture/examples/multi-unit-paid-orphan-allowlist.example.json` (fake IDs)
-- `server/services/checkout/multiUnitRecoveryAndCapacityErrorTaxonomy.js`
+- `server/services/checkout/multiUnitRecoveryAndCapacityErrorTaxonomy.js` (S0 recovery codes first; S1 expands later)
 
-If current lint infrastructure supports repository `no-restricted-imports` (or equivalent) for the runner, include that **existing** lint configuration file in S0 scope. If not, do **not** invent a new lint system solely for this sidequest; the source-boundary test remains mandatory.
+If current lint infrastructure supports repository `no-restricted-imports` for the runner, include that existing lint configuration file in S0 scope. If not, do not invent a new lint system; the source-boundary test remains mandatory.
 
 ### 17.2 Narrow modify
 
-- `server/models/CheckoutFinalizationJob.js` — recovery fields + lease index + bounded history
-- `server/services/checkout/checkoutFinalizationJobService.js` — claim, succeed-from-`failed_permanent`, confirmationQueuedAt patch; reconcile no-op while leased; ALS assert on privileged recovery helpers
-- `server/services/checkout/commercialStayGuardService.js` — exclusivity bypass only after `assertMultiUnitPaidOrphanRecoveryContext()`
-- `server/services/checkout/finalizePaidCheckout.js` / `checkoutFinalizeService.js` — private recovery path hooks only under ALS context
+- `server/models/CheckoutFinalizationJob.js` — recovery lifecycle fields, lease index, recoveryExecutionId index, bounded history
+- `server/models/ManualReviewItem.js` — `resolutionHold` fields + lookup index
+- `server/services/checkout/checkoutFinalizationJobService.js` — claim/reclaim, renew, succeed-from-`failed_permanent`, confirmationQueuedAt phase patch; reconcile report-only while incomplete
+- `server/services/checkout/commercialStayGuardService.js` — exclusivity bypass only after branded context + identity match
+- `server/services/checkout/finalizePaidCheckout.js` / `checkoutFinalizeService.js` — private recovery path hooks only under matching ALS context
+- exact-unit finalize-context seam (`assignedUnitId` injection)
 - `server/services/checkout/executeBookingFinalizeWork.js` — only if needed to honor pre-assigned unit (already supported)
-- `server/services/payments/paymentLinkingService.js` — suppress `payment_unlinked` auto-resolve only when ALS context asserts
-- `server/services/checkout/checkoutFinalizeSideEffects.js` — force `send:false`; suppress MRI auto-resolve under ALS context
-- `server/services/checkout/reconcilePaidCheckoutFinalization.js` — no-op mutate path while recovery lease active
+- payment-linking resolution helper / `paymentReviewResolutionService.js` — hold-aware resolution
+- `server/services/checkout/checkoutFinalizeSideEffects.js` — force `send:false`; hold-aware MRI path
+- central ManualReview resolution service (`manualReviewService.resolveManualReviewItem`) and direct callers (Ops UI routes, scripts)
+- `server/services/checkout/reconcilePaidCheckoutFinalization.js` and/or payment-link reconcile — hold awareness / no-op mutate while incomplete
+- Stripe ingestion link path — hold awareness for this MRI category / PI
+- confirmation queue job patch helper
 - `server/utils/featureFlags.js` — `isMultiUnitPaidOrphanRecoveryEnabled()`
 
 Do not otherwise widen S0.
+
 ### 17.3 Explicitly exclude
 
-- Confirmation-worker PM2 / Batches 2–3
-- Global S1 capacity default-on
-- Client quantity product
-- Payment amount / Stripe charge or refund creation
-- Unrelated voucher or messaging code
+- S1 global capacity builder
+- paid-overlap reader predicates
+- frontend quantity support
+- Stripe charge / refund creation
+- confirmation-worker PM2 / Batches 2–3
+- unrelated payment, voucher, messaging, or checkout architecture
 - Using Batch 8 `reconcilePaidCheckoutSubject` as the mutator for this incident
+- `metadata.provisionalCapacityRelease` (S1 only)
 
 ---
 
 ## 18. Exact S0 acceptance tests
 
-S0 tests (exact-unit / recovery; **not** S1 provisional algorithm):
+S0 tests (exact-unit / recovery; **not** S1 provisional algorithm / paid-overlap predicates):
+
+#### Dry-run / digest / overlay
 
 1. Dry-run performs **zero** Mongo mutations.
 2. Exact allowlist required; wildcards rejected.
-3. Fixed operator confirmation phrase required.
-4. Actor (`ops:<username>`) / timestamp / reason required.
+3. Fixed operator confirmation phrase required (execute overlay).
+4. Actor (`ops:<username>`) / timestamp / reason required as execute overlay (not in digest).
 5. Digest generated deterministically from original `canonicalEvidence` only.
 6. Outer `dryRunGeneratedAt` must equal `canonicalEvidence.dryRunGeneratedAt`; execute rejects when they differ.
 7. Execute rejects when submitted digest ≠ H(received original `canonicalEvidence`).
-8. Execute rejects when live material fields diverge from original evidence (including AF-03 availability / unit updatedAt).
-9. Digest older than max age rejects (age from `canonicalEvidence.dryRunGeneratedAt` after envelope equality).
+8. Initial execute rejects when live material fields diverge from original pre-mutation evidence.
+9. Digest older than max age rejects when no active incomplete recovery owns it.
 10. Wrong identifiers / hashes / amount / dates reject.
 11. Guest identity mismatch rejects without exposing email.
-12. Real ALS context predicate: normal finalizer args / plain bypass flags cannot forge bypass outside recovery context.
-13. HTTP / webhook / worker / reconcile paths cannot bypass guard.
-14. Source-boundary: only recovery service may import `runInMultiUnitPaidOrphanRecoveryContext`; Symbol not exported; runner not re-exported.
-15. Recovery lease acquired **without** job `status=claimed`.
-16. Normal worker cannot execute recovery-leased `failed_permanent` job.
-17. Active lease → reconcile mutates nothing / opens no duplicate MRI.
-18. Expired recovery lease can be reclaimed by recovery CLI only.
-19. Original permanent failure evidence preserved after success.
-20. Exact AF-03 validation passes when available.
-21. Inactive / wrong-type / blocked / overlapping unit rejects.
-22. Orphan paid session alone does **not** make AF-03 unavailable (no assigned unit).
-23. No new PaymentIntent, charge, or refund.
-24. Existing Booking by checkoutId/PI is adopted.
-25. Concurrent creation race creates/adopts only one Booking.
-26. Partial failure after Booking creation reconciles forward (no delete).
-27. Payment link failure reconciles on second run.
-28. Session link failure reconciles on second run.
-29. Job completion failure reconciles on second run.
-30. Job may succeed with `confirmationQueuedAt` null; patch sets it after EDS.
-31. MRI remains open until full verification including confirmationQueuedAt/EDS.
-32. Payment-link auto-resolution suppressed during recovery (real ALS assert in linker).
-33. Sensitive inner functions assert ALS immediately before privilege (guard, unit inject, MRI suppress, lease, job complete, MRI resolve).
-34. One pending confirmation EDS with `send:false`; EDS contains no recovery/bypass marker.
-35. Confirmation enqueue failure leaves MRI open and links intact.
-36. Second run idempotent.
-37. No SMTP invoked.
-38. No production identifiers / emails in tests.
-39. `recoveryHistory` never exceeds 40 entries.
-40. Async-context: context active across awaited operations.
-41. Async-context: context absent before runner invocation.
-42. Async-context: context absent after runner completion.
-43. Async-context: context not present in a later timer or detached task.
-44. Parallel normal finalization remains outside recovery context.
-45. Parallel recovery executions do not share incident state.
 
-**S1-only:** aggregate provisional-slot self-exclusion, grouping precedence, disputed release, multi-reader paidOverlapConflict exclusion (inventory **and** guest-stay), concurrent last-unit loser inventory exclusion.
+#### Context / ALS (real Node semantics)
+
+12. No recovery context before runner.
+13. Correct incident scope across awaited operations.
+14. No context in ordinary caller after awaited runner completion.
+15. Documented behavioral probe: a timer / detached Promise created inside ALS **would retain** context (documents Node; not a production path).
+16. Recovery orchestration invokes no forbidden detached scheduler / fire-and-forget seam.
+17. Fail when recovery implementation invokes forbidden scheduler seams.
+18. No privileged operation occurs after the authoritative recovery Promise resolves (unless durably recorded for resume).
+19. Incident A context cannot authorize incident B.
+20. Parallel normal finalization has no recovery context.
+21. Parallel recoveries retain distinct incident scopes.
+22. Plain bypass flags / option fields ineffective without matching branded context.
+
+#### Source boundary
+
+23. Only recovery service imports runner.
+24. Dynamic / computed capability-module imports rejected.
+25. Runner re-export rejected.
+26. Capability Symbol not exported.
+27. CLI cannot import capability module.
+28. HTTP / webhook / worker / reconcile paths cannot import runner or forge bypass.
+
+#### Initial / resume
+
+29. Initial execute requires unchanged dry-run evidence.
+30. Booking appearance before any recovery lease aborts initial execute.
+31. Booking appearance after stored recovery progress enters resume adoption.
+32. Partial failure after every mutation phase resumes forward.
+33. Original digest remains bound to same `recoveryExecutionId`.
+34. Hostile drift aborts resume (`RECOVERY_HOSTILE_STATE_DRIFT`).
+35. Complete recovery is idempotent (`RECOVERY_ALREADY_COMPLETE`).
+36. New dry-run required only under locked abandon / identity-change / hostile-remediation cases.
+
+#### Lease / lifecycle
+
+37. Lease TTL exactly 15 minutes.
+38. Renewal before every major phase.
+39. Job succeeded while recovery incomplete remains reclaimable / resumable with same `recoveryExecutionId`.
+40. No concurrent finisher.
+41. Recovery ownership retained through EDS and MRI.
+42. `complete` releases lease.
+43. Recovery lease acquired without job `status=claimed`.
+44. Normal worker cannot execute recovery-owned incomplete work.
+45. Active incomplete recovery → generic reconcile mutates nothing / opens no duplicate conflict MRI (except locked premature-completion MRI).
+46. Original permanent failure evidence preserved after job success.
+
+#### Exact unit / money
+
+47. Exact AF-03 validation passes when available.
+48. Inactive / wrong-type / blocked / overlapping unit rejects.
+49. Orphan paid session alone does not make AF-03 unavailable.
+50. No new PaymentIntent, charge, or refund.
+51. Existing Booking by checkoutId/PI is adopted.
+52. Concurrent creation race creates/adopts only one Booking.
+53. Never delete a successfully created paid Booking.
+54. No raw Booking insertion path in recovery.
+
+#### MRI hold
+
+55. Active hold blocks payment-link auto-resolve.
+56. Active hold blocks side-effect auto-resolve.
+57. Active hold blocks reconcile auto-resolve.
+58. Active hold blocks Ops UI resolve.
+59. Hold survives lease expiry.
+60. Recovery-only resolver requires matching ALS scope and `awaiting_review_resolution`.
+61. Premature out-of-band resolution creates recovery-completion MRI (locked policy); does not mark recovery complete.
+62. MRI cannot resolve before confirmationQueuedAt evidence.
+
+#### Confirmation
+
+63. EDS ensured once with `send:false`.
+64. No SMTP.
+65. confirmationQueuedAt phase patch set-once; advances to `awaiting_review_resolution`.
+66. confirmationSentAt unchanged.
+67. Worker remains unnecessary.
+68. EDS contains no recovery/bypass marker.
+
+#### Hygiene
+
+69. No production identifiers / emails in tests.
+70. `recoveryHistory` never exceeds 40 entries.
+71. Sanitized errors never expose ALS store.
+
+**S1-only:** aggregate provisional-slot self-exclusion, grouping precedence, disputed release, multi-reader paidOverlapConflict exclusion (inventory and guest-stay), concurrent last-unit loser inventory exclusion, `provisionalCapacityRelease`.
 
 ---
 
@@ -1064,9 +1532,15 @@ S0 tests (exact-unit / recovery; **not** S1 provisional algorithm):
 - missing metadata remains backward-compatible
 - shared predicate is used rather than duplicated metadata checks where practical
 
-These are **S1** requirements and do **not** expand S0 implementation.
+### 19.4 S1 independence from S0
 
-Additional S1 tests: capacity matrix, grouping precedence, disputed release, concurrent last-unit loser inventory exclusion, flag off/on.
+- Keep the existing S1 shared-predicate and repository-wide reader requirements.
+- Do **not** move their implementation into S0.
+- S1 remains independently blocked until its own implementation audit.
+- `MULTI_UNIT_CAPACITY_STAY_GUARD` remains false during S0 incident recovery.
+- The current incident does not yet contain a retained paid-overlap loser Booking.
+- S0 exact AF-03 recovery is independent of S1 paid-overlap predicates.
+
 ---
 
 ## 20. Pre-charge behavior (S1)
@@ -1096,6 +1570,8 @@ Capacity checked at quote refresh, CheckoutSession refresh, and immediately befo
 - CheckoutSession unique `checkoutId`; partial unique canonical PI
 - CheckoutFinalizationJob unique active executable (`scheduled|claimed`) per checkoutId
 - CheckoutFinalizationJob `{ recoveryStatus, recoveryVisibilityTimeoutAt }` (new)
+- CheckoutFinalizationJob `{ recoveryExecutionId }` (new)
+- ManualReviewItem resolutionHold lookup index (new; exact keys per §11.2)
 - Payment unique `{ provider, providerReference }`
 - EmailDeliveryState unique `correlationKey`
 
@@ -1125,24 +1601,22 @@ Do **not** add a unique index on commercialStayFingerprint that reintroduces cab
 | Topic | Decision |
 |-------|----------|
 | Trust scope | Protects untrusted inputs / accidental ordinary paths; not malicious trusted in-repo code |
-| Capability | Private Symbol in AsyncLocalStorage; never exported, passed, or persisted |
-| Runner ownership | Only recovery service imports `runInMultiUnitPaidOrphanRecoveryContext`; source-boundary test mandatory |
-| Sensitive seams | Inner production functions assert ALS immediately before privilege |
-| Async escape | No unawaited work; context gone after runner; timers/detached tasks have no privilege |
-| Digest | Hash `canonicalEvidence` only; outer `dryRunGeneratedAt` must equal inner; age from inner |
-| Job success | From `failed_permanent` via recovery helper; `confirmationQueuedAt` may be null |
-| confirmationQueuedAt | Separate idempotent patch after EDS |
-| Lease | recoveryStatus fields; worker never claimed; reconcile no-op while leased |
-| Dry-run | Zero writes |
-| Guest identity | In-memory normalize + compare; booleans only |
-| Intent | Fixed phrase + `ops:<username>` evidence + timestamp + reason + digest |
-| Unit | Exact AF-03 via `assignedUnitId` after validateUnitForCabinTypeBooking + ALS assert |
-| MRI | Suppress auto-resolve under ALS context; resolve after verify including queued confirmation |
-| Confirmation | `send:false` pending EDS; worker stopped; EDS has no bypass marker |
-| Paid loser | Retain Booking; `isInventoryBlockingBooking` + `isGuestStayEligibleBooking` exclude conflict |
-| Guest-stay coverage | Messaging, arrival, cleaning, portal, ICS, channel, integrity, lifecycle — not inventory-only |
-| Provisional | Aggregate slot; no auto-expiry; disputed stays blocked; explicit release field |
-| Grouping | Booking → PI → checkoutId → session → job |
-| Deploy | S0 deploy → dry-run → intent → execute → verify → MRI; then S1 flag |
+| ALS semantics | Ordinary caller clears after await; awaited work keeps store; timers/detached created inside may retain store |
+| Orchestration | No unawaited privileged work; exit() for unavoidable non-privileged scheduling |
+| Context schema | Frozen incident-scoped store with private brand + recoveryExecutionId + digest + IDs |
+| Identity match | Privileged seams assert brand **and** argument/scope match (A cannot affect B) |
+| Runner ownership | Only recovery service imports runner; literal path; no dynamic require; boundary test |
+| Modes | `initial` (pre-mutation equality) vs `resume` (adopt progress; hostile drift aborts) |
+| recoveryStatus | idle→leased→linkage_complete→awaiting_confirmation_queue→awaiting_review_resolution→complete |
+| Job vs recovery | Job `succeeded` ≠ recovery `complete`; lease retained through EDS/MRI |
+| Lease | 15 minutes; renew each major phase; reclaim same recoveryExecutionId |
+| MRI hold | Durable resolutionHold; blocks all auto/manual resolvers; survives lease expiry |
+| Premature MRI | New recovery-completion MRI (no reopen); hold follows; not complete until gate |
+| Digest | Hash canonicalEvidence only; envelope timestamp equality; operator overlay separate |
+| Unit | Exact AF-03 via assignedUnitId after validate + ALS match |
+| Confirmation | send:false EDS; no SMTP; worker stopped; no in-process task |
+| Paid loser | S1 predicates/readers only; not S0 |
+| Provisional release | S1 only; S0 must not touch |
+| Deploy | S0 deploy → dry-run → intent → initial/resume → verify → MRI → leave EDS pending; S1 flag off |
 
-**End of binding architecture lock (ownership-restricted 2026-08-03).**
+**End of binding architecture lock (resume-scoped 2026-08-03).**
