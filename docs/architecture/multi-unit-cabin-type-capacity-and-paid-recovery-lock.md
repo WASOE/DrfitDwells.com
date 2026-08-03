@@ -362,13 +362,12 @@ CLI recoverMultiUnitPaidOrphanCheckout.js
        └─ runInMultiUnitPaidOrphanRecoveryContext(frozenScopeWithoutBrand, async () => {
             // callback receives NO context argument
             ├─ acquire/reclaim lease + renew TTL
-            ├─ acquire/verify MRI resolution hold
-            ├─ adopt/create Booking (exact unit after assert+match)
-            ├─ link Payment / finalize session (hold-aware MRI paths)
+            ├─ acquire/verify MRI resolution hold; set activeRecoveryReviewItemId
+            ├─ search/adopt Booking OR runMultiUnitPaidOrphanRecoveryBookingFinalizeCore (no side-effect tail)
+            ├─ link Payment / finalize session (hold-aware; no ordinary auto-resolve)
             ├─ recovery job success → linkage_complete (lease retained)
-            ├─ runMultiUnitPaidOrphanRecoveryBookingFinalizeCore (no side-effect tail)
-            ├─ link Payment / finalize session (hold-aware)
-            ├─ recovery job success → linkage_complete (lease retained)
+            ├─ SavedQuote convert if applicable (explicit; not via side-effect bundle)
+            ├─ advance awaiting_confirmation_queue
             ├─ ensurePendingConfirmationDelivery only (no processBookingConfirmationDelivery; no job stamps)
             ├─ markCheckoutFinalizationJobConfirmationQueued → awaiting_review_resolution
             ├─ ensureMultiUnitPaidOrphanCompletionReview + hold transfer if premature resolve
