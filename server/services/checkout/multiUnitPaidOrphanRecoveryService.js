@@ -57,6 +57,11 @@ const { convertSavedQuoteForBooking } = require('./checkoutFinalizeSideEffects')
 const { linkStripePaymentToBooking } = require('../payments/paymentLinkingService');
 const { normalizeGuestEmail } = require('./bookingCommercialStayFingerprint');
 const AssignmentEngine = require('../assignmentEngine');
+const { BLOCKING_BOOKING_STATUSES } = require('../calendar/blockingStatusConstants');
+const {
+  formatSofiaDateOnly,
+  normalizeDateToSofiaDayStart
+} = require('../../utils/dateTime');
 const {
   ensurePendingConfirmationDelivery,
   resolveConfirmationTemplateKey
@@ -69,6 +74,9 @@ const SCHEMA_VERSION = 'multi-unit-paid-orphan-recovery/v1';
 const MAX_DIGEST_AGE_MS = 24 * 60 * 60 * 1000;
 const INTENT_PHRASE =
   'I CONFIRM THE GUEST INTENDS TO PURCHASE A SECOND PHYSICAL A-FRAME';
+
+/** First-Booking statuses eligible to supply authoritative stay-date evidence. */
+const FIRST_BOOKING_DATE_ELIGIBLE_STATUSES = Object.freeze([...BLOCKING_BOOKING_STATUSES]);
 
 /** Test-only fault injector: async (boundaryName) => void|Promise. Throws to abort after durable writes. */
 let recoveryFaultInjectorForTesting = null;
@@ -170,11 +178,212 @@ function requireAllowlist(allowlist) {
   return allowlist;
 }
 
-function dateOnly(value) {
-  if (!value) return null;
-  const d = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString().slice(0, 10);
+function isUsableStayDateInput(value) {
+  if (value == null || value === '') return false;
+  if (value instanceof Date && Number.isNaN(value.getTime())) return false;
+  return true;
+}
+
+/**
+ * Normalize a stay boundary pair to Sofia civil dates.
+ * @returns {{ kind: 'absent' } | { kind: 'ok', checkIn: Date, checkOut: Date, checkInDateOnly: string, checkOutDateOnly: string }}
+ */
+function tryNormalizeStayDatePair(checkInRaw, checkOutRaw) {
+  const hasIn = isUsableStayDateInput(checkInRaw);
+  const hasOut = isUsableStayDateInput(checkOutRaw);
+  if (!hasIn && !hasOut) return { kind: 'absent' };
+  if (!hasIn || !hasOut) {
+    throw createSanitizedRecoveryError('RECOVERY_HOSTILE_STATE_DRIFT', {
+      reason: 'malformed_stay_date_evidence'
+    });
+  }
+
+  const checkInDateOnly = formatSofiaDateOnly(checkInRaw);
+  const checkOutDateOnly = formatSofiaDateOnly(checkOutRaw);
+  if (!checkInDateOnly || !checkOutDateOnly) {
+    throw createSanitizedRecoveryError('RECOVERY_HOSTILE_STATE_DRIFT', {
+      reason: 'malformed_stay_date_evidence'
+    });
+  }
+
+  const checkIn = normalizeDateToSofiaDayStart(checkInDateOnly);
+  const checkOut = normalizeDateToSofiaDayStart(checkOutDateOnly);
+  if (
+    Number.isNaN(checkIn.getTime()) ||
+    Number.isNaN(checkOut.getTime()) ||
+    !(checkOut.getTime() > checkIn.getTime())
+  ) {
+    throw createSanitizedRecoveryError('RECOVERY_HOSTILE_STATE_DRIFT', {
+      reason: 'invalid_exclusive_stay_range'
+    });
+  }
+
+  return { kind: 'ok', checkIn, checkOut, checkInDateOnly, checkOutDateOnly };
+}
+
+function extractQuoteSnapshotStayDates(session) {
+  const qs = session?.quoteSnapshot;
+  if (!qs || typeof qs !== 'object') return { kind: 'absent' };
+  return tryNormalizeStayDatePair(
+    qs.checkInDate ?? qs.checkInISO ?? qs.checkInDateOnly,
+    qs.checkOutDate ?? qs.checkOutISO ?? qs.checkOutDateOnly
+  );
+}
+
+function extractFinalizeIntentStayDates(session) {
+  const fi = session?.finalizeIntent;
+  if (!fi || typeof fi !== 'object') return { kind: 'absent' };
+  return tryNormalizeStayDatePair(
+    fi.checkInDate ?? fi.checkInISO ?? fi.checkInDateOnly,
+    fi.checkOutDate ?? fi.checkOutISO ?? fi.checkOutDateOnly
+  );
+}
+
+function extractDirectSessionStayDates(session) {
+  if (!session || typeof session !== 'object') return { kind: 'absent' };
+  return tryNormalizeStayDatePair(session.checkInDate, session.checkOutDate);
+}
+
+function stayDatePairsEqual(a, b) {
+  return (
+    a.checkInDateOnly === b.checkInDateOnly &&
+    a.checkOutDateOnly === b.checkOutDateOnly
+  );
+}
+
+/**
+ * Decide whether the allowlisted first Booking may supply stay dates.
+ * Fail-closed on fingerprint mismatch when the Booking is otherwise the only
+ * candidate (caller maps codes). Returns { ok:true } or { ok:false, code?, reason }.
+ */
+function evaluateFirstBookingDateAdoption({ allowlist, firstBooking, session }) {
+  if (!allowlist?.firstBookingId) {
+    return { ok: false, reason: 'no_first_booking_id' };
+  }
+  if (!firstBooking) {
+    return { ok: false, reason: 'first_booking_missing' };
+  }
+  if (String(firstBooking._id) !== String(allowlist.firstBookingId)) {
+    return { ok: false, reason: 'first_booking_id_mismatch' };
+  }
+  if (!FIRST_BOOKING_DATE_ELIGIBLE_STATUSES.includes(String(firstBooking.status || ''))) {
+    return { ok: false, reason: 'first_booking_status_ineligible' };
+  }
+  if (!session?.stayFingerprint || !firstBooking.commercialStayFingerprint) {
+    return { ok: false, reason: 'fingerprint_missing' };
+  }
+  if (
+    String(firstBooking.commercialStayFingerprint) !== String(session.stayFingerprint)
+  ) {
+    return { ok: false, code: 'RECOVERY_FINGERPRINT_MISMATCH', reason: 'fingerprint_mismatch' };
+  }
+  if (
+    !firstBooking.cabinTypeId ||
+    String(firstBooking.cabinTypeId) !== String(allowlist.cabinTypeId)
+  ) {
+    return { ok: false, reason: 'first_booking_cabin_type_mismatch' };
+  }
+  const sessionCabinTypeId =
+    session.quoteSnapshot?.cabinTypeId ||
+    session.finalizeIntent?.cabinTypeId ||
+    session.cabinTypeId ||
+    null;
+  if (
+    sessionCabinTypeId &&
+    String(sessionCabinTypeId) !== String(allowlist.cabinTypeId)
+  ) {
+    return { ok: false, reason: 'session_cabin_type_mismatch' };
+  }
+  return { ok: true };
+}
+
+/**
+ * Authoritative fail-closed stay-date resolver for paid-orphan recovery evidence.
+ *
+ * Precedence among session sources: quoteSnapshot → finalizeIntent → direct fields.
+ * Allowlisted first Booking supplies dates only for the legacy empty-session case,
+ * and only when identity / fingerprint / cabin-type checks pass.
+ * Two populated authoritative sources with conflicting Sofia dates → hostile drift.
+ */
+function resolveRecoveryStayDates({ allowlist, session, firstBooking }) {
+  const sessionSources = [
+    { name: 'quoteSnapshot', pair: extractQuoteSnapshotStayDates(session) },
+    { name: 'finalizeIntent', pair: extractFinalizeIntentStayDates(session) },
+    { name: 'sessionDirect', pair: extractDirectSessionStayDates(session) }
+  ];
+
+  const populatedSession = [];
+  for (const entry of sessionSources) {
+    if (entry.pair.kind === 'ok') populatedSession.push(entry);
+  }
+
+  let sessionResolved = null;
+  if (populatedSession.length > 0) {
+    sessionResolved = populatedSession[0].pair;
+    for (let i = 1; i < populatedSession.length; i += 1) {
+      if (!stayDatePairsEqual(sessionResolved, populatedSession[i].pair)) {
+        throw createSanitizedRecoveryError('RECOVERY_HOSTILE_STATE_DRIFT', {
+          reason: 'conflicting_session_stay_date_sources',
+          sources: `${populatedSession[0].name},${populatedSession[i].name}`
+        });
+      }
+    }
+  }
+
+  const adoption = evaluateFirstBookingDateAdoption({
+    allowlist,
+    firstBooking,
+    session
+  });
+
+  if (sessionResolved) {
+    if (adoption.ok === true) {
+      const bookingPair = tryNormalizeStayDatePair(
+        firstBooking.checkIn,
+        firstBooking.checkOut
+      );
+      if (bookingPair.kind === 'ok' && !stayDatePairsEqual(sessionResolved, bookingPair)) {
+        throw createSanitizedRecoveryError('RECOVERY_HOSTILE_STATE_DRIFT', {
+          reason: 'conflicting_session_and_first_booking_stay_dates'
+        });
+      }
+    }
+    return {
+      checkIn: sessionResolved.checkIn,
+      checkOut: sessionResolved.checkOut,
+      checkInDateOnly: sessionResolved.checkInDateOnly,
+      checkOutDateOnly: sessionResolved.checkOutDateOnly,
+      source: populatedSession[0].name
+    };
+  }
+
+  // Legacy session: no usable session dates — first Booking may supply.
+  if (adoption.ok !== true) {
+    if (adoption.code === 'RECOVERY_FINGERPRINT_MISMATCH') {
+      throw createSanitizedRecoveryError('RECOVERY_FINGERPRINT_MISMATCH');
+    }
+    throw createSanitizedRecoveryError('RECOVERY_HOSTILE_STATE_DRIFT', {
+      reason: adoption.reason || 'missing_stay_date_evidence'
+    });
+  }
+
+  const bookingPair = tryNormalizeStayDatePair(
+    firstBooking.checkIn,
+    firstBooking.checkOut
+  );
+  if (bookingPair.kind !== 'ok') {
+    throw createSanitizedRecoveryError('RECOVERY_HOSTILE_STATE_DRIFT', {
+      reason: 'missing_stay_date_evidence'
+    });
+  }
+
+  return {
+    checkIn: bookingPair.checkIn,
+    checkOut: bookingPair.checkOut,
+    checkInDateOnly: bookingPair.checkInDateOnly,
+    checkOutDateOnly: bookingPair.checkOutDateOnly,
+    source: 'firstBooking'
+  };
 }
 
 async function loadIncidentDocuments(allowlist) {
@@ -255,12 +464,25 @@ async function evaluateTargetUnitAvailability({
   checkIn,
   checkOut
 }) {
-  const result = await AssignmentEngine.validateUnitForCabinTypeBooking(
-    expectedTargetUnitId,
-    cabinTypeId,
-    checkIn,
-    checkOut
-  );
+  if (!isUsableStayDateInput(checkIn) || !isUsableStayDateInput(checkOut)) {
+    throw createSanitizedRecoveryError('RECOVERY_HOSTILE_STATE_DRIFT', {
+      reason: 'missing_stay_date_evidence'
+    });
+  }
+  let result;
+  try {
+    result = await AssignmentEngine.validateUnitForCabinTypeBooking(
+      expectedTargetUnitId,
+      cabinTypeId,
+      checkIn,
+      checkOut
+    );
+  } catch (err) {
+    if (err instanceof MultiUnitPaidOrphanRecoveryError) throw err;
+    throw createSanitizedRecoveryError('RECOVERY_HOSTILE_STATE_DRIFT', {
+      reason: 'stay_date_validation_failed'
+    });
+  }
   return {
     ok: result?.ok === true,
     code: result?.ok ? null : result?.code || 'UNIT_NOT_AVAILABLE'
@@ -269,20 +491,13 @@ async function evaluateTargetUnitAvailability({
 
 async function buildCanonicalEvidence(allowlist, docs, dryRunGeneratedAt) {
   const { session, job, payment, review, targetUnit, firstBooking } = docs;
-  const checkIn =
-    session.quoteSnapshot?.checkInDate ||
-    session.finalizeIntent?.checkInDate ||
-    session.checkInDate;
-  const checkOut =
-    session.quoteSnapshot?.checkOutDate ||
-    session.finalizeIntent?.checkOutDate ||
-    session.checkOutDate;
+  const stayDates = resolveRecoveryStayDates({ allowlist, session, firstBooking });
 
   const availability = await evaluateTargetUnitAvailability({
     expectedTargetUnitId: allowlist.expectedTargetUnitId,
     cabinTypeId: allowlist.cabinTypeId,
-    checkIn,
-    checkOut
+    checkIn: stayDates.checkIn,
+    checkOut: stayDates.checkOut
   });
 
   const identity = computeGuestIdentityProof({ firstBooking, session });
@@ -301,8 +516,8 @@ async function buildCanonicalEvidence(allowlist, docs, dryRunGeneratedAt) {
     manualReviewItemId: String(review._id),
     expectedCabinTypeId: String(allowlist.cabinTypeId),
     expectedTargetUnitId: String(allowlist.expectedTargetUnitId),
-    expectedCheckInDateOnly: dateOnly(checkIn),
-    expectedCheckOutDateOnly: dateOnly(checkOut),
+    expectedCheckInDateOnly: stayDates.checkInDateOnly,
+    expectedCheckOutDateOnly: stayDates.checkOutDateOnly,
     expectedAmountCents:
       payment.amountCents != null
         ? Number(payment.amountCents)
@@ -1397,7 +1612,25 @@ async function recoverAllowlistedMultiUnitPaidOrphanCheckout({
       });
     }
   } else {
-    // resume
+    // resume — keep using original approved date evidence; abort on hostile live date drift
+    const dateDriftFields = [];
+    for (const path of ['expectedCheckInDateOnly', 'expectedCheckOutDateOnly']) {
+      if (
+        materialEvidenceFieldMismatches(
+          getNestedEvidenceValue(canonicalEvidence, path),
+          getNestedEvidenceValue(liveEvidence, path)
+        )
+      ) {
+        dateDriftFields.push(path);
+      }
+    }
+    if (dateDriftFields.length > 0) {
+      throw createSanitizedRecoveryError('RECOVERY_HOSTILE_STATE_DRIFT', {
+        reason: 'resume_date_drift',
+        mismatchedFields: dateDriftFields
+      });
+    }
+
     if (docs.job.recoveryStatus === 'complete') {
       return {
         ok: true,

@@ -48,6 +48,7 @@ const {
   dryRunMultiUnitPaidOrphanRecovery,
   INTENT_PHRASE,
   MultiUnitPaidOrphanRecoveryError,
+  hashAllowlistIdentity,
   __resetRecoveryFaultInjectorForTesting
 } = require('../services/checkout/multiUnitPaidOrphanRecoveryService');
 const {
@@ -92,6 +93,9 @@ const {
 } = require('../services/email/emailDeliveryCorrelation');
 
 const featureFlags = require('../utils/featureFlags');
+const AssignmentEngine = require('../services/assignmentEngine');
+const { buildStayFingerprint } = require('../services/checkout/checkoutSessionFingerprints');
+const { normalizeDateToSofiaDayStart } = require('../utils/dateTime');
 
 let mongoServer;
 
@@ -973,6 +977,490 @@ test('acceptance: RECOVERY_UNIT_UNAVAILABLE aliases RECOVERY_TARGET_UNIT_UNAVAIL
   assert.equal(constructedFromAlias.code, 'RECOVERY_TARGET_UNIT_UNAVAILABLE');
   assert.equal(constructedFromAlias.summary, canonicalEntry.summary);
   assert.equal(constructedFromAlias.permanent, canonicalEntry.permanent);
+});
+
+/* ======================================================================== *
+ * 11b. Legacy / fail-closed stay-date resolution for dry-run evidence.
+ * ======================================================================== */
+
+async function seedLegacyDateIncident(overrides = {}) {
+  const checkInDateOnly = overrides.checkInDateOnly || '2026-09-08';
+  const checkOutDateOnly = overrides.checkOutDateOnly || '2026-09-10';
+  const checkIn = normalizeDateToSofiaDayStart(checkInDateOnly);
+  const checkOut = normalizeDateToSofiaDayStart(checkOutDateOnly);
+  const guestEmail = overrides.guestEmail || 'legacy-date-guest@example.com';
+  const cabinTypeId = overrides.cabinTypeId || new mongoose.Types.ObjectId();
+  const expectedTargetUnitId = overrides.expectedTargetUnitId || new mongoose.Types.ObjectId();
+  const firstUnitId = overrides.firstUnitId || new mongoose.Types.ObjectId();
+
+  const stayFingerprint =
+    overrides.stayFingerprint ||
+    buildStayFingerprint({
+      guestEmail,
+      entityType: 'cabinType',
+      cabinTypeId: String(cabinTypeId),
+      checkInDateOnly,
+      checkOutDateOnly
+    });
+
+  const seeded = await seedFullIncident({
+    ...overrides,
+    cabinTypeId,
+    expectedTargetUnitId,
+    checkIn,
+    checkOut,
+    guestEmail
+  });
+
+  // Production-shaped legacy session: paid/unfinalized with fingerprint but no stay dates.
+  await CheckoutSession.updateOne(
+    { _id: seeded.allowlist.checkoutSessionId },
+    {
+      $set: {
+        guestEmail,
+        stayFingerprint,
+        quoteSnapshot: {
+          totalCents: 40000,
+          currency: 'eur',
+          cabinTypeId: String(cabinTypeId)
+        },
+        finalizeIntent: {
+          guestInfo: { email: guestEmail, firstName: 'Legacy', lastName: 'Guest' }
+        }
+      },
+      $unset: {
+        checkInDate: 1,
+        checkOutDate: 1
+      }
+    }
+  );
+
+  const firstBooking = await Booking.create({
+    cabinTypeId,
+    unitId: firstUnitId,
+    checkIn,
+    checkOut,
+    adults: 2,
+    status: overrides.firstBookingStatus || 'confirmed',
+    totalPrice: 400,
+    commercialStayFingerprint: overrides.firstBookingFingerprint ?? stayFingerprint,
+    guestInfo: {
+      firstName: 'Legacy',
+      lastName: 'Guest',
+      email: guestEmail,
+      phone: '+1-555-0199'
+    }
+  });
+
+  const allowlist = {
+    ...seeded.allowlist,
+    firstBookingId: String(firstBooking._id)
+  };
+
+  return {
+    ...seeded,
+    allowlist,
+    firstBooking,
+    stayFingerprint,
+    checkIn,
+    checkOut,
+    checkInDateOnly,
+    checkOutDateOnly,
+    guestEmail,
+    cabinTypeId,
+    expectedTargetUnitId
+  };
+}
+
+async function recoveryCollectionSnapshot(allowlist, extraIds = {}) {
+  const collections = [
+    CheckoutSession,
+    CheckoutFinalizationJob,
+    Booking,
+    Payment,
+    ManualReviewItem,
+    EmailDeliveryState,
+    Unit,
+    SavedBookingQuote
+  ];
+  const counts = await Promise.all(collections.map((m) => m.countDocuments({})));
+  const [session, job, payment, review, unit, firstBooking] = await Promise.all([
+    CheckoutSession.findById(allowlist.checkoutSessionId).lean(),
+    CheckoutFinalizationJob.findById(allowlist.finalizationJobId).lean(),
+    Payment.findById(allowlist.paymentId).lean(),
+    ManualReviewItem.findById(allowlist.manualReviewItemId).lean(),
+    Unit.findById(allowlist.expectedTargetUnitId).lean(),
+    allowlist.firstBookingId
+      ? Booking.findById(allowlist.firstBookingId).lean()
+      : Promise.resolve(null)
+  ]);
+  return {
+    counts,
+    keyFields: {
+      sessionUpdatedAt: session?.updatedAt ? new Date(session.updatedAt).getTime() : null,
+      jobUpdatedAt: job?.updatedAt ? new Date(job.updatedAt).getTime() : null,
+      paymentUpdatedAt: payment?.updatedAt ? new Date(payment.updatedAt).getTime() : null,
+      reviewUpdatedAt: review?.updatedAt ? new Date(review.updatedAt).getTime() : null,
+      unitUpdatedAt: unit?.updatedAt ? new Date(unit.updatedAt).getTime() : null,
+      firstBookingUpdatedAt: firstBooking?.updatedAt
+        ? new Date(firstBooking.updatedAt).getTime()
+        : null,
+      sessionBookingId: session?.bookingId ? String(session.bookingId) : null,
+      paymentReservationId: payment?.reservationId ? String(payment.reservationId) : null,
+      jobRecoveryStatus: job?.recoveryStatus || 'idle',
+      reviewStatus: review?.status || null,
+      extra: extraIds
+    }
+  };
+}
+
+test('acceptance: legacy session adopts matching first-Booking Sofia stay dates on dry-run', async () => {
+  const seeded = await seedLegacyDateIncident();
+  const { allowlist, checkIn, checkOut, checkInDateOnly, checkOutDateOnly } = seeded;
+
+  const availabilityCalls = [];
+  const origValidate = AssignmentEngine.validateUnitForCabinTypeBooking;
+  AssignmentEngine.validateUnitForCabinTypeBooking = async (unitId, cabinTypeId, ci, co) => {
+    availabilityCalls.push({ unitId: String(unitId), cabinTypeId: String(cabinTypeId), ci, co });
+    return { ok: true, unit: { _id: unitId } };
+  };
+
+  try {
+    const before = await recoveryCollectionSnapshot(allowlist);
+    const dryRun = await dryRunMultiUnitPaidOrphanRecovery({
+      allowlist,
+      now: new Date('2026-08-01T12:00:00.000Z')
+    });
+    const after = await recoveryCollectionSnapshot(allowlist);
+
+    assert.equal(dryRun.writes, 0);
+    assert.deepEqual(after, before);
+    assert.equal(dryRun.canonicalEvidence.expectedCheckInDateOnly, checkInDateOnly);
+    assert.equal(dryRun.canonicalEvidence.expectedCheckOutDateOnly, checkOutDateOnly);
+    assert.equal(dryRun.canonicalEvidence.expectedCheckInDateOnly, '2026-09-08');
+    assert.equal(dryRun.canonicalEvidence.expectedCheckOutDateOnly, '2026-09-10');
+    assert.ok(dryRun.canonicalEvidence.targetUnitAvailabilityResult);
+    assert.equal(dryRun.canonicalEvidence.targetUnitAvailabilityResult.ok, true);
+    assert.equal(availabilityCalls.length, 1);
+    assert.equal(availabilityCalls[0].ci.getTime(), checkIn.getTime());
+    assert.equal(availabilityCalls[0].co.getTime(), checkOut.getTime());
+    assert.equal(availabilityCalls[0].unitId, allowlist.expectedTargetUnitId);
+    assert.equal(availabilityCalls[0].cabinTypeId, allowlist.cabinTypeId);
+  } finally {
+    AssignmentEngine.validateUnitForCabinTypeBooking = origValidate;
+  }
+});
+
+test('acceptance: modern CheckoutSession quoteSnapshot dates keep precedence unchanged', async () => {
+  const checkIn = normalizeDateToSofiaDayStart('2031-04-10');
+  const checkOut = normalizeDateToSofiaDayStart('2031-04-12');
+  const { allowlist } = await seedFullIncident({ checkIn, checkOut });
+
+  const dryRun = await dryRunMultiUnitPaidOrphanRecovery({
+    allowlist,
+    now: new Date('2031-01-01T00:00:00.000Z')
+  });
+
+  assert.equal(dryRun.canonicalEvidence.expectedCheckInDateOnly, '2031-04-10');
+  assert.equal(dryRun.canonicalEvidence.expectedCheckOutDateOnly, '2031-04-12');
+  assert.equal(dryRun.writes, 0);
+  assert.ok(dryRun.canonicalEvidence.targetUnitAvailabilityResult);
+});
+
+test('acceptance: missing stay dates everywhere fail closed before availability', async () => {
+  const seeded = await seedFullIncident();
+  await CheckoutSession.updateOne(
+    { _id: seeded.allowlist.checkoutSessionId },
+    {
+      $set: {
+        quoteSnapshot: { totalCents: 40000, currency: 'eur' },
+        finalizeIntent: {},
+        stayFingerprint: 'fp-missing-dates-only'
+      },
+      $unset: { checkInDate: 1, checkOutDate: 1 }
+    }
+  );
+
+  let availabilityCalled = false;
+  const origValidate = AssignmentEngine.validateUnitForCabinTypeBooking;
+  AssignmentEngine.validateUnitForCabinTypeBooking = async (...args) => {
+    availabilityCalled = true;
+    return origValidate.apply(AssignmentEngine, args);
+  };
+
+  try {
+    await assert.rejects(
+      () => dryRunMultiUnitPaidOrphanRecovery({ allowlist: seeded.allowlist, now: new Date() }),
+      (err) => {
+        assert.ok(err instanceof MultiUnitPaidOrphanRecoveryError);
+        assert.equal(err.code, 'RECOVERY_HOSTILE_STATE_DRIFT');
+        assert.ok(!String(err.message).includes('Exclusive range requires endDate > startDate'));
+        assert.ok(!String(err.summary || '').includes('Exclusive range requires endDate > startDate'));
+        return true;
+      }
+    );
+    assert.equal(availabilityCalled, false);
+  } finally {
+    AssignmentEngine.validateUnitForCabinTypeBooking = origValidate;
+  }
+});
+
+test('acceptance: conflicting session and first-Booking dates fail as hostile drift', async () => {
+  const seeded = await seedLegacyDateIncident();
+  // Restore modern session dates that disagree with the first Booking.
+  await CheckoutSession.updateOne(
+    { _id: seeded.allowlist.checkoutSessionId },
+    {
+      $set: {
+        quoteSnapshot: {
+          checkInDate: normalizeDateToSofiaDayStart('2026-10-01'),
+          checkOutDate: normalizeDateToSofiaDayStart('2026-10-03'),
+          totalCents: 40000,
+          currency: 'eur',
+          cabinTypeId: String(seeded.cabinTypeId)
+        }
+      }
+    }
+  );
+
+  await assert.rejects(
+    () => dryRunMultiUnitPaidOrphanRecovery({ allowlist: seeded.allowlist, now: new Date() }),
+    (err) => {
+      assert.ok(err instanceof MultiUnitPaidOrphanRecoveryError);
+      assert.equal(err.code, 'RECOVERY_HOSTILE_STATE_DRIFT');
+      assert.equal(err.safeDetails?.reason, 'conflicting_session_and_first_booking_stay_dates');
+      return true;
+    }
+  );
+});
+
+test('acceptance: first-Booking fingerprint mismatch cannot supply legacy dates', async () => {
+  const seeded = await seedLegacyDateIncident({
+    firstBookingFingerprint: 'fp-other-stay-does-not-match'
+  });
+
+  let availabilityCalled = false;
+  const origValidate = AssignmentEngine.validateUnitForCabinTypeBooking;
+  AssignmentEngine.validateUnitForCabinTypeBooking = async (...args) => {
+    availabilityCalled = true;
+    return origValidate.apply(AssignmentEngine, args);
+  };
+
+  try {
+    await assert.rejects(
+      () => dryRunMultiUnitPaidOrphanRecovery({ allowlist: seeded.allowlist, now: new Date() }),
+      (err) => {
+        assert.ok(err instanceof MultiUnitPaidOrphanRecoveryError);
+        assert.equal(err.code, 'RECOVERY_FINGERPRINT_MISMATCH');
+        return true;
+      }
+    );
+    assert.equal(availabilityCalled, false);
+  } finally {
+    AssignmentEngine.validateUnitForCabinTypeBooking = origValidate;
+  }
+});
+
+test('acceptance: first-Booking wrong cabin type cannot supply legacy dates', async () => {
+  const seeded = await seedLegacyDateIncident();
+  const foreignCabinTypeId = new mongoose.Types.ObjectId();
+  await Booking.updateOne(
+    { _id: seeded.firstBooking._id },
+    { $set: { cabinTypeId: foreignCabinTypeId } }
+  );
+
+  let availabilityCalled = false;
+  const origValidate = AssignmentEngine.validateUnitForCabinTypeBooking;
+  AssignmentEngine.validateUnitForCabinTypeBooking = async (...args) => {
+    availabilityCalled = true;
+    return origValidate.apply(AssignmentEngine, args);
+  };
+
+  try {
+    await assert.rejects(
+      () => dryRunMultiUnitPaidOrphanRecovery({ allowlist: seeded.allowlist, now: new Date() }),
+      (err) => {
+        assert.ok(err instanceof MultiUnitPaidOrphanRecoveryError);
+        assert.equal(err.code, 'RECOVERY_HOSTILE_STATE_DRIFT');
+        assert.equal(err.safeDetails?.reason, 'first_booking_cabin_type_mismatch');
+        return true;
+      }
+    );
+    assert.equal(availabilityCalled, false);
+  } finally {
+    AssignmentEngine.validateUnitForCabinTypeBooking = origValidate;
+  }
+});
+
+test('acceptance: same-day exclusive stay range fails with sanitized recovery error', async () => {
+  const sameDay = normalizeDateToSofiaDayStart('2026-09-08');
+  const seeded = await seedFullIncident({ checkIn: sameDay, checkOut: sameDay });
+  // Bypass Booking-model validators; force the session quoteSnapshot into a same-day exclusive range.
+  await CheckoutSession.collection.updateOne(
+    { _id: seeded.checkoutSessionId },
+    {
+      $set: {
+        quoteSnapshot: {
+          checkInDate: sameDay,
+          checkOutDate: sameDay,
+          totalCents: 40000,
+          currency: 'eur'
+        }
+      }
+    }
+  );
+
+  let availabilityCalled = false;
+  const origValidate = AssignmentEngine.validateUnitForCabinTypeBooking;
+  AssignmentEngine.validateUnitForCabinTypeBooking = async (...args) => {
+    availabilityCalled = true;
+    return origValidate.apply(AssignmentEngine, args);
+  };
+
+  try {
+    await assert.rejects(
+      () => dryRunMultiUnitPaidOrphanRecovery({ allowlist: seeded.allowlist, now: new Date() }),
+      (err) => {
+        assert.ok(err instanceof MultiUnitPaidOrphanRecoveryError);
+        assert.equal(err.code, 'RECOVERY_HOSTILE_STATE_DRIFT');
+        assert.equal(err.safeDetails?.reason, 'invalid_exclusive_stay_range');
+        assert.ok(!String(err.message).includes('Exclusive range requires endDate > startDate'));
+        assert.doesNotMatch(JSON.stringify(err.toJSON()), /Exclusive range requires endDate > startDate/);
+        return true;
+      }
+    );
+    assert.equal(availabilityCalled, false);
+  } finally {
+    AssignmentEngine.validateUnitForCabinTypeBooking = origValidate;
+  }
+});
+
+test('acceptance: execute compareMaterialEvidence detects stay-date drift', async () => {
+  const seeded = await seedLegacyDateIncident();
+  const dryRun = await dryRunMultiUnitPaidOrphanRecovery({
+    allowlist: seeded.allowlist,
+    now: new Date()
+  });
+  assert.equal(dryRun.canonicalEvidence.expectedCheckInDateOnly, '2026-09-08');
+
+  await Booking.updateOne(
+    { _id: seeded.firstBooking._id },
+    {
+      $set: {
+        checkIn: normalizeDateToSofiaDayStart('2026-09-09'),
+        checkOut: normalizeDateToSofiaDayStart('2026-09-11'),
+        commercialStayFingerprint: buildStayFingerprint({
+          guestEmail: seeded.guestEmail,
+          entityType: 'cabinType',
+          cabinTypeId: String(seeded.cabinTypeId),
+          checkInDateOnly: '2026-09-09',
+          checkOutDateOnly: '2026-09-11'
+        })
+      }
+    }
+  );
+  await CheckoutSession.updateOne(
+    { _id: seeded.allowlist.checkoutSessionId },
+    {
+      $set: {
+        stayFingerprint: buildStayFingerprint({
+          guestEmail: seeded.guestEmail,
+          entityType: 'cabinType',
+          cabinTypeId: String(seeded.cabinTypeId),
+          checkInDateOnly: '2026-09-09',
+          checkOutDateOnly: '2026-09-11'
+        })
+      }
+    }
+  );
+
+  process.env.MULTI_UNIT_PAID_ORPHAN_RECOVERY = '1';
+  await assert.rejects(
+    () =>
+      recoverAllowlistedMultiUnitPaidOrphanCheckout({
+        mode: 'initial',
+        allowlist: seeded.allowlist,
+        originalEvidence: dryRun,
+        digest: dryRun.digest,
+        execute: true,
+        intentOverlay: buildValidIntentOverlay(),
+        now: new Date()
+      }),
+    (err) => {
+      assert.ok(err instanceof MultiUnitPaidOrphanRecoveryError);
+      assert.equal(err.code, 'RECOVERY_HOSTILE_STATE_DRIFT');
+      assert.equal(err.safeDetails?.reason, 'initial_live_mismatch');
+      return true;
+    }
+  );
+});
+
+test('acceptance: resume keeps original date evidence and aborts on live date drift', async () => {
+  const seeded = await seedLegacyDateIncident();
+  const dryRun = await dryRunMultiUnitPaidOrphanRecovery({
+    allowlist: seeded.allowlist,
+    now: new Date()
+  });
+
+  const executionId = 'exec-resume-date-drift-test';
+  await CheckoutFinalizationJob.updateOne(
+    { _id: seeded.allowlist.finalizationJobId },
+    {
+      $set: {
+        recoveryStatus: 'leased',
+        recoveryExecutionId: executionId,
+        recoveryEvidenceDigest: dryRun.digest,
+        recoveryAllowlistHash: hashAllowlistIdentity(seeded.allowlist),
+        recoveryClaimedBy: 'ops:test-operator',
+        recoveryVisibilityTimeoutAt: new Date(Date.now() + RECOVERY_LEASE_TTL_MS)
+      }
+    }
+  );
+
+  // Hostile live drift after approved dry-run.
+  await Booking.updateOne(
+    { _id: seeded.firstBooking._id },
+    {
+      $set: {
+        checkIn: normalizeDateToSofiaDayStart('2026-11-01'),
+        checkOut: normalizeDateToSofiaDayStart('2026-11-03')
+      }
+    }
+  );
+
+  process.env.MULTI_UNIT_PAID_ORPHAN_RECOVERY = '1';
+  await assert.rejects(
+    () =>
+      recoverAllowlistedMultiUnitPaidOrphanCheckout({
+        mode: 'resume',
+        allowlist: seeded.allowlist,
+        originalEvidence: dryRun,
+        digest: dryRun.digest,
+        execute: true,
+        intentOverlay: buildValidIntentOverlay(),
+        now: new Date()
+      }),
+    (err) => {
+      assert.ok(err instanceof MultiUnitPaidOrphanRecoveryError);
+      assert.equal(err.code, 'RECOVERY_HOSTILE_STATE_DRIFT');
+      assert.equal(err.safeDetails?.reason, 'resume_date_drift');
+      return true;
+    }
+  );
+});
+
+test('acceptance: legacy date dry-run zero-write snapshot across recovery collections', async () => {
+  const seeded = await seedLegacyDateIncident();
+  const before = await recoveryCollectionSnapshot(seeded.allowlist);
+  const dryRun = await dryRunMultiUnitPaidOrphanRecovery({
+    allowlist: seeded.allowlist,
+    now: new Date()
+  });
+  const after = await recoveryCollectionSnapshot(seeded.allowlist);
+  assert.equal(dryRun.writes, 0);
+  assert.equal(dryRun.canonicalEvidence.expectedCheckInDateOnly, '2026-09-08');
+  assert.equal(dryRun.canonicalEvidence.expectedCheckOutDateOnly, '2026-09-10');
+  assert.deepEqual(after, before);
 });
 
 /* Load supplemental acceptance proof suites (happy-path, resume matrix, etc.). */
