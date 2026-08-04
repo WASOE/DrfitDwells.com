@@ -42,7 +42,10 @@ const {
 const {
   runMultiUnitPaidOrphanRecoveryBookingFinalizeCore,
   recoverAllowlistedMultiUnitPaidOrphanCheckout,
-  INTENT_PHRASE
+  INTENT_PHRASE,
+  hashAllowlistIdentity,
+  RECOVERY_LEASE_TTL_MS,
+  __getStripeClientForTesting
 } = require('../services/checkout/multiUnitPaidOrphanRecoveryService');
 const {
   ensureMultiUnitPaidOrphanCompletionReview,
@@ -53,6 +56,7 @@ const {
 } = require('../services/checkout/multiUnitPaidOrphanRecoveryReviewService');
 const {
   acquireInitialMultiUnitRecoveryLease,
+  reclaimMultiUnitRecoveryLease,
   markCheckoutFinalizationJobConfirmationQueued,
   setActiveRecoveryReviewItemId,
   markMultiUnitRecoveryComplete,
@@ -1002,6 +1006,362 @@ test('proof: partial expectedScope rejects every privileged operation with zero 
   const after = await snapshotRecoveryCollections();
   assert.deepEqual(after.counts, before.counts);
   assert.deepEqual(after.docs, before.docs);
+});
+
+/* ======================================================================== *
+ * Stripe dependency seam + production-shaped leased-hold resume
+ * ======================================================================== */
+
+/**
+ * Seed the durable state observed after the MODULE_NOT_FOUND Stripe import
+ * failure: leased + MRI hold + activeRecoveryReviewItemId, no Booking yet.
+ */
+async function seedProductionShapedLeasedHoldFailure({
+  seeded,
+  envelope,
+  recoveryExecutionId,
+  now = new Date()
+}) {
+  const at = now instanceof Date ? now : new Date(now);
+  await CheckoutFinalizationJob.updateOne(
+    { _id: seeded.allowlist.finalizationJobId },
+    {
+      $set: {
+        status: 'failed_permanent',
+        stage: 'save_booking',
+        lastErrorCode: 'DUPLICATE_STAY_CONFLICT',
+        recoveryStatus: 'leased',
+        recoveryExecutionId: String(recoveryExecutionId),
+        recoveryEvidenceDigest: String(envelope.digest).toLowerCase(),
+        recoveryAllowlistHash: hashAllowlistIdentity(seeded.allowlist),
+        recoveryClaimedBy: buildRecoveryClaimedBy(recoveryExecutionId),
+        recoveryClaimedAt: at,
+        recoveryVisibilityTimeoutAt: new Date(at.getTime() + RECOVERY_LEASE_TTL_MS),
+        recoveryOperatorActorId: 'ops:test-operator',
+        recoveryOperatorIntentConfirmedAt: at,
+        recoveryReason: 'Synthetic leased-hold failure before Booking creation',
+        activeRecoveryReviewItemId: seeded.allowlist.manualReviewItemId,
+        recoveryAttemptCount: 1,
+        confirmationQueuedAt: null,
+        confirmationSentAt: null,
+        bookingId: null
+      }
+    }
+  );
+
+  await ManualReviewItem.updateOne(
+    { _id: seeded.allowlist.manualReviewItemId },
+    {
+      $set: {
+        status: 'open',
+        resolutionHold: {
+          kind: MULTI_UNIT_PAID_ORPHAN_HOLD_KIND,
+          recoveryExecutionId: String(recoveryExecutionId),
+          finalizationJobId: String(seeded.allowlist.finalizationJobId),
+          checkoutId: String(seeded.allowlist.checkoutId),
+          paymentIntentId: String(seeded.allowlist.paymentIntentId),
+          heldAt: at,
+          status: 'active',
+          releasedAt: null,
+          transferredToManualReviewItemId: null,
+          transferredAt: null
+        }
+      }
+    }
+  );
+
+  // Authoritative post-failure invariants from production.
+  assert.equal(
+    await Booking.countDocuments({ checkoutId: seeded.allowlist.checkoutId }),
+    0
+  );
+  const payment = await Payment.findById(seeded.allowlist.paymentId).lean();
+  assert.equal(payment.status, 'paid');
+  assert.equal(payment.reservationId ?? null, null);
+  const session = await CheckoutSession.findById(seeded.allowlist.checkoutSessionId).lean();
+  assert.equal(session.bookingId ?? null, null);
+  assert.equal(await EmailDeliveryState.countDocuments({}), 0);
+}
+
+test('proof: resume after leased+hold Stripe MODULE_NOT_FOUND failure completes recovery', async () => {
+  enableOrdinarySideEffectFlags();
+  const spies = createSideEffectSpies();
+  try {
+    const recoveryExecutionId = 'dbc7aed3-34bb-4c2d-bd88-defc6f900afb-synth';
+    const seeded = await seedExecutablePaidOrphanIncident({
+      suffix: `leased_hold_resume_${Date.now()}`
+    });
+    const firstBookingUpdatedAt = seeded.firstBooking.updatedAt;
+    const envelope = await runDryRun(seeded.allowlist);
+
+    await seedProductionShapedLeasedHoldFailure({
+      seeded,
+      envelope,
+      recoveryExecutionId
+    });
+
+    const result = await runResumeExecute({
+      allowlist: seeded.allowlist,
+      envelope,
+      stripe: seeded.stripe
+    });
+
+    seeded.firstBooking.updatedAt = firstBookingUpdatedAt;
+    await assertHappyPathOutcome(seeded, result);
+    assert.equal(String(result.recoveryExecutionId), recoveryExecutionId);
+
+    const job = await CheckoutFinalizationJob.findById(
+      seeded.allowlist.finalizationJobId
+    ).lean();
+    assert.equal(String(job.recoveryExecutionId), recoveryExecutionId);
+    assert.equal(job.recoveryStatus, 'complete');
+    assert.equal(job.status, 'succeeded');
+    assert.ok(job.confirmationQueuedAt);
+    assert.equal(job.confirmationSentAt ?? null, null);
+
+    const review = await ManualReviewItem.findById(
+      seeded.allowlist.manualReviewItemId
+    ).lean();
+    assert.equal(review.status, 'resolved');
+    assert.notEqual(review.resolutionHold?.status, 'active');
+
+    assertZeroExternalSideEffects(spies, seeded.stripe);
+    assert.ok(seeded.stripe.counts.retrieve >= 1, 'fake Stripe retrieve used');
+  } finally {
+    spies.reset();
+    clearFaultInjectors();
+  }
+});
+
+test('proof: default Stripe dependency seam resolves without config/stripe MODULE_NOT_FOUND', () => {
+  const servicePath = path.join(
+    __dirname,
+    '..',
+    'services',
+    'checkout',
+    'multiUnitPaidOrphanRecoveryService.js'
+  );
+  const source = fs.readFileSync(servicePath, 'utf8');
+  assert.doesNotMatch(source, /require\(['"][^'"]*config\/stripe['"]\)/);
+  assert.match(source, /require\(['"]stripe['"]\)/);
+
+  const prev = process.env.STRIPE_SECRET_KEY;
+  try {
+    process.env.STRIPE_SECRET_KEY = 'sk_test_default_seam_probe';
+    const client = __getStripeClientForTesting(null);
+    assert.ok(client);
+    assert.equal(typeof client.paymentIntents.retrieve, 'function');
+  } finally {
+    if (prev === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = prev;
+  }
+});
+
+test('proof: fake Stripe dependency injection still works for booking finalize core', async () => {
+  enableOrdinarySideEffectFlags();
+  const seeded = await seedExecutablePaidOrphanIncident({
+    suffix: `fake_stripe_inject_${Date.now()}`
+  });
+  const envelope = await runDryRun(seeded.allowlist);
+  const scope = {
+    recoveryMode: 'initial',
+    recoveryExecutionId: 'exec-fake-stripe-inject',
+    checkoutId: seeded.allowlist.checkoutId,
+    checkoutSessionId: seeded.allowlist.checkoutSessionId,
+    paymentIntentId: seeded.allowlist.paymentIntentId,
+    paymentId: seeded.allowlist.paymentId,
+    finalizationJobId: seeded.allowlist.finalizationJobId,
+    manualReviewItemId: seeded.allowlist.manualReviewItemId,
+    cabinTypeId: seeded.allowlist.cabinTypeId,
+    expectedTargetUnitId: seeded.allowlist.expectedTargetUnitId,
+    evidenceDigest: envelope.digest
+  };
+
+  const orch = await runInMultiUnitPaidOrphanRecoveryContext(scope, async () =>
+    runMultiUnitPaidOrphanRecoveryBookingFinalizeCore({
+      checkoutId: seeded.allowlist.checkoutId,
+      paymentIntentId: seeded.allowlist.paymentIntentId,
+      expectedScope: scope,
+      expectedTargetUnitId: seeded.allowlist.expectedTargetUnitId,
+      stripe: seeded.stripe.client
+    })
+  );
+
+  assert.ok(orch.bookingId || orch.booking);
+  assert.equal(seeded.stripe.counts.retrieve, 1);
+  assert.equal(seeded.stripe.counts.create, 0);
+  assert.equal(seeded.stripe.counts.refundsCreate, 0);
+  assert.equal(seeded.stripe.counts.chargesCreate, 0);
+});
+
+test('proof: foreign recoveryExecutionId cannot reclaim leased incident', async () => {
+  enableOrdinarySideEffectFlags();
+  const recoveryExecutionId = 'exec-owned-lease-for-foreign-reclaim';
+  const seeded = await seedExecutablePaidOrphanIncident({
+    suffix: `foreign_exec_${Date.now()}`
+  });
+  const envelope = await runDryRun(seeded.allowlist);
+  await seedProductionShapedLeasedHoldFailure({
+    seeded,
+    envelope,
+    recoveryExecutionId
+  });
+
+  const foreignId = 'exec-foreign-must-not-reclaim';
+  const scope = {
+    recoveryMode: 'resume',
+    recoveryExecutionId: foreignId,
+    checkoutId: seeded.allowlist.checkoutId,
+    checkoutSessionId: seeded.allowlist.checkoutSessionId,
+    paymentIntentId: seeded.allowlist.paymentIntentId,
+    paymentId: seeded.allowlist.paymentId,
+    finalizationJobId: seeded.allowlist.finalizationJobId,
+    manualReviewItemId: seeded.allowlist.manualReviewItemId,
+    cabinTypeId: seeded.allowlist.cabinTypeId,
+    expectedTargetUnitId: seeded.allowlist.expectedTargetUnitId,
+    evidenceDigest: envelope.digest
+  };
+
+  await assert.rejects(
+    () =>
+      runInMultiUnitPaidOrphanRecoveryContext(scope, async () =>
+        reclaimMultiUnitRecoveryLease({
+          jobId: seeded.allowlist.finalizationJobId,
+          checkoutId: seeded.allowlist.checkoutId,
+          paymentIntentId: seeded.allowlist.paymentIntentId,
+          recoveryExecutionId: foreignId,
+          evidenceDigest: envelope.digest,
+          expectedScope: scope,
+          now: new Date()
+        })
+      ),
+    (err) => {
+      assert.ok(err instanceof MultiUnitPaidOrphanRecoveryError);
+      assert.ok(
+        err.code === 'RECOVERY_LEASE_CONFLICT' ||
+          err.code === 'RECOVERY_JOB_LEASE_CONFLICT' ||
+          err.code === 'RECOVERY_EXECUTION_ID_CONFLICT',
+        `unexpected code ${err.code}`
+      );
+      return true;
+    }
+  );
+
+  const job = await CheckoutFinalizationJob.findById(
+    seeded.allowlist.finalizationJobId
+  ).lean();
+  assert.equal(job.recoveryStatus, 'leased');
+  assert.equal(String(job.recoveryExecutionId), recoveryExecutionId);
+  assert.equal(await Booking.countDocuments({ checkoutId: seeded.allowlist.checkoutId }), 0);
+});
+
+test('proof: second initial execute is rejected once recoveryStatus is leased', async () => {
+  enableOrdinarySideEffectFlags();
+  const recoveryExecutionId = 'exec-leased-blocks-second-initial';
+  const seeded = await seedExecutablePaidOrphanIncident({
+    suffix: `second_initial_${Date.now()}`
+  });
+  const envelope = await runDryRun(seeded.allowlist);
+  await seedProductionShapedLeasedHoldFailure({
+    seeded,
+    envelope,
+    recoveryExecutionId
+  });
+
+  await assert.rejects(
+    () =>
+      runInitialExecute({
+        allowlist: seeded.allowlist,
+        envelope,
+        stripe: seeded.stripe
+      }),
+    (err) => {
+      assert.ok(err instanceof MultiUnitPaidOrphanRecoveryError);
+      // Live job.recoveryStatus=leased drifts from dry-run idle evidence and/or
+      // the explicit use_resume_mode gate — either way initial must abort.
+      assert.ok(
+        err.code === 'RECOVERY_RESUME_PHASE_MISMATCH' ||
+          err.code === 'RECOVERY_HOSTILE_STATE_DRIFT' ||
+          err.code === 'RECOVERY_LEASE_CONFLICT',
+        `unexpected code ${err.code}`
+      );
+      return true;
+    }
+  );
+
+  assert.equal(await Booking.countDocuments({ checkoutId: seeded.allowlist.checkoutId }), 0);
+  const job = await CheckoutFinalizationJob.findById(
+    seeded.allowlist.finalizationJobId
+  ).lean();
+  assert.equal(job.recoveryStatus, 'leased');
+  assert.equal(String(job.recoveryExecutionId), recoveryExecutionId);
+});
+
+test('proof: resume after leased-hold completion remains idempotent', async () => {
+  enableOrdinarySideEffectFlags();
+  const spies = createSideEffectSpies();
+  try {
+    const recoveryExecutionId = 'exec-leased-hold-idempotent-resume';
+    const seeded = await seedExecutablePaidOrphanIncident({
+      suffix: `idempotent_resume_${Date.now()}`
+    });
+    const firstBookingUpdatedAt = seeded.firstBooking.updatedAt;
+    const envelope = await runDryRun(seeded.allowlist);
+    await seedProductionShapedLeasedHoldFailure({
+      seeded,
+      envelope,
+      recoveryExecutionId
+    });
+
+    const first = await runResumeExecute({
+      allowlist: seeded.allowlist,
+      envelope,
+      stripe: seeded.stripe
+    });
+    seeded.firstBooking.updatedAt = firstBookingUpdatedAt;
+    await assertHappyPathOutcome(seeded, first);
+
+    const bookingCountAfterFirst = await Booking.countDocuments({
+      checkoutId: seeded.allowlist.checkoutId
+    });
+
+    const second = await runResumeExecute({
+      allowlist: seeded.allowlist,
+      envelope,
+      stripe: seeded.stripe
+    });
+    assert.equal(second.ok, true);
+    assert.ok(
+      second.recoveryStatus === 'complete' ||
+        second.code === 'RECOVERY_ALREADY_COMPLETE'
+    );
+    assert.equal(
+      await Booking.countDocuments({ checkoutId: seeded.allowlist.checkoutId }),
+      bookingCountAfterFirst
+    );
+    assertZeroExternalSideEffects(spies, seeded.stripe);
+  } finally {
+    spies.reset();
+    clearFaultInjectors();
+  }
+});
+
+test('proof: recovery service source never exposes refund/charge/PaymentIntent-create', () => {
+  const servicePath = path.join(
+    __dirname,
+    '..',
+    'services',
+    'checkout',
+    'multiUnitPaidOrphanRecoveryService.js'
+  );
+  const cliPath = path.join(__dirname, 'recoverMultiUnitPaidOrphanCheckout.js');
+  for (const filePath of [servicePath, cliPath]) {
+    const source = fs.readFileSync(filePath, 'utf8');
+    assert.doesNotMatch(source, /\.refunds\s*\.\s*create\s*\(/);
+    assert.doesNotMatch(source, /\.charges\s*\.\s*create\s*\(/);
+    assert.doesNotMatch(source, /paymentIntents\s*\.\s*create\s*\(/);
+    assert.doesNotMatch(source, /require\(['"][^'"]*config\/stripe['"]\)/);
+  }
 });
 
 /* ======================================================================== *

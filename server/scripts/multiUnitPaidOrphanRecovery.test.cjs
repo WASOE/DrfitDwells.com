@@ -863,6 +863,47 @@ test('F1. CLI source never imports Stripe refund/charge/payment-intent-create su
   assert.doesNotMatch(source, /paymentIntents\s*\.\s*create\s*\(/);
 });
 
+test('F1b. recovery service uses stripe package seam, not config/stripe, and never creates money-movement calls', () => {
+  const servicePath = path.join(
+    __dirname,
+    '..',
+    'services',
+    'checkout',
+    'multiUnitPaidOrphanRecoveryService.js'
+  );
+  const source = fs.readFileSync(servicePath, 'utf8');
+
+  assert.doesNotMatch(source, /require\(['"][^'"]*config\/stripe['"]\)/);
+  assert.match(source, /require\(['"]stripe['"]\)/);
+  assert.doesNotMatch(source, /\.refunds\s*\.\s*create\s*\(/);
+  assert.doesNotMatch(source, /\.charges\s*\.\s*create\s*\(/);
+  assert.doesNotMatch(source, /paymentIntents\s*\.\s*create\s*\(/);
+  assert.match(source, /paymentIntents\.retrieve/);
+});
+
+test('F1c. default Stripe client resolution does not throw MODULE_NOT_FOUND', () => {
+  const {
+    __getStripeClientForTesting
+  } = require('../services/checkout/multiUnitPaidOrphanRecoveryService');
+
+  const fake = { paymentIntents: { retrieve: async () => ({ id: 'pi_x', status: 'succeeded' }) } };
+  assert.equal(__getStripeClientForTesting(fake), fake);
+
+  const prev = process.env.STRIPE_SECRET_KEY;
+  try {
+    delete process.env.STRIPE_SECRET_KEY;
+    assert.equal(__getStripeClientForTesting(null), null);
+
+    process.env.STRIPE_SECRET_KEY = 'sk_test_recovery_dependency_probe_only';
+    const client = __getStripeClientForTesting(null);
+    assert.ok(client);
+    assert.equal(typeof client.paymentIntents.retrieve, 'function');
+  } finally {
+    if (prev === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = prev;
+  }
+});
+
 test('F2. every recovery error carries refundRecommended === false', () => {
   const codes = Object.keys(RECOVERY_ERROR_CATALOG);
   assert.ok(codes.length > 0);

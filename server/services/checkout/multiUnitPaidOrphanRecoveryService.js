@@ -62,6 +62,7 @@ const {
   formatSofiaDateOnly,
   normalizeDateToSofiaDayStart
 } = require('../../utils/dateTime');
+const Stripe = require('stripe');
 const {
   ensurePendingConfirmationDelivery,
   resolveConfirmationTemplateKey
@@ -779,12 +780,12 @@ function buildExpectedScope({
   };
 }
 
-function getStripeClient(stripeOverride) {
+function getStripeClient(stripeOverride = null) {
   if (stripeOverride) return stripeOverride;
-  // Lazy require to avoid hard Stripe dependency in dry-run/unit tests
-  // eslint-disable-next-line global-require
-  const stripeLib = require('../../config/stripe');
-  return stripeLib.stripe || stripeLib;
+  // Same authoritative seam as checkoutFinalizationWorker / reconcilePaidCheckoutFinalization.
+  // Do not require a nonexistent server/config/stripe module.
+  if (!process.env.STRIPE_SECRET_KEY) return null;
+  return new Stripe(process.env.STRIPE_SECRET_KEY);
 }
 
 async function runMultiUnitPaidOrphanRecoveryBookingFinalizeCore({
@@ -816,6 +817,11 @@ async function runMultiUnitPaidOrphanRecoveryBookingFinalizeCore({
   }
 
   const stripeClient = getStripeClient(stripe);
+  if (!stripeClient?.paymentIntents?.retrieve) {
+    throw createSanitizedRecoveryError('RECOVERY_HOSTILE_STATE_DRIFT', {
+      reason: 'stripe_client_unavailable'
+    });
+  }
   const pi = await stripeClient.paymentIntents.retrieve(String(paymentIntentId));
   verifySucceededPaymentIntentAgainstSession({
     session,
@@ -1696,6 +1702,8 @@ module.exports = {
   runMultiUnitPaidOrphanRecoveryBookingFinalizeCore,
   __setRecoveryFaultInjectorForTesting,
   __resetRecoveryFaultInjectorForTesting,
+  /** Test seam: production default uses STRIPE_SECRET_KEY + stripe package. */
+  __getStripeClientForTesting: getStripeClient,
   sha256Hex,
   stableStringify,
   hashAllowlistIdentity,
