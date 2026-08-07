@@ -15,7 +15,7 @@ import './PublicArrivalGuide.css';
 import './ValleyGuestGuide.css';
 import '../the-valley/the-valley.css';
 
-const ActionButton = ({ href, onClick, icon: Icon, label, secondary = false, disabled = false }) => (
+const GuideAction = ({ href, onClick, icon: Icon, label, variant = 'secondary', disabled = false }) => (
   <a
     href={disabled ? '#' : href || '#'}
     onClick={(e) => {
@@ -25,14 +25,17 @@ const ActionButton = ({ href, onClick, icon: Icon, label, secondary = false, dis
     target={href?.startsWith('http') ? '_blank' : undefined}
     rel={href?.startsWith('http') ? 'noopener noreferrer' : undefined}
     aria-disabled={disabled}
-    className={`flex-1 min-h-[46px] rounded-full px-3 py-2.5 flex items-center justify-center gap-1.5 transition-all touch-manipulation active:scale-[0.98] ${
-      secondary
-        ? 'bg-white border border-stone-200 text-stone-900 text-xs font-semibold uppercase tracking-[0.14em] hover:bg-stone-50 hover:border-[#81887a]/35 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#81887a]'
-        : 'bg-[#F1ECE2] text-stone-900 text-xs font-bold uppercase tracking-[0.18em] shadow-sm hover:brightness-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#81887a]'
-    } ${disabled ? 'opacity-40 pointer-events-none' : ''}`}
+    className={`valley-guest-guide__action valley-guest-guide__action--${variant}${
+      disabled ? ' is-disabled' : ''
+    }`}
   >
-    <Icon size={14} strokeWidth={2} className="shrink-0 opacity-90" aria-hidden />
-    <span>{label}</span>
+    <Icon
+      size={variant === 'primary' ? 16 : 15}
+      strokeWidth={1.75}
+      className="valley-guest-guide__action-icon"
+      aria-hidden
+    />
+    <span className="valley-guest-guide__action-label">{label}</span>
   </a>
 );
 
@@ -92,20 +95,27 @@ export default function ValleyGuestGuideLayout({
           </p>
         </header>
 
-        <div className="public-guide-sticky-actions">
-          <div className="public-guide-actions-grid">
-            <ActionButton href={navigateUrl} icon={Navigation} label="Navigate to parking" disabled={!navigateUrl} />
-            <ActionButton
-              onClick={(e) => {
-                e.preventDefault();
-                openPrintableGuide();
-              }}
-              icon={Printer}
-              label="Print / save offline"
-              secondary
+        <div className="public-guide-sticky-actions valley-guest-guide__actions">
+          <div className="valley-guest-guide__action-stack">
+            <GuideAction
+              href={navigateUrl}
+              icon={Navigation}
+              label="Navigate to parking"
+              variant="primary"
+              disabled={!navigateUrl}
             />
-            <ActionButton href={telHref} icon={Phone} label="Call" secondary disabled={!telHref} />
-            <ActionButton href={SUPPORT_WHATSAPP_LINK} icon={MessageCircle} label="WhatsApp" secondary />
+            <div className="valley-guest-guide__action-row">
+              <GuideAction href={telHref} icon={Phone} label="Call" disabled={!telHref} />
+              <GuideAction href={SUPPORT_WHATSAPP_LINK} icon={MessageCircle} label="WhatsApp" />
+            </div>
+            <button
+              type="button"
+              className="valley-guest-guide__print-link"
+              onClick={() => openPrintableGuide()}
+            >
+              <Printer size={14} strokeWidth={1.75} aria-hidden />
+              Print / save offline
+            </button>
           </div>
           <div className="valley-guest-guide__pdf-row">
             <a
