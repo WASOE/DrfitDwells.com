@@ -23,6 +23,11 @@ RewriteRule ^cabin/69b2ff947f141a71ffa7c492/?$ /stays/lux-cabin [R=301,L,QSA]
 RewriteRule ^bg/cabin/69b2ff933a7fff6621e785cc/?$ /bg/stays/the-cabin [R=301,L,QSA]
 RewriteRule ^bg/cabin/69b2ff947f141a71ffa7c492/?$ /bg/stays/lux-cabin [R=301,L,QSA]
 
+# SPA guide roots overlap with real asset directories.
+# Route only the directory root to React; files inside remain static.
+RewriteRule ^guides/the-valley/?$ /index.html [L]
+RewriteRule ^guides/the-cabin/?$ /index.html [L]
+
 # Do not route API calls to the React app
 RewriteCond %{REQUEST_URI} !^/api/ [NC]
 
