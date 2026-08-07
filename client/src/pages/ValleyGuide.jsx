@@ -3,6 +3,13 @@ import { useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Battery, Droplet, Flame, Wifi, ChevronDown } from 'lucide-react';
 import { bookingAPI } from '../services/api';
+import {
+  CHERESHOVO_PARKING,
+  FINAL_APPROACH,
+  KRAISHTE_WARNING,
+  guestNavigateUrl,
+  formatRouteArrowLine
+} from '@shared/valley/accessFacts';
 import './ValleyGuide.css';
 
 const VALLEY_LOCATIONS = ['The Valley', 'Valley'];
@@ -20,11 +27,11 @@ const MODES = [
 ];
 
 const PACKING_ITEMS = [
-  { id: 'shoes', label: 'Closed-toe shoes with grip for 1 km walk' },
+  { id: 'shoes', label: `Closed-toe shoes with grip for the ${FINAL_APPROACH.distanceKmApprox} km walk` },
   { id: 'layers', label: 'Warm layers (mountain nights drop fast)' },
   { id: 'headlamp', label: 'Headlamp / flashlight' },
   { id: 'powerbank', label: 'Power bank for phones' },
-  { id: 'swim', label: 'Swimwear (creek dips & tub)' },
+  { id: 'swim', label: 'Swimwear for creek dips (optional)' },
   { id: 'toiletries', label: 'Personal toiletries & meds' }
 ];
 
@@ -38,12 +45,11 @@ const CHECKLIST_ITEMS = [
 
 const ROUTES = {
   chereshovo: {
-    name: 'Chereshovo parking',
-    warning: 'Important: ignore any Google Maps suggestion through Kraishte. That shortcut is unsafe and subject to fines.',
-    policy: 'Last 1 km is on foot or jeep/horse/ATV only. Do not drive your own car beyond parking.',
-    coords: { lat: 41.949939, lng: 23.715978 },
-    googleMapsUrl:
-      'https://www.google.com/maps/dir/?api=1&origin=Current+Location&destination=41.9551759,23.738895&waypoints=optimize:false|41.9020,23.6520|41.9278,23.6953|41.949939,23.715978&travelmode=driving&dir_action=navigate'
+    name: 'Chereshovo parking (default)',
+    warning: KRAISHTE_WARNING,
+    policy: `From parking to The Valley is ${FINAL_APPROACH.distancePhrase} — about ${FINAL_APPROACH.walkMinutesApprox} minutes walking — by ${FINAL_APPROACH.modesPhrase}. A normal car must not continue beyond parking.`,
+    coords: { lat: CHERESHOVO_PARKING.lat, lng: CHERESHOVO_PARKING.lng },
+    googleMapsUrl: guestNavigateUrl
   }
 };
 
@@ -51,19 +57,18 @@ const LAST_MILE_STEPS = [
   {
     title: 'Park here',
     description:
-      'Enter Chereshovo, keep left, and park in the signed gravel pocket. Parking beyond this point risks fines and tow fees.',
-    detail: 'Meet host if you booked jeep/horse support.'
+      'Enter Chereshovo, keep left, and park in the signed gravel pocket. Do not drive beyond this parking toward The Valley.',
+    detail: 'If you arranged a suitable transfer, meet at the parking time agreed.'
   },
   {
-    title: 'Follow the pine track',
-    description:
-      'Walk ~1 km on a compact forest track then a soft pine-needle path. Keep phones in pockets and headlights off to let your eyes adjust.',
-    detail: '15–25 min with gradual incline.'
+    title: 'Final approach',
+    description: `Continue ${FINAL_APPROACH.distancePhrase} on the forest track and path by ${FINAL_APPROACH.modesPhrase}. Keep a torch ready if light is fading.`,
+    detail: `${FINAL_APPROACH.walkTimePhrase} walking with a gradual incline.`
   },
   {
     title: 'Roll the gear cart',
     description:
-      'A wooden cart waits at the trailhead. Load your luggage and pull gently; heavy or fragile items ride in with the jeep if pre-arranged.',
+      'A wooden cart waits at the trailhead. Load your luggage and pull gently; heavy or fragile items can ride with an arranged transfer if you set that up in advance.',
     detail: 'Return the cart to the same spot after unloading.'
   }
 ];
@@ -76,16 +81,15 @@ const TIMELINE = [
   },
   {
     label: 'T-3h',
-    copy: 'Confirm route, check weather, download Google Maps offline, and share ETA with host.'
+    copy: 'Confirm the Chereshovo route, check weather, download Google Maps offline, and share ETA with us.'
   },
   {
     label: 'T-1h',
-    copy: 'Switch navigation to the exact Eleshnitsa → Palatik → Chereshovo route (or Ortsevo if hiking).'
+    copy: `Navigate ${formatRouteArrowLine()} to the designated Chereshovo parking. Ortsevo is only for guests who deliberately choose the optional hiking arrival and have received instructions.`
   },
   {
     label: 'Arrival',
-    copy:
-      'Park where instructed, do not drive beyond parking, and walk the final kilometer. If you booked jeep/horse support, meet at the parking time agreed.'
+    copy: `Park at the designated spot, do not drive beyond parking, then complete the final ${FINAL_APPROACH.distanceKmApprox} km by ${FINAL_APPROACH.modesPhrase}.`
   }
 ];
 

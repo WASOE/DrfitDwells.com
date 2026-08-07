@@ -84,10 +84,10 @@ const INTENT_TRIGGERS = {
 const CLARIFY_BY_INTENT = {
   access:
     "I'm not fully sure from your question. Are you asking about road access, normal car vs 4x4, late arrival, or directions? Conditions vary with weather—WhatsApp is best for the latest status.",
-  access_normal_car: "Are you asking about The Cabin or The Valley? The Cabin: normal car can sometimes reach. The Valley: transfer only.",
-  access_4x4: "Are you asking if 4x4 is needed? The Cabin: recommended. The Valley: you don't drive—transfer by Jeep, ATV, or horse.",
-  access_after_dark: "Are you asking about late arrival? The Cabin: strongly recommend before dark. The Valley: more flexible.",
-  access_google_maps: "Are you asking about directions? We send detailed instructions and GPS after booking. Don't rely on Google Maps alone.",
+  access_normal_car: "Are you asking about The Cabin or The Valley? The Cabin: normal car can sometimes reach. The Valley: normal car to Chereshovo parking, then walk or arranged suitable transfer — not beyond parking.",
+  access_4x4: "Are you asking if 4x4 is needed? The Cabin: recommended. The Valley: not needed for Chereshovo parking in normal conditions; the last about 2.5 km is walk or arranged suitable transfer.",
+  access_after_dark: "Are you asking about late arrival? The Cabin: strongly recommend before dark. The Valley: more flexible, but bring a torch for the final about 2.5 km / 45-minute approach.",
+  access_google_maps: "Are you asking about directions? For The Valley, avoid Kraishte and use Eleshnitsa → Palatik → Chereshovo to parking. Full guide: https://driftdwells.com/guides/the-valley",
   amenities: "Could you clarify—are you asking about WiFi, phone signal, or remote work? I can help with any of those.",
   offgrid_basics:
     "Are you asking about electricity, water, the toilet, or what to expect in general? I'm happy to explain any of these.",

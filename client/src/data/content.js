@@ -27,7 +27,7 @@ export const locations = [
     price: "From €60/night",
     cta: "View The Valley",
     details: {
-      access: "Jeep, ATV, or Horseback Transfer",
+      access: "Normal car to Chereshovo parking; final ~2.5 km walk or arranged transfer",
       connectivity: "Starlink (Stone House Only)",
       altitude: "1,550m (Highest Inhabited Village in Balkans)",
       highlight: "Communal Stone House & Coworking",

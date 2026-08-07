@@ -1,0 +1,190 @@
+/* Long-form Valley guest guide — mobile first, desktop constrained */
+
+.valley-guest-guide__container {
+  max-width: 46rem;
+}
+
+@media (min-width: 1024px) {
+  .valley-guest-guide__container {
+    max-width: 48rem;
+    padding-top: 64px;
+    padding-bottom: 128px;
+  }
+}
+
+.valley-guest-guide__pdf-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  padding: 10px 4px 4px;
+  border-top: 1px solid rgba(28, 25, 23, 0.08);
+}
+
+@media (min-width: 640px) {
+  .valley-guest-guide__pdf-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.valley-guest-guide__pdf-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  border-radius: 999px;
+  border: 1px solid rgba(28, 25, 23, 0.14);
+  background: #fff;
+  padding: 8px 14px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #1c1917;
+  text-decoration: none;
+}
+
+.valley-guest-guide__pdf-link:hover {
+  background: #f1ece2;
+  border-color: rgba(129, 136, 122, 0.45);
+}
+
+.valley-guest-guide__coords-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px 10px;
+  border-top: 1px solid rgba(28, 25, 23, 0.08);
+  font-size: 0.8125rem;
+  color: #44403c;
+}
+
+.valley-guest-guide__copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(28, 25, 23, 0.12);
+  background: #fff;
+  padding: 6px 12px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #1c1917;
+}
+
+.valley-guest-guide__copy-btn:hover {
+  background: #f1ece2;
+}
+
+.valley-guest-guide__toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: 20px 0 8px;
+  padding: 0;
+  font-size: 0.8125rem;
+}
+
+.valley-guest-guide__toc a {
+  color: #57534e;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.valley-guest-guide__toc a:hover {
+  color: #1c1917;
+}
+
+.valley-guest-guide__section {
+  margin-top: 40px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(28, 25, 23, 0.08);
+  scroll-margin-top: 140px;
+}
+
+@media (min-width: 768px) {
+  .valley-guest-guide__section {
+    margin-top: 56px;
+  }
+}
+
+.valley-guest-guide__section-title {
+  font-family: var(--valley-font-primary, 'Montserrat', sans-serif);
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #1a1a1a;
+  margin: 0 0 16px;
+}
+
+@media (min-width: 768px) {
+  .valley-guest-guide__section-title {
+    font-size: 1.5rem;
+  }
+}
+
+.valley-guest-guide__subheading {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  margin: 20px 0 8px;
+  color: #292524;
+}
+
+.valley-guest-guide__section-body p {
+  margin: 0 0 12px;
+  color: #2a2a2a;
+  font-size: 0.9875rem;
+  line-height: 1.7;
+  max-width: 42rem;
+}
+
+.valley-guest-guide__section-body ul {
+  margin: 0 0 14px;
+  padding-left: 1.15rem;
+  max-width: 42rem;
+}
+
+.valley-guest-guide__section-body li {
+  margin-bottom: 6px;
+  color: #2a2a2a;
+  font-size: 0.9875rem;
+  line-height: 1.65;
+}
+
+.valley-guest-guide__callout {
+  margin: 14px 0;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(28, 25, 23, 0.1);
+  background: #f1ece2;
+  max-width: 42rem;
+}
+
+.valley-guest-guide__callout--warn {
+  background: #faf6f0;
+  border-color: rgba(146, 64, 14, 0.25);
+}
+
+.valley-guest-guide__callout p:last-child {
+  margin-bottom: 0;
+}
+
+.valley-guest-guide__muted {
+  color: #57534e !important;
+  font-size: 0.9rem !important;
+}
+
+@media print {
+  .public-guide-sticky-actions,
+  .valley-guest-guide__toc {
+    display: none !important;
+  }
+
+  .valley-guest-guide__section {
+    break-inside: avoid;
+  }
+}

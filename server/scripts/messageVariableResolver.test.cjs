@@ -67,7 +67,7 @@ async function insertCabinType(overrides = {}) {
       googleMapsUrl: 'https://maps.app.goo.gl/vTk7jCrGtxvbKsJB6'
     },
     arrivalGuideUrl: '/guides/the-valley',
-    arrivalWindowDefault: 'From 15:00. Last 1 km on foot, jeep, horse or ATV only.',
+    arrivalWindowDefault: 'From 15:00. Final approach from Chereshovo parking is approximately 2.5 km / about 45 minutes by walk or arranged suitable transfer.',
     ...overrides
   });
 }
@@ -170,7 +170,8 @@ test('resolveCleanerVariables: valley access fields differ from cabin', async ()
   assert.equal(cabinResult.variables.meetingPointLabel, 'Park-and-walk point for The Cabin');
   assert.equal(valleyResult.variables.meetingPointLabel, 'Chereshovo parking — last km on foot/jeep/ATV');
   assert.notEqual(cabinResult.variables.accessNote, valleyResult.variables.accessNote);
-  assert.match(valleyResult.variables.accessNote, /ATV/);
+  assert.match(valleyResult.variables.accessNote, /2\.5 km/);
+  assert.match(valleyResult.variables.accessNote, /arranged suitable transfer/);
 });
 
 test('resolveVariables audience branch: cleaner vs guest unchanged', async () => {

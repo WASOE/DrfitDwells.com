@@ -177,7 +177,7 @@
     "items": {
       "access": {
         "title": "Year-round access and parking",
-        "content": "The Valley is accessible year-round. Parking is available at the designated area, with a 1km walk to the village (assistance available)."
+        "content": "The Valley is accessible year-round. Default arrival is Chereshovo: a normal car can reach the designated parking in normal conditions. From parking to The Valley is approximately 2.5 km (about 45 minutes walking) by walk or arranged suitable transfer — do not drive a normal car beyond parking."
       },
       "amenities": {
         "title": "Reliable heating and hot water",
@@ -337,7 +337,7 @@
         },
         "arrival": {
           "title": "Group arrival & parking",
-          "content": "The Valley is accessible year-round. Parking is at the designated area, with a 1 km walk to the village — assistance is available for group arrivals."
+          "content": "The Valley is accessible year-round. Default arrival is Chereshovo parking; from there it is approximately 2.5 km (about 45 minutes walking) by walk or arranged suitable transfer — assistance can be arranged for group arrivals."
         },
         "multiday": {
           "title": "Multi-day stays",

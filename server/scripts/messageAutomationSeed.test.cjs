@@ -123,7 +123,7 @@ test.beforeEach(async () => {
 // Pure builder contracts
 // ---------------------------------------------------------------------------
 
-test('buildAllTemplates returns exactly 23 rows (7 guest/ops + 16 cleaner)', () => {
+test('buildAllTemplates returns exactly 25 rows (9 guest/ops + 16 cleaner)', () => {
   const rows = buildAllTemplates();
   assert.equal(rows.length, EXPECTED_TEMPLATE_COUNT);
 });

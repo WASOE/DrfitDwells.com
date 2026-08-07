@@ -57,7 +57,7 @@ const VALLEY_ARRIVAL = Object.freeze({
     what3words: ''
   }),
   arrivalGuideUrl: '/guides/the-valley',
-  arrivalWindowDefault: 'From 15:00. Last 1 km is on foot, jeep, horse or ATV only.'
+  arrivalWindowDefault: 'From 15:00. Final approach from Chereshovo parking is approximately 2.5 km / about 45 minutes by walk or arranged suitable transfer.'
 });
 
 const CABIN_TARGETS = Object.freeze([

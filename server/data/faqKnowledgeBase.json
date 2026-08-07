@@ -1,6 +1,6 @@
 {
-  "version": "4.0",
-  "updatedAt": "2025-03-11",
+  "version": "4.1",
+  "updatedAt": "2026-08-07",
   "schema": "intent + canonical_question + alternative_phrasings",
   "properties": {
     "cabin": {
@@ -20,8 +20,6 @@
       "alternative_phrasings": [
         "how can I get to the valley",
         "how do we get there",
-        "can I reach the valley with a normal car",
-        "is 4x4 needed for the valley",
         "how do we reach the valley",
         "road conditions to the valley",
         "can we drive to the valley",
@@ -30,12 +28,17 @@
         "getting to the valley",
         "is pickup possible",
         "where should we park",
-        "parking"
+        "where do I park",
+        "where do we park",
+        "parking",
+        "from bansko to the valley",
+        "how far do i walk",
+        "how long is the walk"
       ],
-      "short_answer": "The Valley is reached by Jeep, ATV, or horseback transfer. Accessible year-round.",
-      "full_answer": "The Valley is reached by Jeep, ATV, or horseback transfer. Accessible year-round. Parking at the designated area with a 1km walk to the village—assistance is available. If you're unsure, reach out and we can arrange the best option for you.",
+      "short_answer": "Drive to Chereshovo parking via Eleshnitsa → Palatik → Chereshovo. Avoid Kraishte. Final approach is about 2.5 km / 45 minutes by walk or arranged suitable transfer.",
+      "full_answer": "Default arrival is Chereshovo. In normal conditions a normal passenger car can reach the designated Chereshovo parking. Use the road through Eleshnitsa, then Palatik, then Chereshovo — do not follow Google Maps if it sends you through Kraishte. From parking to The Valley is approximately 2.5 km (about 45 minutes walking), completed by walk or arranged suitable transfer. Do not drive a normal car beyond the parking. Full guide: https://driftdwells.com/guides/the-valley",
       "escalation_rule": "suggestWhatsApp",
-      "upsell_hint": "Horseback transfer is one of the options—very memorable."
+      "upsell_hint": null
     },
     {
       "id": "access_cabin",
@@ -71,8 +74,8 @@
         "road conditions",
         "transport options"
       ],
-      "short_answer": "Access depends on which property. The Cabin: 3km rugged trail, SUV recommended. The Valley: Jeep, ATV, or horse transfer.",
-      "full_answer": "Access depends on which property you're looking at. The Cabin has a 3km rugged trail—SUV/Jeep recommended. The Valley uses Jeep, ATV, or horse transfer. If you tell me which one interests you and what car you have, I can guide you properly.",
+      "short_answer": "Access depends on which property. The Cabin: 3km rugged trail, SUV recommended. The Valley: normal car to Chereshovo parking, then about 2.5 km / 45 minutes by walk or arranged suitable transfer.",
+      "full_answer": "Access depends on which property you're looking at. The Cabin has a 3km rugged trail—SUV/Jeep recommended. The Valley: drive a normal car to the designated Chereshovo parking via Eleshnitsa → Palatik → Chereshovo (avoid Kraishte). From parking the final approach is approximately 2.5 km / about 45 minutes walking, by walk or arranged suitable transfer — not by continuing with a normal car. If you tell me which stay and what car you have, I can guide you properly.",
       "escalation_rule": null,
       "upsell_hint": null
     },
@@ -113,8 +116,8 @@
         "normal car valley",
         "drive ourselves to valley"
       ],
-      "short_answer": "No. The Valley is reached by Jeep, ATV, or horseback transfer—not by driving yourself. Parking at the designated area, then 1km walk. We can arrange transfer.",
-      "full_answer": "No. The Valley is reached by Jeep, ATV, or horseback transfer—you don't drive there yourself. Parking at the designated area with a 1km walk to the village. Message us to arrange the best option for your dates.",
+      "short_answer": "Yes to the designated Chereshovo parking in normal conditions. No beyond parking into The Valley — that final about 2.5 km / 45 minutes is by walk or arranged suitable transfer.",
+      "full_answer": "Yes: in normal conditions a normal passenger car can reach the designated Chereshovo parking. Use Eleshnitsa → Palatik → Chereshovo and avoid Kraishte. No: do not drive a normal car beyond that parking toward The Valley. From parking the final approach is approximately 2.5 km (about 45 minutes walking), completed by walk or arranged suitable transfer. Guide: https://driftdwells.com/guides/the-valley",
       "escalation_rule": "suggestWhatsApp",
       "upsell_hint": null
     },
@@ -135,8 +138,8 @@
         "normal car can't make it",
         "so we need 4x4"
       ],
-      "short_answer": "The Cabin: SUV/4x4 recommended but not always required. The Valley: no—transfer by Jeep, ATV, or horse. Message us with your car type and dates for a straight answer.",
-      "full_answer": "The Cabin: SUV or 4x4 is recommended. A normal car can sometimes make it in good weather, but the road is rough. The Valley: you don't drive—transfer by Jeep, ATV, or horse. Message us with your car and dates for the latest.",
+      "short_answer": "The Cabin: SUV/4x4 recommended but not always required. The Valley: not needed for the parking road — a normal car reaches Chereshovo parking; the last about 2.5 km is walk or arranged suitable transfer.",
+      "full_answer": "The Cabin: SUV or 4x4 is recommended. A normal car can sometimes make it in good weather, but the road is rough. The Valley: you do not need a 4x4 to reach the designated Chereshovo parking in normal conditions. Do not drive a normal car beyond parking — the final approximately 2.5 km / 45 minutes is by walk or arranged suitable transfer. Message us with your car and dates for the latest.",
       "escalation_rule": "suggestWhatsApp",
       "upsell_hint": null
     },
@@ -161,8 +164,8 @@
         "night arrival",
         "so we can't arrive late"
       ],
-      "short_answer": "The Cabin: strongly recommend arriving before dark—the last part is very different in daylight. The Valley: more flexible. Message us your planned arrival time.",
-      "full_answer": "The Cabin: I strongly recommend arriving before dark. The last part of the road feels very different in daylight. The Valley: more flexible. If you must arrive late, message us and we'll send clear instructions. Self check-in is possible.",
+      "short_answer": "The Cabin: strongly recommend arriving before dark. The Valley: more flexible, but the final about 2.5 km / 45-minute approach needs a torch if light is fading. Message us your ETA.",
+      "full_answer": "The Cabin: I strongly recommend arriving before dark. The last part of the road feels very different in daylight. The Valley: more flexible, but from Chereshovo parking the final approach is approximately 2.5 km (about 45 minutes walking) by walk or arranged suitable transfer — bring a torch or headlamp if you arrive late. Message us your planned arrival time and we'll send clear instructions. Self check-in is possible.",
       "escalation_rule": null,
       "upsell_hint": null
     },
@@ -181,11 +184,30 @@
         "navigation wrong",
         "get lost",
         "can't find it",
-        "wrong location"
+        "wrong location",
+        "kraishte",
+        "maps through kraishte"
       ],
-      "short_answer": "Don't rely on Google Maps alone. We send detailed instructions and GPS coordinates after booking. Save them—you may lose signal approaching.",
-      "full_answer": "Don't rely on Google Maps alone—it can send you wrong. We send detailed instructions and GPS coordinates after booking. Save or print them before you leave; you may lose phone signal approaching. Message us if anything is unclear.",
+      "short_answer": "For The Valley: do not take Kraishte. Use Eleshnitsa → Palatik → Chereshovo to the designated parking. Save the guide offline — signal can drop.",
+      "full_answer": "Don't rely on a random Google Maps search alone — it can send you wrong. For The Valley, never take the Kraishte route. Use Eleshnitsa → Palatik → Chereshovo and navigate to the designated Chereshovo parking (not into The Valley by car). Full guide: https://driftdwells.com/guides/the-valley — save or print it before you leave; you may lose phone signal approaching. Message us if anything is unclear.",
       "escalation_rule": null,
+      "upsell_hint": null
+    },
+    {
+      "id": "access_ortsevo_valley",
+      "property": "valley",
+      "intent": "access",
+      "canonical_question": "Can I arrive through Ortsevo?",
+      "alternative_phrasings": [
+        "ortsevo route",
+        "arrive via ortsevo",
+        "ortsevo hike",
+        "ortsevo instead of chereshovo",
+        "can we come through ortsevo"
+      ],
+      "short_answer": "Ortsevo is an optional adventure/hiking arrival only — not the standard route. Default arrival is Chereshovo parking.",
+      "full_answer": "Chereshovo is the default arrival. Ortsevo can be an optional adventure or hiking arrival if you deliberately choose it and we give you suitable instructions. Do not treat Ortsevo as an equal alternative to Chereshovo. For the normal route, drive to Chereshovo parking via Eleshnitsa → Palatik → Chereshovo (avoid Kraishte), then complete about 2.5 km / 45 minutes by walk or arranged suitable transfer.",
+      "escalation_rule": "suggestWhatsApp",
       "upsell_hint": null
     },
     {

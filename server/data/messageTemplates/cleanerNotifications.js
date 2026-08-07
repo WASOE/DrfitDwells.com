@@ -50,7 +50,7 @@ const VALLEY_PREP_EMAIL_BODY_EN = [
   '  <p><strong>Cleaning notes:</strong> {{cleaningNotes}}</p>',
   '  <p><strong>Valley access:</strong> {{accessNote}}</p>',
   '  <p>Route via Eleshnitsa, Palatik and Chereshovo — ignore Google Maps if it sends you through Kraishte.</p>',
-  '  <p>Last ~1 km to the unit is on foot, jeep, horse or ATV only.</p>',
+  '  <p>Last approximately 2.5 km (~45 min) to the unit is on foot, jeep, horse or ATV only.</p>',
   '  <p><strong>Meeting point:</strong> {{meetingPointLabel}}<br>',
   '  <a href="{{googleMapsUrl}}">{{googleMapsUrl}}</a></p>',
   '  <p>Guide: <a href="{{guideUrl}}">{{guideUrl}}</a></p>',
@@ -65,7 +65,7 @@ const VALLEY_PREP_EMAIL_BODY_BG = [
   '  <p><strong>Бележки:</strong> {{cleaningNotes}}</p>',
   '  <p><strong>Достъп до Valley:</strong> {{accessNote}}</p>',
   '  <p>Маршрут през Еленшица, Палатик и Черешово — не следвайте Google Maps през Крайще.</p>',
-  '  <p>Последният ~1 км е пеша, с джип, кон или ATV.</p>',
+  '  <p>Последният около 2.5 км (~45 мин) е пеша, с джип, кон или ATV.</p>',
   '  <p><strong>Среща:</strong> {{meetingPointLabel}} — <a href="{{googleMapsUrl}}">{{googleMapsUrl}}</a></p>',
   '  <p>Наръчник: <a href="{{guideUrl}}">{{guideUrl}}</a></p>',
   '</section>'
@@ -102,7 +102,7 @@ const VALLEY_TODAY_EMAIL_BODY_EN = [
   '  <p>Next check-in: {{checkInDate}}</p>',
   '  <p><strong>Cleaning notes:</strong> {{cleaningNotes}}</p>',
   '  <p><strong>Valley access:</strong> {{accessNote}}</p>',
-  '  <p>Route: Eleshnitsa → Palatik → Chereshovo (not Kraishte). Last ~1 km on foot/jeep/horse/ATV.</p>',
+  '  <p>Route: Eleshnitsa → Palatik → Chereshovo (not Kraishte). Last approximately 2.5 km (~45 min) on foot/jeep/horse/ATV.</p>',
   '  <p><strong>Meeting point:</strong> {{meetingPointLabel}} — <a href="{{googleMapsUrl}}">{{googleMapsUrl}}</a></p>',
   '</section>'
 ].join('\n');
@@ -113,7 +113,7 @@ const VALLEY_TODAY_EMAIL_BODY_BG = [
   '  <p>Напускане: <strong>{{checkOutDate}}</strong> до <strong>{{checkoutTime}}</strong>.</p>',
   '  <p>Следващо настаняване: {{checkInDate}}</p>',
   '  <p><strong>Бележки:</strong> {{cleaningNotes}}</p>',
-  '  <p>Маршрут: Еленшица → Палатик → Черешово. Последен ~1 км пеша/джип/кон/ATV.</p>',
+  '  <p>Маршрут: Еленшица → Палатик → Черешово. Последен около 2.5 км (~45 мин) пеша/джип/кон/ATV.</p>',
   '  <p><strong>Среща:</strong> {{meetingPointLabel}} — <a href="{{googleMapsUrl}}">{{googleMapsUrl}}</a></p>',
   '</section>'
 ].join('\n');
@@ -150,7 +150,7 @@ const VALLEY_PREP_WA_BODY = [
   'Check-out: {{checkOutDate}} by {{checkoutTime}}',
   'Notes: {{cleaningNotes}}',
   '',
-  'Valley access: last ~1 km on foot, jeep, horse or ATV.',
+  'Valley access: last approximately 2.5 km (~45 min) on foot, jeep, horse or ATV.',
   'Route via Eleshnitsa, Palatik, Chereshovo — not Kraishte.',
   '{{meetingPointLabel}}',
   '{{googleMapsUrl}}',
@@ -159,7 +159,7 @@ const VALLEY_PREP_WA_BODY = [
   '---',
   '',
   'Напускане утре — {{propertyName}} (Valley)',
-  'Маршрут: Еленшица, Палатик, Черешово. Последен км пеша/джип/кон/ATV.',
+  'Маршрут: Еленшица, Палатик, Черешово. Последен около 2.5 км (~45 мин) пеша/джип/кон/ATV.',
   '{{meetingPointLabel}}',
   '{{googleMapsUrl}}'
 ].join('\n');
@@ -183,7 +183,7 @@ const VALLEY_TODAY_WA_BODY = [
   'Checkout TODAY — Valley · {{propertyName}}',
   '{{checkOutDate}} by {{checkoutTime}}',
   'Notes: {{cleaningNotes}}',
-  'Eleshnitsa / Palatik / Chereshovo route. Last km foot/jeep/horse/ATV.',
+  'Eleshnitsa / Palatik / Chereshovo route. Last approximately 2.5 km (~45 min) foot/jeep/horse/ATV.',
   '{{meetingPointLabel}}',
   '{{googleMapsUrl}}',
   '',

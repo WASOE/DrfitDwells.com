@@ -249,7 +249,7 @@ async function seedValleyBookingContext() {
       googleMapsUrl: 'https://maps.app.goo.gl/example'
     },
     arrivalGuideUrl: '/guides/the-valley',
-    arrivalWindowDefault: 'From 15:00. Last 1 km on foot.'
+    arrivalWindowDefault: 'From 15:00. Final approach from Chereshovo parking is approximately 2.5 km / about 45 minutes by walk or arranged suitable transfer.'
   });
 
   const checkIn = new Date();
@@ -506,7 +506,8 @@ test('GMA preview renders valley email from draft template', async () => {
 
 test('seed source templates match approved copy targets', () => {
   const rows = buildAllTemplates();
-  assert.equal(rows.length, 23);
+  // 9 guest/ops (4 arrival + 3 ops alerts + 2 access day-before) + 16 cleaner = 25
+  assert.equal(rows.length, 25);
   for (const target of GMA_TEMPLATE_COPY_TARGETS) {
     const row = rows.find(
       (r) =>
