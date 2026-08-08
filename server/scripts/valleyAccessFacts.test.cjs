@@ -41,6 +41,10 @@ test('route checkpoints are Eleshnitsa → Palatik → Chereshovo', () => {
     ROUTE_CHECKPOINTS.map((c) => c.name),
     ['Eleshnitsa', 'Palatik', 'Chereshovo']
   );
+  assert.equal(ROUTE_CHECKPOINTS[0].lat, 41.86743);
+  assert.equal(ROUTE_CHECKPOINTS[0].lng, 23.62081);
+  assert.equal(ROUTE_CHECKPOINTS[1].lat, 41.91045);
+  assert.equal(ROUTE_CHECKPOINTS[1].lng, 23.66801);
   assert.equal(formatRouteArrowLine(), 'Eleshnitsa → Palatik → Chereshovo');
 });
 
@@ -77,15 +81,24 @@ test('proven navigate URL ends at parking with Eleshnitsa then Palatik coords', 
   assert.ok(guestNavigateUrl);
   assert.equal(buildParkingNavigateUrl(), guestNavigateUrl);
   assert.match(guestNavigateUrl, /^https:\/\/www\.google\.com\/maps\/dir\/\?/);
+  assert.match(guestNavigateUrl, /origin=Current\+Location/);
   assert.match(guestNavigateUrl, /destination=41\.949939,23\.715978/);
-  assert.match(guestNavigateUrl, /waypoints=41\.9020,23\.6520\|41\.9278,23\.6953/);
+  assert.match(guestNavigateUrl, /waypoints=41\.86743,23\.62081\|41\.91045,23\.66801/);
+  assert.match(guestNavigateUrl, /travelmode=driving/);
+  assert.match(guestNavigateUrl, /dir_action=navigate/);
+  assert.doesNotMatch(guestNavigateUrl, /41\.9020,23\.6520/);
+  assert.doesNotMatch(guestNavigateUrl, /41\.9278,23\.6953/);
   assert.doesNotMatch(guestNavigateUrl, /41\.9551759/);
   assert.doesNotMatch(guestNavigateUrl, /optimize/);
 
   const fromBansko = buildParkingNavigateUrl({ origin: 'Bansko, Bulgaria' });
   assert.match(fromBansko, /origin=Bansko/);
-  assert.match(fromBansko, /destination=41\.949939/);
-  assert.match(fromBansko, /41\.902/);
-  assert.match(fromBansko, /41\.9278/);
+  assert.match(fromBansko, /destination=41\.949939(,|%2C)23\.715978/);
+  assert.match(fromBansko, /waypoints=41\.86743(,|%2C)23\.62081(\||%7C)41\.91045(,|%2C)23\.66801/);
+  assert.match(fromBansko, /travelmode=driving/);
+  assert.match(fromBansko, /dir_action=navigate/);
+  assert.doesNotMatch(fromBansko, /41\.9020(,|%2C)23\.6520/);
+  assert.doesNotMatch(fromBansko, /41\.9278(,|%2C)23\.6953/);
   assert.doesNotMatch(fromBansko, /41\.9551759/);
+  assert.doesNotMatch(fromBansko, /optimize/);
 });

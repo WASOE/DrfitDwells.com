@@ -25,14 +25,14 @@ export const ROUTE_CHECKPOINTS = Object.freeze([
   Object.freeze({
     id: 'eleshnitsa',
     name: 'Eleshnitsa',
-    lat: 41.902,
-    lng: 23.652
+    lat: 41.86743,
+    lng: 23.62081
   }),
   Object.freeze({
     id: 'palatik',
     name: 'Palatik',
-    lat: 41.9278,
-    lng: 23.6953
+    lat: 41.91045,
+    lng: 23.66801
   }),
   Object.freeze({
     id: 'chereshovo',
@@ -81,21 +81,16 @@ export const HOW_TO_ARRIVE_PDF_PATH = '/guides/the-valley/how-to-arrive.pdf';
 export const GUEST_GUIDE_PDF_PATH = '/guides/the-valley/guest-guide.pdf';
 
 /**
- * Proven guest Navigate URL (Batch 2 + mobile deep-link verification, Aug 2026).
+ * Proven guest Navigate URL.
  *
- * Method locked after desktop Google Maps checks from Bansko and Razlog,
- * plus mobile UA / Maps deep-link checks of the same API URL:
- * - destination = Chereshovo parking coords only (never Valley cabin pin)
- * - waypoints = Eleshnitsa then Palatik as raw lat,lng (order preserved)
- * - do NOT use optimize:false with place-name waypoints (Maps mis-resolved it)
- * - do NOT use bare place-name "Eleshnitsa, Bulgaria" as first experiments
- *   were less reliable than coordinates for this corridor
- *
- * Observed: ~54 km / ~1h34 from Bansko via road 84 through Eleshnitsa+Palatik,
- * ending at parking; Kraishte left off the forced path. Razlog similar (~51 km).
+ * Locked constraints:
+ * - destination = Chereshovo parking coords only (never Valley orientation pin)
+ * - waypoints = Eleshnitsa center then Palatik as ordered raw lat,lng
+ * - use deterministic coordinates (not place-name waypoints)
+ * - do NOT use optimize with waypoints
  */
 export const guestNavigateUrl =
-  'https://www.google.com/maps/dir/?api=1&origin=Current+Location&destination=41.949939,23.715978&waypoints=41.9020,23.6520|41.9278,23.6953&travelmode=driving&dir_action=navigate';
+  'https://www.google.com/maps/dir/?api=1&origin=Current+Location&destination=41.949939,23.715978&waypoints=41.86743,23.62081|41.91045,23.66801&travelmode=driving&dir_action=navigate';
 
 export function formatRouteArrowLine() {
   return 'Eleshnitsa → Palatik → Chereshovo';
