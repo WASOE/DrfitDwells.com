@@ -299,3 +299,119 @@ test('8. Historical ChannelSyncEvent records remain unchanged', async () => {
     /append-only and immutable/
   );
 });
+
+// ---------------------------------------------------------------------------
+// Regression tests for production stale-alert bug:
+// metadata.unitId divergence between failure and success events
+// ---------------------------------------------------------------------------
+
+test('9. PRODUCTION SCENARIO: failed event without metadata.unitId suppressed by later success with metadata.unitId (same feedUrl)', async () => {
+  const cabinId = new mongoose.Types.ObjectId();
+  const unitId = new mongoose.Types.ObjectId();
+  const feedUrl = 'https://example.test/feeds/aframe-production.ics';
+
+  // Failed event: metadata has feedUrl but NO unitId key (exactly as production)
+  await ChannelSyncEvent.create({
+    cabinId,
+    channel: 'airbnb_ical',
+    runAt: minutesAgo(120),
+    outcome: 'failed',
+    anomalyType: 'feed_unreachable',
+    message: 'Feed fetch failed: timeout of 15000ms exceeded',
+    metadata: { feedUrl }
+  });
+
+  // Success event: metadata has both feedUrl AND unitId (exactly as production)
+  await ChannelSyncEvent.create({
+    cabinId,
+    channel: 'airbnb_ical',
+    runAt: minutesAgo(5),
+    outcome: 'success',
+    anomalyType: null,
+    message: 'Imported 2 holds, tombstoned 0',
+    metadata: { feedUrl, unitId: String(unitId), warnings: 0 }
+  });
+
+  const result = await queryUnresolvedLatestSyncIssues({ since: daysAgo(7), limit: 5 });
+  assert.equal(result.unresolvedCount, 0, 'recovered source must not appear as unresolved');
+  assert.equal(result.unresolvedEvents.length, 0);
+});
+
+test('10. Two different feedUrls under same multi-unit cabin remain independent', async () => {
+  const cabinId = new mongoose.Types.ObjectId();
+  const unitA = new mongoose.Types.ObjectId();
+  const unitB = new mongoose.Types.ObjectId();
+  const feedA = 'https://example.test/feeds/unit-a.ics';
+  const feedB = 'https://example.test/feeds/unit-b.ics';
+
+  // Feed A: failed, no later success
+  await createSyncEvent({
+    cabinId, outcome: 'failed', runAt: minutesAgo(30),
+    feedUrl: feedA, unitId: unitA, anomalyType: 'feed_unreachable'
+  });
+
+  // Feed B: success
+  await createSyncEvent({
+    cabinId, outcome: 'success', runAt: minutesAgo(5),
+    feedUrl: feedB, unitId: unitB
+  });
+
+  const result = await queryUnresolvedLatestSyncIssues({ since: daysAgo(7), limit: 5 });
+  assert.equal(result.unresolvedCount, 1, 'feed A must still alert');
+  assert.equal(result.unresolvedEvents[0].metadata.feedUrl, feedA);
+});
+
+test('11. Unresolved failure with metadata.unitId absent still alerts when no later success exists', async () => {
+  const cabinId = new mongoose.Types.ObjectId();
+  const feedUrl = 'https://example.test/feeds/still-broken.ics';
+
+  // Failed event with no metadata.unitId — no subsequent success
+  await ChannelSyncEvent.create({
+    cabinId,
+    channel: 'airbnb_ical',
+    runAt: minutesAgo(30),
+    outcome: 'failed',
+    anomalyType: 'feed_unreachable',
+    message: 'timeout',
+    metadata: { feedUrl }
+  });
+
+  const result = await queryUnresolvedLatestSyncIssues({ since: daysAgo(7), limit: 5 });
+  assert.equal(result.unresolvedCount, 1, 'unrecovered failure must still alert');
+});
+
+test('12. Multiple failures for the same feedUrl dedupe to one unresolved source', async () => {
+  const cabinId = new mongoose.Types.ObjectId();
+  const feedUrl = 'https://example.test/feeds/repeated-fail.ics';
+
+  for (let i = 0; i < 5; i += 1) {
+    await createSyncEvent({
+      cabinId, outcome: 'failed', runAt: minutesAgo(100 - i * 15),
+      feedUrl, anomalyType: 'feed_unreachable', message: `fail ${i}`
+    });
+  }
+
+  const result = await queryUnresolvedLatestSyncIssues({ since: daysAgo(7), limit: 10 });
+  assert.equal(result.unresolvedCount, 1, 'same-source failures must dedupe to one');
+});
+
+test('13. buildSyncSourceKey produces same key when only metadata.unitId differs', () => {
+  const cabinId = new mongoose.Types.ObjectId();
+  const feedUrl = 'https://example.test/feeds/key-test.ics';
+
+  const withoutUnit = buildSyncSourceKey({
+    cabinId, channel: 'airbnb_ical',
+    metadata: { feedUrl }
+  });
+  const withUnit = buildSyncSourceKey({
+    cabinId, channel: 'airbnb_ical',
+    metadata: { feedUrl, unitId: '69b2ff947f141a71ffa7c445' }
+  });
+  const withNullUnit = buildSyncSourceKey({
+    cabinId, channel: 'airbnb_ical',
+    metadata: { feedUrl, unitId: null }
+  });
+
+  assert.equal(withoutUnit, withUnit, 'unitId must not affect key');
+  assert.equal(withoutUnit, withNullUnit, 'null unitId must not affect key');
+});

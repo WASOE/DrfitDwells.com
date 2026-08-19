@@ -134,11 +134,7 @@ function buildSyncSourceKey(event) {
     event?.metadata?.feedUrl != null && String(event.metadata.feedUrl).trim()
       ? String(event.metadata.feedUrl).trim()
       : '';
-  const unitId =
-    event?.metadata?.unitId != null && String(event.metadata.unitId).trim()
-      ? String(event.metadata.unitId).trim()
-      : '';
-  return `${cabinId}|${channel}|${feedUrl}|${unitId}`;
+  return `${cabinId}|${channel}|${feedUrl}`;
 }
 
 /**
@@ -157,26 +153,7 @@ async function queryUnresolvedLatestSyncIssues({ since, limit = 5 } = {}) {
         _id: {
           cabinId: '$cabinId',
           channel: '$channel',
-          feedUrl: { $ifNull: ['$metadata.feedUrl', ''] },
-          unitId: {
-            $let: {
-              vars: { raw: { $ifNull: ['$metadata.unitId', ''] } },
-              in: {
-                $cond: [
-                  { $eq: [{ $type: '$$raw' }, 'string'] },
-                  '$$raw',
-                  {
-                    $convert: {
-                      input: '$$raw',
-                      to: 'string',
-                      onError: '',
-                      onNull: ''
-                    }
-                  }
-                ]
-              }
-            }
-          }
+          feedUrl: { $ifNull: ['$metadata.feedUrl', ''] }
         },
         latest: { $first: '$$ROOT' }
       }
