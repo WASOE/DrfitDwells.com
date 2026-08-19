@@ -27,6 +27,30 @@ function alertTone(severity) {
 }
 
 function ReservationRow({ row }) {
+  if (row.kind === 'external_hold') {
+    return (
+      <div className="block border border-gray-200 rounded-lg px-3 py-2 bg-white">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-gray-900 truncate">{row.guestName || 'Airbnb hold'}</p>
+            <p className="text-xs text-gray-500 truncate">{row.accommodationDisplayName || 'Unknown'}</p>
+          </div>
+          <span className="text-[11px] px-2 py-0.5 rounded border border-violet-200 bg-violet-50 text-violet-700 shrink-0">
+            Airbnb
+          </span>
+        </div>
+        <p className="mt-1 text-xs text-gray-600">
+          {row.datesLabel || `${row.checkInDateOnly || '—'} - ${row.checkOutDateOnly || '—'}`}
+        </p>
+        {row.statusLabel ? (
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            <span className="text-xs px-2 py-0.5 rounded border border-sky-200 bg-sky-50 text-sky-700">{row.statusLabel}</span>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   const paymentStatus = paymentStatusLabel(row.paymentStatus);
   return (
     <Link

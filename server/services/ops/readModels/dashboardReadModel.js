@@ -1,4 +1,5 @@
 const Booking = require('../../../models/Booking');
+const AvailabilityBlock = require('../../../models/AvailabilityBlock');
 const Payment = require('../../../models/Payment');
 const Payout = require('../../../models/Payout');
 const ChannelSyncEvent = require('../../../models/ChannelSyncEvent');
@@ -18,6 +19,12 @@ const {
   EMAIL_FAILURE_CATEGORIES
 } = require('../../email/emailDeliveryStateService');
 const { isGuestBookingTemplateKey } = require('../../email/emailDeliveryCorrelation');
+const {
+  buildExternalHoldLaneFilters,
+  mapExternalHoldRow,
+  mergeDashboardRows,
+  appendUpcomingStatusLabel
+} = require('./externalHoldDashboardMapper');
 
 function dayRange(dateInput = new Date()) {
   const start = normalizeDateToSofiaDayStart(dateInput);
@@ -97,6 +104,7 @@ function mapReservationRow(booking, paymentStatus) {
     paymentStatus,
     statusLabel: mapped.reservationStatus || 'unknown',
     checkInDate: mapped.checkInDate,
+    checkOutDate: mapped.checkOutDate,
     checkInDateOnly: mapped.checkInDateOnly,
     checkOutDateOnly: mapped.checkOutDateOnly
   };
@@ -246,6 +254,12 @@ async function getDashboardReadModel() {
     createdAt: { $gte: monthStart, $lt: nextMonthStart }
   };
 
+  const externalHoldFilters = buildExternalHoldLaneFilters({ startOfToday, endOfToday });
+  const holdPopulate = [
+    { path: 'cabinId', select: 'name' },
+    { path: 'unitId', select: 'displayName unitNumber' }
+  ];
+
   const [
     arrivingBookings,
     stayingBookings,
@@ -266,7 +280,11 @@ async function getDashboardReadModel() {
     manualReviewOpenCount,
     manualReviewOpenItems,
     upcomingPayouts,
-    stripeLastWebhook
+    stripeLastWebhook,
+    arrivingHolds,
+    stayingHolds,
+    leavingHolds,
+    nextArrivalsHolds
   ] = await Promise.all([
     Booking.find(todayArrivingFilter).populate('cabinId', 'name').populate('cabinTypeId', 'name').populate('unitId', 'displayName unitNumber').sort({ checkIn: 1 }).limit(20).lean(),
     Booking.find(stayingFilter).populate('cabinId', 'name').populate('cabinTypeId', 'name').populate('unitId', 'displayName unitNumber').sort({ checkOut: 1 }).limit(20).lean(),
@@ -304,7 +322,11 @@ async function getDashboardReadModel() {
     ManualReviewItem.countDocuments({ status: 'open' }),
     ManualReviewItem.find({ status: 'open' }).sort({ severity: -1, createdAt: -1 }).limit(5).lean(),
     Payout.countDocuments({ expectedArrivalDate: { $gte: startOfToday } }),
-    StripeEventEvidence.findOne({}).sort({ createdAtProvider: -1 }).lean()
+    StripeEventEvidence.findOne({}).sort({ createdAtProvider: -1 }).lean(),
+    AvailabilityBlock.find(externalHoldFilters.arriving).populate(holdPopulate).sort({ startDate: 1 }).limit(20).lean(),
+    AvailabilityBlock.find(externalHoldFilters.staying).populate(holdPopulate).sort({ endDate: 1 }).limit(20).lean(),
+    AvailabilityBlock.find(externalHoldFilters.leaving).populate(holdPopulate).sort({ endDate: 1 }).limit(20).lean(),
+    AvailabilityBlock.find(externalHoldFilters.upcoming).populate(holdPopulate).sort({ startDate: 1 }).limit(5).lean()
   ]);
 
   const syncEventsRecent = unresolvedSyncIssues.unresolvedEvents;
@@ -387,14 +409,30 @@ async function getDashboardReadModel() {
       return mapReservationRow(booking, paymentStatus);
     });
 
-  const todayArrivingRows = mapRows(arrivingBookings);
-  const todayStayingRows = mapRows(stayingBookings);
-  const todayLeavingRows = mapRows(leavingBookings);
-  const nextArrivalsRows = mapRows(nextArrivalsBookings).map((row) => {
-    const checkIn = row.checkInDate ? new Date(row.checkInDate) : null;
-    const days = checkIn ? Math.floor((checkIn.getTime() - startOfToday.getTime()) / (1000 * 60 * 60 * 24)) : null;
-    return { ...row, statusLabel: Number.isFinite(days) ? `Arrives in ${days} day${days === 1 ? '' : 's'}` : 'Upcoming arrival' };
-  });
+  const mapHoldRows = (holds) => holds.map((block) => mapExternalHoldRow(block));
+
+  const todayArrivingBookingRows = mapRows(arrivingBookings);
+  const todayStayingBookingRows = mapRows(stayingBookings);
+  const todayLeavingBookingRows = mapRows(leavingBookings);
+  const todayArrivingRows = mergeDashboardRows(todayArrivingBookingRows, mapHoldRows(arrivingHolds));
+  const todayStayingRows = mergeDashboardRows(todayStayingBookingRows, mapHoldRows(stayingHolds));
+  const todayLeavingRows = mergeDashboardRows(
+    todayLeavingBookingRows,
+    mapHoldRows(leavingHolds),
+    { sort: 'checkOut' }
+  );
+  const nextArrivalsRows = appendUpcomingStatusLabel(
+    mergeDashboardRows(mapRows(nextArrivalsBookings), mapHoldRows(nextArrivalsHolds)).slice(0, 5),
+    startOfToday
+  );
+  const nextArrivalsBookingRows = appendUpcomingStatusLabel(
+    mapRows(nextArrivalsBookings),
+    startOfToday
+  );
+
+  const bookingArrivalsTodayCount = todayArrivingBookingRows.length;
+  const bookingStayingNowCount = todayStayingBookingRows.length;
+  const bookingDeparturesTodayCount = todayLeavingBookingRows.length;
 
   const alerts = [];
   for (const booking of alertBookings) {
@@ -664,9 +702,9 @@ async function getDashboardReadModel() {
     dashboard,
     // legacy compatibility fields
     aggregates: {
-      arrivalsToday: dashboard.today.arriving.total,
-      departuresToday: dashboard.today.leaving.total,
-      inHouse: dashboard.today.staying.total,
+      arrivalsToday: bookingArrivalsTodayCount,
+      departuresToday: bookingDeparturesTodayCount,
+      inHouse: bookingStayingNowCount,
       actionNeeded: dashboard.alerts.length,
       upcoming7Days: upcoming7Count,
       cancelledRefundPending: dashboard.alerts.filter((a) => a.type === 'refund_follow_up').length,
@@ -678,14 +716,14 @@ async function getDashboardReadModel() {
     },
     sections: {
       actionNeeded: dashboard.alerts,
-      arrivalsToday: dashboard.today.arriving.rows,
-      inHouse: dashboard.today.staying.rows,
-      checkingOutToday: dashboard.today.leaving.rows,
-      upcoming7Days: dashboard.upcoming.nextArrivals
+      arrivalsToday: todayArrivingBookingRows.slice(0, 5),
+      inHouse: todayStayingBookingRows.slice(0, 5),
+      checkingOutToday: todayLeavingBookingRows.slice(0, 5),
+      upcoming7Days: nextArrivalsBookingRows
     },
     occupancySnapshot: {
       source: 'derived',
-      value: { inHouse: dashboard.today.staying.total }
+      value: { inHouse: bookingStayingNowCount }
     },
     quickActionTargets: {
       reservationsPath: '/api/ops/reservations',
