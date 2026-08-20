@@ -722,7 +722,28 @@ UnitNightClaim remains **shadow infrastructure** in I2. Existing Booking / Avail
 
 | | |
 |--|--|
-| **Delivered** | Extension claims new nights **before** date commit; shrink releases surplus **after** durable date commit |
+| **Delivered** | OPS Edit Dates hardened for multi-unit inventory integrity; Booking-first shadow UnitNightClaim synchronization to the canonical NEW occupied night range (`source=date_edit`); REALLOCATE still disabled; claims still non-authoritative |
+
+##### I3 date-edit integrity semantics (LOCKED)
+
+UnitNightClaim remains **shadow infrastructure** in I3. Canonical Booking / AvailabilityBlock conflict logic remains **canonical**. Therefore:
+
+1. **Allocated multi-unit conflict validation.** Edit Dates for `cabinTypeId` + `unitId` MUST use unit-aware conflict evaluation for the full requested `[checkIn, checkOut)` with self-exclusion (`excludeReservationId = Booking._id`), parent cabin where required, and `treatExternalHoldAsHard = false`. Hard conflict → HTTP 409; zero canonical mutation; zero shadow mutation.
+2. **Booking-first ordering.** Canonical Booking date change + active reservation AvailabilityBlock date sync succeed **before** shadow UnitNightClaim synchronization.
+3. **Shadow / non-authoritative.** UnitNightClaim is not authoritative in I3. No unique `{ unitId, night }` index. REALLOCATE remains disabled. I4+ untouched.
+4. **Shadow synchronization (`syncUnitNightClaimsShadow`, `source=date_edit`).** Fill required NEW Sofia occupied nights first (`claimUnitNights`); then release booking-owned surplus nights outside the NEW range (`releaseUnitNights`). Foreign/write failure is **nonfatal** to canonical date success; never steal foreign claims; create deduped `unit_night_claim_shadow_failure` ManualReviewItem. No PaymentResolutionIssue for normal OPS Edit Dates (no paid-finalize context).
+5. **Surplus release despite fill failure.** Booking-owned claims outside the canonical NEW Booking range are released even when required NEW shadow claims cannot all be obtained (canonical occupancy is SoT).
+6. **External holds.** Retain current Edit Dates soft-warning behavior; no new explicit-accept UI in I3.
+7. **Idempotency fingerprint.** Effective identity includes `bookingId` + normalized requested `checkIn` + normalized requested `checkOut` + actor + action + optional client idempotency key. Different requested dates must never collide merely because they occur within the 10-minute in-memory cache TTL.
+8. **Same requested mutation** remains idempotent.
+9. **Same-date / remembered replay repair.** Must still converge active reservation AvailabilityBlock dates to Booking and repair UnitNightClaim shadow state for allocated blocking multi-unit Bookings.
+10. **Same-date repair/no-op side effects.** Repair/no-op MUST NOT re-fire `reservation_edit_dates` audit, GMA date-change reschedule, or Ops dates-changed push. It is not a new date mutation.
+11. **Status policy.** Allow Edit Dates for `pending`, `confirmed`, and `in_house`. Reject `completed` and `cancelled` with `invalid_transition` HTTP 409. Non-blocking Bookings do not acquire claims via date-edit; stale claims on completed/cancelled are I4/I5 (no cleanup in I3).
+12. **IN_HOUSE HISTORY LOCK.** Once `Booking.status == in_house`, `checkIn` is immutable through Edit Dates. A request that changes `checkIn` is rejected. Changing `checkOut` remains supported when conflict/date validation passes. Reason: one Booking checkIn/unit allocation represents historical occupancy and must not be rewritten after the stay has begun.
+13. **Unallocated multi-inventory.** `cabinTypeId` set and `unitId` null → Edit Dates rejected with a stable domain error. Do **not** use `evaluateCabinConflicts` with `cabinId=null`.
+14. **Canonical Booking + reservation-block writes.** Use repo-native Mongo transaction support when available (`canUseMongoTransactions`). Otherwise: Booking write → reservation AvailabilityBlock update → on block-update failure, compensate Booking back to prior dates → return failure, **never** false success. Zero matching reservation blocks remains valid Booking-only success.
+15. **Compensation failure.** If restoration itself fails: return hard failure; create durable ManualReviewItem (category `reservation_date_edit_canonical_inconsistency`) with Booking id, old/new dates, failure stage, technical error; no unnecessary guest PII; never silently return success.
+16. **Single-cabin Edit Dates** retain correct `evaluateCabinConflicts` behavior; create no UnitNightClaims.
 
 #### I4 — Inventory release
 
@@ -876,6 +897,7 @@ These do not reopen §1–15 locks; they are decided inside the named batches:
 | 2026-08-20 | Batch 0 lock: StayChange aggregate; commercial identity; mode routing; complimentary/partial upgrade equations; replacement contractual semantics; `settledByStayChangeId`; state machine; invariants; batches 1–8. |
 | 2026-08-20 | Amendment: UnitNightClaim exclusivity primitive; delete-on-release; Inventory Integrity Batch I (I1–I6) before REALLOCATE Batch R; Location child Bookings must claim; external holds remain AvailabilityBlock; rollout invariant (no REALLOCATE until claims authoritative). |
 | 2026-08-20 | Amendment: I2 shadow dual-write semantics — Booking-first ordering; shadow claim failure never gates canonical Booking success (paid or unpaid after survival); MRI/PRI durable signals; exact claim sources; no location claim-inside-txn abort; no unique index in I2; orphan recovery no double-write; replay/adopt repair missing claims. |
+| 2026-08-20 | Amendment: I3 date-edit integrity — unit-aware allocated multi-unit conflicts; Booking-first shadow sync (`source=date_edit`); fill-before-release with surplus release despite fill failure; fingerprint idempotency; same-date repair without audit/GMA/push; status + in_house checkIn immutability; unallocated reject; txn/compensate Booking+blocks; MRI on compensation failure; no unique index; REALLOCATE still disabled. |
 
 ---
 
