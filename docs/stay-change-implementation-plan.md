@@ -412,6 +412,73 @@ Booking remains inventory SoT for stays; reservation `AvailabilityBlock` rows mu
 
 Reuse checkout finalize lock / durable job / post-save overlap ideas where they fit; **do not** reuse in-memory `rememberResult` as the sole idempotency for money-bearing StayChanges.
 
+### 10.3 UnitNightClaim — exclusive guest unit ownership (LOCKED)
+
+Mongo transactions alone do **not** prevent write-skew when two writers update different `Booking` documents to the same `unitId`. Deterministic single-winner exclusivity requires a **shared contention document** per occupied unit-night.
+
+#### Model (conceptual)
+
+```text
+UnitNightClaim {
+  unitId: ObjectId → Unit          // required
+  night: Date                      // Sofia civil day-start for one occupied night
+  bookingId: ObjectId → Booking    // required — current exclusive owner
+  stayChangeId: ObjectId | null    // optional — StayChange that caused the claim
+  source: string                   // e.g. finalize | date_edit | reallocate | bootstrap | …
+  createdAt: Date
+}
+```
+
+**No `active` / `released` status.** A row means **current** exclusive ownership only.
+
+**Delete-on-release (LOCKED):** `releaseUnitNights` **deletes** rows owned by the supplied `bookingId`. Historical ownership lives on Booking / StayChange / AuditEvent / ManualReviewItem — not retained claim rows.
+
+**Authoritative unique key (I6 cutover only):**
+
+```text
+unique index { unitId: 1, night: 1 }
+```
+
+Must **not** be enforced in application startup before bootstrap/conflict cleanup (I1–I5).
+
+**Night semantics (LOCKED):** Sofia civil occupied nights for stay `[checkIn, checkOut)` exclusive end. Checkout day is never claimed. Reuse `formatSofiaDateOnly` / `normalizeExclusiveDateRange` / `computeStayNights` (or equivalents) — no duplicate timezone logic.
+
+Examples:
+
+| checkIn | checkOut | Claim nights |
+|---------|----------|--------------|
+| Aug 20 | Aug 21 | Aug 20 |
+| Aug 20 | Aug 23 | Aug 20, Aug 21, Aug 22 |
+
+#### Canonical claim service (LOCKED)
+
+Permanent domain service (repo naming may vary; semantics fixed):
+
+| Operation | Semantics |
+|-----------|-----------|
+| `claimUnitNights` | Expand Sofia nights; same-booking ownership idempotent; fill missing same-booking nights; **foreign owner → structured conflict, no silent partial success**; optional Mongo session |
+| `releaseUnitNights` | Delete **only** claims owned by `bookingId` (optional unit/night scope); idempotent if absent |
+| `transferUnitNightClaims` | Secure **target** nights before releasing **source**; no source release if target incomplete; session-safe; idempotent retry |
+| `assertBookingOwnsNights` | Prove ownership of required set; structured diagnostics for reconciliation |
+
+Every production unit-allocation writer must ultimately use this service (paid finalize, legacy create, LocationBooking **child** Bookings with `unitId`, multi-unit recovery, date-edit night expand/shrink, cancel/complete/delete release, REALLOCATE).
+
+#### External holds (LOCKED)
+
+- Airbnb/iCal holds remain `AvailabilityBlock` (`external_hold`).  
+- **Never** convert external holds into `UnitNightClaim`.  
+- UnitNightClaim = exclusive **internal guest Booking** ownership.  
+- It does **not** mean “no external channel conflict.”  
+- Later REALLOCATE: external hold overlap **blocks** by default; admin may explicitly accept risk without removing/mutating the hold.
+
+#### Rollout invariant (LOCKED)
+
+There must **never** be a production window where REALLOCATE trusts UnitNightClaim while another production allocation writer ignores it.
+
+Shadow/dual-write (I1–I5): claims are infrastructure only; existing Booking/Availability conflict logic remains active; REALLOCATE **disabled**.
+
+Authoritative (after I6): unique index exists; all writers use claim service; conflicts reconciled; then REALLOCATE may enable.
+
 ---
 
 ## 11. REBOOK Booking relationships
@@ -547,7 +614,12 @@ StayChange **must reject** LocationBooking-linked / buyout master flows rather t
 22. Replacement contractual total excludes waived amount.  
 23. `settledByStayChangeId` never fabricates Payment provenance.  
 24. Attribution / reporting / email guards ship with first REBOOK-capable implementation.  
-25. LocationBooking moves rejected in v1.
+25. LocationBooking **StayChange / buyout move** rejected in v1.  
+26. UnitNightClaim is the sole exclusivity primitive for physical unit nights among guest Bookings (including LocationBooking **child** Bookings with `unitId`).  
+27. UnitNightClaim uses **delete-on-release**; no permanent `released` claim rows.  
+28. External holds stay on AvailabilityBlock; never converted to UnitNightClaim.  
+29. REALLOCATE must remain disabled until UnitNightClaim is globally authoritative across all production unit writers (after Inventory Integrity I6).  
+30. Never a production window where REALLOCATE trusts claims while another allocation writer ignores them.
 
 ---
 
@@ -595,7 +667,9 @@ StayChange {
 
 ## 17. Batch plan
 
-Ordering rationale vs earlier drafts: REALLOCATE first (smallest, kills unsafe reassign); StayChange spine before REBOOK; **reporting/email/payment-classifier guards ship in Batch 3 with first REBOOK**; downgrade before upgrade charge complexity; AMEND after shared money primitives; wizard last; reconciliation last.
+**Revised order (OPTION B — LOCKED):** Inventory Integrity is a **prerequisite** before REALLOCATE. REALLOCATE remains disabled until UnitNightClaim is globally authoritative.
+
+Ordering rationale: exclusive unit-night claims before any REALLOCATE; then StayChange REBOOK/AMEND money and wizard as before.
 
 ---
 
@@ -605,35 +679,74 @@ Ordering rationale vs earlier drafts: REALLOCATE first (smallest, kills unsafe r
 |--|--|
 | **Delivered** | This document. Architecture locked. No runtime change. |
 | **Touched** | `docs/stay-change-implementation-plan.md` only |
-| **Invariants** | All §15 accepted as requirements |
+| **Invariants** | All §15 (+ inventory amendments) accepted as requirements |
 | **Tests** | None (doc only) |
 | **Prod verification** | Spec review / owner sign-off |
-| **Still unsupported** | All StayChange runtime behavior |
+| **Still unsupported** | All StayChange / UnitNightClaim runtime behavior |
 
 ---
 
-### Batch 1 — Kill unsafe Reassign + production REALLOCATE
+### Batch I — Inventory Integrity (prerequisite)
+
+#### I1 — Model, service, integrity dry-run
 
 | | |
 |--|--|
-| **Delivered** | Hard-gate legacy reassign so it cannot change commercial product. Ship REALLOCATE: same `cabinTypeId`, change `unitId` only, conflict checks, AvailabilityBlock sync, post-save race check, audit, orchestrator reschedule if needed. `deltaCents === 0` enforced. |
-| **Touched (conceptual)** | `reservationWriteService.reassignReservation` (gate/remove unsafe paths); new reallocate write path; `conflictService` unit-aware checks; AvailabilityBlock sync; `OpsReservationDetail` (remove raw cabinId prompt for cross-product); permissions |
-| **Invariants proven** | 3, 7 (unit claim), 8, 16–19 |
-| **Required tests** | Unit swap A1→A2; reject cabin→cabin; reject cabinType change; block drift absent; double-submit idempotent; external-hold accept path |
-| **Prod verification** | Ops: move guest between two Valley units same dates; calendars correct; no price change |
+| **Delivered** | `UnitNightClaim` model (no authoritative unique index yet); permanent claim service; read-only bootstrap/conflict projection tooling |
+| **Touched** | New model + claim service + CLI/tooling + tests |
+| **Must not** | Change finalize, date-edit, cancel/complete, AvailabilityBlock, OPS UI, or enable REALLOCATE |
+| **Invariants** | 26–28 (foundation); delete-on-release; Sofia nights |
+
+#### I2 — Dual-write allocation writers
+
+| | |
+|--|--|
+| **Delivered** | Dual-write via claim service on: paid finalize, legacy booking create, LocationBooking **child** creation with `unitId`, multi-unit recovery/finalization paths |
+| **Still** | Existing Booking/Availability conflict logic active; claims **not** yet sole authority; REALLOCATE disabled |
+
+#### I3 — Date-edit integration
+
+| | |
+|--|--|
+| **Delivered** | Extension claims new nights **before** date commit; shrink releases surplus **after** durable date commit |
+
+#### I4 — Inventory release
+
+| | |
+|--|--|
+| **Delivered** | Cancel / complete / delete/rollback paths call `releaseUnitNights` (delete-on-release) |
+
+#### I5 — Bootstrap + conflict reconciliation
+
+| | |
+|--|--|
+| **Delivered** | Production bootstrap of blocking+`unitId` bookings; conflict report; ManualReviewItem for ambiguous ownership; **never** silently choose a winner |
+
+#### I6 — Authoritative cutover
+
+| | |
+|--|--|
+| **Delivered** | Create unique `{ unitId, night }` index; authoritative enforcement; cutover verification that **every** production unit writer uses the claim service |
+| **Gate** | Conflicts resolved; dual-write complete; then and only then claims are authoritative |
+
+---
+
+### Batch R — REALLOCATE (after I6)
+
+| | |
+|--|--|
+| **Delivered** | Minimal StayChange(`kind=reallocate`); `transferUnitNightClaims`; OPS same-cabinType unit selector; pre-stay movable policy; same-unit HTTP 200 no-op; hard-disable legacy commercial reassign; AvailabilityBlock `unitId` sync; credential-diff GMA reschedule only |
+| **Invariants proven** | 3, 7, 8, 16–19, 26–30 |
 | **Still unsupported** | AMEND money, REBOOK, upgrades/downgrades, wizard |
 
 ---
 
-### Batch 2 — StayChange spine
+### Batch 2 — StayChange spine (amend/rebook-ready)
 
 | | |
 |--|--|
-| **Delivered** | `StayChange` model; status machine transitions; durable idempotency; inventory securing primitives; failed vs needs_reconciliation scaffolding; no full REBOOK money yet. |
-| **Touched** | New model + domain service; ops routes skeleton (feature-flagged); mongo txn helpers where available; job/lock patterns aligned with checkout finalize |
-| **Invariants proven** | 4, 6, 7, 8, 10 (skeleton), 15 |
-| **Required tests** | Illegal transitions rejected; idempotent create; crash mid-pending leaves recoverable state; LocationBooking input rejected |
-| **Prod verification** | Flagged; no operator wizard yet |
+| **Delivered** | Full StayChange state machine transitions beyond reallocate; durable idempotency for money-bearing kinds; `inventory_secured` / `needs_reconciliation` scaffolding shared with REBOOK |
+| **Touched** | StayChange model expansion; domain service; ops routes skeleton (feature-flagged) |
 | **Still unsupported** | Replacement booking creation, settlement classifiers, guest emails |
 
 ---
@@ -707,9 +820,9 @@ Ordering rationale vs earlier drafts: REALLOCATE first (smallest, kills unsafe r
 
 | | |
 |--|--|
-| **Delivered** | Ops views for `needs_reconciliation`; StayChange parity reports (coverage vs Payments vs contractual); metrics; runbooks; LocationBooking rejection monitoring; integrity jobs for AvailabilityBlock vs Booking after StayChange. |
+| **Delivered** | Ops views for `needs_reconciliation`; StayChange parity reports (coverage vs Payments vs contractual); UnitNightClaim parity; metrics; runbooks; LocationBooking StayChange rejection monitoring; integrity jobs for AvailabilityBlock vs Booking after StayChange. |
 | **Touched** | Dashboard/read models; scripts; alerts; docs/runbooks |
-| **Invariants proven** | 10, 14, 15 under failure injection |
+| **Invariants proven** | 10, 14, 15, 26–30 under failure injection |
 | **Required tests** | Reconciliation fixtures; alert suppression regression |
 | **Prod verification** | Chaos/drill: kill mid-awaiting_payment and mid-settling |
 | **Still unsupported** | LocationBooking StayChange (explicit future epic) |
@@ -723,8 +836,9 @@ Ordering rationale vs earlier drafts: REALLOCATE first (smallest, kills unsafe r
 - Using promo/`discountAmount*` for OPS concessions.  
 - Extending `paymentMethod` for StayChange settlement.  
 - In-place rewrite of source `cabinId` / `cabinTypeId` on REBOOK.  
-- LocationBooking / buyout StayChange.  
-- Keeping raw cabinId `window.prompt` reassign as a supported commercial tool.
+- LocationBooking / buyout **StayChange** (child Bookings with `unitId` still participate in UnitNightClaim).  
+- Keeping raw cabinId `window.prompt` reassign as a supported commercial tool.  
+- Enabling REALLOCATE before Inventory Integrity I6 authoritative cutover.
 
 ---
 
@@ -736,7 +850,8 @@ These do not reopen §1–15 locks; they are decided inside the named batches:
 - Whether optional `movedFromBookingId` thin pointer is added on replacement.  
 - Exact guest email template copy and provider (SMTP / existing lifecycle pipeline).  
 - Permission string naming.  
-- Feature flag names and rollout order per propertyKind.
+- Feature flag names and rollout order per propertyKind.  
+- UnitNightClaim I6 unique-index migration tooling shape (must not auto-enforce before I5 complete).
 
 ---
 
@@ -745,6 +860,7 @@ These do not reopen §1–15 locks; they are decided inside the named batches:
 | Date | Change |
 |------|--------|
 | 2026-08-20 | Batch 0 lock: StayChange aggregate; commercial identity; mode routing; complimentary/partial upgrade equations; replacement contractual semantics; `settledByStayChangeId`; state machine; invariants; batches 1–8. |
+| 2026-08-20 | Amendment: UnitNightClaim exclusivity primitive; delete-on-release; Inventory Integrity Batch I (I1–I6) before REALLOCATE Batch R; Location child Bookings must claim; external holds remain AvailabilityBlock; rollout invariant (no REALLOCATE until claims authoritative). |
 
 ---
 
