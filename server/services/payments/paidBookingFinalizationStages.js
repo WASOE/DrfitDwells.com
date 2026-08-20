@@ -20,6 +20,7 @@ const PAID_BOOKING_FINALIZATION_STAGES = Object.freeze({
   SAVED_QUOTE_CONVERSION: 'saved_quote_conversion',
   CONFIRMATION_SIDE_EFFECT: 'confirmation_side_effect',
   VOUCHER_CONFIRM: 'voucher_confirm',
+  UNIT_NIGHT_CLAIM_SHADOW: 'unit_night_claim_shadow',
   UNKNOWN: 'unknown'
 });
 

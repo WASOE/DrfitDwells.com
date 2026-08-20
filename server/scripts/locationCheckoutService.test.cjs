@@ -484,3 +484,188 @@ test('reports mongo transaction support', async () => {
   console.log(`[location-checkout-test] canUseMongoTransactions=${transactionSupport}`);
   assert.equal(typeof transactionSupport, 'boolean');
 });
+
+test('I2: finalize creates UnitNightClaims for each allocated unit child', async () => {
+  const UnitNightClaim = require('../models/UnitNightClaim');
+  await UnitNightClaim.deleteMany({});
+  await createFullValleyInventory({ unitCount: 2 });
+  const stripe = mockStripe();
+  const created = await createLocationCheckoutPaymentIntent(quoteBody(), { stripe });
+  stripe.markSucceeded(created.paymentIntentId);
+
+  const result = await finalizeLocationCheckout(
+    {
+      checkoutSessionId: created.checkoutSessionId,
+      paymentIntentId: created.paymentIntentId,
+      adults: 12,
+      children: 0,
+      guestInfo: guestInfo()
+    },
+    { stripe }
+  );
+
+  assert.equal(result.idempotentReplay, false);
+  const children = await Booking.find({ _id: { $in: result.childBookingIds } });
+  const unitChildren = children.filter((c) => c.cabinTypeId && c.unitId);
+  assert.ok(unitChildren.length >= 2);
+  for (const child of unitChildren) {
+    const claims = await UnitNightClaim.find({ bookingId: child._id }).lean();
+    assert.ok(claims.length >= 1, `expected claims for child ${child._id}`);
+    assert.ok(claims.every((c) => c.source === 'location_child'));
+  }
+  const singleChildren = children.filter((c) => c.cabinId && !c.unitId);
+  for (const child of singleChildren) {
+    assert.equal(await UnitNightClaim.countDocuments({ bookingId: child._id }), 0);
+  }
+});
+
+test('I2: one child shadow failure is nonfatal; other unit children still claim', async () => {
+  const UnitNightClaim = require('../models/UnitNightClaim');
+  const ManualReviewItem = require('../models/ManualReviewItem');
+  const {
+    SHADOW_OUTCOMES,
+    MRI_CATEGORY
+  } = require('../services/inventory/ensureUnitNightClaimsShadow');
+  const realEnsure = require('../services/inventory/ensureUnitNightClaimsShadow')
+    .ensureUnitNightClaimsShadow;
+
+  await UnitNightClaim.deleteMany({});
+  await createFullValleyInventory({ unitCount: 2 });
+  const stripe = mockStripe();
+  const created = await createLocationCheckoutPaymentIntent(quoteBody(), { stripe });
+  stripe.markSucceeded(created.paymentIntentId);
+
+  let failOnceUnitId = null;
+  const ensureFn = async (args) => {
+    const unitId = args.booking?.unitId ? String(args.booking.unitId) : null;
+    if (unitId && !failOnceUnitId) failOnceUnitId = unitId;
+    if (unitId && failOnceUnitId && unitId === failOnceUnitId) {
+      return realEnsure({
+        ...args,
+        claimUnitNightsFn: async () => {
+          throw Object.assign(new Error('forced location child claim fail'), {
+            code: 'UNIT_NIGHT_CLAIM_SHADOW_FAILURE'
+          });
+        }
+      });
+    }
+    return realEnsure(args);
+  };
+
+  const result = await finalizeLocationCheckout(
+    {
+      checkoutSessionId: created.checkoutSessionId,
+      paymentIntentId: created.paymentIntentId,
+      adults: 12,
+      children: 0,
+      guestInfo: guestInfo()
+    },
+    { stripe, ensureUnitNightClaimsShadowFn: ensureFn }
+  );
+
+  assert.ok(result.locationBookingId);
+  const master = await LocationBooking.findById(result.locationBookingId);
+  assert.equal(master.status, 'confirmed');
+  const children = await Booking.find({ _id: { $in: result.childBookingIds } });
+  assert.equal(children.length, result.childBookingIds.length);
+
+  const unitChildren = children.filter((c) => c.unitId);
+  assert.ok(unitChildren.length >= 2);
+  const failedChild = unitChildren.find((c) => String(c.unitId) === failOnceUnitId);
+  const okChild = unitChildren.find((c) => String(c.unitId) !== failOnceUnitId);
+  assert.ok(failedChild);
+  assert.ok(okChild);
+  assert.equal(await UnitNightClaim.countDocuments({ bookingId: failedChild._id }), 0);
+  assert.ok((await UnitNightClaim.countDocuments({ bookingId: okChild._id })) >= 1);
+  assert.ok(
+    (await ManualReviewItem.countDocuments({
+      category: MRI_CATEGORY,
+      entityId: String(failedChild._id),
+      status: 'open'
+    })) >= 1
+  );
+  void SHADOW_OUTCOMES;
+});
+
+test('I2: location replay repairs missing child claims', async () => {
+  const UnitNightClaim = require('../models/UnitNightClaim');
+  await UnitNightClaim.deleteMany({});
+  await createFullValleyInventory({ unitCount: 2 });
+  const stripe = mockStripe();
+  const created = await createLocationCheckoutPaymentIntent(quoteBody(), { stripe });
+  stripe.markSucceeded(created.paymentIntentId);
+  const guest = guestInfo();
+
+  const first = await finalizeLocationCheckout(
+    {
+      checkoutSessionId: created.checkoutSessionId,
+      paymentIntentId: created.paymentIntentId,
+      adults: 12,
+      children: 0,
+      guestInfo: guest
+    },
+    { stripe }
+  );
+  assert.equal(first.idempotentReplay, false);
+
+  const unitChildIds = (
+    await Booking.find({
+      _id: { $in: first.childBookingIds },
+      unitId: { $ne: null }
+    }).select('_id')
+  ).map((b) => b._id);
+  assert.ok(unitChildIds.length >= 1);
+  await UnitNightClaim.deleteMany({ bookingId: { $in: unitChildIds } });
+  assert.equal(await UnitNightClaim.countDocuments({ bookingId: { $in: unitChildIds } }), 0);
+
+  const replay = await finalizeLocationCheckout(
+    {
+      checkoutSessionId: created.checkoutSessionId,
+      paymentIntentId: created.paymentIntentId,
+      adults: 12,
+      children: 0,
+      guestInfo: guest
+    },
+    { stripe }
+  );
+  assert.equal(replay.idempotentReplay, true);
+  for (const id of unitChildIds) {
+    assert.ok((await UnitNightClaim.countDocuments({ bookingId: id })) >= 1);
+  }
+});
+
+test('I2: canonical location finalize failure before success leaves zero claims', async () => {
+  const UnitNightClaim = require('../models/UnitNightClaim');
+  await UnitNightClaim.deleteMany({});
+  const { lux } = await createFullValleyInventory({ unitCount: 1 });
+  const stripe = mockStripe();
+  const created = await createLocationCheckoutPaymentIntent(quoteBody(), { stripe });
+  stripe.markSucceeded(created.paymentIntentId);
+
+  const checkIn = sofiaDateOnly(10);
+  const checkOut = sofiaDateOnly(14);
+  await createBooking({
+    cabinId: lux._id,
+    checkIn: new Date(checkIn),
+    checkOut: new Date(checkOut)
+  });
+
+  await assert.rejects(
+    () =>
+      finalizeLocationCheckout(
+        {
+          checkoutSessionId: created.checkoutSessionId,
+          paymentIntentId: created.paymentIntentId,
+          adults: 12,
+          children: 0,
+          guestInfo: guestInfo(),
+          checkIn,
+          checkOut
+        },
+        { stripe }
+      ),
+    /no longer available|not available/i
+  );
+
+  assert.equal(await UnitNightClaim.countDocuments({}), 0);
+});

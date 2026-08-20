@@ -1258,6 +1258,22 @@ async function executeRecoveryInsideContext({
     ) {
       throw createSanitizedRecoveryError('RECOVERY_EXISTING_BOOKING_CONFLICT');
     }
+    // Adopt path: repair missing shadow claims idempotently (no second create-path writer).
+    try {
+      const {
+        ensureUnitNightClaimsShadow,
+        I2_SOURCES
+      } = require('../inventory/ensureUnitNightClaimsShadow');
+      await ensureUnitNightClaimsShadow({
+        booking,
+        source: I2_SOURCES.MULTI_UNIT_RECOVERY,
+        paymentIntentId: allowlist.paymentIntentId,
+        checkoutId: allowlist.checkoutId,
+        stripePaymentVerified: true
+      });
+    } catch {
+      /* shadow must never fail recovery adopt */
+    }
   } else {
     if (mode === 'resume' && INCOMPLETE_RECOVERY_STATUSES.includes(job.recoveryStatus) &&
         ['linkage_complete', 'awaiting_confirmation_queue', 'awaiting_review_resolution'].includes(job.recoveryStatus)) {

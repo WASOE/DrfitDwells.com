@@ -27,6 +27,10 @@ const {
   sendLocationBookingInternalNotification
 } = require('./locationCheckoutEmailService');
 const {
+  ensureUnitNightClaimsShadow,
+  I2_SOURCES
+} = require('../inventory/ensureUnitNightClaimsShadow');
+const {
   linkSavedQuoteToCheckout,
   markSavedQuoteConverted,
   scheduleSavedQuoteTask
@@ -132,6 +136,33 @@ function buildChildBookingPayload({
 
   void checkoutSessionId;
   return bookingData;
+}
+
+async function ensureLocationChildShadowClaims({
+  childBookingIds,
+  paymentIntentId = null,
+  checkoutSessionId = null,
+  ensureFn = ensureUnitNightClaimsShadow,
+  stripePaymentVerified = true
+}) {
+  if (!Array.isArray(childBookingIds) || childBookingIds.length === 0) {
+    return [];
+  }
+  const children = await Booking.find({ _id: { $in: childBookingIds } });
+  const results = [];
+  for (const child of children) {
+    // Post-canonical only — never inside the location txn. Failures are isolated.
+    // eslint-disable-next-line no-await-in-loop
+    const outcome = await ensureFn({
+      booking: child,
+      source: I2_SOURCES.LOCATION_CHILD,
+      paymentIntentId,
+      checkoutId: checkoutSessionId,
+      stripePaymentVerified: paymentIntentId ? Boolean(stripePaymentVerified) : null
+    });
+    results.push(outcome);
+  }
+  return results;
 }
 
 async function recordLocationCheckoutFailure({
@@ -335,9 +366,10 @@ async function createLocationCheckoutPaymentIntent(body, { stripe }) {
   }
 }
 
-async function finalizeLocationCheckout(body, { stripe }) {
+async function finalizeLocationCheckout(body, { stripe, ensureUnitNightClaimsShadowFn = null } = {}) {
   const checkoutSessionId = String(body?.checkoutSessionId || '').trim();
   const paymentIntentId = String(body?.paymentIntentId || '').trim();
+  const ensureFn = ensureUnitNightClaimsShadowFn || ensureUnitNightClaimsShadow;
   if (!checkoutSessionId || !paymentIntentId) {
     throw createDomainError(
       'validation',
@@ -374,6 +406,13 @@ async function finalizeLocationCheckout(body, { stripe }) {
     } catch {
       /* ignore */
     }
+    await ensureLocationChildShadowClaims({
+      childBookingIds: existing.childBookingIds || [],
+      paymentIntentId,
+      checkoutSessionId,
+      ensureFn,
+      stripePaymentVerified: true
+    });
     return {
       idempotentReplay: true,
       locationBookingId: String(existing._id),
@@ -576,6 +615,15 @@ async function finalizeLocationCheckout(body, { stripe }) {
       500
     );
   }
+
+  // Canonical LocationBooking + children survived — shadow claims are post-canonical only.
+  await ensureLocationChildShadowClaims({
+    childBookingIds,
+    paymentIntentId,
+    checkoutSessionId,
+    ensureFn,
+    stripePaymentVerified: true
+  });
 
   const masterDoc = await LocationBooking.findById(locationBookingId);
   if (masterDoc && !masterDoc.confirmationEmailSentAt) {

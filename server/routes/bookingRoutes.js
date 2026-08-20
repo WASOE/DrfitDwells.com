@@ -86,6 +86,9 @@ const {
 } = require('../services/checkout/executeBookingFinalizeWork');
 const { finalizePaidCheckout } = require('../services/checkout/finalizePaidCheckout');
 const {
+  ensureUnitNightClaimsShadow
+} = require('../services/inventory/ensureUnitNightClaimsShadow');
+const {
   buildTrustedBookingPayloadForFinalize,
   mapFinalizeOrchestrationResultToHttp,
   isFinalizeReplayError,
@@ -240,6 +243,25 @@ function buildCreateBookingSuccessPayload({ booking, checkInDate, checkOutDate, 
       totalPrice: Number.isFinite(totalPrice) ? totalPrice : booking?.totalPrice
     }
   };
+}
+
+/** Legacy POST /api/bookings shadow dual-write (I2). Never throws into the route. */
+async function ensureLegacyBookingShadowClaims(
+  booking,
+  { paymentIntentId = null, checkoutId = null, stripePaymentVerified = null } = {}
+) {
+  if (!booking) return null;
+  try {
+    return await ensureUnitNightClaimsShadow({
+      booking,
+      source: 'legacy_create',
+      paymentIntentId: paymentIntentId || booking.stripePaymentIntentId || null,
+      checkoutId: checkoutId || booking.checkoutId || null,
+      stripePaymentVerified
+    });
+  } catch {
+    return null;
+  }
 }
 
 function parseAttributionCapturedAt(raw) {
@@ -2077,6 +2099,11 @@ router.post('/', bookingCreateLimiter, [
       const existingByCheckoutId = await Booking.findOne({ checkoutId });
       if (existingByCheckoutId) {
         if (bookingMatchesCheckoutFingerprint(existingByCheckoutId, checkoutFingerprint)) {
+          await ensureLegacyBookingShadowClaims(existingByCheckoutId, {
+            paymentIntentId: paymentIntentIdForReview,
+            checkoutId,
+            stripePaymentVerified
+          });
           return res.status(200).json(
             buildCreateBookingSuccessPayload({
               booking: existingByCheckoutId,
@@ -2102,6 +2129,11 @@ router.post('/', bookingCreateLimiter, [
           && existingByPaymentIntent.checkoutId
           && String(existingByPaymentIntent.checkoutId) === String(checkoutId);
         if (checkoutMatches && bookingMatchesCheckoutFingerprint(existingByPaymentIntent, checkoutFingerprint)) {
+          await ensureLegacyBookingShadowClaims(existingByPaymentIntent, {
+            paymentIntentId: paymentIntentIdForReview,
+            checkoutId,
+            stripePaymentVerified
+          });
           return res.status(200).json(
             buildCreateBookingSuccessPayload({
               booking: existingByPaymentIntent,
@@ -2248,6 +2280,11 @@ router.post('/', bookingCreateLimiter, [
         const existingByCheckoutId = await Booking.findOne({ checkoutId });
         if (existingByCheckoutId) {
           if (bookingMatchesCheckoutFingerprint(existingByCheckoutId, checkoutFingerprint)) {
+            await ensureLegacyBookingShadowClaims(existingByCheckoutId, {
+              paymentIntentId: paymentIntentIdForReview,
+              checkoutId,
+              stripePaymentVerified
+            });
             return res.status(200).json(
               buildCreateBookingSuccessPayload({
                 booking: existingByCheckoutId,
@@ -2481,6 +2518,12 @@ router.post('/', bookingCreateLimiter, [
             error: confirmErr.message
           }
         });
+        // Surviving Booking must receive shadow claims before voucher-failure exit.
+        await ensureLegacyBookingShadowClaims(booking, {
+          paymentIntentId: paymentIntentIdForReview,
+          checkoutId,
+          stripePaymentVerified
+        });
         if (paymentIntentIdForReview) {
           const handled = await handlePaidBookingFailure({
             issueType: 'paid_booking_unknown_failure',
@@ -2506,6 +2549,12 @@ router.post('/', bookingCreateLimiter, [
       await booking.populate('cabinTypeId', 'name description imageUrl location meetingPoint packingList arrivalGuideUrl safetyNotes emergencyContact arrivalWindowDefault transportCutoffs');
       await booking.populate('unitId', 'unitNumber displayName');
     }
+
+    await ensureLegacyBookingShadowClaims(booking, {
+      paymentIntentId: paymentIntentIdForReview,
+      checkoutId,
+      stripePaymentVerified
+    });
 
     // Get the appropriate entity for email (cabin or cabinType)
     const entityForEmail = cabin || cabinType;

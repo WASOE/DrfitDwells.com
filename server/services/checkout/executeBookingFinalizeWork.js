@@ -16,6 +16,13 @@ const {
   findParentCabinForCabinType
 } = require('../publicAvailabilityService');
 const AssignmentEngine = require('../assignmentEngine');
+const {
+  ensureUnitNightClaimsShadow
+} = require('../inventory/ensureUnitNightClaimsShadow');
+const { openManualReviewItem } = require('../ops/ingestion/manualReviewService');
+const {
+  recordPaidBookingResolutionIssueSafe
+} = require('../payments/paidBookingFinalizationObservability');
 
 function sameObjectIdish(a, b) {
   if (!a || !b) return false;
@@ -262,8 +269,13 @@ function createDefaultDependencies() {
     releaseVoucherReservation,
     countBlockingBlocksForSingleCabin,
     countBlockingBlocksForUnit,
+    // General finalize MRI/PRI — callers (incl. recovery) may stub these.
     recordPaidBookingResolutionIssue: async () => null,
     openManualReviewItem: async () => null,
+    // I2 shadow dual-write observability — independent of general finalize stubs.
+    shadowClaimOpenManualReviewItem: openManualReviewItem,
+    shadowClaimRecordPaidBookingResolutionIssue: recordPaidBookingResolutionIssueSafe,
+    ensureUnitNightClaimsShadow,
     stripe: null,
     blockingBookingStatuses: BLOCKING_BOOKING_STATUSES
   };
@@ -419,6 +431,40 @@ function toReplayResult(booking) {
   };
 }
 
+async function runShadowClaimsAfterCanonicalSurvival(deps, {
+  booking,
+  source,
+  paymentIntentId,
+  checkoutId,
+  stripePaymentVerified = null
+}) {
+  if (!booking || typeof deps.ensureUnitNightClaimsShadow !== 'function') {
+    return null;
+  }
+  try {
+    return await deps.ensureUnitNightClaimsShadow({
+      booking,
+      source,
+      paymentIntentId: paymentIntentId || booking.stripePaymentIntentId || null,
+      checkoutId: checkoutId || booking.checkoutId || null,
+      stripePaymentVerified,
+      // Prefer dedicated shadow observability so recovery can stub general MRI
+      // without silencing unit_night_claim_shadow failures.
+      openManualReviewItemFn:
+        typeof deps.shadowClaimOpenManualReviewItem === 'function'
+          ? deps.shadowClaimOpenManualReviewItem
+          : undefined,
+      recordPaidBookingResolutionIssueFn:
+        typeof deps.shadowClaimRecordPaidBookingResolutionIssue === 'function'
+          ? deps.shadowClaimRecordPaidBookingResolutionIssue
+          : undefined
+    });
+  } catch {
+    // Shadow infra must never throw into canonical finalize.
+    return null;
+  }
+}
+
 async function findReplayByCheckoutId(deps, { checkoutId, checkoutFingerprint }) {
   if (!checkoutId) {
     return null;
@@ -512,7 +558,9 @@ async function retainPaidBookingOnOverlap(deps, {
   finalizeContext,
   paymentIntentIdForReview,
   errorCode,
-  errorSummary
+  errorSummary,
+  claimSource = 'frontend',
+  stripePaymentVerified = null
 }) {
   const ctx = finalizeContext || {};
   const checkoutId = ctx.checkoutId || booking?.checkoutId || null;
@@ -558,6 +606,15 @@ async function retainPaidBookingOnOverlap(deps, {
     });
   }
 
+  // Retained paid Booking is canonical evidence — still attempt shadow claims.
+  await runShadowClaimsAfterCanonicalSurvival(deps, {
+    booking,
+    source: claimSource,
+    paymentIntentId: paymentIntentIdForReview || booking.stripePaymentIntentId || null,
+    checkoutId,
+    stripePaymentVerified
+  });
+
   if (paymentIntentIdForReview && typeof deps.recordPaidBookingResolutionIssue === 'function') {
     await deps.recordPaidBookingResolutionIssue({
       issueType: 'paid_booking_conflict',
@@ -586,7 +643,9 @@ async function runPostSaveOverlapChecks(deps, {
   finalizeContext,
   paymentIntentIdForReview,
   voucherReservationContext,
-  voucherEvidence
+  voucherEvidence,
+  claimSource = 'frontend',
+  stripePaymentVerified = null
 }) {
   const ctx = finalizeContext || {};
   const { checkInDate, checkOutDate, cabinId, assignedUnitId, parentCabinForUnit } = ctx;
@@ -620,7 +679,9 @@ async function runPostSaveOverlapChecks(deps, {
           finalizeContext: ctx,
           paymentIntentIdForReview,
           errorCode,
-          errorSummary
+          errorSummary,
+          claimSource,
+          stripePaymentVerified
         });
       }
 
@@ -693,7 +754,9 @@ async function runPostSaveOverlapChecks(deps, {
             finalizeContext: ctx,
             paymentIntentIdForReview,
             errorCode,
-            errorSummary
+            errorSummary,
+            claimSource,
+            stripePaymentVerified
           });
         }
 
@@ -791,9 +854,13 @@ async function incrementPromoUsageIfNeeded(deps, {
 }
 
 async function confirmVoucherIfNeeded(deps, {
+  booking,
+  source,
+  checkoutId,
   finalizeContext,
   paymentIntentIdForReview,
-  voucherEvidence
+  voucherEvidence,
+  stripePaymentVerified = null
 }) {
   const voucherReservationContext = finalizeContext?.voucherReservationContext;
   if (!voucherReservationContext?.redemptionId) {
@@ -825,6 +892,14 @@ async function confirmVoucherIfNeeded(deps, {
         ...voucherEvidence,
         error: confirmErr.message
       }
+    });
+    // Booking already survived canonical allocation — shadow-claim before exit.
+    await runShadowClaimsAfterCanonicalSurvival(deps, {
+      booking,
+      source,
+      paymentIntentId: paymentIntentIdForReview,
+      checkoutId: checkoutId || finalizeContext?.checkoutId || null,
+      stripePaymentVerified
     });
     throw createVoucherConfirmFailedError(confirmErr.message);
   }
@@ -860,6 +935,7 @@ async function executeBookingFinalizeWork({
     : ctx.paymentIntentId
       ? String(ctx.paymentIntentId).trim()
       : null;
+  const stripePaymentVerifiedFlag = Boolean(ctx.stripePaymentVerified);
   const checkoutFingerprint = buildCheckoutFingerprintFromContext({
     finalizeContext: ctx,
     paymentIntentId: paymentIntentIdForReview
@@ -870,16 +946,30 @@ async function executeBookingFinalizeWork({
     checkoutFingerprint
   });
   if (replayByCheckout) {
+    await runShadowClaimsAfterCanonicalSurvival(deps, {
+      booking: replayByCheckout.booking,
+      source,
+      paymentIntentId: paymentIntentIdForReview,
+      checkoutId,
+      stripePaymentVerified: stripePaymentVerifiedFlag
+    });
     return replayByCheckout;
   }
 
   const replayByPi = await findReplayByPaymentIntent(deps, {
     checkoutId,
     checkoutFingerprint,
-    stripePaymentVerified: Boolean(ctx.stripePaymentVerified),
+    stripePaymentVerified: stripePaymentVerifiedFlag,
     paymentIntentId: paymentIntentIdForReview
   });
   if (replayByPi) {
+    await runShadowClaimsAfterCanonicalSurvival(deps, {
+      booking: replayByPi.booking,
+      source,
+      paymentIntentId: paymentIntentIdForReview,
+      checkoutId,
+      stripePaymentVerified: stripePaymentVerifiedFlag
+    });
     return replayByPi;
   }
 
@@ -908,6 +998,13 @@ async function executeBookingFinalizeWork({
     voucherEvidence
   });
   if (saveOutcome.isReplay) {
+    await runShadowClaimsAfterCanonicalSurvival(deps, {
+      booking: saveOutcome.booking,
+      source,
+      paymentIntentId: paymentIntentIdForReview,
+      checkoutId,
+      stripePaymentVerified: Boolean(stripePaymentVerified)
+    });
     return toReplayResult(saveOutcome.booking);
   }
   let booking = saveOutcome.booking;
@@ -945,7 +1042,9 @@ async function executeBookingFinalizeWork({
     finalizeContext: ctx,
     paymentIntentIdForReview,
     voucherReservationContext,
-    voucherEvidence
+    voucherEvidence,
+    claimSource: source,
+    stripePaymentVerified: Boolean(stripePaymentVerified)
   });
 
   await incrementPromoUsageIfNeeded(deps, {
@@ -958,9 +1057,21 @@ async function executeBookingFinalizeWork({
   });
 
   await confirmVoucherIfNeeded(deps, {
+    booking,
+    source,
+    checkoutId,
     finalizeContext: ctx,
     paymentIntentIdForReview,
-    voucherEvidence
+    voucherEvidence,
+    stripePaymentVerified: Boolean(stripePaymentVerified)
+  });
+
+  await runShadowClaimsAfterCanonicalSurvival(deps, {
+    booking,
+    source,
+    paymentIntentId: paymentIntentIdForReview,
+    checkoutId,
+    stripePaymentVerified: Boolean(stripePaymentVerified)
   });
 
   return {
