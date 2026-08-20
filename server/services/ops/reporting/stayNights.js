@@ -91,10 +91,48 @@ function periodKeyForDate(dateOnly, groupBy) {
   return m.format('YYYY-MM');
 }
 
+/**
+ * Occupied Sofia civil nights for stay [checkIn, checkOut) as YYYY-MM-DD strings.
+ * Checkout day is excluded. Empty when stay invalid / zero nights.
+ */
+function expandOccupiedSofiaNightDateOnlys(checkIn, checkOut) {
+  const stay = computeStayNights(checkIn, checkOut);
+  if (stay.invalid || stay.nights === 0) {
+    return {
+      ok: false,
+      nights: [],
+      dateOnlys: [],
+      invalid: stay.invalid,
+      reason: stay.reason || 'zero_nights',
+      checkInDateOnly: stay.checkInDateOnly,
+      checkOutDateOnly: stay.checkOutDateOnly
+    };
+  }
+  const lastNightDateOnly = moment
+    .tz(stay.checkOutDateOnly, 'YYYY-MM-DD', PROPERTY_TIMEZONE)
+    .startOf('day')
+    .subtract(1, 'day')
+    .format('YYYY-MM-DD');
+  const dateOnlys = [];
+  eachSofiaNightInclusive(stay.checkInDateOnly, lastNightDateOnly, (dateOnly) => {
+    dateOnlys.push(dateOnly);
+  });
+  return {
+    ok: true,
+    nights: dateOnlys.length,
+    dateOnlys,
+    invalid: false,
+    reason: null,
+    checkInDateOnly: stay.checkInDateOnly,
+    checkOutDateOnly: stay.checkOutDateOnly
+  };
+}
+
 module.exports = {
   computeStayNights,
   eachSofiaNightInclusive,
   overlapStayNightsWithWindow,
+  expandOccupiedSofiaNightDateOnlys,
   periodKeyForDate,
   PROPERTY_TIMEZONE
 };
