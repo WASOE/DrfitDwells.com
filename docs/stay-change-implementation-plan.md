@@ -875,6 +875,7 @@ These do not reopen §1–15 locks; they are decided inside the named batches:
 |------|--------|
 | 2026-08-20 | Batch 0 lock: StayChange aggregate; commercial identity; mode routing; complimentary/partial upgrade equations; replacement contractual semantics; `settledByStayChangeId`; state machine; invariants; batches 1–8. |
 | 2026-08-20 | Amendment: UnitNightClaim exclusivity primitive; delete-on-release; Inventory Integrity Batch I (I1–I6) before REALLOCATE Batch R; Location child Bookings must claim; external holds remain AvailabilityBlock; rollout invariant (no REALLOCATE until claims authoritative). |
+| 2026-08-20 | Amendment: I2 shadow dual-write semantics — Booking-first ordering; shadow claim failure never gates canonical Booking success (paid or unpaid after survival); MRI/PRI durable signals; exact claim sources; no location claim-inside-txn abort; no unique index in I2; orphan recovery no double-write; replay/adopt repair missing claims. |
 
 ---
 
