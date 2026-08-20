@@ -704,6 +704,20 @@ Ordering rationale: exclusive unit-night claims before any REALLOCATE; then Stay
 | **Delivered** | Dual-write via claim service on: paid finalize, legacy booking create, LocationBooking **child** creation with `unitId`, multi-unit recovery/finalization paths |
 | **Still** | Existing Booking/Availability conflict logic active; claims **not** yet sole authority; REALLOCATE disabled |
 
+##### I2 shadow semantics (LOCKED)
+
+UnitNightClaim remains **shadow infrastructure** in I2. Existing Booking / Availability conflict logic remains **canonical**. Therefore:
+
+1. **Booking-first ordering.** Shadow claims run only **after** the canonical Booking allocation is durably known to survive its existing write/finalization logic (including post-save overlap / promo / unpaid-delete paths). Do **not** claim a Booking the flow is about to delete.
+2. **Shadow failure never gates canonical success.** A UnitNightClaim failure MUST NOT cause an otherwise valid canonical Booking allocation to be rolled back, deleted, refunded, or reported as failed solely because shadow infrastructure failed. This applies to V2 paid finalize, legacy create, LocationBooking child Bookings, and paid orphan recovery/adoption.
+3. **Paid Booking** on shadow claim failure: preserve Booking; no automatic refund; durable ManualReviewItem; PaymentResolutionIssue where `paymentIntentId` context exists; retry idempotently (finalize replay / reconcile / recovery adopt).
+4. **Unpaid Booking** that has already survived canonical allocation logic: also **preserve** solely on shadow-claim failure. Shadow infrastructure must not become authoritative early.
+5. **Exact I2 claim `source` values:** `finalize` | `legacy_create` | `location_child` | `multi_unit_recovery`. Later sources (`date_edit`, `reallocate`, `bootstrap`, …) remain as already defined on the model; they are not I2 writers.
+6. **Orphan recovery** must **not** independently double-write claims when its create path already runs through canonical finalize (`executeBookingFinalizeWork`). Create-path claims happen once there (with `source=multi_unit_recovery` when recovery context supplies it). Adopt path may call the shared shadow helper idempotently for missing claims.
+7. **Replay / adoption** paths must ensure missing shadow claims are repaired idempotently (crash case: Booking saved, process died before claim → replay fills claims).
+8. **LocationBooking (LOCKED CORRECTION).** Do **not** put shadow UnitNightClaim writes inside a Mongo transaction in a way where claim failure aborts canonical LocationBooking / child Booking creation. Canonical location finalization must commit/survive **first**. After canonical success: shadow-claim each surviving unit child (`cabinTypeId` + `unitId`); claim failure is nonfatal to the location Booking; create durable reconciliation evidence; retries/replay may fill missing claims. Single-cabin children create no claims. If existing non-transaction rollback occurs **before** canonical success, there should be **no** shadow claims yet and therefore nothing to release. Only release I2 claims in location cleanup if actual implementation ordering made claims exist before a later canonical rollback — which must be avoided.
+9. **I2 introduces NO unique authoritative `{ unitId, night }` index.** Authoritative exclusivity remains I6 after conflict cleanup.
+
 #### I3 — Date-edit integration
 
 | | |
