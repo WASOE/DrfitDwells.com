@@ -19,7 +19,8 @@ const ERR = Object.freeze({
   TRANSFER_TARGET_FAILED: 'UNIT_NIGHT_CLAIM_TRANSFER_TARGET_FAILED',
   OWNERSHIP_MISMATCH: 'UNIT_NIGHT_CLAIM_OWNERSHIP_MISMATCH',
   INDEX_MISSING: 'UNIT_NIGHT_CLAIM_AUTHORITATIVE_INDEX_MISSING',
-  COMPENSATION_FAILED: 'UNIT_NIGHT_CLAIM_COMPENSATION_FAILED'
+  COMPENSATION_FAILED: 'UNIT_NIGHT_CLAIM_COMPENSATION_FAILED',
+  STAY_CHANGE_OWNERSHIP_CONFLICT: 'UNIT_NIGHT_CLAIM_STAY_CHANGE_OWNERSHIP_CONFLICT'
 });
 
 function toObjectId(value, fieldName) {
@@ -218,7 +219,13 @@ async function claimUnitNights({
   stayChangeId = null,
   source = 'other',
   session = null,
-  skipIndexAssert = false
+  skipIndexAssert = false,
+  /**
+   * R1: when true, same-booking nights count as owned only if stayChangeId matches.
+   * Same booking + different/null stayChangeId on TARGET → STAY_CHANGE_OWNERSHIP_CONFLICT.
+   * Ordinary creators leave this false (booking-scoped idempotency unchanged).
+   */
+  requireExactStayChangeOwnership = false
 } = {}) {
   if (!skipIndexAssert) {
     await assertAuthoritativeUnitNightIndex();
@@ -230,6 +237,13 @@ async function claimUnitNights({
     stayChangeId == null || stayChangeId === ''
       ? null
       : toObjectId(stayChangeId, 'stayChangeId');
+
+  if (requireExactStayChangeOwnership && !stayChangeOid) {
+    throw createClaimError(ERR.VALIDATION, 'stayChangeId is required when requireExactStayChangeOwnership is set', {
+      field: 'stayChangeId'
+    });
+  }
+
   const nightDates = resolveOccupiedNightDates({ checkIn, checkOut, nights });
   if (nightDates.length === 0) {
     throw createClaimError(ERR.VALIDATION, 'No occupied nights to claim');
@@ -243,17 +257,35 @@ async function claimUnitNights({
     .lean();
 
   const foreign = [];
+  const stayChangeConflicts = [];
   const ownedNightKeys = new Set();
   for (const row of existing) {
     const key = dateOnlyFromNightDate(row.night);
-    if (String(row.bookingId) === String(bookingOid)) {
-      ownedNightKeys.add(key);
-    } else {
+    if (String(row.bookingId) !== String(bookingOid)) {
       foreign.push({
         night: key,
         holderBookingId: String(row.bookingId),
         claimId: String(row._id)
       });
+      continue;
+    }
+
+    if (requireExactStayChangeOwnership) {
+      const rowSc = row.stayChangeId ? String(row.stayChangeId) : null;
+      const wantSc = String(stayChangeOid);
+      if (rowSc === wantSc) {
+        ownedNightKeys.add(key);
+      } else {
+        stayChangeConflicts.push({
+          night: key,
+          holderBookingId: String(row.bookingId),
+          holderStayChangeId: rowSc,
+          requestedStayChangeId: wantSc,
+          claimId: String(row._id)
+        });
+      }
+    } else {
+      ownedNightKeys.add(key);
     }
   }
 
@@ -267,6 +299,22 @@ async function claimUnitNights({
       bookingId: String(bookingOid),
       conflicts: foreign
     });
+  }
+
+  if (stayChangeConflicts.length > 0) {
+    const primary = stayChangeConflicts[0];
+    throw createClaimError(
+      ERR.STAY_CHANGE_OWNERSHIP_CONFLICT,
+      'One or more unit-nights are owned by the same booking under a different StayChange',
+      {
+        unitId: String(unitOid),
+        night: primary.night,
+        bookingId: String(bookingOid),
+        requestedStayChangeId: primary.requestedStayChangeId,
+        existingStayChangeId: primary.holderStayChangeId,
+        conflicts: stayChangeConflicts
+      }
+    );
   }
 
   const toInsert = [];
@@ -337,6 +385,7 @@ async function claimUnitNights({
     ok: true,
     bookingId: String(bookingOid),
     unitId: String(unitOid),
+    stayChangeId: stayChangeOid ? String(stayChangeOid) : null,
     nights: nightDates.map(dateOnlyFromNightDate),
     insertedCount: insertedThisAttempt.length,
     alreadyOwnedCount: ownedNightKeys.size,
@@ -344,7 +393,8 @@ async function claimUnitNights({
     claims: claims.map((c) => ({
       id: String(c._id),
       night: dateOnlyFromNightDate(c.night),
-      source: c.source
+      source: c.source,
+      stayChangeId: c.stayChangeId ? String(c.stayChangeId) : null
     }))
   };
 }
@@ -572,10 +622,46 @@ async function deleteSameOwnerDuplicateClaims({
   };
 }
 
+/**
+ * R1: delete target claims owned by a specific StayChange only.
+ * Never broad bookingId delete. Optional night scope for exact stay nights.
+ */
+async function releaseStayChangeTargetClaims({
+  bookingId,
+  stayChangeId,
+  unitId,
+  checkIn = null,
+  checkOut = null,
+  nights = null,
+  session = null
+} = {}) {
+  const bookingOid = toObjectId(bookingId, 'bookingId');
+  const stayChangeOid = toObjectId(stayChangeId, 'stayChangeId');
+  const unitOid = toObjectId(unitId, 'unitId');
+  const filter = {
+    bookingId: bookingOid,
+    stayChangeId: stayChangeOid,
+    unitId: unitOid
+  };
+  if ((checkIn != null && checkOut != null) || (Array.isArray(nights) && nights.length > 0)) {
+    const nightDates = resolveOccupiedNightDates({ checkIn, checkOut, nights });
+    filter.night = { $in: nightDates };
+  }
+  const result = await UnitNightClaim.deleteMany(filter, sessionOpts(session));
+  return {
+    ok: true,
+    bookingId: String(bookingOid),
+    stayChangeId: String(stayChangeOid),
+    unitId: String(unitOid),
+    deletedCount: result.deletedCount || 0
+  };
+}
+
 module.exports = {
   ERR,
   claimUnitNights,
   releaseUnitNights,
+  releaseStayChangeTargetClaims,
   transferUnitNightClaims,
   assertBookingOwnsNights,
   deleteSameOwnerDuplicateClaims,

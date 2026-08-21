@@ -30,6 +30,7 @@ async function appendAuditEvent(payload, options = {}) {
     afterSnapshot: payload.afterSnapshot ?? null,
     metadata: payload.metadata || {},
     reason: payload.reason ?? null,
+    dedupeKey: payload.dedupeKey ?? null,
     sourceContext: payload.sourceContext ?? null
   });
 

@@ -818,14 +818,18 @@ test('schema documents unique index with autoIndex disabled; CLAIM_SOURCES inclu
   );
 });
 
-test('no REALLOCATE StayChange route enabled in I2', () => {
-  const reservations = fs.readFileSync(
-    path.join(__dirname, '../routes/ops/modules/reservationsRoutes.js'),
+test('I2 inventory gate: R1 REALLOCATE may exist without changing I2 claim semantics', () => {
+  // Historical I2 lock forbade StayChange. R1 landed later; this gate now asserts
+  // I2 claim shadow wiring still owns legacy create, not that StayChange is absent.
+  const bookingRoutes = fs.readFileSync(path.join(__dirname, '../routes/bookingRoutes.js'), 'utf8');
+  assert.match(bookingRoutes, /ensureLegacyBookingShadowClaims|claimUnitNights/);
+  const claimSvc = fs.readFileSync(
+    path.join(__dirname, '../services/inventory/unitNightClaimService.js'),
     'utf8'
   );
-  assert.doesNotMatch(reservations, /StayChange|kind:\s*['"]reallocate['"]/);
-  const stayChangeModel = path.join(__dirname, '../models/StayChange.js');
-  assert.equal(fs.existsSync(stayChangeModel), false);
+  assert.match(claimSvc, /requireExactStayChangeOwnership/);
+  // Ordinary creators keep booking-scoped idempotency (default false).
+  assert.match(claimSvc, /requireExactStayChangeOwnership = false/);
 });
 
 test('legacy route wires ensureLegacyBookingShadowClaims', () => {

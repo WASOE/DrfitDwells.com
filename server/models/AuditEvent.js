@@ -2,6 +2,23 @@ const mongoose = require('mongoose');
 
 const ACTOR_TYPES = ['user', 'system', 'webhook', 'sync_importer'];
 
+/**
+ * R1 AuditEvent.dedupeKey unique sparse index.
+ * Created ONLY by stayChangeR1Cutover.js --create-indexes.
+ * Do NOT register via schema.index() or field index:true — ordinary
+ * Mongoose autoIndex / syncIndexes must not create this safety index.
+ */
+const AUDIT_DEDUPE_INDEX_SPEC = Object.freeze({
+  keys: Object.freeze({ dedupeKey: 1 }),
+  options: Object.freeze({
+    unique: true,
+    sparse: true,
+    name: 'auditEvent_dedupeKey_unique'
+  }),
+  cutoverBatch: 'R1',
+  note: 'Created only by stayChangeR1Cutover.js --create-indexes; not schema-registered'
+});
+
 const auditEventSchema = new mongoose.Schema(
   {
     happenedAt: {
@@ -67,6 +84,15 @@ const auditEventSchema = new mongoose.Schema(
       default: null,
       immutable: true
     },
+    /**
+     * Optional durable projection dedupe key (R1 StayChange audit).
+     * No field-level index / no schema.index — cutover owns the unique sparse index.
+     */
+    dedupeKey: {
+      type: String,
+      default: null,
+      immutable: true
+    },
     sourceContext: {
       type: Object,
       default: null,
@@ -83,5 +109,8 @@ auditEventSchema.pre(['deleteOne', 'deleteMany', 'findOneAndDelete', 'findByIdAn
   next(new Error('AuditEvent history is append-only and immutable'));
 });
 
+auditEventSchema.statics.AUDIT_DEDUPE_INDEX_SPEC = AUDIT_DEDUPE_INDEX_SPEC;
+
 module.exports = mongoose.model('AuditEvent', auditEventSchema);
 module.exports.ACTOR_TYPES = ACTOR_TYPES;
+module.exports.AUDIT_DEDUPE_INDEX_SPEC = AUDIT_DEDUPE_INDEX_SPEC;

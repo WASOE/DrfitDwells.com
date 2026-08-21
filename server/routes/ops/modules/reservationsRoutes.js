@@ -17,6 +17,7 @@ const {
   addReservationNote,
   createManualReservation
 } = require('../../../services/ops/domain/reservationWriteService');
+const { reallocateReservation } = require('../../../services/stayChange/reallocateStayChangeService');
 const { editGuestContact } = require('../../../services/ops/domain/guestWriteService');
 const {
   previewBookingLifecycleEmail,
@@ -357,6 +358,67 @@ router.post('/:id/actions/reassign', async (req, res) => {
     return handleDomainError(res, error);
   }
 });
+
+router.post(
+  '/:id/actions/reallocate',
+  validateId('id'),
+  [
+    body('targetUnitId').isMongoId().withMessage('targetUnitId is required'),
+    body('idempotencyKey')
+      .isString()
+      .trim()
+      .isLength({ min: 8, max: 128 })
+      .withMessage('idempotencyKey is required (8–128 characters)'),
+    body('reason').optional({ nullable: true }).isString().isLength({ max: 500 }),
+    body('acceptExternalHoldWarnings').optional().isBoolean()
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        errorType: 'validation',
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const allowed = new Set([
+      'targetUnitId',
+      'idempotencyKey',
+      'reason',
+      'acceptExternalHoldWarnings'
+    ]);
+    const unknown = Object.keys(req.body || {}).filter((k) => !allowed.has(k));
+    if (unknown.length > 0) {
+      return res.status(400).json({
+        success: false,
+        errorType: 'validation',
+        message: 'Unknown or disallowed REALLOCATE fields',
+        details: { unknown }
+      });
+    }
+
+    try {
+      const data = await reallocateReservation({
+        bookingId: req.params.id,
+        targetUnitId: req.body.targetUnitId,
+        idempotencyKey: req.body.idempotencyKey,
+        reason: req.body.reason || null,
+        acceptExternalHoldWarnings: Boolean(req.body.acceptExternalHoldWarnings),
+        ctx: {
+          req,
+          user: req.user,
+          route: 'POST /api/ops/reservations/:id/actions/reallocate',
+          idempotencyKey: req.body.idempotencyKey
+        }
+      });
+      return res.json({ success: true, data });
+    } catch (error) {
+      return handleDomainError(res, error);
+    }
+  }
+);
 
 router.post('/:id/actions/edit-dates', async (req, res) => {
   try {
