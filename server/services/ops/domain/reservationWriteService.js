@@ -19,6 +19,10 @@ const { BLOCKING_BOOKING_STATUSES } = require('../../calendar/blockingStatusCons
 const { canUseMongoTransactions } = require('../../../utils/mongoTransactions');
 const { openManualReviewItem } = require('../ingestion/manualReviewService');
 const { syncUnitNightClaimsShadow } = require('../../inventory/syncUnitNightClaimsShadow');
+const {
+  ensureUnitNightClaimsReleasedShadow,
+  LIFECYCLE_SOURCES
+} = require('../../inventory/ensureUnitNightClaimsReleasedShadow');
 const { processMetaPurchaseAfterConfirm } = require('../../bookingPurchaseTracking');
 const CabinType = require('../../../models/CabinType');
 const bookingLifecycleEmailService = require('../../bookingLifecycleEmailService');
@@ -747,7 +751,20 @@ async function transitionReservation({ bookingId, kind, reason = null, settlemen
 
   const idemKey = getIdempotencyFromContext(ctx, config.action, bookingId);
   const remembered = getRememberedResult(idemKey);
-  if (remembered) return remembered;
+  if (remembered) {
+    if (kind === 'cancel' || kind === 'complete') {
+      try {
+        await ensureUnitNightClaimsReleasedShadow({
+          bookingId,
+          lifecycleSource:
+            kind === 'cancel' ? LIFECYCLE_SOURCES.CANCEL : LIFECYCLE_SOURCES.COMPLETE
+        });
+      } catch {
+        /* shadow release must not invalidate remembered canonical success */
+      }
+    }
+    return remembered;
+  }
 
   const booking = await loadBookingOrFail(bookingId);
   if (!config.from.includes(booking.status)) {
@@ -848,17 +865,35 @@ async function transitionReservation({ bookingId, kind, reason = null, settlemen
   }
 
   // Canonical AvailabilityBlock surface: reservation-backed rows must not outlive non-blocking booking status.
+  // I4: attempt tombstone, then always shadow-release by bookingId when status is already durable terminal.
+  // Preserve existing semantics: tombstone failure still surfaces as transition failure after release attempt.
   if (nextStatus === 'cancelled' || nextStatus === 'completed') {
-    await AvailabilityBlock.updateMany(
-      { reservationId: booking._id, blockType: 'reservation', status: 'active' },
-      {
-        $set: {
-          status: 'tombstoned',
-          tombstonedAt: new Date(),
-          tombstoneReason: nextStatus === 'cancelled' ? 'reservation_cancelled' : 'reservation_completed'
+    let tombstoneError = null;
+    try {
+      await AvailabilityBlock.updateMany(
+        { reservationId: booking._id, blockType: 'reservation', status: 'active' },
+        {
+          $set: {
+            status: 'tombstoned',
+            tombstonedAt: new Date(),
+            tombstoneReason: nextStatus === 'cancelled' ? 'reservation_cancelled' : 'reservation_completed'
+          }
         }
-      }
-    );
+      );
+    } catch (err) {
+      tombstoneError = err;
+    }
+
+    await ensureUnitNightClaimsReleasedShadow({
+      booking,
+      bookingId: booking._id,
+      lifecycleSource:
+        nextStatus === 'cancelled' ? LIFECYCLE_SOURCES.CANCEL : LIFECYCLE_SOURCES.COMPLETE
+    });
+
+    if (tombstoneError) {
+      throw tombstoneError;
+    }
   }
 
   notifyMessageOrchestratorSafely('notifyBookingStatusChange', {

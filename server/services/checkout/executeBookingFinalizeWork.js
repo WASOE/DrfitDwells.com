@@ -19,10 +19,29 @@ const AssignmentEngine = require('../assignmentEngine');
 const {
   ensureUnitNightClaimsShadow
 } = require('../inventory/ensureUnitNightClaimsShadow');
+const {
+  ensureUnitNightClaimsReleasedShadow,
+  LIFECYCLE_SOURCES
+} = require('../inventory/ensureUnitNightClaimsReleasedShadow');
 const { openManualReviewItem } = require('../ops/ingestion/manualReviewService');
 const {
   recordPaidBookingResolutionIssueSafe
 } = require('../payments/paidBookingFinalizationObservability');
+
+/** I4: nonfatal shadow release before canonical Booking delete. */
+async function shadowReleaseBeforeBookingDelete(deps, bookingId, lifecycleSource) {
+  const releaseFn =
+    deps.ensureUnitNightClaimsReleasedShadow || ensureUnitNightClaimsReleasedShadow;
+  if (typeof releaseFn !== 'function' || !bookingId) return;
+  try {
+    await releaseFn({
+      bookingId,
+      lifecycleSource: lifecycleSource || LIFECYCLE_SOURCES.FINALIZE_CLEANUP
+    });
+  } catch {
+    /* never block canonical delete */
+  }
+}
 
 function sameObjectIdish(a, b) {
   if (!a || !b) return false;
@@ -276,6 +295,7 @@ function createDefaultDependencies() {
     shadowClaimOpenManualReviewItem: openManualReviewItem,
     shadowClaimRecordPaidBookingResolutionIssue: recordPaidBookingResolutionIssueSafe,
     ensureUnitNightClaimsShadow,
+    ensureUnitNightClaimsReleasedShadow,
     stripe: null,
     blockingBookingStatuses: BLOCKING_BOOKING_STATUSES
   };
@@ -685,6 +705,11 @@ async function runPostSaveOverlapChecks(deps, {
         });
       }
 
+      await shadowReleaseBeforeBookingDelete(
+        deps,
+        booking._id,
+        LIFECYCLE_SOURCES.FINALIZE_CLEANUP
+      );
       await deps.Booking.deleteOne({ _id: booking._id });
       await tryReleaseVoucherOnFailure(deps, {
         voucherReservationContext,
@@ -760,6 +785,11 @@ async function runPostSaveOverlapChecks(deps, {
           });
         }
 
+        await shadowReleaseBeforeBookingDelete(
+          deps,
+          booking._id,
+          LIFECYCLE_SOURCES.FINALIZE_CLEANUP
+        );
         await deps.Booking.deleteOne({ _id: booking._id });
         await tryReleaseVoucherOnFailure(deps, {
           voucherReservationContext,
@@ -821,6 +851,11 @@ async function incrementPromoUsageIfNeeded(deps, {
   );
 
   if (inc.matchedCount === 0) {
+    await shadowReleaseBeforeBookingDelete(
+      deps,
+      booking._id,
+      LIFECYCLE_SOURCES.FINALIZE_CLEANUP
+    );
     await deps.Booking.deleteOne({ _id: booking._id });
     await tryReleaseVoucherOnFailure(deps, {
       voucherReservationContext,

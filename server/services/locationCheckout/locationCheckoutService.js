@@ -31,6 +31,10 @@ const {
   I2_SOURCES
 } = require('../inventory/ensureUnitNightClaimsShadow');
 const {
+  ensureUnitNightClaimsReleasedShadow,
+  LIFECYCLE_SOURCES
+} = require('../inventory/ensureUnitNightClaimsReleasedShadow');
+const {
   linkSavedQuoteToCheckout,
   markSavedQuoteConverted,
   scheduleSavedQuoteTask
@@ -230,6 +234,17 @@ async function cleanupPartialLocationFinalize({
   checkoutSessionId
 }) {
   if (childBookingIds?.length) {
+    for (const childId of childBookingIds) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await ensureUnitNightClaimsReleasedShadow({
+          bookingId: childId,
+          lifecycleSource: LIFECYCLE_SOURCES.LOCATION_ROLLBACK
+        });
+      } catch {
+        /* nonfatal to rollback */
+      }
+    }
     await Booking.deleteMany({ _id: { $in: childBookingIds } });
   }
   if (locationBookingId) {

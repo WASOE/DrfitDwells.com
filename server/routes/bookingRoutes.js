@@ -89,6 +89,10 @@ const {
   ensureUnitNightClaimsShadow
 } = require('../services/inventory/ensureUnitNightClaimsShadow');
 const {
+  ensureUnitNightClaimsReleasedShadow,
+  LIFECYCLE_SOURCES
+} = require('../services/inventory/ensureUnitNightClaimsReleasedShadow');
+const {
   buildTrustedBookingPayloadForFinalize,
   mapFinalizeOrchestrationResultToHttp,
   isFinalizeReplayError,
@@ -261,6 +265,19 @@ async function ensureLegacyBookingShadowClaims(
     });
   } catch {
     return null;
+  }
+}
+
+/** I4: nonfatal shadow release before canonical Booking delete. */
+async function shadowReleaseBeforeLegacyBookingDelete(bookingId) {
+  if (!bookingId) return;
+  try {
+    await ensureUnitNightClaimsReleasedShadow({
+      bookingId,
+      lifecycleSource: LIFECYCLE_SOURCES.FINALIZE_CLEANUP
+    });
+  } catch {
+    /* never block canonical delete */
   }
 }
 
@@ -2367,6 +2384,7 @@ router.post('/', bookingCreateLimiter, [
       });
       const blockRace = await countBlockingBlocksForSingleCabin(cabinId, checkInDate, checkOutDate);
       if (overlaps > 0 || blockRace > 0) {
+        await shadowReleaseBeforeLegacyBookingDelete(booking._id);
         await Booking.deleteOne({ _id: booking._id });
         await tryReleaseVoucherOnFailure({
           reason: 'booking_conflict_after_save',
@@ -2417,6 +2435,7 @@ router.post('/', bookingCreateLimiter, [
           oldestOverlap && String(oldestOverlap._id) !== String(booking._id);
 
         if (blockRace > 0 || lostUnitRace) {
+          await shadowReleaseBeforeLegacyBookingDelete(booking._id);
           await Booking.deleteOne({ _id: booking._id });
           await tryReleaseVoucherOnFailure({
             reason: 'booking_conflict_after_save',
@@ -2459,6 +2478,7 @@ router.post('/', bookingCreateLimiter, [
         { $inc: { usageCount: 1 } }
       );
       if (inc.matchedCount === 0) {
+        await shadowReleaseBeforeLegacyBookingDelete(booking._id);
         await Booking.deleteOne({ _id: booking._id });
         await tryReleaseVoucherOnFailure({
           reason: 'promo_conflict_after_save',

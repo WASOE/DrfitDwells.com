@@ -5,6 +5,10 @@ const AvailabilityBlock = require('../../models/AvailabilityBlock');
 const CabinChannelSyncState = require('../../models/CabinChannelSyncState');
 const { appendAuditEvent } = require('../auditWriter');
 const {
+  ensureUnitNightClaimsReleasedShadow,
+  LIFECYCLE_SOURCES
+} = require('../inventory/ensureUnitNightClaimsReleasedShadow');
+const {
   FIXTURE_CABIN_NAME_PATTERN,
   FIXTURE_BOOKING_EMAIL_PATTERN,
   isFixtureCabinName,
@@ -381,6 +385,14 @@ async function deleteFixtureReservation(bookingId, reason, ctx) {
   );
 
   const bid = booking._id;
+  try {
+    await ensureUnitNightClaimsReleasedShadow({
+      bookingId: bid,
+      lifecycleSource: LIFECYCLE_SOURCES.MAINTENANCE_DELETE
+    });
+  } catch {
+    /* nonfatal to fixture delete */
+  }
   await AvailabilityBlock.deleteMany({ reservationId: bid });
   await Booking.deleteOne({ _id: bid });
 
