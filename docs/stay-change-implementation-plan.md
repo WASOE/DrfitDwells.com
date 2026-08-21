@@ -749,7 +749,26 @@ UnitNightClaim remains **shadow infrastructure** in I3. Canonical Booking / Avai
 
 | | |
 |--|--|
-| **Delivered** | Cancel / complete / delete/rollback paths call `releaseUnitNights` (delete-on-release) |
+| **Delivered** | Cancel / complete / delete/rollback paths shadow-release UnitNightClaims via delete-on-release (`releaseUnitNights` by `bookingId`); claims remain non-authoritative; REALLOCATE still disabled |
+
+##### I4 unit claim release semantics (LOCKED)
+
+UnitNightClaim remains **shadow infrastructure** in I4. Canonical Booking / AvailabilityBlock lifecycle remains **canonical**. Therefore:
+
+1. **Blocking statuses.** Reuse canonical `BLOCKING_BOOKING_STATUSES` = `pending` | `confirmed` | `in_house`. Non-blocking: `completed` | `cancelled`. Do **not** duplicate status lists across I2/I3/I4 helpers.
+2. **Terminal ownership invariant.** Once a Booking is durably `cancelled` or `completed`, it owns **ZERO** active UnitNightClaims. Terminal release deletes **ALL** `UnitNightClaim` rows matching `bookingId` (no unit filter, no date filter) so stale historical shadow rows are removed with current-range rows.
+3. **No shape fast-skip.** Do **not** skip terminal/delete release merely because the current Booking lacks `unitId` / `cabinTypeId` or is single-inventory. Release-by-`bookingId` always runs; ownership filter is the safety boundary (stale claims may predate current shape).
+4. **Delete-on-release.** `releaseUnitNights` deletes owned rows. No permanent `released` claim status rows.
+5. **Shadow / nonfatal.** Release failure never rolls back a valid cancellation/completion; never blocks a canonical delete already decided; never refunds or mutates payment/settlement solely for claim cleanup; MRI/reconciliation only.
+6. **Cancel / complete ordering.** After terminal Booking status is durably persisted and the existing reservation AvailabilityBlock tombstone operation has been **attempted**, run UnitNightClaim release. Do **not** make claim release conditional on tombstone success if Booking is already durably terminal. Preserve existing canonical error/reconciliation semantics for block maintenance failures; claim release still converges toward the durable non-blocking status.
+7. **Helper.** `ensureUnitNightClaimsReleasedShadow({ booking?, bookingId, lifecycleSource })`: `bookingId` required; calls `releaseUnitNights({ bookingId })` with no narrower filter for terminal/delete; idempotent; structured result; never foreign deletion; shadow failure → MRI; never throws shadow-only failure into canonical success/delete; no auto-close MRI in I4.
+8. **MRI.** Reuse category `unit_night_claim_shadow_failure`. Evidence: `operation=release`, `lifecycleSource`, `bookingId`, technical error/errorCode. No unnecessary guest PII. No PRI for ordinary OPS cancel/complete.
+9. **Stable `lifecycleSource` strings (helper/observability only):** `cancel` | `complete` | `booking_delete` | `location_rollback` | `finalize_cleanup` | `maintenance_delete`. `repair` reserved for I5. Not persisted as `UnitNightClaim.source` (release deletes rows).
+10. **Paid-retain exception.** If a paid-overlap / needs-review Booking is retained in a blocking status, **do not** release its claims. Finalize error ≠ inventory release.
+11. **Remembered cancel/complete replay.** Must still attempt terminal claim release before returning remembered success (crash after terminal write, before release). Already-terminal HTTP 409 is unchanged in I4; I5 repair tooling handles stale claims on historical terminal rows.
+12. **Delete/rollback.** Canonical delete decision → attempt release ALL claims by `bookingId` → delete Booking per existing flow. Release failure → MRI; delete still proceeds; I5 may later remove orphan claims by `bookingId`.
+13. **AvailabilityBlock.** UnitNightClaim does **not** replace reservation AvailabilityBlocks. External holds untouched. No ICS/Airbnb mutation from claim release.
+14. **No unique `{ unitId, night }` index.** REALLOCATE remains disabled. I5/I6 untouched.
 
 #### I5 — Bootstrap + conflict reconciliation
 
@@ -898,6 +917,7 @@ These do not reopen §1–15 locks; they are decided inside the named batches:
 | 2026-08-20 | Amendment: UnitNightClaim exclusivity primitive; delete-on-release; Inventory Integrity Batch I (I1–I6) before REALLOCATE Batch R; Location child Bookings must claim; external holds remain AvailabilityBlock; rollout invariant (no REALLOCATE until claims authoritative). |
 | 2026-08-20 | Amendment: I2 shadow dual-write semantics — Booking-first ordering; shadow claim failure never gates canonical Booking success (paid or unpaid after survival); MRI/PRI durable signals; exact claim sources; no location claim-inside-txn abort; no unique index in I2; orphan recovery no double-write; replay/adopt repair missing claims. |
 | 2026-08-20 | Amendment: I3 date-edit integrity — unit-aware allocated multi-unit conflicts; Booking-first shadow sync (`source=date_edit`); fill-before-release with surplus release despite fill failure; fingerprint idempotency; same-date repair without audit/GMA/push; status + in_house checkIn immutability; unallocated reject; txn/compensate Booking+blocks; MRI on compensation failure; no unique index; REALLOCATE still disabled. |
+| 2026-08-21 | Amendment: I4 unit claim release — terminal cancel/complete + delete/rollback shadow-release by bookingId (all owned rows); no shape fast-skip; nonfatal MRI (`operation=release`); paid-retain keeps claims; remembered cancel/complete repairs; lifecycleSource strings; no unique index; REALLOCATE still disabled; I5 repair reserved. |
 
 ---
 
