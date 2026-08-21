@@ -10,6 +10,9 @@ const Unit = require('../models/Unit');
 const { availabilityBlockUnitScopeClause } = require('./calendar/unitCalendarShared');
 const { normalizeExclusiveDateRange } = require('../utils/dateTime');
 const { BLOCKING_BOOKING_STATUSES } = require('./calendar/blockingStatusConstants');
+const {
+  isUnitCommerciallyAssignable
+} = require('./inventory/cabinTypeCommercialCapacity');
 
 const BLOCKING_BLOCK_TYPES = ['external_hold', 'manual_block', 'maintenance', 'reservation', 'checkout_hold'];
 
@@ -130,7 +133,18 @@ async function isUnitGuestStayAvailable(unitId, cabinTypeId, checkInInput, check
     blockPromise
   ]);
 
-  return bookingCount === 0 && blockCount === 0;
+  if (bookingCount > 0 || blockCount > 0) {
+    return false;
+  }
+
+  // Pooled commercial capacity: unallocated cabinType bookings consume slots
+  // against free physical units (I6). Physical UnitNightClaim ≠ capacity.
+  return isUnitCommerciallyAssignable({
+    unitId: unit._id,
+    cabinTypeId,
+    checkIn: startDate,
+    checkOut: endDate
+  });
 }
 
 async function assertSingleCabinGuestStayAvailableOrThrow(cabin, checkInInput, checkOutInput) {

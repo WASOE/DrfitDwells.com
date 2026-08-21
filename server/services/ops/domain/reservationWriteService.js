@@ -23,6 +23,13 @@ const {
   ensureUnitNightClaimsReleasedShadow,
   LIFECYCLE_SOURCES
 } = require('../../inventory/ensureUnitNightClaimsReleasedShadow');
+const {
+  claimUnitNights,
+  compensateClaimAttempt,
+  releaseUnitNights,
+  ERR: CLAIM_ERR
+} = require('../../inventory/unitNightClaimService');
+const { expandOccupiedSofiaNightDateOnlys } = require('../reporting/stayNights');
 const { processMetaPurchaseAfterConfirm } = require('../../bookingPurchaseTracking');
 const CabinType = require('../../../models/CabinType');
 const bookingLifecycleEmailService = require('../../bookingLifecycleEmailService');
@@ -1080,6 +1087,30 @@ async function reassignReservation({ bookingId, toCabinId, acceptExternalHoldWar
   if (remembered) return remembered;
 
   const booking = await loadBookingOrFail(bookingId);
+
+  // I6: legacy cabin reassign must not mutate multi-inventory / allocated records.
+  if (booking.cabinTypeId || booking.unitId) {
+    throw createDomainError(
+      'conflict',
+      'Multi-unit and cabinType reservations cannot use legacy cabin reassign; REALLOCATE is not available',
+      {
+        code: 'LEGACY_REASSIGN_NOT_ALLOWED_FOR_MULTI_INVENTORY',
+        cabinTypeId: booking.cabinTypeId ? String(booking.cabinTypeId) : null,
+        unitId: booking.unitId ? String(booking.unitId) : null,
+        cabinId: booking.cabinId ? String(booking.cabinId) : null
+      },
+      409
+    );
+  }
+  if (booking.cabinId && booking.cabinTypeId) {
+    throw createDomainError(
+      'conflict',
+      'Malformed multi-inventory reservation cannot use legacy cabin reassign',
+      { code: 'LEGACY_REASSIGN_MALFORMED_IDENTITY' },
+      409
+    );
+  }
+
   const check = await evaluateCabinConflicts({
     cabinId: toCabinId,
     startDate: booking.checkIn,
@@ -1412,13 +1443,94 @@ async function editReservationDates({ bookingId, checkInDate, checkOutDate, reas
   const previousCheckIn = before.checkIn;
   const previousCheckOut = before.checkOut;
 
-  await commitBookingDatesAndReservationBlocks({
-    booking,
-    previousCheckIn,
-    previousCheckOut,
-    startDate: normalized.startDate,
-    endDate: normalized.endDate
-  });
+  const oldExpanded = expandOccupiedSofiaNightDateOnlys(previousCheckIn, previousCheckOut);
+  const newExpanded = expandOccupiedSofiaNightDateOnlys(normalized.startDate, normalized.endDate);
+  if (!oldExpanded.ok || !newExpanded.ok) {
+    throw createDomainError(
+      'validation',
+      'Invalid date range for inventory claims',
+      {
+        oldReason: oldExpanded.reason || null,
+        newReason: newExpanded.reason || null
+      },
+      400
+    );
+  }
+  const oldSet = new Set(oldExpanded.dateOnlys);
+  const newSet = new Set(newExpanded.dateOnlys);
+  const newTarget = newExpanded.dateOnlys.filter((n) => !oldSet.has(n));
+  const surplus = oldExpanded.dateOnlys.filter((n) => !newSet.has(n));
+
+  let newTargetClaim = null;
+  const isAllocatedMulti = Boolean(booking.cabinTypeId && booking.unitId);
+  if (isAllocatedMulti && newTarget.length > 0) {
+    try {
+      newTargetClaim = await claimUnitNights({
+        bookingId: booking._id,
+        unitId: booking.unitId,
+        nights: newTarget,
+        source: 'date_edit'
+      });
+    } catch (err) {
+      if (err?.code === CLAIM_ERR.FOREIGN_OWNER || err?.code === CLAIM_ERR.INDEX_MISSING) {
+        throw createDomainError(
+          'conflict',
+          err.code === CLAIM_ERR.INDEX_MISSING
+            ? 'Inventory exclusivity is not available; try again later'
+            : 'Date edit target nights conflict with another booking',
+          {
+            code: err.code,
+            hardConflicts: err.details?.conflicts || [],
+            details: err.details || null
+          },
+          409
+        );
+      }
+      throw err;
+    }
+  }
+
+  try {
+    await commitBookingDatesAndReservationBlocks({
+      booking,
+      previousCheckIn,
+      previousCheckOut,
+      startDate: normalized.startDate,
+      endDate: normalized.endDate
+    });
+  } catch (commitErr) {
+    if (newTargetClaim?.insertedNightsThisAttempt?.length) {
+      try {
+        await compensateClaimAttempt({
+          bookingId: booking._id,
+          unitId: booking.unitId,
+          insertedNightsThisAttempt: newTargetClaim.insertedNightsThisAttempt
+        });
+      } catch (compErr) {
+        try {
+          await openManualReviewItem({
+            category: 'unit_night_claim_shadow_failure',
+            severity: 'critical',
+            entityType: 'Booking',
+            entityId: String(booking._id),
+            title: 'UnitNightClaim date-edit compensation failed',
+            details: compErr?.message || 'Compensation failed after date-edit commit failure',
+            provenance: {
+              source: 'unit_night_claim_authoritative',
+              sourceReference: `${String(booking._id)}:sync`
+            },
+            evidence: {
+              operation: 'sync',
+              errorCode: compErr?.code || null
+            }
+          });
+        } catch {
+          /* MRI best-effort */
+        }
+      }
+    }
+    throw commitErr;
+  }
 
   // Mutation audit only after canonical Booking + reservation-block convergence.
   await appendAuditEvent(
@@ -1455,11 +1567,43 @@ async function editReservationDates({ bookingId, checkInDate, checkOutDate, reas
     bookingId: booking._id
   });
 
-  // Shadow sync is nonfatal to canonical success.
-  await syncUnitNightClaimsShadow({
-    booking,
-    source: 'date_edit'
-  });
+  // Release surplus only AFTER successful canonical commit.
+  if (isAllocatedMulti && surplus.length > 0) {
+    try {
+      await releaseUnitNights({
+        bookingId: booking._id,
+        unitId: booking.unitId,
+        nights: surplus
+      });
+    } catch (releaseErr) {
+      try {
+        await openManualReviewItem({
+          category: 'unit_night_claim_shadow_failure',
+          severity: 'critical',
+          entityType: 'Booking',
+          entityId: String(booking._id),
+          title: 'UnitNightClaim surplus release failed after date edit',
+          details: releaseErr?.message || 'Surplus release failed; stale claims remain conservative',
+          provenance: {
+            source: 'unit_night_claim_authoritative',
+            sourceReference: `${String(booking._id)}:sync`
+          },
+          evidence: {
+            operation: 'sync',
+            surplusNights: surplus,
+            errorCode: releaseErr?.code || null
+          }
+        });
+      } catch {
+        /* MRI best-effort */
+      }
+    }
+  } else if (!isAllocatedMulti) {
+    await syncUnitNightClaimsShadow({
+      booking,
+      source: 'date_edit'
+    });
+  }
 
   const result = {
     reservationId: String(booking._id),

@@ -1,5 +1,6 @@
 const Booking = require('../../models/Booking');
 const PromoCode = require('../../models/PromoCode');
+const mongoose = require('mongoose');
 const { BLOCKING_BOOKING_STATUSES } = require('../calendar/blockingStatusConstants');
 const {
   CHECKOUT_SESSION_ERROR_CODES,
@@ -23,12 +24,18 @@ const {
   ensureUnitNightClaimsReleasedShadow,
   LIFECYCLE_SOURCES
 } = require('../inventory/ensureUnitNightClaimsReleasedShadow');
+const {
+  claimUnitNights,
+  compensateClaimAttempt,
+  releaseUnitNights,
+  ERR: CLAIM_ERR
+} = require('../inventory/unitNightClaimService');
 const { openManualReviewItem } = require('../ops/ingestion/manualReviewService');
 const {
   recordPaidBookingResolutionIssueSafe
 } = require('../payments/paidBookingFinalizationObservability');
 
-/** I4: nonfatal shadow release before canonical Booking delete. */
+/** I4/I6: release before canonical Booking delete (MRI on failure; delete may proceed). */
 async function shadowReleaseBeforeBookingDelete(deps, bookingId, lifecycleSource) {
   const releaseFn =
     deps.ensureUnitNightClaimsReleasedShadow || ensureUnitNightClaimsReleasedShadow;
@@ -468,8 +475,7 @@ async function runShadowClaimsAfterCanonicalSurvival(deps, {
       paymentIntentId: paymentIntentId || booking.stripePaymentIntentId || null,
       checkoutId: checkoutId || booking.checkoutId || null,
       stripePaymentVerified,
-      // Prefer dedicated shadow observability so recovery can stub general MRI
-      // without silencing unit_night_claim_shadow failures.
+      throwOnFailure: true,
       openManualReviewItemFn:
         typeof deps.shadowClaimOpenManualReviewItem === 'function'
           ? deps.shadowClaimOpenManualReviewItem
@@ -479,10 +485,30 @@ async function runShadowClaimsAfterCanonicalSurvival(deps, {
           ? deps.shadowClaimRecordPaidBookingResolutionIssue
           : undefined
     });
-  } catch {
-    // Shadow infra must never throw into canonical finalize.
-    return null;
+  } catch (err) {
+    // Allocated without claims is not allowed — demote if still allocated.
+    if (booking.cabinTypeId && booking.unitId) {
+      try {
+        await demoteAllocatedBookingWithoutClaims(deps, booking, {
+          reasonCode: err?.code || 'UNIT_NIGHT_CLAIM_FAILURE',
+          reasonSummary: err?.message || 'Claim ensure failed after Booking survival'
+        });
+      } catch {
+        /* demotion failure leaves drift for I5 */
+      }
+    }
+    throw err;
   }
+}
+
+function resolveClaimSourceForFinalize(source) {
+  const raw = String(source || '').trim();
+  if (raw === 'legacy_create') return 'legacy_create';
+  if (raw === 'location_child') return 'location_child';
+  if (raw === 'multi_unit_recovery' || raw === 'multi_unit_paid_orphan_recovery') {
+    return 'multi_unit_recovery';
+  }
+  return 'finalize';
 }
 
 async function findReplayByCheckoutId(deps, { checkoutId, checkoutFingerprint }) {
@@ -573,6 +599,43 @@ function isPaidOverlapPath({ paymentIntentIdForReview, finalizeContext, booking 
   return false;
 }
 
+/**
+ * I6: demote allocated Booking that cannot own claims → unallocated blocking.
+ * Preserves paid/Booking evidence; clears unitId; releases any claims.
+ */
+async function demoteAllocatedBookingWithoutClaims(deps, booking, {
+  reasonCode = 'UNIT_NIGHT_CLAIM_DEMOTE',
+  reasonSummary = 'Allocated Booking demoted to unallocated after claim failure'
+} = {}) {
+  if (!booking?._id) return booking;
+  const existingMeta =
+    booking.metadata && typeof booking.metadata === 'object' && !Array.isArray(booking.metadata)
+      ? booking.metadata
+      : {};
+  await deps.Booking.updateOne(
+    { _id: booking._id },
+    {
+      $set: {
+        unitId: null,
+        metadata: {
+          ...existingMeta,
+          unitClaimDemoted: true,
+          unitClaimDemotedAt: new Date(),
+          unitClaimDemoteCode: reasonCode,
+          unitClaimDemoteSummary: reasonSummary
+        }
+      }
+    }
+  );
+  try {
+    await releaseUnitNights({ bookingId: booking._id });
+  } catch {
+    /* release best-effort; demotion already cleared allocation */
+  }
+  const refreshed = await deps.Booking.findById(booking._id);
+  return refreshed || booking;
+}
+
 async function retainPaidBookingOnOverlap(deps, {
   booking,
   finalizeContext,
@@ -626,14 +689,13 @@ async function retainPaidBookingOnOverlap(deps, {
     });
   }
 
-  // Retained paid Booking is canonical evidence — still attempt shadow claims.
-  await runShadowClaimsAfterCanonicalSurvival(deps, {
-    booking,
-    source: claimSource,
-    paymentIntentId: paymentIntentIdForReview || booking.stripePaymentIntentId || null,
-    checkoutId,
-    stripePaymentVerified
-  });
+  // I6: cannot remain allocated blocking without claims — demote physical unit.
+  if (booking.cabinTypeId && booking.unitId) {
+    booking = await demoteAllocatedBookingWithoutClaims(deps, booking, {
+      reasonCode: errorCode,
+      reasonSummary: errorSummary
+    });
+  }
 
   if (paymentIntentIdForReview && typeof deps.recordPaidBookingResolutionIssue === 'function') {
     await deps.recordPaidBookingResolutionIssue({
@@ -1024,14 +1086,65 @@ async function executeBookingFinalizeWork({
   const voucherReservationContext = ctx.voucherReservationContext || null;
   const voucherEvidence = ctx.voucherEvidence || {};
 
-  const saveOutcome = await saveBookingWithReplay(deps, {
-    bookingData,
-    checkoutId,
-    checkoutFingerprint,
-    voucherReservationContext,
-    paymentIntentIdForReview,
-    voucherEvidence
-  });
+  // I6: mint Booking _id and acquire claims BEFORE durable allocated Booking.
+  let preClaimAttempt = null;
+  const needsPreClaim = Boolean(bookingData.cabinTypeId && bookingData.unitId);
+  if (needsPreClaim) {
+    if (!bookingData._id) {
+      bookingData._id = new mongoose.Types.ObjectId();
+    }
+    try {
+      preClaimAttempt = await claimUnitNights({
+        bookingId: bookingData._id,
+        unitId: bookingData.unitId,
+        checkIn: bookingData.checkIn,
+        checkOut: bookingData.checkOut,
+        source: resolveClaimSourceForFinalize(source)
+      });
+    } catch (claimErr) {
+      if (claimErr?.code === CLAIM_ERR.FOREIGN_OWNER || claimErr?.code === CLAIM_ERR.INDEX_MISSING) {
+        throw createRouteStyleError(
+          claimErr.code === CLAIM_ERR.INDEX_MISSING ? 'INVENTORY_INDEX_UNAVAILABLE' : 'NOT_AVAILABLE',
+          claimErr.code === CLAIM_ERR.INDEX_MISSING
+            ? 'Inventory exclusivity is not available; try again later'
+            : 'This unit was just booked by another guest. Please choose different dates.',
+          { details: claimErr.details || null }
+        );
+      }
+      throw claimErr;
+    }
+  }
+
+  let saveOutcome;
+  try {
+    saveOutcome = await saveBookingWithReplay(deps, {
+      bookingData,
+      checkoutId,
+      checkoutFingerprint,
+      voucherReservationContext,
+      paymentIntentIdForReview,
+      voucherEvidence
+    });
+  } catch (saveErr) {
+    if (preClaimAttempt?.insertedNightsThisAttempt?.length) {
+      try {
+        await compensateClaimAttempt({
+          bookingId: bookingData._id,
+          unitId: bookingData.unitId,
+          insertedNightsThisAttempt: preClaimAttempt.insertedNightsThisAttempt
+        });
+      } catch {
+        /* compensation failure → orphan claims; I5 detects */
+      }
+    } else if (needsPreClaim && bookingData._id) {
+      try {
+        await releaseUnitNights({ bookingId: bookingData._id });
+      } catch {
+        /* ignore */
+      }
+    }
+    throw saveErr;
+  }
   if (saveOutcome.isReplay) {
     await runShadowClaimsAfterCanonicalSurvival(deps, {
       booking: saveOutcome.booking,

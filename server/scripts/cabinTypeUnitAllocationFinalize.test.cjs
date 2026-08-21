@@ -301,6 +301,9 @@ test.before(async () => {
   savedCheckoutSessionV2 = process.env.CHECKOUT_SESSION_V2;
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri(), { serverSelectionTimeoutMS: 10000 });
+  const { ensureAuthoritativeUniqueIndexForTests } = require('../services/inventory/unitNightClaimService');
+  await ensureAuthoritativeUniqueIndexForTests();
+
   await Promise.all([
     CabinType.syncIndexes(),
     Unit.syncIndexes(),

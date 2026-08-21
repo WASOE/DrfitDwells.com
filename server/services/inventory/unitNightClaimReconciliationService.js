@@ -9,6 +9,7 @@
 const crypto = require('crypto');
 const Booking = require('../../models/Booking');
 const UnitNightClaim = require('../../models/UnitNightClaim');
+const { AUTHORITATIVE_UNIQUE_INDEX_SPEC } = require('../../models/UnitNightClaim');
 const { openManualReviewItem } = require('../ops/ingestion/manualReviewService');
 const { baseBookingFilter } = require('../ops/reporting/reportingFilters');
 const { FIXTURE_BOOKING_EMAIL_PATTERN } = require('../../utils/fixtureExclusion');
@@ -799,8 +800,25 @@ async function runUnitNightClaimReconciliation(opts = {}) {
   classified.report.readyForI6 = readyForI6;
   classified.report.stableVerification = stableVerification;
   classified.report.repairLog = repairMeta.repairLog;
-  classified.report.claimsRemainShadow = true;
-  classified.report.uniqueIndexPresent = false;
+
+  let uniqueIndexPresent = false;
+  try {
+    const indexes = await UnitNightClaim.collection.indexes();
+    const spec = AUTHORITATIVE_UNIQUE_INDEX_SPEC;
+    uniqueIndexPresent = (indexes || []).some(
+      (ix) =>
+        ix &&
+        ix.name === spec.options.name &&
+        ix.unique === true &&
+        ix.key &&
+        Number(ix.key.unitId) === 1 &&
+        Number(ix.key.night) === 1
+    );
+  } catch {
+    uniqueIndexPresent = false;
+  }
+  classified.report.uniqueIndexPresent = uniqueIndexPresent;
+  classified.report.claimsRemainShadow = !uniqueIndexPresent;
 
   return classified.report;
 }

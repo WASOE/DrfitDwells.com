@@ -183,6 +183,8 @@ function readSource(relFromServer) {
 test.before(async () => {
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri());
+  const { ensureAuthoritativeUniqueIndexForTests } = require('../services/inventory/unitNightClaimService');
+  await ensureAuthoritativeUniqueIndexForTests();
 });
 
 test.after(async () => {
@@ -686,7 +688,7 @@ test('location rollback: foreign Booking claims survive (#22)', async () => {
 // PAID RETAIN (#23,#24)
 // ---------------------------------------------------------------------------
 
-test('paid-retain path does not invoke claim release (#23,#24)', () => {
+test('paid-retain path demotes allocation and does not release-then-delete (#23,#24)', () => {
   const src = readSource('services/checkout/executeBookingFinalizeWork.js');
   const fnStart = src.indexOf('async function retainPaidBookingOnOverlap');
   assert.ok(fnStart > 0);
@@ -698,7 +700,7 @@ test('paid-retain path does not invoke claim release (#23,#24)', () => {
   );
   const body = src.slice(fnStart, fnEnd);
   assert.doesNotMatch(body, /ensureUnitNightClaimsReleasedShadow|shadowReleaseBeforeBookingDelete/);
-  assert.match(body, /runShadowClaimsAfterCanonicalSurvival/);
+  assert.match(body, /demoteAllocatedBookingWithoutClaims/);
 
   // Overlap delete path: paid retain returns before delete/release
   assert.match(
@@ -726,12 +728,13 @@ test('lifecycleSource constants locked (#27)', () => {
   );
 });
 
-test('no authoritative unique unitId+night index; REALLOCATE disabled (#28,#29)', () => {
+test('schema documents unique unitId+night index with autoIndex false; REALLOCATE disabled (#28,#29)', () => {
   assert.equal(UnitNightClaim.AUTHORITATIVE_UNIQUE_INDEX_SPEC.options.unique, true);
+  assert.equal(UnitNightClaim.schema.get('autoIndex'), false);
   const indexes = UnitNightClaim.schema.indexes();
   assert.ok(
-    !indexes.some((entry) => entry?.[1]?.unique === true),
-    'schema must not declare unique unitId+night index before I6'
+    indexes.some((entry) => entry?.[1]?.unique === true),
+    'schema documents unique unitId+night index for I6'
   );
   const writeSvc = readSource('services/ops/domain/reservationWriteService.js');
   assert.doesNotMatch(writeSvc, /transferUnitNightClaims\(/);

@@ -1,6 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const rateLimit = require('express-rate-limit');
+const mongoose = require('mongoose');
 const Booking = require('../models/Booking');
 const CheckoutSession = require('../models/CheckoutSession');
 const PromoCode = require('../models/PromoCode');
@@ -92,6 +93,8 @@ const {
   ensureUnitNightClaimsReleasedShadow,
   LIFECYCLE_SOURCES
 } = require('../services/inventory/ensureUnitNightClaimsReleasedShadow');
+const unitNightClaimService = require('../services/inventory/unitNightClaimService');
+const { ERR: CLAIM_ERR } = unitNightClaimService;
 const {
   buildTrustedBookingPayloadForFinalize,
   mapFinalizeOrchestrationResultToHttp,
@@ -249,22 +252,89 @@ function buildCreateBookingSuccessPayload({ booking, checkInDate, checkOutDate, 
   };
 }
 
-/** Legacy POST /api/bookings shadow dual-write (I2). Never throws into the route. */
+/**
+ * Legacy POST /api/bookings claim ensure/repair (I6).
+ * Prefer claim-before-save for new allocated creates; this path is fail-closed repair.
+ */
 async function ensureLegacyBookingShadowClaims(
   booking,
   { paymentIntentId = null, checkoutId = null, stripePaymentVerified = null } = {}
 ) {
   if (!booking) return null;
+  return ensureUnitNightClaimsShadow({
+    booking,
+    source: 'legacy_create',
+    paymentIntentId: paymentIntentId || booking.stripePaymentIntentId || null,
+    checkoutId: checkoutId || booking.checkoutId || null,
+    stripePaymentVerified,
+    throwOnFailure: true
+  });
+}
+
+async function emitLegacyClaimCompensationFailureMri({
+  bookingId,
+  unitId,
+  error,
+  operation = 'compensate'
+}) {
   try {
-    return await ensureUnitNightClaimsShadow({
-      booking,
-      source: 'legacy_create',
-      paymentIntentId: paymentIntentId || booking.stripePaymentIntentId || null,
-      checkoutId: checkoutId || booking.checkoutId || null,
-      stripePaymentVerified
+    await openManualReviewItem({
+      category: 'unit_night_claim_shadow_failure',
+      severity: 'critical',
+      entityType: 'Booking',
+      entityId: bookingId ? String(bookingId) : null,
+      title: 'UnitNightClaim legacy-create compensation failed',
+      details: error?.message || 'Compensation failed after legacy Booking persist failure',
+      provenance: {
+        source: 'unit_night_claim_authoritative',
+        sourceReference: bookingId ? `${String(bookingId)}:legacy_create` : null
+      },
+      evidence: {
+        operation,
+        errorCode: error?.code || null,
+        unitId: unitId ? String(unitId) : null,
+        route: 'POST /api/bookings'
+      }
     });
   } catch {
-    return null;
+    /* MRI best-effort */
+  }
+}
+
+async function compensateLegacyCreateClaimAttempt({
+  bookingId,
+  unitId,
+  preClaimAttempt,
+  needsPreClaim
+}) {
+  if (preClaimAttempt?.insertedNightsThisAttempt?.length) {
+    try {
+      await unitNightClaimService.compensateClaimAttempt({
+        bookingId,
+        unitId,
+        insertedNightsThisAttempt: preClaimAttempt.insertedNightsThisAttempt
+      });
+    } catch (compErr) {
+      await emitLegacyClaimCompensationFailureMri({
+        bookingId,
+        unitId,
+        error: compErr,
+        operation: 'compensate'
+      });
+    }
+    return;
+  }
+  if (needsPreClaim && bookingId) {
+    try {
+      await unitNightClaimService.releaseUnitNights({ bookingId });
+    } catch (releaseErr) {
+      await emitLegacyClaimCompensationFailureMri({
+        bookingId,
+        unitId,
+        error: releaseErr,
+        operation: 'release'
+      });
+    }
   }
 }
 
@@ -2276,11 +2346,77 @@ router.post('/', bookingCreateLimiter, [
         error: { code: 'CABIN_TYPE_UNIT_REQUIRED' }
       });
     }
+
+    // I6: mint Booking _id and acquire ALL UnitNightClaims before allocated Booking persistence.
+    let preClaimAttempt = null;
+    const needsPreClaim = Boolean(
+      bookingData.cabinTypeId &&
+        bookingData.unitId &&
+        BLOCKING_BOOKING_STATUSES.includes(bookingData.status)
+    );
+    if (needsPreClaim) {
+      if (!bookingData._id) {
+        bookingData._id = new mongoose.Types.ObjectId();
+      }
+      try {
+        preClaimAttempt = await unitNightClaimService.claimUnitNights({
+          bookingId: bookingData._id,
+          unitId: bookingData.unitId,
+          checkIn: bookingData.checkIn,
+          checkOut: bookingData.checkOut,
+          source: 'legacy_create'
+        });
+      } catch (claimErr) {
+        await tryReleaseVoucherOnFailure({
+          reason: 'unit_night_claim_failed',
+          note: 'release voucher reservation after legacy claim-before-save conflict',
+          paidCard: Boolean(paymentIntentIdForReview),
+          evidence: {
+            subtotalCents,
+            discountAmountCents,
+            giftVoucherAppliedCents,
+            stripePaidAmountCents,
+            totalValueCents
+          }
+        });
+        if (claimErr?.code === CLAIM_ERR.FOREIGN_OWNER || claimErr?.code === CLAIM_ERR.INDEX_MISSING) {
+          const errorCode =
+            claimErr.code === CLAIM_ERR.INDEX_MISSING ? 'INVENTORY_INDEX_UNAVAILABLE' : 'NOT_AVAILABLE';
+          const message =
+            claimErr.code === CLAIM_ERR.INDEX_MISSING
+              ? 'Inventory exclusivity is not available; try again later'
+              : 'This unit was just booked by another guest. Please choose different dates.';
+          const handled = await handlePaidBookingFailure({
+            issueType: 'paid_booking_conflict',
+            errorCode,
+            errorSummary: summarizeError(claimErr),
+            finalizationStage: PAID_BOOKING_FINALIZATION_STAGES.UNIT_NIGHT_CLAIM_SHADOW
+          });
+          if (handled) return;
+          return res.status(409).json({
+            success: false,
+            message,
+            error: {
+              code: errorCode,
+              ...(claimErr.details ? { details: claimErr.details } : {})
+            }
+          });
+        }
+        throw claimErr;
+      }
+    }
+
     let booking;
     try {
       booking = new Booking(bookingData);
       await booking.save();
     } catch (saveErr) {
+      await compensateLegacyCreateClaimAttempt({
+        bookingId: bookingData._id,
+        unitId: bookingData.unitId,
+        preClaimAttempt,
+        needsPreClaim
+      });
       await tryReleaseVoucherOnFailure({
         reason: 'booking_save_failed',
         note: 'release voucher reservation after booking save failure',
@@ -2562,6 +2698,13 @@ router.post('/', bookingCreateLimiter, [
       }
     }
 
+    // Authoritative claim repair before populate (populated refs are not ObjectIds).
+    await ensureLegacyBookingShadowClaims(booking, {
+      paymentIntentId: paymentIntentIdForReview,
+      checkoutId,
+      stripePaymentVerified
+    });
+
     // Populate details for response
     if (cabinId) {
       await booking.populate('cabinId', 'name description imageUrl location meetingPoint packingList arrivalGuideUrl safetyNotes emergencyContact arrivalWindowDefault transportCutoffs');
@@ -2569,12 +2712,6 @@ router.post('/', bookingCreateLimiter, [
       await booking.populate('cabinTypeId', 'name description imageUrl location meetingPoint packingList arrivalGuideUrl safetyNotes emergencyContact arrivalWindowDefault transportCutoffs');
       await booking.populate('unitId', 'unitNumber displayName');
     }
-
-    await ensureLegacyBookingShadowClaims(booking, {
-      paymentIntentId: paymentIntentIdForReview,
-      checkoutId,
-      stripePaymentVerified
-    });
 
     // Get the appropriate entity for email (cabin or cabinType)
     const entityForEmail = cabin || cabinType;

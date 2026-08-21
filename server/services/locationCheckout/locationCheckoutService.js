@@ -26,6 +26,7 @@ const {
   sendLocationBookingConfirmationEmail,
   sendLocationBookingInternalNotification
 } = require('./locationCheckoutEmailService');
+const unitNightClaimService = require('../inventory/unitNightClaimService');
 const {
   ensureUnitNightClaimsShadow,
   I2_SOURCES
@@ -162,7 +163,8 @@ async function ensureLocationChildShadowClaims({
       source: I2_SOURCES.LOCATION_CHILD,
       paymentIntentId,
       checkoutId: checkoutSessionId,
-      stripePaymentVerified: paymentIntentId ? Boolean(stripePaymentVerified) : null
+      stripePaymentVerified: paymentIntentId ? Boolean(stripePaymentVerified) : null,
+      throwOnFailure: false
     });
     results.push(outcome);
   }
@@ -522,6 +524,84 @@ async function finalizeLocationCheckout(body, { stripe, ensureUnitNightClaimsSha
   const usesTransactions = await canUseMongoTransactions();
   const childBookingIds = [];
   let locationBookingId = null;
+  /** @type {{ bookingId: string, unitId: string, insertedNightsThisAttempt: string[] }[]} */
+  const locationClaimAttempts = [];
+
+  // I6: mint child ids + acquire ALL multi-unit claims before durable LocationBooking set.
+  const preparedChildren = [];
+  for (const target of inventory.targets) {
+    const share = shareByTargetKey.get(target.targetKey);
+    if (!share) {
+      throw new Error(`Missing buyout share for target ${target.targetKey}`);
+    }
+    const childPayload = buildChildBookingPayload({
+      target,
+      share,
+      locationBookingId: null,
+      checkInDate,
+      checkOutDate,
+      adults,
+      children,
+      guestInfo,
+      roomAllocation,
+      checkoutSessionId
+    });
+    childPayload._id = new mongoose.Types.ObjectId();
+    preparedChildren.push({ target, childPayload });
+  }
+
+  try {
+    for (const { childPayload } of preparedChildren) {
+      if (!(childPayload.cabinTypeId && childPayload.unitId)) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const claimed = await unitNightClaimService.claimUnitNights({
+        bookingId: childPayload._id,
+        unitId: childPayload.unitId,
+        checkIn: checkInDate,
+        checkOut: checkOutDate,
+        source: I2_SOURCES.LOCATION_CHILD
+      });
+      locationClaimAttempts.push({
+        bookingId: String(childPayload._id),
+        unitId: String(childPayload.unitId),
+        insertedNightsThisAttempt: claimed.insertedNightsThisAttempt || []
+      });
+    }
+  } catch (claimErr) {
+    for (const attempt of locationClaimAttempts) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await unitNightClaimService.compensateClaimAttempt({
+          bookingId: attempt.bookingId,
+          unitId: attempt.unitId,
+          insertedNightsThisAttempt: attempt.insertedNightsThisAttempt
+        });
+      } catch {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await unitNightClaimService.releaseUnitNights({ bookingId: attempt.bookingId });
+        } catch {
+          /* orphan → I5 */
+        }
+      }
+    }
+    await recordLocationCheckoutFailure({
+      paymentIntentId,
+      checkoutSessionId,
+      guestInfo,
+      errorCode: claimErr.code || 'LOCATION_CLAIM_FAILED',
+      errorSummary: claimErr.message,
+      paymentIntent
+    });
+    throw createDomainError(
+      'conflict',
+      process.env.NODE_ENV === 'development'
+        ? `Could not secure Valley inventory: ${claimErr.message}`
+        : 'Could not finalize your Valley booking. Inventory conflict.',
+      { details: claimErr.details || null },
+      409
+    );
+  }
 
   const runFinalize = async (session = null) => {
     const createOpts = session ? { session } : undefined;
@@ -553,25 +633,9 @@ async function finalizeLocationCheckout(body, { stripe, ensureUnitNightClaimsSha
     const master = Array.isArray(locationBooking) ? locationBooking[0] : locationBooking;
     locationBookingId = master._id;
 
-    for (const target of inventory.targets) {
-      const share = shareByTargetKey.get(target.targetKey);
-      if (!share) {
-        throw new Error(`Missing buyout share for target ${target.targetKey}`);
-      }
-
-      const childPayload = buildChildBookingPayload({
-        target,
-        share,
-        locationBookingId: master._id,
-        checkInDate,
-        checkOutDate,
-        adults,
-        children,
-        guestInfo,
-        roomAllocation,
-        checkoutSessionId
-      });
-
+    for (const { childPayload } of preparedChildren) {
+      childPayload.locationBookingId = master._id;
+      // eslint-disable-next-line no-await-in-loop
       const child = await Booking.create([childPayload], createOpts);
       childBookingIds.push((Array.isArray(child) ? child[0] : child)._id);
     }
@@ -608,6 +672,23 @@ async function finalizeLocationCheckout(body, { stripe, ensureUnitNightClaimsSha
       await runFinalize(null);
     }
   } catch (err) {
+    for (const attempt of locationClaimAttempts) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await unitNightClaimService.compensateClaimAttempt({
+          bookingId: attempt.bookingId,
+          unitId: attempt.unitId,
+          insertedNightsThisAttempt: attempt.insertedNightsThisAttempt
+        });
+      } catch {
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          await unitNightClaimService.releaseUnitNights({ bookingId: attempt.bookingId });
+        } catch {
+          /* orphan */
+        }
+      }
+    }
     await cleanupPartialLocationFinalize({
       locationBookingId,
       childBookingIds,
@@ -631,7 +712,7 @@ async function finalizeLocationCheckout(body, { stripe, ensureUnitNightClaimsSha
     );
   }
 
-  // Canonical LocationBooking + children survived — shadow claims are post-canonical only.
+  // Idempotent repair/assert after canonical survival (claims already acquired).
   await ensureLocationChildShadowClaims({
     childBookingIds,
     paymentIntentId,

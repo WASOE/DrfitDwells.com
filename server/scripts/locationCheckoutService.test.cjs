@@ -234,6 +234,9 @@ test.before(async () => {
   mongoServer = await MongoMemoryServer.create();
   process.env.MONGODB_URI = mongoServer.getUri();
   await mongoose.connect(mongoServer.getUri(), { serverSelectionTimeoutMS: 10000 });
+  const { ensureAuthoritativeUniqueIndexForTests } = require('../services/inventory/unitNightClaimService');
+  await ensureAuthoritativeUniqueIndexForTests();
+
   transactionSupport = await canUseMongoTransactions();
 
   originalSendEmail = emailService.sendEmail;
@@ -519,15 +522,10 @@ test('I2: finalize creates UnitNightClaims for each allocated unit child', async
   }
 });
 
-test('I2: one child shadow failure is nonfatal; other unit children still claim', async () => {
+test('I6: child claim failure rejects location finalize and does not leave partial children', async () => {
   const UnitNightClaim = require('../models/UnitNightClaim');
-  const ManualReviewItem = require('../models/ManualReviewItem');
-  const {
-    SHADOW_OUTCOMES,
-    MRI_CATEGORY
-  } = require('../services/inventory/ensureUnitNightClaimsShadow');
-  const realEnsure = require('../services/inventory/ensureUnitNightClaimsShadow')
-    .ensureUnitNightClaimsShadow;
+  const unitNightClaimService = require('../services/inventory/unitNightClaimService');
+  const originalClaim = unitNightClaimService.claimUnitNights;
 
   await UnitNightClaim.deleteMany({});
   await createFullValleyInventory({ unitCount: 2 });
@@ -535,56 +533,37 @@ test('I2: one child shadow failure is nonfatal; other unit children still claim'
   const created = await createLocationCheckoutPaymentIntent(quoteBody(), { stripe });
   stripe.markSucceeded(created.paymentIntentId);
 
-  let failOnceUnitId = null;
-  const ensureFn = async (args) => {
-    const unitId = args.booking?.unitId ? String(args.booking.unitId) : null;
-    if (unitId && !failOnceUnitId) failOnceUnitId = unitId;
-    if (unitId && failOnceUnitId && unitId === failOnceUnitId) {
-      return realEnsure({
-        ...args,
-        claimUnitNightsFn: async () => {
-          throw Object.assign(new Error('forced location child claim fail'), {
-            code: 'UNIT_NIGHT_CLAIM_SHADOW_FAILURE'
-          });
-        }
-      });
+  let calls = 0;
+  unitNightClaimService.claimUnitNights = async (...args) => {
+    calls += 1;
+    if (calls >= 2) {
+      const err = new Error('forced location child claim fail');
+      err.code = unitNightClaimService.ERR.FOREIGN_OWNER;
+      err.details = { conflicts: [{ night: '2026-01-01', holderBookingId: 'x' }] };
+      throw err;
     }
-    return realEnsure(args);
+    return originalClaim(...args);
   };
 
-  const result = await finalizeLocationCheckout(
-    {
-      checkoutSessionId: created.checkoutSessionId,
-      paymentIntentId: created.paymentIntentId,
-      adults: 12,
-      children: 0,
-      guestInfo: guestInfo()
-    },
-    { stripe, ensureUnitNightClaimsShadowFn: ensureFn }
-  );
-
-  assert.ok(result.locationBookingId);
-  const master = await LocationBooking.findById(result.locationBookingId);
-  assert.equal(master.status, 'confirmed');
-  const children = await Booking.find({ _id: { $in: result.childBookingIds } });
-  assert.equal(children.length, result.childBookingIds.length);
-
-  const unitChildren = children.filter((c) => c.unitId);
-  assert.ok(unitChildren.length >= 2);
-  const failedChild = unitChildren.find((c) => String(c.unitId) === failOnceUnitId);
-  const okChild = unitChildren.find((c) => String(c.unitId) !== failOnceUnitId);
-  assert.ok(failedChild);
-  assert.ok(okChild);
-  assert.equal(await UnitNightClaim.countDocuments({ bookingId: failedChild._id }), 0);
-  assert.ok((await UnitNightClaim.countDocuments({ bookingId: okChild._id })) >= 1);
-  assert.ok(
-    (await ManualReviewItem.countDocuments({
-      category: MRI_CATEGORY,
-      entityId: String(failedChild._id),
-      status: 'open'
-    })) >= 1
-  );
-  void SHADOW_OUTCOMES;
+  try {
+    await assert.rejects(
+      () =>
+        finalizeLocationCheckout(
+          {
+            checkoutSessionId: created.checkoutSessionId,
+            paymentIntentId: created.paymentIntentId,
+            adults: 12,
+            children: 0,
+            guestInfo: guestInfo()
+          },
+          { stripe }
+        ),
+      (err) => err && (err.code === 'conflict' || /Inventory conflict/i.test(String(err.message || '')))
+    );
+    assert.equal(await LocationBooking.countDocuments({}), 0);
+  } finally {
+    unitNightClaimService.claimUnitNights = originalClaim;
+  }
 });
 
 test('I2: location replay repairs missing child claims', async () => {

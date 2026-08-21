@@ -1,11 +1,11 @@
 'use strict';
 
 /**
- * I4 shadow UnitNightClaim terminal / delete release helper.
+ * I4/I6 UnitNightClaim terminal / delete release helper.
  *
- * Binding: docs/stay-change-implementation-plan.md — I4 release semantics.
- * Claims remain SHADOW / non-authoritative.
- * Failure never rolls back a valid cancel/complete/delete decision.
+ * Binding: docs/stay-change-implementation-plan.md — I6 terminal release.
+ * Release failure after terminal commit does not un-cancel/un-complete;
+ * emits CRITICAL MRI; stale claims remain conservative.
  */
 
 const {
@@ -68,11 +68,11 @@ async function recordReleaseFailureMri({
     const sourceReference = bookingId ? `${String(bookingId)}:release` : null;
     const mri = await openManualReviewItemFn({
       category: MRI_CATEGORY,
-      severity: 'high',
+      severity: 'critical',
       entityType: 'Booking',
       entityId: bookingId,
-      title: 'UnitNightClaim shadow release failed',
-      details: errorSummary || 'Shadow UnitNightClaim release failed after canonical lifecycle',
+      title: 'UnitNightClaim authoritative release failed',
+      details: errorSummary || 'Authoritative UnitNightClaim release failed after canonical lifecycle',
       provenance: {
         source: MRI_SOURCE,
         sourceReference

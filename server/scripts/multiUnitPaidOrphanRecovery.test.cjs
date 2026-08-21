@@ -103,6 +103,9 @@ function restoreFeatureFlagEnv() {
 test.before(async () => {
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri(), { serverSelectionTimeoutMS: 10000 });
+  const { ensureAuthoritativeUniqueIndexForTests } = require('../services/inventory/unitNightClaimService');
+  await ensureAuthoritativeUniqueIndexForTests();
+
   await CheckoutSession.syncIndexes();
   await CheckoutFinalizationJob.syncIndexes();
   await Payment.syncIndexes();

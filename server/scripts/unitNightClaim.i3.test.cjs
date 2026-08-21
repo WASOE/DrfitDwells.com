@@ -155,6 +155,8 @@ async function nightsOwned(bookingId) {
 test.before(async () => {
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri());
+  const { ensureAuthoritativeUniqueIndexForTests } = require('../services/inventory/unitNightClaimService');
+  await ensureAuthoritativeUniqueIndexForTests();
 });
 
 test.after(async () => {
@@ -384,7 +386,7 @@ test('#1/#20 extend updates Booking + reservation block + claims', async () => {
   );
 });
 
-test('#14 edit path: shadow foreign failure preserves canonical success + audit', async () => {
+test('#14 edit path: foreign claim on newTarget rejects edit and preserves old dates', async () => {
   const seed = await seedMultiUnit();
   const { booking, parentCabin, unitA, unitB } = await createAllocatedBooking({
     _seed: seed,
@@ -401,7 +403,6 @@ test('#14 edit path: shadow foreign failure preserves canonical success + audit'
     checkOut: sofiaDay('2026-10-12'),
     email: 'shadow-foreign@example.com'
   });
-  // Foreign claim on a night the extension will need (Sep12).
   await claimUnitNights({
     bookingId: other.booking._id,
     unitId: unitA._id,
@@ -410,37 +411,28 @@ test('#14 edit path: shadow foreign failure preserves canonical success + audit'
   });
 
   const entityId = String(booking._id);
-  const result = await editReservationDates({
-    bookingId: booking._id,
-    checkInDate: '2026-09-10',
-    checkOutDate: '2026-09-14',
-    ctx: adminCtx()
-  });
+  await assert.rejects(
+    () =>
+      editReservationDates({
+        bookingId: booking._id,
+        checkInDate: '2026-09-10',
+        checkOutDate: '2026-09-14',
+        ctx: adminCtx()
+      }),
+    (err) => err && err.code === 'conflict'
+  );
 
-  assert.equal(formatSofiaDateOnly(result.checkOutDate), '2026-09-14');
   const live = await Booking.findById(booking._id);
-  assert.equal(formatSofiaDateOnly(live.checkOut), '2026-09-14');
-  const block = await AvailabilityBlock.findOne({
-    reservationId: booking._id,
-    blockType: 'reservation',
-    status: 'active'
-  }).lean();
-  assert.equal(formatSofiaDateOnly(block.endDate), '2026-09-14');
+  assert.equal(formatSofiaDateOnly(live.checkOut), '2026-09-12');
   assert.equal(
     await AuditEvent.countDocuments({ action: 'reservation_edit_dates', entityId }),
-    1
+    0
   );
   const foreign = await UnitNightClaim.findOne({
     unitId: unitA._id,
     bookingId: other.booking._id
   }).lean();
   assert.ok(foreign);
-  const mri = await ManualReviewItem.findOne({
-    category: MRI_CATEGORY,
-    entityId,
-    status: 'open'
-  }).lean();
-  assert.ok(mri);
 });
 
 test('#7/#19 same-date retry repairs missing claims without new audit', async () => {
@@ -1047,13 +1039,14 @@ test('#23/#24/#25 side effects only on real date change; claims do not invent ex
   }
 });
 
-test('#27/#28 no unique authoritative index; REALLOCATE still absent from writers', async () => {
+test('#27/#28 schema documents unique with autoIndex false; REALLOCATE still absent from writers', async () => {
   assert.equal(UnitNightClaim.AUTHORITATIVE_UNIQUE_INDEX_SPEC.cutoverBatch, 'I6');
   assert.equal(UnitNightClaim.AUTHORITATIVE_UNIQUE_INDEX_SPEC.options.unique, true);
+  assert.equal(UnitNightClaim.schema.get('autoIndex'), false);
   const indexes = UnitNightClaim.schema.indexes();
   assert.ok(
-    !indexes.some((entry) => entry?.[1]?.unique === true),
-    'schema must not declare unique unitId+night index before I6'
+    indexes.some((entry) => entry?.[1]?.unique === true),
+    'schema documents unique unitId+night index for I6'
   );
 
   const writeSrc = fs.readFileSync(

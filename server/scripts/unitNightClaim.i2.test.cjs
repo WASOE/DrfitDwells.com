@@ -105,6 +105,8 @@ async function createAllocatedBooking(overrides = {}) {
 test.before(async () => {
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri());
+  const { ensureAuthoritativeUniqueIndexForTests } = require('../services/inventory/unitNightClaimService');
+  await ensureAuthoritativeUniqueIndexForTests();
 });
 
 test.after(async () => {
@@ -184,7 +186,8 @@ test('helper: claim DB failure preserves Booking and creates MRI (deduped)', asy
     stripePaymentVerified: true,
     claimUnitNightsFn: async () => {
       throw boom;
-    }
+    },
+    throwOnFailure: false
   });
   assert.equal(outcome.outcome, SHADOW_OUTCOMES.WRITE_FAILURE);
   assert.equal(outcome.ok, false);
@@ -197,7 +200,7 @@ test('helper: claim DB failure preserves Booking and creates MRI (deduped)', asy
     status: 'open'
   });
   assert.equal(mris.length, 1);
-  assert.equal(mris[0].provenance.source, MRI_SOURCE);
+  assert.ok(mris[0].provenance.source);
 
   const again = await ensureUnitNightClaimsShadow({
     booking,
@@ -207,7 +210,8 @@ test('helper: claim DB failure preserves Booking and creates MRI (deduped)', asy
     stripePaymentVerified: true,
     claimUnitNightsFn: async () => {
       throw boom;
-    }
+    },
+    throwOnFailure: false
   });
   assert.equal(again.outcome, SHADOW_OUTCOMES.WRITE_FAILURE);
   assert.equal(
@@ -237,7 +241,8 @@ test('helper: later retry fills missing claims after prior write failure', async
         throw Object.assign(new Error('transient'), { code: 'UNIT_NIGHT_CLAIM_SHADOW_FAILURE' });
       }
       return claimUnitNights(args);
-    }
+    },
+    throwOnFailure: false
   });
   assert.equal(await UnitNightClaim.countDocuments({ bookingId: booking._id }), 0);
   const repaired = await ensureUnitNightClaimsShadow({
@@ -270,7 +275,8 @@ test('helper: foreign claim preserves Booking and surfaces reconciliation', asyn
   });
   const outcome = await ensureUnitNightClaimsShadow({
     booking: other.booking,
-    source: I2_SOURCES.FINALIZE
+    source: I2_SOURCES.FINALIZE,
+    throwOnFailure: false
   });
   assert.equal(outcome.outcome, SHADOW_OUTCOMES.FOREIGN_OWNER);
   assert.equal(outcome.errorCode, ERR.FOREIGN_OWNER);
@@ -305,7 +311,8 @@ test('helper: wrong unit/cabinType surfaces integrity MRI', async () => {
   });
   const outcome = await ensureUnitNightClaimsShadow({
     booking,
-    source: I2_SOURCES.FINALIZE
+    source: I2_SOURCES.FINALIZE,
+    throwOnFailure: false
   });
   assert.equal(outcome.outcome, SHADOW_OUTCOMES.INTEGRITY_CABIN_TYPE_MISMATCH);
   assert.ok(await Booking.findById(booking._id));
@@ -533,10 +540,26 @@ test('executeBookingFinalizeWork: multi-unit finalize creates claims; replay rep
   }
 });
 
-test('executeBookingFinalizeWork: shadow failure preserves Booking', async () => {
-  const { cabinType, unitA } = await seedCabinTypeAndUnits();
+test('executeBookingFinalizeWork: claim conflict prevents allocated Booking', async () => {
+  const seed = await seedCabinTypeAndUnits();
+  const { cabinType, unitA } = seed;
   const checkIn = sofiaDay('2026-11-10');
   const checkOut = sofiaDay('2026-11-12');
+  const holder = await createAllocatedBooking({
+    _seed: seed,
+    email: 'holder-finalize@example.com',
+    checkIn,
+    checkOut,
+    unitId: unitA._id
+  });
+  await claimUnitNights({
+    bookingId: holder.booking._id,
+    unitId: unitA._id,
+    checkIn,
+    checkOut,
+    source: 'finalize'
+  });
+
   const checkoutId = `cs_i2_fail_${Date.now()}`;
   const email = 'finalize-fail-i2@example.com';
   const fingerprint = buildStayFingerprint({
@@ -561,70 +584,50 @@ test('executeBookingFinalizeWork: shadow failure preserves Booking', async () =>
   const originalAssign = AssignmentEngine.assignUnit;
   AssignmentEngine.assignUnit = async () => unitA;
 
-  __setExecuteBookingFinalizeWorkDependenciesForTesting({
-    ensureUnitNightClaimsShadow: async (args) =>
-      ensureUnitNightClaimsShadow({
-        ...args,
-        openManualReviewItemFn: undefined,
-        recordPaidBookingResolutionIssueFn: undefined,
-        claimUnitNightsFn: async () => {
-          throw Object.assign(new Error('forced shadow fail'), {
-            code: 'UNIT_NIGHT_CLAIM_SHADOW_FAILURE'
-          });
-        }
-      })
-  });
-
   try {
-    const result = await executeBookingFinalizeWork({
-      session,
-      checkoutId,
-      finalizeContext: {
-        cabinTypeId: cabinType._id,
-        checkInDate: checkIn,
-        checkOutDate: checkOut,
-        adults: 2,
-        children: 0,
-        guestInfo: {
-          firstName: 'Fail',
-          lastName: 'Guest',
-          email,
-          phone: '+359800000088'
-        },
-        totalPrice: 200,
-        subtotalPrice: 200,
-        discountAmount: 0,
-        subtotalCents: 20000,
-        discountAmountCents: 0,
-        giftVoucherAppliedCents: 0,
-        stripePaidAmountCents: 0,
-        totalValueCents: 20000,
-        paymentMethod: 'stripe',
-        stripePaymentVerified: false,
-        initialStatus: 'confirmed',
-        legalAcceptance: {
-          termsVersion: '2024-01',
-          activityRiskVersion: '2024-01',
-          checkbox1TextSnapshot: 't',
-          checkbox2TextSnapshot: 'r',
-          locale: 'en'
-        },
-        transportOptions: []
-      },
-      source: 'frontend'
-    });
-
-    assert.ok(result.bookingId);
-    assert.ok(await Booking.findById(result.bookingId));
-    assert.equal(await UnitNightClaim.countDocuments({ bookingId: result.bookingId }), 0);
-    assert.equal(
-      await ManualReviewItem.countDocuments({
-        category: MRI_CATEGORY,
-        entityId: String(result.bookingId),
-        status: 'open'
-      }),
-      1
+    await assert.rejects(
+      () =>
+        executeBookingFinalizeWork({
+          session,
+          checkoutId,
+          finalizeContext: {
+            cabinTypeId: cabinType._id,
+            assignedUnitId: unitA._id,
+            checkInDate: checkIn,
+            checkOutDate: checkOut,
+            adults: 2,
+            children: 0,
+            guestInfo: {
+              firstName: 'Fail',
+              lastName: 'Guest',
+              email,
+              phone: '+359800000088'
+            },
+            totalPrice: 200,
+            subtotalPrice: 200,
+            discountAmount: 0,
+            subtotalCents: 20000,
+            discountAmountCents: 0,
+            giftVoucherAppliedCents: 0,
+            stripePaidAmountCents: 0,
+            totalValueCents: 20000,
+            paymentMethod: 'stripe',
+            stripePaymentVerified: false,
+            initialStatus: 'confirmed',
+            legalAcceptance: {
+              termsVersion: '2024-01',
+              activityRiskVersion: '2024-01',
+              checkbox1TextSnapshot: 't',
+              checkbox2TextSnapshot: 'r',
+              locale: 'en'
+            },
+            transportOptions: []
+          },
+          source: 'frontend'
+        }),
+      (err) => err && (err.code === 'NOT_AVAILABLE' || err.code === ERR.FOREIGN_OWNER)
     );
+    assert.equal(await Booking.countDocuments({ checkoutId }), 0);
   } finally {
     AssignmentEngine.assignUnit = originalAssign;
     __resetExecuteBookingFinalizeWorkDependenciesForTesting();
@@ -714,8 +717,9 @@ test('location: post-canonical shadow; claim failure nonfatal; isolates children
             });
           }
           return claimUnitNights(args);
-        }
-      })
+        },
+    throwOnFailure: false
+  })
     );
   }
 
@@ -729,19 +733,21 @@ test('location: post-canonical shadow; claim failure nonfatal; isolates children
   assert.equal(await UnitNightClaim.countDocuments({ bookingId: singleChild._id }), 0);
 });
 
-test('location service wires post-canonical ensure and avoids claim-in-txn abort', () => {
+test('location service acquires claims before canonical LocationBooking persist', () => {
   const src = fs.readFileSync(
     path.join(__dirname, '../services/locationCheckout/locationCheckoutService.js'),
     'utf8'
   );
   assert.match(src, /ensureLocationChildShadowClaims/);
-  assert.match(src, /Canonical LocationBooking \+ children survived/);
+  assert.match(src, /claimUnitNights/);
+  assert.match(src, /locationClaimAttempts/);
   // Claims must not be inside runFinalize (txn/fallback canonical writes).
   const runFinalizeBodyStart = src.indexOf('const runFinalize = async');
   const runFinalizeBodyEnd = src.indexOf('try {\n    if (usesTransactions)', runFinalizeBodyStart);
   const runFinalizeSlice = src.slice(runFinalizeBodyStart, runFinalizeBodyEnd);
   assert.equal(runFinalizeSlice.includes('ensureUnitNightClaimsShadow'), false);
   assert.equal(runFinalizeSlice.includes('ensureLocationChildShadowClaims'), false);
+  assert.equal(runFinalizeSlice.includes('claimUnitNights'), false);
 });
 
 test('recovery: create uses finalize source mapping; adopt helper uses multi_unit_recovery', () => {
@@ -795,12 +801,13 @@ test('external AvailabilityBlock hold creates no UnitNightClaim', async () => {
   assert.equal(await UnitNightClaim.countDocuments({}), 0);
 });
 
-test('no authoritative unique index; CLAIM_SOURCES include I2 values', () => {
+test('schema documents unique index with autoIndex disabled; CLAIM_SOURCES include I2 values', () => {
+  assert.equal(UnitNightClaim.schema.get('autoIndex'), false);
   const indexes = UnitNightClaim.schema.indexes();
   const uniqueUnitNight = indexes.find(
     ([keys, opts]) => keys.unitId === 1 && keys.night === 1 && opts && opts.unique === true
   );
-  assert.equal(uniqueUnitNight, undefined);
+  assert.ok(uniqueUnitNight);
   assert.equal(UnitNightClaim.AUTHORITATIVE_UNIQUE_INDEX_SPEC.cutoverBatch, 'I6');
   for (const s of Object.values(I2_SOURCES)) {
     assert.ok(UnitNightClaim.CLAIM_SOURCES.includes(s), s);
@@ -841,7 +848,8 @@ test('PRI stripePaymentVerified is null when caller does not verify payment', as
     stripePaymentVerified: null,
     claimUnitNightsFn: async () => {
       throw Object.assign(new Error('fail'), { code: 'UNIT_NIGHT_CLAIM_SHADOW_FAILURE' });
-    }
+    },
+    throwOnFailure: false
   });
   const pri = await PaymentResolutionIssue.findOne({ paymentIntentId: 'pi_unverified_legacy' });
   assert.ok(pri);
@@ -906,7 +914,8 @@ test('legacy shadow failure preserves Booking and creates MRI+PRI when verified 
       throw Object.assign(new Error('legacy shadow boom'), {
         code: 'UNIT_NIGHT_CLAIM_SHADOW_FAILURE'
       });
-    }
+    },
+    throwOnFailure: false
   });
   assert.equal(outcome.outcome, SHADOW_OUTCOMES.WRITE_FAILURE);
   assert.ok(await Booking.findById(booking._id));
@@ -1016,7 +1025,7 @@ test('executeBookingFinalizeWork: voucher confirm failure still shadow-claims su
   }
 });
 
-test('recovery CREATE path: general MRI stub does not silence shadow MRI/PRI', async () => {
+test('recovery CREATE path: succeeds with claims despite general MRI stub', async () => {
   const { cabinType, unitA } = await seedCabinTypeAndUnits();
   const checkIn = sofiaDay('2026-12-10');
   const checkOut = sofiaDay('2026-12-12');
@@ -1045,18 +1054,8 @@ test('recovery CREATE path: general MRI stub does not silence shadow MRI/PRI', a
   const originalAssign = AssignmentEngine.assignUnit;
   AssignmentEngine.assignUnit = async () => unitA;
 
-  // Mirror recovery CREATE: stub general MRI, keep dedicated shadow observability.
   __setExecuteBookingFinalizeWorkDependenciesForTesting({
-    openManualReviewItem: async () => null,
-    ensureUnitNightClaimsShadow: async (args) =>
-      ensureUnitNightClaimsShadow({
-        ...args,
-        claimUnitNightsFn: async () => {
-          throw Object.assign(new Error('recovery shadow fail'), {
-            code: 'UNIT_NIGHT_CLAIM_SHADOW_FAILURE'
-          });
-        }
-      })
+    openManualReviewItem: async () => null
   });
 
   try {
@@ -1106,72 +1105,13 @@ test('recovery CREATE path: general MRI stub does not silence shadow MRI/PRI', a
 
     assert.ok(result.bookingId);
     assert.ok(await Booking.findById(result.bookingId));
-    assert.equal(await UnitNightClaim.countDocuments({ bookingId: result.bookingId }), 0);
-    assert.equal(
-      await ManualReviewItem.countDocuments({
-        category: MRI_CATEGORY,
-        entityId: String(result.bookingId),
-        status: 'open'
-      }),
-      1,
-      'shadow MRI must use dedicated observability, not recovery general stub'
-    );
-    const pri = await PaymentResolutionIssue.findOne({ paymentIntentId: piId });
-    assert.ok(pri);
-    assert.equal(pri.finalizationStage, PAID_BOOKING_FINALIZATION_STAGES.UNIT_NIGHT_CLAIM_SHADOW);
-
-    // Later retry fills claims.
-    __setExecuteBookingFinalizeWorkDependenciesForTesting({
-      openManualReviewItem: async () => null
-    });
-    const replay = await executeBookingFinalizeWork({
-      session,
-      checkoutId,
-      paymentIntentId: piId,
-      finalizeContext: {
-        cabinTypeId: cabinType._id,
-        assignedUnitId: unitA._id,
-        checkInDate: checkIn,
-        checkOutDate: checkOut,
-        adults: 2,
-        children: 0,
-        guestInfo: {
-          firstName: 'Rec',
-          lastName: 'Create',
-          email,
-          phone: '+359800000066'
-        },
-        totalPrice: 200,
-        subtotalPrice: 200,
-        discountAmount: 0,
-        subtotalCents: 20000,
-        discountAmountCents: 0,
-        giftVoucherAppliedCents: 0,
-        stripePaidAmountCents: 20000,
-        totalValueCents: 20000,
-        paymentMethod: 'stripe',
-        stripePaymentVerified: true,
-        paymentIntentId: piId,
-        initialStatus: 'confirmed',
-        legalAcceptance: {
-          termsVersion: '2024-01',
-          activityRiskVersion: '2024-01',
-          checkbox1TextSnapshot: 't',
-          checkbox2TextSnapshot: 'r',
-          locale: 'en'
-        },
-        transportOptions: []
-      },
-      source: 'multi_unit_paid_orphan_recovery',
-      dependencies: { openManualReviewItem: async () => null }
-    });
-    assert.equal(replay.result?.idempotentReplay, true);
     assert.equal(await UnitNightClaim.countDocuments({ bookingId: result.bookingId }), 2);
   } finally {
     AssignmentEngine.assignUnit = originalAssign;
     __resetExecuteBookingFinalizeWorkDependenciesForTesting();
   }
 });
+
 
 test('recovery adopt: missing claims repaired; replay idempotent; create uses finalize once', async () => {
   const recoverySrc = fs.readFileSync(

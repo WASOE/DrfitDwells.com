@@ -108,6 +108,8 @@ async function createBooking(overrides = {}) {
 test.before(async () => {
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri());
+  const { ensureAuthoritativeUniqueIndexForTests } = require('../services/inventory/unitNightClaimService');
+  await ensureAuthoritativeUniqueIndexForTests();
 });
 
 test.after(async () => {
@@ -250,24 +252,30 @@ test('#7/#8 outside-range + wrong-unit', async () => {
 test('#9/#10/#58 same-owner duplicate detect + dedupe', async () => {
   const { booking, unitA } = await createBooking();
   const night = sofiaDay('2026-10-10');
-  await UnitNightClaim.create({
-    unitId: unitA._id,
-    night,
-    bookingId: booking._id,
-    source: 'finalize',
-    createdAt: new Date('2026-01-01T00:00:00.000Z')
-  });
-  await UnitNightClaim.create({
-    unitId: unitA._id,
-    night,
-    bookingId: booking._id,
-    source: 'finalize',
-    createdAt: new Date('2026-02-01T00:00:00.000Z')
-  });
-  let report = await runUnitNightClaimReconciliation({ mode: 'classify' });
-  assert.ok(report.drift.some((d) => d.class === DRIFT_CLASS.DUPLICATE_SAME_OWNER_CLAIM));
-  report = await runUnitNightClaimReconciliation({ mode: 'apply-safe' });
-  assert.equal(await UnitNightClaim.countDocuments({ bookingId: booking._id, night }), 1);
+  const { ensureAuthoritativeUniqueIndexForTests } = require('../services/inventory/unitNightClaimService');
+  await UnitNightClaim.collection.dropIndex('unitNightClaim_unitId_night_unique').catch(() => {});
+  try {
+    await UnitNightClaim.create({
+      unitId: unitA._id,
+      night,
+      bookingId: booking._id,
+      source: 'finalize',
+      createdAt: new Date('2026-01-01T00:00:00.000Z')
+    });
+    await UnitNightClaim.create({
+      unitId: unitA._id,
+      night,
+      bookingId: booking._id,
+      source: 'finalize',
+      createdAt: new Date('2026-02-01T00:00:00.000Z')
+    });
+    let report = await runUnitNightClaimReconciliation({ mode: 'classify' });
+    assert.ok(report.drift.some((d) => d.class === DRIFT_CLASS.DUPLICATE_SAME_OWNER_CLAIM));
+    report = await runUnitNightClaimReconciliation({ mode: 'apply-safe' });
+    assert.equal(await UnitNightClaim.countDocuments({ bookingId: booking._id, night }), 1);
+  } finally {
+    await ensureAuthoritativeUniqueIndexForTests();
+  }
 });
 
 test('#11/#12/#27/#48 canonical collision no silent winner', async () => {
@@ -441,6 +449,7 @@ test('#29/#30/#57 MRI operation suffixes preserve stronger refs', async () => {
     booking,
     source: 'finalize',
     checkoutId: 'checkout-abc',
+    throwOnFailure: false,
     claimUnitNightsFn: async () => {
       throw new Error('claim fail');
     }
@@ -532,17 +541,23 @@ test('#35/#36/#59 exit + provisional readiness + repairFailures block', async ()
   assert.equal(failed2.readyForI6, false);
 });
 
-test('#37/#38/#39/#40 unique precheck + no unique index + shadow + REALLOCATE', async () => {
+test('#37/#38/#39/#40 unique precheck + authoritative unique present after I6 test setup + REALLOCATE absent', async () => {
   const { booking, unitA } = await createBooking();
   const night = sofiaDay('2026-10-10');
-  await UnitNightClaim.create({ unitId: unitA._id, night, bookingId: booking._id, source: 'a' });
-  await UnitNightClaim.create({ unitId: unitA._id, night, bookingId: booking._id, source: 'b' });
-  const report = await runUnitNightClaimReconciliation({ mode: 'classify' });
-  assert.ok(report.summary.uniqueIndexDuplicateKeys >= 1);
-  assert.equal(report.claimsRemainShadow, true);
-  assert.equal(report.uniqueIndexPresent, false);
-  const indexes = UnitNightClaim.schema.indexes();
-  assert.ok(!indexes.some((e) => e?.[1]?.unique === true));
+  const { ensureAuthoritativeUniqueIndexForTests } = require('../services/inventory/unitNightClaimService');
+  await UnitNightClaim.collection.dropIndex('unitNightClaim_unitId_night_unique').catch(() => {});
+  try {
+    await UnitNightClaim.create({ unitId: unitA._id, night, bookingId: booking._id, source: 'a' });
+    await UnitNightClaim.create({ unitId: unitA._id, night, bookingId: booking._id, source: 'b' });
+    const report = await runUnitNightClaimReconciliation({ mode: 'classify' });
+    assert.ok(report.summary.uniqueIndexDuplicateKeys >= 1);
+  } finally {
+    await UnitNightClaim.deleteMany({ night });
+    await ensureAuthoritativeUniqueIndexForTests();
+  }
+  const report2 = await runUnitNightClaimReconciliation({ mode: 'classify' });
+  assert.equal(report2.uniqueIndexPresent, true);
+  assert.equal(UnitNightClaim.schema.get('autoIndex'), false);
   const writeSrc = fs.readFileSync(
     path.join(__dirname, '../services/ops/domain/reservationWriteService.js'),
     'utf8'

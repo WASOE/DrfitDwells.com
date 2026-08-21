@@ -130,6 +130,9 @@ function createStripeStub() {
 test.before(async () => {
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri(), { serverSelectionTimeoutMS: 10000 });
+  const { ensureAuthoritativeUniqueIndexForTests } = require('../services/inventory/unitNightClaimService');
+  await ensureAuthoritativeUniqueIndexForTests();
+
   await Promise.all([Booking.syncIndexes(), CheckoutSession.syncIndexes()]);
 });
 

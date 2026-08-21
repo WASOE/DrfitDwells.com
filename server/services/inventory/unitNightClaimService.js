@@ -1,14 +1,15 @@
 'use strict';
 
 /**
- * Permanent UnitNightClaim domain service (Inventory Integrity).
- * Binding: docs/stay-change-implementation-plan.md §10.3
+ * Permanent UnitNightClaim domain service (Inventory Integrity I6).
+ * Binding: docs/stay-change-implementation-plan.md — I6 authoritative cutover.
  *
- * I1: service exists; writers are NOT wired yet. Authoritative unique index is I6.
+ * Production correctness path is standalone compensation (no multi-document txn required).
  */
 
 const mongoose = require('mongoose');
 const UnitNightClaim = require('../../models/UnitNightClaim');
+const { AUTHORITATIVE_UNIQUE_INDEX_SPEC } = require('../../models/UnitNightClaim');
 const { expandOccupiedSofiaNightDateOnlys } = require('../ops/reporting/stayNights');
 const { normalizeDateToSofiaDayStart } = require('../../utils/dateTime');
 
@@ -16,7 +17,9 @@ const ERR = Object.freeze({
   VALIDATION: 'UNIT_NIGHT_CLAIM_VALIDATION',
   FOREIGN_OWNER: 'UNIT_NIGHT_CLAIM_FOREIGN_OWNER',
   TRANSFER_TARGET_FAILED: 'UNIT_NIGHT_CLAIM_TRANSFER_TARGET_FAILED',
-  OWNERSHIP_MISMATCH: 'UNIT_NIGHT_CLAIM_OWNERSHIP_MISMATCH'
+  OWNERSHIP_MISMATCH: 'UNIT_NIGHT_CLAIM_OWNERSHIP_MISMATCH',
+  INDEX_MISSING: 'UNIT_NIGHT_CLAIM_AUTHORITATIVE_INDEX_MISSING',
+  COMPENSATION_FAILED: 'UNIT_NIGHT_CLAIM_COMPENSATION_FAILED'
 });
 
 function toObjectId(value, fieldName) {
@@ -46,9 +49,6 @@ function dateOnlyFromNightDate(nightDate) {
   return formatSofiaDateOnly(nightDate);
 }
 
-/**
- * Expand stay into Sofia occupied night Date instances (day-start).
- */
 function resolveOccupiedNightDates({ checkIn, checkOut, nights } = {}) {
   if (Array.isArray(nights) && nights.length > 0) {
     return nights.map((n) => {
@@ -76,8 +76,138 @@ function sessionOpts(session) {
   return session ? { session } : {};
 }
 
+function indexKeysMatch(indexKey, expectedKeys) {
+  const a = Object.keys(indexKey || {});
+  const b = Object.keys(expectedKeys || {});
+  if (a.length !== b.length) return false;
+  for (const k of b) {
+    if (Number(indexKey[k]) !== Number(expectedKeys[k])) return false;
+  }
+  return true;
+}
+
 /**
- * @returns {Promise<{ bookingId, unitId, nights: string[], insertedCount, alreadyOwnedCount, claims }>}
+ * Verify exact authoritative unique index metadata.
+ * Call once per claim acquisition operation (no process-lifetime positive cache).
+ */
+async function assertAuthoritativeUnitNightIndex({ collection = null } = {}) {
+  const spec = AUTHORITATIVE_UNIQUE_INDEX_SPEC;
+  const col = collection || UnitNightClaim.collection;
+  let indexes;
+  try {
+    indexes = await col.indexes();
+  } catch (err) {
+    throw createClaimError(ERR.INDEX_MISSING, 'Unable to list UnitNightClaim indexes', {
+      cause: err?.message || String(err)
+    });
+  }
+  const match = (indexes || []).find(
+    (idx) =>
+      idx &&
+      idx.name === spec.options.name &&
+      idx.unique === true &&
+      indexKeysMatch(idx.key, spec.keys)
+  );
+  if (!match) {
+    throw createClaimError(
+      ERR.INDEX_MISSING,
+      'Authoritative UnitNightClaim unique index is missing or incorrect',
+      {
+        expectedName: spec.options.name,
+        expectedKeys: { ...spec.keys },
+        expectedUnique: true,
+        foundNames: (indexes || []).map((i) => i.name)
+      }
+    );
+  }
+  return { ok: true, index: match };
+}
+
+function isDuplicateKeyError(err) {
+  if (!err) return false;
+  if (err.code === 11000 || err.code === 11001) return true;
+  const msg = String(err.message || '');
+  return /E11000|duplicate key/i.test(msg);
+}
+
+async function normalizeForeignOrDuplicateConflict({
+  err,
+  unitOid,
+  bookingOid,
+  nightDates,
+  session = null
+}) {
+  const existing = await UnitNightClaim.find({
+    unitId: unitOid,
+    night: { $in: nightDates }
+  })
+    .session(session || null)
+    .lean();
+
+  const conflicts = [];
+  for (const row of existing) {
+    if (String(row.bookingId) === String(bookingOid)) continue;
+    conflicts.push({
+      night: dateOnlyFromNightDate(row.night),
+      holderBookingId: String(row.bookingId),
+      claimId: String(row._id)
+    });
+  }
+
+  if (conflicts.length === 0 && isDuplicateKeyError(err)) {
+    conflicts.push({
+      night: null,
+      holderBookingId: null,
+      claimId: null
+    });
+  }
+
+  const primary = conflicts[0] || {};
+  return createClaimError(ERR.FOREIGN_OWNER, 'One or more unit-nights are owned by another booking', {
+    unitId: String(unitOid),
+    night: primary.night || null,
+    requestedBookingId: String(bookingOid),
+    existingBookingId: primary.holderBookingId || null,
+    bookingId: String(bookingOid),
+    conflicts
+  });
+}
+
+async function compensateAttemptInserts({
+  bookingOid,
+  unitOid,
+  insertedNightDates,
+  session = null
+}) {
+  if (!insertedNightDates || insertedNightDates.length === 0) {
+    return { deletedCount: 0 };
+  }
+  try {
+    const result = await UnitNightClaim.deleteMany(
+      {
+        bookingId: bookingOid,
+        unitId: unitOid,
+        night: { $in: insertedNightDates }
+      },
+      sessionOpts(session)
+    );
+    return { deletedCount: result.deletedCount || 0 };
+  } catch (compErr) {
+    throw createClaimError(
+      ERR.COMPENSATION_FAILED,
+      'Failed to compensate partial UnitNightClaim acquisition',
+      {
+        unitId: String(unitOid),
+        bookingId: String(bookingOid),
+        nights: insertedNightDates.map(dateOnlyFromNightDate),
+        cause: compErr?.message || String(compErr)
+      }
+    );
+  }
+}
+
+/**
+ * Authoritative acquire. All-or-nothing for newly inserted nights (compensation path).
  */
 async function claimUnitNights({
   bookingId,
@@ -87,8 +217,13 @@ async function claimUnitNights({
   nights = null,
   stayChangeId = null,
   source = 'other',
-  session = null
+  session = null,
+  skipIndexAssert = false
 } = {}) {
+  if (!skipIndexAssert) {
+    await assertAuthoritativeUnitNightIndex();
+  }
+
   const bookingOid = toObjectId(bookingId, 'bookingId');
   const unitOid = toObjectId(unitId, 'unitId');
   const stayChangeOid =
@@ -123,8 +258,12 @@ async function claimUnitNights({
   }
 
   if (foreign.length > 0) {
+    const primary = foreign[0];
     throw createClaimError(ERR.FOREIGN_OWNER, 'One or more unit-nights are owned by another booking', {
       unitId: String(unitOid),
+      night: primary.night,
+      requestedBookingId: String(bookingOid),
+      existingBookingId: primary.holderBookingId,
       bookingId: String(bookingOid),
       conflicts: foreign
     });
@@ -143,8 +282,47 @@ async function claimUnitNights({
     });
   }
 
+  const insertedThisAttempt = [];
+
   if (toInsert.length > 0) {
-    await UnitNightClaim.insertMany(toInsert, { ...sessionOpts(session), ordered: true });
+    try {
+      for (const doc of toInsert) {
+        // eslint-disable-next-line no-await-in-loop
+        if (session) {
+          await UnitNightClaim.create([doc], { session });
+        } else {
+          await UnitNightClaim.create(doc);
+        }
+        insertedThisAttempt.push(doc.night);
+      }
+    } catch (err) {
+      let compensationError = null;
+      try {
+        await compensateAttemptInserts({
+          bookingOid,
+          unitOid,
+          insertedNightDates: insertedThisAttempt,
+          session
+        });
+      } catch (compErr) {
+        compensationError = compErr;
+      }
+
+      if (compensationError) {
+        throw compensationError;
+      }
+
+      if (isDuplicateKeyError(err) || err?.code === ERR.FOREIGN_OWNER) {
+        throw await normalizeForeignOrDuplicateConflict({
+          err,
+          unitOid,
+          bookingOid,
+          nightDates,
+          session
+        });
+      }
+      throw err;
+    }
   }
 
   const claims = await UnitNightClaim.find({
@@ -160,8 +338,9 @@ async function claimUnitNights({
     bookingId: String(bookingOid),
     unitId: String(unitOid),
     nights: nightDates.map(dateOnlyFromNightDate),
-    insertedCount: toInsert.length,
+    insertedCount: insertedThisAttempt.length,
     alreadyOwnedCount: ownedNightKeys.size,
+    insertedNightsThisAttempt: insertedThisAttempt.map(dateOnlyFromNightDate),
     claims: claims.map((c) => ({
       id: String(c._id),
       night: dateOnlyFromNightDate(c.night),
@@ -170,9 +349,32 @@ async function claimUnitNights({
   };
 }
 
-/**
- * Delete claims owned by bookingId (optional unit / night scope). Idempotent.
- */
+async function compensateClaimAttempt({
+  bookingId,
+  unitId,
+  nights = null,
+  insertedNightsThisAttempt = null,
+  session = null
+} = {}) {
+  const bookingOid = toObjectId(bookingId, 'bookingId');
+  const unitOid = toObjectId(unitId, 'unitId');
+  const nightList =
+    Array.isArray(insertedNightsThisAttempt) && insertedNightsThisAttempt.length > 0
+      ? insertedNightsThisAttempt
+      : nights;
+  if (!nightList || nightList.length === 0) {
+    return { ok: true, deletedCount: 0 };
+  }
+  const nightDates = resolveOccupiedNightDates({ nights: nightList });
+  const result = await compensateAttemptInserts({
+    bookingOid,
+    unitOid,
+    insertedNightDates: nightDates,
+    session
+  });
+  return { ok: true, ...result };
+}
+
 async function releaseUnitNights({
   bookingId,
   unitId = null,
@@ -201,10 +403,6 @@ async function releaseUnitNights({
   };
 }
 
-/**
- * Secure target nights for booking, then release source nights on fromUnitId.
- * Never releases source if target claim fails.
- */
 async function transferUnitNightClaims({
   bookingId,
   fromUnitId,
@@ -276,9 +474,6 @@ async function transferUnitNightClaims({
   };
 }
 
-/**
- * Prove booking owns the required unit-night set.
- */
 async function assertBookingOwnsNights({
   bookingId,
   unitId,
@@ -336,9 +531,6 @@ async function assertBookingOwnsNights({
   };
 }
 
-/**
- * Keep earliest createdAt then _id; delete other same-owner duplicates for unitId+night+bookingId.
- */
 async function deleteSameOwnerDuplicateClaims({
   unitId,
   night,
@@ -387,9 +579,20 @@ module.exports = {
   transferUnitNightClaims,
   assertBookingOwnsNights,
   deleteSameOwnerDuplicateClaims,
+  assertAuthoritativeUnitNightIndex,
+  compensateClaimAttempt,
   resolveOccupiedNightDates,
   expandOccupiedSofiaNightDateOnlys,
   nightDateFromDateOnly,
   dateOnlyFromNightDate,
-  createClaimError
+  createClaimError,
+  isDuplicateKeyError,
+  AUTHORITATIVE_UNIQUE_INDEX_SPEC,
+  /** Test/helper: create exact authoritative unique index (idempotent). */
+  async ensureAuthoritativeUniqueIndexForTests() {
+    await UnitNightClaim.collection.createIndex(
+      AUTHORITATIVE_UNIQUE_INDEX_SPEC.keys,
+      { ...AUTHORITATIVE_UNIQUE_INDEX_SPEC.options }
+    );
+  }
 };

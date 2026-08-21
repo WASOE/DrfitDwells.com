@@ -103,6 +103,8 @@ async function createBlockingBooking({
 test.before(async () => {
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri());
+  const { ensureAuthoritativeUniqueIndexForTests } = require('../services/inventory/unitNightClaimService');
+  await ensureAuthoritativeUniqueIndexForTests();
 });
 
 test.after(async () => {
@@ -476,12 +478,14 @@ test('dry-run: duplicate ownership reported as conflict; wrong cabinType flagged
   assert.ok(report.invalidAllocations.some((i) => i.type === 'unit_cabinType_mismatch'));
 });
 
-test('I1 does not define authoritative unique index on schema autoIndex path', () => {
+test('I1/I6 schema documents unique index but autoIndex is disabled', () => {
+  assert.equal(UnitNightClaim.schema.get('autoIndex'), false);
   const indexes = UnitNightClaim.schema.indexes();
   const uniqueUnitNight = indexes.find(
     ([keys, opts]) => keys.unitId === 1 && keys.night === 1 && opts && opts.unique === true
   );
-  assert.equal(uniqueUnitNight, undefined);
+  assert.ok(uniqueUnitNight, 'schema should declare named unique for documentation');
+  assert.equal(uniqueUnitNight[1].name, 'unitNightClaim_unitId_night_unique');
   assert.ok(UnitNightClaim.AUTHORITATIVE_UNIQUE_INDEX_SPEC);
   assert.equal(UnitNightClaim.AUTHORITATIVE_UNIQUE_INDEX_SPEC.cutoverBatch, 'I6');
 });
@@ -499,11 +503,11 @@ test('optional Mongo session is passed through claim and release (and transfer)'
   const checkOut = sofiaDay('2026-08-22');
   const fakeSession = { __i1SessionMarker: 'unit-night-claim-session' };
   const findSessions = [];
-  const insertManyOpts = [];
+  const createOpts = [];
   const deleteManyOpts = [];
 
   const originalFind = UnitNightClaim.find;
-  const originalInsertMany = UnitNightClaim.insertMany;
+  const originalCreate = UnitNightClaim.create;
   const originalDeleteMany = UnitNightClaim.deleteMany;
 
   UnitNightClaim.find = function patchedFind(...args) {
@@ -511,18 +515,20 @@ test('optional Mongo session is passed through claim and release (and transfer)'
     const originalSession = query.session.bind(query);
     query.session = function patchedSession(sessionArg) {
       findSessions.push(sessionArg);
-      // Prove propagation without handing a fake ClientSession to the driver.
       return originalSession(sessionArg === fakeSession ? null : sessionArg);
     };
     return query;
   };
-  UnitNightClaim.insertMany = async function patchedInsertMany(docs, options) {
-    insertManyOpts.push(options || null);
+  UnitNightClaim.create = async function patchedCreate(docs, options) {
+    createOpts.push(options || null);
     const safe =
       options && options.session === fakeSession
         ? { ...options, session: undefined }
         : options;
-    return originalInsertMany.call(this, docs, safe);
+    if (safe === undefined) {
+      return originalCreate.call(this, docs);
+    }
+    return originalCreate.call(this, docs, safe);
   };
   UnitNightClaim.deleteMany = async function patchedDeleteMany(filter, options) {
     deleteManyOpts.push(options || null);
@@ -543,10 +549,10 @@ test('optional Mongo session is passed through claim and release (and transfer)'
       session: fakeSession
     });
     assert.ok(findSessions.some((s) => s === fakeSession));
-    assert.ok(insertManyOpts.some((o) => o && o.session === fakeSession));
+    assert.ok(createOpts.some((o) => o && o.session === fakeSession));
 
     findSessions.length = 0;
-    insertManyOpts.length = 0;
+    createOpts.length = 0;
     deleteManyOpts.length = 0;
 
     await releaseUnitNights({
@@ -567,7 +573,7 @@ test('optional Mongo session is passed through claim and release (and transfer)'
       session: fakeSession
     });
     findSessions.length = 0;
-    insertManyOpts.length = 0;
+    createOpts.length = 0;
     deleteManyOpts.length = 0;
 
     await transferUnitNightClaims({
@@ -580,11 +586,11 @@ test('optional Mongo session is passed through claim and release (and transfer)'
       session: fakeSession
     });
     assert.ok(findSessions.some((s) => s === fakeSession));
-    assert.ok(insertManyOpts.some((o) => o && o.session === fakeSession));
+    assert.ok(createOpts.some((o) => o && o.session === fakeSession));
     assert.ok(deleteManyOpts.some((o) => o && o.session === fakeSession));
   } finally {
     UnitNightClaim.find = originalFind;
-    UnitNightClaim.insertMany = originalInsertMany;
+    UnitNightClaim.create = originalCreate;
     UnitNightClaim.deleteMany = originalDeleteMany;
   }
 });
