@@ -1,11 +1,11 @@
 # StayChange — Locked Architecture Spec
 
-**Status:** LOCKED ARCHITECTURE - PENDING IMPLEMENTATION  
-**Feature name:** StayChange  
-**OPS user-facing action:** Move / Modify stay  
-**Canonical aggregate:** `StayChange`  
-**Kinds:** `reallocate` | `amend` | `rebook`  
-**Related:** `docs/cancellation_settlement_implementation_plan.md` (wires `rebooked_or_moved` + `replacementBookingId` as Booking projections of completed REBOOK)  
+**Status:** LOCKED ARCHITECTURE - PENDING IMPLEMENTATION
+**Feature name:** StayChange
+**OPS user-facing action:** Move / Modify stay
+**Canonical aggregate:** `StayChange`
+**Kinds:** `reallocate` | `amend` | `rebook`
+**Related:** `docs/cancellation_settlement_implementation_plan.md` (wires `rebooked_or_moved` + `replacementBookingId` as Booking projections of completed REBOOK)
 **Audits grounding this lock:** Stay move domain audit · Stay-change lock audit · Complimentary upgrade finance audit (2026-08)
 
 This document is the Batch 0 locked architecture. **No application models, migrations, routes, or tests are authorized by this file alone.** Implementation begins only when a later batch is explicitly approved.
@@ -98,6 +98,8 @@ isSameCommercialProduct(a, b) =
 - **Different `cabinId` is NEVER REALLOCATE** (that is REBOOK).
 - Single-inventory bookings have no REALLOCATE path (no operational unit layer).
 
+**R1 runtime lock:** full minimal workflow, eligibility, staged claim/Booking ordering, durable StayChange, and API contract are locked in **§21 (Batch R1)**. R1 is domain/API only (no Move UI). Do **not** wire the combined `transferUnitNightClaims` primitive as the sole R1 workflow.
+
 ### 4.2 AMEND
 
 **When:**
@@ -116,10 +118,10 @@ isSameCommercialProduct(a, b) =
 
 **When:** any commercial product change, including:
 
-- cabin → different cabin  
-- cabin → cabinType  
-- cabinType → cabin  
-- cabinType → different cabinType  
+- cabin → different cabin
+- cabin → cabinType
+- cabinType → cabin
+- cabinType → different cabinType
 
 **Rules:**
 
@@ -270,7 +272,7 @@ Canonical 6500 and waived 1000 live on **StayChange**, not as Booking contractua
 
 ### 7.1 Decision
 
-**Do NOT extend `paymentMethod`** to mean StayChange settlement.  
+**Do NOT extend `paymentMethod`** to mean StayChange settlement.
 `paymentMethod` continues to describe actual payment instrument / payment provenance (`stripe` | `gift_voucher` | `stripe_plus_gift_voucher`, and future instrument enums if added by payments work).
 
 ### 7.2 Booking projection
@@ -318,11 +320,11 @@ A replacement **must not** appear `unpaid` merely because transferred value has 
 
 ## 8. Payment provenance
 
-1. Existing `Payment.reservationId` **never** changes once linked.  
-2. Original Payments remain on the **source** Booking permanently.  
-3. Transferred value = StayChange ledger coverage, **not** Payment.  
-4. Waived value = business concession, **not** Payment.  
-5. Additional cash → **new** Payment attached to **replacement**.  
+1. Existing `Payment.reservationId` **never** changes once linked.
+2. Original Payments remain on the **source** Booking permanently.
+3. Transferred value = StayChange ledger coverage, **not** Payment.
+4. Waived value = business concession, **not** Payment.
+5. Additional cash → **new** Payment attached to **replacement**.
 6. New voucher for incremental obligation → real new redemption; source voucher history untouched.
 
 `Payment` remains Stripe (and linked provider) money SoT. StayChange is business transfer/concession SoT.
@@ -383,7 +385,7 @@ pending → inventory_secured → ready_to_commit → committed → settling →
 
 ### 9.3 Failure classes
 
-- **`failed`:** before irreversible inventory release / before committed dual-write completion that cannot be rolled back cleanly.  
+- **`failed`:** before irreversible inventory release / before committed dual-write completion that cannot be rolled back cleanly.
 - **`needs_reconciliation`:** e.g. Stripe additional charge succeeded but commit crashed; refund evidence incomplete after commit; exactly-one-operational-stay invariant cannot be proven automatically.
 
 ---
@@ -392,8 +394,8 @@ pending → inventory_secured → ready_to_commit → committed → settling →
 
 ### 10.1 Ordering (LOCKED)
 
-1. Durably secure **target** inventory.  
-2. Only then release **source** inventory (REBOOK) or apply same-booking mutation (REALLOCATE / AMEND).  
+1. Durably secure **target** inventory.
+2. Only then release **source** inventory (REBOOK) or apply same-booking mutation (REALLOCATE / AMEND).
 3. Never release source before target is secured.
 
 ### 10.2 Protections
@@ -465,11 +467,11 @@ Every production unit-allocation writer must ultimately use this service (paid f
 
 #### External holds (LOCKED)
 
-- Airbnb/iCal holds remain `AvailabilityBlock` (`external_hold`).  
-- **Never** convert external holds into `UnitNightClaim`.  
-- UnitNightClaim = exclusive **internal guest Booking** ownership.  
-- It does **not** mean “no external channel conflict.”  
-- Later REALLOCATE: external hold overlap **blocks** by default; admin may explicitly accept risk without removing/mutating the hold.
+- Airbnb/iCal holds remain `AvailabilityBlock` (`external_hold`).
+- **Never** convert external holds into `UnitNightClaim`.
+- UnitNightClaim = exclusive **internal guest Booking** ownership.
+- It does **not** mean “no external channel conflict.”
+- **R1 REALLOCATE:** external hold overlap **blocks** by default; OPS must pass explicit `acceptExternalHoldWarnings: true` (same acknowledgment pattern as legacy cabin reassign / manual-create). Acknowledgment must **not** remove or mutate the external hold.
 
 #### Rollout invariant (LOCKED)
 
@@ -512,7 +514,7 @@ Optional thin reverse pointer for ops navigation (non-canonical): e.g. `movedFro
 
 Both directions required:
 
-- Source → replacement via `replacementBookingId` / StayChange  
+- Source → replacement via `replacementBookingId` / StayChange
 - Replacement → source via StayChange `sourceBookingId` (and optional thin pointer)
 
 ---
@@ -537,11 +539,11 @@ Occupancy / ADR for the operational stay uses **replacement contractual** totals
 
 ### 12.2 Must prevent on first REBOOK-capable batch
 
-- Duplicate Meta Purchase  
-- Duplicate creator commission  
-- Duplicate acquisition / funnel conversion  
-- Duplicate booking KPI  
-- Duplicate revenue (cash double-count via copied `stripePaidAmountCents`)  
+- Duplicate Meta Purchase
+- Duplicate creator commission
+- Duplicate acquisition / funnel conversion
+- Duplicate booking KPI
+- Duplicate revenue (cash double-count via copied `stripePaidAmountCents`)
 - Misleading cancellation / refund-follow-up metrics for `rebooked_or_moved`
 
 ### 12.3 Communications
@@ -558,20 +560,21 @@ Reuse existing suppression mechanisms where safe; do not rely on unused `suppres
 
 ## 13. Legacy Reassign
 
-**Status:** UNSAFE and **DEPRECATED**.
+**Status:** UNSAFE for commercial moves; **I6 hard-blocks multi-inventory**.
 
-**Immediate policy (documentation / ops guidance):** do not use for commercial moves.
+**Runtime (I6+):**
 
-**Batch 1:** hard-gate / remove unsafe identity mutation.
+- `POST /api/ops/reservations/:id/actions/reassign` — **single-cabin `cabinId`-only** reassignment remains.
+- Multi-unit / `cabinTypeId` / allocated `unitId` / malformed mixed identity → hard reject (`LEGACY_REASSIGN_NOT_ALLOWED_FOR_MULTI_INVENTORY`).
+- **Never** silently route legacy reassign into StayChange REALLOCATE.
 
-Raw reassign must **never** permit:
+**R1:** physical same-`cabinTypeId` unit moves use a **separate** route:
 
-- different `cabinId`  
-- cabin → cabinType  
-- cabinType → cabin  
-- different `cabinTypeId`  
+```text
+POST /api/ops/reservations/:id/actions/reallocate
+```
 
-Same-`cabinTypeId` physical allocation belongs to **REALLOCATE** only.
+Same-`cabinTypeId` physical allocation belongs to **REALLOCATE** only (see §21).
 
 ---
 
@@ -590,42 +593,42 @@ StayChange **must reject** LocationBooking-linked / buyout master flows rather t
 
 ## 15. Global invariants (LOCKED)
 
-1. Cross-product change never rewrites source commercial identity.  
-2. `Payment.reservationId` never moves once linked.  
-3. Unit-only same-`cabinTypeId` change is not a new sale.  
-4. Every completed StayChange has immutable before/after evidence.  
-5. Every financial delta has explicit disposition.  
-6. Integer cents only; zero tolerance.  
-7. Source inventory is not released until target is durably secured.  
-8. Durable idempotency on every operation.  
-9. Additional payment can never be charged twice for the same StayChange.  
-10. Crash after successful additional payment is recoverable (`needs_reconciliation`).  
-11. No duplicate Meta / commission / acquisition / KPI / lifecycle cancel+confirm emails.  
-12. Historical source Booking remains intact and queryable as originally sold.  
-13. Replacement chain traversable both directions.  
-14. Completed REBOOK has exactly one operational stay.  
-15. Dual secured/operational state only in explicit durable nonterminal workflow states.  
-16. `cabinId` XOR `cabinTypeId` always.  
-17. `unitId` operational-only; belongs to `cabinTypeId` when set.  
-18. REALLOCATE is multi-inventory only.  
-19. REALLOCATE delta exactly zero.  
-20. Transferred value is neither new Payment nor new revenue.  
-21. Waived upgrade value is explicit business concession.  
-22. Replacement contractual total excludes waived amount.  
-23. `settledByStayChangeId` never fabricates Payment provenance.  
-24. Attribution / reporting / email guards ship with first REBOOK-capable implementation.  
-25. LocationBooking **StayChange / buyout move** rejected in v1.  
-26. UnitNightClaim is the sole exclusivity primitive for physical unit nights among guest Bookings (including LocationBooking **child** Bookings with `unitId`).  
-27. UnitNightClaim uses **delete-on-release**; no permanent `released` claim rows.  
-28. External holds stay on AvailabilityBlock; never converted to UnitNightClaim.  
-29. REALLOCATE must remain disabled until UnitNightClaim is globally authoritative across all production unit writers (after Inventory Integrity I6).  
+1. Cross-product change never rewrites source commercial identity.
+2. `Payment.reservationId` never moves once linked.
+3. Unit-only same-`cabinTypeId` change is not a new sale.
+4. Every completed StayChange has immutable before/after evidence.
+5. Every financial delta has explicit disposition.
+6. Integer cents only; zero tolerance.
+7. Source inventory is not released until target is durably secured.
+8. Durable idempotency on every operation.
+9. Additional payment can never be charged twice for the same StayChange.
+10. Crash after successful additional payment is recoverable (`needs_reconciliation`).
+11. No duplicate Meta / commission / acquisition / KPI / lifecycle cancel+confirm emails.
+12. Historical source Booking remains intact and queryable as originally sold.
+13. Replacement chain traversable both directions.
+14. Completed REBOOK has exactly one operational stay.
+15. Dual secured/operational state only in explicit durable nonterminal workflow states.
+16. `cabinId` XOR `cabinTypeId` always.
+17. `unitId` operational-only; belongs to `cabinTypeId` when set.
+18. REALLOCATE is multi-inventory only.
+19. REALLOCATE delta exactly zero.
+20. Transferred value is neither new Payment nor new revenue.
+21. Waived upgrade value is explicit business concession.
+22. Replacement contractual total excludes waived amount.
+23. `settledByStayChangeId` never fabricates Payment provenance.
+24. Attribution / reporting / email guards ship with first REBOOK-capable implementation.
+25. LocationBooking **StayChange / buyout move** rejected in v1.
+26. UnitNightClaim is the sole exclusivity primitive for physical unit nights among guest Bookings (including LocationBooking **child** Bookings with `unitId`).
+27. UnitNightClaim uses **delete-on-release**; no permanent `released` claim rows.
+28. External holds stay on AvailabilityBlock; never converted to UnitNightClaim.
+29. REALLOCATE remained disabled until UnitNightClaim was globally authoritative (I6). **R1** (§21) is the first allowed REALLOCATE runtime after I6.
 30. Never a production window where REALLOCATE trusts claims while another allocation writer ignores them.
 
 ---
 
-## 16. Conceptual StayChange shape (documentation only — not implemented yet)
+## 16. Conceptual StayChange shape (documentation — R1 introduces minimal reallocate model)
 
-Illustrative fields for implementers; exact Mongoose schema lands in Batch 2.
+Illustrative fields for implementers. **R1** introduces the minimal StayChange model sufficient for `kind=reallocate` (§21.6). Full money/amend/rebook expansion remains later batches.
 
 ```text
 StayChange {
@@ -633,33 +636,23 @@ StayChange {
   status: pending | inventory_secured | awaiting_payment | ready_to_commit |
           committed | settling | completed | failed | needs_reconciliation
 
-  sourceBookingId: ObjectId
+  sourceBookingId / bookingId
   targetBookingId: ObjectId | null   # same as source for reallocate/amend
 
-  idempotencyKey: string (unique)
+  idempotencyKey: string (unique scoped with kind + bookingId — see §21.7)
+  payloadFingerprint: string
   actorId, reason
   createdAt, updatedAt, completedAt
 
-  sourceSnapshot: { commercialProductKey, cabinId, cabinTypeId, unitId,
-                    checkIn, checkOut, adults, children,
-                    totalValueCents, stripePaidAmountCents, giftVoucherAppliedCents, ... }
-  targetSnapshot: { ... parallel fields after change ... }
+  # R1 identity / inventory evidence (required for reallocate)
+  sourceCommercialProductKey, targetCommercialProductKey
+  sourceCabinTypeId, targetCabinTypeId
+  sourceUnitId, targetUnitId
+  checkIn, checkOut
+  externalHoldWarningsAccepted?
 
-  money: {
-    canonicalTargetQuoteCents,
-    transferredValueCents,
-    positiveDeltaCents,          # 0 if not applicable
-    negativeDeltaCents,          # 0 if not applicable
-    additionalChargeCents,
-    waivedUpgradeCents,
-    contractualTargetTotalCents,
-    refundCents, creditCents, retainedCents,
-    settlementType,              # complimentary_upgrade | partial_complimentary_upgrade |
-                                 # paid_upgrade | refund | stay_credit | retain | split | no_delta | ...
-    stripeAdditionalPaymentIntentId | null,
-    compensationGiftVoucherId | null,
-    cashRefundEvidence | null
-  }
+  sourceSnapshot / targetSnapshot: { ... }  # expand for amend/rebook
+  money: { ... }                            # not required for R1 reallocate
 }
 ```
 
@@ -881,11 +874,428 @@ UnitNightClaim remains **shadow / non-authoritative** in I5. No unique `{ unitId
 
 ### Batch R — REALLOCATE (after I6)
 
+Split into **R1** (domain/API — locked below), optional **R2** hardening if still needed after R1, and **R3** (OPS UI). Do **not** pull R3 into R1.
+
 | | |
 |--|--|
-| **Delivered** | Minimal StayChange(`kind=reallocate`); `transferUnitNightClaims`; OPS same-cabinType unit selector; pre-stay movable policy; same-unit HTTP 200 no-op; hard-disable legacy commercial reassign; AvailabilityBlock `unitId` sync; credential-diff GMA reschedule only |
-| **Invariants proven** | 3, 7, 8, 16–19, 26–30 |
-| **Still unsupported** | AMEND money, REBOOK, upgrades/downgrades, wizard |
+| **R1 Delivered (when implemented)** | Minimal StayChange(`kind=reallocate`); staged target-secure → Booking CAS → block sync → source-release; durable scoped idempotency; focused reconcile/resume; OPS API `actions/reallocate`; ≥90+ locked regression scenarios; legacy multi-unit reassign remains rejected |
+| **R1 does NOT include** | Move UI; unit selector; wizard; AMEND; REBOOK; pricing/payments; `in_house` unit moves; wiring combined `transferUnitNightClaims` as sole workflow |
+| **Invariants proven (R1)** | 3, 7, 8, 16–19, 26–30 (+ R1 §21 locks) |
+| **Still unsupported after R1** | AMEND money, REBOOK, upgrades/downgrades, Move/Modify wizard (R3) |
+
+---
+
+## 21. R1 minimal StayChange REALLOCATE (LOCKED)
+
+**Prerequisite:** I6 complete in production (authoritative `UnitNightClaim`, unique `{unitId,night}`, compensation without transactions, legacy multi-unit reassign blocked).
+
+**R1 adds ONLY:** minimal StayChange `kind=reallocate` + domain/API workflow.
+**R1 does NOT:** implement application code in this amendment; create UI; start R2/R3; enable AMEND/REBOOK; mutate payments/pricing.
+
+### 21.1 Exact scope
+
+REALLOCATE means:
+
+- same Booking `_id`
+- same `cabinTypeId` / commercial product
+- same dates, guests, extras, transport, romantic package, promo/voucher terms, price/payment state
+- **ONLY** `unitId` changes to another Unit belonging to the same `cabinTypeId`
+
+Example: A-Frame / A2 → A-Frame / A3.
+
+No replacement Booking. No payment mutation. No value transfer. No pricing calculation. No refund. No AMEND. No REBOOK. No Move UI.
+
+### 21.2 Commercial product routing
+
+```text
+commercialProductKey(x) =
+  cabinTypeId ? "cabinType:" + cabinTypeId
+  : cabinId ? "cabin:" + cabinId
+  : invalid
+```
+
+R1 allowed **ONLY** when source and target commercialProductKey are **exactly equal** and **cabinType-based**.
+
+Changing any of: `cabinTypeId`, `cabinId`, dates, guests, extras, price, payment, promo, voucher, transport, romantic package → **NOT R1**.
+
+### 21.3 Eligibility (PRE-STAY ONLY)
+
+**Allowed statuses:** `pending` | `confirmed`
+
+**Rejected:** `in_house` | `completed` | `cancelled`
+
+Also reject:
+
+- single-inventory `cabinId` Booking
+- unallocated cabinType Booking (`unitId` null)
+- mixed/malformed inventory identity
+- invalid Sofia stay dates
+- source Unit not belonging to Booking.`cabinTypeId`
+
+Do **not** add `in_house` unit movement in R1.
+
+### 21.4 Target Unit
+
+Target Unit must:
+
+- exist
+- `isActive === true`
+- belong to Booking.`cabinTypeId`
+- differ from source unit (except same-unit no-op — §21.5)
+
+Reuse existing canonical Unit eligibility. Do not invent maintenance/operational fields that do not exist. Existing hard-block systems remain authoritative where already used.
+
+### 21.5 Same-unit policy
+
+If `targetUnitId` equals current Booking.`unitId`:
+
+| Case | Behavior |
+|------|----------|
+| `idempotencyKey` matches an existing StayChange for this booking/kind | Replay/resume that durable StayChange according to its state |
+| Otherwise | HTTP **200 no-op**; create **NO** StayChange; create **NO** audit event; mutate **NOTHING** |
+
+Do not create fake successful StayChange records for fresh no-op requests.
+
+### 21.6 Durable StayChange contract (conceptual — model lands in R1 implementation)
+
+Required R1 fields:
+
+```text
+_id
+kind = reallocate
+bookingId
+sourceCommercialProductKey
+targetCommercialProductKey
+sourceCabinTypeId
+targetCabinTypeId
+sourceUnitId
+targetUnitId
+checkIn
+checkOut
+status
+idempotencyKey
+payloadFingerprint
+actor
+reason? (optional)
+externalHoldWarningsAccepted (or equivalent audit evidence)
+failure metadata where required
+reconciliation metadata where required
+createdAt
+updatedAt
+completedAt
+```
+
+- Snapshot both cabinTypeIds even though they must match (immutable evidence).
+- No guest PII snapshots unless already required by canonical audit convention.
+- No payment/value fields required for R1.
+- Schema may be future-compatible with amend/rebook; R1 runtime **only** creates `kind=reallocate`.
+
+### 21.7 Idempotency (REQUIRED)
+
+- `idempotencyKey` is **REQUIRED** on every mutating REALLOCATE request (non-empty bounded string; existing API validation style).
+- Do **NOT** use a globally unique key alone.
+- Preferred durable uniqueness: **`{ kind, bookingId, idempotencyKey }`** (partial/index semantics as needed by eventual schema).
+- Store **`payloadFingerprint` independently**. Fingerprint covers at minimum: `kind`, `bookingId`, `sourceUnitId` at accepted creation, `targetUnitId`, `checkIn`, `checkOut`, commercial product identity. Include actor only if canonical convention requires it.
+
+| Same scoped key + same fingerprint | Replay / resume existing StayChange |
+| Same scoped key + different fingerprint | HTTP **409** idempotency conflict |
+
+Do **not** rely on process memory (`rememberResult`) for correctness.
+
+### 21.8 R1 state machine (spine subset)
+
+Use locked generic statuses, **only** this subset:
+
+```text
+pending
+inventory_secured
+committed
+completed
+failed
+needs_reconciliation
+```
+
+**Do not use for R1:** `awaiting_payment`, `settling`. Do not use `ready_to_commit` unless implementation proves it materially necessary (prefer collapsing into the commit transition).
+
+Happy path:
+
+```text
+pending → inventory_secured → committed → completed
+```
+
+| Status | Meaning |
+|--------|---------|
+| `pending` | Operation exists; target not yet known fully secured |
+| `inventory_secured` | All target UnitNightClaims durable; source claims still held; Booking still source |
+| `committed` | Booking.`unitId` durably equals target |
+| `completed` | Booking target + target claims exact + reservation block synchronized + source claims released |
+| `failed` | Pre-commit compensatable failure; no unsafe canonical unit move left dangling |
+| `needs_reconciliation` | Booking crossed canonical commit boundary but required post-commit inventory projection/cleanup is incomplete |
+
+Pre-commit compensatable failure → `failed`.
+Post-Booking-commit cleanup/invariant failure → `needs_reconciliation`.
+
+Status reflects what has **actually** become durable.
+
+### 21.9 Source ownership precondition
+
+Before target acquisition: `assertBookingOwnsNights` **exact** for all Sofia occupied nights in `[checkIn, checkOut)` on the **source** unit.
+
+Missing / foreign / inconsistent ownership → **FAIL CLOSED**. Do not run I5 repair inside REALLOCATE. Do not choose winners. Return reconciliation-required domain error.
+
+### 21.10 Internal / external conflict policy
+
+| Conflict | Policy |
+|----------|--------|
+| Internal UnitNightClaim | **HARD** — **NO OVERRIDE** |
+| External Airbnb/iCal `AvailabilityBlock` | Reuse OPS reassign/manual-create acknowledgment: require `acceptExternalHoldWarnings: true` before commit; otherwise reject per existing OPS convention |
+| Other existing hard blocks | Remain hard |
+| Airbnb/iCal → UnitNightClaim | **Never** |
+
+### 21.11 Staged order (LOCKED) — do NOT wire combined transfer as sole workflow
+
+Current `transferUnitNightClaims()` claims target then **immediately** releases source. That ordering is **wrong for R1** because Booking canonical commit must occur **between** those phases.
+
+**Exact R1 order:**
+
+1. Load Booking
+2. Resolve/replay idempotency if existing StayChange
+3. Validate eligibility / product / target
+4. Evaluate read-only conflicts / external warnings
+5. Assert exact source claims
+6. Create durable StayChange `pending`
+7. Acquire **ALL** target claims
+8. StayChange → `inventory_secured`
+9. **CAS** Booking: expected source unit + eligible status + same cabinType → set `unitId = target`
+10. StayChange → `committed`
+11. Synchronize Booking-owned reservation `AvailabilityBlock` / unit projection to target
+12. Release source UnitNightClaims
+13. Emit OPS audit projection exactly once
+14. StayChange → `completed`
+
+**TARGET FIRST. SOURCE RELEASE LAST.**
+
+Use low-level `claimUnitNights` / `compensateClaimAttempt` / `releaseUnitNights` (and optional staged helpers). Combined `transferUnitNightClaims` must **not** be the sole R1 workflow primitive.
+
+### 21.12 Booking CAS
+
+Standalone Mongo requires explicit concurrency control. Canonical unit move must use compare-and-set semantics equivalent to:
+
+```text
+Booking._id == bookingId
+Booking.unitId == expectedSourceUnitId
+Booking.cabinTypeId == expectedCabinTypeId
+Booking.status ∈ { pending, confirmed }
+→ set unitId = targetUnitId
+```
+
+Only one concurrent move may commit. If CAS matches zero:
+
+- do not overwrite current Booking
+- do not release source claims
+- compensate **ONLY** this operation’s target claims where safe
+- inspect existing StayChange / Booking state → replay legitimate same operation or fail/reconcile
+
+Two simultaneous ops `A2→A3` and `A2→A4` may both temporarily secure different targets before CAS. Exactly **one** CAS wins. Loser compensates only its own target attempt. Loser never releases winner/source claims incorrectly.
+
+Two different Bookings racing the same target unit: unique `{unitId,night}` selects exactly one claim winner; loser gets structured inventory conflict (no raw E11000).
+
+### 21.13 Target acquisition failure
+
+If target acquisition fails:
+
+- Booking remains source
+- Source claims remain untouched
+- Attempt-created target claims compensated via authoritative claim service
+- StayChange → `failed`
+
+If target compensation itself cannot complete: do **not** proceed to Booking CAS; record CRITICAL reconciliation evidence; StayChange reflects reconciliation requirement (not ordinary clean failure) if durable target drift may remain.
+
+### 21.14 CAS failure after target secured
+
+If target claims are fully secured but Booking CAS fails:
+
+- Booking remains whatever canonical state won
+- Compensate **ONLY** target claims created by **this** StayChange when they are no longer canonical
+- Never delete foreign claims, pre-existing same-booking claims, or claims belonging to another successful move
+- Compensation complete → StayChange → `failed` where safe
+- Compensation unproven → StayChange → `needs_reconciliation`
+
+### 21.15 AvailabilityBlock synchronization failure (CRITICAL)
+
+After Booking CAS succeeds: Booking is target; target claims remain authoritative.
+
+Next: synchronize **ONLY** the reservation-owned AvailabilityBlock projection from source unit to target unit using existing canonical reservation-block semantics. Do **NOT** mutate external Airbnb/iCal blocks.
+
+If reservation block synchronization **fails**:
+
+- Do **NOT** roll Booking back to source
+- Do **NOT** release target claims
+- Do **NOT** release source claims yet
+- Booking remains target; target claims remain full; source claims remain conservatively held
+- Stale/old reservation block may remain conservatively blocking source
+- StayChange → `needs_reconciliation`
+- Emit CRITICAL reconciliation evidence
+
+This deliberately blocks **more** inventory rather than risking under-block / double-book. Recovery must finish block synchronization **BEFORE** source release.
+
+### 21.16 Source release failure
+
+If Booking target durable + target claims full + reservation block successfully synchronized, but source claim release fails:
+
+- Booking stays target; target claims stay
+- Do not roll back
+- Stale source claims are conservative
+- StayChange → `needs_reconciliation` + CRITICAL evidence
+- Recovery retries only source cleanup
+
+### 21.17 Completion invariant
+
+StayChange may become `completed` **ONLY** when:
+
+- Booking.`unitId` == `targetUnitId`
+- target claims exactly cover all occupied Sofia nights
+- source claims for those stay nights == zero
+- reservation-owned AvailabilityBlock points to the target unit / canonical target reservation projection
+- no unresolved internal inventory failure exists
+
+Audit projection may be emitted once without becoming a competing inventory SoT.
+
+### 21.18 Crash recovery
+
+R1 **MUST** have a focused durable reconciler/resume path, conceptually:
+
+```text
+reconcileReallocateStayChange(stayChangeId)
+```
+
+Inspect StayChange state, Booking.`unitId`, source/target claims, reservation block projection.
+
+| Observed | Convergence |
+|----------|-------------|
+| `pending` + no target claims | Retry acquisition or safely fail per path |
+| `pending` + full target claims | Recognize crash after acquire; advance/resume |
+| `inventory_secured` + Booking source | Retry CAS if preconditions valid; else compensate target |
+| `inventory_secured` + Booking target | Recognize crash after CAS; advance `committed` |
+| `committed` + block still source | Synchronize block |
+| `committed` + block target + stale source claims | Release source |
+| `committed` + block target + source zero | Complete |
+| `completed` | No-op replay |
+| Ambiguous / foreign ownership | `needs_reconciliation` + CRITICAL evidence |
+
+No general AMEND/REBOOK workflow engine.
+
+### 21.19 HTTP response lost / retry
+
+Because `idempotencyKey` is mandatory: same booking + same key + same payload → load existing StayChange; if `completed` return completed result; if recoverable run/resume focused reconciliation. Do **NOT** create a second StayChange.
+
+### 21.20 AvailabilityBlock is a projection
+
+StayChange + Booking + UnitNightClaim remain domain truth. Reservation AvailabilityBlock must stay aligned. External holds are not part of source/target claim transfer. No new block model. Implementation audits existing reservation-block helpers.
+
+### 21.21 Booking projection
+
+R1 mutates on Booking: **`unitId` only**, plus already-existing operational projections (reservation AvailabilityBlock) where required.
+
+Do **NOT** add `settledByStayChangeId` for R1. Do **NOT** add `replacementBookingId`. StayChange is durable movement history.
+
+### 21.22 Audit event
+
+Reuse existing OPS reservation audit infrastructure. Successful REALLOCATE projects **one** audit event:
+
+- action: `reservation_reallocate` (or existing canonical naming)
+- bookingId, StayChange id, before/after unitId, actor, timestamp, reason, external warnings accepted if applicable
+
+StayChange = durable history SoT. AuditEvent = OPS visibility. Idempotent replay must **not** duplicate audit. Audit write failure must **not** reverse a safely completed inventory move merely because StayChange already holds durable history; use existing MRI/observability patterns if audit projection fails.
+
+### 21.23 Legacy reassign vs R1 API
+
+| Route | Role |
+|-------|------|
+| `POST .../actions/reassign` | Single-cabin `cabinId` only; multi-unit remains rejected (I6) |
+| `POST .../actions/reallocate` | R1 physical unit REALLOCATE |
+
+Never silently route reassign → REALLOCATE.
+
+### 21.24 R1 API contract
+
+```text
+POST /api/ops/reservations/:id/actions/reallocate
+```
+
+Body:
+
+| Field | Rule |
+|-------|------|
+| `targetUnitId` | **REQUIRED** |
+| `idempotencyKey` | **REQUIRED** |
+| `reason` | optional bounded string |
+| `acceptExternalHoldWarnings` | optional boolean, default `false` |
+
+Reject unknown/mutation fields including: checkIn, checkOut, dates, adults, children, guests, cabinTypeId, cabinId, price, totalPrice, payment, extras, transport, romantic, promo, voucher.
+
+Server derives source Booking state.
+
+### 21.25 Authorization
+
+R1 initially uses the same **ADMIN-only** authorization boundary as legacy OPS reservation reassignment. No broader permissions. No operator access in R1. Reusing the same permission constant vs a semantic alias with identical role coverage is an implementation detail; **no permission expansion**.
+
+### 21.26 Service architecture (future implementation)
+
+Preferred:
+
+- `server/services/stayChange/reallocateStayChangeService.js` — validation, StayChange lifecycle, idempotency, target acquisition, Booking CAS, block sync, source release, reconcile/resume
+- `unitNightClaimService` — canonical low-level inventory primitives
+- `reservationWriteService` — focused helpers only; do not place the entire durable state machine there
+- OPS route — thin HTTP adapter
+
+### 21.27 Guest / operational side effects
+
+During implementation, audit existing reassign/date-edit side effects for credentials/messages. Do **NOT** blindly send cancellation/rebooking messages. If changing physical Unit changes an already-existing canonical credential/property instruction projection, reuse the existing precise side-effect helper **only when inputs actually differ**. No new messaging architecture in R1. Side effects are secondary to inventory correctness and must never change core commit ordering.
+
+### 21.28 I5 postcondition
+
+After `completed` REALLOCATE:
+
+- Booking.`unitId` = target
+- target UnitNightClaims = exactly every occupied Sofia night
+- source UnitNightClaims for Booking/stay = zero
+- StayChange = `completed`
+- reservation block = target-aligned
+- I5 = clean
+
+If source cleanup remains, StayChange must **NOT** claim `completed`.
+
+### 21.29 R1 / R2 / R3 boundary
+
+| Stage | Includes |
+|-------|----------|
+| **R1** | StayChange model foundation sufficient for reallocate; reallocate domain service; durable idempotency; recovery/reconcile; OPS API route; tests |
+| **R1 does NOT** | UI |
+| **R2** | Any further inventory-transfer/domain hardening explicitly planned after R1 if still needed |
+| **R3** | OPS target selector; pre-stay Move/Modify UI; warning presentation; human interaction |
+
+Do not pull R3 into R1.
+
+### 21.30 Required R1 test contract
+
+Implementation must cover at least the audited ~90 scenarios plus explicit:
+
+91. `idempotencyKey` required
+92. uniqueness scoped by `kind+bookingId+key`, not global key alone
+93. same scoped key + changed payload = 409
+94. same-unit fresh request creates no StayChange
+95. same-unit matching previous idempotency replays existing StayChange
+96. block sync failure after CAS keeps source claims
+97. block sync failure keeps target claims
+98. block sync failure enters `needs_reconciliation`
+99. reconcile fixes block before releasing source
+100. audit projection failure does not roll back safe completed inventory
+101. crash after CAS before `committed` status inferred safely
+102. crash after block sync before source release inferred safely
+103. concurrent loser compensates only its own target claims
+104. reconciliation never releases claims owned by another StayChange / Booking
+105. no application dependency on Mongo multi-document transactions
 
 ---
 
@@ -979,13 +1389,13 @@ UnitNightClaim remains **shadow / non-authoritative** in I5. No unique `{ unitId
 
 ## 18. Non-goals (v1)
 
-- Guest self-serve move/amend.  
-- Automated Stripe refund API (unless separate epic).  
-- Using promo/`discountAmount*` for OPS concessions.  
-- Extending `paymentMethod` for StayChange settlement.  
-- In-place rewrite of source `cabinId` / `cabinTypeId` on REBOOK.  
-- LocationBooking / buyout **StayChange** (child Bookings with `unitId` still participate in UnitNightClaim).  
-- Keeping raw cabinId `window.prompt` reassign as a supported commercial tool.  
+- Guest self-serve move/amend.
+- Automated Stripe refund API (unless separate epic).
+- Using promo/`discountAmount*` for OPS concessions.
+- Extending `paymentMethod` for StayChange settlement.
+- In-place rewrite of source `cabinId` / `cabinTypeId` on REBOOK.
+- LocationBooking / buyout **StayChange** (child Bookings with `unitId` still participate in UnitNightClaim).
+- Keeping raw cabinId `window.prompt` reassign as a supported commercial tool.
 - Enabling REALLOCATE before Inventory Integrity I6 authoritative cutover.
 
 ---
@@ -994,11 +1404,11 @@ UnitNightClaim remains **shadow / non-authoritative** in I5. No unique `{ unitId
 
 These do not reopen §1–15 locks; they are decided inside the named batches:
 
-- Exact Mongoose indexes and unique keys for StayChange.  
-- Whether optional `movedFromBookingId` thin pointer is added on replacement.  
-- Exact guest email template copy and provider (SMTP / existing lifecycle pipeline).  
-- Permission string naming.  
-- Feature flag names and rollout order per propertyKind.  
+- Exact Mongoose indexes and unique keys for StayChange.
+- Whether optional `movedFromBookingId` thin pointer is added on replacement.
+- Exact guest email template copy and provider (SMTP / existing lifecycle pipeline).
+- Permission string naming.
+- Feature flag names and rollout order per propertyKind.
 - ~~UnitNightClaim I6 unique-index migration tooling shape~~ — locked in I6 (`unitNightClaimI6Cutover.js`; explicit `--create-unique-index`; no auto-enforce before cutover).
 
 ---
@@ -1014,7 +1424,8 @@ These do not reopen §1–15 locks; they are decided inside the named batches:
 | 2026-08-21 | Amendment: I4 unit claim release — terminal cancel/complete + delete/rollback shadow-release by bookingId (all owned rows); no shape fast-skip; nonfatal MRI (`operation=release`); paid-retain keeps claims; remembered cancel/complete repairs; lifecycleSource strings; no unique index; REALLOCATE still disabled; I5 repair reserved. |
 | 2026-08-21 | Amendment: I5 reconciliation — shared expected-claim invariant (full history, no horizon); invalid allocations never expand expected nights; taxonomy + SAFE/HUMAN; no silent winners / deny-write; dry-run zero Mongo writes; partial/targeted never ready; CLI exit 0/2/1; apply-safe order; MRI operation-suffixed sourceReference; conflict MRI mutating-only; READY_FOR_I6 + stable dual verify; excluded claims block I6; deploy I1–I5 together; no unique index / REALLOCATE. |
 | 2026-08-21 | Amendment: I6 authoritative cutover — unique named index via explicit CLI (no legacy drop; Mongo 7 coexistence); autoIndex false; once-per-acquisition index guard; claim-first writers + compensation primary (no txn dependency); paid/voucher demotion; date-edit secure-target-first; reassign hard-block; pooled cabinType capacity fix; Location compensation atomicity; shadow wrappers removed/converted; REALLOCATE still disabled. |
+| 2026-08-21 | Amendment: R1 minimal StayChange REALLOCATE — pre-stay pending/confirmed only; cabinType-only unit move; durable StayChange + scoped idempotency; staged target claims → Booking CAS → reservation block sync → source release; do not wire combined transferUnitNightClaims as sole workflow; external holds reassign-style ack; focused reconcile; separate OPS reallocate route; no UI (R3); no settledByStayChangeId; ≥90+105 test contract. |
 
 ---
 
-**END OF LOCKED ARCHITECTURE — PENDING IMPLEMENTATION**
+**END OF LOCKED ARCHITECTURE — R1 SPEC LOCKED; APPLICATION IMPLEMENTATION PENDING**
