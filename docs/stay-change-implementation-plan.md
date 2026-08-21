@@ -774,7 +774,49 @@ UnitNightClaim remains **shadow infrastructure** in I4. Canonical Booking / Avai
 
 | | |
 |--|--|
-| **Delivered** | Production bootstrap of blocking+`unitId` bookings; conflict report; ManualReviewItem for ambiguous ownership; **never** silently choose a winner |
+| **Delivered** | Shared canonical expected-claim projection; permanent reconciliation CLI/service (dry-run default, `--apply-safe` only for deterministic repairs); conflict report + durable MRI for hard collisions; **never** silently choose a winner; claims remain shadow; no unique index; REALLOCATE still disabled |
+
+##### I5 unit claim reconciliation semantics (LOCKED)
+
+UnitNightClaim remains **shadow / non-authoritative** in I5. No unique `{ unitId, night }` index. No authoritative cutover. REALLOCATE disabled. I6 performs its own final precheck under a controlled low-write window before `createIndex`.
+
+1. **Canonical expected-claim invariant.** A `UnitNightClaim` SHOULD exist iff canonical Booking: production/non-fixture/non-archived per scan rules; `status ∈ BLOCKING_BOOKING_STATUSES` (`pending`|`confirmed`|`in_house`); has `cabinTypeId` and `unitId`; referenced Unit exists; `Unit.cabinTypeId` matches `Booking.cabinTypeId`; inventory shape otherwise valid; dates expand successfully; night ∈ Sofia occupied nights of `[checkIn, checkOut)` (checkout excluded). Expected set covers **ALL** occupied nights — **no** artificial historical/future horizon. Past checkout while still blocking still expects claims until canonical Booking is repaired. Location children and paid-retained blocking Bookings participate normally.
+
+2. **Invalid Bookings do not generate expected claims.** Do **not** expand expected nights for unit/cabinType mismatch, missing Unit, cabinId+cabinTypeId malformed shape, invalid/zero/negative dates, or other non-deterministic allocation. Correct I1 fallthrough where mismatch still expanded expected nights.
+
+3. **Taxonomy (minimum):** `MISSING_CLAIM` | `STALE_TERMINAL_CLAIM` | `ORPHAN_CLAIM` | `WRONG_UNIT_CLAIM` | `OUTSIDE_DATE_RANGE_CLAIM` | `INVALID_ALLOCATION` | `CANONICAL_UNIT_NIGHT_CONFLICT` | `FOREIGN_CLAIM_CONFLICT` | `DUPLICATE_SAME_OWNER_CLAIM` | `DUPLICATE_FOREIGN_OWNER_CLAIM` | `UNALLOCATED_BLOCKING_BOOKING` | `MALFORMED_BOOKING` | `CLAIM_FOR_SINGLE_INVENTORY` | `CLAIM_FOR_EXCLUDED_BOOKING` (test/fixture/archived claims).
+
+4. **No silent winners.** Never auto-choose between two canonical Bookings for the same unit-night by createdAt, payment, amount, claim presence/source, status priority, latest edit, oldest Booking, guest identity, DB ordering, or similar. Canonical conflict = HUMAN. Contested keys enter a **deny-write** set. `--apply-safe` must not create/delete ownership on contested keys in a way that selects a winner.
+
+5. **SAFE_AUTOMATIC:** uncontested `MISSING_CLAIM`; `STALE_TERMINAL_CLAIM`; `ORPHAN_CLAIM` (Booking truly absent — archived exists ≠ orphan); `OUTSIDE_DATE_RANGE_CLAIM`; `WRONG_UNIT_CLAIM` when allocation valid; `DUPLICATE_SAME_OWNER_CLAIM` (keep earliest `createdAt` then `_id`); `CLAIM_FOR_SINGLE_INVENTORY`. **HUMAN/TARGETED:** collisions, foreign live owners, duplicate foreign owners, invalid allocation, unallocated blocking, malformed. **`CLAIM_FOR_EXCLUDED_BOOKING`:** report; do **not** blindly auto-delete in ordinary `--apply-safe`; **MUST be zero before I6** unless I6 implements safe exclusion — fixture/test/archive claims must never become authoritative against real inventory.
+
+6. **Dry-run / `--verify` = zero Mongo writes.** No UnitNightClaim, Booking, MRI, AuditEvent, repair markers, or hidden timestamps. Reports may write only to requested filesystem path. Conflict MRI only in mutating mode (`--apply-safe`).
+
+7. **Partial/targeted never declare readiness.** `--booking-id` / `--limit` → `scanCompleteness=partial|targeted`; never `readyForI6=true`. Only `scanCompleteness=full` can contribute. Reject `--apply-safe` + `--limit`. Targeted `--booking-id --apply-safe` may repair only that target's deterministic drift; global readiness stays false/UNKNOWN.
+
+8. **CLI exit:** `0` = full scan + `READY_FOR_I6=true`; `2` = successful scan with blockers/drift or non-ready; `1` = tool/execution failure. Partial/targeted successful diagnostics use non-ready exit (never global ready).
+
+9. **Tooling:** `unitNightClaimReconciliationService` + `unitNightClaimReconcile.js`; I1 dry-run shares projection (no second occupancy algorithm).
+
+10. **Scale:** cursor/batch; bounded per-unit accumulation where practical; do not load every full Booking document; report if safety bound exceeded.
+
+11. **Apply-safe order:** build valid expected → collisions → deny-write → scan claims → classify → plan; then re-evaluate → release safe drift → same-owner dedupe → `claimUnitNights` (`source=bootstrap`) for uncontested missing → never contested keys → continue on failure → rescan → report. Idempotent.
+
+12. **Orphan / terminal:** orphan = `Booking.findById` null; terminal reuse `releaseUnitNights({ bookingId })` (or release helper for MRI-on-failure); never `transitionReservation`; no lifecycle communication.
+
+13. **MRI shadow-failure dedupe (I4 gap fix):** keep category `unit_night_claim_shadow_failure`; append operation to **existing** stable `sourceReference` (`:claim` / `:sync` / `:release`); fallback to `bookingId` only when no stronger reference. No migration. Same operation retries dedupe; different operations do not overwrite.
+
+14. **Canonical conflict MRI:** mutating mode only; schema-compatible entity type; stable dedupe on unitId+night+sorted bookingIds in provenance/evidence; no guest PII; one open item per contested unit-night across runs.
+
+15. **`READY_FOR_I6`:** only full scan with zeros for: canonical collisions, foreign conflicts, foreign-owner duplicate rows, any duplicate `{unitId,night}` rows, missing, stale terminal, orphan, wrong-unit, outside-range, single-inventory claims, excluded-booking claims, unresolved invalid/malformed affecting inventory, failed safe repairs; claims still shadow; no unique index yet; **and** stable verification (two consecutive full read-only verifies, zero blockers, matching fingerprint excluding volatile passId/detectedAt). `UNALLOCATED_BLOCKING_BOOKING` is **not** a unique-index blocker (report as OPS/HUMAN warning). I6 must preserve pooled-capacity semantics independently.
+
+16. **Stable verification vs I6:** I5 provisional stable ≠ permission to create unique index. I6 must re-precheck immediately before `createIndex` under controlled low-write window.
+
+17. **Unique-index precheck:** read-only aggregation `n>1` on `{unitId,night}`; no create/drop/mutate indexes.
+
+18. **Deploy:** implement/push I5 first; deploy **I1–I5 together**. Deploy alone does not mutate. No reconciliation writes on deploy.
+
+19. **I5 does not:** create unique index; make claims authoritative; reject Bookings on claims; transfer claims; enable REALLOCATE; change pricing/payments/StayChange SM.
 
 #### I6 — Authoritative cutover
 
@@ -918,6 +960,7 @@ These do not reopen §1–15 locks; they are decided inside the named batches:
 | 2026-08-20 | Amendment: I2 shadow dual-write semantics — Booking-first ordering; shadow claim failure never gates canonical Booking success (paid or unpaid after survival); MRI/PRI durable signals; exact claim sources; no location claim-inside-txn abort; no unique index in I2; orphan recovery no double-write; replay/adopt repair missing claims. |
 | 2026-08-20 | Amendment: I3 date-edit integrity — unit-aware allocated multi-unit conflicts; Booking-first shadow sync (`source=date_edit`); fill-before-release with surplus release despite fill failure; fingerprint idempotency; same-date repair without audit/GMA/push; status + in_house checkIn immutability; unallocated reject; txn/compensate Booking+blocks; MRI on compensation failure; no unique index; REALLOCATE still disabled. |
 | 2026-08-21 | Amendment: I4 unit claim release — terminal cancel/complete + delete/rollback shadow-release by bookingId (all owned rows); no shape fast-skip; nonfatal MRI (`operation=release`); paid-retain keeps claims; remembered cancel/complete repairs; lifecycleSource strings; no unique index; REALLOCATE still disabled; I5 repair reserved. |
+| 2026-08-21 | Amendment: I5 reconciliation — shared expected-claim invariant (full history, no horizon); invalid allocations never expand expected nights; taxonomy + SAFE/HUMAN; no silent winners / deny-write; dry-run zero Mongo writes; partial/targeted never ready; CLI exit 0/2/1; apply-safe order; MRI operation-suffixed sourceReference; conflict MRI mutating-only; READY_FOR_I6 + stable dual verify; excluded claims block I6; deploy I1–I5 together; no unique index / REALLOCATE. |
 
 ---
 
