@@ -822,8 +822,60 @@ UnitNightClaim remains **shadow / non-authoritative** in I5. No unique `{ unitId
 
 | | |
 |--|--|
-| **Delivered** | Create unique `{ unitId, night }` index; authoritative enforcement; cutover verification that **every** production unit writer uses the claim service |
-| **Gate** | Conflicts resolved; dual-write complete; then and only then claims are authoritative |
+| **Delivered** | Named unique `{ unitId, night }` index via explicit cutover CLI; UnitNightClaim becomes authoritative exclusive physical-unit ownership; all allocated multi-unit writers acquire/release claims authoritatively; pooled cabinType capacity bug fixed; legacy multi-unit reassign hard-blocked; REALLOCATE still disabled |
+| **Gate** | I5 `readyForI6=true` + clean duplicate aggregation + controlled stop-the-world window; then create unique index **before** starting authoritative writers |
+
+##### I6 authoritative unit claim cutover semantics (LOCKED)
+
+**Production facts (locked for cutover design):** MongoDB 7.0.28 standalone (no multi-document transactions). Collection `unitnightclaims` has non-unique `unitId_1_night_1` and **no** authoritative unique yet. Mongo 7 permits coexistence of non-unique and unique indexes with the same keys when names differ. I6 **must not** drop `unitId_1_night_1` during normal cutover. Transactions may exist for supporting environments but **must not** be required for correctness; standalone compensation is the primary production path.
+
+1. **Permanent authoritative invariant.** Valid allocated blocking multi-inventory Booking (`pending|confirmed|in_house` + `cabinTypeId` + `unitId` + Unit belongs to cabinType + valid Sofia `[checkIn, checkOut)`) owns **exactly one** UnitNightClaim per occupied Sofia night in `[checkIn, checkOut)` and no others (checkout excluded). Terminal (`completed|cancelled`) owns **zero** claims. Unallocated (`cabinTypeId`, `unitId` null) owns **zero** claims but still consumes cabinType **pooled commercial capacity**. Single-inventory (`cabinId`) owns **zero** claims. Location children follow the same rule.
+
+2. **Model + index strategy.** `UnitNightClaim` schema `autoIndex: false`. No `syncIndexes` / `createIndexes` / automatic index replacement / automatic legacy drop in normal startup. Schema documents the authoritative named unique index `unitNightClaim_unitId_night_unique` `{ unitId: 1, night: 1 }` `unique: true` without auto-creating it. Legacy production `unitId_1_night_1` may remain; exclusivity depends only on the named unique index. One canonical `AUTHORITATIVE_UNIQUE_INDEX_SPEC` (no duplicate constants).
+
+3. **Explicit cutover CLI.** `server/scripts/unitNightClaimI6Cutover.js`. Default = **READ-ONLY** preflight (I5-ready fields, duplicate aggregation, index metadata, `readyForUniqueIndex`). Mutation only `--create-unique-index`: full preflight; refuse partial/blockers/duplicates; idempotent if exact unique already exists; otherwise create exactly that named unique; re-verify name+keys+`unique:true`; fail if mismatch. **Never** drop any index, `syncIndexes`, `dropIndexes`, silent replace, Booking mutation, or claim bootstrap/repair. No `--replace-legacy-compound-index` required for production Mongo 7.
+
+4. **Acquisition index guard.** `assertAuthoritativeUnitNightIndex()` (or equivalent) inspects exact name/keys/`unique:true`. **Once per `claimUnitNights` acquisition operation** (not once per night; **no** indefinite positive process cache). Release may proceed without unique index. Read-only reconcile/cutover tooling work without it. Single-inventory paths do not fail solely because the index is absent. Guard never creates/mutates indexes. Do **not** fail entire server boot solely because unique index is absent.
+
+5. **One canonical claim API.** `claimUnitNights` / `releaseUnitNights` / `transferUnitNightClaims` / `assertBookingOwnsNights` — no parallel shadow vs authoritative APIs. `claimUnitNights` is authoritative and asserts the unique index before acquire. Outcomes: empty → acquire; same Booking → idempotent; foreign pre-read → structured conflict; concurrent race E11000 → **same** structured conflict. Raw E11000 never escapes. Structured conflict: code/category, `unitId`, `night`, `requestedBookingId`, `existingBookingId` if deterministically discoverable — no guest PII.
+
+6. **All-or-nothing acquisition (compensation primary).** For target nights: skip nights already owned by same Booking; insert missing; track **exactly** claims this attempt inserted; on any conflict/error delete **only** this attempt’s inserts (same `bookingId` + attempted keys); never delete pre-existing same-booking or foreign claims; never overwrite foreign; normalize E11000; throw structured failure. Either Booking owns **all** requested target nights or gains **none** of the new nights from the failed attempt. If compensation fails: critical reconciliation evidence; do not continue canonical Booking commit; never silent success. Optional txn path only when environment supports it; equivalent semantics; **not** required by tests for correctness.
+
+7. **Creation writer order.** Replace I2 Booking-first / nonfatal shadow. For every new allocated multi-unit Booking: mint `_id` → acquire **all** target claims → then persist Booking → then other canonical side effects per writer; on Booking persist failure compensate only this create attempt’s claims; retries idempotent; crash after claims before Booking → conservative orphans (I5), never double-book. No intentional allocated blocking Booking without claims. Applies to V2 finalize, legacy create, Location children, multi-unit paid orphan recovery, and any other allocated creation writer.
+
+8. **Paid retain / overlap.** Preserve Booking/Payment/PI/checkout/MRI/PRI/audit. Never steal, delete paid evidence, silent unit pick, or invent financial behavior. Prefer claim-before-durable allocated Booking. If a durable allocated Booking cannot own required claims: demote `unitId=null`, keep `cabinTypeId` + blocking status, ensure zero claims, preserve paid evidence, critical MRI/reconciliation, surface finalize failure. If demotion fails: critical evidence; do not report successful inventory finalization; I5 detects allocated-without-claims.
+
+9. **Voucher failure.** Prefer claims before allocated Booking save. If voucher confirm fails after valid Booking+claims: preserve inventory relationship + existing voucher failure review. If an edge leaves allocated without claims: same demotion as paid retain. Do not change voucher accounting semantics.
+
+10. **Date-edit order.** Replace I3 Booking-first shadow sync. `retained = old ∩ new`, `newTarget = new − old`, `surplus = old − new`. Validate → read conflicts → acquire **only** `newTarget` → on conflict reject with old Booking+claims intact → persist new dates + reservation blocks → **only after** successful commit release surplus → on commit failure compensate only newly inserted `newTarget` claims → on surplus release failure after commit: keep new dates; stale surplus is conservative; CRITICAL MRI; do not roll back the committed date edit. Never release surplus before canonical commit. In-house checkIn immutability unchanged.
+
+11. **Legacy reassign hard block.** In `reassignReservation`, immediately after `loadBookingOrFail`: hard reject if `cabinTypeId` present, `unitId` present, or mixed/malformed multi-inventory identity. Do not cabin-mutate multi-inventory with `validateBeforeSave:false`. Single-cabin `cabinId`-only reassign may remain. Clear 409/validation. Do **not** wire `transferUnitNightClaims`. R1 owns physical unit moves.
+
+12. **Transfer primitive.** Harden `transferUnitNightClaims` for all-or-nothing target + never release source before target secured + E11000 normalize + same-unit no-op. **No** production route/UI uses transfer in I6. REALLOCATE = R1.
+
+13. **Terminal / delete release.** Cancel/complete/hard delete/location rollback/finalize cleanup/maintenance delete must release. After durable terminal: release failure does **not** un-cancel/un-complete; stale claim conservative; CRITICAL MRI; I5 detects. Prefer release before hard delete; orphan after delete = CRITICAL. Do not silently swallow authoritative release failure.
+
+14. **Status transitions.** Blocking→blocking (confirm, check-in): claims unchanged. Blocking→terminal: release. Terminal→blocking: keep rejecting resurrection. No reacquire/resurrection semantics.
+
+15. **Pooled cabinType capacity (REQUIRED I6 fix).** Physical UnitNightClaim ≠ pooled commercial capacity. Capacity = **all** overlapping blocking Bookings for that cabinType (allocated **and** unallocated). Public search / AssignmentEngine must not sell when total blocking occupancy already consumes available unit count. Example: 3 units, A1+A2 allocated + 1 unallocated → commercially **full** even if A3 physically unclaimed. Canonical capacity helper preferred over scattered OR queries. Do **not** convert claim count into capacity. Terminal/non-overlap do not consume.
+
+16. **Read vs acquire.** Browsing/selection/quote/AssignmentEngine/OPS preview/finalize validation/date-edit validation = **READ ONLY** (Booking capacity, optional UnitNightClaim ownership observation, AvailabilityBlock). **ACQUIRE** only at commit writers (finalize, legacy create, date-edit commit, Location child commit, paid recovery). No speculative durable claims. REALLOCATE commit = R1.
+
+17. **External holds.** Airbnb/iCal = AvailabilityBlock only; never UnitNightClaim. Internal claim conflict = hard. External overlap = existing warning/policy. ICS sync unchanged.
+
+18. **Conflict SoT.** Physical internal exclusivity race safety = UnitNightClaim + unique index. Pooled capacity = canonical blocking Booking occupancy. External = AvailabilityBlock. Booking scans remain for capacity/reconciliation/preview/single-cabin; **insufficient** alone for physical multi-unit exclusivity.
+
+19. **I5 after cutover.** Default read-only. Missing allocated claim / foreign owner / canonical collision = CRITICAL blockers; terminal/orphan/stale = CRITICAL drift. Safe repair for deterministic uncontested classes only; no silent winners. Historical `unit_night_claim_shadow_failure` may remain; new failures may use clearer category while preserving dedupe discipline. No MRI migration required.
+
+20. **LocationBooking atomicity (compensation).** Mint child ids → acquire **all** child claims for the whole attempt → track all attempt inserts → any later conflict compensates **every** claim newly inserted for the attempt → then persist LocationBooking/children → on canonical failure compensate all attempt claims. Crash strands = I5 orphans. No partial successful location inventory allocation.
+
+21. **Paid orphan recovery.** Acquire authoritatively; never steal/overwrite/silent other unit; preserve payment/recovery evidence; MRI; demotion/unallocated if a blocking Booking must be preserved without claims; never delete paid evidence.
+
+22. **Stop-the-world cutover architecture (ops, not app automation).** Maintenance → stop all inventory-writing PM2 processes → deploy/build/install while **stopped** → final I5 verify with new code → I6 read-only preflight → `--create-unique-index` → verify unique metadata → **first** start of authoritative API/workers → smoke → I5 reconcile → exit. Forbidden: old shadow writers + unique index; new authoritative writers without unique index; mixed old/new writers. **No** permanent feature flag. No deploy automation in application code.
+
+23. **Shadow wrapper disposition.** Convert/remove `ensureUnitNightClaimsShadow` / `syncUnitNightClaimsShadow` / `ensureUnitNightClaimsReleasedShadow` so no convenient nonfatal shadow path remains. Prefer consolidation into canonical authoritative helpers. No duplicate inventory APIs.
+
+24. **I6 does not:** enable REALLOCATE / Move UI / StayChange REBOOK/AMEND; change payments/pricing; touch cancellation-cents / cleaning calendar / client quotas / unrelated OPS; drop legacy `unitId_1_night_1` in normal cutover; depend on multi-document transactions.
 
 ---
 
@@ -947,7 +999,7 @@ These do not reopen §1–15 locks; they are decided inside the named batches:
 - Exact guest email template copy and provider (SMTP / existing lifecycle pipeline).  
 - Permission string naming.  
 - Feature flag names and rollout order per propertyKind.  
-- UnitNightClaim I6 unique-index migration tooling shape (must not auto-enforce before I5 complete).
+- ~~UnitNightClaim I6 unique-index migration tooling shape~~ — locked in I6 (`unitNightClaimI6Cutover.js`; explicit `--create-unique-index`; no auto-enforce before cutover).
 
 ---
 
@@ -961,6 +1013,7 @@ These do not reopen §1–15 locks; they are decided inside the named batches:
 | 2026-08-20 | Amendment: I3 date-edit integrity — unit-aware allocated multi-unit conflicts; Booking-first shadow sync (`source=date_edit`); fill-before-release with surplus release despite fill failure; fingerprint idempotency; same-date repair without audit/GMA/push; status + in_house checkIn immutability; unallocated reject; txn/compensate Booking+blocks; MRI on compensation failure; no unique index; REALLOCATE still disabled. |
 | 2026-08-21 | Amendment: I4 unit claim release — terminal cancel/complete + delete/rollback shadow-release by bookingId (all owned rows); no shape fast-skip; nonfatal MRI (`operation=release`); paid-retain keeps claims; remembered cancel/complete repairs; lifecycleSource strings; no unique index; REALLOCATE still disabled; I5 repair reserved. |
 | 2026-08-21 | Amendment: I5 reconciliation — shared expected-claim invariant (full history, no horizon); invalid allocations never expand expected nights; taxonomy + SAFE/HUMAN; no silent winners / deny-write; dry-run zero Mongo writes; partial/targeted never ready; CLI exit 0/2/1; apply-safe order; MRI operation-suffixed sourceReference; conflict MRI mutating-only; READY_FOR_I6 + stable dual verify; excluded claims block I6; deploy I1–I5 together; no unique index / REALLOCATE. |
+| 2026-08-21 | Amendment: I6 authoritative cutover — unique named index via explicit CLI (no legacy drop; Mongo 7 coexistence); autoIndex false; once-per-acquisition index guard; claim-first writers + compensation primary (no txn dependency); paid/voucher demotion; date-edit secure-target-first; reassign hard-block; pooled cabinType capacity fix; Location compensation atomicity; shadow wrappers removed/converted; REALLOCATE still disabled. |
 
 ---
 
