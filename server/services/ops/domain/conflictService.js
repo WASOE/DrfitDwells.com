@@ -43,7 +43,8 @@ async function evaluateTargetConflicts({
   startDate,
   endDate,
   treatExternalHoldAsHard = false,
-  excludeCheckoutSessionId = null
+  excludeCheckoutSessionId = null,
+  excludeReservationId = null
 }) {
   const normalized = normalizeExclusiveDateRange(startDate, endDate);
   const hardConflicts = [];
@@ -99,6 +100,9 @@ async function evaluateTargetConflicts({
         checkOut: { $gt: normalized.startDate }
       }
     : null;
+  if (bookingFilter && excludeReservationId) {
+    bookingFilter._id = { $ne: excludeReservationId };
+  }
 
   const blockFilter = {
     cabinId,
@@ -118,7 +122,7 @@ async function evaluateTargetConflicts({
   const [bookings, blocks] = await Promise.all([
     bookingFilter ? Booking.find(bookingFilter).select('_id checkIn checkOut status unitId cabinTypeId guestInfo').lean() : [],
     AvailabilityBlock.find(blockFilter)
-      .select('_id blockType startDate endDate unitId checkoutSessionId expiresAt')
+      .select('_id blockType startDate endDate unitId checkoutSessionId expiresAt reservationId')
       .lean()
   ]);
 
@@ -142,6 +146,16 @@ async function evaluateTargetConflicts({
 
   for (const block of blocks) {
     if (!rangesOverlap(block.startDate, block.endDate, normalized.startDate, normalized.endDate)) continue;
+
+    // Self-exclusion: reservation-backed blocks for the reservation being edited
+    // must not hard-conflict against that same reservation's date change.
+    if (
+      excludeReservationId &&
+      block.reservationId &&
+      String(block.reservationId) === String(excludeReservationId)
+    ) {
+      continue;
+    }
 
     if (block.blockType === 'checkout_hold') {
       if (block.expiresAt && block.expiresAt <= now) continue;
@@ -197,7 +211,7 @@ async function evaluateCabinConflicts({ cabinId, startDate, endDate, excludeRese
 
   const [bookings, blocks] = await Promise.all([
     Booking.find(bookingFilter).select('_id checkIn checkOut status').lean(),
-    AvailabilityBlock.find(blockFilter).select('_id blockType startDate endDate status').lean()
+    AvailabilityBlock.find(blockFilter).select('_id blockType startDate endDate status reservationId').lean()
   ]);
 
   const hardConflicts = [];
@@ -216,6 +230,13 @@ async function evaluateCabinConflicts({ cabinId, startDate, endDate, excludeRese
 
   for (const block of blocks) {
     if (rangesOverlap(block.startDate, block.endDate, normalized.startDate, normalized.endDate)) {
+      if (
+        excludeReservationId &&
+        block.reservationId &&
+        String(block.reservationId) === String(excludeReservationId)
+      ) {
+        continue;
+      }
       if (block.blockType === 'external_hold') {
         warnings.push({
           kind: 'availability_block',

@@ -35,5 +35,9 @@ module.exports = {
   buildIdempotencyKey,
   rememberResult,
   getRememberedResult,
-  clearExpired
+  clearExpired,
+  /** Test helper: drop all remembered results. */
+  clearAllRememberedResults() {
+    cache.clear();
+  }
 };

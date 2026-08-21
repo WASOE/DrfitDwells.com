@@ -7,12 +7,18 @@ const mongoose = require('mongoose');
 const { requirePermission, ACTIONS } = require('../../permissionService');
 const { appendAuditEvent } = require('../../auditWriter');
 const { buildIdempotencyKey, getRememberedResult, rememberResult } = require('../../idempotencyService');
-const { normalizeExclusiveDateRange } = require('../../../utils/dateTime');
-const { evaluateCabinConflicts } = require('./conflictService');
+const { normalizeExclusiveDateRange, formatSofiaDateOnly } = require('../../../utils/dateTime');
+const { evaluateCabinConflicts, evaluateTargetConflicts } = require('./conflictService');
 const { createDomainError } = require('./errors');
 const { isFixtureCabinName } = require('../../../utils/fixtureExclusion');
-const { countBlockingBlocksForSingleCabin } = require('../../publicAvailabilityService');
+const {
+  countBlockingBlocksForSingleCabin,
+  findParentCabinForCabinType
+} = require('../../publicAvailabilityService');
 const { BLOCKING_BOOKING_STATUSES } = require('../../calendar/blockingStatusConstants');
+const { canUseMongoTransactions } = require('../../../utils/mongoTransactions');
+const { openManualReviewItem } = require('../ingestion/manualReviewService');
+const { syncUnitNightClaimsShadow } = require('../../inventory/syncUnitNightClaimsShadow');
 const { processMetaPurchaseAfterConfirm } = require('../../bookingPurchaseTracking');
 const CabinType = require('../../../models/CabinType');
 const bookingLifecycleEmailService = require('../../bookingLifecycleEmailService');
@@ -1102,6 +1108,181 @@ async function reassignReservation({ bookingId, toCabinId, acceptExternalHoldWar
   return result;
 }
 
+const DATE_EDIT_ALLOWED_STATUSES = ['pending', 'confirmed', 'in_house'];
+const DATE_EDIT_CANONICAL_MRI_CATEGORY = 'reservation_date_edit_canonical_inconsistency';
+
+function buildEditDatesIdempotencyKey(ctx, bookingId, normalized) {
+  const fingerprint = `${bookingId}:${normalized.startDate.toISOString()}:${normalized.endDate.toISOString()}`;
+  return getIdempotencyFromContext(ctx, ACTIONS.OPS_RESERVATION_EDIT_DATES, fingerprint);
+}
+
+function sofiaDatesEqual(a, b) {
+  const left = formatSofiaDateOnly(a);
+  const right = formatSofiaDateOnly(b);
+  return Boolean(left && right && left === right);
+}
+
+async function ensureReservationBlocksMatchBookingDates(booking, startDate, endDate, session = null) {
+  const filter = {
+    reservationId: booking._id,
+    blockType: 'reservation',
+    status: 'active'
+  };
+  const update = { $set: { startDate, endDate } };
+  if (session) {
+    return AvailabilityBlock.updateMany(filter, update, { session });
+  }
+  return AvailabilityBlock.updateMany(filter, update);
+}
+
+async function recordDateEditCanonicalInconsistencyMri({
+  bookingId,
+  previousCheckIn,
+  previousCheckOut,
+  requestedCheckIn,
+  requestedCheckOut,
+  failureStage,
+  error
+}) {
+  try {
+    await openManualReviewItem({
+      category: DATE_EDIT_CANONICAL_MRI_CATEGORY,
+      severity: 'critical',
+      entityType: 'Booking',
+      entityId: String(bookingId),
+      title: 'Reservation date edit left Booking/AvailabilityBlock inconsistent',
+      details:
+        'Canonical Booking dates and reservation AvailabilityBlocks diverged during Edit Dates; compensation failed',
+      provenance: {
+        source: 'ops_reservation_edit_dates',
+        sourceReference: String(bookingId)
+      },
+      evidence: {
+        bookingId: String(bookingId),
+        previousCheckIn: previousCheckIn || null,
+        previousCheckOut: previousCheckOut || null,
+        requestedCheckIn: requestedCheckIn || null,
+        requestedCheckOut: requestedCheckOut || null,
+        failureStage: failureStage || null,
+        errorCode: error?.code || error?.name || null,
+        errorMessage: error?.message
+          ? String(error.message).slice(0, 500)
+          : String(error || '').slice(0, 500)
+      }
+    });
+  } catch {
+    /* MRI must not mask the hard failure */
+  }
+}
+
+async function commitBookingDatesAndReservationBlocks({
+  booking,
+  previousCheckIn,
+  previousCheckOut,
+  startDate,
+  endDate
+}) {
+  const usesTxn = await canUseMongoTransactions();
+  if (usesTxn) {
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        booking.checkIn = startDate;
+        booking.checkOut = endDate;
+        await booking.save({ session, validateBeforeSave: false });
+        await ensureReservationBlocksMatchBookingDates(booking, startDate, endDate, session);
+      });
+    } finally {
+      await session.endSession();
+    }
+    return;
+  }
+
+  booking.checkIn = startDate;
+  booking.checkOut = endDate;
+  await booking.save({ validateBeforeSave: false });
+
+  try {
+    await ensureReservationBlocksMatchBookingDates(booking, startDate, endDate);
+  } catch (blockErr) {
+    try {
+      booking.checkIn = previousCheckIn;
+      booking.checkOut = previousCheckOut;
+      await booking.save({ validateBeforeSave: false });
+    } catch (compensateErr) {
+      await recordDateEditCanonicalInconsistencyMri({
+        bookingId: booking._id,
+        previousCheckIn,
+        previousCheckOut,
+        requestedCheckIn: startDate,
+        requestedCheckOut: endDate,
+        failureStage: 'block_update_compensate_failed',
+        error: compensateErr
+      });
+      throw createDomainError(
+        'dependency_failure',
+        'Date edit failed and Booking/block compensation could not restore prior dates',
+        {
+          bookingId: String(booking._id),
+          failureStage: 'block_update_compensate_failed',
+          blockError: blockErr?.message || String(blockErr),
+          compensateError: compensateErr?.message || String(compensateErr)
+        },
+        500
+      );
+    }
+    throw createDomainError(
+      'dependency_failure',
+      'Date edit failed while updating reservation AvailabilityBlocks; Booking dates restored',
+      {
+        bookingId: String(booking._id),
+        failureStage: 'block_update_failed_compensated',
+        blockError: blockErr?.message || String(blockErr)
+      },
+      500
+    );
+  }
+}
+
+async function evaluateEditDatesConflicts(booking, normalized) {
+  const isAllocatedMulti = Boolean(booking.cabinTypeId && booking.unitId);
+  if (isAllocatedMulti) {
+    const parentCabin = await findParentCabinForCabinType(booking.cabinTypeId);
+    if (!parentCabin?._id) {
+      throw createDomainError(
+        'validation',
+        'Parent cabin not found for multi-unit reservation date edit',
+        { cabinTypeId: String(booking.cabinTypeId) },
+        409
+      );
+    }
+    return evaluateTargetConflicts({
+      cabinId: parentCabin._id,
+      unitId: booking.unitId,
+      cabinTypeId: booking.cabinTypeId,
+      startDate: normalized.startDate,
+      endDate: normalized.endDate,
+      treatExternalHoldAsHard: false,
+      excludeReservationId: booking._id
+    });
+  }
+
+  return evaluateCabinConflicts({
+    cabinId: booking.cabinId,
+    startDate: normalized.startDate,
+    endDate: normalized.endDate,
+    excludeReservationId: booking._id
+  });
+}
+
+async function repairEditDatesConvergence(booking) {
+  await ensureReservationBlocksMatchBookingDates(booking, booking.checkIn, booking.checkOut);
+  return syncUnitNightClaimsShadow({
+    booking,
+    source: 'date_edit'
+  });
+}
+
 async function editReservationDates({ bookingId, checkInDate, checkOutDate, reason = null, ctx = {} }) {
   requirePermission({
     role: ctx.user?.role,
@@ -1109,20 +1290,83 @@ async function editReservationDates({ bookingId, checkInDate, checkOutDate, reas
   });
   const normalized = normalizeExclusiveDateRange(checkInDate, checkOutDate);
 
-  const idemKey = getIdempotencyFromContext(ctx, ACTIONS.OPS_RESERVATION_EDIT_DATES, bookingId);
+  const idemKey = buildEditDatesIdempotencyKey(ctx, bookingId, normalized);
   const remembered = getRememberedResult(idemKey);
-  if (remembered) return remembered;
+  if (remembered) {
+    try {
+      const bookingForRepair = await loadBookingOrFail(bookingId);
+      if (DATE_EDIT_ALLOWED_STATUSES.includes(bookingForRepair.status)) {
+        await repairEditDatesConvergence(bookingForRepair);
+      }
+    } catch {
+      /* repair is best-effort on remembered success; do not invalidate prior success */
+    }
+    return remembered;
+  }
 
   const booking = await loadBookingOrFail(bookingId);
-  const conflictCheck = await evaluateCabinConflicts({
-    cabinId: booking.cabinId,
-    startDate: normalized.startDate,
-    endDate: normalized.endDate,
-    excludeReservationId: booking._id
-  });
 
+  if (!DATE_EDIT_ALLOWED_STATUSES.includes(booking.status)) {
+    throw createDomainError(
+      'invalid_transition',
+      `Cannot edit dates for reservation in status ${booking.status}`,
+      { status: booking.status, allowedFrom: DATE_EDIT_ALLOWED_STATUSES },
+      409
+    );
+  }
+
+  if (booking.cabinTypeId && !booking.unitId) {
+    throw createDomainError(
+      'conflict',
+      'Date edit requires unit allocation for multi-unit reservations',
+      {
+        code: 'UNIT_ALLOCATION_REQUIRED',
+        cabinTypeId: String(booking.cabinTypeId),
+        unitId: null
+      },
+      409
+    );
+  }
+
+  if (booking.status === 'in_house' && !sofiaDatesEqual(booking.checkIn, normalized.startDate)) {
+    throw createDomainError(
+      'invalid_transition',
+      'Cannot change check-in date for an in-house reservation',
+      {
+        status: booking.status,
+        code: 'IN_HOUSE_CHECKIN_IMMUTABLE',
+        currentCheckIn: booking.checkIn,
+        requestedCheckIn: normalized.startDate
+      },
+      409
+    );
+  }
+
+  const sameDates =
+    sofiaDatesEqual(booking.checkIn, normalized.startDate) &&
+    sofiaDatesEqual(booking.checkOut, normalized.endDate);
+
+  if (sameDates) {
+    await repairEditDatesConvergence(booking);
+    const result = {
+      reservationId: String(booking._id),
+      checkInDate: booking.checkIn,
+      checkOutDate: booking.checkOut,
+      warnings: [],
+      repaired: true
+    };
+    rememberResult(idemKey, result);
+    return result;
+  }
+
+  const conflictCheck = await evaluateEditDatesConflicts(booking, normalized);
   if (conflictCheck.hasHardConflicts) {
-    throw createDomainError('conflict', 'Date edit creates hard conflicts', { hardConflicts: conflictCheck.hardConflicts }, 409);
+    throw createDomainError(
+      'conflict',
+      'Date edit creates hard conflicts',
+      { hardConflicts: conflictCheck.hardConflicts },
+      409
+    );
   }
 
   const before = {
@@ -1130,6 +1374,18 @@ async function editReservationDates({ bookingId, checkInDate, checkOutDate, reas
     checkOut: booking.checkOut
   };
 
+  const previousCheckIn = before.checkIn;
+  const previousCheckOut = before.checkOut;
+
+  await commitBookingDatesAndReservationBlocks({
+    booking,
+    previousCheckIn,
+    previousCheckOut,
+    startDate: normalized.startDate,
+    endDate: normalized.endDate
+  });
+
+  // Mutation audit only after canonical Booking + reservation-block convergence.
   await appendAuditEvent(
     {
       actorType: 'user',
@@ -1154,18 +1410,6 @@ async function editReservationDates({ bookingId, checkInDate, checkOutDate, reas
     { req: ctx.req }
   );
 
-  const previousCheckIn = before.checkIn;
-  const previousCheckOut = before.checkOut;
-  booking.checkIn = normalized.startDate;
-  booking.checkOut = normalized.endDate;
-  await booking.save({ validateBeforeSave: false });
-
-  // keep reservation-backed canonical surface in sync where present
-  await AvailabilityBlock.updateMany(
-    { reservationId: booking._id, blockType: 'reservation', status: 'active' },
-    { $set: { startDate: normalized.startDate, endDate: normalized.endDate } }
-  );
-
   notifyMessageOrchestratorSafely('notifyReservationDatesChanged', {
     bookingId: booking._id,
     previousCheckIn,
@@ -1174,6 +1418,12 @@ async function editReservationDates({ bookingId, checkInDate, checkOutDate, reas
 
   scheduleOpsPushSafely('notifyOpsPushReservationDatesChanged', {
     bookingId: booking._id
+  });
+
+  // Shadow sync is nonfatal to canonical success.
+  await syncUnitNightClaimsShadow({
+    booking,
+    source: 'date_edit'
   });
 
   const result = {
@@ -1623,5 +1873,8 @@ module.exports = {
   editReservationDates,
   editGuestContact,
   addReservationNote,
-  createManualReservation
+  createManualReservation,
+  // Test / diagnostics
+  DATE_EDIT_CANONICAL_MRI_CATEGORY,
+  DATE_EDIT_ALLOWED_STATUSES
 };
