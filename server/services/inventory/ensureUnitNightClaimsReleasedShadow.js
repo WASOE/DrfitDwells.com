@@ -65,6 +65,7 @@ async function recordReleaseFailureMri({
   openManualReviewItemFn
 }) {
   try {
+    const sourceReference = bookingId ? `${String(bookingId)}:release` : null;
     const mri = await openManualReviewItemFn({
       category: MRI_CATEGORY,
       severity: 'high',
@@ -74,7 +75,7 @@ async function recordReleaseFailureMri({
       details: errorSummary || 'Shadow UnitNightClaim release failed after canonical lifecycle',
       provenance: {
         source: MRI_SOURCE,
-        sourceReference: bookingId
+        sourceReference
       },
       evidence: {
         operation: 'release',

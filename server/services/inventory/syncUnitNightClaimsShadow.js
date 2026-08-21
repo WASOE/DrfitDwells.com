@@ -70,6 +70,7 @@ async function recordDateEditShadowFailure({
   openManualReviewItemFn
 }) {
   const bookingId = booking?._id ? String(booking._id) : null;
+  const sourceReference = bookingId ? `${bookingId}:sync` : null;
   try {
     const mri = await openManualReviewItemFn({
       category: MRI_CATEGORY,
@@ -80,9 +81,10 @@ async function recordDateEditShadowFailure({
       details: errorSummary || 'Shadow UnitNightClaim sync failed after canonical date edit',
       provenance: {
         source: MRI_SOURCE,
-        sourceReference: bookingId
+        sourceReference
       },
       evidence: {
+        operation: 'sync',
         errorCode: errorCode || null,
         unitId: booking?.unitId ? String(booking.unitId) : null,
         cabinTypeId: booking?.cabinTypeId ? String(booking.cabinTypeId) : null,

@@ -336,12 +336,57 @@ async function assertBookingOwnsNights({
   };
 }
 
+/**
+ * Keep earliest createdAt then _id; delete other same-owner duplicates for unitId+night+bookingId.
+ */
+async function deleteSameOwnerDuplicateClaims({
+  unitId,
+  night,
+  bookingId,
+  session = null
+} = {}) {
+  const unitOid = toObjectId(unitId, 'unitId');
+  const bookingOid = toObjectId(bookingId, 'bookingId');
+  const nightDate =
+    night instanceof Date ? normalizeDateToSofiaDayStart(night) : nightDateFromDateOnly(String(night).slice(0, 10));
+
+  const rows = await UnitNightClaim.find({
+    unitId: unitOid,
+    night: nightDate,
+    bookingId: bookingOid
+  })
+    .session(session || null)
+    .sort({ createdAt: 1, _id: 1 })
+    .lean();
+
+  if (rows.length <= 1) {
+    return {
+      ok: true,
+      keptClaimId: rows[0] ? String(rows[0]._id) : null,
+      deletedCount: 0
+    };
+  }
+
+  const keepId = rows[0]._id;
+  const deleteIds = rows.slice(1).map((r) => r._id);
+  const result = await UnitNightClaim.deleteMany(
+    { _id: { $in: deleteIds } },
+    sessionOpts(session)
+  );
+  return {
+    ok: true,
+    keptClaimId: String(keepId),
+    deletedCount: result.deletedCount || 0
+  };
+}
+
 module.exports = {
   ERR,
   claimUnitNights,
   releaseUnitNights,
   transferUnitNightClaims,
   assertBookingOwnsNights,
+  deleteSameOwnerDuplicateClaims,
   resolveOccupiedNightDates,
   expandOccupiedSofiaNightDateOnlys,
   nightDateFromDateOnly,

@@ -93,10 +93,13 @@ async function recordShadowFailureSignals({
   const bookingId = booking?._id ? String(booking._id) : null;
   const unitId = booking?.unitId ? String(booking.unitId) : null;
   const cabinTypeId = booking?.cabinTypeId ? String(booking.cabinTypeId) : null;
-  const sourceReference =
+  const baseSourceReference =
     (checkoutId && String(checkoutId).trim()) ||
     (booking?.checkoutId && String(booking.checkoutId).trim()) ||
     bookingId;
+  const sourceReference = baseSourceReference
+    ? `${baseSourceReference}:claim`
+    : null;
 
   let manualReviewItemId = null;
   try {
@@ -109,9 +112,10 @@ async function recordShadowFailureSignals({
       details: errorSummary || 'Shadow UnitNightClaim write failed after canonical Booking allocation',
       provenance: {
         source: MRI_SOURCE,
-        sourceReference: sourceReference || null
+        sourceReference
       },
       evidence: {
+        operation: 'claim',
         errorCode: errorCode || null,
         unitId,
         cabinTypeId,
