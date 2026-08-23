@@ -1,6 +1,7 @@
 const Booking = require('../../../models/Booking');
 const Cabin = require('../../../models/Cabin');
 const CabinType = require('../../../models/CabinType');
+require('../../../models/Unit'); // register for Booking.unitId populate
 const Guest = require('../../../models/Guest');
 const Payment = require('../../../models/Payment');
 const Payout = require('../../../models/Payout');
@@ -17,6 +18,7 @@ const {
   resolvePropertyKindFromCabinDoc,
   resolvePropertyKindFromCabinTypeDoc
 } = require('../../messaging/propertyKindResolver');
+const { resolveCabinSummary } = require('./reservationsReadModel');
 
 async function resolveStayPropertyKindForBooking(booking) {
   try {
@@ -67,11 +69,16 @@ function mapCancellationSettlementForOps(booking) {
 }
 
 async function getReservationDetailReadModel(reservationId) {
-  const booking = await Booking.findById(reservationId).lean();
+  const booking = await Booking.findById(reservationId)
+    .populate('cabinId', 'name location')
+    .populate('cabinTypeId', 'name location')
+    .populate('unitId', 'displayName unitNumber')
+    .lean();
   if (!booking) return null;
   if (booking.isTest || booking.archivedAt) return null;
 
   const mapped = mapBookingToReservationCompatible(booking);
+  const cabinSummary = resolveCabinSummary(booking, mapped);
   const [guest, availability, payments, payouts, emailEvents, auditSummary, notes, stayPropertyKind] =
     await Promise.all([
     Guest.findOne({ email: booking.guestInfo?.email || null }).lean(),
@@ -96,6 +103,7 @@ async function getReservationDetailReadModel(reservationId) {
 
   return {
     reservation: mapped,
+    cabinSummary,
     stayPropertyKind,
     // Admin-authored note for cleaning staff (not guest PII) — safe to expose to ops.
     cleaningNotes: booking.cleaningNotes || null,

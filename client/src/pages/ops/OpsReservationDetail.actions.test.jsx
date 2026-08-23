@@ -111,6 +111,39 @@ describe('OpsReservationDetail reservation actions', () => {
 
   it('shows Reassign only when session includes reassign action', async () => {
     useOpsSession.mockReturnValue({ actions: [OPS_RESERVATION_ACTIONS.REASSIGN] });
+    opsReadAPI.reservationDetail.mockResolvedValue({
+      data: {
+        data: {
+          reservation: {
+            reservationId: '507f1f77bcf86cd799439011',
+            reservationStatus: 'confirmed',
+            checkInDateOnly: '2026-07-01',
+            checkOutDateOnly: '2026-07-05',
+            guest: { email: 'guest@example.com' },
+            cabinId: '507f1f77bcf86cd7994390cc',
+            cabinTypeId: null,
+            unitId: null
+          },
+          cabinSummary: {
+            cabinId: '507f1f77bcf86cd7994390cc',
+            cabinTypeId: null,
+            unitId: null,
+            name: 'Lux Cabin',
+            unitLabel: null,
+            displayName: 'Lux Cabin',
+            location: 'Valley'
+          },
+          guestDetail: {
+            firstName: 'Test',
+            lastName: 'Guest',
+            email: 'guest@example.com',
+            phone: ''
+          },
+          cancellationSettlement: null,
+          stayPropertyKind: 'cabin'
+        }
+      }
+    });
     render(
       <MemoryRouter>
         <OpsReservationDetail />

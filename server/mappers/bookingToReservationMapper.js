@@ -10,6 +10,8 @@ function mapBookingToReservationCompatible(bookingDoc = {}) {
     reservationId: booking._id ? String(booking._id) : null,
     legacyBookingId: booking._id ? String(booking._id) : null,
     cabinId: booking.cabinId ? String(booking.cabinId._id || booking.cabinId) : null,
+    cabinTypeId: booking.cabinTypeId ? String(booking.cabinTypeId._id || booking.cabinTypeId) : null,
+    unitId: booking.unitId ? String(booking.unitId._id || booking.unitId) : null,
     checkInDate: checkInRaw,
     checkOutDate: checkOutRaw,
     checkInDateOnly: checkInRaw ? formatSofiaDateOnly(checkInRaw) : null,

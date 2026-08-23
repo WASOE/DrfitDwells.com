@@ -38,6 +38,8 @@ const opsReadAPI = {
   reservations: (params) => api.get('/ops/reservations', { params, headers: authHeaders() }),
   reservationsExport: (params) => api.get('/ops/reservations/export', { params, headers: authHeaders() }),
   reservationDetail: (id) => api.get(`/ops/reservations/${id}`, { headers: authHeaders() }),
+  reallocateCandidates: (id) =>
+    api.get(`/ops/reservations/${id}/reallocate-candidates`, { headers: authHeaders() }),
   reservationEmailEvents: (id, params) =>
     api.get(`/ops/reservations/${id}/email-events`, { params, headers: authHeaders() }),
   health: () => api.get('/ops/health/readiness', { headers: authHeaders() }),
@@ -158,6 +160,21 @@ const opsWriteAPI = {
       headers: authHeaders()
     }),
   reassignReservation: (id, payload) => api.post(`/ops/reservations/${id}/actions/reassign`, payload, { headers: authHeaders() }),
+  reallocateReservation: (id, payload) => {
+    const body = {
+      targetUnitId: payload.targetUnitId,
+      idempotencyKey: payload.idempotencyKey
+    };
+    if (payload.reason != null && String(payload.reason).trim() !== '') {
+      body.reason = String(payload.reason).trim();
+    }
+    if (payload.acceptExternalHoldWarnings === true) {
+      body.acceptExternalHoldWarnings = true;
+    } else if (payload.acceptExternalHoldWarnings === false) {
+      body.acceptExternalHoldWarnings = false;
+    }
+    return api.post(`/ops/reservations/${id}/actions/reallocate`, body, { headers: authHeaders() });
+  },
   editReservationDates: (id, payload) => api.post(`/ops/reservations/${id}/actions/edit-dates`, payload, { headers: authHeaders() }),
   editGuestContact: (id, payload) => api.post(`/ops/reservations/${id}/actions/edit-guest-contact`, payload, { headers: authHeaders() }),
   addReservationNote: (id, content) => api.post(`/ops/reservations/${id}/actions/add-note`, { content }, { headers: authHeaders() }),

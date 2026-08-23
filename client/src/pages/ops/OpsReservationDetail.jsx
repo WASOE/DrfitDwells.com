@@ -6,11 +6,13 @@ import { useOpsSession } from '../../context/OpsSessionContext';
 import { formatMoneyFromCents } from '../../utils/formatMoney';
 import { OpsEmailPreviewModal } from './components/OpsEmailPreviewModal';
 import { OpsWhatsappPreviewModal } from './components/OpsWhatsappPreviewModal';
+import MoveUnitDialog from './components/MoveUnitDialog';
 import { buildGmaPreviewRuleOptions } from '../../../../shared/messaging/gmaPreviewRules.js';
 import {
   canCancelReservation,
   canMarkCashRefunded,
-  canReassignReservation,
+  canShowLegacyReassign,
+  canMoveUnit,
   canResolveCancellationSettlement,
   showCompletedNotCancellableMessage
 } from './utils/opsReservationPermissions';
@@ -128,6 +130,7 @@ export default function OpsReservationDetail() {
     checkOutDate: '',
     reason: ''
   });
+  const [moveUnitOpen, setMoveUnitOpen] = useState(false);
 
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelBusy, setCancelBusy] = useState(false);
@@ -903,8 +906,10 @@ export default function OpsReservationDetail() {
         : null;
   const cancellationSettlement = data.cancellationSettlement || null;
   const reservationStatus = reservation.reservationStatus || '';
+  const cabinSummary = data.cabinSummary || null;
   const canCancel = canCancelReservation(session, reservationStatus);
-  const canReassign = canReassignReservation(session);
+  const canShowReassign = canShowLegacyReassign(session, cabinSummary, reservation);
+  const canShowMoveUnit = canMoveUnit(session, reservationStatus, cabinSummary, reservation);
   const canResolveSettlement = canResolveCancellationSettlement(
     session,
     reservationStatus,
@@ -934,6 +939,13 @@ export default function OpsReservationDetail() {
         <p className="text-sm text-gray-500 max-w-2xl">
           {reservation.checkInDateOnly || '—'} - {reservation.checkOutDateOnly || '—'}
         </p>
+        {cabinSummary?.displayName || cabinSummary?.name || cabinSummary?.unitLabel ? (
+          <p className="mt-2 text-sm text-gray-800 max-w-2xl">
+            {cabinSummary.displayName ||
+              [cabinSummary.name, cabinSummary.unitLabel].filter(Boolean).join(' · ') ||
+              '—'}
+          </p>
+        ) : null}
         {manualPurpose || sendGuestConfirmationEmail != null ? (
           <div className="mt-3 flex flex-wrap gap-2 max-w-2xl">
             {manualPurpose ? (
@@ -1100,7 +1112,16 @@ export default function OpsReservationDetail() {
                   Completed reservations cannot be cancelled from OPS.
                 </p>
               ) : null}
-              {canReassign ? (
+              {canShowMoveUnit ? (
+                <button
+                  type="button"
+                  onClick={() => setMoveUnitOpen(true)}
+                  className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50"
+                >
+                  Move Unit
+                </button>
+              ) : null}
+              {canShowReassign ? (
                 <button
                   onClick={() => {
                     const toCabinId = window.prompt('Target cabinId');
@@ -2403,6 +2424,35 @@ export default function OpsReservationDetail() {
           </div>
         </div>
       ) : null}
+      <MoveUnitDialog
+        reservationId={id}
+        sourceUnitLabel={cabinSummary?.unitLabel || cabinSummary?.displayName || null}
+        open={moveUnitOpen}
+        onClose={() => setMoveUnitOpen(false)}
+        onSuccess={async (result) => {
+          await load();
+          if (result?.closeOnly && result?.refresh) {
+            setError(
+              result.code
+                ? `Move Unit is no longer available (${result.code}).`
+                : 'Move Unit is no longer available for this reservation.'
+            );
+            return;
+          }
+          if (result?.reconciliation) {
+            setError(
+              'Unit move needs inventory reconciliation. Refresh and verify the current unit.'
+            );
+            return;
+          }
+          if (result?.noop) {
+            return;
+          }
+          if (result?.fromLabel && result?.toLabel) {
+            setSuccessMessage(`Moved from ${result.fromLabel} to ${result.toLabel}`);
+          }
+        }}
+      />
       {error ? <div className="fixed bottom-16 sm:bottom-4 right-4 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">{error}</div> : null}
       {successMessage ? <div className="fixed bottom-16 sm:bottom-4 left-4 bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-2 rounded text-sm">{successMessage}</div> : null}
     </div>

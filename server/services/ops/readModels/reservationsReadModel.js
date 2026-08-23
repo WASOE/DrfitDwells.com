@@ -420,6 +420,8 @@ module.exports = {
   getReservationsExportRows,
   validateStayScope,
   validateOpsBucket,
+  resolveCabinSummary,
+  resolveUnitLabel,
   EXPORT_LIMIT,
   STAY_SCOPE_VALUES,
   OPS_BUCKET_VALUES

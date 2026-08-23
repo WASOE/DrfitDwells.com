@@ -10,6 +10,9 @@ const {
 } = require('../../../services/ops/readModels/reservationsReadModel');
 const { getReservationDetailReadModel } = require('../../../services/ops/readModels/reservationDetailReadModel');
 const {
+  getReallocateCandidatesReadModel
+} = require('../../../services/ops/readModels/reallocateCandidatesReadModel');
+const {
   transitionReservation,
   resolveCancellationSettlement,
   reassignReservation,
@@ -229,6 +232,17 @@ router.get('/:id', async (req, res) => {
     return res.json({ success: true, data });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/:id/reallocate-candidates', validateId('id'), async (req, res) => {
+  try {
+    const data = await getReallocateCandidatesReadModel(req.params.id, {
+      user: req.user
+    });
+    return res.json({ success: true, data });
+  } catch (error) {
+    return handleDomainError(res, error);
   }
 });
 

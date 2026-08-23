@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   canCancelReservation,
   canMarkCashRefunded,
+  canMoveUnit,
   canReassignReservation,
   canResolveCancellationSettlement,
+  canShowLegacyReassign,
   OPS_RESERVATION_ACTIONS,
   showCompletedNotCancellableMessage
 } from './opsReservationPermissions';
@@ -41,6 +43,22 @@ describe('opsReservationPermissions', () => {
   it('allows reassign only when session includes reassign action', () => {
     expect(canReassignReservation(adminSession)).toBe(true);
     expect(canReassignReservation(operatorSession)).toBe(false);
+  });
+
+  it('Move Unit only for allocated multi pending/confirmed with reassign action', () => {
+    const multi = {
+      cabinId: null,
+      cabinTypeId: 't1',
+      unitId: 'u1'
+    };
+    const single = { cabinId: 'c1', cabinTypeId: null, unitId: null };
+    expect(canMoveUnit(adminSession, 'confirmed', multi)).toBe(true);
+    expect(canMoveUnit(adminSession, 'pending', multi)).toBe(true);
+    expect(canMoveUnit(adminSession, 'in_house', multi)).toBe(false);
+    expect(canMoveUnit(operatorSession, 'confirmed', multi)).toBe(false);
+    expect(canMoveUnit(adminSession, 'confirmed', single)).toBe(false);
+    expect(canShowLegacyReassign(adminSession, single)).toBe(true);
+    expect(canShowLegacyReassign(adminSession, multi)).toBe(false);
   });
 
   it('allows settlement resolve only with cancel action on cancelled booking', () => {
