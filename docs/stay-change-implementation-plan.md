@@ -874,14 +874,17 @@ UnitNightClaim remains **shadow / non-authoritative** in I5. No unique `{ unitId
 
 ### Batch R — REALLOCATE (after I6)
 
-Split into **R1** (domain/API — locked below), optional **R2** hardening if still needed after R1, and **R3** (OPS UI). Do **not** pull R3 into R1.
+Split into **R1** (domain/API — locked in §21; **LIVE** in production at `1a2d1638c76d75049515b09905b6b59a0b65d757`), optional **R2** hardening if still needed after R1, and **R3** (OPS Move Unit UI — locked in §22). Do **not** pull AMEND/REBOOK or the Batch 7 wizard into R3.
 
 | | |
 |--|--|
-| **R1 Delivered (when implemented)** | Minimal StayChange(`kind=reallocate`); staged target-secure → Booking CAS → block sync → source-release; durable scoped idempotency; focused reconcile/resume; OPS API `actions/reallocate`; ≥90+ locked regression scenarios; legacy multi-unit reassign remains rejected |
+| **R1 Delivered (LIVE)** | Minimal StayChange(`kind=reallocate`); staged target-secure → Booking CAS → block sync → source-release; durable scoped idempotency; focused reconcile/resume; OPS API `POST …/actions/reallocate`; R1 indexes live (`stayChange_kind_booking_idempotency_unique`, `auditEvent_dedupeKey_unique`); legacy multi-unit reassign remains rejected |
 | **R1 does NOT include** | Move UI; unit selector; wizard; AMEND; REBOOK; pricing/payments; `in_house` unit moves; wiring combined `transferUnitNightClaims` as sole workflow |
 | **Invariants proven (R1)** | 3, 7, 8, 16–19, 26–30 (+ R1 §21 locks) |
-| **Still unsupported after R1** | AMEND money, REBOOK, upgrades/downgrades, Move/Modify wizard (R3) |
+| **R3 Delivered (when implemented)** | OPS Move Unit for existing R1 REALLOCATE: detail inventory identity; read-only reallocate-candidates; Move Unit dialog; selector + warnings + ack; client idempotency; legacy Reassign visibility correction; ≥60+ locked UI/API scenarios (§22) |
+| **R3 does NOT include** | AMEND; REBOOK; date/guest/price/payment/refund/upgrade/extras; cross-product moves; StayChange management UI; full Move/Modify wizard (Batch 7); Cleaning calendar changes |
+| **Still unsupported after R3** | AMEND money, REBOOK, upgrades/downgrades, unified Move/Modify wizard (Batch 7) |
+| **R3 does NOT list as blocker** | R1 index cutover (already live in production) |
 
 ---
 
@@ -1270,12 +1273,12 @@ If source cleanup remains, StayChange must **NOT** claim `completed`.
 
 | Stage | Includes |
 |-------|----------|
-| **R1** | StayChange model foundation sufficient for reallocate; reallocate domain service; durable idempotency; recovery/reconcile; OPS API route; tests |
+| **R1** | StayChange model foundation sufficient for reallocate; reallocate domain service; durable idempotency; recovery/reconcile; OPS API route; tests — **LIVE** |
 | **R1 does NOT** | UI |
 | **R2** | Any further inventory-transfer/domain hardening explicitly planned after R1 if still needed |
-| **R3** | OPS target selector; pre-stay Move/Modify UI; warning presentation; human interaction |
+| **R3** | OPS **Move Unit** only for existing R1 REALLOCATE — locked in §22 (not AMEND/REBOOK; not Batch 7 wizard) |
 
-Do not pull R3 into R1.
+Do not pull R3 into R1. Do not pull AMEND/REBOOK into R3.
 
 ### 21.30 Required R1 test contract
 
@@ -1296,6 +1299,396 @@ Implementation must cover at least the audited ~90 scenarios plus explicit:
 103. concurrent loser compensates only its own target claims
 104. reconciliation never releases claims owned by another StayChange / Booking
 105. no application dependency on Mongo multi-document transactions
+
+---
+
+## 22. R3 OPS Move Unit UI + read-only prerequisites (LOCKED)
+
+**Prerequisite:** R1 LIVE in production (`1a2d1638c76d75049515b09905b6b59a0b65d757`). Production R1 indexes already live (`stayChange_kind_booking_idempotency_unique`, `auditEvent_dedupeKey_unique`). **Do not** list R1 index cutover as an R3 blocker.
+
+**Mutation API already live:**
+
+```text
+POST /api/ops/reservations/:id/actions/reallocate
+```
+
+**R1 guarantees R3 must respect:** same Booking; same `cabinTypeId`; `unitId`-only move; `pending|confirmed` only; durable StayChange; required `idempotencyKey`; authoritative UnitNightClaims; internal conflicts hard; external holds require explicit acknowledgment; admin-only auth (same effective permission as legacy Reassign); crash-safe recovery.
+
+**This §22 amendment locks the R3 contract only.** It does **not** authorize application implementation by itself. Implementation begins only when a later R3 implementation batch is explicitly approved.
+
+### 22.1 Exact R3 scope
+
+R3 **is** the OPS Move Unit experience for existing R1 REALLOCATE.
+
+| Includes | Excludes |
+|----------|----------|
+| Reservation detail inventory identity enrichment | AMEND |
+| Read-only reallocate candidates endpoint | REBOOK |
+| Move Unit button + dialog/sheet | Date / guest / product modification |
+| Target unit selector | Price / payment / refund / upgrade charge |
+| Conflict / warning display | Extras changes |
+| External-hold acknowledgment | Cross-product moves |
+| Optional reason | StayChange management / history panel UI |
+| Client idempotency lifecycle | Full Move/Modify stay wizard (Batch 7) |
+| `opsApi` reallocate + candidates methods | Cleaning calendar changes |
+| Success / error UX + reservation refresh | Second availability / conflict engine |
+| Legacy Reassign visibility correction | Speculative claim / StayChange on preview |
+| Tests (≥60+ locked scenarios) | |
+
+### 22.2 Current OPS UI graph (implementation references)
+
+Lock these as the R3 integration surface. Do not invent parallel pages or availability engines.
+
+| Concern | Path |
+|---------|------|
+| Reservation detail | `client/src/pages/ops/OpsReservationDetail.jsx` |
+| Reservations list | `client/src/pages/ops/OpsReservations.jsx` |
+| Permissions | `client/src/pages/ops/utils/opsReservationPermissions.js` |
+| OPS API client | `client/src/services/opsApi.js` |
+| Detail read model | `server/services/ops/readModels/reservationDetailReadModel.js` |
+| Reservation mapper | `server/mappers/bookingToReservationMapper.js` |
+| Canonical target conflicts | `server/services/ops/domain/conflictService.js` → `evaluateTargetConflicts` |
+| R1 mutation route | `server/routes/ops/modules/reservationsRoutes.js` |
+
+UX precedents to **reuse** (not re-invent): edit-dates / cancel dialog shells; create-reservation external-hold checkbox (`OpsReservations.jsx`); location-block conflict labels (`LocationBlockSheet.jsx`); `crypto.randomUUID()` idempotency style (not timestamp-only keys).
+
+### 22.3 Detail inventory identity prerequisite
+
+Current reservation detail does **not** expose enough multi-unit identity (`mapBookingToReservationCompatible` today exposes `cabinId` but not `cabinTypeId` / `unitId`).
+
+R3 **must** enrich the existing reservation detail read model so the UI can determine, without guessing from text labels:
+
+- `cabinTypeId`
+- `unitId`
+- current unit display label
+- commercial accommodation display label where already available
+
+Prefer reuse of the reservations-list `cabinSummary` shape (`reservationsReadModel.resolveCabinSummary`) where clean.
+
+**Must distinguish structured shapes:**
+
+| Shape | Meaning |
+|-------|---------|
+| Single cabin | `cabinId` present; no `cabinTypeId` |
+| Allocated cabinType | `cabinTypeId` + `unitId`; not malformed |
+| Unallocated cabinType | `cabinTypeId` without `unitId` |
+| Malformed | both `cabinId` and `cabinTypeId` (or other invalid XOR) |
+
+Do **not** add raw internal model dumps or unrelated inventory data.
+
+### 22.4 Read-only reallocate candidates endpoint
+
+Canonical route:
+
+```text
+GET /api/ops/reservations/:id/reallocate-candidates
+```
+
+(Equivalent GET path only if exact OPS route conventions make it materially better; prefer the path above.)
+
+| Rule | Lock |
+|------|------|
+| Mutability | **READ ONLY** |
+| Auth | Same effective permission as REALLOCATE / legacy admin Reassign (`ops.reservation.reassign`) |
+| Engine | **Only** `evaluateTargetConflicts` + existing Unit / cabinType domain rules |
+| Dates | Booking’s **existing** stay dates (no date preview rewrite) |
+| External holds | Warnings (`treatExternalHoldAsHard: false`), not hard conflicts |
+| Self | Exclude the source reservation correctly |
+| Claims | Do **not** acquire UnitNightClaims |
+| StayChange | Do **not** create |
+| Booking / blocks / MRI | Do **not** mutate / write |
+
+**Server flow:**
+
+1. Load Booking
+2. Validate enough identity for candidate context (allocated multi-unit eligible shape)
+3. Load Units belonging to `Booking.cabinTypeId`
+4. Evaluate each Unit against existing stay dates via `evaluateTargetConflicts`
+5. Return compact candidate DTOs
+
+Wrong-cabinType Units must **never** be returned.
+
+**Advisory only:** candidates do **not** reserve inventory. R1 REALLOCATE mutation remains authoritative. A target may become unavailable between preview and submit — treat as normal concurrency, not corruption.
+
+Do **not** call the mutation service for preview. Do **not** use StayChange for preview.
+
+### 22.5 Candidate DTO and state classification
+
+Each candidate minimum UI contract:
+
+| Field | Notes |
+|-------|-------|
+| `unitId` | Required |
+| `displayName` | When available |
+| `unitNumber` | When existing canonical data exposes it |
+| `isActive` | Boolean |
+| `state` | One of the locked states below |
+| conflicts / warnings | Compact safe metadata for OPS display; reuse canonical conflict categories |
+
+**Allowed `state` values (precedence locked):**
+
+| State | Rule | Selectable? |
+|-------|------|-------------|
+| `CURRENT` | `unitId == Booking.unitId` | **No** (even if conflict-free) |
+| `INACTIVE` | `Unit.isActive !== true` | **No** |
+| `HARD_BLOCKED` | ≥1 canonical hard conflict | **No** |
+| `EXTERNAL_HOLD_WARNING` | no hard conflict; ≥1 external hold warning | **Yes** (with visible warning + ack) |
+| `AVAILABLE` | no hard conflict; no external warning | **Yes** |
+
+If both hard conflicts and external warnings exist → `HARD_BLOCKED`.
+
+**PII:** Candidate / conflict DTO must **not** leak another guest’s name, email, phone, payment, notes, or message contents. Expose only operational conflict category, safe reservation identifier if existing OPS convention allows it, dates, and source/channel where appropriate. Prefer existing safe conflict projection patterns (`LocationBlockSheet` / conflict service guest labels are already minimized — do not expand to full PII).
+
+### 22.6 Move Unit placement and eligibility
+
+```text
+OPS Reservation Detail → Reservation actions → Move Unit
+```
+
+**Show only when all hold:**
+
+- Session has existing admin reassign permission (`ops.reservation.reassign`)
+- `Booking.status` ∈ `pending` \| `confirmed`
+- Valid allocated multi-unit identity (`cabinTypeId` + `unitId`, not malformed)
+
+**Hide** (do not show disabled-with-tooltip — match current OPS hide convention): `in_house`, `completed`, `cancelled`, single-cabin, unallocated cabinType, malformed identity, no permission.
+
+### 22.7 Legacy Reassign visibility boundary
+
+| Booking shape | Legacy Reassign | Move Unit |
+|---------------|-----------------|-----------|
+| Single-cabin (`cabinId` only) | Show where currently permitted | Hide |
+| Allocated multi-unit | **Hide** | Show when §22.6 passes |
+| Unallocated / malformed multi-unit | Hide | Hide |
+
+Do **not** route Reassign into REALLOCATE. Do **not** merge into one generic action.
+
+### 22.8 Move dialog UX
+
+Compact vertical selector. Prefer responsive bottom-sheet / modal consistent with existing OPS UI.
+
+**Forbidden:** `window.prompt`; desktop-only inventory grid; full modification wizard; date / guest / product / price / payment / extras controls.
+
+**Contents:** current unit; candidate list; optional reason; external warning acknowledgment when applicable; submit/cancel; local error state.
+
+**Narrow screens:** vertical list, scrollable content, large enough controls; no horizontal inventory tables.
+
+### 22.9 External hold UX
+
+External Airbnb/iCal hold ≠ internal conflict.
+
+When selected candidate is `EXTERNAL_HOLD_WARNING`:
+
+- Show warning visibly (affected date / source / type when safe metadata exists)
+- Require explicit operator acknowledgment
+- Only after explicit action send `acceptExternalHoldWarnings: true`
+- Default / unset → `false`
+- **Never** automatically send `true` (legacy Reassign’s force-true is **not** the R3 pattern)
+- **No** override control for internal hard conflicts
+
+### 22.10 Reason
+
+Optional free text. Match existing OPS edit-dates reason conventions and R1 backend max length (500). No categories/presets in R3. Trim whitespace; empty may be omitted from payload.
+
+### 22.11 Client idempotency lifecycle
+
+Backend requires `idempotencyKey` (8–128 chars).
+
+| Rule | Lock |
+|------|------|
+| Generation | `crypto.randomUUID()` with optional stable prefix, e.g. `ops_realloc_<uuid>` |
+| Mint | **Once** when a new Move intent starts (dialog open) |
+| Reuse | Double-click protection; HTTP / timeout retry; same exact target/payload retry |
+| New key | Dialog close+reopen; target change before a new submission intent; operator starts a genuinely new Move |
+| Do not | Generate a new key on every submit click |
+| Busy | Prevent parallel duplicate in-flight submissions |
+
+### 22.12 API client (implementation-time)
+
+| Method | Contract |
+|--------|----------|
+| `opsWriteAPI.reallocateReservation(id, body)` | `POST /api/ops/reservations/:id/actions/reallocate` |
+| Body **only** | `targetUnitId`, `idempotencyKey`, `reason` when non-empty, `acceptExternalHoldWarnings` |
+| Read | Candidates method for `GET …/reallocate-candidates` using existing OPS API conventions |
+
+No other mutation fields.
+
+### 22.13 Submission flow
+
+1. Open Move Unit
+2. Mint idempotency key
+3. Load candidates endpoint
+4. Render target states
+5. Select valid target
+6. Optional reason
+7. Acknowledge external warning if required
+8. Submit R1 REALLOCATE
+9. Lock submit while request active
+10. **Success:** refresh reservation detail; close dialog; success toast
+11. **Failure:** keep dialog open where recovery is possible; map structured `details.code`
+12. **Target/conflict race:** refresh candidates
+
+Modal-local errors (edit-dates style); do not rely only on page-level `doAction` toast if that closes recovery paths.
+
+### 22.14 Structured error UX
+
+Use `details.code` from existing domain error responses. Do **not** parse human message strings when structured code exists.
+
+| Code | UI behavior |
+|------|-------------|
+| `HARD_CONFLICTS` | Target no longer available; refresh candidates |
+| `EXTERNAL_HOLD_ACK_REQUIRED` | Show warning; require acknowledgment; keep dialog |
+| `UNIT_NOT_FOUND_OR_INACTIVE` | Candidate unavailable / inactive |
+| `UNIT_CABIN_TYPE_MISMATCH` | Invalid target / product mismatch |
+| `STATUS_NOT_ELIGIBLE` | Refresh detail; Move no longer allowed |
+| `SINGLE_CABIN_NOT_REALLOCATE` / `CABIN_TYPE_REQUIRED` / `UNIT_ALLOCATION_REQUIRED` / `MALFORMED_INVENTORY_IDENTITY` / `COMMERCIAL_PRODUCT_INVALID` | Refresh detail; close/hide invalid Move |
+| `SOURCE_OWNERSHIP_MISMATCH` | Inventory needs reconciliation; do not suggest blind retry |
+| `IDEMPOTENCY_KEY_CONFLICT` | Intent/key conflict; new intent only after operator understands prior state |
+| `CAS_FAILED` / `CAS_LOST_OTHER_UNIT` / `BOOKING_CAS_FAILED` | Concurrent change; refresh detail + candidates |
+| `BLOCK_SYNC_FAILED` / `SOURCE_RELEASE_FAILED` / needs_reconciliation | Reconciliation required; **no** financial / guest-charge wording |
+| `STAY_CHANGE_IDEMPOTENCY_INDEX_MISSING` | Operational backend configuration error (should not occur with live indexes; still map) |
+| Validation 400 | Field-specific UI where practical |
+| Unknown | Safe generic failure message |
+
+### 22.15 Success UX and detail unit display
+
+On completed REALLOCATE:
+
+- Refresh detail
+- Display new current Unit
+- Same Booking / reservation id remains
+- Concise toast e.g. `Moved from A2 to A3`
+
+**Do not show:** new reservation; upgrade charge; refund; price difference; payment status change.
+
+R3 must **visibly** show current accommodation / unit on reservation detail so operators can verify after refresh:
+
+- Multi-unit: cabinType / product label + physical Unit label
+- Single cabin: preserve existing display conventions
+
+Do not redesign the whole reservation header.
+
+### 22.16 StayChange / audit history
+
+R3 v1 does **not** require a StayChange history panel. R1 `AuditEvent` (`reservation_reallocate` on Reservation) remains the OPS history projection. Success toast + refreshed Unit is sufficient. History panel may be later work.
+
+### 22.17 Data refresh
+
+| After success | |
+|---------------|--|
+| **MUST** | Refresh reservation detail |
+| May | List refreshes on navigation; calendar on its own page load |
+| **MUST NOT** | Modify Cleaning calendar behavior; add global polling / event systems; broad unrelated invalidation |
+
+No global client cache requires broad invalidation today.
+
+### 22.18 Preferred R3 architecture
+
+**Server (small):**
+
+- Enrich `reservationDetailReadModel` / mapper for inventory identity
+- Focused read service e.g. `reallocateCandidatesReadService` wrapping Booking lookup, Unit lookup, `evaluateTargetConflicts`, safe DTO mapping
+- Thin GET adapter on `reservationsRoutes`
+
+**Client:**
+
+- `opsApi.js`; eligibility helpers in `opsReservationPermissions.js`; `OpsReservationDetail.jsx`
+- Prefer extract `client/src/pages/ops/components/MoveUnitDialog.jsx` if detail would grow materially
+- Small idempotency helper only if genuinely reusable
+- **No** generic workflow framework
+
+### 22.19 Required R3 test contract (≥60; lock ≥80 named)
+
+Implementation must cover at least these scenarios (add more discovered during implementation):
+
+1. admin + pending allocated multi shows Move
+2. admin + confirmed allocated multi shows Move
+3. operator hides Move
+4. in_house hides
+5. completed hides
+6. cancelled hides
+7. cabinId (single-cabin) hides Move
+8. unallocated hides Move
+9. malformed hides Move
+10. multi hides legacy Reassign
+11. single cabin preserves Reassign
+12. detail exposes `cabinTypeId`
+13. detail exposes `unitId`
+14. current Unit label displayed
+15. candidates same cabinType only
+16. current classified `CURRENT`
+17. inactive classified `INACTIVE`
+18. free classified `AVAILABLE`
+19. internal conflict `HARD_BLOCKED`
+20. external only `EXTERNAL_HOLD_WARNING`
+21. hard + external ⇒ `HARD_BLOCKED`
+22. wrong cabinType never returned
+23. candidate endpoint read-only
+24. candidate endpoint creates no StayChange
+25. candidate endpoint creates no claims
+26. candidate endpoint mutates no blocks
+27. candidate endpoint reuses `evaluateTargetConflicts`
+28. current not selectable
+29. inactive not selectable
+30. hard blocked not selectable
+31. available selectable
+32. external-warning selectable
+33. external warning visibly rendered
+34. external acknowledgment required
+35. false/default acknowledgment not silently true
+36. explicit acknowledgment sends true
+37. reason optional
+38. empty reason omitted/normalized
+39. reason length enforced
+40. idempotency generated on open
+41. UUID-based key
+42. same key on double submit
+43. same key on timeout retry
+44. target change produces new operation key
+45. close/reopen produces new key
+46. busy state prevents concurrent submit
+47. successful request refreshes detail
+48. success closes dialog
+49. success toast identifies unit move
+50. same reservation id remains
+51. no financial success copy
+52. `HARD_CONFLICTS` refreshes candidates
+53. `EXTERNAL_HOLD_ACK_REQUIRED` preserves dialog
+54. `STATUS_NOT_ELIGIBLE` refreshes detail
+55. `SOURCE_OWNERSHIP_MISMATCH` shows reconciliation message
+56. `IDEMPOTENCY_KEY_CONFLICT` handled structurally
+57. CAS race refreshes state
+58. needs_reconciliation handled without financial wording
+59. backend 503 / index-missing surfaced operationally
+60. unknown server failure safe generic message
+61. no free-text error-code parsing
+62. no date field in Move dialog
+63. no guest field
+64. no product selector
+65. no price field
+66. no payment control
+67. no extras controls
+68. no StayChange history UI required
+69. candidate endpoint doesn’t leak guest PII
+70. external hold details safe
+71. narrow viewport usable
+72. selector scrollable
+73. no `window.prompt`
+74. client API payload whitelist
+75. single-cabin Reassign regression
+76. R1 mutation regressions remain green
+77. I1–I6 inventory regressions remain green
+78. reservation detail existing actions unchanged
+79. Cleaning calendar untouched
+80. no AMEND/REBOOK implementation
+
+### 22.20 R3 / later boundary
+
+| Stage | |
+|-------|--|
+| **R3** | §22 Move Unit + read-only prerequisites + tests |
+| **R3 does NOT** | AMEND, REBOOK, Batch 7 wizard, StayChange admin UI, Cleaning changes |
+| **Batch 7** | Unified Move / Modify stay wizard remains later; R3 does not pre-build it |
 
 ---
 
@@ -1365,12 +1758,13 @@ Implementation must cover at least the audited ~90 scenarios plus explicit:
 
 | | |
 |--|--|
-| **Delivered** | Single UI action; automatic mode routing; preview (conflicts, canonical vs contractual, delta disposition, email plan, attribution impact); confirm commit. |
+| **Delivered** | Single UI action; automatic mode routing across REALLOCATE / AMEND / REBOOK; preview (conflicts, canonical vs contractual, delta disposition, email plan, attribution impact); confirm commit. Builds on R3 Move Unit for the REALLOCATE path — does not replace R3’s dedicated Move Unit as the first REALLOCATE surface. |
 | **Touched** | `OpsReservationDetail` / new wizard components; `opsApi`; permissions `ops.reservation.stay_change` (name TBD in batch) |
 | **Invariants proven** | Operator cannot select illegal REALLOCATE/REBOOK mix-ups via UI |
 | **Required tests** | Classifier unit tests; permission tests; preview/commit contract tests |
 | **Prod verification** | Operator walkthrough all three kinds |
 | **Still unsupported** | Deep reconciliation dashboards |
+| **Prerequisite** | R3 Move Unit LIVE for pre-stay REALLOCATE; AMEND/REBOOK domain batches as required |
 
 ---
 
@@ -1425,7 +1819,8 @@ These do not reopen §1–15 locks; they are decided inside the named batches:
 | 2026-08-21 | Amendment: I5 reconciliation — shared expected-claim invariant (full history, no horizon); invalid allocations never expand expected nights; taxonomy + SAFE/HUMAN; no silent winners / deny-write; dry-run zero Mongo writes; partial/targeted never ready; CLI exit 0/2/1; apply-safe order; MRI operation-suffixed sourceReference; conflict MRI mutating-only; READY_FOR_I6 + stable dual verify; excluded claims block I6; deploy I1–I5 together; no unique index / REALLOCATE. |
 | 2026-08-21 | Amendment: I6 authoritative cutover — unique named index via explicit CLI (no legacy drop; Mongo 7 coexistence); autoIndex false; once-per-acquisition index guard; claim-first writers + compensation primary (no txn dependency); paid/voucher demotion; date-edit secure-target-first; reassign hard-block; pooled cabinType capacity fix; Location compensation atomicity; shadow wrappers removed/converted; REALLOCATE still disabled. |
 | 2026-08-21 | Amendment: R1 minimal StayChange REALLOCATE — pre-stay pending/confirmed only; cabinType-only unit move; durable StayChange + scoped idempotency; staged target claims → Booking CAS → reservation block sync → source release; do not wire combined transferUnitNightClaims as sole workflow; external holds reassign-style ack; focused reconcile; separate OPS reallocate route; no UI (R3); no settledByStayChangeId; ≥90+105 test contract. |
+| 2026-08-23 | Amendment: R3 OPS Move Unit — detail inventory identity; read-only `GET …/reallocate-candidates` via `evaluateTargetConflicts`; Move Unit dialog/selector/ack/idempotency; legacy Reassign visibility boundary; structured error map; ≥80 test contract; no AMEND/REBOOK/wizard; R1 indexes already live (not an R3 blocker). |
 
 ---
 
-**END OF LOCKED ARCHITECTURE — R1 SPEC LOCKED; APPLICATION IMPLEMENTATION PENDING**
+**END OF LOCKED ARCHITECTURE — R1 LIVE; R3 SPEC LOCKED; APPLICATION IMPLEMENTATION PENDING**
