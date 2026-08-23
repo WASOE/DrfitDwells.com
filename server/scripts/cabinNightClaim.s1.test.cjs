@@ -16,6 +16,7 @@ const {
 } = require('../models/CabinNightClaim');
 const {
   ERR,
+  ACQUISITION_MODES,
   claimCabinNights,
   releaseCabinNights,
   releaseStayChangeTargetCabinClaims,
@@ -43,6 +44,14 @@ function ids() {
     stayChangeA: new mongoose.Types.ObjectId(),
     stayChangeB: new mongoose.Types.ObjectId()
   };
+}
+
+/** S1.2: pre-authority tests must pass acquisitionMode: 'shadow' explicitly. */
+async function claimForTest(opts) {
+  return claimCabinNights({
+    acquisitionMode: ACQUISITION_MODES.SHADOW,
+    ...opts
+  });
 }
 
 test.before(async () => {
@@ -181,7 +190,7 @@ test('nights: same-day invalid range rejected', async () => {
   const { cabinId, bookingA } = ids();
   await assert.rejects(
     () =>
-      claimCabinNights({
+      claimForTest({
         cabinId,
         bookingId: bookingA,
         checkIn: sofiaDay('2026-08-20'),
@@ -196,7 +205,7 @@ test('nights: inverted range rejected', async () => {
   const { cabinId, bookingA } = ids();
   await assert.rejects(
     () =>
-      claimCabinNights({
+      claimForTest({
         cabinId,
         bookingId: bookingA,
         checkIn: sofiaDay('2026-08-22'),
@@ -231,7 +240,7 @@ test('source: invalid source rejected', async () => {
   const { cabinId, bookingA } = ids();
   await assert.rejects(
     () =>
-      claimCabinNights({
+      claimForTest({
         cabinId,
         bookingId: bookingA,
         checkIn: sofiaDay('2026-08-20'),
@@ -246,7 +255,7 @@ test('source: invalid source rejected', async () => {
 
 test('ownership: first claim creates rows', async () => {
   const { cabinId, bookingA } = ids();
-  const r = await claimCabinNights({
+  const r = await claimForTest({
     cabinId,
     bookingId: bookingA,
     checkIn: sofiaDay('2026-08-20'),
@@ -260,14 +269,14 @@ test('ownership: first claim creates rows', async () => {
 
 test('ownership: same booking null StayChange idempotent', async () => {
   const { cabinId, bookingA } = ids();
-  await claimCabinNights({
+  await claimForTest({
     cabinId,
     bookingId: bookingA,
     checkIn: sofiaDay('2026-08-20'),
     checkOut: sofiaDay('2026-08-21'),
     source: 'finalize'
   });
-  const r2 = await claimCabinNights({
+  const r2 = await claimForTest({
     cabinId,
     bookingId: bookingA,
     checkIn: sofiaDay('2026-08-20'),
@@ -281,7 +290,7 @@ test('ownership: same booking null StayChange idempotent', async () => {
 
 test('ownership: same booking same StayChange idempotent', async () => {
   const { cabinId, bookingA, stayChangeA } = ids();
-  await claimCabinNights({
+  await claimForTest({
     cabinId,
     bookingId: bookingA,
     stayChangeId: stayChangeA,
@@ -289,7 +298,7 @@ test('ownership: same booking same StayChange idempotent', async () => {
     checkOut: sofiaDay('2026-08-21'),
     source: 'rebook'
   });
-  const r2 = await claimCabinNights({
+  const r2 = await claimForTest({
     cabinId,
     bookingId: bookingA,
     stayChangeId: stayChangeA,
@@ -303,7 +312,7 @@ test('ownership: same booking same StayChange idempotent', async () => {
 
 test('ownership: foreign booking rejected', async () => {
   const { cabinId, bookingA, bookingB } = ids();
-  await claimCabinNights({
+  await claimForTest({
     cabinId,
     bookingId: bookingA,
     checkIn: sofiaDay('2026-08-20'),
@@ -312,7 +321,7 @@ test('ownership: foreign booking rejected', async () => {
   });
   await assert.rejects(
     () =>
-      claimCabinNights({
+      claimForTest({
         cabinId,
         bookingId: bookingB,
         checkIn: sofiaDay('2026-08-20'),
@@ -325,7 +334,7 @@ test('ownership: foreign booking rejected', async () => {
 
 test('ownership: different StayChange rejected', async () => {
   const { cabinId, bookingA, stayChangeA, stayChangeB } = ids();
-  await claimCabinNights({
+  await claimForTest({
     cabinId,
     bookingId: bookingA,
     stayChangeId: stayChangeA,
@@ -335,7 +344,7 @@ test('ownership: different StayChange rejected', async () => {
   });
   await assert.rejects(
     () =>
-      claimCabinNights({
+      claimForTest({
         cabinId,
         bookingId: bookingA,
         stayChangeId: stayChangeB,
@@ -349,7 +358,7 @@ test('ownership: different StayChange rejected', async () => {
 
 test('ownership: null requested cannot take over StayChange-owned claim', async () => {
   const { cabinId, bookingA, stayChangeA } = ids();
-  await claimCabinNights({
+  await claimForTest({
     cabinId,
     bookingId: bookingA,
     stayChangeId: stayChangeA,
@@ -359,7 +368,7 @@ test('ownership: null requested cannot take over StayChange-owned claim', async 
   });
   await assert.rejects(
     () =>
-      claimCabinNights({
+      claimForTest({
         cabinId,
         bookingId: bookingA,
         checkIn: sofiaDay('2026-08-20'),
@@ -372,7 +381,7 @@ test('ownership: null requested cannot take over StayChange-owned claim', async 
 
 test('ownership: StayChange request cannot adopt ordinary claim', async () => {
   const { cabinId, bookingA, stayChangeA } = ids();
-  await claimCabinNights({
+  await claimForTest({
     cabinId,
     bookingId: bookingA,
     checkIn: sofiaDay('2026-08-20'),
@@ -381,7 +390,7 @@ test('ownership: StayChange request cannot adopt ordinary claim', async () => {
   });
   await assert.rejects(
     () =>
-      claimCabinNights({
+      claimForTest({
         cabinId,
         bookingId: bookingA,
         stayChangeId: stayChangeA,
@@ -395,14 +404,14 @@ test('ownership: StayChange request cannot adopt ordinary claim', async () => {
 
 test('ownership: existing source not rewritten on idempotent replay', async () => {
   const { cabinId, bookingA } = ids();
-  await claimCabinNights({
+  await claimForTest({
     cabinId,
     bookingId: bookingA,
     checkIn: sofiaDay('2026-08-20'),
     checkOut: sofiaDay('2026-08-21'),
     source: 'legacy_create'
   });
-  await claimCabinNights({
+  await claimForTest({
     cabinId,
     bookingId: bookingA,
     checkIn: sofiaDay('2026-08-20'),
@@ -417,7 +426,7 @@ test('ownership: existing source not rewritten on idempotent replay', async () =
 
 test('multi-night: full acquisition', async () => {
   const { cabinId, bookingA } = ids();
-  const r = await claimCabinNights({
+  const r = await claimForTest({
     cabinId,
     bookingId: bookingA,
     checkIn: sofiaDay('2026-08-20'),
@@ -430,14 +439,14 @@ test('multi-night: full acquisition', async () => {
 
 test('multi-night: mixed existing-own plus new nights', async () => {
   const { cabinId, bookingA } = ids();
-  await claimCabinNights({
+  await claimForTest({
     cabinId,
     bookingId: bookingA,
     checkIn: sofiaDay('2026-08-20'),
     checkOut: sofiaDay('2026-08-21'),
     source: 'test'
   });
-  const r = await claimCabinNights({
+  const r = await claimForTest({
     cabinId,
     bookingId: bookingA,
     checkIn: sofiaDay('2026-08-20'),
@@ -450,7 +459,7 @@ test('multi-night: mixed existing-own plus new nights', async () => {
 
 test('multi-night: foreign conflict mid-range', async () => {
   const { cabinId, bookingA, bookingB } = ids();
-  await claimCabinNights({
+  await claimForTest({
     cabinId,
     bookingId: bookingB,
     checkIn: sofiaDay('2026-08-21'),
@@ -459,7 +468,7 @@ test('multi-night: foreign conflict mid-range', async () => {
   });
   await assert.rejects(
     () =>
-      claimCabinNights({
+      claimForTest({
         cabinId,
         bookingId: bookingA,
         checkIn: sofiaDay('2026-08-20'),
@@ -474,14 +483,14 @@ test('multi-night: foreign conflict mid-range', async () => {
 
 test('multi-night: compensation removes only attempt inserts', async () => {
   const { cabinId, bookingA, bookingB } = ids();
-  await claimCabinNights({
+  await claimForTest({
     cabinId,
     bookingId: bookingA,
     checkIn: sofiaDay('2026-08-20'),
     checkOut: sofiaDay('2026-08-21'),
     source: 'test'
   });
-  await claimCabinNights({
+  await claimForTest({
     cabinId,
     bookingId: bookingB,
     nights: ['2026-08-22'],
@@ -489,7 +498,7 @@ test('multi-night: compensation removes only attempt inserts', async () => {
   });
   await assert.rejects(
     () =>
-      claimCabinNights({
+      claimForTest({
         cabinId,
         bookingId: bookingA,
         checkIn: sofiaDay('2026-08-20'),
@@ -504,13 +513,13 @@ test('multi-night: compensation removes only attempt inserts', async () => {
 
 test('compensation: explicit helper deletes by claim ids only', async () => {
   const { cabinId, bookingA } = ids();
-  const first = await claimCabinNights({
+  const first = await claimForTest({
     cabinId,
     bookingId: bookingA,
     nights: ['2026-08-20'],
     source: 'test'
   });
-  const second = await claimCabinNights({
+  const second = await claimForTest({
     cabinId,
     bookingId: bookingA,
     nights: ['2026-08-21'],
@@ -534,7 +543,7 @@ test('race: duplicate-key same-owner replay under unique index', async () => {
       checkIn: sofiaDay('2026-08-20'),
       checkOut: sofiaDay('2026-08-21'),
       source: 'test',
-      skipIndexAssert: false
+      acquisitionMode: ACQUISITION_MODES.AUTHORITATIVE
     });
     const r2 = await claimCabinNights({
       cabinId,
@@ -542,7 +551,7 @@ test('race: duplicate-key same-owner replay under unique index', async () => {
       checkIn: sofiaDay('2026-08-20'),
       checkOut: sofiaDay('2026-08-21'),
       source: 'test',
-      skipIndexAssert: false
+      acquisitionMode: ACQUISITION_MODES.AUTHORITATIVE
     });
     assert.equal(r2.insertedCount, 0);
     assert.equal(await CabinNightClaim.countDocuments({ cabinId }), 1);
@@ -558,7 +567,7 @@ test('race: duplicate-key foreign owner under unique index', async () => {
       checkIn: sofiaDay('2026-08-20'),
       checkOut: sofiaDay('2026-08-21'),
       source: 'test',
-      skipIndexAssert: false
+      acquisitionMode: ACQUISITION_MODES.AUTHORITATIVE
     });
     await assert.rejects(
       () =>
@@ -568,7 +577,7 @@ test('race: duplicate-key foreign owner under unique index', async () => {
           checkIn: sofiaDay('2026-08-20'),
           checkOut: sofiaDay('2026-08-21'),
           source: 'test',
-          skipIndexAssert: false
+          acquisitionMode: ACQUISITION_MODES.AUTHORITATIVE
         }),
       (err) => err.code === ERR.FOREIGN_OWNER
     );
@@ -587,7 +596,7 @@ test('race: concurrent different owners — one winner only under unique index',
         checkIn,
         checkOut,
         source: 'test',
-        skipIndexAssert: false
+        acquisitionMode: ACQUISITION_MODES.AUTHORITATIVE
       }),
       claimCabinNights({
         cabinId,
@@ -595,7 +604,7 @@ test('race: concurrent different owners — one winner only under unique index',
         checkIn,
         checkOut,
         source: 'test',
-        skipIndexAssert: false
+        acquisitionMode: ACQUISITION_MODES.AUTHORITATIVE
       })
     ]);
     const fulfilled = results.filter((r) => r.status === 'fulfilled');
@@ -618,7 +627,7 @@ test('race: concurrent same owner remains one row under unique index', async () 
         checkIn,
         checkOut,
         source: 'test',
-        skipIndexAssert: false
+        acquisitionMode: ACQUISITION_MODES.AUTHORITATIVE
       }),
       claimCabinNights({
         cabinId,
@@ -626,7 +635,7 @@ test('race: concurrent same owner remains one row under unique index', async () 
         checkIn,
         checkOut,
         source: 'test',
-        skipIndexAssert: false
+        acquisitionMode: ACQUISITION_MODES.AUTHORITATIVE
       })
     ]);
     assert.equal(await CabinNightClaim.countDocuments({ cabinId }), 1);
@@ -637,7 +646,7 @@ test('race: concurrent same owner remains one row under unique index', async () 
 
 test('release: booking + cabin scoped', async () => {
   const { cabinId, bookingA } = ids();
-  await claimCabinNights({
+  await claimForTest({
     cabinId,
     bookingId: bookingA,
     checkIn: sofiaDay('2026-08-20'),
@@ -650,7 +659,7 @@ test('release: booking + cabin scoped', async () => {
 
 test('release: night range scoped', async () => {
   const { cabinId, bookingA } = ids();
-  await claimCabinNights({
+  await claimForTest({
     cabinId,
     bookingId: bookingA,
     checkIn: sofiaDay('2026-08-20'),
@@ -669,14 +678,14 @@ test('release: night range scoped', async () => {
 
 test('release: foreign booking preserved', async () => {
   const { cabinId, bookingA, bookingB } = ids();
-  await claimCabinNights({
+  await claimForTest({
     cabinId,
     bookingId: bookingA,
     checkIn: sofiaDay('2026-08-20'),
     checkOut: sofiaDay('2026-08-21'),
     source: 'test'
   });
-  await claimCabinNights({
+  await claimForTest({
     cabinId,
     bookingId: bookingB,
     checkIn: sofiaDay('2026-08-21'),
@@ -687,19 +696,25 @@ test('release: foreign booking preserved', async () => {
   assert.equal(await CabinNightClaim.countDocuments({ bookingId: bookingB }), 1);
 });
 
-test('release: unsafe unscoped release rejected', async () => {
-  const { bookingA } = ids();
-  await assert.rejects(
-    () => releaseCabinNights({ bookingId: bookingA }),
-    (err) => err.code === ERR.VALIDATION
-  );
+test('release: bookingId-only full release (S1.2 owner-scoped)', async () => {
+  const { cabinId, bookingA } = ids();
+  await claimForTest({
+    cabinId,
+    bookingId: bookingA,
+    checkIn: sofiaDay('2026-08-20'),
+    checkOut: sofiaDay('2026-08-22'),
+    source: 'test'
+  });
+  const r = await releaseCabinNights({ bookingId: bookingA });
+  assert.equal(r.deletedCount, 2);
+  assert.equal(await CabinNightClaim.countDocuments({ bookingId: bookingA }), 0);
 });
 
 // --- STAYCHANGE RELEASE ---
 
 test('stayChange release: exact REBOOK scope', async () => {
   const { cabinId, bookingA, stayChangeA, stayChangeB } = ids();
-  await claimCabinNights({
+  await claimForTest({
     cabinId,
     bookingId: bookingA,
     stayChangeId: stayChangeA,
@@ -707,7 +722,7 @@ test('stayChange release: exact REBOOK scope', async () => {
     checkOut: sofiaDay('2026-08-22'),
     source: 'rebook'
   });
-  await claimCabinNights({
+  await claimForTest({
     cabinId,
     bookingId: bookingA,
     stayChangeId: stayChangeB,
@@ -727,14 +742,14 @@ test('stayChange release: exact REBOOK scope', async () => {
 
 test('stayChange release: ordinary claim preserved', async () => {
   const { cabinId, bookingA, stayChangeA } = ids();
-  await claimCabinNights({
+  await claimForTest({
     cabinId,
     bookingId: bookingA,
     checkIn: sofiaDay('2026-08-20'),
     checkOut: sofiaDay('2026-08-21'),
     source: 'finalize'
   });
-  await claimCabinNights({
+  await claimForTest({
     cabinId,
     bookingId: bookingA,
     stayChangeId: stayChangeA,
@@ -755,7 +770,7 @@ test('stayChange release: ordinary claim preserved', async () => {
 
 test('verify: exact ownership passes', async () => {
   const { cabinId, bookingA } = ids();
-  await claimCabinNights({
+  await claimForTest({
     cabinId,
     bookingId: bookingA,
     checkIn: sofiaDay('2026-08-20'),
@@ -786,7 +801,7 @@ test('verify: missing nights detected', async () => {
 
 test('verify: foreign owner detected', async () => {
   const { cabinId, bookingA, bookingB } = ids();
-  await claimCabinNights({
+  await claimForTest({
     cabinId,
     bookingId: bookingB,
     checkIn: sofiaDay('2026-08-20'),
@@ -805,7 +820,7 @@ test('verify: foreign owner detected', async () => {
 
 test('verify: StayChange mismatch detected', async () => {
   const { cabinId, bookingA, stayChangeA, stayChangeB } = ids();
-  await claimCabinNights({
+  await claimForTest({
     cabinId,
     bookingId: bookingA,
     stayChangeId: stayChangeA,
@@ -832,7 +847,7 @@ test('list: requires scoped filter', async () => {
 
 test('list: booking scoped query', async () => {
   const { cabinId, bookingA } = ids();
-  await claimCabinNights({
+  await claimForTest({
     cabinId,
     bookingId: bookingA,
     checkIn: sofiaDay('2026-08-20'),
@@ -844,9 +859,9 @@ test('list: booking scoped query', async () => {
   assert.equal(r.claims[0].night, '2026-08-20');
 });
 
-// --- PRE-AUTHORITY NOTE ---
+// --- PRE-AUTHORITY / ACQUISITION MODE ---
 
-test('pre-authority: claim succeeds without authoritative index when skipIndexAssert true', async () => {
+test('acquisitionMode: shadow explicit skips authoritative index assert', async () => {
   const names = (await CabinNightClaim.collection.indexes()).map((i) => i.name);
   assert.ok(!names.includes('cabinNightClaim_cabinId_night_unique'));
   const { cabinId, bookingA } = ids();
@@ -855,7 +870,23 @@ test('pre-authority: claim succeeds without authoritative index when skipIndexAs
     bookingId: bookingA,
     checkIn: sofiaDay('2026-08-20'),
     checkOut: sofiaDay('2026-08-21'),
-    source: 'test'
+    source: 'test',
+    acquisitionMode: ACQUISITION_MODES.SHADOW
   });
   assert.equal(r.ok, true);
+});
+
+test('acquisitionMode: default authoritative requires index (fail-safe)', async () => {
+  const { cabinId, bookingA } = ids();
+  await assert.rejects(
+    () =>
+      claimCabinNights({
+        cabinId,
+        bookingId: bookingA,
+        checkIn: sofiaDay('2026-08-20'),
+        checkOut: sofiaDay('2026-08-21'),
+        source: 'test'
+      }),
+    (err) => err.code === ERR.INDEX_MISSING
+  );
 });

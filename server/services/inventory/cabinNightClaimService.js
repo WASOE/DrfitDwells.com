@@ -5,6 +5,7 @@
  * Binding: docs/stay-change-implementation-plan.md — §24.
  *
  * S1.1: foundation only — not authoritative in production until S1.6/S1.7.
+ * S1.2: shadow callers must pass acquisitionMode: 'shadow' explicitly.
  * Production correctness path is standalone compensation (no multi-document txn required).
  */
 
@@ -13,6 +14,11 @@ const CabinNightClaim = require('../../models/CabinNightClaim');
 const { AUTHORITATIVE_UNIQUE_INDEX_SPEC, CLAIM_SOURCES } = require('../../models/CabinNightClaim');
 const { expandOccupiedSofiaNightDateOnlys } = require('../ops/reporting/stayNights');
 const { normalizeDateToSofiaDayStart, formatSofiaDateOnly } = require('../../utils/dateTime');
+
+const ACQUISITION_MODES = Object.freeze({
+  SHADOW: 'shadow',
+  AUTHORITATIVE: 'authoritative'
+});
 
 const ERR = Object.freeze({
   VALIDATION: 'CABIN_NIGHT_CLAIM_VALIDATION',
@@ -28,6 +34,17 @@ const ERR = Object.freeze({
 });
 
 const SOURCE_ALLOWLIST = new Set(CLAIM_SOURCES);
+
+function resolveAcquisitionMode(acquisitionMode) {
+  const mode = String(acquisitionMode || ACQUISITION_MODES.AUTHORITATIVE).trim();
+  if (mode === ACQUISITION_MODES.SHADOW) return ACQUISITION_MODES.SHADOW;
+  if (mode === ACQUISITION_MODES.AUTHORITATIVE) return ACQUISITION_MODES.AUTHORITATIVE;
+  throw createClaimError(ERR.VALIDATION, `Invalid acquisitionMode: ${mode}`, {
+    field: 'acquisitionMode',
+    value: mode,
+    allowed: Object.values(ACQUISITION_MODES)
+  });
+}
 
 function toObjectId(value, fieldName) {
   if (value == null || value === '') {
@@ -240,7 +257,8 @@ async function compensateAttemptInsertsByIds({ insertedClaimIds, session = null 
 
 /**
  * Acquire cabin-night ownership. All-or-nothing for newly inserted nights (compensation path).
- * S1.1 default skipIndexAssert=true — authoritative index not live until S1.6.
+ * S1.2 shadow callers must pass acquisitionMode: 'shadow' explicitly.
+ * Default acquisitionMode is 'authoritative' (requires unique index when used).
  */
 async function claimCabinNights({
   cabinId,
@@ -251,9 +269,10 @@ async function claimCabinNights({
   stayChangeId = null,
   source = 'other',
   session = null,
-  skipIndexAssert = true
+  acquisitionMode = ACQUISITION_MODES.AUTHORITATIVE
 } = {}) {
-  if (!skipIndexAssert) {
+  const mode = resolveAcquisitionMode(acquisitionMode);
+  if (mode === ACQUISITION_MODES.AUTHORITATIVE) {
     await assertAuthoritativeCabinNightIndex();
   }
 
@@ -478,15 +497,6 @@ async function releaseCabinNights({
 
   if (cabinId != null && cabinId !== '') {
     filter.cabinId = toObjectId(cabinId, 'cabinId');
-  } else if (
-    (checkIn == null || checkOut == null) &&
-    (!Array.isArray(nights) || nights.length === 0)
-  ) {
-    throw createClaimError(
-      ERR.VALIDATION,
-      'releaseCabinNights requires cabinId and/or an explicit night range',
-      { field: 'cabinId' }
-    );
   }
 
   if ((checkIn != null && checkOut != null) || (Array.isArray(nights) && nights.length > 0)) {
@@ -706,6 +716,7 @@ async function listCabinNightClaims({
 
 module.exports = {
   ERR,
+  ACQUISITION_MODES,
   CLAIM_SOURCES,
   AUTHORITATIVE_UNIQUE_INDEX_SPEC,
   claimCabinNights,

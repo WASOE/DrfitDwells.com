@@ -9,6 +9,9 @@ const {
   LIFECYCLE_SOURCES
 } = require('../inventory/ensureUnitNightClaimsReleasedShadow');
 const {
+  ensureCabinNightClaimsReleasedShadow
+} = require('../inventory/ensureCabinNightClaimsReleasedShadow');
+const {
   FIXTURE_CABIN_NAME_PATTERN,
   FIXTURE_BOOKING_EMAIL_PATTERN,
   isFixtureCabinName,
@@ -387,6 +390,14 @@ async function deleteFixtureReservation(bookingId, reason, ctx) {
   const bid = booking._id;
   try {
     await ensureUnitNightClaimsReleasedShadow({
+      bookingId: bid,
+      lifecycleSource: LIFECYCLE_SOURCES.MAINTENANCE_DELETE
+    });
+  } catch {
+    /* nonfatal to fixture delete */
+  }
+  try {
+    await ensureCabinNightClaimsReleasedShadow({
       bookingId: bid,
       lifecycleSource: LIFECYCLE_SOURCES.MAINTENANCE_DELETE
     });

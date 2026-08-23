@@ -36,6 +36,13 @@ const {
   LIFECYCLE_SOURCES
 } = require('../inventory/ensureUnitNightClaimsReleasedShadow');
 const {
+  ensureCabinNightClaimsShadow,
+  S1_SOURCES: CABIN_S1_SOURCES
+} = require('../inventory/ensureCabinNightClaimsShadow');
+const {
+  ensureCabinNightClaimsReleasedShadow
+} = require('../inventory/ensureCabinNightClaimsReleasedShadow');
+const {
   linkSavedQuoteToCheckout,
   markSavedQuoteConverted,
   scheduleSavedQuoteTask
@@ -148,6 +155,7 @@ async function ensureLocationChildShadowClaims({
   paymentIntentId = null,
   checkoutSessionId = null,
   ensureFn = ensureUnitNightClaimsShadow,
+  ensureCabinFn = ensureCabinNightClaimsShadow,
   stripePaymentVerified = true
 }) {
   if (!Array.isArray(childBookingIds) || childBookingIds.length === 0) {
@@ -167,6 +175,16 @@ async function ensureLocationChildShadowClaims({
       throwOnFailure: false
     });
     results.push(outcome);
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await ensureCabinFn({
+        booking: child,
+        source: CABIN_S1_SOURCES.LOCATION_CHILD,
+        throwOnFailure: false
+      });
+    } catch {
+      /* cabin shadow must not alter location child canonical outcome */
+    }
   }
   return results;
 }
@@ -240,6 +258,15 @@ async function cleanupPartialLocationFinalize({
       try {
         // eslint-disable-next-line no-await-in-loop
         await ensureUnitNightClaimsReleasedShadow({
+          bookingId: childId,
+          lifecycleSource: LIFECYCLE_SOURCES.LOCATION_ROLLBACK
+        });
+      } catch {
+        /* nonfatal to rollback */
+      }
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await ensureCabinNightClaimsReleasedShadow({
           bookingId: childId,
           lifecycleSource: LIFECYCLE_SOURCES.LOCATION_ROLLBACK
         });

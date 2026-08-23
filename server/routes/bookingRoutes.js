@@ -93,6 +93,13 @@ const {
   ensureUnitNightClaimsReleasedShadow,
   LIFECYCLE_SOURCES
 } = require('../services/inventory/ensureUnitNightClaimsReleasedShadow');
+const {
+  ensureCabinNightClaimsShadow,
+  S1_SOURCES: CABIN_S1_SOURCES
+} = require('../services/inventory/ensureCabinNightClaimsShadow');
+const {
+  ensureCabinNightClaimsReleasedShadow
+} = require('../services/inventory/ensureCabinNightClaimsReleasedShadow');
 const unitNightClaimService = require('../services/inventory/unitNightClaimService');
 const { ERR: CLAIM_ERR } = unitNightClaimService;
 const {
@@ -261,7 +268,7 @@ async function ensureLegacyBookingShadowClaims(
   { paymentIntentId = null, checkoutId = null, stripePaymentVerified = null } = {}
 ) {
   if (!booking) return null;
-  return ensureUnitNightClaimsShadow({
+  const unitOutcome = await ensureUnitNightClaimsShadow({
     booking,
     source: 'legacy_create',
     paymentIntentId: paymentIntentId || booking.stripePaymentIntentId || null,
@@ -269,6 +276,16 @@ async function ensureLegacyBookingShadowClaims(
     stripePaymentVerified,
     throwOnFailure: true
   });
+  try {
+    await ensureCabinNightClaimsShadow({
+      booking,
+      source: CABIN_S1_SOURCES.LEGACY_CREATE,
+      throwOnFailure: false
+    });
+  } catch {
+    /* cabin shadow must not alter legacy canonical outcome */
+  }
+  return unitOutcome;
 }
 
 async function emitLegacyClaimCompensationFailureMri({
@@ -338,11 +355,19 @@ async function compensateLegacyCreateClaimAttempt({
   }
 }
 
-/** I4: nonfatal shadow release before canonical Booking delete. */
+/** I4/S1.2: nonfatal shadow release before canonical Booking delete. */
 async function shadowReleaseBeforeLegacyBookingDelete(bookingId) {
   if (!bookingId) return;
   try {
     await ensureUnitNightClaimsReleasedShadow({
+      bookingId,
+      lifecycleSource: LIFECYCLE_SOURCES.FINALIZE_CLEANUP
+    });
+  } catch {
+    /* never block canonical delete */
+  }
+  try {
+    await ensureCabinNightClaimsReleasedShadow({
       bookingId,
       lifecycleSource: LIFECYCLE_SOURCES.FINALIZE_CLEANUP
     });

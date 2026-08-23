@@ -19,10 +19,18 @@ const { BLOCKING_BOOKING_STATUSES } = require('../../calendar/blockingStatusCons
 const { canUseMongoTransactions } = require('../../../utils/mongoTransactions');
 const { openManualReviewItem } = require('../ingestion/manualReviewService');
 const { syncUnitNightClaimsShadow } = require('../../inventory/syncUnitNightClaimsShadow');
+const { syncCabinNightClaimsShadow } = require('../../inventory/syncCabinNightClaimsShadow');
 const {
   ensureUnitNightClaimsReleasedShadow,
   LIFECYCLE_SOURCES
 } = require('../../inventory/ensureUnitNightClaimsReleasedShadow');
+const {
+  ensureCabinNightClaimsShadow,
+  S1_SOURCES: CABIN_S1_SOURCES
+} = require('../../inventory/ensureCabinNightClaimsShadow');
+const {
+  ensureCabinNightClaimsReleasedShadow
+} = require('../../inventory/ensureCabinNightClaimsReleasedShadow');
 const {
   claimUnitNights,
   compensateClaimAttempt,
@@ -769,6 +777,15 @@ async function transitionReservation({ bookingId, kind, reason = null, settlemen
       } catch {
         /* shadow release must not invalidate remembered canonical success */
       }
+      try {
+        await ensureCabinNightClaimsReleasedShadow({
+          bookingId,
+          lifecycleSource:
+            kind === 'cancel' ? LIFECYCLE_SOURCES.CANCEL : LIFECYCLE_SOURCES.COMPLETE
+        });
+      } catch {
+        /* cabin shadow release must not invalidate remembered canonical success */
+      }
     }
     return remembered;
   }
@@ -892,6 +909,13 @@ async function transitionReservation({ bookingId, kind, reason = null, settlemen
     }
 
     await ensureUnitNightClaimsReleasedShadow({
+      booking,
+      bookingId: booking._id,
+      lifecycleSource:
+        nextStatus === 'cancelled' ? LIFECYCLE_SOURCES.CANCEL : LIFECYCLE_SOURCES.COMPLETE
+    });
+
+    await ensureCabinNightClaimsReleasedShadow({
       booking,
       bookingId: booking._id,
       lifecycleSource:
@@ -1156,6 +1180,15 @@ async function reassignReservation({ bookingId, toCabinId, acceptExternalHoldWar
   booking.cabinId = toCabinId;
   await booking.save({ validateBeforeSave: false });
 
+  try {
+    await syncCabinNightClaimsShadow({
+      booking,
+      source: 'reassign'
+    });
+  } catch {
+    /* cabin shadow must not revert canonical reassign */
+  }
+
   notifyMessageOrchestratorSafely('notifyReservationReassigned', {
     bookingId: booking._id,
     previousCabinId
@@ -1343,7 +1376,14 @@ async function evaluateEditDatesConflicts(booking, normalized) {
 
 async function repairEditDatesConvergence(booking) {
   await ensureReservationBlocksMatchBookingDates(booking, booking.checkIn, booking.checkOut);
-  return syncUnitNightClaimsShadow({
+  const isAllocatedMulti = Boolean(booking.cabinTypeId && booking.unitId);
+  if (isAllocatedMulti) {
+    return syncUnitNightClaimsShadow({
+      booking,
+      source: 'date_edit'
+    });
+  }
+  return syncCabinNightClaimsShadow({
     booking,
     source: 'date_edit'
   });
@@ -1599,7 +1639,7 @@ async function editReservationDates({ bookingId, checkInDate, checkOutDate, reas
       }
     }
   } else if (!isAllocatedMulti) {
-    await syncUnitNightClaimsShadow({
+    await syncCabinNightClaimsShadow({
       booking,
       source: 'date_edit'
     });
@@ -1879,6 +1919,16 @@ async function createManualReservation({
       { overlaps, blockRace },
       409
     );
+  }
+
+  try {
+    await ensureCabinNightClaimsShadow({
+      booking,
+      source: CABIN_S1_SOURCES.MANUAL_RESERVATION,
+      throwOnFailure: false
+    });
+  } catch {
+    /* cabin shadow must not alter manual create outcome */
   }
 
   await Guest.findOneAndUpdate(

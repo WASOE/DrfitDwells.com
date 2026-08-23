@@ -25,6 +25,13 @@ const {
   LIFECYCLE_SOURCES
 } = require('../inventory/ensureUnitNightClaimsReleasedShadow');
 const {
+  ensureCabinNightClaimsShadow,
+  S1_SOURCES: CABIN_S1_SOURCES
+} = require('../inventory/ensureCabinNightClaimsShadow');
+const {
+  ensureCabinNightClaimsReleasedShadow
+} = require('../inventory/ensureCabinNightClaimsReleasedShadow');
+const {
   claimUnitNights,
   compensateClaimAttempt,
   releaseUnitNights,
@@ -35,18 +42,31 @@ const {
   recordPaidBookingResolutionIssueSafe
 } = require('../payments/paidBookingFinalizationObservability');
 
-/** I4/I6: release before canonical Booking delete (MRI on failure; delete may proceed). */
+/** I4/I6 + S1.2: release shadow claims before canonical Booking delete. */
 async function shadowReleaseBeforeBookingDelete(deps, bookingId, lifecycleSource) {
   const releaseFn =
     deps.ensureUnitNightClaimsReleasedShadow || ensureUnitNightClaimsReleasedShadow;
-  if (typeof releaseFn !== 'function' || !bookingId) return;
-  try {
-    await releaseFn({
-      bookingId,
-      lifecycleSource: lifecycleSource || LIFECYCLE_SOURCES.FINALIZE_CLEANUP
-    });
-  } catch {
-    /* never block canonical delete */
+  if (typeof releaseFn === 'function' && bookingId) {
+    try {
+      await releaseFn({
+        bookingId,
+        lifecycleSource: lifecycleSource || LIFECYCLE_SOURCES.FINALIZE_CLEANUP
+      });
+    } catch {
+      /* never block canonical delete */
+    }
+  }
+  const cabinReleaseFn =
+    deps.ensureCabinNightClaimsReleasedShadow || ensureCabinNightClaimsReleasedShadow;
+  if (typeof cabinReleaseFn === 'function' && bookingId) {
+    try {
+      await cabinReleaseFn({
+        bookingId,
+        lifecycleSource: lifecycleSource || LIFECYCLE_SOURCES.FINALIZE_CLEANUP
+      });
+    } catch {
+      /* never block canonical delete */
+    }
   }
 }
 
@@ -303,6 +323,8 @@ function createDefaultDependencies() {
     shadowClaimRecordPaidBookingResolutionIssue: recordPaidBookingResolutionIssueSafe,
     ensureUnitNightClaimsShadow,
     ensureUnitNightClaimsReleasedShadow,
+    ensureCabinNightClaimsShadow,
+    ensureCabinNightClaimsReleasedShadow,
     stripe: null,
     blockingBookingStatuses: BLOCKING_BOOKING_STATUSES
   };
@@ -465,40 +487,55 @@ async function runShadowClaimsAfterCanonicalSurvival(deps, {
   checkoutId,
   stripePaymentVerified = null
 }) {
-  if (!booking || typeof deps.ensureUnitNightClaimsShadow !== 'function') {
-    return null;
-  }
-  try {
-    return await deps.ensureUnitNightClaimsShadow({
-      booking,
-      source,
-      paymentIntentId: paymentIntentId || booking.stripePaymentIntentId || null,
-      checkoutId: checkoutId || booking.checkoutId || null,
-      stripePaymentVerified,
-      throwOnFailure: true,
-      openManualReviewItemFn:
-        typeof deps.shadowClaimOpenManualReviewItem === 'function'
-          ? deps.shadowClaimOpenManualReviewItem
-          : undefined,
-      recordPaidBookingResolutionIssueFn:
-        typeof deps.shadowClaimRecordPaidBookingResolutionIssue === 'function'
-          ? deps.shadowClaimRecordPaidBookingResolutionIssue
-          : undefined
-    });
-  } catch (err) {
-    // Allocated without claims is not allowed — demote if still allocated.
-    if (booking.cabinTypeId && booking.unitId) {
-      try {
-        await demoteAllocatedBookingWithoutClaims(deps, booking, {
-          reasonCode: err?.code || 'UNIT_NIGHT_CLAIM_FAILURE',
-          reasonSummary: err?.message || 'Claim ensure failed after Booking survival'
-        });
-      } catch {
-        /* demotion failure leaves drift for I5 */
+  if (!booking) return null;
+
+  let unitOutcome = null;
+  if (typeof deps.ensureUnitNightClaimsShadow === 'function') {
+    try {
+      unitOutcome = await deps.ensureUnitNightClaimsShadow({
+        booking,
+        source,
+        paymentIntentId: paymentIntentId || booking.stripePaymentIntentId || null,
+        checkoutId: checkoutId || booking.checkoutId || null,
+        stripePaymentVerified,
+        throwOnFailure: true,
+        openManualReviewItemFn:
+          typeof deps.shadowClaimOpenManualReviewItem === 'function'
+            ? deps.shadowClaimOpenManualReviewItem
+            : undefined,
+        recordPaidBookingResolutionIssueFn:
+          typeof deps.shadowClaimRecordPaidBookingResolutionIssue === 'function'
+            ? deps.shadowClaimRecordPaidBookingResolutionIssue
+            : undefined
+      });
+    } catch (err) {
+      if (booking.cabinTypeId && booking.unitId) {
+        try {
+          await demoteAllocatedBookingWithoutClaims(deps, booking, {
+            reasonCode: err?.code || 'UNIT_NIGHT_CLAIM_FAILURE',
+            reasonSummary: err?.message || 'Claim ensure failed after Booking survival'
+          });
+        } catch {
+          /* demotion failure leaves drift for I5 */
+        }
       }
+      throw err;
     }
-    throw err;
   }
+
+  if (typeof deps.ensureCabinNightClaimsShadow === 'function') {
+    try {
+      await deps.ensureCabinNightClaimsShadow({
+        booking,
+        source: source || CABIN_S1_SOURCES.FINALIZE,
+        throwOnFailure: false
+      });
+    } catch {
+      /* cabin shadow must never alter canonical finalize outcome */
+    }
+  }
+
+  return unitOutcome;
 }
 
 function resolveClaimSourceForFinalize(source) {
