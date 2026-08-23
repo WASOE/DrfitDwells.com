@@ -487,11 +487,15 @@ Authoritative (after I6): unique index exists; all writers use claim service; co
 
 ### 11.1 Canonical
 
+For **every** StayChange kind, `bookingId` is the canonical **source** Booking identifier.
+
 StayChange holds:
 
-- `sourceBookingId`
-- `targetBookingId` (replacement)
+- `bookingId` — source Booking (same Booking for REALLOCATE/AMEND; source only for REBOOK)
+- `targetBookingId` — replacement Booking for REBOOK only; `null` for REALLOCATE/AMEND
 - snapshots, money plan, status, actor, reason, idempotency key
+
+**Do NOT persist `sourceBookingId`.** A second source identifier must not diverge from `bookingId`. Full REBOOK lock: **§23**.
 
 ### 11.2 Source projection (on completed REBOOK)
 
@@ -514,8 +518,8 @@ Optional thin reverse pointer for ops navigation (non-canonical): e.g. `movedFro
 
 Both directions required:
 
-- Source → replacement via `replacementBookingId` / StayChange
-- Replacement → source via StayChange `sourceBookingId` (and optional thin pointer)
+- Source → replacement via `cancellationSettlement.replacementBookingId` and/or StayChange where `bookingId = source`
+- Replacement → source via StayChange where `targetBookingId = replacement._id` (and optional thin pointer — see §23.28)
 
 ---
 
@@ -550,7 +554,7 @@ Occupancy / ADR for the operational stay uses **replacement contractual** totals
 
 | Kind | Guest experience |
 |------|------------------|
-| REBOOK | One coherent **“Your stay has been moved”** — suppress normal cancel + new confirmation pair |
+| REBOOK | Suppress normal cancel + new confirmation pair in first mutation batch (§23.26). One coherent **“Your stay has been moved”** guest notice is **later scope** (no template exists today). |
 | AMEND | **“Your stay has been updated”** |
 | REALLOCATE | Normally **silent** unless guest-facing information materially changes |
 
@@ -636,10 +640,10 @@ StayChange {
   status: pending | inventory_secured | awaiting_payment | ready_to_commit |
           committed | settling | completed | failed | needs_reconciliation
 
-  sourceBookingId / bookingId
-  targetBookingId: ObjectId | null   # same as source for reallocate/amend
+  bookingId: ObjectId              # canonical SOURCE Booking (all kinds)
+  targetBookingId: ObjectId | null # REBOOK replacement only; null for reallocate/amend
 
-  idempotencyKey: string (unique scoped with kind + bookingId — see §21.7)
+  idempotencyKey: string (unique scoped with kind + bookingId — §21.7, §23.29)
   payloadFingerprint: string
   actorId, reason
   createdAt, updatedAt, completedAt
@@ -874,7 +878,7 @@ UnitNightClaim remains **shadow / non-authoritative** in I5. No unique `{ unitId
 
 ### Batch R — REALLOCATE (after I6)
 
-Split into **R1** (domain/API — locked in §21; **LIVE** in production at `1a2d1638c76d75049515b09905b6b59a0b65d757`), optional **R2** hardening if still needed after R1, and **R3** (OPS Move Unit UI — locked in §22). Do **not** pull AMEND/REBOOK or the Batch 7 wizard into R3.
+Split into **R1** (domain/API — locked in §21; **LIVE** in production at `1a2d1638c76d75049515b09905b6b59a0b65d757`), optional **R2** hardening if still needed after R1, **R3** (OPS Move Unit UI — locked in §22; **LIVE** at `7bf99e6`), and **REBOOK** (cross-product stay change — locked in §23; **NOT LIVE**). Do **not** pull AMEND/REBOOK or the Batch 7 wizard into R3.
 
 | | |
 |--|--|
@@ -1692,52 +1696,723 @@ Implementation must cover at least these scenarios (add more discovered during i
 
 ---
 
-### Batch 2 — StayChange spine (amend/rebook-ready)
+## 23. REBOOK cross-product stay change (LOCKED)
 
-| | |
-|--|--|
-| **Delivered** | Full StayChange state machine transitions beyond reallocate; durable idempotency for money-bearing kinds; `inventory_secured` / `needs_reconciliation` scaffolding shared with REBOOK |
-| **Touched** | StayChange model expansion; domain service; ops routes skeleton (feature-flagged) |
-| **Still unsupported** | Replacement booking creation, settlement classifiers, guest emails |
+**Production baseline:** `7bf99e6be18e642938ed3e199b6871089df01c8d`
+**Live foundation:** I6 authoritative `UnitNightClaim`; R1 REALLOCATE backend; R3 Move Unit OPS UI.
+**REBOOK is NOT live.**
+
+**REBOOK** means a **commercial product** changes (e.g. Lux Cabin → A-Frame, A-Frame → Stone House). REBOOK must remain **distinct from REALLOCATE** internally. Same commercial product is **not** REBOOK — route conceptually to REALLOCATE or reject REBOOK; do not silently turn same-product REBOOK into REALLOCATE inside the mutation service.
+
+This section locks REBOOK only. **No application implementation** is authorized by §23 alone.
+
+### 23.1 Canonical REBOOK identity
+
+For every StayChange kind, **`StayChange.bookingId` remains the canonical SOURCE Booking.**
+
+For REBOOK add:
+
+- **`targetBookingId`** — replacement Booking after creation
+
+**Do NOT add persisted `sourceBookingId`.**
+
+| Kind | `bookingId` | `targetBookingId` |
+|------|-------------|-------------------|
+| REALLOCATE | same Booking | `null` |
+| REBOOK | source Booking | replacement Booking id |
+
+Existing unique index remains:
+
+```text
+{ kind, bookingId, idempotencyKey }
+```
+
+No second source identifier may diverge from `bookingId`.
+
+### 23.2 Source / replacement semantics
+
+REBOOK creates a **NEW replacement Booking**. Source Booking commercial identity is **NEVER rewritten**.
+
+Source retains forever:
+
+- `cabinId` / `cabinTypeId` / `unitId`
+- original Payment rows
+- original Stripe identifiers
+- original voucher/promo evidence
+- original attribution evidence
+- historical contractual totals
+
+On successful REBOOK, source becomes:
+
+```text
+status = cancelled
+cancellationSettlement.outcome = rebooked_or_moved
+cancellationSettlement.replacementBookingId = replacement Booking id
+```
+
+**Do NOT create `Booking.status = rebooked_or_moved`.** Replacement carries the new commercial identity. Canonical relationship is **StayChange**.
+
+### 23.3 Payment ownership
+
+Lock permanently:
+
+- Existing **`Payment.reservationId` NEVER moves.**
+- Source Payment rows remain source evidence.
+- Transferred value is **NOT** represented as Payment.
+- Waived value is **NOT** represented as Payment.
+- Transferred value is **NOT** new revenue.
+- Waiver is **NOT** promo/discount abuse.
+- Only genuinely **NEW incremental money** collected after REBOOK may create Payment rows on replacement.
+
+**Do NOT copy** source `stripePaidAmountCents`, `giftVoucherAppliedCents`, payment intent ids, checkout ids, or voucher redemption ids onto replacement as if newly paid.
+
+### 23.4 Single-cabin inventory prerequisite
+
+Repository audit proved current single-cabin inventory has **NO durable exclusive acquisition primitive.** Current single-cabin availability is check-then-write:
+
+- Booking overlap queries
+- AvailabilityBlock overlap queries
+- post-save conflict cleanup
+
+Neither Booking nor AvailabilityBlock has a unique constraint capable of preventing arbitrary overlapping stays.
+
+Therefore **REBOOK MUST NOT target `cabinId`-only inventory** until a durable single-cabin claim foundation exists.
+
+**Lock the prerequisite as:** **PERMANENT PER-NIGHT SINGLE-CABIN CLAIMS**
+
+Conceptual model: **`CabinNightClaim`**
+
+| Field | |
+|-------|--|
+| `cabinId` | |
+| `night` | |
+| `bookingId` | |
+| `stayChangeId` | optional |
+| `source` | |
+| `createdAt` | |
+
+Occupied-night semantics: `[checkIn, checkOut)` Europe/Sofia civil dates.
+
+Authoritative unique key: `{ cabinId: 1, night: 1 }` — the single-cabin analogue of `UnitNightClaim`.
+
+**Do NOT** attempt to enforce arbitrary date-range overlap using a unique AvailabilityBlock index. AvailabilityBlock remains projection/warning state, **NOT** authoritative single-cabin exclusivity. External Airbnb/iCal holds remain AvailabilityBlock only.
+
+### 23.5 Single-cabin claim foundation boundary
+
+The single-cabin claim foundation must eventually cover **all authoritative single-cabin inventory writers**, not only REBOOK, before REBOOK may rely on it.
+
+Spec must define staged cutover equivalent in spirit to I1–I6:
+
+1. model/index foundation
+2. audit current single-cabin bookings
+3. backfill permanent occupied-night claims
+4. dual-write/shadow if required
+5. reconcile
+6. controlled unique-index cutover
+7. authoritative writer conversion
+8. production verification
+
+**Do NOT implement this in the spec-lock task.** REBOOK targeting `cabinId`-only inventory is **blocked** until that foundation is authoritative. Multi-unit targets continue to use `UnitNightClaim`.
+
+### 23.6 Replacement Booking creation timing
+
+**Do NOT persist a staging Booking** before target inventory is secured.
+
+Existing Booking fields/statuses are insufficient for a safely invisible staging Booking:
+
+- `pending` would block inventory and appear operationally
+- `archived` still participates in some conflict paths
+- `isTest` has wrong semantics
+
+**Lock:** during precommit REBOOK, durable state lives on:
+
+- StayChange
+- source snapshot
+- target snapshot
+- target claims/holds
+
+Replacement Booking is created **only AFTER** target inventory has been durably secured and immediately before/within the forward commit phase.
+
+**No new generic Booking staging status** is introduced.
+
+### 23.7 Product shapes
+
+Canonical commercial key remains:
+
+```text
+cabinTypeId ? "cabinType:" + cabinTypeId
+  : cabinId ? "cabin:" + cabinId
+  : invalid
+```
+
+REBOOK v1 source/target shapes:
+
+| Shape | Fields |
+|-------|--------|
+| SINGLE | `cabinId` set; `cabinTypeId` null; `unitId` null |
+| ALLOCATED MULTI | `cabinTypeId` set; `unitId` set; `cabinId` null |
+
+**Reject:**
+
+- mixed `cabinId` + `cabinTypeId`
+- missing commercial product
+- unallocated multi
+- LocationBooking-linked source/target
+- whole-location inventory
+
+Same commercial product is **NOT** REBOOK.
+
+### 23.8 StayChange schema expansion
+
+REBOOK requires StayChange expansion. Add to locked conceptual schema:
+
+- `targetBookingId`
+- `sourceCabinId`, `targetCabinId`
+- existing `sourceCabinTypeId`, `targetCabinTypeId`, `sourceUnitId`, `targetUnitId` — **shape-dependent** rather than universally required
+- immutable `sourceSnapshot` and `targetSnapshot` sufficient for: idempotency, recovery, financial evidence, commercial identity, dates, guests, target quote, operator decisions
+
+REALLOCATE validation remains exactly as R1. REBOOK gets kind-specific service validation. Schema may allow nullable shape fields, but service validation must **fail closed**.
+
+### 23.9 Source contractual total
+
+Introduce one canonical resolver:
+
+```text
+resolveSourceContractualTotalCents(booking)
+```
+
+Semantics:
+
+- prefer `totalValueCents` when valid
+- otherwise normalized `round(totalPrice * 100)`
+
+Equivalent to existing `bookingRevenueCents` semantics.
+
+**Freeze `sourceContractualTotalCents`** inside StayChange `sourceSnapshot` **BEFORE** source mutation. Do not recompute from a cancelled/mutated source later. Do not use the existing cancellation helper if it only reads `totalPrice` and conflicts with `totalValueCents` normalization.
+
+### 23.10 Recognized transferable coverage
+
+Introduce canonical future helper:
+
+```text
+resolveRecognizedNetSettledCoverageCents(source)
+```
+
+Must distinguish contractual value from actually recognized coverage.
+
+**COUNT:**
+
+- successful paid Payment rows
+- recognized partial captured Payment rows
+- valid source `giftVoucherAppliedCents`
+
+**DO NOT COUNT:**
+
+- failed Payment
+- unpaid Payment
+- promo discount as separate coverage
+- waiver
+- pending/unsettled payment
+- refunded cash already returned
+
+**DISPUTED / CHARGEBACK:** FAIL CLOSED for REBOOK v1.
+
+**MANUAL/CASH WITHOUT DURABLE PAYMENT EVIDENCE:** FAIL CLOSED when the Booking appears financially settled but no reliable evidence exists. Do **NOT** silently treat an ambiguous paid manual booking as zero coverage.
+
+If source is genuinely unpaid with no paid evidence: coverage may correctly be zero.
+
+### 23.11 Payment evidence precedence
+
+Avoid double-counting Payment trail plus Booking stripe aggregate.
+
+**Lock:**
+
+| Rule | |
+|------|--|
+| A | If canonical Payment trail exists and is internally consistent: derive cash coverage from Payment trail. |
+| B | Only when no canonical Payment trail exists may legacy `stripePaidAmountCents` be used as fallback. |
+| C | If both exist and materially disagree: **FAIL CLOSED / reconciliation-required.** Do not `max()`, add(), or silently prefer the larger figure. |
+| D | Add `giftVoucherAppliedCents` once as non-cash coverage if evidence is valid. |
+| E | Cap transferable value at source contractual total. |
+
+**Canonical formula:**
+
+```text
+recognizedNetSettledCoverageCents =
+  recognizedNetCashCoverageCents
+  + recognizedVoucherCoverageCents
+
+transferredValueCents =
+  min(
+    sourceContractualTotalCents,
+    recognizedNetSettledCoverageCents
+  )
+```
+
+All values integer cents. Zero tolerance.
+
+### 23.12 REBOOK money ledger
+
+StayChange is the canonical REBOOK value ledger. Lock fields conceptually including:
+
+- `canonicalTargetQuoteCents`
+- `sourceContractualTotalCents`
+- `transferredValueCents`
+- `waivedUpgradeCents`
+- `additionalChargeCents`
+- `refundCents`, `creditCents`, `retainedCents`
+- `contractualTargetTotalCents`
+- `settlementType`
+- incremental payment/voucher references as needed later
+
+**Do NOT** represent these by mutating source payment provenance.
+
+### 23.13 Batch S3 money scope
+
+First REBOOK mutation batch supports **ONLY:**
+
+| Case | |
+|------|--|
+| A | target canonical quote **equals** source contractual value |
+| B | target canonical quote is **MORE expensive** and operator explicitly waives some or all of the upgrade difference |
+
+**Not in S3:**
+
+- Stripe upgrade collection
+- downgrade
+- refund
+- credit
+- retained-value downgrade settlement
+- split cash+waive collection
+
+**Later:** downgrade disposition = later batch; paid/partial upgrade = later batch.
+
+### 23.14 Waiver semantics
+
+For an upgrade:
+
+```text
+canonicalTargetQuoteCents = target rack/canonical quote
+waivedUpgradeCents = explicit operator waiver
+contractualTargetTotalCents = canonicalTargetQuoteCents - waivedUpgradeCents
+```
+
+Waiver reduces **CONTRACTUAL** target obligation. Waiver **does NOT** create coverage.
+
+Example:
+
+```text
+source contractual = 10000
+recognized coverage = 4000
+target canonical = 14000
+waived = 4000
+
+replacement contractual = 10000
+transferred coverage = 4000
+remaining obligation = 6000
+```
+
+Replacement is **NOT** magically paid. Do not write waiver to promo/`discountAmount`.
+
+### 23.15 Replacement payment status / Booking status
+
+REBOOK requires payment classification to understand transferred coverage through:
+
+```text
+replacement.settledByStayChangeId
+```
+
+Future canonical coverage:
+
+```text
+transferredValueCents from StayChange
++ genuinely incremental paid coverage on replacement
++ new valid voucher coverage on replacement
+```
+
+Replacement is financially settled **iff** `coverage >= contractualTargetTotalCents` (zero tolerance).
+
+REBOOK replacement Booking status on commit:
+
+| Condition | Status |
+|-----------|--------|
+| canonical REBOOK coverage fully settles contractual target total | `confirmed` |
+| otherwise | `pending` |
+
+This is a dedicated REBOOK creator rule. **Do NOT** infer settlement from waiver alone. **Do NOT** copy source Stripe/voucher fields to manufacture proof.
+
+### 23.16 Payment classifier prerequisite
+
+Before Batch S3 mutation is considered ready, payment/read-model classification must understand `settledByStayChangeId` and read transferable coverage from the completed/active REBOOK StayChange.
+
+Without this, a transfer-covered replacement would incorrectly appear unpaid. **This is a mandatory prerequisite.**
+
+### 23.17 Target-first ordering
+
+Lock standalone-Mongo ordering. **No multi-document transaction assumption.**
+
+Conceptual flow:
+
+1. load/validate source
+2. canonical source money snapshot
+3. canonical target quote
+4. validate operator settlement intent
+5. durable StayChange pending
+6. acquire **TARGET** inventory tagged to StayChange
+7. verify full target ownership
+8. StayChange `inventory_secured`
+9. create replacement Booking from locked snapshot
+10. project replacement commercial/financial fields
+11. mark StayChange `ready_to_commit` / `committed` as exact implementation requires
+12. project source: `cancelled`, `rebooked_or_moved`, `replacementBookingId`
+13. release **SOURCE** inventory
+14. verify final inventory invariants
+15. complete StayChange
+16. exactly-once audit
+
+The implementation audit may refine status-write placement but must preserve the safety boundaries.
+
+**Never release source first.**
+
+### 23.18 Source release boundary
+
+**Pre-source-projection failure:**
+
+- source remains canonical
+- source inventory stays
+- compensate REBOOK-owned target resources only
+- replacement Booking, if created but source not projected, must be safely compensated/removed according to durable facts
+- StayChange may fail cleanly
+
+**After source has durably become** `cancelled` + `rebooked_or_moved` + `replacementBookingId`:
+
+- the operation crosses the **forward-only** boundary
+- do **NOT** blindly resurrect source
+- do **NOT** release target
+- recover forward; MRI if ambiguous
+- finish source inventory cleanup
+- finish audit/projections
+- complete StayChange
+
+### 23.19 Multi target claim ownership
+
+For multi-unit target, `UnitNightClaim` must use:
+
+- `bookingId` = replacement Booking when available according to final claim ownership design
+- `stayChangeId` = REBOOK StayChange
+- `source` = `rebook`
+
+The spec implementation audit must resolve the temporary pre-replacement ownership detail because replacement Booking creation is deferred.
+
+**Preferred durable design:**
+
+- target claims may initially be StayChange-owned, then become replacement Booking-owned only through an explicit safe mechanism
+
+**OR**
+
+- replacement id is generated before persistence and used consistently
+
+**Do NOT** weaken unique `{ unitId, night }` authority. **Do NOT** let a second StayChange borrow another REBOOK's target claims. This exact ownership transition must be resolved before implementation.
+
+### 23.20 Single target claim ownership
+
+Future `CabinNightClaim` follows equivalent semantics:
+
+```text
+cabinId, night, bookingId / future replacement id, stayChangeId, source = rebook
+```
+
+| Case | Result |
+|------|--------|
+| Same StayChange | idempotent |
+| Different StayChange | conflict |
+| Foreign Booking | conflict |
+
+Permanent claim remains after completed REBOOK under replacement Booking.
+
+### 23.21 External hold policy
+
+No new hold policy.
+
+| Inventory | Policy |
+|-----------|--------|
+| Internal authoritative inventory | hard conflict, no override |
+| External Airbnb/iCal AvailabilityBlock | warning only; explicit operator acknowledgment required |
+
+Never automatically acknowledge.
+
+### 23.22 Promo / voucher
+
+- Source promo and redemption remain historical.
+- **Do NOT** automatically carry source promo to replacement.
+- **Do NOT** increment promo usage again.
+- Source voucher redemption remains historical.
+- **Do NOT** copy redemption id/application fields to replacement.
+- Transferred source voucher coverage is represented only through `transferredValueCents` / StayChange snapshot.
+- A genuinely **NEW** voucher against future additional obligation is later scope and must use normal voucher redemption flow.
+- **Waiver is never promo.**
+
+### 23.23 Replacement field copy policy
+
+**COPY:** `guestInfo`, contact preferences where canonical, `checkIn`, `checkOut`, `adults`, `children`, `specialRequests`, `cleaningNotes`, `tripType`, `transportMethod`, `romanticSetup`, `craft`, legalAcceptance snapshot.
+
+**REQUOTE / REBUILD:** commercial inventory identity, contractual totals, payment classification.
+
+**DO NOT COPY:** source Payment ids, Stripe intent/session ids, checkout ids, promo redemption, voucher redemption, source paid aggregates as fake replacement money, `locationBookingId`.
+
+**RESET / suppress:** confirmation lifecycle markers, normal booking-created notification behavior, conversion attribution.
+
+### 23.24 Creator / attribution
+
+Source retains historical attribution. Replacement must **NOT** copy UTM/referral/creator attribution fields that would cause a second conversion or commission.
+
+Set replacement provenance: `source = stay_change_rebook`.
+
+**Do not call** normal booking-created conversion hooks, Meta purchase hooks, or creator accrual hooks for replacement creation.
+
+Reporting must explicitly exclude `rebooked_or_moved` source from creator gross logic where current cancelled-booking aggregation would otherwise count it. Do not count replacement as a second creator acquisition.
+
+### 23.25 Revenue reporting
+
+After completed REBOOK:
+
+| Entity | Rule |
+|--------|------|
+| source | `cancelled`, `rebooked_or_moved`; active commercial revenue = 0; historical evidence remains |
+| replacement | count `contractualTargetTotalCents` **ONCE** as active commercial value |
+| `transferredValueCents` | **not** additional revenue |
+| `waivedUpgradeCents` | **not** revenue; **not** promo |
+| Payments | cash reporting remains based on real payment provenance |
+| Creator gross | must not count both source and replacement |
+
+Required reporting guards belong to REBOOK prerequisite/implementation batches.
+
+### 23.26 Messaging / GMA
+
+Batch S3 deliberately sends **NO automatic guest move email.** No move template exists today.
+
+**Suppress:**
+
+- normal cancellation lifecycle email on source
+- normal `booking_received` / `booking_confirmed` messages on replacement
+- normal replacement creation notifications
+- duplicate conversion messaging/hooks
+- GMA/arrival scheduling caused merely by replacement creation
+
+Do not use generic cancel/create service paths that emit these side effects. A dedicated intentional **"stay moved"** guest notice is **later scope**.
+
+### 23.27 Location / unallocated
+
+REBOOK v1 **rejects:**
+
+- `source.locationBookingId` set
+- unallocated multi source
+- unallocated multi target
+- whole-location product
+
+Target multi must be explicitly allocated to one Unit before mutation commit. LocationBooking remains out of scope.
+
+### 23.28 `settledByStayChangeId`
+
+Add to replacement Booking:
+
+```text
+settledByStayChangeId
+```
+
+This is the **only required canonical** Booking → StayChange financial link. It permits later cancellation/payment readers to resolve transferred value, waiver, contractual target total, and future additional payments/refunds/credits.
+
+**No generic `movedFromBookingId` is required for correctness.** Any future navigation convenience field requires separate justification.
+
+### 23.29 Idempotency
+
+Reuse exact durable index:
+
+```text
+{ kind, bookingId, idempotencyKey }
+```
+
+`bookingId` = source Booking.
+
+REBOOK fingerprint must bind immutable accepted intent including:
+
+- source Booking
+- source commercial product
+- target commercial product
+- target unit when multi
+- checkIn/checkOut
+- guests/capacity inputs
+- canonical target quote
+- source contractual snapshot
+- recognized transferable snapshot
+- waiver/operator settlement choice
+- external-hold acknowledgment
+- reason
+
+Existing scoped key lookup must occur **BEFORE** deriving fresh mutable source state where replay requires stored snapshot.
+
+| Case | Result |
+|------|--------|
+| Same key + same fingerprint | replay/resume |
+| Same key + changed fingerprint | 409 |
+
+No soft fallback.
+
+### 23.30 Crash recovery
+
+Focused REBOOK reconciler must derive durable facts, not trust state labels alone.
+
+Cover:
+
+- StayChange pending, no target claims
+- partial target claims
+- full target claims
+- `inventory_secured`, no replacement Booking
+- replacement created, source untouched
+- replacement committed, source untouched
+- source projected moved, source inventory stale
+- source inventory released, StayChange incomplete
+- audit missing
+- foreign/ambiguous target ownership
+- another REBOOK won
+- payment classifier discrepancy
+
+| Phase | Recovery |
+|-------|----------|
+| Before source projection | resume or exact own-target compensation |
+| After source projection | forward-only recovery |
+| Ambiguous | `needs_reconciliation` + MRI |
+
+### 23.31 Audit / MRI
+
+New MRI category: `stay_change_rebook_reconciliation` (or exact canonical equivalent). Safe identifiers only. No unnecessary guest PII.
+
+Audit action: `reservation_rebook` (or exact canonical equivalent). Exactly-once durable dedupe tied to StayChange.
+
+Audit failure must **not** undo a safely completed move.
+
+### 23.32 REBOOK read / OPS UX later
+
+**Do NOT generalize R3:** `GET …/reallocate-candidates` remains same-product Unit selection.
+
+REBOOK later gets separate product-level preview, conceptually:
+
+```text
+GET /api/ops/reservations/:id/rebook-targets
+```
+
+Must return: commercial products, capacity, availability, target unit choices where applicable, external warnings, canonical quote, delta/waiver context. **No second availability engine** — use canonical conflict/pricing services.
+
+UI later uses separate action initially: **Rebook** or **Change accommodation**. **Do NOT merge** current Move Unit UI in first backend batch.
+
+### 23.33 First implementation batch order (LOCKED)
+
+| Stage | Scope |
+|-------|--------|
+| **REBOOK-S0** | this spec amendment |
+| **REBOOK-S1** | single-cabin permanent night-claim foundation and production cutover |
+| **REBOOK-S2** | StayChange REBOOK schema/spine; source/target snapshots; money fields; canonical contractual/coverage resolvers; payment classifier support for `settledByStayChangeId`; reporting/attribution guards required for safe replacement |
+| **REBOOK-S3** | REBOOK mutation: equal-price; upgrade with explicit complimentary waiver; no Stripe delta; no downgrade |
+| **REBOOK-S4** | read preview + first OPS Rebook UI |
+| **REBOOK-S5** | downgrade refund/credit/retain |
+| **REBOOK-S6** | paid/partial upgrade collection |
+| **Later** | unified Move / Modify stay router/wizard |
+
+**Do NOT collapse S1–S3.**
+
+### 23.34 S1 safety requirement
+
+S1 must be treated like I6 infrastructure.
+
+Before authoritative cutover it must audit **ALL** existing single-cabin blocking Bookings and ensure permanent `CabinNightClaim`s match exactly.
+
+It must cover **all production single-cabin inventory writers** before the unique claim index becomes authoritative.
+
+**No REBOOK targeting single-cabin may deploy before S1 closes.**
+
+### 23.35 S2 financial fail-closed rule
+
+S2 must refuse REBOOK when recognized source coverage cannot be determined reliably.
+
+Examples: disputed payment; chargeback ambiguity; Payment trail / Booking paid aggregate inconsistency; manual/cash booking that appears paid without durable evidence; invalid legacy contractual total.
+
+**Do not guess.** Create reconciliation/MRI or explicit unsupported operational response as appropriate.
+
+### 23.36 Test contract
+
+Final REBOOK implementation must eventually include **at least 150 meaningful scenarios** across staged batches.
+
+S1 requires dedicated infrastructure tests analogous to I1–I6.
+
+S2/S3 must cover at least:
+
+- eligibility; product shape; single→multi; multi→single once S1 live; multi→different-multi
+- same-product rejection; Location rejection; unallocated rejection
+- target-first ordering; never source-first; operation-scoped target ownership; concurrency
+- idempotency; replay after source projection; fingerprint mismatch; crash recovery
+- equal-price fully paid / partially paid / unpaid; voucher-covered; €0 source
+- upgrade full waiver / partial waiver; waiver does not create coverage
+- disputed fail closed; manual cash ambiguous fail closed; Payment/stripe discrepancy fail closed
+- source Payments unchanged; no fake replacement Payments; no copied Stripe aggregate; no voucher double redemption; no promo re-use
+- replacement pending/confirmed classification; `settledByStayChangeId` classification
+- creator attribution not copied; no second conversion; no double creator gross; no double active revenue
+- normal cancellation email suppressed; replacement create/confirm emails suppressed; no automatic move email; GMA not duplicated
+- source projection; source inventory release; replacement inventory permanent
+- audit dedupe; MRI dedupe; reconciliation
+- R1 156 baseline; I1–I6 baseline; R3 baseline; Cleaning non-regression
+
+Add actual implementation discoveries.
+
+### 23.37 Out of scope
+
+Do **NOT** include in REBOOK v1 / S3:
+
+- AMEND
+- date change
+- guest-count change during REBOOK
+- LocationBooking
+- whole-location move
+- same-product REALLOCATE rewrite
+- Cleaning redesign
+- duplicate A-Frame 02 cleanup
+- StayChange history UI
+- automatic move email
+- Stripe upgrade collection in S3
+- downgrade/refund in S3
 
 ---
 
-### Batch 3 — REBOOK base + guards + settled-via-StayChange
+### Batch 2 — StayChange spine (amend/rebook-ready) — **SUPERSEDED for REBOOK by §23.33**
 
 | | |
 |--|--|
-| **Delivered** | REBOOK same-price / zero-delta (and structurally ready for later money): create replacement; freeze source; project `rebooked_or_moved` + `replacementBookingId`; set `settledByStayChangeId`; OPS payment classification treats transferred coverage as settled; suppress cancel+confirm emails; send move notice; **guards** for Meta, commission, promo usage, funnel/KPI, cancel/refund alerts; bidirectional traversal. |
-| **Touched** | StayChange commit path; Booking projections; `reservationPaymentSignals`; lifecycle email service; messageOrchestrator; `bookingPurchaseTracking`; creator commission eligibility; promo `$inc` skip; dashboard refund follow-up; reporting filters as needed |
-| **Invariants proven** | 1, 2, 11–14, 20, 23–24, 25 |
-| **Required tests** | Cabin→Valley identity preserved on source; replacement contractual equals transferred when zero delta; OPS not unpaid; no second Meta/commission; no refund-follow-up on source; email single move template |
-| **Prod verification** | Controlled ops rebook with equal contractual value; Insights/cash/commission spot-check |
-| **Still unsupported** | Downgrade settlement, upgrade charge/waiver UI, AMEND, full wizard |
+| **Status** | Legacy Batch 2–5 REBOOK rows superseded by **REBOOK-S0…S6** (§23.33). AMEND spine portions remain conceptually aligned with **Batch 6**. |
+| **REBOOK path** | S0 (spec) → S1 (`CabinNightClaim`) → S2 (schema/spine/classifiers) → S3 (first mutation) → S4 (preview/UI) → S5/S6 (money expansion) |
 
 ---
 
-### Batch 4 — Downgrade settlement
+### Batch 3 — REBOOK base — **SUPERSEDED by REBOOK-S2 + REBOOK-S3 (§23)**
 
 | | |
 |--|--|
-| **Delivered** | Negative-delta outcomes: refund (evidence), stay credit (compensation voucher), retain; `committed → settling → completed`; `needs_reconciliation` on post-commit failure. |
-| **Touched** | StayChange money writers; reuse `issueCancellationCompensationVoucher` patterns; cash refund evidence builders; settlement emails as appropriate |
-| **Invariants proven** | 5, 6, 10, 20–21 (retain/credit/refund explicit) |
-| **Required tests** | Equation exactness; refund before commit forbidden; credit min rules if reused; retain reason required |
-| **Prod verification** | One live downgrade retain + one stay-credit path in staging/prod checklist |
-| **Still unsupported** | Upgrade waiver/charge |
+| **Was** | Combined spine + mutation + move email |
+| **Now locked** | S2 = spine/classifiers/guards; S3 = equal-price + upgrade-with-waiver only; **no automatic move email** (§23.26) |
 
 ---
 
-### Batch 5 — Upgrade: complimentary / partial / paid + Stripe crash recovery
+### Batch 4 — Downgrade settlement — **SUPERSEDED by REBOOK-S5 (§23.33)**
 
 | | |
 |--|--|
-| **Delivered** | Positive-delta equations; `complimentary_upgrade`, `partial_complimentary_upgrade`, `paid_upgrade`; replacement contractual writes; `awaiting_payment` when `additionalChargeCents > 0`; new Payment on replacement; crash → `needs_reconciliation`; no double charge. |
-| **Touched** | Checkout/PI create for delta; payment linking to replacement; StayChange money; OPS classifier coverage math |
-| **Invariants proven** | 5, 6, 9, 10, 20–23 |
-| **Required tests** | €55→€65 free; €55→€75 with €5 charge + €15 waive; PI success + kill before commit; replay does not double-charge |
-| **Prod verification** | Staging Stripe test mode full matrix |
-| **Still unsupported** | AMEND, unified wizard |
+| **Delivered (when approved)** | Negative-delta outcomes per §23.13 later scope |
+
+---
+
+### Batch 5 — Upgrade paid/partial — **SUPERSEDED by REBOOK-S6 (§23.33)**
+
+| | |
+|--|--|
+| **Delivered (when approved)** | Stripe upgrade collection; partial/paid upgrade per later batch |
 
 ---
 
@@ -1798,9 +2473,10 @@ Implementation must cover at least these scenarios (add more discovered during i
 
 These do not reopen §1–15 locks; they are decided inside the named batches:
 
-- Exact Mongoose indexes and unique keys for StayChange.
-- Whether optional `movedFromBookingId` thin pointer is added on replacement.
-- Exact guest email template copy and provider (SMTP / existing lifecycle pipeline).
+- Exact Mongoose indexes and unique keys for StayChange (REBOOK idempotency locked §23.29).
+- ~~Whether optional `movedFromBookingId` thin pointer is added on replacement~~ — **not required for correctness** (§23.28); separate justification if added later.
+- Multi-unit target claim ownership transition before replacement Booking persistence (§23.19) — resolve in implementation audit.
+- Exact guest email template copy and provider (SMTP / existing lifecycle pipeline) — **automatic move email out of S3 scope** (§23.26).
 - Permission string naming.
 - Feature flag names and rollout order per propertyKind.
 - ~~UnitNightClaim I6 unique-index migration tooling shape~~ — locked in I6 (`unitNightClaimI6Cutover.js`; explicit `--create-unique-index`; no auto-enforce before cutover).
@@ -1820,7 +2496,8 @@ These do not reopen §1–15 locks; they are decided inside the named batches:
 | 2026-08-21 | Amendment: I6 authoritative cutover — unique named index via explicit CLI (no legacy drop; Mongo 7 coexistence); autoIndex false; once-per-acquisition index guard; claim-first writers + compensation primary (no txn dependency); paid/voucher demotion; date-edit secure-target-first; reassign hard-block; pooled cabinType capacity fix; Location compensation atomicity; shadow wrappers removed/converted; REALLOCATE still disabled. |
 | 2026-08-21 | Amendment: R1 minimal StayChange REALLOCATE — pre-stay pending/confirmed only; cabinType-only unit move; durable StayChange + scoped idempotency; staged target claims → Booking CAS → reservation block sync → source release; do not wire combined transferUnitNightClaims as sole workflow; external holds reassign-style ack; focused reconcile; separate OPS reallocate route; no UI (R3); no settledByStayChangeId; ≥90+105 test contract. |
 | 2026-08-23 | Amendment: R3 OPS Move Unit — detail inventory identity; read-only `GET …/reallocate-candidates` via `evaluateTargetConflicts`; Move Unit dialog/selector/ack/idempotency; legacy Reassign visibility boundary; structured error map; ≥80 test contract; no AMEND/REBOOK/wizard; R1 indexes already live (not an R3 blocker). |
+| 2026-08-23 | Amendment: REBOOK cross-product stay change (§23) — `bookingId` = source only (no `sourceBookingId`); `targetBookingId`; `CabinNightClaim` S1 prerequisite; deferred replacement Booking create; contractual/coverage resolvers; fail-closed financial evidence; S3 equal-price + upgrade-waiver only; `settledByStayChangeId`; target-first ordering; attribution/reporting/messaging guards; REBOOK-S0…S6 staged batches; ≥150 test contract; supersede legacy Batch 2–5 REBOOK rows. |
 
 ---
 
-**END OF LOCKED ARCHITECTURE — R1 LIVE; R3 SPEC LOCKED; APPLICATION IMPLEMENTATION PENDING**
+**END OF LOCKED ARCHITECTURE — R1 LIVE; R3 LIVE; REBOOK SPEC LOCKED (§23); REBOOK APPLICATION NOT AUTHORIZED**
