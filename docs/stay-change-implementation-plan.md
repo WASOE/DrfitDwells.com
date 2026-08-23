@@ -1768,6 +1768,8 @@ Lock permanently:
 
 ### 23.4 Single-cabin inventory prerequisite
 
+**Full S1 lock:** **§24** (REBOOK-S1 CabinNightClaim foundation).
+
 Repository audit proved current single-cabin inventory has **NO durable exclusive acquisition primitive.** Current single-cabin availability is check-then-write:
 
 - Booking overlap queries
@@ -1776,43 +1778,15 @@ Repository audit proved current single-cabin inventory has **NO durable exclusiv
 
 Neither Booking nor AvailabilityBlock has a unique constraint capable of preventing arbitrary overlapping stays.
 
-Therefore **REBOOK MUST NOT target `cabinId`-only inventory** until a durable single-cabin claim foundation exists.
+Therefore **REBOOK MUST NOT target `cabinId`-only inventory** until **§24** S1 closes (S1.6 unique authority + S1.7 claim-first writers + post-cutover verification).
 
-**Lock the prerequisite as:** **PERMANENT PER-NIGHT SINGLE-CABIN CLAIMS**
-
-Conceptual model: **`CabinNightClaim`**
-
-| Field | |
-|-------|--|
-| `cabinId` | |
-| `night` | |
-| `bookingId` | |
-| `stayChangeId` | optional |
-| `source` | |
-| `createdAt` | |
-
-Occupied-night semantics: `[checkIn, checkOut)` Europe/Sofia civil dates.
-
-Authoritative unique key: `{ cabinId: 1, night: 1 }` — the single-cabin analogue of `UnitNightClaim`.
-
-**Do NOT** attempt to enforce arbitrary date-range overlap using a unique AvailabilityBlock index. AvailabilityBlock remains projection/warning state, **NOT** authoritative single-cabin exclusivity. External Airbnb/iCal holds remain AvailabilityBlock only.
+Conceptual model summary: **`CabinNightClaim`** — `{ cabinId, night }` authoritative uniqueness; occupied nights `[checkIn, checkOut)` Europe/Sofia civil dates. **Do NOT** use AvailabilityBlock as single-cabin uniqueness authority.
 
 ### 23.5 Single-cabin claim foundation boundary
 
-The single-cabin claim foundation must eventually cover **all authoritative single-cabin inventory writers**, not only REBOOK, before REBOOK may rely on it.
+**Full staged cutover:** **§24.29** (S1.1–S1.8). **Do NOT collapse S1.1–S1.7.**
 
-Spec must define staged cutover equivalent in spirit to I1–I6:
-
-1. model/index foundation
-2. audit current single-cabin bookings
-3. backfill permanent occupied-night claims
-4. dual-write/shadow if required
-5. reconcile
-6. controlled unique-index cutover
-7. authoritative writer conversion
-8. production verification
-
-**Do NOT implement this in the spec-lock task.** REBOOK targeting `cabinId`-only inventory is **blocked** until that foundation is authoritative. Multi-unit targets continue to use `UnitNightClaim`.
+The single-cabin claim foundation must cover **all authoritative single-cabin inventory writers**, not only REBOOK, before REBOOK may rely on it. REBOOK targeting `cabinId`-only inventory is **blocked** until §24 S1 closes. Multi-unit targets continue to use `UnitNightClaim`.
 
 ### 23.6 Replacement Booking creation timing
 
@@ -2310,7 +2284,7 @@ UI later uses separate action initially: **Rebook** or **Change accommodation**.
 | Stage | Scope |
 |-------|--------|
 | **REBOOK-S0** | this spec amendment |
-| **REBOOK-S1** | single-cabin permanent night-claim foundation and production cutover |
+| **REBOOK-S1** | single-cabin permanent night-claim foundation and production cutover — **§24** |
 | **REBOOK-S2** | StayChange REBOOK schema/spine; source/target snapshots; money fields; canonical contractual/coverage resolvers; payment classifier support for `settledByStayChangeId`; reporting/attribution guards required for safe replacement |
 | **REBOOK-S3** | REBOOK mutation: equal-price; upgrade with explicit complimentary waiver; no Stripe delta; no downgrade |
 | **REBOOK-S4** | read preview + first OPS Rebook UI |
@@ -2322,13 +2296,13 @@ UI later uses separate action initially: **Rebook** or **Change accommodation**.
 
 ### 23.34 S1 safety requirement
 
-S1 must be treated like I6 infrastructure.
+**Full lock:** **§24**. S1 must be treated like I6 infrastructure.
 
 Before authoritative cutover it must audit **ALL** existing single-cabin blocking Bookings and ensure permanent `CabinNightClaim`s match exactly.
 
 It must cover **all production single-cabin inventory writers** before the unique claim index becomes authoritative.
 
-**No REBOOK targeting single-cabin may deploy before S1 closes.**
+**No REBOOK targeting single-cabin may deploy before §24 S1 closes** (S1.6 + S1.7 + post-cutover verification).
 
 ### 23.35 S2 financial fail-closed rule
 
@@ -2382,12 +2356,648 @@ Do **NOT** include in REBOOK v1 / S3:
 
 ---
 
+## 24. REBOOK-S1 — CabinNightClaim foundation (LOCKED)
+
+**Production baseline:** `7bf99e6be18e642938ed3e199b6871089df01c8d`
+**Depends on:** I6 authoritative `UnitNightClaim` (live).
+**Purpose:** Lock **REBOOK-S1** as the permanent **single-cabin inventory-integrity** foundation. This is **NOT** a REBOOK-specific hold table.
+
+**CabinNightClaim** becomes the permanent occupied-night ownership primitive for every authoritative Booking writer using:
+
+```text
+cabinId set
+cabinTypeId null
+unitId null
+```
+
+**No application implementation** is authorized by §24 alone.
+
+### 24.1 Purpose and conceptual model
+
+| Field | |
+|-------|--|
+| `cabinId` | required |
+| `night` | required (Sofia civil day-start) |
+| `bookingId` | required |
+| `stayChangeId` | optional/null |
+| `source` | required (stable provenance) |
+| `createdAt` | required |
+
+Occupied-night semantics: **`[checkIn, checkOut)`**
+Timezone: **Europe/Sofia civil dates**
+Authoritative exclusivity: **ONE owner** for each `{ cabinId, night }`
+
+### 24.2 Architectural role
+
+| Layer | Role |
+|-------|------|
+| **Booking** | commercial reservation source of truth |
+| **CabinNightClaim** | authoritative **INTERNAL** single-cabin occupied-night exclusivity |
+| **UnitNightClaim** | authoritative **INTERNAL** allocated multi-unit occupied-night exclusivity |
+| **AvailabilityBlock** | manual / maintenance / external / checkout / location holds and optional projection state |
+| **`Cabin.blockedDates`** | legacy/read compatibility where still applicable |
+
+**Locks:**
+
+- AvailabilityBlock **MUST NOT** become the uniqueness authority for single-cabin reservations.
+- External Airbnb/iCal AvailabilityBlocks **NEVER** create CabinNightClaims.
+
+### 24.3 Claim-owning Booking shape
+
+**Canonical single-cabin claim shape:**
+
+```text
+cabinId present
+cabinTypeId absent
+unitId absent
+```
+
+**Canonical blocking statuses:** `pending`, `confirmed`, `in_house`
+**Nonblocking:** `completed`, `cancelled`
+
+Malformed mixed product identities are **NOT** silently normalized. A Booking with both `cabinId` and `cabinTypeId` must be reported **malformed** and must **block authoritative cutover** until inventory ownership is understood or explicitly excluded by a later approved repair.
+
+### 24.4 Test / archived policy
+
+Lock CabinNightClaim expected ownership to operational Booking semantics:
+
+```text
+status ∈ { pending, confirmed, in_house }
+AND valid single-cabin commercial shape
+AND isTest !== true
+AND archivedAt absent
+```
+
+**Location child Bookings** are **NOT** excluded merely because they have `locationBookingId`. If a LocationBooking child has valid blocking single-cabin shape, it **must** own CabinNightClaims.
+
+**Current asymmetry (must not change silently):** public single-cabin availability may still count `isTest` / `archived` Bookings while OPS/base filters exclude them. S1 **MUST NOT** silently change guest-facing availability semantics during shadow/dual-write phases. Reader migration must be **explicit and tested**. Do not make an unrelated public-availability behavior change merely by introducing claims.
+
+### 24.5 Night generation
+
+Reuse existing canonical night semantics:
+
+- `expandOccupiedSofiaNightDateOnlys(checkIn, checkOut)` (`server/services/ops/reporting/stayNights.js`)
+- existing Europe/Sofia day-start normalization (`server/utils/dateTime.js`)
+
+**Do NOT** implement another timezone/night iterator.
+
+Occupied nights are exactly **`[checkIn, checkOut)`**. Checkout day is **not** claimed.
+
+Reject/report: invalid dates; same-day zero-night stay where invalid by current domain; negative/inverted ranges; unparseable legacy dates. DST behavior must follow the same Sofia civil-night logic already used by UnitNightClaim reporting/integrity tooling.
+
+### 24.6 Minimal data model
+
+Lock minimal fields only (see §24.1). **No `updatedAt` required.**
+
+**Do NOT add:** guest data; Booking dates; cabin name; Booking status; price; payment data; availability labels; duplicated commercial projections.
+
+Claim rows are **ownership facts only**.
+
+### 24.7 Authoritative unique index
+
+**Exact authoritative unique index:**
+
+```text
+keys:  { cabinId: 1, night: 1 }
+name:  cabinNightClaim_cabinId_night_unique
+unique: true
+```
+
+**Critical deployment rule:**
+
+- **DO NOT** rely on ordinary Mongoose startup/index synchronization to create this authoritative unique index.
+- **DO NOT** allow application startup to create it before controlled cutover.
+- Define the authoritative index specification centrally for validation and the S1 cutover tool.
+- Create the actual unique index **ONLY** through the explicit controlled S1 cutover command after all gates pass.
+
+If useful, ordinary **non-unique** operational indexes may remain schema-managed:
+
+```text
+{ cabinId: 1 }
+{ night: 1 }
+{ bookingId: 1 }
+{ stayChangeId: 1 }
+{ bookingId: 1, cabinId: 1 }
+```
+
+**Do not** automatically delete a legacy/wrong index.
+
+**Startup:** `autoIndex: false` for authoritative unique (mirror UnitNightClaim I6 pattern).
+
+### 24.8 Claim source semantics
+
+`source` records **stable acquisition provenance**, not every later operation that touched the claim.
+
+Use a controlled service allowlist (not uncontrolled free-form; not an unnecessarily rigid schema enum that complicates migrations).
+
+Conceptual allowed provenance:
+
+```text
+finalize | legacy_create | manual_reservation | location_child |
+date_edit | reassign | rebook | bootstrap | recovery | test | other
+```
+
+Implementation may tighten names during S1.1, but semantics must remain **stable provenance**.
+
+### 24.9 Claim ownership
+
+**Permanent ownership:**
+
+```text
+bookingId = Booking._id that owns the occupied night
+```
+
+Normal create/edit/reassign: `stayChangeId = null` unless an explicit StayChange owns the operation.
+
+REBOOK target:
+
+```text
+bookingId = pre-generated future replacement Booking._id
+stayChangeId = REBOOK StayChange._id
+source = rebook
+```
+
+| Case | Result |
+|------|--------|
+| Same Booking reclaiming same cabin/night | idempotent |
+| Different Booking | hard conflict |
+| Different StayChange borrowing another operation's target claim | hard conflict |
+
+**No silent claim reassignment.**
+
+### 24.10 Pre-generated Booking id
+
+Lock preferred REBOOK and create-path pattern:
+
+1. generate Booking `ObjectId` **BEFORE** persistence
+2. acquire target claims using that exact future Booking id
+3. persist Booking later using the **exact same `_id`**
+
+Repository precedent: manual reservation creation; multi-unit checkout finalization; LocationBooking child creation.
+
+**No temporary StayChange-only ownership/rebinding** is required for the normal design.
+
+### 24.11 Claim service contract
+
+Conceptually require:
+
+```text
+claimCabinNights(...)
+releaseCabinNights(...)
+releaseStayChangeTargetCabinClaims(...)
+assertBookingOwnsCabinNights(...)
+listCabinNightClaims(...)
+compensateCabinClaimAttempt(...)
+assertAuthoritativeCabinNightIndex(...)
+```
+
+A range-replacement helper may be implemented for date/cabin changes but must preserve **target-first** semantics.
+
+Parameters must bind: `cabinId`, `bookingId`, `checkIn`, `checkOut`, `source`, optional `stayChangeId`. **No guest data.**
+
+### 24.12 Multi-night acquisition
+
+After unique cutover, Mongo uniqueness is the hard race barrier.
+
+For N occupied nights: acquire every required `{ cabinId, night }` ownership row.
+
+If acquisition fails part-way:
+
+- compensate **ONLY** rows inserted by **THIS** attempt
+- **do NOT** remove pre-existing same-owner claims, foreign-owner claims, or claims outside this attempt's deterministic insertion set
+
+Surface deterministic errors conceptually: `FOREIGN_OWNER`, `PARTIAL_ACQUISITION`, `COMPENSATION_FAILED` (exact names finalized in S1.1).
+
+### 24.13 Release semantics
+
+**Delete-on-release.**
+
+Release when a Booking ceases to own inventory:
+
+- cancelled
+- completed
+- date shrink/shift removes nights
+- cabin reassignment vacates source cabin
+- failed create compensation
+- location finalize rollback
+- REBOOK source release after forward boundary
+- safe reconciliation of deterministic stale ownership
+
+**Do NOT** release merely because payment state changes.
+
+### 24.14 Create writer coverage
+
+S1 must eventually cover **every** authoritative single-cabin CREATE writer, including:
+
+- legacy booking POST path while it remains live
+- V2 checkout/finalization
+- checkout finalization worker
+- paid checkout recovery / historical recovery paths
+- OPS manual reservation creation
+- LocationBooking single-cabin child creation
+- any production-reachable equivalent discovered during implementation
+
+**No writer** may remain capable of creating a blocking single-cabin Booking without corresponding claim ownership after S1 authority flips.
+
+### 24.15 Authoritative create ordering
+
+**After S1 authority:**
+
+1. generate Booking `_id`
+2. validate current conflict policy
+3. claim CabinNightClaims
+4. verify full ownership
+5. persist authoritative blocking Booking
+6. perform remaining safe projections/side effects
+7. on failure compensate only operation-owned claims
+
+Claims exist **before** the Booking becomes authoritative/blocking. Public external-hold policy remains unchanged.
+
+### 24.16 Shadow / dual-write phase semantics
+
+**Critical distinction:**
+
+| Phase | Canonical inventory |
+|-------|---------------------|
+| **Before unique-index authority** | Booking remains canonical |
+| **After unique index + writer readiness + authority flip** | claim-first mandatory; claim conflict = hard internal inventory failure |
+
+During shadow/dual-write:
+
+- existing Booking mutation succeeds/fails according to existing production semantics
+- CabinNightClaims mirror the resulting Booking ownership
+- claim mismatch/failure is logged/reported for reconciliation
+- claim shadow failure must **not** pretend exclusivity exists when unique authority is not live
+- foreign ownership/collision findings are **cutover blockers**
+
+**Do NOT** call the pre-authority phase "authoritative claim-first inventory."
+
+S1 dual-write must **NOT** unexpectedly change guest-facing booking behavior.
+
+### 24.17 Date change ordering
+
+**After authority:**
+
+1. determine old and new occupied-night sets
+2. preserve already-owned overlap
+3. claim all **NEW** required nights first
+4. verify complete target ownership
+5. CAS/commit Booking dates
+6. release old nights no longer required
+
+**Never release old nights first.**
+
+If Booking date commit fails: release only newly acquired nights belonging to this attempt. Existing overlapping claims remain.
+
+### 24.18 Single-cabin Reassign ordering
+
+Legacy single-cabin Reassign **must be included** before S1 authority.
+
+**After authority:**
+
+1. validate target cabin
+2. claim target cabin occupied nights
+3. verify ownership
+4. commit `Booking.cabinId`
+5. release source cabin claims
+
+Internal claim conflict: **hard, no override.** External Airbnb/iCal warning policy: **unchanged.**
+
+A production Reassign path that can mutate `cabinId` without claim conversion is an **S1 cutover blocker**.
+
+### 24.19 Location child rule
+
+LocationBooking children with `locationBookingId` + valid single-cabin shape **must** participate in CabinNightClaim ownership when their Booking status blocks inventory.
+
+This closes the current gap where single-cabin children skip the UnitNightClaim path.
+
+**Do not redesign LocationBooking.** Multi-unit Location children continue using UnitNightClaim.
+
+### 24.20 Paid checkout race
+
+**After authoritative claim-first acquisition**, if payment is already successful but target CabinNightClaim acquisition loses a race:
+
+- do **NOT** create/confirm a second overlapping Booking
+- do **NOT** delete or rewrite Payment evidence
+- do **NOT** silently choose another cabin
+- preserve durable paid checkout/recovery evidence
+- suppress inappropriate normal guest confirmation where existing recovery policy requires review
+- route to deterministic paid-checkout recovery / MRI / needs-review behavior
+
+**At most one Booking** may own the disputed cabin-night.
+
+### 24.21 AvailabilityBlock
+
+**Do NOT** create mandatory reservation AvailabilityBlocks merely because CabinNightClaim exists.
+
+Booking + CabinNightClaim are sufficient permanent internal reservation facts.
+
+AvailabilityBlock remains for: manual block; maintenance; external_hold; checkout/location holds; existing optional reservation projections.
+
+External blocks do **not** create claims.
+
+### 24.22 Reader migration
+
+| Phase | Reader truth |
+|-------|--------------|
+| **Before S1 authority** | Booking overlap + AvailabilityBlock remain current reader truth; claims are shadow/reconciliation evidence |
+| **After unique authority + all writers converted** | CabinNightClaim = hard internal exclusivity for **mutation safety**; Booking overlap may remain defense / reconciliation / commercial read / legacy compatibility |
+
+**Do NOT** require every public/calendar reader to switch to claim-based queries in the same deployment that creates the unique index. Reader migration must be staged and regression-tested. **No semantic change** to external hold policy.
+
+### 24.23 Expected claim set
+
+S1 integrity tooling computes expected CabinNightClaim set from every valid blocking single-cabin Booking satisfying §24.4.
+
+Expected identity: `{ cabinId, Sofia occupied night, bookingId }`. `stayChangeId` / `source` do not change expected ownership identity for bootstrap parity.
+
+For every expected claim there must eventually be **exactly one** canonical claim row.
+
+### 24.24 Production preflight classification
+
+Read-only S1 audit must report at minimum:
+
+```text
+blocking Bookings scanned
+valid single-cabin blocking Bookings
+expected occupied-night claims
+actual CabinNightClaim rows
+missing claims | stale claims | orphan claims
+wrongCabin | outsideRange
+sameOwnerDuplicates | foreignOwnerDuplicates/collisions
+claimsForNonblockingBooking | claimsForMultiInventoryBooking
+malformed mixed commercial shapes
+missing/invalid cabin references | invalid dates
+zero/negative occupied ranges
+Location child counts | isTest/archived excluded counts
+scan completeness
+```
+
+**No production mutation** in default verify mode.
+
+### 24.25 Foreign collisions
+
+**Canonical foreign collision:** same `{ cabinId, night }` expected by more than one distinct blocking Booking owner, or an existing claim owned by a different Booking than canonical expected owner.
+
+- **Never** auto-select a winner.
+- Foreign collisions are **hard blockers** for authoritative unique cutover.
+- Report safe identifiers: booking ids, cabin id, night, status/type classification. **Avoid guest PII.**
+
+### 24.26 Backfill
+
+Backfill: generate expected claims; insert missing uncontested ownership rows with `source = bootstrap`.
+
+Requirements: idempotent; restartable; batchable; safe under live dual-write traffic; machine-readable output.
+
+Existing correct claims: leave unchanged. Foreign collision: report and refuse winner selection.
+
+**Do not** mutate Bookings. **Do not** perform destructive foreign-ownership repair.
+
+### 24.27 Reconciliation
+
+Permanent reconciliation must detect: missing; stale; orphan; wrongCabin; outsideRange; sameOwnerDuplicates; foreignOwnerDuplicates; claimsForNonblockingBooking; claimsForMultiInventoryBooking; invalid/malformed ownership.
+
+**Safe deterministic repairs may include:**
+
+- insert missing uncontested own claim
+- delete stale own claim for definitively nonblocking Booking
+- delete wrong-cabin/outside-range own claim and restore expected own claim when uncontested
+- deduplicate exact same-owner duplicates pre-unique
+- release obvious orphan/wrong-collection claims when deterministic
+
+**Never auto-repair:** foreign-owner collision; ambiguous Booking shape; ambiguous cabin ownership. Those **fail closed** / require explicit repair.
+
+### 24.28 Live traffic cutover
+
+**Do NOT** perform audit / backfill / unique index while legacy writers continue creating blocking Bookings with no claim dual-write.
+
+Minimum safe progression:
+
+```text
+dual-write compatibility on ALL writers
+→ production audit/backfill
+→ stable verification
+→ unique index
+→ authoritative claim-first mode
+```
+
+If all writer coverage cannot be proven under live traffic: use a controlled writer pause/maintenance window for final cutover.
+
+**Do not** assume I6 exact deployment sequence fits without verifying single-cabin writers.
+
+### 24.29 S1 sub-batches (LOCKED)
+
+| Stage | Scope |
+|-------|--------|
+| **S1.1** | CabinNightClaim model/service foundation; night helper reuse; non-authoritative indexes; cutover specification constants; tests; **NO unique authority** |
+| **S1.2** | shadow/dual-write **ALL** single-cabin inventory writers; Booking remains canonical; observability/parity |
+| **S1.3** | read-only production preflight/audit |
+| **S1.4** | idempotent production backfill under dual-write |
+| **S1.5** | stable clean verification — minimum **two** clean equivalent canonical fingerprints |
+| **S1.6** | controlled authoritative unique index creation |
+| **S1.7** | authoritative claim-first writer mode; index assertion required |
+| **S1.8** | post-cutover reconciliation; safe deterministic repairs only; foreign ambiguity → MRI/manual |
+
+**Do not collapse S1.1–S1.7.**
+
+### 24.30 Stable verification
+
+Require **at least TWO** clean full-scan verification passes before unique cutover.
+
+Canonical fingerprint must **exclude volatile timestamps** and bind:
+
+```text
+sorted expected ownership tuples
+sorted foreign collision tuples
+expected claim count | actual canonical claim count
+malformed/invalid blockers | drift-class counts
+scan completeness
+```
+
+If the repository's proven I6 fingerprint pattern can represent this without losing information, **reuse that architecture**.
+
+Unique cutover requires: full scan; clean pass; prior matching clean fingerprint; no intervening blocker.
+
+### 24.31 Cutover tool
+
+Lock one controlled S1 tool:
+
+```text
+server/scripts/cabinNightClaimS1Cutover.js
+```
+
+(Exact name may remain unless implementation finds a repository naming conflict.)
+
+| Mode | Behavior |
+|------|----------|
+| **Default** | **READ-ONLY VERIFY** |
+| `--backfill` | explicit mutation |
+| `--create-unique-index` | explicit mutation |
+
+Support machine-readable JSON; prior/stable fingerprint gating.
+
+The tool must **NEVER** create the unique index merely because the model is loaded.
+
+### 24.32 Unique-index refusal gates
+
+Refuse authoritative unique-index creation if **ANY** of:
+
+```text
+scan not full
+expected missing claims | unsafe stale/orphan drift
+foreign-owner collision
+same-key duplicate rows incompatible with unique creation
+malformed blocking Booking | invalid cabin reference
+invalid occupied-night range | wrongCabin/outsideRange unresolved
+claim on wrong inventory shape
+writer readiness incomplete | dual-write coverage incomplete
+prior stable fingerprint absent when required
+current fingerprint differs from accepted prior fingerprint
+existing conflicting/wrong index state | tool/inventory scan failure
+```
+
+**Do not** automatically drop an existing wrong index.
+
+### 24.33 Startup safety
+
+Ordinary production process startup **MUST NOT** be able to perform the authoritative S1 cutover.
+
+Application startup may **verify/assert** the authoritative index **after S1.6**, but **creation** belongs to the controlled cutover tool.
+
+`autoIndex` must not create the unique authority. Do not rely solely on developer convention if a schema/syncIndexes path could accidentally create it.
+
+### 24.34 Writer readiness
+
+Before S1.6/S1.7, production must prove every process capable of single-cabin inventory mutation runs claim-compatible code.
+
+Repo-known critical writer: **main API**, including its in-process checkout finalization worker.
+
+Also **production-audit the live PM2 process list** before cutover. Do not assume `ecosystem.config.cjs` is complete.
+
+Messaging/confirmation-only workers need not write claims unless runtime audit proves otherwise.
+
+### 24.35 Deployment ordering
+
+Conceptual production progression:
+
+```text
+deploy S1.1/S1.2 compatible code
+→ restart every inventory writer
+→ verify versions/SHA
+→ verify dual-write readiness
+→ run S1.3 → S1.4 → S1.5 (twice/stably)
+→ run S1.6 unique cutover
+→ enable/deploy S1.7 authoritative writer assertion
+→ verify all writer processes
+→ run S1.8 reconciliation
+```
+
+Exact deploy commands deferred until implementation and production audit.
+
+### 24.36 Rollback
+
+| Phase | Posture |
+|-------|---------|
+| **Pre-authority** | Booking canonical; claim shadow can be disabled/reverted; claims may remain as inert evidence; no need to mutate Booking history merely to rollback code |
+| **Post-authority** | do **NOT** casually drop the unique index; do **NOT** return to writers that bypass claims while index/data model is authoritative; prefer **forward repair** |
+
+Distinguish: code rollback; feature/authority flag rollback; data repair; index rollback — **these are not equivalent**.
+
+### 24.37 Observability
+
+S1 requires structured low-PII observability for:
+
+```text
+claim acquisition conflict | foreign owner | partial acquisition
+compensation success/failure | shadow mismatch | writer lacking readiness
+backfill inserted/skipped/collided | reconciliation drift
+cutover fingerprint | index missing/wrong | paid checkout claim failure
+```
+
+Reuse existing logging/MRI infrastructure. **No new monitoring platform.**
+
+### 24.38 Cleaning
+
+**NO Cleaning changes.** Cleaning remains Booking-derived. CabinNightClaim is inventory integrity only. No Cleaning calendar/read-model dependency on claim rows is introduced by S1.
+
+### 24.39 Reporting
+
+CabinNightClaim is **NOT:** revenue; payment; occupancy reporting ledger; creator attribution; conversion evidence.
+
+**No financial/reporting migration** belongs to S1. Existing reporting remains Booking/payment based.
+
+### 24.40 REBOOK dependency
+
+REBOOK targeting a `cabinId`-only product is **forbidden** until:
+
+1. **S1.6** unique authority is live
+2. **S1.7** claim-first writer mode is live
+3. post-cutover verification has **no blocking drift**
+
+REBOOK multi-unit work may rely on UnitNightClaim separately, but the locked overall S3 cross-product feature must respect product-specific inventory authority.
+
+### 24.41 Test contract
+
+S1 implementation must contain **at least 140 meaningful tests** across sub-batches.
+
+Must include:
+
+- model validation; startup/index safety; index specification
+- Sofia night generation; DST; half-open range; single-night; invalid range
+- same-owner idempotency; foreign-owner rejection; multi-night acquisition; partial acquisition; attempt-scoped compensation; concurrent races
+- V2 finalize; legacy create; OPS manual create; Location child; recovery
+- blocking / terminal statuses; isTest; archived; Location child; malformed mixed shape
+- date extension / shortening / shift; date commit failure compensation
+- single-cabin Reassign; target-first ordering; reassign commit failure
+- cancel; complete; failed create; location rollback
+- paid checkout race; payment evidence preservation; MRI/recovery
+- shadow writer behavior; shadow failure does not falsely claim authority; dual-write parity; writer readiness
+- preflight; backfill; restartability
+- missing / stale / orphan / wrongCabin / outsideRange / same-owner duplicates / foreign collisions / wrong inventory collection
+- stable fingerprint; full-scan requirement; cutover refusal gates; unique-index exactness; wrong-index refusal
+- authoritative claim-first behavior; index assertion; post-cutover reconcile
+- AvailabilityBlock external/manual behavior unchanged
+- public availability regression; OPS availability regression
+- UnitNightClaim regression; I1–I6 regression; R1 regression; R3 regression; Cleaning non-regression
+
+Implementation may add cases discovered during code work.
+
+### 24.42 Production unknown policy
+
+Do **not** fabricate production data assumptions into the spec.
+
+Known unknowns requiring later production verification:
+
+- existing foreign overlapping single-cabin Bookings
+- historical paid overlap anomalies
+- current exact live PM2 writer list
+- existing future CabinNightClaim/index state when deployed
+
+These are **S1.3/cutover facts**. They do **NOT** block this architecture/spec lock. They **DO** block authoritative cutover if unresolved.
+
+### 24.43 Out of scope
+
+Do **NOT** include:
+
+- REBOOK mutation implementation
+- AMEND
+- REBOOK money implementation
+- REBOOK UI
+- Cleaning redesign
+- LocationBooking redesign
+- duplicate A-Frame Unit cleanup
+- multi-unit UnitNightClaim redesign
+- new public external-hold policy
+- financial reporting redesign
+
+---
+
 ### Batch 2 — StayChange spine (amend/rebook-ready) — **SUPERSEDED for REBOOK by §23.33**
 
 | | |
 |--|--|
 | **Status** | Legacy Batch 2–5 REBOOK rows superseded by **REBOOK-S0…S6** (§23.33). AMEND spine portions remain conceptually aligned with **Batch 6**. |
-| **REBOOK path** | S0 (spec) → S1 (`CabinNightClaim`) → S2 (schema/spine/classifiers) → S3 (first mutation) → S4 (preview/UI) → S5/S6 (money expansion) |
+| **REBOOK path** | S0 (spec) → S1 (§24 CabinNightClaim) → S2 (schema/spine/classifiers) → S3 (first mutation) → S4 (preview/UI) → S5/S6 (money expansion) |
 
 ---
 
@@ -2476,6 +3086,7 @@ These do not reopen §1–15 locks; they are decided inside the named batches:
 - Exact Mongoose indexes and unique keys for StayChange (REBOOK idempotency locked §23.29).
 - ~~Whether optional `movedFromBookingId` thin pointer is added on replacement~~ — **not required for correctness** (§23.28); separate justification if added later.
 - Multi-unit target claim ownership transition before replacement Booking persistence (§23.19) — resolve in implementation audit.
+- ~~CabinNightClaim S1 cutover gates, writer graph, fingerprint~~ — locked in §24.
 - Exact guest email template copy and provider (SMTP / existing lifecycle pipeline) — **automatic move email out of S3 scope** (§23.26).
 - Permission string naming.
 - Feature flag names and rollout order per propertyKind.
@@ -2497,7 +3108,8 @@ These do not reopen §1–15 locks; they are decided inside the named batches:
 | 2026-08-21 | Amendment: R1 minimal StayChange REALLOCATE — pre-stay pending/confirmed only; cabinType-only unit move; durable StayChange + scoped idempotency; staged target claims → Booking CAS → reservation block sync → source release; do not wire combined transferUnitNightClaims as sole workflow; external holds reassign-style ack; focused reconcile; separate OPS reallocate route; no UI (R3); no settledByStayChangeId; ≥90+105 test contract. |
 | 2026-08-23 | Amendment: R3 OPS Move Unit — detail inventory identity; read-only `GET …/reallocate-candidates` via `evaluateTargetConflicts`; Move Unit dialog/selector/ack/idempotency; legacy Reassign visibility boundary; structured error map; ≥80 test contract; no AMEND/REBOOK/wizard; R1 indexes already live (not an R3 blocker). |
 | 2026-08-23 | Amendment: REBOOK cross-product stay change (§23) — `bookingId` = source only (no `sourceBookingId`); `targetBookingId`; `CabinNightClaim` S1 prerequisite; deferred replacement Booking create; contractual/coverage resolvers; fail-closed financial evidence; S3 equal-price + upgrade-waiver only; `settledByStayChangeId`; target-first ordering; attribution/reporting/messaging guards; REBOOK-S0…S6 staged batches; ≥150 test contract; supersede legacy Batch 2–5 REBOOK rows. |
+| 2026-08-23 | Amendment: REBOOK-S1 CabinNightClaim foundation (§24) — permanent single-cabin occupied-night exclusivity; claim-owning Booking rule; test/archived policy; night helper reuse; authoritative unique index + startup safety; claim service contract; shadow/dual-write vs authority; create/date/reassign ordering; Location child rule; paid checkout race; backfill/reconcile/fingerprint gates; S1.1–S1.8 sub-batches; cutover tool; ≥140 S1 test contract; REBOOK single-cabin blocked until S1.6+S1.7+verification. |
 
 ---
 
-**END OF LOCKED ARCHITECTURE — R1 LIVE; R3 LIVE; REBOOK SPEC LOCKED (§23); REBOOK APPLICATION NOT AUTHORIZED**
+**END OF LOCKED ARCHITECTURE — R1 LIVE; R3 LIVE; REBOOK §23 + S1 §24 SPEC LOCKED; NO REBOOK/S1 APPLICATION AUTHORIZED**
