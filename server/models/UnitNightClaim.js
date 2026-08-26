@@ -20,6 +20,7 @@ const CLAIM_SOURCES = Object.freeze([
   'multi_unit_recovery',
   'date_edit',
   'reallocate',
+  'rebook',
   'bootstrap',
   'test',
   'other'

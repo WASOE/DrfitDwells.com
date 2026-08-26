@@ -1,6 +1,7 @@
 const Booking = require('../../../models/Booking');
 const AvailabilityBlock = require('../../../models/AvailabilityBlock');
 const Payment = require('../../../models/Payment');
+const StayChange = require('../../../models/StayChange');
 const Payout = require('../../../models/Payout');
 const ChannelSyncEvent = require('../../../models/ChannelSyncEvent');
 const ManualReviewItem = require('../../../models/ManualReviewItem');
@@ -326,7 +327,12 @@ async function getDashboardReadModel() {
     .map((b) => (typeof b.stripePaymentIntentId === 'string' ? b.stripePaymentIntentId.trim() : ''))
     .filter(Boolean);
 
-  const [payments, unlinkedPayments] = await Promise.all([
+  const stayChangeIds = uniqueBookings
+    .map((b) => b.settledByStayChangeId)
+    .filter(Boolean)
+    .map((id) => String(id));
+
+  const [payments, unlinkedPayments, rebookStayChanges] = await Promise.all([
     reservationIds.length ? Payment.find({ reservationId: { $in: reservationIds } }).lean() : [],
     stripePaymentIntentIds.length
       ? Payment.find({
@@ -341,8 +347,15 @@ async function getDashboardReadModel() {
             { 'metadata.id': { $in: stripePaymentIntentIds } }
           ]
         }).lean()
+      : [],
+    stayChangeIds.length
+      ? StayChange.find({ _id: { $in: stayChangeIds }, kind: 'rebook' }).lean()
       : []
   ]);
+
+  const rebookStayChangeById = new Map(
+    rebookStayChanges.map((sc) => [String(sc._id), sc])
+  );
 
   const paymentsByReservation = new Map();
   for (const payment of payments) {
@@ -372,10 +385,14 @@ async function getDashboardReadModel() {
     const key = String(booking._id);
     const trail = paymentsByReservation.get(key) || [];
     const pi = typeof booking.stripePaymentIntentId === 'string' ? booking.stripePaymentIntentId.trim() : '';
+    const rebookStayChange = booking.settledByStayChangeId
+      ? rebookStayChangeById.get(String(booking.settledByStayChangeId)) || null
+      : null;
     const paymentStatus = classifyReservationPaymentStatus({
       booking,
       linkedPaymentTrail: trail,
-      hasUnlinkedStripePayment: pi ? unlinkedPaymentByIntent.has(pi) : false
+      hasUnlinkedStripePayment: pi ? unlinkedPaymentByIntent.has(pi) : false,
+      rebookStayChange
     });
     paymentStatusByReservation.set(key, paymentStatus);
   }

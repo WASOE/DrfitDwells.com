@@ -1,6 +1,7 @@
 const Booking = require('../../../models/Booking');
 const Payment = require('../../../models/Payment');
 const AvailabilityBlock = require('../../../models/AvailabilityBlock');
+const StayChange = require('../../../models/StayChange');
 const { mapBookingToReservationCompatible } = require('../../../mappers/bookingToReservationMapper');
 const { formatSofiaDateOnly } = require('../../../utils/dateTime');
 const { escapeRegex } = require('../../../utils/escapeRegex');
@@ -225,12 +226,19 @@ async function getReservationsWorkspaceReadModel(query = {}) {
   const stripePaymentIntentIds = bookings
     .map((b) => (typeof b.stripePaymentIntentId === 'string' ? b.stripePaymentIntentId.trim() : ''))
     .filter(Boolean);
-  const [payments, conflicts] = await Promise.all([
+  const stayChangeIds = bookings
+    .map((b) => b.settledByStayChangeId)
+    .filter(Boolean)
+    .map((id) => String(id));
+  const [payments, conflicts, rebookStayChanges] = await Promise.all([
     Payment.find({ reservationId: { $in: reservationIds } }).lean(),
     AvailabilityBlock.find({
       reservationId: { $in: reservationIds },
       status: 'active'
-    }).lean()
+    }).lean(),
+    stayChangeIds.length
+      ? StayChange.find({ _id: { $in: stayChangeIds }, kind: 'rebook' }).lean()
+      : Promise.resolve([])
   ]);
   const unlinkedPayments = stripePaymentIntentIds.length
     ? await Payment.find({
@@ -246,6 +254,10 @@ async function getReservationsWorkspaceReadModel(query = {}) {
       ]
     }).lean()
     : [];
+
+  const rebookStayChangeById = new Map(
+    rebookStayChanges.map((sc) => [String(sc._id), sc])
+  );
 
   const paymentsByReservation = new Map();
   for (const payment of payments) {
@@ -283,10 +295,14 @@ async function getReservationsWorkspaceReadModel(query = {}) {
     const mapped = mapBookingToReservationCompatible(booking);
     const paymentTrail = paymentsByReservation.get(String(booking._id)) || [];
     const pi = typeof booking.stripePaymentIntentId === 'string' ? booking.stripePaymentIntentId.trim() : '';
+    const rebookStayChange = booking.settledByStayChangeId
+      ? rebookStayChangeById.get(String(booking.settledByStayChangeId)) || null
+      : null;
     const paymentStatus = classifyReservationPaymentStatus({
       booking,
       linkedPaymentTrail: paymentTrail,
-      hasUnlinkedStripePayment: pi ? unlinkedPaymentByPaymentIntent.has(pi) : false
+      hasUnlinkedStripePayment: pi ? unlinkedPaymentByPaymentIntent.has(pi) : false,
+      rebookStayChange
     });
     const reservationStatus = mapped.reservationStatus;
     const stayTiming = deriveStayTiming(booking, startOfToday);

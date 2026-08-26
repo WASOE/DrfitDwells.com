@@ -21,6 +21,7 @@ const {
   createManualReservation
 } = require('../../../services/ops/domain/reservationWriteService');
 const { reallocateReservation } = require('../../../services/stayChange/reallocateStayChangeService');
+const { rebookReservation } = require('../../../services/stayChange/rebookStayChangeService');
 const { editGuestContact } = require('../../../services/ops/domain/guestWriteService');
 const {
   previewBookingLifecycleEmail,
@@ -424,6 +425,95 @@ router.post(
           req,
           user: req.user,
           route: 'POST /api/ops/reservations/:id/actions/reallocate',
+          idempotencyKey: req.body.idempotencyKey
+        }
+      });
+      return res.json({ success: true, data });
+    } catch (error) {
+      return handleDomainError(res, error);
+    }
+  }
+);
+
+router.post(
+  '/:id/actions/rebook',
+  validateId('id'),
+  [
+    body('idempotencyKey')
+      .isString()
+      .trim()
+      .isLength({ min: 8, max: 128 })
+      .withMessage('idempotencyKey is required (8–128 characters)'),
+    body('targetCabinId').optional({ nullable: true }).isMongoId(),
+    body('targetCabinTypeId').optional({ nullable: true }).isMongoId(),
+    body('targetUnitId').optional({ nullable: true }).isMongoId(),
+    body('reason').optional({ nullable: true }).isString().isLength({ max: 500 }),
+    body('acceptExternalHoldWarnings').optional().isBoolean(),
+    body('waiveUpgradeCents').optional({ nullable: true }).isInt({ min: 0 })
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        errorType: 'validation',
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const allowed = new Set([
+      'idempotencyKey',
+      'targetCabinId',
+      'targetCabinTypeId',
+      'targetUnitId',
+      'reason',
+      'acceptExternalHoldWarnings',
+      'waiveUpgradeCents'
+    ]);
+    const unknown = Object.keys(req.body || {}).filter((k) => !allowed.has(k));
+    if (unknown.length > 0) {
+      return res.status(400).json({
+        success: false,
+        errorType: 'validation',
+        message: 'Unknown or disallowed REBOOK fields',
+        details: { unknown }
+      });
+    }
+
+    const hasCabin = Boolean(req.body?.targetCabinId);
+    const hasMulti = Boolean(req.body?.targetCabinTypeId || req.body?.targetUnitId);
+    if (hasCabin === hasMulti) {
+      return res.status(400).json({
+        success: false,
+        errorType: 'validation',
+        message: 'Provide exactly one of targetCabinId or (targetCabinTypeId + targetUnitId)',
+        details: { code: 'INVALID_TARGET' }
+      });
+    }
+    if (!hasCabin && !(req.body?.targetCabinTypeId && req.body?.targetUnitId)) {
+      return res.status(400).json({
+        success: false,
+        errorType: 'validation',
+        message: 'Multi target requires both targetCabinTypeId and targetUnitId',
+        details: { code: 'INVALID_TARGET' }
+      });
+    }
+
+    try {
+      const data = await rebookReservation({
+        bookingId: req.params.id,
+        targetCabinId: req.body.targetCabinId || null,
+        targetCabinTypeId: req.body.targetCabinTypeId || null,
+        targetUnitId: req.body.targetUnitId || null,
+        idempotencyKey: req.body.idempotencyKey,
+        reason: req.body.reason || null,
+        acceptExternalHoldWarnings: Boolean(req.body.acceptExternalHoldWarnings),
+        waiveUpgradeCents: req.body.waiveUpgradeCents == null ? 0 : Number(req.body.waiveUpgradeCents),
+        ctx: {
+          req,
+          user: req.user,
+          route: 'POST /api/ops/reservations/:id/actions/rebook',
           idempotencyKey: req.body.idempotencyKey
         }
       });
