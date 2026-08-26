@@ -2290,9 +2290,10 @@ test('R1#133 commercial identity unchanged after reallocate', async () => {
   assert.equal(after.totalValueCents, before.totalValueCents);
 });
 
-test('R1#134 no Booking StayChange projection fields', () => {
+test('R1#134 Booking settledByStayChangeId is optional (REBOOK-S2); no other StayChange projections', () => {
   const paths = Booking.schema.paths;
-  assert.equal(paths.settledByStayChangeId, undefined);
+  assert.ok(paths.settledByStayChangeId, 'settledByStayChangeId required by REBOOK-S2 spine');
+  assert.equal(paths.settledByStayChangeId.options.default, null);
   assert.equal(paths.lastStayChangeId, undefined);
   assert.equal(paths.activeStayChangeId, undefined);
 });

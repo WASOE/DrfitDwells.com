@@ -31,6 +31,7 @@ const { appendAuditEvent } = require('../auditWriter');
 const { openManualReviewItem } = require('../ops/ingestion/manualReviewService');
 const { formatSofiaDateOnly, normalizeDateToSofiaDayStart } = require('../../utils/dateTime');
 const { assertStayChangeIdempotencyIndex } = require('./stayChangeIndexes');
+const { commercialProductKeyFromBooking } = require('./commercialProductIdentity');
 
 const KIND = 'reallocate';
 const ELIGIBLE_STATUSES = Object.freeze(['pending', 'confirmed']);
@@ -50,12 +51,6 @@ const FINGERPRINT_KEYS = Object.freeze([
   'acceptExternalHoldWarnings',
   'reason'
 ]);
-
-function commercialProductKeyFromBooking(booking) {
-  if (booking.cabinTypeId) return `cabinType:${String(booking.cabinTypeId)}`;
-  if (booking.cabinId) return `cabin:${String(booking.cabinId)}`;
-  return null;
-}
 
 function normalizeIdempotencyKey(raw) {
   if (typeof raw !== 'string') return '';

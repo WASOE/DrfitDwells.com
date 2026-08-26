@@ -2285,7 +2285,7 @@ UI later uses separate action initially: **Rebook** or **Change accommodation**.
 |-------|--------|
 | **REBOOK-S0** | this spec amendment |
 | **REBOOK-S1** | single-cabin permanent night-claim foundation and production cutover — **§24** |
-| **REBOOK-S2** | StayChange REBOOK schema/spine; source/target snapshots; money fields; canonical contractual/coverage resolvers; payment classifier support for `settledByStayChangeId`; reporting/attribution guards required for safe replacement |
+| **REBOOK-S2** | StayChange REBOOK schema/spine; source/target snapshots; money fields; canonical contractual/coverage resolvers; payment classifier support for `settledByStayChangeId`; reporting/attribution guards required for safe replacement — **IMPLEMENTED (schema/spine only; no mutation endpoint)** |
 | **REBOOK-S3** | REBOOK mutation: equal-price; upgrade with explicit complimentary waiver; no Stripe delta; no downgrade |
 | **REBOOK-S4** | read preview + first OPS Rebook UI |
 | **REBOOK-S5** | downgrade refund/credit/retain |
@@ -2294,6 +2294,7 @@ UI later uses separate action initially: **Rebook** or **Change accommodation**.
 
 **Do NOT collapse S1–S3.**
 
+**S2 delivered artifacts (no production index cutover):** `StayChange` REBOOK fields (`targetBookingId`, cabin shape fields nullable, `sourceSnapshot`/`targetSnapshot`, `money`); `Booking.settledByStayChangeId` (optional, no index); helpers in `server/services/stayChange/rebookStayChangeSpine.js` + `rebookMoneyEvidence.js` + `commercialProductIdentity.js`; payment classifier + creator gross guards. **Out of S2:** REBOOK API, replacement Booking create, claim/Payment/Stripe mutation, client, Cleaning.
 ### 23.34 S1 safety requirement
 
 **Full lock:** **§24**. S1 must be treated like I6 infrastructure.

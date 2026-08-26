@@ -396,6 +396,16 @@ const bookingSchema = new mongoose.Schema({
     type: cancellationSettlementSchema,
     default: undefined
   },
+  /**
+   * REBOOK-S2: replacement Booking → StayChange financial link only.
+   * Optional; no unique index (avoid surprise production index create).
+   * S3 sets this when creating the replacement; S2 only adds the field.
+   */
+  settledByStayChangeId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'StayChange',
+    default: null
+  },
   /** Set when Stripe PaymentIntent was verified at booking creation (paid flow). */
   stripePaymentIntentId: {
     type: String,

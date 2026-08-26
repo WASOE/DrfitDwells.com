@@ -180,6 +180,10 @@ async function buildAllCreatorPartnerStats() {
   }
 
   for (const booking of bookingDocs) {
+    // REBOOK-S2: replacement Bookings must not count as a second creator acquisition.
+    const provenanceSource = String(booking?.provenance?.source || '').trim();
+    if (provenanceSource === 'stay_change_rebook') continue;
+
     const attribution = resolveBookingCreatorAttribution(booking, maps);
     if (!attribution?.creatorPartnerId) continue;
     const creatorId = attribution.creatorPartnerId;
@@ -189,20 +193,26 @@ async function buildAllCreatorPartnerStats() {
     const bookingId = String(booking._id);
     const paymentIntentId = String(booking?.stripePaymentIntentId || '').trim();
     const hasOpenIssue = issuesByBookingId.has(bookingId) || (!!paymentIntentId && issuesByPaymentIntentId.has(paymentIntentId));
+    const settlementOutcome = String(booking?.cancellationSettlement?.outcome || '').trim();
+    const isRebookedOrMoved = settlementOutcome === 'rebooked_or_moved';
+
     stats.attributedBookings += 1;
-    if (PAID_BOOKING_STATUSES.has(booking.status) && !hasOpenIssue) {
+    if (PAID_BOOKING_STATUSES.has(booking.status) && !hasOpenIssue && !isRebookedOrMoved) {
       stats.paidConfirmedBookings += 1;
     }
     if (booking.status === 'cancelled') {
       stats.cancelledRefundedVoidBookings += 1;
     }
-    stats.grossBookingRevenue += Math.max(0, toMoneyNumber(booking.totalPrice));
-    stats.attributedBookingValue += Math.max(0, toMoneyNumber(booking.totalPrice));
-    if (PAID_BOOKING_STATUSES.has(booking.status) && !hasOpenIssue) {
+    // Exclude rebooked_or_moved source from creator gross (active commercial value lives on replacement).
+    if (!isRebookedOrMoved) {
+      stats.grossBookingRevenue += Math.max(0, toMoneyNumber(booking.totalPrice));
+      stats.attributedBookingValue += Math.max(0, toMoneyNumber(booking.totalPrice));
+    }
+    if (PAID_BOOKING_STATUSES.has(booking.status) && !hasOpenIssue && !isRebookedOrMoved) {
       stats.stayBookingRevenueCents += resolveStayBookingCashRevenueCents(booking);
       stats.paidStayRevenue += resolveStayBookingCashRevenueCents(booking) / 100;
     }
-    if (booking.status !== 'cancelled') {
+    if (booking.status !== 'cancelled' && !isRebookedOrMoved) {
       stats.commissionableRevenueEstimate += estimateStayCommissionableRevenueEUR(booking);
     }
     if (!stats.lastBookingAt || new Date(booking.createdAt) > new Date(stats.lastBookingAt)) {
