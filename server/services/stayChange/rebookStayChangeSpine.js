@@ -89,6 +89,15 @@ function buildSourceSnapshot({
       checkOut: booking.checkOut,
       adults: Number.isFinite(booking.adults) ? booking.adults : null,
       children: Number.isFinite(booking.children) ? booking.children : null,
+      transportMethod:
+        booking.transportMethod == null || booking.transportMethod === ''
+          ? null
+          : String(booking.transportMethod),
+      romanticSetup: Boolean(booking.romanticSetup),
+      tripType:
+        booking.tripType == null || booking.tripType === ''
+          ? null
+          : String(booking.tripType),
       currency: String(currency || 'eur').toLowerCase(),
       sourceContractualTotalCents,
       recognizedNetSettledCoverageCents,

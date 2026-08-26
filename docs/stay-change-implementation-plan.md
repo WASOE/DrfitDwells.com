@@ -3568,6 +3568,13 @@ SOURCE Booking
 - New unique indexes / StayChange or Booking backfill
 - Multi-document transactions
 - Staff force-override of internal claim uniqueness
+- **S3.1 / v1:** source bookings with promotional discount or gift-voucher economics
+  (`promoCode` / `promoSnapshot` / positive `discountAmount`/`discountAmountCents` /
+  positive `giftVoucherAppliedCents` / `giftVoucherRedemptionId` /
+  `paymentMethod` in `{gift_voucher, stripe_plus_gift_voucher}`).
+  Target discount-transfer / promo-carry semantics are deferred; reject with
+  `UNSUPPORTED_SOURCE` + reason `PROMOTIONAL_PRICING_UNSUPPORTED` before StayChange create.
+  Historical rack drift without explicit promo/voucher evidence is **not** promotional.
 
 ### 25.2 Route contract
 
@@ -3618,6 +3625,7 @@ SOURCE Booking must:
 | Multi source | must be **allocated** (`unitId` set) |
 | Not already terminal REBOOK source | reject if `cancellationSettlement.outcome === 'rebooked_or_moved'` |
 | Owns source inventory | assert CabinNightClaim / UnitNightClaim exact ownership for occupied nights |
+| No promotional / voucher economics (S3.1) | reject if Booking has explicit promo/voucher evidence (see OUT OF SCOPE); reason `PROMOTIONAL_PRICING_UNSUPPORTED` |
 
 ### 25.5 Target eligibility (v1)
 
@@ -3931,13 +3939,15 @@ Only after source projection (step 13) succeeds:
 | Pre-StayChange validate | none | none | invent Booking | n/a | safe retry | no |
 | StayChange create race | one wins via unique index | adopt winner | second StayChange | pending | resume | no |
 | Target claim conflict | StayChange pending | none / fail StayChange | override uniqueness | failed or pending | new key or fix inventory | optional |
-| Target claim partial | some claims | `releaseStayChangeTarget*` this stayChange only | broad release | pending/failed | resume/compensate | if compensate fails |
-| After inventory_secured, Booking save fails | claims + SC | compensate StayChange-scoped claims; keep SC evidence | delete unrelated claims | failed or pending after compensate | resume; same targetBookingId | if compensate fails |
+| Target claim partial | some claims | **S3.1:** compensate **only `insertedClaimIdsThisAttempt` / inserted nights this invocation** (cabin: `compensateCabinClaimAttempt`; unit: `compensateClaimAttempt`) | broad StayChange-scoped release of prior-retry claims | pending/failed | resume/compensate | if compensate fails |
+| After inventory_secured, Booking save fails | claims + SC | **S3.1:** compensate only inserts from **this** invocation; if none (prior retry already secured), **retain** existing target claims | wipe prior-attempt same-owner claims | failed/pending after compensate, or remain `inventory_secured` | resume; same targetBookingId | if compensate fails |
 | Booking exists, projection/AB fails | Booking + claims | usually forward-fix AB; if unsafe | delete Booking casually | needs_reconciliation or continue | reconcile | yes if stuck |
 | Source CAS fails | target live | **forward-only**; MRI | delete target; release target; resurrect blindly | needs_reconciliation | reconcile only | **yes** |
 | Source projected, release fails | target live; source claims remain | leave conservative over-block | delete target | needs_reconciliation | release retry | **yes** |
 | Completion invariant fails | mixed | MRI; no blind undo past forward boundary | fake completed | needs_reconciliation | reconcile | **yes** |
 | Audit fails | completed ops | retry audit dedupe | undo move | completed (R1 parity: audit non-fatal to undo) | audit retry | optional |
+
+**S3.1 source CAS:** atomic `updateOne` predicate must include eligible status, commercial identity/unit, dates, adults/children, romanticSetup/transportMethod, not-test/not-archived, no locationBookingId, and not already `rebooked_or_moved` / replacement link.
 
 ### 25.23 Completion invariant
 

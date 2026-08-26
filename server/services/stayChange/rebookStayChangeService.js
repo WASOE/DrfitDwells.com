@@ -20,14 +20,14 @@ const AvailabilityBlock = require('../../models/AvailabilityBlock');
 const {
   claimCabinNights,
   releaseCabinNights,
-  releaseStayChangeTargetCabinClaims,
-  assertBookingOwnsCabinNights
+  assertBookingOwnsCabinNights,
+  compensateCabinClaimAttempt
 } = require('../inventory/cabinNightClaimService');
 const {
   claimUnitNights,
   releaseUnitNights,
-  releaseStayChangeTargetClaims,
-  assertBookingOwnsNights
+  assertBookingOwnsNights,
+  compensateClaimAttempt
 } = require('../inventory/unitNightClaimService');
 const { evaluateTargetConflicts } = require('../ops/domain/conflictService');
 const { findParentCabinForCabinType } = require('../publicAvailabilityService');
@@ -54,7 +54,10 @@ const {
   buildSourceSnapshot,
   buildTargetSnapshot
 } = require('./rebookStayChangeSpine');
-
+const {
+  detectPromotionalSourceEconomics,
+  PROMO_REASON
+} = require('./rebookPromoEligibility');
 const KIND = REBOOK_KIND;
 const ELIGIBLE_STATUSES = Object.freeze(['pending', 'confirmed']);
 const MRI_CATEGORY = 'stay_change_rebook_reconciliation';
@@ -310,27 +313,69 @@ async function projectAuditOnce(sc, ctx) {
   return { ok: true };
 }
 
-async function compensateTargetClaims(sc) {
+async function compensateInsertedTargetClaims(sc, claimAttempt) {
+  const insertedIds = normalizeInsertedClaimIds(claimAttempt);
+  const insertedNights = Array.isArray(claimAttempt?.insertedNightsThisAttempt)
+    ? claimAttempt.insertedNightsThisAttempt
+    : [];
+
   if (sc.targetCabinId) {
-    return releaseStayChangeTargetCabinClaims({
-      bookingId: sc.targetBookingId,
-      stayChangeId: sc._id,
-      cabinId: sc.targetCabinId,
-      source: 'rebook',
-      checkIn: sc.checkIn,
-      checkOut: sc.checkOut
+    if (insertedIds.length === 0) {
+      return { ok: true, deletedCount: 0, scope: 'inserted_this_attempt_empty' };
+    }
+    return compensateCabinClaimAttempt({
+      insertedClaimIdsThisAttempt: insertedIds
     });
   }
+
   if (sc.targetUnitId) {
-    return releaseStayChangeTargetClaims({
+    if (insertedNights.length === 0 && insertedIds.length === 0) {
+      return { ok: true, deletedCount: 0, scope: 'inserted_this_attempt_empty' };
+    }
+    // Prefer night-scoped attempt compensation (existing unit primitive).
+    return compensateClaimAttempt({
       bookingId: sc.targetBookingId,
-      stayChangeId: sc._id,
       unitId: sc.targetUnitId,
-      checkIn: sc.checkIn,
-      checkOut: sc.checkOut
+      insertedNightsThisAttempt: insertedNights.length
+        ? insertedNights
+        : undefined
     });
   }
-  return { deletedCount: 0 };
+
+  return { ok: true, deletedCount: 0 };
+}
+
+function normalizeInsertedClaimIds(claimAttempt) {
+  if (!claimAttempt || typeof claimAttempt !== 'object') return [];
+  if (Array.isArray(claimAttempt.insertedClaimIdsThisAttempt)) {
+    return claimAttempt.insertedClaimIdsThisAttempt.map(String).filter(Boolean);
+  }
+  const nights = new Set(
+    (claimAttempt.insertedNightsThisAttempt || []).map((n) => String(n))
+  );
+  if (nights.size === 0 || !Array.isArray(claimAttempt.claims)) return [];
+  return claimAttempt.claims
+    .filter((c) => nights.has(String(c.night)))
+    .map((c) => String(c.id))
+    .filter(Boolean);
+}
+
+function sameSofiaDay(a, b) {
+  if (a == null || b == null) return false;
+  try {
+    return canonicalStayDateOnly(a) === canonicalStayDateOnly(b);
+  } catch {
+    return false;
+  }
+}
+
+function nullableStringMatchFilter(field, value) {
+  if (value == null || value === '') {
+    return {
+      $or: [{ [field]: null }, { [field]: { $exists: false } }, { [field]: '' }]
+    };
+  }
+  return { [field]: value };
 }
 
 async function acquireTargetClaims(sc) {
@@ -509,19 +554,71 @@ async function createReplacementBooking(sc, source) {
 }
 
 async function casSourceToRebooked(sc, sourceBooking) {
-  const filter = {
-    _id: sc.bookingId,
-    status: { $in: ELIGIBLE_STATUSES },
-    checkIn: sc.checkIn,
-    checkOut: sc.checkOut
-  };
-  if (sc.sourceCabinId) {
-    filter.cabinId = sc.sourceCabinId;
-  } else {
-    filter.cabinTypeId = sc.sourceCabinTypeId;
-    filter.unitId = sc.sourceUnitId;
-  }
   const snap = sc.sourceSnapshot || {};
+  const adults =
+    snap.adults != null && Number.isFinite(Number(snap.adults))
+      ? Number(snap.adults)
+      : sourceBooking?.adults;
+  const children =
+    snap.children != null && Number.isFinite(Number(snap.children))
+      ? Number(snap.children)
+      : sourceBooking?.children || 0;
+  const romanticSetup =
+    snap.romanticSetup != null
+      ? Boolean(snap.romanticSetup)
+      : Boolean(sourceBooking?.romanticSetup);
+  const transportMethod =
+    snap.transportMethod !== undefined
+      ? snap.transportMethod
+      : sourceBooking?.transportMethod == null || sourceBooking?.transportMethod === ''
+        ? null
+        : String(sourceBooking.transportMethod);
+
+  const and = [
+    { _id: sc.bookingId },
+    { status: { $in: ELIGIBLE_STATUSES } },
+    { checkIn: sc.checkIn },
+    { checkOut: sc.checkOut },
+    { adults },
+    { children },
+    { romanticSetup },
+    { isTest: { $ne: true } },
+    {
+      $or: [{ archivedAt: null }, { archivedAt: { $exists: false } }]
+    },
+    {
+      $or: [
+        { locationBookingId: null },
+        { locationBookingId: { $exists: false } }
+      ]
+    },
+    {
+      $or: [
+        { cancellationSettlement: { $exists: false } },
+        { cancellationSettlement: null },
+        {
+          'cancellationSettlement.outcome': {
+            $nin: ['rebooked_or_moved']
+          }
+        }
+      ]
+    },
+    {
+      $or: [
+        { 'cancellationSettlement.replacementBookingId': { $exists: false } },
+        { 'cancellationSettlement.replacementBookingId': null }
+      ]
+    },
+    nullableStringMatchFilter('transportMethod', transportMethod)
+  ];
+
+  if (sc.sourceCabinId) {
+    and.push({ cabinId: sc.sourceCabinId });
+  } else {
+    and.push({ cabinTypeId: sc.sourceCabinTypeId });
+    and.push({ unitId: sc.sourceUnitId });
+  }
+
   const financialSnapshot = {
     bookingTotalCents:
       sc.money?.sourceContractualTotalCents ??
@@ -537,19 +634,23 @@ async function casSourceToRebooked(sc, sourceBooking) {
     currency: 'EUR',
     capturedAt: new Date()
   };
-  const result = await Booking.updateOne(filter, {
-    $set: {
-      status: 'cancelled',
-      cancellationSettlement: {
-        outcome: 'rebooked_or_moved',
-        replacementBookingId: sc.targetBookingId,
-        settlementRecordedAt: new Date(),
-        financialSnapshot
-      },
-      'provenance.lastTransition': 'rebook_source_projected',
-      'provenance.lastTransitionAt': new Date()
+
+  const result = await Booking.updateOne(
+    { $and: and },
+    {
+      $set: {
+        status: 'cancelled',
+        cancellationSettlement: {
+          outcome: 'rebooked_or_moved',
+          replacementBookingId: sc.targetBookingId,
+          settlementRecordedAt: new Date(),
+          financialSnapshot
+        },
+        'provenance.lastTransition': 'rebook_source_projected',
+        'provenance.lastTransitionAt': new Date()
+      }
     }
-  });
+  );
   return {
     matched: (result.matchedCount ?? result.n) > 0,
     modified: (result.modifiedCount ?? result.nModified) > 0
@@ -559,6 +660,9 @@ async function casSourceToRebooked(sc, sourceBooking) {
 async function verifyCompletionInvariant(sc) {
   const target = await Booking.findById(sc.targetBookingId).lean();
   if (!target) return { ok: false, reason: 'target_booking_missing' };
+  if (String(target._id) !== String(sc.targetBookingId)) {
+    return { ok: false, reason: 'target_id_mismatch' };
+  }
   if (String(target.settledByStayChangeId) !== String(sc._id)) {
     return { ok: false, reason: 'settledByStayChangeId_mismatch' };
   }
@@ -569,6 +673,30 @@ async function verifyCompletionInvariant(sc) {
   if (key !== sc.targetCommercialProductKey) {
     return { ok: false, reason: 'target_product_mismatch' };
   }
+  if (sc.targetCabinId && String(target.cabinId) !== String(sc.targetCabinId)) {
+    return { ok: false, reason: 'target_cabin_mismatch' };
+  }
+  if (sc.targetCabinTypeId && String(target.cabinTypeId) !== String(sc.targetCabinTypeId)) {
+    return { ok: false, reason: 'target_cabinType_mismatch' };
+  }
+  if (sc.targetUnitId && String(target.unitId) !== String(sc.targetUnitId)) {
+    return { ok: false, reason: 'target_unit_mismatch' };
+  }
+
+  const snap = sc.targetSnapshot || {};
+  if (!sameSofiaDay(target.checkIn, snap.checkIn || sc.checkIn)) {
+    return { ok: false, reason: 'target_checkIn_mismatch' };
+  }
+  if (!sameSofiaDay(target.checkOut, snap.checkOut || sc.checkOut)) {
+    return { ok: false, reason: 'target_checkOut_mismatch' };
+  }
+  if (Number(target.adults) !== Number(snap.adults)) {
+    return { ok: false, reason: 'target_adults_mismatch' };
+  }
+  if (Number(target.children || 0) !== Number(snap.children || 0)) {
+    return { ok: false, reason: 'target_children_mismatch' };
+  }
+
   const own = await verifyTargetOwnership(sc);
   if (!own.ok) return { ok: false, reason: 'target_claims_inexact', detail: own };
 
@@ -583,7 +711,6 @@ async function verifyCompletionInvariant(sc) {
     return { ok: false, reason: 'replacement_link_mismatch' };
   }
 
-  // Source claims must be released
   if (sc.sourceCabinId) {
     const left = await assertBookingOwnsCabinNights({
       cabinId: sc.sourceCabinId,
@@ -609,6 +736,14 @@ async function verifyCompletionInvariant(sc) {
     if (String(p.reservationId) !== String(sc.bookingId)) {
       return { ok: false, reason: 'payment_moved' };
     }
+  }
+  const dupTargets = await Booking.countDocuments({
+    'provenance.source': 'stay_change_rebook',
+    settledByStayChangeId: sc._id,
+    _id: { $ne: sc.targetBookingId }
+  });
+  if (dupTargets > 0) {
+    return { ok: false, reason: 'duplicate_replacement' };
   }
   return { ok: true };
 }
@@ -737,11 +872,21 @@ async function reconcileRebookStayChange(stayChangeId, ctx = {}) {
 }
 
 async function runForwardFromPending(sc, source, ctx) {
+  let claimAttempt = { insertedClaimIdsThisAttempt: [], insertedNightsThisAttempt: [] };
   try {
-    await acquireTargetClaims(sc);
+    claimAttempt = await acquireTargetClaims(sc);
     const own = await verifyTargetOwnership(sc);
     if (!own.ok) {
-      await compensateTargetClaims(sc);
+      try {
+        await compensateInsertedTargetClaims(sc, claimAttempt);
+      } catch {
+        await markNeedsReconciliation(sc, {
+          category: 'TARGET_COMPENSATE_FAILED',
+          detail: 'Target claim ownership incomplete; compensate failed',
+          phase: 'claim'
+        });
+        throw err('NEEDS_RECONCILIATION', 'Target claim verify failed and compensation failed', 409);
+      }
       await markFailed(sc, {
         code: 'TARGET_CLAIM_VERIFY_FAILED',
         message: 'Target claim ownership incomplete',
@@ -759,7 +904,7 @@ async function runForwardFromPending(sc, source, ctx) {
     }
     if (e?.details?.code && e?.type) throw e;
     try {
-      await compensateTargetClaims(sc);
+      await compensateInsertedTargetClaims(sc, claimAttempt);
     } catch {
       await markNeedsReconciliation(sc, {
         category: 'TARGET_COMPENSATE_FAILED',
@@ -776,20 +921,31 @@ async function runForwardFromPending(sc, source, ctx) {
     });
     throw mapClaimFailure(e);
   }
-  return runForwardFromInventorySecured(sc, source, ctx);
+  return runForwardFromInventorySecured(sc, source, ctx, claimAttempt);
 }
 
-async function runForwardFromInventorySecured(sc, source, ctx) {
+async function runForwardFromInventorySecured(sc, source, ctx, claimAttempt = null) {
+  const attempt = claimAttempt || {
+    insertedClaimIdsThisAttempt: [],
+    insertedNightsThisAttempt: []
+  };
   const created = await createReplacementBooking(sc, source);
   if (!created.ok) {
+    const hasInserted =
+      normalizeInsertedClaimIds(attempt).length > 0 ||
+      (Array.isArray(attempt.insertedNightsThisAttempt) &&
+        attempt.insertedNightsThisAttempt.length > 0);
     try {
-      await compensateTargetClaims(sc);
-      await markFailed(sc, {
-        code: 'REPLACEMENT_PERSISTENCE_FAILED',
-        message: created.error?.message || 'Booking create failed',
-        phase: 'replacement',
-        retryable: true
-      });
+      if (hasInserted) {
+        await compensateInsertedTargetClaims(sc, attempt);
+        await markFailed(sc, {
+          code: 'REPLACEMENT_PERSISTENCE_FAILED',
+          message: created.error?.message || 'Booking create failed',
+          phase: 'replacement',
+          retryable: true
+        });
+      }
+      // No inserted-this-attempt claims: leave inventory_secured + prior claims intact.
     } catch {
       await markNeedsReconciliation(sc, {
         category: 'REPLACEMENT_FAIL_COMPENSATE_FAIL',
@@ -1029,6 +1185,19 @@ async function rebookReservation({
     throw err('UNSUPPORTED_SOURCE', 'Source already rebooked or moved', 409);
   }
 
+  const promo = detectPromotionalSourceEconomics(booking);
+  if (promo.promotional) {
+    throw err(
+      'UNSUPPORTED_SOURCE',
+      'Source promotional or voucher pricing is not supported for REBOOK v1',
+      409,
+      {
+        reason: PROMO_REASON,
+        evidenceKeys: promo.evidenceKeys
+      }
+    );
+  }
+
   const sourceShape = validateCommercialShape({
     cabinId: booking.cabinId,
     cabinTypeId: booking.cabinTypeId,
@@ -1263,5 +1432,8 @@ module.exports = {
   MRI_CATEGORY,
   AUDIT_ACTION,
   FINGERPRINT_KEYS,
-  auditDedupeKeyFor
+  auditDedupeKeyFor,
+  detectPromotionalSourceEconomics,
+  PROMO_REASON,
+  normalizeInsertedClaimIds
 };
