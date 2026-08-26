@@ -3,16 +3,18 @@
 /**
  * REBOOK-S1 CabinNightClaim controlled cutover CLI.
  *
- * S1.3: READ-ONLY VERIFY ONLY.
+ * S1.3: READ-ONLY VERIFY (default / --verify)
+ * S1.4: --backfill INSERT-ONLY (fresh preflight gate + mandatory post-verify)
  *
  * Usage:
  *   cd server && node -r dotenv/config scripts/cabinNightClaimS1Cutover.js
  *   cd server && node -r dotenv/config scripts/cabinNightClaimS1Cutover.js --verify
+ *   cd server && node -r dotenv/config scripts/cabinNightClaimS1Cutover.js --backfill
+ *   cd server && node -r dotenv/config scripts/cabinNightClaimS1Cutover.js --backfill --batch-size 100
  *   cd server && node -r dotenv/config scripts/cabinNightClaimS1Cutover.js --report-json /tmp/s1.json
  *   cd server && node -r dotenv/config scripts/cabinNightClaimS1Cutover.js --prior-fingerprint <hex>
  *
- * Mutation flags (--backfill, --create-unique-index) are REFUSED in S1.3
- * with refuseCode NOT_IMPLEMENTED_IN_S1_3. No stubs that mutate.
+ * --create-unique-index is REFUSED until S1.6 (NOT_IMPLEMENTED_IN_S1_3).
  */
 
 const fs = require('fs');
@@ -28,6 +30,11 @@ const {
   runCabinNightClaimS1Preflight,
   CUTOVER_BATCH
 } = require('../services/inventory/cabinNightClaimS1PreflightService');
+const {
+  runCabinNightClaimS1Backfill,
+  normalizeBatchSize,
+  REFUSE: BACKFILL_REFUSE
+} = require('../services/inventory/cabinNightClaimS1BackfillService');
 
 const REFUSE_CODE = 'NOT_IMPLEMENTED_IN_S1_3';
 
@@ -38,7 +45,7 @@ function parseArgs(argv) {
     createUniqueIndex: false,
     reportJson: null,
     priorFingerprint: null,
-    batchSize: 200,
+    batchSize: null,
     mongoUri: process.env.MONGODB_URI || process.env.MONGO_URI || null
   };
   for (let i = 0; i < argv.length; i += 1) {
@@ -51,8 +58,8 @@ function parseArgs(argv) {
     else if (a === '--prior-fingerprint') args.priorFingerprint = argv[++i];
     else if (a.startsWith('--prior-fingerprint=')) {
       args.priorFingerprint = a.slice('--prior-fingerprint='.length);
-    } else if (a === '--batch-size') args.batchSize = Number(argv[++i]);
-    else if (a.startsWith('--batch-size=')) args.batchSize = Number(a.slice('--batch-size='.length));
+    } else if (a === '--batch-size') args.batchSize = argv[++i];
+    else if (a.startsWith('--batch-size=')) args.batchSize = a.slice('--batch-size='.length);
     else if (a.startsWith('--mongo=')) args.mongoUri = a.slice('--mongo='.length);
   }
   return args;
@@ -86,7 +93,7 @@ async function readMongoServerVersion() {
   }
 }
 
-function buildRefusedReport({ mode, reason }) {
+function buildRefusedReport({ mode, reason, refuseCode = REFUSE_CODE }) {
   return {
     mode,
     cutoverBatch: CUTOVER_BATCH,
@@ -109,27 +116,70 @@ function buildRefusedReport({ mode, reason }) {
     readyForUniqueIndexProvisional: false,
     refused: true,
     refuseReason: reason,
-    refuseCode: REFUSE_CODE,
+    refuseCode,
     toolFailure: false,
     samples: {}
   };
 }
 
+/**
+ * Exit codes:
+ *   0 — successful verify (readyForBackfill) or successful complete backfill
+ *   2 — deliberate refusal / unsafe precondition / incomplete backfill
+ *   1 — tool/runtime failure
+ */
 function exitCodeForReport(report) {
   if (!report) return 1;
   if (report.toolFailure) return 1;
   if (report.refused) return 2;
+  if (report.mode === 'backfill') {
+    if ((report.failed || 0) > 0) return 1;
+    if ((report.foreignConflicts || 0) > 0) return 2;
+    if ((report.stayChangeConflicts || 0) > 0) return 2;
+    if (report.readyForStableVerification === true) return 0;
+    return 2;
+  }
   if (report.readyForBackfill === true) return 0;
   return 2;
+}
+
+function emitDiag(event, payload = {}) {
+  process.stderr.write(
+    `${JSON.stringify({
+      component: 'cabin_night_claim_s1_cutover',
+      event,
+      ...payload
+    })}\n`
+  );
+}
+
+async function withMongo(mongoUri, fn) {
+  let connectedHere = false;
+  if (mongoose.connection.readyState !== 1) {
+    await mongoose.connect(mongoUri);
+    connectedHere = true;
+  }
+  try {
+    return await fn();
+  } finally {
+    if (connectedHere) {
+      try {
+        await mongoose.disconnect();
+      } catch (_) {
+        /* ignore */
+      }
+    }
+  }
 }
 
 async function main(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
 
-  if (args.backfill) {
+  if (args.backfill && args.createUniqueIndex) {
     const report = buildRefusedReport({
       mode: 'backfill',
-      reason: 'CabinNightClaim backfill is not implemented in S1.3 (authorized in S1.4)'
+      reason: 'Cannot combine --backfill with --create-unique-index',
+      refuseCode: BACKFILL_REFUSE.INVALID_FLAG_COMBINATION
     });
     process.stdout.write(`${JSON.stringify(report)}\n`);
     return exitCodeForReport(report);
@@ -139,37 +189,70 @@ async function main(argv = process.argv.slice(2)) {
     const report = buildRefusedReport({
       mode: 'create-unique-index',
       reason:
-        'CabinNightClaim unique-index cutover is not implemented in S1.3 (authorized in S1.6)'
+        'CabinNightClaim unique-index cutover is not implemented in S1.4 (authorized in S1.6)',
+      refuseCode: REFUSE_CODE
     });
     process.stdout.write(`${JSON.stringify(report)}\n`);
     return exitCodeForReport(report);
   }
 
-  const mongoUri = args.mongoUri || DEFAULT_MONGO_URI;
-  let connectedHere = false;
-  if (mongoose.connection.readyState !== 1) {
-    await mongoose.connect(mongoUri);
-    connectedHere = true;
+  if (args.backfill && args.batchSize != null) {
+    const norm = normalizeBatchSize(args.batchSize);
+    if (!norm.ok) {
+      const report = buildRefusedReport({
+        mode: 'backfill',
+        reason: norm.reason,
+        refuseCode: BACKFILL_REFUSE.INVALID_BATCH_SIZE
+      });
+      process.stdout.write(`${JSON.stringify(report)}\n`);
+      return exitCodeForReport(report);
+    }
   }
+
+  const mongoUri = args.mongoUri || DEFAULT_MONGO_URI;
 
   let report;
   try {
-    const preflight = await runCabinNightClaimS1Preflight({
-      batchSize: args.batchSize,
-      priorFingerprint: args.priorFingerprint
+    report = await withMongo(mongoUri, async () => {
+      if (args.backfill) {
+        emitDiag('backfill_started', {
+          batchSize: args.batchSize != null ? Number(args.batchSize) : null
+        });
+        const backfill = await runCabinNightClaimS1Backfill({
+          batchSize: args.batchSize
+        });
+        emitDiag('backfill_post_verify', {
+          inserted: backfill.inserted,
+          skippedAlreadyOwned: backfill.skippedAlreadyOwned,
+          foreignConflicts: backfill.foreignConflicts,
+          failed: backfill.failed,
+          readyForStableVerification: backfill.readyForStableVerification,
+          refused: backfill.refused
+        });
+        return {
+          ...backfill,
+          gitSha: resolveGitSha(),
+          mongoVersion: await readMongoServerVersion()
+        };
+      }
+
+      // Default / --verify: read-only
+      const preflight = await runCabinNightClaimS1Preflight({
+        priorFingerprint: args.priorFingerprint
+      });
+      return {
+        ...preflight,
+        gitSha: resolveGitSha(),
+        mongoVersion: await readMongoServerVersion()
+      };
     });
-    report = {
-      ...preflight,
-      gitSha: resolveGitSha(),
-      mongoVersion: await readMongoServerVersion()
-    };
   } catch (err) {
     report = {
-      mode: 'verify',
+      mode: args.backfill ? 'backfill' : 'verify',
       cutoverBatch: CUTOVER_BATCH,
       scanCompleteness: 'failed',
       gitSha: resolveGitSha(),
-      mongoVersion: await readMongoServerVersion().catch(() => null),
+      mongoVersion: null,
       readyForBackfill: false,
       readyForStableVerification: false,
       readyForUniqueIndex: false,
@@ -183,14 +266,6 @@ async function main(argv = process.argv.slice(2)) {
       counts: {},
       samples: {}
     };
-  } finally {
-    if (connectedHere) {
-      try {
-        await mongoose.disconnect();
-      } catch (_) {
-        /* ignore */
-      }
-    }
   }
 
   const json = `${JSON.stringify(report)}\n`;

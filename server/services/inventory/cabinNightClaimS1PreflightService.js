@@ -505,13 +505,22 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
     });
   }
 
-  // Missing expected
+  // Missing expected (full list for S1.4 backfill; samples stay bounded)
+  /** @type {{ cabinId: string, night: string, bookingId: string }[]} */
+  const missingOwnership = [];
   for (const oKey of expectedOwnership) {
     if (claimsByOwnership.has(oKey)) continue;
     counts.missing += 1;
     const [cabinId, night, bookingId] = oKey.split('|');
-    pushSample(samples.missing, { cabinId, night, bookingId });
+    const tuple = { cabinId, night, bookingId };
+    missingOwnership.push(tuple);
+    pushSample(samples.missing, tuple);
   }
+  missingOwnership.sort((a, b) => {
+    const ka = `${a.cabinId}|${a.night}|${a.bookingId}`;
+    const kb = `${b.cabinId}|${b.night}|${b.bookingId}`;
+    return ka < kb ? -1 : ka > kb ? 1 : 0;
+  });
 
   // Drift on actual claims
   for (const [oKey, rows] of claimsByOwnership.entries()) {
@@ -889,7 +898,9 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
     refuseCode: null,
     toolFailure,
     toolFailureMessage,
-    samples
+    samples,
+    /** Full sorted missing expected ownership tuples (S1.4 backfill input). */
+    missingOwnership
   };
 }
 

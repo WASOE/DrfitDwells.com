@@ -153,15 +153,9 @@ test('CLI: --verify accepted', () => {
   assert.equal(a.verify, true);
 });
 
-test('CLI: --backfill refused with NOT_IMPLEMENTED_IN_S1_3', () => {
-  const r = buildRefusedReport({
-    mode: 'backfill',
-    reason: 'not implemented'
-  });
-  assert.equal(r.refused, true);
-  assert.equal(r.refuseCode, REFUSE_CODE);
-  assert.equal(r.readyForBackfill, false);
-  assert.equal(exitCodeForReport(r), 2);
+test('CLI: --backfill flag parsed (S1.4 authorized; mutation in backfill service)', () => {
+  const a = parseArgs(['--backfill']);
+  assert.equal(a.backfill, true);
 });
 
 test('CLI: --create-unique-index refused with NOT_IMPLEMENTED_IN_S1_3', () => {
@@ -173,7 +167,7 @@ test('CLI: --create-unique-index refused with NOT_IMPLEMENTED_IN_S1_3', () => {
   assert.equal(r.mode, 'create-unique-index');
 });
 
-test('CLI: static source has no mutation write APIs in verify path', () => {
+test('CLI: static source refuses unique-index; verify uses preflight', () => {
   const src = readSource('scripts/cabinNightClaimS1Cutover.js');
   assert.match(src, /NOT_IMPLEMENTED_IN_S1_3/);
   assert.match(src, /runCabinNightClaimS1Preflight/);
@@ -183,7 +177,7 @@ test('CLI: static source has no mutation write APIs in verify path', () => {
   assert.doesNotMatch(src, /dropIndex/);
 });
 
-test('preflight service: static source is read-only (no writes)', () => {
+test('preflight service: static source is read-only (no writes)', async () => {
   const src = readSource('services/inventory/cabinNightClaimS1PreflightService.js');
   assert.doesNotMatch(src, /\.create\(/);
   assert.doesNotMatch(src, /insertMany|bulkWrite|findOneAndUpdate|findOneAndDelete/);
@@ -192,7 +186,7 @@ test('preflight service: static source is read-only (no writes)', () => {
   assert.doesNotMatch(src, /\.updateOne|\.updateMany|\.deleteOne|\.deleteMany/);
 });
 
-test('CLI main: --backfill writes refused JSON to stdout only', async () => {
+test('CLI main: --create-unique-index writes refused JSON to stdout only', async () => {
   const chunks = [];
   const orig = process.stdout.write;
   process.stdout.write = (c) => {
@@ -200,11 +194,11 @@ test('CLI main: --backfill writes refused JSON to stdout only', async () => {
     return true;
   };
   try {
-    const code = await cutoverMain(['--backfill']);
+    const code = await cutoverMain(['--create-unique-index']);
     assert.equal(code, 2);
     const report = JSON.parse(chunks.join(''));
     assert.equal(report.refuseCode, REFUSE_CODE);
-    assert.equal(report.mode, 'backfill');
+    assert.equal(report.mode, 'create-unique-index');
   } finally {
     process.stdout.write = orig;
   }
@@ -995,7 +989,7 @@ test('CLI parseArgs: prior-fingerprint and report-json', () => {
   ]);
   assert.equal(a.priorFingerprint, 'abc');
   assert.equal(a.reportJson, '/tmp/x.json');
-  assert.equal(a.batchSize, 50);
+  assert.equal(Number(a.batchSize), 50);
 });
 
 test('AUTHORITATIVE_UNIQUE_INDEX_SPEC reused (not reinvented string-only)', () => {
