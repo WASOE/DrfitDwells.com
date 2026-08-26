@@ -5,11 +5,15 @@ import { formatInTimeZone, toDate } from 'date-fns-tz';
 import { addDays } from 'date-fns';
 import { opsReadAPI } from '../../../services/opsApi';
 import { OPS_CALENDAR_TZ, parseIsoDay, ymdUtc, addDaysUtc } from './opsCalendarDateUtils';
+import { formatWorkDurationMinutes, formatWorkWindowRange } from './workWindowsFormat';
 
 const LOCATION_OPTIONS = [
   { value: 'valley', label: 'The Valley' },
   { value: 'cabin', label: 'The Cabin' }
 ];
+
+/** Site-wide construction windows shown prominently before the timeline. */
+const SITE_BEST_CAP = 3;
 
 /** Planner-local only — do not share with calendarVisualTokens. */
 const SPAN_STYLES = {
@@ -49,17 +53,8 @@ function formatDayWeekday(dayKey) {
   return formatInTimeZone(d, 'UTC', 'EEEEE');
 }
 
-function formatSofiaRange(startAt, endAt) {
-  const start = formatInTimeZone(new Date(startAt), OPS_CALENDAR_TZ, 'd MMM HH:mm');
-  const end = formatInTimeZone(new Date(endAt), OPS_CALENDAR_TZ, 'd MMM HH:mm');
-  return `${start} → ${end}`;
-}
-
-function formatDurationHours(hours) {
-  if (hours == null || Number.isNaN(Number(hours))) return '';
-  const n = Number(hours);
-  const label = n % 1 === 0 ? String(n) : n.toFixed(1);
-  return `${label} hours`;
+function formatSofiaRange(startAt, endAt, continuesBeyondRange = false) {
+  return formatWorkWindowRange(startAt, endAt, OPS_CALENDAR_TZ, { continuesBeyondRange });
 }
 
 function spanTitle(span) {
@@ -89,18 +84,22 @@ function spanTitle(span) {
     origin = map[span.blockSubtype || src.blockType] || 'Blocked';
   } else if (span.state === 'turnaround') {
     origin = 'Turnaround (not a full work window)';
+  } else if (span.continuesBeyondRange) {
+    origin = 'Free work window (continues past checked range)';
   } else {
     origin = 'Free work window';
   }
-  return `${origin}: ${formatSofiaRange(span.startAt, span.endAt)} · ${formatDurationHours(span.durationHours)}`;
+  const range = formatSofiaRange(span.startAt, span.endAt, Boolean(span.continuesBeyondRange));
+  const dur = formatWorkDurationMinutes(span.durationMinutes);
+  return `${origin}: ${range} · ${dur}`;
 }
 
+/** On-bar text for occupied — Pending / In house only; Confirmed is color + tooltip. */
 function occupiedBarLabel(span) {
   const status = span.source?.status;
   if (status === 'pending') return 'Pending';
-  if (status === 'confirmed') return 'Confirmed';
   if (status === 'in_house') return 'In house';
-  return status || 'Guest';
+  return '';
 }
 
 function blockedBarLabel(span) {
@@ -143,13 +142,40 @@ function barGeometrySofia(span, dayKeys) {
 
 function clientRangeError(from, to) {
   if (!from || !to) return 'Choose both From and To dates.';
-  if (to <= from) return 'To must be after From (To is exclusive).';
+  if (to <= from) return 'To must be after From.';
   const start = parseIsoDay(from);
   const end = parseIsoDay(to);
   if (!start || !end) return 'Use YYYY-MM-DD dates.';
   const days = Math.round((end.getTime() - start.getTime()) / 86400000);
   if (days > 92) return 'Range cannot exceed 92 days. Narrow From/To and try again.';
   return null;
+}
+
+function BestWindowCard({ w, prominent }) {
+  const range = formatSofiaRange(w.startAt, w.endAt, Boolean(w.continuesBeyondRange));
+  const dur = formatWorkDurationMinutes(w.durationMinutes);
+  if (prominent) {
+    return (
+      <li className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2.5">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-900">{w.label}</p>
+        <p className="text-sm font-medium text-emerald-950 mt-0.5">{range}</p>
+        <p className="text-xs text-emerald-800 mt-0.5">
+          {dur}
+          {w.continuesBeyondRange ? ' · through end of checked range' : ''}
+          {' · site-wide'}
+        </p>
+      </li>
+    );
+  }
+  return (
+    <li className="flex items-baseline justify-between gap-3 py-1.5 border-b border-gray-100 last:border-0">
+      <div className="min-w-0">
+        <p className="text-xs font-medium text-gray-800 truncate">{w.label}</p>
+        <p className="text-xs text-gray-600 mt-0.5">{range}</p>
+      </div>
+      <p className="shrink-0 text-xs tabular-nums text-gray-500">{dur}</p>
+    </li>
+  );
 }
 
 export default function OpsWorkWindows() {
@@ -186,17 +212,17 @@ export default function OpsWorkWindows() {
   const dayKeys = data?.dayKeys || [];
   const timelineWidth = dayKeys.length * DAY_COL_PX;
 
-  const locationBest = useMemo(
-    () => (data?.bestWindows || []).filter((w) => w.kind === 'location'),
-    [data]
-  );
+  const locationBest = useMemo(() => {
+    const rows = (data?.bestWindows || []).filter((w) => w.kind === 'location');
+    return rows.slice(0, SITE_BEST_CAP);
+  }, [data]);
   const unitBest = useMemo(
     () => (data?.bestWindows || []).filter((w) => w.kind !== 'location'),
     [data]
   );
 
   return (
-    <div className="w-full max-w-lg mx-auto lg:max-w-none space-y-5 overflow-x-hidden">
+    <div className="w-full max-w-lg mx-auto lg:max-w-none space-y-4 overflow-x-hidden">
       <div className="flex items-start gap-3">
         <Link
           to="/ops/calendar"
@@ -239,7 +265,7 @@ export default function OpsWorkWindows() {
             />
           </label>
           <label className="text-sm text-gray-700">
-            <span className="block text-xs text-gray-500 mb-1">To (exclusive)</span>
+            <span className="block text-xs text-gray-500 mb-1">To</span>
             <input
               type="date"
               value={to}
@@ -289,8 +315,8 @@ export default function OpsWorkWindows() {
         <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/80 px-4 py-5 text-sm text-gray-600 max-w-3xl">
           <p className="font-medium text-gray-800">No snapshot yet</p>
           <p className="mt-1 text-gray-500">
-            Choose a location and date range, then check. You will see the longest free windows
-            first, then a day-by-day timeline for the site and each unit.
+            Choose a location and date range, then check. Site-wide free windows appear first, then
+            the day-by-day timeline.
           </p>
         </div>
       ) : null}
@@ -301,7 +327,7 @@ export default function OpsWorkWindows() {
             <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
               Best Work Windows
             </h2>
-            {!data.bestWindows?.length ? (
+            {!locationBest.length && !unitBest.length ? (
               <div className="rounded-xl border border-gray-200 bg-white px-4 py-4 text-sm text-gray-600">
                 No multi-day free windows in this range
                 {data.resources?.some((r) => r.spans?.some((s) => s.state === 'free'))
@@ -309,38 +335,32 @@ export default function OpsWorkWindows() {
                   : ' — every day has guest occupancy or a block.'}
               </div>
             ) : (
-              <ul className="space-y-1.5">
-                {locationBest.map((w) => (
-                  <li
-                    key={`${w.resourceId}-${w.startAt}`}
-                    className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2.5"
-                  >
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-900">
-                      {w.label}
-                    </p>
-                    <p className="text-sm font-medium text-emerald-950 mt-0.5">
-                      {formatSofiaRange(w.startAt, w.endAt)}
-                    </p>
-                    <p className="text-xs text-emerald-800 mt-0.5">
-                      {formatDurationHours(w.durationHours)} · site-wide
-                    </p>
-                  </li>
-                ))}
-                {unitBest.map((w) => (
-                  <li
-                    key={`${w.resourceId}-${w.startAt}`}
-                    className="rounded-lg border border-gray-200 bg-white px-3 py-2"
-                  >
-                    <p className="text-xs font-medium text-gray-800 truncate">{w.label}</p>
-                    <p className="text-sm text-gray-900 mt-0.5">
-                      {formatSofiaRange(w.startAt, w.endAt)}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {formatDurationHours(w.durationHours)}
-                    </p>
-                  </li>
-                ))}
-              </ul>
+              <div className="space-y-2">
+                {locationBest.length ? (
+                  <ul className="space-y-1.5">
+                    {locationBest.map((w) => (
+                      <BestWindowCard key={`${w.resourceId}-${w.startAt}`} w={w} prominent />
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-gray-600 rounded-lg border border-gray-200 bg-white px-3 py-2">
+                    No site-wide free window in this range — check individual units below or the
+                    timeline.
+                  </p>
+                )}
+                {unitBest.length ? (
+                  <details className="rounded-lg border border-gray-200 bg-white">
+                    <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                      Individual unit windows ({unitBest.length})
+                    </summary>
+                    <ul className="px-3 pb-2">
+                      {unitBest.map((w) => (
+                        <BestWindowCard key={`${w.resourceId}-${w.startAt}`} w={w} prominent={false} />
+                      ))}
+                    </ul>
+                  </details>
+                ) : null}
+              </div>
             )}
           </section>
 
@@ -460,6 +480,15 @@ export default function OpsWorkWindows() {
                           {bars.map((span) => {
                             const { left, width, widthPct } = barGeometrySofia(span, dayKeys);
                             const showText = widthPct >= 2.2;
+                            let barText = '';
+                            if (span.state === 'free') {
+                              barText = formatWorkDurationMinutes(span.durationMinutes);
+                              if (span.continuesBeyondRange && widthPct >= 6) barText = `${barText}+`;
+                            } else if (span.state === 'occupied') {
+                              barText = occupiedBarLabel(span);
+                            } else {
+                              barText = blockedBarLabel(span);
+                            }
                             return (
                               <div
                                 key={span.spanId}
@@ -469,13 +498,9 @@ export default function OpsWorkWindows() {
                                 }`}
                                 style={{ left, width }}
                               >
-                                {showText ? (
+                                {showText && barText ? (
                                   <span className="truncate text-[9px] font-semibold leading-none px-0.5">
-                                    {span.state === 'free'
-                                      ? `${span.durationHours}h`
-                                      : span.state === 'occupied'
-                                        ? occupiedBarLabel(span)
-                                        : blockedBarLabel(span)}
+                                    {barText}
                                   </span>
                                 ) : null}
                               </div>

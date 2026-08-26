@@ -108,6 +108,20 @@ function durationFields(startMs, endMs) {
   return { durationMinutes, durationHours };
 }
 
+/**
+ * Operator-facing duration from exact minutes (display only).
+ * Examples: 18h · 1d 3h · 5d 4h · 7 days · 49 days
+ */
+function formatWorkDurationMinutes(durationMinutes) {
+  const mins = Math.max(0, Math.round(Number(durationMinutes) || 0));
+  const totalHours = Math.floor(mins / 60);
+  if (totalHours < 24) return `${totalHours}h`;
+  const days = Math.floor(totalHours / 24);
+  const hoursPart = totalHours % 24;
+  if (hoursPart === 0) return `${days} ${days === 1 ? 'day' : 'days'}`;
+  return `${days}d ${hoursPart}h`;
+}
+
 function dateOnlyBounds(startMs, endMs) {
   return {
     startDateOnly: formatSofiaDateOnly(new Date(startMs)),
@@ -246,6 +260,9 @@ function buildResourceSpans({
     if (endMs <= startMs) return;
     const dates = dateOnlyBounds(startMs, endMs);
     const dur = durationFields(startMs, endMs);
+    // Free/turnaround ending exactly at query `to` is truncated — not a known guest arrival.
+    const continuesBeyondRange =
+      (state === STATES.FREE || state === STATES.TURNAROUND) && endMs >= windowEndMs;
     spans.push({
       spanId: nextId(state),
       state,
@@ -253,6 +270,7 @@ function buildResourceSpans({
       endAt: new Date(endMs).toISOString(),
       ...dates,
       ...dur,
+      continuesBeyondRange: Boolean(continuesBeyondRange),
       blockSubtype: null,
       blockProposal: null,
       ...extra
@@ -324,12 +342,13 @@ function blockMetaFromSource(source) {
 /**
  * @param {object[]} resources — each with spans
  */
-function buildBestWindows(resources, { cap = BEST_WINDOWS_CAP } = {}) {
-  const rows = [];
+function buildBestWindows(resources, { cap = BEST_WINDOWS_CAP, siteCap = 3 } = {}) {
+  const locationRows = [];
+  const unitRows = [];
   for (const resource of resources) {
     for (const span of resource.spans || []) {
       if (span.state !== STATES.FREE) continue;
-      rows.push({
+      const row = {
         resourceId: resource.resourceId,
         kind: resource.kind,
         label: resource.label,
@@ -340,27 +359,37 @@ function buildBestWindows(resources, { cap = BEST_WINDOWS_CAP } = {}) {
         endDateOnly: span.endDateOnly,
         durationMinutes: span.durationMinutes,
         durationHours: span.durationHours,
+        continuesBeyondRange: Boolean(span.continuesBeyondRange),
         displayLabel: formatBestWindowLabel(resource.label, span),
         blockProposal: span.blockProposal || null,
         prominent: resource.kind === 'location'
-      });
+      };
+      if (resource.kind === 'location') locationRows.push(row);
+      else unitRows.push(row);
     }
   }
-  rows.sort((a, b) => {
+  const byDurationThenStart = (a, b) => {
     if (b.durationMinutes !== a.durationMinutes) return b.durationMinutes - a.durationMinutes;
     return String(a.startAt).localeCompare(String(b.startAt));
-  });
-  return rows.slice(0, cap);
+  };
+  locationRows.sort(byDurationThenStart);
+  unitRows.sort(byDurationThenStart);
+
+  // Site-wide construction windows first (cap), then unit windows to fill remaining slots.
+  const site = locationRows.slice(0, siteCap);
+  const remaining = Math.max(0, cap - site.length);
+  return [...site, ...unitRows.slice(0, remaining)];
 }
 
 function formatBestWindowLabel(label, span) {
   const start = moment.tz(span.startAt, PROPERTY_TIMEZONE);
   const end = moment.tz(span.endAt, PROPERTY_TIMEZONE);
   const startFmt = start.format('D MMM HH:mm');
-  const endFmt = end.format('D MMM HH:mm');
-  const hours =
-    span.durationHours % 1 === 0 ? String(span.durationHours) : span.durationHours.toFixed(1);
-  return `${label} · ${startFmt} → ${endFmt} · ${hours}h`;
+  const range = span.continuesBeyondRange
+    ? `${startFmt} → at least ${end.format('D MMM')}`
+    : `${startFmt} → ${end.format('D MMM HH:mm')}`;
+  const dur = formatWorkDurationMinutes(span.durationMinutes);
+  return `${label} · ${range} · ${dur}`;
 }
 
 function buildDayKeys(fromDateOnly, toDateOnly) {
@@ -445,6 +474,7 @@ module.exports = {
   guestLabelFromBooking,
   legacyBlockedDateSpans,
   formatBestWindowLabel,
+  formatWorkDurationMinutes,
   durationFields,
   parseSofiaWall
 };

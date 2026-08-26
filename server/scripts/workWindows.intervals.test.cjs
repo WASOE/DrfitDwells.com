@@ -85,6 +85,7 @@ test('multi-day gap yields free practical window and duration ~76h', () => {
   assert.ok(gap, 'expected free Aug 27→30');
   assert.equal(gap.durationMinutes, 76 * 60);
   assert.equal(gap.durationHours, 76);
+  assert.equal(gap.continuesBeyondRange, false);
   assert.deepEqual(gap.blockProposal, { startDate: '2026-08-27', endDate: '2026-08-30' });
 });
 
@@ -188,6 +189,55 @@ test('zero bookings → single free spanning window', () => {
   assert.equal(spans[0].state, STATES.FREE);
   assert.equal(spans[0].startDateOnly, '2026-08-26');
   assert.equal(spans[0].endDateOnly, '2026-08-30');
+  assert.equal(spans[0].continuesBeyondRange, true);
+});
+
+test('free span ending at query to is range-truncated; natural free end is not', () => {
+  const window = planningWindowBounds('2026-08-26', '2026-09-10');
+  // Guest leaves Aug 28 11:00 — free until range end Sep 10 00:00 (no next booking)
+  const a = guestPracticalInterval(sofiaDay('2026-08-26'), sofiaDay('2026-08-28'));
+  const openEnd = buildResourceSpans({
+    guestIntervals: [{ ...a, source: bookingSource() }],
+    blockIntervals: [],
+    windowStartMs: window.windowStartMs,
+    windowEndMs: window.windowEndMs,
+    resourceId: 'location:valley'
+  });
+  const openFree = openEnd.find(
+    (s) => s.state === STATES.FREE && moment.tz(s.endAt, PROPERTY_TIMEZONE).format('YYYY-MM-DD') === '2026-09-10'
+  );
+  assert.ok(openFree);
+  assert.equal(openFree.continuesBeyondRange, true);
+  assert.equal(moment.tz(openFree.endAt, PROPERTY_TIMEZONE).format('YYYY-MM-DD HH:mm'), '2026-09-10 00:00');
+  assert.equal(
+    openEnd.find((s) => s.state === STATES.FREE && s.startDateOnly === '2026-08-26')?.continuesBeyondRange,
+    false
+  );
+  // Same first stay, but next guest arrives Aug 31 — free ends at check-in, not range end
+  const b = guestPracticalInterval(sofiaDay('2026-08-31'), sofiaDay('2026-09-02'));
+  const closed = buildResourceSpans({
+    guestIntervals: [
+      { ...a, source: bookingSource() },
+      { ...b, source: bookingSource() }
+    ],
+    blockIntervals: [],
+    windowStartMs: window.windowStartMs,
+    windowEndMs: window.windowEndMs,
+    resourceId: 'location:valley'
+  });
+  const closedFree = closed.find(
+    (s) =>
+      s.state === STATES.FREE &&
+      moment.tz(s.startAt, PROPERTY_TIMEZONE).format('YYYY-MM-DD HH:mm') === '2026-08-28 11:00'
+  );
+  assert.ok(closedFree);
+  assert.equal(closedFree.continuesBeyondRange, false);
+  assert.equal(moment.tz(closedFree.endAt, PROPERTY_TIMEZONE).format('YYYY-MM-DD HH:mm'), '2026-08-31 15:00');
+
+  const best = buildBestWindows([
+    { resourceId: 'location:valley', kind: 'location', label: 'The Valley', spans: openEnd }
+  ]);
+  assert.equal(best[0].continuesBeyondRange, true);
 });
 
 test('booking status metadata preserved on occupied spans', () => {
@@ -369,4 +419,14 @@ test('resolveActionableStartMs takes max of range start and now', () => {
   const now = sofiaWall('2026-08-26', '16:00').valueOf();
   assert.equal(resolveActionableStartMs(range, now), now);
   assert.equal(resolveActionableStartMs(now, range), now);
+});
+
+test('formatWorkDurationMinutes is operator-facing (no decimals)', () => {
+  const { formatWorkDurationMinutes } = require('../services/ops/domain/workWindowsIntervals');
+  assert.equal(formatWorkDurationMinutes(18 * 60), '18h');
+  assert.equal(formatWorkDurationMinutes(27 * 60), '1d 3h');
+  assert.equal(formatWorkDurationMinutes(124 * 60), '5d 4h');
+  assert.equal(formatWorkDurationMinutes(168 * 60), '7 days');
+  assert.equal(formatWorkDurationMinutes(1176 * 60), '49 days');
+  assert.equal(formatWorkDurationMinutes(1176.3 * 60), '49 days');
 });
