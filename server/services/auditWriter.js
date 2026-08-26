@@ -9,6 +9,17 @@ function shouldForceAuditFailure(req) {
   return String(req.headers?.[FORCED_FAIL_HEADER] || '').trim() === '1';
 }
 
+/**
+ * Normalize optional dedupeKey: only non-empty strings are stored.
+ * Empty / null / undefined → omit field (do not write null — avoids unique-null collisions).
+ */
+function normalizeDedupeKey(raw) {
+  if (raw == null) return undefined;
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 async function appendAuditEvent(payload, options = {}) {
   const { req } = options;
   if (shouldForceAuditFailure(req)) {
@@ -18,7 +29,8 @@ async function appendAuditEvent(payload, options = {}) {
   }
 
   const actorRoleFromReq = options.req?.user?.role != null ? String(options.req.user.role) : null;
-  const doc = await AuditEvent.create({
+  const dedupeKey = normalizeDedupeKey(payload.dedupeKey);
+  const docPayload = {
     happenedAt: payload.happenedAt || new Date(),
     actorType: payload.actorType,
     actorId: payload.actorId ?? null,
@@ -30,16 +42,20 @@ async function appendAuditEvent(payload, options = {}) {
     afterSnapshot: payload.afterSnapshot ?? null,
     metadata: payload.metadata || {},
     reason: payload.reason ?? null,
-    dedupeKey: payload.dedupeKey ?? null,
     sourceContext: payload.sourceContext ?? null
-  });
+  };
+  if (dedupeKey !== undefined) {
+    docPayload.dedupeKey = dedupeKey;
+  }
 
+  const doc = await AuditEvent.create(docPayload);
   return doc;
 }
 
 module.exports = {
   appendAuditEvent,
   shouldForceAuditFailure,
+  normalizeDedupeKey,
   FORCED_FAIL_ENV,
   FORCED_FAIL_HEADER
 };

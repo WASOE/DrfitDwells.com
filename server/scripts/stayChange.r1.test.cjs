@@ -2107,9 +2107,13 @@ test('R1#121 cutover: refuse Audit dedupe dups', async () => {
   await cutover.ensureR1IndexesForTests();
 });
 
-test('R1#122 cutover: sparse nulls OK for Audit dedupe', async () => {
+test('R1#122 cutover: partial unique allows missing and null dedupeKey; string uniqueness remains', async () => {
   await cutover.ensureR1IndexesForTests();
-  // Sparse unique indexes documents with explicit null; omit field so sparse skips both.
+  const indexes = await AuditEvent.collection.indexes();
+  const found = indexes.find((i) => i.name === AUDIT_NAME);
+  assert.equal(found.unique, true);
+  assert.deepEqual(found.partialFilterExpression, { dedupeKey: { $type: 'string' } });
+
   await AuditEvent.collection.insertMany([
     {
       happenedAt: new Date(),
@@ -2128,11 +2132,60 @@ test('R1#122 cutover: sparse nulls OK for Audit dedupe', async () => {
       action: 'other',
       createdAt: new Date(),
       updatedAt: new Date()
+    },
+    {
+      happenedAt: new Date(),
+      actorType: 'user',
+      entityType: 'Reservation',
+      entityId: 'a3',
+      action: 'other',
+      dedupeKey: null,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    },
+    {
+      happenedAt: new Date(),
+      actorType: 'user',
+      entityType: 'Reservation',
+      entityId: 'a4',
+      action: 'other',
+      dedupeKey: null,
+      createdAt: new Date(),
+      updatedAt: new Date()
     }
   ]);
-  assert.equal(await AuditEvent.collection.countDocuments({ dedupeKey: { $exists: false } }), 2);
+  assert.ok((await AuditEvent.collection.countDocuments({ dedupeKey: { $exists: false } })) >= 2);
+  assert.ok((await AuditEvent.collection.countDocuments({ dedupeKey: { $type: 'null' } })) >= 2);
+
+  await AuditEvent.collection.insertOne({
+    happenedAt: new Date(),
+    actorType: 'user',
+    entityType: 'Reservation',
+    entityId: 's1',
+    action: 'reservation_reallocate',
+    dedupeKey: 'r1-122-unique',
+    createdAt: new Date(),
+    updatedAt: new Date()
+  });
+  await assert.rejects(
+    () =>
+      AuditEvent.collection.insertOne({
+        happenedAt: new Date(),
+        actorType: 'user',
+        entityType: 'Reservation',
+        entityId: 's2',
+        action: 'reservation_reallocate',
+        dedupeKey: 'r1-122-unique',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }),
+    (err) => err.code === 11000
+  );
+
   const report = await cutover.buildReport();
   assert.equal(report.duplicateAuditDedupeKeys, 0);
+  assert.equal(report.auditDedupeIndexKind, 'desired_partial');
+  assert.equal(report.requiredAuditDedupeUniqueExact, true);
 });
 
 test('R1#123 cutover: second createIndexes is idempotent', async () => {
@@ -2146,10 +2199,11 @@ test('R1#123 cutover: second createIndexes is idempotent', async () => {
   assert.equal(stayIdx.filter((i) => i.name === IDEM_NAME).length, 1);
 });
 
-test('R1#124 parseArgs default createIndexes false; verify flag', () => {
+test('R1#124 parseArgs default createIndexes false; verify flag; replace flag', () => {
   assert.equal(cutover.parseArgs([]).createIndexes, false);
   assert.equal(cutover.parseArgs(['--verify']).verify, true);
   assert.equal(cutover.parseArgs(['--create-indexes']).createIndexes, true);
+  assert.equal(cutover.parseArgs(['--replace-audit-dedupe-index']).replaceAuditDedupeIndex, true);
 });
 
 test('R1#125 read-only mutation none when not creating', async () => {
@@ -2372,9 +2426,14 @@ test('R1#139 reallocate across Sofia DST boundary nights succeeds', async () => 
   assert.equal(own.ok, true);
 });
 
-test('R1#140 AUDIT_DEDUPE_INDEX_SPEC name is auditEvent_dedupeKey_unique', () => {
+test('R1#140 AUDIT_DEDUPE_INDEX_SPEC is partial unique on string dedupeKey', () => {
   assert.equal(AUDIT_DEDUPE_INDEX_SPEC.options.name, 'auditEvent_dedupeKey_unique');
   assert.equal(cutover.AUDIT_DEDUPE_INDEX_SPEC.options.name, 'auditEvent_dedupeKey_unique');
+  assert.equal(AUDIT_DEDUPE_INDEX_SPEC.options.unique, true);
+  assert.equal(AUDIT_DEDUPE_INDEX_SPEC.options.sparse, undefined);
+  assert.deepEqual(AUDIT_DEDUPE_INDEX_SPEC.options.partialFilterExpression, {
+    dedupeKey: { $type: 'string' }
+  });
 });
 
 // =============================================================================

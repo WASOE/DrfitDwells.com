@@ -3,20 +3,35 @@ const mongoose = require('mongoose');
 const ACTOR_TYPES = ['user', 'system', 'webhook', 'sync_importer'];
 
 /**
- * R1 AuditEvent.dedupeKey unique sparse index.
- * Created ONLY by stayChangeR1Cutover.js --create-indexes.
- * Do NOT register via schema.index() or field index:true — ordinary
- * Mongoose autoIndex / syncIndexes must not create this safety index.
+ * AuditEvent.dedupeKey uniqueness — ONLY for real string dedupe values.
+ *
+ * Production bug (R1 sparse unique): unique+sparse still indexes explicit null,
+ * so a second AuditEvent with dedupeKey:null collides (E11000).
+ *
+ * Correct contract: unique partial index where dedupeKey is a string.
+ * Missing/null/non-string values do NOT participate in uniqueness.
+ *
+ * Created ONLY by stayChangeR1Cutover.js (--create-indexes / --replace-audit-dedupe-index).
+ * Do NOT register via schema.index() or field index:true.
  */
 const AUDIT_DEDUPE_INDEX_SPEC = Object.freeze({
   keys: Object.freeze({ dedupeKey: 1 }),
   options: Object.freeze({
     unique: true,
-    sparse: true,
-    name: 'auditEvent_dedupeKey_unique'
+    name: 'auditEvent_dedupeKey_unique',
+    partialFilterExpression: Object.freeze({ dedupeKey: { $type: 'string' } })
   }),
   cutoverBatch: 'R1',
-  note: 'Created only by stayChangeR1Cutover.js --create-indexes; not schema-registered'
+  note:
+    'Created only by stayChangeR1Cutover.js; partial unique on string dedupeKey only (not sparse; null/missing excluded)'
+});
+
+/** Known prior broken production shape (unique sparse, no partial filter). */
+const AUDIT_DEDUPE_LEGACY_SPARSE_SHAPE = Object.freeze({
+  keys: Object.freeze({ dedupeKey: 1 }),
+  unique: true,
+  sparse: true,
+  name: 'auditEvent_dedupeKey_unique'
 });
 
 const auditEventSchema = new mongoose.Schema(
@@ -86,11 +101,12 @@ const auditEventSchema = new mongoose.Schema(
     },
     /**
      * Optional durable projection dedupe key (R1 StayChange audit).
-     * No field-level index / no schema.index — cutover owns the unique sparse index.
+     * Omit when unused — do not force null (partial unique excludes missing/null).
+     * No field-level index / no schema.index — cutover owns the unique partial index.
      */
     dedupeKey: {
       type: String,
-      default: null,
+      required: false,
       immutable: true
     },
     sourceContext: {
@@ -110,7 +126,9 @@ auditEventSchema.pre(['deleteOne', 'deleteMany', 'findOneAndDelete', 'findByIdAn
 });
 
 auditEventSchema.statics.AUDIT_DEDUPE_INDEX_SPEC = AUDIT_DEDUPE_INDEX_SPEC;
+auditEventSchema.statics.AUDIT_DEDUPE_LEGACY_SPARSE_SHAPE = AUDIT_DEDUPE_LEGACY_SPARSE_SHAPE;
 
 module.exports = mongoose.model('AuditEvent', auditEventSchema);
 module.exports.ACTOR_TYPES = ACTOR_TYPES;
 module.exports.AUDIT_DEDUPE_INDEX_SPEC = AUDIT_DEDUPE_INDEX_SPEC;
+module.exports.AUDIT_DEDUPE_LEGACY_SPARSE_SHAPE = AUDIT_DEDUPE_LEGACY_SPARSE_SHAPE;
