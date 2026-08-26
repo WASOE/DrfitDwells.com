@@ -1025,3 +1025,160 @@ test('CLI main success path reports created with liveWriterProcessInspectedByCli
   assert.equal(report.liveWriterProcessInspectedByCli, false);
   assert.equal(report.authoritativeUniqueExact, true);
 });
+
+// ========== S1.6.1 — post-authority verify exit code ==========
+
+test('S1.6.1: post-authority clean verify exit 0 (readyForBackfill false)', () => {
+  assert.equal(
+    exitCodeForReport({
+      mode: 'verify',
+      toolFailure: false,
+      refused: false,
+      readyForBackfill: false,
+      readyForStableVerification: true
+    }),
+    0
+  );
+});
+
+test('S1.6.1: pre-authority backfill-ready verify exit 0', () => {
+  assert.equal(
+    exitCodeForReport({
+      mode: 'verify',
+      toolFailure: false,
+      refused: false,
+      readyForBackfill: true,
+      readyForStableVerification: false
+    }),
+    0
+  );
+});
+
+test('S1.6.1: dirty / not-ready verify exit 2', () => {
+  assert.equal(
+    exitCodeForReport({
+      mode: 'verify',
+      toolFailure: false,
+      refused: false,
+      readyForBackfill: false,
+      readyForStableVerification: false
+    }),
+    2
+  );
+});
+
+test('S1.6.1: verify toolFailure exit 1', () => {
+  assert.equal(
+    exitCodeForReport({
+      mode: 'verify',
+      toolFailure: true,
+      refused: false,
+      readyForBackfill: false,
+      readyForStableVerification: false
+    }),
+    1
+  );
+});
+
+test('S1.6.1: verify refused exit 2', () => {
+  assert.equal(
+    exitCodeForReport({
+      mode: 'verify',
+      toolFailure: false,
+      refused: true,
+      readyForBackfill: false,
+      readyForStableVerification: false
+    }),
+    2
+  );
+});
+
+test('S1.6.1: EXACT authority integration --verify exits 0', async () => {
+  await CabinNightClaim.collection.createIndex(
+    AUTHORITATIVE_UNIQUE_INDEX_SPEC.keys,
+    { ...AUTHORITATIVE_UNIQUE_INDEX_SPEC.options }
+  );
+  const { code, report } = await captureStdout(() => cutoverMain(['--verify']));
+  assert.equal(code, 0);
+  assert.equal(report.mode, 'verify');
+  assert.equal(report.authoritativeIndexState, 'EXACT');
+  assert.equal(report.authoritativeUniquePresent, true);
+  assert.equal(report.authoritativeUniqueExact, true);
+  assert.equal(report.readyForBackfill, false);
+  assert.equal(report.readyForStableVerification, true);
+  assert.equal(report.toolFailure, false);
+  assert.equal(report.refused, false);
+});
+
+test('S1.6.1: create-unique success remains exit 0', () => {
+  assert.equal(
+    exitCodeForReport({
+      mode: 'create-unique-index',
+      toolFailure: false,
+      refused: false,
+      needsReview: false,
+      postVerificationClean: true,
+      authoritativeUniqueExact: true
+    }),
+    0
+  );
+});
+
+test('S1.6.1: create-unique refusal remains exit 2', () => {
+  assert.equal(
+    exitCodeForReport({
+      mode: 'create-unique-index',
+      toolFailure: false,
+      refused: true,
+      refuseCode: 'S1_UNIQUE_MODE_NOT_SHADOW'
+    }),
+    2
+  );
+});
+
+test('S1.6.1: backfill success exit 0 unchanged', () => {
+  assert.equal(
+    exitCodeForReport({
+      mode: 'backfill',
+      toolFailure: false,
+      refused: false,
+      failed: 0,
+      foreignConflicts: 0,
+      stayChangeConflicts: 0,
+      readyForStableVerification: true
+    }),
+    0
+  );
+});
+
+test('S1.6.1: backfill conflict exit 2; failed exit 1', () => {
+  assert.equal(
+    exitCodeForReport({
+      mode: 'backfill',
+      toolFailure: false,
+      refused: false,
+      failed: 0,
+      foreignConflicts: 1,
+      stayChangeConflicts: 0,
+      readyForStableVerification: false
+    }),
+    2
+  );
+  assert.equal(
+    exitCodeForReport({
+      mode: 'backfill',
+      toolFailure: false,
+      refused: false,
+      failed: 1,
+      foreignConflicts: 0,
+      stayChangeConflicts: 0,
+      readyForStableVerification: false
+    }),
+    1
+  );
+});
+
+test('S1.6.1: static — readyForBackfill exact-authority formula unchanged in preflight', () => {
+  const src = readSource('services/inventory/cabinNightClaimS1PreflightService.js');
+  assert.match(src, /readyForBackfill\s*=\s*baseInventorySafe\s*&&\s*!authoritativeUniqueExact/);
+});

@@ -155,6 +155,8 @@ function exitCodeForReport(report) {
     if (report.readyForStableVerification === true) return 0;
     return 2;
   }
+  // verify / default: clean parity (incl. post-authority EXACT) OR pre-authority backfill-ready
+  if (report.readyForStableVerification === true) return 0;
   if (report.readyForBackfill === true) return 0;
   return 2;
 }
