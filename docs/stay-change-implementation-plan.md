@@ -2358,7 +2358,7 @@ Do **NOT** include in REBOOK v1 / S3:
 
 ## 24. REBOOK-S1 — CabinNightClaim foundation (LOCKED)
 
-**Production baseline:** `7bf99e6be18e642938ed3e199b6871089df01c8d`
+**Production baseline (S1.6.1):** `8bdec9cba10fca3d07c884fbd21e86464cdec847`
 **Depends on:** I6 authoritative `UnitNightClaim` (live).
 **Purpose:** Lock **REBOOK-S1** as the permanent **single-cabin inventory-integrity** foundation. This is **NOT** a REBOOK-specific hold table.
 
@@ -2370,7 +2370,7 @@ cabinTypeId null
 unitId null
 ```
 
-**No application implementation** is authorized by §24 alone.
+**No application implementation** is authorized by §24 alone. **S1.7 writer cutover** is locked in **§24.44** and still requires separate implementation authorization.
 
 ### 24.1 Purpose and conceptual model
 
@@ -2613,6 +2613,8 @@ S1 must eventually cover **every** authoritative single-cabin CREATE writer, inc
 
 Claims exist **before** the Booking becomes authoritative/blocking. Public external-hold policy remains unchanged.
 
+**S1.7 elaboration (crash, finalize, legacy, manual, Location):** **§24.44.6–§24.44.11**.
+
 ### 24.16 Shadow / dual-write phase semantics
 
 **Critical distinction:**
@@ -2649,6 +2651,8 @@ S1 dual-write must **NOT** unexpectedly change guest-facing booking behavior.
 
 If Booking date commit fails: release only newly acquired nights belonging to this attempt. Existing overlapping claims remain.
 
+**S1.7 elaboration:** **§24.44.12**.
+
 ### 24.18 Single-cabin Reassign ordering
 
 Legacy single-cabin Reassign **must be included** before S1 authority.
@@ -2664,6 +2668,8 @@ Legacy single-cabin Reassign **must be included** before S1 authority.
 Internal claim conflict: **hard, no override.** External Airbnb/iCal warning policy: **unchanged.**
 
 A production Reassign path that can mutate `cabinId` without claim conversion is an **S1 cutover blocker**.
+
+**S1.7 elaboration (including locked AvailabilityBlock cabin projection sync):** **§24.44.13**.
 
 ### 24.19 Location child rule
 
@@ -2795,10 +2801,11 @@ If all writer coverage cannot be proven under live traffic: use a controlled wri
 | **S1.4** | idempotent production backfill under dual-write |
 | **S1.5** | stable clean verification — minimum **two** clean equivalent canonical fingerprints |
 | **S1.6** | controlled authoritative unique index creation |
-| **S1.7** | authoritative claim-first writer mode; index assertion required |
+| **S1.6.1** | post-authority `--verify` exit-code correction (`readyForStableVerification` success path); readiness semantics unchanged |
+| **S1.7** | authoritative claim-first writer mode; mode=`authoritative`; exact-index per-acquire + inventory-writer boot gates; archive release; AB reassign cabin projection sync — **§24.44** |
 | **S1.8** | post-cutover reconciliation; safe deterministic repairs only; foreign ambiguity → MRI/manual |
 
-**Do not collapse S1.1–S1.7.**
+**Do not collapse S1.1–S1.7.** S1.7 implementation contract is locked in **§24.44**.
 
 ### 24.30 Stable verification
 
@@ -2866,15 +2873,19 @@ Application startup may **verify/assert** the authoritative index **after S1.6**
 
 `autoIndex` must not create the unique authority. Do not rely solely on developer convention if a schema/syncIndexes path could accidentally create it.
 
+**S1.7:** exact-index **read-only** boot assertion for inventory writers when `CABIN_NIGHT_CLAIM_MODE=authoritative` is locked in **§24.44.4** / **§24.44.24**.
+
 ### 24.34 Writer readiness
 
 Before S1.6/S1.7, production must prove every process capable of single-cabin inventory mutation runs claim-compatible code.
 
-Repo-known critical writer: **main API**, including its in-process checkout finalization worker.
+Repo-known critical writers: **main API** and **finalize worker**.
 
 Also **production-audit the live PM2 process list** before cutover. Do not assume `ecosystem.config.cjs` is complete.
 
 Messaging/confirmation-only workers need not write claims unless runtime audit proves otherwise.
+
+**S1.7:** authoritative path completeness + archive-under-`status_release` locked in **§24.44.15** / **§24.44.23**.
 
 ### 24.35 Deployment ordering
 
@@ -2887,12 +2898,14 @@ deploy S1.1/S1.2 compatible code
 → verify dual-write readiness
 → run S1.3 → S1.4 → S1.5 (twice/stably)
 → run S1.6 unique cutover
-→ enable/deploy S1.7 authoritative writer assertion
-→ verify all writer processes
+→ S1.6.1 verify-exit correction (live)
+→ deploy S1.7 while env remains shadow
+→ controlled env flip to authoritative (§24.44.28)
+→ verify all inventory writer processes
 → run S1.8 reconciliation
 ```
 
-Exact deploy commands deferred until implementation and production audit.
+Exact deploy commands deferred until implementation and production audit. **S1.7 cutover sequence is locked in §24.44.28.**
 
 ### 24.36 Rollback
 
@@ -2939,6 +2952,8 @@ REBOOK multi-unit work may rely on UnitNightClaim separately, but the locked ove
 ### 24.41 Test contract
 
 S1 implementation must contain **at least 140 meaningful tests** across sub-batches.
+
+**S1.7 alone** must contain **at least 120** meaningful S1.7-focused assertions/scenarios (**§24.44.27**).
 
 Must include:
 
@@ -2989,6 +3004,465 @@ Do **NOT** include:
 - multi-unit UnitNightClaim redesign
 - new public external-hold policy
 - financial reporting redesign
+
+### 24.44 S1.7 — Authoritative claim-first writer cutover (LOCKED)
+
+**Purpose:** Lock the exact **S1.7** implementation contract before code authorization.
+
+S1.7 is the **AUTHORITATIVE CABIN NIGHT CLAIM WRITER CUTOVER**. It switches single-cabin internal inventory mutations from:
+
+```text
+Booking-first + best-effort claim shadow
+```
+
+to:
+
+```text
+CabinNightClaim-first hard database authority
+```
+
+while preserving:
+
+- Booking commercial / canonical record semantics
+- AvailabilityBlock as projection / external-hold representation
+- existing payment / messaging behavior
+- UnitNightClaim semantics
+- REBOOK scope boundary (S1.7 does **not** implement REBOOK)
+- standalone Mongo compensation model (no multi-document transaction requirement)
+
+**No application implementation is authorized by this subsection alone.** Implementation requires a separate authorization after this lock is committed.
+
+#### 24.44.1 Production preconditions
+
+Before production **authority env flip**:
+
+- CabinNightClaim parity clean (`expected = actual`, all drift/collision classes = 0)
+- exact permanent unique index exists:
+
+```text
+name: cabinNightClaim_cabinId_night_unique
+key:  { cabinId: 1, night: 1 }
+unique: true
+```
+
+- S1.6.1 post-authority verify exits **0** when clean
+- Current production before S1.7 cutover remains:
+
+```text
+CABIN_NIGHT_CLAIM_MODE=shadow
+Booking still canonical for inventory mutation ordering
+```
+
+**Deploy rule:** S1.7 code **MUST** be deployable while env remains `shadow`. The env flip to `authoritative` is a **separate controlled production action** after deploy verification.
+
+#### 24.44.2 Canonical claim qualification
+
+One qualification source only. A Booking owns CabinNightClaims only when:
+
+```text
+commercial shape VALID_SINGLE:
+  cabinId present
+  cabinTypeId absent
+  unitId absent
+status ∈ { pending, confirmed, in_house }
+isTest !== true
+archivedAt absent
+valid Cabin reference
+valid [checkIn, checkOut) Europe/Sofia occupied-night range
+```
+
+LocationBooking single-cabin children **participate** when they satisfy the above.
+
+S1.7 writers **MUST** reuse the canonical qualification helpers (`shouldBookingOwnCabinNightClaims` / shared exact helpers). **No** second writer-specific definition of blocking inventory.
+
+#### 24.44.3 Mode contract (`CABIN_NIGHT_CLAIM_MODE`)
+
+One mode module governs behavior. No scattered bespoke env parsing.
+
+| Mode | Behavior |
+|------|----------|
+| **off** | Legacy Booking behavior; no CabinNightClaim writes. Retained for development / controlled emergency compatibility. **NOT** permitted as a normal production mode after successful S1.7 authority cutover. Rollback from `authoritative` → `off` is **outside S1.7** and requires a separately controlled procedure. |
+| **shadow** | Current S1.2 behavior: Booking canonical mutation first; claim mirror/release best effort; failures observed but do not gate Booking. |
+| **authoritative** | S1.7 behavior: claim-first hard internal exclusivity; internal conflict fails closed; exact unique index required; claim failures gate canonical mutations where target inventory is being acquired; source claims are **never** released before canonical ownership moves away. |
+
+#### 24.44.4 Exact-index runtime gate
+
+**A. Per-acquisition gate.** Authoritative `claimCabinNights` must assert exact authority before acquiring (existing foundation).
+
+**B. Process startup gate.** When `mode=authoritative`, the two inventory-writing processes must perform a **READ-ONLY** exact-index assertion before becoming healthy / serving inventory mutations:
+
+1. `driftdwells` API
+2. `driftdwells-finalize-worker`
+
+**Do NOT** require this for: `driftdwells-gma-worker`, `driftdwells-confirmation-worker`.
+
+Startup assertion must:
+
+- read index metadata only
+- never create / drop / sync indexes
+- fail closed if authority missing / wrong
+
+Environment loading must be reliable for both process CWDs. Do not rely on the finalize worker's CWD implicitly finding `server/.env`.
+
+#### 24.44.5 Claim service reuse
+
+Reuse:
+
+- `claimCabinNights`
+- `releaseCabinNights`
+- attempt-scoped compensation
+- `assertAuthoritativeCabinNightIndex`
+
+Preserve: same-owner idempotency; StayChange compatibility; foreign-owner hard conflict; E11000 conflict handling; owner-scoped release; attempt-owned compensation only.
+
+**Do NOT** create a second authority service. S1.7 is writer orchestration + mode conversion.
+
+#### 24.44.6 CREATE ordering
+
+For every **NEW** blocking single-cabin Booking:
+
+1. pre-mint stable Booking ObjectId
+2. construct/validate canonical booking payload
+3. run existing UX / external-hold checks where applicable
+4. acquire all required CabinNightClaims using `bookingId = pre-minted id`, `acquisitionMode = authoritative`
+5. verify target ownership
+6. persist Booking using exact pre-minted id
+7. create/sync AvailabilityBlock reservation projection
+8. continue payment / messaging / confirmation side effects
+9. if Booking persistence fails: compensate **ONLY** claims inserted by this attempt
+10. if compensation itself fails: retain conservative claims; emit reconciliation-required evidence; do not delete/steal foreign claims
+
+**Never** save Booking first and claim afterward under authoritative mode.
+
+#### 24.44.7 CREATE crash semantics
+
+| Boundary | Behavior |
+|----------|----------|
+| Crash before target claim | safe retry |
+| Crash after claim before Booking persist | possible orphan conservative claims owned by pre-minted `bookingId` |
+| Retry with SAME operation / booking identity | same-owner acquisition is idempotent |
+| Operation cannot safely resume | S1.8 reconciliation handles orphan determination |
+
+**Never** solve by: generating a new `bookingId` on every retry; blind claim deletion; foreign-owner release.
+
+#### 24.44.8 Finalize
+
+V2 checkout finalization single-cabin authoritative acquisition must mirror the proven UnitNightClaim preclaim architecture:
+
+1. resolve/preserve stable Booking identity before persistence
+2. if final Booking qualifies as blocking single: acquire CabinNightClaims **before** Booking survival/save
+3. hard claim conflict prevents second Booking creation
+4. preserve payment / finalization evidence
+5. preserve finalize replay / idempotency
+6. preserve existing paid-race MRI / recovery behavior
+7. after Booking survival: AvailabilityBlock / confirmation / messaging remain side effects
+8. Booking failure: compensate attempt-owned CabinNightClaims
+
+A paid inventory race must **NEVER** create a second Booking merely because payment already exists. Payment evidence remains durable and is resolved by existing recovery/MRI semantics.
+
+#### 24.44.9 Legacy create
+
+Legacy POST create must pre-mint Booking `_id`.
+
+Existing overlap checks may remain for UX / external hold warnings / early error messaging, but they are **NOT** exclusivity authority.
+
+Authoritative sequence: pre-mint id → claim nights → persist Booking → projection/side effects.
+
+Foreign internal owner: hard conflict; no override; no second Booking. Booking persistence failure: attempt-owned claim compensation.
+
+#### 24.44.10 OPS manual create
+
+Manual reservation already pre-mints `_id`. Authoritative sequence: existing validation/external warning policy → claim target nights → persist Booking → projection → existing post-save checks if still needed.
+
+If a later canonical race/guard invalidates the create and the Booking is removed: make Booking nonblocking/delete first where already persisted, **then** release owner claims — unless claims belong solely to a pre-persist failed attempt.
+
+Internal claim conflict: deterministic staff inventory conflict; **no override**.
+
+#### 24.44.11 Location single-cabin children
+
+For each single-cabin child: pre-mint child `_id` → claim child's nights → persist child Booking. Multi-unit children remain governed by UnitNightClaim.
+
+For mixed location checkout failure, distinguish:
+
+| Case | Behavior |
+|------|----------|
+| **A. Claim acquired but child Booking never persisted** | safe attempt compensation of that child's attempt-owned claims |
+| **B. Child Booking already persisted and still blocking** | **DO NOT** release its claims first. Rollback: (1) make persisted Booking nonblocking/remove canonical child → (2) then owner-scope release its claims |
+
+Reason: release-first would temporarily expose inventory while a blocking Booking still exists.
+
+If canonical rollback succeeds but claim release fails: leave conservative stale claim; emit reconciliation evidence; S1.8 resolves safely.
+
+Standalone Mongo remains compensation-based. No fake transaction abstraction.
+
+#### 24.44.12 Date edit target-first
+
+For blocking valid single-cabin Booking date edit, compute old/new occupied-night sets; derive:
+
+```text
+intersection = retained
+newOnly     = target nights not already owned
+oldOnly     = surplus source nights
+```
+
+Authoritative sequence:
+
+1. acquire `newOnly` target nights first
+2. verify ownership
+3. commit Booking date mutation
+4. sync reservation AvailabilityBlock date projection
+5. release `oldOnly` source nights
+6. final ownership/invariant verification where practical
+
+**Never** release `oldOnly` before Booking date commit.
+
+| Failure | Behavior |
+|---------|----------|
+| Target claim conflicts | no Booking date mutation |
+| Booking commit fails after `newOnly` acquisition | compensate only `newOnly` inserted by this attempt |
+| AB projection fails after Booking commit | do not revert into unsafe source-first state; retain conservative claims as needed; record reconciliation-required evidence |
+| Source release fails | Booking already owns new dates; extra old claims remain conservative; record/retry owner-scoped release; do not revert Booking merely to remove stale claims |
+
+#### 24.44.13 Reassign target-first + AB cabin projection
+
+S1.7 does **NOT** change product-routing policy. Legacy Reassign remains only for the currently permitted legacy scope until REBOOK replaces cross-product behavior.
+
+For any valid single-cabin `cabinId` reassignment that still exists:
+
+1. calculate target cabin occupied-night keys
+2. claim **TARGET** cabin nights first for existing `bookingId`
+3. verify target ownership
+4. commit `Booking.cabinId` target
+5. sync reservation AvailabilityBlock **`cabinId` projection** to target cabin
+6. release **SOURCE** cabin claims last
+7. verify final ownership where practical
+
+**LOCKED AB decision:** S1.7 **DOES** update reservation-scoped AvailabilityBlock `cabinId` projection during a successful single-cabin Reassign. Reason: AB remains a legacy/read projection and external-hold representation. It is **NOT** the internal authority, but knowingly leaving reservation blocks attached to the old cabin after authoritative Booking reassignment would create avoidable projection drift. This is **projection synchronization only**. Do **NOT** make AB a competing exclusivity gate.
+
+| Failure | Behavior |
+|---------|----------|
+| Internal target conflict | hard failure; no override; Booking remains on source; source claims remain owned |
+| Booking save failure after target acquisition | compensate attempt-owned target claims; source remains untouched |
+| AB projection failure after Booking commit | **DO NOT** release source claims yet if doing so would make legacy projection inconsistent with the operational recovery contract; leave conservative dual claim occupancy; record reconciliation-required evidence; retry projection/release |
+| Once projection synced | release source claims owner-scoped |
+| Source-release failure | target Booking + target claims remain; source claim remains conservative; reconciliation required; do not revert Booking |
+
+#### 24.44.14 Status release
+
+For transition from blocking owner state to nonblocking (`cancelled`, `completed`, `archived`, deleted where production workflow supports it):
+
+1. canonical Booking must cease blocking **FIRST**
+2. then release owner-scoped CabinNightClaims
+
+**Never** release claim first while Booking still canonically blocks. Release must be retry-safe.
+
+If release fails after canonical transition: do not reopen Booking; do not delete foreign claims; leave conservative claim; emit reconciliation-required evidence; allow deterministic retry / S1.8 repair.
+
+#### 24.44.15 Archive gap (IN SCOPE)
+
+**LOCK** `archiveReservation` into S1.7 scope.
+
+Current archive: cancel/archive + AB tombstone but **no** CabinNightClaim release. S1.7 must correct this.
+
+Archive sequence:
+
+1. canonical Booking becomes non-owning
+2. AB projection/tombstone as existing architecture requires
+3. owner-scoped CabinNightClaim release
+
+If claim release fails: archive remains durable; claim remains conservative; structured reconciliation evidence; S1.8 handles safe repair.
+
+Treat archive as part of **`status_release`** writer readiness unless a separate registry key is demonstrably cleaner. Do not add a new arbitrary readiness key without reason.
+
+#### 24.44.16 Maintenance delete invariant
+
+For a persisted blocking Booking: canonical delete/nonblocking state must not occur after inventory was prematurely released.
+
+Preferred safety invariant:
+
+```text
+while Booking still blocks → claim remains held
+once Booking no longer blocks → claim may be released
+```
+
+If current maintenance delete releases-before-delete, S1.7 must make ordering safe under authority. For pre-persist fixture attempts, attempt compensation remains allowed. Do not conflate fixture cleanup with production authority semantics.
+
+#### 24.44.17 External holds
+
+External Airbnb/iCal holds remain AvailabilityBlock records. They **NEVER** become CabinNightClaims.
+
+| Conflict type | Semantics |
+|---------------|-----------|
+| Internal claim conflict | hard; no override |
+| External hold | warning + explicit acknowledgement in workflows that already support it |
+
+External warning acknowledgement **must not** bypass internal claim authority.
+
+#### 24.44.18 Error contract
+
+Reuse existing claim error codes wherever possible.
+
+| Class | Code / mapping |
+|-------|----------------|
+| Foreign / internal ownership conflict | `CABIN_NIGHT_CLAIM_FOREIGN_OWNER` → normally 409 / `NOT_AVAILABLE`-style depending on endpoint |
+| Authority index absent | `CABIN_NIGHT_CLAIM_AUTHORITATIVE_INDEX_MISSING` → fail closed / inventory unavailable |
+| Authority index wrong | `CABIN_NIGHT_CLAIM_AUTHORITATIVE_INDEX_WRONG` → fail closed / inventory unavailable |
+| Validation | existing 400-style semantics |
+| Release after canonical commit failed | do **not** convert successful cancel/archive/etc. back into inventory conflict; record reconciliation-required state/event |
+| Paid finalize conflict | preserve payment evidence; no duplicate Booking; MRI/recovery path |
+
+Use endpoint conventions already present. Do not introduce arbitrary new public status codes if existing equivalents fit.
+
+#### 24.44.19 Idempotency
+
+| Writer | Stable identity |
+|--------|-----------------|
+| Finalize | checkout/finalize replay identity + pre-minted Booking `_id` |
+| Legacy | stable pre-minted `_id` within the request/attempt, reused through claim + Booking persistence |
+| Manual | existing OPS identity / pre-mint |
+| Location | pre-minted child ids |
+| Date edit | existing `bookingId` + target date fingerprint/operation attempt; same-owner claims idempotent |
+| Reassign | existing `bookingId` + target cabin operation; same-owner target claim idempotent |
+| Status release | `bookingId` owner-scoped release idempotent |
+
+Do **NOT** generate a fresh claim owner merely because the same logical operation retries inside one controlled flow.
+
+#### 24.44.20 Crash matrix (minimum)
+
+| Category | Boundary | Behavior |
+|----------|----------|----------|
+| **CREATE** | before target claim | safe retry |
+| | after target claim before Booking | attempt compensation if synchronous failure; otherwise conservative orphan → retry/reconcile |
+| | after Booking before projection | Booking + claim authoritative; retry projection |
+| **DATE EDIT** | after `newOnly` claim before Booking commit | compensate `newOnly` on known failure |
+| | after Booking commit before AB | Booking/new claims authoritative; old claims retained; reconcile/retry projection |
+| | after AB before `oldOnly` release | safe conservative overlap; retry release |
+| **REASSIGN** | after target claim before Booking | compensate target |
+| | after Booking before AB target projection | both source+target claims may remain; reconcile projection |
+| | after AB before source release | safe conservative dual hold; retry release |
+| **STATUS RELEASE** | after canonical nonblocking before claim release | claim remains conservative; retry release/reconcile |
+
+**Unacceptable states:** foreign claim deletion; source-first release; silent internal double booking; second Booking after paid race; Booking claims belonging to unrelated owner.
+
+#### 24.44.21 Reconciliation boundary
+
+S1.7 must include **MINIMUM** durable/structured evidence when a writer cannot finish safely (examples: claim acquisition succeeded but compensation failed; Booking changed but AB projection failed; canonical terminal/archive succeeded but claim release failed; reassign Booking switched but source release failed; paid finalize claim race).
+
+Use existing MRI/recovery/audit/event patterns where available.
+
+**S1.7 does NOT** build the full S1.8 reconciliation/repair CLI. Conservative extra claims are preferred over unsafe release. **S1.8** owns deterministic repair after cutover.
+
+#### 24.44.22 Observability
+
+Extend existing low-PII structured CabinNightClaim observability. Semantic events such as:
+
+```text
+authority_claim_acquired
+authority_claim_conflict
+authority_claim_compensated
+authority_claim_compensation_failed
+authority_claim_release_failed
+authority_index_unavailable
+authority_reconciliation_required
+```
+
+Use existing JSON logging/event conventions. **No guest PII** (name, email, phone, address, special requests). Safe identifiers may include: `bookingId`, `cabinId`, night/count, operation/source, claim ids where useful. Do not build a monitoring subsystem.
+
+#### 24.44.23 Writer readiness
+
+Intended registry:
+
+```text
+finalize
+legacy_create
+manual_reservation
+location_child
+date_edit
+reassign
+status_release
+```
+
+Archive belongs under **`status_release`** unless implementation proves a separate key materially improves correctness.
+
+S1.7 cannot report code-ready for authoritative mode until every registry writer has an authoritative path. Implementation must repeat a repository-wide static search for production single-cabin Booking mutations. No hidden/unregistered blocking writer may remain Booking-only while authoritative mode is enabled.
+
+#### 24.44.24 Startup / process safety
+
+- Deploy S1.7 first while env remains `shadow`.
+- In authoritative mode: API must refuse inventory service readiness if exact index assertion fails; finalize worker must refuse/start-fail if exact index assertion fails.
+- GMA and confirmation workers do not require CabinNightClaim index boot gates.
+- No startup code may: create index; drop index; repair claims; backfill claims. **Read-only assertion only.**
+
+#### 24.44.25 Non-touch locks
+
+| Domain | Rule |
+|--------|------|
+| **UnitNightClaim** | Do not alter schema, unique index, multi-unit authority ordering, R1 REALLOCATE, I1–I6 behavior. Shared orchestration may be reused carefully without regressing multi-unit inventory. |
+| **REBOOK** | Do not implement StayChange REBOOK mutation, replacement Booking workflow, money transfer, upgrade waiver, downgrade, Stripe delta, or REBOOK OPS UI. S1.7 only satisfies the single-cabin authority prerequisite for later REBOOK. |
+| **Readers** | Do not migrate public/internal readers to CabinNightClaim. Public availability, calendar, conflictService, OPS availability preview remain on existing authority until a later planned migration. Claim authority applies to **WRITES** / internal exclusivity barrier. |
+| **Also out** | `client/`; Cleaning behavior; payment/pricing semantics; Stripe flows; CabinNightClaim index create/drop; S1.4 backfill behavior; S1.6 cutover behavior; full S1.8 reconcile/repair; unrelated refactoring. |
+
+#### 24.44.26 Expected implementation touch set
+
+Expected application touch areas (exact paths as in repository at implementation time):
+
+- `server/services/inventory/cabinNightClaimMode.js`
+- CabinNightClaim shadow / mode-aware writer wrappers
+- `server/services/checkout/executeBookingFinalizeWork.js` (or exact current finalize path)
+- `server/routes/bookingRoutes.js`
+- `server/services/ops/domain/reservationWriteService.js`
+- `server/services/locationCheckout/locationCheckoutService.js`
+- `server/services/maintenance/maintenanceOpsService.js`
+- CabinNightClaim observability / readiness
+- API + finalize startup read-only assertion path
+- `server/scripts/cabinNightClaim.s7.test.cjs` (+ minimal directly affected existing tests)
+
+#### 24.44.27 S1.7 test lock
+
+Require **at least 120** meaningful S1.7-focused assertions/scenarios (prefer more if writer coverage requires it).
+
+Must cover: mode (`off`/`shadow`/`authoritative`/invalid); authoritative exact-index startup gate; missing/wrong index; finalize claim-first (pre-mint, retry, foreign/unpaid/paid conflict, Booking save compensation, compensation-failure recon); legacy create; manual create (external warning vs internal hard conflict; post-save rollback ordering); Location (single child claim-first; mixed single/multi; pre-persist compensation; persisted-child canonical-first then release; release failure conservative; no UnitNightClaim regression); date edit (extension/contraction/shift; retained intersection; claim only `newOnly`; target conflict; Booking/AB/release failure paths; retry); Reassign (target-first; AB cabin projection update; AB failure retains source; source release last/failure; retry); status (cancel/complete/archive/maintenance delete as applicable; canonical-before-release; repeated release; release-failure recon); authority service (same-owner; foreign; E11000; index missing/wrong; attempt-only compensation); external vs internal; startup gates for API + finalize worker; non-touch UnitNightClaim/R1/Cleaning/client/REBOOK/payment; regressions S1.1–S1.6.1, I1–I6, R1, R3 service/route, Cleaning baseline.
+
+#### 24.44.28 Production cutover sequence (DO NOT execute in S1.7 implementation)
+
+S1.7 implementation does **NOT** itself flip production env.
+
+Eventual controlled production sequence:
+
+1. production on clean S1.6.1 baseline
+2. deploy exact S1.7 code with `CABIN_NIGHT_CLAIM_MODE=shadow`
+3. restart API + finalize worker
+4. verify both on exact SHA / online / shadow
+5. health
+6. full CabinNightClaim verify: exact authority; parity clean; zero drift/collisions
+7. verify S1.7 writer-code readiness complete
+8. verify exact-index boot assertion succeeds
+9. controlled production env change: `CABIN_NIGHT_CLAIM_MODE=authoritative`
+10. restart API + finalize worker with `--update-env`
+11. verify **BOTH** inventory writers authoritative
+12. refuse mixed shadow/authoritative writer state
+13. health
+14. full read-only CabinNightClaim verify
+15. inspect structured authority events
+16. no arbitrary real Booking mutation required for smoke
+17. stop before S1.8
+
+**Forbidden:** one writer authoritative while another remains shadow; authority with missing/wrong index; switching production to `off` casually after authority cutover; dropping/rebuilding index during writer flip.
+
+#### 24.44.29 S1.8 boundary (OUT of S1.7)
+
+Locked **out** of S1.7:
+
+- full post-cutover reconciliation CLI
+- deterministic orphan/stale repair tooling
+- foreign ambiguity resolution
+- reader migration / final authority closure
+- legacy cleanup
+- claim backfill/rebuild
+- index rebuild
+- REBOOK
+
+S1.8 follows only after S1.7 production authority cutover is verified.
 
 ---
 
@@ -3109,7 +3583,8 @@ These do not reopen §1–15 locks; they are decided inside the named batches:
 | 2026-08-23 | Amendment: R3 OPS Move Unit — detail inventory identity; read-only `GET …/reallocate-candidates` via `evaluateTargetConflicts`; Move Unit dialog/selector/ack/idempotency; legacy Reassign visibility boundary; structured error map; ≥80 test contract; no AMEND/REBOOK/wizard; R1 indexes already live (not an R3 blocker). |
 | 2026-08-23 | Amendment: REBOOK cross-product stay change (§23) — `bookingId` = source only (no `sourceBookingId`); `targetBookingId`; `CabinNightClaim` S1 prerequisite; deferred replacement Booking create; contractual/coverage resolvers; fail-closed financial evidence; S3 equal-price + upgrade-waiver only; `settledByStayChangeId`; target-first ordering; attribution/reporting/messaging guards; REBOOK-S0…S6 staged batches; ≥150 test contract; supersede legacy Batch 2–5 REBOOK rows. |
 | 2026-08-23 | Amendment: REBOOK-S1 CabinNightClaim foundation (§24) — permanent single-cabin occupied-night exclusivity; claim-owning Booking rule; test/archived policy; night helper reuse; authoritative unique index + startup safety; claim service contract; shadow/dual-write vs authority; create/date/reassign ordering; Location child rule; paid checkout race; backfill/reconcile/fingerprint gates; S1.1–S1.8 sub-batches; cutover tool; ≥140 S1 test contract; REBOOK single-cabin blocked until S1.6+S1.7+verification. |
+| 2026-08-26 | Amendment: S1.7 authoritative claim-first writer cutover lock (§24.44) — mode contract; exact-index per-acquire + API/finalize boot gates; CREATE/finalize/legacy/manual/location/date-edit/reassign/status-release orderings; AB reassign cabin projection sync; archive under status_release; maintenance delete invariant; crash/recon/observability; ≥120 S1.7 tests; shadow-deploy then env flip; S1.8 boundary; REBOOK/reader/UnitNightClaim/Cleaning non-touch. |
 
 ---
 
-**END OF LOCKED ARCHITECTURE — R1 LIVE; R3 LIVE; REBOOK §23 + S1 §24 SPEC LOCKED; NO REBOOK/S1 APPLICATION AUTHORIZED**
+**END OF LOCKED ARCHITECTURE — R1 LIVE; R3 LIVE; REBOOK §23 + S1 §24 SPEC LOCKED (THROUGH S1.7 WRITER CUTOVER §24.44); NO S1.7/REBOOK APPLICATION AUTHORIZED BY DOCS ALONE**
