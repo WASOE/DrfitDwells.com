@@ -38,6 +38,7 @@ const OPS_ROUTE_ACTIONS = {
 export const OPS_NAV_ITEMS = [
   { to: '/ops', label: 'Dashboard', end: true, module: 'dashboard' },
   { to: '/ops/calendar', label: 'Calendar', module: 'calendar' },
+  { to: '/ops/calendar/work-windows', label: 'Work windows', module: 'calendar' },
   { to: '/ops/cleaning', label: 'Cleaning', module: 'cleaning', action: 'ops.cleaning.view' },
   { to: '/ops/reservations', label: 'Reservations', module: 'reservations' },
   { to: '/ops/payments', label: 'Payments', module: 'finance' },
@@ -114,6 +115,7 @@ export const OPS_MORE_GROUPS = [
     label: 'Calendar',
     items: [
       { to: '/ops/calendar', label: 'Calendar' },
+      { to: '/ops/calendar/work-windows', label: 'Work windows' },
       { to: '/ops/sync', label: 'Sync' }
     ]
   },
@@ -135,6 +137,7 @@ export const OPS_MORE_GROUPS = [
       { to: '/ops/promo-codes', label: 'Promo codes' },
       { to: '/ops/gift-vouchers', label: 'Gift vouchers' },
       { to: '/ops/insights', label: 'Insights' },
+      { to: '/ops/insights/performance', label: 'Historical performance' },
       { to: '/ops/conversion', label: 'Conversion' },
       { to: '/ops/conversion/recovery', label: 'Quote recovery' }
     ]

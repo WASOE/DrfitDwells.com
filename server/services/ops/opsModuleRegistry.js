@@ -36,6 +36,7 @@ const OPS_API_MODULE_ROUTES = [
   { prefix: '/foundation', module: 'operations' },
   { prefix: '/availability', module: 'reservations' },
   { prefix: '/sync', module: 'calendar' },
+  { prefix: '/work-windows', module: 'calendar' },
   { prefix: '/calendar', module: 'calendar' },
   { prefix: '/dashboard', module: 'dashboard' },
   { prefix: '/health', module: 'dashboard' }

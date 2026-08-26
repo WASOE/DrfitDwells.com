@@ -14,11 +14,12 @@ import {
 } from './opsNavConfig.js';
 
 describe('opsNavConfig', () => {
-  it('lists 19 desktop nav items in OpsLayout order', () => {
-    expect(OPS_NAV_ITEMS).toHaveLength(19);
+  it('lists desktop nav items in OpsLayout order', () => {
+    expect(OPS_NAV_ITEMS).toHaveLength(22);
     expect(OPS_NAV_ITEMS.map((item) => item.to)).toEqual([
       '/ops',
       '/ops/calendar',
+      '/ops/calendar/work-windows',
       '/ops/cleaning',
       '/ops/reservations',
       '/ops/payments',
@@ -31,13 +32,31 @@ describe('opsNavConfig', () => {
       '/ops/messaging',
       '/ops/gift-vouchers',
       '/ops/insights',
+      '/ops/insights/performance',
       '/ops/conversion',
+      '/ops/conversion/recovery',
       '/ops/manual-review',
       '/ops/readiness',
       '/ops/settings/cleaning',
       '/ops/users'
     ]);
     expect(OPS_NAV_ITEMS.find((item) => item.to === '/ops')?.end).toBe(true);
+  });
+
+  it('maps work-windows under the calendar module and mobile calendar tab', () => {
+    expect(
+      canAccessOpsFrontendPath('/ops/calendar/work-windows', {
+        authenticated: true,
+        modules: ['calendar']
+      })
+    ).toBe(true);
+    expect(
+      canAccessOpsFrontendPath('/ops/calendar/work-windows', {
+        authenticated: true,
+        modules: ['cleaning']
+      })
+    ).toBe(false);
+    expect(getActiveOpsMobileTabId('/ops/calendar/work-windows')).toBe('calendar');
   });
 
   it('defines five mobile tabs', () => {
@@ -63,9 +82,9 @@ describe('opsNavConfig', () => {
   describe('OPS_MORE_GROUPS full menu', () => {
     const moreRoutes = () => OPS_MORE_GROUPS.flatMap((group) => group.items.map((item) => item.to));
 
-    it('contains exactly all 19 OPS routes', () => {
-      expect(moreRoutes()).toHaveLength(19);
-      expect(new Set(moreRoutes()).size).toBe(19);
+    it('contains exactly all OPS_NAV_ITEMS routes', () => {
+      expect(moreRoutes()).toHaveLength(OPS_NAV_ITEMS.length);
+      expect(new Set(moreRoutes()).size).toBe(OPS_NAV_ITEMS.length);
       expect(new Set(moreRoutes())).toEqual(new Set(OPS_NAV_ITEMS.map((item) => item.to)));
     });
 
@@ -80,6 +99,7 @@ describe('opsNavConfig', () => {
       const required = [
         '/ops',
         '/ops/calendar',
+        '/ops/calendar/work-windows',
         '/ops/sync',
         '/ops/cleaning',
         '/ops/settings/cleaning',
@@ -130,6 +150,7 @@ describe('opsNavConfig', () => {
       expect(getActiveOpsMobileTabId('/ops/calendar')).toBe('calendar');
       expect(getActiveOpsMobileTabId('/ops/sync')).toBe('calendar');
       expect(getActiveOpsMobileTabId('/ops/calendar/cabin-123')).toBe('calendar');
+      expect(getActiveOpsMobileTabId('/ops/calendar/work-windows')).toBe('calendar');
     });
 
     it('matches guest routes including reservation detail', () => {

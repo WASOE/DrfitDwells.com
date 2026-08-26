@@ -24,6 +24,7 @@ import { useOpsSession } from '../../context/OpsSessionContext';
 const ROW_ICONS = {
   '/ops': LayoutDashboard,
   '/ops/calendar': CalendarDays,
+  '/ops/calendar/work-windows': CalendarDays,
   '/ops/sync': RefreshCw,
   '/ops/reservations': Home,
   '/ops/messaging': MessageSquare,

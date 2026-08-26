@@ -47,6 +47,7 @@ const CabinTypesList = lazy(() => import('./pages/admin/CabinTypesList'))
 const CabinTypeEdit = lazy(() => import('./pages/admin/CabinTypeEdit'))
 const OpsDashboard = lazy(() => import('./pages/ops/OpsDashboard'))
 const OpsCalendarIndex = lazy(() => import('./pages/ops/calendar/OpsCalendarIndex'))
+const OpsWorkWindows = lazy(() => import('./pages/ops/calendar/OpsWorkWindows'))
 const OpsCalendarMonth = lazy(() => import('./pages/ops/calendar/OpsCalendarMonth'))
 const OpsReservations = lazy(() => import('./pages/ops/OpsReservations'))
 const OpsReservationDetail = lazy(() => import('./pages/ops/OpsReservationDetail'))
@@ -237,6 +238,7 @@ function App() {
             <Route element={<OpsLayout />}>
               <Route path="/ops" element={<OpsDashboard />} />
               <Route path="/ops/calendar" element={<OpsCalendarIndex />} />
+              <Route path="/ops/calendar/work-windows" element={<OpsWorkWindows />} />
               <Route path="/ops/calendar/:cabinId" element={<OpsCalendarMonth />} />
               <Route path="/ops/reservations" element={<OpsReservations />} />
               <Route path="/ops/reservations/:id" element={<OpsReservationDetail />} />
