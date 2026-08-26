@@ -1,6 +1,4 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ChevronLeft } from 'lucide-react';
 import { formatInTimeZone, toDate } from 'date-fns-tz';
 import { addDays } from 'date-fns';
 import { opsReadAPI } from '../../../services/opsApi';
@@ -151,29 +149,38 @@ function clientRangeError(from, to) {
   return null;
 }
 
-function BestWindowCard({ w, prominent }) {
+function BestWindowRow({ w, siteWide = false }) {
   const range = formatSofiaRange(w.startAt, w.endAt, Boolean(w.continuesBeyondRange));
   const dur = formatWorkDurationMinutes(w.durationMinutes);
-  if (prominent) {
-    return (
-      <li className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2.5">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-900">{w.label}</p>
-        <p className="text-sm font-medium text-emerald-950 mt-0.5">{range}</p>
-        <p className="text-xs text-emerald-800 mt-0.5">
-          {dur}
-          {w.continuesBeyondRange ? ' · through end of checked range' : ''}
-          {' · site-wide'}
-        </p>
-      </li>
-    );
-  }
+  const rangeNote = w.continuesBeyondRange ? ' · through end of checked range' : '';
+
   return (
-    <li className="flex items-baseline justify-between gap-3 py-1.5 border-b border-gray-100 last:border-0">
-      <div className="min-w-0">
-        <p className="text-xs font-medium text-gray-800 truncate">{w.label}</p>
-        <p className="text-xs text-gray-600 mt-0.5">{range}</p>
+    <li
+      className={`border border-gray-200 rounded-lg px-3 py-2 bg-white ${
+        siteWide ? 'border-l-4 border-l-emerald-500' : ''
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-semibold text-gray-900 truncate">{w.label}</p>
+            {siteWide ? (
+              <span className="text-xs px-2 py-0.5 rounded border border-emerald-200 bg-emerald-50 text-emerald-700 shrink-0">
+                Site-wide
+              </span>
+            ) : null}
+            <span className="inline-flex items-center gap-1 text-xs text-emerald-700 shrink-0">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
+              Free
+            </span>
+          </div>
+          <p className="text-xs text-gray-600 mt-1">{range}</p>
+        </div>
+        <p className="text-xs tabular-nums text-gray-500 shrink-0 pt-0.5">
+          {dur}
+          {rangeNote}
+        </p>
       </div>
-      <p className="shrink-0 text-xs tabular-nums text-gray-500">{dur}</p>
     </li>
   );
 }
@@ -222,31 +229,20 @@ export default function OpsWorkWindows() {
   );
 
   return (
-    <div className="w-full max-w-lg mx-auto lg:max-w-none space-y-4 overflow-x-hidden">
-      <div className="flex items-start gap-3">
-        <Link
-          to="/ops/calendar"
-          className="mt-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-          title="Back to calendar"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </Link>
-        <div className="min-w-0">
-          <h1 className="font-serif text-2xl text-gray-900 tracking-tight">Work Windows</h1>
-          <p className="mt-1 text-sm text-gray-500 max-w-2xl">
-            When a site or unit is free of guests — for construction, maintenance, and noisy work.
-          </p>
-        </div>
-      </div>
+    <div className="space-y-4 pb-16 sm:pb-0 overflow-x-hidden">
+      <section className="bg-white border border-gray-200 rounded-xl p-4">
+        <h2 className="text-lg font-semibold text-gray-900">Work Windows</h2>
+        <p className="text-sm text-gray-500 mt-0.5">
+          When a site or unit is free of guests — for construction, maintenance, and noisy work.
+        </p>
 
-      <div className="rounded-2xl border border-gray-200 bg-white shadow-sm p-4 sm:p-5 space-y-3 max-w-3xl">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
           <label className="text-sm text-gray-700">
             <span className="block text-xs text-gray-500 mb-1">Location</span>
             <select
               value={locationKey}
               onChange={(e) => setLocationKey(e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 bg-white"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white"
             >
               {LOCATION_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -261,7 +257,7 @@ export default function OpsWorkWindows() {
               type="date"
               value={from}
               onChange={(e) => setFrom(e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2.5"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
           </label>
           <label className="text-sm text-gray-700">
@@ -270,7 +266,7 @@ export default function OpsWorkWindows() {
               type="date"
               value={to}
               onChange={(e) => setTo(e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2.5"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
             />
           </label>
           <div className="flex items-end">
@@ -278,84 +274,70 @@ export default function OpsWorkWindows() {
               type="button"
               onClick={checkAvailability}
               disabled={loading}
-              className="w-full rounded-lg bg-gray-900 text-white px-4 py-2.5 text-sm font-medium hover:bg-gray-800 disabled:opacity-60"
+              className="w-full px-4 py-2 text-sm font-medium rounded-lg bg-[#81887A] text-white hover:bg-[#707668] disabled:opacity-60"
             >
               {loading ? 'Checking…' : 'Check availability'}
             </button>
           </div>
         </div>
+
         {data?.generatedAt ? (
-          <p className="text-xs text-gray-600">
-            Availability checked:{' '}
-            <span className="font-medium text-gray-800">{formatCheckedAt(data.generatedAt)}</span>
+          <p className="mt-2 text-xs text-gray-500">
+            Availability checked {formatCheckedAt(data.generatedAt)}
             <span className="text-gray-400">
               {' '}
               · checkout {data.checkOutTime} → check-in {data.checkInTime} ({data.timezone})
             </span>
           </p>
         ) : (
-          <p className="text-xs text-gray-500">
-            Press <span className="font-medium text-gray-700">Check availability</span> for an
-            on-demand snapshot. Nothing loads until you check.
+          <p className="mt-2 text-xs text-gray-500">
+            Press Check availability for an on-demand snapshot. Nothing loads until you check.
           </p>
         )}
-      </div>
+      </section>
 
-      {loading ? (
-        <div className="text-sm text-gray-500 px-0.5">Loading work windows…</div>
-      ) : null}
+      {loading ? <div className="text-sm text-gray-500">Loading work windows…</div> : null}
 
-      {error ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 max-w-3xl">
-          {error}
-        </div>
-      ) : null}
+      {error ? <div className="text-sm text-red-600">{error}</div> : null}
 
       {!data && !loading && !error ? (
-        <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/80 px-4 py-5 text-sm text-gray-600 max-w-3xl">
-          <p className="font-medium text-gray-800">No snapshot yet</p>
-          <p className="mt-1 text-gray-500">
-            Choose a location and date range, then check. Site-wide free windows appear first, then
-            the day-by-day timeline.
-          </p>
-        </div>
+        <p className="text-sm text-gray-500">
+          Choose a location and date range, then check availability.
+        </p>
       ) : null}
 
       {data ? (
         <>
-          <section className="space-y-2 max-w-3xl">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-              Best Work Windows
-            </h2>
+          <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
+            <h3 className="text-sm font-semibold text-gray-900">Best work windows</h3>
             {!locationBest.length && !unitBest.length ? (
-              <div className="rounded-xl border border-gray-200 bg-white px-4 py-4 text-sm text-gray-600">
+              <p className="text-sm text-gray-500">
                 No multi-day free windows in this range
                 {data.resources?.some((r) => r.spans?.some((s) => s.state === 'free'))
                   ? ' (only short same-day turnarounds or partial gaps).'
                   : ' — every day has guest occupancy or a block.'}
-              </div>
+              </p>
             ) : (
               <div className="space-y-2">
                 {locationBest.length ? (
-                  <ul className="space-y-1.5">
+                  <ul className="space-y-2">
                     {locationBest.map((w) => (
-                      <BestWindowCard key={`${w.resourceId}-${w.startAt}`} w={w} prominent />
+                      <BestWindowRow key={`${w.resourceId}-${w.startAt}`} w={w} siteWide />
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-sm text-gray-600 rounded-lg border border-gray-200 bg-white px-3 py-2">
-                    No site-wide free window in this range — check individual units below or the
-                    timeline.
+                  <p className="text-sm text-gray-500">
+                    No site-wide free window in this range — check individual units or the timeline.
                   </p>
                 )}
                 {unitBest.length ? (
-                  <details className="rounded-lg border border-gray-200 bg-white">
-                    <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                  <details className="border border-gray-200 rounded-lg">
+                    <summary className="cursor-pointer select-none px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded-lg">
                       Individual unit windows ({unitBest.length})
                     </summary>
-                    <ul className="px-3 pb-2">
+                    <ul className="px-3 pb-2 space-y-2">
                       {unitBest.map((w) => (
-                        <BestWindowCard key={`${w.resourceId}-${w.startAt}`} w={w} prominent={false} />
+                        <BestWindowRow key={`${w.resourceId}-${w.startAt}`} w={w} />
                       ))}
                     </ul>
                   </details>
@@ -365,17 +347,14 @@ export default function OpsWorkWindows() {
           </section>
 
           <section className="space-y-2">
-            <div className="flex flex-wrap items-end justify-between gap-2">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                Timeline
-              </h2>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-gray-900">Timeline</h3>
               <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-gray-500">
                 <span className="inline-flex items-center gap-1">
                   <span className="h-2 w-2 rounded-sm bg-emerald-500 border border-emerald-800" /> Free
                 </span>
                 <span className="inline-flex items-center gap-1">
-                  <span className="h-2 w-2 rounded-sm bg-amber-400 border border-amber-700" />{' '}
-                  Turnaround
+                  <span className="h-2 w-2 rounded-sm bg-amber-400 border border-amber-700" /> Turnaround
                 </span>
                 <span className="inline-flex items-center gap-1">
                   <span className="h-2 w-2 rounded-sm bg-red-500 border border-red-800" /> Occupied
@@ -387,7 +366,7 @@ export default function OpsWorkWindows() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <div className="overflow-x-auto overscroll-x-contain">
                 <div
                   className="flex"
