@@ -2286,7 +2286,7 @@ UI later uses separate action initially: **Rebook** or **Change accommodation**.
 | **REBOOK-S0** | this spec amendment |
 | **REBOOK-S1** | single-cabin permanent night-claim foundation and production cutover — **§24** |
 | **REBOOK-S2** | StayChange REBOOK schema/spine; source/target snapshots; money fields; canonical contractual/coverage resolvers; payment classifier support for `settledByStayChangeId`; reporting/attribution guards required for safe replacement — **IMPLEMENTED (schema/spine only; no mutation endpoint)** |
-| **REBOOK-S3** | REBOOK mutation: equal-price; upgrade with explicit complimentary waiver; no Stripe delta; no downgrade |
+| **REBOOK-S3** | REBOOK mutation: equal-price; upgrade with explicit complimentary waiver; no Stripe delta; no downgrade — **IMPLEMENTATION LOCKED in §25 (docs only; no application code authorized by §25 alone)** |
 | **REBOOK-S4** | read preview + first OPS Rebook UI |
 | **REBOOK-S5** | downgrade refund/credit/retain |
 | **REBOOK-S6** | paid/partial upgrade collection |
@@ -3520,6 +3520,578 @@ server/services/inventory/cabinNightClaimS1ReconciliationService.js
 
 ---
 
+## 25. REBOOK-S3 — First mutation implementation lock (LOCKED)
+
+**Status:** docs-only architecture lock. **No application implementation is authorized by §25 alone.**
+**Depends on:** §23 (S0), §24 S1 complete (authoritative CabinNightClaim), REBOOK-S2 spine live in code (`bb77b81`), I6 UnitNightClaim, R1 REALLOCATE patterns.
+**Code baseline at lock:** `bb77b81cb406d6dad231bfe37082da4ad39c3a70` (S2 on `origin/master`).
+**Production at lock time may still be on S1.8 (`c4837b8…`)** — S3 deployment requires S2 code present (see §25.22).
+**Standalone MongoDB 7.0 — NO multi-document transactions.**
+
+### 25.1 Purpose / scope
+
+S3 implements the first production-safe **cross-commercial-product REBOOK mutation**:
+
+```text
+SOURCE Booking
+  → StayChange(kind=rebook) precommit
+  → TARGET inventory secured (claims owned by pre-minted targetBookingId)
+  → replacement TARGET Booking persisted
+  → source projected cancelled / rebooked_or_moved
+  → source inventory released
+  → StayChange completed + AuditEvent
+```
+
+**IN SCOPE**
+
+| Area | |
+|------|--|
+| Domain service + OPS route | `POST /api/ops/reservations/:id/actions/rebook` |
+| Equal-value REBOOK | `canonicalTargetQuoteCents === sourceContractualTotalCents` |
+| Complimentary upgrade | target more expensive; explicit `waivedUpgradeCents`; **no Stripe** |
+| Target inventory | CabinNightClaim / UnitNightClaim authoritative acquire |
+| Replacement Booking | create with pre-minted `_id`; set `settledByStayChangeId` |
+| Source projection | `cancelled` + `rebooked_or_moved` + `replacementBookingId` (dedicated path; **not** generic cancel) |
+| Idempotent resume | reuse `{ kind, bookingId, idempotencyKey }` + payload fingerprint |
+| Compensation / MRI | R1-style target-only compensation + `needs_reconciliation` |
+| Minimum reader wiring | payment classifier callers pass StayChange when `settledByStayChangeId` set |
+
+**OUT OF SCOPE (explicit)**
+
+- AMEND / date change / guest-count change via REBOOK
+- REALLOCATE rewrite / same commercial product
+- LocationBooking / whole-location
+- Downgrade / refund / credit / retain settlement
+- Stripe upgrade collection / CheckoutSession / new Payment / Payment moves
+- Automatic guest move email / normal cancel+confirm email pair
+- S4 preview UI / client / Cleaning redesign
+- New unique indexes / StayChange or Booking backfill
+- Multi-document transactions
+- Staff force-override of internal claim uniqueness
+
+### 25.2 Route contract
+
+| | |
+|--|--|
+| **Method/path** | `POST /api/ops/reservations/:id/actions/rebook` |
+| **Mount** | existing `/api/ops` → reservations module (parallel to R1 reallocate) |
+| **Permission** | `ACTIONS.OPS_RESERVATION_REASSIGN` (`ops.reservation.reassign`) — **admin only** (same as R1). Complimentary waiver is admin-gated by this permission; do not invent a new RBAC system. |
+| **Idempotency** | **Body** field `idempotencyKey` (8–128 chars), same as R1. **No** required header. |
+
+**Request body (v1)**
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `idempotencyKey` | yes | scoped with `kind=rebook` + **source** `bookingId` |
+| `targetCabinId` | XOR | single-cabin target |
+| `targetCabinTypeId` + `targetUnitId` | XOR | allocated multi target (unit **required**) |
+| `acceptExternalHoldWarnings` | when warnings | boolean; part of fingerprint |
+| `waiveUpgradeCents` | when upgrade | non-neg int cents; 0 or omit for equal-price |
+| `reason` | recommended | trim ≤500; part of fingerprint |
+
+**Forbidden in body (reject):** client-supplied `canonicalTargetQuoteCents`, `transferredValueCents`, `totalPrice`, Payment ids, Stripe ids, `targetBookingId` (server-owned after first mint), date/guest/extras amendments.
+
+**Success response (conceptual):** `{ stayChangeId, status, sourceBookingId, targetBookingId, settlementType, money summary, warnings[] }` — mirror R1 envelope style.
+
+**Warning-before-mutate (external holds):** if external holds exist and `acceptExternalHoldWarnings !== true`, return **409** `EXTERNAL_HOLD_ACK_REQUIRED` with deterministic warning payload (**no** inventory write). Same pattern as R1.
+
+### 25.3 Authorization
+
+| Action | Role |
+|--------|------|
+| REBOOK equal-price | admin (`ops.reservation.reassign`) |
+| REBOOK complimentary upgrade (`waiveUpgradeCents > 0`) | same admin permission |
+| Non-admin | 403 |
+
+### 25.4 Source eligibility (v1)
+
+SOURCE Booking must:
+
+| Rule | |
+|------|--|
+| Exist | yes |
+| `status` ∈ `{ pending, confirmed }` | pre-stay only (align R1; reject `in_house` / `completed` / `cancelled`) |
+| Not `isTest` | reject |
+| Not archived (`archivedAt` null) | reject |
+| No `locationBookingId` | reject LocationBooking |
+| Canonical commercial shape | `cabinId` XOR `cabinTypeId` via `validateCommercialShape` |
+| Multi source | must be **allocated** (`unitId` set) |
+| Not already terminal REBOOK source | reject if `cancellationSettlement.outcome === 'rebooked_or_moved'` |
+| Owns source inventory | assert CabinNightClaim / UnitNightClaim exact ownership for occupied nights |
+
+### 25.5 Target eligibility (v1)
+
+| Rule | |
+|------|--|
+| Exactly one commercial key | `cabin:` XOR `cabinType:` |
+| Multi | `targetUnitId` **required** (unallocated multi rejected) |
+| Different commercial key from source | same key → **reject** `SAME_COMMERCIAL_PRODUCT` (do **not** silently REALLOCATE) |
+| Any `cabinId` change | REBOOK |
+| Internal availability | hard conflict → fail; **no override** |
+| External AvailabilityBlock | warning + ack only |
+
+**Canonical routing (unchanged):** different commercial key → REBOOK; same product + dates/guests/quote terms → AMEND (not S3); same cabinType + unit only → REALLOCATE; same cabinId no change → no-op.
+
+### 25.6 Source terms preserved (product-only REBOOK)
+
+S3 v1 is **commercial-product REBOOK only**.
+
+**PRESERVE from source (must match target snapshot dates/guests):**
+
+- `checkIn`, `checkOut`
+- `adults`, `children`
+- extras / transport / romantic / craft / tripType / specialRequests / cleaningNotes (COPY onto replacement per §23.23)
+- currency
+
+**DO NOT allow via REBOOK body:** date changes, guest-count changes, extras/transport/romantic changes that would change the quote independently of product. Those belong to **AMEND**.
+
+Target quote is computed from **preserved** source dates/guests/extras **plus** target commercial product.
+
+### 25.7 Idempotency / canonical payload
+
+Reuse unique index:
+
+```text
+{ kind: 'rebook', bookingId: SOURCE, idempotencyKey }
+```
+
+**Fingerprint fields (ordered, SHA-256 like R1):**
+
+| Key | |
+|-----|--|
+| `kind` | `'rebook'` |
+| `bookingId` | source |
+| `targetCommercialProductKey` | `cabin:` / `cabinType:` |
+| `targetCabinId` | or null |
+| `targetCabinTypeId` | or null |
+| `targetUnitId` | or null |
+| `checkIn` / `checkOut` | Sofia YYYY-MM-DD from source |
+| `adults` / `children` | from source |
+| `canonicalTargetQuoteCents` | **server-derived** at first accept |
+| `waiveUpgradeCents` | operator |
+| `acceptExternalHoldWarnings` | boolean |
+| `reason` | normalized |
+
+| Case | Result |
+|------|--------|
+| Same key + same fingerprint | resume / return existing StayChange path |
+| Same key + different fingerprint | **409** `IDEMPOTENCY_KEY_CONFLICT` |
+| After StayChange exists | **never** mint a second `targetBookingId` |
+
+### 25.8 `targetBookingId` lifecycle
+
+**LOCKED decision (§23.19 preferred design resolved):**
+
+1. On first durable StayChange create: **pre-generate** `targetBookingId = new ObjectId()`.
+2. Persist on StayChange **before** target claim acquisition.
+3. All target claims use `bookingId = targetBookingId` + `stayChangeId` + `source = 'rebook'` from the first claim write.
+4. Replacement Booking is later inserted with `_id = targetBookingId` (Mongo `_id` uniqueness = duplicate barrier).
+5. `targetBookingId` **must not equal** `bookingId` (source).
+6. Retries **reuse** StayChange.`targetBookingId` — never regenerate.
+
+If StayChange is `inventory_secured` and Booking missing: resume creates Booking with that `_id` (idempotent insert / duplicate-key adopt).
+
+### 25.9 Precommit StayChange
+
+**Initial status:** `pending` (existing enum; do not invent states).
+
+Order before inventory:
+
+1. Validate source + request + routing (must be REBOOK)
+2. Derive money evidence (fail-closed)
+3. Derive immutable source/target snapshots
+4. Compute fingerprint; create/find StayChange
+5. Ensure `targetBookingId` minted once
+6. Persist StayChange `pending` with snapshots + money + product keys + shape ids
+7. **Then** acquire target inventory
+
+### 25.10 Source snapshot derivation
+
+Use `buildSourceSnapshot` / S2 helpers from **live source Booking at operation start** (before any mutation):
+
+| Include | |
+|---------|--|
+| commercialProductKey, cabinId/cabinTypeId/unitId | yes |
+| checkIn, checkOut, adults, children | yes |
+| currency | yes |
+| sourceContractualTotalCents | frozen |
+| recognizedNetSettledCoverageCents | frozen |
+| locationBookingId | null (else reject) |
+
+**No guest PII** in StayChange snapshots.
+
+### 25.11 Target quote / snapshot authority
+
+**Authority:** `bookingQuoteService.computeQuoteFromEntity` (same as public/booking create), with entity = target Cabin or CabinType, inputs = source dates/guests/extras/transport/romantic.
+
+```text
+canonicalTargetQuoteCents = round(quote.totalPrice * 100)  // integer cents
+```
+
+- Client monetary fields are **never** authority.
+- Do **not** re-apply source promo to target (§23.22).
+- Do **not** copy source voucher redemption onto target.
+
+Target snapshot via `buildTargetSnapshot` with server quote + target shape + preserved dates/guests.
+
+### 25.12 Payment evidence resolver
+
+Use S2:
+
+- `resolveSourceContractualTotalCents(source)`
+- `resolveRecognizedNetSettledCoverageCents(source, paymentTrail)`
+- `computeTransferredValueCents`
+
+Load Payment trail by `reservationId = source._id`.
+
+**Fail-closed:** disputed; trail≠`stripePaidAmountCents`; ambiguous manual confirmed-without-evidence; invalid totals; currency mismatch (source vs quote ≠ EUR/eur).
+
+**NEVER** change `Payment.reservationId`. **NEVER** create Payment for transfer/waiver.
+
+### 25.13 Money equations (S3)
+
+```text
+sourceContractualTotalCents     // frozen
+recognizedNetSettledCoverageCents // frozen
+transferredValueCents =
+  min(sourceContractualTotalCents, recognizedNetSettledCoverageCents)
+
+canonicalTargetQuoteCents       // server quote
+waivedUpgradeCents              // operator; ≥0
+additionalChargeCents           // S3 MUST be 0
+contractualTargetTotalCents =
+  canonicalTargetQuoteCents - waivedUpgradeCents
+```
+
+**S3 allowed outcomes only (per §23.13–23.14):**
+
+**A. Equal-value** — `settlementType = 'equal_price'`
+
+```text
+canonicalTargetQuoteCents == sourceContractualTotalCents
+waivedUpgradeCents == 0
+contractualTargetTotalCents == canonicalTargetQuoteCents
+additionalChargeCents == 0
+```
+
+**B. Complimentary upgrade with no incremental guest obligation** — `settlementType = 'complimentary_upgrade'`
+
+```text
+canonicalTargetQuoteCents > sourceContractualTotalCents
+waivedUpgradeCents = canonicalTargetQuoteCents - sourceContractualTotalCents
+contractualTargetTotalCents = sourceContractualTotalCents
+additionalChargeCents == 0
+```
+
+S3 does **not** support partial waiver that leaves `contractualTargetTotalCents > transferredValueCents` requiring Stripe collection (that is S6).
+
+**Reject**
+
+| Case | Code |
+|------|------|
+| `canonicalTargetQuoteCents < sourceContractualTotalCents` | `DOWNGRADE_UNSUPPORTED` |
+| Upgrade without valid full waiver of the upgrade delta | `UPGRADE_WAIVER_REQUIRED` |
+| `waiveUpgradeCents > 0` on equal-price | `WAIVER_NOT_APPLICABLE` |
+| `additionalChargeCents != 0` | reject |
+
+**Coverage vs contractual on replacement**
+
+```text
+replacementCoverageCents = transferredValueCents
+  (+ incremental paid/voucher on replacement — S3: both 0 at create)
+
+replacement is financially settled iff
+  replacementCoverageCents >= contractualTargetTotalCents
+```
+
+Under S3 A/B, `contractualTargetTotalCents == sourceContractualTotalCents` and
+`transferredValueCents == min(sourceContractualTotalCents, recognizedNetSettledCoverageCents)`:
+
+| Source coverage | Replacement Booking `status` |
+|-----------------|------------------------------|
+| `transferredValueCents >= contractualTargetTotalCents` | `confirmed` |
+| else | `pending` |
+
+Waiver never creates coverage. An under-covered equal-price source correctly yields a `pending` replacement.
+
+### 25.14 Revenue / reporting activation fields
+
+S3 must set:
+
+| Entity | Fields |
+|--------|--------|
+| Source | `status=cancelled`, `cancellationSettlement.outcome=rebooked_or_moved`, `cancellationSettlement.replacementBookingId=targetBookingId`, freeze `financialSnapshot` from source totals at move |
+| Replacement | `provenance.source='stay_change_rebook'`, `settledByStayChangeId=StayChange._id`, **no** creator attribution copy, **no** copied Stripe/voucher paid aggregates |
+
+Activates S2 guards: creator skip on `stay_change_rebook`; exclude source gross on `rebooked_or_moved`; payment suppress refund follow-up on that outcome.
+
+**Minimum reader wiring (S3 correctness, not full migration):** `reservationsReadModel` / `dashboardReadModel` (and any classify caller) **must** load StayChange by `settledByStayChangeId` and pass `rebookStayChange` into `classifyReservationPaymentStatus` when set. Without this, transfer-covered replacements appear unpaid (§23.16).
+
+### 25.15 Target inventory semantics
+
+| Target shape | Service | Owner fields |
+|--------------|---------|--------------|
+| Single cabin | `claimCabinNights` | `bookingId=targetBookingId`, `stayChangeId`, `source='rebook'` |
+| Allocated multi | `claimUnitNights` | same + `unitId`; `requireExactStayChangeOwnership: true` |
+
+**Implementation prerequisite:** add `'rebook'` to `UnitNightClaim.CLAIM_SOURCES` (CabinNightClaim already has it). Schema enum extension only — **no** unique-index cutover.
+
+Occupied nights: Sofia `[checkIn, checkOut)`. Internal conflict = hard failure. Compensate with `releaseStayChangeTargetCabinClaims` / `releaseStayChangeTargetClaims` (**StayChange-scoped only**).
+
+### 25.16 External holds
+
+`evaluateTargetConflicts({ treatExternalHoldAsHard: false, excludeReservationId: source._id })`.
+
+| | |
+|--|--|
+| Hard internal | fail; no ack |
+| External warning | require `acceptExternalHoldWarnings`; ack in fingerprint; **does not** delete external AB |
+
+### 25.17 Exact write ordering (LOCKED)
+
+```text
+ 1. Load source; eligibility; assert source owns claims
+ 2. Resolve Payment trail; money evidence (fail-closed)
+ 3. Server target quote; settlement validation (A/B only)
+ 4. External-hold detect; ack gate
+ 5. Idempotency lookup / create StayChange status=pending
+      (mint targetBookingId once; freeze snapshots+money+fingerprint)
+ 6. Acquire TARGET claims (cabin or unit) for targetBookingId + stayChangeId + source=rebook
+ 7. Verify full target ownership for exact nights
+ 8. StayChange → inventory_secured
+ 9. Persist replacement Booking _id=targetBookingId (COPY/DERIVE/RESET matrix)
+10. Set settledByStayChangeId; provenance; status pending|confirmed per §25.13
+11. Optional: sync/create reservation AvailabilityBlock projection for replacement
+      (do NOT invent if product convention is Booking-only; if created, cabinId/unitId must match target)
+12. StayChange → committed
+13. SOURCE CAS projection:
+      status=cancelled
+      cancellationSettlement.outcome=rebooked_or_moved
+      cancellationSettlement.replacementBookingId=targetBookingId
+      financialSnapshot frozen
+      (dedicated update — NOT transitionReservation cancel; NO cancel email)
+14. Tombstone source reservation AvailabilityBlocks if present (projection only)
+15. Release SOURCE claims (cabin or unit) owner-scoped
+16. Completion invariant checks
+17. StayChange → completed; completedAt
+18. Exactly-once AuditEvent (dedupe reservation_rebook:<stayChangeId>)
+```
+
+**Never release source inventory before step 8 (target secured).** Prefer never before step 13 (source projected). Absolute ban: source release before target claims verified.
+
+**Forward-only boundary:** after step 13 succeeds, do **not** resurrect source or release target; recover forward / MRI.
+
+### 25.18 Replacement Booking field matrix
+
+| Class | Fields |
+|-------|--------|
+| **COPY** | `guestInfo`, contact prefs where canonical, `checkIn`, `checkOut`, `adults`, `children`, `specialRequests`, `cleaningNotes`, `tripType`, `transportMethod`, `romanticSetup`, `craft`, `legalAcceptance` |
+| **DERIVE** | commercial identity (`cabinId`/`cabinTypeId`/`unitId`), `totalPrice`/`totalValueCents` from contractual target, `status` per §25.13, `currency`, `settledByStayChangeId`, `provenance.source=stay_change_rebook`, `provenance.createdByRoute` = rebook route |
+| **RESET / null** | `stripePaymentIntentId`, `checkoutId`, `checkoutSessionId`, `stripePaidAmountCents`, `giftVoucherAppliedCents`, `paymentMethod` (unless genuinely zero-obligation confirmed with transfer only — still **do not** fake stripe method), promo/voucher redemption ids, `confirmationEmailSentAt`, `metaPurchaseSentAt`, `attribution` (do **not** copy), `cancellationSettlement`, `locationBookingId`, `commercialStayFingerprint` (recompute if required by writers), GMA/scheduling markers caused by create |
+| **DO NOT COPY** | source `_id`, source Payment ids, source StayChange, creator referral fields that would double-count |
+
+**Guest identity:** Booking-level COPY of `guestInfo` is required (same guest). StayChange snapshots remain PII-free.
+
+**Creation mechanism:** dedicated REBOOK creator (do **not** call `executeBookingFinalizeWork` / paid finalize / manual create helpers that enqueue confirmation or Stripe). Claims already held — creator must **not** double-claim; adopt existing `rebook` claims for `targetBookingId`.
+
+### 25.19 Source Booking post-state
+
+```text
+status = cancelled
+cancellationSettlement.outcome = rebooked_or_moved
+cancellationSettlement.replacementBookingId = <targetBookingId>
+cancellationSettlement.financialSnapshot = { bookingTotalCents, stripePaidAmountCents, voucherAppliedCents, ... } at move
+```
+
+- Source commercial identity **immutable** (never rewrite cabin/unit).
+- Payments remain on source.
+- Generic cancel/resolve **rejects** `rebooked_or_moved` as operator settlement choice (existing) — prevents treating REBOOK as ordinary cancel later.
+- Reads: active stay = replacement; source = historical moved.
+
+### 25.20 AvailabilityBlock
+
+| | |
+|--|--|
+| External Airbnb/iCal | never delete/modify on REBOOK |
+| Source reservation projection | tombstone if present (after source projected) |
+| Replacement projection | optional sync; not exclusivity authority |
+| Invent blocks | do not invent when none existed (R1 parity) |
+
+### 25.21 Source inventory release point
+
+Only after source projection (step 13) succeeds:
+
+- Single: `releaseCabinNights({ bookingId: sourceId, cabinId, checkIn, checkOut })`
+- Multi: `releaseUnitNights({ bookingId: sourceId, unitId, checkIn, checkOut })`
+
+### 25.22 Failure / compensation matrix
+
+| FAILURE POINT | DURABLE STATE | SAFE COMPENSATION | MUST NOT | STAYCHANGE STATE | RETRY | MRI? |
+|---------------|---------------|-------------------|----------|------------------|-------|------|
+| Pre-StayChange validate | none | none | invent Booking | n/a | safe retry | no |
+| StayChange create race | one wins via unique index | adopt winner | second StayChange | pending | resume | no |
+| Target claim conflict | StayChange pending | none / fail StayChange | override uniqueness | failed or pending | new key or fix inventory | optional |
+| Target claim partial | some claims | `releaseStayChangeTarget*` this stayChange only | broad release | pending/failed | resume/compensate | if compensate fails |
+| After inventory_secured, Booking save fails | claims + SC | compensate StayChange-scoped claims; keep SC evidence | delete unrelated claims | failed or pending after compensate | resume; same targetBookingId | if compensate fails |
+| Booking exists, projection/AB fails | Booking + claims | usually forward-fix AB; if unsafe | delete Booking casually | needs_reconciliation or continue | reconcile | yes if stuck |
+| Source CAS fails | target live | **forward-only**; MRI | delete target; release target; resurrect blindly | needs_reconciliation | reconcile only | **yes** |
+| Source projected, release fails | target live; source claims remain | leave conservative over-block | delete target | needs_reconciliation | release retry | **yes** |
+| Completion invariant fails | mixed | MRI; no blind undo past forward boundary | fake completed | needs_reconciliation | reconcile | **yes** |
+| Audit fails | completed ops | retry audit dedupe | undo move | completed (R1 parity: audit non-fatal to undo) | audit retry | optional |
+
+### 25.23 Completion invariant
+
+Before `completed`, all must hold:
+
+1. `kind=rebook`; `bookingId`≠`targetBookingId`; both set
+2. Replacement Booking exists with `_id=targetBookingId`
+3. Replacement commercial identity matches target snapshot / StayChange shape fields
+4. Target claims exact-own nights for replacement; `stayChangeId` match; `source=rebook`
+5. Source `status=cancelled` + `outcome=rebooked_or_moved` + `replacementBookingId`
+6. Source claims released (zero remaining for source stay nights)
+7. Source Payment rows unchanged (spot-check reservationId still source)
+8. Replacement `provenance.source=stay_change_rebook`; `settledByStayChangeId=StayChange._id`
+9. Money fields immutable match fingerprint settlement
+10. No second Booking with same commercial stay competing as active duplicate of replacement
+
+### 25.24 Retry / resume matrix
+
+| Existing status | Behavior |
+|-----------------|----------|
+| `pending` | resume: claims → forward |
+| `inventory_secured` | resume: create/adopt Booking → forward |
+| `awaiting_payment` / `ready_to_commit` / `settling` | **S3 should not enter**; if found, MRI / refuse blind mutate |
+| `committed` | resume source project / release / complete only |
+| `completed` | **return success; zero mutation** |
+| `failed` | same fingerprint may restart only if no irreversible target Booking / or compensate-clean; else MRI |
+| `needs_reconciliation` | **refuse** blind restart; recon path only |
+
+### 25.25 Source concurrency / CAS
+
+Before mutating source (and at precommit), revalidate source still matches snapshot:
+
+- commercial key, unitId, checkIn/checkOut, status ∈ eligible, totals/payment fingerprint used in money freeze
+
+Source projection CAS example:
+
+```text
+updateOne({
+  _id: sourceId,
+  status: { $in: ['pending','confirmed'] },
+  cabinId/cabinTypeId/unitId: as snapshot,
+  checkIn/checkOut: as snapshot
+}, { $set: cancelled + rebooked_or_moved + ... })
+```
+
+If matchedCount=0 → `SOURCE_CHANGED` / `needs_reconciliation` if target already committed.
+
+### 25.26 Target duplication protection
+
+- No StayChange unique index on `targetBookingId` (intentional).
+- Application: never remint after StayChange exists.
+- Booking insert with fixed `_id`; duplicate key → adopt existing if same StayChange link / refuse if foreign.
+
+### 25.27 Messaging / confirmation
+
+S3 **suppresses entirely**:
+
+- source cancel lifecycle email
+- replacement `booking_confirmed` / `booking_received`
+- `notifyBookingCreated` / manual-create orchestrator hooks
+- Meta purchase / conversion hooks on replacement
+- GMA scheduling caused merely by replacement create
+- Stripe checkout enqueue
+
+**No automatic “stay moved” email in S3** (§23.26). Later scope.
+
+Implementation: dedicated creator + source CAS **must not** call `transitionReservation({kind:'cancel'})` or finalize side-effect enqueue.
+
+### 25.28 AuditEvent
+
+On successful completion (exactly-once dedupe):
+
+| | |
+|--|--|
+| Action | `reservation_rebook` |
+| Dedupe | `reservation_rebook:<stayChangeId>` |
+| Payload | sourceBookingId, targetBookingId, stayChangeId, source/target commercial keys, settlementType, transferredValueCents, waivedUpgradeCents, contractualTargetTotalCents, actor, reason |
+
+No guest PII; no Payment secrets.
+
+### 25.29 MRI / reconciliation
+
+Category: `stay_change_rebook_reconciliation` (canonical).
+
+Open MRI when: target compensate fails; source CAS fails after target exists; source release fails; completion invariant fails; ambiguous partial commit.
+
+Reuse existing ManualReviewItem + StayChange.`reconciliation` fields (R1 pattern).
+
+### 25.30 Stable error codes
+
+| Code | When |
+|------|------|
+| `UNSUPPORTED_SOURCE` | status/test/archive/location/shape |
+| `SAME_COMMERCIAL_PRODUCT` | not REBOOK |
+| `INVALID_TARGET` | shape/unit missing/mixed |
+| `HARD_CONFLICTS` | internal inventory |
+| `EXTERNAL_HOLD_ACK_REQUIRED` | external warning w/o ack |
+| `COVERAGE_*` / `PAYMENT_EVIDENCE_AMBIGUOUS` | money fail-closed |
+| `DOWNGRADE_UNSUPPORTED` | cheaper target |
+| `UPGRADE_WAIVER_REQUIRED` | upgrade without valid S3 waiver |
+| `IDEMPOTENCY_KEY_CONFLICT` | fingerprint mismatch |
+| `SOURCE_CHANGED` | CAS / revalidation miss |
+| `REPLACEMENT_PERSISTENCE_FAILED` | Booking save |
+| `NEEDS_RECONCILIATION` | forward-only stuck |
+| `FORBIDDEN` | non-admin |
+
+Use existing `createDomainError` envelope.
+
+### 25.31 UnitNightClaim `rebook` source prerequisite
+
+S3 implementation **must** extend `UnitNightClaim` `CLAIM_SOURCES` with `'rebook'` before multi-target claim writes. No index migration.
+
+### 25.32 Test plan (≥150 scenarios)
+
+**Eligibility (~20):** source statuses; isTest; archived; Location; mixed/missing identity; same product; unallocated multi; in_house reject.
+
+**Idempotency (~15):** first; retry same; retry different payload; resume each lifecycle state; concurrent duplicate.
+
+**Money (~25):** equal; overpaid capped; partial coverage → pending replacement; complimentary upgrade; upgrade no waiver; downgrade; disputed; ambiguous manual; trail/Stripe disagree; currency; waiver not coverage.
+
+**Shapes (~12):** single→single; single→multi; multi→single; multi→multi; cabin change.
+
+**Inventory (~20):** claim ok; hard conflict; external no/yes ack; target-first order; exact nights; Sofia DST boundaries; claim source=rebook.
+
+**Persistence/compensation (~30):** SC fail; claim fail; Booking fail after claims; AB fail; source CAS fail; transition fail; release fail; completion fail; compensate-only-this-attempt; MRI; conservative overblock; retry completion.
+
+**Booking fields (~15):** COPY/DERIVE/RESET matrix; no payment/session dup; provenance; settledByStayChangeId; status rule.
+
+**Reporting (~8):** no duplicate revenue; transfer/waiver not revenue; creator skip; classifier with StayChange wired.
+
+**Messaging (~6):** no confirm; no cancel email; no Stripe checkout; no worker enqueue.
+
+**Regressions:** R1 156; R3; S1.7/S1.7.1/S1.8; I6; Cleaning; S2 48.
+
+### 25.33 Production deployment prerequisites
+
+Before enabling S3 route in production:
+
+1. Production includes **S2 code** (StayChange spine + `settledByStayChangeId` + classifiers/guards)
+2. `CABIN_NIGHT_CLAIM_MODE=authoritative`
+3. CabinNightClaim unique index **EXACT**; parity clean (e.g. 114/114 or current)
+4. UnitNightClaim I6 clean
+5. R1 clean; S1.8 verify clean recommended
+6. No new unique-index cutover required for S3 (except app enum `rebook` on UnitNightClaim)
+7. Payment classifier callers wired for `settledByStayChangeId`
+
+**Dark deploy:** code may ship with route registered but feature-flagged / admin-only unused; **no** client UI required (S4). Do not enable until prerequisites verified.
+
+### 25.34 Application authorization note
+
+§25 locks implementation semantics. **A separate implementation authorization** is still required before writing REBOOK mutation code (same discipline as S1.7/S2).
+
+---
+
 ### Batch 2 — StayChange spine (amend/rebook-ready) — **SUPERSEDED for REBOOK by §23.33**
 
 | | |
@@ -3613,12 +4185,13 @@ These do not reopen §1–15 locks; they are decided inside the named batches:
 
 - Exact Mongoose indexes and unique keys for StayChange (REBOOK idempotency locked §23.29).
 - ~~Whether optional `movedFromBookingId` thin pointer is added on replacement~~ — **not required for correctness** (§23.28); separate justification if added later.
-- Multi-unit target claim ownership transition before replacement Booking persistence (§23.19) — resolve in implementation audit.
+- ~~Multi-unit target claim ownership transition before replacement Booking persistence (§23.19)~~ — **resolved in §25.8**: pre-mint `targetBookingId`; claims use that id from first acquire; Booking insert uses same `_id`.
 - ~~CabinNightClaim S1 cutover gates, writer graph, fingerprint~~ — locked in §24.
-- Exact guest email template copy and provider (SMTP / existing lifecycle pipeline) — **automatic move email out of S3 scope** (§23.26).
-- Permission string naming.
+- Exact guest email template copy and provider (SMTP / existing lifecycle pipeline) — **automatic move email out of S3 scope** (§23.26 / §25.27).
+- ~~Permission string naming~~ — **resolved in §25.3**: reuse `ops.reservation.reassign` (admin).
 - Feature flag names and rollout order per propertyKind.
 - ~~UnitNightClaim I6 unique-index migration tooling shape~~ — locked in I6 (`unitNightClaimI6Cutover.js`; explicit `--create-unique-index`; no auto-enforce before cutover).
+- ~~REBOOK-S3 mutation ordering / compensation / field matrix~~ — locked in **§25**.
 
 ---
 
@@ -3639,7 +4212,8 @@ These do not reopen §1–15 locks; they are decided inside the named batches:
 | 2026-08-23 | Amendment: REBOOK-S1 CabinNightClaim foundation (§24) — permanent single-cabin occupied-night exclusivity; claim-owning Booking rule; test/archived policy; night helper reuse; authoritative unique index + startup safety; claim service contract; shadow/dual-write vs authority; create/date/reassign ordering; Location child rule; paid checkout race; backfill/reconcile/fingerprint gates; S1.1–S1.8 sub-batches; cutover tool; ≥140 S1 test contract; REBOOK single-cabin blocked until S1.6+S1.7+verification. |
 | 2026-08-26 | Amendment: S1.7 authoritative claim-first writer cutover lock (§24.44) — mode contract; exact-index per-acquire + API/finalize boot gates; CREATE/finalize/legacy/manual/location/date-edit/reassign/status-release orderings; AB reassign cabin projection sync; archive under status_release; maintenance delete invariant; crash/recon/observability; ≥120 S1.7 tests; shadow-deploy then env flip; S1.8 boundary; REBOOK/reader/UnitNightClaim/Cleaning non-touch. |
 | 2026-08-26 | Amendment: S1.8 post-cutover reconciliation lock (§24.45) — verify-default CLI; dual-flag repair; safe insert/release/target-first matrix; orphan/foreign MANUAL; exact-index gate; exit 0/2/1; no reader migration / legacy cleanup / REBOOK. |
+| 2026-08-26 | Amendment: REBOOK-S3 first mutation implementation lock (§25) — route/auth; product-only eligibility; pre-mint targetBookingId ownership; money A/B only; exact write order; COPY/DERIVE/RESET matrix; compensation matrix; resume matrix; messaging suppress; ≥150 test plan; UnitNightClaim `rebook` source prerequisite; no application code authorized by §25 alone. |
 
 ---
 
-**END OF LOCKED ARCHITECTURE — R1 LIVE; R3 LIVE; REBOOK §23 + S1 §24 SPEC LOCKED (THROUGH S1.8 RECONCILIATION §24.45); NO REBOOK APPLICATION AUTHORIZED BY DOCS ALONE**
+**END OF LOCKED ARCHITECTURE — R1 LIVE; R3 LIVE; REBOOK §23 + S1 §24 + S2 SPINE LIVE IN CODE; S3 MUTATION IMPLEMENTATION LOCKED IN §25 (DOCS ONLY — NO REBOOK APPLICATION AUTHORIZED BY DOCS ALONE)**
