@@ -87,86 +87,71 @@ process.on('uncaughtException', (err) => {
   setTimeout(() => process.exit(1), 5000);
 });
 
-// --- MongoDB (non-fatal) ---
-connectDB().then((conn) => {
-  if (conn) {
-    // S1.7 §24.44.4/§24.44.24: this process writes inventory, so authoritative
-    // mode must prove the exact CabinNightClaim unique index before serving
-    // mutations. Read-only assertion; no index create/drop/repair.
-    void (async () => {
-      try {
-        const {
-          assertCabinNightClaimAuthoritativeBootReady
-        } = require('./services/inventory/cabinNightClaimAuthoritativeBoot');
-        const boot = await assertCabinNightClaimAuthoritativeBootReady({
-          processName: 'driftdwells'
-        });
-        if (boot.required) {
-          console.log('[cabin-night-claim] authoritative boot assertion passed (driftdwells)');
-        }
-      } catch (e) {
-        console.error(
-          '[cabin-night-claim] authoritative boot assertion failed (driftdwells):',
-          e?.message || e
-        );
-        process.exit(1);
-      }
-    })();
+const {
+  assertCabinNightClaimAuthoritativeBootReady
+} = require('./services/inventory/cabinNightClaimAuthoritativeBoot');
+const { startApiProcess } = require('./bootstrap/startApiProcess');
 
-    const Review = require('./models/Review');
-    Review.syncIndexes().then(() => {
-      console.log('Review indexes synced');
-    }).catch((err) => {
-      if (err.message && err.message.includes('externalId')) {
-        console.warn('Review index sync warning:', err.message);
-      } else {
-        console.error('Review index sync error:', err);
-      }
-    });
-
-    // Automatic iCal sync scheduling (prod-safe, env-controlled).
-    try {
-      const { startIcalSyncSchedulerIfEnabled } = require('./services/ops/ingestion/icalSyncScheduler');
-      startIcalSyncSchedulerIfEnabled();
-    } catch (e) {
-      console.error('[ical-sync] Scheduler startup failed:', e?.message || e);
+/**
+ * Post-connect runtime started only after Mongo is up AND (when authoritative)
+ * the CabinNightClaim authority boot gate has passed. Includes the
+ * inventory-mutating in-process checkout-finalization worker.
+ */
+function startPostConnectRuntime() {
+  const Review = require('./models/Review');
+  Review.syncIndexes().then(() => {
+    console.log('Review indexes synced');
+  }).catch((err) => {
+    if (err.message && err.message.includes('externalId')) {
+      console.warn('Review index sync warning:', err.message);
+    } else {
+      console.error('Review index sync error:', err);
     }
+  });
 
-    // Messaging scheduler worker (Batch 6: CLAIM-ONLY; default OFF).
-    // Atomic-claim safety holds across processes, so this can also run from
-    // a separate PM2 worker (scripts/runMessagingWorker.js) once D-13 splits.
-    try {
-      const { startSchedulerWorkerIfEnabled } = require('./services/messaging/schedulerWorker');
-      startSchedulerWorkerIfEnabled();
-    } catch (e) {
-      console.error('[messaging-worker] Startup failed:', e?.message || e);
-    }
-
-    try {
-      const { startOpsPushSchedulerWorkerIfEnabled } = require('./services/ops/push/opsPushSchedulerWorker');
-      startOpsPushSchedulerWorkerIfEnabled();
-    } catch (e) {
-      console.error('[ops-push-worker] Startup failed:', e?.message || e);
-    }
-
-    // Paid checkout finalization worker (Batch 5: finalize only; no email). Default OFF.
-    try {
-      const {
-        startCheckoutFinalizationWorkerIfEnabled
-      } = require('./services/checkout/checkoutFinalizationWorker');
-      startCheckoutFinalizationWorkerIfEnabled();
-    } catch (e) {
-      console.error('[checkout-finalization-worker] Startup failed:', e?.message || e);
-    }
-
-    try {
-      const { startSmtpHealthSchedulerIfEnabled } = require('./services/email/smtpHealthScheduler');
-      startSmtpHealthSchedulerIfEnabled();
-    } catch (e) {
-      console.error('[smtp-health] Scheduler startup failed:', e?.message || e);
-    }
+  // Automatic iCal sync scheduling (prod-safe, env-controlled).
+  try {
+    const { startIcalSyncSchedulerIfEnabled } = require('./services/ops/ingestion/icalSyncScheduler');
+    startIcalSyncSchedulerIfEnabled();
+  } catch (e) {
+    console.error('[ical-sync] Scheduler startup failed:', e?.message || e);
   }
-}).catch(() => {});
+
+  // Messaging scheduler worker (Batch 6: CLAIM-ONLY; default OFF).
+  // Atomic-claim safety holds across processes, so this can also run from
+  // a separate PM2 worker (scripts/runMessagingWorker.js) once D-13 splits.
+  try {
+    const { startSchedulerWorkerIfEnabled } = require('./services/messaging/schedulerWorker');
+    startSchedulerWorkerIfEnabled();
+  } catch (e) {
+    console.error('[messaging-worker] Startup failed:', e?.message || e);
+  }
+
+  try {
+    const { startOpsPushSchedulerWorkerIfEnabled } = require('./services/ops/push/opsPushSchedulerWorker');
+    startOpsPushSchedulerWorkerIfEnabled();
+  } catch (e) {
+    console.error('[ops-push-worker] Startup failed:', e?.message || e);
+  }
+
+  // Paid checkout finalization worker (Batch 5: finalize only; no email). Default OFF.
+  // INVENTORY-MUTATING: must not start before authoritative boot gate.
+  try {
+    const {
+      startCheckoutFinalizationWorkerIfEnabled
+    } = require('./services/checkout/checkoutFinalizationWorker');
+    startCheckoutFinalizationWorkerIfEnabled();
+  } catch (e) {
+    console.error('[checkout-finalization-worker] Startup failed:', e?.message || e);
+  }
+
+  try {
+    const { startSmtpHealthSchedulerIfEnabled } = require('./services/email/smtpHealthScheduler');
+    startSmtpHealthSchedulerIfEnabled();
+  } catch (e) {
+    console.error('[smtp-health] Scheduler startup failed:', e?.message || e);
+  }
+}
 
 // --- Directories ---
 const uploadsDir = path.join(__dirname, '..', 'uploads');
@@ -345,12 +330,31 @@ app.use('*', (req, res) => {
   res.status(404).json({ message: 'Route not found' });
 });
 
-const server = app.listen(PORT, () => {
-  console.log(`Drift & Dwells Booking Server running on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/api/health`);
-  // Precompute chat FAQ embeddings (non-blocking)
-  const chatService = require('./services/chatService');
-  chatService.warmEmbeddings().catch((err) => console.warn('[chat] Warm failed:', err?.message));
+// --- S1.7.1 gated API startup ---
+// Authoritative: Mongo → authority assert → post-connect workers → listen.
+// Shadow/off: no exact-index gate; listen even when Mongo is unavailable.
+let server = null;
+
+function startHttpListener() {
+  server = app.listen(PORT, () => {
+    console.log(`Drift & Dwells Booking Server running on port ${PORT}`);
+    console.log(`Health check: http://localhost:${PORT}/api/health`);
+    // Precompute chat FAQ embeddings (non-blocking)
+    const chatService = require('./services/chatService');
+    chatService.warmEmbeddings().catch((err) => console.warn('[chat] Warm failed:', err?.message));
+  });
+  return server;
+}
+
+startApiProcess({
+  connectDbFn: connectDB,
+  assertAuthorityBootFn: assertCabinNightClaimAuthoritativeBootReady,
+  startHttpListenerFn: startHttpListener,
+  startPostConnectRuntimeFn: startPostConnectRuntime,
+  processName: 'driftdwells'
+}).catch((err) => {
+  console.error('[api-startup] fatal:', err?.stack || err?.message || err);
+  process.exit(1);
 });
 
 // --- Graceful shutdown ---
@@ -369,18 +373,31 @@ const shutdown = (signal) => {
     console.error('[ops-push-worker] Shutdown stop failed:', e?.message || e);
   }
   try {
+    const {
+      stopCheckoutFinalizationWorkerForTest
+    } = require('./services/checkout/checkoutFinalizationWorker');
+    stopCheckoutFinalizationWorkerForTest();
+  } catch (e) {
+    console.error('[checkout-finalization-worker] Shutdown stop failed:', e?.message || e);
+  }
+  try {
     const { stopSmtpHealthSchedulerForTest } = require('./services/email/smtpHealthScheduler');
     stopSmtpHealthSchedulerForTest();
   } catch (e) {
     console.error('[smtp-health] Shutdown stop failed:', e?.message || e);
   }
-  server.close(() => {
+  const closeHttp = () => {
     const mongoose = require('mongoose');
     mongoose.connection.close(false).then(() => {
       console.log('MongoDB connection closed.');
       process.exit(0);
     }).catch(() => process.exit(0));
-  });
+  };
+  if (server) {
+    server.close(closeHttp);
+  } else {
+    closeHttp();
+  }
   setTimeout(() => {
     console.error('Forced shutdown after timeout.');
     process.exit(1);

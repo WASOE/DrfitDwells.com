@@ -2243,19 +2243,30 @@ test('STATIC location: multi-unit children still use the unit claim path', () =>
 // STATIC — inventory-writing process boot gates
 // ===========================================================================
 
-test('STATIC boot: server.js asserts authoritative boot readiness', () => {
+test('STATIC boot: server.js starts via startApiProcess gate', () => {
   const src = readSource('server.js');
+  assert.match(src, /startApiProcess/);
   assert.match(src, /assertCabinNightClaimAuthoritativeBootReady/);
-  assert.match(src, /cabinNightClaimAuthoritativeBoot/);
+  assert.match(src, /bootstrap\/startApiProcess/);
 });
 
-test('STATIC boot: server.js exits when the assertion fails', () => {
-  const src = readSource('server.js');
+test('STATIC boot: startApiProcess exits when the assertion fails', () => {
+  const src = readSource('bootstrap/startApiProcess.js');
   orderedIn(
     src,
-    'assertCabinNightClaimAuthoritativeBootReady({',
+    'await assertAuthorityBootFn({',
     'authoritative boot assertion failed',
-    'process.exit(1);'
+    'exitFn(1)'
+  );
+});
+
+test('STATIC boot: startApiProcess listens only after authoritative gate', () => {
+  const src = readSource('bootstrap/startApiProcess.js');
+  orderedIn(
+    src,
+    'await assertAuthorityBootFn({',
+    'startPostConnectRuntimeFn({',
+    'startHttpListenerFn()'
   );
 });
 
@@ -2263,6 +2274,12 @@ test('STATIC boot: server.js boot gate stays read-only', () => {
   const src = readSource('server.js');
   assert.doesNotMatch(src, /cabinNightClaim_cabinId_night_unique/);
   assert.doesNotMatch(src, /CabinNightClaim\.collection\.createIndex/);
+});
+
+test('STATIC boot: startApiProcess never mutates indexes or claims', () => {
+  const src = readSource('bootstrap/startApiProcess.js');
+  assert.doesNotMatch(src, /createIndex|dropIndex|syncIndexes/);
+  assert.doesNotMatch(src, /claimCabinNights\(|releaseCabinNights\(/);
 });
 
 test('STATIC boot: finalize worker asserts authoritative boot readiness', () => {
