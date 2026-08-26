@@ -1,9 +1,15 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, Navigate, useParams } from 'react-router-dom';
 import { addDays } from 'date-fns';
 import { formatInTimeZone, toDate } from 'date-fns-tz';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { opsReadAPI, opsWriteAPI } from '../../../services/opsApi';
+import {
+  OPS_CALENDAR_BASE_PATH,
+  OPS_WORK_WINDOWS_PATH,
+  isOpsCalendarCabinIdParam,
+  isOpsCalendarReservedSegment
+} from '../../../layouts/ops/opsCalendarRoutes';
 import { BLOCK_BAR, CONFLICT_RING, SYNC_BADGE } from './calendarVisualTokens';
 import {
   OPS_CALENDAR_TZ,
@@ -84,6 +90,9 @@ export default function OpsCalendarMonth() {
   const [sheetBlock, setSheetBlock] = useState(null);
   const [locationRemoveFlash, setLocationRemoveFlash] = useState('');
 
+  const cabinIdOk = isOpsCalendarCabinIdParam(cabinId);
+  const reservedSegment = isOpsCalendarReservedSegment(cabinId);
+
   const { weeks, monthStartYmd, monthEndExclusiveYmd } = useMemo(
     () => buildSofiaMonthGrid(year, monthIndex),
     [year, monthIndex]
@@ -93,6 +102,10 @@ export default function OpsCalendarMonth() {
   const rangeTooltip = `${monthStartYmd} → ${monthEndExclusiveYmd} (checkout day exclusive)`;
 
   const load = useCallback(async () => {
+    if (!cabinIdOk || reservedSegment) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError('');
     try {
@@ -108,11 +121,18 @@ export default function OpsCalendarMonth() {
     } finally {
       setLoading(false);
     }
-  }, [cabinId, monthStartYmd, monthEndExclusiveYmd]);
+  }, [cabinId, cabinIdOk, reservedSegment, monthStartYmd, monthEndExclusiveYmd]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  if (reservedSegment) {
+    return <Navigate to={OPS_WORK_WINDOWS_PATH} replace />;
+  }
+  if (!cabinIdOk) {
+    return <Navigate to={OPS_CALENDAR_BASE_PATH} replace />;
+  }
 
   const blocks = data?.blocks || [];
   const renderCabinId = data?.calendarScope?.renderCabinId ?? cabinId;

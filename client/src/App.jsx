@@ -1,8 +1,13 @@
 import { Suspense, lazy } from 'react'
-import { Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom'
+import { Routes, Route, Navigate, Outlet, useParams, useLocation } from 'react-router-dom'
 import { BookingProvider } from './context/BookingContext'
 import BookingProviderLayout from './layouts/BookingProviderLayout'
 import ScrollToTop from './components/ScrollToTop'
+import {
+  OPS_CALENDAR_BASE_PATH,
+  OPS_CALENDAR_CABIN_PARAM_PATH,
+  OPS_WORK_WINDOWS_SEGMENT
+} from './layouts/ops/opsCalendarRoutes'
 
 /** Guest shell (header, outlet, modals) — lazy so admin/ops layouts stay out of the initial graph. */
 const SiteLayout = lazy(() => import('./layouts/SiteLayout'))
@@ -237,9 +242,12 @@ function App() {
             {/* Ops layout */}
             <Route element={<OpsLayout />}>
               <Route path="/ops" element={<OpsDashboard />} />
-              <Route path="/ops/calendar" element={<OpsCalendarIndex />} />
-              <Route path="/ops/calendar/work-windows" element={<OpsWorkWindows />} />
-              <Route path="/ops/calendar/:cabinId" element={<OpsCalendarMonth />} />
+              {/* Nested calendar: static work-windows sibling so :cabinId never binds reserved segments. */}
+              <Route path={OPS_CALENDAR_BASE_PATH} element={<Outlet />}>
+                <Route index element={<OpsCalendarIndex />} />
+                <Route path={OPS_WORK_WINDOWS_SEGMENT} element={<OpsWorkWindows />} />
+                <Route path={OPS_CALENDAR_CABIN_PARAM_PATH} element={<OpsCalendarMonth />} />
+              </Route>
               <Route path="/ops/reservations" element={<OpsReservations />} />
               <Route path="/ops/reservations/:id" element={<OpsReservationDetail />} />
               <Route path="/ops/payments" element={<OpsPayments />} />
