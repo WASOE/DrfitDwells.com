@@ -133,6 +133,63 @@ function isAuthoritativeUniqueExact(ix) {
   );
 }
 
+/** Deterministic CabinNightClaim authoritative index classification (S1.6). */
+const AUTHORITATIVE_INDEX_STATES = Object.freeze({
+  ABSENT: 'ABSENT',
+  EXACT: 'EXACT',
+  WRONG_NAMED_AUTHORITY: 'WRONG_NAMED_AUTHORITY',
+  EQUIVALENT_KEY_CONFLICT: 'EQUIVALENT_KEY_CONFLICT',
+  OTHER_SAFE_INDEXES_ONLY: 'OTHER_SAFE_INDEXES_ONLY'
+});
+
+function classifyAuthoritativeIndexState(indexes) {
+  const spec = AUTHORITATIVE_UNIQUE_INDEX_SPEC;
+  const list = indexes || [];
+  const authIx = list.find((ix) => ix && ix.name === spec.options.name) || null;
+
+  if (authIx) {
+    if (isAuthoritativeUniqueExact(authIx)) {
+      return {
+        authoritativeIndexState: AUTHORITATIVE_INDEX_STATES.EXACT,
+        authoritativeUniquePresent: true,
+        authoritativeUniqueExact: true,
+        unexpectedIndexState: false,
+        authIndex: authIx
+      };
+    }
+    return {
+      authoritativeIndexState: AUTHORITATIVE_INDEX_STATES.WRONG_NAMED_AUTHORITY,
+      authoritativeUniquePresent: authIx.unique === true,
+      authoritativeUniqueExact: false,
+      unexpectedIndexState: true,
+      authIndex: authIx
+    };
+  }
+
+  const equivalentKeyIndexes = list.filter((ix) => ix && sameIndexKeys(ix.key, spec.keys));
+  if (equivalentKeyIndexes.length > 0) {
+    return {
+      authoritativeIndexState: AUTHORITATIVE_INDEX_STATES.EQUIVALENT_KEY_CONFLICT,
+      authoritativeUniquePresent: false,
+      authoritativeUniqueExact: false,
+      unexpectedIndexState: true,
+      authIndex: null,
+      equivalentIndexes: equivalentKeyIndexes
+    };
+  }
+
+  return {
+    authoritativeIndexState:
+      list.length > 0
+        ? AUTHORITATIVE_INDEX_STATES.OTHER_SAFE_INDEXES_ONLY
+        : AUTHORITATIVE_INDEX_STATES.ABSENT,
+    authoritativeUniquePresent: false,
+    authoritativeUniqueExact: false,
+    unexpectedIndexState: false,
+    authIndex: null
+  };
+}
+
 async function collectionExists(db, collectionName) {
   if (!db) return false;
   const rows = await db.listCollections({ name: collectionName }, { nameOnly: true }).toArray();
@@ -414,18 +471,11 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
 
   counts.actual = claimDocs.length;
 
-  const authName = AUTHORITATIVE_UNIQUE_INDEX_SPEC.options.name;
-  const authIx = (existingIndexes || []).find((ix) => ix && ix.name === authName) || null;
-  const authoritativeUniquePresent = Boolean(authIx) && authIx.unique === true;
-  const authoritativeUniqueExact = isAuthoritativeUniqueExact(authIx);
-  // S1.3: any unique on cabinId+night is unexpected (authority not authorized yet).
-  const uniqueCabinNightIndexes = (existingIndexes || []).filter(
-    (ix) =>
-      ix &&
-      ix.unique === true &&
-      sameIndexKeys(ix.key, AUTHORITATIVE_UNIQUE_INDEX_SPEC.keys)
-  );
-  const unexpectedIndexState = uniqueCabinNightIndexes.length > 0;
+  const indexClass = classifyAuthoritativeIndexState(existingIndexes);
+  const authoritativeUniquePresent = indexClass.authoritativeUniquePresent;
+  const authoritativeUniqueExact = indexClass.authoritativeUniqueExact;
+  const unexpectedIndexState = indexClass.unexpectedIndexState;
+  const authoritativeIndexState = indexClass.authoritativeIndexState;
 
   // Index report
   const existingIndexesSummary = (existingIndexes || []).map(summarizeIndex);
@@ -732,7 +782,7 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
   counts.remainingUniqueBlockers = backfillBlockers + uniqueOnlyBlockers;
   counts.remainingBlockers = counts.remainingUniqueBlockers;
 
-  const readyForBackfill =
+  const baseInventorySafe =
     !toolFailure &&
     scanCompleteness === 'full' &&
     counts.canonicalCollisions === 0 &&
@@ -742,8 +792,12 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
     codeWriterReadiness &&
     !unexpectedIndexState;
 
+  // After EXACT unique authority exists, backfill is not the next cutover step (S1.6+).
+  const readyForBackfill = baseInventorySafe && !authoritativeUniqueExact;
+
+  // Parity/stability remains meaningful after exact authority (idempotent re-entry / post-create).
   const readyForStableVerification =
-    readyForBackfill &&
+    baseInventorySafe &&
     counts.missing === 0 &&
     counts.stale === 0 &&
     counts.orphan === 0 &&
@@ -760,9 +814,12 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
 
   // Unique index readiness is provisional: requires stable verification + no auth surprise.
   // Live process readiness / prior fingerprint are later gates (S1.5/S1.6).
+  // After EXACT authority exists, provisional unique-creation readiness is N/A (already created).
   const readyForUniqueIndexProvisional =
-    readyForStableVerification && !authoritativeUniquePresent;
-  const readyForUniqueIndex = false; // S1.3: never claim unique-cutover ready
+    readyForStableVerification &&
+    !authoritativeUniqueExact &&
+    !authoritativeUniquePresent;
+  const readyForUniqueIndex = false; // writer authority remains S1.7; never claim from preflight alone
 
   const inventoryFingerprintPayload = {
     cutoverBatch: CUTOVER_BATCH,
@@ -863,6 +920,7 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
     collectionName: claimCollectionName,
     documentCount: counts.actual,
     existingIndexes: existingIndexesSummary,
+    authoritativeIndexState,
     authoritativeUniquePresent,
     authoritativeUniqueExact,
     unexpectedIndexState,
@@ -909,9 +967,12 @@ module.exports = {
   CUTOVER_BATCH,
   SAMPLE_LIMIT,
   KNOWN_SOURCES,
+  AUTHORITATIVE_INDEX_STATES,
+  classifyAuthoritativeIndexState,
   stableHash,
   cabinNightKey,
   ownershipKey,
   isAuthoritativeUniqueExact,
-  summarizeIndex
+  summarizeIndex,
+  sameIndexKeys
 };

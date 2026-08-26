@@ -28,6 +28,7 @@ const REFUSE = Object.freeze({
   FOREIGN_OWNER_CONFLICT: 'BACKFILL_FOREIGN_OWNER_CONFLICT',
   STAY_CHANGE_CONFLICT: 'BACKFILL_STAY_CHANGE_CONFLICT',
   INVALID_FLAG_COMBINATION: 'BACKFILL_INVALID_FLAG_COMBINATION',
+  AFTER_AUTHORITY_NOT_ALLOWED: 'BACKFILL_AFTER_AUTHORITY_NOT_ALLOWED',
   CREATE_UNIQUE_NOT_IMPLEMENTED: 'NOT_IMPLEMENTED_IN_S1_3'
 });
 
@@ -191,6 +192,26 @@ async function runCabinNightClaimS1Backfill(opts = {}) {
     declaredWriters: opts.declaredWriters,
     db: opts.db
   });
+
+  // S1.6+: backfill is not a post-authority reconciliation path.
+  if (preflight.authoritativeUniqueExact === true) {
+    return {
+      mode: 'backfill',
+      cutoverBatch: CUTOVER_BATCH,
+      refused: true,
+      refuseCode: REFUSE.AFTER_AUTHORITY_NOT_ALLOWED,
+      refuseReason:
+        'CabinNightClaim backfill is not allowed after authoritative unique index exists',
+      toolFailure: false,
+      preflightFingerprint: preflight.fingerprint || null,
+      preflight,
+      postVerificationPerformed: false,
+      readyForStableVerification: false,
+      readyForUniqueIndex: false,
+      readyForBackfill: false,
+      ...emptyBackfillStats()
+    };
+  }
 
   const gate = preflightAllowsBackfill(preflight);
   if (!gate.ok) {

@@ -158,23 +158,24 @@ test('CLI: --backfill flag parsed (S1.4 authorized; mutation in backfill service
   assert.equal(a.backfill, true);
 });
 
-test('CLI: --create-unique-index refused with NOT_IMPLEMENTED_IN_S1_3', () => {
+test('CLI: buildRefusedReport still exposes refuseCode helper', () => {
   const r = buildRefusedReport({
     mode: 'create-unique-index',
-    reason: 'not implemented'
+    reason: 'gate failed'
   });
   assert.equal(r.refuseCode, REFUSE_CODE);
   assert.equal(r.mode, 'create-unique-index');
 });
 
-test('CLI: static source refuses unique-index; verify uses preflight', () => {
+test('CLI: static source routes unique-index to cutover service; verify stays preflight', () => {
   const src = readSource('scripts/cabinNightClaimS1Cutover.js');
-  assert.match(src, /NOT_IMPLEMENTED_IN_S1_3/);
+  assert.match(src, /runCabinNightClaimS1UniqueIndexCutover/);
   assert.match(src, /runCabinNightClaimS1Preflight/);
   assert.doesNotMatch(src, /claimCabinNights\(/);
-  assert.doesNotMatch(src, /createIndex\(/);
   assert.doesNotMatch(src, /syncIndexes\(/);
   assert.doesNotMatch(src, /dropIndex/);
+  // createIndex only via dedicated unique cutover service, not inline in CLI verify path
+  assert.match(src, /live-writers-verified/);
 });
 
 test('preflight service: static source is read-only (no writes)', async () => {
@@ -186,7 +187,7 @@ test('preflight service: static source is read-only (no writes)', async () => {
   assert.doesNotMatch(src, /\.updateOne|\.updateMany|\.deleteOne|\.deleteMany/);
 });
 
-test('CLI main: --create-unique-index writes refused JSON to stdout only', async () => {
+test('CLI main: --create-unique-index without gates refuses (S1.6)', async () => {
   const chunks = [];
   const orig = process.stdout.write;
   process.stdout.write = (c) => {
@@ -197,8 +198,10 @@ test('CLI main: --create-unique-index writes refused JSON to stdout only', async
     const code = await cutoverMain(['--create-unique-index']);
     assert.equal(code, 2);
     const report = JSON.parse(chunks.join(''));
-    assert.equal(report.refuseCode, REFUSE_CODE);
     assert.equal(report.mode, 'create-unique-index');
+    assert.equal(report.refused, true);
+    assert.ok(report.refuseCode);
+    assert.equal(report.created, false);
   } finally {
     process.stdout.write = orig;
   }
@@ -912,7 +915,8 @@ test('index: exact authority detected without create in verify', async () => {
   const r = await runCabinNightClaimS1Preflight({});
   assert.equal(r.authoritativeUniquePresent, true);
   assert.equal(r.authoritativeUniqueExact, true);
-  assert.equal(r.unexpectedIndexState, true);
+  assert.equal(r.authoritativeIndexState, 'EXACT');
+  assert.equal(r.unexpectedIndexState, false);
   assert.equal(r.readyForBackfill, false);
 });
 

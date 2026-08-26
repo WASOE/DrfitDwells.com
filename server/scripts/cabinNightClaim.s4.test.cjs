@@ -161,7 +161,7 @@ test('CLI: --backfill parsed', () => {
   assert.equal(parseArgs(['--backfill']).backfill, true);
 });
 
-test('CLI: --create-unique-index still refused', async () => {
+test('CLI: --create-unique-index without gates refuses (S1.6 wired)', async () => {
   const chunks = [];
   const orig = process.stdout.write;
   process.stdout.write = (c) => {
@@ -172,8 +172,10 @@ test('CLI: --create-unique-index still refused', async () => {
     const code = await cutoverMain(['--create-unique-index']);
     assert.equal(code, 2);
     const report = JSON.parse(chunks.join(''));
-    assert.equal(report.refuseCode, REFUSE_CODE);
+    assert.equal(report.mode, 'create-unique-index');
     assert.equal(report.refused, true);
+    assert.ok(report.refuseCode);
+    assert.equal(report.created, false);
   } finally {
     process.stdout.write = orig;
   }
@@ -904,10 +906,10 @@ test('static: backfill service has no Booking mutation / claim delete / index cr
   assert.match(src, /ACQUISITION_MODES\.SHADOW/);
 });
 
-test('static: cutover still refuses unique index; no AvailabilityBlock', () => {
+test('static: cutover routes unique index to S1.6 service; no AvailabilityBlock', () => {
   const src = readSource('scripts/cabinNightClaimS1Cutover.js');
   assert.match(src, /create-unique-index/);
-  assert.match(src, /NOT_IMPLEMENTED_IN_S1_3/);
+  assert.match(src, /runCabinNightClaimS1UniqueIndexCutover/);
   assert.doesNotMatch(src, /AvailabilityBlock/);
   assert.doesNotMatch(src, /publicAvailability/);
 });

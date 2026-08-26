@@ -4,17 +4,19 @@
  * REBOOK-S1 CabinNightClaim controlled cutover CLI.
  *
  * S1.3: READ-ONLY VERIFY (default / --verify)
- * S1.4: --backfill INSERT-ONLY (fresh preflight gate + mandatory post-verify)
+ * S1.4: --backfill INSERT-ONLY
+ * S1.6: --create-unique-index (explicit, gated; does NOT enable writer authority)
  *
  * Usage:
  *   cd server && node -r dotenv/config scripts/cabinNightClaimS1Cutover.js
  *   cd server && node -r dotenv/config scripts/cabinNightClaimS1Cutover.js --verify
  *   cd server && node -r dotenv/config scripts/cabinNightClaimS1Cutover.js --backfill
- *   cd server && node -r dotenv/config scripts/cabinNightClaimS1Cutover.js --backfill --batch-size 100
- *   cd server && node -r dotenv/config scripts/cabinNightClaimS1Cutover.js --report-json /tmp/s1.json
- *   cd server && node -r dotenv/config scripts/cabinNightClaimS1Cutover.js --prior-fingerprint <hex>
+ *   cd server && node -r dotenv/config scripts/cabinNightClaimS1Cutover.js \
+ *     --create-unique-index \
+ *     --prior-fingerprint <hex> \
+ *     --live-writers-verified
  *
- * --create-unique-index is REFUSED until S1.6 (NOT_IMPLEMENTED_IN_S1_3).
+ * CLI does NOT inspect PM2. --live-writers-verified is operator acknowledgement only.
  */
 
 const fs = require('fs');
@@ -35,6 +37,10 @@ const {
   normalizeBatchSize,
   REFUSE: BACKFILL_REFUSE
 } = require('../services/inventory/cabinNightClaimS1BackfillService');
+const {
+  runCabinNightClaimS1UniqueIndexCutover,
+  REFUSE: UNIQUE_REFUSE
+} = require('../services/inventory/cabinNightClaimS1UniqueIndexCutoverService');
 
 const REFUSE_CODE = 'NOT_IMPLEMENTED_IN_S1_3';
 
@@ -43,6 +49,7 @@ function parseArgs(argv) {
     verify: false,
     backfill: false,
     createUniqueIndex: false,
+    liveWritersVerified: false,
     reportJson: null,
     priorFingerprint: null,
     batchSize: null,
@@ -53,6 +60,7 @@ function parseArgs(argv) {
     if (a === '--verify') args.verify = true;
     else if (a === '--backfill') args.backfill = true;
     else if (a === '--create-unique-index') args.createUniqueIndex = true;
+    else if (a === '--live-writers-verified') args.liveWritersVerified = true;
     else if (a === '--report-json') args.reportJson = argv[++i];
     else if (a.startsWith('--report-json=')) args.reportJson = a.slice('--report-json='.length);
     else if (a === '--prior-fingerprint') args.priorFingerprint = argv[++i];
@@ -118,20 +126,28 @@ function buildRefusedReport({ mode, reason, refuseCode = REFUSE_CODE }) {
     refuseReason: reason,
     refuseCode,
     toolFailure: false,
-    samples: {}
+    samples: {},
+    liveWriterProcessInspectedByCli: false
   };
 }
 
 /**
  * Exit codes:
- *   0 — successful verify (readyForBackfill) or successful complete backfill
- *   2 — deliberate refusal / unsafe precondition / incomplete backfill
+ *   0 — successful verify / complete backfill / unique cutover success
+ *   2 — deliberate refusal / incomplete / needsReview
  *   1 — tool/runtime failure
  */
 function exitCodeForReport(report) {
   if (!report) return 1;
   if (report.toolFailure) return 1;
   if (report.refused) return 2;
+  if (report.mode === 'create-unique-index') {
+    if (report.needsReview) return 2;
+    if (report.postVerificationClean === true && report.authoritativeUniqueExact === true) {
+      return 0;
+    }
+    return 2;
+  }
   if (report.mode === 'backfill') {
     if ((report.failed || 0) > 0) return 1;
     if ((report.foreignConflicts || 0) > 0) return 2;
@@ -185,17 +201,6 @@ async function main(argv = process.argv.slice(2)) {
     return exitCodeForReport(report);
   }
 
-  if (args.createUniqueIndex) {
-    const report = buildRefusedReport({
-      mode: 'create-unique-index',
-      reason:
-        'CabinNightClaim unique-index cutover is not implemented in S1.4 (authorized in S1.6)',
-      refuseCode: REFUSE_CODE
-    });
-    process.stdout.write(`${JSON.stringify(report)}\n`);
-    return exitCodeForReport(report);
-  }
-
   if (args.backfill && args.batchSize != null) {
     const norm = normalizeBatchSize(args.batchSize);
     if (!norm.ok) {
@@ -214,6 +219,32 @@ async function main(argv = process.argv.slice(2)) {
   let report;
   try {
     report = await withMongo(mongoUri, async () => {
+      if (args.createUniqueIndex) {
+        emitDiag('unique_index_cutover_started', {
+          liveWritersVerified: args.liveWritersVerified,
+          priorFingerprintPresent: Boolean(args.priorFingerprint),
+          note: 'CLI does not inspect PM2; --live-writers-verified is operator acknowledgement only'
+        });
+        const cutover = await runCabinNightClaimS1UniqueIndexCutover({
+          priorFingerprint: args.priorFingerprint,
+          liveWritersVerified: args.liveWritersVerified
+        });
+        emitDiag('unique_index_cutover_finished', {
+          created: cutover.created,
+          alreadyPresent: cutover.alreadyPresent,
+          refused: cutover.refused,
+          refuseCode: cutover.refuseCode,
+          postVerificationClean: cutover.postVerificationClean,
+          needsReview: cutover.needsReview
+        });
+        return {
+          ...cutover,
+          gitSha: resolveGitSha(),
+          mongoVersion: await readMongoServerVersion(),
+          liveWriterProcessInspectedByCli: false
+        };
+      }
+
       if (args.backfill) {
         emitDiag('backfill_started', {
           batchSize: args.batchSize != null ? Number(args.batchSize) : null
@@ -248,7 +279,11 @@ async function main(argv = process.argv.slice(2)) {
     });
   } catch (err) {
     report = {
-      mode: args.backfill ? 'backfill' : 'verify',
+      mode: args.createUniqueIndex
+        ? 'create-unique-index'
+        : args.backfill
+          ? 'backfill'
+          : 'verify',
       cutoverBatch: CUTOVER_BATCH,
       scanCompleteness: 'failed',
       gitSha: resolveGitSha(),
@@ -264,7 +299,8 @@ async function main(argv = process.argv.slice(2)) {
       toolFailureMessage: err?.message || String(err),
       fingerprint: null,
       counts: {},
-      samples: {}
+      samples: {},
+      liveWriterProcessInspectedByCli: false
     };
   }
 
@@ -297,5 +333,6 @@ module.exports = {
   main,
   exitCodeForReport,
   buildRefusedReport,
-  REFUSE_CODE
+  REFUSE_CODE,
+  UNIQUE_REFUSE
 };
