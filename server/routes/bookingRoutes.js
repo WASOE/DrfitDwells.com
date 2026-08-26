@@ -94,12 +94,18 @@ const {
   LIFECYCLE_SOURCES
 } = require('../services/inventory/ensureUnitNightClaimsReleasedShadow');
 const {
-  ensureCabinNightClaimsShadow,
   S1_SOURCES: CABIN_S1_SOURCES
 } = require('../services/inventory/ensureCabinNightClaimsShadow');
 const {
-  ensureCabinNightClaimsReleasedShadow
-} = require('../services/inventory/ensureCabinNightClaimsReleasedShadow');
+  preAcquireCabinNightsForCreate,
+  compensateCreateAttemptClaims,
+  postMirrorCabinNightsAfterCanonical,
+  releaseCabinNightsAfterCanonicalNonOwning,
+  CLAIM_ERR: CABIN_CLAIM_ERR
+} = require('../services/inventory/cabinNightClaimAuthorityOps');
+const {
+  isValidSingleCabinCommercialShape
+} = require('../services/inventory/cabinNightClaimQualification');
 const unitNightClaimService = require('../services/inventory/unitNightClaimService');
 const { ERR: CLAIM_ERR } = unitNightClaimService;
 const {
@@ -277,7 +283,8 @@ async function ensureLegacyBookingShadowClaims(
     throwOnFailure: true
   });
   try {
-    await ensureCabinNightClaimsShadow({
+    // S1.7: authoritative mode already preclaimed; postMirror only mirrors in shadow.
+    await postMirrorCabinNightsAfterCanonical({
       booking,
       source: CABIN_S1_SOURCES.LEGACY_CREATE,
       throwOnFailure: false
@@ -355,6 +362,18 @@ async function compensateLegacyCreateClaimAttempt({
   }
 }
 
+/** S1.7: compensate only the cabin claims inserted by this legacy-create attempt. */
+async function compensateLegacyCabinCreateClaimAttempt({ bookingId, cabinId, attempt }) {
+  if (!attempt || attempt.skipped) return;
+  await compensateCreateAttemptClaims({
+    attempt,
+    writer: CABIN_S1_SOURCES.LEGACY_CREATE,
+    bookingId,
+    cabinId,
+    openManualReviewItemFn: openManualReviewItem
+  });
+}
+
 /** I4/S1.2: nonfatal shadow release before canonical Booking delete. */
 async function shadowReleaseBeforeLegacyBookingDelete(bookingId) {
   if (!bookingId) return;
@@ -366,13 +385,22 @@ async function shadowReleaseBeforeLegacyBookingDelete(bookingId) {
   } catch {
     /* never block canonical delete */
   }
+}
+
+/**
+ * S1.7 §24.44.14: cabin claims may only be released once the Booking no longer
+ * blocks, so this must run AFTER the canonical Booking delete.
+ */
+async function releaseCabinClaimsAfterLegacyBookingDelete(bookingId) {
+  if (!bookingId) return;
   try {
-    await ensureCabinNightClaimsReleasedShadow({
+    await releaseCabinNightsAfterCanonicalNonOwning({
       bookingId,
-      lifecycleSource: LIFECYCLE_SOURCES.FINALIZE_CLEANUP
+      lifecycleSource: LIFECYCLE_SOURCES.FINALIZE_CLEANUP,
+      openManualReviewItemFn: openManualReviewItem
     });
   } catch {
-    /* never block canonical delete */
+    /* release failure leaves conservative claims for reconciliation */
   }
 }
 
@@ -2431,6 +2459,68 @@ router.post('/', bookingCreateLimiter, [
       }
     }
 
+    // S1.7: mint Booking _id and acquire CabinNightClaims before single-cabin persistence.
+    let cabinPreClaimAttempt = null;
+    const needsCabinPreClaim = Boolean(
+      !needsPreClaim &&
+        bookingData.cabinId &&
+        isValidSingleCabinCommercialShape(bookingData) &&
+        BLOCKING_BOOKING_STATUSES.includes(bookingData.status)
+    );
+    if (needsCabinPreClaim) {
+      if (!bookingData._id) {
+        bookingData._id = new mongoose.Types.ObjectId();
+      }
+      try {
+        cabinPreClaimAttempt = await preAcquireCabinNightsForCreate({
+          bookingId: bookingData._id,
+          cabinId: bookingData.cabinId,
+          checkIn: bookingData.checkIn,
+          checkOut: bookingData.checkOut,
+          source: CABIN_S1_SOURCES.LEGACY_CREATE
+        });
+      } catch (claimErr) {
+        await tryReleaseVoucherOnFailure({
+          reason: 'cabin_night_claim_failed',
+          note: 'release voucher reservation after legacy cabin claim-before-save conflict',
+          paidCard: Boolean(paymentIntentIdForReview),
+          evidence: {
+            subtotalCents,
+            discountAmountCents,
+            giftVoucherAppliedCents,
+            stripePaidAmountCents,
+            totalValueCents
+          }
+        });
+        const isConflict = claimErr?.code === CABIN_CLAIM_ERR.FOREIGN_OWNER;
+        const isIndexFailure =
+          claimErr?.code === CABIN_CLAIM_ERR.INDEX_MISSING ||
+          claimErr?.code === CABIN_CLAIM_ERR.INDEX_WRONG;
+        if (isConflict || isIndexFailure) {
+          const errorCode = isConflict ? 'NOT_AVAILABLE' : 'INVENTORY_INDEX_UNAVAILABLE';
+          const message = isConflict
+            ? 'This cabin was just booked by another guest. Please choose different dates.'
+            : 'Inventory exclusivity is not available; try again later';
+          const handled = await handlePaidBookingFailure({
+            issueType: isConflict ? 'paid_booking_conflict' : 'paid_booking_unknown_failure',
+            errorCode,
+            errorSummary: summarizeError(claimErr),
+            finalizationStage: PAID_BOOKING_FINALIZATION_STAGES.OVERLAP_CHECK
+          });
+          if (handled) return;
+          return res.status(409).json({
+            success: false,
+            message,
+            error: {
+              code: errorCode,
+              ...(claimErr.details ? { details: claimErr.details } : {})
+            }
+          });
+        }
+        throw claimErr;
+      }
+    }
+
     let booking;
     try {
       booking = new Booking(bookingData);
@@ -2441,6 +2531,11 @@ router.post('/', bookingCreateLimiter, [
         unitId: bookingData.unitId,
         preClaimAttempt,
         needsPreClaim
+      });
+      await compensateLegacyCabinCreateClaimAttempt({
+        bookingId: bookingData._id,
+        cabinId: bookingData.cabinId,
+        attempt: cabinPreClaimAttempt
       });
       await tryReleaseVoucherOnFailure({
         reason: 'booking_save_failed',
@@ -2547,6 +2642,7 @@ router.post('/', bookingCreateLimiter, [
       if (overlaps > 0 || blockRace > 0) {
         await shadowReleaseBeforeLegacyBookingDelete(booking._id);
         await Booking.deleteOne({ _id: booking._id });
+        await releaseCabinClaimsAfterLegacyBookingDelete(booking._id);
         await tryReleaseVoucherOnFailure({
           reason: 'booking_conflict_after_save',
           note: 'release voucher reservation after cabin overlap conflict',
@@ -2598,6 +2694,7 @@ router.post('/', bookingCreateLimiter, [
         if (blockRace > 0 || lostUnitRace) {
           await shadowReleaseBeforeLegacyBookingDelete(booking._id);
           await Booking.deleteOne({ _id: booking._id });
+          await releaseCabinClaimsAfterLegacyBookingDelete(booking._id);
           await tryReleaseVoucherOnFailure({
             reason: 'booking_conflict_after_save',
             note: 'release voucher reservation after unit overlap conflict',
@@ -2641,6 +2738,7 @@ router.post('/', bookingCreateLimiter, [
       if (inc.matchedCount === 0) {
         await shadowReleaseBeforeLegacyBookingDelete(booking._id);
         await Booking.deleteOne({ _id: booking._id });
+        await releaseCabinClaimsAfterLegacyBookingDelete(booking._id);
         await tryReleaseVoucherOnFailure({
           reason: 'promo_conflict_after_save',
           note: 'release voucher reservation after promo conflict',

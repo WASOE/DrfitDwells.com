@@ -14,13 +14,20 @@
  */
 'use strict';
 
-require('dotenv').config();
+// S1.7 §24.44.4: env must resolve from server/.env regardless of the PM2 CWD.
+const { loadServerEnv } = require('../config/loadServerEnv');
+
+loadServerEnv();
+
 const mongoose = require('mongoose');
 const { DEFAULT_MONGO_URI } = require('../config/dbDefaults');
 const {
   startCheckoutFinalizationWorkerIfEnabled,
   stopCheckoutFinalizationWorkerForTest
 } = require('../services/checkout/checkoutFinalizationWorker');
+const {
+  assertCabinNightClaimAuthoritativeBootReady
+} = require('../services/inventory/cabinNightClaimAuthoritativeBoot');
 
 let shuttingDown = false;
 
@@ -53,6 +60,26 @@ async function main() {
   const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || DEFAULT_MONGO_URI;
   await mongoose.connect(mongoUri);
   console.log('[checkout-finalization-worker-standalone] mongoose connected.');
+
+  // Inventory-writing process: refuse to start in authoritative mode without the
+  // exact CabinNightClaim unique index (read-only assertion).
+  try {
+    const boot = await assertCabinNightClaimAuthoritativeBootReady({
+      processName: 'driftdwells-finalize-worker'
+    });
+    if (boot.required) {
+      console.log(
+        '[checkout-finalization-worker-standalone] CabinNightClaim authoritative boot assertion passed.'
+      );
+    }
+  } catch (err) {
+    console.error(
+      '[checkout-finalization-worker-standalone] CabinNightClaim authoritative boot assertion failed:',
+      err?.message || err
+    );
+    process.exit(1);
+    return;
+  }
 
   const res = startCheckoutFinalizationWorkerIfEnabled();
   if (!res.started) {

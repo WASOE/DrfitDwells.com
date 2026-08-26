@@ -90,6 +90,29 @@ process.on('uncaughtException', (err) => {
 // --- MongoDB (non-fatal) ---
 connectDB().then((conn) => {
   if (conn) {
+    // S1.7 §24.44.4/§24.44.24: this process writes inventory, so authoritative
+    // mode must prove the exact CabinNightClaim unique index before serving
+    // mutations. Read-only assertion; no index create/drop/repair.
+    void (async () => {
+      try {
+        const {
+          assertCabinNightClaimAuthoritativeBootReady
+        } = require('./services/inventory/cabinNightClaimAuthoritativeBoot');
+        const boot = await assertCabinNightClaimAuthoritativeBootReady({
+          processName: 'driftdwells'
+        });
+        if (boot.required) {
+          console.log('[cabin-night-claim] authoritative boot assertion passed (driftdwells)');
+        }
+      } catch (e) {
+        console.error(
+          '[cabin-night-claim] authoritative boot assertion failed (driftdwells):',
+          e?.message || e
+        );
+        process.exit(1);
+      }
+    })();
+
     const Review = require('./models/Review');
     Review.syncIndexes().then(() => {
       console.log('Review indexes synced');

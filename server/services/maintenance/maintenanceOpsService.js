@@ -9,8 +9,9 @@ const {
   LIFECYCLE_SOURCES
 } = require('../inventory/ensureUnitNightClaimsReleasedShadow');
 const {
-  ensureCabinNightClaimsReleasedShadow
-} = require('../inventory/ensureCabinNightClaimsReleasedShadow');
+  releaseCabinNightsAfterCanonicalNonOwning
+} = require('../inventory/cabinNightClaimAuthorityOps');
+const { openManualReviewItem } = require('../ops/ingestion/manualReviewService');
 const {
   FIXTURE_CABIN_NAME_PATTERN,
   FIXTURE_BOOKING_EMAIL_PATTERN,
@@ -175,6 +176,16 @@ async function applyFixtureContaminationArchive(reason, ctx) {
         }
       }
     );
+    // S1.7 §24.44.14: these Bookings are now cancelled + archived + isTest, so
+    // they no longer own cabin nights. Release owner-scoped, canonical-first.
+    for (const bookingId of bookingIds) {
+      // eslint-disable-next-line no-await-in-loop
+      await releaseCabinNightsAfterCanonicalNonOwning({
+        bookingId,
+        lifecycleSource: 'archive',
+        openManualReviewItemFn: openManualReviewItem
+      });
+    }
   }
 
   return {
@@ -347,6 +358,16 @@ async function archiveReservation(bookingId, reason, ctx) {
     }
   );
 
+  // S1.7 §24.44.15: archive is a status_release writer. Booking is already
+  // cancelled + archived (non-owning), so owner-scoped release runs last and a
+  // release failure never reverts the archive.
+  await releaseCabinNightsAfterCanonicalNonOwning({
+    booking,
+    bookingId: booking._id,
+    lifecycleSource: 'archive',
+    openManualReviewItemFn: openManualReviewItem
+  });
+
   return { reservationId: String(booking._id), archivedAt: now };
 }
 
@@ -396,16 +417,19 @@ async function deleteFixtureReservation(bookingId, reason, ctx) {
   } catch {
     /* nonfatal to fixture delete */
   }
+  await AvailabilityBlock.deleteMany({ reservationId: bid });
+  await Booking.deleteOne({ _id: bid });
+  // S1.7 §24.44.16: the Booking must stop blocking before claims are released.
+  // Post-delete the release is still owner-scoped by bookingId, so it is safe.
   try {
-    await ensureCabinNightClaimsReleasedShadow({
+    await releaseCabinNightsAfterCanonicalNonOwning({
       bookingId: bid,
-      lifecycleSource: LIFECYCLE_SOURCES.MAINTENANCE_DELETE
+      lifecycleSource: LIFECYCLE_SOURCES.MAINTENANCE_DELETE,
+      openManualReviewItemFn: openManualReviewItem
     });
   } catch {
     /* nonfatal to fixture delete */
   }
-  await AvailabilityBlock.deleteMany({ reservationId: bid });
-  await Booking.deleteOne({ _id: bid });
 
   return { reservationId: String(bid), deleted: true };
 }

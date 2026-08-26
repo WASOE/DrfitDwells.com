@@ -32,6 +32,14 @@ const {
   ensureCabinNightClaimsReleasedShadow
 } = require('../inventory/ensureCabinNightClaimsReleasedShadow');
 const {
+  preAcquireCabinNightsForCreate,
+  compensateCreateAttemptClaims,
+  postMirrorCabinNightsAfterCanonical,
+  releaseCabinNightsAfterCanonicalNonOwning,
+  CLAIM_ERR: CABIN_CLAIM_ERR
+} = require('../inventory/cabinNightClaimAuthorityOps');
+const { isValidSingleCabinCommercialShape } = require('../inventory/cabinNightClaimQualification');
+const {
   claimUnitNights,
   compensateClaimAttempt,
   releaseUnitNights,
@@ -56,17 +64,27 @@ async function shadowReleaseBeforeBookingDelete(deps, bookingId, lifecycleSource
       /* never block canonical delete */
     }
   }
+}
+
+/**
+ * S1.7 §24.44.14: authoritative cabin claims may only be released once the
+ * Booking has stopped blocking, so this runs AFTER the canonical delete.
+ */
+async function releaseCabinClaimsAfterBookingDelete(deps, bookingId, lifecycleSource) {
   const cabinReleaseFn =
-    deps.ensureCabinNightClaimsReleasedShadow || ensureCabinNightClaimsReleasedShadow;
-  if (typeof cabinReleaseFn === 'function' && bookingId) {
-    try {
-      await cabinReleaseFn({
-        bookingId,
-        lifecycleSource: lifecycleSource || LIFECYCLE_SOURCES.FINALIZE_CLEANUP
-      });
-    } catch {
-      /* never block canonical delete */
-    }
+    deps.releaseCabinNightsAfterCanonicalNonOwning || releaseCabinNightsAfterCanonicalNonOwning;
+  if (typeof cabinReleaseFn !== 'function' || !bookingId) return;
+  try {
+    await cabinReleaseFn({
+      bookingId,
+      lifecycleSource: lifecycleSource || LIFECYCLE_SOURCES.FINALIZE_CLEANUP,
+      openManualReviewItemFn:
+        typeof deps.shadowClaimOpenManualReviewItem === 'function'
+          ? deps.shadowClaimOpenManualReviewItem
+          : openManualReviewItem
+    });
+  } catch {
+    /* release failure leaves conservative claims for reconciliation */
   }
 }
 
@@ -325,6 +343,10 @@ function createDefaultDependencies() {
     ensureUnitNightClaimsReleasedShadow,
     ensureCabinNightClaimsShadow,
     ensureCabinNightClaimsReleasedShadow,
+    preAcquireCabinNightsForCreate,
+    compensateCreateAttemptClaims,
+    postMirrorCabinNightsAfterCanonical,
+    releaseCabinNightsAfterCanonicalNonOwning,
     stripe: null,
     blockingBookingStatuses: BLOCKING_BOOKING_STATUSES
   };
@@ -525,11 +547,20 @@ async function runShadowClaimsAfterCanonicalSurvival(deps, {
 
   if (typeof deps.ensureCabinNightClaimsShadow === 'function') {
     try {
-      await deps.ensureCabinNightClaimsShadow({
-        booking,
-        source: source || CABIN_S1_SOURCES.FINALIZE,
-        throwOnFailure: false
-      });
+      // S1.7: authoritative already preclaimed; postMirror no-ops in that mode.
+      if (typeof deps.postMirrorCabinNightsAfterCanonical === 'function') {
+        await deps.postMirrorCabinNightsAfterCanonical({
+          booking,
+          source: source || CABIN_S1_SOURCES.FINALIZE,
+          throwOnFailure: false
+        });
+      } else {
+        await deps.ensureCabinNightClaimsShadow({
+          booking,
+          source: source || CABIN_S1_SOURCES.FINALIZE,
+          throwOnFailure: false
+        });
+      }
     } catch {
       /* cabin shadow must never alter canonical finalize outcome */
     }
@@ -810,6 +841,11 @@ async function runPostSaveOverlapChecks(deps, {
         LIFECYCLE_SOURCES.FINALIZE_CLEANUP
       );
       await deps.Booking.deleteOne({ _id: booking._id });
+      await releaseCabinClaimsAfterBookingDelete(
+        deps,
+        booking._id,
+        LIFECYCLE_SOURCES.FINALIZE_CLEANUP
+      );
       await tryReleaseVoucherOnFailure(deps, {
         voucherReservationContext,
         reason: 'booking_conflict_after_save',
@@ -890,6 +926,11 @@ async function runPostSaveOverlapChecks(deps, {
           LIFECYCLE_SOURCES.FINALIZE_CLEANUP
         );
         await deps.Booking.deleteOne({ _id: booking._id });
+        await releaseCabinClaimsAfterBookingDelete(
+          deps,
+          booking._id,
+          LIFECYCLE_SOURCES.FINALIZE_CLEANUP
+        );
         await tryReleaseVoucherOnFailure(deps, {
           voucherReservationContext,
           reason: 'booking_conflict_after_save',
@@ -956,6 +997,11 @@ async function incrementPromoUsageIfNeeded(deps, {
       LIFECYCLE_SOURCES.FINALIZE_CLEANUP
     );
     await deps.Booking.deleteOne({ _id: booking._id });
+    await releaseCabinClaimsAfterBookingDelete(
+      deps,
+      booking._id,
+      LIFECYCLE_SOURCES.FINALIZE_CLEANUP
+    );
     await tryReleaseVoucherOnFailure(deps, {
       voucherReservationContext,
       reason: 'promo_conflict_after_save',
@@ -1123,13 +1169,24 @@ async function executeBookingFinalizeWork({
   const voucherReservationContext = ctx.voucherReservationContext || null;
   const voucherEvidence = ctx.voucherEvidence || {};
 
-  // I6: mint Booking _id and acquire claims BEFORE durable allocated Booking.
+  // I6: mint Booking _id and acquire unit claims BEFORE durable allocated Booking.
+  // S1.7: mint Booking _id and acquire cabin claims BEFORE durable single-cabin Booking (authoritative mode only).
   let preClaimAttempt = null;
+  let cabinPreClaimAttempt = null;
   const needsPreClaim = Boolean(bookingData.cabinTypeId && bookingData.unitId);
-  if (needsPreClaim) {
+  const needsCabinPreClaim =
+    !needsPreClaim &&
+    Boolean(bookingData.cabinId) &&
+    isValidSingleCabinCommercialShape(bookingData) &&
+    BLOCKING_BOOKING_STATUSES.includes(String(bookingData.status || 'pending'));
+
+  if (needsPreClaim || needsCabinPreClaim) {
     if (!bookingData._id) {
       bookingData._id = new mongoose.Types.ObjectId();
     }
+  }
+
+  if (needsPreClaim) {
     try {
       preClaimAttempt = await claimUnitNights({
         bookingId: bookingData._id,
@@ -1139,12 +1196,51 @@ async function executeBookingFinalizeWork({
         source: resolveClaimSourceForFinalize(source)
       });
     } catch (claimErr) {
-      if (claimErr?.code === CLAIM_ERR.FOREIGN_OWNER || claimErr?.code === CLAIM_ERR.INDEX_MISSING) {
+      if (
+        claimErr?.code === CLAIM_ERR.FOREIGN_OWNER ||
+        claimErr?.code === CLAIM_ERR.INDEX_MISSING
+      ) {
         throw createRouteStyleError(
           claimErr.code === CLAIM_ERR.INDEX_MISSING ? 'INVENTORY_INDEX_UNAVAILABLE' : 'NOT_AVAILABLE',
           claimErr.code === CLAIM_ERR.INDEX_MISSING
             ? 'Inventory exclusivity is not available; try again later'
             : 'This unit was just booked by another guest. Please choose different dates.',
+          { details: claimErr.details || null }
+        );
+      }
+      throw claimErr;
+    }
+  }
+
+  if (needsCabinPreClaim) {
+    const cabinAcquire =
+      typeof deps.preAcquireCabinNightsForCreate === 'function'
+        ? deps.preAcquireCabinNightsForCreate
+        : preAcquireCabinNightsForCreate;
+    try {
+      cabinPreClaimAttempt = await cabinAcquire({
+        bookingId: bookingData._id,
+        cabinId: bookingData.cabinId,
+        checkIn: bookingData.checkIn,
+        checkOut: bookingData.checkOut,
+        source: resolveClaimSourceForFinalize(source) === 'legacy_create'
+          ? CABIN_S1_SOURCES.LEGACY_CREATE
+          : CABIN_S1_SOURCES.FINALIZE
+      });
+    } catch (claimErr) {
+      if (
+        claimErr?.code === CABIN_CLAIM_ERR.FOREIGN_OWNER ||
+        claimErr?.code === CABIN_CLAIM_ERR.INDEX_MISSING ||
+        claimErr?.code === CABIN_CLAIM_ERR.INDEX_WRONG
+      ) {
+        // Paid finalize: do not create a second Booking; payment evidence remains on checkout/PI.
+        throw createRouteStyleError(
+          claimErr.code === CABIN_CLAIM_ERR.FOREIGN_OWNER
+            ? 'NOT_AVAILABLE'
+            : 'INVENTORY_INDEX_UNAVAILABLE',
+          claimErr.code === CABIN_CLAIM_ERR.FOREIGN_OWNER
+            ? 'This cabin was just booked by another guest. Please choose different dates.'
+            : 'Inventory exclusivity is not available; try again later',
           { details: claimErr.details || null }
         );
       }
@@ -1179,6 +1275,23 @@ async function executeBookingFinalizeWork({
       } catch {
         /* ignore */
       }
+    }
+
+    if (cabinPreClaimAttempt && !cabinPreClaimAttempt.skipped) {
+      const compensate =
+        typeof deps.compensateCreateAttemptClaims === 'function'
+          ? deps.compensateCreateAttemptClaims
+          : compensateCreateAttemptClaims;
+      await compensate({
+        attempt: cabinPreClaimAttempt,
+        writer: CABIN_S1_SOURCES.FINALIZE,
+        bookingId: bookingData._id,
+        cabinId: bookingData.cabinId,
+        openManualReviewItemFn:
+          typeof deps.shadowClaimOpenManualReviewItem === 'function'
+            ? deps.shadowClaimOpenManualReviewItem
+            : openManualReviewItem
+      });
     }
     throw saveErr;
   }

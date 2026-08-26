@@ -25,12 +25,22 @@ const {
   LIFECYCLE_SOURCES
 } = require('../../inventory/ensureUnitNightClaimsReleasedShadow');
 const {
-  ensureCabinNightClaimsShadow,
   S1_SOURCES: CABIN_S1_SOURCES
 } = require('../../inventory/ensureCabinNightClaimsShadow');
 const {
-  ensureCabinNightClaimsReleasedShadow
-} = require('../../inventory/ensureCabinNightClaimsReleasedShadow');
+  preAcquireCabinNightsForCreate,
+  preAcquireCabinNightsForMutation,
+  compensateCreateAttemptClaims,
+  postMirrorCabinNightsAfterCanonical,
+  releaseCabinNightsAfterCanonicalNonOwning,
+  releaseSurplusCabinNightsAuthoritative,
+  bookingQualifiesForSingleCabinAuthority,
+  isCabinNightClaimAuthoritativeEnabled,
+  CLAIM_ERR: CABIN_CLAIM_ERR
+} = require('../../inventory/cabinNightClaimAuthorityOps');
+const {
+  isValidSingleCabinCommercialShape
+} = require('../../inventory/cabinNightClaimQualification');
 const {
   claimUnitNights,
   compensateClaimAttempt,
@@ -778,13 +788,15 @@ async function transitionReservation({ bookingId, kind, reason = null, settlemen
         /* shadow release must not invalidate remembered canonical success */
       }
       try {
-        await ensureCabinNightClaimsReleasedShadow({
+        // S1.7: canonical status is already durable/non-owning; release is retry-safe.
+        await releaseCabinNightsAfterCanonicalNonOwning({
           bookingId,
           lifecycleSource:
-            kind === 'cancel' ? LIFECYCLE_SOURCES.CANCEL : LIFECYCLE_SOURCES.COMPLETE
+            kind === 'cancel' ? LIFECYCLE_SOURCES.CANCEL : LIFECYCLE_SOURCES.COMPLETE,
+          openManualReviewItemFn: openManualReviewItem
         });
       } catch {
-        /* cabin shadow release must not invalidate remembered canonical success */
+        /* cabin release must not invalidate remembered canonical success */
       }
     }
     return remembered;
@@ -915,11 +927,13 @@ async function transitionReservation({ bookingId, kind, reason = null, settlemen
         nextStatus === 'cancelled' ? LIFECYCLE_SOURCES.CANCEL : LIFECYCLE_SOURCES.COMPLETE
     });
 
-    await ensureCabinNightClaimsReleasedShadow({
+    // S1.7 §24.44.14: Booking already ceased blocking; release never reopens it.
+    await releaseCabinNightsAfterCanonicalNonOwning({
       booking,
       bookingId: booking._id,
       lifecycleSource:
-        nextStatus === 'cancelled' ? LIFECYCLE_SOURCES.CANCEL : LIFECYCLE_SOURCES.COMPLETE
+        nextStatus === 'cancelled' ? LIFECYCLE_SOURCES.CANCEL : LIFECYCLE_SOURCES.COMPLETE,
+      openManualReviewItemFn: openManualReviewItem
     });
 
     if (tombstoneError) {
@@ -1097,6 +1111,44 @@ async function resolveCancellationSettlement({ bookingId, reason, settlement, ct
   return result;
 }
 
+const REASSIGN_CANONICAL_MRI_CATEGORY = 'reservation_reassign_canonical_inconsistency';
+
+async function recordReassignProjectionInconsistencyMri({
+  bookingId,
+  fromCabinId,
+  toCabinId,
+  error
+}) {
+  try {
+    await openManualReviewItem({
+      category: REASSIGN_CANONICAL_MRI_CATEGORY,
+      severity: 'critical',
+      entityType: 'Booking',
+      entityId: String(bookingId),
+      title: 'Reservation reassign left AvailabilityBlock projection on the source cabin',
+      details:
+        'Booking.cabinId moved to the target cabin but reservation AvailabilityBlocks could not be re-pointed; source cabin claims retained',
+      provenance: {
+        source: 'ops_reservation_reassign',
+        sourceReference: String(bookingId)
+      },
+      evidence: {
+        bookingId: String(bookingId),
+        fromCabinId: fromCabinId ? String(fromCabinId) : null,
+        toCabinId: toCabinId ? String(toCabinId) : null,
+        failureStage: 'reassign_block_projection_failed',
+        needsReconciliation: true,
+        errorCode: error?.code || error?.name || null,
+        errorMessage: error?.message
+          ? String(error.message).slice(0, 500)
+          : String(error || '').slice(0, 500)
+      }
+    });
+  } catch {
+    /* MRI must not mask the hard failure */
+  }
+}
+
 async function reassignReservation({ bookingId, toCabinId, acceptExternalHoldWarnings = false, reason = null, ctx = {} }) {
   requirePermission({
     role: ctx.user?.role,
@@ -1155,6 +1207,63 @@ async function reassignReservation({ bookingId, toCabinId, acceptExternalHoldWar
   }
 
   const before = { cabinId: booking.cabinId ? String(booking.cabinId) : null };
+  const previousCabinId = before.cabinId;
+
+  // S1.7 §24.44.13: authoritative single-cabin reassign acquires the TARGET first.
+  // A same-cabin reassign must not enter this path: releasing "source" nights would
+  // delete the target claims just acquired.
+  const usesCabinAuthority =
+    isCabinNightClaimAuthoritativeEnabled() &&
+    bookingQualifiesForSingleCabinAuthority(booking) &&
+    Boolean(previousCabinId) &&
+    previousCabinId !== String(toCabinId);
+  let stayNights = [];
+  let targetCabinClaim = null;
+
+  if (usesCabinAuthority) {
+    const expanded = expandOccupiedSofiaNightDateOnlys(booking.checkIn, booking.checkOut);
+    if (!expanded.ok) {
+      throw createDomainError(
+        'validation',
+        'Invalid date range for inventory claims',
+        { reason: expanded.reason || null },
+        400
+      );
+    }
+    stayNights = expanded.dateOnlys;
+    try {
+      targetCabinClaim = await preAcquireCabinNightsForMutation({
+        bookingId: booking._id,
+        cabinId: toCabinId,
+        nights: stayNights,
+        source: 'reassign'
+      });
+    } catch (claimErr) {
+      // Internal claim conflict is hard: no override, Booking stays on the source cabin.
+      if (
+        claimErr?.code === CABIN_CLAIM_ERR.FOREIGN_OWNER ||
+        claimErr?.code === CABIN_CLAIM_ERR.STAY_CHANGE_OWNERSHIP_CONFLICT ||
+        claimErr?.code === CABIN_CLAIM_ERR.INDEX_MISSING ||
+        claimErr?.code === CABIN_CLAIM_ERR.INDEX_WRONG
+      ) {
+        throw createDomainError(
+          'conflict',
+          claimErr.code === CABIN_CLAIM_ERR.INDEX_MISSING ||
+          claimErr.code === CABIN_CLAIM_ERR.INDEX_WRONG
+            ? 'Inventory exclusivity is not available; try again later'
+            : 'Target cabin nights are owned by another reservation',
+          {
+            code: claimErr.code,
+            hardConflicts: claimErr.details?.conflicts || [],
+            details: claimErr.details || null
+          },
+          409
+        );
+      }
+      throw claimErr;
+    }
+  }
+
   await appendAuditEvent(
     {
       actorType: 'user',
@@ -1176,17 +1285,66 @@ async function reassignReservation({ bookingId, toCabinId, acceptExternalHoldWar
     { req: ctx.req }
   );
 
-  const previousCabinId = before.cabinId;
   booking.cabinId = toCabinId;
-  await booking.save({ validateBeforeSave: false });
-
   try {
-    await syncCabinNightClaimsShadow({
-      booking,
-      source: 'reassign'
+    await booking.save({ validateBeforeSave: false });
+  } catch (saveErr) {
+    if (targetCabinClaim && !targetCabinClaim.skipped) {
+      await compensateCreateAttemptClaims({
+        attempt: targetCabinClaim,
+        writer: 'reassign',
+        bookingId: booking._id,
+        cabinId: toCabinId,
+        openManualReviewItemFn: openManualReviewItem
+      });
+    }
+    throw saveErr;
+  }
+
+  if (usesCabinAuthority) {
+    // Projection sync only — reservation rows follow the canonical cabin.
+    // external_hold rows are never touched and never become claims (§24.44.17).
+    try {
+      await AvailabilityBlock.updateMany(
+        { reservationId: booking._id, blockType: 'reservation', status: 'active' },
+        { $set: { cabinId: toCabinId } }
+      );
+    } catch (blockErr) {
+      // Source claims stay held: conservative dual occupancy beats projection drift.
+      await recordReassignProjectionInconsistencyMri({
+        bookingId: booking._id,
+        fromCabinId: previousCabinId,
+        toCabinId,
+        error: blockErr
+      });
+      throw createDomainError(
+        'dependency_failure',
+        'Reassign committed the Booking but reservation AvailabilityBlock projection failed; retry to converge',
+        {
+          bookingId: String(booking._id),
+          failureStage: 'reassign_block_projection_failed',
+          blockError: blockErr?.message || String(blockErr)
+        },
+        500
+      );
+    }
+
+    // Source release is LAST and never gates the canonical reassign.
+    await releaseSurplusCabinNightsAuthoritative({
+      bookingId: booking._id,
+      cabinId: previousCabinId,
+      nights: stayNights,
+      writer: 'reassign'
     });
-  } catch {
-    /* cabin shadow must not revert canonical reassign */
+  } else {
+    try {
+      await syncCabinNightClaimsShadow({
+        booking,
+        source: 'reassign'
+      });
+    } catch {
+      /* cabin shadow must not revert canonical reassign */
+    }
   }
 
   notifyMessageOrchestratorSafely('notifyReservationReassigned', {
@@ -1502,7 +1660,14 @@ async function editReservationDates({ bookingId, checkInDate, checkOutDate, reas
   const surplus = oldExpanded.dateOnlys.filter((n) => !newSet.has(n));
 
   let newTargetClaim = null;
+  let newTargetCabinClaim = null;
   const isAllocatedMulti = Boolean(booking.cabinTypeId && booking.unitId);
+  // S1.7 §24.44.12: single-cabin date edit claims only newOnly, target-first.
+  const usesCabinAuthority =
+    !isAllocatedMulti &&
+    isCabinNightClaimAuthoritativeEnabled() &&
+    Boolean(booking.cabinId) &&
+    isValidSingleCabinCommercialShape(booking);
   if (isAllocatedMulti && newTarget.length > 0) {
     try {
       newTargetClaim = await claimUnitNights({
@@ -1530,6 +1695,38 @@ async function editReservationDates({ bookingId, checkInDate, checkOutDate, reas
     }
   }
 
+  if (usesCabinAuthority && newTarget.length > 0) {
+    try {
+      newTargetCabinClaim = await preAcquireCabinNightsForMutation({
+        bookingId: booking._id,
+        cabinId: booking.cabinId,
+        nights: newTarget,
+        source: 'date_edit'
+      });
+    } catch (err) {
+      if (
+        err?.code === CABIN_CLAIM_ERR.FOREIGN_OWNER ||
+        err?.code === CABIN_CLAIM_ERR.STAY_CHANGE_OWNERSHIP_CONFLICT ||
+        err?.code === CABIN_CLAIM_ERR.INDEX_MISSING ||
+        err?.code === CABIN_CLAIM_ERR.INDEX_WRONG
+      ) {
+        throw createDomainError(
+          'conflict',
+          err.code === CABIN_CLAIM_ERR.INDEX_MISSING || err.code === CABIN_CLAIM_ERR.INDEX_WRONG
+            ? 'Inventory exclusivity is not available; try again later'
+            : 'Date edit target nights conflict with another booking',
+          {
+            code: err.code,
+            hardConflicts: err.details?.conflicts || [],
+            details: err.details || null
+          },
+          409
+        );
+      }
+      throw err;
+    }
+  }
+
   try {
     await commitBookingDatesAndReservationBlocks({
       booking,
@@ -1539,6 +1736,16 @@ async function editReservationDates({ bookingId, checkInDate, checkOutDate, reas
       endDate: normalized.endDate
     });
   } catch (commitErr) {
+    if (newTargetCabinClaim && !newTargetCabinClaim.skipped) {
+      // Compensate ONLY the nights this attempt inserted; retained nights stay owned.
+      await compensateCreateAttemptClaims({
+        attempt: newTargetCabinClaim,
+        writer: 'date_edit',
+        bookingId: booking._id,
+        cabinId: booking.cabinId,
+        openManualReviewItemFn: openManualReviewItem
+      });
+    }
     if (newTargetClaim?.insertedNightsThisAttempt?.length) {
       try {
         await compensateClaimAttempt({
@@ -1638,7 +1845,16 @@ async function editReservationDates({ bookingId, checkInDate, checkOutDate, reas
         /* MRI best-effort */
       }
     }
+  } else if (usesCabinAuthority) {
+    // Surplus source nights released only after the canonical date commit.
+    await releaseSurplusCabinNightsAuthoritative({
+      bookingId: booking._id,
+      cabinId: booking.cabinId,
+      nights: surplus,
+      writer: 'date_edit'
+    });
   } else if (!isAllocatedMulti) {
+    // Shadow stays Booking-first: mirror/sync after the canonical commit.
     await syncCabinNightClaimsShadow({
       booking,
       source: 'date_edit'
@@ -1899,7 +2115,60 @@ async function createManualReservation({
     { req: ctx.req }
   );
 
-  await booking.save({ validateBeforeSave: false });
+  // S1.7 §24.44.10: internal claim authority before canonical persistence.
+  // External hold acknowledgement above never bypasses this barrier.
+  let cabinPreClaimAttempt = null;
+  const usesCabinAuthority =
+    isCabinNightClaimAuthoritativeEnabled() &&
+    bookingQualifiesForSingleCabinAuthority(booking);
+  if (usesCabinAuthority) {
+    try {
+      cabinPreClaimAttempt = await preAcquireCabinNightsForCreate({
+        bookingId: booking._id,
+        cabinId,
+        checkIn: normalized.startDate,
+        checkOut: normalized.endDate,
+        source: CABIN_S1_SOURCES.MANUAL_RESERVATION
+      });
+    } catch (claimErr) {
+      if (
+        claimErr?.code === CABIN_CLAIM_ERR.FOREIGN_OWNER ||
+        claimErr?.code === CABIN_CLAIM_ERR.STAY_CHANGE_OWNERSHIP_CONFLICT ||
+        claimErr?.code === CABIN_CLAIM_ERR.INDEX_MISSING ||
+        claimErr?.code === CABIN_CLAIM_ERR.INDEX_WRONG
+      ) {
+        throw createDomainError(
+          'conflict',
+          claimErr.code === CABIN_CLAIM_ERR.INDEX_MISSING ||
+          claimErr.code === CABIN_CLAIM_ERR.INDEX_WRONG
+            ? 'Inventory exclusivity is not available; try again later'
+            : 'These cabin nights are owned by another reservation',
+          {
+            code: claimErr.code,
+            hardConflicts: claimErr.details?.conflicts || [],
+            details: claimErr.details || null
+          },
+          409
+        );
+      }
+      throw claimErr;
+    }
+  }
+
+  try {
+    await booking.save({ validateBeforeSave: false });
+  } catch (saveErr) {
+    if (cabinPreClaimAttempt && !cabinPreClaimAttempt.skipped) {
+      await compensateCreateAttemptClaims({
+        attempt: cabinPreClaimAttempt,
+        writer: CABIN_S1_SOURCES.MANUAL_RESERVATION,
+        bookingId: booking._id,
+        cabinId,
+        openManualReviewItemFn: openManualReviewItem
+      });
+    }
+    throw saveErr;
+  }
 
   const overlaps = await Booking.countDocuments({
     cabinId,
@@ -1912,7 +2181,13 @@ async function createManualReservation({
   });
   const blockRace = await countBlockingBlocksForSingleCabin(cabinId, normalized.startDate, normalized.endDate);
   if (overlaps > 0 || blockRace > 0) {
+    // Canonical record must stop blocking BEFORE owner claims are released.
     await Booking.deleteOne({ _id: booking._id });
+    await releaseCabinNightsAfterCanonicalNonOwning({
+      bookingId: booking._id,
+      lifecycleSource: 'manual_create_rollback',
+      openManualReviewItemFn: openManualReviewItem
+    });
     throw createDomainError(
       'conflict',
       'Availability changed while saving; please retry',
@@ -1922,7 +2197,8 @@ async function createManualReservation({
   }
 
   try {
-    await ensureCabinNightClaimsShadow({
+    // S1.7: authoritative already preclaimed; postMirror only mirrors in shadow.
+    await postMirrorCabinNightsAfterCanonical({
       booking,
       source: CABIN_S1_SOURCES.MANUAL_RESERVATION,
       throwOnFailure: false

@@ -113,11 +113,9 @@ test('mode: shadow mirrors claims', async () => {
   assert.equal(await CabinNightClaim.countDocuments({ bookingId: booking._id }), 3);
 });
 
-test('mode: authoritative env rejected clearly', () => {
-  assert.throws(() => normalizeMode(MODES.AUTHORITATIVE), (err) => {
-    assert.equal(err.code, 'CABIN_NIGHT_CLAIM_MODE_UNSUPPORTED');
-    return true;
-  });
+test('mode: authoritative accepted from S1.7 onward', () => {
+  assert.equal(normalizeMode(MODES.AUTHORITATIVE), MODES.AUTHORITATIVE);
+  assert.equal(isCabinNightClaimShadowEnabled(MODES.AUTHORITATIVE), false);
 });
 
 test('mode: invalid env rejected', () => {
@@ -451,19 +449,22 @@ test('static: finalize integrates cabin shadow post-canonical', () => {
   assert.match(src, /throwOnFailure: false/);
 });
 
+// S1.7 routed these writers through the mode-aware wrappers in
+// cabinNightClaimAuthorityOps, which still delegate to the shadow helpers when
+// CABIN_NIGHT_CLAIM_MODE=shadow.
 test('static: legacy create mirrors and releases on delete', () => {
   const src = readSource('routes/bookingRoutes.js');
-  assert.match(src, /ensureCabinNightClaimsShadow/);
+  assert.match(src, /postMirrorCabinNightsAfterCanonical/);
   assert.match(src, /CABIN_S1_SOURCES\.LEGACY_CREATE/);
   assert.match(src, /shadowReleaseBeforeLegacyBookingDelete/);
-  assert.match(src, /ensureCabinNightClaimsReleasedShadow/);
+  assert.match(src, /releaseCabinNightsAfterCanonicalNonOwning/);
 });
 
 test('static: reservationWriteService wires manual, date edit, reassign, status release', () => {
   const src = readSource('services/ops/domain/reservationWriteService.js');
-  assert.match(src, /ensureCabinNightClaimsShadow/);
+  assert.match(src, /postMirrorCabinNightsAfterCanonical/);
   assert.match(src, /syncCabinNightClaimsShadow/);
-  assert.match(src, /ensureCabinNightClaimsReleasedShadow/);
+  assert.match(src, /releaseCabinNightsAfterCanonicalNonOwning/);
   assert.match(src, /CABIN_S1_SOURCES\.MANUAL_RESERVATION/);
   assert.match(src, /source: 'reassign'/);
   assert.match(src, /source: 'date_edit'/);
@@ -472,15 +473,15 @@ test('static: reservationWriteService wires manual, date edit, reassign, status 
 
 test('static: location child mirrors single-cabin and rollback releases', () => {
   const src = readSource('services/locationCheckout/locationCheckoutService.js');
-  assert.match(src, /ensureCabinNightClaimsShadow/);
+  assert.match(src, /postMirrorCabinNightsAfterCanonical/);
   assert.match(src, /CABIN_S1_SOURCES\.LOCATION_CHILD/);
-  assert.match(src, /ensureCabinNightClaimsReleasedShadow/);
+  assert.match(src, /releaseCabinNightsAfterCanonicalNonOwning/);
   assert.match(src, /LIFECYCLE_SOURCES\.LOCATION_ROLLBACK/);
 });
 
 test('static: maintenance delete releases cabin claims', () => {
   const src = readSource('services/maintenance/maintenanceOpsService.js');
-  assert.match(src, /ensureCabinNightClaimsReleasedShadow/);
+  assert.match(src, /releaseCabinNightsAfterCanonicalNonOwning/);
 });
 
 test('static: recovery multi-unit path does not duplicate cabin finalize integration', () => {
@@ -516,9 +517,14 @@ test('static: public availability readers unchanged by S1.2 adapters', () => {
 
 test('integration: manual create path mirrors after overlap guard (source contract)', async () => {
   const src = readSource('services/ops/domain/reservationWriteService.js');
-  const saveIdx = src.indexOf('await booking.save({ validateBeforeSave: false });');
-  const overlapIdx = src.indexOf('if (overlaps > 0 || blockRace > 0)');
-  const mirrorIdx = src.indexOf('CABIN_S1_SOURCES.MANUAL_RESERVATION');
+  const body = src.slice(src.indexOf('async function createManualReservation('));
+  const preClaimIdx = body.indexOf('preAcquireCabinNightsForCreate(');
+  const saveIdx = body.indexOf('await booking.save({ validateBeforeSave: false });');
+  const overlapIdx = body.indexOf('if (overlaps > 0 || blockRace > 0)');
+  const mirrorIdx = body.indexOf('postMirrorCabinNightsAfterCanonical(');
+  // S1.7 authoritative acquires before persistence; shadow still mirrors after.
+  assert.ok(preClaimIdx > 0);
+  assert.ok(preClaimIdx < saveIdx);
   assert.ok(saveIdx < overlapIdx);
   assert.ok(overlapIdx < mirrorIdx);
 });

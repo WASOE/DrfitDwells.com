@@ -36,12 +36,14 @@ const {
   LIFECYCLE_SOURCES
 } = require('../inventory/ensureUnitNightClaimsReleasedShadow');
 const {
-  ensureCabinNightClaimsShadow,
   S1_SOURCES: CABIN_S1_SOURCES
 } = require('../inventory/ensureCabinNightClaimsShadow');
 const {
-  ensureCabinNightClaimsReleasedShadow
-} = require('../inventory/ensureCabinNightClaimsReleasedShadow');
+  preAcquireCabinNightsForCreate,
+  compensateCreateAttemptClaims,
+  postMirrorCabinNightsAfterCanonical,
+  releaseCabinNightsAfterCanonicalNonOwning
+} = require('../inventory/cabinNightClaimAuthorityOps');
 const {
   linkSavedQuoteToCheckout,
   markSavedQuoteConverted,
@@ -155,7 +157,7 @@ async function ensureLocationChildShadowClaims({
   paymentIntentId = null,
   checkoutSessionId = null,
   ensureFn = ensureUnitNightClaimsShadow,
-  ensureCabinFn = ensureCabinNightClaimsShadow,
+  ensureCabinFn = postMirrorCabinNightsAfterCanonical,
   stripePaymentVerified = true
 }) {
   if (!Array.isArray(childBookingIds) || childBookingIds.length === 0) {
@@ -264,17 +266,22 @@ async function cleanupPartialLocationFinalize({
       } catch {
         /* nonfatal to rollback */
       }
+    }
+    await Booking.deleteMany({ _id: { $in: childBookingIds } });
+    // S1.7 §24.44.11 case B: persisted children must stop blocking BEFORE their
+    // cabin claims are released, otherwise inventory is briefly exposed.
+    for (const childId of childBookingIds) {
       try {
         // eslint-disable-next-line no-await-in-loop
-        await ensureCabinNightClaimsReleasedShadow({
+        await releaseCabinNightsAfterCanonicalNonOwning({
           bookingId: childId,
-          lifecycleSource: LIFECYCLE_SOURCES.LOCATION_ROLLBACK
+          lifecycleSource: LIFECYCLE_SOURCES.LOCATION_ROLLBACK,
+          openManualReviewItemFn: openManualReviewItem
         });
       } catch {
         /* nonfatal to rollback */
       }
     }
-    await Booking.deleteMany({ _id: { $in: childBookingIds } });
   }
   if (locationBookingId) {
     await LocationBooking.deleteOne({ _id: locationBookingId });
@@ -553,6 +560,8 @@ async function finalizeLocationCheckout(body, { stripe, ensureUnitNightClaimsSha
   let locationBookingId = null;
   /** @type {{ bookingId: string, unitId: string, insertedNightsThisAttempt: string[] }[]} */
   const locationClaimAttempts = [];
+  /** S1.7: per-child single-cabin claim attempts, keyed by pre-minted child id. */
+  const locationCabinClaimAttempts = [];
 
   // I6: mint child ids + acquire ALL multi-unit claims before durable LocationBooking set.
   const preparedChildren = [];
@@ -579,20 +588,39 @@ async function finalizeLocationCheckout(body, { stripe, ensureUnitNightClaimsSha
 
   try {
     for (const { childPayload } of preparedChildren) {
-      if (!(childPayload.cabinTypeId && childPayload.unitId)) continue;
+      if (childPayload.cabinTypeId && childPayload.unitId) {
+        // eslint-disable-next-line no-await-in-loop
+        const claimed = await unitNightClaimService.claimUnitNights({
+          bookingId: childPayload._id,
+          unitId: childPayload.unitId,
+          checkIn: checkInDate,
+          checkOut: checkOutDate,
+          source: I2_SOURCES.LOCATION_CHILD
+        });
+        locationClaimAttempts.push({
+          bookingId: String(childPayload._id),
+          unitId: String(childPayload.unitId),
+          insertedNightsThisAttempt: claimed.insertedNightsThisAttempt || []
+        });
+        continue;
+      }
+      if (!childPayload.cabinId) continue;
+      // S1.7 §24.44.11: single-cabin child claims its own nights before persistence.
       // eslint-disable-next-line no-await-in-loop
-      const claimed = await unitNightClaimService.claimUnitNights({
+      const cabinClaimed = await preAcquireCabinNightsForCreate({
         bookingId: childPayload._id,
-        unitId: childPayload.unitId,
+        cabinId: childPayload.cabinId,
         checkIn: checkInDate,
         checkOut: checkOutDate,
-        source: I2_SOURCES.LOCATION_CHILD
+        source: CABIN_S1_SOURCES.LOCATION_CHILD
       });
-      locationClaimAttempts.push({
-        bookingId: String(childPayload._id),
-        unitId: String(childPayload.unitId),
-        insertedNightsThisAttempt: claimed.insertedNightsThisAttempt || []
-      });
+      if (!cabinClaimed.skipped) {
+        locationCabinClaimAttempts.push({
+          bookingId: String(childPayload._id),
+          cabinId: String(childPayload.cabinId),
+          attempt: cabinClaimed
+        });
+      }
     }
   } catch (claimErr) {
     for (const attempt of locationClaimAttempts) {
@@ -611,6 +639,17 @@ async function finalizeLocationCheckout(body, { stripe, ensureUnitNightClaimsSha
           /* orphan → I5 */
         }
       }
+    }
+    // Case A: no child Booking exists yet, so attempt compensation is safe.
+    for (const cabinAttempt of locationCabinClaimAttempts) {
+      // eslint-disable-next-line no-await-in-loop
+      await compensateCreateAttemptClaims({
+        attempt: cabinAttempt.attempt,
+        writer: CABIN_S1_SOURCES.LOCATION_CHILD,
+        bookingId: cabinAttempt.bookingId,
+        cabinId: cabinAttempt.cabinId,
+        openManualReviewItemFn: openManualReviewItem
+      });
     }
     await recordLocationCheckoutFailure({
       paymentIntentId,
@@ -716,11 +755,25 @@ async function finalizeLocationCheckout(body, { stripe, ensureUnitNightClaimsSha
         }
       }
     }
+    // Deletes persisted children first, then releases their cabin claims (case B).
     await cleanupPartialLocationFinalize({
       locationBookingId,
       childBookingIds,
       checkoutSessionId: null
     });
+    // Case A: children whose Booking never persisted keep only attempt-owned claims.
+    const persistedChildIds = new Set(childBookingIds.map(String));
+    for (const cabinAttempt of locationCabinClaimAttempts) {
+      if (persistedChildIds.has(cabinAttempt.bookingId)) continue;
+      // eslint-disable-next-line no-await-in-loop
+      await compensateCreateAttemptClaims({
+        attempt: cabinAttempt.attempt,
+        writer: CABIN_S1_SOURCES.LOCATION_CHILD,
+        bookingId: cabinAttempt.bookingId,
+        cabinId: cabinAttempt.cabinId,
+        openManualReviewItemFn: openManualReviewItem
+      });
+    }
     await recordLocationCheckoutFailure({
       paymentIntentId,
       checkoutSessionId,
