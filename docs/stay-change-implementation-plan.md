@@ -3464,6 +3464,59 @@ Locked **out** of S1.7:
 
 S1.8 follows only after S1.7 production authority cutover is verified.
 
+### 24.45 S1.8 — Post-cutover reconciliation (LOCKED)
+
+**Purpose:** Close the CabinNightClaim foundation after authoritative cutover with deterministic, conservative reconciliation.
+
+| | |
+|--|--|
+| **IN** | read-only verify; deterministic safe repairs; foreign/ambiguous → MANUAL + MRI; post-repair verify; exit 0/2/1 |
+| **OUT** | reader migration; legacy shadow-path cleanup; REBOOK; index create/drop/rebuild; claim backfill rebuild; client; Cleaning; payment/pricing; UnitNightClaim; R1 |
+
+#### 24.45.1 Tool
+
+```text
+server/scripts/cabinNightClaimS1Reconcile.js
+server/services/inventory/cabinNightClaimS1ReconciliationService.js
+```
+
+| Invocation | Behavior |
+|------------|----------|
+| default / `--verify` | READ-ONLY plan + classify; **zero** claim mutations |
+| `--repair --apply-safe-repairs` | BOTH flags required; applies only SAFE plan items; then fresh verify |
+| either flag alone | refuse (exit 1) |
+
+#### 24.45.2 Repair matrix
+
+| Class | Action |
+|-------|--------|
+| missing (uncontested) | SAFE_INSERT via `claimCabinNights` authoritative |
+| claimsForNonblockingBooking / claimsForExcludedBooking | SAFE_RELEASE owner-scoped |
+| wrongCabin / outsideRange | SAFE_TARGET_FIRST (target claim → then surplus release) |
+| sameOwnerDuplicates | SAFE dedupe extras by claimId (keep lowest id) |
+| orphan | MANUAL (`ORPHAN_AMBIGUOUS`) — never auto-delete |
+| foreignClaimConflicts / foreignOwnerDuplicates / canonicalCollisions | MANUAL |
+| malformed Booking/claim / invalid cabin / invalid dates / multi-inventory / malformed shape | MANUAL |
+
+#### 24.45.3 Invariants
+
+- Exact unique index required for mutation; refuse if missing/wrong
+- Target-first: never release surplus before target secured
+- Target conflict: stop; retain source; no claim stealing
+- Source release failure after target success: retain conservative extra; recon evidence
+- Idempotent rerun
+- No guest PII in reports/MRI
+- No createIndex/dropIndex/syncIndexes
+- Post-mutation always re-verifies; `clean` only when parity + no manual blockers + no repair failures
+
+#### 24.45.4 Exit codes
+
+| Code | Meaning |
+|------|---------|
+| **0** | `clean === true` (verify clean or repair completed clean) |
+| **2** | completed with remaining manual/drift/refusal (not a tool crash) |
+| **1** | tool failure / invalid flags |
+
 ---
 
 ### Batch 2 — StayChange spine (amend/rebook-ready) — **SUPERSEDED for REBOOK by §23.33**
@@ -3584,7 +3637,8 @@ These do not reopen §1–15 locks; they are decided inside the named batches:
 | 2026-08-23 | Amendment: REBOOK cross-product stay change (§23) — `bookingId` = source only (no `sourceBookingId`); `targetBookingId`; `CabinNightClaim` S1 prerequisite; deferred replacement Booking create; contractual/coverage resolvers; fail-closed financial evidence; S3 equal-price + upgrade-waiver only; `settledByStayChangeId`; target-first ordering; attribution/reporting/messaging guards; REBOOK-S0…S6 staged batches; ≥150 test contract; supersede legacy Batch 2–5 REBOOK rows. |
 | 2026-08-23 | Amendment: REBOOK-S1 CabinNightClaim foundation (§24) — permanent single-cabin occupied-night exclusivity; claim-owning Booking rule; test/archived policy; night helper reuse; authoritative unique index + startup safety; claim service contract; shadow/dual-write vs authority; create/date/reassign ordering; Location child rule; paid checkout race; backfill/reconcile/fingerprint gates; S1.1–S1.8 sub-batches; cutover tool; ≥140 S1 test contract; REBOOK single-cabin blocked until S1.6+S1.7+verification. |
 | 2026-08-26 | Amendment: S1.7 authoritative claim-first writer cutover lock (§24.44) — mode contract; exact-index per-acquire + API/finalize boot gates; CREATE/finalize/legacy/manual/location/date-edit/reassign/status-release orderings; AB reassign cabin projection sync; archive under status_release; maintenance delete invariant; crash/recon/observability; ≥120 S1.7 tests; shadow-deploy then env flip; S1.8 boundary; REBOOK/reader/UnitNightClaim/Cleaning non-touch. |
+| 2026-08-26 | Amendment: S1.8 post-cutover reconciliation lock (§24.45) — verify-default CLI; dual-flag repair; safe insert/release/target-first matrix; orphan/foreign MANUAL; exact-index gate; exit 0/2/1; no reader migration / legacy cleanup / REBOOK. |
 
 ---
 
-**END OF LOCKED ARCHITECTURE — R1 LIVE; R3 LIVE; REBOOK §23 + S1 §24 SPEC LOCKED (THROUGH S1.7 WRITER CUTOVER §24.44); NO S1.7/REBOOK APPLICATION AUTHORIZED BY DOCS ALONE**
+**END OF LOCKED ARCHITECTURE — R1 LIVE; R3 LIVE; REBOOK §23 + S1 §24 SPEC LOCKED (THROUGH S1.8 RECONCILIATION §24.45); NO REBOOK APPLICATION AUTHORIZED BY DOCS ALONE**

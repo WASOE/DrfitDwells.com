@@ -73,6 +73,12 @@ function pushSample(arr, item, limit = SAMPLE_LIMIT) {
   if (arr.length < limit) arr.push(item);
 }
 
+/** Sample-bounded + optional unbounded list for S1.8 repair planning. */
+function pushDrift(samplesArr, fullArr, item, limit = SAMPLE_LIMIT) {
+  pushSample(samplesArr, item, limit);
+  if (Array.isArray(fullArr)) fullArr.push(item);
+}
+
 function emptyCounts() {
   return {
     bookingsScanned: 0,
@@ -237,6 +243,30 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
     claimsForNonblockingBooking: []
   };
 
+  // S1.8: unbounded low-PII drift lists for deterministic repair planning.
+  const wantFull = opts.fullDriftLists === true;
+  const fullDriftLists = wantFull
+    ? {
+        missing: [],
+        stale: [],
+        orphan: [],
+        wrongCabin: [],
+        outsideRange: [],
+        sameOwnerDuplicates: [],
+        foreignOwnerDuplicates: [],
+        foreignClaimConflicts: [],
+        canonicalCollisions: [],
+        claimsForNonblockingBooking: [],
+        claimsForExcludedBooking: [],
+        claimsForMultiInventoryBooking: [],
+        claimsForMalformedBooking: [],
+        malformedBookings: [],
+        malformedClaims: [],
+        invalidCabinReferences: [],
+        invalidDateRanges: []
+      }
+    : null;
+
   let scanCompleteness = 'partial';
   let toolFailure = false;
   let toolFailureMessage = null;
@@ -293,7 +323,7 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
           shape === COMMERCIAL_SHAPES.OTHER_MALFORMED)
       ) {
         counts.malformedBookings += 1;
-        pushSample(samples.malformedBookings, {
+        pushDrift(samples.malformedBookings, fullDriftLists?.malformedBookings, {
           bookingId,
           shape,
           status,
@@ -314,7 +344,7 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
       const expanded = expandOccupiedSofiaNightDateOnlys(booking.checkIn, booking.checkOut);
       if (!expanded.ok) {
         counts.invalidDateRanges += 1;
-        pushSample(samples.invalidDateRanges, {
+        pushDrift(samples.invalidDateRanges, fullDriftLists?.invalidDateRanges, {
           bookingId,
           cabinId,
           reason: expanded.reason || 'invalid_range',
@@ -376,7 +406,10 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
   }
   for (const { bookingId, cabinId } of bookingsWithInvalidCabin) {
     counts.invalidCabinReferences += 1;
-    pushSample(samples.invalidCabinReferences, { bookingId, cabinId });
+    pushDrift(samples.invalidCabinReferences, fullDriftLists?.invalidCabinReferences, {
+      bookingId,
+      cabinId
+    });
     const nights = expectedNightsByBooking.get(bookingId) || new Set();
     for (const night of nights) {
       const oKey = ownershipKey(cabinId, night, bookingId);
@@ -414,6 +447,9 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
     };
     canonicalCollisions.push(entry);
     pushSample(samples.canonicalCollisions, entry);
+    if (fullDriftLists?.canonicalCollisions) {
+      fullDriftLists.canonicalCollisions.push(entry);
+    }
   }
   canonicalCollisions.sort((a, b) => {
     const ka = `${a.cabinId}|${a.night}`;
@@ -532,7 +568,7 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
     if (rows.length < 2) continue;
     counts.sameOwnerDuplicates += rows.length - 1;
     const [cabinId, night, bookingId] = oKey.split('|');
-    pushSample(samples.sameOwnerDuplicates, {
+    pushDrift(samples.sameOwnerDuplicates, fullDriftLists?.sameOwnerDuplicates, {
       cabinId,
       night,
       bookingId,
@@ -547,7 +583,7 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
     if (bookingIds.length < 2) continue;
     counts.foreignOwnerDuplicates += 1;
     const [cabinId, night] = cnKey.split('|');
-    pushSample(samples.foreignOwnerDuplicates, {
+    pushDrift(samples.foreignOwnerDuplicates, fullDriftLists?.foreignOwnerDuplicates, {
       cabinId,
       night,
       bookingIds: sortIds(bookingIds),
@@ -564,7 +600,7 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
     const [cabinId, night, bookingId] = oKey.split('|');
     const tuple = { cabinId, night, bookingId };
     missingOwnership.push(tuple);
-    pushSample(samples.missing, tuple);
+    pushDrift(samples.missing, fullDriftLists?.missing, tuple);
   }
   missingOwnership.sort((a, b) => {
     const ka = `${a.cabinId}|${a.night}|${a.bookingId}`;
@@ -579,7 +615,7 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
 
     if (!booking) {
       counts.orphan += rows.length;
-      pushSample(samples.orphan, {
+      pushDrift(samples.orphan, fullDriftLists?.orphan, {
         cabinId,
         night,
         bookingId,
@@ -597,7 +633,7 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
       shape === COMMERCIAL_SHAPES.UNALLOCATED_MULTI
     ) {
       counts.claimsForMultiInventoryBooking += rows.length;
-      pushSample(samples.claimsForMultiInventoryBooking, {
+      pushDrift(samples.claimsForMultiInventoryBooking, fullDriftLists?.claimsForMultiInventoryBooking, {
         bookingId,
         cabinId,
         night,
@@ -613,7 +649,7 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
       shape === COMMERCIAL_SHAPES.MISSING_PRODUCT
     ) {
       counts.claimsForMalformedBooking += rows.length;
-      pushSample(samples.malformedClaims, {
+      pushDrift(samples.malformedClaims, fullDriftLists?.claimsForMalformedBooking, {
         bookingId,
         cabinId,
         night,
@@ -621,12 +657,22 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
         claimIds: sortIds(rows.map((r) => r._id)),
         reason: 'claim_for_malformed_booking'
       });
+      if (fullDriftLists?.malformedClaims) {
+        fullDriftLists.malformedClaims.push({
+          bookingId,
+          cabinId,
+          night,
+          shape,
+          claimIds: sortIds(rows.map((r) => r._id)),
+          reason: 'claim_for_malformed_booking'
+        });
+      }
       continue;
     }
 
     if (excluded) {
       counts.claimsForExcludedBooking += rows.length;
-      pushSample(samples.claimsForExcludedBooking, {
+      pushDrift(samples.claimsForExcludedBooking, fullDriftLists?.claimsForExcludedBooking, {
         bookingId,
         cabinId,
         night,
@@ -640,19 +686,20 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
     if (!blocking) {
       counts.claimsForNonblockingBooking += rows.length;
       counts.stale += rows.length;
-      pushSample(samples.claimsForNonblockingBooking, {
+      pushDrift(samples.claimsForNonblockingBooking, fullDriftLists?.claimsForNonblockingBooking, {
         bookingId,
         status: booking.status,
         cabinId,
         night,
         claimIds: sortIds(rows.map((r) => r._id))
       });
-      pushSample(samples.stale, {
+      pushDrift(samples.stale, fullDriftLists?.stale, {
         bookingId,
         cabinId,
         night,
         reason: 'nonblocking',
-        status: booking.status
+        status: booking.status,
+        claimIds: sortIds(rows.map((r) => r._id))
       });
       continue;
     }
@@ -661,7 +708,7 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
     const expectedCabin = idStr(booking.cabinId);
     if (expectedCabin && cabinId !== expectedCabin) {
       counts.wrongCabin += rows.length;
-      pushSample(samples.wrongCabin, {
+      pushDrift(samples.wrongCabin, fullDriftLists?.wrongCabin, {
         bookingId,
         claimCabinId: cabinId,
         bookingCabinId: expectedCabin,
@@ -680,7 +727,7 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
 
     if (!nightSet.has(night)) {
       counts.outsideRange += rows.length;
-      pushSample(samples.outsideRange, {
+      pushDrift(samples.outsideRange, fullDriftLists?.outsideRange, {
         bookingId,
         cabinId,
         night,
@@ -694,7 +741,7 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
     const expectedIds = new Set(expectedOwners.map((o) => o.bookingId));
     if (expectedIds.size > 0 && !expectedIds.has(bookingId)) {
       counts.foreignClaimConflicts += 1;
-      pushSample(samples.foreignClaimConflicts, {
+      pushDrift(samples.foreignClaimConflicts, fullDriftLists?.foreignClaimConflicts, {
         cabinId,
         night,
         claimBookingId: bookingId,
@@ -720,7 +767,7 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
         ) || false;
       if (!already) {
         counts.foreignClaimConflicts += 1;
-        pushSample(samples.foreignClaimConflicts, {
+        pushDrift(samples.foreignClaimConflicts, fullDriftLists?.foreignClaimConflicts, {
           cabinId: owners[0].cabinId,
           night: owners[0].night,
           claimBookingIds: sortIds([...claimOwnerIds]),
@@ -957,7 +1004,8 @@ async function runCabinNightClaimS1Preflight(opts = {}) {
     toolFailure,
     toolFailureMessage,
     samples,
-    /** Full sorted missing expected ownership tuples (S1.4 backfill input). */
+    fullDriftLists,
+    /** Full sorted missing expected ownership tuples (S1.4 backfill / S1.8 repair input). */
     missingOwnership
   };
 }
