@@ -52,7 +52,10 @@ const {
 const {
   REBOOK_KIND,
   buildSourceSnapshot,
-  buildTargetSnapshot
+  buildTargetSnapshot,
+  experienceKeysFromBooking,
+  experienceKeysCasFilter,
+  canonicalExperienceKeysEqual
 } = require('./rebookStayChangeSpine');
 const {
   detectPromotionalSourceEconomics,
@@ -63,6 +66,11 @@ const ELIGIBLE_STATUSES = Object.freeze(['pending', 'confirmed']);
 const MRI_CATEGORY = 'stay_change_rebook_reconciliation';
 const MRI_SOURCE = 'stay_change_rebook';
 const AUDIT_ACTION = 'reservation_rebook';
+
+/** Injectable test seam for compensation-failure behavioral coverage. */
+const _testHooks = {
+  compensateInsertedTargetClaims: null
+};
 
 const FINGERPRINT_KEYS = Object.freeze([
   'kind',
@@ -169,13 +177,6 @@ function toResult(sc, extra = {}) {
 
 function err(code, message, status = 409, details = {}) {
   return createDomainError('conflict', message, { code, ...details }, status);
-}
-
-function experienceKeysFromBooking(booking) {
-  const extras = booking?.craft?.extras;
-  if (extras && Array.isArray(extras.experienceKeys)) return extras.experienceKeys;
-  if (Array.isArray(booking?.experienceKeys)) return booking.experienceKeys;
-  return [];
 }
 
 async function loadPaymentTrail(sourceBookingId) {
@@ -314,6 +315,9 @@ async function projectAuditOnce(sc, ctx) {
 }
 
 async function compensateInsertedTargetClaims(sc, claimAttempt) {
+  if (typeof _testHooks.compensateInsertedTargetClaims === 'function') {
+    return _testHooks.compensateInsertedTargetClaims(sc, claimAttempt);
+  }
   const insertedIds = normalizeInsertedClaimIds(claimAttempt);
   const insertedNights = Array.isArray(claimAttempt?.insertedNightsThisAttempt)
     ? claimAttempt.insertedNightsThisAttempt
@@ -332,13 +336,13 @@ async function compensateInsertedTargetClaims(sc, claimAttempt) {
     if (insertedNights.length === 0 && insertedIds.length === 0) {
       return { ok: true, deletedCount: 0, scope: 'inserted_this_attempt_empty' };
     }
-    // Prefer night-scoped attempt compensation (existing unit primitive).
     return compensateClaimAttempt({
       bookingId: sc.targetBookingId,
       unitId: sc.targetUnitId,
-      insertedNightsThisAttempt: insertedNights.length
-        ? insertedNights
-        : undefined
+      stayChangeId: sc._id,
+      source: 'rebook',
+      insertedClaimIdsThisAttempt: insertedIds.length ? insertedIds : undefined,
+      insertedNightsThisAttempt: insertedNights.length ? insertedNights : undefined
     });
   }
 
@@ -475,7 +479,14 @@ async function tombstoneSourceReservationBlocks(sourceBookingId) {
 }
 
 function buildReplacementDoc(sc, source, contractualTargetTotalCents, status) {
+  const srcSnap = sc.sourceSnapshot || {};
+  const tgtSnap = sc.targetSnapshot || {};
   const totalPrice = contractualTargetTotalCents / 100;
+  const experienceKeysStored = Array.isArray(tgtSnap.experienceKeysStored)
+    ? tgtSnap.experienceKeysStored
+    : srcSnap.experienceKeysStored || [];
+  const experienceKeysField = tgtSnap.experienceKeysField || srcSnap.experienceKeysField || null;
+
   const doc = {
     _id: sc.targetBookingId,
     guestInfo: {
@@ -484,16 +495,19 @@ function buildReplacementDoc(sc, source, contractualTargetTotalCents, status) {
       email: source.guestInfo.email,
       phone: source.guestInfo.phone
     },
-    checkIn: source.checkIn,
-    checkOut: source.checkOut,
-    adults: source.adults,
-    children: source.children || 0,
+    checkIn: sc.checkIn,
+    checkOut: sc.checkOut,
+    adults: tgtSnap.adults != null ? tgtSnap.adults : srcSnap.adults,
+    children: tgtSnap.children != null ? tgtSnap.children : srcSnap.children || 0,
     specialRequests: source.specialRequests || null,
     cleaningNotes: source.cleaningNotes || null,
-    tripType: source.tripType || null,
-    transportMethod: source.transportMethod || null,
-    romanticSetup: Boolean(source.romanticSetup),
-    craft: source.craft || undefined,
+    tripType: tgtSnap.tripType != null ? tgtSnap.tripType : srcSnap.tripType || null,
+    transportMethod:
+      tgtSnap.transportMethod !== undefined ? tgtSnap.transportMethod : srcSnap.transportMethod || null,
+    romanticSetup:
+      tgtSnap.romanticSetup != null
+        ? Boolean(tgtSnap.romanticSetup)
+        : Boolean(srcSnap.romanticSetup),
     legalAcceptance: source.legalAcceptance,
     totalPrice,
     totalValueCents: contractualTargetTotalCents,
@@ -520,6 +534,13 @@ function buildReplacementDoc(sc, source, contractualTargetTotalCents, status) {
     locationBookingId: undefined,
     attribution: undefined
   };
+
+  if (experienceKeysField === 'craft.extras.experienceKeys' && experienceKeysStored.length > 0) {
+    doc.craft = { extras: { experienceKeys: experienceKeysStored.slice() } };
+  } else if (experienceKeysField === 'experienceKeys' && experienceKeysStored.length > 0) {
+    doc.experienceKeys = experienceKeysStored.slice();
+  }
+
   if (sc.targetCabinId) {
     doc.cabinId = sc.targetCabinId;
   } else {
@@ -573,6 +594,12 @@ async function casSourceToRebooked(sc, sourceBooking) {
       : sourceBooking?.transportMethod == null || sourceBooking?.transportMethod === ''
         ? null
         : String(sourceBooking.transportMethod);
+  const tripType =
+    snap.tripType !== undefined
+      ? snap.tripType
+      : sourceBooking?.tripType == null || sourceBooking?.tripType === ''
+        ? null
+        : String(sourceBooking.tripType);
 
   const and = [
     { _id: sc.bookingId },
@@ -609,7 +636,9 @@ async function casSourceToRebooked(sc, sourceBooking) {
         { 'cancellationSettlement.replacementBookingId': null }
       ]
     },
-    nullableStringMatchFilter('transportMethod', transportMethod)
+    nullableStringMatchFilter('transportMethod', transportMethod),
+    nullableStringMatchFilter('tripType', tripType),
+    experienceKeysCasFilter(snap)
   ];
 
   if (sc.sourceCabinId) {
@@ -695,6 +724,34 @@ async function verifyCompletionInvariant(sc) {
   }
   if (Number(target.children || 0) !== Number(snap.children || 0)) {
     return { ok: false, reason: 'target_children_mismatch' };
+  }
+
+  const expectedTransport =
+    snap.transportMethod !== undefined ? snap.transportMethod : null;
+  const actualTransport =
+    target.transportMethod == null || target.transportMethod === ''
+      ? null
+      : String(target.transportMethod);
+  if (actualTransport !== expectedTransport) {
+    return { ok: false, reason: 'target_transport_mismatch' };
+  }
+
+  const expectedRomantic =
+    snap.romanticSetup != null ? Boolean(snap.romanticSetup) : false;
+  if (Boolean(target.romanticSetup) !== expectedRomantic) {
+    return { ok: false, reason: 'target_romantic_mismatch' };
+  }
+
+  const expectedTripType = snap.tripType !== undefined ? snap.tripType : null;
+  const actualTripType =
+    target.tripType == null || target.tripType === '' ? null : String(target.tripType);
+  if (actualTripType !== expectedTripType) {
+    return { ok: false, reason: 'target_tripType_mismatch' };
+  }
+
+  const expectedExperienceKeys = snap.experienceKeys || [];
+  if (!canonicalExperienceKeysEqual(experienceKeysFromBooking(target), expectedExperienceKeys)) {
+    return { ok: false, reason: 'target_experience_keys_mismatch' };
   }
 
   const own = await verifyTargetOwnership(sc);
@@ -1361,6 +1418,12 @@ async function rebookReservation({
     checkOut: booking.checkOut,
     adults: booking.adults,
     children: booking.children || 0,
+    transportMethod: sourceSnap.snapshot.transportMethod,
+    romanticSetup: sourceSnap.snapshot.romanticSetup,
+    tripType: sourceSnap.snapshot.tripType,
+    experienceKeys: sourceSnap.snapshot.experienceKeys,
+    experienceKeysField: sourceSnap.snapshot.experienceKeysField,
+    experienceKeysStored: sourceSnap.snapshot.experienceKeysStored,
     canonicalTargetQuoteCents,
     currency: 'eur'
   });
@@ -1435,5 +1498,7 @@ module.exports = {
   auditDedupeKeyFor,
   detectPromotionalSourceEconomics,
   PROMO_REASON,
-  normalizeInsertedClaimIds
+  normalizeInsertedClaimIds,
+  verifyCompletionInvariant,
+  _testHooks
 };

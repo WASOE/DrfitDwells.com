@@ -50,6 +50,93 @@ const REBOOK_EVIDENCE_LOCKED_STATUSES = Object.freeze([
 
 const IMMUTABLE_ALWAYS = Object.freeze(['kind', 'bookingId', 'idempotencyKey']);
 
+/**
+ * Canonical normalized experience keys (stable sort, trimmed strings; duplicates preserved).
+ */
+function canonicalExperienceKeys(raw) {
+  const list = Array.isArray(raw) ? raw : [];
+  return list
+    .map((k) => (typeof k === 'string' ? k.trim() : String(k)))
+    .filter((k) => k !== '')
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function experienceKeysFromBooking(booking) {
+  const extras = booking?.craft?.extras;
+  if (extras && Array.isArray(extras.experienceKeys)) return extras.experienceKeys;
+  if (Array.isArray(booking?.experienceKeys)) return booking.experienceKeys;
+  return [];
+}
+
+/**
+ * Persisted field path + exact stored array + canonical form for snapshot/CAS/invariant.
+ */
+function experienceKeysEvidenceFromBooking(booking) {
+  const extras = booking?.craft?.extras;
+  if (extras && Array.isArray(extras.experienceKeys)) {
+    const stored = extras.experienceKeys.map((k) => (typeof k === 'string' ? k : String(k)));
+    return {
+      experienceKeysField: 'craft.extras.experienceKeys',
+      experienceKeysStored: stored,
+      experienceKeys: canonicalExperienceKeys(stored)
+    };
+  }
+  if (Array.isArray(booking?.experienceKeys)) {
+    const stored = booking.experienceKeys.map((k) => (typeof k === 'string' ? k : String(k)));
+    return {
+      experienceKeysField: 'experienceKeys',
+      experienceKeysStored: stored,
+      experienceKeys: canonicalExperienceKeys(stored)
+    };
+  }
+  return {
+    experienceKeysField: null,
+    experienceKeysStored: [],
+    experienceKeys: []
+  };
+}
+
+function canonicalExperienceKeysEqual(a, b) {
+  const left = canonicalExperienceKeys(a);
+  const right = canonicalExperienceKeys(b);
+  if (left.length !== right.length) return false;
+  for (let i = 0; i < left.length; i += 1) {
+    if (left[i] !== right[i]) return false;
+  }
+  return true;
+}
+
+/** Mongo filter matching exact persisted experience keys at snapshot time. */
+function experienceKeysCasFilter(snapshot) {
+  const field = snapshot?.experienceKeysField;
+  const stored = snapshot?.experienceKeysStored;
+  if (!field || !Array.isArray(stored) || stored.length === 0) {
+    return {
+      $and: [
+        {
+          $or: [
+            { 'craft.extras.experienceKeys': { $exists: false } },
+            { 'craft.extras.experienceKeys': null },
+            { 'craft.extras.experienceKeys': [] }
+          ]
+        },
+        {
+          $or: [
+            { experienceKeys: { $exists: false } },
+            { experienceKeys: null },
+            { experienceKeys: [] }
+          ]
+        }
+      ]
+    };
+  }
+  return {
+    $expr: {
+      $eq: [{ $ifNull: [`$${field}`, []] }, stored]
+    }
+  };
+}
+
 function isObjectIdLike(value) {
   if (value == null) return false;
   if (value instanceof mongoose.Types.ObjectId) return true;
@@ -78,6 +165,7 @@ function buildSourceSnapshot({
   if (!isNonNegInt(sourceContractualTotalCents) || !isNonNegInt(recognizedNetSettledCoverageCents)) {
     return { ok: false, code: 'SNAPSHOT_CENTS_INVALID', message: 'Contractual/coverage cents required' };
   }
+  const experienceEvidence = experienceKeysEvidenceFromBooking(booking);
   return {
     ok: true,
     snapshot: {
@@ -98,6 +186,9 @@ function buildSourceSnapshot({
         booking.tripType == null || booking.tripType === ''
           ? null
           : String(booking.tripType),
+      experienceKeys: experienceEvidence.experienceKeys,
+      experienceKeysField: experienceEvidence.experienceKeysField,
+      experienceKeysStored: experienceEvidence.experienceKeysStored,
       currency: String(currency || 'eur').toLowerCase(),
       sourceContractualTotalCents,
       recognizedNetSettledCoverageCents,
@@ -117,6 +208,12 @@ function buildTargetSnapshot({
   checkOut,
   adults = null,
   children = null,
+  transportMethod = null,
+  romanticSetup = null,
+  tripType = null,
+  experienceKeys = null,
+  experienceKeysField = null,
+  experienceKeysStored = null,
   canonicalTargetQuoteCents,
   currency = 'eur',
   locationBookingId = null
@@ -148,6 +245,13 @@ function buildTargetSnapshot({
       checkOut,
       adults: Number.isFinite(adults) ? adults : null,
       children: Number.isFinite(children) ? children : null,
+      transportMethod:
+        transportMethod == null || transportMethod === '' ? null : String(transportMethod),
+      romanticSetup: romanticSetup == null ? null : Boolean(romanticSetup),
+      tripType: tripType == null || tripType === '' ? null : String(tripType),
+      experienceKeys: Array.isArray(experienceKeys) ? experienceKeys : [],
+      experienceKeysField: experienceKeysField || null,
+      experienceKeysStored: Array.isArray(experienceKeysStored) ? experienceKeysStored : [],
       currency: String(currency || 'eur').toLowerCase(),
       canonicalTargetQuoteCents,
       locationBookingId: locationBookingId ? String(locationBookingId) : null
@@ -369,6 +473,11 @@ module.exports = {
   REBOOK_KIND,
   REBOOK_STATUSES,
   REBOOK_EVIDENCE_LOCKED_STATUSES,
+  canonicalExperienceKeys,
+  experienceKeysFromBooking,
+  experienceKeysEvidenceFromBooking,
+  canonicalExperienceKeysEqual,
+  experienceKeysCasFilter,
   buildSourceSnapshot,
   buildTargetSnapshot,
   validateSnapshotShape,

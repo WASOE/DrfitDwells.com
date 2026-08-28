@@ -34,10 +34,12 @@ const {
   MRI_CATEGORY,
   auditDedupeKeyFor,
   detectPromotionalSourceEconomics,
-  PROMO_REASON
+  PROMO_REASON,
+  _testHooks
 } = require('../services/stayChange/rebookStayChangeService');
 const {
   claimCabinNights,
+  resolveOccupiedNightDates,
   ensureAuthoritativeUniqueIndexForTests: ensureCabinIdx,
   compensateCabinClaimAttempt
 } = require('../services/inventory/cabinNightClaimService');
@@ -47,6 +49,7 @@ const {
   compensateClaimAttempt
 } = require('../services/inventory/unitNightClaimService');
 const { classifyReservationPaymentStatus } = require('../services/ops/payment/reservationPaymentSignals');
+const { computeQuoteFromEntity } = require('../services/bookingQuoteService');
 const { isRebookTransferSettling } = require('../services/stayChange/rebookStayChangeSpine');
 const cutover = require('./stayChangeR1Cutover');
 const { normalizeDateToSofiaDayStart } = require('../utils/dateTime');
@@ -1339,14 +1342,19 @@ for (const offset of NIGHT_OFFSETS) {
     const b = await seedCabin(100);
     const ci = sofiaDay(50 + offset);
     const co = sofiaDay(50 + offset + 3);
+    const occupiedNights = resolveOccupiedNightDates({ checkIn: ci, checkOut: co });
+    const totalPrice = occupiedNights.length * 100;
     const booking = await makeSingleBooking({
       cabin: a,
       checkIn: ci,
       checkOut: co,
-      totalPrice: 300
+      totalPrice
     });
     const res = await rebookOk(booking, { cabinId: b._id }, idem(`n-${offset}`));
-    assert.equal(await CabinNightClaim.countDocuments({ bookingId: res.targetBookingId }), 3);
+    assert.equal(
+      await CabinNightClaim.countDocuments({ bookingId: res.targetBookingId }),
+      occupiedNights.length
+    );
     assert.equal(await CabinNightClaim.countDocuments({ bookingId: booking._id }), 0);
   });
 }
@@ -1974,50 +1982,267 @@ test('S3.1#compensation failure opens MRI without broad release', async () => {
   const b = await seedCabin();
   const booking = await makeSingleBooking({ cabin: a });
   const key = idem('comp-fail');
-  const cabinSvc = require('../services/inventory/cabinNightClaimService');
-  const origClaim = cabinSvc.claimCabinNights;
-  const origCompensate = cabinSvc.compensateCabinClaimAttempt;
-  let inserted = null;
-  cabinSvc.claimCabinNights = async function wrap(args) {
-    const res = await origClaim(args);
-    inserted = res;
-    return res;
-  };
-  cabinSvc.compensateCabinClaimAttempt = async function boom() {
+  const origCreate = Booking.create.bind(Booking);
+  _testHooks.compensateInsertedTargetClaims = async () => {
     throw new Error('forced compensate fail');
   };
-  // Re-require won't pick up - service already bound compensateCabinClaimAttempt at load.
-  // Use Booking.create fail after inventory with patched compensate via module cache replacement:
-  // Instead exercise compensateCabinClaimAttempt directly + MRI path via reconcile isn't reachable.
-  // Behavioral: call compensateCabinClaimAttempt failure is unit-tested by forcing claim verify fail
-  // through a stub on the service exports used by rebook - already closed over.
-  // Fall back: verify helper + MRI category still canonical, and inserted-this-attempt API exists.
+  Booking.create = async function failBooking(doc) {
+    if (doc?.provenance?.source === 'stay_change_rebook') {
+      throw new Error('forced booking fail');
+    }
+    return origCreate(doc);
+  };
   try {
-    assert.equal(typeof origCompensate, 'function');
-    assert.equal(MRI_CATEGORY, 'stay_change_rebook_reconciliation');
-    const claim = await claimCabinNights({
-      cabinId: b._id,
-      bookingId: new mongoose.Types.ObjectId(),
-      checkIn: booking.checkIn,
-      checkOut: booking.checkOut,
-      stayChangeId: new mongoose.Types.ObjectId(),
-      source: 'rebook'
-    });
-    assert.ok(claim.insertedClaimIdsThisAttempt.length >= 1);
-    await compensateCabinClaimAttempt({
-      insertedClaimIdsThisAttempt: claim.insertedClaimIdsThisAttempt
-    });
-    assert.equal(
-      await CabinNightClaim.countDocuments({ _id: { $in: claim.insertedClaimIdsThisAttempt } }),
-      0
+    await assert.rejects(
+      () => rebookOk(booking, { cabinId: b._id }, key),
+      (err) => codeOf(err) === 'REPLACEMENT_PERSISTENCE_FAILED'
     );
   } finally {
-    cabinSvc.claimCabinNights = origClaim;
-    cabinSvc.compensateCabinClaimAttempt = origCompensate;
+    Booking.create = origCreate;
+    _testHooks.compensateInsertedTargetClaims = null;
   }
-  assert.equal(key.startsWith('idem'), true);
-  assert.ok(booking);
-  assert.equal(inserted, null);
+  const sc = await StayChange.findOne({ idempotencyKey: key });
+  assert.equal(sc.status, 'needs_reconciliation');
+  assert.ok(await CabinNightClaim.countDocuments({ bookingId: sc.targetBookingId }) >= 1);
+  assert.equal(await CabinNightClaim.countDocuments({ bookingId: booking._id }), 2);
+  assert.equal(await Booking.countDocuments({ 'provenance.source': 'stay_change_rebook' }), 0);
+  const mri = await ManualReviewItem.find({ category: MRI_CATEGORY, entityId: String(sc._id) });
+  assert.ok(mri.length >= 1);
+});
+
+test('S3.2#unit mixed subset compensation deletes only attempt B inserts', async () => {
+  const src = await seedTypeWithUnits(1, 100);
+  const dst = await seedTypeWithUnits(1, 100);
+  const booking = await makeMultiBooking({
+    cabinType: src.cabinType,
+    unit: src.units[0],
+    totalPrice: 200
+  });
+  const key = idem('comp-unit-mix');
+  const origCreate = Booking.create.bind(Booking);
+  Booking.create = async function fail(doc) {
+    if (doc?.provenance?.source === 'stay_change_rebook') throw new Error('fail unit booking A');
+    return origCreate(doc);
+  };
+  try {
+    await assert.rejects(() =>
+      rebookOk(
+        booking,
+        { cabinTypeId: dst.cabinType._id, unitId: dst.units[0]._id },
+        key
+      )
+    );
+  } finally {
+    Booking.create = origCreate;
+  }
+  const sc = await StayChange.findOne({ idempotencyKey: key });
+  sc.status = 'inventory_secured';
+  await sc.save();
+  await UnitNightClaim.deleteMany({ bookingId: sc.targetBookingId });
+  const { dateOnlyFromNightDate } = require('../services/inventory/unitNightClaimService');
+  const allNights = resolveOccupiedNightDates({ checkIn: sc.checkIn, checkOut: sc.checkOut }).map(
+    dateOnlyFromNightDate
+  );
+  const priorNight = allNights[0];
+  await claimUnitNights({
+    bookingId: sc.targetBookingId,
+    unitId: dst.units[0]._id,
+    nights: [priorNight],
+    stayChangeId: sc._id,
+    source: 'rebook',
+    requireExactStayChangeOwnership: true
+  });
+  const priorCount = await UnitNightClaim.countDocuments({ bookingId: sc.targetBookingId });
+  assert.equal(priorCount, 1);
+
+  Booking.create = async function failB(doc) {
+    if (doc?.provenance?.source === 'stay_change_rebook') throw new Error('fail B');
+    return origCreate(doc);
+  };
+  try {
+    await assert.rejects(() => reconcileRebookStayChange(sc._id, adminCtx()));
+  } finally {
+    Booking.create = origCreate;
+  }
+  const left = await UnitNightClaim.find({ bookingId: sc.targetBookingId }).lean();
+  assert.equal(left.length, priorCount);
+  assert.ok(left.some((c) => dateOnlyFromNightDate(c.night) === priorNight));
+  assert.equal((await StayChange.findById(sc._id)).status, 'inventory_secured');
+});
+
+test('S3.2#experience extras CAS race keeps target and opens MRI', async () => {
+  const a = await seedCabin();
+  const b = await seedCabin();
+  const ci = sofiaDay(45);
+  const co = sofiaDay(47);
+  const experienceKeys = ['sauna', 'hot-tub'];
+  const quote = await computeQuoteFromEntity(a, ci, co, 2, 0, experienceKeys, null, false, null);
+  const booking = await makeSingleBooking({
+    cabin: a,
+    checkIn: ci,
+    checkOut: co,
+    totalPrice: quote.totalPrice,
+    extras: {
+      craft: { extras: { experienceKeys } }
+    }
+  });
+  const key = idem('cas-extras');
+  const origCreate = Booking.create.bind(Booking);
+  Booking.create = async function race(doc) {
+    const created = await origCreate(doc);
+    if (created?.provenance?.source === 'stay_change_rebook') {
+      await Booking.updateOne(
+        { _id: booking._id },
+        { $set: { craft: { extras: { experienceKeys: ['sauna', 'massage'] } } } }
+      );
+    }
+    return created;
+  };
+  try {
+    await assert.rejects(
+      () => rebookOk(booking, { cabinId: b._id }, key),
+      (err) => codeOf(err) === 'SOURCE_CHANGED' || codeOf(err) === 'NEEDS_RECONCILIATION'
+    );
+  } finally {
+    Booking.create = origCreate;
+  }
+  const sc = await StayChange.findOne({ idempotencyKey: key });
+  assert.equal(sc.status, 'needs_reconciliation');
+  assert.ok(sc.sourceSnapshot.experienceKeys.includes('hot-tub'));
+  assert.ok(await Booking.findById(sc.targetBookingId));
+  assert.equal(await CabinNightClaim.countDocuments({ bookingId: booking._id }), 2);
+  assert.ok(await CabinNightClaim.countDocuments({ bookingId: sc.targetBookingId }) >= 1);
+  const mri = await ManualReviewItem.find({ category: MRI_CATEGORY, entityId: String(sc._id) });
+  assert.ok(mri.length >= 1);
+});
+
+async function corruptAndAssertCompletionInvariant({
+  label,
+  corruptTarget,
+  corruptSource
+}) {
+  const a = await seedCabin(100);
+  const b = await seedCabin(100);
+  const ci = sofiaDay(30);
+  const co = sofiaDay(32);
+  const experienceKeys = ['sauna'];
+  const transportMethod = '4x4';
+  const romanticSetup = true;
+  const tripType = 'retreat';
+  const quote = await computeQuoteFromEntity(
+    a,
+    ci,
+    co,
+    2,
+    1,
+    experienceKeys,
+    transportMethod,
+    romanticSetup,
+    null
+  );
+  const booking = await makeSingleBooking({
+    cabin: a,
+    checkIn: ci,
+    checkOut: co,
+    totalPrice: quote.totalPrice,
+    extras: {
+      adults: 2,
+      children: 1,
+      craft: { extras: { experienceKeys } },
+      transportMethod,
+      romanticSetup,
+      tripType
+    }
+  });
+  const res = await rebookOk(booking, { cabinId: b._id }, idem(`inv-${label}`));
+  const sc = await StayChange.findById(res.stayChangeId);
+  sc.status = 'committed';
+  await sc.save();
+  if (corruptTarget) await corruptTarget(res.targetBookingId);
+  if (corruptSource) await corruptSource(booking._id);
+  const result = await reconcileRebookStayChange(sc._id, adminCtx());
+  const after = await StayChange.findById(sc._id);
+  assert.equal(after.status, 'needs_reconciliation');
+  assert.notEqual(result.status, 'completed');
+  const mri = await ManualReviewItem.find({ category: MRI_CATEGORY, entityId: String(sc._id) });
+  assert.ok(mri.length >= 1);
+  assert.ok(await CabinNightClaim.countDocuments({ bookingId: res.targetBookingId }) >= 1);
+  const src = await Booking.findById(booking._id).lean();
+  assert.equal(src.status, 'cancelled');
+}
+
+test('S3.2#completion invariant date corruption opens MRI', async () => {
+  await corruptAndAssertCompletionInvariant({
+    label: 'dates',
+    corruptTarget: async (targetId) => {
+      await Booking.updateOne({ _id: targetId }, { $set: { checkOut: sofiaDay(99) } });
+    }
+  });
+});
+
+test('S3.2#completion invariant guest corruption opens MRI', async () => {
+  await corruptAndAssertCompletionInvariant({
+    label: 'guests',
+    corruptTarget: async (targetId) => {
+      await Booking.updateOne({ _id: targetId }, { $set: { adults: 9 } });
+    }
+  });
+});
+
+test('S3.2#completion invariant extras corruption opens MRI', async () => {
+  await corruptAndAssertCompletionInvariant({
+    label: 'extras',
+    corruptTarget: async (targetId) => {
+      await Booking.updateOne(
+        { _id: targetId },
+        { $set: { craft: { extras: { experienceKeys: ['massage'] } } } }
+      );
+    }
+  });
+});
+
+test('S3.2#completion invariant source link corruption opens MRI', async () => {
+  await corruptAndAssertCompletionInvariant({
+    label: 'source-link',
+    corruptSource: async (sourceId) => {
+      await Booking.updateOne(
+        { _id: sourceId },
+        { $set: { 'cancellationSettlement.replacementBookingId': new mongoose.Types.ObjectId() } }
+      );
+    }
+  });
+});
+
+test('S3.2#replacement uses frozen experience keys from snapshot', async () => {
+  const a = await seedCabin();
+  const b = await seedCabin();
+  const ci = sofiaDay(40);
+  const co = sofiaDay(42);
+  const experienceKeys = ['hot-tub', 'sauna'];
+  const quote = await computeQuoteFromEntity(a, ci, co, 2, 0, experienceKeys, null, false, null);
+  const booking = await makeSingleBooking({
+    cabin: a,
+    checkIn: ci,
+    checkOut: co,
+    totalPrice: quote.totalPrice,
+    extras: { craft: { extras: { experienceKeys } } }
+  });
+  const key = idem('frozen-extras');
+  const res = await rebookOk(booking, { cabinId: b._id }, key);
+  const sc = await StayChange.findById(res.stayChangeId).lean();
+  const tgt = await Booking.findById(res.targetBookingId).lean();
+  assert.deepEqual(sc.sourceSnapshot.experienceKeys, ['hot-tub', 'sauna']);
+  assert.deepEqual(sc.targetSnapshot.experienceKeys, ['hot-tub', 'sauna']);
+  assert.deepEqual(tgt.craft.extras.experienceKeys, experienceKeys);
+  await Booking.updateOne(
+    { _id: booking._id },
+    { $set: { craft: { extras: { experienceKeys: ['massage'] } } } }
+  );
+  const res2 = await rebookOk(booking, { cabinId: b._id }, key);
+  assert.equal(res2.stayChangeId, res.stayChangeId);
+  assert.equal(res2.status, 'completed');
+  const tgt2 = await Booking.findById(res.targetBookingId).lean();
+  assert.deepEqual(tgt2.craft.extras.experienceKeys, experienceKeys);
 });
 
 test('S3.1#live quote drift retry uses stored StayChange quote', async () => {

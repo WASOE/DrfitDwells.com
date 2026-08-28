@@ -3644,11 +3644,12 @@ SOURCE Booking must:
 
 S3 v1 is **commercial-product REBOOK only**.
 
-**PRESERVE from source (must match target snapshot dates/guests):**
+**PRESERVE from source (must match target snapshot dates/guests and frozen snapshot/CAS/completion evidence):**
 
 - `checkIn`, `checkOut`
 - `adults`, `children`
 - extras / transport / romantic / craft / tripType / specialRequests / cleaningNotes (COPY onto replacement per §23.23)
+- canonical `experienceKeys` / `craft.extras.experienceKeys` (frozen in `sourceSnapshot` + `targetSnapshot`; guarded by source CAS and verified at completion)
 - currency
 
 **DO NOT allow via REBOOK body:** date changes, guest-count changes, extras/transport/romantic changes that would change the quote independently of product. Those belong to **AMEND**.

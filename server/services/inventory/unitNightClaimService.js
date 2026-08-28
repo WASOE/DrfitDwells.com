@@ -331,17 +331,21 @@ async function claimUnitNights({
   }
 
   const insertedThisAttempt = [];
+  const insertedThisAttemptIds = [];
 
   if (toInsert.length > 0) {
     try {
       for (const doc of toInsert) {
+        let created;
         // eslint-disable-next-line no-await-in-loop
         if (session) {
-          await UnitNightClaim.create([doc], { session });
+          created = await UnitNightClaim.create([doc], { session });
+          created = Array.isArray(created) ? created[0] : created;
         } else {
-          await UnitNightClaim.create(doc);
+          created = await UnitNightClaim.create(doc);
         }
         insertedThisAttempt.push(doc.night);
+        insertedThisAttemptIds.push(created._id);
       }
     } catch (err) {
       let compensationError = null;
@@ -390,6 +394,7 @@ async function claimUnitNights({
     insertedCount: insertedThisAttempt.length,
     alreadyOwnedCount: ownedNightKeys.size,
     insertedNightsThisAttempt: insertedThisAttempt.map(dateOnlyFromNightDate),
+    insertedClaimIdsThisAttempt: insertedThisAttemptIds.map(String),
     claims: claims.map((c) => ({
       id: String(c._id),
       night: dateOnlyFromNightDate(c.night),
@@ -402,10 +407,22 @@ async function claimUnitNights({
 async function compensateClaimAttempt({
   bookingId,
   unitId,
+  stayChangeId = null,
+  source = null,
   nights = null,
   insertedNightsThisAttempt = null,
+  insertedClaimIdsThisAttempt = null,
   session = null
 } = {}) {
+  if (Array.isArray(insertedClaimIdsThisAttempt) && insertedClaimIdsThisAttempt.length > 0) {
+    const ids = insertedClaimIdsThisAttempt.map((id) => toObjectId(id, 'insertedClaimIdsThisAttempt'));
+    const result = await UnitNightClaim.deleteMany(
+      { _id: { $in: ids } },
+      sessionOpts(session)
+    );
+    return { ok: true, deletedCount: result.deletedCount || 0, scope: 'inserted_claim_ids' };
+  }
+
   const bookingOid = toObjectId(bookingId, 'bookingId');
   const unitOid = toObjectId(unitId, 'unitId');
   const nightList =
@@ -416,13 +433,32 @@ async function compensateClaimAttempt({
     return { ok: true, deletedCount: 0 };
   }
   const nightDates = resolveOccupiedNightDates({ nights: nightList });
-  const result = await compensateAttemptInserts({
-    bookingOid,
-    unitOid,
-    insertedNightDates: nightDates,
-    session
-  });
-  return { ok: true, ...result };
+  const filter = {
+    bookingId: bookingOid,
+    unitId: unitOid,
+    night: { $in: nightDates }
+  };
+  if (stayChangeId != null && stayChangeId !== '') {
+    filter.stayChangeId = toObjectId(stayChangeId, 'stayChangeId');
+  }
+  if (source != null && source !== '') {
+    filter.source = String(source);
+  }
+  try {
+    const result = await UnitNightClaim.deleteMany(filter, sessionOpts(session));
+    return { ok: true, deletedCount: result.deletedCount || 0, scope: 'scoped_nights' };
+  } catch (compErr) {
+    throw createClaimError(
+      ERR.COMPENSATION_FAILED,
+      'Failed to compensate partial UnitNightClaim acquisition',
+      {
+        unitId: String(unitOid),
+        bookingId: String(bookingOid),
+        nights: nightDates.map(dateOnlyFromNightDate),
+        cause: compErr?.message || String(compErr)
+      }
+    );
+  }
 }
 
 async function releaseUnitNights({
