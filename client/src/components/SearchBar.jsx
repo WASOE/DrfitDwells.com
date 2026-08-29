@@ -62,18 +62,29 @@ const SearchBar = ({ initialData = {}, buttonTheme = 'default', variant = 'defau
     const incomingCheckOut = parseDate(initialData.checkOut);
     const incomingAdults = initialData.adults ? parseInt(initialData.adults, 10) : undefined;
     const incomingChildren = initialData.children ? parseInt(initialData.children, 10) : undefined;
+    const incomingPets =
+      initialData.pets !== undefined && initialData.pets !== null && initialData.pets !== ''
+        ? parseInt(initialData.pets, 10)
+        : undefined;
 
     if (incomingCheckIn || incomingCheckOut) {
       updateDates(incomingCheckIn || checkIn, incomingCheckOut || checkOut);
     }
 
-    if (incomingAdults !== undefined || incomingChildren !== undefined) {
+    if (
+      incomingAdults !== undefined ||
+      incomingChildren !== undefined ||
+      (incomingPets !== undefined && !Number.isNaN(incomingPets))
+    ) {
       updateGuests({
         adults: incomingAdults !== undefined ? incomingAdults : adults,
-        children: incomingChildren !== undefined ? incomingChildren : children
+        children: incomingChildren !== undefined ? incomingChildren : children,
+        ...(incomingPets !== undefined && !Number.isNaN(incomingPets)
+          ? { pets: Math.max(0, incomingPets) }
+          : {})
       });
     }
-  }, [initialData?.checkIn, initialData?.checkOut, initialData?.adults, initialData?.children]);
+  }, [initialData?.checkIn, initialData?.checkOut, initialData?.adults, initialData?.children, initialData?.pets]);
 
   useEffect(() => {
     const data = initialData || {};

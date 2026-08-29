@@ -20,7 +20,11 @@ const CABIN_NAME_TO_SLUG = Object.freeze({
   bucephalus: STAY_SLUG.THE_CABIN,
   'the cabin (bucephalus)': STAY_SLUG.THE_CABIN,
   'lux cabin': STAY_SLUG.LUX_CABIN,
-  'stone house': STAY_SLUG.STONE_HOUSE
+  'luxury cabin': STAY_SLUG.LUX_CABIN,
+  'stone house': STAY_SLUG.STONE_HOUSE,
+  'a-frame': STAY_SLUG.A_FRAME,
+  'a frame': STAY_SLUG.A_FRAME,
+  'a-frames': STAY_SLUG.A_FRAME
 });
 
 export function stayPathForSlug(slug, language = 'en') {
@@ -63,6 +67,16 @@ export function resolveListingStayPathBase(cabin) {
 
   const slug = resolveCabinStaySlug(cabin);
   return slug ? `/stays/${slug}` : null;
+}
+
+/** Public listing slug for policy / stay links (multi uses type slug). */
+export function resolveListingStaySlug(cabin) {
+  if (!cabin) return null;
+  if (isMultiUnitListing(cabin)) {
+    const typeSlug = String(cabin?.slug || cabin?.cabinTypeSlug || '').trim().toLowerCase();
+    return typeSlug || null;
+  }
+  return resolveCabinStaySlug(cabin);
 }
 
 export function resolveListingStayPath(cabin, language = 'en') {

@@ -23,6 +23,10 @@ import {
   promoStatusMicrocopyClass
 } from '../components/booking/StayLodgingPriceBlock';
 import { getListingCoverImage } from '../utils/listingGalleryUtils';
+import {
+  getSearchCardPetPolicyLabel,
+  getSearchCardStatus
+} from '../utils/searchCardStatus';
 
 const SearchBar = lazy(() => import('../components/SearchBar'));
 
@@ -36,6 +40,8 @@ function computeValidatedSearchParams(searchParams) {
   let checkOut = searchParams.get('checkOut');
   let adults = parseInt(searchParams.get('adults'), 10) || 2;
   let children = parseInt(searchParams.get('children'), 10) || 0;
+  let pets = parseInt(searchParams.get('pets'), 10);
+  if (Number.isNaN(pets)) pets = 0;
 
   const today = getMinSelectableStayDate();
   let checkInDate = null;
@@ -65,11 +71,12 @@ function computeValidatedSearchParams(searchParams) {
 
   adults = Math.max(1, Math.min(10, adults));
   children = Math.max(0, Math.min(10, children));
+  pets = Math.max(0, Math.min(10, pets));
 
   const promoRaw = searchParams.get('promoCode');
   const promoCode = promoRaw && promoRaw.trim() ? promoRaw.trim().toUpperCase() : '';
 
-  return { checkIn, checkOut, adults, children, promoCode };
+  return { checkIn, checkOut, adults, children, pets, promoCode };
 }
 
 /** Build query string for cabin / stay links (omits empty promo). */
@@ -78,7 +85,8 @@ function stayQueryString(p) {
     checkIn: p.checkIn,
     checkOut: p.checkOut,
     adults: String(p.adults),
-    children: String(p.children)
+    children: String(p.children),
+    pets: String(p.pets || 0)
   });
   if (p.promoCode) q.set('promoCode', p.promoCode);
   return q.toString();
@@ -118,84 +126,6 @@ function formatStaySuggestionRange(checkIn, checkOut, siteLanguage) {
   if (!inDate || !outDate) return '';
   const loc = getDateFnsLocale(siteLanguage);
   return `${format(inDate, 'd MMM', { locale: loc })} - ${format(outDate, 'd MMM', { locale: loc })}`;
-}
-
-/**
- * Maps API `unavailabilityReason` (+ legacy rows with only `available: false`) to card messaging.
- */
-function getSearchCardStatus(cabin, t) {
-  const isBookable = cabin.available !== false;
-  if (isBookable) {
-    return {
-      isBookable: true,
-      reasonCode: null,
-      banner: null,
-      disabledCta: null,
-      openPlannerGuests: false,
-      openPlannerStay: false
-    };
-  }
-
-  const code = cabin.unavailabilityReason || 'dates';
-  const d = cabin.unavailabilityDetail || {};
-
-  switch (code) {
-    case 'min_guests': {
-      const msg = t('search.reasonMinGuests', { count: d.minGuests });
-      return {
-        isBookable: false,
-        reasonCode: code,
-        banner: msg,
-        disabledCta: msg,
-        openPlannerGuests: true,
-        openPlannerStay: false
-      };
-    }
-    case 'max_guests': {
-      const msg = t('search.reasonMaxGuests', { count: d.maxGuests });
-      return {
-        isBookable: false,
-        reasonCode: code,
-        banner: msg,
-        disabledCta: msg,
-        openPlannerGuests: true,
-        openPlannerStay: false
-      };
-    }
-    case 'min_nights': {
-      const msg = t('search.reasonMinNights', { count: d.minNights });
-      return {
-        isBookable: false,
-        reasonCode: code,
-        banner: msg,
-        disabledCta: msg,
-        openPlannerGuests: false,
-        openPlannerStay: true
-      };
-    }
-    case 'dates': {
-      const msg = t('search.unavailableForDates');
-      return {
-        isBookable: false,
-        reasonCode: code,
-        banner: msg,
-        disabledCta: msg,
-        openPlannerGuests: false,
-        openPlannerStay: true
-      };
-    }
-    default: {
-      const msg = t('search.reasonCriteria');
-      return {
-        isBookable: false,
-        reasonCode: 'criteria',
-        banner: msg,
-        disabledCta: msg,
-        openPlannerGuests: true,
-        openPlannerStay: true
-      };
-    }
-  }
 }
 
 const SearchResults = () => {
@@ -672,8 +602,11 @@ const SearchResults = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12">
             {cabins.map((cabin) => {
-              const status = getSearchCardStatus(cabin, t);
+              const status = getSearchCardStatus(cabin, t, {
+                pets: currentSearchParams.pets
+              });
               const { isBookable } = status;
+              const petPolicyLabel = getSearchCardPetPolicyLabel(cabin, t);
               const suggestionKey = getListingSuggestionKey(cabin);
               const isDateUnavailable = !isBookable && status.reasonCode === 'dates';
               const dateSuggestion = isDateUnavailable
@@ -699,6 +632,7 @@ const SearchResults = () => {
                 data-testid="search-result-card"
                 data-available={isBookable ? 'true' : 'false'}
                 data-unavailability-reason={status.reasonCode || ''}
+                data-pet-policy={petPolicyLabel}
               >
                 <div className="relative h-64 overflow-hidden">
                   <img
@@ -746,9 +680,13 @@ const SearchResults = () => {
                   <h3 className="headline-subsection mb-4">
                     {cabin.name}
                   </h3>
-                  <p className="text-body text-gray-600 flex items-center mb-6">
+                  <p className="text-body text-gray-600 flex items-center mb-2">
                     <span className="w-1 h-1 bg-sage rounded-full mr-3"></span>
                     {cabin.location}
+                  </p>
+                  <p className="text-body text-gray-600 flex items-center mb-6">
+                    <span className="w-1 h-1 bg-sage rounded-full mr-3" aria-hidden="true"></span>
+                    {petPolicyLabel}
                   </p>
                   <p className="text-body text-gray-600 mb-8 line-clamp-3 flex-grow">
                     {cabin.description}

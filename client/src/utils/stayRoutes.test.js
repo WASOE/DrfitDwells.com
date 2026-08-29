@@ -4,6 +4,7 @@ import {
   KNOWN_CABIN_ID_TO_SLUG,
   resolveCabinStaySlug,
   resolveListingStayPathBase,
+  resolveListingStaySlug,
   STAY_SLUG
 } from './stayRoutes';
 
@@ -29,6 +30,11 @@ describe('stayRoutes', () => {
     expect(resolveListingStayPathBase({ inventoryType: 'multi', slug: 'a-frame' })).toBe(
       '/stays/a-frame'
     );
+  });
+
+  it('resolveListingStaySlug covers multi and luxury name aliases', () => {
+    expect(resolveListingStaySlug({ inventoryType: 'multi', slug: 'a-frame' })).toBe('a-frame');
+    expect(resolveListingStaySlug({ name: 'Luxury Cabin' })).toBe('lux-cabin');
   });
 
   it('appendQueryString omits bare ?', () => {
