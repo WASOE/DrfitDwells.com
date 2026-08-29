@@ -24,6 +24,7 @@ import {
   LEGAL_ACCEPTANCE_TERMS_VERSION
 } from '../constants/legalAcceptance';
 import { getListingCoverImage } from '../utils/listingGalleryUtils';
+import { resolveAllowPets } from '../utils/stayPageContent';
 import { isCheckoutSessionV2Enabled } from '../utils/checkoutSessionV2Flags';
 import {
   isFinalizeIntentPersistEnabled,
@@ -969,7 +970,15 @@ const ConfirmBooking = () => {
   }, []);
 
   const maxGuests = cabin?.capacity ?? 4;
-  const allowPets = cabin?.allowPets ?? false;
+  const staySlugForPets = bookingEntitySlug || cabin?.slug || null;
+  const allowPets = resolveAllowPets({
+    slug: staySlugForPets,
+    apiAllowPets: cabin?.allowPets
+  });
+
+  useEffect(() => {
+    if (!allowPets && pets > 0) setPets(0);
+  }, [allowPets, pets]);
 
   const pricing = useMemo(() => {
     if (!cabin || !checkIn || !checkOut || !cabin.pricePerNight) return null;

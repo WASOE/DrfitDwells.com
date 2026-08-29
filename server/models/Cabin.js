@@ -136,6 +136,11 @@ const cabinSchema = new mongoose.Schema({
     type: String,
     trim: true
   }],
+  /** Guest pet policy. Known stay pages also resolve from slug; this is the API/admin source. */
+  allowPets: {
+    type: Boolean,
+    default: false
+  },
   location: {
     type: String,
     required: [true, 'Location is required'],

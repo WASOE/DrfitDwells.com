@@ -83,7 +83,13 @@
     "labels": {
       "sleeps": "Sleeps:",
       "bestFor": "Best for:",
-      "keyFeature": "Key feature:"
+      "keyFeature": "Key feature:",
+      "pets": "Pets:"
+    },
+    "pets": {
+      "luxury-cabin": "Dogs not permitted",
+      "stone-house": "Dogs welcome",
+      "a-frames": "Dogs welcome"
     },
     "bestFor": {
       "stoneHouse": "families or small groups",

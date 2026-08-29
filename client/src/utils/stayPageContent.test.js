@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveStayAmenities, resolveStayHighlights } from './stayPageContent';
+import { resolveAllowPets, resolveStayAmenities, resolveStayHighlights } from './stayPageContent';
 
 const tEn = (key, opts = {}) => {
   const bundles = {
@@ -10,12 +10,13 @@ const tEn = (key, opts = {}) => {
     'stayContent.lux-cabin.amenities': [
       'Double bed',
       'Private fully equipped kitchen',
-      'Starlink internet'
+      'Starlink internet',
+      'Dogs not permitted'
     ],
     'stayContent.the-cabin.highlights': [
       'Off-grid comfort: wood stove, steaming hot tub'
     ],
-    'stayContent.the-cabin.amenities': ['Steaming hot tub', 'Wood stove']
+    'stayContent.the-cabin.amenities': ['Steaming hot tub', 'Wood stove', 'Dogs welcome']
   };
   if (opts.returnObjects && bundles[key]) return bundles[key];
   return bundles[key] || opts.defaultValue || key;
@@ -40,6 +41,7 @@ describe('stayPageContent', () => {
     });
     expect(amenities.join(' ')).not.toMatch(/hot tub/i);
     expect(amenities).toContain('Starlink internet');
+    expect(amenities).toContain('Dogs not permitted');
   });
 
   it('allows hot tub for the-cabin', () => {
@@ -49,5 +51,15 @@ describe('stayPageContent', () => {
       t: tEn
     });
     expect(highlights.join(' ')).toMatch(/hot tub/i);
+  });
+
+  it('resolves pet policy by known stay slug', () => {
+    expect(resolveAllowPets({ slug: 'the-cabin' })).toBe(true);
+    expect(resolveAllowPets({ slug: 'a-frame' })).toBe(true);
+    expect(resolveAllowPets({ slug: 'stone-house' })).toBe(true);
+    expect(resolveAllowPets({ slug: 'lux-cabin' })).toBe(false);
+    expect(resolveAllowPets({ slug: 'lux-cabin', apiAllowPets: true })).toBe(false);
+    expect(resolveAllowPets({ slug: 'unknown', apiAllowPets: true })).toBe(true);
+    expect(resolveAllowPets({ slug: 'unknown' })).toBe(false);
   });
 });

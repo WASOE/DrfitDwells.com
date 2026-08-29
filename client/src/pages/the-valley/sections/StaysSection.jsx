@@ -99,6 +99,7 @@ const StaysSection = ({ accommodationsRef }) => {
                       return t(`stays.bestFor.${key}`);
                     })()}
                   </div>
+                  <div><strong className="text-[#1a1a1a] font-semibold">{t('stays.labels.pets')}</strong> {t(`stays.pets.${stay.id}`)}</div>
                   <div><strong className="text-[#1a1a1a] font-semibold">{t('stays.labels.keyFeature')}</strong> {bullet0}</div>
                 </div>
               </div>

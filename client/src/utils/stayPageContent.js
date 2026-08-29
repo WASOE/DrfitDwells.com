@@ -2,6 +2,14 @@ const HOT_TUB_PATTERN = /hot\s*tub|hot_tub|джакузи|хот\s*тъб/i;
 
 const KNOWN_STAY_SLUGS = new Set(['the-cabin', 'lux-cabin', 'stone-house', 'a-frame']);
 
+/** Guest-facing pet policy for known stays. Lux Cabin is the only no-dogs unit. */
+const ALLOW_PETS_BY_SLUG = {
+  'the-cabin': true,
+  'a-frame': true,
+  'stone-house': true,
+  'lux-cabin': false
+};
+
 function readLocalizedList(t, key) {
   const items = t(key, { returnObjects: true, defaultValue: [] });
   if (!Array.isArray(items) || items.length === 0) return null;
@@ -54,4 +62,16 @@ export function resolveStayAmenities({ slug, apiAmenities, t }) {
   }
 
   return [];
+}
+
+/**
+ * Whether pets (dogs) are welcome for a stay.
+ * Known slugs use the fixed Valley/Cabin policy map; unknown listings fall back to API.
+ */
+export function resolveAllowPets({ slug, apiAllowPets } = {}) {
+  const key = typeof slug === 'string' ? slug.trim().toLowerCase() : '';
+  if (key && Object.prototype.hasOwnProperty.call(ALLOW_PETS_BY_SLUG, key)) {
+    return ALLOW_PETS_BY_SLUG[key];
+  }
+  return apiAllowPets === true;
 }

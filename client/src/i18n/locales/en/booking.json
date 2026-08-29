@@ -94,7 +94,7 @@
     },
     "pets": {
       "label": "Pets",
-      "description": "Bringing a service animal?"
+      "description": "Dogs welcome on most stays"
     },
     "addGuests": "Add guests"
   },
@@ -295,7 +295,8 @@
         "Spring water",
         "Solar electricity",
         "Mountain and forest views",
-        "Bed linen and towels"
+        "Bed linen and towels",
+        "Dogs welcome"
       ]
     },
     "lux-cabin": {
@@ -315,7 +316,8 @@
         "Bed linen and towels",
         "Solar electricity",
         "Mountain and forest views",
-        "Starlink internet"
+        "Starlink internet",
+        "Dogs not permitted"
       ]
     },
     "stone-house": {
@@ -333,7 +335,8 @@
         "Coworking space",
         "Historic stone construction",
         "Valley access trails",
-        "Bed linen and towels"
+        "Bed linen and towels",
+        "Dogs welcome"
       ]
     },
     "a-frame": {
@@ -354,7 +357,8 @@
         "Shared outdoor showers",
         "Shared toilets",
         "Fire pit",
-        "Starlink internet in communal area"
+        "Starlink internet in communal area",
+        "Dogs welcome"
       ]
     }
   },

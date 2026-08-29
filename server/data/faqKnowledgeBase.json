@@ -641,8 +641,8 @@
         "no pets right",
         "pets not allowed"
       ],
-      "short_answer": "No. Pets are not permitted at The Cabin. The Valley: check with us—some units may allow. The remote location and wildlife make it unsuitable for pets at The Cabin.",
-      "full_answer": "No pets at The Cabin—the remote location and wildlife make it unsuitable. The Valley: some units may allow pets; message us to check. If you have a specific situation, we'll tell you honestly.",
+      "short_answer": "Dogs welcome at The Cabin, A-frames, and Stone House. Lux Cabin: dogs not permitted.",
+      "full_answer": "Dogs are welcome at The Cabin, the Valley A-frames, and the Stone House — keep them off furniture and beds, and mindful of wildlife. Lux Cabin: dogs are not permitted.",
       "escalation_rule": null,
       "upsell_hint": null
     },

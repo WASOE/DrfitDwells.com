@@ -153,7 +153,7 @@ export default function ValleyPublicGuide() {
           <li>Paths can be uneven, dark, or slippery — move carefully at night with a light</li>
           <li>Supervise children near stoves, fires, and the creek</li>
           <li>Agree clear boundaries with children for where they may walk alone</li>
-          <li>If your unit allows pets, keep them under control and away from wildlife and farm animals</li>
+          <li>Dogs are welcome at A-frames and the Stone House; they are not permitted in the Lux Cabin — keep pets under control and away from wildlife and farm animals</li>
           <li>Mountain weather changes quickly — keep a warm layer ready</li>
         </ul>
       </GuideSection>

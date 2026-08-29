@@ -14,7 +14,7 @@ const faqTextAnswers = {
   'How long does it take to heat the hot tub?': 'The wood-fired hot tub takes 4-6 hours to heat from cold. This requires maintaining a fire for the entire duration. In winter, heating takes significantly longer and may be impractical.',
   'How does the composting toilet work?': 'The cabin uses a composting toilet system that does not require water or flushing. Add sawdust or provided material after each use as directed.',
   'What is the main heating source?': 'The main heat source is a wood stove located in the cabin. You must light and maintain the fire yourself. There is no automatic heating system. Firewood is provided.',
-  'Can I bring my pet?': 'No. Pets are not permitted at The Cabin. The remote location and presence of wildlife make it unsuitable for pets.',
+  'Can I bring my pet?': 'Yes. Dogs are welcome at The Cabin. Please keep them off furniture and beds, and be mindful of wildlife and shepherd dogs nearby.',
   'Is there wifi?': 'No. There is no wifi connection at the cabin. This is a full digital detox location.',
   'Is there phone signal?': 'Mobile reception is weak or completely absent at the cabin. Do not rely on having phone signal during your stay.',
   'Should I bring my own food?': 'Yes. You must bring all food and drinks for your stay. There are no nearby shops or restaurants.',
@@ -319,10 +319,9 @@ const CabinFaqPage = () => {
           question: 'Can I bring my pet?',
           answer: (
             <ul className="list-disc list-inside space-y-2 ml-4">
-              <li>No. Pets are not permitted at The Cabin.</li>
-              <li>The remote location and presence of wildlife make it unsuitable for pets.</li>
-              <li>The area is home to protected species, and we maintain strict policies to preserve the natural ecosystem.</li>
-              <li>Pet waste and disturbance can negatively impact the local wildlife and environment.</li>
+              <li>Yes. Dogs are welcome at The Cabin.</li>
+              <li>Please keep them off furniture and beds.</li>
+              <li>Be mindful of wildlife and shepherd dogs in the area.</li>
             </ul>
           )
         }
@@ -480,7 +479,6 @@ const CabinFaqPage = () => {
             <ul className="list-disc list-inside space-y-2 ml-4">
               <li>High-consumption electronics or appliances (kettles, hair dryers, heaters).</li>
               <li>Devices that require standard power outlets.</li>
-              <li>Pets.</li>
               <li>Expectations of modern conveniences or connectivity.</li>
             </ul>
           )
