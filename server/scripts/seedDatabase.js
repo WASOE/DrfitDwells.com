@@ -197,13 +197,15 @@ const seedDatabase = async () => {
           }
         },
         capacity: 6,
-        minGuests: 3,
+        minGuests: 1,
         bedConfig: [
           { bedType: 'double', count: 2 },
           { bedType: 'single', count: 2 }
         ],
-        pricePerNight: 25,
-        pricingModel: 'per_person',
+        pricePerNight: 75,
+        pricingModel: 'base_plus_extra',
+        includedGuests: 3,
+        extraGuestPricePerNight: 25,
         minNights: 2,
         location: 'Chereshovo / Ortsevo, Rhodope Mountains, Bulgaria',
         amenities: [

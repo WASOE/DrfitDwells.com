@@ -2,10 +2,10 @@
 /* eslint-disable no-console */
 /**
  * Seed flat whole-Valley buyout nightly rates into the existing `buyoutPricePerNight`
- * field. Single-stay `pricePerNight` (incl. Stone House €25 per-person) is never touched.
+ * field. Single-stay `pricePerNight` (Stone House base_plus_extra) is never touched.
  *
  * Targets & values:
- *   - Stone House (Cabin)      → €150  (flat buyout; derived from €25/person × 6 capacity)
+ *   - Stone House (Cabin)      → €150  (flat buyout; independent of single-stay guest formula)
  *   - Lux Cabin  (Cabin)       → €85
  *   - A-Frame    (CabinType)   → €60   (per unit)
  *

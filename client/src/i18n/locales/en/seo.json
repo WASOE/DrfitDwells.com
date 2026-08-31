@@ -80,7 +80,7 @@
         "the-cabin": { "fit": "Couples · max remoteness", "price": "From €55/night" },
         "valley-a-frame": { "fit": "Couples · comfort + views", "price": "From €60/night" },
         "valley-lux-cabin": { "fit": "Couples · top comfort", "price": "From €85/night" },
-        "valley-stone-house": { "fit": "Groups & families", "price": "From €75/night · min 3 guests" }
+        "valley-stone-house": { "fit": "Groups & families", "price": "From €75/night" }
       }
     },
     "card": {
@@ -159,7 +159,7 @@
       },
       "valley-stone-house": {
         "title": "The Valley Stone House",
-        "price": "From €25/person (min 3)",
+        "price": "From €75/night",
         "fitLine": "For groups or families who want character, history, and more space.",
         "facts": [
           "Historic stone house, shared spaces",

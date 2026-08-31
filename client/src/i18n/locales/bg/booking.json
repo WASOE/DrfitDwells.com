@@ -61,6 +61,9 @@
     "promoAppliedDefault": "Промо приложено",
     "pricePerNight": "€{{price}}/нощ",
     "perPersonSuffix": " на човек",
+    "upToPeopleBanner": "До {{count}} души",
+    "upToGuestsIncluded": "До {{count}} гости включени",
+    "basePlusExtraHint": "€{{base}}/нощувка за до {{included}} гости · +€{{extra}}/нощувка за всеки допълнителен гост",
     "saveOnStay": "Спестете €{{amount}} от престоя",
     "priceFromPerNight": "От €{{price}}/нощ",
     "selectThisCabinCta": "Избери тази къща →",
@@ -332,6 +335,8 @@
       ],
       "amenities": [
         "До 6 гости",
+        "€75/нощувка за до 3 гости",
+        "+€25/нощувка за всеки допълнителен гост",
         "Обща кухня",
         "Камина",
         "Starlink интернет",

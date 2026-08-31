@@ -84,8 +84,23 @@ const cabinTypeSchema = new mongoose.Schema({
   },
   pricingModel: {
     type: String,
-    enum: ['per_night', 'per_person'],
+    enum: ['per_night', 'per_person', 'base_plus_extra'],
     default: 'per_night'
+  },
+  /**
+   * For pricingModel `base_plus_extra`: guests included in pricePerNight.
+   */
+  includedGuests: {
+    type: Number,
+    min: [0, 'Included guests cannot be negative'],
+    max: [20, 'Included guests cannot exceed 20'],
+    default: null
+  },
+  /** Nightly surcharge per human guest beyond includedGuests (base_plus_extra). */
+  extraGuestPricePerNight: {
+    type: Number,
+    min: [0, 'Extra guest price cannot be negative'],
+    default: null
   },
   minNights: {
     type: Number,

@@ -25,6 +25,7 @@ import {
 } from '../constants/legalAcceptance';
 import { getListingCoverImage } from '../utils/listingGalleryUtils';
 import { resolveAllowPets } from '../utils/stayPageContent';
+import { calculateBaseLodgingPrice } from '../utils/lodgingPrice';
 import { isCheckoutSessionV2Enabled } from '../utils/checkoutSessionV2Flags';
 import {
   isFinalizeIntentPersistEnabled,
@@ -985,11 +986,12 @@ const ConfirmBooking = () => {
     try {
       const totalNights = daysBetweenDateOnly(checkIn, checkOut);
       if (totalNights < 1) return null;
-      const totalGuests = adults + children;
-      let totalPrice = totalNights * cabin.pricePerNight;
-      if ((cabin.pricingModel || 'per_night') === 'per_person') {
-        totalPrice *= Math.max(totalGuests, 1);
-      }
+      const totalPrice = calculateBaseLodgingPrice(
+        cabin,
+        totalNights,
+        adults,
+        children
+      );
       return { totalNights, totalPrice, pricePerNight: cabin.pricePerNight };
     } catch {
       return null;

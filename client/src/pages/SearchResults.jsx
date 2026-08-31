@@ -27,6 +27,8 @@ import {
   getSearchCardPetPolicyLabel,
   getSearchCardStatus
 } from '../utils/searchCardStatus';
+import { calculateNightlyLodgingRate } from '../utils/lodgingPrice';
+import { resolveListingStaySlug } from '../utils/stayRoutes';
 
 const SearchBar = lazy(() => import('../components/SearchBar'));
 
@@ -607,6 +609,15 @@ const SearchResults = () => {
               });
               const { isBookable } = status;
               const petPolicyLabel = getSearchCardPetPolicyLabel(cabin, t);
+              const listingSlug = resolveListingStaySlug(cabin);
+              const isStoneHouse = listingSlug === 'stone-house';
+              const humanGuests =
+                (currentSearchParams.adults || 0) + (currentSearchParams.children || 0);
+              const effectiveNightly = calculateNightlyLodgingRate(
+                cabin,
+                currentSearchParams.adults,
+                currentSearchParams.children
+              );
               const suggestionKey = getListingSuggestionKey(cabin);
               const isDateUnavailable = !isBookable && status.reasonCode === 'dates';
               const dateSuggestion = isDateUnavailable
@@ -614,6 +625,7 @@ const SearchResults = () => {
                 : null;
               const hasDateSuggestion = isDateUnavailable && !!dateSuggestion;
               const showStatusBanner = !isBookable && !!status.banner;
+              const showStoneCapacityBanner = isStoneHouse && !showStatusBanner;
               const shouldShowDuplicateStatus = !isBookable && !!status.disabledCta && !showStatusBanner;
               const shouldShowPlannerAction =
                 (status.openPlannerGuests || status.openPlannerStay) && !hasDateSuggestion;
@@ -633,6 +645,7 @@ const SearchResults = () => {
                 data-available={isBookable ? 'true' : 'false'}
                 data-unavailability-reason={status.reasonCode || ''}
                 data-pet-policy={petPolicyLabel}
+                data-listing-slug={listingSlug || ''}
               >
                 <div className="relative h-64 overflow-hidden">
                   <img
@@ -649,6 +662,16 @@ const SearchResults = () => {
                     >
                       <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#F1ECE2] leading-snug">
                         {status.banner}
+                      </p>
+                    </div>
+                  )}
+                  {showStoneCapacityBanner && (
+                    <div
+                      className="absolute inset-x-0 bottom-0 z-20 bg-stone-900/85 px-4 py-3 text-center"
+                      data-testid="stone-house-capacity-banner"
+                    >
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#F1ECE2] leading-snug">
+                        {t('search.upToPeopleBanner', { count: cabin.capacity || 6 })}
                       </p>
                     </div>
                   )}
@@ -712,10 +735,21 @@ const SearchResults = () => {
                             : null
                         }
                         footnote={
-                          <p className="text-sm text-gray-500 font-light mt-1">
-                            {t('search.pricePerNight', { price: cabin.pricePerNight })}
-                            {(cabin.pricingModel || 'per_night') === 'per_person' ? t('search.perPersonSuffix') : ''}
-                          </p>
+                          <div className="mt-1 space-y-0.5">
+                            <p className="text-sm text-gray-500 font-light">
+                              {t('search.pricePerNight', {
+                                price: Number(effectiveNightly).toLocaleString()
+                              })}
+                            </p>
+                            {(cabin.pricingModel || 'per_night') === 'base_plus_extra' &&
+                              humanGuests <= (cabin.includedGuests || 0) && (
+                                <p className="text-xs text-gray-500 font-light">
+                                  {t('search.upToGuestsIncluded', {
+                                    count: cabin.includedGuests || 3
+                                  })}
+                                </p>
+                              )}
+                          </div>
                         }
                       />
                     </div>

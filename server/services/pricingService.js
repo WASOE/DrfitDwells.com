@@ -6,29 +6,48 @@
 const moment = require('moment');
 
 /**
- * Calculate total price for a cabin or cabin-type booking.
- * @param {Object} entity - Cabin or CabinType document (pricePerNight, pricingModel, transportOptions)
- * @param {Date|string} checkIn
- * @param {Date|string} checkOut
- * @param {number} adults
- * @param {number} children
- * @param {string[]} experienceKeys - Whitelisted keys from entity.experiences
- * @param {Object} opts - { transportMethod?: string, romanticSetup?: boolean }
- * @returns {{ totalPrice: number, totalNights: number, experienceKeysUsed: string[] }}
+ * Human guest count for lodging (adults + children). Pets never count.
  */
+function humanGuestCount(adults, children = 0) {
+  return Math.max(0, parseInt(adults, 10) || 0) + Math.max(0, parseInt(children, 10) || 0);
+}
+
 /**
- * Nights × rate (and per-person multiplier). Excludes experiences, transport, romantic setup.
+ * Nightly lodging rate for an entity given human guest count.
+ * Models:
+ * - per_night: flat pricePerNight
+ * - per_person: pricePerNight × guests (legacy)
+ * - base_plus_extra: pricePerNight for up to includedGuests, then +extraGuestPricePerNight per extra guest
+ */
+function calculateNightlyLodgingRate(entity, adults, children = 0) {
+  const rate = Number(entity?.pricePerNight) || 0;
+  const guests = humanGuestCount(adults, children);
+  const model = entity?.pricingModel || 'per_night';
+
+  if (model === 'per_person') {
+    return rate * Math.max(guests, 1);
+  }
+
+  if (model === 'base_plus_extra') {
+    const included = Math.max(0, parseInt(entity.includedGuests, 10) || 0);
+    const extraRate = Number(entity.extraGuestPricePerNight) || 0;
+    const extraGuests = Math.max(0, guests - included);
+    return rate + extraGuests * extraRate;
+  }
+
+  return rate;
+}
+
+/**
+ * Nights × nightly rate. Excludes experiences, transport, romantic setup.
+ * Pets never affect lodging.
  */
 function calculateBaseLodgingPrice(entity, checkIn, checkOut, adults, children = 0) {
   const checkInDate = moment(checkIn).startOf('day').toDate();
   const checkOutDate = moment(checkOut).startOf('day').toDate();
   const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
-  const totalGuests = Math.max(0, parseInt(adults, 10) || 0) + Math.max(0, parseInt(children, 10) || 0);
-  let base = totalNights * (entity.pricePerNight || 0);
-  if ((entity.pricingModel || 'per_night') === 'per_person') {
-    base *= Math.max(totalGuests, 1);
-  }
-  return Math.round(base * 100) / 100;
+  const nightly = calculateNightlyLodgingRate(entity, adults, children);
+  return Math.round(totalNights * nightly * 100) / 100;
 }
 
 /**
@@ -38,7 +57,7 @@ function calculateCabinPriceBreakdown(entity, checkIn, checkOut, adults, childre
   const checkInDate = moment(checkIn).startOf('day').toDate();
   const checkOutDate = moment(checkOut).startOf('day').toDate();
   const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
-  const totalGuests = Math.max(0, parseInt(adults, 10) || 0) + Math.max(0, parseInt(children, 10) || 0);
+  const totalGuests = humanGuestCount(adults, children);
 
   const baseLodgingPrice = calculateBaseLodgingPrice(entity, checkIn, checkOut, adults, children);
 
@@ -107,5 +126,7 @@ module.exports = {
   calculateCabinPrice,
   calculateCabinPriceBreakdown,
   calculateBaseLodgingPrice,
+  calculateNightlyLodgingRate,
+  humanGuestCount,
   validateExperienceKeys
 };

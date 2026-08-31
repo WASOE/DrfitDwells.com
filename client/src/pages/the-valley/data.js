@@ -67,7 +67,7 @@ export const STAY_CARDS = [
     listingSlug: 'stone-house',
     route: '/stays/stone-house',
     sleeps: 'up to 6',
-    price: '€25/person (min 3)',
+    price: '€75/night',
     fallbackImage: '/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.24%20AM.jpeg',
     imagePath: '/uploads/The Valley/WhatsApp Image 2025-10-17 at 10.20.24 AM.jpeg',
     bullets: [

@@ -21,6 +21,7 @@ import {
   buildStayLodgingJsonLd
 } from '../utils/staySeo';
 import { resolveStayAmenities, resolveStayHighlights } from '../utils/stayPageContent';
+import { calculateBaseLodgingPrice } from '../utils/lodgingPrice';
 import { isStayBookingHash, scrollToVisibleBookingAnchor } from '../utils/stayBookingHashScroll';
 import './CabinDetails.css';
 import '../components/gallery/lightbox.css';
@@ -195,11 +196,12 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
       }
       
       const totalNights = daysBetweenDateOnly(checkIn, checkOut);
-      const totalGuests = (searchCriteria.adults || 0) + (searchCriteria.children || 0);
-      let totalPrice = totalNights * cabinType.pricePerNight;
-      if ((cabinType.pricingModel || 'per_night') === 'per_person') {
-        totalPrice *= Math.max(totalGuests, 1);
-      }
+      const totalPrice = calculateBaseLodgingPrice(
+        cabinType,
+        totalNights,
+        searchCriteria.adults || 0,
+        searchCriteria.children || 0
+      );
       
       return { totalNights, totalPrice };
     } catch {

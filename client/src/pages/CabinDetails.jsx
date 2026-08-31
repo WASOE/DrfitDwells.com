@@ -26,6 +26,7 @@ import {
   buildStayLodgingJsonLd
 } from '../utils/staySeo';
 import { resolveStayAmenities, resolveStayHighlights } from '../utils/stayPageContent';
+import { calculateBaseLodgingPrice, calculateNightlyLodgingRate } from '../utils/lodgingPrice';
 import { isStayBookingHash, scrollToVisibleBookingAnchor } from '../utils/stayBookingHashScroll';
 
 // Constants
@@ -386,17 +387,36 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
       }
       
       const totalNights = daysBetweenDateOnly(checkIn, checkOut);
-      const totalGuests = (searchCriteria.adults || 0) + (searchCriteria.children || 0);
-      let totalPrice = totalNights * cabin.pricePerNight;
-      if ((cabin.pricingModel || 'per_night') === 'per_person') {
-        totalPrice *= Math.max(totalGuests, 1);
-      }
+      const totalPrice = calculateBaseLodgingPrice(
+        cabin,
+        totalNights,
+        searchCriteria.adults || 0,
+        searchCriteria.children || 0
+      );
       
       return { totalNights, totalPrice };
     } catch {
       return null;
     }
   }, [cabin, searchCriteria.checkIn, searchCriteria.checkOut, searchCriteria.adults, searchCriteria.children]);
+
+  const effectiveNightlyRate = useMemo(() => {
+    if (!cabin?.pricePerNight) return null;
+    return calculateNightlyLodgingRate(
+      cabin,
+      searchCriteria.adults || 0,
+      searchCriteria.children || 0
+    );
+  }, [cabin, searchCriteria.adults, searchCriteria.children]);
+
+  const basePlusExtraHint =
+    cabin?.pricingModel === 'base_plus_extra'
+      ? t('search.basePlusExtraHint', {
+          base: Number(cabin.pricePerNight || 0).toLocaleString(),
+          included: cabin.includedGuests || 3,
+          extra: Number(cabin.extraGuestPricePerNight || 0).toLocaleString()
+        })
+      : null;
 
   const displayGrandTotal =
     cabinQuote?.totalPrice != null
@@ -1173,19 +1193,29 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
                     }
                     footnote={
                       pricing ? (
-                        <p className="text-sm text-gray-500 mt-0.5">
-                          {t('modal.nights', { count: pricing.totalNights })}
-                          {cabin.pricePerNight &&
-                            ` · ${t('search.pricePerNight', { price: cabin.pricePerNight.toLocaleString() })}`}
-                        </p>
+                        <div className="mt-0.5 space-y-0.5">
+                          <p className="text-sm text-gray-500">
+                            {t('modal.nights', { count: pricing.totalNights })}
+                            {effectiveNightlyRate != null &&
+                              ` · ${t('search.pricePerNight', { price: Number(effectiveNightlyRate).toLocaleString() })}`}
+                          </p>
+                          {basePlusExtraHint && (
+                            <p className="text-xs text-gray-500">{basePlusExtraHint}</p>
+                          )}
+                        </div>
                       ) : null
                     }
                   />
                 </div>
               ) : cabin.pricePerNight ? (
-                <p className="text-xl md:text-2xl font-semibold text-gray-900 tabular-nums mt-0.5">
-                  {t('search.priceFromPerNight', { price: cabin.pricePerNight.toLocaleString() })}
-                </p>
+                <div className="mt-0.5">
+                  <p className="text-xl md:text-2xl font-semibold text-gray-900 tabular-nums">
+                    {t('search.priceFromPerNight', { price: cabin.pricePerNight.toLocaleString() })}
+                  </p>
+                  {basePlusExtraHint && (
+                    <p className="text-xs text-gray-500 mt-1">{basePlusExtraHint}</p>
+                  )}
+                </div>
               ) : (
                 <p className="text-xl md:text-2xl font-semibold text-gray-900 tabular-nums mt-0.5">
                   {t('details.selectDatesForPricing')}
@@ -1331,11 +1361,16 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
                       <span className="text-base font-normal text-gray-500 ml-1">{t('details.priceTotalSuffix')}</span>
                     }
                     footnote={
-                      <p className="text-sm text-gray-500 mt-0.5">
-                        {t('modal.nights', { count: pricing.totalNights })}
-                        {cabin.pricePerNight &&
-                          ` · ${t('search.pricePerNight', { price: cabin.pricePerNight.toLocaleString() })}`}
-                      </p>
+                      <div className="mt-0.5 space-y-0.5">
+                        <p className="text-sm text-gray-500">
+                          {t('modal.nights', { count: pricing.totalNights })}
+                          {effectiveNightlyRate != null &&
+                            ` · ${t('search.pricePerNight', { price: Number(effectiveNightlyRate).toLocaleString() })}`}
+                        </p>
+                        {basePlusExtraHint && (
+                          <p className="text-xs text-gray-500">{basePlusExtraHint}</p>
+                        )}
+                      </div>
                     }
                   />
                 </div>

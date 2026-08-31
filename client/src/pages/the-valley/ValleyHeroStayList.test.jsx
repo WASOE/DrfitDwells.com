@@ -52,7 +52,7 @@ const fullData = {
   units: [
     baseUnit('a-frame'),
     baseUnit('lux-cabin', { fromPrice: 'From €85/night' }),
-    baseUnit('stone-house', { fromPrice: 'From €25/night', sleeps: 'Sleeps 6' })
+    baseUnit('stone-house', { fromPrice: 'From €75/night', sleeps: 'Sleeps 6' })
   ],
   buyout: {
     id: 'buyout',
@@ -141,7 +141,7 @@ describe('ValleyHeroStayList', () => {
 
     expect(screen.getByText('stone-house')).toBeInTheDocument();
     expect(screen.getByText('Sleeps 6')).toBeInTheDocument();
-    expect(screen.queryByText('From €25/night')).not.toBeInTheDocument();
+    expect(screen.queryByText('From €75/night')).not.toBeInTheDocument();
   });
 
   it('renders unit rows when covers are missing', () => {

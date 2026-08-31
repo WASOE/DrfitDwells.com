@@ -13,6 +13,7 @@ const {
 const { guestFacingCabinMatch } = require('../utils/fixtureExclusion');
 const { localizeCabinContent, normalizeContentLocale } = require('../utils/cabinLocalization');
 const promoService = require('../services/promoService');
+const { calculateBaseLodgingPrice } = require('../services/pricingService');
 const { findNextSameLengthAvailability } = require('../services/availabilitySuggestionService');
 
 const router = express.Router();
@@ -85,11 +86,13 @@ router.get('/', [
       const capacity = cabin.capacity;
       const minNights = cabin.minNights || 1;
 
-      let totalPrice = totalNights * cabin.pricePerNight;
-      if ((cabin.pricingModel || 'per_night') === 'per_person') {
-        totalPrice *= totalGuests;
-      }
-      totalPrice = Math.round(totalPrice * 100) / 100;
+      let totalPrice = calculateBaseLodgingPrice(
+        cabin,
+        checkInDate,
+        checkOutDate,
+        adults,
+        children
+      );
       const lodgingSubtotalBeforePromo = totalPrice;
       if (promoDocForSearch) {
         const { displayPrice } = promoService.applyValidatedDocToLodging(totalPrice, promoDocForSearch);
@@ -162,11 +165,13 @@ router.get('/', [
         const minNights = cabinType.minNights || 1;
         const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
 
-        let totalPrice = totalNights * cabinType.pricePerNight;
-        if ((cabinType.pricingModel || 'per_night') === 'per_person') {
-          totalPrice *= totalGuests;
-        }
-        totalPrice = Math.round(totalPrice * 100) / 100;
+        let totalPrice = calculateBaseLodgingPrice(
+          cabinType,
+          checkInDate,
+          checkOutDate,
+          adults,
+          children
+        );
         const lodgingSubtotalBeforePromo = totalPrice;
         if (promoDocForSearch) {
           const { displayPrice } = promoService.applyValidatedDocToLodging(totalPrice, promoDocForSearch);
@@ -395,11 +400,13 @@ router.get('/cabin-type/:slug', [
 
     // Calculate total price
     const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
-    let totalPrice = totalNights * cabinType.pricePerNight;
-    if ((cabinType.pricingModel || 'per_night') === 'per_person') {
-      totalPrice *= totalGuests;
-    }
-    totalPrice = Math.round(totalPrice * 100) / 100;
+    let totalPrice = calculateBaseLodgingPrice(
+      cabinType,
+      checkInDate,
+      checkOutDate,
+      adults,
+      children
+    );
     const lodgingSubtotalBeforePromo = totalPrice;
     if (promoDocForType) {
       const { displayPrice } = promoService.applyValidatedDocToLodging(totalPrice, promoDocForType);

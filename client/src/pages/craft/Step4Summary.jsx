@@ -4,6 +4,7 @@ import { useBookingContext } from '../../context/BookingContext';
 import { cabinAPI, bookingAPI } from '../../services/api';
 import StickyBookingBar from '../../components/StickyBookingBar';
 import { daysBetweenDateOnly, formatDateOnlyLocal, parseDateOnlyLocal } from '../../utils/dateOnly';
+import { calculateBaseLodgingPrice } from '../../utils/lodgingPrice';
 import { useSiteLanguage } from '../../hooks/useSiteLanguage';
 import { formatStayDayWithWeekday } from '../../utils/localeDates';
 import { getAttributionPayload } from '../../tracking/attribution';
@@ -99,10 +100,7 @@ const Step4Summary = () => {
     if (totalNights < 1) return null;
     const totalGuests = adults + children;
     
-    let cabinCost = cabin.pricePerNight * totalNights;
-    if ((cabin.pricingModel || 'per_night') === 'per_person') {
-      cabinCost *= Math.max(totalGuests, 1);
-    }
+    const cabinCost = calculateBaseLodgingPrice(cabin, totalNights, adults, children);
     const transportCost = transportMethod ? transportMethod.pricePerPerson * totalGuests : 0;
     const romanticSetupCost = guestInfo.romanticSetup ? 30 : 0;
     

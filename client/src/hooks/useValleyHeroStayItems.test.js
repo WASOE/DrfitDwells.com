@@ -51,9 +51,11 @@ const listingIndex = {
     kind: 'cabin',
     listing: {
       capacity: 6,
-      pricePerNight: 25,
-      pricingModel: 'per_person',
-      minGuests: 3
+      pricePerNight: 75,
+      pricingModel: 'base_plus_extra',
+      includedGuests: 3,
+      extraGuestPricePerNight: 25,
+      minGuests: 1
     },
     slug: 'stone-house'
   }
@@ -97,7 +99,7 @@ describe('useValleyHeroStayItems data builders', () => {
       title: 'Stone House',
       fit: 'Families or small groups',
       sleeps: 'Sleeps 6',
-      fromPrice: 'From €25/night',
+      fromPrice: 'From €75/night',
       cover: { url: '/covers/stone-house.jpg', alt: 'Stone House' }
     });
   });
@@ -122,7 +124,7 @@ describe('useValleyHeroStayItems data builders', () => {
         price: listing.pricePerNight.toLocaleString()
       })
     );
-    expect(formatted).toBe('From €25/night');
+    expect(formatted).toBe('From €75/night');
   });
 
   it('buildValleyHeroBuyoutItem exposes inventory pricing and localized route', () => {

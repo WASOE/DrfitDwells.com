@@ -61,6 +61,9 @@
     "promoAppliedDefault": "Promo applied",
     "pricePerNight": "€{{price}}/night",
     "perPersonSuffix": " per person",
+    "upToPeopleBanner": "Up to {{count}} people",
+    "upToGuestsIncluded": "Up to {{count}} guests included",
+    "basePlusExtraHint": "€{{base}}/night for up to {{included}} guests · +€{{extra}}/night per additional guest",
     "saveOnStay": "Save €{{amount}} on stay",
     "priceFromPerNight": "From €{{price}}/night",
     "selectThisCabinCta": "Select this cabin →",
@@ -332,6 +335,8 @@
       ],
       "amenities": [
         "Sleeps up to 6",
+        "€75/night for up to 3 guests",
+        "+€25/night per additional guest",
         "Shared kitchen",
         "Fireplace",
         "Starlink internet",
