@@ -1,4 +1,8 @@
 import { Component } from 'react';
+import {
+  attemptChunkLoadRecovery,
+  isDynamicImportChunkError
+} from '../utils/appReleaseUpdate.js';
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -11,10 +15,22 @@ class ErrorBoundary extends Component {
   }
 
   componentDidCatch(error, info) {
+    if (isDynamicImportChunkError(error)) {
+      const result = attemptChunkLoadRecovery();
+      if (result.recovered) {
+        return;
+      }
+    }
+
     console.error('ErrorBoundary caught:', error, info.componentStack);
   }
 
   handleReset = () => {
+    const { error } = this.state;
+    if (isDynamicImportChunkError(error)) {
+      attemptChunkLoadRecovery();
+      return;
+    }
     this.setState({ hasError: false, error: null });
   };
 

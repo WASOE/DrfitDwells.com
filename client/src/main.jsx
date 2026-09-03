@@ -19,6 +19,7 @@ import { LanguageProvider } from './context/LanguageContext.jsx';
 import { SeasonProvider } from './context/SeasonContext.jsx';
 import './i18n/i18nCore.js';
 import { initWebVitals } from './tracking/webVitals.js';
+import { registerAppServiceWorker } from './utils/appReleaseUpdate.js';
 
 const scheduleWebVitals = () => initWebVitals();
 if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
@@ -30,24 +31,7 @@ if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'func
 const scheduleSwRegister = () => {
   import('virtual:pwa-register')
     .then(({ registerSW }) => {
-      const updateSW = registerSW({
-        immediate: true,
-        onNeedRefresh() {
-          // Controlled update only — never force-reload (breaks Stripe Elements / form state).
-          // Payment flows set sessionStorage dd_payment_flow_active=1; skip activation there.
-          const paymentActive =
-            typeof sessionStorage !== 'undefined' &&
-            sessionStorage.getItem('dd_payment_flow_active') === '1';
-          window.dispatchEvent(
-            new CustomEvent('dd:sw-update-available', {
-              detail: { updateSW, paymentActive }
-            })
-          );
-          if (paymentActive) return;
-          // Outside payment: activate on next navigation opportunity — still no hard reload.
-        }
-      });
-      window.__ddUpdateSW = updateSW;
+      registerAppServiceWorker(registerSW);
     })
     .catch(() => {});
 };
