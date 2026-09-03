@@ -71,7 +71,7 @@ async function listRecentGiftVouchersForPartner(creatorPartnerDoc, limit = 15) {
  */
 async function buildCreatorPortalMe(creatorPartnerId) {
   const partner = await CreatorPartner.findById(creatorPartnerId)
-    .select('name slug status referral promo commission')
+    .select('name slug status referral.code referral.ownedCodes promo commission')
     .lean();
   if (!partner) return null;
   if (partner.status === 'draft') return null;

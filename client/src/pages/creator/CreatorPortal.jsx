@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { creatorPortalAPI } from '../../services/creatorPortalApi';
+import { normalizeReferralCodeForPreview } from '../../utils/referralCodeNormalize';
 
 function formatMoney(amount, currency = 'EUR') {
   const n = Number(amount);
@@ -232,6 +233,11 @@ export default function CreatorPortal() {
   const [requestSent, setRequestSent] = useState(false);
   const [requestError, setRequestError] = useState('');
 
+  const [referralDraft, setReferralDraft] = useState('');
+  const [referralBusy, setReferralBusy] = useState(false);
+  const [referralError, setReferralError] = useState('');
+  const [referralSuccess, setReferralSuccess] = useState('');
+
   // Custom hook must be at the top level — never after an early return (React #310).
   const { copiedKey, copy } = useCopyToClipboard();
 
@@ -257,6 +263,9 @@ export default function CreatorPortal() {
           return;
         }
         setMe(data);
+        setReferralDraft(data?.profile?.referralCode ? String(data.profile.referralCode) : '');
+        setReferralError('');
+        setReferralSuccess('');
         setPhase('ready');
       } catch {
         setMeError('We could not load your dashboard. Please try again in a moment.');
@@ -311,6 +320,53 @@ export default function CreatorPortal() {
     }
     setRequestBusy(false);
     setRequestSent(true);
+  }
+
+  async function handleReferralCodeSave(e) {
+    if (e && typeof e.preventDefault === 'function') e.preventDefault();
+    if (referralBusy) return;
+    const value = String(referralDraft || '').trim();
+    if (!value) {
+      setReferralError('Enter a referral code.');
+      setReferralSuccess('');
+      return;
+    }
+    setReferralError('');
+    setReferralSuccess('');
+    setReferralBusy(true);
+    try {
+      const current = me?.profile?.referralCode || null;
+      const res = await creatorPortalAPI.updateReferralCode(value, current);
+      const nextCode = res.data?.data?.referralCode;
+      const changed = !!res.data?.data?.changed;
+      if (!nextCode) {
+        setReferralError('We could not update your referral code. Please try again.');
+        return;
+      }
+      setMe((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          profile: {
+            ...(prev.profile || {}),
+            referralCode: nextCode
+          }
+        };
+      });
+      setReferralDraft(nextCode);
+      setReferralSuccess(
+        changed
+          ? 'Referral code updated. Your previous referral links will continue to work.'
+          : 'That is already your current referral code.'
+      );
+    } catch (err) {
+      const msg =
+        err?.response?.data?.message ||
+        'We could not update your referral code. Please try again.';
+      setReferralError(String(msg));
+    } finally {
+      setReferralBusy(false);
+    }
   }
 
   if (phase === 'boot' || phase === 'session-ok') {
@@ -519,12 +575,12 @@ export default function CreatorPortal() {
             </p>
           </header>
 
-          {/* Your code / share link */}
+                    {/* Your code / share link */}
           <Card
             title="Your code"
             subtitle="Share your link or give guests your checkout code. Both help us track bookings from you."
           >
-            <div className="space-y-3">
+            <div className="space-y-3 max-w-2xl">
               {referralLink ? (
                 <CodeRow
                   label="Share link"
@@ -533,6 +589,14 @@ export default function CreatorPortal() {
                   copyLabel="Copy link"
                   onCopy={() => copy('link', referralLink)}
                   copied={copiedKey === 'link'}
+                />
+              ) : null}
+              {profile.referralCode ? (
+                <CodeRow
+                  label="Current referral code"
+                  value={profile.referralCode}
+                  onCopy={() => copy('code', profile.referralCode)}
+                  copied={copiedKey === 'code'}
                 />
               ) : null}
               {profile.promoCode ? (
@@ -548,6 +612,71 @@ export default function CreatorPortal() {
                   No share link or checkout code assigned yet. Drift &amp; Dwells will set this up for you.
                 </p>
               ) : null}
+
+              {profile.status === 'active' && profile.referralCode ? (
+                <form
+                  onSubmit={handleReferralCodeSave}
+                  className="rounded-xl border border-white/10 bg-zinc-900/40 px-3 py-3 md:px-4 md:py-4 space-y-3"
+                  noValidate
+                >
+                  <div>
+                    <label
+                      htmlFor="creator-referral-code"
+                      className="block text-[11px] uppercase tracking-[0.14em] text-zinc-500"
+                    >
+                      Change referral code
+                    </label>
+                    <input
+                      id="creator-referral-code"
+                      type="text"
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={referralDraft}
+                      onChange={(ev) => {
+                        setReferralDraft(ev.target.value);
+                        setReferralError('');
+                        setReferralSuccess('');
+                      }}
+                      disabled={referralBusy}
+                      className="mt-2 w-full max-w-md rounded-xl border border-white/15 bg-zinc-950/80 px-3 py-2.5 text-sm md:text-base font-mono text-white placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-fuchsia-400/40 disabled:opacity-60"
+                      placeholder="your.code"
+                    />
+                    {(() => {
+                      const previewCode = normalizeReferralCodeForPreview(referralDraft);
+                      if (!previewCode) return null;
+                      return (
+                        <p className="mt-2 text-xs text-zinc-500 break-all">
+                          Preview:{' '}
+                          <span className="text-zinc-300">
+                            {buildReferralLink(previewCode) || `/?ref=${encodeURIComponent(previewCode)}`}
+                          </span>
+                        </p>
+                      );
+                    })()}
+                  </div>
+                  <p className="text-[11px] md:text-xs text-zinc-500 leading-relaxed">
+                    Your previous referral links will continue to work.
+                  </p>
+                  {referralError ? (
+                    <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs md:text-sm text-rose-100">
+                      {referralError}
+                    </div>
+                  ) : null}
+                  {referralSuccess ? (
+                    <div className="rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-xs md:text-sm text-emerald-100">
+                      {referralSuccess}
+                    </div>
+                  ) : null}
+                  <button
+                    type="submit"
+                    disabled={referralBusy}
+                    className="inline-flex items-center justify-center rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs md:text-sm font-medium text-white hover:bg-white/15 disabled:opacity-50"
+                  >
+                    {referralBusy ? 'Saving…' : 'Save referral code'}
+                  </button>
+                </form>
+              ) : null}
+
               <p className="text-[11px] md:text-xs text-zinc-500 leading-relaxed">
                 Use the share link for posts, stories, and DMs. Use the checkout code for guests who
                 book directly and enter it at checkout.

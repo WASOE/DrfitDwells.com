@@ -89,13 +89,24 @@ async function assertReferralCodeAvailable(partnerId, newCode, ownedByPartner) {
   return null;
 }
 
-function classifyMissingAtomicUpdate(partnerId, expectedCurrent) {
+function classifyMissingAtomicUpdate(
+  partnerId,
+  expectedCurrent,
+  { constraints = null, introducingNewCode = false } = {}
+) {
   return CreatorPartner.findById(partnerId)
-    .select('referral.code')
+    .select('referral.code referral.ownedCodes status')
     .lean()
     .then((again) => {
       if (!again) {
         return { ok: false, code: 'NOT_FOUND', message: 'Creator partner not found' };
+      }
+      if (constraints?.requiredStatus && again.status !== constraints.requiredStatus) {
+        return {
+          ok: false,
+          code: 'REFERRAL_CODE_CHANGE_UNAVAILABLE',
+          message: 'Referral code changes are unavailable for this creator right now'
+        };
       }
       const latest = normalizeReferralCode(again?.referral?.code);
       if (expectedCurrent && latest && latest !== expectedCurrent) {
@@ -104,6 +115,21 @@ function classifyMissingAtomicUpdate(partnerId, expectedCurrent) {
           code: 'CODE_CHANGED',
           message: 'Referral code was changed concurrently; refresh and try again'
         };
+      }
+      if (
+        introducingNewCode &&
+        constraints?.maxOwnedCodesForNewCode != null &&
+        Number.isFinite(Number(constraints.maxOwnedCodesForNewCode))
+      ) {
+        const ownedNow = getOwnedReferralCodes(again);
+        if (ownedNow.length >= Number(constraints.maxOwnedCodesForNewCode)) {
+          return {
+            ok: false,
+            code: 'ALIAS_LIMIT',
+            message:
+              'You can only set one additional referral code. Switch back to a code you already use, or contact Drift & Dwells.'
+          };
+        }
       }
       return {
         ok: false,
@@ -114,26 +140,55 @@ function classifyMissingAtomicUpdate(partnerId, expectedCurrent) {
 }
 
 /**
- * Single-document atomic OPS update for CreatorPartner.
+ * Distinct owned-code cardinality for atomic $expr filters.
+ * Union of referral.code (when present) and referral.ownedCodes (or []).
+ */
+function ownedReferralCodesCardinalityExpr() {
+  return {
+    $size: {
+      $setUnion: [
+        {
+          $cond: [
+            {
+              $and: [
+                { $ne: [{ $ifNull: ['$referral.code', null] }, null] },
+                { $ne: ['$referral.code', ''] }
+              ]
+            },
+            ['$referral.code'],
+            []
+          ]
+        },
+        { $ifNull: ['$referral.ownedCodes', []] }
+      ]
+    }
+  };
+}
+
+/**
+ * Single-document atomic OPS/creator update for CreatorPartner.
  *
- * - When desiredReferralCode is provided and differs from current: optimistic lock on
- *   persisted referral.code, set new current, permanently $addToSet old+new into ownedCodes.
- * - When desiredReferralCode matches current or is omitted: apply allowlisted fields only;
- *   does not record rename metadata.
- * - Preflight ownership checks run before any write. Duplicate-key → CODE_TAKEN with no
- *   partial application (single findOneAndUpdate).
+ * Optional `constraints` (creator self-service only):
+ * - requiredStatus: document status must match at mutation time
+ * - maxOwnedCodesForNewCode: when introducing a code not already owned, require
+ *   distinct owned cardinality (code ∪ ownedCodes) strictly less than this value
  *
  * @param {object} args
  * @param {string|object} args.partnerId
  * @param {string|undefined} args.desiredReferralCode undefined = code not requested
  * @param {object} args.fieldUpdates allowlisted merged fields from OPS route
  * @param {string|null} args.actor
+ * @param {object|null} args.constraints
+ * @param {string|null} args.expectedCurrentCode when set (creator self-service), the final
+ *   atomic filter locks on normalize(expectedCurrentCode) — not a re-read current
  */
 async function applyCreatorPartnerOpsAtomicUpdate({
   partnerId,
   desiredReferralCode = undefined,
   fieldUpdates = {},
-  actor = null
+  actor = null,
+  constraints = null,
+  expectedCurrentCode = null
 } = {}) {
   if (!partnerId) {
     return { ok: false, code: 'NOT_FOUND', message: 'Creator partner not found' };
@@ -142,6 +197,14 @@ async function applyCreatorPartnerOpsAtomicUpdate({
   const partner = await CreatorPartner.findById(partnerId).lean();
   if (!partner) {
     return { ok: false, code: 'NOT_FOUND', message: 'Creator partner not found' };
+  }
+
+  if (constraints?.requiredStatus && partner.status !== constraints.requiredStatus) {
+    return {
+      ok: false,
+      code: 'REFERRAL_CODE_CHANGE_UNAVAILABLE',
+      message: 'Referral code changes are unavailable for this creator right now'
+    };
   }
 
   const current = normalizeReferralCode(partner.referral?.code);
@@ -153,6 +216,20 @@ async function applyCreatorPartnerOpsAtomicUpdate({
     };
   }
 
+  // Creator optimistic lock value (when provided). OPS omits this and locks on re-read current.
+  let expectedLock = null;
+  if (expectedCurrentCode != null) {
+    expectedLock = normalizeReferralCode(expectedCurrentCode);
+    if (!expectedLock) {
+      return {
+        ok: false,
+        code: 'CODE_CHANGED',
+        message: 'Referral code was changed concurrently; refresh and try again'
+      };
+    }
+  }
+  const lockCode = expectedLock || current;
+
   const owned = getOwnedReferralCodes(partner);
   const actorBound = boundActorMetadata(actor);
   const $set = buildAllowlistedPartnerSet(fieldUpdates);
@@ -163,6 +240,10 @@ async function applyCreatorPartnerOpsAtomicUpdate({
   const codeRequested = desiredReferralCode !== undefined;
   let newCode = null;
   let codeChanges = false;
+  let introducingNewCode = false;
+  // When an expected lock is present, compare the desired code to that lock (client snapshot),
+  // not a newer re-read — otherwise a stale A→C request can treat re-read B as the baseline.
+  const baselineForChange = lockCode;
 
   if (codeRequested) {
     newCode = normalizeReferralCode(desiredReferralCode);
@@ -174,10 +255,25 @@ async function applyCreatorPartnerOpsAtomicUpdate({
           'Referral code must be Instagram-style: a-z, 0-9, ., -, _ (max 80 chars); optional leading @ is removed'
       };
     }
-    codeChanges = newCode !== current;
+    codeChanges = newCode !== baselineForChange;
+    introducingNewCode = codeChanges && !owned.includes(newCode);
     if (codeChanges) {
       const takenErr = await assertReferralCodeAvailable(partnerId, newCode, owned);
       if (takenErr) return takenErr;
+    }
+    if (
+      introducingNewCode &&
+      constraints?.maxOwnedCodesForNewCode != null &&
+      owned.length >= Number(constraints.maxOwnedCodesForNewCode) &&
+      // Only trust pre-read cardinality when the re-read still matches the client lock.
+      (!expectedLock || expectedLock === current)
+    ) {
+      return {
+        ok: false,
+        code: 'ALIAS_LIMIT',
+        message:
+          'You can only set one additional referral code. Switch back to a code you already use, or contact Drift & Dwells.'
+      };
     }
   }
 
@@ -193,8 +289,15 @@ async function applyCreatorPartnerOpsAtomicUpdate({
     };
   }
 
-  // Same-code request with no other fields: no-op (no rename metadata).
+  // Same-code request with no other fields: no-op only if the document still matches the lock.
   if (codeRequested && !codeChanges && !hasFieldSets) {
+    if (expectedLock && expectedLock !== current) {
+      return {
+        ok: false,
+        code: 'CODE_CHANGED',
+        message: 'Referral code was changed concurrently; refresh and try again'
+      };
+    }
     return {
       ok: true,
       changed: false,
@@ -208,13 +311,28 @@ async function applyCreatorPartnerOpsAtomicUpdate({
   const filter = { _id: partnerId };
   const update = {};
 
+  if (constraints?.requiredStatus) {
+    filter.status = constraints.requiredStatus;
+  }
+
   if (codeChanges) {
-    filter['referral.code'] = current;
+    // Creator: lock on normalize(expectedCurrentCode). OPS: lock on re-read current.
+    filter['referral.code'] = lockCode;
     $set['referral.code'] = newCode;
     $set['referral.codeChangedAt'] = new Date();
     $set['referral.lastCodeChangedBy'] = actorBound;
-    // Permanently retain old current and add new in one op (also heals missing ownedCodes).
-    update.$addToSet = { 'referral.ownedCodes': { $each: [current, newCode] } };
+    // Permanently retain prior current (lock) and add new in one op (also heals missing ownedCodes).
+    update.$addToSet = { 'referral.ownedCodes': { $each: [lockCode, newCode] } };
+
+    if (
+      introducingNewCode &&
+      constraints?.maxOwnedCodesForNewCode != null &&
+      Number.isFinite(Number(constraints.maxOwnedCodesForNewCode))
+    ) {
+      filter.$expr = {
+        $lt: [ownedReferralCodesCardinalityExpr(), Number(constraints.maxOwnedCodesForNewCode)]
+      };
+    }
   } else if (!Array.isArray(partner.referral?.ownedCodes) || partner.referral.ownedCodes.length === 0) {
     // Heal ownership without recording a rename when applying other fields.
     update.$addToSet = { 'referral.ownedCodes': current };
@@ -250,7 +368,10 @@ async function applyCreatorPartnerOpsAtomicUpdate({
   }
 
   if (!updated) {
-    return classifyMissingAtomicUpdate(partnerId, codeChanges ? current : null);
+    return classifyMissingAtomicUpdate(partnerId, codeChanges ? lockCode : null, {
+      constraints,
+      introducingNewCode
+    });
   }
 
   return {
@@ -258,7 +379,7 @@ async function applyCreatorPartnerOpsAtomicUpdate({
     changed: true,
     referralCodeChanged: codeChanges,
     referralCode: codeChanges ? newCode : current,
-    previousReferralCode: codeChanges ? current : null,
+    previousReferralCode: codeChanges ? lockCode : null,
     partner: updated
   };
 }
@@ -267,20 +388,33 @@ async function applyCreatorPartnerOpsAtomicUpdate({
  * Atomically switch a partner's current referral.code while permanently retaining
  * prior codes in referral.ownedCodes. Allows switching current back to an own alias.
  * Thin wrapper over applyCreatorPartnerOpsAtomicUpdate (no extra partner fields).
+ *
+ * @param {object|null} [args.constraints] creator self-service only; OPS omits
  */
 async function renameCreatorReferralCode({
   partnerId,
   desiredRawCode,
   actor = null,
-  expectedCurrentCode = null
+  expectedCurrentCode = null,
+  constraints = null
 } = {}) {
   if (!partnerId) {
     return { ok: false, code: 'NOT_FOUND', message: 'Creator partner not found' };
   }
 
-  const partner = await CreatorPartner.findById(partnerId).select('_id referral.code').lean();
+  const partner = await CreatorPartner.findById(partnerId)
+    .select('_id status referral.code referral.ownedCodes')
+    .lean();
   if (!partner) {
     return { ok: false, code: 'NOT_FOUND', message: 'Creator partner not found' };
+  }
+
+  if (constraints?.requiredStatus && partner.status !== constraints.requiredStatus) {
+    return {
+      ok: false,
+      code: 'REFERRAL_CODE_CHANGE_UNAVAILABLE',
+      message: 'Referral code changes are unavailable for this creator right now'
+    };
   }
 
   const current = normalizeReferralCode(partner.referral?.code);
@@ -292,9 +426,10 @@ async function renameCreatorReferralCode({
     };
   }
 
+  let expectedNormalized = null;
   if (expectedCurrentCode != null) {
-    const expected = normalizeReferralCode(expectedCurrentCode);
-    if (!expected || expected !== current) {
+    expectedNormalized = normalizeReferralCode(expectedCurrentCode);
+    if (!expectedNormalized || expectedNormalized !== current) {
       return {
         ok: false,
         code: 'CODE_CHANGED',
@@ -307,7 +442,10 @@ async function renameCreatorReferralCode({
     partnerId,
     desiredReferralCode: desiredRawCode,
     fieldUpdates: {},
-    actor
+    actor,
+    constraints,
+    // Creator self-service: final Mongo filter must lock on this snapshot, not a re-read.
+    expectedCurrentCode: expectedNormalized
   });
 
   if (!out.ok) return out;
@@ -407,6 +545,7 @@ module.exports = {
   findPartnerByOwnedReferralCode,
   applyCreatorPartnerOpsAtomicUpdate,
   buildAllowlistedPartnerSet,
+  ownedReferralCodesCardinalityExpr,
   renameCreatorReferralCode,
   backfillCreatorPartnerOwnedCodes,
   getOwnedReferralCodes,
