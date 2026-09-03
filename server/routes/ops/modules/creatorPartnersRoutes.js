@@ -17,8 +17,12 @@ const {
   normalizePartnerKey,
   PARTNER_KEY_RE,
   applyReferralCodeNormalization,
-  REFERRAL_CODE_RE
+  REFERRAL_CODE_RE,
+  buildInitialOwnedCodes
 } = require('../../../models/CreatorPartner');
+const {
+  applyCreatorPartnerOpsAtomicUpdate
+} = require('../../../services/creators/creatorReferralCodeService');
 
 const router = express.Router();
 
@@ -179,6 +183,7 @@ router.post(
       const promoLink = await resolvePromoLink(req.body?.promo?.code);
       warnings.push(...promoLink.warnings);
       const actor = getOpsIdentity(req);
+      const referralCode = applyReferralCodeNormalization(req.body?.referral?.code);
       const doc = await CreatorPartner.create({
         name: String(req.body.name).trim(),
         slug: normalizePartnerKey(req.body.slug),
@@ -194,7 +199,8 @@ router.post(
           website: req.body?.profiles?.website ? String(req.body.profiles.website).trim() : null
         },
         referral: {
-          code: applyReferralCodeNormalization(req.body?.referral?.code),
+          code: referralCode,
+          ownedCodes: buildInitialOwnedCodes(referralCode),
           cookieDays: req.body?.referral?.cookieDays ?? 60
         },
         promo: promoLink.promo,
@@ -437,84 +443,137 @@ router.patch(
         return res.status(400).json({ success: false, message: 'Validation failed', errors: errors.array() });
       }
 
-      const doc = await CreatorPartner.findById(req.params.id);
-      if (!doc) {
+      const existing = await CreatorPartner.findById(req.params.id).lean();
+      if (!existing) {
         return res.status(404).json({ success: false, message: 'Creator partner not found' });
       }
 
       const warnings = [];
-      if (req.body.name !== undefined) doc.name = String(req.body.name).trim();
-      if (req.body.slug !== undefined) doc.slug = normalizePartnerKey(req.body.slug);
-      if (req.body.status !== undefined) doc.status = req.body.status;
+      const fieldUpdates = {};
+      const actor = getOpsIdentity(req);
+
+      if (req.body.name !== undefined) fieldUpdates.name = String(req.body.name).trim();
+      if (req.body.slug !== undefined) fieldUpdates.slug = normalizePartnerKey(req.body.slug);
+      if (req.body.status !== undefined) fieldUpdates.status = req.body.status;
 
       if (req.body.contact !== undefined) {
-        doc.contact = {
-          ...doc.contact,
-          email: req.body?.contact?.email != null ? String(req.body.contact.email).trim().toLowerCase() : doc.contact?.email || null,
-          phone: req.body?.contact?.phone != null ? String(req.body.contact.phone).trim() : doc.contact?.phone || null
+        fieldUpdates.contact = {
+          ...(existing.contact || {}),
+          email:
+            req.body?.contact?.email != null
+              ? String(req.body.contact.email).trim().toLowerCase()
+              : existing.contact?.email || null,
+          phone:
+            req.body?.contact?.phone != null
+              ? String(req.body.contact.phone).trim()
+              : existing.contact?.phone || null
         };
       }
 
       if (req.body.profiles !== undefined) {
-        doc.profiles = {
-          ...doc.profiles,
-          instagram: req.body?.profiles?.instagram != null ? String(req.body.profiles.instagram).trim() : doc.profiles?.instagram || null,
-          tiktok: req.body?.profiles?.tiktok != null ? String(req.body.profiles.tiktok).trim() : doc.profiles?.tiktok || null,
-          youtube: req.body?.profiles?.youtube != null ? String(req.body.profiles.youtube).trim() : doc.profiles?.youtube || null,
-          website: req.body?.profiles?.website != null ? String(req.body.profiles.website).trim() : doc.profiles?.website || null
+        fieldUpdates.profiles = {
+          ...(existing.profiles || {}),
+          instagram:
+            req.body?.profiles?.instagram != null
+              ? String(req.body.profiles.instagram).trim()
+              : existing.profiles?.instagram || null,
+          tiktok:
+            req.body?.profiles?.tiktok != null
+              ? String(req.body.profiles.tiktok).trim()
+              : existing.profiles?.tiktok || null,
+          youtube:
+            req.body?.profiles?.youtube != null
+              ? String(req.body.profiles.youtube).trim()
+              : existing.profiles?.youtube || null,
+          website:
+            req.body?.profiles?.website != null
+              ? String(req.body.profiles.website).trim()
+              : existing.profiles?.website || null
         };
       }
 
-      if (req.body.referral !== undefined) {
-        if (req.body?.referral?.code !== undefined) {
-          doc.referral.code = applyReferralCodeNormalization(req.body.referral.code);
-        }
-        if (req.body?.referral?.cookieDays !== undefined) doc.referral.cookieDays = req.body.referral.cookieDays;
+      if (req.body.referral !== undefined && req.body?.referral?.cookieDays !== undefined) {
+        fieldUpdates.referralCookieDays = req.body.referral.cookieDays;
       }
 
       if (req.body.promo !== undefined) {
         const promoLink = await resolvePromoLink(req.body?.promo?.code);
         warnings.push(...promoLink.warnings);
-        doc.promo = promoLink.promo;
+        fieldUpdates.promo = promoLink.promo;
       }
 
       if (req.body.commission !== undefined) {
-        if (req.body?.commission?.rateBps !== undefined) doc.commission.rateBps = req.body.commission.rateBps;
-        if (req.body?.commission?.basis !== undefined) doc.commission.basis = req.body.commission.basis;
-        if (req.body?.commission?.eligibleAfter !== undefined) doc.commission.eligibleAfter = req.body.commission.eligibleAfter;
+        fieldUpdates.commission = {
+          ...(existing.commission || {}),
+          rateBps:
+            req.body?.commission?.rateBps !== undefined
+              ? req.body.commission.rateBps
+              : existing.commission?.rateBps,
+          basis:
+            req.body?.commission?.basis !== undefined
+              ? req.body.commission.basis
+              : existing.commission?.basis,
+          eligibleAfter:
+            req.body?.commission?.eligibleAfter !== undefined
+              ? req.body.commission.eligibleAfter
+              : existing.commission?.eligibleAfter
+        };
       }
 
       if (req.body.contentAgreement !== undefined) {
+        const nextAgreement = { ...(existing.contentAgreement || {}) };
         if (req.body?.contentAgreement?.compStayOffered !== undefined) {
-          doc.contentAgreement.compStayOffered = !!req.body.contentAgreement.compStayOffered;
+          nextAgreement.compStayOffered = !!req.body.contentAgreement.compStayOffered;
         }
         if (req.body?.contentAgreement?.deliverables !== undefined) {
-          doc.contentAgreement.deliverables = req.body.contentAgreement.deliverables
+          nextAgreement.deliverables = req.body.contentAgreement.deliverables
             ? String(req.body.contentAgreement.deliverables).trim()
             : null;
         }
         if (req.body?.contentAgreement?.usageRights !== undefined) {
-          doc.contentAgreement.usageRights = req.body.contentAgreement.usageRights
+          nextAgreement.usageRights = req.body.contentAgreement.usageRights
             ? String(req.body.contentAgreement.usageRights).trim()
             : null;
         }
         if (req.body?.contentAgreement?.agreedAt !== undefined) {
-          doc.contentAgreement.agreedAt = req.body.contentAgreement.agreedAt
+          nextAgreement.agreedAt = req.body.contentAgreement.agreedAt
             ? new Date(req.body.contentAgreement.agreedAt)
             : null;
         }
+        fieldUpdates.contentAgreement = nextAgreement;
       }
 
       if (req.body.notes !== undefined) {
-        doc.notes = req.body.notes ? String(req.body.notes).trim() : null;
+        fieldUpdates.notes = req.body.notes ? String(req.body.notes).trim() : null;
       }
-      doc.updatedBy = getOpsIdentity(req);
+      fieldUpdates.updatedBy = actor;
 
-      await doc.save();
+      const desiredReferralCode =
+        req.body?.referral?.code !== undefined ? req.body.referral.code : undefined;
+
+      const result = await applyCreatorPartnerOpsAtomicUpdate({
+        partnerId: existing._id,
+        desiredReferralCode,
+        fieldUpdates,
+        actor
+      });
+
+      if (!result.ok) {
+        if (result.code === 'INVALID_CODE' || result.code === 'INVALID_CURRENT') {
+          return res.status(400).json({ success: false, message: result.message });
+        }
+        if (result.code === 'CODE_TAKEN' || result.code === 'CODE_CHANGED' || result.code === 'CONFLICT') {
+          return res.status(409).json({ success: false, message: result.message });
+        }
+        if (result.code === 'NOT_FOUND') {
+          return res.status(404).json({ success: false, message: result.message });
+        }
+        return res.status(500).json({ success: false, message: 'Unable to update creator partner' });
+      }
 
       return res.json({
         success: true,
-        data: { creatorPartner: formatCreatorPartner(doc), warnings }
+        data: { creatorPartner: formatCreatorPartner(result.partner), warnings }
       });
     } catch (error) {
       if (error?.code === 11000) {

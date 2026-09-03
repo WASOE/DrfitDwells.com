@@ -47,6 +47,43 @@ function normalizeReferralCode(raw) {
   return value;
 }
 
+function validateOwnedCodesArray(arr) {
+  if (arr == null) return true;
+  if (!Array.isArray(arr)) return false;
+  for (const item of arr) {
+    if (item == null) return false;
+    if (!REFERRAL_CODE_RE.test(String(item))) return false;
+  }
+  return true;
+}
+
+/**
+ * All codes permanently owned by a partner (current + historical aliases).
+ * Falls back to `[referral.code]` when ownedCodes is missing/empty so pre-backfill
+ * and inert rollout behave like current-code-only.
+ */
+function getOwnedReferralCodes(partner) {
+  const set = new Set();
+  const raw = partner?.referral?.ownedCodes;
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      const n = normalizeReferralCode(item);
+      if (n) set.add(n);
+    }
+  }
+  const current = normalizeReferralCode(partner?.referral?.code);
+  if (current) set.add(current);
+  return Array.from(set);
+}
+
+/**
+ * Initial ownedCodes payload for partner create (always includes current code).
+ */
+function buildInitialOwnedCodes(rawCode) {
+  const code = normalizeReferralCode(rawCode) || applyReferralCodeNormalization(rawCode);
+  return code ? [code] : [];
+}
+
 const creatorPartnerSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true, maxlength: 200 },
@@ -87,7 +124,21 @@ const creatorPartnerSchema = new mongoose.Schema(
           message: 'Referral code must be Instagram-style: a-z, 0-9, ., -, _ (max 80 chars)'
         }
       },
-      cookieDays: { type: Number, default: 60, min: 1, max: 365 }
+      /**
+       * Permanent set of every referral code this partner has owned (includes current).
+       * Unique multikey index prevents another partner from claiming any owned code.
+       */
+      ownedCodes: {
+        type: [String],
+        default: undefined,
+        validate: {
+          validator: validateOwnedCodesArray,
+          message: 'ownedCodes entries must be Instagram-style referral codes'
+        }
+      },
+      cookieDays: { type: Number, default: 60, min: 1, max: 365 },
+      codeChangedAt: { type: Date, default: null },
+      lastCodeChangedBy: { type: String, trim: true, maxlength: 200, default: null }
     },
     promo: {
       code: { type: String, trim: true, uppercase: true, default: null },
@@ -111,8 +162,36 @@ const creatorPartnerSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+/**
+ * Keep ownedCodes ⊇ current code on validate/save paths that still mutate referral.code
+ * outside the rename service (e.g. create). Does not remove historical aliases.
+ */
+creatorPartnerSchema.pre('validate', function ensureCurrentCodeOwned(next) {
+  try {
+    if (!this.referral) return next();
+    const current = normalizeReferralCode(this.referral.code);
+    if (!current) return next();
+    const existing = Array.isArray(this.referral.ownedCodes) ? this.referral.ownedCodes.slice() : [];
+    const normalizedOwned = [];
+    const seen = new Set();
+    for (const item of existing) {
+      const n = normalizeReferralCode(item);
+      if (n && !seen.has(n)) {
+        seen.add(n);
+        normalizedOwned.push(n);
+      }
+    }
+    if (!seen.has(current)) normalizedOwned.push(current);
+    this.referral.ownedCodes = normalizedOwned;
+  } catch {
+    /* leave validation to schema validators */
+  }
+  return next();
+});
+
 creatorPartnerSchema.index({ slug: 1 }, { unique: true });
 creatorPartnerSchema.index({ 'referral.code': 1 }, { unique: true });
+creatorPartnerSchema.index({ 'referral.ownedCodes': 1 }, { unique: true });
 
 module.exports = mongoose.model('CreatorPartner', creatorPartnerSchema);
 module.exports.normalizePartnerKey = normalizePartnerKey;
@@ -120,3 +199,5 @@ module.exports.PARTNER_KEY_RE = PARTNER_KEY_RE;
 module.exports.applyReferralCodeNormalization = applyReferralCodeNormalization;
 module.exports.normalizeReferralCode = normalizeReferralCode;
 module.exports.REFERRAL_CODE_RE = REFERRAL_CODE_RE;
+module.exports.getOwnedReferralCodes = getOwnedReferralCodes;
+module.exports.buildInitialOwnedCodes = buildInitialOwnedCodes;

@@ -90,6 +90,9 @@ process.on('uncaughtException', (err) => {
 const {
   assertCabinNightClaimAuthoritativeBootReady
 } = require('./services/inventory/cabinNightClaimAuthoritativeBoot');
+const {
+  assertCreatorPartnerOwnedCodesIndexBootReady
+} = require('./services/creators/creatorPartnerOwnedCodesIndex');
 const { startApiProcess } = require('./bootstrap/startApiProcess');
 
 /**
@@ -349,6 +352,7 @@ function startHttpListener() {
 startApiProcess({
   connectDbFn: connectDB,
   assertAuthorityBootFn: assertCabinNightClaimAuthoritativeBootReady,
+  assertOwnedCodesIndexBootFn: assertCreatorPartnerOwnedCodesIndexBootReady,
   startHttpListenerFn: startHttpListener,
   startPostConnectRuntimeFn: startPostConnectRuntime,
   processName: 'driftdwells'

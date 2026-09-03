@@ -2,8 +2,8 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { body, validationResult } = require('express-validator');
 const CreatorReferralVisit = require('../models/CreatorReferralVisit');
-const CreatorPartner = require('../models/CreatorPartner');
 const { normalizeReferralCode } = require('../models/CreatorPartner');
+const { findPartnerByOwnedReferralCode } = require('../services/creators/creatorReferralCodeService');
 
 const router = express.Router();
 
@@ -62,12 +62,10 @@ router.post(
       const now = new Date();
       const dayBucket = getDayBucket(now);
 
-      const creator = await CreatorPartner.findOne({
-        'referral.code': referralCode,
-        status: { $in: ['active', 'paused'] }
-      })
-        .select('_id')
-        .lean();
+      const creator = await findPartnerByOwnedReferralCode(referralCode, {
+        statuses: ['active', 'paused'],
+        select: '_id'
+      });
 
       const matchFilter =
         visitorKey != null

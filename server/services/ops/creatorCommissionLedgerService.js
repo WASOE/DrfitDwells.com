@@ -2,7 +2,7 @@ const Booking = require('../../models/Booking');
 const CreatorPartner = require('../../models/CreatorPartner');
 const CreatorCommission = require('../../models/CreatorCommission');
 const PaymentResolutionIssue = require('../../models/PaymentResolutionIssue');
-const { normalizeReferralCode } = require('../../models/CreatorPartner');
+const { normalizeReferralCode, getOwnedReferralCodes } = require('../../models/CreatorPartner');
 const {
   normalizePromoCode,
   buildCreatorAttributionMaps,
@@ -76,8 +76,9 @@ async function recalculateCreatorCommissionForPartner(creatorPartnerDoc) {
   const rateBps = Math.max(0, Math.min(10000, Number(creatorPartnerDoc?.commission?.rateBps) || 0));
 
   const candidateOr = [];
-  const creatorReferral = normalizeReferralCode(creatorPartnerDoc?.referral?.code);
-  if (creatorReferral) candidateOr.push({ 'attribution.referralCode': creatorReferral });
+  for (const ownedCode of getOwnedReferralCodes(creatorPartnerDoc)) {
+    candidateOr.push({ 'attribution.referralCode': ownedCode });
+  }
   const creatorPromoCode = normalizePromoCode(creatorPartnerDoc?.promo?.code);
   if (creatorPromoCode && ['active', 'paused', 'archived'].includes(creatorPartnerDoc?.status)) {
     candidateOr.push({ promoCode: creatorPromoCode });

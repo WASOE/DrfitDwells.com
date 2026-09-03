@@ -1,4 +1,4 @@
-const { normalizeReferralCode } = require('../../models/CreatorPartner');
+const { normalizeReferralCode, getOwnedReferralCodes } = require('../../models/CreatorPartner');
 
 const ATTRIBUTABLE_STATUSES = new Set(['active', 'paused', 'archived']);
 
@@ -15,8 +15,10 @@ function buildCreatorAttributionMaps(creatorPartners = []) {
   for (const creator of creatorPartners) {
     if (!creator || !ATTRIBUTABLE_STATUSES.has(creator.status)) continue;
     const creatorId = String(creator._id);
-    const referralCode = normalizeReferralCode(creator?.referral?.code);
-    if (referralCode) referralToCreatorId.set(referralCode, creatorId);
+    // Current code + permanent aliases (ownedCodes), with fallback to [code] pre-backfill.
+    for (const referralCode of getOwnedReferralCodes(creator)) {
+      referralToCreatorId.set(referralCode, creatorId);
+    }
 
     const promoCode = normalizePromoCode(creator?.promo?.code);
     if (promoCode) promoToCreatorId.set(promoCode, creatorId);

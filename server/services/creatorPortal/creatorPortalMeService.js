@@ -1,5 +1,6 @@
 const GiftVoucher = require('../../models/GiftVoucher');
 const CreatorPartner = require('../../models/CreatorPartner');
+const { getOwnedReferralCodes } = CreatorPartner;
 const { purchasedGiftVoucherQuery } = require('../giftVouchers/giftVoucherIssuance');
 const {
   buildSingleCreatorPartnerStats,
@@ -42,10 +43,12 @@ function portalCommissionStatus(ledgerRow) {
 }
 
 async function listRecentGiftVouchersForPartner(creatorPartnerDoc, limit = 15) {
-  const ref = CreatorPartner.normalizeReferralCode(creatorPartnerDoc?.referral?.code);
+  const owned = getOwnedReferralCodes(creatorPartnerDoc);
   const id = creatorPartnerDoc._id;
   const or = [{ 'attribution.creatorPartnerId': id }];
-  if (ref) or.push({ 'attribution.referralCode': ref });
+  for (const ref of owned) {
+    or.push({ 'attribution.referralCode': ref });
+  }
   const rows = await GiftVoucher.find(
     purchasedGiftVoucherQuery({
       status: { $in: PAID_VOUCHER_STATUSES },

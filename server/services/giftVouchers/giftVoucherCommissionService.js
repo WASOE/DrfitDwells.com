@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const GiftVoucherCreatorCommission = require('../../models/GiftVoucherCreatorCommission');
 const CreatorPartner = require('../../models/CreatorPartner');
 const { normalizeReferralCode } = require('../../models/CreatorPartner');
+const { findPartnerByOwnedReferralCode } = require('../creators/creatorReferralCodeService');
 const { openManualReviewItem } = require('../ops/ingestion/manualReviewService');
 
 const CREATOR_STATUSES_ATTRIBUTABLE = new Set(['active', 'paused', 'archived']);
@@ -39,9 +40,9 @@ async function resolveCreatorAttributionForVoucher(voucherDoc) {
 
   let byReferral = null;
   if (refNorm) {
-    byReferral = await CreatorPartner.findOne({ 'referral.code': refNorm })
-      .select('_id status referral commission')
-      .lean();
+    byReferral = await findPartnerByOwnedReferralCode(refNorm, {
+      select: '_id status referral commission'
+    });
     if (byReferral && !CREATOR_STATUSES_ATTRIBUTABLE.has(byReferral.status)) {
       byReferral = null;
     }

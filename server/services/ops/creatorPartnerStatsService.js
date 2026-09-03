@@ -5,7 +5,7 @@ const GiftVoucher = require('../../models/GiftVoucher');
 const GiftVoucherCreatorCommission = require('../../models/GiftVoucherCreatorCommission');
 const CreatorCommission = require('../../models/CreatorCommission');
 const PaymentResolutionIssue = require('../../models/PaymentResolutionIssue');
-const { normalizeReferralCode } = require('../../models/CreatorPartner');
+const { normalizeReferralCode, getOwnedReferralCodes } = require('../../models/CreatorPartner');
 const mongoose = require('mongoose');
 const {
   normalizePromoCode,
@@ -280,8 +280,9 @@ async function listCreatorPartnerAttributedBookings(creatorPartnerDoc, { limit =
   const targetId = String(creatorPartnerDoc._id);
 
   const candidateOr = [];
-  const creatorReferral = normalizeReferralCode(creatorPartnerDoc?.referral?.code);
-  if (creatorReferral) candidateOr.push({ 'attribution.referralCode': creatorReferral });
+  for (const ownedCode of getOwnedReferralCodes(creatorPartnerDoc)) {
+    candidateOr.push({ 'attribution.referralCode': ownedCode });
+  }
   const creatorPromoCode = normalizePromoCode(creatorPartnerDoc?.promo?.code);
   if (creatorPromoCode && ['active', 'paused', 'archived'].includes(creatorPartnerDoc?.status)) {
     candidateOr.push({ promoCode: creatorPromoCode });
