@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import {
   assertNoProtectedPathsDeleted,
   buildRemoteRsyncPhases,
@@ -14,6 +16,26 @@ import {
   mergeReleaseManifest,
   validateWebroot
 } from './deploy-frontend-safe.lib.mjs';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const deployScript = path.join(__dirname, 'deploy-frontend-safe.mjs');
+
+function runCLI(args = [], env = {}) {
+  return spawnSync(
+    process.execPath,
+    [deployScript, ...args],
+    { encoding: 'utf8', env: { ...process.env, ...env } }
+  );
+}
+
+/** Extract the trailing JSON summary block from CLI stdout. */
+function parseCLISummary(stdout) {
+  // The summary is the last {...} block in stdout (may be multi-line).
+  const start = stdout.lastIndexOf('{');
+  const end = stdout.lastIndexOf('}');
+  if (start === -1 || end === -1) throw new SyntaxError('No JSON block found in CLI stdout');
+  return JSON.parse(stdout.slice(start, end + 1));
+}
 
 // ---------------------------------------------------------------------------
 // Helper: create a minimal dist-like tree in a temp directory
@@ -142,24 +164,40 @@ test('executeLocalPublish preserves uploads and protected files', () => {
   assert.ok(fs.existsSync(path.join(webroot, '.htaccess.bk-1')));
 });
 
-test('executeLocalPublish dry-run writes no files', () => {
+test('executeLocalPublish dry-run writes no files (byte-for-byte unchanged)', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-deploy-dryrun-'));
   const dist = makeMockDist(tmp);
   const webroot = makeMockWebroot(tmp);
 
-  // Capture state before
-  const assetsBefore = fs.readdirSync(path.join(webroot, 'assets')).sort();
+  // Snapshot entire webroot before
+  function snapshotDir(dir) {
+    const snap = {};
+    if (!fs.existsSync(dir)) return snap;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true, recursive: true })) {
+      if (entry.isFile()) {
+        const full = path.join(entry.path || dir, entry.name);
+        const rel = path.relative(dir, full);
+        snap[rel] = fs.readFileSync(full);
+      }
+    }
+    return snap;
+  }
+
+  const before = snapshotDir(webroot);
 
   const result = executeLocalPublish({ distDir: dist, webroot, dryRun: true });
 
-  // No new assets written
-  const assetsAfter = fs.readdirSync(path.join(webroot, 'assets')).sort();
-  assert.deepEqual(assetsBefore, assetsAfter);
+  const after = snapshotDir(webroot);
 
-  // Shell not overwritten
-  assert.ok(!fs.existsSync(path.join(webroot, 'sw.js')));
+  // Same set of keys
+  assert.deepEqual(Object.keys(before).sort(), Object.keys(after).sort());
 
-  // Log still reports phases
+  // Same content for every file
+  for (const rel of Object.keys(before)) {
+    assert.deepEqual(before[rel], after[rel], `file changed: ${rel}`);
+  }
+
+  // Log still reports phases with dryRun flag set
   assert.ok(result.log.length >= 3);
   assert.ok(result.log.every((e) => e.dryRun === true));
 });
@@ -269,4 +307,113 @@ test('listHashedAssets reads dist/assets', () => {
   fs.writeFileSync(path.join(assetsDir, 'readme.txt'), 'nope');
 
   assert.deepEqual(listHashedAssets(assetsDir), ['index-abc.js']);
+});
+
+// ---------------------------------------------------------------------------
+// CLI argument handling
+// ---------------------------------------------------------------------------
+
+test('--help exits 0 without WEBROOT/REMOTE and prints usage', () => {
+  const result = runCLI(['--help'], { WEBROOT: '', REMOTE: '' });
+  assert.equal(result.status, 0, `stderr: ${result.stderr}`);
+  assert.match(result.stdout, /WEBROOT=/);
+  assert.match(result.stdout, /--dry-run/);
+  assert.match(result.stdout, /--help/);
+});
+
+test('unknown flag fails closed with exit 1', () => {
+  const result = runCLI(['--foo'], { WEBROOT: '/some/valid/deep/path', REMOTE: '' });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Unknown flag/);
+});
+
+test('no WEBROOT and no REMOTE fails closed with exit 1', () => {
+  const result = runCLI([], { WEBROOT: '', REMOTE: '' });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /FAIL/);
+});
+
+test('--dry-run from argv is honoured: no files written, output reports dryRun true', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-cli-dryrun-'));
+  const dist = makeMockDist(tmp);
+  const webroot = makeMockWebroot(tmp);
+
+  // Snapshot webroot before CLI run
+  const assetsBefore = fs.readdirSync(path.join(webroot, 'assets')).sort();
+  const webrootFilesBefore = fs.readdirSync(webroot).sort();
+
+  const result = runCLI(['--dry-run'], {
+    WEBROOT: webroot,
+    REMOTE: '',
+    // Deliberately do NOT set DRY_RUN env var — flag must be sufficient
+    DRY_RUN: '',
+    // Point PREVIOUS_MANIFEST somewhere that does not exist so manifest read is a no-op
+    PREVIOUS_MANIFEST: path.join(tmp, 'no-such-manifest.json')
+  });
+
+  // CLI must succeed
+  assert.equal(result.status, 0, `stderr: ${result.stderr}`);
+
+  // Output must report dryRun: true
+  const summary = parseCLISummary(result.stdout);
+  assert.equal(summary.dryRun, true);
+  assert.equal(summary.mode, 'local');
+
+  // Assets on disk must be unchanged
+  const assetsAfter = fs.readdirSync(path.join(webroot, 'assets')).sort();
+  assert.deepEqual(assetsBefore, assetsAfter);
+
+  // No new top-level files created in webroot
+  const webrootFilesAfter = fs.readdirSync(webroot).sort();
+  assert.deepEqual(webrootFilesBefore, webrootFilesAfter);
+
+  // Manifest must not have been written into dist
+  // (we passed a nonexistent PREVIOUS_MANIFEST; dist manifest may already exist
+  // from a previous build but must not have been overwritten by this CLI invocation)
+  // The safest assertion: sw.js must not have appeared in webroot (it isn't there initially)
+  assert.ok(!fs.existsSync(path.join(webroot, 'sw.js')));
+});
+
+test('DRY_RUN=1 env var is also honoured when no --dry-run flag', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-cli-dryrun-env-'));
+  const dist = makeMockDist(tmp);
+  const webroot = makeMockWebroot(tmp);
+
+  const result = runCLI([], {
+    WEBROOT: webroot,
+    REMOTE: '',
+    DRY_RUN: '1',
+    PREVIOUS_MANIFEST: path.join(tmp, 'no-such-manifest.json')
+  });
+
+  assert.equal(result.status, 0, `stderr: ${result.stderr}`);
+  const summary = parseCLISummary(result.stdout);
+  assert.equal(summary.dryRun, true);
+  assert.ok(!fs.existsSync(path.join(webroot, 'sw.js')));
+});
+
+test('without --dry-run flag an actual local publish writes files', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-cli-real-'));
+  const dist = makeMockDist(tmp);
+  const webroot = makeMockWebroot(tmp);
+
+  const result = runCLI([], {
+    WEBROOT: webroot,
+    REMOTE: '',
+    DRY_RUN: '',
+    PREVIOUS_MANIFEST: path.join(tmp, 'no-such-manifest.json')
+  });
+
+  assert.equal(result.status, 0, `stderr: ${result.stderr}`);
+  const summary = parseCLISummary(result.stdout);
+  assert.equal(summary.dryRun, false);
+
+  // Files should now exist in webroot (CLI publishes from real client/dist)
+  assert.ok(fs.existsSync(path.join(webroot, 'index.html')));
+  assert.ok(fs.existsSync(path.join(webroot, 'sw.js')));
+  // At least some JS assets were published
+  const publishedAssets = fs.existsSync(path.join(webroot, 'assets'))
+    ? fs.readdirSync(path.join(webroot, 'assets')).filter((f) => f.endsWith('.js'))
+    : [];
+  assert.ok(publishedAssets.length > 0, 'expected at least one JS asset in webroot/assets');
 });
