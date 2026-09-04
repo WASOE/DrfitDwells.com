@@ -1,169 +1,1063 @@
-/* Scoped to Winter Village page only — reuses Valley tokens via .valley-page */
+/* Winter Village page only. Cinematic, wide, dark. Do not leak to other pages. */
 
-.winter-village-page .wv-preview-notice {
+.winter-village-page {
+  --wv-ink: #0b0b0b;
+  --wv-panel: #111111;
+  --wv-paper: #f1ece2;
+  --wv-muted: rgba(241, 236, 226, 0.72);
+  --wv-line: rgba(241, 236, 226, 0.16);
+  background: var(--wv-ink);
+  color: var(--wv-paper);
+  padding-bottom: calc(5.75rem + env(safe-area-inset-bottom, 0px));
+}
+
+.winter-village-page .wv-kicker {
+  margin: 0 0 0.85rem;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(241, 236, 226, 0.62);
+}
+
+.winter-village-page .wv-kicker--light {
+  color: rgba(241, 236, 226, 0.82);
+}
+
+.winter-village-page .wv-display {
+  margin: 0;
+  max-width: min(92vw, 56rem);
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: clamp(2.6rem, 7.2vw, 5.75rem);
+  font-weight: 600;
+  line-height: 0.98;
+  letter-spacing: -0.03em;
+  color: #fff;
+}
+
+.winter-village-page .wv-lede {
+  margin: 1.35rem 0 0;
+  max-width: 44rem;
+  font-size: clamp(1.05rem, 1.7vw, 1.35rem);
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.winter-village-page .wv-section-display {
+  margin: 0;
+  max-width: 22ch;
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: clamp(2.1rem, 4.6vw, 4.25rem);
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  color: var(--wv-paper);
+}
+
+.winter-village-page .wv-section-display--light {
+  color: #fff;
+}
+
+.winter-village-page .wv-section-copy {
+  margin: 1.1rem 0 0;
+  max-width: 40rem;
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  color: var(--wv-muted);
+}
+
+.winter-village-page .wv-section-copy--light {
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.winter-village-page .wv-btn {
   display: inline-flex;
-  max-width: 36rem;
-  margin-left: auto;
-  margin-right: auto;
-  margin-top: 1.25rem;
-  padding: 0.5rem 0.875rem;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.28);
-  color: rgba(255, 255, 255, 0.88);
-  font-size: 0.6875rem;
-  line-height: 1.4;
-  letter-spacing: 0.04em;
-  text-align: center;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0.9rem 1.7rem;
+  border: 1px solid transparent;
+  background: #1a1a1a;
+  color: #fff;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.winter-village-page .wv-btn:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+
+.winter-village-page .wv-btn--light {
+  background: #fff;
+  color: #1a1a1a;
+}
+
+.winter-village-page .wv-btn--light:hover {
+  background: #eee;
+}
+
+.winter-village-page .wv-btn--ghost {
+  background: transparent;
+  border-color: rgba(241, 236, 226, 0.35);
+  color: var(--wv-paper);
+}
+
+.winter-village-page .wv-btn--ghost:hover {
+  border-color: #fff;
+  color: #fff;
+}
+
+/* Media fill */
+.winter-village-page .wv-media {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.winter-village-page .wv-media picture,
+.winter-village-page .wv-media img,
+.winter-village-page .wv-media video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.winter-village-page .wv-media-video {
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+.winter-village-page .wv-media-video.is-on {
+  opacity: 1;
+}
+
+/* 1. Hero */
+.winter-village-page .wv-hero {
+  position: relative;
+  min-height: 85svh;
+  display: flex;
+  align-items: flex-end;
+  color: #fff;
+}
+
+.winter-village-page .wv-hero-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.28) 0%, rgba(0, 0, 0, 0.12) 32%, rgba(0, 0, 0, 0.72) 100%),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.45) 0%, rgba(0, 0, 0, 0.08) 58%);
+}
+
+.winter-village-page .wv-hero-copy {
+  position: relative;
+  z-index: 3;
+  width: 100%;
+  max-width: none;
+  padding: 5.5rem 6vw 4.5rem;
+}
+
+.winter-village-page .wv-hero-actions {
+  margin-top: 1.75rem;
+}
+
+.winter-village-page .wv-hero-secondary {
+  margin: 0.85rem 0 0;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+@media (min-width: 1024px) {
+  .winter-village-page .wv-hero {
+    min-height: 100svh;
+    height: 100svh;
+  }
+
+  .winter-village-page .wv-hero-copy {
+    padding: 7rem 5vw 5.5rem;
+  }
+}
+
+/* 2. Configurator */
+.winter-village-page .wv-config {
+  display: grid;
+  grid-template-columns: 1fr;
+  background: var(--wv-ink);
+}
+
+.winter-village-page .wv-config-media {
+  position: relative;
+  min-height: 58svh;
+  height: 100%;
+  overflow: hidden;
+}
+
+.winter-village-page .wv-config-media-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.08) 30%, rgba(0, 0, 0, 0.55) 100%);
+}
+
+.winter-village-page .wv-config-media-overlay--stay {
+  background: linear-gradient(180deg, rgba(8, 16, 28, 0.08) 20%, rgba(0, 0, 0, 0.5) 100%);
+}
+
+.winter-village-page .wv-config-media[data-product='parent-child'] .wv-media-img {
+  object-position: center 78%;
+  transform: scale(1.28);
+  filter: sepia(0.22) saturate(1.18) contrast(1.06);
+}
+
+.winter-village-page .wv-config-media[data-product='christmas'] .wv-media-img {
+  object-position: 16% 26%;
+  transform: scale(1.38);
+  filter: sepia(0.38) saturate(1.28) contrast(1.14) hue-rotate(-12deg);
+}
+
+.winter-village-page .wv-config-media-overlay--christmas {
+  background:
+    linear-gradient(180deg, rgba(70, 28, 12, 0.18) 0%, rgba(20, 8, 4, 0.62) 100%),
+    radial-gradient(ellipse at 40% 70%, rgba(196, 92, 32, 0.28), transparent 58%);
+}
+
+.winter-village-page .wv-config-media-overlay--parent-child {
+  background: linear-gradient(180deg, rgba(18, 12, 8, 0.12) 20%, rgba(10, 8, 6, 0.55) 100%);
+}
+
+.winter-village-page .wv-config-media-caption {
+  position: absolute;
+  z-index: 3;
+  left: 1.25rem;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  margin: 0;
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: clamp(1.35rem, 3vw, 2.1rem);
+  line-height: 1.15;
+  color: #fff;
+}
+
+.winter-village-page .wv-config-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--wv-panel);
+  padding: 1.25rem 1.25rem 6.5rem;
 }
 
 .winter-village-page .wv-product-tabs {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 0.75rem;
-}
-
-@media (min-width: 768px) {
-  .winter-village-page .wv-product-tabs {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 1rem;
-  }
+  gap: 0.65rem;
 }
 
 .winter-village-page .wv-product-tab {
   width: 100%;
+  min-height: 5.75rem;
+  padding: 1rem 1.05rem;
   text-align: left;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 0.75rem;
-  background: #fff;
-  padding: 1rem 1.125rem;
-  min-height: 4.5rem;
-  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+  border: 1px solid var(--wv-line);
+  background: transparent;
+  color: var(--wv-paper);
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 
 .winter-village-page .wv-product-tab:hover {
-  border-color: rgba(129, 136, 122, 0.55);
+  border-color: rgba(241, 236, 226, 0.42);
 }
 
 .winter-village-page .wv-product-tab:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #81887a;
+  outline: 2px solid #fff;
+  outline-offset: 2px;
 }
 
 .winter-village-page .wv-product-tab[aria-selected='true'] {
-  border-color: #1a1a1a;
-  background: rgba(0, 0, 0, 0.02);
+  background: #fff;
+  border-color: #fff;
+  color: #111;
+}
+
+.winter-village-page .wv-product-tab-kicker {
+  display: block;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.62;
+  margin-bottom: 0.3rem;
+}
+
+.winter-village-page .wv-product-tab[aria-selected='true'] .wv-product-tab-kicker {
+  opacity: 0.55;
 }
 
 .winter-village-page .wv-product-tab-label {
   display: block;
-  font-family: 'Montserrat', sans-serif;
-  font-size: 0.9375rem;
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 1.15rem;
   font-weight: 600;
-  color: #1a1a1a;
-  margin-bottom: 0.25rem;
+  line-height: 1.15;
+  margin-bottom: 0.35rem;
 }
 
-.winter-village-page .wv-product-tab-meta {
+.winter-village-page .wv-product-tab-meta,
+.winter-village-page .wv-product-tab-price {
   display: block;
-  font-size: 0.75rem;
-  letter-spacing: 0.04em;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #81887a;
+  opacity: 0.78;
+}
+
+.winter-village-page .wv-product-tab-price {
+  margin-top: 0.35rem;
+  font-weight: 700;
+  opacity: 1;
+}
+
+.winter-village-page .wv-config-body {
+  padding-top: 1.5rem;
+}
+
+.winter-village-page .wv-config-headline {
+  margin: 0;
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: clamp(1.7rem, 2.4vw, 2.35rem);
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.winter-village-page .wv-config-story {
+  margin: 0.65rem 0 0;
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 1.25rem;
+  font-style: italic;
+  line-height: 1.3;
+  color: rgba(241, 236, 226, 0.88);
+}
+
+.winter-village-page .wv-config-copy {
+  margin: 0.85rem 0 0;
+  font-size: 1.05rem;
+  line-height: 1.6;
+  color: var(--wv-muted);
+}
+
+.winter-village-page .wv-field-label {
+  margin: 1.5rem 0 0.7rem;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(241, 236, 226, 0.55);
+}
+
+.winter-village-page .wv-acc-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.55rem;
+}
+
+.winter-village-page .wv-acc-choice {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  column-gap: 0.75rem;
+  width: 100%;
+  padding: 0.95rem 1rem;
+  text-align: left;
+  border: 1px solid var(--wv-line);
+  background: transparent;
+  color: var(--wv-paper);
+  cursor: pointer;
+}
+
+.winter-village-page .wv-acc-choice[aria-pressed='true'] {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: #fff;
+}
+
+.winter-village-page .wv-acc-choice-name {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.winter-village-page .wv-acc-choice-meta {
+  grid-column: 1;
+  font-size: 0.8rem;
+  color: var(--wv-muted);
+}
+
+.winter-village-page .wv-acc-choice-rate {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.winter-village-page .wv-config-controls {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1.25rem;
+}
+
+.winter-village-page .wv-stepper-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 2.75rem;
+}
+
+.winter-village-page .wv-stepper-label,
+.winter-village-page .wv-static-value {
+  font-size: 1rem;
 }
 
 .winter-village-page .wv-stepper {
   display: inline-flex;
   align-items: center;
-  gap: 0.75rem;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 999px;
-  padding: 0.25rem;
-  background: #fff;
+  gap: 0.65rem;
 }
 
 .winter-village-page .wv-stepper button {
-  width: 2.25rem;
-  height: 2.25rem;
-  border-radius: 999px;
-  border: none;
-  background: rgba(0, 0, 0, 0.04);
-  color: #1a1a1a;
-  font-size: 1.125rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--wv-line);
+  background: transparent;
+  color: #fff;
+  font-size: 1.15rem;
   line-height: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: background-color 0.15s ease;
-}
-
-.winter-village-page .wv-stepper button:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.08);
 }
 
 .winter-village-page .wv-stepper button:disabled {
   opacity: 0.35;
-  cursor: not-allowed;
-}
-
-.winter-village-page .wv-stepper button:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #81887a;
 }
 
 .winter-village-page .wv-stepper-value {
   min-width: 1.5rem;
   text-align: center;
-  font-weight: 600;
-  color: #1a1a1a;
+  font-variant-numeric: tabular-nums;
+  font-size: 1.05rem;
 }
 
-.winter-village-page .wv-acc-choice {
+.winter-village-page .wv-wellness {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.85rem 0 0;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.winter-village-page .wv-wellness em {
+  display: block;
+  margin-top: 0.2rem;
+  font-style: normal;
+  font-size: 0.85rem;
+  color: var(--wv-muted);
+}
+
+.winter-village-page .wv-warnings {
+  margin: 1rem 0 0;
+  padding-left: 1.1rem;
+  color: #e8c9a8;
+  font-size: 0.95rem;
+}
+
+.winter-village-page .wv-summary {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  padding: 0.75rem 4.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px)) 1rem;
+  background: #1a1a1a;
+  border-top: 1px solid #333;
+  color: #fff;
+}
+
+.winter-village-page .wv-summary-meta {
+  min-width: 0;
+}
+
+.winter-village-page .wv-summary-line {
+  display: none;
+}
+
+.winter-village-page .wv-summary-price {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.winter-village-page .wv-summary-price span {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #b5b5b5;
+}
+
+.winter-village-page .wv-summary-price strong {
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.winter-village-page .wv-summary .wv-btn {
+  flex-shrink: 0;
+  font-size: 0.64rem;
+  letter-spacing: 0.1em;
+  padding-left: 1.05rem;
+  padding-right: 1.05rem;
+}
+
+@media (min-width: 768px) {
+  .winter-village-page .wv-product-tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .winter-village-page .wv-acc-list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .winter-village-page .wv-acc-choice {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto;
+  }
+
+  .winter-village-page .wv-acc-choice-rate {
+    grid-column: 1;
+    grid-row: auto;
+    margin-top: 0.45rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .winter-village-page .wv-config {
+    grid-template-columns: 58% 42%;
+    min-height: max(800px, calc(100svh - var(--header-offset, 5.5rem)));
+  }
+
+  .winter-village-page .wv-config-media {
+    min-height: 100%;
+  }
+
+  .winter-village-page .wv-config-panel {
+    padding: 1.5rem 1.75rem 6.75rem;
+  }
+
+  .winter-village-page .wv-product-tab {
+    min-height: 8.25rem;
+    padding: 1.15rem 1.05rem;
+  }
+
+  .winter-village-page .wv-product-tab-label {
+    font-size: 1.28rem;
+  }
+
+  .winter-village-page .wv-summary {
+    padding: 0.9rem 5.25rem calc(0.9rem + env(safe-area-inset-bottom, 0px)) 1.5rem;
+  }
+
+  .winter-village-page .wv-summary-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem 0.7rem;
+    margin: 0 0 0.2rem;
+    font-family: 'Montserrat', sans-serif;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #d2d2d2;
+  }
+
+  .winter-village-page .wv-summary-price {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 0.65rem;
+  }
+}
+
+/* 3. Founding */
+.winter-village-page .wv-founding {
+  padding: 3.25rem 0 0;
+}
+
+.winter-village-page .wv-founding-intro {
+  padding: 0 6vw 2rem;
+}
+
+.winter-village-page .wv-founding-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+
+.winter-village-page .wv-founding-statement {
+  position: relative;
+  min-height: 42vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 1.5rem 1.4rem 1.6rem;
+  overflow: hidden;
+}
+
+.winter-village-page .wv-founding-statement-img {
+  position: absolute;
+  inset: 0;
   width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.winter-village-page .wv-founding-statement-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.12) 0%, rgba(0, 0, 0, 0.72) 100%);
+}
+
+.winter-village-page .wv-founding-stamp,
+.winter-village-page .wv-founding-title {
+  position: relative;
+  z-index: 1;
+}
+
+.winter-village-page .wv-founding-stamp {
+  margin: 0 0 0.55rem;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.winter-village-page .wv-founding-title {
+  margin: 0;
+  max-width: 14ch;
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: clamp(1.7rem, 3.4vw, 3rem);
+  font-weight: 600;
+  line-height: 1.02;
+  color: #fff;
+  text-transform: uppercase;
+}
+
+@media (min-width: 768px) {
+  .winter-village-page .wv-founding-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .winter-village-page .wv-founding-statement {
+    min-height: 52vh;
+    padding: 2rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .winter-village-page .wv-founding-intro {
+    padding: 3rem 5vw 2.5rem;
+  }
+}
+
+/* 4. Christmas */
+.winter-village-page .wv-christmas {
+  position: relative;
+  min-height: 88svh;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+}
+
+.winter-village-page .wv-christmas-media {
+  position: absolute;
+  inset: 0;
+}
+
+.winter-village-page .wv-christmas-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 40%;
+  filter: saturate(1.15) contrast(1.08) sepia(0.18);
+}
+
+.winter-village-page .wv-christmas-wash {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(48, 18, 8, 0.18) 0%, rgba(12, 6, 4, 0.78) 100%),
+    radial-gradient(ellipse at 30% 70%, rgba(196, 92, 32, 0.32), transparent 55%);
+}
+
+.winter-village-page .wv-christmas-copy {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  padding: 3.5rem 6vw 3.75rem;
+}
+
+.winter-village-page .wv-christmas-moments {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.55rem 2rem;
+  margin: 1.6rem 0 1.75rem;
+  padding: 0;
+  list-style: none;
+  max-width: 42rem;
+}
+
+.winter-village-page .wv-christmas-moments li {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 1.35rem;
+  line-height: 1.25;
+  color: #fff;
+}
+
+@media (min-width: 768px) {
+  .winter-village-page .wv-christmas-moments {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (min-width: 1024px) {
+  .winter-village-page .wv-christmas {
+    min-height: 100svh;
+  }
+
+  .winter-village-page .wv-christmas-copy {
+    padding: 5rem 5vw 5.5rem;
+  }
+
+  .winter-village-page .wv-christmas-moments li {
+    font-size: 1.6rem;
+  }
+}
+
+/* 5. Parent & Child */
+.winter-village-page .wv-parent {
+  display: grid;
+  grid-template-columns: 1fr;
+  background: #14110f;
+}
+
+.winter-village-page .wv-parent-media {
+  min-height: 48vh;
+  overflow: hidden;
+}
+
+.winter-village-page .wv-parent-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 70%;
+}
+
+.winter-village-page .wv-parent-copy {
+  padding: 2.5rem 6vw 3rem;
+}
+
+.winter-village-page .wv-parent-flow {
+  margin: 1.75rem 0 0;
+  max-width: 18ch;
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: clamp(1.8rem, 4.2vw, 3.4rem);
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  color: #fff;
+}
+
+@media (min-width: 1024px) {
+  .winter-village-page .wv-parent {
+    grid-template-columns: 46% 54%;
+    min-height: 78vh;
+  }
+
+  .winter-village-page .wv-parent-copy {
+    padding: 4.5rem 5vw;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+}
+
+/* 6. Dates */
+.winter-village-page .wv-dates {
+  padding: 3rem 0 2.5rem;
+  background: var(--wv-ink);
+}
+
+.winter-village-page .wv-dates .wv-kicker,
+.winter-village-page .wv-dates-intro {
+  padding: 0 6vw;
+}
+
+.winter-village-page .wv-dates-intro {
+  margin: 0 0 1.5rem;
+  max-width: 38rem;
+  font-size: 1.05rem;
+  line-height: 1.55;
+  color: var(--wv-muted);
+}
+
+.winter-village-page .wv-date-strip {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0 6vw;
+  list-style: none;
+}
+
+.winter-village-page .wv-date-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 16rem;
+  padding: 1.35rem 1.25rem 1.4rem;
+  background: #161616;
+  border-top: 1px solid rgba(241, 236, 226, 0.12);
+}
+
+.winter-village-page .wv-date-card-when {
+  margin: 0;
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: clamp(1.65rem, 3vw, 2.35rem);
+  line-height: 1.1;
+  color: #fff;
+}
+
+.winter-village-page .wv-date-card-title {
+  margin: 0.7rem 0 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.winter-village-page .wv-date-card-meta,
+.winter-village-page .wv-date-card-price {
+  margin: 0.35rem 0 0;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--wv-muted);
+}
+
+.winter-village-page .wv-date-card-price {
+  margin-bottom: 1.1rem;
+  color: #fff;
+  font-weight: 700;
+}
+
+.winter-village-page .wv-date-card .wv-btn {
+  margin-top: auto;
+  align-self: flex-start;
+}
+
+@media (min-width: 900px) {
+  .winter-village-page .wv-date-strip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0;
+    padding: 0;
+  }
+
+  .winter-village-page .wv-dates .wv-kicker,
+  .winter-village-page .wv-dates-intro {
+    padding: 0 5vw;
+  }
+
+  .winter-village-page .wv-date-card {
+    min-height: 22rem;
+    padding: 1.75rem 1.4rem 1.6rem;
+    border-top: none;
+    border-right: 1px solid rgba(241, 236, 226, 0.1);
+  }
+
+  .winter-village-page .wv-date-card:last-child {
+    border-right: none;
+  }
+}
+
+/* 7. Close */
+.winter-village-page .wv-close {
+  position: relative;
+  min-height: 72svh;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+}
+
+.winter-village-page .wv-close-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.winter-village-page .wv-close-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.2) 0%, rgba(0, 0, 0, 0.72) 100%);
+}
+
+.winter-village-page .wv-close-copy {
+  position: relative;
+  z-index: 1;
+  padding: 3.25rem 6vw 3.5rem;
+}
+
+@media (min-width: 1024px) {
+  .winter-village-page .wv-close {
+    min-height: 88svh;
+  }
+
+  .winter-village-page .wv-close-copy {
+    padding: 5rem 5vw 5.25rem;
+  }
+}
+
+/* 8. FAQ */
+.winter-village-page .wv-faq {
+  padding: 2.5rem 6vw 3rem;
+  background: #0e0e0e;
+}
+
+.winter-village-page .wv-faq-heading {
+  margin: 0 0 1.25rem;
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 1.75rem;
+}
+
+.winter-village-page .wv-faq-item {
+  border-top: 1px solid var(--wv-line);
+}
+
+.winter-village-page .wv-faq-item:last-child {
+  border-bottom: 1px solid var(--wv-line);
+}
+
+.winter-village-page .wv-faq-trigger {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 0;
+  background: transparent;
+  border: 0;
+  color: #fff;
   text-align: left;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  border-radius: 0.75rem;
-  padding: 0.875rem 1rem;
-  background: #fff;
-  transition: border-color 0.2s ease, background-color 0.2s ease;
+  font-size: 1.05rem;
+  cursor: pointer;
 }
 
-.winter-village-page .wv-acc-choice[aria-pressed='true'] {
-  border-color: #1a1a1a;
-  background: rgba(0, 0, 0, 0.02);
+.winter-village-page .wv-faq-mark {
+  flex-shrink: 0;
+  font-size: 1.35rem;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.55);
 }
 
-.winter-village-page .wv-acc-choice:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #81887a;
+.winter-village-page .wv-faq-answer {
+  margin: 0;
+  padding: 0 0 1.1rem;
+  max-width: 40rem;
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--wv-muted);
 }
 
-/* Portaled under a winter-village-page root wrapper so styles stay scoped */
+@media (min-width: 1024px) {
+  .winter-village-page .wv-faq {
+    padding: 3rem 5vw 3.5rem;
+  }
+}
+
+/* Modal */
 .winter-village-page .wv-modal-backdrop {
   position: fixed;
   inset: 0;
   z-index: 80;
-  background: rgba(0, 0, 0, 0.45);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 1.25rem;
+  background: rgba(0, 0, 0, 0.72);
 }
 
 .winter-village-page .wv-modal {
-  width: 100%;
-  max-width: 28rem;
-  background: #fff;
-  border-radius: 0.75rem;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  padding: 1.5rem 1.5rem 1.25rem;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.18);
+  width: min(100%, 32rem);
+  padding: 1.5rem 1.5rem 1.6rem;
+  background: #161616;
+  color: var(--wv-paper);
+  border: 1px solid var(--wv-line);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .winter-village-page .wv-product-tab,
-  .winter-village-page .wv-acc-choice,
-  .winter-village-page .wv-stepper button {
-    transition: none;
-  }
+.winter-village-page .wv-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.winter-village-page .wv-modal-title {
+  margin: 0;
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 1.7rem;
+  line-height: 1.15;
+}
+
+.winter-village-page .wv-modal-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--wv-line);
+  background: transparent;
+  color: #fff;
+}
+
+.winter-village-page .wv-modal-body {
+  margin: 0 0 1.35rem;
+  font-size: 1.05rem;
+  line-height: 1.6;
+  color: var(--wv-muted);
 }

@@ -100,29 +100,22 @@ export default function WinterVillagePreviewModal({ open, onClose }) {
           className="wv-modal"
           data-wv-modal="true"
         >
-          <div className="flex items-start justify-between gap-4 mb-4">
-            <h2
-              id="wv-preview-modal-title"
-              className="font-serif text-2xl text-[#1a1a1a] font-semibold leading-tight"
-            >
+          <div className="wv-modal-head">
+            <h2 id="wv-preview-modal-title" className="wv-modal-title">
               {WINTER_VILLAGE_PREVIEW_MODAL.title}
             </h2>
             <button
               ref={closeRef}
               type="button"
               onClick={onClose}
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[rgba(0,0,0,0.12)] text-[#1a1a1a] hover:bg-[rgba(0,0,0,0.04)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81887A]"
+              className="wv-modal-x"
               aria-label={WINTER_VILLAGE_PREVIEW_MODAL.closeLabel}
             >
               <X className="h-5 w-5" aria-hidden="true" />
             </button>
           </div>
-          <p className="valley-body text-[#4a4a4a] mb-6">{WINTER_VILLAGE_PREVIEW_MODAL.body}</p>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-full max-w-sm bg-[#1a1a1a] text-white px-8 py-3.5 font-semibold uppercase tracking-wider text-sm hover:bg-[#2a2a2a] transition-colors min-h-[48px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81887A] focus-visible:ring-offset-2"
-          >
+          <p className="wv-modal-body">{WINTER_VILLAGE_PREVIEW_MODAL.body}</p>
+          <button type="button" onClick={onClose} className="wv-btn wv-btn--light">
             {WINTER_VILLAGE_PREVIEW_MODAL.closeLabel}
           </button>
         </div>

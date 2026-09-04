@@ -1,7 +1,8 @@
 import { useMemo, useState, useEffect, useId, useRef } from 'react';
-import { Check } from 'lucide-react';
+import { getValleyHeroResponsive } from '../../../config/heroResponsive';
 import {
   WINTER_VILLAGE_ACCOMMODATIONS,
+  WINTER_VILLAGE_MEDIA,
   WINTER_VILLAGE_PRODUCT_ORDER,
   WINTER_VILLAGE_PRODUCTS,
   getWinterVillageProduct
@@ -10,18 +11,15 @@ import {
   calculateWinterVillageTotal,
   formatEuro
 } from '../winterVillageCalculator';
+import WinterVillageCinematicMedia from './WinterVillageCinematicMedia';
 
 function Stepper({ id, label, value, min, max, onChange, disabled }) {
   const labelId = `${id}-label`;
   const valueId = `${id}-value`;
 
   return (
-    <div
-      className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
-      role="group"
-      aria-labelledby={labelId}
-    >
-      <span id={labelId} className="text-sm font-medium text-[#1a1a1a]">
+    <div className="wv-stepper-row" role="group" aria-labelledby={labelId}>
+      <span id={labelId} className="wv-stepper-label">
         {label}
       </span>
       <div className="wv-stepper">
@@ -33,12 +31,7 @@ function Stepper({ id, label, value, min, max, onChange, disabled }) {
         >
           −
         </button>
-        <span
-          id={valueId}
-          className="wv-stepper-value"
-          aria-live="polite"
-          aria-atomic="true"
-        >
+        <span id={valueId} className="wv-stepper-value" aria-live="polite" aria-atomic="true">
           {value}
         </span>
         <button
@@ -54,18 +47,47 @@ function Stepper({ id, label, value, min, max, onChange, disabled }) {
   );
 }
 
+function accommodationRateLabel(product, accId) {
+  const unit = product.pricing.units[accId];
+  if (!unit) return '';
+  if (product.pricing.type === 'per-night') {
+    if (unit.ratePerNight) return `€${unit.ratePerNight} / night`;
+    if (unit.ratePerPersonPerNight) return `€${unit.ratePerPersonPerNight} / person / night`;
+  }
+  if (unit.packagePrice) return `€${unit.packagePrice} for two`;
+  if (unit.adultPrice) return `From €${unit.adultPrice} / adult`;
+  return '';
+}
+
+function guestSummary(quote, isStone) {
+  if (isStone) {
+    const { guests, adults, children4to12, under4 } = quote.normalised;
+    if (quote.normalised.product.pricing.type === 'package') {
+      const parts = [`${adults} adult${adults === 1 ? '' : 's'}`];
+      if (children4to12) parts.push(`${children4to12} child${children4to12 === 1 ? '' : 'ren'}`);
+      if (under4) parts.push(`${under4} under 4`);
+      return parts.join(' · ');
+    }
+    return `${guests} people`;
+  }
+  return '2 people';
+}
+
 /**
- * Data-driven three-product Winter Village selector + calculator.
+ * Split-screen Winter Village configurator. Calculator logic is unchanged.
  */
 export default function WinterVillageProductSelector({
   selectedProductId,
   onSelectProduct,
   sectionRef,
-  onRequestReserve
+  onRequestReserve,
+  prefersReducedMotion = false
 }) {
   const baseId = useId();
   const tabRefs = useRef({});
   const product = getWinterVillageProduct(selectedProductId);
+  const media = WINTER_VILLAGE_MEDIA[selectedProductId] || WINTER_VILLAGE_MEDIA.stay;
+  const stayPicture = selectedProductId === 'stay' ? getValleyHeroResponsive('winter') : null;
   const [accommodationId, setAccommodationId] = useState('a-frame');
   const [nights, setNights] = useState(product.defaultNights);
   const [guests, setGuests] = useState(3);
@@ -118,6 +140,10 @@ export default function WinterVillageProductSelector({
   const isStone = accommodationId === 'stone-house';
   const isStay = product.pricing.type === 'per-night';
   const nightsLocked = product.nightsFixed != null;
+  const accommodation = WINTER_VILLAGE_ACCOMMODATIONS.find((item) => item.id === accommodationId);
+  const nightsLabel = nightsLocked
+    ? product.durationLabel
+    : `${quote.normalised.nights} night${quote.normalised.nights === 1 ? '' : 's'}`;
 
   const selectProductWithFocus = (nextId) => {
     onSelectProduct(nextId);
@@ -130,21 +156,30 @@ export default function WinterVillageProductSelector({
     <section
       ref={sectionRef}
       id="winter-packages"
-      className="valley-section"
+      className="wv-config"
       aria-labelledby={`${baseId}-heading`}
     >
-      <div className="valley-container">
-        <p className="valley-label mb-3">Three winter products</p>
-        <h2 id={`${baseId}-heading`} className="valley-h2 mb-4 max-w-3xl">
-          Choose how you want to experience Winter Village
-        </h2>
-        <p className="valley-intro mb-10 md:mb-12 max-w-2xl">
-          Stay simply, join a hosted Parent &amp; Child weekend, or come for Christmas. Selecting a
-          product updates the package details and proposed price below.
-        </p>
+      <h2 id={`${baseId}-heading`} className="sr-only">
+        Choose how you want to experience Winter Village
+      </h2>
 
+      <div className="wv-config-media" data-product={selectedProductId}>
+        <WinterVillageCinematicMedia
+          key={selectedProductId}
+          videoSrc={media.videoSrc}
+          posterSrc={media.posterSrc || media.stillSrc}
+          picture={stayPicture}
+          alt={media.alt}
+          overlayClassName={`wv-config-media-overlay wv-config-media-overlay--${selectedProductId}`}
+          prefersReducedMotion={prefersReducedMotion}
+          objectPosition={selectedProductId === 'parent-child' ? 'center 70%' : 'center center'}
+        />
+        <p className="wv-config-media-caption">{product.headline}</p>
+      </div>
+
+      <div className="wv-config-panel">
         <div
-          className="wv-product-tabs mb-10 md:mb-12"
+          className="wv-product-tabs"
           role="tablist"
           aria-label="Winter Village products"
         >
@@ -178,8 +213,10 @@ export default function WinterVillageProductSelector({
                   selectProductWithFocus(next);
                 }}
               >
+                <span className="wv-product-tab-kicker">{item.kicker}</span>
                 <span className="wv-product-tab-label">{item.name}</span>
-                <span className="wv-product-tab-meta">{item.durationLabel}</span>
+                <span className="wv-product-tab-meta">{item.details}</span>
+                <span className="wv-product-tab-price">{item.fromPrice}</span>
               </button>
             );
           })}
@@ -189,204 +226,148 @@ export default function WinterVillageProductSelector({
           id={`${baseId}-panel`}
           role="tabpanel"
           aria-labelledby={`${baseId}-tab-${selectedProductId}`}
-          className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-start"
+          className="wv-config-body"
         >
-          <div>
-            <div
-              className="relative w-full overflow-hidden rounded-xl bg-[#e8e8e8] mb-6"
-              style={{ aspectRatio: '4 / 5', maxHeight: '560px' }}
-            >
-              <img
-                key={product.image}
-                src={product.image}
-                alt={product.imageAlt}
-                className="h-full w-full object-cover"
-                loading="lazy"
-                decoding="async"
-                width={800}
-                height={1000}
-              />
-            </div>
-            <p className="text-sm uppercase tracking-[0.14em] text-[#81887A] mb-2 font-medium">
-              {product.durationLabel}
-            </p>
-            <h3 className="font-serif text-3xl md:text-4xl text-[#1a1a1a] font-semibold mb-3">
-              {product.name}
-            </h3>
-            <p className="valley-body text-[#4a4a4a] mb-4">{product.description}</p>
-            <p className="valley-body text-[#6a6a6a] text-sm mb-6">{product.purpose}</p>
+          <p className="wv-kicker">{product.details}</p>
+          <h3 className="wv-config-headline">{product.name}</h3>
+          <p className="wv-config-story">{product.headline}</p>
+          <p className="wv-config-copy">{product.shortDescription || product.description}</p>
 
-            <h4 className="text-sm font-semibold uppercase tracking-[0.12em] text-[#1a1a1a] mb-3">
-              Included
-            </h4>
-            <ul className="space-y-2 mb-2">
-              {product.included.map((item) => (
-                <li key={item} className="flex gap-3 valley-body text-[#4a4a4a]">
-                  <Check className="w-4 h-4 mt-1 shrink-0 text-[#81887A]" aria-hidden="true" />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
+          <p className="wv-field-label">Accommodation</p>
+          <div className="wv-acc-list" role="group" aria-label="Accommodation">
+            {WINTER_VILLAGE_ACCOMMODATIONS.map((acc) => (
+              <button
+                key={acc.id}
+                type="button"
+                className="wv-acc-choice"
+                aria-pressed={accommodationId === acc.id}
+                onClick={() => {
+                  setAccommodationId(acc.id);
+                  if (acc.id === 'stone-house') {
+                    const stone = product.pricing.units['stone-house'];
+                    setGuests(stone?.defaultGuests ?? 3);
+                    setAdults(stone?.defaultAdults ?? 2);
+                    setChildren4to12(stone?.defaultChildren4to12 ?? 1);
+                    setUnder4(stone?.defaultUnder4 ?? 0);
+                  }
+                }}
+              >
+                <span className="wv-acc-choice-name">{acc.name}</span>
+                <span className="wv-acc-choice-meta">{acc.sleepsLabel}</span>
+                <span className="wv-acc-choice-rate">{accommodationRateLabel(product, acc.id)}</span>
+              </button>
+            ))}
           </div>
 
-          <div className="border border-[rgba(0,0,0,0.12)] rounded-xl bg-white p-5 md:p-7 lg:p-8 max-w-xl lg:max-w-none">
-            <h4 className="text-sm font-semibold uppercase tracking-[0.12em] text-[#717171] mb-4">
-              Accommodation
-            </h4>
-            <div className="grid grid-cols-1 gap-2 mb-6" role="group" aria-label="Accommodation">
-              {WINTER_VILLAGE_ACCOMMODATIONS.map((acc) => (
-                <button
-                  key={acc.id}
-                  type="button"
-                  className="wv-acc-choice"
-                  aria-pressed={accommodationId === acc.id}
-                  onClick={() => {
-                    setAccommodationId(acc.id);
-                    if (acc.id === 'stone-house') {
-                      const stone = product.pricing.units['stone-house'];
-                      setGuests(stone?.defaultGuests ?? 3);
-                      setAdults(stone?.defaultAdults ?? 2);
-                      setChildren4to12(stone?.defaultChildren4to12 ?? 1);
-                      setUnder4(stone?.defaultUnder4 ?? 0);
-                    }
-                  }}
-                >
-                  <span className="block font-semibold text-[#1a1a1a]">{acc.name}</span>
-                  <span className="block text-sm text-[#6a6a6a] mt-0.5">{acc.sleepsLabel}</span>
-                </button>
-              ))}
-            </div>
+          <div className="wv-config-controls">
+            {isStay && !nightsLocked ? (
+              <Stepper
+                id={`${baseId}-nights`}
+                label="Nights"
+                value={quote.normalised.nights}
+                min={product.minNights}
+                max={21}
+                onChange={setNights}
+              />
+            ) : (
+              <div className="wv-stepper-row">
+                <span className="wv-stepper-label">Duration</span>
+                <span className="wv-static-value">{product.durationLabel}</span>
+              </div>
+            )}
 
-            <div className="space-y-4 mb-6 border-t border-[rgba(0,0,0,0.08)] pt-5">
-              {isStay && !nightsLocked ? (
-                <Stepper
-                  id={`${baseId}-nights`}
-                  label="Nights"
-                  value={quote.normalised.nights}
-                  min={product.minNights}
-                  max={21}
-                  onChange={setNights}
-                />
-              ) : (
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-medium text-[#1a1a1a]">Duration</span>
-                  <span className="text-sm text-[#4a4a4a]">{product.durationLabel}</span>
-                </div>
-              )}
-
-              {isStay && isStone ? (
-                <Stepper
-                  id={`${baseId}-guests`}
-                  label="Guests"
-                  value={quote.normalised.guests}
-                  min={unit?.minGuests ?? 3}
-                  max={unit?.maxGuests ?? 6}
-                  onChange={setGuests}
-                />
-              ) : null}
-
-              {!isStay && isStone ? (
-                <>
-                  <Stepper
-                    id={`${baseId}-adults`}
-                    label="Adults"
-                    value={quote.normalised.adults}
-                    min={1}
-                    max={unit?.maxOccupancy ?? 6}
-                    onChange={setAdults}
-                  />
-                  <Stepper
-                    id={`${baseId}-children`}
-                    label="Children aged 4–12"
-                    value={quote.normalised.children4to12}
-                    min={0}
-                    max={unit?.maxOccupancy ?? 6}
-                    onChange={setChildren4to12}
-                  />
-                  <Stepper
-                    id={`${baseId}-under4`}
-                    label="Children under 4"
-                    value={quote.normalised.under4}
-                    min={0}
-                    max={unit?.maxOccupancy ?? 6}
-                    onChange={setUnder4}
-                  />
-                </>
-              ) : null}
-
-              {!isStone ? (
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-medium text-[#1a1a1a]">Guests</span>
-                  <span className="text-sm text-[#4a4a4a]">2 people</span>
-                </div>
-              ) : null}
-
-              {product.pricing.wellnessOptional ? (
-                <label className="flex items-start gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="mt-1 h-4 w-4 rounded border-[rgba(0,0,0,0.25)] text-[#81887A] focus-visible:ring-2 focus-visible:ring-[#81887A]"
-                    checked={wellnessSelected}
-                    onChange={(event) => setWellnessSelected(event.target.checked)}
-                  />
-                  <span className="text-sm text-[#2a2a2a]">
-                    {product.pricing.wellnessOptional.label}
-                    <span className="block text-[#81887A] mt-0.5">
-                      +{formatEuro(product.pricing.wellnessOptional.pricePerBooking)} per booking
-                    </span>
-                  </span>
-                </label>
-              ) : null}
-            </div>
-
-            {quote.warnings.length > 0 ? (
-              <ul className="mb-4 space-y-1" aria-live="polite">
-                {quote.warnings.map((warning) => (
-                  <li key={warning} className="text-xs text-[#81887A]">
-                    {warning}
-                  </li>
-                ))}
-              </ul>
+            {isStay && isStone ? (
+              <Stepper
+                id={`${baseId}-guests`}
+                label="Guests"
+                value={quote.normalised.guests}
+                min={unit?.minGuests ?? 3}
+                max={unit?.maxGuests ?? 6}
+                onChange={setGuests}
+              />
             ) : null}
 
-            <div className="border-t border-[rgba(0,0,0,0.08)] pt-5 mb-5">
-              <p className="text-xs uppercase tracking-[0.14em] text-[#717171] mb-2">
-                Proposed total
-              </p>
-              <p className="font-serif text-4xl text-[#1a1a1a] font-semibold mb-3">
-                {formatEuro(quote.total)}
-              </p>
-              <ul className="space-y-1 mb-4">
-                {quote.lines.map((line) => (
-                  <li
-                    key={line.label}
-                    className="flex justify-between gap-4 text-sm text-[#4a4a4a]"
-                  >
-                    <span>{line.label}</span>
-                    <span className="shrink-0">{formatEuro(line.amount)}</span>
-                  </li>
-                ))}
-              </ul>
-              <div className="rounded-lg bg-[rgba(0,0,0,0.02)] border border-[rgba(0,0,0,0.08)] p-4 text-sm text-[#4a4a4a] space-y-1.5">
-                <p>
-                  <strong className="text-[#1a1a1a] font-semibold">{quote.depositLabel}:</strong>{' '}
-                  {formatEuro(quote.deposit)}
-                </p>
-                <p>{quote.balanceLabel}</p>
-                <p className="text-xs text-[#6a6a6a] pt-1">
-                  Proposed prices only. No payment is taken on this page.
-                </p>
-              </div>
-            </div>
+            {!isStay && isStone ? (
+              <>
+                <Stepper
+                  id={`${baseId}-adults`}
+                  label="Adults"
+                  value={quote.normalised.adults}
+                  min={1}
+                  max={unit?.maxOccupancy ?? 6}
+                  onChange={setAdults}
+                />
+                <Stepper
+                  id={`${baseId}-children`}
+                  label="Children aged 4–12"
+                  value={quote.normalised.children4to12}
+                  min={0}
+                  max={unit?.maxOccupancy ?? 6}
+                  onChange={setChildren4to12}
+                />
+                <Stepper
+                  id={`${baseId}-under4`}
+                  label="Children under 4"
+                  value={quote.normalised.under4}
+                  min={0}
+                  max={unit?.maxOccupancy ?? 6}
+                  onChange={setUnder4}
+                />
+              </>
+            ) : null}
 
-            <button
-              type="button"
-              onClick={onRequestReserve}
-              className="w-full bg-[#1a1a1a] text-white px-8 py-4 font-semibold uppercase tracking-wider text-sm hover:bg-[#2a2a2a] transition-colors min-h-[52px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81887A] focus-visible:ring-offset-2"
-            >
-              {product.actionLabel}
-            </button>
+            {!isStone ? (
+              <div className="wv-stepper-row">
+                <span className="wv-stepper-label">Guests</span>
+                <span className="wv-static-value">2 people</span>
+              </div>
+            ) : null}
+
+            {product.pricing.wellnessOptional ? (
+              <label className="wv-wellness">
+                <input
+                  type="checkbox"
+                  checked={wellnessSelected}
+                  onChange={(event) => setWellnessSelected(event.target.checked)}
+                />
+                <span>
+                  {product.pricing.wellnessOptional.label}
+                  <em>
+                    +{formatEuro(product.pricing.wellnessOptional.pricePerBooking)} per booking
+                  </em>
+                </span>
+              </label>
+            ) : null}
           </div>
+
+          {quote.warnings.length > 0 ? (
+            <ul className="wv-warnings" aria-live="polite">
+              {quote.warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+
+        <div className="wv-summary" data-wv-summary="true">
+          <div className="wv-summary-meta">
+            <p className="wv-summary-line">
+              <span>{product.kicker}</span>
+              <span aria-hidden="true">|</span>
+              <span>{accommodation?.name}</span>
+              <span aria-hidden="true">|</span>
+              <span>{nightsLabel}</span>
+              <span aria-hidden="true">|</span>
+              <span>{guestSummary(quote, isStone)}</span>
+            </p>
+            <p className="wv-summary-price">
+              <span>Proposed total</span>
+              <strong>{formatEuro(quote.total)}</strong>
+            </p>
+          </div>
+          <button type="button" className="wv-btn wv-btn--light" onClick={onRequestReserve}>
+            {product.actionLabel}
+          </button>
         </div>
       </div>
     </section>

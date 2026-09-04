@@ -1,26 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import Seo from '../../components/Seo';
-import BookingCTABand from '../the-valley/sections/BookingCTABand';
-import { useLocalizedPath } from '../../hooks/useLocalizedPath';
 import { buildHreflangAlternates } from '../../utils/localizedRoutes';
 import { WINTER_VILLAGE_SEO } from './winterVillageConfig';
 import WinterVillageHero, {
   WINTER_VILLAGE_HERO_PRELOAD
 } from './components/WinterVillageHero';
 import WinterVillageProductSelector from './components/WinterVillageProductSelector';
-import WinterVillageAccommodations from './components/WinterVillageAccommodations';
-import WinterVillageFacilities from './components/WinterVillageFacilities';
+import WinterVillageFounding from './components/WinterVillageFounding';
+import WinterVillageChristmasFeature from './components/WinterVillageChristmasFeature';
+import WinterVillageParentFeature from './components/WinterVillageParentFeature';
 import WinterVillageDates from './components/WinterVillageDates';
+import WinterVillageClose from './components/WinterVillageClose';
 import WinterVillageFaq from './components/WinterVillageFaq';
 import WinterVillagePreviewModal from './components/WinterVillagePreviewModal';
-import '../the-valley/the-valley.css';
 import './winter-village.css';
 
 export default function WinterVillagePage() {
   const packagesRef = useRef(null);
-  const navigate = useNavigate();
-  const lp = useLocalizedPath();
   const [selectedProductId, setSelectedProductId] = useState('stay');
   const [modalOpen, setModalOpen] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
@@ -71,7 +67,7 @@ export default function WinterVillagePage() {
         ]}
       />
 
-      <div className="valley-page winter-village-page retreat-page">
+      <div className="winter-village-page">
         <WinterVillageHero
           onExplorePackages={scrollToPackages}
           prefersReducedMotion={prefersReducedMotion}
@@ -82,22 +78,22 @@ export default function WinterVillagePage() {
           selectedProductId={selectedProductId}
           onSelectProduct={setSelectedProductId}
           onRequestReserve={() => setModalOpen(true)}
+          prefersReducedMotion={prefersReducedMotion}
         />
 
-        <WinterVillageAccommodations prefersReducedMotion={prefersReducedMotion} />
+        <WinterVillageFounding />
 
-        <WinterVillageFacilities prefersReducedMotion={prefersReducedMotion} />
+        <WinterVillageChristmasFeature
+          onChooseChristmas={() => selectProductAndScroll('christmas')}
+        />
+
+        <WinterVillageParentFeature />
 
         <WinterVillageDates onSelectDate={selectProductAndScroll} />
 
-        <WinterVillageFaq prefersReducedMotion={prefersReducedMotion} />
+        <WinterVillageClose onChooseWinter={scrollToPackages} />
 
-        <BookingCTABand
-          primaryLabel="Explore winter packages"
-          secondaryLabel="Visit The Valley"
-          onPrimaryClick={scrollToPackages}
-          onSecondaryClick={() => navigate(lp('/valley'))}
-        />
+        <WinterVillageFaq prefersReducedMotion={prefersReducedMotion} />
 
         <WinterVillagePreviewModal open={modalOpen} onClose={() => setModalOpen(false)} />
       </div>

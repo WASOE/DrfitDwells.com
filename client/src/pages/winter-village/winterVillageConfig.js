@@ -25,12 +25,13 @@ export const WINTER_VILLAGE_SEO = Object.freeze({
 });
 
 export const WINTER_VILLAGE_HERO = Object.freeze({
-  headline: 'The Valley Winter Village',
-  copy: 'A whole winter of fire, snow and mountain silence. Stay simply, join a hosted family weekend, or come for Christmas.',
-  seasonLabel: 'December 2026 to March 2027',
-  locationLabel: 'Rhodope Mountains, Bulgaria',
-  primaryCta: 'Explore winter packages',
-  previewNotice: 'Winter Village concept preview. Proposed prices and dates. No payment is taken.'
+  eyebrow: 'The first winter at The Valley · December 2026 to March 2027',
+  headline: 'This winter, The Valley becomes a village.',
+  copy: 'Cabins in the snow. Fire after dark. Sauna and hot tubs under the stars. Come quietly for two nights, join a parent and child adventure, or spend Christmas somewhere your children will never forget.',
+  primaryCta: 'Choose your winter',
+  secondaryLine: 'Founding presale opening soon',
+  videoSrc: '/uploads/Videos/The-Valley-firaplace-video.winter.mp4',
+  posterSrc: '/uploads/Videos/The-Valley-firaplace-video.winter-poster.jpg'
 });
 
 export const WINTER_VILLAGE_DEPOSIT = Object.freeze({
@@ -43,8 +44,8 @@ export const WINTER_VILLAGE_DEPOSIT = Object.freeze({
 });
 
 export const WINTER_VILLAGE_PREVIEW_MODAL = Object.freeze({
-  title: 'Reservation coming soon',
-  body: 'This is currently a Winter Village preview. The reservation and presale system will be activated after the packages, facilities and dates are confirmed.',
+  title: 'Founding presale opening soon',
+  body: 'The founding presale is not open yet. Leave this page open for now while we finalise the dates, facilities and booking terms.',
   closeLabel: 'Close'
 });
 
@@ -96,23 +97,52 @@ export const WINTER_VILLAGE_ACCOMMODATIONS = Object.freeze([
   }
 ]);
 
+export const WINTER_VILLAGE_MEDIA = Object.freeze({
+  stay: {
+    videoSrc: null,
+    posterSrc: '/uploads/Videos/The-Valley-firaplace-video.winter-poster.jpg',
+    stillSrc: '/media/hero/valley-winter-1920w.avif',
+    alt: 'The Valley in winter snow — cabins and mountain silence'
+  },
+  'parent-child': {
+    videoSrc: null,
+    posterSrc: '/uploads/Content%20website/drift-dwells-bulgaria-fireside-lounge.avif',
+    stillSrc: '/uploads/Content%20website/drift-dwells-bulgaria-fireside-lounge.avif',
+    alt: 'Fireside lounge at The Valley — warmth after the mountain'
+  },
+  christmas: {
+    videoSrc: null,
+    posterSrc: '/uploads/Content%20website/drift-dwells-bulgaria-campfire-night.avif',
+    stillSrc: '/uploads/Content%20website/drift-dwells-bulgaria-campfire-night.avif',
+    alt: 'Night fire at The Valley — Christmas atmosphere'
+  },
+  foundingStill: '/media/hero/valley-winter-1200w.avif',
+  closeStill: '/media/hero/valley-winter-1920w.avif',
+  campfire: '/uploads/Content%20website/drift-dwells-bulgaria-campfire-night.avif',
+  fireside: '/uploads/Content%20website/drift-dwells-bulgaria-fireside-lounge.avif'
+});
+
 export const WINTER_VILLAGE_PRODUCTS = Object.freeze({
   stay: {
     id: 'stay',
     name: 'Winter Village Stay',
     shortName: 'Stay',
+    kicker: 'Winter Village Stay',
+    headline: 'Your cabin. Your fire. Your winter.',
+    details: 'Self-led · 2 night minimum',
+    fromPrice: 'From €150 for two',
+    shortDescription:
+      'Come for the mountain, the snow and the silence. Your accommodation is private. The winter village is shared.',
     purpose:
       'A normal accommodation stay inside the winter atmosphere. It is not fully hosted and does not include daily food, guides or organised entertainment.',
     description:
-      'Book your accommodation and add only what you want. Enjoy the Winter Village atmosphere without paying for a full retreat programme.',
+      'Come for the mountain, the snow and the silence. Your accommodation is private. The winter village is shared.',
     durationLabel: 'Flexible stay',
     nightsFixed: null,
     minNights: 2,
     defaultNights: 2,
-    image:
-      metaBySlug['a-frame']?.fallbackImage ||
-      '/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.24%20AM%20(4).jpeg',
-    imageAlt: 'A-frame cabin in The Valley winter landscape',
+    image: '/media/hero/valley-winter-1920w.avif',
+    imageAlt: 'The Valley in winter snow — cabins and mountain silence',
     included: [
       'Winter Village lighting',
       'Sledges',
@@ -138,24 +168,29 @@ export const WINTER_VILLAGE_PRODUCTS = Object.freeze({
         pricePerBooking: 45
       }
     },
-    actionLabel: 'Express interest',
+    actionLabel: 'Join the founding presale',
     depositRule: 'stay'
   },
   'parent-child': {
     id: 'parent-child',
     name: 'Parent & Child Winter Weekend',
     shortName: 'Parent & Child',
+    kicker: 'Parent & Child Weekend',
+    headline: 'Two days away from everything except each other.',
+    details: 'Hosted · 3 days / 2 nights',
+    fromPrice: 'From €260 for two',
+    shortDescription:
+      'A small winter adventure with the transport, food and main activities already organised.',
     purpose:
       'A hosted weekend designed specifically around the two-person A-frames and Luxury Cabin.',
     description:
-      'Three winter days for one parent and one child, with the accommodation, transport, food and main activities already organised.',
+      'A small winter adventure with the transport, food and main activities already organised.',
     durationLabel: '3 days and 2 nights',
     nightsFixed: 2,
     minNights: 2,
     defaultNights: 2,
-    image:
-      '/uploads/Content%20website/drift-dwells-bulgaria-fireside-lounge.avif',
-    imageAlt: 'Fireside lounge at Drift & Dwells',
+    image: '/uploads/Content%20website/drift-dwells-bulgaria-fireside-lounge.avif',
+    imageAlt: 'Fireside lounge at The Valley — warmth after the mountain',
     included: [
       '2 nights',
       'Breakfast and dinner',
@@ -183,23 +218,28 @@ export const WINTER_VILLAGE_PRODUCTS = Object.freeze({
         }
       }
     },
-    actionLabel: 'Express interest',
+    actionLabel: 'Join the founding presale',
     depositRule: 'stay'
   },
   christmas: {
     id: 'christmas',
     name: 'Christmas in the Valley',
     shortName: 'Christmas',
+    kicker: 'Christmas in the Valley',
+    headline: 'The Christmas they will talk about for years.',
+    details: 'Fully hosted · 4 days / 3 nights',
+    fromPrice: 'From €490 for two',
+    shortDescription:
+      'Three nights of snow, fires, shared food, Santa, presents and a Christmas morning built around the children.',
     purpose: 'The flagship hosted Winter Village event.',
     description:
-      'Christmas without the hotel feeling. Three nights in a small mountain village with shared food, fires, family activities and a real Christmas programme.',
+      'Three nights of snow, fires, shared food, Santa, presents and a Christmas morning built around the children.',
     durationLabel: '4 days and 3 nights',
     nightsFixed: 3,
     minNights: 3,
     defaultNights: 3,
-    image:
-      '/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.23%20AM.jpeg',
-    imageAlt: 'The Valley mountain village in winter light',
+    image: '/uploads/Content%20website/drift-dwells-bulgaria-campfire-night.avif',
+    imageAlt: 'Night fire at The Valley — Christmas atmosphere',
     included: [
       '3 nights',
       'Breakfast and dinner',
@@ -230,7 +270,7 @@ export const WINTER_VILLAGE_PRODUCTS = Object.freeze({
         }
       }
     },
-    actionLabel: 'Express interest',
+    actionLabel: 'Join the founding presale',
     depositRule: 'christmas'
   }
 });
@@ -241,50 +281,101 @@ export const WINTER_VILLAGE_PRODUCT_ORDER = Object.freeze([
   'christmas'
 ]);
 
-export const WINTER_VILLAGE_FACILITIES = Object.freeze({
-  title: 'Planned for the Winter Village season',
-  intro:
-    'These facilities are proposed for the founding Winter Village season. Final confirmation depends on supplier quotes, installation and the launch budget. The hill itself remains untouched.',
-  statusLabel: 'Planned for the Winter Village season.',
+export const WINTER_VILLAGE_FOUNDING = Object.freeze({
+  headline: 'You are not donating. You are booking the winter that helps build it.',
+  copy: 'The first Winter Village reservations fund the shared sauna, two wood-fired hot tubs, winter lighting and the heated family space. You secure a real stay at the founding price. We use the presale to finish the village before winter.',
+  targetLabel: '€15,000 winter build target',
+  statusLabel: 'Planned for the founding winter',
   items: [
-    'Shared sauna',
-    'Two wood-fired hot tubs',
-    'Heated family fire room',
-    'Safe illuminated winter paths',
-    'Sledges',
-    'Hot drinks and board games',
-    'Family film evenings',
-    'Space for drying winter clothing'
+    {
+      title: 'A shared sauna',
+      image: '/media/hero/valley-winter-1920w.avif',
+      objectPosition: 'center 78%'
+    },
+    {
+      title: 'Two wood-fired hot tubs',
+      image: '/media/hero/valley-winter-1920w.avif',
+      objectPosition: '70% 45%'
+    },
+    {
+      title: 'A heated family fire room',
+      image: '/media/hero/valley-winter-1200w.avif',
+      objectPosition: 'center 62%'
+    },
+    {
+      title: 'Safe winter lighting and paths',
+      image: '/media/hero/valley-winter-1920w.avif',
+      objectPosition: '30% 30%'
+    }
   ]
 });
 
+export const WINTER_VILLAGE_CHRISTMAS_FEATURE = Object.freeze({
+  headline: 'The morning they remember.',
+  copy: 'Presents waiting outside the cabins. Santa arriving through the snow. Children from the nearby village joining the celebration. Breakfast by the fire. One shared Christmas, far away from the hotel version of it.',
+  moments: [
+    'Christmas Eve feast',
+    'Santa and presents',
+    'Family snow day',
+    'Sauna and hot-tub session',
+    'Shared film night',
+    'Proposed family film of the stay'
+  ],
+  cta: 'Choose Christmas'
+});
+
+export const WINTER_VILLAGE_PARENT_FEATURE = Object.freeze({
+  headline: 'Nothing to organise. Nowhere else to be.',
+  copy: 'We collect you, bring you into the mountains and organise the important parts. Two nights, shared meals, snow activities, fire and time together.',
+  flow: ['Arrive', 'Eat', 'Explore', 'Warm up', 'Sleep', 'Do it again']
+});
+
+export const WINTER_VILLAGE_CLOSE = Object.freeze({
+  headline: 'Winter is being built now.',
+  copy: 'Choose the experience you want. When the founding presale opens, you will be able to secure the first dates.',
+  cta: 'Choose your winter'
+});
+
 export const WINTER_VILLAGE_DATES = Object.freeze({
-  sectionLabel: 'Proposed first release dates',
-  intro: 'These dates are proposed for the first Winter Village release. They are not connected to live availability yet.',
+  sectionLabel: 'First dates to be released',
+  intro: 'These are the first dates we intend to release. They are not live availability.',
+  selectLabel: 'Select package',
   items: [
     {
       id: 'opening',
       label: '11 to 13 December 2026',
       title: 'Winter Village Opening',
-      productId: 'stay'
+      productId: 'stay',
+      mode: 'Self-led',
+      duration: '2 nights',
+      fromPrice: 'From €150'
     },
     {
       id: 'christmas',
       label: '24 to 27 December 2026',
       title: 'Christmas in the Valley',
-      productId: 'christmas'
+      productId: 'christmas',
+      mode: 'Fully hosted',
+      duration: '4 days / 3 nights',
+      fromPrice: 'From €490'
     },
     {
       id: 'parent-child-jan',
       label: '15 to 17 January 2027',
       title: 'Parent & Child Weekend',
-      productId: 'parent-child'
+      productId: 'parent-child',
+      mode: 'Hosted',
+      duration: '3 days / 2 nights',
+      fromPrice: 'From €260'
     },
     {
       id: 'deep-winter',
       label: '12 to 14 February 2027',
       title: 'Deep Winter Weekend',
-      productId: 'parent-child'
+      productId: 'parent-child',
+      mode: 'Hosted',
+      duration: '3 days / 2 nights',
+      fromPrice: 'From €260'
     }
   ]
 });
@@ -292,41 +383,35 @@ export const WINTER_VILLAGE_DATES = Object.freeze({
 export const WINTER_VILLAGE_FAQ = Object.freeze([
   {
     id: 'hosted',
-    question: 'Is the whole winter fully hosted?',
+    question: 'Is the whole winter hosted?',
     answer:
-      'No. Normal Winter Village stays are accommodation-led. Food, guides and organised family activities are only included in the hosted packages.'
+      'No. Winter Village Stay is self-led accommodation. Food, transport and organised activities are included only in the Parent & Child Weekend and Christmas packages.'
+  },
+  {
+    id: 'presale',
+    question: 'What is included in the presale?',
+    answer:
+      'A real stay at the founding price. The first reservations fund the shared sauna, two wood-fired hot tubs, heated family fire room and winter lighting. Payment is not open yet.'
+  },
+  {
+    id: 'sauna',
+    question: 'Are the sauna and hot tubs already built?',
+    answer:
+      'Not yet. They are planned for the founding winter. Final confirmation depends on supplier quotes, installation and the launch budget.'
   },
   {
     id: 'family-aframe',
-    question: 'Can a family of four stay in an A-frame?',
+    question: 'Can a family of four use the A-frames?',
     answer:
       'One A-frame sleeps two. A family of four can reserve two neighbouring A-frames or choose the Stone House.'
   },
   {
-    id: 'sauna',
-    question: 'Are the sauna and hot tubs already confirmed?',
+    id: 'payment',
+    question: 'When will payment open?',
     answer:
-      'They are planned parts of the Winter Village product. Final confirmation depends on supplier quotes, installation and the launch budget.'
-  },
-  {
-    id: 'prices',
-    question: 'Are these final prices and dates?',
-    answer:
-      'No. These are proposed launch prices and dates being tested before the presale opens.'
-  },
-  {
-    id: 'transport',
-    question: 'Is transport included?',
-    answer:
-      'Transport is included in the Parent & Child Weekend and Christmas packages. It is not automatically included with a normal Winter Village Stay.'
+      'When the founding presale opens — after dates, facilities and booking terms are finalised. This page does not take payment.'
   }
 ]);
-
-export const WINTER_VILLAGE_ACCOMMODATION_SECTION = Object.freeze({
-  title: 'Where you stay',
-  intro:
-    'One A-frame sleeps two. A family of four can reserve two neighbouring A-frames or choose the Stone House. Neighbouring availability is confirmed only when live calendars show it.'
-});
 
 export function getWinterVillageProduct(productId) {
   return WINTER_VILLAGE_PRODUCTS[productId] || WINTER_VILLAGE_PRODUCTS.stay;

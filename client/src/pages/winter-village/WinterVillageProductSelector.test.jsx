@@ -68,7 +68,7 @@ describe('WinterVillageProductSelector', () => {
     );
 
     expect(screen.getByText('Proposed total').parentElement).toHaveTextContent('€260');
-    fireEvent.click(screen.getByRole('button', { name: /Express interest/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Join the founding presale/i }));
     expect(onRequestReserve).toHaveBeenCalledTimes(1);
   });
 
@@ -125,7 +125,7 @@ describe('WinterVillageDates', () => {
     const onSelectDate = vi.fn();
     render(<WinterVillageDates onSelectDate={onSelectDate} />);
 
-    const buttons = screen.getAllByRole('button', { name: /View package/i });
+    const buttons = screen.getAllByRole('button', { name: /Select package/i });
     expect(buttons).toHaveLength(4);
 
     fireEvent.click(buttons[0]);
