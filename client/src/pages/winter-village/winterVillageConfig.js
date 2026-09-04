@@ -21,7 +21,7 @@ export const WINTER_VILLAGE_SEO = Object.freeze({
   description:
     'A whole winter of fire, snow and mountain silence in the Rhodope Mountains. Stay simply, join a hosted Parent & Child weekend, or come for Christmas in the Valley. December 2026 to March 2027.',
   canonicalPath: '/winter-village',
-  ogImage: '/uploads/Videos/The-Valley-firaplace-video.winter-poster.jpg'
+  ogImage: '/media/winter/cabin-fire-interior.jpg'
 });
 
 export const WINTER_VILLAGE_HERO = Object.freeze({
@@ -29,9 +29,7 @@ export const WINTER_VILLAGE_HERO = Object.freeze({
   headline: 'This winter, The Valley becomes a village.',
   copy: 'Cabins in the snow. Fire after dark. Sauna and hot tubs under the stars. Come quietly for two nights, join a parent and child adventure, or spend Christmas somewhere your children will never forget.',
   primaryCta: 'Choose your winter',
-  secondaryLine: 'Founding presale opening soon',
-  videoSrc: '/uploads/Videos/The-Valley-firaplace-video.winter.mp4',
-  posterSrc: '/uploads/Videos/The-Valley-firaplace-video.winter-poster.jpg'
+  secondaryLine: 'Founding presale opening soon'
 });
 
 export const WINTER_VILLAGE_DEPOSIT = Object.freeze({
@@ -97,30 +95,10 @@ export const WINTER_VILLAGE_ACCOMMODATIONS = Object.freeze([
   }
 ]);
 
-export const WINTER_VILLAGE_MEDIA = Object.freeze({
-  stay: {
-    videoSrc: null,
-    posterSrc: '/uploads/Videos/The-Valley-firaplace-video.winter-poster.jpg',
-    stillSrc: '/media/hero/valley-winter-1920w.avif',
-    alt: 'The Valley in winter snow — cabins and mountain silence'
-  },
-  'parent-child': {
-    videoSrc: null,
-    posterSrc: '/uploads/Content%20website/drift-dwells-bulgaria-fireside-lounge.avif',
-    stillSrc: '/uploads/Content%20website/drift-dwells-bulgaria-fireside-lounge.avif',
-    alt: 'Fireside lounge at The Valley — warmth after the mountain'
-  },
-  christmas: {
-    videoSrc: null,
-    posterSrc: '/uploads/Content%20website/drift-dwells-bulgaria-campfire-night.avif',
-    stillSrc: '/uploads/Content%20website/drift-dwells-bulgaria-campfire-night.avif',
-    alt: 'Night fire at The Valley — Christmas atmosphere'
-  },
-  foundingStill: '/media/hero/valley-winter-1200w.avif',
-  closeStill: '/media/hero/valley-winter-1920w.avif',
-  campfire: '/uploads/Content%20website/drift-dwells-bulgaria-campfire-night.avif',
-  fireside: '/uploads/Content%20website/drift-dwells-bulgaria-fireside-lounge.avif'
-});
+/**
+ * Page imagery is defined in ./winterVillageMedia.js, not here. The winter Valley
+ * footage under /uploads is AI-generated and watermarked, so this page never uses it.
+ */
 
 export const WINTER_VILLAGE_PRODUCTS = Object.freeze({
   stay: {
@@ -141,8 +119,6 @@ export const WINTER_VILLAGE_PRODUCTS = Object.freeze({
     nightsFixed: null,
     minNights: 2,
     defaultNights: 2,
-    image: '/media/hero/valley-winter-1920w.avif',
-    imageAlt: 'The Valley in winter snow — cabins and mountain silence',
     included: [
       'Winter Village lighting',
       'Sledges',
@@ -189,8 +165,6 @@ export const WINTER_VILLAGE_PRODUCTS = Object.freeze({
     nightsFixed: 2,
     minNights: 2,
     defaultNights: 2,
-    image: '/uploads/Content%20website/drift-dwells-bulgaria-fireside-lounge.avif',
-    imageAlt: 'Fireside lounge at The Valley — warmth after the mountain',
     included: [
       '2 nights',
       'Breakfast and dinner',
@@ -238,8 +212,6 @@ export const WINTER_VILLAGE_PRODUCTS = Object.freeze({
     nightsFixed: 3,
     minNights: 3,
     defaultNights: 3,
-    image: '/uploads/Content%20website/drift-dwells-bulgaria-campfire-night.avif',
-    imageAlt: 'Night fire at The Valley — Christmas atmosphere',
     included: [
       '3 nights',
       'Breakfast and dinner',
@@ -287,26 +259,10 @@ export const WINTER_VILLAGE_FOUNDING = Object.freeze({
   targetLabel: '€15,000 winter build target',
   statusLabel: 'Planned for the founding winter',
   items: [
-    {
-      title: 'A shared sauna',
-      image: '/media/hero/valley-winter-1920w.avif',
-      objectPosition: 'center 78%'
-    },
-    {
-      title: 'Two wood-fired hot tubs',
-      image: '/media/hero/valley-winter-1920w.avif',
-      objectPosition: '70% 45%'
-    },
-    {
-      title: 'A heated family fire room',
-      image: '/media/hero/valley-winter-1200w.avif',
-      objectPosition: 'center 62%'
-    },
-    {
-      title: 'Safe winter lighting and paths',
-      image: '/media/hero/valley-winter-1920w.avif',
-      objectPosition: '30% 30%'
-    }
+    { title: 'A shared sauna' },
+    { title: 'Two wood-fired hot tubs' },
+    { title: 'A heated family fire room' },
+    { title: 'Safe winter lighting and paths' }
   ]
 });
 

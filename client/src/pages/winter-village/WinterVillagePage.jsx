@@ -2,13 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Seo from '../../components/Seo';
 import { buildHreflangAlternates } from '../../utils/localizedRoutes';
 import { WINTER_VILLAGE_SEO } from './winterVillageConfig';
-import WinterVillageHero, {
-  WINTER_VILLAGE_HERO_PRELOAD
-} from './components/WinterVillageHero';
-import WinterVillageProductSelector from './components/WinterVillageProductSelector';
-import WinterVillageFounding from './components/WinterVillageFounding';
+import { WINTER_VILLAGE_HERO_PRELOAD } from './winterVillageMedia';
+import WinterVillageHero from './components/WinterVillageHero';
+import WinterVillageWays from './components/WinterVillageWays';
 import WinterVillageChristmasFeature from './components/WinterVillageChristmasFeature';
 import WinterVillageParentFeature from './components/WinterVillageParentFeature';
+import WinterVillageFounding from './components/WinterVillageFounding';
+import WinterVillageProductSelector from './components/WinterVillageProductSelector';
 import WinterVillageDates from './components/WinterVillageDates';
 import WinterVillageClose from './components/WinterVillageClose';
 import WinterVillageFaq from './components/WinterVillageFaq';
@@ -68,20 +68,9 @@ export default function WinterVillagePage() {
       />
 
       <div className="winter-village-page">
-        <WinterVillageHero
-          onExplorePackages={scrollToPackages}
-          prefersReducedMotion={prefersReducedMotion}
-        />
+        <WinterVillageHero onExplorePackages={scrollToPackages} />
 
-        <WinterVillageProductSelector
-          sectionRef={packagesRef}
-          selectedProductId={selectedProductId}
-          onSelectProduct={setSelectedProductId}
-          onRequestReserve={() => setModalOpen(true)}
-          prefersReducedMotion={prefersReducedMotion}
-        />
-
-        <WinterVillageFounding />
+        <WinterVillageWays onChooseWay={selectProductAndScroll} />
 
         <WinterVillageChristmasFeature
           onChooseChristmas={() => selectProductAndScroll('christmas')}
@@ -89,11 +78,20 @@ export default function WinterVillagePage() {
 
         <WinterVillageParentFeature />
 
+        <WinterVillageFounding />
+
+        <WinterVillageProductSelector
+          sectionRef={packagesRef}
+          selectedProductId={selectedProductId}
+          onSelectProduct={setSelectedProductId}
+          onRequestReserve={() => setModalOpen(true)}
+        />
+
         <WinterVillageDates onSelectDate={selectProductAndScroll} />
 
         <WinterVillageClose onChooseWinter={scrollToPackages} />
 
-        <WinterVillageFaq prefersReducedMotion={prefersReducedMotion} />
+        <WinterVillageFaq />
 
         <WinterVillagePreviewModal open={modalOpen} onClose={() => setModalOpen(false)} />
       </div>

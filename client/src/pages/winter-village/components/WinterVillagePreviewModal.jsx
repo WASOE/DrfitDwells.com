@@ -115,7 +115,7 @@ export default function WinterVillagePreviewModal({ open, onClose }) {
             </button>
           </div>
           <p className="wv-modal-body">{WINTER_VILLAGE_PREVIEW_MODAL.body}</p>
-          <button type="button" onClick={onClose} className="wv-btn wv-btn--light">
+          <button type="button" onClick={onClose} className="wv-btn wv-btn--solid">
             {WINTER_VILLAGE_PREVIEW_MODAL.closeLabel}
           </button>
         </div>

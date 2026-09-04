@@ -1,50 +1,52 @@
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useId, useState } from 'react';
 import { WINTER_VILLAGE_FAQ } from '../winterVillageConfig';
 
-export default function WinterVillageFaq({ prefersReducedMotion }) {
-  const [openIndex, setOpenIndex] = useState(0);
+export default function WinterVillageFaq() {
+  const baseId = useId();
+  const [openId, setOpenId] = useState(WINTER_VILLAGE_FAQ[0]?.id ?? null);
 
   return (
     <section className="wv-faq" aria-labelledby="wv-faq-heading">
-      <h2 id="wv-faq-heading" className="wv-faq-heading">
-        Questions
-      </h2>
+      <div className="wv-faq-inner">
+        <div>
+          <p className="wv-kicker">Before you ask</p>
+          <h2 id="wv-faq-heading" className="wv-display wv-display--sm">
+            The five things people want to know.
+          </h2>
+        </div>
 
-      <div className="wv-faq-list">
-        {WINTER_VILLAGE_FAQ.map((item, index) => {
-          const isOpen = openIndex === index;
-          return (
-            <div key={item.id} className="wv-faq-item">
-              <button
-                type="button"
-                onClick={() => setOpenIndex(isOpen ? -1 : index)}
-                className="wv-faq-trigger"
-                aria-expanded={isOpen}
-                aria-controls={`wv-faq-${item.id}`}
-              >
-                <span>{item.question}</span>
-                <span className="wv-faq-mark" aria-hidden="true">
-                  {isOpen ? '–' : '+'}
-                </span>
-              </button>
-              <AnimatePresence initial={false}>
-                {isOpen && (
-                  <motion.div
-                    id={`wv-faq-${item.id}`}
-                    initial={prefersReducedMotion ? false : { height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={prefersReducedMotion ? undefined : { height: 0, opacity: 0 }}
-                    transition={{ duration: prefersReducedMotion ? 0 : 0.28 }}
-                    className="overflow-hidden"
+        <div className="wv-faq-list">
+          {WINTER_VILLAGE_FAQ.map((item) => {
+            const open = openId === item.id;
+            const panelId = `${baseId}-${item.id}-panel`;
+            const triggerId = `${baseId}-${item.id}-trigger`;
+
+            return (
+              <div key={item.id} className="wv-faq-item">
+                <h3>
+                  <button
+                    type="button"
+                    id={triggerId}
+                    className="wv-faq-trigger"
+                    aria-expanded={open}
+                    aria-controls={panelId}
+                    onClick={() => setOpenId(open ? null : item.id)}
                   >
-                    <p className="wv-faq-answer">{item.answer}</p>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          );
-        })}
+                    <span>{item.question}</span>
+                    <span className="wv-faq-sign" aria-hidden="true">
+                      {open ? '−' : '+'}
+                    </span>
+                  </button>
+                </h3>
+                {open ? (
+                  <p id={panelId} role="region" aria-labelledby={triggerId} className="wv-faq-answer">
+                    {item.answer}
+                  </p>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </section>
   );

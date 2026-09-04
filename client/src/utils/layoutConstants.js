@@ -27,6 +27,15 @@ const ROUTES_WITH_BOTTOM_BAR = [
   { pattern: /^\/craft\/step-[1-4]$/, desktop: true, mobile: true },
   // Build configurator: BuildStickyBar / MobileSpecsBar (~76px)
   { pattern: /^\/build$/, desktop: true, mobile: true, barHeight: 76 },
+  // Winter Village: summary bar shows only while the configurator is in view.
+  // Taller on mobile, where the CTA sits on its own row.
+  {
+    pattern: /^\/winter-village$/,
+    desktop: true,
+    mobile: true,
+    barHeight: 88,
+    barHeightMobile: 124
+  },
   // Home / Valley: booking drawer on mobile only
   { pattern: /^\/$/, desktop: false, mobile: true },
   { pattern: /^\/valley$/, desktop: false, mobile: true },
@@ -43,10 +52,17 @@ import { stripLocaleFromPath } from './localizedRoutes';
  */
 export function getFloatingBottomOffset(pathname, isDesktop = false) {
   const basePath = stripLocaleFromPath(pathname || '/');
-  for (const { pattern, desktop, mobile, barHeight = BOTTOM_BAR_HEIGHT } of ROUTES_WITH_BOTTOM_BAR) {
+  for (const {
+    pattern,
+    desktop,
+    mobile,
+    barHeight = BOTTOM_BAR_HEIGHT,
+    barHeightMobile
+  } of ROUTES_WITH_BOTTOM_BAR) {
     if (pattern.test(basePath)) {
       const showBar = isDesktop ? desktop : mobile;
-      return showBar ? barHeight + FLOATING_GAP : FLOATING_GAP;
+      const height = isDesktop ? barHeight : barHeightMobile ?? barHeight;
+      return showBar ? height + FLOATING_GAP : FLOATING_GAP;
     }
   }
 
