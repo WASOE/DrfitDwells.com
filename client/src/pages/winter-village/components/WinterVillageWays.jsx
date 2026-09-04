@@ -1,6 +1,7 @@
 import {
   WINTER_VILLAGE_PRODUCTS,
-  WINTER_VILLAGE_PRODUCT_ORDER
+  WINTER_VILLAGE_PRODUCT_ORDER,
+  WINTER_VILLAGE_WAYS
 } from '../winterVillageConfig';
 import WinterVillageImage from './WinterVillageImage';
 
@@ -11,21 +12,17 @@ const SLOT_BY_PRODUCT = {
 };
 
 /**
- * The three ways to spend the winter, as editorial bands rather than tabs.
- * Choosing one preselects it in the configurator further down the page.
+ * Three winter experiences as editorial bands. CTAs select the package and scroll to details.
  */
 export default function WinterVillageWays({ onChooseWay }) {
   return (
     <section className="wv-ways" aria-labelledby="wv-ways-heading">
       <div className="wv-ways-head">
-        <p className="wv-kicker">Three ways to spend it</p>
+        <p className="wv-kicker">{WINTER_VILLAGE_WAYS.eyebrow}</p>
         <h2 id="wv-ways-heading" className="wv-display">
-          Come quietly, come together, or come for Christmas.
+          {WINTER_VILLAGE_WAYS.headline}
         </h2>
-        <p className="wv-lede">
-          The same valley, the same fire, three different winters. Choose the one that sounds
-          like your family and we will hold it for you when the presale opens.
-        </p>
+        <p className="wv-lede">{WINTER_VILLAGE_WAYS.copy}</p>
       </div>
 
       <ol className="wv-ways-list">
@@ -52,8 +49,7 @@ export default function WinterVillageWays({ onChooseWay }) {
                 <p className="wv-way-copy">{product.shortDescription}</p>
 
                 <ul className="wv-way-facts">
-                  <li>{product.details}</li>
-                  <li className="wv-way-price">{product.fromPrice}</li>
+                  <li>{product.commercialLine}</li>
                 </ul>
 
                 <div className="wv-way-actions">
@@ -62,7 +58,7 @@ export default function WinterVillageWays({ onChooseWay }) {
                     className="wv-btn wv-btn--solid"
                     onClick={() => onChooseWay(id)}
                   >
-                    Choose this winter
+                    {product.cardCta}
                   </button>
                 </div>
               </div>

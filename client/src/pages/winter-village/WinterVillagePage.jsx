@@ -54,6 +54,8 @@ export default function WinterVillagePage() {
       <Seo
         title={WINTER_VILLAGE_SEO.title}
         description={WINTER_VILLAGE_SEO.description}
+        ogTitle={WINTER_VILLAGE_SEO.ogTitle}
+        ogDescription={WINTER_VILLAGE_SEO.ogDescription}
         canonicalPath={WINTER_VILLAGE_SEO.canonicalPath}
         hreflangAlternates={buildHreflangAlternates('/winter-village')}
         ogType="website"
@@ -68,7 +70,10 @@ export default function WinterVillagePage() {
       />
 
       <div className="winter-village-page">
-        <WinterVillageHero onExplorePackages={scrollToPackages} />
+        <WinterVillageHero
+          onViewPackage={selectProductAndScroll}
+          onExplorePackages={scrollToPackages}
+        />
 
         <WinterVillageWays onChooseWay={selectProductAndScroll} />
 
@@ -76,7 +81,9 @@ export default function WinterVillagePage() {
           onChooseChristmas={() => selectProductAndScroll('christmas')}
         />
 
-        <WinterVillageParentFeature />
+        <WinterVillageParentFeature
+          onChooseWeekend={() => selectProductAndScroll('parent-child')}
+        />
 
         <WinterVillageFounding />
 

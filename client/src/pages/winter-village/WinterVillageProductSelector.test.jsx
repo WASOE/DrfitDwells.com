@@ -37,10 +37,10 @@ describe('WinterVillageProductSelector', () => {
       />
     );
 
-    expect(screen.getByRole('heading', { level: 3, name: 'Winter Village Stay' })).toBeInTheDocument();
-    expect(screen.getByText('Proposed total').parentElement).toHaveTextContent('€150');
+    expect(screen.getByRole('heading', { level: 3, name: 'Winter Cabin Stay' })).toBeInTheDocument();
+    expect(screen.getByText('Total for this stay').parentElement).toHaveTextContent('€150');
 
-    fireEvent.click(screen.getByRole('tab', { name: /Christmas in the Valley/i }));
+    fireEvent.click(screen.getByRole('tab', { name: /Christmas in The Valley/i }));
     expect(onSelectProduct).toHaveBeenCalledWith('christmas');
 
     rerender(
@@ -52,9 +52,9 @@ describe('WinterVillageProductSelector', () => {
     );
 
     expect(
-      screen.getByRole('heading', { level: 3, name: 'Christmas in the Valley' })
+      screen.getByRole('heading', { level: 3, name: 'Christmas in The Valley' })
     ).toBeInTheDocument();
-    expect(screen.getByText('Proposed total').parentElement).toHaveTextContent('€490');
+    expect(screen.getByText('Total for this stay').parentElement).toHaveTextContent('€490');
   });
 
   it('opens the preview action for the selected product', () => {
@@ -67,8 +67,8 @@ describe('WinterVillageProductSelector', () => {
       />
     );
 
-    expect(screen.getByText('Proposed total').parentElement).toHaveTextContent('€260');
-    fireEvent.click(screen.getByRole('button', { name: /Join the founding presale/i }));
+    expect(screen.getByText('Total for this stay').parentElement).toHaveTextContent('€260');
+    fireEvent.click(screen.getByRole('button', { name: /Booking opens soon/i }));
     expect(onRequestReserve).toHaveBeenCalledTimes(1);
   });
 
@@ -86,7 +86,7 @@ describe('WinterVillageProductSelector', () => {
 
     render(<Harness />);
 
-    const stayTab = screen.getByRole('tab', { name: /Winter Village Stay/i });
+    const stayTab = screen.getByRole('tab', { name: /Winter Cabin Stay/i });
     stayTab.focus();
     expect(stayTab).toHaveFocus();
 
@@ -99,8 +99,10 @@ describe('WinterVillageProductSelector', () => {
       expect(parentTab).toHaveAttribute('tabindex', '0');
     });
 
-    expect(screen.getByRole('heading', { level: 3, name: 'Parent & Child Winter Weekend' })).toBeInTheDocument();
-    expect(screen.getByText('Proposed total').parentElement).toHaveTextContent('€260');
+    expect(
+      screen.getByRole('heading', { level: 3, name: 'Parent & Child Winter Weekend' })
+    ).toBeInTheDocument();
+    expect(screen.getByText('Total for this stay').parentElement).toHaveTextContent('€260');
   });
 
   it('exposes stepper groups without invalid htmlFor labels', () => {
@@ -118,6 +120,19 @@ describe('WinterVillageProductSelector', () => {
     expect(screen.getByRole('button', { name: 'Increase Nights' })).toBeEnabled();
     expect(document.querySelector('label[for]')).toBeNull();
   });
+
+  it('does not offer wellness as a purchasable add-on before facilities are confirmed', () => {
+    render(
+      <WinterVillageProductSelector
+        selectedProductId="stay"
+        onSelectProduct={vi.fn()}
+        onRequestReserve={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.queryByText(/private sauna and hot-tub session/i)).toBeNull();
+  });
 });
 
 describe('WinterVillageDates', () => {
@@ -125,36 +140,36 @@ describe('WinterVillageDates', () => {
     const onSelectDate = vi.fn();
     render(<WinterVillageDates onSelectDate={onSelectDate} />);
 
-    const buttons = screen.getAllByRole('button', { name: /Select package/i });
-    expect(buttons).toHaveLength(4);
-
-    fireEvent.click(buttons[0]);
+    fireEvent.click(screen.getByRole('button', { name: /See this stay/i }));
     expect(onSelectDate).toHaveBeenCalledWith('stay');
 
-    fireEvent.click(buttons[1]);
+    fireEvent.click(screen.getByRole('button', { name: /See Christmas/i }));
     expect(onSelectDate).toHaveBeenCalledWith('christmas');
 
-    fireEvent.click(buttons[2]);
+    const weekendButtons = screen.getAllByRole('button', { name: /See the weekend/i });
+    expect(weekendButtons).toHaveLength(2);
+    fireEvent.click(weekendButtons[0]);
     expect(onSelectDate).toHaveBeenCalledWith('parent-child');
-
-    fireEvent.click(buttons[3]);
+    fireEvent.click(weekendButtons[1]);
     expect(onSelectDate).toHaveBeenCalledWith('parent-child');
   });
 
   it('Deep Winter Weekend selects Parent & Child and shows package pricing', () => {
     render(<DatesAndSelectorHarness />);
 
-    const deepWinterRow = screen.getByRole('heading', { name: 'Deep Winter Weekend' }).closest('li');
+    const deepWinterRow = screen
+      .getByRole('heading', { name: 'Deep Winter Parent & Child Weekend' })
+      .closest('li');
     fireEvent.click(deepWinterRow.querySelector('button'));
 
     expect(
-      screen.getByRole('heading', { level: 3, name: 'Parent & Child Winter Weekend' })
-    ).toBeInTheDocument();
+      screen.getAllByRole('heading', { level: 3, name: 'Parent & Child Winter Weekend' }).length
+    ).toBeGreaterThan(0);
     expect(screen.getByRole('tab', { name: /Parent & Child Winter Weekend/i })).toHaveAttribute(
       'aria-selected',
       'true'
     );
-    expect(screen.getByText('Proposed total').parentElement).toHaveTextContent('€260');
+    expect(screen.getByText('Total for this stay').parentElement).toHaveTextContent('€260');
   });
 });
 
@@ -179,19 +194,18 @@ describe('WinterVillagePreviewModal', () => {
 
     const dialog = await screen.findByRole('dialog');
     expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(dialog).toHaveTextContent(/Bookings are not open yet/i);
 
     const closeButtons = screen.getAllByRole('button', { name: 'Close' });
     await waitFor(() => {
       expect(closeButtons[0]).toHaveFocus();
     });
 
-    // From first focusable, Shift+Tab wraps to last
     fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
     await waitFor(() => {
       expect(closeButtons[closeButtons.length - 1]).toHaveFocus();
     });
 
-    // From last focusable, Tab wraps to first
     fireEvent.keyDown(document, { key: 'Tab', shiftKey: false });
     await waitFor(() => {
       expect(closeButtons[0]).toHaveFocus();

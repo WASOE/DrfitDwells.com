@@ -1,22 +1,25 @@
 import { useId, useState } from 'react';
 import { WINTER_VILLAGE_FAQ } from '../winterVillageConfig';
 
+/**
+ * Semantic FAQ: real H2, H3 questions, and answer regions always in the DOM for crawlability.
+ */
 export default function WinterVillageFaq() {
   const baseId = useId();
-  const [openId, setOpenId] = useState(WINTER_VILLAGE_FAQ[0]?.id ?? null);
+  const [openId, setOpenId] = useState(WINTER_VILLAGE_FAQ.items[0]?.id ?? null);
 
   return (
     <section className="wv-faq" aria-labelledby="wv-faq-heading">
       <div className="wv-faq-inner">
         <div>
-          <p className="wv-kicker">Before you ask</p>
+          <p className="wv-kicker">{WINTER_VILLAGE_FAQ.eyebrow}</p>
           <h2 id="wv-faq-heading" className="wv-display wv-display--sm">
-            The five things people want to know.
+            {WINTER_VILLAGE_FAQ.headline}
           </h2>
         </div>
 
         <div className="wv-faq-list">
-          {WINTER_VILLAGE_FAQ.map((item) => {
+          {WINTER_VILLAGE_FAQ.items.map((item) => {
             const open = openId === item.id;
             const panelId = `${baseId}-${item.id}-panel`;
             const triggerId = `${baseId}-${item.id}-trigger`;
@@ -38,11 +41,15 @@ export default function WinterVillageFaq() {
                     </span>
                   </button>
                 </h3>
-                {open ? (
-                  <p id={panelId} role="region" aria-labelledby={triggerId} className="wv-faq-answer">
-                    {item.answer}
-                  </p>
-                ) : null}
+                <div
+                  id={panelId}
+                  role="region"
+                  aria-labelledby={triggerId}
+                  hidden={!open}
+                  className="wv-faq-answer-wrap"
+                >
+                  <p className="wv-faq-answer">{item.answer}</p>
+                </div>
               </div>
             );
           })}

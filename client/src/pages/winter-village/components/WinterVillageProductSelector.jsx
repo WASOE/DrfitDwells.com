@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, useId, useRef } from 'react';
 import {
   WINTER_VILLAGE_ACCOMMODATIONS,
+  WINTER_VILLAGE_CALCULATOR,
   WINTER_VILLAGE_DEPOSIT,
   WINTER_VILLAGE_PRODUCT_ORDER,
   WINTER_VILLAGE_PRODUCTS,
@@ -178,14 +179,12 @@ export default function WinterVillageProductSelector({
     >
       <div className="wv-config-inner">
         <div className="wv-config-head">
-          <p className="wv-kicker">Build your winter</p>
+          <p className="wv-kicker">{WINTER_VILLAGE_CALCULATOR.eyebrow}</p>
           <h2 id={`${baseId}-heading`} className="wv-display wv-display--sm">
-            Shape the stay, then see what it costs.
+            {WINTER_VILLAGE_CALCULATOR.headline}
           </h2>
-          <p className="wv-lede">
-            Nothing is charged here. This is the founding price we intend to hold for the first
-            reservations.
-          </p>
+          <p className="wv-lede">{WINTER_VILLAGE_CALCULATOR.copy}</p>
+          <p className="wv-config-status">{WINTER_VILLAGE_CALCULATOR.statusNote}</p>
         </div>
 
         <div className="wv-product-tabs" role="tablist" aria-label="Winter Village products">
@@ -334,7 +333,7 @@ export default function WinterVillageProductSelector({
                 </div>
               ) : null}
 
-              {product.pricing.wellnessOptional ? (
+              {product.pricing.wellnessOptional?.purchasable ? (
                 <label className="wv-wellness">
                   <input
                     type="checkbox"
@@ -344,7 +343,7 @@ export default function WinterVillageProductSelector({
                   <span>
                     {product.pricing.wellnessOptional.label}
                     <em>
-                      +{formatEuro(product.pricing.wellnessOptional.pricePerBooking)} per booking
+                      +{formatEuro(product.pricing.wellnessOptional.pricePerBooking)} per stay
                     </em>
                   </span>
                 </label>
@@ -371,16 +370,15 @@ export default function WinterVillageProductSelector({
             </div>
 
             <div className="wv-terms">
-              <p className="wv-field-label">How the presale will work</p>
+              <h3 className="wv-field-label">{WINTER_VILLAGE_DEPOSIT.termsHeading}</h3>
+              <p className="wv-terms-note">{WINTER_VILLAGE_DEPOSIT.termsBody}</p>
               <p className="wv-terms-line">{WINTER_VILLAGE_DEPOSIT.depositLabel}</p>
               <p className="wv-terms-line">
                 {product.depositRule === 'christmas'
                   ? WINTER_VILLAGE_DEPOSIT.christmasBalanceLabel
                   : WINTER_VILLAGE_DEPOSIT.stayBalanceLabel}
               </p>
-              <p className="wv-terms-note">
-                Nothing is taken today. These are proposed founding prices for the first winter.
-              </p>
+              <p className="wv-terms-note">{WINTER_VILLAGE_DEPOSIT.previewNote}</p>
             </div>
           </aside>
         </div>
@@ -393,18 +391,20 @@ export default function WinterVillageProductSelector({
         <div className="wv-summary-inner">
           <div>
             <p className="wv-summary-line">
-              <span>{product.kicker}</span>
+              <span>{product.shortName}</span>
               <span aria-hidden="true">|</span>
               <span>{accommodation?.name}</span>
-              <span aria-hidden="true">|</span>
-              <span>{nightsLabel}</span>
+              <span className="wv-summary-opt" aria-hidden="true">
+                |
+              </span>
+              <span className="wv-summary-opt">{nightsLabel}</span>
               <span className="wv-summary-opt" aria-hidden="true">
                 |
               </span>
               <span className="wv-summary-opt">{guestSummary(quote, isStone)}</span>
             </p>
             <p className="wv-summary-price">
-              <span>Proposed total</span>
+              <span>{WINTER_VILLAGE_CALCULATOR.totalLabel}</span>
               <strong>{formatEuro(quote.total)}</strong>
             </p>
           </div>

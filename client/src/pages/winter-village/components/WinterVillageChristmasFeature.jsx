@@ -11,11 +11,8 @@ export default function WinterVillageChristmasFeature({ onChooseChristmas }) {
         />
 
         <div className="wv-christmas-body">
-          <p className="wv-kicker">Christmas in the Valley</p>
-          <h2
-            id="wv-christmas-heading"
-            className="wv-display wv-christmas-title"
-          >
+          <p className="wv-kicker">{WINTER_VILLAGE_CHRISTMAS_FEATURE.eyebrow}</p>
+          <h2 id="wv-christmas-heading" className="wv-display wv-christmas-title">
             {WINTER_VILLAGE_CHRISTMAS_FEATURE.headline}
           </h2>
           <p className="wv-lede">{WINTER_VILLAGE_CHRISTMAS_FEATURE.copy}</p>

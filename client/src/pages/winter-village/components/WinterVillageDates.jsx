@@ -5,7 +5,7 @@ export default function WinterVillageDates({ onSelectDate }) {
     <section className="wv-dates wv-on-dark" aria-labelledby="wv-dates-heading">
       <div className="wv-dates-inner">
         <div>
-          <p className="wv-kicker">Winter 2026 / 27</p>
+          <p className="wv-kicker">{WINTER_VILLAGE_DATES.eyebrow}</p>
           <h2 id="wv-dates-heading" className="wv-display">
             {WINTER_VILLAGE_DATES.sectionLabel}
           </h2>
@@ -31,7 +31,7 @@ export default function WinterVillageDates({ onSelectDate }) {
                 className="wv-btn wv-btn--ghost wv-date-action"
                 onClick={() => onSelectDate(item.productId)}
               >
-                {WINTER_VILLAGE_DATES.selectLabel}
+                {item.selectLabel}
               </button>
             </li>
           ))}

@@ -11,6 +11,8 @@ const Seo = ({
   noindex = false,
   jsonLd,
   ogImage,
+  ogTitle,
+  ogDescription,
   ogType = 'website',
   preloadImages = [],
   hreflangAlternates = []
@@ -20,6 +22,8 @@ const Seo = ({
   const localizedCanonicalPath = canonicalPath ? localizePath(canonicalPath, routeLanguage) : '/';
   const canonical = `${siteUrl}${localizedCanonicalPath}`;
   const absoluteOgImage = toAbsoluteSiteUrl(ogImage);
+  const socialTitle = ogTitle || title;
+  const socialDescription = ogDescription || description;
 
   return (
     <Helmet>
@@ -32,16 +36,16 @@ const Seo = ({
       ))}
       {noindex && <meta name="robots" content="noindex,nofollow" />}
       {/* Open Graph */}
-      {title && <meta property="og:title" content={title} />}
-      {description && <meta property="og:description" content={description} />}
+      {socialTitle && <meta property="og:title" content={socialTitle} />}
+      {socialDescription && <meta property="og:description" content={socialDescription} />}
       <meta property="og:type" content={ogType} />
       <meta property="og:url" content={canonical} />
       {absoluteOgImage && <meta property="og:image" content={absoluteOgImage} />}
-      {absoluteOgImage && title && <meta property="og:image:alt" content={title} />}
+      {absoluteOgImage && socialTitle && <meta property="og:image:alt" content={socialTitle} />}
       {/* Twitter */}
       <meta name="twitter:card" content="summary_large_image" />
-      {title && <meta name="twitter:title" content={title} />}
-      {description && <meta name="twitter:description" content={description} />}
+      {socialTitle && <meta name="twitter:title" content={socialTitle} />}
+      {socialDescription && <meta name="twitter:description" content={socialDescription} />}
       {absoluteOgImage && <meta name="twitter:image" content={absoluteOgImage} />}
       {/* Route-specific image preloads */}
       {preloadImages.map((entry, index) => {

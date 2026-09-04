@@ -10,7 +10,7 @@ export default function WinterVillageClose({ onChooseWinter }) {
       <div className="wv-close-scrim" aria-hidden="true" />
 
       <div className="wv-close-inner">
-        <p className="wv-kicker">The first winter</p>
+        <p className="wv-kicker">{WINTER_VILLAGE_CLOSE.eyebrow}</p>
         <h2 id="wv-close-heading" className="wv-display wv-display--xl wv-close-title">
           {WINTER_VILLAGE_CLOSE.headline}
         </h2>

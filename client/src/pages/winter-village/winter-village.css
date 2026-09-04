@@ -221,16 +221,19 @@
     radial-gradient(115% 85% at 26% 18%, rgba(180, 99, 47, 0.34), transparent 64%),
     radial-gradient(95% 75% at 82% 92%, rgba(129, 136, 122, 0.22), transparent 68%),
     linear-gradient(162deg, #3a2c20 0%, #241c14 52%, #17110c 100%);
-  display: flex;
-  align-items: flex-end;
 }
 
 .winter-village-page .wv-plate--pending::after {
-  content: '';
+  content: none;
+}
+
+.winter-village-page .wv-plate-grain {
   position: absolute;
-  inset: 0.75rem;
-  border: 1px solid rgba(245, 240, 231, 0.16);
+  inset: 0;
+  opacity: 0.35;
+  mix-blend-mode: overlay;
   pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
 }
 
 .winter-village-page .wv-plate-grain {
@@ -287,12 +290,14 @@
 
 .winter-village-page .wv-hero {
   position: relative;
-  min-height: 88svh;
   display: flex;
-  align-items: flex-end;
+  align-items: stretch;
   overflow: hidden;
   background: var(--wv-night);
   color: var(--wv-paper);
+  /* Mobile-first: enough room for intro + selector in first scrolls */
+  min-height: auto;
+  padding-bottom: 1.5rem;
 }
 
 .winter-village-page .wv-hero-media {
@@ -309,15 +314,24 @@
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(to top, rgba(15, 12, 9, 0.9) 0%, rgba(15, 12, 9, 0.38) 42%, rgba(15, 12, 9, 0.5) 100%);
+    linear-gradient(to bottom, rgba(15, 12, 9, 0.72) 0%, rgba(15, 12, 9, 0.55) 42%, rgba(15, 12, 9, 0.88) 100%);
 }
 
 .winter-village-page .wv-hero-inner {
   position: relative;
   width: var(--wv-shell);
   margin-inline: auto;
-  padding-block: clamp(3.5rem, 8vh, 7rem);
-  padding-top: calc(var(--header-offset, 5.5rem) + 2rem);
+  padding-top: calc(var(--header-offset, 5.5rem) + 1.25rem);
+  padding-bottom: 1.5rem;
+  display: grid;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.winter-village-page .wv-hero-copy-col {
+  display: grid;
+  gap: 0.85rem;
+  justify-items: start;
 }
 
 .winter-village-page .wv-hero-eyebrow {
@@ -325,23 +339,29 @@
 }
 
 .winter-village-page .wv-hero-title {
-  margin: 1.5rem 0 0;
-  max-width: 16ch;
+  margin: 0;
+  max-width: 14ch;
   color: var(--wv-paper);
+  font-size: clamp(2.15rem, 9vw, 3.25rem);
 }
 
 .winter-village-page .wv-hero-copy {
-  margin-top: 1.5rem;
-  max-width: 38rem;
-  color: rgba(245, 240, 231, 0.76);
+  margin: 0;
+  max-width: 36rem;
+  color: rgba(245, 240, 231, 0.78);
+  font-size: clamp(0.98rem, 3.4vw, 1.125rem);
 }
 
 .winter-village-page .wv-hero-actions {
-  margin-top: clamp(1.75rem, 4vw, 2.75rem);
+  margin-top: 0.5rem;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 1rem;
+  gap: 0.85rem;
+}
+
+.winter-village-page .wv-hero-actions--desktop {
+  display: none;
 }
 
 .winter-village-page .wv-hero-note {
@@ -349,20 +369,146 @@
   font-family: 'Montserrat', 'Inter', sans-serif;
   font-size: 0.6875rem;
   font-weight: 600;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(245, 240, 231, 0.6);
+  color: rgba(245, 240, 231, 0.62);
+  line-height: 1.5;
+}
+
+.winter-village-page .wv-hero-note--mobile {
+  margin-top: 0.75rem;
+}
+
+/* Hero commercial selector — Valley-style white card */
+
+.winter-village-page .wv-hero-card-col {
+  width: 100%;
+  max-width: 26rem;
+}
+
+.winter-village-page .wv-hero-card {
+  background: #fff;
+  color: var(--wv-ink);
+  border-radius: 1rem;
+  border: 1px solid rgba(34, 27, 20, 0.08);
+  box-shadow: 0 18px 40px rgba(15, 12, 9, 0.28);
+  padding: 1.15rem 1.15rem 1rem;
+}
+
+.winter-village-page .wv-hero-card-title {
+  margin: 0 0 0.85rem;
+  font-family: 'Montserrat', 'Inter', sans-serif;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--wv-ink);
+}
+
+.winter-village-page .wv-hero-options {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.winter-village-page .wv-hero-option {
+  display: grid;
+  gap: 0.65rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(34, 27, 20, 0.1);
+}
+
+.winter-village-page .wv-hero-option:last-of-type {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.winter-village-page .wv-hero-option-name {
+  margin: 0;
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: 1.125rem;
+  line-height: 1.2;
+  color: var(--wv-ink);
+}
+
+.winter-village-page .wv-hero-option-details {
+  margin: 0.2rem 0 0;
+  font-size: 0.8125rem;
+  font-weight: 300;
+  color: var(--wv-ink-soft);
+}
+
+.winter-village-page .wv-hero-option-price {
+  margin: 0.35rem 0 0;
+  font-family: 'Montserrat', 'Inter', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--wv-ember);
+}
+
+.winter-village-page .wv-hero-option-cta {
+  width: 100%;
+  min-height: 2.75rem;
+  border-radius: 0.5rem;
+}
+
+.winter-village-page .wv-hero-card-footer {
+  margin: 0.9rem 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(34, 27, 20, 0.08);
+  font-family: 'Montserrat', 'Inter', sans-serif;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--wv-ink-soft);
 }
 
 @media (min-width: 768px) {
   .winter-village-page .wv-hero {
     min-height: 100svh;
+    align-items: center;
+    padding-bottom: 0;
   }
 
-  .winter-village-page .wv-hero-actions {
-    flex-direction: row;
+  .winter-village-page .wv-hero-inner {
+    grid-template-columns: minmax(0, 1.05fr) minmax(18rem, 24rem);
+    gap: clamp(2rem, 4vw, 3.5rem);
     align-items: center;
-    gap: 2rem;
+    padding-block: clamp(4rem, 8vh, 6.5rem);
+    padding-top: calc(var(--header-offset, 5.5rem) + 2rem);
+  }
+
+  .winter-village-page .wv-hero-title {
+    font-size: var(--wv-display-1);
+  }
+
+  .winter-village-page .wv-hero-actions--desktop {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .winter-village-page .wv-hero-note--mobile {
+    display: none;
+  }
+
+  .winter-village-page .wv-hero-card {
+    padding: 1.35rem 1.35rem 1.15rem;
+  }
+
+  .winter-village-page .wv-hero-scrim {
+    background:
+      linear-gradient(100deg, rgba(15, 12, 9, 0.82) 0%, rgba(15, 12, 9, 0.45) 55%, rgba(15, 12, 9, 0.55) 100%);
+  }
+}
+
+@media (min-width: 1024px) {
+  .winter-village-page .wv-hero-inner {
+    grid-template-columns: minmax(0, 1.15fr) minmax(20rem, 26rem);
   }
 }
 
@@ -571,10 +717,42 @@
   align-items: baseline;
 }
 
-.winter-village-page .wv-flow li + li::before {
-  content: '·';
-  padding-inline: 0.7em;
-  color: var(--wv-ember);
+.winter-village-page .wv-flow--stacked {
+  flex-direction: column;
+  gap: 0.65rem;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  font-weight: 400;
+  font-size: 0.9375rem;
+  font-family: inherit;
+}
+
+.winter-village-page .wv-flow--stacked li + li::before {
+  content: none;
+}
+
+.winter-village-page .wv-parent-note {
+  margin: 0;
+  max-width: var(--wv-measure);
+  font-size: 0.875rem;
+  font-weight: 300;
+  color: var(--wv-ink-soft);
+}
+
+.winter-village-page .wv-config-status {
+  margin: 0.35rem 0 0;
+  max-width: var(--wv-measure);
+  font-size: 0.875rem;
+  font-weight: 300;
+  color: var(--wv-ink-soft);
+}
+
+.winter-village-page .wv-faq-answer-wrap[hidden] {
+  display: none;
+}
+
+.winter-village-page .wv-faq-answer-wrap:not([hidden]) {
+  display: block;
 }
 
 /* ------------------------------------------------------------------ founding */
@@ -594,22 +772,6 @@
   display: grid;
   gap: 1.25rem;
   max-width: 46rem;
-}
-
-.winter-village-page .wv-founding-target {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.75rem 1.25rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid var(--wv-hair-dark);
-}
-
-.winter-village-page .wv-founding-target strong {
-  font-family: 'Playfair Display', Georgia, serif;
-  font-weight: 400;
-  font-size: clamp(1.75rem, 3.4vw, 3rem);
-  color: var(--wv-paper);
 }
 
 .winter-village-page .wv-founding-list {
@@ -647,14 +809,23 @@
   color: var(--wv-paper);
 }
 
+.winter-village-page .wv-founding-note {
+  margin: 0.5rem 0 0;
+  max-width: var(--wv-measure);
+  font-size: 0.875rem;
+  font-weight: 300;
+  line-height: 1.65;
+  color: rgba(245, 240, 231, 0.55);
+}
+
 .winter-village-page .wv-founding-status {
   margin: 0.5rem 0 0;
-  font-family: 'Montserrat', 'Inter', sans-serif;
-  font-size: 0.625rem;
-  font-weight: 600;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: rgba(245, 240, 231, 0.42);
+  font-size: 0.875rem;
+  font-weight: 300;
+  line-height: 1.55;
+  letter-spacing: 0;
+  text-transform: none;
+  color: rgba(245, 240, 231, 0.62);
 }
 
 @media (min-width: 900px) {

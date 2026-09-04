@@ -2,10 +2,7 @@ import { getSlot } from '../winterVillageMedia';
 
 /**
  * Renders a Winter Village media slot.
- *
- * A ready slot renders a responsive picture. A pending slot renders a designed plate
- * carrying the shot brief, so the layout reads at full quality before the photography
- * arrives and the page never falls back to off-season or AI imagery.
+ * Pending slots are silent atmospheric plates — no public photography instructions.
  */
 export default function WinterVillageImage({
   slot,
@@ -26,10 +23,6 @@ export default function WinterVillageImage({
         aria-label={media.alt}
       >
         <span className="wv-plate-grain" aria-hidden="true" />
-        <span className="wv-plate-note" aria-hidden="true">
-          <span className="wv-plate-note-label">Winter photograph to come</span>
-          <span className="wv-plate-note-brief">{media.brief}</span>
-        </span>
       </div>
     );
   }
