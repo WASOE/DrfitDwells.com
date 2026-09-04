@@ -16,10 +16,10 @@ const { BLOCKING_BOOKING_STATUSES } = require('../../calendar/blockingStatusCons
 const { guestFacingCabinMatch } = require('../../../utils/fixtureExclusion');
 const { findParentCabinForCabinType } = require('../../publicAvailabilityService');
 const { LOCATION_REGISTRY, isAllowedLocationKey } = require('../domain/locationRegistry');
-
-function overlaps(aStart, aEnd, bStart, bEnd) {
-  return aStart < bEnd && aEnd > bStart;
-}
+const {
+  collectCalendarConflictMarkers,
+  formatCalendarUnitLabel
+} = require('./calendarBlockConflict');
 
 function enumerateOccupiedDayKeysInWindow(blockStart, blockEndExclusive, windowStart, windowEndExclusive) {
   const keys = [];
@@ -85,10 +85,12 @@ function attachConflictTokens(blocks, hardConflicts, warnings) {
   });
 }
 
-function enrichBlockRender(block, bookingById, windowStart, windowEndExclusive) {
+function enrichBlockRender(block, bookingById, windowStart, windowEndExclusive, unitLabelById) {
   const start = new Date(block.startDate);
   const end = new Date(block.endDate);
   const occupiedDayKeys = enumerateOccupiedDayKeysInWindow(start, end, windowStart, windowEndExclusive);
+  const unitLabel =
+    block.unitId && unitLabelById ? unitLabelById.get(String(block.unitId)) || null : null;
 
   if (block.blockType === 'external_hold') {
     return {
@@ -97,6 +99,7 @@ function enrichBlockRender(block, bookingById, windowStart, windowEndExclusive) 
         labelShort: 'Channel hold',
         guestInitials: null,
         guestShortName: null,
+        unitLabel,
         blockTypeToken: 'external_hold',
         holdCategory: 'channel_import',
         conflictToken: null,
@@ -128,6 +131,7 @@ function enrichBlockRender(block, bookingById, windowStart, windowEndExclusive) 
       labelShort,
       guestInitials,
       guestShortName,
+      unitLabel,
       blockTypeToken: block.blockType,
       holdCategory: block.blockType === 'reservation' ? 'internal_reservation' : 'internal_block',
       conflictToken: null,
@@ -344,31 +348,24 @@ async function buildBlocksForRange(normalized, propertyId) {
 
   const allBlocks = [...canonicalBlocks, ...reservationBacked];
 
-  const hardConflicts = [];
-  const warnings = [];
+  const unitIdList = [
+    ...new Set(allBlocks.map((b) => (b.unitId ? String(b.unitId) : null)).filter(Boolean))
+  ];
+  const unitDocs =
+    unitIdList.length > 0
+      ? await Unit.find({ _id: { $in: unitIdList } })
+          .select('displayName unitNumber')
+          .lean()
+      : [];
+  const unitLabelById = new Map(
+    unitDocs.map((u) => [String(u._id), formatCalendarUnitLabel(u)]).filter(([, label]) => Boolean(label))
+  );
 
-  for (let i = 0; i < allBlocks.length; i += 1) {
-    for (let j = i + 1; j < allBlocks.length; j += 1) {
-      const a = allBlocks[i];
-      const b = allBlocks[j];
-      if (a.cabinId !== b.cabinId) continue;
-      if (a.status === 'tombstoned' || b.status === 'tombstoned') continue;
-      const isOverlap = overlaps(new Date(a.startDate), new Date(a.endDate), new Date(b.startDate), new Date(b.endDate));
-      if (!isOverlap) continue;
+  const { hardConflicts, warnings } = collectCalendarConflictMarkers(allBlocks);
 
-      const isExternalWarning = a.blockType === 'external_hold' || b.blockType === 'external_hold';
-      const marker = {
-        cabinId: a.cabinId,
-        blockA: a.id,
-        blockB: b.id,
-        type: isExternalWarning ? 'warning' : 'hard_conflict'
-      };
-      if (isExternalWarning) warnings.push(marker);
-      else hardConflicts.push(marker);
-    }
-  }
-
-  const enriched = allBlocks.map((blk) => enrichBlockRender(blk, bookingById, normalized.startDate, normalized.endDate));
+  const enriched = allBlocks.map((blk) =>
+    enrichBlockRender(blk, bookingById, normalized.startDate, normalized.endDate, unitLabelById)
+  );
   const withConflict = attachConflictTokens(enriched, hardConflicts, warnings);
 
   return {
@@ -621,5 +618,8 @@ module.exports = {
   syncIndicatorsForCabin,
   listActiveLocationBlockGroups,
   buildCalendarScope,
-  resolveCalendarPropertyScope
+  resolveCalendarPropertyScope,
+  // Test / shared helpers
+  collectCalendarConflictMarkers,
+  formatCalendarUnitLabel
 };

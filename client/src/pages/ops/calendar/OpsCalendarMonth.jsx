@@ -21,6 +21,14 @@ import {
 } from './opsCalendarDateUtils';
 import CalendarBottomSheet from './CalendarBottomSheet';
 import OpsCalendarLegend from './OpsCalendarLegend';
+import {
+  LOCATION_KEY_LABELS,
+  blockDisplayLabel,
+  blockRangeTitle,
+  blockTooltip,
+  getLocationBlockGroupId,
+  isLocationWideManualBlock
+} from './calendarBlockLabels';
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const WEEKDAYS_SHORT = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
@@ -28,49 +36,10 @@ const WEEKDAYS_SHORT = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 const navBtnCls =
   'inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-800 shadow-sm hover:border-gray-400 transition-colors';
 
-const LOCATION_KEY_LABELS = {
-  valley: 'The Valley',
-  cabin: 'The Cabin'
-};
-
 function extractMongoIdFromBlockId(id) {
   const s = String(id || '');
   if (s.startsWith('block:')) return s.slice('block:'.length);
   return null;
-}
-
-function blockRangeTitle(b) {
-  const s = String(b?.startDate || '').slice(0, 10);
-  const e = String(b?.endDate || '').slice(0, 10);
-  return `${s} → ${e} (exclusive end)`;
-}
-
-function getLocationBlockGroupId(block) {
-  const id = block?.locationBlockGroupId;
-  if (!id) return null;
-  const trimmed = String(id).trim();
-  return trimmed || null;
-}
-
-function isLocationWideManualBlock(block) {
-  if (block?.blockType !== 'manual_block') return false;
-  if (block.isLocationWideBlock) return true;
-  return Boolean(getLocationBlockGroupId(block));
-}
-
-function blockDisplayLabel(block) {
-  if (isLocationWideManualBlock(block)) return 'Location-wide';
-  return block.render?.labelShort || block.blockType;
-}
-
-function blockTooltip(block) {
-  const dates = blockRangeTitle(block);
-  if (isLocationWideManualBlock(block)) {
-    const locLabel = LOCATION_KEY_LABELS[block.locationKey] || block.locationKey;
-    const locPart = locLabel ? ` (${locLabel})` : '';
-    return `Location-wide block${locPart} — blocks entire location — ${dates}`;
-  }
-  return `${blockDisplayLabel(block)} — ${dates}`;
 }
 
 export default function OpsCalendarMonth() {
@@ -476,6 +445,9 @@ export default function OpsCalendarMonth() {
                   ? 'Maintenance block'
                   : 'Block'}
             </div>
+            {sheetBlock?.render?.unitLabel ? (
+              <div className="text-xs text-gray-600">Unit: {sheetBlock.render.unitLabel}</div>
+            ) : null}
             <div className="text-xs text-gray-500">{blockRangeTitle(sheetBlock)}</div>
             {actionError ? (
               <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
