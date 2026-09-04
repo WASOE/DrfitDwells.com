@@ -98,6 +98,7 @@ const BanskoRemoteWorkRetreat = lazy(() => import('./pages/seo/BanskoRemoteWorkR
 const RetreatVenueBulgaria = lazy(() => import('./pages/seo/RetreatVenueBulgaria'))
 const OffGridStaysBulgaria = lazy(() => import('./pages/seo/OffGridStaysBulgaria'))
 const Enduro = lazy(() => import('./pages/seo/Enduro'))
+const WinterVillagePage = lazy(() => import('./pages/winter-village/WinterVillagePage'))
 const CreatorPortal = lazy(() => import('./pages/creator/CreatorPortal'))
 
 const PageLoader = () => (
@@ -192,6 +193,7 @@ function App() {
               <Route path="/bg/off-grid-stays-bulgaria" element={<OffGridStaysBulgaria />} />
               <Route path="/enduro" element={<Enduro />} />
               <Route path="/bg/enduro" element={<Enduro />} />
+              <Route path="/winter-village" element={<WinterVillagePage />} />
 
               {/* Booking state only where useBookingContext is required */}
               <Route element={<BookingProviderLayout />}>

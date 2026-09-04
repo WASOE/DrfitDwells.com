@@ -16,7 +16,11 @@ const Header = () => {
   const { language } = useSiteLanguage();
   const { openModal } = useBookingSearch();
   const basePath = stripLocaleFromPath(location.pathname);
-  const isHeroOverlay = basePath === '/' || basePath === '/cabin' || basePath === '/valley';
+  const isHeroOverlay =
+    basePath === '/' ||
+    basePath === '/cabin' ||
+    basePath === '/valley' ||
+    basePath === '/winter-village';
 
   useEffect(() => {
     if (!isHeroOverlay) {

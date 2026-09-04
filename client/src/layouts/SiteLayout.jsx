@@ -17,7 +17,7 @@ import { captureAttributionFromUrl } from "../tracking/attribution";
 import { trackPageViewForPath } from "../tracking/funnel";
 
 /** Routes where the first section is a full-bleed hero (content intentionally under the nav). No top padding. */
-const HERO_PATHS = ['/', '/cabin', '/valley'];
+const HERO_PATHS = ['/', '/cabin', '/valley', '/winter-village'];
 
 /** Festival/paid landings: keep consent, but don't let it steal first-paint LCP on 3G. */
 function PaidTrafficConsentBanner() {

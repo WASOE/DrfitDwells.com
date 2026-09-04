@@ -1,0 +1,169 @@
+/* Scoped to Winter Village page only — reuses Valley tokens via .valley-page */
+
+.winter-village-page .wv-preview-notice {
+  display: inline-flex;
+  max-width: 36rem;
+  margin-left: auto;
+  margin-right: auto;
+  margin-top: 1.25rem;
+  padding: 0.5rem 0.875rem;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.28);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+
+.winter-village-page .wv-product-tabs {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+@media (min-width: 768px) {
+  .winter-village-page .wv-product-tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+  }
+}
+
+.winter-village-page .wv-product-tab {
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 0.75rem;
+  background: #fff;
+  padding: 1rem 1.125rem;
+  min-height: 4.5rem;
+  transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.winter-village-page .wv-product-tab:hover {
+  border-color: rgba(129, 136, 122, 0.55);
+}
+
+.winter-village-page .wv-product-tab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #81887a;
+}
+
+.winter-village-page .wv-product-tab[aria-selected='true'] {
+  border-color: #1a1a1a;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.winter-village-page .wv-product-tab-label {
+  display: block;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin-bottom: 0.25rem;
+}
+
+.winter-village-page .wv-product-tab-meta {
+  display: block;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #81887a;
+}
+
+.winter-village-page .wv-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 999px;
+  padding: 0.25rem;
+  background: #fff;
+}
+
+.winter-village-page .wv-stepper button {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 999px;
+  border: none;
+  background: rgba(0, 0, 0, 0.04);
+  color: #1a1a1a;
+  font-size: 1.125rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease;
+}
+
+.winter-village-page .wv-stepper button:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.winter-village-page .wv-stepper button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.winter-village-page .wv-stepper button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #81887a;
+}
+
+.winter-village-page .wv-stepper-value {
+  min-width: 1.5rem;
+  text-align: center;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.winter-village-page .wv-acc-choice {
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 0.75rem;
+  padding: 0.875rem 1rem;
+  background: #fff;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.winter-village-page .wv-acc-choice[aria-pressed='true'] {
+  border-color: #1a1a1a;
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.winter-village-page .wv-acc-choice:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #81887a;
+}
+
+/* Portaled under a winter-village-page root wrapper so styles stay scoped */
+.winter-village-page .wv-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+}
+
+.winter-village-page .wv-modal {
+  width: 100%;
+  max-width: 28rem;
+  background: #fff;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  padding: 1.5rem 1.5rem 1.25rem;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .winter-village-page .wv-product-tab,
+  .winter-village-page .wv-acc-choice,
+  .winter-village-page .wv-stepper button {
+    transition: none;
+  }
+}
