@@ -1,8 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { creatorPortalAPI } from '../../services/creatorPortalApi';
 import { normalizeReferralCodeForPreview } from '../../utils/referralCodeNormalize';
+import {
+  CREATOR_SHARE_PLATFORMS,
+  UTM_FIELD_MAX_LENGTH,
+  UTM_CUSTOM_SOURCE_MAX_LENGTH,
+  buildCreatorCampaignShareUrl,
+  decideCreatorShareFormIdentityTransition
+} from '../../utils/creatorShareLink';
 
 function formatMoney(amount, currency = 'EUR') {
   const n = Number(amount);
@@ -237,6 +244,27 @@ export default function CreatorPortal() {
   const [referralBusy, setReferralBusy] = useState(false);
   const [referralError, setReferralError] = useState('');
   const [referralSuccess, setReferralSuccess] = useState('');
+  const [sharePlatform, setSharePlatform] = useState('instagram');
+  const [shareCustomSource, setShareCustomSource] = useState('');
+  const [shareCampaign, setShareCampaign] = useState('');
+  /** Stable creator partner id from /session — never referral code. */
+  const rememberedShareCreatorIdRef = useRef(null);
+
+  function clearShareLinkBuilder() {
+    setSharePlatform('instagram');
+    setShareCustomSource('');
+    setShareCampaign('');
+  }
+
+  function applyShareFormIdentityTransition(nextCreatorId) {
+    const decision = decideCreatorShareFormIdentityTransition(
+      rememberedShareCreatorIdRef.current,
+      nextCreatorId
+    );
+    if (decision.shouldResetShareForm) clearShareLinkBuilder();
+    rememberedShareCreatorIdRef.current = decision.nextRememberedCreatorId;
+    return decision;
+  }
 
   // Custom hook must be at the top level — never after an early return (React #310).
   const { copiedKey, copy } = useCopyToClipboard();
@@ -250,9 +278,25 @@ export default function CreatorPortal() {
       const sRes = await creatorPortalAPI.session();
       const authenticated = !!sRes.data?.data?.authenticated;
       if (!authenticated) {
+        applyShareFormIdentityTransition(null);
         setPhase('guest');
         return;
       }
+      const sessionCreatorId =
+        sRes.data?.data?.creator?.id != null ? String(sRes.data.data.creator.id) : null;
+      if (!sessionCreatorId) {
+        applyShareFormIdentityTransition(null);
+        setPhase('guest');
+        return;
+      }
+
+      // Different creator: clear builder before /me so prior campaign URL state cannot linger.
+      const early = decideCreatorShareFormIdentityTransition(
+        rememberedShareCreatorIdRef.current,
+        sessionCreatorId
+      );
+      if (early.shouldResetShareForm) clearShareLinkBuilder();
+
       setPhase('session-ok');
       try {
         const mRes = await creatorPortalAPI.me();
@@ -260,8 +304,10 @@ export default function CreatorPortal() {
         if (!data) {
           setMeError('No dashboard data returned.');
           setPhase('me-error');
+          // Keep remembered id unset until a successful /me; form already cleared if identity changed.
           return;
         }
+        applyShareFormIdentityTransition(sessionCreatorId);
         setMe(data);
         setReferralDraft(data?.profile?.referralCode ? String(data.profile.referralCode) : '');
         setReferralError('');
@@ -295,6 +341,7 @@ export default function CreatorPortal() {
       /* still treat as logged out locally */
     }
     setMe(null);
+    applyShareFormIdentityTransition(null);
     setLogoutBusy(false);
     setPhase('guest');
   }
@@ -528,6 +575,16 @@ export default function CreatorPortal() {
     gvCount === 0 && gvRevAmount === 0 && gvCommAmount === 0 && giftSales.length === 0;
 
   const referralLink = buildReferralLink(profile.referralCode);
+  const campaignShareUrl = profile.referralCode
+    ? buildCreatorCampaignShareUrl({
+        origin:
+          typeof window !== 'undefined' && window.location?.origin ? window.location.origin : '',
+        referralCode: profile.referralCode,
+        platform: sharePlatform,
+        customSource: shareCustomSource,
+        campaign: shareCampaign
+      })
+    : '';
   const ratePercent =
     profile.commissionRatePercent != null && Number.isFinite(Number(profile.commissionRatePercent))
       ? `${profile.commissionRatePercent}%`
@@ -575,7 +632,7 @@ export default function CreatorPortal() {
             </p>
           </header>
 
-                    {/* Your code / share link */}
+          {/* Your code / share link */}
           <Card
             title="Your code"
             subtitle="Share your link or give guests your checkout code. Both help us track bookings from you."
@@ -675,6 +732,103 @@ export default function CreatorPortal() {
                     {referralBusy ? 'Saving…' : 'Save referral code'}
                   </button>
                 </form>
+              ) : null}
+
+              {profile.referralCode ? (
+                <div className="rounded-xl border border-white/10 bg-zinc-900/40 px-3 py-3 md:px-4 md:py-4 space-y-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.14em] text-zinc-500">
+                      Create a campaign link
+                    </p>
+                    <p className="mt-1 text-[11px] md:text-xs text-zinc-500 leading-relaxed max-w-xl">
+                      Same referral code, with optional platform and campaign tags for your posts.
+                      Tracking still uses your one referral code.
+                    </p>
+                  </div>
+                  <div
+                    className="flex flex-wrap gap-2"
+                    role="group"
+                    aria-label="Share platform"
+                  >
+                    {CREATOR_SHARE_PLATFORMS.map((p) => {
+                      const selected = sharePlatform === p.id;
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => {
+                            setSharePlatform(p.id);
+                            if (p.id !== 'other') setShareCustomSource('');
+                          }}
+                          className={`inline-flex items-center justify-center rounded-full border px-3 py-1.5 text-xs md:text-sm font-medium transition-colors ${
+                            selected
+                              ? 'border-fuchsia-400/40 bg-fuchsia-500/15 text-fuchsia-100'
+                              : 'border-white/15 bg-white/5 text-zinc-200 hover:bg-white/10'
+                          }`}
+                          aria-pressed={selected}
+                        >
+                          {p.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {sharePlatform === 'other' ? (
+                    <div>
+                      <label
+                        htmlFor="creator-share-custom-source"
+                        className="block text-[11px] uppercase tracking-[0.14em] text-zinc-500"
+                      >
+                        Custom source
+                      </label>
+                      <input
+                        id="creator-share-custom-source"
+                        type="text"
+                        autoComplete="off"
+                        spellCheck={false}
+                        value={shareCustomSource}
+                        maxLength={UTM_CUSTOM_SOURCE_MAX_LENGTH}
+                        onChange={(ev) => setShareCustomSource(ev.target.value)}
+                        className="mt-2 w-full max-w-md rounded-xl border border-white/15 bg-zinc-950/80 px-3 py-2.5 text-sm md:text-base font-mono text-white placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-fuchsia-400/40"
+                        placeholder="newsletter"
+                      />
+                      {!campaignShareUrl ? (
+                        <p className="mt-2 text-[11px] md:text-xs text-zinc-500">
+                          Enter a source name to generate a link (letters, numbers, or punctuation are
+                          fine).
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  <div>
+                    <label
+                      htmlFor="creator-share-campaign"
+                      className="block text-[11px] uppercase tracking-[0.14em] text-zinc-500"
+                    >
+                      Campaign name <span className="normal-case tracking-normal text-zinc-600">(optional)</span>
+                    </label>
+                    <input
+                      id="creator-share-campaign"
+                      type="text"
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={shareCampaign}
+                      maxLength={UTM_FIELD_MAX_LENGTH}
+                      onChange={(ev) => setShareCampaign(ev.target.value)}
+                      className="mt-2 w-full max-w-md rounded-xl border border-white/15 bg-zinc-950/80 px-3 py-2.5 text-sm md:text-base font-mono text-white placeholder:text-zinc-600 focus:outline-none focus:ring-2 focus:ring-fuchsia-400/40"
+                      placeholder="summer-story"
+                    />
+                  </div>
+                  {campaignShareUrl ? (
+                    <CodeRow
+                      label="Campaign link"
+                      value={campaignShareUrl}
+                      mono={false}
+                      copyLabel="Copy campaign link"
+                      onCopy={() => copy('campaign-link', campaignShareUrl)}
+                      copied={copiedKey === 'campaign-link'}
+                    />
+                  ) : null}
+                </div>
               ) : null}
 
               <p className="text-[11px] md:text-xs text-zinc-500 leading-relaxed">
