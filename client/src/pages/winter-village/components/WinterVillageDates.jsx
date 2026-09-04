@@ -1,4 +1,5 @@
 import { WINTER_VILLAGE_DATES } from '../winterVillageConfig';
+import WinterVillageImage from './WinterVillageImage';
 
 export default function WinterVillageDates({ onSelectDate }) {
   return (
@@ -11,6 +12,13 @@ export default function WinterVillageDates({ onSelectDate }) {
           </h2>
         </div>
         <p className="wv-dates-intro">{WINTER_VILLAGE_DATES.intro}</p>
+
+        <div className="wv-dates-media">
+          <WinterVillageImage
+            slot="datesPlate"
+            sizes="(min-width: 900px) 78vw, 100vw"
+          />
+        </div>
 
         <ul className="wv-date-strip">
           {WINTER_VILLAGE_DATES.items.map((item) => (

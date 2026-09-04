@@ -768,6 +768,10 @@
   gap: clamp(2rem, 4vw, 3.5rem);
 }
 
+.winter-village-page .wv-founding-media {
+  margin-top: clamp(2rem, 4vw, 3.25rem);
+}
+
 .winter-village-page .wv-founding-head {
   display: grid;
   gap: 1.25rem;
@@ -1345,6 +1349,10 @@
   color: var(--wv-paper-soft);
   font-weight: 300;
   line-height: 1.7;
+}
+
+.winter-village-page .wv-dates-media {
+  margin: 0.25rem 0 clamp(0.5rem, 2vw, 1rem);
 }
 
 .winter-village-page .wv-date-strip {

@@ -1,4 +1,5 @@
 import { WINTER_VILLAGE_PREPARE } from '../winterVillageConfig';
+import WinterVillageImage from './WinterVillageImage';
 
 /**
  * Planned winter preparation — replaces the deleted €15,000 / founding-presale story.
@@ -29,6 +30,13 @@ export default function WinterVillageFounding() {
             </li>
           ))}
         </ol>
+      </div>
+
+      <div className="wv-founding-media wv-shell">
+        <WinterVillageImage
+          slot="preparePlate"
+          sizes="(min-width: 900px) 78vw, 100vw"
+        />
       </div>
     </section>
   );

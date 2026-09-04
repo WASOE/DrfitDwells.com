@@ -1,8 +1,8 @@
 /**
  * Winter Village media slots.
  *
- * Ready slots point at verified real assets. Pending slots render as silent
- * atmospheric plates — no public photography briefs or placeholder copy in the DOM.
+ * Filenames are SEO-oriented descriptive slugs under /media/winter/.
+ * Every public slot is a ready responsive picture — no photography placeholders.
  */
 
 const WINTER_DIR = '/media/winter';
@@ -25,69 +25,81 @@ function realSlot({ slug, widths, alt, ratio, focus = 'center center' }) {
   };
 }
 
-function pendingSlot({ ratio, alt }) {
-  return { ready: false, ratio, alt, focus: 'center center' };
-}
-
 export const WINTER_VILLAGE_SLOTS = Object.freeze({
-  hero: pendingSlot({
+  hero: realSlot({
+    slug: 'rhodope-winter-valley-aerial',
+    widths: [480, 720, 960, 1200, 1600, 1920],
     ratio: '16 / 9',
-    alt: "Snow-covered cabins at The Valley in Bulgaria's Rhodope Mountains"
+    alt: "Aerial view of a snow-covered winter valley cabin in Bulgaria's Rhodope Mountains",
+    focus: 'center 45%'
   }),
 
-  wayStay: pendingSlot({
+  wayStay: realSlot({
+    slug: 'winter-aframe-cabins-frost',
+    widths: [480, 720, 960],
     ratio: '4 / 5',
-    alt: 'A-frame cabin in winter at The Valley'
+    alt: 'Frosted A-frame winter cabins at The Valley in the Rhodope Mountains',
+    focus: 'center 55%'
   }),
 
-  wayParent: pendingSlot({
+  wayParent: realSlot({
+    slug: 'winter-cabin-morning-snow-view',
+    widths: [480, 720, 960],
     ratio: '4 / 5',
-    alt: 'Parent and child on a winter weekend in the Rhodope Mountains'
+    alt: 'Quiet morning in a winter cabin looking out over snowy Rhodope forest',
+    focus: 'center 40%'
   }),
 
   wayChristmas: realSlot({
-    slug: 'christmas-interior',
+    slug: 'winter-village-sunset-lanterns',
     widths: [480, 720, 960, 1200],
     ratio: '4 / 5',
-    alt: 'Family Christmas around the fire at The Valley',
-    focus: 'center 70%'
+    alt: 'Winter sunset at The Valley with cabin lights, lanterns and Christmas warmth',
+    focus: 'center 48%'
   }),
 
   christmasPlate: realSlot({
     slug: 'christmas-interior',
     widths: [480, 720, 960, 1200],
     ratio: '4 / 5',
-    alt: 'Family Christmas around the fire at The Valley',
+    alt: 'Family Christmas around the fire inside a Valley cabin',
     focus: 'center center'
   }),
 
   parentPlate: realSlot({
-    slug: 'cabin-fire-interior',
-    widths: [480, 720, 960, 1200, 1920],
+    slug: 'winter-cabin-fireplace-mountain-view',
+    widths: [480, 720, 960, 1200],
     ratio: '16 / 9',
-    alt: 'Wood fire inside a private cabin at The Valley',
-    focus: 'center 60%'
+    alt: 'Wood stove fire inside a winter cabin with mountain snow beyond the door',
+    focus: 'center 55%'
   }),
 
   closePlate: realSlot({
-    slug: 'cabin-fire-interior',
-    widths: [480, 720, 960, 1200, 1920],
+    slug: 'winter-village-fire-pit-sunset',
+    widths: [480, 720, 960, 1200, 1600, 1920],
     ratio: '16 / 9',
-    alt: 'Firelight inside a Valley cabin after dark',
-    focus: '70% 55%'
+    alt: 'Fire pit and snowy cabins at sunset in a Rhodope winter village',
+    focus: 'center 55%'
   }),
 
   datesPlate: realSlot({
-    slug: 'porch-dusk',
+    slug: 'stone-house-winter-village-dusk',
     widths: [480, 720, 960, 1200],
     ratio: '3 / 2',
-    alt: 'Two chairs on a Valley cabin porch in the cold season',
-    focus: 'center center'
+    alt: 'Stone house and glowing A-frame cabins at dusk in winter at The Valley',
+    focus: 'center 40%'
+  }),
+
+  preparePlate: realSlot({
+    slug: 'stone-house-aframes-winter-morning',
+    widths: [480, 720, 960, 1200],
+    ratio: '16 / 9',
+    alt: 'Stone house and A-frame winter cabins under frosted Rhodope forest',
+    focus: 'center 42%'
   })
 });
 
-/** Preload a real winter still until a dedicated hero photograph lands. */
-export const WINTER_VILLAGE_HERO_PRELOAD = `${WINTER_DIR}/cabin-fire-interior-1920w.avif`;
+export const WINTER_VILLAGE_HERO_PRELOAD = `${WINTER_DIR}/rhodope-winter-valley-aerial-1920w.avif`;
 
 export function getSlot(name) {
   return WINTER_VILLAGE_SLOTS[name] || WINTER_VILLAGE_SLOTS.hero;

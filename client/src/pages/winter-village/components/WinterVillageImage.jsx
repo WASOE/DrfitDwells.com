@@ -37,7 +37,7 @@ export default function WinterVillageImage({
         className="wv-plate-img"
         style={{ objectPosition }}
         loading={priority ? 'eager' : 'lazy'}
-        fetchPriority={priority ? 'high' : undefined}
+        fetchpriority={priority ? 'high' : undefined}
         decoding="async"
       />
     </picture>

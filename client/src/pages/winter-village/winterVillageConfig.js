@@ -25,7 +25,7 @@ export const WINTER_VILLAGE_SEO = Object.freeze({
   ogDescription:
     'Private cabins, shared fires and three ways to experience winter at The Valley, from a quiet two-night stay to a hosted family Christmas.',
   canonicalPath: '/winter-village',
-  ogImage: '/media/winter/cabin-fire-interior.jpg'
+  ogImage: '/media/winter/rhodope-winter-valley-aerial.jpg'
 });
 
 export const WINTER_VILLAGE_HERO = Object.freeze({
