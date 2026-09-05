@@ -64,9 +64,9 @@ export const VALLEY_PAGE_SEASON_IMAGES = Object.freeze({
         'Warm cabin interiors and wood fires for quiet winter evenings in The Valley.'
       ),
       winterStill(
-        'stone-house-aframes-winter-morning',
-        'Stone house and frosted A-frame cabins under snowy Rhodope forest at The Valley',
-        'The Valley at 1,550m in winter — private cabins, shared land, and mountain quiet.'
+        'winter-village-campfire-sunset',
+        'Communal winter campfire at sunset with cabin lights and snowy Rhodope forest at The Valley',
+        'Shared winter evenings around the fire — private cabins, shared land.'
       ),
       winterStill(
         'rhodope-winter-valley-aerial',
