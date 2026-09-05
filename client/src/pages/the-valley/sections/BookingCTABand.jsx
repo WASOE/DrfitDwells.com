@@ -1,6 +1,8 @@
 import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { useBookingSearch } from '../../../context/BookingSearchContext';
+import { useSeason } from '../../../context/SeasonContext';
+import { VALLEY_PAGE_SEASON_IMAGES } from '../data';
 import '../../../i18n/ns/booking';
 import '../../../i18n/ns/valley';
 
@@ -11,6 +13,7 @@ const BookingCTABand = ({
   secondaryLabel
 }) => {
   const { openModal } = useBookingSearch();
+  const { season } = useSeason();
   const { t: tv } = useTranslation('valley');
   const { t: tb } = useTranslation('booking');
 
@@ -18,6 +21,8 @@ const BookingCTABand = ({
   const handleSecondary = onSecondaryClick || openModal;
   const resolvedPrimaryLabel = primaryLabel || tb('cta.checkAvailability');
   const resolvedSecondaryLabel = secondaryLabel || tv('bookingBand.compareStays');
+  const ctaImage =
+    VALLEY_PAGE_SEASON_IMAGES.bookingCta[season === 'winter' ? 'winter' : 'summer'];
 
   return (
     <section 
@@ -38,10 +43,10 @@ const BookingCTABand = ({
         <div 
           className="absolute inset-0 bg-cover bg-center"
           style={{
-            backgroundImage: 'url(/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.23%20AM.jpeg)',
+            backgroundImage: `url(${ctaImage.encoded})`,
           }}
           role="img"
-          aria-label="Panoramic view of The Valley mountain village at sunset"
+          aria-label={ctaImage.alt}
         />
         
         {/* Gradient Overlay */}

@@ -1,26 +1,31 @@
 import { motion } from 'framer-motion';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useBookingSearch } from '../../../context/BookingSearchContext';
+import { useSeason } from '../../../context/SeasonContext';
 import { getSEOAlt } from '../../../data/imageMetadata';
+import { VALLEY_PAGE_SEASON_IMAGES } from '../data';
 
 const VibeSection = ({ galleryRef }) => {
   const { openModal } = useBookingSearch();
-  const [sliderPosition, setSliderPosition] = useState(50);
+  const { season } = useSeason();
+  const seasonKey = season === 'winter' ? 'winter' : 'summer';
+
+  const [sliderPosition, setSliderPosition] = useState(seasonKey === 'winter' ? 72 : 50);
   const [isDragging, setIsDragging] = useState(false);
   const sliderRef = useRef(null);
 
-  // Lead images - seasonal comparison
-  const summerImage = {
-    path: '/uploads/The Valley/1768207815-2996ea84.jpg',
-    encoded: '/uploads/The%20Valley/1768207815-2996ea84.jpg',
-    alt: 'Panoramic summer view of The Valley mountain village at 1,550m altitude showing A-frame cabins, Stone House, and shared spaces, Rhodope Mountains, Bulgaria'
-  };
+  const summerImage = VALLEY_PAGE_SEASON_IMAGES.vibeCompare.summer;
+  const winterImage = VALLEY_PAGE_SEASON_IMAGES.vibeCompare.winter;
 
-  const winterImage = {
-    path: '/uploads/The Valley/1768208001-196d2a1f.jpg',
-    encoded: '/uploads/The%20Valley/1768208001-196d2a1f.jpg',
-    alt: 'Panoramic winter view of The Valley mountain village at 1,550m altitude showing snow-covered A-frame cabins, Stone House, and shared spaces, Rhodope Mountains, Bulgaria'
-  };
+  const imageMoments = useMemo(
+    () => VALLEY_PAGE_SEASON_IMAGES.vibeMoments[seasonKey],
+    [seasonKey]
+  );
+
+  // Bias the compare slider toward the active season when the toggle changes.
+  useEffect(() => {
+    setSliderPosition(seasonKey === 'winter' ? 72 : 28);
+  }, [seasonKey]);
 
   // Handle mouse/touch events for slider
   const handleMove = (clientX) => {
@@ -62,71 +67,6 @@ const VibeSection = ({ galleryRef }) => {
       };
     }
   }, [isDragging]);
-
-  // Image-anchored moments (Pattern A: each image has its moment below)
-  // Matched to metadata for precise categorization
-  const imageMoments = [
-    {
-      // Firepit: New fireplace image showing evening gathering
-      image: {
-        path: '/uploads/The Valley/-03e7a985-8967-4a35-9169-36206d128506.png',
-        encoded: '/uploads/The%20Valley/-03e7a985-8967-4a35-9169-36206d128506.png',
-        alt: 'Communal fireplace evening gathering at The Valley showing glowing fire and warm atmosphere at 1,550m altitude, Rhodope Mountains, Bulgaria',
-        ratio: '4/5'
-      },
-      moment: 'Evenings by the communal firepit'
-    },
-    {
-      // Morning coffee: Couple with mugs on porch bench (A-Frame)
-      image: {
-        path: '/uploads/The Valley/WhatsApp Image 2025-12-03 at 4.36.14 PM.jpeg',
-        encoded: '/uploads/The%20Valley/WhatsApp%20Image%202025-12-03%20at%204.36.14%20PM.jpeg',
-        alt: 'Couple enjoying front of A-frame cabin at The Valley with mountain forest backdrop at 1,550m altitude, Rhodope Mountains, Bulgaria',
-        ratio: '4/5'
-      },
-      moment: 'Morning coffee on the porch with mountain views'
-    },
-    {
-      // Reading: Person reading in nature
-      image: {
-        path: '/uploads/The Valley/Lux-cabin-exterior-1768207498-98737209.jpg',
-        encoded: '/uploads/The%20Valley/Lux-cabin-exterior-1768207498-98737209.jpg',
-        alt: 'Person reading in nature at The Valley showing outdoor reading space and natural setting at 1,550m altitude, Rhodope Mountains, Bulgaria',
-        ratio: '4/5'
-      },
-      moment: 'Quiet reading in nature'
-    },
-    {
-      // Sunrise window: Person looking out window at sunrise/sunset
-      image: {
-        path: '/uploads/The Valley/Lux-cabin-WhatsApp Image 2026-01-11 at 11.43.42 AM (1).jpeg',
-        encoded: '/uploads/The%20Valley/Lux-cabin-WhatsApp%20Image%202026-01-11%20at%2011.43.42%20AM%20%281%29.jpeg',
-        alt: 'Luxury cabin interior with sunset window view at The Valley showing person looking out at golden hour, 1,550m altitude, Rhodope Mountains, Bulgaria',
-        ratio: '4/5'
-      },
-      moment: 'Sunrise from your cabin window'
-    },
-    {
-      // Stargazing: Starry night landscape
-      image: {
-        path: '/uploads/Content website/drift-dwells-bulgaria-starlit-mountain.avif',
-        encoded: '/uploads/Content%20website/drift-dwells-bulgaria-starlit-mountain.avif',
-        alt: 'Starry night sky over The Valley showing mountains, starry sky, and night landscape at 1,550m altitude, Rhodope Mountains, Bulgaria',
-        ratio: '4/5'
-      },
-      moment: 'Hot tub under the stars'
-    },
-    {
-      // ATV: Actual ATV vehicles in mountain landscape
-      image: {
-        path: '/uploads/The Valley/WhatsApp Image 2026-01-11 at 11.43.40 AM.jpeg',
-        encoded: '/uploads/The%20Valley/WhatsApp%20Image%202026-01-11%20at%2011.43.40%20AM.jpeg',
-        alt: 'ATVs in mountain landscape at The Valley showing red vehicles and mountain views at 1,550m altitude, Rhodope Mountains, Bulgaria',
-        ratio: '4/5'
-      },
-      moment: 'ATV adventures through mountain trails'
-    }
-  ];
 
   return (
     <section 
@@ -233,7 +173,7 @@ const VibeSection = ({ galleryRef }) => {
         <div className="grid grid-cols-2 md:grid-cols-3 gap-6" style={{ marginTop: '32px' }}>
           {imageMoments.map((item, index) => (
             <motion.div
-              key={index}
+              key={`${seasonKey}-${item.image.path}`}
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}

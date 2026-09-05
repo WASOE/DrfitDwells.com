@@ -3,16 +3,19 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useBookingSearch } from '../../../context/BookingSearchContext';
+import { useSeason } from '../../../context/SeasonContext';
 import { useLocalizedPath } from '../../../hooks/useLocalizedPath';
 import { useListingCoversBySlug } from '../../../hooks/useListingCoversBySlug';
 import { getSEOAlt, getSEOTitle } from '../../../data/imageMetadata';
-import { STAY_CARDS } from '../data';
+import { STAY_CARDS, VALLEY_PAGE_SEASON_IMAGES } from '../data';
 
 const StaysSection = ({ accommodationsRef }) => {
   const { openModal } = useBookingSearch();
+  const { season } = useSeason();
   const navigate = useNavigate();
   const lp = useLocalizedPath();
   const { t } = useTranslation('valley');
+  const isWinter = season === 'winter';
 
   const cardLinks = useMemo(() => {
     const map = {};
@@ -113,7 +116,13 @@ const StaysSection = ({ accommodationsRef }) => {
           {STAY_CARDS.map((card, index) => {
             const slugKey = String(card.listingSlug || '').trim().toLowerCase();
             const liveCover = slugKey ? coversBySlug[slugKey] : null;
-            const imageSrc = liveCover?.url || card.fallbackImage;
+            const winterCover = isWinter ? VALLEY_PAGE_SEASON_IMAGES.stayCovers[card.id] : null;
+            const imageSrc = winterCover?.encoded || liveCover?.url || card.fallbackImage;
+            const imageAlt =
+              winterCover?.alt ||
+              getSEOAlt(card.imagePath) ||
+              liveCover?.alt ||
+              `${card.title} at The Valley showing comfortable space and mountain views`;
             return (
             <motion.div
               key={card.id}
@@ -130,8 +139,9 @@ const StaysSection = ({ accommodationsRef }) => {
                 onClick={() => handleCardAction(card)}
               >
                 <img 
+                  key={imageSrc}
                   src={imageSrc}
-                  alt={getSEOAlt(card.imagePath) || liveCover?.alt || `${card.title} at The Valley showing comfortable space and mountain views`}
+                  alt={imageAlt}
                   title={getSEOTitle(card.imagePath) || `${card.title} - Mountain Retreat at The Valley`}
                   className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
                   loading="lazy"

@@ -1,29 +1,19 @@
 import { motion } from 'framer-motion';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Mountain, Flame, Trees, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import { getSEOAlt } from '../../../data/imageMetadata';
+import { useSeason } from '../../../context/SeasonContext';
+import { VALLEY_PAGE_SEASON_IMAGES } from '../data';
 
 const EditorialHookSection = () => {
-  const editorialImages = [
-    {
-      path: '/uploads/Content website/drift-dwells-bulgaria-fireside-lounge.avif',
-      encoded: '/uploads/Content%20website/drift-dwells-bulgaria-fireside-lounge.avif',
-      alt: 'Communal fireside lounge interior at The Valley Stone House showing fireplace, comfortable seating, and cozy gathering space for guests, Rhodope Mountains',
-      caption: 'The communal Stone House at The Valley, a shared gathering space for guests to connect, cook, and relax together.'
-    },
-    {
-      path: '/uploads/The Valley/WhatsApp Image 2025-10-17 at 10.20.23 AM.jpeg',
-      encoded: '/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.23%20AM.jpeg',
-      alt: 'Panoramic landscape view of The Valley mountain village showing Stone House, A-frame cabins, and forest backdrop at 1,550m altitude, Rhodope Mountains, Bulgaria',
-      caption: 'The Valley at 1,550m altitude, a mountain village where each stay is private but the land is shared.'
-    },
-    {
-      path: '/uploads/The Valley/1768207815-2996ea84.jpg',
-      encoded: '/uploads/The%20Valley/1768207815-2996ea84.jpg',
-      alt: 'Panoramic summer view of The Valley mountain village at 1,550m altitude showing A-frame cabins, Stone House, and shared spaces, Rhodope Mountains, Bulgaria',
-      caption: 'A small, walkable mountain village where each stay is private, but the land itself is shared.'
-    }
-  ];
+  const { season } = useSeason();
+  const seasonKey = season === 'winter' ? 'winter' : 'summer';
+
+  const editorialImages = useMemo(
+    () => VALLEY_PAGE_SEASON_IMAGES.editorialCarousel[seasonKey],
+    [seasonKey]
+  );
+  const overviewImage = VALLEY_PAGE_SEASON_IMAGES.editorialOverview[seasonKey];
 
   // Initialize currentSlide to middle image
   const [currentSlide, setCurrentSlide] = useState(Math.floor(editorialImages.length / 2));
@@ -54,7 +44,7 @@ const EditorialHookSection = () => {
 
     const timer = setTimeout(initializeSlider, 100);
     return () => clearTimeout(timer);
-  }, [editorialImages.length]);
+  }, [editorialImages.length, seasonKey]);
 
   // Track carousel scroll position
   useEffect(() => {
@@ -62,10 +52,10 @@ const EditorialHookSection = () => {
     if (!carousel) return;
 
     const handleScroll = () => {
-      const scrollLeft = carousel.scrollLeft;
+      const scrollLeftPos = carousel.scrollLeft;
       const containerWidth = carousel.offsetWidth;
       const slideWidth = containerWidth * 0.85; // Mobile width percentage
-      const slideIndex = Math.round(scrollLeft / slideWidth);
+      const slideIndex = Math.round(scrollLeftPos / slideWidth);
       setCurrentSlide(Math.min(Math.max(0, slideIndex), editorialImages.length - 1));
     };
 
@@ -183,14 +173,15 @@ const EditorialHookSection = () => {
               Several cabins, a stone house, and shared outdoor spaces. Private stays, shared land.
             </p>
             
-            {/* GIF — aspect ratio on wrapper + cover avoids letterboxing from img box vs intrinsic AR mismatch */}
+            {/* Overview media — aspect ratio on wrapper + cover avoids letterboxing */}
             <div
               className="relative w-full overflow-hidden rounded-xl bg-[#e8e8e8]"
               style={{ aspectRatio: '16 / 9' }}
             >
               <img
-                src="/uploads/The%20Valley/Screencastfrom2024-09-3022-01-26-ezgif.com-video-to-gif-converter-1-1.gif"
-                alt="The Valley animated overview showing mountain village layout, A-frame cabins, and natural landscape"
+                key={overviewImage.encoded}
+                src={overviewImage.encoded}
+                alt={getSEOAlt(overviewImage.path) || overviewImage.alt}
                 className="absolute inset-0 h-full w-full object-cover object-center"
                 loading="lazy"
               />
@@ -251,7 +242,7 @@ const EditorialHookSection = () => {
             <div className="flex gap-6 px-6 md:px-12 lg:px-24">
               {editorialImages.map((item, index) => (
                 <motion.div
-                  key={index}
+                  key={`${seasonKey}-${item.path}`}
                   data-slide={index}
                   initial={{ opacity: 0, scale: 0.95 }}
                   whileInView={{ opacity: 1, scale: 1 }}
