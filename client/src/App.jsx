@@ -194,6 +194,7 @@ function App() {
               <Route path="/enduro" element={<Enduro />} />
               <Route path="/bg/enduro" element={<Enduro />} />
               <Route path="/winter-village" element={<WinterVillagePage />} />
+              <Route path="/bg/winter-village" element={<WinterVillagePage />} />
 
               {/* Booking state only where useBookingContext is required */}
               <Route element={<BookingProviderLayout />}>

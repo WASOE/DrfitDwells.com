@@ -2,7 +2,7 @@
 import { clientsClaim } from 'workbox-core';
 import { cleanupOutdatedCaches, createHandlerBoundToURL, precacheAndRoute } from 'workbox-precaching';
 import { NavigationRoute, registerRoute } from 'workbox-routing';
-import { NetworkOnly, StaleWhileRevalidate } from 'workbox-strategies';
+import { NetworkFirst, NetworkOnly, StaleWhileRevalidate } from 'workbox-strategies';
 import { sanitizeOpsPushClickUrl } from '../../shared/ops/sanitizeOpsPushClickUrl.js';
 
 // Do not call skipWaiting() on install — that replaces open checkout tabs mid-payment.
@@ -17,7 +17,25 @@ clientsClaim();
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
 
-const navigationHandler = createHandlerBoundToURL('/index.html');
+// Network-first navigations so marketing pages (e.g. /winter-village) pick up the
+// latest index.html shell instead of a weeks-old precached entry chunk graph.
+// Offline / flaky network still falls back to the precached SPA shell.
+const precachedShellHandler = createHandlerBoundToURL('/index.html');
+const networkNavigationHandler = new NetworkFirst({
+  cacheName: 'html-navigations-v1',
+  networkTimeoutSeconds: 3
+});
+
+const navigationHandler = async (options) => {
+  try {
+    const response = await networkNavigationHandler.handle(options);
+    if (response) return response;
+  } catch {
+    // fall through to precached shell
+  }
+  return precachedShellHandler(options);
+};
+
 const navigationRoute = new NavigationRoute(navigationHandler, {
   denylist: [/^\/api\//, /^\/uploads\//, /\.pdf($|\?)/i]
 });

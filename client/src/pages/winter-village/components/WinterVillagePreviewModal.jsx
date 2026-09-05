@@ -1,7 +1,7 @@
 import { createPortal } from 'react-dom';
 import { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
-import { WINTER_VILLAGE_PREVIEW_MODAL } from '../winterVillageConfig';
+import { useWinterVillageLocale } from '../useWinterVillageLocale';
 
 const FOCUSABLE_SELECTOR =
   'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -18,6 +18,7 @@ function getFocusableElements(root) {
  * so modal CSS stays scoped and cannot leak to unrelated components.
  */
 export default function WinterVillagePreviewModal({ open, onClose }) {
+  const { previewModal } = useWinterVillageLocale();
   const dialogRef = useRef(null);
   const closeRef = useRef(null);
   const previouslyFocusedRef = useRef(null);
@@ -102,21 +103,21 @@ export default function WinterVillagePreviewModal({ open, onClose }) {
         >
           <div className="wv-modal-head">
             <h2 id="wv-preview-modal-title" className="wv-modal-title">
-              {WINTER_VILLAGE_PREVIEW_MODAL.title}
+              {previewModal.title}
             </h2>
             <button
               ref={closeRef}
               type="button"
               onClick={onClose}
               className="wv-modal-x"
-              aria-label={WINTER_VILLAGE_PREVIEW_MODAL.closeLabel}
+              aria-label={previewModal.closeLabel}
             >
               <X className="h-5 w-5" aria-hidden="true" />
             </button>
           </div>
-          <p className="wv-modal-body">{WINTER_VILLAGE_PREVIEW_MODAL.body}</p>
+          <p className="wv-modal-body">{previewModal.body}</p>
           <button type="button" onClick={onClose} className="wv-btn wv-btn--solid">
-            {WINTER_VILLAGE_PREVIEW_MODAL.closeLabel}
+            {previewModal.closeLabel}
           </button>
         </div>
       </div>

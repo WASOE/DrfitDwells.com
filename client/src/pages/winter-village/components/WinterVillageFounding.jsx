@@ -1,24 +1,26 @@
-import { WINTER_VILLAGE_PREPARE } from '../winterVillageConfig';
+import { useWinterVillageLocale } from '../useWinterVillageLocale';
 import WinterVillageImage from './WinterVillageImage';
 
 /**
  * Planned winter preparation — replaces the deleted €15,000 / founding-presale story.
  */
 export default function WinterVillageFounding() {
+  const { prepare } = useWinterVillageLocale();
+
   return (
     <section className="wv-founding wv-on-dark" aria-labelledby="wv-prepare-heading">
       <div className="wv-founding-inner">
         <div className="wv-founding-head">
-          <p className="wv-kicker">{WINTER_VILLAGE_PREPARE.eyebrow}</p>
+          <p className="wv-kicker">{prepare.eyebrow}</p>
           <h2 id="wv-prepare-heading" className="wv-display">
-            {WINTER_VILLAGE_PREPARE.headline}
+            {prepare.headline}
           </h2>
-          <p className="wv-lede">{WINTER_VILLAGE_PREPARE.copy}</p>
-          <p className="wv-founding-note">{WINTER_VILLAGE_PREPARE.transparencyNote}</p>
+          <p className="wv-lede">{prepare.copy}</p>
+          <p className="wv-founding-note">{prepare.transparencyNote}</p>
         </div>
 
         <ol className="wv-founding-list">
-          {WINTER_VILLAGE_PREPARE.items.map((item, index) => (
+          {prepare.items.map((item, index) => (
             <li key={item.title} className="wv-founding-item">
               <span className="wv-founding-num" aria-hidden="true">
                 {String(index + 1).padStart(2, '0')}

@@ -1,25 +1,26 @@
 import { useId, useState } from 'react';
-import { WINTER_VILLAGE_FAQ } from '../winterVillageConfig';
+import { useWinterVillageLocale } from '../useWinterVillageLocale';
 
 /**
  * Semantic FAQ: real H2, H3 questions, and answer regions always in the DOM for crawlability.
  */
 export default function WinterVillageFaq() {
+  const { faq } = useWinterVillageLocale();
   const baseId = useId();
-  const [openId, setOpenId] = useState(WINTER_VILLAGE_FAQ.items[0]?.id ?? null);
+  const [openId, setOpenId] = useState(faq.items[0]?.id ?? null);
 
   return (
     <section className="wv-faq" aria-labelledby="wv-faq-heading">
       <div className="wv-faq-inner">
         <div>
-          <p className="wv-kicker">{WINTER_VILLAGE_FAQ.eyebrow}</p>
+          <p className="wv-kicker">{faq.eyebrow}</p>
           <h2 id="wv-faq-heading" className="wv-display wv-display--sm">
-            {WINTER_VILLAGE_FAQ.headline}
+            {faq.headline}
           </h2>
         </div>
 
         <div className="wv-faq-list">
-          {WINTER_VILLAGE_FAQ.items.map((item) => {
+          {faq.items.map((item) => {
             const open = openId === item.id;
             const panelId = `${baseId}-${item.id}-panel`;
             const triggerId = `${baseId}-${item.id}-trigger`;

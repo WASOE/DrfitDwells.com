@@ -7,9 +7,7 @@ export const BG_EXCLUDED_PATHS = new Set([
   '/cancellation-policy',
   '/career',
   '/press',
-  '/cabin/faq',
-  // English-only until Winter Village Bulgarian content exists
-  '/winter-village'
+  '/cabin/faq'
 ]);
 
 export const stripLocaleFromPath = (pathname = '/') => {

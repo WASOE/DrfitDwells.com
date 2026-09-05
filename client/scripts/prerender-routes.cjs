@@ -84,7 +84,8 @@ const ROUTES = [
   '/bg/off-grid-stays-bulgaria',
   '/enduro',
   '/bg/enduro',
-  '/winter-village'
+  '/winter-village',
+  '/bg/winter-village'
 ];
 
 const CONTENT_TYPES = {

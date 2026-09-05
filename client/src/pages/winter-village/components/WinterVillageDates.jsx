@@ -1,17 +1,19 @@
-import { WINTER_VILLAGE_DATES } from '../winterVillageConfig';
+import { useWinterVillageLocale } from '../useWinterVillageLocale';
 import WinterVillageImage from './WinterVillageImage';
 
 export default function WinterVillageDates({ onSelectDate }) {
+  const { dates } = useWinterVillageLocale();
+
   return (
     <section className="wv-dates wv-on-dark" aria-labelledby="wv-dates-heading">
       <div className="wv-dates-inner">
         <div>
-          <p className="wv-kicker">{WINTER_VILLAGE_DATES.eyebrow}</p>
+          <p className="wv-kicker">{dates.eyebrow}</p>
           <h2 id="wv-dates-heading" className="wv-display">
-            {WINTER_VILLAGE_DATES.sectionLabel}
+            {dates.sectionLabel}
           </h2>
         </div>
-        <p className="wv-dates-intro">{WINTER_VILLAGE_DATES.intro}</p>
+        <p className="wv-dates-intro">{dates.intro}</p>
 
         <div className="wv-dates-media">
           <WinterVillageImage
@@ -21,7 +23,7 @@ export default function WinterVillageDates({ onSelectDate }) {
         </div>
 
         <ul className="wv-date-strip">
-          {WINTER_VILLAGE_DATES.items.map((item) => (
+          {dates.items.map((item) => (
             <li key={item.id} className="wv-date">
               <div>
                 <p className="wv-date-when">{item.label}</p>

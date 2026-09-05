@@ -1,8 +1,4 @@
-import {
-  WINTER_VILLAGE_PRODUCTS,
-  WINTER_VILLAGE_PRODUCT_ORDER,
-  WINTER_VILLAGE_WAYS
-} from '../winterVillageConfig';
+import { useWinterVillageLocale } from '../useWinterVillageLocale';
 import WinterVillageImage from './WinterVillageImage';
 
 const SLOT_BY_PRODUCT = {
@@ -15,19 +11,21 @@ const SLOT_BY_PRODUCT = {
  * Three winter experiences as editorial bands. CTAs select the package and scroll to details.
  */
 export default function WinterVillageWays({ onChooseWay }) {
+  const { ways, products, productOrder } = useWinterVillageLocale();
+
   return (
     <section className="wv-ways" aria-labelledby="wv-ways-heading">
       <div className="wv-ways-head">
-        <p className="wv-kicker">{WINTER_VILLAGE_WAYS.eyebrow}</p>
+        <p className="wv-kicker">{ways.eyebrow}</p>
         <h2 id="wv-ways-heading" className="wv-display">
-          {WINTER_VILLAGE_WAYS.headline}
+          {ways.headline}
         </h2>
-        <p className="wv-lede">{WINTER_VILLAGE_WAYS.copy}</p>
+        <p className="wv-lede">{ways.copy}</p>
       </div>
 
       <ol className="wv-ways-list">
-        {WINTER_VILLAGE_PRODUCT_ORDER.map((id, index) => {
-          const product = WINTER_VILLAGE_PRODUCTS[id];
+        {productOrder.map((id, index) => {
+          const product = products[id];
           return (
             <li
               key={id}

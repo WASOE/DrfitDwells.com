@@ -1,7 +1,9 @@
-import { WINTER_VILLAGE_CLOSE } from '../winterVillageConfig';
+import { useWinterVillageLocale } from '../useWinterVillageLocale';
 import WinterVillageImage from './WinterVillageImage';
 
 export default function WinterVillageClose({ onChooseWinter }) {
+  const { close } = useWinterVillageLocale();
+
   return (
     <section className="wv-close" aria-labelledby="wv-close-heading">
       <div className="wv-close-media">
@@ -10,13 +12,13 @@ export default function WinterVillageClose({ onChooseWinter }) {
       <div className="wv-close-scrim" aria-hidden="true" />
 
       <div className="wv-close-inner">
-        <p className="wv-kicker">{WINTER_VILLAGE_CLOSE.eyebrow}</p>
+        <p className="wv-kicker">{close.eyebrow}</p>
         <h2 id="wv-close-heading" className="wv-display wv-display--xl wv-close-title">
-          {WINTER_VILLAGE_CLOSE.headline}
+          {close.headline}
         </h2>
-        <p className="wv-lede">{WINTER_VILLAGE_CLOSE.copy}</p>
+        <p className="wv-lede">{close.copy}</p>
         <button type="button" className="wv-btn wv-btn--light" onClick={onChooseWinter}>
-          {WINTER_VILLAGE_CLOSE.cta}
+          {close.cta}
         </button>
       </div>
     </section>

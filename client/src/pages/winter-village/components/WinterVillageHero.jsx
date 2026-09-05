@@ -1,8 +1,4 @@
-import {
-  WINTER_VILLAGE_HERO,
-  WINTER_VILLAGE_PRODUCT_ORDER,
-  WINTER_VILLAGE_PRODUCTS
-} from '../winterVillageConfig';
+import { useWinterVillageLocale } from '../useWinterVillageLocale';
 import WinterVillageImage from './WinterVillageImage';
 
 /**
@@ -10,6 +6,8 @@ import WinterVillageImage from './WinterVillageImage';
  * mobile = intro then product selector; desktop = copy left, white selector right.
  */
 export default function WinterVillageHero({ onViewPackage, onExplorePackages }) {
+  const { hero, products, productOrder } = useWinterVillageLocale();
+
   return (
     <section className="wv-hero" aria-labelledby="wv-hero-title">
       <div className="wv-hero-media" aria-hidden="true">
@@ -19,27 +17,27 @@ export default function WinterVillageHero({ onViewPackage, onExplorePackages }) 
 
       <div className="wv-hero-inner">
         <div className="wv-hero-copy-col">
-          <p className="wv-kicker wv-hero-eyebrow">{WINTER_VILLAGE_HERO.eyebrow}</p>
+          <p className="wv-kicker wv-hero-eyebrow">{hero.eyebrow}</p>
           <h1 id="wv-hero-title" className="wv-display wv-display--xl wv-hero-title">
-            {WINTER_VILLAGE_HERO.headline}
+            {hero.headline}
           </h1>
-          <p className="wv-lede wv-hero-copy">{WINTER_VILLAGE_HERO.copy}</p>
+          <p className="wv-lede wv-hero-copy">{hero.copy}</p>
 
           <div className="wv-hero-actions wv-hero-actions--desktop">
             <button type="button" className="wv-btn wv-btn--light" onClick={onExplorePackages}>
-              {WINTER_VILLAGE_HERO.primaryCta}
+              {hero.primaryCta}
             </button>
-            <p className="wv-hero-note">{WINTER_VILLAGE_HERO.trustLine}</p>
+            <p className="wv-hero-note">{hero.trustLine}</p>
           </div>
         </div>
 
         <div className="wv-hero-card-col">
           <div className="wv-hero-card" data-wv-hero-selector="true">
-            <p className="wv-hero-card-title">{WINTER_VILLAGE_HERO.selectorTitle}</p>
+            <p className="wv-hero-card-title">{hero.selectorTitle}</p>
 
             <ul className="wv-hero-options">
-              {WINTER_VILLAGE_PRODUCT_ORDER.map((id) => {
-                const product = WINTER_VILLAGE_PRODUCTS[id];
+              {productOrder.map((id) => {
+                const product = products[id];
                 return (
                   <li key={id} className="wv-hero-option">
                     <div className="wv-hero-option-meta">
@@ -52,17 +50,17 @@ export default function WinterVillageHero({ onViewPackage, onExplorePackages }) 
                       className="wv-btn wv-btn--solid wv-hero-option-cta"
                       onClick={() => onViewPackage(id)}
                     >
-                      {WINTER_VILLAGE_HERO.selectorCta}
+                      {hero.selectorCta}
                     </button>
                   </li>
                 );
               })}
             </ul>
 
-            <p className="wv-hero-card-footer">{WINTER_VILLAGE_HERO.selectorFooter}</p>
+            <p className="wv-hero-card-footer">{hero.selectorFooter}</p>
           </div>
 
-          <p className="wv-hero-note wv-hero-note--mobile">{WINTER_VILLAGE_HERO.trustLine}</p>
+          <p className="wv-hero-note wv-hero-note--mobile">{hero.trustLine}</p>
         </div>
       </div>
     </section>

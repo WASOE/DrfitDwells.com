@@ -1,7 +1,9 @@
-import { WINTER_VILLAGE_CHRISTMAS_FEATURE } from '../winterVillageConfig';
+import { useWinterVillageLocale } from '../useWinterVillageLocale';
 import WinterVillageImage from './WinterVillageImage';
 
 export default function WinterVillageChristmasFeature({ onChooseChristmas }) {
+  const { christmasFeature } = useWinterVillageLocale();
+
   return (
     <section className="wv-christmas wv-on-dark" aria-labelledby="wv-christmas-heading">
       <div className="wv-christmas-inner">
@@ -11,20 +13,20 @@ export default function WinterVillageChristmasFeature({ onChooseChristmas }) {
         />
 
         <div className="wv-christmas-body">
-          <p className="wv-kicker">{WINTER_VILLAGE_CHRISTMAS_FEATURE.eyebrow}</p>
+          <p className="wv-kicker">{christmasFeature.eyebrow}</p>
           <h2 id="wv-christmas-heading" className="wv-display wv-christmas-title">
-            {WINTER_VILLAGE_CHRISTMAS_FEATURE.headline}
+            {christmasFeature.headline}
           </h2>
-          <p className="wv-lede">{WINTER_VILLAGE_CHRISTMAS_FEATURE.copy}</p>
+          <p className="wv-lede">{christmasFeature.copy}</p>
 
           <ul className="wv-christmas-moments">
-            {WINTER_VILLAGE_CHRISTMAS_FEATURE.moments.map((moment) => (
+            {christmasFeature.moments.map((moment) => (
               <li key={moment}>{moment}</li>
             ))}
           </ul>
 
           <button type="button" className="wv-btn wv-btn--light" onClick={onChooseChristmas}>
-            {WINTER_VILLAGE_CHRISTMAS_FEATURE.cta}
+            {christmasFeature.cta}
           </button>
         </div>
       </div>

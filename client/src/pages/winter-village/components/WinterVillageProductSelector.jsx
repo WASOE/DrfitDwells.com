@@ -1,12 +1,5 @@
 import { useMemo, useState, useEffect, useId, useRef } from 'react';
-import {
-  WINTER_VILLAGE_ACCOMMODATIONS,
-  WINTER_VILLAGE_CALCULATOR,
-  WINTER_VILLAGE_DEPOSIT,
-  WINTER_VILLAGE_PRODUCT_ORDER,
-  WINTER_VILLAGE_PRODUCTS,
-  getWinterVillageProduct
-} from '../winterVillageConfig';
+import { useWinterVillageLocale } from '../useWinterVillageLocale';
 import {
   calculateWinterVillageTotal,
   formatEuro
@@ -45,30 +38,36 @@ function Stepper({ id, label, value, min, max, onChange, disabled }) {
   );
 }
 
-function accommodationRateLabel(product, accId) {
+function accommodationRateLabel(product, accId, ui) {
   const unit = product.pricing.units[accId];
   if (!unit) return '';
   if (product.pricing.type === 'per-night') {
-    if (unit.ratePerNight) return `€${unit.ratePerNight} / night`;
-    if (unit.ratePerPersonPerNight) return `€${unit.ratePerPersonPerNight} / person / night`;
+    if (unit.ratePerNight) return `€${unit.ratePerNight} ${ui.perNight}`;
+    if (unit.ratePerPersonPerNight) return `€${unit.ratePerPersonPerNight} ${ui.perPersonPerNight}`;
   }
-  if (unit.packagePrice) return `€${unit.packagePrice} for two`;
-  if (unit.adultPrice) return `From €${unit.adultPrice} / adult`;
+  if (unit.packagePrice) return `€${unit.packagePrice} ${ui.forTwo}`;
+  if (unit.adultPrice) return `€${unit.adultPrice} ${ui.fromAdult}`;
   return '';
 }
 
-function guestSummary(quote, isStone) {
+function guestSummary(quote, isStone, ui) {
   if (isStone) {
     const { guests, adults, children4to12, under4 } = quote.normalised;
     if (quote.normalised.product.pricing.type === 'package') {
-      const parts = [`${adults} adult${adults === 1 ? '' : 's'}`];
-      if (children4to12) parts.push(`${children4to12} child${children4to12 === 1 ? '' : 'ren'}`);
-      if (under4) parts.push(`${under4} under 4`);
+      const parts = [
+        `${adults} ${adults === 1 ? ui.adultSingular : ui.adultPlural}`
+      ];
+      if (children4to12) {
+        parts.push(
+          `${children4to12} ${children4to12 === 1 ? ui.childSingular : ui.childPlural}`
+        );
+      }
+      if (under4) parts.push(`${under4} ${ui.under4Label}`);
       return parts.join(' · ');
     }
-    return `${guests} people`;
+    return `${guests} ${ui.people}`;
   }
-  return '2 people';
+  return ui.twoPeople;
 }
 
 /**
@@ -81,11 +80,20 @@ export default function WinterVillageProductSelector({
   sectionRef,
   onRequestReserve
 }) {
+  const {
+    accommodations,
+    calculator,
+    deposit,
+    products,
+    productOrder,
+    ui,
+    getProduct
+  } = useWinterVillageLocale();
   const baseId = useId();
   const tabRefs = useRef({});
   const sectionNodeRef = useRef(null);
   const [summaryVisible, setSummaryVisible] = useState(false);
-  const product = getWinterVillageProduct(selectedProductId);
+  const product = getProduct(selectedProductId);
   const [accommodationId, setAccommodationId] = useState('a-frame');
   const [nights, setNights] = useState(product.defaultNights);
   const [guests, setGuests] = useState(3);
@@ -95,7 +103,7 @@ export default function WinterVillageProductSelector({
   const [wellnessSelected, setWellnessSelected] = useState(false);
 
   useEffect(() => {
-    const next = getWinterVillageProduct(selectedProductId);
+    const next = getProduct(selectedProductId);
     setNights(next.defaultNights);
     setWellnessSelected(false);
     setAccommodationId((current) => {
@@ -138,10 +146,12 @@ export default function WinterVillageProductSelector({
   const isStone = accommodationId === 'stone-house';
   const isStay = product.pricing.type === 'per-night';
   const nightsLocked = product.nightsFixed != null;
-  const accommodation = WINTER_VILLAGE_ACCOMMODATIONS.find((item) => item.id === accommodationId);
+  const accommodation = accommodations.find((item) => item.id === accommodationId);
   const nightsLabel = nightsLocked
     ? product.durationLabel
-    : `${quote.normalised.nights} night${quote.normalised.nights === 1 ? '' : 's'}`;
+    : `${quote.normalised.nights} ${
+        quote.normalised.nights === 1 ? ui.nightSingular : ui.nightPlural
+      }`;
 
   const selectProductWithFocus = (nextId) => {
     onSelectProduct(nextId);
@@ -179,17 +189,17 @@ export default function WinterVillageProductSelector({
     >
       <div className="wv-config-inner">
         <div className="wv-config-head">
-          <p className="wv-kicker">{WINTER_VILLAGE_CALCULATOR.eyebrow}</p>
+          <p className="wv-kicker">{calculator.eyebrow}</p>
           <h2 id={`${baseId}-heading`} className="wv-display wv-display--sm">
-            {WINTER_VILLAGE_CALCULATOR.headline}
+            {calculator.headline}
           </h2>
-          <p className="wv-lede">{WINTER_VILLAGE_CALCULATOR.copy}</p>
-          <p className="wv-config-status">{WINTER_VILLAGE_CALCULATOR.statusNote}</p>
+          <p className="wv-lede">{calculator.copy}</p>
+          <p className="wv-config-status">{calculator.statusNote}</p>
         </div>
 
-        <div className="wv-product-tabs" role="tablist" aria-label="Winter Village products">
-          {WINTER_VILLAGE_PRODUCT_ORDER.map((id) => {
-            const item = WINTER_VILLAGE_PRODUCTS[id];
+        <div className="wv-product-tabs" role="tablist" aria-label={ui.productsAria}>
+          {productOrder.map((id) => {
+            const item = products[id];
             const selected = id === selectedProductId;
             return (
               <button
@@ -208,12 +218,12 @@ export default function WinterVillageProductSelector({
                 onKeyDown={(event) => {
                   if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
                   event.preventDefault();
-                  const idx = WINTER_VILLAGE_PRODUCT_ORDER.indexOf(id);
+                  const idx = productOrder.indexOf(id);
                   const delta = event.key === 'ArrowRight' ? 1 : -1;
                   const next =
-                    WINTER_VILLAGE_PRODUCT_ORDER[
-                      (idx + delta + WINTER_VILLAGE_PRODUCT_ORDER.length) %
-                        WINTER_VILLAGE_PRODUCT_ORDER.length
+                    productOrder[
+                      (idx + delta + productOrder.length) %
+                        productOrder.length
                     ];
                   selectProductWithFocus(next);
                 }}
@@ -240,9 +250,9 @@ export default function WinterVillageProductSelector({
             </div>
 
             <div>
-              <p className="wv-field-label">Accommodation</p>
-              <div className="wv-acc-list" role="group" aria-label="Accommodation">
-                {WINTER_VILLAGE_ACCOMMODATIONS.map((acc) => (
+              <p className="wv-field-label">{ui.accommodation}</p>
+              <div className="wv-acc-list" role="group" aria-label={ui.accommodation}>
+                {accommodations.map((acc) => (
                   <button
                     key={acc.id}
                     type="button"
@@ -261,7 +271,7 @@ export default function WinterVillageProductSelector({
                   >
                     <span className="wv-acc-choice-name">{acc.name}</span>
                     <span className="wv-acc-choice-rate">
-                      {accommodationRateLabel(product, acc.id)}
+                      {accommodationRateLabel(product, acc.id, ui)}
                     </span>
                     <span className="wv-acc-choice-meta">{acc.sleepsLabel}</span>
                   </button>
@@ -273,7 +283,7 @@ export default function WinterVillageProductSelector({
               {isStay && !nightsLocked ? (
                 <Stepper
                   id={`${baseId}-nights`}
-                  label="Nights"
+                  label={ui.nights}
                   value={quote.normalised.nights}
                   min={product.minNights}
                   max={21}
@@ -281,7 +291,7 @@ export default function WinterVillageProductSelector({
                 />
               ) : (
                 <div className="wv-stepper-row">
-                  <span className="wv-stepper-label">Duration</span>
+                  <span className="wv-stepper-label">{ui.duration}</span>
                   <span className="wv-static-value">{product.durationLabel}</span>
                 </div>
               )}
@@ -289,7 +299,7 @@ export default function WinterVillageProductSelector({
               {isStay && isStone ? (
                 <Stepper
                   id={`${baseId}-guests`}
-                  label="Guests"
+                  label={ui.guests}
                   value={quote.normalised.guests}
                   min={unit?.minGuests ?? 3}
                   max={unit?.maxGuests ?? 6}
@@ -301,7 +311,7 @@ export default function WinterVillageProductSelector({
                 <>
                   <Stepper
                     id={`${baseId}-adults`}
-                    label="Adults"
+                    label={ui.adults}
                     value={quote.normalised.adults}
                     min={1}
                     max={unit?.maxOccupancy ?? 6}
@@ -309,7 +319,7 @@ export default function WinterVillageProductSelector({
                   />
                   <Stepper
                     id={`${baseId}-children`}
-                    label="Children aged 4–12"
+                    label={ui.children4to12}
                     value={quote.normalised.children4to12}
                     min={0}
                     max={unit?.maxOccupancy ?? 6}
@@ -317,7 +327,7 @@ export default function WinterVillageProductSelector({
                   />
                   <Stepper
                     id={`${baseId}-under4`}
-                    label="Children under 4"
+                    label={ui.under4}
                     value={quote.normalised.under4}
                     min={0}
                     max={unit?.maxOccupancy ?? 6}
@@ -328,8 +338,8 @@ export default function WinterVillageProductSelector({
 
               {!isStone ? (
                 <div className="wv-stepper-row">
-                  <span className="wv-stepper-label">Guests</span>
-                  <span className="wv-static-value">2 people</span>
+                  <span className="wv-stepper-label">{ui.guests}</span>
+                  <span className="wv-static-value">{ui.twoPeople}</span>
                 </div>
               ) : null}
 
@@ -343,7 +353,7 @@ export default function WinterVillageProductSelector({
                   <span>
                     {product.pricing.wellnessOptional.label}
                     <em>
-                      +{formatEuro(product.pricing.wellnessOptional.pricePerBooking)} per stay
+                      +{formatEuro(product.pricing.wellnessOptional.pricePerBooking)} {ui.perStay}
                     </em>
                   </span>
                 </label>
@@ -361,7 +371,7 @@ export default function WinterVillageProductSelector({
 
           <aside className="wv-config-aside">
             <div>
-              <p className="wv-field-label">What is included</p>
+              <p className="wv-field-label">{ui.included}</p>
               <ul className="wv-included">
                 {product.included.map((entry) => (
                   <li key={entry}>{entry}</li>
@@ -370,15 +380,15 @@ export default function WinterVillageProductSelector({
             </div>
 
             <div className="wv-terms">
-              <h3 className="wv-field-label">{WINTER_VILLAGE_DEPOSIT.termsHeading}</h3>
-              <p className="wv-terms-note">{WINTER_VILLAGE_DEPOSIT.termsBody}</p>
-              <p className="wv-terms-line">{WINTER_VILLAGE_DEPOSIT.depositLabel}</p>
+              <h3 className="wv-field-label">{deposit.termsHeading}</h3>
+              <p className="wv-terms-note">{deposit.termsBody}</p>
+              <p className="wv-terms-line">{deposit.depositLabel}</p>
               <p className="wv-terms-line">
                 {product.depositRule === 'christmas'
-                  ? WINTER_VILLAGE_DEPOSIT.christmasBalanceLabel
-                  : WINTER_VILLAGE_DEPOSIT.stayBalanceLabel}
+                  ? deposit.christmasBalanceLabel
+                  : deposit.stayBalanceLabel}
               </p>
-              <p className="wv-terms-note">{WINTER_VILLAGE_DEPOSIT.previewNote}</p>
+              <p className="wv-terms-note">{deposit.previewNote}</p>
             </div>
           </aside>
         </div>
@@ -401,10 +411,10 @@ export default function WinterVillageProductSelector({
               <span className="wv-summary-opt" aria-hidden="true">
                 |
               </span>
-              <span className="wv-summary-opt">{guestSummary(quote, isStone)}</span>
+              <span className="wv-summary-opt">{guestSummary(quote, isStone, ui)}</span>
             </p>
             <p className="wv-summary-price">
-              <span>{WINTER_VILLAGE_CALCULATOR.totalLabel}</span>
+              <span>{calculator.totalLabel}</span>
               <strong>{formatEuro(quote.total)}</strong>
             </p>
           </div>

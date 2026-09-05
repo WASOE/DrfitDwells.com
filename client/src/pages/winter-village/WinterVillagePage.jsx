@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Seo from '../../components/Seo';
 import { buildHreflangAlternates } from '../../utils/localizedRoutes';
-import { WINTER_VILLAGE_SEO } from './winterVillageConfig';
 import { WINTER_VILLAGE_HERO_PRELOAD } from './winterVillageMedia';
+import { useWinterVillageLocale } from './useWinterVillageLocale';
 import WinterVillageHero from './components/WinterVillageHero';
 import WinterVillageWays from './components/WinterVillageWays';
 import WinterVillageChristmasFeature from './components/WinterVillageChristmasFeature';
@@ -16,6 +16,7 @@ import WinterVillagePreviewModal from './components/WinterVillagePreviewModal';
 import './winter-village.css';
 
 export default function WinterVillagePage() {
+  const { seo } = useWinterVillageLocale();
   const packagesRef = useRef(null);
   const [selectedProductId, setSelectedProductId] = useState('stay');
   const [modalOpen, setModalOpen] = useState(false);
@@ -52,14 +53,14 @@ export default function WinterVillagePage() {
   return (
     <>
       <Seo
-        title={WINTER_VILLAGE_SEO.title}
-        description={WINTER_VILLAGE_SEO.description}
-        ogTitle={WINTER_VILLAGE_SEO.ogTitle}
-        ogDescription={WINTER_VILLAGE_SEO.ogDescription}
-        canonicalPath={WINTER_VILLAGE_SEO.canonicalPath}
+        title={seo.title}
+        description={seo.description}
+        ogTitle={seo.ogTitle}
+        ogDescription={seo.ogDescription}
+        canonicalPath={seo.canonicalPath}
         hreflangAlternates={buildHreflangAlternates('/winter-village')}
         ogType="website"
-        ogImage={WINTER_VILLAGE_SEO.ogImage}
+        ogImage={seo.ogImage}
         preloadImages={[
           {
             href: WINTER_VILLAGE_HERO_PRELOAD,
