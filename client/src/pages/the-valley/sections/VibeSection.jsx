@@ -10,10 +10,11 @@ const VibeSection = ({ galleryRef }) => {
   const { season } = useSeason();
   const seasonKey = season === 'winter' ? 'winter' : 'summer';
 
-  const [sliderPosition, setSliderPosition] = useState(seasonKey === 'winter' ? 72 : 50);
+  const [sliderPosition, setSliderPosition] = useState(50);
   const [isDragging, setIsDragging] = useState(false);
   const sliderRef = useRef(null);
 
+  // Original land winter↔summer pair — not driven by the hero season toggle.
   const summerImage = VALLEY_PAGE_SEASON_IMAGES.vibeCompare.summer;
   const winterImage = VALLEY_PAGE_SEASON_IMAGES.vibeCompare.winter;
 
@@ -21,11 +22,6 @@ const VibeSection = ({ galleryRef }) => {
     () => VALLEY_PAGE_SEASON_IMAGES.vibeMoments[seasonKey],
     [seasonKey]
   );
-
-  // Bias the compare slider toward the active season when the toggle changes.
-  useEffect(() => {
-    setSliderPosition(seasonKey === 'winter' ? 72 : 28);
-  }, [seasonKey]);
 
   // Handle mouse/touch events for slider
   const handleMove = (clientX) => {

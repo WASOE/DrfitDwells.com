@@ -76,16 +76,18 @@ export const VALLEY_PAGE_SEASON_IMAGES = Object.freeze({
     ])
   }),
 
+  // Keep the original land winter↔summer compare pair — do not retarget this slider.
   vibeCompare: Object.freeze({
     summer: Object.freeze({
       path: '/uploads/The Valley/1768207815-2996ea84.jpg',
       encoded: '/uploads/The%20Valley/1768207815-2996ea84.jpg',
       alt: 'Panoramic summer view of The Valley mountain village at 1,550m altitude showing A-frame cabins, Stone House, and shared spaces, Rhodope Mountains, Bulgaria'
     }),
-    winter: winterStill(
-      'winter-aframe-cabins-frost',
-      'Frosted A-frame winter cabins at The Valley in the Rhodope Mountains, Bulgaria'
-    )
+    winter: Object.freeze({
+      path: '/uploads/The Valley/1768208001-196d2a1f.jpg',
+      encoded: '/uploads/The%20Valley/1768208001-196d2a1f.jpg',
+      alt: 'Panoramic winter view of The Valley mountain village at 1,550m altitude showing snow-covered A-frame cabins, Stone House, and shared spaces, Rhodope Mountains, Bulgaria'
+    })
   }),
 
   vibeMoments: Object.freeze({
@@ -149,22 +151,22 @@ export const VALLEY_PAGE_SEASON_IMAGES = Object.freeze({
       Object.freeze({
         image: Object.freeze({
           ...winterStill(
-            'winter-village-fire-pit-sunset',
-            'Fire pit and snowy cabins at sunset in a Rhodope winter village'
+            'luxury-cabin-winter-fireside-sunset',
+            'Luxury cabin fireside at winter sunset in The Valley with snowy Rhodope forest'
           ),
           ratio: '4/5'
         }),
-        moment: 'Evenings by the communal firepit'
+        moment: 'Fireside evenings at the Luxury Cabin'
       }),
       Object.freeze({
         image: Object.freeze({
           ...winterStill(
-            'porch-dusk',
-            'Winter porch at dusk looking out over snowy mountain forest at The Valley'
+            'winter-aframe-cabin-interior-fireplace',
+            'Warm A-frame cabin interior with wood stove and snowy mountain view at The Valley'
           ),
           ratio: '4/5'
         }),
-        moment: 'Morning coffee on the porch with mountain views'
+        moment: 'Morning coffee inside your A-frame'
       }),
       Object.freeze({
         image: Object.freeze({
@@ -224,16 +226,16 @@ export const VALLEY_PAGE_SEASON_IMAGES = Object.freeze({
   /** Stay card covers when Winter is selected (overrides listing summer covers). */
   stayCovers: Object.freeze({
     'luxury-cabin': winterStill(
-      'winter-cabin-fireplace-mountain-view',
-      'Luxury winter cabin interior with wood stove and mountain snow view at The Valley'
+      'luxury-cabin-winter-fireside-sunset',
+      'Luxury Cabin fireside at winter sunset in The Valley, Rhodope Mountains'
     ),
     'stone-house': winterStill(
       'stone-house-aframes-winter-morning',
       'Stone House and frosted A-frames on a winter morning at The Valley'
     ),
     'a-frames': winterStill(
-      'winter-aframe-cabins-frost',
-      'Frosted A-frame winter cabins at The Valley in the Rhodope Mountains'
+      'winter-aframe-cabin-interior-fireplace',
+      'Warm A-frame cabin interior with wood stove and snowy mountain view at The Valley'
     )
   })
 });
