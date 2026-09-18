@@ -20,9 +20,60 @@ const PAYMENT_STATUSES = ['unpaid', 'processing', 'paid', 'failed', 'not_require
 
 const FINALIZE_STATUSES = ['open', 'in_progress', 'finalized', 'needs_review'];
 
+const RESOURCE_LEASE_STATUSES = [
+  'active',
+  'cancel_pending',
+  'expired',
+  'paid',
+  'released',
+  'needs_review'
+];
+
 function integerNonNegativeValidator(value) {
   return Number.isInteger(value) && value >= 0;
 }
+
+const resourceLeaseAccommodationSchema = new mongoose.Schema(
+  {
+    holdId: { type: String, trim: true, default: null },
+    leaseId: { type: String, trim: true, default: null },
+    generation: { type: Number, default: null },
+    cabinId: { type: String, trim: true, default: null },
+    unitId: { type: String, trim: true, default: null },
+    entityType: { type: String, trim: true, default: null }
+  },
+  { _id: false }
+);
+
+const resourceLeaseSchema = new mongoose.Schema(
+  {
+    status: {
+      type: String,
+      enum: RESOURCE_LEASE_STATUSES,
+      default: null
+    },
+    generation: { type: Number, default: null, min: 1 },
+    attemptId: { type: String, trim: true, default: null },
+    quoteSnapshotHash: { type: String, trim: true, default: null },
+    validUntil: { type: Date, default: null },
+    activatedAt: { type: Date, default: null },
+    updatedAt: { type: Date, default: null },
+    accommodation: { type: resourceLeaseAccommodationSchema, default: null },
+    facilityHoldIds: { type: [String], default: [] },
+    voucherRedemptionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'GiftVoucherRedemption',
+      default: null
+    },
+    voucherOperationId: { type: String, trim: true, default: null },
+    paymentIntentId: { type: String, trim: true, default: null },
+    cancellationStatus: { type: String, trim: true, default: null },
+    cancellationAttemptedAt: { type: Date, default: null },
+    releasedAt: { type: Date, default: null },
+    failureCode: { type: String, trim: true, default: null }
+  },
+  { _id: false }
+);
 
 const checkoutSessionSchema = new mongoose.Schema(
   {
@@ -177,6 +228,14 @@ const checkoutSessionSchema = new mongoose.Schema(
     metadata: {
       type: mongoose.Schema.Types.Mixed,
       default: null
+    },
+    /**
+     * B8F3: durable resource lease attached under the orchestrator fence before PI work.
+     * Default-off payment gate verifies this before any Stripe create/reuse return.
+     */
+    resourceLease: {
+      type: resourceLeaseSchema,
+      default: null
     }
   },
   { timestamps: true }
@@ -206,8 +265,20 @@ checkoutSessionSchema.index(
 checkoutSessionSchema.index({ guestEmail: 1, createdAt: -1 });
 checkoutSessionSchema.index({ status: 1, updatedAt: -1 });
 
+// B8F3 reconciliation lookup. Not bootstrapped against production here; tests create explicitly.
+checkoutSessionSchema.index(
+  { 'resourceLease.status': 1, 'resourceLease.validUntil': 1 },
+  {
+    name: 'resource_lease_status_validUntil_v1',
+    partialFilterExpression: {
+      'resourceLease.status': { $exists: true, $type: 'string' }
+    }
+  }
+);
+
 module.exports = mongoose.model('CheckoutSession', checkoutSessionSchema);
 module.exports.FLOW_VERSIONS = FLOW_VERSIONS;
 module.exports.CHECKOUT_SESSION_STATUSES = CHECKOUT_SESSION_STATUSES;
 module.exports.PAYMENT_STATUSES = PAYMENT_STATUSES;
 module.exports.FINALIZE_STATUSES = FINALIZE_STATUSES;
+module.exports.RESOURCE_LEASE_STATUSES = RESOURCE_LEASE_STATUSES;

@@ -6,6 +6,7 @@ const mongoose = require('mongoose');
  * UnitNightClaim — exclusive guest ownership of one physical unit-night.
  *
  * Binding: docs/stay-change-implementation-plan.md — I6 authoritative cutover.
+ * B8F1A: checkout lease ownership shares the same unique {unitId, night} authority.
  *
  * Delete-on-release: releasing deletes the row. No active/released status.
  *
@@ -23,10 +24,12 @@ const CLAIM_SOURCES = Object.freeze([
   'rebook',
   'bootstrap',
   'test',
-  'other'
+  'other',
+  'checkout_lease'
 ]);
 
-/** Single canonical I6 unique-index specification. */
+const OWNER_TYPES = Object.freeze(['booking', 'checkout']);
+
 const AUTHORITATIVE_UNIQUE_INDEX_SPEC = Object.freeze({
   keys: Object.freeze({ unitId: 1, night: 1 }),
   options: Object.freeze({
@@ -38,6 +41,10 @@ const AUTHORITATIVE_UNIQUE_INDEX_SPEC = Object.freeze({
   note: 'Created only by unitNightClaimI6Cutover.js --create-unique-index'
 });
 
+function isNonNullField(value) {
+  return value != null && !(typeof value === 'string' && value.trim() === '');
+}
+
 const unitNightClaimSchema = new mongoose.Schema(
   {
     unitId: {
@@ -45,22 +52,44 @@ const unitNightClaimSchema = new mongoose.Schema(
       ref: 'Unit',
       required: true
     },
-    /**
-     * Sofia civil day-start (UTC instant for Europe/Sofia midnight of that night).
-     * One occupied night in stay [checkIn, checkOut). Checkout day is never claimed.
-     */
     night: {
       type: Date,
       required: true
     },
+    ownerType: {
+      type: String,
+      enum: OWNER_TYPES,
+      default: 'booking'
+    },
     bookingId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Booking',
-      required: true
+      default: null,
+      required: function requiredBookingId() {
+        return this.ownerType !== 'checkout';
+      }
+    },
+    checkoutId: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    leaseId: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    acquisitionId: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    expiresAt: {
+      type: Date,
+      default: null
     },
     stayChangeId: {
       type: mongoose.Schema.Types.ObjectId,
-      // StayChange model lands in Batch R; stored as ObjectId until then.
       default: null
     },
     source: {
@@ -69,20 +98,87 @@ const unitNightClaimSchema = new mongoose.Schema(
       trim: true,
       maxlength: [80, 'source cannot exceed 80 characters'],
       default: 'other'
+    },
+    /** B8F4A — durable conversion provenance on booking-owned claims. */
+    convertedFromCheckoutId: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    convertedFromLeaseId: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    convertedFromGeneration: {
+      type: Number,
+      default: null,
+      min: 1
+    },
+    convertedFromAttemptId: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    convertedFromQuoteSnapshotHash: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    convertedAt: {
+      type: Date,
+      default: null
     }
   },
   { timestamps: { createdAt: true, updatedAt: false } }
 );
 
-// Lookup helpers only — exclusivity is the named unique index (I6 CLI).
+unitNightClaimSchema.pre('validate', function validateOwnership(next) {
+  const owner = this.ownerType == null || this.ownerType === '' ? 'booking' : this.ownerType;
+  if (owner === 'checkout') {
+    if (!isNonNullField(this.checkoutId)) {
+      this.invalidate('checkoutId', 'checkoutId is required for checkout ownership');
+    }
+    if (!isNonNullField(this.leaseId)) {
+      this.invalidate('leaseId', 'leaseId is required for checkout ownership');
+    }
+    if (this.expiresAt == null || Number.isNaN(new Date(this.expiresAt).getTime())) {
+      this.invalidate('expiresAt', 'valid expiresAt is required for checkout ownership');
+    }
+    if (this.bookingId != null) {
+      this.invalidate('bookingId', 'bookingId must be null for checkout ownership');
+    }
+  } else {
+    if (this.bookingId == null) {
+      this.invalidate('bookingId', 'bookingId is required for booking ownership');
+    }
+    if (isNonNullField(this.checkoutId)) {
+      this.invalidate('checkoutId', 'checkoutId must be null for booking ownership');
+    }
+    if (isNonNullField(this.leaseId)) {
+      this.invalidate('leaseId', 'leaseId must be null for booking ownership');
+    }
+    if (isNonNullField(this.acquisitionId)) {
+      this.invalidate('acquisitionId', 'acquisitionId must be null for booking ownership');
+    }
+    if (this.expiresAt != null) {
+      this.invalidate('expiresAt', 'expiresAt must be null for booking ownership');
+    }
+  }
+  next();
+});
+
 unitNightClaimSchema.index({ unitId: 1 });
 unitNightClaimSchema.index({ night: 1 });
 unitNightClaimSchema.index({ bookingId: 1 });
 unitNightClaimSchema.index({ stayChangeId: 1 });
 unitNightClaimSchema.index({ bookingId: 1, unitId: 1 });
+unitNightClaimSchema.index({ checkoutId: 1, leaseId: 1 });
+unitNightClaimSchema.index({ leaseId: 1, acquisitionId: 1 });
+unitNightClaimSchema.index({ ownerType: 1, expiresAt: 1 });
+unitNightClaimSchema.index({ convertedFromCheckoutId: 1, convertedFromLeaseId: 1 });
+unitNightClaimSchema.index({ bookingId: 1, convertedFromLeaseId: 1 });
 
-// Document authoritative unique index for tooling/docs; autoIndex is OFF so this
-// declaration never builds on ordinary connect/startup.
 unitNightClaimSchema.index(
   AUTHORITATIVE_UNIQUE_INDEX_SPEC.keys,
   { ...AUTHORITATIVE_UNIQUE_INDEX_SPEC.options }
@@ -92,7 +188,9 @@ unitNightClaimSchema.set('autoIndex', false);
 
 unitNightClaimSchema.statics.AUTHORITATIVE_UNIQUE_INDEX_SPEC = AUTHORITATIVE_UNIQUE_INDEX_SPEC;
 unitNightClaimSchema.statics.CLAIM_SOURCES = CLAIM_SOURCES;
+unitNightClaimSchema.statics.OWNER_TYPES = OWNER_TYPES;
 
 module.exports = mongoose.model('UnitNightClaim', unitNightClaimSchema);
 module.exports.CLAIM_SOURCES = CLAIM_SOURCES;
+module.exports.OWNER_TYPES = OWNER_TYPES;
 module.exports.AUTHORITATIVE_UNIQUE_INDEX_SPEC = AUTHORITATIVE_UNIQUE_INDEX_SPEC;

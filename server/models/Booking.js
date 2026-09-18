@@ -534,6 +534,82 @@ const bookingSchema = new mongoose.Schema({
   metadata: {
     type: mongoose.Schema.Types.Mixed,
     default: null
+  },
+  /**
+   * B8F4B — immutable lease-aware finalization snapshot (server session/lease evidence only).
+   * Absent on legacy Bookings.
+   */
+  resourceFinalizationSnapshot: {
+    type: new mongoose.Schema(
+      {
+        quoteSnapshotHash: { type: String, trim: true, default: null },
+        resourceLeaseGeneration: { type: Number, default: null, min: 1 },
+        resourceLeaseAttemptId: { type: String, trim: true, default: null },
+        resourceLeaseValidUntil: { type: Date, default: null },
+        accommodationLeaseId: { type: String, trim: true, default: null },
+        accommodationLeaseGeneration: { type: Number, default: null, min: 1 },
+        accommodationEntityType: {
+          type: String,
+          enum: ['unit', 'cabin', null],
+          default: null
+        },
+        accommodationCabinId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Cabin',
+          default: null
+        },
+        accommodationUnitId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Unit',
+          default: null
+        },
+        canonicalPaymentIntentId: { type: String, trim: true, default: null },
+        paymentAuthorityType: {
+          type: String,
+          enum: ['stripe', 'full_voucher', null],
+          default: null
+        },
+        voucherRedemptionId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'GiftVoucherRedemption',
+          default: null
+        },
+        voucherOperationId: { type: String, trim: true, default: null },
+        expectedFacilityReservationIds: { type: [String], default: undefined },
+        confirmedFacilityReservationIds: { type: [String], default: undefined },
+        currency: { type: String, enum: ['EUR', null], default: null },
+        totalCents: {
+          type: Number,
+          default: null,
+          min: [0, 'resourceFinalizationSnapshot.totalCents cannot be negative']
+        },
+        giftVoucherAppliedCents: {
+          type: Number,
+          default: null,
+          min: [0, 'resourceFinalizationSnapshot.giftVoucherAppliedCents cannot be negative']
+        },
+        remainingDueCents: {
+          type: Number,
+          default: null,
+          min: [0, 'resourceFinalizationSnapshot.remainingDueCents cannot be negative']
+        },
+        stripeAmountCents: {
+          type: Number,
+          default: null,
+          min: [0, 'resourceFinalizationSnapshot.stripeAmountCents cannot be negative']
+        },
+        bookingType: { type: String, trim: true, default: null },
+        ratePlanCode: { type: String, trim: true, default: null },
+        ratePlanVersion: { type: String, trim: true, default: null },
+        packageDates: { type: mongoose.Schema.Types.Mixed, default: null },
+        packageInclusions: { type: mongoose.Schema.Types.Mixed, default: null },
+        participants: { type: mongoose.Schema.Types.Mixed, default: null },
+        facilitySelections: { type: mongoose.Schema.Types.Mixed, default: null },
+        cancellationPolicy: { type: mongoose.Schema.Types.Mixed, default: null }
+      },
+      { _id: false }
+    ),
+    default: undefined
   }
 }, {
   timestamps: true

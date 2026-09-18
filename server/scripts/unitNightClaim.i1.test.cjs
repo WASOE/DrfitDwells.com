@@ -353,8 +353,13 @@ test('assertBookingOwnsNights: success and mismatch diagnostics', async () => {
 
 test('dry-run: confirmed / pending allocated / in_house project; unallocated pending and terminal excluded', async () => {
   const { cabinType, unitA, unitB } = await seedCabinTypeAndUnits();
-  const checkIn = sofiaDay('2026-09-10');
-  const checkOut = sofiaDay('2026-09-12');
+  // Future Sofia stay (dynamic offset) so Booking checkIn validator stays green.
+  const checkInOnly = formatSofiaDateOnly(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
+  const [y, m, d] = checkInOnly.split('-').map(Number);
+  const checkOutOnly = new Date(Date.UTC(y, m - 1, d + 2)).toISOString().slice(0, 10);
+  const inHouseOutOnly = new Date(Date.UTC(y, m - 1, d + 4)).toISOString().slice(0, 10);
+  const checkIn = sofiaDay(checkInOnly);
+  const checkOut = sofiaDay(checkOutOnly);
 
   await createBlockingBooking({
     cabinTypeId: cabinType._id,
@@ -376,7 +381,7 @@ test('dry-run: confirmed / pending allocated / in_house project; unallocated pen
     cabinTypeId: cabinType._id,
     unitId: unitA._id,
     checkIn,
-    checkOut: sofiaDay('2026-09-14'),
+    checkOut: sofiaDay(inHouseOutOnly),
     status: 'in_house',
     email: 'inhouse@example.com'
   });
@@ -426,7 +431,7 @@ test('dry-run: confirmed / pending allocated / in_house project; unallocated pen
   const after = await UnitNightClaim.countDocuments();
   assert.equal(before, after);
   assert.equal(report.summary.blockingBookingsScanned, 3);
-  // confirmed 2 nights + pending 2 + in_house 4 (Sep10-14) = 8
+  // confirmed 2 nights + pending 2 + in_house 4 = 8 occupied nights
   assert.equal(report.summary.expectedClaims, 8);
   assert.equal(report.mode, 'dry-run');
 });

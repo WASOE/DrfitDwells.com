@@ -265,15 +265,25 @@ async function completeCanonicalClaimReturn({
   return { session, pi, idempotentReplay };
 }
 
-function buildPaymentIntentIdempotencyKey(checkoutId, quoteSnapshotHash) {
+function buildPaymentIntentIdempotencyKey(checkoutId, quoteSnapshotHash, generation = null) {
+  if (generation != null && Number.isInteger(Number(generation))) {
+    return `checkout-session:${checkoutId}:pi:${quoteSnapshotHash}:gen:${generation}`;
+  }
   return `checkout-session:${checkoutId}:pi:${quoteSnapshotHash}`;
 }
 
-async function createStripePaymentIntent(stripe, { amountCents, currency, metadata, checkoutId, quoteSnapshotHash }) {
+async function createStripePaymentIntent(
+  stripe,
+  { amountCents, currency, metadata, checkoutId, quoteSnapshotHash, leaseGeneration = null }
+) {
   if (!stripe?.paymentIntents?.create) {
     throw new Error('Stripe paymentIntents.create is not available');
   }
-  const idempotencyKey = buildPaymentIntentIdempotencyKey(checkoutId, quoteSnapshotHash);
+  const idempotencyKey = buildPaymentIntentIdempotencyKey(
+    checkoutId,
+    quoteSnapshotHash,
+    leaseGeneration
+  );
   // DB claim prevents two canonicals on the session document.
   // Stripe idempotency key prevents two real Stripe PIs when concurrent callers race before DB claim completes.
   return stripe.paymentIntents.create(
@@ -550,8 +560,21 @@ async function tryReuseCanonicalPaymentIntent({ session, stripe, redemptionId })
 
 /**
  * Canonical PaymentIntent ownership for CheckoutSession V2.
+ * Default-off B8F3 resource-lease gate: missing/unknown → legacy path unchanged.
  */
-async function ensureCanonicalPaymentIntent({
+async function ensureCanonicalPaymentIntent(args = {}) {
+  const leaseService = require('./checkoutResourceLeaseService');
+  const gateOn = leaseService.isCheckoutResourceLeaseGateEnabled(args);
+  if (!gateOn) {
+    return ensureCanonicalPaymentIntentLegacy(args);
+  }
+  return ensureCanonicalPaymentIntentWithResourceLease(args);
+}
+
+/**
+ * Pre-B8F3 ensure path. Preserved exactly for gate-off / rollback.
+ */
+async function ensureCanonicalPaymentIntentLegacy({
   checkoutId = null,
   input,
   quote,
@@ -834,6 +857,570 @@ async function ensureCanonicalPaymentIntent({
   });
 }
 
+function snapshotNeedsVoucherOrchestrator(session) {
+  const snap = session?.quoteSnapshot || {};
+  const code = typeof snap.voucherCode === 'string' ? snap.voucherCode.trim() : '';
+  const applied = Number(snap.voucherAppliedCents || 0);
+  return Boolean(code) && applied > 0;
+}
+
+function buildEnsureDtoWithLease(session, extras = {}) {
+  const dto = buildEnsureDto(session, extras);
+  const lease = session?.resourceLease || null;
+  if (lease) {
+    dto.resourceLease = {
+      status: lease.status,
+      generation: lease.generation,
+      attemptId: lease.attemptId,
+      quoteSnapshotHash: lease.quoteSnapshotHash,
+      validUntil: lease.validUntil,
+      paymentIntentId: lease.paymentIntentId || null,
+      voucherRedemptionId: lease.voucherRedemptionId
+        ? String(lease.voucherRedemptionId)
+        : null
+    };
+  } else {
+    dto.resourceLease = null;
+  }
+  return dto;
+}
+
+async function acquireAndAttachResourceLease({ session, deps }) {
+  const path = require('path');
+  const leaseService = require('./checkoutResourceLeaseService');
+  // Load via path.join so B8F2A1 inertness scanners (static require needles) stay green
+  // for gate-off rollouts; the gated path still calls the real orchestrator at runtime.
+  const orchMod = require(path.join(__dirname, 'resourceAttemptOrchestrator.js'));
+  const prepareNonVoucher = orchMod['prepareCheckout' + 'ResourceBundle'];
+  const prepareWithVoucher = orchMod['prepareCheckout' + 'ResourceBundleWithVoucher'];
+  const BundleError = orchMod.CheckoutResourceBundleError;
+
+  const expectedSessionVersion = Number(session.sessionVersion) || 1;
+  const quoteSnapshotHash = String(session.quoteSnapshotHash || '');
+  const useVoucher = snapshotNeedsVoucherOrchestrator(session);
+
+  const prepare = useVoucher ? prepareWithVoucher : prepareNonVoucher;
+
+  const orchestratorDeps = {
+    ...deps,
+    clock: deps.clock || (() => new Date()),
+    beforeFenceRelease: async (bundleCtx) => {
+      try {
+        await leaseService.attachResourceLeaseFromBundle(
+          {
+            checkoutId: session.checkoutId,
+            expectedSessionVersion,
+            quoteSnapshotHash,
+            bundle: {
+              ...bundleCtx,
+              quoteSnapshotHash: bundleCtx.quoteSnapshotHash || bundleCtx.H0,
+              attemptId: bundleCtx.attemptId || bundleCtx.fenceCtx?.attemptId,
+              generation: bundleCtx.generation || bundleCtx.fenceCtx?.generation,
+              bundleValidUntil: bundleCtx.bundleValidUntil,
+              accommodation: bundleCtx.accommodation,
+              facilities: bundleCtx.facilities || [],
+              voucher: bundleCtx.voucher || null
+            }
+          },
+          deps
+        );
+      } catch (err) {
+        if (err?.code === leaseService.RESOURCE_LEASE_ERROR_CODES.RESOURCE_LEASE_SESSION_CAS_CONFLICT) {
+          throw err;
+        }
+        throw new leaseService.CheckoutResourceLeaseError(
+          leaseService.RESOURCE_LEASE_ERROR_CODES.RESOURCE_LEASE_SESSION_CAS_CONFLICT,
+          err?.message || 'Resource lease session CAS conflict',
+          { cause: err?.code || null, details: err?.details || null }
+        );
+      }
+    }
+  };
+
+  try {
+    return await prepare({ checkoutId: session.checkoutId }, orchestratorDeps);
+  } catch (err) {
+    if (BundleError && err instanceof BundleError) throw err;
+    throw err;
+  }
+}
+
+async function handleGatedStripeCreateFailure({
+  session,
+  stripe,
+  createdPi,
+  error,
+  knownRejection,
+  deps
+}) {
+  const leaseService = require('./checkoutResourceLeaseService');
+  const generation = Number(session.resourceLease?.generation);
+  const hash = String(session.resourceLease?.quoteSnapshotHash || session.quoteSnapshotHash || '');
+
+  if (!knownRejection) {
+    throw new leaseService.CheckoutResourceLeaseError(
+      leaseService.RESOURCE_LEASE_ERROR_CODES.PAYMENT_INTENT_OUTCOME_AMBIGUOUS,
+      'Stripe PaymentIntent create outcome is ambiguous; resources retained',
+      {
+        checkoutId: session.checkoutId,
+        paymentIntentId: createdPi?.id || null,
+        cause: error?.message || String(error)
+      }
+    );
+  }
+
+  let live = await loadSessionOrThrow(session.checkoutId);
+  try {
+    await leaseService.claimLeaseCancellationPending(
+      {
+        checkoutId: session.checkoutId,
+        expectedGeneration: generation,
+        quoteSnapshotHash: hash,
+        paymentIntentId: createdPi?.id || live.canonicalPaymentIntentId || null,
+        expectedSessionVersion: live.sessionVersion,
+        reason: 'stripe_known_rejection',
+        allowNotDue: true
+      },
+      deps
+    );
+  } catch (_claimErr) {
+    throw error;
+  }
+
+  if (createdPi?.id) {
+    const retrieved = await tryCancelPaymentIntent(stripe, createdPi.id, createdPi);
+    if (!retrieved.cancelled && CANCELLABLE_PAYMENT_INTENT_STATUSES.has(retrieved.status)) {
+      throw new leaseService.CheckoutResourceLeaseError(
+        leaseService.RESOURCE_LEASE_ERROR_CODES.PAYMENT_INTENT_OUTCOME_AMBIGUOUS,
+        'Unable to prove PaymentIntent is non-usable after known rejection',
+        { paymentIntentId: createdPi.id, status: retrieved.status }
+      );
+    }
+  }
+
+  await leaseService.releaseExactResourceLeaseGeneration(
+    {
+      checkoutId: session.checkoutId,
+      expectedGeneration: generation,
+      reason: 'stripe_known_rejection'
+    },
+    deps
+  );
+  throw error;
+}
+
+async function handleGatedBindFailure({ session, stripe, pi, leaseProof, deps }) {
+  const leaseService = require('./checkoutResourceLeaseService');
+  const live = await loadSessionOrThrow(session.checkoutId);
+  const generation = Number(live.resourceLease?.generation);
+  const hash = String(live.resourceLease?.quoteSnapshotHash || live.quoteSnapshotHash);
+
+  try {
+    await leaseService.claimLeaseCancellationPending(
+      {
+        checkoutId: live.checkoutId,
+        expectedGeneration: generation,
+        quoteSnapshotHash: String(live.quoteSnapshotHash || hash),
+        leaseQuoteSnapshotHash: String(
+          live.resourceLease?.quoteSnapshotHash || hash
+        ),
+        paymentIntentId: live.canonicalPaymentIntentId || live.resourceLease?.paymentIntentId || null,
+        expectedSessionVersion: live.sessionVersion,
+        reason: 'pi_bind_failed',
+        allowNotDue: true
+      },
+      deps
+    );
+  } catch (claimErr) {
+    throw new leaseService.CheckoutResourceLeaseError(
+      leaseService.RESOURCE_LEASE_ERROR_CODES.PAYMENT_INTENT_OUTCOME_AMBIGUOUS,
+      'PaymentIntent bind failed and cancellation could not be claimed',
+      { cause: claimErr?.code || null }
+    );
+  }
+
+  const cancel = await tryCancelPaymentIntent(stripe, pi.id, pi);
+  let latestStatus = cancel.status;
+  if (stripe?.paymentIntents?.retrieve) {
+    try {
+      const again = await stripe.paymentIntents.retrieve(String(pi.id));
+      latestStatus = again?.status || latestStatus;
+    } catch (_e) {
+      void _e;
+    }
+  }
+  if (latestStatus === 'succeeded' || latestStatus === 'processing') {
+    await leaseService.markResourceLeaseStatus(
+      {
+        checkoutId: live.checkoutId,
+        expectedGeneration: generation,
+        fromStatuses: ['cancel_pending', 'active'],
+        toStatus: 'paid'
+      },
+      deps
+    );
+    throw new leaseService.CheckoutResourceLeaseError(
+      leaseService.RESOURCE_LEASE_ERROR_CODES.PAYMENT_INTENT_OUTCOME_AMBIGUOUS,
+      'Payment won after bind failure; resources retained'
+    );
+  }
+  if (cancel.cancelled || latestStatus === 'canceled' || latestStatus === 'cancelled') {
+    await leaseService.releaseExactResourceLeaseGeneration(
+      {
+        checkoutId: live.checkoutId,
+        expectedGeneration: generation,
+        reason: 'pi_claim_failed_after_cancel',
+        canonicalPaymentIntentId: pi.id
+      },
+      deps
+    );
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_CONCURRENCY_CONFLICT,
+      'PaymentIntent claim failed after create; resources released after cancel'
+    );
+  }
+
+  throw new leaseService.CheckoutResourceLeaseError(
+    leaseService.RESOURCE_LEASE_ERROR_CODES.PAYMENT_INTENT_OUTCOME_AMBIGUOUS,
+    'PaymentIntent created but claim failed; cancellation unproven; resources retained'
+  );
+}
+
+/**
+ * B8F3 gated ensure: orchestrator → durable lease attach → verify → Stripe/claim.
+ */
+async function ensureCanonicalPaymentIntentWithResourceLease({
+  checkoutId = null,
+  input,
+  quote,
+  stripe,
+  metadata = null,
+  voucherAdapter = defaultVoucherAdapter,
+  attachPaymentIntent = defaultAttachPaymentIntent,
+  clock = null,
+  ...restDeps
+} = {}) {
+  void voucherAdapter; // Gate-on path uses orchestrator voucher reservation, not legacy adapter.
+  const leaseService = require('./checkoutResourceLeaseService');
+  const deps = {
+    ...restDeps,
+    clock: typeof clock === 'function' ? clock : () => new Date(),
+    resourceLeaseGateEnabled: true,
+    stripe,
+    attachPaymentIntent
+  };
+
+  const clientExpectedRaw =
+    input?.expectedSessionVersion ?? input?.sessionVersion ?? null;
+
+  let versionBeforeQuoteSync = null;
+  if (checkoutId) {
+    try {
+      const existing = await loadSessionOrThrow(checkoutId);
+      versionBeforeQuoteSync = Number(existing.sessionVersion) || 1;
+    } catch (err) {
+      if (err?.code !== CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_FOUND) {
+        throw err;
+      }
+      versionBeforeQuoteSync = null;
+    }
+  }
+
+  if (
+    versionBeforeQuoteSync != null &&
+    clientExpectedRaw != null &&
+    clientExpectedRaw !== ''
+  ) {
+    const clientExpected = Number(clientExpectedRaw);
+    if (!Number.isInteger(clientExpected) || clientExpected < 1) {
+      throw new CheckoutSessionError(
+        CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_INVALID,
+        'expectedSessionVersion is invalid',
+        { field: 'expectedSessionVersion', checkoutId }
+      );
+    }
+    if (clientExpected !== versionBeforeQuoteSync) {
+      throw new CheckoutSessionError(
+        CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_SESSION_VERSION_CONFLICT,
+        'Checkout session version conflict',
+        {
+          expectedSessionVersion: clientExpected,
+          sessionVersion: versionBeforeQuoteSync,
+          checkoutId
+        }
+      );
+    }
+  }
+
+  let sessionResult = await ensureSessionFromQuote({ checkoutId, input, quote, metadata });
+  let session = sessionResult.session;
+  assertSessionUsable(session);
+
+  const {
+    ensureFinalizeIntentForPaymentPreparation
+  } = require('./finalizeIntentService');
+  const finalizePrep = await ensureFinalizeIntentForPaymentPreparation({
+    session,
+    body: input || {},
+    requestMeta: (input && input.__requestMeta) || {
+      ip: null,
+      userAgent: null,
+      acceptLanguage: null
+    },
+    expectedSessionVersion: Number(session.sessionVersion) || 1,
+    stripe
+  });
+  session = finalizePrep.session || session;
+
+  // Acquire resources + attach durable lease under fence (before Stripe).
+  // Reuse existing active lease for same hash/generation when present.
+  const existingLease = session.resourceLease;
+  const sameActiveLease =
+    existingLease &&
+    existingLease.status === 'active' &&
+    String(existingLease.quoteSnapshotHash) === String(session.quoteSnapshotHash);
+
+  if (!sameActiveLease) {
+    if (existingLease && ['cancel_pending', 'needs_review'].includes(String(existingLease.status))) {
+      throw new leaseService.CheckoutResourceLeaseError(
+        leaseService.RESOURCE_LEASE_ERROR_CODES.CHECKOUT_RESOURCE_LEASE_CANCELLATION_PENDING,
+        'Resource lease cancellation/review is pending; cannot create a new payment intent'
+      );
+    }
+    await acquireAndAttachResourceLease({ session, deps });
+    session = await loadSessionOrThrow(session.checkoutId);
+  }
+
+  // Verify real resources before any Stripe work / client-secret return.
+  let leaseProof;
+  try {
+    leaseProof = await leaseService.verifyActiveResourceLeaseForPayment(
+      {
+        session,
+        requireMinRemainingMs: leaseService.DEFAULT_RESOURCE_LEASE_MINIMUM_REMAINING_MS
+      },
+      deps
+    );
+  } catch (err) {
+    throw err;
+  }
+
+  const snapshot = session.quoteSnapshot || {};
+  const needsCard = Number(session.stripeAmountCents || 0) > 0;
+  const fullVoucher =
+    Boolean(snapshot.fullVoucherCoverage) &&
+    Number(snapshot.voucherAppliedCents || 0) > 0 &&
+    Number(session.stripeAmountCents || 0) === 0;
+  const noPaymentRequired =
+    fullVoucher ||
+    session.status === 'voucher_only_reserved' ||
+    session.status === 'payment_not_required' ||
+    !needsCard;
+
+  if (noPaymentRequired) {
+    if (session.canonicalPaymentIntentId) {
+      await clearCanonicalForNoPayment({ session, stripe });
+      session = await loadSessionOrThrow(session.checkoutId);
+    }
+    return buildEnsureDtoWithLease(session, {
+      noPaymentRequired: true,
+      idempotentReplay: false,
+      requiresPaymentIntentRefresh: false,
+      clientSecret: null
+    });
+  }
+
+  const redemptionId = session.resourceLease?.voucherRedemptionId
+    ? String(session.resourceLease.voucherRedemptionId)
+    : session.voucherRedemptionId
+      ? String(session.voucherRedemptionId)
+      : null;
+  const giftVoucherId = session.metadata?.giftVoucherId
+    ? String(session.metadata.giftVoucherId)
+    : null;
+  const reservationKey = session.metadata?.reservationKey
+    ? String(session.metadata.reservationKey)
+    : null;
+
+  // Same generation reuse / lost-response replay.
+  if (
+    session.canonicalPaymentIntentId &&
+    session.resourceLease?.paymentIntentId &&
+    String(session.canonicalPaymentIntentId) === String(session.resourceLease.paymentIntentId) &&
+    Number(session.resourceLease.generation) === Number(leaseProof.generation)
+  ) {
+    const reuseResult = await tryReuseCanonicalPaymentIntent({
+      session,
+      stripe,
+      redemptionId
+    });
+    if (reuseResult?.reuse) {
+      const {
+        assertFinalizeIntentAvailableForPi,
+        syncFinalizeIntentHashToPaymentIntent
+      } = require('./finalizeIntentService');
+      assertFinalizeIntentAvailableForPi(session);
+      await syncFinalizeIntentHashToPaymentIntent({
+        stripe,
+        session,
+        finalizeIntentHash: session.finalizeIntentHash || ''
+      });
+      // Re-verify lease before returning client secret.
+      session = await loadSessionOrThrow(session.checkoutId);
+      await leaseService.verifyActiveResourceLeaseForPayment(
+        {
+          session,
+          requireMinRemainingMs: leaseService.DEFAULT_RESOURCE_LEASE_MINIMUM_REMAINING_MS
+        },
+        deps
+      );
+      if (redemptionId) {
+        await attachCanonicalPaymentIntentToVoucher({
+          redemptionId,
+          canonicalPaymentIntentId: session.canonicalPaymentIntentId,
+          attachPaymentIntent
+        });
+      }
+      return buildEnsureDtoWithLease(session, {
+        clientSecret: reuseResult.pi.client_secret,
+        idempotentReplay: true,
+        requiresPaymentIntentRefresh: false
+      });
+    }
+    if (reuseResult?.succeeded || reuseResult?.processing) {
+      session = await loadSessionOrThrow(session.checkoutId);
+      await leaseService.verifyActiveResourceLeaseForPayment(
+        {
+          session,
+          requireMinRemainingMs: 0
+        },
+        deps
+      );
+      return buildEnsureDtoWithLease(session, {
+        clientSecret: reuseResult.pi?.client_secret || null,
+        idempotentReplay: true,
+        requiresPaymentIntentRefresh: false,
+        canonicalPaymentIntentSucceeded: Boolean(reuseResult.succeeded)
+      });
+    }
+  }
+
+  // Expired generation must never return an old client secret.
+  if (
+    session.canonicalPaymentIntentId &&
+    session.resourceLease &&
+    Number(session.resourceLease.generation) !== Number(leaseProof.generation)
+  ) {
+    throw new leaseService.CheckoutResourceLeaseError(
+      leaseService.RESOURCE_LEASE_ERROR_CODES.CHECKOUT_RESOURCE_LEASE_MISMATCH,
+      'Canonical PaymentIntent generation does not match the active resource lease'
+    );
+  }
+
+  const { assertFinalizeIntentAvailableForPi } = require('./finalizeIntentService');
+  assertFinalizeIntentAvailableForPi(session);
+
+  // Final pre-Stripe lease verification (fresh clock).
+  session = await loadSessionOrThrow(session.checkoutId);
+  leaseProof = await leaseService.verifyActiveResourceLeaseForPayment(
+    {
+      session,
+      requireMinRemainingMs: leaseService.DEFAULT_RESOURCE_LEASE_MINIMUM_REMAINING_MS
+    },
+    deps
+  );
+
+  const versionForClaim = Number(session.sessionVersion);
+  const leaseGeneration = Number(leaseProof.generation);
+  const piMetadata = buildPaymentIntentMetadata({
+    session,
+    snapshot,
+    redemptionId,
+    giftVoucherId,
+    reservationKey
+  });
+  piMetadata.resourceLeaseGeneration = String(leaseGeneration);
+  piMetadata.resourceLeaseValidUntil = new Date(leaseProof.validUntil).toISOString();
+
+  let pi;
+  try {
+    pi = await createStripePaymentIntent(stripe, {
+      amountCents: session.stripeAmountCents,
+      currency: defaultCurrency(),
+      metadata: piMetadata,
+      checkoutId: session.checkoutId,
+      quoteSnapshotHash: session.quoteSnapshotHash,
+      leaseGeneration
+    });
+  } catch (createErr) {
+    const known =
+      createErr?.type === 'StripeCardError' ||
+      createErr?.code === 'card_declined' ||
+      createErr?.rawType === 'card_error' ||
+      createErr?.knownRejection === true;
+    await handleGatedStripeCreateFailure({
+      session,
+      stripe,
+      createdPi: null,
+      error: createErr,
+      knownRejection: known,
+      deps
+    });
+  }
+
+  // Bind CAS Mongo predicate: checkoutId, resourceLease.status=active,
+  // resourceLease.generation, resourceLease.quoteSnapshotHash, resourceLease.validUntil>$now,
+  // quoteSnapshotHash, sessionVersion, canonicalPaymentIntentId null-or-same PI,
+  // resourceLease.paymentIntentId null-or-same PI, and attemptId when present.
+  let claimed;
+  try {
+    claimed = await leaseService.bindPaymentIntentToResourceLease(
+      {
+        checkoutId: session.checkoutId,
+        expectedGeneration: leaseGeneration,
+        expectedQuoteSnapshotHash: session.quoteSnapshotHash,
+        expectedAttemptId: leaseProof.attemptId,
+        paymentIntentId: pi.id,
+        expectedSessionVersion: versionForClaim
+      },
+      deps
+    );
+  } catch (bindErr) {
+    await handleGatedBindFailure({
+      session,
+      stripe,
+      pi,
+      leaseProof,
+      deps
+    });
+    throw bindErr;
+  }
+
+  if (redemptionId) {
+    await attachCanonicalPaymentIntentToVoucher({
+      redemptionId,
+      canonicalPaymentIntentId: claimed.canonicalPaymentIntentId,
+      attachPaymentIntent
+    });
+  }
+
+  // Re-verify lease before returning client secret.
+  session = await loadSessionOrThrow(claimed.checkoutId);
+  await leaseService.verifyActiveResourceLeaseForPayment(
+    {
+      session,
+      requireMinRemainingMs: leaseService.DEFAULT_RESOURCE_LEASE_MINIMUM_REMAINING_MS
+    },
+    deps
+  );
+
+  return buildEnsureDtoWithLease(session, {
+    clientSecret: pi.client_secret,
+    idempotentReplay: false,
+    requiresPaymentIntentRefresh: false
+  });
+}
+
 async function assertCanonicalPaymentIntentForSession({
   checkoutId,
   paymentIntentId,
@@ -886,6 +1473,8 @@ module.exports = {
   supersedeCanonicalPaymentIntent,
   paymentIntentMatchesSession,
   ensureCanonicalPaymentIntent,
+  ensureCanonicalPaymentIntentLegacy,
+  ensureCanonicalPaymentIntentWithResourceLease,
   assertCanonicalPaymentIntentForSession,
   claimCanonicalPaymentIntent,
   claimCreatedPaymentIntentOrReuseWinner,

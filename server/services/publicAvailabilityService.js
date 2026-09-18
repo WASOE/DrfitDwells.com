@@ -13,6 +13,12 @@ const { BLOCKING_BOOKING_STATUSES } = require('./calendar/blockingStatusConstant
 const {
   isUnitCommerciallyAssignable
 } = require('./inventory/cabinTypeCommercialCapacity');
+const {
+  listBlockingUnitCheckoutClaims,
+  listBlockingCabinCheckoutClaims,
+  listBlockingUnitBookingOwnedClaims,
+  listBlockingCabinBookingOwnedClaims
+} = require('./inventory/checkoutNightClaimVisibility');
 
 const BLOCKING_BLOCK_TYPES = ['external_hold', 'manual_block', 'maintenance', 'reservation', 'checkout_hold'];
 
@@ -81,32 +87,60 @@ function normalizeGuestStayRange(checkInInput, checkOutInput) {
 
 /**
  * Single-cabin (cabinId) guest stay: bookings + blocks + legacy cabin.blockedDates.
+ * @param {object} [opts]
  */
-async function isSingleCabinGuestStayAvailable(cabin, checkInInput, checkOutInput) {
+async function isSingleCabinGuestStayAvailable(cabin, checkInInput, checkOutInput, opts = {}) {
   const { startDate, endDate } = normalizeGuestStayRange(checkInInput, checkOutInput);
 
   if (cabinLegacyBlockedDatesOverlap(cabin.blockedDates, startDate, endDate)) {
     return false;
   }
 
-  const [bookingCount, blockCount] = await Promise.all([
+  const [bookingCount, blockCount, checkoutClaimBlocks, bookingOwnedClaimBlocks] = await Promise.all([
     Booking.countDocuments({
       cabinId: cabin._id,
       status: { $in: BLOCKING_BOOKING_STATUSES },
       checkIn: { $lt: endDate },
       checkOut: { $gt: startDate }
     }),
-    countBlockingBlocksForSingleCabin(cabin._id, startDate, endDate)
+    countBlockingBlocksForSingleCabin(cabin._id, startDate, endDate),
+    listBlockingCabinCheckoutClaims({
+      cabinId: cabin._id,
+      startDate,
+      endDate,
+      now: opts.now,
+      excludeCheckoutId: opts.excludeCheckoutId,
+      excludeLeaseId: opts.excludeLeaseId
+    }),
+    listBlockingCabinBookingOwnedClaims({
+      cabinId: cabin._id,
+      startDate,
+      endDate,
+      excludeBookingId: opts.excludeBookingId
+    })
   ]);
 
-  return bookingCount === 0 && blockCount === 0;
+  return (
+    bookingCount === 0 &&
+    blockCount === 0 &&
+    checkoutClaimBlocks.length === 0 &&
+    bookingOwnedClaimBlocks.length === 0
+  );
 }
 
 /**
  * Multi-unit: one physical unit. Blocks keyed by parent Cabin + optional unitId.
  * @param {object|null} parentCabinHint - from findParentCabinForCabinType (avoid N+1 in loops)
+ * @param {object} [opts]
  */
-async function isUnitGuestStayAvailable(unitId, cabinTypeId, checkInInput, checkOutInput, parentCabinHint = null) {
+async function isUnitGuestStayAvailable(
+  unitId,
+  cabinTypeId,
+  checkInInput,
+  checkOutInput,
+  parentCabinHint = null,
+  opts = {}
+) {
   const unit = await Unit.findById(unitId);
   if (!unit || !unit.isActive) return false;
   if (String(unit.cabinTypeId) !== String(cabinTypeId)) return false;
@@ -123,17 +157,36 @@ async function isUnitGuestStayAvailable(unitId, cabinTypeId, checkInInput, check
     ? countBlockingBlocksForUnit(parentCabin._id, unit._id, startDate, endDate)
     : Promise.resolve(0);
 
-  const [bookingCount, blockCount] = await Promise.all([
+  const [bookingCount, blockCount, checkoutClaimBlocks, bookingOwnedClaimBlocks] = await Promise.all([
     Booking.countDocuments({
       unitId: unit._id,
       status: { $in: BLOCKING_BOOKING_STATUSES },
       checkIn: { $lt: endDate },
       checkOut: { $gt: startDate }
     }),
-    blockPromise
+    blockPromise,
+    listBlockingUnitCheckoutClaims({
+      unitId: unit._id,
+      startDate,
+      endDate,
+      now: opts.now,
+      excludeCheckoutId: opts.excludeCheckoutId,
+      excludeLeaseId: opts.excludeLeaseId
+    }),
+    listBlockingUnitBookingOwnedClaims({
+      unitId: unit._id,
+      startDate,
+      endDate,
+      excludeBookingId: opts.excludeBookingId
+    })
   ]);
 
-  if (bookingCount > 0 || blockCount > 0) {
+  if (
+    bookingCount > 0 ||
+    blockCount > 0 ||
+    checkoutClaimBlocks.length > 0 ||
+    bookingOwnedClaimBlocks.length > 0
+  ) {
     return false;
   }
 
@@ -143,7 +196,11 @@ async function isUnitGuestStayAvailable(unitId, cabinTypeId, checkInInput, check
     unitId: unit._id,
     cabinTypeId,
     checkIn: startDate,
-    checkOut: endDate
+    checkOut: endDate,
+    excludeBookingId: opts.excludeBookingId,
+    excludeCheckoutId: opts.excludeCheckoutId,
+    excludeLeaseId: opts.excludeLeaseId,
+    now: opts.now
   });
 }
 

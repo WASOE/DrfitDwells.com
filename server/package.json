@@ -80,6 +80,8 @@
     "start:gift-voucher-delivery-worker": "node scripts/runGiftVoucherDeliveryWorker.js",
     "start:booking-confirmation-delivery-worker": "node scripts/runBookingConfirmationDeliveryWorker.js",
     "test:booking-confirmation-delivery-worker": "node --test --test-concurrency=1 scripts/bookingConfirmationDeliveryWorker.test.cjs",
+    "start:accommodation-checkout-hold-expiry-worker": "node scripts/runAccommodationCheckoutHoldExpiryWorker.js",
+    "test:accommodation-checkout-hold-expiry-worker": "node --test --test-concurrency=1 scripts/accommodationCheckoutHoldExpiryWorker.test.cjs",
     "maintenance:backfill-property-kind": "node scripts/backfillPropertyKind.js",
     "maintenance:gma-arrival-metadata": "node scripts/gmaArrivalMetadataBackfill.cjs",
     "maintenance:gma-approve-cabin-arrival-templates": "node scripts/gmaApproveCabinArrivalTemplates.cjs",

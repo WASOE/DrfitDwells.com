@@ -9,12 +9,19 @@
  *
  * Unallocated bookings consume anonymous slots against free physical units.
  * Binding: docs/stay-change-implementation-plan.md — I6 pooled capacity.
+ *
+ * B8F1B/B8F4A: checkout-owned AND booking-owned UnitNightClaims remove physical
+ * units from the free set (booking-owned claims block even before Booking exists).
  */
 
 const Unit = require('../../models/Unit');
 const Booking = require('../../models/Booking');
 const { normalizeExclusiveDateRange } = require('../../utils/dateTime');
 const { BLOCKING_BOOKING_STATUSES } = require('../calendar/blockingStatusConstants');
+const {
+  listBlockingUnitCheckoutClaims,
+  listBlockingUnitBookingOwnedClaims
+} = require('./checkoutNightClaimVisibility');
 
 function rangesOverlap(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && aEnd > bStart;
@@ -35,7 +42,10 @@ async function evaluateCabinTypeCommercialCapacity({
   checkIn,
   checkOut,
   excludeBookingId = null,
-  excludeUnitId = null
+  excludeUnitId = null,
+  excludeCheckoutId = null,
+  excludeLeaseId = null,
+  now = null
 } = {}) {
   if (!cabinTypeId) {
     throw new Error('cabinTypeId is required');
@@ -89,6 +99,35 @@ async function evaluateCabinTypeCommercialCapacity({
     allocatedUnitIds.add(String(excludeUnitId));
   }
 
+  if (unitIdSet.size > 0) {
+    const [checkoutBlocking, bookingOwnedBlocking] = await Promise.all([
+      listBlockingUnitCheckoutClaims({
+        unitIds: [...unitIdSet],
+        startDate: normalized.startDate,
+        endDate: normalized.endDate,
+        now,
+        excludeCheckoutId,
+        excludeLeaseId
+      }),
+      listBlockingUnitBookingOwnedClaims({
+        unitIds: [...unitIdSet],
+        startDate: normalized.startDate,
+        endDate: normalized.endDate,
+        excludeBookingId
+      })
+    ]);
+    for (const row of checkoutBlocking) {
+      if (row.resourceId && unitIdSet.has(row.resourceId)) {
+        allocatedUnitIds.add(row.resourceId);
+      }
+    }
+    for (const row of bookingOwnedBlocking) {
+      if (row.resourceId && unitIdSet.has(row.resourceId)) {
+        allocatedUnitIds.add(row.resourceId);
+      }
+    }
+  }
+
   const freePhysicalUnitIds = [...unitIdSet].filter((id) => !allocatedUnitIds.has(id));
   const commerciallyAvailableSlots = Math.max(0, freePhysicalUnitIds.length - unallocatedCount);
 
@@ -110,13 +149,19 @@ async function isUnitCommerciallyAssignable({
   cabinTypeId,
   checkIn,
   checkOut,
-  excludeBookingId = null
+  excludeBookingId = null,
+  excludeCheckoutId = null,
+  excludeLeaseId = null,
+  now = null
 } = {}) {
   const capacity = await evaluateCabinTypeCommercialCapacity({
     cabinTypeId,
     checkIn,
     checkOut,
-    excludeBookingId
+    excludeBookingId,
+    excludeCheckoutId,
+    excludeLeaseId,
+    now
   });
   if (capacity.commerciallyAvailableSlots <= 0) return false;
   return capacity.freePhysicalUnitIds.includes(String(unitId));
