@@ -3483,4 +3483,3 @@ describe('B8F4A Correction 1 — converted replay (minimal)', () => {
     assert.equal(typeof proveFullVoucherPaidAuthority, 'function');
   });
 });
-

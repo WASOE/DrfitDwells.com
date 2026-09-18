@@ -1,8 +1,8 @@
 # AccommodationCheckoutLease released-cleanup index (v2) runbook
 
-**Batch:** B8F5C  
-**Index name:** `accommodationCheckoutLease_released_cleanup_v2`  
-**Collection:** `accommodationcheckoutleases`  
+**Batch:** B8F5C
+**Index name:** `accommodationCheckoutLease_released_cleanup_v2`
+**Collection:** `accommodationcheckoutleases`
 **Model:** `AccommodationCheckoutLease`
 
 ## Authority separation (read first)
@@ -45,8 +45,8 @@ Required index definition (must match model + worker):
 }
 ```
 
-Name: `accommodationCheckoutLease_released_cleanup_v2`  
-Options: **none** of `unique`, `sparse`, TTL (`expireAfterSeconds`), `partialFilterExpression`, `collation`, or `hidden: true`.  
+Name: `accommodationCheckoutLease_released_cleanup_v2`
+Options: **none** of `unique`, `sparse`, TTL (`expireAfterSeconds`), `partialFilterExpression`, `collation`, or `hidden: true`.
 `hidden` must be **missing** or exact boolean `false`. Any other value (`true`, `null`, `0`, `1`, strings, objects, arrays) is `OPTION_CONFLICT`.
 
 An older `accommodationCheckoutLease_released_cleanup_v1` (if present) is **informational only** and does **not** satisfy v2 readiness. Do not assume it should be dropped.
