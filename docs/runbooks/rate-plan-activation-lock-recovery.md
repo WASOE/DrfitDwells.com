@@ -1,7 +1,7 @@
 # RatePlan activation-lock recovery runbook
 
-**Batch:** RP5  
-**Script:** `server/scripts/ratePlanActivationLockRecovery.cjs`  
+**Batch:** RP5
+**Script:** `server/scripts/ratePlanActivationLockRecovery.cjs`
 **Lock:** collection `rateplanactivationlocks`, `_id` `seasonal-rateplan-activation`
 
 ## Authority separation (read first)
