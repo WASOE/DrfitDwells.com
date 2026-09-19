@@ -150,6 +150,16 @@ export const promoAdminAPI = {
   update: (id, data) => api.patch(`/admin/promo-codes/${id}`, data)
 };
 
+/** RP2 RatePlan management API (ops UI). Uses admin JWT via interceptor. */
+export const ratePlanAdminAPI = {
+  list: (params = {}) => api.get('/admin/rate-plans', { params }),
+  create: (data) => api.post('/admin/rate-plans', data),
+  update: (id, data) => api.patch(`/admin/rate-plans/${id}`, data),
+  clone: (id) => api.post(`/admin/rate-plans/${id}/clone`, {}),
+  activate: (id, data) => api.post(`/admin/rate-plans/${id}/activate`, data),
+  retire: (id, data) => api.post(`/admin/rate-plans/${id}/retire`, data)
+};
+
 export const reviewAPI = {
   getByCabinId: (cabinId, params) => {
     const queryParams = new URLSearchParams(params).toString();

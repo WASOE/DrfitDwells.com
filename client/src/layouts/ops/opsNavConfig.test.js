@@ -15,7 +15,7 @@ import {
 
 describe('opsNavConfig', () => {
   it('lists desktop nav items in OpsLayout order', () => {
-    expect(OPS_NAV_ITEMS).toHaveLength(22);
+    expect(OPS_NAV_ITEMS).toHaveLength(23);
     expect(OPS_NAV_ITEMS.map((item) => item.to)).toEqual([
       '/ops',
       '/ops/calendar',
@@ -24,6 +24,7 @@ describe('opsNavConfig', () => {
       '/ops/reservations',
       '/ops/payments',
       '/ops/promo-codes',
+      '/ops/rate-plans',
       '/ops/creator-partners',
       '/ops/sync',
       '/ops/cabins',
@@ -109,6 +110,7 @@ describe('opsNavConfig', () => {
         '/ops/reviews',
         '/ops/payments',
         '/ops/promo-codes',
+        '/ops/rate-plans',
         '/ops/gift-vouchers',
         '/ops/cabins',
         '/ops/creator-partners',
@@ -164,6 +166,7 @@ describe('opsNavConfig', () => {
     it('matches finance routes including voucher detail', () => {
       expect(getActiveOpsMobileTabId('/ops/payments')).toBe('finance');
       expect(getActiveOpsMobileTabId('/ops/promo-codes')).toBe('finance');
+      expect(getActiveOpsMobileTabId('/ops/rate-plans')).toBe('finance');
       expect(getActiveOpsMobileTabId('/ops/gift-vouchers')).toBe('finance');
       expect(getActiveOpsMobileTabId('/ops/gift-vouchers/v-1')).toBe('finance');
     });
