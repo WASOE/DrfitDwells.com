@@ -29,6 +29,7 @@ const {
   deleteCabinImage
 } = require('../services/cabins/cabinMediaService');
 const adminPromoRoutes = require('./adminPromoRoutes');
+const adminRatePlanRoutes = require('./adminRatePlanRoutes');
 
 const router = express.Router();
 
@@ -63,6 +64,7 @@ router.use((req, res, next) => {
 });
 
 router.use('/promo-codes', adminPromoRoutes);
+router.use('/rate-plans', adminRatePlanRoutes);
 
 // GET /api/admin/bookings - Get bookings with filters and pagination
 router.get('/bookings', getBookings);
