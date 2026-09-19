@@ -11,6 +11,7 @@ import ReviewsSection from '../components/reviews/ReviewsSection';
 import MapArrival from '../components/MapArrival';
 import StickyBookingBar from '../components/StickyBookingBar';
 import { StayLodgingPriceBlock } from '../components/booking/StayLodgingPriceBlock';
+import { effectiveDisplayNightlyFromStayTotal } from '../utils/lodgingPrice';
 import Seo from '../components/Seo';
 import { daysBetweenDateOnly, parseDateOnlyLocal } from '../utils/dateOnly';
 import { trackFunnelEvent } from '../tracking/funnel';
@@ -214,6 +215,16 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
             }
           })()
         : null;
+
+  const ratePlanDisplayNightly =
+    isRatePlanPrice && serverLodgingTotal != null && displayNights != null
+      ? effectiveDisplayNightlyFromStayTotal(serverLodgingTotal, displayNights)
+      : null;
+
+  const displayLodgingNightly =
+    isExactStayPrice && !isRatePlanPrice && cabinType?.pricePerNight != null
+      ? Number(cabinType.pricePerNight)
+      : ratePlanDisplayNightly;
 
   const displayGrandTotal =
     pricingError || serverLodgingTotal == null
@@ -662,11 +673,9 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
                       displayNights != null ? (
                         <p className="text-sm text-gray-500 mt-0.5">
                           {t('modal.nights', { count: displayNights })}
-                          {isExactStayPrice && !isRatePlanPrice && cabinType?.pricePerNight
-                            ? ` · ${t('search.pricePerNight', { price: cabinType.pricePerNight.toLocaleString() })}`
-                            : isRatePlanPrice
-                              ? ` · ${t('search.exactStayPriceHint', { defaultValue: 'Exact total for your selected dates and guests' })}`
-                              : ''}
+                          {displayLodgingNightly != null
+                            ? ` · ${t('search.pricePerNight', { price: Number(displayLodgingNightly).toLocaleString() })}`
+                            : ''}
                         </p>
                       ) : null
                     }
@@ -808,11 +817,9 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
                       footnote={
                         <p className="text-sm text-gray-500 mt-0.5">
                           {t('modal.nights', { count: displayNights })}
-                          {isExactStayPrice && !isRatePlanPrice && cabinType?.pricePerNight
-                            ? ` · ${t('search.pricePerNight', { price: cabinType.pricePerNight.toLocaleString() })}`
-                            : isRatePlanPrice
-                              ? ` · ${t('search.exactStayPriceHint', { defaultValue: 'Exact total for your selected dates and guests' })}`
-                              : ''}
+                          {displayLodgingNightly != null
+                            ? ` · ${t('search.pricePerNight', { price: Number(displayLodgingNightly).toLocaleString() })}`
+                            : ''}
                         </p>
                       }
                     />
@@ -967,8 +974,8 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
         subLabel={
           displayGrandTotal != null && displayNights != null
             ? `${t('modal.nights', { count: displayNights })}${
-                isExactStayPrice && !isRatePlanPrice && cabinType?.pricePerNight
-                  ? ` · ${t('search.pricePerNight', { price: cabinType.pricePerNight.toLocaleString() })}`
+                displayLodgingNightly != null
+                  ? ` · ${t('search.pricePerNight', { price: Number(displayLodgingNightly).toLocaleString() })}`
                   : ''
               }`
             : showStartingFromPrice

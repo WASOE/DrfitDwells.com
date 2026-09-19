@@ -29,7 +29,10 @@ import {
   getSearchCardStatus,
   resolvePublicPricingErrorMessage
 } from '../utils/searchCardStatus';
-import { calculateNightlyLodgingRate } from '../utils/lodgingPrice';
+import {
+  calculateNightlyLodgingRate,
+  effectiveDisplayNightlyFromStayTotal
+} from '../utils/lodgingPrice';
 import { resolveListingStaySlug } from '../utils/stayRoutes';
 
 const SearchBar = lazy(() => import('../components/SearchBar'));
@@ -130,6 +133,33 @@ function formatStaySuggestionRange(checkIn, checkOut, siteLanguage) {
   if (!inDate || !outDate) return '';
   const loc = getDateFnsLocale(siteLanguage);
   return `${format(inDate, 'd MMM', { locale: loc })} - ${format(outDate, 'd MMM', { locale: loc })}`;
+}
+
+
+/** Display-only search-card nightly for exact_stay / RatePlan results. */
+export function resolveSearchCardEffectiveNightly(cabin, adults = 0, children = 0) {
+  const isExactStayPrice = cabin?.pricingMode === 'exact_stay' && cabin?.totalPrice != null;
+  if (!isExactStayPrice) return null;
+  if (cabin.pricingSource === 'rate_plan') {
+    return effectiveDisplayNightlyFromStayTotal(cabin.totalPrice, cabin.totalNights);
+  }
+  return calculateNightlyLodgingRate(cabin, adults, children);
+}
+
+export function clampSearchCardDescription(text, maxLength = 148) {
+  const raw = String(text || '').replace(/\s+/g, ' ').trim();
+  if (raw.length <= maxLength) return raw;
+  let cut = raw.slice(0, maxLength);
+  const sentenceBreak = cut.lastIndexOf('. ');
+  const wordBreak = cut.lastIndexOf(' ');
+  if (sentenceBreak >= Math.floor(maxLength * 0.55)) {
+    cut = cut.slice(0, sentenceBreak + 1);
+  } else if (wordBreak >= Math.floor(maxLength * 0.55)) {
+    cut = cut.slice(0, wordBreak);
+  }
+  cut = cut.replace(/[\s.,;:!?…]+$/u, '');
+  cut = cut.replace(/\s+\b(and|or|the|a|an|of|to|for|with|in|on)\s*$/i, '');
+  return `${cut}…`;
 }
 
 const SearchResults = () => {
@@ -631,14 +661,15 @@ const SearchResults = () => {
                 (currentSearchParams.adults || 0) + (currentSearchParams.children || 0);
               const isExactStayPrice = cabin.pricingMode === 'exact_stay' && cabin.totalPrice != null;
               const isRatePlanPrice = cabin.pricingSource === 'rate_plan';
-              const effectiveNightly =
-                isExactStayPrice && !isRatePlanPrice
-                  ? calculateNightlyLodgingRate(
+              const effectiveNightly = isExactStayPrice
+                ? isRatePlanPrice
+                  ? effectiveDisplayNightlyFromStayTotal(cabin.totalPrice, cabin.totalNights)
+                  : calculateNightlyLodgingRate(
                       cabin,
                       currentSearchParams.adults,
                       currentSearchParams.children
                     )
-                  : null;
+                : null;
               const suggestionKey = getListingSuggestionKey(cabin);
               const isDateUnavailable = !isBookable && status.reasonCode === 'dates';
               const dateSuggestion = isDateUnavailable
@@ -734,8 +765,8 @@ const SearchResults = () => {
                     <span className="w-1 h-1 bg-sage rounded-full mr-3" aria-hidden="true"></span>
                     {petPolicyLabel}
                   </p>
-                  <p className="text-body text-gray-600 mb-8 line-clamp-3 flex-grow">
-                    {cabin.description}
+                  <p className="text-body text-gray-600 mb-8 flex-grow">
+                    {clampSearchCardDescription(cabin.description)}
                   </p>
                   <div className="border-t border-gray-200 pt-6 mt-auto">
                     <div className="flex justify-between items-start gap-4 mb-6">
@@ -784,14 +815,9 @@ const SearchResults = () => {
                                   price: Number(effectiveNightly).toLocaleString()
                                 })}
                               </p>
-                            ) : isRatePlanPrice ? (
-                              <p className="text-sm text-gray-500 font-light">
-                                {t('search.exactStayPriceHint', {
-                                  defaultValue: 'Exact total for your selected dates and guests'
-                                })}
-                              </p>
                             ) : null}
                             {effectiveNightly != null &&
+                              !isRatePlanPrice &&
                               (cabin.pricingModel || 'per_night') === 'base_plus_extra' &&
                               humanGuests <= (cabin.includedGuests || 0) && (
                                 <p className="text-xs text-gray-500 font-light">

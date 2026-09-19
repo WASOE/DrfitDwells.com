@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import '../i18n/ns/booking';
 import { useSiteLanguage } from '../hooks/useSiteLanguage';
-import { cabinAPI, bookingAPI } from '../services/api';
+import { cabinAPI, bookingAPI, availabilityAPI } from '../services/api';
 import { useBookingContext } from '../context/BookingContext';
 import { useBookingSearch } from '../context/BookingSearchContext';
 import { useBookingNavigation } from '../hooks/useBookingNavigation';
@@ -26,7 +26,11 @@ import {
   buildStayLodgingJsonLd
 } from '../utils/staySeo';
 import { resolveStayAmenities, resolveStayHighlights } from '../utils/stayPageContent';
-import { calculateBaseLodgingPrice, calculateNightlyLodgingRate } from '../utils/lodgingPrice';
+import {
+  calculateBaseLodgingPrice,
+  calculateNightlyLodgingRate,
+  effectiveDisplayNightlyFromStayTotal
+} from '../utils/lodgingPrice';
 import { isStayBookingHash, scrollToVisibleBookingAnchor } from '../utils/stayBookingHashScroll';
 
 // Constants
@@ -37,6 +41,194 @@ const DEFAULT_EXPERIENCES = [
   { key: 'horse_riding', name: 'Horse riding', price: 70, currency: 'BGN', unit: 'per_guest', active: true, sortOrder: 1 },
   { key: 'jeep_transfer', name: 'Jeep transfer', price: 60, currency: 'BGN', unit: 'flat_per_stay', active: true, sortOrder: 2 },
 ];
+
+
+/** Request key so availability pricing is never reused across dates/guests/locale. */
+/** Normalize promo for request identity — empty/whitespace → '' (omit from API). */
+export function normalizeCabinDetailsPromoCode(promoCode) {
+  return String(promoCode ?? '').trim().toUpperCase();
+}
+
+export function buildCabinAvailabilityRequestKey({
+  cabinId,
+  checkIn,
+  checkOut,
+  adults,
+  children,
+  locale,
+  promoCode = ''
+}) {
+  return [
+    String(cabinId || ''),
+    String(checkIn || ''),
+    String(checkOut || ''),
+    String(Number(adults) || 0),
+    String(Number(children) || 0),
+    String(locale || 'en'),
+    normalizeCabinDetailsPromoCode(promoCode)
+  ].join('|');
+}
+
+function isNonNegativeFiniteNumber(value) {
+  if (value == null || value === '') return false;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0;
+}
+
+function isPositiveIntegerNights(value) {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0;
+}
+
+/**
+ * CabinDetails lodging display authority for the current exact request.
+ * Display-only — never used for quoting, checkout, or PaymentIntents.
+ *
+ * Order:
+ * 1. Successful server quote total
+ * 2. Exact-request availability RatePlan total
+ * 3. Exact-request availability entity total (explicit entity only)
+ * 4. Neutral price-unavailable (never rebuild RatePlan stays from entity nightly)
+ */
+export function resolveCabinDetailsLodgingPresentation({
+  quoteTotal = null,
+  quoteBaseLodgingPrice = null,
+  experienceTotal = 0,
+  entityLodgingTotal = null,
+  entityNightly = null,
+  entityTotalNights = null,
+  availability = null,
+  availabilityRequestKey = null,
+  currentRequestKey = null
+}) {
+  const experiences = Number(experienceTotal) || 0;
+  const availabilityMatches =
+    Boolean(availability) &&
+    availabilityRequestKey != null &&
+    currentRequestKey != null &&
+    availabilityRequestKey === currentRequestKey;
+
+  const stayUnavailable = availabilityMatches && availability?.available === false;
+  const bookingDisabled = stayUnavailable;
+
+  const withExperiences = (lodgingTotal) => {
+    const lodging = Number(lodgingTotal);
+    if (!Number.isFinite(lodging)) return null;
+    return Math.round((lodging + experiences) * 100) / 100;
+  };
+
+  // 1) Successful quote
+  if (quoteTotal != null && isNonNegativeFiniteNumber(quoteTotal)) {
+    const quoteUsesNonEntity =
+      entityLodgingTotal != null &&
+      Math.abs(Number(quoteTotal) - Number(entityLodgingTotal)) > 0.005;
+    const lodgingTotal =
+      quoteBaseLodgingPrice != null
+        ? Number(quoteBaseLodgingPrice)
+        : Number(quoteTotal) - experiences;
+    const nights = isPositiveIntegerNights(entityTotalNights)
+      ? Number(entityTotalNights)
+      : null;
+    const displayNightly = quoteUsesNonEntity
+      ? effectiveDisplayNightlyFromStayTotal(lodgingTotal, nights)
+      : entityNightly;
+    return {
+      lodgingTotal: Number(lodgingTotal),
+      displayGrandTotal: Number(quoteTotal),
+      displayNightly,
+      displayNights: nights,
+      pricingSource: quoteUsesNonEntity ? 'rate_plan' : 'entity',
+      usesNonEntityLodging: quoteUsesNonEntity,
+      stayUnavailable,
+      bookingDisabled,
+      authority: 'quote'
+    };
+  }
+
+  // 2–3) Exact-request availability (never stale)
+  if (availabilityMatches) {
+    const source = availability.pricingSource;
+    const totalPrice = availability.totalPrice;
+    const totalNights = availability.totalNights;
+
+    if (source === 'rate_plan') {
+      if (isNonNegativeFiniteNumber(totalPrice) && isPositiveIntegerNights(totalNights)) {
+        const lodgingTotal = Number(totalPrice);
+        return {
+          lodgingTotal,
+          displayGrandTotal: withExperiences(lodgingTotal),
+          displayNightly: effectiveDisplayNightlyFromStayTotal(lodgingTotal, totalNights),
+          displayNights: Number(totalNights),
+          pricingSource: 'rate_plan',
+          usesNonEntityLodging: true,
+          stayUnavailable,
+          bookingDisabled,
+          authority: 'availability_rate_plan'
+        };
+      }
+      // Malformed RatePlan availability: fail closed — never entity nightly for this request
+      return {
+        lodgingTotal: null,
+        displayGrandTotal: null,
+        displayNightly: null,
+        displayNights: isPositiveIntegerNights(entityTotalNights)
+          ? Number(entityTotalNights)
+          : null,
+        pricingSource: 'rate_plan',
+        usesNonEntityLodging: true,
+        stayUnavailable,
+        bookingDisabled,
+        authority: 'unavailable_neutral'
+      };
+    }
+
+    if (source === 'entity') {
+      if (isNonNegativeFiniteNumber(totalPrice) && isPositiveIntegerNights(totalNights)) {
+        const lodgingTotal = Number(totalPrice);
+        return {
+          lodgingTotal,
+          displayGrandTotal: withExperiences(lodgingTotal),
+          displayNightly: entityNightly,
+          displayNights: Number(totalNights),
+          pricingSource: 'entity',
+          usesNonEntityLodging: false,
+          stayUnavailable,
+          bookingDisabled,
+          authority: 'availability_entity'
+        };
+      }
+      return {
+        lodgingTotal: null,
+        displayGrandTotal: null,
+        displayNightly: null,
+        displayNights: isPositiveIntegerNights(entityTotalNights)
+          ? Number(entityTotalNights)
+          : null,
+        pricingSource: 'entity',
+        usesNonEntityLodging: false,
+        stayUnavailable,
+        bookingDisabled,
+        authority: 'unavailable_neutral'
+      };
+    }
+  }
+
+  // 4) Neutral — do not invent a winter price from entity nightly when quote/availability
+  //    did not authorize an entity total for this exact request.
+  return {
+    lodgingTotal: null,
+    displayGrandTotal: null,
+    displayNightly: null,
+    displayNights: isPositiveIntegerNights(entityTotalNights)
+      ? Number(entityTotalNights)
+      : null,
+    pricingSource: null,
+    usesNonEntityLodging: false,
+    stayUnavailable,
+    bookingDisabled,
+    authority: 'neutral'
+  };
+}
 
 const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
   // ===== A) Router & Context hooks (always first) =====
@@ -64,6 +256,10 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
   const [isSaved, setIsSaved] = useState(false);
   const [selectedExpKeys, setSelectedExpKeys] = useState(new Set());
   const [cabinQuote, setCabinQuote] = useState(null);
+  /** Exact-request availability row for this cabin (never reuse across requests). */
+  const [stayAvailability, setStayAvailability] = useState(null);
+  const [stayAvailabilityKey, setStayAvailabilityKey] = useState(null);
+  const [stayAvailabilityLoading, setStayAvailabilityLoading] = useState(false);
 
   // ===== C) All Refs (declare ALL unconditionally) =====
   const lightboxCloseBtnRef = useRef(null);
@@ -366,6 +562,84 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
     experienceKeysSorted
   ]);
 
+  const availabilityRequestKey = useMemo(
+    () =>
+      cabin?._id && searchCriteria.checkIn && searchCriteria.checkOut
+        ? buildCabinAvailabilityRequestKey({
+            cabinId: cabin._id,
+            checkIn: searchCriteria.checkIn,
+            checkOut: searchCriteria.checkOut,
+            adults: searchCriteria.adults,
+            children: searchCriteria.children,
+            locale: siteLanguage,
+            promoCode: searchCriteria.promoCode
+          })
+        : null,
+    [
+      cabin?._id,
+      searchCriteria.checkIn,
+      searchCriteria.checkOut,
+      searchCriteria.adults,
+      searchCriteria.children,
+      searchCriteria.promoCode,
+      siteLanguage
+    ]
+  );
+
+  // Exact-request availability for display authority when quote is unavailable.
+  useEffect(() => {
+    if (!availabilityRequestKey || !cabin?._id) {
+      setStayAvailability(null);
+      setStayAvailabilityKey(null);
+      setStayAvailabilityLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const requestKey = availabilityRequestKey;
+    setStayAvailabilityLoading(true);
+    (async () => {
+      try {
+        const availabilityQuery = {
+          checkIn: searchCriteria.checkIn,
+          checkOut: searchCriteria.checkOut,
+          adults: searchCriteria.adults,
+          children: searchCriteria.children,
+          pets: 0
+        };
+        // Same normalized promo as quote — omit when empty/whitespace.
+        if (searchCriteria.promoCode) {
+          availabilityQuery.promoCode = searchCriteria.promoCode;
+        }
+        const res = await availabilityAPI.search(availabilityQuery);
+        if (cancelled) return;
+        const cabins = res?.data?.data?.cabins || res?.data?.cabins || [];
+        const row = Array.isArray(cabins)
+          ? cabins.find((c) => String(c?._id) === String(cabin._id))
+          : null;
+        setStayAvailability(row || null);
+        setStayAvailabilityKey(requestKey);
+      } catch {
+        if (!cancelled) {
+          setStayAvailability(null);
+          setStayAvailabilityKey(requestKey);
+        }
+      } finally {
+        if (!cancelled) setStayAvailabilityLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    availabilityRequestKey,
+    cabin?._id,
+    searchCriteria.checkIn,
+    searchCriteria.checkOut,
+    searchCriteria.adults,
+    searchCriteria.children,
+    searchCriteria.promoCode
+  ]);
+
   // Calculate pricing - memoized
   const pricing = useMemo(() => {
     if (!cabin || !searchCriteria.checkIn || !searchCriteria.checkOut || !cabin.pricePerNight) {
@@ -418,12 +692,38 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
         })
       : null;
 
-  const displayGrandTotal =
-    cabinQuote?.totalPrice != null
-      ? cabinQuote.totalPrice
-      : pricing
-        ? pricing.totalPrice + (experienceTotal || 0)
-        : null;
+  const lodgingPresentation = useMemo(
+    () =>
+      resolveCabinDetailsLodgingPresentation({
+        quoteTotal: cabinQuote?.totalPrice,
+        quoteBaseLodgingPrice: cabinQuote?.baseLodgingPrice,
+        experienceTotal: experienceTotal || 0,
+        entityLodgingTotal: pricing?.totalPrice,
+        entityNightly: effectiveNightlyRate,
+        entityTotalNights: pricing?.totalNights,
+        availability: stayAvailability,
+        availabilityRequestKey: stayAvailabilityKey,
+        currentRequestKey: availabilityRequestKey
+      }),
+    [
+      cabinQuote?.totalPrice,
+      cabinQuote?.baseLodgingPrice,
+      experienceTotal,
+      pricing?.totalPrice,
+      pricing?.totalNights,
+      effectiveNightlyRate,
+      stayAvailability,
+      stayAvailabilityKey,
+      availabilityRequestKey
+    ]
+  );
+
+  const displayGrandTotal = lodgingPresentation.displayGrandTotal;
+  const displayNightlyRate = lodgingPresentation.displayNightly;
+  const displayStayNights = lodgingPresentation.displayNights ?? pricing?.totalNights ?? null;
+  const quoteUsesNonEntityLodging = lodgingPresentation.usesNonEntityLodging;
+  const stayRequestUnavailable = lodgingPresentation.stayUnavailable;
+  const bookingActionDisabled = lodgingPresentation.bookingDisabled;
 
   const quoteGrandBeforePromo =
     !cabinQuote?.promo?.invalidReason &&
@@ -1166,6 +1466,9 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
         {/* Quick Book Strip — mobile only; desktop has single booking card on right */}
         <div
           data-booking-anchor
+          data-stay-unavailable={stayRequestUnavailable ? 'true' : 'false'}
+          data-pricing-source={lodgingPresentation.pricingSource || ''}
+          data-availability-loading={stayAvailabilityLoading ? 'true' : 'false'}
           className="mt-6 p-4 md:p-5 bg-gradient-to-br from-sage/10 via-white to-sage/5 border border-sage/20 rounded-xl shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 lg:hidden scroll-mt-[var(--header-offset,5.5rem)]"
         >
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
@@ -1195,17 +1498,26 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
                       pricing ? (
                         <div className="mt-0.5 space-y-0.5">
                           <p className="text-sm text-gray-500">
-                            {t('modal.nights', { count: pricing.totalNights })}
-                            {effectiveNightlyRate != null &&
-                              ` · ${t('search.pricePerNight', { price: Number(effectiveNightlyRate).toLocaleString() })}`}
+                            {t('modal.nights', { count: displayStayNights })}
+                            {displayNightlyRate != null &&
+                              ` · ${t('search.pricePerNight', { price: Number(displayNightlyRate).toLocaleString() })}`}
                           </p>
-                          {basePlusExtraHint && (
+                          {basePlusExtraHint && !quoteUsesNonEntityLodging && (
                             <p className="text-xs text-gray-500">{basePlusExtraHint}</p>
                           )}
                         </div>
                       ) : null
                     }
                   />
+                </div>
+              ) : pricing ? (
+                <div className="mt-0.5" data-testid="cabin-details-pricing-unavailable-mobile">
+                  <p className="text-sm text-stone-600">
+                    {t('search.pricingUnavailable', {
+                      defaultValue:
+                        'Price unavailable for these dates. Try different dates or contact us.'
+                    })}
+                  </p>
                 </div>
               ) : cabin.pricePerNight ? (
                 <div className="mt-0.5">
@@ -1233,12 +1545,21 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
           <div className="flex-shrink-0">
             <button
               type="button"
-              onClick={goToConfirmOrOpenDates}
-              className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#81887A] text-white font-semibold text-sm hover:opacity-95 transition-all shadow-sm hover:shadow-md min-h-[44px] touch-manipulation"
+              onClick={bookingActionDisabled ? undefined : goToConfirmOrOpenDates}
+              disabled={bookingActionDisabled}
+              data-testid="cabin-details-booking-cta-mobile"
+              aria-disabled={bookingActionDisabled ? 'true' : 'false'}
+              className={`w-full sm:w-auto px-6 py-3 rounded-xl bg-[#81887A] text-white font-semibold text-sm transition-all shadow-sm min-h-[44px] touch-manipulation ${
+                bookingActionDisabled
+                  ? 'opacity-50 cursor-not-allowed'
+                  : 'hover:opacity-95 hover:shadow-md'
+              }`}
             >
-              {searchCriteria.checkIn && searchCriteria.checkOut
-                ? t('details.continueToPayment')
-                : t('modal.footerSelectDates')}
+              {bookingActionDisabled
+                ? t('search.unavailableForDates')
+                : searchCriteria.checkIn && searchCriteria.checkOut
+                  ? t('details.continueToPayment')
+                  : t('modal.footerSelectDates')}
             </button>
           </div>
         </div>
@@ -1335,12 +1656,15 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
         {/* RIGHT: booking card — starts below gallery, aligns with content row (desktop only) */}
         <aside
           data-booking-anchor
+          data-stay-unavailable={stayRequestUnavailable ? 'true' : 'false'}
+          data-pricing-source={lodgingPresentation.pricingSource || ''}
+          data-availability-loading={stayAvailabilityLoading ? 'true' : 'false'}
           className="cabin-hero-right hidden lg:block scroll-mt-[var(--header-offset,5.5rem)]"
           aria-label="Reservation"
         >
           <div className="booking-card-compact rounded-2xl border border-gray-200/80 shadow-sm bg-white p-5">
             {/* Price as anchor — not "Booking Summary" */}
-            {pricing ? (
+            {pricing && displayGrandTotal != null ? (
               <>
                 <div className="mb-4">
                   <StayLodgingPriceBlock
@@ -1363,11 +1687,11 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
                     footnote={
                       <div className="mt-0.5 space-y-0.5">
                         <p className="text-sm text-gray-500">
-                          {t('modal.nights', { count: pricing.totalNights })}
-                          {effectiveNightlyRate != null &&
-                            ` · ${t('search.pricePerNight', { price: Number(effectiveNightlyRate).toLocaleString() })}`}
+                          {t('modal.nights', { count: displayStayNights })}
+                          {displayNightlyRate != null &&
+                              ` · ${t('search.pricePerNight', { price: Number(displayNightlyRate).toLocaleString() })}`}
                         </p>
-                        {basePlusExtraHint && (
+                        {basePlusExtraHint && !quoteUsesNonEntityLodging && (
                           <p className="text-xs text-gray-500">{basePlusExtraHint}</p>
                         )}
                       </div>
@@ -1471,12 +1795,43 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
                 <button
                   type="button"
                   data-booking-primary-cta="true"
-                  onClick={goToConfirmOrOpenDates}
-                  className="w-full mt-5 py-3.5 rounded-xl bg-[#81887A] text-white font-semibold text-sm hover:opacity-95 transition-all shadow-sm"
+                  data-testid="cabin-details-booking-cta"
+                  onClick={bookingActionDisabled ? undefined : goToConfirmOrOpenDates}
+                  disabled={bookingActionDisabled}
+                  aria-disabled={bookingActionDisabled ? 'true' : 'false'}
+                  className={`w-full mt-5 py-3.5 rounded-xl bg-[#81887A] text-white font-semibold text-sm transition-all shadow-sm ${
+                    bookingActionDisabled
+                      ? 'opacity-50 cursor-not-allowed'
+                      : 'hover:opacity-95'
+                  }`}
                 >
-                  {!searchCriteria.checkIn || !searchCriteria.checkOut
-                    ? t('modal.footerSelectDates')
-                    : t('details.continueToPaymentShort')}
+                  {bookingActionDisabled
+                    ? t('search.unavailableForDates')
+                    : !searchCriteria.checkIn || !searchCriteria.checkOut
+                      ? t('modal.footerSelectDates')
+                      : t('details.continueToPaymentShort')}
+                </button>
+              </>
+            ) : pricing ? (
+              <>
+                <p className="text-sm text-stone-600 mb-4" data-testid="cabin-details-pricing-unavailable">
+                  {t('search.pricingUnavailable', {
+                    defaultValue:
+                      'Price unavailable for these dates. Try different dates or contact us.'
+                  })}
+                </p>
+                <button
+                  type="button"
+                  data-testid="cabin-details-booking-cta"
+                  disabled={bookingActionDisabled}
+                  onClick={bookingActionDisabled ? undefined : goToConfirmOrOpenDates}
+                  className={`w-full mt-5 py-3.5 rounded-xl bg-[#81887A] text-white font-semibold text-sm transition-all shadow-sm ${
+                    bookingActionDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-95'
+                  }`}
+                >
+                  {bookingActionDisabled
+                    ? t('search.unavailableForDates')
+                    : t('modal.footerSelectDates')}
                 </button>
               </>
             ) : (
@@ -1895,19 +2250,28 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
       <StickyBookingBar
         className="lg:hidden"
         label={
-          pricing
+          displayGrandTotal != null
             ? t('details.stickyGrandTotal', { amount: displayGrandTotal.toLocaleString() })
             : t('details.selectDatesToSeePricing')
         }
         subLabel={
-          pricing ? t('modal.nights', { count: pricing.totalNights }) : undefined
+          displayStayNights != null
+            ? `${t('modal.nights', { count: displayStayNights })}${
+                displayNightlyRate != null
+                  ? ` · ${t('search.pricePerNight', { price: Number(displayNightlyRate).toLocaleString() })}`
+                  : ''
+              }`
+            : undefined
         }
         buttonLabel={
-          searchCriteria.checkIn && searchCriteria.checkOut
-            ? t('details.continueToPaymentShort')
-            : t('modal.footerSelectDates')
+          bookingActionDisabled
+            ? t('search.unavailableForDates')
+            : searchCriteria.checkIn && searchCriteria.checkOut
+              ? t('details.continueToPaymentShort')
+              : t('modal.footerSelectDates')
         }
-        onButtonClick={goToConfirmOrOpenDates}
+        buttonDisabled={bookingActionDisabled}
+        onButtonClick={bookingActionDisabled ? undefined : goToConfirmOrOpenDates}
       />
     </div>
   );
