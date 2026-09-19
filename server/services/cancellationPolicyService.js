@@ -322,10 +322,13 @@ function buildCancellationPolicySnapshot(policy) {
 }
 
 function isWithinCorrectionWindow(policy, bookingTimestamp, cancellationTimestamp) {
+  const hours = Number(policy && policy.correctionWindowHours);
+  // Zero or negative hours fully disables the correction window (including elapsed === 0).
+  if (!Number.isFinite(hours) || hours <= 0) return false;
   const booked = toInstant(bookingTimestamp);
   const cancelled = toInstant(cancellationTimestamp);
   if (!booked || !cancelled) return false;
-  const windowMs = Number(policy.correctionWindowHours) * 60 * 60 * 1000;
+  const windowMs = hours * 60 * 60 * 1000;
   const elapsed = cancelled.getTime() - booked.getTime();
   // At exactly window hours, still valid.
   return elapsed >= 0 && elapsed <= windowMs;
