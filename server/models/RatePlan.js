@@ -187,7 +187,17 @@ const ratePlanSchema = new mongoose.Schema(
         },
         message: 'At least one accommodation pricing entry is required'
       }
-    }
+    },
+    /**
+     * Operator audit / lifecycle (RP1). Optional so pre-existing documents remain valid.
+     * Never trust client-supplied values on these fields in management APIs.
+     */
+    createdBy: { type: String, trim: true, default: null, maxlength: 160 },
+    updatedBy: { type: String, trim: true, default: null, maxlength: 160 },
+    activatedAt: { type: Date, default: null },
+    activatedBy: { type: String, trim: true, default: null, maxlength: 160 },
+    retiredAt: { type: Date, default: null },
+    retiredBy: { type: String, trim: true, default: null, maxlength: 160 }
   },
   { timestamps: true }
 );
