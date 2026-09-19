@@ -13,7 +13,11 @@ const {
 const { guestFacingCabinMatch } = require('../utils/fixtureExclusion');
 const { localizeCabinContent, normalizeContentLocale } = require('../utils/cabinLocalization');
 const promoService = require('../services/promoService');
-const { calculateBaseLodgingPrice } = require('../services/pricingService');
+const {
+  pricePublicStayLodging,
+  availabilityPriceFieldsFromResult,
+  defaultLoadActiveSeasonalRatePlans
+} = require('../services/publicAvailabilityPricingService');
 const { findNextSameLengthAvailability } = require('../services/availabilitySuggestionService');
 
 const router = express.Router();
@@ -76,6 +80,15 @@ router.get('/', [
       });
     }
 
+    // Load active seasonal plans once per search (same loader as booking quotes).
+    let cachedSeasonalPlans = null;
+    const loadActiveSeasonalRatePlans = async () => {
+      if (cachedSeasonalPlans == null) {
+        cachedSeasonalPlans = await defaultLoadActiveSeasonalRatePlans();
+      }
+      return cachedSeasonalPlans;
+    };
+
     // Guest-facing cabins only (exclude validation fixture names)
     const allCabins = await Cabin.find({ ...guestFacingCabinMatch(), inventoryType: { $ne: 'multi' } });
 
@@ -86,25 +99,32 @@ router.get('/', [
       const capacity = cabin.capacity;
       const minNights = cabin.minNights || 1;
 
-      let totalPrice = calculateBaseLodgingPrice(
-        cabin,
+      const priced = await pricePublicStayLodging({
+        entity: cabin,
         checkInDate,
         checkOutDate,
         adults,
-        children
-      );
-      const lodgingSubtotalBeforePromo = totalPrice;
-      if (promoDocForSearch) {
-        const { displayPrice } = promoService.applyValidatedDocToLodging(totalPrice, promoDocForSearch);
-        totalPrice = displayPrice;
-      }
+        children,
+        promoDoc: promoDocForSearch,
+        loadActiveSeasonalRatePlans
+      });
+      const priceFields = availabilityPriceFieldsFromResult(priced);
 
       const baseRow = {
         ...localizeCabinContent(cabin, contentLocale),
         totalNights,
-        totalPrice,
-        lodgingSubtotalBeforePromo
+        ...priceFields
       };
+
+      if (!priced.ok) {
+        cabinResults.push({
+          ...baseRow,
+          available: false,
+          unavailabilityReason: 'pricing',
+          unavailabilityDetail: { code: priced.code }
+        });
+        continue;
+      }
 
       if (totalGuests < minGuests) {
         cabinResults.push({
@@ -165,24 +185,21 @@ router.get('/', [
         const minNights = cabinType.minNights || 1;
         const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
 
-        let totalPrice = calculateBaseLodgingPrice(
-          cabinType,
+        const pricedMulti = await pricePublicStayLodging({
+          entity: cabinType,
           checkInDate,
           checkOutDate,
           adults,
-          children
-        );
-        const lodgingSubtotalBeforePromo = totalPrice;
-        if (promoDocForSearch) {
-          const { displayPrice } = promoService.applyValidatedDocToLodging(totalPrice, promoDocForSearch);
-          totalPrice = displayPrice;
-        }
+          children,
+          promoDoc: promoDocForSearch,
+          loadActiveSeasonalRatePlans
+        });
+        const priceFieldsMulti = availabilityPriceFieldsFromResult(pricedMulti);
 
         const baseMulti = {
           ...localizeCabinContent(cabinType, contentLocale),
           totalNights,
-          totalPrice,
-          lodgingSubtotalBeforePromo,
+          ...priceFieldsMulti,
           inventoryMode: 'multi',
           inventoryType: 'multi',
           cabinTypeId: cabinType._id,
@@ -190,6 +207,16 @@ router.get('/', [
           unitsAvailable: 0,
           unitsTotal: 0
         };
+
+        if (!pricedMulti.ok) {
+          cabinResults.push({
+            ...baseMulti,
+            available: false,
+            unavailabilityReason: 'pricing',
+            unavailabilityDetail: { code: pricedMulti.code }
+          });
+          continue;
+        }
 
         if (totalGuests < minGuests) {
           cabinResults.push({
@@ -398,20 +425,17 @@ router.get('/cabin-type/:slug', [
 
     const isAvailable = availabilitySummary.availableUnits.length > 0;
 
-    // Calculate total price
     const totalNights = moment(checkOutDate).diff(moment(checkInDate), 'days');
-    let totalPrice = calculateBaseLodgingPrice(
-      cabinType,
+    const pricedType = await pricePublicStayLodging({
+      entity: cabinType,
       checkInDate,
       checkOutDate,
       adults,
-      children
-    );
-    const lodgingSubtotalBeforePromo = totalPrice;
-    if (promoDocForType) {
-      const { displayPrice } = promoService.applyValidatedDocToLodging(totalPrice, promoDocForType);
-      totalPrice = displayPrice;
-    }
+      children,
+      promoDoc: promoDocForType
+    });
+    const priceFieldsType = availabilityPriceFieldsFromResult(pricedType);
+    const bookable = isAvailable && pricedType.ok;
 
     res.json({
       success: true,
@@ -419,11 +443,16 @@ router.get('/cabin-type/:slug', [
         cabinType: {
           ...localizeCabinContent(cabinType, normalizeContentLocale(req.query.locale)),
           totalNights,
-          totalPrice,
-          lodgingSubtotalBeforePromo,
-          available: isAvailable,
+          ...priceFieldsType,
+          available: bookable,
           availableUnitsCount: availabilitySummary.availableUnits.length,
-          totalUnitsCount: availabilitySummary.totalUnits
+          totalUnitsCount: availabilitySummary.totalUnits,
+          ...(pricedType.ok
+            ? {}
+            : {
+                unavailabilityReason: 'pricing',
+                unavailabilityDetail: { code: pricedType.code }
+              })
         },
         availabilitySummary,
         promo: promoTypeResponse,

@@ -2,6 +2,65 @@ import { resolveAllowPets } from './stayPageContent';
 import { resolveListingStaySlug } from './stayRoutes';
 
 /**
+ * Client-owned pricing-unavailable messages keyed by API pricingError.code only.
+ * Never render API message/details text.
+ */
+export const PUBLIC_PRICING_ERROR_MESSAGES = Object.freeze({
+  AMBIGUOUS_SEASONAL_RATE_PLAN:
+    'Pricing is temporarily unavailable for this stay. Please try different dates or contact us.',
+  SEASONAL_MIN_NIGHTS: 'This seasonal rate requires a longer stay.',
+  MALFORMED_SEASONAL_RATE_PLAN:
+    'Pricing is temporarily unavailable for this stay. Please try again later.',
+  RATE_PLAN_LOOKUP_FAILED:
+    'Pricing is temporarily unavailable for this stay. Please try again later.',
+  INVALID_STAY_DATES: 'Please provide a valid stay range.',
+  MISSING_ACCOMMODATION_KEY:
+    'Pricing is temporarily unavailable for this stay. Please try again later.',
+  PRICING_FAILED:
+    'Price unavailable for these dates. Try different dates or contact us.'
+});
+
+/**
+ * Map an API pricingError.code to a fixed client-owned string.
+ * Unknown / malformed codes → PRICING_FAILED message.
+ */
+export function resolvePublicPricingErrorMessage(code) {
+  if (typeof code === 'string' && Object.prototype.hasOwnProperty.call(PUBLIC_PRICING_ERROR_MESSAGES, code)) {
+    return PUBLIC_PRICING_ERROR_MESSAGES[code];
+  }
+  return PUBLIC_PRICING_ERROR_MESSAGES.PRICING_FAILED;
+}
+
+/**
+ * Monotonic last-request-wins guard for async UI updates.
+ * begin() issues a ticket; only the latest ticket may apply state updates.
+ * invalidate() retires all in-flight tickets (deps change / unmount).
+ */
+export function createLastRequestWinsGuard() {
+  let generation = 0;
+  return {
+    begin() {
+      const id = ++generation;
+      return {
+        id,
+        isCurrent: () => id === generation,
+        apply(fn) {
+          if (id !== generation) return false;
+          fn();
+          return true;
+        }
+      };
+    },
+    invalidate() {
+      generation += 1;
+    },
+    get currentGeneration() {
+      return generation;
+    }
+  };
+}
+
+/**
  * Quiet dog-policy line for Browse stays cards (explicit; never by omission).
  */
 export function getSearchCardPetPolicyLabel(cabin, t) {
@@ -89,6 +148,17 @@ export function getSearchCardStatus(cabin, t, { pets = 0 } = {}) {
     }
     case 'dates': {
       const msg = t('search.unavailableForDates');
+      return {
+        isBookable: false,
+        reasonCode: code,
+        banner: msg,
+        disabledCta: msg,
+        openPlannerGuests: false,
+        openPlannerStay: true
+      };
+    }
+    case 'pricing': {
+      const msg = resolvePublicPricingErrorMessage(cabin?.pricingError?.code);
       return {
         isBookable: false,
         reasonCode: code,

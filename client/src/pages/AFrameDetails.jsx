@@ -21,8 +21,8 @@ import {
   buildStayLodgingJsonLd
 } from '../utils/staySeo';
 import { resolveStayAmenities, resolveStayHighlights } from '../utils/stayPageContent';
-import { calculateBaseLodgingPrice } from '../utils/lodgingPrice';
 import { isStayBookingHash, scrollToVisibleBookingAnchor } from '../utils/stayBookingHashScroll';
+import { resolvePublicPricingErrorMessage } from '../utils/searchCardStatus';
 import './CabinDetails.css';
 import '../components/gallery/lightbox.css';
 
@@ -181,49 +181,56 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
     }, 0);
   }, [experiences, selectedExpKeys, searchCriteria.adults, searchCriteria.children]);
 
-  // Pricing
-  const pricing = useMemo(() => {
-    if (!cabinType || !searchCriteria.checkIn || !searchCriteria.checkOut || !cabinType.pricePerNight) {
-      return null;
-    }
-    
-    try {
-      const checkIn = parseDateOnlyLocal(searchCriteria.checkIn);
-      const checkOut = parseDateOnlyLocal(searchCriteria.checkOut);
-      
-      if (!checkIn || !checkOut || isNaN(checkIn.getTime()) || isNaN(checkOut.getTime()) || checkOut <= checkIn) {
-        return null;
-      }
-      
-      const totalNights = daysBetweenDateOnly(checkIn, checkOut);
-      const totalPrice = calculateBaseLodgingPrice(
-        cabinType,
-        totalNights,
-        searchCriteria.adults || 0,
-        searchCriteria.children || 0
-      );
-      
-      return { totalNights, totalPrice };
-    } catch {
-      return null;
-    }
-  }, [cabinType, searchCriteria.checkIn, searchCriteria.checkOut, searchCriteria.adults, searchCriteria.children]);
+  // Client-side starting estimate only when the stay is incomplete.
+  // Complete dates+guests must use server availability totals (RatePlan-aligned).
+  const hasCompleteStaySearch = Boolean(
+    searchCriteria.checkIn &&
+      searchCriteria.checkOut &&
+      Number(searchCriteria.adults || 0) >= 1
+  );
 
-  const serverLodgingTotal = availability?.cabinType?.totalPrice;
+  const pricingError = availability?.cabinType?.pricingError || null;
+  const pricingErrorMessage = resolvePublicPricingErrorMessage(pricingError?.code);
+  const serverLodgingTotal =
+    availability?.cabinType?.totalPrice != null ? Number(availability.cabinType.totalPrice) : null;
+  const serverPricingMode = availability?.cabinType?.pricingMode || null;
+  const serverPricingSource = availability?.cabinType?.pricingSource || null;
+  const isExactStayPrice =
+    hasCompleteStaySearch && serverPricingMode === 'exact_stay' && serverLodgingTotal != null;
+  const isRatePlanPrice = serverPricingSource === 'rate_plan';
+
   const displayNights =
-    availability?.cabinType?.totalNights != null ? availability.cabinType.totalNights : pricing?.totalNights;
-  const displayGrandTotal =
-    serverLodgingTotal != null
-      ? serverLodgingTotal + (experienceTotal || 0)
-      : pricing
-        ? pricing.totalPrice + (experienceTotal || 0)
+    availability?.cabinType?.totalNights != null
+      ? availability.cabinType.totalNights
+      : hasCompleteStaySearch && searchCriteria.checkIn && searchCriteria.checkOut
+        ? (() => {
+            try {
+              const checkIn = parseDateOnlyLocal(searchCriteria.checkIn);
+              const checkOut = parseDateOnlyLocal(searchCriteria.checkOut);
+              if (!checkIn || !checkOut || checkOut <= checkIn) return null;
+              return daysBetweenDateOnly(checkIn, checkOut);
+            } catch {
+              return null;
+            }
+          })()
         : null;
+
+  const displayGrandTotal =
+    pricingError || serverLodgingTotal == null
+      ? null
+      : serverLodgingTotal + (experienceTotal || 0);
 
   const lodgingSubtotalBeforePromo = availability?.cabinType?.lodgingSubtotalBeforePromo;
   const aFrameGrandBeforePromo =
     lodgingSubtotalBeforePromo != null && displayGrandTotal != null
       ? lodgingSubtotalBeforePromo + (experienceTotal || 0)
       : null;
+
+  const showStartingFromPrice =
+    !hasCompleteStaySearch && cabinType?.pricePerNight != null && !loading;
+  const showPricingLoading = hasCompleteStaySearch && loading;
+  const showPricingUnavailable =
+    hasCompleteStaySearch && !loading && (Boolean(pricingError) || serverLodgingTotal == null);
 
   useEffect(() => {
     setGuestPromoCode(searchCriteria.promoCode || '');
@@ -623,8 +630,16 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6">
             <div>
               <span className="text-[10px] uppercase tracking-[0.2em] text-gray-500 font-medium">Price</span>
-              {displayGrandTotal != null ? (
-                <div className="mt-0.5">
+              {showPricingLoading ? (
+                <p className="text-sm text-gray-500 mt-1" data-testid="aframe-pricing-loading">
+                  {t('details.updatingPrice', { defaultValue: 'Updating price…' })}
+                </p>
+              ) : showPricingUnavailable ? (
+                <p className="text-sm text-stone-600 mt-1 max-w-xs" data-testid="aframe-pricing-unavailable">
+                  {pricingErrorMessage}
+                </p>
+              ) : displayGrandTotal != null ? (
+                <div className="mt-0.5" data-pricing-mode={serverPricingMode || ''} data-pricing-source={serverPricingSource || ''}>
                   <StayLodgingPriceBlock
                     wrapperClassName="text-left"
                     originalAmount={aFrameGrandBeforePromo}
@@ -647,15 +662,22 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
                       displayNights != null ? (
                         <p className="text-sm text-gray-500 mt-0.5">
                           {t('modal.nights', { count: displayNights })}
-                          {cabinType?.pricePerNight &&
-                            ` · ${t('search.pricePerNight', { price: cabinType.pricePerNight.toLocaleString() })}`}
+                          {isExactStayPrice && !isRatePlanPrice && cabinType?.pricePerNight
+                            ? ` · ${t('search.pricePerNight', { price: cabinType.pricePerNight.toLocaleString() })}`
+                            : isRatePlanPrice
+                              ? ` · ${t('search.exactStayPriceHint', { defaultValue: 'Exact total for your selected dates and guests' })}`
+                              : ''}
                         </p>
                       ) : null
                     }
                   />
                 </div>
-              ) : cabinType?.pricePerNight ? (
-                <p className="text-xl md:text-2xl font-semibold text-gray-900 tabular-nums mt-0.5">
+              ) : showStartingFromPrice ? (
+                <p
+                  className="text-xl md:text-2xl font-semibold text-gray-900 tabular-nums mt-0.5"
+                  data-pricing-mode="starting"
+                  data-testid="aframe-starting-price"
+                >
                   {t('search.priceFromPerNight', { price: cabinType.pricePerNight.toLocaleString() })}
                 </p>
               ) : (
@@ -754,34 +776,47 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
           aria-label="Reservation"
         >
           <div className="booking-card-compact rounded-2xl border border-gray-200/80 shadow-sm bg-white p-5">
-            {pricing ? (
+            {hasCompleteStaySearch ? (
               <>
                 <div className="mb-4">
-                  <StayLodgingPriceBlock
-                    originalAmount={aFrameGrandBeforePromo}
-                    finalAmount={displayGrandTotal}
-                    showPromoMicrocopy={
-                      !!availability?.promo?.applied && !availability?.promo?.invalidReason
-                    }
-                    promoMicrocopyText={availability?.promo?.label || undefined}
-                    invalidReason={
-                      searchCriteria.promoCode && availability?.promo?.invalidReason
-                        ? availability.promo.invalidReason
-                        : null
-                    }
-                    priceClassName="text-2xl font-semibold text-gray-900"
-                    strikeClassName="font-serif text-lg text-gray-400 line-through decoration-gray-400/70 tabular-nums"
-                    priceSuffix={
-                      <span className="text-base font-normal text-gray-500 ml-1">{t('details.priceTotalSuffix')}</span>
-                    }
-                    footnote={
-                      <p className="text-sm text-gray-500 mt-0.5">
-                        {t('modal.nights', { count: displayNights })}
-                        {cabinType?.pricePerNight &&
-                          ` · ${t('search.pricePerNight', { price: cabinType.pricePerNight.toLocaleString() })}`}
-                      </p>
-                    }
-                  />
+                  {showPricingLoading ? (
+                    <p className="text-sm text-gray-500" data-testid="aframe-pricing-loading-desktop">
+                      {t('details.updatingPrice', { defaultValue: 'Updating price…' })}
+                    </p>
+                  ) : showPricingUnavailable ? (
+                    <p className="text-sm text-stone-600" data-testid="aframe-pricing-unavailable-desktop">
+                      {pricingErrorMessage}
+                    </p>
+                  ) : displayGrandTotal != null ? (
+                    <StayLodgingPriceBlock
+                      originalAmount={aFrameGrandBeforePromo}
+                      finalAmount={displayGrandTotal}
+                      showPromoMicrocopy={
+                        !!availability?.promo?.applied && !availability?.promo?.invalidReason
+                      }
+                      promoMicrocopyText={availability?.promo?.label || undefined}
+                      invalidReason={
+                        searchCriteria.promoCode && availability?.promo?.invalidReason
+                          ? availability.promo.invalidReason
+                          : null
+                      }
+                      priceClassName="text-2xl font-semibold text-gray-900"
+                      strikeClassName="font-serif text-lg text-gray-400 line-through decoration-gray-400/70 tabular-nums"
+                      priceSuffix={
+                        <span className="text-base font-normal text-gray-500 ml-1">{t('details.priceTotalSuffix')}</span>
+                      }
+                      footnote={
+                        <p className="text-sm text-gray-500 mt-0.5">
+                          {t('modal.nights', { count: displayNights })}
+                          {isExactStayPrice && !isRatePlanPrice && cabinType?.pricePerNight
+                            ? ` · ${t('search.pricePerNight', { price: cabinType.pricePerNight.toLocaleString() })}`
+                            : isRatePlanPrice
+                              ? ` · ${t('search.exactStayPriceHint', { defaultValue: 'Exact total for your selected dates and guests' })}`
+                              : ''}
+                        </p>
+                      }
+                    />
+                  ) : null}
                 </div>
 
                 <div className="space-y-2 text-sm border-t border-gray-100 pt-4">
@@ -886,6 +921,17 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
               </>
             ) : (
               <>
+                {showStartingFromPrice ? (
+                  <p
+                    className="text-2xl font-semibold text-gray-900 tabular-nums mb-2"
+                    data-pricing-mode="starting"
+                    data-testid="aframe-starting-price-desktop"
+                  >
+                    {t('search.priceFromPerNight', {
+                      price: cabinType.pricePerNight.toLocaleString()
+                    })}
+                  </p>
+                ) : null}
                 <p className="text-sm text-gray-500 mb-4">
                   {t('details.addDatesSeePrice')}
                 </p>
@@ -905,20 +951,31 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
       <StickyBookingBar
         className="lg:hidden"
         label={
-          displayGrandTotal != null
-            ? t('details.stickyGrandTotal', { amount: displayGrandTotal.toLocaleString() })
-            : cabinType?.pricePerNight
-              ? t('search.priceFromPerNight', { price: cabinType.pricePerNight.toLocaleString() })
-              : t('details.selectDatesForPricing')
+          showPricingLoading
+            ? t('details.updatingPrice', { defaultValue: 'Updating price…' })
+            : showPricingUnavailable
+              ? t('search.pricingUnavailable', {
+                  defaultValue:
+                    'Price unavailable for these dates. Try different dates or contact us.'
+                })
+              : displayGrandTotal != null
+                ? t('details.stickyGrandTotal', { amount: displayGrandTotal.toLocaleString() })
+                : showStartingFromPrice
+                  ? t('search.priceFromPerNight', { price: cabinType.pricePerNight.toLocaleString() })
+                  : t('details.selectDatesForPricing')
         }
         subLabel={
-          displayNights != null
+          displayGrandTotal != null && displayNights != null
             ? `${t('modal.nights', { count: displayNights })}${
-                cabinType?.pricePerNight
+                isExactStayPrice && !isRatePlanPrice && cabinType?.pricePerNight
                   ? ` · ${t('search.pricePerNight', { price: cabinType.pricePerNight.toLocaleString() })}`
                   : ''
               }`
-            : null
+            : showStartingFromPrice
+              ? t('search.startingPriceHint', {
+                  defaultValue: 'Starting price — select dates for an exact stay total'
+                })
+              : null
         }
         buttonLabel={
           searchCriteria.checkIn && searchCriteria.checkOut
