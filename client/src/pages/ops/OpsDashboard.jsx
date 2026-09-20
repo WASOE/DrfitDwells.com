@@ -36,6 +36,12 @@ function humanSeverity(severity) {
   return SEVERITY_LABELS[key] || 'Low';
 }
 
+function alertSeverityKey(severity) {
+  const key = String(severity || 'low').toLowerCase();
+  if (key === 'critical' || key === 'high' || key === 'medium' || key === 'low') return key;
+  return 'low';
+}
+
 function arrivingLaterDays(row) {
   const label = String(row?.statusLabel || '');
   const match = label.match(/^Arrives in (\d+) days?$/i);
@@ -138,13 +144,13 @@ function ReservationRow({ row }) {
 
   if (row.kind === 'external_hold') {
     return (
-      <div className="ops-dashboard-row" data-ops-dashboard-row="hold">
+      <div className="ops-dashboard-row ops-dashboard-row--hold" data-ops-dashboard-row="hold">
         <div className="ops-dashboard-row__top">
           <div className="ops-dashboard-row__identity">
             <p className="ops-dashboard-row__guest">{row.guestName || 'Airbnb hold'}</p>
             <p className="ops-dashboard-row__cabin">{row.accommodationDisplayName || 'Unknown'}</p>
           </div>
-          <OpsBadge>Airbnb</OpsBadge>
+          <OpsBadge tone="info">Airbnb</OpsBadge>
         </div>
         <p className="ops-dashboard-row__meta">
           {row.datesLabel || `${row.checkInDateOnly || '—'} - ${row.checkOutDateOnly || '—'}`}
@@ -208,8 +214,13 @@ function Lane({ title, total = 0, rows = [], emptyText, testId }) {
 
 function AlertRow({ alert, onResolved }) {
   const status = alertStatusProps(alert);
+  const severity = alertSeverityKey(alert.severity);
   return (
-    <div className="ops-dashboard-alert" data-testid="ops-dashboard-alert">
+    <div
+      className={`ops-dashboard-alert ops-dashboard-alert--${severity}`}
+      data-testid="ops-dashboard-alert"
+      data-ops-alert-severity={severity}
+    >
       <div className="ops-dashboard-alert__main">
         <Link to={alert.href || '/ops/reservations'} className="ops-dashboard-alert__copy">
           <p className="ops-dashboard-alert__title">{alert.title}</p>
@@ -235,8 +246,17 @@ function DashboardHeader({ health }) {
       title="Dashboard"
       description="Who arrives, stays, leaves, and what needs attention."
       meta={
-        health?.kind === 'healthy' ? (
-          <OpsBadge>{health.label}</OpsBadge>
+        health ? (
+          <span
+            className={
+              health.kind === 'healthy'
+                ? 'ops-dashboard-health-chip'
+                : 'ops-dashboard-health-chip ops-dashboard-health-chip--attention'
+            }
+            data-testid="ops-dashboard-health-chip"
+          >
+            {health.label}
+          </span>
         ) : null
       }
     />
@@ -246,19 +266,19 @@ function DashboardHeader({ health }) {
 function QuickLinks() {
   return (
     <nav className="ops-dashboard-links" aria-label="Dashboard shortcuts">
-      <Link className="ops-dashboard-links__link" to="/ops/reservations">
+      <Link className="ops-button ops-button--secondary ops-button--compact ops-dashboard-links__link" to="/ops/reservations">
         Reservations
       </Link>
-      <Link className="ops-dashboard-links__link" to="/ops/calendar">
+      <Link className="ops-button ops-button--secondary ops-button--compact ops-dashboard-links__link" to="/ops/calendar">
         Calendar
       </Link>
-      <Link className="ops-dashboard-links__link" to="/ops/payments">
+      <Link className="ops-button ops-button--secondary ops-button--compact ops-dashboard-links__link" to="/ops/payments">
         Payments
       </Link>
-      <Link className="ops-dashboard-links__link" to="/ops/sync">
+      <Link className="ops-button ops-button--secondary ops-button--compact ops-dashboard-links__link" to="/ops/sync">
         Sync
       </Link>
-      <Link className="ops-dashboard-links__link" to={COMMS_HREF}>
+      <Link className="ops-button ops-button--secondary ops-button--compact ops-dashboard-links__link" to={COMMS_HREF}>
         Comms
       </Link>
     </nav>
@@ -300,7 +320,6 @@ export default function OpsDashboard() {
   return (
     <OpsPage width="wide" className="ops-dashboard">
       <DashboardHeader health={health} />
-      {health?.kind === 'attention' ? <OpsBanner tone="warning" title={health.label} /> : null}
       <QuickLinks />
 
       {loading ? (
@@ -369,9 +388,9 @@ export default function OpsDashboard() {
             )}
           </section>
 
-          <section className="ops-dashboard-surface" data-testid="ops-dashboard-pulse-stay">
+          <section className="ops-dashboard-surface ops-dashboard-surface--pulse" data-testid="ops-dashboard-pulse-stay">
             <h2 className="ops-dashboard-surface__title">Stay/business pulse</h2>
-            <OpsMetricGroup>
+            <OpsMetricGroup className="ops-dashboard-metric-group">
               <OpsMetric label="Bookings MTD" value={d.pulse?.bookingsMTD ?? 0} />
               <OpsMetric
                 label="Gross booked MTD"
@@ -384,9 +403,9 @@ export default function OpsDashboard() {
             </OpsMetricGroup>
           </section>
 
-          <section className="ops-dashboard-surface" data-testid="ops-dashboard-pulse-cash">
+          <section className="ops-dashboard-surface ops-dashboard-surface--pulse" data-testid="ops-dashboard-pulse-cash">
             <h2 className="ops-dashboard-surface__title">Gift vouchers &amp; cash</h2>
-            <OpsMetricGroup>
+            <OpsMetricGroup className="ops-dashboard-metric-group">
               <OpsMetric
                 label="Gift voucher sales MTD"
                 value={formatMoneyFromCents(d.pulse?.giftVouchers?.salesMTDCents ?? 0)}
@@ -417,47 +436,44 @@ export default function OpsDashboard() {
             </p>
           </section>
 
-          <section className="ops-dashboard-surface" data-testid="ops-dashboard-health">
-            <h2 className="ops-dashboard-surface__title">Health summary</h2>
-            <div className="ops-dashboard-health">
-              <div className="ops-dashboard-health__facts">
-                <p className="ops-dashboard-health__fact">
-                  <span className="ops-dashboard-health__label">Sync last outcome</span>
-                  {syncValue ? (
-                    <OpsStatus domain="sync" value={syncValue} />
-                  ) : (
-                    <span className="ops-dashboard-health__value">Unknown</span>
-                  )}
-                </p>
-                <p className="ops-dashboard-health__fact">
-                  <span className="ops-dashboard-health__label">Email failures (14d)</span>
-                  <span className="ops-dashboard-health__value">{d.health?.email?.recentFailuresCount ?? 0}</span>
-                </p>
-                <p className="ops-dashboard-health__fact">
-                  <span className="ops-dashboard-health__label">Manual review open</span>
-                  <span className="ops-dashboard-health__value">{d.health?.manualReview?.openCount ?? 0}</span>
-                </p>
-                <p className="ops-dashboard-health__fact">
-                  <span className="ops-dashboard-health__label">Webhook last seen</span>
-                  <span className="ops-dashboard-health__value">
-                    {formatWebhookLastSeen(d.health?.payments?.webhookLastSeenAt)}
-                  </span>
-                </p>
-              </div>
-              <div className="ops-dashboard-health__links">
-                <Link className="ops-dashboard-health__link" to={d.health?.sync?.href || '/ops/sync'}>
-                  Sync
-                </Link>
-                <Link className="ops-dashboard-health__link" to={d.health?.email?.href || COMMS_HREF}>
-                  Comms
-                </Link>
-                <Link className="ops-dashboard-health__link" to={d.health?.payments?.href || '/ops/payments'}>
-                  Payments
-                </Link>
-                <Link className="ops-dashboard-health__link" to={d.health?.manualReview?.href || '/ops/manual-review'}>
-                  Manual review
-                </Link>
-              </div>
+          <section className="ops-dashboard-health" data-testid="ops-dashboard-health">
+            <div className="ops-dashboard-health__facts">
+              <p className="ops-dashboard-health__fact">
+                <span className="ops-dashboard-health__label">Sync last outcome</span>
+                {syncValue ? (
+                  <OpsStatus domain="sync" value={syncValue} />
+                ) : (
+                  <span className="ops-dashboard-health__value">Unknown</span>
+                )}
+              </p>
+              <p className="ops-dashboard-health__fact">
+                <span className="ops-dashboard-health__label">Email failures (14d)</span>
+                <span className="ops-dashboard-health__value">{d.health?.email?.recentFailuresCount ?? 0}</span>
+              </p>
+              <p className="ops-dashboard-health__fact">
+                <span className="ops-dashboard-health__label">Manual review open</span>
+                <span className="ops-dashboard-health__value">{d.health?.manualReview?.openCount ?? 0}</span>
+              </p>
+              <p className="ops-dashboard-health__fact">
+                <span className="ops-dashboard-health__label">Webhook last seen</span>
+                <span className="ops-dashboard-health__value">
+                  {formatWebhookLastSeen(d.health?.payments?.webhookLastSeenAt)}
+                </span>
+              </p>
+            </div>
+            <div className="ops-dashboard-health__links">
+              <Link className="ops-dashboard-health__link" to={d.health?.sync?.href || '/ops/sync'}>
+                Sync
+              </Link>
+              <Link className="ops-dashboard-health__link" to={d.health?.email?.href || COMMS_HREF}>
+                Comms
+              </Link>
+              <Link className="ops-dashboard-health__link" to={d.health?.payments?.href || '/ops/payments'}>
+                Payments
+              </Link>
+              <Link className="ops-dashboard-health__link" to={d.health?.manualReview?.href || '/ops/manual-review'}>
+                Manual review
+              </Link>
             </div>
           </section>
         </>

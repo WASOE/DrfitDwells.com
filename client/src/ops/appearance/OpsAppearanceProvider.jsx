@@ -4,6 +4,7 @@ import {
   getOpsRootDomProps,
   readOpsAppearanceMode,
   resolveOpsAppearance,
+  resolveOpsProductHtmlAppearance,
   writeOpsAppearanceMode
 } from './opsAppearance';
 
@@ -36,17 +37,18 @@ export function OpsAppearanceProvider({ children }) {
   });
 
   const appearance = resolveOpsAppearance(mode, systemPrefersDark);
+  const htmlAppearance = resolveOpsProductHtmlAppearance(mode, systemPrefersDark);
 
   useEffect(() => {
     applyOpsAppearanceToRoot(document.documentElement, {
       active: true,
       mode,
-      appearance
+      appearance: htmlAppearance
     });
     return () => {
       applyOpsAppearanceToRoot(document.documentElement, { active: false });
     };
-  }, [mode, appearance]);
+  }, [mode, htmlAppearance]);
 
   useEffect(() => {
     if (mode !== 'system') {

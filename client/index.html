@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <!-- Ops appearance bootstrap: /ops only. Keep in sync with initOpsAppearanceBootstrap. -->
+    <!-- Product cutover: html appearance is light-only; themed demo roots may still paint dark. -->
     <script>
       (function () {
         try {
@@ -11,9 +12,7 @@
           var mode = null;
           try { mode = localStorage.getItem('dd_ops_appearance'); } catch (e) {}
           if (mode !== 'light' && mode !== 'dark' && mode !== 'system') mode = 'system';
-          var appearance = mode === 'light' || mode === 'dark'
-            ? mode
-            : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+          var appearance = 'light';
           var el = document.documentElement;
           el.setAttribute('data-ops-active', 'true');
           el.setAttribute('data-ops-appearance-mode', mode);

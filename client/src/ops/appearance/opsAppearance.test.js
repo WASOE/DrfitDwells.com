@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   DEFAULT_OPS_APPEARANCE_MODE,
   OPS_APPEARANCE_STORAGE_KEY,
+  OPS_PRODUCT_FORCE_LIGHT,
   applyOpsAppearanceToRoot,
   getOpsRootDomProps,
   initOpsAppearanceBootstrap,
@@ -9,6 +10,8 @@ import {
   parseStoredOpsAppearanceMode,
   readOpsAppearanceMode,
   resolveOpsAppearance,
+  resolveOpsProductHtmlAppearance,
+  resolveOpsRootAppearance,
   writeOpsAppearanceMode
 } from './opsAppearance.js';
 
@@ -70,6 +73,19 @@ describe('ops appearance resolver', () => {
     expect(resolveOpsAppearance('dark', false)).toBe('dark');
   });
 
+  it('forces product html appearance to light during the light-only cutover', () => {
+    expect(OPS_PRODUCT_FORCE_LIGHT).toBe(true);
+    expect(resolveOpsProductHtmlAppearance('system', true)).toBe('light');
+    expect(resolveOpsProductHtmlAppearance('dark', true)).toBe('light');
+    expect(resolveOpsProductHtmlAppearance('light', false)).toBe('light');
+  });
+
+  it('keeps unthemed product OpsRoot light while themed roots may be dark', () => {
+    expect(resolveOpsRootAppearance('dark', { themed: false })).toBe('light');
+    expect(resolveOpsRootAppearance('dark', { themed: true })).toBe('dark');
+    expect(resolveOpsRootAppearance('light', { themed: true })).toBe('light');
+  });
+
   it('persists explicit mode per device storage', () => {
     const storage = memoryStorage();
     writeOpsAppearanceMode('dark', storage);
@@ -103,7 +119,7 @@ describe('ops appearance bootstrap path gating', () => {
     expect(root.classList.contains('dark')).toBe(false);
   });
 
-  it('applies resolved appearance on /ops from storage + system', () => {
+  it('applies light product appearance on /ops even when system prefers dark', () => {
     const root = document.createElement('html');
     const result = initOpsAppearanceBootstrap({
       pathname: '/ops',
@@ -111,12 +127,25 @@ describe('ops appearance bootstrap path gating', () => {
       matchMedia: matchMediaFn(true),
       root
     });
-    expect(result).toEqual({ applied: true, mode: 'system', appearance: 'dark' });
+    expect(result).toEqual({ applied: true, mode: 'system', appearance: 'light' });
     expect(root.getAttribute('data-ops-active')).toBe('true');
     expect(root.getAttribute('data-ops-appearance-mode')).toBe('system');
-    expect(root.getAttribute('data-ops-appearance')).toBe('dark');
+    expect(root.getAttribute('data-ops-appearance')).toBe('light');
     expect(root.className).not.toMatch(/\bdark\b/);
     expect(root.style.colorScheme).toBe('');
+  });
+
+  it('applies light product appearance even when stored mode is dark', () => {
+    const root = document.createElement('html');
+    const result = initOpsAppearanceBootstrap({
+      pathname: '/ops/messaging',
+      storage: memoryStorage({ [OPS_APPEARANCE_STORAGE_KEY]: 'dark' }),
+      matchMedia: matchMediaFn(true),
+      root
+    });
+    expect(result).toEqual({ applied: true, mode: 'dark', appearance: 'light' });
+    expect(root.getAttribute('data-ops-appearance-mode')).toBe('dark');
+    expect(root.getAttribute('data-ops-appearance')).toBe('light');
   });
 
   it('applies explicit light on nested ops paths even when system is dark', () => {
@@ -140,11 +169,17 @@ describe('ops appearance bootstrap path gating', () => {
     expect(root.getAttribute('data-ops-appearance-mode')).toBeNull();
   });
 
-  it('exposes ops-root props without themed/color-scheme opt-in by default', () => {
+  it('forces unthemed ops-root props to light during product cutover', () => {
     expect(getOpsRootDomProps({ appearance: 'dark', mode: 'system' })).toEqual({
       className: 'ops-root',
+      'data-ops-appearance': 'light',
+      'data-ops-appearance-mode': 'light'
+    });
+    expect(getOpsRootDomProps({ appearance: 'dark', mode: 'dark', themed: true })).toEqual({
+      className: 'ops-root',
       'data-ops-appearance': 'dark',
-      'data-ops-appearance-mode': 'system'
+      'data-ops-appearance-mode': 'dark',
+      'data-ops-themed': 'true'
     });
     expect(getOpsRootDomProps({ appearance: 'light', mode: 'light', themed: true })['data-ops-themed']).toBe(
       'true'

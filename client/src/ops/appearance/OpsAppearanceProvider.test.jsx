@@ -73,11 +73,11 @@ describe('OpsAppearanceProvider', () => {
     const root = getByTestId('ops-root');
     expect(root).toHaveClass('ops-root');
     expect(root.getAttribute('data-ops-appearance')).toBe('light');
-    expect(root.getAttribute('data-ops-appearance-mode')).toBe('system');
+    expect(root.getAttribute('data-ops-appearance-mode')).toBe('light');
     expect(root.getAttribute('data-ops-themed')).toBeNull();
   });
 
-  it('updates resolved appearance when system preference changes', async () => {
+  it('keeps context resolution following system while product root/html stay light', async () => {
     const mq = stubMatchMedia(false);
     const { getByTestId } = render(
       <OpsAppearanceProvider>
@@ -88,10 +88,34 @@ describe('OpsAppearanceProvider', () => {
     mq.dispatch(true);
     await waitFor(() => {
       expect(getByTestId('ops-resolved').textContent).toBe('dark');
-      expect(document.documentElement.getAttribute('data-ops-appearance')).toBe('dark');
-      expect(getByTestId('ops-root').getAttribute('data-ops-appearance')).toBe('dark');
     });
+    expect(document.documentElement.getAttribute('data-ops-appearance')).toBe('light');
+    expect(getByTestId('ops-root').getAttribute('data-ops-appearance')).toBe('light');
+    expect(getByTestId('ops-root').getAttribute('data-ops-appearance-mode')).toBe('light');
     expect(document.documentElement.getAttribute('data-ops-appearance-mode')).toBe('system');
+  });
+
+  it('themed OpsRoot may still paint dark for demo surfaces', async () => {
+    localStorage.setItem(OPS_APPEARANCE_STORAGE_KEY, 'dark');
+    stubMatchMedia(false);
+    function ThemedProbe() {
+      const { appearance, mode } = useOpsAppearance();
+      return (
+        <OpsRoot themed data-testid="ops-themed-root">
+          <span data-testid="ops-mode">{mode}</span>
+          <span data-testid="ops-resolved">{appearance}</span>
+        </OpsRoot>
+      );
+    }
+    const { getByTestId } = render(
+      <OpsAppearanceProvider>
+        <ThemedProbe />
+      </OpsAppearanceProvider>
+    );
+    expect(getByTestId('ops-resolved').textContent).toBe('dark');
+    expect(getByTestId('ops-themed-root').getAttribute('data-ops-appearance')).toBe('dark');
+    expect(getByTestId('ops-themed-root').getAttribute('data-ops-themed')).toBe('true');
+    expect(document.documentElement.getAttribute('data-ops-appearance')).toBe('light');
   });
 
   it('does not follow system changes when an explicit mode is stored', async () => {
@@ -148,7 +172,7 @@ describe('OpsLayout ops-root', () => {
     const root = container.querySelector('.ops-root');
     expect(root).toBeTruthy();
     expect(root.getAttribute('data-ops-appearance')).toBe('light');
-    expect(root.getAttribute('data-ops-appearance-mode')).toBe('system');
+    expect(root.getAttribute('data-ops-appearance-mode')).toBe('light');
     expect(root.getAttribute('data-ops-themed')).toBeNull();
     expect(root.textContent).toContain('Loading ops console');
   });

@@ -2,6 +2,12 @@ export const OPS_APPEARANCE_STORAGE_KEY = 'dd_ops_appearance';
 export const OPS_APPEARANCE_MODES = ['system', 'light', 'dark'];
 export const DEFAULT_OPS_APPEARANCE_MODE = 'system';
 
+/**
+ * Production Ops stays light-only until dark product rollout.
+ * Storage, system preference, and themed/demo surfaces still resolve fully.
+ */
+export const OPS_PRODUCT_FORCE_LIGHT = true;
+
 export const OPS_HTML_ATTR = {
   active: 'data-ops-active',
   mode: 'data-ops-appearance-mode',
@@ -60,6 +66,21 @@ export function resolveOpsAppearance(mode, systemPrefersDark) {
   return systemPrefersDark ? 'dark' : 'light';
 }
 
+/** Document/html appearance for normal Ops product mount. */
+export function resolveOpsProductHtmlAppearance(mode, systemPrefersDark) {
+  if (OPS_PRODUCT_FORCE_LIGHT) return 'light';
+  return resolveOpsAppearance(mode, systemPrefersDark);
+}
+
+/**
+ * Appearance painted on an OpsRoot. Unthemed product roots stay light.
+ * Themed/demo roots (design system) keep full light/dark resolution.
+ */
+export function resolveOpsRootAppearance(appearance, { themed = false } = {}) {
+  if (OPS_PRODUCT_FORCE_LIGHT && !themed) return 'light';
+  return appearance === 'dark' ? 'dark' : 'light';
+}
+
 export function applyOpsAppearanceToRoot(root, { active, mode, appearance }) {
   if (!root) return;
   if (!active) {
@@ -74,10 +95,12 @@ export function applyOpsAppearanceToRoot(root, { active, mode, appearance }) {
 }
 
 export function getOpsRootDomProps({ appearance, mode, themed = false }) {
+  const resolvedAppearance = resolveOpsRootAppearance(appearance, { themed });
+  const resolvedMode = OPS_PRODUCT_FORCE_LIGHT && !themed ? 'light' : mode;
   const props = {
     className: 'ops-root',
-    [OPS_HTML_ATTR.appearance]: appearance,
-    [OPS_HTML_ATTR.mode]: mode
+    [OPS_HTML_ATTR.appearance]: resolvedAppearance,
+    [OPS_HTML_ATTR.mode]: resolvedMode
   };
   if (themed) {
     props[OPS_HTML_ATTR.themed] = 'true';
@@ -88,6 +111,7 @@ export function getOpsRootDomProps({ appearance, mode, themed = false }) {
 /**
  * Pre-React bootstrap. Same rules as the inline index.html script.
  * Public routes are a no-op. Never sets html.dark or color-scheme.
+ * Product cutover: html appearance is light even when system prefers dark.
  */
 export function initOpsAppearanceBootstrap({
   pathname,
@@ -100,7 +124,7 @@ export function initOpsAppearanceBootstrap({
     return { applied: false, mode: null, appearance: null };
   }
   const mode = readOpsAppearanceMode(storage);
-  const appearance = resolveOpsAppearance(mode, getSystemPrefersDark(matchMedia));
+  const appearance = resolveOpsProductHtmlAppearance(mode, getSystemPrefersDark(matchMedia));
   applyOpsAppearanceToRoot(root, { active: true, mode, appearance });
   return { applied: true, mode, appearance };
 }

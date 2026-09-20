@@ -580,9 +580,15 @@ a.ops-collection-row__main:hover {
   }
 }
 
-@container ops-page (min-width: 900px) {
+@container ops-page (min-width: 720px) {
   .ops-metric-group {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@container ops-page (min-width: 1100px) {
+  .ops-metric-group {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 }
 

@@ -308,7 +308,8 @@ describe('OpsDashboard home migration', () => {
     expect(headings.indexOf('Today operations')).toBeLessThan(headings.indexOf('Upcoming operations'));
     expect(headings.indexOf('Upcoming operations')).toBeLessThan(headings.indexOf('Stay/business pulse'));
     expect(headings.indexOf('Stay/business pulse')).toBeLessThan(headings.indexOf('Gift vouchers & cash'));
-    expect(headings.indexOf('Gift vouchers & cash')).toBeLessThan(headings.indexOf('Health summary'));
+    expect(screen.getByTestId('ops-dashboard-health')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Health summary' })).not.toBeInTheDocument();
     expect(screen.getByText('Arriving Guest')).toBeInTheDocument();
     expect(screen.getByText('Staying Guest')).toBeInTheDocument();
     expect(screen.getByText('Leaving Guest')).toBeInTheDocument();
@@ -316,6 +317,8 @@ describe('OpsDashboard home migration', () => {
     expect(screen.getByText('Next 14 days: 4')).toBeInTheDocument();
     expect(document.querySelector('.ops-metric-group')).toBeTruthy();
     expect(document.querySelector('.lg\\:grid-cols-6')).toBeNull();
+    expect(screen.getByTestId('ops-dashboard-health-chip')).toHaveTextContent('Watch');
+    expect(document.querySelector('.ops-banner--warning')).toBeNull();
   });
 
   it('keeps the header mounted and shows OpsLoadingState while the dashboard read is pending', () => {
@@ -899,5 +902,146 @@ describe('OpsDashboard home migration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Resolve' }));
     expect(screen.queryByTestId('reservation-detail')).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText('What was done to handle this?')).toBeInTheDocument();
+  });
+
+  it('preserves distinct reservation operational tags on a populated fixture', async () => {
+    opsReadAPI.dashboard.mockResolvedValue(
+      payload(
+        dashboard({
+          today: {
+            arriving: {
+              total: 2,
+              rows: [
+                reservationRow({
+                  reservationId: 'res-abc12345',
+                  guestName: 'Confirmed Paid Guest',
+                  reservationStatus: 'confirmed',
+                  paymentStatus: 'paid',
+                  statusLabel: 'Arrives in 2 days'
+                }),
+                reservationRow({
+                  reservationId: 'res-unlinked',
+                  guestName: 'Unlinked Guest',
+                  reservationStatus: 'confirmed',
+                  paymentStatus: 'unlinked_payment'
+                })
+              ]
+            },
+            staying: {
+              total: 1,
+              rows: [
+                reservationRow({
+                  reservationId: 'res-staying',
+                  guestName: 'In House Guest',
+                  reservationStatus: 'in_house',
+                  paymentStatus: 'manual_not_required',
+                  statusLabel: 'Currently staying'
+                })
+              ]
+            },
+            leaving: {
+              total: 1,
+              rows: [holdRow({ reservationId: 'hold-airbnb', guestName: 'Airbnb hold guest' })]
+            }
+          }
+        })
+      )
+    );
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('Confirmed Paid Guest')).toBeInTheDocument();
+    });
+    expect(document.querySelector('[data-ops-status-key="reservation.confirmed"]')).toBeTruthy();
+    expect(document.querySelector('[data-ops-status-key="payment.paid"]')).toBeTruthy();
+    expect(document.querySelector('[data-ops-status-key="reservation.arriving_later"]')).toBeTruthy();
+    expect(screen.getByText('Arriving in 2 days')).toBeInTheDocument();
+    expect(screen.getByText('In House Guest')).toBeInTheDocument();
+    expect(document.querySelector('[data-ops-status-key="reservation.in_house"]')).toBeTruthy();
+    expect(document.querySelector('[data-ops-status-key="payment.manual_not_required"]')).toBeTruthy();
+    expect(screen.getByText('Currently staying')).toBeInTheDocument();
+    expect(screen.getByText('Airbnb')).toBeInTheDocument();
+    expect(screen.getByText('Airbnb hold guest').closest('a')).toBeNull();
+    expect(document.querySelector('[data-ops-status-key="payment.unlinked"]')).toBeTruthy();
+    expect(screen.getByText('#abc12345')).toBeInTheDocument();
+    expect(screen.getAllByText('Stone House').length).toBeGreaterThan(0);
+  });
+
+  it('applies distinct semantic severity treatments on alert surfaces', async () => {
+    opsReadAPI.dashboard.mockResolvedValue(
+      payload(
+        dashboard({
+          alerts: [
+            alertItem({ id: 'c1', severity: 'critical', title: 'Critical payment' }),
+            alertItem({ id: 'h1', severity: 'high', title: 'High review', type: 'manual_review' }),
+            alertItem({ id: 'm1', severity: 'medium', title: 'Medium note', type: 'guest_email_failed' })
+          ]
+        })
+      )
+    );
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('Critical payment')).toBeInTheDocument();
+    });
+    const critical = document.querySelector('[data-ops-alert-severity="critical"]');
+    const high = document.querySelector('[data-ops-alert-severity="high"]');
+    const medium = document.querySelector('[data-ops-alert-severity="medium"]');
+    expect(critical).toHaveClass('ops-dashboard-alert--critical');
+    expect(high).toHaveClass('ops-dashboard-alert--high');
+    expect(medium).toHaveClass('ops-dashboard-alert--medium');
+    expect(critical.className).not.toEqual(high.className);
+    expect(high.className).not.toEqual(medium.className);
+    expect(screen.getAllByText('Critical').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('High').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Medium').length).toBeGreaterThan(0);
+    expect(pageCss).toContain('ops-dashboard-alert--critical');
+    expect(pageCss).toContain('--ops-danger-soft');
+    expect(pageCss).toContain('--ops-warning-soft');
+  });
+
+  it('keeps all 12 pulse metrics and supports 6-up metric architecture at wide container', async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('Bookings MTD')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('ops-dashboard-pulse-stay').querySelectorAll('.ops-metric')).toHaveLength(6);
+    expect(screen.getByTestId('ops-dashboard-pulse-cash').querySelectorAll('.ops-metric')).toHaveLength(6);
+    expect(pageCss).toMatch(
+      /@container ops-page \(min-width:\s*1100px\)[\s\S]*\.ops-dashboard-metric-group[\s\S]*repeat\(6/
+    );
+    expect(pageCss).toMatch(/@container ops-page \(min-width:\s*720px\)[\s\S]*\.ops-dashboard-metric-group[\s\S]*repeat\(3/);
+  });
+
+  it('restores strong quick-link affordance with canonical button classes', async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: 'Reservations' })).toBeInTheDocument();
+    });
+    const reservations = screen.getByRole('link', { name: 'Reservations' });
+    expect(reservations).toHaveClass('ops-button', 'ops-button--secondary', 'ops-button--compact');
+    expect(screen.getAllByRole('link', { name: 'Comms' })[0]).toHaveClass('ops-button');
+  });
+
+  it('keeps health facts in a compact strip without a giant banner', async () => {
+    opsReadAPI.dashboard.mockResolvedValue(
+      payload(
+        dashboard({
+          health: {
+            status: 'degraded',
+            sync: { lastOutcome: 'failed' },
+            email: { recentFailuresCount: 2 },
+            manualReview: { openCount: 1 }
+          }
+        })
+      )
+    );
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByTestId('ops-dashboard-health-chip')).toHaveTextContent('Degraded');
+    });
+    expect(document.querySelector('.ops-banner--warning')).toBeNull();
+    expect(screen.getByTestId('ops-dashboard-health')).toBeInTheDocument();
+    expect(screen.getByText('Email failures (14d)')).toBeInTheDocument();
+    expect(screen.getByText('Manual review open')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Health summary' })).not.toBeInTheDocument();
   });
 });
