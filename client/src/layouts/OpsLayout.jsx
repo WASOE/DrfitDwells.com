@@ -12,8 +12,15 @@ import { canAccessOpsFrontendPath, isCleanerOnlySession } from './ops/opsNavConf
 import { OPS_SIDEBAR_COLLAPSED, OPS_SIDEBAR_EXPANDED, useOpsSidebarMode } from './ops/opsSidebarState';
 import { OpsAppearanceProvider, OpsRoot } from '../ops/appearance/OpsAppearanceProvider';
 import { applyOpsDocumentLang, resolveOpsUiLanguage } from '../ops/i18n/opsUiLanguage';
+import { OpsPageWidthProvider, useOpsPageOwnsWidth } from '../ops/layout/OpsPageLayoutContext';
 import '../ops/ops.css';
 import './ops/opsShell.css';
+
+/** Unmigrated #ops-main cap. Do not change — OpsPage opts out by replacing this class. */
+export const OPS_MAIN_LEGACY_CLASSNAME =
+  'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 md:pt-8 pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-8';
+
+export const OPS_MAIN_OWNED_CLASSNAME = 'ops-main ops-main--owned';
 
 function roleLabel(role) {
   if (role === 'operator') return 'Operator';
@@ -71,7 +78,9 @@ function CompactHeader({ title, session, onLogout }) {
 export default function OpsLayout() {
   return (
     <OpsAppearanceProvider>
-      <OpsLayoutShell />
+      <OpsPageWidthProvider>
+        <OpsLayoutShell />
+      </OpsPageWidthProvider>
     </OpsAppearanceProvider>
   );
 }
@@ -86,6 +95,7 @@ function OpsLayoutShell() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const { mode, isDesktop, persistMode } = useOpsSidebarMode();
+  const pageOwnsWidth = useOpsPageOwnsWidth();
 
   const handleLogout = () => {
     localStorage.removeItem('adminToken');
@@ -216,7 +226,8 @@ function OpsLayoutShell() {
             <main
               id="ops-main"
               data-testid="ops-main"
-              className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 md:pt-8 pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-8"
+              data-ops-page-owns-width={pageOwnsWidth ? 'true' : 'false'}
+              className={pageOwnsWidth ? OPS_MAIN_OWNED_CLASSNAME : OPS_MAIN_LEGACY_CLASSNAME}
             >
               <Outlet />
             </main>

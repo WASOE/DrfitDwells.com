@@ -123,7 +123,10 @@ export const OPS_SHARED_TOKEN_VALUES = {
   '--ops-z-modal': '50',
   '--ops-z-toast': '60',
   '--ops-bp-md': '768px',
-  '--ops-bp-lg': '1024px'
+  '--ops-bp-lg': '1024px',
+  '--ops-page-w-narrow': '720px',
+  '--ops-page-w-default': '1040px',
+  '--ops-page-w-wide': '1360px'
 };
 
 export const OPS_SHARED_TOKEN_NAMES = Object.keys(OPS_SHARED_TOKEN_VALUES);

@@ -81,6 +81,8 @@ describe('OpsDesignSystemPage', () => {
     expect(screen.getByText('No stays in this range')).toBeInTheDocument();
     expect(screen.getByText('Check-out must be after check-in.')).toHaveAttribute('role', 'alert');
     expect(screen.getByRole('button', { name: 'Open modal' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Pagination' })).toBeInTheDocument();
+    expect(screen.getByText('Page 2 of 5')).toBeInTheDocument();
   });
 
   it('resolves status examples through the registry', () => {

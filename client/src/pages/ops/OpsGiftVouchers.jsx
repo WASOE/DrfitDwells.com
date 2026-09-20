@@ -1,7 +1,50 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { opsReadAPI } from '../../services/opsApi';
 import { formatMoneyFromCents } from '../../utils/formatMoney';
+import OpsPage from '../../ops/primitives/OpsPage';
+import OpsPageHeader from '../../ops/primitives/OpsPageHeader';
+import OpsTextField from '../../ops/primitives/OpsTextField';
+import OpsSelect from '../../ops/primitives/OpsSelect';
+import OpsButton from '../../ops/primitives/OpsButton';
+import OpsCollectionRow from '../../ops/primitives/OpsCollectionRow';
+import OpsStatus from '../../ops/primitives/OpsStatus';
+import OpsBadge from '../../ops/primitives/OpsBadge';
+import OpsBanner from '../../ops/primitives/OpsBanner';
+import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
+import OpsEmptyState from '../../ops/primitives/OpsEmptyState';
+import OpsPagination from '../../ops/primitives/OpsPagination';
+import './OpsGiftVouchers.css';
+
+const DELIVERY_LABELS = {
+  email: 'Email',
+  postal: 'Postal',
+  manual: 'Manual'
+};
+
+function deliveryLabel(mode) {
+  if (!mode) return '';
+  return DELIVERY_LABELS[mode] || mode;
+}
+
+function voucherTitle(row) {
+  return row.code || 'Code pending';
+}
+
+function voucherMeta(row) {
+  return `${row.buyerName || 'Unknown buyer'} (${row.buyerEmail || '—'}) → ${row.recipientName || 'Unknown recipient'} (${row.recipientEmail || '—'})`;
+}
+
+function hasActiveGiftVoucherFilters(filters) {
+  return Boolean(
+    filters.search ||
+      filters.status ||
+      filters.deliveryMode ||
+      filters.visibility ||
+      filters.includeSmoke ||
+      filters.includeAbandoned
+  );
+}
 
 export default function OpsGiftVouchers() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -81,26 +124,33 @@ export default function OpsGiftVouchers() {
 
   const resetFilters = () => setSearchParams(new URLSearchParams());
 
-  if (loading) return <div className="text-sm text-gray-500">Loading gift vouchers...</div>;
+  const items = data?.items || [];
+  const pagination = data?.pagination;
+  const filtered = hasActiveGiftVoucherFilters(filters);
 
   return (
-    <div className="space-y-4 pb-16 sm:pb-0">
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <h2 className="text-lg font-semibold text-gray-900">Gift vouchers</h2>
-        <p className="text-sm text-gray-500 mt-1">
-          Operational vouchers shown by default (active, partially redeemed, redeemed, expired).
-        </p>
-        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-          <input
+    <OpsPage width="wide" className="ops-gv-page">
+      <OpsPageHeader
+        title="Gift vouchers"
+        description="Operational vouchers shown by default (active, partially redeemed, redeemed, expired)."
+      />
+
+      {error ? <OpsBanner tone="danger" body={error} /> : null}
+
+      <div className="ops-gv-toolbar">
+        <div className="ops-gv-filters">
+          <OpsTextField
+            className="ops-gv-filters__search"
+            label="Search"
             value={filters.search}
             onChange={(e) => updateFilter('search', e.target.value)}
             placeholder="Search code, buyer, recipient, email"
-            className="px-3 py-2 text-sm border rounded-lg sm:col-span-2 lg:col-span-2"
           />
-          <select
+          <OpsSelect
+            className="ops-gv-filters__select"
+            label="Status"
             value={statusSelectValue}
             onChange={(e) => updateStatusFilter(e.target.value)}
-            className="px-3 py-2 text-sm border rounded-lg"
           >
             <option value="">Operational (default)</option>
             <option value="active">Active</option>
@@ -111,86 +161,74 @@ export default function OpsGiftVouchers() {
             <option value="voided">Voided</option>
             <option value="refunded">Refunded</option>
             <option value="__all__">All statuses</option>
-          </select>
-          <select
+          </OpsSelect>
+          <OpsSelect
+            className="ops-gv-filters__select"
+            label="Delivery"
             value={filters.deliveryMode}
             onChange={(e) => updateFilter('deliveryMode', e.target.value)}
-            className="px-3 py-2 text-sm border rounded-lg"
           >
             <option value="">All delivery modes</option>
             <option value="email">Email</option>
             <option value="postal">Postal</option>
             <option value="manual">Manual</option>
-          </select>
+          </OpsSelect>
         </div>
-        <div className="mt-2 flex justify-end">
-          <button
-            type="button"
-            onClick={resetFilters}
-            className="text-xs text-gray-600 hover:text-gray-900 underline underline-offset-2"
-          >
-            Reset filters
-          </button>
-        </div>
-        {error ? <div className="mt-2 text-sm text-red-600">{error}</div> : null}
-      </section>
+        <OpsButton className="ops-gv-toolbar__reset" variant="quiet" size="compact" onClick={resetFilters}>
+          Reset filters
+        </OpsButton>
+      </div>
 
-      <section className="space-y-2">
-        {(data?.items || []).map((row) => (
-          <Link
-            key={row.giftVoucherId}
-            to={`/ops/gift-vouchers/${row.giftVoucherId}`}
-            className="block bg-white border border-gray-200 rounded-xl p-4 hover:bg-gray-50"
-          >
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-gray-900 truncate">
-                  {row.code || 'Code pending'} · {row.status}
-                </p>
-                <p className="text-xs text-gray-500 truncate">
-                  {row.buyerName || 'Unknown buyer'} ({row.buyerEmail || '—'}) → {row.recipientName || 'Unknown recipient'} ({row.recipientEmail || '—'})
-                </p>
-              </div>
-              <div className="text-xs text-gray-600 flex items-center gap-2">
-                <span className="px-2 py-1 border border-gray-200 rounded bg-gray-50">{row.deliveryMode}</span>
-                <span className="px-2 py-1 border border-gray-200 rounded bg-gray-50 tabular-nums">
-                  Balance {formatMoneyFromCents(row.balanceRemainingCents, row.currency)} /{' '}
-                  {formatMoneyFromCents(row.amountOriginalCents, row.currency)}
+      {loading ? (
+        <OpsLoadingState label="Loading gift vouchers" />
+      ) : items.length === 0 ? (
+        <OpsEmptyState
+          variant={filtered ? 'filtered' : 'empty'}
+          title={filtered ? 'No matching gift vouchers' : 'No gift vouchers'}
+          body={
+            filtered
+              ? 'No gift vouchers match the current filters.'
+              : 'Operational vouchers will appear here.'
+          }
+          action={
+            filtered ? (
+              <OpsButton variant="secondary" onClick={resetFilters}>
+                Reset filters
+              </OpsButton>
+            ) : null
+          }
+        />
+      ) : (
+        <div className="ops-gv-collection" role="list">
+          {items.map((row) => (
+            <OpsCollectionRow
+              key={row.giftVoucherId}
+              role="listitem"
+              to={`/ops/gift-vouchers/${row.giftVoucherId}`}
+              title={voucherTitle(row)}
+              meta={voucherMeta(row)}
+              status={
+                <span className="ops-gv-row__facts">
+                  <OpsStatus domain="voucher" value={row.status} />
+                  {row.deliveryMode ? <OpsBadge>{deliveryLabel(row.deliveryMode)}</OpsBadge> : null}
+                  <span className="ops-gv-row__balance">
+                    Balance {formatMoneyFromCents(row.balanceRemainingCents, row.currency)} /{' '}
+                    {formatMoneyFromCents(row.amountOriginalCents, row.currency)}
+                  </span>
                 </span>
-              </div>
-            </div>
-          </Link>
-        ))}
-        {(data?.items || []).length === 0 ? (
-          <div className="bg-white border border-gray-200 rounded-xl p-4 text-sm text-gray-600">
-            No gift vouchers match the current filters.
-          </div>
-        ) : null}
-      </section>
-
-      {data?.pagination?.totalPages > 1 ? (
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => updateFilter('page', Math.max(1, Number(data.pagination.page) - 1))}
-            disabled={Number(data.pagination.page) <= 1}
-            className="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg disabled:opacity-50"
-          >
-            Prev
-          </button>
-          <span className="text-xs text-gray-500">
-            Page {data.pagination.page} of {data.pagination.totalPages}
-          </span>
-          <button
-            type="button"
-            onClick={() => updateFilter('page', Number(data.pagination.page) + 1)}
-            disabled={Number(data.pagination.page) >= Number(data.pagination.totalPages)}
-            className="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg disabled:opacity-50"
-          >
-            Next
-          </button>
+              }
+            />
+          ))}
         </div>
+      )}
+
+      {!loading && Number(pagination?.totalPages) > 1 ? (
+        <OpsPagination
+          page={pagination.page}
+          totalPages={pagination.totalPages}
+          onPageChange={(nextPage) => updateFilter('page', nextPage)}
+        />
       ) : null}
-    </div>
+    </OpsPage>
   );
 }

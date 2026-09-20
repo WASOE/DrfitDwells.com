@@ -39,6 +39,9 @@ html[data-ops-active="true"] {
   --ops-z-toast: 60;
   --ops-bp-md: 768px;
   --ops-bp-lg: 1024px;
+  --ops-page-w-narrow: 720px;
+  --ops-page-w-default: 1040px;
+  --ops-page-w-wide: 1360px;
 }
 
 /*

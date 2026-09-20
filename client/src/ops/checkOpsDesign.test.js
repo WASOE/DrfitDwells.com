@@ -3,13 +3,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
-const { RULES, scanDirectory } = require('../../scripts/check-ops-design.cjs');
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const OPS_ROOT = path.resolve(__dirname);
+const { RULES, MIGRATED_OPS_FILES, scanDirectory, scanOpsDesign } = require('../../scripts/check-ops-design.cjs');
 
 let tmpDir = null;
 
@@ -21,10 +17,12 @@ afterEach(() => {
 });
 
 describe('ops design guard', () => {
-  it('passes the current Ops design island', () => {
-    const result = scanDirectory(OPS_ROOT);
+  it('passes the current Ops design island and migrated production files', () => {
+    const result = scanOpsDesign();
     expect(result.violations, JSON.stringify(result.violations, null, 2)).toEqual([]);
     expect(result.scanned.length).toBeGreaterThan(0);
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsGiftVouchers.jsx');
+    expect(result.scanned).toEqual(expect.arrayContaining(MIGRATED_OPS_FILES));
   });
 
   it('detects raw hex, Playfair, browser confirm, and arbitrary Tailwind', () => {

@@ -431,6 +431,21 @@ a.ops-collection-row__main:hover {
   min-height: var(--ops-control-h);
 }
 
+.ops-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ops-space-12);
+  max-width: 100%;
+}
+
+.ops-pagination__status {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ops-text-muted);
+}
+
 /* Banner / empty / loading / error */
 .ops-banner {
   display: flex;
@@ -762,5 +777,45 @@ a.ops-collection-row__main:hover {
   .ops-sheet,
   .ops-tooltip__content {
     animation: none;
+  }
+}
+
+/* Page container — max-width from locked tokens. Not a page-type template. */
+.ops-page {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  margin-inline: auto;
+  padding: var(--ops-space-16);
+  padding-bottom: calc(var(--ops-space-16) + var(--ops-bottomnav-h) + env(safe-area-inset-bottom, 0px));
+  container-type: inline-size;
+  container-name: ops-page;
+}
+
+.ops-page--narrow {
+  max-width: var(--ops-page-w-narrow);
+}
+
+.ops-page--default {
+  max-width: var(--ops-page-w-default);
+}
+
+.ops-page--wide {
+  max-width: var(--ops-page-w-wide);
+}
+
+.ops-page--full {
+  max-width: none;
+}
+
+@media (min-width: 768px) {
+  .ops-page {
+    padding: var(--ops-space-16);
+  }
+}
+
+@media (min-width: 1024px) {
+  .ops-page {
+    padding: var(--ops-space-24);
   }
 }

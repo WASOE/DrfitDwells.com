@@ -15,6 +15,7 @@ import OpsInlineError from '../primitives/OpsInlineError';
 import OpsLoadingState from '../primitives/OpsLoadingState';
 import OpsModal from '../primitives/OpsModal';
 import OpsPageHeader from '../primitives/OpsPageHeader';
+import OpsPagination from '../primitives/OpsPagination';
 import OpsSelect from '../primitives/OpsSelect';
 import OpsSheet from '../primitives/OpsSheet';
 import OpsStatus from '../primitives/OpsStatus';
@@ -143,6 +144,11 @@ function AppearanceControl() {
   );
 }
 
+function PaginationSample() {
+  const [page, setPage] = useState(2);
+  return <OpsPagination page={page} totalPages={5} onPageChange={setPage} />;
+}
+
 export default function OpsDesignSystemPage() {
   const [overlay, setOverlay] = useState(null);
 
@@ -207,6 +213,14 @@ export default function OpsDesignSystemPage() {
         </div>
         <p className="ops-ds-section__note">Focus ring uses --ops-focus.</p>
         <div className="ops-ds-focus-sample">Guest name</div>
+      </Section>
+
+      <Section
+        id="ops-ds-page-width"
+        title="Page width"
+        note="OpsPage maxima from the locked guide. Unmigrated routes still use max-w-7xl. This page is not wrapped in OpsPage."
+      >
+        <p className="ops-ds-type-body">narrow 720 · default 1040 · wide 1360 · full none</p>
       </Section>
 
       <Section id="ops-ds-space" title="Spacing" note="4px atomic unit. Allowed: 4, 8, 12, 16, 24, 32, 48.">
@@ -369,6 +383,10 @@ export default function OpsDesignSystemPage() {
             />
           ))}
         </div>
+      </Section>
+
+      <Section id="ops-ds-pagination" title="Pagination" note="Previous, page context, Next. URL-agnostic. No page-size selector.">
+        <PaginationSample />
       </Section>
 
       <Section id="ops-ds-banners" title="Banners">

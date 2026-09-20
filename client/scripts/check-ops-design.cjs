@@ -2,8 +2,9 @@
 'use strict';
 
 /**
- * Ops design-island guard (P0E).
- * Scans client/src/ops only. Does not scan client/src/pages/ops.
+ * Ops design-language guard (P0E).
+ * Scans client/src/ops plus explicit migrated production files in MIGRATED_OPS_FILES.
+ * Does not scan the rest of client/src/pages/ops.
  *
  * ENFORCED NOW (narrow, deterministic):
  * - raw hex outside token sources
@@ -23,7 +24,11 @@
 const fs = require('fs');
 const path = require('path');
 
+const CLIENT_ROOT = path.resolve(__dirname, '..');
 const DEFAULT_ROOT = path.resolve(__dirname, '../src/ops');
+
+/** Production files migrated onto the Ops design language. Append per batch. */
+const MIGRATED_OPS_FILES = ['src/pages/ops/OpsGiftVouchers.jsx', 'src/pages/ops/OpsGiftVouchers.css'];
 
 const HEX_ALLOWLIST = new Set(['ops.css', 'tokens/opsTokenNames.js']);
 const CREATE_PORTAL_ALLOWLIST = new Set(['primitives/opsOverlay.js']);
@@ -221,6 +226,40 @@ function scanDirectory(root = DEFAULT_ROOT, options = {}) {
   return { root, scanned, violations };
 }
 
+function scanMigratedOpsFiles(options = {}) {
+  const ignoreTests = options.ignoreTests !== false;
+  const scanned = [];
+  const violations = [];
+
+  for (const relPosix of MIGRATED_OPS_FILES) {
+    if (ignoreTests && isTestFile(relPosix)) continue;
+    scanned.push(relPosix);
+    const absPath = path.join(CLIENT_ROOT, relPosix);
+    if (!fs.existsSync(absPath)) {
+      violations.push({
+        file: relPosix,
+        line: 0,
+        rule: 'ops-migrated',
+        message: 'listed migrated Ops file is missing'
+      });
+      continue;
+    }
+    violations.push(...scanFile(absPath, relPosix));
+  }
+
+  return { scanned, violations };
+}
+
+function scanOpsDesign(options = {}) {
+  const island = scanDirectory(DEFAULT_ROOT, options);
+  const migrated = scanMigratedOpsFiles(options);
+  return {
+    root: island.root,
+    scanned: island.scanned.concat(migrated.scanned),
+    violations: island.violations.concat(migrated.violations)
+  };
+}
+
 function printReport({ root, scanned, violations }) {
   if (violations.length === 0) {
     console.log(
@@ -246,9 +285,10 @@ function printReport({ root, scanned, violations }) {
 
 function main(argv = process.argv.slice(2)) {
   const rootFlag = argv.find((arg) => arg.startsWith('--root='));
-  const root = rootFlag ? path.resolve(rootFlag.slice('--root='.length)) : DEFAULT_ROOT;
   const includeTests = argv.includes('--include-tests');
-  const result = scanDirectory(root, { ignoreTests: !includeTests });
+  const result = rootFlag
+    ? scanDirectory(path.resolve(rootFlag.slice('--root='.length)), { ignoreTests: !includeTests })
+    : scanOpsDesign({ ignoreTests: !includeTests });
   printReport(result);
   process.exitCode = result.violations.length === 0 ? 0 : 1;
   return result;
@@ -262,7 +302,10 @@ module.exports = {
   RULES,
   HEX_ALLOWLIST,
   DEFAULT_ROOT,
+  MIGRATED_OPS_FILES,
   scanDirectory,
+  scanMigratedOpsFiles,
+  scanOpsDesign,
   scanFile,
   main
 };

@@ -3,6 +3,8 @@ description: Locked Ops design language. New Ops UI uses canonical tokens and pr
 globs:
   - client/src/ops/**/*
   - docs/ops-design/**/*
+  - client/src/pages/ops/OpsGiftVouchers.jsx
+  - client/src/pages/ops/OpsGiftVouchers.css
 alwaysApply: false
 ---
 
@@ -14,9 +16,9 @@ This rule does **not** authorize feature work, IA changes, desktop-shell work, o
 
 ## Scope
 
-Applies to the new Ops design island: `client/src/ops/**`.
+Applies to the new Ops design island: `client/src/ops/**`, plus explicitly migrated production files listed in the globs (currently Gift Vouchers collection).
 
-`client/src/pages/ops/**` is legacy until an explicit migration slice. Do not drive-by rewrite it. Do not fail CI against that tree from this rule.
+`client/src/pages/ops/**` is otherwise legacy until an explicit migration slice. Do not drive-by rewrite it. Do not fail CI against that tree from this rule except for files listed in `MIGRATED_OPS_FILES` (`client/scripts/check-ops-design.cjs`).
 
 ## MUST
 
