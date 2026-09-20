@@ -1,5 +1,23 @@
 import { useEffect, useState } from 'react';
 import { opsReadAPI } from '../../services/opsApi';
+import OpsPage from '../../ops/primitives/OpsPage';
+import OpsPageHeader from '../../ops/primitives/OpsPageHeader';
+import OpsStatus from '../../ops/primitives/OpsStatus';
+import OpsBanner from '../../ops/primitives/OpsBanner';
+import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
+import OpsEmptyState from '../../ops/primitives/OpsEmptyState';
+import OpsMetric, { OpsMetricGroup } from '../../ops/primitives/OpsMetric';
+import './OpsSyncCenter.css';
+
+function syncRowStatusValue(row) {
+  if (row.lastSyncOutcome === 'failed') return 'failed';
+  if (row.stale) return 'stale';
+  return row.syncStatus || 'stale';
+}
+
+function formatLastSyncedAt(value) {
+  return value ? String(value).slice(0, 10) : 'n/a';
+}
 
 export default function OpsSyncCenter() {
   const [data, setData] = useState(null);
@@ -27,109 +45,100 @@ export default function OpsSyncCenter() {
     };
   }, []);
 
-  if (loading) return <div className="text-sm text-gray-500">Loading sync center...</div>;
-  if (error) return <div className="text-sm text-red-600">{error}</div>;
-  if (!data) return <div className="text-sm text-gray-500">No sync data.</div>;
-
-  const staleCount = data.healthByCabinChannel?.filter((r) => r.stale).length || 0;
-  const failedCount = data.healthByCabinChannel?.filter((r) => r.lastSyncOutcome === 'failed').length || 0;
-  const totalUnresolved = data.healthByCabinChannel?.reduce((acc, r) => acc + (r.unresolvedAnomalies || 0), 0) || 0;
-  const duplicateImportCount =
-    data.recentEvents?.filter((e) => e.anomalyType === 'sync_duplicate_import').length || 0;
+  const healthRows = data?.healthByCabinChannel || [];
+  const recentEvents = data?.recentEvents || [];
+  const staleCount = healthRows.filter((row) => row.stale).length;
+  const failedCount = healthRows.filter((row) => row.lastSyncOutcome === 'failed').length;
+  const totalUnresolved = healthRows.reduce((acc, row) => acc + (row.unresolvedAnomalies || 0), 0);
+  const duplicateImportCount = recentEvents.filter((event) => event.anomalyType === 'sync_duplicate_import').length;
 
   return (
-    <div className="space-y-4 pb-16 sm:pb-0">
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <h2 className="text-lg font-semibold text-gray-900">Sync Center</h2>
-        <div className="mt-2 text-sm text-gray-500">
-          External holds and sync health (real evidence).
-        </div>
-      </section>
+    <OpsPage width="default" className="ops-sync-page">
+      <OpsPageHeader title="Sync" description="External holds and sync health (real evidence)." />
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-        <h3 className="text-sm font-semibold text-gray-900">Health by cabin + channel</h3>
-        {data.healthByCabinChannel?.length ? (
-          <div className="divide-y divide-gray-100">
-            {data.healthByCabinChannel.map((row) => {
-              const isStale = row.stale;
-              const statusColor = row.lastSyncOutcome === 'failed' ? 'text-red-700 bg-red-50 border-red-200' : isStale ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200';
-              const rowKey = `${row.cabinId}:${row.channel}:${row.unitId || ''}`;
-              return (
-                <div key={rowKey} className="py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium text-gray-900">Cabin {row.cabinId}</div>
-                    <div className="text-xs text-gray-500">
-                      {row.channel}
-                      {row.unitId ? (
-                        <>
-                          {' '}
-                          · unit <span className="font-mono">{row.unitId}</span>
-                        </>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="ml-auto">
-                    <span className={`inline-flex items-center px-2 py-1 rounded text-xs border ${statusColor}`}>
-                      {row.syncStatus || 'stale'}
-                    </span>
-                  </div>
-                  <div className="text-xs text-gray-600 sm:ml-auto">
-                    lastSyncedAt: {row.lastSyncedAt ? String(row.lastSyncedAt).slice(0, 10) : 'n/a'}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="text-sm text-gray-500">No health rows yet.</div>
-        )}
-      </section>
+      {error ? <OpsBanner tone="danger" body={error} /> : null}
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <h3 className="text-sm font-semibold text-gray-900">Recent sync events</h3>
-        <div className="mt-3 divide-y divide-gray-100">
-          {data.recentEvents?.length ? (
-            data.recentEvents.map((e) => (
-              <div key={e.eventId} className="py-2.5">
-                <div className="text-sm text-gray-900">{e.cabinId} · {e.channel}</div>
-                <div className="text-xs text-gray-500">
-                  outcome: {e.outcome} · at {String(e.runAt).slice(0, 19)}
-                </div>
-                {e.anomalyType ? (
-                  <div className="mt-1 text-xs">
-                    <span className="inline-flex px-2 py-1 rounded border border-amber-200 bg-amber-50 text-amber-800">
-                      anomaly: {e.anomalyType}
-                    </span>
-                  </div>
-                ) : null}
+      {loading ? (
+        <OpsLoadingState label="Loading sync center" />
+      ) : error ? null : !data ? (
+        <OpsEmptyState title="No sync data." />
+      ) : (
+        <>
+          <section className="ops-sync-section" aria-labelledby="ops-sync-anomalies">
+            <h2 id="ops-sync-anomalies" className="ops-sync-section__title">
+              Anomalies & manual review
+            </h2>
+            <OpsMetricGroup>
+              <OpsMetric label="Stale pairs" value={staleCount} />
+              <OpsMetric label="Failed pairs" value={failedCount} />
+              <OpsMetric label="Unresolved anomalies" value={totalUnresolved} />
+            </OpsMetricGroup>
+            <p className="ops-sync-note">
+              Open sync-related manual reviews: {data.aggregates?.unresolvedSyncManualReviews ?? 0} · duplicate-import anomalies in recent events: {duplicateImportCount}
+            </p>
+          </section>
+
+          <section className="ops-sync-section" aria-labelledby="ops-sync-health">
+            <h2 id="ops-sync-health" className="ops-sync-section__title">
+              Health by cabin + channel
+            </h2>
+            {healthRows.length ? (
+              <div className="ops-sync-list" role="list">
+                {healthRows.map((row) => {
+                  const rowKey = `${row.cabinId}:${row.channel}:${row.unitId || ''}`;
+                  return (
+                    <article key={rowKey} className="ops-sync-row" role="listitem">
+                      <div className="ops-sync-row__head">
+                        <p className="ops-sync-row__title">Cabin {row.cabinId}</p>
+                        <span className="ops-sync-row__status">
+                          <OpsStatus domain="sync" value={syncRowStatusValue(row)} />
+                        </span>
+                      </div>
+                      <p className="ops-sync-row__meta">
+                        {row.channel}
+                        {row.unitId ? (
+                          <>
+                            {' '}
+                            · unit <span className="ops-sync-row__id">{row.unitId}</span>
+                          </>
+                        ) : null}
+                      </p>
+                      <p className="ops-sync-row__time">lastSyncedAt: {formatLastSyncedAt(row.lastSyncedAt)}</p>
+                    </article>
+                  );
+                })}
               </div>
-            ))
-          ) : (
-            <div className="text-sm text-gray-500">No recent sync events.</div>
-          )}
-        </div>
-      </section>
+            ) : (
+              <OpsEmptyState title="No health rows yet." />
+            )}
+          </section>
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <h3 className="text-sm font-semibold text-gray-900">Anomalies & manual review</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-2">
-          <div className="border border-gray-200 rounded-xl p-3">
-            <div className="text-xs text-gray-500">Stale pairs</div>
-            <div className="mt-1 text-lg font-semibold text-gray-900">{staleCount}</div>
-          </div>
-          <div className="border border-red-200 rounded-xl p-3">
-            <div className="text-xs text-red-700">Failed pairs</div>
-            <div className="mt-1 text-lg font-semibold text-red-800">{failedCount}</div>
-          </div>
-          <div className="border border-amber-200 rounded-xl p-3">
-            <div className="text-xs text-amber-800">Unresolved anomalies</div>
-            <div className="mt-1 text-lg font-semibold text-amber-900">{totalUnresolved}</div>
-          </div>
-        </div>
-        <p className="text-sm text-gray-600 mt-2">
-          Open sync-related manual reviews: {data.aggregates?.unresolvedSyncManualReviews ?? 0} · duplicate-import anomalies in recent events: {duplicateImportCount}
-        </p>
-      </section>
-    </div>
+          <section className="ops-sync-section" aria-labelledby="ops-sync-events">
+            <h2 id="ops-sync-events" className="ops-sync-section__title">
+              Recent sync events
+            </h2>
+            {recentEvents.length ? (
+              <div className="ops-sync-list" role="list">
+                {recentEvents.map((event) => (
+                  <article key={event.eventId} className="ops-sync-event" role="listitem">
+                    <p className="ops-sync-event__title">
+                      {event.cabinId} · {event.channel}
+                    </p>
+                    <p className="ops-sync-event__meta">
+                      outcome: {event.outcome} · at {String(event.runAt).slice(0, 19)}
+                    </p>
+                    {event.anomalyType ? (
+                      <p className="ops-sync-event__anomaly">anomaly: {event.anomalyType}</p>
+                    ) : null}
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <OpsEmptyState title="No recent sync events." />
+            )}
+          </section>
+        </>
+      )}
+    </OpsPage>
   );
 }

@@ -1,0 +1,104 @@
+/* Sync center dashboard layout only. Visual values come from --ops-* tokens. */
+.ops-sync-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-16);
+  min-width: 0;
+}
+
+.ops-sync-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-12);
+  min-width: 0;
+}
+
+.ops-sync-section__title {
+  margin: 0;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--ops-text);
+}
+
+.ops-sync-note {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ops-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.ops-sync-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ops-sync-row,
+.ops-sync-event {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-4);
+  min-width: 0;
+  padding: var(--ops-space-12) 0;
+  border-bottom: 1px solid var(--ops-border);
+}
+
+.ops-sync-row__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ops-space-8);
+  min-width: 0;
+}
+
+.ops-sync-row__title {
+  margin: 0;
+  flex: 1 1 12rem;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--ops-text);
+  overflow-wrap: anywhere;
+}
+
+.ops-sync-event__title {
+  margin: 0;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--ops-text);
+  overflow-wrap: anywhere;
+}
+
+.ops-sync-row__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-self: flex-start;
+}
+
+.ops-sync-row__meta,
+.ops-sync-row__time,
+.ops-sync-event__meta,
+.ops-sync-event__anomaly {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ops-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.ops-sync-row__time,
+.ops-sync-event__meta {
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-sync-row__id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}

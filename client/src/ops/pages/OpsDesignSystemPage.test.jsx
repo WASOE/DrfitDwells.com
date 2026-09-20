@@ -83,6 +83,8 @@ describe('OpsDesignSystemPage', () => {
     expect(screen.getByRole('button', { name: 'Open modal' })).toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Pagination' })).toBeInTheDocument();
     expect(screen.getByText('Page 2 of 5')).toBeInTheDocument();
+    expect(screen.getByText('Stale pairs')).toBeInTheDocument();
+    expect(screen.getByText('Zero is valid.')).toBeInTheDocument();
   });
 
   it('resolves status examples through the registry', () => {

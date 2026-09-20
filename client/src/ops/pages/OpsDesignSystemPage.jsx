@@ -19,6 +19,7 @@ import OpsPagination from '../primitives/OpsPagination';
 import OpsSelect from '../primitives/OpsSelect';
 import OpsSheet from '../primitives/OpsSheet';
 import OpsStatus from '../primitives/OpsStatus';
+import OpsMetric, { OpsMetricGroup } from '../primitives/OpsMetric';
 import OpsTable, {
   OpsTableBody,
   OpsTableCell,
@@ -387,6 +388,18 @@ export default function OpsDesignSystemPage() {
 
       <Section id="ops-ds-pagination" title="Pagination" note="Previous, page context, Next. URL-agnostic. No page-size selector.">
         <PaginationSample />
+      </Section>
+
+      <Section
+        id="ops-ds-metrics"
+        title="Metric"
+        note="Compact operational label/value. Not a dashboard tile. Optional meta only when it adds context."
+      >
+        <OpsMetricGroup>
+          <OpsMetric label="Stale pairs" value={2} />
+          <OpsMetric label="Failed events" value={0} meta="Zero is valid." />
+          <OpsMetric label="Worker" value="Running" />
+        </OpsMetricGroup>
       </Section>
 
       <Section id="ops-ds-banners" title="Banners">

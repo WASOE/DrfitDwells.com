@@ -1,5 +1,22 @@
 import { useEffect, useState } from 'react';
 import { opsReadAPI } from '../../services/opsApi';
+import OpsPage from '../../ops/primitives/OpsPage';
+import OpsPageHeader from '../../ops/primitives/OpsPageHeader';
+import OpsBanner from '../../ops/primitives/OpsBanner';
+import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
+import OpsEmptyState from '../../ops/primitives/OpsEmptyState';
+import OpsMetric, { OpsMetricGroup } from '../../ops/primitives/OpsMetric';
+import './OpsCommunicationOversight.css';
+
+function workerLabel(delivery) {
+  if (delivery?.workerRunning) return 'Running';
+  if (delivery?.workerEnabled) return 'Enabled (not running)';
+  return 'Disabled';
+}
+
+function yesNo(value) {
+  return value ? 'Yes' : 'No';
+}
 
 export default function OpsCommunicationOversight() {
   const [data, setData] = useState(null);
@@ -27,108 +44,82 @@ export default function OpsCommunicationOversight() {
     };
   }, []);
 
-  if (loading) return <div className="text-sm text-gray-500">Loading communication oversight...</div>;
-  if (error) return <div className="text-sm text-red-600">{error}</div>;
-  if (!data) return <div className="text-sm text-gray-500">No communication data.</div>;
+  const recent = data?.recent || [];
+  const failedAmbiguous =
+    (data?.summary?.confirmationFailed ?? 0) + (data?.summary?.confirmationAmbiguous ?? 0);
 
   return (
-    <div className="space-y-4 pb-16 sm:pb-0">
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <h2 className="text-lg font-semibold text-gray-900">Communication oversight</h2>
-        <p className="text-sm text-gray-500 mt-1">Email delivery evidence (read-only).</p>
-        {data.degraded?.eventTrackingGapsPossible ? (
-          <p className="text-sm text-amber-800 mt-2">Degraded: email tracking gaps may exist.</p>
-        ) : null}
-      </section>
+    <OpsPage width="default" className="ops-comms-page">
+      <OpsPageHeader title="Communications" description="Email delivery evidence (read-only)." />
 
-      <section className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <div className="text-xs text-gray-500 uppercase tracking-wide">Failed events</div>
-          <div className="mt-1 text-2xl font-semibold text-gray-900">{data.summary?.failedEvents ?? 0}</div>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <div className="text-xs text-gray-500 uppercase tracking-wide">Total recent</div>
-          <div className="mt-1 text-2xl font-semibold text-gray-900">{data.summary?.totalRecentEvents ?? 0}</div>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <div className="text-xs text-gray-500 uppercase tracking-wide">Gaps possible</div>
-          <div className="mt-1 text-2xl font-semibold text-gray-900">
-            {data.degraded?.eventTrackingGapsPossible ? 'Yes' : 'No'}
-          </div>
-        </div>
-      </section>
+      {error ? <OpsBanner tone="danger" body={error} /> : null}
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-        <h3 className="text-sm font-semibold text-gray-900">Booking confirmation delivery</h3>
-        <p className="text-xs text-gray-500">
-          SMTP credentials alone do not mean confirmations are draining. Overdue pending rows require the confirmation worker.
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <div className="rounded-lg border border-gray-200 p-3">
-            <div className="text-xs text-gray-500 uppercase tracking-wide">SMTP configured</div>
-            <div className="mt-1 text-lg font-semibold text-gray-900">
-              {data.confirmationDelivery?.smtpConfigured ? 'Yes' : 'No'}
-            </div>
-          </div>
-          <div className="rounded-lg border border-gray-200 p-3">
-            <div className="text-xs text-gray-500 uppercase tracking-wide">Worker</div>
-            <div className="mt-1 text-lg font-semibold text-gray-900">
-              {data.confirmationDelivery?.workerRunning
-                ? 'Running'
-                : data.confirmationDelivery?.workerEnabled
-                  ? 'Enabled (not running)'
-                  : 'Disabled'}
-            </div>
-          </div>
-          <div className="rounded-lg border border-gray-200 p-3">
-            <div className="text-xs text-gray-500 uppercase tracking-wide">Overdue pending</div>
-            <div
-              className={`mt-1 text-lg font-semibold ${
-                (data.summary?.confirmationPendingDue ?? 0) > 0 ? 'text-amber-800' : 'text-gray-900'
-              }`}
-            >
-              {data.summary?.confirmationPendingDue ?? 0}
-            </div>
-          </div>
-          <div className="rounded-lg border border-gray-200 p-3">
-            <div className="text-xs text-gray-500 uppercase tracking-wide">Failed / ambiguous</div>
-            <div className="mt-1 text-lg font-semibold text-gray-900">
-              {(data.summary?.confirmationFailed ?? 0) + (data.summary?.confirmationAmbiguous ?? 0)}
-            </div>
-          </div>
-        </div>
-        {data.degraded?.overdueConfirmationBacklog ? (
-          <p className="text-sm text-amber-800">
-            Unhealthy: overdue booking confirmation states are waiting for the confirmation worker.
-          </p>
-        ) : null}
-        <p className="text-xs text-gray-500">
-          Health: {data.confirmationDelivery?.deliveryHealth || 'unknown'}
-          {data.confirmationDelivery?.worker?.workerId
-            ? ` · workerId ${data.confirmationDelivery.worker.workerId}`
-            : ''}
-        </p>
-      </section>
+      {loading ? (
+        <OpsLoadingState label="Loading communication oversight" />
+      ) : error ? null : !data ? (
+        <OpsEmptyState title="No communication data." />
+      ) : (
+        <>
+          {data.degraded?.eventTrackingGapsPossible ? (
+            <OpsBanner tone="warning" body="Degraded: email tracking gaps may exist." />
+          ) : null}
+          {data.degraded?.overdueConfirmationBacklog ? (
+            <OpsBanner
+              tone="warning"
+              body="Unhealthy: overdue booking confirmation states are waiting for the confirmation worker."
+            />
+          ) : null}
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <h3 className="text-sm font-semibold text-gray-900">Recent email events</h3>
-        <div className="mt-3 space-y-2">
-          {(data.recent || []).map((evt) => (
-            <div key={evt.eventId} className="border border-gray-200 rounded-xl p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold text-gray-900">{evt.type || 'unknown'}</div>
-                  <div className="text-xs text-gray-500 truncate">
-                    to: {evt.recipient || '—'} · bookingId: {evt.bookingId || '—'}
-                  </div>
-                </div>
-                <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50">{String(evt.happenedAt).slice(0, 10)}</span>
+          <OpsMetricGroup>
+            <OpsMetric label="Failed events" value={data.summary?.failedEvents ?? 0} />
+            <OpsMetric label="Total recent" value={data.summary?.totalRecentEvents ?? 0} />
+            <OpsMetric label="Gaps possible" value={yesNo(data.degraded?.eventTrackingGapsPossible)} />
+          </OpsMetricGroup>
+
+          <section className="ops-comms-section" aria-labelledby="ops-comms-confirmation">
+            <h2 id="ops-comms-confirmation" className="ops-comms-section__title">
+              Booking confirmation delivery
+            </h2>
+            <p className="ops-comms-note">
+              SMTP credentials alone do not mean confirmations are draining. Overdue pending rows require the
+              confirmation worker.
+            </p>
+            <OpsMetricGroup>
+              <OpsMetric label="SMTP configured" value={yesNo(data.confirmationDelivery?.smtpConfigured)} />
+              <OpsMetric label="Worker" value={workerLabel(data.confirmationDelivery)} />
+              <OpsMetric label="Overdue pending" value={data.summary?.confirmationPendingDue ?? 0} />
+              <OpsMetric label="Failed / ambiguous" value={failedAmbiguous} />
+            </OpsMetricGroup>
+            <p className="ops-comms-health">
+              Health: {data.confirmationDelivery?.deliveryHealth || 'unknown'}
+              {data.confirmationDelivery?.worker?.workerId
+                ? ` · workerId ${data.confirmationDelivery.worker.workerId}`
+                : ''}
+            </p>
+          </section>
+
+          <section className="ops-comms-section" aria-labelledby="ops-comms-events">
+            <h2 id="ops-comms-events" className="ops-comms-section__title">
+              Recent email events
+            </h2>
+            {recent.length ? (
+              <div className="ops-comms-list" role="list">
+                {recent.map((evt) => (
+                  <article key={evt.eventId} className="ops-comms-event" role="listitem">
+                    <p className="ops-comms-event__title">{evt.type || 'unknown'}</p>
+                    <p className="ops-comms-event__meta">
+                      to: {evt.recipient || '—'} · bookingId: {evt.bookingId || '—'}
+                    </p>
+                    <p className="ops-comms-event__time">{String(evt.happenedAt).slice(0, 10)}</p>
+                  </article>
+                ))}
               </div>
-            </div>
-          ))}
-          {(data.recent || []).length === 0 ? <div className="text-sm text-gray-500">No recent events.</div> : null}
-        </div>
-      </section>
-    </div>
+            ) : (
+              <OpsEmptyState title="No recent events." />
+            )}
+          </section>
+        </>
+      )}
+    </OpsPage>
   );
 }

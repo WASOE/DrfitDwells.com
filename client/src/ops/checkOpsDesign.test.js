@@ -28,6 +28,10 @@ describe('ops design guard', () => {
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsPromoCodes.css');
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsManualReviewBacklog.jsx');
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsManualReviewBacklog.css');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsSyncCenter.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsSyncCenter.css');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsCommunicationOversight.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsCommunicationOversight.css');
     expect(result.scanned).toEqual(expect.arrayContaining(MIGRATED_OPS_FILES));
   });
 

@@ -486,6 +486,58 @@ a.ops-collection-row__main:hover {
   color: var(--ops-text-muted);
 }
 
+/* Compact operational metrics — label / value / optional meta. Not KPI tiles. */
+.ops-metric-group {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--ops-space-16);
+  min-width: 0;
+}
+
+.ops-metric {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-4);
+  min-width: 0;
+}
+
+.ops-metric__label {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ops-text-muted);
+}
+
+.ops-metric__value {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ops-text);
+  overflow-wrap: anywhere;
+}
+
+.ops-metric__meta {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ops-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+@container ops-page (min-width: 520px) {
+  .ops-metric-group {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container ops-page (min-width: 900px) {
+  .ops-metric-group {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 /* Banner / empty / loading / error */
 .ops-banner {
   display: flex;
