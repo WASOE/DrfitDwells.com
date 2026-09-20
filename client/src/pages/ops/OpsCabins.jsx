@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { opsReadAPI, opsWriteAPI } from '../../services/opsApi';
+import OpsPage from '../../ops/primitives/OpsPage';
+import OpsPageHeader from '../../ops/primitives/OpsPageHeader';
+import OpsButton from '../../ops/primitives/OpsButton';
+import OpsBanner from '../../ops/primitives/OpsBanner';
+import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
+import OpsEmptyState from '../../ops/primitives/OpsEmptyState';
+import OpsInlineError from '../../ops/primitives/OpsInlineError';
+import OpsBadge from '../../ops/primitives/OpsBadge';
 import {
   buildExperienceKey,
   formatDateOnlyForOps,
@@ -16,6 +24,22 @@ import CabinArrivalEditor from './cabins/CabinArrivalEditor.jsx';
 import CabinTransportEditor from './cabins/CabinTransportEditor.jsx';
 import CabinOccupancyPricingEditor from './cabins/CabinOccupancyPricingEditor.jsx';
 import CabinExperiencesEditor from './cabins/CabinExperiencesEditor.jsx';
+import './OpsCabinDetail.css';
+
+const BACK = { to: '/ops/cabins', label: 'Back to cabins' };
+
+function DetailHeader({ title, meta, actions }) {
+  return <OpsPageHeader back={BACK} title={title} meta={meta} actions={actions} />;
+}
+
+function Fact({ label, children, numeric = false, wide = false }) {
+  return (
+    <div className={`ops-cd-fact${wide ? ' ops-cd-fact--wide' : ''}`}>
+      <dt className="ops-cd-fact__label">{label}</dt>
+      <dd className={`ops-cd-fact__value${numeric ? ' ops-cd-fact__value--numeric' : ''}`}>{children}</dd>
+    </div>
+  );
+}
 
 export default function OpsCabinDetail() {
   const { id } = useParams();
@@ -113,8 +137,9 @@ export default function OpsCabinDetail() {
       if (detailRequestSeq.current !== requestSeq) return;
       setError(err?.response?.data?.message || 'Failed to load cabin');
     } finally {
-      if (detailRequestSeq.current !== requestSeq) return;
-      setLoading(false);
+      if (detailRequestSeq.current === requestSeq) {
+        setLoading(false);
+      }
     }
   }, [id]);
 
@@ -133,15 +158,6 @@ export default function OpsCabinDetail() {
       { replace: true, state: {} }
     );
   }, [location.pathname, location.search, location.state?.opsFlash, navigateDetail]);
-
-  useEffect(() => {
-    if (!archiveModalOpen) return undefined;
-    const onKey = (e) => {
-      if (e.key === 'Escape') setArchiveModalOpen(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [archiveModalOpen]);
 
   const handleArchiveSubmit = async (e) => {
     e.preventDefault();
@@ -166,24 +182,9 @@ export default function OpsCabinDetail() {
     }
   };
 
-  const isMulti = data?.kind === 'multi_unit_type';
-  const op = data?.operationalSettings || {};
-  const content = data?.contentMedia || {};
-  const pre = data?.preArrival || {};
-  const degraded = data?.degraded || {};
-  const titleId = isMulti ? data?.cabinTypeId : data?.cabinId;
-  const cover = content.imageUrl;
-
-  if (loading) return <div className="text-sm text-gray-500">Loading…</div>;
-  if (error) return <div className="text-sm text-red-600">{error}</div>;
-  if (!data) return <div className="text-sm text-gray-500">Not found.</div>;
-
-  const geo = content?.geoLocation;
-  const meeting = op?.meetingPoint;
-  const summary = op?.unitBlockedDatesSummary;
-  const blockedList = !isMulti && Array.isArray(op.blockedDates) ? op.blockedDates : [];
-
   const openContentEdit = () => {
+    const content = data?.contentMedia || {};
+    const op = data?.operationalSettings || {};
     setContentEditForm({
       name: content.name || '',
       description: content.description || '',
@@ -257,6 +258,11 @@ export default function OpsCabinDetail() {
   };
 
   const openArrivalEdit = () => {
+    const content = data?.contentMedia || {};
+    const op = data?.operationalSettings || {};
+    const pre = data?.preArrival || {};
+    const geo = content?.geoLocation;
+    const meeting = op?.meetingPoint;
     setArrivalEditForm({
       location: content.location || '',
       geoLatitude: geo?.latitude != null ? String(geo.latitude) : '',
@@ -329,6 +335,7 @@ export default function OpsCabinDetail() {
   };
 
   const openCutoffsEdit = () => {
+    const op = data?.operationalSettings || {};
     const rows = Array.isArray(op.transportCutoffs)
       ? op.transportCutoffs.map((item) => ({
           type: item?.type ? String(item.type) : 'Horse',
@@ -376,6 +383,7 @@ export default function OpsCabinDetail() {
   };
 
   const openTransportOptionsEdit = () => {
+    const op = data?.operationalSettings || {};
     const rows = Array.isArray(op.transportOptions)
       ? op.transportOptions.map((item) => ({
           type: item?.type ? String(item.type) : '',
@@ -432,6 +440,7 @@ export default function OpsCabinDetail() {
   };
 
   const openOccupancyEdit = () => {
+    const op = data?.operationalSettings || {};
     setOccupancyEditForm({
       capacity: op.capacity != null ? String(op.capacity) : '',
       minNights: op.minNights != null ? String(op.minNights) : ''
@@ -462,6 +471,7 @@ export default function OpsCabinDetail() {
   };
 
   const openPricingEdit = () => {
+    const op = data?.operationalSettings || {};
     setPricingEditForm({
       pricePerNight: op.pricePerNight != null ? String(op.pricePerNight) : ''
     });
@@ -490,6 +500,7 @@ export default function OpsCabinDetail() {
   };
 
   const openExperiencesEdit = () => {
+    const content = data?.contentMedia || {};
     const rows = Array.isArray(content.experiences)
       ? content.experiences.map((item, index) => ({
           key: item?.key ? String(item.key) : '',
@@ -568,492 +579,528 @@ export default function OpsCabinDetail() {
     }
   };
 
-  return (
-    <div className="space-y-4 pb-16 sm:pb-0 w-full max-w-4xl mx-auto">
-      {showCreatedBanner ? (
-        <div
-          role="status"
-          className="rounded-xl border border-green-200 bg-green-50 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 max-w-4xl mx-auto w-full"
-        >
-          <p className="text-sm text-green-900">Cabin created successfully.</p>
-          <button
-            type="button"
-            className="text-sm text-green-800 underline shrink-0 text-left sm:text-right"
-            onClick={() => setShowCreatedBanner(false)}
-          >
-            Dismiss
-          </button>
+  if (loading) {
+    return (
+      <OpsPage width="default">
+        <div className="ops-cd">
+          <DetailHeader title="Cabin" />
+          <OpsLoadingState label="Loading cabin…" />
         </div>
-      ) : null}
-      <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
-        <Link to="/ops/cabins" className="text-sm text-[#81887A] hover:underline">
-          Back to cabins
-        </Link>
-        <div className="mt-4 flex flex-col sm:flex-row sm:items-start gap-4 sm:gap-6">
-          <div className="shrink-0 w-20 h-20 sm:w-24 sm:h-24 rounded-lg bg-gray-100 overflow-hidden border border-gray-100">
-            {cover ? (
-              <img src={normalizeMediaSrc(cover)} alt="" className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-sm font-semibold text-gray-600 bg-gray-50">
-                {thumbInitials(content.name)}
-              </div>
-            )}
-          </div>
-          <div className="min-w-0 flex-1 text-left">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-lg font-semibold text-gray-900">{content.name || '—'}</h2>
-              {isMulti ? (
-                <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-100">
-                  Multi-unit type
-                </span>
+      </OpsPage>
+    );
+  }
+
+  if (error && !data) {
+    return (
+      <OpsPage width="default">
+        <div className="ops-cd">
+          <DetailHeader title="Cabin" />
+          <OpsBanner tone="danger" title={error} />
+        </div>
+      </OpsPage>
+    );
+  }
+
+  if (!data) {
+    return (
+      <OpsPage width="default">
+        <div className="ops-cd">
+          <DetailHeader title="Cabin" />
+          <OpsEmptyState title="Not found." />
+        </div>
+      </OpsPage>
+    );
+  }
+
+  const isMulti = data?.kind === 'multi_unit_type';
+  const op = data?.operationalSettings || {};
+  const content = data?.contentMedia || {};
+  const pre = data?.preArrival || {};
+  const degraded = data?.degraded || {};
+  const titleId = isMulti ? data?.cabinTypeId : data?.cabinId;
+  const cover = content.imageUrl;
+  const geo = content?.geoLocation;
+  const meeting = op?.meetingPoint;
+  const summary = op?.unitBlockedDatesSummary;
+  const blockedList = !isMulti && Array.isArray(op.blockedDates) ? op.blockedDates : [];
+  const cabinTitle = content.name || 'Cabin';
+
+  const headerMeta = (
+    <div className="ops-cd-header-meta">
+      <div className="ops-cd-header-meta__badges">
+        <OpsBadge>{isMulti ? 'Multi-unit type' : 'Single cabin'}</OpsBadge>
+      </div>
+      {content.hostName ? <p className="ops-cd-header-meta__line">Host: {content.hostName}</p> : null}
+      <p className={`ops-cd-header-meta__muted ops-cd-mono`}>{titleId}</p>
+      {data.slug ? <p className={`ops-cd-header-meta__muted ops-cd-mono`}>Slug: {data.slug}</p> : null}
+      <p className="ops-cd-header-meta__line">{content.location || '—'}</p>
+    </div>
+  );
+
+  const headerActions = (
+    <div className="ops-cd-actions">
+      <OpsButton variant="secondary" size="compact" onClick={openContentEdit}>
+        Edit content
+      </OpsButton>
+      <OpsButton variant="secondary" size="compact" onClick={openArrivalEdit}>
+        Edit arrival
+      </OpsButton>
+      {contentEditSuccess ? <span className="ops-cd-note ops-cd-note--ok">{contentEditSuccess}</span> : null}
+      {contentEditError ? <OpsInlineError>{contentEditError}</OpsInlineError> : null}
+      {arrivalEditSuccess ? <span className="ops-cd-note ops-cd-note--ok">{arrivalEditSuccess}</span> : null}
+      {arrivalEditError ? <OpsInlineError>{arrivalEditError}</OpsInlineError> : null}
+      {occupancyEditSuccess ? <span className="ops-cd-note ops-cd-note--ok">{occupancyEditSuccess}</span> : null}
+      {occupancyEditError ? <OpsInlineError>{occupancyEditError}</OpsInlineError> : null}
+      {pricingEditSuccess ? <span className="ops-cd-note ops-cd-note--ok">{pricingEditSuccess}</span> : null}
+      {pricingEditError ? <OpsInlineError>{pricingEditError}</OpsInlineError> : null}
+      {experiencesEditSuccess ? <span className="ops-cd-note ops-cd-note--ok">{experiencesEditSuccess}</span> : null}
+      {experiencesEditError ? <OpsInlineError>{experiencesEditError}</OpsInlineError> : null}
+    </div>
+  );
+
+  return (
+    <OpsPage width="default">
+      <div className="ops-cd">
+        <DetailHeader title={cabinTitle} meta={headerMeta} actions={headerActions} />
+
+        <div className="ops-cd-banners">
+          {showCreatedBanner ? (
+            <OpsBanner
+              tone="success"
+              title="Cabin created successfully."
+              action={
+                <OpsButton variant="quiet" size="compact" onClick={() => setShowCreatedBanner(false)}>
+                  Dismiss
+                </OpsButton>
+              }
+            />
+          ) : null}
+          {degraded.missingGeo ? (
+            <OpsBanner tone="warning" title="Degraded: missing geo coordinates." />
+          ) : null}
+          {degraded.emptyInventory ? (
+            <OpsBanner tone="warning" title="Degraded: no units linked to this cabin type." />
+          ) : null}
+        </div>
+
+        <section className="ops-cd-surface">
+          <div className="ops-cd-identity">
+            <div className="ops-cd-identity__thumb">
+              {cover ? (
+                <img src={normalizeMediaSrc(cover)} alt="" />
               ) : (
-                <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-stone-100 text-stone-700 border border-stone-200">
-                  Single cabin
-                </span>
+                <div className="ops-cd-identity__thumb-fallback">{thumbInitials(content.name)}</div>
               )}
             </div>
-            {content.hostName ? (
-              <p className="text-xs text-gray-500 mt-1">Host: {content.hostName}</p>
-            ) : null}
-            <p className="text-xs text-gray-500 mt-1 font-mono break-all">{titleId}</p>
-            {data.slug ? <p className="text-xs text-gray-400 mt-0.5 font-mono">Slug: {data.slug}</p> : null}
-            <p className="text-sm text-gray-600 mt-2">{content.location || '—'}</p>
-            {degraded.missingGeo ? (
-              <p className="mt-2 text-sm text-amber-800">Degraded: missing geo coordinates.</p>
-            ) : null}
-            {degraded.emptyInventory ? (
-              <p className="mt-2 text-sm text-amber-800">Degraded: no units linked to this cabin type.</p>
-            ) : null}
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={openContentEdit}
-                className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
-              >
-                Edit content
-              </button>
-              <button
-                type="button"
-                onClick={openArrivalEdit}
-                className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
-              >
-                Edit arrival
-              </button>
-              {contentEditSuccess ? <span className="text-xs text-green-700">{contentEditSuccess}</span> : null}
-              {contentEditError ? <span className="text-xs text-red-700">{contentEditError}</span> : null}
-              {arrivalEditSuccess ? <span className="text-xs text-green-700">{arrivalEditSuccess}</span> : null}
-              {arrivalEditError ? <span className="text-xs text-red-700">{arrivalEditError}</span> : null}
-              {occupancyEditSuccess ? <span className="text-xs text-green-700">{occupancyEditSuccess}</span> : null}
-              {occupancyEditError ? <span className="text-xs text-red-700">{occupancyEditError}</span> : null}
-              {pricingEditSuccess ? <span className="text-xs text-green-700">{pricingEditSuccess}</span> : null}
-              {pricingEditError ? <span className="text-xs text-red-700">{pricingEditError}</span> : null}
-              {experiencesEditSuccess ? <span className="text-xs text-green-700">{experiencesEditSuccess}</span> : null}
-              {experiencesEditError ? <span className="text-xs text-red-700">{experiencesEditError}</span> : null}
+            <div className="ops-cd-identity__body">
+              <p className="ops-cd-note ops-cd-note--strong">{content.location || '—'}</p>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <CabinContentEditor
-        contentEditOpen={contentEditOpen}
-        contentForm={contentEditForm}
-        setContentForm={setContentEditForm}
-        contentBusy={contentEditBusy}
-        contentMessage={contentEditSuccess}
-        contentError={contentEditError}
-        onOpen={openContentEdit}
-        onCancel={() => {
-          setContentEditOpen(false);
-          setContentEditError('');
-        }}
-        onSave={saveContentEdit}
-      />
+        <CabinContentEditor
+          contentEditOpen={contentEditOpen}
+          contentForm={contentEditForm}
+          setContentForm={setContentEditForm}
+          contentBusy={contentEditBusy}
+          contentMessage={contentEditSuccess}
+          contentError={contentEditError}
+          onOpen={openContentEdit}
+          onCancel={() => {
+            setContentEditOpen(false);
+            setContentEditError('');
+          }}
+          onSave={saveContentEdit}
+        />
 
-      <CabinArrivalEditor
-        arrivalEditOpen={arrivalEditOpen}
-        arrivalForm={arrivalEditForm}
-        setArrivalForm={setArrivalEditForm}
-        arrivalBusy={arrivalEditBusy}
-        arrivalError={arrivalEditError}
-        onCancel={() => {
-          setArrivalEditOpen(false);
-          setArrivalEditError('');
-        }}
-        onSave={saveArrivalEdit}
-      />
+        <CabinArrivalEditor
+          arrivalEditOpen={arrivalEditOpen}
+          arrivalForm={arrivalEditForm}
+          setArrivalForm={setArrivalEditForm}
+          arrivalBusy={arrivalEditBusy}
+          arrivalError={arrivalEditError}
+          onCancel={() => {
+            setArrivalEditOpen(false);
+            setArrivalEditError('');
+          }}
+          onSave={saveArrivalEdit}
+        />
 
-      <CabinOccupancyPricingEditor
-        occupancyEditOpen={occupancyEditOpen}
-        occupancyForm={occupancyEditForm}
-        setOccupancyForm={setOccupancyEditForm}
-        occupancyBusy={occupancyEditBusy}
-        occupancyError={occupancyEditError}
-        onCancelOccupancy={() => {
-          setOccupancyEditOpen(false);
-          setOccupancyEditError('');
-        }}
-        onSaveOccupancy={saveOccupancyEdit}
-        pricingEditOpen={pricingEditOpen}
-        pricingForm={pricingEditForm}
-        setPricingForm={setPricingEditForm}
-        pricingBusy={pricingEditBusy}
-        pricingError={pricingEditError}
-        onCancelPricing={() => {
-          setPricingEditOpen(false);
-          setPricingEditError('');
-        }}
-        onSavePricing={savePricingEdit}
-      />
+        <CabinOccupancyPricingEditor
+          occupancyEditOpen={occupancyEditOpen}
+          occupancyForm={occupancyEditForm}
+          setOccupancyForm={setOccupancyEditForm}
+          occupancyBusy={occupancyEditBusy}
+          occupancyError={occupancyEditError}
+          onCancelOccupancy={() => {
+            setOccupancyEditOpen(false);
+            setOccupancyEditError('');
+          }}
+          onSaveOccupancy={saveOccupancyEdit}
+          pricingEditOpen={pricingEditOpen}
+          pricingForm={pricingEditForm}
+          setPricingForm={setPricingEditForm}
+          pricingBusy={pricingEditBusy}
+          pricingError={pricingEditError}
+          onCancelPricing={() => {
+            setPricingEditOpen(false);
+            setPricingEditError('');
+          }}
+          onSavePricing={savePricingEdit}
+        />
 
-      <CabinExperiencesEditor
-        experiencesEditOpen={experiencesEditOpen}
-        experiencesRows={experiencesEditRows}
-        experiencesBusy={experiencesEditBusy}
-        experiencesError={experiencesEditError}
-        onAddRow={addExperienceRow}
-        onRemoveRow={removeExperienceRow}
-        onUpdateRow={updateExperienceRow}
-        onCancel={() => {
-          setExperiencesEditOpen(false);
-          setExperiencesEditError('');
-        }}
-        onSave={saveExperiencesEdit}
-      />
+        <CabinExperiencesEditor
+          experiencesEditOpen={experiencesEditOpen}
+          experiencesRows={experiencesEditRows}
+          experiencesBusy={experiencesEditBusy}
+          experiencesError={experiencesEditError}
+          onAddRow={addExperienceRow}
+          onRemoveRow={removeExperienceRow}
+          onUpdateRow={updateExperienceRow}
+          onCancel={() => {
+            setExperiencesEditOpen(false);
+            setExperiencesEditError('');
+          }}
+          onSave={saveExperiencesEdit}
+        />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <OpsReadOnlyDetailSection title="Location &amp; coordinates">
-          <p>
-            <span className="font-medium text-gray-800">Address / label:</span> {content.location || '—'}
-          </p>
-          {geo?.latitude != null && geo?.longitude != null ? (
-            <p className="font-mono text-[11px] text-gray-600 break-all">
-              {Number(geo.latitude).toFixed(5)}, {Number(geo.longitude).toFixed(5)}
-              {geo.zoom != null ? ` · zoom ${geo.zoom}` : ''}
-            </p>
-          ) : (
-            <p className="text-gray-500">No map coordinates stored.</p>
-          )}
-        </OpsReadOnlyDetailSection>
-
-        <OpsReadOnlyDetailSection title="Meeting point &amp; arrival">
-          {meeting?.label ? (
+        <div className="ops-cd-grid ops-cd-grid--2">
+          <OpsReadOnlyDetailSection title="Location &amp; coordinates">
             <p>
-              <span className="font-medium text-gray-800">Meeting point:</span> {meeting.label}
+              <span className="ops-cd-note--strong">Address / label:</span> {content.location || '—'}
             </p>
-          ) : (
-            <p className="text-gray-500">No meeting point label.</p>
-          )}
-          {meeting?.googleMapsUrl ? (
-            <p className="break-all">
-              <span className="font-medium text-gray-800">Maps:</span>{' '}
-              <span className="font-mono text-[11px]">{meeting.googleMapsUrl}</span>
-            </p>
-          ) : null}
-          {meeting?.what3words ? (
-            <p>
-              <span className="font-medium text-gray-800">what3words:</span> {meeting.what3words}
-            </p>
-          ) : null}
-          {meeting?.lat != null && meeting?.lng != null ? (
-            <p className="font-mono text-[11px] text-gray-600">
-              Meeting lat/lng: {meeting.lat}, {meeting.lng}
-            </p>
-          ) : null}
-          <p>
-            <span className="font-medium text-gray-800">Default arrival window:</span>{' '}
-            {pre.arrivalWindowDefault?.trim() ? pre.arrivalWindowDefault : '—'}
-          </p>
-          <p className="break-all">
-            <span className="font-medium text-gray-800">Arrival guide URL:</span>{' '}
-            {pre.arrivalGuideUrl ? <span className="font-mono text-[11px]">{pre.arrivalGuideUrl}</span> : '—'}
-          </p>
-        </OpsReadOnlyDetailSection>
-      </div>
-
-      <OpsReadOnlyDetailSection title="Safety &amp; emergency">
-        <p>
-          <span className="font-medium text-gray-800">Emergency contact:</span>{' '}
-          {pre.emergencyContact?.trim() ? pre.emergencyContact : '—'}
-        </p>
-        <div>
-          <p className="font-medium text-gray-800 mb-1">Safety notes</p>
-          {pre.safetyNotes?.trim() ? (
-            <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{pre.safetyNotes}</p>
-          ) : (
-            <p className="text-gray-500">—</p>
-          )}
-        </div>
-      </OpsReadOnlyDetailSection>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-gray-900">Operational settings</h3>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={openOccupancyEdit}
-                className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
-              >
-                Edit occupancy
-              </button>
-              <button
-                type="button"
-                onClick={openPricingEdit}
-                className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
-              >
-                Edit price
-              </button>
-            </div>
-          </div>
-          <div className="mt-3 space-y-2 text-sm text-gray-700">
-            <p>Capacity: {op.capacity ?? '—'}</p>
-            <p>Min guests: {op.minGuests ?? '—'}</p>
-            <p>Min nights: {op.minNights ?? '—'}</p>
-            <p>Price/night: {op.pricePerNight ?? '—'}</p>
-            <p>Pricing model: {op.pricingModel ?? '—'}</p>
-            {isMulti ? (
-              <p>
-                Unit legacy blocked dates: {summary?.totalBlockedDateEntries ?? 0} entries across{' '}
-                {summary?.unitsWithBlockedDates ?? 0} unit(s)
+            {geo?.latitude != null && geo?.longitude != null ? (
+              <p className="ops-cd-mono ops-cd-note">
+                {Number(geo.latitude).toFixed(5)}, {Number(geo.longitude).toFixed(5)}
+                {geo.zoom != null ? ` · zoom ${geo.zoom}` : ''}
               </p>
             ) : (
-              <p>Legacy blocked dates (cabin): {op.blockedDatesCount ?? op.blockedDates?.length ?? 0}</p>
+              <p className="ops-cd-note">No map coordinates stored.</p>
             )}
-            <p>Transport options: {op.transportOptions?.length ?? 0}</p>
-            <p>Transport cutoffs: {Array.isArray(op.transportCutoffs) ? op.transportCutoffs.length : 0}</p>
-          </div>
-        </section>
+          </OpsReadOnlyDetailSection>
 
-        <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
-          <h3 className="text-sm font-semibold text-gray-900">Content &amp; media</h3>
-          <div className="mt-3 space-y-2">
-            {cover ? (
-              <img src={normalizeMediaSrc(cover)} alt="" className="w-full max-w-lg rounded-lg border border-gray-200" />
+          <OpsReadOnlyDetailSection title="Meeting point &amp; arrival">
+            {meeting?.label ? (
+              <p>
+                <span className="ops-cd-note--strong">Meeting point:</span> {meeting.label}
+              </p>
             ) : (
-              <p className="text-sm text-gray-500">No cover image.</p>
+              <p className="ops-cd-note">No meeting point label.</p>
             )}
-            {content.description ? (
-              <p className="text-sm text-gray-600 line-clamp-6">{content.description}</p>
+            {meeting?.googleMapsUrl ? (
+              <p>
+                <span className="ops-cd-note--strong">Maps:</span>{' '}
+                <span className="ops-cd-mono">{meeting.googleMapsUrl}</span>
+              </p>
             ) : null}
-          </div>
-        </section>
-      </div>
-
-      <OpsReadOnlyDetailSection title="Transport">
-        <div className="flex items-center gap-2 mb-2">
-          <button
-            type="button"
-            onClick={openTransportOptionsEdit}
-            className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
-          >
-            Edit transport options
-          </button>
-          <button
-            type="button"
-            onClick={openCutoffsEdit}
-            className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
-          >
-            Edit cutoffs
-          </button>
-          {transportOptionsEditSuccess ? <span className="text-xs text-green-700">{transportOptionsEditSuccess}</span> : null}
-          {transportOptionsEditError ? <span className="text-xs text-red-700">{transportOptionsEditError}</span> : null}
-          {cutoffsEditSuccess ? <span className="text-xs text-green-700">{cutoffsEditSuccess}</span> : null}
-          {cutoffsEditError ? <span className="text-xs text-red-700">{cutoffsEditError}</span> : null}
+            {meeting?.what3words ? (
+              <p>
+                <span className="ops-cd-note--strong">what3words:</span> {meeting.what3words}
+              </p>
+            ) : null}
+            {meeting?.lat != null && meeting?.lng != null ? (
+              <p className="ops-cd-mono ops-cd-note">
+                Meeting lat/lng: {meeting.lat}, {meeting.lng}
+              </p>
+            ) : null}
+            <p>
+              <span className="ops-cd-note--strong">Default arrival window:</span>{' '}
+              {pre.arrivalWindowDefault?.trim() ? pre.arrivalWindowDefault : '—'}
+            </p>
+            <p>
+              <span className="ops-cd-note--strong">Arrival guide URL:</span>{' '}
+              {pre.arrivalGuideUrl ? <span className="ops-cd-mono">{pre.arrivalGuideUrl}</span> : '—'}
+            </p>
+          </OpsReadOnlyDetailSection>
         </div>
-        {Array.isArray(op.transportOptions) && op.transportOptions.length > 0 ? (
-          <ul className="space-y-2 list-none pl-0">
-            {op.transportOptions.map((t, i) => (
-              <li key={i} className="border border-gray-100 rounded-md p-2 bg-gray-50/80">
-                <p className="font-medium text-gray-900">{t.type || '—'}</p>
-                <p className="text-gray-600 mt-0.5">{t.description || '—'}</p>
-                <p className="text-gray-500 mt-0.5">
-                  {t.duration || '—'} · {t.pricePerPerson != null ? `${t.pricePerPerson}/person` : '—'} ·{' '}
-                  {t.isAvailable === false ? 'Unavailable' : 'Available'}
-                </p>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-gray-500">No transport options configured.</p>
-        )}
-        {Array.isArray(op.transportCutoffs) && op.transportCutoffs.length > 0 ? (
-          <div className="mt-3 pt-3 border-t border-gray-100">
-            <p className="font-medium text-gray-800 mb-1">Last departure cutoffs</p>
-            <ul className="space-y-1 font-mono text-[11px]">
-              {op.transportCutoffs.map((c, i) => (
-                <li key={i}>
-                  {c.type || '—'} — {c.lastDeparture || '—'}
-                </li>
-              ))}
-            </ul>
+
+        <OpsReadOnlyDetailSection title="Safety &amp; emergency">
+          <p>
+            <span className="ops-cd-note--strong">Emergency contact:</span>{' '}
+            {pre.emergencyContact?.trim() ? pre.emergencyContact : '—'}
+          </p>
+          <div>
+            <p className="ops-cd-note--strong">Safety notes</p>
+            {pre.safetyNotes?.trim() ? (
+              <p className="ops-cd-fact__value">{pre.safetyNotes}</p>
+            ) : (
+              <p className="ops-cd-note">—</p>
+            )}
           </div>
-        ) : null}
-      </OpsReadOnlyDetailSection>
+        </OpsReadOnlyDetailSection>
 
-      <CabinTransportEditor
-        transportOptionsEditOpen={transportOptionsEditOpen}
-        transportOptionsForm={transportOptionsEditRows}
-        setTransportOptionsForm={setTransportOptionsEditRows}
-        transportOptionsBusy={transportOptionsEditBusy}
-        transportOptionsError={transportOptionsEditError}
-        onCancelTransportOptions={() => {
-          setTransportOptionsEditOpen(false);
-          setTransportOptionsEditError('');
-        }}
-        onSaveTransportOptions={saveTransportOptionsEdit}
-        onAddTransportOptionRow={addTransportOptionRow}
-        onRemoveTransportOptionRow={removeTransportOptionRow}
-        onUpdateTransportOptionRow={updateTransportOptionRow}
-        transportCutoffsEditOpen={cutoffsEditOpen}
-        transportCutoffsForm={cutoffsEditRows}
-        setTransportCutoffsForm={setCutoffsEditRows}
-        transportCutoffsBusy={cutoffsEditBusy}
-        transportCutoffsError={cutoffsEditError}
-        onCancelTransportCutoffs={() => {
-          setCutoffsEditOpen(false);
-          setCutoffsEditError('');
-        }}
-        onSaveTransportCutoffs={saveCutoffsEdit}
-        onAddTransportCutoffRow={addCutoffRow}
-        onRemoveTransportCutoffRow={removeCutoffRow}
-        onUpdateTransportCutoffRow={updateCutoffRow}
-      />
+        <div className="ops-cd-grid ops-cd-grid--2">
+          <section className="ops-cd-surface">
+            <div className="ops-cd-surface__head">
+              <h2 className="ops-cd-surface__title">Operational settings</h2>
+              <div className="ops-cd-actions">
+                <OpsButton variant="secondary" size="compact" onClick={openOccupancyEdit}>
+                  Edit occupancy
+                </OpsButton>
+                <OpsButton variant="secondary" size="compact" onClick={openPricingEdit}>
+                  Edit price
+                </OpsButton>
+              </div>
+            </div>
+            <dl className="ops-cd-facts">
+              <Fact label="Capacity" numeric>
+                {op.capacity ?? '—'}
+              </Fact>
+              <Fact label="Min guests" numeric>
+                {op.minGuests ?? '—'}
+              </Fact>
+              <Fact label="Min nights" numeric>
+                {op.minNights ?? '—'}
+              </Fact>
+              <Fact label="Price/night" numeric>
+                {op.pricePerNight ?? '—'}
+              </Fact>
+              <Fact label="Pricing model">{op.pricingModel ?? '—'}</Fact>
+              {isMulti ? (
+                <Fact label="Unit legacy blocked dates" wide>
+                  {summary?.totalBlockedDateEntries ?? 0} entries across {summary?.unitsWithBlockedDates ?? 0}{' '}
+                  unit(s)
+                </Fact>
+              ) : (
+                <Fact label="Legacy blocked dates (cabin)" numeric>
+                  {op.blockedDatesCount ?? op.blockedDates?.length ?? 0}
+                </Fact>
+              )}
+              <Fact label="Transport options" numeric>
+                {op.transportOptions?.length ?? 0}
+              </Fact>
+              <Fact label="Transport cutoffs" numeric>
+                {Array.isArray(op.transportCutoffs) ? op.transportCutoffs.length : 0}
+              </Fact>
+            </dl>
+          </section>
 
-      <OpsReadOnlyDetailSection title="Highlights, badges &amp; experiences">
-        <div>
-          <p className="font-medium text-gray-800 mb-1">Highlights</p>
-          {content.highlights?.length ? (
-            <ul className="list-disc pl-4 space-y-0.5">
-              {content.highlights.map((h, i) => (
-                <li key={i}>{h}</li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-gray-500">—</p>
-          )}
+          <section className="ops-cd-surface">
+            <h2 className="ops-cd-surface__title">Content &amp; media</h2>
+            <div className="ops-cd-surface__body">
+              {cover ? (
+                <img src={normalizeMediaSrc(cover)} alt="" className="ops-cd-cover" />
+              ) : (
+                <p className="ops-cd-note">No cover image.</p>
+              )}
+              {content.description ? <p className="ops-cd-fact__value">{content.description}</p> : null}
+            </div>
+          </section>
         </div>
-        <div className="mt-3 pt-3 border-t border-gray-100">
-          <p className="font-medium text-gray-800 mb-1">Badges</p>
-          {content.badges?.superhost?.enabled || content.badges?.guestFavorite?.enabled ? (
-            <ul className="space-y-1">
-              {content.badges.superhost?.enabled ? (
-                <li>
-                  Superhost: <span className="text-gray-600">{content.badges.superhost.label || 'Superhost'}</span>
-                </li>
+
+        <OpsReadOnlyDetailSection
+          title="Transport"
+          actions={
+            <>
+              <OpsButton variant="secondary" size="compact" onClick={openTransportOptionsEdit}>
+                Edit transport options
+              </OpsButton>
+              <OpsButton variant="secondary" size="compact" onClick={openCutoffsEdit}>
+                Edit cutoffs
+              </OpsButton>
+              {transportOptionsEditSuccess ? (
+                <span className="ops-cd-note ops-cd-note--ok">{transportOptionsEditSuccess}</span>
               ) : null}
-              {content.badges.guestFavorite?.enabled ? (
-                <li>
-                  Guest favorite:{' '}
-                  <span className="text-gray-600">{content.badges.guestFavorite.label || 'Guest favorite'}</span>
-                </li>
-              ) : null}
-            </ul>
-          ) : (
-            <p className="text-gray-500">None enabled.</p>
-          )}
-        </div>
-        <div className="mt-3 pt-3 border-t border-gray-100">
-          <div className="flex items-center gap-2 mb-2">
-            <button
-              type="button"
-              onClick={openExperiencesEdit}
-              className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
-            >
-              Edit experiences
-            </button>
-          </div>
-          <p className="font-medium text-gray-800 mb-1">Experiences</p>
-          {Array.isArray(content.experiences) && content.experiences.length > 0 ? (
-            <ul className="space-y-2 list-none pl-0">
-              {content.experiences.map((ex, i) => (
-                <li key={ex.key ? String(ex.key) : `exp-${i}`} className="border border-gray-100 rounded-md p-2 bg-gray-50/80">
-                  <p className="font-medium text-gray-900">{ex.name || '—'}</p>
-                  <p className="text-gray-600 mt-0.5">
-                    {ex.price != null ? `${ex.price} ${ex.currency || 'BGN'}` : '—'} · {ex.unit || 'flat_per_stay'} ·{' '}
-                    {ex.active === false ? 'Inactive' : 'Active'}
+              {transportOptionsEditError ? <OpsInlineError>{transportOptionsEditError}</OpsInlineError> : null}
+              {cutoffsEditSuccess ? <span className="ops-cd-note ops-cd-note--ok">{cutoffsEditSuccess}</span> : null}
+              {cutoffsEditError ? <OpsInlineError>{cutoffsEditError}</OpsInlineError> : null}
+            </>
+          }
+        >
+          {Array.isArray(op.transportOptions) && op.transportOptions.length > 0 ? (
+            <ul className="ops-cd-list">
+              {op.transportOptions.map((t, i) => (
+                <li key={i} className="ops-cd-list-item">
+                  <p className="ops-cd-list-item__title">{t.type || '—'}</p>
+                  <p className="ops-cd-list-item__meta">{t.description || '—'}</p>
+                  <p className="ops-cd-list-item__muted">
+                    {t.duration || '—'} · {t.pricePerPerson != null ? `${t.pricePerPerson}/person` : '—'} ·{' '}
+                    {t.isAvailable === false ? 'Unavailable' : 'Available'}
                   </p>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="text-gray-500">—</p>
+            <p className="ops-cd-note">No transport options configured.</p>
           )}
-        </div>
-      </OpsReadOnlyDetailSection>
+          {Array.isArray(op.transportCutoffs) && op.transportCutoffs.length > 0 ? (
+            <>
+              <hr className="ops-cd-divider" />
+              <p className="ops-cd-note--strong">Last departure cutoffs</p>
+              <ul className="ops-cd-list">
+                {op.transportCutoffs.map((c, i) => (
+                  <li key={i} className="ops-cd-list-item__meta ops-cd-mono">
+                    {c.type || '—'} — {c.lastDeparture || '—'}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+        </OpsReadOnlyDetailSection>
 
-      <OpsReadOnlyDetailSection title="Blocked dates (legacy cabin fields)">
-        {isMulti ? (
-          <p>
-            Per-unit blocked date entries: <span className="font-mono">{summary?.totalBlockedDateEntries ?? 0}</span>{' '}
-            across <span className="font-mono">{summary?.unitsWithBlockedDates ?? 0}</span> unit(s). See units table
-            for per-unit counts.
-          </p>
-        ) : blockedList.length > 0 ? (
-          <>
-            <p className="text-gray-600 mb-2">
-              Count: {op.blockedDatesCount ?? blockedList.length} · day-level blocks stored on the cabin document.
+        <CabinTransportEditor
+          transportOptionsEditOpen={transportOptionsEditOpen}
+          transportOptionsForm={transportOptionsEditRows}
+          setTransportOptionsForm={setTransportOptionsEditRows}
+          transportOptionsBusy={transportOptionsEditBusy}
+          transportOptionsError={transportOptionsEditError}
+          onCancelTransportOptions={() => {
+            setTransportOptionsEditOpen(false);
+            setTransportOptionsEditError('');
+          }}
+          onSaveTransportOptions={saveTransportOptionsEdit}
+          onAddTransportOptionRow={addTransportOptionRow}
+          onRemoveTransportOptionRow={removeTransportOptionRow}
+          onUpdateTransportOptionRow={updateTransportOptionRow}
+          transportCutoffsEditOpen={cutoffsEditOpen}
+          transportCutoffsForm={cutoffsEditRows}
+          setTransportCutoffsForm={setCutoffsEditRows}
+          transportCutoffsBusy={cutoffsEditBusy}
+          transportCutoffsError={cutoffsEditError}
+          onCancelTransportCutoffs={() => {
+            setCutoffsEditOpen(false);
+            setCutoffsEditError('');
+          }}
+          onSaveTransportCutoffs={saveCutoffsEdit}
+          onAddTransportCutoffRow={addCutoffRow}
+          onRemoveTransportCutoffRow={removeCutoffRow}
+          onUpdateTransportCutoffRow={updateCutoffRow}
+        />
+
+        <OpsReadOnlyDetailSection title="Highlights, badges &amp; experiences">
+          <div>
+            <p className="ops-cd-note--strong">Highlights</p>
+            {content.highlights?.length ? (
+              <ul className="ops-cd-list ops-cd-list--bullets">
+                {content.highlights.map((h, i) => (
+                  <li key={i}>{h}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="ops-cd-note">—</p>
+            )}
+          </div>
+          <hr className="ops-cd-divider" />
+          <div>
+            <p className="ops-cd-note--strong">Badges</p>
+            {content.badges?.superhost?.enabled || content.badges?.guestFavorite?.enabled ? (
+              <ul className="ops-cd-list">
+                {content.badges.superhost?.enabled ? (
+                  <li className="ops-cd-list-item__meta">
+                    Superhost: {content.badges.superhost.label || 'Superhost'}
+                  </li>
+                ) : null}
+                {content.badges.guestFavorite?.enabled ? (
+                  <li className="ops-cd-list-item__meta">
+                    Guest favorite: {content.badges.guestFavorite.label || 'Guest favorite'}
+                  </li>
+                ) : null}
+              </ul>
+            ) : (
+              <p className="ops-cd-note">None enabled.</p>
+            )}
+          </div>
+          <hr className="ops-cd-divider" />
+          <div>
+            <div className="ops-cd-actions ops-cd-actions--spaced">
+              <OpsButton variant="secondary" size="compact" onClick={openExperiencesEdit}>
+                Edit experiences
+              </OpsButton>
+            </div>
+            <p className="ops-cd-note--strong">Experiences</p>
+            {Array.isArray(content.experiences) && content.experiences.length > 0 ? (
+              <ul className="ops-cd-list">
+                {content.experiences.map((ex, i) => (
+                  <li key={ex.key ? String(ex.key) : `exp-${i}`} className="ops-cd-list-item">
+                    <p className="ops-cd-list-item__title">{ex.name || '—'}</p>
+                    <p className="ops-cd-list-item__meta">
+                      {ex.price != null ? `${ex.price} ${ex.currency || 'BGN'}` : '—'} · {ex.unit || 'flat_per_stay'} ·{' '}
+                      {ex.active === false ? 'Inactive' : 'Active'}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="ops-cd-note">—</p>
+            )}
+          </div>
+        </OpsReadOnlyDetailSection>
+
+        <OpsReadOnlyDetailSection title="Blocked dates (legacy cabin fields)">
+          {isMulti ? (
+            <p>
+              Per-unit blocked date entries:{' '}
+              <span className="ops-cd-mono">{summary?.totalBlockedDateEntries ?? 0}</span> across{' '}
+              <span className="ops-cd-mono">{summary?.unitsWithBlockedDates ?? 0}</span> unit(s). See units table for
+              per-unit counts.
             </p>
-            <p className="font-mono text-[11px] text-gray-800 break-all leading-relaxed">
-              {blockedList.map((d) => formatDateOnlyForOps(d)).filter(Boolean).join(', ')}
+          ) : blockedList.length > 0 ? (
+            <>
+              <p className="ops-cd-note">
+                Count: {op.blockedDatesCount ?? blockedList.length} · day-level blocks stored on the cabin document.
+              </p>
+              <p className="ops-cd-mono ops-cd-note">
+                {blockedList.map((d) => formatDateOnlyForOps(d)).filter(Boolean).join(', ')}
+              </p>
+            </>
+          ) : (
+            <p className="ops-cd-note">No legacy blocked dates on this cabin.</p>
+          )}
+        </OpsReadOnlyDetailSection>
+
+        <CabinMediaManager titleId={titleId} isMulti={isMulti} content={content} onReload={loadDetail} />
+
+        {isMulti && Array.isArray(data.units) ? (
+          <CabinUnitsEditor units={data.units} onReload={loadDetail} />
+        ) : null}
+
+        <OpsReadOnlyDetailSection title="Packing list (pre-arrival)">
+          {pre.packingList?.length ? (
+            <ul className="ops-cd-list ops-cd-list--bullets">
+              {pre.packingList.map((item, i) => (
+                <li key={i}>{item}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="ops-cd-note">No packing list items.</p>
+          )}
+        </OpsReadOnlyDetailSection>
+
+        {!isMulti ? (
+          <section className="ops-cd-surface ops-cd-surface--danger">
+            <h2 className="ops-cd-surface__title">Danger zone</h2>
+            <p className="ops-cd-surface__subtitle">
+              Archiving hides this cabin from public listings, search, quotes, and booking. This does not delete data.
             </p>
-          </>
-        ) : (
-          <p className="text-gray-500">No legacy blocked dates on this cabin.</p>
-        )}
-      </OpsReadOnlyDetailSection>
+            <div className="ops-cd-actions">
+              <OpsButton
+                variant="destructive"
+                onClick={() => {
+                  setArchiveReason('');
+                  setArchiveConfirmName('');
+                  setArchiveError('');
+                  setArchiveModalOpen(true);
+                }}
+              >
+                Archive cabin
+              </OpsButton>
+            </div>
+          </section>
+        ) : null}
 
-      <CabinMediaManager titleId={titleId} isMulti={isMulti} content={content} onReload={loadDetail} />
-
-      {isMulti && Array.isArray(data.units) ? (
-        <CabinUnitsEditor units={data.units} onReload={loadDetail} />
-      ) : null}
-
-      <OpsReadOnlyDetailSection title="Packing list (pre-arrival)">
-        {pre.packingList?.length ? (
-          <ul className="list-disc pl-4 space-y-0.5">
-            {pre.packingList.map((item, i) => (
-              <li key={i}>{item}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-gray-500">No packing list items.</p>
-        )}
-      </OpsReadOnlyDetailSection>
-
-      {!isMulti ? (
-        <section className="bg-white border border-red-200 rounded-xl p-4 md:p-5 max-w-4xl mx-auto w-full">
-          <h3 className="text-sm font-semibold text-red-900">Danger zone</h3>
-          <p className="text-xs text-gray-600 mt-2 max-w-2xl">
-            Archiving hides this cabin from public listings, search, quotes, and booking. This does not delete data.
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              setArchiveReason('');
-              setArchiveConfirmName('');
-              setArchiveError('');
-              setArchiveModalOpen(true);
-            }}
-            className="mt-3 text-sm px-4 py-2 rounded-lg border border-red-300 text-red-900 bg-red-50 hover:bg-red-100"
-          >
-            Archive cabin
-          </button>
-        </section>
-      ) : null}
-
-      <ArchiveCabinModal
-        open={archiveModalOpen && !isMulti}
-        onClose={() => setArchiveModalOpen(false)}
-        cabinDisplayName={content.name || ''}
-        archiveConfirmName={archiveConfirmName}
-        setArchiveConfirmName={setArchiveConfirmName}
-        archiveReason={archiveReason}
-        setArchiveReason={setArchiveReason}
-        archiveError={archiveError}
-        archiveBusy={archiveBusy}
-        onSubmit={handleArchiveSubmit}
-      />
-    </div>
+        <ArchiveCabinModal
+          open={archiveModalOpen && !isMulti}
+          onClose={() => setArchiveModalOpen(false)}
+          cabinDisplayName={content.name || ''}
+          archiveConfirmName={archiveConfirmName}
+          setArchiveConfirmName={setArchiveConfirmName}
+          archiveReason={archiveReason}
+          setArchiveReason={setArchiveReason}
+          archiveError={archiveError}
+          archiveBusy={archiveBusy}
+          onSubmit={handleArchiveSubmit}
+        />
+      </div>
+    </OpsPage>
   );
 }

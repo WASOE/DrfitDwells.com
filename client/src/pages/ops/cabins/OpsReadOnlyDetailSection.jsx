@@ -1,8 +1,11 @@
-export default function OpsReadOnlyDetailSection({ title, children }) {
+export default function OpsReadOnlyDetailSection({ title, children, actions }) {
   return (
-    <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5 max-w-4xl mx-auto w-full">
-      <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
-      <div className="mt-3 text-xs text-gray-700 space-y-2">{children}</div>
+    <section className="ops-cd-surface">
+      <div className="ops-cd-surface__head">
+        <h2 className="ops-cd-surface__title">{title}</h2>
+        {actions ? <div className="ops-cd-actions">{actions}</div> : null}
+      </div>
+      <div className="ops-cd-surface__body">{children}</div>
     </section>
   );
 }
