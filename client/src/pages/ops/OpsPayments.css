@@ -1,0 +1,178 @@
+/* Payments dashboard + capped evidence lists. Visual values come from --ops-* tokens. */
+.ops-payments-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-16);
+  min-width: 0;
+}
+
+.ops-payments-obs {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ops-text-muted);
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-payments-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-12);
+  min-width: 0;
+}
+
+.ops-payments-section__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ops-space-8);
+  min-width: 0;
+}
+
+.ops-payments-section__title {
+  margin: 0;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--ops-text);
+}
+
+.ops-payments-cap,
+.ops-payments-note,
+.ops-payments-detail__row {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ops-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.ops-payments-detail__row {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ops-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-payments-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ops-payments-row,
+.ops-payments-payout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-4);
+  min-width: 0;
+  padding: var(--ops-space-12) 0;
+  padding-left: var(--ops-space-8);
+  border: 0;
+  border-bottom: 1px solid var(--ops-border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.ops-payments-row__head,
+.ops-payments-payout__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ops-space-8);
+  min-width: 0;
+}
+
+.ops-payments-ref {
+  margin: 0;
+  flex: 1 1 12rem;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--ops-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ops-payments-amount {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--ops-text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ops-payments-row__meta,
+.ops-payments-payout__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ops-space-8);
+  min-width: 0;
+}
+
+.ops-payments-linkage,
+.ops-payments-payout-status {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ops-text-muted);
+}
+
+.ops-payments-payout {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  min-height: var(--ops-control-h);
+}
+
+.ops-payments-payout:hover {
+  background: var(--ops-surface-subtle);
+}
+
+.ops-payments-payout:focus {
+  outline: none;
+}
+
+.ops-payments-payout:focus-visible {
+  outline: 2px solid var(--ops-focus);
+  outline-offset: 2px;
+}
+
+.ops-payments-payout[aria-current='true'] {
+  background: var(--ops-accent-soft);
+}
+
+.ops-payments-payout[aria-current='true']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--ops-accent);
+}
+
+.ops-payments-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-8);
+  min-width: 0;
+}
+
+@media (pointer: coarse) {
+  .ops-payments-payout {
+    min-height: var(--ops-control-h-touch);
+  }
+}

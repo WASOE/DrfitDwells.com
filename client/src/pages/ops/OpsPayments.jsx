@@ -1,12 +1,71 @@
 import { useEffect, useState } from 'react';
 import { opsReadAPI } from '../../services/opsApi';
+import OpsPage from '../../ops/primitives/OpsPage';
+import OpsPageHeader from '../../ops/primitives/OpsPageHeader';
+import OpsStatus from '../../ops/primitives/OpsStatus';
+import OpsBanner from '../../ops/primitives/OpsBanner';
+import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
+import OpsEmptyState from '../../ops/primitives/OpsEmptyState';
+import OpsInlineError from '../../ops/primitives/OpsInlineError';
+import OpsMetric, { OpsMetricGroup } from '../../ops/primitives/OpsMetric';
+import './OpsPayments.css';
+
+const PROPERTY_TIME_ZONE = 'Europe/Sofia';
+const EVIDENCE_LIMIT = 20;
+
+function formatWebhookLastSeen(value) {
+  if (!value) return 'unknown';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  try {
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: PROPERTY_TIME_ZONE,
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZoneName: 'short'
+    }).format(date);
+  } catch {
+    return String(value);
+  }
+}
+
+function formatLedgerAmount(amount, currency) {
+  const num = Number(amount);
+  const code = String(currency || '').trim().toUpperCase();
+  if (!Number.isFinite(num) && !code) return '—';
+  if (!Number.isFinite(num)) return `— ${code}`.trim();
+  if (!code) return String(num);
+  try {
+    return new Intl.NumberFormat('en-GB', {
+      style: 'currency',
+      currency: code,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    }).format(num);
+  } catch {
+    return `${num.toFixed(2)} ${code}`;
+  }
+}
+
+function observabilityCopy(summary) {
+  const obs = summary?.observability;
+  if (!obs) return 'Webhook evidence: unknown';
+  const seen = formatWebhookLastSeen(obs.webhookLastSeenAt);
+  return `Webhook last seen: ${seen} · open reconciliation items: ${obs.openReconciliationItems ?? 0}`;
+}
 
 export default function OpsPayments() {
   const [summary, setSummary] = useState(null);
   const [ledger, setLedger] = useState([]);
   const [payouts, setPayouts] = useState([]);
   const [reconciliation, setReconciliation] = useState(null);
+  const [selectedPayoutId, setSelectedPayoutId] = useState(null);
   const [selectedPayout, setSelectedPayout] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -36,119 +95,144 @@ export default function OpsPayments() {
   }, []);
 
   const loadPayoutDetail = async (id) => {
+    setSelectedPayoutId(id);
+    setDetailError('');
+    setDetailLoading(true);
     try {
       const detail = await opsReadAPI.payoutDetail(id);
       setSelectedPayout(detail.data?.data || null);
     } catch (err) {
-      setError(err?.response?.data?.message || 'Failed to load payout detail');
+      setDetailError(err?.response?.data?.message || 'Failed to load payout detail');
+    } finally {
+      setDetailLoading(false);
     }
   };
 
-  if (loading) return <div className="text-sm text-gray-500">Loading payments...</div>;
+  const failedDisputed = (summary?.totals?.failed ?? 0) + (summary?.totals?.disputed ?? 0);
+  const showDetailPanel = Boolean(selectedPayout || detailLoading || detailError);
 
   return (
-    <div className="space-y-4 pb-16 sm:pb-0">
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <h2 className="text-lg font-semibold text-gray-900">Payments and payouts</h2>
-        {summary?.observability ? (
-          <p className="text-xs text-gray-500 mt-1">
-            Webhook last seen:{' '}
-            {summary.observability.webhookLastSeenAt ? String(summary.observability.webhookLastSeenAt) : 'unknown'} | open reconciliation items:{' '}
-            {summary.observability.openReconciliationItems ?? 0}
-          </p>
-        ) : (
-          <p className="text-xs text-gray-500 mt-1">Webhook evidence: unknown</p>
-        )}
-        {error ? <p className="text-sm text-red-600 mt-2">{error}</p> : null}
-      </section>
+    <OpsPage width="default" className="ops-payments-page">
+      <OpsPageHeader
+        title="Payments and payouts"
+        meta={
+          loading ? null : <p className="ops-payments-obs">{observabilityCopy(summary)}</p>
+        }
+      />
 
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <p className="text-xs text-gray-500 uppercase">Total payments</p>
-          <p className="text-2xl font-semibold text-gray-900">{summary?.totals?.total ?? 0}</p>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <p className="text-xs text-gray-500 uppercase">Failed/disputed</p>
-          <p className="text-2xl font-semibold text-gray-900">
-            {(summary?.totals?.failed ?? 0) + (summary?.totals?.disputed ?? 0)}
-          </p>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <p className="text-xs text-gray-500 uppercase">Unlinked payments</p>
-          <p className="text-2xl font-semibold text-gray-900">{summary?.totals?.unlinked ?? 0}</p>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <p className="text-xs text-gray-500 uppercase">Unlinked payouts</p>
-          <p className="text-2xl font-semibold text-gray-900">{reconciliation?.manualReview?.openUnlinkedPayouts ?? 0}</p>
-        </div>
-      </section>
+      {error ? <OpsBanner tone="danger" body={error} /> : null}
 
-      {reconciliation ? (
-        <section className="bg-white border border-gray-200 rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-gray-900 mb-2">Reconciliation summary</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="border border-gray-200 rounded-lg p-3">
-              <div className="text-xs text-gray-500">Total payouts</div>
-              <div className="text-lg font-semibold text-gray-900">{reconciliation.totals?.totalPayouts ?? 0}</div>
-            </div>
-            <div className="border border-gray-200 rounded-lg p-3">
-              <div className="text-xs text-gray-500">With reservation reference</div>
-              <div className="text-lg font-semibold text-gray-900">{reconciliation.totals?.withReservationReference ?? 0}</div>
-            </div>
-            <div className="border border-red-200 rounded-lg p-3">
-              <div className="text-xs text-red-700">Incomplete linkage</div>
-              <div className="text-lg font-semibold text-red-800">{reconciliation.totals?.incompleteLinkage ?? 0}</div>
-            </div>
-          </div>
-        </section>
-      ) : null}
+      {loading ? (
+        <OpsLoadingState label="Loading payments" />
+      ) : error ? null : (
+        <>
+          <OpsMetricGroup>
+            <OpsMetric label="Total payments" value={summary?.totals?.total ?? 0} />
+            <OpsMetric label="Failed/disputed" value={failedDisputed} />
+            <OpsMetric label="Unlinked payments" value={summary?.totals?.unlinked ?? 0} />
+            <OpsMetric label="Unlinked payouts" value={reconciliation?.manualReview?.openUnlinkedPayouts ?? 0} />
+          </OpsMetricGroup>
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <h3 className="text-sm font-semibold text-gray-900 mb-3">Payment ledger</h3>
-        <div className="space-y-2">
-          {ledger.map((item) => (
-            <div key={item.paymentId} className="border border-gray-200 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center gap-2">
-              <div className="text-sm font-medium text-gray-900">{item.providerReference}</div>
-              <div className="text-xs text-gray-600">{item.amount} {item.currency}</div>
-              <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50">{item.status}</span>
-              <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50">{item.linkageState}</span>
-            </div>
-          ))}
-          {ledger.length === 0 ? <p className="text-sm text-gray-500">No payment evidence yet.</p> : null}
-        </div>
-      </section>
+          <section className="ops-payments-section" aria-labelledby="ops-payments-recon">
+            <h2 id="ops-payments-recon" className="ops-payments-section__title">
+              Reconciliation summary
+            </h2>
+            <OpsMetricGroup>
+              <OpsMetric label="Total payouts" value={reconciliation?.totals?.totalPayouts ?? 0} />
+              <OpsMetric
+                label="With reservation reference"
+                value={reconciliation?.totals?.withReservationReference ?? 0}
+              />
+              <OpsMetric label="Incomplete linkage" value={reconciliation?.totals?.incompleteLinkage ?? 0} />
+            </OpsMetricGroup>
+          </section>
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <h3 className="text-sm font-semibold text-gray-900 mb-3">Payouts</h3>
-        <div className="space-y-2">
-          {payouts.map((item) => (
-            <button
-              key={item.payoutId}
-              onClick={() => loadPayoutDetail(item.payoutId)}
-              className="w-full text-left border border-gray-200 rounded-lg p-3 hover:bg-gray-50"
-            >
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-sm font-medium text-gray-900">{item.providerReference}</span>
-                <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50">{item.status}</span>
-                <span className="text-xs text-gray-600">{item.amount} {item.currency}</span>
+          <section className="ops-payments-section" aria-labelledby="ops-payments-recent">
+            <div className="ops-payments-section__head">
+              <h2 id="ops-payments-recent" className="ops-payments-section__title">
+                Recent payments
+              </h2>
+              <p className="ops-payments-cap">Latest {EVIDENCE_LIMIT}</p>
+            </div>
+            {ledger.length ? (
+              <div className="ops-payments-list" role="list">
+                {ledger.map((item) => (
+                  <article key={item.paymentId} className="ops-payments-row" role="listitem">
+                    <div className="ops-payments-row__head">
+                      <p className="ops-payments-ref">{item.providerReference}</p>
+                      <p className="ops-payments-amount">{formatLedgerAmount(item.amount, item.currency)}</p>
+                    </div>
+                    <div className="ops-payments-row__meta">
+                      <OpsStatus domain="payment" value={item.status} />
+                      <p className="ops-payments-linkage">{item.linkageState}</p>
+                    </div>
+                  </article>
+                ))}
               </div>
-            </button>
-          ))}
-          {payouts.length === 0 ? <p className="text-sm text-gray-500">No payout evidence yet.</p> : null}
-        </div>
-      </section>
+            ) : (
+              <OpsEmptyState title="No payment evidence yet." />
+            )}
+          </section>
 
-      {selectedPayout ? (
-        <section className="bg-white border border-gray-200 rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-gray-900">Payout detail</h3>
-          <p className="text-sm text-gray-700 mt-2">Status: {selectedPayout.payout?.status}</p>
-          <p className="text-sm text-gray-700">Amount: {selectedPayout.payout?.amount} {selectedPayout.payout?.currency}</p>
-          <p className="text-sm text-gray-700">Linkage: {selectedPayout.reconciliation?.linkageState}</p>
-          {selectedPayout.degraded?.linkageIncomplete ? (
-            <p className="text-sm text-amber-700 mt-1">Degraded: payout is not linked to a reservation yet.</p>
+          <section className="ops-payments-section" aria-labelledby="ops-payments-payouts">
+            <div className="ops-payments-section__head">
+              <h2 id="ops-payments-payouts" className="ops-payments-section__title">
+                Recent payouts
+              </h2>
+              <p className="ops-payments-cap">Latest {EVIDENCE_LIMIT}</p>
+            </div>
+            {payouts.length ? (
+              <div className="ops-payments-list">
+                {payouts.map((item) => {
+                  const selected = selectedPayoutId === item.payoutId;
+                  return (
+                    <button
+                      key={item.payoutId}
+                      type="button"
+                      className="ops-payments-payout"
+                      aria-current={selected ? 'true' : undefined}
+                      onClick={() => loadPayoutDetail(item.payoutId)}
+                    >
+                      <div className="ops-payments-payout__head">
+                        <p className="ops-payments-ref">{item.providerReference}</p>
+                        <p className="ops-payments-amount">{formatLedgerAmount(item.amount, item.currency)}</p>
+                      </div>
+                      <p className="ops-payments-payout-status">{item.status}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <OpsEmptyState title="No payout evidence yet." />
+            )}
+          </section>
+
+          {showDetailPanel ? (
+            <section className="ops-payments-section" aria-labelledby="ops-payments-detail">
+              <h2 id="ops-payments-detail" className="ops-payments-section__title">
+                Payout detail
+              </h2>
+              {detailError ? <OpsInlineError>{detailError}</OpsInlineError> : null}
+              {detailLoading ? <p className="ops-payments-note">Loading payout detail</p> : null}
+              {selectedPayout ? (
+                <div className="ops-payments-detail">
+                  <p className="ops-payments-detail__row">Status: {selectedPayout.payout?.status}</p>
+                  <p className="ops-payments-detail__row">
+                    Amount: {formatLedgerAmount(selectedPayout.payout?.amount, selectedPayout.payout?.currency)}
+                  </p>
+                  <p className="ops-payments-detail__row">Linkage: {selectedPayout.reconciliation?.linkageState}</p>
+                  {selectedPayout.degraded?.linkageIncomplete ? (
+                    <OpsBanner
+                      tone="warning"
+                      body="Degraded: payout is not linked to a reservation yet."
+                    />
+                  ) : null}
+                </div>
+              ) : null}
+            </section>
           ) : null}
-        </section>
-      ) : null}
-    </div>
+        </>
+      )}
+    </OpsPage>
   );
 }
