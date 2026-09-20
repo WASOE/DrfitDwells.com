@@ -1,0 +1,215 @@
+/* Quote recovery layout only. Visual values come from --ops-* tokens. */
+
+.ops-recovery {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-16);
+  min-width: 0;
+  padding-bottom: calc(var(--ops-space-48) + env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 640px) {
+  .ops-recovery {
+    padding-bottom: 0;
+  }
+}
+
+.ops-recovery__surface {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-12);
+  min-width: 0;
+  padding: var(--ops-space-16);
+  border: 1px solid var(--ops-border);
+  border-radius: var(--ops-radius-surface);
+  background: var(--ops-surface);
+}
+
+.ops-recovery__surface-title {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--ops-text);
+}
+
+.ops-recovery__kind-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ops-space-8);
+  min-width: 0;
+}
+
+.ops-recovery__kind-row .ops-button {
+  min-height: 44px;
+}
+
+@media (min-width: 768px) {
+  .ops-recovery__kind-row .ops-button {
+    min-height: 36px;
+  }
+}
+
+.ops-recovery__filters .ops-filter-bar__controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--ops-space-12);
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .ops-recovery__filters .ops-filter-bar__controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .ops-recovery__filters .ops-filter-bar__controls {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.ops-recovery__stage {
+  text-transform: capitalize;
+}
+
+.ops-recovery__mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ops-text);
+  overflow-wrap: anywhere;
+}
+
+.ops-recovery__muted {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ops-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.ops-recovery__cell-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-4);
+  min-width: 0;
+}
+
+.ops-recovery__suppressed {
+  margin: var(--ops-space-4) 0 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ops-danger);
+}
+
+.ops-recovery__pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ops-space-12);
+  min-width: 0;
+  margin-top: var(--ops-space-12);
+}
+
+.ops-recovery__pager-meta {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ops-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.ops-recovery__pager-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ops-space-8);
+}
+
+.ops-recovery__detail-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-4);
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ops-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.ops-recovery__detail-lines p {
+  margin: 0;
+}
+
+.ops-recovery__delivery-list {
+  margin: 0;
+  padding-left: var(--ops-space-16);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ops-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.ops-recovery__delivery-list li + li {
+  margin-top: var(--ops-space-4);
+}
+
+.ops-recovery__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--ops-space-8);
+  min-width: 0;
+}
+
+.ops-recovery__actions .ops-field {
+  min-width: 12rem;
+}
+
+.ops-recovery__preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-8);
+  min-width: 0;
+  padding: var(--ops-space-12);
+  border: 1px solid var(--ops-border);
+  border-radius: var(--ops-radius-control);
+  background: var(--ops-surface-subtle);
+}
+
+.ops-recovery__preview-subject {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--ops-text);
+  overflow-wrap: anywhere;
+}
+
+.ops-recovery__preview-text {
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ops-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.ops-recovery__links {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-4);
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ops-text-secondary);
+}
+
+.ops-recovery__links p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}

@@ -1,0 +1,105 @@
+/* Ops Conversion funnel. Tokens via --ops-* only. */
+.ops-conversion {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-16);
+  min-width: 0;
+  padding-bottom: calc(var(--ops-space-48) + env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 640px) {
+  .ops-conversion {
+    padding-bottom: 0;
+  }
+}
+
+.ops-conversion__link {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--ops-text);
+  text-decoration: none;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--ops-space-12);
+  border: 1px solid var(--ops-border-strong);
+  border-radius: var(--ops-radius-control);
+  background: var(--ops-surface);
+}
+
+.ops-conversion__link:hover {
+  background: var(--ops-surface-subtle);
+}
+
+.ops-conversion__surface {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-12);
+  min-width: 0;
+  padding: var(--ops-space-16);
+  border: 1px solid var(--ops-border);
+  border-radius: var(--ops-radius-surface);
+  background: var(--ops-surface);
+}
+
+.ops-conversion__surface-title {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--ops-text);
+}
+
+.ops-conversion__kind-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ops-space-8);
+  min-width: 0;
+}
+
+.ops-conversion__filters {
+  min-width: 0;
+}
+
+.ops-conversion__note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ops-text-muted);
+}
+
+.ops-conversion__body {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ops-text);
+  overflow-wrap: anywhere;
+}
+
+.ops-conversion__list {
+  margin: 0;
+  padding-left: var(--ops-space-16);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ops-text);
+}
+
+.ops-conversion__provenance {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-4);
+  min-width: 0;
+  padding: var(--ops-space-16);
+  border: 1px solid var(--ops-border);
+  border-radius: var(--ops-radius-surface);
+  background: var(--ops-surface-subtle);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ops-text-secondary);
+}
+
+.ops-conversion__provenance p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

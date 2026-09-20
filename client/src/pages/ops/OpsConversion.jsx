@@ -8,6 +8,22 @@ import {
   humanizeEventType,
   daysBetweenInclusive
 } from './utils/opsIntelligenceFilters';
+import OpsPage from '../../ops/primitives/OpsPage';
+import OpsPageHeader from '../../ops/primitives/OpsPageHeader';
+import OpsFilterBar from '../../ops/primitives/OpsFilterBar';
+import OpsSelect from '../../ops/primitives/OpsSelect';
+import OpsTextField from '../../ops/primitives/OpsTextField';
+import OpsButton from '../../ops/primitives/OpsButton';
+import OpsBanner from '../../ops/primitives/OpsBanner';
+import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
+import OpsTable, {
+  OpsTableBody,
+  OpsTableCell,
+  OpsTableHead,
+  OpsTableHeader,
+  OpsTableRow
+} from '../../ops/primitives/OpsTable';
+import './OpsConversion.css';
 
 const MAX_CONVERSION_RANGE_DAYS = 180;
 
@@ -112,79 +128,62 @@ export default function OpsConversion() {
     };
   }, [filters.propertyKind, filters.from, filters.to, filters.cabinId, filters.cabinTypeId]);
 
-  if (loading) {
-    return <div className="text-sm text-gray-500">Loading conversion summary...</div>;
-  }
-
   const searchResults = summary?.supplementary?.searchResults;
   const quoteFailed = summary?.supplementary?.quoteFailed;
   const savedQuotes = summary?.supplementary?.savedQuotes;
   const provenance = summary?.provenance || {};
 
   return (
-    <div className="space-y-4 pb-16 sm:pb-0">
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Conversion funnel</h2>
-            <p className="text-xs text-gray-500 mt-1">
-              Zone-specific funnel for {filters.propertyKind === 'valley' ? 'The Valley' : 'The Cabin'}.
-            </p>
-          </div>
-          <Link
-            to={`/ops/conversion/recovery?propertyKind=${filters.propertyKind}&from=${filters.from}&to=${filters.to}`}
-            className="text-sm text-gray-700 underline"
-          >
-            Quote recovery
-          </Link>
-        </div>
-        {error ? <p className="text-sm text-red-600 mt-2">{error}</p> : null}
-      </section>
-
-      <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-        <div className="flex flex-wrap gap-2">
-          {PROPERTY_KIND_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => updateFilter('propertyKind', option.value)}
-              className={`px-3 py-1.5 rounded-lg text-sm border ${
-                filters.propertyKind === option.value
-                  ? 'bg-gray-900 text-white border-gray-900'
-                  : 'bg-white text-gray-700 border-gray-200'
-              }`}
+    <OpsPage width="wide" className="ops-conversion">
+      <div data-testid="ops-conversion-page">
+        <OpsPageHeader
+          title="Conversion funnel"
+          description={`Zone-specific funnel for ${
+            filters.propertyKind === 'valley' ? 'The Valley' : 'The Cabin'
+          }.`}
+          actions={
+            <Link
+              to={`/ops/conversion/recovery?propertyKind=${filters.propertyKind}&from=${filters.from}&to=${filters.to}`}
+              className="ops-conversion__link"
             >
-              {option.label}
-            </button>
-          ))}
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label className="text-sm text-gray-700">
-            <span className="block text-xs text-gray-500 mb-1">From</span>
-            <input
+              Quote recovery
+            </Link>
+          }
+        />
+
+        {error ? <OpsBanner tone="danger" body={error} /> : null}
+
+        <section className="ops-conversion__surface">
+          <div className="ops-conversion__kind-row" data-testid="conversion-property-kind">
+            {PROPERTY_KIND_OPTIONS.map((option) => (
+              <OpsButton
+                key={option.value}
+                type="button"
+                variant={filters.propertyKind === option.value ? 'primary' : 'secondary'}
+                size="compact"
+                onClick={() => updateFilter('propertyKind', option.value)}
+              >
+                {option.label}
+              </OpsButton>
+            ))}
+          </div>
+          <OpsFilterBar className="ops-conversion__filters">
+            <OpsTextField
+              label="From"
               type="date"
               value={filters.from}
               onChange={(event) => updateFilter('from', event.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2"
             />
-          </label>
-          <label className="text-sm text-gray-700">
-            <span className="block text-xs text-gray-500 mb-1">To</span>
-            <input
+            <OpsTextField
+              label="To"
               type="date"
               value={filters.to}
               onChange={(event) => updateFilter('to', event.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2"
             />
-          </label>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label className="text-sm text-gray-700">
-            <span className="block text-xs text-gray-500 mb-1">Cabin</span>
-            <select
+            <OpsSelect
+              label="Cabin"
               value={filters.cabinId}
               onChange={(event) => updateFilter('cabinId', event.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2"
             >
               <option value="">All cabins</option>
               {(filterOptions.cabins || []).map((cabin) => (
@@ -192,14 +191,11 @@ export default function OpsConversion() {
                   {cabin.name}
                 </option>
               ))}
-            </select>
-          </label>
-          <label className="text-sm text-gray-700">
-            <span className="block text-xs text-gray-500 mb-1">Cabin type</span>
-            <select
+            </OpsSelect>
+            <OpsSelect
+              label="Cabin type"
               value={filters.cabinTypeId}
               onChange={(event) => updateFilter('cabinTypeId', event.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2"
               disabled={Boolean(filters.cabinId)}
             >
               <option value="">All cabin types</option>
@@ -208,115 +204,127 @@ export default function OpsConversion() {
                   {type.name}
                 </option>
               ))}
-            </select>
-          </label>
-        </div>
-        <p className="text-xs text-gray-500">
-          Default range is the current month. Maximum range is {MAX_CONVERSION_RANGE_DAYS} days.
-          Unit filtering is not supported on conversion.
-        </p>
-      </section>
+            </OpsSelect>
+          </OpsFilterBar>
+          <p className="ops-conversion__note">
+            Default range is the current month. Maximum range is {MAX_CONVERSION_RANGE_DAYS} days.
+            Unit filtering is not supported on conversion.
+          </p>
+        </section>
 
-      {!error ? (
-        <>
-          <section className="bg-white border border-gray-200 rounded-xl p-4">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Zone funnel steps</h3>
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="text-left text-gray-500 border-b border-gray-200">
-                  <th className="py-2 pr-4">Step</th>
-                  <th className="py-2 pr-4">Sessions</th>
-                  <th className="py-2 pr-4">Events</th>
-                  <th className="py-2">Orphan events</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(summary?.steps || []).map((step) => (
-                  <tr key={step.eventType} className="border-b border-gray-100">
-                    <td className="py-2 pr-4">{step.label || humanizeEventType(step.eventType)}</td>
-                    <td className="py-2 pr-4">{step.sessionCount ?? 0}</td>
-                    <td className="py-2 pr-4">{step.eventCount ?? 0}</td>
-                    <td className="py-2">{step.orphanEventCount ?? '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
+        {loading ? (
+          <OpsLoadingState label="Loading conversion summary..." data-testid="conversion-loading" />
+        ) : error && !summary ? null : (
+          <>
+            <section className="ops-conversion__surface" data-testid="conversion-funnel-steps">
+              <h3 className="ops-conversion__surface-title">Zone funnel steps</h3>
+              <OpsTable>
+                <OpsTableHead>
+                  <OpsTableRow>
+                    <OpsTableHeader>Step</OpsTableHeader>
+                    <OpsTableHeader>Sessions</OpsTableHeader>
+                    <OpsTableHeader>Events</OpsTableHeader>
+                    <OpsTableHeader>Orphan events</OpsTableHeader>
+                  </OpsTableRow>
+                </OpsTableHead>
+                <OpsTableBody>
+                  {(summary?.steps || []).map((step) => (
+                    <OpsTableRow key={step.eventType}>
+                      <OpsTableCell>
+                        {step.label || humanizeEventType(step.eventType)}
+                      </OpsTableCell>
+                      <OpsTableCell>{step.sessionCount ?? 0}</OpsTableCell>
+                      <OpsTableCell>{step.eventCount ?? 0}</OpsTableCell>
+                      <OpsTableCell>{step.orphanEventCount ?? '—'}</OpsTableCell>
+                    </OpsTableRow>
+                  ))}
+                </OpsTableBody>
+              </OpsTable>
+            </section>
 
-          <section className="bg-white border border-gray-200 rounded-xl p-4">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Drop-off (session-sequential)</h3>
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="text-left text-gray-500 border-b border-gray-200">
-                  <th className="py-2 pr-4">From → To</th>
-                  <th className="py-2 pr-4">Sessions at from</th>
-                  <th className="py-2 pr-4">Continued</th>
-                  <th className="py-2">Drop-off</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(summary?.dropOff || []).map((row) => (
-                  <tr key={`${row.from}-${row.to}`} className="border-b border-gray-100">
-                    <td className="py-2 pr-4">
-                      {humanizeEventType(row.from)} → {humanizeEventType(row.to)}
-                    </td>
-                    <td className="py-2 pr-4">{row.fromSessionCount ?? 0}</td>
-                    <td className="py-2 pr-4">{row.continuedSessionCount ?? 0}</td>
-                    <td className="py-2">{formatPercent(row.dropOffRate)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
+            <section className="ops-conversion__surface" data-testid="conversion-dropoff">
+              <h3 className="ops-conversion__surface-title">Drop-off (session-sequential)</h3>
+              <OpsTable>
+                <OpsTableHead>
+                  <OpsTableRow>
+                    <OpsTableHeader>From → To</OpsTableHeader>
+                    <OpsTableHeader>Sessions at from</OpsTableHeader>
+                    <OpsTableHeader>Continued</OpsTableHeader>
+                    <OpsTableHeader>Drop-off</OpsTableHeader>
+                  </OpsTableRow>
+                </OpsTableHead>
+                <OpsTableBody>
+                  {(summary?.dropOff || []).map((row) => (
+                    <OpsTableRow key={`${row.from}-${row.to}`}>
+                      <OpsTableCell>
+                        {humanizeEventType(row.from)} → {humanizeEventType(row.to)}
+                      </OpsTableCell>
+                      <OpsTableCell>{row.fromSessionCount ?? 0}</OpsTableCell>
+                      <OpsTableCell>{row.continuedSessionCount ?? 0}</OpsTableCell>
+                      <OpsTableCell>{formatPercent(row.dropOffRate)}</OpsTableCell>
+                    </OpsTableRow>
+                  ))}
+                </OpsTableBody>
+              </OpsTable>
+            </section>
 
-          <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
-            <h3 className="text-sm font-semibold text-gray-900">Supplementary: search results (site-wide)</h3>
-            <p className="text-sm text-gray-700">
-              Site-wide sessions: {searchResults?.sessionCount ?? 0} · Events:{' '}
-              {searchResults?.eventCount ?? 0}
-            </p>
-            <p className="text-xs text-gray-500">{searchResults?.note}</p>
-          </section>
+            <section className="ops-conversion__surface" data-testid="conversion-search-results">
+              <h3 className="ops-conversion__surface-title">
+                Supplementary: search results (site-wide)
+              </h3>
+              <p className="ops-conversion__body">
+                Site-wide sessions: {searchResults?.sessionCount ?? 0} · Events:{' '}
+                {searchResults?.eventCount ?? 0}
+              </p>
+              {searchResults?.note ? (
+                <p className="ops-conversion__note">{searchResults.note}</p>
+              ) : null}
+            </section>
 
-          <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
-            <h3 className="text-sm font-semibold text-gray-900">Supplementary: quote failures</h3>
-            <p className="text-sm text-gray-700">
-              Failed quotes: {quoteFailed?.eventCount ?? 0} · Orphan failures:{' '}
-              {quoteFailed?.orphanEventCount ?? 0}
-            </p>
-            {quoteFailed?.byClass ? (
-              <ul className="text-sm text-gray-700 space-y-1">
-                {Object.entries(quoteFailed.byClass).map(([cls, count]) => (
-                  <li key={cls}>
-                    {cls}: {count}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </section>
+            <section className="ops-conversion__surface" data-testid="conversion-quote-failed">
+              <h3 className="ops-conversion__surface-title">Supplementary: quote failures</h3>
+              <p className="ops-conversion__body">
+                Failed quotes: {quoteFailed?.eventCount ?? 0} · Orphan failures:{' '}
+                {quoteFailed?.orphanEventCount ?? 0}
+              </p>
+              {quoteFailed?.byClass ? (
+                <ul className="ops-conversion__list">
+                  {Object.entries(quoteFailed.byClass).map(([cls, count]) => (
+                    <li key={cls}>
+                      {cls}: {count}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </section>
 
-          <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
-            <h3 className="text-sm font-semibold text-gray-900">Supplementary: saved quotes</h3>
-            <p className="text-sm text-gray-700">
-              Valid: {savedQuotes?.savedValidQuotes ?? 0} · Checkout started:{' '}
-              {savedQuotes?.checkoutStartedSavedQuotes ?? 0} · Converted:{' '}
-              {savedQuotes?.convertedSavedQuotes ?? 0} · Abandoned:{' '}
-              {savedQuotes?.abandonedSavedQuotes ?? 0} · Recovery-eligible:{' '}
-              {savedQuotes?.recoveryEligibleJourneys ?? 0}
-            </p>
-            <p className="text-xs text-gray-500">{savedQuotes?.note}</p>
-          </section>
+            <section className="ops-conversion__surface" data-testid="conversion-saved-quotes">
+              <h3 className="ops-conversion__surface-title">Supplementary: saved quotes</h3>
+              <p className="ops-conversion__body">
+                Valid: {savedQuotes?.savedValidQuotes ?? 0} · Checkout started:{' '}
+                {savedQuotes?.checkoutStartedSavedQuotes ?? 0} · Converted:{' '}
+                {savedQuotes?.convertedSavedQuotes ?? 0} · Abandoned:{' '}
+                {savedQuotes?.abandonedSavedQuotes ?? 0} · Recovery-eligible:{' '}
+                {savedQuotes?.recoveryEligibleJourneys ?? 0}
+              </p>
+              {savedQuotes?.note ? (
+                <p className="ops-conversion__note">{savedQuotes.note}</p>
+              ) : null}
+            </section>
 
-          <section className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-xs text-gray-600 space-y-1">
-            <p>{provenance.funnelModelNote}</p>
-            <p>{provenance.propertyKindFilterNote}</p>
-            <p>{provenance.entityFilterNote}</p>
-            <p>{provenance.consentNote}</p>
-            <p>{provenance.checkoutStartedNote}</p>
-            <p>{provenance.searchResultsNote}</p>
-          </section>
-        </>
-      ) : null}
-    </div>
+            <section className="ops-conversion__provenance" data-testid="conversion-provenance">
+              {provenance.funnelModelNote ? <p>{provenance.funnelModelNote}</p> : null}
+              {provenance.propertyKindFilterNote ? (
+                <p>{provenance.propertyKindFilterNote}</p>
+              ) : null}
+              {provenance.entityFilterNote ? <p>{provenance.entityFilterNote}</p> : null}
+              {provenance.consentNote ? <p>{provenance.consentNote}</p> : null}
+              {provenance.checkoutStartedNote ? <p>{provenance.checkoutStartedNote}</p> : null}
+              {provenance.searchResultsNote ? <p>{provenance.searchResultsNote}</p> : null}
+            </section>
+          </>
+        )}
+      </div>
+    </OpsPage>
   );
 }

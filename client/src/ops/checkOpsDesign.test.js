@@ -74,6 +74,14 @@ describe('ops design guard', () => {
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsInsights.jsx');
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsInsightsPerformance.jsx');
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsInsights.css');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsCreatorPartners.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsCreatorPartners.css');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsConversion.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsConversion.css');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsConversionRecovery.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsConversionRecovery.css');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsReadiness.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsReadiness.css');
     expect(MIGRATED_OPS_FILES).not.toContain('src/pages/ops/calendar/opsCalendarDateUtils.js');
     expect(MIGRATED_OPS_FILES).not.toContain('src/pages/ops/calendar/workWindowsFormat.js');
     expect(MIGRATED_OPS_FILES).not.toContain('src/services/cleaningApi.js');
