@@ -2,12 +2,17 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useOpsSession } from '../../../context/OpsSessionContext';
 import { getPricingPolicy, updatePricingPolicy } from '../../../services/cleaningApi';
+import OpsPage from '../../../ops/primitives/OpsPage';
+import OpsPageHeader from '../../../ops/primitives/OpsPageHeader';
+import OpsBanner from '../../../ops/primitives/OpsBanner';
+import OpsLoadingState from '../../../ops/primitives/OpsLoadingState';
 import OpsCleaningInventoryTagsPanel from './OpsCleaningInventoryTagsPanel';
 import OpsCleaningRateCardPanel, {
   cloneRules,
   newEmptyRule,
   parseAmount
 } from './OpsCleaningRateCardPanel';
+import './OpsCleaningSettings.css';
 
 const LOCATIONS = [
   { propertyKind: 'cabin', label: 'The Cabin' },
@@ -194,52 +199,53 @@ export default function OpsCleaningSettings() {
   const rulesByKind = { cabin: cabinRules, valley: valleyRules };
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4 px-4 py-6 pb-20 md:py-8">
-      <section className="rounded-xl border border-gray-200 bg-white p-4 md:p-6">
-        <h2 className="text-lg font-semibold text-gray-900 md:text-xl">Cleaning payout settings</h2>
-        <p className="mt-1 max-w-2xl text-sm text-gray-500">
-          Tag inventory and edit checkout-linked payout rules. Saved rules drive automatic pricing — no manual
-          day-sheet counts.
-        </p>
-        <p className="mt-2 text-xs font-medium uppercase tracking-wide text-gray-500">Currency: EUR only</p>
-        <p className="mt-2 text-sm text-gray-500">
-          <Link to="/ops/cleaning" className="font-medium text-[#81887A] hover:underline">
-            Open cleaning calendar
-          </Link>
-        </p>
-      </section>
+    <OpsPage width="default">
+      <div className="ops-cleaning-settings">
+        <OpsPageHeader
+          title="Cleaning payout settings"
+          description="Tag inventory and edit checkout-linked payout rules. Saved rules drive automatic pricing — no manual day-sheet counts."
+          meta={<p className="ops-cleaning-settings__meta">Currency: EUR only</p>}
+          actions={
+            <Link to="/ops/cleaning" className="ops-cleaning-settings__calendar-link">
+              Open cleaning calendar
+            </Link>
+          }
+        />
 
-      {loadError ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {loadError}
-        </div>
-      ) : null}
+        {!canWrite ? (
+          <OpsBanner
+            tone="info"
+            title="Read-only"
+            body="You can view inventory tags and payout policies. Contact an admin to make changes."
+          />
+        ) : null}
 
-      {loading ? (
-        <p className="text-sm text-gray-400">Loading settings…</p>
-      ) : (
-        <div className="space-y-4">
-          <OpsCleaningInventoryTagsPanel canWrite={canWrite} />
+        {loadError ? <OpsBanner tone="danger" body={loadError} /> : null}
 
-          {LOCATIONS.map((loc) => (
-            <OpsCleaningRateCardPanel
-              key={loc.propertyKind}
-              locationMeta={loc}
-              locationState={locationMeta[loc.propertyKind]}
-              rules={rulesByKind[loc.propertyKind] || []}
-              canWrite={canWrite}
-              saving={savingKind === loc.propertyKind}
-              feedback={feedback[loc.propertyKind]}
-              onRuleChange={(index, field, value) =>
-                handleRuleChange(loc.propertyKind, index, field, value)
-              }
-              onAddRule={handleAddRule}
-              onRemoveRule={(index) => handleRemoveRule(loc.propertyKind, index)}
-              onSave={handleSave}
-            />
-          ))}
-        </div>
-      )}
-    </div>
+        {loading ? <OpsLoadingState label="Loading settings…" /> : null}
+
+        <OpsCleaningInventoryTagsPanel canWrite={canWrite} />
+
+        {!loading && !loadError
+          ? LOCATIONS.map((loc) => (
+              <OpsCleaningRateCardPanel
+                key={loc.propertyKind}
+                locationMeta={loc}
+                locationState={locationMeta[loc.propertyKind]}
+                rules={rulesByKind[loc.propertyKind] || []}
+                canWrite={canWrite}
+                saving={savingKind === loc.propertyKind}
+                feedback={feedback[loc.propertyKind]}
+                onRuleChange={(index, field, value) =>
+                  handleRuleChange(loc.propertyKind, index, field, value)
+                }
+                onAddRule={handleAddRule}
+                onRemoveRule={(index) => handleRemoveRule(loc.propertyKind, index)}
+                onSave={handleSave}
+              />
+            ))
+          : null}
+      </div>
+    </OpsPage>
   );
 }
