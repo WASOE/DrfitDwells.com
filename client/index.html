@@ -2,6 +2,25 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Ops appearance bootstrap: /ops only. Keep in sync with initOpsAppearanceBootstrap. -->
+    <script>
+      (function () {
+        try {
+          var path = location.pathname || '';
+          if (path !== '/ops' && path.indexOf('/ops/') !== 0) return;
+          var mode = null;
+          try { mode = localStorage.getItem('dd_ops_appearance'); } catch (e) {}
+          if (mode !== 'light' && mode !== 'dark' && mode !== 'system') mode = 'system';
+          var appearance = mode === 'light' || mode === 'dark'
+            ? mode
+            : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+          var el = document.documentElement;
+          el.setAttribute('data-ops-active', 'true');
+          el.setAttribute('data-ops-appearance-mode', mode);
+          el.setAttribute('data-ops-appearance', appearance);
+        } catch (e) {}
+      })();
+    </script>
     <link rel="icon" type="image/png" sizes="32x32" href="/media/branding/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="48x48" href="/media/branding/favicon-48.png" />
     <link rel="apple-touch-icon" href="/media/branding/pwa/apple-touch-icon.png" />

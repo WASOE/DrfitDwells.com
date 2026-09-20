@@ -2,12 +2,18 @@ import { useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { opsReadAPI } from '../services/opsApi';
 import { OpsSessionProvider } from '../context/OpsSessionContext';
-import OpsDesktopNav from './ops/OpsDesktopNav';
 import OpsMobileTabBar from './ops/OpsMobileTabBar';
 import OpsMoreSheet from './ops/OpsMoreSheet';
 import OpsPushNotificationsPanel from '../components/ops/OpsPushNotificationsPanel';
 import OpsNotificationBell from '../components/ops/OpsNotificationBell';
+import OpsSidebar from './ops/OpsSidebar';
+import OpsTopBar from './ops/OpsTopBar';
 import { canAccessOpsFrontendPath, isCleanerOnlySession } from './ops/opsNavConfig';
+import { OPS_SIDEBAR_COLLAPSED, OPS_SIDEBAR_EXPANDED, useOpsSidebarMode } from './ops/opsSidebarState';
+import { OpsAppearanceProvider, OpsRoot } from '../ops/appearance/OpsAppearanceProvider';
+import { applyOpsDocumentLang, resolveOpsUiLanguage } from '../ops/i18n/opsUiLanguage';
+import '../ops/ops.css';
+import './ops/opsShell.css';
 
 function roleLabel(role) {
   if (role === 'operator') return 'Operator';
@@ -22,7 +28,55 @@ function roleBadgeClass(role) {
   return 'text-amber-900 border-amber-200 bg-amber-50';
 }
 
+function SkipToContent() {
+  return (
+    <a href="#ops-main" className="ops-skip-link bg-white text-sm text-gray-900" data-testid="ops-skip-link">
+      Skip to content
+    </a>
+  );
+}
+
+function CompactHeader({ title, session, onLogout }) {
+  return (
+    <header className="bg-white border-b border-gray-200" data-testid="ops-mobile-header">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="py-3 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Ops Console</p>
+            <h1 className="text-base font-semibold text-gray-900 truncate">{title}</h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <OpsNotificationBell actorId={session.actorId} />
+            <div
+              className={`text-xs px-2 py-1 rounded border tabular-nums ${roleBadgeClass(session.role)}`}
+              title="Session role from login"
+            >
+              {roleLabel(session.role)}
+            </div>
+            <button
+              type="button"
+              onClick={onLogout}
+              className="text-xs px-2 py-1 rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+              data-testid="ops-logout"
+            >
+              Logout
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
 export default function OpsLayout() {
+  return (
+    <OpsAppearanceProvider>
+      <OpsLayoutShell />
+    </OpsAppearanceProvider>
+  );
+}
+
+function OpsLayoutShell() {
   const [ready, setReady] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [session, setSession] = useState(null);
@@ -31,6 +85,7 @@ export default function OpsLayout() {
   const moreButtonRef = useRef(null);
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const { mode, isDesktop, persistMode } = useOpsSidebarMode();
 
   const handleLogout = () => {
     localStorage.removeItem('adminToken');
@@ -103,11 +158,18 @@ export default function OpsLayout() {
     setIsMoreOpen(false);
   }, [pathname]);
 
+  useEffect(() => {
+    if (!session) {
+      return undefined;
+    }
+    return applyOpsDocumentLang(resolveOpsUiLanguage(session));
+  }, [session]);
+
   if (!ready) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <OpsRoot className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-sm text-gray-500">Loading ops console...</div>
-      </div>
+      </OpsRoot>
     );
   }
 
@@ -118,61 +180,50 @@ export default function OpsLayout() {
   const staleWebhook = !health?.dependencies?.stripeWebhookLastSeenAt;
   const hasDegraded = staleSync || staleWebhook;
   const cleanerOnly = isCleanerOnlySession(session);
+  const showDesktopShell = !cleanerOnly && isDesktop;
+
+  function handleSidebarToggle() {
+    persistMode(mode === OPS_SIDEBAR_EXPANDED ? OPS_SIDEBAR_COLLAPSED : OPS_SIDEBAR_EXPANDED);
+  }
 
   return (
     <OpsSessionProvider session={session}>
-      <div className="min-h-screen bg-gray-50">
-        <header className="bg-white border-b border-gray-200">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="py-3 flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Ops Console</p>
-                <h1 className="text-base font-semibold text-gray-900 truncate">
-                  {cleanerOnly ? 'Cleaning' : 'Drift & Dwells'}
-                </h1>
-              </div>
-              <div className="flex items-center gap-2">
-                <OpsNotificationBell actorId={session.actorId} />
-                <div
-                  className={`text-xs px-2 py-1 rounded border tabular-nums ${roleBadgeClass(session.role)}`}
-                  title="Session role from login"
-                >
-                  {roleLabel(session.role)}
-                </div>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="text-xs px-2 py-1 rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                  data-testid="ops-logout"
-                >
-                  Logout
-                </button>
-              </div>
-            </div>
-            {!cleanerOnly ? (
-              <div className="hidden md:block">
-                <OpsDesktopNav />
-              </div>
-            ) : null}
-          </div>
-        </header>
-
-        <OpsPushNotificationsPanel actorId={session.actorId} />
-
-        {!cleanerOnly && hasDegraded ? (
-          <div className="bg-amber-50 border-b border-amber-200">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 text-xs text-amber-800">
-              Degraded state: {staleWebhook ? 'webhook not seen yet. ' : ''}
-              {staleSync ? 'sync warnings/failures detected.' : ''}
-            </div>
-          </div>
+      <OpsRoot className="min-h-screen bg-gray-50">
+        <SkipToContent />
+        {cleanerOnly ? <CompactHeader title="Cleaning" session={session} onLogout={handleLogout} /> : null}
+        {!cleanerOnly && !isDesktop ? (
+          <CompactHeader title="Drift & Dwells" session={session} onLogout={handleLogout} />
         ) : null}
 
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 md:pt-8 pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-8">
-          <Outlet />
-        </main>
+        <div
+          className={showDesktopShell ? `ops-shell-frame ops-shell-frame--desktop ops-shell-frame--${mode}` : 'ops-shell-frame'}
+          data-sidebar-mode={showDesktopShell ? mode : undefined}
+        >
+          {showDesktopShell ? <OpsSidebar mode={mode} /> : null}
+          <div className="ops-shell-main">
+            {showDesktopShell ? (
+              <OpsTopBar mode={mode} session={session} onToggle={handleSidebarToggle} onLogout={handleLogout} />
+            ) : null}
+            <OpsPushNotificationsPanel actorId={session.actorId} />
+            {!cleanerOnly && hasDegraded ? (
+              <div className="bg-amber-50 border-b border-amber-200" data-testid="ops-degraded-banner">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 text-xs text-amber-800">
+                  Degraded state: {staleWebhook ? 'webhook not seen yet. ' : ''}
+                  {staleSync ? 'sync warnings/failures detected.' : ''}
+                </div>
+              </div>
+            ) : null}
+            <main
+              id="ops-main"
+              data-testid="ops-main"
+              className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 md:pt-8 pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-8"
+            >
+              <Outlet />
+            </main>
+          </div>
+        </div>
 
-        {!cleanerOnly ? (
+        {!cleanerOnly && !isDesktop ? (
           <>
             <OpsMobileTabBar
               onMoreClick={() => setIsMoreOpen(true)}
@@ -186,7 +237,7 @@ export default function OpsLayout() {
             />
           </>
         ) : null}
-      </div>
+      </OpsRoot>
     </OpsSessionProvider>
   );
 }

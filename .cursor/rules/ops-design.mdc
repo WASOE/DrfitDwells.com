@@ -1,0 +1,49 @@
+---
+description: Locked Ops design language. New Ops UI uses canonical tokens and primitives only.
+globs:
+  - client/src/ops/**/*
+  - docs/ops-design/**/*
+alwaysApply: false
+---
+
+# Ops design language (locked v1.2)
+
+Source of truth: `docs/ops-design/DND_OPS_DESIGN_LANGUAGE_GUIDE_V1_2_LOCKED.md`
+
+This rule does **not** authorize feature work, IA changes, desktop-shell work, or production page migration. If the locked guide conflicts with a requested implementation, **STOP and report the conflict**. Do not invent tokens, exceptions, or primitives to proceed.
+
+## Scope
+
+Applies to the new Ops design island: `client/src/ops/**`.
+
+`client/src/pages/ops/**` is legacy until an explicit migration slice. Do not drive-by rewrite it. Do not fail CI against that tree from this rule.
+
+## MUST
+
+- New Ops UI uses canonical primitives in `client/src/ops/primitives/`.
+- New Ops UI uses semantic `--ops-*` tokens only.
+- Light and dark use the same token names. No `dark:` / `html.dark` / raw `gray-*` styling.
+- No public-site editorial styling. No Playfair. No `font-serif` / `font-heading` / `font-script` as Ops styling (ops.css may neutralize those classes to Inter).
+- No raw visual hex outside `client/src/ops/ops.css` (and the P0A test mirror `client/src/ops/tokens/opsTokenNames.js`).
+- No arbitrary one-off Tailwind visual values (`p-[13px]`, `rounded-[7px]`, `text-[#…]`, `z-[9999]`) when a locked token exists.
+- No `window.confirm`, `alert`, or `prompt`. Use `OpsConfirmDialog` / canonical overlays.
+- No new status color or label maps outside `client/src/ops/status/opsStatusRegistry.js`.
+- No new overlay system. Modal / Sheet / Confirm come from `client/src/ops/primitives/` and `opsOverlay.js`.
+- No new component library (Radix, Headless UI, shadcn, Framer Motion, focus-trap packages) without explicit approval.
+- Production migrations must preserve business behavior. Visual change only when the slice says so.
+- Mobile and desktop share semantics, not necessarily layout.
+- Register every approved deviation in `docs/ops-design/OPS_DESIGN_EXCEPTION_REGISTER.md`.
+
+## MUST NOT
+
+- Do not migrate Dashboard, Reservations, Calendar, or other production pages unless the current slice names them.
+- Do not add `/ops/design-system` to operator navigation.
+- Do not treat this rule as permission to start the desktop sidebar, command search, or P0+ shell work.
+
+## Checks
+
+Run from `client/`:
+
+```bash
+npm run test:ops-design
+```

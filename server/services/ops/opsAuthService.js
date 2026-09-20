@@ -1,9 +1,30 @@
 const crypto = require('crypto');
+const mongoose = require('mongoose');
 const { createToken } = require('../../middleware/adminAuth');
 const { verifyOpsUserCredentials } = require('./opsUserService');
 const { normalizeModulesForRole, getDefaultRoute } = require('./opsModuleRegistry');
 const { listAllowedActions } = require('../permissionService');
 const authDefaults = require('../../config/defaults');
+const OpsUser = require('../../models/OpsUser');
+
+function normalizeSessionLocale(locale) {
+  if (locale === 'en' || locale === 'bg') {
+    return locale;
+  }
+  return null;
+}
+
+async function loadOpsUserLocale(userId) {
+  if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+    return null;
+  }
+  try {
+    const doc = await OpsUser.findById(userId).select('locale').lean();
+    return normalizeSessionLocale(doc?.locale);
+  } catch {
+    return null;
+  }
+}
 
 function buildTokenPayloadForOpsUser(user) {
   const now = Math.floor(Date.now() / 1000);
@@ -61,8 +82,16 @@ function buildSessionData(user) {
     role,
     modules,
     actions: listAllowedActions({ role, modules }),
-    defaultRoute: getDefaultRoute(role)
+    defaultRoute: getDefaultRoute(role),
+    locale: normalizeSessionLocale(user.locale)
   };
+}
+
+async function buildSessionDataForRequest(authUser, options = {}) {
+  const loadLocale = options.loadLocale || loadOpsUserLocale;
+  const locale =
+    authUser?.src === 'ops_user' ? await loadLocale(authUser.id) : normalizeSessionLocale(authUser?.locale);
+  return buildSessionData({ ...authUser, locale });
 }
 
 module.exports = {
@@ -70,5 +99,8 @@ module.exports = {
   buildTokenPayloadForLegacy,
   tryOpsUserLogin,
   issueTokenResponse,
-  buildSessionData
+  buildSessionData,
+  buildSessionDataForRequest,
+  loadOpsUserLocale,
+  normalizeSessionLocale
 };

@@ -1,0 +1,128 @@
+/* Transitional S1B desktop shell geometry. Colors stay in light-neutral Tailwind on components. */
+
+/* Always position:fixed so focus never inserts an in-flow block or shifts the shell. */
+.ops-skip-link {
+  position: fixed;
+  left: var(--ops-space-8);
+  top: var(--ops-space-8);
+  z-index: var(--ops-z-toast);
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ops-skip-link:focus,
+.ops-skip-link:focus-visible {
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+  padding: var(--ops-space-8) var(--ops-space-12);
+}
+
+.ops-shell-frame--desktop {
+  display: grid;
+  grid-template-columns: var(--ops-sidebar-w) minmax(0, 1fr);
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+.ops-shell-frame--desktop.ops-shell-frame--collapsed {
+  grid-template-columns: var(--ops-sidebar-w-collapsed) minmax(0, 1fr);
+}
+
+.ops-shell-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ops-sidebar {
+  position: sticky;
+  top: 0;
+  z-index: var(--ops-z-nav);
+  display: flex;
+  flex-direction: column;
+  width: var(--ops-sidebar-w);
+  height: 100vh;
+  height: 100dvh;
+  overflow: visible;
+}
+
+.ops-sidebar--collapsed {
+  width: var(--ops-sidebar-w-collapsed);
+}
+
+.ops-sidebar--collapsed .ops-tooltip {
+  display: flex;
+  width: 100%;
+}
+
+.ops-sidebar--collapsed .ops-sidebar-group-btn {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.ops-sidebar__nav {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.ops-sidebar__groups {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: visible;
+}
+
+.ops-sidebar--collapsed .ops-sidebar__groups {
+  overflow: visible;
+}
+
+.ops-sidebar__admin {
+  flex: 0 0 auto;
+  margin-top: auto;
+}
+
+.ops-sidebar-flyout {
+  position: fixed;
+  z-index: var(--ops-z-dropdown);
+  width: var(--ops-sidebar-w);
+  overflow-x: hidden;
+  overflow-y: auto;
+  pointer-events: auto;
+}
+
+.ops-topbar {
+  height: var(--ops-topbar-h);
+}
+
+@media (pointer: coarse) {
+  .ops-sidebar-group-btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ops-shell-frame--desktop,
+  .ops-sidebar,
+  .ops-sidebar-flyout {
+    transition: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ops-shell-frame--desktop {
+    transition: grid-template-columns 150ms ease-out;
+  }
+}

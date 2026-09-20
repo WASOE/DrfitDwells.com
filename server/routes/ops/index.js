@@ -1,7 +1,7 @@
 const express = require('express');
 const { adminAuth } = require('../../middleware/adminAuth');
 const { requireOpsModuleAccess } = require('../../middleware/requireOpsModuleAccess');
-const { buildSessionData } = require('../../services/ops/opsAuthService');
+const { buildSessionDataForRequest } = require('../../services/ops/opsAuthService');
 const foundationRoutes = require('./modules/foundationRoutes');
 const dashboardRoutes = require('./modules/dashboardRoutes');
 const calendarRoutes = require('./modules/calendarRoutes');
@@ -44,10 +44,10 @@ router.get('/health', (req, res) => {
 });
 
 router.use(adminAuth);
-router.get('/session', (req, res) => {
+router.get('/session', async (req, res) => {
   return res.json({
     success: true,
-    data: buildSessionData(req.user)
+    data: await buildSessionDataForRequest(req.user)
   });
 });
 router.use(requireOpsModuleAccess);

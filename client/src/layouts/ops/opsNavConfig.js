@@ -1,9 +1,11 @@
 /**
  * Shared OPS navigation config — single source for desktop nav, mobile tabs, and More sheet.
- * Batch 1: config + matchers only; OpsLayout still uses inline navItems until wired in Batch 2+.
+ * Desktop sidebar groups are derived from the same records. Mobile tabs/More stay the current IA.
  */
 
 /** @typedef {'home' | 'calendar' | 'guests' | 'finance' | 'more'} OpsMobileTabId */
+/** @typedef {'home' | 'calendar' | 'guests' | 'finance' | 'property' | 'cleaning' | 'insights' | 'admin'} OpsDesktopGroupId */
+/** @typedef {'exact' | 'prefix'} OpsNavMatch */
 
 /** Frontend route prefixes → module keys (longest match first). Keep in sync with server opsModuleRegistry. */
 const OPS_FRONTEND_MODULE_ROUTES = [
@@ -34,39 +36,254 @@ const OPS_ROUTE_ACTIONS = {
   '/ops/users': 'ops.users.manage'
 };
 
-/** All OPS top-nav destinations in current desktop order (OpsLayout.jsx). */
+/** Admin-only frontend prefixes. Not nav destinations and not permission modules. */
+export const OPS_ADMIN_ONLY_PREFIXES = Object.freeze(['/ops/design-system']);
+
+export function isOpsAdminOnlyPath(pathname) {
+  const path = pathname || '';
+  return OPS_ADMIN_ONLY_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+}
+
+/** Locked desktop product groups. Admin is last. Icons are Lucide names for a later shell; not rendered here. */
+export const OPS_SIDEBAR_GROUPS = Object.freeze([
+  { id: 'home', label: 'Home', order: 1, icon: 'House' },
+  { id: 'calendar', label: 'Calendar', order: 2, icon: 'CalendarDays' },
+  { id: 'guests', label: 'Guests', order: 3, icon: 'Users' },
+  { id: 'finance', label: 'Finance', order: 4, icon: 'CircleDollarSign' },
+  { id: 'property', label: 'Property', order: 5, icon: 'Building2' },
+  { id: 'cleaning', label: 'Cleaning', order: 6, icon: 'Sparkles' },
+  { id: 'insights', label: 'Insights', order: 7, icon: 'ChartSpline' },
+  { id: 'admin', label: 'Admin', order: 8, icon: 'Settings' }
+]);
+
+/**
+ * All OPS destinations. Array order is the current desktop strip order (do not reshuffle in S1A).
+ * desktopGroup is the future sidebar. mobileTab / moreGroupId preserve current mobile IA.
+ */
 export const OPS_NAV_ITEMS = [
-  { to: '/ops', label: 'Dashboard', end: true, module: 'dashboard' },
-  { to: '/ops/calendar', label: 'Calendar', module: 'calendar' },
-  { to: '/ops/calendar/work-windows', label: 'Work windows', module: 'calendar' },
-  { to: '/ops/cleaning', label: 'Cleaning', module: 'cleaning', action: 'ops.cleaning.view' },
-  { to: '/ops/reservations', label: 'Reservations', module: 'reservations' },
-  { to: '/ops/payments', label: 'Payments', module: 'finance' },
-  { to: '/ops/promo-codes', label: 'Promo codes', module: 'finance' },
-  { to: '/ops/creator-partners', label: 'Creator partners', module: 'property' },
-  { to: '/ops/sync', label: 'Sync', module: 'calendar' },
-  { to: '/ops/cabins', label: 'Cabins', module: 'property' },
-  { to: '/ops/reviews', label: 'Reviews', module: 'guests_comms' },
-  { to: '/ops/communications', label: 'Comms', module: 'guests_comms' },
-  { to: '/ops/messaging', label: 'Messaging', module: 'guests_comms' },
-  { to: '/ops/gift-vouchers', label: 'Gift vouchers', module: 'finance' },
-  { to: '/ops/insights', label: 'Insights', module: 'finance' },
-  { to: '/ops/insights/performance', label: 'Historical performance', module: 'finance' },
-  { to: '/ops/conversion', label: 'Conversion', module: 'finance' },
-  { to: '/ops/conversion/recovery', label: 'Quote recovery', module: 'finance' },
-  { to: '/ops/manual-review', label: 'Manual', module: 'operations' },
-  { to: '/ops/readiness', label: 'Readiness', module: 'operations' },
+  {
+    to: '/ops',
+    label: 'Dashboard',
+    end: true,
+    module: 'dashboard',
+    desktopGroup: 'home',
+    sidebarOrder: 1,
+    mobileTab: 'home',
+    moreGroupId: 'dashboard',
+    match: 'exact'
+  },
+  {
+    to: '/ops/calendar',
+    label: 'Calendar',
+    module: 'calendar',
+    desktopGroup: 'calendar',
+    sidebarOrder: 1,
+    mobileTab: 'calendar',
+    moreGroupId: 'calendar',
+    match: 'prefix'
+  },
+  {
+    to: '/ops/calendar/work-windows',
+    label: 'Work windows',
+    module: 'calendar',
+    desktopGroup: 'calendar',
+    sidebarOrder: 2,
+    mobileTab: 'calendar',
+    moreGroupId: 'calendar',
+    match: 'prefix'
+  },
+  {
+    to: '/ops/cleaning',
+    label: 'Cleaning',
+    module: 'cleaning',
+    action: 'ops.cleaning.view',
+    desktopGroup: 'cleaning',
+    sidebarOrder: 1,
+    mobileTab: 'more',
+    moreGroupId: 'operations',
+    match: 'prefix'
+  },
+  {
+    to: '/ops/reservations',
+    label: 'Reservations',
+    module: 'reservations',
+    desktopGroup: 'guests',
+    sidebarOrder: 1,
+    mobileTab: 'guests',
+    moreGroupId: 'guests',
+    match: 'prefix'
+  },
+  {
+    to: '/ops/payments',
+    label: 'Payments',
+    module: 'finance',
+    desktopGroup: 'finance',
+    sidebarOrder: 1,
+    mobileTab: 'finance',
+    moreGroupId: 'finance',
+    match: 'prefix'
+  },
+  {
+    to: '/ops/promo-codes',
+    label: 'Promo codes',
+    module: 'finance',
+    desktopGroup: 'finance',
+    sidebarOrder: 2,
+    mobileTab: 'finance',
+    moreGroupId: 'finance',
+    match: 'prefix'
+  },
+  {
+    to: '/ops/creator-partners',
+    label: 'Creator partners',
+    module: 'property',
+    desktopGroup: 'property',
+    sidebarOrder: 2,
+    mobileTab: 'more',
+    moreGroupId: 'property-partners',
+    match: 'prefix'
+  },
+  {
+    to: '/ops/sync',
+    label: 'Sync',
+    module: 'calendar',
+    desktopGroup: 'calendar',
+    sidebarOrder: 3,
+    mobileTab: 'calendar',
+    moreGroupId: 'calendar',
+    match: 'prefix'
+  },
+  {
+    to: '/ops/cabins',
+    label: 'Cabins',
+    module: 'property',
+    desktopGroup: 'property',
+    sidebarOrder: 1,
+    mobileTab: 'more',
+    moreGroupId: 'property-partners',
+    match: 'prefix'
+  },
+  {
+    to: '/ops/reviews',
+    label: 'Reviews',
+    module: 'guests_comms',
+    desktopGroup: 'guests',
+    sidebarOrder: 4,
+    mobileTab: 'guests',
+    moreGroupId: 'guests',
+    match: 'prefix'
+  },
+  {
+    to: '/ops/communications',
+    label: 'Comms',
+    module: 'guests_comms',
+    desktopGroup: 'guests',
+    sidebarOrder: 3,
+    mobileTab: 'guests',
+    moreGroupId: 'guests',
+    match: 'prefix'
+  },
+  {
+    to: '/ops/messaging',
+    label: 'Messaging',
+    module: 'guests_comms',
+    desktopGroup: 'guests',
+    sidebarOrder: 2,
+    mobileTab: 'guests',
+    moreGroupId: 'guests',
+    match: 'prefix'
+  },
+  {
+    to: '/ops/gift-vouchers',
+    label: 'Gift vouchers',
+    module: 'finance',
+    desktopGroup: 'finance',
+    sidebarOrder: 3,
+    mobileTab: 'finance',
+    moreGroupId: 'finance',
+    match: 'prefix'
+  },
+  {
+    to: '/ops/insights',
+    label: 'Insights',
+    module: 'finance',
+    desktopGroup: 'insights',
+    sidebarOrder: 1,
+    mobileTab: 'finance',
+    moreGroupId: 'finance',
+    match: 'prefix'
+  },
+  {
+    to: '/ops/insights/performance',
+    label: 'Historical performance',
+    module: 'finance',
+    desktopGroup: 'insights',
+    sidebarOrder: 2,
+    mobileTab: 'finance',
+    moreGroupId: 'finance',
+    match: 'prefix'
+  },
+  {
+    to: '/ops/conversion',
+    label: 'Conversion',
+    module: 'finance',
+    desktopGroup: 'insights',
+    sidebarOrder: 3,
+    mobileTab: 'finance',
+    moreGroupId: 'finance',
+    match: 'prefix'
+  },
+  {
+    to: '/ops/conversion/recovery',
+    label: 'Quote recovery',
+    module: 'finance',
+    desktopGroup: 'insights',
+    sidebarOrder: 4,
+    mobileTab: 'finance',
+    moreGroupId: 'finance',
+    match: 'prefix'
+  },
+  {
+    to: '/ops/manual-review',
+    label: 'Manual',
+    module: 'operations',
+    desktopGroup: 'home',
+    sidebarOrder: 2,
+    mobileTab: 'more',
+    moreGroupId: 'operations',
+    match: 'prefix'
+  },
+  {
+    to: '/ops/readiness',
+    label: 'Readiness',
+    module: 'operations',
+    desktopGroup: 'admin',
+    sidebarOrder: 2,
+    mobileTab: 'more',
+    moreGroupId: 'operations',
+    match: 'prefix'
+  },
   {
     to: '/ops/settings/cleaning',
     label: 'Cleaning settings',
     module: 'cleaning',
-    action: 'ops.cleaning.settings_read'
+    action: 'ops.cleaning.settings_read',
+    desktopGroup: 'cleaning',
+    sidebarOrder: 2,
+    mobileTab: 'more',
+    moreGroupId: 'operations',
+    match: 'prefix'
   },
   {
     to: '/ops/users',
     label: 'Users',
     module: 'users',
-    action: 'ops.users.manage'
+    action: 'ops.users.manage',
+    desktopGroup: 'admin',
+    sidebarOrder: 1,
+    mobileTab: 'more',
+    moreGroupId: 'operations',
+    match: 'prefix'
   }
 ];
 
@@ -103,7 +320,7 @@ export const OPS_MOBILE_TABS = [
   { id: 'more', label: 'More', to: null }
 ];
 
-/** Full OPS mobile menu (< md More sheet). All 14 destinations; bottom tabs remain shortcuts. */
+/** Full OPS mobile menu (< md More sheet). Current IA; not regrouped to desktop taxonomy in S1A. */
 export const OPS_MORE_GROUPS = [
   {
     id: 'dashboard',
@@ -163,6 +380,12 @@ export const OPS_MORE_GROUPS = [
   }
 ];
 
+function compareSidebarItems(a, b) {
+  const orderDelta = (a.sidebarOrder || 0) - (b.sidebarOrder || 0);
+  if (orderDelta !== 0) return orderDelta;
+  return a.to.localeCompare(b.to);
+}
+
 /**
  * @param {string | null | undefined} pathname
  * @returns {boolean}
@@ -183,6 +406,76 @@ function pathMatchesPrefix(pathname, prefix) {
     return isOpsHomePath(path);
   }
   return path === prefix || path.startsWith(`${prefix}/`);
+}
+
+function normalizeOpsPath(pathname) {
+  const path = pathname || '';
+  if (path.length > 1 && path.endsWith('/')) {
+    return path.slice(0, -1);
+  }
+  return path;
+}
+
+/**
+ * Whether a nav record matches a pathname. Exact `/ops` never consumes nested routes.
+ * @param {string | null | undefined} pathname
+ * @param {{ to: string, match?: OpsNavMatch }} item
+ */
+export function pathMatchesOpsNavItem(pathname, item) {
+  const path = normalizeOpsPath(pathname);
+  if (!item?.to) return false;
+  if (item.match === 'exact' || item.to === '/ops') {
+    return isOpsHomePath(path);
+  }
+  return path === item.to || path.startsWith(`${item.to}/`);
+}
+
+/**
+ * Most specific matching nav record, or null (including /ops/design-system).
+ * @param {string | null | undefined} pathname
+ * @param {typeof OPS_NAV_ITEMS} [items]
+ */
+export function matchOpsNavItem(pathname, items = OPS_NAV_ITEMS) {
+  const matches = items.filter((item) => pathMatchesOpsNavItem(pathname, item));
+  if (matches.length === 0) return null;
+  return matches.reduce((best, item) => (item.to.length > best.to.length ? item : best));
+}
+
+/**
+ * @param {string | null | undefined} pathname
+ * @param {typeof OPS_NAV_ITEMS} [items]
+ * @returns {{ groupId: OpsDesktopGroupId, item: (typeof OPS_NAV_ITEMS)[number] } | null}
+ */
+export function getOpsSidebarSelection(pathname, items = OPS_NAV_ITEMS) {
+  const item = matchOpsNavItem(pathname, items);
+  if (!item) return null;
+  return { groupId: item.desktopGroup, item };
+}
+
+/**
+ * Unfiltered desktop sidebar groups in locked order.
+ * @param {typeof OPS_NAV_ITEMS} [items]
+ */
+export function getOpsSidebarGroups(items = OPS_NAV_ITEMS) {
+  return OPS_SIDEBAR_GROUPS.map((group) => ({
+    id: group.id,
+    label: group.label,
+    order: group.order,
+    icon: group.icon,
+    items: items.filter((item) => item.desktopGroup === group.id).sort(compareSidebarItems)
+  }));
+}
+
+/**
+ * Permission-filtered desktop sidebar groups. Empty groups are omitted.
+ */
+export function filterOpsSidebarGroups(session, items = OPS_NAV_ITEMS) {
+  return getOpsSidebarGroups(items)
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => canAccessNavItem(item, session))
+    }))
+    .filter((group) => group.items.length > 0);
 }
 
 /**
@@ -301,6 +594,9 @@ export function filterOpsMoreGroups(groups, session) {
 export function canAccessOpsFrontendPath(pathname, session) {
   if (!session?.authenticated) {
     return false;
+  }
+  if (isOpsAdminOnlyPath(pathname)) {
+    return session.role === 'admin';
   }
   if (session.modules?.includes('*')) {
     return true;

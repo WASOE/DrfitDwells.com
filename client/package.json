@@ -14,7 +14,8 @@
     "lint:i18n": "eslint src --ext js,jsx --no-eslintrc -c .eslintrc-i18n.cjs",
     "preview": "vite preview --host",
     "check:i18n": "node ./scripts/check-i18n.mjs",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:ops-design": "node ./scripts/check-ops-design.cjs && vitest run src/ops/tokens/opsTokenNames.test.js src/ops/status/opsStatusRegistry.test.js src/ops/i18n/opsUiLanguage.test.js src/ops/checkOpsDesign.test.js"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

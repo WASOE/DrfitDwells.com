@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react';
 
-/** @typedef {{ authenticated: boolean, actorId: string|null, role: string, modules: string[], actions: string[], defaultRoute: string }} OpsSession */
+/** @typedef {{ authenticated: boolean, actorId: string|null, role: string, modules: string[], actions: string[], defaultRoute: string, locale: 'en'|'bg'|null }} OpsSession */
 
 export const OpsSessionContext = createContext(/** @type {OpsSession|null} */ (null));
 

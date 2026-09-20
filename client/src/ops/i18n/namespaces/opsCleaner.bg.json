@@ -1,0 +1,8 @@
+{
+  "status.cleaning.pending": "За почистване",
+  "status.cleaning.done": "Почистено",
+  "status.cleaning.same_day_turn": "Смяна в същия ден",
+  "status.cleaning_payment.pending": "За плащане",
+  "status.cleaning_payment.partial": "Частично платено",
+  "status.cleaning_payment.paid": "Платено"
+}
