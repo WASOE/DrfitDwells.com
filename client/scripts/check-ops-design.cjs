@@ -28,7 +28,12 @@ const CLIENT_ROOT = path.resolve(__dirname, '..');
 const DEFAULT_ROOT = path.resolve(__dirname, '../src/ops');
 
 /** Production files migrated onto the Ops design language. Append per batch. */
-const MIGRATED_OPS_FILES = ['src/pages/ops/OpsGiftVouchers.jsx', 'src/pages/ops/OpsGiftVouchers.css'];
+const MIGRATED_OPS_FILES = [
+  'src/pages/ops/OpsGiftVouchers.jsx',
+  'src/pages/ops/OpsGiftVouchers.css',
+  'src/pages/ops/OpsGiftVoucherDetail.jsx',
+  'src/pages/ops/OpsGiftVoucherDetail.css'
+];
 
 const HEX_ALLOWLIST = new Set(['ops.css', 'tokens/opsTokenNames.js']);
 const CREATE_PORTAL_ALLOWLIST = new Set(['primitives/opsOverlay.js']);

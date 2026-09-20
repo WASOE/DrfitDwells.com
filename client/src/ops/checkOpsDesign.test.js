@@ -22,6 +22,8 @@ describe('ops design guard', () => {
     expect(result.violations, JSON.stringify(result.violations, null, 2)).toEqual([]);
     expect(result.scanned.length).toBeGreaterThan(0);
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsGiftVouchers.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsGiftVoucherDetail.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsGiftVoucherDetail.css');
     expect(result.scanned).toEqual(expect.arrayContaining(MIGRATED_OPS_FILES));
   });
 

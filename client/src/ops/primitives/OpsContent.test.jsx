@@ -34,6 +34,49 @@ describe('OpsPageHeader', () => {
     expect(screen.getByText('Open stays')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Create' })).toBeInTheDocument();
   });
+
+  it('does not render a back control when the back prop is absent', () => {
+    render(<OpsPageHeader title="Reservations" />);
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(document.querySelector('.ops-page-header__back')).toBeNull();
+  });
+
+  it('renders a single back link with the provided to and label', () => {
+    render(
+      <MemoryRouter>
+        <OpsPageHeader
+          back={{ to: '/ops/gift-vouchers', label: 'Gift vouchers' }}
+          title="DD-ACTIVE-01"
+          meta={<span>Active</span>}
+          actions={<OpsButton variant="secondary">Print card</OpsButton>}
+        />
+      </MemoryRouter>
+    );
+    const back = screen.getByRole('link', { name: 'Gift vouchers' });
+    expect(back).toHaveAttribute('href', '/ops/gift-vouchers');
+    expect(back).toHaveClass('ops-page-header__back-link');
+    expect(screen.getByRole('heading', { level: 1, name: 'DD-ACTIVE-01' })).toBeInTheDocument();
+    expect(screen.getByText('Active')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Print card' })).toBeInTheDocument();
+    expect(back.contains(screen.getByRole('button', { name: 'Print card' }))).toBe(false);
+  });
+
+  it('keeps token class architecture and does not nest actions inside the back link', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <OpsPageHeader
+          back={{ to: '/ops/gift-vouchers', label: 'Gift vouchers' }}
+          title="DD-ACTIVE-01"
+          actions={<OpsButton>Print card</OpsButton>}
+        />
+      </MemoryRouter>
+    );
+    const header = container.querySelector('.ops-page-header');
+    expect(header.querySelector('.ops-page-header__title')).toBeTruthy();
+    expect(header.querySelector('.ops-page-header__actions')).toBeTruthy();
+    expect(header.querySelector('.ops-page-header__back-link').tagName).toBe('A');
+    expect(header.className).not.toMatch(/dark:|html\.dark|gray-/);
+  });
 });
 
 describe('OpsTable', () => {

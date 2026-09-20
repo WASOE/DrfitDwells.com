@@ -1,10 +1,43 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { opsReadAPI, opsWriteAPI } from '../../services/opsApi';
 import { formatMoneyFromCents } from '../../utils/formatMoney';
+import OpsPage from '../../ops/primitives/OpsPage';
+import OpsPageHeader from '../../ops/primitives/OpsPageHeader';
+import OpsStatus from '../../ops/primitives/OpsStatus';
+import OpsButton from '../../ops/primitives/OpsButton';
+import OpsTextField from '../../ops/primitives/OpsTextField';
+import OpsBanner from '../../ops/primitives/OpsBanner';
+import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
+import OpsEmptyState from '../../ops/primitives/OpsEmptyState';
+import OpsInlineError from '../../ops/primitives/OpsInlineError';
+import { opsCx } from '../../ops/primitives/opsCx';
+import './OpsGiftVoucherDetail.css';
 
 function makeIdempotencyKey() {
   return `ops_gv_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+const BACK = { to: '/ops/gift-vouchers', label: 'Gift vouchers' };
+
+function Fact({ label, children, numeric = false }) {
+  return (
+    <div className={opsCx('ops-gv-detail__fact', numeric && 'ops-gv-detail__fact--numeric')}>
+      <dt className="ops-gv-detail__fact-label">{label}</dt>
+      <dd className="ops-gv-detail__fact-value">{children}</dd>
+    </div>
+  );
+}
+
+function DetailHeader({ title, voucher, actions }) {
+  return (
+    <OpsPageHeader
+      back={BACK}
+      title={title}
+      meta={voucher ? <OpsStatus domain="voucher" value={voucher.status} /> : undefined}
+      actions={actions}
+    />
+  );
 }
 
 export default function OpsGiftVoucherDetail() {
@@ -62,368 +95,368 @@ export default function OpsGiftVoucherDetail() {
     }
   };
 
-  if (loading) return <div className="text-sm text-gray-500">Loading voucher detail...</div>;
-  if (error) return <div className="text-sm text-red-600">{error}</div>;
-  if (!voucher) return <div className="text-sm text-gray-500">Voucher not found.</div>;
+  if (loading) {
+    return (
+      <OpsPage width="default">
+        <DetailHeader title="Gift voucher" />
+        <OpsLoadingState label="Loading voucher detail..." />
+      </OpsPage>
+    );
+  }
+
+  if (error) {
+    return (
+      <OpsPage width="default">
+        <DetailHeader title="Gift voucher" />
+        <OpsBanner tone="danger" title={error} />
+      </OpsPage>
+    );
+  }
+
+  if (!voucher) {
+    return (
+      <OpsPage width="default">
+        <DetailHeader title="Gift voucher" />
+        <OpsEmptyState title="Voucher not found." />
+      </OpsPage>
+    );
+  }
+
+  const title = voucher.code || 'Code pending';
 
   return (
-    <div className="space-y-4 pb-16 sm:pb-0">
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-lg font-semibold text-gray-900">Gift voucher detail</h2>
-          <Link to="/ops/gift-vouchers" className="text-sm text-[#81887A] hover:underline">
-            Back to list
-          </Link>
-        </div>
-        <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-          <div>
-            <p className="text-gray-500">Code</p>
-            <p className="font-medium text-gray-900">{voucher.code || 'Pending'}</p>
-          </div>
-          <div>
-            <p className="text-gray-500">Status</p>
-            <p className="font-medium text-gray-900">{voucher.status}</p>
-          </div>
-          <div>
-            <p className="text-gray-500">Buyer</p>
-            <p className="font-medium text-gray-900">{voucher.buyerName || '—'} ({voucher.buyerEmail || '—'})</p>
-          </div>
-          <div>
-            <p className="text-gray-500">Recipient</p>
-            <p className="font-medium text-gray-900">{voucher.recipientName || '—'} ({voucher.recipientEmail || '—'})</p>
-          </div>
-          <div>
-            <p className="text-gray-500">Delivery mode</p>
-            <p className="font-medium text-gray-900">{voucher.deliveryMode}</p>
-          </div>
-          <div>
-            <p className="text-gray-500">Delivery option</p>
-            <p className="font-medium text-gray-900">{voucher.deliveryOptionLabel || voucher.deliveryOption || '—'}</p>
-          </div>
-          <div>
-            <p className="text-gray-500">Card design</p>
-            <p className="font-medium text-gray-900">{voucher.cardTemplateLabel || '—'}</p>
-          </div>
-          <div>
-            <p className="text-gray-500">Occasion</p>
-            <p className="font-medium text-gray-900">{voucher.cardOccasion || '—'}</p>
-          </div>
-          <div>
-            <p className="text-gray-500">Card language</p>
-            <p className="font-medium text-gray-900">{voucher.cardLocale ? voucher.cardLocale.toUpperCase() : '—'}</p>
-          </div>
-          <div>
-            <p className="text-gray-500">Scheduled date</p>
-            <p className="font-medium text-gray-900">
+    <OpsPage width="default">
+      <div className="ops-gv-detail">
+        <DetailHeader
+          title={title}
+          voucher={voucher}
+          actions={
+            <OpsButton
+              variant="secondary"
+              loading={busyAction === 'print'}
+              loadingLabel="Opening print..."
+              onClick={() =>
+                runAction('print', async () => {
+                  const resp = await opsReadAPI.printGiftVoucherCard(voucher.giftVoucherId);
+                  const blob = new Blob([resp.data], { type: 'text/html;charset=utf-8' });
+                  const url = URL.createObjectURL(blob);
+                  window.open(url, '_blank', 'noopener,noreferrer');
+                  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                })
+              }
+            >
+              Print card
+            </OpsButton>
+          }
+        />
+
+        <section className="ops-gv-detail__section">
+          <h2 className="ops-gv-detail__section-title">Voucher</h2>
+          <dl className="ops-gv-detail__facts">
+            <Fact label="Code">{voucher.code || 'Pending'}</Fact>
+            <Fact label="Expires">
+              {voucher.expiresAt ? new Date(voucher.expiresAt).toLocaleString() : '—'}
+            </Fact>
+            <Fact label="Payment reference">{voucher.stripePaymentIntentId || '—'}</Fact>
+            <Fact label="Attribution">{voucher.attribution?.referralCode || '—'}</Fact>
+          </dl>
+        </section>
+
+        <section className="ops-gv-detail__section">
+          <h2 className="ops-gv-detail__section-title">People</h2>
+          <dl className="ops-gv-detail__facts">
+            <Fact label="Buyer">
+              {voucher.buyerName || '—'} ({voucher.buyerEmail || '—'})
+            </Fact>
+            <Fact label="Recipient">
+              {voucher.recipientName || '—'} ({voucher.recipientEmail || '—'})
+            </Fact>
+          </dl>
+        </section>
+
+        <section className="ops-gv-detail__section">
+          <h2 className="ops-gv-detail__section-title">Delivery</h2>
+          <dl className="ops-gv-detail__facts">
+            <Fact label="Delivery mode">{voucher.deliveryMode}</Fact>
+            <Fact label="Delivery option">
+              {voucher.deliveryOptionLabel || voucher.deliveryOption || '—'}
+            </Fact>
+            <Fact label="Card design">{voucher.cardTemplateLabel || '—'}</Fact>
+            <Fact label="Occasion">{voucher.cardOccasion || '—'}</Fact>
+            <Fact label="Card language">
+              {voucher.cardLocale ? voucher.cardLocale.toUpperCase() : '—'}
+            </Fact>
+            <Fact label="Scheduled date">
               {voucher.deliveryDate ? new Date(voucher.deliveryDate).toLocaleDateString() : '—'}
-            </p>
-          </div>
-          <div>
-            <p className="text-gray-500">Sent at</p>
-            <p className="font-medium text-gray-900">{voucher.sentAt ? new Date(voucher.sentAt).toLocaleString() : '—'}</p>
-          </div>
-          <div>
-            <p className="text-gray-500">Recipient card sent</p>
-            <p className="font-medium text-gray-900">{voucher.recipientCardSent ? 'Yes' : 'No'}</p>
-          </div>
-          <div>
-            <p className="text-gray-500">Download token</p>
-            <p className="font-medium text-gray-900">{voucher.hasCardAccessToken ? 'Active' : 'None'}</p>
-          </div>
-          {voucher.deliveryMode === 'postal' && (voucher.physicalCardFeeCents || 0) > 0 ? (
-            <div>
-              <p className="text-gray-500">Physical card fee</p>
-              <p className="font-medium text-gray-900">
+            </Fact>
+            <Fact label="Sent at">
+              {voucher.sentAt ? new Date(voucher.sentAt).toLocaleString() : '—'}
+            </Fact>
+            <Fact label="Recipient card sent">{voucher.recipientCardSent ? 'Yes' : 'No'}</Fact>
+            <Fact label="Download token">{voucher.hasCardAccessToken ? 'Active' : 'None'}</Fact>
+            {voucher.deliveryMode === 'postal' && (voucher.physicalCardFeeCents || 0) > 0 ? (
+              <Fact label="Physical card fee" numeric>
                 {formatMoneyFromCents(voucher.physicalCardFeeCents, voucher.currency)}
+              </Fact>
+            ) : null}
+          </dl>
+          {voucher.deliveryMode === 'postal' && voucher.deliveryAddress ? (
+            <div className="ops-gv-detail__address">
+              <p className="ops-gv-detail__address-title">Delivery address</p>
+              <p>{voucher.deliveryAddress.addressLine1 || ''}</p>
+              {voucher.deliveryAddress.addressLine2 ? <p>{voucher.deliveryAddress.addressLine2}</p> : null}
+              <p>
+                {voucher.deliveryAddress.city || ''} {voucher.deliveryAddress.postalCode || ''}
               </p>
+              <p>{voucher.deliveryAddress.country || ''}</p>
             </div>
           ) : null}
-          <div>
-            <p className="text-gray-500">Payment reference</p>
-            <p className="font-medium text-gray-900">{voucher.stripePaymentIntentId || '—'}</p>
+        </section>
+
+        <section className="ops-gv-detail__section">
+          <h2 className="ops-gv-detail__section-title">Value</h2>
+          <p className="ops-gv-detail__fact-label">Balance</p>
+          <div className="ops-gv-detail__balance-track">
+            <div className="ops-gv-detail__balance-fill" style={{ '--ops-gv-balance': `${balancePct}%` }} />
           </div>
-          <div>
-            <p className="text-gray-500">Expires</p>
-            <p className="font-medium text-gray-900">{voucher.expiresAt ? new Date(voucher.expiresAt).toLocaleString() : '—'}</p>
-          </div>
-          <div>
-            <p className="text-gray-500">Attribution</p>
-            <p className="font-medium text-gray-900">{voucher.attribution?.referralCode || '—'}</p>
-          </div>
-        </div>
-        {voucher.deliveryMode === 'postal' && voucher.deliveryAddress ? (
-          <div className="mt-3 text-sm text-gray-700 border border-gray-200 rounded-lg p-3">
-            <p className="font-semibold text-gray-900">Delivery address</p>
-            <p>{voucher.deliveryAddress.addressLine1 || ''}</p>
-            {voucher.deliveryAddress.addressLine2 ? <p>{voucher.deliveryAddress.addressLine2}</p> : null}
-            <p>{voucher.deliveryAddress.city || ''} {voucher.deliveryAddress.postalCode || ''}</p>
-            <p>{voucher.deliveryAddress.country || ''}</p>
-          </div>
-        ) : null}
-        <div className="mt-3">
-          <p className="text-xs text-gray-500">Balance</p>
-          <div className="w-full h-2 rounded bg-gray-100 overflow-hidden">
-            <div className="h-full bg-[#81887A]" style={{ width: `${balancePct}%` }} />
-          </div>
-          <p className="text-xs text-gray-700 mt-1 tabular-nums">
+          <p className="ops-gv-detail__balance-copy">
             {formatMoneyFromCents(voucher.balanceRemainingCents, voucher.currency)} /{' '}
             {formatMoneyFromCents(voucher.amountOriginalCents, voucher.currency)}
           </p>
-        </div>
-      </section>
+        </section>
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-        <h3 className="text-sm font-semibold text-gray-900">Actions</h3>
-        {actionError ? <div className="text-sm text-red-600">{actionError}</div> : null}
-        <div className="mb-3">
-          <button
-            type="button"
-            disabled={busyAction === 'print'}
-            onClick={() =>
-              runAction('print', async () => {
-                const resp = await opsReadAPI.printGiftVoucherCard(voucher.giftVoucherId);
-                const blob = new Blob([resp.data], { type: 'text/html;charset=utf-8' });
-                const url = URL.createObjectURL(blob);
-                window.open(url, '_blank', 'noopener,noreferrer');
-                setTimeout(() => URL.revokeObjectURL(url), 60_000);
-              })
-            }
-            className="px-3 py-2 text-sm rounded-lg border border-stone-300 bg-white text-stone-800 hover:border-stone-500 disabled:opacity-50"
-          >
-            {busyAction === 'print' ? 'Opening print...' : 'Print card'}
-          </button>
-        </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          <div className="border border-gray-200 rounded-lg p-3 space-y-2">
-            <p className="text-sm font-medium text-gray-900">Resend recipient voucher</p>
-            <input
-              className="w-full px-3 py-2 text-sm border rounded-lg"
-              placeholder={`Override recipient email (default: ${defaultRecipientEmail || 'none'})`}
-              value={form.recipientOverride}
-              onChange={(e) => setForm((s) => ({ ...s, recipientOverride: e.target.value }))}
-            />
-            <input
-              className="w-full px-3 py-2 text-sm border rounded-lg"
-              placeholder="Note (optional)"
-              value={form.note}
-              onChange={(e) => setForm((s) => ({ ...s, note: e.target.value }))}
-            />
-            <button
-              type="button"
-              disabled={busyAction === 'resend'}
-              onClick={() =>
-                runAction('resend', () =>
-                  opsWriteAPI.resendGiftVoucher(voucher.giftVoucherId, {
-                    idempotencyKey: makeIdempotencyKey(),
-                    recipientOverride: form.recipientOverride || undefined,
-                    note: form.note || undefined
-                  })
-                )
-              }
-              className="px-3 py-2 text-sm rounded-lg bg-[#81887A] text-white disabled:opacity-50"
-            >
-              {busyAction === 'resend' ? 'Sending...' : 'Resend'}
-            </button>
-          </div>
+        <section className="ops-gv-detail__section">
+          <h2 className="ops-gv-detail__section-title">Actions</h2>
+          {actionError ? <OpsInlineError>{actionError}</OpsInlineError> : null}
+          <div className="ops-gv-detail__actions">
+            <div className="ops-gv-detail__action">
+              <p className="ops-gv-detail__action-title">Resend recipient voucher</p>
+              <OpsTextField
+                label="Override recipient email"
+                hint={`Override recipient email (default: ${defaultRecipientEmail || 'none'})`}
+                value={form.recipientOverride}
+                onChange={(e) => setForm((s) => ({ ...s, recipientOverride: e.target.value }))}
+              />
+              <OpsTextField
+                label="Note"
+                optional
+                value={form.note}
+                onChange={(e) => setForm((s) => ({ ...s, note: e.target.value }))}
+              />
+              <OpsButton
+                variant="secondary"
+                loading={busyAction === 'resend'}
+                loadingLabel="Sending..."
+                onClick={() =>
+                  runAction('resend', () =>
+                    opsWriteAPI.resendGiftVoucher(voucher.giftVoucherId, {
+                      idempotencyKey: makeIdempotencyKey(),
+                      recipientOverride: form.recipientOverride || undefined,
+                      note: form.note || undefined
+                    })
+                  )
+                }
+              >
+                Resend
+              </OpsButton>
+            </div>
 
-          <div className="border border-gray-200 rounded-lg p-3 space-y-2">
-            <p className="text-sm font-medium text-gray-900">Void voucher</p>
-            <input
-              className="w-full px-3 py-2 text-sm border rounded-lg"
-              placeholder="Reason"
-              value={form.reason}
-              onChange={(e) => setForm((s) => ({ ...s, reason: e.target.value }))}
-            />
-            <input
-              className="w-full px-3 py-2 text-sm border rounded-lg"
-              placeholder="Note"
-              value={form.note}
-              onChange={(e) => setForm((s) => ({ ...s, note: e.target.value }))}
-            />
-            <button
-              type="button"
-              disabled={busyAction === 'void'}
-              onClick={() =>
-                runAction('void', () =>
-                  opsWriteAPI.voidGiftVoucher(voucher.giftVoucherId, {
-                    idempotencyKey: makeIdempotencyKey(),
-                    reason: form.reason,
-                    note: form.note
-                  })
-                )
-              }
-              className="px-3 py-2 text-sm rounded-lg bg-red-600 text-white disabled:opacity-50"
-            >
-              {busyAction === 'void' ? 'Voiding...' : 'Void'}
-            </button>
-          </div>
+            <div className="ops-gv-detail__action">
+              <p className="ops-gv-detail__action-title">Void voucher</p>
+              <OpsTextField
+                label="Reason"
+                value={form.reason}
+                onChange={(e) => setForm((s) => ({ ...s, reason: e.target.value }))}
+              />
+              <OpsTextField
+                label="Note"
+                value={form.note}
+                onChange={(e) => setForm((s) => ({ ...s, note: e.target.value }))}
+              />
+              <OpsButton
+                variant="destructive"
+                loading={busyAction === 'void'}
+                loadingLabel="Voiding..."
+                onClick={() =>
+                  runAction('void', () =>
+                    opsWriteAPI.voidGiftVoucher(voucher.giftVoucherId, {
+                      idempotencyKey: makeIdempotencyKey(),
+                      reason: form.reason,
+                      note: form.note
+                    })
+                  )
+                }
+              >
+                Void
+              </OpsButton>
+            </div>
 
-          <div className="border border-gray-200 rounded-lg p-3 space-y-2">
-            <p className="text-sm font-medium text-gray-900">Extend expiry</p>
-            <input
-              type="datetime-local"
-              className="w-full px-3 py-2 text-sm border rounded-lg"
-              value={form.expiresAt}
-              onChange={(e) => setForm((s) => ({ ...s, expiresAt: e.target.value }))}
-            />
-            <input
-              className="w-full px-3 py-2 text-sm border rounded-lg"
-              placeholder="Reason"
-              value={form.reason}
-              onChange={(e) => setForm((s) => ({ ...s, reason: e.target.value }))}
-            />
-            <input
-              className="w-full px-3 py-2 text-sm border rounded-lg"
-              placeholder="Note"
-              value={form.note}
-              onChange={(e) => setForm((s) => ({ ...s, note: e.target.value }))}
-            />
-            <button
-              type="button"
-              disabled={busyAction === 'extend'}
-              onClick={() =>
-                runAction('extend', () =>
-                  opsWriteAPI.extendGiftVoucherExpiry(voucher.giftVoucherId, {
-                    idempotencyKey: makeIdempotencyKey(),
-                    expiresAt: form.expiresAt,
-                    reason: form.reason,
-                    note: form.note
-                  })
-                )
-              }
-              className="px-3 py-2 text-sm rounded-lg bg-[#81887A] text-white disabled:opacity-50"
-            >
-              {busyAction === 'extend' ? 'Updating...' : 'Extend expiry'}
-            </button>
-          </div>
+            <div className="ops-gv-detail__action">
+              <p className="ops-gv-detail__action-title">Extend expiry</p>
+              <OpsTextField
+                label="New expiry"
+                type="datetime-local"
+                value={form.expiresAt}
+                onChange={(e) => setForm((s) => ({ ...s, expiresAt: e.target.value }))}
+              />
+              <OpsTextField
+                label="Reason"
+                value={form.reason}
+                onChange={(e) => setForm((s) => ({ ...s, reason: e.target.value }))}
+              />
+              <OpsTextField
+                label="Note"
+                value={form.note}
+                onChange={(e) => setForm((s) => ({ ...s, note: e.target.value }))}
+              />
+              <OpsButton
+                variant="secondary"
+                loading={busyAction === 'extend'}
+                loadingLabel="Updating..."
+                onClick={() =>
+                  runAction('extend', () =>
+                    opsWriteAPI.extendGiftVoucherExpiry(voucher.giftVoucherId, {
+                      idempotencyKey: makeIdempotencyKey(),
+                      expiresAt: form.expiresAt,
+                      reason: form.reason,
+                      note: form.note
+                    })
+                  )
+                }
+              >
+                Extend expiry
+              </OpsButton>
+            </div>
 
-          <div className="border border-gray-200 rounded-lg p-3 space-y-2">
-            <p className="text-sm font-medium text-gray-900">Manual balance adjustment</p>
-            <input
-              className="w-full px-3 py-2 text-sm border rounded-lg"
-              placeholder="Delta cents (+/-)"
-              value={form.deltaCents}
-              onChange={(e) => setForm((s) => ({ ...s, deltaCents: e.target.value }))}
-            />
-            <input
-              className="w-full px-3 py-2 text-sm border rounded-lg"
-              placeholder="Reason (optional)"
-              value={form.reason}
-              onChange={(e) => setForm((s) => ({ ...s, reason: e.target.value }))}
-            />
-            <input
-              className="w-full px-3 py-2 text-sm border rounded-lg"
-              placeholder="Note"
-              value={form.note}
-              onChange={(e) => setForm((s) => ({ ...s, note: e.target.value }))}
-            />
-            <button
-              type="button"
-              disabled={busyAction === 'adjust'}
-              onClick={() =>
-                runAction('adjust', () =>
-                  opsWriteAPI.adjustGiftVoucherBalance(voucher.giftVoucherId, {
-                    idempotencyKey: makeIdempotencyKey(),
-                    deltaCents: Number(form.deltaCents),
-                    reason: form.reason || undefined,
-                    note: form.note
-                  })
-                )
-              }
-              className="px-3 py-2 text-sm rounded-lg bg-[#81887A] text-white disabled:opacity-50"
-            >
-              {busyAction === 'adjust' ? 'Adjusting...' : 'Adjust balance'}
-            </button>
-          </div>
+            <div className="ops-gv-detail__action">
+              <p className="ops-gv-detail__action-title">Manual balance adjustment</p>
+              <OpsTextField
+                label="Delta cents"
+                hint="Delta cents (+/-)"
+                value={form.deltaCents}
+                onChange={(e) => setForm((s) => ({ ...s, deltaCents: e.target.value }))}
+              />
+              <OpsTextField
+                label="Reason"
+                optional
+                value={form.reason}
+                onChange={(e) => setForm((s) => ({ ...s, reason: e.target.value }))}
+              />
+              <OpsTextField
+                label="Note"
+                value={form.note}
+                onChange={(e) => setForm((s) => ({ ...s, note: e.target.value }))}
+              />
+              <OpsButton
+                variant="secondary"
+                loading={busyAction === 'adjust'}
+                loadingLabel="Adjusting..."
+                onClick={() =>
+                  runAction('adjust', () =>
+                    opsWriteAPI.adjustGiftVoucherBalance(voucher.giftVoucherId, {
+                      idempotencyKey: makeIdempotencyKey(),
+                      deltaCents: Number(form.deltaCents),
+                      reason: form.reason || undefined,
+                      note: form.note
+                    })
+                  )
+                }
+              >
+                Adjust balance
+              </OpsButton>
+            </div>
 
-          <div className="border border-gray-200 rounded-lg p-3 space-y-2 lg:col-span-2">
-            <p className="text-sm font-medium text-gray-900">Update recipient email before send</p>
-            <input
-              className="w-full px-3 py-2 text-sm border rounded-lg"
-              placeholder="Recipient email"
-              value={form.recipientEmail}
-              onChange={(e) => setForm((s) => ({ ...s, recipientEmail: e.target.value }))}
-            />
-            <input
-              className="w-full px-3 py-2 text-sm border rounded-lg"
-              placeholder="Note"
-              value={form.note}
-              onChange={(e) => setForm((s) => ({ ...s, note: e.target.value }))}
-            />
-            <button
-              type="button"
-              disabled={busyAction === 'updateEmail'}
-              onClick={() =>
-                runAction('updateEmail', () =>
-                  opsWriteAPI.updateGiftVoucherRecipientEmail(voucher.giftVoucherId, {
-                    idempotencyKey: makeIdempotencyKey(),
-                    recipientEmail: form.recipientEmail,
-                    note: form.note
-                  })
-                )
-              }
-              className="px-3 py-2 text-sm rounded-lg bg-[#81887A] text-white disabled:opacity-50"
-            >
-              {busyAction === 'updateEmail' ? 'Updating...' : 'Update recipient email'}
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <section className="grid grid-cols-1 xl:grid-cols-3 gap-3">
-        <div className="bg-white border border-gray-200 rounded-xl p-4 xl:col-span-2">
-          <h3 className="text-sm font-semibold text-gray-900">Event timeline</h3>
-          <div className="mt-2 space-y-2 max-h-[420px] overflow-y-auto">
-            {(data?.events || []).map((event) => (
-              <div key={event.giftVoucherEventId} className="border border-gray-200 rounded-lg p-3 text-xs">
-                <p className="font-semibold text-gray-900">{event.type}</p>
-                <p className="text-gray-600">{event.note || '—'} · {event.actor}</p>
-                <p className="text-gray-500">{new Date(event.createdAt).toLocaleString()}</p>
-                {(event.previousBalanceCents != null || event.newBalanceCents != null) ? (
-                  <p className="text-gray-500 tabular-nums">
-                    {formatMoneyFromCents(event.previousBalanceCents, voucher.currency)} →{' '}
-                    {formatMoneyFromCents(event.newBalanceCents, voucher.currency)}
-                    {event.deltaCents != null ? ` (Δ ${formatMoneyFromCents(event.deltaCents, voucher.currency)})` : null}
-                  </p>
-                ) : null}
-              </div>
-            ))}
-            {(data?.events || []).length === 0 ? <p className="text-sm text-gray-500">No events.</p> : null}
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          <div className="bg-white border border-gray-200 rounded-xl p-4">
-            <h3 className="text-sm font-semibold text-gray-900">Redemptions</h3>
-            <div className="mt-2 space-y-2">
-              {(data?.redemptions || []).map((row) => (
-                <div key={row.giftVoucherRedemptionId} className="border border-gray-200 rounded-lg p-2 text-xs">
-                  <p className="font-medium text-gray-900 tabular-nums">
-                    {row.status} · {formatMoneyFromCents(row.amountAppliedCents, voucher.currency)}
-                  </p>
-                  <p className="text-gray-500">Booking: {row.bookingId || '—'}</p>
-                </div>
-              ))}
-              {(data?.redemptions || []).length === 0 ? <p className="text-sm text-gray-500">No redemptions.</p> : null}
+            <div className="ops-gv-detail__action ops-gv-detail__action--wide">
+              <p className="ops-gv-detail__action-title">Update recipient email before send</p>
+              <OpsTextField
+                label="Recipient email"
+                value={form.recipientEmail}
+                onChange={(e) => setForm((s) => ({ ...s, recipientEmail: e.target.value }))}
+              />
+              <OpsTextField
+                label="Note"
+                value={form.note}
+                onChange={(e) => setForm((s) => ({ ...s, note: e.target.value }))}
+              />
+              <OpsButton
+                variant="secondary"
+                loading={busyAction === 'updateEmail'}
+                loadingLabel="Updating..."
+                onClick={() =>
+                  runAction('updateEmail', () =>
+                    opsWriteAPI.updateGiftVoucherRecipientEmail(voucher.giftVoucherId, {
+                      idempotencyKey: makeIdempotencyKey(),
+                      recipientEmail: form.recipientEmail,
+                      note: form.note
+                    })
+                  )
+                }
+              >
+                Update recipient email
+              </OpsButton>
             </div>
           </div>
-          <div className="bg-white border border-gray-200 rounded-xl p-4">
-            <h3 className="text-sm font-semibold text-gray-900">Manual review items</h3>
-            <div className="mt-2 space-y-2">
+        </section>
+
+        <section className="ops-gv-detail__lifecycle">
+          <div className="ops-gv-detail__section">
+            <h2 className="ops-gv-detail__section-title">Event timeline</h2>
+            <div className="ops-gv-detail__timeline">
+              {(data?.events || []).map((event) => (
+                <div key={event.giftVoucherEventId} className="ops-gv-detail__item">
+                  <p className="ops-gv-detail__item-title">{event.type}</p>
+                  <p className="ops-gv-detail__item-copy">
+                    {event.note || '—'} · {event.actor}
+                  </p>
+                  <p className="ops-gv-detail__item-copy">{new Date(event.createdAt).toLocaleString()}</p>
+                  {event.previousBalanceCents != null || event.newBalanceCents != null ? (
+                    <p className="ops-gv-detail__item-copy ops-gv-detail__item-copy--numeric">
+                      {formatMoneyFromCents(event.previousBalanceCents, voucher.currency)} →{' '}
+                      {formatMoneyFromCents(event.newBalanceCents, voucher.currency)}
+                      {event.deltaCents != null
+                        ? ` (Δ ${formatMoneyFromCents(event.deltaCents, voucher.currency)})`
+                        : null}
+                    </p>
+                  ) : null}
+                </div>
+              ))}
+              {(data?.events || []).length === 0 ? <p className="ops-gv-detail__muted">No events.</p> : null}
+            </div>
+          </div>
+
+          <div className="ops-gv-detail__stack">
+            <section className="ops-gv-detail__section">
+              <h2 className="ops-gv-detail__section-title">Redemptions</h2>
+              {(data?.redemptions || []).map((row) => (
+                <div key={row.giftVoucherRedemptionId} className="ops-gv-detail__item">
+                  <p className="ops-gv-detail__item-title ops-gv-detail__item-copy--numeric">
+                    {row.status} · {formatMoneyFromCents(row.amountAppliedCents, voucher.currency)}
+                  </p>
+                  <p className="ops-gv-detail__item-copy">Booking: {row.bookingId || '—'}</p>
+                </div>
+              ))}
+              {(data?.redemptions || []).length === 0 ? (
+                <p className="ops-gv-detail__muted">No redemptions.</p>
+              ) : null}
+            </section>
+            <section className="ops-gv-detail__section">
+              <h2 className="ops-gv-detail__section-title">Manual review items</h2>
               {(data?.manualReviewItems || []).map((item) => (
-                <div key={item.manualReviewItemId} className="border border-gray-200 rounded-lg p-2 text-xs">
-                  <p className="font-medium text-gray-900">{item.category}</p>
-                  <p className="text-gray-600">{item.title}</p>
-                  <p className="text-gray-500">{item.status} · {item.severity}</p>
+                <div key={item.manualReviewItemId} className="ops-gv-detail__item">
+                  <p className="ops-gv-detail__item-title">{item.category}</p>
+                  <p className="ops-gv-detail__item-copy">{item.title}</p>
+                  <p className="ops-gv-detail__item-copy">
+                    {item.status} · {item.severity}
+                  </p>
                 </div>
               ))}
               {(data?.manualReviewItems || []).length === 0 ? (
-                <p className="text-sm text-gray-500">No relevant manual review items.</p>
+                <p className="ops-gv-detail__muted">No relevant manual review items.</p>
               ) : null}
-            </div>
+            </section>
           </div>
-        </div>
-      </section>
-    </div>
+        </section>
+      </div>
+    </OpsPage>
   );
 }
