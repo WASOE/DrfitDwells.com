@@ -368,6 +368,7 @@
   flex-direction: column;
   gap: var(--ops-space-12);
   min-width: 0;
+  width: 100%;
 }
 
 .ops-page-header__copy {
@@ -399,6 +400,10 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--ops-space-8);
+  flex-shrink: 0;
+  justify-content: flex-end;
+  margin-inline-start: auto;
+  max-width: 100%;
 }
 
 @media (min-width: 768px) {

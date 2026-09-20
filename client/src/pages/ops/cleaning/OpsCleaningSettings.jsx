@@ -199,53 +199,51 @@ export default function OpsCleaningSettings() {
   const rulesByKind = { cabin: cabinRules, valley: valleyRules };
 
   return (
-    <OpsPage width="default">
-      <div className="ops-cleaning-settings">
-        <OpsPageHeader
-          title="Cleaning payout settings"
-          description="Tag inventory and edit checkout-linked payout rules. Saved rules drive automatic pricing — no manual day-sheet counts."
-          meta={<p className="ops-cleaning-settings__meta">Currency: EUR only</p>}
-          actions={
-            <Link to="/ops/cleaning" className="ops-cleaning-settings__calendar-link">
-              Open cleaning calendar
-            </Link>
-          }
+    <OpsPage width="default" className="ops-cleaning-settings">
+      <OpsPageHeader
+        title="Cleaning payout settings"
+        description="Tag inventory and edit checkout-linked payout rules. Saved rules drive automatic pricing — no manual day-sheet counts."
+        meta={<p className="ops-cleaning-settings__meta">Currency: EUR only</p>}
+        actions={
+          <Link to="/ops/cleaning" className="ops-cleaning-settings__calendar-link">
+            Open cleaning calendar
+          </Link>
+        }
+      />
+
+      {!canWrite ? (
+        <OpsBanner
+          tone="info"
+          title="Read-only"
+          body="You can view inventory tags and payout policies. Contact an admin to make changes."
         />
+      ) : null}
 
-        {!canWrite ? (
-          <OpsBanner
-            tone="info"
-            title="Read-only"
-            body="You can view inventory tags and payout policies. Contact an admin to make changes."
-          />
-        ) : null}
+      {loadError ? <OpsBanner tone="danger" body={loadError} /> : null}
 
-        {loadError ? <OpsBanner tone="danger" body={loadError} /> : null}
+      {loading ? <OpsLoadingState label="Loading settings…" /> : null}
 
-        {loading ? <OpsLoadingState label="Loading settings…" /> : null}
+      <OpsCleaningInventoryTagsPanel canWrite={canWrite} />
 
-        <OpsCleaningInventoryTagsPanel canWrite={canWrite} />
-
-        {!loading && !loadError
-          ? LOCATIONS.map((loc) => (
-              <OpsCleaningRateCardPanel
-                key={loc.propertyKind}
-                locationMeta={loc}
-                locationState={locationMeta[loc.propertyKind]}
-                rules={rulesByKind[loc.propertyKind] || []}
-                canWrite={canWrite}
-                saving={savingKind === loc.propertyKind}
-                feedback={feedback[loc.propertyKind]}
-                onRuleChange={(index, field, value) =>
-                  handleRuleChange(loc.propertyKind, index, field, value)
-                }
-                onAddRule={handleAddRule}
-                onRemoveRule={(index) => handleRemoveRule(loc.propertyKind, index)}
-                onSave={handleSave}
-              />
-            ))
-          : null}
-      </div>
+      {!loading && !loadError
+        ? LOCATIONS.map((loc) => (
+            <OpsCleaningRateCardPanel
+              key={loc.propertyKind}
+              locationMeta={loc}
+              locationState={locationMeta[loc.propertyKind]}
+              rules={rulesByKind[loc.propertyKind] || []}
+              canWrite={canWrite}
+              saving={savingKind === loc.propertyKind}
+              feedback={feedback[loc.propertyKind]}
+              onRuleChange={(index, field, value) =>
+                handleRuleChange(loc.propertyKind, index, field, value)
+              }
+              onAddRule={handleAddRule}
+              onRemoveRule={(index) => handleRemoveRule(loc.propertyKind, index)}
+              onSave={handleSave}
+            />
+          ))
+        : null}
     </OpsPage>
   );
 }

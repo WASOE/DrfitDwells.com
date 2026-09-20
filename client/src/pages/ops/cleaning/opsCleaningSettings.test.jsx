@@ -196,6 +196,10 @@ describe('OpsCleaningSettings', () => {
       '/ops/cleaning'
     );
     expect(document.querySelector('.ops-page')).toBeTruthy();
+    expect(document.querySelector('.ops-page')).toHaveAttribute('data-ops-page-width', 'default');
+    expect(document.querySelector('.ops-page')).toHaveClass('ops-cleaning-settings');
+    expect(document.querySelector('.ops-page > .ops-page-header')).toBeTruthy();
+    expect(document.querySelector('.ops-page-header__actions .ops-cleaning-settings__calendar-link')).toBeTruthy();
     expect(document.querySelector('.max-w-7xl')).toBeNull();
   });
 

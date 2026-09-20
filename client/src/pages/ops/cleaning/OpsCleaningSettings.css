@@ -14,15 +14,43 @@
 }
 
 .ops-cleaning-settings__calendar-link {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 var(--ops-space-12);
+  border: 1px solid var(--ops-border-strong);
+  border-radius: var(--ops-radius-control);
+  background: var(--ops-surface);
   font-size: 13px;
   line-height: 18px;
   font-weight: 600;
   color: var(--ops-text);
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .ops-cleaning-settings__calendar-link:hover {
-  text-decoration: underline;
+  background: var(--ops-surface-subtle);
+  text-decoration: none;
+}
+
+.ops-cleaning-settings__calendar-link:focus {
+  outline: none;
+}
+
+.ops-cleaning-settings__calendar-link:focus-visible {
+  outline: 2px solid var(--ops-focus);
+  outline-offset: 2px;
+}
+
+@media (pointer: coarse) {
+  .ops-cleaning-settings__calendar-link {
+    min-height: 44px;
+    font-size: 16px;
+    line-height: 22px;
+  }
 }
 
 .ops-cleaning-settings-surface {
