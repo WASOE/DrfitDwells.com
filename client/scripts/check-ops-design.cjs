@@ -32,7 +32,9 @@ const MIGRATED_OPS_FILES = [
   'src/pages/ops/OpsGiftVouchers.jsx',
   'src/pages/ops/OpsGiftVouchers.css',
   'src/pages/ops/OpsGiftVoucherDetail.jsx',
-  'src/pages/ops/OpsGiftVoucherDetail.css'
+  'src/pages/ops/OpsGiftVoucherDetail.css',
+  'src/pages/ops/OpsPromoCodes.jsx',
+  'src/pages/ops/OpsPromoCodes.css'
 ];
 
 const HEX_ALLOWLIST = new Set(['ops.css', 'tokens/opsTokenNames.js']);

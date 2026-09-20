@@ -1,0 +1,59 @@
+/* Promo codes collection layout only. Visual values come from --ops-* tokens. */
+.ops-promo-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-16);
+  min-width: 0;
+}
+
+.ops-promo-table {
+  display: none;
+  min-width: 0;
+}
+
+.ops-promo-rows {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ops-promo-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ops-promo-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-self: flex-start;
+}
+
+.ops-promo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--ops-space-8);
+}
+
+.ops-promo-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-12);
+  min-width: 0;
+}
+
+.ops-promo-form__code .ops-field-control {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-transform: uppercase;
+}
+
+@container ops-page (min-width: 1024px) {
+  .ops-promo-table {
+    display: block;
+  }
+
+  .ops-promo-rows {
+    display: none;
+  }
+}

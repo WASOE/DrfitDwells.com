@@ -664,6 +664,7 @@ a.ops-collection-row__main:hover {
 .ops-modal {
   width: min(calc(100% - var(--ops-space-32)), 28rem);
   max-width: 100%;
+  max-height: min(90vh, calc(100dvh - var(--ops-space-32)));
   border-radius: var(--ops-radius-surface);
 }
 
@@ -717,6 +718,8 @@ a.ops-collection-row__main:hover {
 .ops-sheet__body {
   padding: var(--ops-space-16);
   overflow: auto;
+  min-height: 0;
+  flex: 1 1 auto;
   color: var(--ops-text);
 }
 
