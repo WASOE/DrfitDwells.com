@@ -15,7 +15,8 @@ export default function OpsConfirmDialog({
   onClose,
   loading = false,
   closeOnEscape = true,
-  initialFocusRef
+  initialFocusRef,
+  children
 }) {
   const cancelRef = useRef(null);
   const copy = body || description;
@@ -57,6 +58,8 @@ export default function OpsConfirmDialog({
           </OpsButton>
         </>
       }
-    />
+    >
+      {children}
+    </OpsModal>
   );
 }

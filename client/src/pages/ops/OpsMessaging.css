@@ -1,0 +1,255 @@
+/* Messaging (Guest Message Automation) layout only. Visual values come from --ops-* tokens. */
+.ops-messaging {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-16);
+  min-width: 0;
+}
+
+.ops-messaging-surface {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-12);
+  min-width: 0;
+  padding: var(--ops-space-16);
+  border: 1px solid var(--ops-border);
+  border-radius: var(--ops-radius-surface);
+  background: var(--ops-surface);
+}
+
+.ops-messaging-surface__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ops-space-8);
+  min-width: 0;
+}
+
+.ops-messaging-surface__title {
+  margin: 0;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--ops-text);
+}
+
+.ops-messaging-note,
+.ops-messaging-empty,
+.ops-messaging-refresh,
+.ops-messaging-readonly {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ops-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.ops-messaging-note {
+  max-width: 42rem;
+}
+
+.ops-messaging-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ops-space-8) var(--ops-space-16);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ops-messaging-flag {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ops-space-8);
+  min-width: 0;
+}
+
+.ops-messaging-flag__label {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ops-text-secondary);
+}
+
+.ops-messaging-explanations {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-12);
+  min-width: 0;
+  max-width: 42rem;
+}
+
+.ops-messaging-explanations p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ops-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.ops-messaging-explanations strong {
+  display: block;
+  margin-bottom: var(--ops-space-4);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--ops-text-secondary);
+}
+
+.ops-messaging-table {
+  display: none;
+  min-width: 0;
+}
+
+.ops-messaging-table .ops-table-wrap {
+  overflow-x: visible;
+}
+
+.ops-messaging-table .ops-table th,
+.ops-messaging-table .ops-table td {
+  height: auto;
+  vertical-align: top;
+  padding-top: var(--ops-space-12);
+  padding-bottom: var(--ops-space-12);
+}
+
+.ops-messaging-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-12);
+  min-width: 0;
+}
+
+.ops-messaging-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-12);
+  min-width: 0;
+  min-height: var(--ops-row-min-mobile);
+  padding: var(--ops-space-12);
+  border: 1px solid var(--ops-border);
+  border-radius: var(--ops-radius-surface);
+  background: var(--ops-surface);
+}
+
+.ops-messaging-rule-key {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--ops-text);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ops-messaging-rule-trigger {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ops-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.ops-messaging-meta,
+.ops-messaging-templates,
+.ops-messaging-facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-8);
+  min-width: 0;
+}
+
+.ops-messaging-facts {
+  margin: 0;
+}
+
+.ops-messaging-facts > div {
+  min-width: 0;
+}
+
+.ops-messaging-facts dt {
+  margin: 0;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ops-text-muted);
+}
+
+.ops-messaging-facts dd {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ops-text);
+  overflow-wrap: anywhere;
+}
+
+.ops-messaging-config {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ops-text-muted);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.ops-messaging-template-channel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-4);
+  min-width: 0;
+}
+
+.ops-messaging-template-channel__label,
+.ops-messaging-template-key {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ops-text-muted);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ops-messaging-template-key {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.ops-messaging-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ops-space-8);
+  min-width: 0;
+}
+
+.ops-messaging-link {
+  color: var(--ops-text-secondary);
+  text-decoration: none;
+}
+
+.ops-messaging-link:hover,
+.ops-messaging-link:focus-visible {
+  color: var(--ops-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@container ops-page (min-width: 520px) {
+  .ops-messaging-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--ops-space-12);
+  }
+}
+
+@container ops-page (min-width: 900px) {
+  .ops-messaging-table {
+    display: block;
+  }
+
+  .ops-messaging-rows {
+    display: none;
+  }
+}
