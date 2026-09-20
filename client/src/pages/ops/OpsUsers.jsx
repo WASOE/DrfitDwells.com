@@ -1,6 +1,27 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { opsReadAPI, opsWriteAPI } from '../../services/opsApi';
 import { formatPushLastSuccess, pushHealthLabel } from '../../utils/opsPushReadiness';
+import OpsPage from '../../ops/primitives/OpsPage';
+import OpsPageHeader from '../../ops/primitives/OpsPageHeader';
+import OpsButton from '../../ops/primitives/OpsButton';
+import OpsTextField from '../../ops/primitives/OpsTextField';
+import OpsSelect from '../../ops/primitives/OpsSelect';
+import OpsCheckbox from '../../ops/primitives/OpsCheckbox';
+import OpsBadge from '../../ops/primitives/OpsBadge';
+import OpsBanner from '../../ops/primitives/OpsBanner';
+import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
+import OpsEmptyState from '../../ops/primitives/OpsEmptyState';
+import OpsInlineError from '../../ops/primitives/OpsInlineError';
+import OpsCollectionRow from '../../ops/primitives/OpsCollectionRow';
+import OpsModal from '../../ops/primitives/OpsModal';
+import OpsTable, {
+  OpsTableBody,
+  OpsTableCell,
+  OpsTableHead,
+  OpsTableHeader,
+  OpsTableRow
+} from '../../ops/primitives/OpsTable';
+import './OpsUsers.css';
 
 const ROLES = [
   { value: 'operator', label: 'Operator' },
@@ -47,6 +68,14 @@ const emptyForm = {
   propertyKinds: []
 };
 
+function copyEmptyForm() {
+  return {
+    ...emptyForm,
+    modules: [...DEFAULT_OPERATOR_MODULES],
+    propertyKinds: []
+  };
+}
+
 function cleanerContactPayload(form) {
   if (form.role !== 'cleaner') {
     return {};
@@ -61,15 +90,12 @@ function cleanerContactPayload(form) {
 function phoneFormatHint(phone) {
   const trimmed = String(phone || '').trim();
   if (!trimmed) {
-    return { tone: 'muted', text: 'International E.164 format, e.g. +359881234567' };
+    return 'International E.164 format, e.g. +359881234567';
   }
   if (trimmed.startsWith('+') && E164_HINT.test(trimmed)) {
-    return { tone: 'ok', text: 'Looks like valid E.164.' };
+    return 'Looks like valid E.164.';
   }
-  return {
-    tone: 'warn',
-    text: 'Use international E.164 (+country code). Local numbers are normalized on save when possible.'
-  };
+  return 'Use international E.164 (+country code). Local numbers are normalized on save when possible.';
 }
 
 function modulesSummary(role, modules) {
@@ -79,16 +105,11 @@ function modulesSummary(role, modules) {
   return modules.join(', ');
 }
 
-function roleBadgeClass(role) {
-  if (role === 'cleaner') return 'bg-emerald-50 text-emerald-800';
-  if (role === 'operator') return 'bg-sky-50 text-sky-800';
-  return 'bg-amber-50 text-amber-900';
-}
-
-function pushHealthBadgeClass(label) {
-  if (label === 'Ready') return 'bg-emerald-50 text-emerald-800';
-  if (label === 'Expired') return 'bg-amber-50 text-amber-800';
-  return 'bg-gray-100 text-gray-600';
+function roleLabel(role) {
+  if (role === 'admin') return 'Admin';
+  if (role === 'operator') return 'Operator';
+  if (role === 'cleaner') return 'Cleaner';
+  return role;
 }
 
 function pushHealthSummary(row) {
@@ -105,13 +126,33 @@ function pushHealthSummary(row) {
   return parts.join(' · ');
 }
 
+function UserRoleMarker({ role }) {
+  return <OpsBadge>{roleLabel(role)}</OpsBadge>;
+}
+
+function UserActiveMarker({ isActive }) {
+  return <OpsBadge>{isActive ? 'Active' : 'Inactive'}</OpsBadge>;
+}
+
+function UserRowActions({ row, onEdit }) {
+  return (
+    <div className="ops-users-actions">
+      <OpsButton variant="quiet" size="compact" onClick={() => onEdit(row)}>
+        Edit
+      </OpsButton>
+    </div>
+  );
+}
+
 export default function OpsUsers() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [banner, setBanner] = useState({ type: '', message: '' });
+  const [listError, setListError] = useState('');
+  const [notice, setNotice] = useState({ type: '', message: '' });
+  const [formError, setFormError] = useState('');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState(copyEmptyForm);
   const [saving, setSaving] = useState(false);
 
   const modulesLocked = form.role === 'admin' || form.role === 'cleaner';
@@ -119,10 +160,11 @@ export default function OpsUsers() {
   const load = useCallback(async () => {
     try {
       setLoading(true);
+      setListError('');
       const res = await opsReadAPI.opsUsers();
       setRows(res.data?.data?.users || []);
     } catch (e) {
-      setBanner({ type: 'error', message: e?.response?.data?.message || 'Failed to load OPS users.' });
+      setListError(e?.response?.data?.message || 'Failed to load OPS users.');
     } finally {
       setLoading(false);
     }
@@ -134,8 +176,9 @@ export default function OpsUsers() {
 
   function openCreate() {
     setEditingId(null);
-    setForm(emptyForm);
-    setBanner({ type: '', message: '' });
+    setForm(copyEmptyForm());
+    setNotice({ type: '', message: '' });
+    setFormError('');
     setDrawerOpen(true);
   }
 
@@ -156,7 +199,8 @@ export default function OpsUsers() {
       locale: row.locale || '',
       propertyKinds: Array.isArray(row.propertyKinds) ? [...row.propertyKinds] : []
     });
-    setBanner({ type: '', message: '' });
+    setNotice({ type: '', message: '' });
+    setFormError('');
     setDrawerOpen(true);
   }
 
@@ -213,12 +257,13 @@ export default function OpsUsers() {
   async function handleSubmit(e) {
     e.preventDefault();
     setSaving(true);
-    setBanner({ type: '', message: '' });
+    setNotice({ type: '', message: '' });
+    setFormError('');
 
     try {
       const name = form.name.trim();
       if (!name) {
-        setBanner({ type: 'error', message: 'Name is required.' });
+        setFormError('Name is required.');
         return;
       }
 
@@ -232,20 +277,20 @@ export default function OpsUsers() {
         });
         if (form.resetPassword.trim()) {
           if (form.resetPassword.length < 8) {
-            setBanner({ type: 'error', message: 'New password must be at least 8 characters.' });
+            setFormError('New password must be at least 8 characters.');
             return;
           }
           await opsWriteAPI.setOpsUserPassword(editingId, form.resetPassword);
         }
-        setBanner({ type: 'success', message: 'User updated.' });
+        setNotice({ type: 'success', message: 'User updated.' });
       } else {
         const email = form.email.trim();
         if (!email) {
-          setBanner({ type: 'error', message: 'Email is required.' });
+          setFormError('Email is required.');
           return;
         }
         if (!form.password || form.password.length < 8) {
-          setBanner({ type: 'error', message: 'Password must be at least 8 characters.' });
+          setFormError('Password must be at least 8 characters.');
           return;
         }
         await opsWriteAPI.createOpsUser({
@@ -257,320 +302,249 @@ export default function OpsUsers() {
           isActive: form.isActive,
           ...cleanerContactPayload(form)
         });
-        setBanner({ type: 'success', message: 'User created.' });
+        setNotice({ type: 'success', message: 'User created.' });
       }
 
       setDrawerOpen(false);
       await load();
     } catch (err) {
-      setBanner({ type: 'error', message: err?.response?.data?.message || 'Save failed.' });
+      setFormError(err?.response?.data?.message || 'Save failed.');
     } finally {
       setSaving(false);
     }
   }
 
+  const createAction = <OpsButton onClick={openCreate}>New user</OpsButton>;
+  const showEmpty = !loading && !listError && rows.length === 0;
+  const showCollection = !loading && rows.length > 0;
+
   return (
-    <div className="space-y-4 pb-16 sm:pb-0 max-w-7xl mx-auto px-4 py-6 md:py-8">
-      <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg md:text-xl font-semibold text-gray-900">OPS Users</h2>
-            <p className="text-sm text-gray-500 mt-1 max-w-2xl">
-              Manage limited OPS accounts for cleaners and operators. Passwords are set manually here — no email invites.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={openCreate}
-            className="px-3 py-2 text-sm rounded-lg bg-[#81887A] text-white hover:bg-[#707668]"
-          >
-            New user
-          </button>
-        </div>
-      </section>
+    <OpsPage width="wide">
+      <div className="ops-users-page">
+        <OpsPageHeader
+          title="Users"
+          description="Manage limited OPS accounts for cleaners and operators. Passwords are set manually here — no email invites."
+          actions={createAction}
+        />
 
-      {banner.message ? (
-        <div
-          className={`text-sm rounded-xl border p-3 ${
-            banner.type === 'success'
-              ? 'border-green-200 bg-green-50 text-green-800'
-              : 'border-red-200 bg-red-50 text-red-800'
-          }`}
-        >
-          {banner.message}
-        </div>
-      ) : null}
+        {listError ? <OpsBanner tone="danger" body={listError} /> : null}
+        {notice.message ? (
+          <OpsBanner tone={notice.type === 'success' ? 'success' : 'danger'} body={notice.message} />
+        ) : null}
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-6">
         {loading ? (
-          <div className="text-sm text-gray-500">Loading users…</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Email</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Name</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Role</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Modules</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Push</th>
-                  <th className="px-4 py-3 text-center font-medium text-gray-600">Active</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-600">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {rows.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-gray-500">
-                      No OPS users yet.
-                    </td>
-                  </tr>
-                ) : (
-                  rows.map((row) => (
-                    <tr key={row.id} className="hover:bg-gray-50/80">
-                      <td className="px-4 py-3 text-gray-900">{row.email}</td>
-                      <td className="px-4 py-3 text-gray-700">{row.name}</td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium capitalize ${roleBadgeClass(row.role)}`}>
-                          {row.role}
+          <OpsLoadingState label="Loading users" />
+        ) : showEmpty ? (
+          <OpsEmptyState
+            title="No OPS users yet."
+            action={
+              <OpsButton variant="secondary" onClick={openCreate}>
+                New user
+              </OpsButton>
+            }
+          />
+        ) : showCollection ? (
+          <>
+            <div className="ops-users-table">
+              <OpsTable caption="OPS users">
+                <OpsTableHead>
+                  <OpsTableRow>
+                    <OpsTableHeader>Email</OpsTableHeader>
+                    <OpsTableHeader>Name</OpsTableHeader>
+                    <OpsTableHeader>Role</OpsTableHeader>
+                    <OpsTableHeader>Modules</OpsTableHeader>
+                    <OpsTableHeader>Push</OpsTableHeader>
+                    <OpsTableHeader>Active</OpsTableHeader>
+                    <OpsTableHeader align="end">Actions</OpsTableHeader>
+                  </OpsTableRow>
+                </OpsTableHead>
+                <OpsTableBody>
+                  {rows.map((row) => (
+                    <OpsTableRow key={row.id}>
+                      <OpsTableCell>
+                        <span className="ops-users-email">{row.email}</span>
+                      </OpsTableCell>
+                      <OpsTableCell>{row.name}</OpsTableCell>
+                      <OpsTableCell>
+                        <UserRoleMarker role={row.role} />
+                      </OpsTableCell>
+                      <OpsTableCell>
+                        <span className="ops-users-modules" title={modulesSummary(row.role, row.modules)}>
+                          {modulesSummary(row.role, row.modules)}
                         </span>
-                      </td>
-                      <td className="px-4 py-3 text-gray-600 text-xs max-w-xs truncate" title={modulesSummary(row.role, row.modules)}>
-                        {modulesSummary(row.role, row.modules)}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-gray-600">
-                        <span
-                          className={`inline-flex px-2 py-0.5 rounded font-medium ${pushHealthBadgeClass(pushHealthLabel(row.pushHealth))}`}
-                          title={pushHealthSummary(row)}
-                        >
-                          {pushHealthLabel(row.pushHealth)}
-                        </span>
-                        {row.pushHealth?.activeCount > 0 ? (
-                          <p className="mt-0.5 text-[11px] text-gray-500 tabular-nums">
-                            {row.pushHealth.activeCount} active
-                            {row.pushHealth.lastSuccessAt
-                              ? ` · ${formatPushLastSuccess(row.pushHealth.lastSuccessAt)}`
-                              : ''}
-                          </p>
-                        ) : null}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <span
-                          className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
-                            row.isActive ? 'bg-emerald-50 text-emerald-800' : 'bg-gray-100 text-gray-600'
-                          }`}
-                        >
-                          {row.isActive ? 'Yes' : 'No'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() => openEdit(row)}
-                          className="text-[#81887A] font-medium hover:underline"
-                        >
-                          Edit
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      {drawerOpen ? (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40">
-          <div className="bg-white rounded-xl shadow-xl border border-gray-200 w-full max-w-xl max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 md:px-6 flex flex-wrap items-center justify-between gap-3 z-10">
-              <h3 className="text-lg font-semibold text-gray-900">{editingId ? 'Edit OPS user' : 'New OPS user'}</h3>
-              <button
-                type="button"
-                onClick={() => setDrawerOpen(false)}
-                className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-800 hover:bg-gray-50"
-              >
-                Close
-              </button>
-            </div>
-            <form onSubmit={handleSubmit} className="p-4 md:p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
-                <input
-                  type="email"
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50"
-                  value={form.email}
-                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                  required={!editingId}
-                  disabled={!!editingId}
-                />
-                {editingId ? (
-                  <p className="mt-1 text-xs text-gray-500">Email cannot be changed after creation.</p>
-                ) : null}
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
-                <input
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                  value={form.name}
-                  onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  required
-                  maxLength={120}
-                />
-              </div>
-              {!editingId ? (
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Password</label>
-                  <input
-                    type="password"
-                    autoComplete="new-password"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                    value={form.password}
-                    onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                    required
-                    minLength={8}
-                  />
-                </div>
-              ) : (
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Reset password (optional)</label>
-                  <input
-                    type="password"
-                    autoComplete="new-password"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                    value={form.resetPassword}
-                    onChange={(e) => setForm((f) => ({ ...f, resetPassword: e.target.value }))}
-                    minLength={8}
-                    placeholder="Leave blank to keep current password"
-                  />
-                </div>
-              )}
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
-                <select
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                  value={form.role}
-                  onChange={(e) => handleRoleChange(e.target.value)}
-                >
-                  {ROLES.map((r) => (
-                    <option key={r.value} value={r.value}>
-                      {r.label}
-                    </option>
+                      </OpsTableCell>
+                      <OpsTableCell>
+                        <p className="ops-users-push" title={pushHealthSummary(row)}>
+                          {pushHealthSummary(row)}
+                        </p>
+                      </OpsTableCell>
+                      <OpsTableCell>
+                        <UserActiveMarker isActive={row.isActive} />
+                      </OpsTableCell>
+                      <OpsTableCell align="end">
+                        <UserRowActions row={row} onEdit={openEdit} />
+                      </OpsTableCell>
+                    </OpsTableRow>
                   ))}
-                </select>
-              </div>
-              {form.role === 'cleaner' ? (
-                <div className="space-y-4 rounded-lg border border-emerald-100 bg-emerald-50/40 p-4">
-                  <p className="text-xs font-medium text-emerald-900">Cleaner contact &amp; assignment</p>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Phone (WhatsApp)</label>
-                    <input
-                      type="tel"
-                      inputMode="tel"
-                      autoComplete="tel"
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                      value={form.phone}
-                      onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-                      placeholder="+359881234567"
-                    />
-                    <p
-                      className={`mt-1 text-xs ${
-                        phoneHint.tone === 'ok'
-                          ? 'text-emerald-700'
-                          : phoneHint.tone === 'warn'
-                            ? 'text-amber-700'
-                            : 'text-gray-500'
-                      }`}
-                    >
-                      {phoneHint.text}
-                    </p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Notification locale</label>
-                    <select
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                      value={form.locale}
-                      onChange={(e) => setForm((f) => ({ ...f, locale: e.target.value }))}
-                    >
-                      {LOCALE_OPTIONS.map((opt) => (
-                        <option key={opt.value || 'none'} value={opt.value}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="mt-1 text-xs text-gray-500">Optional. Used for cleaner notifications in later batches.</p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-medium text-gray-600 mb-2">Property kinds</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {PROPERTY_KIND_OPTIONS.map(({ value, label }) => (
-                        <label key={value} className="flex items-center gap-2 text-sm text-gray-800">
-                          <input
-                            type="checkbox"
-                            checked={form.propertyKinds.includes(value)}
-                            onChange={() => togglePropertyKind(value)}
-                          />
-                          {label}
-                        </label>
-                      ))}
-                    </div>
-                    <p className="mt-1 text-xs text-gray-500">
-                      Assign which property kinds this cleaner receives notifications for.
-                    </p>
-                  </div>
-                </div>
-              ) : null}
-              <div>
-                <p className="text-xs font-medium text-gray-600 mb-2">Modules</p>
-                <p className="text-xs text-gray-500 mb-2">{moduleHint}</p>
-                {modulesLocked ? (
-                  <p className="text-sm text-gray-700 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                    {form.role === 'admin' ? 'All modules' : 'Cleaning'}
-                  </p>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {OPERATOR_MODULE_OPTIONS.map(({ key, label }) => (
-                      <label key={key} className="flex items-center gap-2 text-sm text-gray-800">
-                        <input
-                          type="checkbox"
-                          checked={form.modules.includes(key)}
-                          onChange={() => toggleModule(key)}
-                        />
-                        {label}
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <label className="flex items-center gap-2 text-sm text-gray-800">
-                <input
-                  type="checkbox"
-                  checked={form.isActive}
-                  onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
+                </OpsTableBody>
+              </OpsTable>
+            </div>
+
+            <div className="ops-users-rows">
+              {rows.map((row) => (
+                <OpsCollectionRow
+                  key={row.id}
+                  title={<span className="ops-users-email">{row.email}</span>}
+                  meta={`${row.name} · ${modulesSummary(row.role, row.modules)} · ${pushHealthSummary(row)}`}
+                  status={
+                    <span className="ops-users-markers">
+                      <UserRoleMarker role={row.role} />
+                      <UserActiveMarker isActive={row.isActive} />
+                    </span>
+                  }
+                  actions={<UserRowActions row={row} onEdit={openEdit} />}
                 />
-                Active
-              </label>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setDrawerOpen(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="px-4 py-2 text-sm font-medium text-white bg-[#81887A] rounded-lg hover:bg-[#707668] disabled:opacity-50"
-                >
-                  {saving ? 'Saving…' : 'Save'}
-                </button>
+              ))}
+            </div>
+          </>
+        ) : null}
+      </div>
+
+      <OpsModal
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        title={editingId ? 'Edit OPS user' : 'New OPS user'}
+        footer={
+          <>
+            <OpsButton variant="secondary" onClick={() => setDrawerOpen(false)}>
+              Cancel
+            </OpsButton>
+            <OpsButton type="submit" form="ops-users-form" loading={saving} loadingLabel="Saving…">
+              Save
+            </OpsButton>
+          </>
+        }
+      >
+        <form id="ops-users-form" className="ops-users-form" onSubmit={handleSubmit}>
+          {formError ? <OpsInlineError>{formError}</OpsInlineError> : null}
+          <OpsTextField
+            label="Email"
+            type="email"
+            value={form.email}
+            onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+            required={!editingId}
+            disabled={!!editingId}
+            hint={editingId ? 'Email cannot be changed after creation.' : undefined}
+          />
+          <OpsTextField
+            label="Name"
+            value={form.name}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            required
+            maxLength={120}
+          />
+          {!editingId ? (
+            <OpsTextField
+              label="Password"
+              type="password"
+              autoComplete="new-password"
+              value={form.password}
+              onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+              required
+              minLength={8}
+            />
+          ) : (
+            <OpsTextField
+              label="Reset password"
+              optional
+              type="password"
+              autoComplete="new-password"
+              value={form.resetPassword}
+              onChange={(e) => setForm((f) => ({ ...f, resetPassword: e.target.value }))}
+              minLength={8}
+              placeholder="Leave blank to keep current password"
+            />
+          )}
+          <OpsSelect
+            label="Role"
+            value={form.role}
+            onChange={(e) => handleRoleChange(e.target.value)}
+          >
+            {ROLES.map((r) => (
+              <option key={r.value} value={r.value}>
+                {r.label}
+              </option>
+            ))}
+          </OpsSelect>
+          {form.role === 'cleaner' ? (
+            <div className="ops-users-cleaner">
+              <p className="ops-users-cleaner__title">Cleaner contact &amp; assignment</p>
+              <OpsTextField
+                label="Phone (WhatsApp)"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                value={form.phone}
+                onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                placeholder="+359881234567"
+                hint={phoneHint}
+              />
+              <OpsSelect
+                label="Notification locale"
+                optional
+                value={form.locale}
+                onChange={(e) => setForm((f) => ({ ...f, locale: e.target.value }))}
+                hint="Optional. Used for cleaner notifications in later batches."
+              >
+                {LOCALE_OPTIONS.map((opt) => (
+                  <option key={opt.value || 'none'} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </OpsSelect>
+              <div>
+                <p className="ops-users-note">Property kinds</p>
+                <div className="ops-users-checkgrid">
+                  {PROPERTY_KIND_OPTIONS.map(({ value, label }) => (
+                    <OpsCheckbox
+                      key={value}
+                      label={label}
+                      checked={form.propertyKinds.includes(value)}
+                      onChange={() => togglePropertyKind(value)}
+                    />
+                  ))}
+                </div>
+                <p className="ops-users-note">
+                  Assign which property kinds this cleaner receives notifications for.
+                </p>
               </div>
-            </form>
+            </div>
+          ) : null}
+          <div>
+            <p className="ops-users-note">Modules</p>
+            <p className="ops-users-note">{moduleHint}</p>
+            {modulesLocked ? (
+              <p className="ops-users-locked">{form.role === 'admin' ? 'All modules' : 'Cleaning'}</p>
+            ) : (
+              <div className="ops-users-checkgrid">
+                {OPERATOR_MODULE_OPTIONS.map(({ key, label }) => (
+                  <OpsCheckbox
+                    key={key}
+                    label={label}
+                    checked={form.modules.includes(key)}
+                    onChange={() => toggleModule(key)}
+                  />
+                ))}
+              </div>
+            )}
           </div>
-        </div>
-      ) : null}
-    </div>
+          <OpsCheckbox
+            label="Active"
+            checked={form.isActive}
+            onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
+          />
+        </form>
+      </OpsModal>
+    </OpsPage>
   );
 }

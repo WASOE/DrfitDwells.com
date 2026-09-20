@@ -34,6 +34,8 @@ describe('ops design guard', () => {
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsCommunicationOversight.css');
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsPayments.jsx');
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsPayments.css');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsUsers.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsUsers.css');
     expect(result.scanned).toEqual(expect.arrayContaining(MIGRATED_OPS_FILES));
   });
 
