@@ -112,6 +112,29 @@ describe('Ops token completeness (P0A)', () => {
     }
   });
 
+  it('defines work-windows spatial span tokens for light and dark appearances', () => {
+    const required = [
+      '--ops-work-free',
+      '--ops-work-free-soft',
+      '--ops-work-free-border',
+      '--ops-work-turnaround',
+      '--ops-work-turnaround-soft',
+      '--ops-work-turnaround-border',
+      '--ops-work-occupied',
+      '--ops-work-occupied-soft',
+      '--ops-work-occupied-border',
+      '--ops-work-blocked',
+      '--ops-work-blocked-soft',
+      '--ops-work-blocked-border',
+      '--ops-work-today',
+      '--ops-work-today-fg'
+    ];
+    for (const name of required) {
+      const re = new RegExp(`${name}\\s*:`);
+      expect(OPS_CSS.match(new RegExp(re, 'g'))?.length || 0, name).toBeGreaterThanOrEqual(2);
+    }
+  });
+
   it('applies color-scheme only on themed surfaces', () => {
     expect(OPS_CSS).toMatch(
       /\.ops-root\[data-ops-themed="true"\]\[data-ops-appearance="dark"\][\s\S]*?color-scheme:\s*dark/

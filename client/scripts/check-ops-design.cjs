@@ -71,7 +71,9 @@ const MIGRATED_OPS_FILES = [
   'src/pages/ops/calendar/OpsCalendar.css',
   'src/pages/ops/calendar/calendarVisualTokens.js',
   'src/pages/ops/calendar/CalendarBottomSheet.jsx',
-  'src/pages/ops/calendar/LocationBlockSheet.jsx'
+  'src/pages/ops/calendar/LocationBlockSheet.jsx',
+  'src/pages/ops/calendar/OpsWorkWindows.jsx',
+  'src/pages/ops/calendar/OpsWorkWindows.css'
 ];
 
 const HEX_ALLOWLIST = new Set(['ops.css', 'tokens/opsTokenNames.js']);

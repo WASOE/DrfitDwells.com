@@ -64,8 +64,10 @@ describe('ops design guard', () => {
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/calendarVisualTokens.js');
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/CalendarBottomSheet.jsx');
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/LocationBlockSheet.jsx');
-    expect(MIGRATED_OPS_FILES).not.toContain('src/pages/ops/calendar/OpsWorkWindows.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/OpsWorkWindows.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/OpsWorkWindows.css');
     expect(MIGRATED_OPS_FILES).not.toContain('src/pages/ops/calendar/opsCalendarDateUtils.js');
+    expect(MIGRATED_OPS_FILES).not.toContain('src/pages/ops/calendar/workWindowsFormat.js');
     expect(MIGRATED_OPS_FILES).not.toContain('src/components/ops/ManualReviewResolveAction.jsx');
     expect(result.scanned).toEqual(expect.arrayContaining(MIGRATED_OPS_FILES));
   });

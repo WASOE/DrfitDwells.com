@@ -186,3 +186,44 @@ html[data-ops-active="true"][data-ops-appearance="dark"] {
   --ops-calendar-conflict: #F27A72;
   --ops-calendar-warning: #E5A94F;
 }
+
+/*
+ * Work Windows spatial span tokens (approved exception — not status families).
+ * Occupied = guest occupancy (info/blue), never danger/red.
+ * Hex allowed only here. Light is the product appearance; dark mirrors for parity.
+ */
+.ops-root[data-ops-appearance="light"],
+html[data-ops-active="true"][data-ops-appearance="light"] {
+  --ops-work-free: #1F7A4D;
+  --ops-work-free-soft: #EDF8F1;
+  --ops-work-free-border: #145C39;
+  --ops-work-turnaround: #F59E0B;
+  --ops-work-turnaround-soft: #FFF7E8;
+  --ops-work-turnaround-border: #9A5B00;
+  --ops-work-occupied: #2563EB;
+  --ops-work-occupied-soft: #EFF6FF;
+  --ops-work-occupied-border: #1E40AF;
+  --ops-work-blocked: #334155;
+  --ops-work-blocked-soft: #F1F5F9;
+  --ops-work-blocked-border: #0F172A;
+  --ops-work-today: #EFF6FF;
+  --ops-work-today-fg: #175CD3;
+}
+
+.ops-root[data-ops-appearance="dark"],
+html[data-ops-active="true"][data-ops-appearance="dark"] {
+  --ops-work-free: #5AC58A;
+  --ops-work-free-soft: #173223;
+  --ops-work-free-border: #3D9A66;
+  --ops-work-turnaround: #E5A94F;
+  --ops-work-turnaround-soft: #332817;
+  --ops-work-turnaround-border: #F59E0B;
+  --ops-work-occupied: #6FA9FF;
+  --ops-work-occupied-soft: #172A42;
+  --ops-work-occupied-border: #3B82F6;
+  --ops-work-blocked: #94A3B8;
+  --ops-work-blocked-soft: #1B1F1B;
+  --ops-work-blocked-border: #CBD5E1;
+  --ops-work-today: #172A42;
+  --ops-work-today-fg: #6FA9FF;
+}
