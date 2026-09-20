@@ -20,8 +20,25 @@ import {
   manualReservationPurposeLabel,
   guestConfirmationEmailPolicyLabel
 } from '../../utils/manualReservationPurpose';
+import OpsPage from '../../ops/primitives/OpsPage';
+import OpsPageHeader from '../../ops/primitives/OpsPageHeader';
+import OpsButton from '../../ops/primitives/OpsButton';
+import OpsTextField from '../../ops/primitives/OpsTextField';
+import OpsSelect from '../../ops/primitives/OpsSelect';
+import OpsTextarea from '../../ops/primitives/OpsTextarea';
+import OpsBanner from '../../ops/primitives/OpsBanner';
+import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
+import OpsInlineError from '../../ops/primitives/OpsInlineError';
+import OpsStatus from '../../ops/primitives/OpsStatus';
+import OpsBadge from '../../ops/primitives/OpsBadge';
+import OpsModal from '../../ops/primitives/OpsModal';
+import OpsConfirmDialog from '../../ops/primitives/OpsConfirmDialog';
+import OpsEmptyState from '../../ops/primitives/OpsEmptyState';
+import { resolveOpsStatus } from '../../ops/status/opsStatusRegistry';
+import './OpsReservationDetail.css';
 
 const MIN_STAY_CREDIT_CENTS = 10000;
+const BACK = { to: '/ops/reservations', label: 'Reservations' };
 
 const CASH_REFUND_METHOD_OPTIONS = [
   { value: 'stripe_manual', label: 'Stripe (manual)' },
@@ -96,17 +113,73 @@ const TEMPLATE_LABELS = {
 
 const LIFECYCLE_TEMPLATE_KEYS = ['booking_received', 'booking_confirmed', 'booking_cancelled'];
 
-function gmaTemplateStatusBadge(status) {
-  const base = 'text-[10px] px-1.5 py-0.5 rounded border font-medium uppercase tracking-wide';
-  if (status === 'approved') return `${base} bg-emerald-50 text-emerald-900 border-emerald-200`;
-  if (status === 'draft') return `${base} bg-amber-50 text-amber-900 border-amber-200`;
-  return `${base} bg-gray-100 text-gray-700 border-gray-200`;
+function paymentOpsValue(status) {
+  if (!status) return 'unknown';
+  if (status === 'unlinked_payment') return 'unlinked';
+  return status;
 }
 
 function resolveEffectiveRecipient(overrideInput, guestEmail) {
   const trimmed = (overrideInput || '').trim();
   if (trimmed) return trimmed;
   return (guestEmail || '').trim() || '';
+}
+
+function operationalItems(detail) {
+  const items = [];
+  const timing = detail?.operational?.stayTiming || {};
+  const daysUntilCheckIn = Number.isFinite(timing.daysUntilCheckIn) ? timing.daysUntilCheckIn : null;
+  const reservationStatus = detail?.reservation?.reservationStatus || '';
+  if (reservationStatus !== 'cancelled') {
+    if (timing.currentlyStaying) {
+      items.push({ key: 'currently_staying' });
+    } else if (timing.arrivingToday) {
+      items.push({ key: 'arriving_today' });
+    } else if (timing.arrivingTomorrow) {
+      items.push({ key: 'arriving_tomorrow' });
+    } else if (daysUntilCheckIn !== null && daysUntilCheckIn > 1) {
+      items.push({ key: 'arriving_later', days: daysUntilCheckIn });
+    } else if (timing.checkedOut) {
+      items.push({ key: 'checked_out' });
+    }
+  }
+  if (timing.checkingOutToday && reservationStatus !== 'cancelled') {
+    items.push({ key: 'checking_out_today' });
+  }
+  if (detail?.operational?.cancelledPaid) items.push({ key: 'cancelled_paid' });
+  if (detail?.operational?.refundPending) items.push({ key: 'refund_pending' });
+  if (detail?.operational?.paymentAttention) items.push({ key: 'payment_attention' });
+  if (detail?.conflictContext?.hasHardConflict || detail?.conflict?.hasConflict) {
+    items.push({ key: 'conflict' });
+  }
+  return items;
+}
+
+function ArrivingLaterStatus({ days }) {
+  const entry = resolveOpsStatus('reservation', 'arriving_later');
+  return (
+    <span
+      className={`ops-status ops-status--${entry.family || 'info'} ops-status--${entry.loudness || 'quiet'}`}
+      data-ops-status-key={entry.key}
+    >
+      Arriving in {days} days
+    </span>
+  );
+}
+
+function DetailHeader({ title, description, meta, actions }) {
+  return (
+    <OpsPageHeader back={BACK} title={title} description={description} meta={meta} actions={actions} />
+  );
+}
+
+function Fact({ label, children, wide = false, numeric = false }) {
+  return (
+    <div className={`ops-rd-fact${wide ? ' ops-rd-fact--wide' : ''}`}>
+      <dt className="ops-rd-fact__label">{label}</dt>
+      <dd className={`ops-rd-fact__value${numeric ? ' ops-rd-fact__value--numeric' : ''}`}>{children}</dd>
+    </div>
+  );
 }
 
 export default function OpsReservationDetail() {
@@ -131,6 +204,12 @@ export default function OpsReservationDetail() {
     reason: ''
   });
   const [moveUnitOpen, setMoveUnitOpen] = useState(false);
+
+  const [lifecycleConfirm, setLifecycleConfirm] = useState(null);
+  const [reassignOpen, setReassignOpen] = useState(false);
+  const [reassignCabinId, setReassignCabinId] = useState('');
+  const [blockModal, setBlockModal] = useState(null);
+
 
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelBusy, setCancelBusy] = useState(false);
@@ -762,11 +841,20 @@ export default function OpsReservationDetail() {
       /* confirm still works without subject line */
     }
     const subjectLine = composedSubject ? `\n\nSubject: ${composedSubject}` : '\n\nSubject: (composed from current booking data)';
-    const ok = window.confirm(
-      `Send "${label}" now?\n\nTo: ${effective}${(overrideRecipient || '').trim() ? '\n(using override address)' : '\n(guest email on file)'}${subjectLine}\n\nUses template defaults (not the edit-before-send path).`
-    );
-    if (!ok) return;
+    setLifecycleConfirm({
+      kind: 'resend',
+      templateKey,
+      label,
+      effective,
+      usingOverride: Boolean((overrideRecipient || '').trim()),
+      subjectLine,
+      bodyText: `Send "${label}" now?\n\nTo: ${effective}${(overrideRecipient || '').trim() ? '\n(using override address)' : '\n(guest email on file)'}${subjectLine}\n\nUses template defaults (not the edit-before-send path).`
+    });
+  };
 
+  const executeResendTemplate = async (templateKey) => {
+    const guestEmail = (guestDraft?.email || data?.reservation?.guest?.email || '').trim();
+    const effective = resolveEffectiveRecipient(overrideRecipient, guestEmail);
     setResendLoadingKey(templateKey);
     setLifecycleInlineError('');
     try {
@@ -846,11 +934,22 @@ export default function OpsReservationDetail() {
       return;
     }
     const label = TEMPLATE_LABELS[editResendModal.templateKey] || editResendModal.templateKey;
-    const ok = window.confirm(
-      `Send edited "${label}"?\n\nTo: ${effective}${(overrideRecipient || '').trim() ? '\n(using override address)' : '\n(guest email on file)'}\n\nSubject: ${subjectTrim}`
-    );
-    if (!ok) return;
+    setLifecycleConfirm({
+      kind: 'editResend',
+      templateKey: editResendModal.templateKey,
+      label,
+      effective,
+      usingOverride: Boolean((overrideRecipient || '').trim()),
+      subjectTrim,
+      bodyText: `Send edited "${label}"?\n\nTo: ${effective}${(overrideRecipient || '').trim() ? '\n(using override address)' : '\n(guest email on file)'}\n\nSubject: ${subjectTrim}`
+    });
+  };
 
+  const executeEditedResend = async () => {
+    const guestEmail = (guestDraft?.email || data?.reservation?.guest?.email || '').trim();
+    const effective = resolveEffectiveRecipient(overrideRecipient, guestEmail);
+    const subjectTrim = (editResendModal.subject || '').trim();
+    const htmlRaw = editResendModal.html || '';
     setEditResendSending(true);
     setLifecycleInlineError('');
     try {
@@ -892,18 +991,131 @@ export default function OpsReservationDetail() {
     editResendModal.loading ||
     editResendModal.open;
 
-  if (loading) return <div className="text-sm text-gray-500">Loading reservation...</div>;
-  if (error && !data) return <div className="text-sm text-red-600">{error}</div>;
-  if (!data) return <div className="text-sm text-gray-500">Reservation not found.</div>;
+
+  const confirmLifecycleSend = async () => {
+    const pending = lifecycleConfirm;
+    setLifecycleConfirm(null);
+    if (!pending) return;
+    if (pending.kind === 'resend') {
+      await executeResendTemplate(pending.templateKey);
+      return;
+    }
+    if (pending.kind === 'editResend') {
+      await executeEditedResend();
+    }
+  };
+
+  const submitReassign = async () => {
+    const toCabinId = (reassignCabinId || '').trim();
+    if (!toCabinId) return;
+    setReassignOpen(false);
+    setReassignCabinId('');
+    await doAction(opsWriteAPI.reassignReservation, id, {
+      toCabinId,
+      acceptExternalHoldWarnings: true,
+      reason: 'ops_reassign'
+    });
+  };
+
+  const submitBlockModal = async () => {
+    if (!blockModal) return;
+    const startDate = (blockModal.startDate || '').trim();
+    const endDate = (blockModal.endDate || '').trim();
+    if (!startDate || !endDate) return;
+    const cabinId = data?.reservation?.cabinId;
+    const payload = {
+      cabinId,
+      startDate,
+      endDate,
+      reason: 'reservation_detail'
+    };
+    const kind = blockModal.kind;
+    setBlockModal(null);
+    if (kind === 'manual') {
+      await doAction(opsWriteAPI.createManualBlock, payload);
+      return;
+    }
+    await doAction(opsWriteAPI.createMaintenanceBlock, payload);
+  };
+
+  const headerTitle = data?.reservation?.reservationId
+    ? `Reservation ${data.reservation.reservationId}`
+    : 'Reservation';
+
+  const renderStatusCluster = (detail) => {
+    if (!detail) return null;
+    const reservation = detail.reservation || {};
+    const paymentStatus =
+      reservation.paymentStatus ||
+      detail.paymentStatus ||
+      detail.paymentTrail?.[0]?.status ||
+      null;
+    const source = reservation.source || detail.source || null;
+    const purpose = reservation.manualReservationPurpose || detail.manualReservationPurpose || null;
+    const sendGuestConfirmationEmail =
+      reservation.sendGuestConfirmationEmail === true || reservation.sendGuestConfirmationEmail === false
+        ? reservation.sendGuestConfirmationEmail
+        : detail.sendGuestConfirmationEmail === true || detail.sendGuestConfirmationEmail === false
+          ? detail.sendGuestConfirmationEmail
+          : null;
+    const items = operationalItems(detail);
+
+    return (
+      <div className="ops-rd-status" data-testid="ops-rd-status-cluster">
+        <OpsStatus domain="reservation" value={reservation.reservationStatus || 'unknown'} />
+        {paymentStatus ? <OpsStatus domain="payment" value={paymentOpsValue(paymentStatus)} /> : null}
+        {items.map((item) =>
+          item.key === 'arriving_later' ? (
+            <ArrivingLaterStatus key={item.key} days={item.days} />
+          ) : (
+            <OpsStatus key={item.key} domain="reservation" value={item.key} />
+          )
+        )}
+        {source ? <OpsBadge>{source}</OpsBadge> : null}
+        {purpose ? <OpsBadge>{manualReservationPurposeLabel(purpose)}</OpsBadge> : null}
+        {sendGuestConfirmationEmail != null ? (
+          <OpsBadge tone={sendGuestConfirmationEmail ? 'info' : 'neutral'}>
+            {guestConfirmationEmailPolicyLabel(sendGuestConfirmationEmail)}
+          </OpsBadge>
+        ) : null}
+      </div>
+    );
+  };
+
+  if (loading) {
+    return (
+      <OpsPage width="wide">
+        <div className="ops-rd">
+          <DetailHeader title="Reservation" />
+          <OpsLoadingState label="Loading reservation…" />
+        </div>
+      </OpsPage>
+    );
+  }
+
+  if (error && !data) {
+    return (
+      <OpsPage width="wide">
+        <div className="ops-rd">
+          <DetailHeader title="Reservation" />
+          <OpsBanner tone="danger" title={error} />
+        </div>
+      </OpsPage>
+    );
+  }
+
+  if (!data) {
+    return (
+      <OpsPage width="wide">
+        <div className="ops-rd">
+          <DetailHeader title="Reservation" />
+          <OpsEmptyState title="Reservation not found." />
+        </div>
+      </OpsPage>
+    );
+  }
 
   const reservation = data.reservation || {};
-  const manualPurpose = reservation.manualReservationPurpose || data.manualReservationPurpose || null;
-  const sendGuestConfirmationEmail =
-    reservation.sendGuestConfirmationEmail === true || reservation.sendGuestConfirmationEmail === false
-      ? reservation.sendGuestConfirmationEmail
-      : data.sendGuestConfirmationEmail === true || data.sendGuestConfirmationEmail === false
-        ? data.sendGuestConfirmationEmail
-        : null;
   const cancellationSettlement = data.cancellationSettlement || null;
   const reservationStatus = reservation.reservationStatus || '';
   const cabinSummary = data.cabinSummary || null;
@@ -929,1532 +1141,1352 @@ export default function OpsReservationDetail() {
       ? settlementOutcomeLabel(cancellationSettlement.outcome || 'resolution_pending')
       : settlementOutcomeLabel(cancellationSettlement.outcome);
 
-  return (
-    <div className="space-y-4 pb-20 max-w-7xl mx-auto">
-      <div className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
-        <Link to="/ops/reservations" className="text-sm text-[#81887A] hover:underline">
-          Back to reservations
-        </Link>
-        <h2 className="mt-1 text-lg md:text-xl font-semibold text-gray-900">Reservation {reservation.reservationId}</h2>
-        <p className="text-sm text-gray-500 max-w-2xl">
-          {reservation.checkInDateOnly || '—'} - {reservation.checkOutDateOnly || '—'}
-        </p>
-        {cabinSummary?.displayName || cabinSummary?.name || cabinSummary?.unitLabel ? (
-          <p className="mt-2 text-sm text-gray-800 max-w-2xl">
-            {cabinSummary.displayName ||
-              [cabinSummary.name, cabinSummary.unitLabel].filter(Boolean).join(' · ') ||
-              '—'}
-          </p>
-        ) : null}
-        {manualPurpose || sendGuestConfirmationEmail != null ? (
-          <div className="mt-3 flex flex-wrap gap-2 max-w-2xl">
-            {manualPurpose ? (
-              <span className="text-xs px-2 py-1 rounded border border-indigo-200 bg-indigo-50 text-indigo-800">
-                {manualReservationPurposeLabel(manualPurpose)}
-              </span>
-            ) : null}
-            {sendGuestConfirmationEmail != null ? (
-              <span
-                className={`text-xs px-2 py-1 rounded border ${
-                  sendGuestConfirmationEmail
-                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                    : 'border-slate-200 bg-slate-50 text-slate-700'
-                }`}
-              >
-                {guestConfirmationEmailPolicyLabel(sendGuestConfirmationEmail)}
-              </span>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
+  const guestName = `${guestDraft?.firstName || reservation.guest?.firstName || ''} ${
+    guestDraft?.lastName || reservation.guest?.lastName || ''
+  }`.trim();
+  const cabinLabel =
+    cabinSummary?.displayName ||
+    [cabinSummary?.name, cabinSummary?.unitLabel].filter(Boolean).join(' · ') ||
+    null;
+  const datesLabel = `${reservation.checkInDateOnly || '—'} - ${reservation.checkOutDateOnly || '—'}`;
 
-      {showSettlementCard ? (
-        <section className="bg-white border border-amber-200 rounded-xl p-4 md:p-5 max-w-3xl">
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-            <h3 className="text-sm font-semibold text-gray-900">Cancellation settlement</h3>
+  const headerMeta = (
+    <div className="ops-rd-header-meta">
+      <p className="ops-rd-header-meta__line">{datesLabel}</p>
+      {cabinLabel ? <p className="ops-rd-header-meta__cabin">{cabinLabel}</p> : null}
+      {guestName ? <p className="ops-rd-header-meta__guest">{guestName}</p> : null}
+      {renderStatusCluster(data)}
+    </div>
+  );
+
+  return (
+    <OpsPage width="wide">
+      <div className="ops-rd">
+        <DetailHeader title={headerTitle} meta={headerMeta} />
+
+        <div className="ops-rd-banners">
+          {error ? <OpsBanner tone="danger" title={error} /> : null}
+          {successMessage ? <OpsBanner tone="success" title={successMessage} /> : null}
+          {data.conflictContext?.hasHardConflict || data.conflict?.hasConflict ? (
+            <OpsBanner tone="danger" title="Hard availability conflict on this reservation." />
+          ) : null}
+          {data.operational?.paymentAttention ? (
+            <OpsBanner tone="warning" title="Payment attention required for this reservation." />
+          ) : null}
+          {data.operational?.refundPending && !showSettlementCard ? (
+            <OpsBanner tone="warning" title="Refund pending for this reservation." />
+          ) : null}
+          {data.operational?.cancelledPaid && !showSettlementCard ? (
+            <OpsBanner tone="warning" title="Cancelled reservation still shows as paid." />
+          ) : null}
+        </div>
+
+        {showSettlementCard ? (
+          <section className="ops-rd-surface ops-rd-surface--warn">
+            <div className="ops-rd-surface__head">
+              <h2 className="ops-rd-surface__title">Cancellation settlement</h2>
+              <div className="ops-rd-actions">
+                {canResolveSettlement ? (
+                  <OpsButton variant="secondary" onClick={openResolveModal}>
+                    Resolve settlement
+                  </OpsButton>
+                ) : null}
+                {canMarkCashRefundedSettlement ? (
+                  <OpsButton variant="secondary" onClick={openMarkRefundedModal}>
+                    Mark as refunded
+                  </OpsButton>
+                ) : null}
+              </div>
+            </div>
             {canResolveSettlement ? (
-              <button
-                type="button"
-                onClick={openResolveModal}
-                className="shrink-0 px-3 py-2 text-sm rounded border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
-              >
-                Resolve settlement
-              </button>
+              <OpsBanner
+                tone="warning"
+                title="Refund follow-up stays active until this settlement is resolved."
+              />
             ) : null}
             {canMarkCashRefundedSettlement ? (
-              <button
-                type="button"
-                onClick={openMarkRefundedModal}
-                className="shrink-0 px-3 py-2 text-sm rounded border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
-              >
-                Mark as refunded
-              </button>
+              <OpsBanner
+                tone="warning"
+                title="Manual cash refund is still required. Mark as refunded once completed."
+              />
             ) : null}
-          </div>
-          {canResolveSettlement ? (
-            <p className="mt-2 text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-              Refund follow-up stays active until this settlement is resolved.
-            </p>
-          ) : null}
-          {canMarkCashRefundedSettlement ? (
-            <p className="mt-2 text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-              Manual cash refund is still required. Mark as refunded once completed.
-            </p>
-          ) : null}
-          <dl className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
-            <div>
-              <dt className="text-gray-500">Outcome</dt>
-              <dd className="font-medium text-gray-900">{displayedSettlementOutcome}</dd>
-            </div>
-            {cancellationSettlement?.creditAmountCents != null ? (
-              <div>
-                <dt className="text-gray-500">Stay credit amount</dt>
-                <dd className="font-medium text-gray-900 tabular-nums">
+            <dl className="ops-rd-facts">
+              <Fact label="Outcome">{displayedSettlementOutcome}</Fact>
+              {cancellationSettlement?.creditAmountCents != null ? (
+                <Fact label="Stay credit amount" numeric>
                   {formatMoneyFromCents(cancellationSettlement.creditAmountCents, 'EUR')}
-                </dd>
-              </div>
-            ) : null}
-            {cancellationSettlement?.cashRefundAmountCents != null ? (
-              <div>
-                <dt className="text-gray-500">Cash refund amount</dt>
-                <dd className="font-medium text-gray-900 tabular-nums">
+                </Fact>
+              ) : null}
+              {cancellationSettlement?.cashRefundAmountCents != null ? (
+                <Fact label="Cash refund amount" numeric>
                   {formatMoneyFromCents(cancellationSettlement.cashRefundAmountCents, 'EUR')}
-                </dd>
-              </div>
-            ) : null}
-            {cancellationSettlement?.cashRefundEvidence?.method ? (
-              <div>
-                <dt className="text-gray-500">Refund method</dt>
-                <dd className="text-gray-900">
+                </Fact>
+              ) : null}
+              {cancellationSettlement?.cashRefundEvidence?.method ? (
+                <Fact label="Refund method">
                   {cashRefundMethodLabel(cancellationSettlement.cashRefundEvidence.method)}
-                </dd>
-              </div>
-            ) : null}
-            {cancellationSettlement?.cashRefundEvidence?.reference ? (
-              <div>
-                <dt className="text-gray-500">Refund reference</dt>
-                <dd className="text-gray-900 break-all">{cancellationSettlement.cashRefundEvidence.reference}</dd>
-              </div>
-            ) : null}
-            {cancellationSettlement?.cashRefundEvidence?.recordedAt ? (
-              <div>
-                <dt className="text-gray-500">Refunded at</dt>
-                <dd className="text-gray-900">
+                </Fact>
+              ) : null}
+              {cancellationSettlement?.cashRefundEvidence?.reference ? (
+                <Fact label="Refund reference">{cancellationSettlement.cashRefundEvidence.reference}</Fact>
+              ) : null}
+              {cancellationSettlement?.cashRefundEvidence?.recordedAt ? (
+                <Fact label="Refunded at">
                   {String(cancellationSettlement.cashRefundEvidence.recordedAt).slice(0, 19).replace('T', ' ')}
-                </dd>
-              </div>
-            ) : null}
-            {cancellationSettlement?.cashRefundNote ? (
-              <div className="sm:col-span-2">
-                <dt className="text-gray-500">Cash refund note</dt>
-                <dd className="text-gray-900 whitespace-pre-wrap">{cancellationSettlement.cashRefundNote}</dd>
-              </div>
-            ) : null}
-            {cancellationSettlement?.settlementRecordedAt ? (
-              <div>
-                <dt className="text-gray-500">Recorded at</dt>
-                <dd className="text-gray-900">
+                </Fact>
+              ) : null}
+              {cancellationSettlement?.cashRefundNote ? (
+                <Fact label="Cash refund note" wide>
+                  {cancellationSettlement.cashRefundNote}
+                </Fact>
+              ) : null}
+              {cancellationSettlement?.settlementRecordedAt ? (
+                <Fact label="Recorded at">
                   {String(cancellationSettlement.settlementRecordedAt).slice(0, 19).replace('T', ' ')}
-                </dd>
-              </div>
-            ) : null}
-            {cancellationSettlement?.compensationGiftVoucherId ? (
-              <div className="sm:col-span-2">
-                <dt className="text-gray-500">Compensation voucher</dt>
-                <dd>
+                </Fact>
+              ) : null}
+              {cancellationSettlement?.compensationGiftVoucherId ? (
+                <Fact label="Compensation voucher" wide>
                   <Link
                     to={`/ops/gift-vouchers/${cancellationSettlement.compensationGiftVoucherId}`}
-                    className="text-[#81887A] font-medium hover:underline"
+                    className="ops-rd-link"
                   >
                     View voucher {cancellationSettlement.compensationGiftVoucherId}
                   </Link>
-                </dd>
-              </div>
-            ) : null}
-            {cancellationSettlement?.reason ? (
-              <div className="sm:col-span-2">
-                <dt className="text-gray-500">Reason</dt>
-                <dd className="text-gray-900 whitespace-pre-wrap">{cancellationSettlement.reason}</dd>
-              </div>
-            ) : null}
-          </dl>
-        </section>
-      ) : null}
+                </Fact>
+              ) : null}
+              {cancellationSettlement?.reason ? (
+                <Fact label="Reason" wide>
+                  {cancellationSettlement.reason}
+                </Fact>
+              ) : null}
+            </dl>
+          </section>
+        ) : null}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 space-y-4">
-          <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-            <h3 className="text-sm font-semibold text-gray-900">Reservation actions</h3>
-            <div className="flex flex-wrap gap-2">
-              <button onClick={() => doAction(opsWriteAPI.confirmReservation, id)} className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50">
-                Confirm
-              </button>
-              <button onClick={() => doAction(opsWriteAPI.checkInReservation, id)} className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50">
-                Check-in
-              </button>
-              <button onClick={() => doAction(opsWriteAPI.completeReservation, id)} className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50">
-                Complete
-              </button>
-              <button onClick={openEditDatesModal} className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50">
-                Edit dates
-              </button>
-              {canCancel ? (
-                <button
-                  type="button"
-                  onClick={openCancelModal}
-                  className="px-3 py-2 text-sm rounded border border-red-200 text-red-700 hover:bg-red-50"
+        <div className="ops-rd-layout">
+          <div className="ops-rd-main">
+            <section className="ops-rd-surface">
+              <h2 className="ops-rd-surface__title">Reservation actions</h2>
+              <div className="ops-rd-actions">
+                <OpsButton
+                  variant="secondary"
+                  onClick={() => doAction(opsWriteAPI.confirmReservation, id)}
                 >
-                  Cancel reservation
-                </button>
-              ) : null}
-              {showCompletedNotCancellableNote ? (
-                <p className="w-full text-xs text-gray-500 mt-1">
-                  Completed reservations cannot be cancelled from OPS.
-                </p>
-              ) : null}
-              {canShowMoveUnit ? (
-                <button
-                  type="button"
-                  onClick={() => setMoveUnitOpen(true)}
-                  className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50"
+                  Confirm
+                </OpsButton>
+                <OpsButton
+                  variant="secondary"
+                  onClick={() => doAction(opsWriteAPI.checkInReservation, id)}
                 >
-                  Move Unit
-                </button>
-              ) : null}
-              {canShowReassign ? (
-                <button
-                  onClick={() => {
-                    const toCabinId = window.prompt('Target cabinId');
-                    if (!toCabinId) return;
-                    doAction(opsWriteAPI.reassignReservation, id, {
-                      toCabinId,
-                      acceptExternalHoldWarnings: true,
-                      reason: 'ops_reassign'
-                    });
-                  }}
-                  className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50"
+                  Check-in
+                </OpsButton>
+                <OpsButton
+                  variant="secondary"
+                  onClick={() => doAction(opsWriteAPI.completeReservation, id)}
                 >
-                  Reassign
-                </button>
-              ) : null}
-            </div>
-          </section>
-
-          <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-            <h3 className="text-sm font-semibold text-gray-900">Guest detail</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <input
-                value={guestDraft?.firstName || ''}
-                onChange={(e) => setGuestDraft((p) => ({ ...p, firstName: e.target.value }))}
-                className="px-3 py-2 text-sm border rounded-lg"
-                placeholder="First name"
-              />
-              <input
-                value={guestDraft?.lastName || ''}
-                onChange={(e) => setGuestDraft((p) => ({ ...p, lastName: e.target.value }))}
-                className="px-3 py-2 text-sm border rounded-lg"
-                placeholder="Last name"
-              />
-              <input
-                value={guestDraft?.email || ''}
-                onChange={(e) => setGuestDraft((p) => ({ ...p, email: e.target.value }))}
-                className="px-3 py-2 text-sm border rounded-lg"
-                placeholder="Email"
-              />
-              <input
-                value={guestDraft?.phone || ''}
-                onChange={(e) => setGuestDraft((p) => ({ ...p, phone: e.target.value }))}
-                className="px-3 py-2 text-sm border rounded-lg"
-                placeholder="Phone"
-              />
-            </div>
-            <button
-              onClick={() =>
-                doAction(opsWriteAPI.editGuestContact, id, {
-                  firstName: guestDraft?.firstName,
-                  lastName: guestDraft?.lastName,
-                  email: guestDraft?.email,
-                  phone: guestDraft?.phone
-                })
-              }
-              className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50"
-            >
-              Save guest contact
-            </button>
-          </section>
-
-          <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-            <h3 className="text-sm font-semibold text-gray-900">Notes</h3>
-            <div className="flex gap-2">
-              <input
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                className="flex-1 px-3 py-2 text-sm border rounded-lg"
-                placeholder="Add reservation note"
-              />
-              <button
-                onClick={async () => {
-                  if (!note.trim()) return;
-                  await doAction(opsWriteAPI.addReservationNote, id, note.trim());
-                  setNote('');
-                }}
-                className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50"
-              >
-                Add
-              </button>
-            </div>
-            <div className="space-y-2">
-              {(data.notes?.items || []).map((n) => (
-                <div key={n.noteId} className="text-sm bg-gray-50 border border-gray-200 rounded p-2">
-                  <p className="text-gray-900">{n.content}</p>
-                  <p className="text-xs text-gray-500 mt-1">{n.author?.actorId} - {String(n.createdAt).slice(0, 19)}</p>
-                </div>
-              ))}
-              {(data.notes?.items || []).length === 0 ? <p className="text-sm text-gray-500">No notes yet.</p> : null}
-            </div>
-          </section>
-
-          <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900">Cleaning Notes</h3>
-              <p className="mt-1 text-xs text-gray-500">
-                Internal note for cleaning staff. Shown as a special request on the cleaning calendar.
-              </p>
-            </div>
-            <textarea
-              value={cleaningNotesDraft}
-              onChange={(e) => setCleaningNotesDraft(e.target.value)}
-              maxLength={1000}
-              rows={3}
-              placeholder="e.g. Extra towels, late check-out cleaning, allergy note…"
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
-            />
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={saveCleaningNotes}
-                disabled={cleaningNotesBusy}
-                className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
-              >
-                {cleaningNotesBusy ? 'Saving…' : 'Save cleaning notes'}
-              </button>
-              <span className="text-xs text-gray-400">{(cleaningNotesDraft || '').length}/1000</span>
-              {cleaningNotesMsg ? <span className="text-xs text-emerald-700">{cleaningNotesMsg}</span> : null}
-              {cleaningNotesError ? <span className="text-xs text-red-700">{cleaningNotesError}</span> : null}
-            </div>
-          </section>
-        </div>
-
-        <div className="space-y-4">
-          <section className="bg-white border border-violet-200 border-l-4 border-l-violet-500 rounded-xl p-4 space-y-4 max-w-2xl lg:max-w-none">
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
-              <div>
-                <h3 className="text-sm font-semibold text-violet-900">Guest message automation</h3>
-                <p className="text-xs text-violet-800/90 mt-1 max-w-2xl">
-                  Scheduled jobs can be cancelled from here. Dispatches and comms manual-review items are listed below.
-                  Separate from legacy booking lifecycle email.
-                </p>
-              </div>
-              <Link
-                to="/ops/messaging"
-                className="text-xs text-violet-800 underline underline-offset-2 shrink-0 self-start"
-              >
-                Global rules &amp; flags
-              </Link>
-            </div>
-            {messagingLoading ? <p className="text-xs text-gray-500">Loading automation data…</p> : null}
-            {messagingError ? <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-2 py-1">{messagingError}</div> : null}
-            <div className="rounded-lg border border-violet-100 bg-violet-50/40 p-3 space-y-3 max-w-2xl">
-              <h4 className="text-xs font-semibold text-violet-900 uppercase tracking-wide">Preview automation message</h4>
-              <p className="text-xs text-violet-900/80 leading-relaxed">
-                Compose-only preview using this booking&apos;s data and draft or approved templates. Nothing is sent.
-              </p>
-              <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-2">
-                <label className="flex flex-col gap-1 text-xs text-gray-700 min-w-0 flex-1 sm:max-w-xs">
-                  <span className="font-medium">Automation rule</span>
-                  <select
-                    value={gmaPreviewRuleKey}
-                    onChange={(e) => setGmaPreviewRuleKey(e.target.value)}
-                    disabled={Boolean(gmaPreviewLoading)}
-                    className="px-2 py-1.5 text-sm border border-gray-200 rounded-md bg-white"
+                  Complete
+                </OpsButton>
+                <OpsButton variant="secondary" onClick={openEditDatesModal}>
+                  Edit dates
+                </OpsButton>
+                {canCancel ? (
+                  <OpsButton variant="destructive" onClick={openCancelModal}>
+                    Cancel reservation
+                  </OpsButton>
+                ) : null}
+                {canShowMoveUnit ? (
+                  <OpsButton variant="secondary" onClick={() => setMoveUnitOpen(true)}>
+                    Move Unit
+                  </OpsButton>
+                ) : null}
+                {canShowReassign ? (
+                  <OpsButton
+                    variant="secondary"
+                    onClick={() => {
+                      setReassignCabinId('');
+                      setReassignOpen(true);
+                    }}
                   >
-                    {gmaPreviewRuleOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  disabled={Boolean(gmaPreviewLoading)}
-                  onClick={() => void handleGmaPreview('email')}
-                  className="text-xs px-3 py-1.5 rounded-md border border-violet-300 text-violet-900 bg-white hover:bg-violet-50 disabled:opacity-50"
-                >
-                  {gmaPreviewLoading === 'email' ? 'Loading…' : 'Preview GMA email'}
-                </button>
-                <button
-                  type="button"
-                  disabled={Boolean(gmaPreviewLoading)}
-                  onClick={() => void handleGmaPreview('whatsapp')}
-                  className="text-xs px-3 py-1.5 rounded-md border border-violet-300 text-violet-900 bg-white hover:bg-violet-50 disabled:opacity-50"
-                >
-                  {gmaPreviewLoading === 'whatsapp' ? 'Loading…' : 'Preview GMA WhatsApp'}
-                </button>
+                    Reassign
+                  </OpsButton>
+                ) : null}
               </div>
-              {gmaPreviewError ? (
-                <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-2 py-1">{gmaPreviewError}</div>
+              {showCompletedNotCancellableNote ? (
+                <p className="ops-rd-note">Completed reservations cannot be cancelled from OPS.</p>
               ) : null}
-            </div>
-            {!messagingLoading && messagingSummary ? (
-              <div className="space-y-4 text-xs text-gray-800">
-                <div>
-                  <h4 className="text-xs font-semibold text-gray-900 uppercase tracking-wide mb-2">Scheduled / recent jobs</h4>
-                  {(messagingSummary.jobs || []).length === 0 ? (
-                    <p className="text-gray-500">No jobs for this booking.</p>
-                  ) : (
-                    <ul className="space-y-2 max-h-48 overflow-y-auto">
-                      {(messagingSummary.jobs || []).map((j) => (
-                        <li
-                          key={j.jobId}
-                          className="border border-gray-100 rounded-md p-2 bg-gray-50/80 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2"
-                        >
-                          <div className="min-w-0">
-                            <div className="font-medium text-gray-900">{j.ruleKey}</div>
-                            <div className="text-gray-600 mt-0.5">
-                              {j.status}
-                              {j.scheduledFor ? <span className="ml-2">{String(j.scheduledFor).slice(0, 16)}</span> : null}
-                            </div>
-                            {j.lastError ? <div className="text-red-700 mt-1">{j.lastError}</div> : null}
-                          </div>
-                          {j.status === 'scheduled' ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setMessagingCancelModal({ open: true, jobId: j.jobId, ruleKey: j.ruleKey || '' })
-                              }
-                              className="text-xs px-2 py-1 rounded border border-red-200 text-red-800 hover:bg-red-50 shrink-0 self-start"
-                            >
-                              Cancel job
-                            </button>
-                          ) : null}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-                <div>
-                  <h4 className="text-xs font-semibold text-gray-900 uppercase tracking-wide mb-2">Dispatch attempts</h4>
-                  {(messagingSummary.dispatches || []).length === 0 ? (
-                    <p className="text-gray-500">No dispatches recorded.</p>
-                  ) : (
-                    <ul className="space-y-2 max-h-56 overflow-y-auto">
-                      {(messagingSummary.dispatches || []).map((d) => (
-                        <li key={d.dispatchId} className="border border-gray-100 rounded-md p-2 bg-white">
-                          <div className="font-medium text-gray-900">
-                            {d.channel} · {d.status}
-                          </div>
-                          <div className="text-gray-600 mt-0.5">
-                            Rule {d.ruleKey || '—'} · provider {d.providerName}
-                          </div>
-                          <div className="text-gray-500 mt-0.5">Recipient: {d.recipientMasked || '—'}</div>
-                          <div className="text-gray-500 mt-0.5">
-                            Delivery events: {d.deliveryEventCount ?? 0}
-                            {d.latestDeliveryEvent?.eventType ? (
-                              <span className="ml-1">
-                                · latest {d.latestDeliveryEvent.eventType}{' '}
-                                {d.latestDeliveryEvent.occurredAt
-                                  ? `(${String(d.latestDeliveryEvent.occurredAt).slice(0, 19)})`
-                                  : ''}
-                              </span>
-                            ) : null}
-                          </div>
-                          {d.error?.code ? (
-                            <div className="text-red-700 mt-1 text-[11px]">{d.error.code}</div>
-                          ) : null}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-                <div>
-                  <h4 className="text-xs font-semibold text-gray-900 uppercase tracking-wide mb-2">Open comms manual review</h4>
-                  {(messagingSummary.manualReviewItems || []).length === 0 ? (
-                    <p className="text-gray-500">No open comms-related items for this booking.</p>
-                  ) : (
-                    <ul className="space-y-2 max-h-40 overflow-y-auto">
-                      {(messagingSummary.manualReviewItems || []).map((m) => (
-                        <li key={m.manualReviewItemId} className="border border-amber-100 rounded-md p-2 bg-amber-50/50">
-                          <div className="font-medium text-gray-900">{m.title}</div>
-                          <div className="text-gray-600 mt-0.5">
-                            {m.category} · {m.severity}
-                          </div>
-                          {m.details ? <div className="text-gray-700 mt-1 line-clamp-3">{m.details}</div> : null}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
+            </section>
+
+            <section className="ops-rd-surface">
+              <h2 className="ops-rd-surface__title">Guest detail</h2>
+              <div className="ops-rd-field-grid">
+                <OpsTextField
+                  label="First name"
+                  value={guestDraft?.firstName || ''}
+                  onChange={(e) => setGuestDraft((p) => ({ ...p, firstName: e.target.value }))}
+                />
+                <OpsTextField
+                  label="Last name"
+                  value={guestDraft?.lastName || ''}
+                  onChange={(e) => setGuestDraft((p) => ({ ...p, lastName: e.target.value }))}
+                />
+                <OpsTextField
+                  label="Email"
+                  value={guestDraft?.email || ''}
+                  onChange={(e) => setGuestDraft((p) => ({ ...p, email: e.target.value }))}
+                />
+                <OpsTextField
+                  label="Phone"
+                  value={guestDraft?.phone || ''}
+                  onChange={(e) => setGuestDraft((p) => ({ ...p, phone: e.target.value }))}
+                />
               </div>
-            ) : null}
-          </section>
+              <div className="ops-rd-actions">
+                <OpsButton
+                  variant="secondary"
+                  onClick={() =>
+                    doAction(opsWriteAPI.editGuestContact, id, {
+                      firstName: guestDraft?.firstName,
+                      lastName: guestDraft?.lastName,
+                      email: guestDraft?.email,
+                      phone: guestDraft?.phone
+                    })
+                  }
+                >
+                  Save guest contact
+                </OpsButton>
+              </div>
+            </section>
 
-          <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-4 max-w-2xl lg:max-w-none">
-            <div className="flex flex-wrap gap-2">
-              <button onClick={() => doAction(opsWriteAPI.sendArrivalInstructions, id)} className="px-2.5 py-1.5 text-xs rounded border border-gray-300">
-                Send arrival
-              </button>
-              <button onClick={() => doAction(opsWriteAPI.resendArrivalInstructions, id)} className="px-2.5 py-1.5 text-xs rounded border border-gray-300">
-                Resend
-              </button>
-              <button onClick={() => doAction(opsWriteAPI.markArrivalCompleted, id)} className="px-2.5 py-1.5 text-xs rounded border border-gray-300">
-                Mark completed
-              </button>
-            </div>
+            <section className="ops-rd-surface">
+              <h2 className="ops-rd-surface__title">Notes</h2>
+              <div className="ops-rd-field-row">
+                <OpsTextField
+                  label="Add reservation note"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  placeholder="Add reservation note"
+                />
+                <OpsButton
+                  variant="secondary"
+                  onClick={async () => {
+                    if (!note.trim()) return;
+                    await doAction(opsWriteAPI.addReservationNote, id, note.trim());
+                    setNote('');
+                  }}
+                >
+                  Add
+                </OpsButton>
+              </div>
+              <div className="ops-rd-notes">
+                {(data.notes?.items || []).map((n) => (
+                  <div key={n.noteId} className="ops-rd-note-item">
+                    <p className="ops-rd-note-item__body">{n.content}</p>
+                    <p className="ops-rd-note-item__meta">
+                      {n.author?.actorId} - {String(n.createdAt).slice(0, 19)}
+                    </p>
+                  </div>
+                ))}
+                {(data.notes?.items || []).length === 0 ? (
+                  <p className="ops-rd-note">No notes yet.</p>
+                ) : null}
+              </div>
+            </section>
 
-            <div className="border-t border-gray-100 pt-4 space-y-4">
-              <h4 className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Booking lifecycle email</h4>
-              <p className="text-xs text-gray-500 leading-relaxed">
-                Preview is read-only. Resend sends only after you confirm. Leave override blank to use the guest email on file (
-                <span className="font-medium text-gray-800">
-                  {resolveEffectiveRecipient(overrideRecipient, guestDraft?.email || reservation?.guest?.email || '') || '—'}
+            <section className="ops-rd-surface">
+              <div>
+                <h2 className="ops-rd-surface__title">Cleaning Notes</h2>
+                <p className="ops-rd-surface__subtitle">
+                  Internal note for cleaning staff. Shown as a special request on the cleaning calendar.
+                </p>
+              </div>
+              <OpsTextarea
+                label="Cleaning notes"
+                value={cleaningNotesDraft}
+                onChange={(e) => setCleaningNotesDraft(e.target.value)}
+                maxLength={1000}
+                rows={3}
+                placeholder="e.g. Extra towels, late check-out cleaning, allergy note…"
+              />
+              <div className="ops-rd-actions">
+                <OpsButton
+                  variant="secondary"
+                  loading={cleaningNotesBusy}
+                  loadingLabel="Saving…"
+                  onClick={saveCleaningNotes}
+                >
+                  Save cleaning notes
+                </OpsButton>
+                <p className="ops-rd-char-count">{(cleaningNotesDraft || '').length}/1000</p>
+              </div>
+              {cleaningNotesMsg ? <OpsBanner tone="success" title={cleaningNotesMsg} /> : null}
+              {cleaningNotesError ? <OpsInlineError>{cleaningNotesError}</OpsInlineError> : null}
+            </section>
+          </div>
+
+          <div className="ops-rd-aside">
+            <section className="ops-rd-surface">
+              <div className="ops-rd-surface__head">
+                <div>
+                  <h2 className="ops-rd-surface__title">Guest message automation</h2>
+                  <p className="ops-rd-surface__subtitle">
+                    Scheduled jobs can be cancelled from here. Dispatches and comms manual-review items are
+                    listed below. Separate from legacy booking lifecycle email.
+                  </p>
+                </div>
+                <Link to="/ops/messaging" className="ops-rd-link">
+                  Global rules &amp; flags
+                </Link>
+              </div>
+              {messagingLoading ? <OpsLoadingState label="Loading automation data…" /> : null}
+              {messagingError ? <OpsInlineError>{messagingError}</OpsInlineError> : null}
+
+              <div className="ops-rd-surface">
+                <h3 className="ops-rd-section-title">Preview automation message</h3>
+                <p className="ops-rd-note">
+                  Compose-only preview using this booking&apos;s data and draft or approved templates. Nothing
+                  is sent.
+                </p>
+                <OpsSelect
+                  label="Automation rule"
+                  value={gmaPreviewRuleKey}
+                  onChange={(e) => setGmaPreviewRuleKey(e.target.value)}
+                  disabled={Boolean(gmaPreviewLoading)}
+                >
+                  {gmaPreviewRuleOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </OpsSelect>
+                <div className="ops-rd-actions">
+                  <OpsButton
+                    variant="secondary"
+                    size="compact"
+                    loading={gmaPreviewLoading === 'email'}
+                    loadingLabel="Loading…"
+                    disabled={Boolean(gmaPreviewLoading)}
+                    onClick={() => void handleGmaPreview('email')}
+                  >
+                    Preview GMA email
+                  </OpsButton>
+                  <OpsButton
+                    variant="secondary"
+                    size="compact"
+                    loading={gmaPreviewLoading === 'whatsapp'}
+                    loadingLabel="Loading…"
+                    disabled={Boolean(gmaPreviewLoading)}
+                    onClick={() => void handleGmaPreview('whatsapp')}
+                  >
+                    Preview GMA WhatsApp
+                  </OpsButton>
+                </div>
+                {gmaPreviewError ? <OpsInlineError>{gmaPreviewError}</OpsInlineError> : null}
+              </div>
+
+              {!messagingLoading && messagingSummary ? (
+                <>
+                  <div>
+                    <h3 className="ops-rd-section-title">Scheduled / recent jobs</h3>
+                    {(messagingSummary.jobs || []).length === 0 ? (
+                      <p className="ops-rd-note">No jobs for this booking.</p>
+                    ) : (
+                      <ul className="ops-rd-scroll-list ops-rd-scroll-list--sm">
+                        {(messagingSummary.jobs || []).map((j) => (
+                          <li key={j.jobId} className="ops-rd-list-item">
+                            <div className="ops-rd-list-item__row">
+                              <div>
+                                <p className="ops-rd-list-item__title">{j.ruleKey}</p>
+                                <p className="ops-rd-list-item__meta">
+                                  {j.status}
+                                  {j.scheduledFor ? (
+                                    <span> {String(j.scheduledFor).slice(0, 16)}</span>
+                                  ) : null}
+                                </p>
+                                {j.lastError ? (
+                                  <p className="ops-rd-list-item__danger">{j.lastError}</p>
+                                ) : null}
+                              </div>
+                              {j.status === 'scheduled' ? (
+                                <OpsButton
+                                  variant="destructive"
+                                  size="compact"
+                                  onClick={() =>
+                                    setMessagingCancelModal({
+                                      open: true,
+                                      jobId: j.jobId,
+                                      ruleKey: j.ruleKey || ''
+                                    })
+                                  }
+                                >
+                                  Cancel job
+                                </OpsButton>
+                              ) : null}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="ops-rd-section-title">Dispatch attempts</h3>
+                    {(messagingSummary.dispatches || []).length === 0 ? (
+                      <p className="ops-rd-note">No dispatches recorded.</p>
+                    ) : (
+                      <ul className="ops-rd-scroll-list ops-rd-scroll-list--md">
+                        {(messagingSummary.dispatches || []).map((d) => (
+                          <li key={d.dispatchId} className="ops-rd-list-item">
+                            <p className="ops-rd-list-item__title">
+                              {d.channel} · {d.status}
+                            </p>
+                            <p className="ops-rd-list-item__meta">
+                              Rule {d.ruleKey || '—'} · provider {d.providerName}
+                            </p>
+                            <p className="ops-rd-list-item__muted">
+                              Recipient: {d.recipientMasked || '—'}
+                            </p>
+                            <p className="ops-rd-list-item__muted">
+                              Delivery events: {d.deliveryEventCount ?? 0}
+                              {d.latestDeliveryEvent?.eventType ? (
+                                <span>
+                                  {' '}
+                                  · latest {d.latestDeliveryEvent.eventType}{' '}
+                                  {d.latestDeliveryEvent.occurredAt
+                                    ? `(${String(d.latestDeliveryEvent.occurredAt).slice(0, 19)})`
+                                    : ''}
+                                </span>
+                              ) : null}
+                            </p>
+                            {d.error?.code ? (
+                              <p className="ops-rd-list-item__danger">{d.error.code}</p>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="ops-rd-section-title">Open comms manual review</h3>
+                    {(messagingSummary.manualReviewItems || []).length === 0 ? (
+                      <p className="ops-rd-note">No open comms-related items for this booking.</p>
+                    ) : (
+                      <ul className="ops-rd-scroll-list ops-rd-scroll-list--sm">
+                        {(messagingSummary.manualReviewItems || []).map((m) => (
+                          <li key={m.manualReviewItemId} className="ops-rd-list-item">
+                            <p className="ops-rd-list-item__title">{m.title}</p>
+                            <p className="ops-rd-list-item__meta">
+                              {m.category} · {m.severity}
+                            </p>
+                            {m.details ? <p className="ops-rd-list-item__muted">{m.details}</p> : null}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </>
+              ) : null}
+            </section>
+
+            <section className="ops-rd-surface">
+              <div className="ops-rd-actions">
+                <OpsButton
+                  variant="secondary"
+                  size="compact"
+                  onClick={() => doAction(opsWriteAPI.sendArrivalInstructions, id)}
+                >
+                  Send arrival
+                </OpsButton>
+                <OpsButton
+                  variant="secondary"
+                  size="compact"
+                  onClick={() => doAction(opsWriteAPI.resendArrivalInstructions, id)}
+                >
+                  Resend
+                </OpsButton>
+                <OpsButton
+                  variant="secondary"
+                  size="compact"
+                  onClick={() => doAction(opsWriteAPI.markArrivalCompleted, id)}
+                >
+                  Mark completed
+                </OpsButton>
+              </div>
+
+              <hr className="ops-rd-divider" />
+
+              <h3 className="ops-rd-section-title">Booking lifecycle email</h3>
+              <p className="ops-rd-note">
+                Preview is read-only. Resend sends only after you confirm. Leave override blank to use the guest
+                email on file (
+                <span className="ops-rd-note--strong">
+                  {resolveEffectiveRecipient(
+                    overrideRecipient,
+                    guestDraft?.email || reservation?.guest?.email || ''
+                  ) || '—'}
                 </span>
                 ).
               </p>
-              <div className="space-y-1.5">
-                <label htmlFor="ops-lifecycle-override" className="block text-xs font-medium text-gray-600 mb-1">
-                  Override recipient (optional)
-                </label>
-                <input
-                  id="ops-lifecycle-override"
-                  type="email"
-                  value={overrideRecipient}
-                  onChange={(e) => setOverrideRecipient(e.target.value)}
-                  placeholder="Leave blank for guest email"
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg"
-                />
-              </div>
-              {lifecycleInlineError ? (
-                <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">{lifecycleInlineError}</div>
-              ) : null}
-              <div className="space-y-2.5">
+              <OpsTextField
+                id="ops-lifecycle-override"
+                label="Override recipient (optional)"
+                type="email"
+                value={overrideRecipient}
+                onChange={(e) => setOverrideRecipient(e.target.value)}
+                placeholder="Leave blank for guest email"
+              />
+              {lifecycleInlineError ? <OpsInlineError>{lifecycleInlineError}</OpsInlineError> : null}
+
+              <div className="ops-rd-template-grid">
                 {LIFECYCLE_TEMPLATE_KEYS.map((key) => (
-                  <div
-                    key={key}
-                    className="rounded-lg border border-gray-200/80 bg-gray-50/40 px-3 py-2.5 space-y-2"
-                  >
-                    <div>
-                      <span className="block text-sm text-gray-900 leading-tight">{TEMPLATE_LABELS[key]}</span>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      <button
-                        type="button"
+                  <div key={key} className="ops-rd-template-card">
+                    <p className="ops-rd-template-card__title">{TEMPLATE_LABELS[key]}</p>
+                    <div className="ops-rd-template-card__actions">
+                      <OpsButton
+                        variant="secondary"
+                        size="compact"
                         disabled={lifecycleActionsBusy}
+                        loading={previewLoadingKey === key}
+                        loadingLabel="Loading…"
                         onClick={() => handlePreviewTemplate(key)}
-                        className="w-full inline-flex justify-center items-center px-2.5 py-1.5 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50"
                       >
-                        {previewLoadingKey === key ? 'Loading…' : 'Preview'}
-                      </button>
-                      <button
-                        type="button"
+                        Preview
+                      </OpsButton>
+                      <OpsButton
+                        variant="secondary"
+                        size="compact"
                         disabled={lifecycleActionsBusy}
+                        loading={resendLoadingKey === key}
+                        loadingLabel="Sending…"
                         onClick={() => handleResendTemplate(key)}
-                        className="w-full inline-flex justify-center items-center px-2.5 py-1.5 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50"
                       >
-                        {resendLoadingKey === key ? 'Sending…' : 'Resend'}
-                      </button>
-                      <button
-                        type="button"
+                        Resend
+                      </OpsButton>
+                      <OpsButton
+                        variant="secondary"
+                        size="compact"
                         disabled={lifecycleActionsBusy}
+                        loading={editResendLoadingKey === key}
+                        loadingLabel="Loading…"
                         onClick={() => openEditResendModal(key)}
-                        className="w-full inline-flex justify-center items-center px-2.5 py-1.5 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50"
                       >
-                        {editResendLoadingKey === key ? 'Loading…' : 'Edit & resend'}
-                      </button>
+                        Edit & resend
+                      </OpsButton>
                     </div>
                   </div>
                 ))}
               </div>
-            </div>
 
-            <div className="border-t border-gray-100 pt-5 space-y-2.5">
-              <h4 className="text-xs font-semibold text-gray-800 uppercase tracking-wide">Email event history</h4>
+              <hr className="ops-rd-divider" />
+              <h3 className="ops-rd-section-title">Email event history</h3>
               {lifecycleEmailLoading ? (
-                <p className="text-xs text-gray-500">Loading email events…</p>
+                <p className="ops-rd-note">Loading email events…</p>
               ) : lifecycleEmailEvents.length === 0 ? (
-                <p className="text-xs text-gray-500">No email events for this booking.</p>
+                <p className="ops-rd-note">No email events for this booking.</p>
               ) : (
-                <ul className="space-y-2 max-h-64 overflow-y-auto text-xs text-gray-700">
+                <ul className="ops-rd-scroll-list">
                   {lifecycleEmailEvents.map((evt) => (
-                    <li key={evt._id} className="border border-gray-100 rounded-md p-2 bg-white">
-                      <div className="font-medium text-gray-900">
+                    <li key={evt._id} className="ops-rd-list-item">
+                      <p className="ops-rd-list-item__title">
                         {evt.type || '—'}
-                        {evt.templateKey ? <span className="text-gray-500 font-normal"> · {evt.templateKey}</span> : null}
-                      </div>
-                      <div className="text-gray-600 mt-0.5">
+                        {evt.templateKey ? (
+                          <span className="ops-rd-list-item__meta"> · {evt.templateKey}</span>
+                        ) : null}
+                      </p>
+                      <p className="ops-rd-list-item__meta">
                         {evt.sendStatus ? <span>{evt.sendStatus}</span> : null}
-                        {evt.lifecycleSource ? <span className="ml-2">Source: {evt.lifecycleSource}</span> : null}
-                      </div>
-                      <div className="text-gray-500 mt-0.5 truncate" title={evt.to || ''}>
-                        To: {evt.to || '—'}
-                      </div>
+                        {evt.lifecycleSource ? <span> Source: {evt.lifecycleSource}</span> : null}
+                      </p>
+                      <p className="ops-rd-list-item__muted">To: {evt.to || '—'}</p>
                       {evt.subject ? (
-                        <div className="text-gray-500 mt-0.5 truncate" title={evt.subject}>
-                          {evt.subject}
-                        </div>
+                        <p className="ops-rd-list-item__muted">{evt.subject}</p>
                       ) : null}
-                      <div className="text-gray-400 mt-0.5">{evt.createdAt ? String(evt.createdAt).slice(0, 19) : ''}</div>
-                      {evt.errorMessage ? <div className="text-red-600 mt-1">{evt.errorMessage}</div> : null}
+                      <p className="ops-rd-list-item__muted">
+                        {evt.createdAt ? String(evt.createdAt).slice(0, 19) : ''}
+                      </p>
+                      {evt.errorMessage ? (
+                        <p className="ops-rd-list-item__danger">{evt.errorMessage}</p>
+                      ) : null}
                     </li>
                   ))}
                 </ul>
               )}
               {lifecycleEmailPagination && lifecycleEmailPagination.pages > 1 ? (
-                <div className="flex items-center gap-2 pt-1">
-                  <button
-                    type="button"
+                <div className="ops-rd-pager">
+                  <OpsButton
+                    variant="secondary"
+                    size="compact"
                     disabled={lifecycleEmailPage <= 1 || lifecycleEmailLoading}
                     onClick={() => setLifecycleEmailPage((p) => Math.max(1, p - 1))}
-                    className="px-2 py-1 text-xs rounded border border-gray-200 disabled:opacity-50"
                   >
                     Previous
-                  </button>
-                  <span className="text-xs text-gray-500">
+                  </OpsButton>
+                  <span className="ops-rd-note">
                     Page {lifecycleEmailPagination.page} of {lifecycleEmailPagination.pages}
                   </span>
-                  <button
-                    type="button"
-                    disabled={lifecycleEmailPage >= lifecycleEmailPagination.pages || lifecycleEmailLoading}
+                  <OpsButton
+                    variant="secondary"
+                    size="compact"
+                    disabled={
+                      lifecycleEmailPage >= lifecycleEmailPagination.pages || lifecycleEmailLoading
+                    }
                     onClick={() => setLifecycleEmailPage((p) => p + 1)}
-                    className="px-2 py-1 text-xs rounded border border-gray-200 disabled:opacity-50"
                   >
                     Next
-                  </button>
+                  </OpsButton>
                 </div>
               ) : null}
-            </div>
-          </section>
+            </section>
 
-          <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
-            <h3 className="text-sm font-semibold text-gray-900">Context</h3>
-            <p className="text-xs text-gray-600">Payment events: {(data.paymentTrail || []).length}</p>
-            <p className="text-xs text-gray-600">Payout relevance: {data.payoutRelevance?.payoutCount || 0}</p>
-            <p className="text-xs text-gray-600">Hard conflict: {data.conflictContext?.hasHardConflict ? 'yes' : 'no'}</p>
-            <p className="text-xs text-gray-600">Warning: {data.conflictContext?.hasWarning ? 'yes' : 'no'}</p>
-          </section>
+            <section className="ops-rd-surface">
+              <h2 className="ops-rd-surface__title">Context</h2>
+              <p className="ops-rd-note">Payment events: {(data.paymentTrail || []).length}</p>
+              <p className="ops-rd-note">Payout relevance: {data.payoutRelevance?.payoutCount || 0}</p>
+              <p className="ops-rd-note">
+                Hard conflict: {data.conflictContext?.hasHardConflict ? 'yes' : 'no'}
+              </p>
+              <p className="ops-rd-note">Warning: {data.conflictContext?.hasWarning ? 'yes' : 'no'}</p>
+            </section>
 
-          <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
-            <h3 className="text-sm font-semibold text-gray-900">Availability actions</h3>
-            <button
-              onClick={() => {
-                const startDate = window.prompt('Manual block start date (YYYY-MM-DD)');
-                const endDate = window.prompt('Manual block end date (YYYY-MM-DD)');
-                if (!startDate || !endDate) return;
-                doAction(opsWriteAPI.createManualBlock, {
-                  cabinId: reservation.cabinId,
-                  startDate,
-                  endDate,
-                  reason: 'reservation_detail'
-                });
-              }}
-              className="w-full px-3 py-2 text-sm rounded border border-gray-300 text-left"
-            >
-              Add manual block
-            </button>
-            <button
-              onClick={() => {
-                const startDate = window.prompt('Maintenance start date (YYYY-MM-DD)');
-                const endDate = window.prompt('Maintenance end date (YYYY-MM-DD)');
-                if (!startDate || !endDate) return;
-                doAction(opsWriteAPI.createMaintenanceBlock, {
-                  cabinId: reservation.cabinId,
-                  startDate,
-                  endDate,
-                  reason: 'reservation_detail'
-                });
-              }}
-              className="w-full px-3 py-2 text-sm rounded border border-gray-300 text-left"
-            >
-              Add maintenance block
-            </button>
-          </section>
-        </div>
-      </div>
-
-      {messagingCancelModal.open ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="ops-messaging-cancel-title"
-        >
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/40"
-            aria-label="Close cancel dialog"
-            disabled={messagingCancelBusy}
-            onClick={() => {
-              if (!messagingCancelBusy) setMessagingCancelModal({ open: false, jobId: null, ruleKey: '' });
-            }}
-          />
-          <div className="relative w-full max-w-md rounded-xl border border-gray-200 bg-white shadow-xl p-5 space-y-4">
-            <h2 id="ops-messaging-cancel-title" className="text-sm font-semibold text-gray-900">
-              Cancel scheduled job?
-            </h2>
-            <p className="text-xs text-gray-600">
-              Rule: <span className="font-medium text-gray-800">{messagingCancelModal.ruleKey || '—'}</span>
-            </p>
-            <p className="text-sm text-gray-700">
-              This stops this scheduled automation job. It does not unsend messages already accepted by a provider.
-            </p>
-            <div className="flex flex-wrap justify-end gap-2">
-              <button
-                type="button"
-                disabled={messagingCancelBusy}
-                onClick={() => setMessagingCancelModal({ open: false, jobId: null, ruleKey: '' })}
-                className="px-3 py-1.5 text-sm rounded border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              >
-                Back
-              </button>
-              <button
-                type="button"
-                disabled={messagingCancelBusy}
-                onClick={() => void confirmCancelMessagingJob()}
-                className="px-3 py-1.5 text-sm rounded border border-red-300 bg-red-50 text-red-900 hover:bg-red-100 disabled:opacity-50"
-              >
-                {messagingCancelBusy ? 'Cancelling…' : 'Confirm cancel'}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      <OpsEmailPreviewModal
-        open={gmaEmailPreviewModal.open}
-        onClose={closeGmaEmailPreviewModal}
-        titleId="ops-gma-email-preview-title"
-        title="GMA email preview"
-        metaLine={gmaEmailPreviewModal.ruleKey || ''}
-        statusBadge={
-          gmaEmailPreviewModal.templateStatus ? (
-            <span className={`ml-2 ${gmaTemplateStatusBadge(gmaEmailPreviewModal.templateStatus)}`}>
-              {gmaEmailPreviewModal.templateStatus}
-            </span>
-          ) : null
-        }
-        subject={gmaEmailPreviewModal.subject}
-        html={gmaEmailPreviewModal.html}
-        bannerText="GMA preview only. Nothing is sent."
-        iframeTitle="GMA email HTML preview"
-        previewKey={gmaEmailPreviewModal.previewKey}
-      />
-
-      <OpsWhatsappPreviewModal
-        open={gmaWhatsappPreviewModal.open}
-        onClose={closeGmaWhatsappPreviewModal}
-        titleId="ops-gma-wa-preview-title"
-        title="GMA WhatsApp preview"
-        ruleKey={gmaWhatsappPreviewModal.ruleKey || ''}
-        statusBadge={
-          gmaWhatsappPreviewModal.templateStatus ? (
-            <span className={`ml-2 ${gmaTemplateStatusBadge(gmaWhatsappPreviewModal.templateStatus)}`}>
-              {gmaWhatsappPreviewModal.templateStatus}
-            </span>
-          ) : null
-        }
-        templateName={gmaWhatsappPreviewModal.templateName}
-        locale={gmaWhatsappPreviewModal.locale}
-        body={gmaWhatsappPreviewModal.body}
-        variables={gmaWhatsappPreviewModal.variables}
-      />
-
-      <OpsEmailPreviewModal
-        open={previewModal.open}
-        onClose={closePreviewModal}
-        titleId="ops-email-preview-title"
-        title="Email preview"
-        metaLine={TEMPLATE_LABELS[previewModal.templateKey] || previewModal.templateKey || ''}
-        subject={previewModal.subject}
-        html={previewModal.html}
-        iframeTitle="Email HTML preview"
-        previewKey={previewModal.previewKey}
-        headerActions={
-          <>
-            <button
-              type="button"
-              onClick={openEditFromPreview}
-              disabled={lifecycleActionsBusy}
-              className="rounded-lg px-3 py-1.5 text-sm font-medium text-white bg-[#81887A] hover:bg-[#6d7366] border border-transparent disabled:opacity-50"
-            >
-              Edit &amp; resend
-            </button>
-            <button
-              type="button"
-              onClick={closePreviewModal}
-              className="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 border border-gray-200"
-            >
-              Close
-            </button>
-          </>
-        }
-      />
-
-      {editResendModal.open ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="ops-email-edit-resend-title"
-        >
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/40"
-            aria-label="Close editor"
-            onClick={() => {
-              if (!editResendSending) closeEditResendModal();
-            }}
-          />
-          <div className="relative w-full max-w-4xl max-h-[min(92vh,900px)] flex flex-col rounded-xl border border-gray-200 bg-white shadow-xl overflow-hidden">
-            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-100 px-4 py-3 sm:px-5">
-              <div className="min-w-0 flex-1">
-                <h2 id="ops-email-edit-resend-title" className="text-sm font-semibold text-gray-900">
-                  Edit before resend
-                </h2>
-                <p className="text-xs text-gray-500 mt-1">
-                  {TEMPLATE_LABELS[editResendModal.templateKey] || editResendModal.templateKey || ''}
-                </p>
-              </div>
-              <button
-                type="button"
-                disabled={editResendSending}
-                onClick={closeEditResendModal}
-                className="shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 border border-gray-200 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-            </div>
-            {editResendModal.loading ? (
-              <div className="px-4 py-10 text-center text-sm text-gray-500">Loading template…</div>
-            ) : (
-              <>
-                <p className="px-4 py-2 text-xs text-gray-600 bg-gray-50 border-b border-gray-100 sm:px-5">
-                  Recipient for this send:{' '}
-                  <span className="font-medium text-gray-900">
-                    {resolveEffectiveRecipient(overrideRecipient, guestDraft?.email || reservation?.guest?.email || '') || '—'}
-                  </span>
-                  . Plain text is derived from HTML on the server; obvious script tags and{' '}
-                  <span className="font-mono">javascript:</span> URLs are stripped.
-                </p>
-                <div className="flex-1 overflow-y-auto px-4 py-3 sm:px-5 space-y-3">
-                  <div>
-                    <label htmlFor="ops-edit-resend-subject" className="block text-xs font-medium text-gray-500 mb-1">
-                      Subject
-                    </label>
-                    <input
-                      id="ops-edit-resend-subject"
-                      type="text"
-                      value={editResendModal.subject}
-                      onChange={(e) => setEditResendModal((prev) => ({ ...prev, subject: e.target.value }))}
-                      className="w-full max-w-2xl px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="ops-edit-resend-html" className="block text-xs font-medium text-gray-500 mb-1">
-                      HTML body
-                    </label>
-                    <textarea
-                      id="ops-edit-resend-html"
-                      rows={14}
-                      value={editResendModal.html}
-                      onChange={(e) => setEditResendModal((prev) => ({ ...prev, html: e.target.value }))}
-                      className="w-full font-mono text-xs sm:text-sm px-3 py-2 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A] min-h-[200px] lg:min-h-[280px]"
-                    />
-                  </div>
-                </div>
-                <div className="border-t border-gray-100 px-4 py-3 sm:px-5 flex justify-end gap-2">
-                  <button
-                    type="button"
-                    disabled={editResendSending}
-                    onClick={closeEditResendModal}
-                    className="rounded-lg px-4 py-2 text-sm font-medium text-gray-700 border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    disabled={editResendSending}
-                    onClick={submitEditedResend}
-                    className="rounded-lg px-4 py-2 text-sm font-medium text-white bg-[#81887A] hover:bg-[#6d7366] disabled:opacity-50"
-                  >
-                    {editResendSending ? 'Sending…' : 'Confirm send'}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      ) : null}
-
-      {cancelOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="cancel-reservation-title"
-        >
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/40"
-            aria-label="Close cancel reservation modal"
-            onClick={() => {
-              if (!cancelBusy) setCancelOpen(false);
-            }}
-          />
-          <div className="relative w-full max-w-lg rounded-xl bg-white border border-gray-200 shadow-xl p-5 space-y-4">
-            <h3 id="cancel-reservation-title" className="text-base font-semibold text-gray-900">
-              Cancel reservation
-            </h3>
-            <form onSubmit={submitCancelReservation} className="space-y-4">
-              <div>
-                <label htmlFor="cancelReason" className="block text-xs font-medium text-gray-500 mb-1">
-                  Reason <span className="text-red-600">*</span>
-                </label>
-                <textarea
-                  id="cancelReason"
-                  required
-                  maxLength={500}
-                  rows={3}
-                  value={cancelForm.reason}
-                  onChange={(e) => setCancelForm((prev) => ({ ...prev, reason: e.target.value }))}
-                  placeholder="Why is this reservation being cancelled?"
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
-                />
-              </div>
-              <fieldset>
-                <legend className="block text-xs font-medium text-gray-500 mb-2">Settlement outcome</legend>
-                <div className="space-y-2">
-                  {SETTLEMENT_OUTCOME_OPTIONS.map((option) => (
-                    <label
-                      key={option.value}
-                      className="flex items-start gap-2 text-sm text-gray-900 cursor-pointer"
-                    >
-                      <input
-                        type="radio"
-                        name="cancelSettlementOutcome"
-                        value={option.value}
-                        checked={cancelForm.outcome === option.value}
-                        onChange={() =>
-                          setCancelForm((prev) => ({
-                            ...prev,
-                            outcome: option.value,
-                            creditAmountEuros:
-                              option.value === 'credits_issued' ? prev.creditAmountEuros : '',
-                            cashRefund:
-                              option.value === 'cash_refund_pending' || option.value === 'cash_refunded'
-                                ? prev.cashRefund
-                                : { ...EMPTY_CASH_REFUND_FORM }
-                          }))
-                        }
-                        className="mt-0.5"
-                      />
-                      <span>{option.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-              {cancelForm.outcome === 'credits_issued' ? (
-                <div>
-                  <label htmlFor="cancelCreditEuros" className="block text-xs font-medium text-gray-500 mb-1">
-                    Stay credit amount (EUR) <span className="text-red-600">*</span>
-                  </label>
-                  <input
-                    id="cancelCreditEuros"
-                    type="text"
-                    inputMode="decimal"
-                    required
-                    value={cancelForm.creditAmountEuros}
-                    onChange={(e) =>
-                      setCancelForm((prev) => ({ ...prev, creditAmountEuros: e.target.value }))
-                    }
-                    placeholder="e.g. 120"
-                    className="w-full max-w-xs px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">Minimum €100. Amount is issued immediately.</p>
-                </div>
-              ) : null}
-              {cancelForm.outcome === 'cash_refund_pending' ? (
-                <div className="space-y-3">
-                  <div>
-                    <label htmlFor="cancelCashRefundAmount" className="block text-xs font-medium text-gray-500 mb-1">
-                      Refund amount (EUR)
-                    </label>
-                    <input
-                      id="cancelCashRefundAmount"
-                      type="text"
-                      inputMode="decimal"
-                      value={cancelForm.cashRefund.amountEuros}
-                      onChange={(e) =>
-                        setCancelForm((prev) => ({
-                          ...prev,
-                          cashRefund: { ...prev.cashRefund, amountEuros: e.target.value }
-                        }))
-                      }
-                      placeholder="e.g. 300"
-                      className="w-full max-w-xs px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
-                    />
-                    <p className="mt-1 text-xs text-gray-500">Required when the booking has a recorded cash payment.</p>
-                  </div>
-                  <div>
-                    <label htmlFor="cancelCashRefundNote" className="block text-xs font-medium text-gray-500 mb-1">
-                      Note (optional)
-                    </label>
-                    <input
-                      id="cancelCashRefundNote"
-                      type="text"
-                      value={cancelForm.cashRefund.note}
-                      onChange={(e) =>
-                        setCancelForm((prev) => ({
-                          ...prev,
-                          cashRefund: { ...prev.cashRefund, note: e.target.value }
-                        }))
-                      }
-                      placeholder="e.g. Refund via Stripe dashboard"
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
-                    />
-                  </div>
-                </div>
-              ) : null}
-              {cancelForm.outcome === 'cash_refunded' ? (
-                <div className="space-y-3">
-                  <div>
-                    <label htmlFor="cancelCashRefundedAmount" className="block text-xs font-medium text-gray-500 mb-1">
-                      Refund amount (EUR) <span className="text-red-600">*</span>
-                    </label>
-                    <input
-                      id="cancelCashRefundedAmount"
-                      type="text"
-                      inputMode="decimal"
-                      required
-                      value={cancelForm.cashRefund.amountEuros}
-                      onChange={(e) =>
-                        setCancelForm((prev) => ({
-                          ...prev,
-                          cashRefund: { ...prev.cashRefund, amountEuros: e.target.value }
-                        }))
-                      }
-                      placeholder="e.g. 300"
-                      className="w-full max-w-xs px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="cancelCashRefundedMethod" className="block text-xs font-medium text-gray-500 mb-1">
-                      Refund method <span className="text-red-600">*</span>
-                    </label>
-                    <select
-                      id="cancelCashRefundedMethod"
-                      required
-                      value={cancelForm.cashRefund.method}
-                      onChange={(e) =>
-                        setCancelForm((prev) => ({
-                          ...prev,
-                          cashRefund: { ...prev.cashRefund, method: e.target.value }
-                        }))
-                      }
-                      className="w-full max-w-xs px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
-                    >
-                      {CASH_REFUND_METHOD_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label htmlFor="cancelCashRefundedReference" className="block text-xs font-medium text-gray-500 mb-1">
-                      Reference (optional)
-                    </label>
-                    <input
-                      id="cancelCashRefundedReference"
-                      type="text"
-                      value={cancelForm.cashRefund.reference}
-                      onChange={(e) =>
-                        setCancelForm((prev) => ({
-                          ...prev,
-                          cashRefund: { ...prev.cashRefund, reference: e.target.value }
-                        }))
-                      }
-                      placeholder="e.g. Stripe refund ID"
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="cancelCashRefundedDate" className="block text-xs font-medium text-gray-500 mb-1">
-                      Refunded date
-                    </label>
-                    <input
-                      id="cancelCashRefundedDate"
-                      type="date"
-                      value={cancelForm.cashRefund.refundedDate}
-                      onChange={(e) =>
-                        setCancelForm((prev) => ({
-                          ...prev,
-                          cashRefund: { ...prev.cashRefund, refundedDate: e.target.value }
-                        }))
-                      }
-                      className="w-full max-w-xs px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="cancelCashRefundedNote" className="block text-xs font-medium text-gray-500 mb-1">
-                      Refund note <span className="text-red-600">*</span>
-                    </label>
-                    <input
-                      id="cancelCashRefundedNote"
-                      type="text"
-                      required
-                      value={cancelForm.cashRefund.note}
-                      onChange={(e) =>
-                        setCancelForm((prev) => ({
-                          ...prev,
-                          cashRefund: { ...prev.cashRefund, note: e.target.value }
-                        }))
-                      }
-                      placeholder="How was the refund completed?"
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
-                    />
-                  </div>
-                </div>
-              ) : null}
-              <div
-                className={`text-sm rounded-md px-3 py-2 border ${
-                  cancelForm.outcome === 'credits_issued' ||
-                  cancelForm.outcome === 'cash_refund_pending' ||
-                  cancelForm.outcome === 'cash_refunded'
-                    ? 'bg-amber-50 border-amber-200 text-amber-900'
-                    : 'bg-gray-50 border-gray-200 text-gray-700'
-                }`}
-                role="note"
-              >
-                {SETTLEMENT_WARNINGS[cancelForm.outcome]}
-              </div>
-              {cancelError ? (
-                <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
-                  {cancelError}
-                </div>
-              ) : null}
-              <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-1">
-                <button
-                  type="button"
-                  disabled={cancelBusy}
-                  onClick={() => setCancelOpen(false)}
-                  className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
-                >
-                  Close
-                </button>
-                <button
-                  type="submit"
-                  disabled={cancelBusy}
-                  className="px-3 py-2 text-sm rounded bg-red-700 text-white hover:bg-red-800 disabled:opacity-50"
-                >
-                  {cancelBusy ? 'Cancelling…' : 'Confirm cancellation'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      ) : null}
-
-      {resolveOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="resolve-settlement-title"
-        >
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/40"
-            aria-label="Close resolve settlement modal"
-            onClick={() => {
-              if (!resolveBusy) setResolveOpen(false);
-            }}
-          />
-          <div className="relative w-full max-w-lg rounded-xl bg-white border border-gray-200 shadow-xl p-5 space-y-4">
-            <h3 id="resolve-settlement-title" className="text-base font-semibold text-gray-900">
-              {resolveModalMode === 'mark_refunded'
-                ? 'Mark cash refund as paid'
-                : 'Resolve cancellation settlement'}
-            </h3>
-            <form onSubmit={submitResolveSettlement} className="space-y-4">
-              <div>
-                <label htmlFor="resolveReason" className="block text-xs font-medium text-gray-500 mb-1">
-                  Reason <span className="text-red-600">*</span>
-                </label>
-                <textarea
-                  id="resolveReason"
-                  required
-                  maxLength={500}
-                  rows={3}
-                  value={resolveForm.reason}
-                  onChange={(e) => setResolveForm((prev) => ({ ...prev, reason: e.target.value }))}
-                  placeholder={
-                    resolveModalMode === 'mark_refunded'
-                      ? 'Why is this refund being recorded as completed?'
-                      : 'Why is this settlement being resolved?'
+            <section className="ops-rd-surface">
+              <h2 className="ops-rd-surface__title">Availability actions</h2>
+              <div className="ops-rd-actions ops-rd-actions--stack">
+                <OpsButton
+                  variant="secondary"
+                  onClick={() =>
+                    setBlockModal({ kind: 'manual', startDate: '', endDate: '' })
                   }
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
-                />
-              </div>
-              {resolveModalMode === 'settlement' ? (
-              <fieldset>
-                <legend className="block text-xs font-medium text-gray-500 mb-2">Settlement outcome</legend>
-                <div className="space-y-2">
-                  {RESOLVE_SETTLEMENT_OUTCOME_OPTIONS.map((option) => (
-                    <label
-                      key={option.value}
-                      className="flex items-start gap-2 text-sm text-gray-900 cursor-pointer"
-                    >
-                      <input
-                        type="radio"
-                        name="resolveSettlementOutcome"
-                        value={option.value}
-                        checked={resolveForm.outcome === option.value}
-                        onChange={() =>
-                          setResolveForm((prev) => ({
-                            ...prev,
-                            outcome: option.value,
-                            creditAmountEuros:
-                              option.value === 'credits_issued' ? prev.creditAmountEuros : '',
-                            cashRefund:
-                              option.value === 'cash_refund_pending' || option.value === 'cash_refunded'
-                                ? prev.cashRefund
-                                : { ...EMPTY_CASH_REFUND_FORM }
-                          }))
-                        }
-                        className="mt-0.5"
-                      />
-                      <span>{option.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-              ) : null}
-              {resolveModalMode === 'settlement' && resolveForm.outcome === 'credits_issued' ? (
-                <div>
-                  <label htmlFor="resolveCreditEuros" className="block text-xs font-medium text-gray-500 mb-1">
-                    Stay credit amount (EUR) <span className="text-red-600">*</span>
-                  </label>
-                  <input
-                    id="resolveCreditEuros"
-                    type="text"
-                    inputMode="decimal"
-                    required
-                    value={resolveForm.creditAmountEuros}
-                    onChange={(e) =>
-                      setResolveForm((prev) => ({ ...prev, creditAmountEuros: e.target.value }))
-                    }
-                    placeholder="e.g. 120"
-                    className="w-full max-w-xs px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">Minimum €100. Amount is issued immediately.</p>
-                </div>
-              ) : null}
-              {resolveModalMode === 'settlement' && resolveForm.outcome === 'cash_refund_pending' ? (
-                <div className="space-y-3">
-                  <div>
-                    <label htmlFor="resolveCashRefundAmount" className="block text-xs font-medium text-gray-500 mb-1">
-                      Refund amount (EUR)
-                    </label>
-                    <input
-                      id="resolveCashRefundAmount"
-                      type="text"
-                      inputMode="decimal"
-                      value={resolveForm.cashRefund.amountEuros}
-                      onChange={(e) =>
-                        setResolveForm((prev) => ({
-                          ...prev,
-                          cashRefund: { ...prev.cashRefund, amountEuros: e.target.value }
-                        }))
-                      }
-                      placeholder="e.g. 300"
-                      className="w-full max-w-xs px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="resolveCashRefundNote" className="block text-xs font-medium text-gray-500 mb-1">
-                      Note (optional)
-                    </label>
-                    <input
-                      id="resolveCashRefundNote"
-                      type="text"
-                      value={resolveForm.cashRefund.note}
-                      onChange={(e) =>
-                        setResolveForm((prev) => ({
-                          ...prev,
-                          cashRefund: { ...prev.cashRefund, note: e.target.value }
-                        }))
-                      }
-                      placeholder="e.g. Refund via Stripe dashboard"
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
-                    />
-                  </div>
-                </div>
-              ) : null}
-              {(resolveModalMode === 'mark_refunded' ||
-                (resolveModalMode === 'settlement' && resolveForm.outcome === 'cash_refunded')) ? (
-                <div className="space-y-3">
-                  <div>
-                    <label htmlFor="resolveCashRefundedAmount" className="block text-xs font-medium text-gray-500 mb-1">
-                      Refund amount (EUR) <span className="text-red-600">*</span>
-                    </label>
-                    <input
-                      id="resolveCashRefundedAmount"
-                      type="text"
-                      inputMode="decimal"
-                      required
-                      value={resolveForm.cashRefund.amountEuros}
-                      onChange={(e) =>
-                        setResolveForm((prev) => ({
-                          ...prev,
-                          cashRefund: { ...prev.cashRefund, amountEuros: e.target.value }
-                        }))
-                      }
-                      placeholder="e.g. 300"
-                      className="w-full max-w-xs px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="resolveCashRefundedMethod" className="block text-xs font-medium text-gray-500 mb-1">
-                      Refund method <span className="text-red-600">*</span>
-                    </label>
-                    <select
-                      id="resolveCashRefundedMethod"
-                      required
-                      value={resolveForm.cashRefund.method}
-                      onChange={(e) =>
-                        setResolveForm((prev) => ({
-                          ...prev,
-                          cashRefund: { ...prev.cashRefund, method: e.target.value }
-                        }))
-                      }
-                      className="w-full max-w-xs px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
-                    >
-                      {CASH_REFUND_METHOD_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label htmlFor="resolveCashRefundedReference" className="block text-xs font-medium text-gray-500 mb-1">
-                      Reference (optional)
-                    </label>
-                    <input
-                      id="resolveCashRefundedReference"
-                      type="text"
-                      value={resolveForm.cashRefund.reference}
-                      onChange={(e) =>
-                        setResolveForm((prev) => ({
-                          ...prev,
-                          cashRefund: { ...prev.cashRefund, reference: e.target.value }
-                        }))
-                      }
-                      placeholder="e.g. Stripe refund ID"
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="resolveCashRefundedDate" className="block text-xs font-medium text-gray-500 mb-1">
-                      Refunded date
-                    </label>
-                    <input
-                      id="resolveCashRefundedDate"
-                      type="date"
-                      value={resolveForm.cashRefund.refundedDate}
-                      onChange={(e) =>
-                        setResolveForm((prev) => ({
-                          ...prev,
-                          cashRefund: { ...prev.cashRefund, refundedDate: e.target.value }
-                        }))
-                      }
-                      className="w-full max-w-xs px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="resolveCashRefundedNote" className="block text-xs font-medium text-gray-500 mb-1">
-                      Refund note <span className="text-red-600">*</span>
-                    </label>
-                    <input
-                      id="resolveCashRefundedNote"
-                      type="text"
-                      required
-                      value={resolveForm.cashRefund.note}
-                      onChange={(e) =>
-                        setResolveForm((prev) => ({
-                          ...prev,
-                          cashRefund: { ...prev.cashRefund, note: e.target.value }
-                        }))
-                      }
-                      placeholder="How was the refund completed?"
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
-                    />
-                  </div>
-                </div>
-              ) : null}
-              <div
-                className={`text-sm rounded-md px-3 py-2 border ${
-                  resolveModalMode === 'mark_refunded' ||
-                  resolveForm.outcome === 'credits_issued' ||
-                  resolveForm.outcome === 'cash_refund_pending' ||
-                  resolveForm.outcome === 'cash_refunded'
-                    ? 'bg-amber-50 border-amber-200 text-amber-900'
-                    : 'bg-gray-50 border-gray-200 text-gray-700'
-                }`}
-                role="note"
-              >
-                {resolveModalMode === 'mark_refunded'
-                  ? SETTLEMENT_WARNINGS.cash_refunded
-                  : SETTLEMENT_WARNINGS[resolveForm.outcome]}
-              </div>
-              {resolveError ? (
-                <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
-                  {resolveError}
-                </div>
-              ) : null}
-              <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-1">
-                <button
-                  type="button"
-                  disabled={resolveBusy}
-                  onClick={() => setResolveOpen(false)}
-                  className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
                 >
-                  Close
-                </button>
-                <button
-                  type="submit"
-                  disabled={resolveBusy}
-                  className="px-3 py-2 text-sm rounded bg-[#81887A] text-white hover:bg-[#6d7366] disabled:opacity-50"
+                  Add manual block
+                </OpsButton>
+                <OpsButton
+                  variant="secondary"
+                  onClick={() =>
+                    setBlockModal({ kind: 'maintenance', startDate: '', endDate: '' })
+                  }
                 >
-                  {resolveBusy
-                    ? 'Saving…'
-                    : resolveModalMode === 'mark_refunded'
-                      ? 'Mark as refunded'
-                      : 'Resolve settlement'}
-                </button>
+                  Add maintenance block
+                </OpsButton>
               </div>
-            </form>
+            </section>
           </div>
         </div>
-      ) : null}
 
-      {editDatesOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="edit-reservation-dates-title">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/40"
-            aria-label="Close edit dates modal"
-            onClick={() => {
-              if (!editDatesBusy) setEditDatesOpen(false);
-            }}
+        <OpsConfirmDialog
+          open={messagingCancelModal.open}
+          title="Cancel scheduled job?"
+          body={`Rule: ${messagingCancelModal.ruleKey || '—'}\n\nThis stops this scheduled automation job. It does not unsend messages already accepted by a provider.`}
+          confirmLabel="Confirm cancel"
+          cancelLabel="Back"
+          tone="destructive"
+          loading={messagingCancelBusy}
+          onConfirm={() => void confirmCancelMessagingJob()}
+          onCancel={() => {
+            if (!messagingCancelBusy) setMessagingCancelModal({ open: false, jobId: null, ruleKey: '' });
+          }}
+        />
+
+        <OpsConfirmDialog
+          open={Boolean(lifecycleConfirm)}
+          title={
+            lifecycleConfirm?.kind === 'editResend'
+              ? `Send edited "${lifecycleConfirm?.label || ''}"?`
+              : `Send "${lifecycleConfirm?.label || ''}" now?`
+          }
+          body={lifecycleConfirm?.bodyText || ''}
+          confirmLabel="Send"
+          cancelLabel="Cancel"
+          onConfirm={() => void confirmLifecycleSend()}
+          onCancel={() => setLifecycleConfirm(null)}
+        />
+
+        <OpsModal
+          open={reassignOpen}
+          onClose={() => setReassignOpen(false)}
+          title="Reassign reservation"
+          footer={
+            <div className="ops-rd-modal-footer">
+              <OpsButton variant="secondary" onClick={() => setReassignOpen(false)}>
+                Cancel
+              </OpsButton>
+              <OpsButton
+                disabled={!(reassignCabinId || '').trim()}
+                onClick={() => void submitReassign()}
+              >
+                Reassign
+              </OpsButton>
+            </div>
+          }
+        >
+          <OpsTextField
+            label="Target cabinId"
+            value={reassignCabinId}
+            onChange={(e) => setReassignCabinId(e.target.value)}
+            placeholder="cabinId"
           />
-          <div className="relative w-full max-w-lg rounded-xl bg-white border border-gray-200 shadow-xl p-5 space-y-4">
-            <h3 id="edit-reservation-dates-title" className="text-base font-semibold text-gray-900">
-              Edit reservation dates
-            </h3>
-            <form onSubmit={submitEditDates} className="space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label htmlFor="checkInDate" className="block text-xs font-medium text-gray-500 mb-1">Check-in</label>
-                  <input
-                    id="checkInDate"
-                    type="date"
-                    required
-                    value={editDatesForm.checkInDate}
-                    onChange={(e) => setEditDatesForm((prev) => ({ ...prev, checkInDate: e.target.value }))}
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="checkOutDate" className="block text-xs font-medium text-gray-500 mb-1">Check-out</label>
-                  <input
-                    id="checkOutDate"
-                    type="date"
-                    required
-                    value={editDatesForm.checkOutDate}
-                    onChange={(e) => setEditDatesForm((prev) => ({ ...prev, checkOutDate: e.target.value }))}
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
-                  />
-                </div>
-              </div>
-              <div>
-                <label htmlFor="editDatesReason" className="block text-xs font-medium text-gray-500 mb-1">Reason (optional)</label>
-                <input
-                  id="editDatesReason"
-                  type="text"
-                  value={editDatesForm.reason}
-                  onChange={(e) => setEditDatesForm((prev) => ({ ...prev, reason: e.target.value }))}
-                  placeholder="Why was this rescheduled?"
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#81887A]/20 focus:border-[#81887A]"
-                />
-              </div>
-              {editDatesError ? (
-                <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
-                  {editDatesError}
-                </div>
-              ) : null}
-              <div className="flex justify-end gap-2 pt-1">
-                <button
-                  type="button"
-                  disabled={editDatesBusy}
-                  onClick={() => setEditDatesOpen(false)}
-                  className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+        </OpsModal>
+
+        <OpsModal
+          open={Boolean(blockModal)}
+          onClose={() => setBlockModal(null)}
+          title={blockModal?.kind === 'maintenance' ? 'Add maintenance block' : 'Add manual block'}
+          footer={
+            <div className="ops-rd-modal-footer">
+              <OpsButton variant="secondary" onClick={() => setBlockModal(null)}>
+                Cancel
+              </OpsButton>
+              <OpsButton
+                disabled={!(blockModal?.startDate || '').trim() || !(blockModal?.endDate || '').trim()}
+                onClick={() => void submitBlockModal()}
+              >
+                Confirm
+              </OpsButton>
+            </div>
+          }
+        >
+          <div className="ops-rd-modal-stack">
+            <OpsTextField
+              label={
+                blockModal?.kind === 'maintenance'
+                  ? 'Maintenance start date (YYYY-MM-DD)'
+                  : 'Manual block start date (YYYY-MM-DD)'
+              }
+              type="date"
+              value={blockModal?.startDate || ''}
+              onChange={(e) =>
+                setBlockModal((prev) => (prev ? { ...prev, startDate: e.target.value } : prev))
+              }
+            />
+            <OpsTextField
+              label={
+                blockModal?.kind === 'maintenance'
+                  ? 'Maintenance end date (YYYY-MM-DD)'
+                  : 'Manual block end date (YYYY-MM-DD)'
+              }
+              type="date"
+              value={blockModal?.endDate || ''}
+              onChange={(e) =>
+                setBlockModal((prev) => (prev ? { ...prev, endDate: e.target.value } : prev))
+              }
+            />
+          </div>
+        </OpsModal>
+
+        <OpsEmailPreviewModal
+          open={gmaEmailPreviewModal.open}
+          onClose={closeGmaEmailPreviewModal}
+          titleId="ops-gma-email-preview-title"
+          title="GMA email preview"
+          metaLine={gmaEmailPreviewModal.ruleKey || ''}
+          statusBadge={
+            gmaEmailPreviewModal.templateStatus ? (
+              <OpsBadge>{gmaEmailPreviewModal.templateStatus}</OpsBadge>
+            ) : null
+          }
+          subject={gmaEmailPreviewModal.subject}
+          html={gmaEmailPreviewModal.html}
+          bannerText="GMA preview only. Nothing is sent."
+          iframeTitle="GMA email HTML preview"
+          previewKey={gmaEmailPreviewModal.previewKey}
+        />
+
+        <OpsWhatsappPreviewModal
+          open={gmaWhatsappPreviewModal.open}
+          onClose={closeGmaWhatsappPreviewModal}
+          titleId="ops-gma-wa-preview-title"
+          title="GMA WhatsApp preview"
+          ruleKey={gmaWhatsappPreviewModal.ruleKey || ''}
+          statusBadge={
+            gmaWhatsappPreviewModal.templateStatus ? (
+              <OpsBadge>{gmaWhatsappPreviewModal.templateStatus}</OpsBadge>
+            ) : null
+          }
+          templateName={gmaWhatsappPreviewModal.templateName}
+          locale={gmaWhatsappPreviewModal.locale}
+          body={gmaWhatsappPreviewModal.body}
+          variables={gmaWhatsappPreviewModal.variables}
+        />
+
+        <OpsEmailPreviewModal
+          open={previewModal.open}
+          onClose={closePreviewModal}
+          titleId="ops-email-preview-title"
+          title="Email preview"
+          metaLine={TEMPLATE_LABELS[previewModal.templateKey] || previewModal.templateKey || ''}
+          subject={previewModal.subject}
+          html={previewModal.html}
+          iframeTitle="Email HTML preview"
+          previewKey={previewModal.previewKey}
+          headerActions={
+            <>
+              <OpsButton
+                size="compact"
+                onClick={openEditFromPreview}
+                disabled={lifecycleActionsBusy}
+              >
+                Edit &amp; resend
+              </OpsButton>
+              <OpsButton variant="secondary" size="compact" onClick={closePreviewModal}>
+                Close
+              </OpsButton>
+            </>
+          }
+        />
+
+        <OpsModal
+          open={editResendModal.open}
+          onClose={() => {
+            if (!editResendSending) closeEditResendModal();
+          }}
+          title="Edit before resend"
+          description={TEMPLATE_LABELS[editResendModal.templateKey] || editResendModal.templateKey || ''}
+          closeOnBackdrop={!editResendSending}
+          closeOnEscape={!editResendSending}
+          footer={
+            editResendModal.loading ? null : (
+              <div className="ops-rd-modal-footer">
+                <OpsButton
+                  variant="secondary"
+                  disabled={editResendSending}
+                  onClick={closeEditResendModal}
                 >
                   Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={editDatesBusy}
-                  className="px-3 py-2 text-sm rounded bg-[#81887A] text-white hover:bg-[#6d7366] disabled:opacity-50"
+                </OpsButton>
+                <OpsButton
+                  loading={editResendSending}
+                  loadingLabel="Sending…"
+                  onClick={submitEditedResend}
                 >
-                  {editDatesBusy ? 'Saving...' : 'Save dates'}
-                </button>
+                  Confirm send
+                </OpsButton>
               </div>
-            </form>
-          </div>
-        </div>
-      ) : null}
-      <MoveUnitDialog
-        reservationId={id}
-        sourceUnitLabel={cabinSummary?.unitLabel || cabinSummary?.displayName || null}
-        open={moveUnitOpen}
-        onClose={() => setMoveUnitOpen(false)}
-        onSuccess={async (result) => {
-          await load();
-          if (result?.closeOnly && result?.refresh) {
-            setError(
-              result.code
-                ? `Move Unit is no longer available (${result.code}).`
-                : 'Move Unit is no longer available for this reservation.'
-            );
-            return;
+            )
           }
-          if (result?.reconciliation) {
-            setError(
-              'Unit move needs inventory reconciliation. Refresh and verify the current unit.'
-            );
-            return;
+        >
+          {editResendModal.loading ? (
+            <OpsLoadingState label="Loading template…" />
+          ) : (
+            <div className="ops-rd-modal-stack">
+              <p className="ops-rd-note">
+                Recipient for this send:{' '}
+                <span className="ops-rd-note--strong">
+                  {resolveEffectiveRecipient(
+                    overrideRecipient,
+                    guestDraft?.email || reservation?.guest?.email || ''
+                  ) || '—'}
+                </span>
+                . Plain text is derived from HTML on the server; obvious script tags and{' '}
+                <span className="ops-rd-mono">javascript:</span> URLs are stripped.
+              </p>
+              <OpsTextField
+                id="ops-edit-resend-subject"
+                label="Subject"
+                value={editResendModal.subject}
+                onChange={(e) => setEditResendModal((prev) => ({ ...prev, subject: e.target.value }))}
+              />
+              <OpsTextarea
+                id="ops-edit-resend-html"
+                label="HTML body"
+                rows={14}
+                value={editResendModal.html}
+                onChange={(e) => setEditResendModal((prev) => ({ ...prev, html: e.target.value }))}
+                className="ops-rd-mono"
+              />
+            </div>
+          )}
+        </OpsModal>
+
+        <OpsModal
+          open={cancelOpen}
+          onClose={() => {
+            if (!cancelBusy) setCancelOpen(false);
+          }}
+          title="Cancel reservation"
+          closeOnBackdrop={!cancelBusy}
+          closeOnEscape={!cancelBusy}
+          footer={
+            <div className="ops-rd-modal-footer">
+              <OpsButton variant="secondary" disabled={cancelBusy} onClick={() => setCancelOpen(false)}>
+                Close
+              </OpsButton>
+              <OpsButton
+                variant="destructive"
+                type="submit"
+                form="ops-rd-cancel-form"
+                loading={cancelBusy}
+                loadingLabel="Cancelling…"
+              >
+                Confirm cancellation
+              </OpsButton>
+            </div>
           }
-          if (result?.noop) {
-            return;
+        >
+          <form id="ops-rd-cancel-form" onSubmit={submitCancelReservation} className="ops-rd-modal-stack">
+            <OpsTextarea
+              id="cancelReason"
+              label="Reason *"
+              required
+              maxLength={500}
+              rows={3}
+              value={cancelForm.reason}
+              onChange={(e) => setCancelForm((prev) => ({ ...prev, reason: e.target.value }))}
+              placeholder="Why is this reservation being cancelled?"
+            />
+            <fieldset className="ops-rd-radio-group">
+              <legend className="ops-rd-radio-group__legend">Settlement outcome</legend>
+              {SETTLEMENT_OUTCOME_OPTIONS.map((option) => (
+                <label key={option.value} className="ops-rd-radio">
+                  <input
+                    type="radio"
+                    name="cancelSettlementOutcome"
+                    value={option.value}
+                    checked={cancelForm.outcome === option.value}
+                    onChange={() =>
+                      setCancelForm((prev) => ({
+                        ...prev,
+                        outcome: option.value,
+                        creditAmountEuros:
+                          option.value === 'credits_issued' ? prev.creditAmountEuros : '',
+                        cashRefund:
+                          option.value === 'cash_refund_pending' || option.value === 'cash_refunded'
+                            ? prev.cashRefund
+                            : { ...EMPTY_CASH_REFUND_FORM }
+                      }))
+                    }
+                  />
+                  <span>{option.label}</span>
+                </label>
+              ))}
+            </fieldset>
+            {cancelForm.outcome === 'credits_issued' ? (
+              <div className="ops-rd-modal-stack">
+                <OpsTextField
+                  id="cancelCreditEuros"
+                  label="Stay credit amount (EUR) *"
+                  inputMode="decimal"
+                  required
+                  value={cancelForm.creditAmountEuros}
+                  onChange={(e) =>
+                    setCancelForm((prev) => ({ ...prev, creditAmountEuros: e.target.value }))
+                  }
+                  placeholder="e.g. 120"
+                />
+                <p className="ops-rd-note">Minimum €100. Amount is issued immediately.</p>
+              </div>
+            ) : null}
+            {cancelForm.outcome === 'cash_refund_pending' ? (
+              <div className="ops-rd-modal-stack">
+                <OpsTextField
+                  id="cancelCashRefundAmount"
+                  label="Refund amount (EUR)"
+                  inputMode="decimal"
+                  value={cancelForm.cashRefund.amountEuros}
+                  onChange={(e) =>
+                    setCancelForm((prev) => ({
+                      ...prev,
+                      cashRefund: { ...prev.cashRefund, amountEuros: e.target.value }
+                    }))
+                  }
+                  placeholder="e.g. 300"
+                />
+                <p className="ops-rd-note">Required when the booking has a recorded cash payment.</p>
+                <OpsTextField
+                  id="cancelCashRefundNote"
+                  label="Note (optional)"
+                  value={cancelForm.cashRefund.note}
+                  onChange={(e) =>
+                    setCancelForm((prev) => ({
+                      ...prev,
+                      cashRefund: { ...prev.cashRefund, note: e.target.value }
+                    }))
+                  }
+                  placeholder="e.g. Refund via Stripe dashboard"
+                />
+              </div>
+            ) : null}
+            {cancelForm.outcome === 'cash_refunded' ? (
+              <div className="ops-rd-modal-stack">
+                <OpsTextField
+                  id="cancelCashRefundedAmount"
+                  label="Refund amount (EUR) *"
+                  inputMode="decimal"
+                  required
+                  value={cancelForm.cashRefund.amountEuros}
+                  onChange={(e) =>
+                    setCancelForm((prev) => ({
+                      ...prev,
+                      cashRefund: { ...prev.cashRefund, amountEuros: e.target.value }
+                    }))
+                  }
+                  placeholder="e.g. 300"
+                />
+                <OpsSelect
+                  id="cancelCashRefundedMethod"
+                  label="Refund method *"
+                  required
+                  value={cancelForm.cashRefund.method}
+                  onChange={(e) =>
+                    setCancelForm((prev) => ({
+                      ...prev,
+                      cashRefund: { ...prev.cashRefund, method: e.target.value }
+                    }))
+                  }
+                >
+                  {CASH_REFUND_METHOD_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </OpsSelect>
+                <OpsTextField
+                  id="cancelCashRefundedReference"
+                  label="Reference (optional)"
+                  value={cancelForm.cashRefund.reference}
+                  onChange={(e) =>
+                    setCancelForm((prev) => ({
+                      ...prev,
+                      cashRefund: { ...prev.cashRefund, reference: e.target.value }
+                    }))
+                  }
+                  placeholder="e.g. Stripe refund ID"
+                />
+                <OpsTextField
+                  id="cancelCashRefundedDate"
+                  label="Refunded date"
+                  type="date"
+                  value={cancelForm.cashRefund.refundedDate}
+                  onChange={(e) =>
+                    setCancelForm((prev) => ({
+                      ...prev,
+                      cashRefund: { ...prev.cashRefund, refundedDate: e.target.value }
+                    }))
+                  }
+                />
+                <OpsTextField
+                  id="cancelCashRefundedNote"
+                  label="Refund note *"
+                  required
+                  value={cancelForm.cashRefund.note}
+                  onChange={(e) =>
+                    setCancelForm((prev) => ({
+                      ...prev,
+                      cashRefund: { ...prev.cashRefund, note: e.target.value }
+                    }))
+                  }
+                  placeholder="How was the refund completed?"
+                />
+              </div>
+            ) : null}
+            <OpsBanner
+              tone={
+                cancelForm.outcome === 'credits_issued' ||
+                cancelForm.outcome === 'cash_refund_pending' ||
+                cancelForm.outcome === 'cash_refunded'
+                  ? 'warning'
+                  : 'info'
+              }
+              title={SETTLEMENT_WARNINGS[cancelForm.outcome]}
+            />
+            {cancelError ? <OpsInlineError>{cancelError}</OpsInlineError> : null}
+          </form>
+        </OpsModal>
+
+        <OpsModal
+          open={resolveOpen}
+          onClose={() => {
+            if (!resolveBusy) setResolveOpen(false);
+          }}
+          title={
+            resolveModalMode === 'mark_refunded'
+              ? 'Mark cash refund as paid'
+              : 'Resolve cancellation settlement'
           }
-          if (result?.fromLabel && result?.toLabel) {
-            setSuccessMessage(`Moved from ${result.fromLabel} to ${result.toLabel}`);
+          closeOnBackdrop={!resolveBusy}
+          closeOnEscape={!resolveBusy}
+          footer={
+            <div className="ops-rd-modal-footer">
+              <OpsButton variant="secondary" disabled={resolveBusy} onClick={() => setResolveOpen(false)}>
+                Close
+              </OpsButton>
+              <OpsButton
+                type="submit"
+                form="ops-rd-resolve-form"
+                loading={resolveBusy}
+                loadingLabel="Saving…"
+              >
+                {resolveModalMode === 'mark_refunded' ? 'Mark as refunded' : 'Resolve settlement'}
+              </OpsButton>
+            </div>
           }
-        }}
-      />
-      {error ? <div className="fixed bottom-16 sm:bottom-4 right-4 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">{error}</div> : null}
-      {successMessage ? <div className="fixed bottom-16 sm:bottom-4 left-4 bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-2 rounded text-sm">{successMessage}</div> : null}
-    </div>
+        >
+          <form id="ops-rd-resolve-form" onSubmit={submitResolveSettlement} className="ops-rd-modal-stack">
+            <OpsTextarea
+              id="resolveReason"
+              label="Reason *"
+              required
+              maxLength={500}
+              rows={3}
+              value={resolveForm.reason}
+              onChange={(e) => setResolveForm((prev) => ({ ...prev, reason: e.target.value }))}
+              placeholder={
+                resolveModalMode === 'mark_refunded'
+                  ? 'Why is this refund being recorded as completed?'
+                  : 'Why is this settlement being resolved?'
+              }
+            />
+            {resolveModalMode === 'settlement' ? (
+              <fieldset className="ops-rd-radio-group">
+                <legend className="ops-rd-radio-group__legend">Settlement outcome</legend>
+                {RESOLVE_SETTLEMENT_OUTCOME_OPTIONS.map((option) => (
+                  <label key={option.value} className="ops-rd-radio">
+                    <input
+                      type="radio"
+                      name="resolveSettlementOutcome"
+                      value={option.value}
+                      checked={resolveForm.outcome === option.value}
+                      onChange={() =>
+                        setResolveForm((prev) => ({
+                          ...prev,
+                          outcome: option.value,
+                          creditAmountEuros:
+                            option.value === 'credits_issued' ? prev.creditAmountEuros : '',
+                          cashRefund:
+                            option.value === 'cash_refund_pending' || option.value === 'cash_refunded'
+                              ? prev.cashRefund
+                              : { ...EMPTY_CASH_REFUND_FORM }
+                        }))
+                      }
+                    />
+                    <span>{option.label}</span>
+                  </label>
+                ))}
+              </fieldset>
+            ) : null}
+            {resolveModalMode === 'settlement' && resolveForm.outcome === 'credits_issued' ? (
+              <div className="ops-rd-modal-stack">
+                <OpsTextField
+                  id="resolveCreditEuros"
+                  label="Stay credit amount (EUR) *"
+                  inputMode="decimal"
+                  required
+                  value={resolveForm.creditAmountEuros}
+                  onChange={(e) =>
+                    setResolveForm((prev) => ({ ...prev, creditAmountEuros: e.target.value }))
+                  }
+                  placeholder="e.g. 120"
+                />
+                <p className="ops-rd-note">Minimum €100. Amount is issued immediately.</p>
+              </div>
+            ) : null}
+            {resolveModalMode === 'settlement' && resolveForm.outcome === 'cash_refund_pending' ? (
+              <div className="ops-rd-modal-stack">
+                <OpsTextField
+                  id="resolveCashRefundAmount"
+                  label="Refund amount (EUR)"
+                  inputMode="decimal"
+                  value={resolveForm.cashRefund.amountEuros}
+                  onChange={(e) =>
+                    setResolveForm((prev) => ({
+                      ...prev,
+                      cashRefund: { ...prev.cashRefund, amountEuros: e.target.value }
+                    }))
+                  }
+                  placeholder="e.g. 300"
+                />
+                <OpsTextField
+                  id="resolveCashRefundNote"
+                  label="Note (optional)"
+                  value={resolveForm.cashRefund.note}
+                  onChange={(e) =>
+                    setResolveForm((prev) => ({
+                      ...prev,
+                      cashRefund: { ...prev.cashRefund, note: e.target.value }
+                    }))
+                  }
+                  placeholder="e.g. Refund via Stripe dashboard"
+                />
+              </div>
+            ) : null}
+            {(resolveModalMode === 'mark_refunded' ||
+              (resolveModalMode === 'settlement' && resolveForm.outcome === 'cash_refunded')) ? (
+              <div className="ops-rd-modal-stack">
+                <OpsTextField
+                  id="resolveCashRefundedAmount"
+                  label="Refund amount (EUR) *"
+                  inputMode="decimal"
+                  required
+                  value={resolveForm.cashRefund.amountEuros}
+                  onChange={(e) =>
+                    setResolveForm((prev) => ({
+                      ...prev,
+                      cashRefund: { ...prev.cashRefund, amountEuros: e.target.value }
+                    }))
+                  }
+                  placeholder="e.g. 300"
+                />
+                <OpsSelect
+                  id="resolveCashRefundedMethod"
+                  label="Refund method *"
+                  required
+                  value={resolveForm.cashRefund.method}
+                  onChange={(e) =>
+                    setResolveForm((prev) => ({
+                      ...prev,
+                      cashRefund: { ...prev.cashRefund, method: e.target.value }
+                    }))
+                  }
+                >
+                  {CASH_REFUND_METHOD_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </OpsSelect>
+                <OpsTextField
+                  id="resolveCashRefundedReference"
+                  label="Reference (optional)"
+                  value={resolveForm.cashRefund.reference}
+                  onChange={(e) =>
+                    setResolveForm((prev) => ({
+                      ...prev,
+                      cashRefund: { ...prev.cashRefund, reference: e.target.value }
+                    }))
+                  }
+                  placeholder="e.g. Stripe refund ID"
+                />
+                <OpsTextField
+                  id="resolveCashRefundedDate"
+                  label="Refunded date"
+                  type="date"
+                  value={resolveForm.cashRefund.refundedDate}
+                  onChange={(e) =>
+                    setResolveForm((prev) => ({
+                      ...prev,
+                      cashRefund: { ...prev.cashRefund, refundedDate: e.target.value }
+                    }))
+                  }
+                />
+                <OpsTextField
+                  id="resolveCashRefundedNote"
+                  label="Refund note *"
+                  required
+                  value={resolveForm.cashRefund.note}
+                  onChange={(e) =>
+                    setResolveForm((prev) => ({
+                      ...prev,
+                      cashRefund: { ...prev.cashRefund, note: e.target.value }
+                    }))
+                  }
+                  placeholder="How was the refund completed?"
+                />
+              </div>
+            ) : null}
+            <OpsBanner
+              tone={
+                resolveModalMode === 'mark_refunded' ||
+                resolveForm.outcome === 'credits_issued' ||
+                resolveForm.outcome === 'cash_refund_pending' ||
+                resolveForm.outcome === 'cash_refunded'
+                  ? 'warning'
+                  : 'info'
+              }
+              title={
+                resolveModalMode === 'mark_refunded'
+                  ? SETTLEMENT_WARNINGS.cash_refunded
+                  : SETTLEMENT_WARNINGS[resolveForm.outcome]
+              }
+            />
+            {resolveError ? <OpsInlineError>{resolveError}</OpsInlineError> : null}
+          </form>
+        </OpsModal>
+
+        <OpsModal
+          open={editDatesOpen}
+          onClose={() => {
+            if (!editDatesBusy) setEditDatesOpen(false);
+          }}
+          title="Edit reservation dates"
+          closeOnBackdrop={!editDatesBusy}
+          closeOnEscape={!editDatesBusy}
+          footer={
+            <div className="ops-rd-modal-footer">
+              <OpsButton
+                variant="secondary"
+                disabled={editDatesBusy}
+                onClick={() => setEditDatesOpen(false)}
+              >
+                Cancel
+              </OpsButton>
+              <OpsButton
+                type="submit"
+                form="ops-rd-edit-dates-form"
+                loading={editDatesBusy}
+                loadingLabel="Saving..."
+              >
+                Save dates
+              </OpsButton>
+            </div>
+          }
+        >
+          <form id="ops-rd-edit-dates-form" onSubmit={submitEditDates} className="ops-rd-modal-stack">
+            <div className="ops-rd-modal-grid ops-rd-modal-grid--2">
+              <OpsTextField
+                id="checkInDate"
+                label="Check-in"
+                type="date"
+                required
+                value={editDatesForm.checkInDate}
+                onChange={(e) => setEditDatesForm((prev) => ({ ...prev, checkInDate: e.target.value }))}
+              />
+              <OpsTextField
+                id="checkOutDate"
+                label="Check-out"
+                type="date"
+                required
+                value={editDatesForm.checkOutDate}
+                onChange={(e) => setEditDatesForm((prev) => ({ ...prev, checkOutDate: e.target.value }))}
+              />
+            </div>
+            <OpsTextField
+              id="editDatesReason"
+              label="Reason (optional)"
+              value={editDatesForm.reason}
+              onChange={(e) => setEditDatesForm((prev) => ({ ...prev, reason: e.target.value }))}
+              placeholder="Why was this rescheduled?"
+            />
+            {editDatesError ? <OpsInlineError>{editDatesError}</OpsInlineError> : null}
+          </form>
+        </OpsModal>
+
+        <MoveUnitDialog
+          reservationId={id}
+          sourceUnitLabel={cabinSummary?.unitLabel || cabinSummary?.displayName || null}
+          open={moveUnitOpen}
+          onClose={() => setMoveUnitOpen(false)}
+          onSuccess={async (result) => {
+            await load();
+            if (result?.closeOnly && result?.refresh) {
+              setError(
+                result.code
+                  ? `Move Unit is no longer available (${result.code}).`
+                  : 'Move Unit is no longer available for this reservation.'
+              );
+              return;
+            }
+            if (result?.reconciliation) {
+              setError(
+                'Unit move needs inventory reconciliation. Refresh and verify the current unit.'
+              );
+              return;
+            }
+            if (result?.noop) {
+              return;
+            }
+            if (result?.fromLabel && result?.toLabel) {
+              setSuccessMessage(`Moved from ${result.fromLabel} to ${result.toLabel}`);
+            }
+          }}
+        />
+      </div>
+    </OpsPage>
   );
 }

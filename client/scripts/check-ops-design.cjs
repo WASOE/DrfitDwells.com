@@ -49,6 +49,8 @@ const MIGRATED_OPS_FILES = [
   'src/pages/ops/OpsCabinsList.css',
   'src/pages/ops/OpsReservations.jsx',
   'src/pages/ops/OpsReservations.css',
+  'src/pages/ops/OpsReservationDetail.jsx',
+  'src/pages/ops/OpsReservationDetail.css',
   'src/pages/ops/OpsDashboard.jsx',
   'src/pages/ops/OpsDashboard.css',
   'src/pages/ops/OpsMessaging.jsx',
