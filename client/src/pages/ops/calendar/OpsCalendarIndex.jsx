@@ -7,14 +7,22 @@ import {
   CONFLICT_RING,
   PREVIEW_DOT_CONFLICT,
   PREVIEW_DOT_EMPTY,
-  PREVIEW_DOT_SIZE,
-  PREVIEW_DOT_WARNING,
-  SYNC_BADGE
+  PREVIEW_DOT_WARNING
 } from './calendarVisualTokens';
 import { eachDayKeyInRange, parseIsoDay } from './opsCalendarDateUtils';
 import LocationBlockSheet from './LocationBlockSheet';
 import OpsCalendarLegend from './OpsCalendarLegend';
-import CalendarBottomSheet from './CalendarBottomSheet';
+import OpsPage from '../../../ops/primitives/OpsPage';
+import OpsPageHeader from '../../../ops/primitives/OpsPageHeader';
+import OpsButton from '../../../ops/primitives/OpsButton';
+import OpsBanner from '../../../ops/primitives/OpsBanner';
+import OpsBadge from '../../../ops/primitives/OpsBadge';
+import OpsStatus from '../../../ops/primitives/OpsStatus';
+import OpsLoadingState from '../../../ops/primitives/OpsLoadingState';
+import OpsConfirmDialog from '../../../ops/primitives/OpsConfirmDialog';
+import OpsInlineError from '../../../ops/primitives/OpsInlineError';
+import { opsCx } from '../../../ops/primitives/opsCx';
+import './OpsCalendar.css';
 
 function dayStripCells(fromIso, toIso) {
   const a = parseIsoDay(fromIso);
@@ -61,9 +69,9 @@ function initialsFromName(name) {
 }
 
 function conflictAccentClass(hardN, warnN) {
-  if (hardN > 0) return 'border-l-red-500';
-  if (warnN > 0) return 'border-l-amber-400';
-  return 'border-l-transparent';
+  if (hardN > 0) return 'ops-cal-row--conflict';
+  if (warnN > 0) return 'ops-cal-row--warning';
+  return '';
 }
 
 /** Stable id for calendar routes (single cabin or multi-unit type from ops cabins list). */
@@ -75,6 +83,11 @@ function formatGroupDateRange(startIso, endIso) {
   const s = String(startIso || '').slice(0, 10);
   const e = String(endIso || '').slice(0, 10);
   return `${s} → ${e} (exclusive end)`;
+}
+
+function syncStatusValue(sync) {
+  if (sync === 'healthy' || sync === 'warning' || sync === 'failed' || sync === 'stale') return sync;
+  return 'stale';
 }
 
 export default function OpsCalendarIndex() {
@@ -156,6 +169,7 @@ export default function OpsCalendarIndex() {
   };
 
   const closeRemoveGroup = () => {
+    if (removeLoading) return;
     setRemoveGroup(null);
     setRemoveError('');
   };
@@ -171,7 +185,8 @@ export default function OpsCalendarIndex() {
     setRemoveError('');
     try {
       await opsWriteAPI.removeLocationBlockGroup(groupId, 'ops_calendar_index');
-      closeRemoveGroup();
+      setRemoveGroup(null);
+      setRemoveError('');
       setLocationBlockFlash('Location-wide block removed from all properties in this group.');
       await load();
     } catch (err) {
@@ -181,91 +196,58 @@ export default function OpsCalendarIndex() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="w-full max-w-lg mx-auto pb-24 lg:max-w-none lg:mx-0">
-        <p className="py-8 text-center text-sm text-gray-400">Loading properties…</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="w-full max-w-lg mx-auto pb-24 md:pb-10 lg:max-w-none lg:mx-0 lg:pb-8">
-      <div className="space-y-4 lg:max-w-7xl lg:mx-auto">
-        <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm md:p-5 text-left">
-          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 md:gap-4">
-            <div className="min-w-0 flex-1">
-              <h1
-                className="text-2xl font-semibold text-gray-900"
-                style={{ fontFamily: 'Playfair Display, serif' }}
-              >
-                Calendar
-              </h1>
-              <p className="text-sm text-gray-600 mt-1 max-w-2xl">
-                Pick a property to open the month view. Preview shows the next {previewDays} nights ({timezone}).
+    <OpsPage width="full">
+      <div className="ops-cal">
+        <OpsPageHeader
+          title="Calendar"
+          description={`Pick a property to open the month view. Preview shows the next ${previewDays} nights (${timezone}).`}
+          meta={
+            preview?.meta?.today ? (
+              <p className="ops-cal__hint">
+                Today: <strong>{preview.meta.today}</strong>
               </p>
-              {preview?.meta?.today ? (
-                <p className="text-xs text-gray-500 mt-2">
-                  Today: <span className="font-medium text-gray-700">{preview.meta.today}</span>
-                </p>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              onClick={() => setLocationBlockOpen(true)}
-              className="w-full md:w-auto shrink-0 inline-flex items-center justify-center px-4 py-2 text-sm font-medium text-gray-800 border border-gray-300 rounded-lg bg-white shadow-sm hover:border-gray-400 hover:bg-gray-50 transition-colors"
-            >
+            ) : null
+          }
+          actions={
+            <OpsButton variant="secondary" onClick={() => setLocationBlockOpen(true)}>
               Block location
-            </button>
-          </div>
+            </OpsButton>
+          }
+        />
 
-          <div className="mt-4 pt-4 border-t border-gray-100">
-            <OpsCalendarLegend />
-          </div>
-        </section>
+        <div className="ops-cal__legend-wrap">
+          <OpsCalendarLegend />
+        </div>
 
-        {locationBlockFlash ? (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-            {locationBlockFlash}
-          </div>
-        ) : null}
+        {locationBlockFlash ? <OpsBanner tone="success" body={locationBlockFlash} /> : null}
+        {error ? <OpsBanner tone="danger" body={error} /> : null}
 
-        {error ? (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">{error}</div>
-        ) : null}
+        {loading ? <OpsLoadingState label="Loading properties" /> : null}
 
-        {activeLocationBlockGroups.length > 0 ? (
-          <section className="space-y-3">
-            <h2 className="text-sm font-semibold text-gray-900">Active location blocks</h2>
-            <ul className="space-y-3">
+        {!loading && activeLocationBlockGroups.length > 0 ? (
+          <section className="ops-cal-sheet-stack">
+            <h2 className="ops-cal-section-title">Active location blocks</h2>
+            <ul className="ops-cal-groups">
               {activeLocationBlockGroups.map((group) => {
                 const label = group.locationLabel || group.locationKey || 'Location';
                 const count = group.targetCount ?? 0;
                 return (
-                  <li
-                    key={group.locationBlockGroupId}
-                    className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm border-l-4 border-l-amber-500 md:p-5"
-                  >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-base font-bold text-gray-900">{label}</h3>
-                          <span className="rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
-                            Location-wide block
-                          </span>
+                  <li key={group.locationBlockGroupId} className="ops-cal-group">
+                    <div className="ops-cal-group__row">
+                      <div className="ops-cal-sheet-stack">
+                        <div className="ops-cal__meta-row">
+                          <h3 className="ops-cal-group__title">{label}</h3>
+                          <span className="ops-cal-chip ops-cal-chip--location">Location-wide block</span>
                         </div>
-                        <p className="mt-1 text-sm text-gray-600">{formatGroupDateRange(group.startDate, group.endDate)}</p>
-                        <p className="mt-1 text-sm text-gray-500">
+                        <p className="ops-cal-group__meta">{formatGroupDateRange(group.startDate, group.endDate)}</p>
+                        <p className="ops-cal-group__meta">
                           {count} propert{count === 1 ? 'y' : 'ies'} blocked
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => openRemoveGroup(group)}
-                        className="w-full shrink-0 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-red-700 shadow-sm hover:border-red-200 hover:bg-red-50 sm:w-auto"
-                      >
+                      <OpsButton variant="destructive" onClick={() => openRemoveGroup(group)}>
                         Remove
-                      </button>
+                      </OpsButton>
                     </div>
                   </li>
                 );
@@ -274,131 +256,92 @@ export default function OpsCalendarIndex() {
           </section>
         ) : null}
 
-        <ul className="space-y-3">
-          {mergedRows.length === 0 ? (
-            <li className="rounded-xl border border-dashed border-gray-200 bg-white p-8 text-center text-sm text-gray-500">
-              No properties found.
-            </li>
-          ) : null}
-          {mergedRows.map(({ cabin, preview: pr }) => {
-            const routeId = propertyRouteId(cabin);
-            const rowKey = routeId || `row-${cabin.name}`;
-            const blocks = pr?.blocks || [];
-            const sync = pr?.syncIndicators?.syncStatus || 'stale';
-            const syncCls = SYNC_BADGE[sync] || SYNC_BADGE.stale;
-            const img = cabin.content?.imageUrl || pr?.listing?.imageUrl;
-            const hardN = pr?.summary?.hardConflictCount ?? pr?.conflictMarkers?.hard?.length ?? 0;
-            const warnN = pr?.summary?.warningCount ?? pr?.conflictMarkers?.warnings?.length ?? 0;
-            const accentCls = conflictAccentClass(hardN, warnN);
+        {!loading ? (
+          <ul className="ops-cal-rows">
+            {mergedRows.length === 0 ? <li className="ops-cal-empty">No properties found.</li> : null}
+            {mergedRows.map(({ cabin, preview: pr }) => {
+              const routeId = propertyRouteId(cabin);
+              const rowKey = routeId || `row-${cabin.name}`;
+              const blocks = pr?.blocks || [];
+              const sync = syncStatusValue(pr?.syncIndicators?.syncStatus || 'stale');
+              const img = cabin.content?.imageUrl || pr?.listing?.imageUrl;
+              const hardN = pr?.summary?.hardConflictCount ?? pr?.conflictMarkers?.hard?.length ?? 0;
+              const warnN = pr?.summary?.warningCount ?? pr?.conflictMarkers?.warnings?.length ?? 0;
+              const accentCls = conflictAccentClass(hardN, warnN);
 
-            return (
-              <li key={rowKey}>
-                <Link
-                  to={routeId ? `/ops/calendar/${routeId}` : '#'}
-                  className={`group block rounded-2xl border border-gray-200 bg-white p-4 shadow-sm border-l-4 min-w-0 text-left transition-all md:p-5 ${accentCls} ${
-                    routeId
-                      ? 'hover:border-gray-300 hover:shadow-md'
-                      : 'opacity-60 pointer-events-none'
-                  }`}
-                >
-                  <div className="flex gap-4">
-                    <div className="shrink-0">
-                      <div className="h-16 w-16 sm:h-20 sm:w-20 overflow-hidden rounded-xl border border-gray-100 bg-gray-100">
+              return (
+                <li key={rowKey}>
+                  <Link
+                    to={routeId ? `/ops/calendar/${routeId}` : '#'}
+                    className={opsCx('ops-cal-row', accentCls, !routeId && 'ops-cal-row--disabled')}
+                  >
+                    <div className="ops-cal-row__body">
+                      <div className="ops-cal-row__thumb">
                         {img ? (
-                          <img src={img} alt="" className="h-full w-full object-cover" loading="lazy" />
+                          <img src={img} alt="" loading="lazy" />
                         ) : (
-                          <div className="flex h-full w-full items-center justify-center bg-gray-50 text-sm font-semibold text-gray-700">
-                            {initialsFromName(cabin.name)}
-                          </div>
+                          <span className="ops-cal-row__thumb-fallback">{initialsFromName(cabin.name)}</span>
                         )}
                       </div>
-                    </div>
 
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <h2 className="text-base font-bold leading-snug text-gray-900 group-hover:text-gray-950">
-                            {cabin.name}
-                          </h2>
-                          <p className="mt-0.5 text-sm text-gray-600 truncate">{cabin.location || '—'}</p>
+                      <div className="ops-cal-row__main">
+                        <div className="ops-cal-row__title-row">
+                          <div>
+                            <h2 className="ops-cal-row__name">{cabin.name}</h2>
+                            <p className="ops-cal-row__location">{cabin.location || '—'}</p>
+                          </div>
+                          {routeId ? <ChevronRight size={20} aria-hidden="true" /> : null}
                         </div>
-                        {routeId ? (
-                          <ChevronRight className="h-5 w-5 shrink-0 text-gray-300 group-hover:text-gray-500 mt-0.5" />
-                        ) : null}
-                      </div>
 
-                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                        {cabin.kind === 'multi_unit_type' ? (
-                          <span className="rounded-md bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-800">
-                            Multi-unit
-                          </span>
-                        ) : null}
-                        <span
-                          className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                            cabin.isActive !== false
-                              ? 'bg-emerald-50 text-emerald-700'
-                              : 'bg-gray-100 text-gray-600'
-                          }`}
-                        >
-                          {cabin.isActive !== false ? 'Active' : 'Inactive'}
-                        </span>
-                        <span
-                          className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide border ${syncCls}`}
-                        >
-                          Sync {sync}
-                        </span>
-                        {hardN > 0 ? (
-                          <span className="rounded-md bg-red-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-700">
-                            {hardN} conflict{hardN === 1 ? '' : 's'}
-                          </span>
-                        ) : null}
-                        {warnN > 0 ? (
-                          <span className="rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
-                            {warnN} warning{warnN === 1 ? '' : 's'}
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-
-                  {stripKeys.length > 0 ? (
-                    <div className="mt-4 pt-3 border-t border-gray-100">
-                      <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-                        Next {previewDays} nights
-                      </p>
-                      <div className="overflow-x-auto -mx-1 px-1">
-                        <div className="flex min-w-max gap-1.5 py-0.5">
-                          {stripKeys.map((dk) => {
-                            const { dot, ring } = cellToneForDay(dk, blocks);
-                            const isToday = dk === preview?.meta?.today;
-                            return (
-                              <div
-                                key={dk}
-                                title={dk}
-                                className="flex w-7 shrink-0 flex-col items-center gap-1 sm:w-8"
-                              >
-                                <span className="hidden text-[10px] font-medium text-gray-400 sm:block">
-                                  {formatStripDayLabel(dk)}
-                                </span>
-                                <span
-                                  className={`flex h-6 w-6 items-center justify-center rounded-full sm:h-7 sm:w-7 ${
-                                    isToday ? 'ring-2 ring-gray-900 ring-offset-1' : ''
-                                  }`}
-                                >
-                                  <span className={`${PREVIEW_DOT_SIZE} rounded-full ${dot} ${ring}`} />
-                                </span>
-                              </div>
-                            );
-                          })}
+                        <div className="ops-cal-row__badges">
+                          {cabin.kind === 'multi_unit_type' ? <OpsBadge tone="info">Multi-unit</OpsBadge> : null}
+                          {cabin.isActive !== false ? (
+                            <OpsStatus domain="cabin" value="active" />
+                          ) : (
+                            <OpsStatus domain="cabin" value="inactive" />
+                          )}
+                          <OpsStatus domain="sync" value={sync} />
+                          {hardN > 0 ? (
+                            <span className="ops-cal-chip ops-cal-chip--danger">
+                              {hardN} conflict{hardN === 1 ? '' : 's'}
+                            </span>
+                          ) : null}
+                          {warnN > 0 ? (
+                            <span className="ops-cal-chip ops-cal-chip--warning">
+                              {warnN} warning{warnN === 1 ? '' : 's'}
+                            </span>
+                          ) : null}
                         </div>
                       </div>
                     </div>
-                  ) : null}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+
+                    {stripKeys.length > 0 ? (
+                      <div className="ops-cal-strip">
+                        <p className="ops-cal-strip__label">Next {previewDays} nights</p>
+                        <div className="ops-cal-strip__scroll">
+                          <div className="ops-cal-strip__days">
+                            {stripKeys.map((dk) => {
+                              const { dot, ring } = cellToneForDay(dk, blocks);
+                              const isToday = dk === preview?.meta?.today;
+                              return (
+                                <div key={dk} title={dk} className="ops-cal-strip__day">
+                                  <span className="ops-cal-strip__dow">{formatStripDayLabel(dk)}</span>
+                                  <span className={opsCx('ops-cal-strip__cell', isToday && 'ops-cal-strip__cell--today')}>
+                                    <span className={opsCx(dot, ring)} />
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
 
         <LocationBlockSheet
           open={locationBlockOpen}
@@ -409,52 +352,33 @@ export default function OpsCalendarIndex() {
           }}
         />
 
-        <CalendarBottomSheet
+        <OpsConfirmDialog
           open={Boolean(removeGroup)}
           title="Remove entire location block?"
-          subtitle="This removes the location-wide block from every property/unit included in this group. Existing reservations, external holds, maintenance blocks, and separate manual blocks remain unchanged."
+          body="This removes the location-wide block from every property/unit included in this group. Existing reservations, external holds, maintenance blocks, and separate manual blocks remain unchanged."
+          confirmLabel={removeLoading ? 'Removing…' : 'Remove entire location block'}
+          cancelLabel="Cancel"
+          tone="destructive"
+          loading={removeLoading}
+          onConfirm={confirmRemoveGroup}
           onClose={closeRemoveGroup}
-          footer={
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={confirmRemoveGroup}
-                disabled={removeLoading}
-                className="h-11 flex-1 rounded-lg bg-red-700 px-4 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-50 sm:flex-none"
-              >
-                {removeLoading ? 'Removing…' : 'Remove entire location block'}
-              </button>
-              <button
-                type="button"
-                onClick={closeRemoveGroup}
-                disabled={removeLoading}
-                className="h-11 flex-1 rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-gray-800 disabled:opacity-50 sm:flex-none"
-              >
-                Cancel
-              </button>
-            </div>
-          }
         >
-          <div className="space-y-2">
-            <div className="text-sm font-medium text-gray-800">
+          <div className="ops-cal-sheet-stack">
+            <p className="ops-cal-sheet-stack__title">
               {removeGroup?.locationLabel || removeGroup?.locationKey || 'Location-wide block'}
-            </div>
-            <div className="text-xs text-gray-500">
+            </p>
+            <p className="ops-cal-sheet-stack__meta">
               {formatGroupDateRange(removeGroup?.startDate, removeGroup?.endDate)}
-            </div>
+            </p>
             {removeGroup?.targetCount != null ? (
-              <div className="text-xs text-gray-600">
+              <p className="ops-cal-sheet-stack__meta">
                 {removeGroup.targetCount} propert{removeGroup.targetCount === 1 ? 'y' : 'ies'} in this group
-              </div>
+              </p>
             ) : null}
-            {removeError ? (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-                {removeError}
-              </div>
-            ) : null}
+            {removeError ? <OpsInlineError>{removeError}</OpsInlineError> : null}
           </div>
-        </CalendarBottomSheet>
+        </OpsConfirmDialog>
       </div>
-    </div>
+    </OpsPage>
   );
 }

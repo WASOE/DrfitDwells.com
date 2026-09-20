@@ -4,6 +4,12 @@ import { formatInTimeZone, toDate } from 'date-fns-tz';
 import CalendarBottomSheet from './CalendarBottomSheet';
 import { opsWriteAPI } from '../../../services/opsApi';
 import { OPS_CALENDAR_TZ, sofiaNowYearMonth } from './opsCalendarDateUtils';
+import OpsButton from '../../../ops/primitives/OpsButton';
+import OpsSelect from '../../../ops/primitives/OpsSelect';
+import OpsTextField from '../../../ops/primitives/OpsTextField';
+import OpsBanner from '../../../ops/primitives/OpsBanner';
+import OpsBadge from '../../../ops/primitives/OpsBadge';
+import './OpsCalendar.css';
 
 const LOCATION_OPTIONS = [
   { locationKey: 'valley', label: 'The Valley' },
@@ -103,145 +109,113 @@ export default function LocationBlockSheet({ open, onClose, onSuccess }) {
       title="Block entire location"
       subtitle="Use this for weddings, retreats, private events, or full-location buyouts. The system checks all cabins and units before blocking."
       onClose={onClose}
+      dismissible={!submitLoading}
       footer={
-        <div className="flex flex-col sm:flex-row gap-2 max-w-2xl mx-auto w-full">
-          <button
-            type="button"
+        <div className="ops-cal-footer-actions">
+          <OpsButton
+            variant="secondary"
             onClick={runPreview}
             disabled={previewLoading || !formStart || !formEnd}
-            className="flex-1 px-4 py-3 rounded-lg border border-gray-300 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+            loading={previewLoading}
+            loadingLabel="Checking…"
           >
-            {previewLoading ? 'Checking…' : 'Check dates'}
-          </button>
-          <button
-            type="button"
-            onClick={submitLocationBlock}
-            disabled={!canSubmit}
-            className="flex-1 px-4 py-3 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 disabled:opacity-50"
-          >
-            {submitLoading ? 'Blocking…' : 'Block entire location'}
-          </button>
+            Check dates
+          </OpsButton>
+          <OpsButton onClick={submitLocationBlock} disabled={!canSubmit} loading={submitLoading} loadingLabel="Blocking…">
+            Block entire location
+          </OpsButton>
         </div>
       }
     >
-      <div className="space-y-4 max-w-2xl mx-auto">
-        <div>
-          <label htmlFor="location-block-key" className="block text-xs font-medium text-gray-700 mb-1">
-            Location
-          </label>
-          <select
-            id="location-block-key"
-            value={locationKey}
-            onChange={(e) => {
-              setLocationKey(e.target.value);
-              setPreview(null);
-            }}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-          >
-            {LOCATION_OPTIONS.map((opt) => (
-              <option key={opt.locationKey} value={opt.locationKey}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
+      <OpsSelect
+        id="location-block-key"
+        label="Location"
+        value={locationKey}
+        onChange={(e) => {
+          setLocationKey(e.target.value);
+          setPreview(null);
+        }}
+      >
+        {LOCATION_OPTIONS.map((opt) => (
+          <option key={opt.locationKey} value={opt.locationKey}>
+            {opt.label}
+          </option>
+        ))}
+      </OpsSelect>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label htmlFor="location-block-start" className="block text-xs font-medium text-gray-700 mb-1">
-              Start (check-in)
-            </label>
-            <input
-              id="location-block-start"
-              type="date"
-              value={formStart}
-              onChange={(e) => {
-                setFormStart(e.target.value);
-                setPreview(null);
-              }}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label htmlFor="location-block-end" className="block text-xs font-medium text-gray-700 mb-1">
-              End (checkout, exclusive)
-            </label>
-            <input
-              id="location-block-end"
-              type="date"
-              value={formEnd}
-              onChange={(e) => {
-                setFormEnd(e.target.value);
-                setPreview(null);
-              }}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label htmlFor="location-block-reason" className="block text-xs font-medium text-gray-700 mb-1">
-            Reason (optional)
-          </label>
-          <input
-            id="location-block-reason"
-            type="text"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="Private event, full buyout, retreat…"
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-          />
-        </div>
-
-        {actionError ? (
-          <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{actionError}</div>
-        ) : null}
-
-        {preview ? (
-          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className={`text-xs font-semibold px-2 py-1 rounded-full ${
-                  preview.canBlock
-                    ? 'bg-emerald-100 text-emerald-800'
-                    : 'bg-red-100 text-red-800'
-                }`}
-              >
-                {preview.canBlock ? 'Ready to block' : 'Some properties are already booked or blocked'}
-              </span>
-              <span className="text-xs text-gray-600">
-                {preview.targetCount} propert{preview.targetCount === 1 ? 'y' : 'ies'} checked
-              </span>
-            </div>
-
-            {!preview.canBlock && preview.conflicts?.length ? (
-              <div className="space-y-2">
-                <p className="text-sm text-gray-800">
-                  Some properties are already booked or blocked for these dates:
-                </p>
-                <ul className="space-y-2 max-h-48 overflow-y-auto">
-                  {preview.conflicts.map((row) => (
-                    <li key={row.targetKey} className="text-sm bg-white border border-gray-200 rounded-lg px-3 py-2">
-                      <span className="font-medium text-gray-900">{row.label}</span>
-                      <ul className="mt-1 text-xs text-gray-600 space-y-0.5">
-                        {(row.hardConflicts || []).map((c, idx) => (
-                          <li key={`${row.targetKey}-${idx}`}>{conflictSummaryLabel(c)}</li>
-                        ))}
-                      </ul>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            {preview.canBlock ? (
-              <p className="text-sm text-gray-700">
-                All properties in {preview.locationLabel || locationLabel} are free for this range.
-              </p>
-            ) : null}
-          </div>
-        ) : null}
+      <div className="ops-cal-form-grid">
+        <OpsTextField
+          id="location-block-start"
+          label="Start (check-in)"
+          type="date"
+          value={formStart}
+          onChange={(e) => {
+            setFormStart(e.target.value);
+            setPreview(null);
+          }}
+        />
+        <OpsTextField
+          id="location-block-end"
+          label="End (checkout, exclusive)"
+          type="date"
+          value={formEnd}
+          onChange={(e) => {
+            setFormEnd(e.target.value);
+            setPreview(null);
+          }}
+        />
       </div>
+
+      <OpsTextField
+        id="location-block-reason"
+        label="Reason"
+        optional
+        type="text"
+        value={reason}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder="Private event, full buyout, retreat…"
+      />
+
+      {actionError ? <OpsBanner tone="danger" body={actionError} /> : null}
+
+      {preview ? (
+        <div className="ops-cal-preview">
+          <div className="ops-cal__meta-row">
+            <OpsBadge tone={preview.canBlock ? 'neutral' : 'info'}>
+              {preview.canBlock ? 'Ready to block' : 'Some properties are already booked or blocked'}
+            </OpsBadge>
+            <span className="ops-cal__hint">
+              {preview.targetCount} propert{preview.targetCount === 1 ? 'y' : 'ies'} checked
+            </span>
+          </div>
+
+          {!preview.canBlock && preview.conflicts?.length ? (
+            <div className="ops-cal-sheet-stack">
+              <p className="ops-cal-sheet-stack__title">
+                Some properties are already booked or blocked for these dates:
+              </p>
+              <ul className="ops-cal-preview__conflicts">
+                {preview.conflicts.map((row) => (
+                  <li key={row.targetKey} className="ops-cal-preview__conflict">
+                    <strong>{row.label}</strong>
+                    <ul className="ops-cal-preview__conflict-list">
+                      {(row.hardConflicts || []).map((c, idx) => (
+                        <li key={`${row.targetKey}-${idx}`}>{conflictSummaryLabel(c)}</li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {preview.canBlock ? (
+            <p className="ops-cal__hint">
+              All properties in {preview.locationLabel || locationLabel} are free for this range.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </CalendarBottomSheet>
   );
 }

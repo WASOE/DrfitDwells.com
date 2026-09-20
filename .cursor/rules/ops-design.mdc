@@ -33,6 +33,19 @@ globs:
   - client/src/pages/ops/OpsDashboard.css
   - client/src/pages/ops/OpsMessaging.jsx
   - client/src/pages/ops/OpsMessaging.css
+  - client/src/pages/ops/cleaning/OpsCleaningSettings.jsx
+  - client/src/pages/ops/cleaning/OpsCleaningSettings.css
+  - client/src/pages/ops/cleaning/OpsCleaningInventoryTagsPanel.jsx
+  - client/src/pages/ops/cleaning/OpsCleaningRateCardPanel.jsx
+  - client/src/pages/ops/OpsReviews.jsx
+  - client/src/pages/ops/OpsReviews.css
+  - client/src/pages/ops/calendar/OpsCalendarIndex.jsx
+  - client/src/pages/ops/calendar/OpsCalendarMonth.jsx
+  - client/src/pages/ops/calendar/OpsCalendarLegend.jsx
+  - client/src/pages/ops/calendar/OpsCalendar.css
+  - client/src/pages/ops/calendar/calendarVisualTokens.js
+  - client/src/pages/ops/calendar/CalendarBottomSheet.jsx
+  - client/src/pages/ops/calendar/LocationBlockSheet.jsx
 alwaysApply: false
 ---
 
@@ -44,7 +57,7 @@ This rule does **not** authorize feature work, IA changes, desktop-shell work, o
 
 ## Scope
 
-Applies to the new Ops design island: `client/src/ops/**`, plus explicitly migrated production files listed in the globs (currently Gift Vouchers collection, Gift Voucher detail, Promo Codes, Manual Review, Sync, Communications, Payments, Users, Cabins list, Cabin detail, Reservations collection, Reservation detail, Home Dashboard, and Messaging). Calendar remains legacy.
+Applies to the new Ops design island: `client/src/ops/**`, plus explicitly migrated production files listed in the globs (currently Gift Vouchers collection, Gift Voucher detail, Promo Codes, Manual Review, Sync, Communications, Payments, Users, Cabins list, Cabin detail, Reservations collection, Reservation detail, Home Dashboard, Messaging, Cleaning Settings panels, Reviews, and Calendar index/month). Work Windows and Cleaning Calendar remain legacy.
 
 `client/src/pages/ops/**` is otherwise legacy until an explicit migration slice. Do not drive-by rewrite it. Do not fail CI against that tree from this rule except for files listed in `MIGRATED_OPS_FILES` (`client/scripts/check-ops-design.cjs`).
 
@@ -66,7 +79,7 @@ Applies to the new Ops design island: `client/src/ops/**`, plus explicitly migra
 
 ## MUST NOT
 
-- Do not migrate Calendar or other production pages unless the current slice names them.
+- Do not migrate Work Windows, Cleaning Calendar, Insights, Conversion, or other production pages unless the current slice names them.
 - Do not add `/ops/design-system` to operator navigation.
 - Do not treat this rule as permission to start the desktop sidebar, command search, or P0+ shell work.
 

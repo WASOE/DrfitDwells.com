@@ -89,6 +89,29 @@ describe('Ops token completeness (P0A)', () => {
     expect(OPS_CSS).not.toMatch(/--ops-blocked\b/);
   });
 
+  it('defines calendar spatial category tokens for light and dark appearances', () => {
+    const required = [
+      '--ops-calendar-reservation',
+      '--ops-calendar-reservation-soft',
+      '--ops-calendar-reservation-border',
+      '--ops-calendar-manual',
+      '--ops-calendar-manual-soft',
+      '--ops-calendar-manual-border',
+      '--ops-calendar-maintenance',
+      '--ops-calendar-maintenance-soft',
+      '--ops-calendar-maintenance-border',
+      '--ops-calendar-external',
+      '--ops-calendar-external-soft',
+      '--ops-calendar-external-border',
+      '--ops-calendar-conflict',
+      '--ops-calendar-warning'
+    ];
+    for (const name of required) {
+      const re = new RegExp(`${name}\\s*:`);
+      expect(OPS_CSS.match(new RegExp(re, 'g'))?.length || 0, name).toBeGreaterThanOrEqual(2);
+    }
+  });
+
   it('applies color-scheme only on themed surfaces', () => {
     expect(OPS_CSS).toMatch(
       /\.ops-root\[data-ops-themed="true"\]\[data-ops-appearance="dark"\][\s\S]*?color-scheme:\s*dark/

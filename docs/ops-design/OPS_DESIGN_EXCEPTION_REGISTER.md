@@ -10,4 +10,4 @@ Owner of the locked guide: Jose Antonio Fiallo León.
 
 | ID | Screen / component | Rule | Reason | Owner | Date approved | Review date | Status |
 |---|---|---|---|---|---|---|---|
-| — | — | — | No active exceptions from P0A–P0D. | — | — | — | empty |
+| EX-CAL-01 | Ops Calendar index + cabin month (`/ops/calendar`, `/ops/calendar/:cabinId`) | §6.5 spatial exception; page width `full`; calendar category colors via `--ops-calendar-*` (incl. violet external hold) | Approved spatial planner surface: dense month grid + preview strips need full width and stable category colors that are not status families. Ordinary occupied reservations stay reservation blue, not danger. | Jose Antonio Fiallo León | 2026-09-20 | 2026-12-20 | active |

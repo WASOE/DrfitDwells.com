@@ -146,3 +146,43 @@ html[data-ops-active="true"][data-ops-appearance="dark"] {
   color: var(--ops-text);
   color-scheme: dark;
 }
+
+/*
+ * Calendar spatial category tokens (approved exception — not status families).
+ * Hex allowed only here. Light is the product appearance; dark mirrors for parity.
+ */
+.ops-root[data-ops-appearance="light"],
+html[data-ops-active="true"][data-ops-appearance="light"] {
+  --ops-calendar-reservation: #2563EB;
+  --ops-calendar-reservation-soft: #EFF6FF;
+  --ops-calendar-reservation-border: #1E40AF;
+  --ops-calendar-manual: #D97706;
+  --ops-calendar-manual-soft: #FFF7E8;
+  --ops-calendar-manual-border: #B45309;
+  --ops-calendar-maintenance: #334155;
+  --ops-calendar-maintenance-soft: #F1F5F9;
+  --ops-calendar-maintenance-border: #0F172A;
+  --ops-calendar-external: #7C3AED;
+  --ops-calendar-external-soft: #F5F3FF;
+  --ops-calendar-external-border: #5B21B6;
+  --ops-calendar-conflict: #B42318;
+  --ops-calendar-warning: #F59E0B;
+}
+
+.ops-root[data-ops-appearance="dark"],
+html[data-ops-active="true"][data-ops-appearance="dark"] {
+  --ops-calendar-reservation: #6FA9FF;
+  --ops-calendar-reservation-soft: #172A42;
+  --ops-calendar-reservation-border: #3B82F6;
+  --ops-calendar-manual: #E5A94F;
+  --ops-calendar-manual-soft: #332817;
+  --ops-calendar-manual-border: #F59E0B;
+  --ops-calendar-maintenance: #94A3B8;
+  --ops-calendar-maintenance-soft: #1B1F1B;
+  --ops-calendar-maintenance-border: #CBD5E1;
+  --ops-calendar-external: #A78BFA;
+  --ops-calendar-external-soft: #2A1F42;
+  --ops-calendar-external-border: #8B5CF6;
+  --ops-calendar-conflict: #F27A72;
+  --ops-calendar-warning: #E5A94F;
+}

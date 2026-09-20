@@ -57,6 +57,15 @@ describe('ops design guard', () => {
     expect(MIGRATED_OPS_FILES).not.toContain('src/pages/ops/cleaning/OpsCleaningCalendar.jsx');
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsReviews.jsx');
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsReviews.css');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/OpsCalendarIndex.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/OpsCalendarMonth.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/OpsCalendarLegend.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/OpsCalendar.css');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/calendarVisualTokens.js');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/CalendarBottomSheet.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/LocationBlockSheet.jsx');
+    expect(MIGRATED_OPS_FILES).not.toContain('src/pages/ops/calendar/OpsWorkWindows.jsx');
+    expect(MIGRATED_OPS_FILES).not.toContain('src/pages/ops/calendar/opsCalendarDateUtils.js');
     expect(MIGRATED_OPS_FILES).not.toContain('src/components/ops/ManualReviewResolveAction.jsx');
     expect(result.scanned).toEqual(expect.arrayContaining(MIGRATED_OPS_FILES));
   });
