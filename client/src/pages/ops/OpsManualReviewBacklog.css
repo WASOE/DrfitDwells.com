@@ -1,0 +1,107 @@
+/* Manual review backlog layout only. Visual values come from --ops-* tokens. */
+.ops-mr-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-16);
+  min-width: 0;
+}
+
+.ops-mr-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.ops-mr-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-8);
+  min-width: 0;
+  padding: var(--ops-space-12) 0;
+  border-bottom: 1px solid var(--ops-border);
+}
+
+.ops-mr-item__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ops-space-8);
+  min-width: 0;
+}
+
+.ops-mr-item__title {
+  margin: 0;
+  flex: 1 1 12rem;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--ops-text);
+  overflow-wrap: anywhere;
+}
+
+.ops-mr-item__status {
+  display: flex;
+  flex-wrap: wrap;
+  align-self: flex-start;
+}
+
+.ops-mr-item__meta {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ops-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.ops-mr-item__details {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--ops-text);
+  overflow-wrap: anywhere;
+}
+
+.ops-mr-item__ref {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ops-mr-item__link {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  box-sizing: border-box;
+  min-height: var(--ops-control-h);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--ops-text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ops-mr-item__link:hover {
+  color: var(--ops-text);
+}
+
+.ops-mr-item__link:focus {
+  outline: none;
+}
+
+.ops-mr-item__link:focus-visible {
+  outline: 2px solid var(--ops-focus);
+  outline-offset: 2px;
+}
+
+.ops-mr-item__actions {
+  min-width: 0;
+}
+
+@media (pointer: coarse) {
+  .ops-mr-item__link {
+    min-height: var(--ops-control-h-touch);
+  }
+}

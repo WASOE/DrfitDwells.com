@@ -2,6 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { opsReadAPI } from '../../services/opsApi';
 import ManualReviewResolveAction from '../../components/ops/ManualReviewResolveAction';
+import OpsPage from '../../ops/primitives/OpsPage';
+import OpsPageHeader from '../../ops/primitives/OpsPageHeader';
+import OpsStatus from '../../ops/primitives/OpsStatus';
+import OpsBanner from '../../ops/primitives/OpsBanner';
+import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
+import OpsEmptyState from '../../ops/primitives/OpsEmptyState';
+import './OpsManualReviewBacklog.css';
 
 function isMongoObjectIdString(value) {
   return typeof value === 'string' && /^[0-9a-fA-F]{24}$/.test(value);
@@ -16,6 +23,20 @@ function resolveCommsReservationHref(item) {
     return `/ops/reservations/${item.entityId}`;
   }
   return null;
+}
+
+function reviewStatusValue(item) {
+  if (item?.severity === 'critical') return 'critical';
+  if (item?.severity === 'high') return 'high';
+  return item?.status || 'open';
+}
+
+function ReviewStatus({ item }) {
+  return (
+    <span className="ops-mr-item__status">
+      <OpsStatus domain="manual_review" value={reviewStatusValue(item)} />
+    </span>
+  );
 }
 
 export default function OpsManualReviewBacklog() {
@@ -40,76 +61,78 @@ export default function OpsManualReviewBacklog() {
     load();
   }, [load]);
 
-  if (loading) return <div className="text-sm text-gray-500">Loading manual review backlog...</div>;
-  if (error) return <div className="text-sm text-red-600">{error}</div>;
-  if (!data) return <div className="text-sm text-gray-500">No manual review backlog data.</div>;
+  const items = data?.items || [];
+  const itemCount = items.length ? `${items.length} item(s)` : null;
 
   return (
-    <div className="space-y-4 pb-16 sm:pb-0">
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <h2 className="text-lg font-semibold text-gray-900">Manual review backlog</h2>
-        <p className="text-sm text-gray-500 mt-1">Open operational items requiring operator action.</p>
-      </section>
+    <OpsPage width="default" className="ops-mr-page">
+      <OpsPageHeader
+        title="Manual review"
+        description="Open operational items requiring operator action."
+        meta={!loading && !error && itemCount ? itemCount : null}
+      />
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-        <h3 className="text-sm font-semibold text-gray-900">Open items</h3>
-        <div className="text-sm text-gray-600">
-          {data.items?.length ? `${data.items.length} item(s)` : 'No open items'}
-        </div>
+      {error ? <OpsBanner tone="danger" body={error} /> : null}
 
-        <div className="space-y-2">
-          {(data.items || []).map((item) => {
+      {loading ? (
+        <OpsLoadingState label="Loading manual review backlog" />
+      ) : error ? null : !data ? (
+        <OpsEmptyState title="No manual review backlog data." />
+      ) : items.length === 0 ? (
+        <OpsEmptyState title="Nothing to review right now." />
+      ) : (
+        <div className="ops-mr-list" role="list">
+          {items.map((item) => {
             const reservationHref = resolveCommsReservationHref(item);
+            const showSeverityText =
+              reviewStatusValue(item) !== 'high' && reviewStatusValue(item) !== 'critical';
             return (
-            <div key={item.manualReviewItemId} className="border border-gray-200 rounded-xl p-3">
-              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold text-gray-900 truncate">{item.title || 'Untitled'}</div>
-                  <div className="text-xs text-gray-500 mt-1 truncate">
-                    Category: {item.category || '—'} · Severity: {item.severity || '—'}
-                  </div>
-                  <div className="text-xs text-gray-500 mt-1 truncate">
-                    Target: {item.entityType || '—'} · {item.entityId || '—'}
-                  </div>
-                  {reservationHref ? (
-                    <div className="mt-2">
-                      <Link
-                        to={reservationHref}
-                        className="text-xs text-[#81887A] underline underline-offset-2 font-medium"
-                      >
-                        Open reservation (guest message automation)
-                      </Link>
-                    </div>
-                  ) : null}
+              <article
+                key={item.manualReviewItemId}
+                className="ops-mr-item"
+                role="listitem"
+              >
+                <div className="ops-mr-item__head">
+                  <p className="ops-mr-item__title">{item.title || 'Untitled'}</p>
+                  <ReviewStatus item={item} />
                 </div>
-                <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50 self-start">
-                  {item.status}
-                </span>
-              </div>
-
-              {item.details ? <div className="text-sm text-gray-700 mt-2">{item.details}</div> : null}
-
-              {item.provenance ? (
-                <div className="text-xs text-gray-500 mt-2">
-                  Provenance: {item.provenance.source || '—'} {item.provenance.sourceReference ? `(${item.provenance.sourceReference})` : ''}
-                </div>
-              ) : null}
-
-              {item.status === 'open' ? (
-                <ManualReviewResolveAction
-                  manualReviewItemId={item.manualReviewItemId}
-                  onResolved={() => load()}
-                />
-              ) : null}
-            </div>
+                <p className="ops-mr-item__meta">
+                  Category: {item.category || '—'}
+                  {showSeverityText ? ` · Severity: ${item.severity || '—'}` : ''}
+                </p>
+                <p className="ops-mr-item__meta">
+                  Target: {item.entityType || '—'} ·{' '}
+                  <span className="ops-mr-item__ref">{item.entityId || '—'}</span>
+                </p>
+                {reservationHref ? (
+                  <Link to={reservationHref} className="ops-mr-item__link">
+                    Open reservation (guest message automation)
+                  </Link>
+                ) : null}
+                {item.details ? <p className="ops-mr-item__details">{item.details}</p> : null}
+                {item.provenance ? (
+                  <p className="ops-mr-item__meta">
+                    Provenance: {item.provenance.source || '—'}{' '}
+                    {item.provenance.sourceReference ? (
+                      <span className="ops-mr-item__ref">({item.provenance.sourceReference})</span>
+                    ) : (
+                      ''
+                    )}
+                  </p>
+                ) : null}
+                {item.status === 'open' ? (
+                  <div className="ops-mr-item__actions">
+                    <ManualReviewResolveAction
+                      manualReviewItemId={item.manualReviewItemId}
+                      onResolved={() => load()}
+                    />
+                  </div>
+                ) : null}
+              </article>
             );
           })}
-          {(data.items || []).length === 0 ? (
-            <div className="text-sm text-gray-500">Nothing to review right now.</div>
-          ) : null}
         </div>
-      </section>
-    </div>
+      )}
+    </OpsPage>
   );
 }
-

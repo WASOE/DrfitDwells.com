@@ -9,6 +9,8 @@ globs:
   - client/src/pages/ops/OpsGiftVoucherDetail.css
   - client/src/pages/ops/OpsPromoCodes.jsx
   - client/src/pages/ops/OpsPromoCodes.css
+  - client/src/pages/ops/OpsManualReviewBacklog.jsx
+  - client/src/pages/ops/OpsManualReviewBacklog.css
 alwaysApply: false
 ---
 
@@ -20,7 +22,7 @@ This rule does **not** authorize feature work, IA changes, desktop-shell work, o
 
 ## Scope
 
-Applies to the new Ops design island: `client/src/ops/**`, plus explicitly migrated production files listed in the globs (currently Gift Vouchers collection, Gift Voucher detail, and Promo Codes).
+Applies to the new Ops design island: `client/src/ops/**`, plus explicitly migrated production files listed in the globs (currently Gift Vouchers collection, Gift Voucher detail, Promo Codes, and Manual Review).
 
 `client/src/pages/ops/**` is otherwise legacy until an explicit migration slice. Do not drive-by rewrite it. Do not fail CI against that tree from this rule except for files listed in `MIGRATED_OPS_FILES` (`client/scripts/check-ops-design.cjs`).
 
