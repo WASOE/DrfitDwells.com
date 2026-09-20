@@ -170,9 +170,41 @@
   border-radius: var(--ops-radius-control);
   background: var(--ops-surface);
   color: var(--ops-text);
+  /* Mobile-first 16px avoids browser input zoom; fine pointer drops to 14px below. */
   font-size: 16px;
   line-height: 20px;
   font-weight: 400;
+}
+
+.ops-select-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.ops-select {
+  -webkit-appearance: none;
+  appearance: none;
+  /* Room for the non-interactive chevron on the right. */
+  padding-right: calc(var(--ops-space-12) + 16px + var(--ops-space-8));
+}
+
+.ops-select-chevron {
+  position: absolute;
+  top: 50%;
+  right: var(--ops-space-12);
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--ops-text-muted);
+}
+
+.ops-select:disabled ~ .ops-select-chevron {
+  color: var(--ops-text-disabled);
 }
 
 .ops-textarea {
@@ -195,6 +227,15 @@
 .ops-select[aria-invalid='true'],
 .ops-textarea[aria-invalid='true'] {
   border-color: var(--ops-danger);
+}
+
+@media (pointer: fine) {
+  .ops-field-control,
+  .ops-select,
+  .ops-textarea {
+    font-size: 14px;
+    line-height: 20px;
+  }
 }
 
 .ops-field-hint {
@@ -486,7 +527,7 @@ a.ops-collection-row__main:hover {
   color: var(--ops-text-muted);
 }
 
-/* Filter bar — layout only. Compact on fine pointer; coarse uses 44px controls. */
+/* Filter bar — layout only. Controls use default 36px; explicit compact stays opt-in. */
 .ops-filter-bar {
   display: flex;
   flex-direction: column;
@@ -518,13 +559,6 @@ a.ops-collection-row__main:hover {
   justify-content: flex-end;
   gap: var(--ops-space-8);
   min-width: 0;
-}
-
-@media (pointer: fine) {
-  .ops-filter-bar .ops-field-control,
-  .ops-filter-bar .ops-select {
-    height: var(--ops-control-h-compact);
-  }
 }
 
 @container ops-page (min-width: 720px) {
@@ -690,6 +724,13 @@ a.ops-collection-row__main:hover {
   .ops-checkbox-hit {
     height: var(--ops-control-h-touch);
     min-height: var(--ops-control-h-touch);
+  }
+
+  .ops-field-control,
+  .ops-select,
+  .ops-textarea {
+    font-size: 16px;
+    line-height: 20px;
   }
 
   .ops-icon-button {

@@ -2,6 +2,28 @@ import { useId } from 'react';
 import { opsCx } from './opsCx';
 import OpsInlineError from './OpsInlineError';
 
+function OpsSelectChevron() {
+  return (
+    <svg
+      className="ops-select-chevron"
+      aria-hidden="true"
+      focusable="false"
+      viewBox="0 0 16 16"
+      width="16"
+      height="16"
+      fill="none"
+    >
+      <path
+        d="M4.5 6.25L8 9.75l3.5-3.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export default function OpsSelect({
   id,
   label,
@@ -25,16 +47,19 @@ export default function OpsSelect({
         {label}
         {optional ? <span className="ops-field-optional">Optional</span> : null}
       </label>
-      <select
-        id={fieldId}
-        className="ops-select"
-        disabled={disabled}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={describedBy}
-        {...rest}
-      >
-        {children}
-      </select>
+      <div className="ops-select-wrap">
+        <select
+          id={fieldId}
+          className="ops-select"
+          disabled={disabled}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={describedBy}
+          {...rest}
+        >
+          {children}
+        </select>
+        <OpsSelectChevron />
+      </div>
       {hint ? (
         <p id={hintId} className="ops-field-hint">
           {hint}

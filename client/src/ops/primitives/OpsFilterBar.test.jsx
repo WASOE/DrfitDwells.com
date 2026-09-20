@@ -54,13 +54,17 @@ describe('OpsFilterBar', () => {
     expect(root).toHaveClass('extra-slot');
   });
 
-  it('is layout-only and uses shared compact/coarse control architecture', () => {
+  it('is layout-only and does not force filter controls to compact height', () => {
     expect(source).not.toMatch(/opsBucket|reservationStatus|useSearchParams|opsReadAPI|paymentStatus/);
     expect(source).not.toMatch(/react-router/);
     expect(css).toMatch(/\.ops-filter-bar\s*\{/);
     expect(css).toMatch(/\.ops-filter-bar__search/);
-    expect(css).toMatch(
+    expect(css).not.toMatch(
       /@media \(pointer:\s*fine\)[\s\S]*\.ops-filter-bar[\s\S]*--ops-control-h-compact/
+    );
+    expect(css).toMatch(/\.ops-button--compact[\s\S]*height:\s*var\(--ops-control-h-compact\)/);
+    expect(css).toMatch(
+      /@media \(pointer:\s*coarse\)[\s\S]*\.ops-select[\s\S]*--ops-control-h-touch/
     );
   });
 });
