@@ -3,92 +3,265 @@ import { Link } from 'react-router-dom';
 import { opsReadAPI } from '../../services/opsApi';
 import { formatMoneyFromCents } from '../../utils/formatMoney';
 import ManualReviewResolveAction from '../../components/ops/ManualReviewResolveAction';
+import OpsPage from '../../ops/primitives/OpsPage';
+import OpsPageHeader from '../../ops/primitives/OpsPageHeader';
+import OpsBadge from '../../ops/primitives/OpsBadge';
+import OpsStatus from '../../ops/primitives/OpsStatus';
+import OpsBanner from '../../ops/primitives/OpsBanner';
+import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
+import OpsMetric, { OpsMetricGroup } from '../../ops/primitives/OpsMetric';
+import { resolveOpsStatus } from '../../ops/status/opsStatusRegistry';
+import './OpsDashboard.css';
 
-function paymentStatusLabel(status) {
-  const labels = {
-    paid: 'paid',
-    partial: 'partial',
-    failed: 'failed',
-    disputed: 'disputed',
-    refunded: 'refunded',
-    unpaid: 'unpaid',
-    pending_verification: 'pending verification',
-    manual_not_required: 'manual / not required',
-    unlinked_payment: 'unlinked payment',
-    unknown: 'unknown'
-  };
-  return labels[status] || 'unknown';
+const COMMS_HREF = '/ops/communications';
+const SEVERITY_LABELS = {
+  critical: 'Critical',
+  high: 'High',
+  medium: 'Medium',
+  low: 'Low'
+};
+
+function paymentOpsValue(status) {
+  if (!status) return 'unknown';
+  if (status === 'unlinked_payment') return 'unlinked';
+  return status;
 }
 
-function alertTone(severity) {
-  if (severity === 'critical') return 'border-rose-200 bg-rose-50 text-rose-800';
-  if (severity === 'high') return 'border-amber-200 bg-amber-50 text-amber-800';
-  return 'border-gray-200 bg-gray-50 text-gray-700';
+function last8Id(reservationId) {
+  return `#${String(reservationId || '').slice(-8)}`;
+}
+
+function humanSeverity(severity) {
+  const key = String(severity || 'low').toLowerCase();
+  return SEVERITY_LABELS[key] || 'Low';
+}
+
+function arrivingLaterDays(row) {
+  const label = String(row?.statusLabel || '');
+  const match = label.match(/^Arrives in (\d+) days?$/i);
+  if (!match) return null;
+  const days = Number(match[1]);
+  return Number.isFinite(days) && days > 1 ? days : null;
+}
+
+function arrivingTimingValue(row) {
+  const label = String(row?.statusLabel || '');
+  const match = label.match(/^Arrives in (\d+) days?$/i);
+  if (!match) return null;
+  const days = Number(match[1]);
+  if (!Number.isFinite(days)) return null;
+  if (days === 0) return 'arriving_today';
+  if (days === 1) return 'arriving_tomorrow';
+  return null;
+}
+
+function ArrivingLaterStatus({ days }) {
+  const entry = resolveOpsStatus('reservation', 'arriving_later');
+  return (
+    <span
+      className={`ops-status ops-status--${entry.family || 'info'} ops-status--${entry.loudness || 'quiet'}`}
+      data-ops-status-key={entry.key}
+    >
+      Arriving in {days} days
+    </span>
+  );
+}
+
+function alertStatusProps(alert) {
+  const type = alert?.type;
+  const severity = String(alert?.severity || '').toLowerCase();
+  const detail = String(alert?.detail || '').toLowerCase();
+
+  if (type === 'payment_failed') {
+    return { domain: 'payment', value: detail.includes('disputed') ? 'disputed' : 'failed' };
+  }
+  if (type === 'payment_unlinked' || type === 'payment_link_audit') {
+    return { domain: 'payment', value: 'unlinked' };
+  }
+  if (type === 'payment_pending_verification') {
+    return { domain: 'payment', value: 'pending_verification' };
+  }
+  if (type === 'unpaid_upcoming') {
+    return { domain: 'payment', value: 'unpaid' };
+  }
+  if (type === 'refund_follow_up') {
+    return { domain: 'reservation', value: 'refund_pending' };
+  }
+  if (type === 'sync_issue') {
+    return { domain: 'sync', value: severity === 'high' || severity === 'critical' ? 'failed' : 'warning' };
+  }
+  if (type === 'manual_review') {
+    if (severity === 'critical') return { domain: 'manual_review', value: 'critical' };
+    if (severity === 'high') return { domain: 'manual_review', value: 'high' };
+    return { domain: 'manual_review', value: 'open' };
+  }
+  return null;
+}
+
+function syncStatusValue(outcome) {
+  if (outcome === 'failed') return 'failed';
+  if (outcome === 'warning') return 'warning';
+  if (outcome === 'success') return 'healthy';
+  return null;
+}
+
+function formatGrossBooked(value) {
+  return `€${Number(value ?? 0).toFixed(0)}`;
+}
+
+function formatWebhookLastSeen(value) {
+  if (!value) return '—';
+  return String(value).slice(0, 19);
+}
+
+function pageHealthState(dashboard, freshness) {
+  const attention =
+    dashboard?.health?.status === 'degraded' ||
+    dashboard?.health?.status === 'warning' ||
+    freshness?.degraded ||
+    freshness?.isStale;
+  if (!attention) return { kind: 'healthy', label: 'Healthy' };
+  return {
+    kind: 'attention',
+    label: dashboard?.health?.status === 'warning' ? 'Watch' : 'Degraded'
+  };
 }
 
 function ReservationRow({ row }) {
+  const laterDays = arrivingLaterDays(row);
+  const timingValue = arrivingTimingValue(row);
+  const showStatusLabel =
+    Boolean(row.statusLabel) &&
+    row.statusLabel !== row.reservationStatus &&
+    laterDays == null &&
+    timingValue == null;
+
   if (row.kind === 'external_hold') {
     return (
-      <div className="block border border-gray-200 rounded-lg px-3 py-2 bg-white">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-gray-900 truncate">{row.guestName || 'Airbnb hold'}</p>
-            <p className="text-xs text-gray-500 truncate">{row.accommodationDisplayName || 'Unknown'}</p>
+      <div className="ops-dashboard-row" data-ops-dashboard-row="hold">
+        <div className="ops-dashboard-row__top">
+          <div className="ops-dashboard-row__identity">
+            <p className="ops-dashboard-row__guest">{row.guestName || 'Airbnb hold'}</p>
+            <p className="ops-dashboard-row__cabin">{row.accommodationDisplayName || 'Unknown'}</p>
           </div>
-          <span className="text-[11px] px-2 py-0.5 rounded border border-violet-200 bg-violet-50 text-violet-700 shrink-0">
-            Airbnb
-          </span>
+          <OpsBadge>Airbnb</OpsBadge>
         </div>
-        <p className="mt-1 text-xs text-gray-600">
+        <p className="ops-dashboard-row__meta">
           {row.datesLabel || `${row.checkInDateOnly || '—'} - ${row.checkOutDateOnly || '—'}`}
         </p>
         {row.statusLabel ? (
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            <span className="text-xs px-2 py-0.5 rounded border border-sky-200 bg-sky-50 text-sky-700">{row.statusLabel}</span>
+          <div className="ops-dashboard-row__status">
+            <OpsBadge>{row.statusLabel}</OpsBadge>
           </div>
         ) : null}
       </div>
     );
   }
 
-  const paymentStatus = paymentStatusLabel(row.paymentStatus);
   return (
     <Link
-      key={row.reservationId}
       to={row.href || `/ops/reservations/${row.reservationId}`}
-      className="block border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-50"
+      className="ops-dashboard-row"
+      data-ops-dashboard-row="reservation"
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-gray-900 truncate">{row.guestName || 'Guest'}</p>
-          <p className="text-xs text-gray-500 truncate">{row.accommodationDisplayName || 'Unknown'}</p>
+      <div className="ops-dashboard-row__top">
+        <div className="ops-dashboard-row__identity">
+          <p className="ops-dashboard-row__guest">{row.guestName || 'Guest'}</p>
+          <p className="ops-dashboard-row__cabin">{row.accommodationDisplayName || 'Unknown'}</p>
         </div>
-        <p className="text-[11px] text-gray-500 font-mono">#{String(row.reservationId || '').slice(-8)}</p>
+        <p className="ops-dashboard-row__id">{last8Id(row.reservationId)}</p>
       </div>
-      <p className="mt-1 text-xs text-gray-600">
+      <p className="ops-dashboard-row__meta">
         {row.datesLabel || `${row.checkInDateOnly || '—'} - ${row.checkOutDateOnly || '—'}`} · {row.guestsLabel || '—'}
       </p>
-      <div className="mt-1.5 flex flex-wrap gap-1.5">
-        <span className="text-xs px-2 py-0.5 rounded border border-gray-200 bg-gray-50">{row.reservationStatus || row.statusLabel || 'unknown'}</span>
-        <span className="text-xs px-2 py-0.5 rounded border border-gray-200 bg-gray-50">{paymentStatus}</span>
-        {row.statusLabel && row.statusLabel !== row.reservationStatus ? (
-          <span className="text-xs px-2 py-0.5 rounded border border-sky-200 bg-sky-50 text-sky-700">{row.statusLabel}</span>
-        ) : null}
+      <div className="ops-dashboard-row__status">
+        <OpsStatus domain="reservation" value={row.reservationStatus || 'unknown'} />
+        <OpsStatus domain="payment" value={paymentOpsValue(row.paymentStatus)} />
+        {laterDays != null ? <ArrivingLaterStatus days={laterDays} /> : null}
+        {timingValue ? <OpsStatus domain="reservation" value={timingValue} /> : null}
+        {showStatusLabel ? <OpsBadge>{row.statusLabel}</OpsBadge> : null}
       </div>
     </Link>
   );
 }
 
-function Lane({ title, total = 0, rows = [], emptyText }) {
+function Lane({ title, total = 0, rows = [], emptyText, testId }) {
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
-        <span className="text-xs text-gray-500">{total}</span>
+    <div className="ops-dashboard-lane" data-testid={testId}>
+      <div className="ops-dashboard-lane__head">
+        <h3 className="ops-dashboard-lane__title">{title}</h3>
+        <p className="ops-dashboard-lane__count">{total}</p>
       </div>
-      {rows.length === 0 ? <p className="text-xs text-gray-500">{emptyText}</p> : rows.map((row) => <ReservationRow key={row.reservationId} row={row} />)}
-      {total > rows.length ? <p className="text-xs text-gray-500">+{total - rows.length} more</p> : null}
+      {rows.length === 0 ? (
+        <p className="ops-dashboard-empty">{emptyText}</p>
+      ) : (
+        <div className="ops-dashboard-rows">
+          {rows.map((row) => (
+            <ReservationRow key={row.reservationId || row.href || row.guestName} row={row} />
+          ))}
+        </div>
+      )}
+      {total > rows.length ? <p className="ops-dashboard-lane__more">+{total - rows.length} more</p> : null}
     </div>
+  );
+}
+
+function AlertRow({ alert, onResolved }) {
+  const status = alertStatusProps(alert);
+  return (
+    <div className="ops-dashboard-alert" data-testid="ops-dashboard-alert">
+      <div className="ops-dashboard-alert__main">
+        <Link to={alert.href || '/ops/reservations'} className="ops-dashboard-alert__copy">
+          <p className="ops-dashboard-alert__title">{alert.title}</p>
+          {alert.detail ? <p className="ops-dashboard-alert__detail">{alert.detail}</p> : null}
+        </Link>
+        <div className="ops-dashboard-alert__marks">
+          <OpsBadge>{humanSeverity(alert.severity)}</OpsBadge>
+          {status ? <OpsStatus domain={status.domain} value={status.value} /> : null}
+        </div>
+      </div>
+      {alert.type === 'manual_review' && alert.manualReviewItemId ? (
+        <div className="ops-dashboard-alert__action">
+          <ManualReviewResolveAction manualReviewItemId={alert.manualReviewItemId} onResolved={onResolved} />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function DashboardHeader({ health }) {
+  return (
+    <OpsPageHeader
+      title="Dashboard"
+      description="Who arrives, stays, leaves, and what needs attention."
+      meta={
+        health?.kind === 'healthy' ? (
+          <OpsBadge>{health.label}</OpsBadge>
+        ) : null
+      }
+    />
+  );
+}
+
+function QuickLinks() {
+  return (
+    <nav className="ops-dashboard-links" aria-label="Dashboard shortcuts">
+      <Link className="ops-dashboard-links__link" to="/ops/reservations">
+        Reservations
+      </Link>
+      <Link className="ops-dashboard-links__link" to="/ops/calendar">
+        Calendar
+      </Link>
+      <Link className="ops-dashboard-links__link" to="/ops/payments">
+        Payments
+      </Link>
+      <Link className="ops-dashboard-links__link" to="/ops/sync">
+        Sync
+      </Link>
+      <Link className="ops-dashboard-links__link" to={COMMS_HREF}>
+        Comms
+      </Link>
+    </nav>
   );
 }
 
@@ -114,222 +287,181 @@ export default function OpsDashboard() {
     load();
   }, [load]);
 
-  if (loading) return <div className="text-sm text-gray-500">Loading dashboard...</div>;
-  if (error) return <div className="text-sm text-red-600">{error}</div>;
-  if (!data) return <div className="text-sm text-gray-500">No dashboard data.</div>;
-  const d = data.dashboard || data?.data?.dashboard || {};
+  const d = data?.dashboard || data?.data?.dashboard || {};
+  const health = !loading && !error && data ? pageHealthState(d, data.freshness) : null;
   const hasDashboardAlerts = Array.isArray(d.alerts);
   const criticalAlerts = hasDashboardAlerts
     ? d.alerts
-    : Array.isArray(data.sections?.actionNeeded)
+    : Array.isArray(data?.sections?.actionNeeded)
       ? data.sections.actionNeeded
       : [];
+  const syncValue = syncStatusValue(d.health?.sync?.lastOutcome);
 
   return (
-    <div className="space-y-5 pb-16 sm:pb-0">
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">OPS Dashboard</h2>
-            <p className="text-sm text-gray-500">Who arrives, stays, leaves, and what needs attention.</p>
-          </div>
-          {d.health?.status === 'degraded' || d.health?.status === 'warning' || data.freshness?.degraded || data.freshness?.isStale ? (
-            <span className="text-xs px-2 py-1 rounded border border-amber-200 bg-amber-50 text-amber-700">
-              {d.health?.status === 'warning' ? 'Watch' : 'Degraded'}
-            </span>
-          ) : (
-            <span className="text-xs px-2 py-1 rounded border border-emerald-200 bg-emerald-50 text-emerald-700">Healthy</span>
-          )}
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Link to="/ops/reservations" className="px-3 py-1.5 text-sm rounded border border-gray-200 hover:bg-gray-50">
-            Reservations
-          </Link>
-          <Link to="/ops/calendar" className="px-3 py-1.5 text-sm rounded border border-gray-200 hover:bg-gray-50">
-            Calendar
-          </Link>
-          <Link to="/ops/payments" className="px-3 py-1.5 text-sm rounded border border-gray-200 hover:bg-gray-50">
-            Payments
-          </Link>
-          <Link to="/ops/sync" className="px-3 py-1.5 text-sm rounded border border-gray-200 hover:bg-gray-50">
-            Sync
-          </Link>
-          <Link to="/ops/communications/oversight" className="px-3 py-1.5 text-sm rounded border border-gray-200 hover:bg-gray-50">
-            Comms
-          </Link>
-        </div>
-      </section>
+    <OpsPage width="wide" className="ops-dashboard">
+      <DashboardHeader health={health} />
+      {health?.kind === 'attention' ? <OpsBanner tone="warning" title={health.label} /> : null}
+      <QuickLinks />
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
-        <h3 className="text-sm font-semibold text-gray-900">Critical alerts</h3>
-        {criticalAlerts.length === 0 ? (
-          <p className="text-sm text-gray-500">No critical alerts.</p>
-        ) : (
-          <div className="space-y-2">
-            {criticalAlerts.map((alert) => (
-              <div
-                key={alert.id}
-                className={`border rounded-lg px-3 py-2 ${alertTone(alert.severity)}`}
-              >
-                <Link to={alert.href || '/ops/reservations'} className="block">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold truncate">{alert.title}</p>
-                    <span className="text-[11px] uppercase tracking-wide">{alert.severity || 'low'}</span>
-                  </div>
-                  <p className="text-xs mt-1 line-clamp-2">{alert.detail}</p>
-                </Link>
-                {alert.type === 'manual_review' && alert.manualReviewItemId ? (
-                  <ManualReviewResolveAction
-                    manualReviewItemId={alert.manualReviewItemId}
-                    onResolved={() => load()}
-                  />
-                ) : null}
+      {loading ? (
+        <OpsLoadingState label="Loading dashboard" />
+      ) : error ? (
+        <OpsBanner tone="danger" title={error} />
+      ) : !data ? (
+        <p className="ops-dashboard-missing">No dashboard data.</p>
+      ) : (
+        <>
+          <section className="ops-dashboard-surface" data-testid="ops-dashboard-alerts">
+            <h2 className="ops-dashboard-surface__title">Critical alerts</h2>
+            {criticalAlerts.length === 0 ? (
+              <p className="ops-dashboard-empty">No critical alerts.</p>
+            ) : (
+              <div className="ops-dashboard-alerts">
+                {criticalAlerts.map((alert) => (
+                  <AlertRow key={alert.id} alert={alert} onResolved={() => load()} />
+                ))}
               </div>
-            ))}
-          </div>
-        )}
-      </section>
+            )}
+          </section>
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4 grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <Lane
-          title="Arriving today"
-          total={d.today?.arriving?.total || 0}
-          rows={d.today?.arriving?.rows || []}
-          emptyText="No arrivals today."
-        />
-        <Lane
-          title="Staying now"
-          total={d.today?.staying?.total || 0}
-          rows={d.today?.staying?.rows || []}
-          emptyText="No in-house stays now."
-        />
-        <Lane
-          title="Leaving today"
-          total={d.today?.leaving?.total || 0}
-          rows={d.today?.leaving?.rows || []}
-          emptyText="No departures today."
-        />
-      </section>
+          <section className="ops-dashboard-surface" data-testid="ops-dashboard-today">
+            <h2 className="ops-dashboard-surface__title">Today operations</h2>
+            <div className="ops-dashboard-lanes">
+              <Lane
+                title="Arriving today"
+                total={d.today?.arriving?.total || 0}
+                rows={d.today?.arriving?.rows || []}
+                emptyText="No arrivals today."
+                testId="ops-dashboard-lane-arriving"
+              />
+              <Lane
+                title="Staying now"
+                total={d.today?.staying?.total || 0}
+                rows={d.today?.staying?.rows || []}
+                emptyText="No guests staying now."
+                testId="ops-dashboard-lane-staying"
+              />
+              <Lane
+                title="Leaving today"
+                total={d.today?.leaving?.total || 0}
+                rows={d.today?.leaving?.rows || []}
+                emptyText="No departures today."
+                testId="ops-dashboard-lane-leaving"
+              />
+            </div>
+          </section>
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-gray-900">Upcoming operations</h3>
-          <span className="text-xs text-gray-500">Next 14 days: {d.upcoming?.next14DaysArrivalCount || 0}</span>
-        </div>
-        {(d.upcoming?.nextArrivals || []).length > 0 ? (
-          <div className="space-y-2">
-            {(d.upcoming?.nextArrivals || []).map((row) => (
-              <ReservationRow key={row.reservationId} row={row} />
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-gray-500">No upcoming arrivals.</p>
-        )}
-      </section>
+          <section className="ops-dashboard-surface" data-testid="ops-dashboard-upcoming">
+            <div className="ops-dashboard-surface__head">
+              <h2 className="ops-dashboard-surface__title">Upcoming operations</h2>
+              <p className="ops-dashboard-surface__meta">
+                Next 14 days: {d.upcoming?.next14DaysArrivalCount || 0}
+              </p>
+            </div>
+            {(d.upcoming?.nextArrivals || []).length > 0 ? (
+              <div className="ops-dashboard-rows">
+                {(d.upcoming?.nextArrivals || []).map((row) => (
+                  <ReservationRow key={row.reservationId || row.href || row.guestName} row={row} />
+                ))}
+              </div>
+            ) : (
+              <p className="ops-dashboard-empty">No upcoming arrivals.</p>
+            )}
+          </section>
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-4">
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900 mb-2">Business pulse — stays</h3>
-          <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 text-xs">
-            <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
-              <p className="text-gray-500">Bookings MTD</p>
-              <p className="text-sm font-semibold text-gray-900">{d.pulse?.bookingsMTD ?? 0}</p>
-            </div>
-            <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
-              <p className="text-gray-500">Gross booked MTD</p>
-              <p className="text-sm font-semibold text-gray-900">€{Number(d.pulse?.grossBookedMTD ?? d.pulse?.bookingValueMTD ?? 0).toFixed(0)}</p>
-            </div>
-            <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
-              <p className="text-gray-500">Paid active stays</p>
-              <p className="text-sm font-semibold text-gray-900">{d.pulse?.activePaidCount ?? 0}</p>
-            </div>
-            <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
-              <p className="text-gray-500">Open payment active stays</p>
-              <p className="text-sm font-semibold text-gray-900">{d.pulse?.activeUnpaidCount ?? 0}</p>
-            </div>
-            <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
-              <p className="text-gray-500">Cancellations MTD</p>
-              <p className="text-sm font-semibold text-gray-900">{d.pulse?.cancellationsMTD ?? 0}</p>
-            </div>
-            <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
-              <p className="text-gray-500">Refunds MTD</p>
-              <p className="text-sm font-semibold text-gray-900">{d.pulse?.refundsMTD ?? 0}</p>
-            </div>
-          </div>
-        </div>
+          <section className="ops-dashboard-surface" data-testid="ops-dashboard-pulse-stay">
+            <h2 className="ops-dashboard-surface__title">Stay/business pulse</h2>
+            <OpsMetricGroup>
+              <OpsMetric label="Bookings MTD" value={d.pulse?.bookingsMTD ?? 0} />
+              <OpsMetric
+                label="Gross booked MTD"
+                value={formatGrossBooked(d.pulse?.grossBookedMTD ?? d.pulse?.bookingValueMTD ?? 0)}
+              />
+              <OpsMetric label="Paid active stays" value={d.pulse?.activePaidCount ?? 0} />
+              <OpsMetric label="Open payment active stays" value={d.pulse?.activeUnpaidCount ?? 0} />
+              <OpsMetric label="Cancellations MTD" value={d.pulse?.cancellationsMTD ?? 0} />
+              <OpsMetric label="Refunds MTD" value={d.pulse?.refundsMTD ?? 0} />
+            </OpsMetricGroup>
+          </section>
 
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900 mb-2">Business pulse — gift vouchers &amp; cash</h3>
-          <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 text-xs">
-            <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
-              <p className="text-gray-500">Gift voucher sales MTD</p>
-              <p className="text-sm font-semibold text-gray-900">
-                {formatMoneyFromCents(d.pulse?.giftVouchers?.salesMTDCents ?? 0)}
-              </p>
-            </div>
-            <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
-              <p className="text-gray-500">Voucher cash collected MTD</p>
-              <p className="text-sm font-semibold text-gray-900">
-                {formatMoneyFromCents(d.pulse?.giftVouchers?.cashCollectedMTDCents ?? 0)}
-              </p>
-            </div>
-            <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
-              <p className="text-gray-500">Physical card fees MTD</p>
-              <p className="text-sm font-semibold text-gray-900">
-                {formatMoneyFromCents(d.pulse?.giftVouchers?.physicalCardFeesMTDCents ?? 0)}
-              </p>
-            </div>
-            <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
-              <p className="text-gray-500">Voucher liability outstanding</p>
-              <p className="text-sm font-semibold text-gray-900">
-                {formatMoneyFromCents(d.pulse?.giftVouchers?.liabilityOutstandingCents ?? 0)}
-              </p>
-            </div>
-            <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
-              <p className="text-gray-500">Voucher redemptions MTD</p>
-              <p className="text-sm font-semibold text-gray-900">
-                {formatMoneyFromCents(d.pulse?.giftVouchers?.redemptionsMTDCents ?? 0)}
-              </p>
-            </div>
-            <div className="rounded border border-gray-200 bg-gray-50 px-2 py-2">
-              <p className="text-gray-500">Total cash collected MTD</p>
-              <p className="text-sm font-semibold text-gray-900">
-                {formatMoneyFromCents(d.pulse?.cashCollected?.totalCashCollectedMTDCents ?? 0)}
-              </p>
-            </div>
-          </div>
-          <p className="mt-3 text-xs text-gray-500 max-w-3xl">
-            Gift voucher sales are prepaid credit. Gross booked stays and cash collected are shown separately.
-          </p>
-        </div>
-      </section>
+          <section className="ops-dashboard-surface" data-testid="ops-dashboard-pulse-cash">
+            <h2 className="ops-dashboard-surface__title">Gift vouchers &amp; cash</h2>
+            <OpsMetricGroup>
+              <OpsMetric
+                label="Gift voucher sales MTD"
+                value={formatMoneyFromCents(d.pulse?.giftVouchers?.salesMTDCents ?? 0)}
+              />
+              <OpsMetric
+                label="Voucher cash collected MTD"
+                value={formatMoneyFromCents(d.pulse?.giftVouchers?.cashCollectedMTDCents ?? 0)}
+              />
+              <OpsMetric
+                label="Physical card fees MTD"
+                value={formatMoneyFromCents(d.pulse?.giftVouchers?.physicalCardFeesMTDCents ?? 0)}
+              />
+              <OpsMetric
+                label="Voucher liability outstanding"
+                value={formatMoneyFromCents(d.pulse?.giftVouchers?.liabilityOutstandingCents ?? 0)}
+              />
+              <OpsMetric
+                label="Voucher redemptions MTD"
+                value={formatMoneyFromCents(d.pulse?.giftVouchers?.redemptionsMTDCents ?? 0)}
+              />
+              <OpsMetric
+                label="Total cash collected MTD"
+                value={formatMoneyFromCents(d.pulse?.cashCollected?.totalCashCollectedMTDCents ?? 0)}
+              />
+            </OpsMetricGroup>
+            <p className="ops-dashboard-note">
+              Gift voucher sales are prepaid credit. Gross booked stays and cash collected are shown separately.
+            </p>
+          </section>
 
-      <section className="text-xs text-gray-500 border-t border-gray-200 pt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <span>
-          Sync: <span className="text-gray-700">{d.health?.sync?.lastOutcome || 'unknown'}</span>
-        </span>
-        <span>
-          Email failures (14d): <span className="text-gray-700">{d.health?.email?.recentFailuresCount ?? 0}</span>
-        </span>
-        <span>
-          Manual review open: <span className="text-gray-700">{d.health?.manualReview?.openCount ?? 0}</span>
-        </span>
-        <span>
-          Webhook last seen: <span className="text-gray-700">{d.health?.payments?.webhookLastSeenAt ? String(d.health.payments.webhookLastSeenAt).slice(0, 19) : '—'}</span>
-        </span>
-        <Link to={d.health?.sync?.href || '/ops/sync'} className="underline underline-offset-2 text-[#81887A] hover:text-[#707668]">
-          Sync
-        </Link>
-        <Link to={d.health?.email?.href || '/ops/communications/oversight'} className="underline underline-offset-2 text-[#81887A] hover:text-[#707668]">
-          Comms
-        </Link>
-        <Link to={d.health?.payments?.href || '/ops/payments'} className="underline underline-offset-2 text-[#81887A] hover:text-[#707668]">
-          Payments
-        </Link>
-        <Link to={d.health?.manualReview?.href || '/ops/manual-review'} className="underline underline-offset-2 text-[#81887A] hover:text-[#707668]">
-          Manual review
-        </Link>
-      </section>
-    </div>
+          <section className="ops-dashboard-surface" data-testid="ops-dashboard-health">
+            <h2 className="ops-dashboard-surface__title">Health summary</h2>
+            <div className="ops-dashboard-health">
+              <div className="ops-dashboard-health__facts">
+                <p className="ops-dashboard-health__fact">
+                  <span className="ops-dashboard-health__label">Sync last outcome</span>
+                  {syncValue ? (
+                    <OpsStatus domain="sync" value={syncValue} />
+                  ) : (
+                    <span className="ops-dashboard-health__value">Unknown</span>
+                  )}
+                </p>
+                <p className="ops-dashboard-health__fact">
+                  <span className="ops-dashboard-health__label">Email failures (14d)</span>
+                  <span className="ops-dashboard-health__value">{d.health?.email?.recentFailuresCount ?? 0}</span>
+                </p>
+                <p className="ops-dashboard-health__fact">
+                  <span className="ops-dashboard-health__label">Manual review open</span>
+                  <span className="ops-dashboard-health__value">{d.health?.manualReview?.openCount ?? 0}</span>
+                </p>
+                <p className="ops-dashboard-health__fact">
+                  <span className="ops-dashboard-health__label">Webhook last seen</span>
+                  <span className="ops-dashboard-health__value">
+                    {formatWebhookLastSeen(d.health?.payments?.webhookLastSeenAt)}
+                  </span>
+                </p>
+              </div>
+              <div className="ops-dashboard-health__links">
+                <Link className="ops-dashboard-health__link" to={d.health?.sync?.href || '/ops/sync'}>
+                  Sync
+                </Link>
+                <Link className="ops-dashboard-health__link" to={d.health?.email?.href || COMMS_HREF}>
+                  Comms
+                </Link>
+                <Link className="ops-dashboard-health__link" to={d.health?.payments?.href || '/ops/payments'}>
+                  Payments
+                </Link>
+                <Link className="ops-dashboard-health__link" to={d.health?.manualReview?.href || '/ops/manual-review'}>
+                  Manual review
+                </Link>
+              </div>
+            </div>
+          </section>
+        </>
+      )}
+    </OpsPage>
   );
 }

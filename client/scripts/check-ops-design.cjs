@@ -48,7 +48,9 @@ const MIGRATED_OPS_FILES = [
   'src/pages/ops/OpsCabinsList.jsx',
   'src/pages/ops/OpsCabinsList.css',
   'src/pages/ops/OpsReservations.jsx',
-  'src/pages/ops/OpsReservations.css'
+  'src/pages/ops/OpsReservations.css',
+  'src/pages/ops/OpsDashboard.jsx',
+  'src/pages/ops/OpsDashboard.css'
 ];
 
 const HEX_ALLOWLIST = new Set(['ops.css', 'tokens/opsTokenNames.js']);
