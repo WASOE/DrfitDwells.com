@@ -19,6 +19,12 @@ function formatLastSyncedAt(value) {
   return value ? String(value).slice(0, 10) : 'n/a';
 }
 
+function syncRowTone(row) {
+  if (row.lastSyncOutcome === 'failed') return 'danger';
+  if (row.stale) return 'warning';
+  return null;
+}
+
 export default function OpsSyncCenter() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -64,30 +70,40 @@ export default function OpsSyncCenter() {
         <OpsEmptyState title="No sync data." />
       ) : (
         <>
-          <section className="ops-sync-section" aria-labelledby="ops-sync-anomalies">
-            <h2 id="ops-sync-anomalies" className="ops-sync-section__title">
-              Anomalies & manual review
-            </h2>
+          <section className="ops-sync-surface" aria-labelledby="ops-sync-anomalies">
+            <div className="ops-sync-surface__head">
+              <h2 id="ops-sync-anomalies" className="ops-sync-surface__title">
+                Anomalies & manual review
+              </h2>
+            </div>
             <OpsMetricGroup>
               <OpsMetric label="Stale pairs" value={staleCount} />
               <OpsMetric label="Failed pairs" value={failedCount} />
               <OpsMetric label="Unresolved anomalies" value={totalUnresolved} />
             </OpsMetricGroup>
             <p className="ops-sync-note">
-              Open sync-related manual reviews: {data.aggregates?.unresolvedSyncManualReviews ?? 0} · duplicate-import anomalies in recent events: {duplicateImportCount}
+              Open sync-related manual reviews: {data.aggregates?.unresolvedSyncManualReviews ?? 0} ·
+              duplicate-import anomalies in recent events: {duplicateImportCount}
             </p>
           </section>
 
-          <section className="ops-sync-section" aria-labelledby="ops-sync-health">
-            <h2 id="ops-sync-health" className="ops-sync-section__title">
-              Health by cabin + channel
-            </h2>
+          <section className="ops-sync-surface" aria-labelledby="ops-sync-health">
+            <div className="ops-sync-surface__head">
+              <h2 id="ops-sync-health" className="ops-sync-surface__title">
+                Health by cabin + channel
+              </h2>
+            </div>
             {healthRows.length ? (
               <div className="ops-sync-list" role="list">
                 {healthRows.map((row) => {
                   const rowKey = `${row.cabinId}:${row.channel}:${row.unitId || ''}`;
+                  const tone = syncRowTone(row);
                   return (
-                    <article key={rowKey} className="ops-sync-row" role="listitem">
+                    <article
+                      key={rowKey}
+                      className={`ops-sync-row${tone ? ` ops-sync-row--${tone}` : ''}`}
+                      role="listitem"
+                    >
                       <div className="ops-sync-row__head">
                         <p className="ops-sync-row__title">Cabin {row.cabinId}</p>
                         <span className="ops-sync-row__status">
@@ -109,18 +125,24 @@ export default function OpsSyncCenter() {
                 })}
               </div>
             ) : (
-              <OpsEmptyState title="No health rows yet." />
+              <OpsEmptyState className="ops-sync-empty" title="No health rows yet." />
             )}
           </section>
 
-          <section className="ops-sync-section" aria-labelledby="ops-sync-events">
-            <h2 id="ops-sync-events" className="ops-sync-section__title">
-              Recent sync events
-            </h2>
+          <section className="ops-sync-surface" aria-labelledby="ops-sync-events">
+            <div className="ops-sync-surface__head">
+              <h2 id="ops-sync-events" className="ops-sync-surface__title">
+                Recent sync events
+              </h2>
+            </div>
             {recentEvents.length ? (
               <div className="ops-sync-list" role="list">
                 {recentEvents.map((event) => (
-                  <article key={event.eventId} className="ops-sync-event" role="listitem">
+                  <article
+                    key={event.eventId}
+                    className={`ops-sync-event${event.anomalyType ? ' ops-sync-event--anomaly' : ''}`}
+                    role="listitem"
+                  >
                     <p className="ops-sync-event__title">
                       {event.cabinId} · {event.channel}
                     </p>
@@ -134,7 +156,7 @@ export default function OpsSyncCenter() {
                 ))}
               </div>
             ) : (
-              <OpsEmptyState title="No recent sync events." />
+              <OpsEmptyState className="ops-sync-empty" title="No recent sync events." />
             )}
           </section>
         </>

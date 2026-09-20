@@ -18,6 +18,11 @@ function yesNo(value) {
   return value ? 'Yes' : 'No';
 }
 
+function isFailedEvent(evt) {
+  const type = String(evt?.type || '').toLowerCase();
+  return type.includes('fail') || type.includes('bounce') || type.includes('error');
+}
+
 export default function OpsCommunicationOversight() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -70,16 +75,25 @@ export default function OpsCommunicationOversight() {
             />
           ) : null}
 
-          <OpsMetricGroup>
-            <OpsMetric label="Failed events" value={data.summary?.failedEvents ?? 0} />
-            <OpsMetric label="Total recent" value={data.summary?.totalRecentEvents ?? 0} />
-            <OpsMetric label="Gaps possible" value={yesNo(data.degraded?.eventTrackingGapsPossible)} />
-          </OpsMetricGroup>
+          <section className="ops-comms-surface" aria-labelledby="ops-comms-delivery">
+            <div className="ops-comms-surface__head">
+              <h2 id="ops-comms-delivery" className="ops-comms-surface__title">
+                Delivery overview
+              </h2>
+            </div>
+            <OpsMetricGroup>
+              <OpsMetric label="Failed events" value={data.summary?.failedEvents ?? 0} />
+              <OpsMetric label="Total recent" value={data.summary?.totalRecentEvents ?? 0} />
+              <OpsMetric label="Gaps possible" value={yesNo(data.degraded?.eventTrackingGapsPossible)} />
+            </OpsMetricGroup>
+          </section>
 
-          <section className="ops-comms-section" aria-labelledby="ops-comms-confirmation">
-            <h2 id="ops-comms-confirmation" className="ops-comms-section__title">
-              Booking confirmation delivery
-            </h2>
+          <section className="ops-comms-surface" aria-labelledby="ops-comms-confirmation">
+            <div className="ops-comms-surface__head">
+              <h2 id="ops-comms-confirmation" className="ops-comms-surface__title">
+                Booking confirmation delivery
+              </h2>
+            </div>
             <p className="ops-comms-note">
               SMTP credentials alone do not mean confirmations are draining. Overdue pending rows require the
               confirmation worker.
@@ -98,14 +112,20 @@ export default function OpsCommunicationOversight() {
             </p>
           </section>
 
-          <section className="ops-comms-section" aria-labelledby="ops-comms-events">
-            <h2 id="ops-comms-events" className="ops-comms-section__title">
-              Recent email events
-            </h2>
+          <section className="ops-comms-surface" aria-labelledby="ops-comms-events">
+            <div className="ops-comms-surface__head">
+              <h2 id="ops-comms-events" className="ops-comms-surface__title">
+                Recent email events
+              </h2>
+            </div>
             {recent.length ? (
               <div className="ops-comms-list" role="list">
                 {recent.map((evt) => (
-                  <article key={evt.eventId} className="ops-comms-event" role="listitem">
+                  <article
+                    key={evt.eventId}
+                    className={`ops-comms-event${isFailedEvent(evt) ? ' ops-comms-event--failed' : ''}`}
+                    role="listitem"
+                  >
                     <p className="ops-comms-event__title">{evt.type || 'unknown'}</p>
                     <p className="ops-comms-event__meta">
                       to: {evt.recipient || '—'} · bookingId: {evt.bookingId || '—'}
@@ -115,7 +135,7 @@ export default function OpsCommunicationOversight() {
                 ))}
               </div>
             ) : (
-              <OpsEmptyState title="No recent events." />
+              <OpsEmptyState className="ops-comms-empty" title="No recent events." />
             )}
           </section>
         </>
