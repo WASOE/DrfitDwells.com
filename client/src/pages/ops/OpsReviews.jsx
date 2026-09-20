@@ -1,6 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { opsReadAPI, opsWriteAPI } from '../../services/opsApi';
+import OpsPage from '../../ops/primitives/OpsPage';
+import OpsPageHeader from '../../ops/primitives/OpsPageHeader';
+import OpsButton from '../../ops/primitives/OpsButton';
+import OpsTextField from '../../ops/primitives/OpsTextField';
+import OpsSelect from '../../ops/primitives/OpsSelect';
+import OpsTextarea from '../../ops/primitives/OpsTextarea';
+import OpsCheckbox from '../../ops/primitives/OpsCheckbox';
+import OpsBadge from '../../ops/primitives/OpsBadge';
+import OpsStatus from '../../ops/primitives/OpsStatus';
+import OpsBanner from '../../ops/primitives/OpsBanner';
+import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
+import OpsEmptyState from '../../ops/primitives/OpsEmptyState';
+import OpsInlineError from '../../ops/primitives/OpsInlineError';
+import OpsFilterBar from '../../ops/primitives/OpsFilterBar';
+import OpsModal from '../../ops/primitives/OpsModal';
+import OpsConfirmDialog from '../../ops/primitives/OpsConfirmDialog';
+import OpsMetric, { OpsMetricGroup } from '../../ops/primitives/OpsMetric';
+import './OpsReviews.css';
 
 const STATUS_OPTIONS = [
   { value: '', label: 'All statuses' },
@@ -68,6 +86,12 @@ function emptyEditForm() {
   };
 }
 
+function sourceLabel(source) {
+  if (!source) return '—';
+  const match = SOURCE_OPTIONS.find((option) => option.value === source);
+  return match?.label || source;
+}
+
 export default function OpsReviews() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [data, setData] = useState(null);
@@ -92,6 +116,7 @@ export default function OpsReviews() {
   const [editSaving, setEditSaving] = useState(false);
   const [editDeleting, setEditDeleting] = useState(false);
   const [editError, setEditError] = useState('');
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState(emptyCreateForm());
   const [createSaving, setCreateSaving] = useState(false);
@@ -171,7 +196,10 @@ export default function OpsReviews() {
     setBanner({ type: '', message: '' });
     try {
       await opsWriteAPI.updateReviewStatus(reviewId, status);
-      setBanner({ type: 'success', message: `Review ${status === 'approved' ? 'approved' : 'hidden'}.` });
+      setBanner({
+        type: 'success',
+        message: `Review ${status === 'approved' ? 'approved' : 'hidden'}.`
+      });
       await load();
     } catch (err) {
       const msg =
@@ -192,6 +220,7 @@ export default function OpsReviews() {
     setEditForm(emptyEditForm());
     setEditError('');
     setEditLoading(false);
+    setDeleteConfirmOpen(false);
 
     if (searchParams.get('reviewId')) {
       const next = new URLSearchParams(searchParams);
@@ -200,11 +229,14 @@ export default function OpsReviews() {
     }
   };
 
-  const openCreate = useCallback((prefillCabinId = '') => {
-    setCreateOpen(true);
-    setCreateError('');
-    setCreateForm(emptyCreateForm(prefillCabinId));
-  }, []);
+  const openCreate = useCallback(
+    (prefillCabinId = '') => {
+      setCreateOpen(true);
+      setCreateError('');
+      setCreateForm(emptyCreateForm(prefillCabinId));
+    },
+    []
+  );
 
   const closeCreate = useCallback(() => {
     setCreateOpen(false);
@@ -226,6 +258,7 @@ export default function OpsReviews() {
     setDetailReview(null);
     setEditForm(emptyEditForm());
     setEditLoading(true);
+    setDeleteConfirmOpen(false);
     try {
       const resp = await opsReadAPI.review(reviewId);
       const review = resp.data?.data?.review;
@@ -338,15 +371,19 @@ export default function OpsReviews() {
     }
   };
 
+  const requestDelete = () => {
+    if (!editReviewId || editLoading || editSaving || editDeleting) return;
+    setDeleteConfirmOpen(true);
+  };
+
   const handleEditDelete = async () => {
     if (!editReviewId || editLoading || editSaving || editDeleting) return;
-    const confirmed = window.confirm('Delete this review? This is a soft delete and can affect cabin stats.');
-    if (!confirmed) return;
     setEditDeleting(true);
     setEditError('');
     try {
       await opsWriteAPI.deleteReview(editReviewId);
       setBanner({ type: 'success', message: 'Review deleted.' });
+      setDeleteConfirmOpen(false);
       closeEdit();
       await load();
     } catch (err) {
@@ -355,6 +392,7 @@ export default function OpsReviews() {
           ? 'Not allowed to delete this review (cutover or permissions).'
           : err?.response?.data?.message || 'Delete failed';
       setEditError(msg);
+      setDeleteConfirmOpen(false);
     } finally {
       setEditDeleting(false);
     }
@@ -404,89 +442,86 @@ export default function OpsReviews() {
     }
   };
 
-  const textLocked =
-    Boolean(detailReview?.locked) && Boolean(editForm.locked);
-
-  const cabin = detailReview?.cabinId && typeof detailReview.cabinId === 'object' ? detailReview.cabinId : null;
+  const textLocked = Boolean(detailReview?.locked) && Boolean(editForm.locked);
+  const cabin =
+    detailReview?.cabinId && typeof detailReview.cabinId === 'object' ? detailReview.cabinId : null;
   const createHasSelectedCabin = !createForm.cabinId || cabins.some((c) => c.id === createForm.cabinId);
-
-  if (loading && !data) {
-    return <div className="text-sm text-gray-500 max-w-5xl mx-auto px-4 py-6">Loading reviews...</div>;
-  }
+  const items = data?.items || [];
+  const showData = Boolean(data) && !error;
+  const emptyCopy = `No reviews for this filter${searchQ ? ' / search' : ''}.`;
 
   return (
-    <div className="space-y-4 pb-16 sm:pb-0 max-w-5xl mx-auto px-4 py-6 md:py-8">
-      <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-6">
-        <h2 className="text-lg md:text-xl font-semibold text-gray-900">Reviews moderation</h2>
-        <p className="text-sm text-gray-500 mt-1 max-w-2xl">
-          Approve or hide guest reviews. Same rules as admin reviews (cabins stats refresh after status
-          changes). Edit opens the full moderator form.
-        </p>
-      </section>
+    <OpsPage width="wide">
+      <div className="ops-reviews">
+        <OpsPageHeader
+          title="Reviews"
+          description="Approve or hide guest reviews. Same rules as admin reviews (cabins stats refresh after status changes). Edit opens the full moderator form."
+          actions={
+            <div className="ops-reviews-toolbar__actions">
+              <OpsButton
+                onClick={() => {
+                  const next = new URLSearchParams(searchParams);
+                  next.set('create', '1');
+                  if (cabinIdFilter) next.set('cabinId', cabinIdFilter);
+                  setSearchParams(next, { replace: false });
+                }}
+              >
+                Create review
+              </OpsButton>
+              <OpsButton variant="secondary" onClick={() => load()} disabled={loading} loading={loading && Boolean(data)}>
+                Reload
+              </OpsButton>
+            </div>
+          }
+        />
 
-      {error ? (
-        <div className="text-sm text-red-600 rounded-xl border border-red-200 bg-red-50 p-3">{error}</div>
-      ) : null}
+        {error ? <OpsBanner tone="danger" body={error} /> : null}
 
-      {banner.message ? (
-        <div
-          className={`text-sm rounded-xl border p-3 ${
-            banner.type === 'success'
-              ? 'border-green-200 bg-green-50 text-green-800'
-              : 'border-red-200 bg-red-50 text-red-800'
-          }`}
-        >
-          {banner.message}
-        </div>
-      ) : null}
+        {banner.message ? (
+          <OpsBanner
+            tone={banner.type === 'success' ? 'success' : 'danger'}
+            body={banner.message}
+          />
+        ) : null}
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-6 space-y-3">
-        <h3 className="text-sm font-semibold text-gray-900">Moderation summary</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="border border-gray-200 rounded-xl p-3">
-            <div className="text-xs text-gray-500">Approved</div>
-            <div className="text-xl font-semibold text-gray-900">{data?.moderationSummary?.approved ?? 0}</div>
-          </div>
-          <div className="border border-gray-200 rounded-xl p-3">
-            <div className="text-xs text-gray-500">Pending</div>
-            <div className="text-xl font-semibold text-gray-900">{data?.moderationSummary?.pending ?? 0}</div>
-          </div>
-          <div className="border border-gray-200 rounded-xl p-3">
-            <div className="text-xs text-gray-500">Hidden</div>
-            <div className="text-xl font-semibold text-gray-900">{data?.moderationSummary?.hidden ?? 0}</div>
-          </div>
-        </div>
-      </section>
+        {loading && !data ? <OpsLoadingState label="Loading reviews…" /> : null}
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-6 space-y-4">
-        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 w-full md:max-w-3xl">
-            <div className="space-y-1">
-              <label htmlFor="ops-review-status" className="text-xs font-medium text-gray-600">
-                Status
-              </label>
-              <select
+        {showData ? (
+          <>
+            <OpsMetricGroup>
+              <OpsMetric label="Approved" value={data?.moderationSummary?.approved ?? 0} />
+              <OpsMetric label="Pending" value={data?.moderationSummary?.pending ?? 0} />
+              <OpsMetric label="Hidden" value={data?.moderationSummary?.hidden ?? 0} />
+            </OpsMetricGroup>
+
+            <OpsFilterBar
+              footer={
+                <div className="ops-reviews-toolbar">
+                  <p className="ops-reviews-toolbar__meta">
+                    {data?.pagination?.total != null ? `${data.pagination.total} review(s)` : null}
+                    {loading ? ' · Refreshing…' : null}
+                  </p>
+                </div>
+              }
+            >
+              <OpsSelect
                 id="ops-review-status"
+                label="Status"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
               >
                 {STATUS_OPTIONS.map((o) => (
                   <option key={o.value || 'all'} value={o.value}>
                     {o.label}
                   </option>
                 ))}
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label htmlFor="ops-review-cabin" className="text-xs font-medium text-gray-600">
-                Cabin
-              </label>
-              <select
+              </OpsSelect>
+              <OpsSelect
                 id="ops-review-cabin"
+                label="Cabin"
                 value={cabinIdFilter}
                 onChange={(e) => setCabinIdFilter(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                hint={loadingCabins ? 'Loading cabins…' : undefined}
               >
                 <option value="">All cabins</option>
                 {cabins.map((cabinOption) => (
@@ -494,537 +529,390 @@ export default function OpsReviews() {
                     {cabinOption.name}
                   </option>
                 ))}
-              </select>
-              {loadingCabins ? <p className="text-[11px] text-gray-500">Loading cabins...</p> : null}
-            </div>
-            <div className="space-y-1">
-              <label htmlFor="ops-review-source" className="text-xs font-medium text-gray-600">
-                Source
-              </label>
-              <select
+              </OpsSelect>
+              <OpsSelect
                 id="ops-review-source"
+                label="Source"
                 value={sourceFilter}
                 onChange={(e) => setSourceFilter(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
               >
                 {SOURCE_OPTIONS.map((o) => (
                   <option key={o.value || 'all'} value={o.value}>
                     {o.label}
                   </option>
                 ))}
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label htmlFor="ops-review-sort" className="text-xs font-medium text-gray-600">
-                Sort
-              </label>
-              <select
+              </OpsSelect>
+              <OpsSelect
                 id="ops-review-sort"
+                label="Sort"
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
               >
                 {SORT_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
                   </option>
                 ))}
-              </select>
+              </OpsSelect>
+              <div className="ops-reviews-search">
+                <OpsTextField
+                  id="ops-review-q"
+                  label="Search text"
+                  type="search"
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && applySearch()}
+                  placeholder="Matches review or reviewer name"
+                />
+                <OpsButton variant="secondary" onClick={applySearch}>
+                  Search
+                </OpsButton>
+              </div>
+            </OpsFilterBar>
+
+            {items.length === 0 ? (
+              <OpsEmptyState title={emptyCopy} />
+            ) : (
+              <div className="ops-reviews-list">
+                {items.map((r) => (
+                  <article key={r.reviewId} className="ops-reviews-row" data-testid={`review-row-${r.reviewId}`}>
+                    <div className="ops-reviews-row__top">
+                      <div className="ops-reviews-row__identity">
+                        <h2 className="ops-reviews-row__name">{r.reviewerDisplay}</h2>
+                        <div className="ops-reviews-row__meta">
+                          {r.cabinName ? <strong>{r.cabinName}</strong> : null}
+                          <span>Source: {sourceLabel(r.source)}</span>
+                          <span>Date: {formatDate(r.createdAtSource)}</span>
+                        </div>
+                        <p className="ops-reviews-row__text">{r.textExcerpt || '—'}</p>
+                      </div>
+                      <div className="ops-reviews-row__badges">
+                        <OpsBadge tone="neutral">
+                          <span className="ops-reviews-row__rating">★ {r.rating ?? '—'}</span>
+                        </OpsBadge>
+                        <OpsStatus domain="review" value={r.status} />
+                      </div>
+                    </div>
+                    <div className="ops-reviews-row__actions">
+                      <OpsButton
+                        variant="secondary"
+                        size="compact"
+                        onClick={() => {
+                          const next = new URLSearchParams(searchParams);
+                          next.set('reviewId', r.reviewId);
+                          setSearchParams(next, { replace: false });
+                        }}
+                      >
+                        Edit
+                      </OpsButton>
+                      <OpsButton
+                        size="compact"
+                        disabled={rowAction !== null || loading || r.status === 'approved'}
+                        loading={rowAction === `${r.reviewId}:approved`}
+                        loadingLabel="Approving…"
+                        onClick={() => handleModeration(r.reviewId, 'approved')}
+                      >
+                        Approve
+                      </OpsButton>
+                      <OpsButton
+                        variant="secondary"
+                        size="compact"
+                        disabled={rowAction !== null || loading || r.status === 'hidden'}
+                        loading={rowAction === `${r.reviewId}:hidden`}
+                        loadingLabel="Hiding…"
+                        onClick={() => handleModeration(r.reviewId, 'hidden')}
+                      >
+                        Hide
+                      </OpsButton>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </>
+        ) : null}
+
+        <OpsModal
+          open={createOpen}
+          onClose={closeCreate}
+          title="Create review"
+          footer={
+            <div className="ops-reviews-modal-footer">
+              <OpsButton variant="secondary" onClick={closeCreate}>
+                Cancel
+              </OpsButton>
+              <OpsButton loading={createSaving} loadingLabel="Saving…" onClick={handleCreateSave}>
+                Create
+              </OpsButton>
             </div>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-2 w-full md:max-w-xl">
-            <div className="space-y-1 flex-1 min-w-0">
-              <label htmlFor="ops-review-q" className="text-xs font-medium text-gray-600">
-                Search text
-              </label>
-              <input
-                id="ops-review-q"
-                type="search"
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && applySearch()}
-                placeholder="Matches review or reviewer name"
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+          }
+        >
+          {createError ? <OpsInlineError>{createError}</OpsInlineError> : null}
+          <div className="ops-reviews-modal-grid">
+            <div className="ops-reviews-modal-grid__full">
+              <OpsSelect
+                label="Cabin *"
+                value={createForm.cabinId}
+                onChange={(e) => handleCreateField('cabinId', e.target.value)}
+                hint={loadingCabins ? 'Loading cabin options…' : undefined}
+              >
+                <option value="">Select a cabin</option>
+                {!createHasSelectedCabin ? (
+                  <option value={createForm.cabinId}>{`Selected (ID: ${createForm.cabinId})`}</option>
+                ) : null}
+                {cabins.map((cabinOption) => (
+                  <option key={cabinOption.id} value={cabinOption.id}>
+                    {cabinOption.name}
+                  </option>
+                ))}
+              </OpsSelect>
+            </div>
+            <OpsSelect
+              label="Rating *"
+              value={createForm.rating}
+              onChange={(e) => handleCreateField('rating', parseInt(e.target.value, 10))}
+            >
+              {[1, 2, 3, 4, 5].map((n) => (
+                <option key={n} value={n}>
+                  {n} ★
+                </option>
+              ))}
+            </OpsSelect>
+            <OpsSelect
+              label="Status"
+              value={createForm.status}
+              onChange={(e) => handleCreateField('status', e.target.value)}
+            >
+              {EDIT_STATUS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </OpsSelect>
+            <OpsTextField
+              label="Reviewer name"
+              value={createForm.reviewerName}
+              onChange={(e) => handleCreateField('reviewerName', e.target.value)}
+            />
+            <OpsTextField
+              label="Language"
+              value={createForm.language}
+              onChange={(e) => handleCreateField('language', e.target.value)}
+            />
+            <div className="ops-reviews-modal-grid__full ops-reviews-modal-checks">
+              <OpsCheckbox
+                label="Pinned"
+                checked={createForm.pinned}
+                onChange={(e) => handleCreateField('pinned', e.target.checked)}
+              />
+              <OpsCheckbox
+                label="Locked"
+                checked={createForm.locked}
+                onChange={(e) => handleCreateField('locked', e.target.checked)}
               />
             </div>
-            <button
-              type="button"
-              onClick={applySearch}
-              className="shrink-0 h-[42px] px-4 rounded-lg border border-gray-300 text-sm font-medium text-gray-800 bg-gray-50 hover:bg-gray-100"
-            >
-              Search
-            </button>
+            <div className="ops-reviews-modal-grid__full">
+              <OpsTextarea
+                label="Review text *"
+                value={createForm.text}
+                onChange={(e) => handleCreateField('text', e.target.value)}
+                rows={6}
+              />
+            </div>
           </div>
-        </div>
+        </OpsModal>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
-          <span className="text-xs text-gray-500">
-            {data?.pagination?.total != null ? `${data.pagination.total} review(s)` : null}
-            {loading ? ' · Refreshing…' : null}
-          </span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                const next = new URLSearchParams(searchParams);
-                next.set('create', '1');
-                if (cabinIdFilter) {
-                  next.set('cabinId', cabinIdFilter);
-                }
-                setSearchParams(next, { replace: false });
-              }}
-              className="px-3 py-2 text-sm rounded-lg bg-[#81887A] text-white hover:bg-[#707668]"
-            >
-              Create review
-            </button>
-            <button
-              type="button"
-              onClick={() => load()}
-              disabled={loading}
-              className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-800 bg-white hover:bg-gray-50 disabled:opacity-50"
-            >
-              Reload
-            </button>
-          </div>
-        </div>
+        <OpsModal
+          open={editOpen}
+          onClose={closeEdit}
+          title="Edit review"
+          description={editReviewId || undefined}
+          footer={
+            <div className="ops-reviews-modal-footer ops-reviews-modal-footer--split">
+              <OpsButton
+                variant="destructive"
+                disabled={editDeleting || editSaving || editLoading || !detailReview}
+                loading={editDeleting}
+                loadingLabel="Deleting…"
+                onClick={requestDelete}
+              >
+                Delete
+              </OpsButton>
+              <div className="ops-reviews-modal-footer__end">
+                <OpsButton variant="secondary" onClick={closeEdit}>
+                  Cancel
+                </OpsButton>
+                <OpsButton
+                  disabled={editSaving || editLoading || editDeleting || !detailReview}
+                  loading={editSaving}
+                  loadingLabel="Saving…"
+                  onClick={handleEditSave}
+                >
+                  Save
+                </OpsButton>
+              </div>
+            </div>
+          }
+        >
+          {editLoading ? <OpsLoadingState label="Loading review…" /> : null}
+          {editError ? <OpsInlineError>{editError}</OpsInlineError> : null}
 
-        <h3 className="text-sm font-semibold text-gray-900">Reviews</h3>
-        <div className="mt-3 space-y-3">
-          {(data?.items || []).map((r) => (
-            <div key={r.reviewId} className="border border-gray-200 rounded-xl p-4 space-y-3">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0 space-y-1">
-                  <div className="text-sm font-semibold text-gray-900">{r.reviewerDisplay}</div>
-                  <div className="text-xs text-gray-500 flex flex-wrap gap-x-3 gap-y-1">
-                    {r.cabinName ? <span className="font-medium text-gray-700">{r.cabinName}</span> : null}
-                    <span>Source: {r.source ?? '—'}</span>
-                    <span>Date: {formatDate(r.createdAtSource)}</span>
-                  </div>
-                  <p className="text-sm text-gray-800 mt-2 whitespace-pre-wrap break-words max-w-3xl">
-                    {r.textExcerpt || '—'}
+          {!editLoading && detailReview ? (
+            <>
+              {detailReview.locked && editForm.locked ? (
+                <OpsBanner
+                  tone="warning"
+                  title="Review is locked"
+                  body="Imported reviews may lock text to prevent accidental edits. Uncheck “Locked” below to edit the review text."
+                  action={
+                    <OpsButton variant="quiet" size="compact" onClick={() => handleEditField('locked', false)}>
+                      Unlock to edit text
+                    </OpsButton>
+                  }
+                />
+              ) : null}
+
+              <div className="ops-reviews-modal-grid">
+                <div className="ops-reviews-modal-grid__full">
+                  <p className="ops-reviews-hint">Cabin</p>
+                  <p className="ops-reviews-cabin-readout">
+                    {cabin?.name ?? '—'}
+                    {cabin?.location ? (
+                      <span>
+                        {' '}
+                        ·{' '}
+                        {typeof cabin.location === 'string'
+                          ? cabin.location
+                          : cabin.location?.label || ''}
+                      </span>
+                    ) : null}
                   </p>
                 </div>
-                <div className="flex flex-row sm:flex-col items-center sm:items-end gap-2 shrink-0">
-                  <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50">
-                    ★ {r.rating ?? '—'}
-                  </span>
-                  <span className="text-xs px-2 py-1 rounded border border-amber-200 bg-amber-50 text-amber-900 capitalize">
-                    {r.status}
-                  </span>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2 pt-1 border-t border-gray-100">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const next = new URLSearchParams(searchParams);
-                    next.set('reviewId', r.reviewId);
-                    setSearchParams(next, { replace: false });
-                  }}
-                  className="px-3 py-1.5 text-sm rounded-lg border border-[#81887A] text-gray-900 hover:bg-gray-50"
+                <OpsSelect
+                  label="Rating"
+                  value={editForm.rating}
+                  onChange={(e) => handleEditField('rating', parseInt(e.target.value, 10))}
                 >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  disabled={rowAction !== null || loading || r.status === 'approved'}
-                  onClick={() => handleModeration(r.reviewId, 'approved')}
-                  className="px-3 py-1.5 text-sm rounded-lg bg-green-700 text-white hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <option key={n} value={n}>
+                      {n} ★
+                    </option>
+                  ))}
+                </OpsSelect>
+                <OpsSelect
+                  label="Status"
+                  value={editForm.status}
+                  onChange={(e) => handleEditField('status', e.target.value)}
                 >
-                  {rowAction === `${r.reviewId}:approved` ? 'Approving…' : 'Approve'}
-                </button>
-                <button
-                  type="button"
-                  disabled={rowAction !== null || loading || r.status === 'hidden'}
-                  onClick={() => handleModeration(r.reviewId, 'hidden')}
-                  className="px-3 py-1.5 text-sm rounded-lg border border-gray-400 text-gray-800 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {rowAction === `${r.reviewId}:hidden` ? 'Hiding…' : 'Hide'}
-                </button>
-              </div>
-            </div>
-          ))}
-          {(data?.items || []).length === 0 ? (
-            <div className="text-sm text-gray-500">No reviews for this filter{searchQ ? ' / search' : ''}.</div>
-          ) : null}
-        </div>
-      </section>
-
-      {createOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="ops-review-create-title"
-        >
-          <div className="bg-white rounded-xl shadow-xl border border-gray-200 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 md:px-6 flex flex-wrap items-center justify-between gap-3 z-10">
-              <h3 id="ops-review-create-title" className="text-lg font-semibold text-gray-900">
-                Create review
-              </h3>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={closeCreate}
-                  className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-800 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCreateSave}
-                  disabled={createSaving}
-                  className="px-3 py-2 text-sm rounded-lg bg-[#81887A] text-white hover:bg-[#707668] disabled:opacity-50"
-                >
-                  {createSaving ? 'Saving…' : 'Create'}
-                </button>
-              </div>
-            </div>
-            <div className="p-4 md:p-6 space-y-4">
-              {createError ? (
-                <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">{createError}</div>
-              ) : null}
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Cabin *</label>
-                  <select
-                    value={createForm.cabinId}
-                    onChange={(e) => handleCreateField('cabinId', e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  >
-                    <option value="">Select a cabin</option>
-                    {!createHasSelectedCabin ? (
-                      <option value={createForm.cabinId}>{`Selected (ID: ${createForm.cabinId})`}</option>
-                    ) : null}
-                    {cabins.map((cabinOption) => (
-                      <option key={cabinOption.id} value={cabinOption.id}>
-                        {cabinOption.name}
-                      </option>
-                    ))}
-                  </select>
-                  {loadingCabins ? <p className="mt-1 text-[11px] text-gray-500">Loading cabin options...</p> : null}
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Rating *</label>
-                  <select
-                    value={createForm.rating}
-                    onChange={(e) => handleCreateField('rating', parseInt(e.target.value, 10))}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  >
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <option key={n} value={n}>
-                        {n} ★
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
-                  <select
-                    value={createForm.status}
-                    onChange={(e) => handleCreateField('status', e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  >
-                    {EDIT_STATUS_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Reviewer name</label>
-                  <input
-                    type="text"
-                    value={createForm.reviewerName}
-                    onChange={(e) => handleCreateField('reviewerName', e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  {EDIT_STATUS_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </OpsSelect>
+                <OpsTextField
+                  label="Reviewer name"
+                  value={editForm.reviewerName}
+                  onChange={(e) => handleEditField('reviewerName', e.target.value)}
+                />
+                <OpsTextField
+                  label="Language"
+                  value={editForm.language}
+                  onChange={(e) => handleEditField('language', e.target.value)}
+                />
+                <div className="ops-reviews-modal-grid__full ops-reviews-modal-checks">
+                  <OpsCheckbox
+                    label="Pinned"
+                    checked={editForm.pinned}
+                    onChange={(e) => handleEditField('pinned', e.target.checked)}
+                  />
+                  <OpsCheckbox
+                    label="Locked"
+                    hint="Prevents editing review text until unchecked."
+                    checked={editForm.locked}
+                    onChange={(e) => handleEditField('locked', e.target.checked)}
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Language</label>
-                  <input
-                    type="text"
-                    value={createForm.language}
-                    onChange={(e) => handleCreateField('language', e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  />
-                </div>
-                <div className="md:col-span-2 flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <label className="inline-flex items-center gap-2 text-sm text-gray-800">
-                    <input
-                      type="checkbox"
-                      checked={createForm.pinned}
-                      onChange={(e) => handleCreateField('pinned', e.target.checked)}
-                      className="rounded border-gray-300"
-                    />
-                    Pinned
-                  </label>
-                  <label className="inline-flex items-center gap-2 text-sm text-gray-800">
-                    <input
-                      type="checkbox"
-                      checked={createForm.locked}
-                      onChange={(e) => handleCreateField('locked', e.target.checked)}
-                      className="rounded border-gray-300"
-                    />
-                    Locked
-                  </label>
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Review text *</label>
-                  <textarea
-                    value={createForm.text}
-                    onChange={(e) => handleCreateField('text', e.target.value)}
+                <div className="ops-reviews-modal-grid__full">
+                  <OpsTextarea
+                    label="Review text"
+                    value={editForm.text}
+                    onChange={(e) => handleEditField('text', e.target.value)}
+                    disabled={textLocked}
                     rows={6}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                   />
+                  {detailReview.source === 'airbnb' ? (
+                    <p className="ops-reviews-hint">Source: imported from {detailReview.source}</p>
+                  ) : null}
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
-      ) : null}
 
-      {editOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/40"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="ops-review-edit-title"
-        >
-          <div className="bg-white rounded-xl shadow-xl border border-gray-200 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 md:px-6 flex flex-wrap items-center justify-between gap-3 z-10">
-              <div>
-                <h3 id="ops-review-edit-title" className="text-lg font-semibold text-gray-900">
-                  Edit review
-                </h3>
-                {editReviewId ? (
-                  <p className="text-xs text-gray-500 font-mono mt-0.5">{editReviewId}</p>
+              <div className="ops-reviews-modal-section">
+                <h3 className="ops-reviews-modal-section__title">Owner response</h3>
+                <OpsTextarea
+                  label="Response text"
+                  value={editForm.ownerResponse.text}
+                  onChange={(e) => handleEditField('ownerResponse.text', e.target.value)}
+                  rows={3}
+                />
+                <OpsTextField
+                  label="Responded by"
+                  value={editForm.ownerResponse.respondedBy}
+                  onChange={(e) => handleEditField('ownerResponse.respondedBy', e.target.value)}
+                />
+              </div>
+
+              <OpsTextarea
+                label="Moderation notes (internal)"
+                value={editForm.moderationNotes}
+                onChange={(e) => handleEditField('moderationNotes', e.target.value)}
+                rows={3}
+              />
+
+              <div className="ops-reviews-modal-meta">
+                <div>
+                  <div className="ops-reviews-modal-meta__label">Source</div>
+                  <div className="ops-reviews-modal-meta__value">{sourceLabel(detailReview.source)}</div>
+                </div>
+                {detailReview.externalId ? (
+                  <div>
+                    <div className="ops-reviews-modal-meta__label">External ID</div>
+                    <div className="ops-reviews-modal-meta__value ops-reviews-modal-meta__mono">
+                      {detailReview.externalId}
+                    </div>
+                  </div>
+                ) : null}
+                <div>
+                  <div className="ops-reviews-modal-meta__label">Original date</div>
+                  <div className="ops-reviews-modal-meta__value">
+                    {formatDate(detailReview.createdAtSource)}
+                  </div>
+                </div>
+                {detailReview.editedAt ? (
+                  <div>
+                    <div className="ops-reviews-modal-meta__label">Last edited</div>
+                    <div className="ops-reviews-modal-meta__value">
+                      {formatDate(detailReview.editedAt)}
+                      {detailReview.editedBy ? ` · ${detailReview.editedBy}` : ''}
+                    </div>
+                  </div>
                 ) : null}
               </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  disabled={editDeleting || editSaving || editLoading || !detailReview}
-                  onClick={handleEditDelete}
-                  className="px-3 py-2 text-sm rounded-lg border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-50"
-                >
-                  {editDeleting ? 'Deleting…' : 'Delete'}
-                </button>
-                <button
-                  type="button"
-                  onClick={closeEdit}
-                  className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-800 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={editSaving || editLoading || editDeleting || !detailReview}
-                  onClick={handleEditSave}
-                  className="px-3 py-2 text-sm rounded-lg bg-[#81887A] text-white hover:bg-[#707668] disabled:opacity-50"
-                >
-                  {editSaving ? 'Saving…' : 'Save'}
-                </button>
-              </div>
-            </div>
+            </>
+          ) : null}
+        </OpsModal>
 
-            <div className="p-4 md:p-6 space-y-4">
-              {editLoading ? (
-                <div className="text-sm text-gray-600 py-8 text-center">Loading review…</div>
-              ) : null}
-
-              {editError ? (
-                <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">{editError}</div>
-              ) : null}
-
-              {!editLoading && detailReview ? (
-                <>
-                  {detailReview.locked && editForm.locked ? (
-                    <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900">
-                      <p className="font-medium">Review is locked</p>
-                      <p className="mt-1">
-                        Imported reviews may lock text to prevent accidental edits. Uncheck “Locked” below to
-                        edit the review text.
-                      </p>
-                      <button
-                        type="button"
-                        className="mt-2 text-sm font-medium underline text-yellow-950"
-                        onClick={() => handleEditField('locked', false)}
-                      >
-                        Unlock to edit text →
-                      </button>
-                    </div>
-                  ) : null}
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="md:col-span-2">
-                      <div className="text-xs font-medium text-gray-500 uppercase tracking-wide">Cabin</div>
-                      <p className="text-sm text-gray-900 mt-1">
-                        {cabin?.name ?? '—'}
-                        {cabin?.location ? (
-                          <span className="text-gray-600">
-                            {' '}
-                            · {typeof cabin.location === 'string' ? cabin.location : cabin.location?.label || ''}
-                          </span>
-                        ) : null}
-                      </p>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Rating</label>
-                      <select
-                        value={editForm.rating}
-                        onChange={(e) => handleEditField('rating', parseInt(e.target.value, 10))}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                      >
-                        {[1, 2, 3, 4, 5].map((n) => (
-                          <option key={n} value={n}>
-                            {n} ★
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
-                      <select
-                        value={editForm.status}
-                        onChange={(e) => handleEditField('status', e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                      >
-                        {EDIT_STATUS_OPTIONS.map((o) => (
-                          <option key={o.value} value={o.value}>
-                            {o.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Reviewer name</label>
-                      <input
-                        type="text"
-                        value={editForm.reviewerName}
-                        onChange={(e) => handleEditField('reviewerName', e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Language</label>
-                      <input
-                        type="text"
-                        value={editForm.language}
-                        onChange={(e) => handleEditField('language', e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                      />
-                    </div>
-                    <div className="md:col-span-2 flex flex-col gap-3 sm:flex-row sm:items-center">
-                      <label className="inline-flex items-center gap-2 text-sm text-gray-800">
-                        <input
-                          type="checkbox"
-                          checked={editForm.pinned}
-                          onChange={(e) => handleEditField('pinned', e.target.checked)}
-                          className="rounded border-gray-300"
-                        />
-                        Pinned
-                      </label>
-                      <label className="inline-flex items-start gap-2 text-sm text-gray-800">
-                        <input
-                          type="checkbox"
-                          checked={editForm.locked}
-                          onChange={(e) => handleEditField('locked', e.target.checked)}
-                          className="rounded border-gray-300 mt-0.5"
-                        />
-                        <span>
-                          Locked
-                          <span className="block text-xs text-gray-500 font-normal">
-                            Prevents editing review text until unchecked.
-                          </span>
-                        </span>
-                      </label>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Review text</label>
-                    <textarea
-                      value={editForm.text}
-                      onChange={(e) => handleEditField('text', e.target.value)}
-                      disabled={textLocked}
-                      rows={6}
-                      className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm ${
-                        textLocked ? 'bg-gray-100 cursor-not-allowed' : ''
-                      }`}
-                    />
-                    {detailReview.source === 'airbnb' ? (
-                      <p className="text-xs text-gray-500 mt-1">Source: imported from {detailReview.source}</p>
-                    ) : null}
-                  </div>
-
-                  <div className="border-t border-gray-100 pt-4 space-y-3">
-                    <h4 className="text-sm font-semibold text-gray-900">Owner response</h4>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Response text</label>
-                      <textarea
-                        value={editForm.ownerResponse.text}
-                        onChange={(e) => handleEditField('ownerResponse.text', e.target.value)}
-                        rows={3}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">Responded by</label>
-                      <input
-                        type="text"
-                        value={editForm.ownerResponse.respondedBy}
-                        onChange={(e) => handleEditField('ownerResponse.respondedBy', e.target.value)}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm max-w-md"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">
-                      Moderation notes (internal)
-                    </label>
-                    <textarea
-                      value={editForm.moderationNotes}
-                      onChange={(e) => handleEditField('moderationNotes', e.target.value)}
-                      rows={3}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                    />
-                  </div>
-
-                  <div className="border-t border-gray-100 pt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <span className="text-gray-500">Source</span>
-                      <div className="text-gray-900">{detailReview.source ?? '—'}</div>
-                    </div>
-                    {detailReview.externalId ? (
-                      <div>
-                        <span className="text-gray-500">External ID</span>
-                        <div className="text-gray-900 font-mono text-xs break-all">{detailReview.externalId}</div>
-                      </div>
-                    ) : null}
-                    <div>
-                      <span className="text-gray-500">Original date</span>
-                      <div className="text-gray-900">{formatDate(detailReview.createdAtSource)}</div>
-                    </div>
-                    {detailReview.editedAt ? (
-                      <div className="sm:col-span-2">
-                        <span className="text-gray-500">Last edited</span>
-                        <div className="text-gray-900">
-                          {formatDate(detailReview.editedAt)}
-                          {detailReview.editedBy ? ` · ${detailReview.editedBy}` : ''}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-                </>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </div>
+        <OpsConfirmDialog
+          open={deleteConfirmOpen}
+          title="Delete this review?"
+          body="This is a soft delete and can affect cabin stats."
+          confirmLabel="Delete"
+          tone="destructive"
+          loading={editDeleting}
+          onCancel={() => setDeleteConfirmOpen(false)}
+          onConfirm={handleEditDelete}
+        />
+      </div>
+    </OpsPage>
   );
 }

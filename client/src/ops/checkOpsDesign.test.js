@@ -51,6 +51,8 @@ describe('ops design guard', () => {
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cleaning/OpsCleaningInventoryTagsPanel.jsx');
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cleaning/OpsCleaningRateCardPanel.jsx');
     expect(MIGRATED_OPS_FILES).not.toContain('src/pages/ops/cleaning/OpsCleaningCalendar.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsReviews.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsReviews.css');
     expect(MIGRATED_OPS_FILES).not.toContain('src/components/ops/ManualReviewResolveAction.jsx');
     expect(result.scanned).toEqual(expect.arrayContaining(MIGRATED_OPS_FILES));
   });
