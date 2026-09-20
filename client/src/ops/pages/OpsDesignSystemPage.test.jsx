@@ -69,6 +69,8 @@ describe('OpsDesignSystemPage', () => {
     expect(screen.getByRole('button', { name: 'Edit stay' })).toHaveAttribute('aria-label', 'Edit stay');
     expect(screen.getByLabelText('Guest name')).toBeInTheDocument();
     expect(screen.getByLabelText('Property')).toBeInTheDocument();
+    expect(document.querySelector('[data-ops-filter-bar]')).toBeTruthy();
+    expect(screen.getByLabelText('Look up')).toBeInTheDocument();
     expect(screen.getByLabelText('Internal note')).toBeInTheDocument();
     expect(screen.getByLabelText('Send confirmation email')).toBeInTheDocument();
     expect(screen.getByText('Needs review')).toHaveClass('ops-badge--info');

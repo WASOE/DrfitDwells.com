@@ -10,6 +10,7 @@ import OpsCheckbox from '../primitives/OpsCheckbox';
 import OpsCollectionRow from '../primitives/OpsCollectionRow';
 import OpsConfirmDialog from '../primitives/OpsConfirmDialog';
 import OpsEmptyState from '../primitives/OpsEmptyState';
+import OpsFilterBar from '../primitives/OpsFilterBar';
 import OpsIconButton from '../primitives/OpsIconButton';
 import OpsInlineError from '../primitives/OpsInlineError';
 import OpsLoadingState from '../primitives/OpsLoadingState';
@@ -290,6 +291,20 @@ export default function OpsDesignSystemPage() {
             <option value="aframe">A-Frame</option>
           </OpsSelect>
         </div>
+      </Section>
+
+      <Section
+        id="ops-ds-filter-bar"
+        title="Filter bar"
+        note="Layout only. Search and filters wrap. Reset is a footer slot. No URL or fetch knowledge."
+      >
+        <OpsFilterBar footer={<OpsButton variant="quiet" size="compact">Reset filters</OpsButton>}>
+          <OpsSelect label="Status" defaultValue="">
+            <option value="">All</option>
+            <option value="open">Open</option>
+          </OpsSelect>
+          <OpsTextField className="ops-filter-bar__search" label="Look up" />
+        </OpsFilterBar>
       </Section>
 
       <Section id="ops-ds-textarea" title="Textarea">

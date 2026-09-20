@@ -39,6 +39,9 @@ describe('ops design guard', () => {
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsCabinsList.jsx');
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsCabinsList.css');
     expect(MIGRATED_OPS_FILES).not.toContain('src/pages/ops/OpsCabins.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsReservations.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsReservations.css');
+    expect(MIGRATED_OPS_FILES).not.toContain('src/pages/ops/OpsReservationDetail.jsx');
     expect(result.scanned).toEqual(expect.arrayContaining(MIGRATED_OPS_FILES));
   });
 

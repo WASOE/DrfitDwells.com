@@ -486,6 +486,54 @@ a.ops-collection-row__main:hover {
   color: var(--ops-text-muted);
 }
 
+/* Filter bar — layout only. Compact on fine pointer; coarse uses 44px controls. */
+.ops-filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-8);
+  min-width: 0;
+}
+
+.ops-filter-bar__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--ops-space-12);
+  min-width: 0;
+}
+
+.ops-filter-bar__controls > * {
+  flex: 1 1 160px;
+  min-width: min(100%, 160px);
+}
+
+.ops-filter-bar__search {
+  flex: 1 1 100%;
+  min-width: min(100%, 240px);
+}
+
+.ops-filter-bar__footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--ops-space-8);
+  min-width: 0;
+}
+
+@media (pointer: fine) {
+  .ops-filter-bar .ops-field-control,
+  .ops-filter-bar .ops-select {
+    height: var(--ops-control-h-compact);
+  }
+}
+
+@container ops-page (min-width: 720px) {
+  .ops-filter-bar__search {
+    flex: 2 1 280px;
+    min-width: min(100%, 240px);
+  }
+}
+
 /* Compact operational metrics — label / value / optional meta. Not KPI tiles. */
 .ops-metric-group {
   display: grid;

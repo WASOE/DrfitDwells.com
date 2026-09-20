@@ -7,6 +7,192 @@ import {
   defaultSendGuestConfirmationForPurpose,
   manualReservationPurposeLabel
 } from '../../utils/manualReservationPurpose';
+import OpsPage from '../../ops/primitives/OpsPage';
+import OpsPageHeader from '../../ops/primitives/OpsPageHeader';
+import OpsButton from '../../ops/primitives/OpsButton';
+import OpsTextField from '../../ops/primitives/OpsTextField';
+import OpsSelect from '../../ops/primitives/OpsSelect';
+import OpsTextarea from '../../ops/primitives/OpsTextarea';
+import OpsCheckbox from '../../ops/primitives/OpsCheckbox';
+import OpsBadge from '../../ops/primitives/OpsBadge';
+import OpsStatus from '../../ops/primitives/OpsStatus';
+import OpsBanner from '../../ops/primitives/OpsBanner';
+import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
+import OpsEmptyState from '../../ops/primitives/OpsEmptyState';
+import OpsInlineError from '../../ops/primitives/OpsInlineError';
+import OpsPagination from '../../ops/primitives/OpsPagination';
+import OpsModal from '../../ops/primitives/OpsModal';
+import OpsFilterBar from '../../ops/primitives/OpsFilterBar';
+import OpsTable, {
+  OpsTableBody,
+  OpsTableCell,
+  OpsTableHead,
+  OpsTableHeader,
+  OpsTableRow
+} from '../../ops/primitives/OpsTable';
+import { resolveOpsStatus } from '../../ops/status/opsStatusRegistry';
+import './OpsReservations.css';
+
+const EMPTY_CREATE_FORM = {
+  cabinId: '',
+  checkIn: '',
+  checkOut: '',
+  firstName: '',
+  lastName: '',
+  email: '',
+  phone: '',
+  adults: '2',
+  children: '0',
+  initialStatus: 'pending',
+  note: '',
+  paymentPlaceholder: '',
+  acceptExternalHoldWarnings: false,
+  manualReservationPurpose: 'paid_guest',
+  sendGuestConfirmationEmail: true
+};
+
+function copyEmptyCreateForm() {
+  return { ...EMPTY_CREATE_FORM };
+}
+
+function paymentOpsValue(status) {
+  if (!status) return 'unknown';
+  if (status === 'unlinked_payment') return 'unlinked';
+  return status;
+}
+
+function formatReservationAmount(amount) {
+  if (amount == null || amount === '') return '—';
+  const num = Number(amount);
+  if (!Number.isFinite(num)) return '—';
+  return new Intl.NumberFormat('en-GB', {
+    style: 'currency',
+    currency: 'EUR',
+    maximumFractionDigits: 2
+  }).format(num);
+}
+
+function guestCountLabel(row) {
+  const adults = row.adults ?? 0;
+  const children = row.children ?? 0;
+  return children > 0 ? `${adults}A ${children}C` : `${adults}A`;
+}
+
+function last8Id(reservationId) {
+  return `#${String(reservationId || '').slice(-8)}`;
+}
+
+function guestName(row) {
+  return `${row.guestSummary?.firstName || ''} ${row.guestSummary?.lastName || ''}`.trim() || '—';
+}
+
+function cabinLabel(row) {
+  return row.cabinSummary?.displayName || row.cabinSummary?.name || 'Unknown';
+}
+
+function stayLabel(row) {
+  return `${row.dateRange?.startDateOnly || '—'} - ${row.dateRange?.endDateOnly || '—'}`;
+}
+
+function operationalItems(row) {
+  const items = [];
+  const timing = row.operational?.stayTiming || {};
+  const daysUntilCheckIn = Number.isFinite(timing.daysUntilCheckIn) ? timing.daysUntilCheckIn : null;
+  if (row.reservationStatus !== 'cancelled') {
+    if (timing.currentlyStaying) {
+      items.push({ key: 'currently_staying' });
+    } else if (timing.arrivingToday) {
+      items.push({ key: 'arriving_today' });
+    } else if (timing.arrivingTomorrow) {
+      items.push({ key: 'arriving_tomorrow' });
+    } else if (daysUntilCheckIn !== null && daysUntilCheckIn > 1) {
+      items.push({ key: 'arriving_later', days: daysUntilCheckIn });
+    } else if (timing.checkedOut) {
+      items.push({ key: 'checked_out' });
+    }
+  }
+  if (timing.checkingOutToday && row.reservationStatus !== 'cancelled') {
+    items.push({ key: 'checking_out_today' });
+  }
+  if (row.operational?.cancelledPaid) items.push({ key: 'cancelled_paid' });
+  if (row.operational?.refundPending) items.push({ key: 'refund_pending' });
+  if (row.operational?.paymentAttention) items.push({ key: 'payment_attention' });
+  if (row.conflict?.hasConflict) items.push({ key: 'conflict' });
+  return items;
+}
+
+function ArrivingLaterStatus({ days }) {
+  const entry = resolveOpsStatus('reservation', 'arriving_later');
+  return (
+    <span
+      className={`ops-status ops-status--${entry.family || 'info'} ops-status--${entry.loudness || 'quiet'}`}
+      data-ops-status-key={entry.key}
+    >
+      Arriving in {days} days
+    </span>
+  );
+}
+
+function ReservationStatuses({ row }) {
+  const purposeLabel = row.manualReservationPurpose
+    ? manualReservationPurposeLabel(row.manualReservationPurpose)
+    : null;
+
+  return (
+    <div className="ops-reservations-status">
+      <OpsStatus domain="reservation" value={row.reservationStatus || 'unknown'} />
+      <OpsStatus domain="payment" value={paymentOpsValue(row.paymentStatus)} />
+      {operationalItems(row).map((item) =>
+        item.key === 'arriving_later' ? (
+          <ArrivingLaterStatus key={item.key} days={item.days} />
+        ) : (
+          <OpsStatus key={item.key} domain="reservation" value={item.key} />
+        )
+      )}
+      {purposeLabel ? <OpsBadge>{purposeLabel}</OpsBadge> : null}
+      {row.sendGuestConfirmationEmail === false ? <OpsBadge>No auto confirmation email</OpsBadge> : null}
+    </div>
+  );
+}
+
+function ReservationStructuredRow({ row }) {
+  const href = `/ops/reservations/${row.reservationId}`;
+  return (
+    <Link className="ops-reservations-row" to={href} data-testid="ops-reservation-row">
+      <div className="ops-reservations-row__top">
+        <div className="ops-reservations-guest">
+          <p className="ops-reservations-guest__name">{guestName(row)}</p>
+          <p className="ops-reservations-guest__email">{row.guestSummary?.email || '—'}</p>
+        </div>
+        <p className="ops-reservations-id">{last8Id(row.reservationId)}</p>
+      </div>
+      <div className="ops-reservations-facts">
+        <div>
+          <span className="ops-reservations-facts__label">Dates: </span>
+          <span className="ops-reservations-facts__value">{stayLabel(row)}</span>
+        </div>
+        <div>
+          <span className="ops-reservations-facts__label">Cabin: </span>
+          <span className="ops-reservations-facts__value">{cabinLabel(row)}</span>
+          {row.cabinSummary?.location ? (
+            <span className="ops-reservations-facts__label"> · {row.cabinSummary.location}</span>
+          ) : null}
+        </div>
+        <div>
+          <span className="ops-reservations-facts__label">Guests: </span>
+          <span className="ops-reservations-facts__value">{guestCountLabel(row)}</span>
+        </div>
+        <div>
+          <span className="ops-reservations-facts__label">Amount: </span>
+          <span className="ops-reservations-facts__value ops-reservations-amount">
+            {formatReservationAmount(row.amount)}
+          </span>
+        </div>
+      </div>
+      <ReservationStatuses row={row} />
+    </Link>
+  );
+}
 
 export default function OpsReservations() {
   const navigate = useNavigate();
@@ -18,23 +204,9 @@ export default function OpsReservations() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState('');
-  const [form, setForm] = useState({
-    cabinId: '',
-    checkIn: '',
-    checkOut: '',
-    firstName: '',
-    lastName: '',
-    email: '',
-    phone: '',
-    adults: '2',
-    children: '0',
-    initialStatus: 'pending',
-    note: '',
-    paymentPlaceholder: '',
-    acceptExternalHoldWarnings: false,
-    manualReservationPurpose: 'paid_guest',
-    sendGuestConfirmationEmail: true
-  });
+  const [form, setForm] = useState(copyEmptyCreateForm);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportError, setExportError] = useState('');
 
   const filters = useMemo(
     () => ({
@@ -48,25 +220,6 @@ export default function OpsReservations() {
     }),
     [searchParams]
   );
-
-  const [exportBusy, setExportBusy] = useState(false);
-  const [exportError, setExportError] = useState('');
-
-  const paymentStatusLabel = (status) => {
-    const labels = {
-      paid: 'paid',
-      partial: 'partial',
-      failed: 'failed',
-      disputed: 'disputed',
-      refunded: 'refunded',
-      unpaid: 'unpaid',
-      pending_verification: 'pending verification',
-      manual_not_required: 'manual / not required',
-      unlinked_payment: 'unlinked payment',
-      unknown: 'unknown'
-    };
-    return labels[status] || 'unknown';
-  };
 
   useEffect(() => {
     let cancelled = false;
@@ -112,45 +265,6 @@ export default function OpsReservations() {
     setSearchParams(new URLSearchParams());
   };
 
-  const buildOperationalBadges = (row) => {
-    const badges = [];
-    const timing = row.operational?.stayTiming || {};
-    const daysUntilCheckIn = Number.isFinite(timing.daysUntilCheckIn) ? timing.daysUntilCheckIn : null;
-    if (row.reservationStatus === 'cancelled') {
-      badges.push({ label: 'Cancelled', tone: 'rose' });
-    } else if (timing.currentlyStaying) {
-      badges.push({ label: 'Currently staying', tone: 'emerald' });
-    } else if (timing.arrivingToday) {
-      badges.push({ label: 'Arriving today', tone: 'sky' });
-    } else if (timing.arrivingTomorrow) {
-      badges.push({ label: 'Arriving tomorrow', tone: 'sky' });
-    } else if (daysUntilCheckIn !== null && daysUntilCheckIn > 1) {
-      badges.push({ label: `Arriving in ${daysUntilCheckIn} days`, tone: 'sky' });
-    } else if (timing.checkedOut) {
-      badges.push({ label: 'Checked out', tone: 'slate' });
-    }
-    if (timing.checkingOutToday && row.reservationStatus !== 'cancelled') {
-      badges.push({ label: 'Checking out today', tone: 'amber' });
-    }
-    if (row.operational?.cancelledPaid) {
-      badges.push({ label: 'Cancelled + paid', tone: 'rose' });
-    }
-    if (row.paymentStatus === 'paid') badges.push({ label: 'Paid', tone: 'emerald' });
-    if (row.paymentStatus === 'refunded') badges.push({ label: 'Refunded', tone: 'violet' });
-    if (row.operational?.refundPending) badges.push({ label: 'Refund pending', tone: 'amber' });
-    if (row.operational?.paymentAttention) badges.push({ label: 'Payment attention', tone: 'rose' });
-    return badges;
-  };
-
-  const badgeToneClass = (tone) => {
-    if (tone === 'emerald') return 'border-emerald-200 bg-emerald-50 text-emerald-700';
-    if (tone === 'sky') return 'border-sky-200 bg-sky-50 text-sky-700';
-    if (tone === 'amber') return 'border-amber-200 bg-amber-50 text-amber-700';
-    if (tone === 'rose') return 'border-rose-200 bg-rose-50 text-rose-700';
-    if (tone === 'violet') return 'border-violet-200 bg-violet-50 text-violet-700';
-    return 'border-gray-200 bg-gray-50 text-gray-700';
-  };
-
   const handleExportCSV = async () => {
     setExportError('');
     setExportBusy(true);
@@ -168,11 +282,11 @@ export default function OpsReservations() {
       const filename = `ops-reservations-${new Date().toISOString().split('T')[0]}.csv`;
       exportToCSV(rows, filename);
     } catch (err) {
-      const data = err?.response?.data;
-      if (data?.errorType === 'export_too_large') {
-        setExportError(data.message || 'Export too large. Refine filters.');
+      const payload = err?.response?.data;
+      if (payload?.errorType === 'export_too_large') {
+        setExportError(payload.message || 'Export too large. Refine filters.');
       } else {
-        setExportError(data?.message || 'Failed to export reservations');
+        setExportError(payload?.message || 'Failed to export reservations');
       }
     } finally {
       setExportBusy(false);
@@ -219,41 +333,61 @@ export default function OpsReservations() {
     }
   };
 
-  if (loading) return <div className="text-sm text-gray-500">Loading reservations...</div>;
+  const items = data?.items || [];
+  const pagination = data?.pagination || {};
+  const totalPages = pagination.totalPages || 1;
+  const queryHasFilters = [...searchParams.keys()].some((key) => key !== 'page' && key !== 'limit');
+  const emptyCatalog = Boolean(data) && items.length === 0 && !queryHasFilters;
+  const emptyFiltered = Boolean(data) && items.length === 0 && queryHasFilters;
 
   return (
-    <div className="space-y-4 pb-16 sm:pb-0">
-      <div className="bg-white border border-gray-200 rounded-xl p-4">
-        <div className="flex flex-col sm:flex-row sm:items-start gap-3 max-w-7xl">
-          <h2 className="text-lg font-semibold text-gray-900">Reservations workspace</h2>
-          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto sm:ml-auto sm:justify-end">
-            <button
-              type="button"
-              onClick={handleExportCSV}
-              disabled={exportBusy}
-              className="w-full sm:w-auto shrink-0 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              data-testid="ops-reservations-export-csv"
-            >
-              {exportBusy ? 'Exporting…' : 'Export CSV'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setCreateError('');
-                setCreateOpen(true);
-              }}
-              className="w-full sm:w-auto shrink-0 px-4 py-2 text-sm font-medium rounded-lg bg-[#81887A] text-white hover:bg-[#707668]"
-            >
-              Create reservation
-            </button>
+    <OpsPage width="wide">
+      <div className="ops-reservations">
+        <OpsPageHeader
+          title="Reservations"
+          actions={
+            <>
+              <OpsButton
+                variant="secondary"
+                onClick={handleExportCSV}
+                disabled={exportBusy}
+                loading={exportBusy}
+                loadingLabel="Exporting…"
+                data-testid="ops-reservations-export-csv"
+              >
+                Export CSV
+              </OpsButton>
+              <OpsButton
+                onClick={() => {
+                  setCreateError('');
+                  setCreateOpen(true);
+                }}
+              >
+                Create reservation
+              </OpsButton>
+            </>
+          }
+        />
+
+        {exportError ? (
+          <div className="ops-reservations-header-errors">
+            <OpsInlineError>{exportError}</OpsInlineError>
           </div>
-        </div>
-        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 max-w-7xl">
-          <select
+        ) : null}
+
+        {error ? <OpsBanner tone="danger" body={error} /> : null}
+
+        <OpsFilterBar
+          footer={
+            <OpsButton variant="quiet" size="compact" onClick={resetFilters}>
+              Reset filters
+            </OpsButton>
+          }
+        >
+          <OpsSelect
+            label="Operational bucket"
             value={filters.opsBucket}
             onChange={(e) => updateFilter('opsBucket', e.target.value)}
-            className="px-3 py-2 text-sm border rounded-lg"
-            aria-label="Operational bucket filter"
             data-testid="ops-filter-ops-bucket"
           >
             <option value="">All operational buckets</option>
@@ -264,28 +398,37 @@ export default function OpsReservations() {
             <option value="past">Past</option>
             <option value="cancelled">Cancelled</option>
             <option value="payment_attention">Payment attention</option>
-          </select>
-          <select value={filters.status} onChange={(e) => updateFilter('status', e.target.value)} className="px-3 py-2 text-sm border rounded-lg" aria-label="Reservation status filter" data-testid="ops-filter-status">
+          </OpsSelect>
+          <OpsSelect
+            label="Reservation status"
+            value={filters.status}
+            onChange={(e) => updateFilter('status', e.target.value)}
+            data-testid="ops-filter-status"
+          >
             <option value="">All status</option>
             <option value="pending">Pending</option>
             <option value="confirmed">Confirmed</option>
             <option value="in_house">In house</option>
             <option value="completed">Completed</option>
             <option value="cancelled">Cancelled</option>
-          </select>
-          <select value={filters.cabinId} onChange={(e) => updateFilter('cabinId', e.target.value)} className="px-3 py-2 text-sm border rounded-lg" aria-label="Cabin filter" data-testid="ops-filter-cabin">
+          </OpsSelect>
+          <OpsSelect
+            label="Cabin"
+            value={filters.cabinId}
+            onChange={(e) => updateFilter('cabinId', e.target.value)}
+            data-testid="ops-filter-cabin"
+          >
             <option value="">All cabins</option>
             {cabins.map((c) => (
-              <option key={c.cabinId} value={c.cabinId}>
+              <option key={c.cabinId || c.cabinTypeId || c.name} value={c.cabinId}>
                 {c.name}
               </option>
             ))}
-          </select>
-          <select
+          </OpsSelect>
+          <OpsSelect
+            label="Payment status"
             value={filters.paymentStatus}
             onChange={(e) => updateFilter('paymentStatus', e.target.value)}
-            className="px-3 py-2 text-sm border rounded-lg"
-            aria-label="Payment status filter"
             data-testid="ops-filter-payment-status"
           >
             <option value="">All payment status</option>
@@ -299,354 +442,291 @@ export default function OpsReservations() {
             <option value="disputed">Disputed</option>
             <option value="refunded">Refunded</option>
             <option value="unknown">Unknown</option>
-          </select>
-          <input
+          </OpsSelect>
+          <OpsTextField
+            className="ops-filter-bar__search"
+            label="Search"
             value={filters.search}
             onChange={(e) => updateFilter('search', e.target.value)}
             placeholder="Search guest/email"
-            className="px-3 py-2 text-sm border rounded-lg sm:col-span-2 lg:col-span-4"
-            aria-label="Reservations search"
             data-testid="ops-filter-search"
           />
-        </div>
-        <div className="mt-2 flex items-center justify-end">
-          <button
-            type="button"
-            onClick={resetFilters}
-            className="text-xs text-gray-600 hover:text-gray-900 underline underline-offset-2"
-          >
-            Reset filters
-          </button>
-        </div>
-        {error ? <div className="mt-2 text-sm text-red-600">{error}</div> : null}
-        {exportError ? <div className="mt-2 text-sm text-red-600" role="alert">{exportError}</div> : null}
-      </div>
+        </OpsFilterBar>
 
-      {createOpen ? (
-        <div className="fixed inset-0 z-40 flex items-end sm:items-center justify-center sm:p-4 bg-black/40">
-          <div
-            className="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto border border-gray-200"
-            role="dialog"
-            aria-labelledby="create-res-title"
-          >
-            <div className="p-4 sm:p-6 border-b border-gray-100 flex justify-between items-center gap-2">
-              <h3 id="create-res-title" className="text-base font-semibold text-gray-900">
-                Manual reservation
-              </h3>
-              <button
-                type="button"
-                onClick={() => setCreateOpen(false)}
-                className="text-sm text-gray-500 hover:text-gray-800 px-2 py-1"
-              >
-                Close
-              </button>
+        {loading ? <OpsLoadingState label="Loading reservations" /> : null}
+
+        {!loading && emptyCatalog && !error ? <OpsEmptyState title="No reservations yet." /> : null}
+
+        {!loading && emptyFiltered && !error ? (
+          <OpsEmptyState
+            variant="filtered"
+            title="No reservations match the selected filters."
+            action={
+              <OpsButton variant="quiet" size="compact" onClick={resetFilters}>
+                Reset filters
+              </OpsButton>
+            }
+          />
+        ) : null}
+
+        {!loading && items.length > 0 ? (
+          <>
+            <div className="ops-reservations-table">
+              <OpsTable caption="Reservations">
+                <OpsTableHead>
+                  <OpsTableRow>
+                    <OpsTableHeader>Guest</OpsTableHeader>
+                    <OpsTableHeader>Stay</OpsTableHeader>
+                    <OpsTableHeader>Cabin</OpsTableHeader>
+                    <OpsTableHeader>Guests</OpsTableHeader>
+                    <OpsTableHeader>Lifecycle</OpsTableHeader>
+                    <OpsTableHeader>Payment</OpsTableHeader>
+                    <OpsTableHeader align="end" numeric>
+                      Amount
+                    </OpsTableHeader>
+                  </OpsTableRow>
+                </OpsTableHead>
+                <OpsTableBody>
+                  {items.map((row) => {
+                    const href = `/ops/reservations/${row.reservationId}`;
+                    return (
+                      <OpsTableRow key={row.reservationId} className="ops-reservations-table__row">
+                        <OpsTableCell>
+                          <Link className="ops-reservations-table__nav" to={href} data-testid="ops-reservation-row">
+                            {guestName(row)}
+                          </Link>
+                          <p className="ops-reservations-table__meta">{row.guestSummary?.email || '—'}</p>
+                          <p className="ops-reservations-table__meta ops-reservations-id">{last8Id(row.reservationId)}</p>
+                          <div className="ops-reservations-status">
+                            {operationalItems(row).map((item) =>
+                              item.key === 'arriving_later' ? (
+                                <ArrivingLaterStatus key={item.key} days={item.days} />
+                              ) : (
+                                <OpsStatus key={item.key} domain="reservation" value={item.key} />
+                              )
+                            )}
+                            {row.manualReservationPurpose ? (
+                              <OpsBadge>{manualReservationPurposeLabel(row.manualReservationPurpose)}</OpsBadge>
+                            ) : null}
+                            {row.sendGuestConfirmationEmail === false ? (
+                              <OpsBadge>No auto confirmation email</OpsBadge>
+                            ) : null}
+                          </div>
+                        </OpsTableCell>
+                        <OpsTableCell>{stayLabel(row)}</OpsTableCell>
+                        <OpsTableCell>
+                          {cabinLabel(row)}
+                          {row.cabinSummary?.location ? (
+                            <p className="ops-reservations-table__meta">{row.cabinSummary.location}</p>
+                          ) : null}
+                        </OpsTableCell>
+                        <OpsTableCell>{guestCountLabel(row)}</OpsTableCell>
+                        <OpsTableCell>
+                          <OpsStatus domain="reservation" value={row.reservationStatus || 'unknown'} />
+                        </OpsTableCell>
+                        <OpsTableCell>
+                          <OpsStatus domain="payment" value={paymentOpsValue(row.paymentStatus)} />
+                        </OpsTableCell>
+                        <OpsTableCell align="end" numeric>
+                          <span className="ops-reservations-amount">{formatReservationAmount(row.amount)}</span>
+                        </OpsTableCell>
+                      </OpsTableRow>
+                    );
+                  })}
+                </OpsTableBody>
+              </OpsTable>
             </div>
-            <form onSubmit={submitCreate} className="p-4 sm:p-6 space-y-3 max-w-2xl mx-auto">
-              <p className="text-xs text-gray-500">
-                Single-cabin stays only. Dates use the property calendar (check-out is exclusive). Overlaps are rejected
-                unless you acknowledge external channel holds.
-              </p>
-              {createError ? <div className="text-sm text-red-600">{createError}</div> : null}
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Cabin</label>
-                <select
-                  required
-                  value={form.cabinId}
-                  onChange={(e) => setForm((f) => ({ ...f, cabinId: e.target.value }))}
-                  className="w-full px-3 py-2 text-sm border rounded-lg"
-                >
-                  <option value="">Select cabin</option>
-                  {singleCabins.map((c) => (
-                    <option key={c.cabinId} value={c.cabinId}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-                {singleCabins.length === 0 ? (
-                  <p className="mt-1 text-xs text-amber-700">No bookable single cabins in ops list (multi-unit types need another flow).</p>
-                ) : null}
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Check-in</label>
-                  <input
-                    required
-                    type="date"
-                    value={form.checkIn}
-                    onChange={(e) => setForm((f) => ({ ...f, checkIn: e.target.value }))}
-                    className="w-full px-3 py-2 text-sm border rounded-lg"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Check-out</label>
-                  <input
-                    required
-                    type="date"
-                    value={form.checkOut}
-                    onChange={(e) => setForm((f) => ({ ...f, checkOut: e.target.value }))}
-                    className="w-full px-3 py-2 text-sm border rounded-lg"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Adults</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={10}
-                    value={form.adults}
-                    onChange={(e) => setForm((f) => ({ ...f, adults: e.target.value }))}
-                    className="w-full px-3 py-2 text-sm border rounded-lg"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Children</label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={10}
-                    value={form.children}
-                    onChange={(e) => setForm((f) => ({ ...f, children: e.target.value }))}
-                    className="w-full px-3 py-2 text-sm border rounded-lg"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">First name</label>
-                  <input
-                    required
-                    value={form.firstName}
-                    onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))}
-                    className="w-full px-3 py-2 text-sm border rounded-lg"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Last name</label>
-                  <input
-                    required
-                    value={form.lastName}
-                    onChange={(e) => setForm((f) => ({ ...f, lastName: e.target.value }))}
-                    className="w-full px-3 py-2 text-sm border rounded-lg"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Email</label>
-                <input
-                  required
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-                  className="w-full px-3 py-2 text-sm border rounded-lg"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Phone</label>
-                <input
-                  required
-                  value={form.phone}
-                  onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-                  className="w-full px-3 py-2 text-sm border rounded-lg"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Reservation purpose</label>
-                <select
-                  value={form.manualReservationPurpose}
-                  onChange={(e) => {
-                    const purpose = e.target.value;
-                    setForm((f) => ({
-                      ...f,
-                      manualReservationPurpose: purpose,
-                      sendGuestConfirmationEmail: defaultSendGuestConfirmationForPurpose(purpose)
-                    }));
-                  }}
-                  className="w-full px-3 py-2 text-sm border rounded-lg"
-                >
-                  {MANUAL_RESERVATION_PURPOSE_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <label className="flex items-start gap-2 text-xs text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={form.sendGuestConfirmationEmail}
-                  onChange={(e) => setForm((f) => ({ ...f, sendGuestConfirmationEmail: e.target.checked }))}
-                  className="mt-0.5"
-                />
-                <span>Send guest confirmation email when this reservation is confirmed</span>
-              </label>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Initial status</label>
-                <select
-                  value={form.initialStatus}
-                  onChange={(e) => setForm((f) => ({ ...f, initialStatus: e.target.value }))}
-                  className="w-full px-3 py-2 text-sm border rounded-lg"
-                >
-                  <option value="pending">Pending</option>
-                  <option value="confirmed">Confirmed</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Note (optional)</label>
-                <textarea
-                  value={form.note}
-                  onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
-                  rows={2}
-                  className="w-full px-3 py-2 text-sm border rounded-lg"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Payment placeholder (optional)</label>
-                <input
-                  value={form.paymentPlaceholder}
-                  onChange={(e) => setForm((f) => ({ ...f, paymentPlaceholder: e.target.value }))}
-                  placeholder="e.g. Pay on arrival, invoice sent"
-                  className="w-full px-3 py-2 text-sm border rounded-lg"
-                />
-              </div>
-              <label className="flex items-start gap-2 text-xs text-gray-700">
-                <input
-                  type="checkbox"
-                  checked={form.acceptExternalHoldWarnings}
-                  onChange={(e) => setForm((f) => ({ ...f, acceptExternalHoldWarnings: e.target.checked }))}
-                  className="mt-0.5"
-                />
-                <span>I understand this range overlaps external channel holds and still want to create the reservation.</span>
-              </label>
-              <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setCreateOpen(false)}
-                  className="w-full sm:w-auto px-4 py-2 text-sm border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={createBusy || singleCabins.length === 0}
-                  className="w-full sm:w-auto px-4 py-2 text-sm font-medium rounded-lg bg-[#81887A] text-white hover:bg-[#707668] disabled:opacity-50"
-                >
-                  {createBusy ? 'Creating…' : 'Create'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      ) : null}
 
-      <div className="space-y-2">
-        {(data?.items || []).map((row) => (
-          <Link key={row.reservationId} to={`/ops/reservations/${row.reservationId}`} className="block bg-white border border-gray-200 rounded-xl p-4 hover:bg-gray-50" data-testid="ops-reservation-row">
-            <div className="space-y-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-gray-900">
-                    {row.guestSummary?.firstName} {row.guestSummary?.lastName}
-                  </p>
-                  <p className="text-xs text-gray-500 truncate">{row.guestSummary?.email}</p>
-                </div>
-                <p className="text-[11px] text-gray-500 font-mono">#{String(row.reservationId || '').slice(-8)}</p>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs text-gray-600">
-                <div>
-                  <span className="text-gray-500">Dates:</span>{' '}
-                  <span className="text-gray-700">
-                    {row.dateRange?.startDateOnly || '—'} - {row.dateRange?.endDateOnly || '—'}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Cabin:</span>{' '}
-                  <span className="text-gray-700">{row.cabinSummary?.displayName || row.cabinSummary?.name || 'Unknown'}</span>
-                  {row.cabinSummary?.location ? (
-                    <span className="text-gray-500"> · {row.cabinSummary.location}</span>
-                  ) : null}
-                </div>
-                <div>
-                  <span className="text-gray-500">Guests:</span>{' '}
-                  <span className="text-gray-700">
-                    {row.adults ?? 0}A{(row.children ?? 0) > 0 ? ` ${(row.children ?? 0)}C` : ''}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-gray-500">Amount:</span>{' '}
-                  <span className="text-gray-700">€{row.amount ?? '—'}</span>
-                </div>
-                <div className="sm:col-span-2">
-                  <span className="text-gray-500">Source:</span>{' '}
-                  <span className="text-gray-700">{row.source || '—'}</span>
-                  {row.sourceReference ? <span className="text-gray-500"> · {row.sourceReference}</span> : null}
-                </div>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50">{row.reservationStatus || 'unknown'}</span>
-                <span className="text-xs px-2 py-1 rounded border border-gray-200 bg-gray-50">{paymentStatusLabel(row.paymentStatus)}</span>
-                {row.manualReservationPurpose ? (
-                  <span className="text-xs px-2 py-1 rounded border border-indigo-200 bg-indigo-50 text-indigo-800">
-                    {manualReservationPurposeLabel(row.manualReservationPurpose)}
-                  </span>
-                ) : null}
-                {row.sendGuestConfirmationEmail === false ? (
-                  <span className="text-xs px-2 py-1 rounded border border-slate-200 bg-slate-50 text-slate-700">
-                    No auto confirmation email
-                  </span>
-                ) : null}
-                {buildOperationalBadges(row).map((badge) => (
-                  <span key={badge.label} className={`text-xs px-2 py-1 rounded border ${badgeToneClass(badge.tone)}`}>
-                    {badge.label}
-                  </span>
-                ))}
-                {row.conflict?.hasConflict ? (
-                  <span className="text-xs px-2 py-1 rounded border border-red-200 bg-red-50 text-red-700">Conflict</span>
-                ) : null}
-              </div>
+            <div className="ops-reservations-rows">
+              {items.map((row) => (
+                <ReservationStructuredRow key={row.reservationId} row={row} />
+              ))}
             </div>
-          </Link>
-        ))}
-        {data?.items?.length === 0 ? (
-          <div className="bg-white border border-gray-200 rounded-xl p-4 text-sm text-gray-600 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <span>No reservations match the selected filters.</span>
-            <button
-              type="button"
-              onClick={resetFilters}
-              className="w-full sm:w-auto px-3 py-2 text-xs font-medium rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-            >
-              Reset filters
-            </button>
+          </>
+        ) : null}
+
+        {!loading && data && totalPages > 1 ? (
+          <div className="ops-reservations-pager">
+            <OpsPagination
+              page={pagination.page}
+              totalPages={totalPages}
+              onPageChange={(nextPage) => updateFilter('page', nextPage)}
+            />
+            <p className="ops-reservations-total">{pagination.total ?? '—'} total</p>
           </div>
         ) : null}
       </div>
 
-      {data?.pagination?.totalPages > 1 ? (
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => updateFilter('page', Math.max(1, Number(data.pagination.page) - 1))}
-            disabled={Number(data.pagination.page) <= 1}
-            className="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      <OpsModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        title="Manual reservation"
+        description="Single-cabin stays only. Dates use the property calendar (check-out is exclusive). Overlaps are rejected unless you acknowledge external channel holds."
+        footer={
+          <>
+            <OpsButton variant="secondary" onClick={() => setCreateOpen(false)} disabled={createBusy}>
+              Cancel
+            </OpsButton>
+            <OpsButton
+              type="submit"
+              form="ops-reservations-create-form"
+              loading={createBusy}
+              loadingLabel="Creating…"
+              disabled={singleCabins.length === 0}
+            >
+              Create
+            </OpsButton>
+          </>
+        }
+      >
+        <form id="ops-reservations-create-form" className="ops-reservations-form" onSubmit={submitCreate}>
+          {createError ? <OpsInlineError>{createError}</OpsInlineError> : null}
+          <OpsSelect
+            label="Cabin"
+            required
+            value={form.cabinId}
+            onChange={(e) => setForm((f) => ({ ...f, cabinId: e.target.value }))}
+            disabled={createBusy}
           >
-            Prev
-          </button>
-          <span className="text-xs text-gray-500 tabular-nums">
-            Page {data.pagination.page} of {data.pagination.totalPages}
-          </span>
-          <button
-            type="button"
-            onClick={() => updateFilter('page', Number(data.pagination.page) + 1)}
-            disabled={Number(data.pagination.page) >= Number(data.pagination.totalPages)}
-            className="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            <option value="">Select cabin</option>
+            {singleCabins.map((c) => (
+              <option key={c.cabinId} value={c.cabinId}>
+                {c.name}
+              </option>
+            ))}
+          </OpsSelect>
+          {singleCabins.length === 0 ? (
+            <p className="ops-reservations-form__note">
+              No bookable single cabins in ops list (multi-unit types need another flow).
+            </p>
+          ) : null}
+          <div className="ops-reservations-form__split">
+            <OpsTextField
+              label="Check-in"
+              required
+              type="date"
+              value={form.checkIn}
+              onChange={(e) => setForm((f) => ({ ...f, checkIn: e.target.value }))}
+              disabled={createBusy}
+            />
+            <OpsTextField
+              label="Check-out"
+              required
+              type="date"
+              value={form.checkOut}
+              onChange={(e) => setForm((f) => ({ ...f, checkOut: e.target.value }))}
+              disabled={createBusy}
+            />
+          </div>
+          <div className="ops-reservations-form__split">
+            <OpsTextField
+              label="Adults"
+              type="number"
+              min={1}
+              max={10}
+              value={form.adults}
+              onChange={(e) => setForm((f) => ({ ...f, adults: e.target.value }))}
+              disabled={createBusy}
+            />
+            <OpsTextField
+              label="Children"
+              type="number"
+              min={0}
+              max={10}
+              value={form.children}
+              onChange={(e) => setForm((f) => ({ ...f, children: e.target.value }))}
+              disabled={createBusy}
+            />
+          </div>
+          <div className="ops-reservations-form__split">
+            <OpsTextField
+              label="First name"
+              required
+              value={form.firstName}
+              onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))}
+              disabled={createBusy}
+            />
+            <OpsTextField
+              label="Last name"
+              required
+              value={form.lastName}
+              onChange={(e) => setForm((f) => ({ ...f, lastName: e.target.value }))}
+              disabled={createBusy}
+            />
+          </div>
+          <OpsTextField
+            label="Email"
+            required
+            type="email"
+            value={form.email}
+            onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+            disabled={createBusy}
+          />
+          <OpsTextField
+            label="Phone"
+            required
+            value={form.phone}
+            onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+            disabled={createBusy}
+          />
+          <OpsSelect
+            label="Reservation purpose"
+            value={form.manualReservationPurpose}
+            onChange={(e) => {
+              const purpose = e.target.value;
+              setForm((f) => ({
+                ...f,
+                manualReservationPurpose: purpose,
+                sendGuestConfirmationEmail: defaultSendGuestConfirmationForPurpose(purpose)
+              }));
+            }}
+            disabled={createBusy}
           >
-            Next
-          </button>
-        </div>
-      ) : null}
-    </div>
+            {MANUAL_RESERVATION_PURPOSE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </OpsSelect>
+          <OpsCheckbox
+            label="Send guest confirmation email when this reservation is confirmed"
+            checked={form.sendGuestConfirmationEmail}
+            onChange={(e) => setForm((f) => ({ ...f, sendGuestConfirmationEmail: e.target.checked }))}
+            disabled={createBusy}
+          />
+          <OpsSelect
+            label="Initial status"
+            value={form.initialStatus}
+            onChange={(e) => setForm((f) => ({ ...f, initialStatus: e.target.value }))}
+            disabled={createBusy}
+          >
+            <option value="pending">Pending</option>
+            <option value="confirmed">Confirmed</option>
+          </OpsSelect>
+          <OpsTextarea
+            label="Note"
+            optional
+            rows={2}
+            value={form.note}
+            onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
+            disabled={createBusy}
+          />
+          <OpsTextField
+            label="Payment placeholder"
+            optional
+            value={form.paymentPlaceholder}
+            onChange={(e) => setForm((f) => ({ ...f, paymentPlaceholder: e.target.value }))}
+            placeholder="e.g. Pay on arrival, invoice sent"
+            disabled={createBusy}
+          />
+          <OpsCheckbox
+            label="I understand this range overlaps external channel holds and still want to create the reservation."
+            checked={form.acceptExternalHoldWarnings}
+            onChange={(e) => setForm((f) => ({ ...f, acceptExternalHoldWarnings: e.target.checked }))}
+            disabled={createBusy}
+          />
+        </form>
+      </OpsModal>
+    </OpsPage>
   );
 }
