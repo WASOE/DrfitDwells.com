@@ -655,6 +655,8 @@ a.ops-collection-row__main:hover {
 /* Overlays — P0C2. Portal host lives inside .ops-root. */
 .ops-overlay-host {
   pointer-events: none;
+  position: relative;
+  z-index: var(--ops-z-overlay);
 }
 
 .ops-overlay {

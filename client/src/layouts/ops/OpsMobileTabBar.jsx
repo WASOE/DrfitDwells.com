@@ -20,7 +20,7 @@ export default function OpsMobileTabBar({ onMoreClick, moreButtonRef, isMoreOpen
 
   return (
     <nav
-      className="fixed bottom-0 inset-x-0 z-40 border-t border-gray-200 bg-white md:hidden"
+      className="fixed bottom-0 inset-x-0 z-ops-nav border-t border-gray-200 bg-white md:hidden"
       style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       aria-label="Ops sections"
     >

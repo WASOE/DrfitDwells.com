@@ -1,0 +1,212 @@
+/* Cabins list collection layout only. Visual values come from --ops-* tokens. */
+.ops-cabins-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-16);
+  min-width: 0;
+}
+
+.ops-cabins-list__search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--ops-space-8);
+  min-width: 0;
+}
+
+.ops-cabins-list__search-field {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.ops-cabins-list__search-action {
+  flex: 0 0 auto;
+}
+
+.ops-cabins-list__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-8);
+  min-width: 0;
+}
+
+.ops-cabins-list__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--ops-space-12);
+  align-items: start;
+  min-width: 0;
+  min-height: var(--ops-row-min-mobile);
+  padding: var(--ops-space-12);
+  border: 1px solid var(--ops-border);
+  border-radius: var(--ops-radius-surface);
+  background: var(--ops-surface);
+  color: inherit;
+  text-decoration: none;
+}
+
+.ops-cabins-list__row:hover,
+.ops-cabins-list__row:focus-visible {
+  background: var(--ops-surface-subtle);
+}
+
+.ops-cabins-list__thumb {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--ops-radius-control);
+  overflow: hidden;
+  border: 1px solid var(--ops-border);
+  background: var(--ops-surface-subtle);
+  flex-shrink: 0;
+}
+
+.ops-cabins-list__thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ops-cabins-list__thumb-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 600;
+  color: var(--ops-text-secondary);
+}
+
+.ops-cabins-list__identity {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-4);
+}
+
+.ops-cabins-list__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ops-space-8);
+  min-width: 0;
+}
+
+.ops-cabins-list__name {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--ops-text);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ops-cabins-list__location {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--ops-text-secondary);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ops-cabins-list__slug {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ops-text-muted);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.ops-cabins-list__meta {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ops-space-8) var(--ops-space-12);
+  min-width: 0;
+}
+
+.ops-cabins-list__fact {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ops-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.ops-cabins-list__blocked {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ops-space-8);
+  min-width: 0;
+}
+
+.ops-cabins-list__pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ops-space-8);
+  min-width: 0;
+}
+
+.ops-cabins-list__total {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--ops-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ops-cabins-list__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-12);
+  min-width: 0;
+}
+
+.ops-cabins-list__form-split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--ops-space-12);
+  min-width: 0;
+}
+
+.ops-cabins-list .ops-empty .ops-button {
+  align-self: flex-start;
+}
+
+@media (min-width: 520px) {
+  .ops-cabins-list__form-split {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container ops-page (min-width: 480px) {
+  .ops-cabins-list__search-field {
+    flex: 0 1 280px;
+    max-width: 320px;
+  }
+}
+
+@container ops-page (min-width: 720px) {
+  .ops-cabins-list__row {
+    grid-template-columns: auto minmax(0, 1fr) minmax(0, 260px);
+    align-items: start;
+  }
+
+  .ops-cabins-list__thumb {
+    width: 72px;
+    height: 72px;
+  }
+
+  .ops-cabins-list__meta {
+    grid-column: auto;
+    justify-content: flex-end;
+  }
+}

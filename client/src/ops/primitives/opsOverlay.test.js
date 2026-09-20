@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { OPS_SHARED_TOKEN_VALUES } from '../tokens/opsTokenNames.js';
 import {
   acquireOpsScrollLock,
   getOpsScrollLockCount,
@@ -44,11 +45,20 @@ describe('ops overlay appearance and motion source', () => {
     expect(overlayCss).toContain('var(--ops-shadow-modal)');
     expect(overlayCss).toContain('var(--ops-z-overlay)');
     expect(overlayCss).toContain('var(--ops-z-modal)');
+    expect(overlayCss).toMatch(/\.ops-overlay-host\s*\{[^}]*z-index:\s*var\(--ops-z-overlay\)/);
     expect(overlayCss).toContain('@media (prefers-reduced-motion: reduce)');
     expect(overlayCss).not.toMatch(/z-\[9999\]/);
     expect(overlayCss).not.toMatch(/\bhtml\.dark\b/);
     expect(overlayCss).not.toMatch(/\bdark:/);
     expect(overlayCss).not.toMatch(/\bgray-\d+/);
     expect(overlayCss).not.toMatch(/#[0-9A-Fa-f]{3,8}/);
+  });
+
+  it('keeps the overlay layer above the nav layer', () => {
+    const overlay = Number(OPS_SHARED_TOKEN_VALUES['--ops-z-overlay']);
+    const nav = Number(OPS_SHARED_TOKEN_VALUES['--ops-z-nav']);
+    const dropdown = Number(OPS_SHARED_TOKEN_VALUES['--ops-z-dropdown']);
+    expect(overlay).toBeGreaterThan(nav);
+    expect(overlay).toBeGreaterThan(dropdown);
   });
 });

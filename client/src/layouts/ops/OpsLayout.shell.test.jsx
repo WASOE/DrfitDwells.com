@@ -254,4 +254,14 @@ describe('OpsLayout desktop/mobile/cleaner shell', () => {
     expect(skip.className).not.toMatch(/not-sr-only/);
     expect(screen.getByTestId('ops-sidebar').getBoundingClientRect().top).toBe(0);
   });
+
+  it('keeps the mobile bottom nav on the nav layer below overlays', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { dirname, join } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'OpsMobileTabBar.jsx'), 'utf8');
+    expect(source).toMatch(/\bz-ops-nav\b/);
+    expect(source).not.toMatch(/\bz-40\b/);
+    expect(source).not.toMatch(/\bz-50\b/);
+  });
 });

@@ -2,7 +2,80 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { opsReadAPI, opsWriteAPI } from '../../services/opsApi';
 import { listHref, listRowId, normalizeMediaSrc, thumbInitials } from './cabins/cabinOpsUtils.js';
-import CreateCabinModal from './cabins/CreateCabinModal.jsx';
+import OpsPage from '../../ops/primitives/OpsPage';
+import OpsPageHeader from '../../ops/primitives/OpsPageHeader';
+import OpsButton from '../../ops/primitives/OpsButton';
+import OpsTextField from '../../ops/primitives/OpsTextField';
+import OpsTextarea from '../../ops/primitives/OpsTextarea';
+import OpsBadge from '../../ops/primitives/OpsBadge';
+import OpsStatus from '../../ops/primitives/OpsStatus';
+import OpsBanner from '../../ops/primitives/OpsBanner';
+import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
+import OpsEmptyState from '../../ops/primitives/OpsEmptyState';
+import OpsInlineError from '../../ops/primitives/OpsInlineError';
+import OpsPagination from '../../ops/primitives/OpsPagination';
+import OpsModal from '../../ops/primitives/OpsModal';
+import './OpsCabinsList.css';
+
+const EMPTY_CREATE_FORM = {
+  name: '',
+  description: '',
+  location: '',
+  capacity: '',
+  pricePerNight: '',
+  minNights: '1',
+  hostName: ''
+};
+
+function CabinThumb({ cabin }) {
+  const img = cabin.content?.imageUrl;
+  if (img) {
+    return <img src={normalizeMediaSrc(img)} alt="" />;
+  }
+  return <span className="ops-cabins-list__thumb-fallback">{thumbInitials(cabin.name)}</span>;
+}
+
+function CabinRow({ cabin }) {
+  const isMulti = cabin.kind === 'multi_unit_type';
+  const op = cabin.operational || {};
+  const blockedUnits = Number(op.blockedUnitsCount) || 0;
+
+  return (
+    <Link className="ops-cabins-list__row" to={listHref(cabin)}>
+      <div className="ops-cabins-list__thumb">
+        <CabinThumb cabin={cabin} />
+      </div>
+      <div className="ops-cabins-list__identity">
+        <div className="ops-cabins-list__title-row">
+          <span className="ops-cabins-list__name">{cabin.name}</span>
+          <OpsBadge>{isMulti ? 'Multi-unit type' : 'Single cabin'}</OpsBadge>
+          {cabin.isActive === false ? <OpsStatus domain="cabin" value="inactive" /> : null}
+        </div>
+        <p className="ops-cabins-list__location">{cabin.location || '—'}</p>
+        {isMulti && cabin.slug ? <p className="ops-cabins-list__slug">Slug: {cabin.slug}</p> : null}
+      </div>
+      <div className="ops-cabins-list__meta">
+        {isMulti ? (
+          <p className="ops-cabins-list__fact">
+            {op.totalUnits ?? 0} units ({op.activeUnits ?? 0} active)
+          </p>
+        ) : null}
+        {isMulti && blockedUnits > 0 ? (
+          <span className="ops-cabins-list__blocked">
+            <OpsStatus domain="cabin" value="blocked" />
+            <span className="ops-cabins-list__fact">{blockedUnits} blocked</span>
+          </span>
+        ) : null}
+        <p className="ops-cabins-list__fact">{op.capacity ?? '—'} guests</p>
+        <p className="ops-cabins-list__fact">{op.minNights ?? '—'} min nights</p>
+        {!isMulti ? <p className="ops-cabins-list__fact">{op.blockedDatesCount ?? 0} blocked nights</p> : null}
+        {isMulti && op.pricePerNight != null ? (
+          <p className="ops-cabins-list__fact">{op.pricePerNight} / night</p>
+        ) : null}
+      </div>
+    </Link>
+  );
+}
 
 export default function OpsCabinsList() {
   const navigate = useNavigate();
@@ -15,15 +88,7 @@ export default function OpsCabinsList() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createBusy, setCreateBusy] = useState(false);
   const [createError, setCreateError] = useState('');
-  const [createForm, setCreateForm] = useState({
-    name: '',
-    description: '',
-    location: '',
-    capacity: '',
-    pricePerNight: '',
-    minNights: '1',
-    hostName: ''
-  });
+  const [createForm, setCreateForm] = useState({ ...EMPTY_CREATE_FORM });
 
   useEffect(() => {
     let cancelled = false;
@@ -48,26 +113,14 @@ export default function OpsCabinsList() {
     };
   }, [page, searchQuery]);
 
-  useEffect(() => {
-    if (!createOpen) return undefined;
-    const onKey = (e) => {
-      if (e.key === 'Escape') setCreateOpen(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [createOpen]);
-
   const resetCreateForm = () => {
-    setCreateForm({
-      name: '',
-      description: '',
-      location: '',
-      capacity: '',
-      pricePerNight: '',
-      minNights: '1',
-      hostName: ''
-    });
+    setCreateForm({ ...EMPTY_CREATE_FORM });
     setCreateError('');
+  };
+
+  const openCreate = () => {
+    resetCreateForm();
+    setCreateOpen(true);
   };
 
   const handleCreateSubmit = async (e) => {
@@ -135,174 +188,161 @@ export default function OpsCabinsList() {
     setPage(1);
   };
 
-  if (loading && !data) return <div className="text-sm text-gray-500">Loading cabins...</div>;
-  if (error) return <div className="text-sm text-red-600">{error}</div>;
-  if (!data) return <div className="text-sm text-gray-500">No listings found.</div>;
-
-  const pg = data.pagination || {};
+  const items = data?.items || [];
+  const pg = data?.pagination || {};
   const totalPages = pg.totalPages || 1;
+  const firstLoad = loading && !data;
+  const hasRows = items.length > 0;
+  const emptyCatalog = Boolean(data) && items.length === 0 && !searchQuery.trim();
+  const emptySearch = Boolean(data) && items.length === 0 && Boolean(searchQuery.trim());
+  const nullData = !loading && !error && data == null;
 
   return (
-    <div className="space-y-4 pb-16 sm:pb-0 w-full">
-      <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
-        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 lg:gap-8">
-          <div className="min-w-0 flex-1 text-left">
-            <h2 className="text-lg font-semibold text-gray-900">Cabins &amp; unit types</h2>
-            <p className="text-xs text-gray-500 mt-1 max-w-2xl">
-              Single cabins and multi-unit types (e.g. A-Frame). Use Create cabin for new single listings only.
-            </p>
-          </div>
-          <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto lg:items-start lg:justify-end lg:max-w-xl shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                resetCreateForm();
-                setCreateOpen(true);
-              }}
-              className="px-4 py-2 text-sm rounded-lg border border-gray-200 bg-white hover:bg-gray-50 whitespace-nowrap shrink-0 order-2 sm:order-1"
-            >
-              Create cabin
-            </button>
-            <form
-              onSubmit={onSearchSubmit}
-              className="flex flex-col sm:flex-row gap-2 sm:items-center w-full lg:min-w-[280px] lg:max-w-md order-1 sm:order-2"
-            >
-              <input
-                type="search"
-                value={searchDraft}
-                onChange={(e) => setSearchDraft(e.target.value)}
-                placeholder="Search name, location, slug…"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-              />
-              <button
-                type="submit"
-                className="px-4 py-2 text-sm rounded-lg bg-[#81887A] text-white hover:opacity-90 whitespace-nowrap shrink-0"
-              >
-                Search
-              </button>
-            </form>
-          </div>
-        </div>
-      </section>
+    <OpsPage width="wide">
+      <div className="ops-cabins-list">
+        <OpsPageHeader
+          title="Cabins & unit types"
+          description="Single cabins and multi-unit types (e.g. A-Frame). Use Create cabin for new single listings only."
+          actions={<OpsButton onClick={openCreate}>Create cabin</OpsButton>}
+        />
 
-      <CreateCabinModal
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        createForm={createForm}
-        setCreateForm={setCreateForm}
-        createError={createError}
-        createBusy={createBusy}
-        onSubmit={handleCreateSubmit}
-      />
+        {error ? <OpsBanner tone="danger" body={error} /> : null}
 
-      <div className="space-y-3">
-        {data.items?.length === 0 ? (
-          <p className="text-sm text-gray-500 border border-dashed border-gray-200 rounded-xl p-6 bg-white">No rows match your filters.</p>
+        <form className="ops-cabins-list__search" onSubmit={onSearchSubmit}>
+          <OpsTextField
+            className="ops-cabins-list__search-field"
+            label="Search"
+            type="search"
+            value={searchDraft}
+            onChange={(e) => setSearchDraft(e.target.value)}
+            placeholder="Search name, location, slug…"
+          />
+          <OpsButton className="ops-cabins-list__search-action" type="submit" variant="secondary">
+            Search
+          </OpsButton>
+        </form>
+
+        {firstLoad ? <OpsLoadingState label="Loading cabins" /> : null}
+
+        {nullData ? <OpsEmptyState title="No listings found." /> : null}
+
+        {emptyCatalog && !error ? (
+          <OpsEmptyState
+            title="No cabins yet."
+            body="Create a single cabin to start this inventory."
+            action={
+              <OpsButton variant="secondary" onClick={openCreate}>
+                Create cabin
+              </OpsButton>
+            }
+          />
         ) : null}
-        {data.items?.map((c) => {
-          const img = c.content?.imageUrl;
-          return (
-            <Link
-              key={listRowId(c)}
-              to={listHref(c)}
-              className="block bg-white border border-gray-200 rounded-xl p-4 md:p-5 hover:bg-gray-50/80 hover:border-gray-300 transition-colors"
-            >
-              <div className="flex flex-col lg:flex-row lg:items-stretch gap-4 lg:gap-6">
-                <div className="shrink-0 flex lg:block">
-                  <div className="w-16 h-16 sm:w-20 sm:h-20 lg:w-24 lg:h-24 rounded-lg bg-gray-100 overflow-hidden border border-gray-100">
-                    {img ? (
-                      <img src={normalizeMediaSrc(img)} alt="" className="w-full h-full object-cover" loading="lazy" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-sm font-semibold text-gray-600 bg-gray-50">
-                        {thumbInitials(c.name)}
-                      </div>
-                    )}
-                  </div>
-                </div>
 
-                <div className="min-w-0 flex-1 text-left space-y-2">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="text-base font-semibold text-gray-900">{c.name}</span>
-                    {c.kind === 'multi_unit_type' ? (
-                      <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-100">
-                        Multi-unit type
-                      </span>
-                    ) : (
-                      <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-stone-100 text-stone-700 border border-stone-200">
-                        Single cabin
-                      </span>
-                    )}
-                    {c.isActive === false ? (
-                      <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-gray-100 text-gray-600 border border-gray-200">
-                        Inactive
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="text-sm text-gray-600">{c.location || '—'}</p>
-                  {c.kind === 'multi_unit_type' && c.slug ? (
-                    <p className="text-xs text-gray-400 font-mono">Slug: {c.slug}</p>
-                  ) : null}
-                </div>
+        {emptySearch && !error ? (
+          <OpsEmptyState
+            variant="filtered"
+            title="No cabins match this search."
+            body="Try a different name, location, or slug."
+          />
+        ) : null}
 
-                <div className="flex flex-wrap lg:flex-nowrap lg:content-start gap-2 lg:justify-end lg:max-w-xl lg:shrink-0 lg:pt-0.5">
-                  {c.kind === 'multi_unit_type' ? (
-                    <>
-                      <span className="text-xs px-2.5 py-1 rounded border border-gray-200 bg-gray-50 whitespace-nowrap">
-                        {c.operational.totalUnits ?? 0} units ({c.operational.activeUnits ?? 0} active)
-                      </span>
-                      {c.operational.blockedUnitsCount > 0 ? (
-                        <span className="text-xs px-2.5 py-1 rounded border border-amber-200 bg-amber-50 text-amber-900 whitespace-nowrap">
-                          {c.operational.blockedUnitsCount} w/ unit blocks
-                        </span>
-                      ) : null}
-                    </>
-                  ) : null}
-                  <span className="text-xs px-2.5 py-1 rounded border border-gray-200 bg-gray-50 whitespace-nowrap">
-                    {c.operational.capacity ?? '—'} guests
-                  </span>
-                  <span className="text-xs px-2.5 py-1 rounded border border-gray-200 bg-gray-50 whitespace-nowrap">
-                    {c.operational.minNights ?? '—'} min nights
-                  </span>
-                  {c.kind === 'single_cabin' ? (
-                    <span className="text-xs px-2.5 py-1 rounded border border-gray-200 bg-gray-50 whitespace-nowrap">
-                      {c.operational.blockedDatesCount ?? 0} blocked nights
-                    </span>
-                  ) : null}
-                  {c.kind === 'multi_unit_type' && c.operational.pricePerNight != null ? (
-                    <span className="text-xs px-2.5 py-1 rounded border border-gray-200 bg-gray-50 whitespace-nowrap">
-                      {c.operational.pricePerNight} / night
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            </Link>
-          );
-        })}
+        {hasRows ? (
+          <div className="ops-cabins-list__rows" aria-busy={loading || undefined}>
+            {items.map((cabin) => (
+              <CabinRow key={listRowId(cabin)} cabin={cabin} />
+            ))}
+          </div>
+        ) : null}
+
+        {data && totalPages > 1 ? (
+          <div className="ops-cabins-list__pager">
+            <OpsPagination page={page} totalPages={totalPages} onPageChange={setPage} loading={loading} />
+            <p className="ops-cabins-list__total">{pg.total ?? '—'} total</p>
+          </div>
+        ) : null}
       </div>
 
-      {totalPages > 1 ? (
-        <div className="flex items-center justify-between gap-3 pt-1">
-          <button
-            type="button"
-            disabled={page <= 1 || loading}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            className="text-sm px-3 py-2 rounded-lg border border-gray-200 bg-white disabled:opacity-40"
-          >
-            Previous
-          </button>
-          <span className="text-xs text-gray-500">
-            Page {pg.page ?? page} of {totalPages} ({pg.total ?? '—'} total)
-          </span>
-          <button
-            type="button"
-            disabled={page >= totalPages || loading}
-            onClick={() => setPage((p) => p + 1)}
-            className="text-sm px-3 py-2 rounded-lg border border-gray-200 bg-white disabled:opacity-40"
-          >
-            Next
-          </button>
-        </div>
-      ) : null}
-    </div>
+      <OpsModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        title="Create single cabin"
+        description="Creates a single cabin only. Multi-unit provisioning remains separate."
+        footer={
+          <>
+            <OpsButton variant="secondary" onClick={() => setCreateOpen(false)} disabled={createBusy}>
+              Cancel
+            </OpsButton>
+            <OpsButton type="submit" form="ops-cabins-create-form" loading={createBusy} loadingLabel="Creating…">
+              Create cabin
+            </OpsButton>
+          </>
+        }
+      >
+        <form id="ops-cabins-create-form" className="ops-cabins-list__form" onSubmit={handleCreateSubmit}>
+          {createError ? <OpsInlineError>{createError}</OpsInlineError> : null}
+          <OpsTextField
+            label="Name"
+            required
+            value={createForm.name}
+            onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
+            disabled={createBusy}
+          />
+          <OpsTextarea
+            label="Description"
+            required
+            rows={4}
+            value={createForm.description}
+            onChange={(e) => setCreateForm((f) => ({ ...f, description: e.target.value }))}
+            disabled={createBusy}
+          />
+          <OpsTextField
+            label="Location"
+            required
+            value={createForm.location}
+            onChange={(e) => setCreateForm((f) => ({ ...f, location: e.target.value }))}
+            disabled={createBusy}
+          />
+          <div className="ops-cabins-list__form-split">
+            <OpsTextField
+              label="Capacity (guests)"
+              required
+              type="number"
+              min={1}
+              step={1}
+              value={createForm.capacity}
+              onChange={(e) => setCreateForm((f) => ({ ...f, capacity: e.target.value }))}
+              disabled={createBusy}
+            />
+            <OpsTextField
+              label="Price per night"
+              required
+              type="number"
+              min={0}
+              step={0.01}
+              value={createForm.pricePerNight}
+              onChange={(e) => setCreateForm((f) => ({ ...f, pricePerNight: e.target.value }))}
+              disabled={createBusy}
+            />
+          </div>
+          <OpsTextField
+            label="Minimum nights"
+            required
+            type="number"
+            min={1}
+            step={1}
+            value={createForm.minNights}
+            onChange={(e) => setCreateForm((f) => ({ ...f, minNights: e.target.value }))}
+            disabled={createBusy}
+          />
+          <OpsTextField
+            label="Host name"
+            optional
+            value={createForm.hostName}
+            onChange={(e) => setCreateForm((f) => ({ ...f, hostName: e.target.value }))}
+            disabled={createBusy}
+          />
+        </form>
+      </OpsModal>
+    </OpsPage>
   );
 }
