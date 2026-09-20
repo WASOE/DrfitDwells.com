@@ -54,7 +54,6 @@ describe('ops design guard', () => {
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cleaning/OpsCleaningSettings.css');
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cleaning/OpsCleaningInventoryTagsPanel.jsx');
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cleaning/OpsCleaningRateCardPanel.jsx');
-    expect(MIGRATED_OPS_FILES).not.toContain('src/pages/ops/cleaning/OpsCleaningCalendar.jsx');
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsReviews.jsx');
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsReviews.css');
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/OpsCalendarIndex.jsx');
@@ -66,8 +65,15 @@ describe('ops design guard', () => {
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/LocationBlockSheet.jsx');
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/OpsWorkWindows.jsx');
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/OpsWorkWindows.css');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cleaning/OpsCleaningCalendar.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cleaning/OpsCleaningCalendar.css');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cleaning/OpsCleaningPaymentPanel.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cleaning/OpsCleaningPayoutBreakdown.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cleaning/OpsCleaningDailyFeeCard.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cleaning/OpsCleaningLineItemsTable.jsx');
     expect(MIGRATED_OPS_FILES).not.toContain('src/pages/ops/calendar/opsCalendarDateUtils.js');
     expect(MIGRATED_OPS_FILES).not.toContain('src/pages/ops/calendar/workWindowsFormat.js');
+    expect(MIGRATED_OPS_FILES).not.toContain('src/services/cleaningApi.js');
     expect(MIGRATED_OPS_FILES).not.toContain('src/components/ops/ManualReviewResolveAction.jsx');
     expect(result.scanned).toEqual(expect.arrayContaining(MIGRATED_OPS_FILES));
   });

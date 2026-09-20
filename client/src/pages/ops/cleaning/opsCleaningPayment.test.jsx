@@ -1,12 +1,26 @@
 import { describe, expect, it, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen } from '@testing-library/react';
+import { OpsSessionProvider } from '../../../context/OpsSessionContext';
 import OpsCleaningLineItemsTable from './OpsCleaningLineItemsTable.jsx';
 import OpsCleaningPaymentPanel from './OpsCleaningPaymentPanel.jsx';
 
 afterEach(() => {
   cleanup();
 });
+
+const adminSession = {
+  authenticated: true,
+  role: 'admin',
+  modules: ['*'],
+  actions: ['ops.cleaning.payment_write'],
+  defaultRoute: '/ops',
+  locale: 'en'
+};
+
+function renderPayment(ui) {
+  return render(<OpsSessionProvider session={adminSession}>{ui}</OpsSessionProvider>);
+}
 
 describe('OpsCleaningLineItemsTable', () => {
   it('renders line item amounts from API without summing in client', () => {
@@ -37,7 +51,7 @@ describe('OpsCleaningPaymentPanel', () => {
   };
 
   it('is hidden from DOM on mobile via parent aside; panel has desktop test id', () => {
-    render(
+    renderPayment(
       <OpsCleaningPaymentPanel
         selectedDate={new Date('2026-08-01')}
         paymentSummary={baseSummary}
@@ -54,7 +68,7 @@ describe('OpsCleaningPaymentPanel', () => {
   });
 
   it('hides mark paid without payment_write', () => {
-    render(
+    renderPayment(
       <OpsCleaningPaymentPanel
         selectedDate={new Date('2026-08-01')}
         paymentSummary={baseSummary}
@@ -72,7 +86,7 @@ describe('OpsCleaningPaymentPanel', () => {
   });
 
   it('shows frozen snapshot badge when paid', () => {
-    render(
+    renderPayment(
       <OpsCleaningPaymentPanel
         selectedDate={new Date('2026-08-01')}
         paymentSummary={{
@@ -95,14 +109,14 @@ describe('OpsCleaningPaymentPanel', () => {
 });
 
 describe('OpsCleaningCalendar mobile payment card', () => {
-  it('mobile payment wrapper uses lg:hidden class in source', async () => {
+  it('mobile payment wrapper uses dedicated CSS layout classes in source', async () => {
     const fs = await import('node:fs');
     const path = await import('node:path');
     const { fileURLToPath } = await import('node:url');
     const dir = path.dirname(fileURLToPath(import.meta.url));
     const source = fs.readFileSync(path.join(dir, 'OpsCleaningCalendar.jsx'), 'utf8');
-    expect(source).toMatch(/lg:hidden/);
-    expect(source).toMatch(/hidden lg:block lg:col-span-7/);
+    expect(source).toMatch(/ops-cleaning-cal__mobile-panels/);
+    expect(source).toMatch(/ops-cleaning-cal__aside/);
     expect(source).toMatch(/getCleaningPayoutSummary/);
     expect(source).not.toMatch(/Select Cabin or Valley to view payment summary/);
   });
