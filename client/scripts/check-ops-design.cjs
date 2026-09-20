@@ -79,7 +79,10 @@ const MIGRATED_OPS_FILES = [
   'src/pages/ops/cleaning/OpsCleaningPaymentPanel.jsx',
   'src/pages/ops/cleaning/OpsCleaningPayoutBreakdown.jsx',
   'src/pages/ops/cleaning/OpsCleaningDailyFeeCard.jsx',
-  'src/pages/ops/cleaning/OpsCleaningLineItemsTable.jsx'
+  'src/pages/ops/cleaning/OpsCleaningLineItemsTable.jsx',
+  'src/pages/ops/OpsInsights.jsx',
+  'src/pages/ops/OpsInsightsPerformance.jsx',
+  'src/pages/ops/OpsInsights.css'
 ];
 
 const HEX_ALLOWLIST = new Set(['ops.css', 'tokens/opsTokenNames.js']);

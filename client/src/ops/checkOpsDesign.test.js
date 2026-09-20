@@ -71,6 +71,9 @@ describe('ops design guard', () => {
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cleaning/OpsCleaningPayoutBreakdown.jsx');
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cleaning/OpsCleaningDailyFeeCard.jsx');
     expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cleaning/OpsCleaningLineItemsTable.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsInsights.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsInsightsPerformance.jsx');
+    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsInsights.css');
     expect(MIGRATED_OPS_FILES).not.toContain('src/pages/ops/calendar/opsCalendarDateUtils.js');
     expect(MIGRATED_OPS_FILES).not.toContain('src/pages/ops/calendar/workWindowsFormat.js');
     expect(MIGRATED_OPS_FILES).not.toContain('src/services/cleaningApi.js');

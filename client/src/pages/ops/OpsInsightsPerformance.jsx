@@ -7,6 +7,23 @@ import {
   currentMonthDateRange,
   daysBetweenInclusive
 } from './utils/opsIntelligenceFilters';
+import OpsPage from '../../ops/primitives/OpsPage';
+import OpsPageHeader from '../../ops/primitives/OpsPageHeader';
+import OpsFilterBar from '../../ops/primitives/OpsFilterBar';
+import OpsSelect from '../../ops/primitives/OpsSelect';
+import OpsTextField from '../../ops/primitives/OpsTextField';
+import OpsButton from '../../ops/primitives/OpsButton';
+import OpsBanner from '../../ops/primitives/OpsBanner';
+import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
+import OpsMetric, { OpsMetricGroup } from '../../ops/primitives/OpsMetric';
+import OpsTable, {
+  OpsTableBody,
+  OpsTableCell,
+  OpsTableHead,
+  OpsTableHeader,
+  OpsTableRow
+} from '../../ops/primitives/OpsTable';
+import './OpsInsights.css';
 
 const MAX_RANGE_DAYS = 800;
 
@@ -177,299 +194,257 @@ export default function OpsInsightsPerformance() {
   }, [filterOptions.units, filters.cabinTypeId]);
 
   return (
-    <div className="space-y-4 pb-16 sm:pb-0 max-w-7xl mx-auto">
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Historical performance</h2>
-            <p className="text-xs text-gray-500 mt-1">
-              Direct bookings only. External channels (Airbnb and others) are not included yet.
-            </p>
-          </div>
-          <Link to="/ops/insights" className="text-sm text-gray-700 underline">
+    <OpsPage width="wide" className="ops-insights">
+      <div data-testid="ops-insights-performance-page">
+      <OpsPageHeader
+        title="Historical performance"
+        description="Direct bookings only. External channels (Airbnb and others) are not included yet."
+        actions={
+          <Link to="/ops/insights" className="ops-insights__link">
             Back to revenue insights
           </Link>
-        </div>
-        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
-          Direct revenue per sellable night is not total RevPAR. Occupancy uses configured operating
-          periods minus verified maintenance/owner blocks. Unidentified iCal blocks are not
-          subtracted.
-        </div>
-        {error ? <p className="text-sm text-red-600 mt-2">{error}</p> : null}
-      </section>
+        }
+      />
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-        <div className="flex flex-wrap gap-2">
+      <OpsBanner
+        tone="warning"
+        body="Direct revenue per sellable night is not total RevPAR. Occupancy uses configured operating periods minus verified maintenance/owner blocks. Unidentified iCal blocks are not subtracted."
+      />
+
+      {error ? <OpsBanner tone="danger" body={error} /> : null}
+
+      <section className="ops-insights__surface">
+        <div className="ops-insights__kind-row" data-testid="performance-property-kind">
           {PROPERTY_KIND_OPTIONS.map((option) => (
-            <button
+            <OpsButton
               key={option.value}
               type="button"
+              variant={filters.propertyKind === option.value ? 'primary' : 'secondary'}
+              size="compact"
               onClick={() => updateFilter('propertyKind', option.value)}
-              className={`px-3 py-1.5 rounded-lg text-sm border ${
-                filters.propertyKind === option.value
-                  ? 'bg-gray-900 text-white border-gray-900'
-                  : 'bg-white text-gray-700 border-gray-200'
-              }`}
             >
               {option.label}
-            </button>
+            </OpsButton>
           ))}
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <label className="text-sm text-gray-700">
-            <span className="block text-xs text-gray-500 mb-1">From</span>
-            <input
-              type="date"
-              value={filters.from}
-              onChange={(e) => updateFilter('from', e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2"
-            />
-          </label>
-          <label className="text-sm text-gray-700">
-            <span className="block text-xs text-gray-500 mb-1">To</span>
-            <input
-              type="date"
-              value={filters.to}
-              onChange={(e) => updateFilter('to', e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2"
-            />
-          </label>
-          <label className="text-sm text-gray-700">
-            <span className="block text-xs text-gray-500 mb-1">Group by</span>
-            <select
-              value={filters.groupBy}
-              onChange={(e) => updateFilter('groupBy', e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2"
-            >
-              {GROUP_BY_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm text-gray-700">
-            <span className="block text-xs text-gray-500 mb-1">Revenue basis</span>
-            <select
-              value={filters.revenueBasis}
-              onChange={(e) => updateFilter('revenueBasis', e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2"
-            >
-              {REVENUE_BASIS_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm text-gray-700">
-            <span className="block text-xs text-gray-500 mb-1">Channel</span>
-            <select
-              value={filters.channel}
-              onChange={(e) => updateFilter('channel', e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2"
-            >
-              {CHANNEL_OPTIONS.map((o) => (
-                <option key={o.value || 'all'} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm text-gray-700">
-            <span className="block text-xs text-gray-500 mb-1">Confidence</span>
-            <select
-              value={filters.confidence}
-              onChange={(e) => updateFilter('confidence', e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2"
-            >
-              {CONFIDENCE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
+        <OpsFilterBar className="ops-insights__filters">
+          <OpsTextField
+            label="From"
+            type="date"
+            value={filters.from}
+            onChange={(e) => updateFilter('from', e.target.value)}
+          />
+          <OpsTextField
+            label="To"
+            type="date"
+            value={filters.to}
+            onChange={(e) => updateFilter('to', e.target.value)}
+          />
+          <OpsSelect
+            label="Group by"
+            value={filters.groupBy}
+            onChange={(e) => updateFilter('groupBy', e.target.value)}
+          >
+            {GROUP_BY_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </OpsSelect>
+          <OpsSelect
+            label="Revenue basis"
+            value={filters.revenueBasis}
+            onChange={(e) => updateFilter('revenueBasis', e.target.value)}
+          >
+            {REVENUE_BASIS_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </OpsSelect>
+          <OpsSelect
+            label="Channel"
+            value={filters.channel}
+            onChange={(e) => updateFilter('channel', e.target.value)}
+          >
+            {CHANNEL_OPTIONS.map((o) => (
+              <option key={o.value || 'all'} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </OpsSelect>
+          <OpsSelect
+            label="Confidence"
+            value={filters.confidence}
+            onChange={(e) => updateFilter('confidence', e.target.value)}
+          >
+            {CONFIDENCE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </OpsSelect>
           {filters.propertyKind === 'cabin' ? (
-            <label className="text-sm text-gray-700">
-              <span className="block text-xs text-gray-500 mb-1">Cabin</span>
-              <select
-                value={filters.cabinId}
-                onChange={(e) => updateFilter('cabinId', e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2"
-              >
-                <option value="">All cabins</option>
-                {(filterOptions.cabins || []).map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <OpsSelect
+              label="Cabin"
+              value={filters.cabinId}
+              onChange={(e) => updateFilter('cabinId', e.target.value)}
+            >
+              <option value="">All cabins</option>
+              {(filterOptions.cabins || []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </OpsSelect>
           ) : (
             <>
-              <label className="text-sm text-gray-700">
-                <span className="block text-xs text-gray-500 mb-1">Cabin type</span>
-                <select
-                  value={filters.cabinTypeId}
-                  onChange={(e) => updateFilter('cabinTypeId', e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2"
-                >
-                  <option value="">All cabin types</option>
-                  {(filterOptions.cabinTypes || []).map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="text-sm text-gray-700">
-                <span className="block text-xs text-gray-500 mb-1">Unit</span>
-                <select
-                  value={filters.unitId}
-                  onChange={(e) => updateFilter('unitId', e.target.value)}
-                  className="w-full border border-gray-200 rounded-lg px-3 py-2"
-                >
-                  <option value="">All units</option>
-                  {unitsForType.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.label || u.unitNumber || u.id}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <OpsSelect
+                label="Cabin type"
+                value={filters.cabinTypeId}
+                onChange={(e) => updateFilter('cabinTypeId', e.target.value)}
+              >
+                <option value="">All cabin types</option>
+                {(filterOptions.cabinTypes || []).map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </OpsSelect>
+              <OpsSelect
+                label="Unit"
+                value={filters.unitId}
+                onChange={(e) => updateFilter('unitId', e.target.value)}
+              >
+                <option value="">All units</option>
+                {unitsForType.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.label || u.unitNumber || u.id}
+                  </option>
+                ))}
+              </OpsSelect>
             </>
           )}
-        </div>
+        </OpsFilterBar>
       </section>
 
       {loading ? (
-        <p className="text-sm text-gray-500">Loading historical performance…</p>
-      ) : (
+        <OpsLoadingState label="Loading historical performance…" data-testid="performance-loading" />
+      ) : error && !data ? null : (
         <>
-          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {[
-              { label: 'Direct revenue', value: money(summary.grossBookedRevenueCents) },
-              { label: 'Bookings', value: summary.bookingCount ?? 0 },
-              { label: 'Sold nights', value: summary.soldNights ?? 0 },
-              { label: 'Occupied nights', value: summary.occupiedNights ?? 0 },
-              {
-                label: 'Sellable nights',
-                value: occupancyUnavailable ? '—' : summary.sellableNights
-              },
-              { label: 'Occupancy', value: pct(summary.occupancyRate) },
-              { label: 'ADR', value: money(summary.adrCents) },
-              {
-                label: 'Direct revenue / sellable night',
-                value: money(summary.revenuePerSellableNightCents)
-              },
-              {
-                label: 'Cancelled revenue',
-                value: money(summary.cancelledRevenueCents)
-              }
-            ].map((card) => (
-              <div
-                key={card.label}
-                className="bg-white border border-gray-200 rounded-xl p-4 max-w-md"
-              >
-                <p className="text-xs text-gray-500">{card.label}</p>
-                <p className="text-xl font-semibold text-gray-900 mt-1">{card.value}</p>
-              </div>
-            ))}
-          </section>
+          <OpsMetricGroup className="ops-insights__metric-group" data-testid="performance-metrics">
+            <OpsMetric label="Direct revenue" value={money(summary.grossBookedRevenueCents)} />
+            <OpsMetric label="Bookings" value={summary.bookingCount ?? 0} />
+            <OpsMetric label="Sold nights" value={summary.soldNights ?? 0} />
+            <OpsMetric label="Occupied nights" value={summary.occupiedNights ?? 0} />
+            <OpsMetric
+              label="Sellable nights"
+              value={occupancyUnavailable ? '—' : summary.sellableNights}
+            />
+            <OpsMetric label="Occupancy" value={pct(summary.occupancyRate)} />
+            <OpsMetric label="ADR" value={money(summary.adrCents)} />
+            <OpsMetric
+              label="Direct revenue / sellable night"
+              value={money(summary.revenuePerSellableNightCents)}
+            />
+            <OpsMetric label="Cancelled revenue" value={money(summary.cancelledRevenueCents)} />
+          </OpsMetricGroup>
 
           {occupancyUnavailable ? (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-              Occupancy unavailable for this period because historical sellable inventory cannot be
-              verified.
-            </div>
+            <OpsBanner
+              tone="warning"
+              body="Occupancy unavailable for this period because historical sellable inventory cannot be verified."
+            />
           ) : null}
 
-          <section className="bg-white border border-gray-200 rounded-xl p-4">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Trend</h3>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="text-left text-gray-500 border-b border-gray-200">
-                    <th className="py-2 pr-3">Period</th>
-                    <th className="py-2 pr-3">Bookings</th>
-                    <th className="py-2 pr-3">Occupied</th>
-                    <th className="py-2 pr-3">Sellable</th>
-                    <th className="py-2 pr-3">Occupancy</th>
-                    <th className="py-2 pr-3">Revenue</th>
-                    <th className="py-2 pr-3">ADR</th>
-                    <th className="py-2">Confidence</th>
-                  </tr>
-                </thead>
-                <tbody>
+          <section className="ops-insights__surface" data-testid="performance-trend">
+            <h3 className="ops-insights__surface-title">Trend</h3>
+            {(data?.series || []).length === 0 ? (
+              <p className="ops-insights__empty">No data for this period.</p>
+            ) : (
+              <OpsTable caption="Historical trend">
+                <OpsTableHead>
+                  <OpsTableRow>
+                    <OpsTableHeader>Period</OpsTableHeader>
+                    <OpsTableHeader numeric>Bookings</OpsTableHeader>
+                    <OpsTableHeader numeric>Occupied</OpsTableHeader>
+                    <OpsTableHeader numeric>Sellable</OpsTableHeader>
+                    <OpsTableHeader numeric>Occupancy</OpsTableHeader>
+                    <OpsTableHeader numeric>Revenue</OpsTableHeader>
+                    <OpsTableHeader numeric>ADR</OpsTableHeader>
+                    <OpsTableHeader>Confidence</OpsTableHeader>
+                  </OpsTableRow>
+                </OpsTableHead>
+                <OpsTableBody>
                   {(data?.series || []).map((row) => (
-                    <tr key={row.period} className="border-b border-gray-100">
-                      <td className="py-2 pr-3 font-mono text-xs">{row.period}</td>
-                      <td className="py-2 pr-3">{row.bookingCount}</td>
-                      <td className="py-2 pr-3">{row.occupiedNights}</td>
-                      <td className="py-2 pr-3">
+                    <OpsTableRow key={row.period}>
+                      <OpsTableCell className="ops-insights__mono">{row.period}</OpsTableCell>
+                      <OpsTableCell numeric>{row.bookingCount}</OpsTableCell>
+                      <OpsTableCell numeric>{row.occupiedNights}</OpsTableCell>
+                      <OpsTableCell numeric>
                         {row.sellableNights == null ? '—' : row.sellableNights}
-                      </td>
-                      <td className="py-2 pr-3">{pct(row.occupancyRate)}</td>
-                      <td className="py-2 pr-3">{money(row.grossBookedRevenueCents)}</td>
-                      <td className="py-2 pr-3">{money(row.adrCents)}</td>
-                      <td className="py-2 text-xs">{row.dataConfidence}</td>
-                    </tr>
+                      </OpsTableCell>
+                      <OpsTableCell numeric>{pct(row.occupancyRate)}</OpsTableCell>
+                      <OpsTableCell numeric>{money(row.grossBookedRevenueCents)}</OpsTableCell>
+                      <OpsTableCell numeric>{money(row.adrCents)}</OpsTableCell>
+                      <OpsTableCell>{row.dataConfidence}</OpsTableCell>
+                    </OpsTableRow>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </OpsTableBody>
+              </OpsTable>
+            )}
           </section>
 
-          <section className="bg-white border border-gray-200 rounded-xl p-4">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Entity comparison</h3>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="text-left text-gray-500 border-b border-gray-200">
-                    <th className="py-2 pr-3">Entity</th>
-                    <th className="py-2 pr-3">Bookings</th>
-                    <th className="py-2 pr-3">Occupied</th>
-                    <th className="py-2 pr-3">Sellable</th>
-                    <th className="py-2 pr-3">Occupancy</th>
-                    <th className="py-2 pr-3">Revenue</th>
-                    <th className="py-2 pr-3">ADR</th>
-                    <th className="py-2">Issues</th>
-                  </tr>
-                </thead>
-                <tbody>
+          <section className="ops-insights__surface" data-testid="performance-entities">
+            <h3 className="ops-insights__surface-title">Entity comparison</h3>
+            {(data?.entities || []).length === 0 ? (
+              <p className="ops-insights__empty">No data for this period.</p>
+            ) : (
+              <OpsTable caption="Entity comparison">
+                <OpsTableHead>
+                  <OpsTableRow>
+                    <OpsTableHeader>Entity</OpsTableHeader>
+                    <OpsTableHeader numeric>Bookings</OpsTableHeader>
+                    <OpsTableHeader numeric>Occupied</OpsTableHeader>
+                    <OpsTableHeader numeric>Sellable</OpsTableHeader>
+                    <OpsTableHeader numeric>Occupancy</OpsTableHeader>
+                    <OpsTableHeader numeric>Revenue</OpsTableHeader>
+                    <OpsTableHeader numeric>ADR</OpsTableHeader>
+                    <OpsTableHeader>Issues</OpsTableHeader>
+                  </OpsTableRow>
+                </OpsTableHead>
+                <OpsTableBody>
                   {(data?.entities || []).map((row) => (
-                    <tr key={`${row.entityType}:${row.entityId}`} className="border-b border-gray-100">
-                      <td className="py-2 pr-3">
+                    <OpsTableRow key={`${row.entityType}:${row.entityId}`}>
+                      <OpsTableCell>
                         <div>{row.displayName}</div>
-                        <div className="text-xs text-gray-500">
+                        <p className="ops-insights__row-meta">
                           {row.entityType} · {row.dataConfidence}
-                        </div>
-                      </td>
-                      <td className="py-2 pr-3">{row.bookingCount}</td>
-                      <td className="py-2 pr-3">{row.occupiedNights}</td>
-                      <td className="py-2 pr-3">
+                        </p>
+                      </OpsTableCell>
+                      <OpsTableCell numeric>{row.bookingCount}</OpsTableCell>
+                      <OpsTableCell numeric>{row.occupiedNights}</OpsTableCell>
+                      <OpsTableCell numeric>
                         {row.sellableNights == null ? '—' : row.sellableNights}
-                      </td>
-                      <td className="py-2 pr-3">{pct(row.occupancyRate)}</td>
-                      <td className="py-2 pr-3">{money(row.grossBookedRevenueCents)}</td>
-                      <td className="py-2 pr-3">{money(row.adrCents)}</td>
-                      <td className="py-2 text-xs">{(row.issues || []).join(', ') || '—'}</td>
-                    </tr>
+                      </OpsTableCell>
+                      <OpsTableCell numeric>{pct(row.occupancyRate)}</OpsTableCell>
+                      <OpsTableCell numeric>{money(row.grossBookedRevenueCents)}</OpsTableCell>
+                      <OpsTableCell numeric>{money(row.adrCents)}</OpsTableCell>
+                      <OpsTableCell>{(row.issues || []).join(', ') || '—'}</OpsTableCell>
+                    </OpsTableRow>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </OpsTableBody>
+              </OpsTable>
+            )}
           </section>
 
-          <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
-            <h3 className="text-sm font-semibold text-gray-900">Historical data confidence</h3>
-            <p className="text-xs text-gray-600">
-              Earliest reliable revenue:{' '}
-              {quality?.earliestReliableRevenueDate || '—'} · Earliest reliable occupancy:{' '}
-              {quality?.earliestReliableOccupancyDate || 'not configured'}
+          <section className="ops-insights__surface" data-testid="performance-confidence">
+            <h3 className="ops-insights__surface-title">Historical data confidence</h3>
+            <p className="ops-insights__note">
+              Earliest reliable revenue: {quality?.earliestReliableRevenueDate || '—'} · Earliest
+              reliable occupancy: {quality?.earliestReliableOccupancyDate || 'not configured'}
             </p>
-            <ul className="text-xs text-gray-700 space-y-1">
+            <ul className="ops-insights__issue-list">
               {Object.values(quality?.issues || {})
                 .filter((issue) => issue.count > 0)
                 .map((issue) => (
@@ -482,17 +457,18 @@ export default function OpsInsightsPerformance() {
                 ))}
             </ul>
             {(quality?.confidenceByMonth || []).length ? (
-              <div className="text-xs text-gray-600 pt-2">
+              <p className="ops-insights__confidence">
                 Monthly confidence:{' '}
                 {quality.confidenceByMonth
                   .slice(-12)
                   .map((m) => `${m.month}=${m.dataConfidence}`)
                   .join(' · ')}
-              </div>
+              </p>
             ) : null}
           </section>
         </>
       )}
-    </div>
+      </div>
+    </OpsPage>
   );
 }

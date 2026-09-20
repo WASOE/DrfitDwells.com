@@ -6,6 +6,23 @@ import {
   PROPERTY_KIND_OPTIONS,
   currentMonthDateRange
 } from './utils/opsIntelligenceFilters';
+import OpsPage from '../../ops/primitives/OpsPage';
+import OpsPageHeader from '../../ops/primitives/OpsPageHeader';
+import OpsFilterBar from '../../ops/primitives/OpsFilterBar';
+import OpsSelect from '../../ops/primitives/OpsSelect';
+import OpsTextField from '../../ops/primitives/OpsTextField';
+import OpsButton from '../../ops/primitives/OpsButton';
+import OpsBanner from '../../ops/primitives/OpsBanner';
+import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
+import OpsMetric, { OpsMetricGroup } from '../../ops/primitives/OpsMetric';
+import OpsTable, {
+  OpsTableBody,
+  OpsTableCell,
+  OpsTableHead,
+  OpsTableHeader,
+  OpsTableRow
+} from '../../ops/primitives/OpsTable';
+import './OpsInsights.css';
 
 const REVENUE_BASIS_OPTIONS = [
   { value: 'checkIn', label: 'Check-in date' },
@@ -210,457 +227,428 @@ export default function OpsInsights() {
     return (filterOptions.units || []).filter((u) => u.cabinTypeId === filters.cabinTypeId);
   }, [filterOptions.units, filters.cabinTypeId]);
 
-  if (loading) {
-    return <div className="text-sm text-gray-500">Loading insights...</div>;
-  }
-
   const metrics = summary?.metrics || {};
   const channels = summary?.channelBreakdown || {};
   const issues = dataQuality?.issues || [];
   const totalIssues = issues.reduce((sum, issue) => sum + (issue.count || 0), 0);
   const page = Number(bookings?.pagination?.page || 1);
   const hasMore = Boolean(bookings?.pagination?.hasMore);
+  const propertyLabel = filters.propertyKind === 'valley' ? 'The Valley' : 'The Cabin';
 
   return (
-    <div className="space-y-4 pb-16 sm:pb-0">
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Revenue insights</h2>
-            <p className="text-xs text-gray-500 mt-1">
-              Direct booking revenue for {filters.propertyKind === 'valley' ? 'The Valley' : 'The Cabin'}.
-            </p>
-          </div>
-          <Link to="/ops/insights/performance" className="text-sm text-gray-700 underline">
+    <OpsPage width="wide" className="ops-insights">
+      <div data-testid="ops-insights-page">
+      <OpsPageHeader
+        title="Revenue insights"
+        description={`Direct booking revenue for ${propertyLabel}.`}
+        actions={
+          <Link to="/ops/insights/performance" className="ops-insights__link">
             Historical performance
           </Link>
-        </div>
-        {error ? <p className="text-sm text-red-600 mt-2">{error}</p> : null}
-      </section>
+        }
+      />
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-        <div className="flex flex-wrap gap-2">
+      {error ? <OpsBanner tone="danger" body={error} /> : null}
+
+      <section className="ops-insights__surface">
+        <div className="ops-insights__kind-row" data-testid="insights-property-kind">
           {PROPERTY_KIND_OPTIONS.map((option) => (
-            <button
+            <OpsButton
               key={option.value}
               type="button"
+              variant={filters.propertyKind === option.value ? 'primary' : 'secondary'}
+              size="compact"
               onClick={() => updateFilter('propertyKind', option.value)}
-              className={`px-3 py-1.5 rounded-lg text-sm border ${
-                filters.propertyKind === option.value
-                  ? 'bg-gray-900 text-white border-gray-900'
-                  : 'bg-white text-gray-700 border-gray-200'
-              }`}
             >
               {option.label}
-            </button>
+            </OpsButton>
           ))}
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <label className="text-sm text-gray-700">
-            <span className="block text-xs text-gray-500 mb-1">From</span>
-            <input
-              type="date"
-              value={filters.from}
-              onChange={(event) => updateFilter('from', event.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2"
-            />
-          </label>
-          <label className="text-sm text-gray-700">
-            <span className="block text-xs text-gray-500 mb-1">To</span>
-            <input
-              type="date"
-              value={filters.to}
-              onChange={(event) => updateFilter('to', event.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2"
-            />
-          </label>
-          <label className="text-sm text-gray-700">
-            <span className="block text-xs text-gray-500 mb-1">Revenue basis</span>
-            <select
-              value={filters.revenueBasis}
-              onChange={(event) => updateFilter('revenueBasis', event.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2"
-            >
-              {REVENUE_BASIS_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <label className="text-sm text-gray-700">
-            <span className="block text-xs text-gray-500 mb-1">Cabin</span>
-            <select
-              value={filters.cabinId}
-              onChange={(event) => updateFilter('cabinId', event.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2"
-            >
-              <option value="">All cabins</option>
-              {(filterOptions.cabins || []).map((cabin) => (
-                <option key={cabin.id} value={cabin.id}>
-                  {cabin.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm text-gray-700">
-            <span className="block text-xs text-gray-500 mb-1">Cabin type</span>
-            <select
-              value={filters.cabinTypeId}
-              onChange={(event) => updateFilter('cabinTypeId', event.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2"
-              disabled={Boolean(filters.cabinId)}
-            >
-              <option value="">All cabin types</option>
-              {(filterOptions.cabinTypes || []).map((type) => (
-                <option key={type.id} value={type.id}>
-                  {type.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm text-gray-700">
-            <span className="block text-xs text-gray-500 mb-1">Unit</span>
-            <select
-              value={filters.unitId}
-              onChange={(event) => updateFilter('unitId', event.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2"
-              disabled={Boolean(filters.cabinId)}
-            >
-              <option value="">All units</option>
-              {unitsForType.map((unit) => (
-                <option key={unit.id} value={unit.id}>
-                  {unit.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      </section>
-
-      {totalIssues > 0 ? (
-        <section className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-          <h3 className="text-sm font-semibold text-amber-900">Data quality attention</h3>
-          <ul className="mt-2 space-y-1 text-sm text-amber-900">
-            {issues
-              .filter((issue) => issue.count > 0)
-              .map((issue) => (
-                <li key={issue.code}>
-                  <span className="font-mono text-xs">{issue.code}</span>: {issueLabel(issue.code)} —{' '}
-                  {issue.count}
-                </li>
-              ))}
-          </ul>
-        </section>
-      ) : null}
-
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <p className="text-xs text-gray-500 uppercase">Bookings</p>
-          <p className="text-2xl font-semibold text-gray-900">{metrics.bookingCount ?? 0}</p>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <p className="text-xs text-gray-500 uppercase">Gross booked</p>
-          <p className="text-2xl font-semibold text-gray-900">
-            {formatMoneyFromCents(metrics.grossBookedRevenueCents)}
-          </p>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <p className="text-xs text-gray-500 uppercase">Payment snapshot at booking</p>
-          <p className="text-2xl font-semibold text-gray-900">
-            {formatMoneyFromCents(metrics.cashCollectedCents)}
-          </p>
-          <p className="text-xs text-gray-500 mt-2">
-            Captured from booking finalization. Does not reflect later refunds or payment changes.
-            Not live Stripe balance.
-          </p>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <p className="text-xs text-gray-500 uppercase">Avg booking value</p>
-          <p className="text-2xl font-semibold text-gray-900">
-            {formatMoneyFromCents(metrics.avgBookingValueCents)}
-          </p>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <p className="text-xs text-gray-500 uppercase">Cancelled</p>
-          <p className="text-2xl font-semibold text-gray-900">{metrics.cancelledCount ?? 0}</p>
-        </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-4">
-          <p className="text-xs text-gray-500 uppercase">Cancelled revenue</p>
-          <p className="text-2xl font-semibold text-gray-900">
-            {formatMoneyFromCents(metrics.cancelledRevenueCents)}
-          </p>
-        </div>
-      </section>
-
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <h3 className="text-sm font-semibold text-gray-900 mb-1">Cash reconciliation (read-only)</h3>
-        <p className="text-xs text-gray-500 mb-3">
-          Additive comparison of commercial value, booking payment snapshot, and linked Stripe Payment
-          ledger. Not a full accounting P&amp;L.
-        </p>
-        {reconciliation ? (
-          <div className="space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
-              <div className="border border-gray-100 rounded-lg p-3">
-                <p className="text-xs text-gray-500 uppercase">Gross booked commercial</p>
-                <p className="text-lg font-semibold text-gray-900">
-                  {formatMoneyFromCents(reconciliation.commercial?.grossBookedRevenueCents?.value)}
-                </p>
-                <p className="text-[11px] text-gray-500 mt-1">
-                  {reconciliation.commercial?.grossBookedRevenueCents?.source} ·{' '}
-                  {reconciliation.commercial?.grossBookedRevenueCents?.basis}
-                </p>
-              </div>
-              <div className="border border-gray-100 rounded-lg p-3">
-                <p className="text-xs text-gray-500 uppercase">Payment snapshot at booking</p>
-                <p className="text-lg font-semibold text-gray-900">
-                  {formatMoneyFromCents(reconciliation.paymentSnapshotAtBooking?.amountCents?.value)}
-                </p>
-                <p className="text-[11px] text-gray-500 mt-1">
-                  {reconciliation.paymentSnapshotAtBooking?.amountCents?.source} ·{' '}
-                  {reconciliation.paymentSnapshotAtBooking?.amountCents?.basis}
-                </p>
-              </div>
-              <div className="border border-gray-100 rounded-lg p-3">
-                <p className="text-xs text-gray-500 uppercase">Linked ledger gross</p>
-                <p className="text-lg font-semibold text-gray-900">
-                  {formatMoneyFromCents(
-                    reconciliation.linkedPaymentLedger?.grossPaidAmountCents?.value
-                  )}
-                </p>
-                <p className="text-[11px] text-gray-500 mt-1">
-                  {reconciliation.linkedPaymentLedger?.grossPaidAmountCents?.basis}
-                </p>
-              </div>
-              <div className="border border-gray-100 rounded-lg p-3">
-                <p className="text-xs text-gray-500 uppercase">Linked refunds</p>
-                <p className="text-lg font-semibold text-gray-900">
-                  {formatMoneyFromCents(
-                    reconciliation.linkedPaymentLedger?.refundedAmountCents?.value
-                  )}
-                </p>
-                <p className="text-[11px] text-gray-500 mt-1">
-                  {reconciliation.linkedPaymentLedger?.refundedAmountCents?.basis}
-                </p>
-              </div>
-              <div className="border border-gray-100 rounded-lg p-3">
-                <p className="text-xs text-gray-500 uppercase">Linked ledger net</p>
-                <p className="text-lg font-semibold text-gray-900">
-                  {formatMoneyFromCents(reconciliation.linkedPaymentLedger?.netPaidAmountCents?.value)}
-                </p>
-                <p className="text-[11px] text-gray-500 mt-1">
-                  {reconciliation.linkedPaymentLedger?.linkedPaymentCount ?? 0} linked payments
-                </p>
-              </div>
-              <div className="border border-gray-100 rounded-lg p-3">
-                <p className="text-xs text-gray-500 uppercase">Snapshot vs linked net</p>
-                <p className="text-lg font-semibold text-gray-900">
-                  {formatMoneyFromCents(reconciliation.variance?.snapshotVsLinkedLedgerCents)}
-                </p>
-                <p className="text-[11px] text-gray-500 mt-1">
-                  Commercial vs linked net:{' '}
-                  {formatMoneyFromCents(reconciliation.variance?.commercialVsLinkedNetPaidCents)}
-                </p>
-              </div>
-            </div>
-            <div className="border border-dashed border-gray-300 rounded-lg p-3 bg-gray-50">
-              <p className="text-xs font-semibold text-gray-700 uppercase">
-                Site-wide unlinked payments (not attributed to Cabin/Valley)
-              </p>
-              <p className="text-sm text-gray-800 mt-1">
-                Count: {reconciliation.siteWideUnlinkedPayments?.count ?? 0} · Amount shown for ops
-                review only:{' '}
-                {formatMoneyFromCents(reconciliation.siteWideUnlinkedPayments?.amountCents)}
-              </p>
-              <p className="text-[11px] text-gray-500 mt-1">
-                Excluded from zone variance. {reconciliation.siteWideUnlinkedPayments?.source}
-              </p>
-              <Link to="/ops/payments" className="inline-block mt-2 text-sm text-gray-900 underline">
-                Review payments ledger
-              </Link>
-            </div>
-            {reconciliation.exclusions?.locationBookingTreatment ? (
-              <p className="text-xs text-gray-500">{reconciliation.exclusions.locationBookingTreatment}</p>
-            ) : null}
-          </div>
-        ) : (
-          <p className="text-sm text-gray-500">Reconciliation unavailable.</p>
-        )}
-      </section>
-
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <h3 className="text-sm font-semibold text-gray-900 mb-3">Channel breakdown</h3>
-        <table className="min-w-full text-sm">
-          <thead>
-            <tr className="text-left text-gray-500 border-b border-gray-200">
-              <th className="py-2 pr-4">Channel</th>
-              <th className="py-2 pr-4">Bookings</th>
-              <th className="py-2">Revenue</th>
-            </tr>
-          </thead>
-          <tbody>
-            {['website', 'staff', 'other'].map((channel) => (
-              <tr key={channel} className="border-b border-gray-100">
-                <td className="py-2 pr-4 capitalize">{channel}</td>
-                <td className="py-2 pr-4">{channels[channel]?.count ?? 0}</td>
-                <td className="py-2">{formatMoneyFromCents(channels[channel]?.revenueCents)}</td>
-              </tr>
+        <OpsFilterBar className="ops-insights__filters">
+          <OpsTextField
+            label="From"
+            type="date"
+            value={filters.from}
+            onChange={(event) => updateFilter('from', event.target.value)}
+          />
+          <OpsTextField
+            label="To"
+            type="date"
+            value={filters.to}
+            onChange={(event) => updateFilter('to', event.target.value)}
+          />
+          <OpsSelect
+            label="Revenue basis"
+            value={filters.revenueBasis}
+            onChange={(event) => updateFilter('revenueBasis', event.target.value)}
+          >
+            {REVENUE_BASIS_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
             ))}
-          </tbody>
-        </table>
+          </OpsSelect>
+          <OpsSelect
+            label="Cabin"
+            value={filters.cabinId}
+            onChange={(event) => updateFilter('cabinId', event.target.value)}
+          >
+            <option value="">All cabins</option>
+            {(filterOptions.cabins || []).map((cabin) => (
+              <option key={cabin.id} value={cabin.id}>
+                {cabin.name}
+              </option>
+            ))}
+          </OpsSelect>
+          <OpsSelect
+            label="Cabin type"
+            value={filters.cabinTypeId}
+            onChange={(event) => updateFilter('cabinTypeId', event.target.value)}
+            disabled={Boolean(filters.cabinId)}
+          >
+            <option value="">All cabin types</option>
+            {(filterOptions.cabinTypes || []).map((type) => (
+              <option key={type.id} value={type.id}>
+                {type.name}
+              </option>
+            ))}
+          </OpsSelect>
+          <OpsSelect
+            label="Unit"
+            value={filters.unitId}
+            onChange={(event) => updateFilter('unitId', event.target.value)}
+            disabled={Boolean(filters.cabinId)}
+          >
+            <option value="">All units</option>
+            {unitsForType.map((unit) => (
+              <option key={unit.id} value={unit.id}>
+                {unit.name}
+              </option>
+            ))}
+          </OpsSelect>
+        </OpsFilterBar>
       </section>
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <h3 className="text-sm font-semibold text-gray-900">Bookings / stays</h3>
-          <div className="flex flex-wrap gap-2">
-            <select
-              value={filters.channel}
-              onChange={(event) => updateFilter('channel', event.target.value)}
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
-            >
-              {CHANNEL_OPTIONS.map((option) => (
-                <option key={option.value || 'all'} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <select
-              value={filters.status}
-              onChange={(event) => updateFilter('status', event.target.value)}
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
-            >
-              {STATUS_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-        {bookingsLoading ? (
-          <p className="text-sm text-gray-500">Loading bookings...</p>
-        ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="text-left text-gray-500 border-b border-gray-200">
-                    <th className="py-2 pr-3">Stay</th>
-                    <th className="py-2 pr-3">Status</th>
-                    <th className="py-2 pr-3">Channel</th>
-                    <th className="py-2 pr-3">Check-in</th>
-                    <th className="py-2 pr-3">Revenue</th>
-                    <th className="py-2">Snapshot</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(bookings?.rows || []).map((row) => (
-                    <tr
-                      key={`${row.stayKind}-${row.bookingId}`}
-                      className="border-b border-gray-100 hover:bg-gray-50"
-                    >
-                      <td className="py-2 pr-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          {row.detailHref ? (
-                            <Link
-                              to={row.detailHref}
-                              className="font-mono text-xs text-gray-900 hover:underline"
-                            >
-                              {String(row.bookingId).slice(-8)}
-                            </Link>
-                          ) : (
-                            <span className="font-mono text-xs text-gray-700">
-                              {String(row.bookingId).slice(-8)}
-                            </span>
-                          )}
-                          {row.stayKind === 'location_booking' ? (
-                            <span className="inline-flex items-center rounded-md bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[11px] font-medium text-amber-900">
-                              Valley buyout
-                            </span>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td className="py-2 pr-3 capitalize">{row.status}</td>
-                      <td className="py-2 pr-3 capitalize">{row.channel}</td>
-                      <td className="py-2 pr-3">{row.checkInDateOnly || '—'}</td>
-                      <td className="py-2 pr-3">{formatMoneyFromCents(row.bookedRevenueCents)}</td>
-                      <td className="py-2">
-                        {formatMoneyFromCents(row.paymentSnapshotAtBookingCents)}
-                      </td>
-                    </tr>
+      {loading ? (
+        <OpsLoadingState label="Loading insights..." data-testid="insights-loading" />
+      ) : error && !summary ? null : (
+        <>
+          {totalIssues > 0 ? (
+            <section className="ops-insights__surface" data-testid="insights-data-quality">
+              <OpsBanner tone="warning" title="Data quality attention" />
+              <ul className="ops-insights__issue-list">
+                {issues
+                  .filter((issue) => issue.count > 0)
+                  .map((issue) => (
+                    <li key={issue.code}>
+                      <span className="ops-insights__mono">{issue.code}</span>: {issueLabel(issue.code)}{' '}
+                      — {issue.count}
+                    </li>
                   ))}
-                </tbody>
-              </table>
+              </ul>
+            </section>
+          ) : null}
+
+          <OpsMetricGroup className="ops-insights__metric-group" data-testid="insights-metrics">
+            <OpsMetric label="Bookings" value={metrics.bookingCount ?? 0} />
+            <OpsMetric
+              label="Gross booked"
+              value={formatMoneyFromCents(metrics.grossBookedRevenueCents)}
+            />
+            <OpsMetric
+              label="Payment snapshot at booking"
+              value={formatMoneyFromCents(metrics.cashCollectedCents)}
+              meta="Captured from booking finalization. Does not reflect later refunds or payment changes. Not live Stripe balance."
+            />
+            <OpsMetric
+              label="Avg booking value"
+              value={formatMoneyFromCents(metrics.avgBookingValueCents)}
+            />
+            <OpsMetric label="Cancelled" value={metrics.cancelledCount ?? 0} />
+            <OpsMetric
+              label="Cancelled revenue"
+              value={formatMoneyFromCents(metrics.cancelledRevenueCents)}
+            />
+          </OpsMetricGroup>
+
+          <section className="ops-insights__surface" data-testid="insights-reconciliation">
+            <div className="ops-insights__surface-head">
+              <h3 className="ops-insights__surface-title">Cash reconciliation (read-only)</h3>
             </div>
-            <div className="flex items-center justify-between text-sm text-gray-600">
-              <span>
-                Page {page} · {bookings?.pagination?.total ?? 0} total
-              </span>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  disabled={page <= 1}
-                  onClick={() => updateFilter('page', String(page - 1), { resetPage: false })}
-                  className="px-3 py-1.5 border border-gray-200 rounded-lg disabled:opacity-40"
+            <p className="ops-insights__note">
+              Additive comparison of commercial value, booking payment snapshot, and linked Stripe
+              Payment ledger. Not a full accounting P&amp;L.
+            </p>
+            {reconciliation ? (
+              <>
+                <div className="ops-insights__recon-grid">
+                  <div className="ops-insights__recon-item">
+                    <p className="ops-insights__recon-label">Gross booked commercial</p>
+                    <p className="ops-insights__recon-value">
+                      {formatMoneyFromCents(reconciliation.commercial?.grossBookedRevenueCents?.value)}
+                    </p>
+                    <p className="ops-insights__recon-meta">
+                      {reconciliation.commercial?.grossBookedRevenueCents?.source} ·{' '}
+                      {reconciliation.commercial?.grossBookedRevenueCents?.basis}
+                    </p>
+                  </div>
+                  <div className="ops-insights__recon-item">
+                    <p className="ops-insights__recon-label">Payment snapshot at booking</p>
+                    <p className="ops-insights__recon-value">
+                      {formatMoneyFromCents(reconciliation.paymentSnapshotAtBooking?.amountCents?.value)}
+                    </p>
+                    <p className="ops-insights__recon-meta">
+                      {reconciliation.paymentSnapshotAtBooking?.amountCents?.source} ·{' '}
+                      {reconciliation.paymentSnapshotAtBooking?.amountCents?.basis}
+                    </p>
+                  </div>
+                  <div className="ops-insights__recon-item">
+                    <p className="ops-insights__recon-label">Linked ledger gross</p>
+                    <p className="ops-insights__recon-value">
+                      {formatMoneyFromCents(
+                        reconciliation.linkedPaymentLedger?.grossPaidAmountCents?.value
+                      )}
+                    </p>
+                    <p className="ops-insights__recon-meta">
+                      {reconciliation.linkedPaymentLedger?.grossPaidAmountCents?.basis}
+                    </p>
+                  </div>
+                  <div className="ops-insights__recon-item">
+                    <p className="ops-insights__recon-label">Linked refunds</p>
+                    <p className="ops-insights__recon-value">
+                      {formatMoneyFromCents(
+                        reconciliation.linkedPaymentLedger?.refundedAmountCents?.value
+                      )}
+                    </p>
+                    <p className="ops-insights__recon-meta">
+                      {reconciliation.linkedPaymentLedger?.refundedAmountCents?.basis}
+                    </p>
+                  </div>
+                  <div className="ops-insights__recon-item">
+                    <p className="ops-insights__recon-label">Linked ledger net</p>
+                    <p className="ops-insights__recon-value">
+                      {formatMoneyFromCents(
+                        reconciliation.linkedPaymentLedger?.netPaidAmountCents?.value
+                      )}
+                    </p>
+                    <p className="ops-insights__recon-meta">
+                      {reconciliation.linkedPaymentLedger?.linkedPaymentCount ?? 0} linked payments
+                    </p>
+                  </div>
+                  <div className="ops-insights__recon-item">
+                    <p className="ops-insights__recon-label">Snapshot vs linked net</p>
+                    <p className="ops-insights__recon-value">
+                      {formatMoneyFromCents(reconciliation.variance?.snapshotVsLinkedLedgerCents)}
+                    </p>
+                    <p className="ops-insights__recon-meta">
+                      Commercial vs linked net:{' '}
+                      {formatMoneyFromCents(reconciliation.variance?.commercialVsLinkedNetPaidCents)}
+                    </p>
+                  </div>
+                </div>
+                <div className="ops-insights__callout">
+                  <p className="ops-insights__callout-title">
+                    Site-wide unlinked payments (not attributed to Cabin/Valley)
+                  </p>
+                  <p className="ops-insights__note">
+                    Count: {reconciliation.siteWideUnlinkedPayments?.count ?? 0} · Amount shown for ops
+                    review only:{' '}
+                    {formatMoneyFromCents(reconciliation.siteWideUnlinkedPayments?.amountCents)}
+                  </p>
+                  <p className="ops-insights__note">
+                    Excluded from zone variance. {reconciliation.siteWideUnlinkedPayments?.source}
+                  </p>
+                  <Link to="/ops/payments" className="ops-insights__link">
+                    Review payments ledger
+                  </Link>
+                </div>
+                {reconciliation.exclusions?.locationBookingTreatment ? (
+                  <p className="ops-insights__note">
+                    {reconciliation.exclusions.locationBookingTreatment}
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <p className="ops-insights__empty">Reconciliation unavailable.</p>
+            )}
+          </section>
+
+          <section className="ops-insights__surface" data-testid="insights-channels">
+            <h3 className="ops-insights__surface-title">Channel breakdown</h3>
+            <OpsTable caption="Channel breakdown">
+              <OpsTableHead>
+                <OpsTableRow>
+                  <OpsTableHeader>Channel</OpsTableHeader>
+                  <OpsTableHeader numeric>Bookings</OpsTableHeader>
+                  <OpsTableHeader numeric>Revenue</OpsTableHeader>
+                </OpsTableRow>
+              </OpsTableHead>
+              <OpsTableBody>
+                {['website', 'staff', 'other'].map((channel) => (
+                  <OpsTableRow key={channel}>
+                    <OpsTableCell className="capitalize">{channel}</OpsTableCell>
+                    <OpsTableCell numeric>{channels[channel]?.count ?? 0}</OpsTableCell>
+                    <OpsTableCell numeric>
+                      {formatMoneyFromCents(channels[channel]?.revenueCents)}
+                    </OpsTableCell>
+                  </OpsTableRow>
+                ))}
+              </OpsTableBody>
+            </OpsTable>
+          </section>
+
+          <section className="ops-insights__surface" data-testid="insights-bookings">
+            <div className="ops-insights__table-tools">
+              <h3 className="ops-insights__surface-title">Bookings / stays</h3>
+              <div className="ops-insights__table-filters">
+                <OpsSelect
+                  label="Channel"
+                  value={filters.channel}
+                  onChange={(event) => updateFilter('channel', event.target.value)}
                 >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  disabled={!hasMore}
-                  onClick={() => updateFilter('page', String(page + 1), { resetPage: false })}
-                  className="px-3 py-1.5 border border-gray-200 rounded-lg disabled:opacity-40"
+                  {CHANNEL_OPTIONS.map((option) => (
+                    <option key={option.value || 'all'} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </OpsSelect>
+                <OpsSelect
+                  label="Status"
+                  value={filters.status}
+                  onChange={(event) => updateFilter('status', event.target.value)}
                 >
-                  Next
-                </button>
+                  {STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </OpsSelect>
               </div>
             </div>
-            {bookings?.provenance?.locationBookingLimitations ? (
-              <p className="text-xs text-gray-500">{bookings.provenance.locationBookingLimitations}</p>
-            ) : null}
-          </>
-        )}
-      </section>
+            {bookingsLoading ? (
+              <OpsLoadingState label="Loading bookings..." />
+            ) : (bookings?.rows || []).length === 0 ? (
+              <p className="ops-insights__empty">No data for this period.</p>
+            ) : (
+              <>
+                <OpsTable caption="Bookings and stays">
+                  <OpsTableHead>
+                    <OpsTableRow>
+                      <OpsTableHeader>Stay</OpsTableHeader>
+                      <OpsTableHeader>Status</OpsTableHeader>
+                      <OpsTableHeader>Channel</OpsTableHeader>
+                      <OpsTableHeader>Check-in</OpsTableHeader>
+                      <OpsTableHeader numeric>Revenue</OpsTableHeader>
+                      <OpsTableHeader numeric>Snapshot</OpsTableHeader>
+                    </OpsTableRow>
+                  </OpsTableHead>
+                  <OpsTableBody>
+                    {(bookings?.rows || []).map((row) => (
+                      <OpsTableRow key={`${row.stayKind}-${row.bookingId}`}>
+                        <OpsTableCell>
+                          <div className="ops-insights__stay-cell">
+                            {row.detailHref ? (
+                              <Link
+                                to={row.detailHref}
+                                className={`ops-insights__mono ops-insights__stay-link`}
+                              >
+                                {String(row.bookingId).slice(-8)}
+                              </Link>
+                            ) : (
+                              <span className="ops-insights__mono">
+                                {String(row.bookingId).slice(-8)}
+                              </span>
+                            )}
+                            {row.stayKind === 'location_booking' ? (
+                              <span className="ops-insights__chip">Valley buyout</span>
+                            ) : null}
+                          </div>
+                        </OpsTableCell>
+                        <OpsTableCell className="capitalize">{row.status}</OpsTableCell>
+                        <OpsTableCell className="capitalize">{row.channel}</OpsTableCell>
+                        <OpsTableCell>{row.checkInDateOnly || '—'}</OpsTableCell>
+                        <OpsTableCell numeric>
+                          {formatMoneyFromCents(row.bookedRevenueCents)}
+                        </OpsTableCell>
+                        <OpsTableCell numeric>
+                          {formatMoneyFromCents(row.paymentSnapshotAtBookingCents)}
+                        </OpsTableCell>
+                      </OpsTableRow>
+                    ))}
+                  </OpsTableBody>
+                </OpsTable>
+                <div className="ops-insights__pager">
+                  <span>
+                    Page {page} · {bookings?.pagination?.total ?? 0} total
+                  </span>
+                  <div className="ops-insights__pager-actions">
+                    <OpsButton
+                      type="button"
+                      variant="secondary"
+                      size="compact"
+                      disabled={page <= 1}
+                      onClick={() => updateFilter('page', String(page - 1), { resetPage: false })}
+                    >
+                      Previous
+                    </OpsButton>
+                    <OpsButton
+                      type="button"
+                      variant="secondary"
+                      size="compact"
+                      disabled={!hasMore}
+                      onClick={() => updateFilter('page', String(page + 1), { resetPage: false })}
+                    >
+                      Next
+                    </OpsButton>
+                  </div>
+                </div>
+                {bookings?.provenance?.locationBookingLimitations ? (
+                  <p className="ops-insights__note">
+                    {bookings.provenance.locationBookingLimitations}
+                  </p>
+                ) : null}
+              </>
+            )}
+          </section>
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
-        <h3 className="text-sm font-semibold text-gray-900">Inventory health</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
-          <div>
-            <p className="text-gray-500">Cabins with propertyKind</p>
-            <p className="font-semibold text-gray-900">
-              {dataQuality?.inventoryHealth?.cabinsWithPropertyKind ?? 0}
-            </p>
-          </div>
-          <div>
-            <p className="text-gray-500">Cabins missing propertyKind</p>
-            <p className="font-semibold text-gray-900">
-              {dataQuality?.inventoryHealth?.cabinsMissingPropertyKind ?? 0}
-            </p>
-          </div>
-          <div>
-            <p className="text-gray-500">Cabin types with propertyKind</p>
-            <p className="font-semibold text-gray-900">
-              {dataQuality?.inventoryHealth?.cabinTypesWithPropertyKind ?? 0}
-            </p>
-          </div>
-          <div>
-            <p className="text-gray-500">Active valley units</p>
-            <p className="font-semibold text-gray-900">
-              {dataQuality?.inventoryHealth?.activeUnits ?? '—'}
-            </p>
-          </div>
-        </div>
-        {summary?.provenance ? (
-          <p className="text-xs text-gray-500 pt-2">{summary.provenance.revenueBasisNote}</p>
-        ) : null}
-        {summary?.provenance?.paymentSnapshotNote ? (
-          <p className="text-xs text-gray-500">{summary.provenance.paymentSnapshotNote}</p>
-        ) : null}
-      </section>
-    </div>
+          <section className="ops-insights__surface" data-testid="insights-inventory-health">
+            <h3 className="ops-insights__surface-title">Inventory health</h3>
+            <div className="ops-insights__health-grid">
+              <div className="ops-insights__health-item">
+                <p className="ops-insights__health-label">Cabins with propertyKind</p>
+                <p className="ops-insights__health-value">
+                  {dataQuality?.inventoryHealth?.cabinsWithPropertyKind ?? 0}
+                </p>
+              </div>
+              <div className="ops-insights__health-item">
+                <p className="ops-insights__health-label">Cabins missing propertyKind</p>
+                <p className="ops-insights__health-value">
+                  {dataQuality?.inventoryHealth?.cabinsMissingPropertyKind ?? 0}
+                </p>
+              </div>
+              <div className="ops-insights__health-item">
+                <p className="ops-insights__health-label">Cabin types with propertyKind</p>
+                <p className="ops-insights__health-value">
+                  {dataQuality?.inventoryHealth?.cabinTypesWithPropertyKind ?? 0}
+                </p>
+              </div>
+              <div className="ops-insights__health-item">
+                <p className="ops-insights__health-label">Active valley units</p>
+                <p className="ops-insights__health-value">
+                  {dataQuality?.inventoryHealth?.activeUnits ?? '—'}
+                </p>
+              </div>
+            </div>
+            {summary?.provenance ? (
+              <p className="ops-insights__note">{summary.provenance.revenueBasisNote}</p>
+            ) : null}
+            {summary?.provenance?.paymentSnapshotNote ? (
+              <p className="ops-insights__note">{summary.provenance.paymentSnapshotNote}</p>
+            ) : null}
+          </section>
+        </>
+      )}
+      </div>
+    </OpsPage>
   );
 }
