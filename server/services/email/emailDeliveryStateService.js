@@ -88,6 +88,13 @@ async function applyEmailDeliveryAttempt({
     latestErrorMessage: sendStatus === 'failed' ? errorMessage || undefined : undefined
   };
 
+  if (sendStatus === 'failed' || sendStatus === 'ambiguous') {
+    // A new active failure reopens dashboard attention even if previously dismissed/resolved.
+    stateUpdate.resolvedAt = null;
+    stateUpdate.resolvedBy = null;
+    stateUpdate.resolutionNote = null;
+  }
+
   if (sendStatus === 'success' || sendStatus === 'succeeded') {
     stateUpdate.resolvedAt = now;
     stateUpdate.resolvedBy = actorId || actorRole || 'system';
@@ -143,15 +150,59 @@ async function applyEmailDeliveryAttempt({
 
 async function countActiveFailedDeliveryStates() {
   return EmailDeliveryState.countDocuments({
-    latestStatus: { $in: ['failed', 'ambiguous'] }
+    latestStatus: { $in: ['failed', 'ambiguous'] },
+    $or: [{ resolvedAt: null }, { resolvedAt: { $exists: false } }]
   });
 }
 
 async function listActiveFailedDeliveryStates({ limit = 50 } = {}) {
-  return EmailDeliveryState.find({ latestStatus: { $in: ['failed', 'ambiguous'] } })
+  return EmailDeliveryState.find({
+    latestStatus: { $in: ['failed', 'ambiguous'] },
+    $or: [{ resolvedAt: null }, { resolvedAt: { $exists: false } }]
+  })
     .sort({ latestEventAt: -1 })
     .limit(limit)
     .lean();
+}
+
+/**
+ * Operator dismiss for a failed delivery without a successful resend.
+ * Keeps latestStatus/history intact; clears dashboard via resolvedAt.
+ */
+async function dismissFailedEmailDeliveryState({
+  correlationKey = null,
+  resolvedBy = 'operator',
+  resolutionNote = null,
+  now = new Date()
+} = {}) {
+  const key = normalizeString(correlationKey);
+  if (!key) {
+    return { updated: false, reason: 'invalid_input' };
+  }
+  const at = now instanceof Date ? now : new Date(now);
+  const updated = await EmailDeliveryState.findOneAndUpdate(
+    {
+      correlationKey: key,
+      latestStatus: { $in: ['failed', 'ambiguous'] },
+      $or: [{ resolvedAt: null }, { resolvedAt: { $exists: false } }]
+    },
+    {
+      $set: {
+        resolvedAt: at,
+        resolvedBy: normalizeString(resolvedBy) || 'operator',
+        resolutionNote:
+          normalizeString(resolutionNote) || 'Dismissed by operator (no successful resend)'
+      }
+    },
+    { new: true }
+  );
+  if (!updated) {
+    const existing = await EmailDeliveryState.findOne({ correlationKey: key }).lean();
+    if (!existing) return { updated: false, reason: 'not_found' };
+    if (existing.resolvedAt) return { updated: false, reason: 'already_resolved', state: existing };
+    return { updated: false, reason: 'not_active_failure', state: existing };
+  }
+  return { updated: true, reason: null, state: updated };
 }
 
 module.exports = {
@@ -160,5 +211,6 @@ module.exports = {
   EMAIL_FAILURE_CATEGORIES,
   applyEmailDeliveryAttempt,
   countActiveFailedDeliveryStates,
-  listActiveFailedDeliveryStates
+  listActiveFailedDeliveryStates,
+  dismissFailedEmailDeliveryState
 };

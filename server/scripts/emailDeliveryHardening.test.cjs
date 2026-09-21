@@ -394,3 +394,75 @@ test('10. historical EmailEvent rows remain unchanged after successful resend', 
   );
   assert.equal(await EmailEvent.countDocuments({ bookingId: booking._id }), 2);
 });
+
+test('11. operator dismiss of failed delivery clears dashboard without deleting EmailEvent', async () => {
+  const {
+    dismissFailedEmailDeliveryState,
+    listActiveFailedDeliveryStates,
+    countActiveFailedDeliveryStates
+  } = require('../services/email/emailDeliveryStateService');
+
+  const booking = minimalBooking({
+    guestInfo: {
+      firstName: 'Bogdana',
+      lastName: 'Naydenova',
+      email: 'stale-test@example.com',
+      phone: '+10000000000'
+    }
+  });
+  await sendLifecycle({
+    booking,
+    templateKey: bookingLifecycleEmailService.TEMPLATE_KEYS.BOOKING_CANCELLED,
+    lifecycleSource: 'automatic',
+    success: false,
+    error: "Can't send mail - all recipients were rejected: 550 No such recipient here"
+  });
+
+  const correlationKey = bookingLifecycleCorrelationKey({
+    bookingId: booking._id,
+    templateKey: 'booking_cancelled',
+    recipientEmail: 'stale-test@example.com'
+  });
+
+  assert.equal(await countActiveFailedDeliveryStates(), 1);
+  assert.equal((await listActiveFailedDeliveryStates()).length, 1);
+  assert.equal(emailAlertsFromDashboard(await getDashboardReadModel()).length, 1);
+
+  // MRI may already be operator-resolved while EDS remains failed (prod stale case).
+  await ManualReviewItem.updateOne(
+    {
+      category: BOOKING_LIFECYCLE_EMAIL_FAILED,
+      'evidence.deliveryCorrelationKey': correlationKey
+    },
+    {
+      $set: {
+        status: 'resolved',
+        resolution: {
+          note: 'old_invalid_test_recipient',
+          resolvedAt: new Date(),
+          resolvedBy: 'operator_cleanup_test'
+        }
+      }
+    }
+  );
+
+  const dismiss = await dismissFailedEmailDeliveryState({
+    correlationKey,
+    resolvedBy: 'operator_cleanup_test',
+    resolutionNote: 'Dismissed: invalid test recipient; EmailEvent history retained'
+  });
+  assert.equal(dismiss.updated, true);
+  assert.ok(dismiss.state.resolvedAt);
+  assert.equal(dismiss.state.latestStatus, 'failed');
+
+  assert.equal(await countActiveFailedDeliveryStates(), 0);
+  assert.equal((await listActiveFailedDeliveryStates()).length, 0);
+  assert.equal(emailAlertsFromDashboard(await getDashboardReadModel()).length, 0);
+
+  // History preserved
+  assert.equal(await EmailEvent.countDocuments({ bookingId: booking._id, sendStatus: 'failed' }), 1);
+  const eds = await EmailDeliveryState.findOne({ correlationKey }).lean();
+  assert.equal(eds.latestStatus, 'failed');
+  assert.equal(eds.recipient, 'stale-test@example.com');
+  assert.ok(eds.resolvedAt);
+});
