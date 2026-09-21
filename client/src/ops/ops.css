@@ -3,8 +3,8 @@
  * Scoped to .ops-root (and html[data-ops-active] while /ops is mounted).
  * Public-site index.css heading/editorial rules are not modified.
  *
- * Themed canvas/text/color-scheme is opt-in via [data-ops-themed="true"].
- * Legacy Ops screens keep their existing gray/sage utilities until they consume tokens.
+ * Light canvas/text paints on every Ops root. Dark canvas stays opt-in via
+ * [data-ops-themed="true"] until the dark product rollout.
  */
 
 /* ops-tokens: shared */
@@ -14,20 +14,40 @@ html[data-ops-active="true"] {
   --ops-space-8: 8px;
   --ops-space-12: 12px;
   --ops-space-16: 16px;
+  --ops-space-20: 20px;
   --ops-space-24: 24px;
   --ops-space-32: 32px;
   --ops-space-48: 48px;
-  --ops-radius-control: 6px;
-  --ops-radius-surface: 8px;
-  --ops-shadow-overlay: 0 4px 12px rgba(23, 26, 23, 0.08), 0 1px 3px rgba(23, 26, 23, 0.06);
-  --ops-shadow-modal: 0 12px 32px rgba(23, 26, 23, 0.12), 0 2px 6px rgba(23, 26, 23, 0.08);
+  --ops-radius-control: 8px;
+  --ops-radius-surface: 12px;
+  --ops-shadow-surface: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --ops-shadow-raised: 0 2px 6px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --ops-shadow-overlay: 0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
+  --ops-shadow-modal: 0 12px 32px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.08);
+  --ops-size-display: 26px;
+  --ops-lh-display: 32px;
+  --ops-size-title: 18px;
+  --ops-lh-title: 24px;
+  --ops-size-section: 16px;
+  --ops-lh-section: 22px;
+  --ops-size-body: 14px;
+  --ops-lh-body: 20px;
+  --ops-size-small: 13px;
+  --ops-lh-small: 18px;
+  --ops-size-meta: 12px;
+  --ops-lh-meta: 16px;
+  --ops-tracking-tight: -0.02em;
+  --ops-tracking-snug: -0.01em;
+  --ops-motion-fast: 120ms;
+  --ops-motion-ease: cubic-bezier(0.2, 0, 0, 1);
   --ops-control-h-compact: 32px;
   --ops-control-h: 36px;
   --ops-control-h-touch: 44px;
   --ops-row-h: 40px;
   --ops-row-h-compact: 32px;
   --ops-row-min-mobile: 56px;
-  --ops-topbar-h: 48px;
+  --ops-nav-item-h: 40px;
+  --ops-topbar-h: 56px;
   --ops-bottomnav-h: 56px;
   --ops-sidebar-w: 240px;
   --ops-sidebar-w-collapsed: 56px;
@@ -56,22 +76,24 @@ html[data-ops-active="true"] {
 /* ops-tokens: light */
 .ops-root[data-ops-appearance="light"],
 html[data-ops-active="true"][data-ops-appearance="light"] {
-  --ops-canvas: #F7F8F6;
+  --ops-canvas: #F5F5F7;
+  --ops-sidebar: #FAFAFA;
+  --ops-topbar: #FFFFFF;
   --ops-surface: #FFFFFF;
-  --ops-surface-subtle: #F2F4F1;
+  --ops-surface-subtle: #F2F2F4;
   --ops-surface-elevated: #FFFFFF;
-  --ops-border: #E1E5DF;
-  --ops-border-strong: #CDD3CB;
-  --ops-text: #171A17;
-  --ops-text-secondary: #59615A;
-  --ops-text-muted: #666D67;
-  --ops-text-disabled: #9AA198;
-  --ops-border-control: #858C82;
-  --ops-focus: #3F4A3A;
-  --ops-accent: #62695C;
-  --ops-accent-hover: #52584D;
-  --ops-accent-soft: #EEF1EB;
-  --ops-accent-border: #BFC6B9;
+  --ops-border: #E5E5E7;
+  --ops-border-strong: #B8B8BD;
+  --ops-text: #1D1D1F;
+  --ops-text-secondary: #6E6E73;
+  --ops-text-muted: #6B6B70;
+  --ops-text-disabled: #AEAEB2;
+  --ops-border-control: #D2D2D7;
+  --ops-focus: #0071E3;
+  --ops-accent: #2C2C2E;
+  --ops-accent-hover: #1D1D1F;
+  --ops-accent-soft: #E7E7EA;
+  --ops-accent-border: #D2D2D7;
   --ops-accent-fg: #FFFFFF;
   --ops-success: #1F7A4D;
   --ops-success-soft: #EDF8F1;
@@ -81,29 +103,31 @@ html[data-ops-active="true"][data-ops-appearance="light"] {
   --ops-danger-soft: #FEF3F2;
   --ops-info: #175CD3;
   --ops-info-soft: #EFF6FF;
-  --ops-scrim: rgba(23, 26, 23, 0.32);
+  --ops-scrim: rgba(0, 0, 0, 0.32);
 }
 
 /* ops-tokens: dark */
 .ops-root[data-ops-appearance="dark"],
 html[data-ops-active="true"][data-ops-appearance="dark"] {
-  --ops-canvas: #0F1110;
-  --ops-surface: #151815;
-  --ops-surface-subtle: #1B1F1B;
-  --ops-surface-elevated: #202420;
-  --ops-border: #2C322C;
-  --ops-border-strong: #3A423A;
-  --ops-text: #F3F5F2;
-  --ops-text-secondary: #C7CDC6;
-  --ops-text-muted: #AAB2A9;
-  --ops-text-disabled: #6F776F;
-  --ops-border-control: #7E897D;
-  --ops-focus: #D2DBC8;
-  --ops-accent: #A4AE99;
-  --ops-accent-hover: #B2BBA8;
-  --ops-accent-soft: #252B23;
-  --ops-accent-border: #6F7B68;
-  --ops-accent-fg: #171A17;
+  --ops-canvas: #171717;
+  --ops-sidebar: #111111;
+  --ops-topbar: #171717;
+  --ops-surface: #1D1D1F;
+  --ops-surface-subtle: #242426;
+  --ops-surface-elevated: #1D1D1F;
+  --ops-border: rgba(255, 255, 255, 0.07);
+  --ops-border-strong: rgba(255, 255, 255, 0.13);
+  --ops-text: #F5F5F7;
+  --ops-text-secondary: #B0B0B5;
+  --ops-text-muted: #8E8E93;
+  --ops-text-disabled: #636366;
+  --ops-border-control: rgba(255, 255, 255, 0.13);
+  --ops-focus: #0A84FF;
+  --ops-accent: #F5F5F7;
+  --ops-accent-hover: #FFFFFF;
+  --ops-accent-soft: #2C2C2E;
+  --ops-accent-border: rgba(255, 255, 255, 0.13);
+  --ops-accent-fg: #1D1D1F;
   --ops-success: #5AC58A;
   --ops-success-soft: #173223;
   --ops-warning: #E5A94F;
@@ -112,7 +136,7 @@ html[data-ops-active="true"][data-ops-appearance="dark"] {
   --ops-danger-soft: #381B1B;
   --ops-info: #6FA9FF;
   --ops-info-soft: #172A42;
-  --ops-scrim: rgba(23, 26, 23, 0.32);
+  --ops-scrim: rgba(0, 0, 0, 0.48);
 }
 
 .ops-root {
@@ -135,13 +159,18 @@ html[data-ops-active="true"][data-ops-appearance="dark"] {
   font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
-.ops-root[data-ops-themed="true"][data-ops-appearance="light"] {
+/*
+ * Product Ops roots paint canvas for both appearances.
+ * data-ops-themed remains set on production OpsRoot so dark/light share one path
+ * with the design-system demo root.
+ */
+.ops-root[data-ops-appearance="light"] {
   background-color: var(--ops-canvas);
   color: var(--ops-text);
   color-scheme: light;
 }
 
-.ops-root[data-ops-themed="true"][data-ops-appearance="dark"] {
+.ops-root[data-ops-appearance="dark"] {
   background-color: var(--ops-canvas);
   color: var(--ops-text);
   color-scheme: dark;

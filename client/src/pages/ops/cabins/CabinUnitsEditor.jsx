@@ -193,7 +193,7 @@ function UnitAirbnbIcsRow({ unit: u, onReload }) {
                 type="button"
                 onClick={copy}
                 disabled={busy}
-                className="text-xs px-3 py-1.5 rounded-lg bg-[#81887A] text-white hover:opacity-90"
+                className="ops-button ops-button--primary ops-button--compact"
               >
                 Copy ICS URL
               </button>

@@ -150,7 +150,7 @@ export default function CabinMediaManager({ titleId, isMulti, content, onReload 
           type="button"
           disabled={mediaBusy || isMulti}
           onClick={() => uploadRef.current?.click()}
-          className="text-xs px-3 py-2 rounded-lg bg-[#81887A] text-white disabled:opacity-50"
+          className="ops-button ops-button--primary ops-button--compact"
         >
           Upload image
         </button>
@@ -178,7 +178,10 @@ export default function CabinMediaManager({ titleId, isMulti, content, onReload 
                   onClick={() => setLightboxIndex(index)}
                 />
                 {img.isCover ? (
-                  <span className="absolute top-1 right-1 text-[10px] px-2 py-0.5 rounded bg-[#81887A] text-white">
+                  <span
+                    className="absolute top-1 right-1 text-[10px] px-2 py-0.5 rounded"
+                    style={{ background: 'var(--ops-accent)', color: 'var(--ops-accent-fg)' }}
+                  >
                     Cover
                   </span>
                 ) : null}

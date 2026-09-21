@@ -68,7 +68,7 @@ globs:
 alwaysApply: false
 ---
 
-# Ops design language (locked v1.2)
+# Ops design language (locked v1.2.1)
 
 Source of truth: `docs/ops-design/DND_OPS_DESIGN_LANGUAGE_GUIDE_V1_2_LOCKED.md`
 
@@ -85,6 +85,7 @@ Applies to the new Ops design island: `client/src/ops/**`, plus explicitly migra
 - New Ops UI uses canonical primitives in `client/src/ops/primitives/`.
 - New Ops UI uses semantic `--ops-*` tokens only.
 - Light and dark use the same token names. No `dark:` / `html.dark` / raw `gray-*` styling.
+- Structural foundation is neutral gray. Green is semantic/domain only — never canvas, sidebar, topbar, surfaces, borders, nav chrome, or primary actions.
 - No public-site editorial styling. No Playfair. No `font-serif` / `font-heading` / `font-script` as Ops styling (ops.css may neutralize those classes to Inter).
 - No raw visual hex outside `client/src/ops/ops.css` (and the P0A test mirror `client/src/ops/tokens/opsTokenNames.js`).
 - No arbitrary one-off Tailwind visual values (`p-[13px]`, `rounded-[7px]`, `text-[#…]`, `z-[9999]`) when a locked token exists.
@@ -101,6 +102,7 @@ Applies to the new Ops design island: `client/src/ops/**`, plus explicitly migra
 - Do not remigrate already enrolled production pages unless the current slice names them.
 - Do not add `/ops/design-system` to operator navigation.
 - Do not treat this rule as permission to start the desktop sidebar, command search, or P0+ shell work.
+- Do not reintroduce sage/olive/green-tinted values into structural foundation tokens.
 
 ## Checks
 

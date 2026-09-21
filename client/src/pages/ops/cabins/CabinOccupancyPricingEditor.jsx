@@ -49,7 +49,7 @@ export default function CabinOccupancyPricingEditor({
               type="button"
               onClick={onSaveOccupancy}
               disabled={occupancyBusy}
-              className="text-xs px-3 py-2 rounded-lg bg-[#81887A] text-white disabled:opacity-50"
+              className="ops-button ops-button--primary ops-button--compact"
             >
               {occupancyBusy ? 'Saving…' : 'Save'}
             </button>
@@ -88,7 +88,7 @@ export default function CabinOccupancyPricingEditor({
               type="button"
               onClick={onSavePricing}
               disabled={pricingBusy}
-              className="text-xs px-3 py-2 rounded-lg bg-[#81887A] text-white disabled:opacity-50"
+              className="ops-button ops-button--primary ops-button--compact"
             >
               {pricingBusy ? 'Saving…' : 'Save'}
             </button>

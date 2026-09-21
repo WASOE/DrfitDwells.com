@@ -1,8 +1,8 @@
 # Drift & Dwells Ops Design Language Guide
 
-**Version:** 1.2  
-**Status:** LOCKED BASELINE. Supersedes 1.0 and proposed 1.1.  
-**Date:** 19 September 2026  
+**Version:** 1.2.1
+**Status:** LOCKED BASELINE. Supersedes 1.0, proposed 1.1, and 1.2 sage-tinted foundation values.
+**Date:** 21 September 2026
 **Scope:** `driftdwells.com/ops` only
 
 This document is the design contract for Drift & Dwells Ops. It governs the product shell, visual language, responsive behavior, components, page composition, interaction patterns, and accessibility baseline.
@@ -111,9 +111,9 @@ Desktop optimizes for scanning and throughput. Mobile optimizes for focus and to
 
 ### 2.8 Brand is restrained
 
-Drift & Dwells identity should be recognizable through name, tone, and a restrained sage accent.
+Drift & Dwells identity is recognizable through the wordmark/mark in the shell and through product tone.
 
-Ops should not inherit the public site's Playfair/editorial language.
+Ops application chrome MUST use a neutral gray foundation. Green is semantic (success / free / domain meaning), not structural chrome. Ops MUST NOT inherit the public site's Playfair/editorial language or paint the shell sage.
 
 ---
 
@@ -124,8 +124,11 @@ Ops should not inherit the public site's Playfair/editorial language.
 - Inter is the Ops typeface.
 - No serif typography inside Ops.
 - **Both light mode and dark mode are required.**
-- Neutral surfaces dominate in both themes.
-- Sage is an accent, not the page background and not the default text color.
+- Neutral gray surfaces dominate in both themes.
+- Structural foundation tokens MUST be neutral gray. Sage/olive/green-tinted values are forbidden in canvas, sidebar, topbar, surfaces, borders, nav chrome, and primary actions.
+- Green is allowed only for approved semantic/domain roles (success, free work windows, and other locked domain maps).
+- Primary actions use neutral graphite (light: dark fill / white text; dark: light fill / dark text).
+- Focus indication MAY use accessible blue; it is interaction, not brand chrome.
 - No gradients.
 - No decorative shadows.
 - No card around every section.
@@ -168,58 +171,60 @@ These values are the canonical starting point. They may only change through an e
 
 | Token | Value | Use |
 |---|---:|---|
-| `--ops-canvas` | `#F7F8F6` | App background |
+| `--ops-canvas` | `#F5F5F7` | App background |
+| `--ops-sidebar` | `#FAFAFA` | Desktop sidebar foundation |
+| `--ops-topbar` | `#FFFFFF` | Top bar foundation |
 | `--ops-surface` | `#FFFFFF` | Primary surface |
-| `--ops-surface-subtle` | `#F2F4F1` | Secondary/inset surface |
+| `--ops-surface-subtle` | `#F2F2F4` | Secondary/inset surface |
 | `--ops-surface-elevated` | `#FFFFFF` | Floating/elevated surface |
-| `--ops-border` | `#E1E5DF` | Standard borders/dividers |
-| `--ops-border-strong` | `#CDD3CB` | Stronger separation |
-| `--ops-text` | `#171A17` | Primary text |
-| `--ops-text-secondary` | `#59615A` | Secondary text |
-| `--ops-text-muted` | `#666D67` | Low-priority metadata |
-| `--ops-text-disabled` | `#9AA198` | Disabled labels and values only |
-| `--ops-border-control` | `#858C82` | Input, select, checkbox and other control boundaries |
-| `--ops-focus` | `#3F4A3A` | Focus ring |
+| `--ops-border` | `#E5E5E7` | Standard borders/dividers |
+| `--ops-border-strong` | `#B8B8BD` | Stronger separation |
+| `--ops-text` | `#1D1D1F` | Primary text |
+| `--ops-text-secondary` | `#6E6E73` | Secondary text |
+| `--ops-text-muted` | `#6B6B70` | Low-priority metadata (must pass 4.5:1 on surface/subtle) |
+| `--ops-text-disabled` | `#AEAEB2` | Disabled labels and values only |
+| `--ops-border-control` | `#D2D2D7` | Input, select, checkbox and other control boundaries |
+| `--ops-focus` | `#0071E3` | Focus ring (accessible blue; interaction, not brand) |
 
-Contrast (verified, WCAG 2.x formula):
+Contrast targets (WCAG 2.x):
 
-| Pair | Ratio | Result |
-|---|---:|---|
-| `--ops-text-muted` on surface / canvas / surface-subtle / accent-soft | 5.32 / 4.99 / 4.81 / 4.66 | Pass 4.5:1 |
-| `--ops-text-secondary` on surface-subtle | 5.78 | Pass |
-| `--ops-border-control` on surface / canvas / surface-subtle | 3.46 / 3.25 / 3.13 | Pass 3:1 non-text |
-| White on `--ops-accent` | 5.68 | Pass |
-| `--ops-focus` on surface / canvas | 9.33 / 8.75 | Pass |
-
-Why 1.0 changed: the 1.0 muted value `#737B74` measured 4.36:1 on white, 4.09:1 on canvas and 3.94:1 on surface-subtle. Metadata is 12px, so it failed the 4.5:1 target this guide itself sets. The 1.0 border tokens (1.27:1 and 1.52:1 on white) are fine for dividers but cannot identify a control boundary, which needs 3:1.
+| Pair | Target |
+|---|---|
+| Primary/secondary/muted text on surface/canvas | ≥ 4.5:1 for normal text |
+| Control boundaries where the border identifies the control | Prefer ≥ 3:1; use surface contrast when borders are deliberately subtle |
+| White on `--ops-accent` (light) | Pass |
+| Dark text on `--ops-accent` (dark) | Pass |
+| `--ops-focus` on surface / canvas | Pass |
 
 Rules:
 
-- `--ops-border` and `--ops-border-strong` are for dividers and surface edges only. Any control whose boundary is the only thing that identifies it MUST use `--ops-border-control`.
+- `--ops-border` and `--ops-border-strong` are for dividers and surface edges. Prefer layer contrast in dark mode over hard outlines on every nested region.
 - Disabled content is exempt from contrast minimums but MUST still be recognizable as present. Disabled controls use `--ops-text-disabled` on `--ops-surface-subtle`.
-- Read-only is not disabled. Read-only values (for example the cleaner payout view) use normal text tokens without a control boundary.
+- Read-only is not disabled. Read-only values use normal text tokens without a control boundary.
+- Structural foundation MUST NOT use sage, olive, or green-tinted neutrals.
 
-#### Brand/accent
+#### Primary action / selected chrome (neutral graphite)
 
 | Token | Value | Use |
 |---|---:|---|
-| `--ops-accent` | `#62695C` | Primary actions, selected emphasis |
-| `--ops-accent-hover` | `#52584D` | Hover/pressed primary action |
-| `--ops-accent-soft` | `#EEF1EB` | Selected/active soft background |
-| `--ops-accent-border` | `#BFC6B9` | Accent boundary (decorative, not a state indicator) |
+| `--ops-accent` | `#2C2C2E` | Primary actions, selected emphasis indicator |
+| `--ops-accent-hover` | `#1D1D1F` | Hover/pressed primary action |
+| `--ops-accent-soft` | `#E7E7EA` | Selected/active soft background |
+| `--ops-accent-border` | `#D2D2D7` | Accent boundary (decorative) |
+| `--ops-accent-fg` | `#FFFFFF` | Text/icons on filled primary actions |
 
 Selected and active states:
 
-- `--ops-accent-soft` measures 1.14:1 against white. A fill alone is not enough. Every selected/active state (nav item, selected row, active tab, chosen option) MUST add a non-text state indicator with at least 3:1 contrast: a 2px `--ops-accent` bar, an `--ops-accent` border, a check icon, or another explicit shape/icon indicator. Font weight MAY reinforce selection, but font weight alone does not satisfy this rule.
-- `--ops-accent-soft` (`#EEF1EB`) and the success soft background (`#EDF8F1`) are visually close. Selected rows MUST NOT look like success. Never use accent-soft behind status content, and never use success-soft to show selection.
+- Every selected/active state (nav item, selected row, active tab, chosen option) MUST add a non-text state indicator with sufficient contrast: a 2px `--ops-accent` bar, an `--ops-accent` border, a check icon, or another explicit shape/icon indicator. Font weight MAY reinforce selection, but font weight alone does not satisfy this rule.
+- `--ops-accent-soft` is neutral gray. Selected rows MUST NOT look like success. Never use accent-soft behind status content, and never use success-soft to show selection.
 
 Links:
 
 - Links in prose use `--ops-accent` with an underline at all times.
 - Standalone links (for example "View reservation") use `--ops-accent`, underline on hover and focus.
-- Links MUST NOT use the Info blue.
+- Links MUST NOT use the Info blue unless the meaning is informational navigation that already uses info tokens.
 
-The historic sage `#81887A` may remain as a secondary decorative/supporting tone, but it must **not** be used for small body text on white because it does not meet the preferred 4.5:1 body-text contrast target.
+Historic public-site sage `#81887A` MUST NOT appear in Ops structural chrome, primary actions, or nav selection.
 
 #### Semantic
 
@@ -351,29 +356,32 @@ The same semantic token names are used in both appearances. Components MUST refe
 
 | Token | Dark value | Use |
 |---|---:|---|
-| `--ops-canvas` | `#0F1110` | App background |
-| `--ops-surface` | `#151815` | Primary surface |
-| `--ops-surface-subtle` | `#1B1F1B` | Secondary/inset surface |
-| `--ops-surface-elevated` | `#202420` | Popovers, drawers, modals, elevated UI |
-| `--ops-border` | `#2C322C` | Standard dividers |
-| `--ops-border-strong` | `#3A423A` | Stronger separation |
-| `--ops-text` | `#F3F5F2` | Primary text |
-| `--ops-text-secondary` | `#C7CDC6` | Secondary text |
-| `--ops-text-muted` | `#AAB2A9` | Low-priority metadata |
-| `--ops-text-disabled` | `#6F776F` | Disabled labels and values only |
-| `--ops-border-control` | `#7E897D` | Control boundaries |
-| `--ops-focus` | `#D2DBC8` | Focus ring |
+| `--ops-canvas` | `#171717` | App background |
+| `--ops-sidebar` | `#111111` | Desktop sidebar foundation |
+| `--ops-topbar` | `#171717` | Top bar foundation |
+| `--ops-surface` | `#1D1D1F` | Primary surface |
+| `--ops-surface-subtle` | `#242426` | Secondary/inset surface |
+| `--ops-surface-elevated` | `#1D1D1F` | Popovers, drawers, modals, elevated UI |
+| `--ops-border` | `rgba(255, 255, 255, 0.07)` | Subtle dividers |
+| `--ops-border-strong` | `rgba(255, 255, 255, 0.13)` | Stronger separation |
+| `--ops-text` | `#F5F5F7` | Primary text |
+| `--ops-text-secondary` | `#B0B0B5` | Secondary text |
+| `--ops-text-muted` | `#8E8E93` | Low-priority operational metadata |
+| `--ops-text-disabled` | `#636366` | Disabled labels and values only |
+| `--ops-border-control` | `rgba(255, 255, 255, 0.13)` | Control boundaries |
+| `--ops-focus` | `#0A84FF` | Focus ring |
 
-#### Dark accent
+#### Dark primary action / selected chrome
 
 | Token | Dark value |
 |---|---:|
-| `--ops-accent` | `#A4AE99` |
-| `--ops-accent-hover` | `#B2BBA8` |
-| `--ops-accent-soft` | `#252B23` |
-| `--ops-accent-border` | `#6F7B68` |
+| `--ops-accent` | `#F5F5F7` |
+| `--ops-accent-hover` | `#FFFFFF` |
+| `--ops-accent-soft` | `#2C2C2E` |
+| `--ops-accent-border` | `rgba(255, 255, 255, 0.13)` |
+| `--ops-accent-fg` | `#1D1D1F` |
 
-Filled primary buttons in dark mode use `#171A17` text on `--ops-accent`.
+Filled primary buttons in dark mode use `--ops-accent-fg` on `--ops-accent`.
 
 #### Dark semantic
 
@@ -1429,6 +1437,14 @@ Cursor:
 - **Exception register:** a short table in the repo next to this guide. Each exception records screen, rule, reason, and review date. An exception without a review date is not valid. Exceptions that survive two reviews become either a rule change or a fix.
 
 ### 30.1 Changelog
+
+**1.2.1 (LOCKED foundation revision, 21 Sep 2026)**
+
+- Structural Ops foundation replaced sage/green-tinted neutrals with premium neutral gray (light + dark)
+- Added `--ops-sidebar` and `--ops-topbar` chrome tokens
+- Primary actions / nav selection use neutral graphite; focus uses accessible blue
+- Green retained only for semantic success and approved domain maps (calendar/work/cleaning/payment)
+- Historic `#81887A` sage forbidden in Ops structural chrome
 
 **1.2 (LOCKED, 19 Sep 2026)**
 

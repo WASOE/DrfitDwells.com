@@ -135,7 +135,7 @@ export default function CreateCabinModal({
             <button
               type="submit"
               disabled={createBusy}
-              className="px-4 py-2 text-sm rounded-lg bg-[#81887A] text-white hover:opacity-90 disabled:opacity-50"
+              className="ops-button ops-button--primary"
             >
               {createBusy ? 'Creating…' : 'Create cabin'}
             </button>

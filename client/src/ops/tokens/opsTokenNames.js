@@ -1,11 +1,12 @@
 /**
- * Canonical Ops token names from DND_OPS_DESIGN_LANGUAGE_GUIDE_V1_2_LOCKED.md.
- * Values live in client/src/ops/ops.css. This module is the name list for tests
- * and Tailwind mapping — not a second color palette.
+ * Canonical Ops token names. Values live in client/src/ops/ops.css.
+ * Structural foundation is neutral gray. Green is semantic/domain only.
  */
 
 export const OPS_COLOR_TOKEN_NAMES = [
   '--ops-canvas',
+  '--ops-sidebar',
+  '--ops-topbar',
   '--ops-surface',
   '--ops-surface-subtle',
   '--ops-surface-elevated',
@@ -33,24 +34,26 @@ export const OPS_COLOR_TOKEN_NAMES = [
   '--ops-scrim'
 ];
 
-/** Locked light values (guide §4.1, §4.5). */
+/** Locked light values — neutral foundation + semantic roles. */
 export const OPS_LIGHT_COLOR_VALUES = {
-  '--ops-canvas': '#F7F8F6',
+  '--ops-canvas': '#F5F5F7',
+  '--ops-sidebar': '#FAFAFA',
+  '--ops-topbar': '#FFFFFF',
   '--ops-surface': '#FFFFFF',
-  '--ops-surface-subtle': '#F2F4F1',
+  '--ops-surface-subtle': '#F2F2F4',
   '--ops-surface-elevated': '#FFFFFF',
-  '--ops-border': '#E1E5DF',
-  '--ops-border-strong': '#CDD3CB',
-  '--ops-text': '#171A17',
-  '--ops-text-secondary': '#59615A',
-  '--ops-text-muted': '#666D67',
-  '--ops-text-disabled': '#9AA198',
-  '--ops-border-control': '#858C82',
-  '--ops-focus': '#3F4A3A',
-  '--ops-accent': '#62695C',
-  '--ops-accent-hover': '#52584D',
-  '--ops-accent-soft': '#EEF1EB',
-  '--ops-accent-border': '#BFC6B9',
+  '--ops-border': '#E5E5E7',
+  '--ops-border-strong': '#B8B8BD',
+  '--ops-text': '#1D1D1F',
+  '--ops-text-secondary': '#6E6E73',
+  '--ops-text-muted': '#6B6B70',
+  '--ops-text-disabled': '#AEAEB2',
+  '--ops-border-control': '#D2D2D7',
+  '--ops-focus': '#0071E3',
+  '--ops-accent': '#2C2C2E',
+  '--ops-accent-hover': '#1D1D1F',
+  '--ops-accent-soft': '#E7E7EA',
+  '--ops-accent-border': '#D2D2D7',
   '--ops-accent-fg': '#FFFFFF',
   '--ops-success': '#1F7A4D',
   '--ops-success-soft': '#EDF8F1',
@@ -60,28 +63,30 @@ export const OPS_LIGHT_COLOR_VALUES = {
   '--ops-danger-soft': '#FEF3F2',
   '--ops-info': '#175CD3',
   '--ops-info-soft': '#EFF6FF',
-  '--ops-scrim': 'rgba(23, 26, 23, 0.32)'
+  '--ops-scrim': 'rgba(0, 0, 0, 0.32)'
 };
 
-/** Locked dark values (guide §4.9). Scrim is defined once in §4.5 and is shared. */
+/** Locked dark values — neutral foundation + semantic roles. */
 export const OPS_DARK_COLOR_VALUES = {
-  '--ops-canvas': '#0F1110',
-  '--ops-surface': '#151815',
-  '--ops-surface-subtle': '#1B1F1B',
-  '--ops-surface-elevated': '#202420',
-  '--ops-border': '#2C322C',
-  '--ops-border-strong': '#3A423A',
-  '--ops-text': '#F3F5F2',
-  '--ops-text-secondary': '#C7CDC6',
-  '--ops-text-muted': '#AAB2A9',
-  '--ops-text-disabled': '#6F776F',
-  '--ops-border-control': '#7E897D',
-  '--ops-focus': '#D2DBC8',
-  '--ops-accent': '#A4AE99',
-  '--ops-accent-hover': '#B2BBA8',
-  '--ops-accent-soft': '#252B23',
-  '--ops-accent-border': '#6F7B68',
-  '--ops-accent-fg': '#171A17',
+  '--ops-canvas': '#171717',
+  '--ops-sidebar': '#111111',
+  '--ops-topbar': '#171717',
+  '--ops-surface': '#1D1D1F',
+  '--ops-surface-subtle': '#242426',
+  '--ops-surface-elevated': '#1D1D1F',
+  '--ops-border': 'rgba(255, 255, 255, 0.07)',
+  '--ops-border-strong': 'rgba(255, 255, 255, 0.13)',
+  '--ops-text': '#F5F5F7',
+  '--ops-text-secondary': '#B0B0B5',
+  '--ops-text-muted': '#8E8E93',
+  '--ops-text-disabled': '#636366',
+  '--ops-border-control': 'rgba(255, 255, 255, 0.13)',
+  '--ops-focus': '#0A84FF',
+  '--ops-accent': '#F5F5F7',
+  '--ops-accent-hover': '#FFFFFF',
+  '--ops-accent-soft': '#2C2C2E',
+  '--ops-accent-border': 'rgba(255, 255, 255, 0.13)',
+  '--ops-accent-fg': '#1D1D1F',
   '--ops-success': '#5AC58A',
   '--ops-success-soft': '#173223',
   '--ops-warning': '#E5A94F',
@@ -90,29 +95,78 @@ export const OPS_DARK_COLOR_VALUES = {
   '--ops-danger-soft': '#381B1B',
   '--ops-info': '#6FA9FF',
   '--ops-info-soft': '#172A42',
-  '--ops-scrim': 'rgba(23, 26, 23, 0.32)'
+  '--ops-scrim': 'rgba(0, 0, 0, 0.48)'
 };
 
-/** Non-color tokens shared by both appearances (guide §4.3–4.8). */
+/** Hexes that must never appear in structural foundation tokens. */
+export const OPS_FORBIDDEN_STRUCTURAL_GREEN_HEX = Object.freeze([
+  '#F4F6F2',
+  '#F7F8F6',
+  '#F2F4F1',
+  '#E1E5DF',
+  '#CDD3CB',
+  '#2F4F3A',
+  '#24402E',
+  '#ECF3EE',
+  '#BFD3C4',
+  '#CFE6D6',
+  '#8FC6A2',
+  '#A5D3B4',
+  '#1C2C22',
+  '#5E8E6E',
+  '#62695C',
+  '#52584D',
+  '#EEF1EB',
+  '#BFC6B9',
+  '#3F4A3A',
+  '#0F1110',
+  '#151815',
+  '#1B1F1B',
+  '#202420',
+  '#2C322C',
+  '#3A423A'
+]);
+
+/** Non-color tokens shared by both appearances. */
 export const OPS_SHARED_TOKEN_VALUES = {
   '--ops-space-4': '4px',
   '--ops-space-8': '8px',
   '--ops-space-12': '12px',
   '--ops-space-16': '16px',
+  '--ops-space-20': '20px',
   '--ops-space-24': '24px',
   '--ops-space-32': '32px',
   '--ops-space-48': '48px',
-  '--ops-radius-control': '6px',
-  '--ops-radius-surface': '8px',
-  '--ops-shadow-overlay': '0 4px 12px rgba(23, 26, 23, 0.08), 0 1px 3px rgba(23, 26, 23, 0.06)',
-  '--ops-shadow-modal': '0 12px 32px rgba(23, 26, 23, 0.12), 0 2px 6px rgba(23, 26, 23, 0.08)',
+  '--ops-radius-control': '8px',
+  '--ops-radius-surface': '12px',
+  '--ops-shadow-surface': '0 1px 2px rgba(0, 0, 0, 0.05)',
+  '--ops-shadow-raised': '0 2px 6px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04)',
+  '--ops-shadow-overlay': '0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06)',
+  '--ops-shadow-modal': '0 12px 32px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.08)',
+  '--ops-size-display': '26px',
+  '--ops-lh-display': '32px',
+  '--ops-size-title': '18px',
+  '--ops-lh-title': '24px',
+  '--ops-size-section': '16px',
+  '--ops-lh-section': '22px',
+  '--ops-size-body': '14px',
+  '--ops-lh-body': '20px',
+  '--ops-size-small': '13px',
+  '--ops-lh-small': '18px',
+  '--ops-size-meta': '12px',
+  '--ops-lh-meta': '16px',
+  '--ops-tracking-tight': '-0.02em',
+  '--ops-tracking-snug': '-0.01em',
+  '--ops-motion-fast': '120ms',
+  '--ops-motion-ease': 'cubic-bezier(0.2, 0, 0, 1)',
   '--ops-control-h-compact': '32px',
   '--ops-control-h': '36px',
   '--ops-control-h-touch': '44px',
   '--ops-row-h': '40px',
   '--ops-row-h-compact': '32px',
   '--ops-row-min-mobile': '56px',
-  '--ops-topbar-h': '48px',
+  '--ops-nav-item-h': '40px',
+  '--ops-topbar-h': '56px',
   '--ops-bottomnav-h': '56px',
   '--ops-sidebar-w': '240px',
   '--ops-sidebar-w-collapsed': '56px',

@@ -110,7 +110,7 @@ export default function CabinExperiencesEditor({
           type="button"
           onClick={onSave}
           disabled={experiencesBusy}
-          className="text-xs px-3 py-1.5 rounded-lg bg-[#81887A] text-white disabled:opacity-50"
+          className="ops-button ops-button--primary ops-button--compact"
         >
           {experiencesBusy ? 'Saving…' : 'Save'}
         </button>

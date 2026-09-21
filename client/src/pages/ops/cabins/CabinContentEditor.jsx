@@ -146,7 +146,7 @@ export default function CabinContentEditor({
           type="button"
           onClick={onSave}
           disabled={contentBusy}
-          className="text-xs px-3 py-2 rounded-lg bg-[#81887A] text-white disabled:opacity-50"
+          className="ops-button ops-button--primary ops-button--compact"
         >
           {contentBusy ? 'Saving…' : 'Save'}
         </button>

@@ -78,7 +78,7 @@ export default function ManualReviewResolveAction({ manualReviewItemId, onResolv
         <button
           type="submit"
           disabled={submitting}
-          className="text-xs px-2.5 py-1 rounded bg-[#81887A] text-white hover:bg-[#707668] disabled:opacity-60"
+          className="ops-button ops-button--primary ops-button--compact"
         >
           {submitting ? 'Saving…' : 'Confirm resolve'}
         </button>

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import {
   OPS_COLOR_TOKEN_NAMES,
   OPS_DARK_COLOR_VALUES,
+  OPS_FORBIDDEN_STRUCTURAL_GREEN_HEX,
   OPS_LIGHT_COLOR_VALUES,
   OPS_SHARED_TOKEN_NAMES,
   OPS_SHARED_TOKEN_VALUES
@@ -53,7 +54,7 @@ describe('Ops token completeness (P0A)', () => {
     expect(lightOnly).toEqual([]);
     expect(darkOnly).toEqual([]);
     expect(lightTokens['--ops-accent-fg']).toBe('#FFFFFF');
-    expect(darkTokens['--ops-accent-fg']).toBe('#171A17');
+    expect(darkTokens['--ops-accent-fg']).toBe('#1D1D1F');
   });
 
   it('matches locked light color values exactly', () => {
@@ -66,6 +67,56 @@ describe('Ops token completeness (P0A)', () => {
     for (const name of OPS_COLOR_TOKEN_NAMES) {
       expect(darkTokens[name], name).toBe(OPS_DARK_COLOR_VALUES[name]);
     }
+  });
+
+  it('keeps structural foundation neutral (no sage/green chrome)', () => {
+    const structural = [
+      '--ops-canvas',
+      '--ops-sidebar',
+      '--ops-topbar',
+      '--ops-surface',
+      '--ops-surface-subtle',
+      '--ops-surface-elevated',
+      '--ops-border',
+      '--ops-border-strong',
+      '--ops-border-control',
+      '--ops-text',
+      '--ops-text-secondary',
+      '--ops-text-muted',
+      '--ops-text-disabled',
+      '--ops-accent',
+      '--ops-accent-hover',
+      '--ops-accent-soft',
+      '--ops-accent-border',
+      '--ops-accent-fg',
+      '--ops-focus',
+      '--ops-scrim'
+    ];
+    for (const name of structural) {
+      const light = lightTokens[name].toUpperCase();
+      const dark = darkTokens[name].toUpperCase();
+      for (const banned of OPS_FORBIDDEN_STRUCTURAL_GREEN_HEX) {
+        expect(light, `${name} light`).not.toBe(banned.toUpperCase());
+        expect(dark, `${name} dark`).not.toBe(banned.toUpperCase());
+      }
+    }
+    expect(lightTokens['--ops-canvas']).toBe('#F5F5F7');
+    expect(darkTokens['--ops-canvas']).toBe('#171717');
+    expect(lightTokens['--ops-accent']).toBe('#2C2C2E');
+    expect(darkTokens['--ops-accent']).toBe('#F5F5F7');
+    expect(lightTokens['--ops-focus']).toBe('#0071E3');
+    expect(darkTokens['--ops-focus']).toBe('#0A84FF');
+  });
+
+  it('preserves semantic success/warning/danger/info greens and ambers', () => {
+    expect(lightTokens['--ops-success']).toBe('#1F7A4D');
+    expect(darkTokens['--ops-success']).toBe('#5AC58A');
+    expect(lightTokens['--ops-warning']).toBe('#9A5B00');
+    expect(darkTokens['--ops-warning']).toBe('#E5A94F');
+    expect(lightTokens['--ops-danger']).toBe('#B42318');
+    expect(darkTokens['--ops-danger']).toBe('#F27A72');
+    expect(lightTokens['--ops-info']).toBe('#175CD3');
+    expect(darkTokens['--ops-info']).toBe('#6FA9FF');
   });
 
   it('matches locked shared non-color token values exactly', () => {
@@ -135,12 +186,18 @@ describe('Ops token completeness (P0A)', () => {
     }
   });
 
-  it('applies color-scheme only on themed surfaces', () => {
+  it('paints light and dark canvas on Ops roots', () => {
     expect(OPS_CSS).toMatch(
-      /\.ops-root\[data-ops-themed="true"\]\[data-ops-appearance="dark"\][\s\S]*?color-scheme:\s*dark/
+      /\.ops-root\[data-ops-appearance="light"\][\s\S]*?background-color:\s*var\(--ops-canvas\)/
     );
     expect(OPS_CSS).toMatch(
-      /\.ops-root\[data-ops-themed="true"\]\[data-ops-appearance="light"\][\s\S]*?color-scheme:\s*light/
+      /\.ops-root\[data-ops-appearance="light"\][\s\S]*?color-scheme:\s*light/
+    );
+    expect(OPS_CSS).toMatch(
+      /\.ops-root\[data-ops-appearance="dark"\][\s\S]*?background-color:\s*var\(--ops-canvas\)/
+    );
+    expect(OPS_CSS).toMatch(
+      /\.ops-root\[data-ops-appearance="dark"\][\s\S]*?color-scheme:\s*dark/
     );
     const unthemedRoot = OPS_CSS.match(/^\.ops-root\s*\{[\s\S]*?\}/m);
     expect(unthemedRoot?.[0] || '').not.toMatch(/color-scheme/);

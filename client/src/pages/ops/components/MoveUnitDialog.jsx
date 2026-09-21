@@ -269,7 +269,16 @@ export default function MoveUnitDialog({
                     <label
                       className={`flex items-start gap-3 rounded-lg border px-3 py-2 ${
                         selectable ? 'border-gray-200 hover:bg-gray-50 cursor-pointer' : 'border-gray-100 bg-gray-50 opacity-80'
-                      } ${checked ? 'ring-1 ring-[#81887A] border-[#81887A]' : ''}`}
+                      }`}
+                      style={
+                        checked
+                          ? {
+                              borderColor: 'var(--ops-accent)',
+                              boxShadow: '0 0 0 1px var(--ops-accent)',
+                              background: 'var(--ops-accent-soft)'
+                            }
+                          : undefined
+                      }
                     >
                       <input
                         type="radio"
@@ -359,7 +368,7 @@ export default function MoveUnitDialog({
             type="button"
             disabled={!canSubmit}
             onClick={handleSubmit}
-            className="w-full sm:w-auto px-4 py-2 text-sm font-medium rounded-lg bg-[#81887A] text-white hover:bg-[#707668] disabled:opacity-50"
+            className="ops-button ops-button--primary w-full sm:w-auto"
           >
             {busy ? 'Moving…' : 'Move unit'}
           </button>
