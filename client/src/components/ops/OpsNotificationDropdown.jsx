@@ -31,7 +31,8 @@ export default function OpsNotificationDropdown({
   markAllBusy,
   onMarkAllRead,
   onNotificationClick,
-  onRetry
+  onRetry,
+  pushSection = null
 }) {
   return (
     <div
@@ -51,6 +52,12 @@ export default function OpsNotificationDropdown({
           {markAllBusy ? 'Marking…' : 'Mark all read'}
         </button>
       </div>
+
+      {pushSection ? (
+        <div className="ops-notification-dropdown__push" data-testid="ops-notification-push-section">
+          {pushSection}
+        </div>
+      ) : null}
 
       <div className="ops-notification-dropdown__body">
         {loading ? (

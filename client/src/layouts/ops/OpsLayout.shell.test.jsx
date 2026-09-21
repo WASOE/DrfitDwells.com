@@ -120,7 +120,7 @@ describe('OpsLayout desktop/mobile/cleaner shell', () => {
     vi.clearAllMocks();
   });
 
-  it('renders the expanded desktop shell at 1280px and keeps push/health chrome', async () => {
+  it('renders the expanded desktop shell at 1280px without a permanent push strip', async () => {
     renderLayout('/ops/reservations/123', adminSession, {
       dependencies: {
         stripeWebhookLastSeenAt: null,
@@ -136,12 +136,17 @@ describe('OpsLayout desktop/mobile/cleaner shell', () => {
     expect(screen.getByTestId('ops-notification-bell')).toBeInTheDocument();
     expect(screen.getByTestId('ops-logout')).toBeInTheDocument();
     expect(screen.getByTestId('ops-degraded-banner')).toHaveTextContent('Degraded state');
-    expect(screen.getByTestId('ops-push-panel')).toBeInTheDocument();
+    expect(screen.queryByTestId('ops-push-panel')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ops-push-panel-subscribed')).not.toBeInTheDocument();
     expect(screen.getByTestId('ops-skip-link')).toHaveAttribute('href', '#ops-main');
     expect(screen.getByTestId('ops-main')).toHaveAttribute('id', 'ops-main');
     expect(screen.queryByTestId('ops-mobile-header')).not.toBeInTheDocument();
     expect(screen.getByRole('navigation', { name: 'Ops sections' }).closest('[data-testid="ops-sidebar"]')).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Home' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('ops-notification-bell'));
+    expect(await screen.findByTestId('ops-notification-push-section')).toBeInTheDocument();
+    expect(screen.getByTestId('ops-push-panel')).toBeInTheDocument();
   });
 
   it('uses collapsed mode by default at 800px and expanded at 1024px', async () => {

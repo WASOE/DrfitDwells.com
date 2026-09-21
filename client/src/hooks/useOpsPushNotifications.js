@@ -53,7 +53,12 @@ export function useOpsPushNotifications(actorId) {
       return null;
     }
     try {
-      const registration = await navigator.serviceWorker.ready;
+      const registration = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('service_worker_ready_timeout')), 3000);
+        })
+      ]);
       const subscription = await registration.pushManager.getSubscription();
       const endpoint = subscription?.endpoint || null;
       setBrowserEndpoint(endpoint);

@@ -14,6 +14,17 @@
   min-width: 0;
 }
 
+.ops-dashboard-push-attention {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ops-dashboard-push-attention__hint {
+  font-size: var(--ops-size-meta);
+  line-height: var(--ops-lh-meta);
+  color: var(--ops-text-secondary);
+}
+
 .ops-dashboard-links {
   display: flex;
   flex-wrap: wrap;

@@ -41,4 +41,23 @@ describe('OpsNotificationDropdown', () => {
     expect(button.disabled).toBe(true);
     cleanup();
   });
+
+  it('renders an optional push section above the inbox body', () => {
+    render(
+      <OpsNotificationDropdown
+        notifications={[]}
+        loading={false}
+        error=""
+        unreadCount={0}
+        markAllBusy={false}
+        onMarkAllRead={vi.fn()}
+        onNotificationClick={vi.fn()}
+        onRetry={vi.fn()}
+        pushSection={<div data-testid="ops-push-panel">Push notifications</div>}
+      />
+    );
+    expect(screen.getByTestId('ops-notification-push-section')).toBeTruthy();
+    expect(screen.getByTestId('ops-push-panel')).toBeTruthy();
+    cleanup();
+  });
 });

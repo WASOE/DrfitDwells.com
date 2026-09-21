@@ -2,7 +2,9 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { useNavigate } from 'react-router-dom';
 import { useOpsNotifications } from '../../hooks/useOpsNotifications';
 import { resolveOpsNotificationNavigationUrl } from '../../utils/opsNotificationNavigation';
+import { useOptionalOpsPushNotificationsContext } from '../../context/OpsPushNotificationsContext';
 import OpsNotificationDropdown from './OpsNotificationDropdown';
+import OpsPushNotificationsPanel from './OpsPushNotificationsPanel';
 
 function formatBadgeCount(count) {
   if (count > 9) {
@@ -37,6 +39,7 @@ export default function OpsNotificationBell({ actorId }) {
   const [dropdownStyle, setDropdownStyle] = useState(undefined);
   const rootRef = useRef(null);
   const buttonRef = useRef(null);
+  const pushContext = useOptionalOpsPushNotificationsContext();
 
   const updateDropdownPosition = useCallback(() => {
     const button = buttonRef.current;
@@ -101,7 +104,7 @@ export default function OpsNotificationBell({ actorId }) {
     };
   }, [open, updateDropdownPosition]);
 
-  if (!enabled) {
+  if (!enabled && !pushContext) {
     return null;
   }
 
@@ -167,6 +170,7 @@ export default function OpsNotificationBell({ actorId }) {
           onRetry={() => {
             void refreshInbox();
           }}
+          pushSection={pushContext ? <OpsPushNotificationsPanel /> : null}
         />
       ) : null}
     </div>

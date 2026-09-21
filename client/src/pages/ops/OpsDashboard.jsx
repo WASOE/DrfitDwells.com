@@ -12,6 +12,7 @@ import OpsBanner from '../../ops/primitives/OpsBanner';
 import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
 import OpsMetric, { OpsMetricGroup } from '../../ops/primitives/OpsMetric';
 import { resolveOpsStatus } from '../../ops/status/opsStatusRegistry';
+import OpsDashboardPushAttention from './OpsDashboardPushAttention';
 import './OpsDashboard.css';
 
 const COMMS_HREF = '/ops/communications';
@@ -388,6 +389,7 @@ export default function OpsDashboard() {
     <OpsPage width="wide" className="ops-dashboard">
       <div className="ops-dashboard-intro">
         <DashboardHeader health={health} />
+        <OpsDashboardPushAttention />
         <QuickLinks />
       </div>
 

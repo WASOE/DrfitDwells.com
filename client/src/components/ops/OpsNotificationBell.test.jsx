@@ -20,6 +20,10 @@ vi.mock('../../hooks/useOpsNotifications', () => ({
   })
 }));
 
+vi.mock('../../context/OpsPushNotificationsContext', () => ({
+  useOptionalOpsPushNotificationsContext: () => null
+}));
+
 describe('OpsNotificationBell', () => {
   it('renders unread badge capped at 9+', () => {
     render(<OpsNotificationBell actorId="507f1f77bcf86cd799439011" />);

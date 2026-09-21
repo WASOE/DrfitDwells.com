@@ -231,7 +231,7 @@ describe('OpsDashboard home migration', () => {
     cleanup();
   });
 
-  it('uses OpsPage wide, Dashboard header, and no legacy title card', async () => {
+  it('uses OpsPage wide, Dashboard header, and no permanent push strip', async () => {
     renderPage();
     await waitFor(() => {
       expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeInTheDocument();
@@ -242,6 +242,9 @@ describe('OpsDashboard home migration', () => {
       'ops-page-header--meta-inline'
     );
     expect(screen.queryByRole('heading', { name: 'OPS Dashboard' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ops-push-panel')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ops-push-panel-subscribed')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ops-dashboard-push-attention')).not.toBeInTheDocument();
     expect(pageSource).not.toMatch(/max-w-7xl|bg-white border border-gray-200 rounded-xl|#81887A|font-serif|Playfair/);
     expect(pageSource).not.toMatch(/border-rose-200|bg-amber-50|lg:grid-cols-6|xl:grid-cols-3/);
     expect(pageSource).not.toContain('/ops/communications/oversight');

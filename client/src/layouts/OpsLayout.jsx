@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { opsReadAPI } from '../services/opsApi';
 import { OpsSessionProvider } from '../context/OpsSessionContext';
+import { OpsPushNotificationsProvider } from '../context/OpsPushNotificationsContext';
 import OpsMobileTabBar from './ops/OpsMobileTabBar';
 import OpsMoreSheet from './ops/OpsMoreSheet';
-import OpsPushNotificationsPanel from '../components/ops/OpsPushNotificationsPanel';
 import OpsNotificationBell from '../components/ops/OpsNotificationBell';
 import OpsSidebar from './ops/OpsSidebar';
 import OpsTopBar from './ops/OpsTopBar';
@@ -192,6 +192,7 @@ function OpsLayoutShell() {
 
   return (
     <OpsSessionProvider session={session}>
+      <OpsPushNotificationsProvider actorId={session.actorId}>
       <OpsRoot themed className="min-h-screen">
         <SkipToContent />
         {cleanerOnly ? <CompactHeader title="Cleaning" session={session} onLogout={handleLogout} /> : null}
@@ -208,7 +209,6 @@ function OpsLayoutShell() {
             {showDesktopShell ? (
               <OpsTopBar mode={mode} session={session} onToggle={handleSidebarToggle} onLogout={handleLogout} />
             ) : null}
-            <OpsPushNotificationsPanel actorId={session.actorId} />
             {!cleanerOnly && hasDegraded ? (
               <div className="ops-degraded-banner" data-testid="ops-degraded-banner">
                 <div className="ops-degraded-banner__inner">
@@ -243,6 +243,7 @@ function OpsLayoutShell() {
           </>
         ) : null}
       </OpsRoot>
+      </OpsPushNotificationsProvider>
     </OpsSessionProvider>
   );
 }
