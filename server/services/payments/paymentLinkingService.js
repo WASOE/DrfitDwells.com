@@ -161,8 +161,66 @@ async function linkStripePaymentToBooking({
   };
 }
 
+/**
+ * Authoritative ledger check: Payment.reservationId must equal booking._id.
+ * Used by finalize workers / side effects so paymentLinkedAt and MRI resolve
+ * are never stamped from booking existence alone.
+ */
+async function verifyPaymentLinkedToBooking({
+  booking = null,
+  paymentIntentId = null
+} = {}) {
+  const bookingId = toObjectIdString(booking?._id);
+  const piId = normalizePaymentIntentId(
+    paymentIntentId || booking?.stripePaymentIntentId || null
+  );
+  if (!bookingId || !piId) {
+    return {
+      linked: false,
+      reason: 'invalid_input',
+      bookingId: bookingId || null,
+      stripePaymentIntentId: piId || null,
+      paymentId: null
+    };
+  }
+
+  const payment = await Payment.findOne(buildPaymentIntentLookupQuery(piId)).sort({
+    createdAt: -1
+  });
+  if (!payment) {
+    return {
+      linked: false,
+      reason: 'not_found',
+      bookingId,
+      stripePaymentIntentId: piId,
+      paymentId: null
+    };
+  }
+
+  const reservationId = toObjectIdString(payment.reservationId);
+  if (reservationId === bookingId) {
+    return {
+      linked: true,
+      reason: null,
+      bookingId,
+      stripePaymentIntentId: piId,
+      paymentId: String(payment._id)
+    };
+  }
+
+  return {
+    linked: false,
+    reason: reservationId ? 'linked_elsewhere' : 'unlinked',
+    bookingId,
+    stripePaymentIntentId: piId,
+    paymentId: String(payment._id),
+    existingReservationId: reservationId
+  };
+}
+
 module.exports = {
   linkStripePaymentToBooking,
+  verifyPaymentLinkedToBooking,
   normalizePaymentIntentId,
   buildPaymentIntentLookupQuery
 };

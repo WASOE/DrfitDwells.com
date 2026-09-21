@@ -570,7 +570,8 @@ test('12: partial payment linkage / session state is repaired on adopt', async (
 
   const reloadedJob = await CheckoutFinalizationJob.findById(job._id);
   assert.equal(reloadedJob.status, 'succeeded');
-  assert.ok(reloadedJob.paymentLinkedAt);
+  // No Payment ledger row linked in this fixture — paymentLinkedAt must stay unset.
+  assert.equal(reloadedJob.paymentLinkedAt, null);
   assert.ok(reloadedJob.sessionFinalizedAt);
 });
 

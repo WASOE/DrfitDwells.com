@@ -27,6 +27,9 @@ const GiftVoucher = require('../models/GiftVoucher');
 const GiftVoucherRedemption = require('../models/GiftVoucherRedemption');
 const EmailDeliveryState = require('../models/EmailDeliveryState');
 const FacilityReservation = require('../models/FacilityReservation');
+const Payment = require('../models/Payment');
+const ManualReviewItem = require('../models/ManualReviewItem');
+const CheckoutFinalizationJob = require('../models/CheckoutFinalizationJob');
 
 const {
   CHECKOUT_SESSION_ERROR_CODES,
@@ -78,6 +81,17 @@ const {
   LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
   LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT
 } = require('../config/legalAcceptance');
+const { openManualReviewItem } = require('../services/ops/ingestion/manualReviewService');
+const { verifyPaymentLinkedToBooking } = require('../services/payments/paymentLinkingService');
+const {
+  classifyReservationPaymentStatus
+} = require('../services/ops/payment/reservationPaymentSignals');
+const {
+  markCheckoutFinalizationJobSucceeded
+} = require('../services/checkout/checkoutFinalizationJobService');
+const {
+  resolveAlertsForBooking
+} = require('../services/checkout/checkoutFinalizeSideEffects');
 
 const STAY_IN = '2026-10-10';
 const STAY_OUT = '2026-10-12';
@@ -157,7 +171,9 @@ function buildIntentBody(overrides = {}) {
 
 function createStripeStub(piById) {
   const store = new Map(Object.entries(piById || {}));
+  const updates = [];
   return {
+    updates,
     paymentIntents: {
       retrieve: async (id) => {
         const pi = store.get(String(id));
@@ -167,6 +183,19 @@ function createStripeStub(piById) {
           throw err;
         }
         return { ...pi };
+      },
+      update: async (id, payload) => {
+        updates.push({ paymentIntentId: String(id), payload });
+        const existing = store.get(String(id)) || { id: String(id), metadata: {} };
+        const next = {
+          ...existing,
+          metadata: {
+            ...(existing.metadata || {}),
+            ...((payload && payload.metadata) || {})
+          }
+        };
+        store.set(String(id), next);
+        return { ...next };
       }
     }
   };
@@ -211,7 +240,8 @@ function stripeFor(session, paymentIntentId, piOverrides = {}) {
     finalizeIntentHash: session.finalizeIntentHash,
     ...piOverrides
   });
-  return { stripe: createStripeStub({ [pi.id]: pi }), pi };
+  const stripe = createStripeStub({ [pi.id]: pi });
+  return { stripe, pi, updates: stripe.updates };
 }
 
 function voucherConfirmDeps(extra = {}) {
@@ -843,6 +873,10 @@ function assertNeedsReviewErr(err) {
       'FACILITY_CONFIRM_FAILED',
       'ACCOMMODATION_TOMBSTONE_FAILED',
       'VOUCHER_CONFIRM_FAILED',
+      'PAYMENT_LINK_FAILED',
+      'PAYMENT_LINK_UNVERIFIED',
+      'PAYMENT_LINK_INVALID',
+      'PAYMENT_LINK_CONFLICT',
       CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_USABLE
     ].includes(err.code)
   );
@@ -877,7 +911,10 @@ beforeEach(async () => {
     GiftVoucher.deleteMany({}),
     GiftVoucherRedemption.deleteMany({}),
     EmailDeliveryState.deleteMany({}),
-    FacilityReservation.deleteMany({})
+    FacilityReservation.deleteMany({}),
+    Payment.deleteMany({}),
+    ManualReviewItem.deleteMany({}),
+    CheckoutFinalizationJob.deleteMany({})
   ]);
 });
 
@@ -917,6 +954,165 @@ describe('B8F4B happy paths (1–6, 11, 14, 20, 42)', () => {
     const live = await CheckoutSession.findOne({ checkoutId: session.checkoutId }).lean();
     assert.equal(live.resourceLease.status, 'paid');
     assert.equal(live.finalizeStatus, FINALIZE_STATUS.FINALIZED);
+  });
+
+  it('2b. Webhook-before-booking race: lease finalize links Payment ledger + Stripe metadata + MRI', async () => {
+    process.env.FINALIZE_SIDE_EFFECTS = '1';
+    const holdCtx = await acquireUnitHold('pi_race');
+    const { session, paymentIntentId, hold } = await seedLeasedStripeSession({ holdCtx });
+    const amountEuros = Number(session.stripeAmountCents) / 100;
+
+    // Stripe payment_intent.succeeded arrives before booking exists.
+    const payment = await Payment.create({
+      provider: 'stripe',
+      providerReference: paymentIntentId,
+      status: 'paid',
+      amount: amountEuros,
+      currency: 'eur',
+      source: 'webhook',
+      reservationId: null,
+      metadata: {
+        paymentIntentId,
+        checkoutId: session.checkoutId
+      }
+    });
+    await openManualReviewItem({
+      category: 'payment_unlinked',
+      severity: 'high',
+      entityType: 'Payment',
+      entityId: payment._id,
+      title: 'Unlinked Stripe payment (race fixture)',
+      details: `Payment ${paymentIntentId} arrived before booking`,
+      provenance: { source: 'test', sourceReference: 'b8f4b_race' },
+      evidence: {
+        paymentIntentId,
+        paymentId: String(payment._id),
+        checkoutId: session.checkoutId
+      }
+    });
+    assert.equal(
+      await ManualReviewItem.countDocuments({ category: 'payment_unlinked', status: 'open' }),
+      1
+    );
+    assert.equal(
+      classifyReservationPaymentStatus({
+        booking: {
+          stripePaymentIntentId: paymentIntentId,
+          totalPrice: amountEuros
+        },
+        linkedPaymentTrail: [],
+        hasUnlinkedStripePayment: true
+      }),
+      'unlinked_payment'
+    );
+
+    // Side effects must NOT resolve MRI merely because a booking will exist.
+    const preLinkAlert = await resolveAlertsForBooking({
+      booking: {
+        _id: new mongoose.Types.ObjectId(),
+        stripePaymentIntentId: paymentIntentId
+      },
+      session
+    });
+    assert.equal(preLinkAlert.reason, 'payment_not_linked');
+    assert.equal(
+      await ManualReviewItem.countDocuments({ category: 'payment_unlinked', status: 'open' }),
+      1
+    );
+
+    const { stripe, updates } = stripeFor(session, paymentIntentId);
+    const result = await finalizePaidCheckout({
+      checkoutId: session.checkoutId,
+      paymentIntentId,
+      source: 'webhook_worker',
+      dependencies: { stripe }
+    });
+    assert.equal(result.ok, true);
+    assert.ok(result.bookingId);
+
+    const booking = await Booking.findById(result.bookingId);
+    assert.ok(booking);
+    assert.equal(String(booking.unitId), String(hold.unitId));
+    assert.equal(booking.status, 'confirmed');
+
+    const linkedPayment = await Payment.findById(payment._id);
+    assert.equal(String(linkedPayment.reservationId), String(booking._id));
+    assert.equal(linkedPayment.metadata?.linkedBy, 'checkout_finalize_lease_aware');
+
+    const verified = await verifyPaymentLinkedToBooking({
+      booking,
+      paymentIntentId
+    });
+    assert.equal(verified.linked, true);
+
+    assert.ok(updates.length >= 1);
+    const metaUpdate = updates.find((u) => u.paymentIntentId === paymentIntentId);
+    assert.ok(metaUpdate);
+    assert.equal(metaUpdate.payload.metadata.bookingId, String(booking._id));
+    assert.equal(metaUpdate.payload.metadata.reservationId, String(booking._id));
+
+    assert.equal(
+      await ManualReviewItem.countDocuments({ category: 'payment_unlinked', status: 'open' }),
+      0
+    );
+    assert.ok(
+      (await ManualReviewItem.countDocuments({
+        category: 'payment_unlinked',
+        status: 'resolved'
+      })) >= 1
+    );
+
+    assert.equal(
+      classifyReservationPaymentStatus({
+        booking,
+        linkedPaymentTrail: [linkedPayment],
+        hasUnlinkedStripePayment: false
+      }),
+      'paid'
+    );
+
+    // paymentLinkedAt stamps only after verified ledger link.
+    const job = await CheckoutFinalizationJob.create({
+      checkoutId: session.checkoutId,
+      paymentIntentId,
+      status: 'claimed',
+      stage: 'finalize_session',
+      claimedBy: 'test-worker',
+      claimedAt: new Date(),
+      visibilityTimeoutAt: new Date(Date.now() + 60_000),
+      createdReason: 'webhook',
+      nextAttemptAt: new Date()
+    });
+    const at = new Date();
+    await markCheckoutFinalizationJobSucceeded({
+      jobId: job._id,
+      bookingId: booking._id,
+      now: at,
+      paymentLinkedAt: verified.linked ? at : undefined
+    });
+    const reloadedJob = await CheckoutFinalizationJob.findById(job._id);
+    assert.ok(reloadedJob.paymentLinkedAt);
+    assert.equal(reloadedJob.status, 'succeeded');
+
+    // Without an explicit Date, paymentLinkedAt must remain unset.
+    const job2 = await CheckoutFinalizationJob.create({
+      checkoutId: `${session.checkoutId}_nolink`,
+      paymentIntentId: `${paymentIntentId}_nolink`,
+      status: 'claimed',
+      stage: 'finalize_session',
+      claimedBy: 'test-worker',
+      claimedAt: new Date(),
+      visibilityTimeoutAt: new Date(Date.now() + 60_000),
+      createdReason: 'webhook',
+      nextAttemptAt: new Date()
+    });
+    await markCheckoutFinalizationJobSucceeded({
+      jobId: job2._id,
+      bookingId: booking._id,
+      now: at
+    });
+    const reloadedJob2 = await CheckoutFinalizationJob.findById(job2._id);
+    assert.equal(reloadedJob2.paymentLinkedAt, null);
   });
 
   it('3. Full-voucher without Stripe', async () => {

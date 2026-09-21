@@ -7,9 +7,16 @@ const Booking = require('../models/Booking');
 const Payment = require('../models/Payment');
 const ManualReviewItem = require('../models/ManualReviewItem');
 const StripeEventEvidence = require('../models/StripeEventEvidence');
+const CheckoutFinalizationJob = require('../models/CheckoutFinalizationJob');
 const { processStripeWebhookEvent } = require('../services/ops/ingestion/stripeIngestionService');
-const { linkStripePaymentToBooking } = require('../services/payments/paymentLinkingService');
+const {
+  linkStripePaymentToBooking,
+  verifyPaymentLinkedToBooking
+} = require('../services/payments/paymentLinkingService');
 const { resolvePaymentUnlinkedReviews } = require('../services/payments/paymentReviewResolutionService');
+const {
+  classifyReservationPaymentStatus
+} = require('../services/ops/payment/reservationPaymentSignals');
 
 let mongoServer;
 
@@ -82,6 +89,7 @@ test.before(async () => {
   await Payment.syncIndexes();
   await ManualReviewItem.syncIndexes();
   await StripeEventEvidence.syncIndexes();
+  await CheckoutFinalizationJob.syncIndexes();
 });
 
 test.after(async () => {
@@ -94,6 +102,7 @@ test.beforeEach(async () => {
   await Booking.deleteMany({});
   await Payment.deleteMany({});
   await ManualReviewItem.deleteMany({});
+  await CheckoutFinalizationJob.deleteMany({});
 });
 
 test('booking before webhook auto-links payment and keeps payment_unlinked clear', async () => {
@@ -471,4 +480,185 @@ test('incoming metadata sets reservationId only when currently null', async () =
     await ManualReviewItem.countDocuments({ category: 'payment_unlinked', status: 'open' }),
     0
   );
+});
+
+test('finalize-before-Payment not_found catch-up: late webhook auto-links, clears MRI + dashboard signal', async () => {
+  // Lifecycle under audit:
+  // Stripe succeeds → finalize runs before Payment row exists → linker not_found
+  // → booking confirmed → late payment_intent.succeeded upsert → auto-link.
+  const paymentIntentId = `pi_finalize_first_${Date.now()}`;
+  const checkoutId = `chk_finalize_first_${Date.now()}`;
+  const totalPrice = 170;
+
+  // Post-finalize booking state (stripePaymentIntentId already stamped; Payment absent).
+  const booking = await createBooking({
+    stripePaymentIntentId: paymentIntentId,
+    totalPrice,
+    status: 'confirmed',
+    stripePaidAmountCents: 17000
+  });
+  await Booking.updateOne({ _id: booking._id }, { $set: { checkoutId } });
+
+  // Simulate linker not_found verification after finalize.
+  const preWebhookVerify = await verifyPaymentLinkedToBooking({
+    booking,
+    paymentIntentId
+  });
+  assert.equal(preWebhookVerify.linked, false);
+  assert.equal(preWebhookVerify.reason, 'not_found');
+
+  // Worker already marked the job succeeded without paymentLinkedAt (truthful).
+  const job = await CheckoutFinalizationJob.create({
+    checkoutId,
+    paymentIntentId,
+    status: 'succeeded',
+    stage: 'succeeded',
+    bookingId: booking._id,
+    paymentLinkedAt: null,
+    sessionFinalizedAt: new Date(),
+    createdReason: 'webhook',
+    nextAttemptAt: new Date()
+  });
+
+  // Dashboard would classify as pending_verification (PI present, no unlinked Payment row yet).
+  assert.equal(
+    classifyReservationPaymentStatus({
+      booking: { ...booking.toObject(), checkoutId },
+      linkedPaymentTrail: [],
+      hasUnlinkedStripePayment: false
+    }),
+    'pending_verification'
+  );
+
+  // Late webhook: original succeeded payload typically lacks bookingId (patched after finalize).
+  // Catch-up must use Booking.stripePaymentIntentId, not PI metadata / checkoutId.
+  await processStripeWebhookEvent(
+    makeStripeEvent({
+      id: `evt_finalize_first_${Date.now()}`,
+      paymentIntentId,
+      amountCents: 17000,
+      metadata: {
+        checkoutId,
+        flowVersion: 'v2'
+        // intentionally no bookingId / reservationId
+      }
+    })
+  );
+
+  const payment = await Payment.findOne({ providerReference: paymentIntentId }).lean();
+  assert.ok(payment);
+  assert.equal(String(payment.reservationId), String(booking._id));
+  assert.equal(payment.metadata?.linkedBy, 'stripe_webhook_reconciliation');
+
+  const postVerify = await verifyPaymentLinkedToBooking({ booking, paymentIntentId });
+  assert.equal(postVerify.linked, true);
+
+  assert.equal(
+    await ManualReviewItem.countDocuments({ category: 'payment_unlinked', status: 'open' }),
+    0
+  );
+
+  assert.equal(
+    classifyReservationPaymentStatus({
+      booking: { ...booking.toObject(), checkoutId, stripePaymentIntentId: paymentIntentId },
+      linkedPaymentTrail: [payment],
+      hasUnlinkedStripePayment: false
+    }),
+    'paid'
+  );
+
+  // Late webhook backfills paymentLinkedAt on the succeeded finalize job.
+  const reloadedJob = await CheckoutFinalizationJob.findById(job._id).lean();
+  assert.ok(reloadedJob.paymentLinkedAt instanceof Date);
+  assert.equal(reloadedJob.status, 'succeeded');
+});
+
+test('late webhook without matching booking amount leaves Payment unlinked (no false auto-link)', async () => {
+  const paymentIntentId = `pi_amt_mismatch_${Date.now()}`;
+  const checkoutId = `chk_amt_mismatch_${Date.now()}`;
+  const booking = await createBooking({
+    stripePaymentIntentId: paymentIntentId,
+    totalPrice: 170,
+    status: 'confirmed',
+    stripePaidAmountCents: 17000
+  });
+  await Booking.updateOne({ _id: booking._id }, { $set: { checkoutId } });
+
+  const job = await CheckoutFinalizationJob.create({
+    checkoutId,
+    paymentIntentId,
+    status: 'succeeded',
+    stage: 'succeeded',
+    bookingId: booking._id,
+    paymentLinkedAt: null,
+    sessionFinalizedAt: new Date(),
+    createdReason: 'webhook',
+    nextAttemptAt: new Date()
+  });
+
+  await processStripeWebhookEvent(
+    makeStripeEvent({
+      id: `evt_amt_mismatch_${Date.now()}`,
+      paymentIntentId,
+      amountCents: 9900 // mismatch → no auto-link
+    })
+  );
+
+  const payment = await Payment.findOne({ providerReference: paymentIntentId }).lean();
+  assert.ok(payment);
+  assert.equal(payment.reservationId, null);
+  assert.equal(
+    await ManualReviewItem.countDocuments({ category: 'payment_unlinked', status: 'open' }),
+    1
+  );
+  assert.equal(
+    classifyReservationPaymentStatus({
+      booking: { stripePaymentIntentId: paymentIntentId, totalPrice: 170 },
+      linkedPaymentTrail: [],
+      hasUnlinkedStripePayment: true
+    }),
+    'unlinked_payment'
+  );
+
+  const reloadedJob = await CheckoutFinalizationJob.findById(job._id).lean();
+  assert.equal(reloadedJob.paymentLinkedAt, null);
+});
+
+test('paymentLinkedAt backfill never overwrites an existing timestamp', async () => {
+  const paymentIntentId = `pi_plink_keep_${Date.now()}`;
+  const checkoutId = `chk_plink_keep_${Date.now()}`;
+  const priorLinkedAt = new Date('2026-01-15T12:00:00.000Z');
+  const booking = await createBooking({
+    stripePaymentIntentId: paymentIntentId,
+    totalPrice: 88,
+    status: 'confirmed',
+    stripePaidAmountCents: 8800
+  });
+  await Booking.updateOne({ _id: booking._id }, { $set: { checkoutId } });
+
+  const job = await CheckoutFinalizationJob.create({
+    checkoutId,
+    paymentIntentId,
+    status: 'succeeded',
+    stage: 'succeeded',
+    bookingId: booking._id,
+    paymentLinkedAt: priorLinkedAt,
+    sessionFinalizedAt: new Date(),
+    createdReason: 'webhook',
+    nextAttemptAt: new Date()
+  });
+
+  await processStripeWebhookEvent(
+    makeStripeEvent({
+      id: `evt_plink_keep_${Date.now()}`,
+      paymentIntentId,
+      amountCents: 8800
+    })
+  );
+
+  const payment = await Payment.findOne({ providerReference: paymentIntentId }).lean();
+  assert.equal(String(payment.reservationId), String(booking._id));
+
+  const reloadedJob = await CheckoutFinalizationJob.findById(job._id).lean();
+  assert.equal(new Date(reloadedJob.paymentLinkedAt).toISOString(), priorLinkedAt.toISOString());
 });

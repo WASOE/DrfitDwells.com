@@ -601,7 +601,7 @@ async function markCheckoutFinalizationJobSucceeded({
   jobId,
   bookingId,
   now = new Date(),
-  paymentLinkedAt = null,
+  paymentLinkedAt = undefined,
   sessionFinalizedAt = null
 } = {}) {
   if (!jobId || !bookingId) {
@@ -613,19 +613,84 @@ async function markCheckoutFinalizationJobSucceeded({
     stage: 'succeeded',
     bookingId,
     sessionFinalizedAt: sessionFinalizedAt || at,
-    paymentLinkedAt: paymentLinkedAt || at,
     claimedBy: null,
     claimedAt: null,
     visibilityTimeoutAt: null,
     lastErrorCode: null,
     lastErrorSummary: null
   };
+  // Only stamp paymentLinkedAt when caller passes an explicit Date after verifying
+  // Payment.reservationId === booking._id. Do not default to `now`.
+  if (paymentLinkedAt instanceof Date) {
+    set.paymentLinkedAt = paymentLinkedAt;
+  }
 
   return CheckoutFinalizationJob.findOneAndUpdate(
     { _id: jobId, status: 'claimed' },
     { $set: set },
     { new: true }
   );
+}
+
+/**
+ * Telemetry-only: stamp paymentLinkedAt after a late webhook (or other linker)
+ * verifies Payment.reservationId === bookingId, when finalize earlier succeeded
+ * with paymentLinkedAt still null.
+ *
+ * Never overwrites an existing paymentLinkedAt. Matches the job deterministically
+ * by bookingId + paymentIntentId (and checkoutId when provided).
+ */
+async function backfillCheckoutFinalizationJobPaymentLinkedAt({
+  bookingId = null,
+  paymentIntentId = null,
+  checkoutId = null,
+  now = new Date()
+} = {}) {
+  const bookingKey = bookingId != null ? String(bookingId).trim() : '';
+  const piId = paymentIntentId != null ? String(paymentIntentId).trim() : '';
+  if (!bookingKey || !piId) {
+    return { updated: false, reason: 'invalid_input', jobId: null };
+  }
+
+  const at = now instanceof Date ? now : new Date(now);
+  const filter = {
+    bookingId: bookingKey,
+    paymentIntentId: piId,
+    $or: [{ paymentLinkedAt: null }, { paymentLinkedAt: { $exists: false } }]
+  };
+  const checkoutKey = checkoutId != null ? String(checkoutId).trim() : '';
+  if (checkoutKey) {
+    filter.checkoutId = checkoutKey;
+  }
+
+  const matches = await CheckoutFinalizationJob.find(filter).select('_id').limit(2).lean();
+  if (matches.length === 0) {
+    return { updated: false, reason: 'not_found', jobId: null };
+  }
+  if (matches.length > 1) {
+    return { updated: false, reason: 'ambiguous', jobId: null };
+  }
+
+  const jobId = matches[0]._id;
+  const updated = await CheckoutFinalizationJob.findOneAndUpdate(
+    {
+      _id: jobId,
+      $or: [{ paymentLinkedAt: null }, { paymentLinkedAt: { $exists: false } }]
+    },
+    { $set: { paymentLinkedAt: at } },
+    { new: true }
+  );
+
+  if (!updated) {
+    return { updated: false, reason: 'already_set_or_raced', jobId: String(jobId) };
+  }
+
+  return {
+    updated: true,
+    reason: null,
+    jobId: String(updated._id),
+    paymentLinkedAt: updated.paymentLinkedAt
+  };
 }
 
 async function markCheckoutFinalizationJobFailedPermanent({
@@ -1606,6 +1671,7 @@ module.exports = {
   markCheckoutFinalizationJobFailedRetryable,
   markCheckoutFinalizationJobFailedPermanent,
   markCheckoutFinalizationJobCancelled,
+  backfillCheckoutFinalizationJobPaymentLinkedAt,
   classifyFinalizeJobError,
   computeFinalizeJobBackoffMs,
   getFinalizeJobVisibilityTimeoutMs,

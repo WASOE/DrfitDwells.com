@@ -6,7 +6,10 @@ const {
   CHECKOUT_SESSION_ERROR_CODES,
   CheckoutSessionError
 } = require('./checkoutSessionErrors');
-const { linkStripePaymentToBooking } = require('../payments/paymentLinkingService');
+const {
+  linkStripePaymentToBooking,
+  verifyPaymentLinkedToBooking
+} = require('../payments/paymentLinkingService');
 const {
   confirmVoucherReservation,
   releaseVoucherReservation
@@ -280,7 +283,26 @@ function buildBookingData({
         customTripType:
           typeof ctx.customTripType === 'string' ? ctx.customTripType.trim().slice(0, 100) : '',
         specialRequests:
-          typeof ctx.specialRequests === 'string' ? ctx.specialRequests.trim().slice(0, 500) : ''
+          typeof ctx.specialRequests === 'string' ? ctx.specialRequests.trim().slice(0, 500) : '',
+        ...(ctx.winterVillage
+          ? {
+              winterVillage: {
+                productId: ctx.winterVillage.productId,
+                productName: ctx.winterVillage.productName,
+                accommodationId: ctx.winterVillage.accommodationId,
+                dateId: ctx.winterVillage.dateId || null,
+                adults: ctx.winterVillage.adults,
+                children4to12: ctx.winterVillage.children4to12,
+                under4: ctx.winterVillage.under4,
+                wellnessSelected: Boolean(ctx.winterVillage.wellnessSelected),
+                wellnessIncluded: Boolean(ctx.winterVillage.wellnessIncluded),
+                inclusions: Array.isArray(ctx.winterVillage.inclusions)
+                  ? ctx.winterVillage.inclusions
+                  : [],
+                totalCents: ctx.winterVillage.totalCents
+              }
+            }
+          : {})
       }
     },
     status: initialStatus,
@@ -291,7 +313,7 @@ function buildBookingData({
     commercialStayFingerprint: String(session.stayFingerprint).trim(),
     checkoutSessionId: session._id || null,
     provenance: {
-      source: 'guest_portal',
+      source: ctx.winterVillage ? 'winter_village' : 'guest_portal',
       intakeRevision: 1,
       createdByRoute: createdByRouteForSource(source)
     },
@@ -338,6 +360,7 @@ function createDefaultDependencies() {
     Booking,
     PromoCode,
     linkStripePaymentToBooking,
+    verifyPaymentLinkedToBooking,
     confirmVoucherReservation,
     releaseVoucherReservation,
     countBlockingBlocksForSingleCabin,
@@ -1493,15 +1516,138 @@ async function executeLeaseAwareFinalizeWork({
     await deps.afterBookingSave({ checkoutId, bookingId: boundBookingId, booking });
   }
 
+  let paymentLedgerLinked = false;
   if (paymentIntentIdForReview && stripePaymentVerified) {
+    const linkFn =
+      typeof deps.linkStripePaymentToBooking === 'function'
+        ? deps.linkStripePaymentToBooking
+        : linkStripePaymentToBooking;
+    let linkResult = null;
     try {
-      await linkStripePaymentToBooking({
-        paymentIntentId: paymentIntentIdForReview,
-        bookingId: booking._id,
-        checkoutId
+      linkResult = await linkFn({
+        booking,
+        linkedBy: 'checkout_finalize_lease_aware'
       });
-    } catch (_linkErr) {
-      void _linkErr;
+    } catch (linkErr) {
+      console.error(
+        JSON.stringify({
+          source: 'execute-booking-finalize-work',
+          phase: 'lease_payment_link',
+          bookingId: String(booking._id),
+          paymentIntentId: paymentIntentIdForReview,
+          error: linkErr?.message || String(linkErr)
+        })
+      );
+      throw createLeaseWorkNeedsReviewError(
+        'PAYMENT_LINK_FAILED',
+        linkErr?.message || 'Failed to link Stripe payment to booking',
+        {
+          stage: 'payment_link',
+          bookingId: boundBookingId,
+          retryable: true
+        }
+      );
+    }
+
+    const linkStatus = linkResult && linkResult.status ? String(linkResult.status) : '';
+    if (linkStatus === 'not_found') {
+      // Payment row may still be racing in via webhook. Booking finalize continues;
+      // paymentLinkedAt / MRI resolve stay gated here. Catch-up is deterministic in
+      // stripeIngestionService: later payment_intent.succeeded upsert finds the
+      // Booking by stripePaymentIntentId, calls linkStripePaymentToBooking
+      // (linkedBy: stripe_webhook_reconciliation), and backfills
+      // CheckoutFinalizationJob.paymentLinkedAt when still null.
+      console.warn(
+        JSON.stringify({
+          source: 'execute-booking-finalize-work',
+          phase: 'lease_payment_link',
+          bookingId: String(booking._id),
+          paymentIntentId: paymentIntentIdForReview,
+          result: 'not_found'
+        })
+      );
+    } else if (linkStatus === 'invalid_input') {
+      throw createLeaseWorkNeedsReviewError(
+        'PAYMENT_LINK_INVALID',
+        'Payment link rejected invalid booking/payment intent input',
+        {
+          stage: 'payment_link',
+          bookingId: boundBookingId,
+          retryable: false
+        }
+      );
+    } else if (linkStatus === 'conflict') {
+      throw createLeaseWorkNeedsReviewError(
+        'PAYMENT_LINK_CONFLICT',
+        'Payment is already linked to a different booking',
+        {
+          stage: 'payment_link',
+          bookingId: boundBookingId,
+          existingReservationId: linkResult.existingReservationId || null,
+          retryable: false
+        }
+      );
+    } else if (linkStatus === 'linked' || linkStatus === 'already_linked') {
+      const verifyFn =
+        typeof deps.verifyPaymentLinkedToBooking === 'function'
+          ? deps.verifyPaymentLinkedToBooking
+          : verifyPaymentLinkedToBooking;
+      const verified = await verifyFn({
+        booking,
+        paymentIntentId: paymentIntentIdForReview
+      });
+      if (!verified.linked) {
+        console.error(
+          JSON.stringify({
+            source: 'execute-booking-finalize-work',
+            phase: 'lease_payment_link_unverified',
+            bookingId: String(booking._id),
+            paymentIntentId: paymentIntentIdForReview,
+            linkStatus,
+            verifyReason: verified.reason || null
+          })
+        );
+        throw createLeaseWorkNeedsReviewError(
+          'PAYMENT_LINK_UNVERIFIED',
+          'Payment ledger reservationId does not match booking after link attempt',
+          {
+            stage: 'payment_link',
+            bookingId: boundBookingId,
+            linkStatus,
+            verifyReason: verified.reason || null,
+            retryable: true
+          }
+        );
+      }
+      paymentLedgerLinked = true;
+    } else {
+      throw createLeaseWorkNeedsReviewError(
+        'PAYMENT_LINK_FAILED',
+        `Payment linkage failed with status ${linkStatus || 'unknown'}`,
+        {
+          stage: 'payment_link',
+          bookingId: boundBookingId,
+          linkStatus: linkStatus || null,
+          retryable: true
+        }
+      );
+    }
+
+    if (deps.stripe?.paymentIntents?.update) {
+      try {
+        const metadataPatch = {
+          bookingId: String(booking._id),
+          reservationId: String(booking._id)
+        };
+        if (booking.attribution?.referralCode) {
+          metadataPatch.referralCode = booking.attribution.referralCode;
+        }
+        await deps.stripe.paymentIntents.update(paymentIntentIdForReview, {
+          metadata: metadataPatch
+        });
+      } catch {
+        // non-fatal, same as legacy path — ledger link is authoritative
+      }
     }
   }
 
@@ -1654,7 +1800,11 @@ async function executeLeaseAwareFinalizeWork({
   return {
     bookingId: booking._id,
     booking,
-    result: { idempotentReplay: saved.isReplay === true, leaseAware: true }
+    result: {
+      idempotentReplay: saved.isReplay === true,
+      leaseAware: true,
+      paymentLinked: paymentLedgerLinked === true
+    }
   };
 }
 

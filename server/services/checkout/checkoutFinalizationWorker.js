@@ -35,6 +35,9 @@ const {
   runCheckoutFinalizeSideEffects
 } = require('./checkoutFinalizeSideEffects');
 const {
+  verifyPaymentLinkedToBooking
+} = require('../payments/paymentLinkingService');
+const {
   recordPaidBookingResolutionIssueSafe,
   PAID_BOOKING_FINALIZATION_STAGES
 } = require('../payments/paidBookingFinalizationObservability');
@@ -230,20 +233,49 @@ async function executeClaimedJob(job, { now = new Date() } = {}) {
 
     await updateCheckoutFinalizationJobStage({ jobId, stage: 'finalize_session' });
 
-    const succeeded = await markCheckoutFinalizationJobSucceeded({
+    const bookingDoc =
+      result.booking ||
+      (await Booking.findById(result.bookingId).catch(() => null));
+
+    // paymentLinkedAt is truthful only after Payment.reservationId === booking._id.
+    let paymentLinkedAt = null;
+    if (bookingDoc) {
+      try {
+        const verified = await verifyPaymentLinkedToBooking({
+          booking: bookingDoc,
+          paymentIntentId: job.paymentIntentId || bookingDoc.stripePaymentIntentId || null
+        });
+        if (verified.linked) {
+          paymentLinkedAt = at;
+        } else {
+          logLine('warn', 'payment_link_unverified_after_finalize', {
+            jobId: String(jobId),
+            bookingId: String(result.bookingId),
+            reason: verified.reason || null
+          });
+        }
+      } catch (verifyErr) {
+        logLine('warn', 'payment_link_verify_failed', {
+          jobId: String(jobId),
+          bookingId: String(result.bookingId),
+          error: verifyErr?.message || String(verifyErr)
+        });
+      }
+    }
+
+    const succeedArgs = {
       jobId,
       bookingId: result.bookingId,
       now: at,
       sessionFinalizedAt:
         result.session?.finalizedAt instanceof Date
           ? result.session.finalizedAt
-          : at,
-      paymentLinkedAt: at
-    });
-
-    const bookingDoc =
-      result.booking ||
-      (await Booking.findById(result.bookingId).catch(() => null));
+          : at
+    };
+    if (paymentLinkedAt instanceof Date) {
+      succeedArgs.paymentLinkedAt = paymentLinkedAt;
+    }
+    const succeeded = await markCheckoutFinalizationJobSucceeded(succeedArgs);
 
     let sideEffects = null;
     try {
@@ -275,6 +307,7 @@ async function executeClaimedJob(job, { now = new Date() } = {}) {
       bookingId: String(result.bookingId),
       adoptedExisting: result.adoptedExisting === true,
       idempotentReplay: result.idempotentReplay === true,
+      paymentLinked: paymentLinkedAt instanceof Date,
       sideEffects,
       emailSendAttempted: state.lastEmailSendAttempted,
       refundAttempted: false,

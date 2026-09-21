@@ -6,7 +6,7 @@ const StripeEventEvidence = require('../../../models/StripeEventEvidence');
 const PaymentFinalization = require('../../../models/PaymentFinalization');
 const { openManualReviewItem } = require('./manualReviewService');
 const { activatePaidVoucherFromStripeEvent } = require('../../giftVouchers/giftVoucherPaymentService');
-const { linkStripePaymentToBooking } = require('../../payments/paymentLinkingService');
+const { linkStripePaymentToBooking, verifyPaymentLinkedToBooking } = require('../../payments/paymentLinkingService');
 const {
   resolvePaymentUnlinkedReviewsForNonPaidPayment
 } = require('../../payments/paymentReviewResolutionService');
@@ -23,6 +23,9 @@ const {
   isAccommodationPaymentIntentSucceededEvent,
   syncAccommodationCheckoutPaidFromWebhook
 } = require('../../checkout/paidCheckoutWebhookSyncService');
+const {
+  backfillCheckoutFinalizationJobPaymentLinkedAt
+} = require('../../checkout/checkoutFinalizationJobService');
 
 function digestEvent(event) {
   return crypto.createHash('sha256').update(JSON.stringify(event)).digest('hex');
@@ -289,7 +292,9 @@ async function upsertCanonicalPaymentFromEvent(event) {
         status: { $in: ['confirmed', 'in_house', 'completed', 'cancelled'] },
         $or: [{ archivedAt: null }, { archivedAt: { $exists: false } }]
       })
-        .select('_id stripePaymentIntentId totalPrice stripePaidAmountCents status isTest archivedAt')
+        .select(
+          '_id stripePaymentIntentId totalPrice stripePaidAmountCents status isTest archivedAt checkoutId'
+        )
         .lean();
 
       const compatibleCandidates = bookingCandidates.filter((candidate) => {
@@ -313,6 +318,66 @@ async function upsertCanonicalPaymentFromEvent(event) {
         });
         if (linkResult.status === 'linked' || linkResult.status === 'already_linked') {
           linkedReservationId = String(booking._id);
+          // Telemetry-only: backfill paymentLinkedAt when finalize earlier left it null.
+          try {
+            const verified = await verifyPaymentLinkedToBooking({
+              booking,
+              paymentIntentId
+            });
+            if (!verified.linked) {
+              console.warn(
+                JSON.stringify({
+                  source: 'stripe-ingestion',
+                  phase: 'payment_linked_at_backfill',
+                  bookingId: String(booking._id),
+                  paymentIntentId: String(paymentIntentId),
+                  checkoutId: booking.checkoutId ? String(booking.checkoutId) : null,
+                  result: 'ledger_unverified',
+                  verifyReason: verified.reason || null
+                })
+              );
+            } else {
+              const backfill = await backfillCheckoutFinalizationJobPaymentLinkedAt({
+                bookingId: booking._id,
+                paymentIntentId,
+                checkoutId: booking.checkoutId || null,
+                now: new Date()
+              });
+              if (!backfill.updated) {
+                // not_found / already_set_or_raced are expected; warn on unexpected outcomes.
+                if (
+                  backfill.reason &&
+                  backfill.reason !== 'not_found' &&
+                  backfill.reason !== 'already_set_or_raced'
+                ) {
+                  console.warn(
+                    JSON.stringify({
+                      source: 'stripe-ingestion',
+                      phase: 'payment_linked_at_backfill',
+                      bookingId: String(booking._id),
+                      paymentIntentId: String(paymentIntentId),
+                      checkoutId: booking.checkoutId ? String(booking.checkoutId) : null,
+                      result: 'skipped',
+                      reason: backfill.reason,
+                      jobId: backfill.jobId || null
+                    })
+                  );
+                }
+              }
+            }
+          } catch (telemetryErr) {
+            console.warn(
+              JSON.stringify({
+                source: 'stripe-ingestion',
+                phase: 'payment_linked_at_backfill',
+                bookingId: String(booking._id),
+                paymentIntentId: String(paymentIntentId),
+                checkoutId: booking.checkoutId ? String(booking.checkoutId) : null,
+                result: 'error',
+                error: telemetryErr?.message || String(telemetryErr)
+              })
+            );
+          }
         } else if (linkResult.status === 'conflict') {
           unlinkedReviewHandled = true;
           await openManualReviewItem({

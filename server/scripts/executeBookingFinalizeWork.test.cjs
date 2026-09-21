@@ -386,10 +386,12 @@ test('calls linkStripePaymentToBooking when paymentIntentId exists', async () =>
   });
   const session = await seedSession({ cabinId: ctx.cabinId });
   let linkCalls = 0;
+  let linkArgs = null;
 
   __setExecuteBookingFinalizeWorkDependenciesForTesting({
-    linkStripePaymentToBooking: async () => {
+    linkStripePaymentToBooking: async (args) => {
       linkCalls += 1;
+      linkArgs = args;
       return { status: 'linked' };
     }
   });
@@ -403,6 +405,10 @@ test('calls linkStripePaymentToBooking when paymentIntentId exists', async () =>
   });
 
   assert.equal(linkCalls, 1);
+  assert.ok(linkArgs.booking);
+  assert.equal(linkArgs.linkedBy, 'booking_create_reconciliation');
+  assert.equal(linkArgs.paymentIntentId, undefined);
+  assert.equal(linkArgs.bookingId, undefined);
 });
 
 test('patches Stripe metadata with bookingId when paymentIntentId exists', async () => {

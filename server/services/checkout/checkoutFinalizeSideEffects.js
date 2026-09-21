@@ -15,6 +15,7 @@ const featureFlags = require('../../utils/featureFlags');
 const { formatSofiaDateOnly } = require('../../utils/dateTime');
 const { markSavedQuoteConverted } = require('../savedQuotes/savedQuoteService');
 const { resolvePaymentUnlinkedReviews } = require('../payments/paymentReviewResolutionService');
+const { verifyPaymentLinkedToBooking } = require('../payments/paymentLinkingService');
 const {
   processBookingConfirmationDelivery,
   reclaimStaleSendingConfirmationDeliveries
@@ -61,13 +62,28 @@ async function resolveAlertsForBooking({ booking, session }) {
     session?.canonicalPaymentIntentId ||
     session?.paymentEvidence?.paymentIntentId ||
     null;
+
+  // Never auto-resolve payment_unlinked merely because a booking exists.
+  // Require verified Payment.reservationId === booking._id first.
   try {
+    const verified = await verifyPaymentLinkedToBooking({
+      booking,
+      paymentIntentId
+    });
+    if (!verified.linked) {
+      return {
+        attempted: false,
+        resolvedCount: 0,
+        reason: 'payment_not_linked',
+        verifyReason: verified.reason || null
+      };
+    }
     return await resolvePaymentUnlinkedReviews({
-      paymentId: null,
-      paymentIntentId,
+      paymentId: verified.paymentId || null,
+      paymentIntentId: verified.stripePaymentIntentId || paymentIntentId,
       reservationId: String(booking._id),
       resolvedBy: 'checkout_finalize_side_effects',
-      note: 'Auto-resolved: paid checkout finalized and booking linked.'
+      note: 'Auto-resolved: paid checkout finalized and Payment ledger linked to booking.'
     });
   } catch (err) {
     console.error(
