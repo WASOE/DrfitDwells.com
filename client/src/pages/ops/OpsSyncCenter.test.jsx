@@ -89,13 +89,13 @@ describe('OpsSyncCenter dashboard migration', () => {
     cleanup();
   });
 
-  it('uses OpsPage default and OpsPageHeader without a legacy title card or max-w-7xl', async () => {
+  it('uses OpsPage wide and OpsPageHeader without a legacy title card or max-w-7xl', async () => {
     renderPage();
     await waitFor(() => {
       expect(screen.getByRole('heading', { level: 1, name: 'Sync' })).toBeInTheDocument();
     });
-    expect(screen.getByTestId('ops-page')).toHaveAttribute('data-ops-page-width', 'default');
-    expect(screen.getByTestId('ops-page')).toHaveClass('ops-page--default');
+    expect(screen.getByTestId('ops-page')).toHaveAttribute('data-ops-page-width', 'wide');
+    expect(screen.getByTestId('ops-page')).toHaveClass('ops-page--wide');
     expect(screen.queryByRole('heading', { level: 2, name: 'Sync Center' })).not.toBeInTheDocument();
     expect(pageSource).not.toMatch(/max-w-7xl|bg-white border border-gray-200 rounded-xl|#81887A|text-emerald|text-amber|text-red-/);
     expect(pageSource).toContain('External holds and sync health (real evidence).');

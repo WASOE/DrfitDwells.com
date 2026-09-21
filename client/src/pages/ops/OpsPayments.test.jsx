@@ -180,13 +180,13 @@ describe('OpsPayments dashboard/ledger migration', () => {
     cleanup();
   });
 
-  it('uses OpsPage default and OpsPageHeader without a local width wrapper', async () => {
+  it('uses OpsPage wide and OpsPageHeader without a local width wrapper', async () => {
     renderPage();
     await waitFor(() => {
       expect(screen.getByRole('heading', { level: 1, name: 'Payments and payouts' })).toBeInTheDocument();
     });
-    expect(screen.getByTestId('ops-page')).toHaveAttribute('data-ops-page-width', 'default');
-    expect(screen.getByTestId('ops-page')).toHaveClass('ops-page--default');
+    expect(screen.getByTestId('ops-page')).toHaveAttribute('data-ops-page-width', 'wide');
+    expect(screen.getByTestId('ops-page')).toHaveClass('ops-page--wide');
     expect(pageSource).not.toMatch(/max-w-7xl|max-w-\[|mx-auto|bg-white border border-gray-200 rounded-xl|#81887A|text-red-|text-amber/);
     expect(pageSource).toContain('opsReadAPI.paymentsSummary()');
     expect(pageSource).toContain('opsReadAPI.paymentsLedger({ page: 1, limit: 20 })');

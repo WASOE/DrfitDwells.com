@@ -76,7 +76,7 @@ function OpsPushHealthSummary() {
 
   if (healthError) {
     return (
-      <p className="w-full text-[11px] text-gray-500" data-testid="ops-push-health">
+      <p className="ops-push-panel__copy w-full" data-testid="ops-push-health">
         {healthError}
       </p>
     );
@@ -87,7 +87,7 @@ function OpsPushHealthSummary() {
   }
 
   return (
-    <p className="w-full text-[11px] text-gray-500 tabular-nums" data-testid="ops-push-health">
+    <p className="ops-push-panel__copy w-full tabular-nums" data-testid="ops-push-health">
       Push configured: {health.pushEnabled ? 'yes' : 'no'} · Scheduled:{' '}
       {health.scheduledEnabled ? 'yes' : 'no'} · Worker: {formatWorkerHealth(health)} · Active subs:{' '}
       {health.subscriptions?.active ?? 0} · Failed jobs: {health.scheduledJobs?.failed ?? 0}
@@ -124,12 +124,12 @@ export default function OpsPushNotificationsPanel({ actorId }) {
   if (readiness === 'subscribed') {
     return (
       <div
-        className="border-b border-gray-100 bg-gray-50/80"
+        className="ops-push-panel ops-push-panel--subscribed"
         data-testid="ops-push-panel-subscribed"
       >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-1.5 flex flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-          <p className="text-xs text-gray-600">{READINESS_COPY.subscribed}</p>
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="ops-push-panel__inner">
+          <p className="ops-push-panel__copy">{READINESS_COPY.subscribed}</p>
+          <div className="ops-push-panel__actions">
             {showTestButton ? (
               <button
                 type="button"
@@ -137,7 +137,7 @@ export default function OpsPushNotificationsPanel({ actorId }) {
                   void handleSendTest();
                 }}
                 disabled={busy || testBusy}
-                className="text-xs px-2 py-1 rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                className="ops-push-panel__button"
                 data-testid="ops-push-send-test"
               >
                 {testBusy ? 'Sending…' : 'Send test notification'}
@@ -147,7 +147,7 @@ export default function OpsPushNotificationsPanel({ actorId }) {
               type="button"
               onClick={unsubscribe}
               disabled={busy || testBusy}
-              className="text-xs px-2 py-1 rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              className="ops-push-panel__button"
               data-testid="ops-push-disable"
             >
               {busy ? 'Turning off…' : 'Turn off'}
@@ -155,7 +155,7 @@ export default function OpsPushNotificationsPanel({ actorId }) {
           </div>
           {isAdmin ? <OpsPushHealthSummary /> : null}
           {testFeedback ? (
-            <p className="w-full text-xs text-gray-600" data-testid="ops-push-test-feedback" role="status">
+            <p className="ops-push-panel__copy w-full" data-testid="ops-push-test-feedback" role="status">
               {testFeedback}
             </p>
           ) : null}
@@ -167,9 +167,9 @@ export default function OpsPushNotificationsPanel({ actorId }) {
   const showEnable = readiness === 'ready_to_subscribe' || readiness === 'error';
 
   return (
-    <div className="border-b border-gray-200 bg-white" data-testid="ops-push-panel">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-xs text-gray-600 max-w-2xl">
+    <div className="ops-push-panel" data-testid="ops-push-panel">
+      <div className="ops-push-panel__inner">
+        <p className="ops-push-panel__copy max-w-2xl">
           {READINESS_COPY[readiness] || READINESS_COPY.error}
           {errorMessage && readiness === 'error' ? ` ${errorMessage}` : ''}
         </p>
@@ -178,7 +178,7 @@ export default function OpsPushNotificationsPanel({ actorId }) {
             type="button"
             onClick={subscribe}
             disabled={busy}
-            className="shrink-0 text-xs px-3 py-1.5 rounded border border-[#81887A] bg-[#81887A] text-white hover:bg-[#707668] disabled:opacity-50"
+            className="ops-push-panel__button ops-push-panel__button--primary"
             data-testid="ops-push-enable"
           >
             {busy ? 'Enabling…' : 'Enable notifications'}

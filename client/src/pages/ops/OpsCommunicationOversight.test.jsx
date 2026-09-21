@@ -97,13 +97,13 @@ describe('OpsCommunicationOversight dashboard migration', () => {
     cleanup();
   });
 
-  it('uses OpsPage default and OpsPageHeader without a legacy title card or max-w-7xl', async () => {
+  it('uses OpsPage wide and OpsPageHeader without a legacy title card or max-w-7xl', async () => {
     renderPage();
     await waitFor(() => {
       expect(screen.getByRole('heading', { level: 1, name: 'Communications' })).toBeInTheDocument();
     });
-    expect(screen.getByTestId('ops-page')).toHaveAttribute('data-ops-page-width', 'default');
-    expect(screen.getByTestId('ops-page')).toHaveClass('ops-page--default');
+    expect(screen.getByTestId('ops-page')).toHaveAttribute('data-ops-page-width', 'wide');
+    expect(screen.getByTestId('ops-page')).toHaveClass('ops-page--wide');
     expect(screen.queryByRole('heading', { level: 2, name: 'Communication oversight' })).not.toBeInTheDocument();
     expect(pageSource).not.toMatch(/max-w-7xl|bg-white border border-gray-200 rounded-xl|#81887A|text-amber|uppercase tracking-wide/);
     expect(pageSource).toContain('Email delivery evidence (read-only).');

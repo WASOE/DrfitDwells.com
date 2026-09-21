@@ -581,7 +581,7 @@ export default function OpsCabinDetail() {
 
   if (loading) {
     return (
-      <OpsPage width="default">
+      <OpsPage width="wide">
         <div className="ops-cd">
           <DetailHeader title="Cabin" />
           <OpsLoadingState label="Loading cabin…" />
@@ -592,7 +592,7 @@ export default function OpsCabinDetail() {
 
   if (error && !data) {
     return (
-      <OpsPage width="default">
+      <OpsPage width="wide">
         <div className="ops-cd">
           <DetailHeader title="Cabin" />
           <OpsBanner tone="danger" title={error} />
@@ -603,7 +603,7 @@ export default function OpsCabinDetail() {
 
   if (!data) {
     return (
-      <OpsPage width="default">
+      <OpsPage width="wide">
         <div className="ops-cd">
           <DetailHeader title="Cabin" />
           <OpsEmptyState title="Not found." />
@@ -659,7 +659,7 @@ export default function OpsCabinDetail() {
   );
 
   return (
-    <OpsPage width="default">
+    <OpsPage width="wide">
       <div className="ops-cd">
         <DetailHeader title={cabinTitle} meta={headerMeta} actions={headerActions} />
 

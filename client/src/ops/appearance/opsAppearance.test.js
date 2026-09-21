@@ -73,17 +73,18 @@ describe('ops appearance resolver', () => {
     expect(resolveOpsAppearance('dark', false)).toBe('dark');
   });
 
-  it('forces product html appearance to light during the light-only cutover', () => {
-    expect(OPS_PRODUCT_FORCE_LIGHT).toBe(true);
-    expect(resolveOpsProductHtmlAppearance('system', true)).toBe('light');
-    expect(resolveOpsProductHtmlAppearance('dark', true)).toBe('light');
-    expect(resolveOpsProductHtmlAppearance('light', false)).toBe('light');
+  it('does not force product html appearance to light after dark rollout', () => {
+    expect(OPS_PRODUCT_FORCE_LIGHT).toBe(false);
+    expect(resolveOpsProductHtmlAppearance('system', true)).toBe('dark');
+    expect(resolveOpsProductHtmlAppearance('dark', false)).toBe('dark');
+    expect(resolveOpsProductHtmlAppearance('light', true)).toBe('light');
+    expect(resolveOpsProductHtmlAppearance('system', false)).toBe('light');
   });
 
-  it('keeps unthemed product OpsRoot light while themed roots may be dark', () => {
-    expect(resolveOpsRootAppearance('dark', { themed: false })).toBe('light');
+  it('resolves product OpsRoot appearance for light and dark when themed', () => {
     expect(resolveOpsRootAppearance('dark', { themed: true })).toBe('dark');
     expect(resolveOpsRootAppearance('light', { themed: true })).toBe('light');
+    expect(resolveOpsRootAppearance('dark', { themed: false })).toBe('dark');
   });
 
   it('persists explicit mode per device storage', () => {
@@ -119,7 +120,7 @@ describe('ops appearance bootstrap path gating', () => {
     expect(root.classList.contains('dark')).toBe(false);
   });
 
-  it('applies light product appearance on /ops even when system prefers dark', () => {
+  it('applies dark product appearance on /ops when system prefers dark', () => {
     const root = document.createElement('html');
     const result = initOpsAppearanceBootstrap({
       pathname: '/ops',
@@ -127,25 +128,24 @@ describe('ops appearance bootstrap path gating', () => {
       matchMedia: matchMediaFn(true),
       root
     });
-    expect(result).toEqual({ applied: true, mode: 'system', appearance: 'light' });
+    expect(result).toEqual({ applied: true, mode: 'system', appearance: 'dark' });
     expect(root.getAttribute('data-ops-active')).toBe('true');
     expect(root.getAttribute('data-ops-appearance-mode')).toBe('system');
-    expect(root.getAttribute('data-ops-appearance')).toBe('light');
+    expect(root.getAttribute('data-ops-appearance')).toBe('dark');
     expect(root.className).not.toMatch(/\bdark\b/);
-    expect(root.style.colorScheme).toBe('');
   });
 
-  it('applies light product appearance even when stored mode is dark', () => {
+  it('applies stored dark mode on nested ops paths', () => {
     const root = document.createElement('html');
     const result = initOpsAppearanceBootstrap({
       pathname: '/ops/messaging',
       storage: memoryStorage({ [OPS_APPEARANCE_STORAGE_KEY]: 'dark' }),
-      matchMedia: matchMediaFn(true),
+      matchMedia: matchMediaFn(false),
       root
     });
-    expect(result).toEqual({ applied: true, mode: 'dark', appearance: 'light' });
+    expect(result).toEqual({ applied: true, mode: 'dark', appearance: 'dark' });
     expect(root.getAttribute('data-ops-appearance-mode')).toBe('dark');
-    expect(root.getAttribute('data-ops-appearance')).toBe('light');
+    expect(root.getAttribute('data-ops-appearance')).toBe('dark');
   });
 
   it('applies explicit light on nested ops paths even when system is dark', () => {
@@ -169,12 +169,29 @@ describe('ops appearance bootstrap path gating', () => {
     expect(root.getAttribute('data-ops-appearance-mode')).toBeNull();
   });
 
-  it('forces unthemed ops-root props to light during product cutover', () => {
-    expect(getOpsRootDomProps({ appearance: 'dark', mode: 'system' })).toEqual({
-      className: 'ops-root',
-      'data-ops-appearance': 'light',
-      'data-ops-appearance-mode': 'light'
-    });
+  it('keeps html and themed root appearance identical (no hybrid theme)', () => {
+    const cases = [
+      { mode: 'system', osDark: false, expected: 'light' },
+      { mode: 'system', osDark: true, expected: 'dark' },
+      { mode: 'light', osDark: true, expected: 'light' },
+      { mode: 'dark', osDark: false, expected: 'dark' }
+    ];
+
+    for (const row of cases) {
+      const htmlAppearance = resolveOpsProductHtmlAppearance(row.mode, row.osDark);
+      const rootProps = getOpsRootDomProps({
+        appearance: resolveOpsAppearance(row.mode, row.osDark),
+        mode: row.mode,
+        themed: true
+      });
+      expect(htmlAppearance, `${row.mode}/${row.osDark}`).toBe(row.expected);
+      expect(rootProps['data-ops-appearance'], `${row.mode}/${row.osDark}`).toBe(row.expected);
+      expect(rootProps['data-ops-appearance-mode'], `${row.mode}/${row.osDark}`).toBe(row.mode);
+      expect(rootProps['data-ops-themed'], `${row.mode}/${row.osDark}`).toBe('true');
+    }
+  });
+
+  it('marks themed ops-root props with the resolved appearance', () => {
     expect(getOpsRootDomProps({ appearance: 'dark', mode: 'dark', themed: true })).toEqual({
       className: 'ops-root',
       'data-ops-appearance': 'dark',

@@ -66,12 +66,12 @@ describe('OpsCabinDetail migration', () => {
     cleanup();
   });
 
-  it('uses OpsPage default with Back to cabins and ops surfaces', async () => {
+  it('uses OpsPage wide with Back to cabins and ops surfaces', async () => {
     renderDetail('cabin-1');
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Stone House' })).toBeInTheDocument();
     });
-    expect(document.querySelector('.ops-page')).toHaveAttribute('data-ops-page-width', 'default');
+    expect(document.querySelector('.ops-page')).toHaveAttribute('data-ops-page-width', 'wide');
     expect(screen.getByRole('link', { name: 'Back to cabins' })).toHaveAttribute('href', '/ops/cabins');
     expect(document.querySelector('.ops-cd-surface')).toBeTruthy();
     expect(screen.getByText('Single cabin')).toBeInTheDocument();
@@ -85,7 +85,7 @@ describe('OpsCabinDetail migration', () => {
     expect(screen.getByRole('heading', { name: 'Cabin' })).toBeInTheDocument();
     expect(screen.getByText(/Loading cabin/i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Back to cabins' })).toHaveAttribute('href', '/ops/cabins');
-    expect(document.querySelector('.ops-page')).toHaveAttribute('data-ops-page-width', 'default');
+    expect(document.querySelector('.ops-page')).toHaveAttribute('data-ops-page-width', 'wide');
   });
 
   it('shows OpsBanner danger on load error with header still visible', async () => {

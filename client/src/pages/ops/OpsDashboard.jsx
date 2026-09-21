@@ -390,7 +390,7 @@ export default function OpsDashboard() {
 
           <section className="ops-dashboard-surface ops-dashboard-surface--pulse" data-testid="ops-dashboard-pulse-stay">
             <h2 className="ops-dashboard-surface__title">Stay/business pulse</h2>
-            <OpsMetricGroup className="ops-dashboard-metric-group">
+            <OpsMetricGroup className="ops-dashboard-metric-group ops-metric-group--display">
               <OpsMetric label="Bookings MTD" value={d.pulse?.bookingsMTD ?? 0} />
               <OpsMetric
                 label="Gross booked MTD"
@@ -405,7 +405,7 @@ export default function OpsDashboard() {
 
           <section className="ops-dashboard-surface ops-dashboard-surface--pulse" data-testid="ops-dashboard-pulse-cash">
             <h2 className="ops-dashboard-surface__title">Gift vouchers &amp; cash</h2>
-            <OpsMetricGroup className="ops-dashboard-metric-group">
+            <OpsMetricGroup className="ops-dashboard-metric-group ops-metric-group--display">
               <OpsMetric
                 label="Gift voucher sales MTD"
                 value={formatMoneyFromCents(d.pulse?.giftVouchers?.salesMTDCents ?? 0)}

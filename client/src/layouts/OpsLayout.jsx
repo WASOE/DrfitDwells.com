@@ -8,6 +8,7 @@ import OpsPushNotificationsPanel from '../components/ops/OpsPushNotificationsPan
 import OpsNotificationBell from '../components/ops/OpsNotificationBell';
 import OpsSidebar from './ops/OpsSidebar';
 import OpsTopBar from './ops/OpsTopBar';
+import OpsAppearanceControl from './ops/OpsAppearanceControl';
 import { canAccessOpsFrontendPath, isCleanerOnlySession } from './ops/opsNavConfig';
 import { OPS_SIDEBAR_COLLAPSED, OPS_SIDEBAR_EXPANDED, useOpsSidebarMode } from './ops/opsSidebarState';
 import { OpsAppearanceProvider, OpsRoot } from '../ops/appearance/OpsAppearanceProvider';
@@ -29,15 +30,15 @@ function roleLabel(role) {
   return 'User';
 }
 
-function roleBadgeClass(role) {
-  if (role === 'operator') return 'text-sky-800 border-sky-200 bg-sky-50';
-  if (role === 'cleaner') return 'text-emerald-800 border-emerald-200 bg-emerald-50';
-  return 'text-amber-900 border-amber-200 bg-amber-50';
+function roleClass(role) {
+  if (role === 'operator') return 'ops-topbar__role ops-topbar__role--operator';
+  if (role === 'cleaner') return 'ops-topbar__role ops-topbar__role--cleaner';
+  return 'ops-topbar__role';
 }
 
 function SkipToContent() {
   return (
-    <a href="#ops-main" className="ops-skip-link bg-white text-sm text-gray-900" data-testid="ops-skip-link">
+    <a href="#ops-main" className="ops-skip-link" data-testid="ops-skip-link">
       Skip to content
     </a>
   );
@@ -45,27 +46,20 @@ function SkipToContent() {
 
 function CompactHeader({ title, session, onLogout }) {
   return (
-    <header className="bg-white border-b border-gray-200" data-testid="ops-mobile-header">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="py-3 flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs uppercase tracking-[0.2em] text-gray-500">Ops Console</p>
-            <h1 className="text-base font-semibold text-gray-900 truncate">{title}</h1>
+    <header className="ops-mobile-header" data-testid="ops-mobile-header">
+      <div className="ops-mobile-header__inner">
+        <div className="ops-mobile-header__row">
+          <div className="ops-mobile-header__copy">
+            <p className="ops-mobile-header__eyebrow">Ops Console</p>
+            <h1 className="ops-mobile-header__title">{title}</h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="ops-mobile-header__actions">
+            <OpsAppearanceControl />
             <OpsNotificationBell actorId={session.actorId} />
-            <div
-              className={`text-xs px-2 py-1 rounded border tabular-nums ${roleBadgeClass(session.role)}`}
-              title="Session role from login"
-            >
+            <div className={roleClass(session.role)} title="Session role from login">
               {roleLabel(session.role)}
             </div>
-            <button
-              type="button"
-              onClick={onLogout}
-              className="text-xs px-2 py-1 rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-              data-testid="ops-logout"
-            >
+            <button type="button" onClick={onLogout} className="ops-topbar__logout" data-testid="ops-logout">
               Logout
             </button>
           </div>
@@ -177,8 +171,8 @@ function OpsLayoutShell() {
 
   if (!ready) {
     return (
-      <OpsRoot className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-sm text-gray-500">Loading ops console...</div>
+      <OpsRoot themed className="min-h-screen flex items-center justify-center">
+        <div className="ops-shell-loading">Loading ops console...</div>
       </OpsRoot>
     );
   }
@@ -198,7 +192,7 @@ function OpsLayoutShell() {
 
   return (
     <OpsSessionProvider session={session}>
-      <OpsRoot className="min-h-screen bg-gray-50">
+      <OpsRoot themed className="min-h-screen">
         <SkipToContent />
         {cleanerOnly ? <CompactHeader title="Cleaning" session={session} onLogout={handleLogout} /> : null}
         {!cleanerOnly && !isDesktop ? (
@@ -216,8 +210,8 @@ function OpsLayoutShell() {
             ) : null}
             <OpsPushNotificationsPanel actorId={session.actorId} />
             {!cleanerOnly && hasDegraded ? (
-              <div className="bg-amber-50 border-b border-amber-200" data-testid="ops-degraded-banner">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 text-xs text-amber-800">
+              <div className="ops-degraded-banner" data-testid="ops-degraded-banner">
+                <div className="ops-degraded-banner__inner">
                   Degraded state: {staleWebhook ? 'webhook not seen yet. ' : ''}
                   {staleSync ? 'sync warnings/failures detected.' : ''}
                 </div>

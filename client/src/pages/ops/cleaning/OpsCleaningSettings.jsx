@@ -199,7 +199,7 @@ export default function OpsCleaningSettings() {
   const rulesByKind = { cabin: cabinRules, valley: valleyRules };
 
   return (
-    <OpsPage width="default" className="ops-cleaning-settings">
+    <OpsPage width="wide" className="ops-cleaning-settings">
       <OpsPageHeader
         title="Cleaning payout settings"
         description="Tag inventory and edit checkout-linked payout rules. Saved rules drive automatic pricing — no manual day-sheet counts."

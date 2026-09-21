@@ -97,7 +97,7 @@ export default function OpsGiftVoucherDetail() {
 
   if (loading) {
     return (
-      <OpsPage width="default">
+      <OpsPage width="wide">
         <DetailHeader title="Gift voucher" />
         <OpsLoadingState label="Loading voucher detail..." />
       </OpsPage>
@@ -106,7 +106,7 @@ export default function OpsGiftVoucherDetail() {
 
   if (error) {
     return (
-      <OpsPage width="default">
+      <OpsPage width="wide">
         <DetailHeader title="Gift voucher" />
         <OpsBanner tone="danger" title={error} />
       </OpsPage>
@@ -115,7 +115,7 @@ export default function OpsGiftVoucherDetail() {
 
   if (!voucher) {
     return (
-      <OpsPage width="default">
+      <OpsPage width="wide">
         <DetailHeader title="Gift voucher" />
         <OpsEmptyState title="Voucher not found." />
       </OpsPage>
@@ -125,7 +125,7 @@ export default function OpsGiftVoucherDetail() {
   const title = voucher.code || 'Code pending';
 
   return (
-    <OpsPage width="default">
+    <OpsPage width="wide">
       <div className="ops-gv-detail">
         <DetailHeader
           title={title}

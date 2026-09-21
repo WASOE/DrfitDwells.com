@@ -3,7 +3,7 @@
 .ops-insights {
   display: flex;
   flex-direction: column;
-  gap: var(--ops-space-16);
+  gap: var(--ops-space-24);
   min-width: 0;
   padding-bottom: calc(var(--ops-space-48) + env(safe-area-inset-bottom, 0px));
 }
@@ -17,12 +17,19 @@
 .ops-insights__surface {
   display: flex;
   flex-direction: column;
-  gap: var(--ops-space-12);
+  gap: var(--ops-space-16);
   min-width: 0;
   padding: var(--ops-space-16);
   border: 1px solid var(--ops-border);
   border-radius: var(--ops-radius-surface);
   background: var(--ops-surface);
+  box-shadow: var(--ops-shadow-surface);
+}
+
+@media (min-width: 768px) {
+  .ops-insights__surface {
+    padding: var(--ops-space-20);
+  }
 }
 
 .ops-insights__surface-head {
@@ -36,9 +43,10 @@
 
 .ops-insights__surface-title {
   margin: 0;
-  font-size: 14px;
-  line-height: 20px;
+  font-size: var(--ops-size-section);
+  line-height: var(--ops-lh-section);
   font-weight: 600;
+  letter-spacing: var(--ops-tracking-snug);
   color: var(--ops-text);
 }
 
@@ -46,10 +54,18 @@
 .ops-insights__note,
 .ops-insights__empty {
   margin: 0;
-  font-size: 13px;
-  line-height: 18px;
+  font-size: var(--ops-size-small);
+  line-height: var(--ops-lh-small);
   color: var(--ops-text-muted);
   overflow-wrap: anywhere;
+}
+
+.ops-insights__empty {
+  padding: var(--ops-space-16) var(--ops-space-12);
+  border-radius: var(--ops-radius-control);
+  background: var(--ops-surface-subtle);
+  border: 1px dashed var(--ops-border);
+  color: var(--ops-text-secondary);
 }
 
 .ops-insights__note {
@@ -57,11 +73,12 @@
 }
 
 .ops-insights__link {
-  font-size: 13px;
-  line-height: 18px;
+  font-size: var(--ops-size-small);
+  line-height: var(--ops-lh-small);
   font-weight: 600;
-  color: var(--ops-text);
+  color: var(--ops-accent);
   text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .ops-insights__kind-row {
@@ -101,14 +118,14 @@
 }
 
 .ops-insights__metric-group {
-  gap: var(--ops-space-8);
+  gap: var(--ops-space-16) var(--ops-space-12);
 }
 
 .ops-insights__metric-group .ops-metric {
-  padding: var(--ops-space-8) var(--ops-space-12);
-  border: 1px solid var(--ops-border);
-  border-radius: var(--ops-radius-control);
-  background: var(--ops-surface-subtle);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   min-width: 0;
 }
 

@@ -129,29 +129,25 @@ export default function OpsMoreSheet({ open, onClose, returnFocusRef }) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 md:hidden" role="presentation">
-      <div
-        className="absolute inset-0 bg-black/40"
-        aria-hidden="true"
-        onClick={handleClose}
-      />
+    <div className="ops-more-sheet-scrim md:hidden" role="presentation">
+      <div className="ops-more-sheet-scrim__backdrop" aria-hidden="true" onClick={handleClose} />
 
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="OPS menu"
-        className="absolute bottom-0 left-0 right-0 flex max-h-[min(85vh,640px)] flex-col overflow-hidden rounded-t-2xl border border-gray-200 bg-white shadow-2xl"
+        className="ops-more-sheet"
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
         onClick={(event) => event.stopPropagation()}
       >
-        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
-          <h2 className="text-base font-semibold text-gray-900">All OPS sections</h2>
+        <header className="ops-more-sheet__header">
+          <h2 className="ops-more-sheet__title">All OPS sections</h2>
           <button
             ref={closeButtonRef}
             type="button"
             onClick={handleClose}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-gray-600"
+            className="ops-more-sheet__close"
             aria-label="Close"
           >
             <X className="h-5 w-5" aria-hidden="true" />
@@ -160,10 +156,8 @@ export default function OpsMoreSheet({ open, onClose, returnFocusRef }) {
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
           {groups.map((group) => (
-            <section key={group.id} className="border-b border-gray-100 last:border-b-0">
-              <h3 className="px-4 pt-4 pb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
-                {group.label}
-              </h3>
+            <section key={group.id} className="ops-more-sheet__group">
+              <h3 className="ops-more-sheet__group-label">{group.label}</h3>
               <ul>
                 {group.items.map((item) => {
                   const Icon = ROW_ICONS[item.to] || Building2;
@@ -175,14 +169,12 @@ export default function OpsMoreSheet({ open, onClose, returnFocusRef }) {
                         to={item.to}
                         end={item.end === true}
                         onClick={handleClose}
-                        className={`flex h-[52px] w-full touch-manipulation items-center gap-3 px-4 text-sm ${
-                          isActive ? 'bg-sage/10 text-sage font-medium' : 'text-gray-900'
-                        }`}
+                        className={`ops-more-sheet__link${isActive ? ' ops-more-sheet__link--active' : ''}`}
                         aria-current={isActive ? 'page' : undefined}
                       >
                         <Icon className="h-5 w-5 shrink-0" aria-hidden="true" strokeWidth={isActive ? 2.25 : 1.75} />
                         <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                        <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" aria-hidden="true" />
+                        <ChevronRight className="ops-more-sheet__chevron h-4 w-4 shrink-0" aria-hidden="true" />
                       </NavLink>
                     </li>
                   );

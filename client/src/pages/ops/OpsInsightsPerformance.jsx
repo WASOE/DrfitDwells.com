@@ -332,7 +332,7 @@ export default function OpsInsightsPerformance() {
         <OpsLoadingState label="Loading historical performance…" data-testid="performance-loading" />
       ) : error && !data ? null : (
         <>
-          <OpsMetricGroup className="ops-insights__metric-group" data-testid="performance-metrics">
+          <OpsMetricGroup className="ops-insights__metric-group ops-metric-group--display" data-testid="performance-metrics">
             <OpsMetric label="Direct revenue" value={money(summary.grossBookedRevenueCents)} />
             <OpsMetric label="Bookings" value={summary.bookingCount ?? 0} />
             <OpsMetric label="Sold nights" value={summary.soldNights ?? 0} />

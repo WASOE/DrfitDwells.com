@@ -191,13 +191,13 @@ describe('OpsGiftVoucherDetail migration', () => {
     vi.unstubAllGlobals();
   });
 
-  it('uses OpsPage default width and product identity instead of a card pile', async () => {
+  it('uses OpsPage wide width and product identity instead of a card pile', async () => {
     renderDetail();
     await waitFor(() => {
       expect(screen.getByRole('heading', { level: 1, name: 'DD-ACTIVE-01' })).toBeInTheDocument();
     });
-    expect(screen.getByTestId('ops-page')).toHaveAttribute('data-ops-page-width', 'default');
-    expect(screen.getByTestId('ops-page')).toHaveClass('ops-page--default');
+    expect(screen.getByTestId('ops-page')).toHaveAttribute('data-ops-page-width', 'wide');
+    expect(screen.getByTestId('ops-page')).toHaveClass('ops-page--wide');
     expect(pageSource).not.toMatch(/max-w-7xl|max-w-4xl|max-w-5xl|bg-white border border-gray-200 rounded-xl/);
     expect(pageSource).not.toMatch(/navigate\(-1\)|#81887A|window\.confirm/);
   });
@@ -412,7 +412,7 @@ describe('OpsGiftVoucherDetail migration', () => {
       })
     );
     renderDetail();
-    expect(screen.getByTestId('ops-page')).toHaveAttribute('data-ops-page-width', 'default');
+    expect(screen.getByTestId('ops-page')).toHaveAttribute('data-ops-page-width', 'wide');
     expect(screen.getByRole('link', { name: 'Gift vouchers' })).toHaveAttribute('href', '/ops/gift-vouchers');
     expect(screen.getByRole('status')).toHaveTextContent('Loading voucher detail...');
     resolveLoad(detailPayload());

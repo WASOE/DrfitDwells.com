@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import OpsNotificationBell from '../../components/ops/OpsNotificationBell';
 import { getOpsSidebarSelection, isOpsAdminOnlyPath } from './opsNavConfig';
 import { OPS_SIDEBAR_EXPANDED } from './opsSidebarState';
+import OpsAppearanceControl from './OpsAppearanceControl';
 
 export function getOpsTopBarContext(pathname) {
   if (isOpsAdminOnlyPath(pathname)) {
@@ -18,10 +19,10 @@ function roleLabel(role) {
   return 'User';
 }
 
-function roleBadgeClass(role) {
-  if (role === 'operator') return 'text-sky-800 border-sky-200 bg-sky-50';
-  if (role === 'cleaner') return 'text-emerald-800 border-emerald-200 bg-emerald-50';
-  return 'text-amber-900 border-amber-200 bg-amber-50';
+function roleClass(role) {
+  if (role === 'operator') return 'ops-topbar__role ops-topbar__role--operator';
+  if (role === 'cleaner') return 'ops-topbar__role ops-topbar__role--cleaner';
+  return 'ops-topbar__role';
 }
 
 export default function OpsTopBar({
@@ -37,13 +38,10 @@ export default function OpsTopBar({
   const ToggleIcon = expanded ? PanelLeftClose : PanelLeft;
 
   return (
-    <header
-      data-testid="ops-topbar"
-      className="ops-topbar sticky top-0 z-ops-nav flex items-center gap-3 border-b border-gray-200 bg-white px-3"
-    >
+    <header data-testid="ops-topbar" className="ops-topbar sticky top-0 z-ops-nav">
       <button
         type="button"
-        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+        className="ops-topbar__toggle"
         aria-label={toggleLabel}
         aria-expanded={expanded}
         aria-controls="ops-sidebar"
@@ -53,33 +51,22 @@ export default function OpsTopBar({
         <ToggleIcon className="h-4 w-4" aria-hidden="true" />
       </button>
       {contextLabel ? (
-        <p data-testid="ops-topbar-context" className="min-w-0 truncate text-sm text-gray-700">
+        <p data-testid="ops-topbar-context" className="ops-topbar__context">
           {contextLabel}
         </p>
       ) : (
-        <p data-testid="ops-topbar-context" className="min-w-0 truncate text-sm text-gray-400">
+        <p data-testid="ops-topbar-context" className="ops-topbar__context ops-topbar__context--empty">
           {'\u00A0'}
         </p>
       )}
-      <div
-        data-testid="ops-topbar-search-slot"
-        className="min-w-0 flex-1"
-        aria-hidden="true"
-      />
-      <div className="flex shrink-0 items-center gap-2">
+      <div data-testid="ops-topbar-search-slot" className="ops-topbar__search-slot" aria-hidden="true" />
+      <div className="ops-topbar__actions">
+        <OpsAppearanceControl />
         <OpsNotificationBell actorId={session?.actorId} />
-        <div
-          className={`text-xs px-2 py-1 rounded border tabular-nums ${roleBadgeClass(session?.role)}`}
-          title="Session role from login"
-        >
+        <div className={roleClass(session?.role)} title="Session role from login">
           {roleLabel(session?.role)}
         </div>
-        <button
-          type="button"
-          onClick={onLogout}
-          className="text-xs px-2 py-1 rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-          data-testid="ops-logout"
-        >
+        <button type="button" onClick={onLogout} className="ops-topbar__logout" data-testid="ops-logout">
           Logout
         </button>
       </div>

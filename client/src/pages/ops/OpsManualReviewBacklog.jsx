@@ -71,7 +71,7 @@ export default function OpsManualReviewBacklog() {
   const itemCount = items.length ? `${items.length} item(s)` : null;
 
   return (
-    <OpsPage width="default" className="ops-mr-page">
+    <OpsPage width="wide" className="ops-mr-page">
       <OpsPageHeader
         title="Manual review"
         description="Open operational items requiring operator action."

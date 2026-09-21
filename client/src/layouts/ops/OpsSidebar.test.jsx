@@ -47,6 +47,8 @@ describe('OpsSidebar grouping and permissions', () => {
     expect(GROUP_ICONS.House).toBeTruthy();
     expect(GROUP_ICONS.ChartSpline).toBeTruthy();
     expect(screen.getByTestId('ops-sidebar-admin')).toBeInTheDocument();
+    expect(screen.getByTestId('ops-sidebar-brand')).toBeInTheDocument();
+    expect(screen.getByTestId('ops-sidebar-brand-wordmark')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Manual' })).toBeInTheDocument();
   });
@@ -190,6 +192,8 @@ describe('OpsSidebar collapsed flyout', () => {
     renderSidebar('/ops', fullAdminSession, OPS_SIDEBAR_COLLAPSED);
     expect(screen.getByTestId('ops-sidebar')).toHaveAttribute('data-mode', OPS_SIDEBAR_COLLAPSED);
     expect(screen.getByTestId('ops-sidebar')).toHaveClass('ops-sidebar--collapsed');
+    expect(screen.getByTestId('ops-sidebar-brand-mark')).toBeInTheDocument();
+    expect(screen.queryByTestId('ops-sidebar-brand-wordmark')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Home' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Calendar' })).toBeInTheDocument();
     expect(screen.queryByText('Dashboard')).not.toBeInTheDocument();
@@ -284,8 +288,7 @@ describe('OpsSidebar collapsed flyout', () => {
     const guests = screen.getByRole('button', { name: 'Guests' });
     expect(document.querySelector('[data-ops-group="guests"]')).toHaveAttribute('data-active', 'true');
     expect(guests).toHaveClass('ops-sidebar-group-btn--active');
-    expect(guests.className).toMatch(/\bbg-\S+/);
-    expect(guests.className).toMatch(/\bborder-l-2\b/);
+    expect(guests).toHaveClass('ops-sidebar-group-btn--collapsed');
     expect(screen.getByRole('button', { name: 'Calendar' })).not.toHaveClass('ops-sidebar-group-btn--active');
   });
 

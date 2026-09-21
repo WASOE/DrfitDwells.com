@@ -59,7 +59,7 @@ export default function OpsSyncCenter() {
   const duplicateImportCount = recentEvents.filter((event) => event.anomalyType === 'sync_duplicate_import').length;
 
   return (
-    <OpsPage width="default" className="ops-sync-page">
+    <OpsPage width="wide" className="ops-sync-page">
       <OpsPageHeader title="Sync" description="External holds and sync health (real evidence)." />
 
       {error ? <OpsBanner tone="danger" body={error} /> : null}

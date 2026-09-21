@@ -62,7 +62,7 @@ describe('getOpsTopBarContext', () => {
 });
 
 describe('OpsTopBar', () => {
-  it('renders the 48px top bar with toggle, context, bell, role, and logout', () => {
+  it('renders the top bar with toggle, context, bell, role, and logout', () => {
     const onToggle = vi.fn();
     const onLogout = vi.fn();
     renderTopBar('/ops/reservations/123', { onToggle, onLogout });
@@ -73,6 +73,7 @@ describe('OpsTopBar', () => {
     expect(screen.getByTestId('ops-topbar-context')).toHaveTextContent('Reservations');
     expect(screen.getByTestId('ops-topbar-search-slot')).toBeInTheDocument();
     expect(bar.querySelector('input')).toBeNull();
+    expect(screen.getByTestId('ops-appearance-control')).toBeInTheDocument();
     expect(screen.getByTestId('ops-notification-bell')).toBeInTheDocument();
     expect(screen.getByText('Admin')).toBeInTheDocument();
     expect(screen.getByTestId('ops-logout')).toHaveTextContent('Logout');

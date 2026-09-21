@@ -36,40 +36,36 @@ export default function OpsNotificationDropdown({
   return (
     <div
       style={style}
-      className="z-50 rounded-lg border border-gray-200 bg-white shadow-lg fixed left-4 right-4 top-[var(--ops-notification-dropdown-top,3.5rem)] md:absolute md:inset-x-auto md:left-auto md:right-0 md:top-full md:mt-2 md:w-80 md:max-w-sm"
+      className="ops-notification-dropdown fixed left-4 right-4 top-[var(--ops-notification-dropdown-top,3.5rem)] md:absolute md:inset-x-auto md:left-auto md:right-0 md:top-full md:mt-2 md:w-80 md:max-w-sm"
       data-testid="ops-notification-dropdown"
     >
-      <div className="flex items-center justify-between gap-2 border-b border-gray-100 px-3 py-2">
-        <p className="text-sm font-semibold text-gray-900">Notifications</p>
+      <div className="ops-notification-dropdown__header">
+        <p className="ops-notification-dropdown__title">Notifications</p>
         <button
           type="button"
           onClick={onMarkAllRead}
           disabled={markAllBusy || unreadCount === 0}
-          className="text-xs px-2 py-1 rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          className="ops-notification-dropdown__action"
           data-testid="ops-notification-mark-all"
         >
           {markAllBusy ? 'Marking…' : 'Mark all read'}
         </button>
       </div>
 
-      <div className="max-h-[min(24rem,60vh)] overflow-y-auto">
+      <div className="ops-notification-dropdown__body">
         {loading ? (
-          <p className="px-3 py-4 text-xs text-gray-500">Loading notifications…</p>
+          <p className="ops-notification-dropdown__empty">Loading notifications…</p>
         ) : error ? (
           <div className="px-3 py-4">
-            <p className="text-xs text-red-700">{error}</p>
-            <button
-              type="button"
-              onClick={onRetry}
-              className="mt-2 text-xs px-2 py-1 rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-            >
+            <p className="ops-notification-dropdown__error">{error}</p>
+            <button type="button" onClick={onRetry} className="ops-notification-dropdown__action mt-2">
               Try again
             </button>
           </div>
         ) : notifications.length === 0 ? (
-          <p className="px-3 py-4 text-xs text-gray-500">No notifications yet</p>
+          <p className="ops-notification-dropdown__empty">No notifications yet</p>
         ) : (
-          <ul className="divide-y divide-gray-100">
+          <ul className="ops-notification-dropdown__list">
             {notifications.map((notification) => {
               const unread = !notification.readAt;
               return (
@@ -77,24 +73,18 @@ export default function OpsNotificationDropdown({
                   <button
                     type="button"
                     onClick={() => onNotificationClick(notification)}
-                    className={`w-full text-left px-3 py-3 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none ${
-                      unread ? 'bg-amber-50/40' : ''
-                    }`}
+                    className={`ops-notification-dropdown__row${unread ? ' ops-notification-dropdown__row--unread' : ''}`}
                     data-testid={`ops-notification-row-${notification.id}`}
                   >
                     <div className="flex items-start justify-between gap-2 min-w-0">
-                      <p
-                        className={`text-sm leading-snug min-w-0 break-words ${
-                          unread ? 'font-semibold text-gray-900' : 'font-medium text-gray-800'
-                        }`}
-                      >
+                      <p className="ops-notification-dropdown__row-title min-w-0 break-words">
                         {notification.title}
                       </p>
-                      <span className="shrink-0 text-[10px] text-gray-500 tabular-nums">
+                      <span className="ops-notification-dropdown__row-when">
                         {formatWhen(notification.createdAt)}
                       </span>
                     </div>
-                    <p className="mt-1 text-xs text-gray-600 leading-relaxed min-w-0 break-words">
+                    <p className="ops-notification-dropdown__row-body min-w-0 break-words">
                       {truncateBody(notification.body)}
                     </p>
                   </button>

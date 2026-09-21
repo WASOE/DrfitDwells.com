@@ -54,7 +54,7 @@ export default function OpsCommunicationOversight() {
     (data?.summary?.confirmationFailed ?? 0) + (data?.summary?.confirmationAmbiguous ?? 0);
 
   return (
-    <OpsPage width="default" className="ops-comms-page">
+    <OpsPage width="wide" className="ops-comms-page">
       <OpsPageHeader title="Communications" description="Email delivery evidence (read-only)." />
 
       {error ? <OpsBanner tone="danger" body={error} /> : null}

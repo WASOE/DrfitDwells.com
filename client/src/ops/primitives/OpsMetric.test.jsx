@@ -28,4 +28,14 @@ describe('OpsMetric', () => {
     expect(screen.getByText('Stale pairs')).toBeInTheDocument();
     expect(screen.getByText('Failed pairs')).toBeInTheDocument();
   });
+
+  it('supports a display density class on the group', () => {
+    render(
+      <OpsMetricGroup className="ops-metric-group--display">
+        <OpsMetric label="Bookings MTD" value={12} />
+      </OpsMetricGroup>
+    );
+    expect(document.querySelector('.ops-metric-group--display')).toBeTruthy();
+    expect(screen.getByText('12')).toHaveClass('ops-metric__value');
+  });
 });

@@ -113,7 +113,7 @@ export default function OpsPayments() {
   const showDetailPanel = Boolean(selectedPayout || detailLoading || detailError);
 
   return (
-    <OpsPage width="default" className="ops-payments-page">
+    <OpsPage width="wide" className="ops-payments-page">
       <OpsPageHeader
         title="Payments and payouts"
         meta={

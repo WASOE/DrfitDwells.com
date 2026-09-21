@@ -134,7 +134,7 @@ export default function OpsNotificationBell({ actorId }) {
         onClick={() => {
           void handleToggle();
         }}
-        className="relative inline-flex items-center justify-center h-8 w-8 rounded border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+        className="ops-notification-bell"
         aria-label="Notifications"
         aria-expanded={open}
         data-testid="ops-notification-bell"

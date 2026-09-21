@@ -235,7 +235,7 @@ export default function OpsMessaging() {
   const showData = !loading && !error;
 
   return (
-    <OpsPage width="default">
+    <OpsPage width="wide">
       <div className="ops-messaging">
         <OpsPageHeader
           title="Messaging"

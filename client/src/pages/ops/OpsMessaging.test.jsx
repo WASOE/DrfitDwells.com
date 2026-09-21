@@ -173,11 +173,11 @@ describe('OpsMessaging migration', () => {
     localStorage.clear();
   });
 
-  it('uses OpsPage default and Messaging header without max-w-7xl or page Save', async () => {
+  it('uses OpsPage wide and Messaging header without max-w-7xl or page Save', async () => {
     renderPage();
     await waitLoaded();
-    expect(screen.getByTestId('ops-page')).toHaveAttribute('data-ops-page-width', 'default');
-    expect(screen.getByTestId('ops-page')).toHaveClass('ops-page--default');
+    expect(screen.getByTestId('ops-page')).toHaveAttribute('data-ops-page-width', 'wide');
+    expect(screen.getByTestId('ops-page')).toHaveClass('ops-page--wide');
     expect(screen.getByRole('heading', { level: 1, name: 'Messaging' })).toBeInTheDocument();
     expect(screen.getByText(/Guest Message Automation/)).toBeInTheDocument();
     expect(screen.getByText(/booking lifecycle emails/)).toBeInTheDocument();

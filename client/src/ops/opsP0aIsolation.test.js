@@ -106,7 +106,8 @@ describe('P0A isolation guards', () => {
     expect(layout).toContain('OpsAppearanceProvider');
     expect(layout).toContain('isCleanerOnlySession');
     expect(layout).toContain('Loading ops console');
-    expect(layout).toContain("className=\"min-h-screen bg-gray-50\"");
+    expect(layout).toMatch(/<OpsRoot themed className="min-h-screen"/);
+    expect(layout).not.toMatch(/<OpsRoot[^>]*bg-gray-50/);
   });
 
   it('does not change public sage theme values', () => {

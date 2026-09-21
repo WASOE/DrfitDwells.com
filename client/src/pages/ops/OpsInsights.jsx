@@ -349,7 +349,7 @@ export default function OpsInsights() {
             </section>
           ) : null}
 
-          <OpsMetricGroup className="ops-insights__metric-group" data-testid="insights-metrics">
+          <OpsMetricGroup className="ops-insights__metric-group ops-metric-group--display" data-testid="insights-metrics">
             <OpsMetric label="Bookings" value={metrics.bookingCount ?? 0} />
             <OpsMetric
               label="Gross booked"
