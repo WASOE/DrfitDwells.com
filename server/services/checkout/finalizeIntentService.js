@@ -16,8 +16,8 @@ const { sanitizeMetaClientContext } = require('../../utils/sanitizeMetaClientCon
 const {
   LEGAL_ACCEPTANCE_TERMS_VERSION,
   LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
-  LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
-  LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT
+  LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
+  isApprovedCheckbox1TextSnapshot
 } = require('../../config/legalAcceptance');
 const { stableStringify } = require('./checkoutSessionSnapshot');
 const {
@@ -243,11 +243,13 @@ function buildValidatedFinalizeIntent({ body, requestMeta, capturedAt, quoteSnap
       field: 'legalAcceptance.activityRiskVersion'
     });
   }
-  if (legal.checkbox1TextSnapshot !== LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT) {
+  // Exact allowlist only (legacy + approved EN/BG). Preserve the submitted approved string.
+  if (!isApprovedCheckbox1TextSnapshot(legal.checkbox1TextSnapshot)) {
     throw validationError('legalAcceptance.checkbox1TextSnapshot mismatch', {
       field: 'legalAcceptance.checkbox1TextSnapshot'
     });
   }
+  const checkbox1TextSnapshot = legal.checkbox1TextSnapshot;
   if (legal.checkbox2TextSnapshot !== LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT) {
     throw validationError('legalAcceptance.checkbox2TextSnapshot mismatch', {
       field: 'legalAcceptance.checkbox2TextSnapshot'
@@ -309,7 +311,7 @@ function buildValidatedFinalizeIntent({ body, requestMeta, capturedAt, quoteSnap
       acceptedActivityRisk: true,
       termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
       activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
-      checkbox1TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
+      checkbox1TextSnapshot,
       checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
       locale
     },

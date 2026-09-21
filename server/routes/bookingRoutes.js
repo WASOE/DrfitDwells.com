@@ -37,7 +37,7 @@ const emailService = require('../services/emailService');
 const {
   LEGAL_ACCEPTANCE_TERMS_VERSION,
   LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
-  LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
+  isApprovedCheckbox1TextSnapshot,
   LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
   LEGAL_ACCEPTANCE_TERMS_URL,
   LEGAL_ACCEPTANCE_CANCELLATION_URL
@@ -1194,7 +1194,7 @@ router.post('/', bookingCreateLimiter, [
     .equals(LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION)
     .withMessage('Invalid activity risk version'),
   body('legalAcceptance.checkbox1TextSnapshot')
-    .equals(LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT)
+    .custom((value) => isApprovedCheckbox1TextSnapshot(value))
     .withMessage('Invalid checkbox 1 text'),
   body('legalAcceptance.checkbox2TextSnapshot')
     .equals(LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT)
