@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { CircleAlert } from 'lucide-react';
 import { opsReadAPI } from '../../services/opsApi';
 import { formatMoneyFromCents } from '../../utils/formatMoney';
 import ManualReviewResolveAction from '../../components/ops/ManualReviewResolveAction';
@@ -221,6 +222,7 @@ function AlertRow({ alert, onResolved }) {
       data-testid="ops-dashboard-alert"
       data-ops-alert-severity={severity}
     >
+      <CircleAlert className="ops-dashboard-alert__icon" aria-hidden="true" />
       <div className="ops-dashboard-alert__main">
         <Link to={alert.href || '/ops/reservations'} className="ops-dashboard-alert__copy">
           <p className="ops-dashboard-alert__title">{alert.title}</p>
@@ -245,6 +247,7 @@ function DashboardHeader({ health }) {
     <OpsPageHeader
       title="Dashboard"
       description="Who arrives, stays, leaves, and what needs attention."
+      metaPlacement="inline"
       meta={
         health ? (
           <span
@@ -285,6 +288,70 @@ function QuickLinks() {
   );
 }
 
+function StayPulse({ pulse }) {
+  return (
+    <section
+      className="ops-dashboard-surface ops-dashboard-surface--pulse ops-dashboard-surface--stay"
+      data-testid="ops-dashboard-pulse-stay"
+    >
+      <h2 className="ops-dashboard-surface__title">Stay/business pulse</h2>
+      <OpsMetricGroup className="ops-dashboard-metric-group ops-metric-group--display">
+        <OpsMetric label="Bookings MTD" value={pulse?.bookingsMTD ?? 0} />
+        <OpsMetric
+          label="Gross booked MTD"
+          value={formatGrossBooked(pulse?.grossBookedMTD ?? pulse?.bookingValueMTD ?? 0)}
+        />
+        <OpsMetric label="Paid active stays" value={pulse?.activePaidCount ?? 0} />
+        <OpsMetric label="Open payment active stays" value={pulse?.activeUnpaidCount ?? 0} />
+        <OpsMetric label="Cancellations MTD" value={pulse?.cancellationsMTD ?? 0} />
+        <OpsMetric label="Refunds MTD" value={pulse?.refundsMTD ?? 0} />
+      </OpsMetricGroup>
+    </section>
+  );
+}
+
+function CashPulse({ pulse }) {
+  return (
+    <section
+      className="ops-dashboard-surface ops-dashboard-surface--pulse ops-dashboard-surface--cash"
+      data-testid="ops-dashboard-pulse-cash"
+    >
+      <h2 className="ops-dashboard-surface__title">Gift vouchers &amp; cash</h2>
+      <OpsMetricGroup className="ops-dashboard-metric-group ops-dashboard-cash-metrics ops-metric-group--display">
+        <OpsMetric
+          label="Gift voucher sales MTD"
+          value={formatMoneyFromCents(pulse?.giftVouchers?.salesMTDCents ?? 0)}
+        />
+        <OpsMetric
+          label="Voucher cash collected MTD"
+          value={formatMoneyFromCents(pulse?.giftVouchers?.cashCollectedMTDCents ?? 0)}
+        />
+        <OpsMetric
+          label="Physical card fees MTD"
+          value={formatMoneyFromCents(pulse?.giftVouchers?.physicalCardFeesMTDCents ?? 0)}
+        />
+        <OpsMetric
+          label="Voucher liability outstanding"
+          value={formatMoneyFromCents(pulse?.giftVouchers?.liabilityOutstandingCents ?? 0)}
+          className="ops-dashboard-cash-metric--liability"
+        />
+        <OpsMetric
+          label="Voucher redemptions MTD"
+          value={formatMoneyFromCents(pulse?.giftVouchers?.redemptionsMTDCents ?? 0)}
+        />
+        <OpsMetric
+          label="Total cash collected MTD"
+          value={formatMoneyFromCents(pulse?.cashCollected?.totalCashCollectedMTDCents ?? 0)}
+          className="ops-dashboard-cash-metric--total"
+        />
+      </OpsMetricGroup>
+      <p className="ops-dashboard-note">
+        Gift voucher sales are prepaid credit. Gross booked stays and cash collected are shown separately.
+      </p>
+    </section>
+  );
+}
+
 export default function OpsDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -319,8 +386,10 @@ export default function OpsDashboard() {
 
   return (
     <OpsPage width="wide" className="ops-dashboard">
-      <DashboardHeader health={health} />
-      <QuickLinks />
+      <div className="ops-dashboard-intro">
+        <DashboardHeader health={health} />
+        <QuickLinks />
+      </div>
 
       {loading ? (
         <OpsLoadingState label="Loading dashboard" />
@@ -329,8 +398,13 @@ export default function OpsDashboard() {
       ) : !data ? (
         <p className="ops-dashboard-missing">No dashboard data.</p>
       ) : (
-        <>
-          <section className="ops-dashboard-surface" data-testid="ops-dashboard-alerts">
+        <div className="ops-dashboard-main">
+          <section
+            className={`ops-dashboard-surface ops-dashboard-surface--alerts${
+              criticalAlerts.length === 0 ? ' ops-dashboard-surface--alerts-empty' : ''
+            }`}
+            data-testid="ops-dashboard-alerts"
+          >
             <h2 className="ops-dashboard-surface__title">Critical alerts</h2>
             {criticalAlerts.length === 0 ? (
               <p className="ops-dashboard-empty">No critical alerts.</p>
@@ -343,7 +417,7 @@ export default function OpsDashboard() {
             )}
           </section>
 
-          <section className="ops-dashboard-surface" data-testid="ops-dashboard-today">
+          <section className="ops-dashboard-surface ops-dashboard-surface--today" data-testid="ops-dashboard-today">
             <h2 className="ops-dashboard-surface__title">Today operations</h2>
             <div className="ops-dashboard-lanes">
               <Lane
@@ -370,7 +444,7 @@ export default function OpsDashboard() {
             </div>
           </section>
 
-          <section className="ops-dashboard-surface" data-testid="ops-dashboard-upcoming">
+          <section className="ops-dashboard-surface ops-dashboard-surface--upcoming" data-testid="ops-dashboard-upcoming">
             <div className="ops-dashboard-surface__head">
               <h2 className="ops-dashboard-surface__title">Upcoming operations</h2>
               <p className="ops-dashboard-surface__meta">
@@ -388,53 +462,8 @@ export default function OpsDashboard() {
             )}
           </section>
 
-          <section className="ops-dashboard-surface ops-dashboard-surface--pulse" data-testid="ops-dashboard-pulse-stay">
-            <h2 className="ops-dashboard-surface__title">Stay/business pulse</h2>
-            <OpsMetricGroup className="ops-dashboard-metric-group ops-metric-group--display">
-              <OpsMetric label="Bookings MTD" value={d.pulse?.bookingsMTD ?? 0} />
-              <OpsMetric
-                label="Gross booked MTD"
-                value={formatGrossBooked(d.pulse?.grossBookedMTD ?? d.pulse?.bookingValueMTD ?? 0)}
-              />
-              <OpsMetric label="Paid active stays" value={d.pulse?.activePaidCount ?? 0} />
-              <OpsMetric label="Open payment active stays" value={d.pulse?.activeUnpaidCount ?? 0} />
-              <OpsMetric label="Cancellations MTD" value={d.pulse?.cancellationsMTD ?? 0} />
-              <OpsMetric label="Refunds MTD" value={d.pulse?.refundsMTD ?? 0} />
-            </OpsMetricGroup>
-          </section>
-
-          <section className="ops-dashboard-surface ops-dashboard-surface--pulse" data-testid="ops-dashboard-pulse-cash">
-            <h2 className="ops-dashboard-surface__title">Gift vouchers &amp; cash</h2>
-            <OpsMetricGroup className="ops-dashboard-metric-group ops-metric-group--display">
-              <OpsMetric
-                label="Gift voucher sales MTD"
-                value={formatMoneyFromCents(d.pulse?.giftVouchers?.salesMTDCents ?? 0)}
-              />
-              <OpsMetric
-                label="Voucher cash collected MTD"
-                value={formatMoneyFromCents(d.pulse?.giftVouchers?.cashCollectedMTDCents ?? 0)}
-              />
-              <OpsMetric
-                label="Physical card fees MTD"
-                value={formatMoneyFromCents(d.pulse?.giftVouchers?.physicalCardFeesMTDCents ?? 0)}
-              />
-              <OpsMetric
-                label="Voucher liability outstanding"
-                value={formatMoneyFromCents(d.pulse?.giftVouchers?.liabilityOutstandingCents ?? 0)}
-              />
-              <OpsMetric
-                label="Voucher redemptions MTD"
-                value={formatMoneyFromCents(d.pulse?.giftVouchers?.redemptionsMTDCents ?? 0)}
-              />
-              <OpsMetric
-                label="Total cash collected MTD"
-                value={formatMoneyFromCents(d.pulse?.cashCollected?.totalCashCollectedMTDCents ?? 0)}
-              />
-            </OpsMetricGroup>
-            <p className="ops-dashboard-note">
-              Gift voucher sales are prepaid credit. Gross booked stays and cash collected are shown separately.
-            </p>
-          </section>
+          <StayPulse pulse={d.pulse} />
+          <CashPulse pulse={d.pulse} />
 
           <section className="ops-dashboard-health" data-testid="ops-dashboard-health">
             <div className="ops-dashboard-health__facts">
@@ -476,7 +505,7 @@ export default function OpsDashboard() {
               </Link>
             </div>
           </section>
-        </>
+        </div>
       )}
     </OpsPage>
   );

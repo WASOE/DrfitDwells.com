@@ -429,6 +429,25 @@
     align-items: flex-start;
     justify-content: space-between;
   }
+
+  .ops-page-header--meta-inline .ops-page-header__copy {
+    display: grid;
+    grid-template-columns: auto auto;
+    align-items: center;
+    justify-content: start;
+    gap: var(--ops-space-4) var(--ops-space-8);
+  }
+
+  .ops-page-header--meta-inline .ops-page-header__description {
+    grid-column: 1 / -1;
+    margin-top: 0;
+  }
+
+  .ops-page-header--meta-inline .ops-page-header__meta {
+    grid-column: 2;
+    grid-row: 1;
+    margin-top: 0;
+  }
 }
 
 /* Table */

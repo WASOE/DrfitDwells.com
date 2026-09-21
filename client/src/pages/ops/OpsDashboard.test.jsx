@@ -238,6 +238,9 @@ describe('OpsDashboard home migration', () => {
     });
     expect(screen.getByTestId('ops-page')).toHaveAttribute('data-ops-page-width', 'wide');
     expect(screen.getByTestId('ops-page')).toHaveClass('ops-page--wide');
+    expect(screen.getByRole('heading', { level: 1, name: 'Dashboard' }).closest('header')).toHaveClass(
+      'ops-page-header--meta-inline'
+    );
     expect(screen.queryByRole('heading', { name: 'OPS Dashboard' })).not.toBeInTheDocument();
     expect(pageSource).not.toMatch(/max-w-7xl|bg-white border border-gray-200 rounded-xl|#81887A|font-serif|Playfair/);
     expect(pageSource).not.toMatch(/border-rose-200|bg-amber-50|lg:grid-cols-6|xl:grid-cols-3/);
@@ -694,6 +697,13 @@ describe('OpsDashboard home migration', () => {
     expect(metricValue('Voucher liability outstanding', cash)).toHaveTextContent(formatMoneyFromCents(20000));
     expect(metricValue('Voucher redemptions MTD', cash)).toHaveTextContent(formatMoneyFromCents(1500));
     expect(metricValue('Total cash collected MTD', cash)).toHaveTextContent(formatMoneyFromCents(25000));
+    expect(cash.querySelector('.ops-dashboard-cash-metrics')).toBeInTheDocument();
+    expect(within(cash).getByText('Voucher liability outstanding').closest('.ops-metric')).toHaveClass(
+      'ops-dashboard-cash-metric--liability'
+    );
+    expect(within(cash).getByText('Total cash collected MTD').closest('.ops-metric')).toHaveClass(
+      'ops-dashboard-cash-metric--total'
+    );
     expect(screen.getByText('Open payment active stays')).toBeInTheDocument();
     expect(screen.queryByText('Unpaid active stays')).not.toBeInTheDocument();
   });
@@ -988,6 +998,7 @@ describe('OpsDashboard home migration', () => {
     expect(critical).toHaveClass('ops-dashboard-alert--critical');
     expect(high).toHaveClass('ops-dashboard-alert--high');
     expect(medium).toHaveClass('ops-dashboard-alert--medium');
+    expect(critical.querySelector('.ops-dashboard-alert__icon')).toHaveAttribute('aria-hidden', 'true');
     expect(critical.className).not.toEqual(high.className);
     expect(high.className).not.toEqual(medium.className);
     expect(screen.getAllByText('Critical').length).toBeGreaterThan(0);
@@ -1009,6 +1020,28 @@ describe('OpsDashboard home migration', () => {
       /@container ops-page \(min-width:\s*1100px\)[\s\S]*\.ops-dashboard-metric-group[\s\S]*repeat\(6/
     );
     expect(pageCss).toMatch(/@container ops-page \(min-width:\s*720px\)[\s\S]*\.ops-dashboard-metric-group[\s\S]*repeat\(3/);
+  });
+
+  it('keeps one container-scoped composition while mobile retains the base flow', async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('Stay/business pulse')).toBeInTheDocument();
+    });
+    expect(document.querySelector('.ops-dashboard-intro')).toBeInTheDocument();
+    expect(document.querySelector('.ops-dashboard-main')).toBeInTheDocument();
+    expect(screen.getByTestId('ops-dashboard-alerts')).toHaveClass(
+      'ops-dashboard-surface--alerts',
+      'ops-dashboard-surface--alerts-empty'
+    );
+    expect(screen.getByTestId('ops-dashboard-today')).toHaveClass('ops-dashboard-surface--today');
+    expect(screen.getByTestId('ops-dashboard-upcoming')).toHaveClass('ops-dashboard-surface--upcoming');
+    expect(screen.getByTestId('ops-dashboard-pulse-stay')).toHaveClass('ops-dashboard-surface--stay');
+    expect(screen.getByTestId('ops-dashboard-pulse-cash')).toHaveClass('ops-dashboard-surface--cash');
+
+    expect(pageCss).not.toContain('.ops-shell-frame--desktop');
+    expect(pageCss).toMatch(
+      /@container ops-page \(min-width:\s*768px\)[\s\S]*\.ops-dashboard-main[\s\S]*grid-template-areas:/
+    );
   });
 
   it('restores strong quick-link affordance with canonical button classes', async () => {

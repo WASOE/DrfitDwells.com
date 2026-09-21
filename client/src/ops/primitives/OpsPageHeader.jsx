@@ -1,11 +1,21 @@
 import { Link } from 'react-router-dom';
 import { opsCx } from './opsCx';
 
-export default function OpsPageHeader({ title, description, meta, actions, back, className, ...rest }) {
+export default function OpsPageHeader({
+  title,
+  description,
+  meta,
+  metaPlacement = 'stacked',
+  actions,
+  back,
+  className,
+  ...rest
+}) {
   const showBack = Boolean(back?.to);
+  const metaClassName = metaPlacement === 'inline' ? 'ops-page-header--meta-inline' : null;
 
   return (
-    <header className={opsCx('ops-page-header', className)} {...rest}>
+    <header className={opsCx('ops-page-header', metaClassName, className)} {...rest}>
       {showBack ? (
         <p className="ops-page-header__back">
           <Link to={back.to} className="ops-page-header__back-link">

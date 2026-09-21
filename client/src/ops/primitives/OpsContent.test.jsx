@@ -77,6 +77,13 @@ describe('OpsPageHeader', () => {
     expect(header.querySelector('.ops-page-header__back-link').tagName).toBe('A');
     expect(header.className).not.toMatch(/dark:|html\.dark|gray-/);
   });
+
+  it('exposes inline meta as an opt-in header variant', () => {
+    const { container } = render(
+      <OpsPageHeader title="Dashboard" meta={<span>Healthy</span>} metaPlacement="inline" />
+    );
+    expect(container.querySelector('.ops-page-header')).toHaveClass('ops-page-header--meta-inline');
+  });
 });
 
 describe('OpsTable', () => {

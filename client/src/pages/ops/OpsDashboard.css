@@ -6,6 +6,14 @@
   min-width: 0;
 }
 
+.ops-dashboard-intro,
+.ops-dashboard-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-24);
+  min-width: 0;
+}
+
 .ops-dashboard-links {
   display: flex;
   flex-wrap: wrap;
@@ -110,6 +118,11 @@ a.ops-dashboard-links__link {
   border: 1px solid var(--ops-border);
   border-radius: var(--ops-radius-control);
   background: var(--ops-surface-subtle);
+}
+
+.ops-dashboard-alert__icon {
+  display: none;
+  flex: 0 0 auto;
 }
 
 .ops-dashboard-alert--critical {
@@ -420,14 +433,180 @@ a.ops-dashboard-row:focus-visible {
   }
 }
 
+/* Wide-page composition. A mobile viewport cannot produce a 768px page container. */
+@container ops-page (min-width: 768px) {
+  .ops-dashboard-intro {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--ops-space-16);
+  }
+
+  .ops-dashboard-intro .ops-page-header {
+    margin-bottom: 0;
+  }
+
+  .ops-dashboard-links {
+    justify-content: flex-end;
+  }
+
+  .ops-dashboard-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(21rem, 0.95fr);
+    grid-template-areas:
+      'alerts alerts'
+      'today today'
+      'upcoming stay'
+      'upcoming cash'
+      'health health';
+    align-items: start;
+    gap: var(--ops-space-16);
+  }
+
+  .ops-dashboard-surface--alerts {
+    grid-area: alerts;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .ops-dashboard-surface--alerts-empty {
+    display: none;
+  }
+
+  .ops-dashboard-surface--alerts > .ops-dashboard-surface__title {
+    display: none;
+  }
+
+  .ops-dashboard-surface--alerts .ops-dashboard-alert {
+    display: grid;
+    grid-template-columns: var(--ops-control-h) minmax(0, 1fr);
+    align-items: center;
+    min-height: calc(var(--ops-control-h) + var(--ops-space-16));
+    column-gap: var(--ops-space-12);
+  }
+
+  .ops-dashboard-alert__icon {
+    display: block;
+    width: var(--ops-control-h);
+    height: var(--ops-control-h);
+    color: var(--ops-warning);
+  }
+
+  .ops-dashboard-alert--critical .ops-dashboard-alert__icon {
+    color: var(--ops-danger);
+  }
+
+  .ops-dashboard-alert__main,
+  .ops-dashboard-alert__action {
+    grid-column: 2;
+  }
+
+  .ops-dashboard-surface--today {
+    grid-area: today;
+  }
+
+  .ops-dashboard-surface--upcoming {
+    grid-area: upcoming;
+    align-self: start;
+  }
+
+  .ops-dashboard-surface--stay {
+    grid-area: stay;
+  }
+
+  .ops-dashboard-surface--cash {
+    grid-area: cash;
+  }
+
+  .ops-dashboard-health {
+    grid-area: health;
+  }
+
+  .ops-dashboard-surface--alerts {
+    padding: 0;
+  }
+
+  .ops-dashboard-surface--stay .ops-dashboard-metric-group {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ops-dashboard-metric-group.ops-dashboard-cash-metrics {
+    grid-template-columns: minmax(9rem, 0.85fr) minmax(0, 1.4fr);
+    grid-template-rows: repeat(5, auto);
+    align-items: stretch;
+    gap: 0 var(--ops-space-12);
+  }
+
+  .ops-dashboard-cash-metrics .ops-metric:not(.ops-dashboard-cash-metric--total) {
+    display: grid;
+    grid-column: 2;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: var(--ops-space-8);
+    min-height: 0;
+    padding: var(--ops-space-4) 0;
+    border-top: 1px solid var(--ops-border);
+  }
+
+  .ops-dashboard-cash-metrics .ops-metric:first-child {
+    border-top: 0;
+  }
+
+  .ops-dashboard-cash-metrics .ops-metric:not(.ops-dashboard-cash-metric--total) .ops-metric__value {
+    font-size: var(--ops-size-small);
+    line-height: var(--ops-lh-small);
+    text-align: end;
+  }
+
+  .ops-dashboard-cash-metrics .ops-dashboard-cash-metric--total {
+    grid-column: 1;
+    grid-row: 1 / span 5;
+    justify-content: center;
+    padding: var(--ops-space-12);
+    border: 1px solid var(--ops-border);
+    border-radius: var(--ops-radius-control);
+    background: var(--ops-surface-subtle);
+  }
+
+  .ops-dashboard-cash-metric--total .ops-metric__value {
+    font-size: var(--ops-size-display);
+    line-height: var(--ops-lh-display);
+  }
+
+  .ops-dashboard-cash-metric--liability .ops-metric__value {
+    color: var(--ops-warning);
+  }
+
+  .ops-dashboard-surface--cash .ops-dashboard-note {
+    display: none;
+  }
+}
+
 @container ops-page (min-width: 960px) {
   .ops-dashboard-lanes {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ops-dashboard-lane + .ops-dashboard-lane {
+    padding-left: var(--ops-space-16);
+    border-left: 1px solid var(--ops-border);
   }
 }
 
 @container ops-page (min-width: 1100px) {
   .ops-dashboard-metric-group {
     grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .ops-dashboard-surface--stay .ops-dashboard-metric-group {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 768px) {
+  .ops-dashboard {
+    gap: var(--ops-space-16);
   }
 }
