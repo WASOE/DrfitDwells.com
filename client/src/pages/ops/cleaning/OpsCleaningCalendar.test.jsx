@@ -13,6 +13,8 @@ vi.mock('../../../services/cleaningApi', () => ({
   getCleaningPayoutSummary: vi.fn(),
   markCleaned: vi.fn(),
   unmarkCleaned: vi.fn(),
+  markTaskPaid: vi.fn(),
+  unmarkTaskPaid: vi.fn(),
   markPaid: vi.fn(),
   unmarkPaid: vi.fn()
 }));
@@ -73,40 +75,73 @@ function scheduleWithTasks() {
   return {
     checkouts: [
       {
+        taskId: 'b-pending',
         bookingId: 'b-pending',
+        source: 'direct',
         cabinName: 'A-Frame Long Cabin Name For QA',
         unitLabel: 'A-Frame 2',
         cleaningDate: date,
         checkoutTime: '11:00',
         status: 'pending',
+        paymentStatus: 'unpaid',
         sameDayTurn: false,
+        leavingGuest: { name: 'Elena Petrova', source: 'direct' },
+        arrivingNext: null,
         cleaningNotes: 'Please restock towels and leave firewood stacked by the door for guest notes.'
       },
       {
+        taskId: 'b-done',
         bookingId: 'b-done',
+        source: 'direct',
         cabinName: 'Stone House',
         unitLabel: null,
         cleaningDate: date,
         checkoutTime: '11:00',
         status: 'cleaned',
+        paymentStatus: 'unpaid',
         sameDayTurn: false,
+        leavingGuest: { name: 'Ivan', source: 'direct' },
+        arrivingNext: null,
         cleaningNotes: null
       },
       {
+        taskId: 'b-same',
         bookingId: 'b-same',
+        source: 'direct',
         cabinName: 'A-Frame',
         unitLabel: 'A-Frame 3',
         cleaningDate: date,
         checkoutTime: '11:00',
         nextCheckInTime: '15:00',
         status: 'pending',
+        paymentStatus: 'unpaid',
         sameDayTurn: true,
+        leavingGuest: { name: 'Maria', source: 'direct' },
+        arrivingNext: { name: 'Airbnb guest', source: 'airbnb', checkinTime: '15:00' },
+        cleaningNotes: null
+      },
+      {
+        taskId: 'ext:airbnb-block-1',
+        bookingId: null,
+        source: 'airbnb',
+        sourceKind: 'external_hold',
+        cabinName: 'A-Frame',
+        unitLabel: 'A-Frame 3',
+        cleaningDate: date,
+        checkoutTime: '11:00',
+        status: 'pending',
+        paymentStatus: 'paid',
+        sameDayTurn: false,
+        leavingGuest: { name: 'Airbnb guest', source: 'airbnb' },
+        arrivingNext: null,
         cleaningNotes: null
       }
     ],
     checkins: [
       {
+        taskId: 'b-in',
         bookingId: 'b-in',
+        source: 'direct',
         cabinName: 'Lux Cabin',
         unitLabel: null,
         checkinTime: '15:00',
@@ -214,15 +249,17 @@ describe('OpsCleaningCalendar migration', () => {
   it('displays pending, done, same-day turn, unit labels, notes, and check-in', async () => {
     getCleaningSchedule.mockResolvedValue({ data: { data: scheduleWithTasks() } });
     renderCalendar(adminSession);
-    await waitFor(() => expect(screen.getAllByTestId('checkout-card').length).toBe(3));
+    await waitFor(() => expect(screen.getAllByTestId('checkout-card').length).toBe(4));
 
     const cards = screen.getAllByTestId('checkout-card');
     expect(within(cards[0]).getByText(/A-Frame Long Cabin Name For QA/)).toBeInTheDocument();
     expect(within(cards[0]).getByText(/A-Frame 2/)).toBeInTheDocument();
     expect(within(cards[0]).getByText(getOpsCleanerMessage('status.cleaning.pending', 'en'))).toBeInTheDocument();
+    expect(within(cards[0]).getByText(getOpsCleanerMessage('status.cleaning_payment.pending', 'en'))).toBeInTheDocument();
     expect(
       within(cards[0]).getByText(/Please restock towels and leave firewood stacked/)
     ).toBeInTheDocument();
+    expect(within(cards[0]).getByTestId('leaving-guest')).toHaveTextContent(/Elena Petrova/);
 
     expect(within(cards[1]).getByText(getOpsCleanerMessage('status.cleaning.done', 'en'))).toBeInTheDocument();
 
@@ -232,6 +269,12 @@ describe('OpsCleaningCalendar migration', () => {
     expect(cards[2]).toHaveAttribute('data-same-day', 'true');
     expect(cards[2]).toHaveAttribute('data-unit-label', 'A-Frame 3');
     expect(cards[0]).toHaveAttribute('data-unit-label', 'A-Frame 2');
+    expect(within(cards[2]).getByTestId('arriving-guest')).toHaveTextContent(/Airbnb guest/);
+
+    expect(cards[3]).toHaveAttribute('data-source', 'airbnb');
+    expect(cards[3]).toHaveAttribute('data-payment-status', 'paid');
+    expect(within(cards[3]).getByText(getOpsCleanerMessage('status.cleaning_payment.paid', 'en'))).toBeInTheDocument();
+    expect(within(cards[3]).getByTestId('leaving-guest')).toHaveTextContent(/Airbnb guest/);
 
     expect(screen.getByTestId('checkin-card')).toHaveTextContent('Lux Cabin');
     expect(screen.getByTestId('checkin-card')).toHaveTextContent(/Check-in: 3:00 PM/);
@@ -240,14 +283,13 @@ describe('OpsCleaningCalendar migration', () => {
   it('keeps A-Frame 2 and A-Frame 3 as separate unit identities', async () => {
     getCleaningSchedule.mockResolvedValue({ data: { data: scheduleWithTasks() } });
     renderCalendar(adminSession);
-    await waitFor(() => expect(screen.getAllByTestId('checkout-card').length).toBe(3));
+    await waitFor(() => expect(screen.getAllByTestId('checkout-card').length).toBe(4));
     const unitLabels = screen
       .getAllByTestId('checkout-card')
       .map((el) => el.getAttribute('data-unit-label'))
       .filter(Boolean);
     expect(unitLabels).toEqual(expect.arrayContaining(['A-Frame 2', 'A-Frame 3']));
     expect(unitLabels.filter((u) => u === 'A-Frame 2')).toHaveLength(1);
-    expect(unitLabels.filter((u) => u === 'A-Frame 3')).toHaveLength(1);
   });
 
   it('marks cleaned with exact payload and refetches', async () => {
@@ -267,7 +309,7 @@ describe('OpsCleaningCalendar migration', () => {
     getCleaningSchedule.mockResolvedValue({ data: { data: scheduleWithTasks() } });
     unmarkCleaned.mockResolvedValue({ data: { success: true } });
     renderCalendar(adminSession);
-    await waitFor(() => expect(screen.getAllByTestId('mark-cleaned').length).toBe(3));
+    await waitFor(() => expect(screen.getAllByTestId('mark-cleaned').length).toBe(4));
     fireEvent.click(screen.getAllByTestId('mark-cleaned')[1]);
     await waitFor(() => expect(unmarkCleaned).toHaveBeenCalledWith('b-done', todayKey()));
   });
@@ -317,7 +359,7 @@ describe('OpsCleaningCalendar migration', () => {
     await waitFor(() => expect(screen.getAllByTestId('mark-cleaned').length).toBeGreaterThan(0));
     fireEvent.click(screen.getAllByTestId('mark-cleaned')[0]);
     await waitFor(() => expect(screen.getByText('Clean write failed')).toBeInTheDocument());
-    expect(screen.getAllByTestId('checkout-card').length).toBe(3);
+    expect(screen.getAllByTestId('checkout-card').length).toBe(4);
   });
 
   it('renders empty day copy without a giant empty card', async () => {
@@ -330,9 +372,12 @@ describe('OpsCleaningCalendar migration', () => {
     getCleaningSchedule.mockResolvedValue({ data: { data: scheduleWithTasks() } });
     renderCalendar(cleanerSessionEn);
     await waitFor(() => expect(screen.getByTestId('same-day-turn')).toBeInTheDocument());
-    expect(screen.getAllByText('Pending').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Done').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Needs cleaning').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Cleaned').length).toBeGreaterThan(0);
     expect(screen.getByText('Same-day turn')).toBeInTheDocument();
+    expect(screen.getAllByText('Unpaid').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Paid').length).toBeGreaterThan(0);
+    expect(screen.queryByTestId('mark-task-paid')).not.toBeInTheDocument();
   });
 
   it('shows cleaner BG status labels from registry', async () => {
@@ -342,6 +387,10 @@ describe('OpsCleaningCalendar migration', () => {
     expect(screen.getAllByText('За почистване').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Почистено').length).toBeGreaterThan(0);
     expect(screen.getByText('Смяна в същия ден')).toBeInTheDocument();
+    expect(screen.getAllByText('Неплатено').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Платено').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Напуска').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Пристига').length).toBeGreaterThan(0);
   });
 
   it('navigates Today without changing API date helper semantics', async () => {

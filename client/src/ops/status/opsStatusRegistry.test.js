@@ -53,7 +53,12 @@ describe('opsStatusRegistry', () => {
     expect(getOpsStatusByKey('cleaning.pending').label.bg).toBe('За почистване');
     expect(getOpsStatusByKey('cleaning.done').label.bg).toBe('Почистено');
     expect(getOpsStatusByKey('cleaning.same_day_turn').label.bg).toBe('Смяна в същия ден');
-    expect(getOpsStatusByKey('cleaning_payment.pending').label.bg).toBe('За плащане');
+    expect(getOpsStatusByKey('cleaning_payment.pending').label.bg).toBe('Неплатено');
+    expect(getOpsStatusByKey('cleaning_payment.paid').label.bg).toBe('Платено');
+    expect(getOpsStatusByKey('cleaning.pending').label.en).toBe('Needs cleaning');
+    expect(getOpsStatusByKey('cleaning.done').label.en).toBe('Cleaned');
+    expect(getOpsStatusByKey('cleaning_payment.pending').label.en).toBe('Unpaid');
+    expect(getOpsStatusByKey('cleaning_payment.paid').label.en).toBe('Paid');
     expect(getOpsStatusByKey('cleaning_payment.partial').label.bg).toBe('Частично платено');
     expect(getOpsStatusByKey('cleaning_payment.paid').label.bg).toBe('Платено');
   });

@@ -17,7 +17,14 @@ const REQUIRED_CLEANER_STATUS_KEYS = [
   'status.cleaning.same_day_turn',
   'status.cleaning_payment.pending',
   'status.cleaning_payment.partial',
-  'status.cleaning_payment.paid'
+  'status.cleaning_payment.paid',
+  'cleaning.leaving',
+  'cleaning.arriving',
+  'cleaning.no_upcoming_arrival',
+  'cleaning.mark_cleaned',
+  'cleaning.unmark_cleaned',
+  'cleaning.source.airbnb',
+  'cleaning.source.direct'
 ];
 
 describe('resolveOpsUiLanguage', () => {
@@ -62,10 +69,13 @@ describe('cleaner namespaces', () => {
     expect(getOpsCleanerMessage('status.cleaning.pending', 'bg')).toBe('За почистване');
     expect(getOpsCleanerMessage('status.cleaning.done', 'bg')).toBe('Почистено');
     expect(getOpsCleanerMessage('status.cleaning.same_day_turn', 'bg')).toBe('Смяна в същия ден');
-    expect(getOpsCleanerMessage('status.cleaning_payment.pending', 'bg')).toBe('За плащане');
+    expect(getOpsCleanerMessage('status.cleaning_payment.pending', 'bg')).toBe('Неплатено');
     expect(getOpsCleanerMessage('status.cleaning_payment.partial', 'bg')).toBe('Частично платено');
     expect(getOpsCleanerMessage('status.cleaning_payment.paid', 'bg')).toBe('Платено');
-    expect(getOpsCleanerMessage('status.cleaning.pending', 'en')).toBe('Pending');
+    expect(getOpsCleanerMessage('status.cleaning.pending', 'en')).toBe('Needs cleaning');
+    expect(getOpsCleanerMessage('status.cleaning.done', 'en')).toBe('Cleaned');
+    expect(getOpsCleanerMessage('status.cleaning_payment.pending', 'en')).toBe('Unpaid');
+    expect(getOpsCleanerMessage('status.cleaning_payment.paid', 'en')).toBe('Paid');
   });
 });
 

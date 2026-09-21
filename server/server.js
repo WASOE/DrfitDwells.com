@@ -112,6 +112,33 @@ function startPostConnectRuntime() {
     }
   });
 
+  // CleaningRecord: replace legacy unique(bookingId, cleaningDate) that blocked
+  // multiple external_hold rows (bookingId null) on the same day.
+  (async () => {
+    const CleaningRecord = require('./models/CleaningRecord');
+    try {
+      const indexes = await CleaningRecord.collection.indexes();
+      for (const idx of indexes) {
+        if (
+          idx.name === 'bookingId_1_cleaningDate_1' &&
+          idx.unique &&
+          !idx.partialFilterExpression
+        ) {
+          await CleaningRecord.collection.dropIndex(idx.name);
+          console.log('Dropped legacy CleaningRecord bookingId+cleaningDate unique index');
+        }
+      }
+    } catch (err) {
+      console.warn('CleaningRecord index prep warning:', err?.message || err);
+    }
+    try {
+      await CleaningRecord.syncIndexes();
+      console.log('CleaningRecord indexes synced');
+    } catch (err) {
+      console.error('CleaningRecord index sync error:', err);
+    }
+  })();
+
   // Automatic iCal sync scheduling (prod-safe, env-controlled).
   try {
     const { startIcalSyncSchedulerIfEnabled } = require('./services/ops/ingestion/icalSyncScheduler');

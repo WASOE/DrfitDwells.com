@@ -801,10 +801,10 @@ Work Windows is an approved spatial exception but MUST NOT use red merely to mea
 
 | Key | EN label | BG label | Family | Loudness |
 |---|---|---|---|---|
-| `cleaning.pending` | Pending | За почистване | warning | normal |
-| `cleaning.done` | Done | Почистено | success | quiet |
+| `cleaning.pending` | Needs cleaning | За почистване | warning | normal |
+| `cleaning.done` | Cleaned | Почистено | success | quiet |
 | `cleaning.same_day_turn` | Same-day turn | Смяна в същия ден | warning | attention |
-| `cleaning_payment.pending` | Pending | За плащане | warning | normal |
+| `cleaning_payment.pending` | Unpaid | Неплатено | warning | normal |
 | `cleaning_payment.partial` | Partial | Частично платено | warning | normal |
 | `cleaning_payment.paid` | Paid | Платено | success | quiet |
 

@@ -117,14 +117,14 @@ const OPS_STATUS_ENTRIES = Object.freeze([
   // Cleaning (cleaner-facing BG labels from §12.1)
   defineStatus({
     key: 'cleaning.pending',
-    en: 'Pending',
+    en: 'Needs cleaning',
     bg: 'За почистване',
     family: 'warning',
     loudness: 'normal'
   }),
   defineStatus({
     key: 'cleaning.done',
-    en: 'Done',
+    en: 'Cleaned',
     bg: 'Почистено',
     family: 'success',
     loudness: 'quiet'
@@ -138,8 +138,8 @@ const OPS_STATUS_ENTRIES = Object.freeze([
   }),
   defineStatus({
     key: 'cleaning_payment.pending',
-    en: 'Pending',
-    bg: 'За плащане',
+    en: 'Unpaid',
+    bg: 'Неплатено',
     family: 'warning',
     loudness: 'normal'
   }),

@@ -14,11 +14,17 @@ import {
   getCleaningPayoutSummary,
   markCleaned,
   unmarkCleaned,
+  markTaskPaid,
+  unmarkTaskPaid,
   markPaid,
   unmarkPaid
 } from '../../../services/cleaningApi';
 import { useOpsSession } from '../../../context/OpsSessionContext';
 import { isCleanerOnlySession } from '../../../layouts/ops/opsNavConfig';
+import {
+  getOpsCleanerMessage,
+  resolveOpsUiLanguage
+} from '../../../ops/i18n/opsUiLanguage';
 import OpsPage from '../../../ops/primitives/OpsPage';
 import OpsPageHeader from '../../../ops/primitives/OpsPageHeader';
 import OpsButton from '../../../ops/primitives/OpsButton';
@@ -105,6 +111,8 @@ function NoteBox({ text }) {
 export default function OpsCleaningCalendar() {
   const session = useOpsSession();
   const cleanerOnly = isCleanerOnlySession(session);
+  const uiLang = resolveOpsUiLanguage(session);
+  const t = (key) => getOpsCleanerMessage(key, uiLang);
   const canReadPayment = (session?.actions || []).includes('ops.cleaning.payment_read');
   const canReadPayout = (session?.actions || []).includes('ops.cleaning.payout_read');
   const canWritePayment = (session?.actions || []).includes('ops.cleaning.payment_write');
@@ -133,6 +141,7 @@ export default function OpsCleaningCalendar() {
   const [togglePaidError, setTogglePaidError] = useState('');
 
   const [busyBookingId, setBusyBookingId] = useState(null);
+  const [busyTaskPaidId, setBusyTaskPaidId] = useState(null);
 
   const [showLocationMenu, setShowLocationMenu] = useState(false);
   const [showMonthPicker, setShowMonthPicker] = useState(false);
@@ -269,13 +278,14 @@ export default function OpsCleaningCalendar() {
   };
 
   const handleToggleCleaned = async (ev) => {
-    setBusyBookingId(ev.bookingId);
+    const taskId = ev.taskId || ev.bookingId;
+    setBusyBookingId(taskId);
     setToggleCleanedError('');
     try {
       if (ev.status === 'cleaned') {
-        await unmarkCleaned(ev.bookingId, ev.cleaningDate);
+        await unmarkCleaned(taskId, ev.cleaningDate);
       } else {
-        await markCleaned(ev.bookingId, ev.cleaningDate);
+        await markCleaned(taskId, ev.cleaningDate);
       }
       invalidateMonth();
       await Promise.all([loadDay(), loadPayment(), loadGlobalPayout()]);
@@ -285,6 +295,27 @@ export default function OpsCleaningCalendar() {
       );
     } finally {
       setBusyBookingId(null);
+    }
+  };
+
+  const handleToggleTaskPaid = async (ev) => {
+    if (!canWritePayment) return;
+    const taskId = ev.taskId || ev.bookingId;
+    setBusyTaskPaidId(taskId);
+    setTogglePaidError('');
+    try {
+      if (ev.paymentStatus === 'paid') {
+        await unmarkTaskPaid(taskId, ev.cleaningDate);
+      } else {
+        await markTaskPaid(taskId, ev.cleaningDate);
+      }
+      await loadDay();
+    } catch (err) {
+      setTogglePaidError(
+        err?.response?.data?.message || 'Failed to update task payment status. Please try again.'
+      );
+    } finally {
+      setBusyTaskPaidId(null);
     }
   };
 
@@ -587,9 +618,20 @@ export default function OpsCleaningCalendar() {
             ) : null}
 
             {checkouts.map((ev) => {
+              const taskId = ev.taskId || ev.bookingId;
               const isCleaned = ev.status === 'cleaned';
-              const busy = busyBookingId === ev.bookingId;
+              const isTaskPaid = ev.paymentStatus === 'paid';
+              const busy = busyBookingId === taskId;
+              const paidBusy = busyTaskPaidId === taskId;
               const sameDayTurn = Boolean(ev.sameDayTurn);
+              const leaving = ev.leavingGuest;
+              const arriving = ev.arrivingNext;
+              const sourceLabel =
+                ev.source === 'airbnb'
+                  ? t('cleaning.source.airbnb')
+                  : ev.source === 'direct'
+                    ? t('cleaning.source.direct')
+                    : ev.source || null;
               const taskClass = [
                 'ops-cleaning-cal__task',
                 isCleaned ? 'ops-cleaning-cal__task--done' : '',
@@ -599,10 +641,13 @@ export default function OpsCleaningCalendar() {
                 .join(' ');
               return (
                 <div
-                  key={`checkout-${ev.bookingId}`}
+                  key={`checkout-${taskId}`}
                   data-testid="checkout-card"
+                  data-task-id={taskId}
+                  data-source={ev.source || undefined}
                   data-same-day={sameDayTurn ? 'true' : undefined}
                   data-unit-label={ev.unitLabel || undefined}
+                  data-payment-status={ev.paymentStatus || 'unpaid'}
                   className={taskClass}
                 >
                   <div className="ops-cleaning-cal__task-head">
@@ -616,29 +661,69 @@ export default function OpsCleaningCalendar() {
                         <span className="ops-cleaning-cal__task-unit"> · {ev.unitLabel}</span>
                       ) : null}
                     </h3>
-                    <OpsStatus name={isCleaned ? 'cleaning.done' : 'cleaning.pending'} />
+                    <div className="ops-cleaning-cal__task-badges">
+                      <OpsStatus name={isCleaned ? 'cleaning.done' : 'cleaning.pending'} />
+                      <OpsStatus
+                        name={isTaskPaid ? 'cleaning_payment.paid' : 'cleaning_payment.pending'}
+                      />
+                    </div>
                   </div>
+
+                  {sameDayTurn ? (
+                    <p className="ops-cleaning-cal__same-day" data-testid="same-day-turn">
+                      <OpsStatus name="cleaning.same_day_turn" />
+                      {ev.nextCheckInTime ? (
+                        <span className="ops-cleaning-cal__same-day-next">
+                          · next {formatTime(ev.nextCheckInTime)}
+                        </span>
+                      ) : null}
+                    </p>
+                  ) : null}
 
                   <p className="ops-cleaning-cal__task-meta">
                     <Clock className="h-3.5 w-3.5" aria-hidden="true" />
                     <span>Check-out: {formatTime(ev.checkoutTime)}</span>
-                    {sameDayTurn ? (
-                      <span className="ops-cleaning-cal__same-day" data-testid="same-day-turn">
-                        <OpsStatus name="cleaning.same_day_turn" />
-                        {ev.nextCheckInTime ? (
-                          <span className="ops-cleaning-cal__same-day-next">
-                            · next {formatTime(ev.nextCheckInTime)}
-                          </span>
-                        ) : null}
+                    {sourceLabel ? (
+                      <span className="ops-cleaning-cal__source" data-testid="task-source">
+                        · {sourceLabel}
                       </span>
                     ) : null}
                   </p>
+
+                  <div className="ops-cleaning-cal__turnovers" data-testid="task-turnovers">
+                    <p className="ops-cleaning-cal__turnover" data-testid="leaving-guest">
+                      <span className="ops-cleaning-cal__turnover-label">{t('cleaning.leaving')}</span>
+                      <span>
+                        {leaving?.name || 'Guest'}
+                        {leaving?.source === 'airbnb'
+                          ? ` · ${t('cleaning.source.airbnb')}`
+                          : leaving?.source === 'direct'
+                            ? ` · ${t('cleaning.source.direct')}`
+                            : ''}
+                        {ev.checkoutTime ? ` · ${formatTime(ev.checkoutTime)}` : ''}
+                      </span>
+                    </p>
+                    <p className="ops-cleaning-cal__turnover" data-testid="arriving-guest">
+                      <span className="ops-cleaning-cal__turnover-label">{t('cleaning.arriving')}</span>
+                      <span>
+                        {arriving
+                          ? `${arriving.name}${
+                              arriving.source === 'airbnb'
+                                ? ` · ${t('cleaning.source.airbnb')}`
+                                : arriving.source === 'direct'
+                                  ? ` · ${t('cleaning.source.direct')}`
+                                  : ''
+                            }${arriving.checkinTime ? ` · ${formatTime(arriving.checkinTime)}` : ''}`
+                          : t('cleaning.no_upcoming_arrival')}
+                      </span>
+                    </p>
+                  </div>
 
                   {ev.cleaningNotes ? <NoteBox text={ev.cleaningNotes} /> : null}
 
                   <div className="ops-cleaning-cal__task-action">
                     <OpsButton
-                      variant={isCleaned ? 'secondary' : 'secondary'}
+                      variant="secondary"
                       onClick={() => handleToggleCleaned(ev)}
                       disabled={busy}
                       loading={busy}
@@ -650,8 +735,21 @@ export default function OpsCleaningCalendar() {
                       ) : (
                         <Circle className="h-4 w-4" aria-hidden="true" />
                       )}
-                      {isCleaned ? 'Unmark' : 'Mark Cleaned'}
+                      {isCleaned ? t('cleaning.unmark_cleaned') : t('cleaning.mark_cleaned')}
                     </OpsButton>
+                    {canWritePayment ? (
+                      <OpsButton
+                        variant="quiet"
+                        size="compact"
+                        onClick={() => handleToggleTaskPaid(ev)}
+                        disabled={paidBusy}
+                        loading={paidBusy}
+                        loadingLabel="…"
+                        data-testid="mark-task-paid"
+                      >
+                        {isTaskPaid ? 'Unmark paid' : 'Mark paid'}
+                      </OpsButton>
+                    ) : null}
                   </div>
                 </div>
               );
@@ -659,8 +757,9 @@ export default function OpsCleaningCalendar() {
 
             {checkins.map((ev) => (
               <div
-                key={`checkin-${ev.bookingId}`}
+                key={`checkin-${ev.taskId || ev.bookingId}`}
                 data-testid="checkin-card"
+                data-source={ev.source || undefined}
                 data-unit-label={ev.unitLabel || undefined}
                 className="ops-cleaning-cal__task ops-cleaning-cal__task--checkin"
               >
@@ -673,6 +772,13 @@ export default function OpsCleaningCalendar() {
                 <p className="ops-cleaning-cal__task-meta">
                   <Clock className="h-3.5 w-3.5" aria-hidden="true" />
                   <span>Check-in: {formatTime(ev.checkinTime)}</span>
+                  {ev.arrivingGuest?.name ? (
+                    <span>
+                      {' '}
+                      · {ev.arrivingGuest.name}
+                      {ev.arrivingGuest.source === 'airbnb' ? ' · Airbnb' : ''}
+                    </span>
+                  ) : null}
                 </p>
                 {ev.cleaningNotes ? <NoteBox text={ev.cleaningNotes} /> : null}
               </div>

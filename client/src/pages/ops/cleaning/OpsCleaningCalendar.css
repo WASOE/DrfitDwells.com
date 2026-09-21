@@ -436,6 +436,47 @@
   min-width: 0;
 }
 
+.ops-cleaning-cal__task-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ops-space-8);
+  min-width: 0;
+}
+
+.ops-cleaning-cal__turnovers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-4);
+  min-width: 0;
+}
+
+.ops-cleaning-cal__turnover {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--ops-size-small);
+  line-height: var(--ops-lh-small);
+  color: var(--ops-text);
+  overflow-wrap: anywhere;
+}
+
+.ops-cleaning-cal__turnover-label {
+  font-size: var(--ops-size-meta);
+  line-height: var(--ops-lh-meta);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ops-text-muted);
+}
+
+.ops-cleaning-cal__source {
+  color: var(--ops-text-muted);
+}
+
 .ops-cleaning-cal__task-title {
   margin: 0;
   min-width: 0;
@@ -524,6 +565,9 @@
 
 .ops-cleaning-cal__task-action {
   margin-top: var(--ops-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-8);
 }
 
 .ops-cleaning-cal__task-action .ops-button {

@@ -1,13 +1,16 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const Booking = require('../../../models/Booking');
 const CleaningRecord = require('../../../models/CleaningRecord');
 const CleaningPayment = require('../../../models/CleaningPayment');
+const AvailabilityBlock = require('../../../models/AvailabilityBlock');
 const {
   getCleaningSchedule,
   getCleaningPaymentSummary,
   getGlobalPayoutSummary
 } = require('../../../services/ops/readModels/cleaningReadModel');
 const { calculateForMarkPaid } = require('../../../services/ops/cleaning/cleaningPricingService');
+const { isExternalHoldEligibleForCleaning } = require('../../../services/ops/cleaning/airbnbStayClassifier');
 const {
   getPricingPolicySettings,
   updatePricingPolicyRules
@@ -58,6 +61,110 @@ function resolveActorId(req) {
     return String(role).trim();
   }
   return 'unknown';
+}
+
+/**
+ * Parse schedule taskId. Accepts legacy bare booking ObjectId or `ext:{blockId}`.
+ * @returns {{ sourceKind: 'booking'|'external_hold', sourceId: string } | null}
+ */
+function parseCleaningTaskId(taskId) {
+  const raw = String(taskId || '').trim();
+  if (!raw) return null;
+  if (raw.startsWith('ext:')) {
+    const sourceId = raw.slice(4);
+    if (!mongoose.Types.ObjectId.isValid(sourceId)) return null;
+    return { sourceKind: 'external_hold', sourceId };
+  }
+  if (!mongoose.Types.ObjectId.isValid(raw)) return null;
+  return { sourceKind: 'booking', sourceId: raw };
+}
+
+/**
+ * Find-or-create CleaningRecord for a source-neutral task on a Sofia day.
+ */
+async function findOrCreateCleaningRecordForTask(parsed, sofiaStart) {
+  const { sourceKind, sourceId } = parsed;
+
+  let record = await CleaningRecord.findOne({
+    sourceKind,
+    sourceId,
+    cleaningDate: sofiaStart
+  });
+  if (!record && sourceKind === 'booking') {
+    record = await CleaningRecord.findOne({ bookingId: sourceId, cleaningDate: sofiaStart });
+  }
+  if (!record && sourceKind === 'external_hold') {
+    record = await CleaningRecord.findOne({
+      availabilityBlockId: sourceId,
+      cleaningDate: sofiaStart
+    });
+  }
+  if (record) {
+    // Backfill source fields for legacy booking rows.
+    if (!record.sourceKind) record.sourceKind = sourceKind;
+    if (!record.sourceId) record.sourceId = sourceId;
+    return record;
+  }
+
+  if (sourceKind === 'booking') {
+    const booking = await Booking.findById(sourceId).select('cabinId cabinTypeId unitId');
+    if (!booking) return null;
+    const insert = {
+      sourceKind: 'booking',
+      sourceId: String(booking._id),
+      bookingId: booking._id,
+      cabinId: booking.cabinId || null,
+      cabinTypeId: booking.cabinTypeId || null,
+      unitId: booking.unitId || null,
+      cleaningDate: sofiaStart,
+      paymentStatus: 'unpaid'
+    };
+    try {
+      return await CleaningRecord.create(insert);
+    } catch (error) {
+      if (error?.code === 11000) {
+        return CleaningRecord.findOne({
+          $or: [
+            { sourceKind: 'booking', sourceId: String(booking._id), cleaningDate: sofiaStart },
+            { bookingId: booking._id, cleaningDate: sofiaStart }
+          ]
+        });
+      }
+      throw error;
+    }
+  }
+
+  const block = await AvailabilityBlock.findById(sourceId)
+    .select('cabinId unitId sourceReference blockType source status metadata')
+    .lean();
+  if (!block || !isExternalHoldEligibleForCleaning(block)) return null;
+  if (!block.cabinId) return null;
+
+  const insert = {
+    sourceKind: 'external_hold',
+    sourceId: String(block._id),
+    bookingId: null,
+    availabilityBlockId: block._id,
+    sourceReference: block.sourceReference || null,
+    cabinId: block.cabinId,
+    cabinTypeId: null,
+    unitId: block.unitId || null,
+    cleaningDate: sofiaStart,
+    paymentStatus: 'unpaid'
+  };
+  try {
+    return await CleaningRecord.create(insert);
+  } catch (error) {
+    if (error?.code === 11000) {
+      return CleaningRecord.findOne({
+        $or: [
+          { sourceKind: 'external_hold', sourceId: String(block._id), cleaningDate: sofiaStart },
+          { availabilityBlockId: block._id, cleaningDate: sofiaStart }
+        ]
+      });
+    }
+    throw error;
+  }
 }
 
 // GET /api/ops/cleaning/schedule?date=ISO&propertyKind=cabin|valley
@@ -111,85 +218,128 @@ router.get('/payment-summary', async (req, res) => {
   }
 });
 
-/**
- * Find-or-create the CleaningRecord for a booking on a Sofia day.
- * Uses exact cleaningDate + unique index for idempotent, race-safe upsert.
- */
-async function findOrCreateCleaningRecord(bookingId, sofiaStart) {
-  let record = await CleaningRecord.findOne({ bookingId, cleaningDate: sofiaStart });
-  if (record) return record;
-
-  const booking = await Booking.findById(bookingId).select('cabinId cabinTypeId unitId');
-  if (!booking) return null;
-
-  const insert = {
-    bookingId,
-    cabinId: booking.cabinId || null,
-    cabinTypeId: booking.cabinTypeId || null,
-    unitId: booking.unitId || null,
-    cleaningDate: sofiaStart
+function cleaningRecordResponse(record) {
+  return {
+    cleaningRecordId: String(record._id),
+    status: record.status,
+    paymentStatus: record.paymentStatus || 'unpaid',
+    sourceKind: record.sourceKind,
+    sourceId: record.sourceId,
+    taskId:
+      record.sourceKind === 'external_hold' ? `ext:${record.sourceId}` : String(record.sourceId)
   };
-
-  try {
-    record = await CleaningRecord.create(insert);
-    return record;
-  } catch (error) {
-    if (error?.code === 11000) {
-      return CleaningRecord.findOne({ bookingId, cleaningDate: sofiaStart });
-    }
-    throw error;
-  }
 }
 
-// POST /api/ops/cleaning/records/:bookingId/mark-cleaned  body: { cleaningDate }
-router.post('/records/:bookingId/mark-cleaned', async (req, res) => {
+// POST /api/ops/cleaning/records/:taskId/mark-cleaned  body: { cleaningDate }
+// taskId = booking ObjectId (legacy) or ext:{availabilityBlockId}
+router.post('/records/:taskId/mark-cleaned', async (req, res) => {
   try {
     requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_MARK_CLEANED });
-    const { bookingId } = req.params;
+    const parsed = parseCleaningTaskId(req.params.taskId);
+    if (!parsed) {
+      return res.status(400).json({ success: false, message: 'Invalid cleaning task id.' });
+    }
     const { cleaningDate } = req.body || {};
     if (!isValidDateInput(cleaningDate)) {
       return res.status(400).json({ success: false, message: 'A valid cleaningDate is required.' });
     }
     const sofiaStart = normalizeDateToSofiaDayStart(cleaningDate);
-    const record = await findOrCreateCleaningRecord(bookingId, sofiaStart);
+    const record = await findOrCreateCleaningRecordForTask(parsed, sofiaStart);
     if (!record) {
-      return res.status(404).json({ success: false, message: 'Booking not found.' });
+      return res.status(404).json({ success: false, message: 'Cleaning task source not found.' });
     }
     record.status = 'cleaned';
     record.markedCleanedAt = new Date();
     record.markedCleanedBy = resolveActorId(req);
     await record.save();
-    return res.json({ success: true, data: { cleaningRecordId: String(record._id), status: record.status } });
+    return res.json({ success: true, data: cleaningRecordResponse(record) });
   } catch (error) {
     return handleRouteError(error, res);
   }
 });
 
-// POST /api/ops/cleaning/records/:bookingId/unmark-cleaned  body: { cleaningDate }
-router.post('/records/:bookingId/unmark-cleaned', async (req, res) => {
+// POST /api/ops/cleaning/records/:taskId/unmark-cleaned  body: { cleaningDate }
+router.post('/records/:taskId/unmark-cleaned', async (req, res) => {
   try {
     requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_MARK_CLEANED });
-    const { bookingId } = req.params;
+    const parsed = parseCleaningTaskId(req.params.taskId);
+    if (!parsed) {
+      return res.status(400).json({ success: false, message: 'Invalid cleaning task id.' });
+    }
     const { cleaningDate } = req.body || {};
     if (!isValidDateInput(cleaningDate)) {
       return res.status(400).json({ success: false, message: 'A valid cleaningDate is required.' });
     }
     const sofiaStart = normalizeDateToSofiaDayStart(cleaningDate);
-    const record = await findOrCreateCleaningRecord(bookingId, sofiaStart);
+    const record = await findOrCreateCleaningRecordForTask(parsed, sofiaStart);
     if (!record) {
-      return res.status(404).json({ success: false, message: 'Booking not found.' });
+      return res.status(404).json({ success: false, message: 'Cleaning task source not found.' });
     }
     record.status = 'pending';
     record.markedCleanedAt = null;
     record.markedCleanedBy = null;
     await record.save();
-    return res.json({ success: true, data: { cleaningRecordId: String(record._id), status: record.status } });
+    return res.json({ success: true, data: cleaningRecordResponse(record) });
   } catch (error) {
     return handleRouteError(error, res);
   }
 });
 
-/** Find-or-create the per (date, propertyKind) CleaningPayment row. */
+// POST /api/ops/cleaning/records/:taskId/mark-task-paid  body: { cleaningDate }
+// Task-level payment — independent of cleaned status. Admin payment_write only.
+router.post('/records/:taskId/mark-task-paid', async (req, res) => {
+  try {
+    requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_PAYMENT_WRITE });
+    const parsed = parseCleaningTaskId(req.params.taskId);
+    if (!parsed) {
+      return res.status(400).json({ success: false, message: 'Invalid cleaning task id.' });
+    }
+    const { cleaningDate } = req.body || {};
+    if (!isValidDateInput(cleaningDate)) {
+      return res.status(400).json({ success: false, message: 'A valid cleaningDate is required.' });
+    }
+    const sofiaStart = normalizeDateToSofiaDayStart(cleaningDate);
+    const record = await findOrCreateCleaningRecordForTask(parsed, sofiaStart);
+    if (!record) {
+      return res.status(404).json({ success: false, message: 'Cleaning task source not found.' });
+    }
+    record.paymentStatus = 'paid';
+    record.markedPaidAt = new Date();
+    record.markedPaidBy = resolveActorId(req);
+    await record.save();
+    return res.json({ success: true, data: cleaningRecordResponse(record) });
+  } catch (error) {
+    return handleRouteError(error, res);
+  }
+});
+
+router.post('/records/:taskId/unmark-task-paid', async (req, res) => {
+  try {
+    requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_PAYMENT_WRITE });
+    const parsed = parseCleaningTaskId(req.params.taskId);
+    if (!parsed) {
+      return res.status(400).json({ success: false, message: 'Invalid cleaning task id.' });
+    }
+    const { cleaningDate } = req.body || {};
+    if (!isValidDateInput(cleaningDate)) {
+      return res.status(400).json({ success: false, message: 'A valid cleaningDate is required.' });
+    }
+    const sofiaStart = normalizeDateToSofiaDayStart(cleaningDate);
+    const record = await findOrCreateCleaningRecordForTask(parsed, sofiaStart);
+    if (!record) {
+      return res.status(404).json({ success: false, message: 'Cleaning task source not found.' });
+    }
+    record.paymentStatus = 'unpaid';
+    record.markedPaidAt = null;
+    record.markedPaidBy = null;
+    await record.save();
+    return res.json({ success: true, data: cleaningRecordResponse(record) });
+  } catch (error) {
+    return handleRouteError(error, res);
+  }
+});
+
+/** Find-or-create the per (date, propertyKind) CleaningPayment row (daily fee settlement). */
 async function findOrCreateCleaningPayment(sofiaStart, propertyKind, totalAmount) {
   let payment = await CleaningPayment.findOne({ date: sofiaStart, propertyKind });
   if (!payment) {

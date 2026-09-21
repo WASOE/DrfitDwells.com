@@ -1,8 +1,15 @@
 {
-  "status.cleaning.pending": "Pending",
-  "status.cleaning.done": "Done",
+  "status.cleaning.pending": "Needs cleaning",
+  "status.cleaning.done": "Cleaned",
   "status.cleaning.same_day_turn": "Same-day turn",
-  "status.cleaning_payment.pending": "Pending",
+  "status.cleaning_payment.pending": "Unpaid",
   "status.cleaning_payment.partial": "Partial",
-  "status.cleaning_payment.paid": "Paid"
+  "status.cleaning_payment.paid": "Paid",
+  "cleaning.leaving": "Leaving",
+  "cleaning.arriving": "Arriving",
+  "cleaning.no_upcoming_arrival": "No upcoming arrival",
+  "cleaning.mark_cleaned": "Mark cleaned",
+  "cleaning.unmark_cleaned": "Unmark cleaned",
+  "cleaning.source.airbnb": "Airbnb",
+  "cleaning.source.direct": "Direct"
 }

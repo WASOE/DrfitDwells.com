@@ -2,7 +2,14 @@
   "status.cleaning.pending": "За почистване",
   "status.cleaning.done": "Почистено",
   "status.cleaning.same_day_turn": "Смяна в същия ден",
-  "status.cleaning_payment.pending": "За плащане",
+  "status.cleaning_payment.pending": "Неплатено",
   "status.cleaning_payment.partial": "Частично платено",
-  "status.cleaning_payment.paid": "Платено"
+  "status.cleaning_payment.paid": "Платено",
+  "cleaning.leaving": "Напуска",
+  "cleaning.arriving": "Пристига",
+  "cleaning.no_upcoming_arrival": "Няма предстоящо пристигане",
+  "cleaning.mark_cleaned": "Маркирай почистено",
+  "cleaning.unmark_cleaned": "Премахни почистено",
+  "cleaning.source.airbnb": "Airbnb",
+  "cleaning.source.direct": "Директна"
 }

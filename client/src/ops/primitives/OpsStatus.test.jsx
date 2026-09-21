@@ -22,7 +22,7 @@ describe('OpsStatus', () => {
 
   it('resolves domain and backend value', () => {
     renderStatus(<OpsStatus domain="cleaning" value="pending" />);
-    expect(screen.getByText('Pending')).toHaveClass('ops-status--warning');
+    expect(screen.getByText('Needs cleaning')).toHaveClass('ops-status--warning');
   });
 
   it('resolves commission void to Voided', () => {
@@ -44,7 +44,7 @@ describe('OpsStatus', () => {
       role: 'admin',
       locale: 'bg'
     });
-    expect(screen.getByText('Pending')).toBeInTheDocument();
+    expect(screen.getByText('Needs cleaning')).toBeInTheDocument();
     expect(screen.queryByText('За почистване')).not.toBeInTheDocument();
   });
 

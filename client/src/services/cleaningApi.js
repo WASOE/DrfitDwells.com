@@ -32,17 +32,33 @@ export function getCleaningPayoutSummary({ date }) {
   });
 }
 
-export function markCleaned(bookingId, cleaningDate) {
+export function markCleaned(taskId, cleaningDate) {
   return api.post(
-    `/ops/cleaning/records/${bookingId}/mark-cleaned`,
+    `/ops/cleaning/records/${encodeURIComponent(taskId)}/mark-cleaned`,
     { cleaningDate },
     { headers: authHeaders() }
   );
 }
 
-export function unmarkCleaned(bookingId, cleaningDate) {
+export function unmarkCleaned(taskId, cleaningDate) {
   return api.post(
-    `/ops/cleaning/records/${bookingId}/unmark-cleaned`,
+    `/ops/cleaning/records/${encodeURIComponent(taskId)}/unmark-cleaned`,
+    { cleaningDate },
+    { headers: authHeaders() }
+  );
+}
+
+export function markTaskPaid(taskId, cleaningDate) {
+  return api.post(
+    `/ops/cleaning/records/${encodeURIComponent(taskId)}/mark-task-paid`,
+    { cleaningDate },
+    { headers: authHeaders() }
+  );
+}
+
+export function unmarkTaskPaid(taskId, cleaningDate) {
+  return api.post(
+    `/ops/cleaning/records/${encodeURIComponent(taskId)}/unmark-task-paid`,
     { cleaningDate },
     { headers: authHeaders() }
   );
@@ -102,6 +118,8 @@ export default {
   getCleaningPaymentSummary,
   markCleaned,
   unmarkCleaned,
+  markTaskPaid,
+  unmarkTaskPaid,
   markPaid,
   unmarkPaid,
   getPricingPolicy,
