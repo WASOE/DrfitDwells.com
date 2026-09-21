@@ -1,3 +1,4 @@
+/* eslint-env node */
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -52,6 +53,16 @@ function normalizePath(p) {
   }
 }
 
+/**
+ * Production source files only. Test/spec fixtures must not feed asset validation.
+ * Matches: *.js|jsx|ts|tsx, excluding *.test.* and *.spec.* variants.
+ */
+export function isProductionSourceFile(filename) {
+  if (!/\.(js|jsx|ts|tsx)$/.test(filename)) return false;
+  if (/\.(test|spec)\.(js|jsx|ts|tsx)$/.test(filename)) return false;
+  return true;
+}
+
 function* walkJsFiles(dir) {
   if (!fs.existsSync(dir)) return;
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -59,7 +70,7 @@ function* walkJsFiles(dir) {
     const full = path.join(dir, e.name);
     if (e.isDirectory()) {
       yield* walkJsFiles(full);
-    } else if (/\.(js|jsx|ts|tsx)$/.test(e.name)) {
+    } else if (isProductionSourceFile(e.name)) {
       yield full;
     }
   }
@@ -88,7 +99,7 @@ async function main() {
   // path (normalized) -> Set of source file paths (relative to repo)
   const pathToSources = new Map();
 
-  // 1. Scan all client/src/**/*.{js,jsx,ts,tsx}
+  // 1. Scan production client/src sources only (skip *.test.* / *.spec.*)
   for (const absPath of walkJsFiles(clientSrc)) {
     const content = fs.readFileSync(absPath, 'utf8');
     const paths = extractPathsFromContent(content);
@@ -152,4 +163,8 @@ async function main() {
   console.log('[validate-media-assets] All referenced /uploads/ assets exist on disk.');
 }
 
-main();
+const isCli =
+  process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+if (isCli) {
+  main();
+}
