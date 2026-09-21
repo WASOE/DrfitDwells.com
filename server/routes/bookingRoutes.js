@@ -1535,10 +1535,18 @@ router.post('/', bookingCreateLimiter, [
       parentCabinForUnit = await findParentCabinForCabinType(cabinTypeId);
     }
 
-    // Price + promo via bookingQuoteService (must match PI if paymentIntentId provided)
+    // Price + promo via bookingQuoteService (must match PI if paymentIntentId provided).
+    // `quote` must remain in enclosing scope for verifyPaymentIntentPromoMetadata below.
     const entity = cabin || cabinType;
     const experienceKeys = Array.isArray(req.body.experienceKeys) ? req.body.experienceKeys : [];
-    const quote = await bookingQuoteService.computeQuoteFromEntity(
+    let quote;
+    let subtotalPrice;
+    let discountAmount;
+    let totalPrice;
+    let promoSnapshot;
+    let appliedPromoCode;
+
+    quote = await bookingQuoteService.computeQuoteFromEntity(
       entity,
       checkInDate,
       checkOutDate,
@@ -1549,7 +1557,11 @@ router.post('/', bookingCreateLimiter, [
       req.body.romanticSetup,
       req.body.promoCode
     );
-    const { subtotalPrice, discountAmount, totalPrice, promoSnapshot, appliedPromoCode } = quote;
+    subtotalPrice = quote.subtotalPrice;
+    discountAmount = quote.discountAmount;
+    totalPrice = quote.totalPrice;
+    promoSnapshot = quote.promoSnapshot;
+    appliedPromoCode = quote.appliedPromoCode;
 
     if (appliedPromoCode) {
       const pv = await promoService.resolvePromoDocument(appliedPromoCode);

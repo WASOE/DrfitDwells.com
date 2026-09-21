@@ -693,8 +693,503 @@ async function releaseStayChangeTargetClaims({
   };
 }
 
+// ---------------------------------------------------------------------------
+// B8F1A — thin checkout lease wrappers over shared engine
+// ---------------------------------------------------------------------------
+
+const { createCheckoutNightLeaseClaimEngine } = require('./checkoutNightLeaseClaimEngine');
+
+const unitCheckoutLeaseEngine = createCheckoutNightLeaseClaimEngine({
+  ClaimModel: UnitNightClaim,
+  resourceField: 'unitId',
+  assertAuthoritativeIndex: assertAuthoritativeUnitNightIndex,
+  errorPrefix: 'UNIT_CHECKOUT_CLAIM',
+  resolveOccupiedNightDates
+});
+
+const CHECKOUT_CLAIM_ERR = unitCheckoutLeaseEngine.ERR;
+
+async function acquireUnitCheckoutNights(opts = {}) {
+  return unitCheckoutLeaseEngine.acquireCheckoutNights({
+    ...opts,
+    resourceId: opts.unitId
+  });
+}
+
+async function compensateUnitCheckoutAcquisition(opts = {}) {
+  return unitCheckoutLeaseEngine.compensateAcquisition({
+    ...opts,
+    resourceId: opts.unitId != null ? opts.unitId : opts.resourceId
+  });
+}
+
+async function clearUnitCheckoutAcquisitionMarkers(opts = {}) {
+  return unitCheckoutLeaseEngine.clearAcquisitionMarkers(opts);
+}
+
+async function verifyUnitCheckoutLeaseNights(opts = {}) {
+  return unitCheckoutLeaseEngine.verifyLeaseNights({
+    ...opts,
+    resourceId: opts.unitId
+  });
+}
+
+async function releaseUnitCheckoutLeaseClaims(opts = {}) {
+  return unitCheckoutLeaseEngine.releaseLeaseClaims({
+    checkoutId: opts.checkoutId,
+    leaseId: opts.leaseId,
+    generation: opts.generation,
+    resourceId: opts.unitId != null ? opts.unitId : opts.resourceId,
+    session: opts.session || null,
+    // Pass through forbidden keys so engine fail-closes (do not strip silently).
+    AccommodationCheckoutLease: opts.AccommodationCheckoutLease,
+    LeaseModel: opts.LeaseModel,
+    HeaderModel: opts.HeaderModel,
+    leaseRepository: opts.leaseRepository,
+    header: opts.header,
+    leaseHeader: opts.leaseHeader,
+    headerExpiryAuthorized: opts.headerExpiryAuthorized
+  });
+}
+
+async function expireUnitCheckoutClaims(opts = {}) {
+  return unitCheckoutLeaseEngine.expireCheckoutClaims({
+    checkoutId: opts.checkoutId,
+    leaseId: opts.leaseId,
+    generation: opts.generation,
+    resourceId: opts.unitId != null ? opts.unitId : opts.resourceId,
+    session: opts.session || null,
+    now: opts.now,
+    AccommodationCheckoutLease: opts.AccommodationCheckoutLease,
+    LeaseModel: opts.LeaseModel,
+    HeaderModel: opts.HeaderModel,
+    leaseRepository: opts.leaseRepository,
+    header: opts.header,
+    leaseHeader: opts.leaseHeader,
+    headerExpiryAuthorized: opts.headerExpiryAuthorized
+  });
+}
+
+async function clearUnitSealedLeaseLeftoverMarkers(opts = {}) {
+  return unitCheckoutLeaseEngine.clearLeftoverMarkersForSealedLease(opts);
+}
+
+async function countUnitAcquisitionClaims(opts = {}) {
+  return unitCheckoutLeaseEngine.countAcquisitionClaims(opts);
+}
+
+// ---------------------------------------------------------------------------
+// B8F4A — exact irreversible in-place checkout → booking claim promotion
+// ---------------------------------------------------------------------------
+
+const PROMOTION_ERR = Object.freeze({
+  VALIDATION: 'UNIT_NIGHT_CLAIM_PROMOTION_VALIDATION',
+  IDENTITY: 'UNIT_NIGHT_CLAIM_PROMOTION_IDENTITY',
+  FOREIGN: 'UNIT_NIGHT_CLAIM_PROMOTION_FOREIGN',
+  INCOMPLETE: 'UNIT_NIGHT_CLAIM_PROMOTION_INCOMPLETE'
+});
+
+function mapUnitPromotionClaimDto(row) {
+  return {
+    id: String(row._id),
+    unitId: String(row.unitId),
+    night: dateOnlyFromNightDate(row.night),
+    ownerType: row.ownerType || 'booking',
+    bookingId: row.bookingId != null ? String(row.bookingId) : null,
+    checkoutId: row.checkoutId != null ? String(row.checkoutId) : null,
+    leaseId: row.leaseId != null ? String(row.leaseId) : null,
+    acquisitionId: row.acquisitionId != null ? String(row.acquisitionId) : null,
+    expiresAt: row.expiresAt ? new Date(row.expiresAt).toISOString() : null,
+    source: row.source,
+    convertedFromCheckoutId:
+      row.convertedFromCheckoutId != null ? String(row.convertedFromCheckoutId) : null,
+    convertedFromLeaseId: row.convertedFromLeaseId != null ? String(row.convertedFromLeaseId) : null,
+    convertedFromGeneration:
+      row.convertedFromGeneration != null ? Number(row.convertedFromGeneration) : null,
+    convertedFromAttemptId:
+      row.convertedFromAttemptId != null ? String(row.convertedFromAttemptId) : null,
+    convertedFromQuoteSnapshotHash:
+      row.convertedFromQuoteSnapshotHash != null
+        ? String(row.convertedFromQuoteSnapshotHash)
+        : null,
+    convertedAt: row.convertedAt ? new Date(row.convertedAt).toISOString() : null
+  };
+}
+
+function normalizePromotionProvenance(provenance = {}) {
+  const checkoutId = String(provenance.checkoutId || '').trim();
+  const leaseId = String(provenance.leaseId || '').trim();
+  const attemptId = String(provenance.attemptId || '').trim();
+  const quoteSnapshotHash = String(provenance.quoteSnapshotHash || '').trim();
+  const generation = Number(provenance.generation);
+  if (!checkoutId || !leaseId || !attemptId || !quoteSnapshotHash) {
+    throw createClaimError(
+      PROMOTION_ERR.VALIDATION,
+      'checkoutId, leaseId, attemptId, and quoteSnapshotHash are required for promotion provenance'
+    );
+  }
+  if (!Number.isInteger(generation) || generation < 1) {
+    throw createClaimError(PROMOTION_ERR.VALIDATION, 'generation must be a positive integer', {
+      generation: provenance.generation
+    });
+  }
+  return { checkoutId, leaseId, attemptId, quoteSnapshotHash, generation };
+}
+
+function rowMatchesExactUnitConversionProvenance(row, provenance, bookingOid) {
+  if (!row || row.ownerType === 'checkout') return false;
+  if (String(row.bookingId) !== String(bookingOid)) return false;
+  if (String(row.convertedFromCheckoutId || '') !== provenance.checkoutId) return false;
+  if (String(row.convertedFromLeaseId || '') !== provenance.leaseId) return false;
+  if (Number(row.convertedFromGeneration) !== Number(provenance.generation)) return false;
+  if (String(row.convertedFromAttemptId || '') !== provenance.attemptId) return false;
+  if (String(row.convertedFromQuoteSnapshotHash || '') !== provenance.quoteSnapshotHash) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Complete-set preflight: every expected night is exact checkout source or exact
+ * target Booking destination with conversion provenance. Extra lease nights fail.
+ */
+async function preflightUnitPromotionNightSet({
+  unitOid,
+  bookingOid,
+  nightDates,
+  provenance,
+  session = null
+}) {
+  const expectedKeys = nightDates.map(dateOnlyFromNightDate);
+  const expectedKeySet = new Set(expectedKeys);
+
+  const rangeRows = await UnitNightClaim.find({
+    unitId: unitOid,
+    night: { $in: nightDates }
+  })
+    .session(session || null)
+    .lean();
+
+  const leaseExtra = await UnitNightClaim.find({
+    ownerType: 'checkout',
+    checkoutId: provenance.checkoutId,
+    leaseId: provenance.leaseId,
+    unitId: unitOid,
+    night: { $nin: nightDates }
+  })
+    .session(session || null)
+    .lean();
+  if (leaseExtra.length > 0) {
+    throw createClaimError(
+      PROMOTION_ERR.IDENTITY,
+      'Lease owns night(s) outside the expected stay range',
+      {
+        unitId: String(unitOid),
+        leaseId: provenance.leaseId,
+        extraNights: leaseExtra.map((r) => dateOnlyFromNightDate(r.night))
+      }
+    );
+  }
+
+  if (rangeRows.length !== nightDates.length) {
+    throw createClaimError(PROMOTION_ERR.INCOMPLETE, 'Expected unit-night set is incomplete or duplicated', {
+      unitId: String(unitOid),
+      expectedNightCount: nightDates.length,
+      foundNightCount: rangeRows.length
+    });
+  }
+
+  const byNight = new Map();
+  for (const row of rangeRows) {
+    const key = dateOnlyFromNightDate(row.night);
+    if (byNight.has(key)) {
+      throw createClaimError(PROMOTION_ERR.IDENTITY, 'Duplicate unit-night rows for expected night', {
+        unitId: String(unitOid),
+        night: key
+      });
+    }
+    byNight.set(key, row);
+  }
+
+  const classified = [];
+  for (const key of expectedKeys) {
+    const row = byNight.get(key);
+    if (!row) {
+      throw createClaimError(PROMOTION_ERR.IDENTITY, 'Expected unit-night claim is missing', {
+        unitId: String(unitOid),
+        night: key,
+        checkoutId: provenance.checkoutId,
+        leaseId: provenance.leaseId
+      });
+    }
+    if (row.ownerType === 'checkout') {
+      if (
+        String(row.checkoutId || '') !== provenance.checkoutId ||
+        String(row.leaseId || '') !== provenance.leaseId
+      ) {
+        throw createClaimError(PROMOTION_ERR.FOREIGN, 'Expected night owned by a foreign checkout lease', {
+          unitId: String(unitOid),
+          night: key,
+          claimId: String(row._id),
+          holderCheckoutId: row.checkoutId != null ? String(row.checkoutId) : null,
+          holderLeaseId: row.leaseId != null ? String(row.leaseId) : null
+        });
+      }
+      if (row.bookingId != null || String(row.source || '') !== 'checkout_lease') {
+        throw createClaimError(PROMOTION_ERR.IDENTITY, 'Checkout source row has invalid identity', {
+          unitId: String(unitOid),
+          night: key,
+          claimId: String(row._id)
+        });
+      }
+      classified.push({ kind: 'checkout_source', row, nightKey: key });
+      continue;
+    }
+    if (rowMatchesExactUnitConversionProvenance(row, provenance, bookingOid)) {
+      classified.push({ kind: 'exact_destination', row, nightKey: key });
+      continue;
+    }
+    throw createClaimError(PROMOTION_ERR.FOREIGN, 'Expected night owned by incompatible booking state', {
+      unitId: String(unitOid),
+      night: key,
+      claimId: String(row._id),
+      holderBookingId: row.bookingId != null ? String(row.bookingId) : null,
+      expectedBookingId: String(bookingOid)
+    });
+  }
+
+  return { classified, expectedKeys, expectedKeySet };
+}
+
+async function assertExactUnitBookingPromotionDestination({
+  unitOid,
+  bookingOid,
+  nightDates,
+  provenance,
+  session = null
+}) {
+  const rows = await UnitNightClaim.find({
+    unitId: unitOid,
+    night: { $in: nightDates }
+  })
+    .session(session || null)
+    .lean();
+
+  if (rows.length !== nightDates.length) {
+    throw createClaimError(PROMOTION_ERR.INCOMPLETE, 'Promoted unit-night set count mismatch', {
+      unitId: String(unitOid),
+      bookingId: String(bookingOid),
+      expectedNightCount: nightDates.length,
+      foundNightCount: rows.length
+    });
+  }
+
+  const byNight = new Map(rows.map((r) => [dateOnlyFromNightDate(r.night), r]));
+  for (const nd of nightDates) {
+    const key = dateOnlyFromNightDate(nd);
+    const row = byNight.get(key);
+    if (!row || row.ownerType === 'checkout') {
+      throw createClaimError(
+        PROMOTION_ERR.INCOMPLETE,
+        'Expected unit-night remains checkout-owned after promotion',
+        { unitId: String(unitOid), bookingId: String(bookingOid), night: key }
+      );
+    }
+    if (!rowMatchesExactUnitConversionProvenance(row, provenance, bookingOid)) {
+      throw createClaimError(
+        PROMOTION_ERR.FOREIGN,
+        'Promoted unit-night lacks exact conversion provenance',
+        {
+          unitId: String(unitOid),
+          night: key,
+          claimId: String(row._id),
+          holderBookingId: row.bookingId != null ? String(row.bookingId) : null
+        }
+      );
+    }
+    if (
+      (row.checkoutId != null && String(row.checkoutId).trim() !== '') ||
+      (row.leaseId != null && String(row.leaseId).trim() !== '') ||
+      (row.acquisitionId != null && String(row.acquisitionId).trim() !== '') ||
+      row.expiresAt != null
+    ) {
+      throw createClaimError(PROMOTION_ERR.IDENTITY, 'Booking-owned unit claim retains checkout fields', {
+        unitId: String(unitOid),
+        night: key,
+        claimId: String(row._id)
+      });
+    }
+  }
+
+  const leaseExtra = await UnitNightClaim.countDocuments({
+    ownerType: 'checkout',
+    checkoutId: provenance.checkoutId,
+    leaseId: provenance.leaseId,
+    unitId: unitOid
+  }).session(session || null);
+  if (leaseExtra > 0) {
+    throw createClaimError(
+      PROMOTION_ERR.INCOMPLETE,
+      'Checkout-owned lease nights remain after promotion',
+      { unitId: String(unitOid), leaseId: provenance.leaseId, remaining: leaseExtra }
+    );
+  }
+
+  return rows.map(mapUnitPromotionClaimDto);
+}
+
+/**
+ * Promote exact checkout-owned unit-night claims in place to booking ownership.
+ * Irreversible. Idempotent only for exact target Booking + conversion provenance.
+ */
+async function promoteUnitCheckoutClaimsToBooking({
+  unitId,
+  checkoutId,
+  leaseId,
+  bookingId,
+  generation,
+  attemptId,
+  quoteSnapshotHash,
+  checkIn = null,
+  checkOut = null,
+  nights = null,
+  skipIndexAssert = false,
+  session = null,
+  onAfterClaimPromoted = null
+} = {}) {
+  if (!skipIndexAssert) {
+    await assertAuthoritativeUnitNightIndex();
+  }
+
+  const unitOid = toObjectId(unitId, 'unitId');
+  const bookingOid = toObjectId(bookingId, 'bookingId');
+  const provenance = normalizePromotionProvenance({
+    checkoutId,
+    leaseId,
+    generation,
+    attemptId,
+    quoteSnapshotHash
+  });
+
+  const nightDates = resolveOccupiedNightDates({ checkIn, checkOut, nights });
+  if (nightDates.length === 0) {
+    throw createClaimError(PROMOTION_ERR.VALIDATION, 'At least one night is required for promotion');
+  }
+
+  const { classified } = await preflightUnitPromotionNightSet({
+    unitOid,
+    bookingOid,
+    nightDates,
+    provenance,
+    session
+  });
+
+  let promotedCount = 0;
+  let alreadyOwnedCount = 0;
+  const convertedAt = new Date();
+
+  for (const item of classified) {
+    if (item.kind === 'exact_destination') {
+      alreadyOwnedCount += 1;
+      continue;
+    }
+    const row = item.row;
+    const nightDate = row.night;
+    const nightKey = item.nightKey;
+
+    const updated = await UnitNightClaim.findOneAndUpdate(
+      {
+        _id: row._id,
+        unitId: unitOid,
+        night: nightDate,
+        ownerType: 'checkout',
+        checkoutId: provenance.checkoutId,
+        leaseId: provenance.leaseId,
+        bookingId: null,
+        source: 'checkout_lease'
+      },
+      {
+        $set: {
+          ownerType: 'booking',
+          bookingId: bookingOid,
+          checkoutId: null,
+          leaseId: null,
+          acquisitionId: null,
+          expiresAt: null,
+          source: 'checkout_lease',
+          convertedFromCheckoutId: provenance.checkoutId,
+          convertedFromLeaseId: provenance.leaseId,
+          convertedFromGeneration: provenance.generation,
+          convertedFromAttemptId: provenance.attemptId,
+          convertedFromQuoteSnapshotHash: provenance.quoteSnapshotHash,
+          convertedAt
+        }
+      },
+      { new: true, ...sessionOpts(session) }
+    );
+
+    if (!updated) {
+      const after = await UnitNightClaim.findOne({ unitId: unitOid, night: nightDate })
+        .session(session || null)
+        .lean();
+      if (after && rowMatchesExactUnitConversionProvenance(after, provenance, bookingOid)) {
+        alreadyOwnedCount += 1;
+        continue;
+      }
+      throw createClaimError(
+        PROMOTION_ERR.FOREIGN,
+        'Concurrent promotion claimed unit-night for another owner',
+        {
+          unitId: String(unitOid),
+          night: nightKey,
+          claimId: after && after._id != null ? String(after._id) : String(row._id),
+          holderBookingId: after && after.bookingId != null ? String(after.bookingId) : null,
+          expectedBookingId: String(bookingOid)
+        }
+      );
+    }
+
+    promotedCount += 1;
+    if (typeof onAfterClaimPromoted === 'function') {
+      await onAfterClaimPromoted({
+        claimId: String(updated._id),
+        night: nightKey,
+        promotedCount,
+        unitId: String(unitOid),
+        bookingId: String(bookingOid)
+      });
+    }
+  }
+
+  const claims = await assertExactUnitBookingPromotionDestination({
+    unitOid,
+    bookingOid,
+    nightDates,
+    provenance,
+    session
+  });
+
+  return {
+    ok: true,
+    unitId: String(unitOid),
+    bookingId: String(bookingOid),
+    checkoutId: provenance.checkoutId,
+    leaseId: provenance.leaseId,
+    generation: provenance.generation,
+    attemptId: provenance.attemptId,
+    quoteSnapshotHash: provenance.quoteSnapshotHash,
+    expectedNightCount: nightDates.length,
+    promotedCount,
+    alreadyOwnedCount,
+    claimIds: claims.map((c) => c.id),
+    claims
+  };
+}
+
 module.exports = {
   ERR,
+  CHECKOUT_CLAIM_ERR,
+  PROMOTION_ERR,
   claimUnitNights,
   releaseUnitNights,
   releaseStayChangeTargetClaims,
@@ -710,11 +1205,55 @@ module.exports = {
   createClaimError,
   isDuplicateKeyError,
   AUTHORITATIVE_UNIQUE_INDEX_SPEC,
+  isBookingOwnedClaim: unitCheckoutLeaseEngine.isBookingOwnedClaim,
+  isLiveCheckoutClaim: unitCheckoutLeaseEngine.isLiveCheckoutClaim,
+  isExpiredCheckoutClaim: unitCheckoutLeaseEngine.isExpiredCheckoutClaim,
+  acquireUnitCheckoutNights,
+  compensateUnitCheckoutAcquisition,
+  clearUnitCheckoutAcquisitionMarkers,
+  verifyUnitCheckoutLeaseNights,
+  releaseUnitCheckoutLeaseClaims,
+  expireUnitCheckoutClaims,
+  clearUnitSealedLeaseLeftoverMarkers,
+  countUnitAcquisitionClaims,
+  promoteUnitCheckoutClaimsToBooking,
+  preflightUnitCheckoutClaimsForPromotion: async function preflightUnitCheckoutClaimsForPromotion(
+    opts = {}
+  ) {
+    const unitOid = toObjectId(opts.unitId, 'unitId');
+    const bookingOid = toObjectId(opts.bookingId, 'bookingId');
+    const provenance = normalizePromotionProvenance(opts);
+    const nightDates = resolveOccupiedNightDates({
+      checkIn: opts.checkIn,
+      checkOut: opts.checkOut,
+      nights: opts.nights
+    });
+    if (nightDates.length === 0) {
+      throw createClaimError(PROMOTION_ERR.VALIDATION, 'At least one night is required for promotion');
+    }
+    return preflightUnitPromotionNightSet({
+      unitOid,
+      bookingOid,
+      nightDates,
+      provenance,
+      session: opts.session || null
+    });
+  },
   /** Test/helper: create exact authoritative unique index (idempotent). */
   async ensureAuthoritativeUniqueIndexForTests() {
     await UnitNightClaim.collection.createIndex(
       AUTHORITATIVE_UNIQUE_INDEX_SPEC.keys,
       { ...AUTHORITATIVE_UNIQUE_INDEX_SPEC.options }
     );
+  },
+  async ensureCheckoutLookupIndexesForTests() {
+    await UnitNightClaim.collection.createIndex({ checkoutId: 1, leaseId: 1 });
+    await UnitNightClaim.collection.createIndex({ leaseId: 1, acquisitionId: 1 });
+    await UnitNightClaim.collection.createIndex({ ownerType: 1, expiresAt: 1 });
+    await UnitNightClaim.collection.createIndex({
+      convertedFromCheckoutId: 1,
+      convertedFromLeaseId: 1
+    });
+    await UnitNightClaim.collection.createIndex({ bookingId: 1, convertedFromLeaseId: 1 });
   }
 };

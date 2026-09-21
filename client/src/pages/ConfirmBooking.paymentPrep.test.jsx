@@ -9,10 +9,10 @@ import {
   shouldRetryPaymentPreparation,
   shouldPersistFinalizeIntent,
   adoptCheckoutIdentityFromError,
-  resolveFinalizeIntentInvalidFocusTarget
+  resolveFinalizeIntentInvalidFocusTarget,
+  buildTermsConsentPlainText
 } from './ConfirmBooking';
 import {
-  LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
   LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
   LEGAL_ACCEPTANCE_TERMS_VERSION,
   LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION
@@ -45,13 +45,16 @@ describe('ConfirmBooking payment preparation helpers', () => {
     });
   });
 
-  it('23. legal acceptance snapshots use shared constants', () => {
+  it('23. legal acceptance snapshots use localized terms consent + shared activity-risk constant', () => {
     const payload = buildFinalizeIntentClientPayload({
       formData,
       selectedExpKeys: new Set(),
       language: 'en'
     });
-    expect(payload.legalAcceptance.checkbox1TextSnapshot).toBe(LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT);
+    expect(payload.legalAcceptance.checkbox1TextSnapshot).toBe(buildTermsConsentPlainText('en'));
+    expect(payload.legalAcceptance.checkbox1TextSnapshot).toBe(
+      'By completing your booking, you agree to our Terms and Cancellation Policy.'
+    );
     expect(payload.legalAcceptance.checkbox2TextSnapshot).toBe(LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT);
     expect(payload.legalAcceptance.termsVersion).toBe(LEGAL_ACCEPTANCE_TERMS_VERSION);
     expect(payload.legalAcceptance.activityRiskVersion).toBe(LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION);

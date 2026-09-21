@@ -49,6 +49,15 @@ const { openManualReviewItem } = require('../ops/ingestion/manualReviewService')
 const {
   recordPaidBookingResolutionIssueSafe
 } = require('../payments/paidBookingFinalizationObservability');
+const {
+  promoteAccommodationCheckoutHoldToBooking,
+  tombstonePromotedAccommodationCheckoutHold,
+  AccommodationCheckoutHoldError
+} = require('./accommodationCheckoutHoldService');
+const {
+  confirmExactFacilityHoldsForPaidCheckout,
+  assertQuoteLeaseFacilityConsistency
+} = require('../facilityBookingService');
 
 /** I4/I6 + S1.2: release shadow claims before canonical Booking delete. */
 async function shadowReleaseBeforeBookingDelete(deps, bookingId, lifecycleSource) {
@@ -1085,6 +1094,570 @@ async function confirmVoucherIfNeeded(deps, {
   }
 }
 
+
+function isLeaseAwareSessionLocal(session) {
+  const rl = session && session.resourceLease;
+  if (rl == null) return false;
+  return typeof rl === 'object';
+}
+
+function createLeaseWorkNeedsReviewError(code, message, details = {}) {
+  const err = new CheckoutSessionError(
+    CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_USABLE,
+    message,
+    details
+  );
+  err.code = code;
+  err.needsReview = true;
+  err.requiresManualReview = true;
+  return err;
+}
+
+function buildResourceFinalizationSnapshot({
+  session,
+  paymentAuthorityType,
+  paymentAuthorityMeta,
+  expectedFacilityReservationIds,
+  confirmedFacilityReservationIds
+}) {
+  const rl = session.resourceLease || {};
+  const acc = rl.accommodation || {};
+  const snap =
+    session.quoteSnapshot && typeof session.quoteSnapshot === 'object' ? session.quoteSnapshot : {};
+  return {
+    quoteSnapshotHash: session.quoteSnapshotHash != null ? String(session.quoteSnapshotHash) : null,
+    resourceLeaseGeneration: rl.generation != null ? Number(rl.generation) : null,
+    resourceLeaseAttemptId: rl.attemptId != null ? String(rl.attemptId) : null,
+    resourceLeaseValidUntil: rl.validUntil ? new Date(rl.validUntil) : null,
+    accommodationLeaseId: String(acc.leaseId || acc.holdId || ''),
+    accommodationLeaseGeneration:
+      acc.generation != null ? Number(acc.generation) : Number(rl.generation),
+    accommodationEntityType: acc.entityType != null ? String(acc.entityType) : null,
+    accommodationCabinId: acc.cabinId || null,
+    accommodationUnitId: acc.unitId || null,
+    canonicalPaymentIntentId:
+      (paymentAuthorityMeta && paymentAuthorityMeta.canonicalPaymentIntentId) ||
+      (session.canonicalPaymentIntentId != null ? String(session.canonicalPaymentIntentId) : null),
+    paymentAuthorityType: paymentAuthorityType || null,
+    voucherRedemptionId:
+      (paymentAuthorityMeta && paymentAuthorityMeta.voucherRedemptionId) ||
+      session.voucherRedemptionId ||
+      rl.voucherRedemptionId ||
+      null,
+    voucherOperationId:
+      (paymentAuthorityMeta && paymentAuthorityMeta.voucherOperationId) ||
+      (rl.voucherOperationId != null ? String(rl.voucherOperationId) : null),
+    expectedFacilityReservationIds: Array.isArray(expectedFacilityReservationIds)
+      ? expectedFacilityReservationIds.map(String)
+      : [],
+    confirmedFacilityReservationIds: Array.isArray(confirmedFacilityReservationIds)
+      ? confirmedFacilityReservationIds.map(String)
+      : [],
+    currency: 'EUR',
+    totalCents:
+      snap.totalCents != null
+        ? Number(snap.totalCents)
+        : session.stripeAmountCents != null
+          ? Number(session.stripeAmountCents) + Number(session.giftVoucherAppliedCents || 0)
+          : null,
+    giftVoucherAppliedCents:
+      session.giftVoucherAppliedCents != null ? Number(session.giftVoucherAppliedCents) : 0,
+    remainingDueCents: snap.remainingDueCents != null ? Number(snap.remainingDueCents) : null,
+    stripeAmountCents: session.stripeAmountCents != null ? Number(session.stripeAmountCents) : 0,
+    bookingType: snap.bookingType != null ? String(snap.bookingType) : null,
+    ratePlanCode:
+      snap.ratePlanCode != null
+        ? String(snap.ratePlanCode)
+        : snap.ratePlan && snap.ratePlan.code != null
+          ? String(snap.ratePlan.code)
+          : null,
+    ratePlanVersion:
+      snap.ratePlanVersion != null
+        ? String(snap.ratePlanVersion)
+        : snap.ratePlan && snap.ratePlan.version != null
+          ? String(snap.ratePlan.version)
+          : null,
+    packageDates: snap.packageDates || snap.fixedPackageDates || null,
+    packageInclusions: snap.packageInclusions || snap.inclusions || null,
+    // Commercial snapshot fields: quoteSnapshot only — never finalizeIntent / client body.
+    participants: snap.participants != null ? snap.participants : null,
+    facilitySelections: snap.facilitySelections != null ? snap.facilitySelections : null,
+    cancellationPolicy: snap.cancellationPolicySnapshot || snap.cancellationPolicy || null
+  };
+}
+
+/**
+ * Fail closed when quoteSnapshot indicates a package/rate-plan commercial shape
+ * but required immutable package fields are absent. Never copy from finalizeIntent.
+ */
+function assertImmutableQuoteCommercialSnapshot(session, { bookingId } = {}) {
+  const snap =
+    session && session.quoteSnapshot && typeof session.quoteSnapshot === 'object'
+      ? session.quoteSnapshot
+      : null;
+  if (!snap) {
+    throw createLeaseWorkNeedsReviewError(
+      'LEASE_FINALIZE_NEEDS_REVIEW',
+      'Lease-aware Booking requires immutable quoteSnapshot',
+      { stage: 'booking_persist', bookingId: bookingId || null, retryable: false }
+    );
+  }
+  const bookingType = snap.bookingType != null ? String(snap.bookingType).toLowerCase() : '';
+  const ratePlanType =
+    snap.ratePlan && snap.ratePlan.type != null ? String(snap.ratePlan.type).toLowerCase() : '';
+  const packageCode =
+    (snap.packageCode != null && String(snap.packageCode).trim()) ||
+    (snap.fixedPackageCode != null && String(snap.fixedPackageCode).trim()) ||
+    '';
+  const looksLikePackage =
+    bookingType.includes('package') ||
+    ratePlanType === 'fixed_package' ||
+    Boolean(packageCode) ||
+    snap.fixedPackage === true;
+  if (!looksLikePackage) return;
+  const packageDates = snap.packageDates || snap.fixedPackageDates || null;
+  const packageInclusions = snap.packageInclusions || snap.inclusions || null;
+  if (packageDates == null || packageInclusions == null) {
+    throw createLeaseWorkNeedsReviewError(
+      'LEASE_FINALIZE_NEEDS_REVIEW',
+      'Package commercial fields missing from immutable quoteSnapshot',
+      { stage: 'booking_persist', bookingId: bookingId || null, retryable: false }
+    );
+  }
+}
+
+async function saveLeaseAwareBookingWithoutVoucherRelease(deps, { bookingData, checkoutId, boundBookingId }) {
+  const existingById = await deps.Booking.findById(boundBookingId);
+  if (existingById) {
+    if (existingById.checkoutId && String(existingById.checkoutId) !== String(checkoutId)) {
+      throw createLeaseWorkNeedsReviewError(
+        'LEASE_FINALIZE_NEEDS_REVIEW',
+        'Bound Booking ID belongs to a different checkout',
+        { stage: 'booking_persist', bookingId: String(boundBookingId), retryable: false }
+      );
+    }
+    return { booking: existingById, isReplay: true };
+  }
+  const existingByCheckout = await deps.Booking.findOne({ checkoutId: String(checkoutId) });
+  if (existingByCheckout) {
+    if (String(existingByCheckout._id) !== String(boundBookingId)) {
+      throw createLeaseWorkNeedsReviewError(
+        'LEASE_FINALIZE_NEEDS_REVIEW',
+        'Checkout already has a Booking with a different ID',
+        {
+          stage: 'booking_persist',
+          bookingId: String(boundBookingId),
+          existingBookingId: String(existingByCheckout._id),
+          retryable: false
+        }
+      );
+    }
+    return { booking: existingByCheckout, isReplay: true };
+  }
+
+  const piId =
+    bookingData.stripePaymentIntentId != null
+      ? String(bookingData.stripePaymentIntentId).trim()
+      : '';
+  if (piId) {
+    const existingByPi = await deps.Booking.findOne({ stripePaymentIntentId: piId });
+    if (existingByPi) {
+      if (String(existingByPi._id) === String(boundBookingId)) {
+        return { booking: existingByPi, isReplay: true };
+      }
+      throw createLeaseWorkNeedsReviewError(
+        'LEASE_FINALIZE_NEEDS_REVIEW',
+        'PaymentIntent already used by a different Booking',
+        {
+          stage: 'booking_persist',
+          bookingId: String(boundBookingId),
+          existingBookingId: String(existingByPi._id),
+          retryable: false
+        }
+      );
+    }
+  }
+
+  try {
+    const booking = new deps.Booking(bookingData);
+    await booking.save();
+    return { booking, isReplay: false };
+  } catch (saveErr) {
+    if (saveErr && saveErr.code === 11000) {
+      const again =
+        (await deps.Booking.findById(boundBookingId)) ||
+        (await deps.Booking.findOne({ checkoutId: String(checkoutId) }));
+      if (again && String(again._id) === String(boundBookingId)) {
+        return { booking: again, isReplay: true };
+      }
+      if (piId) {
+        const byPi = await deps.Booking.findOne({ stripePaymentIntentId: piId });
+        if (byPi && String(byPi._id) === String(boundBookingId)) {
+          return { booking: byPi, isReplay: true };
+        }
+        if (byPi) {
+          throw createLeaseWorkNeedsReviewError(
+            'LEASE_FINALIZE_NEEDS_REVIEW',
+            'PaymentIntent already used by a different Booking',
+            {
+              stage: 'booking_persist',
+              bookingId: String(boundBookingId),
+              existingBookingId: String(byPi._id),
+              retryable: false
+            }
+          );
+        }
+      }
+      throw createLeaseWorkNeedsReviewError(
+        'LEASE_FINALIZE_NEEDS_REVIEW',
+        'Booking unique conflict during lease-aware persist',
+        { stage: 'booking_persist', bookingId: String(boundBookingId), retryable: false }
+      );
+    }
+    throw createLeaseWorkNeedsReviewError(
+      'PAID_BOOKING_SAVE_FAILED',
+      saveErr.message || 'Booking save failed after promotion',
+      { stage: 'booking_persist', bookingId: String(boundBookingId), retryable: true }
+    );
+  }
+}
+
+async function executeLeaseAwareFinalizeWork({
+  session,
+  checkoutId,
+  paymentIntentId = null,
+  bookingPayload = null,
+  finalizeContext = {},
+  source = 'frontend',
+  dependencies = null
+}) {
+  const deps = dependencies ? { ...activeDependencies, ...dependencies } : activeDependencies;
+  const ctx = { ...finalizeContext, checkoutId: checkoutId || finalizeContext.checkoutId };
+  const paymentIntentIdForReview = paymentIntentId
+    ? String(paymentIntentId).trim()
+    : ctx.paymentIntentId
+      ? String(ctx.paymentIntentId).trim()
+      : null;
+  const boundBookingId =
+    ctx.boundBookingId || (session.bookingId != null ? String(session.bookingId) : null);
+  if (!boundBookingId) {
+    throw createLeaseWorkNeedsReviewError(
+      'LEASE_FINALIZE_NEEDS_REVIEW',
+      'Lease-aware finalization requires durable bound Booking ID',
+      { stage: 'promotion', retryable: true }
+    );
+  }
+
+  const rl = session.resourceLease;
+  if (!rl || String(rl.status || '') !== 'paid') {
+    throw createLeaseWorkNeedsReviewError(
+      'LEASE_FINALIZE_NEEDS_REVIEW',
+      'Lease-aware promotion requires resourceLease.status paid',
+      {
+        stage: 'promotion',
+        bookingId: boundBookingId,
+        resourceLeaseGeneration: rl && rl.generation,
+        retryable: true
+      }
+    );
+  }
+  const acc = rl.accommodation || {};
+  const leaseId = String(acc.leaseId || acc.holdId || '').trim();
+  const generation = Number(acc.generation != null ? acc.generation : rl.generation);
+  const attemptId = String(rl.attemptId || '').trim();
+  const quoteSnapshotHash = String(rl.quoteSnapshotHash || session.quoteSnapshotHash || '').trim();
+  if (!leaseId || !Number.isInteger(generation) || !attemptId || !quoteSnapshotHash) {
+    throw createLeaseWorkNeedsReviewError(
+      'LEASE_FINALIZE_NEEDS_REVIEW',
+      'Lease-aware promotion requires complete resource lease identity',
+      { stage: 'promotion', bookingId: boundBookingId, retryable: false }
+    );
+  }
+
+  const promoteInput = {
+    checkoutId: String(checkoutId),
+    bookingId: boundBookingId,
+    leaseId,
+    holdId: leaseId,
+    generation,
+    attemptId,
+    quoteSnapshotHash,
+    checkIn: String(
+      (session.quoteSnapshot && session.quoteSnapshot.checkInDateOnly) || acc.checkIn || ''
+    ),
+    checkOut: String(
+      (session.quoteSnapshot && session.quoteSnapshot.checkOutDateOnly) || acc.checkOut || ''
+    ),
+    unitId: acc.unitId || undefined,
+    cabinId: acc.cabinId || undefined
+  };
+  if (ctx.paymentAuthorityType === 'stripe' || paymentIntentIdForReview) {
+    promoteInput.canonicalPaymentIntentId =
+      session.canonicalPaymentIntentId != null
+        ? String(session.canonicalPaymentIntentId)
+        : paymentIntentIdForReview;
+  }
+
+  let promoteResult;
+  try {
+    promoteResult = await promoteAccommodationCheckoutHoldToBooking(promoteInput, deps);
+  } catch (promoteErr) {
+    throw createLeaseWorkNeedsReviewError(
+      'ACCOMMODATION_PROMOTION_FAILED',
+      promoteErr.message || 'Accommodation promotion failed',
+      {
+        stage: 'promotion',
+        bookingId: boundBookingId,
+        resourceLeaseGeneration: generation,
+        resourceLeaseAttemptId: attemptId,
+        quoteSnapshotHash,
+        canonicalPaymentIntentId: promoteInput.canonicalPaymentIntentId || null,
+        failureCode: promoteErr.code || null,
+        retryable: true
+      }
+    );
+  }
+  if (typeof deps.afterAccommodationPromote === 'function') {
+    await deps.afterAccommodationPromote({
+      checkoutId,
+      bookingId: boundBookingId,
+      promoteResult
+    });
+  }
+
+  const { bookingData, stripePaymentVerified } = buildBookingData({
+    session,
+    checkoutId,
+    paymentIntentId: paymentIntentIdForReview,
+    bookingPayload,
+    finalizeContext: ctx,
+    source
+  });
+  bookingData._id = new mongoose.Types.ObjectId(String(boundBookingId));
+  if (acc.entityType === 'unit' || acc.unitId) {
+    bookingData.unitId = acc.unitId || bookingData.unitId;
+    if (!bookingData.cabinTypeId && session.quoteSnapshot && session.quoteSnapshot.cabinTypeId) {
+      bookingData.cabinTypeId = session.quoteSnapshot.cabinTypeId;
+    }
+  } else if (acc.cabinId) {
+    bookingData.cabinId = acc.cabinId;
+    bookingData.cabinTypeId = undefined;
+    bookingData.unitId = null;
+  }
+
+  assertImmutableQuoteCommercialSnapshot(session, { bookingId: boundBookingId });
+
+  let facilityConsistency;
+  try {
+    const consistencyFn =
+      typeof deps.assertQuoteLeaseFacilityConsistency === 'function'
+        ? deps.assertQuoteLeaseFacilityConsistency
+        : assertQuoteLeaseFacilityConsistency;
+    facilityConsistency = await consistencyFn(session, deps);
+  } catch (consistencyErr) {
+    throw createLeaseWorkNeedsReviewError(
+      consistencyErr && consistencyErr.code
+        ? String(consistencyErr.code)
+        : 'FACILITY_AUTHORITY_FAILED',
+      consistencyErr.message || 'Quote-to-lease facility consistency failed',
+      {
+        stage: 'facility_authority',
+        bookingId: boundBookingId,
+        expectedFacilityReservationIds: Array.isArray(rl.facilityHoldIds)
+          ? rl.facilityHoldIds.map(String)
+          : [],
+        failureCode: consistencyErr && consistencyErr.code ? String(consistencyErr.code) : null,
+        retryable: true
+      }
+    );
+  }
+
+  const expectedFacilityIds = facilityConsistency.skip
+    ? []
+    : (facilityConsistency.facilityReservationIds || []).map(String);
+  bookingData.resourceFinalizationSnapshot = buildResourceFinalizationSnapshot({
+    session,
+    paymentAuthorityType: ctx.paymentAuthorityType,
+    paymentAuthorityMeta: ctx.paymentAuthorityMeta,
+    expectedFacilityReservationIds: expectedFacilityIds,
+    confirmedFacilityReservationIds: []
+  });
+
+  const saved = await saveLeaseAwareBookingWithoutVoucherRelease(deps, {
+    bookingData,
+    checkoutId,
+    boundBookingId
+  });
+  let booking = saved.booking;
+  if (typeof deps.afterBookingSave === 'function') {
+    await deps.afterBookingSave({ checkoutId, bookingId: boundBookingId, booking });
+  }
+
+  if (paymentIntentIdForReview && stripePaymentVerified) {
+    try {
+      await linkStripePaymentToBooking({
+        paymentIntentId: paymentIntentIdForReview,
+        bookingId: booking._id,
+        checkoutId
+      });
+    } catch (_linkErr) {
+      void _linkErr;
+    }
+  }
+
+  try {
+    await confirmVoucherIfNeeded(deps, {
+      booking,
+      source,
+      checkoutId,
+      finalizeContext: ctx,
+      paymentIntentIdForReview,
+      voucherEvidence: ctx.voucherEvidence || {},
+      stripePaymentVerified: Boolean(stripePaymentVerified)
+    });
+  } catch (voucherErr) {
+    throw createLeaseWorkNeedsReviewError(
+      'VOUCHER_CONFIRM_FAILED',
+      voucherErr.message || 'Voucher confirmation failed',
+      {
+        stage: 'voucher_confirm',
+        bookingId: boundBookingId,
+        voucherRedemptionId:
+          (ctx.paymentAuthorityMeta && ctx.paymentAuthorityMeta.voucherRedemptionId) ||
+          session.voucherRedemptionId ||
+          null,
+        voucherOperationId:
+          (ctx.paymentAuthorityMeta && ctx.paymentAuthorityMeta.voucherOperationId) || null,
+        retryable: true
+      }
+    );
+  }
+  if (typeof deps.afterVoucherConfirm === 'function') {
+    await deps.afterVoucherConfirm({ checkoutId, bookingId: boundBookingId });
+  }
+
+  let confirmedIds = [];
+  // Skip only when quote selections AND lease facilityHoldIds are both empty
+  // (assertQuoteLeaseFacilityConsistency.skip). Never skip solely on empty lease IDs.
+  if (!facilityConsistency.skip) {
+    try {
+      const confirmFn =
+        typeof deps.confirmExactFacilityHoldsForPaidCheckout === 'function'
+          ? deps.confirmExactFacilityHoldsForPaidCheckout
+          : confirmExactFacilityHoldsForPaidCheckout;
+      const confirmResult = await confirmFn(
+        {
+          checkoutId: String(checkoutId),
+          bookingId: boundBookingId,
+          facilityReservationIds: expectedFacilityIds,
+          generation,
+          attemptId,
+          quoteSnapshotHash
+        },
+        deps
+      );
+      confirmedIds = Array.isArray(confirmResult && confirmResult.reservationIds)
+        ? confirmResult.reservationIds.map(String)
+        : (confirmResult && confirmResult.reservations
+            ? confirmResult.reservations.map((r) => String(r._id))
+            : []);
+      const confirmedSet = new Set(confirmedIds);
+      for (const id of expectedFacilityIds) {
+        if (!confirmedSet.has(String(id))) {
+          throw createLeaseWorkNeedsReviewError(
+            'FACILITY_CONFIRM_FAILED',
+            'Expected facility reservation was not confirmed for this booking',
+            {
+              stage: 'facility_confirm',
+              bookingId: boundBookingId,
+              expectedFacilityReservationIds: expectedFacilityIds,
+              retryable: true
+            }
+          );
+        }
+      }
+      if (confirmedSet.size !== new Set(expectedFacilityIds).size) {
+        throw createLeaseWorkNeedsReviewError(
+          'FACILITY_CONFIRM_FAILED',
+          'Confirmed facility set does not match expected lease facility holds',
+          {
+            stage: 'facility_confirm',
+            bookingId: boundBookingId,
+            expectedFacilityReservationIds: expectedFacilityIds,
+            retryable: true
+          }
+        );
+      }
+    } catch (facilityErr) {
+      if (facilityErr && facilityErr.needsReview) throw facilityErr;
+      throw createLeaseWorkNeedsReviewError(
+        'FACILITY_CONFIRM_FAILED',
+        facilityErr.message || 'Facility confirmation failed',
+        {
+          stage: 'facility_confirm',
+          bookingId: boundBookingId,
+          expectedFacilityReservationIds: expectedFacilityIds,
+          failureCode: facilityErr.code || null,
+          retryable: true
+        }
+      );
+    }
+  }
+  if (typeof deps.afterFacilityConfirm === 'function') {
+    await deps.afterFacilityConfirm({ checkoutId, bookingId: boundBookingId, confirmedIds });
+  }
+
+  const snapshotUpdate = buildResourceFinalizationSnapshot({
+    session,
+    paymentAuthorityType: ctx.paymentAuthorityType,
+    paymentAuthorityMeta: ctx.paymentAuthorityMeta,
+    expectedFacilityReservationIds: expectedFacilityIds,
+    confirmedFacilityReservationIds: confirmedIds
+  });
+  await deps.Booking.updateOne(
+    { _id: booking._id },
+    { $set: { resourceFinalizationSnapshot: snapshotUpdate } }
+  );
+  booking = await deps.Booking.findById(booking._id);
+  if (typeof deps.afterBookingFacilitySnapshot === 'function') {
+    await deps.afterBookingFacilitySnapshot({
+      checkoutId,
+      bookingId: boundBookingId,
+      confirmedIds
+    });
+  }
+
+  try {
+    await tombstonePromotedAccommodationCheckoutHold(promoteInput, deps);
+  } catch (tombstoneErr) {
+    throw createLeaseWorkNeedsReviewError(
+      'ACCOMMODATION_TOMBSTONE_FAILED',
+      tombstoneErr.message || 'Accommodation tombstone failed',
+      {
+        stage: 'tombstone',
+        bookingId: boundBookingId,
+        resourceLeaseGeneration: generation,
+        resourceLeaseAttemptId: attemptId,
+        quoteSnapshotHash,
+        failureCode: tombstoneErr.code || null,
+        retryable: true
+      }
+    );
+  }
+  if (typeof deps.afterAccommodationTombstone === 'function') {
+    await deps.afterAccommodationTombstone({ checkoutId, bookingId: boundBookingId });
+  }
+  if (typeof deps.beforeMarkFinalizeSucceeded === 'function') {
+    await deps.beforeMarkFinalizeSucceeded({ checkoutId, bookingId: boundBookingId });
+  }
+
+  return {
+    bookingId: booking._id,
+    booking,
+    result: { idempotentReplay: saved.isReplay === true, leaseAware: true }
+  };
+}
+
 async function executeBookingFinalizeWork({
   session,
   checkoutId,
@@ -1120,6 +1693,26 @@ async function executeBookingFinalizeWork({
     finalizeContext: ctx,
     paymentIntentId: paymentIntentIdForReview
   });
+
+  // B8F4B lease-aware path — never use legacy claimUnitNights / cabin preclaim.
+  // Skip early Booking replay: lease work must resume promote/facilities/tombstone
+  // even when a Booking already exists for this checkout / PI.
+  if (isLeaseAwareSessionLocal(session) || ctx.leaseAwareFinalize === true) {
+    return executeLeaseAwareFinalizeWork({
+      session,
+      checkoutId,
+      paymentIntentId,
+      bookingPayload,
+      finalizeContext: {
+        ...ctx,
+        boundBookingId:
+          ctx.boundBookingId ||
+          (session.bookingId != null ? String(session.bookingId) : null)
+      },
+      source,
+      dependencies: deps
+    });
+  }
 
   const replayByCheckout = await findReplayByCheckoutId(deps, {
     checkoutId,
@@ -1182,8 +1775,12 @@ async function executeBookingFinalizeWork({
 
   if (needsPreClaim || needsCabinPreClaim) {
     if (!bookingData._id) {
-      bookingData._id = new mongoose.Types.ObjectId();
+      bookingData._id = session.bookingId
+        ? new mongoose.Types.ObjectId(String(session.bookingId))
+        : new mongoose.Types.ObjectId();
     }
+  } else if (!bookingData._id && session.bookingId) {
+    bookingData._id = new mongoose.Types.ObjectId(String(session.bookingId));
   }
 
   if (needsPreClaim) {

@@ -132,5 +132,24 @@ giftVoucherEventSchema.index(
   }
 );
 
+const AUTHORITATIVE_LEDGER_EVENT_KEY_INDEX_SPEC = Object.freeze({
+  keys: Object.freeze({ giftVoucherId: 1, type: 1, 'metadata.ledgerEventKey': 1 }),
+  options: Object.freeze({
+    unique: true,
+    name: 'gve_ledgerEventKey_unique',
+    partialFilterExpression: Object.freeze({
+      'metadata.ledgerEventKey': { $type: 'string' }
+    })
+  }),
+  note: 'B8F2B1A financial event idempotency for v1 ledgerEventKey'
+});
+
+giftVoucherEventSchema.index(
+  AUTHORITATIVE_LEDGER_EVENT_KEY_INDEX_SPEC.keys,
+  { ...AUTHORITATIVE_LEDGER_EVENT_KEY_INDEX_SPEC.options }
+);
+
 module.exports = mongoose.model('GiftVoucherEvent', giftVoucherEventSchema);
 module.exports.GIFT_VOUCHER_EVENT_TYPES = GIFT_VOUCHER_EVENT_TYPES;
+module.exports.AUTHORITATIVE_LEDGER_EVENT_KEY_INDEX_SPEC =
+  AUTHORITATIVE_LEDGER_EVENT_KEY_INDEX_SPEC;

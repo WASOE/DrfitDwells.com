@@ -19,10 +19,11 @@ import { useSiteLanguage } from '../hooks/useSiteLanguage';
 import { formatStayDayLong } from '../utils/localeDates';
 import {
   LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
-  LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
   LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
   LEGAL_ACCEPTANCE_TERMS_VERSION
 } from '../constants/legalAcceptance';
+import enBookingLocale from '../i18n/locales/en/booking.json';
+import bgBookingLocale from '../i18n/locales/bg/booking.json';
 import { getListingCoverImage } from '../utils/listingGalleryUtils';
 import { resolveAllowPets } from '../utils/stayPageContent';
 import { calculateBaseLodgingPrice } from '../utils/lodgingPrice';
@@ -63,6 +64,47 @@ const checkoutSessionV2Enabled = isCheckoutSessionV2Enabled();
 const checkoutRecoveryUxEnabled = isCheckoutRecoveryUxEnabled();
 const finalizeIntentPersistEnabled = isFinalizeIntentPersistEnabled();
 const finalizeIntentRequiredForPiEnabled = isFinalizeIntentRequiredForPiEnabled();
+
+/**
+ * RP6A Correction 2/3 — concise checkout consent (links only; no detailed schedule).
+ * Copy lives in locales/en|bg/booking.json — not hardcoded English.
+ * Correction 3: checkbox1TextSnapshot is the same plain-text sentence for the active locale.
+ */
+export const CONFIRM_TERMS_PATH = '/terms';
+export const CONFIRM_CANCELLATION_POLICY_PATH = '/cancellation-policy';
+export const CONFIRM_BOOKING_CONSENT_BEFORE_KEY = 'confirm.bookingConsentBefore';
+export const CONFIRM_BOOKING_CONSENT_MIDDLE_KEY = 'confirm.bookingConsentMiddle';
+export const CONFIRM_BOOKING_CONSENT_AFTER_KEY = 'confirm.bookingConsentAfter';
+export const CONFIRM_TERMS_LINK_KEY = 'confirm.termsLink';
+export const CONFIRM_CANCELLATION_POLICY_LINK_KEY = 'confirm.cancellationPolicyLink';
+
+/**
+ * Plain-text Terms/Cancellation consent for the active locale (no anchor markup).
+ * Built from the same confirm.* fragments as the visible checkout sentence.
+ * The shared legalAcceptance checkbox-1 constant is intentionally unused for this payload.
+ */
+export function buildTermsConsentPlainText(language) {
+  const confirm =
+    language === 'bg' ? bgBookingLocale.confirm : enBookingLocale.confirm;
+  return (
+    confirm.bookingConsentBefore +
+    confirm.termsLink +
+    confirm.bookingConsentMiddle +
+    confirm.cancellationPolicyLink +
+    confirm.bookingConsentAfter
+  );
+}
+
+/** Same sentence via live i18n `t` (must match buildTermsConsentPlainText for the active lng). */
+export function buildTermsConsentPlainTextFromT(t) {
+  return (
+    t(CONFIRM_BOOKING_CONSENT_BEFORE_KEY) +
+    t(CONFIRM_TERMS_LINK_KEY) +
+    t(CONFIRM_BOOKING_CONSENT_MIDDLE_KEY) +
+    t(CONFIRM_CANCELLATION_POLICY_LINK_KEY) +
+    t(CONFIRM_BOOKING_CONSENT_AFTER_KEY)
+  );
+}
 
 export const V2_CHECKOUT_CONFIG_MISMATCH_MESSAGE =
   'Checkout is misconfigured (server did not return a checkout session). Please refresh or contact support.';
@@ -395,7 +437,7 @@ export function buildRedirectBookingPayloadFromPending(
       acceptedActivityRisk: !!fd.agreedToActivityRisk,
       termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
       activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
-      checkbox1TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
+      checkbox1TextSnapshot: buildTermsConsentPlainText(language),
       checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
       locale: language || undefined
     },
@@ -525,7 +567,7 @@ export function buildCreateBookingPayload({
       acceptedActivityRisk: !!formData.agreedToActivityRisk,
       termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
       activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
-      checkbox1TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
+      checkbox1TextSnapshot: buildTermsConsentPlainText(language),
       checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
       locale: language || undefined
     },
@@ -579,7 +621,7 @@ export function buildFinalizeIntentClientPayload({
       acceptedActivityRisk: !!formData.agreedToActivityRisk,
       termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
       activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
-      checkbox1TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
+      checkbox1TextSnapshot: buildTermsConsentPlainText(language),
       checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
       locale: language || undefined
     },
@@ -2793,21 +2835,6 @@ const ConfirmBooking = () => {
           </button>
         </div>
 
-        {/* Cancellation */}
-        <div className="py-4">
-          <p className="font-medium text-gray-900">{t('confirm.freeCancellationTitle')}</p>
-          {checkIn ? (
-            <p className="text-sm text-gray-600 mt-0.5">
-              {t('confirm.freeCancellationBody', {
-                date: formatDate(new Date(checkIn.getFullYear(), checkIn.getMonth(), checkIn.getDate() - 5))
-              })}
-            </p>
-          ) : null}
-          <a href="/cancellation-policy" className="text-sm text-gray-700 underline mt-1 inline-block">
-            {t('confirm.fullPolicyLink')}
-          </a>
-        </div>
-
         <div className="py-4 border-t border-gray-200 space-y-4">
           <label className="flex items-start gap-3 cursor-pointer">
             <input
@@ -2817,15 +2844,29 @@ const ConfirmBooking = () => {
               onChange={(e) => handleFormChange('agreedToTerms', e.target.checked)}
               className="mt-0.5 w-5 h-5 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
             />
-            <span className="text-sm text-gray-800 leading-relaxed">
-              I have read and accept the{' '}
-              <Link to="/terms" target="_blank" rel="noopener noreferrer" className="underline">
-                Terms & Conditions
-              </Link>{' '}
-              and{' '}
-              <Link to="/cancellation-policy" target="_blank" rel="noopener noreferrer" className="underline">
-                Cancellation Policy
-              </Link>.
+            <span
+              className="text-sm text-gray-800 leading-relaxed"
+              data-testid="confirm-booking-consent"
+            >
+              {t(CONFIRM_BOOKING_CONSENT_BEFORE_KEY)}
+              <Link
+                to={CONFIRM_TERMS_PATH}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                {t(CONFIRM_TERMS_LINK_KEY)}
+              </Link>
+              {t(CONFIRM_BOOKING_CONSENT_MIDDLE_KEY)}
+              <Link
+                to={CONFIRM_CANCELLATION_POLICY_PATH}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                {t(CONFIRM_CANCELLATION_POLICY_LINK_KEY)}
+              </Link>
+              {t(CONFIRM_BOOKING_CONSENT_AFTER_KEY)}
             </span>
           </label>
           <label className="flex items-start gap-3 cursor-pointer">

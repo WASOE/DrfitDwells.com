@@ -34,3 +34,15 @@ export function calculateBaseLodgingPrice(entity, totalNights, adults = 0, child
   const nightly = calculateNightlyLodgingRate(entity, adults, children);
   return Math.round(nights * nightly * 100) / 100;
 }
+
+/**
+ * Display-only effective nightly amount from an authoritative stay total.
+ * For RatePlan UI formatting only — never use for quoting, checkout, or PaymentIntents.
+ */
+export function effectiveDisplayNightlyFromStayTotal(totalPrice, totalNights) {
+  if (totalPrice == null || totalNights == null) return null;
+  const nights = Math.max(0, Number(totalNights) || 0);
+  const total = Number(totalPrice);
+  if (nights <= 0 || !Number.isFinite(total)) return null;
+  return Math.round((total / nights) * 100) / 100;
+}

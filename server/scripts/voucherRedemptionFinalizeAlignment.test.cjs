@@ -143,6 +143,7 @@ test.beforeEach(async () => {
 test('V2: PI created without voucher then voucher applied must align or supersede (no false MRI)', async () => {
   const cabin = await Cabin.create({
     name: 'Voucher Late Cabin',
+    slug: 'voucher-late-cabin',
     description: 't',
     capacity: 4,
     minGuests: 1,
@@ -278,6 +279,7 @@ test('FORENSIC: booking date ISO vs PI metadata checkIn mismatch classification'
   // Documents whether date formatting alone opens MRI vs 400.
   const cabin = await Cabin.create({
     name: 'Date Mismatch Cabin',
+    slug: 'date-mismatch-cabin',
     description: 't',
     capacity: 4,
     minGuests: 1,
@@ -363,6 +365,7 @@ test('FORENSIC: booking date ISO vs PI metadata checkIn mismatch classification'
 test('V2 partial voucher: create-PI then paid booking must not open metadata mismatch MRI', async () => {
   const cabin = await Cabin.create({
     name: 'Voucher Align Cabin',
+    slug: 'voucher-align-cabin',
     description: 't',
     capacity: 4,
     minGuests: 1,
@@ -475,6 +478,7 @@ test('V2 partial voucher: create-PI then paid booking must not open metadata mis
 test('ROOT CAUSE: voucher apply after paid full-amount PI is rejected (no reservation / no second charge)', async () => {
   const cabin = await Cabin.create({
     name: 'Paid Then Voucher Cabin',
+    slug: 'paid-then-voucher-cabin',
     description: 't',
     capacity: 4,
     minGuests: 1,
@@ -564,7 +568,57 @@ test('ROOT CAUSE: voucher apply after paid full-amount PI is rejected (no reserv
   const session = await CheckoutSession.findOne({ checkoutId }).lean();
   assert.equal(session.voucherRedemptionId, null);
   assert.equal(await GiftVoucherRedemption.countDocuments({ checkoutId }), 0);
-  assert.equal(await ManualReviewItem.countDocuments({}), 0);
+  assert.equal(await Booking.countDocuments({ checkoutId }), 0);
+
+  // Identity-scoped MRI check: ignore unrelated async lifecycle-email MRI from other bookings
+  // (e.g. case 3), but still fail if a payment/voucher MRI is attributable to this checkout.
+  const paymentIntentId = String(first.body.canonicalPaymentIntentId || '');
+  const voucherId = String(voucher._id);
+  const sessionId = session?._id != null ? String(session._id) : '';
+  const case4IdentityTokens = [checkoutId, paymentIntentId, voucherId, sessionId].filter(Boolean);
+  const paymentOrVoucherMriCategories = new Set([
+    'payment_finalization_failure',
+    'gift_voucher_reservation_release_failed',
+    'gift_voucher_redemption_confirm_failed'
+  ]);
+  const allMris = await ManualReviewItem.find({}).lean();
+  const relevantMris = allMris.filter((item) => {
+    if (!paymentOrVoucherMriCategories.has(String(item.category || ''))) {
+      return false;
+    }
+    const ref =
+      item.provenance?.sourceReference != null ? String(item.provenance.sourceReference) : '';
+    const entityId = item.entityId != null ? String(item.entityId) : '';
+    const holdCheckout =
+      item.resolutionHold?.checkoutId != null ? String(item.resolutionHold.checkoutId) : '';
+    const holdPi =
+      item.resolutionHold?.paymentIntentId != null
+        ? String(item.resolutionHold.paymentIntentId)
+        : '';
+    const evidenceBlob = JSON.stringify(item.evidence || {});
+    const textBlob = `${item.title || ''}\n${item.details || ''}`;
+    return case4IdentityTokens.some(
+      (token) =>
+        token === ref ||
+        token === entityId ||
+        token === holdCheckout ||
+        token === holdPi ||
+        evidenceBlob.includes(token) ||
+        textBlob.includes(token)
+    );
+  });
+  assert.equal(
+    relevantMris.length,
+    0,
+    JSON.stringify(
+      relevantMris.map((m) => ({
+        category: m.category,
+        entityType: m.entityType,
+        entityId: m.entityId,
+        sourceReference: m.provenance?.sourceReference || null
+      }))
+    )
+  );
 });
 
 test('FORENSIC: stale full-amount PI + voucher reservation opens MRI with field diagnosis', async () => {
@@ -577,6 +631,7 @@ test('FORENSIC: stale full-amount PI + voucher reservation opens MRI with field 
 
   const cabin = await Cabin.create({
     name: 'Stale PI Cabin',
+    slug: 'stale-pi-cabin',
     description: 't',
     capacity: 4,
     minGuests: 1,

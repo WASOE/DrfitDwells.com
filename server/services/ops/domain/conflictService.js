@@ -6,6 +6,8 @@ const Unit = require('../../../models/Unit');
 const { normalizeExclusiveDateRange } = require('../../../utils/dateTime');
 const { availabilityBlockUnitScopeClause } = require('../../calendar/unitCalendarShared');
 const { BLOCKING_BOOKING_STATUSES } = require('../../calendar/blockingStatusConstants');
+const { listBlockingCheckoutClaimConflicts } = require('../../inventory/checkoutNightClaimVisibility');
+const { createDomainError } = require('./errors');
 
 const HARD_BLOCK_TYPES = ['manual_block', 'maintenance', 'reservation', 'external_hold', 'checkout_hold'];
 
@@ -30,6 +32,103 @@ function guestLabelFromBooking(booking) {
 }
 
 /**
+ * Canonical multi-parent predicate — mirrors locationInventoryService
+ * (`inventoryType: { $ne: 'multi' }` for single cabins).
+ */
+function isMultiInventoryParentCabin(cabin) {
+  return Boolean(cabin && cabin.inventoryType === 'multi');
+}
+
+/**
+ * Resolve which Unit / Cabin checkout-claim resources apply for an OPS target.
+ * Multi parents expand via CabinType (cabinTypeId or cabinTypeRef).
+ * Single-inventory cabins always use CabinNightClaim for the exact cabinId,
+ * even when a stale cabinTypeId/cabinTypeRef is present.
+ */
+async function resolveCheckoutClaimResources({ cabinId = null, unitId = null, cabinTypeId = null }) {
+  if (unitId) {
+    return { unitIds: [unitId], cabinIds: [] };
+  }
+
+  let cabin = null;
+  if (cabinId) {
+    cabin = await Cabin.findById(cabinId).select('cabinTypeId cabinTypeRef inventoryType').lean();
+  }
+
+  if (isMultiInventoryParentCabin(cabin)) {
+    const typeId = cabinTypeId || cabin.cabinTypeId || cabin.cabinTypeRef || null;
+    if (!typeId) {
+      throw createDomainError(
+        'validation',
+        'Multi-inventory parent cabin cannot resolve CabinType for checkout-claim conflict scope',
+        {
+          cabinId: String(cabinId),
+          inventoryType: cabin.inventoryType,
+          cabinTypeId: cabin.cabinTypeId ? String(cabin.cabinTypeId) : null,
+          cabinTypeRef: cabin.cabinTypeRef ? String(cabin.cabinTypeRef) : null
+        },
+        422
+      );
+    }
+    const units = await Unit.find({ cabinTypeId: typeId, isActive: { $ne: false } })
+      .select('_id')
+      .lean();
+    if (units.length === 0) {
+      throw createDomainError(
+        'validation',
+        'Multi-inventory parent cabin has no active Units for checkout-claim conflict scope',
+        {
+          cabinId: String(cabinId),
+          cabinTypeId: String(typeId),
+          inventoryType: cabin.inventoryType
+        },
+        422
+      );
+    }
+    return { unitIds: units.map((u) => u._id), cabinIds: [] };
+  }
+
+  // Single-inventory (inventoryType !== 'multi'): exact Cabin only.
+  // Stale cabinTypeId / cabinTypeRef must not expand to Units.
+  if (cabinId) {
+    return { unitIds: [], cabinIds: [cabinId] };
+  }
+
+  return { unitIds: [], cabinIds: [] };
+}
+
+async function appendCheckoutClaimHardConflicts(hardConflicts, {
+  cabinId = null,
+  unitId = null,
+  cabinTypeId = null,
+  startDate,
+  endDate,
+  now = null,
+  excludeCheckoutId = null,
+  excludeLeaseId = null
+}) {
+  const { unitIds, cabinIds } = await resolveCheckoutClaimResources({
+    cabinId,
+    unitId,
+    cabinTypeId
+  });
+  if (unitIds.length === 0 && cabinIds.length === 0) return;
+
+  const claimConflicts = await listBlockingCheckoutClaimConflicts({
+    unitIds,
+    cabinIds,
+    startDate,
+    endDate,
+    now,
+    excludeCheckoutId,
+    excludeLeaseId
+  });
+  for (const entry of claimConflicts) {
+    hardConflicts.push(entry);
+  }
+}
+
+/**
  * Per-inventory-target conflict evaluation for location-wide blocks.
  * Supports single cabins (cabinId only) and multi-unit targets (parent cabinId + unitId + cabinTypeId).
  *
@@ -44,7 +143,10 @@ async function evaluateTargetConflicts({
   endDate,
   treatExternalHoldAsHard = false,
   excludeCheckoutSessionId = null,
-  excludeReservationId = null
+  excludeReservationId = null,
+  excludeCheckoutId = null,
+  excludeLeaseId = null,
+  now = null
 }) {
   const normalized = normalizeExclusiveDateRange(startDate, endDate);
   const hardConflicts = [];
@@ -141,7 +243,7 @@ async function evaluateTargetConflicts({
     }
   }
 
-  const now = new Date();
+  const clock = now || new Date();
   const excludedSession = excludeCheckoutSessionId ? String(excludeCheckoutSessionId).trim() : '';
 
   for (const block of blocks) {
@@ -158,7 +260,7 @@ async function evaluateTargetConflicts({
     }
 
     if (block.blockType === 'checkout_hold') {
-      if (block.expiresAt && block.expiresAt <= now) continue;
+      if (block.expiresAt && block.expiresAt <= clock) continue;
       if (excludedSession && String(block.checkoutSessionId || '') === excludedSession) continue;
     }
 
@@ -178,6 +280,17 @@ async function evaluateTargetConflicts({
     }
   }
 
+  await appendCheckoutClaimHardConflicts(hardConflicts, {
+    cabinId,
+    unitId,
+    cabinTypeId,
+    startDate: normalized.startDate,
+    endDate: normalized.endDate,
+    now: clock,
+    excludeCheckoutId,
+    excludeLeaseId
+  });
+
   return {
     startDate: normalized.startDate,
     endDate: normalized.endDate,
@@ -187,7 +300,15 @@ async function evaluateTargetConflicts({
   };
 }
 
-async function evaluateCabinConflicts({ cabinId, startDate, endDate, excludeReservationId = null }) {
+async function evaluateCabinConflicts({
+  cabinId,
+  startDate,
+  endDate,
+  excludeReservationId = null,
+  excludeCheckoutId = null,
+  excludeLeaseId = null,
+  now = null
+}) {
   const normalized = normalizeExclusiveDateRange(startDate, endDate);
 
   const bookingFilter = {
@@ -257,6 +378,17 @@ async function evaluateCabinConflicts({ cabinId, startDate, endDate, excludeRese
     }
   }
 
+  await appendCheckoutClaimHardConflicts(hardConflicts, {
+    cabinId,
+    unitId: null,
+    cabinTypeId: null,
+    startDate: normalized.startDate,
+    endDate: normalized.endDate,
+    now: now || new Date(),
+    excludeCheckoutId,
+    excludeLeaseId
+  });
+
   return {
     startDate: normalized.startDate,
     endDate: normalized.endDate,
@@ -270,5 +402,7 @@ module.exports = {
   BLOCKING_BOOKING_STATUSES,
   HARD_BLOCK_TYPES,
   evaluateCabinConflicts,
-  evaluateTargetConflicts
+  evaluateTargetConflicts,
+  resolveCheckoutClaimResources,
+  isMultiInventoryParentCabin
 };

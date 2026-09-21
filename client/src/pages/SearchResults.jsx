@@ -24,10 +24,15 @@ import {
 } from '../components/booking/StayLodgingPriceBlock';
 import { getListingCoverImage } from '../utils/listingGalleryUtils';
 import {
+  createLastRequestWinsGuard,
   getSearchCardPetPolicyLabel,
-  getSearchCardStatus
+  getSearchCardStatus,
+  resolvePublicPricingErrorMessage
 } from '../utils/searchCardStatus';
-import { calculateNightlyLodgingRate } from '../utils/lodgingPrice';
+import {
+  calculateNightlyLodgingRate,
+  effectiveDisplayNightlyFromStayTotal
+} from '../utils/lodgingPrice';
 import { resolveListingStaySlug } from '../utils/stayRoutes';
 
 const SearchBar = lazy(() => import('../components/SearchBar'));
@@ -130,6 +135,33 @@ function formatStaySuggestionRange(checkIn, checkOut, siteLanguage) {
   return `${format(inDate, 'd MMM', { locale: loc })} - ${format(outDate, 'd MMM', { locale: loc })}`;
 }
 
+
+/** Display-only search-card nightly for exact_stay / RatePlan results. */
+export function resolveSearchCardEffectiveNightly(cabin, adults = 0, children = 0) {
+  const isExactStayPrice = cabin?.pricingMode === 'exact_stay' && cabin?.totalPrice != null;
+  if (!isExactStayPrice) return null;
+  if (cabin.pricingSource === 'rate_plan') {
+    return effectiveDisplayNightlyFromStayTotal(cabin.totalPrice, cabin.totalNights);
+  }
+  return calculateNightlyLodgingRate(cabin, adults, children);
+}
+
+export function clampSearchCardDescription(text, maxLength = 148) {
+  const raw = String(text || '').replace(/\s+/g, ' ').trim();
+  if (raw.length <= maxLength) return raw;
+  let cut = raw.slice(0, maxLength);
+  const sentenceBreak = cut.lastIndexOf('. ');
+  const wordBreak = cut.lastIndexOf(' ');
+  if (sentenceBreak >= Math.floor(maxLength * 0.55)) {
+    cut = cut.slice(0, sentenceBreak + 1);
+  } else if (wordBreak >= Math.floor(maxLength * 0.55)) {
+    cut = cut.slice(0, wordBreak);
+  }
+  cut = cut.replace(/[\s.,;:!?…]+$/u, '');
+  cut = cut.replace(/\s+\b(and|or|the|a|an|of|to|for|with|in|on)\s*$/i, '');
+  return `${cut}…`;
+}
+
 const SearchResults = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -148,6 +180,7 @@ const SearchResults = () => {
   const [searchPromoMeta, setSearchPromoMeta] = useState(null);
   const [suggestionsByListingKey, setSuggestionsByListingKey] = useState({});
   const { t } = useTranslation('booking');
+  const searchRequestGuard = useMemo(() => createLastRequestWinsGuard(), []);
 
   // Check if we're returning to craft flow
   const returnTo = searchParams.get('returnTo');
@@ -203,17 +236,21 @@ const SearchResults = () => {
 
   // Search for available cabins
   const searchCabins = async () => {
+    const request = searchRequestGuard.begin();
+    setLoading(true);
+    setErrorMessage('');
+    setSearchPromoMeta(null);
     try {
-      setLoading(true);
-      setErrorMessage('');
-      setSearchPromoMeta(null);
-
       const searchPayload = { ...currentSearchParams };
       if (!searchPayload.promoCode) delete searchPayload.promoCode;
       // Localized listing content (name/location/description) for the BG site.
       if (routeLanguage === 'bg') searchPayload.locale = 'bg';
 
       const response = await availabilityAPI.search(searchPayload);
+
+      if (!request.isCurrent()) {
+        return;
+      }
 
       if (response.data.success) {
         const promoPayload = response.data.data.promo;
@@ -249,6 +286,9 @@ const SearchResults = () => {
         setErrorMessage(response.data.message || t('search.errorSearchFailed'));
       }
     } catch (err) {
+      if (!request.isCurrent()) {
+        return;
+      }
       console.error('Search error:', err);
       const apiMessage = err.response?.data?.message || '';
       if (
@@ -269,7 +309,9 @@ const SearchResults = () => {
 
       setErrorMessage(apiMessage || t('search.errorSearchGeneric'));
     } finally {
-      setLoading(false);
+      if (request.isCurrent()) {
+        setLoading(false);
+      }
     }
   };
 
@@ -346,13 +388,17 @@ const SearchResults = () => {
     searchParams
   ]);
 
-  // Load search results on component mount
+  // Load search results on component mount / when search criteria change
   useEffect(() => {
     if (currentSearchParams.checkIn && currentSearchParams.checkOut) {
       searchCabins();
     } else {
       navigate(homeBase);
     }
+    return () => {
+      searchRequestGuard.invalidate();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     currentSearchParams.checkIn,
     currentSearchParams.checkOut,
@@ -613,11 +659,17 @@ const SearchResults = () => {
               const isStoneHouse = listingSlug === 'stone-house';
               const humanGuests =
                 (currentSearchParams.adults || 0) + (currentSearchParams.children || 0);
-              const effectiveNightly = calculateNightlyLodgingRate(
-                cabin,
-                currentSearchParams.adults,
-                currentSearchParams.children
-              );
+              const isExactStayPrice = cabin.pricingMode === 'exact_stay' && cabin.totalPrice != null;
+              const isRatePlanPrice = cabin.pricingSource === 'rate_plan';
+              const effectiveNightly = isExactStayPrice
+                ? isRatePlanPrice
+                  ? effectiveDisplayNightlyFromStayTotal(cabin.totalPrice, cabin.totalNights)
+                  : calculateNightlyLodgingRate(
+                      cabin,
+                      currentSearchParams.adults,
+                      currentSearchParams.children
+                    )
+                : null;
               const suggestionKey = getListingSuggestionKey(cabin);
               const isDateUnavailable = !isBookable && status.reasonCode === 'dates';
               const dateSuggestion = isDateUnavailable
@@ -646,6 +698,8 @@ const SearchResults = () => {
                 data-unavailability-reason={status.reasonCode || ''}
                 data-pet-policy={petPolicyLabel}
                 data-listing-slug={listingSlug || ''}
+                data-pricing-mode={cabin.pricingMode || ''}
+                data-pricing-source={cabin.pricingSource || ''}
               >
                 <div className="relative h-64 overflow-hidden">
                   <img
@@ -711,8 +765,8 @@ const SearchResults = () => {
                     <span className="w-1 h-1 bg-sage rounded-full mr-3" aria-hidden="true"></span>
                     {petPolicyLabel}
                   </p>
-                  <p className="text-body text-gray-600 mb-8 line-clamp-3 flex-grow">
-                    {cabin.description}
+                  <p className="text-body text-gray-600 mb-8 flex-grow">
+                    {clampSearchCardDescription(cabin.description)}
                   </p>
                   <div className="border-t border-gray-200 pt-6 mt-auto">
                     <div className="flex justify-between items-start gap-4 mb-6">
@@ -721,10 +775,22 @@ const SearchResults = () => {
                           {t('modal.nights', { count: cabin.totalNights })}
                         </p>
                       </div>
+                      {cabin.totalPrice == null ? (
+                        <div
+                          className="text-right min-w-0 shrink-0 max-w-[14rem]"
+                          data-testid="search-pricing-unavailable"
+                        >
+                          <p className="text-sm text-stone-600 leading-relaxed">
+                            {resolvePublicPricingErrorMessage(cabin.pricingError?.code)}
+                          </p>
+                        </div>
+                      ) : (
                       <StayLodgingPriceBlock
                         wrapperClassName="text-right min-w-0 shrink-0"
                         originalAmount={
-                          searchPromoMeta?.applied ? cabin.lodgingSubtotalBeforePromo : null
+                          searchPromoMeta?.applied && cabin.lodgingSubtotalBeforePromo != null
+                            ? cabin.lodgingSubtotalBeforePromo
+                            : null
                         }
                         finalAmount={cabin.totalPrice}
                         showPromoMicrocopy={!!searchPromoMeta?.applied}
@@ -734,14 +800,25 @@ const SearchResults = () => {
                             ? searchPromoMeta.invalidReason
                             : null
                         }
+                        priceSuffix={
+                          isExactStayPrice ? (
+                            <span className="text-sm font-sans font-normal text-gray-500 ml-1">
+                              {t('search.stayTotalLabel', { defaultValue: 'stay total' })}
+                            </span>
+                          ) : null
+                        }
                         footnote={
                           <div className="mt-1 space-y-0.5">
-                            <p className="text-sm text-gray-500 font-light">
-                              {t('search.pricePerNight', {
-                                price: Number(effectiveNightly).toLocaleString()
-                              })}
-                            </p>
-                            {(cabin.pricingModel || 'per_night') === 'base_plus_extra' &&
+                            {effectiveNightly != null ? (
+                              <p className="text-sm text-gray-500 font-light">
+                                {t('search.pricePerNight', {
+                                  price: Number(effectiveNightly).toLocaleString()
+                                })}
+                              </p>
+                            ) : null}
+                            {effectiveNightly != null &&
+                              !isRatePlanPrice &&
+                              (cabin.pricingModel || 'per_night') === 'base_plus_extra' &&
                               humanGuests <= (cabin.includedGuests || 0) && (
                                 <p className="text-xs text-gray-500 font-light">
                                   {t('search.upToGuestsIncluded', {
@@ -752,6 +829,7 @@ const SearchResults = () => {
                           </div>
                         }
                       />
+                      )}
                     </div>
                     {isBookable ? (
                       <>

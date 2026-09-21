@@ -52,6 +52,115 @@ const deliveryAddressSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const RESERVATION_LEDGER_OPERATION_STATES = Object.freeze([
+  'pending',
+  'debited',
+  'restored',
+  'voided'
+]);
+
+const reservationLedgerOperationSchema = new mongoose.Schema(
+  {
+    operationId: {
+      type: String,
+      required: true,
+      trim: true,
+      immutable: true
+    },
+    redemptionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'GiftVoucherRedemption',
+      required: true,
+      immutable: true
+    },
+    reservationKey: {
+      type: String,
+      required: true,
+      trim: true,
+      immutable: true
+    },
+    amountCents: {
+      type: Number,
+      required: true,
+      min: 1,
+      immutable: true,
+      validate: {
+        validator: integerValidator,
+        message: 'amountCents must be an integer'
+      }
+    },
+    currency: {
+      type: String,
+      enum: ['EUR'],
+      required: true,
+      default: 'EUR',
+      immutable: true
+    },
+    state: {
+      type: String,
+      enum: RESERVATION_LEDGER_OPERATION_STATES,
+      required: true
+    },
+    /**
+     * B8F2B1B: attempt ownership fence on the monetary op.
+     * null/absent = unmarked (B8F2B1A / sealed).
+     * Required when state === 'pending'.
+     */
+    acquisitionAttemptId: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    pendingAt: {
+      type: Date,
+      default: null
+    },
+    debitedAt: {
+      type: Date,
+      default: null
+    },
+    restoredAt: {
+      type: Date,
+      default: null
+    },
+    voidedAt: {
+      type: Date,
+      default: null
+    },
+    protocolVersion: {
+      type: Number,
+      required: true,
+      enum: [1],
+      default: 1,
+      immutable: true
+    }
+  },
+  { _id: false }
+);
+
+reservationLedgerOperationSchema.pre('validate', function validateOperationState(next) {
+  const marker =
+    this.acquisitionAttemptId != null && String(this.acquisitionAttemptId).trim() !== ''
+      ? String(this.acquisitionAttemptId).trim()
+      : null;
+
+  if (this.state === 'pending') {
+    if (!marker) {
+      return next(new Error('pending ledger operation requires acquisitionAttemptId'));
+    }
+    if (this.debitedAt != null) {
+      return next(new Error('pending ledger operation must not set debitedAt'));
+    }
+  }
+  if (this.state === 'debited' && !(this.debitedAt instanceof Date)) {
+    return next(new Error('debited ledger operation requires debitedAt'));
+  }
+  if (this.state === 'voided' && !(this.voidedAt instanceof Date)) {
+    return next(new Error('voided ledger operation requires voidedAt'));
+  }
+  return next();
+});
+
 const giftVoucherSchema = new mongoose.Schema(
   {
     code: { type: String, default: null, trim: true, uppercase: true },
@@ -135,7 +244,15 @@ const giftVoucherSchema = new mongoose.Schema(
       default: null
     },
     issuedByActorId: { type: String, trim: true, default: null },
-    compensationNote: { type: String, trim: true, maxlength: 500, default: null }
+    compensationNote: { type: String, trim: true, maxlength: 500, default: null },
+    /**
+     * B8F2B1A: amount-bound monetary ledger ops (protocol v1).
+     * Authoritative for exactly-once debit/restore; not ID-only sets.
+     */
+    reservationLedgerOperations: {
+      type: [reservationLedgerOperationSchema],
+      default: []
+    }
   },
   { timestamps: true }
 );
@@ -213,3 +330,4 @@ module.exports.GIFT_VOUCHER_STATUSES = VOUCHER_STATUSES;
 module.exports.GIFT_VOUCHER_DELIVERY_MODES = DELIVERY_MODES;
 module.exports.GIFT_VOUCHER_DELIVERY_OPTIONS = DELIVERY_OPTIONS;
 module.exports.GIFT_VOUCHER_ISSUANCE_SOURCES = ISSUANCE_SOURCES;
+module.exports.RESERVATION_LEDGER_OPERATION_STATES = RESERVATION_LEDGER_OPERATION_STATES;

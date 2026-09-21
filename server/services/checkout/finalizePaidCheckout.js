@@ -118,6 +118,262 @@ function needsStripePayment(session) {
   return !NO_PAYMENT_CANONICAL_PI_OPTIONAL_STATUSES.has(session.status);
 }
 
+const LEASE_AWARE_PAYABLE_STATUSES = new Set([
+  'active',
+  'cancel_pending',
+  'expired',
+  'paid'
+]);
+const LEASE_AWARE_FAIL_CLOSED_STATUSES = new Set(['released', 'needs_review']);
+
+/**
+ * Durable selector: any non-null resourceLease object is lease-aware.
+ * Missing/null resourceLease → legacy. Malformed/unknown status fail closed
+ * inside lease validation — never legacy claim creation.
+ */
+function isLeaseAwareFinalizeSession(session) {
+  const rl = session && session.resourceLease;
+  if (rl == null) return false;
+  return typeof rl === 'object';
+}
+
+function createLeaseFinalizeNeedsReviewError(code, message, details = {}) {
+  const err = new CheckoutSessionError(
+    CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_USABLE,
+    message,
+    details
+  );
+  err.code = code;
+  err.needsReview = true;
+  err.requiresManualReview = true;
+  return err;
+}
+
+/**
+ * Canonical full-voucher proof (shared with B8F4A promote). Wraps hold-service
+ * errors into lease finalize needs_review without duplicating predicates.
+ */
+async function proveFullVoucherAuthorityForLeasePaid(session, resourceLease, deps = {}) {
+  const {
+    proveFullVoucherPaidAuthority
+  } = require('./accommodationCheckoutHoldService');
+  const checkoutId = String(session.checkoutId);
+  try {
+    const proof = await proveFullVoucherPaidAuthority(
+      session,
+      resourceLease,
+      checkoutId,
+      deps
+    );
+    return {
+      paymentAuthorityType: 'full_voucher',
+      voucherRedemptionId: proof.voucherRedemptionId,
+      voucherOperationId: proof.voucherOperationId,
+      totalCents: proof.totalCents
+    };
+  } catch (err) {
+    throw createLeaseFinalizeNeedsReviewError(
+      err && err.code ? String(err.code) : 'LEASE_FINALIZE_NEEDS_REVIEW',
+      err && err.message
+        ? String(err.message)
+        : 'Full-voucher authority failed for lease finalization',
+      {
+        stage: 'lease_paid',
+        checkoutId,
+        failureCode: err && err.code ? String(err.code) : null,
+        retryable: false
+      }
+    );
+  }
+}
+
+function assertStripeLeasePaymentIdentity(session, resourceLease) {
+  const checkoutId = String(session.checkoutId);
+  const canonicalPi =
+    session.canonicalPaymentIntentId != null
+      ? String(session.canonicalPaymentIntentId).trim()
+      : '';
+  const leasePi =
+    resourceLease.paymentIntentId != null
+      ? String(resourceLease.paymentIntentId).trim()
+      : '';
+  if (String(session.paymentStatus || '') !== 'paid') {
+    throw createLeaseFinalizeNeedsReviewError(
+      'LEASE_FINALIZE_NEEDS_REVIEW',
+      'Stripe lease finalization requires paymentStatus paid',
+      { stage: 'lease_paid', checkoutId, retryable: false }
+    );
+  }
+  if (!canonicalPi || !leasePi || canonicalPi !== leasePi) {
+    throw createLeaseFinalizeNeedsReviewError(
+      'LEASE_FINALIZE_NEEDS_REVIEW',
+      'Stripe lease PaymentIntent identity mismatch',
+      { stage: 'lease_paid', checkoutId, retryable: false }
+    );
+  }
+  return { paymentAuthorityType: 'stripe', canonicalPaymentIntentId: canonicalPi };
+}
+
+/**
+ * Mark exact resource lease paid via markExactResourceLeasePaidForFinalize.
+ * Verifies generation/attempt/quote/accommodation identity before and after.
+ */
+async function ensureResourceLeasePaidForFinalize(session, { paymentMode, deps = {} } = {}) {
+  const leaseService = require('./checkoutResourceLeaseService');
+  const Model = deps.CheckoutSession || CheckoutSession;
+  const checkoutId = String(session.checkoutId);
+  let live = await Model.findOne({ checkoutId }).lean();
+  if (!live || !isLeaseAwareFinalizeSession(live)) {
+    throw createLeaseFinalizeNeedsReviewError(
+      'LEASE_FINALIZE_NEEDS_REVIEW',
+      'Lease-aware finalization requires durable resource lease',
+      { stage: 'lease_paid', checkoutId, retryable: false }
+    );
+  }
+  const rl = live.resourceLease;
+  if (!rl || typeof rl !== 'object') {
+    throw createLeaseFinalizeNeedsReviewError(
+      'LEASE_FINALIZE_NEEDS_REVIEW',
+      'resourceLease object is required for lease-aware finalization',
+      { stage: 'lease_paid', checkoutId, retryable: false }
+    );
+  }
+  const status = rl.status == null ? '' : String(rl.status);
+  if (LEASE_AWARE_FAIL_CLOSED_STATUSES.has(status)) {
+    throw createLeaseFinalizeNeedsReviewError(
+      'RESOURCE_LEASE_PAID_FAILED',
+      `resourceLease.status ${status} cannot be marked paid`,
+      {
+        stage: 'lease_paid',
+        checkoutId,
+        resourceLeaseGeneration: rl.generation,
+        resourceLeaseAttemptId: rl.attemptId,
+        quoteSnapshotHash: rl.quoteSnapshotHash,
+        retryable: false
+      }
+    );
+  }
+  if (!LEASE_AWARE_PAYABLE_STATUSES.has(status)) {
+    throw createLeaseFinalizeNeedsReviewError(
+      'RESOURCE_LEASE_PAID_FAILED',
+      'resourceLease.status is not payable for finalization',
+      { stage: 'lease_paid', checkoutId, status: status || null, retryable: false }
+    );
+  }
+
+  const acc = rl.accommodation && typeof rl.accommodation === 'object' ? rl.accommodation : null;
+  const accommodationLeaseId =
+    acc && (acc.leaseId != null || acc.holdId != null)
+      ? String(acc.leaseId || acc.holdId).trim()
+      : '';
+  if (!accommodationLeaseId) {
+    throw createLeaseFinalizeNeedsReviewError(
+      'RESOURCE_LEASE_PAID_FAILED',
+      'resourceLease.accommodation.leaseId is required',
+      { stage: 'lease_paid', checkoutId, retryable: false }
+    );
+  }
+
+  const expectedGeneration = Number(rl.generation);
+  const expectedAttemptId = String(rl.attemptId || '').trim();
+  const expectedQuoteHash = String(rl.quoteSnapshotHash || '').trim();
+  if (!Number.isInteger(expectedGeneration) || expectedGeneration < 1) {
+    throw createLeaseFinalizeNeedsReviewError(
+      'RESOURCE_LEASE_PAID_FAILED',
+      'resourceLease.generation is required',
+      { stage: 'lease_paid', checkoutId, retryable: false }
+    );
+  }
+  if (!expectedAttemptId || !expectedQuoteHash) {
+    throw createLeaseFinalizeNeedsReviewError(
+      'RESOURCE_LEASE_PAID_FAILED',
+      'resourceLease attemptId and quoteSnapshotHash are required',
+      { stage: 'lease_paid', checkoutId, retryable: false }
+    );
+  }
+  if (String(live.quoteSnapshotHash || '') !== expectedQuoteHash) {
+    throw createLeaseFinalizeNeedsReviewError(
+      'RESOURCE_LEASE_PAID_FAILED',
+      'Session quoteSnapshotHash does not match resourceLease',
+      { stage: 'lease_paid', checkoutId, retryable: false }
+    );
+  }
+  if (live.bookingId == null || String(live.bookingId).trim() === '') {
+    throw createLeaseFinalizeNeedsReviewError(
+      'RESOURCE_LEASE_PAID_FAILED',
+      'Bound Booking ID is required before marking resource lease paid',
+      { stage: 'lease_paid', checkoutId, retryable: true }
+    );
+  }
+
+  let authorityMeta;
+  if (paymentMode === 'full_voucher') {
+    authorityMeta = await proveFullVoucherAuthorityForLeasePaid(live, rl, deps);
+  } else {
+    authorityMeta = assertStripeLeasePaymentIdentity(live, rl);
+  }
+
+  const markArgs = {
+    checkoutId,
+    expectedGeneration,
+    expectedAttemptId,
+    expectedQuoteSnapshotHash: expectedQuoteHash,
+    expectedAccommodationLeaseId: accommodationLeaseId,
+    expectedBookingId: live.bookingId,
+    paymentMode: paymentMode === 'full_voucher' ? 'full_voucher' : 'stripe'
+  };
+  if (paymentMode === 'full_voucher') {
+    markArgs.expectedVoucherRedemptionId = authorityMeta.voucherRedemptionId;
+    markArgs.expectedVoucherOperationId = authorityMeta.voucherOperationId;
+  } else {
+    markArgs.expectedPaymentIntentId = authorityMeta.canonicalPaymentIntentId;
+  }
+
+  try {
+    const updated = await leaseService.markExactResourceLeasePaidForFinalize(markArgs, deps);
+    live = updated && updated.toObject ? updated.toObject() : updated;
+  } catch (markErr) {
+    throw createLeaseFinalizeNeedsReviewError(
+      'RESOURCE_LEASE_PAID_FAILED',
+      markErr.message || 'Failed to CAS resourceLease.status to paid',
+      {
+        stage: 'lease_paid',
+        checkoutId,
+        resourceLeaseGeneration: expectedGeneration,
+        resourceLeaseAttemptId: expectedAttemptId,
+        quoteSnapshotHash: expectedQuoteHash,
+        failureCode: markErr.code || null,
+        retryable: true
+      }
+    );
+  }
+
+  live = await Model.findOne({ checkoutId }).lean();
+  const paidLease = live && live.resourceLease;
+  if (
+    !paidLease ||
+    String(paidLease.status || '') !== 'paid' ||
+    Number(paidLease.generation) !== expectedGeneration ||
+    String(paidLease.attemptId || '') !== expectedAttemptId ||
+    String(paidLease.quoteSnapshotHash || '') !== expectedQuoteHash
+  ) {
+    throw createLeaseFinalizeNeedsReviewError(
+      'RESOURCE_LEASE_PAID_FAILED',
+      'Paid resourceLease identity verification failed after transition',
+      {
+        stage: 'lease_paid',
+        checkoutId,
+        resourceLeaseGeneration: expectedGeneration,
+        resourceLeaseAttemptId: expectedAttemptId,
+        quoteSnapshotHash: expectedQuoteHash,
+        retryable: true
+      }
+    );
+  }
+
+  return { session: live, authorityMeta };
+}
+
 async function findAdoptableBooking({ checkoutId, paymentIntentId, BookingModel = Booking }) {
   const normalizedId = normalizeCheckoutId(checkoutId);
   let booking = null;
@@ -784,13 +1040,16 @@ async function finalizePaidCheckout({
       ? String(session.canonicalPaymentIntentId).trim()
       : null;
 
-  // 3. Adopt existing Booking before lock rejection
+  // 3. Adopt existing Booking before lock rejection.
+  // Lease-aware sessions must not short-circuit here: an existing Booking may
+  // still need promote / facilities / tombstone before markFinalizeSucceeded.
+  // Exact adoption continues inside the lease-aware finalize work path.
   const existingBooking = await findAdoptableBooking({
     checkoutId: normalizedId,
     paymentIntentId: piIdInput,
     BookingModel
   });
-  if (existingBooking) {
+  if (existingBooking && !isLeaseAwareFinalizeSession(session)) {
     const paidOverride =
       String(session.paymentStatus || '') === 'paid' || Boolean(piIdInput);
     return adoptExistingBooking({
@@ -801,6 +1060,14 @@ async function finalizePaidCheckout({
       now: at,
       visibilityMs,
       paidFinalizeOverride: paidOverride
+    });
+  }
+  if (existingBooking && isLeaseAwareFinalizeSession(session)) {
+    // Hard-conflict checks still apply (foreign checkout / PI misuse).
+    assertAdoptableBookingMatches({
+      booking: existingBooking,
+      session,
+      paymentIntentId: piIdInput
     });
   }
 
@@ -840,6 +1107,26 @@ async function finalizePaidCheckout({
   // Frontend may pass body only to confirm it matches stored intent
   assertConfirmBodyMatchesPersisted({ confirmBody, session });
 
+  // Extra Stripe/lease PI identity for lease-aware path before lock/mutation.
+  const leaseAware = isLeaseAwareFinalizeSession(session);
+  if (leaseAware && (needsStripePayment(session) || piIdInput)) {
+    const leasePi =
+      session.resourceLease?.paymentIntentId != null
+        ? String(session.resourceLease.paymentIntentId).trim()
+        : '';
+    const canonical =
+      session.canonicalPaymentIntentId != null
+        ? String(session.canonicalPaymentIntentId).trim()
+        : '';
+    if (!leasePi || !canonical || leasePi !== canonical) {
+      throw throwVerificationFailure(
+        DOMAIN_VERIFICATION_CODES.NONCANONICAL_PAYMENT_INTENT,
+        'Lease PaymentIntent does not match canonical PaymentIntent',
+        { leasePaymentIntentId: leasePi || null, canonicalPaymentIntentId: canonical || null }
+      );
+    }
+  }
+
   // 10. Build finalizeContext solely from persisted snapshot + intent
   const finalizeContext = await buildFinalizeContextFromPersisted({
     session,
@@ -855,7 +1142,21 @@ async function finalizePaidCheckout({
       deps.recordPaidBookingResolutionIssue ||
       (async () => null),
     openManualReviewItem: deps.openManualReviewItem || (async () => null),
-    stripe
+    stripe,
+    leaseAwareFinalize: leaseAware,
+    paymentAuthorityType: leaseAware
+      ? needsStripePayment(session) || piIdInput
+        ? 'stripe'
+        : 'full_voucher'
+      : null,
+    afterLeasePaid: deps.afterLeasePaid,
+    afterAccommodationPromote: deps.afterAccommodationPromote,
+    afterBookingSave: deps.afterBookingSave,
+    afterVoucherConfirm: deps.afterVoucherConfirm,
+    afterFacilityConfirm: deps.afterFacilityConfirm,
+    afterBookingFacilitySnapshot: deps.afterBookingFacilitySnapshot,
+    afterAccommodationTombstone: deps.afterAccommodationTombstone,
+    beforeMarkFinalizeSucceeded: deps.beforeMarkFinalizeSucceeded
   };
 
   const orchResult = await runCheckoutFinalizeOrchestration({
@@ -867,17 +1168,49 @@ async function finalizePaidCheckout({
     paidFinalizeOverride,
     setPaymentStatusPaid: stripePaymentVerified,
     visibilityMs,
-    finalizeWork: async (workInput) =>
-      executeBookingFinalizeWork({
-        session: workInput.session,
+    afterBookingIdBind: deps.afterBookingIdBind || null,
+    finalizeWork: async (workInput) => {
+      let workSession = workInput.session;
+      if (leaseAware) {
+        const paymentMode =
+          needsStripePayment(session) || piIdInput ? 'stripe' : 'full_voucher';
+        const paid = await ensureResourceLeasePaidForFinalize(workSession, {
+          paymentMode,
+          deps: finalizeWorkDependencies
+        });
+        workSession = paid.session;
+        finalizeWorkDependencies.paymentAuthorityMeta = paid.authorityMeta;
+        if (typeof finalizeWorkDependencies.afterLeasePaid === 'function') {
+          await finalizeWorkDependencies.afterLeasePaid({
+            checkoutId: normalizedId,
+            session: workSession,
+            authorityMeta: paid.authorityMeta
+          });
+        }
+      }
+      return executeBookingFinalizeWork({
+        session: workSession,
         checkoutId: workInput.checkoutId,
         paymentIntentId: workInput.paymentIntentId,
         bookingPayload: workInput.bookingPayload,
-        finalizeContext,
+        finalizeContext: {
+          ...finalizeContext,
+          leaseAwareFinalize: leaseAware,
+          paymentAuthorityType: finalizeWorkDependencies.paymentAuthorityType,
+          paymentAuthorityMeta: finalizeWorkDependencies.paymentAuthorityMeta || null,
+          boundBookingId:
+            workInput.boundBookingId ||
+            (workSession.bookingId != null ? String(workSession.bookingId) : null)
+        },
         source: workInput.source || source,
         dependencies: finalizeWorkDependencies
-      })
+      });
+    }
   });
+
+  if (typeof deps.beforeMarkFinalizeSucceeded === 'function') {
+    // Hook already available inside work; no-op here — success already marked in orch.
+  }
 
   const sideEffects = await enqueuePostFinalizeSideEffects({
     booking: orchResult.booking,
@@ -906,5 +1239,7 @@ module.exports = {
   buildFinalizeContextFromPersisted,
   adoptExistingBooking,
   assertConfirmBodyMatchesPersisted,
+  isLeaseAwareFinalizeSession,
+  ensureResourceLeasePaidForFinalize,
   PAID_BOOKING_FINALIZATION_STAGES
 };

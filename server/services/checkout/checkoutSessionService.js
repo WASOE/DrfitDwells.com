@@ -267,29 +267,108 @@ async function refreshCheckoutSessionQuote({ checkoutId, input, quote }) {
   const requiresPaymentIntentRefresh =
     hashChanged && Boolean(session.canonicalPaymentIntentId);
 
-  session.quoteSnapshot = quoteSnapshot;
-  session.quoteSnapshotHash = quoteSnapshotHash;
-  session.stayFingerprint = buildStayFingerprint(normalizedInput);
-  session.replayFingerprint = buildReplayFingerprint(normalizedInput);
-  session.guestEmail = normalizedInput.guestEmail || session.guestEmail;
-  session.stripeAmountCents = payable.stripeAmountCents;
-  session.giftVoucherAppliedCents = quoteSnapshot.voucherAppliedCents;
-  session.status = payable.status;
-  session.paymentStatus = payable.paymentStatus;
-  session.sessionVersion = Number(session.sessionVersion || 1) + 1;
-  session.metadata = {
+  const {
+    sessionHasSnapshotProtectedLease,
+    snapshotWriteAllowedWithoutProtectedLeasePredicate,
+    toCheckoutSessionLeaseActiveError
+  } = require('./checkoutResourceLeaseService');
+
+  // Exact same-hash refresh with a protected lease: idempotent no-op.
+  // Must not replace lease identity or reduce expiry.
+  if (!hashChanged && sessionHasSnapshotProtectedLease(session)) {
+    return {
+      session,
+      previousQuoteSnapshotHash,
+      quoteSnapshotHash,
+      quoteSnapshotHashChanged: false,
+      requiresPaymentIntentRefresh: false,
+      created: false,
+      idempotentLeaseProtectedRefresh: true
+    };
+  }
+
+  if (hashChanged && sessionHasSnapshotProtectedLease(session)) {
+    throw toCheckoutSessionLeaseActiveError();
+  }
+
+  const expectedSessionVersion = Number(session.sessionVersion || 1);
+  const nowIso = new Date().toISOString();
+  const nextMetadata = {
     ...(session.metadata || {}),
     commercialBoundaryKey: incomingBoundary,
-    lastQuoteRefreshAt: new Date().toISOString()
+    lastQuoteRefreshAt: nowIso
   };
 
-  await session.save();
+  // Atomic Mongo predicate — JS precheck alone is insufficient (B8F3 TOCTOU close).
+  const updated = await CheckoutSession.findOneAndUpdate(
+    {
+      checkoutId: String(checkoutId),
+      sessionVersion: expectedSessionVersion,
+      ...snapshotWriteAllowedWithoutProtectedLeasePredicate()
+    },
+    {
+      $set: {
+        quoteSnapshot,
+        quoteSnapshotHash,
+        stayFingerprint: buildStayFingerprint(normalizedInput),
+        replayFingerprint: buildReplayFingerprint(normalizedInput),
+        guestEmail: normalizedInput.guestEmail || session.guestEmail,
+        stripeAmountCents: payable.stripeAmountCents,
+        giftVoucherAppliedCents: quoteSnapshot.voucherAppliedCents,
+        status: payable.status,
+        paymentStatus: payable.paymentStatus,
+        metadata: nextMetadata
+      },
+      $inc: { sessionVersion: 1 }
+    },
+    { new: true }
+  );
+
+  if (!updated) {
+    const latest = await CheckoutSession.findOne({ checkoutId: String(checkoutId) });
+    if (latest && sessionHasSnapshotProtectedLease(latest)) {
+      // Race: lease attached between precheck and update — commercial lease wins.
+      if (String(latest.quoteSnapshotHash) === String(quoteSnapshotHash)) {
+        return {
+          session: latest,
+          previousQuoteSnapshotHash,
+          quoteSnapshotHash: latest.quoteSnapshotHash,
+          quoteSnapshotHashChanged: false,
+          requiresPaymentIntentRefresh: false,
+          created: false,
+          idempotentLeaseProtectedRefresh: true
+        };
+      }
+      throw toCheckoutSessionLeaseActiveError();
+    }
+    // Same-hash concurrent refresh: another writer already applied the same commercial
+    // snapshot — treat as idempotent success (preserves gate-off ensure races).
+    if (latest && String(latest.quoteSnapshotHash) === String(quoteSnapshotHash)) {
+      return {
+        session: latest,
+        previousQuoteSnapshotHash,
+        quoteSnapshotHash: latest.quoteSnapshotHash,
+        quoteSnapshotHashChanged: false,
+        requiresPaymentIntentRefresh: Boolean(
+          previousQuoteSnapshotHash !== latest.quoteSnapshotHash &&
+            latest.canonicalPaymentIntentId
+        ),
+        created: false,
+        idempotentConcurrentRefresh: true
+      };
+    }
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_CONCURRENCY_CONFLICT,
+      'Checkout session quote refresh lost a concurrency race',
+      { checkoutId: String(checkoutId), expectedSessionVersion }
+    );
+  }
 
   scheduleSavedQuoteTask('link-checkout-refresh', () =>
     linkSavedQuoteToCheckout({
-      checkoutId: session.checkoutId,
-      checkoutSessionId: session._id,
-      checkoutExpiresAt: session.expiresAt,
+      checkoutId: updated.checkoutId,
+      checkoutSessionId: updated._id,
+      checkoutExpiresAt: updated.expiresAt,
       cabinId: quoteSnapshot.cabinId || null,
       cabinTypeId: quoteSnapshot.cabinTypeId || null,
       checkInDateOnly: quoteSnapshot.checkInDateOnly,
@@ -297,12 +376,12 @@ async function refreshCheckoutSessionQuote({ checkoutId, input, quote }) {
       adults: quoteSnapshot.adults,
       children: quoteSnapshot.children,
       quotedTotalCents: quoteSnapshot.totalValueCents,
-      guestEmail: session.guestEmail || normalizedInput.guestEmail || null
+      guestEmail: updated.guestEmail || normalizedInput.guestEmail || null
     })
   );
 
   return {
-    session,
+    session: updated,
     previousQuoteSnapshotHash,
     quoteSnapshotHash,
     quoteSnapshotHashChanged: hashChanged,

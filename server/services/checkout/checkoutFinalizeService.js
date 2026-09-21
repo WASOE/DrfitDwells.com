@@ -582,6 +582,114 @@ async function markFinalizeNeedsReview({ checkoutId, reason, details = null }) {
   return updated;
 }
 
+/**
+ * B8F4B — bind exactly one Booking ObjectId to an in-progress CheckoutSession
+ * before accommodation promotion / claim mutation. Preserves an existing bind.
+ */
+async function bindFinalizeBookingId({
+  checkoutId,
+  expectedSessionVersion = null,
+  preferredBookingId = null,
+  BookingModel = null
+} = {}) {
+  const normalizedId = normalizeCheckoutId(checkoutId);
+  if (!normalizedId) {
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.INVALID_CHECKOUT_ID,
+      'checkoutId is required'
+    );
+  }
+
+  const current = await CheckoutSession.findOne({ checkoutId: normalizedId });
+  if (!current) {
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_FOUND,
+      'Checkout session not found'
+    );
+  }
+  if (String(current.flowVersion || '') !== 'v2') {
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_USABLE,
+      'bindFinalizeBookingId requires flowVersion v2',
+      { checkoutId: normalizedId, flowVersion: current.flowVersion }
+    );
+  }
+  if (String(current.finalizeStatus || '') !== FINALIZE_STATUS.IN_PROGRESS) {
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_USABLE,
+      'bindFinalizeBookingId requires finalizeStatus in_progress',
+      { checkoutId: normalizedId, finalizeStatus: current.finalizeStatus }
+    );
+  }
+
+  if (current.bookingId != null) {
+    return {
+      ok: true,
+      bookingId: String(current.bookingId),
+      session: current,
+      reused: true,
+      minted: false
+    };
+  }
+
+  let targetId = preferredBookingId != null ? toObjectId(preferredBookingId) : null;
+  if (!targetId && BookingModel) {
+    const existing = await BookingModel.findOne({ checkoutId: normalizedId }).select('_id').lean();
+    if (existing?._id) {
+      targetId = existing._id;
+    }
+  }
+  if (!targetId) {
+    targetId = new mongoose.Types.ObjectId();
+  }
+
+  const filter = {
+    checkoutId: normalizedId,
+    flowVersion: 'v2',
+    finalizeStatus: FINALIZE_STATUS.IN_PROGRESS,
+    $or: [{ bookingId: null }, { bookingId: { $exists: false } }]
+  };
+  if (expectedSessionVersion != null && Number.isFinite(Number(expectedSessionVersion))) {
+    filter.sessionVersion = Number(expectedSessionVersion);
+  }
+
+  const updated = await CheckoutSession.findOneAndUpdate(
+    filter,
+    {
+      $set: { bookingId: targetId },
+      $inc: { sessionVersion: 1 }
+    },
+    { new: true }
+  );
+
+  if (updated && updated.bookingId != null) {
+    return {
+      ok: true,
+      bookingId: String(updated.bookingId),
+      session: updated,
+      reused: false,
+      minted: preferredBookingId == null
+    };
+  }
+
+  const again = await CheckoutSession.findOne({ checkoutId: normalizedId });
+  if (again && again.bookingId != null) {
+    return {
+      ok: true,
+      bookingId: String(again.bookingId),
+      session: again,
+      reused: true,
+      minted: false
+    };
+  }
+
+  throw new CheckoutSessionError(
+    CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_USABLE,
+    'Failed to bind durable finalize Booking ID',
+    { checkoutId: normalizedId }
+  );
+}
+
 async function markFinalizeSucceeded({
   checkoutId,
   bookingId,
@@ -607,8 +715,17 @@ async function markFinalizeSucceeded({
     set.paymentStatus = 'paid';
   }
 
+  // Accept sessions that already bound bookingId during in_progress (B8F4B).
   const updated = await CheckoutSession.findOneAndUpdate(
-    { checkoutId: normalizedId, finalizeStatus: FINALIZE_STATUS.IN_PROGRESS },
+    {
+      checkoutId: normalizedId,
+      finalizeStatus: FINALIZE_STATUS.IN_PROGRESS,
+      $or: [
+        { bookingId: null },
+        { bookingId: { $exists: false } },
+        { bookingId: bookingObjectId }
+      ]
+    },
     {
       $set: set,
       $inc: { sessionVersion: 1 }
@@ -622,6 +739,21 @@ async function markFinalizeSucceeded({
       throw new CheckoutSessionError(
         CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_FOUND,
         'Checkout session not found'
+      );
+    }
+    if (
+      current.finalizeStatus === FINALIZE_STATUS.IN_PROGRESS &&
+      current.bookingId != null &&
+      String(current.bookingId) !== String(bookingObjectId)
+    ) {
+      throw new CheckoutSessionError(
+        CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_USABLE,
+        'Checkout session already bound to a different Booking ID',
+        {
+          checkoutId: normalizedId,
+          boundBookingId: String(current.bookingId),
+          requestedBookingId: String(bookingObjectId)
+        }
       );
     }
     const replay = buildFinalizeReplayResponse(current);
@@ -689,12 +821,35 @@ function safeFinalizeErrorDetails(err) {
   if (!err || typeof err !== 'object') {
     return null;
   }
-  return {
+  const details = err.details && typeof err.details === 'object' && !Array.isArray(err.details)
+    ? err.details
+    : null;
+  const safe = {
     code: err.code || null,
     message: err.message || null,
     needsReview: err.needsReview === true,
     requiresManualReview: err.requiresManualReview === true
   };
+  if (details) {
+    for (const key of [
+      'stage',
+      'bookingId',
+      'resourceLeaseGeneration',
+      'resourceLeaseAttemptId',
+      'quoteSnapshotHash',
+      'canonicalPaymentIntentId',
+      'voucherRedemptionId',
+      'voucherOperationId',
+      'expectedFacilityReservationIds',
+      'retryable',
+      'failureCode'
+    ]) {
+      if (details[key] !== undefined) {
+        safe[key] = details[key];
+      }
+    }
+  }
+  return safe;
 }
 
 function shouldMarkNeedsReviewOnFinalizeError(err) {
@@ -705,7 +860,15 @@ function shouldMarkNeedsReviewOnFinalizeError(err) {
     return true;
   }
   const code = err.code;
-  return code === 'PAID_BOOKING_SAVE_FAILED' || code === 'VOUCHER_CONFIRM_FAILED';
+  return (
+    code === 'PAID_BOOKING_SAVE_FAILED' ||
+    code === 'VOUCHER_CONFIRM_FAILED' ||
+    code === 'LEASE_FINALIZE_NEEDS_REVIEW' ||
+    code === 'RESOURCE_LEASE_PAID_FAILED' ||
+    code === 'ACCOMMODATION_PROMOTION_FAILED' ||
+    code === 'FACILITY_CONFIRM_FAILED' ||
+    code === 'ACCOMMODATION_TOMBSTONE_FAILED'
+  );
 }
 
 async function assertOrchestrationBookingPayload(checkoutId, bookingPayload) {
@@ -844,7 +1007,8 @@ async function runCheckoutFinalizeOrchestration({
   setPaymentStatusPaid = false,
   visibilityMs = getFinalizeLockVisibilityMs(),
   /** Ordinary non-authorizing bag: { evidenceDigest, paymentIntentId? } for S0 recovery only */
-  recoveryCommercialStayIdentity = null
+  recoveryCommercialStayIdentity = null,
+  afterBookingIdBind = null
 }) {
   const normalizedId = normalizeCheckoutId(checkoutId);
   const at = normalizeNow(now);
@@ -909,14 +1073,63 @@ async function runCheckoutFinalizeOrchestration({
     throw conflictErr;
   }
 
+  // B8F4B: bind durable Booking ID before resource mutation for lease-aware sessions only.
+  // Legacy orchestration tests/mocks may return their own bookingId; binding is required
+  // only when a durable accommodation resource lease is present.
+  let sessionForWork = lockedSession;
+  const rl = lockedSession && lockedSession.resourceLease;
+  const accLeaseId =
+    rl &&
+    rl.accommodation &&
+    (rl.accommodation.leaseId != null || rl.accommodation.holdId != null)
+      ? String(rl.accommodation.leaseId || rl.accommodation.holdId).trim()
+      : '';
+  const leaseAware =
+    Boolean(accLeaseId) &&
+    ['active', 'cancel_pending', 'expired', 'paid', 'released', 'needs_review'].includes(
+      String(rl.status || '')
+    );
+
+  if (leaseAware) {
+    try {
+      let BookingModel = null;
+      try {
+        BookingModel = mongoose.model('Booking');
+      } catch (_e) {
+        BookingModel = null;
+      }
+      const bound = await bindFinalizeBookingId({
+        checkoutId: normalizedId,
+        expectedSessionVersion: lockedSession.sessionVersion,
+        BookingModel
+      });
+      sessionForWork = bound.session;
+      if (typeof afterBookingIdBind === 'function') {
+        await afterBookingIdBind({
+          checkoutId: normalizedId,
+          bookingId: bound.bookingId,
+          session: sessionForWork
+        });
+      }
+    } catch (bindErr) {
+      await releaseFinalizeLock({
+        checkoutId: normalizedId,
+        note: 'finalize_booking_id_bind_failed'
+      });
+      throw bindErr;
+    }
+  }
+
   let workResult;
   try {
     workResult = await finalizeWork({
-      session: lockedSession,
+      session: sessionForWork,
       checkoutId: normalizedId,
       paymentIntentId,
       bookingPayload,
-      source
+      source,
+      boundBookingId:
+        sessionForWork.bookingId != null ? String(sessionForWork.bookingId) : null
     });
   } catch (err) {
     if (shouldMarkNeedsReviewOnFinalizeError(err)) {
@@ -1030,6 +1243,7 @@ module.exports = {
   reclaimStaleFinalizeLock,
   acquireFinalizeLock,
   releaseFinalizeLock,
+  bindFinalizeBookingId,
   markFinalizeNeedsReview,
   markFinalizeSucceeded,
   assertCheckoutSessionReadyForFinalize,

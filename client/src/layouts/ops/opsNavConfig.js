@@ -17,6 +17,7 @@ const OPS_FRONTEND_MODULE_ROUTES = [
   { prefix: '/ops/conversion', module: 'finance' },
   { prefix: '/ops/insights', module: 'finance' },
   { prefix: '/ops/promo-codes', module: 'finance' },
+  { prefix: '/ops/rate-plans', module: 'finance' },
   { prefix: '/ops/payments', module: 'finance' },
   { prefix: '/ops/creator-partners', module: 'property' },
   { prefix: '/ops/cabins', module: 'property' },
@@ -134,6 +135,16 @@ export const OPS_NAV_ITEMS = [
     match: 'prefix'
   },
   {
+    to: '/ops/rate-plans',
+    label: 'Rate plans',
+    module: 'finance',
+    desktopGroup: 'finance',
+    sidebarOrder: 3,
+    mobileTab: 'finance',
+    moreGroupId: 'finance',
+    match: 'prefix'
+  },
+  {
     to: '/ops/creator-partners',
     label: 'Creator partners',
     module: 'property',
@@ -198,7 +209,7 @@ export const OPS_NAV_ITEMS = [
     label: 'Gift vouchers',
     module: 'finance',
     desktopGroup: 'finance',
-    sidebarOrder: 3,
+    sidebarOrder: 4,
     mobileTab: 'finance',
     moreGroupId: 'finance',
     match: 'prefix'
@@ -295,6 +306,7 @@ export const OPS_MOBILE_TAB_ROUTE_PREFIXES = {
   finance: [
     '/ops/payments',
     '/ops/promo-codes',
+    '/ops/rate-plans',
     '/ops/gift-vouchers',
     '/ops/insights',
     '/ops/conversion',
@@ -352,6 +364,7 @@ export const OPS_MORE_GROUPS = [
     items: [
       { to: '/ops/payments', label: 'Payments' },
       { to: '/ops/promo-codes', label: 'Promo codes' },
+      { to: '/ops/rate-plans', label: 'Rate plans' },
       { to: '/ops/gift-vouchers', label: 'Gift vouchers' },
       { to: '/ops/insights', label: 'Insights' },
       { to: '/ops/insights/performance', label: 'Historical performance' },
