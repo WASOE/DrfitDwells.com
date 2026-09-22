@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const Stripe = require('stripe');
+const { STRIPE_API_VERSION } = require('../../config/stripeApiVersion');
 const GiftVoucher = require('../../models/GiftVoucher');
 const GiftVoucherEvent = require('../../models/GiftVoucherEvent');
 const { appendVoucherEvent } = require('./giftVoucherEventService');
@@ -24,7 +25,9 @@ const {
 const PHYSICAL_CARD_FEE_CENTS = 500;
 const PURCHASE_ID_PATTERN = /^[A-Za-z0-9:_-]{8,128}$/;
 
-let stripeClient = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+let stripeClient = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: STRIPE_API_VERSION })
+  : null;
 
 function setStripeClientForTesting(client) {
   stripeClient = client;

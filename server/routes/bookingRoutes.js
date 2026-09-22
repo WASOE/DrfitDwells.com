@@ -43,6 +43,7 @@ const {
   LEGAL_ACCEPTANCE_CANCELLATION_URL
 } = require('../config/legalAcceptance');
 const Stripe = require('stripe');
+const { STRIPE_API_VERSION } = require('../config/stripeApiVersion');
 
 const { validateId } = require('../middleware/validateId');
 const { sanitizeMetaClientContext } = require('../utils/sanitizeMetaClientContext');
@@ -519,7 +520,7 @@ function mapV2FinalizeErrorToStage(err) {
 
 const ACCEPTANCE_EMAIL_RETRY_DELAY_MS = 5000;
 
-let stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+let stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: STRIPE_API_VERSION }) : null;
 
 const validateTransportMethod = (value, transportOptions) => {
   if (!value || value === 'Not selected') return null;
@@ -3279,7 +3280,7 @@ module.exports.__setStripeClientForTesting = (client) => {
   stripe = client;
 };
 module.exports.__resetStripeClientForTesting = () => {
-  stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+  stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: STRIPE_API_VERSION }) : null;
 };
 module.exports.__setClaimBookingConfirmationSideEffectsForTesting = (fn) => {
   claimBookingConfirmationSideEffectsOnceImpl =

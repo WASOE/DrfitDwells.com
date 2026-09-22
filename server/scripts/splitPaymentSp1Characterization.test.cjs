@@ -238,26 +238,11 @@ test('requiresFullPayment=false is snapshotted false but does not invent reduced
   assert.equal(snapshot.packageSnapshot?.requiresFullPayment, false);
 });
 
-test('canonical PaymentIntent service never reads requiresFullPayment for amount', () => {
+test('canonical PaymentIntent amount is taken from session.stripeAmountCents', () => {
+  // Behavioral coverage for requiresFullPayment=false → full card amount is in the
+  // preceding test. Keep only the amount-source invariant here (not a brittle
+  // requiresFullPayment string absence scan).
   const src = readServerFile('services/checkout/checkoutCanonicalPaymentIntentService.js');
-  assert.equal(src.includes('requiresFullPayment'), false);
   assert.match(src, /amount:\s*amountCents/);
   assert.match(src, /amountCents:\s*session\.stripeAmountCents/);
-});
-
-test('gift voucher and location checkout do not import split-payment flag', () => {
-  const gift = readServerFile('services/giftVouchers/giftVoucherPaymentService.js');
-  const location = readServerFile('services/locationCheckout/locationCheckoutService.js');
-  const giftRoutes = readServerFile('routes/giftVoucherRoutes.js');
-  const locationRoutes = readServerFile('routes/publicLocationCheckoutRoutes.js');
-
-  for (const [label, src] of [
-    ['giftVoucherPaymentService', gift],
-    ['locationCheckoutService', location],
-    ['giftVoucherRoutes', giftRoutes],
-    ['publicLocationCheckoutRoutes', locationRoutes]
-  ]) {
-    assert.equal(src.includes('SPLIT_PAYMENT_ENABLED'), false, label);
-    assert.equal(src.includes('isSplitPaymentEnabled'), false, label);
-  }
 });

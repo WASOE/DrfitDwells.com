@@ -63,6 +63,7 @@ const {
   normalizeDateToSofiaDayStart
 } = require('../../utils/dateTime');
 const Stripe = require('stripe');
+const { STRIPE_API_VERSION } = require('../../config/stripeApiVersion');
 const {
   ensurePendingConfirmationDelivery,
   resolveConfirmationTemplateKey
@@ -785,7 +786,7 @@ function getStripeClient(stripeOverride = null) {
   // Same authoritative seam as checkoutFinalizationWorker / reconcilePaidCheckoutFinalization.
   // Do not require a nonexistent server/config/stripe module.
   if (!process.env.STRIPE_SECRET_KEY) return null;
-  return new Stripe(process.env.STRIPE_SECRET_KEY);
+  return new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: STRIPE_API_VERSION });
 }
 
 async function runMultiUnitPaidOrphanRecoveryBookingFinalizeCore({

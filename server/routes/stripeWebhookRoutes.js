@@ -6,10 +6,13 @@
  */
 const express = require('express');
 const Stripe = require('stripe');
+const { STRIPE_API_VERSION } = require('../config/stripeApiVersion');
 const { processStripeWebhookEvent } = require('../services/ops/ingestion/stripeIngestionService');
 
 const router = express.Router();
-const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: STRIPE_API_VERSION })
+  : null;
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
 function logWebhookAudit(fields) {
