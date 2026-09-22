@@ -15,6 +15,9 @@ const {
   PRICING_METHODS,
   ENTITY_TYPES
 } = require('../models/RatePlan');
+const {
+  normalizeOptionalPaymentTermReference
+} = require('./paymentTermService');
 
 const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -259,6 +262,12 @@ function validateAndNormalizeRatePlan(input) {
     errors.push('cancellationPolicyVersion must be a positive integer');
   }
 
+  // Optional payment-term pin. Independent of legacy requiresFullPayment.
+  const paymentTermRef = normalizeOptionalPaymentTermReference(input);
+  for (const err of paymentTermRef.errors) {
+    errors.push(err);
+  }
+
   let minNights = input.minNights == null ? 1 : input.minNights;
   if (!Number.isInteger(minNights) || minNights < 1) {
     errors.push('minNights must be a positive integer');
@@ -374,6 +383,8 @@ function validateAndNormalizeRatePlan(input) {
     requiresFullPayment: Boolean(requiresFullPayment),
     cancellationPolicyCode,
     cancellationPolicyVersion,
+    paymentTermCode: paymentTermRef.paymentTermCode,
+    paymentTermVersion: paymentTermRef.paymentTermVersion,
     inclusions,
     accommodations
   };

@@ -174,6 +174,38 @@ const ratePlanSchema = new mongoose.Schema(
         message: 'cancellationPolicyVersion must be a positive integer'
       }
     },
+    /**
+     * Optional pin to PaymentTermTemplate (code + version).
+     * Both null = existing full-payment behavior. Both set = exact template version.
+     * SP3: configuration only; not wired to checkout execution.
+     * Independent of legacy requiresFullPayment (left untouched).
+     */
+    paymentTermCode: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      default: null,
+      maxlength: [80, 'paymentTermCode cannot exceed 80 characters'],
+      validate: {
+        validator(v) {
+          if (v == null || v === '') return true;
+          return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(v);
+        },
+        message: 'paymentTermCode must be lowercase kebab-case'
+      }
+    },
+    paymentTermVersion: {
+      type: Number,
+      default: null,
+      min: [1, 'paymentTermVersion must be a positive integer'],
+      validate: {
+        validator(v) {
+          if (v == null) return true;
+          return Number.isInteger(v);
+        },
+        message: 'paymentTermVersion must be a positive integer'
+      }
+    },
     inclusions: {
       type: [{ type: String, trim: true, maxlength: 200 }],
       default: []

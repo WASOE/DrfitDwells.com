@@ -31,6 +31,8 @@ const BUSINESS_FIELD_KEYS = Object.freeze([
   'requiresFullPayment',
   'cancellationPolicyCode',
   'cancellationPolicyVersion',
+  'paymentTermCode',
+  'paymentTermVersion',
   'inclusions',
   'accommodations'
 ]);
@@ -72,6 +74,8 @@ function buildHttpStatusByManagementCode(MANAGEMENT_ERROR_CODES) {
     [MANAGEMENT_ERROR_CODES.ACCOMMODATION_INACTIVE]: 400,
     [MANAGEMENT_ERROR_CODES.ACCOMMODATION_ENTITY_MISMATCH]: 400,
     [MANAGEMENT_ERROR_CODES.CANCELLATION_POLICY_NOT_FOUND]: 400,
+    [MANAGEMENT_ERROR_CODES.PAYMENT_TERM_NOT_FOUND]: 400,
+    [MANAGEMENT_ERROR_CODES.PAYMENT_TERM_NOT_ACTIVE]: 400,
     [MANAGEMENT_ERROR_CODES.UNSUPPORTED_TYPE]: 400,
     [MANAGEMENT_ERROR_CODES.HARD_DELETE_FORBIDDEN]: 400,
 
@@ -266,6 +270,8 @@ const PUBLIC_RATE_PLAN_KEYS = Object.freeze([
   'requiresFullPayment',
   'cancellationPolicyCode',
   'cancellationPolicyVersion',
+  'paymentTermCode',
+  'paymentTermVersion',
   'inclusions',
   'accommodations',
   'createdBy',
