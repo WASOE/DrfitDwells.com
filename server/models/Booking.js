@@ -80,6 +80,14 @@ const cancellationSettlementSchema = new mongoose.Schema(
         { _id: false }
       ),
       default: null
+    },
+    /**
+     * SP7: deterministic split installment allocation (stay credit / cash / forfeit / voids).
+     * Stored as Mixed so allocations remain auditable without schema churn.
+     */
+    splitSettlement: {
+      type: mongoose.Schema.Types.Mixed,
+      default: undefined
     }
   },
   { _id: false }
@@ -368,10 +376,61 @@ const bookingSchema = new mongoose.Schema({
           default: null
         },
         openedAt: { type: Date, default: null },
-        resolvedAt: { type: Date, default: null }
+        resolvedAt: { type: Date, default: null },
+        resolvedNote: { type: String, trim: true, default: null },
+        notes: {
+          type: [
+            new mongoose.Schema(
+              {
+                at: { type: Date, default: Date.now },
+                actorId: { type: String, trim: true, default: null },
+                text: { type: String, trim: true, required: true, maxlength: 2000 }
+              },
+              { _id: false }
+            )
+          ],
+          default: undefined
+        }
       },
       { _id: false }
     ),
+    default: null
+  },
+  /**
+   * SP7: successful date transfers (V1 max one). Append-only history.
+   */
+  dateTransferCount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  dateTransferHistory: {
+    type: [mongoose.Schema.Types.Mixed],
+    default: undefined
+  },
+  /**
+   * SP7B: durable resumable date-transfer operation (prepare → stripe → commit).
+   * Booking dates remain unchanged until status === committed.
+   */
+  dateTransferOperation: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
+  /** SP7: stay credit applied at checkout (disables split; reduces card obligation). */
+  stayCreditAppliedCents: {
+    type: Number,
+    default: 0,
+    min: [0, 'stayCreditAppliedCents cannot be negative']
+  },
+  stayCreditId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'StayCredit',
+    default: null
+  },
+  stayCreditCode: {
+    type: String,
+    trim: true,
+    uppercase: true,
     default: null
   },
   totalValueCents: {

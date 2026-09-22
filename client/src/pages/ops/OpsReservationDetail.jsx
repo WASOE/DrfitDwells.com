@@ -1264,6 +1264,130 @@ export default function OpsReservationDetail() {
           </section>
         ) : null}
 
+        {data.splitPayment ? (
+          <section className="ops-rd-surface" data-testid="ops-split-payment-panel">
+            <div className="ops-rd-surface__head">
+              <h2 className="ops-rd-surface__title">Split payment</h2>
+            </div>
+            <dl className="ops-rd-facts">
+              <Fact label="Settlement">{data.splitPayment.paymentSettlementStatus || '—'}</Fact>
+              <Fact label="Choice">{data.splitPayment.paymentChoice || '—'}</Fact>
+              <Fact label="Total" numeric>
+                {formatMoneyFromCents(data.splitPayment.totalCents, 'EUR')}
+              </Fact>
+              <Fact label="Paid" numeric>
+                {formatMoneyFromCents(data.splitPayment.paidCents, 'EUR')}
+              </Fact>
+              <Fact label="Remaining" numeric>
+                {formatMoneyFromCents(data.splitPayment.remainingCents, 'EUR')}
+              </Fact>
+              <Fact label="Date transfers">
+                {data.splitPayment.dateTransferCount || 0}
+                {data.splitPayment.allowDateTransfer ? '' : ' (not permitted)'}
+              </Fact>
+            </dl>
+            {data.splitPayment.cancellationReview ? (
+              <div className="ops-rd-note" data-testid="ops-split-cancellation-review">
+                <p>
+                  Payment-failure review: {data.splitPayment.cancellationReview.status}
+                  {data.splitPayment.cancellationReview.installmentSequence
+                    ? ` (installment #${data.splitPayment.cancellationReview.installmentSequence})`
+                    : ''}
+                </p>
+                {data.splitPayment.cancellationReview.status === 'open' ? (
+                  <>
+                    <p className="text-sm opacity-80">
+                      Resolve review does not cancel the booking. Use authorized Cancel to settle.
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <OpsButton
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            await opsWriteAPI.resolveCancellationReview(id, {
+                              note: 'Resolved from Ops split payment panel'
+                            });
+                            await load();
+                          } catch (e) {
+                            setError(e?.response?.data?.error?.message || e.message || 'Resolve failed');
+                          }
+                        }}
+                      >
+                        Resolve review
+                      </OpsButton>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+            <div className="ops-rd-table-wrap">
+              <table className="ops-rd-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Amount</th>
+                    <th>Due</th>
+                    <th>Status</th>
+                    <th>Invoice</th>
+                    <th>Retry</th>
+                    <th>Grace</th>
+                    <th>Recovery</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data.splitPayment.installments || []).map((row) => (
+                    <tr key={row.sequence}>
+                      <td>{row.sequence}</td>
+                      <td>{formatMoneyFromCents(row.amountCents, row.currency || 'EUR')}</td>
+                      <td>{row.dueAtDateOnly || '—'}</td>
+                      <td>{row.status}</td>
+                      <td>{row.stripeInvoiceStatus || '—'}</td>
+                      <td>
+                        {row.nextPaymentAttemptAt
+                          ? String(row.nextPaymentAttemptAt).slice(0, 16).replace('T', ' ')
+                          : '—'}
+                      </td>
+                      <td>
+                        {row.graceEndsAt
+                          ? String(row.graceEndsAt).slice(0, 16).replace('T', ' ')
+                          : '—'}
+                      </td>
+                      <td>
+                        {row.hostedInvoiceUrl ? (
+                          <a
+                            href={row.hostedInvoiceUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="ops-rd-link"
+                          >
+                            Hosted invoice
+                          </a>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {(data.splitPayment.stayCreditsIssued || []).length ? (
+              <div className="ops-rd-note">
+                <p>Stay credits issued:</p>
+                <ul>
+                  {data.splitPayment.stayCreditsIssued.map((c) => (
+                    <li key={c.code}>
+                      {c.code} — {formatMoneyFromCents(c.issuedCents, 'EUR')} ({c.status})
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+
         <div className="ops-rd-layout">
           <div className="ops-rd-main">
             <section className="ops-rd-surface">

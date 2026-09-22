@@ -277,6 +277,9 @@ function buildBookingData({
     subtotalCents: ctx.subtotalCents,
     discountAmountCents: ctx.discountAmountCents,
     giftVoucherAppliedCents: ctx.giftVoucherAppliedCents,
+    stayCreditAppliedCents: ctx.stayCreditAppliedCents || session?.stayCreditAppliedCents || 0,
+    stayCreditCode: ctx.stayCreditCode || session?.stayCreditCode || null,
+    stayCreditId: ctx.stayCreditId || session?.stayCreditId || null,
     stripePaidAmountCents: ctx.stripePaidAmountCents,
     paymentSettlementStatus,
     totalValueCents: ctx.totalValueCents,
@@ -1332,6 +1335,91 @@ async function confirmVoucherIfNeeded(deps, {
   }
 }
 
+/**
+ * SP7B: consume reserved StayCredit after Booking persist (idempotent).
+ * Requires a matching live/consumed reservation — never spends from bare preview fields.
+ * On failure after Booking save, reservation remains reserved (unavailable elsewhere);
+ * finalization must not be marked complete (caller throws needs_review).
+ */
+async function consumeStayCreditReservationIfNeeded({ booking, session, finalizeContext }) {
+  const reservationId =
+    (session && session.stayCreditReservationId) ||
+    finalizeContext?.stayCreditReservationId ||
+    null;
+  const applied =
+    Number(session?.stayCreditAppliedCents) ||
+    Number(session?.quoteSnapshot?.stayCreditAppliedCents) ||
+    Number(finalizeContext?.stayCreditAppliedCents) ||
+    0;
+  if ((!reservationId && applied < 1) || applied < 1) return null;
+
+  const {
+    consumeStayCreditReservation,
+    StayCreditError
+  } = require('../stayCreditService');
+  const StayCreditReservation = require('../../models/StayCreditReservation');
+
+  const checkoutId = session?.checkoutId || finalizeContext?.checkoutId || booking?.checkoutId;
+  let reservation = null;
+  if (reservationId) {
+    reservation = await StayCreditReservation.findById(reservationId);
+  }
+  if (!reservation && checkoutId) {
+    reservation = await StayCreditReservation.findOne({
+      checkoutSessionId: String(checkoutId),
+      status: { $in: ['reserved', 'consumed'] }
+    }).sort({ createdAt: -1 });
+  }
+  if (!reservation) {
+    const err = new Error('Stay credit reservation required before Booking can be considered funded');
+    err.code = 'STAY_CREDIT_RESERVATION_REQUIRED';
+    throw err;
+  }
+  if (Math.trunc(Number(reservation.amountCents)) !== Math.trunc(applied)) {
+    const err = new Error('Stay credit reservation amount does not match checkout applied cents');
+    err.code = 'STAY_CREDIT_RESERVATION_AMOUNT_MISMATCH';
+    throw err;
+  }
+
+  // Funding invariant: card paid + reserved stay credit (+ voucher) covers commercial total.
+  const cardPaid = Math.max(0, Math.trunc(Number(booking?.stripePaidAmountCents) || 0));
+  const voucher = Math.max(0, Math.trunc(Number(booking?.giftVoucherAppliedCents) || 0));
+  const reserved = Math.trunc(Number(reservation.amountCents));
+  const commercial =
+    booking?.totalValueCents != null
+      ? Math.trunc(Number(booking.totalValueCents))
+      : Math.round(Number(booking?.totalPrice || 0) * 100);
+  if (Number.isFinite(commercial) && commercial > 0 && cardPaid + voucher + reserved < commercial) {
+    const err = new Error(
+      'Booking underfunded: card + reserved stay credit + voucher below commercial total'
+    );
+    err.code = 'STAY_CREDIT_FUNDING_INVARIANT';
+    throw err;
+  }
+
+  const result = await consumeStayCreditReservation({
+    reservationId: reservation._id,
+    checkoutSessionId: checkoutId ? String(checkoutId) : null,
+    bookingId: booking?._id || null,
+    actorId: 'checkout_finalize'
+  });
+
+  if (booking?._id) {
+    const Booking = require('../../models/Booking');
+    await Booking.updateOne(
+      { _id: booking._id },
+      {
+        $set: {
+          stayCreditAppliedCents: reserved,
+          stayCreditCode: String(reservation.stayCreditCode || ''),
+          stayCreditId: reservation.stayCreditId
+        }
+      }
+    );
+  }
+  return result;
+}
+
 
 function isLeaseAwareSessionLocal(session) {
   const rl = session && session.resourceLease;
@@ -1924,6 +2012,22 @@ async function executeLeaseAwareFinalizeWork({
       }
     );
   }
+
+  try {
+    await consumeStayCreditReservationIfNeeded({ booking, session, finalizeContext: ctx });
+  } catch (stayErr) {
+    throw createLeaseWorkNeedsReviewError(
+      'STAY_CREDIT_CONSUME_FAILED',
+      stayErr.message || 'Stay credit consumption failed',
+      {
+        stage: 'stay_credit_consume',
+        bookingId: boundBookingId,
+        stayCreditCode: session.stayCreditCode || null,
+        stayCreditReservationId: session.stayCreditReservationId || null,
+        retryable: true
+      }
+    );
+  }
   if (typeof deps.afterVoucherConfirm === 'function') {
     await deps.afterVoucherConfirm({ checkoutId, bookingId: boundBookingId });
   }
@@ -2367,6 +2471,8 @@ async function executeBookingFinalizeWork({
     voucherEvidence,
     stripePaymentVerified: Boolean(stripePaymentVerified)
   });
+
+  await consumeStayCreditReservationIfNeeded({ booking, session, finalizeContext: ctx });
 
   await runShadowClaimsAfterCanonicalSurvival(deps, {
     booking,

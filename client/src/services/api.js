@@ -165,6 +165,17 @@ export const ratePlanAdminAPI = {
   retire: (id, data) => api.post(`/admin/rate-plans/${id}/retire`, data)
 };
 
+/** SP7 PaymentTermTemplate management API. */
+export const paymentTermAdminAPI = {
+  list: (params = {}) => api.get('/admin/payment-terms', { params }),
+  get: (id) => api.get(`/admin/payment-terms/${id}`),
+  create: (data) => api.post('/admin/payment-terms', data),
+  update: (id, data) => api.patch(`/admin/payment-terms/${id}`, data),
+  clone: (id) => api.post(`/admin/payment-terms/${id}/clone`, {}),
+  activate: (id, data = {}) => api.post(`/admin/payment-terms/${id}/activate`, data),
+  retire: (id, data = {}) => api.post(`/admin/payment-terms/${id}/retire`, data)
+};
+
 export const reviewAPI = {
   getByCabinId: (cabinId, params) => {
     const queryParams = new URLSearchParams(params).toString();

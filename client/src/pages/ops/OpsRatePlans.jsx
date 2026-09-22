@@ -119,6 +119,8 @@ export default function OpsRatePlans() {
         version: prev.version,
         cancellationPolicyCode: prev.cancellationPolicyCode,
         cancellationPolicyVersion: prev.cancellationPolicyVersion,
+        paymentTermCode: prev.paymentTermCode,
+        paymentTermVersion: prev.paymentTermVersion,
         inclusionsText: prev.inclusionsText,
         requiresFullPayment: prev.requiresFullPayment
       };
@@ -629,6 +631,31 @@ export default function OpsRatePlans() {
                       className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2"
                       value={form.cancellationPolicyVersion}
                       onChange={(e) => updateField('cancellationPolicyVersion', e.target.value)}
+                    />
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="block text-sm text-gray-700">
+                    Payment term code (optional)
+                    <input
+                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2"
+                      value={form.paymentTermCode || ''}
+                      onChange={(e) => updateField('paymentTermCode', e.target.value)}
+                      placeholder="Leave empty for full payment only"
+                      disabled={readOnly}
+                    />
+                  </label>
+                  <label className="block text-sm text-gray-700">
+                    Payment term version
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2"
+                      value={form.paymentTermVersion || ''}
+                      onChange={(e) => updateField('paymentTermVersion', e.target.value)}
+                      disabled={readOnly}
                     />
                   </label>
                 </div>

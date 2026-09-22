@@ -341,6 +341,78 @@ router.post('/:id/actions/cancel', async (req, res) => {
   }
 });
 
+router.post('/:id/actions/cancellation-review/note', validateId('id'), async (req, res) => {
+  try {
+    const {
+      addCancellationReviewNote
+    } = require('../../../services/splitCancellationReviewService');
+    const review = await addCancellationReviewNote({
+      bookingId: req.params.id,
+      text: req.body?.text || req.body?.note || null,
+      actorId: req.user?.id || req.user?.email || 'ops'
+    });
+    return res.json({ success: true, data: { cancellationReview: review } });
+  } catch (error) {
+    const status = error.code === 'NOTE_REQUIRED' || error.code === 'REVIEW_NOT_OPEN' ? 400 : 500;
+    return res.status(status).json({
+      success: false,
+      error: { code: error.code || 'INTERNAL', message: error.message }
+    });
+  }
+});
+
+router.post('/:id/actions/cancellation-review/resolve', validateId('id'), async (req, res) => {
+  try {
+    const {
+      resolveCancellationReview
+    } = require('../../../services/splitCancellationReviewService');
+    const data = await resolveCancellationReview({
+      bookingId: req.params.id,
+      note: req.body?.note || null,
+      actorId: req.user?.id || req.user?.email || 'ops'
+    });
+    // Explicit: does not cancel booking or release inventory.
+    return res.json({
+      success: true,
+      data: {
+        cancellationReview: data.cancellationReview,
+        bookingStatus: data.bookingStatus,
+        cancelled: false
+      }
+    });
+  } catch (error) {
+    const status = error.code === 'REVIEW_MISSING' ? 404 : 400;
+    return res.status(status).json({
+      success: false,
+      error: { code: error.code || 'INTERNAL', message: error.message }
+    });
+  }
+});
+
+router.post('/:id/actions/split-date-transfer', validateId('id'), async (req, res) => {
+  try {
+    const { transferSplitBookingDates } = require('../../../services/splitDateTransferService');
+    const data = await transferSplitBookingDates({
+      bookingId: req.params.id,
+      newCheckIn: req.body?.newCheckIn || req.body?.checkIn,
+      newCheckOut: req.body?.newCheckOut || req.body?.checkOut,
+      actorId: req.user?.id || req.user?.email || 'ops',
+      idempotencyKey: req.body?.idempotencyKey || req.headers['x-idempotency-key'] || null,
+      // Availability must be confirmed by caller-provided authoritative check in service tests;
+      // production ops path requires skipAvailabilityCheck !== true.
+      skipAvailabilityCheck: false,
+      availabilityCheckFn: async () => Boolean(req.body?.availabilityConfirmed === true)
+    });
+    return res.json({ success: true, data });
+  } catch (error) {
+    const status = error.code === 'BOOKING_NOT_FOUND' ? 404 : 409;
+    return res.status(status).json({
+      success: false,
+      error: { code: error.code || 'INTERNAL', message: error.message, details: error.details || null }
+    });
+  }
+});
+
 router.post('/:id/actions/resolve-cancellation-settlement', validateId('id'), async (req, res) => {
   try {
     const data = await resolveCancellationSettlement({

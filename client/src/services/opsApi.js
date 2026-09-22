@@ -160,6 +160,18 @@ const opsWriteAPI = {
     api.post(`/ops/reservations/${id}/actions/resolve-cancellation-settlement`, body, {
       headers: authHeaders()
     }),
+  addCancellationReviewNote: (id, body) =>
+    api.post(`/ops/reservations/${id}/actions/cancellation-review/note`, body, {
+      headers: authHeaders()
+    }),
+  resolveCancellationReview: (id, body = {}) =>
+    api.post(`/ops/reservations/${id}/actions/cancellation-review/resolve`, body, {
+      headers: authHeaders()
+    }),
+  splitDateTransfer: (id, body) =>
+    api.post(`/ops/reservations/${id}/actions/split-date-transfer`, body, {
+      headers: authHeaders()
+    }),
   reassignReservation: (id, payload) => api.post(`/ops/reservations/${id}/actions/reassign`, payload, { headers: authHeaders() }),
   reallocateReservation: (id, payload) => {
     const body = {

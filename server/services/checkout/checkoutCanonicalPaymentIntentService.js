@@ -662,6 +662,12 @@ async function defaultVoucherAdapter({ voucherCode, checkoutId, totalValueCents 
   } = require('../bookings/bookingVoucherRedemptionService');
 
   await releaseExpiredVoucherReservations({ now: new Date(), limit: 25 });
+  try {
+    const { releaseExpiredStayCreditReservations } = require('../stayCreditService');
+    await releaseExpiredStayCreditReservations({ now: new Date(), limit: 25 });
+  } catch {
+    // non-fatal alongside voucher expiry sweep
+  }
   const holdExpiry = new Date(Date.now() + 30 * 60 * 1000);
   return reserveVoucherForCheckout({
     voucherCode: normalized,

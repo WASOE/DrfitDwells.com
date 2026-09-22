@@ -655,6 +655,8 @@ const bookingQuoteBodyValidators = [
   body('experienceKeys').optional().isArray().withMessage('experienceKeys must be an array'),
   body('promoCode').optional().isString().isLength({ max: 40 }).withMessage('promoCode is too long'),
   body('voucherCode').optional().isString().isLength({ max: 64 }).withMessage('voucherCode is too long'),
+  body('stayCreditCode').optional().isString().isLength({ max: 64 }).withMessage('stayCreditCode is too long'),
+  body('guestEmail').optional().isEmail().withMessage('guestEmail must be a valid email'),
   body('funnelSessionKey').optional().isString().isLength({ max: 120 }),
   body('funnelVisitorKey').optional().isString().isLength({ max: 120 })
 ];
@@ -746,7 +748,10 @@ router.post('/quote', bookingQuoteLimiter, bookingQuoteBodyValidators, async (re
       voucherAppliedCents = 0,
       remainingDueCents = Math.round(totalPrice * 100),
       fullVoucherCoverage = false,
-      voucherPreviewError = null
+      voucherPreviewError = null,
+      stayCreditAppliedCents = 0,
+      stayCreditCode = null,
+      stayCreditPreviewError = null
     } = result;
     return res.json({
       success: true,
@@ -758,7 +763,10 @@ router.post('/quote', bookingQuoteLimiter, bookingQuoteBodyValidators, async (re
         voucherAppliedCents,
         remainingDueCents,
         fullVoucherCoverage,
-        ...(voucherPreviewError ? { voucherMessage: voucherPreviewError } : {})
+        stayCreditAppliedCents,
+        stayCreditCode,
+        ...(voucherPreviewError ? { voucherMessage: voucherPreviewError } : {}),
+        ...(stayCreditPreviewError ? { stayCreditMessage: stayCreditPreviewError } : {})
       }
     });
   } catch (err) {

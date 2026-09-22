@@ -315,6 +315,34 @@ const checkoutSessionSchema = new mongoose.Schema(
         message: 'giftVoucherAppliedCents must be a non-negative integer'
       }
     },
+    /** SP7: stay credit applied at checkout — disables split; reduces card obligation. */
+    stayCreditAppliedCents: {
+      type: Number,
+      default: 0,
+      min: 0,
+      validate: {
+        validator: integerNonNegativeValidator,
+        message: 'stayCreditAppliedCents must be a non-negative integer'
+      }
+    },
+    stayCreditCode: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: null
+    },
+    stayCreditId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'StayCredit',
+      default: null
+    },
+    /** SP7B: durable StayCreditReservation for this checkout (authoritative reserved cents). */
+    stayCreditReservationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'StayCreditReservation',
+      default: null,
+      index: true
+    },
     expiresAt: {
       type: Date,
       default: null,

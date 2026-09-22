@@ -226,10 +226,12 @@ function buildSplitPaymentOffer({
   template,
   bookingDateOnly,
   arrivalDateOnly,
-  voucherAppliedCents = 0
+  voucherAppliedCents = 0,
+  stayCreditAppliedCents = 0
 }) {
   const voucherCents = Math.max(0, Number(voucherAppliedCents) || 0);
-  if (voucherCents > 0) {
+  const stayCreditCents = Math.max(0, Number(stayCreditAppliedCents) || 0);
+  if (voucherCents > 0 || stayCreditCents > 0) {
     return ineligible(INELIGIBILITY_REASONS.ACCOMMODATION_VOUCHER_APPLIED);
   }
 
@@ -439,6 +441,16 @@ async function resolveSplitPaymentOfferForCheckout({
           : 0
     ) || 0
   );
+  const stayCreditAppliedCents = Math.max(
+    0,
+    Number(
+      quoteSnapshot && quoteSnapshot.stayCreditAppliedCents != null
+        ? quoteSnapshot.stayCreditAppliedCents
+        : quote && quote.stayCreditAppliedCents != null
+          ? quote.stayCreditAppliedCents
+          : 0
+    ) || 0
+  );
 
   const totalCents = Math.max(
     0,
@@ -469,7 +481,8 @@ async function resolveSplitPaymentOfferForCheckout({
     template,
     bookingDateOnly: booking,
     arrivalDateOnly: arrival,
-    voucherAppliedCents
+    voucherAppliedCents,
+    stayCreditAppliedCents
   });
 
   if (!eligibility.eligible) {
