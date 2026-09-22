@@ -25,6 +25,19 @@ const PAYMENT_TERM_DUE_RULES = [
   'days_before_arrival',
   'days_after_booking'
 ];
+/**
+ * Commercial treatment of a leg amount if the guest cancels within the
+ * applicable cancellation-policy window. Not a refund-engine; storage only.
+ *
+ * - standard_policy: existing cancellation policy governs cash refund/penalty
+ * - stay_credit: retained as Drift & Dwells future-stay credit when policy allows
+ * - forfeit: not returned as cash or credit when that treatment applies
+ */
+const PAYMENT_TERM_CANCELLATION_TREATMENTS = [
+  'standard_policy',
+  'stay_credit',
+  'forfeit'
+];
 
 const paymentTermLegSchema = new mongoose.Schema(
   {
@@ -83,10 +96,14 @@ const paymentTermLegSchema = new mongoose.Schema(
         message: 'leg.dueOffsetDays must be an integer'
       }
     },
-    nonRefundable: {
-      type: Boolean,
-      required: true,
-      default: false
+    cancellationTreatment: {
+      type: String,
+      required: [true, 'leg.cancellationTreatment is required'],
+      enum: {
+        values: PAYMENT_TERM_CANCELLATION_TREATMENTS,
+        message: 'Unsupported cancellationTreatment'
+      },
+      default: 'standard_policy'
     }
   },
   { _id: false }
@@ -184,3 +201,4 @@ module.exports.PAYMENT_TERM_CURRENCIES = PAYMENT_TERM_CURRENCIES;
 module.exports.PAYMENT_TERM_SCHEDULE_KINDS = PAYMENT_TERM_SCHEDULE_KINDS;
 module.exports.PAYMENT_TERM_AMOUNT_TYPES = PAYMENT_TERM_AMOUNT_TYPES;
 module.exports.PAYMENT_TERM_DUE_RULES = PAYMENT_TERM_DUE_RULES;
+module.exports.PAYMENT_TERM_CANCELLATION_TREATMENTS = PAYMENT_TERM_CANCELLATION_TREATMENTS;

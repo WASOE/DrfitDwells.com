@@ -225,8 +225,9 @@ const featureFlags = {
 
   /**
    * Split-payment master kill switch (SP1).
-   * Default OFF when unset. No payment path may branch on this flag until a later
-   * batch explicitly wires schedule/invoice behavior behind it.
+   * Default OFF when unset.
+   * SP4: when enabled, may attach an optional splitPaymentOfferSnapshot on
+   * CheckoutSession; Stripe charge amount remains full card obligation.
    * Enabled: 1|true|on|yes. Disabled: 0|false|off|no.
    */
   isSplitPaymentEnabled() {

@@ -1,8 +1,9 @@
 /**
- * SP1 — Split-payment isolation characterization (no split behavior).
+ * SP1/SP4 — Split-payment isolation characterization.
  *
- * Locks CURRENT committed full-payment invariants + disabled SPLIT_PAYMENT_ENABLED.
- * Does not invent requiresFullPayment=false semantics beyond today's snapshot/charge path.
+ * Locks full-payment charge invariants + disabled-by-default SPLIT_PAYMENT_ENABLED.
+ * SP4 may attach an optional splitPaymentOfferSnapshot behind the flag; Stripe
+ * charge amount / canonical PI / webhook paths must remain flag-independent.
  *
  * Run: cd server && node --test --test-concurrency=1 scripts/splitPaymentSp1Characterization.test.cjs
  */
@@ -111,36 +112,51 @@ test('SPLIT_PAYMENT_ENABLED respects explicit off/on tokens', () => {
   }
 });
 
-test('SP1: no runtime payment path branches on SPLIT_PAYMENT_ENABLED yet', () => {
-  const flagDef = path.join(SERVER_ROOT, 'utils', 'featureFlags.js');
-  const scanRoots = [
-    path.join(SERVER_ROOT, 'services', 'checkout'),
-    path.join(SERVER_ROOT, 'services', 'payments'),
-    path.join(SERVER_ROOT, 'services', 'ops', 'ingestion'),
-    path.join(SERVER_ROOT, 'services', 'giftVouchers'),
-    path.join(SERVER_ROOT, 'services', 'locationCheckout'),
-    path.join(SERVER_ROOT, 'routes')
+test('SP4: flag may attach offer snapshot only — charge/PI/webhook paths stay flag-free', () => {
+  // SP4 wires optional splitPaymentOfferSnapshot behind the flag.
+  // Stripe amount / canonical PI / paid sync must remain flag-independent.
+  const chargeCriticalFiles = [
+    'services/checkout/checkoutCanonicalPaymentIntentService.js',
+    'services/checkout/paidCheckoutWebhookSyncService.js',
+    'services/checkout/finalizePaidCheckout.js',
+    'services/checkout/executeBookingFinalizeWork.js',
+    'services/checkout/checkoutSessionSnapshot.js',
+    'services/giftVouchers/giftVoucherPaymentService.js',
+    'services/locationCheckout',
+    'routes/stripeWebhookRoutes.js',
+    'routes/bookingRoutes.js',
+    'routes/publicLocationCheckoutRoutes.js'
   ];
 
   const offenders = [];
-  for (const root of scanRoots) {
-    for (const file of walkJsFiles(root)) {
-      if (path.resolve(file) === path.resolve(flagDef)) continue;
-      const src = fs.readFileSync(file, 'utf8');
-      if (
-        src.includes('SPLIT_PAYMENT_ENABLED') ||
-        src.includes('isSplitPaymentEnabled')
-      ) {
-        offenders.push(path.relative(REPO_ROOT, file));
+  for (const rel of chargeCriticalFiles) {
+    const abs = path.join(SERVER_ROOT, rel);
+    if (fs.statSync(abs).isDirectory()) {
+      for (const file of walkJsFiles(abs)) {
+        const src = fs.readFileSync(file, 'utf8');
+        if (src.includes('SPLIT_PAYMENT_ENABLED') || src.includes('isSplitPaymentEnabled')) {
+          offenders.push(path.relative(REPO_ROOT, file));
+        }
       }
+      continue;
+    }
+    const src = fs.readFileSync(abs, 'utf8');
+    if (src.includes('SPLIT_PAYMENT_ENABLED') || src.includes('isSplitPaymentEnabled')) {
+      offenders.push(rel);
     }
   }
 
   assert.deepEqual(
     offenders,
     [],
-    `SP1 forbids payment branching on SPLIT_PAYMENT_ENABLED; offenders=${offenders.join(',')}`
+    `Charge/PI/webhook paths must not branch on SPLIT_PAYMENT_ENABLED; offenders=${offenders.join(',')}`
   );
+
+  // Offer resolver is the only intentional flag consumer for SP4 checkout wiring.
+  const offerSrc = readServerFile('services/paymentScheduleService.js');
+  assert.match(offerSrc, /isSplitPaymentEnabled/);
+  assert.doesNotMatch(offerSrc, /paymentIntents\.create/);
+  assert.doesNotMatch(offerSrc, /setup_future_usage/);
 });
 
 test('requiresFullPayment=false is snapshotted false but does not invent reduced charge math', () => {

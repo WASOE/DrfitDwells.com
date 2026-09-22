@@ -13,6 +13,10 @@ const {
   linkSavedQuoteToCheckout,
   scheduleSavedQuoteTask
 } = require('../savedQuotes/savedQuoteService');
+const {
+  resolveSplitPaymentOfferForCheckout,
+  PaymentScheduleError
+} = require('../paymentScheduleService');
 
 const CHECKOUT_ID_PATTERN = /^[A-Za-z0-9:_-]{8,128}$/;
 const DEFAULT_SESSION_TTL_MS = 48 * 60 * 60 * 1000;
@@ -187,6 +191,12 @@ async function createCheckoutSession({ input, quote, metadata = null, checkoutId
   const quoteSnapshotHash = hashQuoteSnapshot(quoteSnapshot);
   const payable = resolvePayableState(quoteSnapshot);
 
+  const splitOffer = await resolveSplitPaymentOfferForCheckout({
+    quote,
+    quoteSnapshot,
+    stripeAmountCents: payable.stripeAmountCents
+  });
+
   const resolvedCheckoutId =
     typeof checkoutId === 'string' && checkoutId.trim()
       ? (() => {
@@ -207,6 +217,8 @@ async function createCheckoutSession({ input, quote, metadata = null, checkoutId
     quoteSnapshotHash,
     stripeAmountCents: payable.stripeAmountCents,
     giftVoucherAppliedCents: quoteSnapshot.voucherAppliedCents,
+    splitPaymentOfferSnapshot: splitOffer.splitPaymentOfferSnapshot,
+    splitPaymentOfferSnapshotHash: splitOffer.splitPaymentOfferSnapshotHash,
     canonicalPaymentIntentId: null,
     expiresAt: computeExpiresAt(),
     sessionVersion: 1,
@@ -267,6 +279,12 @@ async function refreshCheckoutSessionQuote({ checkoutId, input, quote }) {
   const requiresPaymentIntentRefresh =
     hashChanged && Boolean(session.canonicalPaymentIntentId);
 
+  const splitOffer = await resolveSplitPaymentOfferForCheckout({
+    quote,
+    quoteSnapshot,
+    stripeAmountCents: payable.stripeAmountCents
+  });
+
   const {
     sessionHasSnapshotProtectedLease,
     snapshotWriteAllowedWithoutProtectedLeasePredicate,
@@ -275,6 +293,7 @@ async function refreshCheckoutSessionQuote({ checkoutId, input, quote }) {
 
   // Exact same-hash refresh with a protected lease: idempotent no-op.
   // Must not replace lease identity or reduce expiry.
+  // Offer fields are left unchanged on this path (commercial hash unchanged).
   if (!hashChanged && sessionHasSnapshotProtectedLease(session)) {
     return {
       session,
@@ -315,6 +334,8 @@ async function refreshCheckoutSessionQuote({ checkoutId, input, quote }) {
         guestEmail: normalizedInput.guestEmail || session.guestEmail,
         stripeAmountCents: payable.stripeAmountCents,
         giftVoucherAppliedCents: quoteSnapshot.voucherAppliedCents,
+        splitPaymentOfferSnapshot: splitOffer.splitPaymentOfferSnapshot,
+        splitPaymentOfferSnapshotHash: splitOffer.splitPaymentOfferSnapshotHash,
         status: payable.status,
         paymentStatus: payable.paymentStatus,
         metadata: nextMetadata
@@ -440,5 +461,6 @@ module.exports = {
   loadSessionOrThrow,
   resolvePayableState,
   computeExpiresAt,
-  isSessionExpired
+  isSessionExpired,
+  PaymentScheduleError
 };

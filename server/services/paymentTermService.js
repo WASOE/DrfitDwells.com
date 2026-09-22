@@ -13,7 +13,8 @@ const {
   PAYMENT_TERM_CURRENCIES,
   PAYMENT_TERM_SCHEDULE_KINDS,
   PAYMENT_TERM_AMOUNT_TYPES,
-  PAYMENT_TERM_DUE_RULES
+  PAYMENT_TERM_DUE_RULES,
+  PAYMENT_TERM_CANCELLATION_TREATMENTS
 } = PaymentTermTemplateModel;
 
 const CODE_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -90,7 +91,14 @@ function normalizeLeg(raw, index, errors) {
     errors.push(`${prefix}.dueOffsetDays must be 0 when dueRule is checkout`);
   }
 
-  const nonRefundable = raw.nonRefundable === true;
+  let cancellationTreatment =
+    raw.cancellationTreatment == null || String(raw.cancellationTreatment).trim() === ''
+      ? 'standard_policy'
+      : String(raw.cancellationTreatment).trim();
+  if (!PAYMENT_TERM_CANCELLATION_TREATMENTS.includes(cancellationTreatment)) {
+    errors.push(`${prefix}.cancellationTreatment is unsupported`);
+    cancellationTreatment = 'standard_policy';
+  }
 
   return {
     sequence: Number.isInteger(sequence) ? sequence : index + 1,
@@ -98,7 +106,7 @@ function normalizeLeg(raw, index, errors) {
     amountValue: amountValue == null ? null : amountValue,
     dueRule,
     dueOffsetDays: Number.isInteger(dueOffsetDays) ? dueOffsetDays : 0,
-    nonRefundable
+    cancellationTreatment
   };
 }
 
@@ -391,5 +399,6 @@ module.exports = {
   PAYMENT_TERM_CURRENCIES,
   PAYMENT_TERM_SCHEDULE_KINDS,
   PAYMENT_TERM_AMOUNT_TYPES,
-  PAYMENT_TERM_DUE_RULES
+  PAYMENT_TERM_DUE_RULES,
+  PAYMENT_TERM_CANCELLATION_TREATMENTS
 };

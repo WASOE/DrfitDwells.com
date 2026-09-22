@@ -49,7 +49,7 @@ function baseFullTerm(overrides = {}) {
         amountValue: null,
         dueRule: 'checkout',
         dueOffsetDays: 0,
-        nonRefundable: false
+        cancellationTreatment: 'standard_policy'
       }
     ],
     ...overrides
@@ -72,7 +72,7 @@ function basePercentSplit(overrides = {}) {
         amountValue: 4000,
         dueRule: 'checkout',
         dueOffsetDays: 0,
-        nonRefundable: true
+        cancellationTreatment: 'stay_credit'
       },
       {
         sequence: 2,
@@ -80,7 +80,7 @@ function basePercentSplit(overrides = {}) {
         amountValue: null,
         dueRule: 'days_before_arrival',
         dueOffsetDays: 30,
-        nonRefundable: false
+        cancellationTreatment: 'standard_policy'
       }
     ],
     ...overrides
@@ -180,6 +180,8 @@ test('valid full term', () => {
   assert.equal(result.value.legs.length, 1);
   assert.equal(result.value.legs[0].amountType, 'remainder');
   assert.equal(result.value.legs[0].amountValue, null);
+  assert.equal(result.value.legs[0].cancellationTreatment, 'standard_policy');
+  assert.equal(Object.prototype.hasOwnProperty.call(result.value.legs[0], 'nonRefundable'), false);
 });
 
 test('valid 40/remainder percent split', () => {
@@ -188,6 +190,86 @@ test('valid 40/remainder percent split', () => {
   assert.equal(result.value.legs[0].amountValue, 4000);
   assert.equal(Number.isInteger(result.value.legs[0].amountValue), true);
   assert.equal(result.value.legs[1].amountType, 'remainder');
+  assert.equal(result.value.legs[0].cancellationTreatment, 'stay_credit');
+});
+
+test('cancellationTreatment defaults to standard_policy; invalid rejected', () => {
+  const withDefault = validateAndNormalizePaymentTermTemplate({
+    code: 'default-treatment',
+    internalName: 'Default treatment',
+    version: 1,
+    scheduleKind: 'full',
+    legs: [
+      {
+        sequence: 1,
+        amountType: 'remainder',
+        amountValue: null,
+        dueRule: 'checkout',
+        dueOffsetDays: 0
+      }
+    ]
+  });
+  assert.equal(withDefault.ok, true);
+  assert.equal(withDefault.value.legs[0].cancellationTreatment, 'standard_policy');
+
+  const invalid = validateAndNormalizePaymentTermTemplate(
+    baseFullTerm({
+      legs: [
+        {
+          sequence: 1,
+          amountType: 'remainder',
+          amountValue: null,
+          dueRule: 'checkout',
+          dueOffsetDays: 0,
+          cancellationTreatment: 'non_refundable'
+        }
+      ]
+    })
+  );
+  assert.equal(invalid.ok, false);
+  assert.ok(invalid.errors.some((e) => /cancellationTreatment/i.test(e)));
+});
+
+test('valid cancellationTreatment enum values accepted', () => {
+  for (const treatment of ['standard_policy', 'stay_credit', 'forfeit']) {
+    const result = validateAndNormalizePaymentTermTemplate(
+      baseFullTerm({
+        code: `treat-${treatment.replace(/_/g, '-')}`,
+        legs: [
+          {
+            sequence: 1,
+            amountType: 'remainder',
+            amountValue: null,
+            dueRule: 'checkout',
+            dueOffsetDays: 0,
+            cancellationTreatment: treatment
+          }
+        ]
+      })
+    );
+    assert.equal(result.ok, true, treatment);
+    assert.equal(result.value.legs[0].cancellationTreatment, treatment);
+  }
+});
+
+test('split checkout leg with stay_credit is valid', () => {
+  const result = validateAndNormalizePaymentTermTemplate(basePercentSplit());
+  assert.equal(result.ok, true);
+  assert.equal(result.value.legs[0].dueRule, 'checkout');
+  assert.equal(result.value.legs[0].cancellationTreatment, 'stay_credit');
+});
+
+test('PaymentTermTemplate schema has cancellationTreatment and no nonRefundable', () => {
+  const legsPath = PaymentTermTemplate.schema.path('legs');
+  assert.ok(legsPath);
+  const legSchema = legsPath.schema;
+  assert.ok(legSchema.path('cancellationTreatment'));
+  assert.equal(legSchema.path('nonRefundable'), undefined);
+  assert.deepEqual(PaymentTermTemplate.PAYMENT_TERM_CANCELLATION_TREATMENTS, [
+    'standard_policy',
+    'stay_credit',
+    'forfeit'
+  ]);
 });
 
 test('valid fixed deposit / remainder', () => {
