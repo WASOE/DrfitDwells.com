@@ -81,6 +81,8 @@ const CREATE_KEYS = Object.freeze([
   'requiresFullPayment',
   'cancellationPolicyCode',
   'cancellationPolicyVersion',
+  'paymentTermCode',
+  'paymentTermVersion',
   'inclusions',
   'accommodations'
 ]);
@@ -128,6 +130,8 @@ export function createEmptyForm(type = 'seasonal_stay') {
     requiresFullPayment: true,
     cancellationPolicyCode: 'normal-stay-standard',
     cancellationPolicyVersion: '1',
+    paymentTermCode: '',
+    paymentTermVersion: '',
     inclusionsText: '',
     accommodations: [emptyAccommodation(type)]
   };
@@ -165,6 +169,9 @@ export function planToForm(plan) {
     cancellationPolicyCode: plan.cancellationPolicyCode || '',
     cancellationPolicyVersion:
       plan.cancellationPolicyVersion != null ? String(plan.cancellationPolicyVersion) : '1',
+    paymentTermCode: plan.paymentTermCode || '',
+    paymentTermVersion:
+      plan.paymentTermVersion != null ? String(plan.paymentTermVersion) : '',
     inclusionsText: Array.isArray(plan.inclusions) ? plan.inclusions.join('\n') : '',
     accommodations:
       Array.isArray(plan.accommodations) && plan.accommodations.length
@@ -417,9 +424,22 @@ export function buildBusinessPayload(form) {
       form.cancellationPolicyVersion,
       'cancellationPolicyVersion'
     ),
+    paymentTermCode: String(form.paymentTermCode || '')
+      .trim()
+      .toLowerCase() || null,
+    paymentTermVersion: form.paymentTermVersion
+      ? parseRequiredInt(form.paymentTermVersion, 'paymentTermVersion')
+      : null,
     inclusions,
     accommodations
   };
+
+  if (!payload.paymentTermCode) {
+    payload.paymentTermCode = null;
+    payload.paymentTermVersion = null;
+  } else if (payload.paymentTermVersion == null) {
+    throw new RatePlanFormError('Payment term version is required when a payment term code is set');
+  }
 
   if (!payload.code) {
     throw new RatePlanFormError('Code is required');

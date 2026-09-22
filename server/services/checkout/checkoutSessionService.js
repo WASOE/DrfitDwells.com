@@ -13,6 +13,15 @@ const {
   linkSavedQuoteToCheckout,
   scheduleSavedQuoteTask
 } = require('../savedQuotes/savedQuoteService');
+const {
+  resolveSplitPaymentOfferForCheckout,
+  PaymentScheduleError
+} = require('../paymentScheduleService');
+const {
+  reserveStayCredit,
+  releaseStayCreditReservation,
+  StayCreditError
+} = require('../stayCreditService');
 
 const CHECKOUT_ID_PATTERN = /^[A-Za-z0-9:_-]{8,128}$/;
 const DEFAULT_SESSION_TTL_MS = 48 * 60 * 60 * 1000;
@@ -69,6 +78,7 @@ function normalizeCheckoutSessionInput(input = {}) {
     romanticSetup: Boolean(input.romanticSetup),
     promoCode: normalizePromoOrVoucherCode(input.promoCode),
     voucherCode: normalizePromoOrVoucherCode(input.voucherCode),
+    stayCreditCode: normalizePromoOrVoucherCode(input.stayCreditCode),
     guestEmail: trimString(input.guestEmail).toLowerCase() || null
   };
 
@@ -122,6 +132,100 @@ function computeExpiresAt(fromDate = new Date()) {
 
 function isSessionExpired(session, now = new Date()) {
   return Boolean(session?.expiresAt && new Date(session.expiresAt) < now);
+}
+
+/**
+ * SP7B: reserve StayCredit when checkout applies it. Quote preview must not call this.
+ * Returns authoritative reserved cents wired onto the quote before snapshot/payable.
+ */
+async function applyAuthoritativeStayCreditReservation({
+  checkoutId,
+  expiresAt,
+  guestEmail,
+  stayCreditCode,
+  requestedApplyCents = null,
+  priorCheckoutSessionId = null
+} = {}) {
+  const code = stayCreditCode ? String(stayCreditCode).trim().toUpperCase() : '';
+  if (!code) {
+    if (priorCheckoutSessionId || checkoutId) {
+      try {
+        await releaseStayCreditReservation({
+          checkoutSessionId: String(priorCheckoutSessionId || checkoutId),
+          reason: 'stay_credit_cleared_from_checkout'
+        });
+      } catch (err) {
+        if (!(err instanceof StayCreditError && err.code === 'RESERVATION_CONSUMED')) {
+          // Non-fatal clear: consumed reservations must not release.
+        }
+      }
+    }
+    return {
+      stayCreditAppliedCents: 0,
+      stayCreditCode: null,
+      stayCreditId: null,
+      stayCreditReservationId: null
+    };
+  }
+
+  if (!guestEmail) {
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_USABLE,
+      'Guest email is required to reserve stay credit'
+    );
+  }
+
+  try {
+    const { reservation, stayCredit } = await reserveStayCredit({
+      code,
+      amountCents:
+        requestedApplyCents != null && Number(requestedApplyCents) > 0
+          ? Math.trunc(Number(requestedApplyCents))
+          : null,
+      checkoutSessionId: String(checkoutId),
+      guestEmail,
+      expiresAt
+    });
+    return {
+      stayCreditAppliedCents: Math.trunc(Number(reservation.amountCents)),
+      stayCreditCode: String(stayCredit.code || reservation.stayCreditCode),
+      stayCreditId: reservation.stayCreditId || stayCredit._id,
+      stayCreditReservationId: reservation._id
+    };
+  } catch (err) {
+    if (err instanceof StayCreditError) {
+      throw new CheckoutSessionError(
+        CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_USABLE,
+        err.message || 'Stay credit reservation failed',
+        { stayCreditCode: code, stayCreditError: err.code }
+      );
+    }
+    throw err;
+  }
+}
+
+function withAuthoritativeStayCreditOnQuote(quote, reservation) {
+  const next = quote && typeof quote === 'object' ? { ...quote } : {};
+  next.stayCreditAppliedCents = reservation.stayCreditAppliedCents || 0;
+  next.stayCreditCode = reservation.stayCreditCode || null;
+  next.stayCreditId = reservation.stayCreditId || null;
+  if (next.stayCreditAppliedCents > 0 && next.remainingDueCents != null) {
+    // Rebuild remaining due from commercial total when present.
+    const total =
+      next.totalValueCents != null
+        ? Number(next.totalValueCents)
+        : next.totalPrice != null
+          ? Math.round(Number(next.totalPrice) * 100)
+          : null;
+    const voucher = Math.max(0, Number(next.voucherAppliedCents) || 0);
+    if (Number.isFinite(total)) {
+      next.remainingDueCents = Math.max(
+        0,
+        Math.trunc(total) - voucher - reservation.stayCreditAppliedCents
+      );
+    }
+  }
+  return next;
 }
 
 /**
@@ -183,10 +287,6 @@ async function loadSessionOrThrow(checkoutId) {
  */
 async function createCheckoutSession({ input, quote, metadata = null, checkoutId = null } = {}) {
   const normalizedInput = normalizeCheckoutSessionInput(input);
-  const quoteSnapshot = buildQuoteSnapshot({ normalizedInput, quote });
-  const quoteSnapshotHash = hashQuoteSnapshot(quoteSnapshot);
-  const payable = resolvePayableState(quoteSnapshot);
-
   const resolvedCheckoutId =
     typeof checkoutId === 'string' && checkoutId.trim()
       ? (() => {
@@ -194,6 +294,45 @@ async function createCheckoutSession({ input, quote, metadata = null, checkoutId
           return checkoutId.trim();
         })()
       : mintCheckoutId();
+
+  const expiresAt = computeExpiresAt();
+  const stayReservation = await applyAuthoritativeStayCreditReservation({
+    checkoutId: resolvedCheckoutId,
+    expiresAt,
+    guestEmail: normalizedInput.guestEmail,
+    stayCreditCode:
+      (quote && quote.stayCreditCode) ||
+      normalizedInput.stayCreditCode ||
+      null,
+    requestedApplyCents: quote && quote.stayCreditAppliedCents != null
+      ? quote.stayCreditAppliedCents
+      : null
+  });
+  const authoritativeQuote = withAuthoritativeStayCreditOnQuote(quote, stayReservation);
+  const quoteSnapshot = buildQuoteSnapshot({
+    normalizedInput,
+    quote: authoritativeQuote
+  });
+  // Pin reservation fields on snapshot even if quote builder omitted id.
+  quoteSnapshot.stayCreditAppliedCents = stayReservation.stayCreditAppliedCents;
+  quoteSnapshot.stayCreditCode = stayReservation.stayCreditCode || '';
+  quoteSnapshot.stayCreditId = stayReservation.stayCreditId || null;
+  if (stayReservation.stayCreditAppliedCents > 0) {
+    const voucher = Math.max(0, Number(quoteSnapshot.voucherAppliedCents) || 0);
+    const total = Math.max(0, Number(quoteSnapshot.totalValueCents) || 0);
+    quoteSnapshot.stripeAmountCents = Math.max(
+      0,
+      total - voucher - stayReservation.stayCreditAppliedCents
+    );
+  }
+  const quoteSnapshotHash = hashQuoteSnapshot(quoteSnapshot);
+  const payable = resolvePayableState(quoteSnapshot);
+
+  const splitOffer = await resolveSplitPaymentOfferForCheckout({
+    quote: authoritativeQuote,
+    quoteSnapshot,
+    stripeAmountCents: payable.stripeAmountCents
+  });
 
   const session = await CheckoutSession.create({
     checkoutId: resolvedCheckoutId,
@@ -207,8 +346,14 @@ async function createCheckoutSession({ input, quote, metadata = null, checkoutId
     quoteSnapshotHash,
     stripeAmountCents: payable.stripeAmountCents,
     giftVoucherAppliedCents: quoteSnapshot.voucherAppliedCents,
+    stayCreditAppliedCents: stayReservation.stayCreditAppliedCents || 0,
+    stayCreditCode: stayReservation.stayCreditCode || null,
+    stayCreditId: stayReservation.stayCreditId || null,
+    stayCreditReservationId: stayReservation.stayCreditReservationId || null,
+    splitPaymentOfferSnapshot: splitOffer.splitPaymentOfferSnapshot,
+    splitPaymentOfferSnapshotHash: splitOffer.splitPaymentOfferSnapshotHash,
     canonicalPaymentIntentId: null,
-    expiresAt: computeExpiresAt(),
+    expiresAt,
     sessionVersion: 1,
     metadata: {
       commercialBoundaryKey: buildCommercialBoundaryKey(normalizedInput),
@@ -260,12 +405,47 @@ async function refreshCheckoutSessionQuote({ checkoutId, input, quote }) {
   }
 
   const previousQuoteSnapshotHash = session.quoteSnapshotHash;
-  const quoteSnapshot = buildQuoteSnapshot({ normalizedInput, quote });
+
+  const stayReservation = await applyAuthoritativeStayCreditReservation({
+    checkoutId: String(checkoutId),
+    expiresAt: session.expiresAt || computeExpiresAt(),
+    guestEmail: normalizedInput.guestEmail || session.guestEmail,
+    stayCreditCode:
+      (quote && quote.stayCreditCode) ||
+      normalizedInput.stayCreditCode ||
+      null,
+    requestedApplyCents: quote && quote.stayCreditAppliedCents != null
+      ? quote.stayCreditAppliedCents
+      : null,
+    priorCheckoutSessionId: String(checkoutId)
+  });
+  const authoritativeQuote = withAuthoritativeStayCreditOnQuote(quote, stayReservation);
+  const quoteSnapshot = buildQuoteSnapshot({
+    normalizedInput,
+    quote: authoritativeQuote
+  });
+  quoteSnapshot.stayCreditAppliedCents = stayReservation.stayCreditAppliedCents;
+  quoteSnapshot.stayCreditCode = stayReservation.stayCreditCode || '';
+  quoteSnapshot.stayCreditId = stayReservation.stayCreditId || null;
+  if (stayReservation.stayCreditAppliedCents > 0) {
+    const voucher = Math.max(0, Number(quoteSnapshot.voucherAppliedCents) || 0);
+    const total = Math.max(0, Number(quoteSnapshot.totalValueCents) || 0);
+    quoteSnapshot.stripeAmountCents = Math.max(
+      0,
+      total - voucher - stayReservation.stayCreditAppliedCents
+    );
+  }
   const quoteSnapshotHash = hashQuoteSnapshot(quoteSnapshot);
   const payable = resolvePayableState(quoteSnapshot);
   const hashChanged = previousQuoteSnapshotHash !== quoteSnapshotHash;
   const requiresPaymentIntentRefresh =
     hashChanged && Boolean(session.canonicalPaymentIntentId);
+
+  const splitOffer = await resolveSplitPaymentOfferForCheckout({
+    quote: authoritativeQuote,
+    quoteSnapshot,
+    stripeAmountCents: payable.stripeAmountCents
+  });
 
   const {
     sessionHasSnapshotProtectedLease,
@@ -275,6 +455,7 @@ async function refreshCheckoutSessionQuote({ checkoutId, input, quote }) {
 
   // Exact same-hash refresh with a protected lease: idempotent no-op.
   // Must not replace lease identity or reduce expiry.
+  // Offer fields are left unchanged on this path (commercial hash unchanged).
   if (!hashChanged && sessionHasSnapshotProtectedLease(session)) {
     return {
       session,
@@ -315,6 +496,12 @@ async function refreshCheckoutSessionQuote({ checkoutId, input, quote }) {
         guestEmail: normalizedInput.guestEmail || session.guestEmail,
         stripeAmountCents: payable.stripeAmountCents,
         giftVoucherAppliedCents: quoteSnapshot.voucherAppliedCents,
+        stayCreditAppliedCents: stayReservation.stayCreditAppliedCents || 0,
+        stayCreditCode: stayReservation.stayCreditCode || null,
+        stayCreditId: stayReservation.stayCreditId || null,
+        stayCreditReservationId: stayReservation.stayCreditReservationId || null,
+        splitPaymentOfferSnapshot: splitOffer.splitPaymentOfferSnapshot,
+        splitPaymentOfferSnapshotHash: splitOffer.splitPaymentOfferSnapshotHash,
         status: payable.status,
         paymentStatus: payable.paymentStatus,
         metadata: nextMetadata
@@ -411,7 +598,16 @@ function getCheckoutSessionState(sessionDoc) {
     expiresAt: session.expiresAt,
     guestEmail: session.guestEmail || null,
     stayFingerprint: session.stayFingerprint || null,
-    replayFingerprint: session.replayFingerprint || null
+    replayFingerprint: session.replayFingerprint || null,
+    paymentChoice: session.paymentChoice?.choice || 'full',
+    splitPaymentOffer: (() => {
+      try {
+        const { formatPublicSplitOffer } = require('../splitPaymentChoiceService');
+        return formatPublicSplitOffer(session);
+      } catch {
+        return null;
+      }
+    })()
   };
 }
 
@@ -440,5 +636,6 @@ module.exports = {
   loadSessionOrThrow,
   resolvePayableState,
   computeExpiresAt,
-  isSessionExpired
+  isSessionExpired,
+  PaymentScheduleError
 };

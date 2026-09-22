@@ -376,6 +376,8 @@ function buildQuoteSnapshotHashPayload(snapshot) {
     discountAmountCents: snapshot.discountAmountCents,
     totalValueCents: snapshot.totalValueCents,
     voucherAppliedCents: snapshot.voucherAppliedCents,
+    stayCreditAppliedCents: snapshot.stayCreditAppliedCents || 0,
+    stayCreditCode: snapshot.stayCreditCode || '',
     stripeAmountCents: snapshot.stripeAmountCents,
     fullVoucherCoverage: Boolean(snapshot.fullVoucherCoverage),
     ...(snapshot.ratePlan
@@ -436,10 +438,13 @@ function buildQuoteSnapshot({ normalizedInput, quote }) {
   const voucherAppliedCents = toIntegerCents(
     quote.voucherAppliedCents != null ? quote.voucherAppliedCents : 0
   );
+  const stayCreditAppliedCents = toIntegerCents(
+    quote.stayCreditAppliedCents != null ? quote.stayCreditAppliedCents : 0
+  );
   const remainingDueCents =
     quote.remainingDueCents != null
       ? toIntegerCents(quote.remainingDueCents)
-      : Math.max(0, totalValueCents - voucherAppliedCents);
+      : Math.max(0, totalValueCents - voucherAppliedCents - stayCreditAppliedCents);
   const stripeAmountCents = Math.max(0, remainingDueCents);
   const fullVoucherCoverage = Boolean(quote.fullVoucherCoverage);
 
@@ -496,12 +501,18 @@ function buildQuoteSnapshot({ normalizedInput, quote }) {
     romanticSetup: Boolean(normalizedInput.romanticSetup),
     promoCode: normalizedInput.promoCode || '',
     voucherCode: normalizedInput.voucherCode || '',
+    stayCreditCode:
+      quote.stayCreditCode ||
+      normalizedInput.stayCreditCode ||
+      '',
     promoSnapshot: promoSnapshot ? stableSortKeys(promoSnapshot) : null,
     appliedPromoCode,
     subtotalCents: eurosToCents(quote.subtotalPrice),
     discountAmountCents: eurosToCents(quote.discountAmount),
     totalValueCents,
     voucherAppliedCents,
+    stayCreditAppliedCents,
+    stayCreditId: quote.stayCreditId || null,
     stripeAmountCents,
     fullVoucherCoverage,
     currency: 'EUR',

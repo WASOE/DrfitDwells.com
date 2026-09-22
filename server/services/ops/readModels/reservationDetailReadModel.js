@@ -1,4 +1,6 @@
 const Booking = require('../../../models/Booking');
+const BookingInstallment = require('../../../models/BookingInstallment');
+const StayCredit = require('../../../models/StayCredit');
 const Cabin = require('../../../models/Cabin');
 const CabinType = require('../../../models/CabinType');
 require('../../../models/Unit'); // register for Booking.unitId populate
@@ -64,7 +66,109 @@ function mapCancellationSettlementForOps(booking) {
         }
       : null,
     settlementRecordedAt: raw.settlementRecordedAt || null,
-    settlementRecordedByActorId: raw.settlementRecordedByActorId || null
+    settlementRecordedByActorId: raw.settlementRecordedByActorId || null,
+    splitSettlement: raw.splitSettlement
+      ? {
+          withinCancellationWindow: raw.splitSettlement.withinCancellationWindow === true,
+          cashRefundCents: raw.splitSettlement.cashRefundCents ?? null,
+          stayCreditIssuedCents: raw.splitSettlement.stayCreditIssuedCents ?? null,
+          retainedCents: raw.splitSettlement.retainedCents ?? null,
+          cashRefundStatus: raw.splitSettlement.cashRefundStatus || null,
+          creditIssuanceStatus: raw.splitSettlement.creditIssuanceStatus || null,
+          settlementCompletionStatus: raw.splitSettlement.settlementCompletionStatus || null,
+          allocatedAt: raw.splitSettlement.allocatedAt || null,
+          settledAt: raw.splitSettlement.settledAt || null,
+          allocations: Array.isArray(raw.splitSettlement.allocations)
+            ? raw.splitSettlement.allocations.map((a) => ({
+                sequence: a.sequence,
+                treatment: a.treatment,
+                paidCents: a.paidCents,
+                cashRefundCents: a.cashRefundCents ?? 0,
+                stayCreditIssuedCents: a.stayCreditIssuedCents ?? 0,
+                retainedCents: a.retainedCents ?? 0,
+                stayCreditCode: a.stayCreditCode || null,
+                voided: a.voided === true
+              }))
+            : []
+        }
+      : null
+  };
+}
+
+function mapSplitPaymentPanel(booking, installments, stayCredits) {
+  const schedule = booking.chosenPaymentScheduleSnapshot;
+  if (!schedule && !(installments && installments.length)) {
+    return null;
+  }
+  const totalCents =
+    Number(booking.totalValueCents) ||
+    Number(schedule?.totalCents) ||
+    Math.round(Number(booking.totalPrice || 0) * 100);
+  const paidCents = Number(booking.stripePaidAmountCents) || 0;
+  const remainingCents = Math.max(0, totalCents - paidCents);
+
+  return {
+    paymentSettlementStatus: booking.paymentSettlementStatus || null,
+    paymentChoice: schedule ? 'split' : 'full',
+    totalCents,
+    paidCents,
+    remainingCents,
+    allowDateTransfer: schedule?.allowDateTransfer === true,
+    dateTransferCount: Number(booking.dateTransferCount) || 0,
+    dateTransferHistory: Array.isArray(booking.dateTransferHistory)
+      ? booking.dateTransferHistory.map((h) => ({
+          transferredAt: h.transferredAt || null,
+          actorId: h.actorId || null,
+          oldCheckIn: h.oldCheckIn || null,
+          oldCheckOut: h.oldCheckOut || null,
+          newCheckIn: h.newCheckIn || null,
+          newCheckOut: h.newCheckOut || null,
+          dueDateChanges: Array.isArray(h.dueDateChanges)
+            ? h.dueDateChanges.map((d) => ({
+                sequence: d.sequence,
+                oldDueAtDateOnly: d.oldDueAtDateOnly,
+                newDueAtDateOnly: d.newDueAtDateOnly
+              }))
+            : []
+        }))
+      : [],
+    cancellationReview: booking.cancellationReview
+      ? {
+          status: booking.cancellationReview.status || null,
+          reason: booking.cancellationReview.reason || null,
+          installmentSequence: booking.cancellationReview.installmentSequence || null,
+          openedAt: booking.cancellationReview.openedAt || null,
+          resolvedAt: booking.cancellationReview.resolvedAt || null,
+          resolvedNote: booking.cancellationReview.resolvedNote || null,
+          notes: Array.isArray(booking.cancellationReview.notes)
+            ? booking.cancellationReview.notes.map((n) => ({
+                at: n.at,
+                actorId: n.actorId || null,
+                text: n.text
+              }))
+            : []
+        }
+      : null,
+    installments: (installments || []).map((row) => ({
+      sequence: row.sequence,
+      amountCents: row.amountCents,
+      currency: row.currency,
+      dueAtDateOnly: row.dueAtDateOnly,
+      status: row.status,
+      cancellationTreatment: row.cancellationTreatment || null,
+      stripeInvoiceStatus: row.stripeInvoiceStatus || null,
+      nextPaymentAttemptAt: row.nextPaymentAttemptAt || null,
+      graceEndsAt: row.graceEndsAt || null,
+      hostedInvoiceUrl: row.hostedInvoiceUrl || null
+    })),
+    stayCreditsIssued: (stayCredits || []).map((c) => ({
+      code: c.code,
+      issuedCents: c.issuedCents,
+      remainingCents: c.remainingCents,
+      status: c.status,
+      originInstallmentSequence: c.originInstallmentSequence,
+      issuedAt: c.issuedAt
+    }))
   };
 }
 
@@ -79,8 +183,18 @@ async function getReservationDetailReadModel(reservationId) {
 
   const mapped = mapBookingToReservationCompatible(booking);
   const cabinSummary = resolveCabinSummary(booking, mapped);
-  const [guest, availability, payments, payouts, emailEvents, auditSummary, notes, stayPropertyKind] =
-    await Promise.all([
+  const [
+    guest,
+    availability,
+    payments,
+    payouts,
+    emailEvents,
+    auditSummary,
+    notes,
+    stayPropertyKind,
+    installments,
+    stayCredits
+  ] = await Promise.all([
     Guest.findOne({ email: booking.guestInfo?.email || null }).lean(),
     AvailabilityBlock.find({ reservationId: booking._id }).lean(),
     Payment.find({ reservationId: booking._id }).sort({ createdAt: -1 }).lean(),
@@ -93,7 +207,9 @@ async function getReservationDetailReadModel(reservationId) {
     ReservationNote.find({ reservationId: booking._id, 'tombstone.isTombstoned': false })
       .sort({ createdAt: -1 })
       .lean(),
-    resolveStayPropertyKindForBooking(booking)
+    resolveStayPropertyKindForBooking(booking),
+    BookingInstallment.find({ bookingId: booking._id }).sort({ sequence: 1 }).lean(),
+    StayCredit.find({ originBookingId: booking._id }).sort({ originInstallmentSequence: 1 }).lean()
   ]);
 
   const strictIcs = isPublicIcsStrictEligibility();
@@ -105,9 +221,9 @@ async function getReservationDetailReadModel(reservationId) {
     reservation: mapped,
     cabinSummary,
     stayPropertyKind,
-    // Admin-authored note for cleaning staff (not guest PII) — safe to expose to ops.
     cleaningNotes: booking.cleaningNotes || null,
     cancellationSettlement: mapCancellationSettlementForOps(booking),
+    splitPayment: mapSplitPaymentPanel(booking, installments, stayCredits),
     guestDetail: guest
       ? {
           guestId: String(guest._id),
@@ -204,5 +320,7 @@ async function getReservationDetailReadModel(reservationId) {
 }
 
 module.exports = {
-  getReservationDetailReadModel
+  getReservationDetailReadModel,
+  mapSplitPaymentPanel,
+  mapCancellationSettlementForOps
 };

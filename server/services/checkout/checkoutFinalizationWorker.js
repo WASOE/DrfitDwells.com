@@ -16,6 +16,7 @@
 
 const os = require('os');
 const Stripe = require('stripe');
+const { STRIPE_API_VERSION } = require('../../config/stripeApiVersion');
 const featureFlags = require('../../utils/featureFlags');
 const CheckoutSession = require('../../models/CheckoutSession');
 const {
@@ -152,7 +153,7 @@ function logLine(level, phase, fields) {
 function getStripeClient() {
   if (stripeClientOverride) return stripeClientOverride;
   if (!process.env.STRIPE_SECRET_KEY) return null;
-  return new Stripe(process.env.STRIPE_SECRET_KEY);
+  return new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: STRIPE_API_VERSION });
 }
 
 /**

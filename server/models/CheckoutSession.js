@@ -29,9 +29,142 @@ const RESOURCE_LEASE_STATUSES = [
   'needs_review'
 ];
 
+const SPLIT_OFFER_SCHEDULE_KINDS = [
+  'percent_split',
+  'fixed_deposit',
+  'installment_plan'
+];
+const SPLIT_OFFER_AMOUNT_TYPES = ['percent_bps', 'fixed_cents', 'remainder'];
+const SPLIT_OFFER_DUE_RULES = [
+  'checkout',
+  'days_before_arrival',
+  'days_after_booking'
+];
+const SPLIT_OFFER_CANCELLATION_TREATMENTS = [
+  'standard_policy',
+  'stay_credit',
+  'forfeit'
+];
+
 function integerNonNegativeValidator(value) {
   return Number.isInteger(value) && value >= 0;
 }
+
+function integerPositiveValidator(value) {
+  return Number.isInteger(value) && value >= 1;
+}
+
+const splitPaymentOfferInstallmentSchema = new mongoose.Schema(
+  {
+    sequence: {
+      type: Number,
+      required: true,
+      min: 1,
+      validate: { validator: integerPositiveValidator, message: 'sequence must be a positive integer' }
+    },
+    amountCents: {
+      type: Number,
+      required: true,
+      min: 0,
+      validate: {
+        validator: integerNonNegativeValidator,
+        message: 'amountCents must be a non-negative integer'
+      }
+    },
+    amountType: {
+      type: String,
+      required: true,
+      enum: { values: SPLIT_OFFER_AMOUNT_TYPES, message: 'Unsupported amountType' }
+    },
+    dueRule: {
+      type: String,
+      required: true,
+      enum: { values: SPLIT_OFFER_DUE_RULES, message: 'Unsupported dueRule' }
+    },
+    dueOffsetDays: {
+      type: Number,
+      required: true,
+      min: 0,
+      validate: {
+        validator: integerNonNegativeValidator,
+        message: 'dueOffsetDays must be a non-negative integer'
+      }
+    },
+    dueAtDateOnly: {
+      type: String,
+      required: true,
+      trim: true,
+      match: [/^\d{4}-\d{2}-\d{2}$/, 'dueAtDateOnly must be YYYY-MM-DD']
+    },
+    cancellationTreatment: {
+      type: String,
+      required: true,
+      enum: {
+        values: SPLIT_OFFER_CANCELLATION_TREATMENTS,
+        message: 'Unsupported cancellationTreatment'
+      }
+    }
+  },
+  { _id: false }
+);
+
+/**
+ * SP4: immutable optional split-payment OFFER for this quote/session.
+ * Presence means the option was available — not that the guest selected it.
+ */
+const splitPaymentOfferSnapshotSchema = new mongoose.Schema(
+  {
+    schemaVersion: {
+      type: Number,
+      required: true,
+      min: 1,
+      validate: { validator: integerPositiveValidator, message: 'schemaVersion must be a positive integer' }
+    },
+    templateCode: { type: String, required: true, trim: true, lowercase: true },
+    templateVersion: {
+      type: Number,
+      required: true,
+      min: 1,
+      validate: { validator: integerPositiveValidator, message: 'templateVersion must be a positive integer' }
+    },
+    scheduleKind: {
+      type: String,
+      required: true,
+      enum: { values: SPLIT_OFFER_SCHEDULE_KINDS, message: 'Unsupported scheduleKind' }
+    },
+    currency: { type: String, required: true, trim: true, uppercase: true },
+    totalCents: {
+      type: Number,
+      required: true,
+      min: 1,
+      validate: { validator: integerPositiveValidator, message: 'totalCents must be a positive integer' }
+    },
+    bookingDateOnly: {
+      type: String,
+      required: true,
+      trim: true,
+      match: [/^\d{4}-\d{2}-\d{2}$/, 'bookingDateOnly must be YYYY-MM-DD']
+    },
+    arrivalDateOnly: {
+      type: String,
+      required: true,
+      trim: true,
+      match: [/^\d{4}-\d{2}-\d{2}$/, 'arrivalDateOnly must be YYYY-MM-DD']
+    },
+    allowDateTransfer: { type: Boolean, required: true, default: false },
+    installments: {
+      type: [splitPaymentOfferInstallmentSchema],
+      required: true,
+      validate: {
+        validator(v) {
+          return Array.isArray(v) && v.length >= 2;
+        },
+        message: 'split offer requires at least two installments'
+      }
+    }
+  },
+  { _id: false }
+);
 
 const resourceLeaseAccommodationSchema = new mongoose.Schema(
   {
@@ -182,6 +315,34 @@ const checkoutSessionSchema = new mongoose.Schema(
         message: 'giftVoucherAppliedCents must be a non-negative integer'
       }
     },
+    /** SP7: stay credit applied at checkout — disables split; reduces card obligation. */
+    stayCreditAppliedCents: {
+      type: Number,
+      default: 0,
+      min: 0,
+      validate: {
+        validator: integerNonNegativeValidator,
+        message: 'stayCreditAppliedCents must be a non-negative integer'
+      }
+    },
+    stayCreditCode: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: null
+    },
+    stayCreditId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'StayCredit',
+      default: null
+    },
+    /** SP7B: durable StayCreditReservation for this checkout (authoritative reserved cents). */
+    stayCreditReservationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'StayCreditReservation',
+      default: null,
+      index: true
+    },
     expiresAt: {
       type: Date,
       default: null,
@@ -236,6 +397,74 @@ const checkoutSessionSchema = new mongoose.Schema(
     resourceLease: {
       type: resourceLeaseSchema,
       default: null
+    },
+    /**
+     * SP4: optional split-payment OFFER frozen for this quote/session.
+     * Not a chosen obligation. Null when flag off / ineligible / no term.
+     */
+    splitPaymentOfferSnapshot: {
+      type: splitPaymentOfferSnapshotSchema,
+      default: null
+    },
+    splitPaymentOfferSnapshotHash: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    /**
+     * SP5: explicit customer payment choice. Default/absent = full.
+     * Offer presence alone must never imply split was selected.
+     */
+    paymentChoice: {
+      type: new mongoose.Schema(
+        {
+          choice: {
+            type: String,
+            required: true,
+            enum: { values: ['full', 'split'], message: 'Unsupported payment choice' },
+            default: 'full'
+          },
+          splitOfferSnapshotHash: { type: String, trim: true, default: null },
+          selectedAt: { type: Date, default: null },
+          sessionVersionAtSelection: { type: Number, default: null, min: 1 }
+        },
+        { _id: false }
+      ),
+      default: null
+    },
+    /**
+     * SP5: future off-session charge consent evidence (split only).
+     * Protocol identity = consentVersion + consentHash (not displayedText).
+     */
+    futureChargeConsent: {
+      type: new mongoose.Schema(
+        {
+          consentVersion: {
+            type: Number,
+            required: true,
+            min: 1,
+            validate: { validator: integerPositiveValidator, message: 'consentVersion must be a positive integer' }
+          },
+          consentHash: { type: String, required: true, trim: true },
+          acceptedAt: { type: Date, required: true },
+          acceptedLocale: { type: String, trim: true, maxlength: 32, default: 'en' },
+          displayedText: { type: String, required: true, trim: true, maxlength: 4000 }
+        },
+        { _id: false }
+      ),
+      default: null
+    },
+    /** SP5: Stripe Customer for selected split (internal; not public). */
+    stripeCustomerId: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    /** SP5: reusable PaymentMethod captured after successful split initial payment. */
+    stripeReusablePaymentMethodId: {
+      type: String,
+      trim: true,
+      default: null
     }
   },
   { timestamps: true }
@@ -282,3 +511,7 @@ module.exports.CHECKOUT_SESSION_STATUSES = CHECKOUT_SESSION_STATUSES;
 module.exports.PAYMENT_STATUSES = PAYMENT_STATUSES;
 module.exports.FINALIZE_STATUSES = FINALIZE_STATUSES;
 module.exports.RESOURCE_LEASE_STATUSES = RESOURCE_LEASE_STATUSES;
+module.exports.SPLIT_OFFER_SCHEDULE_KINDS = SPLIT_OFFER_SCHEDULE_KINDS;
+module.exports.SPLIT_OFFER_AMOUNT_TYPES = SPLIT_OFFER_AMOUNT_TYPES;
+module.exports.SPLIT_OFFER_DUE_RULES = SPLIT_OFFER_DUE_RULES;
+module.exports.SPLIT_OFFER_CANCELLATION_TREATMENTS = SPLIT_OFFER_CANCELLATION_TREATMENTS;

@@ -1,0 +1,27 @@
+{
+  "id": "evt_sp2_pi_succeeded_legacy_2023_10_16",
+  "object": "event",
+  "api_version": "2023-10-16",
+  "created": 1727000000,
+  "livemode": false,
+  "pending_webhooks": 1,
+  "request": { "id": null, "idempotency_key": null },
+  "type": "payment_intent.succeeded",
+  "data": {
+    "object": {
+      "id": "pi_sp2_legacy_compat_1",
+      "object": "payment_intent",
+      "amount": 36000,
+      "amount_received": 36000,
+      "currency": "eur",
+      "status": "succeeded",
+      "client_secret": "pi_sp2_legacy_compat_1_secret_test",
+      "metadata": {
+        "flowVersion": "v2",
+        "checkoutId": "cs_sp2_legacy_compat_1",
+        "bookingId": ""
+      },
+      "automatic_payment_methods": { "enabled": true }
+    }
+  }
+}

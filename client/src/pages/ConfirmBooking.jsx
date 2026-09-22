@@ -1004,6 +1004,10 @@ const ConfirmBooking = () => {
   const [fullVoucherCoverage, setFullVoucherCoverage] = useState(false);
   const [voucherAppliedCents, setVoucherAppliedCents] = useState(0);
   const [stripeAmountCents, setStripeAmountCents] = useState(0);
+  const [paymentChoice, setPaymentChoice] = useState('full');
+  const [splitPaymentOffer, setSplitPaymentOffer] = useState(null);
+  const [futureChargeConsentAccepted, setFutureChargeConsentAccepted] = useState(false);
+  const [fullCardObligationCents, setFullCardObligationCents] = useState(0);
   const [paymentElementReady, setPaymentElementReady] = useState(false);
   const [paymentElementLoadError, setPaymentElementLoadError] = useState(null);
   const [stripeSlowHint, setStripeSlowHint] = useState(false);
@@ -1695,6 +1699,20 @@ const ConfirmBooking = () => {
       if (formData.email?.trim()) {
         payload.guestEmail = formData.email.trim().toLowerCase();
       }
+      payload.paymentChoice = paymentChoice === 'split' ? 'split' : 'full';
+      if (paymentChoice === 'split' && splitPaymentOffer) {
+        payload.splitOfferSnapshotHash = splitPaymentOffer.offerSnapshotHash;
+        if (!futureChargeConsentAccepted) {
+          setCheckoutInitError('Please accept the future installment charge authorization to reserve with a deposit.');
+          return;
+        }
+        payload.futureChargeConsent = {
+          consentVersion: splitPaymentOffer.futureChargeConsent?.consentVersion,
+          consentHash: splitPaymentOffer.futureChargeConsent?.consentHash,
+          acceptedLocale: language || 'en',
+          displayedText: splitPaymentOffer.futureChargeConsent?.displayedText
+        };
+      }
       // Optional marketing/quote consents are no longer collected on accommodation checkout.
       payload.quoteDeliveryRequested = false;
       payload.bookingReminderConsent = false;
@@ -1783,6 +1801,15 @@ const ConfirmBooking = () => {
         const giftCents = Number(res.data.giftVoucherAppliedCents ?? res.data.voucherAppliedCents ?? 0);
         const reportedStripeCents = Number(res.data.stripeAmountCents);
         const nextSessionVersion = Number(res.data.sessionVersion) || 1;
+        if (res.data.splitPaymentOffer) {
+          setSplitPaymentOffer(res.data.splitPaymentOffer);
+        }
+        if (res.data.paymentChoice === 'split' || res.data.paymentChoice === 'full') {
+          setPaymentChoice(res.data.paymentChoice);
+        }
+        if (Number.isFinite(Number(res.data.fullCardObligationCents))) {
+          setFullCardObligationCents(Number(res.data.fullCardObligationCents));
+        }
 
         setCheckoutId(validation.checkoutId);
         setSessionVersion(nextSessionVersion);
@@ -1847,6 +1874,9 @@ const ConfirmBooking = () => {
       setVoucherRedemptionId(res.data.redemptionId || null);
       setFullVoucherCoverage(Boolean(res.data.fullVoucherCoverage));
       setVoucherAppliedCents(Number(res.data.voucherAppliedCents || 0));
+      if (res.data.splitPaymentOffer) {
+        setSplitPaymentOffer(res.data.splitPaymentOffer);
+      }
       const reportedStripeCents = Number(res.data.stripeAmountCents);
       if (res.data.clientSecret) {
         if (!Number.isFinite(reportedStripeCents) || reportedStripeCents < 0) {
@@ -1933,6 +1963,9 @@ const ConfirmBooking = () => {
     selectedExpKeys,
     language,
     sessionVersion,
+    paymentChoice,
+    splitPaymentOffer,
+    futureChargeConsentAccepted,
     t
   ]);
 
@@ -2511,7 +2544,10 @@ const ConfirmBooking = () => {
   }, [paymentPrecheckMessages, pricing]);
 
   const continueToPayDisabled =
-    checkoutInitLoading || !pricing || precheckDisabled;
+    checkoutInitLoading ||
+    !pricing ||
+    precheckDisabled ||
+    (paymentChoice === 'split' && (!splitPaymentOffer || !futureChargeConsentAccepted));
 
   const handlePaymentElementReady = useCallback(() => {
     setPaymentElementReady(true);
@@ -2886,6 +2922,104 @@ const ConfirmBooking = () => {
         {/* Payment - Stripe when configured, else pay on arrival */}
         <div className="mt-6 p-6 bg-white rounded-xl border border-gray-200">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('confirm.paymentTitle')}</h2>
+          {splitPaymentOffer && !skipCardPaymentUi ? (
+            <div className="mb-5 space-y-3" role="radiogroup" aria-label="Payment options">
+              <label className="flex gap-3 p-3 rounded-lg border border-gray-200 cursor-pointer max-w-xl">
+                <input
+                  type="radio"
+                  name="paymentChoice"
+                  checked={paymentChoice === 'full'}
+                  onChange={() => {
+                    setPaymentChoice('full');
+                    setFutureChargeConsentAccepted(false);
+                    if (clientSecret) {
+                      setClientSecret(null);
+                      setCanonicalPaymentIntentId(null);
+                    }
+                  }}
+                  className="mt-1"
+                />
+                <span className="text-sm text-gray-800 leading-relaxed">
+                  <span className="font-medium block">Pay in full</span>
+                  <span className="text-gray-600">
+                    €
+                    {(
+                      (fullCardObligationCents || stripeAmountCents || splitPaymentOffer.totalCents) /
+                      100
+                    ).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{' '}
+                    today
+                  </span>
+                </span>
+              </label>
+              <label className="flex gap-3 p-3 rounded-lg border border-gray-200 cursor-pointer max-w-xl">
+                <input
+                  type="radio"
+                  name="paymentChoice"
+                  checked={paymentChoice === 'split'}
+                  onChange={() => {
+                    setPaymentChoice('split');
+                    if (clientSecret) {
+                      setClientSecret(null);
+                      setCanonicalPaymentIntentId(null);
+                    }
+                  }}
+                  className="mt-1"
+                />
+                <span className="text-sm text-gray-800 leading-relaxed">
+                  <span className="font-medium block">
+                    Reserve with €
+                    {(
+                      (splitPaymentOffer.installments?.[0]?.amountCents || 0) / 100
+                    ).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2
+                    })}{' '}
+                    today
+                  </span>
+                  <span className="text-gray-600 block mt-1">
+                    {splitPaymentOffer.stayCreditProtectionText}
+                  </span>
+                  <span className="text-gray-600 block mt-1">
+                    Same total €
+                    {(splitPaymentOffer.totalCents / 100).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2
+                    })}
+                    . Remaining installment
+                    {splitPaymentOffer.installments?.length > 2 ? 's' : ''} charged automatically on
+                    the scheduled date
+                    {splitPaymentOffer.installments?.length > 2 ? 's' : ''}.
+                  </span>
+                  {(splitPaymentOffer.installments || [])
+                    .filter((i) => i.sequence > 1)
+                    .map((inst) => (
+                      <span key={inst.sequence} className="block text-gray-600 mt-1">
+                        €
+                        {(inst.amountCents / 100).toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2
+                        })}{' '}
+                        on {inst.dueAtDateOnly}
+                      </span>
+                    ))}
+                </span>
+              </label>
+              {paymentChoice === 'split' ? (
+                <label className="flex gap-3 p-3 rounded-lg bg-stone-50 border border-stone-200 cursor-pointer max-w-xl">
+                  <input
+                    type="checkbox"
+                    checked={futureChargeConsentAccepted}
+                    onChange={(e) => setFutureChargeConsentAccepted(e.target.checked)}
+                    className="mt-1"
+                  />
+                  <span className="text-sm text-gray-800 leading-relaxed">
+                    {splitPaymentOffer.futureChargeConsent?.displayedText ||
+                      splitPaymentOffer.stayCreditProtectionText}
+                  </span>
+                </label>
+              ) : null}
+            </div>
+          ) : null}
           {showContinueToPayment ? (
             <>
               <button

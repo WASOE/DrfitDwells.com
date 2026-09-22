@@ -408,6 +408,76 @@ function bookingHasRecordedCashPayment(booking) {
   return Number.isFinite(booking?.stripePaidAmountCents) && Number(booking.stripePaidAmountCents) > 0;
 }
 
+/**
+ * SP7B: authoritative max cash refundable from card cash only.
+ * StayCredit / accommodation voucher / other non-cash credits are never cash-convertible.
+ * Prefer reject over silent clamp when amount exceeds the cap.
+ */
+function computeMaxCashRefundableCents(booking) {
+  const cardPaid = Math.max(0, Math.trunc(Number(booking?.stripePaidAmountCents) || 0));
+  // Explicit non-cash provenance (must never inflate cash refundability).
+  const stayCreditApplied = Math.max(0, Math.trunc(Number(booking?.stayCreditAppliedCents) || 0));
+  const voucherApplied = Math.max(0, Math.trunc(Number(booking?.giftVoucherAppliedCents) || 0));
+  void stayCreditApplied;
+  void voucherApplied;
+
+  let alreadyRefunded = 0;
+  const cs = booking?.cancellationSettlement;
+  if (cs && typeof cs === 'object') {
+    if (String(cs.outcome) === 'cash_refunded') {
+      alreadyRefunded = Math.max(
+        0,
+        Math.trunc(
+          Number(cs.cashRefundEvidence?.amountCents ?? cs.cashRefundAmountCents) || 0
+        )
+      );
+    }
+  }
+
+  let maxFromCard = Math.max(0, cardPaid - alreadyRefunded);
+
+  // Respect frozen split entitlement when present (lower bound of card cash and policy cash).
+  if (cs?.splitSettlement && Number.isFinite(cs.splitSettlement.cashRefundCents)) {
+    const entitled = Math.max(0, Math.trunc(Number(cs.splitSettlement.cashRefundCents)));
+    const priorEvidence =
+      String(cs.outcome) === 'cash_refunded'
+        ? alreadyRefunded
+        : 0;
+    maxFromCard = Math.min(maxFromCard, Math.max(0, entitled - priorEvidence));
+  } else if (
+    cs &&
+    String(cs.outcome) === 'cash_refund_pending' &&
+    Number.isFinite(cs.cashRefundAmountCents)
+  ) {
+    maxFromCard = Math.min(maxFromCard, Math.max(0, Math.trunc(Number(cs.cashRefundAmountCents))));
+  }
+
+  return maxFromCard;
+}
+
+function assertCashRefundWithinAuthoritativeCap(amountCents, booking, { field = 'cashRefundAmountCents' } = {}) {
+  const max = computeMaxCashRefundableCents(booking);
+  const amount = Math.trunc(Number(amountCents));
+  if (!Number.isInteger(amount) || amount <= 0) {
+    return amount;
+  }
+  if (amount > max) {
+    throw createDomainError(
+      'validation',
+      `${field} exceeds authoritative refundable card cash`,
+      {
+        [field]: amount,
+        maxCashRefundableCents: max,
+        stripePaidAmountCents: Number(booking?.stripePaidAmountCents) || 0,
+        stayCreditAppliedCents: Number(booking?.stayCreditAppliedCents) || 0,
+        giftVoucherAppliedCents: Number(booking?.giftVoucherAppliedCents) || 0
+      },
+      400
+    );
+  }
+  return amount;
+}
+
 function extractCashRefundAmountRaw(settlement) {
   if (!settlement || typeof settlement !== 'object') return null;
   if (settlement.cashRefundAmountCents != null) return settlement.cashRefundAmountCents;
@@ -449,7 +519,9 @@ function parseCashRefundAmountCents(settlement, booking, { required, outcome }) 
       400
     );
   }
-  return raw;
+  return assertCashRefundWithinAuthoritativeCap(raw, booking, {
+    field: 'cashRefundAmountCents'
+  });
 }
 
 function parseCashRefundNote(settlement) {
@@ -540,6 +612,9 @@ function buildCashRefundedCancellationSettlement({
       400
     );
   }
+  assertCashRefundWithinAuthoritativeCap(amountRaw, booking, {
+    field: 'cashRefundEvidence.amountCents'
+  });
 
   const methodRaw = evidenceInput.method != null ? String(evidenceInput.method).trim() : '';
   if (!methodRaw || !CASH_REFUND_METHODS.has(methodRaw)) {
@@ -692,6 +767,32 @@ async function buildCreditsIssuedCancellationSettlement({
 }
 
 async function normalizeCancelSettlement({ settlement, reason, actorId, recordedAt, booking, ctx }) {
+  // SP7: split bookings use deterministic installment allocation (stay credit / policy / forfeit).
+  const BookingInstallment = require('../../../models/BookingInstallment');
+  const installmentCount = await BookingInstallment.countDocuments({ bookingId: booking._id });
+  if (installmentCount > 0) {
+    const {
+      settleSplitBookingCancellation
+    } = require('../../splitCancellationSettlementService');
+    const stripe = ctx?.stripe || null;
+    const split = await settleSplitBookingCancellation({
+      booking,
+      reason,
+      actorId,
+      now: recordedAt,
+      stripe
+    });
+    if (split.skipped) {
+      // fall through to manual settlement
+    } else {
+      return {
+        cancellationSettlement: split.cancellationSettlement,
+        compensationVoucher: null,
+        stayCredits: split.stayCredits || []
+      };
+    }
+  }
+
   const outcomeRaw = settlement && typeof settlement === 'object' ? settlement.outcome : null;
   const outcome = typeof outcomeRaw === 'string' ? outcomeRaw.trim() : '';
   const effectiveOutcome = outcome || 'resolution_pending';
@@ -1051,6 +1152,20 @@ async function resolveCancellationSettlement({ bookingId, reason, settlement, ct
       missingReasonMessage: 'reason is required when recording cash refunded on resolve'
     });
     cancellationSettlement = built.cancellationSettlement;
+    // Preserve SP7 split allocation evidence; mark cash component complete.
+    const priorSplit = booking.cancellationSettlement?.splitSettlement;
+    if (priorSplit && typeof priorSplit === 'object') {
+      cancellationSettlement.splitSettlement = {
+        ...priorSplit,
+        cashRefundStatus: 'completed',
+        settledAt: settlementRecordedAt,
+        settlementCompletionStatus: 'complete'
+      };
+      if (booking.cancellationSettlement.creditAmountCents != null) {
+        cancellationSettlement.creditAmountCents =
+          booking.cancellationSettlement.creditAmountCents;
+      }
+    }
   } else {
     throw createDomainError(
       'validation',
@@ -2381,5 +2496,7 @@ module.exports = {
   createManualReservation,
   // Test / diagnostics
   DATE_EDIT_CANONICAL_MRI_CATEGORY,
-  DATE_EDIT_ALLOWED_STATUSES
+  DATE_EDIT_ALLOWED_STATUSES,
+  computeMaxCashRefundableCents,
+  assertCashRefundWithinAuthoritativeCap
 };

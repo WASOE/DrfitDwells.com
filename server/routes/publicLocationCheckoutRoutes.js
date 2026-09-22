@@ -1,6 +1,7 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const Stripe = require('stripe');
+const { STRIPE_API_VERSION } = require('../config/stripeApiVersion');
 const { createDomainError } = require('../services/ops/domain/errors');
 const {
   createLocationCheckoutPaymentIntent,
@@ -9,7 +10,9 @@ const {
 
 const router = express.Router();
 
-const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: STRIPE_API_VERSION })
+  : null;
 
 const checkoutLimiter = rateLimit({
   windowMs: 60 * 1000,

@@ -865,6 +865,62 @@ ${guestEmailFooterText()}
         valueHtml: `<span class="total-accent">€${htmlEscape(String(booking.totalPrice))}</span>`
       }
     ];
+
+    const splitSchedule = booking.chosenPaymentScheduleSnapshot;
+    const isSplit =
+      String(booking.paymentSettlementStatus || '') === 'partially_paid' &&
+      splitSchedule &&
+      Array.isArray(splitSchedule.installments) &&
+      splitSchedule.installments.length > 1;
+
+    let splitPaymentHtml = '';
+    let splitPaymentText = '';
+    if (isSplit) {
+      const paidCents = Math.trunc(Number(booking.stripePaidAmountCents) || 0);
+      const totalCents =
+        Math.trunc(Number(splitSchedule.totalCents)) ||
+        Math.round(Number(booking.totalPrice || 0) * 100);
+      const remainingCents = Math.max(0, totalCents - paidCents);
+      const future = splitSchedule.installments.filter((i) => Number(i.sequence) > 1);
+      confirmedDetailRows.push(
+        {
+          label: 'Paid today',
+          valueHtml: htmlEscape(`€${(paidCents / 100).toFixed(2)}`)
+        },
+        {
+          label: 'Remaining balance',
+          valueHtml: htmlEscape(`€${(remainingCents / 100).toFixed(2)}`)
+        }
+      );
+      const scheduleLinesHtml = future
+        .map((inst) => {
+          const amt = (Math.trunc(Number(inst.amountCents) || 0) / 100).toFixed(2);
+          return `<li>€${htmlEscape(amt)} on ${htmlEscape(String(inst.dueAtDateOnly))} (automatic charge to your saved card)</li>`;
+        })
+        .join('');
+      const scheduleLinesText = future
+        .map((inst) => {
+          const amt = (Math.trunc(Number(inst.amountCents) || 0) / 100).toFixed(2);
+          return `- €${amt} on ${inst.dueAtDateOnly} (automatic charge to your saved card)`;
+        })
+        .join('\n');
+      splitPaymentHtml = `
+            <div class="booking-details">
+              <h3>Payment schedule</h3>
+              <p>Your reservation payment is protected as future stay credit if your plans change within the cancellation window.</p>
+              <p>Remaining installments will be charged automatically to your saved card:</p>
+              <ul>${scheduleLinesHtml}</ul>
+            </div>`;
+      splitPaymentText = `
+PAYMENT SCHEDULE:
+Paid today: €${(paidCents / 100).toFixed(2)}
+Remaining balance: €${(remainingCents / 100).toFixed(2)}
+Your reservation payment is protected as future stay credit if your plans change within the cancellation window.
+Remaining installments will be charged automatically to your saved card:
+${scheduleLinesText}
+`;
+    }
+
     const confirmedDetailsTable = buildDetailRowsTable(confirmedDetailRows);
 
     const bodyHtml = `
@@ -877,6 +933,7 @@ ${guestEmailFooterText()}
               <h3>Confirmed stay</h3>
               ${confirmedDetailsTable}
             </div>
+            ${splitPaymentHtml}
 
             <p>We'll send practical arrival instructions and local notes a few days before you travel.</p>
 
@@ -916,7 +973,7 @@ CONFIRMED STAY:
 - Check-out: ${formatSofiaDisplayDate(checkOut, 'en-GB')}
 - Duration: ${nights} night${nights !== 1 ? 's' : ''}
 - Total: €${booking.totalPrice}
-
+${splitPaymentText}
 We'll send practical arrival instructions and local notes a few days before you travel.
 
 Questions? Reply to this email or ${SUPPORT_CONTACT_EMAIL}

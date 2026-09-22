@@ -25,6 +25,11 @@ const RatePlanModel = require('../models/RatePlan');
 const CabinModel = require('../models/Cabin');
 const CabinTypeModel = require('../models/CabinType');
 const CancellationPolicyModel = require('../models/CancellationPolicy');
+const PaymentTermTemplateModel = require('../models/PaymentTermTemplate');
+const {
+  assertActivePaymentTermTemplate,
+  PaymentTermError
+} = require('./paymentTermService');
 
 const ACTIVATION_LOCK_COLLECTION_NAME = 'rateplanactivationlocks';
 const ACTIVATION_LOCK_ID = 'seasonal-rateplan-activation';
@@ -36,6 +41,8 @@ const MANAGEMENT_ERROR_CODES = Object.freeze({
   ACCOMMODATION_INACTIVE: 'ACCOMMODATION_INACTIVE',
   ACCOMMODATION_ENTITY_MISMATCH: 'ACCOMMODATION_ENTITY_MISMATCH',
   CANCELLATION_POLICY_NOT_FOUND: 'CANCELLATION_POLICY_NOT_FOUND',
+  PAYMENT_TERM_NOT_FOUND: 'PAYMENT_TERM_NOT_FOUND',
+  PAYMENT_TERM_NOT_ACTIVE: 'PAYMENT_TERM_NOT_ACTIVE',
   INVALID_STATUS_TRANSITION: 'INVALID_STATUS_TRANSITION',
   IMMUTABLE_PLAN: 'IMMUTABLE_PLAN',
   IDENTITY_IMMUTABLE: 'IDENTITY_IMMUTABLE',
@@ -80,6 +87,8 @@ const BUSINESS_FIELD_KEYS = Object.freeze([
   'requiresFullPayment',
   'cancellationPolicyCode',
   'cancellationPolicyVersion',
+  'paymentTermCode',
+  'paymentTermVersion',
   'inclusions',
   'accommodations'
 ]);
@@ -107,6 +116,7 @@ function getDeps(deps = {}) {
     Cabin: deps.Cabin || CabinModel,
     CabinType: deps.CabinType || CabinTypeModel,
     CancellationPolicy: deps.CancellationPolicy || CancellationPolicyModel,
+    PaymentTermTemplate: deps.PaymentTermTemplate || PaymentTermTemplateModel,
     now: typeof deps.now === 'function' ? deps.now : () => new Date(),
     session: deps.session || null,
     activationLockCollection: deps.activationLockCollection || null
@@ -420,6 +430,9 @@ function toPublicPlan(doc) {
     requiresFullPayment: plain.requiresFullPayment === true,
     cancellationPolicyCode: plain.cancellationPolicyCode,
     cancellationPolicyVersion: plain.cancellationPolicyVersion,
+    paymentTermCode: plain.paymentTermCode ?? null,
+    paymentTermVersion:
+      plain.paymentTermVersion != null ? Number(plain.paymentTermVersion) : null,
     inclusions: Array.isArray(plain.inclusions) ? [...plain.inclusions] : [],
     accommodations: Array.isArray(plain.accommodations)
       ? plain.accommodations.map((row) => ({ ...row }))
@@ -544,6 +557,30 @@ async function assertCancellationPolicyExists(code, version, deps) {
     );
   }
   return policy;
+}
+
+/**
+ * NEW activation may only attach a currently active payment-term template.
+ * Absence is allowed (full-payment default). Historical pinned versions remain
+ * resolvable via paymentTermService.resolvePaymentTermTemplate regardless of status.
+ */
+async function assertPaymentTermActiveIfPresent(code, version, deps) {
+  if (code == null || version == null) return null;
+  try {
+    return await assertActivePaymentTermTemplate(code, version, {
+      PaymentTermTemplate: deps.PaymentTermTemplate,
+      session: deps.session
+    });
+  } catch (err) {
+    if (err instanceof PaymentTermError) {
+      const mapped =
+        err.code === 'PAYMENT_TERM_NOT_ACTIVE'
+          ? MANAGEMENT_ERROR_CODES.PAYMENT_TERM_NOT_ACTIVE
+          : MANAGEMENT_ERROR_CODES.PAYMENT_TERM_NOT_FOUND;
+      throw new RatePlanManagementError(mapped, err.message, err.details);
+    }
+    throw err;
+  }
 }
 
 function windowFromPlanPlain(plain) {
@@ -746,6 +783,9 @@ async function updateRatePlanDraft(id, patch, { operatorId, expectedRevision } =
     requiresFullPayment: currentPlain.requiresFullPayment,
     cancellationPolicyCode: currentPlain.cancellationPolicyCode,
     cancellationPolicyVersion: currentPlain.cancellationPolicyVersion,
+    paymentTermCode: currentPlain.paymentTermCode ?? null,
+    paymentTermVersion:
+      currentPlain.paymentTermVersion != null ? Number(currentPlain.paymentTermVersion) : null,
     inclusions: currentPlain.inclusions,
     accommodations: currentPlain.accommodations,
     ...cleanedPatch,
@@ -817,6 +857,9 @@ async function cloneRatePlanAsNextDraftVersion(id, { operatorId } = {}, deps = {
     requiresFullPayment: plain.requiresFullPayment,
     cancellationPolicyCode: plain.cancellationPolicyCode,
     cancellationPolicyVersion: plain.cancellationPolicyVersion,
+    paymentTermCode: plain.paymentTermCode ?? null,
+    paymentTermVersion:
+      plain.paymentTermVersion != null ? Number(plain.paymentTermVersion) : null,
     inclusions: plain.inclusions,
     accommodations: plain.accommodations
   };
@@ -922,6 +965,11 @@ async function activateRatePlanUnderLock(id, { operatorId, expectedRevision } = 
 
   await assertAccommodationIdentities(value.accommodations, deps);
   await assertCancellationPolicyExists(value.cancellationPolicyCode, value.cancellationPolicyVersion, deps);
+  await assertPaymentTermActiveIfPresent(
+    value.paymentTermCode,
+    value.paymentTermVersion,
+    deps
+  );
 
   if (value.type === 'seasonal_stay') {
     const conflicts = await findSeasonalActivationConflicts(value, deps);

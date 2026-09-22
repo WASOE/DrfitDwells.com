@@ -147,6 +147,8 @@ export default function OpsRatePlans() {
         version: prev.version,
         cancellationPolicyCode: prev.cancellationPolicyCode,
         cancellationPolicyVersion: prev.cancellationPolicyVersion,
+        paymentTermCode: prev.paymentTermCode,
+        paymentTermVersion: prev.paymentTermVersion,
         inclusionsText: prev.inclusionsText,
         requiresFullPayment: prev.requiresFullPayment
       };
@@ -458,6 +460,25 @@ export default function OpsRatePlans() {
             <div className="ops-rate-plans__grid ops-rate-plans__grid--2">
               <OpsTextField label="Cancellation policy code" required value={form.cancellationPolicyCode} onChange={(e) => updateField('cancellationPolicyCode', e.target.value)} />
               <OpsTextField label="Policy version" type="number" min={1} step={1} required value={form.cancellationPolicyVersion} onChange={(e) => updateField('cancellationPolicyVersion', e.target.value)} />
+            </div>
+
+            <div className="ops-rate-plans__grid ops-rate-plans__grid--2">
+              <OpsTextField
+                label="Payment term code (optional)"
+                value={form.paymentTermCode || ''}
+                onChange={(e) => updateField('paymentTermCode', e.target.value)}
+                placeholder="Leave empty for full payment only"
+                disabled={readOnly}
+              />
+              <OpsTextField
+                label="Payment term version"
+                type="number"
+                min={1}
+                step={1}
+                value={form.paymentTermVersion || ''}
+                onChange={(e) => updateField('paymentTermVersion', e.target.value)}
+                disabled={readOnly}
+              />
             </div>
 
             <OpsTextarea label="Inclusions (one per line)" rows={4} value={form.inclusionsText} onChange={(e) => updateField('inclusionsText', e.target.value)} />

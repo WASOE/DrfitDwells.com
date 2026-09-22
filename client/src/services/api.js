@@ -95,6 +95,11 @@ export const bookingAPI = {
       `/bookings/checkout-sessions/${encodeURIComponent(String(checkoutId ?? '').trim())}/finalize-intent`,
       data
     ),
+  setPaymentChoice: (checkoutId, data) =>
+    api.put(
+      `/bookings/checkout-sessions/${encodeURIComponent(String(checkoutId ?? '').trim())}/payment-choice`,
+      data
+    ),
   getCheckoutSession: async (checkoutId) => {
     const id = String(checkoutId ?? '').trim();
     const res = await api.get(`/bookings/checkout-sessions/${encodeURIComponent(id)}`);
@@ -158,6 +163,17 @@ export const ratePlanAdminAPI = {
   clone: (id) => api.post(`/admin/rate-plans/${id}/clone`, {}),
   activate: (id, data) => api.post(`/admin/rate-plans/${id}/activate`, data),
   retire: (id, data) => api.post(`/admin/rate-plans/${id}/retire`, data)
+};
+
+/** SP7 PaymentTermTemplate management API. */
+export const paymentTermAdminAPI = {
+  list: (params = {}) => api.get('/admin/payment-terms', { params }),
+  get: (id) => api.get(`/admin/payment-terms/${id}`),
+  create: (data) => api.post('/admin/payment-terms', data),
+  update: (id, data) => api.patch(`/admin/payment-terms/${id}`, data),
+  clone: (id) => api.post(`/admin/payment-terms/${id}/clone`, {}),
+  activate: (id, data = {}) => api.post(`/admin/payment-terms/${id}/activate`, data),
+  retire: (id, data = {}) => api.post(`/admin/payment-terms/${id}/retire`, data)
 };
 
 export const reviewAPI = {

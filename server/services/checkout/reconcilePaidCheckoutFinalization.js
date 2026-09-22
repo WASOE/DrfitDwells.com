@@ -12,6 +12,7 @@
  */
 
 const Stripe = require('stripe');
+const { STRIPE_API_VERSION } = require('../../config/stripeApiVersion');
 const featureFlags = require('../../utils/featureFlags');
 const CheckoutSession = require('../../models/CheckoutSession');
 const CheckoutFinalizationJob = require('../../models/CheckoutFinalizationJob');
@@ -116,7 +117,7 @@ function buildSyntheticSucceededEvent(pi, stripeEventId = null) {
 function getStripeClient(stripeOverride = null) {
   if (stripeOverride) return stripeOverride;
   if (!process.env.STRIPE_SECRET_KEY) return null;
-  return new Stripe(process.env.STRIPE_SECRET_KEY);
+  return new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: STRIPE_API_VERSION });
 }
 
 async function retrievePaymentIntent(stripe, paymentIntentId) {

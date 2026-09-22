@@ -332,7 +332,9 @@ async function buildQuoteForResolvedEntity(
     transportMethod,
     romanticSetup,
     promoCode,
-    voucherCode
+    voucherCode,
+    stayCreditCode = null,
+    guestEmail = null
   },
   deps = {}
 ) {
@@ -410,6 +412,61 @@ async function buildQuoteForResolvedEntity(
     }
   }
 
+  // SP7: stay credit reduces card obligation after voucher; disables split via remaining/applied cents.
+  let stayCreditAppliedCents = 0;
+  let stayCreditCodeOut = null;
+  let stayCreditPreviewError = null;
+  const stayCodeRaw =
+    typeof stayCreditCode === 'string' && stayCreditCode.trim()
+      ? stayCreditCode.trim().toUpperCase()
+      : null;
+  // Prefer explicit stayCreditCode; also accept SC-* entered in voucherCode when not a gift voucher hit.
+  const stayCodeCandidate =
+    stayCodeRaw ||
+    (codeToPreview &&
+    String(codeToPreview).trim().toUpperCase().startsWith('SC-') &&
+    voucherAppliedCents === 0
+      ? String(codeToPreview).trim().toUpperCase()
+      : null);
+  if (stayCodeCandidate && remainingDueCents > 0) {
+    try {
+      const StayCredit = require('../models/StayCredit');
+      const {
+        computeCardObligationAfterStayCredit
+      } = require('./stayCreditService');
+      const credit = await StayCredit.findOne({
+        code: stayCodeCandidate,
+        status: { $in: ['active', 'partially_redeemed'] }
+      }).lean();
+      if (!credit) {
+        stayCreditPreviewError = 'This stay credit cannot be used.';
+      } else {
+        const email =
+          typeof guestEmail === 'string' ? guestEmail.trim().toLowerCase() : null;
+        if (
+          email &&
+          credit.guestEmail &&
+          String(credit.guestEmail).toLowerCase() !== email
+        ) {
+          stayCreditPreviewError = 'This stay credit does not match the guest email.';
+        } else {
+          const obligation = computeCardObligationAfterStayCredit({
+            totalCents: remainingDueCents,
+            stayCreditRemainingCents: credit.remainingCents
+          });
+          stayCreditAppliedCents = obligation.appliedCents;
+          stayCreditCodeOut = stayCodeCandidate;
+          remainingDueCents = obligation.cardObligationCents;
+          if (remainingDueCents === 0 && voucherAppliedCents === 0) {
+            fullVoucherCoverage = stayCreditAppliedCents > 0;
+          }
+        }
+      }
+    } catch (err) {
+      stayCreditPreviewError = err.message || 'This stay credit cannot be used.';
+    }
+  }
+
   const result = {
     ok: true,
     entityType,
@@ -426,7 +483,10 @@ async function buildQuoteForResolvedEntity(
     voucherAppliedCents,
     remainingDueCents,
     fullVoucherCoverage,
-    voucherPreviewError
+    voucherPreviewError,
+    stayCreditAppliedCents,
+    stayCreditCode: stayCreditCodeOut,
+    stayCreditPreviewError
   };
 
   if (seasonal.resolved) {
@@ -593,7 +653,9 @@ async function buildPublicBookingQuote(body, deps = {}) {
       transportMethod,
       romanticSetup,
       promoCode,
-      voucherCode: body.voucherCode
+      voucherCode: body.voucherCode,
+      stayCreditCode: body.stayCreditCode || null,
+      guestEmail: body.guestEmail || body.email || null
     },
     deps
   );

@@ -80,6 +80,14 @@ const cancellationSettlementSchema = new mongoose.Schema(
         { _id: false }
       ),
       default: null
+    },
+    /**
+     * SP7: deterministic split installment allocation (stay credit / cash / forfeit / voids).
+     * Stored as Mixed so allocations remain auditable without schema churn.
+     */
+    splitSettlement: {
+      type: mongoose.Schema.Types.Mixed,
+      default: undefined
     }
   },
   { _id: false }
@@ -301,6 +309,129 @@ const bookingSchema = new mongoose.Schema({
     type: Number,
     default: 0,
     min: [0, 'stripePaidAmountCents cannot be negative']
+  },
+  /**
+   * SP5: settlement vs commercial total. Kept separate from booking.status.
+   * - paid_in_full: card (+voucher) covers commercial obligation
+   * - partially_paid: split initial paid; future installments outstanding
+   * - not_required: no card charge (e.g. full voucher)
+   */
+  paymentSettlementStatus: {
+    type: String,
+    enum: ['paid_in_full', 'partially_paid', 'not_required'],
+    default: null
+  },
+  /**
+   * SP5: immutable chosen split schedule (copied from CheckoutSession offer on select).
+   * Absent for full-pay bookings.
+   */
+  chosenPaymentScheduleSnapshot: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
+  chosenPaymentScheduleSnapshotHash: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  futureChargeConsent: {
+    type: new mongoose.Schema(
+      {
+        consentVersion: { type: Number, min: 1 },
+        consentHash: { type: String, trim: true },
+        acceptedAt: { type: Date },
+        acceptedLocale: { type: String, trim: true, maxlength: 32 },
+        displayedText: { type: String, trim: true, maxlength: 4000 }
+      },
+      { _id: false }
+    ),
+    default: null
+  },
+  stripeCustomerId: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  stripeReusablePaymentMethodId: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  /**
+   * SP6: ops-only unpaid installment review. Never auto-cancels or releases inventory.
+   */
+  cancellationReview: {
+    type: new mongoose.Schema(
+      {
+        status: {
+          type: String,
+          enum: ['open', 'resolved'],
+          default: 'open'
+        },
+        reason: { type: String, trim: true, default: null },
+        installmentSequence: { type: Number, min: 1, default: null },
+        installmentId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'BookingInstallment',
+          default: null
+        },
+        openedAt: { type: Date, default: null },
+        resolvedAt: { type: Date, default: null },
+        resolvedNote: { type: String, trim: true, default: null },
+        notes: {
+          type: [
+            new mongoose.Schema(
+              {
+                at: { type: Date, default: Date.now },
+                actorId: { type: String, trim: true, default: null },
+                text: { type: String, trim: true, required: true, maxlength: 2000 }
+              },
+              { _id: false }
+            )
+          ],
+          default: undefined
+        }
+      },
+      { _id: false }
+    ),
+    default: null
+  },
+  /**
+   * SP7: successful date transfers (V1 max one). Append-only history.
+   */
+  dateTransferCount: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  dateTransferHistory: {
+    type: [mongoose.Schema.Types.Mixed],
+    default: undefined
+  },
+  /**
+   * SP7B: durable resumable date-transfer operation (prepare → stripe → commit).
+   * Booking dates remain unchanged until status === committed.
+   */
+  dateTransferOperation: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
+  /** SP7: stay credit applied at checkout (disables split; reduces card obligation). */
+  stayCreditAppliedCents: {
+    type: Number,
+    default: 0,
+    min: [0, 'stayCreditAppliedCents cannot be negative']
+  },
+  stayCreditId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'StayCredit',
+    default: null
+  },
+  stayCreditCode: {
+    type: String,
+    trim: true,
+    uppercase: true,
+    default: null
   },
   totalValueCents: {
     type: Number,

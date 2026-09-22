@@ -567,10 +567,12 @@ async function processStripeWebhookEvent(event) {
    * 3. If alreadyProcessed:
    *    - For accommodation payment_intent.succeeded: re-run Payment upsert + paid session sync
    *      (idempotent mark-paid + ensure job) so a crash after evidence cannot leave session/job unrepaired.
+   *    - For split installment invoice.* events: re-run invoice handler (idempotent converge).
    *    - Otherwise return deduped without re-running unrelated side effects.
    * 4. First pass: Payment + Payout upsert, legacy finalization compatibility.
    * 5. Accommodation paid sync (mark paid + ensure scheduled job) when flags allow.
-   * 6. Ops push payment alert (first pass only).
+   * 6. Split installment invoice sync (SP6).
+   * 7. Ops push payment alert (first pass only).
    *
    * Never creates Booking, never claims/executes CheckoutFinalizationJob, never waits on email.
    */
@@ -580,6 +582,11 @@ async function processStripeWebhookEvent(event) {
     && event?.data?.object?.object === 'payment_intent'
     && event?.data?.object?.metadata?.type === 'gift_voucher';
   const isAccommodationSucceeded = isAccommodationPaymentIntentSucceededEvent(event);
+  const {
+    isSplitInstallmentInvoiceEvent,
+    processSplitInstallmentInvoiceEvent
+  } = require('../../splitPaymentInvoiceWebhookService');
+  const isSplitInvoice = isSplitInstallmentInvoiceEvent(event);
 
   if (isGiftVoucherSucceeded) {
     await activatePaidVoucherFromStripeEvent(event);
@@ -588,6 +595,7 @@ async function processStripeWebhookEvent(event) {
   if (alreadyProcessed) {
     let paymentId = null;
     let accommodationSync = null;
+    let splitInvoiceSync = null;
     if (isAccommodationSucceeded) {
       const payment = await upsertCanonicalPaymentFromEvent(event);
       paymentId = payment ? String(payment._id) : null;
@@ -596,12 +604,16 @@ async function processStripeWebhookEvent(event) {
         payment
       });
     }
+    if (isSplitInvoice) {
+      splitInvoiceSync = await processSplitInstallmentInvoiceEvent({ event });
+    }
     return {
       ok: true,
       deduped: true,
       eventId: event.id,
       paymentId,
-      accommodationSync
+      accommodationSync,
+      splitInvoiceSync
     };
   }
 
@@ -619,6 +631,11 @@ async function processStripeWebhookEvent(event) {
     });
   }
 
+  let splitInvoiceSync = null;
+  if (isSplitInvoice) {
+    splitInvoiceSync = await processSplitInstallmentInvoiceEvent({ event });
+  }
+
   if (!alreadyProcessed && payment?._id) {
     void notifyOpsPushPaymentAlert({
       eventId: event.id,
@@ -634,7 +651,8 @@ async function processStripeWebhookEvent(event) {
     paymentId: payment ? String(payment._id) : null,
     payoutId: payout ? String(payout._id) : null,
     evidenceId: String(evidence._id),
-    accommodationSync
+    accommodationSync,
+    splitInvoiceSync
   };
 }
 

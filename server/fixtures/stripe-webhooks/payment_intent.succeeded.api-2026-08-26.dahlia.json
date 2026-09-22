@@ -1,0 +1,27 @@
+{
+  "id": "evt_sp2_pi_succeeded_dahlia_2026_08_26",
+  "object": "event",
+  "api_version": "2026-08-26.dahlia",
+  "created": 1727000001,
+  "livemode": false,
+  "pending_webhooks": 1,
+  "request": { "id": null, "idempotency_key": null },
+  "type": "payment_intent.succeeded",
+  "data": {
+    "object": {
+      "id": "pi_sp2_dahlia_compat_1",
+      "object": "payment_intent",
+      "amount": 36000,
+      "amount_received": 36000,
+      "currency": "eur",
+      "status": "succeeded",
+      "client_secret": "pi_sp2_dahlia_compat_1_secret_test",
+      "metadata": {
+        "flowVersion": "v2",
+        "checkoutId": "cs_sp2_dahlia_compat_1",
+        "bookingId": ""
+      },
+      "automatic_payment_methods": { "enabled": true }
+    }
+  }
+}

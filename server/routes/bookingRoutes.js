@@ -43,6 +43,7 @@ const {
   LEGAL_ACCEPTANCE_CANCELLATION_URL
 } = require('../config/legalAcceptance');
 const Stripe = require('stripe');
+const { STRIPE_API_VERSION } = require('../config/stripeApiVersion');
 
 const { validateId } = require('../middleware/validateId');
 const { sanitizeMetaClientContext } = require('../utils/sanitizeMetaClientContext');
@@ -519,7 +520,7 @@ function mapV2FinalizeErrorToStage(err) {
 
 const ACCEPTANCE_EMAIL_RETRY_DELAY_MS = 5000;
 
-let stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+let stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: STRIPE_API_VERSION }) : null;
 
 const validateTransportMethod = (value, transportOptions) => {
   if (!value || value === 'Not selected') return null;
@@ -654,6 +655,8 @@ const bookingQuoteBodyValidators = [
   body('experienceKeys').optional().isArray().withMessage('experienceKeys must be an array'),
   body('promoCode').optional().isString().isLength({ max: 40 }).withMessage('promoCode is too long'),
   body('voucherCode').optional().isString().isLength({ max: 64 }).withMessage('voucherCode is too long'),
+  body('stayCreditCode').optional().isString().isLength({ max: 64 }).withMessage('stayCreditCode is too long'),
+  body('guestEmail').optional().isEmail().withMessage('guestEmail must be a valid email'),
   body('funnelSessionKey').optional().isString().isLength({ max: 120 }),
   body('funnelVisitorKey').optional().isString().isLength({ max: 120 })
 ];
@@ -745,7 +748,10 @@ router.post('/quote', bookingQuoteLimiter, bookingQuoteBodyValidators, async (re
       voucherAppliedCents = 0,
       remainingDueCents = Math.round(totalPrice * 100),
       fullVoucherCoverage = false,
-      voucherPreviewError = null
+      voucherPreviewError = null,
+      stayCreditAppliedCents = 0,
+      stayCreditCode = null,
+      stayCreditPreviewError = null
     } = result;
     return res.json({
       success: true,
@@ -757,7 +763,10 @@ router.post('/quote', bookingQuoteLimiter, bookingQuoteBodyValidators, async (re
         voucherAppliedCents,
         remainingDueCents,
         fullVoucherCoverage,
-        ...(voucherPreviewError ? { voucherMessage: voucherPreviewError } : {})
+        stayCreditAppliedCents,
+        stayCreditCode,
+        ...(voucherPreviewError ? { voucherMessage: voucherPreviewError } : {}),
+        ...(stayCreditPreviewError ? { stayCreditMessage: stayCreditPreviewError } : {})
       }
     });
   } catch (err) {
@@ -818,6 +827,65 @@ router.get('/checkout-sessions/:checkoutId', async (req, res) => {
     return res.status(500).json({
       success: false,
       message: process.env.NODE_ENV === 'development' ? err.message : 'Checkout session lookup failed'
+    });
+  }
+});
+
+// PUT /api/bookings/checkout-sessions/:checkoutId/payment-choice — SP5 explicit full|split choice + consent
+router.put('/checkout-sessions/:checkoutId/payment-choice', paymentIntentLimiter, async (req, res) => {
+  try {
+    const checkoutId = normalizeCheckoutId(req.params.checkoutId);
+    if (!checkoutId || !isValidCheckoutId(checkoutId)) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_CHECKOUT_ID',
+        message: 'Invalid checkout session id'
+      });
+    }
+    const {
+      loadSessionOrThrow,
+      assertSessionUsable
+    } = require('../services/checkout/checkoutSessionService');
+    const {
+      setCheckoutPaymentChoice,
+      toCheckoutSessionError,
+      resolveExpectedChargeCents,
+      getPaymentChoice,
+      formatPublicSplitOffer
+    } = require('../services/splitPaymentChoiceService');
+
+    const session = await loadSessionOrThrow(checkoutId);
+    assertSessionUsable(session);
+    try {
+      await setCheckoutPaymentChoice({
+        session,
+        choice: req.body?.paymentChoice ?? req.body?.choice ?? 'full',
+        splitOfferSnapshotHash: req.body?.splitOfferSnapshotHash || null,
+        consent: req.body?.futureChargeConsent || null,
+        expectedSessionVersion: req.body?.expectedSessionVersion ?? req.body?.sessionVersion ?? null,
+        save: true
+      });
+    } catch (err) {
+      throw toCheckoutSessionError(err);
+    }
+    const refreshed = await loadSessionOrThrow(checkoutId);
+    return res.json({
+      success: true,
+      checkoutId,
+      paymentChoice: getPaymentChoice(refreshed),
+      chargeAmountCents: resolveExpectedChargeCents(refreshed),
+      fullCardObligationCents: Number(refreshed.stripeAmountCents) || 0,
+      sessionVersion: refreshed.sessionVersion,
+      splitPaymentOffer: formatPublicSplitOffer(refreshed)
+    });
+  } catch (err) {
+    if (isCheckoutSessionError(err)) {
+      return sendCheckoutSessionError(res, err);
+    }
+    console.error('Set payment choice error:', err);
+    return res.status(500).json({
+      success: false,
+      message: process.env.NODE_ENV === 'development' ? err.message : 'Payment choice update failed'
     });
   }
 });
@@ -3279,7 +3347,7 @@ module.exports.__setStripeClientForTesting = (client) => {
   stripe = client;
 };
 module.exports.__resetStripeClientForTesting = () => {
-  stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+  stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: STRIPE_API_VERSION }) : null;
 };
 module.exports.__setClaimBookingConfirmationSideEffectsForTesting = (fn) => {
   claimBookingConfirmationSideEffectsOnceImpl =

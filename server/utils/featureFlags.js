@@ -221,6 +221,30 @@ const featureFlags = {
       process.env.MULTI_UNIT_CAPACITY_STAY_GUARD,
       false
     );
+  },
+
+  /**
+   * Split-payment master kill switch (SP1).
+   * Default OFF when unset.
+   * SP4: when enabled, may attach an optional splitPaymentOfferSnapshot on
+   * CheckoutSession; Stripe charge amount remains full card obligation.
+   * Enabled: 1|true|on|yes. Disabled: 0|false|off|no.
+   */
+  isSplitPaymentEnabled() {
+    return this._parseBooleanWithDefault(process.env.SPLIT_PAYMENT_ENABLED, false);
+  },
+
+  /**
+   * SP6: future installment collection / reminder / grace worker.
+   * Independent of SPLIT_PAYMENT_ENABLED — existing contractual obligations
+   * continue even when new split sales are disabled.
+   * Default OFF when unset.
+   */
+  isSplitPaymentCollectionWorkerEnabled() {
+    return this._parseBooleanWithDefault(
+      process.env.SPLIT_PAYMENT_COLLECTION_WORKER_ENABLED,
+      false
+    );
   }
 };
 
