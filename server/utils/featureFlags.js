@@ -221,6 +221,16 @@ const featureFlags = {
       process.env.MULTI_UNIT_CAPACITY_STAY_GUARD,
       false
     );
+  },
+
+  /**
+   * Split-payment master kill switch (SP1).
+   * Default OFF when unset. No payment path may branch on this flag until a later
+   * batch explicitly wires schedule/invoice behavior behind it.
+   * Enabled: 1|true|on|yes. Disabled: 0|false|off|no.
+   */
+  isSplitPaymentEnabled() {
+    return this._parseBooleanWithDefault(process.env.SPLIT_PAYMENT_ENABLED, false);
   }
 };
 
