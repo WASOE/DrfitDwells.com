@@ -18,6 +18,7 @@ import OpsFilterBar from '../../ops/primitives/OpsFilterBar';
 import OpsModal from '../../ops/primitives/OpsModal';
 import OpsConfirmDialog from '../../ops/primitives/OpsConfirmDialog';
 import OpsMetric, { OpsMetricGroup } from '../../ops/primitives/OpsMetric';
+import OpsRecord from '../../ops/primitives/OpsRecord';
 import './OpsReviews.css';
 
 const STATUS_OPTIONS = [
@@ -575,7 +576,7 @@ export default function OpsReviews() {
             ) : (
               <div className="ops-reviews-list">
                 {items.map((r) => (
-                  <article key={r.reviewId} className="ops-reviews-row" data-testid={`review-row-${r.reviewId}`}>
+                  <OpsRecord key={r.reviewId} className="ops-reviews-row" data-testid={`review-row-${r.reviewId}`}>
                     <div className="ops-reviews-row__top">
                       <div className="ops-reviews-row__identity">
                         <h2 className="ops-reviews-row__name">{r.reviewerDisplay}</h2>
@@ -625,7 +626,7 @@ export default function OpsReviews() {
                         Hide
                       </OpsButton>
                     </div>
-                  </article>
+                  </OpsRecord>
                 ))}
               </div>
             )}

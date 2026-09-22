@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { opsReadAPI, opsWriteAPI } from '../../services/opsApi';
 import { exportToCSV } from '../../utils/csvExport';
@@ -23,6 +23,7 @@ import OpsInlineError from '../../ops/primitives/OpsInlineError';
 import OpsPagination from '../../ops/primitives/OpsPagination';
 import OpsModal from '../../ops/primitives/OpsModal';
 import OpsFilterBar from '../../ops/primitives/OpsFilterBar';
+import OpsRecord from '../../ops/primitives/OpsRecord';
 import OpsTable, {
   OpsTableBody,
   OpsTableCell,
@@ -31,6 +32,8 @@ import OpsTable, {
   OpsTableRow
 } from '../../ops/primitives/OpsTable';
 import { resolveOpsStatus } from '../../ops/status/opsStatusRegistry';
+import { useOpsSession } from '../../context/OpsSessionContext';
+import { canCreateManualReservation } from './utils/opsReservationPermissions';
 import './OpsReservations.css';
 
 const EMPTY_CREATE_FORM = {
@@ -158,7 +161,7 @@ function ReservationStatuses({ row }) {
 function ReservationStructuredRow({ row }) {
   const href = `/ops/reservations/${row.reservationId}`;
   return (
-    <Link className="ops-reservations-row" to={href} data-testid="ops-reservation-row">
+    <OpsRecord as={Link} className="ops-reservations-row" to={href} data-testid="ops-reservation-row">
       <div className="ops-reservations-row__top">
         <div className="ops-reservations-guest">
           <p className="ops-reservations-guest__name">{guestName(row)}</p>
@@ -190,13 +193,15 @@ function ReservationStructuredRow({ row }) {
         </div>
       </div>
       <ReservationStatuses row={row} />
-    </Link>
+    </OpsRecord>
   );
 }
 
 export default function OpsReservations() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const session = useOpsSession();
+  const openedCreateFromQuery = useRef(false);
   const [data, setData] = useState(null);
   const [cabins, setCabins] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -207,6 +212,14 @@ export default function OpsReservations() {
   const [form, setForm] = useState(copyEmptyCreateForm);
   const [exportBusy, setExportBusy] = useState(false);
   const [exportError, setExportError] = useState('');
+  const canCreate = canCreateManualReservation(session);
+
+  useEffect(() => {
+    if (openedCreateFromQuery.current || !canCreate || searchParams.get('create') !== '1') return;
+    openedCreateFromQuery.current = true;
+    setCreateError('');
+    setCreateOpen(true);
+  }, [canCreate, searchParams]);
 
   const filters = useMemo(
     () => ({
@@ -336,7 +349,9 @@ export default function OpsReservations() {
   const items = data?.items || [];
   const pagination = data?.pagination || {};
   const totalPages = pagination.totalPages || 1;
-  const queryHasFilters = [...searchParams.keys()].some((key) => key !== 'page' && key !== 'limit');
+  const queryHasFilters = [...searchParams.keys()].some(
+    (key) => key !== 'page' && key !== 'limit' && key !== 'create'
+  );
   const emptyCatalog = Boolean(data) && items.length === 0 && !queryHasFilters;
   const emptyFiltered = Boolean(data) && items.length === 0 && queryHasFilters;
 
@@ -357,14 +372,16 @@ export default function OpsReservations() {
               >
                 Export CSV
               </OpsButton>
-              <OpsButton
-                onClick={() => {
-                  setCreateError('');
-                  setCreateOpen(true);
-                }}
-              >
-                Create reservation
-              </OpsButton>
+              {canCreate ? (
+                <OpsButton
+                  onClick={() => {
+                    setCreateError('');
+                    setCreateOpen(true);
+                  }}
+                >
+                  Create reservation
+                </OpsButton>
+              ) : null}
             </>
           }
         />

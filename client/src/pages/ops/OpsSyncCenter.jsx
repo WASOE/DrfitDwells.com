@@ -7,6 +7,7 @@ import OpsBanner from '../../ops/primitives/OpsBanner';
 import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
 import OpsEmptyState from '../../ops/primitives/OpsEmptyState';
 import OpsMetric, { OpsMetricGroup } from '../../ops/primitives/OpsMetric';
+import OpsSurface, { OpsSurfaceHeader, OpsSurfaceTitle } from '../../ops/primitives/OpsSurface';
 import './OpsSyncCenter.css';
 
 function syncRowStatusValue(row) {
@@ -70,12 +71,12 @@ export default function OpsSyncCenter() {
         <OpsEmptyState title="No sync data." />
       ) : (
         <>
-          <section className="ops-sync-surface" aria-labelledby="ops-sync-anomalies">
-            <div className="ops-sync-surface__head">
-              <h2 id="ops-sync-anomalies" className="ops-sync-surface__title">
+          <OpsSurface className="ops-sync-surface" aria-labelledby="ops-sync-anomalies">
+            <OpsSurfaceHeader className="ops-sync-surface__head">
+              <OpsSurfaceTitle id="ops-sync-anomalies" className="ops-sync-surface__title">
                 Anomalies & manual review
-              </h2>
-            </div>
+              </OpsSurfaceTitle>
+            </OpsSurfaceHeader>
             <OpsMetricGroup>
               <OpsMetric label="Stale pairs" value={staleCount} />
               <OpsMetric label="Failed pairs" value={failedCount} />
@@ -85,14 +86,14 @@ export default function OpsSyncCenter() {
               Open sync-related manual reviews: {data.aggregates?.unresolvedSyncManualReviews ?? 0} ·
               duplicate-import anomalies in recent events: {duplicateImportCount}
             </p>
-          </section>
+          </OpsSurface>
 
-          <section className="ops-sync-surface" aria-labelledby="ops-sync-health">
-            <div className="ops-sync-surface__head">
-              <h2 id="ops-sync-health" className="ops-sync-surface__title">
+          <OpsSurface className="ops-sync-surface" aria-labelledby="ops-sync-health">
+            <OpsSurfaceHeader className="ops-sync-surface__head">
+              <OpsSurfaceTitle id="ops-sync-health" className="ops-sync-surface__title">
                 Health by cabin + channel
-              </h2>
-            </div>
+              </OpsSurfaceTitle>
+            </OpsSurfaceHeader>
             {healthRows.length ? (
               <div className="ops-sync-list" role="list">
                 {healthRows.map((row) => {
@@ -127,14 +128,14 @@ export default function OpsSyncCenter() {
             ) : (
               <OpsEmptyState className="ops-sync-empty" title="No health rows yet." />
             )}
-          </section>
+          </OpsSurface>
 
-          <section className="ops-sync-surface" aria-labelledby="ops-sync-events">
-            <div className="ops-sync-surface__head">
-              <h2 id="ops-sync-events" className="ops-sync-surface__title">
+          <OpsSurface className="ops-sync-surface" aria-labelledby="ops-sync-events">
+            <OpsSurfaceHeader className="ops-sync-surface__head">
+              <OpsSurfaceTitle id="ops-sync-events" className="ops-sync-surface__title">
                 Recent sync events
-              </h2>
-            </div>
+              </OpsSurfaceTitle>
+            </OpsSurfaceHeader>
             {recentEvents.length ? (
               <div className="ops-sync-list" role="list">
                 {recentEvents.map((event) => (
@@ -158,7 +159,7 @@ export default function OpsSyncCenter() {
             ) : (
               <OpsEmptyState className="ops-sync-empty" title="No recent sync events." />
             )}
-          </section>
+          </OpsSurface>
         </>
       )}
     </OpsPage>

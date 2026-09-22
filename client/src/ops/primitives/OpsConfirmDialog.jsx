@@ -16,6 +16,7 @@ export default function OpsConfirmDialog({
   loading = false,
   closeOnEscape = true,
   initialFocusRef,
+  panelProps,
   children
 }) {
   const cancelRef = useRef(null);
@@ -43,6 +44,7 @@ export default function OpsConfirmDialog({
       closeOnEscape={closeOnEscape}
       showCloseButton={false}
       initialFocusRef={initialFocusRef || cancelRef}
+      panelProps={panelProps}
       footer={
         <>
           <OpsButton ref={cancelRef} variant="secondary" onClick={() => requestCancel('cancel')}>

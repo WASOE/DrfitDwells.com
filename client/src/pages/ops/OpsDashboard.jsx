@@ -11,7 +11,10 @@ import OpsStatus from '../../ops/primitives/OpsStatus';
 import OpsBanner from '../../ops/primitives/OpsBanner';
 import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
 import OpsMetric, { OpsMetricGroup } from '../../ops/primitives/OpsMetric';
+import OpsSurface, { OpsSurfaceHeader, OpsSurfaceTitle } from '../../ops/primitives/OpsSurface';
 import { resolveOpsStatus } from '../../ops/status/opsStatusRegistry';
+import { useOpsSession } from '../../context/OpsSessionContext';
+import { canCreateManualReservation } from './utils/opsReservationPermissions';
 import OpsDashboardPushAttention from './OpsDashboardPushAttention';
 import './OpsDashboard.css';
 
@@ -120,6 +123,17 @@ function formatGrossBooked(value) {
 function formatWebhookLastSeen(value) {
   if (!value) return '—';
   return String(value).slice(0, 19);
+}
+
+function dashboardDate(now = new Date()) {
+  return {
+    dateTime: now.toISOString().slice(0, 10),
+    label: new Intl.DateTimeFormat('en-GB', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long'
+    }).format(now)
+  };
 }
 
 function pageHealthState(dashboard, freshness) {
@@ -244,10 +258,20 @@ function AlertRow({ alert, onResolved }) {
 }
 
 function DashboardHeader({ health }) {
+  const date = dashboardDate();
   return (
     <OpsPageHeader
       title="Dashboard"
-      description="Who arrives, stays, leaves, and what needs attention."
+      description={
+        <>
+          <time className="ops-dashboard-context-date" dateTime={date.dateTime}>
+            {date.label}
+          </time>
+          <span className="ops-dashboard-context-summary">
+            Who arrives, stays, leaves, and what needs attention.
+          </span>
+        </>
+      }
       metaPlacement="inline"
       meta={
         health ? (
@@ -267,7 +291,7 @@ function DashboardHeader({ health }) {
   );
 }
 
-function QuickLinks() {
+function QuickLinks({ canCreate }) {
   return (
     <nav className="ops-dashboard-links" aria-label="Dashboard shortcuts">
       <Link className="ops-button ops-button--secondary ops-button--compact ops-dashboard-links__link" to="/ops/reservations">
@@ -279,45 +303,81 @@ function QuickLinks() {
       <Link className="ops-button ops-button--secondary ops-button--compact ops-dashboard-links__link" to="/ops/payments">
         Payments
       </Link>
-      <Link className="ops-button ops-button--secondary ops-button--compact ops-dashboard-links__link" to="/ops/sync">
+      <Link
+        className="ops-button ops-button--secondary ops-button--compact ops-dashboard-links__link ops-dashboard-links__utility"
+        to="/ops/sync"
+      >
         Sync
       </Link>
-      <Link className="ops-button ops-button--secondary ops-button--compact ops-dashboard-links__link" to={COMMS_HREF}>
+      <Link
+        className="ops-button ops-button--secondary ops-button--compact ops-dashboard-links__link ops-dashboard-links__utility"
+        to={COMMS_HREF}
+      >
         Comms
       </Link>
+      {canCreate ? (
+        <Link
+          className="ops-button ops-button--primary ops-button--compact ops-dashboard-links__link ops-dashboard-links__new-booking"
+          to="/ops/reservations?create=1"
+          data-testid="ops-dashboard-new-booking"
+        >
+          New booking
+        </Link>
+      ) : null}
     </nav>
   );
 }
 
 function StayPulse({ pulse }) {
   return (
-    <section
+    <OpsSurface
       className="ops-dashboard-surface ops-dashboard-surface--pulse ops-dashboard-surface--stay"
       data-testid="ops-dashboard-pulse-stay"
     >
-      <h2 className="ops-dashboard-surface__title">Stay/business pulse</h2>
+      <OpsSurfaceTitle className="ops-dashboard-surface__title">Stay/business pulse</OpsSurfaceTitle>
       <OpsMetricGroup className="ops-dashboard-metric-group ops-metric-group--display">
-        <OpsMetric label="Bookings MTD" value={pulse?.bookingsMTD ?? 0} />
+        <OpsMetric
+          label="Bookings MTD"
+          value={pulse?.bookingsMTD ?? 0}
+          className="ops-dashboard-business-metric ops-dashboard-business-metric--bookings"
+        />
         <OpsMetric
           label="Gross booked MTD"
           value={formatGrossBooked(pulse?.grossBookedMTD ?? pulse?.bookingValueMTD ?? 0)}
+          className="ops-dashboard-business-metric ops-dashboard-business-metric--gross"
         />
-        <OpsMetric label="Paid active stays" value={pulse?.activePaidCount ?? 0} />
-        <OpsMetric label="Open payment active stays" value={pulse?.activeUnpaidCount ?? 0} />
-        <OpsMetric label="Cancellations MTD" value={pulse?.cancellationsMTD ?? 0} />
-        <OpsMetric label="Refunds MTD" value={pulse?.refundsMTD ?? 0} />
+        <OpsMetric
+          label="Paid active stays"
+          value={pulse?.activePaidCount ?? 0}
+          className="ops-dashboard-business-metric ops-dashboard-business-metric--paid"
+        />
+        <OpsMetric
+          label="Open payment active stays"
+          value={pulse?.activeUnpaidCount ?? 0}
+          className="ops-dashboard-business-metric ops-dashboard-business-metric--open"
+        />
+        <OpsMetric
+          label="Cancellations MTD"
+          value={pulse?.cancellationsMTD ?? 0}
+          className="ops-dashboard-business-metric ops-dashboard-business-metric--cancelled"
+        />
+        <OpsMetric
+          label="Refunds MTD"
+          value={pulse?.refundsMTD ?? 0}
+          className="ops-dashboard-business-metric ops-dashboard-business-metric--refunds"
+        />
       </OpsMetricGroup>
-    </section>
+    </OpsSurface>
   );
 }
 
 function CashPulse({ pulse }) {
   return (
-    <section
+    <OpsSurface
       className="ops-dashboard-surface ops-dashboard-surface--pulse ops-dashboard-surface--cash"
       data-testid="ops-dashboard-pulse-cash"
     >
-      <h2 className="ops-dashboard-surface__title">Gift vouchers &amp; cash</h2>
+      <OpsSurfaceTitle className="ops-dashboard-surface__title">Gift vouchers &amp; cash</OpsSurfaceTitle>
       <OpsMetricGroup className="ops-dashboard-metric-group ops-dashboard-cash-metrics ops-metric-group--display">
         <OpsMetric
           label="Gift voucher sales MTD"
@@ -349,11 +409,12 @@ function CashPulse({ pulse }) {
       <p className="ops-dashboard-note">
         Gift voucher sales are prepaid credit. Gross booked stays and cash collected are shown separately.
       </p>
-    </section>
+    </OpsSurface>
   );
 }
 
 export default function OpsDashboard() {
+  const session = useOpsSession();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -390,7 +451,7 @@ export default function OpsDashboard() {
       <div className="ops-dashboard-intro">
         <DashboardHeader health={health} />
         <OpsDashboardPushAttention />
-        <QuickLinks />
+        <QuickLinks canCreate={canCreateManualReservation(session)} />
       </div>
 
       {loading ? (
@@ -401,13 +462,13 @@ export default function OpsDashboard() {
         <p className="ops-dashboard-missing">No dashboard data.</p>
       ) : (
         <div className="ops-dashboard-main">
-          <section
+          <OpsSurface
             className={`ops-dashboard-surface ops-dashboard-surface--alerts${
               criticalAlerts.length === 0 ? ' ops-dashboard-surface--alerts-empty' : ''
             }`}
             data-testid="ops-dashboard-alerts"
           >
-            <h2 className="ops-dashboard-surface__title">Critical alerts</h2>
+            <OpsSurfaceTitle className="ops-dashboard-surface__title">Critical alerts</OpsSurfaceTitle>
             {criticalAlerts.length === 0 ? (
               <p className="ops-dashboard-empty">No critical alerts.</p>
             ) : (
@@ -417,10 +478,10 @@ export default function OpsDashboard() {
                 ))}
               </div>
             )}
-          </section>
+          </OpsSurface>
 
-          <section className="ops-dashboard-surface ops-dashboard-surface--today" data-testid="ops-dashboard-today">
-            <h2 className="ops-dashboard-surface__title">Today operations</h2>
+          <OpsSurface className="ops-dashboard-surface ops-dashboard-surface--today" data-testid="ops-dashboard-today">
+            <OpsSurfaceTitle className="ops-dashboard-surface__title">Today operations</OpsSurfaceTitle>
             <div className="ops-dashboard-lanes">
               <Lane
                 title="Arriving today"
@@ -444,15 +505,15 @@ export default function OpsDashboard() {
                 testId="ops-dashboard-lane-leaving"
               />
             </div>
-          </section>
+          </OpsSurface>
 
-          <section className="ops-dashboard-surface ops-dashboard-surface--upcoming" data-testid="ops-dashboard-upcoming">
-            <div className="ops-dashboard-surface__head">
-              <h2 className="ops-dashboard-surface__title">Upcoming operations</h2>
+          <OpsSurface className="ops-dashboard-surface ops-dashboard-surface--upcoming" data-testid="ops-dashboard-upcoming">
+            <OpsSurfaceHeader className="ops-dashboard-surface__head">
+              <OpsSurfaceTitle className="ops-dashboard-surface__title">Upcoming operations</OpsSurfaceTitle>
               <p className="ops-dashboard-surface__meta">
                 Next 14 days: {d.upcoming?.next14DaysArrivalCount || 0}
               </p>
-            </div>
+            </OpsSurfaceHeader>
             {(d.upcoming?.nextArrivals || []).length > 0 ? (
               <div className="ops-dashboard-rows">
                 {(d.upcoming?.nextArrivals || []).map((row) => (
@@ -462,7 +523,7 @@ export default function OpsDashboard() {
             ) : (
               <p className="ops-dashboard-empty">No upcoming arrivals.</p>
             )}
-          </section>
+          </OpsSurface>
 
           <StayPulse pulse={d.pulse} />
           <CashPulse pulse={d.pulse} />

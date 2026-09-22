@@ -41,7 +41,7 @@ const adminSession = {
   actorId: 'admin-1',
   role: 'admin',
   modules: ['*'],
-  actions: [],
+  actions: ['ops.reservation.manual_create'],
   defaultRoute: '/ops',
   locale: 'en'
 };
@@ -178,11 +178,11 @@ function ReservationStub() {
   return <div data-testid="reservation-detail">{id}</div>;
 }
 
-function renderPage() {
+function renderPage(session = adminSession) {
   return render(
     <div className="ops-root" data-ops-appearance="light" data-ops-themed="true">
       <MemoryRouter initialEntries={['/ops']}>
-        <OpsSessionProvider session={adminSession}>
+        <OpsSessionProvider session={session}>
           <Routes>
             <Route path="/ops" element={<OpsDashboard />} />
             <Route path="/ops/reservations/:id" element={<ReservationStub />} />
@@ -1012,16 +1012,17 @@ describe('OpsDashboard home migration', () => {
     expect(pageCss).toContain('--ops-warning-soft');
   });
 
-  it('keeps all 12 pulse metrics and supports 6-up metric architecture at wide container', async () => {
+  it('keeps all 12 pulse metrics and promotes gross booked through the desktop display system', async () => {
     renderPage();
     await waitFor(() => {
       expect(screen.getByText('Bookings MTD')).toBeInTheDocument();
     });
     expect(screen.getByTestId('ops-dashboard-pulse-stay').querySelectorAll('.ops-metric')).toHaveLength(6);
     expect(screen.getByTestId('ops-dashboard-pulse-cash').querySelectorAll('.ops-metric')).toHaveLength(6);
-    expect(pageCss).toMatch(
-      /@container ops-page \(min-width:\s*1100px\)[\s\S]*\.ops-dashboard-metric-group[\s\S]*repeat\(6/
-    );
+    expect(pageCss).toContain('grid-template-areas:');
+    expect(pageCss).toContain('"gross bookings paid cancelled"');
+    expect(pageCss).toContain('var(--ops-font-display)');
+    expect(pageCss).toContain('var(--ops-size-dashboard-lead)');
     expect(pageCss).toMatch(/@container ops-page \(min-width:\s*720px\)[\s\S]*\.ops-dashboard-metric-group[\s\S]*repeat\(3/);
   });
 
@@ -1043,7 +1044,7 @@ describe('OpsDashboard home migration', () => {
 
     expect(pageCss).not.toContain('.ops-shell-frame--desktop');
     expect(pageCss).toMatch(
-      /@container ops-page \(min-width:\s*768px\)[\s\S]*\.ops-dashboard-main[\s\S]*grid-template-areas:/
+      /@container ops-page \(min-width:\s*720px\)[\s\S]*\.ops-dashboard-main[\s\S]*grid-template-areas:/
     );
   });
 
@@ -1054,7 +1055,159 @@ describe('OpsDashboard home migration', () => {
     });
     const reservations = screen.getByRole('link', { name: 'Reservations' });
     expect(reservations).toHaveClass('ops-button', 'ops-button--secondary', 'ops-button--compact');
-    expect(screen.getAllByRole('link', { name: 'Comms' })[0]).toHaveClass('ops-button');
+    const newBooking = screen.getByRole('link', { name: 'New booking' });
+    expect(newBooking).toHaveClass('ops-button', 'ops-button--primary', 'ops-button--compact');
+    expect(newBooking).toHaveAttribute('href', '/ops/reservations?create=1');
+    expect(
+      screen.getAllByRole('link', { name: 'Comms' }).some((link) =>
+        link.classList.contains('ops-dashboard-health__link')
+      )
+    ).toBe(true);
+  });
+
+  it('omits New booking when the current session lacks manual-create permission', async () => {
+    renderPage({ ...adminSession, role: 'operator', actions: [] });
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: 'Reservations' })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('link', { name: 'New booking' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the audited information-preservation ledger at zero missing signals', async () => {
+    opsReadAPI.dashboard.mockResolvedValue(
+      payload(
+        dashboard({
+          alerts: [
+            alertItem({
+              id: 'ledger-alert',
+              type: 'manual_review',
+              severity: 'high',
+              title: 'Manual decision required',
+              detail: 'Review the guest request before arrival.',
+              href: '/ops/manual-review',
+              manualReviewItemId: 'ledger-review'
+            })
+          ],
+          today: {
+            arriving: {
+              total: 1,
+              rows: [
+                reservationRow({
+                  reservationId: 'ledger-reservation',
+                  href: '/ops/reservations/ledger-reservation',
+                  guestName: 'Signal Guest',
+                  accommodationDisplayName: 'A-Frame 3 · Unit 2',
+                  datesLabel: '2026-09-21 - 2026-09-24',
+                  guestsLabel: '2A 1C',
+                  reservationStatus: 'confirmed',
+                  paymentStatus: 'paid',
+                  statusLabel: 'Arrives in 0 days'
+                })
+              ]
+            },
+            staying: { total: 1, rows: [holdRow({ guestName: 'Airbnb signal hold' })] },
+            leaving: { total: 0, rows: [] }
+          },
+          upcoming: {
+            next14DaysArrivalCount: 1,
+            nextArrivals: [
+              reservationRow({
+                reservationId: 'ledger-upcoming',
+                guestName: 'Upcoming Signal Guest',
+                statusLabel: 'Arrives in 2 days'
+              })
+            ]
+          },
+          pulse: {
+            bookingsMTD: 11,
+            grossBookedMTD: 2683,
+            activePaidCount: 8,
+            activeUnpaidCount: 2,
+            cancellationsMTD: 1,
+            refundsMTD: 3,
+            giftVouchers: {
+              salesMTDCents: 41000,
+              cashCollectedMTDCents: 38000,
+              physicalCardFeesMTDCents: 1200,
+              liabilityOutstandingCents: 19000,
+              redemptionsMTDCents: 9000
+            },
+            cashCollected: { totalCashCollectedMTDCents: 306300 }
+          },
+          health: {
+            status: 'warning',
+            sync: { lastOutcome: 'warning', href: '/ops/sync' },
+            email: { recentFailuresCount: 2, href: '/ops/communications' },
+            payments: { webhookLastSeenAt: '2026-09-21T10:11:12.000Z', href: '/ops/payments' },
+            manualReview: { openCount: 4, href: '/ops/manual-review' }
+          }
+        })
+      )
+    );
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('Manual decision required')).toBeInTheDocument();
+    });
+
+    const presentText = (text) => screen.queryAllByText(text).length > 0;
+    const checks = [
+      ['alert detail', presentText('Review the guest request before arrival.')],
+      ['alert severity', presentText('High')],
+      ['manual resolve', Boolean(screen.queryByRole('button', { name: 'Resolve' }))],
+      ['arriving total', presentText('Arriving today')],
+      ['staying total', presentText('Staying now')],
+      ['leaving total', presentText('Leaving today')],
+      ['guest identity', presentText('Signal Guest')],
+      ['unit identity', presentText('A-Frame 3 · Unit 2')],
+      ['dates', presentText('2026-09-21 - 2026-09-24')],
+      ['guest count', presentText(/2A 1C/)],
+      ['Airbnb identity', presentText('Airbnb signal hold')],
+      ['Airbnb channel', presentText('Airbnb')],
+      ['upcoming count', presentText('Next 14 days: 1')],
+      ['upcoming row', presentText('Upcoming Signal Guest')],
+      ['bookings MTD', presentText('Bookings MTD')],
+      ['gross booked MTD', presentText('Gross booked MTD')],
+      ['paid stays', presentText('Paid active stays')],
+      ['open-payment stays', presentText('Open payment active stays')],
+      ['cancellations', presentText('Cancellations MTD')],
+      ['refunds', presentText('Refunds MTD')],
+      ['voucher sales', presentText('Gift voucher sales MTD')],
+      ['voucher cash', presentText('Voucher cash collected MTD')],
+      ['card fees', presentText('Physical card fees MTD')],
+      ['voucher liability', presentText('Voucher liability outstanding')],
+      ['voucher redemptions', presentText('Voucher redemptions MTD')],
+      ['total cash', presentText('Total cash collected MTD')],
+      [
+        'financial distinction note',
+        presentText('Gift voucher sales are prepaid credit. Gross booked stays and cash collected are shown separately.')
+      ],
+      ['sync health', presentText('Sync last outcome')],
+      ['email health', presentText('Email failures (14d)')],
+      ['manual-review health', presentText('Manual review open')],
+      ['webhook health', presentText('Webhook last seen')],
+      ['new-booking action', Boolean(screen.queryByRole('link', { name: 'New booking' }))]
+    ];
+
+    expect(checks.filter(([, present]) => !present).map(([signal]) => signal)).toEqual([]);
+    expect(document.querySelector('[data-ops-status-key="reservation.confirmed"]')).toBeTruthy();
+    expect(document.querySelector('[data-ops-status-key="payment.paid"]')).toBeTruthy();
+    expect(document.querySelector('[data-ops-status-key="reservation.arriving_today"]')).toBeTruthy();
+    expect(document.querySelector('[data-ops-status-key="reservation.arriving_later"]')).toBeTruthy();
+    expect(screen.getByText('Signal Guest').closest('a')).toHaveAttribute(
+      'href',
+      '/ops/reservations/ledger-reservation'
+    );
+    expect(screen.getByText('Airbnb signal hold').closest('a')).toBeNull();
+    expect(screen.getAllByRole('link', { name: 'Sync' }).at(-1)).toHaveAttribute('href', '/ops/sync');
+    expect(screen.getAllByRole('link', { name: 'Comms' }).at(-1)).toHaveAttribute(
+      'href',
+      '/ops/communications'
+    );
+    expect(screen.getAllByRole('link', { name: 'Payments' }).at(-1)).toHaveAttribute(
+      'href',
+      '/ops/payments'
+    );
+    expect(screen.getByRole('link', { name: 'Manual review' })).toHaveAttribute('href', '/ops/manual-review');
   });
 
   it('keeps health facts in a compact strip without a giant banner', async () => {

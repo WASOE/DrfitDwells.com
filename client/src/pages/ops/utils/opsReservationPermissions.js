@@ -2,6 +2,7 @@ const CANCELLABLE_RESERVATION_STATUSES = new Set(['pending', 'confirmed', 'in_ho
 const MOVE_ELIGIBLE_STATUSES = new Set(['pending', 'confirmed']);
 
 export const OPS_RESERVATION_ACTIONS = {
+  MANUAL_CREATE: 'ops.reservation.manual_create',
   CANCEL: 'ops.reservation.cancel',
   REASSIGN: 'ops.reservation.reassign'
 };
@@ -12,6 +13,10 @@ function sessionHasAction(session, action) {
 
 function idPresent(value) {
   return value != null && String(value).trim() !== '';
+}
+
+export function canCreateManualReservation(session) {
+  return sessionHasAction(session, OPS_RESERVATION_ACTIONS.MANUAL_CREATE);
 }
 
 /**

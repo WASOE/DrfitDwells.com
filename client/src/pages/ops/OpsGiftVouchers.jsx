@@ -14,6 +14,7 @@ import OpsBanner from '../../ops/primitives/OpsBanner';
 import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
 import OpsEmptyState from '../../ops/primitives/OpsEmptyState';
 import OpsPagination from '../../ops/primitives/OpsPagination';
+import OpsFilterBar from '../../ops/primitives/OpsFilterBar';
 import './OpsGiftVouchers.css';
 
 const DELIVERY_LABELS = {
@@ -137,17 +138,21 @@ export default function OpsGiftVouchers() {
 
       {error ? <OpsBanner tone="danger" body={error} /> : null}
 
-      <div className="ops-gv-toolbar">
-        <div className="ops-gv-filters">
+      <OpsFilterBar
+        footer={
+          <OpsButton variant="quiet" size="compact" onClick={resetFilters}>
+            Reset filters
+          </OpsButton>
+        }
+      >
           <OpsTextField
-            className="ops-gv-filters__search"
+            className="ops-filter-bar__search"
             label="Search"
             value={filters.search}
             onChange={(e) => updateFilter('search', e.target.value)}
             placeholder="Search code, buyer, recipient, email"
           />
           <OpsSelect
-            className="ops-gv-filters__select"
             label="Status"
             value={statusSelectValue}
             onChange={(e) => updateStatusFilter(e.target.value)}
@@ -163,7 +168,6 @@ export default function OpsGiftVouchers() {
             <option value="__all__">All statuses</option>
           </OpsSelect>
           <OpsSelect
-            className="ops-gv-filters__select"
             label="Delivery"
             value={filters.deliveryMode}
             onChange={(e) => updateFilter('deliveryMode', e.target.value)}
@@ -173,11 +177,7 @@ export default function OpsGiftVouchers() {
             <option value="postal">Postal</option>
             <option value="manual">Manual</option>
           </OpsSelect>
-        </div>
-        <OpsButton className="ops-gv-toolbar__reset" variant="quiet" size="compact" onClick={resetFilters}>
-          Reset filters
-        </OpsButton>
-      </div>
+      </OpsFilterBar>
 
       {loading ? (
         <OpsLoadingState label="Loading gift vouchers" />

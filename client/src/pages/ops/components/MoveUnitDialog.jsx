@@ -5,6 +5,14 @@ import {
   mapReallocateErrorCode,
   interpretReallocateSuccessPayload
 } from '../utils/opsReservationPermissions';
+import OpsBanner from '../../../ops/primitives/OpsBanner';
+import OpsButton from '../../../ops/primitives/OpsButton';
+import OpsCheckbox from '../../../ops/primitives/OpsCheckbox';
+import OpsLoadingState from '../../../ops/primitives/OpsLoadingState';
+import OpsModal from '../../../ops/primitives/OpsModal';
+import OpsStatus from '../../../ops/primitives/OpsStatus';
+import OpsTextarea from '../../../ops/primitives/OpsTextarea';
+import './MoveUnitDialog.css';
 
 const SELECTABLE = new Set(['AVAILABLE', 'EXTERNAL_HOLD_WARNING']);
 
@@ -15,23 +23,6 @@ function unitLabel(c) {
     return /^unit\b/i.test(String(c.unitNumber)) ? String(c.unitNumber) : `Unit ${c.unitNumber}`;
   }
   return c.unitId ? String(c.unitId).slice(-6) : '—';
-}
-
-function stateBadgeClass(state) {
-  if (state === 'AVAILABLE') return 'bg-emerald-50 text-emerald-800 border-emerald-200';
-  if (state === 'EXTERNAL_HOLD_WARNING') return 'bg-amber-50 text-amber-900 border-amber-200';
-  if (state === 'HARD_BLOCKED') return 'bg-red-50 text-red-800 border-red-200';
-  if (state === 'CURRENT') return 'bg-slate-100 text-slate-700 border-slate-200';
-  return 'bg-gray-50 text-gray-600 border-gray-200';
-}
-
-function stateLabel(state) {
-  if (state === 'AVAILABLE') return 'Available';
-  if (state === 'EXTERNAL_HOLD_WARNING') return 'External hold';
-  if (state === 'HARD_BLOCKED') return 'Blocked';
-  if (state === 'CURRENT') return 'Current';
-  if (state === 'INACTIVE') return 'Inactive';
-  return state;
 }
 
 function conflictLine(c) {
@@ -225,156 +216,110 @@ export default function MoveUnitDialog({
     }
   };
 
-  if (!open) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="move-unit-title">
-      <button
-        type="button"
-        className="absolute inset-0 bg-black/40"
-        aria-label="Close Move Unit"
-        disabled={busy}
-        onClick={handleClose}
-      />
-      <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto bg-white rounded-t-2xl sm:rounded-xl border border-gray-200 shadow-lg p-4 sm:p-5 space-y-4">
-        <div>
-          <h3 id="move-unit-title" className="text-sm font-semibold text-gray-900">
-            Move Unit
-          </h3>
-          <p className="mt-1 text-xs text-gray-500 max-w-md">
-            Move this reservation to another physical unit of the same accommodation type. Dates,
-            guests, and payment are unchanged.
-          </p>
-          {sourceUnitLabel ? (
-            <p className="mt-2 text-sm text-gray-700">
-              Current unit: <span className="font-medium">{sourceUnitLabel}</span>
-            </p>
-          ) : null}
-        </div>
-
-        {loading ? <p className="text-sm text-gray-500">Loading units…</p> : null}
-        {loadError ? (
-          <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{loadError}</div>
-        ) : null}
-
-        {!loading && !loadError ? (
-          <fieldset className="space-y-2">
-            <legend className="text-xs font-medium text-gray-500 mb-1">Target unit</legend>
-            <ul className="space-y-2">
-              {candidates.map((c) => {
-                const selectable = SELECTABLE.has(c.state);
-                const checked = selectedUnitId === c.unitId;
-                return (
-                  <li key={c.unitId}>
-                    <label
-                      className={`flex items-start gap-3 rounded-lg border px-3 py-2 ${
-                        selectable ? 'border-gray-200 hover:bg-gray-50 cursor-pointer' : 'border-gray-100 bg-gray-50 opacity-80'
-                      }`}
-                      style={
-                        checked
-                          ? {
-                              borderColor: 'var(--ops-accent)',
-                              boxShadow: '0 0 0 1px var(--ops-accent)',
-                              background: 'var(--ops-accent-soft)'
-                            }
-                          : undefined
-                      }
-                    >
-                      <input
-                        type="radio"
-                        name="moveUnitTarget"
-                        className="mt-1"
-                        disabled={!selectable || busy}
-                        checked={checked}
-                        onChange={() => selectTarget(c.unitId)}
-                        value={c.unitId}
-                      />
-                      <span className="flex-1 min-w-0">
-                        <span className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-medium text-gray-900">{unitLabel(c)}</span>
-                          <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border ${stateBadgeClass(c.state)}`}>
-                            {stateLabel(c.state)}
-                          </span>
-                        </span>
-                        {c.state === 'HARD_BLOCKED' && c.hardConflicts?.length ? (
-                          <ul className="mt-1 text-xs text-red-700 space-y-0.5">
-                            {c.hardConflicts.map((h, idx) => (
-                              <li key={`${c.unitId}-h-${idx}`}>{conflictLine(h)}</li>
-                            ))}
-                          </ul>
-                        ) : null}
-                        {c.state === 'EXTERNAL_HOLD_WARNING' && c.warnings?.length ? (
-                          <ul className="mt-1 text-xs text-amber-800 space-y-0.5">
-                            {c.warnings.map((w, idx) => (
-                              <li key={`${c.unitId}-w-${idx}`}>{conflictLine(w) || 'External channel hold'}</li>
-                            ))}
-                          </ul>
-                        ) : null}
-                      </span>
-                    </label>
-                  </li>
-                );
-              })}
-            </ul>
-          </fieldset>
-        ) : null}
-
-        {needsAck ? (
-          <label className="flex items-start gap-2 text-xs text-amber-950 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            <input
-              type="checkbox"
-              className="mt-0.5"
-              checked={acceptExternal}
-              disabled={busy}
-              onChange={(e) => setAcceptExternal(e.target.checked)}
-            />
-            <span>
-              I understand this unit overlaps an external channel hold for these dates and still want
-              to move the reservation. This is not an internal inventory conflict override.
-            </span>
-          </label>
-        ) : null}
-
-        <div>
-          <label htmlFor="moveUnitReason" className="block text-xs font-medium text-gray-500 mb-1">
-            Reason (optional)
-          </label>
-          <textarea
-            id="moveUnitReason"
-            rows={2}
-            maxLength={500}
-            value={reason}
-            disabled={busy}
-            onChange={(e) => setReason(e.target.value)}
-            className="w-full px-3 py-2 text-sm border rounded-lg max-w-lg"
-            placeholder="Optional ops note"
-          />
-        </div>
-
-        {submitError ? (
-          <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{submitError}</div>
-        ) : null}
-
-        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-1">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={handleClose}
-            className="w-full sm:w-auto px-4 py-2 text-sm border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50"
-          >
+    <OpsModal
+      open={open}
+      onClose={handleClose}
+      title="Move Unit"
+      description="Move this reservation to another physical unit of the same accommodation type. Dates, guests, and payment are unchanged."
+      size="lg"
+      mobileSheet
+      dismissible={!busy}
+      panelProps={{ className: 'ops-move-unit-modal' }}
+      footer={
+        <>
+          <OpsButton variant="secondary" disabled={busy} onClick={handleClose}>
             Cancel
-          </button>
-          <button
-            type="button"
-            disabled={!canSubmit}
-            onClick={handleSubmit}
-            className="ops-button ops-button--primary w-full sm:w-auto"
-          >
-            {busy ? 'Moving…' : 'Move unit'}
-          </button>
-        </div>
-      </div>
-    </div>
+          </OpsButton>
+          <OpsButton disabled={!canSubmit} loading={busy} loadingLabel="Moving…" onClick={handleSubmit}>
+            Move unit
+          </OpsButton>
+        </>
+      }
+    >
+      {sourceUnitLabel ? (
+        <p className="ops-move-unit__current">
+          Current unit: <strong>{sourceUnitLabel}</strong>
+        </p>
+      ) : null}
+
+      {loading ? <OpsLoadingState label="Loading units" /> : null}
+      {loadError ? <OpsBanner tone="danger" body={loadError} /> : null}
+
+      {!loading && !loadError ? (
+        <fieldset className="ops-move-unit__fieldset">
+          <legend>Target unit</legend>
+          <ul className="ops-move-unit__candidates">
+            {candidates.map((candidate) => {
+              const selectable = SELECTABLE.has(candidate.state);
+              const checked = selectedUnitId === candidate.unitId;
+              return (
+                <li key={candidate.unitId}>
+                  <label
+                    className={`ops-move-unit__candidate${checked ? ' ops-move-unit__candidate--selected' : ''}${selectable ? '' : ' ops-move-unit__candidate--disabled'}`}
+                  >
+                    <input
+                      type="radio"
+                      name="moveUnitTarget"
+                      disabled={!selectable || busy}
+                      checked={checked}
+                      onChange={() => selectTarget(candidate.unitId)}
+                      value={candidate.unitId}
+                    />
+                    <span className="ops-move-unit__candidate-copy">
+                      <span className="ops-move-unit__candidate-head">
+                        <strong>{unitLabel(candidate)}</strong>
+                        <OpsStatus domain="move_unit" value={candidate.state} />
+                      </span>
+                      {candidate.state === 'HARD_BLOCKED' && candidate.hardConflicts?.length ? (
+                        <ul className="ops-move-unit__conflicts ops-move-unit__conflicts--danger">
+                          {candidate.hardConflicts.map((conflict, index) => (
+                            <li key={`${candidate.unitId}-h-${index}`}>{conflictLine(conflict)}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      {candidate.state === 'EXTERNAL_HOLD_WARNING' && candidate.warnings?.length ? (
+                        <ul className="ops-move-unit__conflicts ops-move-unit__conflicts--warning">
+                          {candidate.warnings.map((warning, index) => (
+                            <li key={`${candidate.unitId}-w-${index}`}>
+                              {conflictLine(warning) || 'External channel hold'}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        </fieldset>
+      ) : null}
+
+      {needsAck ? (
+        <OpsCheckbox
+          className="ops-move-unit__ack"
+          label="I understand this unit overlaps an external channel hold for these dates and still want to move the reservation. This is not an internal inventory conflict override."
+          checked={acceptExternal}
+          disabled={busy}
+          onChange={(e) => setAcceptExternal(e.target.checked)}
+        />
+      ) : null}
+
+      <OpsTextarea
+        id="moveUnitReason"
+        label="Reason"
+        optional
+        rows={2}
+        maxLength={500}
+        value={reason}
+        disabled={busy}
+        onChange={(e) => setReason(e.target.value)}
+        placeholder="Optional ops note"
+      />
+
+      {submitError ? <OpsBanner tone="danger" body={submitError} /> : null}
+    </OpsModal>
   );
 }
 

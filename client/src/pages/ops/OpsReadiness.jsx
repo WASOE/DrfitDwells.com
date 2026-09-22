@@ -6,6 +6,7 @@ import OpsPageHeader from '../../ops/primitives/OpsPageHeader';
 import OpsBanner from '../../ops/primitives/OpsBanner';
 import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
 import OpsStatus from '../../ops/primitives/OpsStatus';
+import OpsSurface, { OpsSurfaceHeader, OpsSurfaceTitle } from '../../ops/primitives/OpsSurface';
 import './OpsReadiness.css';
 
 function readinessStatusName(verdict) {
@@ -92,10 +93,12 @@ export default function OpsReadiness() {
                 const cutover = m?.cutover || {};
 
                 return (
-                  <section key={k} className="ops-readiness__module" data-testid={`readiness-module-${k}`}>
-                    <div className="ops-readiness__module-head">
+                  <OpsSurface key={k} className="ops-readiness__module" data-testid={`readiness-module-${k}`}>
+                    <OpsSurfaceHeader className="ops-readiness__module-head">
                       <div className="min-w-0">
-                        <h3 className="ops-readiness__module-title">{k.replace('_', ' ')}</h3>
+                        <OpsSurfaceTitle as="h3" className="ops-readiness__module-title">
+                          {k.replace('_', ' ')}
+                        </OpsSurfaceTitle>
                         <p className="ops-readiness__meta">
                           Verdict: <OpsStatus name={readinessStatusName(m?.readiness?.verdict)} />
                         </p>
@@ -112,7 +115,7 @@ export default function OpsReadiness() {
                       >
                         Blocking errors: {blocking}
                       </div>
-                    </div>
+                    </OpsSurfaceHeader>
 
                     <div>
                       <p className="ops-readiness__section-label">Parity mismatch summary</p>
@@ -172,14 +175,16 @@ export default function OpsReadiness() {
                         </p>
                       </div>
                     ) : null}
-                  </section>
+                  </OpsSurface>
                 );
               })}
             </div>
 
             {qa ? (
-              <section className="ops-readiness__surface" data-testid="readiness-qa">
-                <h3 className="ops-readiness__surface-title">Operational QA smoke</h3>
+              <OpsSurface className="ops-readiness__surface" data-testid="readiness-qa">
+                <OpsSurfaceTitle as="h3" className="ops-readiness__surface-title">
+                  Operational QA smoke
+                </OpsSurfaceTitle>
                 <p className="ops-readiness__note">
                   Pass/fail for route-backed read-model assemblies. If an item fails, parity verdicts
                   may reflect that.
@@ -202,7 +207,7 @@ export default function OpsReadiness() {
                     <p className="ops-readiness__note">No QA smoke output.</p>
                   ) : null}
                 </div>
-              </section>
+              </OpsSurface>
             ) : null}
           </>
         ) : null}

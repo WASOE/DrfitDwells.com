@@ -9,6 +9,7 @@ import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
 import OpsEmptyState from '../../ops/primitives/OpsEmptyState';
 import OpsInlineError from '../../ops/primitives/OpsInlineError';
 import OpsMetric, { OpsMetricGroup } from '../../ops/primitives/OpsMetric';
+import OpsSurface, { OpsSurfaceHeader, OpsSurfaceTitle } from '../../ops/primitives/OpsSurface';
 import './OpsPayments.css';
 
 const PROPERTY_TIME_ZONE = 'Europe/Sofia';
@@ -127,26 +128,26 @@ export default function OpsPayments() {
         <OpsLoadingState label="Loading payments" />
       ) : error ? null : (
         <>
-          <section className="ops-payments-surface" aria-labelledby="ops-payments-summary">
-            <div className="ops-payments-surface__head">
-              <h2 id="ops-payments-summary" className="ops-payments-surface__title">
+          <OpsSurface className="ops-payments-surface" aria-labelledby="ops-payments-summary">
+            <OpsSurfaceHeader className="ops-payments-surface__head">
+              <OpsSurfaceTitle id="ops-payments-summary" className="ops-payments-surface__title">
                 Payment summary
-              </h2>
-            </div>
+              </OpsSurfaceTitle>
+            </OpsSurfaceHeader>
             <OpsMetricGroup>
               <OpsMetric label="Total payments" value={summary?.totals?.total ?? 0} />
               <OpsMetric label="Failed/disputed" value={failedDisputed} />
               <OpsMetric label="Unlinked payments" value={summary?.totals?.unlinked ?? 0} />
               <OpsMetric label="Unlinked payouts" value={reconciliation?.manualReview?.openUnlinkedPayouts ?? 0} />
             </OpsMetricGroup>
-          </section>
+          </OpsSurface>
 
-          <section className="ops-payments-surface" aria-labelledby="ops-payments-recon">
-            <div className="ops-payments-surface__head">
-              <h2 id="ops-payments-recon" className="ops-payments-surface__title">
+          <OpsSurface className="ops-payments-surface" aria-labelledby="ops-payments-recon">
+            <OpsSurfaceHeader className="ops-payments-surface__head">
+              <OpsSurfaceTitle id="ops-payments-recon" className="ops-payments-surface__title">
                 Reconciliation summary
-              </h2>
-            </div>
+              </OpsSurfaceTitle>
+            </OpsSurfaceHeader>
             <OpsMetricGroup>
               <OpsMetric label="Total payouts" value={reconciliation?.totals?.totalPayouts ?? 0} />
               <OpsMetric
@@ -155,15 +156,15 @@ export default function OpsPayments() {
               />
               <OpsMetric label="Incomplete linkage" value={reconciliation?.totals?.incompleteLinkage ?? 0} />
             </OpsMetricGroup>
-          </section>
+          </OpsSurface>
 
-          <section className="ops-payments-surface" aria-labelledby="ops-payments-recent">
-            <div className="ops-payments-surface__head">
-              <h2 id="ops-payments-recent" className="ops-payments-surface__title">
+          <OpsSurface className="ops-payments-surface" aria-labelledby="ops-payments-recent">
+            <OpsSurfaceHeader className="ops-payments-surface__head">
+              <OpsSurfaceTitle id="ops-payments-recent" className="ops-payments-surface__title">
                 Recent payments
-              </h2>
+              </OpsSurfaceTitle>
               <p className="ops-payments-cap">Latest {EVIDENCE_LIMIT}</p>
-            </div>
+            </OpsSurfaceHeader>
             {ledger.length ? (
               <div className="ops-payments-list" role="list">
                 {ledger.map((item) => (
@@ -182,15 +183,15 @@ export default function OpsPayments() {
             ) : (
               <OpsEmptyState className="ops-payments-empty" title="No payment evidence yet." />
             )}
-          </section>
+          </OpsSurface>
 
-          <section className="ops-payments-surface" aria-labelledby="ops-payments-payouts">
-            <div className="ops-payments-surface__head">
-              <h2 id="ops-payments-payouts" className="ops-payments-surface__title">
+          <OpsSurface className="ops-payments-surface" aria-labelledby="ops-payments-payouts">
+            <OpsSurfaceHeader className="ops-payments-surface__head">
+              <OpsSurfaceTitle id="ops-payments-payouts" className="ops-payments-surface__title">
                 Recent payouts
-              </h2>
+              </OpsSurfaceTitle>
               <p className="ops-payments-cap">Latest {EVIDENCE_LIMIT}</p>
-            </div>
+            </OpsSurfaceHeader>
             {payouts.length ? (
               <div className="ops-payments-list">
                 {payouts.map((item) => {
@@ -216,15 +217,15 @@ export default function OpsPayments() {
             ) : (
               <OpsEmptyState className="ops-payments-empty" title="No payout evidence yet." />
             )}
-          </section>
+          </OpsSurface>
 
           {showDetailPanel ? (
-            <section className="ops-payments-surface" aria-labelledby="ops-payments-detail">
-              <div className="ops-payments-surface__head">
-                <h2 id="ops-payments-detail" className="ops-payments-surface__title">
+            <OpsSurface className="ops-payments-surface" aria-labelledby="ops-payments-detail">
+              <OpsSurfaceHeader className="ops-payments-surface__head">
+                <OpsSurfaceTitle id="ops-payments-detail" className="ops-payments-surface__title">
                   Payout detail
-                </h2>
-              </div>
+                </OpsSurfaceTitle>
+              </OpsSurfaceHeader>
               {detailError ? <OpsInlineError>{detailError}</OpsInlineError> : null}
               {detailLoading ? <OpsLoadingState label="Loading payout detail" /> : null}
               {selectedPayout ? (
@@ -242,7 +243,7 @@ export default function OpsPayments() {
                   ) : null}
                 </div>
               ) : null}
-            </section>
+            </OpsSurface>
           ) : null}
         </>
       )}

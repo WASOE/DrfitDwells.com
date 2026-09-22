@@ -1,0 +1,118 @@
+.ops-message-preview {
+  height: min(92vh, 900px);
+}
+
+.ops-message-preview--whatsapp {
+  height: min(92vh, 720px);
+}
+
+.ops-message-preview .ops-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-16);
+}
+
+.ops-message-preview__meta,
+.ops-message-preview__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ops-space-8);
+  min-width: 0;
+  color: var(--ops-text-muted);
+  font-size: var(--ops-size-meta);
+  line-height: var(--ops-lh-meta);
+}
+
+.ops-message-preview__subject {
+  margin: 0;
+  color: var(--ops-text-secondary);
+  font-size: var(--ops-size-small);
+  line-height: var(--ops-lh-small);
+  overflow-wrap: anywhere;
+}
+
+.ops-message-preview__banner {
+  flex: 0 0 auto;
+}
+
+.ops-message-preview__frame-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--ops-surface-subtle);
+  border: 1px solid var(--ops-border);
+}
+
+.ops-message-preview__frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  background: var(--ops-surface-subtle);
+}
+
+.ops-message-preview__definition-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ops-space-16);
+  margin: 0;
+}
+
+.ops-message-preview__definition-grid dt {
+  color: var(--ops-text-muted);
+  font-size: var(--ops-size-meta);
+  line-height: var(--ops-lh-meta);
+}
+
+.ops-message-preview__definition-grid dd {
+  margin: var(--ops-space-4) 0 0;
+  color: var(--ops-text);
+  font-size: var(--ops-size-small);
+  line-height: var(--ops-lh-small);
+  overflow-wrap: anywhere;
+}
+
+.ops-message-preview__mono {
+  font-family: var(--ops-font-mono);
+}
+
+.ops-message-preview__whatsapp-stage {
+  width: min(100%, 24rem);
+  margin-inline: auto;
+  padding: var(--ops-space-16);
+  border: 1px solid var(--ops-border);
+  background: var(--ops-surface-subtle);
+}
+
+.ops-message-preview__whatsapp-stage pre {
+  margin: 0;
+  padding: var(--ops-space-16);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--ops-border);
+  background: var(--ops-surface);
+  color: var(--ops-text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.ops-message-preview__variables {
+  border-top: 1px solid var(--ops-border);
+}
+
+.ops-message-preview__variables summary {
+  padding: var(--ops-space-12) 0;
+  color: var(--ops-text-secondary);
+  cursor: pointer;
+  font-size: var(--ops-size-small);
+  font-weight: 600;
+}
+
+@media (max-width: 767px) {
+  .ops-message-preview__definition-grid {
+    grid-template-columns: 1fr;
+  }
+}

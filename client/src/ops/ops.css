@@ -1,4 +1,4 @@
-/* Drift & Dwells Ops design tokens — DND_OPS_DESIGN_LANGUAGE_GUIDE_V1_2_LOCKED.md
+/* Drift & Dwells Ops design tokens — locked guide v1.5
  *
  * Scoped to .ops-root (and html[data-ops-active] while /ops is mounted).
  * Public-site index.css heading/editorial rules are not modified.
@@ -26,6 +26,13 @@ html[data-ops-active="true"] {
   --ops-shadow-modal: 0 12px 32px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.08);
   --ops-size-display: 26px;
   --ops-lh-display: 32px;
+  --ops-font-display: "Montserrat", Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --ops-size-dashboard-lead: clamp(52px, 6vw, 88px);
+  --ops-lh-dashboard-lead: 0.95;
+  --ops-size-page-title-premium: 24px;
+  --ops-lh-page-title-premium: 30px;
+  --ops-size-surface-title-premium: 17px;
+  --ops-lh-surface-title-premium: 22px;
   --ops-size-title: 18px;
   --ops-lh-title: 24px;
   --ops-size-section: 16px;
@@ -104,6 +111,16 @@ html[data-ops-active="true"][data-ops-appearance="light"] {
   --ops-info: #175CD3;
   --ops-info-soft: #EFF6FF;
   --ops-scrim: rgba(0, 0, 0, 0.32);
+}
+
+/* Premium desktop is intentionally white-on-white; mobile keeps the existing canvas. */
+@media (min-width: 768px) {
+  .ops-root[data-ops-appearance="light"],
+  html[data-ops-active="true"][data-ops-appearance="light"] {
+    --ops-canvas: #FFFFFF;
+    --ops-sidebar: #FFFFFF;
+    --ops-topbar: #FFFFFF;
+  }
 }
 
 /* ops-tokens: dark */

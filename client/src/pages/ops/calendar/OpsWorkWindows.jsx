@@ -11,6 +11,7 @@ import OpsTextField from '../../../ops/primitives/OpsTextField';
 import OpsButton from '../../../ops/primitives/OpsButton';
 import OpsBanner from '../../../ops/primitives/OpsBanner';
 import OpsLoadingState from '../../../ops/primitives/OpsLoadingState';
+import OpsSurface, { OpsSurfaceHeader, OpsSurfaceTitle } from '../../../ops/primitives/OpsSurface';
 import './OpsWorkWindows.css';
 
 const LOCATION_OPTIONS = [
@@ -295,8 +296,8 @@ export default function OpsWorkWindows() {
 
         {data ? (
           <>
-            <section className="ops-ww__section" aria-label="Best work windows">
-              <h2 className="ops-ww__section-title">Best work windows</h2>
+            <OpsSurface variant="plain" className="ops-ww__section" aria-label="Best work windows">
+              <OpsSurfaceTitle className="ops-ww__section-title">Best work windows</OpsSurfaceTitle>
               {!locationBest.length && !unitBest.length ? (
                 <p className="ops-ww__empty">
                   No multi-day free windows in this range
@@ -332,11 +333,11 @@ export default function OpsWorkWindows() {
                   ) : null}
                 </div>
               )}
-            </section>
+            </OpsSurface>
 
-            <section className="ops-ww__section" aria-label="Timeline">
-              <div className="ops-ww__section-head">
-                <h2 className="ops-ww__section-title">Timeline</h2>
+            <OpsSurface variant="plain" className="ops-ww__section" aria-label="Timeline">
+              <OpsSurfaceHeader className="ops-ww__section-head">
+                <OpsSurfaceTitle className="ops-ww__section-title">Timeline</OpsSurfaceTitle>
                 <div className="ops-ww__legend">
                   <span className="ops-ww__legend-item">
                     <span className="ops-ww__legend-swatch ops-ww__legend-swatch--free" /> Free
@@ -353,7 +354,7 @@ export default function OpsWorkWindows() {
                     <span className="ops-ww__legend-swatch ops-ww__legend-swatch--blocked" /> Blocked
                   </span>
                 </div>
-              </div>
+              </OpsSurfaceHeader>
 
               <div className="ops-ww__timeline-shell">
                 <div className="ops-ww__timeline-scroll">
@@ -494,7 +495,7 @@ export default function OpsWorkWindows() {
                   Swipe sideways to scroll days. Resource names stay fixed.
                 </p>
               </div>
-            </section>
+            </OpsSurface>
           </>
         ) : null}
       </div>

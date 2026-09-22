@@ -16,7 +16,8 @@ export default function OpsSheet({
   dismissible = true,
   closeOnBackdrop,
   closeOnEscape,
-  showCloseButton = true
+  showCloseButton = true,
+  panelProps
 }) {
   const titleId = useId();
   const descriptionId = useId();
@@ -48,8 +49,9 @@ export default function OpsSheet({
           onClick={canBackdrop ? () => onClose?.({ reason: 'backdrop' }) : undefined}
         />
         <div
+          {...panelProps}
           ref={panelRef}
-          className={opsCx('ops-sheet', `ops-sheet--${resolvedSide}`)}
+          className={opsCx('ops-sheet', `ops-sheet--${resolvedSide}`, panelProps?.className)}
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}

@@ -9,7 +9,6 @@ import {
   assertNoForbiddenKeys,
   safeErrorMessage,
   describeActivationResult,
-  statusBadgeClass,
   formatWindow,
   emptyAccommodation,
   RATE_PLAN_TYPES,
@@ -17,6 +16,29 @@ import {
   ENTITY_TYPES,
   isDraftEditable
 } from './ratePlans/ratePlanFormUtils';
+import OpsPage from '../../ops/primitives/OpsPage';
+import OpsPageHeader from '../../ops/primitives/OpsPageHeader';
+import OpsButton from '../../ops/primitives/OpsButton';
+import OpsTextField from '../../ops/primitives/OpsTextField';
+import OpsSelect from '../../ops/primitives/OpsSelect';
+import OpsTextarea from '../../ops/primitives/OpsTextarea';
+import OpsCheckbox from '../../ops/primitives/OpsCheckbox';
+import OpsBanner from '../../ops/primitives/OpsBanner';
+import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
+import OpsEmptyState from '../../ops/primitives/OpsEmptyState';
+import OpsFilterBar from '../../ops/primitives/OpsFilterBar';
+import OpsSheet from '../../ops/primitives/OpsSheet';
+import OpsConfirmDialog from '../../ops/primitives/OpsConfirmDialog';
+import OpsStatus from '../../ops/primitives/OpsStatus';
+import OpsSurface, { OpsSurfaceHeader, OpsSurfaceTitle } from '../../ops/primitives/OpsSurface';
+import OpsTable, {
+  OpsTableBody,
+  OpsTableCell,
+  OpsTableHead,
+  OpsTableHeader,
+  OpsTableRow
+} from '../../ops/primitives/OpsTable';
+import './OpsRatePlans.css';
 
 function LifecycleMeta({ plan }) {
   if (!plan) return null;
@@ -27,8 +49,14 @@ function LifecycleMeta({ plan }) {
   if (plan.activatedAt) bits.push(String(plan.activatedAt).slice(0, 19).replace('T', ' '));
   if (plan.retiredBy) bits.push(`Retired by ${plan.retiredBy}`);
   if (plan.retiredAt) bits.push(String(plan.retiredAt).slice(0, 19).replace('T', ' '));
-  if (!bits.length) return <span className="text-gray-400">—</span>;
-  return <span className="text-xs text-gray-500">{bits.join(' · ')}</span>;
+  if (!bits.length) return <span className="ops-rate-plans__muted">—</span>;
+  return <span className="ops-rate-plans__lifecycle">{bits.join(' · ')}</span>;
+}
+
+function bannerTone(type) {
+  if (type === 'success') return 'success';
+  if (type === 'warning') return 'warning';
+  return 'danger';
 }
 
 export default function OpsRatePlans() {
@@ -215,670 +243,281 @@ export default function OpsRatePlans() {
   }, [filters]);
 
   return (
-    <div className="space-y-4 pb-20 sm:pb-0 max-w-7xl mx-auto px-4 py-6 md:py-8" data-testid="ops-rate-plans">
-      <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <h2 className="text-lg md:text-xl font-semibold text-gray-900">Rate plans</h2>
-            <p className="text-sm text-gray-500 mt-1 max-w-2xl">
-              Manage seasonal and fixed-package commercial rate plans. Production activation tooling
-              remains blocked pending controlled lock recovery.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => openCreate('seasonal_stay')}
-              className="px-3 py-2 text-sm rounded-lg bg-[#81887A] text-white hover:bg-[#707668] disabled:opacity-50"
-            >
-              New seasonal draft
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => openCreate('fixed_package')}
-              className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-800 hover:bg-gray-50 disabled:opacity-50"
-            >
+    <OpsPage width="wide" className="ops-rate-plans" data-testid="ops-rate-plans">
+      <OpsPageHeader
+        title="Rate plans"
+        description="Manage seasonal and fixed-package commercial rate plans. Production activation tooling remains blocked pending controlled lock recovery."
+        actions={
+          <>
+            <OpsButton variant="secondary" disabled={busy} onClick={() => openCreate('fixed_package')}>
               New package draft
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <label className="text-sm text-gray-600">
-            Status
-            <select
-              className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-              value={filters.status}
-              onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
-            >
-              <option value="">All</option>
-              <option value="draft">Draft</option>
-              <option value="active">Active</option>
-              <option value="retired">Retired</option>
-            </select>
-          </label>
-          <label className="text-sm text-gray-600">
-            Type
-            <select
-              className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-              value={filters.type}
-              onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))}
-            >
-              <option value="">All</option>
-              {RATE_PLAN_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="text-sm text-gray-600">
-            Code
-            <input
-              className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-              value={filters.code}
-              onChange={(e) => setFilters((f) => ({ ...f, code: e.target.value }))}
-              placeholder="e.g. winter-2026"
-            />
-          </label>
-        </div>
-        {filteredHint ? <p className="mt-2 text-xs text-gray-400">{filteredHint}</p> : null}
-      </section>
+            </OpsButton>
+            <OpsButton disabled={busy} onClick={() => openCreate('seasonal_stay')}>
+              New seasonal draft
+            </OpsButton>
+          </>
+        }
+      />
 
       {banner.message ? (
-        <div
-          role="status"
-          data-testid="rate-plans-banner"
-          className={`text-sm rounded-xl border p-3 ${
-            banner.type === 'success'
-              ? 'border-green-200 bg-green-50 text-green-800'
-              : banner.type === 'warning'
-                ? 'border-amber-200 bg-amber-50 text-amber-900'
-                : 'border-red-200 bg-red-50 text-red-800'
-          }`}
-        >
-          {banner.message}
-        </div>
+        <OpsBanner data-testid="rate-plans-banner" tone={bannerTone(banner.type)} title={banner.message} />
       ) : null}
 
-      <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-6 overflow-hidden">
+      <OpsFilterBar>
+        <OpsSelect
+          label="Status"
+          value={filters.status}
+          onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
+        >
+          <option value="">All</option>
+          <option value="draft">Draft</option>
+          <option value="active">Active</option>
+          <option value="retired">Retired</option>
+        </OpsSelect>
+        <OpsSelect
+          label="Type"
+          value={filters.type}
+          onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))}
+        >
+          <option value="">All</option>
+          {RATE_PLAN_TYPES.map((type) => (
+            <option key={type} value={type}>
+              {type}
+            </option>
+          ))}
+        </OpsSelect>
+        <OpsTextField
+          className="ops-filter-bar__search ops-rate-plans__mono"
+          label="Code"
+          value={filters.code}
+          onChange={(e) => setFilters((f) => ({ ...f, code: e.target.value }))}
+          placeholder="e.g. winter-2026"
+        />
+      </OpsFilterBar>
+      {filteredHint ? <p className="ops-rate-plans__filter-hint">{filteredHint}</p> : null}
+
+      <OpsSurface variant="plain" aria-labelledby="ops-rate-plan-catalogue">
+        <OpsSurfaceTitle id="ops-rate-plan-catalogue">Rate plan catalogue</OpsSurfaceTitle>
         {loading ? (
-          <div className="text-sm text-gray-500" data-testid="rate-plans-loading">
-            Loading rate plans…
+          <div data-testid="rate-plans-loading">
+            <OpsLoadingState label="Loading rate plans" />
           </div>
         ) : rows.length === 0 ? (
-          <div className="text-sm text-gray-500 py-8 text-center" data-testid="rate-plans-empty">
-            No rate plans match these filters.
+          <div data-testid="rate-plans-empty">
+            <OpsEmptyState title="No rate plans match these filters." />
           </div>
         ) : (
-          <div className="overflow-x-auto -mx-4 md:mx-0">
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Code / version</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Status</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Type</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Window</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Pricing</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Rev</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Lifecycle</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-600">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {rows.map((plan) => (
-                  <tr key={plan.id} className="hover:bg-gray-50/80" data-testid={`rate-plan-row-${plan.id}`}>
-                    <td className="px-4 py-3">
-                      <div className="font-mono font-medium text-gray-900">
-                        {plan.code}
-                        <span className="text-gray-400">@v{plan.version}</span>
-                      </div>
-                      <div className="text-xs text-gray-500 truncate max-w-[12rem]">{plan.internalName}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`inline-flex px-2 py-0.5 rounded border text-xs font-medium capitalize ${statusBadgeClass(
-                          plan.status
-                        )}`}
-                      >
-                        {plan.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{plan.type}</td>
-                    <td className="px-4 py-3 text-gray-700 whitespace-nowrap">{formatWindow(plan)}</td>
-                    <td className="px-4 py-3 text-gray-700">
-                      {(plan.accommodations || []).slice(0, 2).map((a) => (
-                        <div key={`${a.accommodationKey}-${a.pricingMethod}`} className="text-xs">
-                          {a.accommodationKey}: {a.pricingMethod}
-                          {a.nightlyPerUnitAmount != null ? ` €${a.nightlyPerUnitAmount}` : ''}
-                          {a.adultPackageAmount != null ? ` adult €${a.adultPackageAmount}` : ''}
-                        </div>
+          <OpsTable className="ops-rate-plans__table" caption="Rate plans">
+            <OpsTableHead>
+              <OpsTableRow>
+                <OpsTableHeader>Code / version</OpsTableHeader>
+                <OpsTableHeader>Status</OpsTableHeader>
+                <OpsTableHeader>Type</OpsTableHeader>
+                <OpsTableHeader>Window</OpsTableHeader>
+                <OpsTableHeader>Pricing</OpsTableHeader>
+                <OpsTableHeader numeric>Rev</OpsTableHeader>
+                <OpsTableHeader>Lifecycle</OpsTableHeader>
+                <OpsTableHeader align="end">Actions</OpsTableHeader>
+              </OpsTableRow>
+            </OpsTableHead>
+            <OpsTableBody>
+              {rows.map((plan) => (
+                <OpsTableRow key={plan.id} data-testid={`rate-plan-row-${plan.id}`}>
+                  <OpsTableCell>
+                    <div className="ops-rate-plans__identity ops-rate-plans__mono">
+                      {plan.code}<span>@v{plan.version}</span>
+                    </div>
+                    <p className="ops-rate-plans__internal-name">{plan.internalName}</p>
+                  </OpsTableCell>
+                  <OpsTableCell><OpsStatus domain="rate_plan" value={plan.status} /></OpsTableCell>
+                  <OpsTableCell className="ops-rate-plans__nowrap">{plan.type}</OpsTableCell>
+                  <OpsTableCell className="ops-rate-plans__nowrap">{formatWindow(plan)}</OpsTableCell>
+                  <OpsTableCell>
+                    <div className="ops-rate-plans__pricing">
+                      {(plan.accommodations || []).slice(0, 2).map((accommodation) => (
+                        <span key={`${accommodation.accommodationKey}-${accommodation.pricingMethod}`}>
+                          {accommodation.accommodationKey}: {accommodation.pricingMethod}
+                          {accommodation.nightlyPerUnitAmount != null ? ` €${accommodation.nightlyPerUnitAmount}` : ''}
+                          {accommodation.adultPackageAmount != null ? ` adult €${accommodation.adultPackageAmount}` : ''}
+                        </span>
                       ))}
-                    </td>
-                    <td className="px-4 py-3 tabular-nums text-gray-900">{plan.revision}</td>
-                    <td className="px-4 py-3 max-w-[14rem]">
-                      <LifecycleMeta plan={plan} />
-                    </td>
-                    <td className="px-4 py-3 text-right whitespace-nowrap space-x-2">
-                      <button
-                        type="button"
-                        className="text-[#81887A] hover:underline"
-                        onClick={() => openPlan(plan)}
-                      >
+                    </div>
+                  </OpsTableCell>
+                  <OpsTableCell numeric>{plan.revision}</OpsTableCell>
+                  <OpsTableCell className="ops-rate-plans__lifecycle-cell"><LifecycleMeta plan={plan} /></OpsTableCell>
+                  <OpsTableCell align="end">
+                    <div className="ops-rate-plans__actions">
+                      <OpsButton variant="quiet" size="compact" onClick={() => openPlan(plan)}>
                         {isDraftEditable(plan) ? 'Edit' : 'View'}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        className="text-gray-700 hover:underline disabled:opacity-50"
-                        onClick={() => handleClone(plan)}
-                      >
+                      </OpsButton>
+                      <OpsButton variant="quiet" size="compact" disabled={busy} onClick={() => handleClone(plan)}>
                         Clone
-                      </button>
+                      </OpsButton>
                       {plan.status === 'draft' ? (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          className="text-emerald-700 hover:underline disabled:opacity-50"
-                          onClick={() => setConfirm({ action: 'activate', plan })}
-                        >
+                        <OpsButton variant="quiet" size="compact" disabled={busy} onClick={() => setConfirm({ action: 'activate', plan })}>
                           Activate
-                        </button>
+                        </OpsButton>
                       ) : null}
                       {plan.status === 'active' ? (
-                        <button
-                          type="button"
-                          disabled={busy}
-                          className="text-amber-800 hover:underline disabled:opacity-50"
-                          onClick={() => setConfirm({ action: 'retire', plan })}
-                        >
+                        <OpsButton variant="quiet" size="compact" disabled={busy} onClick={() => setConfirm({ action: 'retire', plan })}>
                           Retire
-                        </button>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      {drawerOpen ? (
-        <div className="fixed inset-0 z-40 flex justify-end" data-testid="rate-plan-drawer">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/30"
-            aria-label="Close drawer"
-            onClick={() => !busy && setDrawerOpen(false)}
-          />
-          <div className="relative w-full max-w-xl h-full bg-white shadow-xl overflow-y-auto p-4 sm:p-6">
-            <div className="flex items-start justify-between gap-3 mb-4">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {mode === 'create' ? 'Create draft' : mode === 'edit' ? 'Edit draft' : 'View plan'}
-                </h3>
-                {selected ? (
-                  <p className="text-xs text-gray-500 mt-1">
-                    Revision {selected.revision} · {selected.status}
-                  </p>
-                ) : null}
-              </div>
-              <button
-                type="button"
-                className="text-sm text-gray-500"
-                disabled={busy}
-                onClick={() => setDrawerOpen(false)}
-              >
-                Close
-              </button>
-            </div>
-
-            <form className="space-y-4" onSubmit={handleSave}>
-              <fieldset disabled={readOnly || busy} className="space-y-4">
-                {mode === 'create' ? (
-                  <label className="block text-sm text-gray-700">
-                    Type
-                    <select
-                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2"
-                      value={form.type}
-                      onChange={(e) => onTypeChange(e.target.value)}
-                    >
-                      {RATE_PLAN_TYPES.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : (
-                  <div className="text-sm text-gray-600">
-                    Type: <span className="font-medium text-gray-900">{form.type}</span>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <label className="block text-sm text-gray-700">
-                    Code
-                    <input
-                      required
-                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 font-mono"
-                      value={form.code}
-                      onChange={(e) => updateField('code', e.target.value)}
-                      disabled={mode === 'edit'}
-                    />
-                  </label>
-                  <label className="block text-sm text-gray-700">
-                    Version
-                    <input
-                      required
-                      type="number"
-                      min={1}
-                      step={1}
-                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2"
-                      value={form.version}
-                      onChange={(e) => updateField('version', e.target.value)}
-                      disabled={mode === 'edit'}
-                    />
-                  </label>
-                </div>
-
-                <label className="block text-sm text-gray-700">
-                  Internal name
-                  <input
-                    required
-                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2"
-                    value={form.internalName}
-                    onChange={(e) => updateField('internalName', e.target.value)}
-                  />
-                </label>
-
-                {seasonal ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <label className="block text-sm text-gray-700">
-                      Arrival window start
-                      <input
-                        type="date"
-                        required
-                        className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2"
-                        value={form.arrivalWindowStart}
-                        onChange={(e) => updateField('arrivalWindowStart', e.target.value)}
-                      />
-                    </label>
-                    <label className="block text-sm text-gray-700">
-                      Arrival window end
-                      <input
-                        type="date"
-                        required
-                        className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2"
-                        value={form.arrivalWindowEnd}
-                        onChange={(e) => updateField('arrivalWindowEnd', e.target.value)}
-                      />
-                    </label>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <label className="block text-sm text-gray-700">
-                      Package arrival
-                      <input
-                        type="date"
-                        required
-                        className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2"
-                        value={form.packageArrivalDate}
-                        onChange={(e) => updateField('packageArrivalDate', e.target.value)}
-                      />
-                    </label>
-                    <label className="block text-sm text-gray-700">
-                      Package departure
-                      <input
-                        type="date"
-                        required
-                        className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2"
-                        value={form.packageDepartureDate}
-                        onChange={(e) => updateField('packageDepartureDate', e.target.value)}
-                      />
-                    </label>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <label className="block text-sm text-gray-700">
-                    Booking window start
-                    <input
-                      type="date"
-                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2"
-                      value={form.bookingWindowStart}
-                      onChange={(e) => updateField('bookingWindowStart', e.target.value)}
-                    />
-                  </label>
-                  <label className="block text-sm text-gray-700">
-                    Booking window end
-                    <input
-                      type="date"
-                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2"
-                      value={form.bookingWindowEnd}
-                      onChange={(e) => updateField('bookingWindowEnd', e.target.value)}
-                    />
-                  </label>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <label className="block text-sm text-gray-700">
-                    Min nights
-                    <input
-                      type="number"
-                      min={1}
-                      step={1}
-                      required
-                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2"
-                      value={form.minNights}
-                      onChange={(e) => updateField('minNights', e.target.value)}
-                    />
-                  </label>
-                  <label className="block text-sm text-gray-700">
-                    Currency
-                    <select
-                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2"
-                      value={form.currency}
-                      onChange={(e) => updateField('currency', e.target.value)}
-                    >
-                      <option value="EUR">EUR</option>
-                    </select>
-                  </label>
-                  <label className="block text-sm text-gray-700">
-                    Inventory
-                    <select
-                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2"
-                      value={form.inventoryMode}
-                      onChange={(e) => updateField('inventoryMode', e.target.value)}
-                    >
-                      <option value="shared">shared</option>
-                      <option value="exclusive">exclusive</option>
-                    </select>
-                  </label>
-                </div>
-
-                <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-                  <input
-                    type="checkbox"
-                    checked={form.requiresFullPayment === true}
-                    onChange={(e) => updateField('requiresFullPayment', e.target.checked)}
-                  />
-                  Requires full payment
-                </label>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <label className="block text-sm text-gray-700">
-                    Cancellation policy code
-                    <input
-                      required
-                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2"
-                      value={form.cancellationPolicyCode}
-                      onChange={(e) => updateField('cancellationPolicyCode', e.target.value)}
-                    />
-                  </label>
-                  <label className="block text-sm text-gray-700">
-                    Policy version
-                    <input
-                      type="number"
-                      min={1}
-                      step={1}
-                      required
-                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2"
-                      value={form.cancellationPolicyVersion}
-                      onChange={(e) => updateField('cancellationPolicyVersion', e.target.value)}
-                    />
-                  </label>
-                </div>
-
-                <label className="block text-sm text-gray-700">
-                  Inclusions (one per line)
-                  <textarea
-                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 min-h-[72px]"
-                    value={form.inclusionsText}
-                    onChange={(e) => updateField('inclusionsText', e.target.value)}
-                  />
-                </label>
-
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-semibold text-gray-900">Accommodations</h4>
-                    {!readOnly ? (
-                      <button
-                        type="button"
-                        className="text-sm text-[#81887A]"
-                        onClick={addAccommodation}
-                      >
-                        Add row
-                      </button>
-                    ) : null}
-                  </div>
-                  {form.accommodations.map((row, index) => (
-                    <div
-                      key={`acc-${index}`}
-                      className="border border-gray-200 rounded-lg p-3 space-y-2"
-                    >
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        <label className="block text-xs text-gray-600">
-                          Key (slug)
-                          <input
-                            className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
-                            value={row.accommodationKey}
-                            onChange={(e) =>
-                              updateAccommodation(index, 'accommodationKey', e.target.value)
-                            }
-                          />
-                        </label>
-                        <label className="block text-xs text-gray-600">
-                          Entity
-                          <select
-                            className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
-                            value={row.entityType}
-                            onChange={(e) =>
-                              updateAccommodation(index, 'entityType', e.target.value)
-                            }
-                          >
-                            {ENTITY_TYPES.map((t) => (
-                              <option key={t} value={t}>
-                                {t}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="block text-xs text-gray-600">
-                          Pricing method
-                          <select
-                            className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
-                            value={row.pricingMethod}
-                            onChange={(e) =>
-                              updateAccommodation(index, 'pricingMethod', e.target.value)
-                            }
-                          >
-                            {PRICING_METHODS.filter((m) =>
-                              seasonal
-                                ? m.startsWith('nightly')
-                                : m.startsWith('fixed')
-                            ).map((m) => (
-                              <option key={m} value={m}>
-                                {m}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      </div>
-                      {seasonal ? (
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                          <label className="block text-xs text-gray-600">
-                            Nightly €
-                            <input
-                              type="number"
-                              min={0}
-                              step="0.01"
-                              className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
-                              value={row.nightlyPerUnitAmount}
-                              onChange={(e) =>
-                                updateAccommodation(index, 'nightlyPerUnitAmount', e.target.value)
-                              }
-                            />
-                          </label>
-                          <label className="block text-xs text-gray-600">
-                            Included guests
-                            <input
-                              type="number"
-                              min={0}
-                              step={1}
-                              className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
-                              value={row.includedGuests}
-                              onChange={(e) =>
-                                updateAccommodation(index, 'includedGuests', e.target.value)
-                              }
-                            />
-                          </label>
-                          <label className="block text-xs text-gray-600">
-                            Extra guest nightly €
-                            <input
-                              type="number"
-                              min={0}
-                              step="0.01"
-                              className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
-                              value={row.additionalGuestNightlyAmount}
-                              onChange={(e) =>
-                                updateAccommodation(
-                                  index,
-                                  'additionalGuestNightlyAmount',
-                                  e.target.value
-                                )
-                              }
-                            />
-                          </label>
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          <label className="block text-xs text-gray-600">
-                            Fixed per unit €
-                            <input
-                              type="number"
-                              min={0}
-                              step="0.01"
-                              className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
-                              value={row.fixedPerUnitAmount}
-                              onChange={(e) =>
-                                updateAccommodation(index, 'fixedPerUnitAmount', e.target.value)
-                              }
-                            />
-                          </label>
-                          <label className="block text-xs text-gray-600">
-                            Adult package €
-                            <input
-                              type="number"
-                              min={0}
-                              step="0.01"
-                              className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
-                              value={row.adultPackageAmount}
-                              onChange={(e) =>
-                                updateAccommodation(index, 'adultPackageAmount', e.target.value)
-                              }
-                            />
-                          </label>
-                          <label className="block text-xs text-gray-600">
-                            Child package €
-                            <input
-                              type="number"
-                              min={0}
-                              step="0.01"
-                              className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
-                              value={row.childPackageAmount}
-                              onChange={(e) =>
-                                updateAccommodation(index, 'childPackageAmount', e.target.value)
-                              }
-                            />
-                          </label>
-                          <label className="block text-xs text-gray-600">
-                            Infant package €
-                            <input
-                              type="number"
-                              min={0}
-                              step="0.01"
-                              className="mt-1 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
-                              value={row.infantPackageAmount}
-                              onChange={(e) =>
-                                updateAccommodation(index, 'infantPackageAmount', e.target.value)
-                              }
-                            />
-                          </label>
-                        </div>
-                      )}
-                      {!readOnly && form.accommodations.length > 1 ? (
-                        <button
-                          type="button"
-                          className="text-xs text-red-700"
-                          onClick={() => removeAccommodation(index)}
-                        >
-                          Remove row
-                        </button>
+                        </OpsButton>
                       ) : null}
                     </div>
-                  ))}
-                </div>
-              </fieldset>
+                  </OpsTableCell>
+                </OpsTableRow>
+              ))}
+            </OpsTableBody>
+          </OpsTable>
+        )}
+      </OpsSurface>
 
-              {!readOnly ? (
-                <button
-                  type="submit"
-                  disabled={busy}
-                  className="w-full sm:w-auto px-4 py-2 rounded-lg bg-[#81887A] text-white text-sm disabled:opacity-50"
-                >
-                  {busy ? 'Saving…' : mode === 'create' ? 'Create draft' : 'Save draft'}
-                </button>
-              ) : (
-                <p className="text-sm text-gray-500">
-                  Active and retired plans are read-only. Clone to create an editable next draft.
-                </p>
-              )}
-            </form>
-          </div>
-        </div>
-      ) : null}
+      <OpsSheet
+        open={drawerOpen}
+        side="right"
+        dismissible={!busy}
+        showCloseButton={false}
+        onClose={() => !busy && setDrawerOpen(false)}
+        title={mode === 'create' ? 'Create draft' : mode === 'edit' ? 'Edit draft' : 'View plan'}
+        description={selected ? `Revision ${selected.revision} · ${selected.status}` : undefined}
+        panelProps={{ 'data-testid': 'rate-plan-drawer' }}
+        footer={
+          <>
+            <OpsButton variant="secondary" disabled={busy} onClick={() => setDrawerOpen(false)}>Close</OpsButton>
+            {!readOnly ? (
+              <OpsButton type="submit" form="ops-rate-plan-form" loading={busy} loadingLabel="Saving…">
+                {mode === 'create' ? 'Create draft' : 'Save draft'}
+              </OpsButton>
+            ) : null}
+          </>
+        }
+      >
+        <form id="ops-rate-plan-form" className="ops-rate-plans__form" onSubmit={handleSave}>
+          <fieldset disabled={readOnly || busy} className="ops-rate-plans__fieldset">
+            {mode === 'create' ? (
+              <OpsSelect label="Type" value={form.type} onChange={(e) => onTypeChange(e.target.value)}>
+                {RATE_PLAN_TYPES.map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </OpsSelect>
+            ) : (
+              <p className="ops-rate-plans__readout">Type: <strong>{form.type}</strong></p>
+            )}
 
-      {confirm ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" data-testid="rate-plan-confirm">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/40"
-            aria-label="Cancel"
-            onClick={() => !busy && setConfirm(null)}
-          />
-          <div className="relative bg-white rounded-xl border border-gray-200 p-5 max-w-md w-full shadow-lg">
-            <h4 className="text-base font-semibold text-gray-900">
-              {confirm.action === 'activate' ? 'Activate rate plan?' : 'Retire rate plan?'}
-            </h4>
-            <p className="text-sm text-gray-600 mt-2">
-              {confirm.plan.code}@v{confirm.plan.version} (revision {confirm.plan.revision}). This
-              uses the exact server revision and does not retry on conflict.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2 justify-end">
-              <button
-                type="button"
-                disabled={busy}
-                className="px-3 py-2 text-sm rounded-lg border border-gray-300"
-                onClick={() => setConfirm(null)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                className="px-3 py-2 text-sm rounded-lg bg-[#81887A] text-white disabled:opacity-50"
-                onClick={() => runLifecycle(confirm.action, confirm.plan)}
-              >
-                {busy ? 'Working…' : 'Confirm'}
-              </button>
+            <div className="ops-rate-plans__grid ops-rate-plans__grid--2">
+              <OpsTextField
+                className="ops-rate-plans__mono"
+                label="Code"
+                required
+                value={form.code}
+                onChange={(e) => updateField('code', e.target.value)}
+                disabled={mode === 'edit'}
+              />
+              <OpsTextField
+                label="Version"
+                required
+                type="number"
+                min={1}
+                step={1}
+                value={form.version}
+                onChange={(e) => updateField('version', e.target.value)}
+                disabled={mode === 'edit'}
+              />
             </div>
-          </div>
-        </div>
-      ) : null}
-    </div>
+
+            <OpsTextField label="Internal name" required value={form.internalName} onChange={(e) => updateField('internalName', e.target.value)} />
+
+            {seasonal ? (
+              <div className="ops-rate-plans__grid ops-rate-plans__grid--2">
+                <OpsTextField label="Arrival window start" type="date" required value={form.arrivalWindowStart} onChange={(e) => updateField('arrivalWindowStart', e.target.value)} />
+                <OpsTextField label="Arrival window end" type="date" required value={form.arrivalWindowEnd} onChange={(e) => updateField('arrivalWindowEnd', e.target.value)} />
+              </div>
+            ) : (
+              <div className="ops-rate-plans__grid ops-rate-plans__grid--2">
+                <OpsTextField label="Package arrival" type="date" required value={form.packageArrivalDate} onChange={(e) => updateField('packageArrivalDate', e.target.value)} />
+                <OpsTextField label="Package departure" type="date" required value={form.packageDepartureDate} onChange={(e) => updateField('packageDepartureDate', e.target.value)} />
+              </div>
+            )}
+
+            <div className="ops-rate-plans__grid ops-rate-plans__grid--2">
+              <OpsTextField label="Booking window start" type="date" value={form.bookingWindowStart} onChange={(e) => updateField('bookingWindowStart', e.target.value)} />
+              <OpsTextField label="Booking window end" type="date" value={form.bookingWindowEnd} onChange={(e) => updateField('bookingWindowEnd', e.target.value)} />
+            </div>
+
+            <div className="ops-rate-plans__grid ops-rate-plans__grid--3">
+              <OpsTextField label="Min nights" type="number" min={1} step={1} required value={form.minNights} onChange={(e) => updateField('minNights', e.target.value)} />
+              <OpsSelect label="Currency" value={form.currency} onChange={(e) => updateField('currency', e.target.value)}><option value="EUR">EUR</option></OpsSelect>
+              <OpsSelect label="Inventory" value={form.inventoryMode} onChange={(e) => updateField('inventoryMode', e.target.value)}>
+                <option value="shared">shared</option>
+                <option value="exclusive">exclusive</option>
+              </OpsSelect>
+            </div>
+
+            <OpsCheckbox label="Requires full payment" checked={form.requiresFullPayment === true} onChange={(e) => updateField('requiresFullPayment', e.target.checked)} />
+
+            <div className="ops-rate-plans__grid ops-rate-plans__grid--2">
+              <OpsTextField label="Cancellation policy code" required value={form.cancellationPolicyCode} onChange={(e) => updateField('cancellationPolicyCode', e.target.value)} />
+              <OpsTextField label="Policy version" type="number" min={1} step={1} required value={form.cancellationPolicyVersion} onChange={(e) => updateField('cancellationPolicyVersion', e.target.value)} />
+            </div>
+
+            <OpsTextarea label="Inclusions (one per line)" rows={4} value={form.inclusionsText} onChange={(e) => updateField('inclusionsText', e.target.value)} />
+
+            <section className="ops-rate-plans__accommodations" aria-labelledby="rate-plan-accommodations-title">
+              <OpsSurfaceHeader>
+                <OpsSurfaceTitle id="rate-plan-accommodations-title" as="h3">Accommodations</OpsSurfaceTitle>
+                {!readOnly ? <OpsButton variant="quiet" size="compact" onClick={addAccommodation}>Add row</OpsButton> : null}
+              </OpsSurfaceHeader>
+              {form.accommodations.map((row, index) => (
+                <OpsSurface as="div" variant="inset" className="ops-rate-plans__accommodation" key={`acc-${index}`}>
+                  <div className="ops-rate-plans__grid ops-rate-plans__grid--3">
+                    <OpsTextField label="Key (slug)" className="ops-rate-plans__mono" value={row.accommodationKey} onChange={(e) => updateAccommodation(index, 'accommodationKey', e.target.value)} />
+                    <OpsSelect label="Entity" value={row.entityType} onChange={(e) => updateAccommodation(index, 'entityType', e.target.value)}>
+                      {ENTITY_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
+                    </OpsSelect>
+                    <OpsSelect label="Pricing method" value={row.pricingMethod} onChange={(e) => updateAccommodation(index, 'pricingMethod', e.target.value)}>
+                      {PRICING_METHODS.filter((method) => seasonal ? method.startsWith('nightly') : method.startsWith('fixed')).map((method) => (
+                        <option key={method} value={method}>{method}</option>
+                      ))}
+                    </OpsSelect>
+                  </div>
+                  {seasonal ? (
+                    <div className="ops-rate-plans__grid ops-rate-plans__grid--3">
+                      <OpsTextField label="Nightly €" type="number" min={0} step="0.01" value={row.nightlyPerUnitAmount} onChange={(e) => updateAccommodation(index, 'nightlyPerUnitAmount', e.target.value)} />
+                      <OpsTextField label="Included guests" type="number" min={0} step={1} value={row.includedGuests} onChange={(e) => updateAccommodation(index, 'includedGuests', e.target.value)} />
+                      <OpsTextField label="Extra guest nightly €" type="number" min={0} step="0.01" value={row.additionalGuestNightlyAmount} onChange={(e) => updateAccommodation(index, 'additionalGuestNightlyAmount', e.target.value)} />
+                    </div>
+                  ) : (
+                    <div className="ops-rate-plans__grid ops-rate-plans__grid--2">
+                      <OpsTextField label="Fixed per unit €" type="number" min={0} step="0.01" value={row.fixedPerUnitAmount} onChange={(e) => updateAccommodation(index, 'fixedPerUnitAmount', e.target.value)} />
+                      <OpsTextField label="Adult package €" type="number" min={0} step="0.01" value={row.adultPackageAmount} onChange={(e) => updateAccommodation(index, 'adultPackageAmount', e.target.value)} />
+                      <OpsTextField label="Child package €" type="number" min={0} step="0.01" value={row.childPackageAmount} onChange={(e) => updateAccommodation(index, 'childPackageAmount', e.target.value)} />
+                      <OpsTextField label="Infant package €" type="number" min={0} step="0.01" value={row.infantPackageAmount} onChange={(e) => updateAccommodation(index, 'infantPackageAmount', e.target.value)} />
+                    </div>
+                  )}
+                  {!readOnly && form.accommodations.length > 1 ? (
+                    <OpsButton variant="quiet" size="compact" className="ops-rate-plans__remove" onClick={() => removeAccommodation(index)}>Remove row</OpsButton>
+                  ) : null}
+                </OpsSurface>
+              ))}
+            </section>
+          </fieldset>
+
+          {readOnly ? (
+            <p className="ops-rate-plans__note">Active and retired plans are read-only. Clone to create an editable next draft.</p>
+          ) : null}
+        </form>
+      </OpsSheet>
+
+      <OpsConfirmDialog
+        open={Boolean(confirm)}
+        title={confirm?.action === 'activate' ? 'Activate rate plan?' : 'Retire rate plan?'}
+        body={confirm ? `${confirm.plan.code}@v${confirm.plan.version} (revision ${confirm.plan.revision}). This uses the exact server revision and does not retry on conflict.` : ''}
+        confirmLabel="Confirm"
+        loading={busy}
+        onCancel={() => !busy && setConfirm(null)}
+        onConfirm={() => confirm && runLifecycle(confirm.action, confirm.plan)}
+        panelProps={{ 'data-testid': 'rate-plan-confirm' }}
+      />
+    </OpsPage>
   );
 }

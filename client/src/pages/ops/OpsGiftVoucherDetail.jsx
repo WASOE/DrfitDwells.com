@@ -11,6 +11,7 @@ import OpsBanner from '../../ops/primitives/OpsBanner';
 import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
 import OpsEmptyState from '../../ops/primitives/OpsEmptyState';
 import OpsInlineError from '../../ops/primitives/OpsInlineError';
+import OpsSurface, { OpsSurfaceTitle } from '../../ops/primitives/OpsSurface';
 import { opsCx } from '../../ops/primitives/opsCx';
 import './OpsGiftVoucherDetail.css';
 
@@ -150,8 +151,8 @@ export default function OpsGiftVoucherDetail() {
           }
         />
 
-        <section className="ops-gv-detail__section">
-          <h2 className="ops-gv-detail__section-title">Voucher</h2>
+        <OpsSurface variant="plain" className="ops-gv-detail__section">
+          <OpsSurfaceTitle className="ops-gv-detail__section-title">Voucher</OpsSurfaceTitle>
           <dl className="ops-gv-detail__facts">
             <Fact label="Code">{voucher.code || 'Pending'}</Fact>
             <Fact label="Expires">
@@ -160,10 +161,10 @@ export default function OpsGiftVoucherDetail() {
             <Fact label="Payment reference">{voucher.stripePaymentIntentId || '—'}</Fact>
             <Fact label="Attribution">{voucher.attribution?.referralCode || '—'}</Fact>
           </dl>
-        </section>
+        </OpsSurface>
 
-        <section className="ops-gv-detail__section">
-          <h2 className="ops-gv-detail__section-title">People</h2>
+        <OpsSurface variant="plain" className="ops-gv-detail__section">
+          <OpsSurfaceTitle className="ops-gv-detail__section-title">People</OpsSurfaceTitle>
           <dl className="ops-gv-detail__facts">
             <Fact label="Buyer">
               {voucher.buyerName || '—'} ({voucher.buyerEmail || '—'})
@@ -172,10 +173,10 @@ export default function OpsGiftVoucherDetail() {
               {voucher.recipientName || '—'} ({voucher.recipientEmail || '—'})
             </Fact>
           </dl>
-        </section>
+        </OpsSurface>
 
-        <section className="ops-gv-detail__section">
-          <h2 className="ops-gv-detail__section-title">Delivery</h2>
+        <OpsSurface variant="plain" className="ops-gv-detail__section">
+          <OpsSurfaceTitle className="ops-gv-detail__section-title">Delivery</OpsSurfaceTitle>
           <dl className="ops-gv-detail__facts">
             <Fact label="Delivery mode">{voucher.deliveryMode}</Fact>
             <Fact label="Delivery option">
@@ -211,10 +212,10 @@ export default function OpsGiftVoucherDetail() {
               <p>{voucher.deliveryAddress.country || ''}</p>
             </div>
           ) : null}
-        </section>
+        </OpsSurface>
 
-        <section className="ops-gv-detail__section">
-          <h2 className="ops-gv-detail__section-title">Value</h2>
+        <OpsSurface variant="plain" className="ops-gv-detail__section">
+          <OpsSurfaceTitle className="ops-gv-detail__section-title">Value</OpsSurfaceTitle>
           <p className="ops-gv-detail__fact-label">Balance</p>
           <div className="ops-gv-detail__balance-track">
             <div className="ops-gv-detail__balance-fill" style={{ '--ops-gv-balance': `${balancePct}%` }} />
@@ -223,10 +224,10 @@ export default function OpsGiftVoucherDetail() {
             {formatMoneyFromCents(voucher.balanceRemainingCents, voucher.currency)} /{' '}
             {formatMoneyFromCents(voucher.amountOriginalCents, voucher.currency)}
           </p>
-        </section>
+        </OpsSurface>
 
-        <section className="ops-gv-detail__section">
-          <h2 className="ops-gv-detail__section-title">Actions</h2>
+        <OpsSurface variant="plain" className="ops-gv-detail__section">
+          <OpsSurfaceTitle className="ops-gv-detail__section-title">Actions</OpsSurfaceTitle>
           {actionError ? <OpsInlineError>{actionError}</OpsInlineError> : null}
           <div className="ops-gv-detail__actions">
             <div className="ops-gv-detail__action">
@@ -396,11 +397,11 @@ export default function OpsGiftVoucherDetail() {
               </OpsButton>
             </div>
           </div>
-        </section>
+        </OpsSurface>
 
         <section className="ops-gv-detail__lifecycle">
-          <div className="ops-gv-detail__section">
-            <h2 className="ops-gv-detail__section-title">Event timeline</h2>
+          <OpsSurface as="div" variant="plain" className="ops-gv-detail__section">
+            <OpsSurfaceTitle className="ops-gv-detail__section-title">Event timeline</OpsSurfaceTitle>
             <div className="ops-gv-detail__timeline">
               {(data?.events || []).map((event) => (
                 <div key={event.giftVoucherEventId} className="ops-gv-detail__item">
@@ -422,11 +423,11 @@ export default function OpsGiftVoucherDetail() {
               ))}
               {(data?.events || []).length === 0 ? <p className="ops-gv-detail__muted">No events.</p> : null}
             </div>
-          </div>
+          </OpsSurface>
 
           <div className="ops-gv-detail__stack">
-            <section className="ops-gv-detail__section">
-              <h2 className="ops-gv-detail__section-title">Redemptions</h2>
+            <OpsSurface variant="plain" className="ops-gv-detail__section">
+              <OpsSurfaceTitle className="ops-gv-detail__section-title">Redemptions</OpsSurfaceTitle>
               {(data?.redemptions || []).map((row) => (
                 <div key={row.giftVoucherRedemptionId} className="ops-gv-detail__item">
                   <p className="ops-gv-detail__item-title ops-gv-detail__item-copy--numeric">
@@ -438,9 +439,9 @@ export default function OpsGiftVoucherDetail() {
               {(data?.redemptions || []).length === 0 ? (
                 <p className="ops-gv-detail__muted">No redemptions.</p>
               ) : null}
-            </section>
-            <section className="ops-gv-detail__section">
-              <h2 className="ops-gv-detail__section-title">Manual review items</h2>
+            </OpsSurface>
+            <OpsSurface variant="plain" className="ops-gv-detail__section">
+              <OpsSurfaceTitle className="ops-gv-detail__section-title">Manual review items</OpsSurfaceTitle>
               {(data?.manualReviewItems || []).map((item) => (
                 <div key={item.manualReviewItemId} className="ops-gv-detail__item">
                   <p className="ops-gv-detail__item-title">{item.category}</p>
@@ -453,7 +454,7 @@ export default function OpsGiftVoucherDetail() {
               {(data?.manualReviewItems || []).length === 0 ? (
                 <p className="ops-gv-detail__muted">No relevant manual review items.</p>
               ) : null}
-            </section>
+            </OpsSurface>
           </div>
         </section>
       </div>

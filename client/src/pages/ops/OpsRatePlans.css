@@ -1,0 +1,126 @@
+/* Rate-plan domain composition. Chrome and controls belong to Ops primitives. */
+.ops-rate-plans {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-16);
+  min-width: 0;
+}
+
+.ops-rate-plans__filter-hint,
+.ops-rate-plans__note,
+.ops-rate-plans__muted,
+.ops-rate-plans__lifecycle,
+.ops-rate-plans__internal-name {
+  margin: 0;
+  font-size: var(--ops-size-meta);
+  line-height: var(--ops-lh-meta);
+  color: var(--ops-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.ops-rate-plans__filter-hint {
+  margin-top: calc(-1 * var(--ops-space-8));
+}
+
+.ops-rate-plans__table .ops-table {
+  min-width: 1080px;
+}
+
+.ops-rate-plans__identity {
+  font-weight: 600;
+  color: var(--ops-text);
+}
+
+.ops-rate-plans__identity span {
+  color: var(--ops-text-muted);
+}
+
+.ops-rate-plans__internal-name {
+  max-width: 12rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ops-rate-plans__mono,
+.ops-rate-plans__mono .ops-field-control {
+  font-family: var(--ops-font-mono);
+}
+
+.ops-rate-plans__nowrap {
+  white-space: nowrap;
+}
+
+.ops-rate-plans__pricing {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: var(--ops-size-meta);
+  line-height: var(--ops-lh-meta);
+  color: var(--ops-text-secondary);
+}
+
+.ops-rate-plans__lifecycle-cell {
+  max-width: 15rem;
+}
+
+.ops-rate-plans__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ops-space-4);
+  white-space: nowrap;
+}
+
+.ops-rate-plans__form,
+.ops-rate-plans__fieldset,
+.ops-rate-plans__accommodations {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-16);
+  min-width: 0;
+}
+
+.ops-rate-plans__fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ops-rate-plans__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--ops-space-12);
+  min-width: 0;
+}
+
+.ops-rate-plans__readout {
+  margin: 0;
+  font-size: var(--ops-size-body);
+  line-height: var(--ops-lh-body);
+  color: var(--ops-text-secondary);
+}
+
+.ops-rate-plans__readout strong {
+  color: var(--ops-text);
+}
+
+.ops-rate-plans__accommodation {
+  gap: var(--ops-space-12);
+}
+
+.ops-rate-plans__remove {
+  align-self: flex-start;
+  color: var(--ops-danger);
+}
+
+@media (min-width: 520px) {
+  .ops-rate-plans__grid--2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ops-rate-plans__grid--3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

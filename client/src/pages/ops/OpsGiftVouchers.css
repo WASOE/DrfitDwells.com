@@ -6,42 +6,6 @@
   min-width: 0;
 }
 
-.ops-gv-toolbar {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ops-space-8);
-  min-width: 0;
-}
-
-.ops-gv-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ops-space-12);
-  align-items: flex-end;
-  min-width: 0;
-}
-
-.ops-gv-filters__search {
-  flex: 1 1 100%;
-  min-width: min(100%, 240px);
-}
-
-.ops-gv-filters__select {
-  flex: 1 1 180px;
-  min-width: min(100%, 180px);
-}
-
-@media (min-width: 1024px) {
-  .ops-gv-filters__search {
-    flex: 2 1 280px;
-    min-width: min(100%, 280px);
-  }
-}
-
-.ops-gv-toolbar__reset {
-  align-self: flex-end;
-}
-
 .ops-gv-collection {
   display: flex;
   flex-direction: column;

@@ -14,42 +14,6 @@
   }
 }
 
-.ops-insights__surface {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ops-space-16);
-  min-width: 0;
-  padding: var(--ops-space-16);
-  border: 1px solid var(--ops-border);
-  border-radius: var(--ops-radius-surface);
-  background: var(--ops-surface);
-  box-shadow: var(--ops-shadow-surface);
-}
-
-@media (min-width: 768px) {
-  .ops-insights__surface {
-    padding: var(--ops-space-20);
-  }
-}
-
-.ops-insights__surface-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--ops-space-8);
-  min-width: 0;
-}
-
-.ops-insights__surface-title {
-  margin: 0;
-  font-size: var(--ops-size-section);
-  line-height: var(--ops-lh-section);
-  font-weight: 600;
-  letter-spacing: var(--ops-tracking-snug);
-  color: var(--ops-text);
-}
-
 .ops-insights__surface-meta,
 .ops-insights__note,
 .ops-insights__empty {

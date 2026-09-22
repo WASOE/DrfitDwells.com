@@ -15,6 +15,8 @@ import OpsInlineError from '../../ops/primitives/OpsInlineError';
 import OpsFilterBar from '../../ops/primitives/OpsFilterBar';
 import OpsModal from '../../ops/primitives/OpsModal';
 import OpsMetric, { OpsMetricGroup } from '../../ops/primitives/OpsMetric';
+import OpsSurface, { OpsSurfaceHeader, OpsSurfaceTitle } from '../../ops/primitives/OpsSurface';
+import OpsRecord from '../../ops/primitives/OpsRecord';
 import OpsTable, {
   OpsTableBody,
   OpsTableCell,
@@ -755,7 +757,7 @@ export default function OpsCreatorPartners() {
             {rows.map((r) => {
               const s = partnerListStats(r, statsById);
               return (
-                <article key={r._id} className="ops-creator-partners-row">
+                <OpsRecord key={r._id} density="roomy" className="ops-creator-partners-row">
                   <div className="ops-creator-partners-row__top">
                     <h2 className="ops-creator-partners-row__name">{r.name}</h2>
                     <OpsStatus domain="partner" value={r.status} />
@@ -788,7 +790,7 @@ export default function OpsCreatorPartners() {
                     onCopy={copyReferralLink}
                     onPatchStatus={patchStatus}
                   />
-                </article>
+                </OpsRecord>
               );
             })}
           </div>
@@ -850,8 +852,8 @@ export default function OpsCreatorPartners() {
 
               {detailTab === 'overview' ? (
                 <>
-                  <section className="ops-creator-partners-section">
-                    <h3 className="ops-creator-partners-section__title">Performance summary</h3>
+                  <OpsSurface className="ops-creator-partners-section">
+                    <OpsSurfaceTitle as="h3" className="ops-creator-partners-section__title">Performance summary</OpsSurfaceTitle>
                     <OpsMetricGroup className="ops-creator-partners-overview-metrics">
                       <OpsMetric label="Visits" value={detailStats?.visits ?? 0} />
                       <OpsMetric label="Unique visitors" value={detailStats?.uniqueVisitors ?? 0} />
@@ -900,11 +902,11 @@ export default function OpsCreatorPartners() {
                         )}
                       />
                     </OpsMetricGroup>
-                  </section>
+                  </OpsSurface>
 
                   <div className="ops-creator-partners-split">
-                    <section className="ops-creator-partners-section">
-                      <h3 className="ops-creator-partners-section__title">Tracking details</h3>
+                    <OpsSurface className="ops-creator-partners-section">
+                      <OpsSurfaceTitle as="h3" className="ops-creator-partners-section__title">Tracking details</OpsSurfaceTitle>
                       <dl className="ops-creator-partners-kv">
                         <div className="ops-creator-partners-kv__row">
                           <dt className="ops-creator-partners-kv__label">Referral code:</dt>
@@ -923,9 +925,9 @@ export default function OpsCreatorPartners() {
                           <dd>{formatPercentRatio(detailStats?.conversionRate ?? 0)}</dd>
                         </div>
                       </dl>
-                    </section>
-                    <section className="ops-creator-partners-section">
-                      <h3 className="ops-creator-partners-section__title">Recent activity</h3>
+                    </OpsSurface>
+                    <OpsSurface className="ops-creator-partners-section">
+                      <OpsSurfaceTitle as="h3" className="ops-creator-partners-section__title">Recent activity</OpsSurfaceTitle>
                       <dl className="ops-creator-partners-kv">
                         <div className="ops-creator-partners-kv__row">
                           <dt className="ops-creator-partners-kv__label">Last visit:</dt>
@@ -940,11 +942,11 @@ export default function OpsCreatorPartners() {
                           <dd>{detailStats?.cancelledRefundedVoidBookings ?? 0}</dd>
                         </div>
                       </dl>
-                    </section>
+                    </OpsSurface>
                   </div>
 
-                  <section className="ops-creator-partners-section">
-                    <h3 className="ops-creator-partners-section__title">Content agreement / notes</h3>
+                  <OpsSurface className="ops-creator-partners-section">
+                    <OpsSurfaceTitle as="h3" className="ops-creator-partners-section__title">Content agreement / notes</OpsSurfaceTitle>
                     <div className="ops-creator-partners-kv-grid">
                       <div>
                         <span className="ops-creator-partners-kv__label">Comp stay offered:</span>{' '}
@@ -966,13 +968,13 @@ export default function OpsCreatorPartners() {
                         <span className="ops-creator-partners-kv__label">Notes:</span> {detailRow.notes || '—'}
                       </div>
                     </div>
-                  </section>
+                  </OpsSurface>
                 </>
               ) : null}
 
               {detailTab === 'bookings' ? (
-                <section className="ops-creator-partners-section">
-                  <h3 className="ops-creator-partners-section__title">Bookings</h3>
+                <OpsSurface className="ops-creator-partners-section">
+                  <OpsSurfaceTitle as="h3" className="ops-creator-partners-section__title">Bookings</OpsSurfaceTitle>
                   <div className="ops-creator-partners-table-wrap">
                     <OpsTable caption="Attributed bookings">
                       <OpsTableHead>
@@ -1054,13 +1056,13 @@ export default function OpsCreatorPartners() {
                       </OpsTableBody>
                     </OpsTable>
                   </div>
-                </section>
+                </OpsSurface>
               ) : null}
 
               {detailTab === 'commissions' ? (
-                <section className="ops-creator-partners-section">
-                  <div className="ops-creator-partners-section__head">
-                    <h3 className="ops-creator-partners-section__title">Commission ledger</h3>
+                <OpsSurface className="ops-creator-partners-section">
+                  <OpsSurfaceHeader className="ops-creator-partners-section__head">
+                    <OpsSurfaceTitle as="h3" className="ops-creator-partners-section__title">Commission ledger</OpsSurfaceTitle>
                     <div className="ops-creator-partners-commission-totals">
                       <span>
                         Pending eligible:{' '}
@@ -1089,7 +1091,7 @@ export default function OpsCreatorPartners() {
                         Recalculate
                       </OpsButton>
                     </div>
-                  </div>
+                  </OpsSurfaceHeader>
                   <OpsBanner
                     tone="warning"
                     body="Manual workflow only. These actions do not trigger Stripe or real payouts."
@@ -1231,13 +1233,13 @@ export default function OpsCreatorPartners() {
                       </OpsTableBody>
                     </OpsTable>
                   </div>
-                </section>
+                </OpsSurface>
               ) : null}
 
               {detailTab === 'profile' ? (
-                <section className="ops-creator-partners-section">
-                  <div className="ops-creator-partners-section__head">
-                    <h3 className="ops-creator-partners-section__title">Creator profile</h3>
+                <OpsSurface className="ops-creator-partners-section">
+                  <OpsSurfaceHeader className="ops-creator-partners-section__head">
+                    <OpsSurfaceTitle as="h3" className="ops-creator-partners-section__title">Creator profile</OpsSurfaceTitle>
                     <OpsButton
                       variant="secondary"
                       size="compact"
@@ -1248,7 +1250,7 @@ export default function OpsCreatorPartners() {
                     >
                       Edit creator
                     </OpsButton>
-                  </div>
+                  </OpsSurfaceHeader>
                   <div className="ops-creator-partners-profile-grid">
                     <div>
                       <span className="ops-creator-partners-kv__label">Name:</span> {detailRow.name}
@@ -1310,7 +1312,7 @@ export default function OpsCreatorPartners() {
                       </a>
                     </div>
                   ) : null}
-                </section>
+                </OpsSurface>
               ) : null}
             </>
           ) : null}

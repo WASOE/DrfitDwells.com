@@ -39,6 +39,18 @@ describe('OpsModal', () => {
     expect(dialog).toHaveAttribute('aria-labelledby', screen.getByText('Edit stay').id);
   });
 
+  it('uses a caller-provided title id when a workflow owns that contract', () => {
+    render(
+      <OpsModal open onClose={() => {}} title="Preview" titleId="preview-title">
+        Body
+      </OpsModal>
+    );
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveAttribute('aria-labelledby', 'preview-title');
+    expect(screen.getByRole('heading', { name: 'Preview' })).toHaveAttribute('id', 'preview-title');
+  });
+
   it('connects description through aria-describedby', () => {
     renderInOpsRoot(
       <OpsModal open title="Edit stay" description="Update dates" onClose={vi.fn()} />
@@ -181,6 +193,19 @@ describe('OpsModal', () => {
     expect(host.parentElement).not.toBe(document.body);
     expect(document.body.querySelector(':scope > .ops-overlay-host')).toBeNull();
     expect(host.querySelector('[data-ops-overlay="modal"]')).toBeTruthy();
+  });
+
+  it('exposes canonical large and mobile-sheet variants without changing dialog semantics', () => {
+    renderInOpsRoot(
+      <OpsModal open title="Move unit" onClose={vi.fn()} size="lg" mobileSheet>
+        Body
+      </OpsModal>
+    );
+    expect(screen.getByRole('dialog', { name: 'Move unit' })).toHaveClass(
+      'ops-modal--lg',
+      'ops-modal--sheet-mobile'
+    );
+    expect(document.querySelector('.ops-overlay--modal-sheet-mobile')).toBeInTheDocument();
   });
 });
 

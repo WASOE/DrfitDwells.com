@@ -1,0 +1,115 @@
+.ops-move-unit-modal .ops-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-16);
+}
+
+.ops-move-unit__current {
+  margin: 0;
+  color: var(--ops-text-secondary);
+  font-size: var(--ops-size-body);
+}
+
+.ops-move-unit__current strong,
+.ops-move-unit__candidate-head strong {
+  color: var(--ops-text);
+  font-weight: 600;
+}
+
+.ops-move-unit__fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ops-move-unit__fieldset legend {
+  margin-bottom: var(--ops-space-8);
+  color: var(--ops-text-muted);
+  font-size: var(--ops-size-meta);
+  font-weight: 600;
+}
+
+.ops-move-unit__candidates,
+.ops-move-unit__conflicts {
+  display: grid;
+  gap: var(--ops-space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ops-move-unit__candidate {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ops-space-12);
+  padding: var(--ops-space-12);
+  border: 1px solid var(--ops-border);
+  background: var(--ops-surface);
+  cursor: pointer;
+}
+
+.ops-move-unit__candidate:hover {
+  background: var(--ops-surface-subtle);
+}
+
+.ops-move-unit__candidate--selected {
+  border-color: var(--ops-accent);
+  background: var(--ops-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--ops-accent);
+}
+
+.ops-move-unit__candidate--disabled {
+  background: var(--ops-surface-subtle);
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.ops-move-unit__candidate input {
+  margin-top: 3px;
+}
+
+.ops-move-unit__candidate-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ops-move-unit__candidate-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ops-space-8);
+}
+
+.ops-move-unit__conflicts {
+  gap: 2px;
+  margin-top: var(--ops-space-4);
+  font-size: var(--ops-size-meta);
+  line-height: var(--ops-lh-small);
+}
+
+.ops-move-unit__conflicts--danger {
+  color: var(--ops-danger);
+}
+
+.ops-move-unit__conflicts--warning {
+  color: var(--ops-warning);
+}
+
+.ops-move-unit__ack {
+  padding: var(--ops-space-12);
+  border: 1px solid var(--ops-warning);
+  background: var(--ops-warning-soft);
+}
+
+@media (min-width: 768px) {
+  .ops-move-unit__candidate {
+    padding-inline: 0;
+    border-inline: 0;
+    border-bottom: 0;
+  }
+
+  .ops-move-unit__candidate:last-child {
+    border-bottom: 1px solid var(--ops-border);
+  }
+}

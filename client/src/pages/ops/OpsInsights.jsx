@@ -15,6 +15,7 @@ import OpsButton from '../../ops/primitives/OpsButton';
 import OpsBanner from '../../ops/primitives/OpsBanner';
 import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
 import OpsMetric, { OpsMetricGroup } from '../../ops/primitives/OpsMetric';
+import OpsSurface, { OpsSurfaceHeader, OpsSurfaceTitle } from '../../ops/primitives/OpsSurface';
 import OpsTable, {
   OpsTableBody,
   OpsTableCell,
@@ -250,7 +251,7 @@ export default function OpsInsights() {
 
       {error ? <OpsBanner tone="danger" body={error} /> : null}
 
-      <section className="ops-insights__surface">
+      <OpsSurface className="ops-insights__surface">
         <div className="ops-insights__kind-row" data-testid="insights-property-kind">
           {PROPERTY_KIND_OPTIONS.map((option) => (
             <OpsButton
@@ -327,14 +328,14 @@ export default function OpsInsights() {
             ))}
           </OpsSelect>
         </OpsFilterBar>
-      </section>
+      </OpsSurface>
 
       {loading ? (
         <OpsLoadingState label="Loading insights..." data-testid="insights-loading" />
       ) : error && !summary ? null : (
         <>
           {totalIssues > 0 ? (
-            <section className="ops-insights__surface" data-testid="insights-data-quality">
+            <OpsSurface className="ops-insights__surface" data-testid="insights-data-quality">
               <OpsBanner tone="warning" title="Data quality attention" />
               <ul className="ops-insights__issue-list">
                 {issues
@@ -346,7 +347,7 @@ export default function OpsInsights() {
                     </li>
                   ))}
               </ul>
-            </section>
+            </OpsSurface>
           ) : null}
 
           <OpsMetricGroup className="ops-insights__metric-group ops-metric-group--display" data-testid="insights-metrics">
@@ -371,10 +372,12 @@ export default function OpsInsights() {
             />
           </OpsMetricGroup>
 
-          <section className="ops-insights__surface" data-testid="insights-reconciliation">
-            <div className="ops-insights__surface-head">
-              <h3 className="ops-insights__surface-title">Cash reconciliation (read-only)</h3>
-            </div>
+          <OpsSurface className="ops-insights__surface" data-testid="insights-reconciliation">
+            <OpsSurfaceHeader className="ops-insights__surface-head">
+              <OpsSurfaceTitle as="h3" className="ops-insights__surface-title">
+                Cash reconciliation (read-only)
+              </OpsSurfaceTitle>
+            </OpsSurfaceHeader>
             <p className="ops-insights__note">
               Additive comparison of commercial value, booking payment snapshot, and linked Stripe
               Payment ledger. Not a full accounting P&amp;L.
@@ -471,10 +474,10 @@ export default function OpsInsights() {
             ) : (
               <p className="ops-insights__empty">Reconciliation unavailable.</p>
             )}
-          </section>
+          </OpsSurface>
 
-          <section className="ops-insights__surface" data-testid="insights-channels">
-            <h3 className="ops-insights__surface-title">Channel breakdown</h3>
+          <OpsSurface className="ops-insights__surface" data-testid="insights-channels">
+            <OpsSurfaceTitle as="h3" className="ops-insights__surface-title">Channel breakdown</OpsSurfaceTitle>
             <OpsTable caption="Channel breakdown">
               <OpsTableHead>
                 <OpsTableRow>
@@ -495,11 +498,11 @@ export default function OpsInsights() {
                 ))}
               </OpsTableBody>
             </OpsTable>
-          </section>
+          </OpsSurface>
 
-          <section className="ops-insights__surface" data-testid="insights-bookings">
+          <OpsSurface className="ops-insights__surface" data-testid="insights-bookings">
             <div className="ops-insights__table-tools">
-              <h3 className="ops-insights__surface-title">Bookings / stays</h3>
+              <OpsSurfaceTitle as="h3" className="ops-insights__surface-title">Bookings / stays</OpsSurfaceTitle>
               <div className="ops-insights__table-filters">
                 <OpsSelect
                   label="Channel"
@@ -609,10 +612,10 @@ export default function OpsInsights() {
                 ) : null}
               </>
             )}
-          </section>
+          </OpsSurface>
 
-          <section className="ops-insights__surface" data-testid="insights-inventory-health">
-            <h3 className="ops-insights__surface-title">Inventory health</h3>
+          <OpsSurface className="ops-insights__surface" data-testid="insights-inventory-health">
+            <OpsSurfaceTitle as="h3" className="ops-insights__surface-title">Inventory health</OpsSurfaceTitle>
             <div className="ops-insights__health-grid">
               <div className="ops-insights__health-item">
                 <p className="ops-insights__health-label">Cabins with propertyKind</p>
@@ -645,7 +648,7 @@ export default function OpsInsights() {
             {summary?.provenance?.paymentSnapshotNote ? (
               <p className="ops-insights__note">{summary.provenance.paymentSnapshotNote}</p>
             ) : null}
-          </section>
+          </OpsSurface>
         </>
       )}
       </div>

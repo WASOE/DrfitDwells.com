@@ -192,9 +192,19 @@ const OPS_STATUS_ENTRIES = Object.freeze([
   // Promo / cabin
   defineStatus({ key: 'promo.active', en: 'Active', family: 'success', loudness: 'quiet' }),
   defineStatus({ key: 'promo.inactive', en: 'Inactive', family: 'neutral', loudness: 'quiet' }),
+  defineStatus({ key: 'rate_plan.draft', en: 'Draft', family: 'neutral', loudness: 'quiet' }),
+  defineStatus({ key: 'rate_plan.active', en: 'Active', family: 'success', loudness: 'quiet' }),
+  defineStatus({ key: 'rate_plan.retired', en: 'Retired', family: 'neutral', loudness: 'quiet' }),
   defineStatus({ key: 'cabin.active', en: 'Active', family: 'neutral', loudness: 'quiet' }),
   defineStatus({ key: 'cabin.inactive', en: 'Inactive', family: 'neutral', loudness: 'quiet' }),
   defineStatus({ key: 'cabin.blocked', en: 'Blocked units', family: 'warning', loudness: 'normal' }),
+  defineStatus({ key: 'move_unit.available', en: 'Available', family: 'success', loudness: 'quiet' }),
+  defineStatus({ key: 'move_unit.external_hold_warning', en: 'External hold', family: 'warning', loudness: 'normal' }),
+  defineStatus({ key: 'move_unit.hard_blocked', en: 'Blocked', family: 'danger', loudness: 'attention' }),
+  defineStatus({ key: 'move_unit.current', en: 'Current', family: 'neutral', loudness: 'quiet' }),
+  defineStatus({ key: 'move_unit.inactive', en: 'Inactive', family: 'neutral', loudness: 'quiet' }),
+  defineStatus({ key: 'unit.active', en: 'Active', family: 'success', loudness: 'quiet' }),
+  defineStatus({ key: 'unit.inactive', en: 'Inactive', family: 'neutral', loudness: 'quiet' }),
 
   // Manual review / readiness
   defineStatus({ key: 'manual_review.open', en: 'Open', family: 'warning', loudness: 'normal' }),

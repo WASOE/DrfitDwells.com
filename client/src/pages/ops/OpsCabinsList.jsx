@@ -15,6 +15,8 @@ import OpsEmptyState from '../../ops/primitives/OpsEmptyState';
 import OpsInlineError from '../../ops/primitives/OpsInlineError';
 import OpsPagination from '../../ops/primitives/OpsPagination';
 import OpsModal from '../../ops/primitives/OpsModal';
+import OpsRecord from '../../ops/primitives/OpsRecord';
+import OpsFilterBar from '../../ops/primitives/OpsFilterBar';
 import './OpsCabinsList.css';
 
 const EMPTY_CREATE_FORM = {
@@ -41,7 +43,7 @@ function CabinRow({ cabin }) {
   const blockedUnits = Number(op.blockedUnitsCount) || 0;
 
   return (
-    <Link className="ops-cabins-list__row" to={listHref(cabin)}>
+    <OpsRecord as={Link} className="ops-cabins-list__row" to={listHref(cabin)}>
       <div className="ops-cabins-list__thumb">
         <CabinThumb cabin={cabin} />
       </div>
@@ -73,7 +75,7 @@ function CabinRow({ cabin }) {
           <p className="ops-cabins-list__fact">{op.pricePerNight} / night</p>
         ) : null}
       </div>
-    </Link>
+    </OpsRecord>
   );
 }
 
@@ -208,19 +210,25 @@ export default function OpsCabinsList() {
 
         {error ? <OpsBanner tone="danger" body={error} /> : null}
 
-        <form className="ops-cabins-list__search" onSubmit={onSearchSubmit}>
+        <OpsFilterBar
+          as="form"
+          aria-label="Cabin search"
+          onSubmit={onSearchSubmit}
+          footer={
+            <OpsButton type="submit" variant="secondary">
+              Search
+            </OpsButton>
+          }
+        >
           <OpsTextField
-            className="ops-cabins-list__search-field"
+            className="ops-filter-bar__search"
             label="Search"
             type="search"
             value={searchDraft}
             onChange={(e) => setSearchDraft(e.target.value)}
             placeholder="Search name, location, slug…"
           />
-          <OpsButton className="ops-cabins-list__search-action" type="submit" variant="secondary">
-            Search
-          </OpsButton>
-        </form>
+        </OpsFilterBar>
 
         {firstLoad ? <OpsLoadingState label="Loading cabins" /> : null}
 

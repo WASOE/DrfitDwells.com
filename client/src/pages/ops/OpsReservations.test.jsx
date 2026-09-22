@@ -36,7 +36,7 @@ const adminSession = {
   actorId: 'admin-1',
   role: 'admin',
   modules: ['*'],
-  actions: [],
+  actions: ['ops.reservation.manual_create'],
   defaultRoute: '/ops',
   locale: 'en'
 };
@@ -119,10 +119,10 @@ function cabinsPayload(items) {
   return { data: { data: { items } } };
 }
 
-function renderPage(initialPath = '/ops/reservations') {
+function renderPage(initialPath = '/ops/reservations', session = adminSession) {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
-      <OpsSessionProvider session={adminSession}>
+      <OpsSessionProvider session={session}>
         <SearchProbe />
         <Routes>
           <Route path="/ops/reservations" element={<OpsReservations />} />
@@ -532,6 +532,21 @@ describe('OpsReservations collection migration', () => {
     });
     expect(screen.getByTestId('legacy-reservation-detail')).toHaveTextContent('new-res-1');
     expect(screen.getByTestId('detail-state')).toHaveTextContent('none');
+  });
+
+  it('opens the existing create workflow from the Dashboard deep link', async () => {
+    renderPage('/ops/reservations?create=1');
+    expect(await screen.findByRole('dialog', { name: 'Manual reservation' })).toBeInTheDocument();
+    expect(screen.getByTestId('reservations-search')).toHaveTextContent('create=1');
+  });
+
+  it('does not expose manual creation when the session lacks the action', async () => {
+    renderPage('/ops/reservations?create=1', { ...adminSession, role: 'operator', actions: [] });
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 1, name: 'Reservations' })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('button', { name: 'Create reservation' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Manual reservation' })).not.toBeInTheDocument();
   });
 
   it('keeps the create modal open on failure and shows a 403 message locally', async () => {

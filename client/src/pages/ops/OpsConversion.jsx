@@ -16,6 +16,7 @@ import OpsTextField from '../../ops/primitives/OpsTextField';
 import OpsButton from '../../ops/primitives/OpsButton';
 import OpsBanner from '../../ops/primitives/OpsBanner';
 import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
+import OpsSurface, { OpsSurfaceTitle } from '../../ops/primitives/OpsSurface';
 import OpsTable, {
   OpsTableBody,
   OpsTableCell,
@@ -153,7 +154,7 @@ export default function OpsConversion() {
 
         {error ? <OpsBanner tone="danger" body={error} /> : null}
 
-        <section className="ops-conversion__surface">
+        <OpsSurface className="ops-conversion__surface">
           <div className="ops-conversion__kind-row" data-testid="conversion-property-kind">
             {PROPERTY_KIND_OPTIONS.map((option) => (
               <OpsButton
@@ -210,14 +211,14 @@ export default function OpsConversion() {
             Default range is the current month. Maximum range is {MAX_CONVERSION_RANGE_DAYS} days.
             Unit filtering is not supported on conversion.
           </p>
-        </section>
+        </OpsSurface>
 
         {loading ? (
           <OpsLoadingState label="Loading conversion summary..." data-testid="conversion-loading" />
         ) : error && !summary ? null : (
           <>
-            <section className="ops-conversion__surface" data-testid="conversion-funnel-steps">
-              <h3 className="ops-conversion__surface-title">Zone funnel steps</h3>
+            <OpsSurface className="ops-conversion__surface" data-testid="conversion-funnel-steps">
+              <OpsSurfaceTitle as="h3" className="ops-conversion__surface-title">Zone funnel steps</OpsSurfaceTitle>
               <OpsTable>
                 <OpsTableHead>
                   <OpsTableRow>
@@ -240,10 +241,12 @@ export default function OpsConversion() {
                   ))}
                 </OpsTableBody>
               </OpsTable>
-            </section>
+            </OpsSurface>
 
-            <section className="ops-conversion__surface" data-testid="conversion-dropoff">
-              <h3 className="ops-conversion__surface-title">Drop-off (session-sequential)</h3>
+            <OpsSurface className="ops-conversion__surface" data-testid="conversion-dropoff">
+              <OpsSurfaceTitle as="h3" className="ops-conversion__surface-title">
+                Drop-off (session-sequential)
+              </OpsSurfaceTitle>
               <OpsTable>
                 <OpsTableHead>
                   <OpsTableRow>
@@ -266,12 +269,12 @@ export default function OpsConversion() {
                   ))}
                 </OpsTableBody>
               </OpsTable>
-            </section>
+            </OpsSurface>
 
-            <section className="ops-conversion__surface" data-testid="conversion-search-results">
-              <h3 className="ops-conversion__surface-title">
+            <OpsSurface className="ops-conversion__surface" data-testid="conversion-search-results">
+              <OpsSurfaceTitle as="h3" className="ops-conversion__surface-title">
                 Supplementary: search results (site-wide)
-              </h3>
+              </OpsSurfaceTitle>
               <p className="ops-conversion__body">
                 Site-wide sessions: {searchResults?.sessionCount ?? 0} · Events:{' '}
                 {searchResults?.eventCount ?? 0}
@@ -279,10 +282,12 @@ export default function OpsConversion() {
               {searchResults?.note ? (
                 <p className="ops-conversion__note">{searchResults.note}</p>
               ) : null}
-            </section>
+            </OpsSurface>
 
-            <section className="ops-conversion__surface" data-testid="conversion-quote-failed">
-              <h3 className="ops-conversion__surface-title">Supplementary: quote failures</h3>
+            <OpsSurface className="ops-conversion__surface" data-testid="conversion-quote-failed">
+              <OpsSurfaceTitle as="h3" className="ops-conversion__surface-title">
+                Supplementary: quote failures
+              </OpsSurfaceTitle>
               <p className="ops-conversion__body">
                 Failed quotes: {quoteFailed?.eventCount ?? 0} · Orphan failures:{' '}
                 {quoteFailed?.orphanEventCount ?? 0}
@@ -296,10 +301,12 @@ export default function OpsConversion() {
                   ))}
                 </ul>
               ) : null}
-            </section>
+            </OpsSurface>
 
-            <section className="ops-conversion__surface" data-testid="conversion-saved-quotes">
-              <h3 className="ops-conversion__surface-title">Supplementary: saved quotes</h3>
+            <OpsSurface className="ops-conversion__surface" data-testid="conversion-saved-quotes">
+              <OpsSurfaceTitle as="h3" className="ops-conversion__surface-title">
+                Supplementary: saved quotes
+              </OpsSurfaceTitle>
               <p className="ops-conversion__body">
                 Valid: {savedQuotes?.savedValidQuotes ?? 0} · Checkout started:{' '}
                 {savedQuotes?.checkoutStartedSavedQuotes ?? 0} · Converted:{' '}
@@ -310,7 +317,7 @@ export default function OpsConversion() {
               {savedQuotes?.note ? (
                 <p className="ops-conversion__note">{savedQuotes.note}</p>
               ) : null}
-            </section>
+            </OpsSurface>
 
             <section className="ops-conversion__provenance" data-testid="conversion-provenance">
               {provenance.funnelModelNote ? <p>{provenance.funnelModelNote}</p> : null}

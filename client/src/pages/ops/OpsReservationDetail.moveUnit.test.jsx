@@ -540,8 +540,8 @@ describe('MoveUnitDialog behavior', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Move unit' })).toBeTruthy());
   });
 
-  it('uses bottom-sheet friendly layout classes (narrow viewport semantics)', async () => {
-    const { container } = render(
+  it('uses the canonical mobile-sheet modal contract', async () => {
+    render(
       <MoveUnitDialog
         reservationId="507f1f77bcf86cd799439011"
         sourceUnitLabel="A2"
@@ -551,8 +551,8 @@ describe('MoveUnitDialog behavior', () => {
       />
     );
     await waitFor(() => expect(screen.getByText('Move Unit')).toBeTruthy());
-    expect(container.querySelector('.items-end')).toBeTruthy();
-    expect(container.querySelector('.max-h-\\[90vh\\], [class*="max-h-"]')).toBeTruthy();
+    expect(document.querySelector('.ops-overlay--modal-sheet-mobile')).toBeTruthy();
+    expect(screen.getByRole('dialog').classList.contains('ops-modal--sheet-mobile')).toBe(true);
     expect(screen.queryByRole('prompt')).toBeNull();
   });
 

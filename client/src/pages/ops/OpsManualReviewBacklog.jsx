@@ -8,6 +8,7 @@ import OpsStatus from '../../ops/primitives/OpsStatus';
 import OpsBanner from '../../ops/primitives/OpsBanner';
 import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
 import OpsEmptyState from '../../ops/primitives/OpsEmptyState';
+import OpsSurface, { OpsSurfaceHeader, OpsSurfaceTitle } from '../../ops/primitives/OpsSurface';
 import './OpsManualReviewBacklog.css';
 
 function isMongoObjectIdString(value) {
@@ -87,12 +88,12 @@ export default function OpsManualReviewBacklog() {
       ) : items.length === 0 ? (
         <OpsEmptyState title="Nothing to review right now." />
       ) : (
-        <section className="ops-mr-surface" aria-labelledby="ops-mr-backlog">
-          <div className="ops-mr-surface__head">
-            <h2 id="ops-mr-backlog" className="ops-mr-surface__title">
+        <OpsSurface className="ops-mr-surface" aria-labelledby="ops-mr-backlog">
+          <OpsSurfaceHeader className="ops-mr-surface__head">
+            <OpsSurfaceTitle id="ops-mr-backlog" className="ops-mr-surface__title">
               Open backlog
-            </h2>
-          </div>
+            </OpsSurfaceTitle>
+          </OpsSurfaceHeader>
           <div className="ops-mr-list" role="list">
             {items.map((item) => {
               const reservationHref = resolveCommsReservationHref(item);
@@ -144,7 +145,7 @@ export default function OpsManualReviewBacklog() {
               );
             })}
           </div>
-        </section>
+        </OpsSurface>
       )}
     </OpsPage>
   );

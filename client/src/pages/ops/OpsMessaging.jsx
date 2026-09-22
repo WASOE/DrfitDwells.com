@@ -10,6 +10,7 @@ import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
 import OpsInlineError from '../../ops/primitives/OpsInlineError';
 import OpsButton from '../../ops/primitives/OpsButton';
 import OpsConfirmDialog from '../../ops/primitives/OpsConfirmDialog';
+import OpsSurface, { OpsSurfaceHeader, OpsSurfaceTitle } from '../../ops/primitives/OpsSurface';
 import OpsTable, {
   OpsTableBody,
   OpsTableCell,
@@ -248,12 +249,12 @@ export default function OpsMessaging() {
 
         {showData ? (
           <>
-            <section className="ops-messaging-surface" aria-labelledby="ops-messaging-flags-title">
-              <div className="ops-messaging-surface__head">
-                <h2 id="ops-messaging-flags-title" className="ops-messaging-surface__title">
+            <OpsSurface className="ops-messaging-surface" aria-labelledby="ops-messaging-flags-title">
+              <OpsSurfaceHeader className="ops-messaging-surface__head">
+                <OpsSurfaceTitle id="ops-messaging-flags-title" className="ops-messaging-surface__title">
                   System flags
-                </h2>
-              </div>
+                </OpsSurfaceTitle>
+              </OpsSurfaceHeader>
               <p className="ops-messaging-note">
                 Values reflect server environment booleans only (no secrets). Shadow mode is active for email unless the
                 real provider flag is on.
@@ -277,19 +278,19 @@ export default function OpsMessaging() {
                   {system?.explanations?.dispatcher}
                 </p>
               </div>
-            </section>
+            </OpsSurface>
 
-            <section className="ops-messaging-surface" aria-labelledby="ops-messaging-rules-title">
-              <div className="ops-messaging-surface__head">
-                <h2 id="ops-messaging-rules-title" className="ops-messaging-surface__title">
+            <OpsSurface className="ops-messaging-surface" aria-labelledby="ops-messaging-rules-title">
+              <OpsSurfaceHeader className="ops-messaging-surface__head">
+                <OpsSurfaceTitle id="ops-messaging-rules-title" className="ops-messaging-surface__title">
                   Rules & template readiness
-                </h2>
+                </OpsSurfaceTitle>
                 {refreshing ? (
                   <p className="ops-messaging-refresh" aria-live="polite">
                     Refreshing…
                   </p>
                 ) : null}
-              </div>
+              </OpsSurfaceHeader>
               <p className="ops-messaging-note">
                 Mode Shadow uses internal providers only. Auto / Manual approval are not toggled from this page. Template
                 readiness is per channel (locale en, property scope from rule).
@@ -435,7 +436,7 @@ export default function OpsMessaging() {
                 </Link>{' '}
                 and see the &quot;Guest message automation&quot; panel.
               </p>
-            </section>
+            </OpsSurface>
           </>
         ) : null}
       </div>

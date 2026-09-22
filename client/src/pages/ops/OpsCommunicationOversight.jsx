@@ -6,6 +6,7 @@ import OpsBanner from '../../ops/primitives/OpsBanner';
 import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
 import OpsEmptyState from '../../ops/primitives/OpsEmptyState';
 import OpsMetric, { OpsMetricGroup } from '../../ops/primitives/OpsMetric';
+import OpsSurface, { OpsSurfaceHeader, OpsSurfaceTitle } from '../../ops/primitives/OpsSurface';
 import './OpsCommunicationOversight.css';
 
 function workerLabel(delivery) {
@@ -75,25 +76,25 @@ export default function OpsCommunicationOversight() {
             />
           ) : null}
 
-          <section className="ops-comms-surface" aria-labelledby="ops-comms-delivery">
-            <div className="ops-comms-surface__head">
-              <h2 id="ops-comms-delivery" className="ops-comms-surface__title">
+          <OpsSurface className="ops-comms-surface" aria-labelledby="ops-comms-delivery">
+            <OpsSurfaceHeader className="ops-comms-surface__head">
+              <OpsSurfaceTitle id="ops-comms-delivery" className="ops-comms-surface__title">
                 Delivery overview
-              </h2>
-            </div>
+              </OpsSurfaceTitle>
+            </OpsSurfaceHeader>
             <OpsMetricGroup>
               <OpsMetric label="Failed events" value={data.summary?.failedEvents ?? 0} />
               <OpsMetric label="Total recent" value={data.summary?.totalRecentEvents ?? 0} />
               <OpsMetric label="Gaps possible" value={yesNo(data.degraded?.eventTrackingGapsPossible)} />
             </OpsMetricGroup>
-          </section>
+          </OpsSurface>
 
-          <section className="ops-comms-surface" aria-labelledby="ops-comms-confirmation">
-            <div className="ops-comms-surface__head">
-              <h2 id="ops-comms-confirmation" className="ops-comms-surface__title">
+          <OpsSurface className="ops-comms-surface" aria-labelledby="ops-comms-confirmation">
+            <OpsSurfaceHeader className="ops-comms-surface__head">
+              <OpsSurfaceTitle id="ops-comms-confirmation" className="ops-comms-surface__title">
                 Booking confirmation delivery
-              </h2>
-            </div>
+              </OpsSurfaceTitle>
+            </OpsSurfaceHeader>
             <p className="ops-comms-note">
               SMTP credentials alone do not mean confirmations are draining. Overdue pending rows require the
               confirmation worker.
@@ -110,14 +111,14 @@ export default function OpsCommunicationOversight() {
                 ? ` · workerId ${data.confirmationDelivery.worker.workerId}`
                 : ''}
             </p>
-          </section>
+          </OpsSurface>
 
-          <section className="ops-comms-surface" aria-labelledby="ops-comms-events">
-            <div className="ops-comms-surface__head">
-              <h2 id="ops-comms-events" className="ops-comms-surface__title">
+          <OpsSurface className="ops-comms-surface" aria-labelledby="ops-comms-events">
+            <OpsSurfaceHeader className="ops-comms-surface__head">
+              <OpsSurfaceTitle id="ops-comms-events" className="ops-comms-surface__title">
                 Recent email events
-              </h2>
-            </div>
+              </OpsSurfaceTitle>
+            </OpsSurfaceHeader>
             {recent.length ? (
               <div className="ops-comms-list" role="list">
                 {recent.map((evt) => (
@@ -137,7 +138,7 @@ export default function OpsCommunicationOversight() {
             ) : (
               <OpsEmptyState className="ops-comms-empty" title="No recent events." />
             )}
-          </section>
+          </OpsSurface>
         </>
       )}
     </OpsPage>

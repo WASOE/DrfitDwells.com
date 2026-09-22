@@ -54,6 +54,15 @@ describe('OpsFilterBar', () => {
     expect(root).toHaveClass('extra-slot');
   });
 
+  it('supports a semantic form wrapper', () => {
+    render(
+      <OpsFilterBar as="form" aria-label="Filters">
+        <OpsTextField label="Find" />
+      </OpsFilterBar>
+    );
+    expect(screen.getByRole('form', { name: 'Filters' })).toHaveClass('ops-filter-bar');
+  });
+
   it('is layout-only and does not force filter controls to compact height', () => {
     expect(source).not.toMatch(/opsBucket|reservationStatus|useSearchParams|opsReadAPI|paymentStatus/);
     expect(source).not.toMatch(/react-router/);

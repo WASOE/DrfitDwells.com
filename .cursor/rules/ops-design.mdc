@@ -68,15 +68,15 @@ globs:
 alwaysApply: false
 ---
 
-# Ops design language (locked v1.2.1)
+# Ops design language (locked v1.5)
 
 Source of truth: `docs/ops-design/DND_OPS_DESIGN_LANGUAGE_GUIDE_V1_2_LOCKED.md`
 
-This rule does **not** authorize feature work, IA changes, desktop-shell work, or production page migration. If the locked guide conflicts with a requested implementation, **STOP and report the conflict**. Do not invent tokens, exceptions, or primitives to proceed.
+This rule does **not** authorize feature work or IA changes. If the locked guide conflicts with a requested implementation, **STOP and report the conflict**. Do not invent tokens, exceptions, or primitives to proceed.
 
 ## Scope
 
-Applies to the new Ops design island: `client/src/ops/**`, plus explicitly migrated production files listed in the globs (currently Gift Vouchers collection, Gift Voucher detail, Promo Codes, Manual Review, Sync, Communications, Payments, Users, Cabins list, Cabin detail, Reservations collection, Reservation detail, Home Dashboard, Messaging, Cleaning Settings panels, Reviews, Calendar index/month, Work Windows, Cleaning Calendar, Insights, Historical Performance, Creator Partners, Conversion, Quote Recovery, and Readiness). Production Ops page migration is complete; `/ops/design-system` remains an intentional non-operator exception.
+Applies to the Ops design island, shared Ops shell, and every production route under `client/src/pages/ops/**`. Production Ops page migration is complete; `/ops/design-system` remains an intentional non-operator exception.
 
 `client/src/pages/ops/**` files not listed in `MIGRATED_OPS_FILES` remain out of CI scope for this rule. Do not drive-by rewrite shared helpers. Do not fail CI against that tree from this rule except for files listed in `MIGRATED_OPS_FILES` (`client/scripts/check-ops-design.cjs`).
 
@@ -86,7 +86,8 @@ Applies to the new Ops design island: `client/src/ops/**`, plus explicitly migra
 - New Ops UI uses semantic `--ops-*` tokens only.
 - Light and dark use the same token names. No `dark:` / `html.dark` / raw `gray-*` styling.
 - Structural foundation is neutral gray. Green is semantic/domain only — never canvas, sidebar, topbar, surfaces, borders, nav chrome, or primary actions.
-- No public-site editorial styling. No Playfair. No `font-serif` / `font-heading` / `font-script` as Ops styling (ops.css may neutralize those classes to Inter).
+- No public-site editorial styling. No Playfair. No `font-serif` / `font-heading` / `font-script` as Ops styling (ops.css may neutralize those classes to Inter). Montserrat is limited to canonical desktop page, surface, metric, and Dashboard lead display roles.
+- Migrated sections use `OpsSurface`. Feature CSS may own domain layout, but must not recreate surface chrome, title typography, or desktop ruled composition.
 - No raw visual hex outside `client/src/ops/ops.css` (and the P0A test mirror `client/src/ops/tokens/opsTokenNames.js`).
 - No arbitrary one-off Tailwind visual values (`p-[13px]`, `rounded-[7px]`, `text-[#…]`, `z-[9999]`) when a locked token exists.
 - No `window.confirm`, `alert`, or `prompt`. Use `OpsConfirmDialog` / canonical overlays.
@@ -99,9 +100,8 @@ Applies to the new Ops design island: `client/src/ops/**`, plus explicitly migra
 
 ## MUST NOT
 
-- Do not remigrate already enrolled production pages unless the current slice names them.
 - Do not add `/ops/design-system` to operator navigation.
-- Do not treat this rule as permission to start the desktop sidebar, command search, or P0+ shell work.
+- Do not introduce command search or change information architecture without a separately approved slice.
 - Do not reintroduce sage/olive/green-tinted values into structural foundation tokens.
 
 ## Checks

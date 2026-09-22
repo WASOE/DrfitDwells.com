@@ -1,9 +1,11 @@
 # Drift & Dwells Ops Design Language Guide
 
-**Version:** 1.2.1
+**Version:** 1.5
 **Status:** LOCKED BASELINE. Supersedes 1.0, proposed 1.1, and 1.2 sage-tinted foundation values.
-**Date:** 21 September 2026
+**Date:** 22 September 2026
 **Scope:** `driftdwells.com/ops` only
+
+The canonical file path is retained for existing rule and CI references; the governed document version is 1.5.
 
 This document is the design contract for Drift & Dwells Ops. It governs the product shell, visual language, responsive behavior, components, page composition, interaction patterns, and accessibility baseline.
 
@@ -23,9 +25,9 @@ Plain statements of rules (for example "Header is not wrapped in a decorative ca
 
 Every number in this document is exact. Where a range appears, the first value is the default and the range is the only allowed variation. If a value is missing, it is not "free": add it to section 31 instead of improvising.
 
-### What changed in 1.2
+### What changed in 1.5
 
-See section 30.1. In short: all remaining product decisions are resolved; dark mode is required; admin/operator UI is English while the cleaner shell supports English and Bulgarian; the status system is now namespaced and locked at the semantic level; coarse-pointer row sizing is explicit; accessibility wording is corrected; and `Insights` replaces the ambiguous `Growth` navigation label.
+See section 30.1. Version 1.5 completes the product-wide application of the approved premium hierarchy. The shared desktop shell, all 23 menu destinations, collection records, active cabin editors, and reservation message/move-unit overlays now use the governed primitives. Inter remains the core UI/body typeface, Montserrat remains display-only, spatial workflows retain their domain layouts, and mobile navigation and composition remain unchanged.
 
 ---
 
@@ -121,7 +123,7 @@ Ops application chrome MUST use a neutral gray foundation. Green is semantic (su
 
 ### Locked
 
-- Inter is the Ops typeface.
+- Inter is the core Ops UI typeface. Montserrat is approved only for the shared desktop display hierarchy defined in §4.2.
 - No serif typography inside Ops.
 - **Both light mode and dark mode are required.**
 - Neutral gray surfaces dominate in both themes.
@@ -241,18 +243,24 @@ Status must never rely on color alone. Text/icon/shape must communicate the same
 
 ### 4.2 Typography
 
-Typeface: **Inter**.
+Core UI typeface: **Inter**.
+
+Desktop Ops may use self-hosted **Montserrat** only through the canonical
+`--ops-font-display` token for page titles, canonical surface titles, metric
+values, and the Dashboard lead business metric. This is a product-level display
+role, not permission for page-local `font-family` declarations or Montserrat body copy.
 
 | Role | Size / line height | Weight |
 |---|---|---|
-| Page title | 20 / 28 px | 600 |
-| Section title | 15 / 20 px | 600 |
+| Page title (mobile / desktop) | 18 / 24 px; 24 / 30 px | 600 |
+| Canonical surface title (mobile / desktop) | 16 / 22 px; 17 / 22 px | 600 |
 | Body | 14 / 20 px | 400 |
 | Body strong | 14 / 20 px | 500–600 |
 | Compact/table | 13 / 18 px | 400 |
 | Label | 13 / 18 px | 500 |
 | Metadata | 12 / 16 px | 400 |
 | Button | 14 / 20 px | 500 |
+| Dashboard lead metric (desktop only) | 52–88 px / 0.95 | 600–700 |
 
 Rules:
 
@@ -266,7 +274,7 @@ Rules:
 
 Font loading:
 
-- Inter is self-hosted as a variable WOFF2 font. No third-party font request at runtime.
+- Inter and the approved Montserrat display weights are self-hosted as WOFF2. No third-party font request at runtime.
 - Subsets MUST include Latin and Cyrillic, because Ops content contains Bulgarian names and text.
 - `font-display: swap`, with a fallback stack of `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`.
 - Ops MUST NOT load Playfair Display or Lato. Public-site font preloads MUST NOT run on `/ops` routes.
@@ -556,6 +564,12 @@ Order:
 
 Healthy system data stays quiet.
 
+The Dashboard may use one operational lead metric as a restrained display
+hierarchy on desktop. It is not a marketing hero: it remains inside the normal
+Dashboard grammar, uses `--ops-font-display` and
+`--ops-size-dashboard-lead`, and must not displace exceptions, actions, or
+supporting operational signals. Mobile retains the standard Ops type scale.
+
 ### 6.4 Settings
 
 Order:
@@ -599,6 +613,7 @@ Rules:
 - One primary action maximum in the header
 - Secondary actions use quiet/secondary treatment or overflow menu
 - Status may sit beside entity identity on detail pages
+- On desktop, title typography is owned by `OpsPageHeader`; page CSS MUST NOT redeclare its font family or scale
 
 ---
 
@@ -624,6 +639,14 @@ Do not use cards for:
 - wrappers around wrappers
 
 Prefer whitespace, typography, surface contrast, and table dividers before adding another card.
+
+Implementation contract:
+
+- Migrated product sections use `OpsSurface`; feature CSS may add domain layout but MUST NOT recreate surface chrome or title typography.
+- Mobile keeps the established card treatment for touch grouping.
+- At desktop content widths, default and plain surfaces resolve to open ruled sections with no decorative shadow.
+- `OpsSurface` inset variants remain cards only when they represent a real nested object.
+- Calendar, work-window timelines, and cleaning-calendar grids may retain spatial containment under §6.5.
 
 ---
 
@@ -1438,6 +1461,30 @@ Cursor:
 
 ### 30.1 Changelog
 
+**1.5 (LOCKED product-wide completion revision, 22 Sep 2026)**
+
+- Applied the premium hierarchy to the shared desktop sidebar/topbar and every menu destination
+- Added `OpsRecord` as the canonical non-tabular collection-row primitive
+- Added reusable modal sizes and an opt-in mobile-sheet contract to `OpsModal`
+- Migrated Rate Plans, active cabin editors, Move Unit, and email/WhatsApp previews to canonical primitives
+- Kept the mobile navigation, Dashboard composition, business behavior, and spatial exceptions unchanged
+- Added an explicit 23-destination coverage ledger and zero-missing-destination gate
+
+**1.4 (LOCKED product hierarchy revision, 21 Sep 2026)**
+
+- Promoted Montserrat from Dashboard-only use to canonical desktop page, surface, and metric display roles
+- Added `OpsSurface` as the single owner of section chrome, heading hierarchy, and wide ruled composition
+- Standardized desktop tables as open, divider-led operational surfaces
+- Preserved the existing mobile scale and card composition
+- Preserved calendar, work-window timeline, and cleaning-calendar spatial exceptions
+
+**1.3 (LOCKED Dashboard display revision, 21 Sep 2026)**
+
+- Added a self-hosted Montserrat display role for the desktop Dashboard only
+- Added canonical Dashboard lead-metric size and line-height tokens
+- Kept Inter as the core Ops UI/body typeface and preserved the standard mobile scale
+- Required Latin and Cyrillic coverage for the Montserrat display role
+
 **1.2.1 (LOCKED foundation revision, 21 Sep 2026)**
 
 - Structural Ops foundation replaced sage/green-tinted neutrals with premium neutral gray (light + dark)
@@ -1484,7 +1531,7 @@ Cursor:
 
 ## 31. Resolved product decisions
 
-These decisions are locked for v1.2.
+These decisions are locked for v1.5.
 
 1. **Ops UI language:** admin/operator is English-only. Cleaner-only shell supports English and Bulgarian.
 2. **Status system:** namespaced registry in section 12. Backend keys remain unchanged; presentation is unified.
@@ -1499,7 +1546,7 @@ These decisions are locked for v1.2.
 
 ## 32. Lock statement
 
-This is **Drift & Dwells Ops Design Language v1.2**, the locked baseline for the Ops redesign.
+This is **Drift & Dwells Ops Design Language v1.5**, the locked baseline for the Ops redesign.
 
 It supersedes v1.0 and proposed v1.1.
 

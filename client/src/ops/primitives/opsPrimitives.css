@@ -423,6 +423,70 @@
   max-width: 100%;
 }
 
+/*
+ * Product surface contract. Mobile intentionally retains the established card
+ * treatment; wider Ops pages resolve into the quieter ruled composition used
+ * across the premium product language.
+ */
+.ops-surface {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-12);
+  min-width: 0;
+  padding: var(--ops-space-16);
+  border: 1px solid var(--ops-border);
+  border-radius: var(--ops-radius-surface);
+  background: var(--ops-surface);
+}
+
+.ops-surface__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ops-space-8);
+  min-width: 0;
+}
+
+.ops-surface__title {
+  margin: 0;
+  font-size: var(--ops-size-section);
+  line-height: var(--ops-lh-section);
+  font-weight: 600;
+  letter-spacing: var(--ops-tracking-snug);
+  color: var(--ops-text);
+}
+
+.ops-surface__description {
+  margin: var(--ops-space-4) 0 0;
+  max-width: 48rem;
+  font-size: var(--ops-size-small);
+  line-height: var(--ops-lh-small);
+  color: var(--ops-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.ops-surface--plain {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* Non-tabular collection record. Feature CSS supplies only internal layout. */
+.ops-record {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: var(--ops-space-12);
+  border: 1px solid var(--ops-border);
+  border-radius: var(--ops-radius-surface);
+  background: var(--ops-surface);
+}
+
+.ops-record--roomy {
+  padding: var(--ops-space-16);
+}
+
 @media (min-width: 768px) {
   .ops-page-header__main {
     flex-direction: row;
@@ -609,6 +673,11 @@ a.ops-collection-row__main:hover {
 }
 
 @container ops-page (min-width: 720px) {
+  .ops-filter-bar {
+    padding: var(--ops-space-20) 0 var(--ops-space-24);
+    border-top: 1px solid var(--ops-border-strong);
+  }
+
   .ops-filter-bar__search {
     flex: 2 1 280px;
     min-width: min(100%, 240px);
@@ -673,6 +742,89 @@ a.ops-collection-row__main:hover {
 }
 
 @container ops-page (min-width: 720px) {
+  .ops-page-header {
+    margin-bottom: var(--ops-space-32);
+  }
+
+  .ops-page-header .ops-page-header__title {
+    font-family: var(--ops-font-display);
+    font-size: var(--ops-size-page-title-premium);
+    line-height: var(--ops-lh-page-title-premium);
+    font-weight: 600;
+    letter-spacing: -0.035em;
+  }
+
+  .ops-page-header__description {
+    margin-top: var(--ops-space-8);
+  }
+
+  .ops-surface {
+    gap: var(--ops-space-16);
+    padding: var(--ops-space-20) 0 var(--ops-space-24);
+    border: 0;
+    border-top: 1px solid var(--ops-border-strong);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .ops-surface--plain {
+    padding: var(--ops-space-20) 0 var(--ops-space-24);
+    border-top: 1px solid var(--ops-border-strong);
+  }
+
+  .ops-surface--inset {
+    padding: var(--ops-space-16);
+    border: 1px solid var(--ops-border);
+    border-radius: var(--ops-radius-surface);
+    background: var(--ops-surface-subtle);
+  }
+
+  .ops-record {
+    padding: var(--ops-space-16) 0;
+    border: 0;
+    border-top: 1px solid var(--ops-border);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .ops-record--roomy {
+    padding: var(--ops-space-16) 0;
+  }
+
+  .ops-record:last-child {
+    border-bottom: 1px solid var(--ops-border);
+  }
+
+  .ops-button--primary,
+  .ops-button--secondary {
+    box-shadow: none;
+  }
+
+  .ops-surface .ops-surface__title {
+    font-family: var(--ops-font-display);
+    font-size: var(--ops-size-surface-title-premium);
+    line-height: var(--ops-lh-surface-title-premium);
+    letter-spacing: -0.025em;
+  }
+
+  .ops-table-wrap {
+    border-inline: 0;
+    border-color: var(--ops-border-strong);
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .ops-table th {
+    background: transparent;
+  }
+
+  .ops-metric__value {
+    font-family: var(--ops-font-display);
+    letter-spacing: -0.03em;
+  }
+
   .ops-metric-group {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -884,6 +1036,14 @@ a.ops-collection-row__main:hover {
   width: min(calc(100% - var(--ops-space-32)), 22.5rem);
 }
 
+.ops-modal--lg {
+  width: min(calc(100% - var(--ops-space-32)), 42rem);
+}
+
+.ops-modal--xl {
+  width: min(calc(100% - var(--ops-space-32)), 56rem);
+}
+
 .ops-sheet--bottom {
   width: min(100%, 28rem);
   max-height: min(100%, 24rem);
@@ -943,6 +1103,20 @@ a.ops-collection-row__main:hover {
   gap: var(--ops-space-8);
   padding: var(--ops-space-16);
   border-top: 1px solid var(--ops-border);
+}
+
+@media (max-width: 767px) {
+  .ops-overlay--modal-sheet-mobile {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .ops-modal--sheet-mobile {
+    width: 100%;
+    max-height: 90dvh;
+    border-radius: var(--ops-radius-surface) var(--ops-radius-surface) 0 0;
+    border-bottom: 0;
+  }
 }
 
 @keyframes ops-overlay-fade-in {
@@ -1075,6 +1249,6 @@ a.ops-collection-row__main:hover {
 
 @media (min-width: 1024px) {
   .ops-page {
-    padding: var(--ops-space-24);
+    padding: var(--ops-space-32) var(--ops-space-48) var(--ops-space-48);
   }
 }

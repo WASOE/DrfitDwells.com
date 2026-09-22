@@ -11,6 +11,11 @@ import OpsButton from '../../../ops/primitives/OpsButton';
 import OpsCheckbox from '../../../ops/primitives/OpsCheckbox';
 import OpsInlineError from '../../../ops/primitives/OpsInlineError';
 import OpsLoadingState from '../../../ops/primitives/OpsLoadingState';
+import OpsSurface, {
+  OpsSurfaceDescription,
+  OpsSurfaceHeader,
+  OpsSurfaceTitle
+} from '../../../ops/primitives/OpsSurface';
 
 function toggleTag(currentTags, tag) {
   const set = new Set(currentTags || []);
@@ -128,17 +133,17 @@ export default function OpsCleaningInventoryTagsPanel({ canWrite }) {
   const filtered = (data?.inventory || []).filter((row) => row.propertyKind === filterKind);
 
   return (
-    <section className="ops-cleaning-settings-surface" aria-labelledby="ops-cleaning-inventory-title">
-      <div className="ops-cleaning-settings-surface__head">
+    <OpsSurface className="ops-cleaning-settings-surface" aria-labelledby="ops-cleaning-inventory-title">
+      <OpsSurfaceHeader className="ops-cleaning-settings-surface__head">
         <div>
-          <h2 id="ops-cleaning-inventory-title" className="ops-cleaning-settings-surface__title">
+          <OpsSurfaceTitle id="ops-cleaning-inventory-title" className="ops-cleaning-settings-surface__title">
             Inventory cleaning tags
-          </h2>
-          <p className="ops-cleaning-settings-surface__desc">
+          </OpsSurfaceTitle>
+          <OpsSurfaceDescription className="ops-cleaning-settings-surface__desc">
             Tag each bookable unit so checkout-driven rules can match. Only controlled tags are stored.
-          </p>
+          </OpsSurfaceDescription>
         </div>
-      </div>
+      </OpsSurfaceHeader>
 
       {data?.untaggedValleyCount > 0 ? (
         <div data-testid="untagged-valley-banner">
@@ -210,6 +215,6 @@ export default function OpsCleaningInventoryTagsPanel({ canWrite }) {
           )}
         </div>
       ) : null}
-    </section>
+    </OpsSurface>
   );
 }

@@ -433,14 +433,14 @@ describe('OpsRatePlans', () => {
     expect(screen.getByTestId('ops-rate-plans').innerHTML).not.toMatch(/DELETE/i);
   });
 
-  it('renders mobile-usable layout classes and safe banner text', async () => {
+  it('uses the canonical wide Ops page and safe banner text', async () => {
     list.mockRejectedValue({
       response: { data: { message: '<b>boom</b> stack at Object.fail ownerToken=SECRET' } }
     });
     renderPage();
     const page = await screen.findByTestId('ops-rate-plans');
-    expect(page.className).toMatch(/max-w-7xl/);
-    expect(page.className).toMatch(/px-4/);
+    expect(page).toHaveClass('ops-page', 'ops-page--wide', 'ops-rate-plans');
+    expect(page.className).not.toMatch(/max-w-7xl|px-4|bg-white|rounded-xl/);
     const banner = await screen.findByTestId('rate-plans-banner');
     expect(banner.textContent).not.toMatch(/</);
     expect(banner.textContent).not.toMatch(/Object\.fail|boom|ownerToken|SECRET/i);

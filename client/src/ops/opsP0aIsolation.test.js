@@ -73,7 +73,7 @@ describe('P0A isolation guards', () => {
   });
 
   it('does not change navigation configuration', () => {
-    expect(OPS_NAV_ITEMS).toHaveLength(22);
+    expect(OPS_NAV_ITEMS).toHaveLength(23);
     expect(OPS_NAV_ITEMS.map((item) => item.to)).toEqual([
       '/ops',
       '/ops/calendar',
@@ -82,6 +82,7 @@ describe('P0A isolation guards', () => {
       '/ops/reservations',
       '/ops/payments',
       '/ops/promo-codes',
+      '/ops/rate-plans',
       '/ops/creator-partners',
       '/ops/sync',
       '/ops/cabins',

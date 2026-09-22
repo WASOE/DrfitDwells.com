@@ -21,6 +21,7 @@ import OpsSelect from '../primitives/OpsSelect';
 import OpsSheet from '../primitives/OpsSheet';
 import OpsStatus from '../primitives/OpsStatus';
 import OpsMetric, { OpsMetricGroup } from '../primitives/OpsMetric';
+import OpsSurface, { OpsSurfaceDescription, OpsSurfaceTitle } from '../primitives/OpsSurface';
 import OpsTable, {
   OpsTableBody,
   OpsTableCell,
@@ -159,11 +160,11 @@ export default function OpsDesignSystemPage() {
       <OpsPageHeader
         title="Design system"
         description="Internal review surface for locked Ops tokens and primitives. Not a production workflow."
-        meta={<span className="ops-ds-type-meta">Admin only · v1.2</span>}
+        meta={<span className="ops-ds-type-meta">Admin only · v1.5</span>}
         actions={<AppearanceControl />}
       />
 
-      <Section id="ops-ds-type" title="Typography" note="Locked Inter scale. Sentence case. No Playfair.">
+      <Section id="ops-ds-type" title="Typography" note="Inter body; Montserrat canonical desktop display roles. Sentence case. No Playfair.">
         <div className="ops-ds-stack">
           <div>
             <span className="ops-ds-type-role">Page title · 20/28 · 600</span>
@@ -198,6 +199,19 @@ export default function OpsDesignSystemPage() {
             <p className="ops-ds-type-button">Save stay</p>
           </div>
         </div>
+      </Section>
+
+      <Section id="ops-ds-surfaces" title="Product surfaces" note="Cards on mobile; ruled sections at desktop content widths.">
+        <OpsSurface>
+          <OpsSurfaceTitle>Operational summary</OpsSurfaceTitle>
+          <OpsSurfaceDescription>
+            Feature pages provide content and domain layout. The primitive owns chrome and hierarchy.
+          </OpsSurfaceDescription>
+          <OpsMetricGroup>
+            <OpsMetric label="Open items" value="4" />
+            <OpsMetric label="Completed today" value="12" />
+          </OpsMetricGroup>
+        </OpsSurface>
       </Section>
 
       <Section id="ops-ds-color" title="Colors" note="Semantic tokens only. Switch Light/Dark to inspect both appearances.">

@@ -3,8 +3,7 @@
 
 /**
  * Ops design-language guard (P0E).
- * Scans client/src/ops plus explicit migrated production files in MIGRATED_OPS_FILES.
- * Does not scan the rest of client/src/pages/ops.
+ * Scans client/src/ops plus every production file enrolled in the product-wide migration.
  *
  * ENFORCED NOW (narrow, deterministic):
  * - raw hex outside token sources
@@ -13,9 +12,9 @@
  * - narrow arbitrary Tailwind visual values (px/rem extras, hex classes, z-[digits])
  * - overlay libraries / createPortal outside opsOverlay.js
  *
- * NOT ENFORCED HERE (documented, later):
+ * NOT ENFORCED HERE:
  * - axe accessibility
- * - full legacy pages/ops tree
+ * - unused legacy source with no production import
  * - every possible status map shape
  * - every position:fixed overlay
  * - env()/calc() arbitrary values (allowed; not a visual token substitute)
@@ -90,7 +89,24 @@ const MIGRATED_OPS_FILES = [
   'src/pages/ops/OpsConversionRecovery.jsx',
   'src/pages/ops/OpsConversionRecovery.css',
   'src/pages/ops/OpsReadiness.jsx',
-  'src/pages/ops/OpsReadiness.css'
+  'src/pages/ops/OpsReadiness.css',
+  'src/pages/ops/OpsRatePlans.jsx',
+  'src/pages/ops/OpsRatePlans.css',
+  'src/pages/ops/cabins/CabinEditorSection.jsx',
+  'src/pages/ops/cabins/CabinEditor.css',
+  'src/pages/ops/cabins/CabinArrivalEditor.jsx',
+  'src/pages/ops/cabins/CabinContentEditor.jsx',
+  'src/pages/ops/cabins/CabinExperiencesEditor.jsx',
+  'src/pages/ops/cabins/CabinOccupancyPricingEditor.jsx',
+  'src/pages/ops/cabins/CabinTransportEditor.jsx',
+  'src/pages/ops/cabins/CabinMediaManager.jsx',
+  'src/pages/ops/cabins/CabinUnitsEditor.jsx',
+  'src/pages/ops/components/MoveUnitDialog.jsx',
+  'src/pages/ops/components/MoveUnitDialog.css',
+  'src/pages/ops/components/OpsEmailPreviewModal.jsx',
+  'src/pages/ops/components/OpsWhatsappPreviewModal.jsx',
+  'src/pages/ops/components/OpsMessagePreview.css',
+  'src/layouts/ops/opsShell.css'
 ];
 
 const HEX_ALLOWLIST = new Set(['ops.css', 'tokens/opsTokenNames.js']);

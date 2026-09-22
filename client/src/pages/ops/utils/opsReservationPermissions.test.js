@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   canCancelReservation,
+  canCreateManualReservation,
   canMarkCashRefunded,
   canMoveUnit,
   canReassignReservation,
@@ -13,7 +14,11 @@ import {
 const adminSession = {
   authenticated: true,
   role: 'admin',
-  actions: [OPS_RESERVATION_ACTIONS.CANCEL, OPS_RESERVATION_ACTIONS.REASSIGN]
+  actions: [
+    OPS_RESERVATION_ACTIONS.MANUAL_CREATE,
+    OPS_RESERVATION_ACTIONS.CANCEL,
+    OPS_RESERVATION_ACTIONS.REASSIGN
+  ]
 };
 
 const operatorSession = {
@@ -23,6 +28,11 @@ const operatorSession = {
 };
 
 describe('opsReservationPermissions', () => {
+  it('exposes manual creation only when the session includes the action', () => {
+    expect(canCreateManualReservation(adminSession)).toBe(true);
+    expect(canCreateManualReservation(operatorSession)).toBe(false);
+  });
+
   it('shows cancel for admin session with cancel action and confirmed booking', () => {
     expect(canCancelReservation(adminSession, 'confirmed')).toBe(true);
   });

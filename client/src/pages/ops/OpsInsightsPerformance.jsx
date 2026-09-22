@@ -16,6 +16,7 @@ import OpsButton from '../../ops/primitives/OpsButton';
 import OpsBanner from '../../ops/primitives/OpsBanner';
 import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
 import OpsMetric, { OpsMetricGroup } from '../../ops/primitives/OpsMetric';
+import OpsSurface, { OpsSurfaceTitle } from '../../ops/primitives/OpsSurface';
 import OpsTable, {
   OpsTableBody,
   OpsTableCell,
@@ -213,7 +214,7 @@ export default function OpsInsightsPerformance() {
 
       {error ? <OpsBanner tone="danger" body={error} /> : null}
 
-      <section className="ops-insights__surface">
+      <OpsSurface className="ops-insights__surface">
         <div className="ops-insights__kind-row" data-testid="performance-property-kind">
           {PROPERTY_KIND_OPTIONS.map((option) => (
             <OpsButton
@@ -326,7 +327,7 @@ export default function OpsInsightsPerformance() {
             </>
           )}
         </OpsFilterBar>
-      </section>
+      </OpsSurface>
 
       {loading ? (
         <OpsLoadingState label="Loading historical performance…" data-testid="performance-loading" />
@@ -357,8 +358,8 @@ export default function OpsInsightsPerformance() {
             />
           ) : null}
 
-          <section className="ops-insights__surface" data-testid="performance-trend">
-            <h3 className="ops-insights__surface-title">Trend</h3>
+          <OpsSurface className="ops-insights__surface" data-testid="performance-trend">
+            <OpsSurfaceTitle as="h3" className="ops-insights__surface-title">Trend</OpsSurfaceTitle>
             {(data?.series || []).length === 0 ? (
               <p className="ops-insights__empty">No data for this period.</p>
             ) : (
@@ -393,10 +394,10 @@ export default function OpsInsightsPerformance() {
                 </OpsTableBody>
               </OpsTable>
             )}
-          </section>
+          </OpsSurface>
 
-          <section className="ops-insights__surface" data-testid="performance-entities">
-            <h3 className="ops-insights__surface-title">Entity comparison</h3>
+          <OpsSurface className="ops-insights__surface" data-testid="performance-entities">
+            <OpsSurfaceTitle as="h3" className="ops-insights__surface-title">Entity comparison</OpsSurfaceTitle>
             {(data?.entities || []).length === 0 ? (
               <p className="ops-insights__empty">No data for this period.</p>
             ) : (
@@ -436,10 +437,12 @@ export default function OpsInsightsPerformance() {
                 </OpsTableBody>
               </OpsTable>
             )}
-          </section>
+          </OpsSurface>
 
-          <section className="ops-insights__surface" data-testid="performance-confidence">
-            <h3 className="ops-insights__surface-title">Historical data confidence</h3>
+          <OpsSurface className="ops-insights__surface" data-testid="performance-confidence">
+            <OpsSurfaceTitle as="h3" className="ops-insights__surface-title">
+              Historical data confidence
+            </OpsSurfaceTitle>
             <p className="ops-insights__note">
               Earliest reliable revenue: {quality?.earliestReliableRevenueDate || '—'} · Earliest
               reliable occupancy: {quality?.earliestReliableOccupancyDate || 'not configured'}
@@ -465,7 +468,7 @@ export default function OpsInsightsPerformance() {
                   .join(' · ')}
               </p>
             ) : null}
-          </section>
+          </OpsSurface>
         </>
       )}
       </div>

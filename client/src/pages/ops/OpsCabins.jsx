@@ -9,6 +9,11 @@ import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
 import OpsEmptyState from '../../ops/primitives/OpsEmptyState';
 import OpsInlineError from '../../ops/primitives/OpsInlineError';
 import OpsBadge from '../../ops/primitives/OpsBadge';
+import OpsSurface, {
+  OpsSurfaceDescription,
+  OpsSurfaceHeader,
+  OpsSurfaceTitle
+} from '../../ops/primitives/OpsSurface';
 import {
   buildExperienceKey,
   formatDateOnlyForOps,
@@ -683,7 +688,7 @@ export default function OpsCabinDetail() {
           ) : null}
         </div>
 
-        <section className="ops-cd-surface">
+        <OpsSurface className="ops-cd-surface">
           <div className="ops-cd-identity">
             <div className="ops-cd-identity__thumb">
               {cover ? (
@@ -696,7 +701,7 @@ export default function OpsCabinDetail() {
               <p className="ops-cd-note ops-cd-note--strong">{content.location || '—'}</p>
             </div>
           </div>
-        </section>
+        </OpsSurface>
 
         <CabinContentEditor
           contentEditOpen={contentEditOpen}
@@ -830,9 +835,9 @@ export default function OpsCabinDetail() {
         </OpsReadOnlyDetailSection>
 
         <div className="ops-cd-grid ops-cd-grid--2">
-          <section className="ops-cd-surface">
-            <div className="ops-cd-surface__head">
-              <h2 className="ops-cd-surface__title">Operational settings</h2>
+          <OpsSurface className="ops-cd-surface">
+            <OpsSurfaceHeader className="ops-cd-surface__head">
+              <OpsSurfaceTitle className="ops-cd-surface__title">Operational settings</OpsSurfaceTitle>
               <div className="ops-cd-actions">
                 <OpsButton variant="secondary" size="compact" onClick={openOccupancyEdit}>
                   Edit occupancy
@@ -841,7 +846,7 @@ export default function OpsCabinDetail() {
                   Edit price
                 </OpsButton>
               </div>
-            </div>
+            </OpsSurfaceHeader>
             <dl className="ops-cd-facts">
               <Fact label="Capacity" numeric>
                 {op.capacity ?? '—'}
@@ -873,10 +878,10 @@ export default function OpsCabinDetail() {
                 {Array.isArray(op.transportCutoffs) ? op.transportCutoffs.length : 0}
               </Fact>
             </dl>
-          </section>
+          </OpsSurface>
 
-          <section className="ops-cd-surface">
-            <h2 className="ops-cd-surface__title">Content &amp; media</h2>
+          <OpsSurface className="ops-cd-surface">
+            <OpsSurfaceTitle className="ops-cd-surface__title">Content &amp; media</OpsSurfaceTitle>
             <div className="ops-cd-surface__body">
               {cover ? (
                 <img src={normalizeMediaSrc(cover)} alt="" className="ops-cd-cover" />
@@ -885,7 +890,7 @@ export default function OpsCabinDetail() {
               )}
               {content.description ? <p className="ops-cd-fact__value">{content.description}</p> : null}
             </div>
-          </section>
+          </OpsSurface>
         </div>
 
         <OpsReadOnlyDetailSection
@@ -1067,11 +1072,11 @@ export default function OpsCabinDetail() {
         </OpsReadOnlyDetailSection>
 
         {!isMulti ? (
-          <section className="ops-cd-surface ops-cd-surface--danger">
-            <h2 className="ops-cd-surface__title">Danger zone</h2>
-            <p className="ops-cd-surface__subtitle">
+          <OpsSurface className="ops-cd-surface ops-cd-surface--danger">
+            <OpsSurfaceTitle className="ops-cd-surface__title">Danger zone</OpsSurfaceTitle>
+            <OpsSurfaceDescription className="ops-cd-surface__subtitle">
               Archiving hides this cabin from public listings, search, quotes, and booking. This does not delete data.
-            </p>
+            </OpsSurfaceDescription>
             <div className="ops-cd-actions">
               <OpsButton
                 variant="destructive"
@@ -1085,7 +1090,7 @@ export default function OpsCabinDetail() {
                 Archive cabin
               </OpsButton>
             </div>
-          </section>
+          </OpsSurface>
         ) : null}
 
         <ArchiveCabinModal

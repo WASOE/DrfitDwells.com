@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import OpsGalleryLightbox from '../../../components/ops/OpsGalleryLightbox';
-import { MEDIA_TAG_OPTIONS, normalizeMediaSrc } from './cabinOpsUtils.js';
+import OpsBadge from '../../../ops/primitives/OpsBadge';
+import OpsBanner from '../../../ops/primitives/OpsBanner';
+import OpsButton from '../../../ops/primitives/OpsButton';
+import OpsConfirmDialog from '../../../ops/primitives/OpsConfirmDialog';
+import OpsEmptyState from '../../../ops/primitives/OpsEmptyState';
+import OpsSelect from '../../../ops/primitives/OpsSelect';
+import OpsTextField from '../../../ops/primitives/OpsTextField';
 import { opsWriteAPI } from '../../../services/opsApi';
+import { CabinEditorRow, CabinEditorSection } from './CabinEditorSection';
+import { MEDIA_TAG_OPTIONS, normalizeMediaSrc } from './cabinOpsUtils.js';
 
 export default function CabinMediaManager({ titleId, isMulti, content, onReload }) {
   const [mediaBusy, setMediaBusy] = useState(false);
@@ -9,6 +17,7 @@ export default function CabinMediaManager({ titleId, isMulti, content, onReload 
   const [mediaError, setMediaError] = useState('');
   const uploadRef = useRef(null);
   const [lightboxIndex, setLightboxIndex] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   const mediaImages = useMemo(() => {
     const arr = Array.isArray(content?.images) ? [...content.images] : [];
@@ -20,12 +29,12 @@ export default function CabinMediaManager({ titleId, isMulti, content, onReload 
 
   const lightboxImages = useMemo(
     () =>
-      mediaImages.map((img) => ({
-        _id: String(img._id),
-        src: normalizeMediaSrc(img.url),
-        alt: img.alt || '',
-        tags: Array.isArray(img.tags) ? img.tags : [],
-        isCover: Boolean(img.isCover)
+      mediaImages.map((image) => ({
+        _id: String(image._id),
+        src: normalizeMediaSrc(image.url),
+        alt: image.alt || '',
+        tags: Array.isArray(image.tags) ? image.tags : [],
+        isCover: Boolean(image.isCover)
       })),
     [mediaImages]
   );
@@ -50,8 +59,8 @@ export default function CabinMediaManager({ titleId, isMulti, content, onReload 
         await work();
         await onReload();
         setMediaMessage(successText);
-      } catch (err) {
-        setMediaError(err?.response?.data?.message || 'Media update failed');
+      } catch (error) {
+        setMediaError(error?.response?.data?.message || 'Media update failed');
       } finally {
         setMediaBusy(false);
       }
@@ -81,18 +90,18 @@ export default function CabinMediaManager({ titleId, isMulti, content, onReload 
 
   const handleMove = useCallback(
     async (imageId, direction) => {
-      const idx = mediaImages.findIndex((img) => String(img?._id) === String(imageId));
-      if (idx < 0) return;
-      const target = direction === 'up' ? idx - 1 : idx + 1;
+      const index = mediaImages.findIndex((image) => String(image?._id) === String(imageId));
+      if (index < 0) return;
+      const target = direction === 'up' ? index - 1 : index + 1;
       if (target < 0 || target >= mediaImages.length) return;
       const next = [...mediaImages];
-      const swap = next[idx];
-      next[idx] = next[target];
+      const swap = next[index];
+      next[index] = next[target];
       next[target] = swap;
-      const order = next.map((img, index) => ({
-        imageId: String(img._id),
-        sort: index,
-        spaceOrder: typeof img.spaceOrder === 'number' ? img.spaceOrder : 0
+      const order = next.map((image, sort) => ({
+        imageId: String(image._id),
+        sort,
+        spaceOrder: typeof image.spaceOrder === 'number' ? image.spaceOrder : 0
       }));
       await runMediaMutation(
         () => opsWriteAPI.reorderCabinImages(titleId, order),
@@ -104,11 +113,11 @@ export default function CabinMediaManager({ titleId, isMulti, content, onReload 
 
   const handleDelete = useCallback(
     async (imageId) => {
-      if (!window.confirm('Delete this image? This cannot be undone.')) return;
       await runMediaMutation(
         () => opsWriteAPI.deleteCabinImage(titleId, imageId),
         'Image deleted'
       );
+      setDeleteTarget(null);
     },
     [runMediaMutation, titleId]
   );
@@ -125,9 +134,8 @@ export default function CabinMediaManager({ titleId, isMulti, content, onReload 
 
   const handleSetTag = useCallback(
     async (imageId, tag) => {
-      const tags = tag ? [tag] : [];
       await runMediaMutation(
-        () => opsWriteAPI.updateCabinImage(titleId, imageId, { tags }),
+        () => opsWriteAPI.updateCabinImage(titleId, imageId, { tags: tag ? [tag] : [] }),
         'Image category updated'
       );
     },
@@ -135,126 +143,114 @@ export default function CabinMediaManager({ titleId, isMulti, content, onReload 
   );
 
   return (
-    <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-gray-900">Media manager</h3>
+    <CabinEditorSection title="Media manager" className="ops-cabin-media">
+      <div className="ops-cabin-media__toolbar">
         <input
           ref={uploadRef}
           type="file"
           accept="image/*"
           onChange={handleUpload}
-          className="hidden"
+          className="sr-only"
           disabled={mediaBusy || isMulti}
         />
-        <button
-          type="button"
+        <OpsButton
+          size="compact"
           disabled={mediaBusy || isMulti}
+          loading={mediaBusy}
+          loadingLabel="Working…"
           onClick={() => uploadRef.current?.click()}
-          className="ops-button ops-button--primary ops-button--compact"
         >
           Upload image
-        </button>
+        </OpsButton>
       </div>
       {isMulti ? (
-        <p className="text-xs text-amber-700 mt-2">
-          Media editing is currently available for single cabins only in this batch.
-        </p>
+        <OpsBanner
+          tone="warning"
+          body="Media editing is currently available for single cabins only in this batch."
+        />
       ) : null}
-      {mediaError ? <p className="text-xs text-red-600 mt-2">{mediaError}</p> : null}
-      {mediaMessage ? <p className="text-xs text-green-700 mt-2">{mediaMessage}</p> : null}
+      {mediaError ? <OpsBanner tone="danger" body={mediaError} /> : null}
+      {mediaMessage ? <OpsBanner tone="success" body={mediaMessage} /> : null}
 
       {mediaImages.length === 0 ? (
-        <p className="text-sm text-gray-500 mt-3">No images yet.</p>
+        <OpsEmptyState title="No images yet." />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
-          {mediaImages.map((img, index) => (
-            <div key={String(img._id)} className="border border-gray-200 rounded-lg p-2">
-              <div className="relative rounded-md overflow-hidden border border-gray-100 bg-gray-50">
+        <div className="ops-cabin-media__grid">
+          {mediaImages.map((image, index) => (
+            <CabinEditorRow key={String(image._id)} className="ops-cabin-media__item">
+              <button
+                type="button"
+                className="ops-cabin-media__preview"
+                onClick={() => setLightboxIndex(index)}
+              >
                 <img
-                  src={normalizeMediaSrc(img.url)}
-                  alt={img.alt || ''}
-                  className="w-full h-28 object-cover"
+                  src={normalizeMediaSrc(image.url)}
+                  alt={image.alt || ''}
                   loading="lazy"
-                  onClick={() => setLightboxIndex(index)}
                 />
-                {img.isCover ? (
-                  <span
-                    className="absolute top-1 right-1 text-[10px] px-2 py-0.5 rounded"
-                    style={{ background: 'var(--ops-accent)', color: 'var(--ops-accent-fg)' }}
-                  >
-                    Cover
-                  </span>
-                ) : null}
-              </div>
-              <div className="mt-2 text-xs text-gray-500">Order: {index + 1}</div>
-              <div className="mt-2 space-y-2">
-                <label className="block">
-                  <span className="block text-[11px] text-gray-500 mb-1">Alt text</span>
-                  <input
-                    type="text"
-                    defaultValue={img.alt || ''}
-                    onBlur={(event) => {
-                      const nextAlt = String(event.target.value || '');
-                      if (nextAlt === String(img.alt || '')) return;
-                      handleSaveAlt(String(img._id), nextAlt);
-                    }}
-                    disabled={mediaBusy || isMulti}
-                    className="w-full text-xs px-2 py-1.5 rounded border border-gray-200 bg-white disabled:opacity-50"
-                    placeholder="Short image description"
-                  />
-                </label>
-                <label className="block">
-                  <span className="block text-[11px] text-gray-500 mb-1">Category</span>
-                  <select
-                    value={Array.isArray(img.tags) && img.tags[0] ? String(img.tags[0]) : ''}
-                    onChange={(event) => handleSetTag(String(img._id), event.target.value)}
-                    disabled={mediaBusy || isMulti}
-                    className="w-full text-xs px-2 py-1.5 rounded border border-gray-200 bg-white disabled:opacity-50"
-                  >
-                    <option value="">Unassigned</option>
-                    {MEDIA_TAG_OPTIONS.map((tag) => (
-                      <option key={tag} value={tag}>
-                        {tag}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={mediaBusy || isMulti || Boolean(img.isCover)}
-                  onClick={() => handleSetCover(String(img._id))}
-                  className="text-xs px-2 py-1 rounded border border-gray-200 bg-white disabled:opacity-50"
+                {image.isCover ? <OpsBadge>Cover</OpsBadge> : null}
+              </button>
+              <p className="ops-cabin-editor__row-meta">Order: {index + 1}</p>
+              <OpsTextField
+                label="Alt text"
+                defaultValue={image.alt || ''}
+                onBlur={(event) => {
+                  const nextAlt = String(event.target.value || '');
+                  if (nextAlt !== String(image.alt || '')) {
+                    handleSaveAlt(String(image._id), nextAlt);
+                  }
+                }}
+                disabled={mediaBusy || isMulti}
+                placeholder="Short image description"
+              />
+              <OpsSelect
+                label="Category"
+                value={Array.isArray(image.tags) && image.tags[0] ? String(image.tags[0]) : ''}
+                onChange={(event) => handleSetTag(String(image._id), event.target.value)}
+                disabled={mediaBusy || isMulti}
+              >
+                <option value="">Unassigned</option>
+                {MEDIA_TAG_OPTIONS.map((tag) => (
+                  <option key={tag} value={tag}>
+                    {tag}
+                  </option>
+                ))}
+              </OpsSelect>
+              <div className="ops-cabin-media__actions">
+                <OpsButton
+                  variant="secondary"
+                  size="compact"
+                  disabled={mediaBusy || isMulti || Boolean(image.isCover)}
+                  onClick={() => handleSetCover(String(image._id))}
                 >
                   Set cover
-                </button>
-                <button
-                  type="button"
+                </OpsButton>
+                <OpsButton
+                  variant="quiet"
+                  size="compact"
                   disabled={mediaBusy || isMulti || index === 0}
-                  onClick={() => handleMove(String(img._id), 'up')}
-                  className="text-xs px-2 py-1 rounded border border-gray-200 bg-white disabled:opacity-50"
+                  onClick={() => handleMove(String(image._id), 'up')}
                 >
                   Move up
-                </button>
-                <button
-                  type="button"
+                </OpsButton>
+                <OpsButton
+                  variant="quiet"
+                  size="compact"
                   disabled={mediaBusy || isMulti || index === mediaImages.length - 1}
-                  onClick={() => handleMove(String(img._id), 'down')}
-                  className="text-xs px-2 py-1 rounded border border-gray-200 bg-white disabled:opacity-50"
+                  onClick={() => handleMove(String(image._id), 'down')}
                 >
                   Move down
-                </button>
-                <button
-                  type="button"
+                </OpsButton>
+                <OpsButton
+                  variant="destructive"
+                  size="compact"
                   disabled={mediaBusy || isMulti}
-                  onClick={() => handleDelete(String(img._id))}
-                  className="text-xs px-2 py-1 rounded border border-red-200 text-red-700 bg-white disabled:opacity-50"
+                  onClick={() => setDeleteTarget(String(image._id))}
                 >
                   Delete
-                </button>
+                </OpsButton>
               </div>
-            </div>
+            </CabinEditorRow>
           ))}
         </div>
       )}
@@ -264,13 +260,23 @@ export default function CabinMediaManager({ titleId, isMulti, content, onReload 
         images={lightboxImages}
         activeIndex={lightboxIndex}
         onClose={() => setLightboxIndex(null)}
-        onPrev={() => setLightboxIndex((idx) => (idx === null ? idx : Math.max(0, idx - 1)))}
+        onPrev={() => setLightboxIndex((index) => (index === null ? index : Math.max(0, index - 1)))}
         onNext={() =>
-          setLightboxIndex((idx) =>
-            idx === null ? idx : Math.min(lightboxImages.length - 1, idx + 1)
+          setLightboxIndex((index) =>
+            index === null ? index : Math.min(lightboxImages.length - 1, index + 1)
           )
         }
       />
-    </section>
+      <OpsConfirmDialog
+        open={Boolean(deleteTarget)}
+        onClose={() => !mediaBusy && setDeleteTarget(null)}
+        onConfirm={() => handleDelete(deleteTarget)}
+        title="Delete image?"
+        body="This removes the image permanently and cannot be undone."
+        confirmLabel="Delete image"
+        destructive
+        loading={mediaBusy}
+      />
+    </CabinEditorSection>
   );
 }

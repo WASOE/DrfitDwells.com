@@ -31,10 +31,6 @@
   gap: var(--ops-space-12);
   min-width: 0;
   min-height: var(--ops-row-min-mobile);
-  padding: var(--ops-space-12);
-  border: 1px solid var(--ops-border);
-  border-radius: var(--ops-radius-surface);
-  background: var(--ops-surface);
   color: inherit;
   text-decoration: none;
 }

@@ -30,6 +30,11 @@ import OpsBanner from '../../ops/primitives/OpsBanner';
 import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
 import OpsInlineError from '../../ops/primitives/OpsInlineError';
 import OpsStatus from '../../ops/primitives/OpsStatus';
+import OpsSurface, {
+  OpsSurfaceDescription,
+  OpsSurfaceHeader,
+  OpsSurfaceTitle
+} from '../../ops/primitives/OpsSurface';
 import OpsBadge from '../../ops/primitives/OpsBadge';
 import OpsModal from '../../ops/primitives/OpsModal';
 import OpsConfirmDialog from '../../ops/primitives/OpsConfirmDialog';
@@ -1182,9 +1187,9 @@ export default function OpsReservationDetail() {
         </div>
 
         {showSettlementCard ? (
-          <section className="ops-rd-surface ops-rd-surface--warn">
-            <div className="ops-rd-surface__head">
-              <h2 className="ops-rd-surface__title">Cancellation settlement</h2>
+          <OpsSurface className="ops-rd-surface ops-rd-surface--warn">
+            <OpsSurfaceHeader className="ops-rd-surface__head">
+              <OpsSurfaceTitle className="ops-rd-surface__title">Cancellation settlement</OpsSurfaceTitle>
               <div className="ops-rd-actions">
                 {canResolveSettlement ? (
                   <OpsButton variant="secondary" onClick={openResolveModal}>
@@ -1197,7 +1202,7 @@ export default function OpsReservationDetail() {
                   </OpsButton>
                 ) : null}
               </div>
-            </div>
+            </OpsSurfaceHeader>
             {canResolveSettlement ? (
               <OpsBanner
                 tone="warning"
@@ -1261,13 +1266,13 @@ export default function OpsReservationDetail() {
                 </Fact>
               ) : null}
             </dl>
-          </section>
+          </OpsSurface>
         ) : null}
 
         <div className="ops-rd-layout">
           <div className="ops-rd-main">
-            <section className="ops-rd-surface">
-              <h2 className="ops-rd-surface__title">Reservation actions</h2>
+            <OpsSurface className="ops-rd-surface">
+              <OpsSurfaceTitle className="ops-rd-surface__title">Reservation actions</OpsSurfaceTitle>
               <div className="ops-rd-actions">
                 <OpsButton
                   variant="secondary"
@@ -1315,10 +1320,10 @@ export default function OpsReservationDetail() {
               {showCompletedNotCancellableNote ? (
                 <p className="ops-rd-note">Completed reservations cannot be cancelled from OPS.</p>
               ) : null}
-            </section>
+            </OpsSurface>
 
-            <section className="ops-rd-surface">
-              <h2 className="ops-rd-surface__title">Guest detail</h2>
+            <OpsSurface className="ops-rd-surface">
+              <OpsSurfaceTitle className="ops-rd-surface__title">Guest detail</OpsSurfaceTitle>
               <div className="ops-rd-field-grid">
                 <OpsTextField
                   label="First name"
@@ -1356,10 +1361,10 @@ export default function OpsReservationDetail() {
                   Save guest contact
                 </OpsButton>
               </div>
-            </section>
+            </OpsSurface>
 
-            <section className="ops-rd-surface">
-              <h2 className="ops-rd-surface__title">Notes</h2>
+            <OpsSurface className="ops-rd-surface">
+              <OpsSurfaceTitle className="ops-rd-surface__title">Notes</OpsSurfaceTitle>
               <div className="ops-rd-field-row">
                 <OpsTextField
                   label="Add reservation note"
@@ -1391,14 +1396,14 @@ export default function OpsReservationDetail() {
                   <p className="ops-rd-note">No notes yet.</p>
                 ) : null}
               </div>
-            </section>
+            </OpsSurface>
 
-            <section className="ops-rd-surface">
+            <OpsSurface className="ops-rd-surface">
               <div>
-                <h2 className="ops-rd-surface__title">Cleaning Notes</h2>
-                <p className="ops-rd-surface__subtitle">
+                <OpsSurfaceTitle className="ops-rd-surface__title">Cleaning Notes</OpsSurfaceTitle>
+                <OpsSurfaceDescription className="ops-rd-surface__subtitle">
                   Internal note for cleaning staff. Shown as a special request on the cleaning calendar.
-                </p>
+                </OpsSurfaceDescription>
               </div>
               <OpsTextarea
                 label="Cleaning notes"
@@ -1421,27 +1426,27 @@ export default function OpsReservationDetail() {
               </div>
               {cleaningNotesMsg ? <OpsBanner tone="success" title={cleaningNotesMsg} /> : null}
               {cleaningNotesError ? <OpsInlineError>{cleaningNotesError}</OpsInlineError> : null}
-            </section>
+            </OpsSurface>
           </div>
 
           <div className="ops-rd-aside">
-            <section className="ops-rd-surface">
-              <div className="ops-rd-surface__head">
+            <OpsSurface className="ops-rd-surface">
+              <OpsSurfaceHeader className="ops-rd-surface__head">
                 <div>
-                  <h2 className="ops-rd-surface__title">Guest message automation</h2>
-                  <p className="ops-rd-surface__subtitle">
+                  <OpsSurfaceTitle className="ops-rd-surface__title">Guest message automation</OpsSurfaceTitle>
+                  <OpsSurfaceDescription className="ops-rd-surface__subtitle">
                     Scheduled jobs can be cancelled from here. Dispatches and comms manual-review items are
                     listed below. Separate from legacy booking lifecycle email.
-                  </p>
+                  </OpsSurfaceDescription>
                 </div>
                 <Link to="/ops/messaging" className="ops-rd-link">
                   Global rules &amp; flags
                 </Link>
-              </div>
+              </OpsSurfaceHeader>
               {messagingLoading ? <OpsLoadingState label="Loading automation data…" /> : null}
               {messagingError ? <OpsInlineError>{messagingError}</OpsInlineError> : null}
 
-              <div className="ops-rd-surface">
+              <OpsSurface as="div" variant="inset" className="ops-rd-surface">
                 <h3 className="ops-rd-section-title">Preview automation message</h3>
                 <p className="ops-rd-note">
                   Compose-only preview using this booking&apos;s data and draft or approved templates. Nothing
@@ -1482,7 +1487,7 @@ export default function OpsReservationDetail() {
                   </OpsButton>
                 </div>
                 {gmaPreviewError ? <OpsInlineError>{gmaPreviewError}</OpsInlineError> : null}
-              </div>
+              </OpsSurface>
 
               {!messagingLoading && messagingSummary ? (
                 <>
@@ -1585,9 +1590,9 @@ export default function OpsReservationDetail() {
                   </div>
                 </>
               ) : null}
-            </section>
+            </OpsSurface>
 
-            <section className="ops-rd-surface">
+            <OpsSurface className="ops-rd-surface">
               <div className="ops-rd-actions">
                 <OpsButton
                   variant="secondary"
@@ -1735,20 +1740,20 @@ export default function OpsReservationDetail() {
                   </OpsButton>
                 </div>
               ) : null}
-            </section>
+            </OpsSurface>
 
-            <section className="ops-rd-surface">
-              <h2 className="ops-rd-surface__title">Context</h2>
+            <OpsSurface className="ops-rd-surface">
+              <OpsSurfaceTitle className="ops-rd-surface__title">Context</OpsSurfaceTitle>
               <p className="ops-rd-note">Payment events: {(data.paymentTrail || []).length}</p>
               <p className="ops-rd-note">Payout relevance: {data.payoutRelevance?.payoutCount || 0}</p>
               <p className="ops-rd-note">
                 Hard conflict: {data.conflictContext?.hasHardConflict ? 'yes' : 'no'}
               </p>
               <p className="ops-rd-note">Warning: {data.conflictContext?.hasWarning ? 'yes' : 'no'}</p>
-            </section>
+            </OpsSurface>
 
-            <section className="ops-rd-surface">
-              <h2 className="ops-rd-surface__title">Availability actions</h2>
+            <OpsSurface className="ops-rd-surface">
+              <OpsSurfaceTitle className="ops-rd-surface__title">Availability actions</OpsSurfaceTitle>
               <div className="ops-rd-actions ops-rd-actions--stack">
                 <OpsButton
                   variant="secondary"
@@ -1767,7 +1772,7 @@ export default function OpsReservationDetail() {
                   Add maintenance block
                 </OpsButton>
               </div>
-            </section>
+            </OpsSurface>
           </div>
         </div>
 

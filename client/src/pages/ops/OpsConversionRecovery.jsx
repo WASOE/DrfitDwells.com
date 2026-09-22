@@ -16,6 +16,7 @@ import OpsButton from '../../ops/primitives/OpsButton';
 import OpsBanner from '../../ops/primitives/OpsBanner';
 import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
 import OpsEmptyState from '../../ops/primitives/OpsEmptyState';
+import OpsSurface, { OpsSurfaceTitle } from '../../ops/primitives/OpsSurface';
 import OpsTable, {
   OpsTableBody,
   OpsTableCell,
@@ -229,7 +230,7 @@ export default function OpsConversionRecovery() {
 
       {error ? <OpsBanner tone="danger" body={error} /> : null}
 
-      <section className="ops-recovery__surface" aria-label="Recovery filters">
+      <OpsSurface className="ops-recovery__surface" aria-label="Recovery filters">
         <div className="ops-recovery__kind-row" data-testid="recovery-property-kind">
           {PROPERTY_KIND_OPTIONS.map((option) => (
             <OpsButton
@@ -343,12 +344,12 @@ export default function OpsConversionRecovery() {
             ))}
           </OpsSelect>
         </OpsFilterBar>
-      </section>
+      </OpsSurface>
 
       {loading ? (
         <OpsLoadingState label="Loading recovery journeys..." data-testid="recovery-loading" />
       ) : error && !data ? null : (
-        <section className="ops-recovery__surface" data-testid="recovery-table" aria-label="Recovery list">
+        <OpsSurface className="ops-recovery__surface" data-testid="recovery-table" aria-label="Recovery list">
           {(data?.rows || []).length === 0 ? (
             <OpsEmptyState title="No saved quotes for these filters." />
           ) : (
@@ -473,18 +474,18 @@ export default function OpsConversionRecovery() {
               </OpsButton>
             </div>
           </div>
-        </section>
+        </OpsSurface>
       )}
 
       {selectedId && detail ? (
-        <section
+        <OpsSurface
           className="ops-recovery__surface"
           data-testid="recovery-detail"
           aria-labelledby="ops-recovery-detail-title"
         >
-          <h2 id="ops-recovery-detail-title" className="ops-recovery__surface-title">
+          <OpsSurfaceTitle id="ops-recovery-detail-title" className="ops-recovery__surface-title">
             Delivery safety panel
-          </h2>
+          </OpsSurfaceTitle>
           <OpsBanner tone="warning" body="Recovery delivery is disabled. Previews do not send messages." />
           <div className="ops-recovery__detail-lines">
             <p>Send gate quote_delivery: {detail.deliveryGates?.quote_delivery?.reason || '—'}</p>
@@ -579,7 +580,7 @@ export default function OpsConversionRecovery() {
               <p>{links.continuationUrl || '—'}</p>
             </div>
           ) : null}
-        </section>
+        </OpsSurface>
       ) : null}
     </OpsPage>
   );

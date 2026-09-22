@@ -1,3 +1,8 @@
+import OpsCheckbox from '../../../ops/primitives/OpsCheckbox';
+import OpsTextField from '../../../ops/primitives/OpsTextField';
+import OpsTextarea from '../../../ops/primitives/OpsTextarea';
+import { CabinEditorActions, CabinEditorRow, CabinEditorSection } from './CabinEditorSection';
+
 export default function CabinContentEditor({
   contentEditOpen,
   contentForm,
@@ -9,157 +14,120 @@ export default function CabinContentEditor({
 }) {
   if (!contentEditOpen) return null;
 
+  const update = (key) => (event) =>
+    setContentForm((current) => ({ ...current, [key]: event.target.value }));
+
   return (
-    <section className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
-      <h3 className="text-sm font-semibold text-gray-900">Edit content</h3>
-      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-        <label className="block">
-          <span className="block text-xs text-gray-600 mb-1">Name</span>
-          <input
-            type="text"
-            value={contentForm.name}
-            onChange={(e) => setContentForm((p) => ({ ...p, name: e.target.value }))}
-            className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-sm"
+    <CabinEditorSection title="Edit content">
+      <div className="ops-cabin-editor__grid ops-cabin-editor__grid--2">
+        <OpsTextField label="Name" value={contentForm.name} onChange={update('name')} maxLength={100} />
+        <OpsTextField
+          label="Host name"
+          value={contentForm.hostName}
+          onChange={update('hostName')}
+          maxLength={120}
+        />
+        <OpsTextarea
+          className="ops-cabin-editor__span-2"
+          label="Description"
+          rows={4}
+          value={contentForm.description}
+          onChange={update('description')}
+          maxLength={1000}
+        />
+        <OpsTextField
+          label="Avg response time (hours)"
+          type="number"
+          min="0"
+          step="0.1"
+          value={contentForm.avgResponseTimeHours}
+          onChange={update('avgResponseTimeHours')}
+        />
+        <OpsTextarea
+          className="ops-cabin-editor__span-2"
+          label="Highlights (up to 5, one per line)"
+          rows={4}
+          value={contentForm.highlightsText}
+          onChange={update('highlightsText')}
+        />
+      </div>
+
+      <CabinEditorRow>
+        <div>
+          <strong>Bulgarian translation (BG)</strong>
+          <p className="ops-surface__description">
+            Shown on the /bg site. Empty fields fall back to the English text.
+          </p>
+        </div>
+        <div className="ops-cabin-editor__grid ops-cabin-editor__grid--2">
+          <OpsTextField
+            label="Name (BG)"
+            value={contentForm.i18nBgName}
+            onChange={update('i18nBgName')}
             maxLength={100}
           />
-        </label>
-        <label className="block">
-          <span className="block text-xs text-gray-600 mb-1">Host name</span>
-          <input
-            type="text"
-            value={contentForm.hostName}
-            onChange={(e) => setContentForm((p) => ({ ...p, hostName: e.target.value }))}
-            className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-sm"
-            maxLength={120}
+          <OpsTextField
+            label="Location (BG)"
+            value={contentForm.i18nBgLocation}
+            onChange={update('i18nBgLocation')}
+            maxLength={200}
           />
-        </label>
-        <label className="block md:col-span-2">
-          <span className="block text-xs text-gray-600 mb-1">Description</span>
-          <textarea
+          <OpsTextarea
+            className="ops-cabin-editor__span-2"
+            label="Description (BG)"
             rows={4}
-            value={contentForm.description}
-            onChange={(e) => setContentForm((p) => ({ ...p, description: e.target.value }))}
-            className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-sm"
+            value={contentForm.i18nBgDescription}
+            onChange={update('i18nBgDescription')}
             maxLength={1000}
           />
-        </label>
-        <label className="block">
-          <span className="block text-xs text-gray-600 mb-1">Avg response time (hours)</span>
-          <input
-            type="number"
-            min="0"
-            step="0.1"
-            value={contentForm.avgResponseTimeHours}
-            onChange={(e) => setContentForm((p) => ({ ...p, avgResponseTimeHours: e.target.value }))}
-            className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-sm"
-          />
-        </label>
-        <label className="block md:col-span-2">
-          <span className="block text-xs text-gray-600 mb-1">Highlights (up to 5, one per line)</span>
-          <textarea
-            rows={4}
-            value={contentForm.highlightsText}
-            onChange={(e) => setContentForm((p) => ({ ...p, highlightsText: e.target.value }))}
-            className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-sm font-mono"
-          />
-        </label>
-      </div>
-
-      <div className="mt-4 border border-gray-100 rounded-md p-3">
-        <h4 className="text-xs font-semibold text-gray-900">Bulgarian translation (BG)</h4>
-        <p className="text-[11px] text-gray-500 mt-0.5">
-          Shown on the /bg site. Empty fields fall back to the English text.
-        </p>
-        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-          <label className="block">
-            <span className="block text-xs text-gray-600 mb-1">Name (BG)</span>
-            <input
-              type="text"
-              value={contentForm.i18nBgName}
-              onChange={(e) => setContentForm((p) => ({ ...p, i18nBgName: e.target.value }))}
-              className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-sm"
-              maxLength={100}
-            />
-          </label>
-          <label className="block">
-            <span className="block text-xs text-gray-600 mb-1">Location (BG)</span>
-            <input
-              type="text"
-              value={contentForm.i18nBgLocation}
-              onChange={(e) => setContentForm((p) => ({ ...p, i18nBgLocation: e.target.value }))}
-              className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-sm"
-              maxLength={200}
-            />
-          </label>
-          <label className="block md:col-span-2">
-            <span className="block text-xs text-gray-600 mb-1">Description (BG)</span>
-            <textarea
-              rows={4}
-              value={contentForm.i18nBgDescription}
-              onChange={(e) => setContentForm((p) => ({ ...p, i18nBgDescription: e.target.value }))}
-              className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-sm"
-              maxLength={1000}
-            />
-          </label>
         </div>
-      </div>
+      </CabinEditorRow>
 
-      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="border border-gray-100 rounded-md p-3">
-          <label className="flex items-center gap-2 text-xs text-gray-700">
-            <input
-              type="checkbox"
-              checked={contentForm.superhostEnabled}
-              onChange={(e) => setContentForm((p) => ({ ...p, superhostEnabled: e.target.checked }))}
-            />
-            Superhost enabled
-          </label>
-          <input
-            type="text"
+      <div className="ops-cabin-editor__grid ops-cabin-editor__grid--2">
+        <CabinEditorRow>
+          <OpsCheckbox
+            label="Superhost enabled"
+            checked={contentForm.superhostEnabled}
+            onChange={(event) =>
+              setContentForm((current) => ({
+                ...current,
+                superhostEnabled: event.target.checked
+              }))
+            }
+          />
+          <OpsTextField
+            label="Superhost label"
             value={contentForm.superhostLabel}
-            onChange={(e) => setContentForm((p) => ({ ...p, superhostLabel: e.target.value }))}
-            className="mt-2 w-full border border-gray-200 rounded-md px-2.5 py-2 text-sm"
+            onChange={update('superhostLabel')}
             maxLength={100}
           />
-        </div>
-        <div className="border border-gray-100 rounded-md p-3">
-          <label className="flex items-center gap-2 text-xs text-gray-700">
-            <input
-              type="checkbox"
-              checked={contentForm.guestFavoriteEnabled}
-              onChange={(e) => setContentForm((p) => ({ ...p, guestFavoriteEnabled: e.target.checked }))}
-            />
-            Guest favorite enabled
-          </label>
-          <input
-            type="text"
+        </CabinEditorRow>
+        <CabinEditorRow>
+          <OpsCheckbox
+            label="Guest favorite enabled"
+            checked={contentForm.guestFavoriteEnabled}
+            onChange={(event) =>
+              setContentForm((current) => ({
+                ...current,
+                guestFavoriteEnabled: event.target.checked
+              }))
+            }
+          />
+          <OpsTextField
+            label="Guest favorite label"
             value={contentForm.guestFavoriteLabel}
-            onChange={(e) => setContentForm((p) => ({ ...p, guestFavoriteLabel: e.target.value }))}
-            className="mt-2 w-full border border-gray-200 rounded-md px-2.5 py-2 text-sm"
+            onChange={update('guestFavoriteLabel')}
             maxLength={100}
           />
-        </div>
+        </CabinEditorRow>
       </div>
 
-      <div className="mt-4 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={contentBusy}
-          className="ops-button ops-button--primary ops-button--compact"
-        >
-          {contentBusy ? 'Saving…' : 'Save'}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={contentBusy}
-          className="text-xs px-3 py-2 rounded-lg border border-gray-200 bg-white disabled:opacity-50"
-        >
-          Cancel
-        </button>
-        {contentError ? <span className="text-xs text-red-700">{contentError}</span> : null}
-      </div>
-    </section>
+      <CabinEditorActions
+        onSave={onSave}
+        onCancel={onCancel}
+        busy={contentBusy}
+        error={contentError}
+      />
+    </CabinEditorSection>
   );
 }

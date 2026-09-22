@@ -14,6 +14,20 @@
   min-width: 0;
 }
 
+.ops-dashboard-context-summary {
+  display: block;
+}
+
+.ops-dashboard-context-date {
+  display: none;
+  color: var(--ops-text);
+  font-weight: 500;
+}
+
+.ops-dashboard-context-summary {
+  color: var(--ops-text-secondary);
+}
+
 .ops-dashboard-push-attention {
   min-width: 0;
   max-width: 100%;
@@ -34,6 +48,10 @@
 
 a.ops-dashboard-links__link {
   text-decoration: none;
+}
+
+a.ops-dashboard-links__new-booking {
+  display: none;
 }
 
 .ops-dashboard-health-chip {
@@ -107,9 +125,9 @@ a.ops-dashboard-links__link {
 
 .ops-dashboard-empty {
   padding: var(--ops-space-16) var(--ops-space-12);
+  border: 1px dashed var(--ops-border);
   border-radius: var(--ops-radius-control);
   background: var(--ops-surface-subtle);
-  border: 1px dashed var(--ops-border);
   color: var(--ops-text-secondary);
 }
 
@@ -163,9 +181,9 @@ a.ops-dashboard-links__link {
 
 .ops-dashboard-alert__copy {
   display: flex;
+  flex: 1 1 12rem;
   flex-direction: column;
   gap: var(--ops-space-4);
-  flex: 1 1 12rem;
   min-width: 0;
   color: inherit;
   text-decoration: none;
@@ -179,28 +197,28 @@ a.ops-dashboard-links__link {
 
 .ops-dashboard-alert__title {
   margin: 0;
+  color: var(--ops-text);
   font-size: var(--ops-size-body);
   line-height: var(--ops-lh-body);
   font-weight: 600;
-  color: var(--ops-text);
   overflow-wrap: anywhere;
 }
 
 .ops-dashboard-alert__detail {
   margin: 0;
+  color: var(--ops-text-secondary);
   font-size: var(--ops-size-small);
   line-height: var(--ops-lh-small);
-  color: var(--ops-text-secondary);
   overflow-wrap: anywhere;
 }
 
 .ops-dashboard-alert__marks {
   display: flex;
+  flex: 0 1 auto;
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: flex-end;
   gap: var(--ops-space-4);
-  flex: 0 1 auto;
   min-width: 0;
 }
 
@@ -232,27 +250,27 @@ a.ops-dashboard-links__link {
 
 .ops-dashboard-lane__title {
   margin: 0;
+  color: var(--ops-text);
   font-size: var(--ops-size-small);
   line-height: var(--ops-lh-small);
   font-weight: 600;
-  color: var(--ops-text);
 }
 
 .ops-dashboard-lane__count {
   margin: 0;
+  color: var(--ops-text);
   font-size: var(--ops-size-display);
   line-height: var(--ops-lh-display);
   font-weight: 600;
   letter-spacing: var(--ops-tracking-tight);
   font-variant-numeric: tabular-nums;
-  color: var(--ops-text);
 }
 
 .ops-dashboard-lane__more {
   margin: 0;
+  color: var(--ops-text-muted);
   font-size: var(--ops-size-meta);
   line-height: var(--ops-lh-meta);
-  color: var(--ops-text-muted);
 }
 
 .ops-dashboard-rows {
@@ -274,8 +292,8 @@ a.ops-dashboard-links__link {
 }
 
 .ops-dashboard-row:last-child {
-  border-bottom: 0;
   padding-bottom: 0;
+  border-bottom: 0;
 }
 
 .ops-dashboard-row:first-child {
@@ -294,8 +312,8 @@ a.ops-dashboard-row:focus-visible {
 }
 
 .ops-dashboard-row--hold {
-  border-left: 2px solid var(--ops-info);
   padding-left: var(--ops-space-8);
+  border-left: 2px solid var(--ops-info);
 }
 
 .ops-dashboard-row__top {
@@ -307,43 +325,43 @@ a.ops-dashboard-row:focus-visible {
 }
 
 .ops-dashboard-row__identity {
-  min-width: 0;
   flex: 1 1 12rem;
+  min-width: 0;
 }
 
 .ops-dashboard-row__guest {
   margin: 0;
+  color: var(--ops-text);
   font-size: var(--ops-size-small);
   line-height: var(--ops-lh-small);
   font-weight: 600;
-  color: var(--ops-text);
   overflow-wrap: anywhere;
 }
 
 .ops-dashboard-row__cabin {
   margin: 0;
+  color: var(--ops-text-muted);
   font-size: var(--ops-size-meta);
   line-height: var(--ops-lh-meta);
-  color: var(--ops-text-muted);
   overflow-wrap: anywhere;
 }
 
 .ops-dashboard-row__id {
-  margin: 0;
   flex: 0 0 auto;
+  margin: 0;
+  color: var(--ops-text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: var(--ops-size-meta);
   line-height: var(--ops-lh-meta);
   font-variant-numeric: tabular-nums;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  color: var(--ops-text-muted);
   overflow-wrap: anywhere;
 }
 
 .ops-dashboard-row__meta {
   margin: 0;
+  color: var(--ops-text-secondary);
   font-size: var(--ops-size-meta);
   line-height: var(--ops-lh-meta);
-  color: var(--ops-text-secondary);
   overflow-wrap: anywhere;
 }
 
@@ -360,11 +378,11 @@ a.ops-dashboard-row:focus-visible {
 }
 
 .ops-dashboard-metric-group .ops-metric {
+  min-width: 0;
   padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
-  min-width: 0;
 }
 
 .ops-dashboard-health {
@@ -379,11 +397,11 @@ a.ops-dashboard-row:focus-visible {
 
 .ops-dashboard-health__facts {
   display: flex;
+  flex: 1 1 18rem;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--ops-space-8) var(--ops-space-16);
   min-width: 0;
-  flex: 1 1 18rem;
 }
 
 .ops-dashboard-health__fact {
@@ -393,9 +411,9 @@ a.ops-dashboard-row:focus-visible {
   gap: var(--ops-space-4);
   min-width: 0;
   margin: 0;
+  color: var(--ops-text-secondary);
   font-size: var(--ops-size-meta);
   line-height: var(--ops-lh-meta);
-  color: var(--ops-text-secondary);
   overflow-wrap: anywhere;
 }
 
@@ -417,10 +435,10 @@ a.ops-dashboard-row:focus-visible {
 }
 
 .ops-dashboard-health__link {
+  color: var(--ops-accent);
   font-size: var(--ops-size-meta);
   line-height: var(--ops-lh-meta);
   font-weight: 500;
-  color: var(--ops-accent);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -444,50 +462,105 @@ a.ops-dashboard-row:focus-visible {
   }
 }
 
-/* Wide-page composition. A mobile viewport cannot produce a 768px page container. */
-@container ops-page (min-width: 768px) {
+/* Wide composition. Base/mobile presentation above remains unchanged. */
+@container ops-page (min-width: 720px) {
+  .ops-dashboard {
+    gap: var(--ops-space-32);
+  }
+
   .ops-dashboard-intro {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: var(--ops-space-16);
+    align-items: start;
+    gap: var(--ops-space-16) var(--ops-space-24);
   }
 
   .ops-dashboard-intro .ops-page-header {
+    grid-column: 1;
+    grid-row: 1;
     margin-bottom: 0;
   }
 
+  .ops-dashboard-intro .ops-page-header__title,
+  .ops-dashboard-context-date,
+  .ops-dashboard-surface__title,
+  .ops-dashboard-lane__count,
+  .ops-dashboard-business-metric .ops-metric__value {
+    font-family: var(--ops-font-display);
+  }
+
+  .ops-dashboard-context-date {
+    display: block;
+    margin-bottom: var(--ops-space-4);
+  }
+
   .ops-dashboard-links {
+    grid-column: 2;
+    grid-row: 1;
     justify-content: flex-end;
+  }
+
+  .ops-dashboard-links__utility {
+    display: none;
+  }
+
+  a.ops-dashboard-links__new-booking {
+    display: inline-flex;
+  }
+
+  .ops-dashboard-push-attention {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   .ops-dashboard-main {
     display: grid;
-    grid-template-columns: minmax(0, 1.25fr) minmax(21rem, 0.95fr);
+    grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
-      'alerts alerts'
-      'today today'
-      'upcoming stay'
-      'upcoming cash'
-      'health health';
+      "alerts"
+      "stay"
+      "today"
+      "upcoming"
+      "cash"
+      "health";
     align-items: start;
-    gap: var(--ops-space-16);
+    gap: var(--ops-space-32);
   }
 
-  .ops-dashboard-surface--alerts {
-    grid-area: alerts;
+  .ops-dashboard-surface {
     padding: 0;
     border: 0;
+    border-radius: 0;
     background: transparent;
     box-shadow: none;
   }
 
-  .ops-dashboard-surface--alerts-empty {
-    display: none;
+  .ops-dashboard-surface--alerts {
+    grid-area: alerts;
   }
 
-  .ops-dashboard-surface--alerts > .ops-dashboard-surface__title {
-    display: none;
+  .ops-dashboard-surface--alerts-empty {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: baseline;
+    gap: var(--ops-space-16);
+    padding-bottom: var(--ops-space-12);
+    border-bottom: 1px solid var(--ops-border);
+  }
+
+  .ops-dashboard-surface--alerts .ops-dashboard-surface__title {
+    padding-bottom: var(--ops-space-12);
+    border-bottom: 1px solid var(--ops-text);
+  }
+
+  .ops-dashboard-surface--alerts-empty .ops-dashboard-surface__title {
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+
+  .ops-dashboard-surface--alerts-empty .ops-dashboard-empty {
+    padding: 0;
+    text-align: end;
   }
 
   .ops-dashboard-surface--alerts .ops-dashboard-alert {
@@ -514,88 +587,81 @@ a.ops-dashboard-row:focus-visible {
     grid-column: 2;
   }
 
-  .ops-dashboard-surface--today {
-    grid-area: today;
-  }
-
-  .ops-dashboard-surface--upcoming {
-    grid-area: upcoming;
-    align-self: start;
-  }
-
   .ops-dashboard-surface--stay {
     grid-area: stay;
+    gap: var(--ops-space-24);
+    padding: var(--ops-space-16) 0 var(--ops-space-32);
+    border-bottom: 1px solid var(--ops-text);
   }
 
-  .ops-dashboard-surface--cash {
-    grid-area: cash;
-  }
-
-  .ops-dashboard-health {
-    grid-area: health;
-  }
-
-  .ops-dashboard-surface--alerts {
-    padding: 0;
+  .ops-dashboard-surface--stay .ops-dashboard-surface__title {
+    color: var(--ops-text-secondary);
+    font-size: var(--ops-size-body);
+    line-height: var(--ops-lh-body);
+    font-weight: 500;
   }
 
   .ops-dashboard-surface--stay .ops-dashboard-metric-group {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .ops-dashboard-metric-group.ops-dashboard-cash-metrics {
-    grid-template-columns: minmax(9rem, 0.85fr) minmax(0, 1.4fr);
-    grid-template-rows: repeat(5, auto);
-    align-items: stretch;
-    gap: 0 var(--ops-space-12);
-  }
-
-  .ops-dashboard-cash-metrics .ops-metric:not(.ops-dashboard-cash-metric--total) {
     display: grid;
-    grid-column: 2;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: baseline;
-    gap: var(--ops-space-8);
-    min-height: 0;
-    padding: var(--ops-space-4) 0;
-    border-top: 1px solid var(--ops-border);
+    grid-template-columns: minmax(15rem, 1.3fr) repeat(2, minmax(7rem, 0.7fr));
+    grid-template-areas:
+      "gross bookings paid"
+      "gross open cancelled"
+      "gross refunds refunds";
+    gap: var(--ops-space-24) var(--ops-space-32);
+    align-items: end;
   }
 
-  .ops-dashboard-cash-metrics .ops-metric:first-child {
-    border-top: 0;
-  }
-
-  .ops-dashboard-cash-metrics .ops-metric:not(.ops-dashboard-cash-metric--total) .ops-metric__value {
-    font-size: var(--ops-size-small);
-    line-height: var(--ops-lh-small);
-    text-align: end;
-  }
-
-  .ops-dashboard-cash-metrics .ops-dashboard-cash-metric--total {
-    grid-column: 1;
-    grid-row: 1 / span 5;
+  .ops-dashboard-business-metric--gross {
+    grid-area: gross;
+    align-self: stretch;
     justify-content: center;
-    padding: var(--ops-space-12);
-    border: 1px solid var(--ops-border);
-    border-radius: var(--ops-radius-control);
-    background: var(--ops-surface-subtle);
   }
 
-  .ops-dashboard-cash-metric--total .ops-metric__value {
+  .ops-dashboard-business-metric--bookings {
+    grid-area: bookings;
+  }
+
+  .ops-dashboard-business-metric--paid {
+    grid-area: paid;
+  }
+
+  .ops-dashboard-business-metric--open {
+    grid-area: open;
+  }
+
+  .ops-dashboard-business-metric--cancelled {
+    grid-area: cancelled;
+  }
+
+  .ops-dashboard-business-metric--refunds {
+    grid-area: refunds;
+  }
+
+  .ops-dashboard-business-metric--gross .ops-metric__label {
+    color: var(--ops-text-secondary);
+    font-size: var(--ops-size-body);
+    line-height: var(--ops-lh-body);
+  }
+
+  .ops-dashboard-business-metric--gross .ops-metric__value {
+    font-size: var(--ops-size-dashboard-lead);
+    line-height: var(--ops-lh-dashboard-lead);
+    font-weight: 700;
+    letter-spacing: var(--ops-tracking-tight);
+    white-space: nowrap;
+  }
+
+  .ops-dashboard-business-metric:not(.ops-dashboard-business-metric--gross) .ops-metric__value {
     font-size: var(--ops-size-display);
     line-height: var(--ops-lh-display);
   }
 
-  .ops-dashboard-cash-metric--liability .ops-metric__value {
-    color: var(--ops-warning);
+  .ops-dashboard-surface--today {
+    grid-area: today;
+    gap: var(--ops-space-24);
   }
 
-  .ops-dashboard-surface--cash .ops-dashboard-note {
-    display: none;
-  }
-}
-
-@container ops-page (min-width: 960px) {
   .ops-dashboard-lanes {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -604,15 +670,109 @@ a.ops-dashboard-row:focus-visible {
     padding-left: var(--ops-space-16);
     border-left: 1px solid var(--ops-border);
   }
+
+  .ops-dashboard-surface--today > .ops-dashboard-surface__title {
+    padding-bottom: var(--ops-space-12);
+    border-bottom: 1px solid var(--ops-text);
+  }
+
+  .ops-dashboard-surface--upcoming {
+    grid-area: upcoming;
+    align-self: start;
+  }
+
+  .ops-dashboard-surface--cash {
+    grid-area: cash;
+    align-self: start;
+  }
+
+  .ops-dashboard-surface--upcoming .ops-dashboard-surface__head,
+  .ops-dashboard-surface--cash > .ops-dashboard-surface__title {
+    padding-bottom: var(--ops-space-12);
+    border-bottom: 1px solid var(--ops-text);
+  }
+
+  .ops-dashboard-row {
+    border-radius: 0;
+  }
+
+  .ops-dashboard-empty {
+    padding: var(--ops-space-16) 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .ops-dashboard-metric-group.ops-dashboard-cash-metrics {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .ops-dashboard-cash-metrics .ops-metric {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: var(--ops-space-8);
+    padding: var(--ops-space-8) 0;
+    border-bottom: 1px solid var(--ops-border);
+  }
+
+  .ops-dashboard-cash-metrics .ops-metric__value {
+    font-size: var(--ops-size-small);
+    line-height: var(--ops-lh-small);
+    text-align: end;
+  }
+
+  .ops-dashboard-cash-metrics .ops-dashboard-cash-metric--total {
+    grid-row: 1;
+    padding: 0 0 var(--ops-space-16);
+    border-bottom-color: var(--ops-text);
+  }
+
+  .ops-dashboard-cash-metric--total .ops-metric__label {
+    color: var(--ops-text-secondary);
+    font-size: var(--ops-size-small);
+    line-height: var(--ops-lh-small);
+  }
+
+  .ops-dashboard-cash-metric--total .ops-metric__value {
+    font-family: var(--ops-font-display);
+    font-size: var(--ops-size-display);
+    line-height: var(--ops-lh-display);
+  }
+
+  .ops-dashboard-cash-metric--liability .ops-metric__value {
+    color: var(--ops-warning);
+  }
+
+  .ops-dashboard-health {
+    grid-area: health;
+    padding-top: var(--ops-space-16);
+  }
 }
 
-@container ops-page (min-width: 1100px) {
-  .ops-dashboard-metric-group {
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+@container ops-page (min-width: 960px) {
+  .ops-dashboard-main {
+    grid-template-columns: minmax(0, 1.08fr) minmax(21rem, 0.92fr);
+    grid-template-areas:
+      "alerts alerts"
+      "stay stay"
+      "today today"
+      "upcoming cash"
+      "health health";
+    gap: var(--ops-space-48) var(--ops-space-32);
   }
 
   .ops-dashboard-surface--stay .ops-dashboard-metric-group {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: minmax(18rem, 1.55fr) repeat(3, minmax(7rem, 0.65fr));
+    grid-template-areas:
+      "gross bookings paid cancelled"
+      "gross open refunds refunds";
+  }
+
+  .ops-dashboard-lane + .ops-dashboard-lane {
+    padding-left: var(--ops-space-24);
   }
 }
 

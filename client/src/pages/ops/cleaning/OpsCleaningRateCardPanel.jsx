@@ -5,6 +5,11 @@ import OpsCheckbox from '../../../ops/primitives/OpsCheckbox';
 import OpsInlineError from '../../../ops/primitives/OpsInlineError';
 import OpsSelect from '../../../ops/primitives/OpsSelect';
 import OpsTextField from '../../../ops/primitives/OpsTextField';
+import OpsSurface, {
+  OpsSurfaceDescription,
+  OpsSurfaceHeader,
+  OpsSurfaceTitle
+} from '../../../ops/primitives/OpsSurface';
 
 const RULE_TYPE_OPTIONS = [
   { value: 'daily_fixed', label: 'Per cleaning trip' },
@@ -215,24 +220,24 @@ export default function OpsCleaningRateCardPanel({
   }, {});
 
   return (
-    <section
+    <OpsSurface
       className="ops-cleaning-settings-surface"
       aria-labelledby={`ops-cleaning-rate-${locationMeta.propertyKind}`}
     >
-      <div className="ops-cleaning-settings-surface__head">
+      <OpsSurfaceHeader className="ops-cleaning-settings-surface__head">
         <div>
-          <h2
+          <OpsSurfaceTitle
             id={`ops-cleaning-rate-${locationMeta.propertyKind}`}
             className="ops-cleaning-settings-surface__title"
           >
             {locationMeta.label} payout policy
-          </h2>
-          <p className="ops-cleaning-settings-surface__desc">
+          </OpsSurfaceTitle>
+          <OpsSurfaceDescription className="ops-cleaning-settings-surface__desc">
             Rules saved here are exactly what the payout engine runs — no manual day-sheet counts.
-          </p>
+          </OpsSurfaceDescription>
         </div>
         {locationState ? <ModeBadge location={locationState} /> : null}
-      </div>
+      </OpsSurfaceHeader>
 
       <div className="ops-cleaning-settings-rules">
         {rules.map((rule, index) => (
@@ -281,7 +286,7 @@ export default function OpsCleaningRateCardPanel({
       ) : (
         <p className="ops-cleaning-settings-readonly">Read-only. Contact an admin to change rules.</p>
       )}
-    </section>
+    </OpsSurface>
   );
 }
 

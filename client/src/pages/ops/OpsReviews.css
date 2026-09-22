@@ -62,10 +62,6 @@
   flex-direction: column;
   gap: var(--ops-space-12);
   min-width: 0;
-  padding: var(--ops-space-12);
-  border: 1px solid var(--ops-border);
-  border-radius: var(--ops-radius-surface);
-  background: var(--ops-surface);
 }
 
 .ops-reviews-row__top {

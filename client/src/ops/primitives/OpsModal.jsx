@@ -8,6 +8,7 @@ export default function OpsModal({
   open,
   onClose,
   title,
+  titleId: providedTitleId,
   description,
   children,
   footer,
@@ -16,9 +17,12 @@ export default function OpsModal({
   dismissible = true,
   closeOnBackdrop,
   closeOnEscape,
-  showCloseButton = true
+  showCloseButton = true,
+  mobileSheet = false,
+  panelProps
 }) {
-  const titleId = useId();
+  const generatedTitleId = useId();
+  const titleId = providedTitleId || generatedTitleId;
   const descriptionId = useId();
   const panelRef = useRef(null);
   const canBackdrop = closeOnBackdrop ?? dismissible;
@@ -36,15 +40,28 @@ export default function OpsModal({
 
   return (
     <OpsOverlayPortal>
-      <div className="ops-overlay ops-overlay--modal" data-ops-overlay="modal">
+      <div
+        className={opsCx(
+          'ops-overlay',
+          'ops-overlay--modal',
+          mobileSheet && 'ops-overlay--modal-sheet-mobile'
+        )}
+        data-ops-overlay="modal"
+      >
         <div
           className="ops-overlay__scrim"
           aria-hidden="true"
           onClick={canBackdrop ? () => onClose?.({ reason: 'backdrop' }) : undefined}
         />
         <div
+          {...panelProps}
           ref={panelRef}
-          className={opsCx('ops-modal', size === 'sm' && 'ops-modal--sm')}
+          className={opsCx(
+            'ops-modal',
+            size !== 'md' && `ops-modal--${size}`,
+            mobileSheet && 'ops-modal--sheet-mobile',
+            panelProps?.className
+          )}
           role="dialog"
           aria-modal="true"
           aria-labelledby={titleId}
