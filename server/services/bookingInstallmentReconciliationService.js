@@ -106,7 +106,8 @@ function buildExpectedRows({ booking, session, paymentIntentId, schedule, now })
       cancellationTreatment: String(inst.cancellationTreatment),
       stripePaymentIntentId: isInitial && paymentIntentId ? String(paymentIntentId) : null,
       paidAt: isInitial ? now : null,
-      revision: 1
+      revision: 1,
+      provisioningState: isInitial ? 'provisioned' : 'unprovisioned'
     });
   }
   return rows;

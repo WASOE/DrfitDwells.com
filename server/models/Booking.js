@@ -349,6 +349,31 @@ const bookingSchema = new mongoose.Schema({
     trim: true,
     default: null
   },
+  /**
+   * SP6: ops-only unpaid installment review. Never auto-cancels or releases inventory.
+   */
+  cancellationReview: {
+    type: new mongoose.Schema(
+      {
+        status: {
+          type: String,
+          enum: ['open', 'resolved'],
+          default: 'open'
+        },
+        reason: { type: String, trim: true, default: null },
+        installmentSequence: { type: Number, min: 1, default: null },
+        installmentId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'BookingInstallment',
+          default: null
+        },
+        openedAt: { type: Date, default: null },
+        resolvedAt: { type: Date, default: null }
+      },
+      { _id: false }
+    ),
+    default: null
+  },
   totalValueCents: {
     type: Number,
     required: false,

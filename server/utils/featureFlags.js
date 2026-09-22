@@ -232,6 +232,19 @@ const featureFlags = {
    */
   isSplitPaymentEnabled() {
     return this._parseBooleanWithDefault(process.env.SPLIT_PAYMENT_ENABLED, false);
+  },
+
+  /**
+   * SP6: future installment collection / reminder / grace worker.
+   * Independent of SPLIT_PAYMENT_ENABLED — existing contractual obligations
+   * continue even when new split sales are disabled.
+   * Default OFF when unset.
+   */
+  isSplitPaymentCollectionWorkerEnabled() {
+    return this._parseBooleanWithDefault(
+      process.env.SPLIT_PAYMENT_COLLECTION_WORKER_ENABLED,
+      false
+    );
   }
 };
 
