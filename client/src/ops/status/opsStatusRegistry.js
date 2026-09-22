@@ -1,6 +1,6 @@
 /**
  * Ops status registry — presentation data only.
- * Source: DND_OPS_DESIGN_LANGUAGE_GUIDE_V1_2_LOCKED.md §12.
+ * Source: docs/ops-design/OPS_DESIGN_LANGUAGE.md §9.
  *
  * Does not change backend enums, API semantics, or production page rendering.
  */

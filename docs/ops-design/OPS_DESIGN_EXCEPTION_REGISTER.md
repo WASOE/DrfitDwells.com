@@ -1,8 +1,8 @@
 # Ops design exception register
 
-Approved deviations from `docs/ops-design/DND_OPS_DESIGN_LANGUAGE_GUIDE_V1_2_LOCKED.md`.
+Approved deviations from `docs/ops-design/OPS_DESIGN_LANGUAGE.md`.
 
-Legacy Ops screens under `client/src/pages/ops/**` are **not migrated yet**. They are not listed here. Do not turn the unmigrated tree into hundreds of exceptions.
+The full OPS product is governed by the design language. This register is only for deliberate product exceptions; legacy or new files do not receive an automatic exemption.
 
 An exception without a review date is not valid. Exceptions that survive two reviews become either a rule change or a fix.
 

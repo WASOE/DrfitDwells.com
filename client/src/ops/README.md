@@ -1,28 +1,31 @@
-# Ops design island
+# Drift & Dwells OPS design system
 
-Private `/ops` design system. Not a public-site style guide.
+Private design system for the complete authenticated `/ops` product. This is not a public-site style guide and not a Dashboard-only theme.
 
-## Locked source
+## Authority
 
-- Guide: `docs/ops-design/DND_OPS_DESIGN_LANGUAGE_GUIDE_V1_2_LOCKED.md`
-- Exceptions: `docs/ops-design/OPS_DESIGN_EXCEPTION_REGISTER.md`
-- Cursor rule: `.cursor/rules/ops-design.mdc`
+- Design language: `docs/ops-design/OPS_DESIGN_LANGUAGE.md`
+- Reviewed deviations: `docs/ops-design/OPS_DESIGN_EXCEPTION_REGISTER.md`
+- Agent rule: `.cursor/rules/ops-design.mdc`
 
-Legacy screens live in `client/src/pages/ops/**` until an explicit migration slice. Do not treat them as hundreds of exceptions.
+Do not create another design-language document. Update the authoritative guide and its implementation in the same change.
 
-## Where things live
+## Ownership
 
-| What | Path |
+| Concern | Path |
 |---|---|
-| Tokens | `client/src/ops/ops.css` |
-| Token names (tests / Tailwind map) | `client/src/ops/tokens/opsTokenNames.js` |
-| Primitives | `client/src/ops/primitives/` |
-| Overlay helper | `client/src/ops/primitives/opsOverlay.js` |
-| Status registry | `client/src/ops/status/opsStatusRegistry.js` |
-| Cleaner EN/BG | `client/src/ops/i18n/namespaces/` |
-| Design-system page | `client/src/ops/pages/OpsDesignSystemPage.jsx` |
+| Tokens and appearance | `client/src/ops/ops.css` |
+| Token-name contract | `client/src/ops/tokens/opsTokenNames.js` |
+| Canonical primitives | `client/src/ops/primitives/` |
+| Overlay behavior | `client/src/ops/primitives/opsOverlay.js` |
+| Status meaning | `client/src/ops/status/opsStatusRegistry.js` |
+| Shell | `client/src/layouts/ops/` |
+| Domain composition | `client/src/pages/ops/` |
+| Internal showcase | `client/src/ops/pages/OpsDesignSystemPage.jsx` |
 
-## Checks
+Every new file under `client/src/pages/ops/**` is automatically included in the design guard.
+
+## Gate
 
 From `client/`:
 
@@ -30,4 +33,4 @@ From `client/`:
 npm run test:ops-design
 ```
 
-That runs the design-island guard plus token, status, and cleaner-namespace tests. It does not scan `client/src/pages/ops/**`.
+This validates the design-system source and the full production OPS page tree.

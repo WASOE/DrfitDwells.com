@@ -3,7 +3,7 @@
 
 /**
  * Ops design-language guard (P0E).
- * Scans client/src/ops plus every production file enrolled in the product-wide migration.
+ * Scans client/src/ops plus the complete production OPS page tree.
  *
  * ENFORCED NOW (narrow, deterministic):
  * - raw hex outside token sources
@@ -14,7 +14,6 @@
  *
  * NOT ENFORCED HERE:
  * - axe accessibility
- * - unused legacy source with no production import
  * - every possible status map shape
  * - every position:fixed overlay
  * - env()/calc() arbitrary values (allowed; not a visual token substitute)
@@ -25,8 +24,12 @@ const path = require('path');
 
 const CLIENT_ROOT = path.resolve(__dirname, '..');
 const DEFAULT_ROOT = path.resolve(__dirname, '../src/ops');
+const OPS_PAGES_ROOT = path.resolve(__dirname, '../src/pages/ops');
 
-/** Production files migrated onto the Ops design language. Append per batch. */
+/**
+ * Historical migration baseline retained for API compatibility with older tests/tools.
+ * Enforcement no longer depends on enrollment: the complete OPS page tree is scanned.
+ */
 const MIGRATED_OPS_FILES = [
   'src/pages/ops/OpsGiftVouchers.jsx',
   'src/pages/ops/OpsGiftVouchers.css',
@@ -331,11 +334,16 @@ function scanMigratedOpsFiles(options = {}) {
 
 function scanOpsDesign(options = {}) {
   const island = scanDirectory(DEFAULT_ROOT, options);
-  const migrated = scanMigratedOpsFiles(options);
+  const pages = scanDirectory(OPS_PAGES_ROOT, options);
+  const pageFiles = pages.scanned.map((relPosix) => `src/pages/ops/${relPosix}`);
+  const pageViolations = pages.violations.map((violation) => ({
+    ...violation,
+    file: `src/pages/ops/${violation.file}`
+  }));
   return {
     root: island.root,
-    scanned: island.scanned.concat(migrated.scanned),
-    violations: island.violations.concat(migrated.violations)
+    scanned: island.scanned.concat(pageFiles),
+    violations: island.violations.concat(pageViolations)
   };
 }
 
@@ -381,6 +389,7 @@ module.exports = {
   RULES,
   HEX_ALLOWLIST,
   DEFAULT_ROOT,
+  OPS_PAGES_ROOT,
   MIGRATED_OPS_FILES,
   scanDirectory,
   scanMigratedOpsFiles,

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { RULES, MIGRATED_OPS_FILES, scanDirectory, scanOpsDesign } = require('../../scripts/check-ops-design.cjs');
+const { RULES, OPS_PAGES_ROOT, scanDirectory, scanOpsDesign } = require('../../scripts/check-ops-design.cjs');
 
 let tmpDir = null;
 
@@ -17,76 +17,19 @@ afterEach(() => {
 });
 
 describe('ops design guard', () => {
-  it('passes the current Ops design island and migrated production files', () => {
+  it('passes the design system and the complete production OPS page tree', () => {
     const result = scanOpsDesign();
+    const productionFiles = scanDirectory(OPS_PAGES_ROOT).scanned.map((file) => `src/pages/ops/${file}`);
+
     expect(result.violations, JSON.stringify(result.violations, null, 2)).toEqual([]);
-    expect(result.scanned.length).toBeGreaterThan(0);
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsGiftVouchers.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsGiftVoucherDetail.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsGiftVoucherDetail.css');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsPromoCodes.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsPromoCodes.css');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsManualReviewBacklog.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsManualReviewBacklog.css');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsSyncCenter.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsSyncCenter.css');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsCommunicationOversight.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsCommunicationOversight.css');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsPayments.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsPayments.css');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsUsers.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsUsers.css');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsCabinsList.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsCabinsList.css');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsCabins.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsCabinDetail.css');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cabins/OpsReadOnlyDetailSection.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cabins/ArchiveCabinModal.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsReservations.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsReservations.css');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsReservationDetail.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsReservationDetail.css');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsDashboard.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsDashboard.css');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsMessaging.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsMessaging.css');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cleaning/OpsCleaningSettings.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cleaning/OpsCleaningSettings.css');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cleaning/OpsCleaningInventoryTagsPanel.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cleaning/OpsCleaningRateCardPanel.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsReviews.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsReviews.css');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/OpsCalendarIndex.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/OpsCalendarMonth.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/OpsCalendarLegend.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/OpsCalendar.css');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/calendarVisualTokens.js');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/CalendarBottomSheet.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/LocationBlockSheet.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/OpsWorkWindows.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/calendar/OpsWorkWindows.css');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cleaning/OpsCleaningCalendar.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cleaning/OpsCleaningCalendar.css');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cleaning/OpsCleaningPaymentPanel.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cleaning/OpsCleaningPayoutBreakdown.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cleaning/OpsCleaningDailyFeeCard.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/cleaning/OpsCleaningLineItemsTable.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsInsights.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsInsightsPerformance.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsInsights.css');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsCreatorPartners.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsCreatorPartners.css');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsConversion.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsConversion.css');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsConversionRecovery.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsConversionRecovery.css');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsReadiness.jsx');
-    expect(MIGRATED_OPS_FILES).toContain('src/pages/ops/OpsReadiness.css');
-    expect(MIGRATED_OPS_FILES).not.toContain('src/pages/ops/calendar/opsCalendarDateUtils.js');
-    expect(MIGRATED_OPS_FILES).not.toContain('src/pages/ops/calendar/workWindowsFormat.js');
-    expect(MIGRATED_OPS_FILES).not.toContain('src/services/cleaningApi.js');
-    expect(MIGRATED_OPS_FILES).not.toContain('src/components/ops/ManualReviewResolveAction.jsx');
-    expect(result.scanned).toEqual(expect.arrayContaining(MIGRATED_OPS_FILES));
+    expect(result.scanned.length).toBeGreaterThan(productionFiles.length);
+    expect(result.scanned).toEqual(expect.arrayContaining(productionFiles));
+
+    // These were outside the old manual migration list. Their presence proves
+    // that new and legacy files cannot silently escape the guard.
+    expect(result.scanned).toContain('src/pages/ops/OpsDashboardPushAttention.jsx');
+    expect(result.scanned).toContain('src/pages/ops/cabins/CreateCabinModal.jsx');
+    expect(result.scanned).toContain('src/pages/ops/utils/opsReservationPermissions.js');
   });
 
   it('detects raw hex, Playfair, browser confirm, and arbitrary Tailwind', () => {

@@ -1,113 +1,51 @@
 ---
-description: Locked Ops design language. New Ops UI uses canonical tokens and primitives only.
+description: Locked Drift & Dwells OPS product design language and integration boundary.
 globs:
   - client/src/ops/**/*
+  - client/src/layouts/ops/**/*
+  - client/src/pages/ops/**/*
   - docs/ops-design/**/*
-  - client/src/pages/ops/OpsGiftVouchers.jsx
-  - client/src/pages/ops/OpsGiftVouchers.css
-  - client/src/pages/ops/OpsGiftVoucherDetail.jsx
-  - client/src/pages/ops/OpsGiftVoucherDetail.css
-  - client/src/pages/ops/OpsPromoCodes.jsx
-  - client/src/pages/ops/OpsPromoCodes.css
-  - client/src/pages/ops/OpsManualReviewBacklog.jsx
-  - client/src/pages/ops/OpsManualReviewBacklog.css
-  - client/src/pages/ops/OpsSyncCenter.jsx
-  - client/src/pages/ops/OpsSyncCenter.css
-  - client/src/pages/ops/OpsCommunicationOversight.jsx
-  - client/src/pages/ops/OpsCommunicationOversight.css
-  - client/src/pages/ops/OpsPayments.jsx
-  - client/src/pages/ops/OpsPayments.css
-  - client/src/pages/ops/OpsUsers.jsx
-  - client/src/pages/ops/OpsUsers.css
-  - client/src/pages/ops/OpsCabinsList.jsx
-  - client/src/pages/ops/OpsCabinsList.css
-  - client/src/pages/ops/OpsCabins.jsx
-  - client/src/pages/ops/OpsCabinDetail.css
-  - client/src/pages/ops/cabins/OpsReadOnlyDetailSection.jsx
-  - client/src/pages/ops/cabins/ArchiveCabinModal.jsx
-  - client/src/pages/ops/OpsReservations.jsx
-  - client/src/pages/ops/OpsReservations.css
-  - client/src/pages/ops/OpsReservationDetail.jsx
-  - client/src/pages/ops/OpsReservationDetail.css
-  - client/src/pages/ops/OpsDashboard.jsx
-  - client/src/pages/ops/OpsDashboard.css
-  - client/src/pages/ops/OpsMessaging.jsx
-  - client/src/pages/ops/OpsMessaging.css
-  - client/src/pages/ops/cleaning/OpsCleaningSettings.jsx
-  - client/src/pages/ops/cleaning/OpsCleaningSettings.css
-  - client/src/pages/ops/cleaning/OpsCleaningInventoryTagsPanel.jsx
-  - client/src/pages/ops/cleaning/OpsCleaningRateCardPanel.jsx
-  - client/src/pages/ops/OpsReviews.jsx
-  - client/src/pages/ops/OpsReviews.css
-  - client/src/pages/ops/calendar/OpsCalendarIndex.jsx
-  - client/src/pages/ops/calendar/OpsCalendarMonth.jsx
-  - client/src/pages/ops/calendar/OpsCalendarLegend.jsx
-  - client/src/pages/ops/calendar/OpsCalendar.css
-  - client/src/pages/ops/calendar/calendarVisualTokens.js
-  - client/src/pages/ops/calendar/CalendarBottomSheet.jsx
-  - client/src/pages/ops/calendar/LocationBlockSheet.jsx
-  - client/src/pages/ops/calendar/OpsWorkWindows.jsx
-  - client/src/pages/ops/calendar/OpsWorkWindows.css
-  - client/src/pages/ops/cleaning/OpsCleaningCalendar.jsx
-  - client/src/pages/ops/cleaning/OpsCleaningCalendar.css
-  - client/src/pages/ops/cleaning/OpsCleaningPaymentPanel.jsx
-  - client/src/pages/ops/cleaning/OpsCleaningPayoutBreakdown.jsx
-  - client/src/pages/ops/cleaning/OpsCleaningDailyFeeCard.jsx
-  - client/src/pages/ops/cleaning/OpsCleaningLineItemsTable.jsx
-  - client/src/pages/ops/OpsInsights.jsx
-  - client/src/pages/ops/OpsInsightsPerformance.jsx
-  - client/src/pages/ops/OpsInsights.css
-  - client/src/pages/ops/OpsCreatorPartners.jsx
-  - client/src/pages/ops/OpsCreatorPartners.css
-  - client/src/pages/ops/OpsConversion.jsx
-  - client/src/pages/ops/OpsConversion.css
-  - client/src/pages/ops/OpsConversionRecovery.jsx
-  - client/src/pages/ops/OpsConversionRecovery.css
-  - client/src/pages/ops/OpsReadiness.jsx
-  - client/src/pages/ops/OpsReadiness.css
 alwaysApply: false
 ---
 
-# Ops design language (locked v1.5)
+# OPS design language — locked
 
-Source of truth: `docs/ops-design/DND_OPS_DESIGN_LANGUAGE_GUIDE_V1_2_LOCKED.md`
+Authoritative source: `docs/ops-design/OPS_DESIGN_LANGUAGE.md`
 
-This rule does **not** authorize feature work or IA changes. If the locked guide conflicts with a requested implementation, **STOP and report the conflict**. Do not invent tokens, exceptions, or primitives to proceed.
+This rule applies to the complete authenticated OPS product, including every existing or new route under `client/src/pages/ops/**`. It does not authorize feature, workflow, permission, API, or information-architecture changes.
 
-## Scope
+## Required architecture
 
-Applies to the Ops design island, shared Ops shell, and every production route under `client/src/pages/ops/**`. Production Ops page migration is complete; `/ops/design-system` remains an intentional non-operator exception.
+- Compose canonical primitives from `client/src/ops/primitives/` before adding feature styling.
+- Use semantic `--ops-*` tokens from `client/src/ops/ops.css`; never create a page-local palette or type scale.
+- Use Montserrat only through the canonical display roles. Inter owns controls, body text, metadata, and dense data.
+- Use `OpsSurface` for section chrome, `OpsTable` for comparable columns, and `OpsRecord` / `OpsCollectionRow` for responsive records.
+- Use `OpsStatus` and `opsStatusRegistry.js` for operational states. Distinct facts remain distinct.
+- Use canonical fields, buttons, banners, empty/loading states, and overlays.
+- Feature CSS owns domain composition only: grids, timelines, content flow, data alignment, and responsive ordering.
 
-`client/src/pages/ops/**` files not listed in `MIGRATED_OPS_FILES` remain out of CI scope for this rule. Do not drive-by rewrite shared helpers. Do not fail CI against that tree from this rule except for files listed in `MIGRATED_OPS_FILES` (`client/scripts/check-ops-design.cjs`).
+## Product boundaries
 
-## MUST
+- Preserve every useful signal, action, permission, and drilldown. Visual minimalism never authorizes deletion.
+- A Dashboard change requires a current-signal-to-new-location ledger with zero missing signals.
+- Reuse existing production workflows. Do not build a second booking, payment, reservation, or communication flow for visual convenience.
+- Keep the established mobile composition unless the task explicitly includes mobile redesign.
+- Graphite is structural and primary. Green is semantic only.
+- No Playfair, serif/script styling, raw page-local font declarations, decorative gradients, or promotional public-site treatment.
+- No raw visual hex outside the token source.
+- No browser dialogs, local portals, or alternate modal/sheet/focus systems.
+- No new UI, overlay, or animation library without explicit approval.
+- Spatial exceptions require a reviewed entry in `OPS_DESIGN_EXCEPTION_REGISTER.md`; never copy an existing exception by analogy.
+- Never create another OPS/dashboard design-language document. Update the authoritative guide instead.
 
-- New Ops UI uses canonical primitives in `client/src/ops/primitives/`.
-- New Ops UI uses semantic `--ops-*` tokens only.
-- Light and dark use the same token names. No `dark:` / `html.dark` / raw `gray-*` styling.
-- Structural foundation is neutral gray. Green is semantic/domain only — never canvas, sidebar, topbar, surfaces, borders, nav chrome, or primary actions.
-- No public-site editorial styling. No Playfair. No `font-serif` / `font-heading` / `font-script` as Ops styling (ops.css may neutralize those classes to Inter). Montserrat is limited to canonical desktop page, surface, metric, and Dashboard lead display roles.
-- Migrated sections use `OpsSurface`. Feature CSS may own domain layout, but must not recreate surface chrome, title typography, or desktop ruled composition.
-- No raw visual hex outside `client/src/ops/ops.css` (and the P0A test mirror `client/src/ops/tokens/opsTokenNames.js`).
-- No arbitrary one-off Tailwind visual values (`p-[13px]`, `rounded-[7px]`, `text-[#…]`, `z-[9999]`) when a locked token exists.
-- No `window.confirm`, `alert`, or `prompt`. Use `OpsConfirmDialog` / canonical overlays.
-- No new status color or label maps outside `client/src/ops/status/opsStatusRegistry.js`.
-- No new overlay system. Modal / Sheet / Confirm come from `client/src/ops/primitives/` and `opsOverlay.js`.
-- No new component library (Radix, Headless UI, shadcn, Framer Motion, focus-trap packages) without explicit approval.
-- Production migrations must preserve business behavior. Visual change only when the slice says so.
-- Mobile and desktop share semantics, not necessarily layout.
-- Register every approved deviation in `docs/ops-design/OPS_DESIGN_EXCEPTION_REGISTER.md`.
+## Completion gate
 
-## MUST NOT
+Before calling an OPS feature complete:
 
-- Do not add `/ops/design-system` to operator navigation.
-- Do not introduce command search or change information architecture without a separately approved slice.
-- Do not reintroduce sage/olive/green-tinted values into structural foundation tokens.
+1. inventory fields, states, actions, permissions, and drilldowns;
+2. map them to canonical primitives and responsive locations;
+3. verify populated, empty, loading, error, long-content, and stale/offline states;
+4. review at 432, 1024, and 1440 pixels;
+5. run `npm run test:ops-design` from `client/` plus relevant feature tests and build.
 
-## Checks
-
-Run from `client/`:
-
-```bash
-npm run test:ops-design
-```
+If the guide conflicts with a requested implementation, stop and report the conflict. Do not invent an exception.
