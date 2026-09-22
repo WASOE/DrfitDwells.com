@@ -382,6 +382,61 @@ const checkoutSessionSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: null
+    },
+    /**
+     * SP5: explicit customer payment choice. Default/absent = full.
+     * Offer presence alone must never imply split was selected.
+     */
+    paymentChoice: {
+      type: new mongoose.Schema(
+        {
+          choice: {
+            type: String,
+            required: true,
+            enum: { values: ['full', 'split'], message: 'Unsupported payment choice' },
+            default: 'full'
+          },
+          splitOfferSnapshotHash: { type: String, trim: true, default: null },
+          selectedAt: { type: Date, default: null },
+          sessionVersionAtSelection: { type: Number, default: null, min: 1 }
+        },
+        { _id: false }
+      ),
+      default: null
+    },
+    /**
+     * SP5: future off-session charge consent evidence (split only).
+     * Protocol identity = consentVersion + consentHash (not displayedText).
+     */
+    futureChargeConsent: {
+      type: new mongoose.Schema(
+        {
+          consentVersion: {
+            type: Number,
+            required: true,
+            min: 1,
+            validate: { validator: integerPositiveValidator, message: 'consentVersion must be a positive integer' }
+          },
+          consentHash: { type: String, required: true, trim: true },
+          acceptedAt: { type: Date, required: true },
+          acceptedLocale: { type: String, trim: true, maxlength: 32, default: 'en' },
+          displayedText: { type: String, required: true, trim: true, maxlength: 4000 }
+        },
+        { _id: false }
+      ),
+      default: null
+    },
+    /** SP5: Stripe Customer for selected split (internal; not public). */
+    stripeCustomerId: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    /** SP5: reusable PaymentMethod captured after successful split initial payment. */
+    stripeReusablePaymentMethodId: {
+      type: String,
+      trim: true,
+      default: null
     }
   },
   { timestamps: true }

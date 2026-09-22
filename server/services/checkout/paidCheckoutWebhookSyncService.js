@@ -284,13 +284,21 @@ async function verifyAccommodationPaymentSuccess({ event, payment = null }) {
   }
 
   const amountReceived = Number(pi.amount_received != null ? pi.amount_received : pi.amount);
-  const expectedAmount = Number(session.stripeAmountCents);
+  const {
+    resolveExpectedChargeCents
+  } = require('../splitPaymentChoiceService');
+  let expectedAmount;
+  try {
+    expectedAmount = Number(resolveExpectedChargeCents(session));
+  } catch {
+    expectedAmount = Number(session.stripeAmountCents);
+  }
   if (!Number.isFinite(amountReceived) || amountReceived !== expectedAmount) {
     return {
       ok: false,
       permanent: true,
       errorCode: VERIFICATION_ERROR_CODES.AMOUNT_MISMATCH,
-      errorSummary: 'amount_received does not equal CheckoutSession.stripeAmountCents',
+      errorSummary: 'amount_received does not equal expected charge amount for payment choice',
       checkoutId,
       paymentIntentId: piId
     };
@@ -386,7 +394,13 @@ async function verifyAccommodationPaymentSuccess({ event, payment = null }) {
   return { ok: true, session, pi, evidence, checkoutId, paymentIntentId: piId };
 }
 
-async function markCheckoutSessionPaid({ session, evidence, now = new Date() }) {
+async function markCheckoutSessionPaid({
+  session,
+  evidence,
+  now = new Date(),
+  paymentIntent = null,
+  stripe = null
+}) {
   const checkoutId = session.checkoutId;
   const set = {
     paymentStatus: 'paid'
@@ -418,6 +432,59 @@ async function markCheckoutSessionPaid({ session, evidence, now = new Date() }) 
     }
   }
 
+  // SP5B: authoritative reusable card PM verification for split only.
+  // Never trust client/unexpanded PM ids. Failure preserves paid evidence
+  // and fails into needs_review — no auto-refund / silent inventory release.
+  let splitOffSessionVerificationFailed = null;
+  const { getPaymentChoice } = require('../splitPaymentChoiceService');
+  if (getPaymentChoice(session) === 'split' && paymentIntent) {
+    const {
+      verifySplitOffSessionPaymentMethod,
+      SplitOffSessionVerificationError
+    } = require('../splitPaymentOffSessionVerificationService');
+    const Stripe = require('stripe');
+    const { STRIPE_API_VERSION } = require('../../config/stripeApiVersion');
+    const stripeClient =
+      stripe ||
+      (process.env.STRIPE_SECRET_KEY
+        ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: STRIPE_API_VERSION })
+        : null);
+    try {
+      const verified = await verifySplitOffSessionPaymentMethod({
+        stripe: stripeClient,
+        session,
+        paymentIntent
+      });
+      if (verified?.paymentMethodId) {
+        set.stripeReusablePaymentMethodId = String(verified.paymentMethodId);
+      }
+      if (verified?.customerId) {
+        set.stripeCustomerId = String(verified.customerId);
+      }
+    } catch (verifyErr) {
+      splitOffSessionVerificationFailed = verifyErr;
+      const metadata = {
+        ...(session.metadata && typeof session.metadata === 'object' ? session.metadata : {}),
+        finalizeNeedsReview: {
+          reason:
+            verifyErr.code ||
+            (verifyErr instanceof SplitOffSessionVerificationError
+              ? verifyErr.code
+              : 'SPLIT_OFF_SESSION_VERIFICATION_FAILED'),
+          details: verifyErr.details || { message: verifyErr.message },
+          markedAt: now
+        }
+      };
+      set.status = 'needs_review';
+      set.finalizeStatus = 'needs_review';
+      set.metadata = metadata;
+      // Unexpected non-verification errors must not be swallowed after paid write.
+      if (!(verifyErr instanceof SplitOffSessionVerificationError) && verifyErr?.name !== 'SplitOffSessionVerificationError') {
+        // Still persist paid evidence first, then rethrow below.
+      }
+    }
+  }
+
   const updated = await CheckoutSession.findOneAndUpdate(
     { checkoutId },
     { $set: set },
@@ -426,6 +493,33 @@ async function markCheckoutSessionPaid({ session, evidence, now = new Date() }) 
 
   if (!updated || updated.paymentStatus !== 'paid') {
     throw new Error('CheckoutSession paymentStatus update did not persist as paid');
+  }
+
+  if (splitOffSessionVerificationFailed) {
+    await recordPaidBookingResolutionIssueSafe({
+      issueType: 'paid_booking_unknown_failure',
+      errorCode:
+        splitOffSessionVerificationFailed.code || 'SPLIT_OFF_SESSION_VERIFICATION_FAILED',
+      errorSummary: safeErrorSummary(
+        splitOffSessionVerificationFailed.message ||
+          'Split off-session PaymentMethod verification failed'
+      ),
+      paymentIntentId: evidence.paymentIntentId,
+      checkoutId,
+      finalizationStage: PAID_BOOKING_FINALIZATION_STAGES.PAYMENT_VERIFIED,
+      failureSource: 'stripe_webhook',
+      stripePaymentVerified: true,
+      stripeEventId: evidence.stripeEventId || null,
+      extraMetadata: {
+        splitOffSessionVerification: true,
+        details: splitOffSessionVerificationFailed.details || null
+      }
+    });
+    // Known verification failures: paid + needs_review (no refund / no silent release).
+    // Unexpected errors are not swallowed.
+    if (splitOffSessionVerificationFailed.name !== 'SplitOffSessionVerificationError') {
+      throw splitOffSessionVerificationFailed;
+    }
   }
 
   return updated;
@@ -541,7 +635,8 @@ async function syncAccommodationCheckoutPaidFromWebhook({ event, payment = null 
   try {
     session = await markCheckoutSessionPaid({
       session: verified.session,
-      evidence: verified.evidence
+      evidence: verified.evidence,
+      paymentIntent: verified.pi || null
     });
   } catch (err) {
     await recordPaidBookingResolutionIssueSafe({

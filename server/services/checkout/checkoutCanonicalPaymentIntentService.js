@@ -8,6 +8,15 @@ const {
   assertSessionUsable,
   normalizeCheckoutSessionInput
 } = require('./checkoutSessionService');
+const {
+  getPaymentChoice,
+  resolveExpectedChargeCents,
+  buildPaymentIdentityKey,
+  assertSplitConsentOnSession,
+  setCheckoutPaymentChoice,
+  toCheckoutSessionError,
+  SplitPaymentChoiceError
+} = require('../splitPaymentChoiceService');
 
 const CANCELLABLE_PAYMENT_INTENT_STATUSES = new Set([
   'requires_payment_method',
@@ -23,6 +32,7 @@ const REUSABLE_PAYMENT_INTENT_STATUSES = new Set([
 ]);
 
 const TERMINAL_NON_CANCEL_PI_STATUSES = new Set(['processing', 'succeeded']);
+const REUSABLE_OFF_SESSION_PM_TYPES = new Set(['card']);
 
 function defaultCurrency() {
   return (process.env.STRIPE_CURRENCY || 'eur').toLowerCase();
@@ -43,10 +53,16 @@ function buildPaymentIntentMetadata({
   snapshot,
   redemptionId = null,
   giftVoucherId = null,
-  reservationKey = null
+  reservationKey = null,
+  chargeAmountCents = null
 }) {
   const checkInDate = snapshot.checkInISO ? new Date(snapshot.checkInISO) : null;
   const checkOutDate = snapshot.checkOutISO ? new Date(snapshot.checkOutISO) : null;
+  const charge =
+    chargeAmountCents != null
+      ? Number(chargeAmountCents)
+      : resolveExpectedChargeCents(session);
+  const choice = getPaymentChoice(session);
   return {
     flowVersion: session.flowVersion || 'v2',
     checkoutId: session.checkoutId,
@@ -56,8 +72,12 @@ function buildPaymentIntentMetadata({
     cabinTypeId: snapshot.cabinTypeId || '',
     checkIn: checkInDate ? checkInDate.toISOString() : '',
     checkOut: checkOutDate ? checkOutDate.toISOString() : '',
-    amountCents: String(snapshot.stripeAmountCents || 0),
-    stripeAmountCents: String(snapshot.stripeAmountCents || 0),
+    amountCents: String(charge),
+    stripeAmountCents: String(session.stripeAmountCents || 0),
+    chargeAmountCents: String(charge),
+    paymentChoice: choice,
+    splitOfferSnapshotHash:
+      choice === 'split' ? String(session.splitPaymentOfferSnapshotHash || '') : '',
     experienceKeys: JSON.stringify(snapshot.experienceKeys || []),
     transportMethod: String(snapshot.transportMethod || ''),
     romanticSetup: String(!!snapshot.romanticSetup),
@@ -156,17 +176,58 @@ function paymentIntentMatchesSession(pi, session, redemptionId = null) {
   if (!pi || !snapshot) {
     return { ok: false, message: 'missing_payment_intent_or_snapshot' };
   }
+  let chargeAmountCents;
+  try {
+    chargeAmountCents = resolveExpectedChargeCents(session);
+  } catch (err) {
+    return { ok: false, message: err.code || 'charge_amount_unresolved' };
+  }
+  if (Number(pi.amount) !== Number(chargeAmountCents)) {
+    return { ok: false, message: 'amount_mismatch' };
+  }
+
+  const meta = pi.metadata || {};
+  if (Number(meta.voucherAppliedCents || 0) !== Number(snapshot.voucherAppliedCents || 0)) {
+    return { ok: false, message: 'voucher_applied_mismatch' };
+  }
+  const redId = redemptionId || session.voucherRedemptionId;
+  if (redId != null && String(redId) !== '') {
+    if (String(meta.redemptionId || '') !== String(redId)) {
+      return { ok: false, message: 'redemption_id_mismatch' };
+    }
+  }
+
+  // Promo code identity still required; amount-vs-full-total check is skipped for split
+  // because charge amount is the installment, not the commercial total.
   const quote = buildQuoteFromSnapshot(snapshot);
-  return bookingQuoteService.paymentIntentMatchesVoucherCheckout(pi, {
-    quote,
-    stripeAmountCents: session.stripeAmountCents,
-    voucherAppliedCents: snapshot.voucherAppliedCents,
-    redemptionId: redemptionId || session.voucherRedemptionId
-  });
+  const metaPromo = String(meta.promoCode || '').trim().toUpperCase();
+  const applied = String(quote.appliedPromoCode || '').trim().toUpperCase();
+  if (metaPromo !== applied) {
+    return { ok: false, message: 'promo_mismatch' };
+  }
+
+  const metaChoice = String(pi.metadata?.paymentChoice || 'full');
+  const sessionChoice = getPaymentChoice(session);
+  if (metaChoice !== sessionChoice) {
+    return { ok: false, message: 'payment_choice_mismatch' };
+  }
+  if (sessionChoice === 'split') {
+    const metaOffer = String(pi.metadata?.splitOfferSnapshotHash || '');
+    if (!metaOffer || metaOffer !== String(session.splitPaymentOfferSnapshotHash || '')) {
+      return { ok: false, message: 'split_offer_hash_mismatch' };
+    }
+  }
+  return { ok: true };
 }
 
 function buildEnsureDto(session, extras = {}) {
   const snapshot = session.quoteSnapshot || {};
+  let chargeAmountCents = Number(session.stripeAmountCents) || 0;
+  try {
+    chargeAmountCents = resolveExpectedChargeCents(session);
+  } catch {
+    chargeAmountCents = Number(session.stripeAmountCents) || 0;
+  }
   return {
     checkoutId: session.checkoutId,
     flowVersion: session.flowVersion,
@@ -177,7 +238,10 @@ function buildEnsureDto(session, extras = {}) {
     finalizeIntentHash: session.finalizeIntentHash || null,
     canonicalPaymentIntentId: session.canonicalPaymentIntentId || null,
     clientSecret: extras.clientSecret ?? null,
-    stripeAmountCents: session.stripeAmountCents,
+    stripeAmountCents: chargeAmountCents,
+    fullCardObligationCents: Number(session.stripeAmountCents) || 0,
+    chargeAmountCents,
+    paymentChoice: getPaymentChoice(session),
     giftVoucherAppliedCents: session.giftVoucherAppliedCents,
     fullVoucherCoverage: Boolean(snapshot.fullVoucherCoverage),
     voucherRedemptionId: session.voucherRedemptionId ? String(session.voucherRedemptionId) : null,
@@ -185,7 +249,15 @@ function buildEnsureDto(session, extras = {}) {
     supersededPaymentIntentIds: [...(session.supersededPaymentIntentIds || [])],
     requiresPaymentIntentRefresh: Boolean(extras.requiresPaymentIntentRefresh),
     noPaymentRequired: Boolean(extras.noPaymentRequired),
-    canonicalPaymentIntentSucceeded: Boolean(extras.canonicalPaymentIntentSucceeded)
+    canonicalPaymentIntentSucceeded: Boolean(extras.canonicalPaymentIntentSucceeded),
+    splitPaymentOffer: (() => {
+      try {
+        const { formatPublicSplitOffer } = require('../splitPaymentChoiceService');
+        return formatPublicSplitOffer(session);
+      } catch {
+        return null;
+      }
+    })()
   };
 }
 
@@ -265,16 +337,68 @@ async function completeCanonicalClaimReturn({
   return { session, pi, idempotentReplay };
 }
 
-function buildPaymentIntentIdempotencyKey(checkoutId, quoteSnapshotHash, generation = null) {
+function buildPaymentIntentIdempotencyKey(
+  checkoutId,
+  quoteSnapshotHash,
+  generation = null,
+  paymentIdentity = 'full'
+) {
+  const identity = paymentIdentity == null || paymentIdentity === '' ? 'full' : String(paymentIdentity);
   if (generation != null && Number.isInteger(Number(generation))) {
-    return `checkout-session:${checkoutId}:pi:${quoteSnapshotHash}:gen:${generation}`;
+    return `checkout-session:${checkoutId}:pi:${quoteSnapshotHash}:pay:${identity}:gen:${generation}`;
   }
-  return `checkout-session:${checkoutId}:pi:${quoteSnapshotHash}`;
+  return `checkout-session:${checkoutId}:pi:${quoteSnapshotHash}:pay:${identity}`;
+}
+
+async function ensureStripeCustomerForSplit({ stripe, session }) {
+  if (session.stripeCustomerId) {
+    return String(session.stripeCustomerId);
+  }
+  const email =
+    (session.finalizeIntent &&
+      session.finalizeIntent.guestInfo &&
+      session.finalizeIntent.guestInfo.email) ||
+    session.guestEmail ||
+    null;
+  if (!email) {
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_INVALID,
+      'Guest email is required to create a Stripe Customer for split payment',
+      { checkoutId: session.checkoutId, field: 'guestInfo.email' }
+    );
+  }
+  if (!stripe?.customers?.create) {
+    throw new Error('Stripe customers.create is not available');
+  }
+  const idempotencyKey = `checkout-session:${session.checkoutId}:customer`;
+  const customer = await stripe.customers.create(
+    {
+      email: String(email).trim().toLowerCase(),
+      metadata: {
+        checkoutId: String(session.checkoutId),
+        flowVersion: session.flowVersion || 'v2'
+      }
+    },
+    { idempotencyKey }
+  );
+  session.stripeCustomerId = String(customer.id);
+  await saveSession(session);
+  return String(customer.id);
 }
 
 async function createStripePaymentIntent(
   stripe,
-  { amountCents, currency, metadata, checkoutId, quoteSnapshotHash, leaseGeneration = null }
+  {
+    amountCents,
+    currency,
+    metadata,
+    checkoutId,
+    quoteSnapshotHash,
+    leaseGeneration = null,
+    paymentIdentity = 'full',
+    customerId = null,
+    setupFutureUsage = null
+  }
 ) {
   if (!stripe?.paymentIntents?.create) {
     throw new Error('Stripe paymentIntents.create is not available');
@@ -282,19 +406,107 @@ async function createStripePaymentIntent(
   const idempotencyKey = buildPaymentIntentIdempotencyKey(
     checkoutId,
     quoteSnapshotHash,
-    leaseGeneration
+    leaseGeneration,
+    paymentIdentity
   );
+  const params = {
+    amount: amountCents,
+    currency,
+    metadata
+  };
+  if (customerId) {
+    params.customer = String(customerId);
+  }
+  // Split/off-session PIs must be cards-only — automatic_payment_methods can
+  // expose non-reusable methods we cannot authoritatively charge off-session.
+  if (setupFutureUsage) {
+    params.setup_future_usage = setupFutureUsage;
+    params.payment_method_types = Array.from(REUSABLE_OFF_SESSION_PM_TYPES);
+  } else {
+    params.automatic_payment_methods = { enabled: true };
+  }
   // DB claim prevents two canonicals on the session document.
   // Stripe idempotency key prevents two real Stripe PIs when concurrent callers race before DB claim completes.
-  return stripe.paymentIntents.create(
-    {
-      amount: amountCents,
-      currency,
-      automatic_payment_methods: { enabled: true },
-      metadata
-    },
-    { idempotencyKey }
-  );
+  return stripe.paymentIntents.create(params, { idempotencyKey });
+}
+
+/**
+ * Apply explicit payment choice from ensure input before PI create/reuse.
+ * Default remains full when omitted.
+ */
+async function applyPaymentChoiceFromEnsureInput(session, input = {}) {
+  const rawChoice =
+    input.paymentChoice != null
+      ? input.paymentChoice
+      : input.payment_option != null
+        ? input.payment_option
+        : null;
+  if (rawChoice == null || rawChoice === '') {
+    if (!session.paymentChoice || !session.paymentChoice.choice) {
+      session.paymentChoice = {
+        choice: 'full',
+        splitOfferSnapshotHash: null,
+        selectedAt: new Date(),
+        sessionVersionAtSelection: Number(session.sessionVersion || 1)
+      };
+      session.futureChargeConsent = null;
+      await saveSession(session);
+    }
+    return session;
+  }
+
+  try {
+    await setCheckoutPaymentChoice({
+      session,
+      choice: rawChoice,
+      splitOfferSnapshotHash: input.splitOfferSnapshotHash || input.offerSnapshotHash || null,
+      consent: input.futureChargeConsent || input.splitPaymentConsent || null,
+      expectedSessionVersion: input.expectedSessionVersion ?? input.sessionVersion ?? null,
+      save: true
+    });
+  } catch (err) {
+    throw toCheckoutSessionError(err);
+  }
+  return loadSessionOrThrow(session.checkoutId);
+}
+
+async function buildSplitAwarePaymentIntentCreateArgs(session, snapshot, {
+  redemptionId = null,
+  giftVoucherId = null,
+  reservationKey = null,
+  leaseGeneration = null,
+  stripe
+} = {}) {
+  const choice = getPaymentChoice(session);
+  if (choice === 'split') {
+    assertSplitConsentOnSession(session);
+  }
+  const chargeAmountCents = resolveExpectedChargeCents(session);
+  const paymentIdentity = buildPaymentIdentityKey(session);
+  let customerId = null;
+  let setupFutureUsage = null;
+  if (choice === 'split') {
+    customerId = await ensureStripeCustomerForSplit({ stripe, session });
+    setupFutureUsage = 'off_session';
+  }
+  return {
+    amountCents: chargeAmountCents,
+    currency: defaultCurrency(),
+    metadata: buildPaymentIntentMetadata({
+      session,
+      snapshot,
+      redemptionId,
+      giftVoucherId,
+      reservationKey,
+      chargeAmountCents
+    }),
+    checkoutId: session.checkoutId,
+    quoteSnapshotHash: session.quoteSnapshotHash,
+    leaseGeneration,
+    paymentIdentity,
+    customerId,
+    setupFutureUsage
+  };
 }
 
 async function reconcileOrphanCreatedPaymentIntent({ session, stripe, createdPi, winnerCanonicalId }) {
@@ -708,6 +920,8 @@ async function ensureCanonicalPaymentIntentLegacy({
   });
   session = finalizePrep.session || session;
 
+  session = await applyPaymentChoiceFromEnsureInput(session, input);
+
   const snapshot = session.quoteSnapshot || {};
   const needsCard = session.stripeAmountCents > 0;
   const noPaymentRequired =
@@ -827,19 +1041,15 @@ async function ensureCanonicalPaymentIntentLegacy({
   assertFinalizeIntentAvailableForPi(session);
 
   const versionForClaim = session.sessionVersion;
-  const pi = await createStripePaymentIntent(stripe, {
-    amountCents: session.stripeAmountCents,
-    currency: defaultCurrency(),
-    metadata: buildPaymentIntentMetadata({
-      session,
-      snapshot,
+  const pi = await createStripePaymentIntent(
+    stripe,
+    await buildSplitAwarePaymentIntentCreateArgs(session, snapshot, {
       redemptionId,
       giftVoucherId,
-      reservationKey
-    }),
-    checkoutId: session.checkoutId,
-    quoteSnapshotHash: session.quoteSnapshotHash
-  });
+      reservationKey,
+      stripe
+    })
+  );
 
   const claimResult = await claimCreatedPaymentIntentOrReuseWinner({
     session,
@@ -1206,6 +1416,9 @@ async function ensureCanonicalPaymentIntentWithResourceLease({
   }
 
   const snapshot = session.quoteSnapshot || {};
+  // Apply choice before card/no-card branching so split consent is validated early.
+  session = await applyPaymentChoiceFromEnsureInput(session, input);
+
   const needsCard = Number(session.stripeAmountCents || 0) > 0;
   const fullVoucher =
     Boolean(snapshot.fullVoucherCoverage) &&
@@ -1332,26 +1545,19 @@ async function ensureCanonicalPaymentIntentWithResourceLease({
 
   const versionForClaim = Number(session.sessionVersion);
   const leaseGeneration = Number(leaseProof.generation);
-  const piMetadata = buildPaymentIntentMetadata({
-    session,
-    snapshot,
+  const createArgs = await buildSplitAwarePaymentIntentCreateArgs(session, snapshot, {
     redemptionId,
     giftVoucherId,
-    reservationKey
+    reservationKey,
+    leaseGeneration,
+    stripe
   });
-  piMetadata.resourceLeaseGeneration = String(leaseGeneration);
-  piMetadata.resourceLeaseValidUntil = new Date(leaseProof.validUntil).toISOString();
+  createArgs.metadata.resourceLeaseGeneration = String(leaseGeneration);
+  createArgs.metadata.resourceLeaseValidUntil = new Date(leaseProof.validUntil).toISOString();
 
   let pi;
   try {
-    pi = await createStripePaymentIntent(stripe, {
-      amountCents: session.stripeAmountCents,
-      currency: defaultCurrency(),
-      metadata: piMetadata,
-      checkoutId: session.checkoutId,
-      quoteSnapshotHash: session.quoteSnapshotHash,
-      leaseGeneration
-    });
+    pi = await createStripePaymentIntent(stripe, createArgs);
   } catch (createErr) {
     const known =
       createErr?.type === 'StripeCardError' ||
@@ -1466,6 +1672,7 @@ async function assertCanonicalPaymentIntentForSession({
 module.exports = {
   CANCELLABLE_PAYMENT_INTENT_STATUSES,
   REUSABLE_PAYMENT_INTENT_STATUSES,
+  REUSABLE_OFF_SESSION_PM_TYPES,
   buildPaymentIntentIdempotencyKey,
   buildPaymentIntentMetadata,
   buildQuoteFromSnapshot,
@@ -1479,6 +1686,12 @@ module.exports = {
   claimCanonicalPaymentIntent,
   claimCreatedPaymentIntentOrReuseWinner,
   attachCanonicalPaymentIntentToVoucher,
+  applyPaymentChoiceFromEnsureInput,
+  buildSplitAwarePaymentIntentCreateArgs,
+  createStripePaymentIntent,
+  ensureStripeCustomerForSplit,
+  resolveExpectedChargeCents,
+  getPaymentChoice,
   defaultVoucherAdapter,
   defaultAttachPaymentIntent
 };

@@ -187,7 +187,9 @@ function formatPublicCheckoutSessionState(state) {
     voucherRedemptionId: state.voucherRedemptionId || null,
     noPaymentRequired:
       sessionStatus === 'voucher_only_reserved' || sessionStatus === 'payment_not_required',
-    expiresAt: state.expiresAt
+    expiresAt: state.expiresAt,
+    paymentChoice: state.paymentChoice || 'full',
+    splitPaymentOffer: state.splitPaymentOffer || null
   };
 }
 
@@ -204,11 +206,17 @@ function formatV2CreatePaymentIntentResponse(dto) {
     canonicalPaymentIntentId: dto.canonicalPaymentIntentId ?? null,
     finalizeIntentHash: dto.finalizeIntentHash ?? null,
     stripeAmountCents: dto.stripeAmountCents,
+    fullCardObligationCents:
+      dto.fullCardObligationCents != null ? dto.fullCardObligationCents : dto.stripeAmountCents,
+    chargeAmountCents:
+      dto.chargeAmountCents != null ? dto.chargeAmountCents : dto.stripeAmountCents,
+    paymentChoice: dto.paymentChoice || 'full',
     giftVoucherAppliedCents: dto.giftVoucherAppliedCents,
     fullVoucherCoverage: Boolean(dto.fullVoucherCoverage),
     voucherRedemptionId: dto.voucherRedemptionId ?? null,
     idempotentReplay: Boolean(dto.idempotentReplay),
-    noPaymentRequired: Boolean(dto.noPaymentRequired)
+    noPaymentRequired: Boolean(dto.noPaymentRequired),
+    splitPaymentOffer: dto.splitPaymentOffer || null
   };
 }
 

@@ -528,7 +528,7 @@ test('idempotency key is stable for same checkoutId and quoteSnapshotHash', asyn
   const keyA = buildPaymentIntentIdempotencyKey(checkoutId, hash);
   const keyB = buildPaymentIntentIdempotencyKey(checkoutId, hash);
   assert.equal(keyA, keyB);
-  assert.equal(keyA, `checkout-session:${checkoutId}:pi:${hash}`);
+  assert.equal(keyA, `checkout-session:${checkoutId}:pi:${hash}:pay:full`);
 
   const changedSnapshot = buildQuoteSnapshot({
     normalizedInput: normalizeCheckoutSessionInput(baseInput({ promoCode: 'OTHER' })),
@@ -537,6 +537,10 @@ test('idempotency key is stable for same checkoutId and quoteSnapshotHash', asyn
   const changedHash = hashQuoteSnapshot(changedSnapshot);
   const keyC = buildPaymentIntentIdempotencyKey(checkoutId, changedHash);
   assert.notEqual(keyA, keyC);
+
+  const splitKey = buildPaymentIntentIdempotencyKey(checkoutId, hash, null, 'split:abc');
+  assert.notEqual(keyA, splitKey);
+  assert.equal(splitKey, `checkout-session:${checkoutId}:pi:${hash}:pay:split:abc`);
 });
 
 test('concurrent same checkoutId and quote hash creates one unique Stripe PI', async () => {

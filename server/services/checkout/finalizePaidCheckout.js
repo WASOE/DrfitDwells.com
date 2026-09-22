@@ -24,6 +24,7 @@ const {
   reclaimStaleFinalizeLock,
   acquireFinalizeLock,
   markFinalizeSucceeded,
+  markFinalizeNeedsReview,
   runCheckoutFinalizeOrchestration,
   getFinalizeLockVisibilityMs
 } = require('./checkoutFinalizeService');
@@ -40,8 +41,20 @@ const { hashQuoteSnapshot } = require('./checkoutSessionSnapshot');
 const { formatSofiaDateOnly, normalizeDateToSofiaDayStart } = require('../../utils/dateTime');
 const { enqueuePostFinalizeSideEffects } = require('./checkoutFinalizeSideEffects');
 const {
-  PAID_BOOKING_FINALIZATION_STAGES
+  PAID_BOOKING_FINALIZATION_STAGES,
+  recordPaidBookingResolutionIssueSafe,
+  safeErrorSummary
 } = require('../payments/paidBookingFinalizationObservability');
+const {
+  verifySplitOffSessionPaymentMethod,
+  SplitOffSessionVerificationError
+} = require('../splitPaymentOffSessionVerificationService');
+const { getPaymentChoice } = require('../splitPaymentChoiceService');
+const {
+  reconcileBookingInstallmentsForSplit,
+  BookingInstallmentReconciliationError
+} = require('../bookingInstallmentReconciliationService');
+const BookingInstallment = require('../../models/BookingInstallment');
 
 const DOMAIN_VERIFICATION_CODES = Object.freeze({
   PAYMENT_NOT_SUCCEEDED: 'PAYMENT_NOT_SUCCEEDED',
@@ -57,7 +70,9 @@ const DOMAIN_VERIFICATION_CODES = Object.freeze({
   STRIPE_RETRIEVE_FAILED: 'STRIPE_RETRIEVE_FAILED',
   CONFIRM_BODY_MISMATCH: 'CONFIRM_BODY_MISMATCH',
   ADOPT_FINGERPRINT_MISMATCH: 'ADOPT_FINGERPRINT_MISMATCH',
-  ADOPT_PAYMENT_INTENT_MISMATCH: 'ADOPT_PAYMENT_INTENT_MISMATCH'
+  ADOPT_PAYMENT_INTENT_MISMATCH: 'ADOPT_PAYMENT_INTENT_MISMATCH',
+  SPLIT_OFF_SESSION_VERIFICATION_FAILED: 'SPLIT_OFF_SESSION_VERIFICATION_FAILED',
+  INSTALLMENT_RECONCILE_FAILED: 'INSTALLMENT_RECONCILE_FAILED'
 });
 
 function normalizeCheckoutId(checkoutId) {
@@ -539,11 +554,19 @@ function verifySucceededPaymentIntentAgainstSession({ session, paymentIntent }) 
   }
 
   const amountReceived = Number(pi.amount_received != null ? pi.amount_received : pi.amount);
-  const expectedAmount = Number(session.stripeAmountCents);
+  const {
+    resolveExpectedChargeCents
+  } = require('../splitPaymentChoiceService');
+  let expectedAmount;
+  try {
+    expectedAmount = Number(resolveExpectedChargeCents(session));
+  } catch {
+    expectedAmount = Number(session.stripeAmountCents);
+  }
   if (!Number.isFinite(amountReceived) || amountReceived !== expectedAmount) {
     throw throwVerificationFailure(
       DOMAIN_VERIFICATION_CODES.AMOUNT_MISMATCH,
-      'amount_received does not equal CheckoutSession.stripeAmountCents',
+      'amount_received does not equal expected charge amount for payment choice',
       { paymentIntentId: piId, amountReceived, expectedAmount }
     );
   }
@@ -878,6 +901,25 @@ async function adoptExistingBooking({
 
   assertAdoptableBookingMatches({ booking, session, paymentIntentId });
 
+  if (getPaymentChoice(session) === 'split') {
+    // Adopt / early-existing Booking paths must still converge installments.
+    const Stripe = require('stripe');
+    const { STRIPE_API_VERSION } = require('../../config/stripeApiVersion');
+    const stripeClient = process.env.STRIPE_SECRET_KEY
+      ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: STRIPE_API_VERSION })
+      : null;
+    await assertSplitOffSessionVerifiedForFinalize({
+      stripe: stripeClient,
+      session,
+      paymentIntent: paymentIntentId || session.canonicalPaymentIntentId
+    });
+    await reconcileSplitInstallmentsForFinalizePath({
+      booking,
+      session,
+      paymentIntentId: paymentIntentId || session.canonicalPaymentIntentId
+    });
+  }
+
   const replay = buildFinalizeReplayResponse(session);
   if (replay && String(replay.bookingId) === String(booking._id)) {
     return {
@@ -987,6 +1029,121 @@ async function adoptExistingBooking({
 /**
  * Authoritative paid checkout finalization.
  */
+
+async function assertSplitOffSessionVerifiedForFinalize({ stripe, session, paymentIntent }) {
+  if (getPaymentChoice(session) !== 'split') return null;
+  try {
+    const verified = await verifySplitOffSessionPaymentMethod({
+      stripe,
+      session,
+      paymentIntent
+    });
+    if (verified?.paymentMethodId) {
+      const CheckoutSession = require('../../models/CheckoutSession');
+      await CheckoutSession.updateOne(
+        { checkoutId: String(session.checkoutId) },
+        {
+          $set: {
+            stripeReusablePaymentMethodId: verified.paymentMethodId,
+            stripeCustomerId: verified.customerId
+          }
+        }
+      );
+      session.stripeReusablePaymentMethodId = verified.paymentMethodId;
+      session.stripeCustomerId = verified.customerId;
+    }
+    return verified;
+  } catch (err) {
+    await recordPaidBookingResolutionIssueSafe({
+      issueType: 'paid_booking_unknown_failure',
+      errorCode: err.code || DOMAIN_VERIFICATION_CODES.SPLIT_OFF_SESSION_VERIFICATION_FAILED,
+      errorSummary: safeErrorSummary(
+        err.message || 'Split off-session PaymentMethod verification failed'
+      ),
+      paymentIntentId:
+        (paymentIntent && paymentIntent.id) ||
+        session.canonicalPaymentIntentId ||
+        null,
+      checkoutId: session.checkoutId || null,
+      finalizationStage: PAID_BOOKING_FINALIZATION_STAGES.PAYMENT_VERIFIED,
+      failureSource: 'finalize_paid_checkout',
+      stripePaymentVerified: true,
+      extraMetadata: { details: err.details || null }
+    });
+    try {
+      await markFinalizeNeedsReview({
+        checkoutId: session.checkoutId,
+        reason: err.code || DOMAIN_VERIFICATION_CODES.SPLIT_OFF_SESSION_VERIFICATION_FAILED,
+        details: err.details || { message: err.message }
+      });
+    } catch {
+      /* best-effort */
+    }
+    throw throwVerificationFailure(
+      err.code || DOMAIN_VERIFICATION_CODES.SPLIT_OFF_SESSION_VERIFICATION_FAILED,
+      err.message || 'Split off-session PaymentMethod verification failed',
+      err.details || null
+    );
+  }
+}
+
+async function reconcileSplitInstallmentsForFinalizePath({
+  booking,
+  session,
+  paymentIntentId = null
+}) {
+  if (!booking || getPaymentChoice(session) !== 'split') return null;
+  try {
+    return await reconcileBookingInstallmentsForSplit({
+      booking,
+      session,
+      paymentIntentId:
+        paymentIntentId ||
+        booking.stripePaymentIntentId ||
+        session.canonicalPaymentIntentId ||
+        null,
+      BookingInstallmentModel: BookingInstallment
+    });
+  } catch (err) {
+    await recordPaidBookingResolutionIssueSafe({
+      issueType: 'paid_booking_save_failed',
+      errorCode: err.code || DOMAIN_VERIFICATION_CODES.INSTALLMENT_RECONCILE_FAILED,
+      errorSummary: safeErrorSummary(err.message || 'BookingInstallment reconciliation failed'),
+      paymentIntentId:
+        paymentIntentId ||
+        booking.stripePaymentIntentId ||
+        session.canonicalPaymentIntentId ||
+        null,
+      checkoutId: session.checkoutId || null,
+      bookingId: booking._id ? String(booking._id) : null,
+      finalizationStage: PAID_BOOKING_FINALIZATION_STAGES.BOOKING_SAVE,
+      failureSource: 'finalize_paid_checkout',
+      stripePaymentVerified: true,
+      extraMetadata: { details: err.details || null }
+    });
+    try {
+      await markFinalizeNeedsReview({
+        checkoutId: session.checkoutId,
+        reason: err.code || DOMAIN_VERIFICATION_CODES.INSTALLMENT_RECONCILE_FAILED,
+        details: err.details || { message: err.message }
+      });
+    } catch {
+      /* best-effort */
+    }
+    const wrapped = new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_USABLE,
+      err.message || 'BookingInstallment reconciliation failed',
+      {
+        checkoutId: session.checkoutId,
+        installmentReconcileCode: err.code || null,
+        details: err.details || null
+      }
+    );
+    wrapped.needsReview = true;
+    throw wrapped;
+  }
+}
+
 async function finalizePaidCheckout({
   checkoutId,
   paymentIntentId = null,
@@ -1022,6 +1179,18 @@ async function finalizePaidCheckout({
   const replay = buildFinalizeReplayResponse(session);
   if (replay) {
     const booking = await BookingModel.findById(replay.bookingId);
+    if (booking && getPaymentChoice(session) === 'split') {
+      await assertSplitOffSessionVerifiedForFinalize({
+        stripe,
+        session,
+        paymentIntent: session.canonicalPaymentIntentId
+      });
+      await reconcileSplitInstallmentsForFinalizePath({
+        booking,
+        session,
+        paymentIntentId: session.canonicalPaymentIntentId
+      });
+    }
     return {
       ok: true,
       bookingId: replay.bookingId,
@@ -1096,6 +1265,13 @@ async function finalizePaidCheckout({
     });
     stripePaymentVerified = true;
     paidFinalizeOverride = true;
+    if (getPaymentChoice(session) === 'split') {
+      await assertSplitOffSessionVerifiedForFinalize({
+        stripe,
+        session,
+        paymentIntent: verifiedPi
+      });
+    }
   } else if (!sessionHasCompleteFinalizeIntent(session)) {
     // Voucher-only / no-payment still needs finalizeIntent when using domain service.
     throw new CheckoutSessionError(
@@ -1241,5 +1417,7 @@ module.exports = {
   assertConfirmBodyMatchesPersisted,
   isLeaseAwareFinalizeSession,
   ensureResourceLeasePaidForFinalize,
+  assertSplitOffSessionVerifiedForFinalize,
+  reconcileSplitInstallmentsForFinalizePath,
   PAID_BOOKING_FINALIZATION_STAGES
 };

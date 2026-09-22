@@ -432,7 +432,16 @@ function getCheckoutSessionState(sessionDoc) {
     expiresAt: session.expiresAt,
     guestEmail: session.guestEmail || null,
     stayFingerprint: session.stayFingerprint || null,
-    replayFingerprint: session.replayFingerprint || null
+    replayFingerprint: session.replayFingerprint || null,
+    paymentChoice: session.paymentChoice?.choice || 'full',
+    splitPaymentOffer: (() => {
+      try {
+        const { formatPublicSplitOffer } = require('../splitPaymentChoiceService');
+        return formatPublicSplitOffer(session);
+      } catch {
+        return null;
+      }
+    })()
   };
 }
 

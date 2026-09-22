@@ -302,6 +302,53 @@ const bookingSchema = new mongoose.Schema({
     default: 0,
     min: [0, 'stripePaidAmountCents cannot be negative']
   },
+  /**
+   * SP5: settlement vs commercial total. Kept separate from booking.status.
+   * - paid_in_full: card (+voucher) covers commercial obligation
+   * - partially_paid: split initial paid; future installments outstanding
+   * - not_required: no card charge (e.g. full voucher)
+   */
+  paymentSettlementStatus: {
+    type: String,
+    enum: ['paid_in_full', 'partially_paid', 'not_required'],
+    default: null
+  },
+  /**
+   * SP5: immutable chosen split schedule (copied from CheckoutSession offer on select).
+   * Absent for full-pay bookings.
+   */
+  chosenPaymentScheduleSnapshot: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
+  chosenPaymentScheduleSnapshotHash: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  futureChargeConsent: {
+    type: new mongoose.Schema(
+      {
+        consentVersion: { type: Number, min: 1 },
+        consentHash: { type: String, trim: true },
+        acceptedAt: { type: Date },
+        acceptedLocale: { type: String, trim: true, maxlength: 32 },
+        displayedText: { type: String, trim: true, maxlength: 4000 }
+      },
+      { _id: false }
+    ),
+    default: null
+  },
+  stripeCustomerId: {
+    type: String,
+    trim: true,
+    default: null
+  },
+  stripeReusablePaymentMethodId: {
+    type: String,
+    trim: true,
+    default: null
+  },
   totalValueCents: {
     type: Number,
     required: false,

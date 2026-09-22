@@ -823,6 +823,65 @@ router.get('/checkout-sessions/:checkoutId', async (req, res) => {
   }
 });
 
+// PUT /api/bookings/checkout-sessions/:checkoutId/payment-choice — SP5 explicit full|split choice + consent
+router.put('/checkout-sessions/:checkoutId/payment-choice', paymentIntentLimiter, async (req, res) => {
+  try {
+    const checkoutId = normalizeCheckoutId(req.params.checkoutId);
+    if (!checkoutId || !isValidCheckoutId(checkoutId)) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_CHECKOUT_ID',
+        message: 'Invalid checkout session id'
+      });
+    }
+    const {
+      loadSessionOrThrow,
+      assertSessionUsable
+    } = require('../services/checkout/checkoutSessionService');
+    const {
+      setCheckoutPaymentChoice,
+      toCheckoutSessionError,
+      resolveExpectedChargeCents,
+      getPaymentChoice,
+      formatPublicSplitOffer
+    } = require('../services/splitPaymentChoiceService');
+
+    const session = await loadSessionOrThrow(checkoutId);
+    assertSessionUsable(session);
+    try {
+      await setCheckoutPaymentChoice({
+        session,
+        choice: req.body?.paymentChoice ?? req.body?.choice ?? 'full',
+        splitOfferSnapshotHash: req.body?.splitOfferSnapshotHash || null,
+        consent: req.body?.futureChargeConsent || null,
+        expectedSessionVersion: req.body?.expectedSessionVersion ?? req.body?.sessionVersion ?? null,
+        save: true
+      });
+    } catch (err) {
+      throw toCheckoutSessionError(err);
+    }
+    const refreshed = await loadSessionOrThrow(checkoutId);
+    return res.json({
+      success: true,
+      checkoutId,
+      paymentChoice: getPaymentChoice(refreshed),
+      chargeAmountCents: resolveExpectedChargeCents(refreshed),
+      fullCardObligationCents: Number(refreshed.stripeAmountCents) || 0,
+      sessionVersion: refreshed.sessionVersion,
+      splitPaymentOffer: formatPublicSplitOffer(refreshed)
+    });
+  } catch (err) {
+    if (isCheckoutSessionError(err)) {
+      return sendCheckoutSessionError(res, err);
+    }
+    console.error('Set payment choice error:', err);
+    return res.status(500).json({
+      success: false,
+      message: process.env.NODE_ENV === 'development' ? err.message : 'Payment choice update failed'
+    });
+  }
+});
+
 // GET /api/bookings/checkout-sessions/:checkoutId/status — Batch 9 public recovery status (read-only)
 router.get('/checkout-sessions/:checkoutId/status', async (req, res) => {
   const {

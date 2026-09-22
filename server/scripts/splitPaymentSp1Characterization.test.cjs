@@ -254,11 +254,9 @@ test('requiresFullPayment=false is snapshotted false but does not invent reduced
   assert.equal(snapshot.packageSnapshot?.requiresFullPayment, false);
 });
 
-test('canonical PaymentIntent amount is taken from session.stripeAmountCents', () => {
-  // Behavioral coverage for requiresFullPayment=false → full card amount is in the
-  // preceding test. Keep only the amount-source invariant here (not a brittle
-  // requiresFullPayment string absence scan).
+test('canonical PaymentIntent amount is taken from expected charge (full => session.stripeAmountCents)', () => {
   const src = readServerFile('services/checkout/checkoutCanonicalPaymentIntentService.js');
   assert.match(src, /amount:\s*amountCents/);
-  assert.match(src, /amountCents:\s*session\.stripeAmountCents/);
+  assert.match(src, /resolveExpectedChargeCents/);
+  assert.match(src, /buildSplitAwarePaymentIntentCreateArgs/);
 });

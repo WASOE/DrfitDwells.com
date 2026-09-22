@@ -1,4 +1,5 @@
 const Booking = require('../../models/Booking');
+const BookingInstallment = require('../../models/BookingInstallment');
 const PromoCode = require('../../models/PromoCode');
 const mongoose = require('mongoose');
 const { BLOCKING_BOOKING_STATUSES } = require('../calendar/blockingStatusConstants');
@@ -252,6 +253,17 @@ function buildBookingData({
     ? String(paymentIntentId).trim()
     : null;
 
+  const {
+    getPaymentChoice
+  } = require('../splitPaymentChoiceService');
+  const choice = getPaymentChoice(session);
+  let paymentSettlementStatus = 'paid_in_full';
+  if (!stripePaymentVerified && Number(ctx.stripePaidAmountCents || 0) === 0) {
+    paymentSettlementStatus = 'not_required';
+  } else if (choice === 'split') {
+    paymentSettlementStatus = 'partially_paid';
+  }
+
   const bookingData = {
     checkIn: ctx.checkInDate || payload.checkIn,
     checkOut: ctx.checkOutDate || payload.checkOut,
@@ -266,6 +278,7 @@ function buildBookingData({
     discountAmountCents: ctx.discountAmountCents,
     giftVoucherAppliedCents: ctx.giftVoucherAppliedCents,
     stripePaidAmountCents: ctx.stripePaidAmountCents,
+    paymentSettlementStatus,
     totalValueCents: ctx.totalValueCents,
     giftVoucherRedemptionId: ctx.voucherReservationContext?.redemptionId || null,
     paymentMethod: ctx.paymentMethod || 'stripe',
@@ -335,6 +348,26 @@ function buildBookingData({
       checkbox2TextSnapshot: legalAcceptance.checkbox2TextSnapshot
     }
   };
+
+  if (choice === 'split' && session.splitPaymentOfferSnapshot && session.splitPaymentOfferSnapshotHash) {
+    bookingData.chosenPaymentScheduleSnapshot = session.splitPaymentOfferSnapshot;
+    bookingData.chosenPaymentScheduleSnapshotHash = session.splitPaymentOfferSnapshotHash;
+    if (session.futureChargeConsent) {
+      bookingData.futureChargeConsent = {
+        consentVersion: session.futureChargeConsent.consentVersion,
+        consentHash: session.futureChargeConsent.consentHash,
+        acceptedAt: session.futureChargeConsent.acceptedAt,
+        acceptedLocale: session.futureChargeConsent.acceptedLocale,
+        displayedText: session.futureChargeConsent.displayedText
+      };
+    }
+    if (session.stripeCustomerId) {
+      bookingData.stripeCustomerId = String(session.stripeCustomerId);
+    }
+    if (session.stripeReusablePaymentMethodId) {
+      bookingData.stripeReusablePaymentMethodId = String(session.stripeReusablePaymentMethodId);
+    }
+  }
 
   if (ctx.attribution) {
     bookingData.attribution = ctx.attribution;
@@ -657,17 +690,189 @@ async function findReplayByPaymentIntent(deps, {
   );
 }
 
+async function createBookingInstallmentsForSplit(booking, session, {
+  paymentIntentId = null,
+  BookingInstallmentModel = BookingInstallment
+} = {}) {
+  const {
+    reconcileBookingInstallmentsForSplit,
+    BookingInstallmentReconciliationError,
+    sessionNeedsSplitInstallmentReconciliation
+  } = require('../bookingInstallmentReconciliationService');
+  if (!booking || !session) return { reconciled: false, reason: 'missing_args', count: 0 };
+  if (!sessionNeedsSplitInstallmentReconciliation(session)) {
+    return { reconciled: false, reason: 'not_needed', count: 0 };
+  }
+  try {
+    return await reconcileBookingInstallmentsForSplit({
+      booking,
+      session,
+      paymentIntentId:
+        paymentIntentId ||
+        booking.stripePaymentIntentId ||
+        session.canonicalPaymentIntentId ||
+        null,
+      BookingInstallmentModel
+    });
+  } catch (err) {
+    if (
+      err instanceof BookingInstallmentReconciliationError ||
+      err?.name === 'BookingInstallmentReconciliationError'
+    ) {
+      const wrapped = createPaidBookingSaveFailedError({
+        errorCode: err.code || 'INSTALLMENT_RECONCILE_FAILED',
+        errorSummary: err.message || 'BookingInstallment reconciliation failed',
+        paymentIntentId:
+          paymentIntentId ||
+          booking.stripePaymentIntentId ||
+          session.canonicalPaymentIntentId ||
+          null,
+        finalizationStage: 'booking_persist'
+      });
+      wrapped.installmentReconciliationError = err;
+      wrapped.details = err.details || null;
+      throw wrapped;
+    }
+    throw err;
+  }
+}
+
+/**
+ * SP5B — every split finalize/replay path must converge installments.
+ */
+async function reconcileSplitInstallmentsAfterBookingPersist(deps, {
+  booking,
+  session,
+  paymentIntentId = null,
+  leaseAware = false
+}) {
+  if (!booking || !session) return null;
+  const { getPaymentChoice } = require('../splitPaymentChoiceService');
+  if (getPaymentChoice(session) !== 'split') return null;
+
+  // Authoritative off-session PM must be proven before creating collectible future installments.
+  const {
+    verifySplitOffSessionPaymentMethod,
+    SplitOffSessionVerificationError
+  } = require('../splitPaymentOffSessionVerificationService');
+  try {
+    if (!session.stripeReusablePaymentMethodId) {
+      const verified = await verifySplitOffSessionPaymentMethod({
+        stripe: deps.stripe,
+        session,
+        paymentIntent:
+          paymentIntentId ||
+          booking.stripePaymentIntentId ||
+          session.canonicalPaymentIntentId
+      });
+      if (verified?.paymentMethodId) {
+        session.stripeReusablePaymentMethodId = verified.paymentMethodId;
+        if (!booking.stripeReusablePaymentMethodId) {
+          booking.stripeReusablePaymentMethodId = verified.paymentMethodId;
+          try {
+            await deps.Booking.updateOne(
+              { _id: booking._id },
+              { $set: { stripeReusablePaymentMethodId: verified.paymentMethodId } }
+            );
+          } catch {
+            /* best-effort mirror */
+          }
+        }
+      }
+    } else {
+      // Re-verify even when an id is already stored — never trust unverified string alone.
+      await verifySplitOffSessionPaymentMethod({
+        stripe: deps.stripe,
+        session,
+        paymentIntent:
+          paymentIntentId ||
+          booking.stripePaymentIntentId ||
+          session.canonicalPaymentIntentId
+      });
+    }
+  } catch (verifyErr) {
+    if (deps.recordPaidBookingResolutionIssue) {
+      try {
+        await deps.recordPaidBookingResolutionIssue({
+          issueType: 'paid_booking_unknown_failure',
+          errorCode: verifyErr.code || 'SPLIT_OFF_SESSION_VERIFICATION_FAILED',
+          errorSummary: verifyErr.message || 'Split off-session PM verification failed',
+          paymentIntentId:
+            paymentIntentId || booking.stripePaymentIntentId || null,
+          checkoutId: session.checkoutId || null,
+          bookingId: booking._id ? String(booking._id) : null,
+          finalizationStage: 'booking_persist',
+          failureSource: 'booking_finalize_worker',
+          stripePaymentVerified: true,
+          extraMetadata: { details: verifyErr.details || null }
+        });
+      } catch {
+        /* observability best-effort */
+      }
+    }
+    if (leaseAware) {
+      throw createLeaseWorkNeedsReviewError(
+        'LEASE_FINALIZE_NEEDS_REVIEW',
+        verifyErr.message || 'Split off-session PaymentMethod verification failed',
+        {
+          stage: 'booking_persist',
+          bookingId: booking._id ? String(booking._id) : null,
+          retryable: false,
+          failureCode: verifyErr.code || 'SPLIT_OFF_SESSION_VERIFICATION_FAILED',
+          details: verifyErr.details || null
+        }
+      );
+    }
+    throw createPaidBookingSaveFailedError({
+      errorCode: verifyErr.code || 'SPLIT_OFF_SESSION_VERIFICATION_FAILED',
+      errorSummary: verifyErr.message || 'Split off-session PaymentMethod verification failed',
+      paymentIntentId: paymentIntentId || booking.stripePaymentIntentId || null,
+      finalizationStage: 'booking_persist'
+    });
+  }
+
+  try {
+    return await createBookingInstallmentsForSplit(booking, session, {
+      paymentIntentId,
+      BookingInstallmentModel: deps.BookingInstallment || BookingInstallment
+    });
+  } catch (err) {
+    if (leaseAware && err?.code === 'PAID_BOOKING_SAVE_FAILED') {
+      throw createLeaseWorkNeedsReviewError(
+        'LEASE_FINALIZE_NEEDS_REVIEW',
+        err.errorSummary || err.message || 'BookingInstallment reconciliation failed',
+        {
+          stage: 'booking_persist',
+          bookingId: booking._id ? String(booking._id) : null,
+          retryable: false,
+          failureCode: err.errorCode || null,
+          details: err.details || null
+        }
+      );
+    }
+    throw err;
+  }
+}
+
 async function saveBookingWithReplay(deps, {
   bookingData,
   checkoutId,
   checkoutFingerprint,
   voucherReservationContext,
   paymentIntentIdForReview,
-  voucherEvidence
+  voucherEvidence,
+  session = null
 }) {
   try {
     const booking = new deps.Booking(bookingData);
     await booking.save();
+    if (session) {
+      await reconcileSplitInstallmentsAfterBookingPersist(deps, {
+        booking,
+        session,
+        paymentIntentId: paymentIntentIdForReview || booking.stripePaymentIntentId || null
+      });
+    }
     return { booking, isReplay: false };
   } catch (saveErr) {
     await tryReleaseVoucherOnFailure(deps, {
@@ -678,6 +883,16 @@ async function saveBookingWithReplay(deps, {
     if (saveErr?.code === 11000 && checkoutId) {
       const existing = await deps.Booking.findOne({ checkoutId });
       if (existing && bookingMatchesCheckoutFingerprint(existing, checkoutFingerprint)) {
+        if (session) {
+          await reconcileSplitInstallmentsAfterBookingPersist(deps, {
+            booking: existing,
+            session,
+            paymentIntentId:
+              paymentIntentIdForReview ||
+              existing.stripePaymentIntentId ||
+              null
+          });
+        }
         return { booking: existing, isReplay: true };
       }
       if (existing) {
@@ -1249,7 +1464,29 @@ function assertImmutableQuoteCommercialSnapshot(session, { bookingId } = {}) {
   }
 }
 
-async function saveLeaseAwareBookingWithoutVoucherRelease(deps, { bookingData, checkoutId, boundBookingId }) {
+async function saveLeaseAwareBookingWithoutVoucherRelease(deps, {
+  bookingData,
+  checkoutId,
+  boundBookingId,
+  session = null,
+  paymentIntentId = null
+}) {
+  async function returnWithReconcile(booking, isReplay) {
+    if (session) {
+      await reconcileSplitInstallmentsAfterBookingPersist(deps, {
+        booking,
+        session,
+        paymentIntentId:
+          paymentIntentId ||
+          booking.stripePaymentIntentId ||
+          bookingData.stripePaymentIntentId ||
+          null,
+        leaseAware: true
+      });
+    }
+    return { booking, isReplay };
+  }
+
   const existingById = await deps.Booking.findById(boundBookingId);
   if (existingById) {
     if (existingById.checkoutId && String(existingById.checkoutId) !== String(checkoutId)) {
@@ -1259,7 +1496,7 @@ async function saveLeaseAwareBookingWithoutVoucherRelease(deps, { bookingData, c
         { stage: 'booking_persist', bookingId: String(boundBookingId), retryable: false }
       );
     }
-    return { booking: existingById, isReplay: true };
+    return returnWithReconcile(existingById, true);
   }
   const existingByCheckout = await deps.Booking.findOne({ checkoutId: String(checkoutId) });
   if (existingByCheckout) {
@@ -1275,7 +1512,7 @@ async function saveLeaseAwareBookingWithoutVoucherRelease(deps, { bookingData, c
         }
       );
     }
-    return { booking: existingByCheckout, isReplay: true };
+    return returnWithReconcile(existingByCheckout, true);
   }
 
   const piId =
@@ -1286,7 +1523,7 @@ async function saveLeaseAwareBookingWithoutVoucherRelease(deps, { bookingData, c
     const existingByPi = await deps.Booking.findOne({ stripePaymentIntentId: piId });
     if (existingByPi) {
       if (String(existingByPi._id) === String(boundBookingId)) {
-        return { booking: existingByPi, isReplay: true };
+        return returnWithReconcile(existingByPi, true);
       }
       throw createLeaseWorkNeedsReviewError(
         'LEASE_FINALIZE_NEEDS_REVIEW',
@@ -1304,19 +1541,19 @@ async function saveLeaseAwareBookingWithoutVoucherRelease(deps, { bookingData, c
   try {
     const booking = new deps.Booking(bookingData);
     await booking.save();
-    return { booking, isReplay: false };
+    return returnWithReconcile(booking, false);
   } catch (saveErr) {
     if (saveErr && saveErr.code === 11000) {
       const again =
         (await deps.Booking.findById(boundBookingId)) ||
         (await deps.Booking.findOne({ checkoutId: String(checkoutId) }));
       if (again && String(again._id) === String(boundBookingId)) {
-        return { booking: again, isReplay: true };
+        return returnWithReconcile(again, true);
       }
       if (piId) {
         const byPi = await deps.Booking.findOne({ stripePaymentIntentId: piId });
         if (byPi && String(byPi._id) === String(boundBookingId)) {
-          return { booking: byPi, isReplay: true };
+          return returnWithReconcile(byPi, true);
         }
         if (byPi) {
           throw createLeaseWorkNeedsReviewError(
@@ -1336,6 +1573,13 @@ async function saveLeaseAwareBookingWithoutVoucherRelease(deps, { bookingData, c
         'Booking unique conflict during lease-aware persist',
         { stage: 'booking_persist', bookingId: String(boundBookingId), retryable: false }
       );
+    }
+    // Propagate installment/PM verification needs-review errors as-is.
+    if (
+      saveErr?.code === 'LEASE_FINALIZE_NEEDS_REVIEW' ||
+      saveErr?.code === 'PAID_BOOKING_SAVE_FAILED'
+    ) {
+      throw saveErr;
     }
     throw createLeaseWorkNeedsReviewError(
       'PAID_BOOKING_SAVE_FAILED',
@@ -1509,7 +1753,9 @@ async function executeLeaseAwareFinalizeWork({
   const saved = await saveLeaseAwareBookingWithoutVoucherRelease(deps, {
     bookingData,
     checkoutId,
-    boundBookingId
+    boundBookingId,
+    session,
+    paymentIntentId: paymentIntentIdForReview
   });
   let booking = saved.booking;
   if (typeof deps.afterBookingSave === 'function') {
@@ -1869,6 +2115,11 @@ async function executeBookingFinalizeWork({
     checkoutFingerprint
   });
   if (replayByCheckout) {
+    await reconcileSplitInstallmentsAfterBookingPersist(deps, {
+      booking: replayByCheckout.booking,
+      session,
+      paymentIntentId: paymentIntentIdForReview
+    });
     await runShadowClaimsAfterCanonicalSurvival(deps, {
       booking: replayByCheckout.booking,
       source,
@@ -1886,6 +2137,11 @@ async function executeBookingFinalizeWork({
     paymentIntentId: paymentIntentIdForReview
   });
   if (replayByPi) {
+    await reconcileSplitInstallmentsAfterBookingPersist(deps, {
+      booking: replayByPi.booking,
+      session,
+      paymentIntentId: paymentIntentIdForReview
+    });
     await runShadowClaimsAfterCanonicalSurvival(deps, {
       booking: replayByPi.booking,
       source,
@@ -2003,7 +2259,8 @@ async function executeBookingFinalizeWork({
       checkoutFingerprint,
       voucherReservationContext,
       paymentIntentIdForReview,
-      voucherEvidence
+      voucherEvidence,
+      session
     });
   } catch (saveErr) {
     if (preClaimAttempt?.insertedNightsThisAttempt?.length) {

@@ -95,6 +95,11 @@ export const bookingAPI = {
       `/bookings/checkout-sessions/${encodeURIComponent(String(checkoutId ?? '').trim())}/finalize-intent`,
       data
     ),
+  setPaymentChoice: (checkoutId, data) =>
+    api.put(
+      `/bookings/checkout-sessions/${encodeURIComponent(String(checkoutId ?? '').trim())}/payment-choice`,
+      data
+    ),
   getCheckoutSession: async (checkoutId) => {
     const id = String(checkoutId ?? '').trim();
     const res = await api.get(`/bookings/checkout-sessions/${encodeURIComponent(id)}`);
