@@ -10,6 +10,10 @@ const EMPTY_LEG = {
   cancellationTreatment: 'standard_policy'
 };
 
+const AMOUNT_TYPES = ['percent_bps', 'fixed_cents', 'remainder'];
+const DUE_RULES = ['checkout', 'days_before_arrival', 'days_after_booking'];
+const CANCELLATION_TREATMENTS = ['standard_policy', 'stay_credit', 'forfeit'];
+
 function emptyForm() {
   return {
     code: '',
@@ -150,6 +154,23 @@ export default function OpsPaymentTerms() {
     });
   }
 
+  function updateLeg(index, field, value) {
+    setForm((current) => ({
+      ...current,
+      legs: current.legs.map((leg, legIndex) => {
+        if (legIndex !== index) return leg;
+        if (field === 'amountType') {
+          return {
+            ...leg,
+            amountType: value,
+            amountValue: value === 'remainder' ? null : leg.amountValue ?? 1
+          };
+        }
+        return { ...leg, [field]: value };
+      })
+    }));
+  }
+
   const editable = selected?.status === 'draft';
 
   return (
@@ -261,11 +282,87 @@ export default function OpsPaymentTerms() {
             <div className="text-sm">
               <div className="font-medium mb-1">Legs</div>
               {(form.legs || []).map((leg, idx) => (
-                <div key={idx} className="border rounded p-2 mb-2 text-xs space-y-1">
-                  <div>
-                    #{leg.sequence} · {leg.amountType} {leg.amountValue ?? '—'} · {leg.dueRule} +
-                    {leg.dueOffsetDays}d · {leg.cancellationTreatment}
-                  </div>
+                <div key={idx} className="border rounded p-3 mb-2 text-xs space-y-3">
+                  {editable || !selected ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <label>
+                        Leg {idx + 1} sequence
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          className="mt-1 w-full border rounded px-2 py-1"
+                          value={leg.sequence}
+                          onChange={(e) => updateLeg(idx, 'sequence', Number(e.target.value))}
+                        />
+                      </label>
+                      <label>
+                        Leg {idx + 1} amount type
+                        <select
+                          className="mt-1 w-full border rounded px-2 py-1"
+                          value={leg.amountType}
+                          onChange={(e) => updateLeg(idx, 'amountType', e.target.value)}
+                        >
+                          {AMOUNT_TYPES.map((value) => (
+                            <option key={value} value={value}>{value}</option>
+                          ))}
+                        </select>
+                      </label>
+                      {leg.amountType !== 'remainder' ? (
+                        <label>
+                          Leg {idx + 1} amount value
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            className="mt-1 w-full border rounded px-2 py-1"
+                            value={leg.amountValue ?? ''}
+                            onChange={(e) => updateLeg(idx, 'amountValue', Number(e.target.value))}
+                          />
+                        </label>
+                      ) : null}
+                      <label>
+                        Leg {idx + 1} due rule
+                        <select
+                          className="mt-1 w-full border rounded px-2 py-1"
+                          value={leg.dueRule}
+                          onChange={(e) => updateLeg(idx, 'dueRule', e.target.value)}
+                        >
+                          {DUE_RULES.map((value) => (
+                            <option key={value} value={value}>{value}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Leg {idx + 1} due offset days
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          className="mt-1 w-full border rounded px-2 py-1"
+                          value={leg.dueOffsetDays}
+                          onChange={(e) => updateLeg(idx, 'dueOffsetDays', Number(e.target.value))}
+                        />
+                      </label>
+                      <label>
+                        Leg {idx + 1} cancellation treatment
+                        <select
+                          className="mt-1 w-full border rounded px-2 py-1"
+                          value={leg.cancellationTreatment}
+                          onChange={(e) => updateLeg(idx, 'cancellationTreatment', e.target.value)}
+                        >
+                          {CANCELLATION_TREATMENTS.map((value) => (
+                            <option key={value} value={value}>{value}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  ) : (
+                    <div>
+                      #{leg.sequence} · {leg.amountType} {leg.amountValue ?? '—'} · {leg.dueRule} +
+                      {leg.dueOffsetDays}d · {leg.cancellationTreatment}
+                    </div>
+                  )}
                 </div>
               ))}
               <p className="text-gray-500">
