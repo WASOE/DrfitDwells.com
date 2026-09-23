@@ -80,6 +80,29 @@ function isPositiveIntegerNights(value) {
   return Number.isInteger(n) && n > 0;
 }
 
+export function SplitPaymentPreviewNote({ preview, className = '' }) {
+  if (!preview || !Number.isInteger(preview.initialAmountCents) || preview.initialAmountCents < 1) {
+    return null;
+  }
+  const percentage = Number.isInteger(preview.initialPercentBps)
+    ? preview.initialPercentBps / 100
+    : null;
+  const lead = percentage != null
+    ? `Reserve with ${percentage.toLocaleString(undefined, { maximumFractionDigits: 2 })}% today`
+    : `Reserve with €${(preview.initialAmountCents / 100).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      })} today`;
+  return (
+    <div className={`mt-2 text-xs leading-relaxed text-sage-dark ${className}`} data-testid="split-payment-preview">
+      <p className="font-medium">{lead}</p>
+      {Number.isInteger(preview.balanceDueOffsetDays) && preview.balanceDueOffsetDays > 0 ? (
+        <p className="text-gray-500">Pay the rest {preview.balanceDueOffsetDays} days before arrival.</p>
+      ) : null}
+    </div>
+  );
+}
+
 /**
  * CabinDetails lodging display authority for the current exact request.
  * Display-only — never used for quoting, checkout, or PaymentIntents.
@@ -1509,6 +1532,7 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
                       ) : null
                     }
                   />
+                  <SplitPaymentPreviewNote preview={cabinQuote?.splitPaymentPreview} />
                 </div>
               ) : pricing ? (
                 <div className="mt-0.5" data-testid="cabin-details-pricing-unavailable-mobile">
@@ -1697,6 +1721,7 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
                       </div>
                     }
                   />
+                  <SplitPaymentPreviewNote preview={cabinQuote?.splitPaymentPreview} />
                 </div>
 
                 <div className="space-y-2 text-sm border-t border-gray-100 pt-4">

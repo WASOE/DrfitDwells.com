@@ -165,8 +165,45 @@ function buildEnsureQuoteFromPublicResult(quoteResult) {
     promo: quoteResult.promo,
     voucherAppliedCents: quoteResult.voucherAppliedCents,
     remainingDueCents: quoteResult.remainingDueCents,
-    fullVoucherCoverage: quoteResult.fullVoucherCoverage
+    fullVoucherCoverage: quoteResult.fullVoucherCoverage,
+    ratePlan: quoteResult.ratePlan || null
   };
+}
+
+function formatPublicSplitPaymentPreview(snapshot) {
+  if (!snapshot || !Array.isArray(snapshot.installments) || snapshot.installments.length < 2) {
+    return null;
+  }
+  const checkout = snapshot.installments.find((row) => row.dueRule === 'checkout');
+  const future = snapshot.installments.filter((row) => row.dueRule !== 'checkout');
+  if (!checkout || future.length === 0 || !Number.isInteger(snapshot.totalCents) || snapshot.totalCents < 1) {
+    return null;
+  }
+  return {
+    initialAmountCents: checkout.amountCents,
+    initialPercentBps: Math.round((checkout.amountCents * 10000) / snapshot.totalCents),
+    balanceAmountCents: future.reduce((sum, row) => sum + row.amountCents, 0),
+    balanceDueAtDateOnly: future.length === 1 ? future[0].dueAtDateOnly : null,
+    balanceDueOffsetDays: future.length === 1 ? future[0].dueOffsetDays : null
+  };
+}
+
+async function resolvePublicSplitPaymentPreview(quoteResult, options = {}) {
+  const { resolveSplitPaymentOfferForCheckout } = require('../services/paymentScheduleService');
+  const { formatSofiaDateOnly } = require('../utils/dateTime');
+  const resolved = await resolveSplitPaymentOfferForCheckout({
+    quote: buildEnsureQuoteFromPublicResult(quoteResult),
+    quoteSnapshot: {
+      checkInDateOnly: formatSofiaDateOnly(quoteResult.checkInDate),
+      currency: quoteResult.ratePlan?.currency || 'EUR',
+      voucherAppliedCents: quoteResult.voucherAppliedCents || 0,
+      stayCreditAppliedCents: quoteResult.stayCreditAppliedCents || 0
+    },
+    stripeAmountCents: resolveRemainingCardAmountCents(quoteResult),
+    bookingDateOnly: options.bookingDateOnly || null,
+    deps: options.paymentScheduleDeps || {}
+  });
+  return formatPublicSplitPaymentPreview(resolved.splitPaymentOfferSnapshot);
 }
 
 function formatPublicCheckoutSessionState(state) {
@@ -576,6 +613,8 @@ module.exports = {
   assertV2CheckoutSessionCanFinalize,
   NO_PAYMENT_FINALIZE_STATUSES,
   buildEnsureQuoteFromPublicResult,
+  formatPublicSplitPaymentPreview,
+  resolvePublicSplitPaymentPreview,
   formatPublicCheckoutSessionState,
   formatV2CreatePaymentIntentResponse,
   ROUTE_AMOUNT_ERROR_CODES,

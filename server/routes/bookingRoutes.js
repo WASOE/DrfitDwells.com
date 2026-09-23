@@ -78,6 +78,7 @@ const {
   handleCreatePaymentIntentV2,
   handlePersistFinalizeIntent,
   formatPublicCheckoutSessionState,
+  resolvePublicSplitPaymentPreview,
   sendCheckoutSessionError,
   assertV2CheckoutSessionCanFinalize
 } = require('./checkoutSessionRouteAdapter');
@@ -740,6 +741,7 @@ router.post('/quote', bookingQuoteLimiter, bookingQuoteBodyValidators, async (re
 
     funnelOutcome = { kind: 'received', httpStatus: 200, result };
 
+    const splitPaymentPreview = await resolvePublicSplitPaymentPreview(result);
     const {
       subtotalPrice,
       discountAmount,
@@ -765,6 +767,7 @@ router.post('/quote', bookingQuoteLimiter, bookingQuoteBodyValidators, async (re
         fullVoucherCoverage,
         stayCreditAppliedCents,
         stayCreditCode,
+        splitPaymentPreview,
         ...(voucherPreviewError ? { voucherMessage: voucherPreviewError } : {}),
         ...(stayCreditPreviewError ? { stayCreditMessage: stayCreditPreviewError } : {})
       }
@@ -3356,4 +3359,3 @@ module.exports.__setClaimBookingConfirmationSideEffectsForTesting = (fn) => {
 module.exports.__resetClaimBookingConfirmationSideEffectsForTesting = () => {
   claimBookingConfirmationSideEffectsOnceImpl = claimBookingConfirmationSideEffectsOnce;
 };
-
