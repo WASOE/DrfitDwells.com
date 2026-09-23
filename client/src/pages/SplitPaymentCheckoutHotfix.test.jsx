@@ -3,6 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { SplitPaymentChoiceOptions } from './ConfirmBooking';
 import { SplitPaymentPreviewNote } from './CabinDetails';
+import { AFrameSplitPaymentPreviewNote } from './AFrameDetails';
 
 const offer = {
   totalCents: 60000,
@@ -53,5 +54,21 @@ describe('property split eligibility message', () => {
 
     rerender(<SplitPaymentPreviewNote preview={null} />);
     expect(screen.queryByTestId('split-payment-preview')).not.toBeInTheDocument();
+  });
+
+  it('shows the server-derived reserve banner on the A-frame selection page', () => {
+    render(
+      <AFrameSplitPaymentPreviewNote
+        preview={{
+          initialAmountCents: 24000,
+          balanceAmountCents: 36000,
+          balanceDueAtDateOnly: '2026-11-10'
+        }}
+      />
+    );
+    expect(screen.getByTestId('a-frame-split-payment-preview')).toHaveTextContent(
+      'Reserve with €240.00 today'
+    );
+    expect(screen.getByText('Pay €360.00 on 2026-11-10')).toBeInTheDocument();
   });
 });

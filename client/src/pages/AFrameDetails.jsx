@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import '../i18n/ns/booking';
 import { useSiteLanguage } from '../hooks/useSiteLanguage';
-import { cabinTypeAPI, availabilityAPI, unitAPI } from '../services/api';
+import { cabinTypeAPI, availabilityAPI, unitAPI, bookingAPI } from '../services/api';
 import { useBookingSearch } from '../context/BookingSearchContext';
 import { useBookingNavigation } from '../hooks/useBookingNavigation';
 import MosaicGallery from '../components/MosaicGallery';
@@ -36,6 +36,30 @@ const DEFAULT_EXPERIENCES = [
 
 const MULTI_UNIT_SLUG = 'a-frame';
 
+export function AFrameSplitPaymentPreviewNote({ preview, className = '' }) {
+  if (!preview || !Number.isInteger(preview.initialAmountCents) || preview.initialAmountCents < 1) {
+    return null;
+  }
+  const formatEuros = (cents) =>
+    `€${(Number(cents) / 100).toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    })}`;
+  const balance = Number.isInteger(preview.balanceAmountCents)
+    ? preview.balanceAmountCents
+    : null;
+  return (
+    <div className={`mt-2 text-xs leading-relaxed text-sage-dark ${className}`} data-testid="a-frame-split-payment-preview">
+      <p className="font-medium">Reserve with {formatEuros(preview.initialAmountCents)} today</p>
+      {balance != null && preview.balanceDueAtDateOnly ? (
+        <p className="text-gray-500">
+          Pay {formatEuros(balance)} on {preview.balanceDueAtDateOnly}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 const AFrameDetails = ({ staySlug: staySlugProp }) => {
   const staySlug = staySlugProp || MULTI_UNIT_SLUG;
   const [searchParams, setSearchParams] = useSearchParams();
@@ -53,6 +77,7 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
   const [selectedExpKeys, setSelectedExpKeys] = useState(new Set());
   const [isMultiUnitEnabled, setIsMultiUnitEnabled] = useState(false);
   const [unitStats, setUnitStats] = useState(null); // { total, active }
+  const [splitPaymentPreview, setSplitPaymentPreview] = useState(null);
 
   // Search criteria
   const searchCriteria = useMemo(() => ({
@@ -329,6 +354,7 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
         }
 
         let nextAvailability = null;
+        let nextSplitPaymentPreview = null;
         let availabilityError = null;
         if (searchCriteria.checkIn && searchCriteria.checkOut) {
           try {
@@ -351,12 +377,31 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
           }
         }
 
+        if (searchCriteria.checkIn && searchCriteria.checkOut) {
+          try {
+            const quoteResponse = await bookingAPI.quote({
+              cabinTypeId: type._id,
+              checkIn: searchCriteria.checkIn,
+              checkOut: searchCriteria.checkOut,
+              adults: searchCriteria.adults,
+              children: searchCriteria.children
+            });
+            if (quoteResponse.data?.success) {
+              nextSplitPaymentPreview =
+                quoteResponse.data.data?.splitPaymentPreview || null;
+            }
+          } catch {
+            nextSplitPaymentPreview = null;
+          }
+        }
+
         if (cancelled) return;
 
         setCabinType(type);
         setIsMultiUnitEnabled(true);
         setUnitStats(nextUnitStats);
         setAvailability(nextAvailability);
+        setSplitPaymentPreview(nextSplitPaymentPreview);
         if (availabilityError) setError(availabilityError);
       } catch (err) {
         if (cancelled) return;
@@ -694,6 +739,7 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
                   {t('details.selectDatesForPricing')}
                 </p>
               )}
+              <AFrameSplitPaymentPreviewNote preview={splitPaymentPreview} />
             </div>
           </div>
           <div className="flex-shrink-0">
@@ -797,32 +843,35 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
                       {pricingErrorMessage}
                     </p>
                   ) : displayGrandTotal != null ? (
-                    <StayLodgingPriceBlock
-                      originalAmount={aFrameGrandBeforePromo}
-                      finalAmount={displayGrandTotal}
-                      showPromoMicrocopy={
-                        !!availability?.promo?.applied && !availability?.promo?.invalidReason
-                      }
-                      promoMicrocopyText={availability?.promo?.label || undefined}
-                      invalidReason={
-                        searchCriteria.promoCode && availability?.promo?.invalidReason
-                          ? availability.promo.invalidReason
-                          : null
-                      }
-                      priceClassName="text-2xl font-semibold text-gray-900"
-                      strikeClassName="font-serif text-lg text-gray-400 line-through decoration-gray-400/70 tabular-nums"
-                      priceSuffix={
-                        <span className="text-base font-normal text-gray-500 ml-1">{t('details.priceTotalSuffix')}</span>
-                      }
-                      footnote={
-                        <p className="text-sm text-gray-500 mt-0.5">
-                          {t('modal.nights', { count: displayNights })}
-                          {displayLodgingNightly != null
-                            ? ` · ${t('search.pricePerNight', { price: Number(displayLodgingNightly).toLocaleString() })}`
-                            : ''}
-                        </p>
-                      }
-                    />
+                    <>
+                      <StayLodgingPriceBlock
+                        originalAmount={aFrameGrandBeforePromo}
+                        finalAmount={displayGrandTotal}
+                        showPromoMicrocopy={
+                          !!availability?.promo?.applied && !availability?.promo?.invalidReason
+                        }
+                        promoMicrocopyText={availability?.promo?.label || undefined}
+                        invalidReason={
+                          searchCriteria.promoCode && availability?.promo?.invalidReason
+                            ? availability.promo.invalidReason
+                            : null
+                        }
+                        priceClassName="text-2xl font-semibold text-gray-900"
+                        strikeClassName="font-serif text-lg text-gray-400 line-through decoration-gray-400/70 tabular-nums"
+                        priceSuffix={
+                          <span className="text-base font-normal text-gray-500 ml-1">{t('details.priceTotalSuffix')}</span>
+                        }
+                        footnote={
+                          <p className="text-sm text-gray-500 mt-0.5">
+                            {t('modal.nights', { count: displayNights })}
+                            {displayLodgingNightly != null
+                              ? ` · ${t('search.pricePerNight', { price: Number(displayLodgingNightly).toLocaleString() })}`
+                              : ''}
+                          </p>
+                        }
+                      />
+                      <AFrameSplitPaymentPreviewNote preview={splitPaymentPreview} />
+                    </>
                   ) : null}
                 </div>
 
@@ -1042,4 +1091,3 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
 };
 
 export default AFrameDetails;
-

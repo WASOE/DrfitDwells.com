@@ -442,16 +442,9 @@ async function applyPaymentChoiceFromEnsureInput(session, input = {}) {
         ? input.payment_option
         : null;
   if (rawChoice == null || rawChoice === '') {
-    if (!session.paymentChoice || !session.paymentChoice.choice) {
-      session.paymentChoice = {
-        choice: 'full',
-        splitOfferSnapshotHash: null,
-        selectedAt: new Date(),
-        sessionVersionAtSelection: Number(session.sessionVersion || 1)
-      };
-      session.futureChargeConsent = null;
-      await saveSession(session);
-    }
+    // Full is the protocol default. Do not persist it during payment
+    // preparation; quote/finalize synchronization may have just advanced the
+    // session version and a redundant write can self-conflict.
     return session;
   }
 

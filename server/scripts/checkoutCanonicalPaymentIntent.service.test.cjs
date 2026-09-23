@@ -17,7 +17,8 @@ const {
   supersedeCanonicalPaymentIntent,
   buildPaymentIntentIdempotencyKey,
   claimCreatedPaymentIntentOrReuseWinner,
-  claimCanonicalPaymentIntent
+  claimCanonicalPaymentIntent,
+  applyPaymentChoiceFromEnsureInput
 } = require('../services/checkout/checkoutCanonicalPaymentIntentService');
 const { hashQuoteSnapshot, buildQuoteSnapshot } = require('../services/checkout/checkoutSessionSnapshot');
 const { normalizeCheckoutSessionInput } = require('../services/checkout/checkoutSessionService');
@@ -181,6 +182,20 @@ test('creates PI for card-due session and stores canonicalPaymentIntentId', asyn
   assert.equal(stored.canonicalPaymentIntentId, dto.canonicalPaymentIntentId);
   assert.equal(stored.client_secret, undefined);
   assert.equal(stored.clientSecret, undefined);
+});
+
+test('omitted payment choice keeps full as a non-persisted default', async () => {
+  const { session } = await createCheckoutSession({
+    input: baseInput(),
+    quote: buildFabricatedQuote()
+  });
+  const versionBefore = session.sessionVersion;
+
+  await applyPaymentChoiceFromEnsureInput(session, {});
+
+  const stored = await CheckoutSession.findOne({ checkoutId: session.checkoutId }).lean();
+  assert.equal(stored.sessionVersion, versionBefore);
+  assert.equal(stored.paymentChoice, null);
 });
 
 test('same checkoutId and quote reuses existing PI', async () => {

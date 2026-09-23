@@ -1078,6 +1078,7 @@ const ConfirmBooking = () => {
   const [voucherAppliedCents, setVoucherAppliedCents] = useState(0);
   const [stripeAmountCents, setStripeAmountCents] = useState(0);
   const [paymentChoice, setPaymentChoice] = useState('full');
+  const [paymentChoiceTouched, setPaymentChoiceTouched] = useState(false);
   const [splitPaymentOffer, setSplitPaymentOffer] = useState(null);
   const [futureChargeConsentAccepted, setFutureChargeConsentAccepted] = useState(false);
   const [fullCardObligationCents, setFullCardObligationCents] = useState(0);
@@ -1772,7 +1773,9 @@ const ConfirmBooking = () => {
       if (formData.email?.trim()) {
         payload.guestEmail = formData.email.trim().toLowerCase();
       }
-      payload.paymentChoice = paymentChoice === 'split' ? 'split' : 'full';
+      if (paymentChoice === 'split' || paymentChoiceTouched) {
+        payload.paymentChoice = paymentChoice === 'split' ? 'split' : 'full';
+      }
       if (paymentChoice === 'split' && splitPaymentOffer) {
         payload.splitOfferSnapshotHash = splitPaymentOffer.offerSnapshotHash;
         if (!futureChargeConsentAccepted) {
@@ -2041,6 +2044,7 @@ const ConfirmBooking = () => {
     language,
     sessionVersion,
     paymentChoice,
+    paymentChoiceTouched,
     splitPaymentOffer,
     futureChargeConsentAccepted,
     t
@@ -3008,6 +3012,7 @@ const ConfirmBooking = () => {
               }
               consentAccepted={futureChargeConsentAccepted}
               onPaymentChoiceChange={(choice) => {
+                setPaymentChoiceTouched(true);
                 setPaymentChoice(choice);
                 if (choice === 'full') setFutureChargeConsentAccepted(false);
                 if (clientSecret) {
