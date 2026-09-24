@@ -460,6 +460,16 @@ const checkoutSessionSchema = new mongoose.Schema(
       trim: true,
       default: null
     },
+    /**
+     * Monotonic economic PaymentIntent identity. This advances when a
+     * canonical intent is superseded so Stripe idempotency cannot resurrect a
+     * canceled intent for a new payment form.
+     */
+    paymentIntentGeneration: {
+      type: Number,
+      min: 0,
+      default: 0
+    },
     /** SP5: reusable PaymentMethod captured after successful split initial payment. */
     stripeReusablePaymentMethodId: {
       type: String,

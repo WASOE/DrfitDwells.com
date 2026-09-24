@@ -153,6 +153,7 @@ async function supersedeCanonicalPaymentIntent({ session, reason = null, stripe 
   const cancelResult = await tryCancelPaymentIntent(stripe, paymentIntentId, existingPi);
   appendSupersededId(session, paymentIntentId);
   session.canonicalPaymentIntentId = null;
+  session.paymentIntentGeneration = (Number(session.paymentIntentGeneration) || 0) + 1;
   if (session.status === 'pi_active') {
     session.status = session.quoteSnapshot?.fullVoucherCoverage
       ? 'voucher_only_reserved'
@@ -395,6 +396,7 @@ async function createStripePaymentIntent(
     checkoutId,
     quoteSnapshotHash,
     leaseGeneration = null,
+    paymentIntentGeneration = null,
     paymentIdentity = 'full',
     customerId = null,
     setupFutureUsage = null
@@ -409,6 +411,10 @@ async function createStripePaymentIntent(
     leaseGeneration,
     paymentIdentity
   );
+  const economicKey =
+    paymentIntentGeneration != null && Number(paymentIntentGeneration) > 0
+      ? `${idempotencyKey}:economic:${Number(paymentIntentGeneration)}`
+      : idempotencyKey;
   const params = {
     amount: amountCents,
     currency,
@@ -427,7 +433,7 @@ async function createStripePaymentIntent(
   }
   // DB claim prevents two canonicals on the session document.
   // Stripe idempotency key prevents two real Stripe PIs when concurrent callers race before DB claim completes.
-  return stripe.paymentIntents.create(params, { idempotencyKey });
+  return stripe.paymentIntents.create(params, { idempotencyKey: economicKey });
 }
 
 /**
@@ -468,6 +474,7 @@ async function buildSplitAwarePaymentIntentCreateArgs(session, snapshot, {
   giftVoucherId = null,
   reservationKey = null,
   leaseGeneration = null,
+  paymentIntentGeneration = null,
   stripe
 } = {}) {
   const choice = getPaymentChoice(session);
@@ -496,6 +503,7 @@ async function buildSplitAwarePaymentIntentCreateArgs(session, snapshot, {
     checkoutId: session.checkoutId,
     quoteSnapshotHash: session.quoteSnapshotHash,
     leaseGeneration,
+    paymentIntentGeneration,
     paymentIdentity,
     customerId,
     setupFutureUsage
@@ -956,7 +964,7 @@ async function ensureCanonicalPaymentIntentLegacy({
     }
     if (terminalPi && TERMINAL_NON_CANCEL_PI_STATUSES.has(terminalPi.status)) {
       const match = paymentIntentMatchesSession(terminalPi, session, redemptionId);
-      if (!match.ok) {
+      if (existingPi.status === 'canceled' || !match.ok) {
         throw new CheckoutSessionError(
           CHECKOUT_SESSION_ERROR_CODES.CANONICAL_PAYMENT_INTENT_MISMATCH,
           'Paid payment intent does not match the current voucher reservation or quote',
@@ -1046,7 +1054,8 @@ async function ensureCanonicalPaymentIntentLegacy({
       redemptionId,
       giftVoucherId,
       reservationKey,
-      stripe
+      stripe,
+      paymentIntentGeneration: session.paymentIntentGeneration
     })
   );
 
@@ -1529,6 +1538,14 @@ async function ensureCanonicalPaymentIntentWithResourceLease({
       });
     }
     if (reuseResult?.succeeded || reuseResult?.processing) {
+      const match = paymentIntentMatchesSession(reuseResult.pi, session, redemptionId);
+      if (!match.ok) {
+        throw new CheckoutSessionError(
+          CHECKOUT_SESSION_ERROR_CODES.CANONICAL_PAYMENT_INTENT_MISMATCH,
+          'Terminal PaymentIntent does not match the current checkout payment identity',
+          { checkoutId: session.checkoutId, reason: match.message }
+        );
+      }
       session = await loadSessionOrThrow(session.checkoutId);
       await leaseService.verifyActiveResourceLeaseForPayment(
         {
@@ -1577,6 +1594,7 @@ async function ensureCanonicalPaymentIntentWithResourceLease({
     giftVoucherId,
     reservationKey,
     leaseGeneration,
+    paymentIntentGeneration: session.paymentIntentGeneration,
     stripe
   });
   createArgs.metadata.resourceLeaseGeneration = String(leaseGeneration);

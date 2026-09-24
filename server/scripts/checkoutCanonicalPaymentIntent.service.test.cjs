@@ -217,11 +217,11 @@ test('creates PI for card-due session and stores canonicalPaymentIntentId', asyn
   assert.equal(stored.clientSecret, undefined);
 });
 
-test('split €450 offer creates an €180 card-only off-session PI with one customer', async () => {
+test('split €525 offer creates an €210 card-only off-session PI with one customer', async () => {
   const stripe = createFakeStripe();
   const { session } = await createCheckoutSession({
     input: baseInput(),
-    quote: buildFabricatedQuote({ totalPrice: 450, remainingDueCents: 18000 })
+    quote: buildFabricatedQuote({ totalPrice: 525, remainingDueCents: 21000 })
   });
   session.paymentChoice = {
     choice: 'split',
@@ -231,7 +231,7 @@ test('split €450 offer creates an €180 card-only off-session PI with one cus
   session.splitPaymentOfferSnapshot = {
     schemaVersion: 1,
     currency: 'EUR',
-    totalCents: 45000,
+    totalCents: 52500,
     bookingDateOnly: '2026-10-01',
     arrivalDateOnly: '2026-12-10',
     templateCode: 'test',
@@ -240,7 +240,7 @@ test('split €450 offer creates an €180 card-only off-session PI with one cus
     installments: [
       {
         sequence: 1,
-        amountCents: 18000,
+        amountCents: 21000,
         amountType: 'percent_bps',
         dueRule: 'checkout',
         dueOffsetDays: 0,
@@ -249,11 +249,11 @@ test('split €450 offer creates an €180 card-only off-session PI with one cus
       },
       {
         sequence: 2,
-        amountCents: 27000,
+        amountCents: 31500,
         amountType: 'remainder',
         dueRule: 'days_before_arrival',
         dueOffsetDays: 30,
-        dueAtDateOnly: '2026-11-10',
+        dueAtDateOnly: '2026-11-04',
         cancellationTreatment: 'standard_policy'
       }
     ]
@@ -282,7 +282,7 @@ test('split €450 offer creates an €180 card-only off-session PI with one cus
   );
   const pi = await createStripePaymentIntent(stripe, args);
 
-  assert.equal(pi.amount, 18000);
+  assert.equal(pi.amount, 21000);
   assert.equal(pi.currency, 'eur');
   assert.equal(pi.customer, session.stripeCustomerId);
   assert.equal(pi.setup_future_usage, 'off_session');
@@ -296,6 +296,34 @@ test('split €450 offer creates an €180 card-only off-session PI with one cus
     { stripe, leaseGeneration: 1 }
   );
   assert.equal(stripe.__calls.customerCreate, 1);
+});
+
+test('canceled canonical PI advances economic generation and never reuses its idempotency key', async () => {
+  const stripe = createFakeStripe();
+  const input = baseInput();
+  const quote = buildFabricatedQuote();
+  const first = await ensureCanonicalPaymentIntent({ input, quote, stripe });
+  const oldPi = first.canonicalPaymentIntentId;
+  const oldKeys = [...stripe.__idempotencyStore.keys()];
+  stripe.setStatus(oldPi, 'canceled');
+
+  const retry = await ensureCanonicalPaymentIntent({
+    checkoutId: first.checkoutId,
+    input,
+    quote,
+    stripe
+  });
+
+  assert.notEqual(retry.canonicalPaymentIntentId, oldPi);
+  assert.equal(stripe.__calls.uniqueCreated, 2);
+  assert.equal(retry.clientSecret.includes(oldPi), false);
+  const stored = await CheckoutSession.findOne({ checkoutId: first.checkoutId }).lean();
+  assert.equal(stored.paymentIntentGeneration, 1);
+  const keys = [...stripe.__idempotencyStore.keys()];
+  assert.equal(keys.length, 2);
+  assert.notEqual(keys[0], keys[1]);
+  assert.deepEqual(stored.supersededPaymentIntentIds, [oldPi]);
+  assert.ok(oldKeys.every((key) => key !== keys[1]));
 });
 
 test('omitted payment choice keeps full as a non-persisted default', async () => {
