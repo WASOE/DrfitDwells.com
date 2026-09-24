@@ -108,6 +108,44 @@ a.ops-dashboard-links__new-booking {
   color: var(--ops-text);
 }
 
+.ops-dashboard-disclosure-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: nowrap;
+  width: 100%;
+  min-width: 0;
+  gap: var(--ops-space-8);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.ops-dashboard-disclosure-header:focus-visible {
+  outline: 2px solid var(--ops-text);
+  outline-offset: 2px;
+}
+
+.ops-dashboard-disclosure-chevron {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: var(--ops-text-muted);
+  transition: transform var(--ops-motion-fast) var(--ops-motion-ease);
+}
+
+.ops-dashboard-disclosure-header--open .ops-dashboard-disclosure-chevron {
+  transform: rotate(90deg);
+}
+
+.ops-dashboard-disclosure-content {
+  min-width: 0;
+}
+
 .ops-dashboard-surface__meta,
 .ops-dashboard-note,
 .ops-dashboard-empty,
@@ -548,12 +586,27 @@ a.ops-dashboard-row:focus-visible {
     border-bottom: 1px solid var(--ops-border);
   }
 
-  .ops-dashboard-surface--alerts .ops-dashboard-surface__title {
+  .ops-dashboard-surface--alerts-empty .ops-dashboard-disclosure-header,
+  .ops-dashboard-surface--alerts-empty .ops-dashboard-disclosure-content {
+    grid-column: 1 / -1;
+  }
+
+  .ops-dashboard-surface--alerts .ops-dashboard-disclosure-header {
     padding-bottom: var(--ops-space-12);
     border-bottom: 1px solid var(--ops-text);
   }
 
+  .ops-dashboard-surface--alerts .ops-dashboard-disclosure-header .ops-dashboard-surface__title {
+    border-bottom: 0;
+    padding-bottom: 0;
+  }
+
   .ops-dashboard-surface--alerts-empty .ops-dashboard-surface__title {
+    padding-bottom: 0;
+    border-bottom: 0;
+  }
+
+  .ops-dashboard-surface--alerts-empty .ops-dashboard-disclosure-header {
     padding-bottom: 0;
     border-bottom: 0;
   }
@@ -595,10 +648,7 @@ a.ops-dashboard-row:focus-visible {
   }
 
   .ops-dashboard-surface--stay .ops-dashboard-surface__title {
-    color: var(--ops-text-secondary);
-    font-size: var(--ops-size-body);
-    line-height: var(--ops-lh-body);
-    font-weight: 500;
+    color: var(--ops-text);
   }
 
   .ops-dashboard-surface--stay .ops-dashboard-metric-group {
@@ -671,7 +721,7 @@ a.ops-dashboard-row:focus-visible {
     border-left: 1px solid var(--ops-border);
   }
 
-  .ops-dashboard-surface--today > .ops-dashboard-surface__title {
+  .ops-dashboard-surface--today .ops-dashboard-disclosure-header {
     padding-bottom: var(--ops-space-12);
     border-bottom: 1px solid var(--ops-text);
   }
