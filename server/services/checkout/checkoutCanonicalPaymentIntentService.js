@@ -1418,6 +1418,35 @@ async function ensureCanonicalPaymentIntentWithResourceLease({
   // Apply choice before card/no-card branching so split consent is validated early.
   session = await applyPaymentChoiceFromEnsureInput(session, input);
 
+  // A user can switch payment terms after a full-payment PI was prepared.
+  // That PI cannot be rebound to the split identity (or vice versa), so
+  // supersede only the mismatching, still-cancellable canonical PI and clear
+  // its lease reference before creating the new identity.
+  if (session.canonicalPaymentIntentId && session.resourceLease?.paymentIntentId) {
+    const existingPi = await stripe.paymentIntents.retrieve(
+      String(session.canonicalPaymentIntentId)
+    );
+    const match = paymentIntentMatchesSession(existingPi, session);
+    if (!match.ok) {
+      if (TERMINAL_NON_CANCEL_PI_STATUSES.has(existingPi.status)) {
+        throw new CheckoutSessionError(
+          CHECKOUT_SESSION_ERROR_CODES.CANONICAL_PAYMENT_INTENT_MISMATCH,
+          'Paid payment intent does not match the current payment choice',
+          { checkoutId: session.checkoutId, reason: match.message }
+        );
+      }
+      await supersedeCanonicalPaymentIntent({
+        session,
+        reason: 'payment_choice_changed',
+        stripe
+      });
+      session = await loadSessionOrThrow(session.checkoutId);
+      session.resourceLease.paymentIntentId = null;
+      await saveSession(session);
+      session = await loadSessionOrThrow(session.checkoutId);
+    }
+  }
+
   const needsCard = Number(session.stripeAmountCents || 0) > 0;
   const fullVoucher =
     Boolean(snapshot.fullVoucherCoverage) &&
