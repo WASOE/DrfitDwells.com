@@ -27,6 +27,10 @@ const {
   CHECKOUT_SESSION_ERROR_CODES
 } = require('../services/checkout/checkoutSessionErrors');
 const { createCheckoutSession, loadSessionOrThrow } = require('../services/checkout/checkoutSessionService');
+const {
+  buildFutureChargeConsentContract,
+  buildFutureChargeConsentDisplayedText
+} = require('../services/splitPaymentChoiceService');
 
 let mongoServer;
 
@@ -35,10 +39,34 @@ const ENTITY_ID = new mongoose.Types.ObjectId();
 function createFakeStripe() {
   const store = new Map();
   const idempotencyStore = new Map();
+  const customerStore = new Map();
   let seq = 0;
-  const calls = { create: 0, uniqueCreated: 0, retrieve: 0, cancel: 0, update: 0 };
+  const calls = {
+    create: 0,
+    uniqueCreated: 0,
+    customerCreate: 0,
+    retrieve: 0,
+    cancel: 0,
+    update: 0
+  };
 
   const client = {
+    customers: {
+      create: async (payload, options = {}) => {
+        calls.customerCreate += 1;
+        const idempotencyKey = options.idempotencyKey || null;
+        if (idempotencyKey && customerStore.has(idempotencyKey)) {
+          return { ...customerStore.get(idempotencyKey) };
+        }
+        const customer = {
+          id: `cus_test_${customerStore.size + 1}`,
+          email: payload.email,
+          metadata: { ...(payload.metadata || {}) }
+        };
+        if (idempotencyKey) customerStore.set(idempotencyKey, customer);
+        return customer;
+      }
+    },
     paymentIntents: {
       create: async (payload, options = {}) => {
         calls.create += 1;
@@ -53,6 +81,10 @@ function createFakeStripe() {
           client_secret: `cs_secret_${id}`,
           amount: payload.amount,
           currency: payload.currency,
+          customer: payload.customer,
+          setup_future_usage: payload.setup_future_usage,
+          payment_method_types: payload.payment_method_types,
+          automatic_payment_methods: payload.automatic_payment_methods,
           metadata: { ...(payload.metadata || {}) },
           status: 'requires_payment_method',
           idempotencyKey
@@ -92,6 +124,7 @@ function createFakeStripe() {
     },
     __store: store,
     __idempotencyStore: idempotencyStore,
+    __customerStore: customerStore,
     __calls: calls,
     getIdempotencyKey(checkoutId, quoteSnapshotHash) {
       return buildPaymentIntentIdempotencyKey(checkoutId, quoteSnapshotHash);
@@ -182,6 +215,87 @@ test('creates PI for card-due session and stores canonicalPaymentIntentId', asyn
   assert.equal(stored.canonicalPaymentIntentId, dto.canonicalPaymentIntentId);
   assert.equal(stored.client_secret, undefined);
   assert.equal(stored.clientSecret, undefined);
+});
+
+test('split €450 offer creates an €180 card-only off-session PI with one customer', async () => {
+  const stripe = createFakeStripe();
+  const { session } = await createCheckoutSession({
+    input: baseInput(),
+    quote: buildFabricatedQuote({ totalPrice: 450, remainingDueCents: 18000 })
+  });
+  session.paymentChoice = {
+    choice: 'split',
+    splitOfferSnapshotHash: 'offer-hash'
+  };
+  session.splitPaymentOfferSnapshotHash = 'offer-hash';
+  session.splitPaymentOfferSnapshot = {
+    schemaVersion: 1,
+    currency: 'EUR',
+    totalCents: 45000,
+    bookingDateOnly: '2026-10-01',
+    arrivalDateOnly: '2026-12-10',
+    templateCode: 'test',
+    templateVersion: 1,
+    scheduleKind: 'installment_plan',
+    installments: [
+      {
+        sequence: 1,
+        amountCents: 18000,
+        amountType: 'percent_bps',
+        dueRule: 'checkout',
+        dueOffsetDays: 0,
+        dueAtDateOnly: '2026-10-01',
+        cancellationTreatment: 'stay_credit'
+      },
+      {
+        sequence: 2,
+        amountCents: 27000,
+        amountType: 'remainder',
+        dueRule: 'days_before_arrival',
+        dueOffsetDays: 30,
+        dueAtDateOnly: '2026-11-10',
+        cancellationTreatment: 'standard_policy'
+      }
+    ]
+  };
+  const consent = buildFutureChargeConsentContract(
+    session.splitPaymentOfferSnapshot,
+    'offer-hash'
+  );
+  session.futureChargeConsent = {
+    consentHash: consent.consentHash,
+    consentVersion: consent.consentVersion,
+    acceptedAt: new Date(),
+    displayedText: buildFutureChargeConsentDisplayedText(
+      session.splitPaymentOfferSnapshot,
+      'en'
+    )
+  };
+  await session.save();
+
+  const { buildSplitAwarePaymentIntentCreateArgs, createStripePaymentIntent } =
+    require('../services/checkout/checkoutCanonicalPaymentIntentService');
+  const args = await buildSplitAwarePaymentIntentCreateArgs(
+    session,
+    session.quoteSnapshot,
+    { stripe, leaseGeneration: 1 }
+  );
+  const pi = await createStripePaymentIntent(stripe, args);
+
+  assert.equal(pi.amount, 18000);
+  assert.equal(pi.currency, 'eur');
+  assert.equal(pi.customer, session.stripeCustomerId);
+  assert.equal(pi.setup_future_usage, 'off_session');
+  assert.deepEqual(pi.payment_method_types, ['card']);
+  assert.equal(pi.automatic_payment_methods, undefined);
+  assert.equal(stripe.__calls.customerCreate, 1);
+  assert.equal(stripe.__customerStore.size, 1);
+  await buildSplitAwarePaymentIntentCreateArgs(
+    session,
+    session.quoteSnapshot,
+    { stripe, leaseGeneration: 1 }
+  );
+  assert.equal(stripe.__calls.customerCreate, 1);
 });
 
 test('omitted payment choice keeps full as a non-persisted default', async () => {

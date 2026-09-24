@@ -1542,7 +1542,6 @@ async function ensureCanonicalPaymentIntentWithResourceLease({
     deps
   );
 
-  const versionForClaim = Number(session.sessionVersion);
   const leaseGeneration = Number(leaseProof.generation);
   const createArgs = await buildSplitAwarePaymentIntentCreateArgs(session, snapshot, {
     redemptionId,
@@ -1553,6 +1552,19 @@ async function ensureCanonicalPaymentIntentWithResourceLease({
   });
   createArgs.metadata.resourceLeaseGeneration = String(leaseGeneration);
   createArgs.metadata.resourceLeaseValidUntil = new Date(leaseProof.validUntil).toISOString();
+
+  // Split preparation may persist a newly-created Stripe Customer before the
+  // PaymentIntent is created. Refresh the CAS version after that persistence so
+  // the bind claims the current session rather than self-conflicting.
+  session = await loadSessionOrThrow(session.checkoutId);
+  const versionForClaim = Number(session.sessionVersion);
+  leaseProof = await leaseService.verifyActiveResourceLeaseForPayment(
+    {
+      session,
+      requireMinRemainingMs: leaseService.DEFAULT_RESOURCE_LEASE_MINIMUM_REMAINING_MS
+    },
+    deps
+  );
 
   let pi;
   try {
