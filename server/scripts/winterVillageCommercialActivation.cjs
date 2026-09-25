@@ -34,7 +34,7 @@ const ACTIVATION_CONFIRM = 'ACTIVATE_WINTER_VILLAGE_COMMERCIAL_V1';
 function buildPaymentTermDefinition() {
   return {
     code: PAYMENT_TERM_CODE,
-    internalName: '40% at checkout, remainder 30 days before arrival',
+    internalName: '40% now / 60% 30 days before arrival',
     version: PAYMENT_TERM_VERSION,
     status: 'draft',
     currency: 'EUR',

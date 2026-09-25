@@ -177,8 +177,8 @@ const WINTER_VILLAGE_SEASONAL_RATE_PLAN = Object.freeze({
   currency: 'EUR',
   arrivalWindowStart: '2026-12-01',
   arrivalWindowEnd: '2027-03-31',
-  bookingWindowStart: '2026-09-25',
-  bookingWindowEnd: '2027-03-30',
+  bookingWindowStart: null,
+  bookingWindowEnd: null,
   minNights: 2,
   inventoryMode: 'shared',
   requiresFullPayment: true,
@@ -203,8 +203,10 @@ const WINTER_VILLAGE_SEASONAL_RATE_PLAN = Object.freeze({
     {
       accommodationKey: 'stone-house',
       entityType: 'cabin',
-      pricingMethod: 'nightly_per_unit',
-      nightlyPerUnitAmount: 90
+      pricingMethod: 'nightly_base_plus_extra_guest',
+      nightlyPerUnitAmount: 90,
+      includedGuests: 3,
+      additionalGuestNightlyAmount: 30
     }
   ]
 });

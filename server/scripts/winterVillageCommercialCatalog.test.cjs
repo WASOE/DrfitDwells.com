@@ -9,7 +9,8 @@ const {
   PAYMENT_TERM_CODE,
   PAYMENT_TERM_VERSION,
   CANCELLATION_POLICY_CODE,
-  CANCELLATION_POLICY_VERSION
+  CANCELLATION_POLICY_VERSION,
+  WINTER_VILLAGE_SEASONAL_RATE_PLAN
 } = require('../config/winterVillageCommercialCatalog');
 const {
   buildWinterVillageFixedPackageQuote,
@@ -19,6 +20,10 @@ const {
   auditWinterVillageCommercialData,
   expectedPaymentTermShape
 } = require('../services/winterVillageCommercialReadinessService');
+const {
+  selectSeasonalRatePlan,
+  seasonalStayFullyEligible
+} = require('../services/ratePlanService');
 
 const PARTICIPANTS = [
   { fullName: 'Parent One', dateOfBirth: '1985-01-01' },
@@ -52,34 +57,7 @@ function quoteDeps(plan, resources = [{ _id: 'unit-1', isActive: true, salesStat
 }
 
 function seasonalPlan() {
-  return {
-    code: 'winter-cabin-stay-2026-27',
-    internalName: 'Winter Cabin Stay 2026/27',
-    version: 2,
-    status: 'active',
-    type: 'seasonal_stay',
-    currency: 'EUR',
-    arrivalWindowStart: '2026-12-01',
-    arrivalWindowEnd: '2027-03-31',
-    bookingWindowStart: '2026-09-01',
-    bookingWindowEnd: '2027-03-30',
-    minNights: 2,
-    inventoryMode: 'shared',
-    requiresFullPayment: true,
-    cancellationPolicyCode: 'normal-stay-standard',
-    cancellationPolicyVersion: 1,
-    paymentTermCode: 'split-40-60-30d',
-    paymentTermVersion: 1,
-    inclusions: [],
-    accommodations: [
-      {
-        accommodationKey: 'a-frame',
-        entityType: 'cabinType',
-        pricingMethod: 'nightly_per_unit',
-        nightlyPerUnitAmount: 75
-      }
-    ]
-  };
+  return { ...WINTER_VILLAGE_SEASONAL_RATE_PLAN, status: 'active' };
 }
 
 test('catalog maps every planned date to one exact fixed package identity', () => {
@@ -187,6 +165,47 @@ test('Winter Cabin Stay uses the exact seasonal plan and nightly override bounda
   assert.equal(result.ratePlanPricingBreakdown.ratePlanCode, 'winter-cabin-stay-2026-27');
   assert.equal(result.nightlyPricing.length, 4);
   assert.equal(result.nightlyPricing[0].effectiveBaseNightlyAmount, 110);
+});
+
+test('Winter Cabin Stay leaves booking sale window open while restricting stay dates', () => {
+  const plan = seasonalPlan();
+  assert.equal(plan.bookingWindowStart, null);
+  assert.equal(plan.bookingWindowEnd, null);
+  assert.equal(seasonalStayFullyEligible(plan, '2026-12-23', '2026-12-27'), true);
+  assert.equal(seasonalStayFullyEligible(plan, '2026-11-30', '2026-12-02'), false);
+  const selected = selectSeasonalRatePlan({
+    plans: [plan],
+    checkIn: '2026-12-23',
+    checkOut: '2026-12-27',
+    accommodationKey: 'stone-house'
+  });
+  assert.equal(selected.ok, true);
+  assert.equal(selected.resolved.pricing.pricingMethod, 'nightly_base_plus_extra_guest');
+});
+
+test('Winter Cabin Stay Stone House applies the €90 minimum and €30 extra-guest rate', async () => {
+  const plan = seasonalPlan();
+  const expectedByGuests = [90, 90, 90, 120, 150, 180];
+  for (const [index, expected] of expectedByGuests.entries()) {
+    const guests = index + 1;
+    const result = await buildWinterVillageStayQuote(
+      {
+        entity: { slug: 'stone-house', experiences: [] },
+        entityType: 'cabin',
+        checkIn: '2026-12-23',
+        checkOut: '2026-12-25',
+        adults: guests,
+        children: 0
+      },
+      {
+        loadActiveSeasonalRatePlans: async () => [plan],
+        loadNightlyRateOverrides: async () => [],
+        applyPromoToBreakdown: async (quote) => quote
+      }
+    );
+    assert.equal(result.totalPrice, expected * 2, `${guests} guests`);
+    assert.equal(result.ratePlanPricingBreakdown.preDiscountTotal / 2, expected, `${guests} guests per night`);
+  }
 });
 
 test('commercial readiness accepts active exact plans, references, and physical inventory', () => {

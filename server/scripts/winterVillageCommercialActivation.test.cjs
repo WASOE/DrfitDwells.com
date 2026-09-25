@@ -42,12 +42,26 @@ function inventory() {
 }
 
 test('activation definitions validate against all current schemas', () => {
+  assert.equal(buildPaymentTermDefinition().internalName, '40% now / 60% 30 days before arrival');
   assert.equal(validateAndNormalizePaymentTermTemplate(buildPaymentTermDefinition()).ok, true);
   assert.equal(validateAndNormalizeCancellationPolicy(buildCancellationPolicyDefinition()).ok, true);
   for (const definition of buildRatePlanDefinitions()) {
     const result = validateAndNormalizeRatePlan(definition);
     assert.equal(result.ok, true, `${definition.code}: ${result.errors?.join('; ')}`);
   }
+  const seasonal = buildRatePlanDefinitions().find((definition) => definition.code === 'winter-cabin-stay-2026-27');
+  assert.equal(seasonal.bookingWindowStart, null);
+  assert.deepEqual(
+    seasonal.accommodations.find((row) => row.accommodationKey === 'stone-house'),
+    {
+      accommodationKey: 'stone-house',
+      entityType: 'cabin',
+      pricingMethod: 'nightly_base_plus_extra_guest',
+      nightlyPerUnitAmount: 90,
+      includedGuests: 3,
+      additionalGuestNightlyAmount: 30
+    }
+  );
 });
 
 test('inventory mapping uses stable business identity without requiring live slugs', () => {
