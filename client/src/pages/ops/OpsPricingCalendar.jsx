@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { pricingOverridesAPI, ratePlanAdminAPI } from '../../services/api';
 
+function exclusiveEndDate(inclusiveEndDate) {
+  if (!inclusiveEndDate) return inclusiveEndDate;
+  const date = new Date(`${inclusiveEndDate}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
+
 export default function OpsPricingCalendar() {
   const [plans, setPlans] = useState([]);
   const [form, setForm] = useState({
@@ -44,6 +51,7 @@ export default function OpsPricingCalendar() {
       const calendarParams = { ...form };
       delete calendarParams.accommodations;
       delete calendarParams.priceCents;
+      calendarParams.endDate = exclusiveEndDate(calendarParams.endDate);
       const response = await pricingOverridesAPI.calendar(calendarParams);
       setCalendar(response.data?.data || response.data);
     } catch (requestError) {
@@ -57,7 +65,7 @@ export default function OpsPricingCalendar() {
     setError('');
     setBusy(true);
     try {
-      await pricingOverridesAPI.saveRange(form);
+      await pricingOverridesAPI.saveRange({ ...form, endDate: exclusiveEndDate(form.endDate) });
       await load();
     } catch (requestError) {
       setError(requestError.response?.data?.message || 'Unable to save overrides');
@@ -70,7 +78,7 @@ export default function OpsPricingCalendar() {
     setError('');
     setBusy(true);
     try {
-      await pricingOverridesAPI.clearRange(form);
+      await pricingOverridesAPI.clearRange({ ...form, endDate: exclusiveEndDate(form.endDate) });
       await load();
     } catch (requestError) {
       setError(requestError.response?.data?.message || 'Unable to clear overrides');
