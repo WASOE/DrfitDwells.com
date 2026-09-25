@@ -187,6 +187,7 @@ router.get('/', [
 
         const pricedMulti = await pricePublicStayLodging({
           entity: cabinType,
+          entityType: 'cabinType',
           checkInDate,
           checkOutDate,
           adults,
