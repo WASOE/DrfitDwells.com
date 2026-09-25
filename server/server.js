@@ -16,6 +16,7 @@ const connectDB = require('./config/database');
 const db = require('./config/database');
 
 const availabilityRoutes = require('./routes/availabilityRoutes');
+const publicPackageRoutes = require('./routes/publicPackageRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
 const cabinRoutes = require('./routes/cabinRoutes');
 const cabinTypeRoutes = require('./routes/cabinTypeRoutes');
@@ -328,6 +329,7 @@ app.use('/api/public', requireDb, require('./routes/publicLocationQuoteRoutes'))
 app.use('/api/public', requireDb, require('./routes/publicLocationCheckoutRoutes'));
 app.use('/api/public', requireDb, require('./routes/publicRecoveryPreferenceRoutes'));
 app.use('/api/availability', requireDb, availabilityRoutes);
+app.use('/api/packages', requireDb, publicPackageRoutes);
 app.use('/api/creator-referral-visits', requireDb, creatorReferralVisitRoutes);
 app.use('/api/creator-portal', requireDb, creatorPortalRoutes);
 app.use('/api/bookings', requireDb, bookingRoutes);
