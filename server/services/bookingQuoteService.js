@@ -45,6 +45,7 @@ const {
 const {
   applyCancellationPolicyToQuote
 } = require('./cancellationPolicyService');
+const { loadNightlyRateOverrides } = require('./nightlyRateOverrideService');
 
 function roundMoney(value) {
   return Math.round(Number(value) * 100) / 100;
@@ -287,6 +288,24 @@ async function computeQuoteFromEntity(
     { transportMethod, romanticSetup }
   );
 
+  let nightlyRateOverrides = [];
+  if (resolvedRatePlan && ['nightly_per_unit', 'nightly_base_plus_extra_guest'].includes(
+    resolvedRatePlan.pricing?.pricingMethod
+  )) {
+    const mongoose = require('mongoose');
+    const loadOverrides = deps.loadNightlyRateOverrides ||
+      (mongoose.connection.readyState === 1 ? loadNightlyRateOverrides : null);
+    if (loadOverrides) {
+      nightlyRateOverrides = await loadOverrides({
+        ratePlanCode: resolvedRatePlan.code,
+        ratePlanVersion: resolvedRatePlan.version,
+        entityType: resolvedRatePlan.accommodation?.entityType || 'cabin',
+        accommodationKey: resolvedRatePlan.accommodation?.accommodationKey,
+        checkIn: resolvedRatePlan.dates.checkIn,
+        checkOut: resolvedRatePlan.dates.checkOut
+      });
+    }
+  }
   const authoritative = pricingService.calculateAuthoritativePriceBreakdown({
     entity,
     checkIn: checkInDate,
@@ -295,7 +314,8 @@ async function computeQuoteFromEntity(
     children,
     experienceKeys,
     opts: { transportMethod, romanticSetup },
-    resolvedRatePlan
+    resolvedRatePlan,
+    nightlyRateOverrides
   });
 
   const canonical = toCanonicalLodgingBreakdown({
@@ -310,6 +330,7 @@ async function computeQuoteFromEntity(
     ...withPromo,
     extraGuestLodgingPrice: canonical.extraGuestLodgingPrice,
     ratePlanPricingBreakdown: canonical.ratePlanPricingBreakdown,
+    nightlyPricing: canonical.ratePlanPricingBreakdown?.nightlyPricing || null,
     totalNights: canonical.totalNights,
     experienceKeysUsed: canonical.experienceKeysUsed
   };
@@ -496,6 +517,12 @@ async function buildQuoteForResolvedEntity(
       type: seasonal.resolved.type,
       currency: seasonal.resolved.currency
     };
+    if (result.nightlyPricing) {
+      result.nightlyPricing = result.nightlyPricing.map((night) => ({
+        date: night.date,
+        effectiveBaseNightlyAmount: night.effectiveBaseNightlyAmount
+      }));
+    }
   }
 
   // Keep unused stay inputs referenced for callers that pass original strings.

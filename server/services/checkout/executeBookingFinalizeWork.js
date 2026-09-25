@@ -1508,7 +1508,8 @@ function buildResourceFinalizationSnapshot({
     // Commercial snapshot fields: quoteSnapshot only — never finalizeIntent / client body.
     participants: snap.participants != null ? snap.participants : null,
     facilitySelections: snap.facilitySelections != null ? snap.facilitySelections : null,
-    cancellationPolicy: snap.cancellationPolicySnapshot || snap.cancellationPolicy || null
+    cancellationPolicy: snap.cancellationPolicySnapshot || snap.cancellationPolicy || null,
+    nightlyPricing: snap.ratePlanPricingBreakdown?.nightlyPricing || null
   };
 }
 

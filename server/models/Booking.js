@@ -736,7 +736,8 @@ const bookingSchema = new mongoose.Schema({
         packageInclusions: { type: mongoose.Schema.Types.Mixed, default: null },
         participants: { type: mongoose.Schema.Types.Mixed, default: null },
         facilitySelections: { type: mongoose.Schema.Types.Mixed, default: null },
-        cancellationPolicy: { type: mongoose.Schema.Types.Mixed, default: null }
+        cancellationPolicy: { type: mongoose.Schema.Types.Mixed, default: null },
+        nightlyPricing: { type: mongoose.Schema.Types.Mixed, default: null }
       },
       { _id: false }
     ),
