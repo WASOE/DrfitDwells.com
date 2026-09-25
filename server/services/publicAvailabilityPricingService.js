@@ -16,6 +16,7 @@ const pricingService = require('./pricingService');
 const {
   resolveSeasonalRatePlanForQuote
 } = require('./bookingQuoteService');
+const { loadNightlyRateOverrides } = require('./nightlyRateOverrideService');
 
 /** Safe operator/guest-facing codes only — never attach server details/stacks. */
 const SAFE_PRICING_ERROR_MESSAGES = Object.freeze({
@@ -60,12 +61,14 @@ function defaultLoadActiveSeasonalRatePlans() {
  */
 async function pricePublicStayLodging({
   entity,
+  entityType = 'cabin',
   checkInDate,
   checkOutDate,
   adults,
   children = 0,
   promoDoc = null,
-  loadActiveSeasonalRatePlans
+  loadActiveSeasonalRatePlans,
+  loadNightlyRateOverrides: loadNightlyRateOverridesOverride
 } = {}) {
   const accommodationKey =
     entity && entity.slug != null ? String(entity.slug).trim().toLowerCase() : '';
@@ -119,7 +122,30 @@ async function pricePublicStayLodging({
   let pricingSource = 'entity';
   let ratePlan = null;
 
+  let nightlyRateOverrides = [];
   try {
+    if (
+      seasonal.resolved &&
+      ['nightly_per_unit', 'nightly_base_plus_extra_guest'].includes(
+        seasonal.resolved.pricing?.pricingMethod
+      )
+    ) {
+      const mongoose = require('mongoose');
+      const loadOverrides =
+        loadNightlyRateOverridesOverride ||
+        (mongoose.connection.readyState === 1 ? loadNightlyRateOverrides : null);
+      if (loadOverrides) {
+        nightlyRateOverrides = await loadOverrides({
+          ratePlanCode: seasonal.resolved.code,
+          ratePlanVersion: seasonal.resolved.version,
+          entityType: seasonal.resolved.accommodation?.entityType || entityType,
+          accommodationKey: seasonal.resolved.accommodation?.accommodationKey || accommodationKey,
+          checkIn: checkInDate,
+          checkOut: checkOutDate
+        });
+      }
+    }
+
     const authoritative = pricingService.calculateAuthoritativePriceBreakdown({
       entity,
       checkIn: checkInDate,
@@ -129,7 +155,8 @@ async function pricePublicStayLodging({
       infants: 0,
       experienceKeys: [],
       opts: {},
-      resolvedRatePlan: seasonal.resolved
+      resolvedRatePlan: seasonal.resolved,
+      nightlyRateOverrides
     });
 
     if (seasonal.resolved) {
