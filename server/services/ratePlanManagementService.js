@@ -469,20 +469,21 @@ function assertNormalizedRatePlanDraft(normalized) {
       'Unsupported currency'
     );
   }
-  if (value.type === 'seasonal_stay' && value.inventoryMode !== 'shared') {
-    throw new RatePlanManagementError(
-      MANAGEMENT_ERROR_CODES.VALIDATION_FAILED,
-      'seasonal_stay inventoryMode must be shared',
-      { inventoryMode: value.inventoryMode, allowed: INVENTORY_MODES }
-    );
-  }
-  if (!value.arrivalWindowStart || !value.arrivalWindowEnd) {
-    throw new RatePlanManagementError(
-      MANAGEMENT_ERROR_CODES.VALIDATION_FAILED,
-      'seasonal_stay requires a valid arrival window'
-    );
-  }
-  if (value.type === 'fixed_package' && value.inventoryMode !== 'exclusive') {
+  if (value.type === 'seasonal_stay') {
+    if (value.inventoryMode !== 'shared') {
+      throw new RatePlanManagementError(
+        MANAGEMENT_ERROR_CODES.VALIDATION_FAILED,
+        'seasonal_stay inventoryMode must be shared',
+        { inventoryMode: value.inventoryMode, allowed: INVENTORY_MODES }
+      );
+    }
+    if (!value.arrivalWindowStart || !value.arrivalWindowEnd) {
+      throw new RatePlanManagementError(
+        MANAGEMENT_ERROR_CODES.VALIDATION_FAILED,
+        'seasonal_stay requires a valid arrival window'
+      );
+    }
+  } else if (value.type === 'fixed_package' && value.inventoryMode !== 'exclusive') {
     throw new RatePlanManagementError(
       MANAGEMENT_ERROR_CODES.VALIDATION_FAILED,
       'fixed_package inventoryMode must be exclusive'
