@@ -1,0 +1,244 @@
+.ops-pricing-calendar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-16);
+  min-width: 0;
+}
+
+.ops-pricing-calendar__plan-meta {
+  color: var(--ops-text-secondary);
+  font-family: var(--ops-font-mono);
+  font-size: var(--ops-size-meta);
+}
+
+.ops-pricing-calendar__toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.2fr) minmax(190px, 0.7fr) minmax(300px, 1.6fr);
+  align-items: end;
+  gap: var(--ops-space-16);
+}
+
+.ops-pricing-calendar__month-control,
+.ops-pricing-calendar__accommodation-filter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-8);
+  min-width: 0;
+}
+
+.ops-pricing-calendar__month-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--ops-control-h);
+  gap: var(--ops-space-8);
+}
+
+.ops-pricing-calendar__month-nav strong {
+  flex: 1;
+  text-align: center;
+  color: var(--ops-text);
+  font-size: var(--ops-size-body);
+}
+
+.ops-pricing-calendar__filter-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ops-space-8) var(--ops-space-16);
+  min-height: var(--ops-control-h);
+  align-items: center;
+}
+
+.ops-pricing-calendar__filter-option,
+.ops-pricing-calendar__editor-option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ops-space-8);
+  color: var(--ops-text-secondary);
+  font-size: var(--ops-size-small);
+  cursor: pointer;
+}
+
+.ops-pricing-calendar__filter-option input,
+.ops-pricing-calendar__editor-option input {
+  accent-color: var(--ops-accent);
+}
+
+.ops-pricing-calendar__empty {
+  min-height: 260px;
+  display: grid;
+  place-items: center;
+}
+
+.ops-pricing-calendar__grid-surface {
+  min-width: 0;
+}
+
+.ops-pricing-calendar__grid-surface > .ops-surface__header {
+  align-items: center;
+}
+
+.ops-pricing-calendar__scroll {
+  overflow-x: auto;
+  padding-bottom: var(--ops-space-8);
+}
+
+.ops-pricing-calendar__grid {
+  display: grid;
+  grid-template-columns: 180px repeat(var(--pricing-days), minmax(86px, 1fr));
+  min-width: max-content;
+  border-top: 1px solid var(--ops-border);
+  border-left: 1px solid var(--ops-border);
+}
+
+.ops-pricing-calendar__corner,
+.ops-pricing-calendar__date,
+.ops-pricing-calendar__accommodation-name,
+.ops-pricing-calendar__cell {
+  min-height: 64px;
+  padding: var(--ops-space-8);
+  border-right: 1px solid var(--ops-border);
+  border-bottom: 1px solid var(--ops-border);
+}
+
+.ops-pricing-calendar__corner {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  display: flex;
+  align-items: end;
+  background: var(--ops-surface-subtle);
+  color: var(--ops-text-muted);
+  font-size: var(--ops-size-meta);
+  font-weight: 600;
+}
+
+.ops-pricing-calendar__date {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: var(--ops-surface-subtle);
+  color: var(--ops-text-muted);
+  font-size: var(--ops-size-meta);
+}
+
+.ops-pricing-calendar__date strong {
+  color: var(--ops-text);
+  font-size: var(--ops-size-body);
+}
+
+.ops-pricing-calendar__row {
+  display: contents;
+}
+
+.ops-pricing-calendar__accommodation-name {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  background: var(--ops-surface);
+}
+
+.ops-pricing-calendar__accommodation-name strong {
+  color: var(--ops-text);
+  font-size: var(--ops-size-small);
+}
+
+.ops-pricing-calendar__accommodation-name span,
+.ops-pricing-calendar__cell span {
+  color: var(--ops-text-muted);
+  font-size: var(--ops-size-meta);
+}
+
+.ops-pricing-calendar__cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  background: var(--ops-surface);
+  color: var(--ops-text);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--ops-motion-fast) var(--ops-motion-ease);
+}
+
+.ops-pricing-calendar__cell:hover,
+.ops-pricing-calendar__cell:focus-visible {
+  background: var(--ops-accent-soft);
+  outline: none;
+}
+
+.ops-pricing-calendar__cell--override {
+  background: var(--ops-warning-soft);
+  box-shadow: inset 3px 0 0 var(--ops-warning);
+}
+
+.ops-pricing-calendar__cell--override strong {
+  color: var(--ops-warning);
+}
+
+.ops-pricing-calendar__hint,
+.ops-pricing-calendar__editor-note {
+  margin: var(--ops-space-12) 0 0;
+  color: var(--ops-text-muted);
+  font-size: var(--ops-size-meta);
+  line-height: var(--ops-lh-meta);
+}
+
+.ops-pricing-calendar__editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-20);
+}
+
+.ops-pricing-calendar__editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ops-space-12);
+}
+
+.ops-pricing-calendar__editor-accommodations {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-12);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ops-pricing-calendar__editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--ops-space-8);
+}
+
+@media (max-width: 900px) {
+  .ops-pricing-calendar__toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ops-pricing-calendar__accommodation-filter {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 560px) {
+  .ops-pricing-calendar__toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .ops-pricing-calendar__accommodation-filter {
+    grid-column: auto;
+  }
+
+  .ops-pricing-calendar__editor-grid {
+    grid-template-columns: 1fr;
+  }
+}
