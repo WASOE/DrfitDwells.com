@@ -12,6 +12,17 @@ const mongoose = require('mongoose');
 const RATE_PLAN_STATUSES = ['draft', 'active', 'retired'];
 const RATE_PLAN_TYPES = ['seasonal_stay', 'fixed_package'];
 const RATE_PLAN_CURRENCIES = ['EUR'];
+const PACKAGE_TYPES = [
+  'retreat',
+  'holiday',
+  'event',
+  'workshop',
+  'family',
+  'private_group',
+  'seasonal_special',
+  'other'
+];
+const PACKAGE_VISIBILITIES = ['public', 'private'];
 const INVENTORY_MODES = ['shared', 'exclusive'];
 const PRICING_METHODS = [
   'nightly_per_unit',
@@ -111,6 +122,17 @@ const ratePlanSchema = new mongoose.Schema(
         values: RATE_PLAN_TYPES,
         message: 'Type must be seasonal_stay or fixed_package'
       }
+    },
+    /** Optional OPS presentation metadata for fixed-package RatePlans. */
+    packageType: {
+      type: String,
+      enum: PACKAGE_TYPES,
+      default: null
+    },
+    packageVisibility: {
+      type: String,
+      enum: PACKAGE_VISIBILITIES,
+      default: null
     },
     currency: {
       type: String,
@@ -241,6 +263,8 @@ module.exports = mongoose.model('RatePlan', ratePlanSchema);
 module.exports.RATE_PLAN_STATUSES = RATE_PLAN_STATUSES;
 module.exports.RATE_PLAN_TYPES = RATE_PLAN_TYPES;
 module.exports.RATE_PLAN_CURRENCIES = RATE_PLAN_CURRENCIES;
+module.exports.PACKAGE_TYPES = PACKAGE_TYPES;
+module.exports.PACKAGE_VISIBILITIES = PACKAGE_VISIBILITIES;
 module.exports.INVENTORY_MODES = INVENTORY_MODES;
 module.exports.PRICING_METHODS = PRICING_METHODS;
 module.exports.ENTITY_TYPES = ENTITY_TYPES;

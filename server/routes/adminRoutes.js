@@ -66,6 +66,8 @@ router.use((req, res, next) => {
 
 router.use('/promo-codes', adminPromoRoutes);
 router.use('/rate-plans', adminRatePlanRoutes);
+// Packages are the OPS presentation of fixed-package RatePlans; keep one lifecycle.
+router.use('/packages', adminRatePlanRoutes);
 router.use('/payment-terms', adminPaymentTermRoutes);
 
 // GET /api/admin/bookings - Get bookings with filters and pagination

@@ -13,6 +13,17 @@ export const PRICING_METHODS = Object.freeze([
   'fixed_per_participant'
 ]);
 export const ENTITY_TYPES = Object.freeze(['cabin', 'cabinType']);
+export const PACKAGE_TYPES = Object.freeze([
+  'retreat',
+  'holiday',
+  'event',
+  'workshop',
+  'family',
+  'private_group',
+  'seasonal_special',
+  'other'
+]);
+export const PACKAGE_VISIBILITIES = Object.freeze(['public', 'private']);
 
 export const FORBIDDEN_PAYLOAD_KEYS = Object.freeze([
   'status',
@@ -69,6 +80,8 @@ const CREATE_KEYS = Object.freeze([
   'internalName',
   'version',
   'type',
+  'packageType',
+  'packageVisibility',
   'currency',
   'arrivalWindowStart',
   'arrivalWindowEnd',
@@ -118,6 +131,8 @@ export function createEmptyForm(type = 'seasonal_stay') {
     internalName: '',
     version: '1',
     type: seasonal ? 'seasonal_stay' : 'fixed_package',
+    packageType: seasonal ? '' : 'other',
+    packageVisibility: seasonal ? '' : 'public',
     currency: 'EUR',
     arrivalWindowStart: '',
     arrivalWindowEnd: '',
@@ -156,6 +171,8 @@ export function planToForm(plan) {
     internalName: plan.internalName || '',
     version: plan.version != null ? String(plan.version) : '1',
     type,
+    packageType: plan.packageType || (type === 'fixed_package' ? 'other' : ''),
+    packageVisibility: plan.packageVisibility || (type === 'fixed_package' ? 'public' : ''),
     currency: plan.currency || 'EUR',
     arrivalWindowStart: dateOnly(plan.arrivalWindowStart),
     arrivalWindowEnd: dateOnly(plan.arrivalWindowEnd),
@@ -411,6 +428,8 @@ export function buildBusinessPayload(form) {
     internalName: String(form.internalName || '').trim(),
     version: parseRequiredInt(form.version, 'version'),
     type,
+    packageType: type === 'fixed_package' ? String(form.packageType || 'other') : null,
+    packageVisibility: type === 'fixed_package' ? String(form.packageVisibility || 'public') : null,
     currency: form.currency === 'EUR' ? 'EUR' : 'EUR',
     bookingWindowStart: parseDateOrNull(form.bookingWindowStart),
     bookingWindowEnd: parseDateOrNull(form.bookingWindowEnd),
@@ -452,6 +471,8 @@ export function buildBusinessPayload(form) {
   }
 
   if (type === 'seasonal_stay') {
+    delete payload.packageType;
+    delete payload.packageVisibility;
     payload.arrivalWindowStart = parseDateOrNull(form.arrivalWindowStart);
     payload.arrivalWindowEnd = parseDateOrNull(form.arrivalWindowEnd);
     payload.packageArrivalDate = null;

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ratePlanAdminAPI } from '../../services/api';
+import { packageAdminAPI, ratePlanAdminAPI } from '../../services/api';
 import {
   createEmptyForm,
   planToForm,
@@ -12,6 +12,8 @@ import {
   formatWindow,
   emptyAccommodation,
   RATE_PLAN_TYPES,
+  PACKAGE_TYPES,
+  PACKAGE_VISIBILITIES,
   PRICING_METHODS,
   ENTITY_TYPES,
   isDraftEditable
@@ -59,11 +61,15 @@ function bannerTone(type) {
   return 'danger';
 }
 
-export default function OpsRatePlans() {
+export default function OpsRatePlans({ packagesOnly = false }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [banner, setBanner] = useState({ type: '', message: '' });
-  const [filters, setFilters] = useState({ status: '', type: '', code: '' });
+  const [filters, setFilters] = useState({
+    status: '',
+    type: packagesOnly ? 'fixed_package' : '',
+    code: ''
+  });
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [mode, setMode] = useState('create'); // create | edit | view
@@ -71,6 +77,10 @@ export default function OpsRatePlans() {
   const [form, setForm] = useState(() => createEmptyForm('seasonal_stay'));
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(null); // { action: 'activate'|'retire', plan }
+  const managementAPI = useMemo(
+    () => (packagesOnly ? packageAdminAPI : ratePlanAdminAPI),
+    [packagesOnly]
+  );
 
   const load = useCallback(async () => {
     try {
@@ -79,14 +89,15 @@ export default function OpsRatePlans() {
       if (filters.status) params.status = filters.status;
       if (filters.type) params.type = filters.type;
       if (filters.code.trim()) params.code = filters.code.trim().toLowerCase();
-      const res = await ratePlanAdminAPI.list(params);
-      setRows(res.data?.data?.ratePlans || []);
+      const res = await managementAPI.list(params);
+      const plans = res.data?.data?.ratePlans || [];
+      setRows(packagesOnly ? plans.filter((plan) => plan.type === 'fixed_package') : plans);
     } catch (e) {
       setBanner({ type: 'error', message: safeErrorMessage(e, 'Failed to load rate plans') });
     } finally {
       setLoading(false);
     }
-  }, [filters.status, filters.type, filters.code]);
+  }, [filters.status, filters.type, filters.code, packagesOnly, managementAPI]);
 
   useEffect(() => {
     load();
@@ -164,14 +175,14 @@ export default function OpsRatePlans() {
       if (mode === 'create') {
         const payload = buildCreatePayload(form);
         assertNoForbiddenKeys(payload);
-        await ratePlanAdminAPI.create(payload);
+        await managementAPI.create(payload);
         setBanner({ type: 'success', message: 'Draft rate plan created.' });
         setDrawerOpen(false);
       } else if (mode === 'edit' && selected) {
         const revision = selected.revision;
         const payload = buildUpdatePayload(form, revision);
         assertNoForbiddenKeys(payload);
-        await ratePlanAdminAPI.update(selected.id, payload);
+        await managementAPI.update(selected.id, payload);
         setBanner({ type: 'success', message: 'Draft updated.' });
         setDrawerOpen(false);
       }
@@ -189,7 +200,7 @@ export default function OpsRatePlans() {
     setBusy(true);
     setBanner({ type: '', message: '' });
     try {
-      const res = await ratePlanAdminAPI.clone(plan.id);
+      const res = await managementAPI.clone(plan.id);
       const draft = res.data?.data?.ratePlan;
       await load();
       if (draft) openPlan(draft, false);
@@ -210,7 +221,7 @@ export default function OpsRatePlans() {
       const payload = buildRevisionOnlyPayload(plan.revision);
       assertNoForbiddenKeys(payload);
       if (action === 'activate') {
-        const res = await ratePlanAdminAPI.activate(plan.id, payload);
+        const res = await managementAPI.activate(plan.id, payload);
         const data = res.data?.data || {};
         const desc = describeActivationResult(data);
         if (!desc.committed) {
@@ -222,7 +233,7 @@ export default function OpsRatePlans() {
           });
         }
       } else {
-        await ratePlanAdminAPI.retire(plan.id, payload);
+        await managementAPI.retire(plan.id, payload);
         setBanner({ type: 'success', message: 'Rate plan retired.' });
       }
       setDrawerOpen(false);
@@ -247,16 +258,22 @@ export default function OpsRatePlans() {
   return (
     <OpsPage width="wide" className="ops-rate-plans" data-testid="ops-rate-plans">
       <OpsPageHeader
-        title="Rate plans"
-        description="Manage seasonal and fixed-package commercial rate plans. Production activation tooling remains blocked pending controlled lock recovery."
+        title={packagesOnly ? 'Packages' : 'Rate plans'}
+        description={
+          packagesOnly
+            ? 'Create and manage fixed-package commercial offers using the authoritative RatePlan lifecycle.'
+            : 'Manage seasonal and fixed-package commercial rate plans.'
+        }
         actions={
           <>
-            <OpsButton variant="secondary" disabled={busy} onClick={() => openCreate('fixed_package')}>
-              New package draft
+            <OpsButton disabled={busy} onClick={() => openCreate(packagesOnly ? 'fixed_package' : 'seasonal_stay')}>
+              {packagesOnly ? 'New Package' : 'New seasonal draft'}
             </OpsButton>
-            <OpsButton disabled={busy} onClick={() => openCreate('seasonal_stay')}>
-              New seasonal draft
-            </OpsButton>
+            {!packagesOnly ? (
+              <OpsButton variant="secondary" disabled={busy} onClick={() => openCreate('fixed_package')}>
+                New package draft
+              </OpsButton>
+            ) : null}
           </>
         }
       />
@@ -276,18 +293,20 @@ export default function OpsRatePlans() {
           <option value="active">Active</option>
           <option value="retired">Retired</option>
         </OpsSelect>
-        <OpsSelect
-          label="Type"
-          value={filters.type}
-          onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))}
-        >
-          <option value="">All</option>
-          {RATE_PLAN_TYPES.map((type) => (
-            <option key={type} value={type}>
-              {type}
-            </option>
-          ))}
-        </OpsSelect>
+        {!packagesOnly ? (
+          <OpsSelect
+            label="Type"
+            value={filters.type}
+            onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value }))}
+          >
+            <option value="">All</option>
+            {RATE_PLAN_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </OpsSelect>
+        ) : null}
         <OpsTextField
           className="ops-filter-bar__search ops-rate-plans__mono"
           label="Code"
@@ -299,7 +318,9 @@ export default function OpsRatePlans() {
       {filteredHint ? <p className="ops-rate-plans__filter-hint">{filteredHint}</p> : null}
 
       <OpsSurface variant="plain" aria-labelledby="ops-rate-plan-catalogue">
-        <OpsSurfaceTitle id="ops-rate-plan-catalogue">Rate plan catalogue</OpsSurfaceTitle>
+        <OpsSurfaceTitle id="ops-rate-plan-catalogue">
+          {packagesOnly ? 'Package catalogue' : 'Rate plan catalogue'}
+        </OpsSurfaceTitle>
         {loading ? (
           <div data-testid="rate-plans-loading">
             <OpsLoadingState label="Loading rate plans" />
@@ -315,6 +336,8 @@ export default function OpsRatePlans() {
                 <OpsTableHeader>Code / version</OpsTableHeader>
                 <OpsTableHeader>Status</OpsTableHeader>
                 <OpsTableHeader>Type</OpsTableHeader>
+                {packagesOnly ? <OpsTableHeader>Visibility</OpsTableHeader> : null}
+                {packagesOnly ? <OpsTableHeader>Capacity</OpsTableHeader> : null}
                 <OpsTableHeader>Window</OpsTableHeader>
                 <OpsTableHeader>Pricing</OpsTableHeader>
                 <OpsTableHeader numeric>Rev</OpsTableHeader>
@@ -333,6 +356,16 @@ export default function OpsRatePlans() {
                   </OpsTableCell>
                   <OpsTableCell><OpsStatus domain="rate_plan" value={plan.status} /></OpsTableCell>
                   <OpsTableCell className="ops-rate-plans__nowrap">{plan.type}</OpsTableCell>
+                  {packagesOnly ? (
+                    <OpsTableCell className="ops-rate-plans__nowrap">
+                      {plan.packageVisibility || (plan.status === 'active' ? 'public' : 'private')}
+                    </OpsTableCell>
+                  ) : null}
+                  {packagesOnly ? (
+                    <OpsTableCell className="ops-rate-plans__nowrap">
+                      {(plan.accommodations || []).length} accommodation{(plan.accommodations || []).length === 1 ? '' : 's'}
+                    </OpsTableCell>
+                  ) : null}
                   <OpsTableCell className="ops-rate-plans__nowrap">{formatWindow(plan)}</OpsTableCell>
                   <OpsTableCell>
                     <div className="ops-rate-plans__pricing">
@@ -405,6 +438,29 @@ export default function OpsRatePlans() {
             ) : (
               <p className="ops-rate-plans__readout">Type: <strong>{form.type}</strong></p>
             )}
+
+            {form.type === 'fixed_package' ? (
+              <div className="ops-rate-plans__grid ops-rate-plans__grid--2">
+                <OpsSelect
+                  label="Package type"
+                  value={form.packageType}
+                  onChange={(e) => updateField('packageType', e.target.value)}
+                >
+                  {PACKAGE_TYPES.map((type) => (
+                    <option key={type} value={type}>{type}</option>
+                  ))}
+                </OpsSelect>
+                <OpsSelect
+                  label="Visibility"
+                  value={form.packageVisibility}
+                  onChange={(e) => updateField('packageVisibility', e.target.value)}
+                >
+                  {PACKAGE_VISIBILITIES.map((visibility) => (
+                    <option key={visibility} value={visibility}>{visibility}</option>
+                  ))}
+                </OpsSelect>
+              </div>
+            ) : null}
 
             <div className="ops-rate-plans__grid ops-rate-plans__grid--2">
               <OpsTextField
@@ -525,6 +581,11 @@ export default function OpsRatePlans() {
 
           {readOnly ? (
             <p className="ops-rate-plans__note">Active and retired plans are read-only. Clone to create an editable next draft.</p>
+          ) : null}
+          {packagesOnly ? (
+            <p className="ops-rate-plans__note">
+              Capacity is validated against active physical inventory on the server. Booking counts and sold-place metrics are not available in the current OPS read model.
+            </p>
           ) : null}
         </form>
       </OpsSheet>

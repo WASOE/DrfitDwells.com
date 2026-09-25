@@ -260,6 +260,7 @@ function App() {
               <Route path="/ops/payments" element={<OpsPayments />} />
               <Route path="/ops/promo-codes" element={<OpsPromoCodes />} />
               <Route path="/ops/rate-plans" element={<OpsRatePlans />} />
+              <Route path="/ops/packages" element={<OpsRatePlans packagesOnly />} />
               <Route path="/ops/payment-terms" element={<OpsPaymentTerms />} />
               <Route path="/ops/pricing-calendar" element={<OpsPricingCalendar />} />
               <Route path="/ops/creator-partners" element={<OpsCreatorPartners />} />

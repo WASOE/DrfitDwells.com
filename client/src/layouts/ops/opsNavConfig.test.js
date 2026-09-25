@@ -23,7 +23,7 @@ import {
 
 describe('opsNavConfig', () => {
   it('lists desktop nav items in OpsLayout order', () => {
-    expect(OPS_NAV_ITEMS).toHaveLength(23);
+    expect(OPS_NAV_ITEMS).toHaveLength(24);
     expect(OPS_NAV_ITEMS.map((item) => item.to)).toEqual([
       '/ops',
       '/ops/calendar',
@@ -33,6 +33,7 @@ describe('opsNavConfig', () => {
       '/ops/payments',
       '/ops/promo-codes',
       '/ops/rate-plans',
+      '/ops/packages',
       '/ops/creator-partners',
       '/ops/sync',
       '/ops/cabins',
@@ -119,6 +120,7 @@ describe('opsNavConfig', () => {
         '/ops/payments',
         '/ops/promo-codes',
         '/ops/rate-plans',
+        '/ops/packages',
         '/ops/gift-vouchers',
         '/ops/cabins',
         '/ops/creator-partners',
@@ -175,6 +177,7 @@ describe('opsNavConfig', () => {
       expect(getActiveOpsMobileTabId('/ops/payments')).toBe('finance');
       expect(getActiveOpsMobileTabId('/ops/promo-codes')).toBe('finance');
       expect(getActiveOpsMobileTabId('/ops/rate-plans')).toBe('finance');
+      expect(getActiveOpsMobileTabId('/ops/packages')).toBe('finance');
       expect(getActiveOpsMobileTabId('/ops/gift-vouchers')).toBe('finance');
       expect(getActiveOpsMobileTabId('/ops/gift-vouchers/v-1')).toBe('finance');
     });
@@ -317,8 +320,8 @@ describe('opsNavConfig', () => {
 
     it('places every nav destination in exactly one desktop group', () => {
       const groupedTos = getOpsSidebarGroups().flatMap((group) => group.items.map((item) => item.to));
-      expect(groupedTos).toHaveLength(23);
-      expect(new Set(groupedTos).size).toBe(23);
+      expect(groupedTos).toHaveLength(24);
+      expect(new Set(groupedTos).size).toBe(24);
       expect(new Set(groupedTos)).toEqual(new Set(OPS_NAV_ITEMS.map((item) => item.to)));
       expect(OPS_NAV_ITEMS.every((item) => Boolean(item.desktopGroup))).toBe(true);
       expect(OPS_NAV_ITEMS.some((item) => item.to === '/ops/design-system')).toBe(false);
@@ -346,6 +349,7 @@ describe('opsNavConfig', () => {
         '/ops/payments',
         '/ops/promo-codes',
         '/ops/rate-plans',
+        '/ops/packages',
         '/ops/gift-vouchers'
       ]);
       expect(groupChildren('property')).toEqual(['/ops/cabins', '/ops/creator-partners']);
@@ -549,6 +553,7 @@ describe('opsNavConfig', () => {
           '/ops/payments',
           '/ops/promo-codes',
           '/ops/rate-plans',
+          '/ops/packages',
           '/ops/gift-vouchers',
           '/ops/insights',
           '/ops/conversion',

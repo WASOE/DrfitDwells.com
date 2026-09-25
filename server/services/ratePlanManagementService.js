@@ -75,6 +75,8 @@ const BUSINESS_FIELD_KEYS = Object.freeze([
   'internalName',
   'version',
   'type',
+  'packageType',
+  'packageVisibility',
   'currency',
   'arrivalWindowStart',
   'arrivalWindowEnd',
@@ -418,6 +420,8 @@ function toPublicPlan(doc) {
     version: plain.version,
     status: plain.status,
     type: plain.type,
+    packageType: plain.packageType ?? null,
+    packageVisibility: plain.packageVisibility ?? null,
     currency: plain.currency,
     arrivalWindowStart: toDateOnlyString(plain.arrivalWindowStart),
     arrivalWindowEnd: toDateOnlyString(plain.arrivalWindowEnd),
@@ -448,7 +452,7 @@ function toPublicPlan(doc) {
   };
 }
 
-function assertNormalizedSeasonalDraft(normalized) {
+function assertNormalizedRatePlanDraft(normalized) {
   if (!normalized.ok) {
     throw new RatePlanManagementError(
       MANAGEMENT_ERROR_CODES.VALIDATION_FAILED,
@@ -457,10 +461,10 @@ function assertNormalizedSeasonalDraft(normalized) {
     );
   }
   const value = normalized.value;
-  if (value.type !== 'seasonal_stay') {
+  if (!RATE_PLAN_TYPES.includes(value.type)) {
     throw new RatePlanManagementError(
       MANAGEMENT_ERROR_CODES.UNSUPPORTED_TYPE,
-      'RP1 management create/update accepts seasonal_stay only'
+      'Unsupported rate plan type'
     );
   }
   if (!RATE_PLAN_CURRENCIES.includes(value.currency)) {
@@ -469,17 +473,23 @@ function assertNormalizedSeasonalDraft(normalized) {
       'Unsupported currency'
     );
   }
-  if (value.inventoryMode !== 'shared') {
+  if (value.type === 'seasonal_stay' && value.inventoryMode !== 'shared') {
     throw new RatePlanManagementError(
       MANAGEMENT_ERROR_CODES.VALIDATION_FAILED,
       'seasonal_stay inventoryMode must be shared',
       { inventoryMode: value.inventoryMode, allowed: INVENTORY_MODES }
     );
   }
-  if (!value.arrivalWindowStart || !value.arrivalWindowEnd) {
+  if (value.type === 'seasonal_stay' && (!value.arrivalWindowStart || !value.arrivalWindowEnd)) {
     throw new RatePlanManagementError(
       MANAGEMENT_ERROR_CODES.VALIDATION_FAILED,
       'seasonal_stay requires a valid arrival window'
+    );
+  }
+  if (value.type === 'fixed_package' && value.inventoryMode !== 'exclusive') {
+    throw new RatePlanManagementError(
+      MANAGEMENT_ERROR_CODES.VALIDATION_FAILED,
+      'fixed_package inventoryMode must be exclusive'
     );
   }
   return value;
@@ -492,11 +502,14 @@ async function assertAccommodationIdentities(accommodations, deps) {
       .trim()
       .toLowerCase();
     const entityType = row.entityType;
+    const stableName = key.replace(/[-_]+/g, ' ');
     const query = { slug: key };
     const opts = session ? { session } : {};
 
     if (entityType === 'cabin') {
-      const cabin = await Cabin.findOne(query, null, opts).lean();
+      const cabin =
+        (await Cabin.findOne(query, null, opts).lean()) ||
+        (await Cabin.findOne({ name: new RegExp(`^${stableName}$`, 'i') }, null, opts).lean());
       if (!cabin) {
         throw new RatePlanManagementError(
           MANAGEMENT_ERROR_CODES.ACCOMMODATION_NOT_FOUND,
@@ -512,7 +525,9 @@ async function assertAccommodationIdentities(accommodations, deps) {
         );
       }
     } else if (entityType === 'cabinType') {
-      const cabinType = await CabinType.findOne(query, null, opts).lean();
+      const cabinType =
+        (await CabinType.findOne(query, null, opts).lean()) ||
+        (await CabinType.findOne({ name: new RegExp(`^${stableName}$`, 'i') }, null, opts).lean());
       if (!cabinType) {
         throw new RatePlanManagementError(
           MANAGEMENT_ERROR_CODES.ACCOMMODATION_NOT_FOUND,
@@ -647,7 +662,7 @@ async function validateBusinessPayloadForPersist(rawInput, { forceType } = {}, d
   if (forceType) cleaned.type = forceType;
 
   const normalized = validateAndNormalizeRatePlan(cleaned);
-  const value = assertNormalizedSeasonalDraft(normalized);
+  const value = assertNormalizedRatePlanDraft(normalized);
 
   await assertAccommodationIdentities(value.accommodations, deps);
   await assertCancellationPolicyExists(
@@ -682,7 +697,7 @@ async function listRatePlans(filters = {}, deps = {}) {
 async function createRatePlanDraft(input, { operatorId } = {}, deps = {}) {
   const d = getDeps(deps);
   const operator = normalizeOperator(operatorId);
-  const value = await validateBusinessPayloadForPersist(input, { forceType: 'seasonal_stay' }, d);
+  const value = await validateBusinessPayloadForPersist(input, {}, d);
 
   const now = d.now();
   const docPayload = {
@@ -771,6 +786,8 @@ async function updateRatePlanDraft(id, patch, { operatorId, expectedRevision } =
     version: doc.version,
     internalName: currentPlain.internalName,
     type: currentPlain.type,
+    packageType: currentPlain.packageType ?? null,
+    packageVisibility: currentPlain.packageVisibility ?? null,
     currency: currentPlain.currency,
     arrivalWindowStart: toDateOnlyString(currentPlain.arrivalWindowStart),
     arrivalWindowEnd: toDateOnlyString(currentPlain.arrivalWindowEnd),
@@ -791,10 +808,10 @@ async function updateRatePlanDraft(id, patch, { operatorId, expectedRevision } =
     ...cleanedPatch,
     code: doc.code,
     version: doc.version,
-    type: 'seasonal_stay'
+    type: doc.type
   };
 
-  const value = await validateBusinessPayloadForPersist(mergedInput, { forceType: 'seasonal_stay' }, d);
+  const value = await validateBusinessPayloadForPersist(mergedInput, {}, d);
   const persistable = persistableFromNormalized(value);
 
   // Explicit allowlisted field assignment — never Object.assign / $set of raw patch.
@@ -845,6 +862,8 @@ async function cloneRatePlanAsNextDraftVersion(id, { operatorId } = {}, deps = {
     internalName: plain.internalName,
     version: nextVersion,
     type: plain.type,
+    packageType: plain.packageType ?? null,
+    packageVisibility: plain.packageVisibility ?? null,
     currency: plain.currency,
     arrivalWindowStart: toDateOnlyString(plain.arrivalWindowStart),
     arrivalWindowEnd: toDateOnlyString(plain.arrivalWindowEnd),

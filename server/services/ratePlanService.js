@@ -13,7 +13,9 @@ const {
   RATE_PLAN_CURRENCIES,
   INVENTORY_MODES,
   PRICING_METHODS,
-  ENTITY_TYPES
+  ENTITY_TYPES,
+  PACKAGE_TYPES,
+  PACKAGE_VISIBILITIES
 } = require('../models/RatePlan');
 const {
   normalizeOptionalPaymentTermReference
@@ -361,10 +363,6 @@ function validateAndNormalizeRatePlan(input) {
     });
   });
 
-  if (errors.length) {
-    return { ok: false, errors };
-  }
-
   const value = {
     code: codeRaw,
     internalName,
@@ -388,6 +386,32 @@ function validateAndNormalizeRatePlan(input) {
     inclusions,
     accommodations
   };
+
+  if (Object.prototype.hasOwnProperty.call(input, 'packageType')) {
+    const packageType = input.packageType == null ? null : String(input.packageType).trim();
+    if (type !== 'fixed_package' && packageType != null) {
+      errors.push('packageType is only supported for fixed_package');
+    } else if (packageType && !PACKAGE_TYPES.includes(packageType)) {
+      errors.push('packageType is unsupported');
+    } else {
+      value.packageType = packageType || null;
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'packageVisibility')) {
+    const packageVisibility =
+      input.packageVisibility == null ? null : String(input.packageVisibility).trim();
+    if (type !== 'fixed_package' && packageVisibility != null) {
+      errors.push('packageVisibility is only supported for fixed_package');
+    } else if (packageVisibility && !PACKAGE_VISIBILITIES.includes(packageVisibility)) {
+      errors.push('packageVisibility is unsupported');
+    } else {
+      value.packageVisibility = packageVisibility || null;
+    }
+  }
+
+  if (errors.length) {
+    return { ok: false, errors };
+  }
 
   return { ok: true, value };
 }
@@ -670,6 +694,8 @@ module.exports = {
   RATE_PLAN_TYPES,
   RATE_PLAN_CURRENCIES,
   INVENTORY_MODES,
+  PACKAGE_TYPES,
+  PACKAGE_VISIBILITIES,
   PRICING_METHODS,
   ENTITY_TYPES
 };

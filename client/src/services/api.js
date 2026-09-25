@@ -165,6 +165,16 @@ export const ratePlanAdminAPI = {
   retire: (id, data) => api.post(`/admin/rate-plans/${id}/retire`, data)
 };
 
+/** OPS Packages API. Uses the same RatePlan lifecycle under a package-specific route. */
+export const packageAdminAPI = {
+  list: (params = {}) => api.get('/admin/packages', { params: { ...params, type: 'fixed_package' } }),
+  create: (data) => api.post('/admin/packages', { ...data, type: 'fixed_package' }),
+  update: (id, data) => api.patch(`/admin/packages/${id}`, { ...data, type: 'fixed_package' }),
+  clone: (id) => api.post(`/admin/packages/${id}/clone`, {}),
+  activate: (id, data) => api.post(`/admin/packages/${id}/activate`, data),
+  retire: (id, data) => api.post(`/admin/packages/${id}/retire`, data)
+};
+
 export const pricingOverridesAPI = {
   calendar: (params) => api.get('/ops/pricing-overrides', { params }),
   saveRange: (data) => api.put('/ops/pricing-overrides/range', data),
