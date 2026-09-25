@@ -165,6 +165,12 @@ export const ratePlanAdminAPI = {
   retire: (id, data) => api.post(`/admin/rate-plans/${id}/retire`, data)
 };
 
+export const pricingOverridesAPI = {
+  calendar: (params) => api.get('/ops/pricing-overrides', { params }),
+  saveRange: (data) => api.put('/ops/pricing-overrides/range', data),
+  clearRange: (data) => api.delete('/ops/pricing-overrides/range', { data })
+};
+
 /** SP7 PaymentTermTemplate management API. */
 export const paymentTermAdminAPI = {
   list: (params = {}) => api.get('/admin/payment-terms', { params }),

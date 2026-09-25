@@ -30,6 +30,7 @@ const pushConfigRoutes = require('./modules/pushConfigRoutes');
 const pushHealthRoutes = require('./modules/pushHealthRoutes');
 const confirmationDeliveryHealthRoutes = require('./modules/confirmationDeliveryHealthRoutes');
 const notificationsRoutes = require('./modules/notificationsRoutes');
+const pricingOverridesRoutes = require('./modules/pricingOverridesRoutes');
 
 const router = express.Router();
 
@@ -79,5 +80,6 @@ router.use('/push-health', pushHealthRoutes);
 router.use('/confirmation-delivery-health', confirmationDeliveryHealthRoutes);
 router.use('/push-subscriptions', pushSubscriptionsRoutes);
 router.use('/notifications', notificationsRoutes);
+router.use('/pricing-overrides', pricingOverridesRoutes);
 
 module.exports = router;

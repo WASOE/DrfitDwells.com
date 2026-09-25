@@ -18,6 +18,7 @@ const OPS_FRONTEND_MODULE_ROUTES = [
   { prefix: '/ops/insights', module: 'finance' },
   { prefix: '/ops/promo-codes', module: 'finance' },
   { prefix: '/ops/rate-plans', module: 'finance' },
+  { prefix: '/ops/pricing-calendar', module: 'finance' },
   { prefix: '/ops/payment-terms', module: 'finance' },
   { prefix: '/ops/payments', module: 'finance' },
   { prefix: '/ops/creator-partners', module: 'property' },
@@ -141,6 +142,16 @@ export const OPS_NAV_ITEMS = [
     module: 'finance',
     desktopGroup: 'finance',
     sidebarOrder: 3,
+    mobileTab: 'finance',
+    moreGroupId: 'finance',
+    match: 'prefix'
+  },
+  {
+    to: '/ops/pricing-calendar',
+    label: 'Pricing Calendar',
+    module: 'finance',
+    desktopGroup: 'finance',
+    sidebarOrder: 5,
     mobileTab: 'finance',
     moreGroupId: 'finance',
     match: 'prefix'

@@ -19,8 +19,16 @@ const nightlyRateOverrideSchema = new mongoose.Schema(
       min: 0,
       validate: { validator: Number.isInteger, message: 'baseNightlyAmountCents must be an integer' }
     },
+    source: {
+      type: String,
+      enum: ['manual', 'system_recommendation'],
+      default: 'manual'
+    },
     reason: { type: String, trim: true, maxlength: 500, default: null },
     recommendation: { type: String, trim: true, maxlength: 500, default: null },
+    recommendationId: { type: String, trim: true, maxlength: 160, default: null },
+    acceptedAt: { type: Date, default: null },
+    acceptedBy: { type: String, trim: true, maxlength: 160, default: null },
     createdBy: { type: String, trim: true, maxlength: 160, default: null },
     updatedBy: { type: String, trim: true, maxlength: 160, default: null }
   },
