@@ -119,7 +119,11 @@
     "continue": "Continue to secure payment",
     "processing": "Processing payment…",
     "paySecurely": "Pay securely",
-    "editDetails": "Edit details"
+    "editDetails": "Edit details",
+    "unavailableTitle": "Secure payment is temporarily unavailable",
+    "unavailableBody": "We couldn't load the secure card form. Please retry, or contact us for help with your purchase. Do not submit another payment if you have already paid.",
+    "unavailableRetry": "Retry secure payment",
+    "unavailableContact": "Contact support"
   },
   "errors": {
     "wholeAmount": "Please enter a whole-euro amount.",

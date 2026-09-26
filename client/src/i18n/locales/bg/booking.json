@@ -174,7 +174,11 @@
     "bookingCompletedNoConfirmation": "Резервацията е завършена, но потвърждението не бе намерено",
     "bookingFailed": "Резервацията не бе успешна",
     "couldNotCompleteBooking": "Резервацията не можа да бъде завършена",
-    "paymentSetupFailed": "Неуспешна настройка на плащането"
+    "paymentSetupFailed": "Неуспешна настройка на плащането",
+    "paymentUnavailableTitle": "Сигурното плащане е временно недостъпно",
+    "paymentUnavailableBody": "Не успяхме да заредим формата за плащане с карта. Моля, опитайте отново или се свържете с нас за помощ с резервацията. Ако вече сте платили, не правете ново плащане.",
+    "paymentUnavailableRetry": "Опитай отново",
+    "paymentUnavailableContact": "Свържете се с нас"
   },
   "success": {
     "seoLoadingTitle": "Потвърждение на резервация | Drift & Dwells",
@@ -384,4 +388,3 @@
     "addExperiences": "Добави изживявания"
   }
 }
-

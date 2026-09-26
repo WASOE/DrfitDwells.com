@@ -70,19 +70,28 @@ export function resolveBookingPaymentState({
   stripeAvailable,
   appliedVoucherCode,
   clientSecret,
-  checkoutInitLoading
+  checkoutInitLoading,
+  checkoutInitError
 }) {
-  if (recovering) return 'recovering';
-  if (skipCardPaymentUi) return 'no-card-required';
-  if (stripeEnabled === null) return 'checking-capability';
-  if (stripeEnabled === 'error') return 'unavailable';
-  if (stripeEnabled === false) {
-    if (clientSecret) return 'unavailable';
-    return appliedVoucherCode ? 'awaiting-initiation' : 'pay-on-arrival';
+  if (recovering) return { kind: 'recovering', preparationError: checkoutInitError };
+  if (checkoutInitError) {
+    return {
+      kind: 'preparation-failed',
+      message: checkoutInitError,
+      cardUnavailable: stripeEnabled === 'error' || (stripeEnabled === false && Boolean(clientSecret)) ||
+        (stripeEnabled === true && !stripeAvailable)
+    };
   }
-  if (stripeEnabled !== true || !stripeAvailable) return 'unavailable';
-  if (clientSecret) return 'collecting-payment';
-  return checkoutInitLoading ? 'preparing' : 'awaiting-initiation';
+  if (skipCardPaymentUi) return { kind: 'no-card-required' };
+  if (stripeEnabled === null) return { kind: 'checking-capability' };
+  if (stripeEnabled === 'error') return { kind: 'unavailable' };
+  if (stripeEnabled === false) {
+    if (clientSecret) return { kind: 'unavailable' };
+    return { kind: appliedVoucherCode ? 'awaiting-initiation' : 'pay-on-arrival' };
+  }
+  if (stripeEnabled !== true || !stripeAvailable) return { kind: 'unavailable' };
+  if (clientSecret) return { kind: 'collecting-payment' };
+  return { kind: checkoutInitLoading ? 'preparing' : 'awaiting-initiation' };
 }
 
 /**
@@ -2243,7 +2252,6 @@ const ConfirmBooking = () => {
     const stored = readCheckoutRecoveryState(checkoutId);
     if (stored?.paymentMayHaveSucceeded) {
       setPaymentMayHaveSucceeded(true);
-      setRecoveryActive(true);
     }
   }, [checkoutId]);
 
@@ -2662,7 +2670,8 @@ const ConfirmBooking = () => {
     stripeAvailable: Boolean(stripePromise) && !stripeClientError,
     appliedVoucherCode,
     clientSecret,
-    checkoutInitLoading
+    checkoutInitLoading,
+    checkoutInitError
   });
   const showPaymentElement = Boolean(stripePromise && clientSecret && !skipCardPaymentUi);
 
@@ -3083,7 +3092,7 @@ const ConfirmBooking = () => {
             />
           ) : null}
           {(() => {
-            switch (paymentState) {
+            switch (paymentState.kind) {
               case 'awaiting-initiation':
               case 'preparing':
                 return (
@@ -3140,6 +3149,11 @@ const ConfirmBooking = () => {
               {recoveryNetworkError ? (
                 <p className="mt-3 text-center text-sm text-stone-500" role="status">
                   Still checking your reservation status…
+                </p>
+              ) : null}
+              {paymentState.preparationError ? (
+                <p role="alert" className="mt-3 text-sm text-red-600">
+                  {paymentState.preparationError}
                 </p>
               ) : null}
             </div>
@@ -3249,6 +3263,31 @@ const ConfirmBooking = () => {
                 );
               case 'checking-capability':
                 return <p role="status" className="text-sm text-gray-600">Checking payment availability…</p>;
+              case 'preparation-failed':
+                return (
+                  <div role="alert" className="space-y-3">
+                    <p className="text-sm text-red-600">{paymentState.message}</p>
+                    {paymentState.cardUnavailable ? (
+                      <p className="text-sm text-red-700">
+                        Secure card payment is temporarily unavailable. Please refresh the page or contact support before trying again. Do not submit another booking.
+                      </p>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={paymentState.cardUnavailable
+                        ? () => window.location.reload()
+                        : initializeCheckoutPayment}
+                      disabled={!paymentState.cardUnavailable && continueToPayDisabled}
+                      className="text-sm font-semibold text-[#81887A] underline disabled:opacity-50"
+                    >
+                      {paymentState.cardUnavailable
+                        ? 'Refresh checkout'
+                        : paymentState.message === V2_CHECKOUT_RESTART_MESSAGE
+                          ? 'Continue to secure payment'
+                          : 'Retry'}
+                    </button>
+                  </div>
+                );
               case 'unavailable':
                 return (
                   <div role="alert" className="space-y-3 text-sm text-red-700">
@@ -3259,23 +3298,10 @@ const ConfirmBooking = () => {
                   </div>
                 );
               default:
-                console.error('Unknown booking payment state:', paymentState);
+                console.error('Unknown booking payment state:', paymentState.kind);
                 return <p role="alert" className="text-sm text-red-700">Payment is unavailable. Please refresh the page or contact support.</p>;
             }
           })()}
-          {checkoutInitError && ['awaiting-initiation', 'preparing', 'collecting-payment'].includes(paymentState) ? (
-            <div className="mt-3 space-y-2">
-              <p className="text-sm text-red-600">{checkoutInitError}</p>
-              <button
-                type="button"
-                onClick={initializeCheckoutPayment}
-                disabled={checkoutInitLoading || continueToPayDisabled}
-                className="text-sm font-semibold text-[#81887A] underline disabled:opacity-50"
-              >
-                Retry
-              </button>
-            </div>
-          ) : null}
         </div>
         </div>
 

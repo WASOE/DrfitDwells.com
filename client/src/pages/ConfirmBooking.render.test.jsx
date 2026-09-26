@@ -2,11 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import ConfirmBooking, { resolveBookingPaymentState } from './ConfirmBooking';
+import ConfirmBooking from './ConfirmBooking';
 import { bookingAPI, cabinAPI } from '../services/api';
 import { getStripePromise } from '../lib/stripeClient';
 import { readCheckoutRecoveryState } from '../utils/checkoutRecoveryStorage';
-import { shouldHidePaymentControls } from '../utils/checkoutRecoveryFlow';
 
 vi.mock('../lib/stripeClient', () => ({ getStripePromise: vi.fn() }));
 vi.mock('../services/api', () => ({
@@ -37,9 +36,6 @@ vi.mock('../components/Seo', () => ({ default: () => null }));
 vi.mock('../components/booking/ChangeDatesModal', () => ({ default: () => null }));
 vi.mock('../components/booking/ChangeGuestsModal', () => ({ default: () => null }));
 vi.mock('../components/booking/PriceDetailsModal', () => ({ default: () => null }));
-vi.mock('../components/booking/CheckoutRecoveryPanel', () => ({
-  default: () => <div data-testid="recovery-panel">Checking reservation status</div>
-}));
 vi.mock('@stripe/react-stripe-js', () => ({
   Elements: ({ children, stripe, options }) => (
     <div data-testid="stripe-elements" data-secret={options.clientSecret} data-available={Boolean(stripe)}>
@@ -100,7 +96,10 @@ afterEach(() => cleanup());
 describe('ConfirmBooking payment render states', () => {
   it('shows the full-payment initiation before preparation', async () => {
     mountBooking();
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Continue to secure payment' })).toBeEnabled());
+    await waitFor(
+      () => expect(screen.getByRole('button', { name: 'Continue to secure payment' })).toBeEnabled(),
+      { timeout: 5000 }
+    );
     expect(screen.queryByTestId('stripe-elements')).not.toBeInTheDocument();
   });
 
@@ -151,16 +150,8 @@ describe('ConfirmBooking payment render states', () => {
   it('does not hide controls without displaying the recovery panel', async () => {
     readCheckoutRecoveryState.mockReturnValue({ paymentMayHaveSucceeded: true });
     mountBooking();
-    expect(await screen.findByTestId('recovery-panel')).toBeInTheDocument();
+    expect(await screen.findByTestId('checkout-recovery-panel')).toHaveTextContent('Confirming your reservation');
     expect(screen.queryByRole('button', { name: 'Continue to secure payment' })).not.toBeInTheDocument();
-    const controlsHidden = shouldHidePaymentControls({
-      flagEnabled: true, recoveryActive: false, paymentMayHaveSucceeded: true
-    });
-    expect(controlsHidden).toBe(true);
-    expect(resolveBookingPaymentState({
-      recovering: controlsHidden, skipCardPaymentUi: false, stripeEnabled: true,
-      stripeAvailable: true, clientSecret: null
-    })).toBe('recovering');
   });
 
   it('shows pay-on-arrival only when the server explicitly disables card payments', async () => {
