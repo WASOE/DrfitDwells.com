@@ -313,6 +313,16 @@ describe('ConfirmBooking V2 checkout init error handling', () => {
     expect(getV2CheckoutInitErrorHandling('COMMERCIAL_BOUNDARY_CHANGED').clearAll).toBe(true);
   });
 
+  it('FINALIZE_INTENT_IMMUTABLE clears the stale checkout identity so a fresh checkoutId is minted (regression: previously "unknown", causing an infinite 409 retry loop with no working Continue-to-payment recovery)', () => {
+    expect(classifyV2CheckoutInitError('FINALIZE_INTENT_IMMUTABLE').kind).toBe('restart');
+    expect(getV2CheckoutInitErrorHandling('FINALIZE_INTENT_IMMUTABLE').clearAll).toBe(true);
+  });
+
+  it('FINALIZE_INTENT_SESSION_VERSION_CONFLICT clears the stale checkout identity so a fresh checkoutId is minted (regression: previously "unknown", causing an infinite 409 retry loop with no working Continue-to-payment recovery)', () => {
+    expect(classifyV2CheckoutInitError('FINALIZE_INTENT_SESSION_VERSION_CONFLICT').kind).toBe('restart');
+    expect(getV2CheckoutInitErrorHandling('FINALIZE_INTENT_SESSION_VERSION_CONFLICT').clearAll).toBe(true);
+  });
+
   it('CHECKOUT_SESSION_CONCURRENCY_CONFLICT keeps checkoutId scope but clears clientSecret', () => {
     const handling = getV2CheckoutInitErrorHandling('CHECKOUT_SESSION_CONCURRENCY_CONFLICT');
     expect(handling.clearAll).toBe(false);

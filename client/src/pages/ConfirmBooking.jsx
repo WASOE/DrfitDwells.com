@@ -118,7 +118,13 @@ export const V2_CHECKOUT_RESTART_MESSAGE =
 const V2_CHECKOUT_RESTART_ERROR_CODES = new Set([
   'CHECKOUT_SESSION_EXPIRED',
   'CHECKOUT_SESSION_SUPERSEDED',
-  'COMMERCIAL_BOUNDARY_CHANGED'
+  'COMMERCIAL_BOUNDARY_CHANGED',
+  // These two codes tell the guest (via mapPaymentPreparationErrorMessage) to
+  // refresh/start a new checkout, but without this classification the client
+  // kept retrying with the same stale checkoutId/sessionVersion and looped on
+  // 409s forever with no working "Continue to secure payment" recovery path.
+  'FINALIZE_INTENT_IMMUTABLE',
+  'FINALIZE_INTENT_SESSION_VERSION_CONFLICT'
 ]);
 
 const V2_CHECKOUT_CLEAR_PAYMENT_KEEP_SESSION_CODES = new Set([
