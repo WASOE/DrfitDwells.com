@@ -27,7 +27,6 @@ const {
   normalizeOptionalAccommodationConsents,
   ensureFinalizeIntentForPaymentPreparation,
   persistFinalizeIntent,
-  persistPaidCheckoutRecoveryFinalizeIntent
 } = require('../services/checkout/finalizeIntentService');
 const {
   ensureCanonicalPaymentIntent

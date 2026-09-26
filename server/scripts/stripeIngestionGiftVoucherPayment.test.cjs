@@ -159,7 +159,7 @@ test('gift voucher payment_intent.succeeded upserts Payment without payment_unli
   });
   assert.equal(unlinkedCount, 0);
 
-  const voucher = await GiftVoucher.findById(created.giftVoucherId).lean();
+  const voucher = await GiftVoucher.findById(created.giftVoucherId).lean().exec();
   assert.equal(voucher.status, 'active');
   assert.equal(voucher.stripePaymentIntentId, created.stripePaymentIntentId);
 });
@@ -208,4 +208,17 @@ test('booking payment with reservationId metadata does not create payment_unlink
     status: 'open'
   });
   assert.equal(unlinkedCount, 0);
+
+  const staleFailure = makeStripeEvent({
+    id: `evt_booking_stale_failure_${Date.now()}`,
+    type: 'payment_intent.payment_failed',
+    paymentIntentId,
+    amountCents: 18000,
+    metadata: { reservationId: String(booking._id) }
+  });
+  staleFailure.created = Math.floor(Date.now() / 1000) - 60;
+  await processStripeWebhookEvent(staleFailure);
+  const afterStaleFailure = await Payment.findOne({ providerReference: paymentIntentId }).lean();
+  assert.equal(afterStaleFailure.status, 'paid');
+  assert.equal(String(afterStaleFailure.reservationId), String(booking._id));
 });

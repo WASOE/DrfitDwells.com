@@ -48,7 +48,8 @@ const {
   __resetFinalizePaidCheckoutForTesting,
   __setStripeClientForTesting,
   __resetStripeClientForTesting,
-  getCheckoutFinalizationWorkerState
+  getCheckoutFinalizationWorkerState,
+  isExecuteEnabled
 } = require('../services/checkout/checkoutFinalizationWorker');
 const { CHECKOUT_SESSION_ERROR_CODES } = require('../services/checkout/checkoutSessionErrors');
 const { finalizePaidCheckout } = require('../services/checkout/finalizePaidCheckout');
@@ -667,4 +668,17 @@ test('flag defaults: FINALIZE_JOB_EXECUTE and SEND_CONFIRMATION off', () => {
   delete process.env.FINALIZE_WORKER_SEND_CONFIRMATION;
   assert.equal(featureFlags.isFinalizeJobExecuteEnabled(), false);
   assert.equal(featureFlags.isFinalizeWorkerSendConfirmationEnabled(), false);
+});
+
+test('production finalization cannot be disabled by FINALIZE_JOB_EXECUTE', () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'production';
+  process.env.FINALIZE_JOB_EXECUTE = '0';
+  try {
+    assert.equal(isExecuteEnabled(), true);
+  } finally {
+    if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalNodeEnv;
+    restoreEnv();
+  }
 });

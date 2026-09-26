@@ -53,6 +53,7 @@ function setCheckoutSessionV2Flag(value) {
 async function createCabin() {
   return Cabin.create({
     name: 'Route Adapter Cabin',
+    slug: 'route-adapter-cabin',
     description: 'Test cabin',
     capacity: 4,
     minGuests: 1,
@@ -156,7 +157,7 @@ test.after(async () => {
   if (mongoServer) await mongoServer.stop();
 });
 
-test('CHECKOUT_SESSION_V2=0 keeps legacy create-payment-intent path (route stripe.create)', async () => {
+test('CHECKOUT_SESSION_V2=0 fails payment preparation closed instead of using legacy PI creation', async () => {
   setCheckoutSessionV2Flag('0');
   const cabin = await createCabin();
   const mock = createMockStripeWithCreateSpy();
@@ -165,7 +166,22 @@ test('CHECKOUT_SESSION_V2=0 keeps legacy create-payment-intent path (route strip
   let ensureCalls = 0;
   checkoutSessionRouteAdapter.__setEnsureCanonicalPaymentIntentForTesting(async () => {
     ensureCalls += 1;
-    throw new Error('ensureCanonicalPaymentIntent must not run when flag is off');
+    return {
+      checkoutId: 'chk_v2_required_01',
+      flowVersion: 'v2',
+      sessionStatus: 'payment_required',
+      paymentStatus: 'unpaid',
+      quoteSnapshotHash: 'hash_v2_required',
+      sessionVersion: 1,
+      clientSecret: 'cs_mock_v2_required',
+      canonicalPaymentIntentId: 'pi_v2_required_1',
+      stripeAmountCents: 36000,
+      giftVoucherAppliedCents: 0,
+      fullVoucherCoverage: false,
+      voucherRedemptionId: null,
+      idempotentReplay: false,
+      noPaymentRequired: false
+    };
   });
 
   const payload = {
@@ -177,12 +193,10 @@ test('CHECKOUT_SESSION_V2=0 keeps legacy create-payment-intent path (route strip
   };
 
   const res = await postPaymentIntent(request(app), payload, 1);
-  assert.equal(res.status, 200);
-  assert.equal(res.body.success, true);
-  assert.ok(res.body.paymentIntentId);
-  assert.ok(res.body.clientSecret);
+  assert.equal(res.status, 503);
+  assert.equal(res.body.code, 'CHECKOUT_SESSION_V2_REQUIRED');
   assert.equal(ensureCalls, 0);
-  assert.equal(mock.getCreateCalls(), 1);
+  assert.equal(mock.getCreateCalls(), 0);
 });
 
 test('CHECKOUT_SESSION_V2=1 uses V2 ensureCanonicalPaymentIntent path without route stripe.create', async () => {
@@ -594,8 +608,8 @@ test('V2 card-due >= 50 cents still reaches ensure', async () => {
   assert.equal(res.body.stripeAmountCents, 36000);
 });
 
-test('legacy voucher hotfix path still runs when CHECKOUT_SESSION_V2 is off', async () => {
-  setCheckoutSessionV2Flag('0');
+test('legacy checkout cannot create a payable PI when finalize intent is missing', async () => {
+  setCheckoutSessionV2Flag('1');
   const cabin = await createCabin();
   const voucher = await GiftVoucher.create({
     code: 'DD-ROUTE-HOTF-0001',
@@ -632,8 +646,6 @@ test('legacy voucher hotfix path still runs when CHECKOUT_SESSION_V2 is off', as
   };
 
   const first = await postPaymentIntent(request(app), payload, 10);
-  assert.equal(first.status, 200);
-  assert.equal(first.body.success, true);
-  assert.ok(first.body.paymentIntentId);
-  assert.equal(mock.getCreateCalls(), 1);
+  assert.notEqual(first.status, 200);
+  assert.equal(mock.getCreateCalls(), 0);
 });

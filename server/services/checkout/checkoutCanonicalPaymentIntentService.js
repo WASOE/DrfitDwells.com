@@ -964,7 +964,7 @@ async function ensureCanonicalPaymentIntentLegacy({
     }
     if (terminalPi && TERMINAL_NON_CANCEL_PI_STATUSES.has(terminalPi.status)) {
       const match = paymentIntentMatchesSession(terminalPi, session, redemptionId);
-      if (existingPi.status === 'canceled' || !match.ok) {
+      if (terminalPi.status === 'canceled' || !match.ok) {
         throw new CheckoutSessionError(
           CHECKOUT_SESSION_ERROR_CODES.CANONICAL_PAYMENT_INTENT_MISMATCH,
           'Paid payment intent does not match the current voucher reservation or quote',

@@ -512,12 +512,13 @@ test('flag defaults: FINALIZE_SIDE_EFFECTS and FINALIZE_WORKER_SEND_CONFIRMATION
   assert.equal(featureFlags.isFinalizeWorkerSendConfirmationEnabled(), false);
 });
 
-test('enqueue is no-op when FINALIZE_SIDE_EFFECTS off and send false', async () => {
+test('confirmation is durably queued when optional finalize side effects are off', async () => {
   process.env.FINALIZE_SIDE_EFFECTS = '0';
   const booking = await createBooking();
   const result = await enqueuePostFinalizeSideEffects({ booking, sendConfirmation: false });
-  assert.equal(result.deferred, true);
-  assert.equal(await EmailDeliveryState.countDocuments({}), 0);
+  assert.equal(result.confirmationEmail.queued, true);
+  assert.equal(result.confirmationEmail.sent, false);
+  assert.equal(await EmailDeliveryState.countDocuments({ bookingId: booking._id }), 1);
 });
 
 test('confirmationEmailSentAt is not set on claim-before-SMTP', async () => {
