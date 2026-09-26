@@ -274,6 +274,15 @@ const bookingSchema = new mongoose.Schema({
       trim: true
     }
   },
+  legalConsentEvidenceStatus: {
+    type: String,
+    enum: ['recorded', 'missing_due_to_checkout_incident'],
+    default: null
+  },
+  legalConsentEvidenceAudit: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
   totalPrice: {
     type: Number,
     required: true,

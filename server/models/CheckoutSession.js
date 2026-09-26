@@ -398,6 +398,10 @@ const checkoutSessionSchema = new mongoose.Schema(
       type: resourceLeaseSchema,
       default: null
     },
+    legacyPaidRecovery: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null
+    },
     /**
      * SP4: optional split-payment OFFER frozen for this quote/session.
      * Not a chosen obligation. Null when flag off / ineligible / no term.

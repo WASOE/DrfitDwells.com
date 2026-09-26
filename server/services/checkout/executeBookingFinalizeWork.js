@@ -241,6 +241,7 @@ function buildBookingData({
   const payload = bookingPayload || {};
   const guestInfo = ctx.guestInfo || payload.guestInfo;
   const legalAcceptance = ctx.legalAcceptance || {};
+  const legacyPaidRecoveryAudit = ctx.legacyPaidRecoveryAudit || null;
   const requestMeta = ctx.requestMeta || {};
   const transportOptions = ctx.transportOptions || [];
   const tripType =
@@ -329,11 +330,38 @@ function buildBookingData({
     commercialStayFingerprint: String(session.stayFingerprint).trim(),
     checkoutSessionId: session._id || null,
     provenance: {
-      source: ctx.winterVillage ? 'winter_village' : 'guest_portal',
+      source: legacyPaidRecoveryAudit
+        ? 'paid_checkout_incident_recovery'
+        : ctx.winterVillage
+          ? 'winter_village'
+          : 'guest_portal',
       intakeRevision: 1,
-      createdByRoute: createdByRouteForSource(source)
-    },
-    legalAcceptance: {
+      createdByRoute: legacyPaidRecoveryAudit
+        ? 'operator_paid_checkout_recovery'
+        : createdByRouteForSource(source)
+    }
+  };
+
+  if (legacyPaidRecoveryAudit) {
+    bookingData.legalConsentEvidenceStatus =
+      legacyPaidRecoveryAudit.status;
+    bookingData.legalConsentEvidenceAudit = {
+      provenance: legacyPaidRecoveryAudit.provenance,
+      reason: legacyPaidRecoveryAudit.reason,
+      checkoutId: legacyPaidRecoveryAudit.checkoutId,
+      paymentIntentId: legacyPaidRecoveryAudit.paymentIntentId,
+      recoveryExecutionId: legacyPaidRecoveryAudit.recoveryExecutionId,
+      operatorActorId: legacyPaidRecoveryAudit.operatorActorId,
+      approvedAt: legacyPaidRecoveryAudit.approvedAt,
+      recoveredAt: new Date(),
+      defectFixCommit: legacyPaidRecoveryAudit.defectFixCommit,
+      guestIdentityEvidenceSource:
+        legacyPaidRecoveryAudit.guestIdentityEvidenceSource,
+      stripeChargeId: legacyPaidRecoveryAudit.stripeChargeId
+    };
+  } else if (ctx.legalAcceptance) {
+    bookingData.legalConsentEvidenceStatus = 'recorded';
+    bookingData.legalAcceptance = {
       termsVersion: legalAcceptance.termsVersion,
       activityRiskVersion: legalAcceptance.activityRiskVersion,
       acceptedAt: new Date(),
@@ -349,8 +377,8 @@ function buildBookingData({
             : null,
       checkbox1TextSnapshot: legalAcceptance.checkbox1TextSnapshot,
       checkbox2TextSnapshot: legalAcceptance.checkbox2TextSnapshot
-    }
-  };
+    };
+  }
 
   if (choice === 'split' && session.splitPaymentOfferSnapshot && session.splitPaymentOfferSnapshotHash) {
     bookingData.chosenPaymentScheduleSnapshot = session.splitPaymentOfferSnapshot;

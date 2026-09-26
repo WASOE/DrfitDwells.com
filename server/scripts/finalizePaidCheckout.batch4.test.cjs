@@ -33,6 +33,10 @@ const {
   finalizePaidCheckout
 } = require('../services/checkout/finalizePaidCheckout');
 const {
+  LEGACY_PAID_RECOVERY_FIX_COMMIT,
+  LEGAL_CONSENT_EVIDENCE_MISSING
+} = require('../services/checkout/legacyPaidCheckoutRecoveryEvidence');
+const {
   LEGAL_ACCEPTANCE_TERMS_VERSION,
   LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
   LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
@@ -676,6 +680,107 @@ test('happy path: domain finalize creates booking and sets paymentStatus paid', 
   const reloaded = await CheckoutSession.findOne({ checkoutId: session.checkoutId });
   assert.equal(reloaded.finalizeStatus, FINALIZE_STATUS.FINALIZED);
   assert.equal(reloaded.paymentStatus, 'paid');
+});
+
+test('legacy paid incident recovery finalizes without fabricating consent and stays gated', async () => {
+  const cabin = await createCabin();
+  const paymentIntentId = `pi_legacy_recovery_${new mongoose.Types.ObjectId()}`;
+  const created = await createCheckoutSession({
+    input: buildInput(cabin._id),
+    quote: buildQuote({ cabinId: cabin._id })
+  });
+  const session = created.session;
+  const approvedAt = new Date('2026-09-26T10:00:00.000Z');
+  const guestIdentitySnapshot = {
+    firstName: 'Damyan',
+    lastName: 'Tonchev',
+    email: 'batch4@example.com',
+    phone: '+359888000444'
+  };
+  const legacyPaidRecovery = {
+    status: 'approved',
+    legalConsentEvidenceStatus: LEGAL_CONSENT_EVIDENCE_MISSING,
+    provenance: 'paid_checkout_incident_recovery',
+    reason: 'pre_fix_checkout_allowed_payment_before_finalize_intent',
+    checkoutId: session.checkoutId,
+    paymentIntentId,
+    quoteSnapshotHash: session.quoteSnapshotHash,
+    recoveryExecutionId: 'test-legacy-recovery-1',
+    operatorActorId: 'ops:test',
+    approvedAt,
+    defectFixCommit: LEGACY_PAID_RECOVERY_FIX_COMMIT,
+    guestIdentityEvidenceSource: 'stripe_charge_billing_details',
+    stripeChargeId: 'ch_legacy_test',
+    paymentIntentCreatedAt: 1790416465,
+    guestIdentitySnapshot
+  };
+  await CheckoutSession.collection.updateOne(
+    { _id: session._id },
+    {
+      $set: {
+        createdAt: new Date('2026-09-26T08:00:00.000Z'),
+        status: 'pi_active',
+        paymentStatus: 'paid',
+        stripeAmountCents: 20000,
+        canonicalPaymentIntentId: paymentIntentId,
+        legacyPaidRecovery
+      }
+    }
+  );
+  const persistedSession = await CheckoutSession.findOne({ _id: session._id }).lean();
+  const stripe = createStripeStub({
+    [paymentIntentId]: buildSucceededPi({
+      session: persistedSession,
+      paymentIntentId,
+      finalizeIntentHash: ''
+    })
+  });
+
+  const result = await finalizePaidCheckout({
+    checkoutId: session.checkoutId,
+    paymentIntentId,
+    source: 'legacy_paid_incident_recovery_test',
+    dependencies: { stripe }
+  });
+
+  const booking = await Booking.findOne({ _id: result.bookingId }).lean();
+  assert.equal(result.ok, true);
+  assert.ok(booking);
+  assert.equal(booking.guestInfo.email, 'batch4@example.com');
+  assert.equal(booking.legalConsentEvidenceStatus, LEGAL_CONSENT_EVIDENCE_MISSING);
+  assert.equal(
+    booking.legalConsentEvidenceAudit.defectFixCommit,
+    LEGACY_PAID_RECOVERY_FIX_COMMIT
+  );
+  assert.equal(booking.legalAcceptance?.acceptedAt, undefined);
+  assert.equal(persistedSession.finalizeIntent, null);
+
+  const ordinarySession = await createCheckoutSession({
+    input: buildInput(cabin._id, { guestEmail: 'ordinary@example.com' }),
+    quote: buildQuote({ cabinId: cabin._id })
+  });
+  ordinarySession.session.canonicalPaymentIntentId = `pi_unapproved_${new mongoose.Types.ObjectId()}`;
+  ordinarySession.session.status = 'pi_active';
+  ordinarySession.session.paymentStatus = 'paid';
+  ordinarySession.session.stripeAmountCents = 20000;
+  await ordinarySession.session.save();
+  const ordinaryPiId = ordinarySession.session.canonicalPaymentIntentId;
+  const ordinaryStripe = createStripeStub({
+    [ordinaryPiId]: buildSucceededPi({
+      session: ordinarySession.session,
+      paymentIntentId: ordinaryPiId,
+      finalizeIntentHash: ''
+    })
+  });
+
+  await assert.rejects(
+    finalizePaidCheckout({
+      checkoutId: ordinarySession.session.checkoutId,
+      paymentIntentId: ordinaryPiId,
+      dependencies: { stripe: ordinaryStripe }
+    }),
+    (err) => err.verificationErrorCode === DOMAIN_VERIFICATION_CODES.FINALIZE_INTENT_MISSING
+  );
 });
 
 test('flag defaults: FINALIZE_DOMAIN_SERVICE off; FINALIZE_JOB_EXECUTE off', () => {
