@@ -10,6 +10,9 @@
 const crypto = require('crypto');
 const validator = require('validator');
 const CheckoutSession = require('../../models/CheckoutSession');
+const CheckoutFinalizationJob = require('../../models/CheckoutFinalizationJob');
+const Booking = require('../../models/Booking');
+const Payment = require('../../models/Payment');
 const featureFlags = require('../../utils/featureFlags');
 const { normalizeReferralCode } = require('../../models/CreatorPartner');
 const { sanitizeMetaClientContext } = require('../../utils/sanitizeMetaClientContext');
@@ -19,7 +22,7 @@ const {
   LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
   isApprovedCheckbox1TextSnapshot
 } = require('../../config/legalAcceptance');
-const { stableStringify } = require('./checkoutSessionSnapshot');
+const { hashQuoteSnapshot, stableStringify } = require('./checkoutSessionSnapshot');
 const {
   CheckoutSessionError,
   CHECKOUT_SESSION_ERROR_CODES
@@ -628,7 +631,12 @@ async function retrieveCanonicalPiStatus(stripe, paymentIntentId) {
  * Update Stripe PI metadata finalizeIntentHash when PI is still mutable (requires_*).
  * Does not create a new PaymentIntent.
  */
-async function syncFinalizeIntentHashToPaymentIntent({ stripe, session, finalizeIntentHash }) {
+async function syncFinalizeIntentHashToPaymentIntent({
+  stripe,
+  session,
+  finalizeIntentHash,
+  allowSucceededRecovery = false
+}) {
   const paymentIntentId = session?.canonicalPaymentIntentId;
   if (!paymentIntentId) {
     return { synced: false, reason: 'no_canonical_pi' };
@@ -646,11 +654,15 @@ async function syncFinalizeIntentHashToPaymentIntent({ stripe, session, finalize
     );
   }
 
-  if (IMMUTABLE_PI_STATUSES.has(status)) {
+  if (
+    IMMUTABLE_PI_STATUSES.has(status) &&
+    !(allowSucceededRecovery && status === 'succeeded')
+  ) {
     return { synced: false, reason: 'pi_immutable', status };
   }
 
-  if (!MUTABLE_PI_STATUSES.has(status)) {
+  const succeededRecovery = allowSucceededRecovery && status === 'succeeded';
+  if (!MUTABLE_PI_STATUSES.has(status) && !succeededRecovery) {
     throw new CheckoutSessionError(
       CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_METADATA_SYNC_FAILED,
       'Canonical PaymentIntent is not in a mutable status for finalizeIntentHash sync',
@@ -708,6 +720,180 @@ function logFinalizeIntentEvent(event, fields) {
       idempotent: fields.idempotent === true
     })
   );
+}
+
+/**
+ * Save guest consent for an already-paid, unlinked V2 checkout.
+ */
+async function persistPaidCheckoutRecoveryFinalizeIntent({
+  checkoutId,
+  body,
+  requestMeta,
+  stripe
+}) {
+    const normalizedCheckoutId = String(checkoutId || '').trim();
+    if (!normalizedCheckoutId || !stripe?.paymentIntents?.retrieve || !stripe?.paymentIntents?.update) {
+      throw validationError('Paid checkout recovery is unavailable');
+    }
+
+    const session = await CheckoutSession.findOne({ checkoutId: normalizedCheckoutId }).lean();
+    if (!session || session.flowVersion !== 'v2') {
+      throw validationError('Paid checkout recovery session was not found');
+    }
+    if (session.paymentStatus === 'paid' || session.finalizeStatus === 'finalized') {
+      throw new CheckoutSessionError(
+        CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_IMMUTABLE,
+        'This checkout has already completed recovery'
+      );
+    }
+
+    const guestEmail = normalizeEmail(body?.guestInfo?.email);
+    if (!guestEmail || guestEmail !== normalizeEmail(session.guestEmail)) {
+      throw validationError('Guest email does not match this checkout');
+    }
+
+    const paymentIntentId = String(session.canonicalPaymentIntentId || '').trim();
+    if (!paymentIntentId) {
+      throw validationError('The paid checkout has no canonical PaymentIntent');
+    }
+    const [payment, existingBooking, existingJob] = await Promise.all([
+      Payment.findOne({ provider: 'stripe', providerReference: paymentIntentId }).lean(),
+      Booking.findOne({
+        $or: [
+          { checkoutId: normalizedCheckoutId },
+          { stripePaymentIntentId: paymentIntentId },
+          ...(session.bookingId ? [{ _id: session.bookingId }] : [])
+        ]
+      }).lean(),
+      CheckoutFinalizationJob.findOne({ checkoutId: normalizedCheckoutId }).lean()
+    ]);
+
+    if (
+      !payment ||
+      payment.status !== 'paid' ||
+      payment.reservationId ||
+      existingBooking ||
+      existingJob
+    ) {
+      throw validationError('This checkout is not eligible for consent-only recovery');
+    }
+
+    const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+    const quoteHash = String(session.quoteSnapshotHash || '');
+    const snapshotAmount = Number(
+      session.quoteSnapshot?.stripeAmountCents ?? session.stripeAmountCents
+    );
+    const paymentAmountCents = Math.round(Number(payment.amount) * 100);
+    if (
+      pi.status !== 'succeeded' ||
+      pi.metadata?.checkoutId !== normalizedCheckoutId ||
+      !quoteHash ||
+      pi.metadata?.quoteSnapshotHash !== quoteHash ||
+      hashQuoteSnapshot(session.quoteSnapshot) !== quoteHash ||
+      !Number.isInteger(snapshotAmount) ||
+      snapshotAmount <= 0 ||
+      Number(pi.amount) !== snapshotAmount ||
+      Number(pi.amount_received) !== snapshotAmount ||
+      paymentAmountCents !== snapshotAmount ||
+      String(pi.currency || '').toLowerCase() !== 'eur' ||
+      String(payment.currency || '').toLowerCase() !== 'eur'
+    ) {
+      throw validationError('Paid checkout evidence does not match its immutable quote');
+    }
+
+    const capturedAt = new Date();
+    const intent = buildValidatedFinalizeIntent({
+      body,
+      requestMeta,
+      capturedAt,
+      quoteSnapshot: session.quoteSnapshot
+    });
+    if (intent.guestInfo.email !== guestEmail) {
+      throw validationError('Guest email does not match this checkout');
+    }
+
+    const finalizeIntentHash = hashFinalizeIntent(intent);
+    if (session.finalizeIntent) {
+      if (!materialFinalizeIntentEqual(session.finalizeIntent, intent)) {
+        throw new CheckoutSessionError(
+          CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_IMMUTABLE,
+          'A different recovery consent is already stored'
+        );
+      }
+      const existingHash = String(session.finalizeIntentHash || hashFinalizeIntent(session.finalizeIntent));
+      if (pi.metadata?.finalizeIntentHash && pi.metadata.finalizeIntentHash !== existingHash) {
+        throw validationError('PaymentIntent finalize evidence conflicts with this checkout');
+      }
+      const metadataSync = await syncFinalizeIntentHashToPaymentIntent({
+        stripe,
+        session,
+        finalizeIntentHash: existingHash,
+        allowSucceededRecovery: true
+      });
+      return {
+        checkoutId: normalizedCheckoutId,
+        paymentIntentId,
+        finalizeIntentHash: existingHash,
+        sessionVersion: session.sessionVersion,
+        idempotentReplay: true,
+        noPaymentAttempted: true,
+        metadataSync
+      };
+    }
+
+    if (pi.metadata?.finalizeIntentHash) {
+      throw validationError('PaymentIntent already has conflicting finalize evidence');
+    }
+
+    const expectedVersion = Number(session.sessionVersion) || 1;
+    const updated = await CheckoutSession.findOneAndUpdate(
+      {
+        checkoutId: normalizedCheckoutId,
+        sessionVersion: expectedVersion,
+        paymentStatus: { $ne: 'paid' },
+        canonicalPaymentIntentId: paymentIntentId,
+        finalizeIntent: { $in: [null] },
+        $or: [
+          { finalizeIntentImmutableAt: null },
+          { finalizeIntentImmutableAt: { $exists: false } }
+        ]
+      },
+      {
+        $set: {
+          finalizeIntent: intent,
+          finalizeIntentHash,
+          finalizeIntentCapturedAt: capturedAt,
+          finalizeIntentImmutableAt: capturedAt,
+          guestEmail: intent.guestInfo.email,
+          sessionVersion: expectedVersion + 1
+        }
+      },
+      { new: true }
+    ).lean();
+
+    if (!updated) {
+      throw new CheckoutSessionError(
+        CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_SESSION_VERSION_CONFLICT,
+        'Checkout session changed while saving recovery consent',
+        { checkoutId: normalizedCheckoutId }
+      );
+    }
+
+    const metadataSync = await syncFinalizeIntentHashToPaymentIntent({
+      stripe,
+      session: updated,
+      finalizeIntentHash,
+      allowSucceededRecovery: true
+    });
+    return {
+      checkoutId: normalizedCheckoutId,
+      paymentIntentId,
+      finalizeIntentHash,
+      sessionVersion: updated.sessionVersion,
+      idempotentReplay: false,
+      noPaymentAttempted: true,
+      metadataSync
+    };
 }
 
 /**
@@ -916,6 +1102,7 @@ module.exports = {
   ensureFinalizeIntentForPaymentPreparation,
   syncFinalizeIntentHashToPaymentIntent,
   persistFinalizeIntent,
+  persistPaidCheckoutRecoveryFinalizeIntent,
   normalizeExperienceKeys,
   sanitizeAttribution
 };

@@ -38,6 +38,10 @@ const {
   sessionHasCompleteFinalizeIntent
 } = require('./finalizeIntentService');
 const { hashQuoteSnapshot } = require('./checkoutSessionSnapshot');
+const {
+  getAuthorizedLegacyPaidRecovery,
+  LEGAL_CONSENT_EVIDENCE_MISSING
+} = require('./legacyPaidCheckoutRecoveryEvidence');
 const { formatSofiaDateOnly, normalizeDateToSofiaDayStart } = require('../../utils/dateTime');
 const { enqueuePostFinalizeSideEffects } = require('./checkoutFinalizeSideEffects');
 const {
@@ -517,7 +521,8 @@ function verifySucceededPaymentIntentAgainstSession({ session, paymentIntent }) 
     }
   }
 
-  if (!sessionHasCompleteFinalizeIntent(session)) {
+  const legacyRecovery = getAuthorizedLegacyPaidRecovery(session, piId);
+  if (!sessionHasCompleteFinalizeIntent(session) && !legacyRecovery) {
     throw throwVerificationFailure(
       DOMAIN_VERIFICATION_CODES.FINALIZE_INTENT_MISSING,
       'finalizeIntent is required for paid checkout finalization',
@@ -525,32 +530,34 @@ function verifySucceededPaymentIntentAgainstSession({ session, paymentIntent }) 
     );
   }
 
-  const sessionFinalizeHash = String(session.finalizeIntentHash || '');
-  const metaFinalizeHash = String(pi.metadata?.finalizeIntentHash || '');
-  if (!sessionFinalizeHash || sessionFinalizeHash !== metaFinalizeHash) {
-    throw throwVerificationFailure(
-      DOMAIN_VERIFICATION_CODES.FINALIZE_INTENT_HASH_MISMATCH,
-      'finalizeIntentHash mismatch between session and PaymentIntent metadata',
-      { paymentIntentId: piId }
-    );
-  }
-
-  try {
-    const recomputed = hashFinalizeIntent(session.finalizeIntent);
-    if (recomputed !== sessionFinalizeHash) {
+  if (!legacyRecovery) {
+    const sessionFinalizeHash = String(session.finalizeIntentHash || '');
+    const metaFinalizeHash = String(pi.metadata?.finalizeIntentHash || '');
+    if (!sessionFinalizeHash || sessionFinalizeHash !== metaFinalizeHash) {
       throw throwVerificationFailure(
         DOMAIN_VERIFICATION_CODES.FINALIZE_INTENT_HASH_MISMATCH,
-        'Stored finalizeIntent does not re-hash to finalizeIntentHash',
+        'finalizeIntentHash mismatch between session and PaymentIntent metadata',
         { paymentIntentId: piId }
       );
     }
-  } catch (err) {
-    if (err instanceof CheckoutSessionError) throw err;
-    throw throwVerificationFailure(
-      DOMAIN_VERIFICATION_CODES.FINALIZE_INTENT_HASH_MISMATCH,
-      'Stored finalizeIntent could not be re-hashed',
-      { paymentIntentId: piId }
-    );
+
+    try {
+      const recomputed = hashFinalizeIntent(session.finalizeIntent);
+      if (recomputed !== sessionFinalizeHash) {
+        throw throwVerificationFailure(
+          DOMAIN_VERIFICATION_CODES.FINALIZE_INTENT_HASH_MISMATCH,
+          'Stored finalizeIntent does not re-hash to finalizeIntentHash',
+          { paymentIntentId: piId }
+        );
+      }
+    } catch (err) {
+      if (err instanceof CheckoutSessionError) throw err;
+      throw throwVerificationFailure(
+        DOMAIN_VERIFICATION_CODES.FINALIZE_INTENT_HASH_MISMATCH,
+        'Stored finalizeIntent could not be re-hashed',
+        { paymentIntentId: piId }
+      );
+    }
   }
 
   const amountReceived = Number(pi.amount_received != null ? pi.amount_received : pi.amount);
@@ -765,8 +772,13 @@ async function buildFinalizeContextFromPersisted({
 }) {
   const snapshot = session.quoteSnapshot || {};
   const intent = session.finalizeIntent || {};
-
-  if (!sessionHasCompleteFinalizeIntent(session) && needsStripePayment(session)) {
+  const recoveryPaymentIntentId =
+    paymentIntent?.id || session.canonicalPaymentIntentId || null;
+  const legacyRecovery = getAuthorizedLegacyPaidRecovery(
+    session,
+    recoveryPaymentIntentId
+  );
+  if (!sessionHasCompleteFinalizeIntent(session) && needsStripePayment(session) && !legacyRecovery) {
     throw new CheckoutSessionError(
       CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_MISSING,
       'finalizeIntent is required for paid checkout finalization'
@@ -809,8 +821,9 @@ async function buildFinalizeContextFromPersisted({
 
   const cabinId = snapshot.cabinId || null;
   const cabinTypeId = snapshot.cabinTypeId || null;
-  const guestInfo = intent.guestInfo || null;
-  const legalAcceptance = intent.legalAcceptance || null;
+  const guestInfo =
+    intent.guestInfo || legacyRecovery?.guestIdentitySnapshot || null;
+  const legalAcceptance = legacyRecovery ? null : intent.legalAcceptance || null;
   const transportOptions = await loadTransportOptions(snapshot);
   const voucherReservationContext = await resolveVoucherReservationContext(session);
 
@@ -861,6 +874,22 @@ async function buildFinalizeContextFromPersisted({
     attribution: intent.attribution || null,
     metaClientContext: intent.metaClientContext || null,
     legalAcceptance,
+    legacyPaidRecoveryAudit: legacyRecovery
+      ? {
+          status: LEGAL_CONSENT_EVIDENCE_MISSING,
+          provenance: legacyRecovery.provenance,
+          reason: legacyRecovery.reason,
+          checkoutId: legacyRecovery.checkoutId,
+          paymentIntentId: legacyRecovery.paymentIntentId,
+          recoveryExecutionId: legacyRecovery.recoveryExecutionId,
+          operatorActorId: legacyRecovery.operatorActorId,
+          approvedAt: legacyRecovery.approvedAt,
+          defectFixCommit: legacyRecovery.defectFixCommit,
+          guestIdentityEvidenceSource:
+            legacyRecovery.guestIdentityEvidenceSource,
+          stripeChargeId: legacyRecovery.stripeChargeId
+        }
+      : null,
     requestMeta: intent.requestMeta || {},
     transportOptions,
     tripType: intent.tripType || null,

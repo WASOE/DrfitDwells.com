@@ -56,6 +56,15 @@ function sanitizeRatePlanPricingBreakdownForSnapshot(breakdown) {
   if (!breakdown || typeof breakdown !== 'object') return null;
   const g = breakdown.guests;
   if (!g || typeof g !== 'object') return null;
+  const nightlyPricing = Array.isArray(breakdown.nightlyPricing)
+    ? breakdown.nightlyPricing.map((night) => ({
+        date: String(night.date || ''),
+        baseNightlyAmount: Number(night.baseNightlyAmount) || 0,
+        effectiveBaseNightlyAmount: Number(night.effectiveBaseNightlyAmount) || 0,
+        overrideDelta: Number(night.overrideDelta) || 0,
+        overrideApplied: night.overrideApplied === true
+      }))
+    : [];
   return {
     accommodationKey: String(breakdown.accommodationKey || ''),
     pricingMethod: String(breakdown.pricingMethod || ''),
@@ -71,7 +80,8 @@ function sanitizeRatePlanPricingBreakdownForSnapshot(breakdown) {
     additionalGuestAmount: Number(breakdown.additionalGuestAmount) || 0,
     preDiscountTotal: Number(breakdown.preDiscountTotal) || 0,
     finalTotalBeforeExternalDiscounts: Number(breakdown.finalTotalBeforeExternalDiscounts) || 0,
-    totalPrice: Number(breakdown.totalPrice) || 0
+    totalPrice: Number(breakdown.totalPrice) || 0,
+    nightlyPricing
   };
 }
 

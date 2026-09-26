@@ -963,6 +963,51 @@ router.put('/checkout-sessions/:checkoutId/finalize-intent', paymentIntentLimite
   }
 });
 
+router.post(
+  '/checkout-sessions/:checkoutId/paid-recovery-consent',
+  paymentIntentLimiter,
+  async (req, res) => {
+    const checkoutId = normalizeCheckoutId(req.params.checkoutId);
+    if (!checkoutId || !isValidCheckoutId(checkoutId)) {
+      return res.status(400).json({
+        success: false,
+        code: 'INVALID_CHECKOUT_ID',
+        message: 'Invalid checkout session id'
+      });
+    }
+
+    try {
+      const {
+        persistPaidCheckoutRecoveryFinalizeIntent,
+        buildRequestMetaFromReq
+      } = require('../services/checkout/finalizeIntentService');
+      const result = await persistPaidCheckoutRecoveryFinalizeIntent({
+        checkoutId,
+        body: req.body || {},
+        requestMeta: buildRequestMetaFromReq(req),
+        stripe
+      });
+      return res.json({
+        success: true,
+        ...result
+      });
+    } catch (err) {
+      if (isCheckoutSessionError(err)) {
+        return sendCheckoutSessionError(res, err);
+      }
+      console.error('Paid checkout recovery consent error:', {
+        checkoutId,
+        code: err?.code || null,
+        message: err?.message ? String(err.message).slice(0, 200) : null
+      });
+      return res.status(500).json({
+        success: false,
+        message: 'Could not save your recovery details. Please contact support.'
+      });
+    }
+  }
+);
+
 // POST /api/bookings/create-payment-intent - Create Stripe PaymentIntent for cabin booking
 router.post('/create-payment-intent', paymentIntentLimiter, bookingQuoteBodyValidators, async (req, res) => {
   attachPaymentFlowMonitor(res, BOOKING_PAYMENT_INTENT_ROUTE);

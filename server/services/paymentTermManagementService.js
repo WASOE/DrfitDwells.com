@@ -73,7 +73,7 @@ async function listPaymentTermTemplates({ status = null, code = null, limit = 20
   return rows.map(toClient);
 }
 
-async function createDraftPaymentTermTemplate({ input, operator }) {
+async function createDraftPaymentTermTemplate({ input, operator, session = null }) {
   const op = assertOperator(operator);
   const normalized = validateAndNormalizePaymentTermTemplate({
     ...input,
@@ -88,12 +88,16 @@ async function createDraftPaymentTermTemplate({ input, operator }) {
   }
   const v = normalized.value;
   try {
-    const doc = await PaymentTermTemplateModel.create({
+    const payload = {
       ...v,
       status: 'draft',
       createdBy: op,
       updatedBy: op
-    });
+    };
+    const docs = session
+      ? await PaymentTermTemplateModel.create([payload], { session })
+      : [await PaymentTermTemplateModel.create(payload)];
+    const doc = docs[0];
     return toClient(doc);
   } catch (err) {
     if (err && err.code === 11000) {
@@ -155,9 +159,11 @@ async function updateDraftPaymentTermTemplate({ id, input, operator, expectedRev
   return toClient(doc);
 }
 
-async function activatePaymentTermTemplate({ id, operator, expectedRevision = null }) {
+async function activatePaymentTermTemplate({ id, operator, expectedRevision = null, session = null }) {
   const op = assertOperator(operator);
-  const doc = await PaymentTermTemplateModel.findById(id);
+  const docQuery = PaymentTermTemplateModel.findById(id);
+  if (session) docQuery.session(session);
+  const doc = await docQuery;
   if (!doc) {
     throw new PaymentTermManagementError(MGMT_CODES.NOT_FOUND, 'Payment term not found');
   }
@@ -175,7 +181,7 @@ async function activatePaymentTermTemplate({ id, operator, expectedRevision = nu
   }
 
   // Retire any other active version of the same code
-  await PaymentTermTemplateModel.updateMany(
+  const retireQuery = PaymentTermTemplateModel.updateMany(
     { code: doc.code, status: 'active', _id: { $ne: doc._id } },
     {
       $set: {
@@ -185,12 +191,14 @@ async function activatePaymentTermTemplate({ id, operator, expectedRevision = nu
       }
     }
   );
+  if (session) retireQuery.session(session);
+  await retireQuery;
 
   doc.status = 'active';
   doc.activatedAt = new Date();
   doc.activatedBy = op;
   doc.updatedBy = op;
-  await doc.save();
+  await doc.save(session ? { session } : undefined);
   return toClient(doc);
 }
 

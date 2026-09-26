@@ -3,7 +3,7 @@
  * Used by create-payment-intent and booking creation to ensure consistency.
  * Never trust client-supplied amounts.
  */
-const moment = require('moment');
+const moment = require('moment-timezone');
 
 /**
  * Human guest count for lodging (adults + children). Pets never count.
@@ -183,7 +183,7 @@ function nightsFromStay(checkIn, checkOut) {
  * @param {number} [counts.children]
  * @param {number} [counts.infants]
  */
-function calculateRatePlanPriceBreakdown(resolvedRatePlan, counts = {}) {
+function calculateRatePlanPriceBreakdown(resolvedRatePlan, counts = {}, nightlyRateOverrides = []) {
   if (!resolvedRatePlan || typeof resolvedRatePlan !== 'object') {
     throw new PricingError('MISSING_RATE_PLAN', 'resolvedRatePlan is required');
   }
@@ -239,15 +239,44 @@ function calculateRatePlanPriceBreakdown(resolvedRatePlan, counts = {}) {
   let childAmount = 0;
   let infantAmount = 0;
 
+  const overrideByDate = new Map(
+    (Array.isArray(nightlyRateOverrides) ? nightlyRateOverrides : []).map((override) => [
+      String(override.dateKey),
+      override
+    ])
+  );
+  const nightlyPricing = [];
+  if (pricingMethod === 'nightly_per_unit' || pricingMethod === 'nightly_base_plus_extra_guest') {
+    const dateStart = moment.tz(checkIn, 'Europe/Sofia').startOf('day');
+    for (let index = 0; index < numberOfNights; index += 1) {
+      const date = dateStart.clone().add(index, 'days').format('YYYY-MM-DD');
+      const override = overrideByDate.get(date);
+      const baseNightlyAmount = Number(pricing.nightlyPerUnitAmount) || 0;
+      const effectiveBaseNightlyAmount =
+        override && Number.isInteger(Number(override.baseNightlyAmountCents))
+          ? Number(override.baseNightlyAmountCents) / 100
+          : baseNightlyAmount;
+      nightlyPricing.push({
+        date,
+        baseNightlyAmount,
+        effectiveBaseNightlyAmount,
+        overrideDelta: roundEuro(effectiveBaseNightlyAmount - baseNightlyAmount),
+        overrideApplied: Boolean(override)
+      });
+    }
+  }
+
   if (pricingMethod === 'nightly_per_unit') {
-    const nightly = Number(pricing.nightlyPerUnitAmount) || 0;
-    baseLodgingAmount = roundEuro(nightly * numberOfNights);
+    baseLodgingAmount = roundEuro(
+      nightlyPricing.reduce((total, night) => total + night.effectiveBaseNightlyAmount, 0)
+    );
   } else if (pricingMethod === 'nightly_base_plus_extra_guest') {
-    const nightlyBase = Number(pricing.nightlyPerUnitAmount) || 0;
     const included = Math.max(0, parseInt(pricing.includedGuests, 10) || 0);
     const extraNightly = Number(pricing.additionalGuestNightlyAmount) || 0;
     const extraGuests = Math.max(0, lodgingGuests - included);
-    baseLodgingAmount = roundEuro(nightlyBase * numberOfNights);
+    baseLodgingAmount = roundEuro(
+      nightlyPricing.reduce((total, night) => total + night.effectiveBaseNightlyAmount, 0)
+    );
     additionalGuestAmount = roundEuro(extraNightly * extraGuests * numberOfNights);
   } else if (pricingMethod === 'fixed_per_unit') {
     baseLodgingAmount = roundEuro(Number(pricing.fixedPerUnitAmount) || 0);
@@ -289,7 +318,8 @@ function calculateRatePlanPriceBreakdown(resolvedRatePlan, counts = {}) {
     preDiscountTotal,
     /** Final lodging total before promos, vouchers, or other external discounts. */
     finalTotalBeforeExternalDiscounts: preDiscountTotal,
-    totalPrice: preDiscountTotal
+    totalPrice: preDiscountTotal,
+    nightlyPricing
   };
 }
 
@@ -307,14 +337,15 @@ function calculateAuthoritativePriceBreakdown({
   infants = 0,
   experienceKeys = [],
   opts = {},
-  resolvedRatePlan = null
+  resolvedRatePlan = null,
+  nightlyRateOverrides = []
 } = {}) {
   if (resolvedRatePlan) {
     return calculateRatePlanPriceBreakdown(resolvedRatePlan, {
       adults,
       children,
       infants
-    });
+    }, nightlyRateOverrides);
   }
   return calculateCabinPriceBreakdown(
     entity,

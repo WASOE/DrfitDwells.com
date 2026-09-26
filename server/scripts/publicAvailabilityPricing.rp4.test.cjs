@@ -93,6 +93,24 @@ function loader(plans) {
   return async () => plans;
 }
 
+function overrideLoader(overrides, calls = []) {
+  return async (query) => {
+    calls.push(query);
+    const dateOnly = (value) =>
+      value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
+    const checkIn = dateOnly(query.checkIn);
+    const checkOut = dateOnly(query.checkOut);
+    return overrides.filter((override) =>
+      override.ratePlanCode === query.ratePlanCode &&
+      override.ratePlanVersion === query.ratePlanVersion &&
+      override.entityType === query.entityType &&
+      override.accommodationKey === query.accommodationKey &&
+      override.dateKey >= checkIn &&
+      override.dateKey < checkOut
+    );
+  };
+}
+
 describe('RP4 publicAvailabilityPricingService', () => {
   it('1. no RatePlan → existing entity price', async () => {
     const entity = cabinEntity();
@@ -129,6 +147,132 @@ describe('RP4 publicAvailabilityPricingService', () => {
     assert.equal(priced.pricingSource, 'rate_plan');
     assert.equal(priced.totalPrice, 360);
     assert.deepEqual(priced.ratePlan, { code: 'winter-peak', version: 1, type: 'seasonal_stay' });
+  });
+
+  it('2b. public search applies exact nightly overrides and matches checkout totals', async () => {
+    const entity = cabinEntity();
+    const plan = seasonalPlan({
+      code: 'winter-cabin-stay-2026-27',
+      version: 2,
+      accommodations: [{
+        accommodationKey: 'lux-cabin',
+        entityType: 'cabin',
+        pricingMethod: 'nightly_per_unit',
+        nightlyPerUnitAmount: 110
+      }]
+    });
+    const { checkInDate, checkOutDate, checkIn, checkOut } = stay('2026-12-23', '2026-12-27');
+    const overrides = [
+      ...['2026-12-23', '2026-12-24', '2026-12-25'].map((dateKey) => ({
+        ratePlanCode: plan.code,
+        ratePlanVersion: 2,
+        entityType: 'cabin',
+        accommodationKey: 'lux-cabin',
+        dateKey,
+        baseNightlyAmountCents: 15500
+      })),
+      {
+        ratePlanCode: plan.code,
+        ratePlanVersion: 1,
+        entityType: 'cabin',
+        accommodationKey: 'lux-cabin',
+        dateKey: '2026-12-24',
+        baseNightlyAmountCents: 99900
+      },
+      {
+        ratePlanCode: plan.code,
+        ratePlanVersion: 2,
+        entityType: 'cabin',
+        accommodationKey: 'a-frame',
+        dateKey: '2026-12-24',
+        baseNightlyAmountCents: 99900
+      },
+      {
+        ratePlanCode: plan.code,
+        ratePlanVersion: 2,
+        entityType: 'cabin',
+        accommodationKey: 'lux-cabin',
+        dateKey: '2026-12-27',
+        baseNightlyAmountCents: 99900
+      }
+    ];
+    const publicLoaderCalls = [];
+    const priced = await pricePublicStayLodging({
+      entity,
+      checkInDate,
+      checkOutDate,
+      adults: 2,
+      children: 0,
+      loadActiveSeasonalRatePlans: loader([plan]),
+      loadNightlyRateOverrides: overrideLoader(overrides, publicLoaderCalls)
+    });
+    const quote = await buildQuoteForResolvedEntity(
+      { entity, checkIn, checkOut, checkInDate, checkOutDate, adults: 2, children: 0 },
+      {
+        loadActiveSeasonalRatePlans: loader([plan]),
+        loadNightlyRateOverrides: overrideLoader(overrides)
+      }
+    );
+
+    assert.equal(priced.ok, true);
+    assert.equal(priced.totalPrice, 575);
+    assert.equal(quote.ok, true);
+    assert.equal(quote.totalPrice, priced.totalPrice);
+    assert.equal(priced.lodgingSubtotalBeforePromo, 575);
+    assert.deepEqual(publicLoaderCalls[0], {
+      ratePlanCode: plan.code,
+      ratePlanVersion: 2,
+      entityType: 'cabin',
+      accommodationKey: 'lux-cabin',
+      checkIn: checkInDate,
+      checkOut: checkOutDate
+    });
+    assert.equal(priced.totalPrice, 155 + 155 + 155 + 110);
+  });
+
+  it('2c. Christmas search totals are authoritative for every accommodation', async () => {
+    const plans = [{
+      ...seasonalPlan({
+        code: 'winter-cabin-stay-2026-27',
+        version: 2,
+        accommodations: [
+          { accommodationKey: 'a-frame', entityType: 'cabinType', pricingMethod: 'nightly_per_unit', nightlyPerUnitAmount: 75 },
+          { accommodationKey: 'lux-cabin', entityType: 'cabin', pricingMethod: 'nightly_per_unit', nightlyPerUnitAmount: 110 },
+          { accommodationKey: 'stone-house', entityType: 'cabin', pricingMethod: 'nightly_per_unit', nightlyPerUnitAmount: 90 }
+        ]
+      })
+    }];
+    const stayDates = stay('2026-12-23', '2026-12-27');
+    const prices = {
+      'a-frame': 11000,
+      'lux-cabin': 15500,
+      'stone-house': 13000
+    };
+    const entities = [
+      ['a-frame', 'cabinType'],
+      ['lux-cabin', 'cabin'],
+      ['stone-house', 'cabin']
+    ];
+    for (const [accommodationKey, entityType] of entities) {
+      const priced = await pricePublicStayLodging({
+        entity: { slug: accommodationKey },
+        entityType,
+        ...stayDates,
+        adults: 2,
+        loadActiveSeasonalRatePlans: loader(plans),
+        loadNightlyRateOverrides: async (query) =>
+          Array.from({ length: 4 }, (_, index) => ({
+            ratePlanCode: query.ratePlanCode,
+            ratePlanVersion: query.ratePlanVersion,
+            entityType,
+            accommodationKey,
+            dateKey: `2026-12-${String(23 + index).padStart(2, '0')}`,
+            baseNightlyAmountCents: prices[accommodationKey]
+          }))
+      });
+      assert.equal(priced.ok, true);
+      assert.equal(priced.totalPrice, prices[accommodationKey] * 4 / 100);
+    }
   });
 
   it('3. draft and retired plans are ignored', async () => {

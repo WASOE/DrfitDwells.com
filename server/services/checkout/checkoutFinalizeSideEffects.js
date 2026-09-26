@@ -57,6 +57,16 @@ async function resolveAlertsForBooking({ booking, session }) {
   if (!booking?._id) {
     return { attempted: false, resolvedCount: 0, reason: 'missing_booking' };
   }
+  if (
+    session?.legacyPaidRecovery?.legalConsentEvidenceStatus ===
+    'missing_due_to_checkout_incident'
+  ) {
+    return {
+      attempted: false,
+      resolvedCount: 0,
+      reason: 'legacy_recovery_requires_post_verification_resolution'
+    };
+  }
   const paymentIntentId =
     booking.stripePaymentIntentId ||
     session?.canonicalPaymentIntentId ||

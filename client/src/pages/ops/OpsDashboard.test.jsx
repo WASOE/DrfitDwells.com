@@ -178,8 +178,8 @@ function ReservationStub() {
   return <div data-testid="reservation-detail">{id}</div>;
 }
 
-function renderPage(session = adminSession) {
-  return render(
+function renderPage(session = adminSession, { openSections = ['Critical alerts', 'Stay/business pulse'] } = {}) {
+  const rendered = render(
     <div className="ops-root" data-ops-appearance="light" data-ops-themed="true">
       <MemoryRouter initialEntries={['/ops']}>
         <OpsSessionProvider session={session}>
@@ -197,6 +197,15 @@ function renderPage(session = adminSession) {
       </MemoryRouter>
     </div>
   );
+  if (openSections.length > 0) {
+    void waitFor(() => {
+      openSections.forEach((title) => {
+        const header = screen.getByRole('button', { name: title });
+        if (header.getAttribute('aria-expanded') === 'false') fireEvent.click(header);
+      });
+    });
+  }
+  return rendered;
 }
 
 function metricValue(label, root = document) {
@@ -327,6 +336,51 @@ describe('OpsDashboard home migration', () => {
     expect(document.querySelector('.ops-banner--warning')).toBeNull();
   });
 
+  it('uses the requested disclosure defaults and toggles sections independently', async () => {
+    opsReadAPI.dashboard.mockResolvedValue(
+      payload(
+        dashboard({
+          alerts: [alertItem({ title: 'Critical test alert' })],
+          today: {
+            arriving: { total: 1, rows: [reservationRow({ guestName: 'Today test guest' })] }
+          },
+          pulse: { bookingsMTD: 7 }
+        })
+      )
+    );
+    renderPage(adminSession, { openSections: [] });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Today operations' })).toBeInTheDocument();
+    });
+
+    const alertsHeader = screen.getByRole('button', { name: 'Critical alerts' });
+    const todayHeader = screen.getByRole('button', { name: 'Today operations' });
+    const pulseHeader = screen.getByRole('button', { name: 'Stay/business pulse' });
+
+    expect(alertsHeader).toHaveAttribute('aria-expanded', 'false');
+    expect(pulseHeader).toHaveAttribute('aria-expanded', 'false');
+    expect(todayHeader).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.queryByText('Critical test alert')).not.toBeInTheDocument();
+    expect(screen.queryByText('Bookings MTD')).not.toBeInTheDocument();
+    expect(screen.getByText('Today test guest')).toBeInTheDocument();
+    expect(alertsHeader.querySelector('svg')).toHaveClass('ops-dashboard-disclosure-chevron');
+
+    fireEvent.click(alertsHeader);
+    fireEvent.click(pulseHeader);
+    expect(alertsHeader).toHaveAttribute('aria-expanded', 'true');
+    expect(pulseHeader).toHaveAttribute('aria-expanded', 'true');
+    expect(todayHeader).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Critical test alert')).toBeInTheDocument();
+    expect(screen.getByText('Bookings MTD')).toBeInTheDocument();
+
+    fireEvent.click(todayHeader);
+    expect(todayHeader).toHaveAttribute('aria-expanded', 'false');
+    expect(alertsHeader).toHaveAttribute('aria-expanded', 'true');
+    expect(pulseHeader).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.queryByText('Today test guest')).not.toBeInTheDocument();
+  });
+
   it('keeps the header mounted and shows OpsLoadingState while the dashboard read is pending', () => {
     opsReadAPI.dashboard.mockImplementation(() => new Promise(() => {}));
     renderPage();
@@ -453,6 +507,8 @@ describe('OpsDashboard home migration', () => {
     await waitFor(() => {
       expect(screen.queryByText('Guest message automation failed')).not.toBeInTheDocument();
     });
+    const alertsHeader = screen.getByRole('button', { name: 'Critical alerts' });
+    if (alertsHeader.getAttribute('aria-expanded') === 'false') fireEvent.click(alertsHeader);
     expect(screen.getByText('No critical alerts.')).toBeInTheDocument();
   });
 

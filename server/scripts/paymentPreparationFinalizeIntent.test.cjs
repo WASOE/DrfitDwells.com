@@ -13,6 +13,7 @@ const path = require('path');
 
 const CheckoutSession = require('../models/CheckoutSession');
 const Booking = require('../models/Booking');
+const Payment = require('../models/Payment');
 const {
   LEGAL_ACCEPTANCE_TERMS_VERSION,
   LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
@@ -25,7 +26,8 @@ const {
   sessionHasCompleteFinalizeIntent,
   normalizeOptionalAccommodationConsents,
   ensureFinalizeIntentForPaymentPreparation,
-  persistFinalizeIntent
+  persistFinalizeIntent,
+  persistPaidCheckoutRecoveryFinalizeIntent
 } = require('../services/checkout/finalizeIntentService');
 const {
   ensureCanonicalPaymentIntent
@@ -36,6 +38,7 @@ let mongoServer;
 let createdPiIds = [];
 let chargeCalls = [];
 let refundCalls = [];
+let paymentIntentUpdates = [];
 
 const ORIG = {
   PERSIST: process.env.FINALIZE_INTENT_PERSIST,
@@ -199,6 +202,7 @@ test.before(async () => {
   await mongoose.connect(mongoServer.getUri(), { serverSelectionTimeoutMS: 10000 });
   await CheckoutSession.syncIndexes();
   await Booking.syncIndexes();
+  await Payment.syncIndexes();
 });
 
 test.after(async () => {
@@ -213,8 +217,10 @@ test.beforeEach(async () => {
   createdPiIds = [];
   chargeCalls = [];
   refundCalls = [];
+  paymentIntentUpdates = [];
   await CheckoutSession.deleteMany({});
   await Booking.deleteMany({});
+  await Payment.deleteMany({});
 });
 
 test('legal acceptance text drift guard: client and server constants match', () => {

@@ -274,6 +274,15 @@ const bookingSchema = new mongoose.Schema({
       trim: true
     }
   },
+  legalConsentEvidenceStatus: {
+    type: String,
+    enum: ['recorded', 'missing_due_to_checkout_incident'],
+    default: null
+  },
+  legalConsentEvidenceAudit: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
   totalPrice: {
     type: Number,
     required: true,
@@ -736,7 +745,8 @@ const bookingSchema = new mongoose.Schema({
         packageInclusions: { type: mongoose.Schema.Types.Mixed, default: null },
         participants: { type: mongoose.Schema.Types.Mixed, default: null },
         facilitySelections: { type: mongoose.Schema.Types.Mixed, default: null },
-        cancellationPolicy: { type: mongoose.Schema.Types.Mixed, default: null }
+        cancellationPolicy: { type: mongoose.Schema.Types.Mixed, default: null },
+        nightlyPricing: { type: mongoose.Schema.Types.Mixed, default: null }
       },
       { _id: false }
     ),

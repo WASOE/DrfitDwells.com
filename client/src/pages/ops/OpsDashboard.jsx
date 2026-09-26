@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CircleAlert } from 'lucide-react';
+import { ChevronRight, CircleAlert } from 'lucide-react';
 import { opsReadAPI } from '../../services/opsApi';
 import { formatMoneyFromCents } from '../../utils/formatMoney';
 import ManualReviewResolveAction from '../../components/ops/ManualReviewResolveAction';
@@ -328,13 +328,40 @@ function QuickLinks({ canCreate }) {
   );
 }
 
+function DashboardDisclosure({ title, defaultOpen, className, testId, contentId, children }) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <OpsSurface className={className} data-testid={testId}>
+      <OpsSurfaceHeader
+        as="button"
+        type="button"
+        className={`ops-dashboard-disclosure-header${open ? ' ops-dashboard-disclosure-header--open' : ''}`}
+        aria-expanded={open}
+        aria-controls={contentId}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <OpsSurfaceTitle className="ops-dashboard-surface__title">{title}</OpsSurfaceTitle>
+        <ChevronRight className="ops-dashboard-disclosure-chevron" aria-hidden="true" focusable="false" />
+      </OpsSurfaceHeader>
+      {open ? (
+        <div id={contentId} className="ops-dashboard-disclosure-content">
+          {children}
+        </div>
+      ) : null}
+    </OpsSurface>
+  );
+}
+
 function StayPulse({ pulse }) {
   return (
-    <OpsSurface
+    <DashboardDisclosure
       className="ops-dashboard-surface ops-dashboard-surface--pulse ops-dashboard-surface--stay"
-      data-testid="ops-dashboard-pulse-stay"
+      testId="ops-dashboard-pulse-stay"
+      title="Stay/business pulse"
+      defaultOpen={false}
+      contentId="ops-dashboard-pulse-stay-content"
     >
-      <OpsSurfaceTitle className="ops-dashboard-surface__title">Stay/business pulse</OpsSurfaceTitle>
       <OpsMetricGroup className="ops-dashboard-metric-group ops-metric-group--display">
         <OpsMetric
           label="Bookings MTD"
@@ -367,7 +394,7 @@ function StayPulse({ pulse }) {
           className="ops-dashboard-business-metric ops-dashboard-business-metric--refunds"
         />
       </OpsMetricGroup>
-    </OpsSurface>
+    </DashboardDisclosure>
   );
 }
 
@@ -462,13 +489,15 @@ export default function OpsDashboard() {
         <p className="ops-dashboard-missing">No dashboard data.</p>
       ) : (
         <div className="ops-dashboard-main">
-          <OpsSurface
+          <DashboardDisclosure
             className={`ops-dashboard-surface ops-dashboard-surface--alerts${
               criticalAlerts.length === 0 ? ' ops-dashboard-surface--alerts-empty' : ''
             }`}
-            data-testid="ops-dashboard-alerts"
+            testId="ops-dashboard-alerts"
+            title="Critical alerts"
+            defaultOpen={false}
+            contentId="ops-dashboard-alerts-content"
           >
-            <OpsSurfaceTitle className="ops-dashboard-surface__title">Critical alerts</OpsSurfaceTitle>
             {criticalAlerts.length === 0 ? (
               <p className="ops-dashboard-empty">No critical alerts.</p>
             ) : (
@@ -478,10 +507,15 @@ export default function OpsDashboard() {
                 ))}
               </div>
             )}
-          </OpsSurface>
+          </DashboardDisclosure>
 
-          <OpsSurface className="ops-dashboard-surface ops-dashboard-surface--today" data-testid="ops-dashboard-today">
-            <OpsSurfaceTitle className="ops-dashboard-surface__title">Today operations</OpsSurfaceTitle>
+          <DashboardDisclosure
+            className="ops-dashboard-surface ops-dashboard-surface--today"
+            testId="ops-dashboard-today"
+            title="Today operations"
+            defaultOpen
+            contentId="ops-dashboard-today-content"
+          >
             <div className="ops-dashboard-lanes">
               <Lane
                 title="Arriving today"
@@ -505,7 +539,7 @@ export default function OpsDashboard() {
                 testId="ops-dashboard-lane-leaving"
               />
             </div>
-          </OpsSurface>
+          </DashboardDisclosure>
 
           <OpsSurface className="ops-dashboard-surface ops-dashboard-surface--upcoming" data-testid="ops-dashboard-upcoming">
             <OpsSurfaceHeader className="ops-dashboard-surface__head">

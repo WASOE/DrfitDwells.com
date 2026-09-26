@@ -95,6 +95,11 @@ export const bookingAPI = {
       `/bookings/checkout-sessions/${encodeURIComponent(String(checkoutId ?? '').trim())}/finalize-intent`,
       data
     ),
+  submitPaidCheckoutRecoveryConsent: (checkoutId, data) =>
+    api.post(
+      `/bookings/checkout-sessions/${encodeURIComponent(String(checkoutId ?? '').trim())}/paid-recovery-consent`,
+      data
+    ),
   setPaymentChoice: (checkoutId, data) =>
     api.put(
       `/bookings/checkout-sessions/${encodeURIComponent(String(checkoutId ?? '').trim())}/payment-choice`,
@@ -163,6 +168,12 @@ export const ratePlanAdminAPI = {
   clone: (id) => api.post(`/admin/rate-plans/${id}/clone`, {}),
   activate: (id, data) => api.post(`/admin/rate-plans/${id}/activate`, data),
   retire: (id, data) => api.post(`/admin/rate-plans/${id}/retire`, data)
+};
+
+export const pricingOverridesAPI = {
+  calendar: (params) => api.get('/ops/pricing-overrides', { params }),
+  saveRange: (data) => api.put('/ops/pricing-overrides/range', data),
+  clearRange: (data) => api.delete('/ops/pricing-overrides/range', { data })
 };
 
 /** SP7 PaymentTermTemplate management API. */
