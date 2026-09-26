@@ -90,6 +90,7 @@ const MaintenanceArchived = lazy(() => import('./pages/maintenance/MaintenanceAr
 const CraftEmbedded = lazy(() => import('./pages/embedded/CraftEmbedded'))
 
 const ConfirmBooking = lazy(() => import('./pages/ConfirmBooking'))
+const PaidCheckoutConsentRecovery = lazy(() => import('./pages/PaidCheckoutConsentRecovery'))
 const BookingRefundResolution = lazy(() => import('./pages/BookingRefundResolution'))
 const GiftVouchers = lazy(() => import('./pages/GiftVouchers'))
 const GiftVoucherSuccess = lazy(() => import('./pages/GiftVoucherSuccess'))
@@ -167,6 +168,10 @@ function App() {
               <Route path="/press" element={<Press />} />
               <Route path="/stays/:slug/confirm" element={<ConfirmBooking />} />
               <Route path="/bg/stays/:slug/confirm" element={<ConfirmBooking />} />
+              <Route
+                path="/booking-recovery/consent/:checkoutId"
+                element={<PaidCheckoutConsentRecovery />}
+              />
               <Route path="/booking-refund" element={<BookingRefundResolution />} />
               <Route path="/bg/booking-refund" element={<BookingRefundResolution />} />
               <Route path="/gift-vouchers" element={<GiftVouchers />} />

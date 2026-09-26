@@ -95,6 +95,11 @@ export const bookingAPI = {
       `/bookings/checkout-sessions/${encodeURIComponent(String(checkoutId ?? '').trim())}/finalize-intent`,
       data
     ),
+  submitPaidCheckoutRecoveryConsent: (checkoutId, data) =>
+    api.post(
+      `/bookings/checkout-sessions/${encodeURIComponent(String(checkoutId ?? '').trim())}/paid-recovery-consent`,
+      data
+    ),
   setPaymentChoice: (checkoutId, data) =>
     api.put(
       `/bookings/checkout-sessions/${encodeURIComponent(String(checkoutId ?? '').trim())}/payment-choice`,
