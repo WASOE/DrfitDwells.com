@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { loadStripe } from '@stripe/stripe-js';
+import { getStripePromise } from '../../../lib/stripeClient';
 import { Elements } from '@stripe/react-stripe-js';
 import { Minus, Plus } from 'lucide-react';
 import GuestSelect from '../../../components/GuestSelect';
@@ -12,8 +12,7 @@ import { formatDateOnlyLocal } from '../../../utils/dateOnly';
 import '../../../i18n/ns/booking';
 import '../../../i18n/ns/valley';
 
-const stripePk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
-const stripePromise = stripePk ? loadStripe(stripePk) : null;
+const stripePromise = getStripePromise();
 
 function quoteMatchesContextDates(quote, checkIn, checkOut) {
   if (!quote?.checkIn || !quote?.checkOut || !checkIn || !checkOut) return false;

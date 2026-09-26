@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
 import { X } from 'lucide-react';
-import { loadStripe } from '@stripe/stripe-js';
+import { getStripePromise } from '../lib/stripeClient';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { cabinAPI, cabinTypeAPI, bookingAPI } from '../services/api';
 import { CONFIRM_BOOKING_SIMPLE_KEY } from '../hooks/useBookingNavigation';
@@ -57,13 +57,33 @@ import {
   writeCheckoutSessionV2Storage
 } from '../utils/checkoutSessionV2Storage';
 
-const stripePk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
-const stripePromise = stripePk ? loadStripe(stripePk) : null;
 const CHECKOUT_SESSION_KEY = 'confirm-booking-checkout-session';
 const checkoutSessionV2Enabled = isCheckoutSessionV2Enabled();
 const checkoutRecoveryUxEnabled = isCheckoutRecoveryUxEnabled();
 const finalizeIntentPersistEnabled = isFinalizeIntentPersistEnabled();
 const finalizeIntentRequiredForPiEnabled = isFinalizeIntentRequiredForPiEnabled();
+
+export function resolveBookingPaymentState({
+  recovering,
+  skipCardPaymentUi,
+  stripeEnabled,
+  stripeAvailable,
+  appliedVoucherCode,
+  clientSecret,
+  checkoutInitLoading
+}) {
+  if (recovering) return 'recovering';
+  if (skipCardPaymentUi) return 'no-card-required';
+  if (stripeEnabled === null) return 'checking-capability';
+  if (stripeEnabled === 'error') return 'unavailable';
+  if (stripeEnabled === false) {
+    if (clientSecret) return 'unavailable';
+    return appliedVoucherCode ? 'awaiting-initiation' : 'pay-on-arrival';
+  }
+  if (stripeEnabled !== true || !stripeAvailable) return 'unavailable';
+  if (clientSecret) return 'collecting-payment';
+  return checkoutInitLoading ? 'preparing' : 'awaiting-initiation';
+}
 
 /**
  * RP6A Correction 2/3 — concise checkout consent (links only; no detailed schedule).
@@ -970,6 +990,7 @@ export function SplitPaymentChoiceOptions({
 }
 
 const ConfirmBooking = () => {
+  const stripePromise = getStripePromise();
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -1070,7 +1091,21 @@ const ConfirmBooking = () => {
   const [priceModalOpen, setPriceModalOpen] = useState(false);
   const [clientSecret, setClientSecret] = useState(null);
   const [stripeError, setStripeError] = useState(null);
-  const [stripeEnabled, setStripeEnabled] = useState(false);
+  const [stripeClientError, setStripeClientError] = useState(false);
+  const [stripeEnabled, setStripeEnabled] = useState(null);
+  useEffect(() => {
+    if (!stripePromise) return;
+    let active = true;
+    setStripeClientError(false);
+    Promise.resolve(stripePromise).then(
+      (client) => { if (active && !client) setStripeClientError(true); },
+      (error) => {
+        console.error('Stripe client initialization failed:', error);
+        if (active) setStripeClientError(true);
+      }
+    );
+    return () => { active = false; };
+  }, [stripePromise]);
 
   const [serverQuote, setServerQuote] = useState(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
@@ -1419,11 +1454,13 @@ const ConfirmBooking = () => {
   useEffect(() => {
     bookingAPI.getConfig()
       .then((res) => {
-        if (res.data?.success && res.data?.data?.stripeEnabled === true) {
-          setStripeEnabled(true);
+        if (res.data?.success && typeof res.data?.data?.stripeEnabled === 'boolean') {
+          setStripeEnabled(res.data.data.stripeEnabled);
+        } else {
+          setStripeEnabled('error');
         }
       })
-      .catch(() => { /* keep stripeEnabled false */ });
+      .catch(() => setStripeEnabled('error'));
   }, []);
 
   // Sync URL when we have dates but URL lacks them (e.g. after restore from sessionStorage)
@@ -2183,7 +2220,7 @@ const ConfirmBooking = () => {
     networkError: recoveryNetworkError
   } = useCheckoutRecoveryPolling({
     checkoutId,
-    enabled: checkoutRecoveryUxEnabled && recoveryActive && Boolean(checkoutId),
+    enabled: checkoutRecoveryUxEnabled && (recoveryActive || paymentMayHaveSucceeded) && Boolean(checkoutId),
     onConfirmed: handleRecoveryConfirmed,
     onNeedsReview: handleRecoveryNeedsReview,
     onPaymentFailed: handleRecoveryPaymentFailed
@@ -2199,6 +2236,7 @@ const ConfirmBooking = () => {
     recoveryActive,
     paymentMayHaveSucceeded
   });
+  const recoveryVisible = checkoutRecoveryUxEnabled && hidePaymentControls;
 
   useEffect(() => {
     if (!checkoutRecoveryUxEnabled || !checkoutId) return;
@@ -2617,9 +2655,16 @@ const ConfirmBooking = () => {
     shouldBlockCardPaymentPrecheck(serverQuote, { noPaymentRequired, fullVoucherCoverage });
 
   const skipCardPaymentUi = fullVoucherCoverage || (checkoutSessionV2Enabled && noPaymentRequired);
-  const showContinueToPayment =
-    (stripeEnabled || appliedVoucherCode) && !skipCardPaymentUi && !clientSecret;
-  const showPaymentElement = stripePromise && clientSecret && !skipCardPaymentUi;
+  const paymentState = resolveBookingPaymentState({
+    recovering: recoveryVisible,
+    skipCardPaymentUi,
+    stripeEnabled,
+    stripeAvailable: Boolean(stripePromise) && !stripeClientError,
+    appliedVoucherCode,
+    clientSecret,
+    checkoutInitLoading
+  });
+  const showPaymentElement = Boolean(stripePromise && clientSecret && !skipCardPaymentUi);
 
   const v2PaymentElementKey = useMemo(() => {
     if (!checkoutSessionV2Enabled || !showPaymentElement) {
@@ -3037,7 +3082,11 @@ const ConfirmBooking = () => {
               onConsentChange={setFutureChargeConsentAccepted}
             />
           ) : null}
-          {showContinueToPayment ? (
+          {(() => {
+            switch (paymentState) {
+              case 'awaiting-initiation':
+              case 'preparing':
+                return (
             <>
               <button
                 type="button"
@@ -3057,9 +3106,10 @@ const ConfirmBooking = () => {
                 </div>
               ) : null}
             </>
-          ) : null}
+                );
 
-          {checkoutRecoveryUxEnabled && recoveryActive ? (
+              case 'recovering':
+                return (
             <div className="mb-6">
               <CheckoutRecoveryPanel
                 phase={recoveryPanelPhase === 'confirmed' ? 'finalizing' : recoveryPanelPhase}
@@ -3093,9 +3143,10 @@ const ConfirmBooking = () => {
                 </p>
               ) : null}
             </div>
-          ) : null}
+                );
 
-          {showPaymentElement && !hidePaymentControls ? (
+              case 'collecting-payment':
+                return (
 
             <>
               <p className="text-sm text-gray-600 mb-4">
@@ -3135,9 +3186,10 @@ const ConfirmBooking = () => {
                 <p className="mt-2 text-sm text-red-600">{stripeError}</p>
               )}
             </>
-          ) : null}
+                );
 
-          {skipCardPaymentUi && !hidePaymentControls ? (
+              case 'no-card-required':
+                return (
             <>
               <p className="text-sm text-gray-600 mb-4">
                 {voucherAppliedCents > 0
@@ -3164,9 +3216,10 @@ const ConfirmBooking = () => {
                 </div>
               ) : null}
             </>
-          ) : null}
+                );
 
-          {!stripeEnabled && !hidePaymentControls ? (
+              case 'pay-on-arrival':
+                return (
             <>
               <p className="text-sm text-gray-600 mb-4">
                 {t('confirm.payOnArrivalNote')}
@@ -3193,8 +3246,24 @@ const ConfirmBooking = () => {
                 </div>
               ) : null}
             </>
-          ) : null}
-          {checkoutInitError ? (
+                );
+              case 'checking-capability':
+                return <p role="status" className="text-sm text-gray-600">Checking payment availability…</p>;
+              case 'unavailable':
+                return (
+                  <div role="alert" className="space-y-3 text-sm text-red-700">
+                    <p>Secure card payment is temporarily unavailable. Please refresh the page or contact support before trying again. Do not submit another booking.</p>
+                    <button type="button" onClick={() => window.location.reload()} className="text-sm font-semibold text-[#81887A] underline">
+                      Refresh checkout
+                    </button>
+                  </div>
+                );
+              default:
+                console.error('Unknown booking payment state:', paymentState);
+                return <p role="alert" className="text-sm text-red-700">Payment is unavailable. Please refresh the page or contact support.</p>;
+            }
+          })()}
+          {checkoutInitError && ['awaiting-initiation', 'preparing', 'collecting-payment'].includes(paymentState) ? (
             <div className="mt-3 space-y-2">
               <p className="text-sm text-red-600">{checkoutInitError}</p>
               <button

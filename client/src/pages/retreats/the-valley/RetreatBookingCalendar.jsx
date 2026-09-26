@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
-import { loadStripe } from '@stripe/stripe-js';
+import { getStripePromise } from '../../../lib/stripeClient';
 import { Elements } from '@stripe/react-stripe-js';
 import { Minus, Plus, X } from 'lucide-react';
 import LocationPaymentForm from './LocationPaymentForm';
@@ -75,8 +75,7 @@ const DayPicker = lazy(() =>
   })
 );
 
-const stripePk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
-const stripePromise = stripePk ? loadStripe(stripePk) : null;
+const stripePromise = getStripePromise();
 
 function formatEuroAmount(value) {
   const amount = Number(value);

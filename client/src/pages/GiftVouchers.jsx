@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { loadStripe } from '@stripe/stripe-js';
+import { getStripePromise } from '../lib/stripeClient';
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
 import Seo from '../components/Seo';
 import GiftVoucherCardPreview from '../components/giftVoucher/GiftVoucherCardPreview';
@@ -20,12 +20,10 @@ import {
 } from '../components/giftVoucher/giftVoucherBuilderState';
 import { giftVoucherAPI } from '../services/api';
 import { getAttributionPayload } from '../tracking/attribution';
-import { useSiteLanguage } from '../hooks/useSiteLanguage';
 import { getLanguageFromPath } from '../utils/localizedRoutes';
 import '../i18n/ns/giftVoucher';
 
-const stripePk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
-const stripePromise = stripePk ? loadStripe(stripePk) : null;
+const stripePromise = getStripePromise();
 
 const VALIDATION_I18N_KEYS = {
   WHOLE_AMOUNT: 'errors.wholeAmount',
@@ -111,9 +109,7 @@ function AmountCard({ cents, selected, onClick }) {
 
 export default function GiftVouchers() {
   const { t } = useTranslation('giftVoucher');
-  const { language } = useSiteLanguage();
   const location = useLocation();
-  const isBg = language === 'bg';
   const routeLanguage = getLanguageFromPath(location.pathname);
 
   const [builder, setBuilder] = useState(() => createInitialBuilderState(routeLanguage));

@@ -13,6 +13,13 @@ Repository-backed operational assets for the **main booking portal** (`driftdwel
 | MongoDB env keys | `MONGODB_URI` (primary), `MONGO_URI` (fallback) |
 | Backup root | `/home/illoc/backups/driftdwells/` |
 
+The client build (`cd client && npm run build`) requires
+`VITE_STRIPE_PUBLISHABLE_KEY` at build time in `pk_live_...` or `pk_test_...`
+format. Supply the appropriate publishable key in the build environment; a
+server-only Stripe configuration cannot populate an already-built client.
+The build rejects missing or malformed keys before generating assets. Local
+development and tests do not require this variable.
+
 ## Directory layout
 
 ```
