@@ -262,6 +262,56 @@ test('1-4. valid guest+legal persists finalize intent, hash matches, PI after pe
   assert.equal(await Booking.countDocuments({}), 0);
 });
 
+test('payable PI preparation persists a valid finalize intent even when rollout flags are off', async () => {
+  setFlags({ persist: '0', required: '0' });
+  const session = await seedSession();
+  const body = guestLegalBody();
+  const stripe = makeStripe();
+  const create = stripe.paymentIntents.create;
+  stripe.paymentIntents.create = async (args) => {
+    const persisted = await CheckoutSession.findOne({ checkoutId: session.checkoutId }).lean();
+    assert.ok(sessionHasCompleteFinalizeIntent(persisted));
+    assert.equal(persisted.finalizeIntent.guestInfo.email, body.guestInfo.email);
+    return create(args);
+  };
+
+  const dto = await ensureCanonicalPaymentIntent({
+    checkoutId: session.checkoutId,
+    input: inputFromSession(session, body),
+    quote: quoteFromSession(session),
+    stripe
+  });
+
+  const persisted = await CheckoutSession.findOne({ checkoutId: session.checkoutId }).lean();
+  assert.ok(dto.clientSecret);
+  assert.ok(sessionHasCompleteFinalizeIntent(persisted));
+  assert.equal(createdPiIds.length, 1);
+});
+
+test('payment preparation fails closed when finalize intent persistence fails', async () => {
+  setFlags({ persist: '0', required: '0' });
+  const session = await seedSession();
+  const originalFindOneAndUpdate = CheckoutSession.findOneAndUpdate;
+  CheckoutSession.findOneAndUpdate = async () => null;
+
+  try {
+    await assert.rejects(
+      ensureCanonicalPaymentIntent({
+        checkoutId: session.checkoutId,
+        input: inputFromSession(session, guestLegalBody()),
+        quote: quoteFromSession(session),
+        stripe: makeStripe()
+      }),
+      (err) =>
+        err.code === 'FINALIZE_INTENT_SESSION_VERSION_CONFLICT' ||
+        err.code === 'FINALIZE_INTENT_PERSIST_DISABLED'
+    );
+    assert.equal(createdPiIds.length, 0);
+  } finally {
+    CheckoutSession.findOneAndUpdate = originalFindOneAndUpdate;
+  }
+});
+
 test('5-10. missing guest/legal fields reject before PI', async () => {
   const cases = [
     { name: 'firstName', body: guestLegalBody({ guestInfo: { ...guestLegalBody().guestInfo, firstName: '' } }) },

@@ -31,6 +31,12 @@ const {
   buildFutureChargeConsentContract,
   buildFutureChargeConsentDisplayedText
 } = require('../services/splitPaymentChoiceService');
+const {
+  LEGAL_ACCEPTANCE_TERMS_VERSION,
+  LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+  LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
+  LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT
+} = require('../config/legalAcceptance');
 
 let mongoServer;
 
@@ -176,6 +182,21 @@ function baseInput(overrides = {}) {
     promoCode: '',
     voucherCode: '',
     guestEmail: 'guest@example.com',
+    guestInfo: {
+      firstName: 'Test',
+      lastName: 'Guest',
+      email: 'guest@example.com',
+      phone: '+359888000111'
+    },
+    legalAcceptance: {
+      acceptedTermsAndCancellation: true,
+      acceptedActivityRisk: true,
+      termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
+      activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+      checkbox1TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
+      checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
+      locale: 'en'
+    },
     ...overrides
   };
 }
