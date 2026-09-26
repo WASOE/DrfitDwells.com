@@ -1702,7 +1702,7 @@ const ConfirmBooking = () => {
 
   const initializeCheckoutPayment = useCallback(async () => {
     if (!bookingEntityId || !checkIn || !checkOut || !serverQuote) return;
-    if (finalizeIntentRequiredForPiEnabled && checkoutSessionV2Enabled) {
+    if (checkoutSessionV2Enabled) {
       const guestOk =
         !!formData.firstName?.trim() &&
         !!formData.lastName?.trim() &&

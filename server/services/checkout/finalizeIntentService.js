@@ -437,7 +437,7 @@ function normalizeOptionalAccommodationConsents(body = {}) {
 }
 
 function assertFinalizeIntentAvailableForPi(session) {
-  if (!isFinalizeIntentRequiredForPiEnabled()) {
+  if (session?.flowVersion !== 'v2') {
     return { ok: true, required: false };
   }
   if (!sessionHasCompleteFinalizeIntent(session)) {
@@ -468,8 +468,16 @@ async function ensureFinalizeIntentForPaymentPreparation({
   expectedSessionVersion = null,
   stripe = null
 } = {}) {
-  const required = isFinalizeIntentRequiredForPiEnabled();
-  const persistEnabled = isFinalizeIntentPersistEnabled();
+  const paymentRequired =
+    session?.flowVersion === 'v2' &&
+    Number(session?.stripeAmountCents || 0) > 0 &&
+    !['voucher_only_reserved', 'payment_not_required'].includes(String(session?.status || ''));
+  if (!paymentRequired) {
+    return { session, reused: false, persisted: false, skipped: true };
+  }
+
+  // Payment preparation always requires this evidence; rollout flags may only
+  // control the standalone persistence endpoint, never whether a PI is payable.
   const hasPayload = paymentRequestHasFinalizeIntentPayload(body);
 
   if (sessionHasCompleteFinalizeIntent(session)) {
@@ -502,29 +510,14 @@ async function ensureFinalizeIntentForPaymentPreparation({
     };
   }
 
-  if (!required && !persistEnabled) {
-    return { session, reused: false, persisted: false, skipped: true };
-  }
-
   if (!hasPayload) {
-    if (required) {
-      throw new CheckoutSessionError(
-        CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_REQUIRED,
-        'finalizeIntent is required before creating a payable PaymentIntent',
-        {
-          checkoutId: session?.checkoutId || null,
-          sessionVersion: session?.sessionVersion ?? null
-        }
-      );
-    }
-    return { session, reused: false, persisted: false, skipped: true };
-  }
-
-  if (!persistEnabled && required) {
-    // Strict PI requirement still needs persistence capability.
     throw new CheckoutSessionError(
-      CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_PERSIST_DISABLED,
-      'Finalize intent persistence is disabled'
+      CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_REQUIRED,
+      'finalizeIntent is required before creating a payable PaymentIntent',
+      {
+        checkoutId: session?.checkoutId || null,
+        sessionVersion: session?.sessionVersion ?? null
+      }
     );
   }
 
@@ -544,7 +537,8 @@ async function ensureFinalizeIntentForPaymentPreparation({
           : expectedSessionVersion != null
             ? expectedSessionVersion
             : body?.expectedSessionVersion ?? body?.sessionVersion ?? null,
-      stripe
+      stripe,
+      allowPaymentPreparation: true
     });
 
   try {
@@ -724,9 +718,10 @@ async function persistFinalizeIntent({
   body,
   requestMeta,
   expectedSessionVersion = null,
-  stripe = null
+  stripe = null,
+  allowPaymentPreparation = false
 }) {
-  if (!isFinalizeIntentPersistEnabled()) {
+  if (!isFinalizeIntentPersistEnabled() && !allowPaymentPreparation) {
     throw new CheckoutSessionError(
       CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_PERSIST_DISABLED,
       'Finalize intent persistence is disabled'
