@@ -124,7 +124,15 @@ const V2_CHECKOUT_RESTART_ERROR_CODES = new Set([
   // kept retrying with the same stale checkoutId/sessionVersion and looped on
   // 409s forever with no working "Continue to secure payment" recovery path.
   'FINALIZE_INTENT_IMMUTABLE',
-  'FINALIZE_INTENT_SESSION_VERSION_CONFLICT'
+  'FINALIZE_INTENT_SESSION_VERSION_CONFLICT',
+  // A checkoutId the client is holding (e.g. restored from localStorage after
+  // the server-side session expired/was purged, or otherwise no longer valid)
+  // can never succeed again with the same identity. Without restarting here,
+  // every subsequent click resubmits the same dead checkoutId and reproduces
+  // the exact same "Continue to secure payment" dead-CTA failure class as
+  // FINALIZE_INTENT_IMMUTABLE/SESSION_VERSION_CONFLICT above.
+  'CHECKOUT_SESSION_NOT_FOUND',
+  'INVALID_CHECKOUT_ID'
 ]);
 
 const V2_CHECKOUT_CLEAR_PAYMENT_KEEP_SESSION_CODES = new Set([

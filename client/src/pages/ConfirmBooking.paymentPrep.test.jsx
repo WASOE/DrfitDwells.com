@@ -120,6 +120,24 @@ describe('ConfirmBooking payment preparation helpers', () => {
     ).toBe(false);
   });
 
+  it('restart-classified stale/invalid checkoutId codes are never auto-retried within a single click (prevents an infinite same-identity retry loop; the outer restart handler mints a fresh checkoutId for the next click instead)', () => {
+    expect(
+      shouldRetryPaymentPreparation({
+        response: { status: 409, data: { code: 'FINALIZE_INTENT_IMMUTABLE' } }
+      })
+    ).toBe(false);
+    expect(
+      shouldRetryPaymentPreparation({
+        response: { status: 404, data: { code: 'CHECKOUT_SESSION_NOT_FOUND' } }
+      })
+    ).toBe(false);
+    expect(
+      shouldRetryPaymentPreparation({
+        response: { status: 400, data: { code: 'INVALID_CHECKOUT_ID' } }
+      })
+    ).toBe(false);
+  });
+
   it('11. adopts checkoutId from safe error details before retry', () => {
     const adopted = adoptCheckoutIdentityFromError(
       {

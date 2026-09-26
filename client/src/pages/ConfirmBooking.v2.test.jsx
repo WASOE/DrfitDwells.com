@@ -323,6 +323,16 @@ describe('ConfirmBooking V2 checkout init error handling', () => {
     expect(getV2CheckoutInitErrorHandling('FINALIZE_INTENT_SESSION_VERSION_CONFLICT').clearAll).toBe(true);
   });
 
+  it('CHECKOUT_SESSION_NOT_FOUND clears the stale checkoutId so a fresh checkout is started (same dead-CTA class as FINALIZE_INTENT_IMMUTABLE: a checkoutId the server no longer recognizes, e.g. restored from localStorage after expiry/purge, can never succeed again unchanged)', () => {
+    expect(classifyV2CheckoutInitError('CHECKOUT_SESSION_NOT_FOUND').kind).toBe('restart');
+    expect(getV2CheckoutInitErrorHandling('CHECKOUT_SESSION_NOT_FOUND').clearAll).toBe(true);
+  });
+
+  it('INVALID_CHECKOUT_ID clears the stale/malformed checkoutId so a fresh checkout is started (same dead-CTA class as FINALIZE_INTENT_IMMUTABLE)', () => {
+    expect(classifyV2CheckoutInitError('INVALID_CHECKOUT_ID').kind).toBe('restart');
+    expect(getV2CheckoutInitErrorHandling('INVALID_CHECKOUT_ID').clearAll).toBe(true);
+  });
+
   it('CHECKOUT_SESSION_CONCURRENCY_CONFLICT keeps checkoutId scope but clears clientSecret', () => {
     const handling = getV2CheckoutInitErrorHandling('CHECKOUT_SESSION_CONCURRENCY_CONFLICT');
     expect(handling.clearAll).toBe(false);
