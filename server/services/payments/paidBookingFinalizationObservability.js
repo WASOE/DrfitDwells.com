@@ -1,6 +1,7 @@
 'use strict';
 
 const PaymentResolutionIssue = require('../../models/PaymentResolutionIssue');
+const ManualReviewItem = require('../../models/ManualReviewItem');
 const Payment = require('../../models/Payment');
 const Booking = require('../../models/Booking');
 const CheckoutSession = require('../../models/CheckoutSession');
@@ -513,6 +514,50 @@ async function recordPaidBookingResolutionIssueSafe(params) {
     );
     return null;
   }
+
+}
+
+async function resolvePaidBookingResolutionIssueSafe({
+    paymentIntentId,
+    checkoutId = null,
+    note = 'Auto-resolved: terminal unpaid payment attempt; no funds captured and no booking required.'
+  } = {}) {
+    const piId = paymentIntentId ? String(paymentIntentId).trim() : '';
+    if (!piId) return null;
+    const now = new Date();
+    const resolutionNote = safeErrorSummary(note);
+    const issue = await PaymentResolutionIssue.findOneAndUpdate(
+      { paymentIntentId: piId, status: 'needs_review' },
+      { $set: { status: 'resolved', resolvedAt: now, resolutionNote } },
+      { new: true }
+    );
+    const manualReview = issue
+      ? await ManualReviewItem.updateMany(
+          {
+            category: 'payment_finalization_failure',
+            status: 'open',
+            entityType: 'PaymentResolutionIssue',
+            entityId: String(issue._id)
+          },
+          {
+            $set: {
+              status: 'resolved',
+              resolution: {
+                resolvedAt: now,
+                resolvedBy: 'system:paid_checkout_reconciler',
+                note: resolutionNote
+              },
+              updatedAt: now,
+              'evidence.autoResolvedCheckoutId': checkoutId ? String(checkoutId) : null
+            }
+          }
+        )
+      : { modifiedCount: 0 };
+    return {
+      issueId: issue?._id ? String(issue._id) : null,
+      issueResolved: Boolean(issue),
+      manualReviewResolvedCount: Number(manualReview.modifiedCount || 0)
+    };
 }
 
 /**
@@ -558,6 +603,7 @@ module.exports = {
   collectRelatedObservabilityContext,
   recordPaidBookingResolutionIssue,
   recordPaidBookingResolutionIssueSafe,
+  resolvePaidBookingResolutionIssueSafe,
   buildPaymentUnlinkedObservabilityEvidence,
   normalizeFinalizationStage
 };

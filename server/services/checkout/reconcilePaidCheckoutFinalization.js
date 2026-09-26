@@ -37,6 +37,7 @@ const { createDefaultDependencies } = require('./executeBookingFinalizeWork');
 const { runCheckoutFinalizeSideEffects } = require('./checkoutFinalizeSideEffects');
 const {
   recordPaidBookingResolutionIssueSafe,
+  resolvePaidBookingResolutionIssueSafe,
   PAID_BOOKING_FINALIZATION_STAGES,
   safeErrorSummary
 } = require('../payments/paidBookingFinalizationObservability');
@@ -60,6 +61,7 @@ const RECONCILE_CLASSIFICATIONS = Object.freeze({
   SUPERSEDED_OR_NONCANONICAL_PI: 'SUPERSEDED_OR_NONCANONICAL_PI',
   VERIFICATION_MISMATCH: 'VERIFICATION_MISMATCH',
   PAYMENT_RECORD_MISSING_OR_NOT_PAID: 'PAYMENT_RECORD_MISSING_OR_NOT_PAID',
+  TERMINAL_UNPAID_PAYMENT: 'TERMINAL_UNPAID_PAYMENT',
   UNMAPPED_SUCCESSFUL_PAYMENT: 'UNMAPPED_SUCCESSFUL_PAYMENT',
   PERMANENT_FINALIZATION_FAILURE: 'PERMANENT_FINALIZATION_FAILURE',
   RETRYABLE_FINALIZATION_FAILURE: 'RETRYABLE_FINALIZATION_FAILURE',
@@ -385,6 +387,21 @@ async function inspectPaidCheckoutSubject({
         repairAction: 'open_manual_review'
       };
     }
+  } else if (
+    payment &&
+    payment.status !== 'paid' &&
+    session &&
+    String(session.paymentStatus || '') !== 'paid' &&
+    (!pi || String(pi.status || '').toLowerCase() !== 'succeeded')
+  ) {
+    return {
+      ...base,
+      classification: RECONCILE_CLASSIFICATIONS.TERMINAL_UNPAID_PAYMENT,
+      reason: `Payment attempt is terminal and uncharged (Payment status=${payment.status}, Stripe status=${pi?.status || 'unknown'})`,
+      failureStage: PAID_BOOKING_FINALIZATION_STAGES.PAYMENT_VERIFIED,
+      safeToMutate: true,
+      repairAction: 'resolve_terminal_payment_issue'
+    };
   } else if (payment && payment.status !== 'paid') {
     return {
       ...base,
@@ -683,6 +700,15 @@ async function executeRepair(inspection, { stripe = null, now = new Date() } = {
 
   if (action === 'open_manual_review') {
     result.details = await openUnsafeReview(inspection);
+    result.mutated = Boolean(result.details);
+    return result;
+  }
+
+  if (action === 'resolve_terminal_payment_issue') {
+    result.details = await resolvePaidBookingResolutionIssueSafe({
+      paymentIntentId: inspection.paymentIntentId,
+      checkoutId: inspection.checkoutId
+    });
     result.mutated = Boolean(result.details);
     return result;
   }

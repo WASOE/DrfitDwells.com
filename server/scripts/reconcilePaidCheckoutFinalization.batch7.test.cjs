@@ -202,6 +202,22 @@ function buildSucceededPi({ session, paymentIntentId }) {
   };
 }
 
+function buildFailedPi({ session, paymentIntentId }) {
+  return {
+    id: paymentIntentId,
+    object: 'payment_intent',
+    status: 'requires_payment_method',
+    amount: session.stripeAmountCents,
+    amount_received: 0,
+    currency: 'eur',
+    metadata: {
+      checkoutId: session.checkoutId,
+      flowVersion: 'v2'
+    },
+    last_payment_error: { code: 'card_declined' }
+  };
+}
+
 function createStripeStub(piById) {
   const calls = { retrieve: 0, create: 0, refunds: 0 };
   return {
@@ -308,6 +324,59 @@ test('dry-run performs no writes', async () => {
   assert.equal(afterSession.paymentStatus, beforeSession.paymentStatus);
   assert.equal(await CheckoutFinalizationJob.countDocuments({}), beforeJobs);
   assert.equal(await PaymentResolutionIssue.countDocuments({}), beforeIssues);
+  assert.equal(stripe.calls.create, 0);
+  assert.equal(stripe.calls.refunds, 0);
+});
+
+test('terminal failed and uncharged payment does not remain in manual review', async () => {
+  process.env.FINALIZE_RECONCILE_ENQUEUE = '1';
+  const cabin = await createCabin();
+  const { session, paymentIntentId } = await seedSession({ cabin, paymentStatus: 'unpaid' });
+  await Payment.create({
+    provider: 'stripe',
+    providerReference: paymentIntentId,
+    status: 'failed',
+    amount: 0,
+    currency: 'eur',
+    source: 'webhook',
+    metadata: { checkoutId: session.checkoutId }
+  });
+  const pi = buildFailedPi({ session, paymentIntentId });
+  const stripe = createStripeStub({ [paymentIntentId]: pi });
+  const issue = await PaymentResolutionIssue.create({
+    paymentIntentId,
+    checkoutId: session.checkoutId,
+    issueType: 'paid_booking_unknown_failure',
+    status: 'needs_review',
+    errorCode: 'PAYMENT_RECORD_MISSING_OR_NOT_PAID'
+  });
+  await ManualReviewItem.create({
+    category: 'payment_finalization_failure',
+    severity: 'high',
+    status: 'open',
+    entityType: 'PaymentResolutionIssue',
+    entityId: String(issue._id),
+    title: 'Paid booking could not be finalized automatically',
+    provenance: { source: 'reconcile', sourceReference: session.checkoutId },
+    details: 'test',
+    evidence: {}
+  });
+
+  const outcome = await reconcilePaidCheckoutSubject({
+    checkoutId: session.checkoutId,
+    paymentIntentId,
+    execute: true,
+    automatic: true,
+    stripe,
+    paymentIntent: pi
+  });
+
+  assert.equal(outcome.classification, RECONCILE_CLASSIFICATIONS.TERMINAL_UNPAID_PAYMENT);
+  assert.equal(outcome.repair.action, 'resolve_terminal_payment_issue');
+  assert.equal(outcome.repair.details.issueResolved, true);
+  assert.equal(await PaymentResolutionIssue.countDocuments({ status: 'needs_review' }), 0);
+  assert.equal(await ManualReviewItem.countDocuments({ status: 'open' }), 0);
+  assert.equal(await Booking.countDocuments({}), 0);
   assert.equal(stripe.calls.create, 0);
   assert.equal(stripe.calls.refunds, 0);
 });
