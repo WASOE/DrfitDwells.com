@@ -336,6 +336,25 @@ function tagLineItemsWithPropertyKind(lineItems, propertyKind) {
   );
 }
 
+function addedAtMs(item) {
+  const t = item?.addedAt ? new Date(item.addedAt).getTime() : 0;
+  return Number.isFinite(t) ? t : 0;
+}
+
+/**
+ * Generated policy lines first (engine order), then manual lines by addedAt, ruleKey.
+ */
+function combineWithManualLineItems(generatedLineItems, manualLineItems, propertyKind) {
+  const manual = tagLineItemsWithPropertyKind(manualLineItems, propertyKind)
+    .map((item) => ({ ...item, source: 'manual' }))
+    .sort(
+      (a, b) =>
+        addedAtMs(a) - addedAtMs(b) || String(a.ruleKey).localeCompare(String(b.ruleKey))
+    );
+  const lineItems = [...(generatedLineItems || []), ...manual];
+  return { lineItems, totalAmountEUR: sumLineItems(lineItems) };
+}
+
 async function buildPaidSnapshotResponse(payment, cabinCount) {
   return {
     date: payment.date.toISOString(),
@@ -417,15 +436,20 @@ async function calculateCleaningPaymentSummary({ date, propertyKind }) {
   }
 
   const calc = buildPolicyCalcResult(checkouts, policy);
+  const combined = combineWithManualLineItems(
+    calc.lineItems,
+    payment?.manualLineItems,
+    propertyKind
+  );
 
   return {
     date: sofiaStart.toISOString(),
     propertyKind,
     currency: calc.currency,
-    totalAmount: calc.totalAmountEUR,
+    totalAmount: combined.totalAmountEUR,
     paidAmount: payment?.paidAmount || 0,
     status: payment?.status || 'pending',
-    lineItems: calc.lineItems,
+    lineItems: combined.lineItems,
     isSnapshot: false,
     noPolicy: false,
     unmatchedCheckouts: calc.unmatchedCheckouts,
@@ -524,6 +548,7 @@ module.exports = {
   calculateCleaningPaymentSummary,
   calculateGlobalPayoutSummary,
   calculateForMarkPaid,
+  combineWithManualLineItems,
   GLOBAL_PROPERTY_KINDS,
   calculatePolicyLineItems,
   priceDay,

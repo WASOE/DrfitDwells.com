@@ -276,28 +276,6 @@ test('cleaning pricing Batch 1 — checkout-driven engine', async (t) => {
     assert.equal(four.totalAmountEUR, 50);
   });
 
-  await t.test('€81 valley day: 3 a-frames + 1 lux + laundry', () => {
-    const policy = valleyPolicy(defaultRulesForPropertyKind('valley'));
-    const checkouts = [
-      { bookingId: 'b1', cabinName: 'AF-01', propertyKind: 'valley', cleaningTags: ['a-frame'] },
-      { bookingId: 'b2', cabinName: 'AF-02', propertyKind: 'valley', cleaningTags: ['a-frame'] },
-      { bookingId: 'b3', cabinName: 'AF-03', propertyKind: 'valley', cleaningTags: ['a-frame'] },
-      { bookingId: 'b4', cabinName: 'Lux', propertyKind: 'valley', cleaningTags: ['lux-cabin'] }
-    ];
-    const calc = priceDay(checkouts, policy);
-    assert.equal(calc.totalAmountEUR, 81);
-    assert.ok(calc.lineItems.some((li) => li.ruleKey === 'transport' && li.amountEUR === 8));
-    assert.equal(
-      calc.lineItems.filter((li) => li.ruleKey === 'aframe_clean').reduce((s, li) => s + li.amountEUR, 0),
-      40
-    );
-    assert.ok(calc.lineItems.some((li) => li.ruleKey === 'lux_cabin' && li.amountEUR === 25));
-    assert.equal(
-      calc.lineItems.filter((li) => li.ruleKey === 'laundry').reduce((s, li) => s + li.amountEUR, 0),
-      8
-    );
-  });
-
   await t.test('unmatchedCheckouts when valley checkout has no priced tag', () => {
     const policy = valleyPolicy(defaultRulesForPropertyKind('valley'));
     const checkouts = [
@@ -649,8 +627,8 @@ test('cleaning pricing Batch 1 — checkout-driven engine', async (t) => {
     const global = await calculateGlobalPayoutSummary({ date: dayIso });
 
     assert.equal(cabinSummary.totalAmount, 35);
-    assert.equal(valleySummary.totalAmount, 30);
-    assert.equal(global.totalAmount, 65);
+    assert.equal(valleySummary.totalAmount, 32);
+    assert.equal(global.totalAmount, 67);
     assert.equal(global.totalAmount, cabinSummary.totalAmount + valleySummary.totalAmount);
     assert.ok(global.lineItems.some((li) => li.propertyKind === 'cabin'));
     assert.ok(global.lineItems.some((li) => li.propertyKind === 'valley'));

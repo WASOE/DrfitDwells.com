@@ -13,7 +13,9 @@ export default function OpsCleaningPaymentPanel({
   togglePaidError,
   canWritePayment,
   formatLongDate,
-  onTogglePaid
+  onTogglePaid,
+  hasDeepCleaning = false,
+  onToggleDeepCleaning
 }) {
   const currency = paymentSummary?.currency || 'EUR';
   const totalAmount = paymentSummary?.totalAmount ?? 0;
@@ -71,6 +73,17 @@ export default function OpsCleaningPaymentPanel({
               >
                 {isPaid ? 'Unmark Paid' : 'Mark Paid'}
               </OpsButton>
+              {!isPaid && onToggleDeepCleaning ? (
+                <OpsButton
+                  variant="secondary"
+                  size="compact"
+                  onClick={onToggleDeepCleaning}
+                  disabled={paymentBusy || paymentLoading}
+                  data-testid="toggle-deep-cleaning-desktop"
+                >
+                  {hasDeepCleaning ? 'Remove Deep Cleaning' : 'Add Deep Cleaning (€150)'}
+                </OpsButton>
+              ) : null}
               {togglePaidError ? <OpsBanner tone="danger" body={togglePaidError} /> : null}
             </div>
           ) : null}

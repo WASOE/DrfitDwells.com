@@ -17,7 +17,9 @@ import {
   markTaskPaid,
   unmarkTaskPaid,
   markPaid,
-  unmarkPaid
+  unmarkPaid,
+  addDeepCleaning,
+  removeDeepCleaning
 } from '../../../services/cleaningApi';
 import { useOpsSession } from '../../../context/OpsSessionContext';
 import { isCleanerOnlySession } from '../../../layouts/ops/opsNavConfig';
@@ -340,6 +342,31 @@ export default function OpsCleaningCalendar() {
     }
   };
 
+  const hasDeepCleaning = (paymentSummary?.lineItems || []).some(
+    (item) => item.source === 'manual' && item.ruleKey === 'deep_clean'
+  );
+
+  const handleToggleDeepCleaning = async () => {
+    if (!canWritePayment || !paymentSummary || !selectedPropertyKind) return;
+    setPaymentBusy(true);
+    setTogglePaidError('');
+    try {
+      const args = { date: dateKey(selectedDate), propertyKind: selectedPropertyKind };
+      if (hasDeepCleaning) {
+        await removeDeepCleaning(args);
+      } else {
+        await addDeepCleaning(args);
+      }
+      await loadPayment();
+    } catch (err) {
+      setTogglePaidError(
+        err?.response?.data?.message || 'Failed to update deep cleaning. Please try again.'
+      );
+    } finally {
+      setPaymentBusy(false);
+    }
+  };
+
   const monthDots = monthCache[monthKey] || {};
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const blanks = leadingBlanks(viewYear, viewMonth);
@@ -585,6 +612,17 @@ export default function OpsCleaningCalendar() {
                         >
                           {isPaid ? 'Unmark Paid' : 'Mark Paid'}
                         </OpsButton>
+                        {canWritePayment && !isPaid ? (
+                          <OpsButton
+                            variant="secondary"
+                            size="compact"
+                            onClick={handleToggleDeepCleaning}
+                            disabled={paymentBusy || paymentLoading}
+                            data-testid="toggle-deep-cleaning"
+                          >
+                            {hasDeepCleaning ? 'Remove Deep Cleaning' : 'Add Deep Cleaning (€150)'}
+                          </OpsButton>
+                        ) : null}
                       </div>
                       {togglePaidError ? <OpsBanner tone="danger" body={togglePaidError} /> : null}
                     </div>
@@ -821,6 +859,8 @@ export default function OpsCleaningCalendar() {
               canWritePayment={canWritePayment}
               formatLongDate={formatLongDate}
               onTogglePaid={handleTogglePaid}
+              hasDeepCleaning={hasDeepCleaning}
+              onToggleDeepCleaning={handleToggleDeepCleaning}
             />
           ) : null}
         </aside>

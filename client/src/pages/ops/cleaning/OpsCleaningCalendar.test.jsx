@@ -16,7 +16,9 @@ vi.mock('../../../services/cleaningApi', () => ({
   markTaskPaid: vi.fn(),
   unmarkTaskPaid: vi.fn(),
   markPaid: vi.fn(),
-  unmarkPaid: vi.fn()
+  unmarkPaid: vi.fn(),
+  addDeepCleaning: vi.fn(),
+  removeDeepCleaning: vi.fn()
 }));
 
 import {

@@ -68,7 +68,7 @@ const VALLEY_PAYOUT_RULES = [
     ruleKey: 'laundry',
     type: 'per_event_fixed',
     label: 'Laundry',
-    amountEUR: 2,
+    amountEUR: 4,
     amountType: 'cleaner_payout',
     selector: {},
     enabled: true
