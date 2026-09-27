@@ -460,7 +460,9 @@ async function applyPaymentChoiceFromEnsureInput(session, input = {}) {
       choice: rawChoice,
       splitOfferSnapshotHash: input.splitOfferSnapshotHash || input.offerSnapshotHash || null,
       consent: input.futureChargeConsent || input.splitPaymentConsent || null,
-      expectedSessionVersion: input.expectedSessionVersion ?? input.sessionVersion ?? null,
+      // The client version was checked before quote/finalize/lease mutations.
+      // Continue with the version produced by those server-owned writes.
+      expectedSessionVersion: session.sessionVersion,
       save: true
     });
   } catch (err) {
@@ -715,7 +717,9 @@ async function syncVoucherReservation({
   return reservation;
 }
 
-async function ensureSessionFromQuote({ checkoutId, input, quote, metadata }) {
+async function ensureSessionFromQuote({
+  checkoutId, input, quote, metadata, expectedSessionVersion = null
+}) {
   if (!checkoutId) {
     return createCheckoutSession({ input, quote, metadata });
   }
@@ -730,7 +734,7 @@ async function ensureSessionFromQuote({ checkoutId, input, quote, metadata }) {
     return createCheckoutSession({ input, quote, metadata, checkoutId });
   }
 
-  return refreshCheckoutSessionQuote({ checkoutId, input, quote });
+  return refreshCheckoutSessionQuote({ checkoutId, input, quote, expectedSessionVersion });
 }
 
 async function clearCanonicalForNoPayment({ session, stripe }) {
@@ -846,7 +850,12 @@ async function ensureCanonicalPaymentIntentLegacy({
     }
   }
 
-  let sessionResult = await ensureSessionFromQuote({ checkoutId, input, quote, metadata });
+  let sessionResult = await ensureSessionFromQuote({
+    checkoutId, input, quote, metadata,
+    expectedSessionVersion: clientExpectedRaw != null && clientExpectedRaw !== ''
+      ? versionBeforeQuoteSync
+      : null
+  });
   let session = sessionResult.session;
   assertSessionUsable(session);
 
@@ -964,7 +973,7 @@ async function ensureCanonicalPaymentIntentLegacy({
     }
     if (terminalPi && TERMINAL_NON_CANCEL_PI_STATUSES.has(terminalPi.status)) {
       const match = paymentIntentMatchesSession(terminalPi, session, redemptionId);
-      if (existingPi.status === 'canceled' || !match.ok) {
+      if (terminalPi.status === 'canceled' || !match.ok) {
         throw new CheckoutSessionError(
           CHECKOUT_SESSION_ERROR_CODES.CANONICAL_PAYMENT_INTENT_MISMATCH,
           'Paid payment intent does not match the current voucher reservation or quote',
@@ -1370,7 +1379,12 @@ async function ensureCanonicalPaymentIntentWithResourceLease({
     }
   }
 
-  let sessionResult = await ensureSessionFromQuote({ checkoutId, input, quote, metadata });
+  let sessionResult = await ensureSessionFromQuote({
+    checkoutId, input, quote, metadata,
+    expectedSessionVersion: clientExpectedRaw != null && clientExpectedRaw !== ''
+      ? versionBeforeQuoteSync
+      : null
+  });
   let session = sessionResult.session;
   assertSessionUsable(session);
 

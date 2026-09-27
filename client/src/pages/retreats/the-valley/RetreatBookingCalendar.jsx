@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
-import { loadStripe } from '@stripe/stripe-js';
+import { useStripeAvailability } from '../../../lib/stripeClient';
 import { Elements } from '@stripe/react-stripe-js';
 import { Minus, Plus, X } from 'lucide-react';
 import LocationPaymentForm from './LocationPaymentForm';
@@ -19,6 +19,7 @@ import {
   isValidCheckoutForCheckIn
 } from '../../../utils/stayWindows';
 import { formatStayDay, formatStayRangeSummary, getDateFnsLocale } from '../../../utils/localeDates';
+import { CONTACT_EMAIL } from '../../../data/gmbLocations';
 import {
   addDaysDateOnly,
   compareDateOnly,
@@ -74,9 +75,6 @@ const DayPicker = lazy(() =>
     return { default: m.DayPicker };
   })
 );
-
-const stripePk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
-const stripePromise = stripePk ? loadStripe(stripePk) : null;
 
 function formatEuroAmount(value) {
   const amount = Number(value);
@@ -220,6 +218,12 @@ const RetreatBookingCalendar = ({
     autoQuote: true,
     minNights
   });
+
+  const {
+    stripePromise,
+    unavailable: stripeUnavailable,
+    retry: retryStripe
+  } = useStripeAvailability();
 
   useEffect(() => {
     loadAvailability(slug, { months: AVAILABILITY_WINDOW_MONTHS });
@@ -641,7 +645,7 @@ const RetreatBookingCalendar = ({
             type="button"
             data-booking-primary-cta="true"
             onClick={startCheckout}
-            disabled={checkoutLoading}
+            disabled={checkoutLoading || stripeUnavailable}
             className={primaryButtonClass}
           >
             {checkoutLoading
@@ -656,7 +660,33 @@ const RetreatBookingCalendar = ({
           </p>
         )}
 
-        {checkoutStep && clientSecret && stripePromise && (
+        {(canContinueToPayment || checkoutStep) && stripeUnavailable && (
+          <div
+            role="alert"
+            data-testid="retreat-calendar-stripe-unavailable"
+            className="border-t border-gray-100 pt-4 space-y-2 text-sm text-gray-700"
+          >
+            <p className="font-semibold text-gray-900">{tb('confirm.paymentUnavailableTitle')}</p>
+            <p>{tb('confirm.paymentUnavailableBody')}</p>
+            <div className="flex flex-wrap items-center gap-4 pt-1">
+              <button
+                type="button"
+                onClick={retryStripe}
+                className="text-sm text-gray-900 underline hover:text-gray-600"
+              >
+                {tb('confirm.paymentUnavailableRetry')}
+              </button>
+              <a
+                href={`mailto:${CONTACT_EMAIL}`}
+                className="text-sm text-gray-600 underline hover:text-gray-900"
+              >
+                {tb('confirm.paymentUnavailableContact')}
+              </a>
+            </div>
+          </div>
+        )}
+
+        {checkoutStep && clientSecret && !stripeUnavailable && (
           <div className="border-t border-gray-100 pt-4 space-y-4">
             <div className="grid grid-cols-1 gap-3">
               <div>

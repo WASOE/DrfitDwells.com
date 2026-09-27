@@ -199,24 +199,89 @@ async function upsertCanonicalPaymentFromEvent(event) {
     paymentMetadata.linkageConfidence = 'high';
   }
 
-  const payment = await Payment.findOneAndUpdate(
-    { provider: 'stripe', providerReference: String(providerReference) },
-    {
-      $set: {
-        status: paymentStatus,
-        amount: amount ?? 0,
-        currency,
-        source: 'webhook',
-        sourceReference: event.id,
-        importedAt: new Date((event.created || Date.now() / 1000) * 1000),
-        metadata: paymentMetadata
-      },
-      $setOnInsert: {
-        provider: 'stripe'
-      }
-    },
-    { new: true, upsert: true }
+  const providerEventAt = new Date(
+    (Number(event.created) || Date.now() / 1000) * 1000
   );
+  const paymentFields = {
+    status: paymentStatus,
+    amount: amount ?? 0,
+    currency,
+    source: 'webhook',
+    sourceReference: event.id,
+    importedAt: providerEventAt,
+    metadata: paymentMetadata
+  };
+
+  let payment = null;
+  for (let attempt = 0; attempt < 3 && !payment; attempt += 1) {
+    const existing = await Payment.findOne({
+      provider: 'stripe',
+      providerReference: String(providerReference)
+    });
+    if (!existing) {
+      try {
+        payment = await Payment.create({
+          provider: 'stripe',
+          providerReference: String(providerReference),
+          ...paymentFields
+        });
+        break;
+      } catch (err) {
+        if (err?.code !== 11000) throw err;
+        continue;
+      }
+    }
+
+    const currentStatus = String(existing.status || '');
+    const currentEventAt = existing.importedAt
+      ? new Date(existing.importedAt)
+      : new Date(0);
+    const staleEvent = providerEventAt.getTime() < currentEventAt.getTime();
+    const successfulState = ['paid', 'partial', 'refunded', 'disputed'].includes(
+      currentStatus
+    );
+    const incomingNonSuccess = ['unpaid', 'failed'].includes(paymentStatus);
+    const currentSuccessfulState = ['paid', 'partial', 'refunded', 'disputed'].includes(
+      currentStatus
+    );
+    const mustPreserveSuccessfulState = currentSuccessfulState && incomingNonSuccess;
+    const mustPreserveTerminalSuccess =
+      ['partial', 'refunded', 'disputed'].includes(currentStatus) &&
+      paymentStatus === 'paid';
+    const mustPreserveLaterTerminalState =
+      staleEvent &&
+      successfulState &&
+      ['paid', 'partial', 'refunded', 'disputed'].includes(paymentStatus);
+
+    if (
+      mustPreserveSuccessfulState ||
+      mustPreserveTerminalSuccess ||
+      mustPreserveLaterTerminalState
+    ) {
+      payment = existing;
+      break;
+    }
+
+    const update = { ...paymentFields };
+    if (staleEvent) {
+      delete update.importedAt;
+      if (currentSuccessfulState && incomingNonSuccess) {
+        delete update.status;
+      }
+    }
+    const filter = {
+      _id: existing._id,
+      status: existing.status,
+      importedAt: existing.importedAt
+    };
+    const updated = await Payment.findOneAndUpdate(filter, { $set: update }, { new: true });
+    if (updated) {
+      payment = updated;
+    }
+  }
+  if (!payment) {
+    throw new Error('Stripe Payment upsert did not converge after concurrent updates');
+  }
 
   if (incomingReservationId) {
     await Payment.updateOne(
@@ -236,13 +301,13 @@ async function upsertCanonicalPaymentFromEvent(event) {
   }
 
   const requiresBookingLinkage = shouldRequireBookingLinkage({
-    paymentStatus,
+    paymentStatus: payment.status,
     amountReceived: amount,
     isGiftVoucher: false
   });
 
   if (!requiresBookingLinkage) {
-    if (shouldResolvePaymentUnlinkedAsNonPaid(paymentStatus)) {
+    if (shouldResolvePaymentUnlinkedAsNonPaid(payment.status)) {
       await resolvePaymentUnlinkedReviewsForNonPaidPayment({
         paymentId: payment._id,
         paymentIntentId: paymentIntentId || providerReference
@@ -570,7 +635,7 @@ async function processStripeWebhookEvent(event) {
    *    - For split installment invoice.* events: re-run invoice handler (idempotent converge).
    *    - Otherwise return deduped without re-running unrelated side effects.
    * 4. First pass: Payment + Payout upsert, legacy finalization compatibility.
-   * 5. Accommodation paid sync (mark paid + ensure scheduled job) when flags allow.
+   * 5. Accommodation paid sync (mark paid + ensure scheduled job).
    * 6. Split installment invoice sync (SP6).
    * 7. Ops push payment alert (first pass only).
    *
@@ -603,6 +668,7 @@ async function processStripeWebhookEvent(event) {
         event,
         payment
       });
+      assertAccommodationHandoffComplete(accommodationSync);
     }
     if (isSplitInvoice) {
       splitInvoiceSync = await processSplitInstallmentInvoiceEvent({ event });
@@ -629,6 +695,7 @@ async function processStripeWebhookEvent(event) {
       event,
       payment
     });
+    assertAccommodationHandoffComplete(accommodationSync);
   }
 
   let splitInvoiceSync = null;
@@ -654,6 +721,20 @@ async function processStripeWebhookEvent(event) {
     accommodationSync,
     splitInvoiceSync
   };
+}
+
+function assertAccommodationHandoffComplete(result) {
+  if (
+    result?.retryable === true ||
+    (result?.ok !== true && result?.permanent !== true)
+  ) {
+    const err = new Error(
+      `Retryable paid-checkout handoff failure: ${result?.errorCode || 'unknown'}`
+    );
+    err.code = result?.errorCode || 'PAID_CHECKOUT_HANDOFF_RETRYABLE';
+    err.retryable = true;
+    throw err;
+  }
 }
 
 module.exports = {

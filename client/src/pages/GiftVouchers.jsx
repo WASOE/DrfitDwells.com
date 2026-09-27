@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { loadStripe } from '@stripe/stripe-js';
+import { useStripeAvailability } from '../lib/stripeClient';
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
 import Seo from '../components/Seo';
 import GiftVoucherCardPreview from '../components/giftVoucher/GiftVoucherCardPreview';
@@ -20,12 +20,9 @@ import {
 } from '../components/giftVoucher/giftVoucherBuilderState';
 import { giftVoucherAPI } from '../services/api';
 import { getAttributionPayload } from '../tracking/attribution';
-import { useSiteLanguage } from '../hooks/useSiteLanguage';
 import { getLanguageFromPath } from '../utils/localizedRoutes';
+import { CONTACT_EMAIL } from '../data/gmbLocations';
 import '../i18n/ns/giftVoucher';
-
-const stripePk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
-const stripePromise = stripePk ? loadStripe(stripePk) : null;
 
 const VALIDATION_I18N_KEYS = {
   WHOLE_AMOUNT: 'errors.wholeAmount',
@@ -111,9 +108,7 @@ function AmountCard({ cents, selected, onClick }) {
 
 export default function GiftVouchers() {
   const { t } = useTranslation('giftVoucher');
-  const { language } = useSiteLanguage();
   const location = useLocation();
-  const isBg = language === 'bg';
   const routeLanguage = getLanguageFromPath(location.pathname);
 
   const [builder, setBuilder] = useState(() => createInitialBuilderState(routeLanguage));
@@ -128,6 +123,11 @@ export default function GiftVouchers() {
   const [paymentIntentId, setPaymentIntentId] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const {
+    stripePromise,
+    unavailable: stripeUnavailable,
+    retry: retryStripe
+  } = useStripeAvailability();
 
   const purchaseConfig = useMemo(
     () => ({ scheduledDeliveryEnabled }),
@@ -753,24 +753,51 @@ export default function GiftVouchers() {
                 </label>
 
                 <div>
+                  {stripeUnavailable && (
+                    <div
+                      role="alert"
+                      data-testid="gift-voucher-stripe-unavailable"
+                      className="mb-6 rounded-2xl border border-stone-300 bg-white px-5 py-4 text-sm text-stone-700"
+                    >
+                      <p className="font-medium text-stone-900">{t('payment.unavailableTitle')}</p>
+                      <p className="mt-1">{t('payment.unavailableBody')}</p>
+                      <div className="mt-3 flex flex-wrap items-center gap-4">
+                        <button
+                          type="button"
+                          onClick={retryStripe}
+                          className="text-xs uppercase tracking-[0.2em] text-stone-800 underline underline-offset-4"
+                        >
+                          {t('payment.unavailableRetry')}
+                        </button>
+                        <a
+                          href={`mailto:${CONTACT_EMAIL}`}
+                          className="text-xs uppercase tracking-[0.2em] text-stone-500 underline underline-offset-4 hover:text-stone-800"
+                        >
+                          {t('payment.unavailableContact')}
+                        </a>
+                      </div>
+                    </div>
+                  )}
                   {!clientSecret ? (
                     <button
                       type="button"
                       onClick={initializePayment}
-                      disabled={loading}
+                      disabled={loading || stripeUnavailable}
                       className="w-full rounded-full bg-[#81887A] px-8 py-4 text-sm font-medium uppercase tracking-[0.18em] text-white transition hover:bg-[#6f7669] disabled:cursor-not-allowed disabled:opacity-50 md:w-auto md:min-w-[280px]"
                     >
                       {loading ? t('payment.preparing') : t('payment.continue')}
                     </button>
                   ) : (
                     <div className="space-y-4">
-                      <Elements stripe={stripePromise} options={{ clientSecret }}>
-                        <PaymentForm
-                          submitDisabled={!validation.ok}
-                          onSubmit={handleStripeSubmit}
-                          loading={loading}
-                        />
-                      </Elements>
+                      {!stripeUnavailable && (
+                        <Elements stripe={stripePromise} options={{ clientSecret }}>
+                          <PaymentForm
+                            submitDisabled={!validation.ok}
+                            onSubmit={handleStripeSubmit}
+                            loading={loading}
+                          />
+                        </Elements>
+                      )}
                       <button
                         type="button"
                         onClick={resetAttempt}

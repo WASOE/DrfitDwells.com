@@ -202,6 +202,22 @@ function buildSucceededPi({ session, paymentIntentId }) {
   };
 }
 
+function buildFailedPi({ session, paymentIntentId }) {
+  return {
+    id: paymentIntentId,
+    object: 'payment_intent',
+    status: 'requires_payment_method',
+    amount: session.stripeAmountCents,
+    amount_received: 0,
+    currency: 'eur',
+    metadata: {
+      checkoutId: session.checkoutId,
+      flowVersion: 'v2'
+    },
+    last_payment_error: { code: 'card_declined' }
+  };
+}
+
 function createStripeStub(piById) {
   const calls = { retrieve: 0, create: 0, refunds: 0 };
   return {
@@ -312,6 +328,59 @@ test('dry-run performs no writes', async () => {
   assert.equal(stripe.calls.refunds, 0);
 });
 
+test('terminal failed and uncharged payment does not remain in manual review', async () => {
+  process.env.FINALIZE_RECONCILE_ENQUEUE = '1';
+  const cabin = await createCabin();
+  const { session, paymentIntentId } = await seedSession({ cabin, paymentStatus: 'unpaid' });
+  await Payment.create({
+    provider: 'stripe',
+    providerReference: paymentIntentId,
+    status: 'failed',
+    amount: 0,
+    currency: 'eur',
+    source: 'webhook',
+    metadata: { checkoutId: session.checkoutId }
+  });
+  const pi = buildFailedPi({ session, paymentIntentId });
+  const stripe = createStripeStub({ [paymentIntentId]: pi });
+  const issue = await PaymentResolutionIssue.create({
+    paymentIntentId,
+    checkoutId: session.checkoutId,
+    issueType: 'paid_booking_unknown_failure',
+    status: 'needs_review',
+    errorCode: 'PAYMENT_RECORD_MISSING_OR_NOT_PAID'
+  });
+  await ManualReviewItem.create({
+    category: 'payment_finalization_failure',
+    severity: 'high',
+    status: 'open',
+    entityType: 'PaymentResolutionIssue',
+    entityId: String(issue._id),
+    title: 'Paid booking could not be finalized automatically',
+    provenance: { source: 'reconcile', sourceReference: session.checkoutId },
+    details: 'test',
+    evidence: {}
+  });
+
+  const outcome = await reconcilePaidCheckoutSubject({
+    checkoutId: session.checkoutId,
+    paymentIntentId,
+    execute: true,
+    automatic: true,
+    stripe,
+    paymentIntent: pi
+  });
+
+  assert.equal(outcome.classification, RECONCILE_CLASSIFICATIONS.TERMINAL_UNPAID_PAYMENT);
+  assert.equal(outcome.repair.action, 'resolve_terminal_payment_issue');
+  assert.equal(outcome.repair.details.issueResolved, true);
+  assert.equal(await PaymentResolutionIssue.countDocuments({ status: 'needs_review' }), 0);
+  assert.equal(await ManualReviewItem.countDocuments({ status: 'open' }), 0);
+  assert.equal(await Booking.countDocuments({}), 0);
+  assert.equal(stripe.calls.create, 0);
+  assert.equal(stripe.calls.refunds, 0);
+});
+
 test('explicit execution repairs safe SESSION_PAID_NO_JOB', async () => {
   process.env.FINALIZE_RECONCILE_ENQUEUE = '1';
   const cabin = await createCabin();
@@ -368,8 +437,49 @@ test('execute without flag remains dry-run', async () => {
     paymentIntentId,
     execute: true
   });
+
   assert.equal(outcome.dryRun, true);
   assert.equal(await CheckoutFinalizationJob.countDocuments({}), 0);
+});
+
+test('automatic reconciliation reviews a paid Stripe payment with no safe checkout mapping', async () => {
+  process.env.FINALIZE_RECONCILE_ENQUEUE = '0';
+  const paymentIntentId = `pi_unmapped_paid_${new mongoose.Types.ObjectId()}`;
+  await Payment.create({
+    provider: 'stripe',
+    providerReference: paymentIntentId,
+    status: 'paid',
+    amount: 108,
+    currency: 'eur',
+    source: 'webhook',
+    sourceReference: 'evt_unmapped_paid',
+    metadata: { stripeObjectType: 'payment_intent' }
+  });
+  const paymentIntent = {
+    id: paymentIntentId,
+    status: 'succeeded',
+    metadata: {}
+  };
+
+  const outcome = await reconcilePaidCheckoutSubject({
+    paymentIntentId,
+    paymentIntent,
+    execute: true,
+    automatic: true
+  });
+
+  assert.equal(outcome.dryRun, false);
+  assert.equal(
+    outcome.classification,
+    RECONCILE_CLASSIFICATIONS.UNMAPPED_SUCCESSFUL_PAYMENT
+  );
+  assert.equal(outcome.repairAction, 'open_manual_review');
+  assert.ok(
+    await PaymentResolutionIssue.findOne({
+      paymentIntentId,
+      status: 'needs_review'
+    })
+  );
 });
 
 test('repeated execution is idempotent (no duplicate active job)', async () => {
@@ -486,6 +596,7 @@ test('no email resend for ambiguous delivery', async () => {
     paymentStatus: 'paid',
     finalizeStatus: FINALIZE_STATUS.FINALIZED
   });
+
   const booking = await Booking.create({
     checkIn: normalizeDateToSofiaDayStart('2030-09-10'),
     checkOut: normalizeDateToSofiaDayStart('2030-09-12'),
@@ -555,6 +666,89 @@ test('no email resend for ambiguous delivery', async () => {
   assert.equal(outcome.repair?.emailResendAttempted, false);
   assert.equal(outcome.repair?.mutated, false);
   void sendCalls;
+});
+
+test('reconciliation recreates missing durable confirmation delivery state', async () => {
+  process.env.FINALIZE_RECONCILE_ENQUEUE = '0';
+  process.env.FINALIZE_SIDE_EFFECTS = '0';
+  process.env.FINALIZE_WORKER_SEND_CONFIRMATION = '0';
+  const cabin = await createCabin();
+  const { session, paymentIntentId } = await seedSession({
+    cabin,
+    paymentStatus: 'paid',
+    finalizeStatus: FINALIZE_STATUS.FINALIZED
+  });
+  const booking = await Booking.create({
+    checkIn: normalizeDateToSofiaDayStart('2030-09-10'),
+    checkOut: normalizeDateToSofiaDayStart('2030-09-12'),
+    adults: 2,
+    children: 0,
+    totalPrice: 200,
+    subtotalPrice: 200,
+    status: 'confirmed',
+    paymentMethod: 'stripe',
+    stripePaymentIntentId: paymentIntentId,
+    checkoutId: session.checkoutId,
+    commercialStayFingerprint: `fp_b7_confirmation_${session.checkoutId}`,
+    guestInfo: {
+      firstName: 'Batch',
+      lastName: 'Seven',
+      email: `batch7-confirm-${session.checkoutId}@example.com`,
+      phone: '+359888000777'
+    },
+    legalAcceptance: {
+      termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
+      activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+      acceptedAt: new Date(),
+      firstName: 'Batch',
+      lastName: 'Seven',
+      checkbox1TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
+      checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT
+    },
+    cabinId: cabin._id
+  });
+  await CheckoutSession.updateOne(
+    { checkoutId: session.checkoutId },
+    { $set: { bookingId: booking._id, finalizeStatus: FINALIZE_STATUS.FINALIZED } }
+  );
+  await createPaidPayment({
+    paymentIntentId,
+    checkoutId: session.checkoutId,
+    reservationId: booking._id
+  });
+  await ensureCheckoutFinalizationJob({
+    checkoutId: session.checkoutId,
+    paymentIntentId,
+    createdReason: 'reconcile'
+  });
+  await CheckoutFinalizationJob.updateOne(
+    { checkoutId: session.checkoutId },
+    { $set: { status: 'succeeded', stage: 'succeeded', bookingId: booking._id } }
+  );
+
+  const inspection = await inspectPaidCheckoutSubject({
+    checkoutId: session.checkoutId,
+    paymentIntentId
+  });
+  assert.equal(
+    inspection.classification,
+    RECONCILE_CLASSIFICATIONS.CONFIRMATION_PENDING_OR_FAILED
+  );
+
+  const repaired = await reconcilePaidCheckoutSubject({
+    checkoutId: session.checkoutId,
+    paymentIntentId,
+    execute: true,
+    automatic: true
+  });
+  assert.equal(repaired.repair?.mutated, true);
+  assert.equal(
+    await EmailDeliveryState.countDocuments({
+      bookingId: booking._id,
+      latestStatus: 'pending'
+    }),
+    1
+  );
 });
 
 test('unsafe mismatch creates review evidence rather than mutate', async () => {
@@ -640,9 +834,13 @@ test('no refund and no PaymentIntent create in reconcile module', () => {
   assert.doesNotMatch(cli, /startCheckoutFinalizationWorker/);
 });
 
-test('server startup does not auto-run reconcile', () => {
+test('reconciler is configured as an independent process, not in the API', () => {
   const serverSrc = fs.readFileSync(path.join(__dirname, '../server.js'), 'utf8');
   assert.doesNotMatch(serverSrc, /reconcilePaidCheckoutFinalization/);
+  const ecosystem = fs.readFileSync(path.join(__dirname, '../../ecosystem.config.cjs'), 'utf8');
+  assert.match(ecosystem, /driftdwells-paid-checkout-reconciler/);
+  assert.match(ecosystem, /runPaidCheckoutReconciler\.js/);
+  assert.match(ecosystem, /driftdwells-checkout-finalization-worker/);
 });
 
 test('batch entry respects limit and dry-run summary', async () => {

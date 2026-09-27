@@ -6,9 +6,8 @@
  * Uses authoritative finalizePaidCheckout result only (booking + session).
  * Never creates Booking, PaymentIntent, or refunds.
  *
- * Flags:
- * - FINALIZE_SIDE_EFFECTS (default off): quote convert, alert resolve, enqueue confirmation pending
- * - FINALIZE_WORKER_SEND_CONFIRMATION (default off): worker/caller may SMTP-send via delivery SM
+ * FINALIZE_SIDE_EFFECTS controls optional quote conversion and alert resolution.
+ * Confirmation delivery state is always persisted; SMTP sending remains separately controlled.
  */
 
 const featureFlags = require('../../utils/featureFlags');
@@ -114,8 +113,8 @@ async function resolveAlertsForBooking({ booking, session }) {
 }
 
 /**
- * Domain finalize entry: quote/alerts/enqueue pending when FINALIZE_SIDE_EFFECTS on.
- * Never sends SMTP from domain core (sendConfirmation defaults false).
+ * Domain finalize entry: confirmation delivery is always durably enqueued.
+ * Optional quote/alert effects and SMTP sending remain independently controlled.
  */
 async function enqueuePostFinalizeSideEffects({
   booking = null,
@@ -132,18 +131,6 @@ async function enqueuePostFinalizeSideEffects({
   const at = now instanceof Date ? now : new Date(now);
   const enabled = sideEffectsEnabled();
   const shouldSend = sendConfirmation === true;
-
-  if (!enabled && !shouldSend) {
-    return {
-      deferred: true,
-      quoteConvert: 'flag_off',
-      alertResolve: 'flag_off',
-      confirmationEmail: 'flag_off',
-      refundAttempted: false,
-      paymentIntentCreateAttempted: false,
-      bookingDeleted: false
-    };
-  }
 
   if (!booking?._id) {
     return {

@@ -231,6 +231,31 @@ async function setCheckoutPaymentChoice({
   expectedSessionVersion = null,
   save = true
 }) {
+  async function persistChoice() {
+    if (!save) return;
+    const expected = Number(session.sessionVersion || 1);
+    const updated = await session.constructor.findOneAndUpdate(
+      { _id: session._id, sessionVersion: expected },
+      {
+        $set: {
+          paymentChoice: session.paymentChoice,
+          futureChargeConsent: session.futureChargeConsent
+        },
+        $inc: { sessionVersion: 1 }
+      },
+      { new: true, runValidators: true }
+    );
+    if (!updated) {
+      const latest = await session.constructor.findById(session._id).select('sessionVersion');
+      throw new SplitPaymentChoiceError(
+        'SESSION_VERSION_CONFLICT',
+        'Checkout session changed while selecting payment choice',
+        { expectedSessionVersion: expected, sessionVersion: latest?.sessionVersion ?? null }
+      );
+    }
+    session.sessionVersion = updated.sessionVersion;
+  }
+
   const wanted = choice == null || choice === '' ? 'full' : String(choice).trim().toLowerCase();
   if (!PAYMENT_CHOICES.includes(wanted)) {
     throw new SplitPaymentChoiceError(
@@ -259,7 +284,7 @@ async function setCheckoutPaymentChoice({
       sessionVersionAtSelection: Number(session.sessionVersion || 1)
     };
     session.futureChargeConsent = null;
-    if (save) await session.save();
+    await persistChoice();
     return {
       choice: 'full',
       chargeAmountCents: resolveExpectedChargeCents(session),
@@ -336,7 +361,7 @@ async function setCheckoutPaymentChoice({
 
   assertSplitConsentOnSession(session);
 
-  if (save) await session.save();
+  await persistChoice();
   return {
     choice: 'split',
     chargeAmountCents: resolveExpectedChargeCents(session),

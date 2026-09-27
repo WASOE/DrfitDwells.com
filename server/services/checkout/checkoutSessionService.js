@@ -387,9 +387,25 @@ async function createCheckoutSession({ input, quote, metadata = null, checkoutId
   };
 }
 
-async function refreshCheckoutSessionQuote({ checkoutId, input, quote }) {
+async function refreshCheckoutSessionQuote({
+  checkoutId, input, quote, expectedSessionVersion = null
+}) {
   const session = await loadSessionOrThrow(checkoutId);
   assertSessionUsable(session);
+  if (
+    expectedSessionVersion != null &&
+    Number(expectedSessionVersion) !== Number(session.sessionVersion)
+  ) {
+    throw new CheckoutSessionError(
+      CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_SESSION_VERSION_CONFLICT,
+      'Checkout session version conflict',
+      {
+        expectedSessionVersion: Number(expectedSessionVersion),
+        sessionVersion: session.sessionVersion,
+        checkoutId
+      }
+    );
+  }
 
   const normalizedInput = normalizeCheckoutSessionInput(input);
   const incomingBoundary = buildCommercialBoundaryKey(normalizedInput);
@@ -472,7 +488,7 @@ async function refreshCheckoutSessionQuote({ checkoutId, input, quote }) {
     throw toCheckoutSessionLeaseActiveError();
   }
 
-  const expectedSessionVersion = Number(session.sessionVersion || 1);
+  const versionForRefresh = Number(session.sessionVersion || 1);
   const nowIso = new Date().toISOString();
   const nextMetadata = {
     ...(session.metadata || {}),
@@ -484,7 +500,7 @@ async function refreshCheckoutSessionQuote({ checkoutId, input, quote }) {
   const updated = await CheckoutSession.findOneAndUpdate(
     {
       checkoutId: String(checkoutId),
-      sessionVersion: expectedSessionVersion,
+      sessionVersion: versionForRefresh,
       ...snapshotWriteAllowedWithoutProtectedLeasePredicate()
     },
     {
@@ -513,6 +529,17 @@ async function refreshCheckoutSessionQuote({ checkoutId, input, quote }) {
 
   if (!updated) {
     const latest = await CheckoutSession.findOne({ checkoutId: String(checkoutId) });
+    if (expectedSessionVersion != null && latest?.sessionVersion !== versionForRefresh) {
+      throw new CheckoutSessionError(
+        CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_SESSION_VERSION_CONFLICT,
+        'Checkout session version conflict during quote refresh',
+        {
+          checkoutId: String(checkoutId),
+          expectedSessionVersion: versionForRefresh,
+          sessionVersion: latest?.sessionVersion ?? null
+        }
+      );
+    }
     if (latest && sessionHasSnapshotProtectedLease(latest)) {
       // Race: lease attached between precheck and update — commercial lease wins.
       if (String(latest.quoteSnapshotHash) === String(quoteSnapshotHash)) {
@@ -547,7 +574,7 @@ async function refreshCheckoutSessionQuote({ checkoutId, input, quote }) {
     throw new CheckoutSessionError(
       CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_CONCURRENCY_CONFLICT,
       'Checkout session quote refresh lost a concurrency race',
-      { checkoutId: String(checkoutId), expectedSessionVersion }
+      { checkoutId: String(checkoutId), expectedSessionVersion: versionForRefresh }
     );
   }
 

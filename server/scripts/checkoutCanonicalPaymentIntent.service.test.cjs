@@ -11,6 +11,9 @@ const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
 const CheckoutSession = require('../models/CheckoutSession');
+const PaymentTermTemplate = require('../models/PaymentTermTemplate');
+const RatePlan = require('../models/RatePlan');
+const { validateAndNormalizePaymentTermTemplate } = require('../services/paymentTermService');
 const {
   ensureCanonicalPaymentIntent,
   assertCanonicalPaymentIntentForSession,
@@ -26,7 +29,9 @@ const {
   CheckoutSessionError,
   CHECKOUT_SESSION_ERROR_CODES
 } = require('../services/checkout/checkoutSessionErrors');
-const { createCheckoutSession, loadSessionOrThrow } = require('../services/checkout/checkoutSessionService');
+const {
+  createCheckoutSession, loadSessionOrThrow, refreshCheckoutSessionQuote
+} = require('../services/checkout/checkoutSessionService');
 const {
   buildFutureChargeConsentContract,
   buildFutureChargeConsentDisplayedText
@@ -215,6 +220,216 @@ test.after(async () => {
 
 test.beforeEach(async () => {
   await CheckoutSession.deleteMany({});
+  await PaymentTermTemplate.deleteMany({});
+  await RatePlan.deleteMany({});
+});
+
+async function withSplitOffer(fn) {
+  const previous = process.env.SPLIT_PAYMENT_ENABLED;
+  process.env.SPLIT_PAYMENT_ENABLED = 'true';
+  try {
+    const term = validateAndNormalizePaymentTermTemplate({
+      code: 'lifecycle-split-40',
+      internalName: '40% checkout',
+      version: 1,
+      status: 'active',
+      currency: 'EUR',
+      scheduleKind: 'percent_split',
+      allowDateTransfer: false,
+      legs: [
+        {
+          sequence: 1, amountType: 'percent_bps', amountValue: 4000,
+          dueRule: 'checkout', dueOffsetDays: 0, cancellationTreatment: 'stay_credit'
+        },
+        {
+          sequence: 2, amountType: 'remainder', amountValue: null,
+          dueRule: 'days_before_arrival', dueOffsetDays: 30,
+          cancellationTreatment: 'standard_policy'
+        }
+      ]
+    });
+    assert.equal(term.ok, true);
+    await PaymentTermTemplate.create(term.value);
+    await RatePlan.create({
+      code: 'lifecycle-winter',
+      internalName: 'Lifecycle winter',
+      version: 1,
+      status: 'active',
+      type: 'seasonal_stay',
+      currency: 'EUR',
+      arrivalWindowStart: '2026-12-01',
+      arrivalWindowEnd: '2026-12-31',
+      minNights: 2,
+      inventoryMode: 'shared',
+      requiresFullPayment: true,
+      cancellationPolicyCode: 'normal-stay-standard',
+      cancellationPolicyVersion: 1,
+      paymentTermCode: 'lifecycle-split-40',
+      paymentTermVersion: 1,
+      inclusions: [],
+      accommodations: [{
+        accommodationKey: 'lux-cabin',
+        entityType: 'cabin',
+        pricingMethod: 'nightly_per_unit',
+        nightlyPerUnitAmount: 180,
+        includedGuests: 2,
+        additionalGuestNightlyAmount: 40
+      }],
+      revision: 1
+    });
+    const input = baseInput({ checkIn: '2026-12-20', checkOut: '2026-12-22' });
+    const quote = buildFabricatedQuote({
+      checkInDate: new Date('2026-12-20T12:00:00Z'),
+      checkOutDate: new Date('2026-12-22T12:00:00Z'),
+      checkInDateOnly: '2026-12-20',
+      checkOutDateOnly: '2026-12-22',
+      ratePlan: { code: 'lifecycle-winter', version: 1, type: 'seasonal_stay', currency: 'EUR' }
+    });
+    await fn({ input, quote });
+  } finally {
+    if (previous === undefined) delete process.env.SPLIT_PAYMENT_ENABLED;
+    else process.env.SPLIT_PAYMENT_ENABLED = previous;
+  }
+}
+
+test('gate-off full -> split -> full -> split retry adopts each authoritative version', async () => {
+  await withSplitOffer(async ({ input, quote }) => {
+    const stripe = createFakeStripe();
+    const prepare = (checkoutId, expectedSessionVersion, extra = {}) =>
+      ensureCanonicalPaymentIntent({
+        checkoutId,
+        input: { ...input, expectedSessionVersion, ...extra },
+        quote,
+        stripe,
+        resourceLeaseGateEnabled: false
+      });
+    const first = await prepare(null, null);
+    assert.equal(first.sessionVersion, 3);
+    assert.ok(first.finalizeIntentHash);
+    assert.equal(first.paymentChoice, 'full');
+    assert.equal(stripe.__calls.uniqueCreated, 1);
+    assert.ok(first.splitPaymentOffer);
+
+    const consentContract = buildFutureChargeConsentContract(
+      (await loadSessionOrThrow(first.checkoutId)).splitPaymentOfferSnapshot,
+      first.splitPaymentOffer.offerSnapshotHash
+    );
+    const splitInput = {
+      paymentChoice: 'split',
+      splitOfferSnapshotHash: first.splitPaymentOffer.offerSnapshotHash,
+      futureChargeConsent: {
+        consentVersion: consentContract.consentVersion,
+        consentHash: consentContract.consentHash,
+        acceptedLocale: 'en'
+      }
+    };
+    const split = await prepare(first.checkoutId, first.sessionVersion, splitInput);
+    assert.equal(split.paymentChoice, 'split');
+    assert.equal(split.chargeAmountCents, 7200);
+    assert.equal(split.splitPaymentOffer.installments[1].amountCents, 10800);
+    assert.ok(split.sessionVersion > first.sessionVersion);
+    assert.equal(split.sessionVersion, (await loadSessionOrThrow(first.checkoutId)).sessionVersion);
+    assert.notEqual(split.canonicalPaymentIntentId, first.canonicalPaymentIntentId);
+    assert.equal(stripe.__store.get(first.canonicalPaymentIntentId).status, 'canceled');
+    assert.equal(stripe.__store.get(split.canonicalPaymentIntentId).amount, 7200);
+    assert.equal(stripe.__store.get(split.canonicalPaymentIntentId).setup_future_usage, 'off_session');
+    assert.equal(stripe.__calls.uniqueCreated, 2);
+
+    const retry = await prepare(first.checkoutId, split.sessionVersion, splitInput);
+    assert.equal(retry.canonicalPaymentIntentId, split.canonicalPaymentIntentId);
+    assert.equal(stripe.__calls.uniqueCreated, 2);
+
+    const full = await prepare(first.checkoutId, retry.sessionVersion, { paymentChoice: 'full' });
+    assert.equal(full.paymentChoice, 'full');
+    assert.equal(full.chargeAmountCents, 18000);
+    assert.notEqual(full.canonicalPaymentIntentId, split.canonicalPaymentIntentId);
+    assert.equal(stripe.__store.get(split.canonicalPaymentIntentId).status, 'canceled');
+    assert.equal(stripe.__calls.uniqueCreated, 3);
+
+    const restoredSplit = await prepare(first.checkoutId, full.sessionVersion, splitInput);
+    assert.equal(restoredSplit.paymentChoice, 'split');
+    assert.equal(restoredSplit.chargeAmountCents, 7200);
+    assert.notEqual(restoredSplit.canonicalPaymentIntentId, split.canonicalPaymentIntentId);
+    assert.equal(stripe.__store.get(full.canonicalPaymentIntentId).status, 'canceled');
+    assert.equal(stripe.__store.get(restoredSplit.canonicalPaymentIntentId).status, 'requires_payment_method');
+    assert.equal(stripe.__calls.uniqueCreated, 4);
+
+    await assert.rejects(
+      () => prepare(first.checkoutId, first.sessionVersion, splitInput),
+      (err) => err.code === CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_SESSION_VERSION_CONFLICT
+    );
+    assert.equal(stripe.__calls.uniqueCreated, 4);
+    assert.equal(restoredSplit.sessionVersion,
+      (await loadSessionOrThrow(first.checkoutId)).sessionVersion);
+  });
+});
+
+test('payment choice CAS detects an independent write after quote/finalize continuation', async () => {
+  const { session } = await createCheckoutSession({
+    input: baseInput(),
+    quote: buildFabricatedQuote()
+  });
+  const stale = await loadSessionOrThrow(session.checkoutId);
+  await CheckoutSession.updateOne(
+    { _id: session._id },
+    { $inc: { sessionVersion: 1 } }
+  );
+  await assert.rejects(
+    () => applyPaymentChoiceFromEnsureInput(stale, { paymentChoice: 'full' }),
+    (err) => err.code === CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_SESSION_VERSION_CONFLICT
+  );
+  assert.equal((await loadSessionOrThrow(session.checkoutId)).paymentChoice, null);
+});
+
+test('quote refresh rejects a concurrent version advance after the client precheck', async () => {
+  const input = baseInput();
+  const quote = buildFabricatedQuote();
+  const { session } = await createCheckoutSession({ input, quote });
+  const checkedVersion = session.sessionVersion;
+  await CheckoutSession.updateOne(
+    { _id: session._id }, { $inc: { sessionVersion: 1 } }
+  );
+  await assert.rejects(
+    () => refreshCheckoutSessionQuote({
+      checkoutId: session.checkoutId, input, quote,
+      expectedSessionVersion: checkedVersion
+    }),
+    (err) => err.code === CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_SESSION_VERSION_CONFLICT
+  );
+  assert.equal((await loadSessionOrThrow(session.checkoutId)).sessionVersion, checkedVersion + 1);
+});
+
+test('quote refresh CAS rejects an independent write between read and update', async () => {
+  const input = baseInput();
+  const quote = buildFabricatedQuote();
+  const { session } = await createCheckoutSession({ input, quote });
+  const checkedVersion = session.sessionVersion;
+  const original = CheckoutSession.findOneAndUpdate;
+  let injected = false;
+  CheckoutSession.findOneAndUpdate = function (filter, update, options) {
+    if (!injected && filter.checkoutId === session.checkoutId &&
+        filter.sessionVersion === checkedVersion && update.$inc?.sessionVersion) {
+      injected = true;
+      return CheckoutSession.updateOne(
+        { checkoutId: session.checkoutId, sessionVersion: checkedVersion },
+        { $inc: { sessionVersion: 1 } }
+      ).then(() => original.call(this, filter, update, options));
+    }
+    return original.call(this, filter, update, options);
+  };
+  try {
+    await assert.rejects(
+      () => refreshCheckoutSessionQuote({
+        checkoutId: session.checkoutId, input, quote,
+        expectedSessionVersion: checkedVersion
+      }),
+      (err) => err.code === CHECKOUT_SESSION_ERROR_CODES.FINALIZE_INTENT_SESSION_VERSION_CONFLICT
+    );
+    assert.equal(injected, true);
+    assert.equal((await loadSessionOrThrow(session.checkoutId)).sessionVersion, checkedVersion + 1);
+  } finally {
+    CheckoutSession.findOneAndUpdate = original;
+  }
 });
 
 test('creates PI for card-due session and stores canonicalPaymentIntentId', async () => {
