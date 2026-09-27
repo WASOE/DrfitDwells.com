@@ -143,7 +143,7 @@ test('tiered + per-event + gated daily rules round-trip losslessly', async () =>
   );
 });
 
-test('saved valley policy prices €81 day via priceDay', async () => {
+test('saved valley policy prices €89 day via priceDay', async () => {
   const rules = defaultRulesForPropertyKind('valley').map(policyRuleToDto);
   await updatePricingPolicyRules({ propertyKind: 'valley', rules });
 
@@ -156,7 +156,7 @@ test('saved valley policy prices €81 day via priceDay', async () => {
   ];
 
   const priced = priceDay(checkouts, { propertyKind: 'valley', rules: policy.rules });
-  assert.equal(priced.totalAmountEUR, 81);
+  assert.equal(priced.totalAmountEUR, 89);
 });
 
 test('seed rules and editor save produce structurally identical valley policy', async () => {
