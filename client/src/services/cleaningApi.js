@@ -80,6 +80,21 @@ export function unmarkPaid({ date, propertyKind }) {
   );
 }
 
+export function addDeepCleaning({ date, propertyKind }) {
+  return api.post(
+    '/ops/cleaning/payments/deep-cleaning',
+    { date, propertyKind },
+    { headers: authHeaders() }
+  );
+}
+
+export function removeDeepCleaning({ date, propertyKind }) {
+  return api.delete('/ops/cleaning/payments/deep-cleaning', {
+    data: { date, propertyKind },
+    headers: authHeaders()
+  });
+}
+
 export function getPricingPolicy() {
   return api.get('/ops/cleaning/pricing-policy', { headers: authHeaders() });
 }
@@ -122,6 +137,8 @@ export default {
   unmarkTaskPaid,
   markPaid,
   unmarkPaid,
+  addDeepCleaning,
+  removeDeepCleaning,
   getPricingPolicy,
   updatePricingPolicy,
   getCleaningInventoryTags,

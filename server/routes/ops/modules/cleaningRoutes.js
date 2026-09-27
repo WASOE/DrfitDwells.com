@@ -2,14 +2,18 @@ const express = require('express');
 const mongoose = require('mongoose');
 const Booking = require('../../../models/Booking');
 const CleaningRecord = require('../../../models/CleaningRecord');
-const CleaningPayment = require('../../../models/CleaningPayment');
 const AvailabilityBlock = require('../../../models/AvailabilityBlock');
 const {
   getCleaningSchedule,
   getCleaningPaymentSummary,
   getGlobalPayoutSummary
 } = require('../../../services/ops/readModels/cleaningReadModel');
-const { calculateForMarkPaid } = require('../../../services/ops/cleaning/cleaningPricingService');
+const {
+  addDeepCleaning,
+  removeDeepCleaning,
+  markCleaningPaymentPaid,
+  unmarkCleaningPaymentPaid
+} = require('../../../services/ops/cleaning/cleaningPaymentLifecycleService');
 const { isExternalHoldEligibleForCleaning } = require('../../../services/ops/cleaning/airbnbStayClassifier');
 const {
   getPricingPolicySettings,
@@ -339,91 +343,89 @@ router.post('/records/:taskId/unmark-task-paid', async (req, res) => {
   }
 });
 
-/** Find-or-create the per (date, propertyKind) CleaningPayment row (daily fee settlement). */
-async function findOrCreateCleaningPayment(sofiaStart, propertyKind, totalAmount) {
-  let payment = await CleaningPayment.findOne({ date: sofiaStart, propertyKind });
-  if (!payment) {
-    payment = new CleaningPayment({ date: sofiaStart, propertyKind, totalAmount });
+function parsePaymentBucket(req, res) {
+  const { date, propertyKind } = req.body || {};
+  if (!isValidDateInput(date)) {
+    res.status(400).json({ success: false, message: 'A valid date is required.' });
+    return null;
   }
-  return payment;
+  const kind = normalizePropertyKind(propertyKind);
+  if (!kind) {
+    res.status(400).json({ success: false, message: "propertyKind must be 'cabin' or 'valley'." });
+    return null;
+  }
+  return { date, propertyKind: kind };
+}
+
+function handlePaymentLifecycleError(error, res) {
+  if (error?.code === 'NO_ACTIVE_PRICING_POLICY') {
+    return res.status(error.status || 422).json({
+      success: false,
+      errorType: 'no_policy',
+      message: error.message
+    });
+  }
+  if (error?.code === 'CLEANING_PAYMENT_LOCKED') {
+    return res.status(409).json({ success: false, errorType: 'payment_locked', message: error.message });
+  }
+  if (error?.code === 'CLEANING_PAYMENT_CONFLICT') {
+    return res.status(409).json({ success: false, errorType: 'conflict', message: error.message });
+  }
+  return handleRouteError(error, res);
 }
 
 // POST /api/ops/cleaning/payments/mark-paid  body: { date, propertyKind }
+// Idempotent: an already-paid snapshot is returned unchanged, never recalculated.
 router.post('/payments/mark-paid', async (req, res) => {
   try {
     requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_PAYMENT_WRITE });
-    const { date, propertyKind } = req.body || {};
-    if (!isValidDateInput(date)) {
-      return res.status(400).json({ success: false, message: 'A valid date is required.' });
-    }
-    const kind = normalizePropertyKind(propertyKind);
-    if (!kind) {
-      return res.status(400).json({ success: false, message: "propertyKind must be 'cabin' or 'valley'." });
-    }
-    const sofiaStart = normalizeDateToSofiaDayStart(date);
-    const calc = await calculateForMarkPaid({ date, propertyKind: kind });
-    const payment = await findOrCreateCleaningPayment(sofiaStart, kind, calc.totalAmountEUR);
-    payment.currency = calc.currency || 'EUR';
-    payment.totalAmount = calc.totalAmountEUR;
-    payment.paidAmount = calc.totalAmountEUR;
-    payment.status = 'paid';
-    payment.lineItems = calc.lineItems;
-    payment.pricingPolicyId = calc.pricingPolicyId || null;
-    payment.pricingVersion = calc.pricingVersion || null;
-    payment.calculatedAt = calc.calculatedAt;
-    payment.markedPaidAt = new Date();
-    payment.markedPaidBy = resolveActorId(req);
-    await payment.save();
-    return res.json({
-      success: true,
-      data: {
-        cleaningPaymentId: String(payment._id),
-        status: payment.status,
-        totalAmount: payment.totalAmount,
-        currency: payment.currency,
-        lineItems: payment.lineItems
-      }
-    });
+    const bucket = parsePaymentBucket(req, res);
+    if (!bucket) return undefined;
+    const data = await markCleaningPaymentPaid({ ...bucket, actorId: resolveActorId(req) });
+    return res.json({ success: true, data });
   } catch (error) {
-    if (error?.code === 'NO_ACTIVE_PRICING_POLICY') {
-      return res.status(error.status || 422).json({
-        success: false,
-        errorType: 'no_policy',
-        message: error.message
-      });
-    }
-    return handleRouteError(error, res);
+    return handlePaymentLifecycleError(error, res);
   }
 });
 
 // POST /api/ops/cleaning/payments/unmark-paid  body: { date, propertyKind }
+// Archives the paid snapshot into paidSnapshotHistory, then reopens the day.
 router.post('/payments/unmark-paid', async (req, res) => {
   try {
     requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_PAYMENT_WRITE });
-    const { date, propertyKind } = req.body || {};
-    if (!isValidDateInput(date)) {
-      return res.status(400).json({ success: false, message: 'A valid date is required.' });
-    }
-    const kind = normalizePropertyKind(propertyKind);
-    if (!kind) {
-      return res.status(400).json({ success: false, message: "propertyKind must be 'cabin' or 'valley'." });
-    }
-    const sofiaStart = normalizeDateToSofiaDayStart(date);
-    const summary = await getCleaningPaymentSummary({ date, propertyKind: kind });
-    const payment = await findOrCreateCleaningPayment(sofiaStart, kind, summary.totalAmount);
-    payment.totalAmount = summary.totalAmount;
-    payment.status = 'pending';
-    payment.paidAmount = 0;
-    payment.lineItems = [];
-    payment.pricingPolicyId = null;
-    payment.pricingVersion = null;
-    payment.calculatedAt = null;
-    payment.markedPaidAt = null;
-    payment.markedPaidBy = null;
-    await payment.save();
-    return res.json({ success: true, data: { cleaningPaymentId: String(payment._id), status: payment.status } });
+    const bucket = parsePaymentBucket(req, res);
+    if (!bucket) return undefined;
+    const data = await unmarkCleaningPaymentPaid({ ...bucket, actorId: resolveActorId(req) });
+    return res.json({ success: true, data });
   } catch (error) {
-    return handleRouteError(error, res);
+    return handlePaymentLifecycleError(error, res);
+  }
+});
+
+// POST /api/ops/cleaning/payments/deep-cleaning  body: { date, propertyKind }
+// Adds the fixed Deep/Main cleaning item once per unpaid (date, propertyKind) bucket.
+router.post('/payments/deep-cleaning', async (req, res) => {
+  try {
+    requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_PAYMENT_WRITE });
+    const bucket = parsePaymentBucket(req, res);
+    if (!bucket) return undefined;
+    const { changed, summary } = await addDeepCleaning({ ...bucket, actorId: resolveActorId(req) });
+    return res.json({ success: true, changed, data: summary });
+  } catch (error) {
+    return handlePaymentLifecycleError(error, res);
+  }
+});
+
+// DELETE /api/ops/cleaning/payments/deep-cleaning  body: { date, propertyKind }
+router.delete('/payments/deep-cleaning', async (req, res) => {
+  try {
+    requirePermission({ ...permissionContext(req), action: ACTIONS.OPS_CLEANING_PAYMENT_WRITE });
+    const bucket = parsePaymentBucket(req, res);
+    if (!bucket) return undefined;
+    const { changed, summary } = await removeDeepCleaning(bucket);
+    return res.json({ success: true, changed, data: summary });
+  } catch (error) {
+    return handlePaymentLifecycleError(error, res);
   }
 });
 

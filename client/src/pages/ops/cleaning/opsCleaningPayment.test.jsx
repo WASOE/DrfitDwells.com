@@ -1,6 +1,6 @@
-import { describe, expect, it, afterEach } from 'vitest';
+import { describe, expect, it, afterEach, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { OpsSessionProvider } from '../../../context/OpsSessionContext';
 import OpsCleaningLineItemsTable from './OpsCleaningLineItemsTable.jsx';
 import OpsCleaningPaymentPanel from './OpsCleaningPaymentPanel.jsx';
@@ -105,6 +105,48 @@ describe('OpsCleaningPaymentPanel', () => {
       />
     );
     expect(screen.getByText(/Frozen snapshot/)).toBeInTheDocument();
+  });
+
+  function renderDeepCleaningPanel(overrides = {}) {
+    const props = {
+      selectedDate: new Date('2026-08-01'),
+      paymentSummary: baseSummary,
+      paymentLoading: false,
+      paymentError: '',
+      paymentBusy: false,
+      togglePaidError: '',
+      canWritePayment: true,
+      formatLongDate: (d) => d.toDateString(),
+      onTogglePaid: () => {},
+      hasDeepCleaning: false,
+      onToggleDeepCleaning: vi.fn(),
+      ...overrides
+    };
+    renderPayment(<OpsCleaningPaymentPanel {...props} />);
+    return props;
+  }
+
+  it('lets payment writers add deep cleaning on an unpaid day', () => {
+    const props = renderDeepCleaningPanel();
+    const button = screen.getByTestId('toggle-deep-cleaning-desktop');
+    expect(button).toHaveTextContent('Add Deep Cleaning (€150)');
+    fireEvent.click(button);
+    expect(props.onToggleDeepCleaning).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers removal when deep cleaning is present', () => {
+    renderDeepCleaningPanel({ hasDeepCleaning: true });
+    expect(screen.getByTestId('toggle-deep-cleaning-desktop')).toHaveTextContent(
+      'Remove Deep Cleaning'
+    );
+  });
+
+  it('hides deep cleaning controls when paid or without payment_write', () => {
+    renderDeepCleaningPanel({ paymentSummary: { ...baseSummary, status: 'paid', isSnapshot: true } });
+    expect(screen.queryByTestId('toggle-deep-cleaning-desktop')).not.toBeInTheDocument();
+    cleanup();
+    renderDeepCleaningPanel({ canWritePayment: false });
+    expect(screen.queryByTestId('toggle-deep-cleaning-desktop')).not.toBeInTheDocument();
   });
 });
 
