@@ -619,7 +619,7 @@ test('20) Payment record not paid prevents enqueue', async () => {
   assert.equal(await CheckoutFinalizationJob.countDocuments({}), 0);
 });
 
-test('21) MARK_PAID off preserves current behaviour', async () => {
+test('21) webhook flags cannot disable paid checkout handoff', async () => {
   setFlags({ markPaid: '0', enqueue: '0' });
   const { session, paymentIntentId, finalizeIntentHash } = await createV2SessionWithCanonicalPi();
   const event = makeSucceededEvent({
@@ -628,14 +628,16 @@ test('21) MARK_PAID off preserves current behaviour', async () => {
     session,
     finalizeIntentHash
   });
-  await processStripeWebhookEvent(event);
+  const result = await processStripeWebhookEvent(event);
+  assert.equal(result.accommodationSync?.markPaid, true);
+  assert.equal(result.accommodationSync?.enqueue, true);
   const updated = await CheckoutSession.findOne({ checkoutId: session.checkoutId }).lean();
-  assert.equal(updated.paymentStatus, 'unpaid');
-  assert.equal(await CheckoutFinalizationJob.countDocuments({}), 0);
+  assert.equal(updated.paymentStatus, 'paid');
+  assert.equal(await CheckoutFinalizationJob.countDocuments({ checkoutId: session.checkoutId }), 1);
   assert.ok(await Payment.findOne({ providerReference: paymentIntentId, status: 'paid' }));
 });
 
-test('22) ENQUEUE off creates no job while mark-paid still works', async () => {
+test('22) enqueue flag off still ensures the finalization job', async () => {
   setFlags({ markPaid: '1', enqueue: '0' });
   const { session, paymentIntentId, finalizeIntentHash } = await createV2SessionWithCanonicalPi();
   const event = makeSucceededEvent({
@@ -646,15 +648,15 @@ test('22) ENQUEUE off creates no job while mark-paid still works', async () => {
   });
   const result = await processStripeWebhookEvent(event);
   assert.equal(result.accommodationSync?.markPaid, true);
-  assert.equal(result.accommodationSync?.enqueue, false);
+  assert.equal(result.accommodationSync?.enqueue, true);
   assert.equal(
     (await CheckoutSession.findOne({ checkoutId: session.checkoutId }).lean()).paymentStatus,
     'paid'
   );
-  assert.equal(await CheckoutFinalizationJob.countDocuments({}), 0);
+  assert.equal(await CheckoutFinalizationJob.countDocuments({ checkoutId: session.checkoutId }), 1);
 });
 
-test('23) ENQUEUE on while MARK_PAID off fails safely', async () => {
+test('23) either old webhook flag combination still performs the handoff', async () => {
   setFlags({ markPaid: '0', enqueue: '1' });
   const { session, paymentIntentId, finalizeIntentHash } = await createV2SessionWithCanonicalPi();
   const event = makeSucceededEvent({
@@ -664,13 +666,41 @@ test('23) ENQUEUE on while MARK_PAID off fails safely', async () => {
     finalizeIntentHash
   });
   const result = await processStripeWebhookEvent(event);
-  assert.equal(result.accommodationSync?.skipped, true);
-  assert.equal(result.accommodationSync?.warning, VERIFICATION_ERROR_CODES.ENQUEUE_WITHOUT_MARK_PAID);
+  assert.equal(result.accommodationSync?.markPaid, true);
+  assert.equal(result.accommodationSync?.enqueue, true);
   assert.equal(
     (await CheckoutSession.findOne({ checkoutId: session.checkoutId }).lean()).paymentStatus,
-    'unpaid'
+    'paid'
   );
-  assert.equal(await CheckoutFinalizationJob.countDocuments({}), 0);
+  assert.equal(await CheckoutFinalizationJob.countDocuments({ checkoutId: session.checkoutId }), 1);
+});
+
+test('retryable job enqueue failure rejects webhook and duplicate receipt retries handoff', async () => {
+  const { session, paymentIntentId, finalizeIntentHash } = await createV2SessionWithCanonicalPi();
+  const event = makeSucceededEvent({
+    eventId: 'evt_retry_handoff_after_receipt',
+    paymentIntentId,
+    session,
+    finalizeIntentHash
+  });
+  const originalCreate = CheckoutFinalizationJob.create;
+  CheckoutFinalizationJob.create = async () => {
+    throw new Error('temporary database write failure');
+  };
+  try {
+    await assert.rejects(
+      () => processStripeWebhookEvent(event),
+      (err) => err.retryable === true && err.code === VERIFICATION_ERROR_CODES.JOB_ENQUEUE_FAILED
+    );
+  } finally {
+    CheckoutFinalizationJob.create = originalCreate;
+  }
+
+  assert.ok(await StripeEventEvidence.findOne({ eventId: event.id }));
+  const retried = await processStripeWebhookEvent(event);
+  assert.equal(retried.deduped, true);
+  assert.equal(retried.accommodationSync?.enqueue, true);
+  assert.equal(await CheckoutFinalizationJob.countDocuments({ checkoutId: session.checkoutId }), 1);
 });
 
 test('24) active-job unique index prevents duplicates', async () => {
@@ -777,7 +807,7 @@ test('26b) failed_retryable with remaining attempts is rescheduled without dupli
   assert.equal(ensured.status, 'scheduled');
   assert.equal(ensured.jobId, String(job._id));
 
-  const updated = await CheckoutFinalizationJob.findById(job._id).lean();
+  const updated = await CheckoutFinalizationJob.findById(job._id).lean().exec();
   assert.equal(updated.status, 'scheduled');
   assert.equal(updated.attemptCount, 3);
   assert.equal(updated.lastErrorCode, 'TRANSIENT_DB_ERROR');
@@ -798,7 +828,7 @@ test('26b) failed_retryable with remaining attempts is rescheduled without dupli
   });
   await processStripeWebhookEvent(event);
   assert.equal(await CheckoutFinalizationJob.countDocuments({ checkoutId: session.checkoutId }), 1);
-  const afterWebhook = await CheckoutFinalizationJob.findById(job._id).lean();
+  const afterWebhook = await CheckoutFinalizationJob.findById(job._id).lean().exec();
   assert.equal(afterWebhook.status, 'scheduled');
   assert.equal(afterWebhook.lastErrorCode, 'TRANSIENT_DB_ERROR');
 });
@@ -826,7 +856,7 @@ test('26c) failed_retryable at maxAttempts is promoted to failed_permanent', asy
   assert.equal(ensured.promotedToPermanent, true);
   assert.equal(ensured.status, 'failed_permanent');
   assert.equal(ensured.jobId, String(job._id));
-  const updated = await CheckoutFinalizationJob.findById(job._id).lean();
+  const updated = await CheckoutFinalizationJob.findById(job._id).lean().exec();
   assert.equal(updated.status, 'failed_permanent');
   assert.equal(updated.attemptCount, 20);
   assert.ok(
@@ -853,7 +883,7 @@ test('26d) cancelled job is not silently revived; a new scheduled job may be cre
   assert.equal(ensured.created, true);
   assert.equal(ensured.status, 'scheduled');
   assert.notEqual(ensured.jobId, String(cancelled._id));
-  const cancelledStill = await CheckoutFinalizationJob.findById(cancelled._id).lean();
+  const cancelledStill = await CheckoutFinalizationJob.findById(cancelled._id).lean().exec();
   assert.equal(cancelledStill.status, 'cancelled');
   assert.equal(
     await CheckoutFinalizationJob.countDocuments({

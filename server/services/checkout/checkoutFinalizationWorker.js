@@ -10,7 +10,7 @@
  *   via centralized checkoutFinalizeSideEffects (never duplicates Booking/payment).
  * - No gift-voucher execution; no refund; no new PaymentIntent.
  *
- * Feature flag: FINALIZE_JOB_EXECUTE=1 (default off).
+ * Production execution is mandatory; non-production runs remain opt-in.
  * Standalone PM2 entry: server/scripts/runCheckoutFinalizationWorker.js
  */
 
@@ -120,6 +120,7 @@ function buildWorkerId() {
 }
 
 function isExecuteEnabled() {
+  if (process.env.NODE_ENV === 'production') return true;
   return featureFlags.isFinalizeJobExecuteEnabled();
 }
 

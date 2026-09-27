@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { loadStripe } from '@stripe/stripe-js';
+import { useStripeAvailability } from '../../../lib/stripeClient';
 import { Elements } from '@stripe/react-stripe-js';
 import { Minus, Plus } from 'lucide-react';
 import GuestSelect from '../../../components/GuestSelect';
@@ -9,11 +9,9 @@ import PriceDetailsModal from '../../../components/booking/PriceDetailsModal';
 import LocationPaymentForm from './LocationPaymentForm';
 import useLocationRetreatBooking from '../../../hooks/useLocationRetreatBooking';
 import { formatDateOnlyLocal } from '../../../utils/dateOnly';
+import { CONTACT_EMAIL } from '../../../data/gmbLocations';
 import '../../../i18n/ns/booking';
 import '../../../i18n/ns/valley';
-
-const stripePk = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
-const stripePromise = stripePk ? loadStripe(stripePk) : null;
 
 function quoteMatchesContextDates(quote, checkIn, checkOut) {
   if (!quote?.checkIn || !quote?.checkOut || !checkIn || !checkOut) return false;
@@ -57,6 +55,12 @@ const LocationRetreatQuotePanel = ({ onQuoteChange, panelRef }) => {
     priceExtras,
     guestFormValid
   } = useLocationRetreatBooking({ onQuoteChange });
+
+  const {
+    stripePromise,
+    unavailable: stripeUnavailable,
+    retry: retryStripe
+  } = useStripeAvailability();
 
   const quoteIsCurrent = useMemo(
     () => quoteMatchesContextDates(quote, checkIn, checkOut),
@@ -185,7 +189,7 @@ const LocationRetreatQuotePanel = ({ onQuoteChange, panelRef }) => {
                 type="button"
                 data-booking-primary-cta="true"
                 onClick={startCheckout}
-                disabled={checkoutLoading}
+                disabled={checkoutLoading || stripeUnavailable}
                 className="w-full py-3.5 rounded-xl bg-[#81887A] text-white font-semibold text-sm hover:opacity-95 disabled:opacity-50"
               >
                 {checkoutLoading
@@ -200,7 +204,33 @@ const LocationRetreatQuotePanel = ({ onQuoteChange, panelRef }) => {
               </p>
             )}
 
-            {checkoutStep && clientSecret && stripePromise && (
+            {(showPanelAvailablePrice || checkoutStep) && stripeUnavailable && (
+              <div
+                role="alert"
+                data-testid="location-retreat-stripe-unavailable"
+                className="border-t border-gray-100 pt-4 space-y-2 text-sm text-gray-700"
+              >
+                <p className="font-semibold text-gray-900">{tb('confirm.paymentUnavailableTitle')}</p>
+                <p>{tb('confirm.paymentUnavailableBody')}</p>
+                <div className="flex flex-wrap items-center gap-4 pt-1">
+                  <button
+                    type="button"
+                    onClick={retryStripe}
+                    className="text-sm text-gray-900 underline hover:text-gray-600"
+                  >
+                    {tb('confirm.paymentUnavailableRetry')}
+                  </button>
+                  <a
+                    href={`mailto:${CONTACT_EMAIL}`}
+                    className="text-sm text-gray-600 underline hover:text-gray-900"
+                  >
+                    {tb('confirm.paymentUnavailableContact')}
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {checkoutStep && clientSecret && !stripeUnavailable && (
               <div className="border-t border-gray-100 pt-4 space-y-4">
                 <div className="grid grid-cols-1 gap-3">
                   <div>

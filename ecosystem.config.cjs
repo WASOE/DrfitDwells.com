@@ -13,6 +13,52 @@
 module.exports = {
   apps: [
     {
+      name: 'driftdwells-checkout-finalization-worker',
+      cwd: __dirname,
+      script: 'server/scripts/runCheckoutFinalizationWorker.js',
+      interpreter: 'node',
+      instances: 1,
+      exec_mode: 'fork',
+      autorestart: true,
+      restart_delay: 5000,
+      max_restarts: 20,
+      min_uptime: '10s',
+      kill_timeout: 10000,
+      env: {
+        NODE_ENV: 'development',
+        FINALIZE_JOB_EXECUTE: '0',
+        FINALIZE_WORKER_SEND_CONFIRMATION: '0'
+      },
+      env_production: {
+        NODE_ENV: 'production',
+        FINALIZE_JOB_EXECUTE: '1',
+        FINALIZE_WORKER_SEND_CONFIRMATION: '0'
+      }
+    },
+    {
+      name: 'driftdwells-paid-checkout-reconciler',
+      cwd: __dirname,
+      script: 'server/scripts/runPaidCheckoutReconciler.js',
+      interpreter: 'node',
+      instances: 1,
+      exec_mode: 'fork',
+      autorestart: true,
+      restart_delay: 5000,
+      max_restarts: 20,
+      min_uptime: '10s',
+      kill_timeout: 10000,
+      env: {
+        NODE_ENV: 'development',
+        PAID_CHECKOUT_RECONCILE_TICK_MS: '60000',
+        PAID_CHECKOUT_RECONCILE_BATCH_SIZE: '50'
+      },
+      env_production: {
+        NODE_ENV: 'production',
+        PAID_CHECKOUT_RECONCILE_TICK_MS: '60000',
+        PAID_CHECKOUT_RECONCILE_BATCH_SIZE: '50'
+      }
+    },
+    {
       name: 'driftdwells-confirmation-worker',
       cwd: __dirname,
       script: 'server/scripts/runBookingConfirmationDeliveryWorker.js',

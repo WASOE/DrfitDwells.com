@@ -152,6 +152,25 @@ async function shouldUseCheckoutSessionV2(checkoutId) {
   return featureFlags.isCheckoutSessionV2Enabled();
 }
 
+async function shouldUseCheckoutSessionV2ForPaymentPreparation(checkoutId) {
+  const normalized =
+    typeof checkoutId === 'string' && checkoutId.trim() ? checkoutId.trim() : null;
+  if (normalized) {
+    const session = await CheckoutSession.findOne({ checkoutId: normalized })
+      .select('flowVersion')
+      .lean();
+    if (session && session.flowVersion !== 'v2') {
+      throw new CheckoutSessionError(
+        CHECKOUT_SESSION_ERROR_CODES.CHECKOUT_SESSION_NOT_USABLE,
+        'This legacy checkout cannot prepare a new payment. Restart checkout to continue safely.',
+        { checkoutId: normalized }
+      );
+    }
+    if (session) return true;
+  }
+  return featureFlags.isCheckoutSessionV2Enabled();
+}
+
 function buildEnsureQuoteFromPublicResult(quoteResult) {
   return {
     entityType: quoteResult.entityType,
@@ -610,6 +629,7 @@ module.exports = {
   mapCheckoutSessionErrorToHttp,
   sendCheckoutSessionError,
   shouldUseCheckoutSessionV2,
+  shouldUseCheckoutSessionV2ForPaymentPreparation,
   assertV2CheckoutSessionCanFinalize,
   NO_PAYMENT_FINALIZE_STATUSES,
   buildEnsureQuoteFromPublicResult,

@@ -27,7 +27,6 @@ const {
   normalizeOptionalAccommodationConsents,
   ensureFinalizeIntentForPaymentPreparation,
   persistFinalizeIntent,
-  persistPaidCheckoutRecoveryFinalizeIntent
 } = require('../services/checkout/finalizeIntentService');
 const {
   ensureCanonicalPaymentIntent
@@ -316,98 +315,6 @@ test('payment preparation fails closed when finalize intent persistence fails', 
   } finally {
     CheckoutSession.findOneAndUpdate = originalFindOneAndUpdate;
   }
-});
-
-test('paid recovery records guest consent against the existing PI without creating or charging', async () => {
-  const session = await seedSession();
-  const paymentIntentId = 'pi_existing_paid_recovery';
-  session.guestEmail = 'ada@example.test';
-  session.canonicalPaymentIntentId = paymentIntentId;
-  await session.save();
-  await Payment.create({
-    provider: 'stripe',
-    providerReference: paymentIntentId,
-    status: 'paid',
-    amount: 200,
-    currency: 'eur',
-    source: 'stripe_webhook',
-    metadata: { checkoutId: session.checkoutId }
-  });
-
-  const pi = {
-    id: paymentIntentId,
-    status: 'succeeded',
-    amount: 20000,
-    amount_received: 20000,
-    currency: 'eur',
-    metadata: {
-      checkoutId: session.checkoutId,
-      quoteSnapshotHash: session.quoteSnapshotHash
-    }
-  };
-  const stripe = makeStripe();
-  stripe.paymentIntents.retrieve = async () => pi;
-  stripe.paymentIntents.update = async (id, args) => {
-    paymentIntentUpdates.push({ id, metadata: args.metadata });
-    pi.metadata = args.metadata;
-    return pi;
-  };
-
-  const saved = await persistPaidCheckoutRecoveryFinalizeIntent({
-    checkoutId: session.checkoutId,
-    body: guestLegalBody(),
-    requestMeta: { ip: '127.0.0.1', userAgent: 'test', acceptLanguage: 'en' },
-    stripe
-  });
-
-  const persisted = await CheckoutSession.findOne({ checkoutId: session.checkoutId }).lean();
-  assert.equal(saved.paymentIntentId, paymentIntentId);
-  assert.equal(saved.noPaymentAttempted, true);
-  assert.ok(sessionHasCompleteFinalizeIntent(persisted));
-  assert.equal(persisted.paymentStatus, 'unpaid');
-  assert.equal(persisted.finalizeIntentImmutableAt instanceof Date, true);
-  assert.equal(pi.metadata.finalizeIntentHash, persisted.finalizeIntentHash);
-  assert.equal(paymentIntentUpdates.length, 1);
-  assert.equal(createdPiIds.length, 0);
-  assert.equal(chargeCalls.length, 0);
-  assert.equal(refundCalls.length, 0);
-  assert.equal(await Booking.countDocuments({}), 0);
-
-  const replay = await persistPaidCheckoutRecoveryFinalizeIntent({
-    checkoutId: session.checkoutId,
-    body: guestLegalBody(),
-    requestMeta: { ip: '127.0.0.1', userAgent: 'test', acceptLanguage: 'en' },
-    stripe
-  });
-  assert.equal(replay.idempotentReplay, true);
-  assert.equal(paymentIntentUpdates.length, 1);
-  assert.equal(createdPiIds.length, 0);
-});
-
-test('paid recovery rejects a guest email that does not match the stored checkout', async () => {
-  const session = await seedSession();
-  session.guestEmail = 'ada@example.test';
-  session.canonicalPaymentIntentId = 'pi_existing_paid_recovery';
-  await session.save();
-  const stripe = makeStripe();
-
-  await assert.rejects(
-    persistPaidCheckoutRecoveryFinalizeIntent({
-      checkoutId: session.checkoutId,
-      body: guestLegalBody({
-        guestInfo: {
-          ...guestLegalBody().guestInfo,
-          email: 'someone-else@example.test'
-        }
-      }),
-      requestMeta: {},
-      stripe
-    }),
-    (err) => err.code === 'FINALIZE_INTENT_INVALID'
-  );
-  assert.equal(createdPiIds.length, 0);
-  assert.equal(paymentIntentUpdates.length, 0);
-  assert.equal(await Booking.countDocuments({}), 0);
 });
 
 test('5-10. missing guest/legal fields reject before PI', async () => {

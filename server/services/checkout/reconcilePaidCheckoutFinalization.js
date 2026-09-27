@@ -37,6 +37,7 @@ const { createDefaultDependencies } = require('./executeBookingFinalizeWork');
 const { runCheckoutFinalizeSideEffects } = require('./checkoutFinalizeSideEffects');
 const {
   recordPaidBookingResolutionIssueSafe,
+  resolvePaidBookingResolutionIssueSafe,
   PAID_BOOKING_FINALIZATION_STAGES,
   safeErrorSummary
 } = require('../payments/paidBookingFinalizationObservability');
@@ -60,6 +61,8 @@ const RECONCILE_CLASSIFICATIONS = Object.freeze({
   SUPERSEDED_OR_NONCANONICAL_PI: 'SUPERSEDED_OR_NONCANONICAL_PI',
   VERIFICATION_MISMATCH: 'VERIFICATION_MISMATCH',
   PAYMENT_RECORD_MISSING_OR_NOT_PAID: 'PAYMENT_RECORD_MISSING_OR_NOT_PAID',
+  TERMINAL_UNPAID_PAYMENT: 'TERMINAL_UNPAID_PAYMENT',
+  UNMAPPED_SUCCESSFUL_PAYMENT: 'UNMAPPED_SUCCESSFUL_PAYMENT',
   PERMANENT_FINALIZATION_FAILURE: 'PERMANENT_FINALIZATION_FAILURE',
   RETRYABLE_FINALIZATION_FAILURE: 'RETRYABLE_FINALIZATION_FAILURE',
   CONFIRMATION_PENDING_OR_FAILED: 'CONFIRMATION_PENDING_OR_FAILED',
@@ -296,6 +299,20 @@ async function inspectPaidCheckoutSubject({
       reason: 'Gift voucher or location payment excluded from accommodation reconcile'
     };
   }
+  if (
+    !session &&
+    payment?.status === 'paid'
+  ) {
+    return {
+      ...base,
+      classification: RECONCILE_CLASSIFICATIONS.UNMAPPED_SUCCESSFUL_PAYMENT,
+      reason: 'Successful Stripe payment cannot be safely mapped to an accommodation checkout',
+      failureStage: PAID_BOOKING_FINALIZATION_STAGES.PAYMENT_VERIFIED,
+      errorCode: 'SUCCESSFUL_PAYMENT_CHECKOUT_UNMAPPED',
+      safeToMutate: false,
+      repairAction: 'open_manual_review'
+    };
+  }
   if (session && session.flowVersion !== 'v2') {
     return {
       ...base,
@@ -370,6 +387,21 @@ async function inspectPaidCheckoutSubject({
         repairAction: 'open_manual_review'
       };
     }
+  } else if (
+    payment &&
+    payment.status !== 'paid' &&
+    session &&
+    String(session.paymentStatus || '') !== 'paid' &&
+    (!pi || String(pi.status || '').toLowerCase() !== 'succeeded')
+  ) {
+    return {
+      ...base,
+      classification: RECONCILE_CLASSIFICATIONS.TERMINAL_UNPAID_PAYMENT,
+      reason: `Payment attempt is terminal and uncharged (Payment status=${payment.status}, Stripe status=${pi?.status || 'unknown'})`,
+      failureStage: PAID_BOOKING_FINALIZATION_STAGES.PAYMENT_VERIFIED,
+      safeToMutate: true,
+      repairAction: 'resolve_terminal_payment_issue'
+    };
   } else if (payment && payment.status !== 'paid') {
     return {
       ...base,
@@ -404,8 +436,7 @@ async function inspectPaidCheckoutSubject({
   const confirmationOk =
     !booking ||
     Boolean(booking.confirmationEmailSentAt) ||
-    isDefinitiveSentStatus(confirmation?.latestStatus) ||
-    !confirmation;
+    isDefinitiveSentStatus(confirmation?.latestStatus);
 
   if (
     sessionPaid &&
@@ -439,13 +470,17 @@ async function inspectPaidCheckoutSubject({
     sessionFinalized &&
     booking &&
     !booking.confirmationEmailSentAt &&
-    confirmation &&
-    ['pending', 'failed', 'sending'].includes(confirmation.latestStatus)
+    (
+      !confirmation ||
+      ['pending', 'failed', 'sending'].includes(confirmation.latestStatus)
+    )
   ) {
     return {
       ...base,
       classification: RECONCILE_CLASSIFICATIONS.CONFIRMATION_PENDING_OR_FAILED,
-      reason: `Confirmation delivery status=${confirmation.latestStatus}`,
+      reason: confirmation
+        ? `Confirmation delivery status=${confirmation.latestStatus}`
+        : 'Confirmation delivery has no durable state row',
       failureStage: PAID_BOOKING_FINALIZATION_STAGES.CONFIRMATION_SIDE_EFFECT,
       safeToMutate: true,
       repairAction: 'repair_side_effects'
@@ -669,6 +704,15 @@ async function executeRepair(inspection, { stripe = null, now = new Date() } = {
     return result;
   }
 
+  if (action === 'resolve_terminal_payment_issue') {
+    result.details = await resolvePaidBookingResolutionIssueSafe({
+      paymentIntentId: inspection.paymentIntentId,
+      checkoutId: inspection.checkoutId
+    });
+    result.mutated = Boolean(result.details);
+    return result;
+  }
+
   if (!inspection.safeToMutate) {
     result.details = { skipped: true, reason: 'not_safe_to_mutate' };
     return result;
@@ -877,6 +921,7 @@ async function reconcilePaidCheckoutSubject({
   checkoutId = null,
   paymentIntentId = null,
   execute = false,
+  automatic = false,
   mutationFlag = 'enqueue',
   stripe = null,
   paymentIntent = null,
@@ -886,7 +931,7 @@ async function reconcilePaidCheckoutSubject({
   const flagEnabled = historical
     ? featureFlags.isFinalizeReconcileHistoricalEnabled()
     : isReconcileEnqueueEnabled();
-  const dryRun = !(execute === true && flagEnabled);
+  const dryRun = !(execute === true && (automatic === true || flagEnabled));
   const inspection = await inspectPaidCheckoutSubject({
     checkoutId,
     paymentIntentId,
@@ -1037,9 +1082,9 @@ async function discoverReconcileCandidates({
 
   if (subjects.size < capped) {
     const paymentQuery = {
+      provider: 'stripe',
       status: 'paid',
-      reservationId: null,
-      'metadata.checkoutId': { $exists: true, $nin: [null, ''] }
+      $or: [{ reservationId: null }, { reservationId: { $exists: false } }]
     };
     if (hasDate) paymentQuery.createdAt = createdAt;
     const payments = await Payment.find(paymentQuery)
@@ -1080,10 +1125,14 @@ async function reconcilePaidCheckoutFinalization({
   until = null,
   limit = DEFAULT_LIMIT,
   execute = false,
+  automatic = false,
   stripe = null,
   now = new Date()
 } = {}) {
-  const dryRun = !(execute === true && isReconcileEnqueueEnabled());
+  const dryRun = !(
+    execute === true &&
+    (automatic === true || isReconcileEnqueueEnabled())
+  );
   const candidates = await discoverReconcileCandidates({
     checkoutId,
     paymentIntentId,
@@ -1100,6 +1149,7 @@ async function reconcilePaidCheckoutFinalization({
       checkoutId: subject.checkoutId,
       paymentIntentId: subject.paymentIntentId,
       execute,
+      automatic,
       stripe,
       now
     });

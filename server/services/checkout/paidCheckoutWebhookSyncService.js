@@ -9,7 +9,6 @@
 
 const CheckoutSession = require('../../models/CheckoutSession');
 const Payment = require('../../models/Payment');
-const featureFlags = require('../../utils/featureFlags');
 const { formatSofiaDateOnly } = require('../../utils/dateTime');
 const {
   hashFinalizeIntent,
@@ -233,9 +232,7 @@ async function verifyAccommodationPaymentSuccess({ event, payment = null }) {
   const metaFinalizeHash = pi.metadata?.finalizeIntentHash
     ? String(pi.metadata.finalizeIntentHash)
     : '';
-  const required = featureFlags.isFinalizeIntentRequiredForPiEnabled();
-
-  if (required && !sessionHasCompleteFinalizeIntent(session)) {
+  if (!sessionHasCompleteFinalizeIntent(session)) {
     return {
       ok: false,
       permanent: true,
@@ -530,7 +527,9 @@ async function recordVerificationFailure({
   event,
   failureSource = 'stripe_webhook'
 }) {
-  if (!result?.paymentIntentId) return null;
+  if (!result?.paymentIntentId) {
+    throw new Error('Paid checkout verification failure has no PaymentIntent for manual review');
+  }
   const issueType =
     result.errorCode === VERIFICATION_ERROR_CODES.SUPERSEDED_PAYMENT_INTENT ||
     result.errorCode === VERIFICATION_ERROR_CODES.NONCANONICAL_PAYMENT_INTENT ||
@@ -543,7 +542,7 @@ async function recordVerificationFailure({
       ? 'paid_booking_conflict'
       : 'paid_booking_unknown_failure';
 
-  return recordPaidBookingResolutionIssueSafe({
+  const issue = await recordPaidBookingResolutionIssueSafe({
     issueType,
     errorCode: result.errorCode,
     errorSummary: result.errorSummary,
@@ -558,44 +557,16 @@ async function recordVerificationFailure({
       webhookSync: 'batch3'
     }
   });
+  if (!issue) {
+    throw new Error('Could not durably record paid checkout verification failure');
+  }
+  return issue;
 }
 
 /**
  * Main Batch 3 webhook sync entry (idempotent).
  */
 async function syncAccommodationCheckoutPaidFromWebhook({ event, payment = null }) {
-  const markPaidEnabled = featureFlags.isCheckoutMarkPaidOnWebhookEnabled();
-  const enqueueEnabled = featureFlags.isFinalizeJobEnqueueEnabled();
-
-  if (!markPaidEnabled && !enqueueEnabled) {
-    return {
-      ok: true,
-      skipped: true,
-      reason: 'flags_disabled',
-      markPaid: false,
-      enqueue: false
-    };
-  }
-
-  if (!markPaidEnabled && enqueueEnabled) {
-    logSafe('checkout_paid_webhook_sync', {
-      resultCode: 'enqueue_without_mark_paid_skipped',
-      errorCode: VERIFICATION_ERROR_CODES.ENQUEUE_WITHOUT_MARK_PAID,
-      markPaid: false,
-      enqueue: false,
-      stripeEventId: event?.id || null,
-      paymentIntentId: extractPaymentIntentFromEvent(event)?.id || null
-    });
-    return {
-      ok: true,
-      skipped: true,
-      reason: 'enqueue_requires_mark_paid',
-      markPaid: false,
-      enqueue: false,
-      warning: VERIFICATION_ERROR_CODES.ENQUEUE_WITHOUT_MARK_PAID
-    };
-  }
-
   const verified = await verifyAccommodationPaymentSuccess({ event, payment });
   if (verified.skipped) {
     return {
@@ -608,8 +579,10 @@ async function syncAccommodationCheckoutPaidFromWebhook({ event, payment = null 
   }
 
   if (!verified.ok) {
+    let manualReviewRecorded = false;
     if (verified.permanent) {
       await recordVerificationFailure({ result: verified, event });
+      manualReviewRecorded = true;
     }
     logSafe('checkout_paid_webhook_sync', {
       checkoutId: verified.checkoutId || null,
@@ -625,6 +598,7 @@ async function syncAccommodationCheckoutPaidFromWebhook({ event, payment = null 
       ok: false,
       skipped: false,
       permanent: verified.permanent === true,
+      manualReviewRecorded,
       errorCode: verified.errorCode,
       markPaid: false,
       enqueue: false
@@ -670,47 +644,46 @@ async function syncAccommodationCheckoutPaidFromWebhook({ event, payment = null 
   }
 
   let enqueueResult = null;
-  if (enqueueEnabled) {
-    try {
-      enqueueResult = await ensureCheckoutFinalizationJob({
-        checkoutId: verified.checkoutId,
-        paymentIntentId: verified.paymentIntentId,
-        stripeEventId: event?.id || null,
-        quoteSnapshotHash: verified.evidence.quoteSnapshotHash,
-        finalizeIntentHash: verified.evidence.finalizeIntentHash,
-        createdReason: 'webhook'
-      });
-    } catch (err) {
-      await recordPaidBookingResolutionIssueSafe({
-        issueType: 'paid_booking_unknown_failure',
-        errorCode: VERIFICATION_ERROR_CODES.JOB_ENQUEUE_FAILED,
-        errorSummary: safeErrorSummary(err?.message || 'job enqueue failed'),
-        paymentIntentId: verified.paymentIntentId,
-        checkoutId: verified.checkoutId,
-        finalizationStage: PAID_BOOKING_FINALIZATION_STAGES.PAYMENT_INGESTED,
-        failureSource: 'stripe_webhook',
-        stripePaymentVerified: true,
-        stripeEventId: event?.id || null
-      });
-      logSafe('checkout_paid_webhook_sync', {
-        checkoutId: verified.checkoutId,
-        paymentIntentId: verified.paymentIntentId,
-        stripeEventId: event?.id || null,
-        errorCode: VERIFICATION_ERROR_CODES.JOB_ENQUEUE_FAILED,
-        resultCode: 'job_enqueue_failed',
-        markPaid: true,
-        enqueue: false
-      });
-      return {
-        ok: false,
-        permanent: false,
-        retryable: true,
-        errorCode: VERIFICATION_ERROR_CODES.JOB_ENQUEUE_FAILED,
-        markPaid: true,
-        enqueue: false,
-        sessionPaymentStatus: session.paymentStatus
-      };
-    }
+  try {
+    enqueueResult = await ensureCheckoutFinalizationJob({
+      checkoutId: verified.checkoutId,
+      paymentIntentId: verified.paymentIntentId,
+      stripeEventId: event?.id || null,
+      quoteSnapshotHash: verified.evidence.quoteSnapshotHash,
+      finalizeIntentHash: verified.evidence.finalizeIntentHash,
+      createdReason: 'webhook'
+    });
+  } catch (err) {
+    const issue = await recordPaidBookingResolutionIssueSafe({
+      issueType: 'paid_booking_unknown_failure',
+      errorCode: VERIFICATION_ERROR_CODES.JOB_ENQUEUE_FAILED,
+      errorSummary: safeErrorSummary(err?.message || 'job enqueue failed'),
+      paymentIntentId: verified.paymentIntentId,
+      checkoutId: verified.checkoutId,
+      finalizationStage: PAID_BOOKING_FINALIZATION_STAGES.PAYMENT_INGESTED,
+      failureSource: 'stripe_webhook',
+      stripePaymentVerified: true,
+      stripeEventId: event?.id || null
+    });
+    if (!issue) throw err;
+    logSafe('checkout_paid_webhook_sync', {
+      checkoutId: verified.checkoutId,
+      paymentIntentId: verified.paymentIntentId,
+      stripeEventId: event?.id || null,
+      errorCode: VERIFICATION_ERROR_CODES.JOB_ENQUEUE_FAILED,
+      resultCode: 'job_enqueue_failed',
+      markPaid: true,
+      enqueue: false
+    });
+    return {
+      ok: false,
+      permanent: false,
+      retryable: true,
+      errorCode: VERIFICATION_ERROR_CODES.JOB_ENQUEUE_FAILED,
+      markPaid: true,
+      enqueue: false,
+      sessionPaymentStatus: session.paymentStatus
+    };
   }
 
   logSafe('checkout_paid_webhook_sync', {
@@ -728,7 +701,7 @@ async function syncAccommodationCheckoutPaidFromWebhook({ event, payment = null 
     ok: true,
     skipped: false,
     markPaid: true,
-    enqueue: Boolean(enqueueEnabled),
+    enqueue: true,
     checkoutId: verified.checkoutId,
     paymentIntentId: verified.paymentIntentId,
     sessionPaymentStatus: session.paymentStatus,

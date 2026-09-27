@@ -18,6 +18,10 @@ const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
 const CheckoutSession = require('../models/CheckoutSession');
+const PaymentTermTemplate = require('../models/PaymentTermTemplate');
+const RatePlan = require('../models/RatePlan');
+const { validateAndNormalizePaymentTermTemplate } = require('../services/paymentTermService');
+const { buildFutureChargeConsentContract } = require('../services/splitPaymentChoiceService');
 const CheckoutResourceAttempt = require('../models/CheckoutResourceAttempt');
 const FacilityReservation = require('../models/FacilityReservation');
 const AccommodationCheckoutLease = require('../models/AccommodationCheckoutLease');
@@ -79,6 +83,12 @@ const {
   DEFAULT_RESOURCE_BUNDLE_MINIMUM_REMAINING_MS
 } = require('../services/checkout/resourceAttemptOrchestrator');
 const { CheckoutSessionError } = require('../services/checkout/checkoutSessionErrors');
+const {
+  LEGAL_ACCEPTANCE_TERMS_VERSION,
+  LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+  LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
+  LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT
+} = require('../config/legalAcceptance');
 
 const STAY_IN = '2026-10-10';
 const STAY_OUT = '2026-10-12';
@@ -214,6 +224,9 @@ function createFakeStripe(options = {}) {
   let cancelBehavior = 'default'; // default | throw | succeed_during
 
   const client = {
+    customers: {
+      create: async () => ({ id: `cus_b8f3_${++stripePiSeq}` })
+    },
     paymentIntents: {
       create: async (payload, createOptions = {}) => {
         calls.create += 1;
@@ -727,7 +740,9 @@ beforeEach(async () => {
     AvailabilityBlock.deleteMany({}),
     Booking.deleteMany({}),
     GiftVoucherRedemption.deleteMany({}),
-    GiftVoucher.deleteMany({})
+    GiftVoucher.deleteMany({}),
+    PaymentTermTemplate.deleteMany({}),
+    RatePlan.deleteMany({})
   ]);
   await mongoose.connection.db.collection('giftvoucherevents').deleteMany({});
 });
@@ -812,6 +827,131 @@ describe('B8F3 gate-off legacy parity (1–3, 40)', () => {
 });
 
 describe('B8F3 gate-on happy paths (4–8, 17–19)', () => {
+  it('full to split uses the lease-protected version and preserves PI supersession', async () => {
+    const previous = process.env.SPLIT_PAYMENT_ENABLED;
+    process.env.SPLIT_PAYMENT_ENABLED = 'true';
+    try {
+      const term = validateAndNormalizePaymentTermTemplate({
+        code: 'b8f3-split-40', internalName: '40% checkout', version: 1,
+        status: 'active', currency: 'EUR', scheduleKind: 'percent_split',
+        allowDateTransfer: false,
+        legs: [
+          { sequence: 1, amountType: 'percent_bps', amountValue: 4000,
+            dueRule: 'checkout', dueOffsetDays: 0, cancellationTreatment: 'stay_credit' },
+          { sequence: 2, amountType: 'remainder', amountValue: null,
+            dueRule: 'days_before_arrival', dueOffsetDays: 30,
+            cancellationTreatment: 'standard_policy' }
+        ]
+      });
+      assert.equal(term.ok, true);
+      await PaymentTermTemplate.create(term.value);
+      await RatePlan.create({
+        code: 'b8f3-winter', internalName: 'B8F3 winter', version: 1,
+        status: 'active', type: 'seasonal_stay', currency: 'EUR',
+        arrivalWindowStart: '2026-12-01', arrivalWindowEnd: '2026-12-31',
+        minNights: 2, inventoryMode: 'shared', requiresFullPayment: true,
+        cancellationPolicyCode: 'normal-stay-standard', cancellationPolicyVersion: 1,
+        paymentTermCode: 'b8f3-split-40', paymentTermVersion: 1,
+        inclusions: [], accommodations: [{
+          accommodationKey: 'a-frame', entityType: 'cabinType',
+          pricingMethod: 'nightly_per_unit', nightlyPerUnitAmount: 100,
+          includedGuests: 2, additionalGuestNightlyAmount: 0
+        }], revision: 1
+      });
+
+      const stripe = createFakeStripe();
+      const input = cabinTypeInput({
+        checkIn: '2026-12-10', checkOut: '2026-12-12',
+        guestInfo: { firstName: 'Test', lastName: 'Guest',
+          email: 'b8f3@example.com', phone: '+359888000111' },
+        legalAcceptance: {
+          acceptedTermsAndCancellation: true, acceptedActivityRisk: true,
+          termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
+          activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+          checkbox1TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
+          checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
+          locale: 'en'
+        }
+      });
+      const quote = cabinTypeQuote({
+        checkInDate: new Date('2026-12-10T12:00:00Z'),
+        checkOutDate: new Date('2026-12-12T12:00:00Z'),
+        ratePlan: { code: 'b8f3-winter', version: 1, type: 'seasonal_stay', currency: 'EUR' }
+      });
+      const first = await ensureCanonicalPaymentIntent(gatedArgs({ stripe, input, quote }));
+      assert.ok(first.splitPaymentOffer);
+      const storedOffer = (await CheckoutSession.findOne({ checkoutId: first.checkoutId })).splitPaymentOfferSnapshot;
+      const consent = buildFutureChargeConsentContract(
+        storedOffer, first.splitPaymentOffer.offerSnapshotHash
+      );
+      const split = await ensureCanonicalPaymentIntent(gatedArgs({
+        stripe, checkoutId: first.checkoutId, quote,
+        input: {
+          ...input, expectedSessionVersion: first.sessionVersion, paymentChoice: 'split',
+          splitOfferSnapshotHash: first.splitPaymentOffer.offerSnapshotHash,
+          futureChargeConsent: {
+            consentVersion: consent.consentVersion, consentHash: consent.consentHash,
+            acceptedLocale: 'en'
+          }
+        }
+      }));
+      assert.equal(split.paymentChoice, 'split');
+      assert.equal(split.chargeAmountCents, 8000);
+      assert.equal(split.splitPaymentOffer.installments[1].amountCents, 12000);
+      assert.equal(split.sessionVersion,
+        (await CheckoutSession.findOne({ checkoutId: first.checkoutId })).sessionVersion);
+      assert.notEqual(split.canonicalPaymentIntentId, first.canonicalPaymentIntentId);
+      assert.equal(stripe.__store.get(first.canonicalPaymentIntentId).status, 'canceled');
+      assert.equal(stripe.__calls.uniqueCreated, 2);
+    } finally {
+      if (previous === undefined) delete process.env.SPLIT_PAYMENT_ENABLED;
+      else process.env.SPLIT_PAYMENT_ENABLED = previous;
+    }
+  });
+
+  it('explicit-choice retry uses the post-lease authoritative version without duplicating the PI', async () => {
+    const stripe = createFakeStripe();
+    const input = cabinTypeInput({
+      guestInfo: {
+        firstName: 'Test', lastName: 'Guest', email: 'b8f3@example.com',
+        phone: '+359888000111'
+      },
+      legalAcceptance: {
+        acceptedTermsAndCancellation: true,
+        acceptedActivityRisk: true,
+        termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
+        activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+        checkbox1TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
+        checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
+        locale: 'en'
+      }
+    });
+    const quote = cabinTypeQuote();
+    const first = await ensureCanonicalPaymentIntent(gatedArgs({ stripe, input, quote }));
+    assert.ok(first.finalizeIntentHash);
+    assert.equal(first.sessionVersion, (await CheckoutSession.findOne({ checkoutId: first.checkoutId })).sessionVersion);
+
+    const replay = await ensureCanonicalPaymentIntent(gatedArgs({
+      stripe,
+      checkoutId: first.checkoutId,
+      input: { ...input, expectedSessionVersion: first.sessionVersion, paymentChoice: 'full' },
+      quote
+    }));
+    assert.equal(replay.paymentChoice, 'full');
+    assert.equal(replay.canonicalPaymentIntentId, first.canonicalPaymentIntentId);
+    assert.equal(replay.sessionVersion, (await CheckoutSession.findOne({ checkoutId: first.checkoutId })).sessionVersion);
+    assert.equal(stripe.__calls.uniqueCreated, 1);
+    await assert.rejects(
+      () => ensureCanonicalPaymentIntent(gatedArgs({
+        stripe,
+        checkoutId: first.checkoutId,
+        input: { ...input, expectedSessionVersion: first.sessionVersion, paymentChoice: 'full' },
+        quote
+      })),
+      (err) => err.code === 'FINALIZE_INTENT_SESSION_VERSION_CONFLICT'
+    );
+  });
+
   it('4+5+8. Gate on: A2 non-voucher acquires lease before Stripe; lease durable', async () => {
     const id = checkoutId('a2');
     let sawLeaseBeforeStripe = false;

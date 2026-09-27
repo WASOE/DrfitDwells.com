@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'node:path';
@@ -7,7 +7,14 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ command, mode }) => {
+  if (command === 'build') {
+    const key = loadEnv(mode, __dirname, 'VITE_STRIPE_PUBLISHABLE_KEY').VITE_STRIPE_PUBLISHABLE_KEY;
+    if (!/^pk_(live|test)_[A-Za-z0-9]+$/.test(key || '')) {
+      throw new Error('Client build requires a valid VITE_STRIPE_PUBLISHABLE_KEY (pk_live_... or pk_test_...).');
+    }
+  }
+  return {
   resolve: {
     alias: {
       '@shared': path.resolve(__dirname, '../shared')
@@ -117,4 +124,5 @@ export default defineConfig({
       }
     }
   }
+  };
 });

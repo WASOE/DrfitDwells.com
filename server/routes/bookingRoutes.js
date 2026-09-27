@@ -73,6 +73,7 @@ const {
 const { isCheckoutSessionError } = require('../services/checkout/checkoutSessionErrors');
 const {
   shouldUseCheckoutSessionV2,
+  shouldUseCheckoutSessionV2ForPaymentPreparation,
   handleGetCheckoutSession,
   getCheckoutPaymentCapabilities,
   handleCreatePaymentIntentV2,
@@ -963,51 +964,6 @@ router.put('/checkout-sessions/:checkoutId/finalize-intent', paymentIntentLimite
   }
 });
 
-router.post(
-  '/checkout-sessions/:checkoutId/paid-recovery-consent',
-  paymentIntentLimiter,
-  async (req, res) => {
-    const checkoutId = normalizeCheckoutId(req.params.checkoutId);
-    if (!checkoutId || !isValidCheckoutId(checkoutId)) {
-      return res.status(400).json({
-        success: false,
-        code: 'INVALID_CHECKOUT_ID',
-        message: 'Invalid checkout session id'
-      });
-    }
-
-    try {
-      const {
-        persistPaidCheckoutRecoveryFinalizeIntent,
-        buildRequestMetaFromReq
-      } = require('../services/checkout/finalizeIntentService');
-      const result = await persistPaidCheckoutRecoveryFinalizeIntent({
-        checkoutId,
-        body: req.body || {},
-        requestMeta: buildRequestMetaFromReq(req),
-        stripe
-      });
-      return res.json({
-        success: true,
-        ...result
-      });
-    } catch (err) {
-      if (isCheckoutSessionError(err)) {
-        return sendCheckoutSessionError(res, err);
-      }
-      console.error('Paid checkout recovery consent error:', {
-        checkoutId,
-        code: err?.code || null,
-        message: err?.message ? String(err.message).slice(0, 200) : null
-      });
-      return res.status(500).json({
-        success: false,
-        message: 'Could not save your recovery details. Please contact support.'
-      });
-    }
-  }
-);
-
 // POST /api/bookings/create-payment-intent - Create Stripe PaymentIntent for cabin booking
 router.post('/create-payment-intent', paymentIntentLimiter, bookingQuoteBodyValidators, async (req, res) => {
   attachPaymentFlowMonitor(res, BOOKING_PAYMENT_INTENT_ROUTE);
@@ -1053,7 +1009,17 @@ router.post('/create-payment-intent', paymentIntentLimiter, bookingQuoteBodyVali
       });
     }
 
-    if (await shouldUseCheckoutSessionV2(checkoutId)) {
+    const useV2PaymentPreparation =
+      await shouldUseCheckoutSessionV2ForPaymentPreparation(checkoutId);
+    if (!useV2PaymentPreparation) {
+      return res.status(503).json({
+        success: false,
+        code: 'CHECKOUT_SESSION_V2_REQUIRED',
+        message: 'Secure checkout payment preparation is temporarily unavailable.'
+      });
+    }
+
+    if (useV2PaymentPreparation) {
       try {
         const outcome = await handleCreatePaymentIntentV2(req, stripe);
         if (!outcome.ok) {
@@ -1270,7 +1236,7 @@ router.post('/create-payment-intent', paymentIntentLimiter, bookingQuoteBodyVali
     if (isGuestSafeVoucherFailureCode(err?.code)) {
       console.warn('[booking-voucher] create-payment-intent voucher validation failed', {
         internalCode: err.code,
-        checkoutId
+        checkoutId: normalizeCheckoutId(req.body?.checkoutId)
       });
       return res.status(400).json({ success: false, message: PUBLIC_VOUCHER_ERROR_MESSAGE });
     }
