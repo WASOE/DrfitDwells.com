@@ -52,6 +52,10 @@ function isDuplicateKeyError(error) {
   return error?.code === 11000;
 }
 
+function expectedRevision(payment) {
+  return { revision: payment.revision == null ? { $in: [null, 0] } : payment.revision };
+}
+
 async function addDeepCleaning({ date, propertyKind, actorId }) {
   const filter = bucketFilter(date, propertyKind);
   const item = buildDeepCleanLineItem(propertyKind, actorId);
@@ -66,6 +70,7 @@ async function addDeepCleaning({ date, propertyKind, actorId }) {
       },
       {
         $push: { manualLineItems: item },
+        $inc: { revision: 1 },
         $setOnInsert: { totalAmount: 0, currency: 'EUR' }
       },
       { upsert: true, new: true, setDefaultsOnInsert: true }
@@ -91,7 +96,10 @@ async function removeDeepCleaning({ date, propertyKind }) {
   const filter = bucketFilter(date, propertyKind);
   const updated = await CleaningPayment.findOneAndUpdate(
     { ...filter, status: { $ne: 'paid' }, 'manualLineItems.ruleKey': DEEP_CLEAN_RULE_KEY },
-    { $pull: { manualLineItems: { ruleKey: DEEP_CLEAN_RULE_KEY } } },
+    {
+      $pull: { manualLineItems: { ruleKey: DEEP_CLEAN_RULE_KEY } },
+      $inc: { revision: 1 }
+    },
     { new: true }
   );
 
@@ -146,14 +154,13 @@ async function markCleaningPaymentPaid({ date, propertyKind, actorId }) {
   let saved;
   try {
     if (existing) {
-      // updatedAt guard: manual items added/removed after our read abort the snapshot.
       saved = await CleaningPayment.findOneAndUpdate(
-        { _id: existing._id, status: { $ne: 'paid' }, updatedAt: existing.updatedAt ?? null },
-        { $set: snapshot },
+        { _id: existing._id, status: { $ne: 'paid' }, ...expectedRevision(existing) },
+        { $set: snapshot, $inc: { revision: 1 } },
         { new: true }
       ).lean();
     } else {
-      saved = (await CleaningPayment.create({ ...filter, ...snapshot })).toObject();
+      saved = (await CleaningPayment.create({ ...filter, ...snapshot, revision: 1 })).toObject();
     }
   } catch (error) {
     if (!isDuplicateKeyError(error)) throw error;
@@ -198,9 +205,10 @@ async function unmarkCleaningPaymentPaid({ date, propertyKind, actorId }) {
   };
 
   const updated = await CleaningPayment.findOneAndUpdate(
-    { _id: existing._id, status: 'paid', updatedAt: existing.updatedAt ?? null },
+    { _id: existing._id, status: 'paid', ...expectedRevision(existing) },
     {
       $push: { paidSnapshotHistory: archived },
+      $inc: { revision: 1 },
       $set: {
         status: 'pending',
         paidAmount: 0,

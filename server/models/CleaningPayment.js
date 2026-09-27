@@ -96,6 +96,13 @@ const cleaningPaymentSchema = new mongoose.Schema(
       enum: ['pending', 'partial', 'paid'],
       default: 'pending'
     },
+    // Missing on older documents; lifecycle writes treat it as zero.
+    revision: {
+      type: Number,
+      default: 0,
+      min: 0,
+      validate: Number.isSafeInteger
+    },
     lineItems: {
       type: [lineItemSchema],
       default: []

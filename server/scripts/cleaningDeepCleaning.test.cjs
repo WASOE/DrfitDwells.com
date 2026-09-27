@@ -110,6 +110,43 @@ function deepItems(lineItems) {
   return (lineItems || []).filter((li) => li.ruleKey === 'deep_clean');
 }
 
+async function raceAtWrite(matches, firstAction, secondAction) {
+  const collection = CleaningPayment.collection;
+  const original = collection.findOneAndUpdate;
+  let resume;
+  let reached;
+  let intercepted = false;
+  const paused = new Promise((resolve) => { resume = resolve; });
+  const atWrite = new Promise((resolve) => { reached = resolve; });
+  collection.findOneAndUpdate = async function (...args) {
+    if (!intercepted && matches(args[0], args[1])) {
+      intercepted = true;
+      reached();
+      await paused;
+    }
+    return original.apply(this, args);
+  };
+
+  const first = Promise.resolve(firstAction());
+  try {
+    await atWrite;
+    const second = await secondAction();
+    resume();
+    return { first: await first, second };
+  } finally {
+    resume();
+    collection.findOneAndUpdate = original;
+    await first;
+  }
+}
+
+async function storedPayment(bucket) {
+  return CleaningPayment.findOne({
+    date: normalizeDateToSofiaDayStart(bucket.date),
+    propertyKind: bucket.propertyKind
+  }).lean();
+}
+
 async function activateDefaultValleyPolicy(version) {
   await CleaningPricingPolicy.updateMany({ propertyKind: 'valley' }, { $set: { isActive: false } });
   await CleaningPricingPolicy.create({
@@ -127,6 +164,7 @@ test.before(async () => {
   process.env.MONGODB_URI = mongoServer.getUri();
   process.env.ADMIN_JWT_SECRET = 'cleaning-deep-cleaning-batch-2';
   await mongoose.connect(mongoServer.getUri(), { serverSelectionTimeoutMS: 10000 });
+  await CleaningPayment.init();
 
   delete require.cache[require.resolve('../routes/adminRoutes')];
   delete require.cache[require.resolve('../routes/ops/index')];
@@ -166,6 +204,198 @@ test('Cleaning Batch 2 — manual Deep/Main cleaning and paid-snapshot lifecycle
     assert.ok(res.body.data.lineItems.every((li) => li.source === 'policy'));
   });
 
+  await t.test('revision guards concurrent lifecycle writes', async (t) => {
+    for (let i = 0; i < 3; i += 1) {
+      await t.test(`add versus mark-paid, stale mark conflicts (${i + 1})`, async () => {
+        const bucket = await seedValleyDay({ aframes: 1 });
+        const created = await CleaningPayment.create({
+          ...bucket,
+          date: normalizeDateToSofiaDayStart(bucket.date),
+          totalAmount: 0
+        });
+        const { first, second } = await raceAtWrite(
+          (filter) => String(filter._id) === String(created._id) && filter.status?.$ne === 'paid',
+          () => markPaid(adminToken, bucket),
+          () => addDeep(adminToken, bucket)
+        );
+        assert.equal(second.status, 200);
+        assert.equal(second.body.changed, true);
+        assert.equal(first.status, 409);
+        assert.equal(first.body.errorType, 'conflict');
+        const paid = await markPaid(adminToken, bucket);
+        assert.equal(paid.status, 200);
+        assert.equal(paid.body.data.totalAmount, 182);
+        const stored = await storedPayment(bucket);
+        assert.equal(stored.revision, 2);
+        assert.equal(deepItems(stored.lineItems).length, 1);
+      });
+
+      await t.test(`mark-paid wins before a delayed add (${i + 1})`, async () => {
+        const bucket = await seedValleyDay({ aframes: 1 });
+        const { first, second } = await raceAtWrite(
+          (filter, update) => filter['manualLineItems.ruleKey']?.$ne === 'deep_clean' &&
+            update.$push?.manualLineItems?.ruleKey === 'deep_clean',
+          () => addDeep(adminToken, bucket),
+          () => markPaid(adminToken, bucket)
+        );
+        assert.equal(second.status, 200);
+        assert.equal(second.body.data.totalAmount, 32);
+        assert.equal(first.status, 409);
+        assert.equal(first.body.errorType, 'payment_locked');
+        const stored = await storedPayment(bucket);
+        assert.equal(stored.revision, 1);
+        assert.equal(stored.totalAmount, 32);
+        assert.equal(deepItems(stored.manualLineItems).length, 0);
+        assert.equal(await CleaningPayment.countDocuments({
+          date: normalizeDateToSofiaDayStart(bucket.date),
+          propertyKind: bucket.propertyKind
+        }), 1);
+      });
+
+      await t.test(`remove versus mark-paid, stale mark conflicts (${i + 1})`, async () => {
+        const bucket = await seedValleyDay({ aframes: 1 });
+        await addDeep(adminToken, bucket);
+        const before = await storedPayment(bucket);
+        const { first, second } = await raceAtWrite(
+          (filter) => String(filter._id) === String(before._id) && filter.status?.$ne === 'paid',
+          () => markPaid(adminToken, bucket),
+          () => removeDeep(adminToken, bucket)
+        );
+        assert.equal(second.status, 200);
+        assert.equal(second.body.changed, true);
+        assert.equal(first.status, 409);
+        assert.equal(first.body.errorType, 'conflict');
+        assert.equal((await markPaid(adminToken, bucket)).body.data.totalAmount, 32);
+        const stored = await storedPayment(bucket);
+        assert.equal(stored.revision, before.revision + 2);
+        assert.equal(deepItems(stored.lineItems).length, 0);
+        assert.equal(deepItems(stored.manualLineItems).length, 0);
+      });
+
+      await t.test(`mark-paid wins before a delayed remove (${i + 1})`, async () => {
+        const bucket = await seedValleyDay({ aframes: 1 });
+        await addDeep(adminToken, bucket);
+        const { first, second } = await raceAtWrite(
+          (filter, update) => filter['manualLineItems.ruleKey'] === 'deep_clean' &&
+            update.$pull?.manualLineItems?.ruleKey === 'deep_clean',
+          () => removeDeep(adminToken, bucket),
+          () => markPaid(adminToken, bucket)
+        );
+        assert.equal(second.status, 200);
+        assert.equal(second.body.data.totalAmount, 182);
+        assert.equal(first.status, 409);
+        assert.equal(first.body.errorType, 'payment_locked');
+        const stored = await storedPayment(bucket);
+        assert.equal(stored.revision, 2);
+        assert.equal(deepItems(stored.manualLineItems).length, 1);
+        assert.equal(deepItems(stored.lineItems).length, 1);
+      });
+
+      await t.test(`simultaneous mark-paid keeps one snapshot (${i + 1})`, async () => {
+        const bucket = await seedValleyDay({ aframes: 1 });
+        await addDeep(adminToken, bucket);
+        const before = await storedPayment(bucket);
+        const { first, second } = await raceAtWrite(
+          (filter) => String(filter._id) === String(before._id) && filter.status?.$ne === 'paid',
+          () => markPaid(adminToken, bucket),
+          () => markPaid(adminToken, bucket)
+        );
+        assert.equal(second.status, 200);
+        assert.equal(second.body.data.alreadyPaid, false);
+        assert.equal(first.status, 200);
+        assert.equal(first.body.data.alreadyPaid, true);
+        const stored = await storedPayment(bucket);
+        assert.equal(stored.revision, before.revision + 1);
+        assert.equal(stored.totalAmount, 182);
+        assert.equal(stored.paidSnapshotHistory.length, 0);
+        assert.deepEqual(first.body.data.lineItems, second.body.data.lineItems);
+        assert.ok(stored.markedPaidAt instanceof Date);
+      });
+
+      await t.test(`stale unmark cannot erase a later paid snapshot (${i + 1})`, async () => {
+        const bucket = await seedValleyDay({ aframes: 1 });
+        await addDeep(adminToken, bucket);
+        await markPaid(adminToken, bucket);
+        const before = await storedPayment(bucket);
+        const { first, second } = await raceAtWrite(
+          (filter) => String(filter._id) === String(before._id) && filter.status === 'paid',
+          () => unmarkPaid(adminToken, bucket),
+          async () => {
+            const unmarked = await unmarkPaid(adminToken, bucket);
+            const remarked = await markPaid(adminToken, bucket);
+            return { unmarked, remarked };
+          }
+        );
+        assert.equal(second.unmarked.status, 200);
+        assert.equal(second.unmarked.body.data.changed, true);
+        assert.equal(second.remarked.status, 200);
+        assert.equal(first.status, 409);
+        assert.equal(first.body.errorType, 'conflict');
+        const stored = await storedPayment(bucket);
+        assert.equal(stored.status, 'paid');
+        assert.equal(stored.revision, before.revision + 2);
+        assert.equal(stored.paidSnapshotHistory.length, 1);
+        assert.equal(stored.paidSnapshotHistory[0].totalAmount, 182);
+        assert.equal(stored.totalAmount, 182);
+        assert.ok(stored.markedPaidAt instanceof Date);
+      });
+    }
+
+    await t.test('legacy missing revision is zero and advances on first mutation', async () => {
+      const bucket = await seedValleyDay({ aframes: 1 });
+      await CleaningPayment.collection.insertOne({
+        date: normalizeDateToSofiaDayStart(bucket.date),
+        propertyKind: bucket.propertyKind,
+        status: 'pending',
+        totalAmount: 0,
+        currency: 'EUR'
+      });
+      assert.equal((await storedPayment(bucket)).revision, undefined);
+      assert.equal((await addDeep(adminToken, bucket)).status, 200);
+      assert.equal((await storedPayment(bucket)).revision, 1);
+      assert.equal((await markPaid(adminToken, bucket)).status, 200);
+      assert.equal((await storedPayment(bucket)).revision, 2);
+      assert.equal((await unmarkPaid(adminToken, bucket)).status, 200);
+      assert.equal((await storedPayment(bucket)).revision, 3);
+    });
+
+    await t.test('mark-paid accepts a legacy pending document without revision', async () => {
+      const bucket = await seedValleyDay({ aframes: 1 });
+      await CleaningPayment.collection.insertOne({
+        date: normalizeDateToSofiaDayStart(bucket.date),
+        propertyKind: bucket.propertyKind,
+        status: 'pending',
+        totalAmount: 0,
+        currency: 'EUR'
+      });
+      const paid = await markPaid(adminToken, bucket);
+      assert.equal(paid.status, 200);
+      assert.equal(paid.body.data.totalAmount, 32);
+      assert.equal((await storedPayment(bucket)).revision, 1);
+    });
+
+    await t.test('legacy paid document without revision archives only once', async () => {
+      const bucket = await seedValleyDay({ aframes: 1 });
+      await CleaningPayment.collection.insertOne({
+        date: normalizeDateToSofiaDayStart(bucket.date),
+        propertyKind: bucket.propertyKind,
+        status: 'paid',
+        totalAmount: 32,
+        paidAmount: 32,
+        currency: 'EUR',
+        lineItems: [],
+        markedPaidAt: new Date(),
+        markedPaidBy: 'legacy-admin'
+      });
+      const res = await unmarkPaid(adminToken, bucket);
+      assert.equal(res.status, 200);
+      const stored = await storedPayment(bucket);
+      assert.equal(stored.revision, 1);
+      assert.equal(stored.paidSnapshotHistory.length, 1);
+      assert.equal(stored.paidSnapshotHistory[0].totalAmount, 32);
+    });
+  });
+
   await t.test('2 + 5. add deep cleaning: +€150 once, manual source, stable key, audit; 1 A-frame => €182', async () => {
     const bucket = await seedValleyDay({ aframes: 1 });
     const before = Date.now();
@@ -202,6 +432,7 @@ test('Cleaning Batch 2 — manual Deep/Main cleaning and paid-snapshot lifecycle
   await t.test('3. adding deep cleaning twice does not duplicate or change the total', async () => {
     const bucket = await seedValleyDay({ aframes: 1 });
     const first = await addDeep(adminToken, bucket);
+    const revisionAfterFirst = (await storedPayment(bucket)).revision;
     const second = await addDeep(adminToken, bucket);
     const concurrent = await Promise.all([addDeep(adminToken, bucket), addDeep(adminToken, bucket)]);
     assert.equal(first.body.changed, true);
@@ -215,6 +446,7 @@ test('Cleaning Batch 2 — manual Deep/Main cleaning and paid-snapshot lifecycle
       propertyKind: 'valley'
     }).lean();
     assert.equal(stored.manualLineItems.length, 1);
+    assert.equal(stored.revision, revisionAfterFirst);
     assert.equal(deepItems((await summary(adminToken, bucket)).body.data.lineItems).length, 1);
   });
 
@@ -230,6 +462,7 @@ test('Cleaning Batch 2 — manual Deep/Main cleaning and paid-snapshot lifecycle
     const again = await removeDeep(adminToken, bucket);
     assert.equal(again.status, 200);
     assert.equal(again.body.changed, false);
+    assert.equal((await storedPayment(bucket)).revision, 2);
   });
 
   await t.test('6. deep cleaning + 2 A-frames + Lux => €75 + €150 = €225', async () => {
@@ -292,6 +525,7 @@ test('Cleaning Batch 2 — manual Deep/Main cleaning and paid-snapshot lifecycle
     const afterRepeat = await CleaningPayment.findOne({ date: sofiaStart, propertyKind: 'valley' }).lean();
     assert.deepEqual(afterRepeat.lineItems, frozen.lineItems);
     assert.equal(afterRepeat.pricingVersion, 'batch2-default');
+    assert.equal(afterRepeat.revision, frozen.revision);
     assert.equal(afterRepeat.markedPaidAt.getTime(), frozen.markedPaidAt.getTime());
     assert.equal(afterRepeat.markedPaidBy, frozen.markedPaidBy);
 
@@ -328,6 +562,7 @@ test('Cleaning Batch 2 — manual Deep/Main cleaning and paid-snapshot lifecycle
     // Unmarking an unpaid day is a no-op that preserves history.
     const unmarkAgain = await unmarkPaid(adminToken, bucket);
     assert.equal(unmarkAgain.body.data.changed, false);
+    assert.equal((await storedPayment(bucket)).revision, reopened.revision);
     assert.equal(
       (await CleaningPayment.findOne({ date: sofiaStart, propertyKind: 'valley' }).lean())
         .paidSnapshotHistory.length,
