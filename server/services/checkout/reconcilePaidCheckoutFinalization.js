@@ -47,6 +47,7 @@ const { FINALIZE_STATUS } = require('./checkoutFinalizeService');
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 const RESULT_HISTORY_MAX = 50;
+const PAYMENT_RECORD_CONVERGENCE_GRACE_MS = 30_000;
 
 const RECONCILE_CLASSIFICATIONS = Object.freeze({
   SESSION_NOT_MARKED_PAID: 'SESSION_NOT_MARKED_PAID',
@@ -61,6 +62,7 @@ const RECONCILE_CLASSIFICATIONS = Object.freeze({
   SUPERSEDED_OR_NONCANONICAL_PI: 'SUPERSEDED_OR_NONCANONICAL_PI',
   VERIFICATION_MISMATCH: 'VERIFICATION_MISMATCH',
   PAYMENT_RECORD_MISSING_OR_NOT_PAID: 'PAYMENT_RECORD_MISSING_OR_NOT_PAID',
+  PAYMENT_RECORD_CONVERGENCE_PENDING: 'PAYMENT_RECORD_CONVERGENCE_PENDING',
   TERMINAL_UNPAID_PAYMENT: 'TERMINAL_UNPAID_PAYMENT',
   UNMAPPED_SUCCESSFUL_PAYMENT: 'UNMAPPED_SUCCESSFUL_PAYMENT',
   PERMANENT_FINALIZATION_FAILURE: 'PERMANENT_FINALIZATION_FAILURE',
@@ -90,6 +92,34 @@ function isReconcileEnqueueEnabled() {
 
 function normalizeNow(now) {
   return now instanceof Date ? now : new Date(now);
+}
+
+function isWithinPaymentRecordConvergenceWindow(value, at) {
+  if (!value) return false;
+  const timestamp = value instanceof Date ? value.getTime() : new Date(value).getTime();
+  const age = at.getTime() - timestamp;
+  return Number.isFinite(timestamp) && age >= 0 && age <= PAYMENT_RECORD_CONVERGENCE_GRACE_MS;
+}
+
+function hasRecentPaymentSuccessEvidence({ session, job, paymentIntentId, now }) {
+  if (job?.status === 'failed_permanent') return false;
+
+  if (
+    session?.paymentStatus === 'paid' &&
+    isWithinPaymentRecordConvergenceWindow(session.paymentSucceededAt, now)
+  ) {
+    return true;
+  }
+
+  const jobMatchesIntent =
+    job &&
+    (!job.paymentIntentId ||
+      String(job.paymentIntentId) === String(paymentIntentId || ''));
+  return Boolean(
+    jobMatchesIntent &&
+      ACTIVE_JOB_STATUSES.has(job.status) &&
+      isWithinPaymentRecordConvergenceWindow(job.createdAt, now)
+  );
 }
 
 function clampLimit(limit) {
@@ -249,7 +279,8 @@ async function inspectPaidCheckoutSubject({
           flowVersion: session.flowVersion,
           expiresAt: session.expiresAt || null,
           bookingId: session.bookingId ? String(session.bookingId) : null,
-          canonicalPaymentIntentId: session.canonicalPaymentIntentId || null
+          canonicalPaymentIntentId: session.canonicalPaymentIntentId || null,
+          paymentSucceededAt: session.paymentSucceededAt || null
         }
       : null,
     payment: payment
@@ -362,12 +393,33 @@ async function inspectPaidCheckoutSubject({
         };
       }
       if (verification.errorCode === VERIFICATION_ERROR_CODES.PAYMENT_RECORD_NOT_PAID) {
+        if (
+          !payment &&
+          hasRecentPaymentSuccessEvidence({
+            session,
+            job,
+            paymentIntentId: piId,
+            now: at
+          })
+        ) {
+          return {
+            ...base,
+            classification: RECONCILE_CLASSIFICATIONS.PAYMENT_RECORD_CONVERGENCE_PENDING,
+            reason: 'Recent verified payment is awaiting Payment ledger convergence',
+            failureStage: PAID_BOOKING_FINALIZATION_STAGES.PAYMENT_VERIFIED,
+            errorCode: verification.errorCode,
+            paymentRecordState: 'missing',
+            safeToMutate: false,
+            repairAction: 'none'
+          };
+        }
         return {
           ...base,
           classification: RECONCILE_CLASSIFICATIONS.PAYMENT_RECORD_MISSING_OR_NOT_PAID,
           reason: verification.errorSummary,
           failureStage: PAID_BOOKING_FINALIZATION_STAGES.PAYMENT_VERIFIED,
           errorCode: verification.errorCode,
+          paymentRecordState: payment ? 'unpaid' : 'missing',
           safeToMutate: false,
           repairAction: 'open_manual_review'
         };
@@ -377,12 +429,36 @@ async function inspectPaidCheckoutSubject({
 
   if (piId && !payment) {
     // If Stripe says succeeded we still need a paid Payment row for safe mark-paid.
-    if (pi && String(pi.status || '').toLowerCase() === 'succeeded') {
+    if (
+      (pi && String(pi.status || '').toLowerCase() === 'succeeded') ||
+      session?.paymentStatus === 'paid'
+    ) {
+      if (
+        hasRecentPaymentSuccessEvidence({
+          session,
+          job,
+          paymentIntentId: piId,
+          now: at
+        })
+      ) {
+        return {
+          ...base,
+          classification: RECONCILE_CLASSIFICATIONS.PAYMENT_RECORD_CONVERGENCE_PENDING,
+          reason: 'Recent verified payment is awaiting Payment ledger convergence',
+          failureStage: PAID_BOOKING_FINALIZATION_STAGES.PAYMENT_VERIFIED,
+          errorCode: 'PAYMENT_RECORD_MISSING',
+          paymentRecordState: 'missing',
+          safeToMutate: false,
+          repairAction: 'none'
+        };
+      }
       return {
         ...base,
         classification: RECONCILE_CLASSIFICATIONS.PAYMENT_RECORD_MISSING_OR_NOT_PAID,
         reason: 'Canonical Payment record is missing',
         failureStage: PAID_BOOKING_FINALIZATION_STAGES.PAYMENT_VERIFIED,
+        errorCode: 'PAYMENT_RECORD_MISSING',
+        paymentRecordState: 'missing',
         safeToMutate: false,
         repairAction: 'open_manual_review'
       };
@@ -408,6 +484,7 @@ async function inspectPaidCheckoutSubject({
       classification: RECONCILE_CLASSIFICATIONS.PAYMENT_RECORD_MISSING_OR_NOT_PAID,
       reason: `Payment status is ${payment.status}`,
       failureStage: PAID_BOOKING_FINALIZATION_STAGES.PAYMENT_VERIFIED,
+      paymentRecordState: 'unpaid',
       safeToMutate: false,
       repairAction: 'open_manual_review'
     };
@@ -932,13 +1009,26 @@ async function reconcilePaidCheckoutSubject({
     ? featureFlags.isFinalizeReconcileHistoricalEnabled()
     : isReconcileEnqueueEnabled();
   const dryRun = !(execute === true && (automatic === true || flagEnabled));
-  const inspection = await inspectPaidCheckoutSubject({
+  let inspection = await inspectPaidCheckoutSubject({
     checkoutId,
     paymentIntentId,
     stripe,
     paymentIntent,
     now
   });
+  if (
+    !dryRun &&
+    inspection.repairAction === 'open_manual_review' &&
+    inspection.paymentRecordState === 'missing'
+  ) {
+    inspection = await inspectPaidCheckoutSubject({
+      checkoutId,
+      paymentIntentId,
+      stripe,
+      paymentIntent,
+      now
+    });
+  }
 
   const outcome = {
     dryRun,
@@ -1193,6 +1283,7 @@ module.exports = {
   RECONCILE_CLASSIFICATIONS,
   DEFAULT_LIMIT,
   MAX_LIMIT,
+  PAYMENT_RECORD_CONVERGENCE_GRACE_MS,
   isReconcileEnqueueEnabled,
   inspectPaidCheckoutSubject,
   reconcilePaidCheckoutSubject,

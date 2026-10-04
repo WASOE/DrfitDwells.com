@@ -36,11 +36,13 @@ const { normalizeDateToSofiaDayStart } = require('../utils/dateTime');
 const { FINALIZE_STATUS } = require('../services/checkout/checkoutFinalizeService');
 const {
   RECONCILE_CLASSIFICATIONS,
+  PAYMENT_RECORD_CONVERGENCE_GRACE_MS,
   inspectPaidCheckoutSubject,
   reconcilePaidCheckoutSubject,
   reconcilePaidCheckoutFinalization
 } = require('../services/checkout/reconcilePaidCheckoutFinalization');
 const { ensureCheckoutFinalizationJob } = require('../services/checkout/checkoutFinalizationJobService');
+const { resolveAlertsForBooking } = require('../services/checkout/checkoutFinalizeSideEffects');
 
 let mongoServer;
 const ORIG_RECONCILE = process.env.FINALIZE_RECONCILE_ENQUEUE;
@@ -261,6 +263,63 @@ async function createPaidPayment({ paymentIntentId, checkoutId, reservationId = 
   });
 }
 
+async function createFinalizedBooking({ cabin, session, paymentIntentId }) {
+  const booking = await Booking.create({
+    checkIn: normalizeDateToSofiaDayStart('2030-09-10'),
+    checkOut: normalizeDateToSofiaDayStart('2030-09-12'),
+    adults: 2,
+    children: 0,
+    totalPrice: 200,
+    subtotalPrice: 200,
+    status: 'confirmed',
+    paymentMethod: 'stripe',
+    stripePaymentIntentId: paymentIntentId,
+    checkoutId: session.checkoutId,
+    commercialStayFingerprint: `fp_b7_converged_${session.checkoutId}`,
+    guestInfo: {
+      firstName: 'Batch',
+      lastName: 'Seven',
+      email: `batch7-converged-${session.checkoutId}@example.com`,
+      phone: '+359888000777'
+    },
+    legalAcceptance: {
+      termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
+      activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+      acceptedAt: new Date(),
+      firstName: 'Batch',
+      lastName: 'Seven',
+      checkbox1TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
+      checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT
+    },
+    cabinId: cabin._id
+  });
+  await CheckoutSession.updateOne(
+    { checkoutId: session.checkoutId },
+    {
+      $set: {
+        paymentStatus: 'paid',
+        finalizeStatus: FINALIZE_STATUS.FINALIZED,
+        bookingId: booking._id
+      }
+    }
+  );
+  await createPaidPayment({
+    paymentIntentId,
+    checkoutId: session.checkoutId,
+    reservationId: booking._id
+  });
+  await ensureCheckoutFinalizationJob({
+    checkoutId: session.checkoutId,
+    paymentIntentId,
+    createdReason: 'webhook'
+  });
+  await CheckoutFinalizationJob.updateOne(
+    { checkoutId: session.checkoutId },
+    { $set: { status: 'succeeded', stage: 'succeeded', bookingId: booking._id } }
+  );
+  return booking;
+}
+
 test.before(async () => {
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri());
@@ -379,6 +438,291 @@ test('terminal failed and uncharged payment does not remain in manual review', a
   assert.equal(await Booking.countDocuments({}), 0);
   assert.equal(stripe.calls.create, 0);
   assert.equal(stripe.calls.refunds, 0);
+});
+
+test('recent scheduled, claimed, and retryable jobs defer missing Payment review within the convergence window', async () => {
+  const cabin = await createCabin();
+
+  for (const status of ['scheduled', 'claimed', 'failed_retryable']) {
+    const { session, paymentIntentId } = await seedSession({
+      cabin,
+      paymentStatus: 'unpaid'
+    });
+    const createdAt = new Date();
+    await ensureCheckoutFinalizationJob({
+      checkoutId: session.checkoutId,
+      paymentIntentId,
+      createdReason: 'webhook',
+      now: createdAt
+    });
+    await CheckoutFinalizationJob.updateOne(
+      { checkoutId: session.checkoutId },
+      { $set: { status } }
+    );
+    const now = new Date(Date.now() + 1);
+
+    const outcome = await reconcilePaidCheckoutSubject({
+      checkoutId: session.checkoutId,
+      paymentIntentId,
+      execute: true,
+      automatic: true,
+      paymentIntent: buildSucceededPi({ session, paymentIntentId }),
+      now
+    });
+
+    assert.equal(
+      outcome.classification,
+      RECONCILE_CLASSIFICATIONS.PAYMENT_RECORD_CONVERGENCE_PENDING
+    );
+    assert.equal(outcome.repair?.mutated, false);
+    assert.equal(
+      await PaymentResolutionIssue.countDocuments({ paymentIntentId }),
+      0
+    );
+  }
+
+  assert.ok(PAYMENT_RECORD_CONVERGENCE_GRACE_MS > 0);
+});
+
+test('persistent missing Payment after convergence window opens a review', async () => {
+  process.env.FINALIZE_RECONCILE_ENQUEUE = '1';
+  const cabin = await createCabin();
+  const { session, paymentIntentId } = await seedSession({
+    cabin,
+    paymentStatus: 'paid'
+  });
+  const now = new Date();
+  const staleAt = new Date(now.getTime() - PAYMENT_RECORD_CONVERGENCE_GRACE_MS - 1);
+  await CheckoutSession.updateOne(
+    { checkoutId: session.checkoutId },
+    { $set: { paymentSucceededAt: staleAt } }
+  );
+  await ensureCheckoutFinalizationJob({
+    checkoutId: session.checkoutId,
+    paymentIntentId,
+    createdReason: 'webhook',
+    now: staleAt
+  });
+  await CheckoutFinalizationJob.updateOne(
+    { checkoutId: session.checkoutId },
+    { $set: { status: 'failed_retryable', createdAt: staleAt } }
+  );
+
+  const outcome = await reconcilePaidCheckoutSubject({
+    checkoutId: session.checkoutId,
+    paymentIntentId,
+    execute: true,
+    automatic: true,
+    paymentIntent: buildSucceededPi({ session, paymentIntentId }),
+    now
+  });
+
+  assert.equal(
+    outcome.classification,
+    RECONCILE_CLASSIFICATIONS.PAYMENT_RECORD_MISSING_OR_NOT_PAID
+  );
+  assert.equal(outcome.repairAction, 'open_manual_review');
+  assert.equal(
+    (await PaymentResolutionIssue.findOne({ paymentIntentId })).errorCode,
+    'PAYMENT_RECORD_NOT_PAID'
+  );
+  assert.equal(await ManualReviewItem.countDocuments({ status: 'open' }), 1);
+});
+
+test('an existing unpaid Payment is reviewed immediately despite a recent active job', async () => {
+  const now = new Date();
+  const cabin = await createCabin();
+  const { session, paymentIntentId } = await seedSession({
+    cabin,
+    paymentStatus: 'paid'
+  });
+  await ensureCheckoutFinalizationJob({
+    checkoutId: session.checkoutId,
+    paymentIntentId,
+    createdReason: 'webhook',
+    now
+  });
+  await Payment.create({
+    provider: 'stripe',
+    providerReference: paymentIntentId,
+    status: 'failed',
+    amount: 0,
+    currency: 'eur',
+    source: 'webhook',
+    metadata: { checkoutId: session.checkoutId }
+  });
+
+  const outcome = await reconcilePaidCheckoutSubject({
+    checkoutId: session.checkoutId,
+    paymentIntentId,
+    execute: true,
+    automatic: true,
+    paymentIntent: buildSucceededPi({ session, paymentIntentId }),
+    now
+  });
+
+  assert.equal(
+    outcome.classification,
+    RECONCILE_CLASSIFICATIONS.PAYMENT_RECORD_MISSING_OR_NOT_PAID
+  );
+  assert.equal(outcome.inspection.paymentRecordState, 'unpaid');
+  assert.equal(await PaymentResolutionIssue.countDocuments({ paymentIntentId }), 1);
+});
+
+test('unsafe Stripe verification mismatch remains a review even with a recent active job', async () => {
+  const now = new Date();
+  const cabin = await createCabin();
+  const { session, paymentIntentId } = await seedSession({
+    cabin,
+    paymentStatus: 'paid'
+  });
+  await CheckoutSession.updateOne(
+    { checkoutId: session.checkoutId },
+    { $set: { paymentSucceededAt: now } }
+  );
+  await ensureCheckoutFinalizationJob({
+    checkoutId: session.checkoutId,
+    paymentIntentId,
+    createdReason: 'webhook',
+    now
+  });
+  const paymentIntent = buildSucceededPi({ session, paymentIntentId });
+  paymentIntent.amount_received += 1;
+  paymentIntent.amount += 1;
+
+  const outcome = await reconcilePaidCheckoutSubject({
+    checkoutId: session.checkoutId,
+    paymentIntentId,
+    execute: true,
+    automatic: true,
+    paymentIntent,
+    now
+  });
+
+  assert.equal(outcome.classification, RECONCILE_CLASSIFICATIONS.VERIFICATION_MISMATCH);
+  assert.equal(outcome.repairAction, 'open_manual_review');
+  assert.equal(await PaymentResolutionIssue.countDocuments({ paymentIntentId }), 1);
+});
+
+test('a Payment arriving during inspection is re-read before a missing-record review is opened', async () => {
+  process.env.FINALIZE_RECONCILE_ENQUEUE = '0';
+  const cabin = await createCabin();
+  const { session, paymentIntentId } = await seedSession({ cabin, paymentStatus: 'unpaid' });
+  const paymentIntent = buildSucceededPi({ session, paymentIntentId });
+  const stripe = createStripeStub({ [paymentIntentId]: paymentIntent });
+  stripe.paymentIntents.retrieve = async () => {
+    await createPaidPayment({ paymentIntentId, checkoutId: session.checkoutId });
+    await CheckoutSession.updateOne(
+      { checkoutId: session.checkoutId },
+      { $set: { paymentStatus: 'paid', paymentSucceededAt: new Date() } }
+    );
+    return paymentIntent;
+  };
+
+  const outcome = await reconcilePaidCheckoutSubject({
+    checkoutId: session.checkoutId,
+    paymentIntentId,
+    execute: true,
+    automatic: true,
+    stripe
+  });
+
+  assert.equal(outcome.classification, RECONCILE_CLASSIFICATIONS.SESSION_PAID_NO_JOB);
+  assert.equal(outcome.repair?.action, 'ensure_job');
+  assert.equal(await PaymentResolutionIssue.countDocuments({ paymentIntentId }), 0);
+  assert.equal(
+    await CheckoutFinalizationJob.countDocuments({ checkoutId: session.checkoutId }),
+    1
+  );
+});
+
+test('successful finalization resolves only the matching transient failure alert idempotently', async () => {
+  const cabin = await createCabin();
+  const { session, paymentIntentId } = await seedSession({
+    cabin,
+    paymentStatus: 'unpaid'
+  });
+  const booking = await createFinalizedBooking({ cabin, session, paymentIntentId });
+  const issue = await PaymentResolutionIssue.create({
+    paymentIntentId,
+    checkoutId: session.checkoutId,
+    issueType: 'paid_booking_unknown_failure',
+    status: 'needs_review',
+    errorCode: 'PAYMENT_RECORD_MISSING'
+  });
+  await ManualReviewItem.create({
+    category: 'payment_finalization_failure',
+    severity: 'high',
+    status: 'open',
+    entityType: 'PaymentResolutionIssue',
+    entityId: String(issue._id),
+    title: 'Paid booking could not be finalized automatically',
+    provenance: { source: 'reconcile', sourceReference: session.checkoutId },
+    details: 'test',
+    evidence: {}
+  });
+  const finalizedSession = await CheckoutSession.findOne({
+    checkoutId: session.checkoutId
+  }).lean();
+
+  const first = await resolveAlertsForBooking({ booking, session: finalizedSession });
+  const second = await resolveAlertsForBooking({ booking, session: finalizedSession });
+
+  assert.equal(first.finalizationFailure.issueResolved, true);
+  assert.equal(
+    await PaymentResolutionIssue.countDocuments({
+      paymentIntentId,
+      status: 'needs_review'
+    }),
+    0
+  );
+  assert.equal(
+    await ManualReviewItem.countDocuments({
+      entityId: String(issue._id),
+      status: 'resolved'
+    }),
+    1
+  );
+  assert.equal(second.finalizationFailure.reason, 'no_transient_finalization_issue');
+});
+
+test('successful finalization leaves an operator-held failure alert and issue untouched', async () => {
+  const cabin = await createCabin();
+  const { session, paymentIntentId } = await seedSession({
+    cabin,
+    paymentStatus: 'unpaid'
+  });
+  const booking = await createFinalizedBooking({ cabin, session, paymentIntentId });
+  const issue = await PaymentResolutionIssue.create({
+    paymentIntentId,
+    checkoutId: session.checkoutId,
+    issueType: 'paid_booking_unknown_failure',
+    status: 'needs_review',
+    errorCode: 'PAYMENT_RECORD_MISSING_OR_NOT_PAID'
+  });
+  const heldReview = await ManualReviewItem.create({
+    category: 'payment_finalization_failure',
+    severity: 'high',
+    status: 'open',
+    entityType: 'PaymentResolutionIssue',
+    entityId: String(issue._id),
+    title: 'Paid booking could not be finalized automatically',
+    provenance: { source: 'reconcile', sourceReference: session.checkoutId },
+    details: 'held',
+    evidence: {},
+    resolutionHold: { kind: 'operator', status: 'active', heldAt: new Date() }
+  });
+  const finalizedSession = await CheckoutSession.findOne({
+    checkoutId: session.checkoutId
+  }).lean();
+
+  const result = await resolveAlertsForBooking({ booking, session: finalizedSession });
+  const reviewAfter = await ManualReviewItem.findOne({ _id: heldReview._id }).lean();
+  const issueAfter = await PaymentResolutionIssue.findOne({ _id: issue._id }).lean();
+
+  assert.equal(result.finalizationFailure.reason, 'active_operator_hold');
+  assert.equal(reviewAfter.status, 'open');
+  assert.equal(issueAfter.status, 'needs_review');
 });
 
 test('explicit execution repairs safe SESSION_PAID_NO_JOB', async () => {

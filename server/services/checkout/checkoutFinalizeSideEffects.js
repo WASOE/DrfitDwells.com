@@ -15,11 +15,23 @@ const { formatSofiaDateOnly } = require('../../utils/dateTime');
 const { markSavedQuoteConverted } = require('../savedQuotes/savedQuoteService');
 const { resolvePaymentUnlinkedReviews } = require('../payments/paymentReviewResolutionService');
 const { verifyPaymentLinkedToBooking } = require('../payments/paymentLinkingService');
+const ManualReviewItem = require('../../models/ManualReviewItem');
+const PaymentResolutionIssue = require('../../models/PaymentResolutionIssue');
 const {
   processBookingConfirmationDelivery,
   reclaimStaleSendingConfirmationDeliveries
 } = require('../email/bookingConfirmationDeliveryService');
 const CheckoutFinalizationJob = require('../../models/CheckoutFinalizationJob');
+const { FINALIZE_STATUS } = require('./checkoutFinalizeService');
+const {
+  withOrdinaryManualReviewHoldExclusion
+} = require('../ops/ingestion/manualReviewResolutionHoldFilter');
+
+const TRANSIENT_PAYMENT_RECORD_ERROR_CODES = [
+  'PAYMENT_RECORD_MISSING',
+  'PAYMENT_RECORD_NOT_PAID',
+  'PAYMENT_RECORD_MISSING_OR_NOT_PAID'
+];
 
 function sideEffectsEnabled() {
   return featureFlags.isFinalizeSideEffectsEnabled();
@@ -52,7 +64,105 @@ async function convertSavedQuoteForBooking({ booking, session }) {
   }
 }
 
-async function resolveAlertsForBooking({ booking, session }) {
+async function resolveConvergedFinalizationFailure({
+  booking,
+  session,
+  paymentIntentId,
+  now
+}) {
+  const checkoutId = session?.checkoutId || booking.checkoutId || null;
+  if (
+    !checkoutId ||
+    session?.paymentStatus !== 'paid' ||
+    session?.finalizeStatus !== FINALIZE_STATUS.FINALIZED ||
+    String(session?.bookingId || '') !== String(booking._id) ||
+    String(session?.canonicalPaymentIntentId || '') !== String(paymentIntentId || '')
+  ) {
+    return { attempted: false, resolvedCount: 0, reason: 'checkout_not_fully_finalized' };
+  }
+
+  const job = await CheckoutFinalizationJob.findOne({ checkoutId })
+    .select('status')
+    .lean();
+  if (job && job.status !== 'succeeded') {
+    return { attempted: false, resolvedCount: 0, reason: 'finalization_job_not_succeeded' };
+  }
+
+  const issue = await PaymentResolutionIssue.findOne({
+    paymentIntentId,
+    checkoutId,
+    status: 'needs_review',
+    errorCode: { $in: TRANSIENT_PAYMENT_RECORD_ERROR_CODES }
+  })
+    .select('_id occurrenceCount lastFailedAt')
+    .lean();
+  if (!issue) {
+    return { attempted: false, resolvedCount: 0, reason: 'no_transient_finalization_issue' };
+  }
+
+  const reviewQuery = {
+    category: 'payment_finalization_failure',
+    status: 'open',
+    entityType: 'PaymentResolutionIssue',
+    entityId: String(issue._id)
+  };
+  const heldReview = await ManualReviewItem.exists({
+    ...reviewQuery,
+    'resolutionHold.status': 'active'
+  });
+  if (heldReview) {
+    return { attempted: false, resolvedCount: 0, reason: 'active_operator_hold' };
+  }
+
+  const resolutionNote =
+    'Auto-resolved: paid checkout finalized and Payment ledger linked to booking.';
+  const reviewResult = await ManualReviewItem.updateMany(
+    withOrdinaryManualReviewHoldExclusion(reviewQuery),
+    {
+      $set: {
+        status: 'resolved',
+        'resolution.resolvedAt': now,
+        'resolution.resolvedBy': 'checkout_finalize_side_effects',
+        'resolution.note': resolutionNote,
+        updatedAt: now,
+        'evidence.autoResolvedCheckoutId': String(checkoutId)
+      }
+    }
+  );
+
+  if (
+    await ManualReviewItem.exists({
+      ...reviewQuery,
+      'resolutionHold.status': 'active'
+    })
+  ) {
+    return { attempted: false, resolvedCount: 0, reason: 'active_operator_hold' };
+  }
+
+  const issueResult = await PaymentResolutionIssue.updateOne(
+    {
+      _id: issue._id,
+      status: 'needs_review',
+      occurrenceCount: issue.occurrenceCount,
+      lastFailedAt: issue.lastFailedAt,
+      errorCode: { $in: TRANSIENT_PAYMENT_RECORD_ERROR_CODES }
+    },
+    {
+      $set: {
+        status: 'resolved',
+        resolvedAt: now,
+        resolutionNote
+      }
+    }
+  );
+  return {
+    attempted: true,
+    resolvedCount: Number(reviewResult.modifiedCount || 0),
+    issueResolved: Number(issueResult.modifiedCount || 0) > 0
+  };
+}
+
+async function resolveAlertsForBooking({ booking, session, now = new Date() }) {
   if (!booking?._id) {
     return { attempted: false, resolvedCount: 0, reason: 'missing_booking' };
   }
@@ -87,13 +197,20 @@ async function resolveAlertsForBooking({ booking, session }) {
         verifyReason: verified.reason || null
       };
     }
-    return await resolvePaymentUnlinkedReviews({
+    const paymentUnlinked = await resolvePaymentUnlinkedReviews({
       paymentId: verified.paymentId || null,
       paymentIntentId: verified.stripePaymentIntentId || paymentIntentId,
       reservationId: String(booking._id),
       resolvedBy: 'checkout_finalize_side_effects',
       note: 'Auto-resolved: paid checkout finalized and Payment ledger linked to booking.'
     });
+    const finalizationFailure = await resolveConvergedFinalizationFailure({
+      booking,
+      session,
+      paymentIntentId: verified.stripePaymentIntentId || paymentIntentId,
+      now
+    });
+    return { ...paymentUnlinked, finalizationFailure };
   } catch (err) {
     console.error(
       JSON.stringify({
@@ -148,7 +265,7 @@ async function enqueuePostFinalizeSideEffects({
 
   if (enabled) {
     quoteConvert = await convertSavedQuoteForBooking({ booking, session });
-    alertResolve = await resolveAlertsForBooking({ booking, session });
+    alertResolve = await resolveAlertsForBooking({ booking, session, now: at });
     await reclaimStaleSendingConfirmationDeliveries({ now: at, limit: 10 }).catch(() => {});
   }
 
