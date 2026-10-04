@@ -57,4 +57,26 @@ describe('calendarBlockLabels', () => {
     expect(blockDisplayLabel(block)).toBe('Location-wide');
     expect(blockTooltip(block)).toContain('Location-wide block (The Valley)');
   });
+
+  it('uses the Sofia date-only API fields instead of slicing UTC instants', () => {
+    const block = {
+      blockType: 'manual_block',
+      startDate: '2026-11-05T22:00:00.000Z',
+      endDate: '2026-11-07T22:00:00.000Z',
+      startDateOnly: '2026-11-06',
+      endDateOnly: '2026-11-08',
+      render: { labelShort: 'Manual', unitLabel: 'A-Frame 2' }
+    };
+    expect(blockTooltip(block)).toContain('2026-11-06 → 2026-11-08');
+  });
+
+  it('derives Sofia civil dates for older API responses', () => {
+    const block = {
+      blockType: 'manual_block',
+      startDate: '2026-11-05T22:00:00.000Z',
+      endDate: '2026-11-07T22:00:00.000Z',
+      render: { labelShort: 'Manual' }
+    };
+    expect(blockTooltip(block)).toContain('2026-11-06 → 2026-11-08');
+  });
 });

@@ -16,6 +16,7 @@ import {
   addOneMonth,
   buildSofiaMonthGrid,
   computeWeekBarSegments,
+  blockBoundaryDateOnly,
   formatSofiaMonthTitle,
   sofiaNowYearMonth
 } from './opsCalendarDateUtils';
@@ -39,11 +40,13 @@ import OpsLoadingState from '../../../ops/primitives/OpsLoadingState';
 import OpsConfirmDialog from '../../../ops/primitives/OpsConfirmDialog';
 import OpsInlineError from '../../../ops/primitives/OpsInlineError';
 import OpsTextField from '../../../ops/primitives/OpsTextField';
+import OpsSelect from '../../../ops/primitives/OpsSelect';
 import { opsCx } from '../../../ops/primitives/opsCx';
 import './OpsCalendar.css';
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const WEEKDAYS_SHORT = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+const ALL_UNITS_VALUE = '__all_units__';
 
 function extractMongoIdFromBlockId(id) {
   const s = String(id || '');
@@ -62,12 +65,14 @@ export default function OpsCalendarMonth() {
   const [year, setYear] = useState(initialYm.year);
   const [monthIndex, setMonthIndex] = useState(initialYm.monthIndex);
   const [data, setData] = useState(null);
+  const [cabinDetail, setCabinDetail] = useState(null);
   const [cabinLabel, setCabinLabel] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actionError, setActionError] = useState('');
   const [formStart, setFormStart] = useState('');
   const [formEnd, setFormEnd] = useState('');
+  const [formUnitId, setFormUnitId] = useState('');
   const [openBlockKey, setOpenBlockKey] = useState(null);
   const [sheetKind, setSheetKind] = useState(null);
   const [sheetBlock, setSheetBlock] = useState(null);
@@ -98,7 +103,9 @@ export default function OpsCalendarMonth() {
         opsReadAPI.cabinDetail(cabinId)
       ]);
       setData(calRes.data?.data || null);
-      const name = cabRes.data?.data?.contentMedia?.name || cabRes.data?.data?.cabinId || cabinId;
+      const detail = cabRes.data?.data || null;
+      setCabinDetail(detail);
+      const name = detail?.contentMedia?.name || detail?.cabinId || cabinId;
       setCabinLabel(name);
     } catch (err) {
       setError(err?.response?.data?.message || 'Failed to load calendar');
@@ -120,6 +127,8 @@ export default function OpsCalendarMonth() {
 
   const blocks = data?.blocks || [];
   const renderCabinId = data?.calendarScope?.renderCabinId ?? cabinId;
+  const isMultiUnit = cabinDetail?.kind === 'multi_unit_type';
+  const activeUnits = (cabinDetail?.units || []).filter((unit) => unit.isActive !== false);
   const todayYmd = data?.meta?.today;
   const sync = syncStatusValue(data?.syncIndicators?.syncStatus || 'stale');
   const priceHint = data?.pricingHint;
@@ -150,6 +159,7 @@ export default function OpsCalendarMonth() {
     if (kind === 'manual') setSheetKind('add_manual');
     if (kind === 'maintenance') setSheetKind('add_maintenance');
     setFormStart(monthStartYmd);
+    setFormUnitId('');
     const t0 = toDate(`${monthStartYmd} 00:00:00.000`, { timeZone: OPS_CALENDAR_TZ });
     setFormEnd(formatInTimeZone(addDays(t0, 1), OPS_CALENDAR_TZ, 'yyyy-MM-dd'));
   };
@@ -163,17 +173,29 @@ export default function OpsCalendarMonth() {
 
   const submitBlock = async () => {
     setActionError('');
+    const addingBlock = sheetKind === 'add_manual' || sheetKind === 'add_maintenance';
+    if (addingBlock && isMultiUnit && !formUnitId) {
+      setActionError('Choose one A-frame or explicitly choose all A-frame units.');
+      return;
+    }
     setWriteBusy(true);
     try {
+      const createPayload = {
+        cabinId: renderCabinId,
+        startDate: formStart,
+        endDate: formEnd,
+        reason: 'ops_calendar',
+        targetScope: isMultiUnit
+          ? formUnitId === ALL_UNITS_VALUE
+            ? 'all_units'
+            : 'unit'
+          : 'single_cabin'
+      };
+      if (isMultiUnit && formUnitId !== ALL_UNITS_VALUE) createPayload.unitId = formUnitId;
       if (sheetKind === 'add_manual') {
-        await opsWriteAPI.createManualBlock({ cabinId, startDate: formStart, endDate: formEnd, reason: 'ops_calendar' });
+        await opsWriteAPI.createManualBlock(createPayload);
       } else if (sheetKind === 'add_maintenance') {
-        await opsWriteAPI.createMaintenanceBlock({
-          cabinId,
-          startDate: formStart,
-          endDate: formEnd,
-          reason: 'ops_calendar'
-        });
+        await opsWriteAPI.createMaintenanceBlock(createPayload);
       } else if (sheetKind === 'edit_manual') {
         const id = extractMongoIdFromBlockId(sheetBlock?.id);
         await opsWriteAPI.editManualBlock(id, { startDate: formStart, endDate: formEnd, reason: 'ops_calendar' });
@@ -200,8 +222,9 @@ export default function OpsCalendarMonth() {
     setActionError('');
     setOpenBlockKey(null);
     setSheetBlock(b);
-    setFormStart(String(b.startDate).slice(0, 10));
-    setFormEnd(String(b.endDate).slice(0, 10));
+    setFormStart(blockBoundaryDateOnly(b, 'start'));
+    setFormEnd(blockBoundaryDateOnly(b, 'end'));
+    setFormUnitId(b.unitId || ALL_UNITS_VALUE);
     if (b.blockType === 'manual_block') setSheetKind('edit_manual');
     if (b.blockType === 'maintenance') setSheetKind('edit_maintenance');
   };
@@ -373,6 +396,30 @@ export default function OpsCalendarMonth() {
             </div>
           }
         >
+          {(sheetKind === 'add_manual' || sheetKind === 'add_maintenance') && isMultiUnit ? (
+            <OpsSelect
+              id="calendar-block-unit"
+              label="Apply to"
+              value={formUnitId}
+              onChange={(e) => setFormUnitId(e.target.value)}
+              hint="All units is an explicit parent-wide block and affects every A-frame in this listing."
+            >
+              <option value="" disabled>
+                Select an A-frame
+              </option>
+              {activeUnits.map((unit) => (
+                <option key={unit.unitId} value={unit.unitId}>
+                  {unit.displayName || unit.unitNumber}
+                </option>
+              ))}
+              <option value={ALL_UNITS_VALUE}>All A-frame units</option>
+            </OpsSelect>
+          ) : null}
+          {(sheetKind === 'edit_manual' || sheetKind === 'edit_maintenance') && isMultiUnit ? (
+            <p className="ops-cal__hint">
+              Scope: {sheetBlock?.render?.unitLabel || 'All A-frame units'} (scope cannot be changed while editing dates)
+            </p>
+          ) : null}
           <div className="ops-cal-form-grid">
             <OpsTextField
               label="Start (inclusive)"

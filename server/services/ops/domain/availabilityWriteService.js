@@ -1,5 +1,7 @@
 const AvailabilityBlock = require('../../../models/AvailabilityBlock');
 const Cabin = require('../../../models/Cabin');
+const CabinType = require('../../../models/CabinType');
+const Unit = require('../../../models/Unit');
 const mongoose = require('mongoose');
 const { requirePermission, ACTIONS } = require('../../permissionService');
 const { appendAuditEvent } = require('../../auditWriter');
@@ -35,6 +37,107 @@ function rejectIfCheckoutClaimConflicts(conflict) {
       409
     );
   }
+}
+
+const TARGET_SCOPES = Object.freeze({
+  SINGLE_CABIN: 'single_cabin',
+  UNIT: 'unit',
+  ALL_UNITS: 'all_units'
+});
+
+function objectIdOrValidationError(value, field) {
+  if (!mongoose.Types.ObjectId.isValid(value)) {
+    throw createDomainError('validation', `${field} must be a valid id`, { field }, 400);
+  }
+  return new mongoose.Types.ObjectId(String(value));
+}
+
+/**
+ * Resolve the public/calendar identifier to the canonical stored Cabin and
+ * validate physical-unit targeting. Multi-unit parent-wide blocks require an
+ * explicit all_units scope so a missing unit id can never silently block the pool.
+ */
+async function resolveAvailabilityBlockTarget({ cabinId, unitId = null, targetScope = null }) {
+  const requestedCabinId = objectIdOrValidationError(cabinId, 'cabinId');
+  let cabin = await Cabin.findById(requestedCabinId)
+    .select('_id inventoryType cabinTypeId cabinTypeRef isActive')
+    .lean();
+
+  if (!cabin) {
+    const cabinType = await CabinType.findById(requestedCabinId).select('_id').lean();
+    if (cabinType) {
+      cabin = await Cabin.findOne({
+        isActive: true,
+        $or: [{ cabinTypeId: cabinType._id }, { cabinTypeRef: cabinType._id }]
+      })
+        .select('_id inventoryType cabinTypeId cabinTypeRef isActive')
+        .lean();
+    }
+  }
+
+  if (!cabin) {
+    throw createDomainError('validation', 'Cabin target not found', { cabinId: String(cabinId) }, 404);
+  }
+
+  const cabinTypeId = cabin.cabinTypeId || cabin.cabinTypeRef || null;
+  const isMultiUnit = cabin.inventoryType === 'multi';
+
+  if (!isMultiUnit) {
+    if (unitId) {
+      throw createDomainError('validation', 'Single-cabin blocks cannot target a unit', {
+        cabinId: String(cabin._id),
+        unitId: String(unitId)
+      });
+    }
+    if (targetScope && targetScope !== TARGET_SCOPES.SINGLE_CABIN) {
+      throw createDomainError('validation', 'Invalid target scope for a single cabin', { targetScope });
+    }
+    return {
+      cabinId: cabin._id,
+      unitId: null,
+      targetScope: TARGET_SCOPES.SINGLE_CABIN
+    };
+  }
+
+  if (!cabinTypeId) {
+    throw createDomainError('validation', 'Multi-unit cabin is missing its cabin type', {
+      cabinId: String(cabin._id)
+    });
+  }
+
+  if (!unitId) {
+    if (targetScope !== TARGET_SCOPES.ALL_UNITS) {
+      throw createDomainError(
+        'validation',
+        'Choose a physical unit or explicitly request an all-units block',
+        { cabinId: String(cabin._id), targetScope }
+      );
+    }
+    return {
+      cabinId: cabin._id,
+      unitId: null,
+      targetScope: TARGET_SCOPES.ALL_UNITS
+    };
+  }
+
+  if (targetScope && targetScope !== TARGET_SCOPES.UNIT) {
+    throw createDomainError('validation', 'A unit target requires targetScope=unit', { targetScope });
+  }
+
+  const unitObjectId = objectIdOrValidationError(unitId, 'unitId');
+  const unit = await Unit.findById(unitObjectId).select('_id cabinTypeId isActive').lean();
+  if (!unit || unit.isActive === false || String(unit.cabinTypeId) !== String(cabinTypeId)) {
+    throw createDomainError('validation', 'Unit is inactive or does not belong to this cabin', {
+      cabinId: String(cabin._id),
+      unitId: String(unitId)
+    });
+  }
+
+  return {
+    cabinId: cabin._id,
+    unitId: unit._id,
+    targetScope: TARGET_SCOPES.UNIT
+  };
 }
 
 /**
@@ -80,7 +183,17 @@ async function evaluateOpsAvailabilityConflicts({
   });
 }
 
-async function createBlock({ blockType, cabinId, unitId = null, startDate, endDate, reason = null, metadata = {}, ctx = {} }) {
+async function createBlock({
+  blockType,
+  cabinId,
+  unitId = null,
+  targetScope = null,
+  startDate,
+  endDate,
+  reason = null,
+  metadata = {},
+  ctx = {}
+}) {
   if (!['manual_block', 'maintenance'].includes(blockType)) {
     throw createDomainError('validation', 'Only manual_block or maintenance can be created from ops actions');
   }
@@ -88,10 +201,11 @@ async function createBlock({ blockType, cabinId, unitId = null, startDate, endDa
     role: ctx.user?.role,
     action: actionFor(blockType, 'create')
   });
+  const target = await resolveAvailabilityBlockTarget({ cabinId, unitId, targetScope });
   const normalized = normalizeExclusiveDateRange(startDate, endDate);
   const conflict = await evaluateOpsAvailabilityConflicts({
-    cabinId,
-    unitId,
+    cabinId: target.cabinId,
+    unitId: target.unitId,
     startDate: normalized.startDate,
     endDate: normalized.endDate
   });
@@ -109,7 +223,9 @@ async function createBlock({ blockType, cabinId, unitId = null, startDate, endDa
       beforeSnapshot: null,
       afterSnapshot: {
         blockType,
-        cabinId: String(cabinId),
+        cabinId: String(target.cabinId),
+        unitId: target.unitId ? String(target.unitId) : null,
+        targetScope: target.targetScope,
         startDate: normalized.startDate,
         endDate: normalized.endDate
       },
@@ -130,8 +246,8 @@ async function createBlock({ blockType, cabinId, unitId = null, startDate, endDa
 
   const block = await AvailabilityBlock.create({
     _id: blockId,
-    cabinId,
-    unitId,
+    cabinId: target.cabinId,
+    unitId: target.unitId,
     reservationId: null,
     blockType,
     startDate: normalized.startDate,
@@ -142,6 +258,7 @@ async function createBlock({ blockType, cabinId, unitId = null, startDate, endDa
     confidence: 'high',
     metadata: {
       ...metadata,
+      availabilityTargetScope: target.targetScope,
       conflictSummary: {
         hardCount: conflict.hardConflicts.length,
         warningCount: conflict.warnings.length
@@ -153,6 +270,9 @@ async function createBlock({ blockType, cabinId, unitId = null, startDate, endDa
     blockId: String(block._id),
     blockType: block.blockType,
     status: block.status,
+    cabinId: String(block.cabinId),
+    unitId: block.unitId ? String(block.unitId) : null,
+    targetScope: target.targetScope,
     conflict: {
       hard: conflict.hardConflicts,
       warnings: conflict.warnings
@@ -284,5 +404,7 @@ async function tombstoneBlock({ blockId, reason, ctx = {} }) {
 module.exports = {
   createBlock,
   editBlock,
-  tombstoneBlock
+  tombstoneBlock,
+  resolveAvailabilityBlockTarget,
+  TARGET_SCOPES
 };

@@ -9,7 +9,8 @@ const Unit = require('../../../models/Unit');
 const {
   PROPERTY_TIMEZONE,
   normalizeExclusiveDateRange,
-  normalizeDateToSofiaDayStart
+  normalizeDateToSofiaDayStart,
+  formatSofiaDateOnly
 } = require('../../../utils/dateTime');
 const { assertExclusiveCalendarRangeWithinMax } = require('../../../utils/calendarExclusiveRangeGuard');
 const { BLOCKING_BOOKING_STATUSES } = require('../../calendar/blockingStatusConstants');
@@ -155,6 +156,17 @@ function aggregateSyncStatusFromOutcomes(rows) {
     return { syncStatus: 'healthy', lastSyncOutcome: 'success' };
   }
   return { syncStatus: 'stale', lastSyncOutcome: rows[rows.length - 1]?.lastSyncOutcome ?? null };
+}
+
+function calendarBoundaryFields(startInput, endInput) {
+  const startDate = normalizeDateToSofiaDayStart(startInput);
+  const endDate = normalizeDateToSofiaDayStart(endInput);
+  return {
+    startDate: startDate.toISOString(),
+    endDate: endDate.toISOString(),
+    startDateOnly: formatSofiaDateOnly(startDate),
+    endDateOnly: formatSofiaDateOnly(endDate)
+  };
 }
 
 async function syncIndicatorsForCabin(cabinId) {
@@ -314,8 +326,7 @@ async function buildBlocksForRange(normalized, propertyId) {
         sourceReference: String(b._id),
         cabinId: scope.calendarCabinId || (b.cabinId ? String(b.cabinId) : null),
         unitId: b.unitId ? String(b.unitId) : null,
-        startDate: range.startDate.toISOString(),
-        endDate: range.endDate.toISOString(),
+        ...calendarBoundaryFields(range.startDate, range.endDate),
         status: 'active',
         tombstonedAt: null,
         provenance: {
@@ -333,8 +344,7 @@ async function buildBlocksForRange(normalized, propertyId) {
       blk.blockType === 'reservation' && blk.reservationId ? String(blk.reservationId) : String(blk._id),
     cabinId: String(blk.cabinId),
     unitId: blk.unitId ? String(blk.unitId) : null,
-    startDate: normalizeDateToSofiaDayStart(blk.startDate).toISOString(),
-    endDate: normalizeDateToSofiaDayStart(blk.endDate).toISOString(),
+    ...calendarBoundaryFields(blk.startDate, blk.endDate),
     status: blk.status,
     tombstonedAt: blk.tombstonedAt || null,
     locationBlockGroupId: blk.metadata?.locationBlockGroupId || null,
@@ -447,8 +457,7 @@ async function listActiveLocationBlockGroups() {
       locationBlockGroupId: String(row._id),
       locationKey,
       locationLabel,
-      startDate: normalizeDateToSofiaDayStart(row.startDate).toISOString(),
-      endDate: normalizeDateToSofiaDayStart(row.endDate).toISOString(),
+      ...calendarBoundaryFields(row.startDate, row.endDate),
       targetCount: row.targetCount,
       blockType: 'manual_block'
     };
@@ -619,6 +628,7 @@ module.exports = {
   listActiveLocationBlockGroups,
   buildCalendarScope,
   resolveCalendarPropertyScope,
+  calendarBoundaryFields,
   // Test / shared helpers
   collectCalendarConflictMarkers,
   formatCalendarUnitLabel

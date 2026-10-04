@@ -1,3 +1,5 @@
+import { blockBoundaryDateOnly } from './opsCalendarDateUtils';
+
 const LOCATION_KEY_LABELS = {
   valley: 'The Valley',
   cabin: 'The Cabin'
@@ -32,8 +34,8 @@ export function blockDisplayLabel(block) {
 }
 
 export function blockRangeTitle(block) {
-  const s = String(block?.startDate || '').slice(0, 10);
-  const e = String(block?.endDate || '').slice(0, 10);
+  const s = blockBoundaryDateOnly(block, 'start');
+  const e = blockBoundaryDateOnly(block, 'end');
   return `${s} → ${e} (exclusive end)`;
 }
 

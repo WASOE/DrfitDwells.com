@@ -33,6 +33,9 @@ vi.mock('./opsCalendarDateUtils', async () => {
 import { opsReadAPI, opsWriteAPI } from '../../../services/opsApi';
 
 const CABIN_ID = '507f1f77bcf86cd799439011';
+const PARENT_CABIN_ID = '507f1f77bcf86cd799439012';
+const UNIT_2_ID = '507f1f77bcf86cd799439021';
+const UNIT_3_ID = '507f1f77bcf86cd799439022';
 
 const adminSession = {
   authenticated: true,
@@ -117,6 +120,22 @@ function cabinDetailPayload() {
       data: {
         cabinId: CABIN_ID,
         contentMedia: { name: 'A-Frame Village' }
+      }
+    }
+  };
+}
+
+function multiCabinDetailPayload() {
+  return {
+    data: {
+      data: {
+        kind: 'multi_unit_type',
+        cabinTypeId: CABIN_ID,
+        contentMedia: { name: 'A-Frame Village' },
+        units: [
+          { unitId: UNIT_2_ID, unitNumber: 'AF-03', displayName: 'A-Frame 2', isActive: true },
+          { unitId: UNIT_3_ID, unitNumber: 'AF-04', displayName: 'A-Frame 3', isActive: true }
+        ]
       }
     }
   };
@@ -269,10 +288,59 @@ describe('OpsCalendarMonth migration', () => {
       expect.objectContaining({
         cabinId: CABIN_ID,
         reason: 'ops_calendar',
+        targetScope: 'single_cabin',
         startDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
         endDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/)
       })
     );
+  });
+
+  it('requires and sends an explicit physical unit for a pooled A-frame block', async () => {
+    opsReadAPI.calendar.mockResolvedValue(
+      calendarPayload({ calendarScope: { renderCabinId: PARENT_CABIN_ID } })
+    );
+    opsReadAPI.cabinDetail.mockResolvedValue(multiCabinDetailPayload());
+    opsWriteAPI.createManualBlock.mockResolvedValue({ data: { data: {} } });
+    renderMonth();
+    await screen.findByRole('button', { name: 'Add manual block' });
+    fireEvent.click(screen.getByRole('button', { name: 'Add manual block' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByText(/Choose one A-frame/i)).toBeInTheDocument();
+    expect(opsWriteAPI.createManualBlock).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText('Apply to'), { target: { value: UNIT_3_ID } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => {
+      expect(opsWriteAPI.createManualBlock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cabinId: PARENT_CABIN_ID,
+          unitId: UNIT_3_ID,
+          targetScope: 'unit'
+        })
+      );
+    });
+  });
+
+  it('only creates a parent-wide A-frame block after explicit all-units selection', async () => {
+    opsReadAPI.calendar.mockResolvedValue(
+      calendarPayload({ calendarScope: { renderCabinId: PARENT_CABIN_ID } })
+    );
+    opsReadAPI.cabinDetail.mockResolvedValue(multiCabinDetailPayload());
+    opsWriteAPI.createMaintenanceBlock.mockResolvedValue({ data: { data: {} } });
+    renderMonth();
+    await screen.findByRole('button', { name: 'Add maintenance' });
+    fireEvent.click(screen.getByRole('button', { name: 'Add maintenance' }));
+    fireEvent.change(screen.getByLabelText('Apply to'), { target: { value: '__all_units__' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => {
+      expect(opsWriteAPI.createMaintenanceBlock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cabinId: PARENT_CABIN_ID,
+          targetScope: 'all_units'
+        })
+      );
+    });
+    expect(opsWriteAPI.createMaintenanceBlock.mock.calls[0][0]).not.toHaveProperty('unitId');
   });
 
   it('creates maintenance block with exact payload', async () => {

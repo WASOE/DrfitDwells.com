@@ -9,7 +9,7 @@ import {
   PREVIEW_DOT_EMPTY,
   PREVIEW_DOT_WARNING
 } from './calendarVisualTokens';
-import { eachDayKeyInRange, parseIsoDay } from './opsCalendarDateUtils';
+import { eachDayKeyInRange, parseIsoDay, resolveSofiaDateOnly } from './opsCalendarDateUtils';
 import LocationBlockSheet from './LocationBlockSheet';
 import OpsCalendarLegend from './OpsCalendarLegend';
 import OpsPage from '../../../ops/primitives/OpsPage';
@@ -79,9 +79,9 @@ function propertyRouteId(cabinLike) {
   return cabinLike.cabinId || cabinLike.cabinTypeId || '';
 }
 
-function formatGroupDateRange(startIso, endIso) {
-  const s = String(startIso || '').slice(0, 10);
-  const e = String(endIso || '').slice(0, 10);
+function formatGroupDateRange(startIso, endIso, startDateOnly, endDateOnly) {
+  const s = resolveSofiaDateOnly(startDateOnly, startIso);
+  const e = resolveSofiaDateOnly(endDateOnly, endIso);
   return `${s} → ${e} (exclusive end)`;
 }
 
@@ -240,7 +240,14 @@ export default function OpsCalendarIndex() {
                           <h3 className="ops-cal-group__title">{label}</h3>
                           <span className="ops-cal-chip ops-cal-chip--location">Location-wide block</span>
                         </div>
-                        <p className="ops-cal-group__meta">{formatGroupDateRange(group.startDate, group.endDate)}</p>
+                        <p className="ops-cal-group__meta">
+                          {formatGroupDateRange(
+                            group.startDate,
+                            group.endDate,
+                            group.startDateOnly,
+                            group.endDateOnly
+                          )}
+                        </p>
                         <p className="ops-cal-group__meta">
                           {count} propert{count === 1 ? 'y' : 'ies'} blocked
                         </p>

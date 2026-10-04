@@ -4,6 +4,30 @@ import { formatInTimeZone, toDate } from 'date-fns-tz';
 
 export const OPS_CALENDAR_TZ = 'Europe/Sofia';
 
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Resolve an API calendar boundary to a Sofia civil date.
+ * Prefer the explicit date-only contract and only derive from an instant for
+ * backwards compatibility with older API responses.
+ */
+export function resolveSofiaDateOnly(dateOnly, instant) {
+  const explicit = String(dateOnly || '').trim();
+  if (DATE_ONLY_RE.test(explicit)) return explicit;
+  if (!instant) return '';
+  const parsed = new Date(instant);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return formatInTimeZone(parsed, OPS_CALENDAR_TZ, 'yyyy-MM-dd');
+}
+
+export function blockBoundaryDateOnly(block, boundary) {
+  const isStart = boundary === 'start';
+  return resolveSofiaDateOnly(
+    isStart ? block?.startDateOnly : block?.endDateOnly,
+    isStart ? block?.startDate : block?.endDate
+  );
+}
+
 export function parseIsoDay(iso) {
   if (!iso) return null;
   const s = String(iso).slice(0, 10);

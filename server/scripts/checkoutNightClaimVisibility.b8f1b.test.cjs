@@ -679,6 +679,100 @@ describe('B8F1B commercial capacity', () => {
   });
 });
 
+describe('OPS availability block target contract', () => {
+  it('rejects an implicit parent-wide block for multi-unit inventory', async () => {
+    await assert.rejects(
+      () =>
+        createBlock({
+          blockType: 'manual_block',
+          cabinId: parentCabinId,
+          startDate: STAY_IN,
+          endDate: STAY_OUT,
+          ctx: opsCtx()
+        }),
+      (err) =>
+        err.type === 'validation' &&
+        err.status === 400 &&
+        /explicitly request an all-units block/i.test(err.message)
+    );
+    assert.equal(await AvailabilityBlock.countDocuments(), 0);
+    assert.equal(await AuditEvent.countDocuments(), 0);
+  });
+
+  it('stores a unit-specific block against the canonical multi-unit parent', async () => {
+    const created = await createBlock({
+      blockType: 'manual_block',
+      cabinId: cabinTypeId,
+      unitId: unitIds[1],
+      targetScope: 'unit',
+      startDate: STAY_IN,
+      endDate: STAY_OUT,
+      ctx: opsCtx()
+    });
+    assert.equal(created.cabinId, String(parentCabinId));
+    assert.equal(created.unitId, String(unitIds[1]));
+    assert.equal(created.targetScope, 'unit');
+
+    const stored = await AvailabilityBlock.findById(created.blockId).lean();
+    assert.equal(String(stored.cabinId), String(parentCabinId));
+    assert.equal(String(stored.unitId), String(unitIds[1]));
+    assert.equal(stored.metadata.availabilityTargetScope, 'unit');
+  });
+
+  it('stores a parent-wide block only with explicit all_units scope', async () => {
+    const created = await createBlock({
+      blockType: 'maintenance',
+      cabinId: cabinTypeId,
+      targetScope: 'all_units',
+      startDate: STAY_IN,
+      endDate: STAY_OUT,
+      ctx: opsCtx('POST /api/ops/availability/maintenance-blocks')
+    });
+    assert.equal(created.cabinId, String(parentCabinId));
+    assert.equal(created.unitId, null);
+    assert.equal(created.targetScope, 'all_units');
+
+    const stored = await AvailabilityBlock.findById(created.blockId).lean();
+    assert.equal(stored.unitId, null);
+    assert.equal(stored.metadata.availabilityTargetScope, 'all_units');
+  });
+
+  it('rejects units belonging to another cabin type', async () => {
+    const stamp = Date.now();
+    const otherType = await CabinType.create({
+      name: `Other ${stamp}`,
+      slug: `other-${stamp}`,
+      description: 'other',
+      capacity: 2,
+      pricePerNight: 100,
+      minNights: 1,
+      imageUrl: 'https://example.com/other.jpg',
+      location: 'The Valley',
+      propertyKind: 'valley',
+      isActive: true
+    });
+    const otherUnit = await Unit.create({
+      cabinTypeId: otherType._id,
+      unitNumber: `OTHER-${stamp}`,
+      isActive: true
+    });
+    await assert.rejects(
+      () =>
+        createBlock({
+          blockType: 'manual_block',
+          cabinId: parentCabinId,
+          unitId: otherUnit._id,
+          targetScope: 'unit',
+          startDate: STAY_IN,
+          endDate: STAY_OUT,
+          ctx: opsCtx()
+        }),
+      (err) => err.type === 'validation' && /does not belong/i.test(err.message)
+    );
+    assert.equal(await AvailabilityBlock.countDocuments(), 0);
+  });
+});
+
 describe('B8F1B OPS conflicts and writes', () => {
   it('23-25. unit / parent / single-cabin conflict resource mapping', async () => {
     await insertUnitCheckoutClaim({ unitId: unitIds[0], checkoutId: 'co_u0', leaseId: 'lease_u0' });
@@ -839,6 +933,7 @@ describe('B8F1B OPS conflicts and writes', () => {
           blockType: 'manual_block',
           cabinId: parentCabinId,
           unitId: null,
+          targetScope: 'all_units',
           startDate: STAY_IN,
           endDate: STAY_OUT,
           ctx: opsCtx()
