@@ -120,12 +120,14 @@ router.post('/manual', async (req, res) => {
   try {
     const data = await createManualReservation({
       cabinId: req.body?.cabinId,
+      unitId: req.body?.unitId || null,
+      cabinTypeId: req.body?.cabinTypeId || null,
       checkInDate: req.body?.checkIn ?? req.body?.checkInDate,
       checkOutDate: req.body?.checkOut ?? req.body?.checkOutDate,
       adults: req.body?.adults,
       children: req.body?.children,
       guestInfo: req.body?.guestInfo,
-      initialStatus: req.body?.initialStatus || 'pending',
+      initialStatus: req.body?.initialStatus ?? 'pending',
       note: req.body?.note,
       acceptExternalHoldWarnings: Boolean(req.body?.acceptExternalHoldWarnings),
       paymentPlaceholderNote: req.body?.paymentPlaceholderNote,

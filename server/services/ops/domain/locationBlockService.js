@@ -8,6 +8,7 @@ const { evaluateLocationConflicts } = require('./locationConflictService');
 const { resolveLocationTargets } = require('./locationInventoryService');
 const { assertAllowedLocationKey } = require('./locationRegistry');
 const { createDomainError } = require('./errors');
+const { normalizeManualBlockPurpose } = require('../manualBlockPurposeService');
 
 const { canUseMongoTransactions } = require('../../../utils/mongoTransactions');
 
@@ -54,12 +55,20 @@ async function insertLocationBlockGroup(blockPayloads) {
   return createdBlockIds;
 }
 
-function buildLocationBlockMetadata({ locationBlockGroupId, locationKey, targetKey }) {
+function buildLocationBlockMetadata({
+  locationBlockGroupId,
+  locationKey,
+  targetKey,
+  manualBlockPurpose,
+  operatorNote
+}) {
   return {
     locationBlockGroupId,
     locationKey,
     scope: 'location_wide',
-    targetKey
+    targetKey,
+    manualBlockPurpose,
+    ...(operatorNote ? { operatorNote } : {})
   };
 }
 
@@ -73,12 +82,24 @@ async function createLocationBlock({
   startDate,
   endDate,
   blockType = 'manual_block',
+  manualBlockPurpose = null,
+  operatorNote = null,
   reason = null,
   ctx = {}
 }) {
   assertAllowedLocationKey(locationKey);
   if (blockType !== 'manual_block') {
     throw createDomainError('validation', 'Only manual_block is supported for location-wide blocks in v1');
+  }
+  let normalizedPurpose;
+  try {
+    operatorNote = operatorNote == null ? null : String(operatorNote).trim() || null;
+    if (operatorNote && operatorNote.length > 500) {
+      throw new Error('Operator note cannot exceed 500 characters');
+    }
+    normalizedPurpose = normalizeManualBlockPurpose(manualBlockPurpose, operatorNote);
+  } catch (error) {
+    throw createDomainError('validation', error.message, { code: error.code }, 400);
   }
 
   requirePermission({
@@ -114,7 +135,9 @@ async function createLocationBlock({
     metadata: buildLocationBlockMetadata({
       locationBlockGroupId,
       locationKey,
-      targetKey: target.targetKey
+      targetKey: target.targetKey,
+      manualBlockPurpose: normalizedPurpose,
+      operatorNote
     })
   }));
 
@@ -132,6 +155,8 @@ async function createLocationBlock({
         locationBlockGroupId,
         locationKey,
         blockType,
+        manualBlockPurpose: normalizedPurpose,
+        operatorNote,
         targetCount: createdBlockIds.length,
         blockIds: createdBlockIds
       },

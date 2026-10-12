@@ -8,6 +8,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const { createFutureSofiaDates } = require('./testHelpers/futureSofiaDates.cjs');
 
 const Booking = require('../models/Booking');
 const Cabin = require('../models/Cabin');
@@ -44,6 +45,7 @@ const adminCtx = {
 let cabinId;
 let guestCounter = 0;
 let stayCounter = 0;
+const fixtureDate = createFutureSofiaDates();
 
 function nextGuest(prefix = 'guest') {
   guestCounter += 1;
@@ -57,11 +59,9 @@ function nextGuest(prefix = 'guest') {
 
 function nextDateRange() {
   stayCounter += 1;
-  const checkInDay = String(stayCounter).padStart(2, '0');
-  const checkOutDay = String(stayCounter + 1).padStart(2, '0');
   return {
-    checkInDate: `2026-09-${checkInDay}`,
-    checkOutDate: `2026-09-${checkOutDay}`
+    checkInDate: fixtureDate(stayCounter - 1),
+    checkOutDate: fixtureDate(stayCounter)
   };
 }
 

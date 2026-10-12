@@ -50,6 +50,7 @@ const {
 const { expandOccupiedSofiaNightDateOnlys } = require('../reporting/stayNights');
 const { processMetaPurchaseAfterConfirm } = require('../../bookingPurchaseTracking');
 const CabinType = require('../../../models/CabinType');
+const Unit = require('../../../models/Unit');
 const bookingLifecycleEmailService = require('../../bookingLifecycleEmailService');
 const { sendCancellationStayCreditEmail } = require('../../cancellationStayCreditEmailService');
 const {
@@ -254,6 +255,55 @@ function normalizeTrimmedReason(reason) {
   if (reason == null) return null;
   const value = String(reason).trim();
   return value || null;
+}
+
+function validateManualReservationInput({ guestInfo, adults, children, initialStatus }) {
+  const fieldErrors = {};
+  const stringFields = [
+    ['firstName', 50],
+    ['lastName', 50],
+    ['email', 254],
+    ['phone', 40]
+  ];
+  for (const [field, maxLength] of stringFields) {
+    const value = guestInfo?.[field];
+    const normalized = value == null ? '' : String(value).trim();
+    if (!normalized) fieldErrors[`guestInfo.${field}`] = 'required';
+    else if (normalized.length > maxLength) fieldErrors[`guestInfo.${field}`] = `max_${maxLength}`;
+    else if (field === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+      fieldErrors['guestInfo.email'] = 'invalid_email';
+    }
+  }
+  const countValue = (value) =>
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim()
+        ? Number(value)
+        : Number.NaN;
+  const adultCount = countValue(adults);
+  const childCount = countValue(children);
+  if (!Number.isInteger(adultCount) || adultCount < 1 || adultCount > 10) {
+    fieldErrors.adults = 'must_be_integer_1_to_10';
+  }
+  if (!Number.isInteger(childCount) || childCount < 0 || childCount > 10) {
+    fieldErrors.children = 'must_be_integer_0_to_10';
+  }
+  const phone = String(guestInfo?.phone || '').trim();
+  if (phone.length < 5 || !/\d/.test(phone)) {
+    fieldErrors['guestInfo.phone'] = 'invalid_phone';
+  }
+  if (!['pending', 'confirmed'].includes(initialStatus)) {
+    fieldErrors.initialStatus = 'unsupported_status';
+  }
+  if (Object.keys(fieldErrors).length) {
+    throw createDomainError(
+      'validation',
+      'Manual reservation details are invalid',
+      { code: 'INVALID_MANUAL_RESERVATION', fields: fieldErrors },
+      400
+    );
+  }
+  return { adults: adultCount, children: childCount };
 }
 
 function deriveCancelRecipientEmail(settlement, booking) {
@@ -2078,6 +2128,8 @@ async function editGuestContact({ bookingId, firstName, lastName, email, phone, 
 
 async function createManualReservation({
   cabinId,
+  unitId = null,
+  cabinTypeId = null,
   checkInDate,
   checkOutDate,
   adults = 2,
@@ -2089,6 +2141,11 @@ async function createManualReservation({
   paymentPlaceholderNote = null,
   manualReservationPurpose = null,
   sendGuestConfirmationEmail = null,
+  excludeAvailabilityBlockId = null,
+  convertedFromAvailabilityBlockId = null,
+  deferPostCreateHooks = false,
+  conversionHooksPending = false,
+  skipIdempotencyCache = false,
   reason = null,
   ctx = {}
 }) {
@@ -2100,27 +2157,27 @@ async function createManualReservation({
   if (!cabinId) {
     throw createDomainError('validation', 'cabinId is required');
   }
-  if (!guestInfo || !guestInfo.firstName || !guestInfo.lastName || !guestInfo.email || !guestInfo.phone) {
-    throw createDomainError('validation', 'guestInfo must include firstName, lastName, email, and phone');
-  }
-
-  const allowedInitial = ['pending', 'confirmed'];
-  if (!allowedInitial.includes(initialStatus)) {
-    throw createDomainError('validation', 'initialStatus must be pending or confirmed');
-  }
+  const validatedInput = validateManualReservationInput({ guestInfo, adults, children, initialStatus });
 
   const normalized = normalizeExclusiveDateRange(checkInDate, checkOutDate);
-  const fingerprint = `${cabinId}:${normalized.startDate.toISOString()}:${normalized.endDate.toISOString()}:${String(guestInfo.email).toLowerCase()}`;
-  const idemKey = getIdempotencyFromContext(ctx, ACTIONS.OPS_RESERVATION_MANUAL_CREATE, fingerprint);
-  const remembered = getRememberedResult(idemKey);
-  if (remembered) return remembered;
-
+  const today = formatSofiaDateOnly(new Date());
+  const checkInDay = formatSofiaDateOnly(normalized.startDate);
+  if (!checkInDay || checkInDay < today) {
+    throw createDomainError('validation', 'Check-in date must be today or in the future', {
+      checkInDate: 'must_be_today_or_future'
+    }, 400);
+  }
   const cabin = await Cabin.findById(cabinId).lean();
   if (!cabin) {
     throw createDomainError('validation', 'Cabin not found', { cabinId }, 404);
   }
   if (cabin.archivedAt) {
     throw createDomainError('validation', 'Cabin is archived', { cabinId }, 409);
+  }
+  if (cabin.inventoryType === 'multi' && !unitId) {
+    throw createDomainError('validation', 'Choose a physical unit for this multi-unit accommodation', {
+      cabinId: String(cabinId)
+    }, 400);
   }
 
   if (isFixtureCabinName(cabin.name)) {
@@ -2136,11 +2193,57 @@ async function createManualReservation({
     }
   }
 
-  const check = await evaluateCabinConflicts({
-    cabinId,
-    startDate: normalized.startDate,
-    endDate: normalized.endDate
-  });
+  let targetUnit = null;
+  if (unitId || cabinTypeId) {
+    if (!unitId || !cabinTypeId) {
+      throw createDomainError('validation', 'Allocated manual reservations require a physical unit');
+    }
+    const parent = await Cabin.findById(cabinId).select('inventoryType cabinTypeId cabinTypeRef').lean();
+    const parentTypeId = parent?.cabinTypeId || parent?.cabinTypeRef || null;
+    if (parent?.inventoryType !== 'multi' || String(parentTypeId) !== String(cabinTypeId)) {
+      throw createDomainError('validation', 'Unit does not belong to the selected multi-unit accommodation', {
+        cabinId: String(cabinId),
+        cabinTypeId: String(cabinTypeId)
+      }, 400);
+    }
+    targetUnit = await Unit.findById(unitId).select('_id cabinTypeId isActive').lean();
+    if (
+      !targetUnit ||
+      targetUnit.isActive === false ||
+      String(targetUnit.cabinTypeId) !== String(cabinTypeId)
+    ) {
+      throw createDomainError('validation', 'Unit is inactive or does not belong to this cabin type', {
+        unitId: String(unitId),
+        cabinTypeId: String(cabinTypeId)
+      });
+    }
+  }
+
+  const inventoryTarget = targetUnit
+    ? `unit:${targetUnit.cabinTypeId}:${targetUnit._id}`
+    : `cabin:${cabin._id}`;
+  const fingerprint = `${inventoryTarget}:${normalized.startDate.toISOString()}:${normalized.endDate.toISOString()}:${String(guestInfo.email).toLowerCase()}`;
+  const idemKey = getIdempotencyFromContext(ctx, ACTIONS.OPS_RESERVATION_MANUAL_CREATE, fingerprint);
+  if (!skipIdempotencyCache) {
+    const remembered = getRememberedResult(idemKey);
+    if (remembered) return remembered;
+  }
+
+  const check = targetUnit
+    ? await evaluateTargetConflicts({
+        cabinId,
+        unitId: targetUnit._id,
+        cabinTypeId: targetUnit.cabinTypeId,
+        startDate: normalized.startDate,
+        endDate: normalized.endDate,
+        excludeAvailabilityBlockId
+      })
+    : await evaluateCabinConflicts({
+        cabinId,
+        startDate: normalized.startDate,
+        endDate: normalized.endDate,
+        excludeAvailabilityBlockId
+      });
   if (check.hasHardConflicts) {
     throw createDomainError(
       'conflict',
@@ -2176,11 +2279,12 @@ async function createManualReservation({
 
   const booking = new Booking({
     _id: new mongoose.Types.ObjectId(),
-    cabinId,
+    cabinId: targetUnit ? null : cabinId,
+    ...(targetUnit ? { cabinTypeId: targetUnit.cabinTypeId, unitId: targetUnit._id } : {}),
     checkIn: normalized.startDate,
     checkOut: normalized.endDate,
-    adults: Math.max(1, parseInt(adults, 10) || 1),
-    children: Math.max(0, parseInt(children, 10) || 0),
+    adults: validatedInput.adults,
+    children: validatedInput.children,
     guestInfo: {
       firstName: String(guestInfo.firstName).trim(),
       lastName: String(guestInfo.lastName).trim(),
@@ -2196,7 +2300,28 @@ async function createManualReservation({
       source: provenanceSource,
       channel: 'staff',
       intakeRevision: 1,
-      createdByRoute: ctx.route || null
+      createdByRoute: ctx.route || null,
+      ...(convertedFromAvailabilityBlockId
+        ? {
+            convertedFromAvailabilityBlockId,
+            convertedAt: new Date(),
+            ...(conversionHooksPending
+              ? {
+                  conversionHooks: {
+                    status: 'pending',
+                    attemptCount: 0,
+                    processingLeaseAt: null,
+                    processingOwner: null,
+                    completedAt: null,
+                    lastFailureAt: null,
+                    lastErrorCode: null,
+                    completedSteps: [],
+                    sendGuestConfirmationEmail: resolvedSendGuestConfirmationEmail === true
+                  }
+                }
+              : {})
+          }
+        : {})
     },
     manualReservationPurpose: normalizedPurpose,
     sendGuestConfirmationEmail: resolvedSendGuestConfirmationEmail
@@ -2233,6 +2358,31 @@ async function createManualReservation({
   // S1.7 §24.44.10: internal claim authority before canonical persistence.
   // External hold acknowledgement above never bypasses this barrier.
   let cabinPreClaimAttempt = null;
+  let unitClaimAcquired = false;
+  if (targetUnit) {
+    try {
+      await claimUnitNights({
+        bookingId: booking._id,
+        unitId: targetUnit._id,
+        checkIn: normalized.startDate,
+        checkOut: normalized.endDate,
+        source: convertedFromAvailabilityBlockId
+          ? 'ops_manual_block_conversion'
+          : 'ops_manual_reservation'
+      });
+      unitClaimAcquired = true;
+    } catch (claimErr) {
+      if (claimErr?.code === CLAIM_ERR.FOREIGN_OWNER || claimErr?.code === CLAIM_ERR.INDEX_MISSING) {
+        throw createDomainError(
+          'conflict',
+          'The selected unit is no longer available',
+          { code: claimErr.code, hardConflicts: claimErr.details?.conflicts || [] },
+          409
+        );
+      }
+      throw claimErr;
+    }
+  }
   const usesCabinAuthority =
     isCabinNightClaimAuthoritativeEnabled() &&
     bookingQualifiesForSingleCabinAuthority(booking);
@@ -2273,6 +2423,9 @@ async function createManualReservation({
   try {
     await booking.save({ validateBeforeSave: false });
   } catch (saveErr) {
+    if (unitClaimAcquired) {
+      await releaseUnitNights({ bookingId: booking._id, unitId: targetUnit._id });
+    }
     if (cabinPreClaimAttempt && !cabinPreClaimAttempt.skipped) {
       await compensateCreateAttemptClaims({
         attempt: cabinPreClaimAttempt,
@@ -2285,19 +2438,48 @@ async function createManualReservation({
     throw saveErr;
   }
 
-  const overlaps = await Booking.countDocuments({
-    cabinId,
-    _id: { $ne: booking._id },
-    status: { $in: BLOCKING_BOOKING_STATUSES },
-    isTest: { $ne: true },
-    $or: [{ archivedAt: null }, { archivedAt: { $exists: false } }],
-    checkIn: { $lt: normalized.endDate },
-    checkOut: { $gt: normalized.startDate }
-  });
-  const blockRace = await countBlockingBlocksForSingleCabin(cabinId, normalized.startDate, normalized.endDate);
+  const postSaveConflicts = targetUnit
+    ? await evaluateTargetConflicts({
+        cabinId,
+        unitId: targetUnit._id,
+        cabinTypeId: targetUnit.cabinTypeId,
+        startDate: normalized.startDate,
+        endDate: normalized.endDate,
+        excludeReservationId: booking._id,
+        excludeAvailabilityBlockId
+      })
+    : excludeAvailabilityBlockId
+      ? await evaluateCabinConflicts({
+          cabinId,
+          startDate: normalized.startDate,
+          endDate: normalized.endDate,
+          excludeReservationId: booking._id,
+          excludeAvailabilityBlockId
+        })
+      : null;
+  const overlaps = postSaveConflicts
+    ? postSaveConflicts.hardConflicts.filter((entry) => entry.kind === 'reservation').length +
+      postSaveConflicts.hardConflicts.filter(
+        (entry) => entry.kind !== 'reservation' && entry.kind !== 'availability_block'
+      ).length
+    : await Booking.countDocuments({
+        cabinId,
+        _id: { $ne: booking._id },
+        status: { $in: BLOCKING_BOOKING_STATUSES },
+        isTest: { $ne: true },
+        $or: [{ archivedAt: null }, { archivedAt: { $exists: false } }],
+        checkIn: { $lt: normalized.endDate },
+        checkOut: { $gt: normalized.startDate }
+      });
+  const blockRace = postSaveConflicts
+    ? postSaveConflicts.hardConflicts.filter((entry) => entry.kind === 'availability_block').length
+    : await countBlockingBlocksForSingleCabin(cabinId, normalized.startDate, normalized.endDate);
   if (overlaps > 0 || blockRace > 0) {
     // Canonical record must stop blocking BEFORE owner claims are released.
     await Booking.deleteOne({ _id: booking._id });
+    if (unitClaimAcquired) {
+      await releaseUnitNights({ bookingId: booking._id, unitId: targetUnit._id });
+    }
     await releaseCabinNightsAfterCanonicalNonOwning({
       bookingId: booking._id,
       lifecycleSource: 'manual_create_rollback',
@@ -2322,6 +2504,27 @@ async function createManualReservation({
     /* cabin shadow must not alter manual create outcome */
   }
 
+  const result = {
+    reservationId: String(booking._id),
+    status: booking.status,
+    cabinId: String(booking.cabinId),
+    provenanceSource,
+    manualReservationPurpose: booking.manualReservationPurpose || null,
+    sendGuestConfirmationEmail: booking.sendGuestConfirmationEmail ?? null
+  };
+  if (targetUnit) {
+    result.cabinId = String(cabinId);
+    result.cabinTypeId = String(booking.cabinTypeId);
+    result.unitId = String(booking.unitId);
+  }
+  if (!deferPostCreateHooks) {
+    await runManualReservationPostCreateHooks({ booking, cabin, note, initialStatus, ctx });
+  }
+  if (!skipIdempotencyCache) rememberResult(idemKey, result);
+  return result;
+}
+
+async function runManualReservationPostCreateHooks({ booking, cabin, note, initialStatus, ctx = {} }) {
   await Guest.findOneAndUpdate(
     { email: booking.guestInfo.email },
     {
@@ -2411,17 +2614,6 @@ async function createManualReservation({
   scheduleOpsPushSafely('scheduleOpsPushForBooking', {
     bookingId: booking._id
   });
-
-  const result = {
-    reservationId: String(booking._id),
-    status: booking.status,
-    cabinId: String(booking.cabinId),
-    provenanceSource,
-    manualReservationPurpose: booking.manualReservationPurpose || null,
-    sendGuestConfirmationEmail: booking.sendGuestConfirmationEmail ?? null
-  };
-  rememberResult(idemKey, result);
-  return result;
 }
 
 async function addReservationNote({ bookingId, content, metadata = {}, ctx = {} }) {
@@ -2494,6 +2686,7 @@ module.exports = {
   editGuestContact,
   addReservationNote,
   createManualReservation,
+  runManualReservationPostCreateHooks,
   // Test / diagnostics
   DATE_EDIT_CANONICAL_MRI_CATEGORY,
   DATE_EDIT_ALLOWED_STATUSES,

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
 import { opsReadAPI, opsWriteAPI } from '../../../services/opsApi';
+import { MANUAL_BLOCK_PURPOSES } from '../../../utils/manualReservationPurpose';
 import {
   BLOCK_DOT,
   CONFLICT_RING,
@@ -232,6 +233,9 @@ export default function OpsCalendarIndex() {
               {activeLocationBlockGroups.map((group) => {
                 const label = group.locationLabel || group.locationKey || 'Location';
                 const count = group.targetCount ?? 0;
+                const purposeLabel = MANUAL_BLOCK_PURPOSES.find(
+                  (purpose) => purpose.value === group.manualBlockPurpose
+                )?.label;
                 return (
                   <li key={group.locationBlockGroupId} className="ops-cal-group">
                     <div className="ops-cal-group__row">
@@ -239,6 +243,7 @@ export default function OpsCalendarIndex() {
                         <div className="ops-cal__meta-row">
                           <h3 className="ops-cal-group__title">{label}</h3>
                           <span className="ops-cal-chip ops-cal-chip--location">Location-wide block</span>
+                          {purposeLabel ? <OpsBadge>{purposeLabel}</OpsBadge> : null}
                         </div>
                         <p className="ops-cal-group__meta">
                           {formatGroupDateRange(
@@ -251,6 +256,9 @@ export default function OpsCalendarIndex() {
                         <p className="ops-cal-group__meta">
                           {count} propert{count === 1 ? 'y' : 'ies'} blocked
                         </p>
+                        {group.operatorNote ? (
+                          <p className="ops-cal-group__meta">Operator note: {group.operatorNote}</p>
+                        ) : null}
                       </div>
                       <OpsButton variant="destructive" onClick={() => openRemoveGroup(group)}>
                         Remove

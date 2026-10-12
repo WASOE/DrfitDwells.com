@@ -16,6 +16,7 @@ const { assertExclusiveCalendarRangeWithinMax } = require('../../../utils/calend
 const { BLOCKING_BOOKING_STATUSES } = require('../../calendar/blockingStatusConstants');
 const { guestFacingCabinMatch } = require('../../../utils/fixtureExclusion');
 const { findParentCabinForCabinType } = require('../../publicAvailabilityService');
+const { manualBlockPurposeLabel } = require('../manualBlockPurposeService');
 const { LOCATION_REGISTRY, isAllowedLocationKey } = require('../domain/locationRegistry');
 const {
   collectCalendarConflictMarkers,
@@ -123,7 +124,11 @@ function enrichBlockRender(block, bookingById, windowStart, windowEndExclusive, 
     }
   }
   if (!labelShort) {
-    labelShort = block.isLocationWideBlock ? 'Location-wide' : labelShortForBlockType(block.blockType);
+    labelShort = block.isLocationWideBlock
+      ? 'Location-wide'
+      : block.blockType === 'manual_block'
+        ? manualBlockPurposeLabel(block.manualBlockPurpose) || 'Manual block'
+        : labelShortForBlockType(block.blockType);
   }
 
   return {
@@ -134,6 +139,7 @@ function enrichBlockRender(block, bookingById, windowStart, windowEndExclusive, 
       guestShortName,
       unitLabel,
       blockTypeToken: block.blockType,
+      manualBlockPurpose: block.manualBlockPurpose || null,
       holdCategory: block.blockType === 'reservation' ? 'internal_reservation' : 'internal_block',
       conflictToken: null,
       occupiedDayKeys
@@ -350,6 +356,8 @@ async function buildBlocksForRange(normalized, propertyId) {
     locationBlockGroupId: blk.metadata?.locationBlockGroupId || null,
     locationKey: blk.metadata?.locationKey || null,
     isLocationWideBlock: blk.metadata?.scope === 'location_wide',
+    manualBlockPurpose: blk.metadata?.manualBlockPurpose || null,
+    operatorNote: blk.metadata?.operatorNote || null,
     provenance: {
       source: blk.source,
       sourceReference: blk.sourceReference || null
@@ -438,6 +446,8 @@ async function listActiveLocationBlockGroups() {
       $group: {
         _id: '$metadata.locationBlockGroupId',
         locationKey: { $first: '$metadata.locationKey' },
+        manualBlockPurpose: { $first: '$metadata.manualBlockPurpose' },
+        operatorNote: { $first: '$metadata.operatorNote' },
         startDate: { $first: '$startDate' },
         endDate: { $first: '$endDate' },
         targetCount: { $sum: 1 }
@@ -456,6 +466,8 @@ async function listActiveLocationBlockGroups() {
     return {
       locationBlockGroupId: String(row._id),
       locationKey,
+      manualBlockPurpose: row.manualBlockPurpose || null,
+      operatorNote: row.operatorNote || null,
       locationLabel,
       ...calendarBoundaryFields(row.startDate, row.endDate),
       targetCount: row.targetCount,

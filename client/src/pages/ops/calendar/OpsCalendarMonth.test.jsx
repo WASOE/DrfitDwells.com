@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { OpsSessionProvider } from '../../../context/OpsSessionContext';
 import OpsCalendarMonth from './OpsCalendarMonth';
 import { BLOCK_BAR, BLOCK_DOT, CONFLICT_RING } from './calendarVisualTokens';
@@ -13,6 +13,7 @@ vi.mock('../../../services/opsApi', () => ({
   },
   opsWriteAPI: {
     createManualBlock: vi.fn(),
+    convertManualBlockToReservation: vi.fn(),
     createMaintenanceBlock: vi.fn(),
     editManualBlock: vi.fn(),
     editMaintenanceBlock: vi.fn(),
@@ -37,12 +38,17 @@ const PARENT_CABIN_ID = '507f1f77bcf86cd799439012';
 const UNIT_2_ID = '507f1f77bcf86cd799439021';
 const UNIT_3_ID = '507f1f77bcf86cd799439022';
 
+function CurrentLocation() {
+  const location = useLocation();
+  return <div data-testid="location">{location.search}</div>;
+}
+
 const adminSession = {
   authenticated: true,
   actorId: 'admin-1',
   role: 'admin',
   modules: ['*'],
-  actions: [],
+  actions: ['ops.reservation.manual_create', 'ops.availability.manual_block.remove'],
   defaultRoute: '/ops',
   locale: 'en'
 };
@@ -141,14 +147,16 @@ function multiCabinDetailPayload() {
   };
 }
 
-function renderMonth(path = `/ops/calendar/${CABIN_ID}`) {
+function renderMonth(path = `/ops/calendar/${CABIN_ID}`, session = adminSession) {
   return render(
     <div className="ops-root" data-ops-appearance="light" data-ops-themed="true">
-      <OpsSessionProvider session={adminSession}>
+      <OpsSessionProvider session={session}>
         <MemoryRouter initialEntries={[path]}>
           <Routes>
             <Route path="/ops/calendar/:cabinId" element={<OpsCalendarMonth />} />
             <Route path="/ops/calendar" element={<div>Calendar index</div>} />
+            <Route path="/ops/reservations" element={<CurrentLocation />} />
+            <Route path="/ops/reservations/:reservationId" element={<div>Converted reservation</div>} />
           </Routes>
         </MemoryRouter>
       </OpsSessionProvider>
@@ -177,6 +185,18 @@ describe('OpsCalendarMonth migration', () => {
     expect(screen.getByTestId('ops-cal-month-grid')).toBeInTheDocument();
   });
 
+  it('hides guest-stay and conversion actions without the required permissions', async () => {
+    renderMonth(`/ops/calendar/${CABIN_ID}`, {
+      ...adminSession,
+      actions: []
+    });
+    await screen.findByRole('button', { name: 'Add manual block' });
+    expect(screen.queryByRole('button', { name: 'Add guest stay' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'A-Frame 2 · Manual' }));
+    expect(screen.queryByRole('button', { name: 'Convert to guest reservation' })).not.toBeInTheDocument();
+  });
+
   it('loads month with exact from/to/cabinId and cabin detail', async () => {
     renderMonth();
     await waitFor(() => {
@@ -191,7 +211,7 @@ describe('OpsCalendarMonth migration', () => {
 
   it('shows OpsBanner danger on load error and still keeps shell', async () => {
     opsReadAPI.calendar.mockRejectedValue({ response: { data: { message: 'Month boom' } } });
-    renderMonth();
+    renderMonth(`/ops/calendar/${PARENT_CABIN_ID}`);
     await waitFor(() => {
       expect(screen.getByText('Month boom')).toBeInTheDocument();
     });
@@ -287,12 +307,92 @@ describe('OpsCalendarMonth migration', () => {
     expect(opsWriteAPI.createManualBlock).toHaveBeenCalledWith(
       expect.objectContaining({
         cabinId: CABIN_ID,
-        reason: 'ops_calendar',
+        reason: null,
+        manualBlockPurpose: 'owner_hold',
+        operatorNote: undefined,
         targetScope: 'single_cabin',
         startDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
         endDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/)
       })
     );
+  });
+
+  it('converts a manual block through the canonical guest reservation action', async () => {
+    opsWriteAPI.convertManualBlockToReservation.mockResolvedValue({
+      data: { data: { reservationId: 'reservation-converted' } }
+    });
+    renderMonth();
+    await screen.findByRole('button', { name: 'Add manual block' });
+
+    fireEvent.click(screen.getByRole('button', { name: /A-Frame 2 · Manual/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Convert to guest reservation' }));
+    fireEvent.change(screen.getByLabelText('First name (required)'), { target: { value: 'Ada' } });
+    fireEvent.change(screen.getByLabelText('Last name (required)'), { target: { value: 'Guest' } });
+    fireEvent.change(screen.getByLabelText('Email (required)'), { target: { value: 'ada@example.com' } });
+    fireEvent.change(screen.getByLabelText('Phone (required)'), { target: { value: '+359888000000' } });
+    const emailOptIn = screen.getByRole('checkbox', {
+      name: 'Send guest confirmation email when this reservation is confirmed'
+    });
+    expect(emailOptIn).not.toBeChecked();
+    fireEvent.click(emailOptIn);
+    fireEvent.click(screen.getByRole('button', { name: 'Create reservation' }));
+
+    await waitFor(() => {
+      expect(opsWriteAPI.convertManualBlockToReservation).toHaveBeenCalledWith(
+        '507f1f77bcf86cd799439099',
+        expect.objectContaining({
+          guestInfo: {
+            firstName: 'Ada',
+            lastName: 'Guest',
+            email: 'ada@example.com',
+            phone: '+359888000000'
+          },
+          manualReservationPurpose: 'comp_other',
+          initialStatus: 'pending',
+          sendGuestConfirmationEmail: true
+        })
+      );
+    });
+    expect(await screen.findByText('Converted reservation')).toBeInTheDocument();
+  });
+
+  it('requires an explicit unit when converting a parent-wide multi-unit block', async () => {
+    const parentWideBlock = monthBlocks().find((block) => block.blockType === 'manual_block');
+    parentWideBlock.cabinId = PARENT_CABIN_ID;
+    parentWideBlock.unitId = null;
+    parentWideBlock.render.unitId = null;
+    parentWideBlock.render.unitLabel = null;
+    opsReadAPI.calendar.mockResolvedValue(
+      calendarPayload({
+        calendarScope: { renderCabinId: PARENT_CABIN_ID },
+        blocks: [parentWideBlock]
+      })
+    );
+    opsReadAPI.cabinDetail.mockResolvedValue(multiCabinDetailPayload());
+    opsWriteAPI.convertManualBlockToReservation.mockResolvedValue({
+      data: { data: { reservationId: 'reservation-converted' } }
+    });
+    renderMonth(`/ops/calendar/${PARENT_CABIN_ID}`);
+    await screen.findByRole('button', { name: 'Add manual block' });
+    fireEvent.click(screen.getByRole('button', { name: 'Manual' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Convert to guest reservation' }));
+    expect(screen.getByLabelText('Assign to physical unit')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Assign to physical unit'), {
+      target: { value: UNIT_3_ID }
+    });
+    fireEvent.change(screen.getByLabelText('First name (required)'), { target: { value: 'Ada' } });
+    fireEvent.change(screen.getByLabelText('Last name (required)'), { target: { value: 'Guest' } });
+    fireEvent.change(screen.getByLabelText('Email (required)'), { target: { value: 'ada@example.com' } });
+    fireEvent.change(screen.getByLabelText('Phone (required)'), { target: { value: '+359888000000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create reservation' }));
+
+    await waitFor(() => {
+      expect(opsWriteAPI.convertManualBlockToReservation).toHaveBeenCalledWith(
+        '507f1f77bcf86cd799439099',
+        expect.objectContaining({ unitId: UNIT_3_ID })
+      );
+    });
   });
 
   it('requires and sends an explicit physical unit for a pooled A-frame block', async () => {
@@ -341,6 +441,25 @@ describe('OpsCalendarMonth migration', () => {
       );
     });
     expect(opsWriteAPI.createMaintenanceBlock.mock.calls[0][0]).not.toHaveProperty('unitId');
+  });
+
+  it('routes multi-unit guest-stay creation with the selected physical unit', async () => {
+    opsReadAPI.calendar.mockResolvedValue(
+      calendarPayload({ calendarScope: { renderCabinId: PARENT_CABIN_ID } })
+    );
+    opsReadAPI.cabinDetail.mockResolvedValue(multiCabinDetailPayload());
+    renderMonth(`/ops/calendar/${PARENT_CABIN_ID}`);
+
+    fireEvent.change(await screen.findByLabelText('Guest stay unit'), {
+      target: { value: UNIT_3_ID }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Add guest stay' }));
+
+    const location = await screen.findByTestId('location');
+    expect(location.textContent).toContain(`cabinId=${PARENT_CABIN_ID}`);
+    expect(location.textContent).toContain(`cabinTypeId=${CABIN_ID}`);
+    expect(location.textContent).toContain(`unitId=${UNIT_3_ID}`);
+    expect(location.textContent).toContain('unitLabel=A-Frame+3');
   });
 
   it('creates maintenance block with exact payload', async () => {

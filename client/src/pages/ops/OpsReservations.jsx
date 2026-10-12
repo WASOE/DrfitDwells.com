@@ -217,6 +217,15 @@ export default function OpsReservations() {
   useEffect(() => {
     if (openedCreateFromQuery.current || !canCreate || searchParams.get('create') !== '1') return;
     openedCreateFromQuery.current = true;
+    setForm({
+      ...copyEmptyCreateForm(),
+      cabinId: searchParams.get('cabinId') || '',
+      cabinTypeId: searchParams.get('cabinTypeId') || '',
+      unitId: searchParams.get('unitId') || '',
+      unitLabel: searchParams.get('unitLabel') || '',
+      checkIn: searchParams.get('checkIn') || '',
+      checkOut: searchParams.get('checkOut') || ''
+    });
     setCreateError('');
     setCreateOpen(true);
   }, [canCreate, searchParams]);
@@ -313,6 +322,9 @@ export default function OpsReservations() {
     try {
       const res = await opsWriteAPI.createManualReservation({
         cabinId: form.cabinId,
+        ...(form.unitId && form.cabinTypeId
+          ? { unitId: form.unitId, cabinTypeId: form.cabinTypeId }
+          : {}),
         checkIn: form.checkIn,
         checkOut: form.checkOut,
         adults: parseInt(form.adults, 10) || 2,
@@ -578,7 +590,7 @@ export default function OpsReservations() {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         title="Manual reservation"
-        description="Single-cabin stays only. Dates use the property calendar (check-out is exclusive). Overlaps are rejected unless you acknowledge external channel holds."
+        description="Guest stays create canonical Bookings. Allocated stays require the selected physical unit. Dates use the property calendar (check-out is exclusive)."
         footer={
           <>
             <OpsButton variant="secondary" onClick={() => setCreateOpen(false)} disabled={createBusy}>
@@ -589,7 +601,7 @@ export default function OpsReservations() {
               form="ops-reservations-create-form"
               loading={createBusy}
               loadingLabel="Creating…"
-              disabled={singleCabins.length === 0}
+              disabled={!form.unitId && singleCabins.length === 0}
             >
               Create
             </OpsButton>
@@ -598,21 +610,28 @@ export default function OpsReservations() {
       >
         <form id="ops-reservations-create-form" className="ops-reservations-form" onSubmit={submitCreate}>
           {createError ? <OpsInlineError>{createError}</OpsInlineError> : null}
-          <OpsSelect
-            label="Cabin"
-            required
-            value={form.cabinId}
-            onChange={(e) => setForm((f) => ({ ...f, cabinId: e.target.value }))}
-            disabled={createBusy}
-          >
-            <option value="">Select cabin</option>
-            {singleCabins.map((c) => (
-              <option key={c.cabinId} value={c.cabinId}>
-                {c.name}
-              </option>
-            ))}
-          </OpsSelect>
-          {singleCabins.length === 0 ? (
+          {form.unitId && form.cabinTypeId ? (
+            <p className="ops-reservations-form__note">
+              Accommodation: {cabins.find((c) => c.cabinId === form.cabinId)?.name || 'Selected multi-unit accommodation'}
+              {' · '}Physical unit: {form.unitLabel || 'Selected A-frame'}
+            </p>
+          ) : (
+            <OpsSelect
+              label="Cabin"
+              required
+              value={form.cabinId}
+              onChange={(e) => setForm((f) => ({ ...f, cabinId: e.target.value }))}
+              disabled={createBusy}
+            >
+              <option value="">Select cabin</option>
+              {singleCabins.map((c) => (
+                <option key={c.cabinId} value={c.cabinId}>
+                  {c.name}
+                </option>
+              ))}
+            </OpsSelect>
+          )}
+          {!form.unitId && singleCabins.length === 0 ? (
             <p className="ops-reservations-form__note">
               No bookable single cabins in ops list (multi-unit types need another flow).
             </p>

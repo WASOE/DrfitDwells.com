@@ -39,6 +39,7 @@ let mongoServer;
 test.before(async () => {
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri());
+  await AuditEvent.createCollection();
   await ensureR1IndexesForTests();
 });
 
@@ -364,6 +365,7 @@ test('DEDUP#17 manual block emits AuditEvent without dedupeKey; order is audit-t
   const result = await createBlock({
     blockType: 'manual_block',
     cabinId: cabin._id,
+    manualBlockPurpose: 'owner_hold',
     startDate: '2026-11-01',
     endDate: '2026-11-03',
     reason: 'hotfix test',
@@ -380,6 +382,7 @@ test('DEDUP#17 manual block emits AuditEvent without dedupeKey; order is audit-t
   assert.ok(audit);
   assert.equal(audit.dedupeKey, undefined);
   assert.equal(audit.action, 'manual_block_create');
+  assert.equal(audit.afterSnapshot.manualBlockPurpose, 'owner_hold');
 });
 
 test('DEDUP#18 maintenance block emits AuditEvent without dedupeKey', async () => {

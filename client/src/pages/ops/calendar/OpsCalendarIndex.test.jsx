@@ -25,6 +25,14 @@ vi.mock('../../../services/opsApi', () => ({
   }
 }));
 
+vi.mock('./opsCalendarDateUtils', async () => {
+  const actual = await vi.importActual('./opsCalendarDateUtils');
+  return {
+    ...actual,
+    sofiaNowYearMonth: () => ({ year: 2026, monthIndex: 8 })
+  };
+});
+
 import { opsReadAPI, opsWriteAPI } from '../../../services/opsApi';
 
 const adminSession = {

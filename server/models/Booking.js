@@ -526,7 +526,28 @@ const bookingSchema = new mongoose.Schema({
         intakeRevision: { type: Number, default: 1 },
         lastTransitionAt: { type: Date, default: null },
         lastTransition: { type: String, trim: true, default: null },
-        createdByRoute: { type: String, trim: true, default: null }
+        createdByRoute: { type: String, trim: true, default: null },
+        convertedFromAvailabilityBlockId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'AvailabilityBlock',
+          default: null
+        },
+        convertedAt: { type: Date, default: null },
+        conversionHooks: {
+          status: {
+            type: String,
+            enum: ['pending', 'processing', 'completed', 'failed'],
+            default: null
+          },
+          attemptCount: { type: Number, default: 0 },
+          processingLeaseAt: { type: Date, default: null },
+          processingOwner: { type: String, trim: true, maxlength: 80, default: null },
+          completedAt: { type: Date, default: null },
+          lastFailureAt: { type: Date, default: null },
+          lastErrorCode: { type: String, trim: true, maxlength: 80, default: null },
+          completedSteps: { type: [String], default: [] },
+          sendGuestConfirmationEmail: { type: Boolean, default: false }
+        }
       },
       { _id: false }
     ),
@@ -760,6 +781,16 @@ const bookingSchema = new mongoose.Schema({
 bookingSchema.index({ cabinId: 1, checkIn: 1, checkOut: 1 });
 bookingSchema.index({ cabinTypeId: 1, checkIn: 1, checkOut: 1 });
 bookingSchema.index({ unitId: 1, checkIn: 1, checkOut: 1 });
+bookingSchema.index(
+  { 'provenance.convertedFromAvailabilityBlockId': 1 },
+  {
+    unique: true,
+    name: 'booking_conversion_source_block_unique_v1',
+    partialFilterExpression: {
+      'provenance.convertedFromAvailabilityBlockId': { $type: 'objectId' }
+    }
+  }
+);
 bookingSchema.index({ status: 1 });
 bookingSchema.index({ 'guestInfo.email': 1 });
 bookingSchema.index(

@@ -23,11 +23,11 @@ function isPlausibleGuestEmail(email) {
 
 /**
  * Upsert `GuestContactPreference` rows from a persisted `Booking` guest snapshot.
- * Never throws. Never mutates `Booking`.
+ * Never mutates `Booking`; failures are swallowed unless a durable caller opts into retries.
  *
  * Feature flag: `MESSAGE_GUEST_CONTACT_PREF_SYNC_ENABLED=1` required; otherwise no-op.
  */
-async function syncGuestContactPreferencesForBooking(booking) {
+async function syncGuestContactPreferencesForBooking(booking, { throwOnError = false } = {}) {
   if (!isGuestContactPrefSyncEnabled()) {
     return;
   }
@@ -134,6 +134,7 @@ async function syncGuestContactPreferencesForBooking(booking) {
         error: err?.message || String(err)
       })
     );
+    if (throwOnError) throw err;
   }
 }
 

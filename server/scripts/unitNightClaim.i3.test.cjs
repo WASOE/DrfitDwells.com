@@ -12,6 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const { createFutureSofiaDates } = require('./testHelpers/futureSofiaDates.cjs');
 
 const UnitNightClaim = require('../models/UnitNightClaim');
 const Booking = require('../models/Booking');
@@ -40,6 +41,7 @@ const { normalizeDateToSofiaDayStart, formatSofiaDateOnly } = require('../utils/
 
 let mongoServer;
 let actorSeq = 0;
+const fixtureDate = createFutureSofiaDates();
 
 function sofiaDay(isoDateOnly) {
   return normalizeDateToSofiaDayStart(`${isoDateOnly}T12:00:00.000Z`);
@@ -97,8 +99,8 @@ async function seedMultiUnit() {
 
 async function createAllocatedBooking(overrides = {}) {
   const seed = overrides._seed || (await seedMultiUnit());
-  const checkIn = overrides.checkIn || sofiaDay('2026-09-10');
-  const checkOut = overrides.checkOut || sofiaDay('2026-09-12');
+  const checkIn = overrides.checkIn || sofiaDay(fixtureDate(0));
+  const checkOut = overrides.checkOut || sofiaDay(fixtureDate(2));
   const booking = await Booking.create({
     cabinTypeId: overrides.cabinTypeId || seed.cabinType._id,
     unitId: overrides.unitId === undefined ? seed.unitA._id : overrides.unitId,
@@ -181,18 +183,18 @@ test.beforeEach(async () => {
 
 test('#2/#3/#26 sync helper: extend fills added nights; checkout excluded; source=date_edit', async () => {
   const { booking, unitA } = await createAllocatedBooking({
-    checkIn: sofiaDay('2026-09-10'),
-    checkOut: sofiaDay('2026-09-12')
+    checkIn: sofiaDay(fixtureDate(0)),
+    checkOut: sofiaDay(fixtureDate(2))
   });
   await claimNightsFor(booking, unitA._id, booking.checkIn, booking.checkOut);
-  booking.checkOut = sofiaDay('2026-09-14');
+  booking.checkOut = sofiaDay(fixtureDate(4));
   await booking.save({ validateBeforeSave: false });
 
   const outcome = await syncUnitNightClaimsShadow({ booking, source: DATE_EDIT_SOURCE });
   assert.equal(outcome.ok, true);
   assert.equal(outcome.outcome, SYNC_OUTCOMES.SYNCED);
   assert.equal(outcome.source, 'date_edit');
-  assert.deepEqual(outcome.requiredNights, ['2026-09-10', '2026-09-11', '2026-09-12', '2026-09-13']);
+  assert.deepEqual(outcome.requiredNights, [fixtureDate(0), fixtureDate(1), fixtureDate(2), fixtureDate(3)]);
   assert.deepEqual(await nightsOwned(booking._id), outcome.requiredNights);
   const rows = await UnitNightClaim.find({ bookingId: booking._id }).lean();
   assert.ok(rows.some((r) => r.source === 'date_edit'));
@@ -200,32 +202,32 @@ test('#2/#3/#26 sync helper: extend fills added nights; checkout excluded; sourc
 
 test('#4 sync helper: shrink releases surplus', async () => {
   const { booking, unitA } = await createAllocatedBooking({
-    checkIn: sofiaDay('2026-09-10'),
-    checkOut: sofiaDay('2026-09-14')
+    checkIn: sofiaDay(fixtureDate(0)),
+    checkOut: sofiaDay(fixtureDate(4))
   });
   await claimNightsFor(booking, unitA._id, booking.checkIn, booking.checkOut);
-  booking.checkOut = sofiaDay('2026-09-12');
+  booking.checkOut = sofiaDay(fixtureDate(2));
   await booking.save({ validateBeforeSave: false });
 
   const outcome = await syncUnitNightClaimsShadow({ booking });
   assert.equal(outcome.ok, true);
   assert.equal(outcome.releasedCount, 2);
-  assert.deepEqual(await nightsOwned(booking._id), ['2026-09-10', '2026-09-11']);
+  assert.deepEqual(await nightsOwned(booking._id), [fixtureDate(0), fixtureDate(1)]);
 });
 
 test('#5/#6 sync helper: moved range fills new + releases old; overlap idempotent', async () => {
   const { booking, unitA } = await createAllocatedBooking({
-    checkIn: sofiaDay('2026-09-10'),
-    checkOut: sofiaDay('2026-09-13')
+    checkIn: sofiaDay(fixtureDate(0)),
+    checkOut: sofiaDay(fixtureDate(3))
   });
   await claimNightsFor(booking, unitA._id, booking.checkIn, booking.checkOut);
-  booking.checkIn = sofiaDay('2026-09-12');
-  booking.checkOut = sofiaDay('2026-09-15');
+  booking.checkIn = sofiaDay(fixtureDate(2));
+  booking.checkOut = sofiaDay(fixtureDate(5));
   await booking.save({ validateBeforeSave: false });
 
   const outcome = await syncUnitNightClaimsShadow({ booking });
   assert.equal(outcome.ok, true);
-  assert.deepEqual(await nightsOwned(booking._id), ['2026-09-12', '2026-09-13', '2026-09-14']);
+  assert.deepEqual(await nightsOwned(booking._id), [fixtureDate(2), fixtureDate(3), fixtureDate(4)]);
 });
 
 test('#8/#9/#41 sync helper skips single-cabin, unallocated, non-blocking', async () => {
@@ -243,8 +245,8 @@ test('#8/#9/#41 sync helper skips single-cabin, unallocated, non-blocking', asyn
   });
   const single = await Booking.create({
     cabinId: cabin._id,
-    checkIn: sofiaDay('2026-09-10'),
-    checkOut: sofiaDay('2026-09-12'),
+    checkIn: sofiaDay(fixtureDate(0)),
+    checkOut: sofiaDay(fixtureDate(2)),
     adults: 2,
     children: 0,
     status: 'confirmed',
@@ -262,8 +264,8 @@ test('#8/#9/#41 sync helper skips single-cabin, unallocated, non-blocking', asyn
   const unalloc = await Booking.create({
     cabinTypeId: seed.cabinType._id,
     unitId: null,
-    checkIn: sofiaDay('2026-09-10'),
-    checkOut: sofiaDay('2026-09-12'),
+    checkIn: sofiaDay(fixtureDate(0)),
+    checkOut: sofiaDay(fixtureDate(2)),
     adults: 2,
     children: 0,
     status: 'confirmed',
@@ -293,28 +295,28 @@ test('#14/#15/#16/#17/#18 surplus release despite foreign fill; MRI dedupe', asy
   const seed = await seedMultiUnit();
   const { booking, unitA, unitB } = await createAllocatedBooking({
     _seed: seed,
-    checkIn: sofiaDay('2026-09-10'),
-    checkOut: sofiaDay('2026-09-12')
+    checkIn: sofiaDay(fixtureDate(0)),
+    checkOut: sofiaDay(fixtureDate(2))
   });
   await claimNightsFor(booking, unitA._id, booking.checkIn, booking.checkOut);
 
   const other = await createAllocatedBooking({
     _seed: seed,
     unitId: unitB._id,
-    checkIn: sofiaDay('2026-10-10'),
-    checkOut: sofiaDay('2026-10-12'),
+    checkIn: sofiaDay(fixtureDate(30)),
+    checkOut: sofiaDay(fixtureDate(32)),
     email: 'other@example.com'
   });
   // Foreign claim on a NEW night the booking will need after the move
   await claimUnitNights({
     bookingId: other.booking._id,
     unitId: unitA._id,
-    nights: ['2026-09-13'],
+    nights: [fixtureDate(3)],
     source: 'test'
   });
 
-  booking.checkIn = sofiaDay('2026-09-12');
-  booking.checkOut = sofiaDay('2026-09-15');
+  booking.checkIn = sofiaDay(fixtureDate(2));
+  booking.checkOut = sofiaDay(fixtureDate(5));
   await booking.save({ validateBeforeSave: false });
 
   const first = await syncUnitNightClaimsShadow({ booking });
@@ -323,8 +325,8 @@ test('#14/#15/#16/#17/#18 surplus release despite foreign fill; MRI dedupe', asy
   assert.ok(first.manualReviewItemId);
   // Surplus Sep10-11 released even though fill failed on foreign Sep13
   const owned = await nightsOwned(booking._id);
-  assert.ok(!owned.includes('2026-09-10'));
-  assert.ok(!owned.includes('2026-09-11'));
+  assert.ok(!owned.includes(fixtureDate(0)));
+  assert.ok(!owned.includes(fixtureDate(1)));
   // Foreign not stolen
   const foreign = await UnitNightClaim.findOne({
     unitId: unitA._id,
@@ -346,8 +348,8 @@ test('#14/#15/#16/#17/#18 surplus release despite foreign fill; MRI dedupe', asy
 
 test('#1/#20 extend updates Booking + reservation block + claims', async () => {
   const { booking, parentCabin, unitA } = await createAllocatedBooking({
-    checkIn: sofiaDay('2026-09-10'),
-    checkOut: sofiaDay('2026-09-12')
+    checkIn: sofiaDay(fixtureDate(0)),
+    checkOut: sofiaDay(fixtureDate(2))
   });
   await createReservationBlock(booking, parentCabin, unitA._id);
   await claimNightsFor(booking, unitA._id, booking.checkIn, booking.checkOut);
@@ -360,25 +362,25 @@ test('#1/#20 extend updates Booking + reservation block + claims', async () => {
 
   const result = await editReservationDates({
     bookingId: booking._id,
-    checkInDate: '2026-09-10',
-    checkOutDate: '2026-09-14',
+    checkInDate: fixtureDate(0),
+    checkOutDate: fixtureDate(4),
     ctx: adminCtx()
   });
-  assert.equal(formatSofiaDateOnly(result.checkOutDate), '2026-09-14');
+  assert.equal(formatSofiaDateOnly(result.checkOutDate), fixtureDate(4));
 
   const updated = await Booking.findById(booking._id);
-  assert.equal(formatSofiaDateOnly(updated.checkOut), '2026-09-14');
+  assert.equal(formatSofiaDateOnly(updated.checkOut), fixtureDate(4));
   const block = await AvailabilityBlock.findOne({
     reservationId: booking._id,
     blockType: 'reservation',
     status: 'active'
   }).lean();
-  assert.equal(formatSofiaDateOnly(block.endDate), '2026-09-14');
+  assert.equal(formatSofiaDateOnly(block.endDate), fixtureDate(4));
   assert.deepEqual(await nightsOwned(booking._id), [
-    '2026-09-10',
-    '2026-09-11',
-    '2026-09-12',
-    '2026-09-13'
+    fixtureDate(0),
+    fixtureDate(1),
+    fixtureDate(2),
+    fixtureDate(3)
   ]);
   assert.equal(
     await AuditEvent.countDocuments({ action: 'reservation_edit_dates', entityId }),
@@ -390,8 +392,8 @@ test('#14 edit path: foreign claim on newTarget rejects edit and preserves old d
   const seed = await seedMultiUnit();
   const { booking, parentCabin, unitA, unitB } = await createAllocatedBooking({
     _seed: seed,
-    checkIn: sofiaDay('2026-09-10'),
-    checkOut: sofiaDay('2026-09-12')
+    checkIn: sofiaDay(fixtureDate(0)),
+    checkOut: sofiaDay(fixtureDate(2))
   });
   await createReservationBlock(booking, parentCabin, unitA._id);
   await claimNightsFor(booking, unitA._id, booking.checkIn, booking.checkOut);
@@ -399,14 +401,14 @@ test('#14 edit path: foreign claim on newTarget rejects edit and preserves old d
   const other = await createAllocatedBooking({
     _seed: seed,
     unitId: unitB._id,
-    checkIn: sofiaDay('2026-10-10'),
-    checkOut: sofiaDay('2026-10-12'),
+    checkIn: sofiaDay(fixtureDate(30)),
+    checkOut: sofiaDay(fixtureDate(32)),
     email: 'shadow-foreign@example.com'
   });
   await claimUnitNights({
     bookingId: other.booking._id,
     unitId: unitA._id,
-    nights: ['2026-09-12'],
+    nights: [fixtureDate(2)],
     source: 'test'
   });
 
@@ -415,15 +417,15 @@ test('#14 edit path: foreign claim on newTarget rejects edit and preserves old d
     () =>
       editReservationDates({
         bookingId: booking._id,
-        checkInDate: '2026-09-10',
-        checkOutDate: '2026-09-14',
+        checkInDate: fixtureDate(0),
+        checkOutDate: fixtureDate(4),
         ctx: adminCtx()
       }),
     (err) => err && err.code === 'conflict'
   );
 
   const live = await Booking.findById(booking._id);
-  assert.equal(formatSofiaDateOnly(live.checkOut), '2026-09-12');
+  assert.equal(formatSofiaDateOnly(live.checkOut), fixtureDate(2));
   assert.equal(
     await AuditEvent.countDocuments({ action: 'reservation_edit_dates', entityId }),
     0
@@ -437,8 +439,8 @@ test('#14 edit path: foreign claim on newTarget rejects edit and preserves old d
 
 test('#7/#19 same-date retry repairs missing claims without new audit', async () => {
   const { booking, parentCabin, unitA } = await createAllocatedBooking({
-    checkIn: sofiaDay('2026-09-10'),
-    checkOut: sofiaDay('2026-09-12')
+    checkIn: sofiaDay(fixtureDate(0)),
+    checkOut: sofiaDay(fixtureDate(2))
   });
   await createReservationBlock(booking, parentCabin, unitA._id);
   // Missing claims — crash before shadow
@@ -449,12 +451,12 @@ test('#7/#19 same-date retry repairs missing claims without new audit', async ()
   });
   const result = await editReservationDates({
     bookingId: booking._id,
-    checkInDate: '2026-09-10',
-    checkOutDate: '2026-09-12',
+    checkInDate: fixtureDate(0),
+    checkOutDate: fixtureDate(2),
     ctx: adminCtx()
   });
   assert.equal(result.repaired, true);
-  assert.deepEqual(await nightsOwned(booking._id), ['2026-09-10', '2026-09-11']);
+  assert.deepEqual(await nightsOwned(booking._id), [fixtureDate(0), fixtureDate(1)]);
   assert.equal(
     await AuditEvent.countDocuments({ action: 'reservation_edit_dates', entityId }),
     auditsBefore
@@ -465,15 +467,15 @@ test('#10/#11 unit conflict rejects; claims unchanged', async () => {
   const seed = await seedMultiUnit();
   const { booking, unitA } = await createAllocatedBooking({
     _seed: seed,
-    checkIn: sofiaDay('2026-09-10'),
-    checkOut: sofiaDay('2026-09-12')
+    checkIn: sofiaDay(fixtureDate(0)),
+    checkOut: sofiaDay(fixtureDate(2))
   });
   await claimNightsFor(booking, unitA._id, booking.checkIn, booking.checkOut);
   await createAllocatedBooking({
     _seed: seed,
     unitId: unitA._id,
-    checkIn: sofiaDay('2026-09-12'),
-    checkOut: sofiaDay('2026-09-14'),
+    checkIn: sofiaDay(fixtureDate(2)),
+    checkOut: sofiaDay(fixtureDate(4)),
     email: 'blocker@example.com'
   });
 
@@ -481,21 +483,21 @@ test('#10/#11 unit conflict rejects; claims unchanged', async () => {
     () =>
       editReservationDates({
         bookingId: booking._id,
-        checkInDate: '2026-09-10',
-        checkOutDate: '2026-09-14',
+        checkInDate: fixtureDate(0),
+        checkOutDate: fixtureDate(4),
         ctx: adminCtx()
       }),
     (err) => err.type === 'conflict' && err.status === 409
   );
-  assert.deepEqual(await nightsOwned(booking._id), ['2026-09-10', '2026-09-11']);
+  assert.deepEqual(await nightsOwned(booking._id), [fixtureDate(0), fixtureDate(1)]);
   const still = await Booking.findById(booking._id);
-  assert.equal(formatSofiaDateOnly(still.checkOut), '2026-09-12');
+  assert.equal(formatSofiaDateOnly(still.checkOut), fixtureDate(2));
 });
 
 test('#12 self-exclusion: extend does not conflict with self', async () => {
   const { booking, parentCabin, unitA } = await createAllocatedBooking({
-    checkIn: sofiaDay('2026-09-10'),
-    checkOut: sofiaDay('2026-09-12')
+    checkIn: sofiaDay(fixtureDate(0)),
+    checkOut: sofiaDay(fixtureDate(2))
   });
   await createReservationBlock(booking, parentCabin, unitA._id);
   await claimNightsFor(booking, unitA._id, booking.checkIn, booking.checkOut);
@@ -504,33 +506,33 @@ test('#12 self-exclusion: extend does not conflict with self', async () => {
     cabinId: parentCabin._id,
     unitId: unitA._id,
     cabinTypeId: booking.cabinTypeId,
-    startDate: sofiaDay('2026-09-10'),
-    endDate: sofiaDay('2026-09-14'),
+    startDate: sofiaDay(fixtureDate(0)),
+    endDate: sofiaDay(fixtureDate(4)),
     excludeReservationId: booking._id
   });
   assert.equal(conflict.hasHardConflicts, false);
 
   await editReservationDates({
     bookingId: booking._id,
-    checkInDate: '2026-09-10',
-    checkOutDate: '2026-09-14',
+    checkInDate: fixtureDate(0),
+    checkOutDate: fixtureDate(4),
     ctx: adminCtx()
   });
-  assert.equal(formatSofiaDateOnly((await Booking.findById(booking._id)).checkOut), '2026-09-14');
+  assert.equal(formatSofiaDateOnly((await Booking.findById(booking._id)).checkOut), fixtureDate(4));
 });
 
 test('#13 external hold soft warning (not hard conflict)', async () => {
   const { booking, parentCabin, unitA } = await createAllocatedBooking({
-    checkIn: sofiaDay('2026-09-10'),
-    checkOut: sofiaDay('2026-09-12')
+    checkIn: sofiaDay(fixtureDate(0)),
+    checkOut: sofiaDay(fixtureDate(2))
   });
   await createReservationBlock(booking, parentCabin, unitA._id);
   await AvailabilityBlock.create({
     cabinId: parentCabin._id,
     unitId: unitA._id,
     blockType: 'external_hold',
-    startDate: sofiaDay('2026-09-12'),
-    endDate: sofiaDay('2026-09-14'),
+    startDate: sofiaDay(fixtureDate(2)),
+    endDate: sofiaDay(fixtureDate(4)),
     status: 'active',
     source: 'external_ics',
     confidence: 'medium'
@@ -538,29 +540,29 @@ test('#13 external hold soft warning (not hard conflict)', async () => {
 
   const result = await editReservationDates({
     bookingId: booking._id,
-    checkInDate: '2026-09-10',
-    checkOutDate: '2026-09-14',
+    checkInDate: fixtureDate(0),
+    checkOutDate: fixtureDate(4),
     ctx: adminCtx()
   });
   assert.ok(Array.isArray(result.warnings));
   assert.ok(result.warnings.some((w) => w.blockType === 'external_hold'));
-  assert.equal(formatSofiaDateOnly(result.checkOutDate), '2026-09-14');
+  assert.equal(formatSofiaDateOnly(result.checkOutDate), fixtureDate(4));
 });
 
 test('#21 no reservation block path still works', async () => {
   const { booking, unitA } = await createAllocatedBooking({
-    checkIn: sofiaDay('2026-09-10'),
-    checkOut: sofiaDay('2026-09-12')
+    checkIn: sofiaDay(fixtureDate(0)),
+    checkOut: sofiaDay(fixtureDate(2))
   });
   await claimNightsFor(booking, unitA._id, booking.checkIn, booking.checkOut);
   await editReservationDates({
     bookingId: booking._id,
-    checkInDate: '2026-09-10',
-    checkOutDate: '2026-09-13',
+    checkInDate: fixtureDate(0),
+    checkOutDate: fixtureDate(3),
     ctx: adminCtx()
   });
-  assert.equal(formatSofiaDateOnly((await Booking.findById(booking._id)).checkOut), '2026-09-13');
-  assert.deepEqual(await nightsOwned(booking._id), ['2026-09-10', '2026-09-11', '2026-09-12']);
+  assert.equal(formatSofiaDateOnly((await Booking.findById(booking._id)).checkOut), fixtureDate(3));
+  assert.deepEqual(await nightsOwned(booking._id), [fixtureDate(0), fixtureDate(1), fixtureDate(2)]);
 });
 
 test('#22 external hold untouched when reservation block updates', async () => {
@@ -570,50 +572,50 @@ test('#22 external hold untouched when reservation block updates', async () => {
     cabinId: parentCabin._id,
     unitId: unitA._id,
     blockType: 'external_hold',
-    startDate: sofiaDay('2026-10-01'),
-    endDate: sofiaDay('2026-10-03'),
+    startDate: sofiaDay(fixtureDate(21)),
+    endDate: sofiaDay(fixtureDate(23)),
     status: 'active',
     source: 'external_ics',
     confidence: 'medium'
   });
   await editReservationDates({
     bookingId: booking._id,
-    checkInDate: '2026-09-10',
-    checkOutDate: '2026-09-13',
+    checkInDate: fixtureDate(0),
+    checkOutDate: fixtureDate(3),
     ctx: adminCtx()
   });
   const holdAfter = await AvailabilityBlock.findById(hold._id).lean();
-  assert.equal(formatSofiaDateOnly(holdAfter.startDate), '2026-10-01');
+  assert.equal(formatSofiaDateOnly(holdAfter.startDate), fixtureDate(21));
   assert.equal(holdAfter.status, 'active');
 });
 
 test('#32 different date edits within TTL both execute', async () => {
   const ctx = adminCtx({ actorId: 'same-actor-ttl' });
   const { booking, parentCabin, unitA } = await createAllocatedBooking({
-    checkIn: sofiaDay('2026-09-10'),
-    checkOut: sofiaDay('2026-09-12')
+    checkIn: sofiaDay(fixtureDate(0)),
+    checkOut: sofiaDay(fixtureDate(2))
   });
   await createReservationBlock(booking, parentCabin, unitA._id);
 
   const first = await editReservationDates({
     bookingId: booking._id,
-    checkInDate: '2026-09-10',
-    checkOutDate: '2026-09-14',
+    checkInDate: fixtureDate(0),
+    checkOutDate: fixtureDate(4),
     ctx
   });
-  assert.equal(formatSofiaDateOnly(first.checkOutDate), '2026-09-14');
+  assert.equal(formatSofiaDateOnly(first.checkOutDate), fixtureDate(4));
 
   const second = await editReservationDates({
     bookingId: booking._id,
-    checkInDate: '2026-09-11',
-    checkOutDate: '2026-09-15',
+    checkInDate: fixtureDate(1),
+    checkOutDate: fixtureDate(5),
     ctx
   });
-  assert.equal(formatSofiaDateOnly(second.checkInDate), '2026-09-11');
-  assert.equal(formatSofiaDateOnly(second.checkOutDate), '2026-09-15');
+  assert.equal(formatSofiaDateOnly(second.checkInDate), fixtureDate(1));
+  assert.equal(formatSofiaDateOnly(second.checkOutDate), fixtureDate(5));
   const live = await Booking.findById(booking._id);
-  assert.equal(formatSofiaDateOnly(live.checkIn), '2026-09-11');
-  assert.equal(formatSofiaDateOnly(live.checkOut), '2026-09-15');
+  assert.equal(formatSofiaDateOnly(live.checkIn), fixtureDate(1));
+  assert.equal(formatSofiaDateOnly(live.checkOut), fixtureDate(5));
 });
 
 test('#33/#34 same request replay idempotent; same client key + different dates never wrong mutation', async () => {
@@ -622,33 +624,33 @@ test('#33/#34 same request replay idempotent; same client key + different dates 
     idempotencyKey: 'client-key-1'
   });
   const { booking, parentCabin, unitA } = await createAllocatedBooking({
-    checkIn: sofiaDay('2026-09-10'),
-    checkOut: sofiaDay('2026-09-12')
+    checkIn: sofiaDay(fixtureDate(0)),
+    checkOut: sofiaDay(fixtureDate(2))
   });
   await createReservationBlock(booking, parentCabin, unitA._id);
 
   const first = await editReservationDates({
     bookingId: booking._id,
-    checkInDate: '2026-09-10',
-    checkOutDate: '2026-09-14',
+    checkInDate: fixtureDate(0),
+    checkOutDate: fixtureDate(4),
     ctx
   });
   const replay = await editReservationDates({
     bookingId: booking._id,
-    checkInDate: '2026-09-10',
-    checkOutDate: '2026-09-14',
+    checkInDate: fixtureDate(0),
+    checkOutDate: fixtureDate(4),
     ctx
   });
   assert.equal(String(replay.checkOutDate), String(first.checkOutDate));
 
   const other = await editReservationDates({
     bookingId: booking._id,
-    checkInDate: '2026-09-10',
-    checkOutDate: '2026-09-15',
+    checkInDate: fixtureDate(0),
+    checkOutDate: fixtureDate(5),
     ctx: { ...ctx, idempotencyKey: 'client-key-1' }
   });
-  assert.equal(formatSofiaDateOnly(other.checkOutDate), '2026-09-15');
-  assert.equal(formatSofiaDateOnly((await Booking.findById(booking._id)).checkOut), '2026-09-15');
+  assert.equal(formatSofiaDateOnly(other.checkOutDate), fixtureDate(5));
+  assert.equal(formatSofiaDateOnly((await Booking.findById(booking._id)).checkOut), fixtureDate(5));
 });
 
 test('#35/#36 completed and cancelled rejected', async () => {
@@ -657,8 +659,8 @@ test('#35/#36 completed and cancelled rejected', async () => {
     () =>
       editReservationDates({
         bookingId: completed.booking._id,
-        checkInDate: '2026-09-10',
-        checkOutDate: '2026-09-14',
+        checkInDate: fixtureDate(0),
+        checkOutDate: fixtureDate(4),
         ctx: adminCtx()
       }),
     (err) => err.type === 'invalid_transition' && err.status === 409
@@ -672,8 +674,8 @@ test('#35/#36 completed and cancelled rejected', async () => {
     () =>
       editReservationDates({
         bookingId: cancelled.booking._id,
-        checkInDate: '2026-09-10',
-        checkOutDate: '2026-09-14',
+        checkInDate: fixtureDate(0),
+        checkOutDate: fixtureDate(4),
         ctx: adminCtx()
       }),
     (err) => err.type === 'invalid_transition' && err.status === 409
@@ -683,27 +685,27 @@ test('#35/#36 completed and cancelled rejected', async () => {
 test('#37/#43 in_house checkout extension succeeds; checkIn preserved', async () => {
   const { booking, parentCabin, unitA } = await createAllocatedBooking({
     status: 'in_house',
-    checkIn: sofiaDay('2026-09-10'),
-    checkOut: sofiaDay('2026-09-12')
+    checkIn: sofiaDay(fixtureDate(0)),
+    checkOut: sofiaDay(fixtureDate(2))
   });
   await createReservationBlock(booking, parentCabin, unitA._id);
   await claimNightsFor(booking, unitA._id, booking.checkIn, booking.checkOut);
 
   const result = await editReservationDates({
     bookingId: booking._id,
-    checkInDate: '2026-09-10',
-    checkOutDate: '2026-09-14',
+    checkInDate: fixtureDate(0),
+    checkOutDate: fixtureDate(4),
     ctx: adminCtx()
   });
-  assert.equal(formatSofiaDateOnly(result.checkInDate), '2026-09-10');
-  assert.equal(formatSofiaDateOnly(result.checkOutDate), '2026-09-14');
+  assert.equal(formatSofiaDateOnly(result.checkInDate), fixtureDate(0));
+  assert.equal(formatSofiaDateOnly(result.checkOutDate), fixtureDate(4));
 });
 
 test('#42 in_house checkIn mutation rejected; state unchanged', async () => {
   const { booking, parentCabin, unitA } = await createAllocatedBooking({
     status: 'in_house',
-    checkIn: sofiaDay('2026-09-10'),
-    checkOut: sofiaDay('2026-09-12')
+    checkIn: sofiaDay(fixtureDate(0)),
+    checkOut: sofiaDay(fixtureDate(2))
   });
   await createReservationBlock(booking, parentCabin, unitA._id);
   await claimNightsFor(booking, unitA._id, booking.checkIn, booking.checkOut);
@@ -712,8 +714,8 @@ test('#42 in_house checkIn mutation rejected; state unchanged', async () => {
     () =>
       editReservationDates({
         bookingId: booking._id,
-        checkInDate: '2026-09-11',
-        checkOutDate: '2026-09-14',
+        checkInDate: fixtureDate(1),
+        checkOutDate: fixtureDate(4),
         ctx: adminCtx()
       }),
     (err) =>
@@ -722,9 +724,9 @@ test('#42 in_house checkIn mutation rejected; state unchanged', async () => {
       err.status === 409
   );
   const live = await Booking.findById(booking._id);
-  assert.equal(formatSofiaDateOnly(live.checkIn), '2026-09-10');
-  assert.equal(formatSofiaDateOnly(live.checkOut), '2026-09-12');
-  assert.deepEqual(await nightsOwned(booking._id), ['2026-09-10', '2026-09-11']);
+  assert.equal(formatSofiaDateOnly(live.checkIn), fixtureDate(0));
+  assert.equal(formatSofiaDateOnly(live.checkOut), fixtureDate(2));
+  assert.deepEqual(await nightsOwned(booking._id), [fixtureDate(0), fixtureDate(1)]);
 });
 
 test('#40 unallocated cabinType rejected', async () => {
@@ -732,8 +734,8 @@ test('#40 unallocated cabinType rejected', async () => {
   const booking = await Booking.create({
     cabinTypeId: seed.cabinType._id,
     unitId: null,
-    checkIn: sofiaDay('2026-09-10'),
-    checkOut: sofiaDay('2026-09-12'),
+    checkIn: sofiaDay(fixtureDate(0)),
+    checkOut: sofiaDay(fixtureDate(2)),
     adults: 2,
     children: 0,
     status: 'confirmed',
@@ -746,8 +748,8 @@ test('#40 unallocated cabinType rejected', async () => {
     () =>
       editReservationDates({
         bookingId: booking._id,
-        checkInDate: '2026-09-10',
-        checkOutDate: '2026-09-14',
+        checkInDate: fixtureDate(0),
+        checkOutDate: fixtureDate(4),
         ctx: adminCtx()
       }),
     (err) => err.type === 'conflict' && err.details?.code === 'UNIT_ALLOCATION_REQUIRED'
@@ -756,8 +758,8 @@ test('#40 unallocated cabinType rejected', async () => {
 
 test('#38/#39 block update failure compensates Booking; no false success', async () => {
   const { booking, parentCabin, unitA } = await createAllocatedBooking({
-    checkIn: sofiaDay('2026-09-10'),
-    checkOut: sofiaDay('2026-09-12')
+    checkIn: sofiaDay(fixtureDate(0)),
+    checkOut: sofiaDay(fixtureDate(2))
   });
   await createReservationBlock(booking, parentCabin, unitA._id);
 
@@ -803,15 +805,15 @@ test('#38/#39 block update failure compensates Booking; no false success', async
       () =>
         editReservationDates({
           bookingId: booking._id,
-          checkInDate: '2026-09-10',
-          checkOutDate: '2026-09-14',
+          checkInDate: fixtureDate(0),
+          checkOutDate: fixtureDate(4),
           ctx: adminCtx()
         }),
       (err) => err.type === 'dependency_failure' && err.status === 500
     );
     const live = await Booking.findById(booking._id);
-    assert.equal(formatSofiaDateOnly(live.checkIn), '2026-09-10');
-    assert.equal(formatSofiaDateOnly(live.checkOut), '2026-09-12');
+    assert.equal(formatSofiaDateOnly(live.checkIn), fixtureDate(0));
+    assert.equal(formatSofiaDateOnly(live.checkOut), fixtureDate(2));
     assert.equal(
       await AuditEvent.countDocuments({ action: 'reservation_edit_dates', entityId }),
       auditsBefore
@@ -829,8 +831,8 @@ test('#38/#39 block update failure compensates Booking; no false success', async
 
 test('#45 compensation failure creates MRI and never reports success', async () => {
   const { booking, parentCabin, unitA } = await createAllocatedBooking({
-    checkIn: sofiaDay('2026-09-10'),
-    checkOut: sofiaDay('2026-09-12')
+    checkIn: sofiaDay(fixtureDate(0)),
+    checkOut: sofiaDay(fixtureDate(2))
   });
   await createReservationBlock(booking, parentCabin, unitA._id);
 
@@ -887,8 +889,8 @@ test('#45 compensation failure creates MRI and never reports success', async () 
       () =>
         editReservationDates({
           bookingId: booking._id,
-          checkInDate: '2026-09-10',
-          checkOutDate: '2026-09-14',
+          checkInDate: fixtureDate(0),
+          checkOutDate: fixtureDate(4),
           ctx: adminCtx()
         }),
       (err) =>
@@ -920,28 +922,28 @@ test('#45 compensation failure creates MRI and never reports success', async () 
 
 test('#39/#7 crash after Booking before blocks: same-date repair converges blocks', async () => {
   const { booking, parentCabin, unitA } = await createAllocatedBooking({
-    checkIn: sofiaDay('2026-09-10'),
-    checkOut: sofiaDay('2026-09-12')
+    checkIn: sofiaDay(fixtureDate(0)),
+    checkOut: sofiaDay(fixtureDate(2))
   });
   const block = await createReservationBlock(booking, parentCabin, unitA._id);
   // Simulate split-brain: Booking already NEW, block still OLD
-  booking.checkOut = sofiaDay('2026-09-14');
+  booking.checkOut = sofiaDay(fixtureDate(4));
   await booking.save({ validateBeforeSave: false });
-  assert.equal(formatSofiaDateOnly(block.endDate), '2026-09-12');
+  assert.equal(formatSofiaDateOnly(block.endDate), fixtureDate(2));
 
   await editReservationDates({
     bookingId: booking._id,
-    checkInDate: '2026-09-10',
-    checkOutDate: '2026-09-14',
+    checkInDate: fixtureDate(0),
+    checkOutDate: fixtureDate(4),
     ctx: adminCtx()
   });
   const fixed = await AvailabilityBlock.findById(block._id).lean();
-  assert.equal(formatSofiaDateOnly(fixed.endDate), '2026-09-14');
+  assert.equal(formatSofiaDateOnly(fixed.endDate), fixtureDate(4));
   assert.deepEqual(await nightsOwned(booking._id), [
-    '2026-09-10',
-    '2026-09-11',
-    '2026-09-12',
-    '2026-09-13'
+    fixtureDate(0),
+    fixtureDate(1),
+    fixtureDate(2),
+    fixtureDate(3)
   ]);
 });
 
@@ -984,8 +986,8 @@ test('#44 same-date repair does not audit / GMA / ops push', async () => {
     });
     await editReservationDates({
       bookingId: booking._id,
-      checkInDate: '2026-09-10',
-      checkOutDate: '2026-09-12',
+      checkInDate: fixtureDate(0),
+      checkOutDate: fixtureDate(2),
       ctx: adminCtx()
     });
     assert.equal(
@@ -1021,8 +1023,8 @@ test('#23/#24/#25 side effects only on real date change; claims do not invent ex
   try {
     await editReservationDates({
       bookingId: booking._id,
-      checkInDate: '2026-09-10',
-      checkOutDate: '2026-09-13',
+      checkInDate: fixtureDate(0),
+      checkOutDate: fixtureDate(3),
       ctx: adminCtx()
     });
     assert.equal(gmaCalls, 1);
@@ -1072,8 +1074,8 @@ test('#8 single cabin edit dates works without claims', async () => {
   });
   const booking = await Booking.create({
     cabinId: cabin._id,
-    checkIn: sofiaDay('2026-09-10'),
-    checkOut: sofiaDay('2026-09-12'),
+    checkIn: sofiaDay(fixtureDate(0)),
+    checkOut: sofiaDay(fixtureDate(2)),
     adults: 2,
     children: 0,
     status: 'confirmed',
@@ -1095,26 +1097,26 @@ test('#8 single cabin edit dates works without claims', async () => {
 
   await editReservationDates({
     bookingId: booking._id,
-    checkInDate: '2026-09-10',
-    checkOutDate: '2026-09-13',
+    checkInDate: fixtureDate(0),
+    checkOutDate: fixtureDate(3),
     ctx: adminCtx()
   });
   assert.equal(await UnitNightClaim.countDocuments({}), 0);
-  assert.equal(formatSofiaDateOnly((await Booking.findById(booking._id)).checkOut), '2026-09-13');
+  assert.equal(formatSofiaDateOnly((await Booking.findById(booking._id)).checkOut), fixtureDate(3));
 });
 
 test('remembered replay still repairs missing shadow claims', async () => {
   const ctx = adminCtx({ actorId: 'remember-repair' });
   const { booking, parentCabin, unitA } = await createAllocatedBooking({
-    checkIn: sofiaDay('2026-09-10'),
-    checkOut: sofiaDay('2026-09-12')
+    checkIn: sofiaDay(fixtureDate(0)),
+    checkOut: sofiaDay(fixtureDate(2))
   });
   await createReservationBlock(booking, parentCabin, unitA._id);
 
   await editReservationDates({
     bookingId: booking._id,
-    checkInDate: '2026-09-10',
-    checkOutDate: '2026-09-14',
+    checkInDate: fixtureDate(0),
+    checkOutDate: fixtureDate(4),
     ctx
   });
   await UnitNightClaim.deleteMany({ bookingId: booking._id });
@@ -1122,14 +1124,14 @@ test('remembered replay still repairs missing shadow claims', async () => {
 
   await editReservationDates({
     bookingId: booking._id,
-    checkInDate: '2026-09-10',
-    checkOutDate: '2026-09-14',
+    checkInDate: fixtureDate(0),
+    checkOutDate: fixtureDate(4),
     ctx
   });
   assert.deepEqual(await nightsOwned(booking._id), [
-    '2026-09-10',
-    '2026-09-11',
-    '2026-09-12',
-    '2026-09-13'
+    fixtureDate(0),
+    fixtureDate(1),
+    fixtureDate(2),
+    fixtureDate(3)
   ]);
 });

@@ -350,7 +350,13 @@ test('create location block returns 409 and creates zero blocks on conflict', as
   const res = await request(app)
     .post('/api/ops/availability/location-blocks')
     .set('Authorization', `Bearer ${token}`)
-    .send({ locationKey: 'valley', startDate: checkIn, endDate: checkOut, reason: 'Full buyout test' });
+    .send({
+      locationKey: 'valley',
+      startDate: checkIn,
+      endDate: checkOut,
+      manualBlockPurpose: 'private_event',
+      reason: 'Full buyout test'
+    });
 
   assert.equal(res.status, 409);
   assert.equal(res.body.success, false);
@@ -369,7 +375,14 @@ test('create location block writes one block per target with shared group id', a
   const res = await request(app)
     .post('/api/ops/availability/location-blocks')
     .set('Authorization', `Bearer ${token}`)
-    .send({ locationKey: 'valley', startDate: checkIn, endDate: checkOut, reason: 'Private event' });
+    .send({
+      locationKey: 'valley',
+      startDate: checkIn,
+      endDate: checkOut,
+      manualBlockPurpose: 'private_event',
+      operatorNote: '  Access coordinated with all hosts  ',
+      reason: 'Private event'
+    });
 
   assert.equal(res.status, 201);
   assert.equal(res.body.success, true);
@@ -380,6 +393,8 @@ test('create location block writes one block per target with shared group id', a
   const blocks = await AvailabilityBlock.find({ status: 'active', 'metadata.locationBlockGroupId': groupId }).lean();
   assert.equal(blocks.length, 4);
   assert.ok(blocks.every((b) => b.metadata.locationKey === 'valley'));
+  assert.ok(blocks.every((b) => b.metadata.manualBlockPurpose === 'private_event'));
+  assert.ok(blocks.every((b) => b.metadata.operatorNote === 'Access coordinated with all hosts'));
   assert.ok(blocks.some((b) => b.unitId));
   assert.ok(blocks.some((b) => !b.unitId));
 });
@@ -393,7 +408,12 @@ test('remove location block group tombstones all active blocks', async () => {
   const createRes = await request(app)
     .post('/api/ops/availability/location-blocks')
     .set('Authorization', `Bearer ${token}`)
-    .send({ locationKey: 'valley', startDate: checkIn, endDate: checkOut });
+    .send({
+      locationKey: 'valley',
+      startDate: checkIn,
+      endDate: checkOut,
+      manualBlockPurpose: 'private_event'
+    });
 
   const groupId = createRes.body.data.locationBlockGroupId;
 
