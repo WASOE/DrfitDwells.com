@@ -1,4 +1,5 @@
 import { blockBoundaryDateOnly } from './opsCalendarDateUtils';
+import { MANUAL_BLOCK_PURPOSES } from '../../../utils/manualReservationPurpose';
 
 const LOCATION_KEY_LABELS = {
   valley: 'The Valley',
@@ -19,7 +20,10 @@ export function isLocationWideManualBlock(block) {
 }
 
 function baseBlockLabel(block) {
-  if (isLocationWideManualBlock(block)) return 'Location-wide';
+  if (isLocationWideManualBlock(block)) {
+    const purpose = MANUAL_BLOCK_PURPOSES.find((entry) => entry.value === block?.manualBlockPurpose);
+    return purpose ? `Location-wide · ${purpose.label}` : 'Location-wide';
+  }
   return block?.render?.labelShort || block?.blockType || 'Block';
 }
 
@@ -41,12 +45,14 @@ export function blockRangeTitle(block) {
 
 export function blockTooltip(block) {
   const dates = blockRangeTitle(block);
+  const note = typeof block?.operatorNote === 'string' ? block.operatorNote.trim() : '';
+  const notePart = note ? ` — ${note}` : '';
   if (isLocationWideManualBlock(block)) {
     const locLabel = LOCATION_KEY_LABELS[block.locationKey] || block.locationKey;
     const locPart = locLabel ? ` (${locLabel})` : '';
-    return `Location-wide block${locPart} — blocks entire location — ${dates}`;
+    return `${blockDisplayLabel(block)} block${locPart} — blocks entire location — ${dates}${notePart}`;
   }
-  return `${blockDisplayLabel(block)} — ${dates}`;
+  return `${blockDisplayLabel(block)} — ${dates}${notePart}`;
 }
 
 export { LOCATION_KEY_LABELS };

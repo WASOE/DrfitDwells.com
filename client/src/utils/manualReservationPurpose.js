@@ -1,3 +1,5 @@
+import MANUAL_BLOCK_PURPOSES from '../../../shared/manualBlockPurposes.json';
+
 export const MANUAL_RESERVATION_PURPOSE_OPTIONS = [
   { value: 'paid_guest', label: 'Paid guest' },
   { value: 'creator_influencer', label: 'Creator / influencer' },
@@ -7,6 +9,8 @@ export const MANUAL_RESERVATION_PURPOSE_OPTIONS = [
   { value: 'comp_other', label: 'Other comp' },
   { value: 'manual_other', label: 'Other manual' }
 ];
+
+export { MANUAL_BLOCK_PURPOSES };
 
 export function defaultSendGuestConfirmationForPurpose(purpose) {
   return purpose === 'paid_guest';

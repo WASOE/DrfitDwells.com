@@ -221,6 +221,8 @@ const opsWriteAPI = {
   patchMessagingShadowRuleEnabled: (ruleKey, body) =>
     api.patch(`/ops/messaging/rules/${encodeURIComponent(ruleKey)}/enabled`, body, { headers: authHeaders() }),
   createManualBlock: (payload) => api.post('/ops/availability/manual-blocks', payload, { headers: authHeaders() }),
+  convertManualBlockToReservation: (blockId, payload) =>
+    api.post(`/ops/availability/manual-blocks/${blockId}/convert`, payload, { headers: authHeaders() }),
   editManualBlock: (blockId, payload) =>
     api.post(`/ops/availability/manual-blocks/${blockId}/edit`, payload, { headers: authHeaders() }),
   removeManualBlock: (blockId, reason) =>

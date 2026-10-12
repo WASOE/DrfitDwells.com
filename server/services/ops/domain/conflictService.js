@@ -144,6 +144,7 @@ async function evaluateTargetConflicts({
   treatExternalHoldAsHard = false,
   excludeCheckoutSessionId = null,
   excludeReservationId = null,
+  excludeAvailabilityBlockId = null,
   excludeCheckoutId = null,
   excludeLeaseId = null,
   now = null
@@ -217,6 +218,9 @@ async function evaluateTargetConflicts({
     Object.assign(blockFilter, availabilityBlockUnitScopeClause(unitId));
   } else {
     blockFilter.$or = [{ unitId: null }, { unitId: { $exists: false } }];
+  }
+  if (excludeAvailabilityBlockId) {
+    blockFilter._id = { $ne: excludeAvailabilityBlockId };
   }
 
   await Promise.all(legacyTasks);
@@ -305,6 +309,7 @@ async function evaluateCabinConflicts({
   startDate,
   endDate,
   excludeReservationId = null,
+  excludeAvailabilityBlockId = null,
   excludeCheckoutId = null,
   excludeLeaseId = null,
   now = null
@@ -329,6 +334,9 @@ async function evaluateCabinConflicts({
     startDate: { $lt: normalized.endDate },
     endDate: { $gt: normalized.startDate }
   };
+  if (excludeAvailabilityBlockId) {
+    blockFilter._id = { $ne: excludeAvailabilityBlockId };
+  }
 
   const [bookings, blocks] = await Promise.all([
     Booking.find(bookingFilter).select('_id checkIn checkOut status').lean(),

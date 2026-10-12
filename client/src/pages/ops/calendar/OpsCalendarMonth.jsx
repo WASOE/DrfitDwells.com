@@ -1,9 +1,14 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, Navigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { addDays } from 'date-fns';
 import { formatInTimeZone, toDate } from 'date-fns-tz';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
 import { opsReadAPI, opsWriteAPI } from '../../../services/opsApi';
+import { useOpsSession } from '../../../context/OpsSessionContext';
+import {
+  MANUAL_BLOCK_PURPOSES,
+  MANUAL_RESERVATION_PURPOSE_OPTIONS
+} from '../../../utils/manualReservationPurpose';
 import {
   OPS_CALENDAR_BASE_PATH,
   OPS_WORK_WINDOWS_PATH,
@@ -39,6 +44,7 @@ import OpsStatus from '../../../ops/primitives/OpsStatus';
 import OpsLoadingState from '../../../ops/primitives/OpsLoadingState';
 import OpsConfirmDialog from '../../../ops/primitives/OpsConfirmDialog';
 import OpsInlineError from '../../../ops/primitives/OpsInlineError';
+import OpsCheckbox from '../../../ops/primitives/OpsCheckbox';
 import OpsTextField from '../../../ops/primitives/OpsTextField';
 import OpsSelect from '../../../ops/primitives/OpsSelect';
 import { opsCx } from '../../../ops/primitives/opsCx';
@@ -61,6 +67,8 @@ function syncStatusValue(sync) {
 
 export default function OpsCalendarMonth() {
   const { cabinId } = useParams();
+  const navigate = useNavigate();
+  const opsSession = useOpsSession();
   const initialYm = useMemo(() => sofiaNowYearMonth(), []);
   const [year, setYear] = useState(initialYm.year);
   const [monthIndex, setMonthIndex] = useState(initialYm.monthIndex);
@@ -73,11 +81,28 @@ export default function OpsCalendarMonth() {
   const [formStart, setFormStart] = useState('');
   const [formEnd, setFormEnd] = useState('');
   const [formUnitId, setFormUnitId] = useState('');
+  const [formBlockReason, setFormBlockReason] = useState('');
+  const [guestStayUnitId, setGuestStayUnitId] = useState('');
   const [openBlockKey, setOpenBlockKey] = useState(null);
   const [sheetKind, setSheetKind] = useState(null);
   const [sheetBlock, setSheetBlock] = useState(null);
   const [locationRemoveFlash, setLocationRemoveFlash] = useState('');
   const [writeBusy, setWriteBusy] = useState(false);
+  const [formBlockPurpose, setFormBlockPurpose] = useState('owner_hold');
+  const [conversionForm, setConversionForm] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    adults: '2',
+    children: '0',
+    manualReservationPurpose: 'comp_other',
+    unitId: '',
+    initialStatus: 'pending',
+    sendGuestConfirmationEmail: false,
+    acceptExternalHoldWarnings: false,
+    reason: ''
+  });
 
   const cabinIdOk = isOpsCalendarCabinIdParam(cabinId);
   const reservedSegment = isOpsCalendarReservedSegment(cabinId);
@@ -160,6 +185,8 @@ export default function OpsCalendarMonth() {
     if (kind === 'maintenance') setSheetKind('add_maintenance');
     setFormStart(monthStartYmd);
     setFormUnitId('');
+    setFormBlockPurpose('owner_hold');
+    setFormBlockReason('');
     const t0 = toDate(`${monthStartYmd} 00:00:00.000`, { timeZone: OPS_CALENDAR_TZ });
     setFormEnd(formatInTimeZone(addDays(t0, 1), OPS_CALENDAR_TZ, 'yyyy-MM-dd'));
   };
@@ -178,13 +205,23 @@ export default function OpsCalendarMonth() {
       setActionError('Choose one A-frame or explicitly choose all A-frame units.');
       return;
     }
+    if (sheetKind === 'add_manual' && formBlockPurpose === 'other' && !formBlockReason.trim()) {
+      setActionError('Add an operator note for an Other hold.');
+      return;
+    }
     setWriteBusy(true);
     try {
       const createPayload = {
         cabinId: renderCabinId,
         startDate: formStart,
         endDate: formEnd,
-        reason: 'ops_calendar',
+        reason: sheetKind === 'add_manual' ? null : 'ops_calendar',
+        ...(sheetKind === 'add_manual'
+          ? {
+              manualBlockPurpose: formBlockPurpose,
+              operatorNote: formBlockReason.trim() || undefined
+            }
+          : {}),
         targetScope: isMultiUnit
           ? formUnitId === ALL_UNITS_VALUE
             ? 'all_units'
@@ -198,7 +235,13 @@ export default function OpsCalendarMonth() {
         await opsWriteAPI.createMaintenanceBlock(createPayload);
       } else if (sheetKind === 'edit_manual') {
         const id = extractMongoIdFromBlockId(sheetBlock?.id);
-        await opsWriteAPI.editManualBlock(id, { startDate: formStart, endDate: formEnd, reason: 'ops_calendar' });
+        await opsWriteAPI.editManualBlock(id, {
+          startDate: formStart,
+          endDate: formEnd,
+          ...(formBlockPurpose ? { manualBlockPurpose: formBlockPurpose } : {}),
+          operatorNote: formBlockReason.trim() || null,
+          reason: 'ops_calendar'
+        });
       } else if (sheetKind === 'edit_maintenance') {
         const id = extractMongoIdFromBlockId(sheetBlock?.id);
         await opsWriteAPI.editMaintenanceBlock(id, { startDate: formStart, endDate: formEnd, reason: 'ops_calendar' });
@@ -224,6 +267,8 @@ export default function OpsCalendarMonth() {
     setSheetBlock(b);
     setFormStart(blockBoundaryDateOnly(b, 'start'));
     setFormEnd(blockBoundaryDateOnly(b, 'end'));
+    setFormBlockPurpose(b.manualBlockPurpose || '');
+    setFormBlockReason(b.operatorNote || '');
     setFormUnitId(b.unitId || ALL_UNITS_VALUE);
     if (b.blockType === 'manual_block') setSheetKind('edit_manual');
     if (b.blockType === 'maintenance') setSheetKind('edit_maintenance');
@@ -237,6 +282,80 @@ export default function OpsCalendarMonth() {
     setOpenBlockKey(null);
     setSheetBlock(b);
     setSheetKind('remove');
+  };
+
+  const requestConvertBlock = (b) => {
+    setOpenBlockKey(null);
+    setActionError('');
+    setSheetBlock(b);
+    setConversionForm({
+      firstName: '',
+      lastName: '',
+      email: '',
+      phone: '',
+      adults: '2',
+      children: '0',
+      manualReservationPurpose: 'comp_other',
+      unitId: '',
+      initialStatus: 'pending',
+      sendGuestConfirmationEmail: false,
+      acceptExternalHoldWarnings: false,
+      reason: ''
+    });
+    setSheetKind('convert_manual');
+  };
+
+  const convertBlock = async () => {
+    const id = extractMongoIdFromBlockId(sheetBlock?.id);
+    if (!id) return;
+    setActionError('');
+    if (isMultiUnit && !sheetBlock?.unitId && !conversionForm.unitId) {
+      setActionError('Choose the physical unit for this parent-wide block.');
+      return;
+    }
+    const adults = Number(conversionForm.adults);
+    const children = Number(conversionForm.children);
+    const firstName = conversionForm.firstName.trim();
+    const lastName = conversionForm.lastName.trim();
+    const email = conversionForm.email.trim();
+    const phone = conversionForm.phone.trim();
+    if (
+      !firstName || firstName.length > 50 ||
+      !lastName || lastName.length > 50 ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 ||
+      !phone || phone.length > 40 ||
+      !Number.isInteger(adults) || adults < 1 || adults > 10 ||
+      !Number.isInteger(children) || children < 0 || children > 10
+    ) {
+      setActionError('Enter valid required guest details and guest counts (adults 1–10, children 0–10).');
+      return;
+    }
+    setWriteBusy(true);
+    try {
+      const response = await opsWriteAPI.convertManualBlockToReservation(id, {
+        guestInfo: {
+          firstName,
+          lastName,
+          email,
+          phone
+        },
+        adults,
+        children,
+        ...(isMultiUnit && !sheetBlock?.unitId ? { unitId: conversionForm.unitId } : {}),
+        initialStatus: conversionForm.initialStatus,
+        manualReservationPurpose: conversionForm.manualReservationPurpose,
+        sendGuestConfirmationEmail: conversionForm.sendGuestConfirmationEmail,
+        acceptExternalHoldWarnings: conversionForm.acceptExternalHoldWarnings,
+        reason: conversionForm.reason.trim() || undefined
+      });
+      const reservationId = response.data?.data?.reservationId;
+      if (!reservationId) throw new Error('Conversion response did not include a reservation');
+      navigate(`/ops/reservations/${reservationId}`);
+    } catch (err) {
+      setActionError(err?.response?.data?.message || err?.message || 'Could not convert block');
+    } finally {
+      setWriteBusy(false);
+    }
   };
 
   const requestRemoveLocationGroup = (b) => {
@@ -307,8 +426,12 @@ export default function OpsCalendarMonth() {
       : sheetKind === 'add_maintenance'
         ? 'New maintenance block'
         : sheetKind === 'edit_manual'
-          ? 'Edit manual block dates'
+          ? 'Edit manual block'
           : 'Edit maintenance block dates';
+  const canConvertManualBlock =
+    opsSession?.actions?.includes('ops.reservation.manual_create') &&
+    opsSession?.actions?.includes('ops.availability.manual_block.remove');
+  const canCreateGuestStay = opsSession?.actions?.includes('ops.reservation.manual_create');
 
   return (
     <OpsPage width="full">
@@ -373,7 +496,55 @@ export default function OpsCalendarMonth() {
             <OpsButton variant="secondary" onClick={() => openPanel('maintenance')}>
               Add maintenance
             </OpsButton>
+            {!loading && !isMultiUnit && canCreateGuestStay ? (
+              <OpsButton
+                variant="secondary"
+                onClick={() =>
+                  navigate(
+                    `/ops/reservations?create=1&cabinId=${encodeURIComponent(renderCabinId)}`
+                  )
+                }
+              >
+                Add guest stay
+              </OpsButton>
+            ) : null}
+            {!loading && isMultiUnit && canCreateGuestStay ? (
+              <>
+                <OpsSelect
+                  label="Guest stay unit"
+                  value={guestStayUnitId}
+                  onChange={(event) => setGuestStayUnitId(event.target.value)}
+                >
+                  <option value="">Select an A-frame</option>
+                  {activeUnits.map((unit) => (
+                    <option key={unit.unitId} value={unit.unitId}>
+                      {unit.displayName || unit.unitNumber}
+                    </option>
+                  ))}
+                </OpsSelect>
+                <OpsButton
+                  variant="secondary"
+                  disabled={!guestStayUnitId}
+                  onClick={() => {
+                    const selectedUnit = activeUnits.find((unit) => unit.unitId === guestStayUnitId);
+                    const query = new URLSearchParams({
+                      create: '1',
+                      cabinId: renderCabinId,
+                      cabinTypeId: cabinDetail?.cabinTypeId || '',
+                      unitId: guestStayUnitId,
+                      unitLabel: selectedUnit?.displayName || selectedUnit?.unitNumber || 'Selected A-frame'
+                    });
+                    navigate(`/ops/reservations?${query.toString()}`);
+                  }}
+                >
+                  Add guest stay
+                </OpsButton>
+              </>
+            ) : null}
           </div>
+          <p className="ops-cal__hint">
+            Guest stays create Bookings. Maintenance creates maintenance blocks. Owner, private, operational, and other holds remain non-guest manual blocks.
+          </p>
           <OpsCalendarLegend ariaLabel="Month calendar block legend" className="ops-cal-legend--end" />
         </div>
 
@@ -396,6 +567,32 @@ export default function OpsCalendarMonth() {
             </div>
           }
         >
+          {sheetKind === 'add_manual' || sheetKind === 'edit_manual' ? (
+            <>
+              <OpsSelect
+                id="calendar-manual-block-purpose"
+                label={sheetKind === 'edit_manual' && !formBlockPurpose ? 'Block purpose (legacy, optional)' : 'Block purpose'}
+                value={formBlockPurpose}
+                onChange={(e) => setFormBlockPurpose(e.target.value)}
+              >
+                {sheetKind === 'edit_manual' && !formBlockPurpose ? <option value="">Legacy / unspecified</option> : null}
+                {MANUAL_BLOCK_PURPOSES.map((purpose) => (
+                  <option key={purpose.value} value={purpose.value}>
+                    {purpose.label}
+                  </option>
+                ))}
+              </OpsSelect>
+              <OpsTextField
+                label={formBlockPurpose === 'other' ? 'Operator note (required for Other)' : 'Operator note'}
+                value={formBlockReason}
+                onChange={(e) => setFormBlockReason(e.target.value)}
+                disabled={writeBusy}
+                maxLength={500}
+                required={formBlockPurpose === 'other'}
+                optional={formBlockPurpose !== 'other'}
+              />
+            </>
+          ) : null}
           {(sheetKind === 'add_manual' || sheetKind === 'add_maintenance') && isMultiUnit ? (
             <OpsSelect
               id="calendar-block-unit"
@@ -434,6 +631,171 @@ export default function OpsCalendarMonth() {
               onChange={(e) => setFormEnd(e.target.value)}
             />
           </div>
+          {actionError ? <OpsInlineError>{actionError}</OpsInlineError> : null}
+        </CalendarBottomSheet>
+
+        <CalendarBottomSheet
+          open={sheetKind === 'convert_manual'}
+          title="Convert block to guest reservation"
+          subtitle="This creates a zero-price Booking and tombstones only this block. Guest confirmation email is opt-in."
+          onClose={closeSheet}
+          dismissible={!writeBusy}
+          footer={
+            <div className="ops-cal-footer-actions">
+              <OpsButton onClick={convertBlock} loading={writeBusy} loadingLabel="Converting…">
+                Create reservation
+              </OpsButton>
+              <OpsButton variant="secondary" onClick={closeSheet} disabled={writeBusy}>
+                Cancel
+              </OpsButton>
+            </div>
+          }
+        >
+          {isMultiUnit && !sheetBlock?.unitId ? (
+            <OpsSelect
+              label="Assign to physical unit"
+              value={conversionForm.unitId}
+              onChange={(e) => setConversionForm((form) => ({ ...form, unitId: e.target.value }))}
+              disabled={writeBusy}
+            >
+              <option value="" disabled>
+                Select an A-frame
+              </option>
+              {activeUnits.map((unit) => (
+                <option key={unit.unitId} value={unit.unitId}>
+                  {unit.displayName || unit.unitNumber}
+                </option>
+              ))}
+            </OpsSelect>
+          ) : null}
+          <section aria-label="Block conversion summary" className="ops-cal-sheet-stack">
+            <h3 className="ops-cal-sheet-stack__title">Block being converted</h3>
+            <p className="ops-cal-sheet-stack__meta">Accommodation: {cabinLabel || 'Selected accommodation'}</p>
+            <p className="ops-cal-sheet-stack__meta">
+              Unit: {sheetBlock?.unitId
+                ? sheetBlock?.render?.unitLabel || 'Selected physical unit'
+                : isMultiUnit ? 'All units' : 'Single accommodation'}
+            </p>
+            <p className="ops-cal-sheet-stack__meta">
+              Check-in: {sheetBlock ? blockBoundaryDateOnly(sheetBlock, 'start') : '—'}
+              {' · '}
+              Check-out: {sheetBlock ? blockBoundaryDateOnly(sheetBlock, 'end') : '—'}
+            </p>
+            <p className="ops-cal-sheet-stack__meta">
+              Existing purpose: {MANUAL_BLOCK_PURPOSES.find((purpose) => purpose.value === sheetBlock?.manualBlockPurpose)?.label || 'Legacy / unspecified'}
+            </p>
+            {sheetBlock?.operatorNote ? (
+              <p className="ops-cal-sheet-stack__meta">Operator note: {sheetBlock.operatorNote}</p>
+            ) : null}
+          </section>
+          <div className="ops-cal-form-grid">
+            <OpsTextField
+              label="First name (required)"
+              value={conversionForm.firstName}
+              onChange={(e) => setConversionForm((form) => ({ ...form, firstName: e.target.value }))}
+              disabled={writeBusy}
+              autoComplete="given-name"
+              required
+            />
+            <OpsTextField
+              label="Last name (required)"
+              value={conversionForm.lastName}
+              onChange={(e) => setConversionForm((form) => ({ ...form, lastName: e.target.value }))}
+              disabled={writeBusy}
+              autoComplete="family-name"
+              required
+            />
+            <OpsTextField
+              label="Email (required)"
+              type="email"
+              value={conversionForm.email}
+              onChange={(e) => setConversionForm((form) => ({ ...form, email: e.target.value }))}
+              disabled={writeBusy}
+              autoComplete="email"
+              required
+            />
+            <OpsTextField
+              label="Phone (required)"
+              type="tel"
+              value={conversionForm.phone}
+              onChange={(e) => setConversionForm((form) => ({ ...form, phone: e.target.value }))}
+              disabled={writeBusy}
+              autoComplete="tel"
+              required
+            />
+            <OpsTextField
+              label="Adults (required)"
+              type="number"
+              min="1"
+              max="10"
+              required
+              value={conversionForm.adults}
+              onChange={(e) => setConversionForm((form) => ({ ...form, adults: e.target.value }))}
+              disabled={writeBusy}
+            />
+            <OpsTextField
+              label="Children (required)"
+              type="number"
+              min="0"
+              max="10"
+              required
+              value={conversionForm.children}
+              onChange={(e) => setConversionForm((form) => ({ ...form, children: e.target.value }))}
+              disabled={writeBusy}
+            />
+          </div>
+          <OpsSelect
+            label="Reservation purpose"
+            value={conversionForm.manualReservationPurpose}
+            onChange={(e) =>
+              setConversionForm((form) => ({ ...form, manualReservationPurpose: e.target.value }))
+            }
+            disabled={writeBusy}
+          >
+            {MANUAL_RESERVATION_PURPOSE_OPTIONS.map((purpose) => (
+              <option key={purpose.value} value={purpose.value}>
+                {purpose.label}
+              </option>
+            ))}
+          </OpsSelect>
+          <OpsCheckbox
+            label="Send guest confirmation email when this reservation is confirmed"
+            checked={conversionForm.sendGuestConfirmationEmail}
+            onChange={(e) =>
+              setConversionForm((form) => ({
+                ...form,
+                sendGuestConfirmationEmail: e.target.checked
+              }))
+            }
+            disabled={writeBusy}
+          />
+          <OpsSelect
+            label="Initial reservation status"
+            value={conversionForm.initialStatus}
+            onChange={(e) => setConversionForm((form) => ({ ...form, initialStatus: e.target.value }))}
+            disabled={writeBusy}
+          >
+            <option value="pending">Pending</option>
+            <option value="confirmed">Confirmed</option>
+          </OpsSelect>
+          <OpsTextField
+            label="Operational note"
+            value={conversionForm.reason}
+            onChange={(e) => setConversionForm((form) => ({ ...form, reason: e.target.value }))}
+            disabled={writeBusy}
+            optional
+          />
+          <OpsCheckbox
+            label="Proceed when an external channel hold overlaps"
+            checked={conversionForm.acceptExternalHoldWarnings}
+            onChange={(e) =>
+              setConversionForm((form) => ({
+                ...form,
+                acceptExternalHoldWarnings: e.target.checked
+              }))
+            }
+            disabled={writeBusy}
+          />
           {actionError ? <OpsInlineError>{actionError}</OpsInlineError> : null}
         </CalendarBottomSheet>
 
@@ -603,6 +965,17 @@ export default function OpsCalendarMonth() {
                                 )
                               ) : (
                                 <>
+                                  {b.blockType === 'manual_block' &&
+                                  !isLocationWide &&
+                                  canConvertManualBlock ? (
+                                    <button
+                                      type="button"
+                                      className="ops-cal-menu__item"
+                                      onClick={() => requestConvertBlock(b)}
+                                    >
+                                      Convert to guest reservation
+                                    </button>
+                                  ) : null}
                                   <button
                                     type="button"
                                     className="ops-cal-menu__item"

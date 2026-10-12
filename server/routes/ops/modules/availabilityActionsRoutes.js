@@ -5,6 +5,11 @@ const {
   createLocationBlock,
   removeLocationBlockGroup
 } = require('../../../services/ops/domain/locationBlockService');
+const {
+  convertManualBlockToReservation
+} = require('../../../services/ops/domain/manualBlockConversionService');
+const { reconcileManualBlockConversions } = require('../../../services/ops/domain/manualBlockConversionReconciliationService');
+const { requirePermission, ACTIONS } = require('../../../services/permissionService');
 
 const router = express.Router();
 
@@ -32,6 +37,8 @@ router.post('/manual-blocks', async (req, res) => {
       startDate: req.body?.startDate,
       endDate: req.body?.endDate,
       reason: req.body?.reason || null,
+      manualBlockPurpose: req.body?.manualBlockPurpose || null,
+      operatorNote: req.body?.operatorNote,
       metadata: req.body?.metadata || {},
       ctx: { req, user: req.user, route: 'POST /api/ops/availability/manual-blocks' }
     });
@@ -47,6 +54,8 @@ router.post('/manual-blocks/:id/edit', async (req, res) => {
       blockId: req.params.id,
       startDate: req.body?.startDate,
       endDate: req.body?.endDate,
+      manualBlockPurpose: req.body?.manualBlockPurpose,
+      operatorNote: req.body?.operatorNote,
       reason: req.body?.reason || null,
       metadata: req.body?.metadata || {},
       ctx: { req, user: req.user, route: 'POST /api/ops/availability/manual-blocks/:id/edit' }
@@ -63,6 +72,42 @@ router.post('/manual-blocks/:id/remove', async (req, res) => {
       blockId: req.params.id,
       reason: req.body?.reason || 'manual_block_remove',
       ctx: { req, user: req.user, route: 'POST /api/ops/availability/manual-blocks/:id/remove' }
+    });
+    return res.json({ success: true, data });
+  } catch (error) {
+    return handleDomainError(res, error);
+  }
+});
+
+router.post('/manual-blocks/:id/convert', async (req, res) => {
+  try {
+    const data = await convertManualBlockToReservation({
+      blockId: req.params.id,
+      guestInfo: req.body?.guestInfo,
+      adults: req.body?.adults,
+      children: req.body?.children,
+      unitId: req.body?.unitId || null,
+      initialStatus: req.body?.initialStatus ?? 'pending',
+      manualReservationPurpose: req.body?.manualReservationPurpose,
+      sendGuestConfirmationEmail: req.body?.sendGuestConfirmationEmail === true,
+      acceptExternalHoldWarnings: Boolean(req.body?.acceptExternalHoldWarnings),
+      reason: req.body?.reason || null,
+      ctx: { req, user: req.user, route: 'POST /api/ops/availability/manual-blocks/:id/convert' }
+    });
+    return res.status(200).json({ success: true, data });
+  } catch (error) {
+    return handleDomainError(res, error);
+  }
+});
+
+router.get('/manual-blocks/reconciliation', async (req, res) => {
+  try {
+    requirePermission({
+      role: req.user?.role,
+      action: ACTIONS.OPS_AVAILABILITY_MANUAL_BLOCK_REMOVE
+    });
+    const data = await reconcileManualBlockConversions({
+      limit: req.query?.limit
     });
     return res.json({ success: true, data });
   } catch (error) {
@@ -138,6 +183,8 @@ router.post('/location-blocks', async (req, res) => {
       startDate: req.body?.startDate,
       endDate: req.body?.endDate,
       blockType: req.body?.blockType || 'manual_block',
+      manualBlockPurpose: req.body?.manualBlockPurpose || null,
+      operatorNote: req.body?.operatorNote,
       reason: req.body?.reason || null,
       ctx: { req, user: req.user, route: 'POST /api/ops/availability/location-blocks' }
     });

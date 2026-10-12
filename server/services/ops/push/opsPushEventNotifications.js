@@ -156,13 +156,13 @@ async function notifyOpsPushBookingCreated({ bookingId, source = 'booking_create
   }
 }
 
-async function notifyOpsPushManualReservationCreated({ bookingId }) {
+async function notifyOpsPushManualReservationCreated({ bookingId, throwOnFailure = false }) {
   if (!bookingId || !mongoose.Types.ObjectId.isValid(String(bookingId))) {
     return;
   }
   try {
     const ctx = await loadBookingContext(bookingId);
-    await safePush({
+    return await safePush({
       role: 'admin',
       title: 'Manual reservation',
       body: buildBookingBody(ctx),
@@ -180,6 +180,7 @@ async function notifyOpsPushManualReservationCreated({ bookingId }) {
         error: err?.message || String(err)
       })
     );
+    if (throwOnFailure) throw err;
   }
 }
 

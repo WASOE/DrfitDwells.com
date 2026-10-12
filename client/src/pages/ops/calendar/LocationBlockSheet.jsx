@@ -3,6 +3,7 @@ import { addDays } from 'date-fns';
 import { formatInTimeZone, toDate } from 'date-fns-tz';
 import CalendarBottomSheet from './CalendarBottomSheet';
 import { opsWriteAPI } from '../../../services/opsApi';
+import { MANUAL_BLOCK_PURPOSES } from '../../../utils/manualReservationPurpose';
 import { OPS_CALENDAR_TZ, sofiaNowYearMonth } from './opsCalendarDateUtils';
 import OpsButton from '../../../ops/primitives/OpsButton';
 import OpsSelect from '../../../ops/primitives/OpsSelect';
@@ -37,6 +38,7 @@ export default function LocationBlockSheet({ open, onClose, onSuccess }) {
   const [formStart, setFormStart] = useState('');
   const [formEnd, setFormEnd] = useState('');
   const [reason, setReason] = useState('');
+  const [manualBlockPurpose, setManualBlockPurpose] = useState('private_event');
   const [preview, setPreview] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
@@ -51,6 +53,7 @@ export default function LocationBlockSheet({ open, onClose, onSuccess }) {
     setFormEnd(formatInTimeZone(addDays(t0, 3), OPS_CALENDAR_TZ, 'yyyy-MM-dd'));
     setLocationKey('valley');
     setReason('');
+    setManualBlockPurpose('private_event');
     setPreview(null);
     setActionError('');
   }, [open, initialYm]);
@@ -77,6 +80,10 @@ export default function LocationBlockSheet({ open, onClose, onSuccess }) {
 
   const submitLocationBlock = async () => {
     setActionError('');
+    if (manualBlockPurpose === 'other' && !reason.trim()) {
+      setActionError('Add an operator note for an Other hold.');
+      return;
+    }
     setSubmitLoading(true);
     try {
       const res = await opsWriteAPI.createLocationBlock({
@@ -84,6 +91,8 @@ export default function LocationBlockSheet({ open, onClose, onSuccess }) {
         startDate: formStart,
         endDate: formEnd,
         blockType: 'manual_block',
+        manualBlockPurpose,
+        operatorNote: reason.trim() || undefined,
         reason: reason.trim() || 'ops_location_block'
       });
       onSuccess?.(res.data?.data || null);
@@ -143,6 +152,19 @@ export default function LocationBlockSheet({ open, onClose, onSuccess }) {
         ))}
       </OpsSelect>
 
+      <OpsSelect
+        id="location-block-purpose"
+        label="Block purpose"
+        value={manualBlockPurpose}
+        onChange={(e) => setManualBlockPurpose(e.target.value)}
+      >
+        {MANUAL_BLOCK_PURPOSES.map((purpose) => (
+          <option key={purpose.value} value={purpose.value}>
+            {purpose.label}
+          </option>
+        ))}
+      </OpsSelect>
+
       <div className="ops-cal-form-grid">
         <OpsTextField
           id="location-block-start"
@@ -168,12 +190,14 @@ export default function LocationBlockSheet({ open, onClose, onSuccess }) {
 
       <OpsTextField
         id="location-block-reason"
-        label="Reason"
-        optional
+        label={manualBlockPurpose === 'other' ? 'Operator note (required for Other)' : 'Operator note'}
+        optional={manualBlockPurpose !== 'other'}
         type="text"
         value={reason}
         onChange={(e) => setReason(e.target.value)}
         placeholder="Private event, full buyout, retreat…"
+        maxLength={500}
+        required={manualBlockPurpose === 'other'}
       />
 
       {actionError ? <OpsBanner tone="danger" body={actionError} /> : null}

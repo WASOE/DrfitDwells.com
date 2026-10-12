@@ -48,14 +48,15 @@ describe('calendarBlockLabels', () => {
       blockType: 'manual_block',
       isLocationWideBlock: true,
       locationKey: 'valley',
+      manualBlockPurpose: 'private_event',
       locationBlockGroupId: 'grp-1',
       startDate: '2026-09-01T00:00:00.000Z',
       endDate: '2026-09-03T00:00:00.000Z',
       render: { labelShort: 'Manual', unitLabel: null }
     };
     expect(isLocationWideManualBlock(block)).toBe(true);
-    expect(blockDisplayLabel(block)).toBe('Location-wide');
-    expect(blockTooltip(block)).toContain('Location-wide block (The Valley)');
+    expect(blockDisplayLabel(block)).toBe('Location-wide · Private event');
+    expect(blockTooltip(block)).toContain('Location-wide · Private event block (The Valley)');
   });
 
   it('uses the Sofia date-only API fields instead of slicing UTC instants', () => {

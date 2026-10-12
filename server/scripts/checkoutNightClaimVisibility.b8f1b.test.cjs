@@ -41,12 +41,12 @@ const { evaluateLocationConflicts } = require('../services/ops/domain/locationCo
 const { createBlock, editBlock } = require('../services/ops/domain/availabilityWriteService');
 const { nightDateFromDateOnly } = require('../services/inventory/unitNightClaimService');
 
-const STAY_IN = '2026-10-10';
-const STAY_OUT = '2026-10-12';
-const STAY_MID = '2026-10-11';
-const ADJACENT_IN = '2026-10-12';
-const ADJACENT_OUT = '2026-10-13';
-const LONG_OUT = '2026-10-14';
+const STAY_IN = '2099-10-10';
+const STAY_OUT = '2099-10-12';
+const STAY_MID = '2099-10-11';
+const ADJACENT_IN = '2099-10-12';
+const ADJACENT_OUT = '2099-10-13';
+const LONG_OUT = '2099-10-14';
 
 const NOW = new Date('2026-09-01T12:00:00.000Z');
 const EXPIRES_LIVE = new Date('2026-12-01T12:00:00.000Z');
@@ -685,6 +685,7 @@ describe('OPS availability block target contract', () => {
       () =>
         createBlock({
           blockType: 'manual_block',
+          manualBlockPurpose: 'owner_hold',
           cabinId: parentCabinId,
           startDate: STAY_IN,
           endDate: STAY_OUT,
@@ -702,7 +703,8 @@ describe('OPS availability block target contract', () => {
   it('stores a unit-specific block against the canonical multi-unit parent', async () => {
     const created = await createBlock({
       blockType: 'manual_block',
-      cabinId: cabinTypeId,
+      manualBlockPurpose: 'owner_hold',
+      cabinId: parentCabinId,
       unitId: unitIds[1],
       targetScope: 'unit',
       startDate: STAY_IN,
@@ -722,7 +724,7 @@ describe('OPS availability block target contract', () => {
   it('stores a parent-wide block only with explicit all_units scope', async () => {
     const created = await createBlock({
       blockType: 'maintenance',
-      cabinId: cabinTypeId,
+      cabinId: parentCabinId,
       targetScope: 'all_units',
       startDate: STAY_IN,
       endDate: STAY_OUT,
@@ -733,8 +735,67 @@ describe('OPS availability block target contract', () => {
     assert.equal(created.targetScope, 'all_units');
 
     const stored = await AvailabilityBlock.findById(created.blockId).lean();
+    assert.equal(stored.blockType, 'maintenance');
     assert.equal(stored.unitId, null);
     assert.equal(stored.metadata.availabilityTargetScope, 'all_units');
+  });
+
+  it('rejects CabinType ids as new Cabin targets', async () => {
+    await assert.rejects(
+      () =>
+        createBlock({
+          blockType: 'manual_block',
+          manualBlockPurpose: 'owner_hold',
+          cabinId: cabinTypeId,
+          unitId: unitIds[0],
+          targetScope: 'unit',
+          startDate: STAY_IN,
+          endDate: STAY_OUT,
+          ctx: opsCtx()
+        }),
+      (err) => err.type === 'validation' && /Cabin target not found/.test(err.message)
+    );
+    assert.equal(await AvailabilityBlock.countDocuments(), 0);
+  });
+
+  it('validates manual-block purpose and blocks caller-controlled system metadata', async () => {
+    await assert.rejects(
+      () =>
+        createBlock({
+          blockType: 'manual_block',
+          manualBlockPurpose: 'other',
+          cabinId: luxCabinId,
+          startDate: STAY_IN,
+          endDate: STAY_OUT,
+          ctx: opsCtx()
+        }),
+      (err) => err.type === 'validation' && /operator note is required/i.test(err.message)
+    );
+    await assert.rejects(
+      () =>
+        createBlock({
+          blockType: 'manual_block',
+          manualBlockPurpose: 'not_registered',
+          cabinId: luxCabinId,
+          startDate: STAY_IN,
+          endDate: STAY_OUT,
+          ctx: opsCtx()
+        }),
+      (err) => err.type === 'validation' && /valid purpose/i.test(err.message)
+    );
+    await assert.rejects(
+      () =>
+        createBlock({
+          blockType: 'maintenance',
+          cabinId: luxCabinId,
+          startDate: STAY_IN,
+          endDate: STAY_OUT,
+          metadata: { scope: 'location_wide', conversionAttemptId: 'caller-controlled' },
+          ctx: opsCtx('POST /api/ops/availability/maintenance-blocks')
+        }),
+      (err) => err.type === 'validation' && /System-managed/.test(err.message)
+    );
+    assert.equal(await AvailabilityBlock.countDocuments(), 0);
   });
 
   it('rejects units belonging to another cabin type', async () => {
@@ -760,6 +821,7 @@ describe('OPS availability block target contract', () => {
       () =>
         createBlock({
           blockType: 'manual_block',
+          manualBlockPurpose: 'owner_hold',
           cabinId: parentCabinId,
           unitId: otherUnit._id,
           targetScope: 'unit',
@@ -887,6 +949,7 @@ describe('B8F1B OPS conflicts and writes', () => {
       () =>
         createBlock({
           blockType: 'manual_block',
+          manualBlockPurpose: 'owner_hold',
           cabinId: luxCabinId,
           startDate: STAY_IN,
           endDate: STAY_OUT,
@@ -931,6 +994,7 @@ describe('B8F1B OPS conflicts and writes', () => {
       () =>
         createBlock({
           blockType: 'manual_block',
+          manualBlockPurpose: 'owner_hold',
           cabinId: parentCabinId,
           unitId: null,
           targetScope: 'all_units',
@@ -950,6 +1014,7 @@ describe('B8F1B OPS conflicts and writes', () => {
       () =>
         createBlock({
           blockType: 'manual_block',
+          manualBlockPurpose: 'owner_hold',
           cabinId: parentCabinId,
           unitId: unitIds[0],
           startDate: STAY_IN,
@@ -976,6 +1041,7 @@ describe('B8F1B OPS conflicts and writes', () => {
       () =>
         createBlock({
           blockType: 'manual_block',
+          manualBlockPurpose: 'owner_hold',
           cabinId: parentCabinId,
           unitId: unitIds[0],
           startDate: STAY_IN,
@@ -994,6 +1060,7 @@ describe('B8F1B OPS conflicts and writes', () => {
   it('30-32. OPS edit checks proposed dates; rejected edit preserves block and claims', async () => {
     const created = await createBlock({
       blockType: 'manual_block',
+      manualBlockPurpose: 'owner_hold',
       cabinId: luxCabinId,
       startDate: '2026-11-01',
       endDate: '2026-11-03',

@@ -8,6 +8,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const { createFutureSofiaDates } = require('./testHelpers/futureSofiaDates.cjs');
 
 const Booking = require('../models/Booking');
 const Cabin = require('../models/Cabin');
@@ -32,6 +33,7 @@ const {
 
 let mongoServer;
 const pushCalls = [];
+const fixtureDate = createFutureSofiaDates();
 
 async function createTestCabin(overrides = {}) {
   return Cabin.create({
@@ -129,8 +131,8 @@ test('notifyOpsPushBookingCreated sends admin payload with dedupeKey', async () 
   const cabin = await createTestCabin({ name: 'The Cabin' });
   const booking = await Booking.create({
     cabinId: cabin._id,
-    checkIn: new Date('2026-07-10T00:00:00.000Z'),
-    checkOut: new Date('2026-07-13T00:00:00.000Z'),
+    checkIn: new Date('2099-07-10T00:00:00.000Z'),
+    checkOut: new Date('2099-07-13T00:00:00.000Z'),
     adults: 2,
     children: 0,
     status: 'confirmed',
@@ -174,8 +176,8 @@ test('manual reservation hook fires after success but not on idempotent remember
 
   const first = await createManualReservation({
     cabinId: String(cabin._id),
-    checkInDate: '2026-08-01',
-    checkOutDate: '2026-08-04',
+    checkInDate: fixtureDate(0),
+    checkOutDate: fixtureDate(3),
     adults: 2,
     children: 0,
     guestInfo: {
@@ -197,8 +199,8 @@ test('manual reservation hook fires after success but not on idempotent remember
   pushCalls.length = 0;
   const second = await createManualReservation({
     cabinId: String(cabin._id),
-    checkInDate: '2026-08-01',
-    checkOutDate: '2026-08-04',
+    checkInDate: fixtureDate(0),
+    checkOutDate: fixtureDate(3),
     adults: 2,
     children: 0,
     guestInfo: {
@@ -288,8 +290,8 @@ test('linked failed and refunded payments notify admin; unlinked and deduped eve
 
   const booking = await Booking.create({
     cabinId: new mongoose.Types.ObjectId(),
-    checkIn: new Date('2026-09-01'),
-    checkOut: new Date('2026-09-04'),
+    checkIn: new Date('2099-09-01'),
+    checkOut: new Date('2099-09-04'),
     adults: 2,
     children: 0,
     status: 'confirmed',
@@ -377,8 +379,8 @@ test('notifyOpsPushBookingCreated is the same hook used after V2 claimResult.cla
   const cabin = await createTestCabin();
   const booking = await Booking.create({
     cabinId: cabin._id,
-    checkIn: new Date('2026-10-01'),
-    checkOut: new Date('2026-10-04'),
+    checkIn: new Date('2099-10-01'),
+    checkOut: new Date('2099-10-04'),
     adults: 2,
     children: 0,
     status: 'confirmed',

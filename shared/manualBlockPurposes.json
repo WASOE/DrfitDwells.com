@@ -1,0 +1,22 @@
+[
+  {
+    "value": "owner_hold",
+    "label": "Owner hold",
+    "requiresReason": false
+  },
+  {
+    "value": "operational_hold",
+    "label": "Operational hold",
+    "requiresReason": false
+  },
+  {
+    "value": "private_event",
+    "label": "Private event",
+    "requiresReason": false
+  },
+  {
+    "value": "other",
+    "label": "Other hold",
+    "requiresReason": true
+  }
+]

@@ -535,9 +535,29 @@ describe('OpsReservations collection migration', () => {
   });
 
   it('opens the existing create workflow from the Dashboard deep link', async () => {
-    renderPage('/ops/reservations?create=1');
-    expect(await screen.findByRole('dialog', { name: 'Manual reservation' })).toBeInTheDocument();
+    renderPage(
+      '/ops/reservations?create=1&cabinId=cabin-1&checkIn=2026-12-10&checkOut=2026-12-12'
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Manual reservation' });
+    expect(dialog).toBeInTheDocument();
     expect(screen.getByTestId('reservations-search')).toHaveTextContent('create=1');
+    expect(within(dialog).getByLabelText('Cabin')).toHaveValue('cabin-1');
+    expect(within(dialog).getByLabelText('Check-in')).toHaveValue('2026-12-10');
+    expect(within(dialog).getByLabelText('Check-out')).toHaveValue('2026-12-12');
+  });
+
+  it('preselects the exact allocated unit when opened from the multi-unit calendar', async () => {
+    renderPage(
+      '/ops/reservations?create=1&cabinId=parent-1&cabinTypeId=type-1&unitId=unit-3&unitLabel=A-Frame+3'
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Manual reservation' });
+    expect(
+      within(dialog).getByText((_, element) =>
+        element?.tagName === 'P' && element.textContent.includes('Physical unit: A-Frame 3')
+      )
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText('Cabin')).not.toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Adults')).toHaveValue(2);
   });
 
   it('does not expose manual creation when the session lacks the action', async () => {
