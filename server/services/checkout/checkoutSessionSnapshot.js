@@ -200,6 +200,7 @@ function sanitizeCancellationPolicySnapshotForCheckout(policySnapshot) {
 
   const dateTransferRules = policySnapshot.dateTransferRules || {};
   const nameTransferRules = policySnapshot.nameTransferRules || {};
+  const bookingCreditRules = policySnapshot.bookingCreditRules || {};
   const organizerCancellationRule = policySnapshot.organizerCancellationRule || {};
   const legalApprovalMetadata = policySnapshot.legalApprovalMetadata || {};
 
@@ -212,6 +213,17 @@ function sanitizeCancellationPolicySnapshotForCheckout(policySnapshot) {
       policySnapshot.correctionWindowMinDaysBeforeArrival
     ),
     refundTiers,
+    cashRefundAdminFeeCents: Number(policySnapshot.cashRefundAdminFeeCents || 0),
+    bookingCreditRules: {
+      enabled: bookingCreditRules.enabled === true,
+      minDaysBeforeArrival:
+        bookingCreditRules.minDaysBeforeArrival == null
+          ? null
+          : Number(bookingCreditRules.minDaysBeforeArrival),
+      creditPercent: Number(bookingCreditRules.creditPercent || 0),
+      requiresExplicitChoice: bookingCreditRules.requiresExplicitChoice !== false,
+      subjectToAvailability: bookingCreditRules.subjectToAvailability !== false
+    },
     noShowRefundPercent: Number(policySnapshot.noShowRefundPercent),
     earlyDepartureRefundPercent: Number(policySnapshot.earlyDepartureRefundPercent),
     dateTransferRules: {

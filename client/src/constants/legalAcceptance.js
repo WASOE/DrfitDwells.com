@@ -1,5 +1,9 @@
 export const LEGAL_ACCEPTANCE_TERMS_VERSION = '2026-04-19-v2';
 export const LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION = '2026-04-19-v2';
+export const LEGAL_ACCEPTANCE_CANCELLATION_POLICY_CODE = 'normal-stay-standard';
+export const LEGAL_ACCEPTANCE_CANCELLATION_POLICY_VERSION = 2;
+export const LEGAL_ACCEPTANCE_CANCELLATION_POLICY_URL =
+  '/legal/cancellation-policy-2026-10-12-v2.pdf';
 
 export const LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT =
   'I have read and accept the Terms & Conditions and Cancellation Policy.';

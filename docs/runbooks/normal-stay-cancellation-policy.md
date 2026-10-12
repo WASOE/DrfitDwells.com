@@ -1,71 +1,64 @@
-# Normal-stay standard CancellationPolicy (RP6A / Correction 3)
+# Normal-stay cancellation policy v2
 
-**Batch:** RP6A
+**Identity:** `normal-stay-standard@v2`
+**Configuration script:** `server/scripts/configureNormalStayCancellationPolicy.cjs`
+**Customer document:** `client/public/legal/cancellation-policy-2026-10-12-v2.pdf`
 
-**Script:** `server/scripts/configureNormalStayCancellationPolicy.cjs`
+Version 1 remains immutable for historical bookings at
+`client/public/legal/cancellation-policy-2026-04-19-v1.pdf`.
 
-**Identity:** `code=normal-stay-standard`, `version=1`
+## Proposed policy
 
-**Collection:** `cancellationpolicies`
+### Cash refund
 
-## Authority separation (read first)
+| Guest cancels | Cash refund |
+|---|---|
+| 30 or more days before arrival | 100% of the original booking amount, less €15 administration fee |
+| 14–29 days before arrival | 50% of the original booking amount, less €15 administration fee |
+| Fewer than 14 days before arrival | No cash refund |
+| No-show | No cash refund |
 
-- **This runbook does not authorize production CancellationPolicy creation by itself.** Production create still requires a **separate explicit authorization** step.
-- **Creating this CancellationPolicy does not authorize RatePlan creation or activation.**
-- **RATEPLAN_PRODUCTION_ACTIVATION_REMAINS_BLOCKED** until an independent activation decision.
-- Do **not** create, edit, or activate RatePlans as part of this procedure.
-- Do **not** mutate indexes, restart PM2, change environment persistence, or alter lease/expiry gates.
-- Winter / seasonal special rules use a **separate future policy**. Do **not** create winter policies here.
+The administration fee applies only when a cash refund would otherwise be due,
+is capped at that refundable amount, and does not apply when Drift & Dwells
+cancels for reasons within its control.
 
----
+### Voluntary booking credit
 
-## 1. Approved business schedule (published PDF)
+Guests cancelling at least 14 days before arrival may explicitly choose booking
+credit instead of cash. Credit is 100% of the original booking amount, has no
+administration fee, and may be used for a future Drift & Dwells stay subject to
+availability. This policy does not create an expiry date. Credit is not
+automatically offered for cancellations fewer than 14 days before arrival or
+for no-shows.
 
-Refunds are of the **accommodation price only**:
+## Checkout disclosure
 
-| Guest cancels | Refund % |
-|---------------|----------|
-| 14 or more days before arrival | 100% |
-| 7 through 13 days before arrival | 50% |
-| Less than 7 days before arrival | 0% |
-| No-show | 0% |
-| Early departure | 0% |
+Checkout retains the existing concise EN/BG consent sentence and links to
+Terms and the Cancellation Policy. Do not add policy tables, fee banners,
+countdowns, warnings, or additional confirmation steps to checkout or property
+pages.
 
-`correctionWindowHours: 0` means the correction window is **fully disabled** (including elapsed time exactly zero). Positive hours retain existing correction-window behavior for other policies.
+New booking consent records carry `normal-stay-standard@v2` and the immutable
+v2 document URL. Missing cancellation-policy fields on historical records are
+treated as legacy v1 evidence. Fixed-package bookings continue to use their
+frozen rate-plan cancellation-policy snapshot.
 
-Date and name transfers are disabled on this document (ops may handle manually outside it).
+## Mandatory legal and production gate
 
-### Checkout disclosure (Correction 2 / Correction 3)
+The candidate document is `status=draft` and `legalReviewStatus=pending`.
+Neither creating the draft policy nor merging its code authorizes activation.
+Before production publication or RatePlan reassignment, obtain and record
+Bulgarian/EU legal approval for the complete schedule and €15 fee. Then update
+the policy to `status=active`, `legalReviewStatus=approved`, and populate
+`legalApprovalMetadata.reviewedAt`, `reviewedBy`, and `notes` through a reviewed
+follow-up change.
 
-- The **full standard policy is not displayed inside checkout**.
-- Checkout provides a **clear consent sentence** with separate accessible links to **Terms** (`/terms`) and the published **Cancellation Policy** (`/cancellation-policy`, PDF viewer).
-- The detailed policy remains available **before payment** through that Cancellation Policy link (new tab; checkout state preserved).
-- ConfirmBooking must **not** show refund percentages, cancellation deadlines, no-show language, or the old check-in−5 free-cancel promise in the summary.
-- `checkbox1TextSnapshot` records the **exact localized plain-text consent** shown at submission (same words and punctuation as the visible sentence for the active locale). Link markup is excluded from the snapshot, but link labels and sentence wording match exactly.
-- Winter and non-refundable package disclosures remain **separate future work**.
-- Production policy creation and RatePlan activation remain **unauthorized** by this runbook.
+Do not overwrite v1, mutate existing Booking policy evidence, automatically
+refund Stripe payments, or automatically choose booking credit.
 
-Consent copy (i18n):
+## Safe inspection and draft creation
 
-- EN: “By completing your booking, you agree to our Terms and Cancellation Policy.”
-- BG: “Завършвайки резервацията, вие се съгласявате с нашите Общи условия и Политика за анулиране.”
-
----
-
-## 2. Default-disabled behavior
-
-| Default | Behavior |
-|---------|----------|
-| Mode env unset / empty | Classification `DISABLED`, exit `0` |
-| Side effects | **None** — no mongoose load, no connection, no mutation |
-
-Importing the script module has no Mongo connection or mutation side effects.
-
-On create: `autoIndex` and `autoCreate` are set to `false` **before** requiring/registering `CancellationPolicy`. Connect options: `{ autoIndex: false, autoCreate: false }`. The script does **not** call `init`, `createIndexes`, `ensureIndexes`, `syncIndexes`, or `createCollection`.
-
----
-
-## 3. Inspection (read-only, native)
+With mode absent, the script exits without connecting. Read-only inspection:
 
 ```bash
 cd server
@@ -73,62 +66,26 @@ NORMAL_STAY_CANCELLATION_POLICY_MODE=inspect \
   node scripts/configureNormalStayCancellationPolicy.cjs
 ```
 
-Inspect uses the native collection API and does **not** need to load the CancellationPolicy model.
-
-Never pass the Mongo URI on the command line. Never print URI, credentials, raw documents, stacks, or raw database errors.
-
-| Classification | Exit | Meaning |
-|----------------|------|---------|
-| `INSPECTION_COMPLETE` | 0 | Read finished |
-| `INSPECTION_FAILED` | 78 | Stop; do not create |
-
----
-
-## 4. Create (model-based; exact confirmation required)
-
-**Prerequisites**
-
-1. Separate production authorization has been granted for this create.
-2. Collection `cancellationpolicies` **must already exist**. If absent → `COLLECTION_ABSENT`, exit `78`, no create.
-3. Set both mode and confirmation:
+Draft creation is a separate production-data action and is not authorized by
+this runbook alone. It requires this exact confirmation:
 
 ```bash
-cd server
 NORMAL_STAY_CANCELLATION_POLICY_MODE=create \
-NORMAL_STAY_CANCELLATION_POLICY_CREATE_CONFIRM=CREATE_NORMAL_STAY_STANDARD_V1 \
+NORMAL_STAY_CANCELLATION_POLICY_CREATE_CONFIRM=CREATE_NORMAL_STAY_STANDARD_V2_DRAFT \
   node scripts/configureNormalStayCancellationPolicy.cjs
 ```
 
-Create persists through the **CancellationPolicy model** (`create`) so Mongoose applies validation, defaults, **timestamps**, and **`__v`** (expected `0` after create). Matching comparisons ignore only `_id`, `__v`, and timestamps.
+The script creates only `normal-stay-standard@v2`, refuses conflicting content,
+does not update or delete v1, does not modify RatePlans, and does not create or
+change indexes.
 
-| Classification | Exit | Meaning |
-|----------------|------|---------|
-| `UNAUTHORIZED` | 78 | Confirmation missing/wrong — no connection |
-| `COLLECTION_ABSENT` | 78 | Collection missing — refuse |
-| `ALREADY_PRESENT_MATCH` | 0 | Identity exists with matching content — **no rewrite** |
-| `CONFLICTING_EXISTING` | 78 | Identity exists with different content — refuse |
-| `CREATE_COMPLETE` | 0 | Model create succeeded; verified content + `__v` + timestamps |
-| `CONCURRENT_CREATE_MATCH` | 0 | Duplicate-key race; re-read matches approved payload |
-| `CREATE_OUTCOME_UNCERTAIN` | 78 | Duplicate/verify ambiguity — **do not automatically retry** |
-| `VERIFY_FAILED` / `CREATE_FAILED` | 78 | Stop — **do not automatically retry** |
+## Verification before any activation
 
-No update, overwrite, repair, or deletion path. No RatePlan writes. No automatic retry.
-
----
-
-## 5. Post-create verification checklist
-
-1. Inspect reports `identityPresent=true`, `contentMatch=true`.
-2. Persisted document has `__v === 0` and valid `createdAt` / `updatedAt`.
-3. Index name inventory unchanged.
-4. RatePlan count unchanged; no activation lock created by this script.
-5. ConfirmBooking shows only the concise EN/BG consent sentence with Terms + Cancellation Policy links; no detailed 14/7/0 schedule and no check-in−5 free-cancel promise in checkout.
-6. PM2 and lease gates untouched.
-
----
-
-## 6. Activation remains blocked
-
-Successful policy configuration is **not** RatePlan activation authority.
-
-**RATEPLAN_PRODUCTION_ACTIVATION_REMAINS_BLOCKED**
+1. Focused cancellation policy, checkout consent, and split-settlement tests pass.
+2. Version 1 and version 2 PDFs both exist and are byte-distinct.
+3. `/cancellation-policy` remains the discreet public route.
+4. Checkout contains no five-day free-cancellation promise or detailed schedule.
+5. Existing bookings and frozen v1 snapshots remain unchanged.
+6. Legal approval metadata is complete before changing v2 from pending/draft.
+7. Production RatePlan reassignment, deployment, and policy publication receive
+   explicit authorization after the legal gate closes.

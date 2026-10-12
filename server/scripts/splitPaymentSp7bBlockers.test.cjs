@@ -765,6 +765,61 @@ test('standard_policy cash only → cash_refund_pending', async () => {
   );
 });
 
+test('standard_policy applies one capped administration fee per booking', async () => {
+  const booking = await makeBooking({
+    stripePaidAmountCents: 30000,
+    resourceFinalizationSnapshot: {
+      cancellationPolicy: {
+        ...policySnapshotFullRefund(),
+        cashRefundAdminFeeCents: 1500
+      }
+    }
+  });
+  await Promise.all([
+    BookingInstallment.create({
+      bookingId: booking._id,
+      sequence: 1,
+      amountCents: 10000,
+      currency: 'EUR',
+      amountType: 'percent_bps',
+      dueRule: 'checkout',
+      dueOffsetDays: 0,
+      dueAtDateOnly: futureDue(-1),
+      cancellationTreatment: 'standard_policy',
+      status: 'paid',
+      paidAt: new Date(),
+      provisioningState: 'unprovisioned'
+    }),
+    BookingInstallment.create({
+      bookingId: booking._id,
+      sequence: 2,
+      amountCents: 20000,
+      currency: 'EUR',
+      amountType: 'remainder',
+      dueRule: 'days_before_arrival',
+      dueOffsetDays: 30,
+      dueAtDateOnly: futureDue(-1),
+      cancellationTreatment: 'standard_policy',
+      status: 'paid',
+      paidAt: new Date(),
+      provisioningState: 'unprovisioned'
+    })
+  ]);
+
+  const result = await settleSplitBookingCancellation({
+    booking,
+    reason: 'cancel',
+    actorId: 'ops'
+  });
+  assert.equal(result.cashRefundCents, 28500);
+  assert.equal(result.retainedCents, 1500);
+  assert.equal(result.cancellationSettlement.splitSettlement.cashRefundAdminFeeCents, 1500);
+  assert.equal(
+    result.allocations.reduce((sum, item) => sum + Number(item.cashRefundAdminFeeCents || 0), 0),
+    1500
+  );
+});
+
 test('mixed credit + cash → credit issued AND cash remains pending; settledAt null', async () => {
   const booking = await makeBooking({ stripePaidAmountCents: 50000, totalValueCents: 50000 });
   await BookingInstallment.create({

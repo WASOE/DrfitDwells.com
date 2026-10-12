@@ -39,6 +39,22 @@ const refundTierSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const bookingCreditRulesSchema = new mongoose.Schema(
+  {
+    enabled: { type: Boolean, default: false },
+    minDaysBeforeArrival: { type: Number, min: 0, default: null },
+    creditPercent: {
+      type: Number,
+      min: [0, 'Credit percentage cannot be below 0'],
+      max: [100, 'Credit percentage cannot exceed 100'],
+      default: 0
+    },
+    requiresExplicitChoice: { type: Boolean, default: true },
+    subjectToAvailability: { type: Boolean, default: true }
+  },
+  { _id: false }
+);
+
 const dateTransferRulesSchema = new mongoose.Schema(
   {
     enabled: { type: Boolean, default: false },
@@ -156,6 +172,17 @@ const cancellationPolicySchema = new mongoose.Schema(
         },
         message: 'At least one refund tier is required'
       }
+    },
+    cashRefundAdminFeeCents: {
+      type: Number,
+      required: true,
+      min: [0, 'Cash refund administration fee cannot be negative'],
+      default: 0
+    },
+    bookingCreditRules: {
+      type: bookingCreditRulesSchema,
+      required: true,
+      default: () => ({})
     },
     noShowRefundPercent: {
       type: Number,

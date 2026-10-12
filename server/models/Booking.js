@@ -229,6 +229,21 @@ const bookingSchema = new mongoose.Schema({
       required: false,
       trim: true
     },
+    cancellationPolicyCode: {
+      type: String,
+      required: false,
+      trim: true
+    },
+    cancellationPolicyVersion: {
+      type: Number,
+      required: false,
+      min: 1
+    },
+    cancellationPolicyUrl: {
+      type: String,
+      required: false,
+      trim: true
+    },
     acceptedAt: {
       type: Date,
       required: false

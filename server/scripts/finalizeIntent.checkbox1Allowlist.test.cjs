@@ -14,6 +14,10 @@ const path = require('node:path');
 const {
   LEGAL_ACCEPTANCE_TERMS_VERSION,
   LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+  LEGAL_ACCEPTANCE_CANCELLATION_POLICY_CODE,
+  LEGAL_ACCEPTANCE_CANCELLATION_POLICY_VERSION,
+  LEGAL_ACCEPTANCE_CANCELLATION_POLICY_URL,
+  LEGAL_ACCEPTANCE_LEGACY_CANCELLATION_POLICY_URL,
   LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
   LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT_EN_APPROVED,
   LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT_BG_APPROVED,
@@ -61,6 +65,9 @@ function baseBody(checkbox1) {
       acceptedActivityRisk: true,
       termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
       activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+      cancellationPolicyCode: LEGAL_ACCEPTANCE_CANCELLATION_POLICY_CODE,
+      cancellationPolicyVersion: LEGAL_ACCEPTANCE_CANCELLATION_POLICY_VERSION,
+      cancellationPolicyUrl: LEGAL_ACCEPTANCE_CANCELLATION_POLICY_URL,
       checkbox1TextSnapshot: checkbox1,
       checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
       locale: 'en'
@@ -128,6 +135,53 @@ test('approved Bulgarian snapshot accepted and stored exactly (not canonicalized
 test('legacy snapshot accepted and stored exactly', () => {
   const intent = accept(LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT);
   assert.equal(intent.legalAcceptance.checkbox1TextSnapshot, LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT);
+});
+
+test('current cancellation policy identity is stored exactly', () => {
+  const intent = accept(LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT_EN_APPROVED);
+  assert.equal(
+    intent.legalAcceptance.cancellationPolicyCode,
+    LEGAL_ACCEPTANCE_CANCELLATION_POLICY_CODE
+  );
+  assert.equal(
+    intent.legalAcceptance.cancellationPolicyVersion,
+    LEGAL_ACCEPTANCE_CANCELLATION_POLICY_VERSION
+  );
+  assert.equal(
+    intent.legalAcceptance.cancellationPolicyUrl,
+    LEGAL_ACCEPTANCE_CANCELLATION_POLICY_URL
+  );
+});
+
+test('cached legacy client without cancellation fields is retained as v1', () => {
+  const body = baseBody(LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT_EN_APPROVED);
+  delete body.legalAcceptance.cancellationPolicyCode;
+  delete body.legalAcceptance.cancellationPolicyVersion;
+  delete body.legalAcceptance.cancellationPolicyUrl;
+  const intent = buildValidatedFinalizeIntent({
+    body,
+    requestMeta,
+    capturedAt: new Date('2026-09-21T12:00:00.000Z'),
+    quoteSnapshot: { experienceKeys: [] }
+  });
+  assert.equal(intent.legalAcceptance.cancellationPolicyVersion, 1);
+  assert.equal(
+    intent.legalAcceptance.cancellationPolicyUrl,
+    LEGAL_ACCEPTANCE_LEGACY_CANCELLATION_POLICY_URL
+  );
+});
+
+test('unknown or mismatched cancellation policy identity is rejected', () => {
+  const wrongVersion = reject(LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT_EN_APPROVED, (b) => {
+    b.legalAcceptance.cancellationPolicyVersion = 99;
+    return b;
+  });
+  assert.equal(wrongVersion.details?.field, 'legalAcceptance.cancellationPolicyVersion');
+
+  reject(LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT_EN_APPROVED, (b) => {
+    b.legalAcceptance.cancellationPolicyUrl = LEGAL_ACCEPTANCE_LEGACY_CANCELLATION_POLICY_URL;
+    return b;
+  });
 });
 
 test('deployed EN/BG locale compositions accepted (cross-contract)', () => {

@@ -346,6 +346,25 @@ async function settleSplitBookingCancellation({
   const paidTotal = allocations
     .filter((a) => a.paidCents > 0)
     .reduce((s, a) => s + a.paidCents, 0);
+  const policySnapshot = resolveFrozenCancellationPolicy(booking);
+  const configuredAdminFeeCents = Math.max(
+    0,
+    Number(policySnapshot?.cashRefundAdminFeeCents || 0)
+  );
+  const cashRefundAdminFeeCents = Math.min(cashRefundCents, configuredAdminFeeCents);
+  if (cashRefundAdminFeeCents > 0) {
+    let feeRemaining = cashRefundAdminFeeCents;
+    for (const allocation of allocations) {
+      if (feeRemaining <= 0 || Number(allocation.cashRefundCents || 0) <= 0) continue;
+      const applied = Math.min(allocation.cashRefundCents, feeRemaining);
+      allocation.cashRefundCents -= applied;
+      allocation.retainedCents += applied;
+      allocation.cashRefundAdminFeeCents = applied;
+      cashRefundCents -= applied;
+      retainedCents += applied;
+      feeRemaining -= applied;
+    }
+  }
   const sumCheck = cashRefundCents + stayCreditIssuedCents + retainedCents;
   if (paidTotal > 0 && sumCheck !== paidTotal) {
     throw new SplitCancellationSettlementError(
@@ -381,6 +400,7 @@ async function settleSplitBookingCancellation({
       withinCancellationWindow: window.withinWindow,
       windowReason: window.reason || null,
       cashRefundCents,
+      cashRefundAdminFeeCents,
       stayCreditIssuedCents,
       retainedCents,
       cashRefundStatus,
