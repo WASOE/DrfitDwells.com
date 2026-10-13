@@ -364,6 +364,9 @@ function buildBookingData({
     bookingData.legalAcceptance = {
       termsVersion: legalAcceptance.termsVersion,
       activityRiskVersion: legalAcceptance.activityRiskVersion,
+      cancellationPolicyCode: legalAcceptance.cancellationPolicyCode,
+      cancellationPolicyVersion: legalAcceptance.cancellationPolicyVersion,
+      cancellationPolicyUrl: legalAcceptance.cancellationPolicyUrl,
       acceptedAt: new Date(),
       firstName: String(guestInfo?.firstName || '').trim(),
       lastName: String(guestInfo?.lastName || '').trim(),

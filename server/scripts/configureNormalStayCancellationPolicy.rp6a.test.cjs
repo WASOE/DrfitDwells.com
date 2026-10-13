@@ -262,8 +262,18 @@ describe('RP6A approved policy payload', () => {
     const n = normalizeApprovedPolicy();
     assert.equal(n.ok, true);
     assert.equal(n.value.code, POLICY_CODE);
-    assert.equal(n.value.version, 1);
+    assert.equal(n.value.version, 2);
     assert.equal(n.value.correctionWindowHours, 0);
+    assert.equal(n.value.status, 'draft');
+    assert.equal(n.value.legalReviewStatus, 'pending');
+    assert.equal(n.value.cashRefundAdminFeeCents, 1500);
+    assert.deepEqual(n.value.bookingCreditRules, {
+      enabled: true,
+      minDaysBeforeArrival: 14,
+      creditPercent: 100,
+      requiresExplicitChoice: true,
+      subjectToAvailability: true
+    });
     assert.equal(n.value.noShowRefundPercent, 0);
     assert.equal(n.value.earlyDepartureRefundPercent, 0);
     assert.equal(n.value.dateTransferRules.enabled, false);
@@ -354,16 +364,61 @@ describe('RP6A correction-window zero hours', () => {
   });
 });
 
-describe('RP6A policy-engine boundary truth table', () => {
-  it('14 days / more than 14 / 13 / 7 / 6 / same-day / no-show / early', () => {
-    assert.equal(outcomeForDays(14).refundPercent, 100);
-    assert.equal(outcomeForDays(30).refundPercent, 100);
-    assert.equal(outcomeForDays(13).refundPercent, 50);
-    assert.equal(outcomeForDays(7).refundPercent, 50);
-    assert.equal(outcomeForDays(6).refundPercent, 0);
-    assert.equal(outcomeForDays(0).refundPercent, 0);
-    assert.equal(outcomeForDays(0, 'no_show').refundPercent, 0);
-    assert.equal(outcomeForDays(3, 'early_departure').refundPercent, 0);
+describe('v2 policy-engine boundary truth table', () => {
+  it('calculates cash and voluntary credit options at every boundary', () => {
+    const day30 = outcomeForDays(30);
+    assert.equal(day30.refundPercent, 100);
+    assert.equal(day30.grossRefundAmount, 100);
+    assert.equal(day30.cashRefundAdminFeeAmount, 15);
+    assert.equal(day30.refundAmount, 85);
+    assert.equal(day30.bookingCreditOption.eligible, true);
+    assert.equal(day30.bookingCreditOption.creditAmount, 100);
+
+    const day29 = outcomeForDays(29);
+    assert.equal(day29.refundPercent, 50);
+    assert.equal(day29.grossRefundAmount, 50);
+    assert.equal(day29.cashRefundAdminFeeAmount, 15);
+    assert.equal(day29.refundAmount, 35);
+    assert.equal(day29.bookingCreditOption.creditAmount, 100);
+
+    const day14 = outcomeForDays(14);
+    assert.equal(day14.refundPercent, 50);
+    assert.equal(day14.refundAmount, 35);
+    assert.equal(day14.bookingCreditOption.eligible, true);
+
+    const day13 = outcomeForDays(13);
+    assert.equal(day13.refundPercent, 0);
+    assert.equal(day13.cashRefundAdminFeeAmount, 0);
+    assert.equal(day13.refundAmount, 0);
+    assert.equal(day13.bookingCreditOption.eligible, false);
+
+    const noShow = outcomeForDays(0, 'no_show');
+    assert.equal(noShow.refundAmount, 0);
+    assert.equal(noShow.bookingCreditOption.eligible, false);
+    assert.equal(outcomeForDays(3, 'early_departure').refundAmount, 0);
+  });
+
+  it('never deducts more than the cash amount otherwise refundable', () => {
+    const snapshot = approvedSnapshot();
+    const result = calculateCancellationOutcome({
+      policySnapshot: snapshot,
+      bookingTimestamp: '2026-10-01T10:00:00+03:00',
+      arrivalDate: '2026-12-15',
+      cancellationTimestamp: '2026-11-01T10:00:00+02:00',
+      cancellableAmount: 10,
+      eventType: 'customer_cancellation'
+    });
+    assert.equal(result.grossRefundAmount, 10);
+    assert.equal(result.cashRefundAdminFeeAmount, 10);
+    assert.equal(result.refundAmount, 0);
+    assert.equal(result.retainedAmount, 10);
+  });
+
+  it('does not charge the administration fee when Drift & Dwells cancels', () => {
+    const result = outcomeForDays(30, 'organizer_cancellation');
+    assert.equal(result.refundPercent, 100);
+    assert.equal(result.cashRefundAdminFeeAmount, 0);
+    assert.equal(result.refundAmount, 100);
   });
 });
 
@@ -727,17 +782,17 @@ describe('RP6A safety scans', () => {
 });
 
 describe('RP6A runbook', () => {
-  it('documents correction-1 requirements', () => {
+  it('documents v2 policy, historical protection, and activation gate', () => {
     const md = fs.readFileSync(RUNBOOK_PATH, 'utf8');
-    assert.match(md, /localized|i18n|Bulgarian/i);
-    assert.match(md, /correctionWindowHours/);
-    assert.match(md, /collection must already exist|COLLECTION_ABSENT/i);
-    assert.match(md, /__v/);
-    assert.match(md, /CONCURRENT_CREATE_MATCH/);
-    assert.match(md, /CREATE_OUTCOME_UNCERTAIN|uncertain/i);
-    assert.match(md, /no automatic retry|Do not automatically retry/i);
-    assert.match(md, /RATEPLAN_PRODUCTION_ACTIVATION_REMAINS_BLOCKED/);
-    assert.match(md, /separate.*authoriz|production.*authoriz/i);
-    assert.match(md, /winter/i);
+    assert.match(md, /normal-stay-standard@v2/);
+    assert.match(md, /€15 administration fee/);
+    assert.match(md, /booking credit/i);
+    assert.match(md, /100% of the original booking amount/);
+    assert.match(md, /Version 1 remains immutable/i);
+    assert.match(md, /status=draft/);
+    assert.match(md, /legalReviewStatus=pending/);
+    assert.match(md, /Bulgarian\/EU legal approval/i);
+    assert.match(md, /does not modify RatePlans/i);
+    assert.match(md, /explicit authorization/i);
   });
 });

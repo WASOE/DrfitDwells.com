@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 /**
- * RP6A — Configure the approved normal-stay standard CancellationPolicy.
+ * Configure the legally pending normal-stay standard CancellationPolicy v2.
  *
- * Identity: code=normal-stay-standard, version=1
+ * Identity: code=normal-stay-standard, version=2
  * Creates at most one CancellationPolicy document via Mongoose model semantics.
  * Never mutates indexes. Never creates, edits, or activates a RatePlan.
  *
@@ -14,7 +14,7 @@
  *   create     → requires exact confirmation; model-based create
  *
  * Create confirmation:
- *   NORMAL_STAY_CANCELLATION_POLICY_CREATE_CONFIRM=CREATE_NORMAL_STAY_STANDARD_V1
+ *   NORMAL_STAY_CANCELLATION_POLICY_CREATE_CONFIRM=CREATE_NORMAL_STAY_STANDARD_V2_DRAFT
  *
  * Importing this module has no Mongo connection or mutation side effects.
  */
@@ -24,11 +24,11 @@ const path = require('path');
 
 const MODE_ENV = 'NORMAL_STAY_CANCELLATION_POLICY_MODE';
 const CREATE_CONFIRM_ENV = 'NORMAL_STAY_CANCELLATION_POLICY_CREATE_CONFIRM';
-const CREATE_CONFIRM_ACCEPTED = 'CREATE_NORMAL_STAY_STANDARD_V1';
+const CREATE_CONFIRM_ACCEPTED = 'CREATE_NORMAL_STAY_STANDARD_V2_DRAFT';
 
 const COLLECTION_NAME = 'cancellationpolicies';
 const POLICY_CODE = 'normal-stay-standard';
-const POLICY_VERSION = 1;
+const POLICY_VERSION = 2;
 
 const CLASSIFICATION = Object.freeze({
   DISABLED: 'DISABLED',
@@ -57,21 +57,29 @@ const STANDALONE_CONNECT_OPTIONS = Object.freeze({
   autoCreate: false
 });
 
-/** Approved nested defaults: transfers disabled; organizer flags = schema defaults (manual). */
+/** Proposed v2. It remains draft/pending until a separately approved activation. */
 function buildApprovedPolicyInput() {
   return {
     code: POLICY_CODE,
-    internalName: 'Normal stay standard cancellation policy',
+    internalName: 'Normal stay standard cancellation policy v2',
     version: POLICY_VERSION,
-    status: 'active',
+    status: 'draft',
     policyType: 'normal_stay',
     correctionWindowHours: 0,
     correctionWindowMinDaysBeforeArrival: 0,
     refundTiers: [
-      { minDaysBeforeArrival: 14, maxDaysBeforeArrival: null, refundPercent: 100 },
-      { minDaysBeforeArrival: 7, maxDaysBeforeArrival: 13, refundPercent: 50 },
-      { minDaysBeforeArrival: 0, maxDaysBeforeArrival: 6, refundPercent: 0 }
+      { minDaysBeforeArrival: 30, maxDaysBeforeArrival: null, refundPercent: 100 },
+      { minDaysBeforeArrival: 14, maxDaysBeforeArrival: 29, refundPercent: 50 },
+      { minDaysBeforeArrival: 0, maxDaysBeforeArrival: 13, refundPercent: 0 }
     ],
+    cashRefundAdminFeeCents: 1500,
+    bookingCreditRules: {
+      enabled: true,
+      minDaysBeforeArrival: 14,
+      creditPercent: 100,
+      requiresExplicitChoice: true,
+      subjectToAvailability: true
+    },
     noShowRefundPercent: 0,
     earlyDepartureRefundPercent: 0,
     dateTransferRules: {
@@ -98,7 +106,7 @@ function buildApprovedPolicyInput() {
     },
     nonQualifyingCancellationReasons: [],
     travelInsuranceRecommendation: '',
-    legalReviewStatus: 'approved',
+    legalReviewStatus: 'pending',
     legalApprovalMetadata: {
       reviewedAt: null,
       reviewedBy: null,

@@ -19,6 +19,9 @@ import { useSiteLanguage } from '../hooks/useSiteLanguage';
 import { formatStayDayLong } from '../utils/localeDates';
 import {
   LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+  LEGAL_ACCEPTANCE_CANCELLATION_POLICY_CODE,
+  LEGAL_ACCEPTANCE_CANCELLATION_POLICY_URL,
+  LEGAL_ACCEPTANCE_CANCELLATION_POLICY_VERSION,
   LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
   LEGAL_ACCEPTANCE_TERMS_VERSION
 } from '../constants/legalAcceptance';
@@ -480,6 +483,9 @@ export function buildRedirectBookingPayloadFromPending(
       acceptedActivityRisk: !!fd.agreedToActivityRisk,
       termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
       activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+      cancellationPolicyCode: LEGAL_ACCEPTANCE_CANCELLATION_POLICY_CODE,
+      cancellationPolicyVersion: LEGAL_ACCEPTANCE_CANCELLATION_POLICY_VERSION,
+      cancellationPolicyUrl: LEGAL_ACCEPTANCE_CANCELLATION_POLICY_URL,
       checkbox1TextSnapshot: buildTermsConsentPlainText(language),
       checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
       locale: language || undefined
@@ -610,6 +616,9 @@ export function buildCreateBookingPayload({
       acceptedActivityRisk: !!formData.agreedToActivityRisk,
       termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
       activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+      cancellationPolicyCode: LEGAL_ACCEPTANCE_CANCELLATION_POLICY_CODE,
+      cancellationPolicyVersion: LEGAL_ACCEPTANCE_CANCELLATION_POLICY_VERSION,
+      cancellationPolicyUrl: LEGAL_ACCEPTANCE_CANCELLATION_POLICY_URL,
       checkbox1TextSnapshot: buildTermsConsentPlainText(language),
       checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
       locale: language || undefined
@@ -664,6 +673,9 @@ export function buildFinalizeIntentClientPayload({
       acceptedActivityRisk: !!formData.agreedToActivityRisk,
       termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
       activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+      cancellationPolicyCode: LEGAL_ACCEPTANCE_CANCELLATION_POLICY_CODE,
+      cancellationPolicyVersion: LEGAL_ACCEPTANCE_CANCELLATION_POLICY_VERSION,
+      cancellationPolicyUrl: LEGAL_ACCEPTANCE_CANCELLATION_POLICY_URL,
       checkbox1TextSnapshot: buildTermsConsentPlainText(language),
       checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
       locale: language || undefined

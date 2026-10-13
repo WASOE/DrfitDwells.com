@@ -560,7 +560,9 @@ function buildLegalAcceptanceConfirmationEmailPayload(booking) {
   const legalSubject = `Legal acceptance confirmation — booking ${String(booking._id)}`;
   const baseSite = (process.env.APP_URL || 'https://driftdwells.com').replace(/\/$/, '');
   const termsLink = `${baseSite}${LEGAL_ACCEPTANCE_TERMS_URL}`;
-  const cancellationLink = `${baseSite}${LEGAL_ACCEPTANCE_CANCELLATION_URL}`;
+  const cancellationLink = `${baseSite}${
+    acceptance.cancellationPolicyUrl || LEGAL_ACCEPTANCE_CANCELLATION_URL
+  }`;
   const legalAcceptedAtIso = acceptance.acceptedAt ? new Date(acceptance.acceptedAt).toISOString() : new Date().toISOString();
 
   return {
@@ -573,6 +575,7 @@ function buildLegalAcceptanceConfirmationEmailPayload(booking) {
         <li><strong>Booking ID:</strong> ${String(booking._id)}</li>
         <li><strong>Accepted at:</strong> ${legalAcceptedAtIso}</li>
         <li><strong>Terms version:</strong> ${acceptance.termsVersion || ''}</li>
+        <li><strong>Cancellation policy:</strong> ${acceptance.cancellationPolicyCode || 'normal-stay-standard'}@v${acceptance.cancellationPolicyVersion || 1}</li>
         <li><strong>Activity risk version:</strong> ${acceptance.activityRiskVersion || ''}</li>
       </ul>
       <p><strong>Accepted statements:</strong></p>
@@ -590,6 +593,7 @@ This email confirms legal acceptance captured for your booking.
 Booking ID: ${String(booking._id)}
 Accepted at: ${legalAcceptedAtIso}
 Terms version: ${acceptance.termsVersion || ''}
+Cancellation policy: ${acceptance.cancellationPolicyCode || 'normal-stay-standard'}@v${acceptance.cancellationPolicyVersion || 1}
 Activity risk version: ${acceptance.activityRiskVersion || ''}
 
 Accepted statements:
@@ -2442,6 +2446,9 @@ router.post('/', bookingCreateLimiter, [
       legalAcceptance: {
         termsVersion: legalAcceptance.termsVersion,
         activityRiskVersion: legalAcceptance.activityRiskVersion,
+        cancellationPolicyCode: legalAcceptance.cancellationPolicyCode,
+        cancellationPolicyVersion: legalAcceptance.cancellationPolicyVersion,
+        cancellationPolicyUrl: legalAcceptance.cancellationPolicyUrl,
         acceptedAt: new Date(),
         firstName: String(guestInfo.firstName || '').trim(),
         lastName: String(guestInfo.lastName || '').trim(),

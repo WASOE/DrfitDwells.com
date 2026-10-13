@@ -211,6 +211,21 @@ function validateAndNormalizeCancellationPolicy(input) {
   }
 
   validateRefundTiers(input.refundTiers, errors);
+  const cashRefundAdminFeeCents = Number(input.cashRefundAdminFeeCents || 0);
+  if (!Number.isInteger(cashRefundAdminFeeCents) || cashRefundAdminFeeCents < 0) {
+    errors.push('cashRefundAdminFeeCents must be a non-negative integer');
+  }
+  const bookingCreditPercent = Number(input.bookingCreditRules?.creditPercent || 0);
+  const bookingCreditMinDays = input.bookingCreditRules?.minDaysBeforeArrival;
+  if (bookingCreditPercent < 0 || bookingCreditPercent > 100) {
+    errors.push('bookingCreditRules.creditPercent must be between 0 and 100');
+  }
+  if (
+    bookingCreditMinDays != null &&
+    (!Number.isInteger(Number(bookingCreditMinDays)) || Number(bookingCreditMinDays) < 0)
+  ) {
+    errors.push('bookingCreditRules.minDaysBeforeArrival must be a non-negative integer or null');
+  }
   assertRefundPercent(input.noShowRefundPercent, 'noShowRefundPercent', errors);
   assertRefundPercent(
     input.earlyDepartureRefundPercent,
@@ -248,6 +263,17 @@ function validateAndNormalizeCancellationPolicy(input) {
       correctionWindowHours,
       correctionWindowMinDaysBeforeArrival,
       refundTiers: tiers,
+      cashRefundAdminFeeCents,
+      bookingCreditRules: {
+        enabled: input.bookingCreditRules?.enabled === true,
+        minDaysBeforeArrival:
+          bookingCreditMinDays == null ? null : Number(bookingCreditMinDays),
+        creditPercent: bookingCreditPercent,
+        requiresExplicitChoice:
+          input.bookingCreditRules?.requiresExplicitChoice !== false,
+        subjectToAvailability:
+          input.bookingCreditRules?.subjectToAvailability !== false
+      },
       noShowRefundPercent: Number(input.noShowRefundPercent),
       earlyDepartureRefundPercent: Number(input.earlyDepartureRefundPercent),
       dateTransferRules: {
@@ -440,8 +466,35 @@ function calculateCancellationOutcome({
     }
   }
 
-  const refundAmount = roundEuro((amount * refundPercent) / 100);
+  const grossRefundAmount = roundEuro((amount * refundPercent) / 100);
+  const configuredAdminFee = roundEuro(
+    Math.max(0, Number(policySnapshot.cashRefundAdminFeeCents || 0)) / 100
+  );
+  const cashRefundAdminFeeAmount =
+    eventType === 'customer_cancellation' && grossRefundAmount > 0
+      ? Math.min(grossRefundAmount, configuredAdminFee)
+      : 0;
+  const refundAmount = roundEuro(grossRefundAmount - cashRefundAdminFeeAmount);
   const retainedAmount = roundEuro(amount - refundAmount);
+  const creditRules = policySnapshot.bookingCreditRules || {};
+  const bookingCreditEligible =
+    eventType === 'customer_cancellation' &&
+    creditRules.enabled === true &&
+    creditRules.minDaysBeforeArrival != null &&
+    daysBeforeArrival >= Number(creditRules.minDaysBeforeArrival);
+  const bookingCreditPercent = bookingCreditEligible
+    ? Number(creditRules.creditPercent || 0)
+    : 0;
+  const bookingCreditOption = {
+    eligible: bookingCreditEligible,
+    creditPercent: bookingCreditPercent,
+    creditAmount: bookingCreditEligible
+      ? roundEuro((amount * bookingCreditPercent) / 100)
+      : 0,
+    administrationFeeAmount: 0,
+    requiresExplicitChoice: creditRules.requiresExplicitChoice !== false,
+    subjectToAvailability: creditRules.subjectToAvailability !== false
+  };
 
   return {
     policyCode: policySnapshot.code,
@@ -450,8 +503,11 @@ function calculateCancellationOutcome({
     daysBeforeArrival,
     correctionWindowEligible,
     refundPercent,
+    grossRefundAmount,
+    cashRefundAdminFeeAmount,
     refundAmount,
     retainedAmount,
+    bookingCreditOption,
     decisionReasonCode,
     requiresManualReview,
     organizerOptions,

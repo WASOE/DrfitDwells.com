@@ -19,6 +19,10 @@ const { sanitizeMetaClientContext } = require('../../utils/sanitizeMetaClientCon
 const {
   LEGAL_ACCEPTANCE_TERMS_VERSION,
   LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+  LEGAL_ACCEPTANCE_CANCELLATION_POLICY_CODE,
+  LEGAL_ACCEPTANCE_CANCELLATION_POLICY_VERSION,
+  LEGAL_ACCEPTANCE_CANCELLATION_POLICY_URL,
+  LEGAL_ACCEPTANCE_LEGACY_CANCELLATION_POLICY_URL,
   LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
   isApprovedCheckbox1TextSnapshot
 } = require('../../config/legalAcceptance');
@@ -246,6 +250,29 @@ function buildValidatedFinalizeIntent({ body, requestMeta, capturedAt, quoteSnap
       field: 'legalAcceptance.activityRiskVersion'
     });
   }
+  const cancellationPolicyCode =
+    legal.cancellationPolicyCode == null
+      ? LEGAL_ACCEPTANCE_CANCELLATION_POLICY_CODE
+      : String(legal.cancellationPolicyCode);
+  const cancellationPolicyVersion =
+    legal.cancellationPolicyVersion == null ? 1 : Number(legal.cancellationPolicyVersion);
+  const cancellationPolicyUrl =
+    legal.cancellationPolicyUrl == null
+      ? LEGAL_ACCEPTANCE_LEGACY_CANCELLATION_POLICY_URL
+      : String(legal.cancellationPolicyUrl);
+  const expectedCancellationPolicyUrl =
+    cancellationPolicyVersion === LEGAL_ACCEPTANCE_CANCELLATION_POLICY_VERSION
+      ? LEGAL_ACCEPTANCE_CANCELLATION_POLICY_URL
+      : LEGAL_ACCEPTANCE_LEGACY_CANCELLATION_POLICY_URL;
+  if (
+    cancellationPolicyCode !== LEGAL_ACCEPTANCE_CANCELLATION_POLICY_CODE ||
+    ![1, LEGAL_ACCEPTANCE_CANCELLATION_POLICY_VERSION].includes(cancellationPolicyVersion) ||
+    cancellationPolicyUrl !== expectedCancellationPolicyUrl
+  ) {
+    throw validationError('legalAcceptance cancellation policy mismatch', {
+      field: 'legalAcceptance.cancellationPolicyVersion'
+    });
+  }
   // Exact allowlist only (legacy + approved EN/BG). Preserve the submitted approved string.
   if (!isApprovedCheckbox1TextSnapshot(legal.checkbox1TextSnapshot)) {
     throw validationError('legalAcceptance.checkbox1TextSnapshot mismatch', {
@@ -314,6 +341,9 @@ function buildValidatedFinalizeIntent({ body, requestMeta, capturedAt, quoteSnap
       acceptedActivityRisk: true,
       termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
       activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+      cancellationPolicyCode,
+      cancellationPolicyVersion,
+      cancellationPolicyUrl,
       checkbox1TextSnapshot,
       checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
       locale

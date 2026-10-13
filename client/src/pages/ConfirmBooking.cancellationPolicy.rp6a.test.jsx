@@ -143,6 +143,11 @@ describe('ConfirmBooking cancellation consent (RP6A C2/C3)', () => {
     expect(payload.legalAcceptance.checkbox1TextSnapshot).toBe(
       buildTermsConsentPlainText('en')
     );
+    expect(payload.legalAcceptance.cancellationPolicyCode).toBe('normal-stay-standard');
+    expect(payload.legalAcceptance.cancellationPolicyVersion).toBe(2);
+    expect(payload.legalAcceptance.cancellationPolicyUrl).toBe(
+      '/legal/cancellation-policy-2026-10-12-v2.pdf'
+    );
   });
 
   it('Bulgarian visible sentence exactly matches Bulgarian checkbox1TextSnapshot', async () => {
