@@ -28,9 +28,13 @@ async function main(argv = process.argv.slice(2)) {
   try {
     const CleaningRecord = require('../models/CleaningRecord');
     const collection = CleaningRecord.collection;
+    const collectionInfo = await mongoose.connection.db
+      .listCollections({ name: collection.collectionName })
+      .next();
     const preflight = await preflightCleaningRecordIndexes(collection);
     console.log(JSON.stringify({
       mode: apply ? 'apply' : 'dry-run',
+      collectionDefaultCollation: collectionInfo?.options?.collation || { locale: 'simple (implicit)' },
       preflight
     }, null, 2));
 

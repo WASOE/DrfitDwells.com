@@ -1,13 +1,16 @@
 'use strict';
 
-const LEGACY_INDEX_NAME = 'bookingId_1_cleaningDate_1';
-const LEGACY_INDEX_KEYS = Object.freeze({ bookingId: 1, cleaningDate: 1 });
-const SOURCE_INDEX_NAME = 'sourceKind_1_sourceId_1_cleaningDate_1';
-const SOURCE_INDEX_KEYS = Object.freeze({
-  sourceKind: 1,
-  sourceId: 1,
+const EXTERNAL_HOLD_INDEX_NAME = 'availabilityBlockId_1_cleaningDate_1_external_hold_unique';
+const EXTERNAL_HOLD_INDEX_KEYS = Object.freeze({
+  availabilityBlockId: 1,
   cleaningDate: 1
 });
+const EXTERNAL_HOLD_INDEX_FILTER = Object.freeze({
+  sourceKind: 'external_hold',
+  availabilityBlockId: Object.freeze({ $type: 'objectId' }),
+  cleaningDate: Object.freeze({ $type: 'date' })
+});
+const EXTERNAL_HOLD_INDEX_COLLATION = Object.freeze({ locale: 'simple' });
 
 function indexKeysMatch(actual, expected) {
   if (!actual || typeof actual !== 'object') return false;
@@ -19,22 +22,43 @@ function indexKeysMatch(actual, expected) {
     );
 }
 
-function isExactUniqueIndex(index, keys) {
+function sameObject(actual, expected) {
+  if (!actual || typeof actual !== 'object') return false;
+  const actualEntries = Object.entries(actual);
+  const expectedEntries = Object.entries(expected);
+  return actualEntries.length === expectedEntries.length &&
+    actualEntries.every(([key, value]) => {
+      const expectedValue = expected[key];
+      if (value && typeof value === 'object') {
+        return sameObject(value, expectedValue);
+      }
+      return value === expectedValue;
+    });
+}
+
+function isExactExternalHoldIndex(index) {
   return index.unique === true &&
     index.sparse !== true &&
     index.hidden !== true &&
-    index.partialFilterExpression == null &&
-    index.collation == null &&
-    indexKeysMatch(index.key, keys);
+    indexKeysMatch(index.key, EXTERNAL_HOLD_INDEX_KEYS) &&
+    sameObject(index.partialFilterExpression, EXTERNAL_HOLD_INDEX_FILTER) &&
+    (index.collation == null ||
+      sameObject(index.collation, EXTERNAL_HOLD_INDEX_COLLATION));
 }
 
-async function countDuplicateSourceIdentities(collection) {
+async function countDuplicateExternalHoldKeys(collection) {
   const duplicates = await collection.aggregate([
+    {
+      $match: {
+        sourceKind: 'external_hold',
+        availabilityBlockId: { $type: 'objectId' },
+        cleaningDate: { $type: 'date' }
+      }
+    },
     {
       $group: {
         _id: {
-          sourceKind: '$sourceKind',
-          sourceId: '$sourceId',
+          availabilityBlockId: '$availabilityBlockId',
           cleaningDate: '$cleaningDate'
         },
         count: { $sum: 1 }
@@ -54,58 +78,74 @@ async function preflightCleaningRecordIndexes(collection) {
   }
 
   const indexes = await collection.indexes();
-  const legacyByName = indexes.find((index) => index.name === LEGACY_INDEX_NAME);
-  const legacyKeyIndexes = indexes.filter((index) =>
-    indexKeysMatch(index.key, LEGACY_INDEX_KEYS)
-  );
-  const sourceKeyIndexes = indexes.filter((index) =>
-    indexKeysMatch(index.key, SOURCE_INDEX_KEYS)
+  const targetByName = indexes.find((index) => index.name === EXTERNAL_HOLD_INDEX_NAME);
+  const sameKeyUniqueIndexes = indexes.filter((index) =>
+    index.unique === true && indexKeysMatch(index.key, EXTERNAL_HOLD_INDEX_KEYS)
   );
   const issues = [];
 
-  if (legacyByName && !isExactUniqueIndex(legacyByName, LEGACY_INDEX_KEYS)) {
-    issues.push('The legacy index name exists with an unexpected definition.');
+  if (targetByName && !isExactExternalHoldIndex(targetByName)) {
+    issues.push('The external-hold unique index name exists with an unexpected definition.');
   }
-  if (legacyKeyIndexes.some((index) =>
-    index.name !== LEGACY_INDEX_NAME || !isExactUniqueIndex(index, LEGACY_INDEX_KEYS)
-  )) {
-    issues.push('An unexpected index definition exists on bookingId and cleaningDate.');
+  if (sameKeyUniqueIndexes.some((index) => !isExactExternalHoldIndex(index))) {
+    issues.push('An unexpected unique index definition exists on availabilityBlockId and cleaningDate.');
   }
-  if (sourceKeyIndexes.length > 1 ||
-      sourceKeyIndexes.some((index) =>
-        index.name !== SOURCE_INDEX_NAME || !isExactUniqueIndex(index, SOURCE_INDEX_KEYS)
-      )) {
-    issues.push('An unexpected index definition exists on sourceKind, sourceId, and cleaningDate.');
+  if (sameKeyUniqueIndexes.some((index) => index.name !== EXTERNAL_HOLD_INDEX_NAME)) {
+    issues.push('A matching unique index exists under a different name; operator review is required.');
   }
 
-  const [duplicateGroups, invalidIdentityCount] = await Promise.all([
-    countDuplicateSourceIdentities(collection),
+  const indexScope = {
+    sourceKind: 'external_hold',
+    availabilityBlockId: { $type: 'objectId' },
+    cleaningDate: { $type: 'date' }
+  };
+  const allIndexKeyRecords = {
+    availabilityBlockId: { $type: 'objectId' },
+    cleaningDate: { $type: 'date' }
+  };
+  const [duplicateGroups, indexScopeCount, nonExternalHoldCount, incompleteExternalHoldCount,
+    externalHoldIdentityMismatchCount] = await Promise.all([
+    countDuplicateExternalHoldKeys(collection),
+    collection.countDocuments(indexScope),
     collection.countDocuments({
+      $and: [allIndexKeyRecords, { sourceKind: { $ne: 'external_hold' } }]
+    }),
+    collection.countDocuments({
+      sourceKind: 'external_hold',
       $or: [
-        { sourceKind: { $exists: false } },
-        { sourceKind: null },
-        { sourceKind: '' },
-        { sourceId: { $exists: false } },
-        { sourceId: null },
-        { sourceId: '' },
-        { sourceId: { $regex: /^\s*$/ } },
-        { cleaningDate: { $exists: false } },
-        { cleaningDate: null }
+        { availabilityBlockId: { $not: { $type: 'objectId' } } },
+        { cleaningDate: { $not: { $type: 'date' } } },
+        { sourceId: { $not: { $type: 'string' } } },
+        { sourceId: '' }
       ]
-    })
+    }),
+    collection.aggregate([
+      { $match: { ...indexScope, sourceKind: 'external_hold' } },
+      {
+        $match: {
+          $expr: {
+            $ne: ['$sourceId', { $toString: '$availabilityBlockId' }]
+          }
+        }
+      },
+      { $count: 'mismatches' }
+    ]).toArray().then((rows) => rows[0]?.mismatches || 0)
   ]);
+
   if (duplicateGroups > 0) {
-    issues.push('Duplicate source identities prevent creation of the required unique index.');
+    issues.push('Duplicate availabilityBlockId and cleaningDate keys prevent creation of the unique index.');
   }
-  if (invalidIdentityCount > 0) {
-    issues.push('Records with incomplete source identity prevent safe index creation.');
+  if (nonExternalHoldCount > 0) {
+    issues.push('Non-external CleaningRecords are in the proposed partial-index scope.');
+  }
+  if (externalHoldIdentityMismatchCount > 0) {
+    issues.push('External-hold sourceId values do not match availabilityBlockId.');
   }
 
+  const exactIndex = sameKeyUniqueIndexes.find(isExactExternalHoldIndex);
   return {
     safe: issues.length === 0,
-    legacyIndexPresent: Boolean(legacyByName),
-    sourceIndexPresent: sourceKeyIndexes.length === 1 &&
-      isExactUniqueIndex(sourceKeyIndexes[0], SOURCE_INDEX_KEYS),
+    externalHoldIndexPresent: Boolean(exactIndex),
     indexes: indexes.map((index) => ({
       name: index.name,
       key: index.key,
@@ -115,8 +155,12 @@ async function preflightCleaningRecordIndexes(collection) {
       collation: index.collation || null,
       partialFilterExpression: index.partialFilterExpression || null
     })),
+    indexScopeCount,
     duplicateGroups,
-    invalidIdentityCount,
+    nonExternalHoldCount,
+    incompleteExternalHoldCount,
+    externalHoldIdentityMismatchCount,
+    incompleteLegacyRecordsExcluded: 'Records without ObjectId availabilityBlockId and Date cleaningDate are outside the proposed index scope.',
     issues
   };
 }
@@ -126,24 +170,23 @@ async function applyCleaningRecordIndexMigration(collection, preflight) {
     throw new Error(`CleaningRecord index migration preflight failed: ${preflight.issues.join(' ')}`);
   }
 
-  if (!preflight.sourceIndexPresent) {
-    await collection.createIndex(SOURCE_INDEX_KEYS, {
+  if (!preflight.externalHoldIndexPresent) {
+    await collection.createIndex(EXTERNAL_HOLD_INDEX_KEYS, {
       unique: true,
-      name: SOURCE_INDEX_NAME
+      name: EXTERNAL_HOLD_INDEX_NAME,
+      partialFilterExpression: EXTERNAL_HOLD_INDEX_FILTER,
+      collation: EXTERNAL_HOLD_INDEX_COLLATION
     });
   }
-  if (preflight.legacyIndexPresent) {
-    await collection.dropIndex(LEGACY_INDEX_NAME);
-  }
 
-  return { createdSourceIndex: !preflight.sourceIndexPresent, droppedLegacyIndex: preflight.legacyIndexPresent };
+  return { createdExternalHoldIndex: !preflight.externalHoldIndexPresent };
 }
 
 module.exports = {
-  LEGACY_INDEX_NAME,
-  LEGACY_INDEX_KEYS,
-  SOURCE_INDEX_NAME,
-  SOURCE_INDEX_KEYS,
+  EXTERNAL_HOLD_INDEX_NAME,
+  EXTERNAL_HOLD_INDEX_KEYS,
+  EXTERNAL_HOLD_INDEX_FILTER,
+  EXTERNAL_HOLD_INDEX_COLLATION,
   indexKeysMatch,
   preflightCleaningRecordIndexes,
   applyCleaningRecordIndexMigration

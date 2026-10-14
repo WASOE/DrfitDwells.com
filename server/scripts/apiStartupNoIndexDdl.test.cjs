@@ -6,10 +6,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { startApiProcess } = require('../bootstrap/startApiProcess');
 const {
-  LEGACY_INDEX_NAME,
-  LEGACY_INDEX_KEYS,
-  SOURCE_INDEX_NAME,
-  SOURCE_INDEX_KEYS,
+  EXTERNAL_HOLD_INDEX_NAME,
+  EXTERNAL_HOLD_INDEX_KEYS,
+  EXTERNAL_HOLD_INDEX_FILTER,
+  EXTERNAL_HOLD_INDEX_COLLATION,
   preflightCleaningRecordIndexes,
   applyCleaningRecordIndexMigration
 } = require('../services/cleaning/cleaningRecordIndexMigration');
@@ -30,11 +30,8 @@ function createCleaningCollection({ indexes, records, allowDdl = false }) {
         async toArray() {
           const identities = new Map();
           for (const record of records) {
-            const key = JSON.stringify([
-              record.sourceKind,
-              record.sourceId,
-              record.cleaningDate
-            ]);
+            if (!record.availabilityBlockId || !record.cleaningDate) continue;
+            const key = JSON.stringify([record.availabilityBlockId.id, record.cleaningDate]);
             identities.set(key, (identities.get(key) || 0) + 1);
           }
           const duplicateGroups = [...identities.values()].filter((count) => count > 1).length;
@@ -42,9 +39,23 @@ function createCleaningCollection({ indexes, records, allowDdl = false }) {
         }
       };
     },
-    async countDocuments() {
+    async countDocuments(filter) {
+      if (filter.availabilityBlockId) {
+        return records.filter((record) =>
+          record.availabilityBlockId?.type === 'objectId' &&
+          record.cleaningDate instanceof Date
+        ).length;
+      }
+      if (filter.$and) {
+        return records.filter((record) =>
+          record.availabilityBlockId?.type === 'objectId' &&
+          record.cleaningDate instanceof Date &&
+          record.sourceKind !== 'external_hold'
+        ).length;
+      }
       return records.filter((record) =>
-        !record.sourceKind || !record.sourceId || !record.cleaningDate
+        record.sourceKind === 'external_hold' &&
+        (!record.availabilityBlockId || !record.sourceId || !record.cleaningDate)
       ).length;
     },
     async createIndex(keys, options) {
@@ -81,15 +92,24 @@ test('API startup has no index DDL or Mongoose auto-creation', async () => {
   assert.doesNotMatch(startup, /\.(?:createIndex|dropIndex|syncIndexes|ensureIndexes)\s*\(/);
 
   const legacyIndex = {
-    name: LEGACY_INDEX_NAME,
-    key: LEGACY_INDEX_KEYS,
+    name: 'bookingId_1_cleaningDate_1',
+    key: { bookingId: 1, cleaningDate: 1 },
     unique: true
   };
+  const legacyRecords = Array.from({ length: 43 }, (_, index) => ({
+    sourceKind: 'booking',
+    sourceId: '',
+    cleaningDate: null,
+    _id: `legacy-${index}`
+  }));
   const cleaningRecords = [
-    { sourceKind: 'external_hold', sourceId: 'hold-a', cleaningDate: '2026-10-14' },
-    { sourceKind: 'external_hold', sourceId: 'hold-b', cleaningDate: '2026-10-14' },
-    { sourceKind: 'booking', sourceId: 'booking-a', cleaningDate: '2026-10-14' },
-    { sourceKind: 'booking', sourceId: 'booking-a', cleaningDate: '2026-10-14' }
+    ...legacyRecords,
+    {
+      sourceKind: 'external_hold',
+      sourceId: 'hold-a',
+      availabilityBlockId: { type: 'objectId', id: 'hold-a' },
+      cleaningDate: new Date('2026-10-14T00:00:00.000Z')
+    }
   ];
   const collection = createCleaningCollection({
     indexes: [legacyIndex],
@@ -98,9 +118,10 @@ test('API startup has no index DDL or Mongoose auto-creation', async () => {
   const originalIndexes = JSON.stringify(await collection.indexes());
   const originalRecords = JSON.stringify(cleaningRecords);
   const report = await preflightCleaningRecordIndexes(collection);
-  assert.equal(report.safe, false);
-  assert.equal(report.legacyIndexPresent, true);
-  assert.equal(report.duplicateGroups, 1);
+  assert.equal(report.safe, true);
+  assert.equal(report.externalHoldIndexPresent, false);
+  assert.equal(report.indexScopeCount, 1);
+  assert.equal(report.duplicateGroups, 0);
 
   const events = [];
   await startApiProcess({
@@ -120,15 +141,28 @@ test('API startup has no index DDL or Mongoose auto-creation', async () => {
   assert.deepEqual(collection.calls, []);
   assert.equal(JSON.stringify(await collection.indexes()), originalIndexes);
   assert.equal(JSON.stringify(cleaningRecords), originalRecords);
-  assert.match(readServerSource('routes/ops/modules/cleaningRoutes.js'), /CleaningRecord\.create/);
+  assert.match(
+    readServerSource('routes/ops/modules/cleaningRoutes.js'),
+    /createOrGetExternalHoldCleaningRecord/
+  );
 });
 
-test('CleaningRecord index migration fails closed and creates replacement before dropping legacy', async () => {
+test('external-hold index migration fails closed and preserves legacy indexes', async () => {
   const duplicateCollection = createCleaningCollection({
-    indexes: [{ name: LEGACY_INDEX_NAME, key: LEGACY_INDEX_KEYS, unique: true }],
+    indexes: [],
     records: [
-      { sourceKind: 'booking', sourceId: 'booking-a', cleaningDate: '2026-10-14' },
-      { sourceKind: 'booking', sourceId: 'booking-a', cleaningDate: '2026-10-14' }
+      {
+        sourceKind: 'external_hold',
+        sourceId: 'hold-a',
+        availabilityBlockId: { type: 'objectId', id: 'hold-a' },
+        cleaningDate: new Date('2026-10-14T00:00:00.000Z')
+      },
+      {
+        sourceKind: 'external_hold',
+        sourceId: 'hold-a',
+        availabilityBlockId: { type: 'objectId', id: 'hold-a' },
+        cleaningDate: new Date('2026-10-14T00:00:00.000Z')
+      }
     ]
   });
   const unsafe = await preflightCleaningRecordIndexes(duplicateCollection);
@@ -139,35 +173,55 @@ test('CleaningRecord index migration fails closed and creates replacement before
   assert.deepEqual(duplicateCollection.calls, []);
 
   const safeCollection = createCleaningCollection({
-    indexes: [{ name: LEGACY_INDEX_NAME, key: LEGACY_INDEX_KEYS, unique: true }],
-    records: [],
+    indexes: [{
+      name: 'availabilityBlockId_1',
+      key: { availabilityBlockId: 1 },
+      unique: false
+    }, {
+      name: 'bookingId_1_cleaningDate_1',
+      key: { bookingId: 1, cleaningDate: 1 },
+      unique: true,
+      partialFilterExpression: { bookingId: { $type: 'objectId' } }
+    }],
+    records: [{
+      sourceKind: 'external_hold',
+      sourceId: 'hold-a',
+      availabilityBlockId: { type: 'objectId', id: 'hold-a' },
+      cleaningDate: new Date('2026-10-14T00:00:00.000Z')
+    }],
     allowDdl: true
   });
   const safe = await preflightCleaningRecordIndexes(safeCollection);
   assert.equal(safe.safe, true);
-  assert.equal(safe.sourceIndexPresent, false);
+  assert.equal(safe.externalHoldIndexPresent, false);
   const result = await applyCleaningRecordIndexMigration(safeCollection, safe);
-  assert.deepEqual(result, { createdSourceIndex: true, droppedLegacyIndex: true });
+  assert.deepEqual(result, { createdExternalHoldIndex: true });
   assert.deepEqual(
     safeCollection.calls.map((call) => call.method),
-    ['createIndex', 'dropIndex']
+    ['createIndex']
   );
   assert.deepEqual(safeCollection.calls[0], {
     method: 'createIndex',
-    keys: SOURCE_INDEX_KEYS,
-    options: { unique: true, name: SOURCE_INDEX_NAME }
+    keys: EXTERNAL_HOLD_INDEX_KEYS,
+    options: {
+      unique: true,
+      name: EXTERNAL_HOLD_INDEX_NAME,
+      partialFilterExpression: EXTERNAL_HOLD_INDEX_FILTER,
+      collation: EXTERNAL_HOLD_INDEX_COLLATION
+    }
   });
 
   const collatedIndex = createCleaningCollection({
     indexes: [{
-      name: SOURCE_INDEX_NAME,
-      key: SOURCE_INDEX_KEYS,
+      name: EXTERNAL_HOLD_INDEX_NAME,
+      key: EXTERNAL_HOLD_INDEX_KEYS,
       unique: true,
+      partialFilterExpression: EXTERNAL_HOLD_INDEX_FILTER,
       collation: { locale: 'en' }
     }],
     records: []
   });
   const collated = await preflightCleaningRecordIndexes(collatedIndex);
   assert.equal(collated.safe, false);
-  assert.match(collated.issues.join(' '), /unexpected index definition/);
+  assert.match(collated.issues.join(' '), /unexpected definition/);
 });

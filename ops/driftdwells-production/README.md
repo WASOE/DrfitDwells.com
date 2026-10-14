@@ -75,11 +75,30 @@ are expected to be provisioned and retained by the database operator; use a
 reviewed, explicit index operation when setting up a new database or changing
 those definitions.
 
-The CleaningRecord source-identity index transition is available as
-`cd server && npm run migrate:cleaning-record-indexes`. This command connects
-to the configured database, reports a read-only preflight by default, and makes
-no changes unless invoked with `-- --apply`. The preflight fails closed if the
-index definitions are unexpected, CleaningRecords have duplicate source
-identities, or source identity fields are missing. Review the report and obtain
-operational approval before applying it; never run it as part of an API
-deployment or startup.
+External-hold CleaningRecord creation depends on the explicitly provisioned
+unique partial index
+`availabilityBlockId_1_cleaningDate_1_external_hold_unique` on
+`{ availabilityBlockId: 1, cleaningDate: 1 }`. Its filter includes only rows
+where `sourceKind` is `external_hold`, `availabilityBlockId` is an ObjectId,
+and `cleaningDate` is a Date, with simple collation. It is an additive
+constraint: the migration does not remove the legacy booking index or modify
+CleaningRecord documents. Incomplete legacy rows outside that filter are not
+rewritten or indexed.
+
+Run `cd server && npm run migrate:cleaning-record-indexes` for a read-only
+preflight. The preflight reports current index definitions/collations and fails
+closed on duplicate keys in the partial-index scope, non-external records in
+that scope, mismatched external-hold identities, or unexpected unique index
+definitions. Review the report and obtain explicit operational approval before
+applying with
+`cd server && npm run migrate:cleaning-record-indexes -- --apply`.
+Never run this migration as part of API deployment or startup.
+
+The normal application rollback is code-only; retain the additive unique index
+because it is backward-compatible and preserves the external-hold race
+protection. Only if index removal is essential, first quiesce every
+CleaningRecord external-hold writer and verify no writes can resume, then drop
+only the named index with
+`db.cleaningrecords.dropIndex("availabilityBlockId_1_cleaningDate_1_external_hold_unique")`.
+Removing it restores the duplicate-creation risk and must not be done while any
+version of the find/create writer is active.
