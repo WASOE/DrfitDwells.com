@@ -66,3 +66,20 @@ Enable scheduled backups: see [BACKUP.md](./BACKUP.md).
 
 - **In scope:** backup, restore verification, logrotate, systemd timer
 - **Out of scope:** application code, DB migrations, seed scripts, `.env` changes
+
+## Application index maintenance
+
+API startup disables Mongoose index and collection auto-creation. It does not
+synchronize indexes or run migrations. The `Review` model's declared indexes
+are expected to be provisioned and retained by the database operator; use a
+reviewed, explicit index operation when setting up a new database or changing
+those definitions.
+
+The CleaningRecord source-identity index transition is available as
+`cd server && npm run migrate:cleaning-record-indexes`. This command connects
+to the configured database, reports a read-only preflight by default, and makes
+no changes unless invoked with `-- --apply`. The preflight fails closed if the
+index definitions are unexpected, CleaningRecords have duplicate source
+identities, or source identity fields are missing. Review the report and obtain
+operational approval before applying it; never run it as part of an API
+deployment or startup.
