@@ -316,13 +316,16 @@ app.use('*', (req, res) => {
 let server = null;
 
 function startHttpListener() {
-  server = app.listen(PORT, () => {
+  const onListening = () => {
     console.log(`Drift & Dwells Booking Server running on port ${PORT}`);
     console.log(`Health check: http://localhost:${PORT}/api/health`);
     // Precompute chat FAQ embeddings (non-blocking)
     const chatService = require('./services/chatService');
     chatService.warmEmbeddings().catch((err) => console.warn('[chat] Warm failed:', err?.message));
-  });
+  };
+  server = process.env.API_HOST
+    ? app.listen(PORT, process.env.API_HOST, onListening)
+    : app.listen(PORT, onListening);
   return server;
 }
 

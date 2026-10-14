@@ -69,6 +69,7 @@ test('API startup has no index DDL or Mongoose auto-creation', async () => {
   const database = readServerSource('config/database.js');
   const startup = readServerSource('bootstrap/startApiProcess.js');
   assert.doesNotMatch(server, /\.(?:createIndex|dropIndex|syncIndexes|ensureIndexes)\s*\(/);
+  assert.match(server, /process\.env\.API_HOST/);
   assert.match(database, /mongoose\.set\('autoIndex', false\)/);
   assert.match(database, /mongoose\.set\('autoCreate', false\)/);
   assert.match(database, /autoIndex:\s*false/);
