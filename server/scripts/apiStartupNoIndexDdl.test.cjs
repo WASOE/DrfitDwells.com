@@ -157,4 +157,17 @@ test('CleaningRecord index migration fails closed and creates replacement before
     keys: SOURCE_INDEX_KEYS,
     options: { unique: true, name: SOURCE_INDEX_NAME }
   });
+
+  const collatedIndex = createCleaningCollection({
+    indexes: [{
+      name: SOURCE_INDEX_NAME,
+      key: SOURCE_INDEX_KEYS,
+      unique: true,
+      collation: { locale: 'en' }
+    }],
+    records: []
+  });
+  const collated = await preflightCleaningRecordIndexes(collatedIndex);
+  assert.equal(collated.safe, false);
+  assert.match(collated.issues.join(' '), /unexpected index definition/);
 });

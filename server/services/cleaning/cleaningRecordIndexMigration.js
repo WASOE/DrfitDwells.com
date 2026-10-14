@@ -22,7 +22,9 @@ function indexKeysMatch(actual, expected) {
 function isExactUniqueIndex(index, keys) {
   return index.unique === true &&
     index.sparse !== true &&
+    index.hidden !== true &&
     index.partialFilterExpression == null &&
+    index.collation == null &&
     indexKeysMatch(index.key, keys);
 }
 
@@ -109,6 +111,8 @@ async function preflightCleaningRecordIndexes(collection) {
       key: index.key,
       unique: index.unique === true,
       sparse: index.sparse === true,
+      hidden: index.hidden === true,
+      collation: index.collation || null,
       partialFilterExpression: index.partialFilterExpression || null
     })),
     duplicateGroups,
