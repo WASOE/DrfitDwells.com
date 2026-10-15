@@ -156,3 +156,67 @@ with a verified release and preserved protected environment. Do not restart the
 API or other workers for this change. Keep the previous worker release and
 protected PM2 environment as rollback material; never run old and new
 reconcilers concurrently.
+
+## Guarded backend deployment
+
+There is no backend CI deployment workflow in this repository. The frontend
+publisher is separate and does not restart PM2. Use
+`deploy-api-guarded.cjs` for future API releases; never restart the legacy
+shared `driftdwells` name or restart/reload all PM2 processes.
+
+1. Run focused application regressions and commit the release. Package that
+   exact commit with
+   `node ops/driftdwells-production/package-api-release.cjs <full-sha> <artifact-directory>`.
+   This includes `server/`, root `shared/`, operational assets and a sidecar
+   manifest of Git blob hashes. Transfer and checksum both artifacts through
+   the authorized release channel, extract into a new isolated release, and
+   retain the sidecar manifest. Copy the protected server environment without
+   printing it and provision dependencies through the established release
+   flow. Do not modify the live release.
+2. Create a private (0600) JSON plan with `current`, `candidate` and `rollback`
+   objects, each containing `id`, `root`, `sha` and `manifest`. Use full commit
+   SHAs and absolute paths. `current.id` is the live API's numeric PM2 ID;
+   probe IDs are initially null. The rollback release must be independently
+   index-safe and pass the same booking/Ops checks, not merely be an old
+   directory. Normally retain the currently healthy release as rollback.
+   Keep all release directories, manifests and protected environments through
+   the rollback window.
+3. Supply an existing authorized admin token through `OPS_VERIFY_TOKEN` in a
+   protected environment (never a command-line argument or printed output).
+   Run `node deploy-api-guarded.cjs <plan> --candidate`, then record its numeric
+   ID in the plan. Run with `--rollback` and record that ID as well. Both
+   probe commands verify artifact hashes and startup-index regressions
+   **before launch**, disable all nine API worker/scheduler flags explicitly,
+   bind only `127.0.0.1:5001` / `:5002`, verify release/DB health/public booking/
+   Ops readiness, and remove only the probe they created if a gate fails.
+   They never save PM2 or touch the live API.
+4. Run `node deploy-api-guarded.cjs <plan>` for read-only preflight. It requires
+   exactly the three specified API processes, five distinct online dedicated
+   workers, single PID-owned listeners, matching SHA/file hashes/script/cwd
+   (including `/proc` cwd), production environments, disabled API runtimes,
+   loopback probes and authenticated endpoint checks. Unverifiable listener
+   ownership, conflicting processes or any gate failure blocks cutover.
+5. Only with operational authorization, add `--cutover`. A fresh protected
+   PM2/environment/plan checkpoint is created first. Only the specified
+   numeric API/probe IDs are stopped. One uniquely named production API is
+   started from the candidate release on port 5000. The command verifies its
+   exact release handshake, one listener, DB-connected health, configuration,
+   checkout capabilities, public availability, Ops session/readiness and
+   critical errors, then repeats these gates for two minutes and confirms
+   that all five worker PIDs/restart counts are unchanged. These are GET-only
+   checks: no bookings, persistent quote endpoint, confirmations or payments
+   are created. Application-specific policy/quote regressions remain required
+   before packaging.
+6. Only after these gates pass are stopped API/probe entries removed and
+   `pm2 save` run, with the dump set to 0600. A critical failure instead stops
+   the newly created API by numeric ID and starts the independently verified
+   rollback release on port 5000. The rollback must pass identity, listener,
+   endpoint and worker gates before its PM2 configuration can be saved.
+   Failed recovery is surfaced as a hard blocker; no automatic reboot occurs.
+
+The guarded command deliberately requires a fresh plan and existing Ops
+authorization; it does not guess a production target, provision indexes,
+run migrations, modify payment states or change the five dedicated workers.
+Keep `/home/illoc/.pm2/dump.pm2` private and verify the enabled
+`pm2-illoc.service` uses that PM2 home and `pm2 resurrect`. Do not test reboot
+recovery by rebooting production without separate approval.
