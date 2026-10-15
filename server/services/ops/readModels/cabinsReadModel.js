@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const Cabin = require('../../../models/Cabin');
 const CabinType = require('../../../models/CabinType');
 const Unit = require('../../../models/Unit');
+const { resolveAccommodationIdentity } = require('./accommodationIdentity');
 const { escapeRegex } = require('../../../utils/escapeRegex');
 const { FIXTURE_CABIN_NAME_PATTERN, isFixtureCabinName } = require('../../../utils/fixtureExclusion');
 const { buildAbsoluteUnitIcsUrl, buildPublicUnitIcsPath } = require('../../../config/publicCalendarSiteUrl');
@@ -144,14 +145,14 @@ async function getCabinsListReadModel({ page = 1, limit = 20, search = '' }) {
 async function getCabinDetailReadModel(id) {
   if (!mongoose.Types.ObjectId.isValid(id)) return null;
 
-  const cabin = await Cabin.findById(id).lean();
+  const { cabin, cabinType, parentCabin } = await resolveAccommodationIdentity(id);
   if (cabin && isFixtureCabinName(cabin.name)) {
     return null;
   }
   if (cabin && cabin.archivedAt) {
     return null;
   }
-  if (cabin) {
+  if (cabin && !cabinType) {
     const blockedDates = cabin.blockedDates || [];
     return {
       kind: 'single_cabin',
@@ -194,7 +195,6 @@ async function getCabinDetailReadModel(id) {
     };
   }
 
-  const cabinType = await CabinType.findById(id).lean();
   if (!cabinType) return null;
 
   const units = await Unit.find({ cabinTypeId: cabinType._id }).sort({ unitNumber: 1 }).lean();
@@ -209,6 +209,7 @@ async function getCabinDetailReadModel(id) {
 
   return {
     kind: 'multi_unit_type',
+    cabinId: parentCabin ? String(parentCabin._id) : null,
     cabinTypeId: String(cabinType._id),
     slug: cabinType.slug,
     operationalSettings: {
