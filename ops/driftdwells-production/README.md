@@ -102,3 +102,26 @@ only the named index with
 `db.cleaningrecords.dropIndex("availabilityBlockId_1_cleaningDate_1_external_hold_unique")`.
 Removing it restores the duplicate-creation risk and must not be done while any
 version of the find/create writer is active.
+
+## Refunded finalized checkout reconciliation
+
+A captured PaymentIntent remains `succeeded` after a refund. Its canonical
+Payment ledger must retain `partial` or `refunded`; never replay payment-success
+ingestion to make this ledger `paid` again.
+
+The reconciler recognizes a subsequent refund only after normal canonical
+PaymentIntent/quote/intent/amount/currency/date/entity verification passes,
+all session/booking/job/payment identities agree, durable finalization and
+confirmation are complete, and the expanded Stripe charge confirms capture
+and the matching refund state without a dispute. It resolves only obsolete
+`PAYMENT_RECORD_NOT_PAID` / `PAYMENT_RECORD_MISSING_OR_NOT_PAID` alerts for that
+same checkout. It does not change payments, bookings, jobs or confirmation
+delivery. Missing, conflicting, disputed or unfinalized evidence stays
+fail-closed. The explicit CLI remains dry-run by default; both it and the
+dedicated reconciler disable automatic index and collection creation.
+
+Deploy a reconciler-only fix by replacing only its numeric PM2 process target
+with a verified release and preserved protected environment. Do not restart the
+API or other workers for this change. Keep the previous worker release and
+protected PM2 environment as rollback material; never run old and new
+reconcilers concurrently.
