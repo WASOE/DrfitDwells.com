@@ -5,13 +5,20 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { execFileSync, spawnSync } = require('node:child_process');
 
-const DISABLED_API_FLAGS = [
+// Read by the API process itself at startup (server.js post-connect runtime).
+const API_RUNTIME_FLAGS = [
   'OPS_ICAL_SYNC_SCHEDULER_ENABLED', 'MESSAGE_SCHEDULER_WORKER_ENABLED',
   'MESSAGE_DISPATCHER_ENABLED', 'OPS_PUSH_SCHEDULER_WORKER_ENABLED',
-  'SMTP_HEALTH_SCHEDULER_ENABLED', 'BOOKING_CONFIRMATION_DELIVERY_WORKER_ENABLED',
-  'ACCOMMODATION_CHECKOUT_HOLD_EXPIRY_EXECUTE', 'SPLIT_PAYMENT_COLLECTION_WORKER_ENABLED',
-  'FINALIZE_JOB_EXECUTE'
+  'SMTP_HEALTH_SCHEDULER_ENABLED'
 ];
+// Consumed only by the dedicated worker scripts; the shared .env enables them for those workers.
+const DEDICATED_WORKER_FLAGS = [
+  'BOOKING_CONFIRMATION_DELIVERY_WORKER_ENABLED', 'ACCOMMODATION_CHECKOUT_HOLD_EXPIRY_EXECUTE',
+  'SPLIT_PAYMENT_COLLECTION_WORKER_ENABLED', 'FINALIZE_JOB_EXECUTE'
+];
+const DISABLED_API_FLAGS = [...API_RUNTIME_FLAGS, ...DEDICATED_WORKER_FLAGS];
+const DEDICATED_WORKER_START =
+  /\b(?:start|run)(?:SplitPaymentCollection|BookingConfirmationDelivery|CheckoutFinalization|AccommodationCheckoutHoldExpiry)\w*\s*\(/;
 const fail = message => { throw new Error(message); };
 const pm2 = args => execFileSync('pm2', args, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
 const getApps = () => JSON.parse(pm2(['jlist']));
@@ -43,6 +50,7 @@ function verifyFiles(root, manifest, expectedSha) {
     if (/\.(?:syncIndexes|createIndexes?|dropIndexes?|ensureIndexes|createCollection)\s*\(/.test(source)) {
       fail('Startup index or collection work detected');
     }
+    if (DEDICATED_WORKER_START.test(source)) fail('API entrypoint starts a dedicated worker');
   }
   const database = fs.readFileSync(path.join(root, 'server/config/database.js'), 'utf8');
   for (const key of ['autoIndex', 'autoCreate']) {
@@ -75,7 +83,9 @@ function validateTopology({ apps, currentId, candidateId, rollbackId, listeners,
     if (port !== 5000 && (env.API_HOST !== '127.0.0.1' || bound[0].host !== '127.0.0.1')) {
       fail('Candidate/rollback probe must be loopback-only');
     }
-    for (const flag of DISABLED_API_FLAGS) {
+    // Probes and new production APIs force every flag off. The running API may inherit
+    // dedicated-worker flags from the shared .env; verifyFiles proves its entrypoint never starts them.
+    for (const flag of port === 5000 ? API_RUNTIME_FLAGS : DISABLED_API_FLAGS) {
       if (!['0', 'false'].includes(String(env[flag] ?? '0').toLowerCase())) fail(`API worker enabled: ${flag}`);
     }
     if (port === 5000 && !/^driftdwells-production-[a-f0-9]+$/.test(app.name)) fail('Production API name is not unique');
@@ -371,4 +381,4 @@ if (require.main === module) {
     process.exitCode = 1;
   });
 }
-module.exports = { DISABLED_API_FLAGS, verifyFiles, validateTopology, cutover, checkHttp };
+module.exports = { API_RUNTIME_FLAGS, DEDICATED_WORKER_FLAGS, DISABLED_API_FLAGS, verifyFiles, validateTopology, cutover, checkHttp };

@@ -194,7 +194,11 @@ shared `driftdwells` name or restart/reload all PM2 processes.
    exactly the three specified API processes, five distinct online dedicated
    workers, single PID-owned listeners, matching SHA/file hashes/script/cwd
    (including `/proc` cwd), production environments, disabled API runtimes,
-   loopback probes and authenticated endpoint checks. Unverifiable listener
+   loopback probes and authenticated endpoint checks. Probes must have all nine
+   flags off; the live API must have the five API-runtime scheduler flags off
+   and may inherit the four dedicated-worker flags from the shared `.env` only
+   because release verification rejects any API entrypoint that starts those
+   workers. Unverifiable listener
    ownership, conflicting processes or any gate failure blocks cutover.
 5. Only with operational authorization, add `--cutover`. A fresh protected
    PM2/environment/plan checkpoint is created first. Only the specified

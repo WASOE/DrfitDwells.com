@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
-const { DISABLED_API_FLAGS, validateTopology, verifyFiles, cutover, checkHttp } = require('./deploy-api-guarded.cjs');
+const { API_RUNTIME_FLAGS, DEDICATED_WORKER_FLAGS, DISABLED_API_FLAGS, validateTopology, verifyFiles, cutover, checkHttp } = require('./deploy-api-guarded.cjs');
 
 function fixture() {
   const apps = [31, 40, 41].map((id, index) => ({
@@ -53,6 +53,25 @@ for (const flag of DISABLED_API_FLAGS) {
     assert.throws(() => validateTopology(f), /API worker enabled/);
   });
 }
+for (const flag of API_RUNTIME_FLAGS) {
+  test(`deployment refuses live API runtime ${flag}`, () => {
+    const f = fixture();
+    f.environments[31][flag] = 'true';
+    assert.throws(() => validateTopology(f), /API worker enabled/);
+  });
+}
+test('live API may inherit dedicated-worker flags from the shared .env; probes may not', () => {
+  for (const flag of DEDICATED_WORKER_FLAGS) {
+    const live = fixture();
+    live.environments[31][flag] = 'true';
+    assert.equal(validateTopology(live).length, 5);
+    for (const probeId of [40, 41]) {
+      const probe = fixture();
+      probe.environments[probeId][flag] = 'true';
+      assert.throws(() => validateTopology(probe), /API worker enabled/);
+    }
+  }
+});
 
 function fakeIO(failure = null) {
   const calls = [];
@@ -160,6 +179,14 @@ test('release verification rejects modified content, wrong SHA, missing shared a
       ...file, hash: crypto.createHash('sha1').update(`blob ${ddl.length}\0${ddl}`).digest('hex')
     });
     assert.throws(() => verifyFiles(dir, { sha, files: ddlFiles }, sha), /Startup index/);
+    for (const call of ['startSplitPaymentCollectionWorker();', 'startBookingConfirmationDeliveryWorkerIfEnabled();',
+      'startCheckoutFinalizationWorker();', 'runAccommodationCheckoutHoldExpirySweep();']) {
+      fs.writeFileSync(path.join(dir, 'server/server.js'), call);
+      const workerFiles = files.map(file => file.path !== 'server/server.js' ? file : {
+        ...file, hash: crypto.createHash('sha1').update(`blob ${call.length}\0${call}`).digest('hex')
+      });
+      assert.throws(() => verifyFiles(dir, { sha, files: workerFiles }, sha), /dedicated worker/);
+    }
   } finally {
     for (const filename of Object.keys(source)) fs.unlinkSync(path.join(dir, filename));
     for (const filename of ['server/bootstrap', 'server/config', 'server', 'shared']) fs.rmdirSync(path.join(dir, filename));
