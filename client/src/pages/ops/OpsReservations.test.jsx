@@ -13,11 +13,17 @@ vi.mock('../../services/opsApi', () => ({
   opsReadAPI: {
     reservations: vi.fn(),
     reservationsExport: vi.fn(),
-    cabins: vi.fn()
+    cabins: vi.fn(),
+    calendar: vi.fn()
   },
   opsWriteAPI: {
     createManualReservation: vi.fn()
   }
+}));
+
+vi.mock('../../services/api', () => ({
+  cabinAPI: { getAll: vi.fn() },
+  unitAPI: { getByCabinType: vi.fn() }
 }));
 
 vi.mock('../../utils/csvExport', () => ({
@@ -25,6 +31,7 @@ vi.mock('../../utils/csvExport', () => ({
 }));
 
 import { opsReadAPI, opsWriteAPI } from '../../services/opsApi';
+import { cabinAPI, unitAPI } from '../../services/api';
 import { exportToCSV } from '../../utils/csvExport';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -139,6 +146,20 @@ describe('OpsReservations collection migration', () => {
     opsReadAPI.reservationsExport.mockReset();
     opsReadAPI.cabins.mockReset();
     opsWriteAPI.createManualReservation.mockReset();
+    cabinAPI.getAll.mockReset();
+    unitAPI.getByCabinType.mockReset();
+    opsReadAPI.calendar.mockReset();
+    cabinAPI.getAll.mockResolvedValue({ data: { data: { cabins: [
+      { _id: 'cabin-1', name: 'Stone House', inventoryType: 'single', isActive: true },
+      { _id: 'parent-1', name: 'A-Frame', inventoryType: 'multi', cabinTypeId: 'type-1', isActive: true }
+    ] } } });
+    unitAPI.getByCabinType.mockResolvedValue({ data: { data: { units: [
+      { _id: 'unit-3', cabinTypeId: 'type-1', unitNumber: 'AF-03', displayName: 'A-Frame 3', isActive: true },
+      { _id: 'unit-4', cabinTypeId: 'type-1', unitNumber: 'AF-04', isActive: true },
+      { _id: 'inactive', cabinTypeId: 'type-1', unitNumber: 'Inactive', isActive: false },
+      { _id: 'foreign', cabinTypeId: 'other-type', unitNumber: 'Foreign', isActive: true }
+    ] } } });
+    opsReadAPI.calendar.mockResolvedValue({ data: { data: { blocks: [] } } });
     exportToCSV.mockReset();
     opsReadAPI.reservations.mockResolvedValue(payload([reservation()]));
     opsReadAPI.cabins.mockResolvedValue(
@@ -497,6 +518,7 @@ describe('OpsReservations collection migration', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Create reservation' }));
     const dialog = await screen.findByRole('dialog');
+    await waitFor(() => expect(within(dialog).getByLabelText('Cabin')).toBeEnabled());
     fireEvent.change(within(dialog).getByLabelText('Cabin'), { target: { value: 'cabin-1' } });
     fireEvent.change(within(dialog).getByLabelText('Check-in'), { target: { value: '2026-10-01' } });
     fireEvent.change(within(dialog).getByLabelText('Check-out'), { target: { value: '2026-10-04' } });
@@ -541,7 +563,7 @@ describe('OpsReservations collection migration', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Manual reservation' });
     expect(dialog).toBeInTheDocument();
     expect(screen.getByTestId('reservations-search')).toHaveTextContent('create=1');
-    expect(within(dialog).getByLabelText('Cabin')).toHaveValue('cabin-1');
+    await waitFor(() => expect(within(dialog).getByLabelText('Cabin')).toHaveValue('cabin-1'));
     expect(within(dialog).getByLabelText('Check-in')).toHaveValue('2026-12-10');
     expect(within(dialog).getByLabelText('Check-out')).toHaveValue('2026-12-12');
   });
@@ -558,6 +580,125 @@ describe('OpsReservations collection migration', () => {
     ).toBeInTheDocument();
     expect(within(dialog).queryByLabelText('Cabin')).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText('Adults')).toHaveValue(2);
+  });
+
+  async function openMulti() {
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Create reservation' }));
+    const dialog = await screen.findByRole('dialog');
+    await waitFor(() => expect(within(dialog).getByLabelText('Cabin')).toBeEnabled());
+    fireEvent.change(within(dialog).getByLabelText('Cabin'), { target: { value: 'parent-1' } });
+    fireEvent.change(within(dialog).getByLabelText('Check-in'), { target: { value: '2027-04-01' } });
+    fireEvent.change(within(dialog).getByLabelText('Check-out'), { target: { value: '2027-04-03' } });
+    await screen.findByRole('option', { name: 'A-Frame 3 — Available' });
+    return dialog;
+  }
+
+  it('loads canonical multi-unit inventory despite the Ops single_cabin presentation', async () => {
+    opsReadAPI.cabins.mockResolvedValue(cabinsPayload([
+      { kind: 'single_cabin', cabinId: 'parent-1', name: 'A-Frame' }
+    ]));
+    const dialog = await openMulti();
+    expect(unitAPI.getByCabinType).toHaveBeenCalledWith('type-1');
+    expect(opsReadAPI.calendar).toHaveBeenLastCalledWith({
+      cabinId: 'type-1', from: '2027-04-01', to: '2027-04-03'
+    });
+    expect(screen.queryByRole('option', { name: /Inactive|Foreign/ })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Create' })).toBeDisabled();
+  });
+
+  it('refreshes availability on date changes, fails closed while loading, and ignores stale responses', async () => {
+    const dialog = await openMulti();
+    fireEvent.change(within(dialog).getByLabelText('Physical unit'), { target: { value: 'unit-3' } });
+    expect(within(dialog).getByRole('button', { name: 'Create' })).toBeEnabled();
+    let resolveOld;
+    opsReadAPI.calendar.mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }));
+    fireEvent.change(within(dialog).getByLabelText('Check-out'), { target: { value: '2027-04-04' } });
+    expect(within(dialog).getByRole('button', { name: 'Create' })).toBeDisabled();
+    opsReadAPI.calendar.mockResolvedValueOnce({ data: { data: { blocks: [{
+      unitId: 'unit-3', status: 'active', blockType: 'reservation',
+      startDateOnly: '2027-04-01', endDateOnly: '2027-04-05'
+    }] } } });
+    fireEvent.change(within(dialog).getByLabelText('Check-out'), { target: { value: '2027-04-05' } });
+    expect(await screen.findByRole('option', { name: 'A-Frame 3 — Occupied' })).toBeDisabled();
+    resolveOld({ data: { data: { blocks: [] } } });
+    await waitFor(() => expect(screen.getByRole('option', { name: 'A-Frame 3 — Occupied' })).toBeDisabled());
+    fireEvent.submit(document.getElementById('ops-reservations-create-form'));
+    expect(opsWriteAPI.createManualReservation).not.toHaveBeenCalled();
+  });
+
+  it('submits all three identifiers once and does not automatically retry a failed request', async () => {
+    const dialog = await openMulti();
+    fireEvent.change(within(dialog).getByLabelText('Physical unit'), { target: { value: 'unit-3' } });
+    let reject;
+    opsWriteAPI.createManualReservation.mockReturnValueOnce(new Promise((_, r) => { reject = r; }));
+    const form = document.getElementById('ops-reservations-create-form');
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    expect(opsWriteAPI.createManualReservation).toHaveBeenCalledTimes(1);
+    expect(opsWriteAPI.createManualReservation).toHaveBeenCalledWith(expect.objectContaining({
+      cabinId: 'parent-1', cabinTypeId: 'type-1', unitId: 'unit-3',
+      checkIn: '2027-04-01', checkOut: '2027-04-03'
+    }));
+    reject({ response: { data: { message: 'Dates conflict with existing reservations or blocks' } } });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Dates conflict');
+    expect(opsWriteAPI.createManualReservation).toHaveBeenCalledTimes(1);
+  });
+
+  it('creates a multi-unit reservation and keeps Calendar-selected identity and dates', async () => {
+    opsWriteAPI.createManualReservation.mockResolvedValue({ data: { data: { reservationId: 'multi-created' } } });
+    renderPage('/ops/reservations?create=1&cabinId=parent-1&cabinTypeId=type-1&unitId=unit-3&unitLabel=A-Frame+3&checkIn=2027-04-01&checkOut=2027-04-03');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled());
+    expect(screen.getByLabelText('Physical unit')).toHaveValue('unit-3');
+    expect(screen.getByLabelText('Physical unit')).toBeDisabled();
+    fireEvent.submit(document.getElementById('ops-reservations-create-form'));
+    await screen.findByTestId('legacy-reservation-detail');
+    expect(opsWriteAPI.createManualReservation).toHaveBeenCalledWith(expect.objectContaining({
+      cabinId: 'parent-1', cabinTypeId: 'type-1', unitId: 'unit-3'
+    }));
+  });
+
+  it('successfully creates A-Frame directly from Reservations and clears unit identity when switching to a single cabin', async () => {
+    const dialog = await openMulti();
+    fireEvent.change(within(dialog).getByLabelText('Physical unit'), { target: { value: 'unit-3' } });
+    fireEvent.change(within(dialog).getByLabelText('Cabin'), { target: { value: 'cabin-1' } });
+    expect(within(dialog).queryByLabelText('Physical unit')).not.toBeInTheDocument();
+    opsWriteAPI.createManualReservation.mockRejectedValueOnce({ response: { data: { message: 'Local test failure' } } });
+    fireEvent.submit(document.getElementById('ops-reservations-create-form'));
+    expect(opsWriteAPI.createManualReservation).toHaveBeenLastCalledWith(expect.not.objectContaining({ unitId: 'unit-3' }));
+    await screen.findByRole('alert');
+    fireEvent.change(within(dialog).getByLabelText('Cabin'), { target: { value: 'parent-1' } });
+    await screen.findByRole('option', { name: 'A-Frame 3 — Available' });
+    expect(within(dialog).getByLabelText('Physical unit')).toHaveValue('');
+    fireEvent.change(within(dialog).getByLabelText('Physical unit'), { target: { value: 'unit-4' } });
+    opsWriteAPI.createManualReservation.mockResolvedValueOnce({ data: { data: { reservationId: 'direct-multi' } } });
+    fireEvent.submit(document.getElementById('ops-reservations-create-form'));
+    await screen.findByTestId('legacy-reservation-detail');
+    expect(opsWriteAPI.createManualReservation).toHaveBeenLastCalledWith(expect.objectContaining({
+      cabinId: 'parent-1', cabinTypeId: 'type-1', unitId: 'unit-4'
+    }));
+  });
+
+  it('rejects a forged Calendar cabin type or unit even when submit is triggered directly', async () => {
+    renderPage('/ops/reservations?create=1&cabinId=parent-1&cabinTypeId=wrong-type&unitId=foreign&checkIn=2027-04-01&checkOut=2027-04-03');
+    await screen.findByRole('option', { name: 'A-Frame 3 — Available' });
+    expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
+    fireEvent.submit(document.getElementById('ops-reservations-create-form'));
+    expect(opsWriteAPI.createManualReservation).not.toHaveBeenCalled();
+  });
+
+  it('resolves the canonical type for a multi-unit accommodation-only deep link', async () => {
+    renderPage('/ops/reservations?create=1&cabinId=parent-1&checkIn=2027-04-01&checkOut=2027-04-03');
+    await screen.findByRole('option', { name: 'A-Frame 3 — Available' });
+    fireEvent.change(screen.getByLabelText('Physical unit'), { target: { value: 'unit-3' } });
+    expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled();
+  });
+
+  it('keeps Create disabled if availability fails', async () => {
+    opsReadAPI.calendar.mockRejectedValue(new Error('Availability offline'));
+    renderPage('/ops/reservations?create=1&cabinId=parent-1&cabinTypeId=type-1&unitId=unit-3&checkIn=2027-04-01&checkOut=2027-04-03');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Availability offline');
+    expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
   });
 
   it('does not expose manual creation when the session lacks the action', async () => {

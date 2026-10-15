@@ -20,6 +20,18 @@ server-only Stripe configuration cannot populate an already-built client.
 The build rejects missing or malformed keys before generating assets. Local
 development and tests do not require this variable.
 
+Manual reservation inventory uses the existing public Cabin and active Unit
+APIs for canonical parent/type/unit identities and the authenticated Ops calendar
+for date-specific occupancy. Unit blocked days use Europe/Sofia and checkout is
+exclusive. Occupied or blocked units cannot be selected; availability failures
+block submission. Calendar-origin reservations keep their explicit unit, and the
+backend remains the final availability/unique-night-claim authority. No automatic
+unit assignment or request retries are performed.
+
+Run `cd client && node scripts/verify-manual-reservation-mobile.mjs` against a
+local frontend on port 3017 (or set `TEST_ORIGIN`) for the 432px browser check.
+It intercepts every API request with fixtures and never creates a real booking.
+
 ## Directory layout
 
 ```

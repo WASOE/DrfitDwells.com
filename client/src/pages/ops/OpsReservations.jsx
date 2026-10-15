@@ -34,10 +34,13 @@ import OpsTable, {
 import { resolveOpsStatus } from '../../ops/status/opsStatusRegistry';
 import { useOpsSession } from '../../context/OpsSessionContext';
 import { canCreateManualReservation } from './utils/opsReservationPermissions';
+import useManualReservationInventory from './utils/useManualReservationInventory';
 import './OpsReservations.css';
 
 const EMPTY_CREATE_FORM = {
   cabinId: '',
+  cabinTypeId: '',
+  unitId: '',
   checkIn: '',
   checkOut: '',
   firstName: '',
@@ -208,11 +211,14 @@ export default function OpsReservations() {
   const [error, setError] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [createBusy, setCreateBusy] = useState(false);
+  const createInFlight = useRef(false);
   const [createError, setCreateError] = useState('');
   const [form, setForm] = useState(copyEmptyCreateForm);
   const [exportBusy, setExportBusy] = useState(false);
   const [exportError, setExportError] = useState('');
   const canCreate = canCreateManualReservation(session);
+  const inventory = useManualReservationInventory(createOpen, form);
+  const calendarUnitContext = Boolean(searchParams.get('unitId') && searchParams.get('cabinTypeId'));
 
   useEffect(() => {
     if (openedCreateFromQuery.current || !canCreate || searchParams.get('create') !== '1') return;
@@ -269,11 +275,6 @@ export default function OpsReservations() {
     };
   }, [filters]);
 
-  const singleCabins = useMemo(
-    () => (cabins || []).filter((c) => c.kind === 'single_cabin'),
-    [cabins]
-  );
-
   const updateFilter = (key, value) => {
     const next = new URLSearchParams(searchParams);
     if (!value) next.delete(key);
@@ -317,6 +318,8 @@ export default function OpsReservations() {
 
   const submitCreate = async (e) => {
     e.preventDefault();
+    if (createInFlight.current || !inventory.ready) return;
+    createInFlight.current = true;
     setCreateBusy(true);
     setCreateError('');
     try {
@@ -354,6 +357,7 @@ export default function OpsReservations() {
           : 'Could not create reservation');
       setCreateError(typeof msg === 'string' ? msg : 'Could not create reservation');
     } finally {
+      createInFlight.current = false;
       setCreateBusy(false);
     }
   };
@@ -601,7 +605,7 @@ export default function OpsReservations() {
               form="ops-reservations-create-form"
               loading={createBusy}
               loadingLabel="Creating…"
-              disabled={!form.unitId && singleCabins.length === 0}
+              disabled={createBusy || !inventory.ready}
             >
               Create
             </OpsButton>
@@ -610,9 +614,16 @@ export default function OpsReservations() {
       >
         <form id="ops-reservations-create-form" className="ops-reservations-form" onSubmit={submitCreate}>
           {createError ? <OpsInlineError>{createError}</OpsInlineError> : null}
-          {form.unitId && form.cabinTypeId ? (
+          {inventory.error ? (
+            <OpsInlineError>
+              {inventory.error}{' '}
+              <OpsButton variant="secondary" onClick={inventory.reload} disabled={createBusy}>Retry availability</OpsButton>
+            </OpsInlineError>
+          ) : null}
+          {inventory.loading ? <p role="status">Loading accommodations and unit availability…</p> : null}
+          {calendarUnitContext ? (
             <p className="ops-reservations-form__note">
-              Accommodation: {cabins.find((c) => c.cabinId === form.cabinId)?.name || 'Selected multi-unit accommodation'}
+              Accommodation: {inventory.selected?.name || 'Selected multi-unit accommodation'}
               {' · '}Physical unit: {form.unitLabel || 'Selected A-frame'}
             </p>
           ) : (
@@ -620,21 +631,42 @@ export default function OpsReservations() {
               label="Cabin"
               required
               value={form.cabinId}
-              onChange={(e) => setForm((f) => ({ ...f, cabinId: e.target.value }))}
-              disabled={createBusy}
+              onChange={(e) => {
+                const cabin = inventory.catalog?.find((item) => String(item._id) === e.target.value);
+                const type = cabin?.cabinTypeId || cabin?.cabinTypeRef;
+                setForm((f) => ({
+                  ...f, cabinId: e.target.value, unitId: '',
+                  cabinTypeId: cabin?.inventoryType === 'multi' ? String(type?._id || type || '') : ''
+                }));
+              }}
+              disabled={createBusy || !inventory.catalog}
             >
               <option value="">Select cabin</option>
-              {singleCabins.map((c) => (
-                <option key={c.cabinId} value={c.cabinId}>
+              {(inventory.catalog || []).map((c) => (
+                <option key={c._id} value={c._id}>
                   {c.name}
                 </option>
               ))}
             </OpsSelect>
           )}
-          {!form.unitId && singleCabins.length === 0 ? (
-            <p className="ops-reservations-form__note">
-              No bookable single cabins in ops list (multi-unit types need another flow).
-            </p>
+          {inventory.isMulti ? (
+            <OpsSelect
+              label="Physical unit"
+              required
+              value={form.unitId}
+              disabled={createBusy || inventory.loading || Boolean(inventory.error) || calendarUnitContext}
+              hint="Choose dates to check availability. The server rechecks availability when creating the reservation."
+              onChange={(e) => setForm((f) => ({
+                ...f, unitId: e.target.value, cabinTypeId: String(inventory.typeId)
+              }))}
+            >
+              <option value="">Select physical unit</option>
+              {inventory.units.map((unit) => (
+                <option key={unit._id} value={unit._id} disabled={unit.availability !== 'Available'}>
+                  {unit.displayName || unit.unitNumber} — {unit.availability}
+                </option>
+              ))}
+            </OpsSelect>
           ) : null}
           <div className="ops-reservations-form__split">
             <OpsTextField
