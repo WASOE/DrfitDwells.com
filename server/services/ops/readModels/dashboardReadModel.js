@@ -10,9 +10,11 @@ const { mapBookingToReservationCompatible } = require('../../../mappers/bookingT
 const { normalizeDateToSofiaDayStart } = require('../../../utils/dateTime');
 const { FIXTURE_BOOKING_EMAIL_PATTERN } = require('../../../utils/fixtureExclusion');
 const {
-  classifyReservationPaymentStatus,
+  assessReservationPaymentCoverage,
+  hasOutstandingNonCardBalance,
   shouldEmitRefundFollowUpAlert
 } = require('../payment/reservationPaymentSignals');
+const { loadNonCardCoverageEvidence } = require('../payment/nonCardCoverageEvidence');
 const { aggregateGiftVoucherPulseMetrics } = require('../reporting/giftVoucherPulseMetricsService');
 const {
   countActiveFailedDeliveryStates,
@@ -270,7 +272,7 @@ async function getDashboardReadModel() {
     Booking.countDocuments(upcoming14Filter),
     Booking.find(nextArrivalsFilter).populate('cabinId', 'name').populate('cabinTypeId', 'name').populate('unitId', 'displayName unitNumber').sort({ checkIn: 1 }).limit(5).lean(),
     Booking.find(alertBookingFilter).populate('cabinId', 'name').populate('cabinTypeId', 'name').populate('unitId', 'displayName unitNumber').sort({ updatedAt: -1 }).limit(120).lean(),
-    Booking.find(activeForPulseFilter).select('_id status totalPrice stripePaymentIntentId provenance createdAt checkIn checkOut guestInfo').lean(),
+    Booking.find(activeForPulseFilter).select('_id status totalPrice totalValueCents stripePaymentIntentId provenance createdAt checkIn checkOut guestInfo settledByStayChangeId checkoutId giftVoucherAppliedCents giftVoucherRedemptionId stayCreditAppliedCents stayCreditId').lean(),
     Booking.aggregate([
       { $match: pulseMonthFilter },
       { $group: { _id: null, bookingsMTD: { $sum: 1 }, bookingValueMTD: { $sum: '$totalPrice' } } }
@@ -319,7 +321,11 @@ async function getDashboardReadModel() {
     ...pulseActiveBookings
   ];
   const uniqueById = new Map();
-  for (const booking of allBookingRefs) uniqueById.set(String(booking._id), booking);
+  // Keep the first (fully loaded) document; pulse rows use a narrower projection.
+  for (const booking of allBookingRefs) {
+    const key = String(booking._id);
+    if (!uniqueById.has(key)) uniqueById.set(key, booking);
+  }
   const uniqueBookings = [...uniqueById.values()];
 
   const reservationIds = uniqueBookings.map((b) => String(b._id));
@@ -332,7 +338,7 @@ async function getDashboardReadModel() {
     .filter(Boolean)
     .map((id) => String(id));
 
-  const [payments, unlinkedPayments, rebookStayChanges] = await Promise.all([
+  const [payments, unlinkedPayments, rebookStayChanges, nonCardEvidenceFor] = await Promise.all([
     reservationIds.length ? Payment.find({ reservationId: { $in: reservationIds } }).lean() : [],
     stripePaymentIntentIds.length
       ? Payment.find({
@@ -350,7 +356,8 @@ async function getDashboardReadModel() {
       : [],
     stayChangeIds.length
       ? StayChange.find({ _id: { $in: stayChangeIds }, kind: 'rebook' }).lean()
-      : []
+      : [],
+    loadNonCardCoverageEvidence(uniqueBookings)
   ]);
 
   const rebookStayChangeById = new Map(
@@ -381,6 +388,7 @@ async function getDashboardReadModel() {
   }
 
   const paymentStatusByReservation = new Map();
+  const outstandingBalanceByReservation = new Set();
   for (const booking of uniqueBookings) {
     const key = String(booking._id);
     const trail = paymentsByReservation.get(key) || [];
@@ -388,13 +396,15 @@ async function getDashboardReadModel() {
     const rebookStayChange = booking.settledByStayChangeId
       ? rebookStayChangeById.get(String(booking.settledByStayChangeId)) || null
       : null;
-    const paymentStatus = classifyReservationPaymentStatus({
+    const paymentAssessment = assessReservationPaymentCoverage({
       booking,
       linkedPaymentTrail: trail,
       hasUnlinkedStripePayment: pi ? unlinkedPaymentByIntent.has(pi) : false,
-      rebookStayChange
+      rebookStayChange,
+      ...nonCardEvidenceFor(booking)
     });
-    paymentStatusByReservation.set(key, paymentStatus);
+    paymentStatusByReservation.set(key, paymentAssessment.paymentStatus);
+    if (hasOutstandingNonCardBalance(paymentAssessment)) outstandingBalanceByReservation.add(key);
   }
 
   const mapRows = (bookings) =>
@@ -509,13 +519,16 @@ async function getDashboardReadModel() {
         entityId: reservationId
       });
     }
-    if (!cancelled && paymentStatus === 'unpaid' && within14d) {
+    const outstandingBalance = outstandingBalanceByReservation.has(reservationId);
+    if (!cancelled && (paymentStatus === 'unpaid' || outstandingBalance) && within14d) {
       alerts.push({
         id: `unpaid-upcoming-${reservationId}`,
         type: 'unpaid_upcoming',
         severity: 'medium',
         title: 'Unpaid upcoming booking',
-        detail: `${detailBase} arrives soon and remains unpaid.`,
+        detail: outstandingBalance
+          ? `${detailBase} arrives soon with an outstanding balance.`
+          : `${detailBase} arrives soon and remains unpaid.`,
         href: row.href,
         createdAt: booking.updatedAt || booking.createdAt,
         entityType: 'reservation',

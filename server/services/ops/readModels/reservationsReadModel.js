@@ -6,9 +6,11 @@ const { mapBookingToReservationCompatible } = require('../../../mappers/bookingT
 const { formatSofiaDateOnly } = require('../../../utils/dateTime');
 const { escapeRegex } = require('../../../utils/escapeRegex');
 const {
-  classifyReservationPaymentStatus,
-  derivePaymentAttention
+  assessReservationPaymentCoverage,
+  derivePaymentAttention,
+  hasOutstandingNonCardBalance
 } = require('../payment/reservationPaymentSignals');
+const { loadNonCardCoverageEvidence } = require('../payment/nonCardCoverageEvidence');
 
 const STAY_SCOPE_VALUES = ['active', 'past'];
 const OPS_BUCKET_VALUES = [
@@ -230,7 +232,7 @@ async function getReservationsWorkspaceReadModel(query = {}) {
     .map((b) => b.settledByStayChangeId)
     .filter(Boolean)
     .map((id) => String(id));
-  const [payments, conflicts, rebookStayChanges] = await Promise.all([
+  const [payments, conflicts, rebookStayChanges, nonCardEvidenceFor] = await Promise.all([
     Payment.find({ reservationId: { $in: reservationIds } }).lean(),
     AvailabilityBlock.find({
       reservationId: { $in: reservationIds },
@@ -238,7 +240,8 @@ async function getReservationsWorkspaceReadModel(query = {}) {
     }).lean(),
     stayChangeIds.length
       ? StayChange.find({ _id: { $in: stayChangeIds }, kind: 'rebook' }).lean()
-      : Promise.resolve([])
+      : Promise.resolve([]),
+    loadNonCardCoverageEvidence(bookings)
   ]);
   const unlinkedPayments = stripePaymentIntentIds.length
     ? await Payment.find({
@@ -298,18 +301,21 @@ async function getReservationsWorkspaceReadModel(query = {}) {
     const rebookStayChange = booking.settledByStayChangeId
       ? rebookStayChangeById.get(String(booking.settledByStayChangeId)) || null
       : null;
-    const paymentStatus = classifyReservationPaymentStatus({
+    const paymentAssessment = assessReservationPaymentCoverage({
       booking,
       linkedPaymentTrail: paymentTrail,
       hasUnlinkedStripePayment: pi ? unlinkedPaymentByPaymentIntent.has(pi) : false,
-      rebookStayChange
+      rebookStayChange,
+      ...nonCardEvidenceFor(booking)
     });
+    const { paymentStatus } = paymentAssessment;
     const reservationStatus = mapped.reservationStatus;
     const stayTiming = deriveStayTiming(booking, startOfToday);
     const paymentSignals = derivePaymentAttention({
       reservationStatus,
       paymentStatus,
-      cancellationSettlementOutcome: booking?.cancellationSettlement?.outcome || null
+      cancellationSettlementOutcome: booking?.cancellationSettlement?.outcome || null,
+      outstandingBalance: hasOutstandingNonCardBalance(paymentAssessment)
     });
     const opsBucket = deriveOpsBucket({
       reservationStatus,
