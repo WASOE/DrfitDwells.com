@@ -1,7 +1,22 @@
 /home/illoc/.pm2/logs/driftdwells*.log {
     daily
+    maxsize 10M
     rotate 14
     compress
+    dateext
+    dateformat -%Y%m%d-%H%M%S
+    missingok
+    notifempty
+    copytruncate
+    su illoc illoc
+}
+
+/home/illoc/.pm2/pm2.log {
+    size 10M
+    rotate 7
+    compress
+    dateext
+    dateformat -%Y%m%d-%H%M%S
     missingok
     notifempty
     copytruncate

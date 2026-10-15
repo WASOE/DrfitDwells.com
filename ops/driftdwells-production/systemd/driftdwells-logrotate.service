@@ -1,0 +1,9 @@
+[Unit]
+Description=Check Drift & Dwells PM2 log size limits
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/logrotate /etc/logrotate.d/driftdwells-pm2
+Nice=19
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

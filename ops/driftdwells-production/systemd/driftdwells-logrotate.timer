@@ -1,0 +1,11 @@
+[Unit]
+Description=Enforce Drift & Dwells log size limits every five minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=driftdwells-logrotate.service
+
+[Install]
+WantedBy=timers.target

@@ -8,7 +8,7 @@ Repository-backed operational assets for the **main booking portal** (`driftdwel
 |------|-------|
 | App path | `/home/illoc/apps/driftdwells-booking-portal` |
 | Service user | `illoc` |
-| PM2 app name | `driftdwells` |
+| Production API name | `driftdwells-production-<short-sha>` (one numeric PM2 ID) |
 | Backend env file | `/home/illoc/apps/driftdwells-booking-portal/server/.env` |
 | MongoDB env keys | `MONGODB_URI` (primary), `MONGO_URI` (fallback) |
 | Backup root | `/home/illoc/backups/driftdwells/` |
@@ -66,6 +66,37 @@ Enable scheduled backups: see [BACKUP.md](./BACKUP.md).
 
 - **In scope:** backup, restore verification, logrotate, systemd timer
 - **Out of scope:** application code, DB migrations, seed scripts, `.env` changes
+
+## Log retention and local monitoring
+
+`logrotate-driftdwells-pm2` retains 14 compressed generations of application
+logs (daily or above 10 MiB) and seven compressed generations of the PM2
+daemon log (above 10 MiB). The supplemental five-minute systemd timer checks
+only this rule, sharing the default logrotate state/lock with the daily
+system timer. Timestamped archive names support more than one rotation per
+day. Existing historical archives are retained; do not delete diagnostics
+during an incident. `copytruncate` preserves open file descriptors and does
+not restart processes; as with all copytruncate policies, a small
+copy/truncate race can lose concurrent log lines. Preserve a protected
+compressed diagnostic excerpt before an incident rotation.
+
+Install `monitor.cjs` as `/home/illoc/bin/driftdwells-monitor.cjs` and the
+four `systemd/driftdwells-{monitor,logrotate}.{service,timer}` files under
+`/etc/systemd/system/`. Install the logrotate rule under `/etc/logrotate.d/`,
+validate it with `logrotate --debug`, reload systemd, then enable/start both
+timers. No application process restart is needed. The monitor checks every
+minute for failed DB-connected API health, process count/name drift,
+restart/PID changes, stopped/disappeared processes, error-log growth above
+5 MiB/minute, two EADDRINUSE lines or three reconciliation failures within
+five minutes. Reads are incremental and bounded to 256 KiB per log per tick;
+overflow alerts rather than silently skipping a burst.
+
+Alerts are structured, credential-free journal errors and a failed systemd
+service; inspect `journalctl -u driftdwells-monitor` and
+`systemctl status driftdwells-monitor`. This is **local monitoring only**, not
+an external pager. State is private under
+`/home/illoc/.local/state/driftdwells-monitor/`. There is no new paid service,
+and no automatic process restart or payment repair.
 
 ## Application index maintenance
 
