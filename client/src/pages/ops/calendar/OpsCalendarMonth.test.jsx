@@ -453,6 +453,7 @@ describe('OpsCalendarMonth migration', () => {
     fireEvent.change(await screen.findByLabelText('Guest stay unit'), {
       target: { value: UNIT_3_ID }
     });
+
     fireEvent.click(screen.getByRole('button', { name: 'Add guest stay' }));
 
     const location = await screen.findByTestId('location');
@@ -460,6 +461,24 @@ describe('OpsCalendarMonth migration', () => {
     expect(location.textContent).toContain(`cabinTypeId=${CABIN_ID}`);
     expect(location.textContent).toContain(`unitId=${UNIT_3_ID}`);
     expect(location.textContent).toContain('unitLabel=A-Frame+3');
+  });
+
+  it('renders canonical type reservations and unit holds through the parent URL without hiding units', async () => {
+    opsReadAPI.calendar.mockResolvedValue(calendarPayload({
+      calendarScope: {
+        requestedId: PARENT_CABIN_ID, scope: 'cabin_type',
+        renderCabinId: PARENT_CABIN_ID, cabinTypeId: CABIN_ID
+      },
+      blocks: monthBlocks().map((block) => ({ ...block, cabinId: PARENT_CABIN_ID }))
+    }));
+    const detail = multiCabinDetailPayload();
+    detail.data.data.cabinId = PARENT_CABIN_ID;
+    opsReadAPI.cabinDetail.mockResolvedValue(detail);
+    renderMonth(`/ops/calendar/${PARENT_CABIN_ID}`);
+    expect(await screen.findByLabelText('Guest stay unit')).toBeInTheDocument();
+    expect(opsReadAPI.cabinDetail).toHaveBeenCalledWith(PARENT_CABIN_ID);
+    expect(document.querySelector('[data-ops-cal-unit="A-Frame 2"][data-ops-cal-block="reservation"]')).toBeTruthy();
+    expect(document.querySelector('[data-ops-cal-unit="A-Frame 3"][data-ops-cal-block="external_hold"]')).toBeTruthy();
   });
 
   it('creates maintenance block with exact payload', async () => {

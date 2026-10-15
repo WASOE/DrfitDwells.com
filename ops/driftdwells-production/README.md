@@ -28,6 +28,13 @@ block submission. Calendar-origin reservations keep their explicit unit, and the
 backend remains the final availability/unique-night-claim authority. No automatic
 unit assignment or request retries are performed.
 
+Ops Calendar and accommodation details normalize multi-unit parent Cabin IDs
+and CabinType IDs to the same canonical type and physical inventory. Booking
+queries use the type; availability blocks and render identity retain the parent.
+Cancelled, archived and test bookings are excluded from Calendar occupancy.
+Calendar bars are event visibility, not a replacement for authoritative booking
+availability or unique unit-night claims.
+
 Run `cd client && node scripts/verify-manual-reservation-mobile.mjs` against a
 local frontend on port 3017 (or set `TEST_ORIGIN`) for the 432px browser check.
 It intercepts every API request with fixtures and never creates a real booking.
