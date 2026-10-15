@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Drift & Dwells health every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=driftdwells-monitor.service
+
+[Install]
+WantedBy=timers.target

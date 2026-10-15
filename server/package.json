@@ -26,6 +26,7 @@
     "guides:parse-the-cabin-kml": "node scripts/parseTheCabinKmlToGuideData.js",
     "cleanup:reservation-integrity": "node scripts/reservationIntegrityCleanup.js",
     "cleanup:reservation-integrity:preview": "node scripts/reservationIntegrityCleanup.js --preview-unsafe-blocking --preview-ics-exclusion",
+    "migrate:cleaning-record-indexes": "node scripts/migrateCleaningRecordIndexes.cjs",
     "validate:sync": "node scripts/validateCalendarSync.js",
     "validate:syncscheduler": "node scripts/validateCalendarSyncScheduler.js",
     "maintenance:archive-fixtures": "node scripts/maintenance/archiveFixtureContamination.js",

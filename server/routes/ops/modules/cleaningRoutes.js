@@ -16,6 +16,9 @@ const {
 } = require('../../../services/ops/cleaning/cleaningPaymentLifecycleService');
 const { isExternalHoldEligibleForCleaning } = require('../../../services/ops/cleaning/airbnbStayClassifier');
 const {
+  createOrGetExternalHoldCleaningRecord
+} = require('../../../services/ops/cleaning/externalHoldCleaningRecordService');
+const {
   getPricingPolicySettings,
   updatePricingPolicyRules
 } = require('../../../services/ops/cleaning/cleaningPricingPolicyAdminService');
@@ -156,19 +159,7 @@ async function findOrCreateCleaningRecordForTask(parsed, sofiaStart) {
     cleaningDate: sofiaStart,
     paymentStatus: 'unpaid'
   };
-  try {
-    return await CleaningRecord.create(insert);
-  } catch (error) {
-    if (error?.code === 11000) {
-      return CleaningRecord.findOne({
-        $or: [
-          { sourceKind: 'external_hold', sourceId: String(block._id), cleaningDate: sofiaStart },
-          { availabilityBlockId: block._id, cleaningDate: sofiaStart }
-        ]
-      });
-    }
-    throw error;
-  }
+  return createOrGetExternalHoldCleaningRecord(CleaningRecord, insert);
 }
 
 // GET /api/ops/cleaning/schedule?date=ISO&propertyKind=cabin|valley

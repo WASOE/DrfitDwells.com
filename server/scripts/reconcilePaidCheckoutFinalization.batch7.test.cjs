@@ -440,6 +440,166 @@ test('terminal failed and uncharged payment does not remain in manual review', a
   assert.equal(stripe.calls.refunds, 0);
 });
 
+async function seedFinalizedRefund({ status = 'partial', bookingStatus = 'cancelled' } = {}) {
+  const cabin = await createCabin();
+  const { session, paymentIntentId } = await seedSession({ cabin, paymentStatus: 'paid' });
+  const booking = await createFinalizedBooking({ cabin, session, paymentIntentId });
+  await Booking.updateOne({ _id: booking._id }, {
+    $set: { status: bookingStatus, confirmationEmailSentAt: new Date() }
+  });
+  await Payment.updateOne({ providerReference: paymentIntentId }, {
+    $set: { status, 'metadata.stripeEventType': 'charge.refunded' }
+  });
+  await CheckoutSession.updateOne({ checkoutId: session.checkoutId }, {
+    $set: {
+      paymentEvidence: {
+        schemaVersion: 1,
+        paymentIntentId,
+        stripeEventId: 'evt_original_success',
+        amountReceivedCents: session.stripeAmountCents,
+        currency: 'eur',
+        quoteSnapshotHash: session.quoteSnapshotHash,
+        finalizeIntentHash: session.finalizeIntentHash,
+        verifiedAt: new Date()
+      }
+    }
+  });
+  const pi = buildSucceededPi({ session, paymentIntentId });
+  pi.latest_charge = {
+    id: 'ch_original',
+    payment_intent: paymentIntentId,
+    paid: true,
+    captured: true,
+    disputed: false,
+    amount: pi.amount_received,
+    amount_captured: pi.amount_received,
+    amount_refunded: status === 'refunded' ? pi.amount_received : 10500
+  };
+  return { session, booking, paymentIntentId, pi, stripe: createStripeStub({ [paymentIntentId]: pi }) };
+}
+
+async function financialSnapshot() {
+  const docs = await Promise.all(
+    [Payment, Booking, CheckoutSession, CheckoutFinalizationJob, EmailDeliveryState]
+      .map(model => model.find({}).sort({ _id: 1 }).lean())
+  );
+  return JSON.stringify(docs);
+}
+
+for (const [status, bookingStatus] of [
+  ['partial', 'cancelled'], ['partial', 'confirmed'], ['refunded', 'cancelled']
+]) {
+  test(`completed ${bookingStatus} checkout with ${status} refund resolves only its obsolete alert, idempotently`, async () => {
+    const { session, paymentIntentId, pi, stripe } = await seedFinalizedRefund({ status, bookingStatus });
+    const issue = await PaymentResolutionIssue.create({
+      paymentIntentId, checkoutId: session.checkoutId,
+      issueType: 'paid_booking_unknown_failure', status: 'needs_review',
+      errorCode: 'PAYMENT_RECORD_NOT_PAID'
+    });
+    await ManualReviewItem.create({
+      category: 'payment_finalization_failure', severity: 'high', status: 'open',
+      entityType: 'PaymentResolutionIssue', entityId: String(issue._id),
+      title: 'Obsolete finalization failure', details: 'test',
+      provenance: { source: 'reconcile', sourceReference: session.checkoutId }
+    });
+    const before = await financialSnapshot();
+    const args = { checkoutId: session.checkoutId, paymentIntentId, stripe, paymentIntent: pi };
+    const dryRun = await reconcilePaidCheckoutSubject(args);
+    assert.equal(dryRun.classification, RECONCILE_CLASSIFICATIONS.FINALIZED_PAYMENT_REFUNDED);
+    assert.equal(await PaymentResolutionIssue.countDocuments({ status: 'needs_review' }), 1);
+    const first = await reconcilePaidCheckoutSubject({ ...args, execute: true, automatic: true });
+    const second = await reconcilePaidCheckoutSubject({ ...args, execute: true, automatic: true });
+    assert.equal(first.repair.details.issueResolved, true);
+    assert.equal(second.repair.mutated, false);
+    assert.equal(await PaymentResolutionIssue.countDocuments({ status: 'needs_review' }), 0);
+    assert.equal(await ManualReviewItem.countDocuments({ status: 'open' }), 0);
+    assert.equal(await financialSnapshot(), before);
+    assert.equal(stripe.calls.create, 0);
+    assert.equal(stripe.calls.refunds, 0);
+  });
+}
+
+const unsafeRefundCases = {
+  unfinalized: async ({ session }) => CheckoutSession.updateOne(
+    { checkoutId: session.checkoutId }, { $set: { finalizeStatus: 'open' } }),
+  jobUnfinished: async ({ session }) => CheckoutFinalizationJob.updateOne(
+    { checkoutId: session.checkoutId }, { $set: { status: 'failed_retryable' } }),
+  jobWrongBooking: async ({ session }) => CheckoutFinalizationJob.updateOne(
+    { checkoutId: session.checkoutId }, { $set: { bookingId: new mongoose.Types.ObjectId() } }),
+  wrongPaymentLink: async ({ paymentIntentId }) => Payment.updateOne(
+    { providerReference: paymentIntentId }, { $set: { reservationId: new mongoose.Types.ObjectId() } }),
+  missingEvidence: async ({ session }) => CheckoutSession.updateOne(
+    { checkoutId: session.checkoutId }, { $unset: { paymentEvidence: 1 } }),
+  noConfirmation: async ({ booking }) => Booking.updateOne(
+    { _id: booking._id }, { $unset: { confirmationEmailSentAt: 1 } }),
+  wrongQuoteHash: async ({ pi }) => { pi.metadata.quoteSnapshotHash = 'different'; },
+  wrongAmount: async ({ pi }) => { pi.amount_received -= 1; },
+  wrongCharge: async ({ pi }) => { pi.latest_charge.payment_intent = 'pi_other'; },
+  noRefund: async ({ pi }) => { pi.latest_charge.amount_refunded = 0; },
+  wrongRefundState: async ({ pi }) => { pi.latest_charge.amount_refunded = pi.amount_received; },
+  disputed: async ({ pi }) => { pi.latest_charge.disputed = true; },
+  uncaptured: async ({ pi }) => { pi.latest_charge.captured = false; },
+  unexpandedCharge: async ({ pi }) => { pi.latest_charge = 'ch_original'; },
+  failedStripeRead: async ({ stripe }) => {
+    stripe.paymentIntents.retrieve = async () => { throw new Error('Stripe unavailable'); };
+  }
+};
+
+for (const [name, corrupt] of Object.entries(unsafeRefundCases)) {
+  test(`post-finalization refund stays fail-closed: ${name}`, async () => {
+    const fixture = await seedFinalizedRefund();
+    await corrupt(fixture);
+    const before = await financialSnapshot();
+    const result = await reconcilePaidCheckoutSubject({
+      checkoutId: fixture.session.checkoutId,
+      paymentIntentId: fixture.paymentIntentId,
+      stripe: fixture.stripe
+    });
+    assert.notEqual(result.classification, RECONCILE_CLASSIFICATIONS.FINALIZED_PAYMENT_REFUNDED);
+    assert.notEqual(result.repairAction, 'resolve_completed_payment_issue');
+    assert.equal(await financialSnapshot(), before);
+  });
+}
+
+test('verified refund does not resolve unrelated payment conflicts', async () => {
+  const { session, paymentIntentId, stripe } = await seedFinalizedRefund();
+  await PaymentResolutionIssue.create({
+    paymentIntentId, checkoutId: session.checkoutId,
+    issueType: 'paid_booking_conflict', status: 'needs_review',
+    errorCode: 'AMOUNT_MISMATCH'
+  });
+  const outcome = await reconcilePaidCheckoutSubject({
+    checkoutId: session.checkoutId, paymentIntentId, stripe, execute: true, automatic: true
+  });
+  assert.equal(outcome.repair.mutated, false);
+  assert.equal(await PaymentResolutionIssue.countDocuments({ status: 'needs_review' }), 1);
+});
+
+test('refund recovery requires the alert checkout identity to match', async () => {
+  const { session, paymentIntentId, stripe } = await seedFinalizedRefund();
+  await PaymentResolutionIssue.create({
+    paymentIntentId, checkoutId: 'different-checkout',
+    issueType: 'paid_booking_unknown_failure', status: 'needs_review',
+    errorCode: 'PAYMENT_RECORD_NOT_PAID'
+  });
+  const outcome = await reconcilePaidCheckoutSubject({
+    checkoutId: session.checkoutId, paymentIntentId, stripe, execute: true, automatic: true
+  });
+  assert.equal(outcome.repair.mutated, false);
+  assert.equal(await PaymentResolutionIssue.countDocuments({ status: 'needs_review' }), 1);
+});
+
+test('reconciler and its CLI disable automatic index/collection work before loading models', () => {
+  for (const filename of ['runPaidCheckoutReconciler.js', 'reconcilePaidCheckoutFinalization.js']) {
+    const source = fs.readFileSync(path.join(__dirname, filename), 'utf8');
+    for (const option of ['autoIndex', 'autoCreate']) {
+      const setting = source.indexOf(`mongoose.set('${option}', false)`);
+      assert.ok(setting >= 0);
+      assert.ok(setting < source.indexOf("require('../services/checkout/reconcilePaidCheckoutFinalization')"));
+    }
+  }
+});
+
 test('recent scheduled, claimed, and retryable jobs defer missing Payment review within the convergence window', async () => {
   const cabin = await createCabin();
 

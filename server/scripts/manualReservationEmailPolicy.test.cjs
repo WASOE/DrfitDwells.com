@@ -12,6 +12,8 @@ const { createFutureSofiaDates } = require('./testHelpers/futureSofiaDates.cjs')
 
 const Booking = require('../models/Booking');
 const Cabin = require('../models/Cabin');
+const Unit = require('../models/Unit');
+const UnitNightClaim = require('../models/UnitNightClaim');
 const EmailEvent = require('../models/EmailEvent');
 const EmailDeliveryState = require('../models/EmailDeliveryState');
 const ManualReviewItem = require('../models/ManualReviewItem');
@@ -97,6 +99,7 @@ test.before(async () => {
   await EmailEvent.syncIndexes();
   await EmailDeliveryState.syncIndexes();
   await ManualReviewItem.syncIndexes();
+  await UnitNightClaim.syncIndexes();
   originalSendEmail = emailService.sendEmail.bind(emailService);
   cabinId = await createTestCabin();
 });
@@ -144,6 +147,73 @@ test('helper: purpose defaults and shouldSendAutomaticGuestConfirmation', () => 
     sendGuestConfirmationEmail: null
   };
   assert.equal(shouldSendAutomaticGuestConfirmation(manualLegacy), true);
+});
+
+async function multiUnitInput() {
+  const parent = await Cabin.findById(await createTestCabin());
+  const typeId = new mongoose.Types.ObjectId();
+  parent.inventoryType = 'multi';
+  parent.cabinTypeId = typeId;
+  await parent.save();
+  const unit = await Unit.create({ cabinTypeId: typeId, unitNumber: 'AF-01', isActive: true });
+  return {
+    cabinId: String(parent._id),
+    cabinTypeId: String(typeId),
+    unitId: String(unit._id),
+    ...nextDateRange(),
+    guestInfo: nextGuest('aframe'),
+    adults: 2,
+    children: 0,
+    initialStatus: 'confirmed',
+    manualReservationPurpose: 'paid_guest',
+    sendGuestConfirmationEmail: false,
+    ctx: adminCtx
+  };
+}
+
+test('multi-unit manual create rejects missing, foreign, nonexistent and inactive unit identities without saving bookings', async () => {
+  const input = await multiUnitInput();
+  const before = await Booking.countDocuments();
+  for (const overrides of [
+    { unitId: null },
+    { cabinTypeId: null },
+    { unitId: String(new mongoose.Types.ObjectId()) },
+    { cabinTypeId: String(new mongoose.Types.ObjectId()) }
+  ]) {
+    await assert.rejects(createManualReservation({ ...input, ...overrides }), (error) => error.type === 'validation');
+    assert.equal(await Booking.countDocuments(), before);
+  }
+  await Unit.updateOne({ _id: input.unitId }, { $set: { isActive: false } });
+  await assert.rejects(createManualReservation(input), (error) => error.type === 'validation');
+  assert.equal(await Booking.countDocuments(), before);
+});
+
+test('multi-unit manual create preserves exact unit, is idempotent, and refuses a double booking', async () => {
+  const input = await multiUnitInput();
+  const first = await createManualReservation(input);
+  const repeat = await createManualReservation(input);
+  assert.equal(repeat.reservationId, first.reservationId);
+  const booking = await Booking.findById(first.reservationId).lean();
+  assert.equal(String(booking.unitId), input.unitId);
+  assert.equal(String(booking.cabinTypeId), input.cabinTypeId);
+  await assert.rejects(
+    createManualReservation({ ...input, guestInfo: nextGuest('aframe-other') }),
+    (error) => error.type === 'conflict'
+  );
+  assert.equal(await Booking.countDocuments({ unitId: input.unitId }), 1);
+  assert.equal(sendEmailCalls, 0);
+});
+
+test('concurrent multi-unit manual requests cannot create two reservations for the same nights', async () => {
+  const input = await multiUnitInput();
+  const results = await Promise.allSettled([
+    createManualReservation(input),
+    createManualReservation({ ...input, guestInfo: nextGuest('aframe-concurrent') })
+  ]);
+  assert.equal(results.filter((result) => result.status === 'fulfilled').length, 1);
+  const rejected = results.find((result) => result.status === 'rejected');
+  assert.equal(rejected.reason.type, 'conflict');
+  assert.equal(await Booking.countDocuments({ unitId: input.unitId }), 1);
 });
 
 test('creator_influencer confirmed create with sendGuestConfirmationEmail false -> no automatic booking_confirmed', async () => {

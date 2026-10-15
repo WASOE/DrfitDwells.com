@@ -22,6 +22,8 @@
 
 require('dotenv').config();
 const mongoose = require('mongoose');
+mongoose.set('autoIndex', false);
+mongoose.set('autoCreate', false);
 const { DEFAULT_MONGO_URI } = require('../config/dbDefaults');
 const {
   reconcilePaidCheckoutFinalization,

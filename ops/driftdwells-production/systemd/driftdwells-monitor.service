@@ -1,0 +1,13 @@
+[Unit]
+Description=Drift & Dwells local API and PM2 health monitor
+After=network.target pm2-illoc.service
+
+[Service]
+Type=oneshot
+User=illoc
+Environment=HOME=/home/illoc
+Environment=PM2_HOME=/home/illoc/.pm2
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/node /home/illoc/bin/driftdwells-monitor.cjs
+UMask=0077
+TimeoutStartSec=30

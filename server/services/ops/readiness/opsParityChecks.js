@@ -346,10 +346,22 @@ async function runReservationDetailParity({ reservationId } = {}) {
     return { module: 'reservation_detail', actual: null, expected: null, mismatches: [], evidence: { hasEvidence: false } };
   }
 
-  const actual = await getReservationDetailReadModel(reservationId);
-
   const booking = await Booking.findById(reservationId).lean();
-  if (!booking) return { module: 'reservation_detail', actual, expected: null, mismatches: [{ key: 'reservation', expected: 'exists', got: 'missing', critical: true }], evidence: { hasEvidence: false } };
+  if (!booking) {
+    const actual = await getReservationDetailReadModel(reservationId);
+    return { module: 'reservation_detail', actual, expected: null, mismatches: [{ key: 'reservation', expected: 'exists', got: 'missing', critical: true }], evidence: { hasEvidence: false } };
+  }
+  if (booking.isTest || booking.archivedAt) {
+    return {
+      module: 'reservation_detail',
+      actual: null,
+      expected: null,
+      mismatches: [],
+      evidence: { hasEvidence: false }
+    };
+  }
+
+  const actual = await getReservationDetailReadModel(reservationId);
 
   const mapped = mapBookingToReservationCompatible(booking);
 
@@ -764,4 +776,3 @@ module.exports = {
   runCabinsDetailParity,
   runReviewsCommsParity
 };
-

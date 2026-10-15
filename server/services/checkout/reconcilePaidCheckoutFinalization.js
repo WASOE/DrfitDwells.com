@@ -70,7 +70,8 @@ const RECONCILE_CLASSIFICATIONS = Object.freeze({
   CONFIRMATION_PENDING_OR_FAILED: 'CONFIRMATION_PENDING_OR_FAILED',
   CONFIRMATION_AMBIGUOUS: 'CONFIRMATION_AMBIGUOUS',
   GIFT_VOUCHER_OR_LOCATION_EXCLUSION: 'GIFT_VOUCHER_OR_LOCATION_EXCLUSION',
-  ALREADY_FULLY_CONSISTENT: 'ALREADY_FULLY_CONSISTENT'
+  ALREADY_FULLY_CONSISTENT: 'ALREADY_FULLY_CONSISTENT',
+  FINALIZED_PAYMENT_REFUNDED: 'FINALIZED_PAYMENT_REFUNDED'
 });
 
 const UNSAFE_MISMATCH_CODES = new Set([
@@ -156,7 +157,48 @@ function getStripeClient(stripeOverride = null) {
 async function retrievePaymentIntent(stripe, paymentIntentId) {
   const piId = String(paymentIntentId || '').trim();
   if (!stripe?.paymentIntents?.retrieve || !piId) return null;
-  return stripe.paymentIntents.retrieve(piId);
+  return stripe.paymentIntents.retrieve(piId, { expand: ['latest_charge'] });
+}
+
+function isVerifiedPostFinalizationRefund({ session, booking, job, payment, pi, confirmation }) {
+  const charge = pi?.latest_charge;
+  const bookingId = booking?._id ? String(booking._id) : '';
+  const refunded = Number(charge?.amount_refunded);
+  const received = Number(pi?.amount_received);
+  const evidence = session?.paymentEvidence;
+  return Boolean(
+    bookingId &&
+    session?.paymentStatus === 'paid' &&
+    session?.finalizeStatus === FINALIZE_STATUS.FINALIZED &&
+    String(session.bookingId || '') === bookingId &&
+    booking.checkoutId === session.checkoutId &&
+    booking.stripePaymentIntentId === pi?.id &&
+    session.canonicalPaymentIntentId === pi?.id &&
+    job?.status === 'succeeded' &&
+    job.checkoutId === session.checkoutId &&
+    job.paymentIntentId === pi?.id &&
+    String(job.bookingId || '') === bookingId &&
+    String(payment?.reservationId || '') === bookingId &&
+    payment?.provider === 'stripe' &&
+    payment.providerReference === pi?.id &&
+    payment.metadata?.stripeEventType === 'charge.refunded' &&
+    pi?.status === 'succeeded' &&
+    charge && typeof charge === 'object' &&
+    charge.payment_intent === pi.id &&
+    charge.paid === true && charge.captured === true && charge.disputed === false &&
+    Number.isSafeInteger(received) && received > 0 &&
+    charge.amount === received && charge.amount_captured === received &&
+    Number.isSafeInteger(refunded) && refunded > 0 && refunded <= received &&
+    payment.status === (refunded === received ? 'refunded' : 'partial') &&
+    Math.round(Number(payment.amount) * 100) === received &&
+    String(payment.currency).toLowerCase() === pi.currency &&
+    evidence?.paymentIntentId === pi.id &&
+    evidence.amountReceivedCents === received &&
+    evidence.currency === pi.currency &&
+    evidence.quoteSnapshotHash === session.quoteSnapshotHash &&
+    evidence.finalizeIntentHash === session.finalizeIntentHash &&
+    (booking.confirmationEmailSentAt || isDefinitiveSentStatus(confirmation?.latestStatus))
+  );
 }
 
 function isLocationPaymentMetadata(meta) {
@@ -393,6 +435,17 @@ async function inspectPaidCheckoutSubject({
         };
       }
       if (verification.errorCode === VERIFICATION_ERROR_CODES.PAYMENT_RECORD_NOT_PAID) {
+        // Verification has already checked canonical PI, quote/intent hashes, amount,
+        // currency, dates and entity. A later refund must not re-finalize the checkout.
+        if (isVerifiedPostFinalizationRefund({ session, booking, job, payment, pi, confirmation })) {
+          return {
+            ...base,
+            classification: RECONCILE_CLASSIFICATIONS.FINALIZED_PAYMENT_REFUNDED,
+            reason: 'Verified completed checkout with a subsequent Stripe-confirmed refund',
+            safeToMutate: true,
+            repairAction: 'resolve_completed_payment_issue'
+          };
+        }
         if (
           !payment &&
           hasRecentPaymentSuccessEvidence({
@@ -787,6 +840,17 @@ async function executeRepair(inspection, { stripe = null, now = new Date() } = {
       checkoutId: inspection.checkoutId
     });
     result.mutated = Boolean(result.details);
+    return result;
+  }
+
+  if (action === 'resolve_completed_payment_issue') {
+    result.details = await resolvePaidBookingResolutionIssueSafe({
+      paymentIntentId: inspection.paymentIntentId,
+      checkoutId: inspection.checkoutId,
+      expectedErrorCodes: ['PAYMENT_RECORD_NOT_PAID', 'PAYMENT_RECORD_MISSING_OR_NOT_PAID'],
+      note: 'Resolved: checkout and booking were finalized and linked before a Stripe-confirmed refund. Refund ledger state preserved; no payment, booking or confirmation replay.'
+    });
+    result.mutated = result.details?.issueResolved === true;
     return result;
   }
 

@@ -520,14 +520,20 @@ async function recordPaidBookingResolutionIssueSafe(params) {
 async function resolvePaidBookingResolutionIssueSafe({
     paymentIntentId,
     checkoutId = null,
+    expectedErrorCodes = null,
     note = 'Auto-resolved: terminal unpaid payment attempt; no funds captured and no booking required.'
   } = {}) {
     const piId = paymentIntentId ? String(paymentIntentId).trim() : '';
     if (!piId) return null;
     const now = new Date();
     const resolutionNote = safeErrorSummary(note);
+    const filter = { paymentIntentId: piId, status: 'needs_review' };
+    if (expectedErrorCodes) {
+      filter.errorCode = { $in: expectedErrorCodes };
+      filter.checkoutId = checkoutId;
+    }
     const issue = await PaymentResolutionIssue.findOneAndUpdate(
-      { paymentIntentId: piId, status: 'needs_review' },
+      filter,
       { $set: { status: 'resolved', resolvedAt: now, resolutionNote } },
       { new: true }
     );

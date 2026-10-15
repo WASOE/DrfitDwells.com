@@ -1,9 +1,14 @@
 const mongoose = require('mongoose');
 const { DEFAULT_MONGO_URI } = require('./dbDefaults');
 
+mongoose.set('autoIndex', false);
+mongoose.set('autoCreate', false);
+
 const uri = process.env.MONGODB_URI || process.env.MONGO_URI || DEFAULT_MONGO_URI;
 
 const connectOptions = {
+  autoIndex: false,
+  autoCreate: false,
   maxPoolSize: 10,
   serverSelectionTimeoutMS: 10000,
   socketTimeoutMS: 45000,

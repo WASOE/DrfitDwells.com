@@ -96,49 +96,10 @@ const {
 const { startApiProcess } = require('./bootstrap/startApiProcess');
 
 /**
- * Post-connect runtime started only after Mongo is up AND (when authoritative)
- * the CabinNightClaim authority boot gate has passed. Includes the
- * inventory-mutating in-process checkout-finalization worker.
+ * Post-connect runtime starts only after Mongo and authority gates pass.
+ * Keep INVENTORY-MUTATING workers behind this startup gate.
  */
 function startPostConnectRuntime() {
-  const Review = require('./models/Review');
-  Review.syncIndexes().then(() => {
-    console.log('Review indexes synced');
-  }).catch((err) => {
-    if (err.message && err.message.includes('externalId')) {
-      console.warn('Review index sync warning:', err.message);
-    } else {
-      console.error('Review index sync error:', err);
-    }
-  });
-
-  // CleaningRecord: replace legacy unique(bookingId, cleaningDate) that blocked
-  // multiple external_hold rows (bookingId null) on the same day.
-  (async () => {
-    const CleaningRecord = require('./models/CleaningRecord');
-    try {
-      const indexes = await CleaningRecord.collection.indexes();
-      for (const idx of indexes) {
-        if (
-          idx.name === 'bookingId_1_cleaningDate_1' &&
-          idx.unique &&
-          !idx.partialFilterExpression
-        ) {
-          await CleaningRecord.collection.dropIndex(idx.name);
-          console.log('Dropped legacy CleaningRecord bookingId+cleaningDate unique index');
-        }
-      }
-    } catch (err) {
-      console.warn('CleaningRecord index prep warning:', err?.message || err);
-    }
-    try {
-      await CleaningRecord.syncIndexes();
-      console.log('CleaningRecord indexes synced');
-    } catch (err) {
-      console.error('CleaningRecord index sync error:', err);
-    }
-  })();
-
   // Automatic iCal sync scheduling (prod-safe, env-controlled).
   try {
     const { startIcalSyncSchedulerIfEnabled } = require('./services/ops/ingestion/icalSyncScheduler');
@@ -355,13 +316,16 @@ app.use('*', (req, res) => {
 let server = null;
 
 function startHttpListener() {
-  server = app.listen(PORT, () => {
+  const onListening = () => {
     console.log(`Drift & Dwells Booking Server running on port ${PORT}`);
     console.log(`Health check: http://localhost:${PORT}/api/health`);
     // Precompute chat FAQ embeddings (non-blocking)
     const chatService = require('./services/chatService');
     chatService.warmEmbeddings().catch((err) => console.warn('[chat] Warm failed:', err?.message));
-  });
+  };
+  server = process.env.API_HOST
+    ? app.listen(PORT, process.env.API_HOST, onListening)
+    : app.listen(PORT, onListening);
   return server;
 }
 

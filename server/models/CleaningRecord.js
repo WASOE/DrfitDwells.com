@@ -1,4 +1,10 @@
 const mongoose = require('mongoose');
+const {
+  EXTERNAL_HOLD_INDEX_NAME,
+  EXTERNAL_HOLD_INDEX_KEYS,
+  EXTERNAL_HOLD_INDEX_FILTER,
+  EXTERNAL_HOLD_INDEX_COLLATION
+} = require('../services/cleaning/cleaningRecordIndexMigration');
 
 /**
  * CleaningRecord — per-turnover cleaning row for the cleaning portal.
@@ -96,7 +102,12 @@ const cleaningRecordSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-cleaningRecordSchema.index({ sourceKind: 1, sourceId: 1, cleaningDate: 1 }, { unique: true });
+cleaningRecordSchema.index(EXTERNAL_HOLD_INDEX_KEYS, {
+  unique: true,
+  name: EXTERNAL_HOLD_INDEX_NAME,
+  partialFilterExpression: EXTERNAL_HOLD_INDEX_FILTER,
+  collation: EXTERNAL_HOLD_INDEX_COLLATION
+});
 cleaningRecordSchema.index(
   { bookingId: 1, cleaningDate: 1 },
   {
