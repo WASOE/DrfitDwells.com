@@ -421,10 +421,10 @@ test('S2#24 transferredValueCents = min(contractual, coverage)', () => {
 });
 
 test('S2#25 coverage from Payment trail; disputed fail-closed', () => {
-  const booking = { totalValueCents: 10000, giftVoucherAppliedCents: 0 };
+  const booking = { _id: 'source', totalValueCents: 10000, giftVoucherAppliedCents: 0 };
   const ok = resolveRecognizedNetSettledCoverageCents(booking, [
-    { status: 'paid', amount: 40 },
-    { status: 'partial', amount: 20 }
+    { status: 'paid', amount: 40, provider: 'stripe', providerReference: 'pi_one', reservationId: 'source', currency: 'eur' },
+    { status: 'paid', amount: 20, provider: 'stripe', providerReference: 'pi_two', reservationId: 'source', currency: 'eur' }
   ]);
   assert.equal(ok.ok, true);
   assert.equal(ok.cents, 6000);
@@ -437,8 +437,8 @@ test('S2#25 coverage from Payment trail; disputed fail-closed', () => {
 });
 
 test('S2#26 trail vs stripePaidAmountCents disagreement fail-closed', () => {
-  const booking = { totalValueCents: 10000, stripePaidAmountCents: 9999 };
-  const r = resolveRecognizedNetSettledCoverageCents(booking, [{ status: 'paid', amount: 100 }]);
+  const booking = { _id: 'source', totalValueCents: 10000, stripePaidAmountCents: 9999 };
+  const r = resolveRecognizedNetSettledCoverageCents(booking, [{ status: 'paid', amount: 100, provider: 'stripe', providerReference: 'pi_one', reservationId: 'source', currency: 'eur' }]);
   assert.equal(r.ok, false);
   assert.equal(r.code, COVERAGE_FAIL_CODES.TRAIL_STRIPE_DISAGREE);
 });
@@ -449,12 +449,19 @@ test('S2#27 unpaid source may have zero coverage', () => {
   assert.equal(r.cents, 0);
 });
 
-test('S2#28 voucher counted once; refunded payments not counted', () => {
-  const booking = { totalValueCents: 10000, giftVoucherAppliedCents: 2500 };
+test('S2#28 confirmed voucher counted once; verified fully refunded payments not counted', () => {
+  const booking = { _id: 'source', totalValueCents: 10000, giftVoucherAppliedCents: 2500, giftVoucherRedemptionId: 'redemption' };
   const r = resolveRecognizedNetSettledCoverageCents(booking, [
-    { status: 'paid', amount: 50 },
-    { status: 'refunded', amount: 50 }
-  ]);
+    { status: 'paid', amount: 50, provider: 'stripe', providerReference: 'pi_paid', reservationId: 'source', currency: 'eur' },
+    { status: 'refunded', amount: 50, provider: 'stripe', providerReference: 'pi_refunded', reservationId: 'source', currency: 'eur' }
+  ], {
+    giftVoucherRedemption: { _id: 'redemption', bookingId: 'source', status: 'confirmed', amountAppliedCents: 2500 },
+    stripePaymentIntents: [{
+      id: 'pi_refunded', status: 'succeeded', currency: 'eur', amount_received: 5000,
+      latest_charge: { id: 'ch_refunded', payment_intent: 'pi_refunded', paid: true, captured: true,
+        disputed: false, currency: 'eur', amount: 5000, amount_captured: 5000, amount_refunded: 5000 }
+    }]
+  });
   assert.equal(r.ok, true);
   assert.equal(r.cents, 7500);
 });

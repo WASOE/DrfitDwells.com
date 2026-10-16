@@ -73,6 +73,8 @@ function resolveVerifiedGiftVoucherCents(booking, giftVoucherRedemption) {
   if (r.bookingId != null && !idsEqual(r.bookingId, booking._id)) return 0;
   if (r.reservationId != null && !idsEqual(r.reservationId, booking._id)) return 0;
   if (r.checkoutId != null && booking.checkoutId != null && !idsEqual(r.checkoutId, booking.checkoutId)) return 0;
+  if (!idsEqual(r.bookingId, booking._id) && !idsEqual(r.reservationId, booking._id) &&
+      !idsEqual(r.checkoutId, booking.checkoutId)) return 0;
   if (r.currency != null && String(r.currency).toUpperCase() !== 'EUR') return 0;
   if (positiveIntegerOrNull(r.amountAppliedCents) !== applied) return 0;
   return applied;

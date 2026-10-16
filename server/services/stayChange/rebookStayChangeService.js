@@ -38,6 +38,7 @@ const { openManualReviewItem } = require('../ops/ingestion/manualReviewService')
 const { computeQuoteFromEntity } = require('../bookingQuoteService');
 const { formatSofiaDateOnly, normalizeDateToSofiaDayStart } = require('../../utils/dateTime');
 const { assertStayChangeIdempotencyIndex } = require('./stayChangeIndexes');
+const { loadRebookCoverageEvidence } = require('./loadRebookCoverageEvidence');
 const {
   commercialProductKeyFromBooking,
   validateCommercialShape,
@@ -1308,7 +1309,8 @@ async function rebookReservation({
       coverageCode: contractual.code
     });
   }
-  const coverage = resolveRecognizedNetSettledCoverageCents(booking, trail);
+  const coverageEvidence = await loadRebookCoverageEvidence(booking, trail);
+  const coverage = resolveRecognizedNetSettledCoverageCents(booking, trail, coverageEvidence);
   if (!coverage.ok) {
     throw err('PAYMENT_EVIDENCE_AMBIGUOUS', 'Recognized source coverage cannot be determined', 409, {
       coverageCode: coverage.code,
