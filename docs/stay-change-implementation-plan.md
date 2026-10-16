@@ -1,5 +1,48 @@
 # StayChange — Locked Architecture Spec
 
+## Durable REBOOK source ownership correction (2026-10-16)
+
+Before acquiring any target inventory, REBOOK atomically claims the original
+Booking with `rebookSourceOwnerId = StayChange._id`. The single-document MongoDB
+CAS matches `_id`, an absent/null owner and source eligibility. Different keys
+cannot acquire the same source. Same-operation retries retain the pre-minted
+replacement ID and resume from durable state, including after a process crash.
+No new index or migration is required; API startup performs no index work.
+
+Ordering is source fence, target night claims, replacement creation,
+`committed`, source cancellation CAS (also matching the owner), source claim
+release, completion invariant, `completed`. Replacement creation retains S3
+confirmation semantics; only the fenced operation can reach it. Original
+payments and other financial evidence are not moved or rewritten.
+
+The fence has no expiry and is not released on failure or completion.
+Retry a safely compensated failure using the **original operation/key**.
+`needs_reconciliation` remains blocked; neither uncertain target inventory nor
+source ownership is automatically released. A new key cannot bypass a failed
+operation. There is no automatic or generic manual-unlock command.
+Once inventory is secured, replacement-persistence failures retain target
+claims, including the current attempt's inserts: a concurrent same-operation
+executor may already be using them. A matching persisted replacement is
+adopted even after a lost write acknowledgement. Unreadable or conflicting
+replacement evidence enters reconciliation; otherwise retry the original key
+from `inventory_secured`. Recovery verifies exact target ownership again.
+Phase saves also compare the prior durable status. A stale executor receives
+`OPERATION_ADVANCED` and must retry the original key rather than regressing a
+newer phase. Repeated source projection succeeds only for the same owner and
+replacement link.
+
+Historical operations acquire the fence before recovery. Adoption fails closed
+if another operation has a target, claims or an advanced/ambiguous state.
+Already-consumed sources must link to this operation's replacement. Historical
+duplicates require explicit operational reconciliation; this fix does not
+delete them or choose a winner. Missing sources, invalid terminal linkage and
+archived/test historical sources fail closed, including on completed replay.
+
+Deployment prerequisite: quiesce/drain all old REBOOK executors before enabling
+the corrected service; do not run mixed old/new REBOOK writers. Rollback must
+keep REBOOK disabled/quiesced, because old code does not honor the fence.
+This correction introduces no new REBOOK eligibility or settlement capability.
+
 ## Financial foundation correction (2026-10-16)
 
 REBOOK source coverage uses booking-linked EUR Payment ledger rows, not a
