@@ -7,6 +7,7 @@ import { formatMoneyFromCents } from '../../utils/formatMoney';
 import { OpsEmailPreviewModal } from './components/OpsEmailPreviewModal';
 import { OpsWhatsappPreviewModal } from './components/OpsWhatsappPreviewModal';
 import MoveUnitDialog from './components/MoveUnitDialog';
+import ReassignReservationDialog from './components/ReassignReservationDialog';
 import { buildGmaPreviewRuleOptions } from '../../../../shared/messaging/gmaPreviewRules.js';
 import {
   canCancelReservation,
@@ -212,7 +213,7 @@ export default function OpsReservationDetail() {
 
   const [lifecycleConfirm, setLifecycleConfirm] = useState(null);
   const [reassignOpen, setReassignOpen] = useState(false);
-  const [reassignCabinId, setReassignCabinId] = useState('');
+  const [reassignedTo, setReassignedTo] = useState(null);
   const [blockModal, setBlockModal] = useState(null);
 
 
@@ -1010,18 +1011,6 @@ export default function OpsReservationDetail() {
     }
   };
 
-  const submitReassign = async () => {
-    const toCabinId = (reassignCabinId || '').trim();
-    if (!toCabinId) return;
-    setReassignOpen(false);
-    setReassignCabinId('');
-    await doAction(opsWriteAPI.reassignReservation, id, {
-      toCabinId,
-      acceptExternalHoldWarnings: true,
-      reason: 'ops_reassign'
-    });
-  };
-
   const submitBlockModal = async () => {
     if (!blockModal) return;
     const startDate = (blockModal.startDate || '').trim();
@@ -1125,7 +1114,8 @@ export default function OpsReservationDetail() {
   const reservationStatus = reservation.reservationStatus || '';
   const cabinSummary = data.cabinSummary || null;
   const canCancel = canCancelReservation(session, reservationStatus);
-  const canShowReassign = canShowLegacyReassign(session, cabinSummary, reservation);
+  const canShowReassign = canShowLegacyReassign(session, cabinSummary, reservation) &&
+    ['pending', 'confirmed'].includes(reservationStatus);
   const canShowMoveUnit = canMoveUnit(session, reservationStatus, cabinSummary, reservation);
   const canResolveSettlement = canResolveCancellationSettlement(
     session,
@@ -1433,7 +1423,6 @@ export default function OpsReservationDetail() {
                   <OpsButton
                     variant="secondary"
                     onClick={() => {
-                      setReassignCabinId('');
                       setReassignOpen(true);
                     }}
                   >
@@ -1928,31 +1917,22 @@ export default function OpsReservationDetail() {
           onCancel={() => setLifecycleConfirm(null)}
         />
 
-        <OpsModal
+        {reassignedTo ? <p role="status">
+          Reassigned to {reassignedTo.destinationLabel}. No guest notification was sent.{' '}
+          <Link to={`/ops/reservations/${reassignedTo.targetBookingId}`}>Open replacement reservation</Link>
+          {' '}or <Link to="/ops/calendar">view refreshed calendar</Link>.
+        </p> : null}
+        <ReassignReservationDialog
           open={reassignOpen}
+          reservationId={id}
+          sourceLabel={cabinSummary?.displayName || cabinSummary?.name || 'Current accommodation'}
           onClose={() => setReassignOpen(false)}
-          title="Reassign reservation"
-          footer={
-            <div className="ops-rd-modal-footer">
-              <OpsButton variant="secondary" onClick={() => setReassignOpen(false)}>
-                Cancel
-              </OpsButton>
-              <OpsButton
-                disabled={!(reassignCabinId || '').trim()}
-                onClick={() => void submitReassign()}
-              >
-                Reassign
-              </OpsButton>
-            </div>
-          }
-        >
-          <OpsTextField
-            label="Target cabinId"
-            value={reassignCabinId}
-            onChange={(e) => setReassignCabinId(e.target.value)}
-            placeholder="cabinId"
-          />
-        </OpsModal>
+          onSuccess={async result => {
+            setReassignedTo(result);
+            setSuccessMessage(`Reservation reassigned to ${result.destinationLabel}.`);
+            await load();
+          }}
+        />
 
         <OpsModal
           open={Boolean(blockModal)}

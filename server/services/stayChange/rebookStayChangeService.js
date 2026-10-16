@@ -1165,6 +1165,9 @@ async function resolveTargetEntity({ targetCabinId, targetCabinTypeId, targetUni
     if (cabin.archivedAt) {
       throw err('INVALID_TARGET', 'Target cabin is archived', 409);
     }
+    if (cabin.inventoryType === 'multi') {
+      throw err('INVALID_TARGET', 'Multi-unit accommodation requires a physical target unit', 409);
+    }
     return {
       shape: 'single',
       entity: cabin,
@@ -1176,7 +1179,7 @@ async function resolveTargetEntity({ targetCabinId, targetCabinTypeId, targetUni
   }
   if (targetCabinTypeId && targetUnitId) {
     const cabinType = await CabinType.findById(targetCabinTypeId);
-    if (!cabinType || cabinType.isActive === false) {
+    if (!cabinType || cabinType.isActive === false || cabinType.archivedAt) {
       throw err('INVALID_TARGET', 'Target cabin type not found or inactive', 409);
     }
     const unit = await Unit.findById(targetUnitId);
@@ -1316,118 +1319,15 @@ async function rebookReservation({
     return reconcileRebookStayChange(existing._id, ctx);
   }
 
-  if (booking.isTest) {
-    throw err('UNSUPPORTED_SOURCE', 'Test bookings cannot REBOOK', 409);
-  }
-  if (booking.archivedAt) {
-    throw err('UNSUPPORTED_SOURCE', 'Archived bookings cannot REBOOK', 409);
-  }
-  if (booking.locationBookingId) {
-    throw err('UNSUPPORTED_SOURCE', 'LocationBooking cannot REBOOK in v1', 409);
-  }
-  if (!ELIGIBLE_STATUSES.includes(booking.status)) {
-    throw err('UNSUPPORTED_SOURCE', 'Source status is not eligible for REBOOK', 409, {
-      status: booking.status
-    });
-  }
-  if (booking.cancellationSettlement?.outcome === 'rebooked_or_moved') {
-    throw err('UNSUPPORTED_SOURCE', 'Source already rebooked or moved', 409);
-  }
-
-  const promo = detectPromotionalSourceEconomics(booking);
-  if (promo.promotional) {
-    throw err(
-      'UNSUPPORTED_SOURCE',
-      'Source promotional or voucher pricing is not supported for REBOOK v1',
-      409,
-      {
-        reason: PROMO_REASON,
-        evidenceKeys: promo.evidenceKeys
-      }
-    );
-  }
-
-  const sourceShape = validateCommercialShape({
-    cabinId: booking.cabinId,
-    cabinTypeId: booking.cabinTypeId,
-    unitId: booking.unitId,
-    locationBookingId: booking.locationBookingId,
-    allowUnallocatedMulti: false
-  });
-  if (!sourceShape.ok) {
-    throw err('UNSUPPORTED_SOURCE', sourceShape.message, 409, { codeDetail: sourceShape.code });
-  }
-
-  const sourceOwns = await assertSourceOwnsClaims(booking);
-  if (!sourceOwns.ok) {
-    throw err('UNSUPPORTED_SOURCE', 'Source does not own expected inventory claims', 409, {
-      ownership: sourceOwns
-    });
-  }
+  const sourceShape = await assertRebookSourceEligible(booking);
+  const { contractual, coverage, transferred } = await loadRebookMoney(booking);
 
   const target = await resolveTargetEntity({
     targetCabinId,
     targetCabinTypeId,
     targetUnitId
   });
-
-  const route = classifyStayChangeRoute({
-    source: {
-      cabinId: booking.cabinId,
-      cabinTypeId: booking.cabinTypeId,
-      unitId: booking.unitId
-    },
-    target: {
-      cabinId: target.cabinId,
-      cabinTypeId: target.cabinTypeId,
-      unitId: target.unitId
-    }
-  });
-  if (route === 'reallocate') {
-    throw err('SAME_COMMERCIAL_PRODUCT', 'Same cabinType unit move belongs to REALLOCATE', 409);
-  }
-  if (route === 'noop' || route === 'amend') {
-    throw err('SAME_COMMERCIAL_PRODUCT', 'Same commercial product is not REBOOK', 409);
-  }
-  if (route !== 'rebook') {
-    throw err('SAME_COMMERCIAL_PRODUCT', 'Request is not a cross-product REBOOK', 409, { route });
-  }
-
-  const trail = await loadPaymentTrail(booking._id);
-  const contractual = resolveSourceContractualTotalCents(booking);
-  if (!contractual.ok) {
-    throw err('PAYMENT_EVIDENCE_AMBIGUOUS', 'Invalid source contractual total', 409, {
-      coverageCode: contractual.code
-    });
-  }
-  const coverageEvidence = await loadRebookCoverageEvidence(booking, trail);
-  const coverage = resolveRecognizedNetSettledCoverageCents(booking, trail, coverageEvidence);
-  if (!coverage.ok) {
-    throw err('PAYMENT_EVIDENCE_AMBIGUOUS', 'Recognized source coverage cannot be determined', 409, {
-      coverageCode: coverage.code,
-      detail: coverage.detail || null
-    });
-  }
-  const transferred = computeTransferredValueCents(contractual.cents, coverage.cents);
-  if (!transferred.ok) {
-    throw err('PAYMENT_EVIDENCE_AMBIGUOUS', 'transferredValueCents invalid', 409);
-  }
-
-  const quote = await computeQuoteFromEntity(
-    target.entity,
-    booking.checkIn,
-    booking.checkOut,
-    booking.adults,
-    booking.children || 0,
-    experienceKeysFromBooking(booking),
-    booking.transportMethod,
-    booking.romanticSetup,
-    null
-  );
-  const canonicalTargetQuoteCents = Math.round(Number(quote.totalPrice) * 100);
-  if (!Number.isInteger(canonicalTargetQuoteCents) || canonicalTargetQuoteCents < 0) {
-    throw err('INVALID_TARGET', 'Target quote could not be computed', 409);
-  }
+  const canonicalTargetQuoteCents = await quoteRebookTarget(booking, target);
 
   let settlementType;
   let waivedUpgradeCents = 0;
@@ -1578,7 +1478,142 @@ async function rebookReservation({
   return reconcileRebookStayChange(sc._id, ctx);
 }
 
+async function assertRebookSourceEligible(booking) {
+  if (booking.rebookSourceOwnerId) {
+    throw err('SOURCE_OWNERSHIP_CONFLICT', 'Source already belongs to a REBOOK operation; reconcile that operation', 409);
+  }
+  if (booking.isTest) {
+    throw err('UNSUPPORTED_SOURCE', 'Test bookings cannot REBOOK', 409);
+  }
+  if (booking.archivedAt) {
+    throw err('UNSUPPORTED_SOURCE', 'Archived bookings cannot REBOOK', 409);
+  }
+  if (booking.locationBookingId) {
+    throw err('UNSUPPORTED_SOURCE', 'LocationBooking cannot REBOOK in v1', 409);
+  }
+  if (!ELIGIBLE_STATUSES.includes(booking.status)) {
+    throw err('UNSUPPORTED_SOURCE', 'Source status is not eligible for REBOOK', 409, {
+      status: booking.status
+    });
+  }
+  if (booking.cancellationSettlement?.outcome === 'rebooked_or_moved') {
+    throw err('UNSUPPORTED_SOURCE', 'Source already rebooked or moved', 409);
+  }
+
+  const promo = detectPromotionalSourceEconomics(booking);
+  if (promo.promotional) {
+    throw err(
+      'UNSUPPORTED_SOURCE',
+      'Source promotional or voucher pricing is not supported for REBOOK v1',
+      409,
+      {
+        reason: PROMO_REASON,
+        evidenceKeys: promo.evidenceKeys
+      }
+    );
+  }
+
+  const sourceShape = validateCommercialShape({
+    cabinId: booking.cabinId,
+    cabinTypeId: booking.cabinTypeId,
+    unitId: booking.unitId,
+    locationBookingId: booking.locationBookingId,
+    allowUnallocatedMulti: false
+  });
+  if (!sourceShape.ok) {
+    throw err('UNSUPPORTED_SOURCE', sourceShape.message, 409, { codeDetail: sourceShape.code });
+  }
+
+  const sourceOwns = await assertSourceOwnsClaims(booking);
+  if (!sourceOwns.ok) {
+    throw err('UNSUPPORTED_SOURCE', 'Source does not own expected inventory claims', 409, {
+      ownership: sourceOwns
+    });
+  }
+  return sourceShape;
+}
+
+function assertRebookTargetCapacity(booking, target) {
+  const guests = Number(booking.adults) + Number(booking.children || 0);
+  const capacity = Number(target.entity.capacity);
+  const minGuests = Number(target.entity.minGuests || 1);
+  if (!Number.isInteger(guests) || guests < minGuests ||
+      !Number.isFinite(capacity) || guests > capacity) {
+    throw err('TARGET_CAPACITY', 'Destination cannot accommodate this reservation\'s guests', 409);
+  }
+}
+
+async function quoteRebookTarget(booking, target) {
+  assertRebookTargetCapacity(booking, target);
+  const route = classifyStayChangeRoute({
+    source: {
+      cabinId: booking.cabinId,
+      cabinTypeId: booking.cabinTypeId,
+      unitId: booking.unitId
+    },
+    target: {
+      cabinId: target.cabinId,
+      cabinTypeId: target.cabinTypeId,
+      unitId: target.unitId
+    }
+  });
+  if (route === 'reallocate') {
+    throw err('SAME_COMMERCIAL_PRODUCT', 'Same cabinType unit move belongs to REALLOCATE', 409);
+  }
+  if (route === 'noop' || route === 'amend') {
+    throw err('SAME_COMMERCIAL_PRODUCT', 'Same commercial product is not REBOOK', 409);
+  }
+  if (route !== 'rebook') {
+    throw err('SAME_COMMERCIAL_PRODUCT', 'Request is not a cross-product REBOOK', 409, { route });
+  }
+
+  const quote = await computeQuoteFromEntity(
+    target.entity,
+    booking.checkIn,
+    booking.checkOut,
+    booking.adults,
+    booking.children || 0,
+    experienceKeysFromBooking(booking),
+    booking.transportMethod,
+    booking.romanticSetup,
+    null
+  );
+  const canonicalTargetQuoteCents = Math.round(Number(quote.totalPrice) * 100);
+  if (!Number.isInteger(canonicalTargetQuoteCents) || canonicalTargetQuoteCents < 0) {
+    throw err('INVALID_TARGET', 'Target quote could not be computed', 409);
+  }
+  return canonicalTargetQuoteCents;
+}
+
+async function loadRebookMoney(booking) {
+  const trail = await loadPaymentTrail(booking._id);
+  const contractual = resolveSourceContractualTotalCents(booking);
+  if (!contractual.ok) {
+    throw err('PAYMENT_EVIDENCE_AMBIGUOUS', 'Invalid source contractual total', 409, {
+      coverageCode: contractual.code
+    });
+  }
+  const coverageEvidence = await loadRebookCoverageEvidence(booking, trail);
+  const coverage = resolveRecognizedNetSettledCoverageCents(booking, trail, coverageEvidence);
+  if (!coverage.ok) {
+    throw err('PAYMENT_EVIDENCE_AMBIGUOUS', 'Recognized source coverage cannot be determined', 409, {
+      coverageCode: coverage.code, detail: coverage.detail || null
+    });
+  }
+  const transferred = computeTransferredValueCents(contractual.cents, coverage.cents);
+  if (!transferred.ok) {
+    throw err('PAYMENT_EVIDENCE_AMBIGUOUS', 'transferredValueCents invalid', 409);
+  }
+  return { contractual, coverage, transferred };
+}
+
 module.exports = {
+  assertRebookSourceEligible,
+  assertRebookTargetCapacity,
+  loadRebookMoney,
+  resolveTargetEntity,
+  quoteRebookTarget,
+  evaluateExternalAndHardConflicts,
   rebookReservation,
   reconcileRebookStayChange,
   buildPayloadFingerprint,

@@ -56,6 +56,7 @@ const { computeQuoteFromEntity } = require('../services/bookingQuoteService');
 const { isRebookTransferSettling } = require('../services/stayChange/rebookStayChangeSpine');
 const cutover = require('./stayChangeR1Cutover');
 const { normalizeDateToSofiaDayStart } = require('../utils/dateTime');
+const { getRebookCandidatesReadModel } = require('../services/ops/readModels/rebookCandidatesReadModel');
 
 const SVC_PATH = path.join(__dirname, '../services/stayChange/rebookStayChangeService.js');
 const ROUTE_PATH = path.join(__dirname, '../routes/ops/modules/reservationsRoutes.js');
@@ -132,6 +133,7 @@ async function seedTypeWithUnits(n = 2, pricePerNight = 100) {
     name: `S3 Parent ${seq}`,
     slug: `s3-parent-${seq}-${crypto.randomBytes(2).toString('hex')}`,
     description: 'parent',
+    inventoryType: 'multi',
     capacity: 4,
     pricePerNight,
     minNights: 1,
@@ -349,6 +351,111 @@ test.after(async () => {
   if (mongoServer) await mongoServer.stop();
   if (originalRebookEnabled === undefined) delete process.env.REBOOK_ENABLED;
   else process.env.REBOOK_ENABLED = originalRebookEnabled;
+});
+
+test('reassignment preview: exact dates, named units, capacity and conflicts; no writes', async () => {
+  const source = await seedCabin();
+  const available = await seedCabin();
+  await Cabin.updateOne({ _id: available._id }, { $set: { cabinTypeId: new mongoose.Types.ObjectId() } });
+  const blocked = await seedCabin();
+  const tooSmall = await seedCabin();
+  const cheaper = await seedCabin(50);
+  const inactive = await seedCabin();
+  const fenced = await seedCabin();
+  const multi = await seedTypeWithUnits();
+  await Cabin.updateOne({ _id: tooSmall._id }, { $set: { capacity: 1 } });
+  await Cabin.updateOne({ _id: inactive._id }, { $set: { isActive: false } });
+  const booking = await makeSingleBooking({ cabin: source });
+  await claimCabinNights({
+    cabinId: fenced._id, bookingId: new mongoose.Types.ObjectId(),
+    checkIn: booking.checkIn, checkOut: booking.checkOut, source: 'rebook'
+  });
+  await makeSingleBooking({ cabin: blocked, checkIn: booking.checkIn, checkOut: booking.checkOut });
+  const before = await Booking.findById(booking._id).lean();
+  const payments = await Payment.find({}).lean();
+  const claims = await CabinNightClaim.countDocuments();
+  const preview = await getRebookCandidatesReadModel(booking._id, adminCtx());
+  assert.equal(preview.checkInDateOnly, formatDate(booking.checkIn));
+  assert.equal(preview.checkOutDateOnly, formatDate(booking.checkOut));
+  assert.equal(preview.contractualTotalCents, 20000);
+  assert.equal(preview.transferableValueCents, 20000);
+  const ids = preview.candidates.map(candidate => candidate.id);
+  assert.ok(ids.includes(String(available._id)));
+  assert.ok(preview.candidates.some(candidate => candidate.targetUnitId === String(multi.units[0]._id)));
+  for (const excluded of [source, blocked, tooSmall, cheaper, inactive, fenced]) {
+    assert.ok(!ids.includes(String(excluded._id)));
+  }
+  assert.equal(preview.candidates.find(candidate => candidate.id === String(available._id)).label, available.name);
+  assert.deepEqual(await Booking.findById(booking._id).lean(), before);
+  assert.deepEqual(await Payment.find({}).lean(), payments);
+  assert.equal(await StayChange.countDocuments(), 0);
+  assert.equal(await CabinNightClaim.countDocuments(), claims);
+});
+
+function formatDate(value) {
+  return require('../utils/dateTime').formatSofiaDateOnly(value);
+}
+
+test('reassignment preview: external hold is explicit and mutation rechecks availability', async () => {
+  const source = await seedCabin();
+  const target = await seedCabin();
+  const booking = await makeSingleBooking({ cabin: source });
+  await AvailabilityBlock.create({
+    cabinId: target._id, blockType: 'external_hold', status: 'active',
+    startDate: booking.checkIn, endDate: booking.checkOut, source: 'airbnb', sourceReference: 'preview-hold'
+  });
+  const preview = await getRebookCandidatesReadModel(booking._id, adminCtx());
+  assert.equal(preview.candidates[0].externalHoldWarning, true);
+  await assert.rejects(() => rebookOk(booking, { cabinId: target._id }), error => codeOf(error) === 'EXTERNAL_HOLD_ACK_REQUIRED');
+  await makeSingleBooking({ cabin: target, checkIn: booking.checkIn, checkOut: booking.checkOut });
+  await assert.rejects(() => rebookOk(booking, { cabinId: target._id }, idem('stale'), {
+    acceptExternalHoldWarnings: true
+  }), error => codeOf(error) === 'HARD_CONFLICTS');
+});
+
+test('reassignment preview: permission and source eligibility fail before transfer', async () => {
+  await assert.rejects(() => getRebookCandidatesReadModel(new mongoose.Types.ObjectId(), {
+    user: { role: 'operator' }
+  }), error => error.code === 'PERMISSION_DENIED');
+  const source = await seedCabin();
+  const booking = await makeSingleBooking({ cabin: source });
+  await Booking.updateOne({ _id: booking._id }, { $set: { rebookSourceOwnerId: new mongoose.Types.ObjectId() } });
+  await assert.rejects(() => getRebookCandidatesReadModel(booking._id, adminCtx()),
+    error => codeOf(error) === 'SOURCE_OWNERSHIP_CONFLICT');
+  assert.equal(await StayChange.countDocuments(), 0);
+});
+
+test('reassignment preview: successful command retains guest, dates and financial provenance without notification', async () => {
+  const source = await seedCabin();
+  const target = await seedCabin(120);
+  const booking = await makeSingleBooking({ cabin: source });
+  const beforePayments = await Payment.find({}).lean();
+  const preview = await getRebookCandidatesReadModel(booking._id, adminCtx());
+  const destination = preview.candidates.find(item => item.id === String(target._id));
+  assert.equal(destination.differenceCents, 4000);
+  const key = idem('preview-success');
+  const result = await rebookOk(booking, { cabinId: target._id }, key, { waiveUpgradeCents: destination.differenceCents });
+  assert.equal(result.status, 'completed');
+  const retry = await rebookOk(booking, { cabinId: target._id }, key, { waiveUpgradeCents: destination.differenceCents });
+  assert.equal(retry.targetBookingId, result.targetBookingId);
+  const replacement = await Booking.findById(result.targetBookingId).lean();
+  assert.deepEqual(replacement.guestInfo, booking.toObject().guestInfo);
+  assert.equal(+replacement.checkIn, +booking.checkIn);
+  assert.equal(+replacement.checkOut, +booking.checkOut);
+  assert.equal(replacement.suppressGuestEmail, true);
+  assert.equal(replacement.sendGuestConfirmationEmail, false);
+  assert.deepEqual(await Payment.find({}).lean(), beforePayments);
+});
+
+test('reassignment capacity cannot be bypassed by a direct REBOOK command', async () => {
+  const source = await seedCabin();
+  const target = await seedCabin();
+  target.capacity = 1;
+  await target.save();
+  const booking = await makeSingleBooking({ cabin: source });
+  await assert.rejects(() => rebookOk(booking, { cabinId: target._id }),
+    error => codeOf(error) === 'TARGET_CAPACITY');
+  assert.equal(await StayChange.countDocuments(), 0);
 });
 
 // =============================================================================
@@ -1667,6 +1774,8 @@ for (const [adults, children] of GUEST_COMBOS) {
   test(`S3#guests-${adults}-${children} preserved`, async () => {
     const a = await seedCabin();
     const b = await seedCabin();
+    b.capacity = Math.max(4, adults + children);
+    await b.save();
     const booking = await makeSingleBooking({
       cabin: a,
       extras: { adults, children }
@@ -2683,6 +2792,8 @@ test('S3.1#Booking DB round-trip durable fields', async () => {
 test('S3.1#completion invariant dates and guests via durable reload', async () => {
   const a = await seedCabin();
   const b = await seedCabin();
+  b.capacity = 5;
+  await b.save();
   const booking = await makeSingleBooking({
     cabin: a,
     extras: { adults: 3, children: 2 }
