@@ -159,6 +159,46 @@ test.beforeEach(async () => {
   ]);
 });
 
+test('REBOOK candidates route rejects unauthenticated requests', async () => {
+  const response = await request(app).get(`/api/ops/reservations/${new mongoose.Types.ObjectId()}/rebook-candidates`);
+  assert.equal(response.status, 401);
+});
+
+test('REBOOK candidates route rejects operator permission before checking the gate', async () => {
+  await createOpsUser({
+    email: 'rebook.operator@test.local', name: 'Operator', password: 'pass-123456',
+    role: 'operator', modules: ['reservations']
+  });
+  const token = await login('rebook.operator@test.local', 'pass-123456');
+  const before = await snapshotCounts();
+  const response = await request(app)
+    .get(`/api/ops/reservations/${new mongoose.Types.ObjectId()}/rebook-candidates`)
+    .set('Authorization', 'Bearer ' + token);
+  assert.equal(response.status, 403);
+  assert.deepEqual(await snapshotCounts(), before);
+});
+
+test('REBOOK candidates route respects the write gate without database mutation', async () => {
+  await createOpsUser({
+    email: 'rebook.admin@test.local', name: 'Admin', password: 'pass-123456', role: 'admin'
+  });
+  const token = await login('rebook.admin@test.local', 'pass-123456');
+  const previous = process.env.REBOOK_ENABLED;
+  process.env.REBOOK_ENABLED = 'false';
+  try {
+    const before = await snapshotCounts();
+    const response = await request(app)
+      .get(`/api/ops/reservations/${new mongoose.Types.ObjectId()}/rebook-candidates`)
+      .set('Authorization', 'Bearer ' + token);
+    assert.equal(response.status, 503);
+    assert.equal(response.body.details.code, 'REBOOK_DISABLED');
+    assert.deepEqual(await snapshotCounts(), before);
+  } finally {
+    if (previous === undefined) delete process.env.REBOOK_ENABLED;
+    else process.env.REBOOK_ENABLED = previous;
+  }
+});
+
 test('R3 route#1 unauthenticated request denied', async () => {
   const { booking } = await seedAllocated();
   const res = await request(app).get(`/api/ops/reservations/${booking._id}/reallocate-candidates`);

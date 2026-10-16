@@ -41,6 +41,8 @@ const opsReadAPI = {
   reservationDetail: (id) => api.get(`/ops/reservations/${id}`, { headers: authHeaders() }),
   reallocateCandidates: (id) =>
     api.get(`/ops/reservations/${id}/reallocate-candidates`, { headers: authHeaders() }),
+  rebookCandidates: (id) =>
+    api.get(`/ops/reservations/${id}/rebook-candidates`, { headers: authHeaders() }),
   reservationEmailEvents: (id, params) =>
     api.get(`/ops/reservations/${id}/email-events`, { params, headers: authHeaders() }),
   health: () => api.get('/ops/health/readiness', { headers: authHeaders() }),
@@ -173,6 +175,8 @@ const opsWriteAPI = {
       headers: authHeaders()
     }),
   reassignReservation: (id, payload) => api.post(`/ops/reservations/${id}/actions/reassign`, payload, { headers: authHeaders() }),
+  rebookReservation: (id, payload) =>
+    api.post(`/ops/reservations/${id}/actions/rebook`, payload, { headers: authHeaders() }),
   reallocateReservation: (id, payload) => {
     const body = {
       targetUnitId: payload.targetUnitId,

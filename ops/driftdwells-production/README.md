@@ -35,6 +35,31 @@ Cancelled, archived and test bookings are excluded from Calendar occupancy.
 Calendar bars are event visibility, not a replacement for authoritative booking
 availability or unique unit-night claims.
 
+### Reservation reassignment
+
+The single-cabin reservation **Reassign** dialog loads named destinations from
+`GET /api/ops/reservations/:id/rebook-candidates` (admin reassignment permission).
+It checks the original dates, capacity, inventory conflicts and night claims
+without reserving anything. It excludes the current accommodation, unavailable
+destinations and unsupported downgrades. Prices and transferable coverage reuse
+the REBOOK evidence services; unverifiable evidence blocks the list.
+
+Confirmation uses the existing ownership-protected `actions/rebook` command,
+not legacy `actions/reassign`. Equal-price changes and explicitly approved full
+complimentary upgrades are supported; no payment is collected. External channel
+holds require separate acknowledgement. The command repeats availability,
+pricing and financial checks. Dates, guests and original financial records are
+preserved; the original reservation links to its replacement. No guest
+notification is requested. Same-product physical unit moves still use **Move
+Unit** / REALLOCATE.
+
+After an attempted request, the dialog freezes its intent and reuses the same
+idempotency key for retries. An uncertain or reconciliation result is not a
+successful reassignment. Refresh/review history before starting another change.
+Successful changes reload the source detail and link to the replacement and
+calendar (which fetches current inventory on navigation). Never test production
+by reassigning an actual reservation without explicit authorization.
+
 Run `cd client && node scripts/verify-manual-reservation-mobile.mjs` against a
 local frontend on port 3017 (or set `TEST_ORIGIN`) for the 432px browser check.
 It intercepts every API request with fixtures and never creates a real booking.

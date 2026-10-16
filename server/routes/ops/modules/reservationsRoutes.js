@@ -23,6 +23,7 @@ const {
 const { reallocateReservation } = require('../../../services/stayChange/reallocateStayChangeService');
 const { rebookReservation } = require('../../../services/stayChange/rebookStayChangeService');
 const { assertRebookEnabled } = require('../../../services/stayChange/rebookWriteGate');
+const { getRebookCandidatesReadModel } = require('../../../services/ops/readModels/rebookCandidatesReadModel');
 const { editGuestContact } = require('../../../services/ops/domain/guestWriteService');
 const {
   previewBookingLifecycleEmail,
@@ -236,6 +237,15 @@ router.get('/:id', async (req, res) => {
     return res.json({ success: true, data });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/:id/rebook-candidates', validateId('id'), async (req, res) => {
+  try {
+    const data = await getRebookCandidatesReadModel(req.params.id, { user: req.user });
+    return res.json({ success: true, data });
+  } catch (error) {
+    return handleDomainError(res, error);
   }
 });
 
