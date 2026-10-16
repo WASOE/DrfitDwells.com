@@ -63,6 +63,7 @@ const UNIT_MODEL_PATH = path.join(__dirname, '../models/UnitNightClaim.js');
 
 let mongoServer;
 let seq = 0;
+const originalRebookEnabled = process.env.REBOOK_ENABLED;
 
 function sofiaDay(daysAhead) {
   const d = new Date();
@@ -317,6 +318,7 @@ function assertRebookError(err, expectedCode) {
 
 test.before(async () => {
   process.env.NODE_ENV = 'test';
+  process.env.REBOOK_ENABLED = 'true';
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri(), { serverSelectionTimeoutMS: 10000 });
   await ensureCabinIdx();
@@ -345,6 +347,8 @@ test.beforeEach(async () => {
 test.after(async () => {
   await mongoose.disconnect();
   if (mongoServer) await mongoServer.stop();
+  if (originalRebookEnabled === undefined) delete process.env.REBOOK_ENABLED;
+  else process.env.REBOOK_ENABLED = originalRebookEnabled;
 });
 
 // =============================================================================

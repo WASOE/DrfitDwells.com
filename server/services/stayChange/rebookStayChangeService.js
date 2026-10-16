@@ -64,6 +64,7 @@ const {
   detectPromotionalSourceEconomics,
   PROMO_REASON
 } = require('./rebookPromoEligibility');
+const { assertRebookEnabled } = require('./rebookWriteGate');
 const KIND = REBOOK_KIND;
 const ELIGIBLE_STATUSES = Object.freeze(['pending', 'confirmed']);
 const MRI_CATEGORY = 'stay_change_rebook_reconciliation';
@@ -952,6 +953,7 @@ async function assertSourceOperationOwnership(sc) {
  * Resume forward from durable StayChange facts.
  */
 async function reconcileRebookStayChange(stayChangeId, ctx = {}) {
+  assertRebookEnabled();
   const sc = await StayChange.findById(stayChangeId);
   if (!sc) {
     throw createDomainError('validation', 'StayChange not found', { stayChangeId }, 404);
@@ -1231,6 +1233,7 @@ async function rebookReservation({
   waiveUpgradeCents = 0,
   ctx = {}
 }) {
+  assertRebookEnabled();
   requireRebookPermission(ctx);
   await assertStayChangeIdempotencyIndex();
 

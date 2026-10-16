@@ -22,6 +22,7 @@ const {
 } = require('../../../services/ops/domain/reservationWriteService');
 const { reallocateReservation } = require('../../../services/stayChange/reallocateStayChangeService');
 const { rebookReservation } = require('../../../services/stayChange/rebookStayChangeService');
+const { assertRebookEnabled } = require('../../../services/stayChange/rebookWriteGate');
 const { editGuestContact } = require('../../../services/ops/domain/guestWriteService');
 const {
   previewBookingLifecycleEmail,
@@ -526,6 +527,11 @@ router.post(
     body('waiveUpgradeCents').optional({ nullable: true }).isInt({ min: 0 })
   ],
   async (req, res) => {
+    try {
+      assertRebookEnabled();
+    } catch (error) {
+      return handleDomainError(res, error);
+    }
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({
