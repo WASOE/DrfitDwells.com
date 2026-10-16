@@ -31,6 +31,18 @@ operations do not use this setting.
    value `REBOOK_ENABLED=true` for every API process and restarting through the
    guarded process procedure. Recheck the effective value on every process.
 
+For the first production enablement, use the guarded deployment runner with a
+private plan containing `"enableRebookOnCutover": true`. The guard only accepts
+this mode when current and candidate are the same ownership release, all
+current/candidate/rollback environments explicitly have the gate closed, the
+candidate source contains the Booking ownership CAS, and read-only Mongo
+counts find zero REBOOK StayChanges and zero source-owner fences. It then
+restarts only the specified API from that exact release with the flag enabled,
+verifies the effective PM2 value, health/Ops endpoints and worker stability,
+and saves only after verification. On failure it restores the gate-capable
+rollback release with REBOOK disabled. Never enable by an unguarded PM2
+environment update.
+
 ## Rollback
 
 Keep REBOOK disabled before and throughout rollback. The pre-gate API ignores

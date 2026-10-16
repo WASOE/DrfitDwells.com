@@ -61,6 +61,74 @@ function verifyFiles(root, manifest, expectedSha) {
   return true;
 }
 
+function verifyOwnershipRelease(root) {
+  const booking = fs.readFileSync(path.join(root, 'server/models/Booking.js'), 'utf8');
+  const service = fs.readFileSync(path.join(root, 'server/services/stayChange/rebookStayChangeService.js'), 'utf8');
+  const ownershipStart = service.indexOf('async function assertSourceOperationOwnership(sc) {');
+  const ownershipEnd = service.indexOf('\nasync function ', ownershipStart + 1);
+  const ownership = ownershipStart >= 0
+    ? service.slice(ownershipStart, ownershipEnd < 0 ? undefined : ownershipEnd)
+    : '';
+  if (!/rebookSourceOwnerId\s*:/.test(booking) ||
+      !ownership.includes('async function assertSourceOperationOwnership(sc)') ||
+      !service.includes('await assertSourceOperationOwnership(sc);') ||
+      !/const acquired = await Booking\.updateOne\(\s*\{\s*_id:\s*sc\.bookingId,\s*rebookSourceOwnerId:\s*null,/.test(ownership) ||
+      !ownership.includes('if (!(acquired.matchedCount ?? acquired.n))') ||
+      !ownership.includes('Another REBOOK acquired the source') ||
+      !ownership.includes('$set: { rebookSourceOwnerId: sc._id }') ||
+      !service.includes('assertRebookEnabled();')) {
+    fail('REBOOK ownership CAS protocol is not present in candidate');
+  }
+}
+
+function effectiveMongoUri(root, env) {
+  const configuredUri = env.MONGODB_URI || env.MONGO_URI;
+  if (configuredUri) return configuredUri;
+  return require(path.join(root, 'server/config/dbDefaults')).DEFAULT_MONGO_URI;
+}
+
+async function countRebookOwnershipState(root, env) {
+  const uri = effectiveMongoUri(root, env);
+  const mongoose = require(path.join(root, 'server/node_modules/mongoose'));
+  await mongoose.connect(uri, { serverSelectionTimeoutMS: 10_000 });
+  try {
+    return await readRebookOwnershipCounts(mongoose.connection);
+  } finally {
+    await mongoose.disconnect();
+  }
+}
+
+async function readRebookOwnershipCounts(connection) {
+  const [rebookChanges, sourceOwners] = await Promise.all([
+    connection.collection('staychanges').countDocuments({ kind: 'rebook' }),
+    connection.collection('bookings').countDocuments({
+      rebookSourceOwnerId: { $exists: true, $ne: null }
+    })
+  ]);
+  return { rebookChanges, sourceOwners };
+}
+
+function assertRebookEnablementReady(plan, prepared, counts) {
+  if (plan.enableRebookOnCutover !== true) return;
+  const { current, candidate, rollback } = prepared;
+  if (current.sha !== candidate.sha || current.root !== candidate.root) {
+    fail('REBOOK enablement may only restart the same ownership release');
+  }
+  if (current.app.pm2_env.REBOOK_ENABLED !== 'false' ||
+      candidate.env.REBOOK_ENABLED !== 'false' ||
+      rollback.env.REBOOK_ENABLED !== 'false') {
+    fail('Current, candidate and rollback must all be explicitly gate-disabled before enablement');
+  }
+  verifyOwnershipRelease(candidate.root);
+  if (counts.rebookChanges !== 0 || counts.sourceOwners !== 0) {
+    fail('Historical REBOOK ownership state requires manual reconciliation before enablement');
+  }
+}
+
+function rebookGateForStart(role, plan) {
+  return role === 'candidate' && plan.enableRebookOnCutover === true ? 'true' : 'false';
+}
+
 function validateTopology({ apps, currentId, candidateId, rollbackId, listeners, environments }) {
   const selected = [currentId, candidateId, rollbackId];
   if (new Set(selected).size !== 3 || selected.some(id => !Number.isInteger(id) || id < 0)) {
@@ -203,6 +271,7 @@ async function startProbe(plan, role) {
   env.NODE_ENV = 'production';
   env.APP_RELEASE = item.sha;
   for (const flag of DISABLED_API_FLAGS) env[flag] = '0';
+  env.REBOOK_ENABLED = 'false';
   const name = `driftdwells-${role}-${item.sha.slice(0, 12)}${Date.now().toString(16)}`;
   const dir = `/home/illoc/.pm2/probe-${role}-${Date.now()}`;
   fs.mkdirSync(dir, { mode: 0o700 });
@@ -249,6 +318,9 @@ async function main() {
   const planPath = path.resolve(args[0]);
   if (fs.statSync(planPath).mode & 0o077) fail('Deployment plan must be private (0600)');
   const plan = JSON.parse(fs.readFileSync(planPath, 'utf8'));
+  if (plan.enableRebookOnCutover !== undefined && typeof plan.enableRebookOnCutover !== 'boolean') {
+    fail('enableRebookOnCutover must be a boolean');
+  }
   if (['--candidate', '--rollback'].includes(args[1])) {
     console.log(JSON.stringify({ status: 'probe_verified', ...await startProbe(plan, args[1].slice(2)) }));
     return;
@@ -275,6 +347,10 @@ async function main() {
   }
   let baseline;
   const preflight = async () => {
+    if (plan.enableRebookOnCutover) {
+      const counts = await countRebookOwnershipState(prepared.candidate.root, prepared.candidate.env);
+      assertRebookEnablementReady(plan, prepared, counts);
+    }
     const environments = Object.fromEntries(Object.values(prepared).map(item => [item.app.pm2_env.pm_id, item.env]));
     baseline = validateTopology({
       ...context, apps: getApps(), environments,
@@ -316,6 +392,7 @@ async function main() {
       if (getApps().some(app => app.name === name)) fail('Production name already exists');
       const env = { ...item.env, PORT: '5000', API_HOST: '0.0.0.0', APP_RELEASE: item.sha };
       for (const flag of DISABLED_API_FLAGS) env[flag] = '0';
+      env.REBOOK_ENABLED = rebookGateForStart(role, plan);
       const config = path.join(checkpoint, `${role}.config.json`);
       fs.writeFileSync(config, JSON.stringify({ apps: [{
         name, script: path.join(item.root, 'server/server.js'), cwd: path.join(item.root, 'server'),
@@ -341,6 +418,10 @@ async function main() {
           bound.length !== 1 || bound[0].pid !== app.pid ||
           fs.realpathSync(`/proc/${app.pid}/cwd`) !== path.join(prepared[role].root, 'server') ||
           app.pm2_env.APP_RELEASE !== prepared[role].sha) fail('Post-cutover identity/listener gate failed');
+      const expectedGate = rebookGateForStart(role, plan);
+      if (app.pm2_env.REBOOK_ENABLED !== expectedGate) {
+        fail('Post-cutover REBOOK gate state mismatch');
+      }
       if (fs.statSync(app.pm2_env.pm_err_log_path).size > 1024 * 1024) fail('New API error log exceeded 1 MiB');
       const errorLog = fs.readFileSync(app.pm2_env.pm_err_log_path, 'utf8');
       if (/EADDRINUSE|uncaughtException|unhandledRejection|MongoServerError|FATAL/i.test(errorLog)) {
@@ -381,4 +462,18 @@ if (require.main === module) {
     process.exitCode = 1;
   });
 }
-module.exports = { API_RUNTIME_FLAGS, DEDICATED_WORKER_FLAGS, DISABLED_API_FLAGS, verifyFiles, validateTopology, cutover, checkHttp };
+module.exports = {
+  API_RUNTIME_FLAGS,
+  DEDICATED_WORKER_FLAGS,
+  DISABLED_API_FLAGS,
+  verifyFiles,
+  verifyOwnershipRelease,
+  countRebookOwnershipState,
+  effectiveMongoUri,
+  readRebookOwnershipCounts,
+  assertRebookEnablementReady,
+  rebookGateForStart,
+  validateTopology,
+  cutover,
+  checkHttp
+};
