@@ -5,7 +5,20 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const crypto = require('node:crypto');
-const { API_RUNTIME_FLAGS, DEDICATED_WORKER_FLAGS, DISABLED_API_FLAGS, validateTopology, verifyFiles, cutover, checkHttp } = require('./deploy-api-guarded.cjs');
+const {
+  API_RUNTIME_FLAGS,
+  DEDICATED_WORKER_FLAGS,
+  DISABLED_API_FLAGS,
+  validateTopology,
+  verifyFiles,
+  verifyOwnershipRelease,
+  effectiveMongoUri,
+  assertRebookEnablementReady,
+  rebookGateForStart,
+  readRebookOwnershipCounts,
+  cutover,
+  checkHttp
+} = require('./deploy-api-guarded.cjs');
 
 function fixture() {
   const apps = [31, 40, 41].map((id, index) => ({
@@ -27,6 +40,72 @@ function fixture() {
 }
 test('valid isolated probes preserve the five dedicated workers', () => {
   assert.equal(validateTopology(fixture()).length, 5);
+});
+
+test('REBOOK enablement is explicit and only applies to the verified candidate start', () => {
+  assert.equal(rebookGateForStart('candidate', {}), 'false');
+  assert.equal(rebookGateForStart('rollback', { enableRebookOnCutover: true }), 'false');
+  assert.equal(rebookGateForStart('candidate', { enableRebookOnCutover: true }), 'true');
+});
+
+test('REBOOK enablement requires the exact same ownership release and a closed rollback', () => {
+  const root = path.resolve(__dirname, '../..');
+  verifyOwnershipRelease(root);
+  const app = { pm2_env: { REBOOK_ENABLED: 'false' } };
+  const prepared = {
+    current: { sha: 'a'.repeat(40), root, app },
+    candidate: { sha: 'a'.repeat(40), root, env: { REBOOK_ENABLED: 'false' } },
+    rollback: { sha: 'b'.repeat(40), root: `${root}-rollback`, env: { REBOOK_ENABLED: 'false' } }
+  };
+  const plan = { enableRebookOnCutover: true };
+  assert.doesNotThrow(() => assertRebookEnablementReady(plan, prepared, {
+    rebookChanges: 0, sourceOwners: 0
+  }));
+  for (const counts of [
+    { rebookChanges: 1, sourceOwners: 0 },
+    { rebookChanges: 0, sourceOwners: 1 }
+  ]) {
+    assert.throws(() => assertRebookEnablementReady(plan, prepared, counts), /manual reconciliation/);
+  }
+  assert.throws(() => assertRebookEnablementReady(plan, {
+    ...prepared, candidate: { ...prepared.candidate, sha: 'c'.repeat(40) }
+  }, { rebookChanges: 0, sourceOwners: 0 }), /same ownership release/);
+  assert.throws(() => assertRebookEnablementReady(plan, {
+    ...prepared, current: { ...prepared.current, app: { pm2_env: { REBOOK_ENABLED: 'true' } } }
+  }, { rebookChanges: 0, sourceOwners: 0 }), /explicitly gate-disabled/);
+  assert.throws(() => assertRebookEnablementReady(plan, {
+    ...prepared, rollback: { ...prepared.rollback, env: { REBOOK_ENABLED: 'true' } }
+  }, { rebookChanges: 0, sourceOwners: 0 }), /explicitly gate-disabled/);
+});
+
+test('REBOOK history verification uses the effective API Mongo configuration', () => {
+  const root = path.resolve(__dirname, '../..');
+  assert.equal(effectiveMongoUri(root, {
+    MONGODB_URI: 'mongodb://effective-host/production'
+  }), 'mongodb://effective-host/production');
+  assert.equal(effectiveMongoUri(root, {
+    MONGO_URI: 'mongodb://alias-host/production'
+  }), 'mongodb://alias-host/production');
+  assert.equal(effectiveMongoUri(root, {}), 'mongodb://127.0.0.1:27017/drift-dwells-booking');
+});
+
+test('REBOOK enablement history check is read-only and counts legacy operations and source fences', async () => {
+  const calls = [];
+  const connection = {
+    collection(name) {
+      return {
+        countDocuments: async filter => {
+          calls.push([name, filter]);
+          return name === 'staychanges' ? 0 : 0;
+        }
+      };
+    }
+  };
+  assert.deepEqual(await readRebookOwnershipCounts(connection), { rebookChanges: 0, sourceOwners: 0 });
+  assert.deepEqual(calls, [
+    ['staychanges', { kind: 'rebook' }],
+    ['bookings', { rebookSourceOwnerId: { $exists: true, $ne: null } }]
+  ]);
 });
 const unsafe = {
   duplicateAPI: f => f.apps.push({ ...f.apps[0], name: 'driftdwells-extra' }),
