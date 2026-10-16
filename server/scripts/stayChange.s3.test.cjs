@@ -10,6 +10,8 @@ const assert = require('assert/strict');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { fork } = require('node:child_process');
+const { once } = require('node:events');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
@@ -830,7 +832,244 @@ test('S3#38 concurrent duplicate creates one StayChange', async () => {
   assert.ok(fulfilled.length >= 1);
   assert.equal(await StayChange.countDocuments({ kind: KIND, idempotencyKey: key }), 1);
   assert.equal(await Booking.countDocuments({ 'provenance.source': 'stay_change_rebook' }), 1);
+  const sc = await StayChange.findOne({ kind: KIND, idempotencyKey: key }).lean();
+  assert.equal(String((await Booking.findById(booking._id)).rebookSourceOwnerId), String(sc._id));
+  assert.equal(sc.status, 'completed');
+  assert.equal(await CabinNightClaim.countDocuments({ bookingId: sc.targetBookingId }), 2);
+  assert.equal(await CabinNightClaim.countDocuments({ bookingId: booking._id }), 0);
 });
+
+function sourceWorker(request, interruptAfterClaim = false, interruptPhase = null) {
+  const child = fork(path.join(__dirname, 'helpers/rebookSourceWorker.cjs'), [], {
+    stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
+    env: { ...process.env, NODE_ENV: 'test' }
+  });
+  let stderr = '';
+  child.stderr.on('data', data => { stderr += data; });
+  const messages = [];
+  const waiters = [];
+  child.on('message', message => {
+    const waiter = waiters.shift();
+    if (waiter) waiter.resolve(message);
+    else messages.push(message);
+  });
+  child.on('exit', () => {
+    for (const waiter of waiters.splice(0)) waiter.reject(new Error(`Worker exited: ${stderr}`));
+  });
+  child.send({ uri: mongoServer.getUri(), request: { reason: 's3 reason', ...request }, interruptAfterClaim, interruptPhase });
+  return {
+    child,
+    next: () => messages.length ? Promise.resolve(messages.shift()) : new Promise((resolve, reject) => {
+      waiters.push({ resolve, reject });
+    }),
+    go: () => child.send({ go: true }),
+    stop: async () => {
+      if (child.exitCode !== null || child.signalCode !== null) return;
+      const exited = once(child, 'exit');
+      child.kill('SIGKILL');
+      await exited;
+    }
+  };
+}
+
+test('source fence: preserved different-key reproduction across two application processes', { timeout: 30000 }, async () => {
+  const source = await seedCabin(100);
+  const targets = [await seedCabin(100), await seedCabin(100)];
+  const booking = await makeSingleBooking({ cabin: source });
+  const paymentsBefore = await Payment.find({}).lean();
+  const workers = targets.map((target, i) => sourceWorker({
+    bookingId: String(booking._id), targetCabinId: String(target._id),
+    idempotencyKey: idem(`source-race-${i}`)
+  }));
+  try {
+    // Both preflights complete before Mongo executes either ownership CAS.
+    assert.deepEqual(await Promise.all(workers.map(worker => worker.next())), [{ ready: true }, { ready: true }]);
+    workers.forEach(worker => worker.go());
+    const results = await Promise.all(workers.map(worker => worker.next()));
+    assert.equal(results.filter(row => row.result?.status === 'completed').length, 1, JSON.stringify(results));
+    assert.equal(results.filter(row => row.error === 'SOURCE_OWNERSHIP_CONFLICT').length, 1);
+    const replacements = await Booking.find({ 'provenance.source': 'stay_change_rebook' }).lean();
+    assert.equal(replacements.length, 1);
+    assert.equal(replacements[0].status, 'confirmed');
+    const sourceAfter = await Booking.findById(booking._id).lean();
+    const winner = await StayChange.findById(sourceAfter.rebookSourceOwnerId).lean();
+    assert.equal(winner.status, 'completed');
+    assert.equal(String(winner.targetBookingId), String(replacements[0]._id));
+    assert.equal(winner.money.transferredValueCents, 20000);
+    assert.equal(await CabinNightClaim.countDocuments({}), 2);
+    assert.equal(await CabinNightClaim.countDocuments({ stayChangeId: winner._id }), 2);
+    assert.deepEqual(await Payment.find({}).lean(), paymentsBefore);
+    const loser = await StayChange.findOne({ bookingId: booking._id, _id: { $ne: winner._id } }).lean();
+    await assert.rejects(() => reconcileRebookStayChange(loser._id, adminCtx()),
+      error => codeOf(error) === 'SOURCE_OWNERSHIP_CONFLICT');
+    await assert.rejects(() => rebookOk(booking, { cabinId: targets[0]._id }, idem('consumed-source')));
+  } finally {
+    await Promise.all(workers.map(worker => worker.stop()));
+  }
+});
+
+test('source fence: process death after atomic claim retains ownership and same operation resumes', { timeout: 30000 }, async () => {
+  const source = await seedCabin(100), target = await seedCabin(100), competitor = await seedCabin(100);
+  const booking = await makeSingleBooking({ cabin: source });
+  const key = idem('crash-source-claim');
+  const worker = sourceWorker({
+    bookingId: String(booking._id), targetCabinId: String(target._id), idempotencyKey: key
+  }, true);
+  try {
+    assert.deepEqual(await worker.next(), { ready: true });
+    worker.go();
+    assert.deepEqual(await worker.next(), { claimed: true });
+  } finally {
+    await worker.stop();
+  }
+  const sc = await StayChange.findOne({ idempotencyKey: key }).lean();
+  assert.equal(sc.status, 'pending');
+  assert.equal(String((await Booking.findById(booking._id)).rebookSourceOwnerId), String(sc._id));
+  assert.equal(await CabinNightClaim.countDocuments({ stayChangeId: sc._id }), 0);
+  assert.equal(await Booking.countDocuments({ 'provenance.source': 'stay_change_rebook' }), 0);
+  await assert.rejects(() => rebookOk(booking, { cabinId: competitor._id }, idem('crash-competitor')),
+    error => codeOf(error) === 'SOURCE_OWNERSHIP_CONFLICT');
+  const resumed = await rebookOk(booking, { cabinId: target._id }, key);
+  assert.equal(resumed.status, 'completed');
+  assert.equal(String(resumed.stayChangeId), String(sc._id));
+  assert.equal(await CabinNightClaim.countDocuments({}), 2);
+});
+
+for (const phase of ['inventory_secured', 'replacement', 'replacement_failure', 'before_source_cas', 'after_source_cas', 'source_release_failure']) {
+test(`source fence: same-key second instance completes while first pauses at ${phase}`, { timeout: 30000 }, async () => {
+  const source = await seedCabin(100), target = await seedCabin(100);
+  const booking = await makeSingleBooking({ cabin: source });
+  const paymentsBefore = await Payment.find({}).lean();
+  const key = idem('same-operation-two-instances');
+  const worker = sourceWorker({
+    bookingId: String(booking._id), targetCabinId: String(target._id), idempotencyKey: key
+  }, false, phase);
+  try {
+    assert.deepEqual(await worker.next(), { ready: true });
+    worker.go();
+    assert.deepEqual(await worker.next(), { paused: phase });
+    assert.equal((await rebookOk(booking, { cabinId: target._id }, key)).status, 'completed');
+    worker.go();
+    const result = await worker.next();
+    assert.ok(result.result?.status === 'completed' || result.error === 'OPERATION_ADVANCED', JSON.stringify(result));
+    assert.equal((await rebookOk(booking, { cabinId: target._id }, key)).status, 'completed');
+    const sc = await StayChange.findOne({ idempotencyKey: key }).lean();
+    assert.equal(sc.status, 'completed');
+    assert.equal(await Booking.countDocuments({ 'provenance.source': 'stay_change_rebook' }), 1);
+    assert.equal(await CabinNightClaim.countDocuments({ bookingId: sc.targetBookingId }), 2);
+    assert.equal(await CabinNightClaim.countDocuments({ bookingId: booking._id }), 0);
+    assert.deepEqual(await Payment.find({}).lean(), paymentsBefore);
+    assert.equal(await ManualReviewItem.countDocuments({ category: MRI_CATEGORY, entityId: String(sc._id) }), 0);
+  } finally {
+    await worker.stop();
+  }
+});
+}
+
+for (const phase of ['inventory_secured', 'replacement', 'before_source_cas', 'after_source_cas']) {
+  test(`source fence: process death at ${phase} retains exact target and resumes without double transfer`, { timeout: 30000 }, async () => {
+    const source = await seedCabin(100), target = await seedCabin(100), competitor = await seedCabin(100);
+    const booking = await makeSingleBooking({ cabin: source });
+    const paymentsBefore = await Payment.find({}).lean();
+    const key = idem(`crash-${phase}`);
+    const worker = sourceWorker({
+      bookingId: String(booking._id), targetCabinId: String(target._id), idempotencyKey: key
+    }, false, phase);
+    try {
+      assert.deepEqual(await worker.next(), { ready: true });
+      worker.go();
+      assert.deepEqual(await worker.next(), { paused: phase });
+    } finally {
+      await worker.stop();
+    }
+    const sc = await StayChange.findOne({ idempotencyKey: key }).lean();
+    assert.equal(String((await Booking.findById(booking._id)).rebookSourceOwnerId), String(sc._id));
+    assert.equal(await CabinNightClaim.countDocuments({ stayChangeId: sc._id }), 2);
+    await assert.rejects(() => rebookOk(booking, { cabinId: competitor._id }, idem(`compete-${phase}`)));
+    const resumed = await rebookOk(booking, { cabinId: target._id }, key);
+    assert.equal(resumed.status, 'completed');
+    assert.equal(String(resumed.targetBookingId), String(sc.targetBookingId));
+    assert.equal((await rebookOk(booking, { cabinId: target._id }, key)).status, 'completed');
+    assert.equal(await Booking.countDocuments({ 'provenance.source': 'stay_change_rebook' }), 1);
+    assert.equal(await CabinNightClaim.countDocuments({}), 2);
+    assert.equal(await CabinNightClaim.countDocuments({ bookingId: sc.targetBookingId }), 2);
+    assert.deepEqual(await Payment.find({}).lean(), paymentsBefore);
+  });
+}
+
+test('source fence: unambiguous historical completed operation adopts its durable source linkage', async () => {
+  const source = await seedCabin(100), target = await seedCabin(100);
+  const booking = await makeSingleBooking({ cabin: source });
+  const result = await rebookOk(booking, { cabinId: target._id }, idem('historical-complete'));
+  await Booking.updateOne({ _id: booking._id }, { $unset: { rebookSourceOwnerId: '' } });
+  assert.equal((await reconcileRebookStayChange(result.stayChangeId, adminCtx())).status, 'completed');
+  assert.equal(String((await Booking.findById(booking._id)).rebookSourceOwnerId), String(result.stayChangeId));
+});
+
+test('source fence: historical competing replacement/claims block adoption even with failed status', async () => {
+  const source = await seedCabin(100), target = await seedCabin(100);
+  const booking = await makeSingleBooking({ cabin: source });
+  const result = await rebookOk(booking, { cabinId: target._id }, idem('historical-ambiguous'));
+  const completed = await StayChange.findById(result.stayChangeId).lean();
+  const { _id, createdAt, updatedAt, __v, ...historical } = completed;
+  const competingId = new mongoose.Types.ObjectId();
+  // Raw insertion models historical evidence, without invoking modern transition guards.
+  await StayChange.collection.insertOne({
+    ...historical, _id: competingId, status: 'failed', idempotencyKey: idem('historical-loser')
+  });
+  await Booking.updateOne({ _id: booking._id }, { $unset: { rebookSourceOwnerId: '' } });
+  await assert.rejects(() => reconcileRebookStayChange(result.stayChangeId, adminCtx()),
+    error => codeOf(error) === 'SOURCE_OWNERSHIP_CONFLICT');
+  assert.equal((await Booking.findById(booking._id)).rebookSourceOwnerId, null);
+  assert.equal(await CabinNightClaim.countDocuments({}), 2);
+  assert.equal(await Booking.countDocuments({ 'provenance.source': 'stay_change_rebook' }), 1);
+});
+
+test('source fence: historical committed recovery adopts before projecting the source', async () => {
+  const source = await seedCabin(100), target = await seedCabin(100);
+  const booking = await makeSingleBooking({ cabin: source });
+  const key = idem('historical-committed');
+  const worker = sourceWorker({
+    bookingId: String(booking._id), targetCabinId: String(target._id), idempotencyKey: key
+  }, false, 'before_source_cas');
+  try {
+    assert.deepEqual(await worker.next(), { ready: true });
+    worker.go();
+    assert.deepEqual(await worker.next(), { paused: 'before_source_cas' });
+  } finally {
+    await worker.stop();
+  }
+  const sc = await StayChange.findOne({ idempotencyKey: key }).lean();
+  await Booking.updateOne({ _id: booking._id }, { $unset: { rebookSourceOwnerId: '' } });
+  assert.equal((await reconcileRebookStayChange(sc._id, adminCtx())).status, 'completed');
+  assert.equal(String((await Booking.findById(booking._id)).rebookSourceOwnerId), String(sc._id));
+  assert.equal(await Booking.countDocuments({ 'provenance.source': 'stay_change_rebook' }), 1);
+  assert.equal(await CabinNightClaim.countDocuments({}), 2);
+});
+
+for (const corruption of ['foreign-owner', 'different-replacement', 'missing-source-settlement']) {
+  test(`source fence: completed replay rejects ${corruption} without mutation`, async () => {
+    const source = await seedCabin(100), target = await seedCabin(100);
+    const booking = await makeSingleBooking({ cabin: source });
+    const result = await rebookOk(booking, { cabinId: target._id }, idem(corruption));
+    if (corruption === 'foreign-owner') {
+      await Booking.updateOne({ _id: booking._id }, { $set: { rebookSourceOwnerId: new mongoose.Types.ObjectId() } });
+    } else {
+      await Booking.updateOne({ _id: booking._id }, {
+        $unset: { rebookSourceOwnerId: '' },
+        $set: corruption === 'different-replacement'
+          ? { 'cancellationSettlement.replacementBookingId': new mongoose.Types.ObjectId() }
+          : { status: 'confirmed', cancellationSettlement: null }
+      });
+    }
+    const before = await Booking.findById(booking._id).lean();
+    await assert.rejects(() => reconcileRebookStayChange(result.stayChangeId, adminCtx()),
+      error => codeOf(error) === 'SOURCE_OWNERSHIP_CONFLICT');
+    assert.deepEqual(await Booking.findById(booking._id).lean(), before);
+    assert.equal(await Booking.countDocuments({ 'provenance.source': 'stay_change_rebook' }), 1);
+    assert.equal(await CabinNightClaim.countDocuments({}), 2);
+  });
+}
 
 test('S3#39 resume inventory_secured creates Booking once', async () => {
   const a = await seedCabin();
@@ -1164,13 +1403,19 @@ test('S3#53 source CAS failure after target → needs_reconciliation', async () 
   assert.equal(sc.status, 'needs_reconciliation');
   assert.ok(captured);
   assert.ok(await Booking.findById(sc.targetBookingId));
+  assert.equal(String((await Booking.findById(booking._id)).rebookSourceOwnerId), String(sc._id));
+  await assert.rejects(() => reconcileRebookStayChange(sc._id, adminCtx()),
+    error => codeOf(error) === 'NEEDS_RECONCILIATION');
+  const competitor = await seedCabin();
+  await assert.rejects(() => rebookOk(booking, { cabinId: competitor._id }, idem('ambiguous-competitor')));
+  assert.equal(await CabinNightClaim.countDocuments({ stayChangeId: sc._id }), 2);
 });
 
 // =============================================================================
 // Compensation
 // =============================================================================
 
-test('S3#54 Booking save fail compensates only this StayChange claims', async () => {
+test('S3#54 Booking save fail retains fenced target claims for safe recovery', async () => {
   const a = await seedCabin();
   const b = await seedCabin();
   const booking = await makeSingleBooking({ cabin: a });
@@ -1194,11 +1439,13 @@ test('S3#54 Booking save fail compensates only this StayChange claims', async ()
   }
   const sc = await StayChange.findOne({ idempotencyKey: key });
   assert.ok(sc);
-  assert.equal(await CabinNightClaim.countDocuments({ stayChangeId: sc._id }), 0);
+  assert.equal(await CabinNightClaim.countDocuments({ stayChangeId: sc._id }), 2);
+  assert.equal(sc.status, 'inventory_secured');
+  assert.equal(String((await Booking.findById(booking._id)).rebookSourceOwnerId), String(sc._id));
   assert.equal(await CabinNightClaim.countDocuments({ bookingId: booking._id }), 2);
 });
 
-test('S3#55 after compensate, retry same key can complete', async () => {
+test('S3#55 after replacement failure, retry same key can complete', async () => {
   const a = await seedCabin();
   const b = await seedCabin();
   const booking = await makeSingleBooking({ cabin: a });
@@ -1923,8 +2170,7 @@ test('S3.1#cabin inserted-this-attempt compensation preserves prior claims', asy
   }
   const sc = await StayChange.findOne({ idempotencyKey: key });
   assert.ok(sc);
-  // First attempt compensated its inserts (pending) OR left inventory_secured.
-  // Seed "prior attempt A" claims explicitly for inventory_secured resume path:
+  // Re-seed prior-attempt claims explicitly for inventory_secured recovery:
   sc.status = 'inventory_secured';
   await sc.save();
   await CabinNightClaim.deleteMany({ bookingId: sc.targetBookingId });
@@ -2023,13 +2269,15 @@ test('S3.1#unit inserted-this-attempt compensation preserves prior claims', asyn
   assert.equal((await StayChange.findById(sc._id)).status, 'inventory_secured');
 });
 
-test('S3.1#compensation failure opens MRI without broad release', async () => {
+test('S3.1#replacement failure never attempts uncertain inventory compensation', async () => {
   const a = await seedCabin();
   const b = await seedCabin();
   const booking = await makeSingleBooking({ cabin: a });
   const key = idem('comp-fail');
   const origCreate = Booking.create.bind(Booking);
+  let compensationAttempted = false;
   _testHooks.compensateInsertedTargetClaims = async () => {
+    compensationAttempted = true;
     throw new Error('forced compensate fail');
   };
   Booking.create = async function failBooking(doc) {
@@ -2048,15 +2296,16 @@ test('S3.1#compensation failure opens MRI without broad release', async () => {
     _testHooks.compensateInsertedTargetClaims = null;
   }
   const sc = await StayChange.findOne({ idempotencyKey: key });
-  assert.equal(sc.status, 'needs_reconciliation');
+  assert.equal(sc.status, 'inventory_secured');
+  assert.equal(compensationAttempted, false);
   assert.ok(await CabinNightClaim.countDocuments({ bookingId: sc.targetBookingId }) >= 1);
   assert.equal(await CabinNightClaim.countDocuments({ bookingId: booking._id }), 2);
   assert.equal(await Booking.countDocuments({ 'provenance.source': 'stay_change_rebook' }), 0);
   const mri = await ManualReviewItem.find({ category: MRI_CATEGORY, entityId: String(sc._id) });
-  assert.ok(mri.length >= 1);
+  assert.equal(mri.length, 0);
 });
 
-test('S3.2#unit mixed subset compensation deletes only attempt B inserts', async () => {
+test('S3.2#unit incomplete durable claims require reconciliation before replacement', async () => {
   const src = await seedTypeWithUnits(1, 100);
   const dst = await seedTypeWithUnits(1, 100);
   const booking = await makeMultiBooking({
@@ -2113,7 +2362,8 @@ test('S3.2#unit mixed subset compensation deletes only attempt B inserts', async
   const left = await UnitNightClaim.find({ bookingId: sc.targetBookingId }).lean();
   assert.equal(left.length, priorCount);
   assert.ok(left.some((c) => dateOnlyFromNightDate(c.night) === priorNight));
-  assert.equal((await StayChange.findById(sc._id)).status, 'inventory_secured');
+  assert.equal((await StayChange.findById(sc._id)).status, 'needs_reconciliation');
+  assert.equal(await Booking.countDocuments({ 'provenance.source': 'stay_change_rebook' }), 0);
 });
 
 test('S3.2#experience extras CAS race keeps target and opens MRI', async () => {

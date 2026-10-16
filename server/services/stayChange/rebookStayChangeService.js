@@ -17,6 +17,8 @@ const CabinType = require('../../models/CabinType');
 const Unit = require('../../models/Unit');
 const Payment = require('../../models/Payment');
 const AvailabilityBlock = require('../../models/AvailabilityBlock');
+const CabinNightClaim = require('../../models/CabinNightClaim');
+const UnitNightClaim = require('../../models/UnitNightClaim');
 const {
   claimCabinNights,
   releaseCabinNights,
@@ -184,7 +186,23 @@ async function loadPaymentTrail(sourceBookingId) {
   return Payment.find({ reservationId: sourceBookingId }).lean();
 }
 
+async function saveOperationState(sc, expectedStatus) {
+  // Same-operation executors share an owner, but may not overwrite a newer phase.
+  sc.$where = { status: expectedStatus };
+  try {
+    await sc.save();
+  } catch (error) {
+    if (error.name === 'DocumentNotFoundError') {
+      throw err('OPERATION_ADVANCED', 'REBOOK advanced concurrently; retry the same operation', 409);
+    }
+    throw error;
+  } finally {
+    sc.$where = undefined;
+  }
+}
+
 async function markFailed(sc, { code, message, phase, retryable = false }) {
+  const expectedStatus = sc.status;
   sc.status = retryable ? 'pending' : 'failed';
   sc.failure = {
     code: code || null,
@@ -192,7 +210,7 @@ async function markFailed(sc, { code, message, phase, retryable = false }) {
     phase: phase || null,
     at: new Date()
   };
-  await sc.save();
+  await saveOperationState(sc, expectedStatus);
   return sc;
 }
 
@@ -221,6 +239,15 @@ function mapClaimFailure(e) {
 }
 
 async function markNeedsReconciliation(sc, { category, detail, phase }) {
+  const expectedStatus = sc.status;
+  sc.status = 'needs_reconciliation';
+  sc.reconciliation = {
+    category: category || null,
+    detail: detail || null,
+    mriId: null,
+    at: new Date()
+  };
+  await saveOperationState(sc, expectedStatus);
   let mriId = null;
   try {
     const mri = await openManualReviewItem({
@@ -246,14 +273,10 @@ async function markNeedsReconciliation(sc, { category, detail, phase }) {
   } catch {
     /* ignore MRI failure */
   }
-  sc.status = 'needs_reconciliation';
-  sc.reconciliation = {
-    category: category || null,
-    detail: detail || null,
-    mriId,
-    at: new Date()
-  };
-  await sc.save();
+  if (mriId) {
+    sc.reconciliation.mriId = mriId;
+    await saveOperationState(sc, 'needs_reconciliation');
+  }
   return sc;
 }
 
@@ -560,7 +583,7 @@ async function createReplacementBooking(sc, source) {
     const created = await Booking.create(doc);
     return { ok: true, booking: created, adopted: false };
   } catch (e) {
-    if (e?.code === 11000) {
+    try {
       const existing = await Booking.findById(sc.targetBookingId);
       if (
         existing &&
@@ -569,7 +592,11 @@ async function createReplacementBooking(sc, source) {
       ) {
         return { ok: true, booking: existing, adopted: true };
       }
-      return { ok: false, code: 'REPLACEMENT_PERSISTENCE_FAILED', error: e };
+      if (existing || e?.code === 11000) {
+        return { ok: false, code: 'REPLACEMENT_AMBIGUOUS', error: e };
+      }
+    } catch (readError) {
+      return { ok: false, code: 'REPLACEMENT_AMBIGUOUS', error: readError };
     }
     return { ok: false, code: 'REPLACEMENT_PERSISTENCE_FAILED', error: e };
   }
@@ -604,6 +631,7 @@ async function casSourceToRebooked(sc, sourceBooking) {
 
   const and = [
     { _id: sc.bookingId },
+    { rebookSourceOwnerId: sc._id },
     { status: { $in: ELIGIBLE_STATUSES } },
     { checkIn: sc.checkIn },
     { checkOut: sc.checkOut },
@@ -681,6 +709,17 @@ async function casSourceToRebooked(sc, sourceBooking) {
       }
     }
   );
+  if (!(result.matchedCount ?? result.n)) {
+    // Another executor of this operation may already have projected the source.
+    const projected = await Booking.exists({
+      _id: sc.bookingId,
+      rebookSourceOwnerId: sc._id,
+      status: 'cancelled',
+      'cancellationSettlement.outcome': 'rebooked_or_moved',
+      'cancellationSettlement.replacementBookingId': sc.targetBookingId
+    });
+    if (projected) return { matched: true, modified: false };
+  }
   return {
     matched: (result.matchedCount ?? result.n) > 0,
     modified: (result.modifiedCount ?? result.nModified) > 0
@@ -762,6 +801,9 @@ async function verifyCompletionInvariant(sc) {
   if (!source || source.status !== 'cancelled') {
     return { ok: false, reason: 'source_not_cancelled' };
   }
+  if (String(source.rebookSourceOwnerId) !== String(sc._id)) {
+    return { ok: false, reason: 'source_owner_mismatch' };
+  }
   if (source.cancellationSettlement?.outcome !== 'rebooked_or_moved') {
     return { ok: false, reason: 'source_outcome_mismatch' };
   }
@@ -818,7 +860,7 @@ async function advanceToCompleted(sc, ctx) {
   }
   sc.status = 'completed';
   sc.completedAt = new Date();
-  await sc.save();
+  await saveOperationState(sc, 'committed');
   await projectAuditOnce(sc, ctx);
   return sc;
 }
@@ -851,6 +893,61 @@ async function createPendingStayChange(doc) {
   }
 }
 
+async function assertSourceOperationOwnership(sc) {
+  const source = await Booking.findById(sc.bookingId).lean();
+  if (!source) throw err('SOURCE_OWNERSHIP_CONFLICT', 'REBOOK source is missing', 409);
+  if (source.rebookSourceOwnerId) {
+    if (String(source.rebookSourceOwnerId) !== String(sc._id)) {
+      throw err('SOURCE_OWNERSHIP_CONFLICT', 'Source belongs to another REBOOK operation', 409);
+    }
+    return;
+  }
+
+  // Historical operations predate the fence. Never adopt across another
+  // operation's durable target/claims, even when its status looks retryable.
+  const otherOperations = await StayChange.find({
+    kind: KIND, bookingId: sc.bookingId, _id: { $ne: sc._id }
+  }).select('_id targetBookingId status').lean();
+  for (const other of otherOperations) {
+    const [target, cabinClaims, unitClaims] = await Promise.all([
+      other.targetBookingId ? Booking.exists({ _id: other.targetBookingId }) : null,
+      CabinNightClaim.exists({ stayChangeId: other._id }),
+      UnitNightClaim.exists({ stayChangeId: other._id })
+    ]);
+    if (target || cabinClaims || unitClaims ||
+        ['inventory_secured', 'awaiting_payment', 'ready_to_commit', 'committed',
+          'settling', 'completed', 'needs_reconciliation'].includes(other.status)) {
+      throw err('SOURCE_OWNERSHIP_CONFLICT', 'Historical source operations require reconciliation', 409);
+    }
+  }
+  const terminal = source.cancellationSettlement?.outcome === 'rebooked_or_moved';
+  if ((sc.status === 'completed' && !terminal) || (terminal && source.status !== 'cancelled')) {
+    throw err('SOURCE_OWNERSHIP_CONFLICT', 'Historical source state requires reconciliation', 409);
+  }
+  if (terminal && String(source.cancellationSettlement?.replacementBookingId) !== String(sc.targetBookingId)) {
+    throw err('SOURCE_OWNERSHIP_CONFLICT', 'Source already consumed by another replacement', 409);
+  }
+  if (!terminal && (!ELIGIBLE_STATUSES.includes(source.status) || source.isTest || source.archivedAt)) {
+    throw err('SOURCE_OWNERSHIP_CONFLICT', 'Source is not eligible for ownership acquisition', 409);
+  }
+  const acquired = await Booking.updateOne({
+    _id: sc.bookingId,
+    rebookSourceOwnerId: null,
+    status: source.status,
+    isTest: { $ne: true },
+    archivedAt: null,
+    ...(terminal
+      ? { 'cancellationSettlement.replacementBookingId': sc.targetBookingId }
+      : { 'cancellationSettlement.outcome': { $ne: 'rebooked_or_moved' } })
+  }, { $set: { rebookSourceOwnerId: sc._id } });
+  if (!(acquired.matchedCount ?? acquired.n)) {
+    const current = await Booking.findById(sc.bookingId).select('rebookSourceOwnerId').lean();
+    if (String(current?.rebookSourceOwnerId) !== String(sc._id)) {
+      throw err('SOURCE_OWNERSHIP_CONFLICT', 'Another REBOOK acquired the source', 409);
+    }
+  }
+}
+
 /**
  * Resume forward from durable StayChange facts.
  */
@@ -862,6 +959,7 @@ async function reconcileRebookStayChange(stayChangeId, ctx = {}) {
   if (sc.kind !== KIND) {
     throw createDomainError('validation', 'StayChange is not a rebook operation', { kind: sc.kind });
   }
+  await assertSourceOperationOwnership(sc);
   if (sc.status === 'completed') {
     return toResult(sc, { changed: false, resumed: true });
   }
@@ -889,7 +987,7 @@ async function reconcileRebookStayChange(stayChangeId, ctx = {}) {
       });
     }
     sc.status = 'pending';
-    await sc.save();
+    await saveOperationState(sc, 'failed');
   }
   if (
     sc.status === 'awaiting_payment' ||
@@ -955,7 +1053,7 @@ async function runForwardFromPending(sc, source, ctx) {
     }
     sc.status = 'inventory_secured';
     sc.failure = undefined;
-    await sc.save();
+    await saveOperationState(sc, 'pending');
   } catch (e) {
     if (e?.details?.code === 'HARD_CONFLICTS' || e?.details?.code === 'NEEDS_RECONCILIATION') {
       throw e;
@@ -979,34 +1077,24 @@ async function runForwardFromPending(sc, source, ctx) {
     });
     throw mapClaimFailure(e);
   }
-  return runForwardFromInventorySecured(sc, source, ctx, claimAttempt);
+  return runForwardFromInventorySecured(sc, source, ctx);
 }
 
-async function runForwardFromInventorySecured(sc, source, ctx, claimAttempt = null) {
-  const attempt = claimAttempt || {
-    insertedClaimIdsThisAttempt: [],
-    insertedNightsThisAttempt: []
-  };
+async function runForwardFromInventorySecured(sc, source, ctx) {
+  const own = await verifyTargetOwnership(sc);
+  if (!own.ok) {
+    await markNeedsReconciliation(sc, {
+      category: 'TARGET_OWNERSHIP_LOST', detail: 'Target claims incomplete before replacement', phase: 'replacement'
+    });
+    throw err('NEEDS_RECONCILIATION', 'Target ownership requires reconciliation', 409);
+  }
   const created = await createReplacementBooking(sc, source);
   if (!created.ok) {
-    const hasInserted =
-      normalizeInsertedClaimIds(attempt).length > 0 ||
-      (Array.isArray(attempt.insertedNightsThisAttempt) &&
-        attempt.insertedNightsThisAttempt.length > 0);
-    try {
-      if (hasInserted) {
-        await compensateInsertedTargetClaims(sc, attempt);
-        await markFailed(sc, {
-          code: 'REPLACEMENT_PERSISTENCE_FAILED',
-          message: created.error?.message || 'Booking create failed',
-          phase: 'replacement',
-          retryable: true
-        });
-      }
-      // No inserted-this-attempt claims: leave inventory_secured + prior claims intact.
-    } catch {
+    // An insert may have committed without its acknowledgement, or another
+    // executor may be creating this same target. Never compensate these claims.
+    if (created.code === 'REPLACEMENT_AMBIGUOUS') {
       await markNeedsReconciliation(sc, {
-        category: 'REPLACEMENT_FAIL_COMPENSATE_FAIL',
+        category: 'REPLACEMENT_PERSISTENCE_AMBIGUOUS',
         detail: created.error?.message || 'Booking create failed',
         phase: 'replacement'
       });
@@ -1019,7 +1107,7 @@ async function runForwardFromInventorySecured(sc, source, ctx, claimAttempt = nu
   }
 
   sc.status = 'committed';
-  await sc.save();
+  await saveOperationState(sc, 'inventory_secured');
   return runForwardFromCommitted(sc, source, ctx);
 }
 

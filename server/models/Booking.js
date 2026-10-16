@@ -572,6 +572,12 @@ const bookingSchema = new mongoose.Schema({
     type: cancellationSettlementSchema,
     default: undefined
   },
+  /** Permanent source-operation fence: only its REBOOK may consume this booking. */
+  rebookSourceOwnerId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'StayChange',
+    default: null
+  },
   /**
    * REBOOK-S2: replacement Booking → StayChange financial link only.
    * Optional; no unique index (avoid surprise production index create).
