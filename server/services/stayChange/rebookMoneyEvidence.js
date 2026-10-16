@@ -8,6 +8,10 @@
  */
 
 const { bookingRevenueCents } = require('../ops/reporting/normalizedStayRow');
+const {
+  resolveVerifiedGiftVoucherCents,
+  resolveVerifiedStayCreditCents
+} = require('../ops/payment/reservationPaymentSignals');
 
 const COVERAGE_FAIL_CODES = Object.freeze({
   DISPUTED: 'COVERAGE_DISPUTED',
@@ -67,8 +71,10 @@ function resolveSourceContractualTotalCents(booking) {
 /** Payment.amount is major currency units (EUR); convert to cents. */
 function paymentAmountToCents(payment) {
   const amount = Number(payment?.amount);
-  if (!Number.isFinite(amount) || amount < 0) return null;
-  return Math.round(amount * 100);
+  const cents = Math.round(amount * 100);
+  if (!Number.isFinite(amount) || amount < 0 || !Number.isSafeInteger(cents) ||
+      Math.abs(amount * 100 - cents) > 0.000001) return null;
+  return cents;
 }
 
 /**
@@ -79,7 +85,7 @@ function paymentAmountToCents(payment) {
  * @param {object[]} [paymentTrail] Payment docs linked to source (reservationId)
  * @returns {{ ok: true, cents: number, breakdown: object } | { ok: false, code: string, cents: null, detail?: object }}
  */
-function resolveRecognizedNetSettledCoverageCents(sourceBooking, paymentTrail = []) {
+function resolveRecognizedNetSettledCoverageCents(sourceBooking, paymentTrail = [], evidence = {}) {
   const contractual = resolveSourceContractualTotalCents(sourceBooking);
   if (!contractual.ok) {
     return { ok: false, code: contractual.code, cents: null };
@@ -97,11 +103,21 @@ function resolveRecognizedNetSettledCoverageCents(sourceBooking, paymentTrail = 
   }
 
   let cashFromTrailCents = 0;
+  let grossFromTrailCents = 0;
   let trailHasRecognizedCash = false;
+  const seen = new Set();
   for (const p of trail) {
     const status = String(p?.status || '');
-    if (status === 'paid' || status === 'partial') {
-      const cents = paymentAmountToCents(p);
+    if (['paid', 'partial', 'refunded'].includes(status)) {
+      const identity = p.provider && p.providerReference ? `${p.provider}:${p.providerReference}` : null;
+      if (!identity || seen.has(identity) ||
+          String(p.currency || '').toLowerCase() !== 'eur' ||
+          !sourceBooking._id || String(p.reservationId || '') !== String(sourceBooking._id)) {
+        return { ok: false, code: COVERAGE_FAIL_CODES.MANUAL_AMBIGUOUS, cents: null,
+          detail: { reason: 'ambiguous_payment_identity_currency_or_duplicate' } };
+      }
+      seen.add(identity);
+      let cents = paymentAmountToCents(p);
       if (cents == null) {
         return {
           ok: false,
@@ -110,10 +126,59 @@ function resolveRecognizedNetSettledCoverageCents(sourceBooking, paymentTrail = 
           detail: { reason: 'invalid_payment_amount' }
         };
       }
+      if (p.provider !== 'stripe' || !/^pi_[A-Za-z0-9_]+$/.test(p.providerReference)) {
+        return { ok: false, code: COVERAGE_FAIL_CODES.MANUAL_AMBIGUOUS, cents: null,
+          detail: { reason: 'unsupported_cash_provenance' } };
+      }
+      let grossCents = cents;
+      if (status === 'partial' || status === 'refunded') {
+        const matches = (evidence.stripePaymentIntents || []).filter(pi => pi.id === p.providerReference);
+        const pi = matches[0];
+        const charge = pi?.latest_charge;
+        const captured = pi?.amount_received;
+        const refunded = charge?.amount_refunded;
+        const metadata = pi?.metadata || {};
+        const identityMismatch =
+          (metadata.bookingId && String(metadata.bookingId) !== String(sourceBooking._id)) ||
+          (metadata.reservationId && String(metadata.reservationId) !== String(sourceBooking._id)) ||
+          (metadata.checkoutId && String(metadata.checkoutId) !== String(sourceBooking.checkoutId || ''));
+        if (matches.length !== 1 || identityMismatch || pi?.status !== 'succeeded' ||
+            pi?.currency !== 'eur' || charge?.currency !== 'eur' ||
+            charge?.payment_intent !== pi?.id || !/^ch_/.test(charge?.id || '') ||
+            charge?.paid !== true || charge?.captured !== true || charge?.disputed !== false ||
+            !Number.isSafeInteger(captured) || captured <= 0 ||
+            charge?.amount !== captured || charge?.amount_captured !== captured ||
+            !Number.isSafeInteger(refunded) || refunded <= 0 || refunded > captured) {
+          return { ok: false, code: COVERAGE_FAIL_CODES.MANUAL_AMBIGUOUS, cents: null,
+            detail: { reason: 'refund_net_coverage_unverified' } };
+        }
+        const isRefundObject = p.metadata?.stripeObjectType === 'refund' ||
+          String(p.metadata?.stripeEventType || '').startsWith('refund.');
+        if (isRefundObject) {
+          const events = (evidence.stripeRefundEvents || []).filter(event => event.id === p.sourceReference);
+          const event = events[0];
+          const refund = event?.data?.object;
+          if (events.length !== 1 || !String(event.type || '').startsWith('refund.') ||
+              refund?.object !== 'refund' || !/^re_/.test(refund?.id || '') ||
+              refund?.status !== 'succeeded' || refund?.currency !== 'eur' ||
+              refund?.payment_intent !== pi.id || refund?.charge !== charge.id ||
+              !Number.isSafeInteger(refund?.amount) || refund.amount <= 0 ||
+              refund.amount !== cents || refund.amount > refunded) {
+            return { ok: false, code: COVERAGE_FAIL_CODES.MANUAL_AMBIGUOUS, cents: null,
+              detail: { reason: 'refund_ledger_amount_unverified' } };
+          }
+        } else if (cents !== captured) {
+          return { ok: false, code: COVERAGE_FAIL_CODES.MANUAL_AMBIGUOUS, cents: null,
+            detail: { reason: 'capture_ledger_amount_mismatch' } };
+        }
+        grossCents = captured;
+        cents = captured - refunded;
+      }
+      grossFromTrailCents += grossCents;
       cashFromTrailCents += cents;
       trailHasRecognizedCash = true;
     }
-    // unpaid, failed, refunded: do not count
+    // Unpaid/failed rows never supply transferable cash.
   }
 
   const stripeAggregate =
@@ -125,7 +190,7 @@ function resolveRecognizedNetSettledCoverageCents(sourceBooking, paymentTrail = 
   let cashSource;
 
   if (trailHasRecognizedCash) {
-    if (stripeAggregate != null && stripeAggregate !== cashFromTrailCents) {
+    if (stripeAggregate != null && stripeAggregate !== grossFromTrailCents) {
       return {
         ok: false,
         code: COVERAGE_FAIL_CODES.TRAIL_STRIPE_DISAGREE,
@@ -139,27 +204,19 @@ function resolveRecognizedNetSettledCoverageCents(sourceBooking, paymentTrail = 
     recognizedNetCashCoverageCents = cashFromTrailCents;
     cashSource = 'payment_trail';
   } else if (stripeAggregate != null && stripeAggregate > 0) {
-    recognizedNetCashCoverageCents = stripeAggregate;
-    cashSource = 'stripePaidAmountCents_fallback';
+    return { ok: false, code: COVERAGE_FAIL_CODES.MANUAL_AMBIGUOUS, cents: null,
+      detail: { reason: 'stripe_aggregate_without_payment_ledger' } };
   } else {
     recognizedNetCashCoverageCents = 0;
     cashSource = 'none';
   }
 
-  const voucherRaw = sourceBooking?.giftVoucherAppliedCents;
-  let recognizedVoucherCoverageCents = 0;
-  if (voucherRaw != null && voucherRaw !== '') {
-    const vNum = Number(voucherRaw);
-    const v = Math.round(vNum);
-    if (!Number.isFinite(vNum) || v < 0 || !Number.isInteger(v)) {
-      return {
-        ok: false,
-        code: COVERAGE_FAIL_CODES.MANUAL_AMBIGUOUS,
-        cents: null,
-        detail: { reason: 'invalid_giftVoucherAppliedCents' }
-      };
-    }
-    recognizedVoucherCoverageCents = v;
+  const recognizedVoucherCoverageCents = resolveVerifiedGiftVoucherCents(sourceBooking, evidence.giftVoucherRedemption);
+  const recognizedStayCreditCoverageCents = resolveVerifiedStayCreditCents(sourceBooking, evidence.stayCreditReservations);
+  if ((Number(sourceBooking.giftVoucherAppliedCents || 0) !== recognizedVoucherCoverageCents) ||
+      (Number(sourceBooking.stayCreditAppliedCents || 0) !== recognizedStayCreditCoverageCents)) {
+    return { ok: false, code: COVERAGE_FAIL_CODES.MANUAL_AMBIGUOUS, cents: null,
+      detail: { reason: 'non_card_coverage_unverified' } };
   }
 
   // Manual / operator booking that looks financially settled without durable evidence → fail closed
@@ -172,6 +229,7 @@ function resolveRecognizedNetSettledCoverageCents(sourceBooking, paymentTrail = 
     contractual.cents > 0 &&
     recognizedNetCashCoverageCents === 0 &&
     recognizedVoucherCoverageCents === 0 &&
+    recognizedStayCreditCoverageCents === 0 &&
     (status === 'confirmed' || Boolean(sourceBooking?.stripePaymentIntentId))
   ) {
     return {
@@ -183,7 +241,11 @@ function resolveRecognizedNetSettledCoverageCents(sourceBooking, paymentTrail = 
   }
 
   const recognizedNetSettledCoverageCents =
-    recognizedNetCashCoverageCents + recognizedVoucherCoverageCents;
+    recognizedNetCashCoverageCents + recognizedVoucherCoverageCents + recognizedStayCreditCoverageCents;
+  if (!Number.isSafeInteger(recognizedNetSettledCoverageCents)) {
+    return { ok: false, code: COVERAGE_FAIL_CODES.MANUAL_AMBIGUOUS, cents: null,
+      detail: { reason: 'coverage_exceeds_safe_integer' } };
+  }
 
   return {
     ok: true,
@@ -191,6 +253,7 @@ function resolveRecognizedNetSettledCoverageCents(sourceBooking, paymentTrail = 
     breakdown: {
       recognizedNetCashCoverageCents,
       recognizedVoucherCoverageCents,
+      recognizedStayCreditCoverageCents,
       cashSource,
       sourceContractualTotalCents: contractual.cents
     }

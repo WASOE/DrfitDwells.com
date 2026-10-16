@@ -24,6 +24,7 @@ const UnitNightClaim = require('../models/UnitNightClaim');
 const AvailabilityBlock = require('../models/AvailabilityBlock');
 const AuditEvent = require('../models/AuditEvent');
 const ManualReviewItem = require('../models/ManualReviewItem');
+const StayCreditReservation = require('../models/StayCreditReservation');
 
 const {
   rebookReservation,
@@ -168,6 +169,50 @@ async function attachPaid(booking, cents = null) {
   return booking;
 }
 
+test('foundation: ambiguous refund blocks before StayChange, replacement or inventory mutation', async () => {
+  const source = await seedCabin(100), target = await seedCabin(100);
+  const booking = await makeSingleBooking({ cabin: source });
+  await Payment.updateOne({ reservationId: booking._id }, {
+    $set: { status: 'partial', providerReference: `ch_ambiguous_${booking._id}` }
+  });
+  const claims = await CabinNightClaim.find({ bookingId: booking._id }).lean();
+  const counts = { bookings: await Booking.countDocuments(), changes: await StayChange.countDocuments() };
+  await assert.rejects(rebookReservation({
+    bookingId: booking._id, targetCabinId: target._id,
+    idempotencyKey: idem('ambiguous-refund'), ctx: adminCtx()
+  }), error => codeOf(error) === 'PAYMENT_EVIDENCE_AMBIGUOUS');
+  assert.equal(await Booking.countDocuments(), counts.bookings);
+  assert.equal(await StayChange.countDocuments(), counts.changes);
+  assert.deepEqual(await CabinNightClaim.find({ bookingId: booking._id }).lean(), claims);
+  assert.equal((await Booking.findById(booking._id)).status, 'confirmed');
+});
+
+test('foundation: consumed credit transfers once without changing original ledger or replacement provenance', async () => {
+  const source = await seedCabin(100), target = await seedCabin(100);
+  const booking = await makeSingleBooking({ cabin: source, paid: false });
+  const creditId = new mongoose.Types.ObjectId();
+  booking.stayCreditAppliedCents = 20000;
+  booking.stayCreditId = creditId;
+  await booking.save();
+  await StayCreditReservation.collection.insertOne({
+    bookingId: booking._id, stayCreditId: creditId, status: 'consumed', amountCents: 20000
+  });
+  const ledgerBefore = await StayCreditReservation.findOne({ bookingId: booking._id }).lean();
+  const payload = { bookingId: booking._id, targetCabinId: target._id,
+    idempotencyKey: idem('consumed-credit'), ctx: adminCtx() };
+  const first = await rebookReservation(payload), retry = await rebookReservation(payload);
+  assert.equal(retry.targetBookingId, first.targetBookingId);
+  assert.equal(await StayChange.countDocuments({ bookingId: booking._id }), 1);
+  const sc = await StayChange.findById(first.stayChangeId);
+  assert.equal(sc.money.transferredValueCents, 20000);
+  const replacement = await Booking.findById(first.targetBookingId);
+  assert.equal(String(replacement.settledByStayChangeId), String(sc._id));
+  assert.equal(replacement.status, 'confirmed');
+  assert.equal(replacement.stayCreditAppliedCents || 0, 0);
+  assert.equal(await Payment.countDocuments({ reservationId: replacement._id }), 0);
+  assert.deepEqual(await StayCreditReservation.findOne({ bookingId: booking._id }).lean(), ledgerBefore);
+});
+
 async function makeSingleBooking({
   cabin,
   status = 'confirmed',
@@ -287,6 +332,7 @@ test.beforeEach(async () => {
     Unit.deleteMany({}),
     Cabin.deleteMany({}),
     Payment.deleteMany({}),
+    StayCreditReservation.deleteMany({}),
     AvailabilityBlock.deleteMany({}),
     AuditEvent.collection.deleteMany({}),
     ManualReviewItem.deleteMany({})

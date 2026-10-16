@@ -1,5 +1,26 @@
 # StayChange — Locked Architecture Spec
 
+## Financial foundation correction (2026-10-16)
+
+REBOOK source coverage uses booking-linked EUR Payment ledger rows, not a
+standalone `stripePaidAmountCents` aggregate. Duplicate or ambiguous cash
+identities block the operation. Historic `paid` Stripe ledger rows remain
+supported. A `partial` or `refunded` Stripe row requires a fresh read-only
+PaymentIntent retrieval with expanded charge: identities, capture, currency,
+dispute state, gross amount and refunded amount must agree before net captured
+value can transfer. Refund-object ledger amounts are reconciled against the
+originating Stripe event through a read-only event retrieval; local `refunded`
+status alone does not establish that the entire capture was refunded.
+Unavailable or inconsistent evidence blocks REBOOK before
+inventory acquisition. No Stripe or financial-ledger writes occur.
+
+Voucher and consumed stay-credit coverage use the shared verified Ops evidence
+rules, with matching booking/checkout, status and amount; unverified applied
+amounts block transfer rather than guessing. Source ledgers remain unchanged.
+Current promotional/voucher REBOOK eligibility restrictions remain in force.
+This correction does not enable external settlement, additional charges,
+downgrades, new settlement types or the Change Accommodation UI.
+
 **Status:** LOCKED ARCHITECTURE - PENDING IMPLEMENTATION
 **Feature name:** StayChange
 **OPS user-facing action:** Move / Modify stay
