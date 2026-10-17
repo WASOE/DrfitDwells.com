@@ -13,12 +13,30 @@ import {
 export const MIN_AMOUNT_CENTS = 1500;
 export const PHYSICAL_CARD_FEE_CENTS = 500;
 export const MESSAGE_MAX_LENGTH = 250;
-export const PRESET_AMOUNTS = [1500, 5000, 10000, 25000];
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export const NAME_MAX_LENGTH = 120;
+export const EMAIL_MAX_LENGTH = 254;
+export const POSTAL_MAX_LENGTHS = Object.freeze({
+  addressLine1: 200, addressLine2: 200, city: 120, postalCode: 40, country: 120
+});
+export const PRESET_AMOUNTS = [1500, 5000, 10000, 25000, 50000];
 
 export function isValidEmail(value) {
-  return EMAIL_RE.test(String(value || '').trim());
+  const email = String(value || '').trim();
+  const separator = email.lastIndexOf('@');
+  if (separator < 1 || email.length > EMAIL_MAX_LENGTH) return false;
+  const local = email.slice(0, separator), domain = email.slice(separator + 1);
+  const bytes = new TextEncoder();
+  if (bytes.encode(local).length > 64 || bytes.encode(domain).length > 254) return false;
+  const labels = domain.split('.');
+  const tld = labels[labels.length - 1];
+  if (labels.length < 2 || !(tld.startsWith('xn--') || /^[\p{L}]{2,}$/u.test(tld)) ||
+    !labels.every((label) => label.length > 0 && label.length <= 63 &&
+      /^[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?$/u.test(label))) return false;
+  if (local.startsWith('"') && local.endsWith('"')) {
+    return /^[\p{L}\p{N}\p{P}\p{S} ]*$/u.test(local.slice(1, -1));
+  }
+  return local.split('.').every((part) => part.length > 0 &&
+    /^[\p{L}\p{N}!#$%&'*+/=?^_`{|}~-]+$/u.test(part));
 }
 
 export function createInitialBuilderState(pageLocale = 'en') {
@@ -47,9 +65,11 @@ export function createInitialBuilderState(pageLocale = 'en') {
 
 export function computeEffectiveAmountCents(state) {
   if (!state.useCustomAmount) return state.amountOriginalCents;
-  const eur = Number(state.customAmountEur);
-  if (!Number.isFinite(eur)) return NaN;
-  return Math.round(eur * 100);
+  const input = String(state.customAmountEur).trim();
+  if (!/^\d+(?:\.\d{1,2})?$/.test(input)) return NaN;
+  const [whole, fraction = ''] = input.split('.');
+  const cents = Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
+  return Number.isSafeInteger(cents) ? cents : NaN;
 }
 
 export function buildPreviewVoucher(state, effectiveAmountCents) {
@@ -80,7 +100,8 @@ export function buildPreviewVoucher(state, effectiveAmountCents) {
 export function validateBuilderState(state, { scheduledDeliveryEnabled = false } = {}) {
   const effectiveAmountCents = computeEffectiveAmountCents(state);
 
-  if (!Number.isInteger(effectiveAmountCents)) {
+  if (!Number.isSafeInteger(effectiveAmountCents) ||
+    (state.deliveryOption === 'postal' && !Number.isSafeInteger(effectiveAmountCents + PHYSICAL_CARD_FEE_CENTS))) {
     return { ok: false, code: 'WHOLE_AMOUNT' };
   }
   if (effectiveAmountCents < MIN_AMOUNT_CENTS) {
@@ -88,6 +109,9 @@ export function validateBuilderState(state, { scheduledDeliveryEnabled = false }
   }
   if (!state.buyerName.trim() || !state.recipientName.trim()) {
     return { ok: false, code: 'NAMES_REQUIRED' };
+  }
+  if (state.buyerName.trim().length > NAME_MAX_LENGTH || state.recipientName.trim().length > NAME_MAX_LENGTH) {
+    return { ok: false, code: 'NAMES_TOO_LONG' };
   }
   if (!isValidEmail(state.buyerEmail)) {
     return { ok: false, code: 'BUYER_EMAIL' };
@@ -103,13 +127,23 @@ export function validateBuilderState(state, { scheduledDeliveryEnabled = false }
     if (!scheduledDeliveryEnabled) {
       return { ok: false, code: 'SCHEDULED_NOT_ENABLED' };
     }
-    const dateResult = validateScheduledDeliveryDateIso(String(state.deliveryDate || '').trim());
+    const dateIso = String(state.deliveryDate || '').trim();
+    if (dateIso) {
+      const parsed = new Date(`${dateIso}T00:00:00.000Z`);
+      if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== dateIso) {
+        return { ok: false, code: 'INVALID_SCHEDULED_DELIVERY_DATE' };
+      }
+    }
+    const dateResult = validateScheduledDeliveryDateIso(dateIso);
     if (!dateResult.ok) {
       return { ok: false, code: dateResult.code };
     }
   }
 
   if (state.deliveryOption === 'postal') {
+    if (state.recipientEmail.trim() && !isValidEmail(state.recipientEmail)) {
+      return { ok: false, code: 'RECIPIENT_EMAIL' };
+    }
     if (
       !state.addressLine1.trim() ||
       !state.city.trim() ||
@@ -118,6 +152,17 @@ export function validateBuilderState(state, { scheduledDeliveryEnabled = false }
     ) {
       return { ok: false, code: 'POSTAL_REQUIRED' };
     }
+    if (Object.entries(POSTAL_MAX_LENGTHS).some(([key, max]) => state[key].length > max)) {
+      return { ok: false, code: 'POSTAL_TOO_LONG' };
+    }
+  }
+
+  if (!['recipient_now', 'send_to_buyer', 'postal', 'scheduled'].includes(state.deliveryOption)) {
+    return { ok: false, code: 'INVALID_DELIVERY_OPTION' };
+  }
+  if (!CARD_TEMPLATE_IDS.includes(state.cardTemplateId) || !CARD_OCCASIONS.includes(state.cardOccasion) ||
+    !['en', 'bg'].includes(state.cardLocale)) {
+    return { ok: false, code: 'INVALID_CUSTOMIZATION_FIELD' };
   }
 
   if (String(state.message || '').length > MESSAGE_MAX_LENGTH) {

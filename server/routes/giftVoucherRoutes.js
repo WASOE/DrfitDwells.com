@@ -215,6 +215,13 @@ router.post('/create-payment-intent', paymentIntentLimiter, paymentIntentValidat
     if (error.code === 'PAYMENT_NOT_CONFIGURED') {
       return res.status(503).json({ success: false, message: error.message, code: error.code });
     }
+    if (error.code === 'PURCHASE_REQUEST_INDEX_NOT_READY') {
+      return res.status(503).json({
+        success: false,
+        message: 'Voucher payments are temporarily unavailable',
+        code: error.code
+      });
+    }
     if (error.code === 'PAYMENT_INTENT_INIT_FAILED') {
       return res.status(502).json({ success: false, message: 'Unable to initialize payment', code: error.code });
     }

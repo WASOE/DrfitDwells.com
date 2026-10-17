@@ -59,6 +59,7 @@ export default function SiteLayout() {
   const deferIdleChrome = isHome || isSearchPage;
   const isGuidePage = basePath.startsWith('/guides/');
   const isHeroPage = HERO_PATHS.includes(basePath);
+  const isGiftVoucherPage = basePath === '/gift-vouchers';
   const isAppPage = basePath === '/build';
 
   return (
@@ -80,8 +81,8 @@ export default function SiteLayout() {
         {isPaidTrafficLanding ? <PaidTrafficHeader /> : <Header />}
         <main
           id="main"
-          style={isHeroPage ? undefined : { paddingTop: 'var(--header-offset)' }}
-          className={isHeroPage ? '' : 'min-h-0'}
+          style={isHeroPage || isGiftVoucherPage ? undefined : { paddingTop: 'var(--header-offset)' }}
+          className={isHeroPage || isGiftVoucherPage ? '' : 'min-h-0'}
         >
           <Outlet />
         </main>

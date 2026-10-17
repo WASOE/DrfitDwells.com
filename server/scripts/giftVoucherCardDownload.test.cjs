@@ -132,6 +132,8 @@ test.after(async () => {
 
 test.beforeEach(async () => {
   await mongoose.connection.dropDatabase();
+  await GiftVoucher.syncIndexes();
+  await GiftVoucherEvent.syncIndexes();
   app = buildApp();
 });
 

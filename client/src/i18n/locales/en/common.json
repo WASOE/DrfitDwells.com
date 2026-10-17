@@ -1,4 +1,11 @@
 {
+  "consent": {
+    "ariaLabel": "Cookie and privacy choices",
+    "message": "We use optional analytics and marketing cookies to measure visits and improve ads. You can change your mind anytime.",
+    "privacyLink": "Privacy Policy",
+    "decline": "Decline optional",
+    "accept": "Accept"
+  },
   "footer": {
     "headline": "Notes from the mountains.",
     "subcopy": "Stories from the mountains, delivered quietly to your inbox.",
@@ -132,4 +139,3 @@
     "notHelpfulAria": "Not helpful"
   }
 }
-

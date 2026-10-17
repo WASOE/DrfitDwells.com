@@ -84,6 +84,7 @@ function buildWebhookEvent({ stripePaymentIntentId, giftVoucherId, purchaseReque
 async function createCabin() {
   return Cabin.create({
     name: 'Lifecycle Cabin',
+    slug: 'lifecycle-cabin',
     description: 'A quiet place',
     capacity: 4,
     minGuests: 1,

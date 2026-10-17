@@ -46,6 +46,7 @@ function nextDate(days) {
 async function createCabin() {
   return Cabin.create({
     name: 'Test Cabin',
+    slug: 'test-cabin',
     description: 'A quiet place',
     capacity: 4,
     minGuests: 1,

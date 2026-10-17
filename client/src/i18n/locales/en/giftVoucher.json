@@ -1,4 +1,277 @@
 {
+  "aria": {
+    "navigation": "Gift voucher navigation",
+    "home": "Drift & Dwells home",
+    "siteLanguage": "Website language",
+    "siteLanguageNames": {
+      "en": "English",
+      "bg": "Bulgarian"
+    },
+    "builder": "Gift voucher details",
+    "design": "Gift card design",
+    "terms": "Accept the terms and cancellation policy",
+    "amount": "Choose a voucher amount",
+    "preview": "Personalized gift voucher preview",
+    "messageSuggestions": "Suggested gift messages",
+    "socialProof": "Guest ratings",
+    "review": "Review your gift voucher"
+  },
+  "reference": {
+    "hero": {
+      "kicker": "DRIFT & DWELLS / THE GIFT COLLECTION",
+      "first": "Give them",
+      "middle": "somewhere",
+      "last": "else.",
+      "lead": "Not another thing to own. Somewhere to go, switch off, and feel something real. An invitation to the mountains, on their terms.",
+      "create": "Create their gift",
+      "discover": "Discover what you're giving ↓",
+      "from": "From €15",
+      "instant": "Instant digital delivery",
+      "valid": "Valid 12 months",
+      "vertical": "THE MOUNTAINS",
+      "caption": "A different kind of present.",
+      "imageAlt": "A-frame cabins surrounded by snowy mountain forest at Drift & Dwells The Valley"
+    },
+    "ribbon": [
+      [
+        "You choose the amount",
+        "From a small gesture to a big escape"
+      ],
+      [
+        "They choose the adventure",
+        "The Cabin, The Valley, their own dates"
+      ],
+      [
+        "No pressure to use it all at once",
+        "Keep the balance for another visit"
+      ]
+    ],
+    "experience": {
+      "kicker": "NOT JUST A GIFT CARD",
+      "title": "Room to",
+      "titleEm": "get lost.",
+      "lead": "They don't have to choose now. One gift can become a night away, an extended escape, or a return to somewhere they fell in love with.",
+      "cards": [
+        [
+          "01 / SLOW DOWN",
+          "The Cabin",
+          "Firelight, forest and absolutely nowhere else to be."
+        ],
+        [
+          "02 / GO FURTHER",
+          "The Valley",
+          "A-frames above the clouds. Big skies, tiny distractions."
+        ],
+        [
+          "03 / GO AGAIN",
+          "Make it theirs",
+          "One stay or several. Add an experience when available."
+        ]
+      ]
+    },
+    "builder": {
+      "kicker": "A LITTLE SOMETHING FOR SOMEONE SPECIAL",
+      "title": "Make it",
+      "titleEm": "theirs.",
+      "previewIntro": "Three small decisions. One very good present. See your gift take shape as you go.",
+      "previewDefaultMessage": "For days worth remembering, and a little time to just be.",
+      "cardDear": "A LITTLE SOMETHING FOR",
+      "cardFrom": "A GIFT FROM",
+      "cardCredit": "GIFT CREDIT",
+      "previewUnder": "Made for a moment. Kept for a memory.",
+      "previewUnderText": "Digital or physical. Redeemable against stays at The Cabin and The Valley."
+    },
+    "messageChips": [
+      [
+        "For an adventure",
+        "For all the little adventures still ahead of us."
+      ],
+      [
+        "With love",
+        "The best kind of time is time together. Love you."
+      ],
+      [
+        "Just because",
+        "You deserve to switch off for a while. Enjoy every minute."
+      ]
+    ],
+    "promise": {
+      "kicker": "NO FIXED DATES. NO GUESSWORK.",
+      "title": "Give the feeling.",
+      "titleEm": "Let them find the moment.",
+      "body": "No need to know which cabin, which weekend, or how long they'll stay. Give the credit. They'll find their way here when the time is right.",
+      "cta": "Create your voucher",
+      "rows": [
+        [
+          "Two places to escape.",
+          "They can choose The Cabin or The Valley, subject to available dates."
+        ],
+        [
+          "A balance that stays.",
+          "Use part today and the rest on another reservation during the validity period."
+        ],
+        [
+          "Spend a little more, if they like.",
+          "When a booking exceeds the gift value, they can pay the difference."
+        ]
+      ]
+    },
+    "faq": {
+      "kicker": "GOOD TO KNOW",
+      "title": "Small print.",
+      "titleEm": "Big freedom.",
+      "intro": "A gift should come with a little certainty, too. Here are the practical bits, without the fuss.",
+      "items": [
+        [
+          "How long is my gift voucher valid?",
+          "Standard gift vouchers are valid for 12 months from issuance. Custom validity can be discussed for special or bulk orders."
+        ],
+        [
+          "Can they split the value over several stays?",
+          "Yes. Any unused credit remains on the voucher until fully redeemed or it expires."
+        ],
+        [
+          "Can they add money if their booking costs more?",
+          "Yes. They can pay any remaining balance when booking."
+        ],
+        [
+          "Where can a voucher be used?",
+          "For available stays at The Cabin and The Valley. Selected extras can be arranged subject to availability and their applicable conditions."
+        ],
+        [
+          "Can I send a physical card?",
+          "Yes. Choose the physical option and we'll arrange delivery details. Digital vouchers are available for faster gifting."
+        ],
+        [
+          "Do you offer bulk or branded gift vouchers?",
+          "Yes. For companies, agencies and larger occasions, email jose@driftdwells.com for a tailored proposal and design options."
+        ]
+      ]
+    },
+    "footer": {
+      "title": "See you out",
+      "titleEm": "there.",
+      "description": "Thoughtfully remote places in Bulgaria's mountains.\nMade for those who want to feel far away.",
+      "discover": "Discover",
+      "help": "Need help?",
+      "story": "Our story",
+      "questions": "Voucher questions",
+      "corporate": "Corporate gifts",
+      "bottom": "© Drift & Dwells · The mountains are waiting.",
+      "concept": "Gift vouchers · Design concept 2026"
+    }
+  },
+  "v2": {
+    "kicker": "Drift & Dwells / The gift collection",
+    "hero": "Give them",
+    "heroEm": "somewhere else.",
+    "lead": "Not another thing to own. Somewhere to go, switch off, and feel something real. An invitation to the mountains, on their terms.",
+    "make": "Make it theirs.",
+    "intro": "Three small decisions. One very good present. See your gift take shape as you go.",
+    "before": "Their gift, before it arrives",
+    "build": "Build your gift.",
+    "personal": "Personal · made by you",
+    "choose": "Choose your amount",
+    "thoughtful": "Every amount is thoughtful.",
+    "custom": "+ Your amount",
+    "credit": "Full value is prepaid credit, not a discount. The recipient decides how to use it.",
+    "personalize": "Make it personal",
+    "name": "Their name",
+    "from": "From",
+    "note": "A few words from you",
+    "look": "Choose the look",
+    "styles": [
+      "Parchment",
+      "After dark",
+      "Golden hour"
+    ],
+    "arrive": "How should it arrive?",
+    "delivery": [
+      "Email to them",
+      "Email to me",
+      "Physical card",
+      "Schedule email"
+    ],
+    "subs": [
+      "Instant & easy",
+      "Give it yourself",
+      "By post",
+      "Pick a date"
+    ],
+    "recipient": "Recipient email",
+    "buyer": "Your email",
+    "voucher": "Your gift voucher",
+    "valid": "Valid 12 months from issuance",
+    "preview": "Create their gift",
+    "fine": "Secure checkout follows. No payment is taken before confirmation.",
+    "team": "Buying for a team or campaign?",
+    "talk": "Let's talk ↗",
+    "promise": "Give the feeling.",
+    "promiseEm": "They choose the place.",
+    "promiseText": "A quiet cabin in the woods or a whole valley to roam. The voucher is theirs to use when the moment feels right.",
+    "faq": "Small print.",
+    "footer": "See you out there.",
+    "create": "Create a gift",
+    "faqNav": "FAQ",
+    "rhodope": "Rhodope Mountains",
+    "heroCaption": "Somewhere worth giving",
+    "ribbon": [
+      [
+        "Choose a value",
+        "From €15, or make it your own"
+      ],
+      [
+        "Add something personal",
+        "A name, a note, a look"
+      ],
+      [
+        "Send it their way",
+        "By email or through the post"
+      ]
+    ],
+    "placesKicker": "One gift. Two wild places.",
+    "room": "Room to",
+    "roomEm": "choose.",
+    "cabinKicker": "A hideout for two",
+    "cabinText": "Off-grid. Deep in the trees.",
+    "valleyKicker": "Space to roam",
+    "valleyText": "A wild valley, shared slowly.",
+    "madeBy": "Made by you",
+    "makeTitle": "Make it",
+    "makeTitleEm": "theirs.",
+    "live": "Live preview",
+    "cardEstablished": "Est. in the wild",
+    "underTitle": "Made for a moment. Kept for a memory.",
+    "underText": "Digital or physical. Redeemable against stays at The Cabin and The Valley. Website preview; the delivered card uses our email and print design.",
+    "promiseRows": [
+      [
+        "They choose when.",
+        "Twelve months to find the right moment."
+      ],
+      [
+        "They choose where.",
+        "The Cabin or The Valley."
+      ],
+      [
+        "Nothing goes to waste.",
+        "The remaining balance stays ready."
+      ]
+    ],
+    "faqKicker": "Everything worth knowing",
+    "faqIntro": "Everything clear, nothing hidden.",
+    "faqPartial": "Can they spend only part of it?",
+    "faqPartialText": "Yes. The remaining balance stays on the voucher.",
+    "faqMore": "What if the stay costs more?",
+    "faqMoreText": "They can securely pay the difference by card.",
+    "footerCredit": "Gift vouchers · prepaid credit",
+    "close": "Close",
+    "reviewKicker": "Your gift / ready to review",
+    "reviewTitle": "A little escape,",
+    "reviewTitleEm": "beautifully wrapped.",
+    "configError": "Delivery options could not be loaded. Please retry before continuing.",
+    "retry": "Retry",
+    "stripeUnavailable": "Secure payment is unavailable right now. Please try again later."
+  },
   "seo": {
     "title": "The Gift of Time Offline | Drift & Dwells Gift Vouchers",
     "description": "Give someone a few days away from noise, screens, and schedules. A Drift & Dwells gift voucher, delivered by email or as a physical card by post."
@@ -93,6 +366,7 @@
     "country": "Country"
   },
   "summary": {
+    "validity": "Validity",
     "total": "Total",
     "voucherValue": "Gift voucher value",
     "physicalFee": "Physical card fee",
@@ -126,7 +400,11 @@
     "unavailableContact": "Contact support"
   },
   "errors": {
-    "wholeAmount": "Please enter a whole-euro amount.",
+    "wholeAmount": "Please enter a valid EUR amount with no more than two decimal places.",
+    "namesTooLong": "Buyer and recipient names must be 120 characters or fewer.",
+    "postalTooLong": "Address lines must be at most 200 characters, city and country 120, and postal code 40.",
+    "invalidDelivery": "Please choose an available delivery method.",
+    "invalidCustomization": "Please choose a valid card design, occasion and language.",
     "minimum": "The minimum gift voucher amount is EUR 15.",
     "namesRequired": "Please add a buyer and recipient name.",
     "buyerEmail": "Please add a valid buyer email.",
