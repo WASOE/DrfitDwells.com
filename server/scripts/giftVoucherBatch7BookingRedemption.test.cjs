@@ -11,6 +11,7 @@ const GiftVoucherRedemption = require('../models/GiftVoucherRedemption');
 const Cabin = require('../models/Cabin');
 const Booking = require('../models/Booking');
 const ManualReviewItem = require('../models/ManualReviewItem');
+const CheckoutSession = require('../models/CheckoutSession');
 const bookingQuoteService = require('../services/bookingQuoteService');
 const bookingRoutes = require('../routes/bookingRoutes');
 const {
@@ -29,6 +30,15 @@ const {
 
 let mongoServer;
 let app;
+let savedCheckoutSessionV2;
+
+function setCheckoutSessionV2Flag(value) {
+  if (value === undefined || value === null) {
+    delete process.env.CHECKOUT_SESSION_V2;
+  } else {
+    process.env.CHECKOUT_SESSION_V2 = value;
+  }
+}
 
 function buildApp() {
   const instance = express();
@@ -59,6 +69,27 @@ async function createCabin() {
   });
 }
 
+function withFinalizeDetails(payload) {
+  return {
+    ...payload,
+    guestInfo: {
+      firstName: 'Voucher',
+      lastName: 'Guest',
+      email: 'voucher.guest@example.com',
+      phone: '+359888000111'
+    },
+    legalAcceptance: {
+      acceptedTermsAndCancellation: true,
+      acceptedActivityRisk: true,
+      termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
+      activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+      checkbox1TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
+      checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
+      locale: 'en'
+    }
+  };
+}
+
 async function createVoucher(overrides = {}) {
   return GiftVoucher.create({
     code: 'DD-ABCD-EFGH-IJKL',
@@ -76,8 +107,10 @@ async function createVoucher(overrides = {}) {
 }
 
 test.before(async () => {
+  savedCheckoutSessionV2 = process.env.CHECKOUT_SESSION_V2;
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri(), { serverSelectionTimeoutMS: 10000 });
+  await CheckoutSession.syncIndexes();
   await GiftVoucher.syncIndexes();
   await GiftVoucherRedemption.syncIndexes();
   await GiftVoucherEvent.syncIndexes();
@@ -87,13 +120,16 @@ test.before(async () => {
 });
 
 test.after(async () => {
+  setCheckoutSessionV2Flag(savedCheckoutSessionV2);
   await mongoose.connection.dropDatabase();
   await mongoose.disconnect();
   if (mongoServer) await mongoServer.stop();
 });
 
 test.beforeEach(async () => {
+  setCheckoutSessionV2Flag('0');
   await mongoose.connection.db.collection('giftvoucherevents').deleteMany({});
+  await CheckoutSession.deleteMany({});
   await GiftVoucherRedemption.deleteMany({});
   await GiftVoucher.deleteMany({});
   await Booking.deleteMany({});
@@ -340,6 +376,7 @@ test('no-voucher booking quote flow still works', async () => {
 });
 
 test('route-level partial voucher creates Stripe PI only for residual', async () => {
+  setCheckoutSessionV2Flag('1');
   const cabin = await createCabin();
   const voucher = await createVoucher({ balanceRemainingCents: 25000 });
   let capturedCreatePayload = null;
@@ -354,7 +391,7 @@ test('route-level partial voucher creates Stripe PI only for residual', async ()
     }
   });
 
-  const response = await request(app).post('/api/bookings/create-payment-intent').send({
+  const response = await request(app).post('/api/bookings/create-payment-intent').send(withFinalizeDetails({
     cabinId: String(cabin._id),
     checkIn: nextDate(3).toISOString(),
     checkOut: nextDate(5).toISOString(),
@@ -362,17 +399,21 @@ test('route-level partial voucher creates Stripe PI only for residual', async ()
     children: 0,
     checkoutId: 'chk_batch7_route_partial_1',
     voucherCode: voucher.code
-  });
+  }));
 
   assert.equal(response.status, 200);
   assert.equal(response.body.success, true);
   assert.equal(response.body.fullVoucherCoverage, false);
-  assert.equal(response.body.voucherAppliedCents, 25000);
+  assert.equal(response.body.giftVoucherAppliedCents, 25000);
   assert.equal(response.body.stripeAmountCents, 11000);
   assert.equal(capturedCreatePayload.amount, 11000);
+  const redemption = await GiftVoucherRedemption.findById(response.body.voucherRedemptionId).lean();
+  assert.equal(redemption.status, 'reserved');
+  assert.equal(redemption.paymentIntentId, 'pi_route_partial_1');
 });
 
 test('route-level full voucher creates no Stripe PI and returns full coverage', async () => {
+  setCheckoutSessionV2Flag('1');
   const cabin = await createCabin();
   const voucher = await createVoucher({ amountOriginalCents: 60000, balanceRemainingCents: 60000 });
   let createCalls = 0;
@@ -401,39 +442,66 @@ test('route-level full voucher creates no Stripe PI and returns full coverage', 
   assert.equal(response.body.success, true);
   assert.equal(response.body.fullVoucherCoverage, true);
   assert.equal(response.body.stripeAmountCents, 0);
+  assert.equal(response.body.noPaymentRequired, true);
   assert.equal(createCalls, 0);
 });
 
-test('PI creation failure after reserve releases redemption and restores balance', async () => {
+test('lost Stripe response preserves reservation and retry recovers the idempotent intent', async () => {
+  setCheckoutSessionV2Flag('1');
   const cabin = await createCabin();
   const voucher = await createVoucher({ balanceRemainingCents: 25000 });
+  const checkoutId = 'chk_batch7_route_fail_1';
+  const body = {
+    cabinId: String(cabin._id),
+    checkIn: nextDate(3).toISOString(),
+    checkOut: nextDate(5).toISOString(),
+    adults: 2,
+    children: 0,
+    checkoutId,
+    voucherCode: voucher.code
+  };
+  const paymentBody = withFinalizeDetails(body);
+  const intentsByKey = new Map();
+  let createCalls = 0;
   bookingRoutes.__setStripeClientForTesting({
     paymentIntents: {
-      create: async () => {
-        throw new Error('forced_pi_failure');
+      create: async (payload, options) => {
+        createCalls += 1;
+        const idempotencyKey = options?.idempotencyKey;
+        if (!intentsByKey.has(idempotencyKey)) {
+          const intent = {
+            id: 'pi_route_fail_1',
+            client_secret: 'cs_route_fail_1',
+            amount: payload.amount,
+            currency: payload.currency,
+            metadata: payload.metadata
+          };
+          intentsByKey.set(idempotencyKey, intent);
+          throw new Error('forced_pi_response_lost');
+        }
+        return intentsByKey.get(idempotencyKey);
       },
       retrieve: async () => ({ id: 'pi_route_fail_1', client_secret: 'cs_route_fail_1' }),
       update: async () => ({ ok: true })
     }
   });
 
-  const response = await request(app).post('/api/bookings/create-payment-intent').send({
-    cabinId: String(cabin._id),
-    checkIn: nextDate(3).toISOString(),
-    checkOut: nextDate(5).toISOString(),
-    adults: 2,
-    children: 0,
-    checkoutId: 'chk_batch7_route_fail_1',
-    voucherCode: voucher.code
-  });
+  const firstResponse = await request(app).post('/api/bookings/create-payment-intent').send(paymentBody);
+  assert.equal(firstResponse.status, 500);
 
-  assert.equal(response.status, 500);
-  const reloaded = await GiftVoucher.findById(voucher._id).lean();
-  assert.equal(reloaded.balanceRemainingCents, 25000);
-  const reservedCount = await GiftVoucherRedemption.countDocuments({ checkoutId: 'chk_batch7_route_fail_1', status: 'reserved' });
-  assert.equal(reservedCount, 0);
-  const releasedCount = await GiftVoucherRedemption.countDocuments({ checkoutId: 'chk_batch7_route_fail_1', status: 'released' });
-  assert.equal(releasedCount >= 1, true);
+  const firstRedemption = await GiftVoucherRedemption.findOne({ checkoutId }).lean();
+  assert.equal(firstRedemption.status, 'reserved');
+  assert.equal((await GiftVoucher.findById(voucher._id).lean()).balanceRemainingCents, 0);
+
+  const retryResponse = await request(app).post('/api/bookings/create-payment-intent').send(paymentBody);
+  assert.equal(retryResponse.status, 200);
+  assert.equal(retryResponse.body.success, true);
+  assert.equal(retryResponse.body.voucherRedemptionId, String(firstRedemption._id));
+  assert.equal(retryResponse.body.canonicalPaymentIntentId, 'pi_route_fail_1');
+  assert.equal(createCalls, 2);
+
+  assert.equal(await GiftVoucherRedemption.countDocuments({ checkoutId }), 1);
+  assert.equal((await GiftVoucherRedemption.findById(firstRedemption._id).lean()).paymentIntentId, 'pi_route_fail_1');
 });
 
 test('expired/missing reservation with paid PI opens payment_finalization_failure and returns guest-safe response', async () => {

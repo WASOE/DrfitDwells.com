@@ -354,6 +354,7 @@ async function buildQuoteForResolvedEntity(
     romanticSetup,
     promoCode,
     voucherCode,
+    checkoutId = null,
     stayCreditCode = null,
     guestEmail = null
   },
@@ -415,7 +416,8 @@ async function buildQuoteForResolvedEntity(
     const previewVoucher = deps.previewVoucherApplication || previewVoucherApplication;
     const voucherPreview = await previewVoucher({
       voucherCode: codeToPreview,
-      totalValueCents: Math.round(quote.totalPrice * 100)
+      totalValueCents: Math.round(quote.totalPrice * 100),
+      checkoutId
     });
     voucherAppliedCents = Number(voucherPreview.voucherAppliedCents || 0);
     remainingDueCents =
@@ -681,6 +683,7 @@ async function buildPublicBookingQuote(body, deps = {}) {
       romanticSetup,
       promoCode,
       voucherCode: body.voucherCode,
+      checkoutId: body.checkoutId || null,
       stayCreditCode: body.stayCreditCode || null,
       guestEmail: body.guestEmail || body.email || null
     },

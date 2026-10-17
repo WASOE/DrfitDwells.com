@@ -8,6 +8,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const GiftVoucher = require('../models/GiftVoucher');
 const GiftVoucherEvent = require('../models/GiftVoucherEvent');
 const GiftVoucherRedemption = require('../models/GiftVoucherRedemption');
+const CheckoutSession = require('../models/CheckoutSession');
 const Cabin = require('../models/Cabin');
 const bookingQuoteService = require('../services/bookingQuoteService');
 const bookingRoutes = require('../routes/bookingRoutes');
@@ -24,10 +25,25 @@ const {
   releaseVoucherReservation,
   releaseExpiredVoucherReservations
 } = require('../services/bookings/bookingVoucherRedemptionService');
+const {
+  LEGAL_ACCEPTANCE_TERMS_VERSION,
+  LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+  LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
+  LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT
+} = require('../config/legalAcceptance');
 
 let mongoServer;
 let app;
 let purchaseCounter = 0;
+let savedCheckoutSessionV2;
+
+function setCheckoutSessionV2Flag(value) {
+  if (value === undefined || value === null) {
+    delete process.env.CHECKOUT_SESSION_V2;
+  } else {
+    process.env.CHECKOUT_SESSION_V2 = value;
+  }
+}
 
 function buildApp() {
   const instance = express();
@@ -123,11 +139,34 @@ function bookingQuoteBody(cabin, voucher, overrides = {}) {
   };
 }
 
+function withFinalizeDetails(payload) {
+  return {
+    ...payload,
+    guestInfo: {
+      firstName: 'Voucher',
+      lastName: 'Guest',
+      email: 'voucher.guest@example.com',
+      phone: '+359888000111'
+    },
+    legalAcceptance: {
+      acceptedTermsAndCancellation: true,
+      acceptedActivityRisk: true,
+      termsVersion: LEGAL_ACCEPTANCE_TERMS_VERSION,
+      activityRiskVersion: LEGAL_ACCEPTANCE_ACTIVITY_RISK_VERSION,
+      checkbox1TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_1_TEXT,
+      checkbox2TextSnapshot: LEGAL_ACCEPTANCE_CHECKBOX_2_TEXT,
+      locale: 'en'
+    }
+  };
+}
+
 const TWO_NIGHT_TOTAL_CENTS = 36000;
 
 test.before(async () => {
+  savedCheckoutSessionV2 = process.env.CHECKOUT_SESSION_V2;
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri(), { serverSelectionTimeoutMS: 10000 });
+  await CheckoutSession.syncIndexes();
   await GiftVoucher.syncIndexes();
   await GiftVoucherRedemption.syncIndexes();
   await GiftVoucherEvent.syncIndexes();
@@ -136,12 +175,15 @@ test.before(async () => {
 });
 
 test.after(async () => {
+  setCheckoutSessionV2Flag(savedCheckoutSessionV2);
   await mongoose.connection.dropDatabase();
   await mongoose.disconnect();
   if (mongoServer) await mongoServer.stop();
 });
 
 test.beforeEach(async () => {
+  setCheckoutSessionV2Flag('0');
+  await CheckoutSession.deleteMany({});
   await mongoose.connection.db.collection('giftvoucherevents').deleteMany({});
   await GiftVoucherRedemption.deleteMany({});
   await GiftVoucher.deleteMany({});
@@ -194,6 +236,7 @@ for (const [label, amountCents, expectedApplied] of [
 }
 
 test('€50 voucher -> create-payment-intent charges only residual', async () => {
+  setCheckoutSessionV2Flag('1');
   const cabin = await createCabin();
   const voucher = await createPurchasedActiveVoucher(5000);
   let capturedAmount = null;
@@ -208,13 +251,13 @@ test('€50 voucher -> create-payment-intent charges only residual', async () =>
     }
   });
 
-  const response = await request(app).post('/api/bookings/create-payment-intent').send({
+  const response = await request(app).post('/api/bookings/create-payment-intent').send(withFinalizeDetails({
     ...bookingQuoteBody(cabin, voucher),
     checkoutId: 'chk_lifecycle_residual_50'
-  });
+  }));
 
   assert.equal(response.status, 200);
-  assert.equal(response.body.voucherAppliedCents, 5000);
+  assert.equal(response.body.giftVoucherAppliedCents, 5000);
   assert.equal(response.body.stripeAmountCents, 31000);
   assert.equal(capturedAmount, 31000);
 });
@@ -248,12 +291,13 @@ test('quote/apply does not mutate balance or ledger', async () => {
 });
 
 test('create-payment-intent creates one hold', async () => {
+  setCheckoutSessionV2Flag('1');
   const cabin = await createCabin();
   const voucher = await createPurchasedActiveVoucher(5000);
-  const response = await request(app).post('/api/bookings/create-payment-intent').send({
+  const response = await request(app).post('/api/bookings/create-payment-intent').send(withFinalizeDetails({
     ...bookingQuoteBody(cabin, voucher),
     checkoutId: 'chk_lifecycle_one_hold'
-  });
+  }));
   assert.equal(response.status, 200);
   assert.equal(await GiftVoucherRedemption.countDocuments({ checkoutId: 'chk_lifecycle_one_hold' }), 1);
   const reloaded = await GiftVoucher.findById(voucher._id).lean();
@@ -261,14 +305,18 @@ test('create-payment-intent creates one hold', async () => {
 });
 
 test('repeated create-payment-intent for same checkout does not double-hold', async () => {
+  setCheckoutSessionV2Flag('1');
   const cabin = await createCabin();
   const voucher = await createPurchasedActiveVoucher(5000);
-  const body = { ...bookingQuoteBody(cabin, voucher), checkoutId: 'chk_lifecycle_idempotent' };
+  const body = withFinalizeDetails({
+    ...bookingQuoteBody(cabin, voucher),
+    checkoutId: 'chk_lifecycle_idempotent'
+  });
   const first = await request(app).post('/api/bookings/create-payment-intent').send(body);
   const second = await request(app).post('/api/bookings/create-payment-intent').send(body);
   assert.equal(first.status, 200);
   assert.equal(second.status, 200);
-  assert.equal(first.body.redemptionId, second.body.redemptionId);
+  assert.equal(first.body.voucherRedemptionId, second.body.voucherRedemptionId);
   assert.equal(await GiftVoucherRedemption.countDocuments({ checkoutId: 'chk_lifecycle_idempotent' }), 1);
 });
 
@@ -294,6 +342,7 @@ test('expired hold released before quote', async () => {
 });
 
 test('expired hold released before new payment-intent reservation', async () => {
+  setCheckoutSessionV2Flag('1');
   const cabin = await createCabin();
   const voucher = await createPurchasedActiveVoucher(5000);
   await reserveVoucherForCheckout({
@@ -305,12 +354,12 @@ test('expired hold released before new payment-intent reservation', async () => 
   const held = await GiftVoucher.findById(voucher._id).lean();
   assert.equal(held.balanceRemainingCents, 0);
 
-  const response = await request(app).post('/api/bookings/create-payment-intent').send({
+  const response = await request(app).post('/api/bookings/create-payment-intent').send(withFinalizeDetails({
     ...bookingQuoteBody(cabin, voucher),
     checkoutId: 'chk_lifecycle_stale_pi_new'
-  });
+  }));
   assert.equal(response.status, 200);
-  assert.equal(response.body.voucherAppliedCents, 5000);
+  assert.equal(response.body.giftVoucherAppliedCents, 5000);
 });
 
 test('booking confirmation consumes voucher once', async () => {
