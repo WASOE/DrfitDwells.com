@@ -16,6 +16,7 @@ const Header = () => {
   const { language } = useSiteLanguage();
   const { openModal } = useBookingSearch();
   const basePath = stripLocaleFromPath(location.pathname);
+  const isGiftVoucherPage = basePath === '/gift-vouchers';
   const isHeroOverlay =
     basePath === '/' ||
     basePath === '/cabin' ||
@@ -82,7 +83,7 @@ const Header = () => {
 
   return (
     <>
-      <header className={`fixed top-0 w-full z-50 px-6 py-6 transition-all duration-300 ${useDarkTheme ? 'bg-white/90 backdrop-blur-md shadow-sm' : 'bg-transparent'}`}>
+      <header className={`fixed top-0 w-full z-50 px-6 py-6 transition-all duration-300 ${isGiftVoucherPage ? 'gv2-site-header' : ''} ${useDarkTheme ? 'bg-white/90 backdrop-blur-md shadow-sm' : 'bg-transparent'}`}>
         <div className="max-w-7xl mx-auto">
           <div className="flex justify-between items-center">
             <div className="flex-shrink-0">
@@ -114,7 +115,7 @@ const Header = () => {
               </Link>
             </div>
 
-            <nav className="hidden md:flex items-center gap-8 lg:gap-10 transition-all duration-300 whitespace-nowrap">
+            <nav className={`${isGiftVoucherPage ? 'gv2-header-desktop-nav' : ''} hidden md:flex items-center gap-8 lg:gap-10 transition-all duration-300 whitespace-nowrap`}>
               {navLinks.map((link) => {
                 const active = isActive(link.to);
                 return (
@@ -132,7 +133,7 @@ const Header = () => {
               })}
             </nav>
 
-            <div className="hidden md:flex items-center flex-shrink-0 ml-4 lg:ml-6 gap-2">
+            <div className={`${isGiftVoucherPage ? 'gv2-header-desktop-actions' : ''} hidden md:flex items-center flex-shrink-0 ml-4 lg:ml-6 gap-2`}>
               <Link
                 to={localizePath('/gift-vouchers', language)}
                 className={`text-[11px] font-medium uppercase tracking-[0.22em] transition-colors duration-200 mr-2 ${
@@ -176,7 +177,7 @@ const Header = () => {
               </button>
             </div>
 
-            <div className="md:hidden relative z-[70] flex-shrink-0 flex items-center gap-2">
+            <div className={`${isGiftVoucherPage ? 'gv2-header-mobile-toggle' : ''} md:hidden relative z-[70] flex-shrink-0 flex items-center gap-2`}>
               <button
                 type="button"
                 className={`

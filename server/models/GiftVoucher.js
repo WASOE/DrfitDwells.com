@@ -222,7 +222,7 @@ const giftVoucherSchema = new mongoose.Schema(
     scheduledDeliveryClaimExpiresAt: { type: Date, default: null },
     sentAt: { type: Date, default: null },
     expiresAt: { type: Date, default: null, index: true },
-    purchaseRequestId: { type: String, trim: true, default: null, index: true },
+    purchaseRequestId: { type: String, trim: true, default: null },
     purchaseFingerprint: { type: String, trim: true, default: null, index: true },
     termsAcceptedAt: { type: Date, default: null },
     termsVersion: { type: String, trim: true, default: null },
@@ -313,6 +313,14 @@ giftVoucherSchema.index(
       issuanceSource: 'cancellation_compensation',
       sourceReservationId: { $type: 'objectId' }
     }
+  }
+);
+giftVoucherSchema.index(
+  { purchaseRequestId: 1 },
+  {
+    unique: true,
+    name: 'gift_voucher_purchase_request_unique',
+    partialFilterExpression: { purchaseRequestId: { $type: 'string' } }
   }
 );
 giftVoucherSchema.index(

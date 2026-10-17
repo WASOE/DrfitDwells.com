@@ -5,8 +5,10 @@ import { MemoryRouter } from 'react-router-dom';
 import GiftVouchers from './GiftVouchers';
 import { useStripeAvailability } from '../lib/stripeClient';
 import { CONTACT_EMAIL } from '../data/gmbLocations';
+import en from '../i18n/locales/en/giftVoucher.json';
 
 vi.mock('../lib/stripeClient', () => ({ useStripeAvailability: vi.fn() }));
+vi.mock('../hooks/useSiteLanguage', () => ({ useSiteLanguage: () => ({ language: 'en' }) }));
 vi.mock('../services/api', () => ({
   giftVoucherAPI: {
     getConfig: vi.fn(() => Promise.resolve({ data: { data: { scheduledDeliveryEnabled: true } } })),
@@ -15,7 +17,9 @@ vi.mock('../services/api', () => ({
   }
 }));
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key) => key }),
+  useTranslation: () => ({
+    t: (key, options = {}) => key.split('.').reduce((value, part) => value?.[part], en) ?? options.defaultValue ?? key
+  }),
   initReactI18next: { type: '3rdParty', init: () => {} }
 }));
 vi.mock('../components/Seo', () => ({ default: () => null }));
@@ -46,7 +50,7 @@ afterEach(() => {
 });
 
 describe('GiftVouchers stripe availability', () => {
-  it('shows an explicit unavailable notice and blocks payment when Stripe cannot load', () => {
+  it('shows an explicit unavailable notice and blocks payment when Stripe cannot load', async () => {
     useStripeAvailability.mockReturnValue({
       stripePromise: null,
       status: 'unavailable',
@@ -60,13 +64,15 @@ describe('GiftVouchers stripe availability', () => {
     const notice = screen.getByTestId('gift-voucher-stripe-unavailable');
     expect(notice).toBeInTheDocument();
     expect(notice).toHaveAttribute('role', 'alert');
-    expect(screen.getByText('payment.unavailableTitle')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'payment.unavailableContact' })).toHaveAttribute(
+    expect(screen.getByText(en.payment.unavailableTitle)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: en.payment.unavailableContact })).toHaveAttribute(
       'href',
       `mailto:${CONTACT_EMAIL}`
     );
-    expect(screen.getByRole('button', { name: 'payment.continue' })).toBeDisabled();
     expect(screen.queryByTestId('stripe-elements')).not.toBeInTheDocument();
+    fireEvent.submit(document.querySelector('form.gv2-details'));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `${en.payment.continue} ↗` })).toBeDisabled();
   });
 
   it('offers a retry affordance that re-attempts Stripe loading', () => {
@@ -80,11 +86,11 @@ describe('GiftVouchers stripe availability', () => {
 
     mount();
 
-    fireEvent.click(screen.getByRole('button', { name: 'payment.unavailableRetry' }));
+    fireEvent.click(screen.getByRole('button', { name: en.payment.unavailableRetry }));
     expect(retry).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps the normal payment flow when Stripe is available', () => {
+  it('keeps the normal payment flow when Stripe is available', async () => {
     useStripeAvailability.mockReturnValue({
       stripePromise: Promise.resolve({}),
       status: 'ready',
@@ -96,6 +102,8 @@ describe('GiftVouchers stripe availability', () => {
     mount();
 
     expect(screen.queryByTestId('gift-voucher-stripe-unavailable')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'payment.continue' })).toBeEnabled();
+    fireEvent.submit(document.querySelector('form.gv2-details'));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `${en.payment.continue} ↗` })).toBeEnabled();
   });
 });

@@ -1,9 +1,15 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const {
+  INDEX_NAME,
+  isEquivalentIndex,
+  findDuplicatePurchaseRequestIds
+} = require('./ensureGiftVoucherPurchaseRequestIndex');
 
 const GiftVoucher = require('../models/GiftVoucher');
 const GiftVoucherEvent = require('../models/GiftVoucherEvent');
@@ -14,11 +20,15 @@ const {
   createGiftVoucherPaymentIntent,
   activatePaidVoucherFromStripeEvent,
   PHYSICAL_CARD_FEE_CENTS,
-  computeGiftVoucherPricing
+  computeGiftVoucherPricing,
+  __resetPurchaseRequestIndexCheckForTests
 } = require('../services/giftVouchers/giftVoucherPaymentService');
 
 let mongoServer;
 let lastStripeCreatePayload = null;
+let stripeCreateCalls = [];
+let stripeIntentsByIdempotencyKey = new Map();
+let stripeIntentsById = new Map();
 
 function buildCreatePayload(overrides = {}) {
   return {
@@ -43,6 +53,34 @@ function buildCreatePayload(overrides = {}) {
     },
     ...overrides
   };
+}
+
+function buildLegacyPurchaseFingerprint(payload) {
+  const canonical = {
+    amountOriginalCents: payload.amountOriginalCents,
+    currency: payload.currency,
+    buyerName: payload.buyerName,
+    buyerEmail: payload.buyerEmail,
+    recipientName: payload.recipientName,
+    recipientEmail: payload.recipientEmail,
+    deliveryMode: payload.deliveryMode,
+    deliveryOption: payload.deliveryOption,
+    cardOccasion: payload.cardOccasion || null,
+    cardTemplateId: payload.cardTemplateId || null,
+    cardLocale: payload.cardLocale || null,
+    message: payload.message || null,
+    deliveryAddress: {
+      addressLine1: payload.deliveryAddress?.addressLine1 || null,
+      addressLine2: payload.deliveryAddress?.addressLine2 || null,
+      city: payload.deliveryAddress?.city || null,
+      postalCode: payload.deliveryAddress?.postalCode || null,
+      country: payload.deliveryAddress?.country || null
+    }
+  };
+  if (payload.deliveryOption === 'scheduled' && payload.deliveryDate) {
+    canonical.scheduledDeliveryDate = payload.deliveryDate.toISOString();
+  }
+  return crypto.createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
 }
 
 function buildPostalPayload(overrides = {}) {
@@ -102,13 +140,22 @@ test.beforeEach(async () => {
   await ManualReviewItem.deleteMany({});
   await GiftVoucher.deleteMany({});
   lastStripeCreatePayload = null;
+  stripeCreateCalls = [];
+  stripeIntentsByIdempotencyKey = new Map();
+  stripeIntentsById = new Map();
   setStripeClientForTesting({
     paymentIntents: {
-      create: async (payload) => {
+      create: async (payload, options = {}) => {
         lastStripeCreatePayload = payload;
-        return { id: 'pi_1', client_secret: 'cs_1' };
+        stripeCreateCalls.push({ payload, options });
+        const existing = stripeIntentsByIdempotencyKey.get(options.idempotencyKey);
+        if (existing) return existing;
+        const intent = { id: `pi_${stripeIntentsById.size + 1}`, client_secret: `cs_${stripeIntentsById.size + 1}` };
+        stripeIntentsByIdempotencyKey.set(options.idempotencyKey, intent);
+        stripeIntentsById.set(intent.id, intent);
+        return intent;
       },
-      retrieve: async () => ({ id: 'pi_1', client_secret: 'cs_1' })
+      retrieve: async (id) => stripeIntentsById.get(id) || { id, client_secret: 'cs_retrieved' }
     }
   });
 });
@@ -154,6 +201,76 @@ test('create-payment-intent creates pending voucher, PI, and payment_pending eve
 
   const event = await GiftVoucherEvent.findOne({ giftVoucherId: voucher._id, type: 'payment_pending' }).lean();
   assert.ok(event);
+});
+
+test('purchase request unique partial index protects request IDs without restricting historical records', async () => {
+  const indexes = await GiftVoucher.collection.indexes();
+  const index = indexes.find((candidate) => candidate.name === INDEX_NAME);
+  assert.ok(isEquivalentIndex(index));
+  await GiftVoucher.collection.insertOne({
+    _id: new mongoose.Types.ObjectId(),
+    amountOriginalCents: 1500,
+    balanceRemainingCents: 1500,
+    currency: 'EUR',
+    status: 'active',
+    purchaseRequestId: null
+  });
+  await GiftVoucher.collection.insertOne({
+    _id: new mongoose.Types.ObjectId(),
+    amountOriginalCents: 1500,
+    balanceRemainingCents: 1500,
+    currency: 'EUR',
+    status: 'active',
+    purchaseRequestId: null
+  });
+  const requestRecord = {
+    amountOriginalCents: 1500,
+    balanceRemainingCents: 1500,
+    currency: 'EUR',
+    status: 'pending_payment',
+    purchaseRequestId: 'gvr_unique_test_1'
+  };
+  await GiftVoucher.collection.insertOne({ _id: new mongoose.Types.ObjectId(), ...requestRecord });
+  await assert.rejects(
+    () => GiftVoucher.collection.insertOne({ _id: new mongoose.Types.ObjectId(), ...requestRecord }),
+    (error) => error.code === 11000
+  );
+});
+
+test('payment preparation fails closed when the purchase request index is absent', async () => {
+  await GiftVoucher.collection.dropIndex(INDEX_NAME);
+  __resetPurchaseRequestIndexCheckForTests();
+  await assert.rejects(
+    () => createGiftVoucherPaymentIntent(buildCreatePayload()),
+    (error) => error.code === 'PURCHASE_REQUEST_INDEX_NOT_READY'
+  );
+  assert.equal(await GiftVoucher.countDocuments({}), 0);
+  await GiftVoucher.collection.createIndex(
+    { purchaseRequestId: 1 },
+    {
+      unique: true,
+      name: INDEX_NAME,
+      partialFilterExpression: { purchaseRequestId: { $type: 'string' } }
+    }
+  );
+  __resetPurchaseRequestIndexCheckForTests();
+});
+
+test('migration duplicate preflight reports existing IDs without exposing them', async () => {
+  const collection = mongoose.connection.db.collection('gift_voucher_purchase_id_preflight_test');
+  await collection.insertMany([
+    { purchaseRequestId: 'sensitive-request-id-1' },
+    { purchaseRequestId: 'sensitive-request-id-1' },
+    { purchaseRequestId: null }
+  ]);
+  try {
+    const summary = await findDuplicatePurchaseRequestIds(collection);
+    assert.equal(summary.count, 1);
+    assert.equal(summary.samples[0].count, 2);
+    assert.equal(summary.samples[0]._id, 'sensitive-request-id-1');
+  } finally {
+    await collection.drop();
+  }
 });
 
 test('terms not accepted creates nothing', async () => {
@@ -217,6 +334,40 @@ test('same purchaseRequestId and same fingerprint returns existing voucher/payme
   assert.equal(await GiftVoucher.countDocuments({}), 1);
 });
 
+test('legacy pending purchase fingerprint replays only when stored attribution also matches', async () => {
+  const payload = buildCreatePayload();
+  const first = await createGiftVoucherPaymentIntent(payload);
+  await GiftVoucher.updateOne(
+    { _id: first.giftVoucherId },
+    { $set: { purchaseFingerprint: buildLegacyPurchaseFingerprint(payload) } }
+  );
+
+  const replay = await createGiftVoucherPaymentIntent(payload);
+  assert.equal(replay.ok, true);
+  assert.equal(replay.idempotentReplay, true);
+  assert.equal(replay.giftVoucherId, first.giftVoucherId);
+  assert.equal(replay.stripePaymentIntentId, first.stripePaymentIntentId);
+  assert.equal(stripeCreateCalls.length, 1);
+  assert.equal(await GiftVoucher.countDocuments({}), 1);
+});
+
+test('legacy pending purchase rejects a changed attribution fingerprint', async () => {
+  const payload = buildCreatePayload();
+  const first = await createGiftVoucherPaymentIntent(payload);
+  await GiftVoucher.updateOne(
+    { _id: first.giftVoucherId },
+    { $set: { purchaseFingerprint: buildLegacyPurchaseFingerprint(payload) } }
+  );
+
+  await assert.rejects(
+    () => createGiftVoucherPaymentIntent(buildCreatePayload({
+      attribution: { referralCode: 'different-referral' }
+    })),
+    (err) => err.code === 'PURCHASE_REQUEST_CONFLICT'
+  );
+  assert.equal(stripeCreateCalls.length, 1);
+});
+
 test('same purchaseRequestId and different fingerprint returns conflict', async () => {
   await createGiftVoucherPaymentIntent(buildCreatePayload());
   await assert.rejects(
@@ -253,7 +404,129 @@ test('same purchaseRequestId with different postal address returns conflict', as
   );
 });
 
-test('same purchaseRequestId after voided PI failure returns PURCHASE_REQUEST_CLOSED', async () => {
+test('same purchaseRequestId with changed attribution returns conflict', async () => {
+  await createGiftVoucherPaymentIntent(buildCreatePayload());
+  await assert.rejects(
+    () => createGiftVoucherPaymentIntent(buildCreatePayload({
+      attribution: { referralCode: 'different-referral' }
+    })),
+    (err) => err.code === 'PURCHASE_REQUEST_CONFLICT'
+  );
+  assert.equal(await GiftVoucher.countDocuments({}), 1);
+});
+
+test('20 simultaneous requests reserve one voucher and one Stripe intent', async () => {
+  let creationStarted = false;
+  let releaseCreate;
+  const creationGate = new Promise((resolve) => { releaseCreate = resolve; });
+  setStripeClientForTesting({
+    paymentIntents: {
+      create: async (payload, options = {}) => {
+        stripeCreateCalls.push({ payload, options });
+        const existing = stripeIntentsByIdempotencyKey.get(options.idempotencyKey);
+        if (existing) return existing;
+        if (creationStarted) {
+          const error = new Error('same idempotency key is currently in progress');
+          error.code = 'idempotency_key_in_use';
+          error.statusCode = 409;
+          throw error;
+        }
+        creationStarted = true;
+        await creationGate;
+        const intent = { id: `pi_${stripeIntentsById.size + 1}`, client_secret: `cs_${stripeIntentsById.size + 1}` };
+        stripeIntentsByIdempotencyKey.set(options.idempotencyKey, intent);
+        stripeIntentsById.set(intent.id, intent);
+        return intent;
+      },
+      retrieve: async (id) => stripeIntentsById.get(id)
+    }
+  });
+  const pending = Promise.all(Array.from({ length: 20 }, () => createGiftVoucherPaymentIntent(buildCreatePayload())));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  releaseCreate();
+  const results = await pending;
+  const voucherIds = new Set(results.map((result) => result.giftVoucherId));
+  const paymentIntentIds = new Set(results.map((result) => result.stripePaymentIntentId));
+  const idempotencyKeys = new Set(stripeCreateCalls.map(({ options }) => options.idempotencyKey));
+  assert.equal(await GiftVoucher.countDocuments({ purchaseRequestId: 'gvr_req_12345678' }), 1);
+  assert.equal(await GiftVoucher.countDocuments({}), 1);
+  assert.equal(voucherIds.size, 1);
+  assert.equal(paymentIntentIds.size, 1);
+  assert.equal(stripeIntentsById.size, 1);
+  assert.equal(idempotencyKeys.size, 1);
+  assert.ok(results.some((result) => result.idempotentReplay));
+  assert.equal(await GiftVoucherEvent.countDocuments({ type: 'payment_pending' }), 1);
+});
+
+test('Stripe failure preserves the reservation and same-ID retry recovers using the same Stripe key', async () => {
+  setStripeClientForTesting({
+    paymentIntents: {
+      create: async (_payload, { idempotencyKey }) => {
+        stripeCreateCalls.push({ options: { idempotencyKey } });
+        throw new Error('temporary Stripe outage');
+      },
+      retrieve: async (id) => ({ id, client_secret: 'cs_retried' })
+    }
+  });
+  await assert.rejects(
+    () => createGiftVoucherPaymentIntent(buildCreatePayload()),
+    (err) => err.code === 'PAYMENT_INTENT_INIT_FAILED'
+  );
+  const pending = await GiftVoucher.findOne({ purchaseRequestId: 'gvr_req_12345678' }).lean();
+  assert.equal(pending.status, 'pending_payment');
+  assert.equal(pending.stripePaymentIntentId, null);
+
+  setStripeClientForTesting({
+    paymentIntents: {
+      create: async (payload, options) => {
+        stripeCreateCalls.push({ payload, options });
+        const existing = stripeIntentsByIdempotencyKey.get(options.idempotencyKey);
+        if (existing) return existing;
+        const intent = { id: 'pi_recovered', client_secret: 'cs_recovered' };
+        stripeIntentsByIdempotencyKey.set(options.idempotencyKey, intent);
+        stripeIntentsById.set(intent.id, intent);
+        return intent;
+      },
+      retrieve: async (id) => stripeIntentsById.get(id)
+    }
+  });
+  const result = await createGiftVoucherPaymentIntent(buildCreatePayload());
+  assert.equal(result.stripePaymentIntentId, 'pi_recovered');
+  const voucher = await GiftVoucher.findOne({ purchaseRequestId: 'gvr_req_12345678' }).lean();
+  assert.equal(voucher.stripePaymentIntentId, 'pi_recovered');
+  assert.equal(new Set(stripeCreateCalls.map(({ options }) => options.idempotencyKey)).size, 1);
+  assert.equal(stripeIntentsById.size, 1);
+});
+
+test('database linkage failure is recovered on retry without creating another Stripe intent', async () => {
+  const originalUpdateOne = GiftVoucher.updateOne.bind(GiftVoucher);
+  let failLinkOnce = true;
+  GiftVoucher.updateOne = async (...args) => {
+    if (failLinkOnce && args[1]?.$set?.stripePaymentIntentId) {
+      failLinkOnce = false;
+      throw new Error('temporary database write failure');
+    }
+    return originalUpdateOne(...args);
+  };
+  try {
+    await assert.rejects(
+      () => createGiftVoucherPaymentIntent(buildCreatePayload()),
+      (err) => err.code === 'PAYMENT_INTENT_INIT_FAILED'
+    );
+  } finally {
+    GiftVoucher.updateOne = originalUpdateOne;
+  }
+  assert.equal(await GiftVoucher.countDocuments({}), 1);
+  assert.equal(stripeIntentsById.size, 1);
+
+  const recovered = await createGiftVoucherPaymentIntent(buildCreatePayload());
+  assert.equal(recovered.stripePaymentIntentId, 'pi_1');
+  assert.equal(stripeIntentsById.size, 1);
+  const voucher = await GiftVoucher.findById(recovered.giftVoucherId).lean();
+  assert.equal(voucher.stripePaymentIntentId, 'pi_1');
+});
+
+test('same purchaseRequestId after Stripe failure remains retryable, not voided', async () => {
   setStripeClientForTesting({
     paymentIntents: {
       create: async () => {
@@ -267,34 +540,9 @@ test('same purchaseRequestId after voided PI failure returns PURCHASE_REQUEST_CL
     () => createGiftVoucherPaymentIntent(buildCreatePayload()),
     (err) => err.code === 'PAYMENT_INTENT_INIT_FAILED'
   );
-  await assert.rejects(
-    () => createGiftVoucherPaymentIntent(buildCreatePayload()),
-    (err) => err.code === 'PURCHASE_REQUEST_CLOSED'
-  );
-});
-
-test('PI creation failure voids voucher and writes event with no manual review', async () => {
-  setStripeClientForTesting({
-    paymentIntents: {
-      create: async () => {
-        throw new Error('forced stripe PI failure');
-      },
-      retrieve: async () => ({ id: 'pi_none', client_secret: null })
-    }
-  });
-
-  await assert.rejects(
-    () => createGiftVoucherPaymentIntent(buildCreatePayload()),
-    (err) => err.code === 'PAYMENT_INTENT_INIT_FAILED'
-  );
-
   const voucher = await GiftVoucher.findOne({ purchaseRequestId: 'gvr_req_12345678' }).lean();
-  assert.equal(voucher.status, 'voided');
-  const voidedEvent = await GiftVoucherEvent.findOne({
-    giftVoucherId: voucher._id,
-    type: 'voided'
-  }).lean();
-  assert.ok(voidedEvent);
+  assert.equal(voucher.status, 'pending_payment');
+  assert.equal(voucher.stripePaymentIntentId, null);
   assert.equal(await ManualReviewItem.countDocuments({}), 0);
 });
 

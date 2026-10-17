@@ -26,6 +26,7 @@
     "verify:creator-referral-visit": "node server/scripts/verifyCreatorReferralVisitWrite.js",
     "test:e2e:availability-contract": "playwright test tests/e2e/api/availability-contract.spec.js --project=chromium",
     "ensure:index:booking-checkout-id": "node server/scripts/ensureBookingCheckoutIdIndex.js",
+    "ensure:index:gift-voucher-purchase-request": "node server/scripts/ensureGiftVoucherPurchaseRequestIndex.js",
     "guard:legal-paths": "node scripts/check-legacy-legal-paths.mjs",
     "verify:checkout-payment-prep-build": "node scripts/verifyCheckoutPaymentPrepBuild.mjs",
     "test:core-payments-stability-e2e": "cd server && node --test scripts/corePaymentsNotificationsStabilityE2E.test.cjs scripts/paymentPrepProductionBuildE2E.test.cjs scripts/voucherRedemptionFinalizeAlignment.test.cjs scripts/parseBooleanFlag.test.cjs",

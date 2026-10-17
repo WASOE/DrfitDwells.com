@@ -1,861 +1,621 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useStripeAvailability } from '../lib/stripeClient';
 import { Elements, PaymentElement, useElements, useStripe } from '@stripe/react-stripe-js';
 import Seo from '../components/Seo';
-import GiftVoucherCardPreview from '../components/giftVoucher/GiftVoucherCardPreview';
-import {
-  buildPreviewVoucher,
-  buildSubmitPayload,
-  CARD_OCCASIONS,
-  CARD_TEMPLATE_IDS,
-  computeEffectiveAmountCents,
-  createInitialBuilderState,
-  getScheduledDeliveryDateBounds,
-  MESSAGE_MAX_LENGTH,
-  PHYSICAL_CARD_FEE_CENTS,
-  PRESET_AMOUNTS,
-  validateBuilderState
-} from '../components/giftVoucher/giftVoucherBuilderState';
+import { buildPreviewVoucher, buildSubmitPayload, CARD_OCCASIONS, computeEffectiveAmountCents, createInitialBuilderState, EMAIL_MAX_LENGTH, getScheduledDeliveryDateBounds, MESSAGE_MAX_LENGTH, NAME_MAX_LENGTH, PHYSICAL_CARD_FEE_CENTS, POSTAL_MAX_LENGTHS, PRESET_AMOUNTS, validateBuilderState } from '../components/giftVoucher/giftVoucherBuilderState';
+import GiftVoucherWebsitePreview from '../components/giftVoucher/GiftVoucherWebsitePreview';
 import { giftVoucherAPI } from '../services/api';
 import { getAttributionPayload } from '../tracking/attribution';
-import { getLanguageFromPath } from '../utils/localizedRoutes';
 import { CONTACT_EMAIL } from '../data/gmbLocations';
+import { useSiteLanguage } from '../hooks/useSiteLanguage';
+import { getLanguageFromPath, localizePath } from '../utils/localizedRoutes';
 import '../i18n/ns/giftVoucher';
+import './GiftVouchersV2.css';
 
-const VALIDATION_I18N_KEYS = {
-  WHOLE_AMOUNT: 'errors.wholeAmount',
-  AMOUNT_BELOW_MINIMUM: 'errors.minimum',
-  NAMES_REQUIRED: 'errors.namesRequired',
-  BUYER_EMAIL: 'errors.buyerEmail',
-  RECIPIENT_EMAIL: 'errors.recipientEmail',
-  POSTAL_REQUIRED: 'errors.postalRequired',
-  TERMS_NOT_ACCEPTED: 'errors.termsRequired',
-  MESSAGE_TOO_LONG: 'errors.messageTooLong',
-  MISSING_SCHEDULED_DELIVERY_DATE: 'errors.scheduledDateRequired',
-  INVALID_SCHEDULED_DELIVERY_DATE: 'errors.scheduledDateInvalid',
-  SCHEDULED_NOT_ENABLED: 'errors.scheduledNotEnabled'
-};
+const ERR = { WHOLE_AMOUNT:'errors.wholeAmount', AMOUNT_BELOW_MINIMUM:'errors.minimum', NAMES_REQUIRED:'errors.namesRequired', NAMES_TOO_LONG:'errors.namesTooLong', BUYER_EMAIL:'errors.buyerEmail', RECIPIENT_EMAIL:'errors.recipientEmail', POSTAL_REQUIRED:'errors.postalRequired', POSTAL_TOO_LONG:'errors.postalTooLong', INVALID_DELIVERY_OPTION:'errors.invalidDelivery', INVALID_CUSTOMIZATION_FIELD:'errors.invalidCustomization', TERMS_NOT_ACCEPTED:'errors.termsRequired', MESSAGE_TOO_LONG:'errors.messageTooLong', MISSING_SCHEDULED_DELIVERY_DATE:'errors.scheduledDateRequired', INVALID_SCHEDULED_DELIVERY_DATE:'errors.scheduledDateInvalid', SCHEDULED_NOT_ENABLED:'errors.scheduledNotEnabled' };
+const requestId = () => `gvr_${typeof crypto !== 'undefined' && crypto.randomUUID
+  ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`}`;
+const heroWidths = [480, 800, 1200, 1600, 2400];
+const heroSrcSet = (extension) => heroWidths
+  .map((width) => `/media/gift-vouchers/gift-voucher-v2-hero-${width}w.${extension} ${width}w`)
+  .join(', ');
 
-function createPurchaseRequestId() {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return `gvr_${crypto.randomUUID()}`;
-  }
-  return `gvr_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-}
-
-function PaymentForm({ submitDisabled, onSubmit, loading }) {
+function Pay({ loading, disabled, onPay }) {
   const { t } = useTranslation('giftVoucher');
   const stripe = useStripe();
   const elements = useElements();
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!stripe || !elements || submitDisabled || loading) return;
-    await onSubmit(stripe, elements);
-  };
-
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="rounded-2xl border border-stone-200 bg-white p-5 md:p-6">
-        <PaymentElement />
-      </div>
-      <button
-        type="submit"
-        disabled={!stripe || loading || submitDisabled}
-        className="w-full rounded-full bg-[#81887A] px-8 py-4 text-sm font-medium uppercase tracking-[0.18em] text-white transition hover:bg-[#6f7669] disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {loading ? t('payment.processing') : t('payment.paySecurely')}
+    <form className="gv2-pay" onSubmit={async (e) => {
+      e.preventDefault();
+      if (!stripe || !elements || loading || disabled) return;
+      await onPay(stripe, elements);
+    }}>
+      <PaymentElement />
+      {loading && <p className="gv2-sr-only" role="status" aria-live="polite">{t('payment.processing')}</p>}
+      <button type="submit" className="btn btn-primary submit-btn gv2-submit" aria-live="polite" disabled={!stripe || !elements || loading || disabled}>
+        {loading ? t('payment.processing') : t('payment.paySecurely')} ↗
       </button>
     </form>
   );
 }
 
-function AmountCard({ cents, selected, onClick }) {
-  const { t } = useTranslation('giftVoucher');
-  const eur = (cents / 100).toLocaleString('en-GB');
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`group relative flex min-h-[6.75rem] flex-col items-start justify-between overflow-hidden rounded-2xl border px-4 py-5 text-left transition-all duration-300 ${
-        selected
-          ? 'border-stone-900 bg-stone-900 text-white shadow-[0_8px_32px_-12px_rgba(0,0,0,0.25)]'
-          : 'border-stone-200 bg-white text-stone-800 hover:border-stone-400 hover:shadow-[0_4px_20px_-12px_rgba(0,0,0,0.15)]'
-      }`}
-    >
-      <span
-        className={`text-[10px] uppercase tracking-[0.2em] ${
-          selected ? 'text-white/70' : 'text-stone-500'
-        }`}
-      >
-        {t('amount.voucher')}
-      </span>
-      <span
-        className="mt-2 whitespace-nowrap font-serif text-2xl leading-none tracking-tight"
-        style={{ fontFamily: 'var(--valley-font-primary, Georgia, serif)' }}
-      >
-        €{eur}
-      </span>
-      <span className={`mt-1 text-[11px] leading-snug ${selected ? 'text-white/70' : 'text-stone-500'}`}>
-        {t('amount.prepaid')}
-      </span>
-    </button>
-  );
-}
-
 export default function GiftVouchers() {
   const { t } = useTranslation('giftVoucher');
-  const location = useLocation();
-  const routeLanguage = getLanguageFromPath(location.pathname);
-
-  const [builder, setBuilder] = useState(() => createInitialBuilderState(routeLanguage));
-  const [scheduledDeliveryEnabled, setScheduledDeliveryEnabled] = useState(false);
-  const [configLoaded, setConfigLoaded] = useState(false);
-
-  const [purchaseRequestId, setPurchaseRequestId] = useState(createPurchaseRequestId);
-  const [quotedAmountCents, setQuotedAmountCents] = useState(null);
-  const [quotedPhysicalCardFeeCents, setQuotedPhysicalCardFeeCents] = useState(null);
-  const [quotedTotalDueCents, setQuotedTotalDueCents] = useState(null);
-  const [clientSecret, setClientSecret] = useState('');
-  const [paymentIntentId, setPaymentIntentId] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const {
     stripePromise,
     unavailable: stripeUnavailable,
     retry: retryStripe
   } = useStripeAvailability();
-
-  const purchaseConfig = useMemo(
-    () => ({ scheduledDeliveryEnabled }),
-    [scheduledDeliveryEnabled]
-  );
-
-  const scheduledBounds = useMemo(() => getScheduledDeliveryDateBounds(), []);
+  const { language } = useSiteLanguage();
+  const location = useLocation();
+  const locale = getLanguageFromPath(location.pathname) === 'bg' ? 'bg' : 'en';
+  const c = t('v2', { returnObjects: true });
+  const [b, setB] = useState(() => createInitialBuilderState(locale));
+  const [scheduled, setScheduled] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [configError, setConfigError] = useState(false);
+  const [configAttempt, setConfigAttempt] = useState(0);
+  const [rid, setRid] = useState(requestId);
+  const [prepared, setPrepared] = useState(null);
+  const [stripeClient, setStripeClient] = useState(null);
+  const [stripeFailed, setStripeFailed] = useState(stripeUnavailable);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [review, setReview] = useState(false);
+  const [validationRequested, setValidationRequested] = useState(false);
+  const [mobileCtaVisible, setMobileCtaVisible] = useState(false);
+  const busy = useRef(false);
+  const mounted = useRef(false);
+  const attempt = useRef({ version: 0, prepared: null });
+  const dialog = useRef(null);
+  const modalOpener = useRef(null);
+  const secret = prepared?.clientSecret || '';
+  const paymentIntentId = prepared?.stripePaymentIntentId || '';
+  const quote = prepared?.quote || null;
+  const bounds = getScheduledDeliveryDateBounds();
+  const config = useMemo(() => ({ scheduledDeliveryEnabled: scheduled }), [scheduled]);
+  const amount = useMemo(() => computeEffectiveAmountCents(b), [b]);
+  const previewFields = useMemo(() => buildPreviewVoucher(b, amount), [b, amount]);
+  const validation = validateBuilderState(b, config);
+  const validationText = validation.ok ? '' : t(ERR[validation.code] || 'errors.paymentFallback');
 
   useEffect(() => {
-    try {
-      sessionStorage.setItem('dd_payment_flow_active', '1');
-    } catch {
-      /* ignore */
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      attempt.current.version += 1;
+      attempt.current.prepared = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    let live = true;
+    if (!stripePromise || stripeUnavailable) {
+      setStripeClient(null);
+      setStripeFailed(true);
+      return () => { live = false; };
+    }
+    setStripeFailed(false);
+    Promise.resolve(stripePromise).then((client) => {
+      if (!live) return;
+      if (!client) {
+        setStripeClient(null);
+        setStripeFailed(true);
+      } else {
+        setStripeClient(client);
+      }
+    }).catch(() => {
+      if (live) {
+        setStripeClient(null);
+        setStripeFailed(true);
+      }
+    });
+    return () => { live = false; };
+  }, [stripePromise, stripeUnavailable]);
+
+  useEffect(() => {
+    let live = true;
+    setReady(false);
+    setConfigError(false);
+    giftVoucherAPI.getConfig().then((r) => {
+      if (typeof r?.data?.data?.scheduledDeliveryEnabled !== 'boolean') {
+        throw new Error('Invalid voucher configuration');
+      }
+      if (live) {
+        setScheduled(r.data.data.scheduledDeliveryEnabled);
+        setReady(true);
+      }
+    }).catch(() => {
+      if (live) {
+        setScheduled(false);
+        setConfigError(true);
+      }
+    });
+    return () => { live = false; };
+  }, [configAttempt]);
+
+  useEffect(() => {
+    document.body.classList.add('gv2-active');
+    try { sessionStorage.setItem('dd_payment_flow_active', '1'); } catch {
+      // Storage can be unavailable in privacy mode.
     }
     return () => {
-      try {
-        sessionStorage.removeItem('dd_payment_flow_active');
-      } catch {
-        /* ignore */
+      document.body.classList.remove('gv2-active');
+      try { sessionStorage.removeItem('dd_payment_flow_active'); } catch {
+        // Match the existing payment flow marker's best-effort cleanup.
       }
     };
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    giftVoucherAPI
-      .getConfig()
-      .then((res) => {
-        if (cancelled) return;
-        setScheduledDeliveryEnabled(Boolean(res?.data?.data?.scheduledDeliveryEnabled));
+    let builderVisible = false;
+    const update = () => {
+      setMobileCtaVisible(
+        window.innerWidth <= 760 &&
+        window.scrollY > Math.min(550, window.innerHeight * 0.75) &&
+        !builderVisible
+      );
+    };
+    const builder = document.getElementById('create');
+    const observer = builder && 'IntersectionObserver' in window
+      ? new IntersectionObserver(([entry]) => {
+        builderVisible = entry.isIntersecting;
+        update();
       })
-      .catch(() => {
-        if (!cancelled) setScheduledDeliveryEnabled(false);
-      })
-      .finally(() => {
-        if (!cancelled) setConfigLoaded(true);
-      });
+      : null;
+    if (builder && observer) observer.observe(builder);
+    window.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    update();
     return () => {
-      cancelled = true;
+      observer?.disconnect();
+      window.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
     };
   }, []);
 
   useEffect(() => {
-    if (!configLoaded) return;
-    if (!scheduledDeliveryEnabled && builder.deliveryOption === 'scheduled') {
-      setBuilder((prev) => ({ ...prev, deliveryOption: 'recipient_now', deliveryDate: '' }));
+    if (!review) return;
+    const modal = dialog.current;
+    if (!modal) return undefined;
+    const previous = modalOpener.current || document.activeElement;
+    const focusableSelector = 'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
+    const getFocusable = () => [...modal.querySelectorAll(focusableSelector)]
+      .filter((node) => !node.closest('[hidden]'));
+    (getFocusable()[0] || modal).focus();
+    const isolated = [];
+    let branch = modal;
+    while (branch && branch !== document.body) {
+      const parent = branch.parentElement;
+      if (!parent) break;
+      for (const sibling of parent.children) {
+        if (sibling === branch) continue;
+        isolated.push({ element: sibling, inert: sibling.inert, ariaHidden: sibling.getAttribute('aria-hidden') });
+        sibling.inert = true;
+        sibling.setAttribute('aria-hidden', 'true');
+      }
+      branch = parent;
     }
-  }, [configLoaded, scheduledDeliveryEnabled, builder.deliveryOption]);
+    const bodyOverflow = document.body.style.overflow;
+    const htmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    const onKey = (e) => {
+      if (e.key === 'Escape' && !busy.current) setReview(false);
+      if (e.key !== 'Tab') return;
+      const focusable = getFocusable();
+      if (!focusable.length) {
+        e.preventDefault();
+        modal.focus();
+        return;
+      }
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (!modal.contains(document.activeElement)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    const onFocus = (e) => {
+      if (!modal.contains(e.target)) (getFocusable()[0] || modal).focus();
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('focusin', onFocus);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('focusin', onFocus);
+      isolated.forEach(({ element, inert, ariaHidden }) => {
+        element.inert = Boolean(inert);
+        if (ariaHidden == null) element.removeAttribute('aria-hidden');
+        else element.setAttribute('aria-hidden', ariaHidden);
+      });
+      document.body.style.overflow = bodyOverflow;
+      document.documentElement.style.overflow = htmlOverflow;
+      if (previous?.isConnected) previous.focus();
+    };
+  }, [review]);
 
-  useEffect(() => {
-    setBuilder((prev) => {
-      if (prev.cardLocale === routeLanguage) return prev;
-      return { ...prev, cardLocale: routeLanguage };
-    });
-  }, [routeLanguage]);
+  function resetAttempt() {
+    if (busy.current) return;
+    attempt.current.version += 1;
+    attempt.current.prepared = null;
+    setPrepared(null);
+    setRid(requestId());
+    setError('');
+  }
 
-  const effectiveAmountCents = useMemo(() => computeEffectiveAmountCents(builder), [builder]);
-
-  const validation = useMemo(
-    () => validateBuilderState(builder, purchaseConfig),
-    [builder, purchaseConfig]
-  );
-
-  const validationMessage = useMemo(() => {
-    if (validation.ok) return '';
-    const key = VALIDATION_I18N_KEYS[validation.code];
-    return key ? t(key) : t('errors.paymentFallback');
-  }, [validation, t]);
-
-  const previewFields = useMemo(
-    () => buildPreviewVoucher(builder, effectiveAmountCents),
-    [builder, effectiveAmountCents]
-  );
-
-  const deliveryOptions = useMemo(() => {
-    const options = [
-      { value: 'recipient_now', label: t('delivery.recipientNow') },
-      { value: 'send_to_buyer', label: t('delivery.sendToBuyer') }
-    ];
-    if (scheduledDeliveryEnabled) {
-      options.push({ value: 'scheduled', label: t('delivery.scheduled') });
-    }
-    options.push({ value: 'postal', label: t('delivery.postal') });
-    return options;
-  }, [scheduledDeliveryEnabled, t]);
-
-  function patchBuilder(patch) {
-    setBuilder((prev) => ({ ...prev, ...patch }));
+  function patch(changes) {
+    if (busy.current) return;
+    setB((s) => ({ ...s, ...changes }));
     resetAttempt();
   }
 
-  function resetAttempt() {
-    setClientSecret('');
-    setPaymentIntentId('');
-    setQuotedAmountCents(null);
-    setQuotedPhysicalCardFeeCents(null);
-    setQuotedTotalDueCents(null);
-    setPurchaseRequestId(createPurchaseRequestId());
+  function delivery(id) {
+    const changes = { deliveryOption: id };
+    if (id === 'send_to_buyer') changes.recipientEmail = '';
+    if (id !== 'scheduled') changes.deliveryDate = '';
+    patch(changes);
   }
 
-  function softMessageFromError(err) {
-    const code = err?.response?.data?.code || err?.code;
-    if (code) {
-      const translated = t(`errors.${code}`, { defaultValue: '' });
-      if (translated) return translated;
-    }
-    return t('errors.paymentFallback');
+  function softError(e) {
+    const code = e?.response?.data?.code || e?.code;
+    return code ? t(`errors.${code}`, { defaultValue: t('errors.paymentFallback') }) : t('errors.paymentFallback');
   }
 
-  async function initializePayment() {
-    if (!validation.ok) {
-      setError(validationMessage);
-      return;
-    }
-
-    const payload = buildSubmitPayload(
-      builder,
-      { purchaseRequestId, attribution: getAttributionPayload() },
-      purchaseConfig
-    );
-    if (!payload) {
-      setError(validationMessage);
-      return;
-    }
-
+  async function start() {
+    if (busy.current) return;
+    if (!ready) { setError(c.configError); return; }
+    if (!stripeClient) { setError(c.stripeUnavailable); return; }
+    const currentValidation = validateBuilderState(b, config);
+    if (!currentValidation.ok) { setError(t(ERR[currentValidation.code] || 'errors.paymentFallback')); return; }
+    if (attempt.current.prepared) { setReview(false); return; }
+    const payload = buildSubmitPayload(b, { purchaseRequestId: rid, attribution: getAttributionPayload() }, config);
+    if (!payload) { setError(validationText || t('errors.paymentFallback')); return; }
+    busy.current = true;
+    const version = attempt.current.version;
+    const isCurrent = () => mounted.current && attempt.current.version === version;
     setLoading(true);
     setError('');
     try {
-      const quoteRes = await giftVoucherAPI.quote({
-        amountOriginalCents: payload.amountOriginalCents,
-        currency: 'EUR',
-        deliveryOption: payload.deliveryOption
+      const response = await giftVoucherAPI.quote({
+        amountOriginalCents: payload.amountOriginalCents, currency: 'EUR', deliveryOption: payload.deliveryOption
       });
-      const q = quoteRes?.data?.data;
-      setQuotedAmountCents(q?.amountOriginalCents ?? null);
-      setQuotedPhysicalCardFeeCents(q?.physicalCardFeeCents ?? null);
-      setQuotedTotalDueCents(q?.totalDueCents ?? null);
-
-      const piRes = await giftVoucherAPI.createPaymentIntent(payload);
-      const data = piRes?.data?.data || {};
-      setClientSecret(data.clientSecret || '');
-      setPaymentIntentId(data.stripePaymentIntentId || '');
-      if (data.purchaseRequestId) setPurchaseRequestId(data.purchaseRequestId);
+      const q = response?.data?.data;
+      if (!q || ![q.amountOriginalCents, q.physicalCardFeeCents, q.totalDueCents].every(Number.isSafeInteger) ||
+        q.amountOriginalCents !== payload.amountOriginalCents || q.currency !== payload.currency || q.physicalCardFeeCents < 0 ||
+        q.totalDueCents !== q.amountOriginalCents + q.physicalCardFeeCents) {
+        throw new Error('Invalid voucher quote');
+      }
+      if (!isCurrent()) return;
+      const pi = await giftVoucherAPI.createPaymentIntent(payload);
+      const data = pi?.data?.data;
+      if (typeof data?.clientSecret !== 'string' || !data.clientSecret.trim() ||
+        typeof data?.stripePaymentIntentId !== 'string' || !data.stripePaymentIntentId.trim() ||
+        (data.purchaseRequestId != null && data.purchaseRequestId !== payload.purchaseRequestId)) {
+        throw new Error('Invalid voucher payment response');
+      }
+      if (!isCurrent()) return;
+      const payment = { clientSecret: data.clientSecret, stripePaymentIntentId: data.stripePaymentIntentId, quote: q };
+      attempt.current.prepared = payment;
+      setPrepared(payment);
+      if (data.purchaseRequestId) setRid(data.purchaseRequestId);
+      setReview(false);
+      requestAnimationFrame(() => {
+        if (isCurrent()) document.querySelector('.gv2-paywrap')?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' });
+      });
     } catch (e) {
-      setClientSecret('');
-      setPaymentIntentId('');
-      setError(softMessageFromError(e));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleStripeSubmit(stripe, elements) {
-    setLoading(true);
-    setError('');
-    try {
-      const successPath = window.location.pathname.startsWith('/bg/')
-        ? '/bg/gift-vouchers/success'
-        : '/gift-vouchers/success';
-      const { error: stripeError } = await stripe.confirmPayment({
-        elements,
-        confirmParams: {
-          return_url: `${window.location.origin}${successPath}`
-        }
-      });
-      if (stripeError) {
-        setError(stripeError.message || t('errors.paymentFallback'));
+      if (isCurrent()) {
+        attempt.current.prepared = null;
+        setPrepared(null);
+        setError(softError(e));
       }
     } finally {
-      setLoading(false);
+      busy.current = false;
+      if (isCurrent()) setLoading(false);
     }
   }
 
-  const previewPhysicalCardFeeCents =
-    builder.deliveryOption === 'postal' ? PHYSICAL_CARD_FEE_CENTS : 0;
-  const voucherValueCents = quotedAmountCents ?? effectiveAmountCents;
-  const physicalCardFeeCents = quotedPhysicalCardFeeCents ?? previewPhysicalCardFeeCents;
-  const totalDueCents =
-    quotedTotalDueCents ??
-    (Number.isFinite(voucherValueCents) ? voucherValueCents + physicalCardFeeCents : NaN);
-  const formattedVoucherValue = Number.isFinite(voucherValueCents)
-    ? (voucherValueCents / 100).toLocaleString('en-GB')
-    : '—';
-  const formattedPhysicalFee = (physicalCardFeeCents / 100).toLocaleString('en-GB');
-  const formattedSummary = Number.isFinite(totalDueCents)
-    ? (totalDueCents / 100).toLocaleString('en-GB')
-    : '—';
+  async function pay(stripe, elements) {
+    if (busy.current || !validation.ok || !ready || !prepared || attempt.current.prepared !== prepared) return;
+    const version = attempt.current.version;
+    const isCurrent = () => mounted.current && attempt.current.version === version;
+    busy.current = true;
+    setLoading(true);
+    setError('');
+    try {
+      const path = locale === 'bg' ? '/bg/gift-vouchers/success' : '/gift-vouchers/success';
+      const result = await stripe.confirmPayment({
+        elements, confirmParams: { return_url: `${window.location.origin}${path}` }
+      });
+      if (isCurrent() && result.error) setError(result.error.message || t('errors.paymentFallback'));
+    } catch (e) {
+      if (isCurrent()) setError(softError(e));
+    } finally {
+      busy.current = false;
+      if (isCurrent()) setLoading(false);
+    }
+  }
 
-  const inputClass =
-    'mt-2 w-full border-0 border-b border-stone-300 bg-transparent px-0 py-3 text-stone-900 outline-none transition placeholder:text-stone-400 focus:border-stone-700';
-  const labelClass = 'block text-[11px] font-light uppercase tracking-[0.2em] text-stone-500';
-
+  const money = (cents) => Number.isFinite(cents)
+    ? new Intl.NumberFormat(locale === 'bg' ? 'bg-BG' : 'en-IE', { style: 'currency', currency: 'EUR' }).format(cents / 100) : '—';
+  const fee = quote?.physicalCardFeeCents ?? (b.deliveryOption === 'postal' ? PHYSICAL_CARD_FEE_CENTS : 0);
+  const value = quote?.amountOriginalCents ?? amount;
+  const total = quote?.totalDueCents ?? value + fee;
+  const templates = [['forest', c.styles[0]], ['minimal', c.styles[1]], ['romantic', c.styles[2]]];
+  const deliveries = [['recipient_now', '↗', c.delivery[0], c.subs[0]], ['send_to_buyer', '✉', c.delivery[1], c.subs[1]], ['postal', '▤', c.delivery[2], c.subs[2]], ...(scheduled ? [['scheduled', '◷', c.delivery[3], c.subs[3]]] : [])];
+  const scrollBehavior = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+  const scrollToBuilder = () => document.getElementById('create')?.scrollIntoView({ behavior: scrollBehavior(), block: 'start' });
+  const fieldErrorFor = (field) => {
+    const fieldsByError = {
+      WHOLE_AMOUNT: ['amount'], AMOUNT_BELOW_MINIMUM: ['amount'],
+      NAMES_REQUIRED: ['buyerName', 'recipientName'], NAMES_TOO_LONG: ['buyerName', 'recipientName'],
+      BUYER_EMAIL: ['buyerEmail'], RECIPIENT_EMAIL: ['recipientEmail'],
+      TERMS_NOT_ACCEPTED: ['termsAccepted'],
+      POSTAL_REQUIRED: ['addressLine1', 'city', 'postalCode', 'country'],
+      POSTAL_TOO_LONG: ['addressLine1', 'addressLine2', 'city', 'postalCode', 'country'],
+      MISSING_SCHEDULED_DELIVERY_DATE: ['deliveryDate'], INVALID_SCHEDULED_DELIVERY_DATE: ['deliveryDate'],
+      SCHEDULED_NOT_ENABLED: ['deliveryDate'], MESSAGE_TOO_LONG: ['message'],
+      INVALID_CUSTOMIZATION_FIELD: ['cardTemplateId', 'cardOccasion', 'cardLocale'],
+      INVALID_DELIVERY_OPTION: ['deliveryOption']
+    };
+    return validationRequested && !validation.ok && fieldsByError[validation.code]?.includes(field);
+  };
+  const fieldA11y = (field) => fieldErrorFor(field)
+    ? { 'aria-invalid': true, 'aria-describedby': 'gv2-validation-description' }
+    : {};
+  const reference = t('reference', { returnObjects: true });
+  const openReview = (event) => {
+    event.preventDefault();
+    if (busy.current) return;
+    modalOpener.current = event.currentTarget.querySelector('[type="submit"]');
+    setValidationRequested(true);
+    setReview(true);
+  };
   return (
     <>
-      <Seo
-        title={t('seo.title')}
-        description={t('seo.description')}
-        canonicalPath="/gift-vouchers"
-      />
-
-      <main className="bg-white">
-        <section className="relative overflow-hidden bg-[#F7F4EE]">
-          <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-10 px-4 pb-16 pt-20 sm:px-8 md:items-start md:gap-12 md:pb-24 md:pt-28 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:gap-16 lg:pb-32 lg:pt-36">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.32em] text-stone-500">{t('hero.kicker')}</p>
-              <h1
-                className="mt-6 max-w-3xl font-serif text-4xl leading-[1.05] tracking-tight text-stone-900 sm:text-5xl md:text-6xl lg:text-[5rem]"
-                style={{ fontFamily: 'var(--valley-font-primary, Georgia, serif)' }}
-              >
-                {t('hero.title')}
-              </h1>
-              <p className="mt-8 max-w-2xl text-base leading-relaxed text-stone-700 md:text-lg">
-                {t('hero.lead')}
-              </p>
-              <p className="mt-4 max-w-2xl text-sm leading-relaxed text-stone-600 md:text-base">
-                {t('hero.textBefore')}{' '}
-                <span className="italic">{t('hero.cabin')}</span> {t('hero.or')}{' '}
-                <span className="italic">{t('hero.valley')}</span>. {t('hero.tail')}
-              </p>
-              <div className="mt-12 flex flex-wrap items-center gap-x-8 gap-y-3 text-xs uppercase tracking-[0.22em] text-stone-500">
-                <span>{t('hero.deliveryTag')}</span>
-                <span className="hidden h-px w-6 bg-stone-300 md:inline-block" />
-                <span>{t('hero.validTag')}</span>
-                <span className="hidden h-px w-6 bg-stone-300 md:inline-block" />
-                <span>{t('hero.fromTag')}</span>
-              </div>
+      <Seo title={t('seo.title')} description={t('seo.description')} canonicalPath="/gift-vouchers" />
+      <div className="gv2" lang={locale}>
+        <section className="hero gv2-hero" id="top">
+          <div className="hero-copy">
+            <div className="hero-index caps"><i aria-hidden="true" />{reference.hero.kicker}</div>
+            <h1>{reference.hero.first}<br /><em>{reference.hero.middle}</em><br />{reference.hero.last}</h1>
+            <p>{reference.hero.lead}</p>
+            <div className="hero-actions">
+              <button className="btn btn-primary" type="button" onClick={scrollToBuilder}>{reference.hero.create}<span>↗</span></button>
+              <a className="hero-link" href="#discover">{reference.hero.discover}</a>
             </div>
-            <div className="mx-auto w-full max-w-sm md:sticky md:top-24 md:max-w-none">
-              <figure className="overflow-hidden rounded-md border-8 border-white bg-white shadow-[0_22px_55px_-25px_rgba(0,0,0,0.35)] md:rotate-[2deg]">
-                <img
-                  src="/media/gift-vouchers/gift-voucher-hero.jpg"
-                  alt={t('hero.imageAlt')}
-                  className="aspect-[4/5] w-full object-cover"
-                  loading="eager"
-                />
-              </figure>
-            </div>
+            <div className="hero-foot"><span>{reference.hero.from}</span><span>✳ {reference.hero.instant}</span><span>✳ {reference.hero.valid}</span></div>
+          </div>
+          <div className="hero-image">
+            <picture>
+              <source type="image/avif" srcSet={heroSrcSet('avif')} sizes="(max-width: 760px) 100vw, 45vw" />
+              <source type="image/webp" srcSet={heroSrcSet('webp')} sizes="(max-width: 760px) 100vw, 45vw" />
+              <img
+                className="photo"
+                src="/media/gift-vouchers/gift-voucher-v2-hero-1200w.jpg"
+                srcSet={heroSrcSet('jpg')}
+                sizes="(max-width: 760px) 100vw, 45vw"
+                width={460}
+                height={583}
+                alt={reference.hero.imageAlt}
+              />
+            </picture>
+            <div className="hero-vertical" aria-hidden="true">DRIFT &amp; DWELLS · {reference.hero.vertical}</div>
+            <div className="photo-caption"><span>{reference.hero.caption}</span><span>{t('hero.valley')} · {t('hero.cabin')}</span></div>
           </div>
         </section>
 
-        <section className="bg-white py-16 md:py-24">
-          <div className="mx-auto grid w-full max-w-5xl grid-cols-1 gap-10 px-4 sm:px-8 md:grid-cols-3 md:gap-12">
-            <div className="md:col-span-1">
-              <p className="text-[11px] uppercase tracking-[0.28em] text-stone-500">{t('howItWorks.title')}</p>
-              <div className="mt-3 h-px w-12 bg-stone-300" />
-            </div>
-            <div className="md:col-span-2 space-y-6 text-base leading-relaxed text-stone-700 md:text-[17px]">
-              <p>
-                {t('howItWorks.line1')} {t('howItWorks.line2')}
-              </p>
-              <p>{t('howItWorks.line3')}</p>
-            </div>
-          </div>
-        </section>
+        <div className="bottom-ribbon">
+          <div className="max ribbon-in">{reference.ribbon.map(([title, text], index) =>
+            <div className="ribbon-item" key={title}><span className="ribbon-number">0{index + 1}.</span>
+              <div><strong>{title}</strong><small>{text}</small></div></div>)}</div>
+        </div>
 
-        <section className="bg-[#FAFAF7] py-16 md:py-24">
-          <div className="mx-auto w-full max-w-7xl px-4 sm:px-8">
-            <div className="mb-10 md:mb-14">
-              <p className="text-[11px] uppercase tracking-[0.28em] text-stone-500">{t('order.kicker')}</p>
-              <h2
-                className="mt-3 font-serif text-2xl leading-tight tracking-tight text-stone-900 md:text-3xl"
-                style={{ fontFamily: 'var(--valley-font-primary, Georgia, serif)' }}
-              >
-                {t('order.customize')}
-              </h2>
-              <p className="mt-3 max-w-xl text-sm leading-relaxed text-stone-600">{t('order.minimumText')}</p>
+        <section className="experience" id="discover">
+          <div className="max">
+            <div className="section-intro">
+              <div><div className="caps">{reference.experience.kicker}</div><h2>{reference.experience.title} <em>{reference.experience.titleEm}</em></h2></div>
+              <p>{reference.experience.lead}</p>
             </div>
-
-            <div className="grid grid-cols-1 gap-10 lg:grid-cols-[3fr_2fr] lg:gap-12">
-              <div className="min-w-0 lg:sticky lg:top-24 lg:self-start">
-                <p className="mb-4 text-[11px] uppercase tracking-[0.28em] text-stone-500">
-                  {t('order.previewLabel')}
-                </p>
-                <GiftVoucherCardPreview fields={previewFields} />
-              </div>
-
-              <div className="min-w-0 w-full space-y-10 lg:space-y-12">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.28em] text-stone-500">{t('order.chooseAmount')}</p>
-                  <div className="mt-4 grid grid-cols-2 gap-3">
-                    {PRESET_AMOUNTS.map((preset) => (
-                      <AmountCard
-                        key={preset}
-                        cents={preset}
-                        selected={!builder.useCustomAmount && builder.amountOriginalCents === preset}
-                        onClick={() =>
-                          patchBuilder({ useCustomAmount: false, amountOriginalCents: preset })
-                        }
-                      />
-                    ))}
+            <div className="escape-grid">
+              {reference.experience.cards.map(([kicker, title, description], index) => (
+                <article key={kicker} className={`escape-card${index === 0 ? ' dark' : ''}${index === 2 ? ' ochre' : ''}`}>
+                  <div className="caps">{kicker}</div>
+                  <div className="escape-art" aria-hidden="true">
+                    <div className="sun" />
+                    {index === 0 && <svg viewBox="0 0 400 300"><path d="M0 255 105 112 174 204 262 61 400 254M25 269 109 151 157 208M147 272 268 115 383 269M0 290h400" /><path d="M80 280v-95m0 0-19 33m19-26 22 37m-22-18-26 45m26-38 31 46M332 280V153m0 21-29 41m29-34 21 34m-21-8-40 56m40-50 36 53" /></svg>}
+                    {index === 1 && <svg viewBox="0 0 400 300"><path d="m-10 277 100-135 103 129 81-115 140 131M20 295l82-114 92 108M185 294l94-111 110 107" /><path d="M240 264h125l-62-100-63 100Zm25-14 38-58 38 58M303 164v100M254 270v16m99-16v16" /></svg>}
+                    {index === 2 && <svg viewBox="0 0 400 300"><path d="M40 208q80-65 150 0t190 0M40 238q80-65 150 0t190 0M40 268q80-65 150 0t190 0M40 298q80-65 150 0t190 0" /><path d="M40 65h170M40 82h112M40 99h145M40 116h98" /></svg>}
                   </div>
-                  <div className="mt-6 rounded-2xl border border-stone-200 bg-white px-5 py-5 md:px-6">
-                    <label className="flex items-start gap-3">
-                      <input
-                        type="checkbox"
-                        checked={builder.useCustomAmount}
-                        onChange={(e) => patchBuilder({ useCustomAmount: e.target.checked })}
-                        className="mt-1 h-4 w-4 rounded border-stone-400 text-stone-900 focus:ring-stone-700"
-                      />
-                      <span className="text-sm text-stone-700">{t('amount.customAmount')}</span>
-                    </label>
-                    {builder.useCustomAmount && (
-                      <div className="mt-4 flex items-center gap-3">
-                        <span className="font-serif text-2xl text-stone-700">€</span>
-                        <input
-                          type="number"
-                          min="15"
-                          step="1"
-                          value={builder.customAmountEur}
-                          onChange={(e) => patchBuilder({ customAmountEur: e.target.value })}
-                          className="w-full border-0 border-b border-stone-300 bg-transparent px-0 py-2 font-serif text-2xl text-stone-900 outline-none transition focus:border-stone-700"
-                          placeholder={t('amount.customPlaceholder')}
-                        />
+                  <div className="card-bottom"><h3>{title}</h3><p>{description}</p></div>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="builder" id="create">
+          <div className="max">
+            <div className="builder-head">
+              <div><div className="caps">{reference.builder.kicker}</div><h2>{reference.builder.title} <em>{reference.builder.titleEm}</em></h2></div>
+              <p>{reference.builder.previewIntro}</p>
+            </div>
+            <div className="builder-layout">
+              <aside className="preview-wrap" aria-label={t('aria.preview')}>
+                <div className="preview-label"><span className="caps">{c.before}</span><span className="caps">↗ {c.live}</span></div>
+                <div className="preview-stage">
+                  <div className="stage-grain" aria-hidden="true" /><div className="envelope" aria-hidden="true" /><div className="seal" aria-hidden="true">D&amp;D</div>
+                  <GiftVoucherWebsitePreview fields={previewFields} copy={reference.builder} />
+                </div>
+                <div className="preview-under"><b>{reference.builder.previewUnder}</b><span>{reference.builder.previewUnderText}</span></div>
+              </aside>
+              <div className="order-form">
+                <form className="gv2-details builder-form" aria-labelledby="gv2-builder-title" noValidate onSubmit={openReview}>
+                  <fieldset className="form-fieldset" disabled={loading}>
+                    <legend className="gv2-sr-only">{t('aria.builder')}</legend>
+                    <div className="form-head"><h3 id="gv2-builder-title">{c.build}</h3><div className="caps">{c.personal}</div></div>
+                    <div className="form-section">
+                      <div className="form-section-title" id="gv2-amount-label"><span className="count">01</span><h4>{c.choose}</h4><span className="tip">{c.thoughtful}</span></div>
+                      <div className="amounts" role="group" aria-label={t('aria.amount')}>
+                        {PRESET_AMOUNTS.map((amountCents) => <button key={amountCents} type="button" className={`amount-btn${!b.useCustomAmount && b.amountOriginalCents === amountCents ? ' active' : ''}`}
+                          aria-pressed={!b.useCustomAmount && b.amountOriginalCents === amountCents} onClick={() => patch({ useCustomAmount: false, amountOriginalCents: amountCents })}>€{amountCents / 100}</button>)}
+                        <button type="button" className={`amount-btn custom${b.useCustomAmount ? ' active' : ''}`} aria-pressed={b.useCustomAmount} onClick={() => patch({ useCustomAmount: true })}>{c.custom}</button>
+                      </div>
+                      {b.useCustomAmount && <label className="custom-wrap visible" htmlFor="gv2-custom-amount"><span>€</span><input id="gv2-custom-amount" {...fieldA11y('amount')} aria-label={t('amount.customAmount')} autoFocus type="number" inputMode="decimal" min="15" step="0.01" placeholder={t('amount.customPlaceholder')} value={b.customAmountEur} onChange={(e) => patch({ customAmountEur: e.target.value })} /></label>}
+                      <p className="microcopy">{c.credit}</p>
+                    </div>
+                    <div className="form-section">
+                      <div className="form-section-title"><span className="count">02</span><h4>{c.personalize}</h4></div>
+                      <div className="form-fields">
+                        <div className="field"><label className="label" htmlFor="gv2-recipient-name">{c.name}</label><input id="gv2-recipient-name" {...fieldA11y('recipientName')} maxLength={NAME_MAX_LENGTH} placeholder={t('fields.recipientNamePlaceholder')} value={b.recipientName} onChange={(e) => patch({ recipientName: e.target.value })} /></div>
+                        <div className="field"><label className="label" htmlFor="gv2-buyer-name">{c.from}</label><input id="gv2-buyer-name" {...fieldA11y('buyerName')} maxLength={NAME_MAX_LENGTH} placeholder={t('fields.buyerNamePlaceholder')} value={b.buyerName} onChange={(e) => patch({ buyerName: e.target.value })} /></div>
+                      </div>
+                      <label className="label" htmlFor="gv2-message">{c.note}</label>
+                      <div className="sample-messages" role="group" aria-label={t('aria.messageSuggestions')}>
+                        {reference.messageChips.map(([label, message]) => <button key={label} className="tiny-chip" type="button" onClick={() => patch({ message })}>{label}</button>)}
+                      </div>
+                      <div className="field"><textarea id="gv2-message" {...fieldA11y('message')} maxLength={MESSAGE_MAX_LENGTH} placeholder={t('fields.messagePlaceholder')} value={b.message} onChange={(e) => patch({ message: e.target.value })} /></div>
+                      <p className="microcopy">{t('fields.messageCounter', { count: b.message.length, max: MESSAGE_MAX_LENGTH })}</p>
+                      <div className="label">{c.look}</div>
+                      <div className="variants" id="gv2-template-group" role="group" aria-label={t('aria.design')} aria-invalid={fieldErrorFor('cardTemplateId') || undefined} aria-describedby={fieldErrorFor('cardTemplateId') ? 'gv2-validation-description' : undefined}>
+                        {templates.map(([id, label], index) => <button key={id} type="button" className={`variant-btn${b.cardTemplateId === id ? ' active' : ''}`} aria-pressed={b.cardTemplateId === id} onClick={() => patch({ cardTemplateId: id })}>
+                          <i className={`swatch${index === 1 ? ' night' : ''}${index === 2 ? ' clay' : ''}`} aria-hidden="true" />{label}</button>)}
+                      </div>
+                      <div className="form-fields gv2-customization">
+                        <div><label className="label" htmlFor="gv2-card-occasion">{t('occasions.label')}</label><select id="gv2-card-occasion" {...fieldA11y('cardOccasion')} value={b.cardOccasion} onChange={(e) => patch({ cardOccasion: e.target.value })}>{CARD_OCCASIONS.map((id) => <option key={id} value={id}>{t(`occasions.${id}`)}</option>)}</select></div>
+                        <div><label className="label" htmlFor="gv2-card-locale">{t('cardLocale.label')}</label><select id="gv2-card-locale" {...fieldA11y('cardLocale')} value={b.cardLocale} onChange={(e) => patch({ cardLocale: e.target.value })}>{['en', 'bg'].map((id) => <option key={id} value={id}>{t(`cardLocale.${id}`)}</option>)}</select></div>
+                      </div>
+                    </div>
+                    <div className="form-section">
+                      <div className="form-section-title" id="gv2-delivery-label"><span className="count">03</span><h4>{c.arrive}</h4></div>
+                      <div className="delivery-grid" role="group" aria-labelledby="gv2-delivery-label" aria-invalid={fieldErrorFor('deliveryOption') || undefined} aria-describedby={fieldErrorFor('deliveryOption') ? 'gv2-validation-description' : undefined}>
+                        {deliveries.map(([id, icon, title, sub]) => <button key={id} type="button" className={`delivery-option${b.deliveryOption === id ? ' active' : ''}`} aria-pressed={b.deliveryOption === id} onClick={() => delivery(id)}>
+                          <span className="icon" aria-hidden="true">{icon}</span><strong>{title}</strong><small>{sub}</small></button>)}
+                      </div>
+                      {b.deliveryOption === 'send_to_buyer' && <p className="delivery-note">{t('delivery.sendToBuyerHint')}</p>}
+                      {['recipient_now', 'scheduled', 'postal'].includes(b.deliveryOption) &&
+                        <div className="field"><label className="label" htmlFor="gv2-recipient-email">{b.deliveryOption === 'postal' ? t('fields.recipientEmailOptional') : c.recipient}</label><input id="gv2-recipient-email" {...fieldA11y('recipientEmail')} type="email" maxLength={EMAIL_MAX_LENGTH} placeholder={t('fields.emailPlaceholder')} value={b.recipientEmail} onChange={(e) => patch({ recipientEmail: e.target.value })} /></div>}
+                      {b.deliveryOption === 'scheduled' && <div className="field"><label className="label" htmlFor="gv2-delivery-date">{t('delivery.scheduledDate')}</label><input id="gv2-delivery-date" {...fieldA11y('deliveryDate')} type="date" min={bounds.minIso} max={bounds.maxIso} value={b.deliveryDate} onChange={(e) => patch({ deliveryDate: e.target.value })} /><p className="delivery-note">{t('delivery.scheduledDateHint')}</p></div>}
+                      {b.deliveryOption === 'postal' && <div className="form-fields gv2-postal">
+                        {[['addressLine1', 'postal.address1'], ['addressLine2', 'postal.address2'], ['city', 'postal.city'], ['postalCode', 'postal.postalCode'], ['country', 'postal.country']].map(([key, label]) =>
+                          <div className="field" key={key}><label className="label" htmlFor={`gv2-${key}`}>{t(label)}</label><input id={`gv2-${key}`} {...fieldA11y(key)} maxLength={POSTAL_MAX_LENGTHS[key]} value={b[key]} onChange={(e) => patch({ [key]: e.target.value })} /></div>)}
+                      </div>}
+                      <div className="field"><label className="label" htmlFor="gv2-buyer-email">{c.buyer}</label><input id="gv2-buyer-email" {...fieldA11y('buyerEmail')} type="email" maxLength={EMAIL_MAX_LENGTH} placeholder={t('fields.emailPlaceholder')} value={b.buyerEmail} onChange={(e) => patch({ buyerEmail: e.target.value })} /></div>
+                    </div>
+                    {validationRequested && !validation.ok && <p id="gv2-validation-description" className="validation" role="alert">{validationText}</p>}
+                    {configError && <p role="alert" className="validation">{c.configError} <button type="button" onClick={() => setConfigAttempt((n) => n + 1)}>{c.retry}</button></p>}
+                    {stripeUnavailable && (
+                      <div
+                        role="alert"
+                        data-testid="gift-voucher-stripe-unavailable"
+                        className="mb-6 rounded-2xl border border-stone-300 bg-white px-5 py-4 text-sm text-stone-700"
+                      >
+                        <p className="font-medium text-stone-900">{t('payment.unavailableTitle')}</p>
+                        <p className="mt-1">{t('payment.unavailableBody')}</p>
+                        <div className="mt-3 flex flex-wrap items-center gap-4">
+                          <button
+                            type="button"
+                            onClick={retryStripe}
+                            className="text-xs uppercase tracking-[0.2em] text-stone-800 underline underline-offset-4"
+                          >
+                            {t('payment.unavailableRetry')}
+                          </button>
+                          <a
+                            href={`mailto:${CONTACT_EMAIL}`}
+                            className="text-xs uppercase tracking-[0.2em] text-stone-500 underline underline-offset-4 hover:text-stone-800"
+                          >
+                            {t('payment.unavailableContact')}
+                          </a>
+                        </div>
                       </div>
                     )}
-                  </div>
-                </div>
-
-                <div>
-                  <p className={labelClass}>{t('templates.label')}</p>
-                  <div className="mt-4 grid grid-cols-3 gap-3">
-                    {CARD_TEMPLATE_IDS.map((templateId) => (
-                      <button
-                        key={templateId}
-                        type="button"
-                        onClick={() => patchBuilder({ cardTemplateId: templateId })}
-                        className={`rounded-xl border px-3 py-4 text-center text-xs uppercase tracking-[0.18em] transition ${
-                          builder.cardTemplateId === templateId
-                            ? 'border-stone-900 bg-stone-900 text-white'
-                            : 'border-stone-200 bg-white text-stone-700 hover:border-stone-400'
-                        }`}
-                      >
-                        {t(`templates.${templateId}`)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <p className={labelClass}>{t('occasions.label')}</p>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {CARD_OCCASIONS.map((occasion) => (
-                      <button
-                        key={occasion}
-                        type="button"
-                        onClick={() => patchBuilder({ cardOccasion: occasion })}
-                        className={`rounded-full border px-4 py-2 text-xs transition ${
-                          builder.cardOccasion === occasion
-                            ? 'border-stone-900 bg-stone-900 text-white'
-                            : 'border-stone-200 bg-white text-stone-700 hover:border-stone-400'
-                        }`}
-                      >
-                        {t(`occasions.${occasion}`)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className={labelClass}>{t('fields.message')}</label>
-                  <textarea
-                    className={`${inputClass} resize-none`}
-                    rows={3}
-                    maxLength={MESSAGE_MAX_LENGTH}
-                    placeholder={t('fields.messagePlaceholder')}
-                    value={builder.message}
-                    onChange={(e) => patchBuilder({ message: e.target.value })}
-                  />
-                  <p className="mt-1 text-right text-xs text-stone-500">
-                    {t('fields.messageCounter', {
-                      count: builder.message.length,
-                      max: MESSAGE_MAX_LENGTH
-                    })}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.28em] text-stone-500">{t('fields.for')}</p>
-                  <div className="mt-2 h-px w-12 bg-stone-300" />
-                  <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-8">
-                    <div>
-                      <label className={labelClass}>{t('fields.recipientName')}</label>
-                      <input
-                        className={inputClass}
-                        placeholder={t('fields.recipientNamePlaceholder')}
-                        value={builder.recipientName}
-                        onChange={(e) => patchBuilder({ recipientName: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <label className={labelClass}>{t('fields.from')}</label>
-                      <input
-                        className={inputClass}
-                        placeholder={t('fields.buyerNamePlaceholder')}
-                        value={builder.buyerName}
-                        onChange={(e) => patchBuilder({ buyerName: e.target.value })}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <p className={labelClass}>{t('cardLocale.label')}</p>
-                  <div className="mt-4 flex gap-2">
-                    {['en', 'bg'].map((loc) => (
-                      <button
-                        key={loc}
-                        type="button"
-                        onClick={() => patchBuilder({ cardLocale: loc })}
-                        className={`rounded-full border px-4 py-2 text-xs transition ${
-                          builder.cardLocale === loc
-                            ? 'border-stone-900 bg-stone-900 text-white'
-                            : 'border-stone-200 bg-white text-stone-700 hover:border-stone-400'
-                        }`}
-                      >
-                        {t(`cardLocale.${loc}`)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.28em] text-stone-500">{t('delivery.title')}</p>
-                  <div className="mt-2 h-px w-12 bg-stone-300" />
-                  <p className="mt-3 text-sm text-stone-600">{t('delivery.hint')}</p>
-                  <fieldset className="mt-6 space-y-3">
-                    <legend className="sr-only">{t('delivery.sendMethod')}</legend>
-                    {deliveryOptions.map((opt) => (
-                      <label
-                        key={opt.value}
-                        className={`flex cursor-pointer items-start gap-3 rounded-xl border px-4 py-3 transition ${
-                          builder.deliveryOption === opt.value
-                            ? 'border-stone-900 bg-white'
-                            : 'border-stone-200 bg-white hover:border-stone-400'
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="deliveryOption"
-                          value={opt.value}
-                          checked={builder.deliveryOption === opt.value}
-                          onChange={() => {
-                            const patch = { deliveryOption: opt.value };
-                            if (opt.value === 'send_to_buyer') patch.recipientEmail = '';
-                            if (opt.value !== 'scheduled') patch.deliveryDate = '';
-                            patchBuilder(patch);
-                          }}
-                          className="mt-1"
-                        />
-                        <span className="text-sm text-stone-800">{opt.label}</span>
-                      </label>
-                    ))}
+                    {stripeFailed && !stripeUnavailable && <p role="alert" className="validation">{c.stripeUnavailable}</p>}
+                    {error && <p role="alert" className="validation">{error}</p>}
+                    <div className="summary"><span><small>{c.voucher} · {c.valid}</small><strong>{money(value)}</strong></span>
+                      {b.deliveryOption === 'postal' && <div className="summary-extra gv2-fees"><small>{t('summary.physicalFee')}: {money(fee)}</small><strong>{t('summary.total')}: {money(total)}</strong></div>}</div>
+                    <label className="terms"><input type="checkbox" aria-label={t('aria.terms')} aria-invalid={fieldErrorFor('termsAccepted') || undefined} aria-describedby={fieldErrorFor('termsAccepted') ? 'gv2-validation-description' : undefined} checked={b.termsAccepted} onChange={(e) => patch({ termsAccepted: e.target.checked })} />
+                      <span>{t('terms.prefix')}<Link to={localizePath('/terms', language)}>{t('terms.terms')}</Link>{t('terms.and')}<Link to={localizePath('/cancellation-policy', language)}>{t('terms.cancellation')}</Link>.</span></label>
+                    <button className="btn btn-primary submit-btn" type="submit" disabled={loading}>{c.preview}<span>↗</span></button>
+                    <p className="prototypenote">{c.fine}</p>
                   </fieldset>
-                  {builder.deliveryOption === 'send_to_buyer' && (
-                    <p className="mt-3 text-sm text-stone-600">{t('delivery.sendToBuyerHint')}</p>
+                </form>
+                {secret && quote && <div className="gv2-payment gv2-paywrap">
+                  <div className="summary"><span><small>{t('summary.total')}</small><strong>{money(quote.totalDueCents)}</strong></span></div>
+                  <p className="microcopy">{t('summary.reference')} · {paymentIntentId}</p>
+                  {!stripeUnavailable && stripeClient && (
+                    <Elements key={secret} stripe={stripeClient} options={{ clientSecret: secret, locale }}>
+                      <Pay loading={loading} disabled={!validation.ok || !ready} onPay={pay} />
+                    </Elements>
                   )}
-                  {builder.deliveryOption === 'scheduled' && (
-                    <div className="mt-6">
-                      <label className={labelClass}>{t('delivery.scheduledDate')}</label>
-                      <input
-                        type="date"
-                        className={inputClass}
-                        min={scheduledBounds.minIso}
-                        max={scheduledBounds.maxIso}
-                        value={builder.deliveryDate}
-                        onChange={(e) => patchBuilder({ deliveryDate: e.target.value })}
-                      />
-                      <p className="mt-2 text-xs text-stone-500">{t('delivery.scheduledDateHint')}</p>
-                    </div>
-                  )}
-                  {builder.deliveryOption === 'postal' && (
-                    <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-8">
-                      <div>
-                        <label className={labelClass}>{t('postal.address1')}</label>
-                        <input
-                          className={inputClass}
-                          placeholder={t('postal.address1Placeholder')}
-                          value={builder.addressLine1}
-                          onChange={(e) => patchBuilder({ addressLine1: e.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <label className={labelClass}>{t('postal.address2')}</label>
-                        <input
-                          className={inputClass}
-                          placeholder={t('postal.address2Placeholder')}
-                          value={builder.addressLine2}
-                          onChange={(e) => patchBuilder({ addressLine2: e.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <label className={labelClass}>{t('postal.city')}</label>
-                        <input
-                          className={inputClass}
-                          value={builder.city}
-                          onChange={(e) => patchBuilder({ city: e.target.value })}
-                        />
-                      </div>
-                      <div>
-                        <label className={labelClass}>{t('postal.postalCode')}</label>
-                        <input
-                          className={inputClass}
-                          value={builder.postalCode}
-                          onChange={(e) => patchBuilder({ postalCode: e.target.value })}
-                        />
-                      </div>
-                      <div className="md:col-span-2">
-                        <label className={labelClass}>{t('postal.country')}</label>
-                        <input
-                          className={inputClass}
-                          value={builder.country}
-                          onChange={(e) => patchBuilder({ country: e.target.value })}
-                        />
-                      </div>
-                    </div>
-                  )}
-                  {(builder.deliveryOption === 'recipient_now' ||
-                    builder.deliveryOption === 'scheduled') && (
-                    <div className="mt-6">
-                      <label className={labelClass}>{t('fields.recipientEmail')}</label>
-                      <input
-                        type="email"
-                        className={inputClass}
-                        placeholder={t('fields.emailPlaceholder')}
-                        value={builder.recipientEmail}
-                        onChange={(e) => patchBuilder({ recipientEmail: e.target.value })}
-                      />
-                    </div>
-                  )}
-                  {builder.deliveryOption === 'postal' && (
-                    <div className="mt-6">
-                      <label className={labelClass}>{t('fields.recipientEmailOptional')}</label>
-                      <input
-                        type="email"
-                        className={inputClass}
-                        placeholder={t('fields.emailPlaceholder')}
-                        value={builder.recipientEmail}
-                        onChange={(e) => patchBuilder({ recipientEmail: e.target.value })}
-                      />
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className={labelClass}>{t('fields.buyerEmail')}</label>
-                  <input
-                    type="email"
-                    className={inputClass}
-                    placeholder={t('fields.emailPlaceholder')}
-                    value={builder.buyerEmail}
-                    onChange={(e) => patchBuilder({ buyerEmail: e.target.value })}
-                  />
-                </div>
-
-                <div className="rounded-2xl border border-stone-200 bg-white p-6 md:p-8">
-                  {builder.deliveryOption === 'postal' ? (
-                    <div className="space-y-3 text-sm text-stone-700">
-                      <div className="flex items-baseline justify-between gap-4">
-                        <p className="text-[11px] uppercase tracking-[0.28em] text-stone-500">
-                          {t('summary.voucherValue')}
-                        </p>
-                        <p className="font-serif text-xl tracking-tight text-stone-900">€{formattedVoucherValue}</p>
-                      </div>
-                      <div className="flex items-baseline justify-between gap-4">
-                        <p className="text-[11px] uppercase tracking-[0.28em] text-stone-500">
-                          {t('summary.physicalFee')}
-                        </p>
-                        <p className="font-serif text-xl tracking-tight text-stone-900">€{formattedPhysicalFee}</p>
-                      </div>
-                      <div className="flex items-baseline justify-between gap-4 border-t border-stone-200 pt-3">
-                        <p className="text-[11px] uppercase tracking-[0.28em] text-stone-500">{t('summary.total')}</p>
-                        <p
-                          className="font-serif text-3xl tracking-tight text-stone-900 md:text-4xl"
-                          style={{ fontFamily: 'var(--valley-font-primary, Georgia, serif)' }}
-                        >
-                          €{formattedSummary}
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-baseline justify-between gap-4">
-                      <p className="text-[11px] uppercase tracking-[0.28em] text-stone-500">{t('summary.total')}</p>
-                      <p
-                        className="font-serif text-3xl tracking-tight text-stone-900 md:text-4xl"
-                        style={{ fontFamily: 'var(--valley-font-primary, Georgia, serif)' }}
-                      >
-                        €{formattedSummary}
-                      </p>
-                    </div>
-                  )}
-                  <p className="mt-3 text-xs leading-relaxed text-stone-500">{t('summary.line')}</p>
-                  {paymentIntentId && (
-                    <p className="mt-2 text-[11px] uppercase tracking-[0.18em] text-stone-400">
-                      {t('summary.reference')} · {paymentIntentId}
-                    </p>
-                  )}
-                </div>
-
-                <label className="flex items-start gap-3 text-sm text-stone-700">
-                  <input
-                    type="checkbox"
-                    className="mt-1 h-4 w-4 rounded border-stone-400 text-stone-900 focus:ring-stone-700"
-                    checked={builder.termsAccepted}
-                    onChange={(e) => patchBuilder({ termsAccepted: e.target.checked })}
-                  />
-                  <span>
-                    {t('terms.prefix')}
-                    <Link
-                      to="/terms"
-                      className="underline decoration-stone-400 underline-offset-4 hover:decoration-stone-700"
-                    >
-                      {t('terms.terms')}
-                    </Link>{' '}
-                    {t('terms.and')}
-                    <Link
-                      to="/cancellation-policy"
-                      className="underline decoration-stone-400 underline-offset-4 hover:decoration-stone-700"
-                    >
-                      {t('terms.cancellation')}
-                    </Link>
-                    .
-                  </span>
-                </label>
-
-                <div>
-                  {stripeUnavailable && (
-                    <div
-                      role="alert"
-                      data-testid="gift-voucher-stripe-unavailable"
-                      className="mb-6 rounded-2xl border border-stone-300 bg-white px-5 py-4 text-sm text-stone-700"
-                    >
-                      <p className="font-medium text-stone-900">{t('payment.unavailableTitle')}</p>
-                      <p className="mt-1">{t('payment.unavailableBody')}</p>
-                      <div className="mt-3 flex flex-wrap items-center gap-4">
-                        <button
-                          type="button"
-                          onClick={retryStripe}
-                          className="text-xs uppercase tracking-[0.2em] text-stone-800 underline underline-offset-4"
-                        >
-                          {t('payment.unavailableRetry')}
-                        </button>
-                        <a
-                          href={`mailto:${CONTACT_EMAIL}`}
-                          className="text-xs uppercase tracking-[0.2em] text-stone-500 underline underline-offset-4 hover:text-stone-800"
-                        >
-                          {t('payment.unavailableContact')}
-                        </a>
-                      </div>
-                    </div>
-                  )}
-                  {!clientSecret ? (
-                    <button
-                      type="button"
-                      onClick={initializePayment}
-                      disabled={loading || stripeUnavailable}
-                      className="w-full rounded-full bg-[#81887A] px-8 py-4 text-sm font-medium uppercase tracking-[0.18em] text-white transition hover:bg-[#6f7669] disabled:cursor-not-allowed disabled:opacity-50 md:w-auto md:min-w-[280px]"
-                    >
-                      {loading ? t('payment.preparing') : t('payment.continue')}
-                    </button>
-                  ) : (
-                    <div className="space-y-4">
-                      {!stripeUnavailable && (
-                        <Elements stripe={stripePromise} options={{ clientSecret }}>
-                          <PaymentForm
-                            submitDisabled={!validation.ok}
-                            onSubmit={handleStripeSubmit}
-                            loading={loading}
-                          />
-                        </Elements>
-                      )}
-                      <button
-                        type="button"
-                        onClick={resetAttempt}
-                        className="text-xs uppercase tracking-[0.2em] text-stone-500 underline-offset-4 hover:text-stone-800 hover:underline"
-                      >
-                        {t('payment.editDetails')}
-                      </button>
-                    </div>
-                  )}
-
-                  {(error || validationMessage) && (
-                    <div
-                      role="alert"
-                      className="mt-6 rounded-2xl border border-stone-300 bg-white px-5 py-4 text-sm text-stone-700"
-                    >
-                      {error || validationMessage}
-                    </div>
-                  )}
-                </div>
+                  <button type="button" className="gv2-edit" disabled={loading} onClick={resetAttempt}>{t('payment.editDetails')}</button>
+                </div>}
+                <a className="corporate-link" href={`mailto:jose@driftdwells.com?subject=${encodeURIComponent(reference.footer.corporate)}`}>
+                  <span>{c.team}</span><strong>{c.talk}</strong>
+                </a>
               </div>
             </div>
           </div>
         </section>
 
-        <section className="bg-white py-12 md:py-16">
-          <div className="mx-auto w-full max-w-5xl px-4 sm:px-8">
-            <div className="grid grid-cols-1 gap-8 md:grid-cols-3 md:gap-10">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.24em] text-stone-500">
-                  {t('reassurance.prepaidTitle')}
-                </p>
-                <p className="mt-3 text-sm leading-relaxed text-stone-600">{t('reassurance.prepaidText')}</p>
-              </div>
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.24em] text-stone-500">
-                  {t('reassurance.durationTitle')}
-                </p>
-                <p className="mt-3 text-sm leading-relaxed text-stone-600">{t('reassurance.durationText')}</p>
-              </div>
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.24em] text-stone-500">
-                  {t('reassurance.helpTitle')}
-                </p>
-                <p className="mt-3 text-sm leading-relaxed text-stone-600">
-                  {t('reassurance.helpText')}{' '}
-                  <Link
-                    to="/contact"
-                    className="underline decoration-stone-400 underline-offset-4 hover:decoration-stone-700"
-                  >
-                    {t('reassurance.contactUs')}
-                  </Link>
-                  .
-                </p>
-              </div>
-            </div>
+        <section className="promise" id="how-it-works">
+          <div className="max promise-grid">
+            <div><div className="caps">{reference.promise.kicker}</div><h2>{reference.promise.title}<br /><em>{reference.promise.titleEm}</em></h2>
+              <p>{reference.promise.body}</p><a className="btn btn-white" href="#create">{reference.promise.cta} ↗</a></div>
+            <div className="promise-list">{reference.promise.rows.map(([title, text], index) =>
+              <div className="promise-row" key={title}><span>0{index + 1}.</span><div><strong>{title}</strong><p>{text}</p></div></div>)}</div>
           </div>
         </section>
-      </main>
+
+        <section className="faq" id="faq">
+          <div className="max faq-grid">
+            <div><div className="caps">{reference.faq.kicker}</div><h2>{reference.faq.title}<br /><em>{reference.faq.titleEm}</em></h2><p className="intro">{reference.faq.intro}</p></div>
+            <div>{reference.faq.items.map(([question, answer]) =>
+              <details key={question}><summary>{question}</summary><p>{answer}</p></details>)}</div>
+          </div>
+        </section>
+
+        <div id="mobileBuy" className={`mobile-buy gv2-mobile${mobileCtaVisible ? '' : ' hidden'}`} aria-hidden={!mobileCtaVisible}>
+          <span>{reference.hero.first} {reference.hero.middle} {reference.hero.last}</span>
+          <button type="button" aria-controls="create" onClick={scrollToBuilder}>{reference.hero.create} ↗</button>
+        </div>
+        {review && <div ref={dialog} className="modal open" role="dialog" aria-modal="true" aria-labelledby="gv2-review-title" aria-label={t('aria.review')} tabIndex="-1" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy.current) setReview(false); }}>
+          <div className="modal-panel">
+            <button type="button" className="close-modal" aria-label={c.close} disabled={loading} onClick={() => setReview(false)}>×</button>
+            <div className="caps">{c.reviewKicker}</div><h3 id="gv2-review-title">{c.reviewTitle}<br />{c.reviewTitleEm}</h3>
+            <p>{t('reference.builder.previewIntro')}</p>
+            <div className="modal-item"><span>{t('summary.voucherValue')}</span><strong>{money(value)}</strong></div>
+            <div className="modal-item"><span>{t('fields.for')}</span><strong>{b.recipientName || '—'}</strong></div>
+            <div className="modal-item"><span>{t('fields.from')}</span><strong>{b.buyerName || '—'}</strong></div>
+            <div className="modal-item"><span>{t('delivery.title')}</span><strong>{t(`delivery.${{ recipient_now: 'recipientNow', send_to_buyer: 'sendToBuyer', postal: 'postal', scheduled: 'scheduled' }[b.deliveryOption]}`)}</strong></div>
+            {b.deliveryOption === 'scheduled' && <div className="modal-item"><span>{t('delivery.scheduledDate')}</span><strong>{b.deliveryDate || '—'}</strong></div>}
+            <div className="modal-item"><span>{t('summary.validity')}</span><strong>{c.valid}</strong></div>
+            {b.deliveryOption === 'postal' && <><div className="modal-item"><span>{t('summary.physicalFee')}</span><strong>{money(fee)}</strong></div><div className="modal-item"><span>{t('summary.total')}</span><strong>{money(total)}</strong></div></>}
+            {!validation.ok && <p id="gv2-modal-validation" role="alert" className="validation">{validationText}</p>}
+            {configError && <p role="alert" className="validation">{c.configError} <button type="button" disabled={loading} onClick={() => setConfigAttempt((n) => n + 1)}>{c.retry}</button></p>}
+            {stripeUnavailable && (
+              <div role="alert" className="validation">
+                <p>{t('payment.unavailableTitle')}</p>
+                <p>{t('payment.unavailableBody')}</p>
+                <button type="button" disabled={loading} onClick={retryStripe}>{t('payment.unavailableRetry')}</button>
+                {' '}
+                <a href={`mailto:${CONTACT_EMAIL}`}>{t('payment.unavailableContact')}</a>
+              </div>
+            )}
+            {stripeFailed && !stripeUnavailable && <p role="alert" className="validation">{c.stripeUnavailable}</p>}
+            {error && <p role="alert" className="validation">{error}</p>}
+            {loading && <p className="gv2-sr-only" role="status" aria-live="polite">{t('payment.preparing')}</p>}
+            <button type="button" className="btn btn-primary submit-btn" aria-describedby={!validation.ok ? 'gv2-modal-validation' : undefined} aria-live="polite" onClick={start} disabled={loading || !ready || !stripeClient || stripeUnavailable}>{loading ? t('payment.preparing') : t('payment.continue')} ↗</button>
+            <button type="button" className="gv2-edit" disabled={loading} onClick={() => setReview(false)}>{t('payment.editDetails')}</button>
+          </div>
+        </div>}
+      </div>
     </>
   );
 }

@@ -38,7 +38,12 @@ async function getVoucherAvailableBalanceCents(giftVoucherId, { now = new Date()
   return Number(voucher?.balanceRemainingCents || 0);
 }
 
-async function previewVoucherApplication({ voucherCode, totalValueCents, now = new Date() }) {
+async function previewVoucherApplication({
+  voucherCode,
+  totalValueCents,
+  checkoutId = null,
+  now = new Date()
+}) {
   assertIntegerCents(totalValueCents, 'totalValueCents');
   await releaseExpiredVoucherReservations({ now, limit: 25 });
 
@@ -54,6 +59,45 @@ async function previewVoucherApplication({ voucherCode, totalValueCents, now = n
   }
 
   const voucher = await GiftVoucher.findOne({ code: normalizedVoucherCode }).lean();
+  if (typeof checkoutId === 'string' && checkoutId.trim()) {
+    const existing = await GiftVoucherRedemption.findOne({
+      checkoutId: checkoutId.trim(),
+      status: 'reserved'
+    }).sort({ createdAt: -1 });
+    if (existing && !isExpired(existing, now)) {
+      const giftVoucherId = voucher?._id ? String(voucher._id) : 'missing_voucher';
+      const expectedReservationKey = buildReservationKey({
+        checkoutId: checkoutId.trim(),
+        normalizedVoucherCode,
+        totalValueCents,
+        giftVoucherId
+      });
+      if (
+        String(existing.giftVoucherId) !== giftVoucherId ||
+        existing.reservationKey !== expectedReservationKey
+      ) {
+        return {
+          ok: false,
+          success: false,
+          publicMessage: 'This checkout already has a different voucher reservation.',
+          internalCode: 'CHECKOUT_ID_CONFLICT',
+          voucherAppliedCents: 0,
+          remainingDueCents: totalValueCents,
+          fullVoucherCoverage: false
+        };
+      }
+
+      const voucherAppliedCents = Number(existing.amountAppliedCents || 0);
+      return {
+        ok: true,
+        success: true,
+        voucherAppliedCents,
+        remainingDueCents: Math.max(0, totalValueCents - voucherAppliedCents),
+        fullVoucherCoverage: voucherAppliedCents >= totalValueCents
+      };
+    }
+  }
+
   return evaluateVoucherForBookingAmount({
     voucher,
     voucherCode: normalizedVoucherCode,

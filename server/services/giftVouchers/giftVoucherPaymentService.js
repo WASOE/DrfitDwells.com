@@ -24,6 +24,31 @@ const {
 } = require('./giftVoucherDeliveryOption');
 const PHYSICAL_CARD_FEE_CENTS = 500;
 const PURCHASE_ID_PATTERN = /^[A-Za-z0-9:_-]{8,128}$/;
+const PURCHASE_REQUEST_INDEX_KEY = { purchaseRequestId: 1 };
+const PURCHASE_REQUEST_INDEX_PARTIAL = { purchaseRequestId: { $type: 'string' } };
+
+let purchaseRequestIndexReady;
+
+async function assertPurchaseRequestIndexReady() {
+  if (!purchaseRequestIndexReady) {
+    purchaseRequestIndexReady = GiftVoucher.collection.indexes().then((indexes) => {
+      const ready = indexes.some((index) =>
+        JSON.stringify(index.key) === JSON.stringify(PURCHASE_REQUEST_INDEX_KEY) &&
+        index.unique === true &&
+        JSON.stringify(index.partialFilterExpression) === JSON.stringify(PURCHASE_REQUEST_INDEX_PARTIAL)
+      );
+      if (!ready) {
+        const err = new Error('Gift voucher purchase idempotency index is not installed');
+        err.code = 'PURCHASE_REQUEST_INDEX_NOT_READY';
+        throw err;
+      }
+    }).catch((error) => {
+      purchaseRequestIndexReady = null;
+      throw error;
+    });
+  }
+  await purchaseRequestIndexReady;
+}
 
 let stripeClient = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: STRIPE_API_VERSION })
@@ -103,7 +128,7 @@ function normalizePurchaseRequestId(value) {
   return maybe;
 }
 
-function buildPurchaseFingerprint(payload) {
+function buildPurchaseFingerprint(payload, { includeAttribution = true } = {}) {
   const canonical = {
     amountOriginalCents: payload.amountOriginalCents,
     currency: payload.currency,
@@ -116,19 +141,39 @@ function buildPurchaseFingerprint(payload) {
     cardOccasion: payload.cardOccasion || null,
     cardTemplateId: payload.cardTemplateId || null,
     cardLocale: payload.cardLocale || null,
-    message: payload.message || null,
-    deliveryAddress: {
-      addressLine1: payload.deliveryAddress?.addressLine1 || null,
-      addressLine2: payload.deliveryAddress?.addressLine2 || null,
-      city: payload.deliveryAddress?.city || null,
-      postalCode: payload.deliveryAddress?.postalCode || null,
-      country: payload.deliveryAddress?.country || null
-    }
+    message: payload.message || null
+  };
+  if (includeAttribution) {
+    canonical.attribution = payload.attribution || null;
+  }
+  canonical.deliveryAddress = {
+    addressLine1: payload.deliveryAddress?.addressLine1 || null,
+    addressLine2: payload.deliveryAddress?.addressLine2 || null,
+    city: payload.deliveryAddress?.city || null,
+    postalCode: payload.deliveryAddress?.postalCode || null,
+    country: payload.deliveryAddress?.country || null
   };
   if (payload.deliveryOption === 'scheduled' && payload.deliveryDate) {
     canonical.scheduledDeliveryDate = payload.deliveryDate.toISOString();
   }
   return crypto.createHash('sha256').update(JSON.stringify(canonical)).digest('hex');
+}
+
+function buildStripeIdempotencyKey(purchaseRequestId) {
+  const digest = crypto.createHash('sha256').update(purchaseRequestId).digest('hex');
+  return `gift-voucher-${digest}`;
+}
+
+function isDuplicateKeyError(error) {
+  return error?.code === 11000 || error?.codeName === 'DuplicateKey';
+}
+
+function isStripeIdempotencyInProgress(error) {
+  return error?.code === 'idempotency_key_in_use' || error?.statusCode === 409;
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function assertIntegerCents(value, fieldName) {
@@ -309,126 +354,143 @@ async function createGiftVoucherPaymentIntent(input = {}) {
     throw err;
   }
 
+  await assertPurchaseRequestIndexReady();
   const normalized = normalizeCreateInput(input);
   const pricing = computeGiftVoucherPricing({
     amountOriginalCents: normalized.amountOriginalCents,
     deliveryMode: normalized.deliveryMode
   });
   const purchaseFingerprint = buildPurchaseFingerprint(normalized);
-  const existing = await GiftVoucher.findOne({ purchaseRequestId: normalized.purchaseRequestId });
-  if (existing) {
-    if (existing.purchaseFingerprint !== purchaseFingerprint) {
-      const err = new Error('purchaseRequestId conflicts with an existing purchase');
-      err.code = 'PURCHASE_REQUEST_CONFLICT';
-      throw err;
-    }
-    if (existing.status === 'voided') {
-      const err = new Error('purchaseRequestId is closed');
-      err.code = 'PURCHASE_REQUEST_CLOSED';
-      throw err;
-    }
-    if (existing.status === 'pending_payment' && existing.stripePaymentIntentId) {
-      const existingPi = await stripeClient.paymentIntents.retrieve(existing.stripePaymentIntentId);
-      return {
-        ok: true,
-        idempotentReplay: true,
+  const legacyPurchaseFingerprint = buildPurchaseFingerprint(normalized, {
+    includeAttribution: false
+  });
+  let voucher = await GiftVoucher.findOne({ purchaseRequestId: normalized.purchaseRequestId });
+  let reservationCreated = false;
+  if (!voucher) {
+    try {
+      voucher = await GiftVoucher.create({
+        code: null,
+        amountOriginalCents: normalized.amountOriginalCents,
+        balanceRemainingCents: normalized.amountOriginalCents,
+        physicalCardFeeCents: pricing.physicalCardFeeCents,
+        currency: normalized.currency,
+        status: 'pending_payment',
+        buyerName: normalized.buyerName,
+        buyerEmail: normalized.buyerEmail,
+        recipientName: normalized.recipientName,
+        recipientEmail: normalized.recipientEmail,
+        message: normalized.message,
+        deliveryOption: normalized.deliveryOption,
+        deliveryMode: normalized.deliveryMode,
+        cardOccasion: normalized.cardOccasion,
+        cardTemplateId: normalized.cardTemplateId,
+        cardLocale: normalized.cardLocale,
+        deliveryAddress: normalized.deliveryAddress,
+        deliveryDate: normalized.deliveryDate,
         purchaseRequestId: normalized.purchaseRequestId,
-        giftVoucherId: String(existing._id),
-        stripePaymentIntentId: String(existing.stripePaymentIntentId),
-        clientSecret: existingPi.client_secret || null
-      };
+        purchaseFingerprint,
+        termsAcceptedAt: normalized.termsAcceptedAt,
+        termsVersion: normalized.termsVersion,
+        attribution: normalized.attribution
+      });
+      reservationCreated = true;
+    } catch (error) {
+      if (!isDuplicateKeyError(error)) throw error;
+      voucher = await GiftVoucher.findOne({ purchaseRequestId: normalized.purchaseRequestId });
+      if (!voucher) throw error;
     }
+  }
+
+  const storedAttribution = normalizeAttribution(voucher.attribution) || null;
+  const requestAttribution = normalized.attribution || null;
+  const legacyFingerprintMatches =
+    voucher.purchaseFingerprint === legacyPurchaseFingerprint &&
+    JSON.stringify(storedAttribution) === JSON.stringify(requestAttribution);
+  if (voucher.purchaseFingerprint !== purchaseFingerprint && !legacyFingerprintMatches) {
+    const err = new Error('purchaseRequestId conflicts with an existing purchase');
+    err.code = 'PURCHASE_REQUEST_CONFLICT';
+    throw err;
+  }
+  if (voucher.status !== 'pending_payment') {
     const err = new Error('purchaseRequestId cannot be reused for current state');
     err.code = 'PURCHASE_REQUEST_CLOSED';
     throw err;
   }
 
-  const voucher = await GiftVoucher.create({
-    code: null,
-    amountOriginalCents: normalized.amountOriginalCents,
-    balanceRemainingCents: normalized.amountOriginalCents,
-    physicalCardFeeCents: pricing.physicalCardFeeCents,
-    currency: normalized.currency,
-    status: 'pending_payment',
-    buyerName: normalized.buyerName,
-    buyerEmail: normalized.buyerEmail,
-    recipientName: normalized.recipientName,
-    recipientEmail: normalized.recipientEmail,
-    message: normalized.message,
-    deliveryOption: normalized.deliveryOption,
-    deliveryMode: normalized.deliveryMode,
-    cardOccasion: normalized.cardOccasion,
-    cardTemplateId: normalized.cardTemplateId,
-    cardLocale: normalized.cardLocale,
-    deliveryAddress: normalized.deliveryAddress,
-    deliveryDate: normalized.deliveryDate,
-    purchaseRequestId: normalized.purchaseRequestId,
-    purchaseFingerprint,
-    termsAcceptedAt: normalized.termsAcceptedAt,
-    termsVersion: normalized.termsVersion,
-    attribution: normalized.attribution
-  });
-
-  await appendVoucherEvent({
-    giftVoucherId: voucher._id,
-    type: 'payment_pending',
-    actor: 'guest',
-    note: 'payment intent requested',
-    metadata: {
-      purchaseRequestId: normalized.purchaseRequestId,
-      purchaseFingerprint
-    }
-  });
-
-  try {
-    const paymentIntent = await stripeClient.paymentIntents.create({
-      amount: pricing.totalDueCents,
-      currency: 'eur',
-      automatic_payment_methods: { enabled: true },
-      metadata: buildStripeMetadata({
-        voucher,
-        purchaseRequestId: normalized.purchaseRequestId,
-        attribution: normalized.attribution,
-        pricing
-      })
-    });
-
-    await GiftVoucher.updateOne(
-      { _id: voucher._id, status: 'pending_payment' },
-      {
-        $set: {
-          stripePaymentIntentId: String(paymentIntent.id)
-        }
-      }
-    );
-
-    return {
-      ok: true,
-      idempotentReplay: false,
-      purchaseRequestId: normalized.purchaseRequestId,
-      giftVoucherId: String(voucher._id),
-      stripePaymentIntentId: String(paymentIntent.id),
-      clientSecret: paymentIntent.client_secret || null
-    };
-  } catch (error) {
-    await GiftVoucher.updateOne(
-      { _id: voucher._id, status: 'pending_payment' },
-      { $set: { status: 'voided' } }
-    );
+  if (reservationCreated) {
     await appendVoucherEvent({
       giftVoucherId: voucher._id,
-      type: 'voided',
-      actor: 'system',
-      note: 'payment intent initialization failed',
+      type: 'payment_pending',
+      actor: 'guest',
+      note: 'payment intent requested',
       metadata: {
         purchaseRequestId: normalized.purchaseRequestId,
-        reasonCode: 'PAYMENT_INTENT_INIT_FAILED'
+        purchaseFingerprint
       }
     });
+  }
+
+  if (voucher.stripePaymentIntentId) {
+    const existingPi = await stripeClient.paymentIntents.retrieve(voucher.stripePaymentIntentId);
+    return {
+      ok: true,
+      idempotentReplay: true,
+      purchaseRequestId: normalized.purchaseRequestId,
+      giftVoucherId: String(voucher._id),
+      stripePaymentIntentId: String(voucher.stripePaymentIntentId),
+      clientSecret: existingPi.client_secret || null
+    };
+  }
+
+  const stripeParams = {
+    amount: pricing.totalDueCents,
+    currency: 'eur',
+    automatic_payment_methods: { enabled: true },
+    metadata: buildStripeMetadata({
+      voucher,
+      purchaseRequestId: normalized.purchaseRequestId,
+      attribution: normalized.attribution,
+      pricing
+    })
+  };
+  let paymentIntent;
+  try {
+    const idempotencyKey = buildStripeIdempotencyKey(normalized.purchaseRequestId);
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        paymentIntent = await stripeClient.paymentIntents.create(stripeParams, { idempotencyKey });
+        break;
+      } catch (error) {
+        if (!isStripeIdempotencyInProgress(error) || attempt >= 4) throw error;
+        await wait(50 * (2 ** attempt));
+      }
+    }
+
+    const linkage = await GiftVoucher.updateOne(
+      { _id: voucher._id, status: 'pending_payment', purchaseFingerprint },
+      { $set: { stripePaymentIntentId: String(paymentIntent.id) } }
+    );
+    if (linkage.matchedCount !== 1) {
+      const linkedVoucher = await GiftVoucher.findById(voucher._id).lean();
+      if (linkedVoucher?.stripePaymentIntentId !== String(paymentIntent.id)) {
+        throw new Error('PaymentIntent could not be linked to its reserved voucher');
+      }
+    }
+  } catch (error) {
     const err = new Error('Unable to initialize payment');
     err.code = 'PAYMENT_INTENT_INIT_FAILED';
+    err.cause = error;
     throw err;
   }
+
+  return {
+    ok: true,
+    idempotentReplay: !reservationCreated,
+    purchaseRequestId: normalized.purchaseRequestId,
+    giftVoucherId: String(voucher._id),
+    stripePaymentIntentId: String(paymentIntent.id),
+    clientSecret: paymentIntent.client_secret || null
+  };
 }
 
 function resolvePaymentIntentFromEvent(event) {
@@ -791,6 +853,9 @@ module.exports = {
   PHYSICAL_CARD_FEE_CENTS,
   setStripeClientForTesting,
   computeGiftVoucherPricing,
+  __resetPurchaseRequestIndexCheckForTests: () => {
+    purchaseRequestIndexReady = null;
+  },
   quoteGiftVoucherPurchase,
   createGiftVoucherPaymentIntent,
   activatePaidVoucherFromStripeEvent,

@@ -30,6 +30,27 @@
 
 ## Deploy runbook (customization track)
 
+### V2 builder input contract
+
+The website builder keeps the existing EUR 15 minimum and accepts custom amounts
+with up to two decimal places, converted to exact integer cents without rounding
+sub-cent input. There is no added EUR 10,000 business cap. Unsafe integer amounts
+are rejected to avoid JavaScript precision loss; provider limits remain
+server/provider-authoritative.
+
+Client validation enforces the API's name (120), message (250), address-line
+(200), city/country (120), and postal-code (40) limits, plus email syntax/length.
+Postal recipient email is optional but validated when supplied. Scheduling uses
+the shared Sofia-calendar bounds and also rejects impossible calendar dates.
+The review includes delivery, validity, scheduled date where relevant, and a
+separate physical-card fee: EUR 50 credit plus EUR 5 fee is EUR 55 payable.
+Neither fee nor payable total is trusted from the client purchase payload.
+
+The V2 website preview remains separate from email/print rendering and shares
+stored customization IDs and display-data helpers. Frontend regression coverage
+does not verify provider payments, delivery workers, or backend concurrent
+purchase idempotency; those remain separate release gates.
+
 Deploy in order. Roll back per component without requiring a full revert.
 
 | Step | Component | Action |
