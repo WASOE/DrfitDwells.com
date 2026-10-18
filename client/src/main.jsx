@@ -24,6 +24,7 @@ import { SeasonProvider } from './context/SeasonContext.jsx';
 import './i18n/i18nCore.js';
 import { initWebVitals } from './tracking/webVitals.js';
 import { registerAppServiceWorker } from './utils/appReleaseUpdate.js';
+import { prepareClientRoot } from './utils/prepareClientRoot.js';
 
 const scheduleWebVitals = () => initWebVitals();
 if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
@@ -54,7 +55,7 @@ if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
   window.setTimeout(scheduleDeferredCss, 0);
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(
+ReactDOM.createRoot(prepareClientRoot(document.getElementById('root'))).render(
   <React.StrictMode>
     <ErrorBoundary>
       <HelmetProvider>

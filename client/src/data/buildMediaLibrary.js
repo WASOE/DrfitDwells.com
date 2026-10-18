@@ -1,14 +1,16 @@
 /**
  * Build configurator media — sourced from live booking listings on driftdwells.com
  * (GET /api/availability, Lux Cabin + A-Frame cover + gallery). Verified 2026-06-07.
+ * Seven original JPEGs are preserved under public/media/build-originals;
+ * buildOriginalAssets.json records their source paths and SHA-256 fingerprints.
  */
 
 /** Live search listing covers (isCover / imageUrl from production API). */
 export const BUILD_BOOKING_COVER = {
   'lux-cabin':
-    '/uploads/cabins/69b2ff947f141a71ffa7c492/original/1776454430446-v6zze6vlats-WhatsApp-Image-2026-04-17-at-9.28.21-PM-(4).jpeg',
+    '/media/build-originals/1776454430446-v6zze6vlats-WhatsApp-Image-2026-04-17-at-9.28.21-PM-(4).jpeg',
   aframe:
-    '/uploads/cabins/69d096b6bd7fb6fc0d3c2a34/original/1775292060909-z9e6zesu9d-WhatsApp-Image-2025-12-03-at-4.36.15-PM-(1).jpeg',
+    '/media/build-originals/1775292060909-z9e6zesu9d-WhatsApp-Image-2025-12-03-at-4.36.15-PM-(1).jpeg',
 };
 
 const urlMediaEntry = (id, label, view, url) => ({
@@ -35,25 +37,25 @@ export const BUILD_CABIN_MEDIA = {
     'exterior-roof',
     'Exterior',
     'exterior',
-    '/uploads/cabins/69b2ff947f141a71ffa7c492/original/1776456061533-nviyrjuw9y9-WhatsApp-Image-2026-04-17-at-10.00.43-PM.jpeg'
+    '/media/build-originals/1776456061533-nviyrjuw9y9-WhatsApp-Image-2026-04-17-at-10.00.43-PM.jpeg'
   ),
   'exterior-angle': urlMediaEntry(
     'exterior-angle',
     'Exterior angle',
     'exterior',
-    '/uploads/cabins/69b2ff947f141a71ffa7c492/original/1776455431687-8g8rfzxhh3o-WhatsApp-Image-2026-04-17-at-9.49.48-PM.jpeg'
+    '/media/build-originals/1776455431687-8g8rfzxhh3o-WhatsApp-Image-2026-04-17-at-9.49.48-PM.jpeg'
   ),
   'interior-main': urlMediaEntry(
     'interior-main',
     'Interior overview',
     'interior',
-    '/uploads/cabins/69b2ff947f141a71ffa7c492/original/1776454278977-jqgp4hfx5q-WhatsApp-Image-2026-04-17-at-9.28.21-PM-(2).jpeg'
+    '/media/build-originals/1776454278977-jqgp4hfx5q-WhatsApp-Image-2026-04-17-at-9.28.21-PM-(2).jpeg'
   ),
   'interior-planks': urlMediaEntry(
     'interior-planks',
     'Interior finish',
     'interior',
-    '/uploads/cabins/69b2ff947f141a71ffa7c492/original/1776454319344-gfmyvd7x1c-WhatsApp-Image-2026-04-17-at-9.28.20-PM-(1).jpeg'
+    '/media/build-originals/1776454319344-gfmyvd7x1c-WhatsApp-Image-2026-04-17-at-9.28.20-PM-(1).jpeg'
   ),
 };
 
@@ -69,7 +71,7 @@ export const BUILD_AFRAME_MEDIA = {
     'aframe-exterior',
     'A-Frame exterior',
     'exterior',
-    '/uploads/cabins/69d096b6bd7fb6fc0d3c2a34/original/1776456229922-aiq1svhdgre-WhatsApp-Image-2026-04-13-at-5.50.08-PM.jpeg'
+    '/media/build-originals/1776456229922-aiq1svhdgre-WhatsApp-Image-2026-04-13-at-5.50.08-PM.jpeg'
   ),
   'aframe-interior': urlMediaEntry(
     'aframe-interior',

@@ -60,7 +60,7 @@ export function AFrameSplitPaymentPreviewNote({ preview, className = '' }) {
   );
 }
 
-const AFrameDetails = ({ staySlug: staySlugProp }) => {
+const AFrameDetails = ({ staySlug: staySlugProp, loadingFallback }) => {
   const staySlug = staySlugProp || MULTI_UNIT_SLUG;
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -529,6 +529,7 @@ const AFrameDetails = ({ staySlug: staySlugProp }) => {
 
   // Early returns
   if (loading) {
+    if (loadingFallback) return loadingFallback;
     return (
       <div className="min-h-screen bg-white">
         <div className="cabin-container py-20">

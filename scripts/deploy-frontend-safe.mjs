@@ -30,6 +30,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import prerenderContract from '../client/scripts/prerender-contract.cjs';
 import {
   buildRemoteRsyncPhases,
   buildRsyncCommand,
@@ -141,6 +142,12 @@ if (!fs.existsSync(path.join(distDir, 'index.html'))) {
 }
 if (!fs.existsSync(assetsDir)) {
   fail('client/dist/assets missing.');
+}
+try {
+  prerenderContract.assertProductionArtifacts(distDir);
+  prerenderContract.validateArtifacts(distDir);
+} catch (error) {
+  fail(`Required prerender output is invalid: ${error.message}`);
 }
 
 // ---------------------------------------------------------------------------

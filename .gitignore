@@ -8,6 +8,7 @@ dist/
 /build/
 client/dist/
 client/build/
+client/.seo-verification/
 *.log
 
 # Environment variables
@@ -56,4 +57,3 @@ training-data/chat_feedback.jsonl
 # Misc
 .cache/
 .temp/
-

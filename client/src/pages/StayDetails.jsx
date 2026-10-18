@@ -4,6 +4,8 @@ import { stayAPI } from '../services/api';
 import AFrameDetails from './AFrameDetails';
 import CabinDetails from './CabinDetails';
 import NotFoundPage from './NotFoundPage';
+import PublicStayIntro, { getPublicStayEntry } from '../components/PublicStayIntro';
+import { useSiteLanguage } from '../hooks/useSiteLanguage';
 
 const PageLoader = () => (
   <div className="min-h-screen flex items-center justify-center">
@@ -17,8 +19,11 @@ const PageLoader = () => (
  */
 const StayDetails = () => {
   const { slug } = useParams();
+  const { language } = useSiteLanguage();
   const [resolved, setResolved] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -26,6 +31,7 @@ const StayDetails = () => {
     const load = async () => {
       setLoading(true);
       setResolved(null);
+      setLoadError(false);
       try {
         const response = await stayAPI.resolve(slug);
         if (cancelled) return;
@@ -34,8 +40,12 @@ const StayDetails = () => {
         } else {
           setResolved(null);
         }
-      } catch {
-        if (!cancelled) setResolved(null);
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Unable to load live stay details:', error);
+          setLoadError(true);
+          setResolved(null);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -50,16 +60,27 @@ const StayDetails = () => {
     return () => {
       cancelled = true;
     };
-  }, [slug]);
+  }, [slug, attempt]);
 
-  if (loading) return <PageLoader />;
+  const intro = getPublicStayEntry(slug) ? <PublicStayIntro slug={slug} /> : <PageLoader />;
+  if (loading) return intro;
+  if (loadError && getPublicStayEntry(slug)) {
+    return (
+      <PublicStayIntro slug={slug}>
+        <p role="alert">{language === 'bg' ? 'Неуспешно зареждане на наличността.' : 'Live availability could not be loaded.'}</p>
+        <button type="button" onClick={() => setAttempt((value) => value + 1)}>
+          {language === 'bg' ? 'Опитайте отново' : 'Try again'}
+        </button>
+      </PublicStayIntro>
+    );
+  }
   if (!resolved?.kind) return <NotFoundPage />;
 
   if (resolved.kind === 'cabinType') {
-    return <AFrameDetails staySlug={slug} />;
+    return <AFrameDetails staySlug={slug} loadingFallback={intro} />;
   }
 
-  return <CabinDetails cabinId={resolved.cabinId} staySlug={slug} />;
+  return <CabinDetails cabinId={resolved.cabinId} staySlug={slug} loadingFallback={intro} />;
 };
 
 export default StayDetails;
