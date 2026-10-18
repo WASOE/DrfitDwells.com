@@ -1,50 +1,35 @@
-/** Festival /enduro landing media under client/public/media/enduro/ */
+/** Festival /enduro landing media. The hero uses an uploaded site-context photograph. */
 
-const HERO_WIDTHS = [480, 720, 960, 1200, 1920];
-const GALLERY_WIDTHS = [720, 1200];
-
-function buildSrcSet(id, ext, widths) {
-  return widths.map((w) => `/media/enduro/${id}-${w}w.${ext} ${w}w`).join(', ');
+function uploadedGalleryItem(id, src, width, height) {
+  return { id, width, height, avifSrcSet: '', webpSrcSet: '', fallbackSrc: src };
 }
 
-function galleryItem(id, width = 1200, height = 1600) {
-  return {
-    id,
-    width,
-    height,
-    avifSrcSet: buildSrcSet(id, 'avif', GALLERY_WIDTHS),
-    webpSrcSet: buildSrcSet(id, 'webp', GALLERY_WIDTHS),
-    fallbackSrc: `/media/enduro/${id}.jpg`
-  };
-}
-
-export const ENDURO_HERO_LCP_PRELOAD = '/media/enduro/hero-aerial-960w.avif';
+export const ENDURO_HERO_LCP_PRELOAD = '/media/seo/aframe-row-sunset.png';
 
 export function getEnduroHeroResponsive() {
   return {
-    slug: 'hero-aerial',
-    avifSrcSet: buildSrcSet('hero-aerial', 'avif', HERO_WIDTHS),
-    webpSrcSet: buildSrcSet('hero-aerial', 'webp', HERO_WIDTHS),
-    fallbackSrc: '/media/enduro/hero-aerial.jpg',
-    width: 1920,
-    height: 1080
+    slug: 'aframe-row-sunset',
+    avifSrcSet: '',
+    webpSrcSet: '',
+    fallbackSrc: '/media/seo/aframe-row-sunset.png',
+    width: 1536,
+    height: 1154
   };
 }
 
 /**
- * Valley gallery sequence for /enduro.
- * Lux Cabin + Stone House use the listing cover stills provided for the page.
+ * Valley gallery sequence for /enduro, using only the uploaded photographs.
  * Captions live in i18n `enduro.gallery.items.*`.
  */
 export const ENDURO_GALLERY = Object.freeze([
-  galleryItem('aframes-sunset'),
-  galleryItem('swing-couple'),
-  galleryItem('firepit-night', 1200, 1500),
-  galleryItem('lux-cabin-cover', 1200, 1500),
-  galleryItem('stone-house-cover', 1200, 1500),
-  galleryItem('swing-solo'),
-  galleryItem('firepit-sunset'),
-  galleryItem('wildflowers-meadow'),
-  galleryItem('bathroom-mirror'),
-  galleryItem('morning-flowers')
+  uploadedGalleryItem('aframes-sunset', '/media/seo/aframe-site-wide.jpeg', 2000, 1493),
+  uploadedGalleryItem('swing-couple', '/media/seo/aframe-row-sunset.png', 1536, 1154),
+  uploadedGalleryItem('firepit-night', '/media/seo/aframe-winter-site.jpeg', 941, 1672),
+  uploadedGalleryItem('lux-cabin-cover', '/media/seo/aframe-field-sunset.jpeg', 1334, 2000),
+  uploadedGalleryItem('stone-house-cover', '/media/seo/stone-house-sunset-site.jpeg', 1334, 2000),
+  uploadedGalleryItem('swing-solo', '/media/seo/aframe-bedroom-winter.jpeg', 948, 1660),
+  uploadedGalleryItem('firepit-sunset', '/media/seo/stone-house-winter-wide.jpeg', 2000, 1500),
+  uploadedGalleryItem('wildflowers-meadow', '/media/seo/aframe-site-wide.jpeg', 2000, 1493),
+  uploadedGalleryItem('bathroom-mirror', '/media/seo/aframe-bedroom-winter.jpeg', 948, 1660),
+  uploadedGalleryItem('morning-flowers', '/media/seo/aframe-row-sunset.png', 1536, 1154)
 ]);

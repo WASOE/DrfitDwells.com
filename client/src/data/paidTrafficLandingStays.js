@@ -1,6 +1,6 @@
 /**
- * Paid-traffic landing: routing + emergency fallbacks only. Copy lives in i18n (`seo` → paidStaysBulgaria).
- * Cover images resolve from listing API via `listingSlug`.
+ * Paid-traffic landing: routing plus the uploaded-photo gallery used by the
+ * AI Search page. Copy lives in i18n (`seo` → paidStaysBulgaria).
  */
 
 export const PAID_TRAFFIC_STAY_META = [
@@ -8,28 +8,44 @@ export const PAID_TRAFFIC_STAY_META = [
     id: 'the-cabin',
     listingSlug: 'the-cabin',
     route: '/stays/the-cabin',
-    fallbackImage: '/uploads/Content%20website/drift-dwells-bulgaria-bucephalus-suite.avif',
+    fallbackImage: '/media/seo/aframe-bedroom-winter.jpeg',
+    galleryImages: [
+      { url: '/media/seo/aframe-bedroom-winter.jpeg', alt: 'A-frame bedroom' },
+      { url: '/media/seo/aframe-winter-site.jpeg', alt: 'A-frame winter setting' }
+    ],
     showDetailsLink: true
   },
   {
     id: 'valley-a-frame',
     listingSlug: 'a-frame',
     route: '/stays/a-frame',
-    fallbackImage: '/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.24%20AM%20(4).jpeg',
+    fallbackImage: '/media/seo/aframe-row-sunset.png',
+    galleryImages: [
+      { url: '/media/seo/aframe-row-sunset.png', alt: 'A-frame cabins in the valley' },
+      { url: '/media/seo/aframe-site-wide.jpeg', alt: 'A-frame site' }
+    ],
     showDetailsLink: false
   },
   {
     id: 'valley-lux-cabin',
     listingSlug: 'lux-cabin',
     route: '/stays/lux-cabin',
-    fallbackImage: '/uploads/The%20Valley/Lux-cabin-exterior-watermark-remover-20260113071503.jpg',
+    fallbackImage: '/media/seo/aframe-field-sunset.jpeg',
+    galleryImages: [
+      { url: '/media/seo/aframe-field-sunset.jpeg', alt: 'A-frame in the field' },
+      { url: '/media/seo/stone-house-sunset-site.jpeg', alt: 'Stone House and valley site' }
+    ],
     showDetailsLink: true
   },
   {
     id: 'valley-stone-house',
     listingSlug: 'stone-house',
     route: '/stays/stone-house',
-    fallbackImage: '/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.24%20AM.jpeg',
+    fallbackImage: '/media/seo/stone-house-winter-wide.jpeg',
+    galleryImages: [
+      { url: '/media/seo/stone-house-winter-wide.jpeg', alt: 'Stone House in winter' },
+      { url: '/media/seo/stone-house-sunset-site.jpeg', alt: 'Stone House and A-frames' }
+    ],
     showDetailsLink: true
   }
 ];

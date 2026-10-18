@@ -19,7 +19,7 @@ const BanskoRemoteWorkRetreat = () => {
         title={t('bansko.metaTitle')}
         description={t('bansko.metaDescription')}
         canonicalPath="/bansko-remote-work-retreat"
-        ogImage="/uploads/The Valley/WhatsApp Image 2025-10-17 at 10.20.23 AM.jpeg"
+        ogImage="/media/seo/aframe-bedroom-winter.jpeg"
         hreflangAlternates={buildHreflangAlternates('/bansko-remote-work-retreat')}
       />
       <div className="seo-landing">
