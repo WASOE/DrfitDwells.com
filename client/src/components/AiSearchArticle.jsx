@@ -47,6 +47,40 @@ export default function AiSearchArticle({ kind, children }) {
   const homePath = language === 'bg' ? '/bg/' : '/';
   const canonical = `${origin}${localizePath(basePath, language)}/`;
   const photos = editorialPhotos[kind];
+  const firstSection = copy.blocks.findIndex((block) => block.type === 'h2');
+  const introduction = copy.blocks.slice(0, firstSection);
+  const heroCta = introduction.find((block) => block.type === 'cta');
+  const introText = introduction[0].text;
+  const sentenceEnd = introText.indexOf('. ');
+  const heroIntro = sentenceEnd < 0 ? introText : introText.slice(0, sentenceEnd + 1);
+  const introContinuation = introText.slice(heroIntro.length).trim();
+  const sections = [];
+  for (const block of copy.blocks.slice(firstSection)) {
+    if (block.type === 'h2') sections.push({ heading: block.text, blocks: [] });
+    else sections[sections.length - 1].blocks.push(block);
+  }
+  const labels = language === 'bg' ? {
+    offGrid: 'Изберете своето място', detox: 'Разгледайте The Cabin', corporate: 'Разгледайте цялата The Valley',
+    contents: 'В този пътеводител', contact: 'Свържете се с нас'
+  } : {
+    offGrid: 'Find your stay', detox: 'Explore The Cabin', corporate: 'Explore the whole Valley',
+    contents: 'In this guide', contact: 'Get in touch'
+  };
+  const renderBlock = (block, index) => {
+    if (block.type === 'h3') return <h3 key={index}><InlineCopy text={block.text} language={language} /></h3>;
+    if (block.type === 'list') return <ul key={index}>{block.items.map((item) => <li key={item}><InlineCopy text={item} language={language} /></li>)}</ul>;
+    if (block.type === 'cta') return <div key={index} className="ai-search-actions"><EditorialCta text={block.text} language={language} onInquiry={openModal} /></div>;
+    return <p key={index}><InlineCopy text={block.text} language={language} /></p>;
+  };
+  const photoFigure = (photo, hero = false) => (
+    <figure key={photo.src} className={`ai-search-photos ai-search-photo${hero ? ' ai-search-hero-photo' : ''}`}>
+      <img src={photo.src} alt={photo[language]} width="1200" height={photo.height}
+        srcSet={`${photo.src.replace('-1200w.', '-720w.')} 720w, ${photo.src} 1200w`}
+        sizes={hero ? '(min-width: 1000px) 1200px, 100vw' : '(min-width: 1200px) 1120px, 100vw'}
+        loading={hero ? 'eager' : 'lazy'} decoding="async" />
+      <figcaption>{photo[language]}</figcaption>
+    </figure>
+  );
   const entities = kind === 'corporate' ? ['valley', 'retreats/the-valley']
     : kind === 'detox' ? ['cabin'] : ['cabin', 'valley'];
   const jsonLd = [
@@ -73,7 +107,7 @@ export default function AiSearchArticle({ kind, children }) {
     }
   ];
   return (
-    <article className="ai-search">
+    <article className="ai-search" data-kind={kind}>
       <Seo title={copy.title} description={copy.description} ogTitle={copy.socialTitle} canonicalPath={basePath} jsonLd={jsonLd} />
       <div className="ai-search-container">
         <nav aria-label={language === 'bg' ? 'Навигационна пътека' : 'Breadcrumb'}>
@@ -82,33 +116,43 @@ export default function AiSearchArticle({ kind, children }) {
             <li aria-current="page">{copy.heading}</li>
           </ol>
         </nav>
-        <h1>{copy.heading}</h1>
-        {copy.blocks.map((block, index) => (
-          <Fragment key={index}>
-            {block.type === 'h2' ? <h2><InlineCopy text={block.text} language={language} /></h2>
-              : block.type === 'h3' ? <h3><InlineCopy text={block.text} language={language} /></h3>
-                : block.type === 'list' ? <ul>{block.items.map((item) => <li key={item}><InlineCopy text={item} language={language} /></li>)}</ul>
-                  : block.type === 'cta' ? <div className="ai-search-actions"><EditorialCta text={block.text} language={language} onInquiry={openModal} /></div>
-                    : <p><InlineCopy text={block.text} language={language} /></p>}
-            {index === 1 && (
-              <>
-                <div className="ai-search-photos">
-                  {photos.map((photo, photoIndex) => (
-                    <figure key={photo.src}>
-                      <img src={photo.src} alt={photo[language]} width="1200" height={photo.height}
-                        srcSet={`${photo.src.replace('-1200w.', '-720w.')} 720w, ${photo.src} 1200w`}
-                        sizes="(min-width: 768px) 33vw, 100vw"
-                        loading={photoIndex === 0 ? 'eager' : 'lazy'} decoding="async" />
-                      <figcaption>{photo[language]}</figcaption>
-                    </figure>
-                  ))}
+        <div className="ai-search-hero">
+          <div className="ai-search-hero-copy">
+            <span className="ai-search-eyebrow">Drift &amp; Dwells · {kind === 'corporate' ? 'The Valley' : language === 'bg' ? 'България' : 'Bulgaria'}</span>
+            <h1>{copy.heading}</h1>
+            <p className="ai-search-hero-intro"><InlineCopy text={heroIntro} language={language} /></p>
+            <div className="ai-search-actions">
+              {heroCta ? <EditorialCta text={heroCta.text} language={language} onInquiry={openModal} /> : kind === 'offGrid'
+                ? <a className="ai-search-cta" href="#stays">{labels.offGrid}</a>
+                : <Link className="ai-search-cta" to={`${localizePath(kind === 'detox' ? '/cabin' : '/retreats/the-valley', language)}/`}>{labels[kind]}</Link>}
+            </div>
+          </div>
+          {photoFigure(photos[0], true)}
+        </div>
+        <div className="ai-search-summary">
+          {introContinuation && <p className="ai-search-intro-continuation"><InlineCopy text={introContinuation} language={language} /></p>}
+          {introduction.slice(1).filter((block) => block !== heroCta).map(renderBlock)}
+        </div>
+        {children}
+        <nav className="ai-search-contents" aria-label={labels.contents}>
+          <span className="ai-search-eyebrow">{labels.contents}</span>
+          <ol>{sections.map((section, index) => <li key={section.heading}><a href={`#guide-${index + 1}`}>{section.heading}</a></li>)}</ol>
+        </nav>
+        <div className="ai-search-editorial">
+          {sections.map((section, index) => (
+            <Fragment key={section.heading}>
+              <section className="ai-search-section" id={`guide-${index + 1}`}>
+                <div className="ai-search-section-heading">
+                  <span className="ai-search-eyebrow" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
+                  <h2><InlineCopy text={section.heading} language={language} /></h2>
                 </div>
-                {children}
-              </>
-            )}
-          </Fragment>
-        ))}
-        <p><a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a></p>
+                <div className="ai-search-prose">{section.blocks.map(renderBlock)}</div>
+              </section>
+              {index === 1 && <div className="ai-search-interlude">{photos.slice(1).map((photo) => photoFigure(photo))}</div>}
+            </Fragment>
+          ))}
+        </div>
+        <div className="ai-search-contact"><span className="ai-search-eyebrow">{labels.contact}</span><a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a></div>
       </div>
     </article>
   );

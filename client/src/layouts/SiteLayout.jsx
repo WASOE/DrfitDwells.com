@@ -18,6 +18,7 @@ import { trackPageViewForPath } from "../tracking/funnel";
 
 /** Routes where the first section is a full-bleed hero (content intentionally under the nav). No top padding. */
 const HERO_PATHS = ['/', '/cabin', '/valley', '/winter-village'];
+const EDITORIAL_PATHS = ['/off-grid-cabins-bulgaria', '/digital-detox-bulgaria', '/retreat-venue-bulgaria'];
 
 /** Festival/paid landings: keep consent, but don't let it steal first-paint LCP on 3G. */
 function PaidTrafficConsentBanner() {
@@ -54,6 +55,8 @@ export default function SiteLayout() {
 
   const basePath = stripLocaleFromPath(location.pathname);
   const isPaidTrafficLanding = isPaidTrafficLandingPath(location.pathname);
+  const isEditorialLanding = EDITORIAL_PATHS.includes(basePath);
+  const hideFloatingChrome = isPaidTrafficLanding || isEditorialLanding;
   const isHome = basePath === '/';
   const isSearchPage = basePath === '/search';
   const deferIdleChrome = isHome || isSearchPage;
@@ -63,7 +66,7 @@ export default function SiteLayout() {
   const isAppPage = basePath === '/build';
 
   return (
-    <div className="relative overflow-x-hidden">
+    <div className={`relative overflow-x-hidden${isEditorialLanding ? ' ai-search-layout' : ''}`}>
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[100] focus:bg-white focus:px-4 focus:py-2 focus:rounded focus:shadow-lg focus:text-sm focus:font-medium"
@@ -103,10 +106,10 @@ export default function SiteLayout() {
           </>
         ) : (
           <>
-            {!isPaidTrafficLanding && <AudioPlayer />}
+            {!hideFloatingChrome && <AudioPlayer />}
             <BookingModalLazy />
-            {!isPaidTrafficLanding && <AnnouncementBar />}
-            {!isPaidTrafficLanding && <ChatWidgetLazy />}
+            {!hideFloatingChrome && <AnnouncementBar />}
+            {!hideFloatingChrome && <ChatWidgetLazy />}
             {isPaidTrafficLanding ? <PaidTrafficConsentBanner /> : <ConsentBanner />}
           </>
         )}

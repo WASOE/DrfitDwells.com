@@ -22,6 +22,15 @@ describe('approved AI Search copy integration', () => {
         );
         expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
         expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(copy.heading);
+        expect(container.querySelectorAll('.ai-search-hero')).toHaveLength(1);
+        expect(container.querySelectorAll('.ai-search-hero img')).toHaveLength(1);
+        expect(container.querySelector('.ai-search-hero .ai-search-cta')).not.toBeNull();
+        expect([...container.querySelectorAll('.ai-search-hero-intro, .ai-search-intro-continuation')].map((node) => node.textContent).join(' ')).toBe(copy.blocks[0].text);
+        expect(container.querySelectorAll('.ai-search-section')).toHaveLength(copy.blocks.filter((block) => block.type === 'h2').length);
+        expect(container.querySelectorAll('.ai-search-contents a')).toHaveLength(copy.blocks.filter((block) => block.type === 'h2').length);
+        for (const link of container.querySelectorAll('.ai-search-contents a')) {
+          expect(container.querySelector(link.getAttribute('href'))).not.toBeNull();
+        }
         expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(copy.blocks.filter((block) => block.type === 'h2').length);
         expect(container.textContent).not.toMatch(/CONTENT SOURCE|Internal link:|Вътрешна връзка:|existing contact form|съществуващата форма|CTA:/);
         const expectedPhotoCount = editorialPhotos[kind].length;

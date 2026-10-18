@@ -67,12 +67,12 @@ export const editorialPaths = {
 
 export const editorialPhotos = {
   offGrid: [
-    { src: '/media/hero/cabin-summer-1200w.webp', height: 675, en: 'The Cabin among the trees in summer.', bg: 'The Cabin сред дърветата през лятото.' },
+    { src: '/media/ai-search/cabin-forest-1200w.webp', height: 675, en: 'The Cabin at the edge of the forest near Bachevo.', bg: 'The Cabin на края на гората край Бачево.' },
     { src: '/media/enduro/hero-aerial-1200w.webp', height: 675, en: 'The Valley and its mountain landscape.', bg: 'The Valley и околният планински пейзаж.' }
   ],
   detox: [
-    { src: '/media/hero/cabin-summer-1200w.webp', height: 675, en: 'The Cabin in its forest setting.', bg: 'The Cabin сред гората.' },
-    { src: '/media/winter/cabin-fire-interior-1200w.webp', height: 675, en: 'The Cabin interior and wood-burning fire.', bg: 'Интериорът на The Cabin с огън на дърва.' }
+    { src: '/media/ai-search/cabin-stove-1200w.webp', height: 636, en: 'The Cabin interior and its wood-burning stove.', bg: 'Интериорът на The Cabin с печка на дърва.' },
+    { src: '/media/ai-search/cabin-forest-1200w.webp', height: 675, en: 'The Cabin at the edge of the forest near Bachevo.', bg: 'The Cabin на края на гората край Бачево.' }
   ],
   corporate: [
     { src: '/media/enduro/hero-aerial-1200w.webp', height: 675, en: 'The Valley buildings in the mountain landscape.', bg: 'Сградите на The Valley сред планинския пейзаж.' },
