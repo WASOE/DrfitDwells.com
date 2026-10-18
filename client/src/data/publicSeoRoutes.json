@@ -1,0 +1,20 @@
+[
+  { "path": "/", "locales": ["en", "bg"], "headings": { "en": "Dwell in the Silence.", "bg": "Обитавай тишината." } },
+  { "path": "/about", "locales": ["en"], "headings": { "en": "The story of Drift & Dwells" } },
+  { "path": "/cabin", "locales": ["en", "bg"], "headings": { "en": "The Cabin", "bg": "Къщата" } },
+  { "path": "/cabin/faq", "locales": ["en"], "headings": { "en": "The Cabin · Full FAQ" } },
+  { "path": "/valley", "locales": ["en", "bg"], "headings": { "en": "The Valley", "bg": "Долината" }, "visibleHeadings": { "en": ["One valley, three ways to stay"], "bg": ["Една долина, три начина да престояваш"] } },
+  { "path": "/retreats/the-valley", "locales": ["en", "bg"], "headings": { "en": "The whole Valley, exclusively yours", "bg": "Цялата Долина, само за вашата група" } },
+  { "path": "/gift-vouchers", "locales": ["en", "bg"], "headings": { "en": "Give themsomewhereelse.", "bg": "Подари имнякъдедругаде." } },
+  { "path": "/off-grid-cabins-bulgaria", "locales": ["en", "bg"], "headings": { "en": "Off-Grid Cabins in Bulgaria to Truly Unplug", "bg": "Еко къщи в България за истинско разкачане" } },
+  { "path": "/rhodopes-cabin-retreat", "locales": ["en", "bg"], "headings": { "en": "Cabin Retreat in the Rhodopes", "bg": "Къща в Родопите" } },
+  { "path": "/bansko-remote-work-retreat", "locales": ["en", "bg"], "headings": { "en": "Cabin Near Bansko", "bg": "Къща близо до Банско" } },
+  { "path": "/retreat-venue-bulgaria", "locales": ["en", "bg"], "headings": { "en": "Retreat Venue in Bulgaria", "bg": "Място за ритрит в България" } },
+  { "path": "/off-grid-stays-bulgaria", "locales": ["en", "bg"], "headings": { "en": "Off-grid stays in Bulgaria", "bg": "Оф-грид престои в България" } },
+  { "path": "/enduro", "locales": ["en", "bg"], "headings": { "en": "THEVALLEY", "bg": "THEVALLEY" } },
+  { "path": "/winter-village", "locales": ["en", "bg"], "headings": { "en": "A winter village above the clouds.", "bg": "Зимно селище над облаците." } },
+  { "path": "/stays/the-cabin", "locales": ["en", "bg"], "stayId": "the-cabin", "headings": { "en": "The Cabin", "bg": "The Cabin" } },
+  { "path": "/stays/a-frame", "locales": ["en", "bg"], "stayId": "valley-a-frame", "headings": { "en": "The Valley A-Frame", "bg": "The Valley A-Frame" } },
+  { "path": "/stays/lux-cabin", "locales": ["en", "bg"], "stayId": "valley-lux-cabin", "headings": { "en": "The Valley Lux Cabin", "bg": "The Valley Lux Cabin" } },
+  { "path": "/stays/stone-house", "locales": ["en", "bg"], "stayId": "valley-stone-house", "headings": { "en": "The Valley Stone House", "bg": "The Valley — Каменна къща" } }
+]

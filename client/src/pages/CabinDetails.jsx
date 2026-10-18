@@ -253,7 +253,7 @@ export function resolveCabinDetailsLodgingPresentation({
   };
 }
 
-const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
+const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp, loadingFallback }) => {
   // ===== A) Router & Context hooks (always first) =====
   const { id: routeId } = useParams();
   const id = cabinIdProp || routeId;
@@ -1267,6 +1267,7 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp }) => {
 
   // ===== H) Early returns (ONLY after ALL hooks are declared) =====
   if (loading) {
+    if (loadingFallback) return loadingFallback;
     return (
       <div className="min-h-screen bg-white">
         <div className="cabin-container py-20">

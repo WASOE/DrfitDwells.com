@@ -252,7 +252,7 @@ export function buildRemoteRsyncPhases({ distDir, remoteRoot }) {
       source: `${dist}/`,
       destination: `${remote}/`,
       delete: false,
-      excludes: ['assets', 'index.html', 'sw.js', 'uploads']
+      excludes: ['/assets', '/index.html', '/sw.js', '/uploads']
     },
     {
       name: 'shell-last',

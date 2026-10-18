@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import prerenderContract from '../client/scripts/prerender-contract.cjs';
 import {
   assertNoProtectedPathsDeleted,
   buildRemoteRsyncPhases,
@@ -18,14 +19,45 @@ import {
 } from './deploy-frontend-safe.lib.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const deployScript = path.join(__dirname, 'deploy-frontend-safe.mjs');
-
-function runCLI(args = [], env = {}) {
-  return spawnSync(
-    process.execPath,
-    [deployScript, ...args],
-    { encoding: 'utf8', env: { ...process.env, ...env } }
-  );
+function runCLI(args = [], env = {}, { invalidRoute, missingRoute, verificationOnly = false, verificationRoute } = {}) {
+  const sandbox = fs.mkdtempSync(path.join(__dirname, '.deploy-cli-test-'));
+  try {
+    for (const relative of [
+      'scripts/deploy-frontend-safe.mjs', 'scripts/deploy-frontend-safe.lib.mjs',
+      'client/scripts/prerender-contract.cjs', 'client/src/data/publicSeoRoutes.json'
+    ]) {
+      const target = path.join(sandbox, relative);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.copyFileSync(path.join(__dirname, '..', relative), target);
+    }
+    fs.symlinkSync(path.join(__dirname, '../client/node_modules'), path.join(sandbox, 'client/node_modules'), 'dir');
+    const dist = makeMockDist(sandbox);
+    for (const route of prerenderContract.ROUTES) {
+      const output = prerenderContract.artifactPath(dist, route);
+      fs.mkdirSync(path.dirname(output), { recursive: true });
+      fs.writeFileSync(output, `<!doctype html><html lang="${route.startsWith('/bg') ? 'bg' : 'en'}">
+        <head><title>Public ${route} | Drift &amp; Dwells</title>
+        <meta name="description" content="Useful public information for this mountain retreat and its accommodation.">
+        <link rel="canonical" href="https://driftdwells.com${route}"></head>
+        <body><div id="root" data-prerender-route="${route}"><main><h1>${prerenderContract.getExpectedHeading(route)}</h1>
+        <p>${'Public accommodation information. '.repeat(10)}</p></main></div></body></html>`);
+    }
+    if (invalidRoute) fs.writeFileSync(prerenderContract.artifactPath(dist, invalidRoute), '<div id="root"></div>');
+    if (missingRoute) fs.unlinkSync(prerenderContract.artifactPath(dist, missingRoute));
+    if (verificationOnly) fs.writeFileSync(path.join(dist, `${prerenderContract.VERIFICATION_MARKER}.json`), '{}');
+    if (verificationRoute) {
+      const file = prerenderContract.artifactPath(dist, verificationRoute);
+      const html = fs.readFileSync(file, 'utf8').replace('</head>', `<meta name="${prerenderContract.VERIFICATION_MARKER}" content="not-for-publication"></head>`);
+      fs.writeFileSync(file, html);
+    }
+    return spawnSync(
+      process.execPath,
+      [path.join(sandbox, 'scripts/deploy-frontend-safe.mjs'), ...args],
+      { encoding: 'utf8', env: { ...process.env, ...env } }
+    );
+  } finally {
+    fs.rmSync(sandbox, { recursive: true });
+  }
 }
 
 /** Extract the trailing JSON summary block from CLI stdout. */
@@ -309,6 +341,38 @@ test('listHashedAssets reads dist/assets', () => {
   assert.deepEqual(listHashedAssets(assetsDir), ['index-abc.js']);
 });
 
+test('nested prerender HTML survives local and remote static publication while root HTML is last', () => {
+  const tmp = fs.mkdtempSync(path.join(__dirname, '.prerender-publish-test-'));
+  try {
+    const dist = makeMockDist(tmp);
+    const relative = path.join('bg', 'stays', 'the-cabin', 'index.html');
+    fs.mkdirSync(path.dirname(path.join(dist, relative)), { recursive: true });
+    fs.writeFileSync(path.join(dist, relative), '<h1>Public stay</h1>');
+    const localRoot = path.join(tmp, 'local-public-html');
+    const local = executeLocalPublish({ distDir: dist, webroot: localRoot });
+    assert.ok(local.staticWritten.includes(relative));
+    assert.ok(local.shellWritten.includes('index.html'));
+
+    const remoteRoot = path.join(tmp, 'remote-public-html');
+    fs.mkdirSync(remoteRoot);
+    // Reproduce the old unanchored rsync exclusion, which matches every basename.
+    const old = spawnSync('rsync', ['-a', '--exclude=index.html', `${dist}/`, `${remoteRoot}/`], { encoding: 'utf8' });
+    assert.equal(old.status, 0, old.stderr);
+    assert.ok(!fs.existsSync(path.join(remoteRoot, relative)));
+
+    const phase = buildRemoteRsyncPhases({ distDir: dist, remoteRoot })[1];
+    const result = spawnSync('rsync', [
+      '-a', ...phase.excludes.map((exclude) => `--exclude=${exclude}`),
+      phase.source, phase.destination
+    ], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(fs.readFileSync(path.join(remoteRoot, relative), 'utf8'), '<h1>Public stay</h1>');
+    assert.ok(!fs.existsSync(path.join(remoteRoot, 'index.html')));
+  } finally {
+    fs.rmSync(tmp, { recursive: true });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // CLI argument handling
 // ---------------------------------------------------------------------------
@@ -331,6 +395,41 @@ test('no WEBROOT and no REMOTE fails closed with exit 1', () => {
   const result = runCLI([], { WEBROOT: '', REMOTE: '' });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /FAIL/);
+});
+
+test('CLI refuses a generic home artifact before any publication', () => {
+  const tmp = fs.mkdtempSync(path.join(__dirname, '.invalid-prerender-test-'));
+  try {
+    const webroot = makeMockWebroot(tmp);
+    const before = fs.readdirSync(webroot).sort();
+    const result = runCLI([], { WEBROOT: webroot, REMOTE: '', DRY_RUN: '' }, { invalidRoute: '/' });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Required prerender output is invalid/);
+    assert.deepEqual(fs.readdirSync(webroot).sort(), before);
+  } finally {
+    fs.rmSync(tmp, { recursive: true });
+  }
+});
+
+test('CLI refuses verification-only artifacts before publication even in dry-run mode', () => {
+  const result = runCLI(['--dry-run'], { WEBROOT: '/tmp/seo-verification/not-published', REMOTE: '' }, { verificationOnly: true });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /must never be published/);
+  assert.doesNotMatch(result.stdout, /LOCAL mode|REMOTE mode/);
+});
+
+test('CLI rejects a missing required nested artifact before any publication', () => {
+  const result = runCLI(['--dry-run'], { WEBROOT: '/tmp/seo-verification/not-published', REMOTE: '' }, { missingRoute: '/bg/stays/stone-house' });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Required prerender output is invalid:.*ENOENT/);
+  assert.doesNotMatch(result.stdout, /LOCAL mode|REMOTE mode/);
+});
+
+test('CLI rejects mixed output with only a nested verification page and no marker JSON', () => {
+  const result = runCLI(['--dry-run'], { WEBROOT: '/tmp/seo-verification/not-published', REMOTE: '' }, { verificationRoute: '/bg/stays/stone-house' });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /must never be published/);
+  assert.doesNotMatch(result.stdout, /LOCAL mode|REMOTE mode/);
 });
 
 test('--dry-run from argv is honoured: no files written, output reports dryRun true', () => {
@@ -408,7 +507,7 @@ test('without --dry-run flag an actual local publish writes files', () => {
   const summary = parseCLISummary(result.stdout);
   assert.equal(summary.dryRun, false);
 
-  // Files should now exist in webroot (CLI publishes from real client/dist)
+  // Files should now exist in the fixture webroot.
   assert.ok(fs.existsSync(path.join(webroot, 'index.html')));
   assert.ok(fs.existsSync(path.join(webroot, 'sw.js')));
   // At least some JS assets were published

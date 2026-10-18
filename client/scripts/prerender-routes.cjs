@@ -2,11 +2,10 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
-const { pathToFileURL } = require('node:url');
 const puppeteer = require('puppeteer-core');
+const { ROUTES, artifactPath, getExpectedHeading, getExpectedVisibleHeadings, inspectDocument, inspectVisibleHeading, validateHtml, validateArtifacts } = require('./prerender-contract.cjs');
 
 const DIST_DIR = path.resolve(__dirname, '..', 'dist');
-const DEFAULT_TITLE = 'Drift & Dwells - Book Your Eco-Retreat';
 const PORT = Number(process.env.PRERENDER_PORT || 0);
 const HOST = '127.0.0.1';
 
@@ -15,10 +14,6 @@ const SHOULD_SKIP =
   process.env.PRERENDER_SKIP === 'true' ||
   process.env.PRERENDER_ENABLED === '0' ||
   process.env.PRERENDER_ENABLED === 'false';
-
-const REQUIRE_BROWSER =
-  process.env.PRERENDER_REQUIRE_BROWSER === '1' ||
-  process.env.PRERENDER_REQUIRE_BROWSER === 'true';
 
 function envString(value) {
   if (value == null) return '';
@@ -43,6 +38,12 @@ function findBrowserExecutablePath() {
     envString(process.env.CHROMIUM_BIN)
   ].filter(Boolean);
 
+  if (envCandidates.length) {
+    const configured = envCandidates.find(fileExists);
+    if (!configured) throw new Error('[prerender] Configured browser executable is unavailable.');
+    return configured;
+  }
+
   for (const candidate of envCandidates) {
     if (fileExists(candidate)) return candidate;
   }
@@ -62,31 +63,6 @@ function findBrowserExecutablePath() {
 
   return '';
 }
-
-const ROUTES = [
-  '/',
-  '/bg',
-  '/about',
-  '/bg/about',
-  '/cabin',
-  '/bg/cabin',
-  '/valley',
-  '/bg/valley',
-  '/off-grid-cabins-bulgaria',
-  '/bg/off-grid-cabins-bulgaria',
-  '/rhodopes-cabin-retreat',
-  '/bg/rhodopes-cabin-retreat',
-  '/bansko-remote-work-retreat',
-  '/bg/bansko-remote-work-retreat',
-  '/retreat-venue-bulgaria',
-  '/bg/retreat-venue-bulgaria',
-  '/off-grid-stays-bulgaria',
-  '/bg/off-grid-stays-bulgaria',
-  '/enduro',
-  '/bg/enduro',
-  '/winter-village',
-  '/bg/winter-village'
-];
 
 const CONTENT_TYPES = {
   '.css': 'text/css; charset=utf-8',
@@ -110,19 +86,23 @@ function getContentType(filePath) {
   return CONTENT_TYPES[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
 }
 
-function resolveRequestPath(requestPathname) {
-  const safePath = decodeURIComponent(requestPathname).split('?')[0];
-  const resolved = path.resolve(DIST_DIR, `.${safePath}`);
-  if (!resolved.startsWith(DIST_DIR)) {
+function resolveRequestPath(requestPathname, distDir) {
+  const safePath = decodeURIComponent(requestPathname);
+  const resolved = path.resolve(distDir, `.${safePath}`);
+  if (resolved !== distDir && !resolved.startsWith(`${distDir}${path.sep}`)) {
     return null;
   }
   return resolved;
 }
 
-async function readServedFile(requestPathname) {
-  const resolved = resolveRequestPath(requestPathname);
+async function readServedFile(requestPathname, distDir, shell) {
+  const resolved = resolveRequestPath(requestPathname, distDir);
   if (!resolved) return null;
 
+  // Never feed a previous capture (especially the home head) into another route.
+  if (shell && !path.extname(requestPathname)) {
+    return { filePath: 'index.html', body: shell };
+  }
   try {
     const stats = await fs.stat(resolved);
     if (stats.isDirectory()) {
@@ -137,10 +117,11 @@ async function readServedFile(requestPathname) {
       filePath: resolved,
       body: await fs.readFile(resolved)
     };
-  } catch {
+  } catch (error) {
+    if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw error;
     if (path.extname(requestPathname)) return null;
 
-    const fallbackPath = path.join(DIST_DIR, 'index.html');
+    const fallbackPath = path.join(distDir, 'index.html');
     return {
       filePath: fallbackPath,
       body: await fs.readFile(fallbackPath)
@@ -148,18 +129,30 @@ async function readServedFile(requestPathname) {
   }
 }
 
-function createStaticServer() {
+function createStaticServer(distDir = DIST_DIR, shell = null) {
   return http.createServer(async (req, res) => {
-    const file = await readServedFile(req.url || '/');
+    try {
+      const pathname = new URL(req.url || '/', `http://${HOST}`).pathname;
+      if (pathname.startsWith('/api/')) {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, message: 'Live data unavailable during static rendering' }));
+        return;
+      }
+      const file = await readServedFile(pathname, distDir, shell);
 
-    if (!file) {
-      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('Not found');
-      return;
+      if (!file) {
+        res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('Not found');
+        return;
+      }
+
+      res.writeHead(200, { 'Content-Type': getContentType(file.filePath) });
+      res.end(file.body);
+    } catch (error) {
+      console.error('[prerender] Static server error:', error);
+      res.writeHead(500);
+      res.end('Prerender server error');
     }
-
-    res.writeHead(200, { 'Content-Type': getContentType(file.filePath) });
-    res.end(file.body);
   });
 }
 
@@ -195,29 +188,25 @@ function revertDeferredGoogleFontMedia(html) {
   );
 }
 
-async function waitForApp(page) {
+async function waitForApp(page, route) {
   await page.waitForFunction(
-    (defaultTitle) => {
-      const root = document.querySelector('#root');
-      if (!root) return false;
-
-      const text = (root.textContent || '').trim();
-      if (!text || text === 'Loading...') return false;
-
-      return document.title && document.title !== defaultTitle;
+    (expectedRoute) => {
+      const main = document.querySelector('#root main');
+      const canonical = document.querySelector('link[rel="canonical"]')?.href;
+      return main?.querySelector('h1')?.textContent?.trim() &&
+        (main.textContent || '').trim().length >= 180 &&
+        canonical && new URL(canonical).pathname.replace(/\/$/, '') === expectedRoute.replace(/\/$/, '');
     },
     { timeout: 15000 },
-    DEFAULT_TITLE
+    route
   );
 
   await new Promise((resolve) => setTimeout(resolve, 250));
 }
 
-async function writePrerenderedRoute(route, html) {
-  const outputPath =
-    route === '/'
-      ? path.join(DIST_DIR, 'index.html')
-      : path.join(DIST_DIR, route.replace(/^\//, ''), 'index.html');
+async function writePrerenderedRoute(route, html, distDir = DIST_DIR) {
+  validateHtml(html, route);
+  const outputPath = artifactPath(distDir, route);
 
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
   await fs.writeFile(outputPath, html, 'utf8');
@@ -244,11 +233,33 @@ function finalizeEnduroHtml(route, html) {
   return next;
 }
 
-async function prerenderRoute(browser, route, port) {
+async function prerenderRoute(browser, route, port, { distDir = DIST_DIR, origin = `http://${HOST}:${port}` } = {}) {
   const page = await browser.newPage();
-  const targetUrl = `http://${HOST}:${port}${route}`;
+  const targetUrl = `${origin}${route}`;
+  const errors = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error' && /hydration|react error|did not match|validateDOMNesting/i.test(message.text())) {
+      errors.push(message.text());
+    }
+  });
 
   try {
+    await page.setBypassServiceWorker(true);
+    await page.setRequestInterception(true);
+    page.on('request', (request) => {
+      const url = new URL(request.url());
+      if (url.pathname.startsWith('/api/') && url.origin === origin) {
+        return request.respond({
+          status: 503, contentType: 'application/json',
+          body: JSON.stringify({ success: false, message: 'Live data unavailable during static rendering' })
+        });
+      }
+      // Build capture must never send analytics, payment, private or mutation requests.
+      if ((url.protocol === 'http:' || url.protocol === 'https:') &&
+          (url.origin !== origin || request.method() !== 'GET')) return request.abort();
+      return request.continue();
+    });
     // Mobile-first HTML for home + enduro so hero LCP matches festival phones.
     if (route === '/' || route === '/bg' || route === '/enduro' || route === '/bg/enduro') {
       await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true });
@@ -256,12 +267,61 @@ async function prerenderRoute(browser, route, port) {
       await page.setViewport({ width: 1280, height: 720, deviceScaleFactor: 1 });
     }
     await page.goto(targetUrl, { waitUntil: 'networkidle2' });
-    await waitForApp(page);
+    await waitForApp(page, route);
+    await page.evaluate(async () => {
+      const animations = document.getElementById('root').getAnimations({ subtree: true });
+      for (const animation of animations) {
+        if (Number.isFinite(animation.effect?.getComputedTiming().endTime) && animation.playbackRate !== 0) {
+          animation.finish();
+          const target = animation.effect?.target;
+          if (target instanceof Element && target.getClientRects().length && typeof animation.commitStyles === 'function') {
+            animation.commitStyles();
+          }
+        }
+      }
+      // Allow animation libraries to commit their completion styles to the DOM.
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    });
+    if (new URL(page.url()).pathname !== route) throw new Error(`[prerender] Unexpected redirect for ${route}`);
+    if (errors.length) throw new Error(`[prerender] ${route}: ${errors.join('; ')}`);
+    const documentHandle = await page.evaluateHandle(() => document);
+    await page.evaluate(inspectVisibleHeading, documentHandle, getExpectedVisibleHeadings(route), true);
+    await page.evaluate(inspectDocument, documentHandle, route, getExpectedHeading(route));
+    await documentHandle.dispose();
+    await page.evaluate((currentRoute) => {
+      document.querySelector('#root').setAttribute('data-prerender-route', currentRoute);
+    }, route);
 
     let html = await page.evaluate(() => `<!DOCTYPE html>${document.documentElement.outerHTML}`);
     html = revertDeferredGoogleFontMedia(html);
     html = finalizeEnduroHtml(route, html);
-    await writePrerenderedRoute(route, html);
+    // Validate serialized styles, not merely the live animation's painted state.
+    const rawPage = await browser.newPage();
+    try {
+      await rawPage.setViewport(page.viewport());
+      await rawPage.setJavaScriptEnabled(false);
+      await rawPage.setBypassServiceWorker(true);
+      await rawPage.setRequestInterception(true);
+      rawPage.on('request', (request) => {
+        const url = new URL(request.url());
+        if (request.isNavigationRequest() && request.frame() === rawPage.mainFrame() && request.url() === targetUrl) {
+          return request.respond({ status: 200, contentType: 'text/html', body: html });
+        }
+        if ((url.protocol === 'http:' || url.protocol === 'https:') &&
+            (url.origin !== origin || request.method() !== 'GET')) return request.abort();
+        return request.continue();
+      });
+      const rawResponse = await rawPage.goto(targetUrl, { waitUntil: 'networkidle2' });
+      if (!rawResponse || rawResponse.status() !== 200) throw new Error(`[prerender] ${route}: serialized HTML navigation did not return HTTP 200`);
+      if (rawResponse.fromServiceWorker()) throw new Error(`[prerender] ${route}: service worker intercepted serialized HTML validation`);
+      const rawDocument = await rawPage.evaluateHandle(() => document);
+      await rawPage.evaluate(inspectVisibleHeading, rawDocument, getExpectedVisibleHeadings(route));
+      await rawDocument.dispose();
+    } finally {
+      await rawPage.close();
+    }
+    if (errors.length) throw new Error(`[prerender] ${route}: ${errors.join('; ')}`);
+    await writePrerenderedRoute(route, html, distDir);
 
     const title = await page.title();
     console.log(`[prerender] ${route} -> ${title}`);
@@ -270,10 +330,9 @@ async function prerenderRoute(browser, route, port) {
   }
 }
 
-async function run() {
+async function run({ distDir = DIST_DIR } = {}) {
   if (SHOULD_SKIP) {
-    console.log('[prerender] Skipping prerender (PRERENDER_SKIP/PRERENDER_ENABLED).');
-    return;
+    throw new Error('[prerender] Skipping required public SEO output is not allowed.');
   }
 
   const executablePath = findBrowserExecutablePath();
@@ -281,35 +340,38 @@ async function run() {
     const message =
       '[prerender] No Chrome/Chromium executable found. ' +
       'Set PRERENDER_BROWSER_PATH (or PUPPETEER_EXECUTABLE_PATH/CHROME_BIN) to an installed browser path, ' +
-      'or set PRERENDER_SKIP=1 to skip prerender on this machine.';
-    if (REQUIRE_BROWSER) {
-      throw new Error(message);
-    }
-    console.warn(message);
-    console.warn('[prerender] Continuing without prerender (soft skip).');
-    return;
+      'Prerender is required; install/configure a browser before building.';
+    throw new Error(message);
   }
 
-  const server = createStaticServer();
+  const shell = await fs.readFile(path.join(distDir, 'index.html'));
+  const server = createStaticServer(distDir, shell);
   const port = await startServer(server);
 
-  const browser = await puppeteer.launch({
-    executablePath,
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-  });
-
+  let browser;
   try {
+    browser = await puppeteer.launch({
+      executablePath,
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
     for (const route of ROUTES) {
-      await prerenderRoute(browser, route, port);
+      await prerenderRoute(browser, route, port, { distDir });
     }
+    const results = validateArtifacts(distDir);
+    console.log(`[prerender] Validated ${results.length} required public SEO artifacts.`);
   } finally {
-    await browser.close();
-    await stopServer(server);
+    try {
+      if (browser) await browser.close();
+    } finally {
+      await stopServer(server);
+    }
   }
 }
 
-run().catch((error) => {
+module.exports = { createStaticServer, prerenderRoute, run, findBrowserExecutablePath, writePrerenderedRoute };
+
+if (require.main === module) run().catch((error) => {
   console.error('[prerender] Failed to generate prerendered routes.');
   console.error(error);
   process.exit(1);
