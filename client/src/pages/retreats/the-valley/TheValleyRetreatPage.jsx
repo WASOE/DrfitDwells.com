@@ -163,10 +163,10 @@ const TheValleyRetreatPage = () => {
   const structuredData = {
     '@context': 'https://schema.org',
     '@type': 'LodgingBusiness',
-    '@id': `${origin}/retreats/the-valley#lodging`,
+    '@id': `${origin}/retreats/the-valley/#lodging`,
     name: `${valleyLoc.businessName} — Private Retreat`,
     description: tv('retreat.seo.description'),
-    url: `${origin}/retreats/the-valley`,
+    url: `${origin}/retreats/the-valley/`,
     telephone: CONTACT_PHONE,
     image: [`${origin}/uploads/Videos/The-Valley-firaplace-video.winter-poster.jpg`],
     address: {
@@ -192,8 +192,8 @@ const TheValleyRetreatPage = () => {
     '@type': 'BreadcrumbList',
     itemListElement: [
       { '@type': 'ListItem', position: 1, name: 'Home', item: `${origin}/` },
-      { '@type': 'ListItem', position: 2, name: 'The Valley', item: `${origin}/valley` },
-      { '@type': 'ListItem', position: 3, name: 'Private Retreat', item: `${origin}/retreats/the-valley` }
+      { '@type': 'ListItem', position: 2, name: 'The Valley', item: `${origin}/valley/` },
+      { '@type': 'ListItem', position: 3, name: 'Private Retreat', item: `${origin}/retreats/the-valley/` }
     ]
   };
 

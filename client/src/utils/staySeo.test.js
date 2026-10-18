@@ -15,23 +15,25 @@ describe('staySeo', () => {
     expect(buildStayCanonicalPath('')).toBeNull();
   });
 
-  it('buildStayCanonicalUrl is absolute without query string', () => {
+  it('buildStayCanonicalUrl is absolute and uses the trailing-slash public route policy', () => {
     const url = buildStayCanonicalUrl('lux-cabin', 'en');
-    expect(url).toBe('https://driftdwells.com/stays/lux-cabin');
+    expect(url).toBe('https://driftdwells.com/stays/lux-cabin/');
     expect(url).not.toContain('?');
   });
 
-  it('buildStayLodgingJsonLd uses canonical url, not window location', () => {
+  it('buildStayLodgingJsonLd identifies the public accommodation without undated pricing or ratings', () => {
     const schema = buildStayLodgingJsonLd({
       name: 'Lux Cabin',
       description: 'Private cabin with views',
       location: 'The Valley',
-      pricePerNight: 85,
       imageUrl: '/media/hero/cabin-summer-960w.webp',
       slug: 'lux-cabin'
     });
-    expect(schema.url).toBe('https://driftdwells.com/stays/lux-cabin');
-    expect(schema.priceRange).toBe('€85');
+    expect(schema.url).toBe('https://driftdwells.com/stays/lux-cabin/');
+    expect(schema['@type']).toEqual(['LodgingBusiness', 'Accommodation']);
+    expect(schema['@id']).toBe('https://driftdwells.com/stays/lux-cabin/#lodging');
+    expect(schema).not.toHaveProperty('priceRange');
+    expect(schema).not.toHaveProperty('aggregateRating');
     expect(schema.image[0]).toContain('https://driftdwells.com/media/hero/cabin-summer-960w.webp');
   });
 
@@ -44,6 +46,6 @@ describe('staySeo', () => {
     expect(crumbs.itemListElement[0].name).toBe('Home');
     expect(crumbs.itemListElement[1].name).toBe('Stays');
     expect(crumbs.itemListElement[2].name).toBe('A-Frame');
-    expect(crumbs.itemListElement[2].item).toBe('https://driftdwells.com/stays/a-frame');
+    expect(crumbs.itemListElement[2].item).toBe('https://driftdwells.com/stays/a-frame/');
   });
 });

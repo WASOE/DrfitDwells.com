@@ -20,7 +20,7 @@ export const getRuntimeOrigin = () => {
 export const toAbsoluteSiteUrl = (path = '') => {
   if (!path) return null;
   if (/^https?:\/\//i.test(path)) return path;
-  return `${getSiteUrl()}${path.startsWith('/') ? path : `/${path}`}`;
+  return new URL(path.startsWith('/') ? path : `/${path}`, `${getSiteUrl()}/`).href;
 };
 
 export const toAbsoluteAssetUrl = (path = '') => {

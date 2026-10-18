@@ -9,11 +9,61 @@ const registry = require('../src/data/publicSeoRoutes.json');
 
 function fixture(route) {
   const locale = route.startsWith('/bg') ? 'bg' : 'en';
-  return `<!doctype html><html lang="${locale}"><head><title>Stay at ${route} | Drift &amp; Dwells</title>
-    <meta name="description" content="A specific public mountain retreat with useful information about your stay.">
-    <link rel="canonical" href="https://driftdwells.com${route}"></head>
-    <body><div id="root" data-prerender-route="${route}"><main><h1>${getExpectedHeading(route)}</h1>
-    <p>${'Useful public accommodation information. '.repeat(8)}</p></main></div></body></html>`;
+  const basePath = route === '/bg' ? '/' : route.startsWith('/bg/') ? route.slice(3) : route;
+  const routeEntry = registry.find((entry) => entry.path === basePath);
+  const canonicalPath = route === '/' ? '/' : `${route.replace(/\/+$/, '')}/`;
+  const origin = 'https://driftdwells.com';
+  const canonical = `${origin}${canonicalPath}`;
+  const title = `Stay at ${route} | Drift &amp; Dwells`;
+  const description = 'A specific public mountain retreat with useful information about your stay.';
+  const alternates = [
+    ...routeEntry.locales.map((alternateLocale) => {
+      const localizedPath = alternateLocale === 'bg'
+        ? `/bg${basePath === '/' ? '' : basePath}`
+        : basePath;
+      return `<link rel="alternate" hreflang="${alternateLocale}" href="${origin}${localizedPath === '/' ? '/' : `${localizedPath}/`}">`;
+    }),
+    `<link rel="alternate" hreflang="x-default" href="${origin}${basePath === '/' ? '/' : `${basePath}/`}">`
+  ].join('');
+  const isStay = Boolean(routeEntry.stayId);
+  const schemas = basePath === '/'
+    ? [{ '@type': 'WebSite' }, { '@type': 'Organization' }]
+    : isStay
+      ? [
+        { '@type': ['LodgingBusiness', 'Accommodation'], url: canonical },
+        { '@type': 'BreadcrumbList' }
+      ]
+      : route === '/cabin/faq'
+        ? [{
+          '@type': 'FAQPage',
+          mainEntity: [{
+            '@type': 'Question',
+            name: 'Is this a public FAQ?',
+            acceptedAnswer: { '@type': 'Answer', text: 'This answer is visible in the public FAQ.' }
+          }]
+        }]
+        : ['/cabin', '/valley', '/retreats/the-valley'].includes(basePath)
+          ? [{ '@type': 'LodgingBusiness' }, { '@type': 'BreadcrumbList' }]
+          : [];
+  const faqCopy = route === '/cabin/faq'
+    ? '<p>Is this a public FAQ? This answer is visible in the public FAQ.</p>'
+    : '';
+  return `<!doctype html><html lang="${locale}"><head><title>${title}</title>
+    <meta name="description" content="${description}">
+    <link rel="canonical" href="${canonical}">
+    ${alternates}
+    <meta property="og:title" content="${title.replace(/&amp;/g, '&')}">
+    <meta property="og:description" content="${description}">
+    <meta property="og:url" content="${canonical}">
+    <meta property="og:image" content="${origin}/media/hero/cabin-winter-1200w.webp">
+    <meta property="og:image:alt" content="${title.replace(/&amp;/g, '&')}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="${title.replace(/&amp;/g, '&')}">
+    <meta name="twitter:description" content="${description}">
+    <meta name="twitter:image" content="${origin}/media/hero/cabin-winter-1200w.webp">
+    ${schemas.map((schema) => `<script type="application/ld+json">${JSON.stringify(schema)}</script>`).join('')}
+    </head><body><div id="root" data-prerender-route="${route}"><main><h1>${getExpectedHeading(route)}</h1>
+    ${faqCopy}<p>${'Useful public accommodation information. '.repeat(8)}</p></main></div></body></html>`;
 }
 
 test('finite registry includes eligible localized public routes, not private/transaction/noindex routes', () => {

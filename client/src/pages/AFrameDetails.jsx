@@ -511,11 +511,8 @@ const AFrameDetails = ({ staySlug: staySlugProp, loadingFallback }) => {
       name: cabinType?.name || 'A-Frame',
       description: cabinType?.description || '',
       location: cabinType?.location || '',
-      pricePerNight: cabinType?.pricePerNight,
       images: cabinType?.images,
       imageUrl: cabinType?.imageUrl,
-      averageRating: cabinType?.averageRating,
-      reviewsCount: cabinType?.reviewsCount,
       slug: staySlug,
       language: siteLanguage
     });

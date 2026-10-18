@@ -4,6 +4,7 @@ import Seo from './Seo';
 import routes from '../data/publicSeoRoutes.json';
 import { PAID_TRAFFIC_STAY_META } from '../data/paidTrafficLandingStays';
 import { buildHreflangAlternates } from '../utils/localizedRoutes';
+import { buildStayBreadcrumbJsonLd, buildStayLodgingJsonLd } from '../utils/staySeo';
 import '../i18n/ns/seo';
 
 export function getPublicStayEntry(slug) {
@@ -17,6 +18,17 @@ export default function PublicStayIntro({ slug, children }) {
   if (!entry) return children || null;
   const copy = t(`paidStaysBulgaria.stays.${entry.stayId}`, { returnObjects: true });
   const image = PAID_TRAFFIC_STAY_META.find((stay) => stay.id === entry.stayId)?.fallbackImage;
+  const staySlug = entry.path.split('/').pop();
+  const jsonLd = [
+    buildStayLodgingJsonLd({
+      name: copy.title,
+      description: copy.fitLine,
+      imageUrl: image,
+      slug: staySlug,
+      language
+    }),
+    buildStayBreadcrumbJsonLd({ stayName: copy.title, slug: staySlug, language })
+  ].filter(Boolean);
 
   return (
     <>
@@ -27,6 +39,7 @@ export default function PublicStayIntro({ slug, children }) {
         hreflangAlternates={buildHreflangAlternates(entry.path)}
         ogImage={image}
         ogType="product"
+        jsonLd={jsonLd}
       />
       <section className="max-w-5xl mx-auto px-6 py-12 text-stone-800" data-public-stay={slug}>
         <h1 className="font-serif text-4xl mb-6">{copy.title}</h1>

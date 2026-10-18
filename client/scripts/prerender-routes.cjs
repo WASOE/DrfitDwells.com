@@ -3,7 +3,7 @@ const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const path = require('node:path');
 const puppeteer = require('puppeteer-core');
-const { ROUTES, artifactPath, getExpectedHeading, getExpectedVisibleHeadings, inspectDocument, inspectVisibleHeading, validateHtml, validateArtifacts } = require('./prerender-contract.cjs');
+const { ROUTES, artifactPath, getExpectedHeading, getExpectedVisibleHeadings, getSeoValidationContext, inspectDocument, inspectVisibleHeading, validateHtml, validateArtifacts } = require('./prerender-contract.cjs');
 
 const DIST_DIR = path.resolve(__dirname, '..', 'dist');
 const PORT = Number(process.env.PRERENDER_PORT || 0);
@@ -286,7 +286,13 @@ async function prerenderRoute(browser, route, port, { distDir = DIST_DIR, origin
     if (errors.length) throw new Error(`[prerender] ${route}: ${errors.join('; ')}`);
     const documentHandle = await page.evaluateHandle(() => document);
     await page.evaluate(inspectVisibleHeading, documentHandle, getExpectedVisibleHeadings(route), true);
-    await page.evaluate(inspectDocument, documentHandle, route, getExpectedHeading(route));
+    await page.evaluate(
+      inspectDocument,
+      documentHandle,
+      route,
+      getExpectedHeading(route),
+      getSeoValidationContext(route)
+    );
     await documentHandle.dispose();
     await page.evaluate((currentRoute) => {
       document.querySelector('#root').setAttribute('data-prerender-route', currentRoute);

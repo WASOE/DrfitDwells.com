@@ -1,7 +1,10 @@
+import publicSeoRoutes from '../data/publicSeoRoutes.json';
+
 export const DEFAULT_LANGUAGE = 'en';
 export const SUPPORTED_LANGUAGES = ['en', 'bg'];
 export const BG_EXCLUDED_PATHS = new Set([
   '/build',
+  '/about',
   '/terms',
   '/privacy',
   '/cancellation-policy',
@@ -40,17 +43,15 @@ export const localizePath = (pathname = '/', language = DEFAULT_LANGUAGE) => {
 
 export const buildHreflangAlternates = (pathname = '/') => {
   const basePath = stripLocaleFromPath(pathname);
-
-  if (BG_EXCLUDED_PATHS.has(basePath)) {
-    return [
-      { href: localizePath(basePath, 'en'), hreflang: 'en' },
-      { href: localizePath(basePath, 'en'), hreflang: 'x-default' }
-    ];
-  }
+  const route = publicSeoRoutes.find((entry) => entry.path === basePath);
+  const locales = route?.locales || (BG_EXCLUDED_PATHS.has(basePath) ? ['en'] : SUPPORTED_LANGUAGES);
+  const canonicalPath = (locale) => {
+    const localized = localizePath(basePath, locale);
+    return localized === '/' ? '/' : `${localized.replace(/\/+$/, '')}/`;
+  };
 
   return [
-    { href: localizePath(basePath, 'en'), hreflang: 'en' },
-    { href: localizePath(basePath, 'bg'), hreflang: 'bg' },
-    { href: localizePath(basePath, 'en'), hreflang: 'x-default' }
+    ...locales.map((locale) => ({ href: canonicalPath(locale), hreflang: locale })),
+    { href: canonicalPath('en'), hreflang: 'x-default' }
   ];
 };

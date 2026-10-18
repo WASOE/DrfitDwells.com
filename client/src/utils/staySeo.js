@@ -11,28 +11,20 @@ export function buildStayCanonicalPath(slug) {
 export function buildStayCanonicalUrl(slug, language = 'en') {
   const path = buildStayCanonicalPath(slug);
   if (!path) return null;
-  return `${getSiteUrl()}${localizePath(path, language)}`;
+  return `${getSiteUrl()}${localizePath(path, language)}/`;
 }
 
 export function buildStayLodgingJsonLd({
   name,
   description,
   location,
-  pricePerNight,
   images,
   imageUrl,
-  averageRating,
-  reviewsCount,
   slug,
   language = 'en'
 }) {
   const canonicalUrl = buildStayCanonicalUrl(slug, language);
   if (!canonicalUrl) return null;
-
-  const hasAgg =
-    typeof averageRating === 'number' &&
-    typeof reviewsCount === 'number' &&
-    reviewsCount > 0;
 
   let imageList = [];
   if (Array.isArray(images) && images.length > 0) {
@@ -50,12 +42,12 @@ export function buildStayLodgingJsonLd({
 
   const data = {
     '@context': 'https://schema.org',
-    '@type': 'LodgingBusiness',
+    '@type': ['LodgingBusiness', 'Accommodation'],
+    '@id': `${canonicalUrl}#lodging`,
     name: name || '',
     description: description || '',
     url: canonicalUrl,
-    sameAs: [INSTAGRAM_URL, FACEBOOK_URL],
-    numberOfRooms: 1
+    sameAs: [INSTAGRAM_URL, FACEBOOK_URL]
   };
 
   if (location) {
@@ -65,22 +57,8 @@ export function buildStayLodgingJsonLd({
     };
   }
 
-  if (pricePerNight != null && pricePerNight !== '') {
-    data.priceRange = `€${pricePerNight}`;
-  }
-
   if (imageList.length > 0) {
     data.image = imageList;
-  }
-
-  if (hasAgg) {
-    data.aggregateRating = {
-      '@type': 'AggregateRating',
-      ratingValue: Number(Number(averageRating).toFixed(2)),
-      reviewCount: reviewsCount,
-      bestRating: 5,
-      worstRating: 1
-    };
   }
 
   return data;

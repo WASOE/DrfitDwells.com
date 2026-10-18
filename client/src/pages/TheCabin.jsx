@@ -187,10 +187,10 @@ const TheCabin = () => {
   const structuredData = {
     '@context': 'https://schema.org',
     '@type': 'LodgingBusiness',
-    '@id': `${origin}/cabin#lodging`,
+    '@id': `${origin}/cabin/#lodging`,
     name: cabinLoc.businessName,
     description: cabinLoc.description,
-    url: cabinLoc.url,
+    url: `${origin}/cabin/`,
     telephone: CONTACT_PHONE,
     image: [`${origin}${CABIN_STILLS.winter}`, `${origin}${CABIN_STILL_FALLBACK}`],
     address: {
@@ -207,7 +207,6 @@ const TheCabin = () => {
       longitude: cabinLoc.geo.longitude
     },
     hasMap: cabinLoc.getMapsUrl(),
-    openingHoursSpecification: { '@type': 'OpeningHoursSpecification', dayOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'], opens: '00:00', closes: '23:59' },
     publisher: { '@id': `${origin}#organization` },
     amenityFeature: [
       { '@type': 'LocationFeatureSpecification', name: 'Off-grid', value: true },
@@ -223,7 +222,7 @@ const TheCabin = () => {
     '@type': 'BreadcrumbList',
     itemListElement: [
       { '@type': 'ListItem', position: 1, name: 'Home', item: `${origin}/` },
-      { '@type': 'ListItem', position: 2, name: 'The Cabin', item: `${origin}/cabin` }
+      { '@type': 'ListItem', position: 2, name: 'The Cabin', item: `${origin}/cabin/` }
     ]
   };
   const seoTitle =

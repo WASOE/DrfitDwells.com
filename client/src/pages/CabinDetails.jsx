@@ -447,11 +447,8 @@ const CabinDetails = ({ cabinId: cabinIdProp, staySlug: staySlugProp, loadingFal
       name: cabin?.name || '',
       description: cabin?.description || '',
       location: cabin?.location || '',
-      pricePerNight: cabin?.pricePerNight,
       images: cabin?.images,
       imageUrl: cabin?.imageUrl,
-      averageRating: cabin?.averageRating,
-      reviewsCount: cabin?.reviewsCount,
       slug: effectiveStaySlug,
       language: siteLanguage
     });

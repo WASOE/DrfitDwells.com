@@ -137,10 +137,10 @@ const TheValleyPage = () => {
   const structuredData = {
     '@context': 'https://schema.org',
     '@type': 'LodgingBusiness',
-    '@id': `${origin}/valley#lodging`,
+    '@id': `${origin}/valley/#lodging`,
     name: valleyLoc.businessName,
     description: valleyLoc.description,
-    url: valleyLoc.url,
+    url: `${origin}/valley/`,
     telephone: CONTACT_PHONE,
     image: [`${origin}/uploads/Videos/The-Valley-firaplace-video.winter-poster.jpg`],
     address: {
@@ -157,7 +157,6 @@ const TheValleyPage = () => {
       longitude: valleyLoc.geo.longitude
     },
     hasMap: valleyLoc.getMapsUrl(),
-    openingHoursSpecification: { '@type': 'OpeningHoursSpecification', dayOfWeek: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'], opens: '00:00', closes: '23:59' },
     publisher: { '@id': `${origin}#organization` },
     sameAs: [INSTAGRAM_URL, FACEBOOK_URL]
   };
@@ -167,7 +166,7 @@ const TheValleyPage = () => {
     '@type': 'BreadcrumbList',
     itemListElement: [
       { '@type': 'ListItem', position: 1, name: 'Home', item: `${origin}/` },
-      { '@type': 'ListItem', position: 2, name: 'The Valley', item: `${origin}/valley` }
+      { '@type': 'ListItem', position: 2, name: 'The Valley', item: `${origin}/valley/` }
     ]
   };
   const seoTitle =
