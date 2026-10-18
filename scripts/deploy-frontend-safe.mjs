@@ -171,12 +171,19 @@ for (const candidate of previousManifestCandidates) {
   if (previousManifest) break;
 }
 
+const releaseIdentifier = String(process.env.VITE_FRONTEND_RELEASE || process.env.GIT_COMMIT || '').trim();
+if (!/^(?:[a-f\d]{40}|[a-f\d]{64})$/i.test(releaseIdentifier)) {
+  fail('Set VITE_FRONTEND_RELEASE or GIT_COMMIT to the full release commit SHA before publication.');
+}
 const nextManifest = mergeReleaseManifest(
   previousManifest,
-  previousManifest || {
-    ok: true,
-    frontendRelease: process.env.VITE_FRONTEND_RELEASE || null,
-    buildTimestamp: new Date().toISOString()
+  {
+    ...(previousManifest || {
+      ok: true,
+      buildTimestamp: new Date().toISOString()
+    }),
+    frontendRelease: releaseIdentifier,
+    applicationCommit: releaseIdentifier
   },
   assetFiles
 );

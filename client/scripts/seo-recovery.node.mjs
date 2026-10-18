@@ -11,6 +11,8 @@ const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const CLIENT_DIR = path.resolve(SCRIPT_DIR, '..');
 const DIST_DIR = path.join(CLIENT_DIR, 'dist');
 const require = createRequire(import.meta.url);
+const puppeteer = require('puppeteer-core');
+const { findBrowserExecutablePath } = require('./prerender-routes.cjs');
 const routes = require('../src/data/publicSeoRoutes.json');
 const expectedRoutes = routes.flatMap(({ path: route, locales }) => (
   locales.map((locale) => ({
@@ -38,6 +40,20 @@ function readJsonLd(document, routePath) {
       throw new Error(`${routePath} contains malformed JSON-LD: ${error.message}`);
     }
   });
+}
+
+function assertImagePayload(filename, routePath) {
+  const bytes = fs.readFileSync(filename);
+  const extension = path.extname(filename).toLowerCase();
+  const valid = extension === '.webp'
+    ? bytes.subarray(0, 4).toString('ascii') === 'RIFF' &&
+      bytes.subarray(8, 12).toString('ascii') === 'WEBP'
+    : extension === '.jpg' || extension === '.jpeg'
+      ? bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+      : extension === '.png'
+        ? bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+        : false;
+  assert.ok(valid, `${routePath} OG image is not a valid supported image payload: ${filename}`);
 }
 
 function collectTypes(value, types = new Set()) {
@@ -78,6 +94,17 @@ test('compiled raw HTML contains complete route-specific multilingual metadata',
     assert.equal(ogUrl, canonical, `${route.path} has an inconsistent og:url`);
     assert.equal(canonical, `${defaultSiteUrl}${canonicalPath}`, `${route.path} has a non-canonical URL`);
     assert.ok(ogImage && new URL(ogImage).origin === defaultSiteUrl, `${route.path} needs an absolute same-site OG image`);
+    const basePath = route.path === '/bg' ? '/' : route.path.startsWith('/bg/')
+      ? route.path.slice(3)
+      : route.path;
+    const registryEntry = routes.find((entry) => entry.path === basePath);
+    assert.ok(registryEntry?.ogImage, `${route.path} has no registry OG image`);
+    assert.equal(ogImage, `${defaultSiteUrl}${registryEntry.ogImage}`, `${route.path} does not use its registry OG image`);
+    const imagePath = decodeURIComponent(new URL(ogImage).pathname);
+    const imageFile = path.resolve(DIST_DIR, `.${imagePath}`);
+    assert.ok(imageFile.startsWith(`${DIST_DIR}${path.sep}`), `${route.path} OG image path escapes compiled output`);
+    assert.ok(fs.existsSync(imageFile), `${route.path} OG image is missing from compiled output: ${imagePath}`);
+    assertImagePayload(imageFile, route.path);
     assert.ok(document.querySelector('meta[property="og:image:alt"]')?.content?.trim(), `${route.path} needs image alt text`);
     assert.equal(document.querySelector('meta[name="twitter:card"]')?.content, 'summary_large_image');
     assert.equal(document.querySelector('meta[name="twitter:title"]')?.content, ogTitle);
@@ -87,10 +114,6 @@ test('compiled raw HTML contains complete route-specific multilingual metadata',
     assert.ok(!/noindex/i.test(document.querySelector('meta[name="robots"]')?.content || ''), `${route.path} is noindex`);
     assert.equal(marker, route.path, `${route.path} is not the matching prerendered document`);
 
-    const basePath = route.path === '/bg' ? '/' : route.path.startsWith('/bg/')
-      ? route.path.slice(3)
-      : route.path;
-    const registryEntry = routes.find((entry) => entry.path === basePath);
     const expectedAlternates = [
       ...registryEntry.locales.map((locale) => ({
         locale,
@@ -111,6 +134,42 @@ test('compiled raw HTML contains complete route-specific multilingual metadata',
     const expectedHeading = registryEntry.headings[route.locale];
     assert.ok(mainText.includes(expectedHeading), `${route.path} has no route-specific main heading`);
     readJsonLd(document, route.path);
+  }
+});
+
+test('compiled registry social images decode as complete image payloads', async () => {
+  const browserPath = findBrowserExecutablePath();
+  assert.ok(browserPath, 'A Chromium executable is required to validate compiled social images.');
+  const imagePaths = [...new Set(routes.map(({ ogImage }) => ogImage))];
+  const browser = await puppeteer.launch({
+    executablePath: browserPath,
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox']
+  });
+
+  try {
+    const page = await browser.newPage();
+    for (const imagePath of imagePaths) {
+      const imageFile = path.resolve(DIST_DIR, `.${decodeURIComponent(imagePath)}`);
+      assert.ok(imageFile.startsWith(`${DIST_DIR}${path.sep}`), `Social image path escapes compiled output: ${imagePath}`);
+      assert.ok(fs.existsSync(imageFile), `Compiled social image is missing: ${imagePath}`);
+      const extension = path.extname(imageFile).toLowerCase();
+      const contentType = extension === '.webp' ? 'image/webp'
+        : extension === '.jpg' || extension === '.jpeg' ? 'image/jpeg'
+          : extension === '.png' ? 'image/png' : null;
+      assert.ok(contentType, `Unsupported compiled social image format: ${imagePath}`);
+      const dataUrl = `data:${contentType};base64,${fs.readFileSync(imageFile).toString('base64')}`;
+      const dimensions = await page.evaluate(async (source) => {
+        const image = new Image();
+        image.src = source;
+        await image.decode();
+        return { width: image.naturalWidth, height: image.naturalHeight };
+      }, dataUrl);
+      assert.ok(dimensions.width > 0 && dimensions.height > 0, `Social image has invalid dimensions: ${imagePath}`);
+    }
+    await page.close();
+  } finally {
+    await browser.close();
   }
 });
 

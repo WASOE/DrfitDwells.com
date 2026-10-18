@@ -119,11 +119,10 @@ export function readReleaseManifest(manifestPath) {
 }
 
 export function mergeReleaseManifest(previous, next, assetFiles) {
-  const previousAssets = Array.isArray(previous?.assetFiles)
-    ? previous.assetFiles
-    : Array.isArray(previous?.retainedAssetFiles)
-      ? previous.retainedAssetFiles
-      : [];
+  const previousAssets = [
+    ...(Array.isArray(previous?.assetFiles) ? previous.assetFiles : []),
+    ...(Array.isArray(previous?.retainedAssetFiles) ? previous.retainedAssetFiles : [])
+  ];
 
   return {
     ...next,
