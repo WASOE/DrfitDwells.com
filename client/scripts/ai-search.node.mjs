@@ -41,10 +41,13 @@ test('all six raw HTML pages preserve approved editorial copy, metadata, links, 
     assert.equal(document.querySelector('meta[property="og:url"]').content, canonical);
     assert.equal(document.querySelectorAll('main h1').length, 1, `${entry.route}: multiple H1s`);
     const text = normalize(article.textContent);
+    const firstParagraph = body.split(/\n\s*\n/)[1].trim();
+    const renderedIntroduction = normalize([...article.querySelectorAll('.ai-search-hero-intro, .ai-search-intro-continuation')].map((node) => node.textContent).join(' '));
+    assert.equal(renderedIntroduction, normalize(plain(firstParagraph)), `${entry.route}: hero and introduction must preserve the exact opening paragraph`);
     for (const line of body.split('\n').map((item) => item.trim()).filter(Boolean)) {
       if (/^(?:CTA:|Secondary|Второ CTA:|Второстепенно CTA:)/.test(line)) continue;
       const expected = normalize(plain(line.replace(/^#{1,3} |^- /, '')));
-      assert.ok(text.includes(expected), `${entry.route}: missing approved copy: ${expected}`);
+      assert.ok(text.includes(expected) || renderedIntroduction === expected, `${entry.route}: missing approved copy: ${expected}`);
     }
     assert.doesNotMatch(text, /CONTENT SOURCE|Internal link:|Вътрешна връзка:|съществуващата форма|CTA:/);
     const title = source.match(/^SEO title: (.+)$/m)[1];
@@ -125,7 +128,7 @@ test('off-grid Luxury Cabin marketing label reflects €110 base rate without hi
   }
 });
 
-test('desktop/mobile editorial pages, inquiry controls, photos and crawler requests work without mutations', { timeout: 240000 }, async () => {
+test('desktop/tablet/mobile editorial pages, inquiry controls, photos and crawler requests work without mutations', { timeout: 360000 }, async () => {
   const server = prerender.createStaticServer(dist);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const origin = `http://127.0.0.1:${server.address().port}`;
@@ -144,12 +147,14 @@ test('desktop/mobile editorial pages, inquiry controls, photos and crawler reque
     assert.match(robots, /User-agent: \*/);
     assert.match(robots, /Disallow: \/admin\//);
     assert.doesNotMatch(robots, /Disallow: \/(?:digital-detox|off-grid-cabins|retreat-venue)/);
-    for (const width of [1280, 390]) {
+    const screenshotDir = process.env.AI_SEARCH_SCREENSHOTS;
+    if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
+    for (const width of [390, 768, 1440]) {
       const context = await browser.createBrowserContext();
       const page = await context.newPage();
       await page.setViewport({ width, height: 900, isMobile: width === 390 });
       await page.evaluateOnNewDocument(() => {
-        localStorage.setItem('dd_consent_v1', JSON.stringify({ essential: true, analytics: false, marketing: false }));
+        localStorage.setItem('dd_consent_v1', JSON.stringify({ analytics: false, ads: false }));
       });
       await page.setBypassServiceWorker(true);
       await page.setRequestInterception(true);
@@ -169,14 +174,24 @@ test('desktop/mobile editorial pages, inquiry controls, photos and crawler reque
         await page.waitForFunction(() => !document.querySelector('#root[data-prerender-route]') && document.querySelector('article.ai-search h1'));
         const result = await page.evaluate(async () => {
           const article = document.querySelector('article.ai-search');
-          const images = [...article.querySelectorAll('.ai-search-photos img')];
+          const images = [...article.querySelectorAll('img')];
           await Promise.all(images.map((image) => { image.loading = 'eager'; return image.decode(); }));
+          await document.fonts.ready;
           return {
             headings: document.querySelectorAll('main h1').length,
             overflow: document.documentElement.scrollWidth > innerWidth + 1,
             images: images.map((image) => ({ width: image.naturalWidth, height: image.naturalHeight })),
             editorialInstructions: /Internal link:|Вътрешна връзка:/.test(article.textContent),
-            language: document.documentElement.lang
+            language: document.documentElement.lang,
+            heroCount: article.querySelectorAll('.ai-search-hero img').length,
+            cards: article.querySelectorAll('.ai-search-stay').length,
+            clippedText: [...article.querySelectorAll('h1, h2, h3, p, .ai-search-cta')].some((node) => node.scrollWidth > node.clientWidth + 1),
+            cardImages: [...article.querySelectorAll('.ai-search-stay-image')].map((image) => {
+              const rect = image.getBoundingClientRect();
+              return { width: rect.width, ratio: rect.width / rect.height };
+            }),
+            headerOverflow: [...document.querySelectorAll('header a, header button')].filter((node) => node.checkVisibility())
+              .some((node) => node.getBoundingClientRect().right > innerWidth + 1 || node.getBoundingClientRect().left < -1)
           };
         });
         assert.equal(result.headings, 1);
@@ -184,10 +199,26 @@ test('desktop/mobile editorial pages, inquiry controls, photos and crawler reque
         assert.equal(result.language, entry.locale);
         assert.equal(result.editorialInstructions, false);
         assert.ok(result.images.every((image) => image.width > 0 && image.height > 0));
+        assert.equal(result.heroCount, 1, `${entry.route}: exactly one hero photograph`);
+        assert.equal(result.clippedText, false, `${entry.route}: clipped text at ${width}px`);
+        assert.equal(result.headerOverflow, false, `${entry.route}: navigation overflows at ${width}px`);
+        assert.equal(result.cards, entry.base === '/off-grid-cabins-bulgaria' ? 4 : 0);
+        assert.ok(result.cardImages.every((image) => image.width >= 290 && Math.abs(image.ratio - 1.5) < 0.01), `${entry.route}: cramped or distorted discovery cards`);
+        if (screenshotDir) {
+          await page.screenshot({ path: path.join(screenshotDir, `${entry.base.slice(1)}_${entry.locale}_${width}.png`), fullPage: true });
+        }
         if (entry.base === '/retreat-venue-bulgaria') {
           await page.evaluate(() => document.querySelector('.ai-search-actions button').click());
           await page.waitForSelector('[role="dialog"][aria-modal="true"]', { visible: true });
+          await page.waitForSelector('[data-testid="booking-modal-submit-search"]', { visible: true });
           await page.keyboard.press('Escape');
+          await page.waitForSelector('[role="dialog"][aria-modal="true"]', { hidden: true });
+        }
+        if (width <= 768 && entry.base !== '/off-grid-cabins-bulgaria') {
+          await page.click('button[aria-label="Toggle menu"]');
+          await page.waitForSelector('#site-mobile-nav', { visible: true });
+          await page.click('button[aria-label="Close menu"]');
+          await page.waitForFunction(() => !document.querySelector('#site-mobile-nav'));
         }
       }
       assert.deepEqual(errors, [], `browser errors at ${width}px`);
