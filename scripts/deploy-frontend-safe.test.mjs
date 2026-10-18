@@ -19,6 +19,50 @@ import {
 } from './deploy-frontend-safe.lib.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const TEST_RELEASE_SHA = 'a'.repeat(40);
+const NEXT_RELEASE_SHA = 'b'.repeat(40);
+const routeRegistry = fs.readFileSync(path.join(__dirname, '../client/src/data/publicSeoRoutes.json'), 'utf8');
+const publicRoutes = JSON.parse(routeRegistry);
+
+function createValidRouteHtml(route) {
+  const context = prerenderContract.getSeoValidationContext(route);
+  const entry = publicRoutes.find((item) => item.path === context.entry.path);
+  const title = `Public ${route} | Drift & Dwells`;
+  const description = 'Useful public information for this mountain retreat and its accommodation.';
+  const image = `https://driftdwells.com${entry.ogImage}`;
+  const alternates = context.alternatePaths
+    .map(({ hreflang, path: alternatePath }) => `<link rel="alternate" hreflang="${hreflang}" href="https://driftdwells.com${alternatePath}">`)
+    .join('');
+  const schema = context.requiredSchemaTypes.map((type) => {
+    if (type === 'FAQPage') {
+      return {
+        '@context': 'https://schema.org',
+        '@type': type,
+        mainEntity: [{
+          '@type': 'Question',
+          name: 'What is included in a stay?',
+          acceptedAnswer: { '@type': 'Answer', text: 'A comfortable place to stay in the mountains.' }
+        }]
+      };
+    }
+    return { '@context': 'https://schema.org', '@type': type };
+  });
+  const schemas = schema.map((item) => `<script type="application/ld+json">${JSON.stringify(item)}</script>`).join('');
+  const faqCopy = context.requiredSchemaTypes.includes('FAQPage')
+    ? '<h2>What is included in a stay?</h2><p>A comfortable place to stay in the mountains.</p>'
+    : '';
+  return `<!doctype html><html lang="${context.locale}"><head>
+    <title>${title}</title><meta name="description" content="${description}">
+    <link rel="canonical" href="https://driftdwells.com${context.canonicalPath}">${alternates}
+    <meta property="og:title" content="${title}"><meta property="og:description" content="${description}">
+    <meta property="og:type" content="website"><meta property="og:url" content="https://driftdwells.com${context.canonicalPath}">
+    <meta property="og:image" content="${image}"><meta property="og:image:alt" content="${title}">
+    <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${title}">
+    <meta name="twitter:description" content="${description}"><meta name="twitter:image" content="${image}">
+    ${schemas}</head><body><div id="root" data-prerender-route="${route}"><main><h1>${prerenderContract.getExpectedHeading(route)}</h1>
+    ${faqCopy}<p>${'Public accommodation information. '.repeat(10)}</p></main></div></body></html>`;
+}
+
 function runCLI(args = [], env = {}, { invalidRoute, missingRoute, verificationOnly = false, verificationRoute } = {}) {
   const sandbox = fs.mkdtempSync(path.join(__dirname, '.deploy-cli-test-'));
   try {
@@ -35,12 +79,7 @@ function runCLI(args = [], env = {}, { invalidRoute, missingRoute, verificationO
     for (const route of prerenderContract.ROUTES) {
       const output = prerenderContract.artifactPath(dist, route);
       fs.mkdirSync(path.dirname(output), { recursive: true });
-      fs.writeFileSync(output, `<!doctype html><html lang="${route.startsWith('/bg') ? 'bg' : 'en'}">
-        <head><title>Public ${route} | Drift &amp; Dwells</title>
-        <meta name="description" content="Useful public information for this mountain retreat and its accommodation.">
-        <link rel="canonical" href="https://driftdwells.com${route}"></head>
-        <body><div id="root" data-prerender-route="${route}"><main><h1>${prerenderContract.getExpectedHeading(route)}</h1>
-        <p>${'Public accommodation information. '.repeat(10)}</p></main></div></body></html>`);
+      fs.writeFileSync(output, createValidRouteHtml(route));
     }
     if (invalidRoute) fs.writeFileSync(prerenderContract.artifactPath(dist, invalidRoute), '<div id="root"></div>');
     if (missingRoute) fs.unlinkSync(prerenderContract.artifactPath(dist, missingRoute));
@@ -53,7 +92,14 @@ function runCLI(args = [], env = {}, { invalidRoute, missingRoute, verificationO
     return spawnSync(
       process.execPath,
       [path.join(sandbox, 'scripts/deploy-frontend-safe.mjs'), ...args],
-      { encoding: 'utf8', env: { ...process.env, ...env } }
+      {
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          VITE_FRONTEND_RELEASE: TEST_RELEASE_SHA,
+          ...env
+        }
+      }
     );
   } finally {
     fs.rmSync(sandbox, { recursive: true });
@@ -319,16 +365,71 @@ test('mergeReleaseManifest retains previous hashed assets', () => {
   const merged = mergeReleaseManifest(
     {
       frontendRelease: 'release-a',
-      assetFiles: ['index-old.js', 'OpsReservationDetail-old.js']
+      assetFiles: ['index-current.js'],
+      retainedAssetFiles: ['index-old.js', 'index-current.js']
     },
     { frontendRelease: 'release-b', ok: true },
     ['index-new.js', 'OpsReservationDetail-new.js']
   );
 
   assert.deepEqual(merged.assetFiles, ['index-new.js', 'OpsReservationDetail-new.js']);
-  assert.ok(merged.retainedAssetFiles.includes('OpsReservationDetail-old.js'));
+  assert.ok(merged.retainedAssetFiles.includes('index-old.js'));
+  assert.ok(merged.retainedAssetFiles.includes('index-current.js'));
   assert.ok(merged.retainedAssetFiles.includes('OpsReservationDetail-new.js'));
   assert.equal(merged.deployStrategy, 'additive-no-delete');
+});
+
+test('publisher CLI refreshes the release id while retaining prior assets', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-cli-release-id-'));
+  try {
+    const dist = makeMockDist(tmp);
+    const webroot = makeMockWebroot(tmp);
+    fs.writeFileSync(path.join(webroot, 'release-manifest.json'), JSON.stringify({
+      ok: true,
+      frontendRelease: 'old-release',
+      applicationCommit: 'old-release',
+      assetFiles: ['assets/old.js'],
+      retainedAssetFiles: ['assets/old.js']
+    }));
+    const result = runCLI([], {
+      WEBROOT: webroot,
+      REMOTE: '',
+      DRY_RUN: '',
+      VITE_FRONTEND_RELEASE: NEXT_RELEASE_SHA
+    });
+    assert.equal(result.status, 0, `stderr: ${result.stderr}`);
+    const manifest = JSON.parse(fs.readFileSync(path.join(webroot, 'release-manifest.json'), 'utf8'));
+    assert.equal(manifest.frontendRelease, NEXT_RELEASE_SHA);
+    assert.equal(manifest.applicationCommit, NEXT_RELEASE_SHA);
+    assert.ok(manifest.retainedAssetFiles.includes('assets/old.js'));
+    assert.ok(manifest.retainedAssetFiles.includes('index-abc123.js'));
+  } finally {
+    fs.rmSync(tmp, { recursive: true });
+  }
+});
+
+test('publisher refuses to reuse a stale manifest release id when the new SHA is missing', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dd-cli-missing-release-id-'));
+  try {
+    const dist = makeMockDist(tmp);
+    const webroot = makeMockWebroot(tmp);
+    fs.writeFileSync(path.join(webroot, 'release-manifest.json'), JSON.stringify({
+      frontendRelease: 'old-release',
+      assetFiles: ['assets/old.js']
+    }));
+    const result = runCLI([], {
+      WEBROOT: webroot,
+      REMOTE: '',
+      DRY_RUN: '',
+      VITE_FRONTEND_RELEASE: '',
+      GIT_COMMIT: ''
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /full release commit SHA before publication/);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(webroot, 'release-manifest.json'), 'utf8')).frontendRelease, 'old-release');
+  } finally {
+    fs.rmSync(tmp, { recursive: true });
+  }
 });
 
 test('listHashedAssets reads dist/assets', () => {

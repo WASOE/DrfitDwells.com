@@ -13,8 +13,8 @@
   { "path": "/off-grid-stays-bulgaria", "locales": ["en", "bg"], "ogImage": "/media/hero/valley-summer-night-1200w.webp", "headings": { "en": "Off-grid stays in Bulgaria", "bg": "Оф-грид престои в България" } },
   { "path": "/enduro", "locales": ["en", "bg"], "ogImage": "/media/enduro/hero-aerial-1200w.webp", "headings": { "en": "THEVALLEY", "bg": "THEVALLEY" } },
   { "path": "/winter-village", "locales": ["en", "bg"], "ogImage": "/media/winter/rhodope-winter-valley-aerial-1200w.webp", "headings": { "en": "A winter village above the clouds.", "bg": "Зимно селище над облаците." } },
-  { "path": "/stays/the-cabin", "locales": ["en", "bg"], "ogImage": "/uploads/Content%20website/drift-dwells-bulgaria-bucephalus-suite.avif", "stayId": "the-cabin", "headings": { "en": "The Cabin", "bg": "The Cabin" } },
-  { "path": "/stays/a-frame", "locales": ["en", "bg"], "ogImage": "/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.24%20AM%20(4).jpeg", "stayId": "valley-a-frame", "headings": { "en": "The Valley A-Frame", "bg": "The Valley A-Frame" } },
-  { "path": "/stays/lux-cabin", "locales": ["en", "bg"], "ogImage": "/uploads/The%20Valley/Lux-cabin-exterior-watermark-remover-20260113071503.jpg", "stayId": "valley-lux-cabin", "headings": { "en": "The Valley Lux Cabin", "bg": "The Valley Lux Cabin" } },
-  { "path": "/stays/stone-house", "locales": ["en", "bg"], "ogImage": "/uploads/The%20Valley/WhatsApp%20Image%202025-10-17%20at%2010.20.24%20AM.jpeg", "stayId": "valley-stone-house", "headings": { "en": "The Valley Stone House", "bg": "The Valley — Каменна къща" } }
+  { "path": "/stays/the-cabin", "locales": ["en", "bg"], "ogImage": "/media/hero/cabin-summer-1200w.webp", "stayId": "the-cabin", "headings": { "en": "The Cabin", "bg": "The Cabin" } },
+  { "path": "/stays/a-frame", "locales": ["en", "bg"], "ogImage": "/media/enduro/aframes-sunset-1200w.webp", "stayId": "valley-a-frame", "headings": { "en": "The Valley A-Frame", "bg": "The Valley A-Frame" } },
+  { "path": "/stays/lux-cabin", "locales": ["en", "bg"], "ogImage": "/media/enduro/lux-cabin-cover-1200w.webp", "stayId": "valley-lux-cabin", "headings": { "en": "The Valley Lux Cabin", "bg": "The Valley Lux Cabin" } },
+  { "path": "/stays/stone-house", "locales": ["en", "bg"], "ogImage": "/media/enduro/stone-house-cover-1200w.webp", "stayId": "valley-stone-house", "headings": { "en": "The Valley Stone House", "bg": "The Valley — Каменна къща" } }
 ]
