@@ -86,7 +86,7 @@ export default function Enduro() {
         description={e('metaDescription')}
         canonicalPath="/enduro"
         ogImage={hero.fallbackSrc}
-        preloadImages={[{ href: ENDURO_HERO_LCP_PRELOAD, type: 'image/avif', fetchPriority: 'high' }]}
+        preloadImages={[{ href: ENDURO_HERO_LCP_PRELOAD, type: 'image/png', fetchPriority: 'high' }]}
         hreflangAlternates={buildHreflangAlternates('/enduro')}
       />
 

@@ -6,6 +6,7 @@ import { useBookingSearch } from '../../context/BookingSearchContext';
 import { useLocalizedPath } from '../../hooks/useLocalizedPath';
 import Seo from '../../components/Seo';
 import { buildHreflangAlternates } from '../../utils/localizedRoutes';
+import SeoLandingHeroImage from './SeoLandingHeroImage';
 import './seo-landing.css';
 
 const BanskoRemoteWorkRetreat = () => {
@@ -19,7 +20,7 @@ const BanskoRemoteWorkRetreat = () => {
         title={t('bansko.metaTitle')}
         description={t('bansko.metaDescription')}
         canonicalPath="/bansko-remote-work-retreat"
-        ogImage="/uploads/The Valley/WhatsApp Image 2025-10-17 at 10.20.23 AM.jpeg"
+        ogImage="/media/seo/aframe-bedroom-winter.jpeg"
         hreflangAlternates={buildHreflangAlternates('/bansko-remote-work-retreat')}
       />
       <div className="seo-landing">
@@ -41,6 +42,7 @@ const BanskoRemoteWorkRetreat = () => {
             >
               {t('bansko.whyBansko')}
             </motion.p>
+            <SeoLandingHeroImage src="/media/seo/aframe-bedroom-winter.jpeg" alt={t('bansko.h1')} />
           </div>
         </section>
 

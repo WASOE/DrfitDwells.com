@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CABIN_MEDIA } from '../../config/mediaConfig';
 import Seo from '../../components/Seo';
 import { buildHreflangAlternates } from '../../utils/localizedRoutes';
 import { useCabinNameToIdMap } from '../../hooks/useCabinNameToIdMap';
@@ -22,7 +21,7 @@ import {
 import '../the-valley/the-valley.css';
 import '../../i18n/ns/seo';
 
-const OG_IMAGE_FALLBACK = CABIN_MEDIA.heroPoster.winter;
+const OG_IMAGE_FALLBACK = '/media/seo/aframe-row-sunset.png';
 
 function sanitizeReviewText(text = '') {
   return String(text)
@@ -96,7 +95,6 @@ export default function OffGridStaysBulgaria() {
           showDetailsLink: stay.showDetailsLink
         };
       }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [slidesByStayId, bookingToById, detailsToById, language]
   );
 

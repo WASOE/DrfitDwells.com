@@ -6,6 +6,7 @@ import { useBookingSearch } from '../../context/BookingSearchContext';
 import { useLocalizedPath } from '../../hooks/useLocalizedPath';
 import Seo from '../../components/Seo';
 import { buildHreflangAlternates } from '../../utils/localizedRoutes';
+import SeoLandingHeroImage from './SeoLandingHeroImage';
 import './seo-landing.css';
 
 const OffGridCabinsBulgaria = () => {
@@ -19,7 +20,7 @@ const OffGridCabinsBulgaria = () => {
         title={t('offGrid.metaTitle')}
         description={t('offGrid.metaDescription')}
         canonicalPath="/off-grid-cabins-bulgaria"
-        ogImage="/uploads/Videos/The-cabin-header.winter-poster.jpg"
+        ogImage="/media/seo/aframe-site-wide.jpeg"
         hreflangAlternates={buildHreflangAlternates('/off-grid-cabins-bulgaria')}
       />
       <div className="seo-landing">
@@ -41,6 +42,7 @@ const OffGridCabinsBulgaria = () => {
             >
               {t('offGrid.intro')}
             </motion.p>
+            <SeoLandingHeroImage src="/media/seo/aframe-site-wide.jpeg" alt={t('offGrid.h1')} />
           </div>
         </section>
 
