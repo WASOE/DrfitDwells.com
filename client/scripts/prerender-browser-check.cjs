@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const puppeteer = require('puppeteer-core');
-const { ROUTES, artifactPath, getExpectedHeading, getExpectedVisibleHeadings, validateArtifacts, inspectDocument, inspectVisibleHeading } = require('./prerender-contract.cjs');
+const { ROUTES, artifactPath, getExpectedHeading, getExpectedVisibleHeadings, getSeoValidationContext, validateArtifacts, inspectDocument, inspectVisibleHeading } = require('./prerender-contract.cjs');
 const { createStaticServer, prerenderRoute, findBrowserExecutablePath } = require('./prerender-routes.cjs');
 
 async function waitForClientRoot(page) {
@@ -52,7 +52,7 @@ async function check() {
           const response = await page.goto(`${artifactOrigin}${route}`, { waitUntil: 'domcontentloaded' });
           assert.equal(response.status(), 200);
           const doc = await page.evaluateHandle(() => document);
-          await page.evaluate(inspectDocument, doc, route, getExpectedHeading(route));
+          await page.evaluate(inspectDocument, doc, route, getExpectedHeading(route), getSeoValidationContext(route));
           await page.evaluate(inspectVisibleHeading, doc, getExpectedVisibleHeadings(route));
           await doc.dispose();
         }
@@ -133,7 +133,7 @@ async function check() {
           assert.equal(frames.started, true, `${route}: visible content was sampled`);
           assert.equal(frames.blank, 0, `${route}: no blank rendered frames during client replacement`);
           const doc = await live.evaluateHandle(() => document);
-          await live.evaluate(inspectDocument, doc, route, getExpectedHeading(route));
+          await live.evaluate(inspectDocument, doc, route, getExpectedHeading(route), getSeoValidationContext(route));
           await doc.dispose();
           assert.deepEqual(errors, [], `${route} has no React/browser errors`);
         }
