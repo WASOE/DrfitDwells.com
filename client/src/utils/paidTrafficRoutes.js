@@ -1,6 +1,6 @@
 import { localizePath, stripLocaleFromPath } from './localizedRoutes';
 
-export const PAID_TRAFFIC_LANDING_PATH = '/off-grid-stays-bulgaria';
+export const PAID_TRAFFIC_LANDING_PATH = '/off-grid-cabins-bulgaria';
 /** Locale-stripped paths that use stripped chrome (no chat / audio / announcement). */
 export const PAID_TRAFFIC_LANDING_PATHS = new Set([
   PAID_TRAFFIC_LANDING_PATH

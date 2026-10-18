@@ -60,7 +60,7 @@ export const editorial = Object.fromEntries(Object.entries(contentSources).map((
 ]));
 
 export const editorialPaths = {
-  offGrid: '/off-grid-stays-bulgaria',
+  offGrid: '/off-grid-cabins-bulgaria',
   detox: '/digital-detox-bulgaria',
   corporate: '/retreat-venue-bulgaria'
 };

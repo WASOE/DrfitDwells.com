@@ -1,13 +1,13 @@
 # CONTENT SOURCE 02 EN | NEW PAGE
 Route: /digital-detox-bulgaria/
 SEO title: Digital Detox Cabin in Bulgaria | 3 Nights Offline | Drift & Dwells
-Meta description: Spend three quiet nights without Wi-Fi at The Cabin near Bachevo. A practical, honest digital-detox getaway for two, with a wood stove and forest silence.
+Meta description: Spend three quiet nights without Wi-Fi at The Cabin near Bachevo, in the Razlog area of southwestern Bulgaria. A practical, honest digital-detox getaway for two, with a wood stove and forest silence.
 Social title: Three nights offline. No app required.
 Photo direction: authentic photo of The Cabin wood stove/forest, with real, descriptive alt text; no staged therapy imagery.
 
 # A digital detox cabin in Bulgaria. Three nights offline.
 
-There is a moment when another notification starts to feel like a demand. At The Cabin by Drift & Dwells, in the forest near Bachevo in southwestern Bulgaria, there is no guest Wi-Fi to connect to. The day follows the light, the weather and the fire instead. This is a small, off-grid cabin for two adults, not a wellness clinic, organised retreat or hotel with a wellness slogan.
+There is a moment when another notification starts to feel like a demand. At The Cabin by Drift & Dwells, near Bachevo in the Razlog area of southwestern Bulgaria, there is no guest Wi-Fi to connect to. The day follows the light, the weather and the fire instead. This is a small, off-grid cabin for two adults, not a wellness clinic, organised retreat or hotel with a wellness slogan.
 
 **In short:** Choose The Cabin if you want privacy, forest quiet and a genuinely low-tech stay. There is no reliable mobile reception and only limited solar lighting. You heat the cabin with a wood stove and take care of basic off-grid routines yourself. A three-night stay gives you two full days without a normal screen-driven schedule. It does not promise to treat burnout.
 
@@ -73,11 +73,11 @@ The Cabin is designed for two adults. Check the current booking conditions for d
 No accommodation can promise that. Persistent exhaustion or burnout symptoms deserve professional evaluation and support; a quiet holiday can be a personal choice alongside appropriate care.
 
 ### Is it close to Sofia?
-The Cabin is in southwestern Bulgaria near Bachevo, in the wider Bansko/Razlog area. Check the current route and conditions from your starting point rather than relying on a fixed travel-time promise.
+The Cabin is near Bachevo, in the Razlog area of southwestern Bulgaria. Check the current route and conditions from your starting point rather than relying on a fixed travel-time promise.
 
 ## Ready to disappear for a while?
 
 Check the actual cabin photos, road access, fire and water arrangements, then select your dates. If you want a group experience instead of solitude, look at The Valley.
 
 CTA: Explore and book The Cabin -> /cabin/
-Secondary CTA: Compare mountain stays -> /off-grid-stays-bulgaria/
+Secondary CTA: Compare mountain stays -> /off-grid-cabins-bulgaria/

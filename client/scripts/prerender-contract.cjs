@@ -57,7 +57,7 @@ function getSeoValidationContext(route) {
         ? ['FAQPage']
         : entry.stayId
           ? ['LodgingBusiness', 'Accommodation', 'BreadcrumbList']
-          : ['/off-grid-stays-bulgaria', '/digital-detox-bulgaria', '/retreat-venue-bulgaria'].includes(entry.path)
+          : ['/off-grid-cabins-bulgaria', '/digital-detox-bulgaria', '/retreat-venue-bulgaria'].includes(entry.path)
             ? ['WebPage', 'BreadcrumbList']
             : [];
 

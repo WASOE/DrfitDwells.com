@@ -9,7 +9,7 @@ function hasStickyBottomBar(pathname) {
   pathname = stripLocaleFromPath(pathname);
   if (pathname === '/') return true;           // Home: BookingDrawer (mobile)
   if (pathname === '/valley') return true;     // Valley: BookingDrawer (mobile)
-  if (pathname === '/off-grid-stays-bulgaria') return true; // Paid landing: sticky mobile CTA
+  if (pathname === '/off-grid-cabins-bulgaria') return true; // Paid landing: sticky mobile CTA
   if (/^\/stays\/[^/]+$/.test(pathname)) return true;  // StayDetails: StickyBookingBar
   if (/^\/cabin\/[^/]+$/.test(pathname)) return true;  // Legacy cabin redirect target
   if (/^\/craft\/step-[1-4]$/.test(pathname)) return true; // Craft steps: StickyBookingBar
@@ -30,7 +30,7 @@ function getBottomPosition(pathname) {
   const hasStickyDesktop = hasStickyBottomBarOnDesktop(pathname);
   if (!hasSticky) return 'bottom-0';
   // Home/Valley: BookingDrawer is exactly 70px — use 70 so no gap above "Check Availability"
-  if (pathname === '/' || pathname === '/valley' || pathname === '/off-grid-stays-bulgaria') {
+  if (pathname === '/' || pathname === '/valley' || pathname === '/off-grid-cabins-bulgaria') {
     return hasStickyDesktop ? 'bottom-[72px]' : 'bottom-[70px] md:bottom-0';
   }
   // Cabin details & craft: StickyBookingBar ~72px
@@ -189,4 +189,3 @@ const AnnouncementBar = () => {
 };
 
 export default AnnouncementBar;
-

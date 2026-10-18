@@ -94,7 +94,6 @@ const GiftVoucherSuccess = lazy(() => import('./pages/GiftVoucherSuccess'))
 const GiftVoucherRedeem = lazy(() => import('./pages/GiftVoucherRedeem'))
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'))
 
-const OffGridCabinsBulgaria = lazy(() => import('./pages/seo/OffGridCabinsBulgaria'))
 const RhodopesCabinRetreat = lazy(() => import('./pages/seo/RhodopesCabinRetreat'))
 const BanskoRemoteWorkRetreat = lazy(() => import('./pages/seo/BanskoRemoteWorkRetreat'))
 const RetreatVenueBulgaria = lazy(() => import('./pages/seo/RetreatVenueBulgaria'))
@@ -184,16 +183,16 @@ function App() {
               <Route path="/guides/cabin/:slug" element={<Navigate to="/guides/the-valley" replace />} />
 
               {/* SEO landing pages */}
-              <Route path="/off-grid-cabins-bulgaria" element={<OffGridCabinsBulgaria />} />
-              <Route path="/bg/off-grid-cabins-bulgaria" element={<OffGridCabinsBulgaria />} />
+              <Route path="/off-grid-cabins-bulgaria" element={<OffGridStaysBulgaria />} />
+              <Route path="/bg/off-grid-cabins-bulgaria" element={<OffGridStaysBulgaria />} />
               <Route path="/rhodopes-cabin-retreat" element={<RhodopesCabinRetreat />} />
               <Route path="/bg/rhodopes-cabin-retreat" element={<RhodopesCabinRetreat />} />
               <Route path="/bansko-remote-work-retreat" element={<BanskoRemoteWorkRetreat />} />
               <Route path="/bg/bansko-remote-work-retreat" element={<BanskoRemoteWorkRetreat />} />
               <Route path="/retreat-venue-bulgaria" element={<RetreatVenueBulgaria />} />
               <Route path="/bg/retreat-venue-bulgaria" element={<RetreatVenueBulgaria />} />
-              <Route path="/off-grid-stays-bulgaria" element={<OffGridStaysBulgaria />} />
-              <Route path="/bg/off-grid-stays-bulgaria" element={<OffGridStaysBulgaria />} />
+              <Route path="/off-grid-stays-bulgaria" element={<Navigate to="/off-grid-cabins-bulgaria/" replace />} />
+              <Route path="/bg/off-grid-stays-bulgaria" element={<Navigate to="/bg/off-grid-cabins-bulgaria/" replace />} />
               <Route path="/digital-detox-bulgaria" element={<DigitalDetoxBulgaria />} />
               <Route path="/bg/digital-detox-bulgaria" element={<DigitalDetoxBulgaria />} />
               <Route path="/enduro" element={<Enduro />} />

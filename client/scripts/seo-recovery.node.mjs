@@ -71,7 +71,18 @@ function collectTypes(value, types = new Set()) {
 
 test('compiled raw HTML contains complete route-specific multilingual metadata', () => {
   assert.ok(fs.existsSync(DIST_DIR), 'Run the normal production build before SEO regression tests.');
-  assert.equal(expectedRoutes.length, 36, 'Update route coverage expectations when the public route registry changes.');
+  assert.equal(expectedRoutes.length, 34, 'Update route coverage expectations when the public route registry changes.');
+  const routePaths = expectedRoutes.map(({ path }) => path);
+  for (const expected of [
+    '/off-grid-cabins-bulgaria',
+    '/bg/off-grid-cabins-bulgaria',
+    '/digital-detox-bulgaria',
+    '/bg/digital-detox-bulgaria',
+    '/retreat-venue-bulgaria',
+    '/bg/retreat-venue-bulgaria'
+  ]) assert.ok(routePaths.includes(expected), `Missing approved editorial URL ${expected}`);
+  assert.ok(!routePaths.includes('/off-grid-stays-bulgaria'));
+  assert.ok(!routePaths.includes('/bg/off-grid-stays-bulgaria'));
   const defaultSiteUrl = 'https://driftdwells.com';
 
   for (const route of expectedRoutes) {
@@ -256,6 +267,8 @@ test('generated sitemap exactly covers indexable registry routes and excludes no
 test('Apache SEO redirects preserve legacy mappings and serve nested prerendered routes', () => {
   const htaccess = fs.readFileSync(path.join(CLIENT_DIR, 'public/.htaccess'), 'utf8');
   for (const [from, to] of [
+    ['off-grid-stays-bulgaria', '/off-grid-cabins-bulgaria/'],
+    ['bg/off-grid-stays-bulgaria', '/bg/off-grid-cabins-bulgaria/'],
     ['cabin/69b2ff933a7fff6621e785cc', '/stays/the-cabin'],
     ['cabin/69b2ff947f141a71ffa7c492', '/stays/lux-cabin'],
     ['bg/cabin/69b2ff933a7fff6621e785cc', '/bg/stays/the-cabin'],

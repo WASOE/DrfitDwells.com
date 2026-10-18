@@ -44,7 +44,7 @@ function fixture(route) {
         }]
         : ['/cabin', '/valley', '/retreats/the-valley'].includes(basePath)
           ? [{ '@type': 'LodgingBusiness' }, { '@type': 'BreadcrumbList' }]
-          : ['/off-grid-stays-bulgaria', '/digital-detox-bulgaria', '/retreat-venue-bulgaria'].includes(basePath)
+          : ['/off-grid-cabins-bulgaria', '/digital-detox-bulgaria', '/retreat-venue-bulgaria'].includes(basePath)
             ? [{ '@type': 'WebPage' }, { '@type': 'BreadcrumbList' }]
             : [];
   const faqCopy = route === '/cabin/faq'
@@ -69,7 +69,9 @@ function fixture(route) {
 }
 
 test('finite registry includes eligible localized public routes, not private/transaction/noindex routes', () => {
-  assert.equal(ROUTES.length, 36);
+  assert.equal(ROUTES.length, 34);
+  assert.ok(!ROUTES.includes('/off-grid-stays-bulgaria'));
+  assert.ok(!ROUTES.includes('/bg/off-grid-stays-bulgaria'));
   assert.equal(new Set(ROUTES).size, ROUTES.length);
   for (const route of ['/build', '/bg/build', '/bg/about', '/bg/cabin/faq', '/search', '/terms', '/privacy',
     '/career', '/press', '/cancellation-policy', '/guides/the-valley', '/guides/the-cabin',
@@ -138,7 +140,7 @@ test('artifact contract rejects missing, wrong-route, generic, loading, noindex 
       fs.mkdirSync(path.dirname(output), { recursive: true });
       fs.writeFileSync(output, fixture(route));
     }
-    assert.equal(validateArtifacts(tmp).length, 36);
+    assert.equal(validateArtifacts(tmp).length, 34);
     fs.writeFileSync(artifactPath(tmp, '/'), '<html><div id="root"></div></html>');
     assert.throws(() => validateArtifacts(tmp));
   } finally {

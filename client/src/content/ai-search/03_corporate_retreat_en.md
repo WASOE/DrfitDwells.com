@@ -8,7 +8,7 @@ Hero image: Real wide photograph of the Valley showing individual stays and shar
 
 # Corporate retreats and team building in Bulgaria, without the conference hotel.
 
-Some teams need more than another meeting room. The Valley by Drift & Dwells is a small off-grid mountain village near Chereshovo in southwestern Bulgaria, approximately 1,550 metres above sea level. Instead of sharing a hotel corridor, your group can spread out across available private cabins and the Stone House, then come together around the fire, at shared tables and in the open air.
+Some teams need more than another meeting room. The Valley by Drift & Dwells is a small off-grid mountain village in the Rhodope Mountains near Chereshovo and Ortsevo, approximately 1,550 metres above sea level. Instead of sharing a hotel corridor, your group can spread out across available private cabins and the Stone House, then come together around the fire, at shared tables and in the open air.
 
 **The short answer:** The Valley is a candidate for small-company offsites, creative retreats, founders' gatherings and unconventional team-building trips. You can enquire about a group stay or reserve the whole active village through its dedicated buyout experience. Sleeping capacity, bed layout, price and the availability of spaces depend on your dates. The setting is deliberately remote, so access planning matters.
 
@@ -74,7 +74,7 @@ CTA: Check exclusive-buyout dates -> /retreats/the-valley/
 ## Frequently asked questions
 
 ### Where can we do an unusual team building in Bulgaria?
-The Valley offers a remote, private-village alternative to a hotel offsite near Chereshovo. It is suited to teams that want real mountain surroundings, shared fireside time and a flexible programme.
+The Valley offers a remote, private-village alternative to a hotel offsite in the Rhodope Mountains near Chereshovo and Ortsevo. It is suited to teams that want real mountain surroundings, shared fireside time and a flexible programme.
 
 ### How many employees can stay overnight?
 Capacity depends on the active cabins and sleeping configuration for your chosen dates. Request a confirmed rooming list or use the current buyout availability tool. Do not use the number of planned future A-frames as current capacity.

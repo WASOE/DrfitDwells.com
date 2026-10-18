@@ -13,7 +13,7 @@ const dist = path.join(clientDir, 'dist');
 const require = createRequire(import.meta.url);
 const registry = require('../src/data/publicSeoRoutes.json');
 const cases = [
-  ['01_off_grid_weekends', '/off-grid-stays-bulgaria'],
+  ['01_off_grid_weekends', '/off-grid-cabins-bulgaria'],
   ['02_digital_detox', '/digital-detox-bulgaria'],
   ['03_corporate_retreat', '/retreat-venue-bulgaria']
 ].flatMap(([file, route]) => ['en', 'bg'].map((locale) => ({
@@ -36,6 +36,9 @@ test('all six raw HTML pages preserve approved editorial copy, metadata, links, 
     const document = new JSDOM(html).window.document;
     const article = document.querySelector('article.ai-search');
     assert.ok(article, `${entry.route}: missing editorial article`);
+    const canonical = `https://driftdwells.com${entry.route}/`;
+    assert.equal(document.querySelector('link[rel="canonical"]').href, canonical);
+    assert.equal(document.querySelector('meta[property="og:url"]').content, canonical);
     assert.equal(document.querySelectorAll('main h1').length, 1, `${entry.route}: multiple H1s`);
     const text = normalize(article.textContent);
     for (const line of body.split('\n').map((item) => item.trim()).filter(Boolean)) {
@@ -53,6 +56,12 @@ test('all six raw HTML pages preserve approved editorial copy, metadata, links, 
     assert.deepEqual(schemas.map((node) => node['@type']), ['WebPage', 'BreadcrumbList']);
     assert.equal(schemas[0].inLanguage, entry.locale);
     assert.equal(schemas[0]['@id'], `https://driftdwells.com${entry.route}/#webpage`);
+    const expectedAbout = entry.base === '/retreat-venue-bulgaria'
+      ? ['/valley/#lodging', '/retreats/the-valley/#lodging']
+      : entry.base === '/digital-detox-bulgaria'
+        ? ['/cabin/#lodging']
+        : ['/cabin/#lodging', '/valley/#lodging'];
+    assert.deepEqual(schemas[0].about.map(({ '@id': id }) => id), expectedAbout.map((id) => `https://driftdwells.com${id}`));
     assert.doesNotMatch(JSON.stringify(schemas), /"Event"|"Product"|"offers"|"aggregateRating"/);
     const images = article.querySelectorAll('.ai-search-photos img');
     assert.ok(images.length >= 2 && images.length <= 4);
@@ -73,12 +82,47 @@ test('all six raw HTML pages preserve approved editorial copy, metadata, links, 
         assert.ok(article.querySelector(`a[href="${href}"]`), `${entry.route}: missing citation`);
       }
     }
-    if (entry.base === '/off-grid-stays-bulgaria') {
+    if (entry.base === '/off-grid-cabins-bulgaria') {
       assert.ok(article.querySelector('a[href*="/stays/the-cabin"]'), 'existing stay selector must remain');
       assert.ok(article.querySelector('a[href*="/stays/lux-cabin"]'), 'existing Luxury Cabin selector must remain');
     }
   }
-  assert.equal(registry.flatMap((entry) => entry.locales).length, 36);
+  const routes = registry.flatMap(({ path, locales }) =>
+    locales.map((locale) => locale === 'bg' ? `/bg${path}` : path)
+  );
+  assert.equal(routes.length, 34);
+  assert.ok(routes.includes('/off-grid-cabins-bulgaria'));
+  assert.ok(routes.includes('/bg/off-grid-cabins-bulgaria'));
+  assert.ok(!routes.includes('/off-grid-stays-bulgaria'));
+  assert.ok(!routes.includes('/bg/off-grid-stays-bulgaria'));
+});
+
+test('publisher handoff uses only the established off-grid destination and agreed placements', () => {
+  const handoff = fs.readFileSync(path.join(clientDir, '../docs/go-guide-publisher-handoff.md'), 'utf8');
+  for (const destination of [
+    'https://driftdwells.com/off-grid-cabins-bulgaria/',
+    'https://driftdwells.com/digital-detox-bulgaria/',
+    'https://driftdwells.com/retreat-venue-bulgaria/',
+    'https://driftdwells.com/bg/off-grid-cabins-bulgaria/',
+    'https://driftdwells.com/bg/digital-detox-bulgaria/',
+    'https://driftdwells.com/bg/retreat-venue-bulgaria/'
+  ]) assert.ok(handoff.includes(destination), `Missing publisher destination ${destination}`);
+  assert.match(handoff, /Q2[\s\S]*burnout/);
+  assert.match(handoff, /Q4[\s\S]*off-grid/);
+  assert.match(handoff, /Q10[\s\S]*The Valley[\s\S]*team building/);
+  assert.doesNotMatch(handoff, /https:\/\/driftdwells\.com\/(?:bg\/)?off-grid-stays-bulgaria/);
+});
+
+test('off-grid Luxury Cabin marketing label reflects €110 base rate without hiding seasonal rates', () => {
+  for (const [locale, route, expected] of [
+    ['en', '/off-grid-cabins-bulgaria', '€110/night base rate; seasonal rates vary'],
+    ['bg', '/bg/off-grid-cabins-bulgaria', 'Базова цена €110/нощувка; сезонните цени варират']
+  ]) {
+    const html = fs.readFileSync(path.join(dist, route.slice(1), 'index.html'), 'utf8');
+    const text = normalize(new JSDOM(html).window.document.body.textContent);
+    assert.ok(text.includes(expected), `${locale} off-grid route does not show the verified €110 base rate`);
+    assert.doesNotMatch(text, /€85/);
+  }
 });
 
 test('desktop/mobile editorial pages, inquiry controls, photos and crawler requests work without mutations', { timeout: 240000 }, async () => {
@@ -99,7 +143,7 @@ test('desktop/mobile editorial pages, inquiry controls, photos and crawler reque
     const robots = await (await fetch(`${origin}/robots.txt`)).text();
     assert.match(robots, /User-agent: \*/);
     assert.match(robots, /Disallow: \/admin\//);
-    assert.doesNotMatch(robots, /Disallow: \/(?:digital-detox|off-grid-stays|retreat-venue)/);
+    assert.doesNotMatch(robots, /Disallow: \/(?:digital-detox|off-grid-cabins|retreat-venue)/);
     for (const width of [1280, 390]) {
       const context = await browser.createBrowserContext();
       const page = await context.newPage();

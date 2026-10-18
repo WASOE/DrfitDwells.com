@@ -179,8 +179,8 @@ const Footer = () => {
                   </Link>
                 </li>
                 <li className="mb-4">
-                  <Link to={`${localizePath('/off-grid-stays-bulgaria', language)}/`} className="text-sm underline underline-offset-4">
-                    {language === 'bg' ? 'Офгрид престои' : 'Off-grid stays'}
+                  <Link to={`${localizePath('/digital-detox-bulgaria', language)}/`} className="text-sm underline underline-offset-4">
+                    {language === 'bg' ? 'Дигитален детокс' : 'Digital detox'}
                   </Link>
                 </li>
                 <li className="mb-4">

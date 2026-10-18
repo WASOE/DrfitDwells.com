@@ -1,5 +1,5 @@
 # CONTENT SOURCE 01 EN | EXISTING ROUTE
-Route: /off-grid-stays-bulgaria/
+Route: /off-grid-cabins-bulgaria/
 Action: Enrich existing page without deleting its verified inventory cards or booking UI. Use this content to replace thin generic copy and add answer-led sections. Keep one H1, not two.
 SEO title: Off-Grid Cabins in Bulgaria | Escape the City | Drift & Dwells
 Meta description: Looking for an off-grid weekend from Sofia? Compare a truly disconnected forest cabin for two with private mountain stays at The Valley in Bulgaria.
@@ -8,7 +8,7 @@ Suggested photo: Genuine wide photo of The Cabin among trees, selected from exis
 
 # Off-grid cabins in Bulgaria. Different by design.
 
-You don't need another hotel weekend. You need a place where the day belongs to you. Drift & Dwells offers two very different escapes in the mountains of southwestern Bulgaria: The Cabin, a self-reliant forest hideaway for two near Bachevo, and The Valley, a small mountain village of separate stays and shared outdoor spaces near Chereshovo. Both put nature first. Only one asks you to leave the internet behind entirely.
+You don't need another hotel weekend. You need a place where the day belongs to you. Drift & Dwells offers two very different escapes in southwestern Bulgaria: The Cabin, a self-reliant forest hideaway for two near Bachevo, in the Razlog area, and The Valley, a small village of separate stays and shared outdoor spaces in the Rhodope Mountains near Chereshovo and Ortsevo. Both put nature first. Only one asks you to leave the internet behind entirely.
 
 **Quick answer:** If you want a no-Wi-Fi escape for two, choose The Cabin. If you want your own space in a mountain village, or are travelling with friends, explore The Valley. Check each location's actual availability and access instructions before setting off.
 
@@ -16,7 +16,7 @@ You don't need another hotel weekend. You need a place where the day belongs to 
 
 Looking to get out of Sofia and into the mountains? You don't have to fly abroad to disappear for a weekend. The Drift & Dwells properties are in southwestern Bulgaria, in the broader Razlog and Bansko region, with an arrival experience very different from a city hotel. Plan the drive and final approach around the chosen property, weather and daylight; neither location is a casual city-centre check-in.
 
-Bring layers, comfortable footwear and time. At The Cabin, your final approach is along a rough forest road, and high ground clearance is recommended. At The Valley, conventional cars stop at the designated parking area near Chereshovo; guests continue on foot or by a suitable prearranged transfer. The current Valley access guide describes approximately 2.5 km on foot, around 45 minutes in normal conditions. Always follow the instructions sent with your booking.
+Bring layers, comfortable footwear and time. The Cabin is near Bachevo, in the Razlog area of southwestern Bulgaria; your final approach is along a rough forest road, and high ground clearance is recommended. The Valley is in the Rhodope Mountains near Chereshovo and Ortsevo. Conventional cars stop at its designated parking area near Chereshovo; guests continue on foot or by a suitable prearranged transfer. The current Valley access guide describes approximately 2.5 km on foot, around 45 minutes in normal conditions. Always follow the instructions sent with your booking.
 
 ## Which stay is right for you?
 
@@ -49,7 +49,7 @@ Choose the experience for what it really is. If you need step-free access, const
 ## Frequently asked questions
 
 ### Where can I stay completely offline in Bulgaria?
-The Cabin near Bachevo has no guest Wi-Fi and unreliable mobile reception. It is intended for guests who can be without normal connectivity during their stay. The Valley is a separate property with different facilities, so check its current connectivity details rather than assuming both places work the same way.
+The Cabin near Bachevo, in the Razlog area of southwestern Bulgaria, has no guest Wi-Fi and unreliable mobile reception. It is intended for guests who can be without normal connectivity during their stay. The Valley is a separate property in the Rhodope Mountains near Chereshovo and Ortsevo, with different facilities, so check its current connectivity details rather than assuming both places work the same way.
 
 ### Is The Cabin suitable for remote work?
 No. It has limited power and no reliable guest internet. If you need to work, choose a property where internet and electricity have been explicitly confirmed.

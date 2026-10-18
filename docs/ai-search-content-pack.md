@@ -1,7 +1,8 @@
 # AI Search content pack
 
-The six approved EN/BG drafts are versioned unchanged in
-`client/src/content/ai-search/`. Their implementation headers are not public copy.
+The six approved EN/BG drafts are versioned in
+`client/src/content/ai-search/`. Changes are limited to implementation headers,
+verified geography and established URLs. Their implementation headers are not public copy.
 The renderer converts the supplied internal-link and CTA instructions to real
 localized links and the existing inquiry action. It preserves the editorial body,
 including access qualifiers, scientific citations and negative-fit advice.
@@ -14,8 +15,13 @@ pricing or inventory APIs were added or changed.
 
 ## Discovery and factual boundaries
 
-- `/digital-detox-bulgaria/` and `/bg/digital-detox-bulgaria/` extend the finite
-  indexable registry from 34 to 36 routes. All use the mandatory normal build
+- `/off-grid-cabins-bulgaria/`, `/digital-detox-bulgaria/` and
+  `/retreat-venue-bulgaria/`, with their `/bg/` counterparts, are the six
+  editorial destinations. The established off-grid URL remains canonical; the
+  former `/off-grid-stays-bulgaria/` alias permanently redirects to it and is
+  excluded from the indexable registry. Removing that duplicate EN/BG pair
+  leaves 34 indexable routes; the two digital-detox locales remain included.
+  All use the mandatory normal build
   and Chromium prerender, existing trailing-slash policy and generated sitemap.
 - Each editorial page emits `WebPage` and visible `BreadcrumbList` JSON-LD.
   Property references reuse the existing `/cabin/#lodging`,
@@ -27,9 +33,11 @@ pricing or inventory APIs were added or changed.
   invented photo dates, coordinates or attribution were added.
 - Existing `robots.txt` wildcard rules allow Googlebot, Bingbot and OAI-SearchBot
   on public marketing pages without changing private-route policy.
-- Geographic ambiguity is avoided using the approved near-Bachevo wording.
-  The existing Valley source still contains a `€85/night` marketing label;
-  this pack introduces no hardcoded rates and does not alter seasonal quotes.
+- The Cabin is described as near Bachevo, in the Razlog area of southwestern
+  Bulgaria. The Valley remains correctly located in the Rhodope Mountains near
+  Chereshovo and Ortsevo. The off-grid selector shows the verified €110 base
+  rate for the Luxury Cabin and clarifies that seasonal rates vary; booking
+  calculations and quotes are unchanged.
 
 ## Not performed
 

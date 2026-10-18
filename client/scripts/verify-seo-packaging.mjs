@@ -98,6 +98,14 @@ DirectoryIndex index.html
     const legacy = await fetch(`${origin}/cabin/69b2ff947f141a71ffa7c492`, { redirect: 'manual' });
     assert.equal(legacy.status, 301);
     assert.equal(new URL(legacy.headers.get('location')).pathname, '/stays/lux-cabin');
+    for (const [source, destination] of [
+      ['/off-grid-stays-bulgaria', '/off-grid-cabins-bulgaria/'],
+      ['/bg/off-grid-stays-bulgaria/', '/bg/off-grid-cabins-bulgaria/']
+    ]) {
+      const response = await fetch(`${origin}${source}`, { redirect: 'manual' });
+      assert.equal(response.status, 301, `${source} must permanently redirect`);
+      assert.equal(new URL(response.headers.get('location')).pathname, destination);
+    }
     console.log(`[packaging] ${path.basename(webroot)}: ${contract.ROUTES.length} routes, slash/query handling, all compiled assets, 7 exact JPEGs, SPA fallback, API/static 404s and legacy redirect passed on Apache.`);
   } finally {
     if (apache.exitCode === null && apache.pid) {
@@ -128,7 +136,7 @@ try {
       }
     }
     assert.equal(fs.readFileSync(path.join(webroot, 'uploads/preserve.txt'), 'utf8'), 'Existing uploads must survive');
-    assert.equal(contract.validateArtifacts(webroot).length, 36);
+    assert.equal(contract.validateArtifacts(webroot).length, 34);
     if (verification) assert.throws(() => contract.assertProductionArtifacts(webroot), /must never be published/);
     const missing = contract.artifactPath(webroot, '/bg/stays/stone-house');
     const saved = fs.readFileSync(missing);
