@@ -18,6 +18,7 @@
     "test:seo-verification": "node --test scripts/seo-verification.node.mjs",
     "test:seo-verification:packaging": "node scripts/verify-seo-packaging.mjs --seo-verification",
     "test:seo-recovery": "node --test scripts/seo-recovery.node.mjs",
+    "test:ai-search": "node --test scripts/ai-search.node.mjs",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
     "lint:i18n": "eslint src --ext js,jsx --no-eslintrc -c .eslintrc-i18n.cjs",
     "preview": "vite preview --host",

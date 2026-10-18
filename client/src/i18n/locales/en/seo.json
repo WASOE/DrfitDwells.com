@@ -79,7 +79,7 @@
       "stays": {
         "the-cabin": { "fit": "Couples · max remoteness", "price": "From €55/night" },
         "valley-a-frame": { "fit": "Couples · comfort + views", "price": "From €60/night" },
-        "valley-lux-cabin": { "fit": "Couples · top comfort", "price": "From €85/night" },
+        "valley-lux-cabin": { "fit": "Couples · top comfort", "price": "€110/night base rate; seasonal rates vary" },
         "valley-stone-house": { "fit": "Groups & families", "price": "From €75/night" }
       }
     },
@@ -176,7 +176,7 @@
       },
       "valley-lux-cabin": {
         "title": "The Valley Lux Cabin",
-        "price": "From €85/night",
+        "price": "€110/night base rate; seasonal rates vary",
         "fitLine": "For guests who want the most comfortable Valley stay.",
         "facts": [
           "Private cabin, elevated comfort",

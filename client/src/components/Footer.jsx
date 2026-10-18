@@ -178,6 +178,16 @@ const Footer = () => {
                     {tn('exploreOffGrid')}
                   </Link>
                 </li>
+                <li className="mb-4">
+                  <Link to={`${localizePath('/digital-detox-bulgaria', language)}/`} className="text-sm underline underline-offset-4">
+                    {language === 'bg' ? 'Дигитален детокс' : 'Digital detox'}
+                  </Link>
+                </li>
+                <li className="mb-4">
+                  <Link to={`${localizePath('/digital-detox-bulgaria', language)}/`} className="text-sm underline underline-offset-4">
+                    {language === 'bg' ? 'Дигитален детокс' : 'Digital detox'}
+                  </Link>
+                </li>
                 <li style={{ marginBottom: 'clamp(16px, 2vw, 28px)' }}>
                   <Link
                     to={localizePath('/rhodopes-cabin-retreat', language)}

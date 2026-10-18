@@ -16,6 +16,10 @@ RewriteEngine On
 # Canonicalize legacy login path before SPA fallback.
 RewriteRule ^admin/login/?$ /login [R=302,L]
 
+# Preserve the established off-grid cabin URL as the sole indexable destination.
+RewriteRule ^off-grid-stays-bulgaria/?$ /off-grid-cabins-bulgaria/ [R=301,L,QSA]
+RewriteRule ^bg/off-grid-stays-bulgaria/?$ /bg/off-grid-cabins-bulgaria/ [R=301,L,QSA]
+
 # Legacy cabin Mongo ID detail URLs → public /stays/:slug (301 for SEO, crawlers, shared links).
 # Checkout confirm URLs are intentionally excluded.
 RewriteRule ^cabin/69b2ff933a7fff6621e785cc/?$ /stays/the-cabin [R=301,L,QSA]
