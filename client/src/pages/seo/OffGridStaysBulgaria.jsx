@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CABIN_MEDIA } from '../../config/mediaConfig';
-import Seo from '../../components/Seo';
-import { buildHreflangAlternates } from '../../utils/localizedRoutes';
+import AiSearchArticle from '../../components/AiSearchArticle';
 import { useCabinNameToIdMap } from '../../hooks/useCabinNameToIdMap';
 import { useConsentBannerOpen } from '../../hooks/useConsentBannerOpen';
 import { useSiteLanguage } from '../../hooks/useSiteLanguage';
@@ -47,7 +46,6 @@ export default function OffGridStaysBulgaria() {
   const lcpPreloadHref =
     firstSlideUrl || PAID_TRAFFIC_STAY_META[0]?.fallbackImage || OG_IMAGE_FALLBACK;
 
-  const ogImage = firstSlideUrl || PAID_TRAFFIC_STAY_META[0]?.fallbackImage || OG_IMAGE_FALLBACK;
   const heroImage = lcpPreloadHref;
 
   const bookingToById = useMemo(() => {
@@ -143,18 +141,7 @@ export default function OffGridStaysBulgaria() {
   const stickyVisible = !consentBannerOpen && pastHero;
 
   return (
-    <>
-      <Seo
-        title={p('metaTitle')}
-        description={p('metaDescription')}
-        canonicalPath="/off-grid-stays-bulgaria"
-        ogImage={ogImage}
-        hreflangAlternates={buildHreflangAlternates('/off-grid-stays-bulgaria')}
-        preloadImages={
-          lcpPreloadHref ? [{ href: lcpPreloadHref, fetchPriority: 'high' }] : []
-        }
-      />
-
+    <AiSearchArticle kind="offGrid">
       <div
         className="valley-page pb-[var(--paid-sticky-clearance)] md:pb-0"
         style={{
@@ -187,9 +174,9 @@ export default function OffGridStaysBulgaria() {
                   <p className="text-[10px] md:text-xs uppercase tracking-[0.16em] text-white/80 mb-2">
                     {p('compact.kicker')}
                   </p>
-                  <h1 className="text-2xl md:text-3xl lg:text-4xl font-semibold text-white tracking-tight leading-tight max-w-xl">
+                  <h2 className="text-2xl md:text-3xl lg:text-4xl font-semibold text-white tracking-tight leading-tight max-w-xl">
                     {p('compact.title')}
-                  </h1>
+                  </h2>
                   <p className="mt-2 max-w-md text-[13px] md:text-sm text-white/85 leading-snug">
                     {p('compact.subline')}
                   </p>
@@ -304,6 +291,6 @@ export default function OffGridStaysBulgaria() {
           labels={ctaLabels}
         />
       </div>
-    </>
+    </AiSearchArticle>
   );
 }

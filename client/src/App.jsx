@@ -99,6 +99,7 @@ const RhodopesCabinRetreat = lazy(() => import('./pages/seo/RhodopesCabinRetreat
 const BanskoRemoteWorkRetreat = lazy(() => import('./pages/seo/BanskoRemoteWorkRetreat'))
 const RetreatVenueBulgaria = lazy(() => import('./pages/seo/RetreatVenueBulgaria'))
 const OffGridStaysBulgaria = lazy(() => import('./pages/seo/OffGridStaysBulgaria'))
+const DigitalDetoxBulgaria = lazy(() => import('./pages/seo/DigitalDetoxBulgaria'))
 const Enduro = lazy(() => import('./pages/seo/Enduro'))
 const WinterVillagePage = lazy(() => import('./pages/winter-village/WinterVillagePage'))
 const CreatorPortal = lazy(() => import('./pages/creator/CreatorPortal'))
@@ -193,6 +194,8 @@ function App() {
               <Route path="/bg/retreat-venue-bulgaria" element={<RetreatVenueBulgaria />} />
               <Route path="/off-grid-stays-bulgaria" element={<OffGridStaysBulgaria />} />
               <Route path="/bg/off-grid-stays-bulgaria" element={<OffGridStaysBulgaria />} />
+              <Route path="/digital-detox-bulgaria" element={<DigitalDetoxBulgaria />} />
+              <Route path="/bg/digital-detox-bulgaria" element={<DigitalDetoxBulgaria />} />
               <Route path="/enduro" element={<Enduro />} />
               <Route path="/bg/enduro" element={<Enduro />} />
               <Route path="/winter-village" element={<WinterVillagePage />} />

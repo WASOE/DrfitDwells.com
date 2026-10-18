@@ -38,4 +38,4 @@ await build({
   ]
 });
 await prerender.run({ distDir });
-console.log('[seo-verification] Compiled and prerendered 34 routes. NOT a publishable production build.');
+console.log('[seo-verification] Compiled and prerendered 36 routes. NOT a publishable production build.');

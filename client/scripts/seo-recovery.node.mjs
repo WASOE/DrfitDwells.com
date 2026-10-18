@@ -71,7 +71,7 @@ function collectTypes(value, types = new Set()) {
 
 test('compiled raw HTML contains complete route-specific multilingual metadata', () => {
   assert.ok(fs.existsSync(DIST_DIR), 'Run the normal production build before SEO regression tests.');
-  assert.equal(expectedRoutes.length, 34, 'Update route coverage expectations when the public route registry changes.');
+  assert.equal(expectedRoutes.length, 36, 'Update route coverage expectations when the public route registry changes.');
   const defaultSiteUrl = 'https://driftdwells.com';
 
   for (const route of expectedRoutes) {
