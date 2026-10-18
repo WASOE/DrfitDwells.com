@@ -8,10 +8,10 @@ import { buildPaidTrafficStayNavTarget, PAID_TRAFFIC_BOOKING_HASH } from '../../
 import '../../i18n/ns/seo';
 
 const discoveryPhotos = {
-  'the-cabin': '/media/ai-search/cabin-exterior-720w.webp',
-  'valley-a-frame': '/media/enduro/aframes-sunset-720w.webp',
-  'valley-lux-cabin': '/media/enduro/lux-cabin-cover-720w.webp',
-  'valley-stone-house': '/media/enduro/stone-house-cover-720w.webp'
+  'the-cabin': '/media/seo/aframe-bedroom-winter.jpeg',
+  'valley-a-frame': '/media/seo/aframe-row-sunset.png',
+  'valley-lux-cabin': '/media/seo/aframe-field-sunset.jpeg',
+  'valley-stone-house': '/media/seo/stone-house-winter-wide.jpeg'
 };
 
 export default function OffGridStaysBulgaria() {

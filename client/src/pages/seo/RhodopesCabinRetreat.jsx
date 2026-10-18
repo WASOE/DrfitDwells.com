@@ -20,7 +20,7 @@ const RhodopesCabinRetreat = () => {
         title={t('rhodopes.metaTitle')}
         description={t('rhodopes.metaDescription')}
         canonicalPath="/rhodopes-cabin-retreat"
-        ogImage="/uploads/The Valley/WhatsApp Image 2025-10-17 at 10.20.23 AM.jpeg"
+        ogImage="/media/seo/aframe-field-sunset.jpeg"
         hreflangAlternates={buildHreflangAlternates('/rhodopes-cabin-retreat')}
       />
       <div className="seo-landing">

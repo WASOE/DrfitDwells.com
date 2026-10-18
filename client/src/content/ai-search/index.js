@@ -67,16 +67,16 @@ export const editorialPaths = {
 
 export const editorialPhotos = {
   offGrid: [
-    { src: '/media/ai-search/cabin-forest-1200w.webp', height: 675, en: 'The Cabin at the edge of the forest near Bachevo.', bg: 'The Cabin на края на гората край Бачево.' },
-    { src: '/media/enduro/hero-aerial-1200w.webp', height: 675, en: 'The Valley and its mountain landscape.', bg: 'The Valley и околният планински пейзаж.' }
+    { src: '/media/seo/aframe-site-wide.jpeg', height: 1493, en: 'The A-frame cabins across the Drift & Dwells valley.', bg: 'A-frame къщичките в долината на Drift & Dwells.' },
+    { src: '/media/seo/stone-house-winter-wide.jpeg', height: 1500, en: 'The Stone House and A-frames in winter.', bg: 'Каменната къща и A-frame къщичките през зимата.' }
   ],
   detox: [
-    { src: '/media/ai-search/cabin-stove-1200w.webp', height: 636, en: 'The Cabin interior and its wood-burning stove.', bg: 'Интериорът на The Cabin с печка на дърва.' },
-    { src: '/media/ai-search/cabin-forest-1200w.webp', height: 675, en: 'The Cabin at the edge of the forest near Bachevo.', bg: 'The Cabin на края на гората край Бачево.' }
+    { src: '/media/seo/aframe-bedroom-winter.jpeg', height: 1660, en: 'A quiet A-frame bedroom in winter.', bg: 'Тиха спалня в A-frame къщичка през зимата.' },
+    { src: '/media/seo/aframe-winter-site.jpeg', height: 1672, en: 'The A-frame site in a winter landscape.', bg: 'A-frame селището в зимния пейзаж.' }
   ],
   corporate: [
-    { src: '/media/enduro/hero-aerial-1200w.webp', height: 675, en: 'The Valley buildings in the mountain landscape.', bg: 'Сградите на The Valley сред планинския пейзаж.' },
-    { src: '/media/enduro/aframes-sunset-1200w.webp', height: 1600, en: 'The Valley A-frame accommodation at sunset.', bg: 'A-frame къщичките в The Valley по залез.' },
-    { src: '/media/enduro/firepit-sunset-1200w.webp', height: 1600, en: 'The Valley outdoor fire area at sunset.', bg: 'Външното огнище в The Valley по залез.' }
+    { src: '/media/seo/stone-house-winter-wide.jpeg', height: 1500, en: 'The Stone House and A-frames in the mountain setting.', bg: 'Каменната къща и A-frame къщичките в планината.' },
+    { src: '/media/seo/aframe-row-sunset.png', height: 1154, en: 'A-frame cabins across the valley at sunset.', bg: 'A-frame къщичките в долината по залез.' },
+    { src: '/media/seo/stone-house-sunset-site.jpeg', height: 2000, en: 'The Stone House and the surrounding site.', bg: 'Каменната къща и околният терен.' }
   ]
 };
