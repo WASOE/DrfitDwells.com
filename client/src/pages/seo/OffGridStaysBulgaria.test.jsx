@@ -35,7 +35,7 @@ describe('single editorial accommodation discovery', () => {
         expect(within(card).getByText(copy.selector.stays[id].price)).not.toBeNull();
         expect(within(card).getByRole('link', { name: copy.cta.checkAvailability }).getAttribute('href'))
           .toBe(`${language === 'bg' ? '/bg' : ''}/stays/${routes[index]}#booking`);
-        expect(within(card).getByRole('img').getAttribute('src')).toMatch(/^\/media\//);
+        expect(within(card).getByRole('img').getAttribute('src')).toMatch(/^\/uploads\//);
       }
       expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
       expect(container.querySelector('[role="dialog"]')).toBeNull();
@@ -47,5 +47,14 @@ describe('single editorial accommodation discovery', () => {
     state.slides = { 'the-cabin': [{ url: '/uploads/current-cabin.jpeg', alt: 'The Cabin beside the forest' }] };
     render(<MemoryRouter><HelmetProvider><OffGridStaysBulgaria /></HelmetProvider></MemoryRouter>);
     expect(screen.getByAltText('The Cabin beside the forest').getAttribute('src')).toBe('/uploads/current-cabin.jpeg');
+  });
+
+  it('keeps every Explore Each Stay fallback on the listing-media namespace', () => {
+    state.language = 'en';
+    render(<MemoryRouter><HelmetProvider><OffGridStaysBulgaria /></HelmetProvider></MemoryRouter>);
+    const images = [...document.querySelectorAll('.ai-search-stay img')];
+    expect(images).toHaveLength(4);
+    expect(images.every((image) => image.src.includes('/uploads/'))).toBe(true);
+    expect(images.some((image) => image.src.includes('/media/seo/'))).toBe(false);
   });
 });

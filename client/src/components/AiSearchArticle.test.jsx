@@ -59,6 +59,9 @@ describe('approved AI Search copy integration', () => {
         if (kind === 'detox') {
           expect(container.querySelector('a[href="https://www.nature.com/articles/s41598-025-90984-3"]')).not.toBeNull();
           expect(container.querySelector('a[href="https://doi.org/10.1016/j.ssaho.2025.101812"]')).not.toBeNull();
+          expect(schemas[0].about).toHaveLength(4);
+          expect(container.textContent).toContain(language === 'bg' ? 'Luxury Cabin' : 'Luxury Cabin');
+          expect(container.textContent).toContain(language === 'bg' ? 'Stone House' : 'Stone House');
         }
         expect(contentSources[kind][language]).toContain(copy.heading);
       });

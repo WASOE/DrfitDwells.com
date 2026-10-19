@@ -60,10 +60,10 @@ export default function AiSearchArticle({ kind, children }) {
     else sections[sections.length - 1].blocks.push(block);
   }
   const labels = language === 'bg' ? {
-    offGrid: 'Изберете своето място', detox: 'Разгледайте The Cabin', corporate: 'Разгледайте цялата The Valley',
+    offGrid: 'Изберете своето място', detox: 'Разгледайте всички места', corporate: 'Разгледайте цялата The Valley',
     contents: 'В този пътеводител', contact: 'Свържете се с нас'
   } : {
-    offGrid: 'Find your stay', detox: 'Explore The Cabin', corporate: 'Explore the whole Valley',
+    offGrid: 'Find your stay', detox: 'Explore all stays', corporate: 'Explore the whole Valley',
     contents: 'In this guide', contact: 'Get in touch'
   };
   const renderBlock = (block, index) => {
@@ -82,7 +82,7 @@ export default function AiSearchArticle({ kind, children }) {
     </figure>
   );
   const entities = kind === 'corporate' ? ['valley', 'retreats/the-valley']
-    : kind === 'detox' ? ['cabin'] : ['cabin', 'valley'];
+    : kind === 'detox' ? ['cabin', 'stays/lux-cabin', 'stays/a-frame', 'stays/stone-house'] : ['cabin', 'valley'];
   const jsonLd = [
     {
       '@context': 'https://schema.org',
@@ -124,7 +124,7 @@ export default function AiSearchArticle({ kind, children }) {
             <div className="ai-search-actions">
               {heroCta ? <EditorialCta text={heroCta.text} language={language} onInquiry={openModal} /> : kind === 'offGrid'
                 ? <a className="ai-search-cta" href="#stays">{labels.offGrid}</a>
-                : <Link className="ai-search-cta" to={`${localizePath(kind === 'detox' ? '/cabin' : '/retreats/the-valley', language)}/`}>{labels[kind]}</Link>}
+                : <Link className="ai-search-cta" to={`${localizePath(kind === 'detox' ? '/off-grid-cabins-bulgaria' : '/retreats/the-valley', language)}/`}>{labels[kind]}</Link>}
             </div>
           </div>
           {photoFigure(photos[0], true)}
