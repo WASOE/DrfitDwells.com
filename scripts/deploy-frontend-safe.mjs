@@ -197,6 +197,8 @@ const nextManifest = mergeReleaseManifest(
       ok: true,
       buildTimestamp: new Date().toISOString()
     }),
+    enabledCapabilities: buildManifest.enabledCapabilities,
+    paymentContractVersion: buildManifest.paymentContractVersion,
     frontendRelease: releaseIdentifier,
     applicationCommit: releaseIdentifier
   },
