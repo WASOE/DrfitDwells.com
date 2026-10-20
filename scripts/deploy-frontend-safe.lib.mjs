@@ -177,14 +177,37 @@ export function copyDirAdditive(srcDir, destDir, options = {}) {
 }
 
 /**
+ * Keep static AVIF uploads correctly typed without replacing the site's
+ * existing rewrite and cache rules.
+ */
+export function ensureAvifMimeType(webroot, { dryRun = false } = {}) {
+  const htaccessPath = path.join(path.resolve(webroot), '.htaccess');
+  const marker = 'AddType image/avif .avif';
+  const existing = fs.existsSync(htaccessPath)
+    ? fs.readFileSync(htaccessPath, 'utf8')
+    : '';
+
+  if (existing.includes(marker)) return false;
+  if (!dryRun) {
+    const suffix = existing.length > 0 && !existing.endsWith('\n') ? '\n' : '';
+    fs.writeFileSync(
+      htaccessPath,
+      `${existing}${suffix}\n# Ensure uploaded AVIF media is served with an image MIME type.\n${marker}\n`
+    );
+  }
+  return true;
+}
+
+/**
  * Build the ordered publication steps for local WEBROOT mode.
  *
  * Phase 1: assets (additive copy, never delete existing)
  * Phase 2: static files excluding assets/, index.html, sw.js, uploads/
- * Phase 3: index.html + sw.js last (switch the shell)
- * Phase 4: release-manifest.json
+ * Phase 3: application uploads additively, preserving existing files
+ * Phase 4: index.html + sw.js last (switch the shell)
+ * Phase 5: release-manifest.json
  */
-export function executeLocalPublish({ distDir, webroot, dryRun = false }) {
+export function executeLocalPublish({ distDir, webroot, uploadsDir = null, dryRun = false }) {
   const dist = path.resolve(distDir);
   const root = path.resolve(webroot);
   const log = [];
@@ -205,6 +228,11 @@ export function executeLocalPublish({ distDir, webroot, dryRun = false }) {
   });
   log.push({ phase: 'static-without-shell', files: staticWritten.length, dryRun });
 
+  const uploadsWritten = uploadsDir
+    ? copyDirAdditive(uploadsDir, path.join(root, 'uploads'), { dryRun })
+    : [];
+  log.push({ phase: 'uploads-additive', files: uploadsWritten.length, dryRun });
+
   // Phase 3: shell last
   const shellWritten = copyDirAdditive(dist, root, {
     include: ['index.html', 'sw.js'],
@@ -221,7 +249,7 @@ export function executeLocalPublish({ distDir, webroot, dryRun = false }) {
     log.push({ phase: 'release-manifest', files: 1, dryRun });
   }
 
-  return { log, assetsWritten, staticWritten, shellWritten };
+  return { log, assetsWritten, staticWritten, uploadsWritten, shellWritten };
 }
 
 // ---------------------------------------------------------------------------

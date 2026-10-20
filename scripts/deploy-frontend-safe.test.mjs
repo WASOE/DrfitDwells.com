@@ -12,6 +12,7 @@ import {
   buildRsyncCommand,
   copyDirAdditive,
   executeLocalPublish,
+  ensureAvifMimeType,
   isProtectedPath,
   listHashedAssets,
   mergeReleaseManifest,
@@ -197,7 +198,8 @@ test('executeLocalPublish writes assets first, shell last, in correct order', ()
   const phaseNames = result.log.map((e) => e.phase);
   assert.equal(phaseNames[0], 'assets-additive');
   assert.equal(phaseNames[1], 'static-without-shell');
-  assert.equal(phaseNames[2], 'shell-last');
+  assert.equal(phaseNames[2], 'uploads-additive');
+  assert.equal(phaseNames[3], 'shell-last');
 
   // Assets were written
   assert.ok(fs.existsSync(path.join(webroot, 'assets', 'index-abc123.js')));
@@ -212,6 +214,37 @@ test('executeLocalPublish writes assets first, shell last, in correct order', ()
   // Static files were written
   assert.ok(fs.existsSync(path.join(webroot, 'manifest.webmanifest')));
   assert.ok(fs.existsSync(path.join(webroot, 'robots.txt')));
+});
+
+test('executeLocalPublish additively publishes application uploads', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'deploy-uploads-'));
+  const dist = path.join(root, 'dist');
+  const webroot = path.join(root, 'webroot');
+  const uploads = path.join(root, 'uploads');
+  fs.mkdirSync(path.join(dist, 'assets'), { recursive: true });
+  fs.mkdirSync(path.join(uploads, 'Content website'), { recursive: true });
+  fs.writeFileSync(path.join(dist, 'assets', 'app.js'), 'new');
+  fs.writeFileSync(path.join(dist, 'index.html'), 'shell');
+  fs.writeFileSync(path.join(uploads, 'Content website', 'photo.avif'), 'photo');
+
+  const result = executeLocalPublish({ distDir: dist, webroot, uploadsDir: uploads });
+
+  assert.equal(result.log.find((entry) => entry.phase === 'uploads-additive').files, 1);
+  assert.equal(
+    fs.readFileSync(path.join(webroot, 'uploads', 'Content website', 'photo.avif'), 'utf8'),
+    'photo'
+  );
+});
+
+test('ensureAvifMimeType preserves existing htaccess rules and is idempotent', () => {
+  const webroot = fs.mkdtempSync(path.join(os.tmpdir(), 'deploy-mime-'));
+  const htaccess = path.join(webroot, '.htaccess');
+  fs.writeFileSync(htaccess, 'RewriteEngine On\n');
+
+  assert.equal(ensureAvifMimeType(webroot), true);
+  assert.match(fs.readFileSync(htaccess, 'utf8'), /RewriteEngine On/);
+  assert.match(fs.readFileSync(htaccess, 'utf8'), /AddType image\/avif \.avif/);
+  assert.equal(ensureAvifMimeType(webroot), false);
 });
 
 test('executeLocalPublish does NOT delete old hashed assets', () => {
