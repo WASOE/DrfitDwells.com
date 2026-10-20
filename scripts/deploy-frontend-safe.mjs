@@ -143,6 +143,21 @@ if (!fs.existsSync(path.join(distDir, 'index.html'))) {
 if (!fs.existsSync(assetsDir)) {
   fail('client/dist/assets missing.');
 }
+const buildManifest = readReleaseManifest(manifestPath);
+const requiredPaymentCapabilities = [
+  'checkoutSessionV2',
+  'finalizeIntentPersist',
+  'finalizeIntentRequiredForPi'
+];
+const missingPaymentCapabilities = requiredPaymentCapabilities.filter(
+  (name) => buildManifest?.enabledCapabilities?.[name] !== true
+);
+if (missingPaymentCapabilities.length > 0) {
+  fail(
+    'Refusing to publish an unverified payment frontend build. ' +
+      `Run npm run verify:checkout-payment-prep-build first; missing enabled capabilities: ${missingPaymentCapabilities.join(', ')}.`
+  );
+}
 try {
   prerenderContract.assertProductionArtifacts(distDir);
   prerenderContract.validateArtifacts(distDir);

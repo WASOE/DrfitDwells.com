@@ -131,6 +131,17 @@ function makeMockDist(tmpRoot) {
   fs.writeFileSync(path.join(dist, 'sw.js'), '// service worker');
   fs.writeFileSync(path.join(dist, 'manifest.webmanifest'), '{}');
   fs.writeFileSync(path.join(dist, 'robots.txt'), 'User-agent: *');
+  fs.writeFileSync(
+    path.join(dist, 'release-manifest.json'),
+    JSON.stringify({
+      enabledCapabilities: {
+        checkoutSessionV2: true,
+        finalizeIntentPersist: true,
+        finalizeIntentRequiredForPi: true
+      },
+      paymentContractVersion: 'checkout-payment-v2-finalize-1'
+    })
+  );
   return dist;
 }
 

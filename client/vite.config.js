@@ -3,15 +3,28 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseBooleanFlag } from '../shared/env/parseBooleanFlag.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // https://vitejs.dev/config/
 export default defineConfig(({ command, mode }) => {
   if (command === 'build') {
-    const key = loadEnv(mode, __dirname, 'VITE_STRIPE_PUBLISHABLE_KEY').VITE_STRIPE_PUBLISHABLE_KEY;
+    const env = loadEnv(mode, __dirname, 'VITE_');
+    const key = env.VITE_STRIPE_PUBLISHABLE_KEY;
     if (!/^pk_(live|test)_[A-Za-z0-9]+$/.test(key || '')) {
       throw new Error('Client build requires a valid VITE_STRIPE_PUBLISHABLE_KEY (pk_live_... or pk_test_...).');
+    }
+    const requiredPaymentFlags = [
+      'VITE_CHECKOUT_SESSION_V2',
+      'VITE_FINALIZE_INTENT_PERSIST',
+      'VITE_FINALIZE_INTENT_REQUIRED_FOR_PI'
+    ];
+    const missingPaymentFlags = requiredPaymentFlags.filter((name) => !parseBooleanFlag(env[name]));
+    if (missingPaymentFlags.length > 0) {
+      throw new Error(
+        `Client payment release build requires explicit enabled flags: ${missingPaymentFlags.join(', ')}.`
+      );
     }
   }
   return {
