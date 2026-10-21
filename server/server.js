@@ -134,7 +134,9 @@ function startPostConnectRuntime() {
 }
 
 // --- Directories ---
-const uploadsDir = path.join(__dirname, '..', 'uploads');
+const uploadsDir = path.resolve(
+  process.env.UPLOADS_DIR || path.join(__dirname, '..', 'uploads')
+);
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 const cabinsUploadsDir = path.join(uploadsDir, 'cabins');
 if (!fs.existsSync(cabinsUploadsDir)) fs.mkdirSync(cabinsUploadsDir, { recursive: true });
@@ -240,6 +242,9 @@ const staticOptions = {
         res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       } else {
         res.setHeader('Cache-Control', 'public, max-age=604800');
+      }
+      if (ext === '.avif') {
+        res.setHeader('Content-Type', 'image/avif');
       }
     } catch {
       res.setHeader('Cache-Control', 'public, max-age=604800');
