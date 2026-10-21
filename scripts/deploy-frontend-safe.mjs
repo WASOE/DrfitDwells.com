@@ -35,6 +35,7 @@ import {
   buildRemoteRsyncPhases,
   buildRsyncCommand,
   executeLocalPublish,
+  ensureAvifMimeType,
   listHashedAssets,
   mergeReleaseManifest,
   readReleaseManifest,
@@ -215,8 +216,14 @@ if (webrootEnv) {
   const result = executeLocalPublish({
     distDir,
     webroot: validation.resolved,
+    uploadsDir: path.join(repoRoot, 'uploads'),
     dryRun
   });
+
+  const avifMimeUpdated = ensureAvifMimeType(validation.resolved, { dryRun });
+  console.log(
+    `[deploy-frontend-safe] avif-mime: ${avifMimeUpdated ? (dryRun ? 'would-update' : 'updated') : 'already-configured'}`
+  );
 
   for (const entry of result.log) {
     console.log(`[deploy-frontend-safe] ${entry.phase}: ${entry.files} files${entry.dryRun ? ' (dry-run)' : ''}`);
