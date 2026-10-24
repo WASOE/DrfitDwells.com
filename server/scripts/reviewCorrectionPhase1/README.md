@@ -136,9 +136,11 @@ to the operator's local state:
 The existing full production backup completed at
 `/home/illoc/backups/driftdwells/daily/20261024-061021`. The protected MongoDB
 archive was 13 MB and the uploads tar was 306 MB. Both SHA-256 entries verified;
-the restore verifier matched counts for its 10 checked collections and removed
-the isolated restore-test database afterward. The backup remains private on the
-production host. Its checksum-set digest recorded by preflight is
+the restore verifier restored into the separate `driftdwells_restore_test`
+database on the same MongoDB service, matched counts for its 10 checked
+collections, then removed that test database. It did not restore into or mutate
+the application database. The backup remains private on the production host.
+Its checksum-set digest recorded by preflight is
 `7eba3f06b29e562c2e9dee191405023b32df767687d03596f8906727165e8540`.
 
 Fresh production preflight completed on 24 October 2026 at 06:18:07Z. It read
