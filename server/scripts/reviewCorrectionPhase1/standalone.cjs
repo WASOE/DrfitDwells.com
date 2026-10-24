@@ -206,11 +206,12 @@ function archiveArtifacts(directory, exportHash, plan) {
   return { archivePath, archiveHash };
 }
 
-function initialJournal(directory, database, bundle, plan, archive) {
+function initialJournal(directory, database, bundle, plan, archive, targetIdentity) {
   return {
     format: 1,
     directory,
     database,
+    targetIdentity,
     exportSha256: bundle.sha256,
     baselineHash: stateHash(bundle.state),
     correctedHash: stateHash(plan.after),
@@ -241,8 +242,9 @@ function expectedStateWithStatus(bundle, audit, status) {
   return state;
 }
 
-async function performApply({ client, uri, exportPath, audit, directory, faultHook = async () => {} }) {
-  const databaseName = validateLocalUri(uri);
+async function performApplyForDatabase({
+  client, databaseName, targetIdentity, exportPath, audit, directory, faultHook = async () => {}
+}) {
   assert(client.db().databaseName === databaseName, 'Connected database differs from allowlisted local database');
   const directoryPath = privateDirectory(directory);
   const bundle = loadExport(exportPath);
@@ -253,13 +255,14 @@ async function performApply({ client, uri, exportPath, audit, directory, faultHo
   if (fs.existsSync(file)) {
     journal = loadJournal(directoryPath, file);
     assert(journal.database === databaseName && journal.exportSha256 === bundle.sha256 &&
-      journal.archiveSha256 === archive.archiveHash, 'Correction journal target mismatch');
+      journal.archiveSha256 === archive.archiveHash &&
+      hash(journal.targetIdentity) === hash(targetIdentity), 'Correction journal target mismatch');
     assert(journal.state === 'applying' || journal.state === 'applied',
       'Journal is not in a resumable apply state');
   } else {
     const live = await readScopedState(client.db(), bundle.state);
     assert(stateHash(live) === stateHash(bundle.state), 'Local staging data drifted from verified export');
-    journal = initialJournal(directoryPath, databaseName, bundle, plan, archive);
+    journal = initialJournal(directoryPath, databaseName, bundle, plan, archive, targetIdentity);
     persistJournal(directoryPath, file, journal);
   }
   const unlock = acquireLock(file);
@@ -374,14 +377,24 @@ async function performApply({ client, uri, exportPath, audit, directory, faultHo
   };
 }
 
-async function performRollback({ client, uri, exportPath, audit, directory, faultHook = async () => {} }) {
+async function performApply({ client, uri, exportPath, audit, directory, faultHook = async () => {} }) {
   const databaseName = validateLocalUri(uri);
+  return performApplyForDatabase({
+    client, databaseName, targetIdentity: { environment: 'local', database: databaseName },
+    exportPath, audit, directory, faultHook
+  });
+}
+
+async function performRollbackForDatabase({
+  client, databaseName, targetIdentity, exportPath, audit, directory, faultHook = async () => {}
+}) {
   assert(client.db().databaseName === databaseName, 'Connected database differs from allowlisted local database');
   const directoryPath = privateDirectory(directory);
   const bundle = loadExport(exportPath);
   const plan = prepare(bundle.state, audit, encode, clone);
   const file = journalPath(directoryPath, bundle.sha256, databaseName);
   const journal = loadJournal(directoryPath, file);
+  assert(hash(journal.targetIdentity) === hash(targetIdentity), 'Rollback target differs from correction journal');
   assert(journal.state === 'applied' || journal.state === 'rolling-back' ||
     journal.state === 'rolled-back', 'Correction must be applied before rollback');
   const archive = readPrivate(journal.archivePath);
@@ -459,6 +472,14 @@ async function performRollback({ client, uri, exportPath, audit, directory, faul
   };
 }
 
+async function performRollback({ client, uri, exportPath, audit, directory, faultHook = async () => {} }) {
+  const databaseName = validateLocalUri(uri);
+  return performRollbackForDatabase({
+    client, databaseName, targetIdentity: { environment: 'local', database: databaseName },
+    exportPath, audit, directory, faultHook
+  });
+}
+
 async function main() {
   const [command, uri, exportPath, directory, inventoryPath, snapshotPath] = process.argv.slice(2);
   assert(['seed-local', 'apply-local', 'rollback-local'].includes(command) &&
@@ -496,5 +517,6 @@ if (require.main === module) {
 module.exports = {
   validateLocalUri, loadExport, collect: readScopedState, seedLocal, stateHash,
   persistJournal, loadJournal, exactDocumentFilter, propertyFilter,
-  sameFields, expectedStateWithStatus, performApply, performRollback
+  sameFields, expectedStateWithStatus, performApply, performRollback,
+  performApplyForDatabase, performRollbackForDatabase, readScopedState
 };

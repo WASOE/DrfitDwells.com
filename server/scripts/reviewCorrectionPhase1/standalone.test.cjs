@@ -13,6 +13,7 @@ const { readState, privateDirectory, encode } = require('./run.cjs');
 const {
   validateLocalUri, loadExport, seedLocal, stateHash, performApply, performRollback
 } = require('./standalone.cjs');
+const { liveIdentity, productionPreflight } = require('./production.cjs');
 
 function loadAudit() {
   const directory = process.env.REVIEW_CORRECTION_AUDIT_DIR;
@@ -62,6 +63,48 @@ test('Standalone correction recovery against verified production export (isolate
     assert.ok(mutationCommands.includes('insert'));
     const manifest = JSON.parse(fs.readFileSync(`${exportPath}.manifest.json`, 'utf8'));
     assert.equal(manifest.sha256, bundle.sha256);
+  });
+
+  await t.test('production preflight logic is read-only and fails closed on unlisted published feedback', async () => {
+    const identity = await liveIdentity(client);
+    const localBundle = {
+      ...bundle,
+      payload: {
+        ...bundle.payload,
+        source: {
+          ...bundle.payload.source,
+          database: identity.database,
+          deploymentFingerprint: identity.deployment
+        }
+      }
+    };
+    const beforeCommands = mutationCommands.length;
+    const result = await productionPreflight({
+      client, bundle: localBundle, audit, expectedIdentity: identity
+    });
+    assert.equal(result.pointInTimeSnapshot, false);
+    assert.deepEqual(result.publishedPoolCounts, {
+      'The Cabin': 130, 'A-Frame': 110, 'Stone House': 97, 'Lux Cabin': 150
+    });
+    assert.deepEqual(result.currentStatistics.map(row => [row.property, row.count, row.ratingSum]), [
+      ['The Cabin', 130, 650], ['A-Frame', 110, 541],
+      ['Stone House', 97, 470], ['Lux Cabin', 150, 731]
+    ]);
+    assert.equal(mutationCommands.length, beforeCommands, 'Preflight must issue no DB mutation commands');
+    const unexpected = {
+      _id: new ObjectId(),
+      cabinId: new ObjectId('69b2ff947f141a71ffa7c452'),
+      source: 'manual',
+      status: 'approved',
+      deletedAt: null,
+      rating: 1,
+      text: 'LOCAL TEST FIXTURE ONLY'
+    };
+    await db.collection('reviews').insertOne(unexpected);
+    await assert.rejects(() => productionPreflight({
+      client, bundle: localBundle, audit, expectedIdentity: identity
+    }), /Unexpected published review in an affected property pool/);
+    await db.collection('reviews').deleteOne({ _id: unexpected._id });
   });
 
   const cabinIds = audit.cabin.map(row => row._id);
