@@ -35,6 +35,27 @@ Airbnb original scores or proof that the source export is complete**.
 
 ## Files and behavior
 
+- `export.cjs` is a separate read-only operator command using `server/.env` and
+  the existing `MONGODB_URI` / `MONGO_URI` server settings. It reads only
+  `reviews`, `cabins` and `cabintypes`, within a snapshot transaction. The review
+  query is constrained to all 357 pinned synthetic IDs plus the 130 records
+  owned by The Cabin. It queries all Review documents only for the four
+  allowlisted property owner pools (including A-Frame's linked owner) and aborts
+  unless that query resolves to exactly 487 unique documents matching every
+  public fingerprint; any extra hidden, pending, deleted or public review in
+  those pools requires evidence review before retry. It reads only five explicitly
+  identified property documents and projects review counters plus the ownership
+  fields needed to explain the A-Frame shared pool. No other reviews, properties,
+  bookings, guests, payments or customer collections are exported.
+- The resulting single canonical-EJSON file is the **review-only staging dataset
+  package**: exact full native review documents and five narrowly projected
+  statistics/ownership documents, with a SHA-256 manifest and measured per-pool
+  statistics. It is written mode `0600` under a new mode `0700` private directory,
+  exclusively created, fsynced, and read-back verified. The command only issues
+  MongoDB reads; it does not change staging or production. Keep source audit
+  files, package, manifest and any transfer restricted; encrypt at rest/in transit
+  through the approved operator channel and remove temporary copies per retention
+  policy.
 - `run.cjs backup` reads native collections without models or application startup:
   **all** Review documents, all statuses, soft-deleted records, `raw`, moderation
   metadata, and complete Cabin/CabinType ownership and statistics documents.
@@ -114,16 +135,48 @@ not a full production backup and not a newly verified guest source.
 
 ## Future approved operator workflow (do not execute under current approval)
 
-1. Obtain separate authorization for a read-only full production backup using
-   credentials restricted to reads. Prepare private storage and retention.
-   Capture and verify `backup`, including its manifest; public snapshots are
-   insufficient. No production mutation command exists in this tooling.
-2. Independently provision and verify a review-only isolated staging replica set
+1. Confirm the separate production-export approval, data-retention owner, and
+   authorized operator. Use the existing production host/server configuration;
+   never copy `.env`, paste its URI, put credentials in arguments, or send them
+   through chat. Ensure the reviewed export code and exact pinned evidence are
+   verified through the authorized code/artifact channel. This is a temporary
+   operator utility run, not a deployment: do not merge/release or add code to
+   the live application checkout.
+2. On the authorized host, create a private temporary directory under
+   `~/.local/state/drift-review-correction/`, mode `0700`; copy only `core.cjs`,
+   `run.cjs`, `export.cjs` and the two pinned audit artifacts there through the
+   approved restricted channel. Run the script with the existing server's
+   installed Node dependencies and configuration-file path (path only, not
+   contents):
+   ```sh
+   NODE_PATH=/home/illoc/apps/driftdwells-booking-portal/server/node_modules \
+   DRIFT_REVIEW_ENV_FILE=/home/illoc/apps/driftdwells-booking-portal/server/.env \
+     node /home/illoc/.local/state/drift-review-correction/operator/export.cjs \
+       --inventory /home/illoc/.local/state/drift-review-correction/audit/generated-review-inventory.csv \
+       --snapshot /home/illoc/.local/state/drift-review-correction/audit/production-public-reviews.json
+   ```
+   The command reads the existing `server/.env` internally, requires it to be
+   owner-only/non-symlink, never prints the URI, and creates a private package
+   plus SHA-256 manifest. It refuses missing or unsafe config. Do not run the
+   broad Mongo+uploads backup for this scoped export. Review its sanitized receipt:
+   exactly 487 reviews (357 generator records + 130 Cabin), four Cabin stats
+   documents plus one CabinType stats document, fixed evidence hashes, count and
+   target fingerprint. Separately verify the manifest against the package with
+   SHA-256 and ensure file/directory ownership and permissions. Export aborts on
+   any missing, changed, extra Cabin, or non-allowlisted record. Do not override
+   a failed check or edit the pinned evidence.
+3. Transfer only the EJSON package and manifest via the approved encrypted
+   operator channel to the isolated staging host. Verify its SHA-256 there.
+   This package is a data fixture, not an imported or modified staging database.
+   Keep backups and package copies private; record retention/deletion.
+4. Independently provision and verify a review-only isolated staging replica set
    with no production tunnels, jobs, notifications, booking/payment data or app
    writers. Transfer only authorized review/property data. Establish target
    identity outside this tool, stop all staging writers, and retain evidence of
-   isolation. A database name or marker alone is not proof.
-3. Staging mutation is deliberately restricted to a **loopback, direct-connection**
+   isolation. A database name or marker alone is not proof. **Stop before
+   importing/modifying staging** unless a distinct approval explicitly authorizes
+   staging writes.
+5. Staging mutation (only after separate approval) is deliberately restricted to a **loopback, direct-connection**
    replica-set URI with database name `review_correction_staging_<suffix>`.
    Hosted staging is intentionally unsupported by these write commands.
    An authorized operator must separately install the `phase1` record in
@@ -135,18 +188,18 @@ not a full production backup and not a newly verified guest source.
    MongoDB `hello` (see `targetIdentity`), not a credential. The tool never
    creates this approval marker. A server restart invalidates it and old target
    backups; recapture under renewed identity checks instead of bypassing checks.
-4. Create a private mode-0600 JSON config with `privateDirectory`, `uriFile`
+6. Create a private mode-0600 JSON config with `privateDirectory`, `uriFile`
    (mode-0600 file holding the explicit URI; no environment URI or dotenv),
    `inventory` and `snapshot` paths, `backup` path when available, and
    `exclusiveReviewOnlyStaging: true` only after stopping other writers.
    Do not put credentials in shell arguments or git.
-5. Use `node server/scripts/reviewCorrectionPhase1/run.cjs backup --config
+7. Use `node server/scripts/reviewCorrectionPhase1/run.cjs backup --config
    /private/config.json` on **staging** to capture its own target-bound full backup.
    Production backups cannot be used as staging write authorization.
    Set `backup` in the config, run `plan`, review its exact totals and provenance,
    then use `apply-staging` only with explicit approval. Keep the same backup for
    the no-op repeat check and optional approved `rollback-staging` rehearsal.
-6. Re-query staging public routes and all persisted counters, confirm the archive
+8. Re-query staging public routes and all persisted counters, confirm the archive
    and Cabin proof, report exact observed results and approval gates, then STOP.
    No deployment, production writes or follow-on phase is authorized.
 

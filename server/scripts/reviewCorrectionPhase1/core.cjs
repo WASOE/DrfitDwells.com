@@ -92,6 +92,62 @@ function publicMatch(current, expected) {
   }
 }
 
+function verifyScopedExport(state, audit) {
+  const syntheticIds = new Set(audit.synthetic.map(row => row._id));
+  const cabinIds = new Set(audit.cabin.map(row => row._id));
+  assert(audit.synthetic.length === 357 && audit.cabin.length === 130, 'Pinned export inventory mismatch');
+  assert(state.reviews.length === 487, 'Scoped export must include exactly 487 reviews');
+  assert(new Set(state.reviews.map(row => id(row._id))).size === 487, 'Duplicate export review ID');
+  const reviewMap = new Map(state.reviews.map(row => [id(row._id), row]));
+  for (const row of [...audit.synthetic, ...audit.cabin]) {
+    assert(reviewMap.has(row._id), `Missing review from scoped export: ${row._id}`);
+    publicMatch(reviewMap.get(row._id), row);
+  }
+  assert(state.reviews.every(row => syntheticIds.has(id(row._id)) || cabinIds.has(id(row._id))),
+    'Export contains a review outside the explicit audit inventory');
+  assert(state.reviews.filter(row => syntheticIds.has(id(row._id))).length === 357,
+    'Export synthetic record count mismatch');
+  assert(state.reviews.filter(row => cabinIds.has(id(row._id))).length === 130,
+    'Export Cabin record count mismatch');
+  const expectedCabins = new Set([
+    CABIN, '69d096b6bd7fb6fc0d3c2a34',
+    '69b2ff947f141a71ffa7c452', '69b2ff947f141a71ffa7c492'
+  ]);
+  const expectedTypes = new Set(['69b2ff947f141a71ffa7c401']);
+  assert(state.cabins.length === expectedCabins.size &&
+    state.cabins.every(row => expectedCabins.has(id(row._id))), 'Export Cabin stats scope mismatch');
+  assert(state.cabinTypes.length === expectedTypes.size &&
+    state.cabinTypes.every(row => expectedTypes.has(id(row._id))), 'Export CabinType stats scope mismatch');
+  const frame = state.cabins.find(row => id(row._id) === '69d096b6bd7fb6fc0d3c2a34');
+  assert(id(frame.cabinTypeId) === '69b2ff947f141a71ffa7c401' &&
+    (frame.inventoryType === 'multi' || frame.inventoryMode === 'multi'),
+  'Export A-Frame ownership proof mismatch');
+
+  const stats = [];
+  for (const pool of POOLS) {
+    const owners = [pool.id, ...(pool.linked ? [pool.linked] : [])];
+    const published = state.reviews.filter(row =>
+      owners.includes(id(row.cabinId)) && row.status === 'approved' && row.deletedAt == null && row.rating >= 2);
+    const sum = published.reduce((total, row) => total + row.rating, 0);
+    stats.push({
+      property: pool.name,
+      count: published.length,
+      ratingSum: sum,
+      exactMean: published.length ? sum / published.length : null,
+      stored: [
+        ...state.cabins.filter(row => owners.includes(id(row._id))),
+        ...state.cabinTypes.filter(row => owners.includes(id(row._id)))
+      ].map(row => ({
+        collection: state.cabinTypes.some(type => id(type._id) === id(row._id)) ? 'cabintypes' : 'cabins',
+        _id: id(row._id),
+        reviewsCount: row.reviewsCount,
+        averageRating: row.averageRating
+      }))
+    });
+  }
+  return stats;
+}
+
 function publication(rows, owners, minRating = 2) {
   return rows.filter(row => owners.includes(id(row.cabinId)) && row.status === 'approved' &&
     row.deletedAt == null && row.rating >= minRating);
@@ -159,4 +215,7 @@ function prepare(before, audit, encode, clone) {
   return { after, archive, report, cabinHash: documentsHash(cabinRows, encode) };
 }
 
-module.exports = { CABIN, POOLS, EVIDENCE_HASHES, assert, hash, evidence, documentsHash, snapshotHash, prepare };
+module.exports = {
+  CABIN, POOLS, EVIDENCE_HASHES, assert, hash, evidence, documentsHash, snapshotHash,
+  publicMatch, verifyScopedExport, prepare
+};

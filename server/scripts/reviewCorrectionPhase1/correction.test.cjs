@@ -13,6 +13,7 @@ const {
   encode, decode, clone, readState, backup, loadBundle, correct, targetIdentity,
   validateStagingUri, privateDirectory, writePrivate
 } = require('./run.cjs');
+const { collect, createExport, loadConfiguredUri } = require('./export.cjs');
 const { ObjectId, BSON } = mongoose.mongo;
 
 function loadFixture() {
@@ -114,6 +115,18 @@ test('Phase 1 local-only fixture verification (NOT staging)', { timeout: 180000 
     ]) assert.throws(() => validateStagingUri(uri));
   });
 
+  await t.test('export reads only an owner-private config file, ignores env fallbacks and never prints its URI', () => {
+    const envPath = path.join(os.tmpdir(), `review-correction-config-${process.pid}`);
+    fs.writeFileSync(envPath, 'MONGODB_URI="mongodb://127.0.0.1/review_correction_staging_local_test"\n', { mode: 0o600 });
+    try {
+      assert.equal(loadConfiguredUri(envPath), 'mongodb://127.0.0.1/review_correction_staging_local_test');
+      fs.chmodSync(envPath, 0o644);
+      assert.throws(() => loadConfiguredUri(envPath), /owner-only/);
+    } finally {
+      fs.rmSync(envPath);
+    }
+  });
+
   const privateRoot = path.join(os.homedir(), '.local/state/drift-review-correction');
   fs.mkdirSync(privateRoot, { recursive: true, mode: 0o700 });
   const directory = fs.mkdtempSync(path.join(privateRoot, 'local-test-'));
@@ -152,6 +165,50 @@ test('Phase 1 local-only fixture verification (NOT staging)', { timeout: 180000 
   await db.collection('cabintypes').insertMany(state.cabinTypes);
   const initial = await readState(db);
   const initialHash = snapshotHash(initial, encode);
+  let exportReceipt;
+  await t.test('scoped production-export package is exact, integrity checked and excludes unrelated data', async () => {
+    const otherPropertyReviews = extra.slice(0, 3);
+    await assert.rejects(() => collect(client, audit), /exactly 487 reviews/);
+    await db.collection('reviews').deleteMany({ _id: { $in: otherPropertyReviews.map(row => row._id) } });
+    try {
+      const writesBeforeExport = mutations.length;
+      const selected = await collect(client, audit);
+      assert.deepEqual(
+        [selected.state.reviews.length, selected.state.cabins.length, selected.state.cabinTypes.length],
+        [487, 4, 1]
+      );
+      assert.equal(selected.stats.find(row => row.property === 'The Cabin').count, 130);
+      assert.equal(selected.stats.find(row => row.property === 'A-Frame').count, 110);
+      assert.equal(selected.stats.find(row => row.property === 'Stone House').count, 97);
+      assert.equal(selected.stats.find(row => row.property === 'Lux Cabin').count, 150);
+      exportReceipt = await createExport(client, audit, directory);
+      const bytes = fs.readFileSync(exportReceipt.path);
+      assert.equal(hash(bytes), exportReceipt.sha256);
+      assert.equal(fs.statSync(exportReceipt.path).mode & 0o777, 0o600);
+      const payload = BSON.EJSON.parse(bytes.toString());
+      assert.equal(payload.scope.reviews, 487);
+      assert.equal(payload.scope.syntheticIds, 357);
+      assert.equal(payload.scope.cabinReviewIds, 130);
+      assert.equal(payload.reviews.length, 487);
+      assert.equal(payload.statistics.cabins.length, 4);
+      assert.equal(payload.statistics.cabinTypes.length, 1);
+      assert.ok(payload.reviews.every(row =>
+        audit.synthetic.some(item => item._id === String(row._id)) ||
+        audit.cabin.some(item => item._id === String(row._id))));
+      assert.ok(payload.reviews.every(row => row.raw?.fixtureOnly === true));
+      assert.ok(payload.statistics.cabins.every(row =>
+        Object.keys(row).every(key => ['_id', 'reviewsCount', 'averageRating', 'inventoryType',
+          'inventoryMode', 'cabinTypeId', 'cabinTypeRef'].includes(key))));
+      const manifest = JSON.parse(fs.readFileSync(`${exportReceipt.path}.manifest.json`, 'utf8'));
+      assert.equal(manifest.sha256, exportReceipt.sha256);
+      assert.deepEqual(manifest.counts, {
+        reviews: 487, synthetic: 357, cabin: 130, cabins: 4, cabinTypes: 1
+      });
+      assert.equal(mutations.length, writesBeforeExport, 'Export must issue no MongoDB mutation commands');
+    } finally {
+      await db.collection('reviews').insertMany(otherPropertyReviews);
+    }
+  });
   const writesBeforeBackup = mutations.length;
   const backupReceipt = await backup(client, uri, directory);
   assert.equal(mutations.length, writesBeforeBackup, 'Backup must issue no MongoDB mutation commands');
