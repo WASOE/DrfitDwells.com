@@ -151,13 +151,15 @@ not a full production backup and not a newly verified guest source.
    ```sh
    NODE_PATH=/home/illoc/apps/driftdwells-booking-portal/server/node_modules \
    DRIFT_REVIEW_ENV_FILE=/home/illoc/apps/driftdwells-booking-portal/server/.env \
+   DRIFT_REVIEW_REPO_ROOT=/home/illoc/apps/driftdwells-booking-portal \
      node /home/illoc/.local/state/drift-review-correction/operator/export.cjs \
        --inventory /home/illoc/.local/state/drift-review-correction/audit/generated-review-inventory.csv \
        --snapshot /home/illoc/.local/state/drift-review-correction/audit/production-public-reviews.json
    ```
-   The command reads the existing `server/.env` internally, requires it to be
-   owner-only/non-symlink, never prints the URI, and creates a private package
-   plus SHA-256 manifest. It refuses missing or unsafe config. Do not run the
+   The command reads the existing server config internally, requires it to be
+   owned by the operator, non-symlink and not group/world writable, never prints
+   the URI, and creates a private package plus SHA-256 manifest. It refuses
+   missing or unsafe config. Do not run the
    broad Mongo+uploads backup for this scoped export. Review its sanitized receipt:
    exactly 487 reviews (357 generator records + 130 Cabin), four Cabin stats
    documents plus one CabinType stats document, fixed evidence hashes, count and
@@ -173,6 +175,10 @@ not a full production backup and not a newly verified guest source.
    is the authorized operator. Export aborts on
    any missing, changed, extra Cabin, or non-allowlisted record. Do not override
    a failed check or edit the pinned evidence.
+   If the approved source does not support snapshot transactions, the exporter
+   stops without an artifact. Do not downgrade to non-transactional reads;
+   obtain an approved transactionally consistent read-only source or verified
+   backup before retrying.
 3. Transfer only the EJSON package and manifest via the approved encrypted
    operator channel to the isolated staging host. Verify its SHA-256 there.
    This package is a data fixture, not an imported or modified staging database.

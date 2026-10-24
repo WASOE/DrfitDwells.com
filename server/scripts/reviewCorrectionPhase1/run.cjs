@@ -7,7 +7,7 @@ const os = require('node:os');
 const crypto = require('node:crypto');
 const { assert, hash, evidence, snapshotHash, prepare } = require('./core.cjs');
 
-const ROOT = path.resolve(__dirname, '../../..');
+const ROOT = path.resolve(process.env.DRIFT_REVIEW_REPO_ROOT || path.resolve(__dirname, '../../..'));
 const PRIVATE_ROOT = path.join(os.homedir(), '.local/state/drift-review-correction');
 const encode = value => require('mongoose').mongo.BSON.EJSON.stringify(value, { relaxed: false });
 const decode = value => require('mongoose').mongo.BSON.EJSON.parse(value, { relaxed: false });

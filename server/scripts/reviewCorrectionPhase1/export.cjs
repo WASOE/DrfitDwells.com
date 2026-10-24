@@ -30,7 +30,8 @@ const encode = value => require('mongoose').mongo.BSON.EJSON.stringify(value, { 
 function loadConfiguredUri(serverEnv) {
   const envStat = fs.lstatSync(serverEnv);
   assert(envStat.isFile() && !envStat.isSymbolicLink() && envStat.uid === process.getuid() &&
-    (envStat.mode & 0o077) === 0, 'Existing server configuration must be owner-only and non-symlink');
+    (envStat.mode & 0o022) === 0,
+  'Existing server configuration must be owner-controlled, non-symlink and not group/world writable');
   const configured = require('dotenv').parse(fs.readFileSync(serverEnv, 'utf8'));
   const uri = configured.MONGODB_URI || configured.MONGO_URI;
   assert(uri, 'Existing server configuration must provide MONGODB_URI or MONGO_URI');

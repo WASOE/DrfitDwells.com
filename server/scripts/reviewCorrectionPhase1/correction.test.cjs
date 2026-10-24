@@ -115,13 +115,15 @@ test('Phase 1 local-only fixture verification (NOT staging)', { timeout: 180000 
     ]) assert.throws(() => validateStagingUri(uri));
   });
 
-  await t.test('export reads only an owner-private config file, ignores env fallbacks and never prints its URI', () => {
+  await t.test('export reads owner-controlled config without printing URI and rejects other-writable files', () => {
     const envPath = path.join(os.tmpdir(), `review-correction-config-${process.pid}`);
     fs.writeFileSync(envPath, 'MONGODB_URI="mongodb://127.0.0.1/review_correction_staging_local_test"\n', { mode: 0o600 });
     try {
       assert.equal(loadConfiguredUri(envPath), 'mongodb://127.0.0.1/review_correction_staging_local_test');
       fs.chmodSync(envPath, 0o644);
-      assert.throws(() => loadConfiguredUri(envPath), /owner-only/);
+      assert.equal(loadConfiguredUri(envPath), 'mongodb://127.0.0.1/review_correction_staging_local_test');
+      fs.chmodSync(envPath, 0o664);
+      assert.throws(() => loadConfiguredUri(envPath), /not group\/world writable/);
     } finally {
       fs.rmSync(envPath);
     }
