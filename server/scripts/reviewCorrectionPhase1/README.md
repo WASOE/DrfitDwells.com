@@ -1,11 +1,11 @@
 # Review correction: Phase 1 preparation only
 
-**Approval boundary:** this change is prepared and tested locally. Full production
-backup and real staging verification are **BLOCKED**, explicitly deferred by the
-owner. This tooling is not production write tooling. No production database access,
-review mutation, merge or deployment is authorized. Further execution requires a
-new approval and independently verified access. The code-review PR for this
-preparation change does not authorize operational execution.
+**Approval boundary:** the current task authorizes only a narrowly scoped,
+read-only production export using `export.cjs`. Full production backup and real
+staging verification are **BLOCKED**. This worktree has no production config, so
+no export was performed here. No production writes, staging modifications, merge
+or deployment are authorized. The code-review PR does not authorize operational
+execution.
 
 ## Scope and evidence
 
@@ -162,7 +162,15 @@ not a full production backup and not a newly verified guest source.
    exactly 487 reviews (357 generator records + 130 Cabin), four Cabin stats
    documents plus one CabinType stats document, fixed evidence hashes, count and
    target fingerprint. Separately verify the manifest against the package with
-   SHA-256 and ensure file/directory ownership and permissions. Export aborts on
+   these commands, substituting the private path printed in the receipt:
+   ```sh
+   EXPORT=/private/path/review-only-export-<sha256>.ejson
+   MANIFEST="${EXPORT}.manifest.json"
+   test "$(sha256sum "$EXPORT" | awk '{print $1}')" = "$(jq -r '.sha256' "$MANIFEST")"
+   stat -c '%a %U %n' "$EXPORT" "$MANIFEST" "$(dirname "$EXPORT")"
+   ```
+   Confirm both files are mode `600`, the directory is mode `700`, and the owner
+   is the authorized operator. Export aborts on
    any missing, changed, extra Cabin, or non-allowlisted record. Do not override
    a failed check or edit the pinned evidence.
 3. Transfer only the EJSON package and manifest via the approved encrypted
