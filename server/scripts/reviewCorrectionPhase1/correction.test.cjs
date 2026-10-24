@@ -170,46 +170,56 @@ test('Phase 1 local-only fixture verification (NOT staging)', { timeout: 180000 
   let exportReceipt;
   await t.test('scoped production-export package is exact, integrity checked and excludes unrelated data', async () => {
     const otherPropertyReviews = extra.slice(0, 3);
-    await assert.rejects(() => collect(client, audit), /exactly 487 reviews/);
-    await db.collection('reviews').deleteMany({ _id: { $in: otherPropertyReviews.map(row => row._id) } });
-    try {
-      const writesBeforeExport = mutations.length;
-      const selected = await collect(client, audit);
-      assert.deepEqual(
-        [selected.state.reviews.length, selected.state.cabins.length, selected.state.cabinTypes.length],
-        [487, 4, 1]
-      );
-      assert.equal(selected.stats.find(row => row.property === 'The Cabin').count, 130);
-      assert.equal(selected.stats.find(row => row.property === 'A-Frame').count, 110);
-      assert.equal(selected.stats.find(row => row.property === 'Stone House').count, 97);
-      assert.equal(selected.stats.find(row => row.property === 'Lux Cabin').count, 150);
-      exportReceipt = await createExport(client, audit, directory);
-      const bytes = fs.readFileSync(exportReceipt.path);
-      assert.equal(hash(bytes), exportReceipt.sha256);
-      assert.equal(fs.statSync(exportReceipt.path).mode & 0o777, 0o600);
-      const payload = BSON.EJSON.parse(bytes.toString());
-      assert.equal(payload.scope.reviews, 487);
-      assert.equal(payload.scope.syntheticIds, 357);
-      assert.equal(payload.scope.cabinReviewIds, 130);
-      assert.equal(payload.reviews.length, 487);
-      assert.equal(payload.statistics.cabins.length, 4);
-      assert.equal(payload.statistics.cabinTypes.length, 1);
-      assert.ok(payload.reviews.every(row =>
-        audit.synthetic.some(item => item._id === String(row._id)) ||
-        audit.cabin.some(item => item._id === String(row._id))));
-      assert.ok(payload.reviews.every(row => row.raw?.fixtureOnly === true));
-      assert.ok(payload.statistics.cabins.every(row =>
-        Object.keys(row).every(key => ['_id', 'reviewsCount', 'averageRating', 'inventoryType',
-          'inventoryMode', 'cabinTypeId', 'cabinTypeRef'].includes(key))));
-      const manifest = JSON.parse(fs.readFileSync(`${exportReceipt.path}.manifest.json`, 'utf8'));
-      assert.equal(manifest.sha256, exportReceipt.sha256);
-      assert.deepEqual(manifest.counts, {
-        reviews: 487, synthetic: 357, cabin: 130, cabins: 4, cabinTypes: 1
-      });
-      assert.equal(mutations.length, writesBeforeExport, 'Export must issue no MongoDB mutation commands');
-    } finally {
-      await db.collection('reviews').insertMany(otherPropertyReviews);
-    }
+    const writesBeforeExport = mutations.length;
+    const selected = await collect(client, audit);
+    assert.deepEqual(
+      [selected.state.reviews.length, selected.state.cabins.length, selected.state.cabinTypes.length],
+      [487, 4, 1]
+    );
+    assert.ok(otherPropertyReviews.every(row => !selected.state.reviews.some(item => String(item._id) === String(row._id))));
+    assert.equal(selected.stats.find(row => row.property === 'The Cabin').count, 130);
+    assert.equal(selected.stats.find(row => row.property === 'A-Frame').count, 110);
+    assert.equal(selected.stats.find(row => row.property === 'Stone House').count, 97);
+    assert.equal(selected.stats.find(row => row.property === 'Lux Cabin').count, 150);
+    let passCount = 0;
+    const exportBefore = new Set(fs.readdirSync(directory));
+    await assert.rejects(() => createExport(client, audit, directory, async (...args) => {
+      const result = await collect(...args);
+      passCount += 1;
+      if (passCount === 2) result.state.reviews[0].text = 'LOCAL ONLY MUTATION';
+      return result;
+    }), /Collected data changed after read hashing|Two complete non-transactional reads differ/);
+    assert.equal(passCount, 2);
+    assert.deepEqual(fs.readdirSync(directory), [...exportBefore]);
+    exportReceipt = await createExport(client, audit, directory);
+    const actualReads = BSON.EJSON.parse(fs.readFileSync(exportReceipt.path, 'utf8')).consistency;
+    assert.equal(actualReads.method, 'two complete, independently hashed non-transactional reads');
+    assert.equal(actualReads.pointInTimeSnapshot, false);
+    assert.equal(actualReads.readHashes.length, 2);
+    assert.equal(actualReads.readHashes[0], actualReads.readHashes[1]);
+    const bytes = fs.readFileSync(exportReceipt.path);
+    assert.equal(hash(bytes), exportReceipt.sha256);
+    assert.equal(fs.statSync(exportReceipt.path).mode & 0o777, 0o600);
+    const payload = BSON.EJSON.parse(bytes.toString());
+    assert.equal(payload.scope.reviews, 487);
+    assert.equal(payload.scope.syntheticIds, 357);
+    assert.equal(payload.scope.cabinReviewIds, 130);
+    assert.equal(payload.reviews.length, 487);
+    assert.equal(payload.statistics.cabins.length, 4);
+    assert.equal(payload.statistics.cabinTypes.length, 1);
+    assert.ok(payload.reviews.every(row =>
+      audit.synthetic.some(item => item._id === String(row._id)) ||
+      audit.cabin.some(item => item._id === String(row._id))));
+    assert.ok(payload.reviews.every(row => row.raw?.fixtureOnly === true));
+    assert.ok(payload.statistics.cabins.every(row =>
+      Object.keys(row).every(key => ['_id', 'reviewsCount', 'averageRating', 'inventoryType',
+        'inventoryMode', 'cabinTypeId', 'cabinTypeRef'].includes(key))));
+    const manifest = JSON.parse(fs.readFileSync(`${exportReceipt.path}.manifest.json`, 'utf8'));
+    assert.equal(manifest.sha256, exportReceipt.sha256);
+    assert.deepEqual(manifest.counts, {
+      reviews: 487, synthetic: 357, cabin: 130, cabins: 4, cabinTypes: 1
+    });
+    assert.equal(mutations.length, writesBeforeExport, 'Export must issue no MongoDB mutation commands');
   });
   const writesBeforeBackup = mutations.length;
   const backupReceipt = await backup(client, uri, directory);

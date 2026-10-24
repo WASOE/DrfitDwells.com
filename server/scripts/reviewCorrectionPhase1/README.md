@@ -1,221 +1,156 @@
-# Review correction: Phase 1 preparation only
+# Review correction: Phase 1 preparation
 
-**Approval boundary:** the current task authorizes only a narrowly scoped,
-read-only production export using `export.cjs`. Full production backup and real
-staging verification are **BLOCKED**. This worktree has no production config, so
-no export was performed here. No production writes, staging modifications, merge
-or deployment are authorized. The code-review PR does not authorize operational
-execution.
+**Approval boundary:** a narrowly scoped, read-only production export was
+completed. No production records were changed, no staging database was imported
+or modified, and no deployment or merge was performed. The full private
+production backup and real staging verification have not been run. The
+correction/rollback tooling in this worktree is restricted to isolated loopback
+MongoDB; it is not a production execution command. Any production write requires
+separate final approval and an independently verified full backup.
 
 ## Scope and evidence
 
-The 22 October 2026 private audit contains 487 unique public records: 130 Cabin
+The pinned 22 October 2026 audit identifies 487 unique public records: 130 Cabin
 imports and 357 generator records (A-Frame 110, Stone House 97, Lux Cabin 150).
-The two A-Frame endpoints share one pool, not 220 unique records.
+The two A-Frame endpoints share one review pool, not 220 records. A separate
+hidden Stone House review was detected outside the explicit inventory and was
+not exported or modified.
 
-`core.cjs` pins SHA-256 digests of the exact CSV inventory and public snapshot.
-It uses all 357 exact IDs, validates complete generator index sequences,
-source/owner/external-ID/creation-window provenance, and compares **every**
-public snapshot field, including text, rating, identity, dates and the edited
-Lux record. A broad `source=manual` predicate is never used.
+`core.cjs` pins SHA-256 digests of the exact inventory and public snapshot. It
+uses the 357 exact IDs, validates the complete generator sequences and
+source/owner/external-ID/creation-window provenance, and compares every
+available public snapshot field, including text, rating, identity, dates and the
+edited Lux record. A broad `source=manual` predicate is never used.
 
-No genuine replacements or original Airbnb export were supplied. No testimonials
-are invented, copied across accommodations, rewritten, or upgraded. Additional
-published records, changed fingerprints, changed Cabin inventory, changed
-ownership, or post-backup state drift stop the operation for evidence review.
-Hidden/pending/deleted and unrelated records are retained. All 130 Cabin review
-documents remain untouched, including their private fields.
+No genuine replacements or original Airbnb export were supplied. No
+testimonials are invented, copied across accommodations, rewritten, or upgraded.
+Additional published records, changed fingerprints, changed Cabin inventory,
+changed ownership, or state drift stop the operation for evidence review. All
+130 Cabin review documents remain unchanged in local correction tests. The
+Cabin 5.0 is a **preserved-import aggregate, not independently verified Airbnb
+original scores or proof that the source export is complete**.
 
-The current `rating >= 2` public/statistics policy and frontend remain unchanged.
-Preflight checks published records at both thresholds 1 and 2 and refuses an
-unreviewed difference. Future scope must address this policy separately; do not
-silently exclude genuine lower-rated feedback or certify source flags as proof.
-The current Cabin 5.0 is a **preserved-import aggregate, not independently verified
-Airbnb original scores or proof that the source export is complete**.
+## Tool behavior
 
-## Files and behavior
-
-- `export.cjs` is a separate read-only operator command using `server/.env` and
-  the existing `MONGODB_URI` / `MONGO_URI` server settings. It reads only
-  `reviews`, `cabins` and `cabintypes`, within a snapshot transaction. The review
-  query is constrained to all 357 pinned synthetic IDs plus the 130 records
-  owned by The Cabin. It queries all Review documents only for the four
-  allowlisted property owner pools (including A-Frame's linked owner) and aborts
-  unless that query resolves to exactly 487 unique documents matching every
-  public fingerprint; any extra hidden, pending, deleted or public review in
-  those pools requires evidence review before retry. It reads only five explicitly
-  identified property documents and projects review counters plus the ownership
-  fields needed to explain the A-Frame shared pool. No other reviews, properties,
-  bookings, guests, payments or customer collections are exported.
-- The resulting single canonical-EJSON file is the **review-only staging dataset
-  package**: exact full native review documents and five narrowly projected
-  statistics/ownership documents, with a SHA-256 manifest and measured per-pool
-  statistics. It is written mode `0600` under a new mode `0700` private directory,
-  exclusively created, fsynced, and read-back verified. The command only issues
-  MongoDB reads; it does not change staging or production. Keep source audit
-  files, package, manifest and any transfer restricted; encrypt at rest/in transit
-  through the approved operator channel and remove temporary copies per retention
-  policy.
-- `run.cjs backup` reads native collections without models or application startup:
-  **all** Review documents, all statuses, soft-deleted records, `raw`, moderation
-  metadata, and complete Cabin/CabinType ownership and statistics documents.
-  No booking, payment, notification, job or unrelated collection is exported.
-  A snapshot transaction requires a replica set. No indexes or DB writes occur.
-- Canonical EJSON preserves native BSON dates, ObjectIds, integer/double/long,
-  binary and decimal values without model selection or default-value injection.
-  The manifest includes target identity, counts, file SHA-256 and whole-state
-  hashes, and is verified by reading the file back.
-- `plan` is offline: it validates a full private backup against the pinned audit.
-  A public API snapshot alone **cannot** be passed off as a full database backup.
-- `apply-staging` writes an immutable private archive of exactly 357 complete
-  originals **before** any DB mutation. It then transactionally removes only
-  those IDs from the live Review collection and updates only resolved property
-  counters. The private file archive has no model, collection, route, static
-  directory or public import surface; it cannot be reapproved through moderation.
-  Removing from the live collection, rather than merely hiding, also excludes
-  these records from admin-derived counts and any other live review consumer.
-- Both the canonical A-Frame type and linked Cabin counters are corrected.
-  Exact means and stored one-decimal means are reported separately; zero
-  reviews means `exactMean: null` and existing database sentinel `averageRating: 0`.
-- The complete review/property state is checked inside the transaction before
-  and after writes. A repeat apply against the same backup is an exact no-write
-  no-op. Anything other than the exact before/after state is rejected.
-- `rollback-staging` uses the same verified backup and archive. It restores the
-  exact originals and original property documents/counters in a transaction;
-  it refuses post-correction drift. Repeat rollback is also a no-write no-op.
-  Archive/backup files are retained. This is rollback **preparation**, never
-  authorization for production rollback.
-
-Archive, backup, manifest and receipt files are exclusive-create, mode `0600`,
-read-back verified and fsynced (including the containing directory). Private run
-directories and their dedicated root must be owned by the current user with
-mode `0700` under `~/.local/state/drift-review-correction/<run>/`, outside the repo
-and all web roots. No review text or private fields are printed in receipts.
-Keep these private artifacts out of git, static serving, shared folders and
-public CI artifacts; restrict host access and arrange encrypted private retention
-according to operational policy before any authorized full export.
-
-The old `generateValleyReviewsImproved.js` entry point now throws immediately,
-without loading dependencies or connecting. Its generator, destructive importer
-and statistics mutation code have been removed. No repository launcher was found.
-Existing Airbnb processing/import scripts are **not safe reconciliation tools**:
-they are unchanged, out of this phase, and must not be run to repair Cabin ratings.
+- `export.cjs` is read-only and uses the existing server configuration and
+  `MONGODB_URI` / `MONGO_URI`. Production is standalone MongoDB: the exporter
+  performs two complete, independently hashed reads of the exact allowlist and
+  verifies deployment identity before and after. Matching reads are not a
+  transactional or point-in-time snapshot. It reads only `reviews`, `cabins`
+  and `cabintypes`: the 357 exact synthetic IDs, 130 Cabin-owned reviews, and
+  five projected statistics/ownership documents. It excludes bookings,
+  payments, guests, users, unrelated reviews and properties.
+- The exporter aborts for missing, extra or changed inventory, mismatched read
+  hashes, or changed deployment identity. Export artifacts and manifest are
+  private mode `0600` under a mode `0700` directory. No credential or review
+  text is printed. Transfer only through an approved encrypted operator channel.
+- `run.cjs backup` is the separate full review/property backup path. It includes
+  all review statuses, soft-deleted documents, raw/moderation fields and
+  complete associated property documents, but no unrelated collections. Its
+  pre-existing transaction-based backup command requires a replica set; it has
+  not been run against production as part of this work.
+- `standalone.cjs` is a local-only correction/rollback harness. It refuses
+  non-loopback database URIs. The fixture is seeded from the verified export,
+  archives exact full documents for the 357 allowlisted reviews, conditionally
+  changes their status to `hidden`, and updates only the resolved property
+  counters. It retains records in the collection, so the operation can be
+  reversed. Per-document conditional updates and a durable, checksummed private
+  journal support recovery after partial failures; no multi-document
+  transaction or atomic snapshot is claimed.
+- Cabin-type and linked Cabin counters are both accounted for. Means are
+  computed from published eligible records, exact and one-decimal stored means
+  are reported separately, and zero reviews use the existing `0` stored
+  average sentinel. Genuine lower-rated feedback is not silently removed or
+  certified based on a source flag.
+- The synthetic generator entry point is retired and fails immediately without
+  importing dependencies or connecting. Its review generation/deletion/stat
+  mutation code has been removed. No repository launcher was found. Existing
+  Airbnb processing/import scripts are unchanged and are not safe tools for
+  reconciling Cabin ratings.
 
 ## Local verification (not staging)
 
-Restore locked server dependencies if missing. The test requires the private
-original audit artifacts; it intentionally fails with guidance if they are absent,
-rather than skipping the exact-ID tests or committing guest text to git.
+The tests require the private pinned audit artifacts; they fail with guidance
+if absent instead of skipping exact-ID checks or committing review text.
+`standalone.test.cjs` additionally requires the private production export.
 
 ```sh
 REVIEW_CORRECTION_AUDIT_DIR=/private/read-only/audit \
+REVIEW_CORRECTION_PRODUCTION_EXPORT=/private/export/review-only-export-<sha256>.ejson \
   npm run test:review-correction-phase1 --prefix server
 ```
 
-The suite starts and stops its own loopback MongoDB replica set, not any supplied
-database. It loads the public snapshot into an ephemeral **local test fixture**,
-adds clearly marked private BSON test metadata and four non-target records, then
-exercises full backup, archive, actual public review routes, both A-Frame endpoints,
-counters, integrity, offline CLI, drift rejection, idempotence, transaction-failure
-atomicity and exact rollback. Command monitoring proves backup and repeat
-apply/rollback issue no MongoDB mutation commands. The test's
-simulated staging marker is not independent staging certification. It tests no
-booking/payment code. It cleans up its own private files and MongoDB process.
+The suite uses ephemeral local MongoDB instances only. The standalone suite
+loads the real verified export into an isolated local standalone MongoDB, injects
+failures after a partial review hide, after a stats update, and during partial
+rollback, then verifies resume/recovery. It checks exact inventory scope,
+checksums, full 130-document Cabin fingerprint preservation, private archival,
+property counters, and that a hidden non-target test fixture survives unchanged.
+No staging or production connection is made by these tests.
 
-Observed local-fixture results: Cabin **130 / exact mean 5.0** (preserved import);
-A-Frame **0 / no mean**, Stone House **0 / no mean**, Lux Cabin **0 / no mean**.
-Archive **357 = 110 + 97 + 150**. All 130 Cabin native-document fingerprints match
-before/after. All four additional records (including lower-rated, hidden, pending,
-deleted and unrelated-owner examples) survive unchanged; an unrelated collection
-sentinel is untouched. Repeat apply performs no writes; rollback restores the
-full native review/property snapshot and rejects drift.
+Latest standalone test results against the verified export: archived/hidden
+**357 (110 + 97 + 150)**; Cabin **130 / sum 650 / exact mean 5.0 / stored 5.0**;
+A-Frame **0 / no mean / stored 0**; Stone House **0 / no mean / stored 0**;
+Lux Cabin **0 / no mean / stored 0**. All 130 Cabin full-document fingerprints
+remain identical. Injected partial hide and stats-write interruptions resumed
+successfully; rollback resumed after a partial restore and restored the exact
+original export state. These are **local isolated database measurements using
+the real export**, not staging or post-correction production measurements.
+The export's matching reads are explicitly not a snapshot.
 
-These are **local fixture measurements only**, not staging or production results,
-not a full production backup and not a newly verified guest source.
+## Verified export and production execution gates
 
-## Future approved operator workflow (do not execute under current approval)
+The read-only production export was validated and privately transferred to the
+operator's local state:
 
-1. Confirm the separate production-export approval, data-retention owner, and
-   authorized operator. Use the existing production host/server configuration;
-   never copy `.env`, paste its URI, put credentials in arguments, or send them
-   through chat. Ensure the reviewed export code and exact pinned evidence are
-   verified through the authorized code/artifact channel. This is a temporary
-   operator utility run, not a deployment: do not merge/release or add code to
-   the live application checkout.
-2. On the authorized host, create a private temporary directory under
-   `~/.local/state/drift-review-correction/`, mode `0700`; copy only `core.cjs`,
-   `run.cjs`, `export.cjs` and the two pinned audit artifacts there through the
-   approved restricted channel. Run the script with the existing server's
-   installed Node dependencies and configuration-file path (path only, not
-   contents):
-   ```sh
-   NODE_PATH=/home/illoc/apps/driftdwells-booking-portal/server/node_modules \
-   DRIFT_REVIEW_ENV_FILE=/home/illoc/apps/driftdwells-booking-portal/server/.env \
-   DRIFT_REVIEW_REPO_ROOT=/home/illoc/apps/driftdwells-booking-portal \
-     node /home/illoc/.local/state/drift-review-correction/operator/export.cjs \
-       --inventory /home/illoc/.local/state/drift-review-correction/audit/generated-review-inventory.csv \
-       --snapshot /home/illoc/.local/state/drift-review-correction/audit/production-public-reviews.json
-   ```
-   The command reads the existing server config internally, requires it to be
-   owned by the operator, non-symlink and not group/world writable, never prints
-   the URI, and creates a private package plus SHA-256 manifest. It refuses
-   missing or unsafe config. Do not run the
-   broad Mongo+uploads backup for this scoped export. Review its sanitized receipt:
-   exactly 487 reviews (357 generator records + 130 Cabin), four Cabin stats
-   documents plus one CabinType stats document, fixed evidence hashes, count and
-   target fingerprint. Separately verify the manifest against the package with
-   these commands, substituting the private path printed in the receipt:
-   ```sh
-   EXPORT=/private/path/review-only-export-<sha256>.ejson
-   MANIFEST="${EXPORT}.manifest.json"
-   test "$(sha256sum "$EXPORT" | awk '{print $1}')" = "$(jq -r '.sha256' "$MANIFEST")"
-   stat -c '%a %U %n' "$EXPORT" "$MANIFEST" "$(dirname "$EXPORT")"
-   ```
-   Confirm both files are mode `600`, the directory is mode `700`, and the owner
-   is the authorized operator. Export aborts on
-   any missing, changed, extra Cabin, or non-allowlisted record. Do not override
-   a failed check or edit the pinned evidence.
-   If the approved source does not support snapshot transactions, the exporter
-   stops without an artifact. Do not downgrade to non-transactional reads;
-   obtain an approved transactionally consistent read-only source or verified
-   backup before retrying.
-3. Transfer only the EJSON package and manifest via the approved encrypted
-   operator channel to the isolated staging host. Verify its SHA-256 there.
-   This package is a data fixture, not an imported or modified staging database.
-   Keep backups and package copies private; record retention/deletion.
-4. Independently provision and verify a review-only isolated staging replica set
-   with no production tunnels, jobs, notifications, booking/payment data or app
-   writers. Transfer only authorized review/property data. Establish target
-   identity outside this tool, stop all staging writers, and retain evidence of
-   isolation. A database name or marker alone is not proof. **Stop before
-   importing/modifying staging** unless a distinct approval explicitly authorizes
-   staging writes.
-5. Staging mutation (only after separate approval) is deliberately restricted to a **loopback, direct-connection**
-   replica-set URI with database name `review_correction_staging_<suffix>`.
-   Hosted staging is intentionally unsupported by these write commands.
-   An authorized operator must separately install the `phase1` record in
-   `review_correction_environment`, after independent verification:
-   `environment: "staging"`, `isolated: true`, `production: false`, exact
-   `database` and `deployment` fingerprint, and
-   `approval: "ISOLATED REVIEW-ONLY STAGING; NO PRODUCTION CONNECTION"`.
-   The fingerprint is SHA-256 of canonical `{hosts, setName, processId}` from
-   MongoDB `hello` (see `targetIdentity`), not a credential. The tool never
-   creates this approval marker. A server restart invalidates it and old target
-   backups; recapture under renewed identity checks instead of bypassing checks.
-6. Create a private mode-0600 JSON config with `privateDirectory`, `uriFile`
-   (mode-0600 file holding the explicit URI; no environment URI or dotenv),
-   `inventory` and `snapshot` paths, `backup` path when available, and
-   `exclusiveReviewOnlyStaging: true` only after stopping other writers.
-   Do not put credentials in shell arguments or git.
-7. Use `node server/scripts/reviewCorrectionPhase1/run.cjs backup --config
-   /private/config.json` on **staging** to capture its own target-bound full backup.
-   Production backups cannot be used as staging write authorization.
-   Set `backup` in the config, run `plan`, review its exact totals and provenance,
-   then use `apply-staging` only with explicit approval. Keep the same backup for
-   the no-op repeat check and optional approved `rollback-staging` rehearsal.
-8. Re-query staging public routes and all persisted counters, confirm the archive
-   and Cabin proof, report exact observed results and approval gates, then STOP.
-   No deployment, production writes or follow-on phase is authorized.
+- SHA-256:
+  `d40a710744d354da87d05a08d8b8502fadcc9e39a47d401ccde75d89fc6847e7`
+- 487 reviews: 357 exact inventory records and 130 Cabin records.
+- Five projected property statistics/ownership documents.
+- Two full read hashes match and the deployment identity remained stable. This
+  is **not** a transactionally consistent or point-in-time snapshot.
+- Observed pre-correction production statistics: Cabin 130, sum 650, mean 5.0,
+  stored 0/0; A-Frame 110, sum 541, mean 4.9181818, stored type 110/4.9 and
+  linked Cabin 0/0; Stone House 97, sum 470, mean 4.8453608, stored 97/4.8;
+  Lux Cabin 150, sum 731, mean 4.8733333, stored 150/4.9. These are export
+  observations, not post-correction results.
+- The export was protected as private files with mode `0600` and a `0700`
+  parent. It contains private review records and must not be committed, printed,
+  or copied to public CI artifacts.
 
-**Ready-for-approval means implementation/local verification complete, not
-production backup complete or real staging passed.**
+Before any production write:
+
+1. Obtain explicit final approval for the exact reviewed correction, scope,
+   operator, window, retention policy and rollback decision. The read-only export
+   approval is not write approval.
+2. The authorized operator must use the existing private full-backup mechanism
+   `/home/illoc/bin/driftdwells-backup.sh`, which creates a broad MongoDB-and-
+   uploads backup. Keep it private and separate from this review-only export.
+   Verify the backup job completed, validate its integrity and restore viability
+   using the established backup process, and record its private location and
+   retention. Stop if those checks fail. Do not copy the backup into the repo or
+   staging, and do not run it from this worktree.
+3. Reconcile the independently verified full backup with the scoped export and
+   exact pinned inventory. Reconfirm target identity, ownership and all
+   preconditions; investigate any drift and the separately detected hidden
+   Stone House record before expanding the allowlist.
+4. The tested `standalone.cjs` commands are loopback-only and **must not** be
+   pointed at production or weakened. No production-capable correction command
+   is provided or authorized by this preparation. Before approval can be
+   executable, a separate production procedure must be reviewed with conditional
+   document writes, durable operation journaling, interruption recovery,
+   exact backup-bound preconditions, and tested rollback. Do not improvise
+   direct database commands.
+5. Staging has not been imported or modified. A real staging verification needs
+   independently established review-only isolation, no production tunnels or
+   writers/jobs/notifications, and separate staging-write approval. Local tests
+   do not satisfy that gate.
+6. Only after all access, backup, review and approval gates are independently
+   met may an authorized operator execute a separately approved change
+   procedure. Verify the exact archive and counters, all 130 unchanged Cabin
+   documents, and unrelated-system scope; retain the backup, archive and journal.
+   No merge, deployment, production write, or release is authorized here.
+
+Website design and frontend files are untouched. No booking/payment systems were
+changed. **Ready for final approval means local engineering and verification are
+complete; it does not mean staging or production correction has occurred.**

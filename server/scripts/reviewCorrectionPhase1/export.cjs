@@ -41,48 +41,57 @@ function loadConfiguredUri(serverEnv) {
 async function collect(client, audit) {
   const db = client.db();
   const { ObjectId } = require('mongoose').mongo;
-  const owners = [...new Set(POOLS.flatMap(pool => [pool.id, ...(pool.linked ? [pool.linked] : [])]))]
-    .map(value => new ObjectId(value));
-  const session = client.startSession();
-  try {
-    return await session.withTransaction(async () => {
-      const reviews = await db.collection('reviews').find({ cabinId: { $in: owners } }, {
-        session, promoteValues: false, promoteLongs: false, bsonRegExp: true
-      }).sort({ _id: 1 }).toArray();
-      const cabins = await db.collection('cabins').find(
-        { _id: { $in: CABIN_IDS.map(value => new ObjectId(value)) } },
-        { session, projection: PROPERTY_PROJECTION, promoteValues: false, promoteLongs: false, bsonRegExp: true }
-      ).sort({ _id: 1 }).toArray();
-      const cabinTypes = await db.collection('cabintypes').find(
-        { _id: { $in: CABIN_TYPE_IDS.map(value => new ObjectId(value)) } },
-        { session, projection: PROPERTY_PROJECTION, promoteValues: false, promoteLongs: false, bsonRegExp: true }
-      ).sort({ _id: 1 }).toArray();
-      const state = { reviews, cabins, cabinTypes };
-      const stats = verifyScopedExport(state, audit);
-      return { state, stats };
-    }, {
-      readConcern: { level: 'snapshot' },
-      writeConcern: { w: 'majority' },
-      readPreference: 'primary'
-    });
-  } finally {
-    await session.endSession();
-  }
+  const reviews = await db.collection('reviews').find({
+    $or: [
+      { _id: { $in: audit.synthetic.map(row => new ObjectId(row._id)) } },
+      { cabinId: new ObjectId(CABIN) }
+    ]
+  }, {
+    promoteValues: false, promoteLongs: false, bsonRegExp: true
+  }).sort({ _id: 1 }).toArray();
+  const cabins = await db.collection('cabins').find(
+    { _id: { $in: CABIN_IDS.map(value => new ObjectId(value)) } },
+    { projection: PROPERTY_PROJECTION, promoteValues: false, promoteLongs: false, bsonRegExp: true }
+  ).sort({ _id: 1 }).toArray();
+  const cabinTypes = await db.collection('cabintypes').find(
+    { _id: { $in: CABIN_TYPE_IDS.map(value => new ObjectId(value)) } },
+    { projection: PROPERTY_PROJECTION, promoteValues: false, promoteLongs: false, bsonRegExp: true }
+  ).sort({ _id: 1 }).toArray();
+  const state = { reviews, cabins, cabinTypes };
+  const stats = verifyScopedExport(state, audit);
+  return { state, stats, sha256: hash(encode(state)) };
 }
 
-async function createExport(client, audit, directory) {
-  const stateResult = await collect(client, audit);
-  const hello = await client.db().admin().command({ hello: 1 });
+async function createExport(client, audit, directory, collectPass = collect) {
+  const helloBefore = await client.db().admin().command({ hello: 1 });
+  const first = await collectPass(client, audit);
+  const second = await collectPass(client, audit);
+  assert(hash(encode(first.state)) === first.sha256 && hash(encode(second.state)) === second.sha256,
+    'Collected data changed after read hashing; no export created');
+  assert(first.sha256 === second.sha256, 'Two complete non-transactional reads differ; no export created');
+  const helloAfter = await client.db().admin().command({ hello: 1 });
+  const deploymentBefore = hash({
+    hosts: helloBefore.hosts, setName: helloBefore.setName,
+    processId: helloBefore.topologyVersion?.processId?.toString()
+  });
+  const deploymentAfter = hash({
+    hosts: helloAfter.hosts, setName: helloAfter.setName,
+    processId: helloAfter.topologyVersion?.processId?.toString()
+  });
+  assert(deploymentBefore === deploymentAfter, 'MongoDB deployment identity changed during export; no export created');
+  const stateResult = second;
   const payload = {
     format: 1,
     createdAt: new Date(),
+    consistency: {
+      method: 'two complete, independently hashed non-transactional reads',
+      readHashes: [first.sha256, second.sha256],
+      sourceSupportsSnapshotTransactions: Boolean(helloBefore.setName || helloBefore.msg === 'isdbgrid'),
+      pointInTimeSnapshot: false
+    },
     source: {
       database: client.db().databaseName,
-      deploymentFingerprint: hash({
-        hosts: hello.hosts,
-        setName: hello.setName,
-        processId: hello.topologyVersion?.processId?.toString()
-      }),
+      deploymentFingerprint: deploymentBefore,
       evidence: {
         inventorySha256: require('./core.cjs').EVIDENCE_HASHES.inventory,
         publicSnapshotSha256: require('./core.cjs').EVIDENCE_HASHES.snapshot
@@ -116,6 +125,7 @@ async function createExport(client, audit, directory) {
       database: payload.source.database,
       deploymentFingerprint: payload.source.deploymentFingerprint
     },
+    consistency: payload.consistency,
     scope: payload.scope,
     stats: stateResult.stats
   };
