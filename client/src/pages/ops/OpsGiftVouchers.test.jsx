@@ -16,7 +16,7 @@ vi.mock('../../services/opsApi', () => ({
   opsWriteAPI: { issueManualGiftVoucher: vi.fn() }
 }));
 
-import { opsReadAPI } from '../../services/opsApi';
+import { opsReadAPI, opsWriteAPI } from '../../services/opsApi';
 
 const pageSource = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'OpsGiftVouchers.jsx'), 'utf8');
 
@@ -87,11 +87,30 @@ describe('OpsGiftVouchers collection migration', () => {
 
   it('shows issuance only with the admin issuance action, not existing gift manage', async () => {
     renderPage('/ops/gift-vouchers', { ...adminSession, actions: ['ops.gift_voucher.issue'] });
-    expect(await screen.findByRole('button', { name: 'Issue Manual Voucher' })).toBeInTheDocument();
+    const trigger = await screen.findByRole('button', { name: 'Issue Manual Voucher' });
+    expect(trigger.closest('.ops-page-header')).not.toBeNull();
+    expect(trigger).toHaveClass('ops-button--primary');
     cleanup();
     renderPage('/ops/gift-vouchers', { ...adminSession, role: 'operator', actions: ['ops.gift_voucher.manage'] });
     await screen.findByRole('heading', { name: 'Gift vouchers' });
     expect(screen.queryByRole('button', { name: 'Issue Manual Voucher' })).not.toBeInTheDocument();
+  });
+
+  it('refreshes the collection after issuance and hands off to the existing detail route', async () => {
+    opsWriteAPI.issueManualGiftVoucher.mockResolvedValue({ data: { data: {
+      giftVoucherId: 'manual-1', code: 'DD-MANUAL', balanceRemainingCents: 26000,
+      currency: 'EUR', expiresAt: '2027-10-25T10:00:00.000Z'
+    } } });
+    renderPage('/ops/gift-vouchers?search=DD', { ...adminSession, actions: ['ops.gift_voucher.issue'] });
+    await screen.findByRole('link', { name: /DD-1001/ });
+    fireEvent.click(screen.getByRole('button', { name: 'Issue Manual Voucher' }));
+    fireEvent.change(screen.getByLabelText('Internal reason'), { target: { value: 'Approved' } });
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Issue Manual Voucher' }));
+    await screen.findByText('DD-MANUAL');
+    await waitFor(() => expect(opsReadAPI.giftVouchers).toHaveBeenCalledTimes(2));
+    expect(opsReadAPI.giftVouchers).toHaveBeenLastCalledWith({ page: 1, limit: 20, search: 'DD' });
+    fireEvent.click(screen.getByRole('link', { name: 'View voucher / print / email' }));
+    expect(screen.getByTestId('legacy-voucher-detail')).toHaveTextContent('manual-1');
   });
 
   it('uses OpsPage wide and OpsPageHeader without a legacy title card or max-w-7xl', async () => {

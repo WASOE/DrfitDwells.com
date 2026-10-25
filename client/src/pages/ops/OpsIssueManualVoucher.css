@@ -1,0 +1,48 @@
+.ops-manual-voucher-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--ops-space-12);
+  min-width: 0;
+}
+
+.ops-manual-voucher-form > .ops-banner,
+.ops-manual-voucher-form__full {
+  grid-column: 1 / -1;
+}
+
+.ops-manual-voucher-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-16);
+  min-width: 0;
+}
+
+.ops-manual-voucher-result p,
+.ops-manual-voucher-result__facts,
+.ops-manual-voucher-result__facts dd {
+  margin: 0;
+}
+
+.ops-manual-voucher-result__code {
+  overflow-wrap: anywhere;
+}
+
+.ops-manual-voucher-result__code strong {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.ops-manual-voucher-result__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ops-space-16);
+}
+
+.ops-manual-voucher-result__facts dt {
+  color: var(--ops-text-muted);
+}
+
+@media (min-width: 640px) {
+  .ops-manual-voucher-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
