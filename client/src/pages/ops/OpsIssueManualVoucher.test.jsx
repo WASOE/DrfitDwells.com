@@ -126,7 +126,7 @@ it('issues another voucher with a fresh form and key without closing or reloadin
   fireEvent.click(screen.getByRole('button', { name: 'Issue Manual Voucher' }));
   await screen.findByText('DD-MANUAL-TEST');
   expect(screen.getByText('DD-MANUAL-TEST').parentElement).toHaveFocus();
-  fireEvent.click(screen.getByRole('button', { name: 'Issue Another' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Issue Another Voucher' }));
   expect(screen.getByRole('dialog', { name: 'Issue Manual Voucher' })).toBeInTheDocument();
   expect(screen.getByLabelText('Amount (EUR)')).toHaveValue(260);
   expect(screen.getByLabelText('Amount (EUR)')).toHaveFocus();

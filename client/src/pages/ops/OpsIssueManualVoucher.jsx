@@ -88,7 +88,7 @@ export default function OpsIssueManualVoucher({ open, onClose, onIssued }) {
       footer={result ? (
         <>
           <OpsButton variant="quiet" onClick={close}>Done</OpsButton>
-          <OpsButton variant="secondary" onClick={reset}>Issue Another</OpsButton>
+          <OpsButton variant="secondary" onClick={reset}>Issue Another Voucher</OpsButton>
           <Link className="ops-button ops-button--primary" to={`/ops/gift-vouchers/${result.giftVoucherId}`}>
             View voucher / print / email
           </Link>
