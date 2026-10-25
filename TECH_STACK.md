@@ -27,7 +27,7 @@ drift-dwells-booking-portal/
 │   ├── controllers/     # Business logic controllers
 │   ├── middleware/       # Express middleware
 │   ├── services/         # Service layer (email, assignment engine)
-│   ├── scripts/          # Utility scripts (seed, generate reviews, etc.)
+│   ├── scripts/          # Utility scripts (seed, evidence-backed review import, etc.)
 │   └── config/           # Configuration files
 ├── uploads/              # User-uploaded files (images, PDFs)
 └── wordpress-plugin/      # WordPress integration plugin

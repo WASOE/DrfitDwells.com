@@ -11,6 +11,7 @@
     "seed-bucephalus": "node scripts/seedBucephalus.js",
     "restore-bucephalus": "node scripts/restoreBucephalusData.js",
     "import-reviews": "node scripts/importReviews.js",
+    "test:review-correction-phase1": "node --test scripts/reviewCorrectionPhase1/*.test.cjs",
     "process-airbnb-reviews": "node scripts/processAirbnbReviews.js",
     "validate:batch1": "node scripts/validateBuildBatch1.js",
     "validate:batch2": "node scripts/validateBuildBatch2ReadModels.js",
