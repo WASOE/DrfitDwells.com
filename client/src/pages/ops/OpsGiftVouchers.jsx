@@ -59,6 +59,7 @@ export default function OpsGiftVouchers() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
+  const [issueOpen, setIssueOpen] = useState(false);
 
   const filters = useMemo(
     () => ({
@@ -141,11 +142,18 @@ export default function OpsGiftVouchers() {
       <OpsPageHeader
         title="Gift vouchers"
         description="Operational vouchers shown by default (active, partially redeemed, redeemed, expired)."
+        actions={session?.actions?.includes('ops.gift_voucher.issue') ? (
+          <OpsButton onClick={() => setIssueOpen(true)}>Issue Manual Voucher</OpsButton>
+        ) : null}
       />
 
       {error ? <OpsBanner tone="danger" body={error} /> : null}
       {session?.actions?.includes('ops.gift_voucher.issue') ? (
-        <OpsIssueManualVoucher onIssued={() => setReload((value) => value + 1)} />
+        <OpsIssueManualVoucher
+          open={issueOpen}
+          onClose={() => setIssueOpen(false)}
+          onIssued={() => setReload((value) => value + 1)}
+        />
       ) : null}
 
       <OpsFilterBar
