@@ -24,6 +24,7 @@ function normalizeNote(note) {
 }
 
 async function appendVoucherEvent({
+  eventId = null,
   giftVoucherId,
   type,
   actor,
@@ -53,6 +54,7 @@ async function appendVoucherEvent({
   if (deltaCents != null) assertIntegerCents(deltaCents, 'deltaCents');
 
   return GiftVoucherEvent.create({
+    ...(eventId ? { _id: eventId } : {}),
     giftVoucherId,
     type,
     actor: normalizedActor,

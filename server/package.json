@@ -52,6 +52,8 @@
     "test:gift-voucher-redemption-lifecycle": "node --test scripts/giftVoucherBookingRedemptionLifecycle.test.cjs scripts/giftVoucherBatch7BookingRedemption.test.cjs",
     "test:gift-voucher-acceptance": "node --test scripts/giftVoucherCustomizationAcceptance.test.cjs",
     "test:gift-voucher-all": "node --test scripts/giftVoucher*.test.cjs",
+    "test:gift-voucher-manual-issuance": "node --test scripts/giftVoucherManualIssuance.test.cjs",
+    "ensure:index:gift-voucher-manual-issuance": "node scripts/ensureGiftVoucherManualIssuanceIndex.cjs",
     "generate:gift-voucher-design-gate": "node scripts/generateGiftVoucherDesignGate.cjs",
     "capture:gift-voucher-design-gate": "node scripts/captureGiftVoucherDesignGateScreenshots.cjs",
     "test:conversion": "node --test scripts/conversionSummaryService.test.cjs",

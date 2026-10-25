@@ -16,6 +16,7 @@ const {
 } = require('../../../services/ops/domain/giftVoucherWriteService');
 
 const router = express.Router();
+const { issueManualVoucher } = require('../../../services/giftVouchers/issueManualVoucherService');
 
 function handleValidation(req, res, next) {
   const errors = validationResult(req);
@@ -30,6 +31,9 @@ function handleDomainError(res, error) {
     return res.status(error.status || 403).json({ success: false, message: error.message });
   }
   const mappings = {
+    INVALID_MANUAL_ISSUANCE: 400,
+    IDEMPOTENCY_CONFLICT: 409,
+    MANUAL_ISSUANCE_INDEX_REQUIRED: 503,
     IDEMPOTENCY_KEY_REQUIRED: 400,
     NOTE_REQUIRED: 400,
     REASON_REQUIRED: 400,
@@ -56,6 +60,19 @@ function handleDomainError(res, error) {
     code: error.code || 'INTERNAL_ERROR'
   });
 }
+
+router.post('/actions/issue-manual', async (req, res) => {
+  try {
+    const { amountCents, recipientName, recipientEmail, reason, idempotencyKey } = req.body;
+    const data = await issueManualVoucher({
+      amountCents, recipientName, recipientEmail, reason,
+      ctx: { user: req.user, idempotencyKey }
+    });
+    return res.status(data.idempotentReplay ? 200 : 201).json({ success: true, data });
+  } catch (error) {
+    return handleDomainError(res, error);
+  }
+});
 
 router.get(
   '/',

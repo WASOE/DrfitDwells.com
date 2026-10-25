@@ -5,6 +5,7 @@ const ManualReviewItem = require('../../../models/ManualReviewItem');
 const { escapeRegex } = require('../../../utils/escapeRegex');
 const {
   ISSUANCE_SOURCE_PURCHASE,
+  ISSUANCE_SOURCE_GOODWILL_OPS,
   purchasedGiftVoucherQuery
 } = require('../../giftVouchers/giftVoucherIssuance');
 const {
@@ -111,7 +112,12 @@ function mapListItem(doc) {
 
 async function getGiftVouchersWorkspaceReadModel(query = {}) {
   const { page, limit, skip } = normalizePagination(query);
-  const filter = purchasedGiftVoucherQuery(buildListFilter(query));
+  const filter = {
+    $and: [
+      buildListFilter(query),
+      { $or: [purchasedGiftVoucherQuery(), { issuanceSource: ISSUANCE_SOURCE_GOODWILL_OPS }] }
+    ]
+  };
   const [items, total] = await Promise.all([
     GiftVoucher.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
     GiftVoucher.countDocuments(filter)

@@ -15,6 +15,8 @@ import OpsLoadingState from '../../ops/primitives/OpsLoadingState';
 import OpsEmptyState from '../../ops/primitives/OpsEmptyState';
 import OpsPagination from '../../ops/primitives/OpsPagination';
 import OpsFilterBar from '../../ops/primitives/OpsFilterBar';
+import { useOpsSession } from '../../context/OpsSessionContext';
+import OpsIssueManualVoucher from './OpsIssueManualVoucher';
 import './OpsGiftVouchers.css';
 
 const DELIVERY_LABELS = {
@@ -33,6 +35,9 @@ function voucherTitle(row) {
 }
 
 function voucherMeta(row) {
+  if (row.issuanceSource === 'goodwill_ops') {
+    return `Manual goodwill credit → ${row.recipientName || 'No recipient name'} (${row.recipientEmail || 'No recipient email'})`;
+  }
   return `${row.buyerName || 'Unknown buyer'} (${row.buyerEmail || '—'}) → ${row.recipientName || 'Unknown recipient'} (${row.recipientEmail || '—'})`;
 }
 
@@ -48,10 +53,12 @@ function hasActiveGiftVoucherFilters(filters) {
 }
 
 export default function OpsGiftVouchers() {
+  const session = useOpsSession();
   const [searchParams, setSearchParams] = useSearchParams();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [reload, setReload] = useState(0);
 
   const filters = useMemo(
     () => ({
@@ -93,7 +100,7 @@ export default function OpsGiftVouchers() {
     return () => {
       cancelled = true;
     };
-  }, [filters]);
+  }, [filters, reload]);
 
   const updateFilter = (key, value) => {
     const next = new URLSearchParams(searchParams);
@@ -137,6 +144,9 @@ export default function OpsGiftVouchers() {
       />
 
       {error ? <OpsBanner tone="danger" body={error} /> : null}
+      {session?.actions?.includes('ops.gift_voucher.issue') ? (
+        <OpsIssueManualVoucher onIssued={() => setReload((value) => value + 1)} />
+      ) : null}
 
       <OpsFilterBar
         footer={
