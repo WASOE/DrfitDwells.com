@@ -150,6 +150,8 @@ export function getOpsPushHealth() {
 }
 
 const opsWriteAPI = {
+  issueManualGiftVoucher: (body) =>
+    api.post('/ops/gift-vouchers/actions/issue-manual', body, { headers: authHeaders() }),
   confirmReservation: (id) => api.post(`/ops/reservations/${id}/actions/confirm`, {}, { headers: authHeaders() }),
   checkInReservation: (id) => api.post(`/ops/reservations/${id}/actions/check-in`, {}, { headers: authHeaders() }),
   completeReservation: (id) => api.post(`/ops/reservations/${id}/actions/complete`, {}, { headers: authHeaders() }),

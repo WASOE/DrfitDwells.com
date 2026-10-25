@@ -30,6 +30,36 @@
 
 ## Deploy runbook (customization track)
 
+### Manual Ops goodwill issuance
+
+Admins can use **Issue Manual Voucher** in Ops gift vouchers. Enter EUR credit
+(minimum EUR 15, integer cents), optional recipient name/email and a mandatory
+internal reason (500 characters maximum). It immediately creates an active
+`goodwill_ops` voucher valid for one calendar year, using normal codes, card
+tokens and redemption. No Stripe/payment/checkout is created, no paid event or
+purchase revenue is recorded, and no email is sent automatically. Use existing
+detail print/resend actions for delivery. The reason is internal audit data,
+never the guest-facing message.
+
+Before enabling issuance in an environment with `autoIndex=false`, run
+`cd server && npm run ensure:index:gift-voucher-manual-issuance` with an explicitly
+configured `MONGODB_URI`/`MONGO_URI` for read-only preflight. After approval, rerun
+with `-- --apply` to add only `gift_voucher_manual_issuance_unique`; the script
+never drops indexes or edits vouchers. Missing/conflicting index configuration
+blocks issuance (503); API startup and issuance never create indexes.
+
+`POST /api/ops/gift-vouchers/actions/issue-manual` takes `amountCents`,
+`recipientName`, `recipientEmail`, `reason`, `idempotencyKey` (3-120 characters).
+The separate `ops.gift_voucher.issue` permission is admin-only; existing operator
+management is unchanged. Keep the same key and payload after uncertain failures.
+Changed payload or issuer with the same key returns 409, including after voiding
+or redemption. The voucher atomically retains original issuer, activation time,
+amount, reason and request fingerprint. A retry repairs a missing `created`
+audit event without duplicating credit; concurrent appends use the voucher ID as
+the event ID in the separate event collection. No transaction/replica set is
+required. Do not issue with a new key just because an earlier response was lost;
+look up the voucher/audit and retry the original request.
+
 ### V2 builder input contract
 
 The website builder keeps the existing EUR 15 minimum and accepts custom amounts

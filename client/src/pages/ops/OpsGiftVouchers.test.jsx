@@ -12,7 +12,8 @@ import OpsGiftVouchers from './OpsGiftVouchers';
 vi.mock('../../services/opsApi', () => ({
   opsReadAPI: {
     giftVouchers: vi.fn()
-  }
+  },
+  opsWriteAPI: { issueManualGiftVoucher: vi.fn() }
 }));
 
 import { opsReadAPI } from '../../services/opsApi';
@@ -60,10 +61,10 @@ function payload(items, pagination = { page: 1, totalPages: 1 }) {
   return { data: { data: { items, pagination } } };
 }
 
-function renderPage(initialPath = '/ops/gift-vouchers') {
+function renderPage(initialPath = '/ops/gift-vouchers', session = adminSession) {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
-      <OpsSessionProvider session={adminSession}>
+      <OpsSessionProvider session={session}>
         <SearchProbe />
         <Routes>
           <Route path="/ops/gift-vouchers" element={<OpsGiftVouchers />} />
@@ -82,6 +83,15 @@ describe('OpsGiftVouchers collection migration', () => {
 
   afterEach(() => {
     cleanup();
+  });
+
+  it('shows issuance only with the admin issuance action, not existing gift manage', async () => {
+    renderPage('/ops/gift-vouchers', { ...adminSession, actions: ['ops.gift_voucher.issue'] });
+    expect(await screen.findByRole('button', { name: 'Issue Manual Voucher' })).toBeInTheDocument();
+    cleanup();
+    renderPage('/ops/gift-vouchers', { ...adminSession, role: 'operator', actions: ['ops.gift_voucher.manage'] });
+    await screen.findByRole('heading', { name: 'Gift vouchers' });
+    expect(screen.queryByRole('button', { name: 'Issue Manual Voucher' })).not.toBeInTheDocument();
   });
 
   it('uses OpsPage wide and OpsPageHeader without a legacy title card or max-w-7xl', async () => {

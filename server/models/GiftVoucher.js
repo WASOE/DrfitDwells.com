@@ -245,6 +245,8 @@ const giftVoucherSchema = new mongoose.Schema(
     },
     issuedByActorId: { type: String, trim: true, default: null },
     compensationNote: { type: String, trim: true, maxlength: 500, default: null },
+    manualIssuanceKey: { type: String, trim: true, default: null, immutable: true },
+    manualIssuanceFingerprint: { type: String, default: null, immutable: true },
     /**
      * B8F2B1A: amount-bound monetary ledger ops (protocol v1).
      * Authoritative for exactly-once debit/restore; not ID-only sets.
@@ -297,6 +299,15 @@ giftVoucherSchema.index(
   }
 );
 giftVoucherSchema.index({ status: 1, createdAt: -1 });
+const MANUAL_ISSUANCE_INDEX = {
+  keys: { manualIssuanceKey: 1 },
+  options: {
+    unique: true,
+    name: 'gift_voucher_manual_issuance_unique',
+    partialFilterExpression: { manualIssuanceKey: { $type: 'string' } }
+  }
+};
+giftVoucherSchema.index(MANUAL_ISSUANCE_INDEX.keys, MANUAL_ISSUANCE_INDEX.options);
 giftVoucherSchema.index({ 'attribution.referralCode': 1 });
 giftVoucherSchema.index({ issuanceSource: 1, createdAt: -1 });
 giftVoucherSchema.index(
@@ -334,6 +345,7 @@ giftVoucherSchema.index(
 );
 
 module.exports = mongoose.model('GiftVoucher', giftVoucherSchema);
+module.exports.MANUAL_ISSUANCE_INDEX = MANUAL_ISSUANCE_INDEX;
 module.exports.GIFT_VOUCHER_STATUSES = VOUCHER_STATUSES;
 module.exports.GIFT_VOUCHER_DELIVERY_MODES = DELIVERY_MODES;
 module.exports.GIFT_VOUCHER_DELIVERY_OPTIONS = DELIVERY_OPTIONS;
