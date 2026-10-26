@@ -256,7 +256,7 @@ test('email status persistence failure does not fail create response', async () 
   assert.ok(blows >= 1);
 });
 
-test('expired sending claim can be reclaimed (worker prep)', async () => {
+test('expired sending claim can be reclaimed when under maxAttempts', async () => {
   const created = await createBuildEnquiry(validPayload(), { isTest: true, skipEmail: true });
   const past = new Date(Date.now() - 60_000);
   await BuildEnquiry.updateOne(
@@ -267,7 +267,8 @@ test('expired sending claim can be reclaimed (worker prep)', async () => {
         'emails.internal.claimedBy': 'stale-worker',
         'emails.internal.claimedAt': past,
         'emails.internal.visibilityTimeoutAt': past,
-        'emails.internal.attemptCount': 1
+        'emails.internal.attemptCount': 1,
+        'emails.internal.maxAttempts': 10
       }
     }
   );
@@ -282,6 +283,87 @@ test('expired sending claim can be reclaimed (worker prep)', async () => {
   assert.equal(claimed.emails.internal.status, 'sending');
   assert.equal(claimed.emails.internal.claimedBy, 'recovery-worker');
   assert.equal(claimed.emails.internal.attemptCount, 2);
+});
+
+test('exhausted failed lane is not claimable even when nextAttemptAt is null', async () => {
+  const created = await createBuildEnquiry(validPayload(), { isTest: true, skipEmail: true });
+  await BuildEnquiry.updateOne(
+    { _id: created.doc._id },
+    {
+      $set: {
+        'emails.customer.status': 'failed',
+        'emails.customer.attemptCount': 10,
+        'emails.customer.maxAttempts': 10,
+        'emails.customer.nextAttemptAt': null,
+        'emails.customer.lastError': 'exhausted'
+      }
+    }
+  );
+
+  const claimed = await claimBuildEnquiryEmailLane({
+    enquiryId: created.doc._id,
+    lane: 'customer',
+    workerId: 'worker',
+    now: new Date()
+  });
+  assert.equal(claimed, null);
+
+  const row = await BuildEnquiry.findById(created.doc._id).lean();
+  assert.equal(row.emails.customer.status, 'failed');
+  assert.equal(row.emails.customer.attemptCount, 10);
+});
+
+test('eligible failed lane with due nextAttemptAt remains claimable under maxAttempts', async () => {
+  const created = await createBuildEnquiry(validPayload(), { isTest: true, skipEmail: true });
+  const due = new Date(Date.now() - 1000);
+  await BuildEnquiry.updateOne(
+    { _id: created.doc._id },
+    {
+      $set: {
+        'emails.internal.status': 'failed',
+        'emails.internal.attemptCount': 2,
+        'emails.internal.maxAttempts': 10,
+        'emails.internal.nextAttemptAt': due,
+        'emails.internal.lastError': 'smtp_timeout'
+      }
+    }
+  );
+
+  const claimed = await claimBuildEnquiryEmailLane({
+    enquiryId: created.doc._id,
+    lane: 'internal',
+    workerId: 'retry-worker',
+    now: new Date()
+  });
+  assert.ok(claimed);
+  assert.equal(claimed.emails.internal.status, 'sending');
+  assert.equal(claimed.emails.internal.attemptCount, 3);
+  assert.equal(claimed.emails.internal.claimedBy, 'retry-worker');
+});
+
+test('exhausted expired sending lease is not reclaimable', async () => {
+  const created = await createBuildEnquiry(validPayload(), { isTest: true, skipEmail: true });
+  const past = new Date(Date.now() - 60_000);
+  await BuildEnquiry.updateOne(
+    { _id: created.doc._id },
+    {
+      $set: {
+        'emails.internal.status': 'sending',
+        'emails.internal.attemptCount': 10,
+        'emails.internal.maxAttempts': 10,
+        'emails.internal.visibilityTimeoutAt': past,
+        'emails.internal.claimedBy': 'stale'
+      }
+    }
+  );
+
+  const claimed = await claimBuildEnquiryEmailLane({
+    enquiryId: created.doc._id,
+    lane: 'internal',
+    workerId: 'recovery-worker',
+    now: new Date()
+  });
+  assert.equal(claimed, null);
 });
 
 test('HTTP create returns 201 even when emails fail; replay is 200 without extra sends', async () => {

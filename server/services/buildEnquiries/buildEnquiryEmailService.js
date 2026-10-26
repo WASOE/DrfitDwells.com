@@ -279,8 +279,17 @@ function lanePath(lane, field) {
 
 /**
  * Atomically claim a lane for send. Supports:
- * - pending/failed when nextAttemptAt is due
+ * - pending/failed when nextAttemptAt is due (or null for not-yet-scheduled)
  * - expired sending claims (visibilityTimeoutAt <= now) for future worker recovery
+ *
+ * Exhausted lanes (attemptCount >= maxAttempts) are never claimable, even when
+ * nextAttemptAt is null. The attemptCount < maxAttempts check is enforced in the
+ * same MongoDB filter as the status/lease predicates ($expr), so the limit cannot
+ * be bypassed by a concurrent claimer.
+ *
+ * At-least-once note: if SMTP accepts a message and the process crashes before
+ * status is marked succeeded, an expired sending lease may be reclaimed and the
+ * message resent (duplicate delivery). No outbox/dedupe layer is added here.
  */
 async function claimBuildEnquiryEmailLane({
   enquiryId,
@@ -295,21 +304,35 @@ async function claimBuildEnquiryEmailLane({
   const at = now instanceof Date ? now : new Date(now);
   const vt = new Date(at.getTime() + visibilityTimeoutMs);
   const wid = String(workerId || 'initial').slice(0, 120);
+  const attemptCountPath = `$emails.${lane}.attemptCount`;
+  const maxAttemptsPath = `$emails.${lane}.maxAttempts`;
 
   return BuildEnquiry.findOneAndUpdate(
     {
       _id: enquiryId,
-      $or: [
+      $and: [
         {
-          [lanePath(lane, 'status')]: { $in: ['pending', 'failed'] },
-          $or: [
-            { [lanePath(lane, 'nextAttemptAt')]: null },
-            { [lanePath(lane, 'nextAttemptAt')]: { $lte: at } }
-          ]
+          $expr: {
+            $lt: [
+              { $ifNull: [attemptCountPath, 0] },
+              { $ifNull: [maxAttemptsPath, 10] }
+            ]
+          }
         },
         {
-          [lanePath(lane, 'status')]: 'sending',
-          [lanePath(lane, 'visibilityTimeoutAt')]: { $lte: at }
+          $or: [
+            {
+              [lanePath(lane, 'status')]: { $in: ['pending', 'failed'] },
+              $or: [
+                { [lanePath(lane, 'nextAttemptAt')]: null },
+                { [lanePath(lane, 'nextAttemptAt')]: { $lte: at } }
+              ]
+            },
+            {
+              [lanePath(lane, 'status')]: 'sending',
+              [lanePath(lane, 'visibilityTimeoutAt')]: { $lte: at }
+            }
+          ]
         }
       ]
     },
