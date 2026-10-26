@@ -17,7 +17,8 @@ const {
   rebookGateForStart,
   readRebookOwnershipCounts,
   cutover,
-  checkHttp
+  checkHttp,
+  linkSharedUploads
 } = require('./deploy-api-guarded.cjs');
 
 function fixture() {
@@ -304,4 +305,25 @@ test('HTTP gates are GET-only, validate DB health and require existing Ops auth'
   } finally {
     global.fetch = original;
   }
+});
+
+test('deploy links a fresh release and a rollback to the same uploads store', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'deploy-uploads-'));
+  const shared = path.join(root, 'shared');
+  fs.mkdirSync(shared);
+  fs.writeFileSync(path.join(shared, 'existing.jpg'), 'KEEP');
+  const fresh = path.join(root, 'fresh');
+  const rollback = path.join(root, 'rollback');
+  fs.mkdirSync(path.join(fresh, 'server'), { recursive: true });
+  fs.mkdirSync(path.join(rollback, 'uploads'), { recursive: true });
+  fs.writeFileSync(path.join(rollback, 'uploads', 'existing.jpg'), 'KEEP');
+  fs.writeFileSync(path.join(rollback, 'uploads', 'rollback-only.jpg'), 'ROLLBACK');
+  const reports = linkSharedUploads([rollback, fresh], shared);
+  assert.equal(reports.length, 2);
+  assert.equal(fs.realpathSync(path.join(fresh, 'uploads')), fs.realpathSync(shared));
+  assert.equal(fs.realpathSync(path.join(rollback, 'uploads')), fs.realpathSync(shared));
+  assert.equal(fs.readFileSync(path.join(fresh, 'uploads', 'existing.jpg'), 'utf8'), 'KEEP');
+  assert.equal(fs.readFileSync(path.join(shared, 'rollback-only.jpg'), 'utf8'), 'ROLLBACK');
+  fs.writeFileSync(path.join(fresh, 'uploads', 'later.jpg'), 'LATER');
+  assert.equal(fs.readFileSync(path.join(rollback, 'uploads', 'later.jpg'), 'utf8'), 'LATER');
 });

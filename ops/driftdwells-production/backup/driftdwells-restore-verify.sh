@@ -103,7 +103,11 @@ verify_checksums() {
 verify_uploads_tar() {
   local uploads_archive="$1"
   log "verifying uploads tar integrity (list only, no extract)"
-  tar -tzf "$uploads_archive" >/dev/null
+  local listing
+  listing="$(tar -tzf "$uploads_archive")"
+  if ! grep -q '^uploads/.' <<< "$listing"; then
+    die "uploads archive has no file members under uploads/"
+  fi
 }
 
 drop_restore_test_db() {

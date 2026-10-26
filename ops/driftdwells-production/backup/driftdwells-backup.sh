@@ -132,10 +132,15 @@ main() {
   fi
 
   log "uploads tar -> $(basename "$uploads_file")"
-  tar -czf "$uploads_file" -C "$APP" uploads
+  # -h follows the stable uploads symlink so the archive contains file members,
+  # not the symlink itself. A real directory is archived unchanged.
+  tar -czf "$uploads_file" -h -C "$APP" uploads
 
   if ! non_empty_file "$uploads_file"; then
     die "uploads backup file missing or empty: $uploads_file"
+  fi
+  if ! tar -tzf "$uploads_file" | grep -q '^uploads/.'; then
+    die "uploads archive has no file members under uploads/"
   fi
 
   mongo_size="$(human_size "$mongo_file")"

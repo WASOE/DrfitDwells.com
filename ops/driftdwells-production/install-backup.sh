@@ -40,16 +40,25 @@ main() {
       die "missing source script: ${OPS}/backup/${script}"
     fi
   done
+  for script in ensure-shared-uploads.cjs deploy-api-guarded.cjs; do
+    if [[ ! -f "${OPS}/${script}" ]]; then
+      die "missing source script: ${OPS}/${script}"
+    fi
+  done
 
   mkdir -p "$BIN" "${HOME}/backups/driftdwells/manual"
 
   install_script "${OPS}/backup/read-mongodb-uri.sh" "${BIN}/read-mongodb-uri.sh"
   install_script "${OPS}/backup/driftdwells-backup.sh" "${BIN}/driftdwells-backup.sh"
   install_script "${OPS}/backup/driftdwells-restore-verify.sh" "${BIN}/driftdwells-restore-verify.sh"
+  install_script "${OPS}/ensure-shared-uploads.cjs" "${BIN}/ensure-shared-uploads.cjs"
+  install_script "${OPS}/deploy-api-guarded.cjs" "${BIN}/driftdwells-deploy-api-guarded.cjs"
 
   log "installed ${BIN}/read-mongodb-uri.sh"
   log "installed ${BIN}/driftdwells-backup.sh"
   log "installed ${BIN}/driftdwells-restore-verify.sh"
+  log "installed ${BIN}/ensure-shared-uploads.cjs"
+  log "installed ${BIN}/driftdwells-deploy-api-guarded.cjs"
 
   log "To install systemd timer (requires sudo):"
   printf '  sudo cp %s/systemd/driftdwells-backup.service /etc/systemd/system/\n' "$OPS"

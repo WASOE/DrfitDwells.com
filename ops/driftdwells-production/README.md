@@ -90,6 +90,8 @@ Stable copies (not symlinks) in `/home/illoc/bin/`:
 | `read-mongodb-uri.sh` | Env URI loader (sourced by other scripts) |
 | `driftdwells-backup.sh` | Daily backup job |
 | `driftdwells-restore-verify.sh` | Restore verification |
+| `ensure-shared-uploads.cjs` | Link every release at the persistent uploads store |
+| `driftdwells-deploy-api-guarded.cjs` | Guarded API deploy; links uploads before verification |
 
 Scripts load `read-mongodb-uri.sh` from the same directory via `BASH_SOURCE`. Re-run `install-backup.sh` after git pull when backup scripts change.
 

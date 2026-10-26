@@ -20,10 +20,38 @@ const DISABLED_API_FLAGS = [...API_RUNTIME_FLAGS, ...DEDICATED_WORKER_FLAGS];
 const DEDICATED_WORKER_START =
   /\b(?:start|run)(?:SplitPaymentCollection|BookingConfirmationDelivery|CheckoutFinalization|AccommodationCheckoutHoldExpiry)\w*\s*\(/;
 const fail = message => { throw new Error(message); };
+const { ensureReleaseUploadsLink } = require(path.join(__dirname, 'ensure-shared-uploads.cjs'));
+const SHARED_UPLOADS = '/home/illoc/shared/driftdwells-uploads';
 const pm2 = args => execFileSync('pm2', args, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
 const getApps = () => JSON.parse(pm2(['jlist']));
 const isApi = app => /\/server\.js$/.test(app.pm2_env.pm_exec_path || '');
 const isWorker = app => app.name.startsWith('driftdwells') && !isApi(app);
+
+function lstatOrNull(target) {
+  try { return fs.lstatSync(target); }
+  catch (error) {
+    if (error.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+function linkSharedUploads(roots, sharedPath = SHARED_UPLOADS) {
+  const ranked = [...roots].sort((left, right) => {
+    const leftLink = lstatOrNull(path.join(left, 'uploads'));
+    const rightLink = lstatOrNull(path.join(right, 'uploads'));
+    return Number(Boolean(leftLink && leftLink.isSymbolicLink())) - Number(Boolean(rightLink && rightLink.isSymbolicLink()));
+  });
+  const reports = [];
+  for (const root of ranked) {
+    let report = ensureReleaseUploadsLink(root, sharedPath);
+    if (report.action === 'foreign-symlink') report = ensureReleaseUploadsLink(root, sharedPath);
+    if (!['already-linked', 'created-symlink', 'preserved-and-linked'].includes(report.action)) {
+      fail(`Release uploads were not linked to ${sharedPath} (${report.action}): ${root}`);
+    }
+    reports.push(report);
+  }
+  return reports;
+}
 
 function verifyFiles(root, manifest, expectedSha) {
   if (!/^[a-f0-9]{40}$/.test(expectedSha) || manifest.sha !== expectedSha) fail('Release SHA mismatch');
@@ -243,6 +271,7 @@ async function startProbe(plan, role) {
   const item = plan[role];
   const root = fs.realpathSync(item.root);
   if (!root.startsWith('/home/illoc/releases/')) fail('Probe must use an isolated release');
+  linkSharedUploads([root]);
   verifyFiles(root, JSON.parse(fs.readFileSync(item.manifest, 'utf8')), item.sha);
   const apps = getApps();
   const allowed = [plan.current.id, plan.candidate.id, plan.rollback.id].filter(Number.isInteger);
@@ -326,6 +355,12 @@ async function main() {
     return;
   }
   const context = { currentId: plan.current.id, candidateId: plan.candidate.id, rollbackId: plan.rollback.id };
+  const releaseRoots = ['current', 'candidate', 'rollback'].map(role => {
+    const root = fs.realpathSync(plan[role].root);
+    if (!root.startsWith('/home/illoc/releases/')) fail('Release is outside isolated releases');
+    return root;
+  });
+  linkSharedUploads(releaseRoots);
   const initialApps = getApps();
   const prepared = {};
   for (const role of ['current', 'candidate', 'rollback']) {
@@ -475,5 +510,7 @@ module.exports = {
   rebookGateForStart,
   validateTopology,
   cutover,
-  checkHttp
+  checkHttp,
+  linkSharedUploads,
+  SHARED_UPLOADS
 };

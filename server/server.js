@@ -134,10 +134,10 @@ function startPostConnectRuntime() {
 }
 
 // --- Directories ---
-const uploadsDir = path.resolve(
-  process.env.UPLOADS_DIR || path.join(__dirname, '..', 'uploads')
-);
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+const { resolveUploadsDir } = require('./lib/resolveUploadsDir');
+const uploadsDir = resolveUploadsDir({
+  localDir: path.join(__dirname, '..', 'uploads')
+});
 const cabinsUploadsDir = path.join(uploadsDir, 'cabins');
 if (!fs.existsSync(cabinsUploadsDir)) fs.mkdirSync(cabinsUploadsDir, { recursive: true });
 
