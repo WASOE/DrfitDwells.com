@@ -172,7 +172,9 @@ async function tickOnce({ now = new Date(), emailService = null } = {}) {
         try {
           const result = await attemptBuildEnquiryEmailLane(row._id, lane, {
             emailService: svc,
-            workerId
+            workerId,
+            now,
+            visibilityTimeoutMs: state.visibilityTimeoutMs
           });
 
           if (result.skipped) {
@@ -281,13 +283,14 @@ async function runTickSafe(opts = {}) {
   return state.tickInFlight;
 }
 
-function startBuildEnquiryEmailWorker(overrides = {}) {
+async function startBuildEnquiryEmailWorker(overrides = {}) {
   const cfg = { ...readEnvConfig(), ...overrides };
   if (!cfg.enabled && overrides.enabled !== true) {
     return { started: false, reason: 'disabled' };
   }
 
-  stopBuildEnquiryEmailWorkerForTest();
+  // Await prior shutdown so restart does not race an in-flight tick.
+  await stopBuildEnquiryEmailWorkerForTest();
 
   state.enabled = true;
   state.stopping = false;
@@ -327,7 +330,7 @@ function startBuildEnquiryEmailWorker(overrides = {}) {
   return { started: true, workerId: state.workerId };
 }
 
-function startBuildEnquiryEmailWorkerIfEnabled(overrides = {}) {
+async function startBuildEnquiryEmailWorkerIfEnabled(overrides = {}) {
   if (!isFlagEnabled() && overrides.enabled !== true) {
     return { started: false, reason: 'disabled' };
   }
@@ -360,6 +363,7 @@ function getBuildEnquiryEmailWorkerStateForTest() {
     workerId: state.workerId,
     tickMs: state.tickMs,
     batchSize: state.batchSize,
+    visibilityTimeoutMs: state.visibilityTimeoutMs,
     lastTickAt: state.lastTickAt,
     lastTickError: state.lastTickError,
     tickInFlight: Boolean(state.tickInFlight)

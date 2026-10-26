@@ -424,13 +424,16 @@ test('startBuildEnquiryEmailWorker respects enabled override and stop', async ()
     method: 'sent',
     messageId: 'boot'
   }));
-  const res = startBuildEnquiryEmailWorker({
+  const res = await startBuildEnquiryEmailWorker({
     enabled: true,
     tickMs: 60_000,
     batchSize: 5,
+    visibilityTimeoutMs: 123456,
     emailService
   });
   assert.equal(res.started, true);
+  const running = getBuildEnquiryEmailWorkerStateForTest();
+  assert.equal(running.visibilityTimeoutMs, 123456);
   await new Promise((r) => setTimeout(r, 30));
   await stopBuildEnquiryEmailWorkerForTest();
   const st = getBuildEnquiryEmailWorkerStateForTest();

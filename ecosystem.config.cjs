@@ -103,6 +103,28 @@ module.exports = {
         // Disabled until production index ensure + explicit ops enablement.
         ACCOMMODATION_CHECKOUT_HOLD_EXPIRY_EXECUTE: '0'
       }
+    },
+    {
+      name: 'driftdwells-build-enquiry-email-worker',
+      cwd: __dirname,
+      script: 'server/scripts/runBuildEnquiryEmailWorker.js',
+      interpreter: 'node',
+      instances: 1,
+      exec_mode: 'fork',
+      autorestart: true,
+      restart_delay: 5000,
+      max_restarts: 20,
+      min_uptime: '10s',
+      kill_timeout: 15000,
+      env: {
+        NODE_ENV: 'development',
+        BUILD_ENQUIRY_EMAIL_WORKER_ENABLED: '0'
+      },
+      env_production: {
+        NODE_ENV: 'production',
+        // Keep 0 until cutover: enable explicitly after indexes + SMTP verify.
+        BUILD_ENQUIRY_EMAIL_WORKER_ENABLED: '0'
+      }
     }
   ]
 };

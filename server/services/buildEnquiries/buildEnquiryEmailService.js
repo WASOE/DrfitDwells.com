@@ -354,10 +354,8 @@ async function claimBuildEnquiryEmailLane({
 async function markBuildEnquiryEmailSucceeded({
   enquiryId,
   lane,
-  providerMessageId = null,
-  now = new Date()
+  providerMessageId = null
 } = {}) {
-  const at = now instanceof Date ? now : new Date(now);
   const $set = {
     [lanePath(lane, 'status')]: 'succeeded',
     [lanePath(lane, 'claimedBy')]: null,
@@ -601,9 +599,24 @@ async function sendLaneEmail(enquiry, lane, emailService) {
  * Claim + send + persist status for one lane. Never throws for send failures.
  * Persistence errors are returned in result.persistenceError (does not throw).
  */
-async function attemptBuildEnquiryEmailLane(enquiryId, lane, { emailService = null, workerId = 'initial' } = {}) {
+async function attemptBuildEnquiryEmailLane(
+  enquiryId,
+  lane,
+  {
+    emailService = null,
+    workerId = 'initial',
+    visibilityTimeoutMs = EMAIL_VISIBILITY_TIMEOUT_MS,
+    now = new Date()
+  } = {}
+) {
   const svc = getEmailService(emailService);
-  const claimed = await claimBuildEnquiryEmailLane({ enquiryId, lane, workerId });
+  const claimed = await claimBuildEnquiryEmailLane({
+    enquiryId,
+    lane,
+    workerId,
+    now,
+    visibilityTimeoutMs
+  });
   if (!claimed) {
     return { lane, skipped: true, reason: 'not_claimable' };
   }

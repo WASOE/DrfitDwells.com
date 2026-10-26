@@ -10,12 +10,35 @@
  *                + node scripts/runBuildEnquiryEmailWorker.js
  *
  * Isolated from booking-confirmation and gift-voucher delivery workers.
+ *
+ * Import order (locked):
+ *   1) loadServerEnv
+ *   2) mongoose / dbDefaults
+ *   3) worker module (transitively emailService) AFTER env
  */
 'use strict';
 
-require('dotenv').config();
-const mongoose = require('mongoose');
+const { loadServerEnv, isNonEmptyEnvValue } = require('../config/loadServerEnv');
 const { DEFAULT_MONGO_URI } = require('../config/dbDefaults');
+
+const envLoad = loadServerEnv();
+
+console.log(
+  JSON.stringify({
+    event: 'build_enquiry_email_worker_env_loaded',
+    source: 'build-enquiry-email-worker-standalone',
+    loaded: envLoad.loaded,
+    missing: envLoad.missing,
+    sourceKind: envLoad.source,
+    keysLoaded: envLoad.keysLoaded,
+    smtpHostPresent: envLoad.presence.smtpHostPresent,
+    smtpUrlPresent: envLoad.presence.smtpUrlPresent,
+    mongoUriPresent: envLoad.presence.mongoUriPresent,
+    mongoUriSource: envLoad.presence.mongoUriSource
+  })
+);
+
+const mongoose = require('mongoose');
 const {
   startBuildEnquiryEmailWorkerIfEnabled,
   stopBuildEnquiryEmailWorkerForTest,
@@ -23,6 +46,16 @@ const {
 } = require('../services/buildEnquiries/buildEnquiryEmailWorker');
 
 let shuttingDown = false;
+
+function resolveMongoUri() {
+  if (isNonEmptyEnvValue(process.env.MONGODB_URI)) {
+    return { uri: String(process.env.MONGODB_URI).trim(), source: 'MONGODB_URI' };
+  }
+  if (isNonEmptyEnvValue(process.env.MONGO_URI)) {
+    return { uri: String(process.env.MONGO_URI).trim(), source: 'MONGO_URI' };
+  }
+  return { uri: DEFAULT_MONGO_URI, source: 'default' };
+}
 
 async function shutdown(signal) {
   if (shuttingDown) return;
@@ -51,17 +84,46 @@ async function shutdown(signal) {
 }
 
 async function main() {
-  const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI || DEFAULT_MONGO_URI;
-  await mongoose.connect(mongoUri);
+  const nodeEnv = String(process.env.NODE_ENV || '');
+  const mongo = resolveMongoUri();
+
+  if (nodeEnv === 'production') {
+    const allowDefault =
+      String(process.env.ALLOW_DEFAULT_LOCAL_MONGO_IN_PRODUCTION || '').trim() === '1';
+    if (mongo.source === 'default' && !allowDefault) {
+      console.error(
+        JSON.stringify({
+          event: 'build_enquiry_email_worker_fatal',
+          reason: 'mongo_uri_missing_or_default',
+          mongoUriSource: mongo.source
+        })
+      );
+      process.exit(1);
+      return;
+    }
+    if (mongo.uri === DEFAULT_MONGO_URI && !allowDefault) {
+      console.error(
+        JSON.stringify({
+          event: 'build_enquiry_email_worker_fatal',
+          reason: 'mongo_uri_is_dev_default'
+        })
+      );
+      process.exit(1);
+      return;
+    }
+  }
+
+  await mongoose.connect(mongo.uri);
   console.log(
     JSON.stringify({
       source: 'build-enquiry-email-worker-standalone',
       event: 'mongoose_connected',
+      mongoUriSource: mongo.source,
       ts: new Date().toISOString()
     })
   );
 
-  const res = startBuildEnquiryEmailWorkerIfEnabled();
+  const res = await startBuildEnquiryEmailWorkerIfEnabled();
   if (!res.started) {
     console.log(
       JSON.stringify({
@@ -77,10 +139,10 @@ async function main() {
   }
 
   process.on('SIGTERM', () => {
-    shutdown('SIGTERM');
+    void shutdown('SIGTERM');
   });
   process.on('SIGINT', () => {
-    shutdown('SIGINT');
+    void shutdown('SIGINT');
   });
 
   setInterval(() => {}, 1 << 30);
