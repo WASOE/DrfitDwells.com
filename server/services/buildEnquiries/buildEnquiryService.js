@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const BuildEnquiry = require('../../models/BuildEnquiry');
 const { SOURCE } = require('./buildEnquiryConstants');
 const { validateBuildEnquiryCreateInput } = require('./buildEnquiryValidation');
+const { attemptInitialBuildEnquiryEmails } = require('./buildEnquiryEmailService');
 
 function isDuplicateKeyError(err) {
   if (!err) return false;
@@ -20,11 +21,11 @@ function formatDateStamp(date = new Date()) {
 
 /**
  * Preallocate ObjectId, then derive projectReference before insert.
- * Format: BD-YYYYMMDD-XXXXXX (last 6 hex of ObjectId, uppercased).
+ * Format: BD-YYYYMMDD-XXXXXXXXXXXX (last 12 hex of ObjectId, uppercased).
  */
 function buildProjectReference(objectId, now = new Date()) {
   const idStr = String(objectId);
-  const suffix = idStr.slice(-6).toUpperCase();
+  const suffix = idStr.slice(-12).toUpperCase();
   return `BD-${formatDateStamp(now)}-${suffix}`;
 }
 
@@ -45,11 +46,15 @@ async function findByIdempotencyKey(idempotencyKey) {
 
 /**
  * Persist a build enquiry. Idempotent on idempotencyKey only.
- * Does not send email (Batch 1).
+ * On first create only, attempts internal + customer emails after persist.
+ * Email failures never fail the create result.
  *
  * @returns {{ kind: 'honeypot' } | { kind: 'validation', errors: string[] } | { kind: 'created'|'replay', result: object, doc: object }}
  */
-async function createBuildEnquiry(rawBody, { isTest = false } = {}) {
+async function createBuildEnquiry(
+  rawBody,
+  { isTest = false, emailService = null, skipEmail = false } = {}
+) {
   const validated = validateBuildEnquiryCreateInput(rawBody);
   if (validated.honeypot) {
     return { kind: 'honeypot' };
@@ -96,6 +101,18 @@ async function createBuildEnquiry(rawBody, { isTest = false } = {}) {
   try {
     const created = await BuildEnquiry.create(docPayload);
     const lean = created.toObject ? created.toObject() : created;
+
+    if (!skipEmail) {
+      try {
+        await attemptInitialBuildEnquiryEmails(lean._id, { emailService });
+      } catch (emailErr) {
+        console.error(
+          '[build-enquiries] initial email attempt failed',
+          emailErr?.message || emailErr
+        );
+      }
+    }
+
     return {
       kind: 'created',
       result: toPublicResult(lean, { duplicate: false }),

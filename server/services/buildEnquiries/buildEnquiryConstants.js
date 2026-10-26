@@ -80,6 +80,40 @@ const EMAIL_LANE_STATUSES = Object.freeze([
 
 const SOURCE = 'build_configurator';
 
+const EMAIL_LANES = Object.freeze(['internal', 'customer']);
+
+const MODEL_DISPLAY_NAMES = Object.freeze({
+  'lux-cabin': 'The Lux Cabin',
+  aframe: 'The A Frame'
+});
+
+const OPTION_DISPLAY_NAMES = Object.freeze({
+  'cladding-thermal-wood': 'Thermal wood cladding',
+  'cladding-shou-sugi': 'Shou sugi ban (charred wood)',
+  'cladding-metal': 'Metal cladding',
+  'roof-membrane': 'Waterproofing membrane',
+  'roof-green': 'Green sedum roof',
+  'extra-timber-deck': 'Timber entrance deck',
+  'extra-outdoor-shower': 'Outdoor shower',
+  'finish-plywood': 'Plywood',
+  'finish-pine-planks': 'Rough pine planks',
+  'floor-pvc-laminate': 'PVC laminate',
+  'floor-wooden-planks': 'Wooden planks',
+  'heat-ac': 'Air conditioning (heating & cooling)',
+  'heat-fireplace': 'Wood-burning fireplace',
+  'heat-pump': 'Heat pump',
+  'heat-underfloor': 'Underfloor heating',
+  'extra-solar': 'Solar array + battery storage',
+  'extra-rainwater': 'Rainwater harvesting',
+  'extra-ev': 'EV charging point',
+  'extra-extended-deck': 'Extended deck (12 m²)',
+  'extra-hot-tub': 'Wood-fired hot tub',
+  'extra-outdoor-kitchen': 'Outdoor kitchen'
+});
+
+/** Default claim lease for sending lanes (future worker reclaim). */
+const EMAIL_VISIBILITY_TIMEOUT_MS = 5 * 60 * 1000;
+
 module.exports = {
   BUILD_MODEL_IDS,
   DEFAULT_MODEL_ID,
@@ -94,5 +128,9 @@ module.exports = {
   TIMELINE_BANDS,
   ENQUIRY_STATUSES,
   EMAIL_LANE_STATUSES,
+  EMAIL_LANES,
+  MODEL_DISPLAY_NAMES,
+  OPTION_DISPLAY_NAMES,
+  EMAIL_VISIBILITY_TIMEOUT_MS,
   SOURCE
 };

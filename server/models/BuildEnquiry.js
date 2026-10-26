@@ -25,7 +25,9 @@ const emailLaneSchema = new mongoose.Schema(
     claimedAt: { type: Date, default: null },
     visibilityTimeoutAt: { type: Date, default: null },
     lastError: { type: String, default: null, maxlength: 500 },
-    providerMessageId: { type: String, default: null, maxlength: 500 }
+    providerMessageId: { type: String, default: null, maxlength: 500 },
+    /** Set when SMTP send is about to start (future worker / ambiguous recovery). */
+    smtpAttemptStartedAt: { type: Date, default: null }
   },
   { _id: false }
 );

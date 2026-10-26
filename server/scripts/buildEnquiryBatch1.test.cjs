@@ -13,10 +13,14 @@ const {
   buildProjectReference
 } = require('../services/buildEnquiries/buildEnquiryService');
 const { validateBuildEnquiryCreateInput } = require('../services/buildEnquiries/buildEnquiryValidation');
+const {
+  __setEmailServiceForTesting
+} = require('../services/buildEnquiries/buildEnquiryEmailService');
 const publicBuildEnquiryRoutes = require('../routes/publicBuildEnquiryRoutes');
 
 let mongoServer;
 let app;
+let previousAdminEmail;
 
 function uniqueKey(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -76,6 +80,9 @@ function buildApp() {
 }
 
 test.before(async () => {
+  previousAdminEmail = process.env.ADMIN_EMAIL;
+  process.env.ADMIN_EMAIL = 'ops-build@driftdwells.test';
+
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri(), {
     serverSelectionTimeoutMS: 10000
@@ -85,6 +92,9 @@ test.before(async () => {
 });
 
 test.after(async () => {
+  if (previousAdminEmail === undefined) delete process.env.ADMIN_EMAIL;
+  else process.env.ADMIN_EMAIL = previousAdminEmail;
+  __setEmailServiceForTesting(null);
   await mongoose.connection.dropDatabase();
   await mongoose.disconnect();
   if (mongoServer) await mongoServer.stop();
@@ -92,12 +102,15 @@ test.after(async () => {
 
 test.beforeEach(async () => {
   await BuildEnquiry.deleteMany({});
+  __setEmailServiceForTesting({
+    sendEmail: async () => ({ success: true, method: 'sent', messageId: 'batch1-mock' })
+  });
 });
 
-test('buildProjectReference uses preallocated ObjectId suffix', () => {
+test('buildProjectReference uses preallocated ObjectId 12-hex suffix', () => {
   const id = new mongoose.Types.ObjectId('507f1f77bcf86cd799439011');
   const ref = buildProjectReference(id, new Date(Date.UTC(2026, 9, 26)));
-  assert.equal(ref, 'BD-20261026-439011');
+  assert.equal(ref, 'BD-20261026-6CD799439011');
 });
 
 test('validation accepts incomplete config (empty radio/toggles)', () => {
@@ -145,9 +158,9 @@ test('validation rejects unknown toggle option', () => {
 
 test('create persists enquiry with normalized email and unverified estimate', async () => {
   const payload = validPayload();
-  const outcome = await createBuildEnquiry(payload, { isTest: true });
+  const outcome = await createBuildEnquiry(payload, { isTest: true, skipEmail: true });
   assert.equal(outcome.kind, 'created');
-  assert.match(outcome.result.data.projectReference, /^BD-\d{8}-[0-9A-F]{6}$/);
+  assert.match(outcome.result.data.projectReference, /^BD-\d{8}-[0-9A-F]{12}$/);
   assert.equal(outcome.result.data.duplicate, false);
 
   const row = await BuildEnquiry.findById(outcome.result.data.enquiryId).lean();
@@ -160,15 +173,15 @@ test('create persists enquiry with normalized email and unverified estimate', as
   assert.equal(row.config.modelId, 'lux-cabin');
   assert.equal(row.emails.internal.status, 'pending');
   assert.equal(row.emails.customer.status, 'pending');
-  assert.equal(String(row._id).slice(-6).toUpperCase(), row.projectReference.slice(-6));
+  assert.equal(String(row._id).slice(-12).toUpperCase(), row.projectReference.slice(-12));
 });
 
 test('idempotent replay returns same project reference without second row', async () => {
   const key = uniqueKey('replay');
   const payload = validPayload({ idempotencyKey: key });
 
-  const first = await createBuildEnquiry(payload, { isTest: true });
-  const second = await createBuildEnquiry(payload, { isTest: true });
+  const first = await createBuildEnquiry(payload, { isTest: true, skipEmail: true });
+  const second = await createBuildEnquiry(payload, { isTest: true, skipEmail: true });
 
   assert.equal(first.kind, 'created');
   assert.equal(second.kind, 'replay');
@@ -185,9 +198,9 @@ test('concurrent identical idempotencyKey creates exactly one document', async (
   const payload = validPayload({ idempotencyKey: key });
 
   const results = await Promise.all([
-    createBuildEnquiry(payload, { isTest: true }),
-    createBuildEnquiry(payload, { isTest: true }),
-    createBuildEnquiry(payload, { isTest: true })
+    createBuildEnquiry(payload, { isTest: true, skipEmail: true }),
+    createBuildEnquiry(payload, { isTest: true, skipEmail: true }),
+    createBuildEnquiry(payload, { isTest: true, skipEmail: true })
   ]);
 
   const refs = new Set(results.map((r) => r.result.data.projectReference));
@@ -203,7 +216,10 @@ test('database failure surfaces as thrown error from service', async () => {
     throw new Error('simulated write failure');
   };
   try {
-    await assert.rejects(() => createBuildEnquiry(payload, { isTest: true }), /simulated write failure/);
+    await assert.rejects(
+      () => createBuildEnquiry(payload, { isTest: true, skipEmail: true }),
+      /simulated write failure/
+    );
   } finally {
     BuildEnquiry.create = original;
   }
