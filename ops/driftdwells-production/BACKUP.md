@@ -9,7 +9,7 @@ Each backup set includes **both** pillars required for recovery:
 | Component | Source | Artifact |
 |-----------|--------|----------|
 | **MongoDB** | Production database (name parsed from env URI) | `mongo/driftdwells-mongo-YYYYMMDD-HHMMSS.gz` (`mongodump --gzip --archive`) |
-| **Uploads** | `/home/illoc/apps/driftdwells-booking-portal/uploads` | `uploads/driftdwells-uploads-YYYYMMDD-HHMMSS.tar.gz` |
+| **Uploads** | `/home/illoc/shared/driftdwells-uploads`, reached through the `uploads` symlink at the app path | `uploads/driftdwells-uploads-YYYYMMDD-HHMMSS.tar.gz` |
 | **Integrity** | SHA-256 of both files | `checksums.sha256` |
 | **Metadata** | Safe fields only (no secrets) | `manifest.txt` |
 
