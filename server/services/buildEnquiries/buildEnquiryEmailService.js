@@ -405,6 +405,127 @@ async function markBuildEnquiryEmailFailed({
   );
 }
 
+/**
+ * Mark an expired sending lease that has already exhausted attempts.
+ * Does not send mail. Safe under concurrent workers via status=sending filter.
+ */
+async function markBuildEnquiryEmailNeedsManual({
+  enquiryId,
+  lane,
+  error = 'expired_lease_exhausted',
+  now = new Date()
+} = {}) {
+  const at = now instanceof Date ? now : new Date(now);
+  const summary = String(error || 'expired_lease_exhausted').slice(0, 500);
+  const attemptCountPath = `$emails.${lane}.attemptCount`;
+  const maxAttemptsPath = `$emails.${lane}.maxAttempts`;
+
+  return BuildEnquiry.findOneAndUpdate(
+    {
+      _id: enquiryId,
+      [lanePath(lane, 'status')]: 'sending',
+      [lanePath(lane, 'visibilityTimeoutAt')]: { $lte: at },
+      $expr: {
+        $gte: [
+          { $ifNull: [attemptCountPath, 0] },
+          { $ifNull: [maxAttemptsPath, 10] }
+        ]
+      }
+    },
+    {
+      $set: {
+        [lanePath(lane, 'status')]: 'needs_manual',
+        [lanePath(lane, 'claimedBy')]: null,
+        [lanePath(lane, 'claimedAt')]: null,
+        [lanePath(lane, 'visibilityTimeoutAt')]: null,
+        [lanePath(lane, 'smtpAttemptStartedAt')]: null,
+        [lanePath(lane, 'nextAttemptAt')]: null,
+        [lanePath(lane, 'lastError')]: summary
+      }
+    },
+    { new: true }
+  );
+}
+
+function buildClaimableLaneMatch(lane, now) {
+  const at = now instanceof Date ? now : new Date(now);
+  const attemptCountPath = `$emails.${lane}.attemptCount`;
+  const maxAttemptsPath = `$emails.${lane}.maxAttempts`;
+  return {
+    $and: [
+      {
+        $expr: {
+          $lt: [
+            { $ifNull: [attemptCountPath, 0] },
+            { $ifNull: [maxAttemptsPath, 10] }
+          ]
+        }
+      },
+      {
+        $or: [
+          {
+            [lanePath(lane, 'status')]: { $in: ['pending', 'failed'] },
+            $or: [
+              { [lanePath(lane, 'nextAttemptAt')]: null },
+              { [lanePath(lane, 'nextAttemptAt')]: { $lte: at } }
+            ]
+          },
+          {
+            [lanePath(lane, 'status')]: 'sending',
+            [lanePath(lane, 'visibilityTimeoutAt')]: { $lte: at }
+          }
+        ]
+      }
+    ]
+  };
+}
+
+function buildExhaustedExpiredSendingMatch(lane, now) {
+  const at = now instanceof Date ? now : new Date(now);
+  const attemptCountPath = `$emails.${lane}.attemptCount`;
+  const maxAttemptsPath = `$emails.${lane}.maxAttempts`;
+  return {
+    [lanePath(lane, 'status')]: 'sending',
+    [lanePath(lane, 'visibilityTimeoutAt')]: { $lte: at },
+    $expr: {
+      $gte: [
+        { $ifNull: [attemptCountPath, 0] },
+        { $ifNull: [maxAttemptsPath, 10] }
+      ]
+    }
+  };
+}
+
+/**
+ * Scan due claimable work for one lane (pending/failed due or expired sending under max).
+ */
+async function findDueBuildEnquiryEmailCandidates(lane, { now = new Date(), limit = 20 } = {}) {
+  if (!EMAIL_LANES.includes(lane)) {
+    throw new Error(`Unknown email lane: ${lane}`);
+  }
+  const capped = Math.min(100, Math.max(1, Number(limit) || 20));
+  return BuildEnquiry.find(buildClaimableLaneMatch(lane, now))
+    .sort({ updatedAt: 1 })
+    .limit(capped)
+    .select('_id projectReference emails')
+    .lean();
+}
+
+/**
+ * Scan expired sending leases that already hit maxAttempts (manual intervention, no resend).
+ */
+async function findExhaustedExpiredSendingLanes(lane, { now = new Date(), limit = 20 } = {}) {
+  if (!EMAIL_LANES.includes(lane)) {
+    throw new Error(`Unknown email lane: ${lane}`);
+  }
+  const capped = Math.min(100, Math.max(1, Number(limit) || 20));
+  return BuildEnquiry.find(buildExhaustedExpiredSendingMatch(lane, now))
+    .sort({ updatedAt: 1 })
+    .limit(capped)
+    .select('_id projectReference emails')
+    .lean();
+}
+
 async function markSmtpAttemptStarted({ enquiryId, lane, now = new Date() } = {}) {
   const at = now instanceof Date ? now : new Date(now);
   return BuildEnquiry.findOneAndUpdate(
@@ -550,7 +671,12 @@ module.exports = {
   claimBuildEnquiryEmailLane,
   markBuildEnquiryEmailSucceeded,
   markBuildEnquiryEmailFailed,
+  markBuildEnquiryEmailNeedsManual,
   markSmtpAttemptStarted,
+  findDueBuildEnquiryEmailCandidates,
+  findExhaustedExpiredSendingLanes,
+  buildClaimableLaneMatch,
+  buildExhaustedExpiredSendingMatch,
   computeNextAttemptAt,
   buildInternalEmailContent,
   buildCustomerEmailContent,
