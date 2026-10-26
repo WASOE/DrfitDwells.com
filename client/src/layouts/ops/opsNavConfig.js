@@ -15,6 +15,7 @@ const OPS_FRONTEND_MODULE_ROUTES = [
   { prefix: '/ops/reservations', module: 'reservations' },
   { prefix: '/ops/gift-vouchers', module: 'finance' },
   { prefix: '/ops/conversion', module: 'finance' },
+  { prefix: '/ops/build-enquiries', module: 'finance' },
   { prefix: '/ops/insights', module: 'finance' },
   { prefix: '/ops/promo-codes', module: 'finance' },
   { prefix: '/ops/rate-plans', module: 'finance' },
@@ -277,6 +278,16 @@ export const OPS_NAV_ITEMS = [
     match: 'prefix'
   },
   {
+    to: '/ops/build-enquiries',
+    label: 'Build enquiries',
+    module: 'finance',
+    desktopGroup: 'insights',
+    sidebarOrder: 5,
+    mobileTab: 'finance',
+    moreGroupId: 'finance',
+    match: 'prefix'
+  },
+  {
     to: '/ops/manual-review',
     label: 'Manual',
     module: 'operations',
@@ -329,11 +340,13 @@ export const OPS_MOBILE_TAB_ROUTE_PREFIXES = {
     '/ops/payments',
     '/ops/promo-codes',
     '/ops/rate-plans',
+    '/ops/pricing-calendar',
     '/ops/payment-terms',
     '/ops/gift-vouchers',
     '/ops/insights',
     '/ops/conversion',
-    '/ops/conversion/recovery'
+    '/ops/conversion/recovery',
+    '/ops/build-enquiries'
   ],
   more: [
     '/ops/creator-partners',
@@ -388,12 +401,14 @@ export const OPS_MORE_GROUPS = [
       { to: '/ops/payments', label: 'Payments' },
       { to: '/ops/promo-codes', label: 'Promo codes' },
       { to: '/ops/rate-plans', label: 'Rate plans' },
+      { to: '/ops/pricing-calendar', label: 'Pricing Calendar' },
       { to: '/ops/payment-terms', label: 'Payment terms' },
       { to: '/ops/gift-vouchers', label: 'Gift vouchers' },
       { to: '/ops/insights', label: 'Insights' },
       { to: '/ops/insights/performance', label: 'Historical performance' },
       { to: '/ops/conversion', label: 'Conversion' },
-      { to: '/ops/conversion/recovery', label: 'Quote recovery' }
+      { to: '/ops/conversion/recovery', label: 'Quote recovery' },
+      { to: '/ops/build-enquiries', label: 'Build enquiries' }
     ]
   },
   {

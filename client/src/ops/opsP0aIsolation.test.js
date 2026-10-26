@@ -31,6 +31,8 @@ const EXPECTED_OPS_ROUTE_STRINGS = [
   'path="/ops/insights/performance"',
   'path="/ops/conversion"',
   'path="/ops/conversion/recovery"',
+  'path="/ops/build-enquiries"',
+  'path="/ops/build-enquiries/:id"',
   'path="/ops/readiness"',
   'path="/ops/cleaning"',
   'path="/ops/settings/cleaning"',
@@ -73,7 +75,7 @@ describe('P0A isolation guards', () => {
   });
 
   it('does not change navigation configuration', () => {
-    expect(OPS_NAV_ITEMS).toHaveLength(23);
+    expect(OPS_NAV_ITEMS).toHaveLength(26);
     expect(OPS_NAV_ITEMS.map((item) => item.to)).toEqual([
       '/ops',
       '/ops/calendar',
@@ -83,6 +85,8 @@ describe('P0A isolation guards', () => {
       '/ops/payments',
       '/ops/promo-codes',
       '/ops/rate-plans',
+      '/ops/pricing-calendar',
+      '/ops/payment-terms',
       '/ops/creator-partners',
       '/ops/sync',
       '/ops/cabins',
@@ -94,6 +98,7 @@ describe('P0A isolation guards', () => {
       '/ops/insights/performance',
       '/ops/conversion',
       '/ops/conversion/recovery',
+      '/ops/build-enquiries',
       '/ops/manual-review',
       '/ops/readiness',
       '/ops/settings/cleaning',

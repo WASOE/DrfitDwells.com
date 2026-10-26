@@ -90,6 +90,8 @@ const opsReadAPI = {
     api.post(`/ops/conversion/recovery/${id}/preview`, body, { headers: authHeaders() }),
   conversionRecoveryLinks: (id) =>
     api.post(`/ops/conversion/recovery/${id}/links`, {}, { headers: authHeaders() }),
+  buildEnquiries: (params) => api.get('/ops/build-enquiries', { params, headers: authHeaders() }),
+  buildEnquiryDetail: (id) => api.get(`/ops/build-enquiries/${id}`, { headers: authHeaders() }),
   readinessSummary: () => api.get('/ops/readiness/summary', { headers: authHeaders() }),
   readinessModules: () => api.get('/ops/readiness/modules', { headers: authHeaders() }),
   readinessOverlap: () => api.get('/ops/readiness/overlap', { headers: authHeaders() }),
@@ -316,7 +318,9 @@ const opsWriteAPI = {
   setOpsUserPassword: (id, password) =>
     api.post(`/ops/users/${id}/password`, { password }, { headers: authHeaders() }),
   resolveManualReviewItem: (id, body) =>
-    api.post(`/ops/manual-review/${id}/resolve`, body, { headers: authHeaders() })
+    api.post(`/ops/manual-review/${id}/resolve`, body, { headers: authHeaders() }),
+  patchBuildEnquiryStatus: (id, status) =>
+    api.patch(`/ops/build-enquiries/${id}`, { status }, { headers: authHeaders() })
 };
 
 export { opsReadAPI, opsWriteAPI, decodeRoleFromToken };

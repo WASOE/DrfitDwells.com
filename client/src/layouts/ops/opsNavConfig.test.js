@@ -23,7 +23,7 @@ import {
 
 describe('opsNavConfig', () => {
   it('lists desktop nav items in OpsLayout order', () => {
-    expect(OPS_NAV_ITEMS).toHaveLength(23);
+    expect(OPS_NAV_ITEMS).toHaveLength(26);
     expect(OPS_NAV_ITEMS.map((item) => item.to)).toEqual([
       '/ops',
       '/ops/calendar',
@@ -33,6 +33,8 @@ describe('opsNavConfig', () => {
       '/ops/payments',
       '/ops/promo-codes',
       '/ops/rate-plans',
+      '/ops/pricing-calendar',
+      '/ops/payment-terms',
       '/ops/creator-partners',
       '/ops/sync',
       '/ops/cabins',
@@ -44,6 +46,7 @@ describe('opsNavConfig', () => {
       '/ops/insights/performance',
       '/ops/conversion',
       '/ops/conversion/recovery',
+      '/ops/build-enquiries',
       '/ops/manual-review',
       '/ops/readiness',
       '/ops/settings/cleaning',
@@ -317,8 +320,8 @@ describe('opsNavConfig', () => {
 
     it('places every nav destination in exactly one desktop group', () => {
       const groupedTos = getOpsSidebarGroups().flatMap((group) => group.items.map((item) => item.to));
-      expect(groupedTos).toHaveLength(23);
-      expect(new Set(groupedTos).size).toBe(23);
+      expect(groupedTos).toHaveLength(26);
+      expect(new Set(groupedTos).size).toBe(26);
       expect(new Set(groupedTos)).toEqual(new Set(OPS_NAV_ITEMS.map((item) => item.to)));
       expect(OPS_NAV_ITEMS.every((item) => Boolean(item.desktopGroup))).toBe(true);
       expect(OPS_NAV_ITEMS.some((item) => item.to === '/ops/design-system')).toBe(false);
@@ -346,7 +349,9 @@ describe('opsNavConfig', () => {
         '/ops/payments',
         '/ops/promo-codes',
         '/ops/rate-plans',
-        '/ops/gift-vouchers'
+        '/ops/gift-vouchers',
+        '/ops/payment-terms',
+        '/ops/pricing-calendar'
       ]);
       expect(groupChildren('property')).toEqual(['/ops/cabins', '/ops/creator-partners']);
       expect(groupChildren('cleaning')).toEqual(['/ops/cleaning', '/ops/settings/cleaning']);
@@ -354,7 +359,8 @@ describe('opsNavConfig', () => {
         '/ops/insights',
         '/ops/insights/performance',
         '/ops/conversion',
-        '/ops/conversion/recovery'
+        '/ops/conversion/recovery',
+        '/ops/build-enquiries'
       ]);
       expect(groupChildren('admin')).toEqual(['/ops/users', '/ops/readiness']);
     });
@@ -388,7 +394,7 @@ describe('opsNavConfig', () => {
 
     it('does not introduce an insights permission module', () => {
       const insightItems = OPS_NAV_ITEMS.filter((item) => item.desktopGroup === 'insights');
-      expect(insightItems).toHaveLength(4);
+      expect(insightItems).toHaveLength(5);
       expect(insightItems.every((item) => item.module === 'finance')).toBe(true);
     });
   });
@@ -475,7 +481,8 @@ describe('opsNavConfig', () => {
         '/ops/insights',
         '/ops/insights/performance',
         '/ops/conversion',
-        '/ops/conversion/recovery'
+        '/ops/conversion/recovery',
+        '/ops/build-enquiries'
       ]);
       expect(financeOnly.home).toBeUndefined();
       expect(operationsOnly.home).toEqual(['/ops/manual-review']);
@@ -549,10 +556,13 @@ describe('opsNavConfig', () => {
           '/ops/payments',
           '/ops/promo-codes',
           '/ops/rate-plans',
+          '/ops/pricing-calendar',
+          '/ops/payment-terms',
           '/ops/gift-vouchers',
           '/ops/insights',
           '/ops/conversion',
-          '/ops/conversion/recovery'
+          '/ops/conversion/recovery',
+          '/ops/build-enquiries'
         ],
         more: [
           '/ops/creator-partners',
@@ -568,6 +578,7 @@ describe('opsNavConfig', () => {
       expect(getActiveOpsMobileTabId('/ops/insights/performance')).toBe('finance');
       expect(getActiveOpsMobileTabId('/ops/conversion')).toBe('finance');
       expect(getActiveOpsMobileTabId('/ops/conversion/recovery')).toBe('finance');
+      expect(getActiveOpsMobileTabId('/ops/build-enquiries')).toBe('finance');
       expect(getActiveOpsMobileTabId('/ops/manual-review')).toBe('more');
     });
 
@@ -596,11 +607,14 @@ describe('opsNavConfig', () => {
           '/ops/payments',
           '/ops/promo-codes',
           '/ops/rate-plans',
+          '/ops/pricing-calendar',
+          '/ops/payment-terms',
           '/ops/gift-vouchers',
           '/ops/insights',
           '/ops/insights/performance',
           '/ops/conversion',
-          '/ops/conversion/recovery'
+          '/ops/conversion/recovery',
+          '/ops/build-enquiries'
         ],
         ['/ops/cabins', '/ops/creator-partners'],
         [
