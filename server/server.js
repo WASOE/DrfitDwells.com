@@ -282,6 +282,7 @@ app.use('/api/public', requireDb, require('./routes/publicLocationAvailabilityRo
 app.use('/api/public', requireDb, require('./routes/publicLocationQuoteRoutes'));
 app.use('/api/public', requireDb, require('./routes/publicLocationCheckoutRoutes'));
 app.use('/api/public', requireDb, require('./routes/publicRecoveryPreferenceRoutes'));
+app.use('/api/public/build-enquiries', requireDb, require('./routes/publicBuildEnquiryRoutes'));
 app.use('/api/availability', requireDb, availabilityRoutes);
 app.use('/api/creator-referral-visits', requireDb, creatorReferralVisitRoutes);
 app.use('/api/creator-portal', requireDb, creatorPortalRoutes);
