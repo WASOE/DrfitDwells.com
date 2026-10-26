@@ -7,7 +7,7 @@ import BuildExteriorStep from '../build/BuildExteriorStep';
 import BuildInteriorStep from '../build/BuildInteriorStep';
 import BuildOptionsStep from '../build/BuildOptionsStep';
 import BuildSummary from '../build/BuildSummary';
-import { BUILD_CONSULTATION_URL } from '../../data/buildConsultation.js';
+import { BUILD_ENQUIRY_PRIMARY_CTA } from '../../data/buildEnquiryConstants.js';
 
 const STEP_HEADERS = {
   model: 'Choose your model',
@@ -22,6 +22,7 @@ const MobileConfigPanel = ({
   onClose,
   configurator,
   onDownloadPDF,
+  onOpenEnquiry,
 }) => {
   const {
     state,
@@ -127,6 +128,7 @@ const MobileConfigPanel = ({
             state={state}
             model={model}
             onDownloadPDF={onDownloadPDF}
+            onOpenEnquiry={onOpenEnquiry}
             padX={padX}
             omitActions
           />
@@ -202,14 +204,14 @@ const MobileConfigPanel = ({
             <div className="shrink-0 border-t border-[#e0e0e0] bg-white px-6 py-4">
               {isSummaryStep ? (
                 <div className="flex flex-col gap-2">
-                  <a
-                    href={BUILD_CONSULTATION_URL}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block w-full touch-manipulation rounded-[2px] bg-[#1a1a1a] px-4 py-3.5 text-center text-[0.68rem] font-medium uppercase tracking-[0.1em] text-white no-underline active:bg-[#2b2b2b]"
+                  <button
+                    type="button"
+                    onClick={onOpenEnquiry}
+                    className="block w-full touch-manipulation rounded-[2px] bg-[#1a1a1a] px-4 py-3.5 text-center text-[0.68rem] font-medium uppercase tracking-[0.1em] text-white active:bg-[#2b2b2b]"
+                    data-testid="build-enquiry-cta-mobile-summary"
                   >
-                    Schedule consultation
-                  </a>
+                    {BUILD_ENQUIRY_PRIMARY_CTA}
+                  </button>
                   <div className="flex gap-2">
                     <button
                       type="button"
@@ -228,27 +230,37 @@ const MobileConfigPanel = ({
                   </div>
                 </div>
               ) : (
-                <div className="flex items-center justify-between gap-3">
-                  {!isFirstStep ? (
-                    <button
-                      type="button"
-                      onClick={prevStep}
-                      className="flex-1 touch-manipulation rounded-[2px] border border-[#e0e0e0] px-4 py-3 text-[0.68rem] uppercase tracking-[0.1em] text-[#5a5a5a] active:border-[#1a1a1a]"
-                    >
-                      ← Back
-                    </button>
-                  ) : (
-                    <div className="flex-1" />
-                  )}
-                  {!isLastStep ? (
-                    <button
-                      type="button"
-                      onClick={nextStep}
-                      className="flex-1 touch-manipulation rounded-[2px] bg-[#1a1a1a] px-4 py-3 text-[0.68rem] uppercase tracking-[0.14em] text-white active:bg-[#2b2b2b]"
-                    >
-                      Next →
-                    </button>
-                  ) : null}
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between gap-3">
+                    {!isFirstStep ? (
+                      <button
+                        type="button"
+                        onClick={prevStep}
+                        className="flex-1 touch-manipulation rounded-[2px] border border-[#e0e0e0] px-4 py-3 text-[0.68rem] uppercase tracking-[0.1em] text-[#5a5a5a] active:border-[#1a1a1a]"
+                      >
+                        ← Back
+                      </button>
+                    ) : (
+                      <div className="flex-1" />
+                    )}
+                    {!isLastStep ? (
+                      <button
+                        type="button"
+                        onClick={nextStep}
+                        className="flex-1 touch-manipulation rounded-[2px] bg-[#1a1a1a] px-4 py-3 text-[0.68rem] uppercase tracking-[0.14em] text-white active:bg-[#2b2b2b]"
+                      >
+                        Next →
+                      </button>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onOpenEnquiry}
+                    className="w-full touch-manipulation rounded-[2px] border border-[#e0e0e0] px-4 py-3 text-[0.68rem] uppercase tracking-[0.1em] text-[#5a5a5a] active:border-[#1a1a1a]"
+                    data-testid="build-enquiry-cta-mobile-step"
+                  >
+                    {BUILD_ENQUIRY_PRIMARY_CTA}
+                  </button>
                 </div>
               )}
             </div>

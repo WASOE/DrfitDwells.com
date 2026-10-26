@@ -1,0 +1,123 @@
+.ops-be-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-16);
+  min-width: 0;
+}
+
+.ops-be-table-wrap {
+  display: none;
+  min-width: 0;
+}
+
+.ops-be-mobile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ops-space-8);
+  min-width: 0;
+}
+
+@media (min-width: 768px) {
+  .ops-be-table-wrap {
+    display: block;
+  }
+
+  .ops-be-mobile {
+    display: none;
+  }
+}
+
+.ops-be-ref {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.ops-be-muted {
+  color: var(--ops-text-muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.ops-be-alert {
+  color: var(--ops-danger, #b42318);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ops-be-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ops-be-row-link {
+  text-decoration: none;
+  color: inherit;
+}
+
+.ops-be-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--ops-space-16);
+}
+
+@media (min-width: 1024px) {
+  .ops-be-detail-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.ops-be-facts {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--ops-space-12);
+}
+
+@media (min-width: 640px) {
+  .ops-be-facts {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.ops-be-fact-label {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ops-text-muted);
+}
+
+.ops-be-fact-value {
+  margin: 4px 0 0;
+  font-size: 14px;
+  line-height: 20px;
+  word-break: break-word;
+}
+
+.ops-be-email-lane {
+  border: 1px solid var(--ops-border, #e5e2da);
+  border-radius: 8px;
+  padding: var(--ops-space-12);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ops-be-email-lane--alert {
+  border-color: var(--ops-danger, #b42318);
+  background: color-mix(in srgb, var(--ops-danger, #b42318) 6%, transparent);
+}
+
+.ops-be-email-lane__title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ops-be-config-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 14px;
+  line-height: 22px;
+}

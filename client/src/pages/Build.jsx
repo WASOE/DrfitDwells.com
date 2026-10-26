@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Seo from '../components/Seo';
 import BuildHeroPhoto from '../components/build/BuildHeroPhoto';
+import BuildEnquiryForm from '../components/build/BuildEnquiryForm';
 import MobileConfigPanel from '../components/configurator/MobileConfigPanel';
 import MobileStepIndicator from '../components/configurator/MobileStepIndicator';
 import MobileSpecsBar from '../components/configurator/MobileSpecsBar';
@@ -17,12 +18,17 @@ import { CONTACT_EMAIL } from '../data/gmbLocations';
 const Build = () => {
   const [isMobileConfigOpen, setIsMobileConfigOpen] = useState(false);
   const [isSpecsBarExpanded, setIsSpecsBarExpanded] = useState(false);
+  const [isEnquiryOpen, setIsEnquiryOpen] = useState(false);
   const { language } = useLanguage();
   const configurator = useBuildConfigurator();
 
   const handlePdfDownload = useCallback(async () => {
     await downloadBuildSpecPdf(configurator.state, CONTACT_EMAIL);
   }, [configurator.state]);
+
+  const handleOpenEnquiry = useCallback(() => {
+    setIsEnquiryOpen(true);
+  }, []);
 
   const handleMobileStepClick = useCallback(
     (stepIndex) => {
@@ -90,6 +96,7 @@ const Build = () => {
           <BuildDesktopShell
             configurator={configurator}
             onDownloadPDF={handlePdfDownload}
+            onOpenEnquiry={handleOpenEnquiry}
           />
         </section>
 
@@ -98,6 +105,7 @@ const Build = () => {
           onClose={() => setIsMobileConfigOpen(false)}
           configurator={configurator}
           onDownloadPDF={handlePdfDownload}
+          onOpenEnquiry={handleOpenEnquiry}
         />
 
         <MobileSpecsBar
@@ -106,8 +114,17 @@ const Build = () => {
           capacity={configurator.capacity}
           price={configurator.barPrice}
           onDownloadPDF={handlePdfDownload}
+          onOpenEnquiry={handleOpenEnquiry}
           isConfigPanelOpen={isMobileConfigOpen}
           onExpandedChange={setIsSpecsBarExpanded}
+        />
+
+        <BuildEnquiryForm
+          open={isEnquiryOpen}
+          onClose={() => setIsEnquiryOpen(false)}
+          configuratorState={configurator.state}
+          currentStep={configurator.currentStep}
+          onDownloadPDF={handlePdfDownload}
         />
       </div>
     </>

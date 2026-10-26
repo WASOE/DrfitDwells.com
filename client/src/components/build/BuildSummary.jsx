@@ -3,13 +3,14 @@ import {
   computeBuildTotal,
   formatBuildBarPrice,
 } from '../../data/buildConfiguratorLogic.js';
-import { BUILD_CONSULTATION_URL } from '../../data/buildConsultation.js';
+import { BUILD_ENQUIRY_PRIMARY_CTA } from '../../data/buildEnquiryConstants.js';
 import { SUMMARY_REVIEWS } from '../../data/buildConfiguratorSchema.js';
 
 const BuildSummary = ({
   state,
   model,
   onDownloadPDF,
+  onOpenEnquiry,
   padX = 'px-8',
   omitActions = false,
 }) => {
@@ -29,8 +30,8 @@ const BuildSummary = ({
         is ready to build.
       </h2>
       <p className="mb-8 text-[0.8rem] leading-relaxed text-[#5a5a5a]">
-        Here is what you&apos;ve configured. Schedule a free consultation and we&apos;ll walk
-        your land together — no obligation, just a real conversation about what&apos;s possible.
+        Here is what you&apos;ve configured. Send us your project details for an indicative
+        estimate — no obligation, just a clear next step.
       </p>
 
       <div className="mb-8 flex flex-col gap-0.5">
@@ -57,14 +58,14 @@ const BuildSummary = ({
 
       {omitActions ? null : (
         <>
-          <a
-            href={BUILD_CONSULTATION_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mb-3 block w-full rounded-[2px] bg-[#1a1a1a] px-4 py-4 text-center text-[0.7rem] font-medium uppercase tracking-[0.14em] text-white no-underline transition-colors hover:bg-[#2b2b2b]"
+          <button
+            type="button"
+            onClick={onOpenEnquiry}
+            className="mb-3 block w-full rounded-[2px] bg-[#1a1a1a] px-4 py-4 text-center text-[0.7rem] font-medium uppercase tracking-[0.14em] text-white transition-colors hover:bg-[#2b2b2b]"
+            data-testid="build-enquiry-cta-summary"
           >
-            Schedule a free consultation
-          </a>
+            {BUILD_ENQUIRY_PRIMARY_CTA}
+          </button>
           <button
             type="button"
             onClick={onDownloadPDF}

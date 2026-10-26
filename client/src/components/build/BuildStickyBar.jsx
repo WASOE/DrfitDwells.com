@@ -1,4 +1,4 @@
-import { BUILD_CONSULTATION_URL } from '../../data/buildConsultation.js';
+import { BUILD_ENQUIRY_PRIMARY_CTA } from '../../data/buildEnquiryConstants.js';
 
 const BuildStickyBar = ({
   dimensions,
@@ -6,6 +6,7 @@ const BuildStickyBar = ({
   capacity,
   price,
   onDownloadPDF,
+  onOpenEnquiry
 }) => {
   const stats = [
     { label: 'Dimensions', value: dimensions || '—' },
@@ -41,14 +42,14 @@ const BuildStickyBar = ({
           >
             Download Spec PDF
           </button>
-          <a
-            href={BUILD_CONSULTATION_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="whitespace-nowrap rounded-[2px] bg-white px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-[#1a1a1a] no-underline transition-colors hover:bg-[#eee] md:px-5 md:py-3 md:text-sm"
+          <button
+            type="button"
+            onClick={onOpenEnquiry}
+            className="whitespace-nowrap rounded-[2px] bg-white px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.08em] text-[#1a1a1a] transition-colors hover:bg-[#eee] md:px-5 md:py-3 md:text-sm"
+            data-testid="build-enquiry-cta-desktop"
           >
-            Schedule Consultation
-          </a>
+            {BUILD_ENQUIRY_PRIMARY_CTA}
+          </button>
         </div>
       </div>
     </div>

@@ -78,6 +78,8 @@ const OpsInsights = lazy(() => import('./pages/ops/OpsInsights'))
 const OpsInsightsPerformance = lazy(() => import('./pages/ops/OpsInsightsPerformance'))
 const OpsConversion = lazy(() => import('./pages/ops/OpsConversion'))
 const OpsConversionRecovery = lazy(() => import('./pages/ops/OpsConversionRecovery'))
+const OpsBuildEnquiries = lazy(() => import('./pages/ops/OpsBuildEnquiries'))
+const OpsBuildEnquiryDetail = lazy(() => import('./pages/ops/OpsBuildEnquiryDetail'))
 const MaintenanceHome = lazy(() => import('./pages/maintenance/MaintenanceHome'))
 const MaintenanceCabins = lazy(() => import('./pages/maintenance/MaintenanceCabins'))
 const MaintenanceReservations = lazy(() => import('./pages/maintenance/MaintenanceReservations'))
@@ -276,6 +278,8 @@ function App() {
               <Route path="/ops/insights/performance" element={<OpsInsightsPerformance />} />
               <Route path="/ops/conversion" element={<OpsConversion />} />
               <Route path="/ops/conversion/recovery" element={<OpsConversionRecovery />} />
+              <Route path="/ops/build-enquiries" element={<OpsBuildEnquiries />} />
+              <Route path="/ops/build-enquiries/:id" element={<OpsBuildEnquiryDetail />} />
               <Route path="/ops/readiness" element={<OpsReadiness />} />
               <Route path="/ops/cleaning" element={<OpsCleaningCalendar />} />
               <Route path="/ops/settings/cleaning" element={<OpsCleaningSettings />} />
