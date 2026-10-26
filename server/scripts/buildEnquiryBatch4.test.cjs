@@ -466,6 +466,23 @@ test('toDetail strips internal email metadata', () => {
   assertNoSecrets(detail);
 });
 
+test('500 responses use safe generic messages (no raw DB errors)', async () => {
+  const original = BuildEnquiry.find;
+  BuildEnquiry.find = () => {
+    throw new Error('ECONNREFUSED mongodb://secret-host:27017');
+  };
+  try {
+    const res = await request(app).get('/api/ops/build-enquiries').set(auth('admin'));
+    assert.equal(res.status, 500);
+    assert.equal(res.body.success, false);
+    assert.equal(res.body.message, 'Failed to list build enquiries');
+    assert.equal(String(JSON.stringify(res.body)).includes('ECONNREFUSED'), false);
+    assert.equal(String(JSON.stringify(res.body)).includes('secret-host'), false);
+  } finally {
+    BuildEnquiry.find = original;
+  }
+});
+
 test('booking and voucher collections remain isolated from list', async () => {
   await BuildEnquiry.create(enquiryDoc());
 

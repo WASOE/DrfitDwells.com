@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
 import { ChevronUp } from 'lucide-react';
-import { BUILD_CONSULTATION_URL } from '../../data/buildConsultation.js';
+import { BUILD_ENQUIRY_PRIMARY_CTA } from '../../data/buildEnquiryConstants.js';
 
 /**
  * Mobile specs bar — matches BuildStickyBar (black, white text).
@@ -12,6 +12,7 @@ const MobileSpecsBar = ({
   capacity = '—',
   price = '—',
   onDownloadPDF,
+  onOpenEnquiry,
   isConfigPanelOpen = false,
   onExpandedChange,
 }) => {
@@ -88,14 +89,14 @@ const MobileSpecsBar = ({
               </div>
 
               <div className="flex gap-2 pt-1">
-                <a
-                  href={BUILD_CONSULTATION_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex flex-1 touch-manipulation items-center justify-center rounded-[2px] bg-white px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.08em] text-[#1a1a1a] no-underline active:bg-[#eee]"
+                <button
+                  type="button"
+                  onClick={onOpenEnquiry}
+                  className="flex flex-1 touch-manipulation items-center justify-center rounded-[2px] bg-white px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.08em] text-[#1a1a1a] active:bg-[#eee]"
+                  data-testid="build-enquiry-cta-mobile"
                 >
-                  Schedule Consultation
-                </a>
+                  {BUILD_ENQUIRY_PRIMARY_CTA}
+                </button>
                 <button
                   type="button"
                   onClick={onDownloadPDF}
