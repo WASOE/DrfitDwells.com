@@ -33,6 +33,19 @@ const opsNotificationSchema = new mongoose.Schema(
       default: undefined,
       maxlength: 256
     },
+    pushDeliveryStatus: {
+      type: String,
+      enum: ['pending', 'delivered', 'no_subscription', 'provider_failure'],
+      default: 'pending'
+    },
+    pushDeliveredAt: {
+      type: Date,
+      default: null
+    },
+    pushAttemptedAt: {
+      type: Date,
+      default: null
+    },
     readAt: {
       type: Date,
       default: null

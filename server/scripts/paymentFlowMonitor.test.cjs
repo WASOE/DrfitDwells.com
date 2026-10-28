@@ -251,8 +251,139 @@ test('booking create-payment-intent calls monitor on validation failure', async 
       children: 0
     });
 
-  assert.equal(failResponse.status, 500);
+  // origin/master returns 503 CHECKOUT_SESSION_V2_REQUIRED before Stripe when
+  // Checkout V2 is off. The monitor is attached first, so this is still an immediate alert.
+  assert.equal(failResponse.status, 503);
+  assert.equal(failResponse.body.code, 'CHECKOUT_SESSION_V2_REQUIRED');
   assert.equal(manualReviewCalls.length, 1);
   assert.equal(pushCalls.length, 1);
   assert.equal(manualReviewCalls[0].category, 'payment_flow_server_error');
+});
+
+const FINALIZE_ROUTE = '/api/bookings/checkout-sessions/:checkoutId/finalize-intent';
+
+test('FINALIZE_INTENT_REQUIRED is an immediate contract alert', async () => {
+  const result = await recordPaymentFlowOutcome({
+    route: '/api/bookings/create-payment-intent',
+    statusCode: 409,
+    body: { code: 'FINALIZE_INTENT_REQUIRED' }
+  });
+  assert.equal(result.alerted, true);
+  assert.equal(result.immediate, true);
+  assert.equal(manualReviewCalls[0].category, 'payment_flow_contract_incident');
+  assert.equal(manualReviewCalls[0].evidence.paymentContractVersion, 'checkout-payment-v2-finalize-1');
+});
+
+test('FINALIZE_INTENT_PERSIST_DISABLED triggers an immediate contract alert', async () => {
+  const result = await recordPaymentFlowOutcome({
+    route: FINALIZE_ROUTE,
+    statusCode: 403,
+    body: {
+      code: 'FINALIZE_INTENT_PERSIST_DISABLED',
+      message: 'Finalize intent persistence is disabled',
+      guestEmail: 'guest@example.test',
+      client_secret: 'pi_test_secret_value'
+    }
+  });
+  assert.equal(result.alerted, true);
+  assert.equal(result.immediate, true);
+  assert.equal(manualReviewCalls.length, 1);
+  assert.equal(manualReviewCalls[0].category, 'payment_flow_contract_incident');
+  assert.equal(manualReviewCalls[0].severity, 'high');
+  assert.equal(manualReviewCalls[0].evidence.errorCode, 'FINALIZE_INTENT_PERSIST_DISABLED');
+  assert.equal(manualReviewCalls[0].evidence.paymentContractVersion, 'checkout-payment-v2-finalize-1');
+  assert.ok('applicationRelease' in manualReviewCalls[0].evidence);
+  const serialized = JSON.stringify(manualReviewCalls[0]);
+  assert.equal(serialized.includes('guest@example.test'), false);
+  assert.equal(serialized.includes('pi_test_secret_value'), false);
+  assert.equal(serialized.includes('client_secret'), false);
+});
+
+test('three repeated monitored 403 failures trigger one threshold alert', async () => {
+  const body = { code: 'PAYMENT_ROUTE_FORBIDDEN', message: 'forbidden' };
+  await recordPaymentFlowOutcome({ route: FINALIZE_ROUTE, statusCode: 403, body });
+  await recordPaymentFlowOutcome({ route: FINALIZE_ROUTE, statusCode: 403, body });
+  const third = await recordPaymentFlowOutcome({ route: FINALIZE_ROUTE, statusCode: 403, body });
+  assert.equal(third.alerted, true);
+  assert.equal(third.immediate, false);
+  assert.equal(manualReviewCalls.length, 1);
+  assert.equal(manualReviewCalls[0].evidence.statusCode, 403);
+  assert.equal(manualReviewCalls[0].evidence.count, 3);
+  assert.equal(manualReviewCalls[0].evidence.route, FINALIZE_ROUTE);
+});
+
+test('finalize-intent 409 hash mismatch is monitored and does not page on the first failure', async () => {
+  const body = { code: 'FINALIZE_INTENT_HASH_MISMATCH' };
+  const first = await recordPaymentFlowOutcome({ route: FINALIZE_ROUTE, statusCode: 409, body });
+  assert.equal(first.alerted, false);
+  await recordPaymentFlowOutcome({ route: FINALIZE_ROUTE, statusCode: 409, body });
+  const third = await recordPaymentFlowOutcome({ route: FINALIZE_ROUTE, statusCode: 409, body });
+  assert.equal(third.alerted, true);
+  assert.equal(third.classification, 'monitored_conflict');
+  assert.equal(manualReviewCalls[0].evidence.errorCode, 'FINALIZE_INTENT_HASH_MISMATCH');
+});
+
+test('FINALIZE_INTENT_METADATA_SYNC_FAILED is a monitored finalize-intent 409', async () => {
+  const body = { code: 'FINALIZE_INTENT_METADATA_SYNC_FAILED' };
+  await recordPaymentFlowOutcome({ route: FINALIZE_ROUTE, statusCode: 409, body });
+  await recordPaymentFlowOutcome({ route: FINALIZE_ROUTE, statusCode: 409, body });
+  const third = await recordPaymentFlowOutcome({ route: FINALIZE_ROUTE, statusCode: 409, body });
+  assert.equal(third.alerted, true);
+  assert.equal(third.immediate, false);
+});
+
+test('expected customer session conflicts do not page immediately', async () => {
+  const body = { code: 'FINALIZE_INTENT_SESSION_VERSION_CONFLICT' };
+  const first = await recordPaymentFlowOutcome({ route: FINALIZE_ROUTE, statusCode: 409, body });
+  await recordPaymentFlowOutcome({ route: FINALIZE_ROUTE, statusCode: 409, body });
+  const third = await recordPaymentFlowOutcome({ route: FINALIZE_ROUTE, statusCode: 409, body });
+  assert.equal(first.alerted, false);
+  assert.equal(first.classification, 'expected_customer');
+  assert.equal(third.alerted, false);
+  assert.equal(manualReviewCalls.length, 0);
+  assert.equal(pushCalls.length, 0);
+});
+
+test('manual review remains when push delivery throws', async () => {
+  __setPaymentFlowMonitorDepsForTesting({
+    openManualReviewItem: async (payload) => {
+      manualReviewCalls.push(payload);
+      return { _id: new mongoose.Types.ObjectId() };
+    },
+    notifyOpsPushPaymentFlowAlert: async () => {
+      throw new Error('push provider down');
+    }
+  });
+  const result = await recordPaymentFlowOutcome({
+    route: BOOKING_ROUTE,
+    statusCode: 500,
+    body: { message: 'Payment setup failed' }
+  });
+  assert.equal(result.alerted, true);
+  assert.equal(manualReviewCalls.length, 1);
+  assert.equal(result.pushDelivery.deliveryOutcome, 'provider_failure');
+});
+
+test('finalize-intent route attaches the monitor for persist disabled', async () => {
+  const bookingRoutes = require('../routes/bookingRoutes');
+  const previous = process.env.FINALIZE_INTENT_PERSIST;
+  delete process.env.FINALIZE_INTENT_PERSIST;
+  const app = express();
+  app.set('trust proxy', 1);
+  app.use(express.json());
+  app.use('/api/bookings', bookingRoutes);
+  try {
+    const response = await request(app)
+      .put('/api/bookings/checkout-sessions/chk_monitor_test_01/finalize-intent')
+      .send({ guestInfo: { email: 'guest@example.test' } });
+    assert.equal(response.status, 403);
+    assert.equal(response.body.code, 'FINALIZE_INTENT_PERSIST_DISABLED');
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(manualReviewCalls.length, 1);
+    assert.equal(manualReviewCalls[0].evidence.errorCode, 'FINALIZE_INTENT_PERSIST_DISABLED');
+    assert.equal(JSON.stringify(manualReviewCalls[0]).includes('guest@example.test'), false);
+  } finally {
+    if (previous === undefined) delete process.env.FINALIZE_INTENT_PERSIST;
+    else process.env.FINALIZE_INTENT_PERSIST = previous;
+  }
 });

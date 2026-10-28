@@ -12,6 +12,8 @@ const OPS_PUSH_DELIVERY_OPTIONS = Object.freeze({
   urgency: 'high'
 });
 
+const OPS_PUSH_DEDUPE_WINDOW_MS = 10 * 60 * 1000;
+
 let webPushModule = null;
 let webPushConfigured = false;
 let logSendAttemptImpl = logSendAttemptDefault;
@@ -107,6 +109,30 @@ async function resolveTargetUserIds({ opsUserIds, role, propertyKind }) {
   return [];
 }
 
+function isConfirmedDeliveryWithinWindow(notification, now = Date.now()) {
+  if (!notification || notification.pushDeliveryStatus !== 'delivered' || !notification.pushDeliveredAt) {
+    return false;
+  }
+  const deliveredAt = new Date(notification.pushDeliveredAt).getTime();
+  if (!Number.isFinite(deliveredAt)) return false;
+  return now - deliveredAt >= 0 && now - deliveredAt < OPS_PUSH_DEDUPE_WINDOW_MS;
+}
+
+async function markPushDelivery(notificationId, outcome) {
+  if (!notificationId) return;
+  const now = new Date();
+  const status =
+    outcome === 'delivered' || outcome === 'no_subscription' || outcome === 'provider_failure'
+      ? outcome
+      : 'provider_failure';
+  const update = {
+    pushDeliveryStatus: status,
+    pushAttemptedAt: now
+  };
+  if (status === 'delivered') update.pushDeliveredAt = now;
+  await OpsNotification.updateOne({ _id: notificationId }, { $set: update });
+}
+
 async function createNotificationForUser({
   opsUserId,
   title,
@@ -120,22 +146,29 @@ async function createNotificationForUser({
     title: String(title || '').slice(0, 200),
     body: String(body || '').slice(0, 2000),
     url: String(url || '').slice(0, 2048),
-    source: source ? String(source).slice(0, 120) : null
+    source: source ? String(source).slice(0, 120) : null,
+    pushDeliveryStatus: 'pending'
   };
 
   if (dedupeKey != null && String(dedupeKey).trim() !== '') {
     payload.dedupeKey = String(dedupeKey).trim();
     try {
-      return await OpsNotification.create(payload);
+      const created = await OpsNotification.create(payload);
+      return { notification: created, duplicate: false };
     } catch (err) {
       if (err && err.code === 11000) {
-        return null;
+        const existing = await OpsNotification.findOne({
+          opsUserId,
+          dedupeKey: payload.dedupeKey
+        });
+        return { notification: existing, duplicate: true };
       }
       throw err;
     }
   }
 
-  return OpsNotification.create(payload);
+  const created = await OpsNotification.create(payload);
+  return { notification: created, duplicate: false };
 }
 
 async function loadActiveSubscriptions(opsUserId) {
@@ -176,7 +209,9 @@ function logPushSendAttempt({
   opsUserId,
   statusCode,
   dedupeKey,
-  skipReason
+  skipReason,
+  priorDeliveryConfirmed,
+  priorDeliveredAt
 }) {
   logSendAttemptImpl({
     outcome,
@@ -185,7 +220,9 @@ function logPushSendAttempt({
     opsUserId: opsUserId ? String(opsUserId) : null,
     statusCode: statusCode ?? null,
     dedupeKey: dedupeKey || null,
-    ...(skipReason ? { skipReason } : {})
+    ...(skipReason ? { skipReason } : {}),
+    ...(priorDeliveryConfirmed === true ? { priorDeliveryConfirmed: true } : {}),
+    ...(priorDeliveredAt ? { priorDeliveredAt } : {})
   });
 }
 
@@ -331,15 +368,28 @@ async function sendOpsPush(params = {}) {
     usersTargeted: targetUserIds.length,
     notificationsCreated: 0,
     notificationsDeduped: 0,
+    deliveryRetried: 0,
     pushAttempts: 0,
     pushAccepted: 0,
     pushFailed: 0,
     subscriptionsInvalidated: 0,
+    deliveryOutcome: null,
     results: []
   };
 
+  if (targetUserIds.length === 0) {
+    summary.deliveryOutcome = 'no_subscription';
+    logPushSendAttempt({
+      outcome: 'no_subscription',
+      sourceEvent: source,
+      dedupeKey,
+      skipReason: 'no_subscription'
+    });
+    return summary;
+  }
+
   for (const opsUserId of targetUserIds) {
-    const notification = await createNotificationForUser({
+    const created = await createNotificationForUser({
       opsUserId,
       title,
       body,
@@ -347,32 +397,62 @@ async function sendOpsPush(params = {}) {
       source,
       dedupeKey
     });
+    const notification = created.notification;
 
-    if (!notification) {
+    if (created.duplicate && isConfirmedDeliveryWithinWindow(notification)) {
       summary.notificationsDeduped += 1;
       logPushSendAttempt({
         outcome: 'skipped',
         sourceEvent: source,
         opsUserId,
         dedupeKey,
-        skipReason: 'deduped'
+        skipReason: 'deduped',
+        priorDeliveryConfirmed: true,
+        priorDeliveredAt: new Date(notification.pushDeliveredAt).toISOString()
       });
       summary.results.push({
         opsUserId: String(opsUserId),
         notificationCreated: false,
         deduped: true,
+        priorDeliveryConfirmed: true,
+        deliveryOutcome: 'deduped',
         pushAttempts: 0
       });
       continue;
     }
 
-    summary.notificationsCreated += 1;
+    if (created.duplicate && !notification) {
+      logPushSendAttempt({
+        outcome: 'dedupe_unconfirmed',
+        sourceEvent: source,
+        opsUserId,
+        dedupeKey,
+        priorDeliveryConfirmed: false
+      });
+      summary.results.push({
+        opsUserId: String(opsUserId),
+        notificationCreated: false,
+        deduped: false,
+        priorDeliveryConfirmed: false,
+        deliveryOutcome: 'dedupe_unconfirmed',
+        pushAttempts: 0
+      });
+      continue;
+    }
+
+    if (created.duplicate) {
+      summary.deliveryRetried += 1;
+    } else {
+      summary.notificationsCreated += 1;
+    }
+
     const subscriptions = await loadActiveSubscriptions(opsUserId);
     const userResult = {
       opsUserId: String(opsUserId),
-      notificationId: String(notification._id),
-      notificationCreated: true,
+      notificationId: notification?._id ? String(notification._id) : null,
+      notificationCreated: !created.duplicate,
       deduped: false,
+      priorDeliveryConfirmed: false,
       pushAttempts: subscriptions.length,
       pushAccepted: 0,
       pushFailed: 0,
@@ -404,10 +484,38 @@ async function sendOpsPush(params = {}) {
       }
     }
 
+    let deliveryOutcome = 'provider_failure';
+    if (subscriptions.length === 0) {
+      deliveryOutcome = 'no_subscription';
+    } else if (userResult.pushAccepted > 0) {
+      deliveryOutcome = 'delivered';
+    }
+    userResult.deliveryOutcome = deliveryOutcome;
+    await markPushDelivery(notification?._id, deliveryOutcome);
+    if (deliveryOutcome === 'no_subscription') {
+      logPushSendAttempt({
+        outcome: 'no_subscription',
+        sourceEvent: source,
+        opsUserId,
+        dedupeKey,
+        priorDeliveryConfirmed: false
+      });
+    }
     summary.results.push(userResult);
   }
 
+  summary.deliveryOutcome = rollupDeliveryOutcome(summary.results);
   return summary;
+}
+
+function rollupDeliveryOutcome(results) {
+  if (!results.length) return 'no_subscription';
+  if (results.every((row) => row.deliveryOutcome === 'deduped')) return 'deduped';
+  if (results.some((row) => row.deliveryOutcome === 'delivered')) return 'delivered';
+  if (results.some((row) => row.deliveryOutcome === 'provider_failure')) return 'provider_failure';
+  if (results.some((row) => row.deliveryOutcome === 'no_subscription')) return 'no_subscription';
+  if (results.some((row) => row.deliveryOutcome === 'dedupe_unconfirmed')) return 'dedupe_unconfirmed';
+  return results[0].deliveryOutcome || 'provider_failure';
 }
 
 function sendOpsPushSafely(params) {
@@ -426,6 +534,7 @@ function sendOpsPushSafely(params) {
       return {
         skipped: false,
         error: true,
+        deliveryOutcome: 'provider_failure',
         message: err?.message || String(err)
       };
     });
@@ -436,6 +545,8 @@ module.exports = {
   sendOpsPushSafely,
   resolveTargetUserIds,
   OPS_PUSH_DELIVERY_OPTIONS,
+  OPS_PUSH_DEDUPE_WINDOW_MS,
+  isConfirmedDeliveryWithinWindow,
   __resetWebPushForTesting,
   __setWebPushModuleForTesting,
   __setLogSendAttemptForTesting,

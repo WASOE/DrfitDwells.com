@@ -36,6 +36,7 @@ const GiftVoucherEvent = require('../models/GiftVoucherEvent');
 const GiftVoucherRedemption = require('../models/GiftVoucherRedemption');
 const ManualReviewItem = require('../models/ManualReviewItem');
 const bookingRoutes = require('../routes/bookingRoutes');
+const { closeBrowserBounded, closeHttpServerBounded } = require('./lib/boundedE2ECleanup.cjs');
 const giftVoucherRoutes = require('../routes/giftVoucherRoutes');
 const {
   setStripeClientForTesting,
@@ -191,6 +192,19 @@ function evaluateCheckoutCapabilityCompatibility(serverCaps, clientCaps) {
   if (!serverCaps || typeof serverCaps !== 'object') {
     return { ok: true, reason: 'capabilities_unavailable', shouldReload: false };
   }
+  if (
+    serverCaps.paymentContractVersion &&
+    clientCaps.paymentContractVersion &&
+    serverCaps.paymentContractVersion !== clientCaps.paymentContractVersion
+  ) {
+    return { ok: false, reason: 'payment_contract_version_mismatch', shouldReload: false };
+  }
+  if (clientCaps.finalizeIntentPersist && serverCaps.finalizeIntentPersist === false) {
+    return { ok: false, reason: 'server_finalize_intent_persist_disabled', shouldReload: false };
+  }
+  if (clientCaps.finalizeIntentRequiredForPi && serverCaps.finalizeIntentRequiredForPi === false) {
+    return { ok: false, reason: 'server_finalize_intent_required_disabled', shouldReload: false };
+  }
   if (serverCaps.requiresFinalizeIntentPayload || serverCaps.finalizeIntentRequiredForPi) {
     if (
       !clientCaps.checkoutSessionV2 &&
@@ -266,6 +280,11 @@ test.before(async () => {
     throw new Error(
       'client/dist missing. Build with VITE_CHECKOUT_SESSION_V2=1 VITE_FINALIZE_INTENT_PERSIST=1 VITE_FINALIZE_INTENT_REQUIRED_FOR_PI=1 before running this E2E.'
     );
+  }
+  const { assessPaymentContractBundle } = await import('../../scripts/lib/verifyPaymentContractBundle.mjs');
+  const bundle = assessPaymentContractBundle(DIST);
+  if (!bundle.ok) {
+    throw new Error(`client/dist is not a compatible checkout bundle:\n${bundle.errors.join('\n')}`);
   }
 
   setStrictEnv();
@@ -349,7 +368,7 @@ test.after(async () => {
   setStripeClientForTesting(null);
   __resetSendOpsPushSafelyForTesting();
   restoreEnv();
-  if (server) await new Promise((resolve) => server.close(resolve));
+  await closeHttpServerBounded(server, 'core-stability-e2e');
   await mongoose.connection.dropDatabase();
   await mongoose.disconnect();
   if (mongoServer) await mongoServer.stop();
@@ -381,7 +400,10 @@ test('accommodation browser Continue → create-PI → server finalize: booking,
     return;
   }
 
-  const browser = await playwright.chromium.launch({ headless: true });
+  let browser;
+  let piResponseCount = 0;
+  try {
+  browser = await playwright.chromium.launch({ headless: true });
   const context = await browser.newContext();
   const page = await context.newPage();
 
@@ -395,6 +417,7 @@ test('accommodation browser Continue → create-PI → server finalize: booking,
         json = null;
       }
       piResponses.push({ status: res.status(), json });
+      piResponseCount = piResponses.length;
     }
   });
 
@@ -494,8 +517,13 @@ test('accommodation browser Continue → create-PI → server finalize: booking,
     'confirmation email not logged / claimed'
   );
   assert.equal(mriCount, 0, 'unexpected payment_finalization_failure MRI');
-
-  await browser.close();
+  } catch (err) {
+    console.error('[core-stability-e2e] browser step failed');
+    console.error(`[core-stability-e2e] diagnostic ${JSON.stringify({ piResponseCount })}`);
+    throw err;
+  } finally {
+    await closeBrowserBounded(browser, 'core-stability-e2e');
+  }
 });
 
 test('gift voucher purchase happy path: create-PI → activate → active voucher', async () => {

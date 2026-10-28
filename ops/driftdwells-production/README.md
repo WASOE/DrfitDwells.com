@@ -70,6 +70,9 @@ It intercepts every API request with fixtures and never creates a real booking.
 ops/driftdwells-production/
 ├── README.md
 ├── BACKUP.md                 # Full backup/recovery runbook
+├── PAYMENT_CONTRACT_MONITOR.md
+├── payment-contract-monitor.mjs
+├── paymentContractMonitorLib.mjs
 ├── install-backup.sh         # Copy scripts → ~/bin (stable; re-run after git pull)
 ├── logrotate-driftdwells-pm2
 ├── backup/
@@ -80,6 +83,12 @@ ops/driftdwells-production/
     ├── driftdwells-backup.service
     └── driftdwells-backup.timer   # daily 03:45 UTC
 ```
+
+## Payment contract monitor
+
+Named-process and checkout-capability checks live in [PAYMENT_CONTRACT_MONITOR.md](./PAYMENT_CONTRACT_MONITOR.md). The incident runbook is [docs/runbooks/payment-contract-incident.md](../../docs/runbooks/payment-contract-incident.md). The monitor script does not install or edit systemd units.
+
+The script's built-in default API role is the historical name `driftdwells`. This document's production API name is `driftdwells-production-<short-sha>`. Before using the monitor against production, pass `--require-role` for that live API name and for `driftdwells-confirmation-worker`. Do not replace the production API name in the table above.
 
 ## Installed paths (after `install-backup.sh`)
 

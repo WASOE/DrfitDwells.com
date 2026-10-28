@@ -60,6 +60,7 @@ const {
 const { attachPaymentFlowMonitor } = require('../services/ops/paymentFlowMonitorService');
 
 const BOOKING_PAYMENT_INTENT_ROUTE = '/api/bookings/create-payment-intent';
+const FINALIZE_INTENT_ROUTE = '/api/bookings/checkout-sessions/:checkoutId/finalize-intent';
 const { linkStripePaymentToBooking } = require('../services/payments/paymentLinkingService');
 const {
   recordQuoteFunnelOutcome,
@@ -939,6 +940,7 @@ router.get('/checkout-sessions/:checkoutId/status', async (req, res) => {
 
 // PUT /api/bookings/checkout-sessions/:checkoutId/finalize-intent — Batch 2 persist finalizeIntent
 router.put('/checkout-sessions/:checkoutId/finalize-intent', paymentIntentLimiter, async (req, res) => {
+  attachPaymentFlowMonitor(res, FINALIZE_INTENT_ROUTE);
   try {
     const checkoutId = normalizeCheckoutId(req.params.checkoutId);
     if (!checkoutId || !isValidCheckoutId(checkoutId)) {

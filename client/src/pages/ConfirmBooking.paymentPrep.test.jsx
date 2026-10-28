@@ -172,4 +172,15 @@ describe('ConfirmBooking payment preparation helpers', () => {
       })
     ).toBe(true);
   });
+
+  it('shows a temporary-unavailable message when the API finalize contract is off', async () => {
+    const { customerMessageForCheckoutCapability } = await import('../utils/checkoutCapabilityHandshake');
+    const message = customerMessageForCheckoutCapability({
+      ok: false,
+      reason: 'server_finalize_intent_persist_disabled',
+      shouldReload: false
+    });
+    expect(message).toMatch(/temporarily unavailable/i);
+    expect(message).not.toMatch(/FINALIZE_INTENT|client_secret|sk_/);
+  });
 });

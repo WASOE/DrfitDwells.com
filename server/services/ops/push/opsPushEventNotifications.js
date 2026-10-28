@@ -280,6 +280,8 @@ async function notifyOpsPushPaymentFlowAlert({
   windowMinutes,
   immediate = false,
   suggestedAction,
+  applicationRelease = null,
+  paymentContractVersion = null,
   dedupeKey
 }) {
   const title = immediate ? 'Payment flow error' : 'Payment flow warning';
@@ -290,11 +292,13 @@ async function notifyOpsPushPaymentFlowAlert({
     `Route: ${route}`,
     `Status: ${statusCode}`,
     `Reason: ${errorReason}`,
+    `Contract: ${paymentContractVersion || 'unknown'}`,
+    `Release: ${applicationRelease || 'unknown'}`,
     `Action: ${suggestedAction}`
   ].join(' · ');
 
   try {
-    await safePush({
+    return await safePush({
       role: 'admin',
       title,
       body,
@@ -314,6 +318,11 @@ async function notifyOpsPushPaymentFlowAlert({
         error: err?.message || String(err)
       })
     );
+    return {
+      skipped: false,
+      error: true,
+      deliveryOutcome: 'provider_failure'
+    };
   }
 }
 

@@ -1,4 +1,7 @@
 const { DEFAULT_MONGO_URI } = require('./dbDefaults');
+const {
+  validateProductionPaymentContract
+} = require('../../shared/payments/productionPaymentContract.js');
 
 /**
  * Validate production configuration without exiting (for tests).
@@ -78,6 +81,11 @@ function validateProductionEnv(env = process.env) {
     errors.push(
       'MONGODB_URI matches the dev default (localhost). Set a real connection string or set ALLOW_DEFAULT_LOCAL_MONGO_IN_PRODUCTION=1 if intentional.'
     );
+  }
+
+  const paymentContract = validateProductionPaymentContract(env);
+  if (!paymentContract.ok) {
+    errors.push(...paymentContract.errors);
   }
 
   return { ok: errors.length === 0, errors };
