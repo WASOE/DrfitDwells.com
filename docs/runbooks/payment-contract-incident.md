@@ -73,7 +73,7 @@ node server/scripts/reportUnfinalizedCheckoutPayments.js \
   --until=2026-10-27T23:59:59.000Z
 ```
 
-Classify rows as `succeeded`, `processing`, `requires_action`, `requires_payment_method`, `cancelled`, or `unknown`. Rows are checkout sessions or PaymentIntents in the window that lack a booking in `confirmed`, `in_house`, or `completed`.
+Classify rows as `succeeded`, `processing`, `requires_action`, `requires_payment_method`, `cancelled`, or `unknown`. Rows are checkout sessions or PaymentIntents in the window that lack a booking in `confirmed`, `in_house`, or `completed`. Treat the report as complete only when `complete` is true. A missing Stripe key, a failed Stripe list, or a safety cap sets `complete` to false and names the incomplete source. Do not treat a partial report as a finished reconciliation.
 
 `--execute` and other mutation flags exit 2 with `MUTATION_NOT_PERMITTED`. Turning on writes later requires a new explicit flag and a separately reviewed task. Use the JSON to decide guest follow-up outside this command. Do not paste guest emails or `client_secret` values into tickets; the report omits them.
 

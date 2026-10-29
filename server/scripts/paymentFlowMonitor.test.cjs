@@ -52,8 +52,53 @@ test('extractSafeErrorReason prefers code and validation path without payload fi
       message: 'Validation failed',
       errors: [{ path: 'buyerName', msg: 'buyerName is required' }]
     }),
-    'validation:buyerName:buyerName is required'
+    'validation:buyerName'
   );
+  assert.equal(
+    extractSafeErrorReason({ code: 'FINALIZE_INTENT_PERSIST_DISABLED' }),
+    'FINALIZE_INTENT_PERSIST_DISABLED'
+  );
+  assert.equal(
+    extractSafeErrorReason({ code: 'STALE_CLIENT_SECRET' }),
+    'STALE_CLIENT_SECRET'
+  );
+});
+
+test('unknown payment messages do not enter incident evidence', async () => {
+  const body = {
+    message: 'Payment failed for Jane Doe, +359888123456, 12 Pirin Street, pi_3NabcSecret',
+    errors: [{ path: 'guestInfo.phone', msg: '+359888123456 is invalid for Jane Doe' }]
+  };
+  assert.equal(extractSafeErrorReason(body, 400), 'validation:guestInfo.phone');
+  assert.equal(
+    extractSafeErrorReason({
+      message: 'Card for Jane Doe at 12 Pirin Street was declined',
+      code: 'pi_3NabcSecret'
+    }, 402),
+    'unclassified_http_402'
+  );
+  assert.equal(
+    extractSafeErrorReason({
+      code: 'Jane Doe',
+      error: { code: 'cus_secretguest' }
+    }, 500),
+    'unclassified_http_500'
+  );
+
+  const result = await recordPaymentFlowOutcome({
+    route: BOOKING_ROUTE,
+    statusCode: 500,
+    body: { message: 'Payment failed for Jane Doe, +359888123456, pi_3NabcSecret' }
+  });
+  assert.equal(result.alerted, true);
+  const serialized = JSON.stringify(manualReviewCalls[0]) + JSON.stringify(pushCalls[0]);
+  assert.equal(serialized.includes('Jane Doe'), false);
+  assert.equal(serialized.includes('+359888123456'), false);
+  assert.equal(serialized.includes('pi_3NabcSecret'), false);
+  assert.equal(serialized.includes('12 Pirin'), false);
+  assert.equal(manualReviewCalls[0].evidence.errorCode, 'unclassified_http_500');
+  assert.equal(manualReviewCalls[0].evidence.statusCode, 500);
+  assert.equal(manualReviewCalls[0].evidence.route, BOOKING_ROUTE);
 });
 
 test('2x same 400 does not alert', async () => {
@@ -351,17 +396,89 @@ test('manual review remains when push delivery throws', async () => {
       return { _id: new mongoose.Types.ObjectId() };
     },
     notifyOpsPushPaymentFlowAlert: async () => {
-      throw new Error('push provider down');
+      throw new Error('push provider down for Jane Doe pi_3NabcSecret');
     }
   });
   const result = await recordPaymentFlowOutcome({
     route: BOOKING_ROUTE,
     statusCode: 500,
-    body: { message: 'Payment setup failed' }
+    body: { code: 'PAYMENT_INTENT_INIT_FAILED' }
   });
   assert.equal(result.alerted, true);
+  assert.equal(result.recorded, true);
   assert.equal(manualReviewCalls.length, 1);
+  assert.equal(result.pushDelivery.error, true);
   assert.equal(result.pushDelivery.deliveryOutcome, 'provider_failure');
+  assert.notEqual(result.pushDelivery.deliveryOutcome, 'delivered');
+  const serialized = JSON.stringify(result);
+  assert.equal(serialized.includes('Jane Doe'), false);
+  assert.equal(serialized.includes('pi_3NabcSecret'), false);
+
+  const retried = await recordPaymentFlowOutcome({
+    route: BOOKING_ROUTE,
+    statusCode: 500,
+    body: { code: 'PAYMENT_INTENT_INIT_FAILED' }
+  });
+  assert.equal(retried.deduped, true);
+  assert.equal(manualReviewCalls.length, 1);
+});
+
+test('failed manual review is not deduped and does not change the payment response', async () => {
+  let attempts = 0;
+  const logs = [];
+  const originalError = console.error;
+  console.error = (...args) => {
+    logs.push(args.map(String).join(' '));
+  };
+  __setPaymentFlowMonitorDepsForTesting({
+    openManualReviewItem: async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('storage rejected Jane Doe +359888123456 pi_3NabcSecret');
+      manualReviewCalls.push({ recorded: true });
+      return { _id: new mongoose.Types.ObjectId() };
+    },
+    notifyOpsPushPaymentFlowAlert: async (payload) => {
+      pushCalls.push(payload);
+    }
+  });
+  const { attachPaymentFlowMonitor } = require('../services/ops/paymentFlowMonitorService');
+  const app = express();
+  app.post('/api/bookings/create-payment-intent', (req, res) => {
+    attachPaymentFlowMonitor(res, BOOKING_ROUTE);
+    res.status(500).json({
+      code: 'PAYMENT_INTENT_INIT_FAILED',
+      message: 'Payment failed for Jane Doe',
+      clientSecret: 'pi_3NabcSecret'
+    });
+  });
+  const unhandled = [];
+  const onUnhandled = (reason) => unhandled.push(reason);
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    const first = await request(app).post(BOOKING_ROUTE).send({ guestName: 'Jane Doe' });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(first.status, 500);
+    assert.equal(first.body.code, 'PAYMENT_INTENT_INIT_FAILED');
+    assert.equal(first.body.clientSecret, 'pi_3NabcSecret');
+    assert.equal(manualReviewCalls.length, 0);
+    assert.equal(pushCalls.length, 0);
+
+    const second = await request(app).post(BOOKING_ROUTE).send({ guestName: 'Jane Doe' });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(second.status, 500);
+    assert.equal(second.body.clientSecret, 'pi_3NabcSecret');
+    assert.equal(manualReviewCalls.length, 1);
+    assert.equal(pushCalls.length, 1);
+    assert.equal(unhandled.length, 0);
+    const logged = logs.join('\n');
+    assert.match(logged, /manual_review_record_failed/);
+    assert.equal(logged.includes('Jane Doe'), false);
+    assert.equal(logged.includes('+359888123456'), false);
+    assert.equal(logged.includes('pi_3NabcSecret'), false);
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+    console.error = originalError;
+  }
 });
 
 test('finalize-intent route attaches the monitor for persist disabled', async () => {

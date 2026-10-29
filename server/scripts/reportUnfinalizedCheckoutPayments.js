@@ -12,7 +12,12 @@
  */
 'use strict';
 
-const { buildUnfinalizedCheckoutPaymentReport, assertReadOnly } = require('../services/ops/unfinalizedCheckoutPaymentReport');
+const {
+  buildUnfinalizedCheckoutPaymentReport,
+  assertReadOnly,
+  paginateReadOnly,
+  collectStripePaymentIntents
+} = require('../services/ops/unfinalizedCheckoutPaymentReport');
 
 function publicErrorMessage(err) {
   if (err?.code === 'MUTATION_NOT_PERMITTED' || err?.code === 'INVALID_WINDOW' || err?.code === 'INVALID_ARGS') {
@@ -31,6 +36,8 @@ function printHelp() {
 Read-only JSON report. No refunds, cancels, captures, finalization, or email.
 Mutation flags (--execute and similar) exit with MUTATION_NOT_PERMITTED.
 A future mutation mode requires an explicit flag and a separately reviewed task.
+The report is complete only when complete is true. A missing Stripe key, a failed
+Stripe list, or a safety cap sets complete to false and names the source.
 `);
 }
 
@@ -67,12 +74,16 @@ function createReadOnlySources() {
     },
     checkoutSessionSource: {
       async listCreatedBetween({ since, until }) {
-        return CheckoutSession.find({
-          createdAt: { $gte: since, $lt: until }
-        })
-          .select('checkoutId createdAt canonicalPaymentIntentId bookingId paymentStatus finalizeStatus')
-          .limit(500)
-          .lean();
+        return paginateReadOnly(({ skip, limit }) => (
+          CheckoutSession.find({
+            createdAt: { $gte: since, $lt: until }
+          })
+            .select('checkoutId createdAt canonicalPaymentIntentId bookingId paymentStatus finalizeStatus')
+            .sort({ _id: 1 })
+            .skip(skip)
+            .limit(limit)
+            .lean()
+        ), { pageSize: 200, maxItems: 5000 });
       }
     },
     bookingSource: {
@@ -80,8 +91,17 @@ function createReadOnlySources() {
         const or = [];
         if (checkoutIds.length > 0) or.push({ checkoutId: { $in: checkoutIds } });
         if (paymentIntentIds.length > 0) or.push({ stripePaymentIntentId: { $in: paymentIntentIds } });
-        if (or.length === 0) return [];
-        return Booking.find({ $or: or }).select('checkoutId status stripePaymentIntentId').limit(1000).lean();
+        if (or.length === 0) {
+          return { items: [], available: true, complete: true, truncated: false, reason: null };
+        }
+        return paginateReadOnly(({ skip, limit }) => (
+          Booking.find({ $or: or })
+            .select('checkoutId status stripePaymentIntentId')
+            .sort({ _id: 1 })
+            .skip(skip)
+            .limit(limit)
+            .lean()
+        ), { pageSize: 200, maxItems: 5000 });
       }
     },
     paymentIntentSource: createStripeListSource()
@@ -93,27 +113,34 @@ function createStripeListSource() {
   if (!key) {
     return {
       async listCreatedBetween() {
-        return [];
+        return {
+          items: [],
+          available: false,
+          complete: false,
+          truncated: false,
+          reason: 'stripe_unavailable'
+        };
       }
     };
   }
   const Stripe = require('stripe');
   const stripe = new Stripe(key);
   return {
-    async listCreatedBetween({ since, until }) {
-      const listed = await stripe.paymentIntents.list({
-        limit: 100,
-        created: {
-          gte: Math.floor(since.getTime() / 1000),
-          lt: Math.floor(until.getTime() / 1000)
-        }
-      });
-      return (listed?.data || []).map((intent) => ({
-        id: intent.id,
-        status: intent.status,
-        created: intent.created,
-        checkoutId: intent.metadata?.checkoutId || null
-      }));
+    async listCreatedBetween(window) {
+      try {
+        return await collectStripePaymentIntents(
+          (query) => stripe.paymentIntents.list(query),
+          window
+        );
+      } catch {
+        return {
+          items: [],
+          available: false,
+          complete: false,
+          truncated: false,
+          reason: 'stripe_list_failed'
+        };
+      }
     }
   };
 }

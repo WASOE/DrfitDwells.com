@@ -80,34 +80,62 @@ function shouldMonitorRoute(route) {
   return MONITORED_ROUTES.has(route);
 }
 
-function redactUnsafeReason(value) {
-  const text = String(value || '').slice(0, 120);
-  if (/client_secret|sk_live|sk_test|rk_live|rk_test|pk_live|pk_test|whsec_|@/.test(text)) {
-    return 'redacted_unsafe_reason';
-  }
+const SAFE_ERROR_CODE = /^[A-Za-z][A-Za-z0-9_]{0,79}$/;
+const PAYMENT_OBJECT_ID = /^(pi|ch|seti|pm|cus|card|tok|src|py|re|txn|po)_/i;
+const SECRET_MARK = /client_secret|sk_live|sk_test|rk_live|rk_test|pk_live|pk_test|whsec_|@/i;
+const SAFE_FIELD_PATH = /^[A-Za-z][A-Za-z0-9_.]{0,80}$/;
+const LONG_DIGIT_RUN = /\d{4,}/;
+
+function isAllowlistedCode(value) {
+  return IMMEDIATE_CONTRACT_CODES.has(value) || EXPECTED_CUSTOMER_CONFLICT_CODES.has(value);
+}
+
+function safeErrorCode(value) {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  if (!text || text.length > 80) return null;
+  if (isAllowlistedCode(text)) return text;
+  if (!SAFE_ERROR_CODE.test(text) || PAYMENT_OBJECT_ID.test(text) || SECRET_MARK.test(text)) return null;
   return text;
 }
 
-function extractSafeErrorReason(body = {}) {
-  if (body?.code) {
-    return redactUnsafeReason(body.code);
-  }
-  if (body?.error?.code) {
-    return redactUnsafeReason(body.error.code);
-  }
+function safeFieldPath(value) {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  if (!SAFE_FIELD_PATH.test(text) || LONG_DIGIT_RUN.test(text) || SECRET_MARK.test(text)) return null;
+  return text;
+}
+
+function redactUnsafeReason(value) {
+  return safeErrorCode(value) || 'unclassified_error';
+}
+
+function genericStatusReason(statusCode) {
+  const status = Number(statusCode);
+  if (Number.isInteger(status) && status >= 400 && status <= 599) return `unclassified_http_${status}`;
+  return 'unclassified_error';
+}
+
+function extractSafeErrorReason(body = {}, statusCode = null) {
+  const code = safeErrorCode(body?.code) || safeErrorCode(body?.error?.code);
+  if (code) return code;
   if (Array.isArray(body?.errors) && body.errors.length > 0) {
     const first = body.errors[0];
-    const msg = redactUnsafeReason(first?.msg || first?.message || 'validation_error');
-    const path = first?.path || first?.param;
-    if (path) {
-      return redactUnsafeReason(`validation:${path}:${msg}`);
-    }
-    return `validation:${msg}`;
+    const path = safeFieldPath(first?.path || first?.param);
+    return path ? `validation:${path}` : 'validation_error';
   }
-  if (body?.message) {
-    return redactUnsafeReason(body.message);
-  }
-  return 'unknown_error';
+  return genericStatusReason(statusCode);
+}
+
+function logMonitorFailure(event, fields) {
+  console.error(JSON.stringify({
+    source: 'payment-flow-monitor',
+    event,
+    route: fields.route || null,
+    statusCode: Number.isInteger(fields.statusCode) ? fields.statusCode : null,
+    errorReason: fields.errorReason || 'unclassified_error',
+    recorded: false
+  }));
 }
 
 function bucketKey(route, errorReason) {
@@ -225,39 +253,50 @@ async function fireAlert({
   const sourceReference = `${route}::${errorReason}`;
   const release = applicationRelease();
 
-  await openManualReviewItemImpl({
-    category,
-    severity,
-    entityType,
-    entityId: entityId ? String(entityId) : null,
-    title,
-    details: buildDetails({
-      route,
-      statusCode,
-      errorReason,
-      count,
-      windowMinutes,
+  try {
+    await openManualReviewItemImpl({
+      category,
+      severity,
+      entityType,
+      entityId: entityId ? String(entityId) : null,
+      title,
+      details: buildDetails({
+        route,
+        statusCode,
+        errorReason,
+        count,
+        windowMinutes,
+        immediate,
+        suggested,
+        release,
+        paymentContractVersion: PRODUCTION_PAYMENT_CONTRACT_VERSION
+      }),
+      provenance: {
+        source: 'payment_flow_monitor',
+        sourceReference
+      },
+      evidence: {
+        route,
+        statusCode,
+        errorCode: errorReason,
+        errorReason,
+        count,
+        windowMinutes,
+        immediate,
+        applicationRelease: release || null,
+        paymentContractVersion: PRODUCTION_PAYMENT_CONTRACT_VERSION
+      }
+    });
+  } catch {
+    logMonitorFailure('manual_review_record_failed', { route, statusCode, errorReason });
+    return {
+      alerted: false,
+      recorded: false,
       immediate,
-      suggested,
-      release,
-      paymentContractVersion: PRODUCTION_PAYMENT_CONTRACT_VERSION
-    }),
-    provenance: {
-      source: 'payment_flow_monitor',
-      sourceReference
-    },
-    evidence: {
-      route,
-      statusCode,
-      errorCode: errorReason,
-      errorReason,
-      count,
-      windowMinutes,
-      immediate,
-      applicationRelease: release || null,
-      paymentContractVersion: PRODUCTION_PAYMENT_CONTRACT_VERSION
-    }
-  });
+      classification,
+      pushDelivery: null
+    };
+  }
 
   let pushDelivery = null;
   try {
@@ -275,65 +314,83 @@ async function fireAlert({
         ? `payment_flow_immediate:${sourceReference}`
         : `payment_flow_threshold:${sourceReference}:${classification}`
     });
-  } catch (err) {
+  } catch {
     pushDelivery = {
       error: true,
-      deliveryOutcome: 'provider_failure',
-      message: err?.message ? String(err.message).slice(0, 200) : 'push_failed'
+      skipped: false,
+      deliveryOutcome: 'provider_failure'
     };
   }
 
-  return { alerted: true, immediate, classification, pushDelivery };
+  return { alerted: true, recorded: true, immediate, classification, pushDelivery };
+}
+
+async function dispatchAlert(bucket, timestampField, inFlightField, alert) {
+  if (bucket[inFlightField]) {
+    return { alerted: false, recorded: false, pending: true, classification: alert.classification };
+  }
+  if (bucket[timestampField] && Date.now() - bucket[timestampField] < WINDOW_MS) {
+    return { alerted: false, deduped: true, recorded: true, classification: alert.classification };
+  }
+  bucket[inFlightField] = true;
+  try {
+    const result = await fireAlert(alert);
+    if (result.recorded) bucket[timestampField] = Date.now();
+    return result;
+  } finally {
+    bucket[inFlightField] = false;
+  }
 }
 
 async function recordPaymentFlowOutcome({ route, statusCode, body = {} }) {
-  if (!shouldMonitorRoute(route) || statusCode < 400) {
-    return { alerted: false };
-  }
-
-  const errorReason = extractSafeErrorReason(body);
-  const classification = classifyPaymentFailure(statusCode, errorReason);
-  if (classification === 'ignore') {
-    return { alerted: false, classification };
-  }
-
-  const key = bucketKey(route, errorReason);
-  const now = Date.now();
-  const bucket = getOrResetBucket(key, now);
-  bucket.count += 1;
-  bucket.lastAt = now;
-
-  if (classification === 'immediate') {
-    if (bucket.lastImmediateAlertAt && now - bucket.lastImmediateAlertAt < WINDOW_MS) {
-      return { alerted: false, deduped: true, classification };
+  try {
+    if (!shouldMonitorRoute(route) || statusCode < 400) {
+      return { alerted: false };
     }
-    bucket.lastImmediateAlertAt = now;
-    return fireAlert({
+
+    const errorReason = extractSafeErrorReason(body, statusCode);
+    const classification = classifyPaymentFailure(statusCode, errorReason);
+    if (classification === 'ignore') {
+      return { alerted: false, classification };
+    }
+
+    const key = bucketKey(route, errorReason);
+    const now = Date.now();
+    const bucket = getOrResetBucket(key, now);
+    bucket.count += 1;
+    bucket.lastAt = now;
+
+    if (classification === 'immediate') {
+      return await dispatchAlert(bucket, 'lastImmediateAlertAt', 'immediateInFlight', {
+        route,
+        statusCode,
+        errorReason,
+        count: bucket.count,
+        immediate: true,
+        classification
+      });
+    }
+
+    const threshold = thresholdFor(classification);
+    if (bucket.count < threshold) {
+      return { alerted: false, classification };
+    }
+    return await dispatchAlert(bucket, 'lastThresholdAlertAt', 'thresholdInFlight', {
       route,
       statusCode,
       errorReason,
       count: bucket.count,
-      immediate: true,
+      immediate: false,
       classification
     });
+  } catch {
+    logMonitorFailure('payment_flow_monitor_failed', {
+      route,
+      statusCode,
+      errorReason: 'unclassified_error'
+    });
+    return { alerted: false, recorded: false, error: 'monitor_failed' };
   }
-
-  const threshold = thresholdFor(classification);
-  if (bucket.count < threshold) {
-    return { alerted: false, classification };
-  }
-  if (bucket.lastThresholdAlertAt && now - bucket.lastThresholdAlertAt < WINDOW_MS) {
-    return { alerted: false, deduped: true, classification };
-  }
-  bucket.lastThresholdAlertAt = now;
-  return fireAlert({
-    route,
-    statusCode,
-    errorReason,
-    count: bucket.count,
-    immediate: false,
-    classification
-  });
 }
 
 function attachPaymentFlowMonitor(res, route) {
@@ -352,7 +409,13 @@ function attachPaymentFlowMonitor(res, route) {
 
   res.json = function jsonWithMonitor(body) {
     if (pendingStatus >= 400) {
-      void recordPaymentFlowOutcome({ route, statusCode: pendingStatus, body });
+      recordPaymentFlowOutcome({ route, statusCode: pendingStatus, body }).catch(() => {
+        logMonitorFailure('payment_flow_monitor_unhandled', {
+          route,
+          statusCode: pendingStatus,
+          errorReason: 'unclassified_error'
+        });
+      });
     }
     return originalJson(body);
   };
@@ -364,22 +427,17 @@ async function notifyGiftVoucherWebhookActivationFailure({
   giftVoucherId = null
 }) {
   const route = '/stripe/webhook/gift-voucher-activation';
-  const errorReason = code ? String(code) : 'ACTIVATION_FAILED';
+  const errorReason = safeErrorCode(code) || 'ACTIVATION_FAILED';
   const key = bucketKey(route, errorReason);
   const now = Date.now();
   const bucket = getOrResetBucket(key, now);
-  if (bucket.lastImmediateAlertAt && now - bucket.lastImmediateAlertAt < WINDOW_MS) {
-    return { alerted: false, deduped: true };
-  }
-  bucket.lastImmediateAlertAt = now;
   bucket.count += 1;
   bucket.lastAt = now;
-
-  return fireAlert({
+  return dispatchAlert(bucket, 'lastImmediateAlertAt', 'immediateInFlight', {
     route,
     statusCode: 500,
     errorReason,
-    count: 1,
+    count: bucket.count,
     immediate: true,
     entityType: 'GiftVoucher',
     entityId: giftVoucherId,

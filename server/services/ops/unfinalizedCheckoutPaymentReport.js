@@ -134,6 +134,100 @@ function emptyCounts() {
   };
 }
 
+const SOURCE_REASONS = new Set(['stripe_unavailable', 'stripe_list_failed', 'result_cap', 'pagination_stopped']);
+
+function cleanSourceReason(reason) {
+  return SOURCE_REASONS.has(reason) ? reason : null;
+}
+
+function readListResult(result) {
+  if (Array.isArray(result)) {
+    return { items: result, available: true, complete: true, truncated: false, reason: null };
+  }
+  const items = Array.isArray(result?.items) ? result.items : [];
+  const available = result?.available !== false;
+  const reason = cleanSourceReason(result?.reason);
+  const truncated = result?.truncated === true || (available && result?.complete === false);
+  const complete = available && result?.complete !== false && !truncated;
+  return { items, available, complete, truncated, reason };
+}
+
+function sourceSummary(list) {
+  return {
+    available: list.available,
+    complete: list.complete,
+    truncated: list.truncated,
+    count: list.items.length,
+    reason: list.reason
+  };
+}
+
+async function paginateReadOnly(fetchPage, { pageSize = 200, maxItems = 5000 } = {}) {
+  const items = [];
+  let skip = 0;
+  while (items.length < maxItems) {
+    const remaining = maxItems - items.length;
+    const limit = Math.min(pageSize, remaining + 1);
+    const rows = await fetchPage({ skip, limit });
+    const page = Array.isArray(rows) ? rows : [];
+    if (page.length > remaining) {
+      items.push(...page.slice(0, remaining));
+      return { items, available: true, complete: false, truncated: true, reason: 'result_cap' };
+    }
+    items.push(...page);
+    if (page.length < limit) {
+      return { items, available: true, complete: true, truncated: false, reason: null };
+    }
+    skip += page.length;
+  }
+  return { items, available: true, complete: false, truncated: true, reason: 'result_cap' };
+}
+
+async function collectStripePaymentIntents(listPage, { since, until, pageSize = 100, maxItems = 2000 } = {}) {
+  const items = [];
+  let startingAfter = null;
+  const seenCursors = new Set();
+  const created = {
+    gte: Math.floor(since.getTime() / 1000),
+    lt: Math.floor(until.getTime() / 1000)
+  };
+  while (items.length < maxItems) {
+    const query = {
+      limit: Math.min(pageSize, maxItems - items.length),
+      created
+    };
+    if (startingAfter) query.starting_after = startingAfter;
+    const listed = await listPage(query);
+    const data = Array.isArray(listed?.data) ? listed.data : [];
+    for (const intent of data) {
+      if (items.length >= maxItems) break;
+      items.push({
+        id: intent?.id,
+        status: intent?.status,
+        created: intent?.created,
+        checkoutId: intent?.metadata?.checkoutId || intent?.checkoutId || null
+      });
+    }
+    const hasMore = listed?.has_more === true;
+    if (!hasMore || data.length === 0) {
+      return {
+        items,
+        available: true,
+        complete: !hasMore,
+        truncated: hasMore,
+        reason: hasMore ? 'pagination_stopped' : null
+      };
+    }
+    const lastId = data[data.length - 1]?.id;
+    if (!lastId || seenCursors.has(lastId)) {
+      return { items, available: true, complete: false, truncated: true, reason: 'pagination_stopped' };
+    }
+    seenCursors.add(lastId);
+    startingAfter = lastId;
+  }
+  return { items, available: true, complete: false, truncated: true, reason: 'result_cap' };
+}
+
 /**
  * @param {object} options
  * @param {string} options.since
@@ -148,13 +242,14 @@ async function buildUnfinalizedCheckoutPaymentReport(options = {}) {
   const until = parseUtcInstant(options.until, 'until');
   assertWindow(since, until);
 
-  const sessions = await options.checkoutSessionSource.listCreatedBetween({ since, until });
+  const sessions = readListResult(
+    await options.checkoutSessionSource.listCreatedBetween({ since, until })
+  );
   const paymentIntents = options.paymentIntentSource
-    ? await options.paymentIntentSource.listCreatedBetween({ since, until })
-    : [];
-
-  const sessionList = Array.isArray(sessions) ? sessions : [];
-  const intentList = Array.isArray(paymentIntents) ? paymentIntents : [];
+    ? readListResult(await options.paymentIntentSource.listCreatedBetween({ since, until }))
+    : readListResult({ items: [], available: false, complete: false, reason: 'stripe_unavailable' });
+  const sessionList = sessions.items;
+  const intentList = paymentIntents.items;
 
   const checkoutIds = new Set();
   const paymentIntentIds = new Set();
@@ -169,11 +264,11 @@ async function buildUnfinalizedCheckoutPaymentReport(options = {}) {
     if (pi) paymentIntentIds.add(pi);
   }
 
-  const bookings = await options.bookingSource.listByCheckoutOrPaymentIntent({
+  const bookings = readListResult(await options.bookingSource.listByCheckoutOrPaymentIntent({
     checkoutIds: [...checkoutIds],
     paymentIntentIds: [...paymentIntentIds]
-  });
-  const bookingList = Array.isArray(bookings) ? bookings : [];
+  }));
+  const bookingList = bookings.items;
 
   const finalizedCheckouts = new Set();
   const finalizedIntents = new Set();
@@ -239,11 +334,18 @@ async function buildUnfinalizedCheckoutPaymentReport(options = {}) {
   const counts = emptyCounts();
   for (const record of records) counts[record.classification] += 1;
 
+  const sources = {
+    checkoutSessions: sourceSummary(sessions),
+    paymentIntents: sourceSummary(paymentIntents),
+    bookings: sourceSummary(bookings)
+  };
   return {
     ok: true,
     mode: 'read_only',
     mutated: false,
     mutationImplemented: false,
+    complete: sources.checkoutSessions.complete && sources.paymentIntents.complete && sources.bookings.complete,
+    sources,
     window: { since: since.toISOString(), until: until.toISOString() },
     counts,
     records
@@ -255,5 +357,7 @@ module.exports = {
   CLASSIFICATIONS,
   classifyStripeStatus,
   assertReadOnly,
+  paginateReadOnly,
+  collectStripePaymentIntents,
   buildUnfinalizedCheckoutPaymentReport
 };
