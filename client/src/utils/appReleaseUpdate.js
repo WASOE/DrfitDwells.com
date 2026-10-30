@@ -6,6 +6,12 @@
 export const PAYMENT_FLOW_KEY = 'dd_payment_flow_active';
 export const SW_UPDATE_PENDING_KEY = 'dd_sw_update_pending';
 export const CHUNK_RECOVERY_KEY = 'dd_chunk_recovery_attempted';
+export const CHECKOUT_STALE_RECOVERY_KEY = 'dd_checkout_stale_recovery_attempted';
+
+const STALE_CLIENT_REASONS = new Set([
+  'stale_client_missing_v2',
+  'stale_client_missing_finalize_support'
+]);
 
 /** @type {((reload?: boolean) => Promise<void>) | null} */
 let pendingUpdateSW = null;
@@ -95,6 +101,43 @@ export function checkDeferredServiceWorkerUpdate(options = {}) {
     return { activated: false, reason: 'payment_active' };
   }
   return activatePendingServiceWorkerUpdate(pendingUpdateSW, { reload: true, storage });
+}
+
+/**
+ * One-shot recovery when checkout handshake reports a stale client bundle.
+ * Activates a waiting service worker when present, otherwise cache-bust reloads
+ * once. Never loops — a second attempt in the same session is refused.
+ *
+ * @param {{ ok?: boolean, reason?: string | null }} compat
+ * @param {{
+ *   storage?: Storage | null,
+ *   reload?: (url: string) => void,
+ *   locationHref?: string,
+ *   now?: number,
+ * }} [options]
+ */
+export function attemptCheckoutStaleClientRecovery(compat, options = {}) {
+  if (!compat || compat.ok) {
+    return { recovered: false, reason: 'compat_ok' };
+  }
+  if (!STALE_CLIENT_REASONS.has(compat.reason)) {
+    return { recovered: false, reason: 'not_stale_client' };
+  }
+
+  const storage = options.storage ?? (typeof sessionStorage !== 'undefined' ? sessionStorage : null);
+  if (storage?.getItem(CHECKOUT_STALE_RECOVERY_KEY) === '1') {
+    return { recovered: false, reason: 'already_attempted' };
+  }
+  storage?.setItem(CHECKOUT_STALE_RECOVERY_KEY, '1');
+
+  const result = attemptChunkLoadRecovery({
+    ...options,
+    storage
+  });
+  return {
+    ...result,
+    trigger: compat.reason
+  };
 }
 
 /**

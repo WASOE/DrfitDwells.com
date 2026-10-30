@@ -40,6 +40,7 @@ import {
   getClientCheckoutCapabilitySnapshot,
   customerMessageForCheckoutCapability
 } from '../utils/checkoutCapabilityHandshake';
+import { attemptCheckoutStaleClientRecovery } from '../utils/appReleaseUpdate';
 import { isCheckoutRecoveryUxEnabled } from '../utils/checkoutRecoveryUxFlags';
 import {
   readCheckoutRecoveryState,
@@ -1810,6 +1811,12 @@ const ConfirmBooking = () => {
           getClientCheckoutCapabilitySnapshot()
         );
         if (!compat.ok) {
+          if (compat.shouldReload) {
+            const recovery = attemptCheckoutStaleClientRecovery(compat);
+            if (recovery.recovered) {
+              return;
+            }
+          }
           setCheckoutInitError(customerMessageForCheckoutCapability(compat));
           return;
         }

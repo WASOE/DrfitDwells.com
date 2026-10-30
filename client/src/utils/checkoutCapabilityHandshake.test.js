@@ -46,13 +46,13 @@ describe('checkout capability handshake', () => {
     expect(result.shouldReload).toBe(false);
   });
 
-  it('keeps stale-client reasons without reloading', () => {
+  it('marks stale-client reasons as self-healable via one-shot reload', () => {
     const missingV2 = evaluateCheckoutCapabilityCompatibility(serverContract, {
       ...alignedClient,
       checkoutSessionV2: false
     });
     expect(missingV2.reason).toBe('stale_client_missing_v2');
-    expect(missingV2.shouldReload).toBe(false);
+    expect(missingV2.shouldReload).toBe(true);
 
     const legacy = evaluateCheckoutCapabilityCompatibility(serverContract, {
       checkoutSessionV2: false,
@@ -61,6 +61,7 @@ describe('checkout capability handshake', () => {
       paymentContractVersion: 'checkout-payment-v2-finalize-1'
     });
     expect(legacy.reason).toBe('stale_client_missing_finalize_support');
+    expect(legacy.shouldReload).toBe(true);
     expect(customerMessageForCheckoutCapability(legacy)).toMatch(/refresh once/i);
   });
 

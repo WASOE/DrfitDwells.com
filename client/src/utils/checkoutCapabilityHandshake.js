@@ -1,6 +1,7 @@
 /**
  * Release handshake: compare compiled client checkout flags with live API capabilities.
- * Advisory only — never force-reload (that caused customer-visible instability).
+ * Stale-client reasons set shouldReload so callers can attempt a one-shot SW/cache recovery.
+ * Server-side mismatches never request a reload (refresh cannot fix API config).
  */
 import { readPaymentContractCompiled } from './paymentContractCompiled';
 
@@ -17,7 +18,7 @@ export function getClientCheckoutCapabilitySnapshot() {
 
 /**
  * Returns { ok, reason, shouldReload }.
- * shouldReload is always false — callers must not auto-reload the tab.
+ * shouldReload is true only for stale_client_* (self-healable via SW/cache update).
  */
 export function evaluateCheckoutCapabilityCompatibility(
   serverCaps,
@@ -60,7 +61,7 @@ export function evaluateCheckoutCapabilityCompatibility(
       return {
         ok: false,
         reason: 'stale_client_missing_finalize_support',
-        shouldReload: false
+        shouldReload: true
       };
     }
   }
@@ -68,7 +69,7 @@ export function evaluateCheckoutCapabilityCompatibility(
     return {
       ok: false,
       reason: 'stale_client_missing_v2',
-      shouldReload: false
+      shouldReload: true
     };
   }
   return { ok: true, reason: null, shouldReload: false };
