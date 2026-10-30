@@ -18,8 +18,24 @@ function evaluate({ apps, previous = {}, logs = {}, health, now = Date.now() }) 
   if (apis.length !== 1 || !/^driftdwells-production-[a-f0-9]+$/.test(apis[0]?.name || '')) {
     alerts.push('PRODUCTION_API_PROCESS_COUNT_OR_NAME');
   }
-  const workers = active.filter(app => /worker|reconciler/.test(app.name));
-  if (workers.length !== 5) alerts.push('DEDICATED_WORKER_COUNT');
+  const REQUIRED_WORKER_ROLES = [
+    { id: 'confirmation', match: /confirmation-worker|runBookingConfirmationDeliveryWorker/i },
+    { id: 'hold-expiry', match: /accommodation-hold-expiry|runAccommodationCheckoutHoldExpiryWorker/i },
+    { id: 'split-payment-collection', match: /split-payment-collection|runSplitPaymentCollectionWorker/i },
+    { id: 'finalize', match: /finalize-worker|runCheckoutFinalizationWorker/i },
+    { id: 'paid-checkout-reconciler', match: /paid-checkout-reconciler|runPaidCheckoutReconciler/i }
+  ];
+  const workers = active.filter(app =>
+    app.name.startsWith('driftdwells') && !/\/server\.js$/.test(app.pm2_env.pm_exec_path || ''));
+  const workerPaths = new Set(workers.map(app => app.pm2_env.pm_exec_path));
+  if (!workers.length || workerPaths.size !== workers.length) {
+    alerts.push('DEDICATED_WORKER_TOPOLOGY');
+  }
+  for (const role of REQUIRED_WORKER_ROLES) {
+    const matches = workers.filter(app =>
+      role.match.test(`${app.name || ''}\0${app.pm2_env.pm_exec_path || ''}`));
+    if (matches.length !== 1) alerts.push(`REQUIRED_WORKER_ROLE:${role.id}`);
+  }
   if (!health) alerts.push('API_HEALTH_FAILED');
 
   for (const app of apps) {
