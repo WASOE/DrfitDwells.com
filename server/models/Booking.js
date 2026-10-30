@@ -666,6 +666,25 @@ const bookingSchema = new mongoose.Schema({
     type: Boolean,
     default: null
   },
+  /**
+   * Arrival Communications V2 automation state (PR2).
+   * scheduleGeneration fences concurrent schedule writers.
+   * communicationRevision is the durable correction identity (not a content hash).
+   */
+  arrivalCommsV2: {
+    type: new mongoose.Schema(
+      {
+        scheduleGeneration: { type: Number, default: 0, min: 0 },
+        communicationRevision: { type: Number, default: 0, min: 0 },
+        lastCommunicatedRevision: { type: Number, default: null },
+        lastCommunicatedStateKey: { type: String, trim: true, default: null },
+        coalesceUntil: { type: Date, default: null },
+        pendingCorrectionRevision: { type: Number, default: null }
+      },
+      { _id: false }
+    ),
+    default: undefined
+  },
   /** First-touch marketing params captured on the client (attribution / ads). */
   attribution: {
     type: new mongoose.Schema(

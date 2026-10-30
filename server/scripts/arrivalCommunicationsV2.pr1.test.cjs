@@ -152,9 +152,22 @@ async function insertBooking({
   return Booking.findById(_id).lean();
 }
 
+async function ensureArrivalDispatchIndexes() {
+  // dropDatabase() removes collections AND indexes. Mongoose autoIndex is not
+  // reliably on in this suite, so unique idempotencyKey must be re-applied or
+  // concurrent-send tests falsely allow duplicate SMTP.
+  await MessageDispatch.syncIndexes();
+  const idx = await MessageDispatch.collection.indexes();
+  const uniqueIdem = idx.find((i) => i.unique && i.key && i.key.idempotencyKey === 1);
+  if (!uniqueIdem) {
+    throw new Error('MessageDispatch unique idempotencyKey index missing after syncIndexes');
+  }
+}
+
 test.before(async () => {
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri(), { serverSelectionTimeoutMS: 10000 });
+  await ensureArrivalDispatchIndexes();
 
   const emailService = require('../services/emailService');
   const originalSend = emailService.sendEmail.bind(emailService);
@@ -179,6 +192,7 @@ test.beforeEach(async () => {
   sendEmailCalls = [];
   sendEmailImpl = null;
   await mongoose.connection.dropDatabase();
+  await ensureArrivalDispatchIndexes();
 });
 
 test('ARRIVAL_EMAIL_V2 defaults OFF and enables only on exact "1"', () => {
@@ -401,6 +415,13 @@ test('concurrent initial sends: only one SMTP under unique idempotency key', asy
     const cabinId = await insertCabin();
     const booking = await insertBooking({ cabinId });
 
+    // Prove the unique index is present for this assertion (not a silent flake).
+    const idx = await MessageDispatch.collection.indexes();
+    assert.ok(
+      idx.some((i) => i.unique && i.key && i.key.idempotencyKey === 1),
+      'unique idempotencyKey index required for concurrency proof'
+    );
+
     let releaseSend;
     const gate = new Promise((resolve) => {
       releaseSend = resolve;
@@ -418,12 +439,87 @@ test('concurrent initial sends: only one SMTP under unique idempotency key', asy
     releaseSend();
     const [r1, r2] = await Promise.all([p1, p2]);
 
-    assert.ok([r1, r2].some((r) => r.ok));
+    assert.ok([r1, r2].some((r) => r.ok && r.status === 'accepted'));
+    assert.ok([r1, r2].some((r) => r.duplicate === true || r.status === 'pending' || r.ok));
     assert.equal(entered, 1);
     const rows = await MessageDispatch.find({
       idempotencyKey: buildInitialArrivalIdempotencyKey(booking._id)
     }).lean();
     assert.equal(rows.length, 1);
+    assert.equal(rows[0].status, 'accepted');
+  });
+});
+
+test('concurrent stress: 20 parallel initial sends → exactly one SMTP and one row', async () => {
+  await withFlag('1', async () => {
+    const { sendArrivalEmailV2 } = require('../services/messaging/arrival/arrivalEmailSendService');
+    const cabinId = await insertCabin();
+    const booking = await insertBooking({ cabinId });
+
+    let entered = 0;
+    sendEmailImpl = async () => {
+      entered += 1;
+      await new Promise((r) => setImmediate(r));
+      return {
+        success: true,
+        method: 'sent',
+        messageId: `stress_${entered}_${Date.now()}`
+      };
+    };
+
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () => sendArrivalEmailV2({ booking, kind: 'send' }))
+    );
+    const accepted = results.filter((r) => r.ok && r.status === 'accepted' && !r.duplicate);
+    const refusedOrDup = results.filter(
+      (r) => r.duplicate || r.status === 'pending' || (r.ok && r.duplicate)
+    );
+    assert.equal(entered, 1, `SMTP entered=${entered}`);
+    assert.equal(accepted.length, 1);
+    assert.ok(refusedOrDup.length + accepted.length === 20 || results.every((r) => r.ok || r.duplicate || r.status === 'pending'));
+    const rows = await MessageDispatch.find({
+      idempotencyKey: buildInitialArrivalIdempotencyKey(booking._id)
+    }).lean();
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].status, 'accepted');
+  });
+});
+
+test('SMTP claim still single-flight when unique index is absent (defense in depth)', async () => {
+  await withFlag('1', async () => {
+    const { sendArrivalEmailV2 } = require('../services/messaging/arrival/arrivalEmailSendService');
+    const cabinId = await insertCabin();
+    const booking = await insertBooking({ cabinId });
+
+    // Reproduce the Phase-7B failure mode: drop indexes so duplicate reserved
+    // rows can exist, then race many sends with no stagger. Lowest-_id claim
+    // must still allow only one provider call.
+    await MessageDispatch.collection.dropIndexes();
+    const idx = await MessageDispatch.collection.indexes();
+    assert.equal(
+      idx.some((i) => i.unique && i.key && i.key.idempotencyKey === 1),
+      false
+    );
+
+    let entered = 0;
+    sendEmailImpl = async () => {
+      entered += 1;
+      await new Promise((r) => setImmediate(r));
+      return { success: true, method: 'sent', messageId: `noindex_${entered}` };
+    };
+
+    const results = await Promise.all(
+      Array.from({ length: 12 }, () => sendArrivalEmailV2({ booking, kind: 'send' }))
+    );
+    assert.equal(entered, 1, `entered=${entered} results=${results.map((r) => r.status || r.code).join(',')}`);
+    assert.ok(results.some((r) => r.ok && r.status === 'accepted'));
+    const rowCount = await MessageDispatch.countDocuments({
+      idempotencyKey: buildInitialArrivalIdempotencyKey(booking._id)
+    });
+    assert.ok(rowCount >= 2, 'expected duplicate reserved rows without unique index');
+    // Restore indexes for subsequent tests (must clear duplicate keys first).
+    await mongoose.connection.dropDatabase();
+    await ensureArrivalDispatchIndexes();
   });
 });
 

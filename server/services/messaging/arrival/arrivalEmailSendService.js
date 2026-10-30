@@ -7,7 +7,8 @@ const { classifyEmailDeliveryResult } = require('../../email/emailDeliveryResult
 const { composeArrivalGuestEmail } = require('./arrivalEmailComposer');
 const {
   buildInitialArrivalIdempotencyKey,
-  buildResendArrivalIdempotencyKey
+  buildResendArrivalIdempotencyKey,
+  buildCorrectionArrivalIdempotencyKey
 } = require('./arrivalDispatchIdentity');
 const { isArrivalEmailV2Enabled } = require('./arrivalFeatureFlags');
 
@@ -178,7 +179,15 @@ async function markUncertainFailure(dispatchId, composed, errorPayload) {
  * - Accepted: return durable duplicate without re-SMTP.
  * - Pending in-flight: refuse until reconciled.
  */
-async function sendArrivalEmailV2({ booking, kind = 'send', operationId = null, actor = {} }) {
+async function sendArrivalEmailV2({
+  booking,
+  kind = 'send',
+  operationId = null,
+  revision = null,
+  actor = {},
+  scheduledMessageJobId = null,
+  lifecycleSource = null
+}) {
   if (!isArrivalEmailV2Enabled()) {
     const err = new Error('Arrival email V2 is disabled');
     err.code = 'ARRIVAL_EMAIL_V2_DISABLED';
@@ -209,17 +218,41 @@ async function sendArrivalEmailV2({ booking, kind = 'send', operationId = null, 
   }
 
   const isResend = kind === 'resend';
+  const isCorrection = kind === 'correction';
+  if (kind !== 'send' && kind !== 'resend' && kind !== 'correction') {
+    const err = new Error(`Unsupported arrival send kind: ${kind}`);
+    err.code = 'validation';
+    err.status = 400;
+    throw err;
+  }
+
   let idempotencyKey;
   try {
-    idempotencyKey = isResend
-      ? buildResendArrivalIdempotencyKey(booking._id, operationId)
-      : buildInitialArrivalIdempotencyKey(booking._id);
+    if (isResend) {
+      idempotencyKey = buildResendArrivalIdempotencyKey(booking._id, operationId);
+    } else if (isCorrection) {
+      idempotencyKey = buildCorrectionArrivalIdempotencyKey(booking._id, revision);
+    } else {
+      idempotencyKey = buildInitialArrivalIdempotencyKey(booking._id);
+    }
   } catch (e) {
     const err = new Error(e.message || 'Invalid arrival idempotency input');
     err.code = 'validation';
     err.status = 400;
     throw err;
   }
+
+  const resolvedLifecycleSource =
+    lifecycleSource ||
+    (isResend ? 'manual_resend' : isCorrection ? 'automatic' : 'manual_first_send');
+  const resolvedRuleKey = isResend
+    ? 'manual_arrival_resend'
+    : isCorrection
+      ? 'arrival_correction'
+      : scheduledMessageJobId
+        ? 'arrival_instructions_auto'
+        : 'manual_arrival_send';
+  const triggerKind = isResend ? 'resend' : isCorrection ? 'correction' : 'send';
 
   let existing = await MessageDispatch.findOne({ idempotencyKey }).lean();
   if (existing) {
@@ -281,10 +314,11 @@ async function sendArrivalEmailV2({ booking, kind = 'send', operationId = null, 
       }
       return finishSendWithDispatch({
         dispatchId: reclaimed._id,
+        idempotencyKey,
         booking,
         composed: null,
         recipient,
-        isResend,
+        triggerKind,
         actor,
         recompose: true
       });
@@ -301,20 +335,19 @@ async function sendArrivalEmailV2({ booking, kind = 'send', operationId = null, 
   }
 
   const dispatchId = new mongoose.Types.ObjectId();
-  const lifecycleSource = isResend ? 'manual_resend' : 'manual_first_send';
 
   try {
     await MessageDispatch.create({
       _id: dispatchId,
-      scheduledMessageJobId: null,
+      scheduledMessageJobId: scheduledMessageJobId || null,
       bookingId: booking._id,
-      ruleKey: isResend ? 'manual_arrival_resend' : 'manual_arrival_send',
+      ruleKey: resolvedRuleKey,
       templateKey: composed.templateKey,
       templateVersion: composed.templateVersion,
       channel: 'email',
       recipient,
       recipientChannelId: null,
-      lifecycleSource,
+      lifecycleSource: resolvedLifecycleSource,
       status: 'pending',
       providerName: 'postmark',
       providerMessageId: null,
@@ -328,7 +361,9 @@ async function sendArrivalEmailV2({ booking, kind = 'send', operationId = null, 
         retriable: true,
         propertyKind: composed.propertyKind,
         propertyName: composed.propertyName,
-        arrivalEmailV2: true
+        arrivalEmailV2: true,
+        kind,
+        revision: isCorrection ? Number(revision) : null
       }
     });
   } catch (err) {
@@ -352,10 +387,11 @@ async function sendArrivalEmailV2({ booking, kind = 'send', operationId = null, 
           if (reclaimed) {
             return finishSendWithDispatch({
               dispatchId: reclaimed._id,
+              idempotencyKey,
               booking,
               composed,
               recipient,
-              isResend,
+              triggerKind,
               actor,
               recompose: false
             });
@@ -369,21 +405,169 @@ async function sendArrivalEmailV2({ booking, kind = 'send', operationId = null, 
 
   return finishSendWithDispatch({
     dispatchId,
+    idempotencyKey,
     booking,
     composed,
     recipient,
-    isResend,
+    triggerKind,
     actor,
     recompose: false
   });
 }
 
+async function markSupersededDuplicateReservation(dispatchId, winningDispatchId) {
+  await MessageDispatch.updateOne(
+    { _id: dispatchId, status: 'pending' },
+    {
+      $set: {
+        status: 'failed',
+        error: {
+          code: 'superseded_duplicate_reservation',
+          message: 'Another dispatch row owns SMTP for this idempotency key'
+        },
+        details: {
+          shadow: false,
+          phase: 'superseded_duplicate',
+          retriable: false,
+          reconciliation: 'not_needed',
+          arrivalEmailV2: true,
+          winningDispatchId: winningDispatchId ? String(winningDispatchId) : null
+        }
+      }
+    }
+  );
+}
+
+/**
+ * Atomically claim the durable dispatch identity for a single provider call.
+ *
+ * Primary guarantee: unique idempotencyKey index → one reserved row.
+ * Defense if that index is missing:
+ *   1) If any row for the key is already accepted or phase=sending, losers
+ *      supersede (do not let remaining reserved twins become a new winner).
+ *   2) Otherwise only the lowest _id among reserved|reclaimed may claim.
+ */
+async function claimDispatchForSmtp({ dispatchId, idempotencyKey, body, recipient }) {
+  const activeWinner = await MessageDispatch.findOne({
+    idempotencyKey,
+    $or: [
+      { status: 'accepted' },
+      { status: 'pending', 'details.phase': 'sending' }
+    ]
+  })
+    .sort({ _id: 1 })
+    .select({ _id: 1, status: 1, details: 1 })
+    .lean();
+
+  if (activeWinner) {
+    if (String(activeWinner._id) !== String(dispatchId)) {
+      await markSupersededDuplicateReservation(dispatchId, activeWinner._id);
+      return { ok: false, reason: 'superseded', claimed: null };
+    }
+    // Our row is already sending/accepted — do not enter provider again.
+    return { ok: false, reason: 'claim_lost' };
+  }
+
+  const canonical = await MessageDispatch.findOne({
+    idempotencyKey,
+    status: 'pending',
+    'details.phase': { $in: ['reserved', 'reclaimed'] }
+  })
+    .sort({ _id: 1 })
+    .select({ _id: 1 })
+    .lean();
+
+  if (!canonical) {
+    return { ok: false, reason: 'claim_lost' };
+  }
+
+  if (String(canonical._id) !== String(dispatchId)) {
+    await markSupersededDuplicateReservation(dispatchId, canonical._id);
+    return { ok: false, reason: 'superseded', claimed: null };
+  }
+
+  const claimed = await MessageDispatch.findOneAndUpdate(
+    {
+      _id: dispatchId,
+      idempotencyKey,
+      status: 'pending',
+      'details.phase': { $in: ['reserved', 'reclaimed'] }
+    },
+    {
+      $set: {
+        templateKey: body.templateKey,
+        templateVersion: body.templateVersion,
+        recipient,
+        'details.phase': 'sending',
+        'details.sendingAt': new Date(),
+        'details.propertyKind': body.propertyKind,
+        'details.propertyName': body.propertyName,
+        'details.arrivalEmailV2': true,
+        'details.retriable': true,
+        'details.smtpClaimedByDispatchId': String(dispatchId)
+      }
+    },
+    { new: true }
+  );
+
+  if (!claimed) {
+    return { ok: false, reason: 'claim_lost' };
+  }
+
+  // Re-check: a twin may have been accepted, or another sender may have
+  // claimed a different reserved row during our window. Only proceed if we
+  // are still the sole sending/accepted row (lowest _id among actives).
+  const activeAfter = await MessageDispatch.find({
+    idempotencyKey,
+    $or: [
+      { status: 'accepted' },
+      { status: 'pending', 'details.phase': 'sending' }
+    ]
+  })
+    .sort({ _id: 1 })
+    .select({ _id: 1 })
+    .lean();
+
+  if (
+    activeAfter.length !== 1 ||
+    String(activeAfter[0]._id) !== String(dispatchId)
+  ) {
+    // Roll back our claim if we are not the sole active owner.
+    if (String(activeAfter[0]?._id) !== String(dispatchId)) {
+      await MessageDispatch.updateOne(
+        { _id: dispatchId, status: 'pending', 'details.phase': 'sending' },
+        {
+          $set: {
+            status: 'failed',
+            error: {
+              code: 'superseded_duplicate_reservation',
+              message: 'Lost SMTP ownership after claim race'
+            },
+            details: {
+              shadow: false,
+              phase: 'superseded_duplicate',
+              retriable: false,
+              reconciliation: 'not_needed',
+              arrivalEmailV2: true,
+              winningDispatchId: activeAfter[0] ? String(activeAfter[0]._id) : null
+            }
+          }
+        }
+      );
+    }
+    return { ok: false, reason: 'superseded', claimed: null };
+  }
+
+  return { ok: true, claimed };
+}
+
 async function finishSendWithDispatch({
   dispatchId,
+  idempotencyKey,
   booking,
   composed,
   recipient,
-  isResend,
+  triggerKind,
   actor,
   recompose
 }) {
@@ -414,22 +598,38 @@ async function finishSendWithDispatch({
     }
   }
 
-  await MessageDispatch.updateOne(
-    { _id: dispatchId, status: 'pending' },
-    {
-      $set: {
-        templateKey: body.templateKey,
-        templateVersion: body.templateVersion,
-        recipient,
-        'details.phase': 'sending',
-        'details.sendingAt': new Date(),
-        'details.propertyKind': body.propertyKind,
-        'details.propertyName': body.propertyName,
-        'details.arrivalEmailV2': true,
-        'details.retriable': true
-      }
+  const claim = await claimDispatchForSmtp({
+    dispatchId,
+    idempotencyKey,
+    body,
+    recipient
+  });
+  if (!claim.ok) {
+    const winner = await MessageDispatch.findOne({ idempotencyKey }).lean();
+    if (winner?.status === 'accepted') return mapExistingDispatch(winner);
+    if (winner?.status === 'pending') {
+      return {
+        ok: false,
+        duplicate: true,
+        uncertain: true,
+        dispatchId: String(winner._id),
+        status: 'pending',
+        code: 'dispatch_pending_requires_review',
+        message: 'A previous send attempt is still pending review; refusing duplicate SMTP'
+      };
     }
-  );
+    if (winner) return mapExistingDispatch(winner);
+    return {
+      ok: false,
+      duplicate: true,
+      dispatchId: String(dispatchId),
+      status: 'failed',
+      code: 'smtp_claim_lost',
+      message: 'Lost SMTP claim for arrival dispatch identity'
+    };
+  }
+
+  const sendDispatchId = claim.claimed._id;
 
   let sendResult;
   let enteredProviderCall = false;
@@ -440,13 +640,13 @@ async function finishSendWithDispatch({
       subject: body.subject,
       html: body.html,
       text: body.text,
-      trigger: `arrival_v2:${isResend ? 'resend' : 'send'}:${String(dispatchId)}`,
+      trigger: `arrival_v2:${triggerKind || 'send'}:${String(sendDispatchId)}`,
       bookingId: String(booking._id),
       skipIdempotencyWindow: true,
       omitBodyFromLogs: true,
-      postmarkTag: `dispatch:${String(dispatchId)}`,
+      postmarkTag: `dispatch:${String(sendDispatchId)}`,
       postmarkMetadata: {
-        dispatchId: String(dispatchId),
+        dispatchId: String(sendDispatchId),
         bookingId: String(booking._id),
         templateKey: body.templateKey,
         channel: 'email',
@@ -455,20 +655,20 @@ async function finishSendWithDispatch({
     });
   } catch (err) {
     // Ambiguous: provider may have accepted before the client saw the error.
-    await markUncertainFailure(dispatchId, body, {
+    await markUncertainFailure(sendDispatchId, body, {
       code: 'provider_outcome_uncertain',
       message: err?.message || String(err)
     });
     await openArrivalDispatchManualReview({
       bookingId: booking._id,
-      dispatchId,
+      dispatchId: sendDispatchId,
       code: 'provider_outcome_uncertain',
       message: err?.message || 'Provider outcome uncertain after send started'
     });
     return {
       ok: false,
       uncertain: true,
-      dispatchId: String(dispatchId),
+      dispatchId: String(sendDispatchId),
       status: 'failed',
       code: 'provider_outcome_uncertain',
       message: err?.message || 'Provider outcome uncertain after send started'
@@ -480,7 +680,7 @@ async function finishSendWithDispatch({
   if (classified.authoritativeDelivered) {
     const providerMessageId = classified.providerMessageId || sendResult.messageId || null;
     await MessageDispatch.updateOne(
-      { _id: dispatchId },
+      { _id: sendDispatchId },
       {
         $set: {
           status: 'accepted',
@@ -502,7 +702,7 @@ async function finishSendWithDispatch({
     return {
       ok: true,
       duplicate: false,
-      dispatchId: String(dispatchId),
+      dispatchId: String(sendDispatchId),
       status: 'accepted',
       providerMessageId,
       messageId: providerMessageId,
@@ -520,14 +720,14 @@ async function finishSendWithDispatch({
       classified.reason === 'malformed_or_null_result');
 
   if (uncertain) {
-    await markUncertainFailure(dispatchId, body, {
+    await markUncertainFailure(sendDispatchId, body, {
       code: 'provider_outcome_uncertain',
       message: classified.reason || sendResult?.error || 'Arrival email outcome uncertain',
       method: classified.method || sendResult?.method || null
     });
     await openArrivalDispatchManualReview({
       bookingId: booking._id,
-      dispatchId,
+      dispatchId: sendDispatchId,
       code: 'provider_outcome_uncertain',
       message: classified.reason || 'Arrival email outcome uncertain after provider call'
     });
@@ -535,7 +735,7 @@ async function finishSendWithDispatch({
       ok: false,
       duplicate: false,
       uncertain: true,
-      dispatchId: String(dispatchId),
+      dispatchId: String(sendDispatchId),
       status: 'failed',
       code: 'provider_outcome_uncertain',
       message: classified.reason || 'Arrival email outcome uncertain after provider call',
@@ -545,11 +745,11 @@ async function finishSendWithDispatch({
   }
 
   // Definitive non-delivery (logged / unavailable) is reclaimable; other failures need review.
-  const retriable = await markDefinitiveFailure(dispatchId, body, classified, sendResult);
+  const retriable = await markDefinitiveFailure(sendDispatchId, body, classified, sendResult);
   if (!retriable) {
     await openArrivalDispatchManualReview({
       bookingId: booking._id,
-      dispatchId,
+      dispatchId: sendDispatchId,
       code: classified.classification || 'send_failed',
       message: classified.reason || 'Arrival email was not accepted by the provider'
     });
@@ -559,7 +759,7 @@ async function finishSendWithDispatch({
     duplicate: false,
     uncertain: !retriable,
     retriable,
-    dispatchId: String(dispatchId),
+    dispatchId: String(sendDispatchId),
     status: 'failed',
     code: classified.classification || classified.reason || 'send_failed',
     message: classified.reason || 'Arrival email was not accepted by the provider',

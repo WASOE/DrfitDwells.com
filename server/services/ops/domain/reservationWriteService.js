@@ -90,6 +90,26 @@ function notifyMessageOrchestratorSafely(method, args) {
       })
     );
   }
+  // PR2: arrival automation is independent of MESSAGE_ORCHESTRATOR_ENABLED.
+  if (args?.bookingId) {
+    notifyArrivalAutomationSafely(args.bookingId, method);
+  }
+}
+
+/** PR2: Arrival automation sync — independent of MESSAGE_ORCHESTRATOR_ENABLED. */
+function notifyArrivalAutomationSafely(bookingId, reason) {
+  try {
+    const { fireAndForgetSync } = require('../../messaging/arrival/arrivalAutomationScheduler');
+    fireAndForgetSync(bookingId, reason);
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        source: 'arrival-automation-v2',
+        phase: 'notify_require_error',
+        error: err?.message || String(err)
+      })
+    );
+  }
 }
 
 function scheduleOpsPushSafely(method, args) {

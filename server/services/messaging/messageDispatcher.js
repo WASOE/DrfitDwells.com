@@ -1114,6 +1114,33 @@ async function processClaimedJob(jobId, options = {}) {
 }
 
 async function processClaimedJobInner({ job, now }) {
+  // PR2 isolation: V2-owned allowlisted jobs never run through the GMA
+  // dispatcher. Legacy GMA jobs for the same ruleKey (no V2 payload, automation
+  // flag OFF) keep the historical dispatcher path for dormant/test coverage.
+  try {
+    const {
+      isArrivalAutomationRuleKey,
+      isArrivalAutomationAuthorized
+    } = require('./arrival/arrivalFeatureFlags');
+    const v2Owned =
+      isArrivalAutomationRuleKey(job.ruleKey) &&
+      (isArrivalAutomationAuthorized() || job.payloadSnapshot?.arrivalAutomationV2 === true);
+    if (v2Owned) {
+      await transitionClaimedJob({
+        jobId: job._id,
+        $set: {
+          status: 'cancelled',
+          lastError: 'arrival_automation_owned_rule',
+          cancelReason: 'arrival_automation_owned_rule',
+          cancelActor: 'message-dispatcher'
+        }
+      });
+      return { ran: true, terminal: 'cancelled', reason: 'arrival_automation_owned_rule' };
+    }
+  } catch (err) {
+    // If flags module fails to load, fall through — safer than crashing the tick.
+  }
+
   // Resolve rule (live, current row — stale snapshots not re-honored here;
   // the spec treats `ruleVersionAtSchedule` as informational in V1).
   const rule = await MessageAutomationRule.findOne({ ruleKey: job.ruleKey }).lean();

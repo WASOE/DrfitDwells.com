@@ -186,6 +186,35 @@ async function sendArrivalInstructions({ bookingId, kind = 'send', ctx = {} }) {
     );
   }
 
+  // PR2: baseline automation state after a *newly accepted* initial manual
+  // send only. Never baseline on durable-idempotency replays — that would
+  // reset lastCommunicatedRevision to 0 and could hide a pending correction.
+  if (kind === 'send' && sendResult.status === 'accepted' && !sendResult.duplicate) {
+    try {
+      const { resolveArrivalStayContext } = require('../../messaging/arrival/arrivalStayResolver');
+      const {
+        buildArrivalStateKey
+      } = require('../../messaging/arrival/arrivalCommunicationRevision');
+      const { markInitialBaseline } = require('../../messaging/arrival/arrivalAutomationScheduler');
+      const stay = await resolveArrivalStayContext(booking);
+      if (stay.ok) {
+        await markInitialBaseline({
+          bookingId: booking._id,
+          stateKey: buildArrivalStateKey(booking, stay.propertyKind)
+        });
+      }
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          source: 'arrival-automation-v2',
+          phase: 'manual_send_baseline_failed',
+          bookingId: String(booking._id),
+          error: err?.message || String(err)
+        })
+      );
+    }
+  }
+
   rememberResult(key, result);
   return result;
 }

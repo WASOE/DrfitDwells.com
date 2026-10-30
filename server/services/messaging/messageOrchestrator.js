@@ -250,8 +250,26 @@ async function createJobIdempotent({ booking, rule, scheduledForUtc, scheduledFo
 async function scheduleAllApplicableRules({ booking, propertyKind, now = new Date() }) {
   const rules = await loadEnabledRules();
   const summary = { evaluated: rules.length, created: 0, duplicates: 0, skipped: {} };
+  let arrivalAutomationOwns = false;
+  let isArrivalRule = () => false;
+  try {
+    const {
+      isArrivalAutomationAuthorized,
+      isArrivalAutomationRuleKey
+    } = require('./arrival/arrivalFeatureFlags');
+    arrivalAutomationOwns = isArrivalAutomationAuthorized();
+    isArrivalRule = isArrivalAutomationRuleKey;
+  } catch (_) {
+    arrivalAutomationOwns = false;
+  }
 
   for (const rule of rules) {
+    // PR2: allowlisted arrival rules are owned by arrivalAutomationScheduler
+    // when ARRIVAL_AUTOMATION_V2 is authorized — never dual-schedule via GMA.
+    if (arrivalAutomationOwns && isArrivalRule(rule.ruleKey)) {
+      summary.skipped.arrival_automation_v2 = (summary.skipped.arrival_automation_v2 || 0) + 1;
+      continue;
+    }
     const applies = ruleApplicableTo(rule, booking, propertyKind);
     if (!applies.ok) {
       summary.skipped[applies.reason] = (summary.skipped[applies.reason] || 0) + 1;
@@ -289,11 +307,27 @@ async function scheduleAllApplicableRules({ booking, propertyKind, now = new Dat
 }
 
 async function cancelFutureJobsForBooking({ bookingId, reason, actor = 'orchestrator', now = new Date() }) {
+  // PR2: when arrival automation owns allowlisted rules, GMA hooks must not
+  // cancel those jobs. While automation is OFF, preserve historical GMA cancel
+  // behaviour (including dormant arrival rule keys used by existing tests).
+  let excludeArrivalKeys = false;
+  let arrivalRuleKeys = [];
+  try {
+    const flags = require('./arrival/arrivalFeatureFlags');
+    excludeArrivalKeys = flags.isArrivalAutomationAuthorized();
+    arrivalRuleKeys = flags.ARRIVAL_AUTOMATION_RULE_KEYS || [];
+  } catch (_) {
+    excludeArrivalKeys = false;
+    arrivalRuleKeys = [];
+  }
   const res = await ScheduledMessageJob.updateMany(
     {
       bookingId,
       status: { $in: CANCELABLE_STATUSES },
-      scheduledFor: { $gt: now }
+      scheduledFor: { $gt: now },
+      ...(excludeArrivalKeys && arrivalRuleKeys.length
+        ? { ruleKey: { $nin: arrivalRuleKeys } }
+        : {})
     },
     {
       $set: {
@@ -382,7 +416,20 @@ async function schedulePassForBooking(booking) {
 // Public hook entrypoints (called by the six surfaces).
 // ---------------------------------------------------------------------------
 
+function notifyArrivalAutomationSafely(bookingId, reason) {
+  try {
+    const { fireAndForgetSync } = require('./arrival/arrivalAutomationScheduler');
+    fireAndForgetSync(bookingId, reason);
+  } catch (err) {
+    logLine('error', 'arrival_automation_notify_failed', {
+      bookingId: bookingId ? String(bookingId) : null,
+      error: err?.message || String(err)
+    });
+  }
+}
+
 async function notifyBookingCreated({ bookingId }) {
+  notifyArrivalAutomationSafely(bookingId, 'notifyBookingCreated');
   return runHook('notifyBookingCreated', async () => {
     const booking = await loadBooking(bookingId);
     if (!booking) return { skipped: 'booking_missing' };
@@ -391,6 +438,7 @@ async function notifyBookingCreated({ bookingId }) {
 }
 
 async function notifyManualReservationCreated({ bookingId }) {
+  notifyArrivalAutomationSafely(bookingId, 'notifyManualReservationCreated');
   return runHook('notifyManualReservationCreated', async () => {
     const booking = await loadBooking(bookingId);
     if (!booking) return { skipped: 'booking_missing' };
@@ -399,6 +447,7 @@ async function notifyManualReservationCreated({ bookingId }) {
 }
 
 async function notifyBookingStatusChange({ bookingId, previousStatus, nextStatus, transitionKind }) {
+  notifyArrivalAutomationSafely(bookingId, 'notifyBookingStatusChange');
   return runHook('notifyBookingStatusChange', async () => {
     const booking = await loadBooking(bookingId);
     if (!booking) return { skipped: 'booking_missing' };
@@ -423,6 +472,7 @@ async function notifyBookingStatusChange({ bookingId, previousStatus, nextStatus
 }
 
 async function notifyReservationDatesChanged({ bookingId, previousCheckIn, previousCheckOut }) {
+  notifyArrivalAutomationSafely(bookingId, 'notifyReservationDatesChanged');
   return runHook('notifyReservationDatesChanged', async () => {
     const booking = await loadBooking(bookingId);
     if (!booking) return { skipped: 'booking_missing' };
@@ -453,6 +503,7 @@ async function notifyReservationDatesChanged({ bookingId, previousCheckIn, previ
 }
 
 async function notifyReservationReassigned({ bookingId, previousCabinId }) {
+  notifyArrivalAutomationSafely(bookingId, 'notifyReservationReassigned');
   return runHook('notifyReservationReassigned', async () => {
     const booking = await loadBooking(bookingId);
     if (!booking) return { skipped: 'booking_missing' };

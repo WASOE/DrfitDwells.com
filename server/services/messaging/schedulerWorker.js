@@ -210,7 +210,60 @@ async function tickOnce({ now = new Date() } = {}) {
           // Batch 8: if the dispatcher flag is on, hand the claim to the
           // dispatcher. Lazy `require` avoids a circular import and keeps
           // the Batch 6 claim-only path import-free when the flag is off.
-          if (isDispatcherEnabled()) {
+          // Arrival Automation V2: allowlisted rules dispatch via PR1 send
+          // path when ARRIVAL_AUTOMATION_V2=1, without enabling full GMA
+          // MESSAGE_DISPATCHER (avoids WhatsApp / unrelated rules).
+          let handedOff = false;
+          try {
+            const {
+              isArrivalAutomationAuthorized,
+              isArrivalAutomationRuleKey
+            } = require('./arrival/arrivalFeatureFlags');
+            // V2-owned allowlisted jobs never enter the GMA/WhatsApp dispatcher.
+            // - Automation ON → PR1 adapter.
+            // - Automation OFF but payload marked V2 → cancel (never GMA).
+            // - Legacy GMA jobs for the same ruleKey (no V2 marker) keep the
+            //   historical claim/dispatcher path while automation remains OFF.
+            const isAllowlisted = isArrivalAutomationRuleKey(claimed.ruleKey);
+            const isV2Payload = claimed.payloadSnapshot?.arrivalAutomationV2 === true;
+            if (isAllowlisted && isArrivalAutomationAuthorized()) {
+              handedOff = true;
+              const { processArrivalAutomationJob } = require('./arrival/arrivalAutoDispatchAdapter');
+              const arrivalPromise = Promise.resolve()
+                .then(() => processArrivalAutomationJob(claimed._id))
+                .catch((err) => logLine('error', 'arrival_auto_dispatch_failed', {
+                  _id: String(claimed._id),
+                  error: err?.message || String(err)
+                }));
+              if (awaitDispatcherForTests) {
+                await arrivalPromise;
+              }
+            } else if (isAllowlisted && isV2Payload) {
+              handedOff = true;
+              await ScheduledMessageJob.updateOne(
+                { _id: claimed._id, status: 'claimed' },
+                {
+                  $set: {
+                    status: 'cancelled',
+                    cancelReason: 'arrival_automation_v2_disabled',
+                    cancelActor: 'scheduler-worker',
+                    lastError: 'arrival_automation_v2_disabled'
+                  }
+                }
+              );
+              logLine('log', 'arrival_job_cancelled_automation_off', {
+                _id: String(claimed._id),
+                ruleKey: claimed.ruleKey
+              });
+            }
+          } catch (err) {
+            logLine('error', 'arrival_auto_dispatch_require_failed', {
+              _id: String(claimed._id),
+              error: err?.message || String(err)
+            });
+          }
+
+          if (!handedOff && isDispatcherEnabled()) {
             try {
               const { processClaimedJob } = require('./messageDispatcher');
               const dispatchPromise = Promise.resolve()
