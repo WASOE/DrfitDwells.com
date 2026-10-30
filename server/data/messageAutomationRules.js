@@ -4,8 +4,8 @@
  * V1 automation rule definitions seeded by Batch 5.
  *
  * All 5 rules ship inert: `enabled: false, mode: 'shadow'`.
- *   - 2 guest-facing rules (Cabin / Valley): T-72h before check-in,
- *     Sofia 17:00, channel `whatsapp_first_email_fallback`,
+ *   - 2 guest-facing arrival rules (Cabin / Valley): T-72h before check-in,
+ *     Sofia 17:00, channel `email_only` (Arrival Automation V2 — no WhatsApp),
  *     `requirePaidIfStripe: true`, `requiredBookingStatus: ['confirmed']`.
  *   - 3 OPS alert rules (email-only, audience `ops`, propertyScope `any`):
  *     `requiredBookingStatus: ['confirmed', 'in_house']`.
@@ -28,8 +28,9 @@ const arrivalInstructionsPreArrivalCabinRule = Object.freeze({
   triggerType: 'time_relative_to_check_in',
   triggerConfig: { offsetHours: -72, sofiaHour: GUEST_SOFIA_HOUR, sofiaMinute: 0 },
   propertyScope: 'cabin',
-  channelStrategy: 'whatsapp_first_email_fallback',
-  templateKeyByChannel: { whatsapp: 'arrival_3d_the_cabin', email: 'arrival_3d_the_cabin' },
+  // PR2: email-only. WhatsApp must never shadow-succeed for arrival V2.
+  channelStrategy: 'email_only',
+  templateKeyByChannel: { email: 'arrival_v2_cabin' },
   requiresConsent: 'transactional',
   enabled: false,
   mode: 'shadow',
@@ -76,8 +77,9 @@ const arrivalInstructionsPreArrivalValleyRule = Object.freeze({
   triggerType: 'time_relative_to_check_in',
   triggerConfig: { offsetHours: -72, sofiaHour: GUEST_SOFIA_HOUR, sofiaMinute: 0 },
   propertyScope: 'valley',
-  channelStrategy: 'whatsapp_first_email_fallback',
-  templateKeyByChannel: { whatsapp: 'arrival_3d_the_valley', email: 'arrival_3d_the_valley' },
+  // PR2: email-only. WhatsApp must never shadow-succeed for arrival V2.
+  channelStrategy: 'email_only',
+  templateKeyByChannel: { email: 'arrival_v2_valley' },
   requiresConsent: 'transactional',
   enabled: false,
   mode: 'shadow',

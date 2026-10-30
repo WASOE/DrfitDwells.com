@@ -5,6 +5,10 @@
  *
  * initial is booking-scoped (not date-scoped) so a date change after an
  * accepted initial cannot mint a second "initial" send.
+ *
+ * Corrections use a durable booking-scoped communication revision number
+ * (not a content fingerprint) so A→B→A→B can notify each necessary
+ * transition while repeated processing of the same revision is a no-op.
  */
 
 function assertBookingId(bookingId) {
@@ -26,10 +30,16 @@ function buildResendArrivalIdempotencyKey(bookingId, operationId) {
   return `arrival_v2:email:${assertBookingId(bookingId)}:resend:${op}`;
 }
 
-function buildCorrectionArrivalIdempotencyKey(bookingId, materialFingerprint) {
-  const fp = materialFingerprint != null ? String(materialFingerprint).trim() : '';
-  if (!fp) throw new Error('arrivalDispatchIdentity: missing materialFingerprint');
-  return `arrival_v2:email:${assertBookingId(bookingId)}:correction:${fp}`;
+/**
+ * @param {string|import('mongoose').Types.ObjectId} bookingId
+ * @param {number|string} revision — integer >= 1
+ */
+function buildCorrectionArrivalIdempotencyKey(bookingId, revision) {
+  const rev = typeof revision === 'number' ? revision : Number.parseInt(String(revision), 10);
+  if (!Number.isInteger(rev) || rev < 1) {
+    throw new Error('arrivalDispatchIdentity: correction revision must be an integer >= 1');
+  }
+  return `arrival_v2:email:${assertBookingId(bookingId)}:correction:rev:${rev}`;
 }
 
 module.exports = {

@@ -216,13 +216,14 @@ test('buildAllRules returns exactly 11 rows, all inert', () => {
   }
 });
 
-test('preparation guest rules: T-72h whatsapp_first_email_fallback', () => {
+test('preparation guest rules: T-72h email_only (Arrival Automation V2)', () => {
   const rows = buildAllRules().filter((r) => PREPARATION_GUEST_RULE_KEYS.includes(r.ruleKey));
   assert.equal(rows.length, 2);
   for (const row of rows) {
     assert.equal(row.requirePaidIfStripe, true);
     assert.deepEqual(row.requiredBookingStatus, ['confirmed']);
-    assert.equal(row.channelStrategy, 'whatsapp_first_email_fallback');
+    // PR2: allowlisted arrival rules are email-only (no WhatsApp).
+    assert.equal(row.channelStrategy, 'email_only');
     assert.equal(row.audience, 'guest');
     assert.deepEqual(row.triggerConfig, { offsetHours: -72, sofiaHour: 17, sofiaMinute: 0 });
   }
