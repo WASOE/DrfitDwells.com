@@ -9,6 +9,8 @@ const {
   API_RUNTIME_FLAGS,
   DEDICATED_WORKER_FLAGS,
   DISABLED_API_FLAGS,
+  REQUIRED_WORKER_ROLES,
+  assertWorkerTopology,
   validateTopology,
   verifyFiles,
   verifyOwnershipRelease,
@@ -21,15 +23,58 @@ const {
   linkSharedUploads
 } = require('./deploy-api-guarded.cjs');
 
-function fixture() {
+const REQUIRED_WORKER_FIXTURES = [
+  {
+    name: 'driftdwells-confirmation-worker',
+    exec: '/release/server/scripts/runBookingConfirmationDeliveryWorker.js'
+  },
+  {
+    name: 'driftdwells-accommodation-hold-expiry-worker',
+    exec: '/release/server/scripts/runAccommodationCheckoutHoldExpiryWorker.js'
+  },
+  {
+    name: 'driftdwells-split-payment-collection-worker',
+    exec: '/release/server/scripts/runSplitPaymentCollectionWorker.js'
+  },
+  {
+    name: 'driftdwells-finalize-worker',
+    exec: '/release/server/scripts/runCheckoutFinalizationWorker.js'
+  },
+  {
+    name: 'driftdwells-paid-checkout-reconciler-9731d3e',
+    exec: '/release/server/scripts/runPaidCheckoutReconciler.js'
+  }
+];
+
+function fixture(extraWorkers = []) {
   const apps = [31, 40, 41].map((id, index) => ({
     name: `driftdwells-${index ? 'probe' : 'production'}-abcdef`,
     pid: id + 1000,
     pm2_env: { pm_id: id, pm_exec_path: '/release/server/server.js', status: 'online' }
   }));
-  for (let id = 1; id <= 5; id++) apps.push({
-    name: `driftdwells-worker-${id}`, pid: id + 100,
-    pm2_env: { pm_id: id, pm_exec_path: `/release/server/worker${id}.js`, status: 'online', restart_time: 0 }
+  REQUIRED_WORKER_FIXTURES.forEach((worker, index) => {
+    apps.push({
+      name: worker.name,
+      pid: index + 100,
+      pm2_env: {
+        pm_id: index + 1,
+        pm_exec_path: worker.exec,
+        status: 'online',
+        restart_time: 0
+      }
+    });
+  });
+  extraWorkers.forEach((worker, index) => {
+    apps.push({
+      name: worker.name,
+      pid: index + 200,
+      pm2_env: {
+        pm_id: index + 20,
+        pm_exec_path: worker.exec,
+        status: 'online',
+        restart_time: 0
+      }
+    });
   });
   return {
     apps, currentId: 31, candidateId: 40, rollbackId: 41,
@@ -39,8 +84,33 @@ function fixture() {
       [id, { PORT: String(5000 + i), NODE_ENV: 'production', API_HOST: i ? '127.0.0.1' : '0.0.0.0' }]))
   };
 }
-test('valid isolated probes preserve the five dedicated workers', () => {
+test('valid isolated probes preserve required dedicated workers', () => {
+  assert.equal(REQUIRED_WORKER_ROLES.length, 5);
   assert.equal(validateTopology(fixture()).length, 5);
+});
+
+test('additional healthy workers are allowed when required roles remain unique', () => {
+  const f = fixture([{
+    name: 'driftdwells-build-enquiry-email-worker',
+    exec: '/release/server/scripts/runBuildEnquiryEmailWorker.js'
+  }]);
+  assert.equal(validateTopology(f).length, 6);
+  assert.equal(assertWorkerTopology(f.apps).length, 6);
+});
+
+test('missing or duplicated required worker roles are refused', () => {
+  const missing = fixture();
+  missing.apps = missing.apps.filter(app => app.name !== 'driftdwells-finalize-worker');
+  assert.throws(() => validateTopology(missing), /finalize/);
+  const duplicated = fixture([{
+    name: 'driftdwells-finalize-worker-copy',
+    exec: '/release/server/scripts/runCheckoutFinalizationWorker-copy.js'
+  }]);
+  // name+path both match finalize role via finalize-worker substring
+  duplicated.apps[duplicated.apps.length - 1].name = 'driftdwells-finalize-worker-extra';
+  duplicated.apps[duplicated.apps.length - 1].pm2_env.pm_exec_path =
+    '/other/runCheckoutFinalizationWorker.js';
+  assert.throws(() => validateTopology(duplicated), /finalize/);
 });
 
 test('REBOOK enablement is explicit and only applies to the verified candidate start', () => {
@@ -115,7 +185,7 @@ const unsafe = {
   publicCandidate: f => { f.listeners[5001][0].host = '0.0.0.0'; },
   sharedName: f => { f.apps[0].name = 'driftdwells'; },
   stoppedWorker: f => { f.apps[3].pm2_env.status = 'stopped'; },
-  duplicateWorker: f => { f.apps[3].pm2_env.pm_exec_path = f.apps[4].pm2_env.pm_exec_path; },
+  duplicateWorker: f => { f.apps[4].pm2_env.pm_exec_path = f.apps[5].pm2_env.pm_exec_path; },
   duplicateIDs: f => { f.rollbackId = f.candidateId; },
   wrongPort: f => { f.environments[40].PORT = '5000'; }
 };
@@ -290,7 +360,17 @@ test('HTTP gates are GET-only, validate DB health and require existing Ops auth'
     seen.push(url);
     let body = { success: true };
     if (url.includes('/api/health')) body = { status: 'OK', database: 'connected' };
-    if (url.includes('checkout-capabilities')) body = { success: true, contractVersion: 2, applicationRelease: 'a'.repeat(40) };
+    if (url.includes('checkout-capabilities')) {
+      body = {
+        success: true,
+        contractVersion: 2,
+        paymentContractVersion: 'checkout-payment-v2-finalize-1',
+        checkoutSessionV2: true,
+        finalizeIntentPersist: true,
+        finalizeIntentRequiredForPi: true,
+        applicationRelease: 'a'.repeat(40)
+      };
+    }
     if (url.includes('/api/availability')) body.data = { cabins: [] };
     if (url.includes('/api/ops/session')) body.data = { authenticated: true };
     if (url.includes('/api/ops/readiness/summary')) body.data = { readinessByModule: {} };
@@ -302,6 +382,34 @@ test('HTTP gates are GET-only, validate DB health and require existing Ops auth'
     assert.equal(seen.length, 6);
     assert.ok(seen.every(url => !url.includes('/quote')));
     await assert.rejects(checkHttp(5001, 'test-token', 'b'.repeat(40)), /endpoint gate/);
+  } finally {
+    global.fetch = original;
+  }
+});
+
+test('HTTP capabilities gate refuses missing finalize flags', async () => {
+  const original = global.fetch;
+  global.fetch = async (url) => {
+    let body = { success: true };
+    if (url.includes('/api/health')) body = { status: 'OK', database: 'connected' };
+    if (url.includes('checkout-capabilities')) {
+      body = {
+        success: true,
+        contractVersion: 2,
+        paymentContractVersion: 'checkout-payment-v2-finalize-1',
+        checkoutSessionV2: true,
+        finalizeIntentPersist: false,
+        finalizeIntentRequiredForPi: true,
+        applicationRelease: 'a'.repeat(40)
+      };
+    }
+    if (url.includes('/api/availability')) body.data = { cabins: [] };
+    if (url.includes('/api/ops/session')) body.data = { authenticated: true };
+    if (url.includes('/api/ops/readiness/summary')) body.data = { readinessByModule: {} };
+    return { ok: true, json: async () => body };
+  };
+  try {
+    await assert.rejects(checkHttp(5001, 'test-token', 'a'.repeat(40)), /endpoint gate/);
   } finally {
     global.fetch = original;
   }

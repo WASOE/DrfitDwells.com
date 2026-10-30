@@ -246,15 +246,18 @@ shared `driftdwells` name or restart/reload all PM2 processes.
    Ops readiness, and remove only the probe they created if a gate fails.
    They never save PM2 or touch the live API.
 4. Run `node deploy-api-guarded.cjs <plan>` for read-only preflight. It requires
-   exactly the three specified API processes, five distinct online dedicated
-   workers, single PID-owned listeners, matching SHA/file hashes/script/cwd
+   exactly the three specified API processes, all required dedicated worker
+   roles online with distinct exec paths (additional healthy workers are
+   allowed), single PID-owned listeners, matching SHA/file hashes/script/cwd
    (including `/proc` cwd), production environments, disabled API runtimes,
-   loopback probes and authenticated endpoint checks. Probes must have all nine
-   flags off; the live API must have the five API-runtime scheduler flags off
-   and may inherit the four dedicated-worker flags from the shared `.env` only
-   because release verification rejects any API entrypoint that starts those
-   workers. Unverifiable listener
-   ownership, conflicting processes or any gate failure blocks cutover.
+   loopback probes and authenticated endpoint checks. Required worker roles are
+   confirmation, hold-expiry, split-payment-collection, finalize, and
+   paid-checkout-reconciler. Probes must have all nine flags off; the live API
+   must have the five API-runtime scheduler flags off and may inherit the four
+   dedicated-worker flags from the shared `.env` only because release
+   verification rejects any API entrypoint that starts those workers.
+   Unverifiable listener ownership, conflicting processes or any gate failure
+   blocks cutover.
 5. Only with operational authorization, add `--cutover`. A fresh protected
    PM2/environment/plan checkpoint is created first. Only the specified
    numeric API/probe IDs are stopped. One uniquely named production API is
@@ -262,10 +265,10 @@ shared `driftdwells` name or restart/reload all PM2 processes.
    exact release handshake, one listener, DB-connected health, configuration,
    checkout capabilities, public availability, Ops session/readiness and
    critical errors, then repeats these gates for two minutes and confirms
-   that all five worker PIDs/restart counts are unchanged. These are GET-only
-   checks: no bookings, persistent quote endpoint, confirmations or payments
-   are created. Application-specific policy/quote regressions remain required
-   before packaging.
+   that all dedicated worker PIDs/restart counts from preflight are unchanged.
+   These are GET-only checks: no bookings, persistent quote endpoint,
+   confirmations or payments are created. Application-specific policy/quote
+   regressions remain required before packaging.
 6. Only after these gates pass are stopped API/probe entries removed and
    `pm2 save` run, with the dump set to 0600. A critical failure instead stops
    the newly created API by numeric ID and starts the independently verified
@@ -275,7 +278,7 @@ shared `driftdwells` name or restart/reload all PM2 processes.
 
 The guarded command deliberately requires a fresh plan and existing Ops
 authorization; it does not guess a production target, provision indexes,
-run migrations, modify payment states or change the five dedicated workers.
+run migrations, modify payment states or change the dedicated workers.
 Keep `/home/illoc/.pm2/dump.pm2` private and verify the enabled
 `pm2-illoc.service` uses that PM2 home and `pm2 resurrect`. Do not test reboot
 recovery by rebooting production without separate approval.

@@ -19,6 +19,31 @@ const DEDICATED_WORKER_FLAGS = [
 const DISABLED_API_FLAGS = [...API_RUNTIME_FLAGS, ...DEDICATED_WORKER_FLAGS];
 const DEDICATED_WORKER_START =
   /\b(?:start|run)(?:SplitPaymentCollection|BookingConfirmationDelivery|CheckoutFinalization|AccommodationCheckoutHoldExpiry)\w*\s*\(/;
+// Required dedicated worker roles. Additional online workers (for example
+// build-enquiry email) are allowed; missing, offline, or duplicate required
+// roles are not. Matched against PM2 name and exec path.
+const REQUIRED_WORKER_ROLES = [
+  {
+    id: 'confirmation',
+    match: /confirmation-worker|runBookingConfirmationDeliveryWorker/i
+  },
+  {
+    id: 'hold-expiry',
+    match: /accommodation-hold-expiry|runAccommodationCheckoutHoldExpiryWorker/i
+  },
+  {
+    id: 'split-payment-collection',
+    match: /split-payment-collection|runSplitPaymentCollectionWorker/i
+  },
+  {
+    id: 'finalize',
+    match: /finalize-worker|runCheckoutFinalizationWorker/i
+  },
+  {
+    id: 'paid-checkout-reconciler',
+    match: /paid-checkout-reconciler|runPaidCheckoutReconciler/i
+  }
+];
 const fail = message => { throw new Error(message); };
 const { ensureReleaseUploadsLink } = require(path.join(__dirname, 'ensure-shared-uploads.cjs'));
 const SHARED_UPLOADS = '/home/illoc/shared/driftdwells-uploads';
@@ -26,6 +51,30 @@ const pm2 = args => execFileSync('pm2', args, { encoding: 'utf8', maxBuffer: 16 
 const getApps = () => JSON.parse(pm2(['jlist']));
 const isApi = app => /\/server\.js$/.test(app.pm2_env.pm_exec_path || '');
 const isWorker = app => app.name.startsWith('driftdwells') && !isApi(app);
+
+function workerIdentity(app) {
+  return `${app.name || ''}\0${app.pm2_env?.pm_exec_path || ''}`;
+}
+
+function assertWorkerTopology(apps) {
+  const workers = apps.filter(isWorker);
+  if (!workers.length) fail('Dedicated worker topology differs');
+  if (workers.some(app => app.pm2_env.status !== 'online')) {
+    fail('Dedicated worker topology differs');
+  }
+  if (new Set(workers.map(app => app.pm2_env.pm_exec_path)).size !== workers.length) {
+    fail('Dedicated worker topology differs');
+  }
+  for (const role of REQUIRED_WORKER_ROLES) {
+    const matches = workers.filter(app => role.match.test(workerIdentity(app)));
+    if (matches.length !== 1) fail(`Required worker role missing or duplicated: ${role.id}`);
+  }
+  return workers.map(app => ({
+    id: app.pm2_env.pm_id,
+    pid: app.pid,
+    restarts: app.pm2_env.restart_time
+  }));
+}
 
 function lstatOrNull(target) {
   try { return fs.lstatSync(target); }
@@ -166,9 +215,7 @@ function validateTopology({ apps, currentId, candidateId, rollbackId, listeners,
   if (apis.length !== 3 || apis.some(app => !selected.includes(app.pm2_env.pm_id))) {
     fail('Unexpected or duplicate API process');
   }
-  const workers = apps.filter(isWorker);
-  if (workers.length !== 5 || workers.some(app => app.pm2_env.status !== 'online') ||
-      new Set(workers.map(app => app.pm2_env.pm_exec_path)).size !== 5) fail('Dedicated worker topology differs');
+  const workers = assertWorkerTopology(apps);
   for (const [id, port] of [[currentId, 5000], [candidateId, 5001], [rollbackId, 5002]]) {
     const app = apis.find(item => item.pm2_env.pm_id === id);
     const env = environments[id];
@@ -186,7 +233,7 @@ function validateTopology({ apps, currentId, candidateId, rollbackId, listeners,
     }
     if (port === 5000 && !/^driftdwells-production-[a-f0-9]+$/.test(app.name)) fail('Production API name is not unique');
   }
-  return workers.map(app => ({ id: app.pm2_env.pm_id, pid: app.pid, restarts: app.pm2_env.restart_time }));
+  return workers;
 }
 
 async function cutover(io, context) {
@@ -251,6 +298,10 @@ async function checkHttp(port, token, expectedSha = null) {
     ['/api/bookings/config', body => body.success === true],
     ['/api/bookings/checkout-capabilities', body =>
       body.success === true && body.contractVersion === 2 &&
+      body.paymentContractVersion === 'checkout-payment-v2-finalize-1' &&
+      body.checkoutSessionV2 === true &&
+      body.finalizeIntentPersist === true &&
+      body.finalizeIntentRequiredForPi === true &&
       (!expectedSha || body.applicationRelease === expectedSha)],
     [`/api/availability?checkIn=${checkIn}&checkOut=${checkOut}&adults=2&children=0`,
       body => body.success === true && Array.isArray(body.data?.cabins)],
@@ -281,9 +332,7 @@ async function startProbe(plan, role) {
   if (!current || current.pm2_env.status !== 'online' || live.length !== 1 || live[0].pid !== current.pid) {
     fail('Production listener baseline is unsafe');
   }
-  if (apps.filter(isWorker).length !== 5 || apps.filter(isWorker).some(app => app.pm2_env.status !== 'online')) {
-    fail('Worker baseline is unsafe');
-  }
+  assertWorkerTopology(apps);
   const port = role === 'candidate' ? 5001 : 5002;
   if (listeners(port).length) fail('Probe port already in use');
   if (!process.env.OPS_VERIFY_TOKEN) fail('Existing authorized Ops token required');
@@ -501,6 +550,8 @@ module.exports = {
   API_RUNTIME_FLAGS,
   DEDICATED_WORKER_FLAGS,
   DISABLED_API_FLAGS,
+  REQUIRED_WORKER_ROLES,
+  assertWorkerTopology,
   verifyFiles,
   verifyOwnershipRelease,
   countRebookOwnershipState,

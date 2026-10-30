@@ -6,31 +6,81 @@ const os = require('node:os');
 const path = require('node:path');
 const { evaluate, readIncrement } = require('./monitor.cjs');
 
-const apps = Array.from({ length: 6 }, (_, id) => ({
-  name: id ? `driftdwells-worker-${id}` : 'driftdwells-production-a0a4d1a',
-  pid: 100 + id,
-  pm2_env: {
-    pm_id: id, PORT: '5000', pm_exec_path: id ? '/server/worker.js' : '/server/server.js',
-    status: 'online', restart_time: 0
+const requiredWorkers = [
+  {
+    name: 'driftdwells-confirmation-worker',
+    exec: '/server/scripts/runBookingConfirmationDeliveryWorker.js'
+  },
+  {
+    name: 'driftdwells-accommodation-hold-expiry-worker',
+    exec: '/server/scripts/runAccommodationCheckoutHoldExpiryWorker.js'
+  },
+  {
+    name: 'driftdwells-split-payment-collection-worker',
+    exec: '/server/scripts/runSplitPaymentCollectionWorker.js'
+  },
+  {
+    name: 'driftdwells-finalize-worker',
+    exec: '/server/scripts/runCheckoutFinalizationWorker.js'
+  },
+  {
+    name: 'driftdwells-paid-checkout-reconciler-9731d3e',
+    exec: '/server/scripts/runPaidCheckoutReconciler.js'
+  },
+  {
+    name: 'driftdwells-build-enquiry-email-worker',
+    exec: '/server/scripts/runBuildEnquiryEmailWorker.js'
   }
-}));
+];
+
+const apps = [
+  {
+    name: 'driftdwells-production-a0a4d1a',
+    pid: 100,
+    pm2_env: {
+      pm_id: 0,
+      PORT: '5000',
+      pm_exec_path: '/server/server.js',
+      status: 'online',
+      restart_time: 0
+    }
+  },
+  ...requiredWorkers.map((worker, id) => ({
+    name: worker.name,
+    pid: 101 + id,
+    pm2_env: {
+      pm_id: id + 1,
+      PORT: '5000',
+      pm_exec_path: worker.exec,
+      status: 'online',
+      restart_time: 0
+    }
+  }))
+];
 const input = { apps, health: true, now: 60_000 };
 
-test('healthy baseline and unchanged processes do not alert', () => {
+test('healthy baseline with six workers does not alert on obsolete exact count', () => {
   const first = evaluate(input);
   assert.deepEqual(first.alerts, []);
   assert.deepEqual(evaluate({ ...input, now: 120_000, previous: first.state }).alerts, []);
 });
-test('restarts, disappeared workers, duplicate APIs, and health failure alert', () => {
+test('restarts, disappeared workers, missing roles, duplicate APIs, and health failure alert', () => {
   const previous = evaluate(input).state;
   const changed = structuredClone(apps);
   changed[0].pm2_env.restart_time++;
   changed[0].pid++;
-  changed.pop();
-  const result = evaluate({ ...input, apps: changed, previous, health: false });
-  for (const alert of ['PM2_RESTART:0', 'PROCESS_DISAPPEARED:5', 'DEDICATED_WORKER_COUNT', 'API_HEALTH_FAILED']) {
-    assert.ok(result.alerts.includes(alert));
+  changed.pop(); // remove optional build-enquiry worker; still healthy on roles
+  const withoutOptional = evaluate({ ...input, apps: changed, previous, health: false });
+  for (const alert of ['PM2_RESTART:0', 'PROCESS_DISAPPEARED:6', 'API_HEALTH_FAILED']) {
+    assert.ok(withoutOptional.alerts.includes(alert), alert);
   }
+  assert.ok(!withoutOptional.alerts.includes('DEDICATED_WORKER_COUNT'));
+  assert.ok(!withoutOptional.alerts.some(alert => alert.startsWith('REQUIRED_WORKER_ROLE:')));
+
+  const missingFinalize = structuredClone(apps).filter(app => app.name !== 'driftdwells-finalize-worker');
+  const missing = evaluate({ ...input, apps: missingFinalize });
+  assert.ok(missing.alerts.includes('REQUIRED_WORKER_ROLE:finalize'));
+
   assert.ok(evaluate({ ...input, apps: [...apps, apps[0]] }).alerts.includes('PRODUCTION_API_PROCESS_COUNT_OR_NAME'));
 });
 test('repeated errors and rapid growth alert; old events expire', () => {
