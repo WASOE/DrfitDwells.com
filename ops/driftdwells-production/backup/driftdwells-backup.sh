@@ -7,6 +7,8 @@ set -euo pipefail
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=read-mongodb-uri.sh
 source "${SCRIPT_DIR}/read-mongodb-uri.sh"
+# shellcheck source=uploads-archive-members.lib.sh
+source "${SCRIPT_DIR}/uploads-archive-members.lib.sh"
 
 readonly APP="/home/illoc/apps/driftdwells-booking-portal"
 readonly BACKUP_ROOT="/home/illoc/backups/driftdwells"
@@ -139,7 +141,9 @@ main() {
   if ! non_empty_file "$uploads_file"; then
     die "uploads backup file missing or empty: $uploads_file"
   fi
-  if ! tar -tzf "$uploads_file" | grep -q '^uploads/.'; then
+  # Do not use grep -q here: under pipefail it SIGPIPEs tar on the first match
+  # and falsely fails valid archives. See uploads-archive-members.lib.sh.
+  if ! uploads_archive_has_members "$uploads_file"; then
     die "uploads archive has no file members under uploads/"
   fi
 

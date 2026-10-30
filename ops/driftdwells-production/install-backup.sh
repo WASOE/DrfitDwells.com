@@ -35,7 +35,7 @@ main() {
     die "ops backup directory not found: ${OPS}/backup"
   fi
 
-  for script in read-mongodb-uri.sh driftdwells-backup.sh driftdwells-restore-verify.sh; do
+  for script in read-mongodb-uri.sh uploads-archive-members.lib.sh driftdwells-backup.sh driftdwells-restore-verify.sh; do
     if [[ ! -f "${OPS}/backup/${script}" ]]; then
       die "missing source script: ${OPS}/backup/${script}"
     fi
@@ -49,12 +49,14 @@ main() {
   mkdir -p "$BIN" "${HOME}/backups/driftdwells/manual"
 
   install_script "${OPS}/backup/read-mongodb-uri.sh" "${BIN}/read-mongodb-uri.sh"
+  install_script "${OPS}/backup/uploads-archive-members.lib.sh" "${BIN}/uploads-archive-members.lib.sh"
   install_script "${OPS}/backup/driftdwells-backup.sh" "${BIN}/driftdwells-backup.sh"
   install_script "${OPS}/backup/driftdwells-restore-verify.sh" "${BIN}/driftdwells-restore-verify.sh"
   install_script "${OPS}/ensure-shared-uploads.cjs" "${BIN}/ensure-shared-uploads.cjs"
   install_script "${OPS}/deploy-api-guarded.cjs" "${BIN}/driftdwells-deploy-api-guarded.cjs"
 
   log "installed ${BIN}/read-mongodb-uri.sh"
+  log "installed ${BIN}/uploads-archive-members.lib.sh"
   log "installed ${BIN}/driftdwells-backup.sh"
   log "installed ${BIN}/driftdwells-restore-verify.sh"
   log "installed ${BIN}/ensure-shared-uploads.cjs"
