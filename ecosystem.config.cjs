@@ -125,6 +125,49 @@ module.exports = {
         // Keep 0 until cutover: enable explicitly after indexes + SMTP verify.
         BUILD_ENQUIRY_EMAIL_WORKER_ENABLED: '0'
       }
+    },
+    {
+      // Dedicated Arrival Automation V2 worker (PR2).
+      // Keep MESSAGE_SCHEDULER_WORKER_ENABLED=0 until owner-approved staff test
+      // or guest enablement. API process must keep scheduler + dispatcher off.
+      // Staff test: set EMAIL_ALLOWLIST to jose@driftdwells.com and start with
+      // MESSAGE_SCHEDULER_WORKER_ENABLED=1 via pm2 env override — never flip
+      // shared server/.env scheduler flag for the API.
+      name: 'driftdwells-arrival-automation-worker',
+      cwd: __dirname,
+      script: 'server/scripts/runArrivalAutomationWorker.js',
+      interpreter: 'node',
+      instances: 1,
+      exec_mode: 'fork',
+      autorestart: true,
+      // 78 = permanent config refusal (do not thrash).
+      stop_exit_codes: [0, 78],
+      restart_delay: 10000,
+      exp_backoff_restart_delay: 1000,
+      max_restarts: 10,
+      min_uptime: '10s',
+      kill_timeout: 15000,
+      env: {
+        NODE_ENV: 'development',
+        ARRIVAL_EMAIL_V2: '1',
+        ARRIVAL_AUTOMATION_V2: '1',
+        ARRIVAL_AUTOMATION_WORKER_MODE: '1',
+        MESSAGE_SCHEDULER_WORKER_ENABLED: '0',
+        MESSAGE_DISPATCHER_ENABLED: '0',
+        MESSAGE_ORCHESTRATOR_ENABLED: '0',
+        ARRIVAL_AUTOMATION_WORKER_EMAIL_ALLOWLIST: 'jose@driftdwells.com'
+      },
+      env_production: {
+        NODE_ENV: 'production',
+        ARRIVAL_EMAIL_V2: '1',
+        ARRIVAL_AUTOMATION_V2: '1',
+        ARRIVAL_AUTOMATION_WORKER_MODE: '1',
+        // Disabled until explicit staff-test / guest cutover.
+        MESSAGE_SCHEDULER_WORKER_ENABLED: '0',
+        MESSAGE_DISPATCHER_ENABLED: '0',
+        MESSAGE_ORCHESTRATOR_ENABLED: '0',
+        ARRIVAL_AUTOMATION_WORKER_EMAIL_ALLOWLIST: 'jose@driftdwells.com'
+      }
     }
   ]
 };

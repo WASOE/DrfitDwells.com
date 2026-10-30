@@ -63,10 +63,17 @@ async function processArrivalAutomationJob(jobOrId, options = {}) {
   }
 
   const now = options.now || new Date();
-  let job =
-    jobOrId && typeof jobOrId === 'object' && jobOrId._id
-      ? jobOrId
-      : await ScheduledMessageJob.findById(jobOrId).lean();
+  // Mongoose/BSON ObjectId is typeof 'object' and has a truthy `_id` (itself).
+  // Never treat a bare ObjectId/string as a job document.
+  const looksLikeJobDoc =
+    jobOrId &&
+    typeof jobOrId === 'object' &&
+    jobOrId._id != null &&
+    jobOrId.ruleKey != null &&
+    !(jobOrId instanceof mongoose.Types.ObjectId);
+  let job = looksLikeJobDoc
+    ? jobOrId
+    : await ScheduledMessageJob.findById(jobOrId).lean();
 
   if (!job) return { ran: true, missing: true };
   if (!isArrivalAutomationRuleKey(job.ruleKey)) {
