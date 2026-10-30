@@ -1,19 +1,17 @@
 const Booking = require('../../../models/Booking');
-const Cabin = require('../../../models/Cabin');
-const EmailEvent = require('../../../models/EmailEvent');
 const { requirePermission, ACTIONS } = require('../../permissionService');
 const { appendAuditEvent } = require('../../auditWriter');
 const { buildIdempotencyKey, getRememberedResult, rememberResult } = require('../../idempotencyService');
-const emailService = require('../../emailService');
 const { createDomainError } = require('./errors');
+const { isArrivalEmailV2Enabled } = require('../../messaging/arrival/arrivalFeatureFlags');
+const { sendArrivalEmailV2 } = require('../../messaging/arrival/arrivalEmailSendService');
 
-async function loadBookingWithCabin(bookingId) {
-  const booking = await Booking.findById(bookingId).lean();
+async function loadBooking(bookingId) {
+  const booking = await Booking.findById(bookingId);
   if (!booking) {
     throw createDomainError('validation', 'Reservation not found', { bookingId }, 404);
   }
-  const cabin = booking.cabinId ? await Cabin.findById(booking.cabinId).lean() : null;
-  return { booking, cabin };
+  return booking;
 }
 
 function idemKey(ctx, action, bookingId) {
@@ -23,6 +21,14 @@ function idemKey(ctx, action, bookingId) {
     entityId: bookingId,
     requestId: ctx.idempotencyKey || ctx.req?.headers?.['x-idempotency-key'] || null
   });
+}
+
+function resolveResendOperationId(ctx) {
+  const fromCtx = ctx.idempotencyKey || ctx.req?.headers?.['x-idempotency-key'];
+  if (fromCtx && String(fromCtx).trim()) return String(fromCtx).trim();
+  const fromBody = ctx.req?.body?.resendOperationId || ctx.req?.body?.operationId;
+  if (fromBody && String(fromBody).trim()) return String(fromBody).trim();
+  return null;
 }
 
 async function sendArrivalInstructions({ bookingId, kind = 'send', ctx = {} }) {
@@ -38,7 +44,8 @@ async function sendArrivalInstructions({ bookingId, kind = 'send', ctx = {} }) {
   const remembered = getRememberedResult(key);
   if (remembered) return remembered;
 
-  const { booking, cabin } = await loadBookingWithCabin(bookingId);
+  const booking = await loadBooking(bookingId);
+
   if (kind === 'complete') {
     await appendAuditEvent(
       {
@@ -63,72 +70,122 @@ async function sendArrivalInstructions({ bookingId, kind = 'send', ctx = {} }) {
     return result;
   }
 
-  if (!booking.guestInfo?.email) {
-    throw createDomainError('validation', 'Guest email is missing for arrival instructions');
+  if (!isArrivalEmailV2Enabled()) {
+    throw createDomainError(
+      'validation',
+      'Arrival email V2 is disabled. The legacy placeholder arrival email is not available.',
+      { flag: 'ARRIVAL_EMAIL_V2' },
+      409
+    );
   }
 
-  const subject = kind === 'send' ? 'Arrival Instructions - Drift & Dwells' : 'Arrival Instructions (Resent) - Drift & Dwells';
-  const text = `Hello ${booking.guestInfo.firstName || 'Guest'},\n\nYour arrival instructions for Drift & Dwells.\nCheck-in date: ${booking.checkIn}\nCabin: ${cabin?.name || 'Unknown'}\n\nSafe travels.`;
-  const html = `<p>Hello ${booking.guestInfo.firstName || 'Guest'},</p><p>Your arrival instructions for Drift & Dwells.</p>`;
+  if (kind !== 'send' && kind !== 'resend') {
+    throw createDomainError('validation', `Unsupported arrival action kind: ${kind}`);
+  }
 
-  const sendResult = await emailService.sendEmail({
-    to: booking.guestInfo.email,
-    subject,
-    html,
-    text,
-    trigger: kind === 'send' ? 'arrival_instructions_sent' : 'arrival_instructions_resent',
-    bookingId: String(booking._id)
+  const operationId = kind === 'resend' ? resolveResendOperationId(ctx) : null;
+  if (kind === 'resend' && !operationId) {
+    throw createDomainError(
+      'validation',
+      'Resend requires a stable operationId (x-idempotency-key or body.resendOperationId)',
+      null,
+      400
+    );
+  }
+
+  const sendResult = await sendArrivalEmailV2({
+    booking,
+    kind,
+    operationId,
+    actor: { id: ctx.user?.id || 'admin', role: ctx.user?.role || null }
   });
-  if (!sendResult.success) {
-    throw createDomainError('dependency_failure', 'Failed to send arrival instructions', { provider: sendResult.method }, 502);
-  }
 
-  // External side effect (email delivery) cannot be rolled back atomically with DB writes.
-  // If audit append fails below, DB commit is blocked, but provider delivery may already have occurred.
-  await appendAuditEvent(
-    {
-      actorType: 'user',
-      actorId: ctx.user?.id || 'admin',
-      entityType: 'Reservation',
-      entityId: String(booking._id),
-      action: kind === 'send' ? 'arrival_instructions_send' : 'arrival_instructions_resend',
-      beforeSnapshot: { arrivalStatus: 'not_sent_or_unknown' },
-      afterSnapshot: { arrivalStatus: 'sent' },
-      metadata: {
-        email: booking.guestInfo.email,
-        sendMethod: sendResult.method
-      },
-      reason: null,
-      sourceContext: { route: ctx.route || null, namespace: 'ops' }
-    },
-    { req: ctx.req }
-  );
-
-  const emailEventPayload = {
-    provider: 'internal',
-    stream: 'transactional',
-    type: kind === 'send' ? 'ArrivalSent' : 'ArrivalResent',
-    bookingId: booking._id,
-    to: booking.guestInfo.email,
-    subject,
-    tag: 'arrival_instructions',
-    details: {
-      sendMethod: sendResult.method
+  if (!sendResult.ok) {
+    if (sendResult.duplicate && sendResult.status === 'accepted') {
+      // Should be handled as ok by mapExisting — defensive
+    } else if (sendResult.uncertain || sendResult.code === 'dispatch_pending_requires_review') {
+      throw createDomainError(
+        'dependency_failure',
+        sendResult.message || 'Arrival send outcome requires review',
+        {
+          dispatchId: sendResult.dispatchId || null,
+          code: sendResult.code || null,
+          status: sendResult.status || null
+        },
+        502
+      );
+    } else if (sendResult.duplicate && sendResult.status !== 'accepted') {
+      throw createDomainError(
+        'dependency_failure',
+        sendResult.message || 'Prior arrival dispatch is not in an accepted state',
+        { dispatchId: sendResult.dispatchId || null, status: sendResult.status || null },
+        502
+      );
+    } else {
+      throw createDomainError(
+        'dependency_failure',
+        sendResult.message || 'Failed to send arrival instructions',
+        {
+          dispatchId: sendResult.dispatchId || null,
+          code: sendResult.code || null,
+          classification: sendResult.classification || null,
+          method: sendResult.method || null,
+          retriable: sendResult.retriable === true
+        },
+        502
+      );
     }
-  };
-  if (sendResult.messageId) {
-    emailEventPayload.messageId = sendResult.messageId;
   }
-  await EmailEvent.create(emailEventPayload);
+
+  // Duplicate accepted initial/resend: treat as success without re-auditing SMTP.
+  const authoritative = sendResult.ok && sendResult.authoritative !== false && sendResult.status === 'accepted';
+  if (!authoritative && !(sendResult.duplicate && sendResult.status === 'accepted')) {
+    throw createDomainError(
+      'dependency_failure',
+      'Arrival email was not authoritatively accepted by the provider',
+      { dispatchId: sendResult.dispatchId || null },
+      502
+    );
+  }
 
   const result = {
     reservationId: String(booking._id),
     arrivalStatus: 'sent',
     communication: {
       sent: true,
-      messageId: sendResult.messageId || null
+      messageId: sendResult.providerMessageId || sendResult.messageId || null,
+      dispatchId: sendResult.dispatchId || null,
+      duplicate: Boolean(sendResult.duplicate),
+      arrivalEmailV2: true
     }
   };
+
+  // Only audit a newly accepted provider send — not durable-idempotency replays.
+  if (!sendResult.duplicate) {
+    await appendAuditEvent(
+      {
+        actorType: 'user',
+        actorId: ctx.user?.id || 'admin',
+        entityType: 'Reservation',
+        entityId: String(booking._id),
+        action: kind === 'send' ? 'arrival_instructions_send' : 'arrival_instructions_resend',
+        beforeSnapshot: { arrivalStatus: 'not_sent_or_unknown' },
+        afterSnapshot: { arrivalStatus: 'sent' },
+        metadata: {
+          email: booking.guestInfo?.email || null,
+          dispatchId: sendResult.dispatchId || null,
+          providerMessageId: sendResult.providerMessageId || sendResult.messageId || null,
+          duplicate: false,
+          arrivalEmailV2: true,
+          propertyKind: sendResult.propertyKind || null
+        },
+        reason: null,
+        sourceContext: { route: ctx.route || null, namespace: 'ops' }
+      },
+      { req: ctx.req }
+    );
+  }
+
   rememberResult(key, result);
   return result;
 }

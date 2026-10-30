@@ -1717,7 +1717,10 @@ export default function OpsReservationDetail() {
                 <OpsButton
                   variant="secondary"
                   size="compact"
-                  onClick={() => doAction(opsWriteAPI.resendArrivalInstructions, id)}
+                  onClick={() => {
+                    const resendOperationId = `ops_arrival_resend_${crypto.randomUUID()}`;
+                    doAction(opsWriteAPI.resendArrivalInstructions, id, { resendOperationId });
+                  }}
                 >
                   Resend
                 </OpsButton>

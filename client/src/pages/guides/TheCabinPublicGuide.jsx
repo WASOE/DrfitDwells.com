@@ -1,8 +1,10 @@
 import PublicArrivalGuideTemplate from './PublicArrivalGuideTemplate';
 import {
-  CABIN_COORDINATES,
+  CABIN_PARK_AND_WALK_COORDINATES,
+  CABIN_PARK_AND_WALK_NAME,
   CABIN_HERO_IMAGE,
   CABIN_NAVIGATE_URL,
+  GOOGLE_EARTH_URL,
   HOST_PHONE_DISPLAY,
   PDF_CHECKLIST_URL
 } from './the-cabin/arrivalConstants';
@@ -13,10 +15,10 @@ export default function TheCabinPublicGuide() {
       propertyName="The Cabin"
       purposeLine="Field-ready arrival companion for your final approach into The Cabin."
       heroImageUrl={CABIN_HERO_IMAGE}
-      destinationLabel="The Cabin, Bachevo"
-      coordinates={CABIN_COORDINATES}
+      destinationLabel={`${CABIN_PARK_AND_WALK_NAME} (drive here, then walk)`}
+      coordinates={CABIN_PARK_AND_WALK_COORDINATES}
       navigateUrl={CABIN_NAVIGATE_URL}
-      parkingNote="Use the pull-in from our arrival message. Pull fully off the lane so local traffic can pass."
+      parkingNote={`Navigate to the ${CABIN_PARK_AND_WALK_NAME} pin, not the cabin building. Google Earth is canonical: ${GOOGLE_EARTH_URL}. Pull fully off the lane so local traffic can pass.`}
       checkInBasics="If needed, stop safely and message us before the final approach."
       finalApproachNote="Road narrows and surface turns rough near the end. Stay on the pinned route and keep speed low."
       routeCheckpoints={[

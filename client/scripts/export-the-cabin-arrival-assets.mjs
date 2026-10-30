@@ -45,6 +45,9 @@ function main() {
   if (!recommended.length || !cabin) {
     throw new Error('export-the-cabin: missing recommended route or cabin point');
   }
+  if (!park) {
+    throw new Error('export-the-cabin: missing primaryParkAndWalk (required for guest Navigate / print checklist)');
+  }
 
   fs.mkdirSync(outDir, { recursive: true });
 
@@ -130,13 +133,16 @@ ${lineToGpxTrkpts(walking)}
   </trkseg></trk>` : ''}
   <wpt lat="${routeStart.lat}" lon="${routeStart.lng}"><name>Route start</name></wpt>
   <wpt lat="${cabin.lat}" lon="${cabin.lng}"><name>Cabin</name></wpt>
-  <wpt lat="${park.lat}" lon="${park.lng}"><name>Park here</name></wpt>
+  <wpt lat="${park.lat}" lon="${park.lng}"><name>Park and walk</name></wpt>
   <wpt lat="${signal.lat}" lon="${signal.lng}"><name>Phone signal</name></wpt>
 </gpx>`;
   fs.writeFileSync(path.join(outDir, 'arrival-pack.gpx'), gpx);
 
-  const lat = cabin.lat.toFixed(6);
-  const lon = cabin.lng.toFixed(6);
+  // Guest driving destination is Park and walk — never the cabin building pin.
+  const parkLat = park.lat.toFixed(6);
+  const parkLon = park.lng.toFixed(6);
+  const cabinLat = cabin.lat.toFixed(6);
+  const cabinLon = cabin.lng.toFixed(6);
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -156,7 +162,9 @@ ${lineToGpxTrkpts(walking)}
   <h1>The Cabin — Arrival checklist</h1>
   <p class="muted">Drift &amp; Dwells · Bachevo area · Print or Save as PDF from your browser.</p>
   <div class="box">
-    <p><strong>Coordinates (cabin):</strong> ${lat}, ${lon}</p>
+    <p><strong>Drive to Park and walk:</strong> ${parkLat}, ${parkLon}</p>
+    <p class="muted">Google Earth is the canonical navigation source. Do not set the cabin building coordinates as your driving destination.</p>
+    <p class="muted">Cabin building (walk orientation only): ${cabinLat}, ${cabinLon}</p>
     <p class="muted">Before you lose signal: save this page; download KML/GPX from the online guide; open offline map in Organic Maps or OsmAnd if you use them.</p>
   </div>
   <div class="box">

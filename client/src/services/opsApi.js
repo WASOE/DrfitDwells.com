@@ -220,8 +220,20 @@ const opsWriteAPI = {
     }),
   sendArrivalInstructions: (id) =>
     api.post(`/ops/communications/reservations/${id}/actions/send-arrival-instructions`, {}, { headers: authHeaders() }),
-  resendArrivalInstructions: (id) =>
-    api.post(`/ops/communications/reservations/${id}/actions/resend-arrival-instructions`, {}, { headers: authHeaders() }),
+  /**
+   * Resend requires a stable operationId for durable MessageDispatch idempotency.
+   * Pass the same resendOperationId on retries of the same click; mint a new one for a new resend.
+   */
+  resendArrivalInstructions: (id, payload = {}) => {
+    const operationId =
+      (payload.resendOperationId && String(payload.resendOperationId).trim()) ||
+      `ops_arrival_resend_${crypto.randomUUID()}`;
+    return api.post(
+      `/ops/communications/reservations/${id}/actions/resend-arrival-instructions`,
+      { resendOperationId: operationId },
+      { headers: { ...authHeaders(), 'x-idempotency-key': operationId } }
+    );
+  },
   markArrivalCompleted: (id) =>
     api.post(`/ops/communications/reservations/${id}/actions/mark-arrival-completed`, {}, { headers: authHeaders() }),
   cancelMessagingJob: (jobId, body) =>

@@ -59,11 +59,110 @@ function isPlausibleEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-function composePayload(templateKey, booking, entity) {
+const FALSE_AUTOMATION_PROMISE_HTML =
+  "<p>We'll send practical arrival instructions and local notes a few days before you travel.</p>";
+const FALSE_AUTOMATION_PROMISE_TEXT =
+  "We'll send practical arrival instructions and local notes a few days before you travel.";
+const PREP_INCOMPLETE_NOTIFIED_HTML =
+  '<p><strong>Important:</strong> Your booking is confirmed, but your full arrival preparation guide could not be attached to this email. Our team has been notified and will send complete arrival details separately — please watch for a follow-up.</p>';
+const PREP_INCOMPLETE_NOTIFIED_TEXT =
+  'IMPORTANT: Your booking is confirmed, but your full arrival preparation guide could not be attached to this email. Our team has been notified and will send complete arrival details separately — please watch for a follow-up.';
+const PREP_INCOMPLETE_UNNOTIFIED_HTML =
+  '<p><strong>Important:</strong> Your booking is confirmed, but your full arrival preparation guide could not be attached to this email. Please reply to this email so we can send complete arrival details.</p>';
+const PREP_INCOMPLETE_UNNOTIFIED_TEXT =
+  'IMPORTANT: Your booking is confirmed, but your full arrival preparation guide could not be attached to this email. Please reply to this email so we can send complete arrival details.';
+
+function withIncompletePrepNotice(legacyPayload, { opsNotified }) {
+  const htmlNotice = opsNotified ? PREP_INCOMPLETE_NOTIFIED_HTML : PREP_INCOMPLETE_UNNOTIFIED_HTML;
+  const textNotice = opsNotified ? PREP_INCOMPLETE_NOTIFIED_TEXT : PREP_INCOMPLETE_UNNOTIFIED_TEXT;
+  return {
+    subject: legacyPayload.subject,
+    html: String(legacyPayload.html || '').includes(FALSE_AUTOMATION_PROMISE_HTML)
+      ? String(legacyPayload.html).replace(FALSE_AUTOMATION_PROMISE_HTML, htmlNotice)
+      : `${legacyPayload.html || ''}${htmlNotice}`,
+    text: String(legacyPayload.text || '').includes(FALSE_AUTOMATION_PROMISE_TEXT)
+      ? String(legacyPayload.text).replace(FALSE_AUTOMATION_PROMISE_TEXT, textNotice)
+      : `${legacyPayload.text || ''}\n\n${textNotice}`
+  };
+}
+
+async function recordConfirmationPrepFailure({ booking, code, message }) {
+  try {
+    const { openManualReviewItem } = require('./ops/ingestion/manualReviewService');
+    await openManualReviewItem({
+      category: 'comms_arrival_confirmation_prep_failed',
+      severity: 'high',
+      entityType: 'Booking',
+      entityId: booking?._id != null ? String(booking._id) : null,
+      title: 'Arrival confirmation preparation guide missing',
+      details:
+        message ||
+        'Arrival V2 confirmation compose failed; guest received incomplete confirmation without the preparation guide.',
+      provenance: {
+        source: 'arrival_email_v2',
+        sourceReference: booking?._id != null ? `booking:${String(booking._id)}:confirmation_prep` : null
+      },
+      evidence: {
+        code: code || null,
+        message: message || null,
+        flag: 'ARRIVAL_EMAIL_V2'
+      }
+    });
+    return true;
+  } catch (mriErr) {
+    console.error('[email] failed to open MRI for arrival confirmation prep failure', {
+      bookingId: booking?._id != null ? String(booking._id) : null,
+      error: mriErr?.message || String(mriErr)
+    });
+    return false;
+  }
+}
+
+async function composePayload(templateKey, booking, entity) {
   if (templateKey === TEMPLATE_KEYS.BOOKING_RECEIVED) {
     return emailService.generateBookingReceivedEmail(booking, entity);
   }
   if (templateKey === TEMPLATE_KEYS.BOOKING_CONFIRMED) {
+    const { isArrivalEmailV2Enabled } = require('./messaging/arrival/arrivalFeatureFlags');
+    if (isArrivalEmailV2Enabled()) {
+      try {
+        const { composeArrivalGuestEmail } = require('./messaging/arrival/arrivalEmailComposer');
+        const composed = await composeArrivalGuestEmail({ booking, purpose: 'confirmation' });
+        if (composed.ok) {
+          return {
+            subject: composed.subject,
+            html: composed.html,
+            text: composed.text
+          };
+        }
+        console.warn('[email] arrival V2 confirmation compose returned not-ok; using incomplete-prep notice', {
+          bookingId: booking?._id != null ? String(booking._id) : null,
+          code: composed.code || null,
+          message: composed.message || null
+        });
+        const opsNotified = await recordConfirmationPrepFailure({
+          booking,
+          code: composed.code || 'compose_not_ok',
+          message: composed.message || null
+        });
+        return withIncompletePrepNotice(emailService.generateBookingConfirmedEmail(booking, entity), {
+          opsNotified
+        });
+      } catch (err) {
+        console.warn('[email] arrival V2 confirmation compose failed; using incomplete-prep notice', {
+          bookingId: booking?._id != null ? String(booking._id) : null,
+          error: err?.message || String(err)
+        });
+        const opsNotified = await recordConfirmationPrepFailure({
+          booking,
+          code: err?.code || 'compose_threw',
+          message: err?.message || String(err)
+        });
+        return withIncompletePrepNotice(emailService.generateBookingConfirmedEmail(booking, entity), {
+          opsNotified
+        });
+      }
+    }
     return emailService.generateBookingConfirmedEmail(booking, entity);
   }
   if (templateKey === TEMPLATE_KEYS.BOOKING_CANCELLED) {
@@ -225,7 +324,7 @@ async function sendBookingLifecycleEmail({
   }
 
   const entityResolved = entity || (await loadEntityForBooking(booking));
-  const basePayload = composePayload(templateKey, booking, entityResolved);
+  const basePayload = await composePayload(templateKey, booking, entityResolved);
   const emailTrigger = TRIGGER_BY_TEMPLATE[templateKey];
   const skipIdempotencyWindow = lifecycleSource === 'manual_resend';
 
@@ -403,7 +502,7 @@ async function previewGuestLifecycleEmail({ booking, templateKey, entity = null 
   }
 
   const entityResolved = entity || (await loadEntityForBooking(booking));
-  const payload = composePayload(templateKey, booking, entityResolved);
+  const payload = await composePayload(templateKey, booking, entityResolved);
   return {
     subject: payload.subject,
     html: payload.html,
