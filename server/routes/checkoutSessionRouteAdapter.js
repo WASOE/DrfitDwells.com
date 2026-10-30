@@ -28,6 +28,11 @@ const {
   isRetryablePaymentPrepCode,
   applicationRelease
 } = require('../services/checkout/paymentPreparationObservability');
+const {
+  publicCapabilityContract,
+  applicationReleaseFromEnv,
+  frontendReleaseFromEnv
+} = require('../../shared/payments/productionPaymentContract.js');
 
 const ROUTE_AMOUNT_ERROR_CODES = {
   CHECKOUT_INVALID_AMOUNT: 'CHECKOUT_INVALID_AMOUNT',
@@ -434,18 +439,17 @@ async function handleGetCheckoutSession(checkoutId) {
  * Used by the client release handshake to detect incompatible bundles.
  */
 function getCheckoutPaymentCapabilities() {
-  return {
-    success: true,
-    flowVersion: featureFlags.isCheckoutSessionV2Enabled() ? 'v2' : 'legacy',
-    checkoutSessionV2: featureFlags.isCheckoutSessionV2Enabled(),
-    finalizeIntentPersist: featureFlags.isFinalizeIntentPersistEnabled(),
-    finalizeIntentRequiredForPi: featureFlags.isFinalizeIntentRequiredForPiEnabled(),
-    requiresFinalizeIntentPayload: featureFlags.isFinalizeIntentRequiredForPiEnabled(),
-    applicationRelease: applicationRelease(),
-    frontendReleaseHint: String(process.env.FRONTEND_RELEASE || process.env.VITE_FRONTEND_RELEASE || '').trim() || null,
-    paymentContractVersion: 'checkout-payment-v2-finalize-1',
-    contractVersion: 2
-  };
+  return publicCapabilityContract(
+    {
+      checkoutSessionV2: featureFlags.isCheckoutSessionV2Enabled(),
+      finalizeIntentPersist: featureFlags.isFinalizeIntentPersistEnabled(),
+      finalizeIntentRequiredForPi: featureFlags.isFinalizeIntentRequiredForPiEnabled()
+    },
+    {
+      applicationRelease: applicationRelease() || applicationReleaseFromEnv(),
+      frontendRelease: frontendReleaseFromEnv()
+    }
+  );
 }
 
 async function handleCreatePaymentIntentV2(req, stripeClient) {

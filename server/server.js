@@ -1,6 +1,11 @@
 require('dotenv').config();
 const { validateProductionEnvOrExit } = require('./config/validateProductionEnv');
 validateProductionEnvOrExit();
+const {
+  PRODUCTION_PAYMENT_CONTRACT_VERSION,
+  applicationReleaseFromEnv,
+  frontendReleaseFromEnv
+} = require('../shared/payments/productionPaymentContract.js');
 
 const express = require('express');
 const morgan = require('morgan');
@@ -269,7 +274,10 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'OK',
     message: 'Drift & Dwells Booking API is running',
-    database: db.isConnected && db.isConnected() ? 'connected' : 'disconnected'
+    database: db.isConnected && db.isConnected() ? 'connected' : 'disconnected',
+    applicationRelease: applicationReleaseFromEnv(),
+    frontendRelease: frontendReleaseFromEnv(),
+    paymentContractVersion: PRODUCTION_PAYMENT_CONTRACT_VERSION
   });
 });
 

@@ -37,7 +37,8 @@ import {
 } from '../utils/finalizeIntentFlags';
 import {
   evaluateCheckoutCapabilityCompatibility,
-  getClientCheckoutCapabilitySnapshot
+  getClientCheckoutCapabilitySnapshot,
+  customerMessageForCheckoutCapability
 } from '../utils/checkoutCapabilityHandshake';
 import { isCheckoutRecoveryUxEnabled } from '../utils/checkoutRecoveryUxFlags';
 import {
@@ -1809,9 +1810,7 @@ const ConfirmBooking = () => {
           getClientCheckoutCapabilitySnapshot()
         );
         if (!compat.ok) {
-          setCheckoutInitError(
-            'This page is out of date for secure checkout. Please refresh once, then try again.'
-          );
+          setCheckoutInitError(customerMessageForCheckoutCapability(compat));
           return;
         }
       } catch {

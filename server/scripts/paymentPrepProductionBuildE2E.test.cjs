@@ -35,6 +35,7 @@ const { MongoMemoryServer } = require('mongodb-memory-server');
 const Cabin = require('../models/Cabin');
 const CheckoutSession = require('../models/CheckoutSession');
 const bookingRoutes = require('../routes/bookingRoutes');
+const { closeBrowserBounded, closeHttpServerBounded } = require('./lib/boundedE2ECleanup.cjs');
 
 const DIST = path.join(__dirname, '../../client/dist');
 const ARTIFACT_DIR = path.join(__dirname, '../../.scratch/payment-prep-forensic');
@@ -120,6 +121,11 @@ test.before(async () => {
       'client/dist missing. Build with VITE_CHECKOUT_SESSION_V2=1 VITE_FINALIZE_INTENT_PERSIST=1 VITE_FINALIZE_INTENT_REQUIRED_FOR_PI=1 before running this E2E.'
     );
   }
+  const { assessPaymentContractBundle } = await import('../../scripts/lib/verifyPaymentContractBundle.mjs');
+  const bundle = assessPaymentContractBundle(DIST);
+  if (!bundle.ok) {
+    throw new Error(`client/dist is not a compatible checkout bundle:\n${bundle.errors.join('\n')}`);
+  }
   setStrict();
   mongoServer = await MongoMemoryServer.create();
   await mongoose.connect(mongoServer.getUri(), { serverSelectionTimeoutMS: 15000 });
@@ -161,7 +167,7 @@ test.before(async () => {
 test.after(async () => {
   bookingRoutes.__setStripeClientForTesting(null);
   restore();
-  if (server) await new Promise((resolve) => server.close(resolve));
+  await closeHttpServerBounded(server, 'payment-prep-e2e');
   await mongoose.connection.dropDatabase();
   await mongoose.disconnect();
   if (mongoServer) await mongoServer.stop();
@@ -176,7 +182,11 @@ test('production-build E2E: Continue to secure payment reaches Stripe Elements c
     return;
   }
 
-  const browser = await playwright.chromium.launch({ headless: true });
+  let browser;
+  let piRequestCount = 0;
+  let piResponseCount = 0;
+  try {
+  browser = await playwright.chromium.launch({ headless: true });
   const context = await browser.newContext();
   const page = await context.newPage();
 
@@ -199,6 +209,7 @@ test('production-build E2E: Continue to secure payment reaches Stripe Elements c
       });
       // Keep full body only in-memory for assertions (not written with email/phone).
       piRequests[piRequests.length - 1].__fullBody = body;
+      piRequestCount = piRequests.length;
     }
   });
   const piResponses = [];
@@ -211,6 +222,7 @@ test('production-build E2E: Continue to secure payment reaches Stripe Elements c
         json = null;
       }
       piResponses.push({ status: res.status(), json });
+      piResponseCount = piResponses.length;
     }
   });
 
@@ -284,6 +296,11 @@ test('production-build E2E: Continue to secure payment reaches Stripe Elements c
     (await page.getByRole('button', { name: /confirm and pay|pay/i }).count()) > 0 ||
     Boolean(last.json.clientSecret);
   assert.ok(secretMounted, 'Stripe Elements / payment UI did not become available');
-
-  await browser.close();
+  } catch (err) {
+    console.error(`[payment-prep-e2e] browser step failed`);
+    console.error(`[payment-prep-e2e] diagnostic ${JSON.stringify({ piRequestCount, piResponseCount })}`);
+    throw err;
+  } finally {
+    await closeBrowserBounded(browser, 'payment-prep-e2e');
+  }
 });
