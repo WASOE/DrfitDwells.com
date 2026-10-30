@@ -63,10 +63,17 @@ async function processArrivalAutomationJob(jobOrId, options = {}) {
   }
 
   const now = options.now || new Date();
-  let job =
-    jobOrId && typeof jobOrId === 'object' && jobOrId._id
-      ? jobOrId
-      : await ScheduledMessageJob.findById(jobOrId).lean();
+  // Mongoose/BSON ObjectId is typeof 'object' and has a truthy `_id` (itself).
+  // Never treat a bare ObjectId/string as a job document.
+  const looksLikeJobDoc =
+    jobOrId &&
+    typeof jobOrId === 'object' &&
+    jobOrId._id != null &&
+    jobOrId.ruleKey != null &&
+    !(jobOrId instanceof mongoose.Types.ObjectId);
+  let job = looksLikeJobDoc
+    ? jobOrId
+    : await ScheduledMessageJob.findById(jobOrId).lean();
 
   if (!job) return { ran: true, missing: true };
   if (!isArrivalAutomationRuleKey(job.ruleKey)) {
@@ -97,6 +104,37 @@ async function processArrivalAutomationJob(jobOrId, options = {}) {
   if (!booking) {
     await transitionJob(job._id, { status: 'failed', lastError: 'booking_missing' });
     return { ran: true, terminal: 'failed', reason: 'booking_missing' };
+  }
+
+  // Dedicated worker: re-validate email allowlist at SMTP time so a booking
+  // email change after schedule cannot deliver to a non-staff guest address.
+  try {
+    const {
+      isArrivalAutomationWorkerMode,
+      evaluateArrivalWorkerClaim
+    } = require('./arrivalWorkerClaimPolicy');
+    if (isArrivalAutomationWorkerMode()) {
+      const gate = evaluateArrivalWorkerClaim({ job, booking });
+      if (!gate.ok) {
+        await transitionJob(job._id, {
+          status: 'cancelled',
+          cancelReason: `worker_scope:${gate.reason || 'denied'}`,
+          cancelActor: 'arrival-auto-dispatch'
+        });
+        return { ran: true, terminal: 'cancelled', reason: gate.reason || 'worker_scope_denied' };
+      }
+    }
+  } catch (err) {
+    logLine('error', 'worker_scope_check_failed', {
+      jobId: String(job._id),
+      error: err?.message || String(err)
+    });
+    await transitionJob(job._id, {
+      status: 'cancelled',
+      cancelReason: 'worker_scope_check_failed',
+      cancelActor: 'arrival-auto-dispatch'
+    });
+    return { ran: true, terminal: 'cancelled', reason: 'worker_scope_check_failed' };
   }
 
   if (booking.status === 'cancelled') {

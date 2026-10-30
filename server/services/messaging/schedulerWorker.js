@@ -178,21 +178,70 @@ function computeBackoffMs(nextAttempt) {
  *     reschedules for retry).
  */
 async function tickOnce({ now = new Date() } = {}) {
-  const result = { candidatesCount: 0, claimed: 0, lost: 0, errors: 0 };
+  const result = {
+    candidatesCount: 0,
+    claimed: 0,
+    lost: 0,
+    errors: 0,
+    skippedByClaimGate: 0,
+    scopedQuery: false
+  };
   const workerId = ensureWorkerId();
   try {
+    const {
+      buildDueCandidateFilter
+    } = require('./arrival/arrivalWorkerClaimPolicy');
+    const Booking = require('../../models/Booking');
+    const { filter: dueFilter, scoped } = await buildDueCandidateFilter({
+      now,
+      Booking
+    });
+    result.scopedQuery = Boolean(scoped);
+
+    // Dedicated worker filters at the DB (V2 rules + optional email bookingIds),
+    // so staff jobs remain reachable even when >250 unrelated due jobs exist.
     const candidates = await ScheduledMessageJob
-      .find({ status: 'scheduled', scheduledFor: { $lte: now } })
+      .find(dueFilter)
       .sort({ scheduledFor: 1 })
       .limit(state.batchSize)
-      .select('_id')
+      .select('_id ruleKey bookingId payloadSnapshot')
       .lean();
     result.candidatesCount = candidates.length;
 
     const visibilityTimeoutAt = new Date(now.getTime() + state.visibilityTimeoutMs);
 
     for (const cand of candidates) {
+      if (result.claimed >= state.batchSize) break;
       try {
+        // Defence in depth for dedicated worker: re-check email allowlist
+        // before claiming (mirrors sweep gate).
+        try {
+          const {
+            isArrivalAutomationWorkerMode,
+            evaluateArrivalWorkerClaim
+          } = require('./arrival/arrivalWorkerClaimPolicy');
+          if (isArrivalAutomationWorkerMode()) {
+            let booking = null;
+            if (cand.bookingId) {
+              booking = await Booking.findById(cand.bookingId)
+                .select('guestInfo.email')
+                .lean();
+            }
+            const gate = evaluateArrivalWorkerClaim({ job: cand, booking });
+            if (!gate.ok) {
+              result.skippedByClaimGate += 1;
+              continue;
+            }
+          }
+        } catch (err) {
+          result.skippedByClaimGate += 1;
+          logLine('error', 'claim_gate_error', {
+            _id: String(cand._id),
+            error: err?.message || String(err)
+          });
+          continue;
+        }
+
         const claimed = await ScheduledMessageJob.findOneAndUpdate(
           { _id: cand._id, status: 'scheduled' },
           {
@@ -229,10 +278,14 @@ async function tickOnce({ now = new Date() } = {}) {
             if (isAllowlisted && isArrivalAutomationAuthorized()) {
               handedOff = true;
               const { processArrivalAutomationJob } = require('./arrival/arrivalAutoDispatchAdapter');
+              // Pass string id (not ObjectId): ObjectId is typeof object and has
+              // truthy `_id`, which previously fooled the adapter into treating
+              // the id as a job document (ruleKey undefined → no SMTP).
+              const arrivalJobId = String(claimed._id);
               const arrivalPromise = Promise.resolve()
-                .then(() => processArrivalAutomationJob(claimed._id))
+                .then(() => processArrivalAutomationJob(arrivalJobId))
                 .catch((err) => logLine('error', 'arrival_auto_dispatch_failed', {
-                  _id: String(claimed._id),
+                  _id: arrivalJobId,
                   error: err?.message || String(err)
                 }));
               if (awaitDispatcherForTests) {
@@ -323,18 +376,53 @@ async function tickOnce({ now = new Date() } = {}) {
  *   - DOES NOT mark any job `sent`. DOES NOT write `MessageDispatch`.
  */
 async function sweepStaleClaimedOnce({ now = new Date() } = {}) {
-  const result = { staleCount: 0, rescheduled: 0, failed: 0, lost: 0, errors: 0 };
+  const result = {
+    staleCount: 0,
+    rescheduled: 0,
+    failed: 0,
+    lost: 0,
+    errors: 0,
+    scopedQuery: false,
+    skippedOutOfScope: 0
+  };
   ensureWorkerId();
   try {
+    const {
+      buildStaleClaimedFilter,
+      isArrivalAutomationWorkerMode,
+      evaluateArrivalWorkerClaim
+    } = require('./arrival/arrivalWorkerClaimPolicy');
+    const Booking = require('../../models/Booking');
+    const { filter: staleFilter, scoped } = await buildStaleClaimedFilter({
+      now,
+      Booking
+    });
+    result.scopedQuery = Boolean(scoped);
+
     const stale = await ScheduledMessageJob
-      .find({ status: 'claimed', visibilityTimeoutAt: { $lte: now } })
+      .find(staleFilter)
       .limit(state.batchSize)
-      .select('_id attemptCount maxAttempts')
+      .select('_id attemptCount maxAttempts ruleKey bookingId payloadSnapshot')
       .lean();
     result.staleCount = stale.length;
 
     for (const job of stale) {
       try {
+        // Defence in depth: re-evaluate scope before mutating (email allowlist).
+        if (isArrivalAutomationWorkerMode()) {
+          let booking = null;
+          if (job.bookingId) {
+            booking = await Booking.findById(job.bookingId)
+              .select('guestInfo.email')
+              .lean();
+          }
+          const gate = evaluateArrivalWorkerClaim({ job, booking });
+          if (!gate.ok) {
+            result.skippedOutOfScope += 1;
+            continue;
+          }
+        }
+
         const currentAttempt = Number.isFinite(job.attemptCount) ? job.attemptCount : 0;
         const cap = Number.isFinite(job.maxAttempts) && job.maxAttempts > 0 ? job.maxAttempts : 3;
         const nextAttempt = currentAttempt + 1;
@@ -426,13 +514,62 @@ function startSchedulerWorkerIfEnabled() {
     return { started: true, alreadyStarted: true };
   }
 
+  let arrivalAutomationAuthorized = false;
+  try {
+    const { isArrivalAutomationAuthorized } = require('./arrival/arrivalFeatureFlags');
+    arrivalAutomationAuthorized = isArrivalAutomationAuthorized();
+  } catch (_) {
+    arrivalAutomationAuthorized = false;
+  }
+
+  // Fail closed: never start a shared/unscoped scheduler while Arrival V2
+  // automation is authorized — that would claim all due guest V2 jobs.
+  // Dedicated worker sets ARRIVAL_AUTOMATION_WORKER_MODE=1 (+ allowlist or
+  // ALLOW_ALL_GUESTS). Escape hatch for intentional shared use only.
+  if (arrivalAutomationAuthorized) {
+    let workerMode = false;
+    let allowShared = false;
+    try {
+      const {
+        isArrivalAutomationWorkerMode
+      } = require('./arrival/arrivalWorkerClaimPolicy');
+      workerMode = isArrivalAutomationWorkerMode();
+      allowShared =
+        String(process.env.ARRIVAL_AUTOMATION_ALLOW_SHARED_SCHEDULER || '').trim() === '1';
+    } catch (_) {
+      workerMode = false;
+    }
+    if (!workerMode && !allowShared) {
+      console.error(
+        '[messaging-worker] REFUSING START: ARRIVAL_AUTOMATION_V2 is authorized but '
+        + 'ARRIVAL_AUTOMATION_WORKER_MODE!=1. Use runArrivalAutomationWorker.js '
+        + '(staff allowlist or ALLOW_ALL_GUESTS). Set ARRIVAL_AUTOMATION_ALLOW_SHARED_SCHEDULER=1 '
+        + 'only for an intentional unscoped shared scheduler.'
+      );
+      logLine('error', 'refused_unscoped_arrival_scheduler', {
+        arrivalAutomationAuthorized: true,
+        arrivalWorkerMode: false
+      });
+      state.enabled = false;
+      return { started: false, refused: 'unscoped_arrival_automation' };
+    }
+  }
+
   if (!isDispatcherEnabled()) {
-    // Same loud warning as Batch 6 — when the dispatcher flag is OFF, the
-    // worker is still claim-only and will silently consume real jobs.
-    console.warn(
-      '[messaging-worker] WARNING: scheduler is in CLAIM-ONLY mode (MESSAGE_DISPATCHER_ENABLED != "1"). '
-      + 'Claimed jobs are not dispatched. Do not enable in production with real jobs.'
-    );
+    if (arrivalAutomationAuthorized) {
+      console.warn(
+        '[messaging-worker] MESSAGE_DISPATCHER_ENABLED=0 (correct for Arrival V2). '
+        + 'Allowlisted arrival jobs dispatch via arrivalAutoDispatchAdapter → sendArrivalEmailV2. '
+        + 'Unrelated GMA rules are not dispatched.'
+      );
+    } else {
+      // Same loud warning as Batch 6 — when the dispatcher flag is OFF and
+      // Arrival V2 automation is OFF, the worker is claim-only.
+      console.warn(
+        '[messaging-worker] WARNING: scheduler is in CLAIM-ONLY mode (MESSAGE_DISPATCHER_ENABLED != "1"). '
+        + 'Claimed jobs are not dispatched. Do not enable in production with real jobs.'
+      );
+    }
   } else {
     // Batch 8 dispatcher is shadow-only. Producing shadow dispatches in
     // production would mark real jobs as sent without sending anything.
@@ -442,12 +579,29 @@ function startSchedulerWorkerIfEnabled() {
     );
   }
 
+  let arrivalWorkerMode = false;
+  let arrivalEmailAllowlistSize = 0;
+  try {
+    const {
+      isArrivalAutomationWorkerMode,
+      parseEmailAllowlist
+    } = require('./arrival/arrivalWorkerClaimPolicy');
+    arrivalWorkerMode = isArrivalAutomationWorkerMode();
+    const list = parseEmailAllowlist();
+    arrivalEmailAllowlistSize = list ? list.size : 0;
+  } catch (_) {
+    arrivalWorkerMode = false;
+  }
+
   logLine('log', 'start', {
     tickMs: state.tickMs,
     sweeperTickMs: state.sweeperTickMs,
     batchSize: state.batchSize,
     visibilityTimeoutMs: state.visibilityTimeoutMs,
-    dispatcherEnabled: isDispatcherEnabled()
+    dispatcherEnabled: isDispatcherEnabled(),
+    arrivalAutomationAuthorized,
+    arrivalWorkerMode,
+    arrivalEmailAllowlistSize
   });
 
   // Kick off one immediate pass (non-blocking; errors swallowed by tickOnce).
