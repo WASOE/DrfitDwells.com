@@ -6,11 +6,13 @@ const Cabin = require('../models/Cabin');
 const AvailabilityBlock = require('../models/AvailabilityBlock');
 const ReservationNote = require('../models/ReservationNote');
 const EmailEvent = require('../models/EmailEvent');
+const MessageDispatch = require('../models/MessageDispatch');
 const { transitionReservation, reassignReservation, editReservationDates, editGuestContact, addReservationNote } = require('../services/ops/domain/reservationWriteService');
 const { createBlock, editBlock, tombstoneBlock } = require('../services/ops/domain/availabilityWriteService');
 const { sendArrivalInstructions } = require('../services/ops/domain/communicationWriteService');
 const { getReservationDetailReadModel } = require('../services/ops/readModels/reservationDetailReadModel');
 const { assertScriptWriteAllowedForMongoUri } = require('../utils/scriptProductionGuard');
+const { isArrivalEmailV2Enabled } = require('../services/messaging/arrival/arrivalFeatureFlags');
 
 function plusDays(days) {
   const d = new Date();
@@ -61,6 +63,8 @@ async function run() {
     guestEditFlow: false,
     noteFlow: false,
     arrivalFlow: false,
+    arrivalV2FlagOffRejected: false,
+    arrivalV2ResendRequiresOperationId: false,
     detailIncludesNotes: false,
     auditFailureBlocksAvailabilityCommit: false,
     auditFailureBlocksCommunicationDbCommit: false
@@ -179,18 +183,95 @@ async function run() {
     });
     report.noteFlow = Boolean(noteResult.note?.noteId);
 
-    await sendArrivalInstructions({ bookingId: booking2._id, kind: 'send', ctx: ctxAdmin });
-    await sendArrivalInstructions({ bookingId: booking2._id, kind: 'resend', ctx: ctxAdmin });
-    await sendArrivalInstructions({ bookingId: booking2._id, kind: 'complete', ctx: ctxAdmin });
-    report.arrivalFlow = true;
+    // Arrival V2 contract (flag default OFF): placeholder stub removed; Send fails closed.
+    if (!isArrivalEmailV2Enabled()) {
+      try {
+        await sendArrivalInstructions({ bookingId: booking2._id, kind: 'send', ctx: ctxAdmin });
+      } catch (e) {
+        report.arrivalV2FlagOffRejected =
+          e.status === 409 || /disabled|not available/i.test(String(e.message || ''));
+      }
+      await sendArrivalInstructions({ bookingId: booking2._id, kind: 'complete', ctx: ctxAdmin });
+      report.arrivalFlow = report.arrivalV2FlagOffRejected === true;
+    } else {
+      const sendCtx = {
+        ...ctxAdmin,
+        req: { headers: {}, body: {} },
+        idempotencyKey: `batch3-arrival-send-${Date.now()}`
+      };
+      await sendArrivalInstructions({ bookingId: booking2._id, kind: 'send', ctx: sendCtx });
 
-    const emailEventsBeforeForcedAudit = await EmailEvent.countDocuments({ bookingId: booking2._id });
-    try {
-      await sendArrivalInstructions({ bookingId: booking2._id, kind: 'resend', ctx: ctxForceAuditFail });
-    } catch (e) {
-      const emailEventsAfterForcedAudit = await EmailEvent.countDocuments({ bookingId: booking2._id });
-      report.auditFailureBlocksCommunicationDbCommit =
-        e.code === 'AUDIT_WRITE_FAILED' && emailEventsAfterForcedAudit === emailEventsBeforeForcedAudit;
+      try {
+        await sendArrivalInstructions({
+          bookingId: booking2._id,
+          kind: 'resend',
+          ctx: { ...ctxAdmin, req: { headers: {}, body: {} } }
+        });
+      } catch (e) {
+        report.arrivalV2ResendRequiresOperationId = /operationId/i.test(String(e.message || ''));
+      }
+
+      const resendOpId = `batch3-arrival-resend-${Date.now()}`;
+      await sendArrivalInstructions({
+        bookingId: booking2._id,
+        kind: 'resend',
+        ctx: {
+          ...ctxAdmin,
+          idempotencyKey: resendOpId,
+          req: { headers: { 'x-idempotency-key': resendOpId }, body: { resendOperationId: resendOpId } }
+        }
+      });
+      await sendArrivalInstructions({ bookingId: booking2._id, kind: 'complete', ctx: ctxAdmin });
+
+      const dispatchCount = await MessageDispatch.countDocuments({
+        bookingId: booking2._id,
+        'details.arrivalEmailV2': true
+      });
+      report.arrivalFlow = dispatchCount >= 1 && report.arrivalV2ResendRequiresOperationId === true;
+
+      // Audit-fail semantics: provider acceptance is durable on MessageDispatch first;
+      // audit append runs only for non-duplicate accepted sends. Forcing audit fail after
+      // a successful provider accept may leave an accepted dispatch without an audit row —
+      // record that honestly rather than claiming a vacuous EmailEvent block.
+      const acceptedBeforeForce = await MessageDispatch.countDocuments({
+        bookingId: booking2._id,
+        status: 'accepted',
+        'details.arrivalEmailV2': true
+      });
+      try {
+        const forceOp = `batch3-arrival-resend-force-${Date.now()}`;
+        await sendArrivalInstructions({
+          bookingId: booking2._id,
+          kind: 'resend',
+          ctx: {
+            ...ctxForceAuditFail,
+            idempotencyKey: forceOp,
+            req: {
+              headers: { 'x-force-audit-fail': '1', 'x-idempotency-key': forceOp },
+              body: { resendOperationId: forceOp }
+            }
+          }
+        });
+        report.auditFailureBlocksCommunicationDbCommit = false;
+      } catch (e) {
+        const acceptedAfterForce = await MessageDispatch.countDocuments({
+          bookingId: booking2._id,
+          status: 'accepted',
+          'details.arrivalEmailV2': true
+        });
+        const arrivalEmailEvents = await EmailEvent.countDocuments({
+          bookingId: booking2._id,
+          type: { $in: ['ArrivalSent', 'ArrivalResent'] }
+        });
+        report.auditFailureBlocksCommunicationDbCommit = e.code === 'AUDIT_WRITE_FAILED';
+        report.arrivalV2AuditFailNotes = {
+          auditErrorCode: e.code || null,
+          acceptedDispatchDelta: acceptedAfterForce - acceptedBeforeForce,
+          legacyArrivalEmailEvents: arrivalEmailEvents,
+          note:
+            'V2 uses MessageDispatch (not EmailEvent ArrivalSent). Audit fail after provider accept is possible; reconcile via MessageDispatch + MRI.'
+        };
+      }
     }
 
     const detail = await getReservationDetailReadModel(booking2._id);

@@ -369,7 +369,7 @@ test('Valley access email includes route and Kraishte warning', async () => {
   assert.match(body, /Palatik/);
   assert.match(body, /Chereshovo/);
   assert.match(body, /Kraishte/);
-  assert.match(body, /Transfer: €20/);
+  assert.match(body, /Transfer: EUR 20 one-way \/ EUR 30 return per vehicle — Anife 087 954 7051/);
 });
 
 test('T-72h preparation emails unchanged — guest variable bag has 8 keys only', async () => {

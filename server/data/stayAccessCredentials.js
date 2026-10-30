@@ -26,7 +26,9 @@ const A_FRAME_LOCK_CODES_BY_UNIT_INDEX = Object.freeze({
 
 const STONE_HOUSE_WIFI_NETWORK = 'Drift&Dwells';
 
-const VALLEY_TRANSFER_OFFER_NOTE = '€20';
+/** Guest-facing Valley transfer offer (EUR). Matches Arrival V2 property facts. */
+const VALLEY_TRANSFER_OFFER_NOTE =
+  'EUR 20 one-way / EUR 30 return per vehicle — Anife 087 954 7051';
 
 const GUEST_ACCESS_RULE_KEYS = Object.freeze([
   'check_in_access_day_before_cabin',
